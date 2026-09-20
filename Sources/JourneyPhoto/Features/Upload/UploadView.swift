@@ -4,6 +4,7 @@ import PhotosUI
 struct UploadView: View {
 
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var joined: JoinedAlbumsStore
     @StateObject private var model: UploadViewModel
     @State private var showCamera = false
     @State private var showSongPicker = false
@@ -59,7 +60,7 @@ struct UploadView: View {
             errorSection
             submitSection
         }
-        .task { await model.loadAlbums() }
+        .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { song in model.song = song }

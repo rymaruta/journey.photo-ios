@@ -150,6 +150,27 @@ final class ViewModelTests: XCTestCase {
         await model.postComment()
         XCTAssertNil(StubProtocol.lastRequest)
     }
+    /// **参加しているアルバムも投稿の行き先に出る。**
+    ///
+    /// `GET /albums` は自分が作ったものしか返さない（`albums.ts` が
+    /// `ownerId !== userId` を落とす）ので、端末が覚えている分を足さないと
+    /// 招待された人は**そのアルバムに1枚も投稿できない**。
+    func testJoinedAlbumsAppearInTheUploadPicker() async throws {
+        prepare()
+        StubProtocol.respond(status: 200, body: #"{"albums":[{"id":"mine","title":"自分の"}]}"#)
+        let model = UploadViewModel(uploads: UploadService(api: api(), session: session),
+                                    albums: AlbumService(api: api()),
+                                    photos: PhotoService(api: api()))
+
+        await model.loadAlbums(joined: [
+            JoinedAlbumsStore.Entry(id: "joined", title: "呼ばれた方", token: "t1"),
+            // **自分が作ったものと重ならない。** 同じアルバムが2行出ると、
+            // どちらを選んでも同じなのに選び直しを迫ることになる
+            JoinedAlbumsStore.Entry(id: "mine", title: "自分の（控え）", token: "t2"),
+        ])
+
+        XCTAssertEqual(model.albums.map { $0.id }, ["mine", "joined"])
+    }
 }
 
 /// お知らせを押したときの行き先。**空振りを作らない。**
@@ -212,4 +233,5 @@ final class NotificationDestinationTests: XCTestCase {
             return XCTFail("消えるものへ飛ばしている")
         }
     }
+
 }

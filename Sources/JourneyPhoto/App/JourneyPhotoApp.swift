@@ -17,6 +17,7 @@ struct JourneyPhotoApp: App {
     @StateObject private var consent = LegalConsent()
     @StateObject private var favorites = FavoritesStore()
     @StateObject private var hidden = ModerationStore()
+    @StateObject private var joinedAlbums = JoinedAlbumsStore()
     @State private var configurationError: String? = nil
 
     init() {
@@ -71,12 +72,19 @@ struct JourneyPhotoApp: App {
                 .environmentObject(consent)
                 .environmentObject(favorites)
                 .environmentObject(hidden)
-                .task {
-                    await auth.restore()
+                .environmentObject(joinedAlbums)
+                .task { await auth.restore() }
+                // **ログイン状態が変わるたびに読み直す。** `.task` のままだと
+                // 起動時に1回しか走らず、あとからログインした人には
+                // **未ログインのときの鍵で読んだ控え**が見えたままになる
+                // （同じ端末を別の人が使うと、その人のハートとブロックが
+                //  こちらに出る——`FavoritesStore` が warn している事故そのもの）
+                .task(id: auth.userId) {
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)
                     hidden.use(userId: auth.userId)
+                    joinedAlbums.use(userId: auth.userId)
                     await applyModeration()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     if auth.userId != nil {

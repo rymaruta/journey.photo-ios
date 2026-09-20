@@ -5,11 +5,14 @@ struct AlbumsView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var joined: JoinedAlbumsStore
     @StateObject private var model = AlbumsViewModel()
     @State private var newTitle = ""
     @State private var showCreate = false
     @State private var showJoin = false
     @State private var inviteText = ""
+    /// 開いている招待。リンクを貼った直後と、参加済みの行を押したとき
+    @State private var openedToken: InviteToken?
 
     var body: some View {
         Group {
@@ -33,8 +36,12 @@ struct AlbumsView: View {
             ForEach(model.albums) { album in
                 row(album)
             }
+            joinedSection
         }
         .toolbar { addMenu }
+        .sheet(item: $openedToken) { opened in
+            NavigationStack { InviteView(token: opened.token) }
+        }
         .alert(L("招待リンクから参加", "Join with a link"), isPresented: $showJoin) {
             joinAlertButtons
         } message: {
@@ -53,6 +60,40 @@ struct AlbumsView: View {
             Text(message).foregroundStyle(.red).font(.callout)
         } else if model.albums.isEmpty && !model.isLoading {
             Text(L("まだアルバムがありません", "No albums yet")).foregroundStyle(.secondary)
+        }
+    }
+
+    /// **参加しているアルバム。** サーバーの一覧（`GET /albums`）は
+    /// 自分が作ったものしか返さないので、端末が覚えている分をここに出す
+    /// ——出さないと、参加した瞬間にアルバムへの入口が消える。
+    @ViewBuilder
+    private var joinedSection: some View {
+        if !joined.entries.isEmpty {
+            Section(L("参加しているアルバム", "Albums you joined")) {
+                ForEach(joined.entries) { entry in
+                    Button {
+                        openedToken = InviteToken(id: entry.token)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.title.isEmpty
+                                 ? L("無題のアルバム", "Untitled album") : entry.title)
+                            Text(L("招待リンクから参加", "Joined with a link"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .swipeActions {
+                        // **抜けるのではなく、この端末の控えを消すだけ。**
+                        // サーバーに「抜ける」口は無い（Web にも無い）
+                        Button(role: .destructive) {
+                            joined.forget(id: entry.id)
+                        } label: {
+                            Label(L("一覧から消す", "Remove"), systemImage: "trash")
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -116,10 +157,15 @@ struct AlbumsView: View {
     @ViewBuilder
     private var joinAlertButtons: some View {
         TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
-        Button(L("参加する", "Join")) {
-            let text = inviteText
+        Button(L("開く", "Open")) {
+            // **押した瞬間に参加させない。** 何のアルバムか分からないまま
+            // 参加することになる（Web は `/j?t=` が中身を見せてから聞く）
+            let token = InviteLink.token(from: inviteText)
             inviteText = ""
-            Task { await model.join(inviteText: text, environment: environment) }
+            openedToken = token.isEmpty ? nil : InviteToken(id: token)
+            if openedToken == nil {
+                model.errorMessage = L("招待リンクを読み取れませんでした", "Couldn't read that invite link")
+            }
         }
         Button(Labels.Common.cancel, role: .cancel) { inviteText = "" }
     }
@@ -168,24 +214,6 @@ final class AlbumsViewModel: ObservableObject {
             albums.insert(album, at: 0)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
-        }
-    }
-
-    /// 招待リンクでも招待コードでも受ける。
-    ///
-    /// **リンクをそのまま貼れるようにする。** 受け取った人は `?t=` の後ろだけを
-    /// 取り出す作業をしたくない（URL を貼って弾かれるのがいちばん多い失敗）。
-    func join(inviteText: String, environment: AppEnvironment) async {
-        let token = InviteLink.token(from: inviteText)
-        guard !token.isEmpty else {
-            errorMessage = L("招待リンクを読み取れませんでした", "Couldn't read that invite link")
-            return
-        }
-        do {
-            _ = try await environment.albums.join(token: token)
-            await load(environment: environment)
-        } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("参加できませんでした", "Couldn't join")
         }
     }
 

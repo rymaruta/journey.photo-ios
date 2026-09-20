@@ -41,8 +41,20 @@ final class UploadViewModel: ObservableObject {
     }
 
     /// アルバムは無いことの方が多い。**取れなくても投稿は止めない。**
-    func loadAlbums() async {
-        albums = (try? await albumService.list()) ?? []
+    ///
+    /// **参加しているアルバムも行き先に出す。** `GET /albums` は自分が
+    /// 作ったものしか返さない（`albums.ts`）ので、端末が覚えている分
+    /// （`JoinedAlbumsStore`）を足す。足さないと、招待された人は
+    /// **そのアルバムに1枚も投稿できない**——サーバーは会員なら受け付ける
+    /// （`upload.ts` の `isAlbumMember`）のに、選ぶ口が無いだけだった。
+    func loadAlbums(joined: [JoinedAlbumsStore.Entry] = []) async {
+        let mine = (try? await albumService.list()) ?? []
+        let mineIds = Set(mine.map(\.id))
+        let extra = joined
+            .filter { !mineIds.contains($0.id) }
+            .map { Album(id: $0.id, title: $0.title, createdAt: nil,
+                         memberCount: nil, inviteToken: nil, inviteExpiresAt: nil) }
+        albums = mine + extra
     }
 
     var canSubmit: Bool { prepared != nil && !isWorking }
