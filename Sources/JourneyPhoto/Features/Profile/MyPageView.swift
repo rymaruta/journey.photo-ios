@@ -22,9 +22,9 @@ struct MyPageView: View {
         }
         .navigationTitle("マイページ")
         .toolbar {
-            if auth.userId != nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("ログアウト") { Task { await auth.signOut() } }
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { SettingsView() } label: {
+                    Image(systemName: "gearshape")
                 }
             }
         }
@@ -40,6 +40,15 @@ struct MyPageView: View {
                 if let profile = model.profile {
                     header(profile)
                 }
+
+                HStack(spacing: 12) {
+                    NavigationLink("プロフィールを編集") { ProfileEditView() }
+                        .buttonStyle(.bordered)
+                    NavigationLink("アルバム") { AlbumsView() }
+                        .buttonStyle(.bordered)
+                }
+                .font(.footnote)
+                .padding(.horizontal, 16)
 
                 if let error = model.errorMessage {
                     ErrorBanner(message: error) { Task { await model.load() } }

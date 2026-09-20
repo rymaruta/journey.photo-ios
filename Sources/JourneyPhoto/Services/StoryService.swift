@@ -1,0 +1,138 @@
+import Foundation
+
+/// ストーリー（24時間で消える投稿）。
+struct StoryService {
+
+    private let api: APIClient
+    private let uploads: UploadService
+
+    init(api: APIClient) {
+        self.api = api
+        self.uploads = UploadService(api: api)
+    }
+
+    private func encoded(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
+    }
+
+    /// 一覧。**応答は配列そのもの**（`{ items: [...] }` ではない）。
+    /// ブロックした相手・された相手は両向きに落とされて返る。
+    func list() async throws -> [Story] {
+        try await api.authorized(.get, "/stories", as: [Story].self)
+    }
+
+    private struct Created: Decodable { let story: Story? }
+
+    /// 画像を上げてストーリーを作る。
+    ///
+    /// **`key` は送らない。** サーバーは検証済みの `publicUrl` から導く。
+    /// 受け取っていた頃は、自分の正当な URL と一緒に他人のキーを送り、
+    /// 自分のストーリーを消すだけで相手のファイルを消せた
+    /// （`api-user/src/stories.ts` の注記）。
+    @discardableResult
+    func create(imageData: Data, caption: String?, location: String?, coords: Photo.Coords?) async throws -> Story? {
+        let presigned = try await uploads.presign(
+            fileName: "story.jpg", fileType: "image/jpeg", fileSize: imageData.count
+        )
+        do {
+            try await uploads.put(data: imageData, to: presigned)
+        } catch {
+            await uploads.discard(key: presigned.key)
+            throw error
+        }
+
+        struct Body: Encodable {
+            let publicUrl: String
+            let caption: String?
+            let mediaType: String
+            let location: String?
+            let coords: Coords?
+            struct Coords: Encodable { let lat: Double; let lng: Double }
+        }
+        // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
+        let body = Body(
+            publicUrl: presigned.publicUrl,
+            caption: caption?.isEmpty == true ? nil : caption,
+            mediaType: "image",
+            location: location?.isEmpty == true ? nil : location,
+            coords: (location?.isEmpty == false) ? coords.map { Body.Coords(lat: $0.lat, lng: $0.lng) } : nil
+        )
+        do {
+            return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
+        } catch {
+            await uploads.discard(key: presigned.key)
+            throw error
+        }
+    }
+
+    func delete(id: String) async throws {
+        try await api.authorizedVoid(.delete, "/stories/\(encoded(id))")
+    }
+
+    /// 見たことを伝える。**失敗しても画面は止めない**（既読が付かないだけ）。
+    func markViewed(id: String) async {
+        _ = try? await api.authorizedVoid(.post, "/stories/\(encoded(id))/view")
+    }
+
+    struct Viewers: Decodable { let users: [FollowUser]? }
+
+    /// 見た人の一覧。**本人だけが読める。**
+    func viewers(id: String) async throws -> [FollowUser] {
+        try await api.authorized(.get, "/stories/\(encoded(id))/viewers", as: Viewers.self).users ?? []
+    }
+
+    struct ReplyList: Decodable { let items: [StoryReply]? }
+
+    func replies(id: String) async throws -> [StoryReply] {
+        try await api.authorized(.get, "/stories/\(encoded(id))/replies", as: ReplyList.self).items ?? []
+    }
+
+    func reply(id: String, text: String) async throws {
+        struct Body: Encodable { let text: String }
+        try await api.authorizedVoid(.post, "/stories/\(encoded(id))/replies", body: Body(text: text))
+    }
+
+    /// 24時間で消える前に、自分の写真として残す。
+    func keep(id: String) async throws {
+        try await api.authorizedVoid(.post, "/stories/\(encoded(id))/keep")
+    }
+}
+
+struct Story: Decodable, Identifiable, Equatable {
+    let id: String
+    let src: String
+    let userId: String?
+    let displayName: String?
+    let caption: String?
+    let mediaType: String?
+    let location: String?
+    let coords: Photo.Coords?
+    let createdAt: String?
+    let expiresAt: String?
+    /// **本人にしか返らない**（見た人には落として返る）
+    let replyCount: Int?
+
+    var imageURL: URL? { URL(string: src) }
+    var isVideo: Bool { mediaType == "video" }
+
+    var authorName: String {
+        if let displayName, !displayName.isEmpty { return displayName }
+        return String((userId ?? "").prefix(8))
+    }
+}
+
+struct StoryReply: Decodable, Identifiable, Equatable {
+    /// サーバーが id を持たない回があるので、無ければ相手と時刻で作る
+    let rawId: String?
+    let uid: String?
+    let name: String?
+    let text: String?
+    let t: String?
+
+    var id: String { rawId ?? [(uid ?? ""), (t ?? "")].joined(separator: "|") }
+
+    private enum CodingKeys: String, CodingKey {
+        case rawId = "id"
+        case uid, name, text, t
+    }
+}

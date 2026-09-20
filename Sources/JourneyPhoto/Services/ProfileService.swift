@@ -29,6 +29,60 @@ struct ProfileService {
     func update(_ patch: ProfilePatch) async throws {
         try await api.authorizedVoid(.put, "/user/profile", body: patch)
     }
+
+    // MARK: - アイコンとカバー
+
+    enum ImageKind: String {
+        case avatar
+        case cover
+    }
+
+    struct AvatarPresign: Decodable {
+        let presignedUrl: String
+        let publicUrl: String
+        /// **PUT で送る Content-Type はこれと一致させること**（署名対象）
+        let contentType: String
+    }
+
+    /// アイコン（`profiles/<uid>`）かカバー（`profiles/<uid>/cover`）の置き場所をもらう。
+    func imagePresign(kind: ImageKind, fileType: String) async throws -> AvatarPresign {
+        struct Body: Encodable {
+            let fileType: String
+            let type: String?
+        }
+        return try await api.authorized(
+            .post, "/profile/avatar/presigned-url",
+            // サーバーは `type == "cover"` だけを見る
+            body: Body(fileType: fileType, type: kind == .cover ? "cover" : nil),
+            as: AvatarPresign.self
+        )
+    }
+
+    /// アイコン／カバーを差し替える。
+    ///
+    /// **キーは固定**（`profiles/<uid>`）なので、上書きすると即座に全員へ届く。
+    /// だからサーバーもアップロードも `no-store` を付けている——控えると
+    /// 変更が永久に届かない。
+    func uploadProfileImage(kind: ImageKind, jpeg: Data) async throws {
+        let presigned = try await imagePresign(kind: kind, fileType: "image/jpeg")
+        guard let url = URL(string: presigned.presignedUrl) else {
+            throw APIError.decoding("署名付き URL を読めませんでした")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue(presigned.contentType, forHTTPHeaderField: "Content-Type")
+
+        let response: URLResponse
+        do {
+            (_, response) = try await URLSession.shared.upload(for: request, from: jpeg)
+        } catch {
+            throw APIError.unreachable
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                                  message: "画像のアップロードに失敗しました")
+        }
+    }
 }
 
 /// プロフィールの部分更新。nil の項目は JSON に載せない

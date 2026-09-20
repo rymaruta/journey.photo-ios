@@ -4,6 +4,25 @@ struct PhotoDetailView: View {
 
     let photo: Photo
 
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
+    @StateObject private var model: PhotoDetailViewModel
+    @State private var showReport = false
+    @State private var showDeleteConfirm = false
+    @State private var actionError: String?
+
+    init(photo: Photo) {
+        self.photo = photo
+        // `AppEnvironment` は init で受け取れない（EnvironmentObject は body 以降）
+        _model = StateObject(wrappedValue: PhotoDetailViewModel(
+            photoId: photo.id,
+            social: SocialService(api: APIClient(tokenProvider: CognitoTokenProvider()))
+        ))
+    }
+
+    private var ownerId: String? { photo.userId ?? photo.uploadedBy }
+    private var isMine: Bool { ownerId != nil && ownerId == auth.userId }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -35,12 +54,145 @@ struct PhotoDetailView: View {
                     if let exif = photo.exif {
                         ExifRow(exif: exif)
                     }
+
+                    Divider().padding(.vertical, 4)
+
+                    socialBar
+                    commentSection
                 }
                 .padding(.horizontal, 16)
             }
             .padding(.bottom, 32)
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
+        .task(id: auth.userId) {
+            model.setSignedIn(auth.userId != nil)
+            await model.load()
+        }
+        .sheet(isPresented: $showReport) {
+            ReportSheet(photoId: photo.id, ownerId: ownerId)
+        }
+        .alert("この写真を削除しますか？", isPresented: $showDeleteConfirm) {
+            Button("削除", role: .destructive) { Task { await deletePhoto() } }
+            Button("やめる", role: .cancel) {}
+        } message: {
+            Text("元に戻せません。画像そのものも消えます。")
+        }
+    }
+
+    // MARK: - 操作
+
+    private var menu: some View {
+        Menu {
+            if let url = photo.detailImageURL {
+                ShareLink(item: url) { Label("共有", systemImage: "square.and.arrow.up") }
+            }
+            if isMine {
+                Button(role: .destructive) { showDeleteConfirm = true } label: {
+                    Label("削除", systemImage: "trash")
+                }
+            } else {
+                // **通報とブロックは1タップで届くところに置く**（審査で見られる）
+                Button { showReport = true } label: {
+                    Label("通報する", systemImage: "flag")
+                }
+                if let ownerId {
+                    Button(role: .destructive) { Task { await block(ownerId) } } label: {
+                        Label("この人をブロック", systemImage: "hand.raised")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+    }
+
+    private var socialBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 16) {
+                Button {
+                    Task { await model.toggleLike() }
+                } label: {
+                    Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
+                        .foregroundStyle(model.liked ? .pink : .primary)
+                }
+                .buttonStyle(.plain)
+
+                Label("\(model.commentCount)", systemImage: "bubble.right")
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                if let ownerId, !isMine {
+                    NavigationLink {
+                        UserProfileView(userId: ownerId)
+                    } label: {
+                        Text(photo.displayName ?? "投稿者")
+                            .font(.footnote)
+                    }
+                }
+            }
+            if let message = model.errorMessage ?? actionError {
+                Text(message).font(.footnote).foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var commentSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if auth.userId != nil {
+                HStack {
+                    TextField("コメントを書く", text: $model.draftComment, axis: .vertical)
+                        .lineLimit(1...4)
+                        .textFieldStyle(.roundedBorder)
+                    Button("送信") { Task { await model.postComment() } }
+                        .disabled(model.isPosting || model.draftComment.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+
+            ForEach(model.comments) { comment in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        // **退会した人にはプロフィールへの導線を出さない**
+                        if comment.isFromDeletedUser {
+                            Text(comment.name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        } else {
+                            NavigationLink {
+                                UserProfileView(userId: comment.uid)
+                            } label: {
+                                Text(comment.name).font(.caption.weight(.semibold))
+                            }
+                        }
+                        Spacer()
+                        if comment.uid == auth.userId {
+                            Button("削除") { Task { await model.deleteComment(comment) } }
+                                .font(.caption2)
+                        }
+                    }
+                    Text(comment.text).font(.callout)
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func block(_ userId: String) async {
+        do {
+            try await environment.moderation.block(userId: userId)
+            actionError = "ブロックしました。おたがいの投稿が見えなくなります。"
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? "ブロックできませんでした"
+        }
+    }
+
+    private func deletePhoto() async {
+        do {
+            try await environment.photos.delete(photoId: photo.id)
+            actionError = "削除しました。一覧への反映には少し時間がかかります。"
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? "削除できませんでした"
+        }
     }
 }
 

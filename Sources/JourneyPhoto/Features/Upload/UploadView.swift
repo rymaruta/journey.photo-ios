@@ -5,6 +5,7 @@ struct UploadView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model: UploadViewModel
+    @State private var showCamera = false
 
     init() {
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
@@ -28,15 +29,24 @@ struct UploadView: View {
     private var form: some View {
         Form {
             Section {
-                PhotosPicker(selection: $model.pickerItem, matching: .images, photoLibrary: .shared()) {
-                    if let preview = model.previewImage {
-                        preview
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxHeight: 260)
-                    } else {
-                        Label("写真を選ぶ", systemImage: "photo.badge.plus")
+                if let preview = model.previewImage {
+                    preview
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 260)
+                        .frame(maxWidth: .infinity)
+                }
+                // **カメラを先に置く。** このアプリがネイティブである理由
+                // （4.2）で、旅先でいちばん使う入口でもある
+                if CameraPicker.isAvailable {
+                    Button {
+                        showCamera = true
+                    } label: {
+                        Label("写真を撮る", systemImage: "camera")
                     }
+                }
+                PhotosPicker(selection: $model.pickerItem, matching: .images, photoLibrary: .shared()) {
+                    Label(model.previewImage == nil ? "写真を選ぶ" : "別の写真を選ぶ", systemImage: "photo.badge.plus")
                 }
             } footer: {
                 Text("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。")
@@ -75,6 +85,12 @@ struct UploadView: View {
                 }
                 .disabled(!model.canSubmit)
             }
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { data in
+                model.accept(capturedJPEG: data)
+            }
+            .ignoresSafeArea()
         }
     }
 }

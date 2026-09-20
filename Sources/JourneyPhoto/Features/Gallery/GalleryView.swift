@@ -28,12 +28,20 @@ struct GalleryView: View {
             }
         }
         .navigationTitle("ギャラリー")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { PhotoMapView() } label: {
+                    Image(systemName: "map")
+                }
+            }
+        }
         .task { await model.load() }
         .refreshable { await model.load() }
     }
 
     private func grid(_ photos: [Photo]) -> some View {
         ScrollView {
+            StoriesRow()
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(photos) { photo in
                     NavigationLink(value: photo.id) {

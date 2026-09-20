@@ -5,6 +5,7 @@ struct JourneyPhotoApp: App {
 
     @StateObject private var auth = AuthStore()
     @StateObject private var environment = AppEnvironment()
+    @StateObject private var consent = LegalConsent()
     @State private var configurationError: String? = nil
 
     init() {
@@ -22,6 +23,7 @@ struct JourneyPhotoApp: App {
             RootView(configurationError: configurationError)
                 .environmentObject(auth)
                 .environmentObject(environment)
+                .environmentObject(consent)
                 .task { await auth.restore() }
         }
     }

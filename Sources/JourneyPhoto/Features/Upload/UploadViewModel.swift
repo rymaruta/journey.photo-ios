@@ -29,6 +29,24 @@ final class UploadViewModel: ObservableObject {
 
     var canSubmit: Bool { prepared != nil && !isWorking }
 
+    /// カメラで撮った画像を受ける。
+    ///
+    /// **`UIImage` を経由した時点で EXIF は残っていない**（撮影地も
+    /// 機材名も付かない）。それでも `ImagePreparer` を通すのは、
+    /// 1920px への縮小と「残っていないことの確認」を1か所に寄せるため。
+    func accept(capturedJPEG data: Data) {
+        do {
+            let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
+            self.prepared = prepared
+            self.previewImage = Self.image(from: prepared.data)
+            self.errorMessage = nil
+        } catch {
+            self.prepared = nil
+            self.previewImage = nil
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "写真を読み込めませんでした"
+        }
+    }
+
     /// 選ばれた写真を読み、**その場で EXIF を落とす**。
     /// 落とせなかったら受け付けない（`ImagePreparer` の関所）。
     private func loadPicked() async {

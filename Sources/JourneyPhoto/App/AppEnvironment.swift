@@ -11,6 +11,13 @@ final class AppEnvironment: ObservableObject {
     let photos: PhotoService
     let profiles: ProfileService
     let uploads: UploadService
+    let social: SocialService
+    let notifications: NotificationService
+    let moderation: ModerationService
+    let account: AccountService
+    let albums: AlbumService
+    let stories: StoryService
+    let search: UserSearchService
 
     init(tokenProvider: TokenProviding = CognitoTokenProvider()) {
         let api = APIClient(tokenProvider: tokenProvider)
@@ -19,5 +26,12 @@ final class AppEnvironment: ObservableObject {
         self.photos = PhotoService(api: api)
         self.profiles = ProfileService(api: api)
         self.uploads = UploadService(api: api)
+        self.social = SocialService(api: api)
+        self.notifications = NotificationService(api: api)
+        self.moderation = ModerationService(api: api)
+        self.account = AccountService(api: api)
+        self.albums = AlbumService(api: api)
+        self.stories = StoryService(api: api)
+        self.search = UserSearchService(api: api)
     }
 }
