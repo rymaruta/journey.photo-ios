@@ -15,6 +15,11 @@ final class GalleryViewModel: ObservableObject {
     @Published private(set) var state: State = .loading
     /// 選ばれているカテゴリ。nil は「すべて」
     @Published var category: String?
+    /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中の既定は「自分」**
+    @Published private(set) var scope: GalleryScope = .all
+    /// フォローしている人。`following` のときだけ要る
+    private var followingIds: Set<String> = []
+    private var viewerId: String?
 
     /// 絞り込みに出すカテゴリ。**写真が1枚もない種類は出さない**
     /// （押しても空になるボタンを置かない）
@@ -47,9 +52,27 @@ final class GalleryViewModel: ObservableObject {
         state = .loaded(filtered())
     }
 
+    func select(scope: GalleryScope) {
+        self.scope = scope
+        state = .loaded(filtered())
+    }
+
+    /// ログイン状態が決まったら呼ぶ。
+    ///
+    /// **未ログインとログアウトは「すべて」に戻す。** 絞れないので絞らない
+    /// （Web も同じ——検索の着地点はみんなの写真）。
+    /// ログインしたら「自分」へ倒す（owner の指示）。
+    func use(viewerId: String?, following: Set<String>) {
+        self.viewerId = viewerId
+        self.followingIds = following
+        scope = viewerId == nil ? .all : .mine
+        if case .loaded = state { state = .loaded(filtered()) }
+    }
+
     private func filtered() -> [Photo] {
-        guard let category else { return all }
-        return all.filter { $0.category == category }
+        let inScope = scope.photos(all, viewerId: viewerId, followingIds: followingIds)
+        guard let category else { return inScope }
+        return inScope.filter { $0.category == category }
     }
 
     /// 出てくる順に、重複を落として並べる。**件数の多い順にしない**

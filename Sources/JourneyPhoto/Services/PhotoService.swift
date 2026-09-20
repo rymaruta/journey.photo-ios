@@ -25,6 +25,56 @@ struct PhotoService {
         )
     }
 
+    /// 写真そのものを差し替える。`PUT /photos/{id}` に `key` と `publicUrl` を送る。
+    ///
+    /// **サーバーは派生（AVIF・256px・寸法）を消す**（`photoReplace.ts` の
+    /// `REPLACE_CLEARS`）。残すと端末によって古い写真が出続ける。
+    /// 上げ方は投稿と同じ3手（presign → S3 → 保存）で、EXIF は端末で落とす。
+    func replace(photoId: String, prepared: ImagePreparer.Prepared,
+                 uploads: UploadService) async throws {
+        let presigned = try await uploads.presign(
+            fileName: prepared.fileName,
+            fileType: prepared.contentType,
+            fileSize: prepared.data.count
+        )
+        do {
+            try await uploads.put(data: prepared.data, to: presigned)
+        } catch {
+            await uploads.discard(key: presigned.key)
+            throw error
+        }
+
+        struct Body: Encodable {
+            let key: String
+            let publicUrl: String
+            let exif: ExifFields?
+            let date: String?
+            let coords: Coords?
+            struct Coords: Encodable { let lat: Double; let lng: Double }
+        }
+        let body = Body(
+            key: presigned.key,
+            publicUrl: presigned.publicUrl,
+            exif: prepared.exif,
+            date: prepared.takenOn,
+            // 送る前に端末でも丸める（投稿と同じ）
+            coords: prepared.coords.map {
+                Body.Coords(lat: ($0.lat * 100).rounded() / 100, lng: ($0.lng * 100).rounded() / 100)
+            }
+        )
+        do {
+            try await api.authorizedVoid(
+                .put,
+                "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)",
+                body: body
+            )
+        } catch {
+            // 保存できなかったぶんの実体を残さない（投稿と同じ後始末）
+            await uploads.discard(key: presigned.key)
+            throw error
+        }
+    }
+
     /// 削除。**画像の実体と CloudFront の控えもサーバー側で消える**
     /// （`cloudfrontDistributionId` が渡されていれば。渡し忘れると
     /// 消した写真が最大1年 公開URLに残る——CLAUDE.md の LEFT-4）。

@@ -111,6 +111,7 @@ public struct Section: View {
     public init<C: View>(@ViewBuilder content: () -> C) {}
     public init<C: View>(_ title: String, @ViewBuilder content: () -> C) {}
     public init<C: View, F: View>(@ViewBuilder content: () -> C, @ViewBuilder footer: () -> F) {}
+    public init<C: View, F: View>(_ title: String, @ViewBuilder content: () -> C, @ViewBuilder footer: () -> F) {}
     public init<C: View, H: View>(@ViewBuilder content: () -> C, @ViewBuilder header: () -> H) {}
     public var body: Never { fatalError("模型") }
 }
@@ -169,6 +170,10 @@ public struct Circle: View, Shape {
     public init() {}
     public func strokeBorder<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Circle { self }
     public func fill<S: ShapeStyle>(_ style: S) -> Circle { self }
+    public var body: Never { fatalError("模型") }
+}
+public struct Stepper: View {
+    public init<L: View>(value: Binding<Int>, in range: ClosedRange<Int>, @ViewBuilder label: () -> L) {}
     public var body: Never { fatalError("模型") }
 }
 public struct Capsule: View, Shape {

@@ -30,7 +30,8 @@ struct StoryService {
     /// 自分のストーリーを消すだけで相手のファイルを消せた
     /// （`api-user/src/stories.ts` の注記）。
     @discardableResult
-    func create(imageData: Data, caption: String?, location: String?, coords: Photo.Coords?) async throws -> Story? {
+    func create(imageData: Data, caption: String?, location: String?, coords: Photo.Coords?,
+                song: Photo.Song? = nil, durationSec: Int? = nil) async throws -> Story? {
         let presigned = try await uploads.presign(
             fileName: "story.jpg", fileType: "image/jpeg", fileSize: imageData.count
         )
@@ -47,6 +48,11 @@ struct StoryService {
             let mediaType: String
             let location: String?
             let coords: Coords?
+            /// ストーリーのBGM。**`title` と https の `previewUrl` が要る**
+            /// （`stories.ts` はホストまで見て、外部の任意URLを弾く）
+            let song: Photo.Song?
+            /// 表示秒数。**3〜15**（`stories.ts` が丸める）。既定の5なら送らない
+            let durationSec: Int?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
@@ -55,7 +61,9 @@ struct StoryService {
             caption: caption?.isEmpty == true ? nil : caption,
             mediaType: "image",
             location: location?.isEmpty == true ? nil : location,
-            coords: (location?.isEmpty == false) ? coords.map { Body.Coords(lat: $0.lat, lng: $0.lng) } : nil
+            coords: (location?.isEmpty == false) ? coords.map { Body.Coords(lat: $0.lat, lng: $0.lng) } : nil,
+            song: song,
+            durationSec: Self.storedDuration(durationSec)
         )
         do {
             return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
@@ -63,6 +71,17 @@ struct StoryService {
             await uploads.discard(key: presigned.key)
             throw error
         }
+    }
+
+    /// 既定（5秒）なら送らない——サーバーも既定は保存しない
+    /// （`stories.ts` の `STORY_DEFAULT_DURATION_SEC`）。
+    static let defaultDurationSec = 5
+    static let durationRange = 3...15
+
+    static func storedDuration(_ value: Int?) -> Int? {
+        guard let value else { return nil }
+        let clamped = min(durationRange.upperBound, max(durationRange.lowerBound, value))
+        return clamped == defaultDurationSec ? nil : clamped
     }
 
     func delete(id: String) async throws {

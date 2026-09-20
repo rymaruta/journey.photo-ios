@@ -2,6 +2,8 @@ import SwiftUI
 
 struct GalleryView: View {
 
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model: GalleryViewModel = GalleryViewModel(gallery: PublicGalleryService())
 
     private let columns = [
@@ -37,7 +39,33 @@ struct GalleryView: View {
             }
         }
         .task { await model.load() }
+        // **ログイン状態が決まってから範囲を決める**（既定は「自分」）。
+        // フォロー中の一覧は、その範囲を選ぶ人にだけ要る
+        .task(id: auth.userId) {
+            guard auth.userId != nil else {
+                model.use(viewerId: nil, following: [])
+                return
+            }
+            let ids = (try? await environment.social.myFollowingIds()) ?? []
+            model.use(viewerId: auth.userId, following: Set(ids))
+        }
         .refreshable { await model.load() }
+    }
+
+    /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中だけ出す**
+    /// ——未ログインには絞る相手が無い（Web も同じ）。
+    private var scopePicker: some View {
+        Picker("", selection: Binding(
+            get: { model.scope },
+            set: { model.select(scope: $0) }
+        )) {
+            ForEach(GalleryScope.allCases) { scope in
+                Text(scope.label).tag(scope)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
     }
 
     /// カテゴリの絞り込み。Web の `FilterBar` にあたる。
@@ -72,6 +100,9 @@ struct GalleryView: View {
         ScrollView {
             // **ストーリーはここに置かない。** 2026-09-20 に Web が
             // トップから外してマイページへ移した（投稿も閲覧もマイページに集める）
+            if auth.userId != nil {
+                scopePicker
+            }
             if !model.categories.isEmpty {
                 filterBar
             }

@@ -16,6 +16,10 @@ struct StoryComposerView: View {
     @State private var location = ""
     @State private var showCamera = false
     @State private var isWorking = false
+    /// ストーリーのBGM（30秒の試聴だけ）と、表示秒数
+    @State private var song: Photo.Song?
+    @State private var durationSec = StoryService.defaultDurationSec
+    @State private var showSongPicker = false
     @State private var message: String?
 
     var body: some View {
@@ -48,6 +52,34 @@ struct StoryComposerView: View {
                 Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。", "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
             }
 
+            Section(L("音と長さ", "Sound and length")) {
+                if let song {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(song.title).font(.callout)
+                            if let artist = song.artist, !artist.isEmpty {
+                                Text(artist).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button(L("外す", "Remove")) { self.song = nil }
+                            .font(.caption)
+                            .buttonStyle(.borderless)
+                    }
+                } else {
+                    Button { showSongPicker = true } label: {
+                        Label(L("曲を付ける", "Add a song"), systemImage: "music.note")
+                    }
+                }
+                Stepper(value: $durationSec, in: StoryService.durationRange) {
+                    Text(L("表示 \(durationSec) 秒", "\(durationSec) seconds"))
+                }
+            } footer: {
+                // 3秒未満は読み切れず、15秒を超えると見る側が飽きる（Web と同じ範囲）
+                Text(L("3〜15秒。曲は30秒の試聴だけを使います。",
+                       "3–15 seconds. Songs use the 30-second preview only."))
+            }
+
             if let message {
                 Section { Text(message).font(.callout) }
             }
@@ -63,6 +95,11 @@ struct StoryComposerView: View {
                     }
                 }
                 .disabled(isWorking || prepared == nil)
+            }
+        }
+        .sheet(isPresented: $showSongPicker) {
+            NavigationStack {
+                SongPickerView { picked in song = picked }
             }
         }
         .navigationTitle(L("ストーリー", "Story"))
@@ -114,7 +151,9 @@ struct StoryComposerView: View {
                 imageData: prepared.data,
                 caption: caption.trimmingCharacters(in: .whitespacesAndNewlines),
                 location: location.trimmingCharacters(in: .whitespacesAndNewlines),
-                coords: prepared.coords
+                coords: prepared.coords,
+                song: song,
+                durationSec: durationSec
             )
             dismiss()
         } catch {

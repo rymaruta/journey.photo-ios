@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// 自分の写真を直す（題・説明・撮影地・タグ・撮影日・公開）。
 struct EditPhotoView: View {
@@ -17,6 +18,9 @@ struct EditPhotoView: View {
     @State private var published: Bool
     @State private var isSaving = false
     @State private var message: String?
+    /// 写真そのものの差し替え（Web の `/user/edit` と同じ操作）
+    @State private var replaceItem: PhotosPickerItem?
+    @State private var isReplacing = false
 
     init(photo: Photo) {
         self.photo = photo
@@ -34,6 +38,17 @@ struct EditPhotoView: View {
             Section {
                 RemoteImage(url: photo.detailImageURL, contentMode: .fit)
                     .frame(maxHeight: 200)
+                if isReplacing {
+                    HStack { ProgressView(); Text(L("差し替えています…", "Replacing…")) }
+                } else {
+                    PhotosPicker(selection: $replaceItem, matching: .images) {
+                        Label(L("写真を差し替える", "Replace the photo"), systemImage: "photo.on.rectangle.angled")
+                    }
+                }
+            } footer: {
+                // 派生（AVIF・小さい版）はサーバーが消して作り直す
+                Text(L("題や説明はそのままで、写真だけを入れ替えます。反映まで数分かかります。",
+                       "Swaps the image only, keeping the title and description. It takes a few minutes to appear."))
             }
 
             Section(L("この写真について", "About this photo")) {
@@ -72,10 +87,31 @@ struct EditPhotoView: View {
         }
         .navigationTitle(L("写真を編集", "Edit photo"))
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: replaceItem) { _, item in
+            Task { await replace(item) }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(Labels.Common.close) { dismiss() }
             }
+        }
+    }
+
+    /// 写真そのものを差し替える。**EXIF は端末で落としてから送る**（投稿と同じ関所）。
+    private func replace(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+        isReplacing = true
+        message = nil
+        defer { isReplacing = false }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else { return }
+            let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
+            try await environment.photos.replace(photoId: photo.id, prepared: prepared,
+                                                 uploads: environment.uploads)
+            message = L("差し替えました（反映まで数分かかります）", "Replaced. It takes a few minutes to appear.")
+        } catch {
+            message = (error as? LocalizedError)?.errorDescription
+                ?? L("差し替えられませんでした", "Couldn't replace it")
         }
     }
 
