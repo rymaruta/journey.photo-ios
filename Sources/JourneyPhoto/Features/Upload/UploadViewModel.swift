@@ -85,7 +85,7 @@ final class UploadViewModel: ObservableObject {
         draft.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.description = caption
         draft.location = location.trimmingCharacters(in: .whitespacesAndNewlines)
-        draft.tags = Self.parseTags(tagsText)
+        draft.tags = TagInput.parse(tagsText)
         draft.published = published
         draft.coords = prepared.coords
         draft.date = prepared.takenOn
@@ -113,20 +113,6 @@ final class UploadViewModel: ObservableObject {
         location = ""
         tagsText = ""
         published = true
-    }
-
-    /// 読点・カンマ・空白のどれで区切っても同じに扱う。
-    /// **重複は落とす**（同じタグが2つ付くと絞り込みの件数がずれる）。
-    static func parseTags(_ text: String) -> [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        for piece in text.components(separatedBy: CharacterSet(charactersIn: ",、 　\n")) {
-            let tag = piece.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !tag.isEmpty, !seen.contains(tag.lowercased()) else { continue }
-            seen.insert(tag.lowercased())
-            result.append(tag)
-        }
-        return result
     }
 
     private static func image(from data: Data) -> Image? {

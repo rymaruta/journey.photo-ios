@@ -82,7 +82,7 @@ final class SearchViewModel: ObservableObject {
     func loadPhotos(environment: AppEnvironment) async {
         guard allPhotos.isEmpty else { return }
         allPhotos = (try? await environment.gallery.fetchPhotos()) ?? []
-        popularTags = Self.topTags(in: allPhotos)
+        popularTags = PhotoQuery.topTags(in: allPhotos)
     }
 
     func search(_ query: String, environment: AppEnvironment) async {
@@ -94,7 +94,7 @@ final class SearchViewModel: ObservableObject {
             return
         }
         // 写真は手元の一覧から即座に絞る（往復しない）
-        photos = Self.match(allPhotos, query: trimmed)
+        photos = PhotoQuery.match(allPhotos, query: trimmed)
 
         searchTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
@@ -105,31 +105,4 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    /// 題・撮影地・タグ・カテゴリのどれかに含まれれば拾う。
-    /// 大文字小文字と全角半角は区別しない。
-    static func match(_ photos: [Photo], query: String) -> [Photo] {
-        let needle = query.folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
-        return photos.filter { photo in
-            let haystack = [
-                photo.displayTitle,
-                photo.location ?? "",
-                photo.category ?? "",
-                (photo.tags ?? []).joined(separator: " "),
-            ].joined(separator: " ")
-                .folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
-            return haystack.contains(needle)
-        }
-    }
-
-    /// 多い順に12件。**種類が少ないので全部数えてよい**（30枚・59種）。
-    static func topTags(in photos: [Photo], limit: Int = 12) -> [String] {
-        var counts: [String: Int] = [:]
-        for tag in photos.flatMap({ $0.tags ?? [] }) {
-            counts[tag, default: 0] += 1
-        }
-        return counts
-            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .prefix(limit)
-            .map(\.key)
-    }
 }

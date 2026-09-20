@@ -24,8 +24,8 @@ final class UploadDraftTests: XCTestCase {
     /// 区切りは読点・カンマ・空白のどれでもよい。重複は落とす
     /// （同じタグが2つ付くと絞り込みの件数がずれる）。
     func testTagParsing() {
-        XCTAssertEqual(UploadViewModel.parseTags("雲海, sunrise 雲海"), ["雲海", "sunrise"])
-        XCTAssertEqual(UploadViewModel.parseTags("  "), [])
-        XCTAssertEqual(UploadViewModel.parseTags("a、b"), ["a", "b"])
+        XCTAssertEqual(TagInput.parse("雲海, sunrise 雲海"), ["雲海", "sunrise"])
+        XCTAssertEqual(TagInput.parse("  "), [])
+        XCTAssertEqual(TagInput.parse("a、b"), ["a", "b"])
     }
 }

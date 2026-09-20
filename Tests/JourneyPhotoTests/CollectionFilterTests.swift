@@ -62,6 +62,6 @@ final class CollectionFilterTests: XCTestCase {
             try photo(id: "a", location: "Helsinki"),
             try photo(id: "b", tags: ["ｻｳﾅ"]),
         ]
-        XCTAssertEqual(SearchViewModel.match(photos, query: "helsinki").map(\.id), ["a"])
+        XCTAssertEqual(PhotoQuery.match(photos, query: "helsinki").map(\.id), ["a"])
     }
 }

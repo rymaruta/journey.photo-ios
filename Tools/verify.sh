@@ -17,6 +17,10 @@ fi
 node Tools/check-swift-syntax.js Sources Tests
 
 echo
+echo "== 参照（配られていない EnvironmentObject・型の重複） =="
+node Tools/check-swift-refs.js Sources
+
+echo
 echo "== 設定ファイル =="
 python3 Tools/check-config.py
 

@@ -81,7 +81,7 @@ struct EditPhotoView: View {
         patch.title = title
         patch.description = caption
         patch.location = location
-        patch.tags = UploadViewModel.parseTags(tagsText)
+        patch.tags = TagInput.parse(tagsText)
         patch.published = published
         // **空なら送らない。** 空文字を送ると api-user の日付検査に落ちる
         let day = date.trimmingCharacters(in: .whitespaces)
