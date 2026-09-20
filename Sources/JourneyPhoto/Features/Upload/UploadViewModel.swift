@@ -20,6 +20,8 @@ final class UploadViewModel: ObservableObject {
     @Published var pickedCoords: Photo.Coords?
     @Published var song: Photo.Song?
     @Published var tagsText = ""
+    /// カテゴリ。**決まった選択肢から選ぶ**（`CategoryChoices`）
+    @Published var category = ""
     @Published var published = true
 
     @Published private(set) var albums: [Album] = []
@@ -102,6 +104,9 @@ final class UploadViewModel: ObservableObject {
         draft.description = caption
         draft.location = location.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.tags = TagInput.parse(tagsText)
+        // **空なら送らない**（空文字は「カテゴリ無し」ではなく空の属性になる）
+        let trimmedCategory = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft.category = trimmedCategory.isEmpty ? nil : trimmedCategory
         draft.published = published
         // **選んだ撮影地の座標を優先する。** 写真に残っていた位置より、
         // 本人が選んだ地名の方が正しい（丸めはどちらも約1km）
@@ -146,6 +151,7 @@ final class UploadViewModel: ObservableObject {
         pickedCoords = nil
         song = nil
         tagsText = ""
+        category = ""
         published = true
         selectedAlbumId = nil
     }

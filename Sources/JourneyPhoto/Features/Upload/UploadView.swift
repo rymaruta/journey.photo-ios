@@ -107,6 +107,7 @@ struct UploadView: View {
             PlaceSearchField(location: $model.location, coords: $model.pickedCoords)
             TextField(L("タグ（カンマ区切り）", "Tags (comma separated)"), text: $model.tagsText)
                 .textInputAutocapitalization(.never)
+            CategoryField(category: $model.category)
         }
     }
 
