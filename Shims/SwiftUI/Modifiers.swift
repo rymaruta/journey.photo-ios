@@ -189,3 +189,40 @@ extension View {
     // 一覧の操作
     public func swipeActions<C: View>(@ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
 }
+
+// MARK: - 指の操作（模型）
+
+public protocol Gesture {}
+
+public struct MagnificationGesture: Gesture {
+    public init(minimumScaleDelta: Double = 0.01) {}
+    public func onChanged(_ action: @escaping (Double) -> Void) -> MagnificationGesture { self }
+    public func onEnded(_ action: @escaping (Double) -> Void) -> MagnificationGesture { self }
+}
+
+public struct TapGesture: Gesture {
+    public init(count: Int = 1) {}
+}
+
+public struct TabViewStyleShim {
+    public static let page = TabViewStyleShim()
+    public static let automatic = TabViewStyleShim()
+}
+
+public struct IndexDisplayModeShim {
+    public static let never = IndexDisplayModeShim()
+    public static let always = IndexDisplayModeShim()
+}
+
+extension TabViewStyleShim {
+    public static func page(indexDisplayMode: IndexDisplayModeShim) -> TabViewStyleShim { .page }
+}
+
+extension View {
+    public func gesture<G: Gesture>(_ gesture: G) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    public func scaleEffect(_ scale: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func animation<V: Equatable>(_ animation: Animation?, value: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func tabViewStyle(_ style: TabViewStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func statusBarHidden(_ hidden: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+}

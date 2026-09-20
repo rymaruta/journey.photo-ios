@@ -3,6 +3,11 @@ import SwiftUI
 struct PhotoDetailView: View {
 
     let photo: Photo
+    /// 公開の一覧から開いたか。**個別ページが在るかの判断に使う**
+    /// ——投稿直後の写真はまだページが無い（`PhotoLink`）
+    var fromPublicFeed: Bool = true
+    /// 同じ一覧に並んでいた写真。大きく見るときに左右へ送るのに使う
+    var context: [Photo] = []
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -12,10 +17,13 @@ struct PhotoDetailView: View {
     @State private var showReport = false
     @State private var showDeleteConfirm = false
     @State private var showEdit = false
+    @State private var showViewer = false
     @State private var actionError: String?
 
-    init(photo: Photo) {
+    init(photo: Photo, fromPublicFeed: Bool = true, context: [Photo] = []) {
         self.photo = photo
+        self.fromPublicFeed = fromPublicFeed
+        self.context = context
         // `AppEnvironment` は init で受け取れない（EnvironmentObject は body 以降）
         _model = StateObject(wrappedValue: PhotoDetailViewModel(
             photoId: photo.id,
@@ -23,15 +31,25 @@ struct PhotoDetailView: View {
         ))
     }
 
+    /// 大きく見るときに送れる並び。**渡されていなければこの1枚だけ**
+    /// ——「送れるはずなのに送れない」より、送りが出ない方がまし。
+    var siblings: [Photo] { context.isEmpty ? [photo] : context }
+
     private var ownerId: String? { photo.userId ?? photo.uploadedBy }
     private var isMine: Bool { ownerId != nil && ownerId == auth.userId }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                RemoteImage(url: photo.detailImageURL, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityLabel(photo.accessibilityText)
+                // 押すと大きく見る（隣の写真へも送れる）
+                Button {
+                    showViewer = true
+                } label: {
+                    RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel(photo.accessibilityText)
+                }
+                .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 12) {
                     if !photo.displayTitle.isEmpty {
@@ -88,6 +106,9 @@ struct PhotoDetailView: View {
         .sheet(isPresented: $showEdit) {
             NavigationStack { EditPhotoView(photo: photo) }
         }
+        .fullScreenCover(isPresented: $showViewer) {
+            PhotoViewerView(photos: siblings, index: siblings.firstIndex(where: { $0.id == photo.id }) ?? 0)
+        }
         .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
             Button(Labels.Common.delete, role: .destructive) { Task { await deletePhoto() } }
             Button(Labels.Common.cancel, role: .cancel) {}
@@ -100,7 +121,10 @@ struct PhotoDetailView: View {
 
     private var menu: some View {
         Menu {
-            if let url = photo.detailImageURL {
+            // **共有するのは画像ではなくページ。** 生の画像を送ると、
+            // 受け取った人に題も説明も撮影地も出ない
+            if let url = PhotoLink.url(photoId: photo.id,
+                                       isPublished: fromPublicFeed && photo.published != false) {
                 ShareLink(item: url) { Label(L("共有", "Share"), systemImage: "square.and.arrow.up") }
             }
             if isMine {

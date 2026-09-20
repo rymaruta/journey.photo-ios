@@ -65,3 +65,40 @@ final class CollectionFilterTests: XCTestCase {
         XCTAssertEqual(PhotoQuery.match(photos, query: "helsinki").map(\.id), ["a"])
     }
 }
+
+/// 共有する URL。**画像ではなくページを指す。**
+final class PhotoLinkTests: XCTestCase {
+
+    override func setUp() {
+        super.setUp()
+        AppConfig.testOverrides = [
+            "JPEnvironmentName": "staging",
+            "JPSiteBaseURL": "https://site.example.test",
+            "JPUserApiBaseURL": "https://api.example.test",
+            "JPCognitoUserPoolId": "pool",
+            "JPCognitoClientId": "client",
+            "JPCognitoRegion": "ap-northeast-1",
+        ]
+    }
+
+    override func tearDown() {
+        AppConfig.testOverrides = nil
+        super.tearDown()
+    }
+
+    func testPublishedPhotoUsesItsOwnPage() throws {
+        let url = try XCTUnwrap(PhotoLink.url(photoId: "abc", isPublished: true))
+        XCTAssertEqual(url.absoluteString, "https://site.example.test/photo/abc")
+    }
+
+    /// **投稿直後の写真には個別ページがまだ無い。** 静的書き出しなので、
+    /// 再ビルドが終わるまで 404 になる。必ず開ける形に落とす。
+    func testUnbuiltPhotoFallsBackToHome() throws {
+        let url = try XCTUnwrap(PhotoLink.url(photoId: "abc", isPublished: false))
+        XCTAssertEqual(url.absoluteString, "https://site.example.test?photo=abc")
+    }
+
+    func testEmptyIdHasNoLink() {
+        XCTAssertNil(PhotoLink.url(photoId: "", isPublished: true))
+    }
+}

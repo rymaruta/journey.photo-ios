@@ -89,7 +89,7 @@ struct MyPageView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 2) {
                         ForEach(model.photos) { photo in
-                            NavigationLink { PhotoDetailView(photo: photo) } label: {
+                            NavigationLink { PhotoDetailView(photo: photo, fromPublicFeed: false, context: model.photos) } label: {
                                 ZStack(alignment: .topTrailing) {
                                     RemoteImage(url: photo.gridImageURL)
                                         .aspectRatio(1, contentMode: .fill)

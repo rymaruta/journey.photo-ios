@@ -87,7 +87,7 @@ struct GalleryView: View {
         }
         .navigationDestination(for: String.self) { id in
             if let photo = photos.first(where: { $0.id == id }) {
-                PhotoDetailView(photo: photo)
+                PhotoDetailView(photo: photo, context: photos)
             }
         }
     }

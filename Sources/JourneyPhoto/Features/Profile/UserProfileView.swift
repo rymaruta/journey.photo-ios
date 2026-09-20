@@ -42,7 +42,7 @@ struct UserProfileView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 2) {
                         ForEach(model.photos) { photo in
-                            NavigationLink { PhotoDetailView(photo: photo) } label: {
+                            NavigationLink { PhotoDetailView(photo: photo, context: model.photos) } label: {
                                 RemoteImage(url: photo.gridImageURL)
                                     .aspectRatio(1, contentMode: .fill)
                             }
