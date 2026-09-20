@@ -16,11 +16,19 @@ API Gateway）をそのまま叩く。
 bash Tools/mac-release.sh    # 生成 → ビルド → テスト → 次にやることを出す
 ```
 
-そのあと **TestFlight に上げて確かめる**（`docs/TESTFLIGHT.md`）→
-スクリーンショット → 提出。TestFlight を通ったビルドは、そのまま審査に出せる。
+**Mac が無い場合は `docs/NO_MAC.md`。** クラウドの Mac（Codemagic）で
+ビルドして TestFlight まで上げる。手を動かすのはブラウザと iPhone だけ。
+設定は `codemagic.yaml` に書いてある。
 
-お金をかけずに自分の iPhone だけで試すなら `docs/DEVICE_TEST.md`
-（無料。ただし7日で切れ、繋がるのは staging）。
+Mac がある場合:
+
+```bash
+bash Tools/mac-release.sh    # 生成 → ビルド → テスト → 次にやることを出す
+```
+
+そのあと **TestFlight で確かめる**（`docs/TESTFLIGHT.md`）→
+スクリーンショット → 提出。TestFlight を通ったビルドは、そのまま審査に出せる。
+自分の iPhone だけで無料で試すなら `docs/DEVICE_TEST.md`（7日・staging）。
 提出時に答える内容は `docs/APP_REVIEW.md`（Notes の文面・年齢制限の質問票・
 プライバシーの回答・最終確認のチェックリスト）にそのまま写せる形で置いてある。
 
