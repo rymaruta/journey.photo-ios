@@ -38,9 +38,13 @@ struct PhotoDetailView: View {
                     }
 
                     if let location = photo.location, !location.isEmpty {
-                        Label(location, systemImage: "mappin.and.ellipse")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        NavigationLink {
+                            TagPhotosView(kind: .location(location))
+                        } label: {
+                            Label(location, systemImage: "mappin.and.ellipse")
+                                .font(.subheadline)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     ForEach(Array(photo.paragraphs.enumerated()), id: \.offset) { _, paragraph in
@@ -56,10 +60,15 @@ struct PhotoDetailView: View {
                         ExifRow(exif: exif)
                     }
 
+                    if let song = photo.song {
+                        SongRow(song: song)
+                    }
+
                     Divider().padding(.vertical, 4)
 
                     socialBar
                     commentSection
+                    RelatedPhotosRow(photo: photo)
                 }
                 .padding(.horizontal, 16)
             }
@@ -210,11 +219,16 @@ private struct TagRow: View {
         // 横に流さず折り返す。タグは59種あり、長い並びは画面外に出る
         FlowLayout(spacing: 6) {
             ForEach(tags, id: \.self) { tag in
-                Text(tag)
-                    .font(.caption)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color(.secondarySystemBackground), in: Capsule())
+                NavigationLink {
+                    TagPhotosView(kind: .tag(tag))
+                } label: {
+                    Text(tag)
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color(.secondarySystemBackground), in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
         }
     }

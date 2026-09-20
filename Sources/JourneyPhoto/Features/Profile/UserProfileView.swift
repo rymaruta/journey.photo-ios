@@ -9,6 +9,7 @@ struct UserProfileView: View {
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = UserProfileViewModel()
     @State private var showBlockConfirm = false
+    @State private var tab: ProfileTab = .posts
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -20,12 +21,23 @@ struct UserProfileView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+
+                Picker("", selection: $tab) {
+                    ForEach(ProfileTab.allCases) { tab in
+                        Text(tab.label).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+
                 if let message = model.errorMessage {
                     ErrorBanner(message: message) {
                         Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
                     }
                 } else if model.photos.isEmpty && !model.isLoading {
                     ErrorBanner(message: "公開された写真はまだありません")
+                } else if tab == .timeline {
+                    PhotoTimelineView(photos: model.photos)
                 } else {
                     LazyVGrid(columns: columns, spacing: 2) {
                         ForEach(model.photos) { photo in

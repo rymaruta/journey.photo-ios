@@ -32,12 +32,16 @@ struct Photo: Identifiable, Decodable, Equatable {
     let displayName: String?
     let createdAt: String?
     let updatedAt: String?
+    /// 撮影日（YYYY-MM-DD）。持っている写真は少ない（実データで 8/30）
+    let date: String?
 
     /// 撮影地（約1km精度に丸め済み）
     let coords: Coords?
     /// 正方形に切り抜くときの中心（0〜1）。未設定なら中央
     let focalPoint: FocalPoint?
     let exif: Exif?
+    /// 写真に付けた曲。30秒の試聴だけを持つ（`previewUrl` は必須）
+    let song: Song?
 
     struct Coords: Decodable, Equatable {
         let lat: Double
@@ -47,6 +51,18 @@ struct Photo: Identifiable, Decodable, Equatable {
     struct FocalPoint: Decodable, Equatable {
         let x: Double
         let y: Double
+    }
+
+    struct Song: Decodable, Equatable {
+        let title: String
+        let artist: String?
+        let artwork: String?
+        /// 30秒の試聴。**https のみ**（サーバーが検証している）
+        let previewUrl: String
+        let trackUrl: String?
+
+        var previewURL: URL? { URL(string: previewUrl) }
+        var artworkURL: URL? { artwork.flatMap(URL.init(string:)) }
     }
 
     struct Exif: Decodable, Equatable {

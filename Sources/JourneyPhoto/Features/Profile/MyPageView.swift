@@ -5,6 +5,7 @@ struct MyPageView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = MyPageViewModel()
+    @State private var tab: ProfileTab = .posts
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -54,10 +55,20 @@ struct MyPageView: View {
                 }
                 .font(.footnote)
 
+                Picker("", selection: $tab) {
+                    ForEach(ProfileTab.allCases) { tab in
+                        Text(tab.label).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+
                 if let error = model.errorMessage {
                     ErrorBanner(message: error) { Task { await model.load() } }
                 } else if model.photos.isEmpty && !model.isLoading {
                     ErrorBanner(message: "まだ写真がありません")
+                } else if tab == .timeline {
+                    PhotoTimelineView(photos: model.photos)
                 } else {
                     LazyVGrid(columns: columns, spacing: 2) {
                         ForEach(model.photos) { photo in
