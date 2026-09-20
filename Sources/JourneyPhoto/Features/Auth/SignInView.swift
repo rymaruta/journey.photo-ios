@@ -9,9 +9,14 @@ struct SignInView: View {
     var reason: String?
 
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var environment: AppEnvironment
     @State private var mode: Mode = .signIn
     @State private var email = ""
     @State private var password = ""
+    /// 登録のときの表示名。**入れないと、しばらく ID の頭8文字で呼ばれる**
+    /// ——プロフィール行は登録時に作られるが、名前は入らない
+    /// （`api/src/cognitoTrigger.ts` は `userId` と `createdAt` だけ書く）
+    @State private var displayName = ""
     @State private var code = ""
     /// signUp が返す UUID。確認コードの送り先を指す
     @State private var pendingUsername: String?
@@ -68,6 +73,11 @@ struct SignInView: View {
                     .autocorrectionDisabled()
                 SecureField(L("パスワード", "Password"), text: $password)
                     .textContentType(mode == .signUp ? .newPassword : .password)
+                if mode == .signUp {
+                    TextField(L("表示名（あとで変えられます）", "Display name (you can change it later)"),
+                              text: $displayName)
+                        .textContentType(.name)
+                }
             } footer: {
                 if mode == .signUp {
                     Text(AuthMessage.passwordRule)
@@ -114,12 +124,26 @@ struct SignInView: View {
         if let username {
             // **UUID を端末に残す。** 画面の `@State` だけだと、
             // アプリを閉じた時点で送り直す手段が消える
-            pending.remember(email: email, username: username)
+            pending.remember(email: email, username: username,
+                             displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines))
             pendingUsername = username
             return
         }
         // 「すでに登録されています」＝**確認前の自分**かもしれない
         if auth.lastFailureWasExistingAccount { await resumeVerification() }
+    }
+
+    /// 預かっていた表示名をプロフィールに入れる。
+    ///
+    /// **登録時にプロフィール行は作られるが、名前は入らない**
+    /// （`api/src/cognitoTrigger.ts` が書くのは `userId` と `createdAt` だけ）。
+    /// 入れないと、その人はしばらく ID の頭8文字で呼ばれる。
+    /// **失敗してもログインは成功のまま**——あとからプロフィール編集で直せる。
+    private func applyDisplayName(_ name: String?) async {
+        guard let name, !name.isEmpty, auth.userId != nil else { return }
+        var patch = ProfilePatch()
+        patch.displayName = name
+        try? await environment.profiles.update(patch)
     }
 
     /// 控えてある UUID で確認画面に戻る。コードも送り直す。
@@ -154,10 +178,12 @@ struct SignInView: View {
                 Task {
                     clearMessages()
                     if await auth.confirmSignUp(username: username, code: code) {
+                        let name = pending.displayName(for: email)
                         pending.forget(email: email)
                         pendingUsername = nil
                         // 確認が済んだらそのままログインする
                         await auth.signIn(email: email, password: password)
+                        await applyDisplayName(name)
                     }
                 }
             }

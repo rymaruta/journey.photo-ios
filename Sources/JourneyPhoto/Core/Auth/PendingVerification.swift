@@ -56,10 +56,15 @@ struct PendingVerificationStore {
     private struct Entry: Codable {
         let username: String
         let savedAt: Date
+        /// 登録のときに入れた表示名。**確認が済むまで預かる**
+        /// （確認前にアプリを閉じても、名前を打ち直させない）
+        var displayName: String?
     }
 
-    func remember(email: String, username: String, now: Date = Date()) {
-        guard let data = try? JSONEncoder().encode(Entry(username: username, savedAt: now)) else { return }
+    func remember(email: String, username: String, displayName: String? = nil, now: Date = Date()) {
+        let entry = Entry(username: username, savedAt: now,
+                          displayName: displayName?.isEmpty == true ? nil : displayName)
+        guard let data = try? JSONEncoder().encode(entry) else { return }
         defaults.set(data, forKey: PendingVerification.key(for: email))
     }
 
@@ -73,6 +78,16 @@ struct PendingVerificationStore {
             return nil
         }
         return entry.username
+    }
+
+    /// 預かっている表示名（**メールアドレスごと**——共有の端末で、
+    /// 次にログインした別人の名前にしない。Web の `pendingNameKey` と同じ理由）。
+    func displayName(for email: String, now: Date = Date()) -> String? {
+        let key = PendingVerification.key(for: email)
+        guard let data = defaults.data(forKey: key),
+              let entry = try? JSONDecoder().decode(Entry.self, from: data),
+              PendingVerification.isFresh(savedAt: entry.savedAt, now: now) else { return nil }
+        return entry.displayName
     }
 
     func forget(email: String) {

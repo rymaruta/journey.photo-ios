@@ -65,6 +65,7 @@ public struct UITextContentTypeShim {
     public static let password = UITextContentTypeShim()
     public static let newPassword = UITextContentTypeShim()
     public static let oneTimeCode = UITextContentTypeShim()
+    public static let name = UITextContentTypeShim()
 }
 public struct PrimitiveButtonStyleShim {
     public static let plain = PrimitiveButtonStyleShim()

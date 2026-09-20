@@ -10,8 +10,13 @@ struct DeleteAccountView: View {
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
 
-    /// 押し間違いで消えないように、決まった語を打たせる
-    private static let confirmWord = "削除"
+    /// 押し間違いで消えないように、決まった語を打たせる。
+    ///
+    /// **その人の言葉で打たせる。** 日本語に固定していたので、英語の端末には
+    /// 「Type “削除” to confirm」と出ていた——日本語入力を持たない人は
+    /// **アプリから退会できない**（審査 5.1.1(v) を見るのはたいてい
+    /// 英語の審査官）。
+    private static var confirmWord: String { L("削除", "DELETE") }
 
     @State private var typed = ""
     @State private var isWorking = false

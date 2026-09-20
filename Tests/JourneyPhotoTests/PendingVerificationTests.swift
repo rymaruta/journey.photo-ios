@@ -60,3 +60,45 @@ final class PendingVerificationTests: XCTestCase {
         XCTAssertFalse(PendingVerification.shouldForget(afterResendError: "NetworkError"))
     }
 }
+
+/// 登録のときに入れた表示名。
+///
+/// **確認が済むまで預かる。** プロフィール行は登録時に作られるが名前は
+/// 入らない（`api/src/cognitoTrigger.ts` が書くのは `userId` と `createdAt`
+/// だけ）ので、入れないとその人はしばらく ID の頭8文字で呼ばれる。
+extension PendingVerificationTests {
+
+    func testDisplayNameIsHeldUntilConfirmed() {
+        let defaults = UserDefaults(suiteName: "pending-name-1")!
+        defaults.removePersistentDomain(forName: "pending-name-1")
+        let pending = PendingVerificationStore(defaults: defaults)
+
+        pending.remember(email: "taro@example.com", username: "uuid-1", displayName: "旅人")
+
+        XCTAssertEqual(pending.displayName(for: "TARO@example.com"), "旅人")
+    }
+
+    /// **別の人の名前を引き継がない。** 共有の端末で、次にログインした人の
+    /// プロフィールに前の人の名前が付く事故が Web で起きている。
+    func testAnotherEmailDoesNotInheritTheName() {
+        let defaults = UserDefaults(suiteName: "pending-name-2")!
+        defaults.removePersistentDomain(forName: "pending-name-2")
+        let pending = PendingVerificationStore(defaults: defaults)
+
+        pending.remember(email: "taro@example.com", username: "uuid-1", displayName: "旅人")
+
+        XCTAssertNil(pending.displayName(for: "hanako@example.com"))
+    }
+
+    func testNameIsGoneOnceTheEntryExpires() {
+        let defaults = UserDefaults(suiteName: "pending-name-3")!
+        defaults.removePersistentDomain(forName: "pending-name-3")
+        let pending = PendingVerificationStore(defaults: defaults)
+        let yesterday = Date().addingTimeInterval(-PendingVerification.ttl - 60)
+
+        pending.remember(email: "taro@example.com", username: "uuid-1",
+                         displayName: "旅人", now: yesterday)
+
+        XCTAssertNil(pending.displayName(for: "taro@example.com"))
+    }
+}
