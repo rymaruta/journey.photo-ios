@@ -32,6 +32,9 @@ struct PhotoService {
     /// 上げ方は投稿と同じ3手（presign → S3 → 保存）で、EXIF は端末で落とす。
     func replace(photoId: String, prepared: ImagePreparer.Prepared,
                  uploads: UploadService) async throws {
+        // **投稿と同じ関所を通す。** 50MB と対応形式はサーバーも見るが、
+        // 手前で弾かないと、上げ切ってから 400 を食う（投稿側と同じ理由）
+        try UploadService.checkAcceptable(size: prepared.data.count, type: prepared.contentType)
         let presigned = try await uploads.presign(
             fileName: prepared.fileName,
             fileType: prepared.contentType,
@@ -44,7 +47,12 @@ struct PhotoService {
             throw error
         }
 
-        struct Body: Encodable {
+        // **`replace` で包む。** サーバーは `body.replace` しか見ない
+        // （`photoUpdate.ts` の `hasReplace`）。包まないと、包まれていない
+        // 項目だけが「中身の更新」として通り、**画像は古いまま
+        // 撮影日と座標だけ黙って上書き**される（Web は包んでいる）。
+        struct Body: Encodable { let replace: Replace }
+        struct Replace: Encodable {
             let key: String
             let publicUrl: String
             let exif: ExifFields?
@@ -52,16 +60,16 @@ struct PhotoService {
             let coords: Coords?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
-        let body = Body(
+        let body = Body(replace: Replace(
             key: presigned.key,
             publicUrl: presigned.publicUrl,
             exif: prepared.exif,
             date: prepared.takenOn,
             // 送る前に端末でも丸める（投稿と同じ）
             coords: prepared.coords.map {
-                Body.Coords(lat: ($0.lat * 100).rounded() / 100, lng: ($0.lng * 100).rounded() / 100)
+                Replace.Coords(lat: ($0.lat * 100).rounded() / 100, lng: ($0.lng * 100).rounded() / 100)
             }
-        )
+        ))
         do {
             try await api.authorizedVoid(
                 .put,

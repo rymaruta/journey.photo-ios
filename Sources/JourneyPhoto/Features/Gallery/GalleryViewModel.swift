@@ -23,7 +23,7 @@ final class GalleryViewModel: ObservableObject {
 
     /// 絞り込みに出すカテゴリ。**写真が1枚もない種類は出さない**
     /// （押しても空になるボタンを置かない）
-    private(set) var categories: [String] = []
+    @Published private(set) var categories: [String] = []
 
     private let gallery: PublicGalleryService
 
@@ -37,7 +37,6 @@ final class GalleryViewModel: ObservableObject {
         do {
             let photos = try await gallery.fetchPhotos()
             all = sorted(photos)
-            categories = Self.categories(in: all)
             state = .loaded(filtered())
         } catch {
             state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
@@ -71,6 +70,15 @@ final class GalleryViewModel: ObservableObject {
 
     private func filtered() -> [Photo] {
         let inScope = scope.photos(all, viewerId: viewerId, followingIds: followingIds)
+        // **チップは、いまの範囲にある写真から作る。** 全体から作ると
+        // 「自分」に切り替えたときに**自分の写真に無いカテゴリ**が並び、
+        // 押すと空になる（押しても空になるボタンを置かない）
+        categories = Self.categories(in: inScope)
+        // 範囲を変えて、選んでいたカテゴリが消えたら絞りも外す
+        if let category, !categories.contains(category) {
+            self.category = nil
+            return inScope
+        }
         guard let category else { return inScope }
         return inScope.filter { $0.category == category }
     }

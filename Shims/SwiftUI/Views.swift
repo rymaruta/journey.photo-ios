@@ -111,7 +111,9 @@ public struct Section: View {
     public init<C: View>(@ViewBuilder content: () -> C) {}
     public init<C: View>(_ title: String, @ViewBuilder content: () -> C) {}
     public init<C: View, F: View>(@ViewBuilder content: () -> C, @ViewBuilder footer: () -> F) {}
-    public init<C: View, F: View>(_ title: String, @ViewBuilder content: () -> C, @ViewBuilder footer: () -> F) {}
+    public init<C: View, H: View, F: View>(@ViewBuilder content: () -> C,
+                                           @ViewBuilder header: () -> H,
+                                           @ViewBuilder footer: () -> F) {}
     public init<C: View, H: View>(@ViewBuilder content: () -> C, @ViewBuilder header: () -> H) {}
     public var body: Never { fatalError("模型") }
 }

@@ -40,10 +40,11 @@ struct UploadView: View {
                 Button(Labels.Common.close) { dismiss() }
             }
         }
-        .onChange(of: model.items.isEmpty) { _, empty in
-            // **全部上がったら閉じる。** 途中で落ちたぶんは待ち行列に残るので、
-            // 閉じずにその場でやり直せる（Web も落ちた枚数を残して伝える）
-            if empty && model.savedPhoto != nil { dismiss() }
+        .onChange(of: model.didPostAll) { _, posted in
+            // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
+            // 選び直しの読み込み中（一度空にする）にも閉じてしまい、
+            // 打った文字ごと消える
+            if posted { dismiss() }
         }
     }
 
@@ -203,7 +204,9 @@ struct UploadView: View {
             Button {
                 Task { await model.submit() }
             } label: {
-                if model.isWorking {
+                if model.isLoadingPicked {
+                    HStack { ProgressView(); Text(L("読み込んでいます…", "Loading…")) }
+                } else if model.isWorking {
                     HStack {
                         ProgressView()
                         // **何枚目かを出す。** 5枚選んだときに、進んでいるのか

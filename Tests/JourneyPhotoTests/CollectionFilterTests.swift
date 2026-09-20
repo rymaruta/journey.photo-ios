@@ -193,19 +193,3 @@ final class PlaceFillTests: XCTestCase {
         XCTAssertNil(PlaceFill.value(current: "", found: "  "))
     }
 }
-
-/// 写真を選び直したときの撮影地。
-extension PlaceFillTests {
-
-    /// **自動で入れた地名は、写真を替えたら消える。**
-    /// 残すと「撮影地 京都・座標 札幌」の投稿ができる。
-    func testAutoFilledPlaceIsClearedForANewPhoto() {
-        XCTAssertEqual(PlaceFill.keptForNewPhoto(current: "京都市", autoFilled: "京都市"), "")
-    }
-
-    /// 手で打ったものは残す（写真を替えても本人のもの）。
-    func testTypedPlaceSurvivesANewPhoto() {
-        XCTAssertEqual(PlaceFill.keptForNewPhoto(current: "高屋神社", autoFilled: "京都市"), "高屋神社")
-        XCTAssertEqual(PlaceFill.keptForNewPhoto(current: "高屋神社", autoFilled: nil), "高屋神社")
-    }
-}

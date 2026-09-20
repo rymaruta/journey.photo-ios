@@ -122,14 +122,20 @@ struct UploadService {
 
     // MARK: - まとめて
 
-    /// 1〜3 を通す。途中で落ちたら S3 の迷子を片付けてから投げ直す。
-    func upload(data: Data, fileName: String, fileType: String, draft: PhotoDraft) async throws -> Photo? {
-        guard data.count <= Self.maxFileSize else {
+    /// 上げてよい大きさと形式か。**投稿と差し替えで同じものを通す**
+    /// ——片方だけ緩いと、そちらから上げ切ってから 400 を食う。
+    static func checkAcceptable(size: Int, type: String) throws {
+        guard size <= maxFileSize else {
             throw APIError.server(status: 400, message: L("ファイルサイズが大きすぎます（最大50MB）", "File is too large (50 MB max)"))
         }
-        guard Self.allowedImageTypes.contains(fileType) else {
+        guard allowedImageTypes.contains(type) else {
             throw APIError.server(status: 400, message: L("対応していない形式です（JPEG・PNG・WebP・AVIF・HEIC）", "Unsupported format (JPEG, PNG, WebP, AVIF, HEIC)"))
         }
+    }
+
+    /// 1〜3 を通す。途中で落ちたら S3 の迷子を片付けてから投げ直す。
+    func upload(data: Data, fileName: String, fileType: String, draft: PhotoDraft) async throws -> Photo? {
+        try Self.checkAcceptable(size: data.count, type: fileType)
 
         let presigned = try await presign(fileName: fileName, fileType: fileType, fileSize: data.count)
         do {

@@ -13,7 +13,13 @@ struct GalleryView: View {
     ]
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            // **タブは写真が0枚でも出す。** 中に入れると、1枚も無い人
+            // （ログイン直後の既定は「自分」）に空の帯だけが出て、
+            // **「すべて」に戻せない**——行き止まりを作らない
+            if auth.userId != nil {
+                scopePicker
+            }
             switch model.state {
             case .loading:
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -65,7 +71,7 @@ struct GalleryView: View {
         }
         .pickerStyle(.segmented)
         .padding(.horizontal, 12)
-        .padding(.bottom, 4)
+        .padding(.vertical, 4)
     }
 
     /// カテゴリの絞り込み。Web の `FilterBar` にあたる。
@@ -100,9 +106,6 @@ struct GalleryView: View {
         ScrollView {
             // **ストーリーはここに置かない。** 2026-09-20 に Web が
             // トップから外してマイページへ移した（投稿も閲覧もマイページに集める）
-            if auth.userId != nil {
-                scopePicker
-            }
             if !model.categories.isEmpty {
                 filterBar
             }

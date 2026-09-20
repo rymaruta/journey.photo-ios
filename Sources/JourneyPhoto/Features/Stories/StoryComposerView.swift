@@ -52,7 +52,9 @@ struct StoryComposerView: View {
                 Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。", "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
             }
 
-            Section(L("音と長さ", "Sound and length")) {
+            // **`Section(_:content:footer:)` は本物の SwiftUI に無い**
+            // （題付きは `init(_:content:)` だけ）。header / footer で書く
+            Section {
                 if let song {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -74,6 +76,8 @@ struct StoryComposerView: View {
                 Stepper(value: $durationSec, in: StoryService.durationRange) {
                     Text(L("表示 \(durationSec) 秒", "\(durationSec) seconds"))
                 }
+            } header: {
+                Text(L("音と長さ", "Sound and length"))
             } footer: {
                 // 3秒未満は読み切れず、15秒を超えると見る側が飽きる（Web と同じ範囲）
                 Text(L("3〜15秒。曲は30秒の試聴だけを使います。",

@@ -18,6 +18,8 @@ struct EditPhotoView: View {
     @State private var published: Bool
     @State private var isSaving = false
     @State private var message: String?
+    /// 直近の知らせが「できた」か。**成功を赤で出さない**
+    @State private var messageIsError = true
     /// 写真そのものの差し替え（Web の `/user/edit` と同じ操作）
     @State private var replaceItem: PhotosPickerItem?
     @State private var isReplacing = false
@@ -69,7 +71,10 @@ struct EditPhotoView: View {
             }
 
             if let message {
-                Section { Text(message).font(.callout).foregroundStyle(.red) }
+                Section {
+                    Text(message).font(.callout)
+                        .foregroundStyle(messageIsError ? Color.red : Color.secondary)
+                }
             }
 
             Section {
@@ -102,14 +107,21 @@ struct EditPhotoView: View {
         guard let item else { return }
         isReplacing = true
         message = nil
-        defer { isReplacing = false }
+        defer {
+            isReplacing = false
+            // **選択を戻す。** 戻さないと、同じ写真をもう一度選んでも
+            // `onChange` が起きず、何も起きない
+            replaceItem = nil
+        }
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else { return }
             let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
             try await environment.photos.replace(photoId: photo.id, prepared: prepared,
                                                  uploads: environment.uploads)
+            messageIsError = false
             message = L("差し替えました（反映まで数分かかります）", "Replaced. It takes a few minutes to appear.")
         } catch {
+            messageIsError = true
             message = (error as? LocalizedError)?.errorDescription
                 ?? L("差し替えられませんでした", "Couldn't replace it")
         }
@@ -135,6 +147,7 @@ struct EditPhotoView: View {
             try await environment.photos.update(photoId: photo.id, patch: patch)
             dismiss()
         } catch {
+            messageIsError = true
             message = (error as? LocalizedError)?.errorDescription ?? L("保存できませんでした", "Couldn't save")
         }
     }

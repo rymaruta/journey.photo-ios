@@ -18,8 +18,6 @@ struct PendingPhoto: Identifiable {
     var location = ""
     /// 撮影地を候補から選んだときに入る座標（写真の EXIF より優先）
     var pickedCoords: Photo.Coords?
-    /// 自動で入れた撮影地。**手で打ったものと区別する**ために覚える
-    var autoFilledPlace: String?
 }
 
 @MainActor
@@ -31,7 +29,13 @@ final class UploadViewModel: ObservableObject {
     static let maxSelection = 10
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
-        didSet { Task { await loadPicked() } }
+        didSet {
+            // **前の読み込みを捨ててから始める。** 重ねると、外したはずの
+            // 写真まで待ち行列に残って一緒に投稿される
+            loadTask?.cancel()
+            let picked = pickerItems
+            loadTask = Task { [weak self] in await self?.loadPicked(picked) }
+        }
     }
     /// 投稿を待っている写真。**画面から直接書き換える**ので `var`
     @Published var items: [PendingPhoto] = []
@@ -45,7 +49,13 @@ final class UploadViewModel: ObservableObject {
 
     @Published private(set) var albums: [Album] = []
     @Published var selectedAlbumId: String?
+    /// 送信中。**読み込み中とは分ける**——一緒にすると、写真を選んでいる
+    /// 間に「送信中… 0 / 2 枚目」と「残りをやめる」が出る
     @Published private(set) var isWorking = false
+    @Published private(set) var isLoadingPicked = false
+    /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
+    /// だけでは閉じない——選び直しの読み込み中も空になる）
+    @Published private(set) var didPostAll = false
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
     @Published private(set) var uploadingIndex = 0
     @Published var errorMessage: String?
@@ -59,6 +69,8 @@ final class UploadViewModel: ObservableObject {
     private var placeTasks: [UUID: Task<Void, Never>] = [:]
     /// 途中でやめた。**残りを上げ始めない**
     private var cancelled = false
+    /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
+    private var loadTask: Task<Void, Never>?
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
         self.uploads = uploads
@@ -114,7 +126,6 @@ final class UploadViewModel: ObservableObject {
         guard let index = items.firstIndex(where: { $0.id == photoId }),
               let next = PlaceFill.value(current: items[index].location, found: found) else { return }
         items[index].location = next
-        items[index].autoFilledPlace = next
     }
 
     /// カメラで撮った画像を受ける。
@@ -143,12 +154,12 @@ final class UploadViewModel: ObservableObject {
     ///
     /// **1枚でも読めたら、読めたぶんは受ける。** 全部捨てると、
     /// 1枚の壊れた写真のために選び直しになる（Web も落ちた枚数だけ伝える）。
-    private func loadPicked() async {
-        let picked = pickerItems
+    private func loadPicked(_ picked: [PhotosPickerItem]) async {
         guard !picked.isEmpty else { return }
-        isWorking = true
+        isLoadingPicked = true
         errorMessage = nil
-        defer { isWorking = false }
+        didPostAll = false
+        defer { isLoadingPicked = false }
 
         // 選び直しは**入れ替え**（前の選択が残ると、何が上がるのか読めない）
         placeTasks.values.forEach { $0.cancel() }
@@ -157,6 +168,7 @@ final class UploadViewModel: ObservableObject {
 
         var failed = 0
         for item in picked {
+            if Task.isCancelled { return }
             do {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
                     failed += 1
@@ -211,10 +223,14 @@ final class UploadViewModel: ObservableObject {
 
         var done: [UUID] = []
         var failures: [String] = []
-        for (offset, item) in items.enumerated() {
+        let queue = items.map(\.id)
+        for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
             if cancelled { break }
             uploadingIndex = offset + 1
+            // **送る直前に引き直す。** 送信中も欄は生きているので、
+            // 始めたときの写しで送ると、直した題が古い値で上がる
+            guard let item = items.first(where: { $0.id == id }) else { continue }
             do {
                 let photo = try await upload(item)
                 savedPhoto = photo ?? savedPhoto
@@ -229,6 +245,7 @@ final class UploadViewModel: ObservableObject {
         // 同じ写真をもう一度上げる（枚数の枠を食う）
         items.removeAll { done.contains($0.id) }
         if items.isEmpty && failures.isEmpty {
+            didPostAll = done.count > 0
             reset()
         } else {
             errorMessage = UploadSummary.message(done: done.count, failures: failures, cancelled: cancelled)
