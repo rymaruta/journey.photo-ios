@@ -22,6 +22,12 @@ enum APIError: LocalizedError, Equatable {
         case .unreachable:
             return Labels.Common.unreachable
         case .server(let status, let message):
+            // **認証切れは「サーバーエラー」と言わない。** 直し方が違う
+            // ——押し直しても直らず、ログインし直すしかない
+            if status == 401 || status == 403 {
+                return L("ログインの有効期限が切れました。ログインし直してください",
+                         "Your session expired. Please sign in again.")
+            }
             return message.isEmpty ? L("サーバーエラー（\(status)）", "Server error (\(status))") : message
         case .decoding:
             return L("応答を読み取れませんでした", "Couldn't read the response")

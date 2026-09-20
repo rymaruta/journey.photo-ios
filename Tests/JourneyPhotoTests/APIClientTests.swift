@@ -187,3 +187,25 @@ final class StubProtocol: URLProtocol {
         return data.isEmpty ? nil : data
     }
 }
+
+/// 認証切れの扱い。**「サーバーエラー」と混ぜない**——直し方が違う。
+final class AuthExpiryTests: XCTestCase {
+
+    func testExpiredSessionHasItsOwnMessage() {
+        let expired = APIError.server(status: 401, message: "Unauthorized")
+        XCTAssertTrue(expired.isAuthExpired)
+        XCTAssertNotEqual(expired.errorDescription, "Unauthorized",
+                          "サーバーの英文をそのまま出している")
+    }
+
+    func testForbiddenIsAlsoTreatedAsExpired() {
+        XCTAssertTrue(APIError.server(status: 403, message: "").isAuthExpired)
+    }
+
+    /// ほかの失敗は巻き込まない（400 は打ち直せば直る）。
+    func testOtherStatusesKeepTheServerMessage() {
+        let bad = APIError.server(status: 400, message: "理由を選んでください")
+        XCTAssertFalse(bad.isAuthExpired)
+        XCTAssertEqual(bad.errorDescription, "理由を選んでください")
+    }
+}

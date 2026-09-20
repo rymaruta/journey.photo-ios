@@ -21,7 +21,9 @@ struct UploadView: View {
 
     var body: some View {
         Group {
-            if auth.userId == nil {
+            if auth.isResolving {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if auth.userId == nil {
                 SignInView(reason: L("写真を投稿するにはログインしてください", "Sign in to post a photo"))
             } else {
                 form

@@ -18,7 +18,10 @@ struct MyPageView: View {
 
     var body: some View {
         Group {
-            if auth.userId == nil {
+            if auth.isResolving {
+                // 確認が終わるまでログイン画面を出さない（ちらつきを作らない）
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if auth.userId == nil {
                 SignInView(reason: nil)
             } else {
                 content
