@@ -25,6 +25,8 @@ struct SignInView: View {
     private let pending = PendingVerificationStore()
     /// 案内（送りました、など）。エラーとは別に出す
     @State private var notice: String?
+    /// 「まだ確認していない」ことが分かったので、確認への入口を出す
+    @State private var offerVerification = false
 
     enum Mode {
         case signIn
@@ -57,6 +59,17 @@ struct SignInView: View {
             }
             if let error = auth.errorMessage {
                 Section { Text(error).foregroundStyle(.red).font(.callout) }
+            }
+            if offerVerification && pendingUsername == nil {
+                Section {
+                    Text(L("メールアドレスの確認がまだ終わっていません。",
+                           "This email hasn't been verified yet."))
+                        .font(.callout)
+                    Button(L("確認コードを入力・再送する", "Enter or resend the code")) {
+                        Task { await resumeVerification() }
+                    }
+                    .disabled(auth.isWorking)
+                }
             }
         }
     }
@@ -139,11 +152,20 @@ struct SignInView: View {
     /// （`api/src/cognitoTrigger.ts` が書くのは `userId` と `createdAt` だけ）。
     /// 入れないと、その人はしばらく ID の頭8文字で呼ばれる。
     /// **失敗してもログインは成功のまま**——あとからプロフィール編集で直せる。
-    private func applyDisplayName(_ name: String?) async {
-        guard let name, !name.isEmpty, auth.userId != nil else { return }
-        var patch = ProfilePatch()
-        patch.displayName = name
-        try? await environment.profiles.update(patch)
+    /// - Returns: 控えを捨ててよいか（入れ終えた／入れるものが無い）。
+    @discardableResult
+    private func applyDisplayName(_ name: String?) async -> Bool {
+        guard let name, !name.isEmpty, auth.userId != nil else { return true }
+        do {
+            var patch = ProfilePatch()
+            patch.displayName = name
+            try await environment.profiles.update(patch)
+            return true
+        } catch {
+            // 入れられなくてもログインは成功のまま（あとから編集で直せる）。
+            // 控えは残すので、次のログインでもう一度試せる
+            return false
+        }
     }
 
     /// 控えてある UUID で確認画面に戻る。コードも送り直す。
@@ -157,8 +179,7 @@ struct SignInView: View {
         }
         // **捨てるのは「この控えはもう使えない」ときだけ。**
         // 回数制限や圏外で捨てると、唯一の手がかりを失う
-        if let failure = auth.lastFailure,
-           PendingVerification.shouldForget(afterResendError: failure) {
+        if auth.lastFailure.isPermanent {
             pending.forget(email: email)
         }
     }
@@ -179,11 +200,24 @@ struct SignInView: View {
                     clearMessages()
                     if await auth.confirmSignUp(username: username, code: code) {
                         let name = pending.displayName(for: email)
-                        pending.forget(email: email)
                         pendingUsername = nil
-                        // 確認が済んだらそのままログインする
+                        offerVerification = false
+                        // 確認が済んだらそのままログインする。
+                        // **失敗しても行き止まりにしない**——「すでに登録
+                        // されています」から来た人は、登録欄に打った
+                        // パスワードが古いものと違うことがある
                         await auth.signIn(email: email, password: password)
-                        await applyDisplayName(name)
+                        if auth.userId == nil {
+                            notice = L("確認できました。パスワードを入れてログインしてください。",
+                                       "Verified. Please sign in with your password.")
+                            return
+                        }
+                        // **控えを捨てるのは、名前を入れ終えてから。**
+                        // 先に捨てると、電波が悪くて1回落ちただけで
+                        // 入れた名前が永久に消える（次のログインでやり直せない）
+                        if await applyDisplayName(name) {
+                            pending.forget(email: email)
+                        }
                     }
                 }
             }

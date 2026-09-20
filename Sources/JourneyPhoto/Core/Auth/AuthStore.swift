@@ -3,6 +3,7 @@ import Foundation
 // ファイルは再輸出で使えるが、ここは読んでいないので明示する
 import Combine
 import Amplify
+import AWSCognitoAuthPlugin
 
 /// ログイン状態を画面に配る。
 @MainActor
@@ -46,18 +47,15 @@ final class AuthStore: ObservableObject {
         }
     }
 
-    /// 直近の失敗（Cognito の生の説明）。**文言ではなく種類で分岐する**ために持つ。
-    @Published private(set) var lastFailure: String?
+    /// 直近の失敗の種類。**文言でも綴りでもなく、型で分岐する。**
+    @Published private(set) var lastFailure: AuthFailure = .none
 
     /// 直近の失敗が「まだ確認していないアカウント」か。
-    var lastFailureWasUnconfirmed: Bool {
-        lastFailure?.contains("UserNotConfirmed") ?? false
-    }
+    var lastFailureWasUnconfirmed: Bool { lastFailure == .userNotConfirmed }
 
     /// 直近の失敗が「もう登録されているメールアドレス」か。
     var lastFailureWasExistingAccount: Bool {
-        guard let lastFailure else { return false }
-        return lastFailure.contains("UsernameExists") || lastFailure.contains("AliasExists")
+        lastFailure == .usernameExists || lastFailure == .aliasExists
     }
 
     func signIn(email: String, password: String) async {
@@ -137,7 +135,7 @@ final class AuthStore: ObservableObject {
     private func run(_ work: () async throws -> Void) async {
         isWorking = true
         errorMessage = nil
-        lastFailure = nil
+        lastFailure = .none
         defer { isWorking = false }
         do {
             try await work()
@@ -145,12 +143,65 @@ final class AuthStore: ObservableObject {
             // **文言だけでなく、種類も残す。** 画面は「未確認だから確認へ送る」
             // のような分岐をしたい——文言で判定すると、言い回しを直すたびに
             // 静かに壊れる
-            lastFailure = String(describing: error)
-            errorMessage = AuthMessage.text(for: error)
+            lastFailure = AuthFailure(error)
+            errorMessage = AuthMessage.text(for: lastFailure)
         } catch {
-            lastFailure = String(describing: error)
+            lastFailure = .other
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+/// 失敗の種類。
+///
+/// **`String(describing:)` の中身で判定しない。** Amplify Swift が持っている
+/// のは `AWSCognitoAuthError`（**lowerCamel**——`userNotConfirmed`）で、
+/// JS SDK の `UserNotConfirmedException` とは綴りが違う。Web から写した
+/// 文字列で照合していたので、**どの分岐も一度も当たらない**状態だった。
+enum AuthFailure: Equatable {
+    case none
+    case userNotConfirmed
+    case usernameExists
+    case aliasExists
+    case invalidPassword
+    case invalidParameter
+    case notAuthorized
+    case userNotFound
+    case codeMismatch
+    case codeExpired
+    case limitExceeded
+    case network
+    case other
+
+    init(_ error: AuthError) {
+        if let cognito = error.underlyingError as? AWSCognitoAuthError {
+            switch cognito {
+            case .userNotConfirmed: self = .userNotConfirmed
+            case .usernameExists: self = .usernameExists
+            case .aliasExists: self = .aliasExists
+            case .invalidPassword: self = .invalidPassword
+            case .invalidParameter: self = .invalidParameter
+            case .userNotFound: self = .userNotFound
+            case .codeMismatch: self = .codeMismatch
+            case .codeExpired: self = .codeExpired
+            case .limitExceeded, .requestLimitExceeded, .failedAttemptsLimitExceeded:
+                self = .limitExceeded
+            case .network: self = .network
+            default: self = .other
+            }
+            return
+        }
+        // 種別が入っていない回もある（`AuthError` そのものの種類で見る）
+        switch error {
+        case .notAuthorized: self = .notAuthorized
+        case .sessionExpired: self = .notAuthorized
+        default: self = .other
+        }
+    }
+
+    /// 控えを捨ててよい失敗か（**この控えはもう使えない**ときだけ）。
+    var isPermanent: Bool {
+        self == .notAuthorized || self == .userNotFound || self == .invalidParameter
     }
 }
 
@@ -165,35 +216,30 @@ enum AuthMessage {
         L("パスワードは8文字以上で、英大文字・小文字・数字・記号（!@#$%など）をそれぞれ1文字以上含める必要があります",
           "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a symbol (!@#$% etc.)")
 
-    static func text(for error: AuthError) -> String {
-        let underlying = String(describing: error)
-        if underlying.contains("UsernameExists") || underlying.contains("AliasExists") {
+    static func text(for failure: AuthFailure) -> String {
+        switch failure {
+        case .usernameExists, .aliasExists:
             return L("このメールアドレスはすでに登録されています", "This email is already registered")
-        }
-        if underlying.contains("InvalidPassword") {
+        case .invalidPassword:
             return passwordRule
-        }
-        if underlying.contains("InvalidParameter") {
+        case .invalidParameter:
             return L("メールアドレスの形式か、\(passwordRule)", "Check the email address, or: \(passwordRule)")
-        }
-        if underlying.contains("NotAuthorized") {
+        case .notAuthorized:
             return L("メールアドレスかパスワードが違います", "Wrong email or password")
-        }
-        if underlying.contains("UserNotConfirmed") {
+        case .userNotFound:
+            return L("そのメールアドレスのアカウントが見つかりません", "No account for that email")
+        case .userNotConfirmed:
             return L("メールに届いた確認コードで登録を完了してください", "Finish sign up with the code we emailed you")
-        }
-        if underlying.contains("CodeMismatch") {
+        case .codeMismatch:
             return L("確認コードが違います", "That code is wrong")
-        }
-        if underlying.contains("ExpiredCode") {
+        case .codeExpired:
             return L("確認コードの有効期限が切れています。再送してください", "That code expired. Send a new one.")
-        }
-        if underlying.contains("LimitExceeded") || underlying.contains("TooManyRequests") {
+        case .limitExceeded:
             return L("回数が多すぎます。しばらく待ってからお試しください", "Too many attempts. Please wait and try again.")
-        }
-        if underlying.contains("Network") {
+        case .network:
             return Labels.Common.unreachable
+        case .none, .other:
+            return L("うまくいきませんでした。しばらくしてからもう一度お試しください", "That didn't work. Please try again in a moment.")
         }
-        return L("うまくいきませんでした。しばらくしてからもう一度お試しください", "That didn't work. Please try again in a moment.")
     }
 }

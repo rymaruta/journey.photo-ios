@@ -23,9 +23,34 @@ public struct AmplifyConfiguration {
 
 public protocol Plugin {}
 
+/// 本物の `Amplify.AuthError`（`Amplify/Categories/Auth/Error/AuthError.swift`）に
+/// 合わせる。**`underlyingError` があるのが肝**——種別はこの中の
+/// `AWSCognitoAuthError` に入っていて、説明文の綴りで見てはいけない。
 public enum AuthError: Error {
+    case configuration(String, String, Error? = nil)
     case service(String, String, Error? = nil)
     case unknown(String, Error? = nil)
+    case validation(String, String, String, Error? = nil)
+    case notAuthorized(String, String, Error? = nil)
+    case invalidState(String, String, Error? = nil)
+    case signedOut(String, String, Error? = nil)
+    case sessionExpired(String, String, Error? = nil)
+
+    public var underlyingError: Error? {
+        switch self {
+        case .configuration(_, _, let underlying),
+             .service(_, _, let underlying),
+             .notAuthorized(_, _, let underlying),
+             .invalidState(_, _, let underlying),
+             .signedOut(_, _, let underlying),
+             .sessionExpired(_, _, let underlying):
+            return underlying
+        case .validation(_, _, _, let underlying):
+            return underlying
+        case .unknown(_, let underlying):
+            return underlying
+        }
+    }
 }
 
 public struct AuthUserAttributeKey {

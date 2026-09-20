@@ -190,16 +190,35 @@ for (const file of files) {
 // 持たない人は**アプリから退会できない**（審査 5.1.1(v) を見るのは
 // たいてい英語の審査官）。比べる語は `L(…)` を通す。
 {
-    const japaneseLiteral = /(==|!=)\s*"[^"]*[\u3040-\u30ff\u4e00-\u9faf][^"]*"/;
+    const japanese = /[\u3040-\u30ff\u4e00-\u9faf]/;
     for (const file of files) {
         if (!file.includes("/Features/") && !file.includes("/App/")) continue;
         const source = fs.readFileSync(file, "utf8");
-        const found = source.match(japaneseLiteral);
-        if (found) {
-            problems.push(
-                `${path.relative(process.cwd(), file)}: 入力と ${found[0].trim()} を直接比べています` +
-                `（日本語を打てない端末で詰みます。L("…", "…") を通してください）`
-            );
+        // コメントは対象外（説明文に日本語が出るのは当たり前）
+        const code = source.split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
+
+        // 1. 直接くらべている: `typed != "削除"`
+        for (const match of code.matchAll(/(?:==|!=)\s*"([^"]*)"/g)) {
+            if (japanese.test(match[1])) {
+                problems.push(
+                    `${path.relative(process.cwd(), file)}: 入力と "${match[1]}" を直接比べています` +
+                    `（日本語を打てない端末で詰みます。L("…", "…") を通してください）`
+                );
+            }
+        }
+
+        // 2. **定数に入れてから比べている**（こちらが実際に踏んだ形）:
+        //    `static let confirmWord = "削除"` ＋ `typed != Self.confirmWord`
+        for (const match of code.matchAll(/(?:let|var)\s+(\w+)(?:\s*:\s*String)?\s*=\s*"([^"]*)"/g)) {
+            const [, name, value] = match;
+            if (!japanese.test(value)) continue;
+            const compared = new RegExp(`(?:==|!=)\\s*(?:Self\\.|self\\.)?${name}\\b`);
+            if (compared.test(code)) {
+                problems.push(
+                    `${path.relative(process.cwd(), file)}: 入力と ${name}（"${value}"）を比べています` +
+                    `（日本語を打てない端末で詰みます。L("…", "…") を通してください）`
+                );
+            }
         }
     }
 }

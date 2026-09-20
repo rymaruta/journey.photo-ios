@@ -32,16 +32,6 @@ enum PendingVerification {
     static func isFresh(savedAt: Date, now: Date = Date()) -> Bool {
         now.timeIntervalSince(savedAt) < ttl && now >= savedAt.addingTimeInterval(-ttl)
     }
-
-    /// **控えを捨ててよい失敗か。**
-    ///
-    /// Web の `PERMANENT_RESEND_FAILURES`。「失敗したら捨てる」にすると、
-    /// 再送の回数制限（`LimitExceeded`）や圏外でも**唯一の手がかりを捨てる**
-    /// ——24時間で自然に回復する元の形より悪くなる。恒久的に効かないのは
-    /// 「その UUID がもう確認済み／存在しない」場合だけ。
-    static func shouldForget(afterResendError error: String) -> Bool {
-        ["NotAuthorized", "UserNotFound", "InvalidParameter"].contains { error.contains($0) }
-    }
 }
 
 /// 端末に残す控え。

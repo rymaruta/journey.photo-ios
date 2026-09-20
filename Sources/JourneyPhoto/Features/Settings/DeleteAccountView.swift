@@ -10,13 +10,8 @@ struct DeleteAccountView: View {
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
 
-    /// 押し間違いで消えないように、決まった語を打たせる。
-    ///
-    /// **その人の言葉で打たせる。** 日本語に固定していたので、英語の端末には
-    /// 「Type “削除” to confirm」と出ていた——日本語入力を持たない人は
-    /// **アプリから退会できない**（審査 5.1.1(v) を見るのはたいてい
-    /// 英語の審査官）。
-    private static var confirmWord: String { L("削除", "DELETE") }
+    /// 押し間違いで消えないように、決まった語を打たせる（`ConfirmWord`）。
+    private static var confirmWord: String { ConfirmWord.delete }
 
     @State private var typed = ""
     @State private var isWorking = false
@@ -65,7 +60,10 @@ struct DeleteAccountView: View {
                         Text(L("アカウントを削除する", "Delete my account"))
                     }
                 }
-                .disabled(isWorking || typed.trimmingCharacters(in: .whitespaces) != Self.confirmWord)
+                // **大小を区別しない。** 英語側は `DELETE` だが、入力欄は
+                // 自動大文字化を切ってあるので `delete` と打つ人が出る
+                // ——灰色のまま理由も出ない画面にしない
+                .disabled(isWorking || !ConfirmWord.matches(typed, word: Self.confirmWord))
             }
         }
         .navigationTitle(L("アカウントの削除", "Delete account"))

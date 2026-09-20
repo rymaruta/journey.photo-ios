@@ -49,16 +49,6 @@ final class PendingVerificationTests: XCTestCase {
 
         XCTAssertNil(pending.username(for: "taro@example.com"))
     }
-
-    /// **捨てるのは「この控えはもう使えない」ときだけ。**
-    /// 回数制限や圏外で捨てると、唯一の手がかりを失う（Web の反省）。
-    func testOnlyPermanentFailuresDiscardTheEntry() {
-        XCTAssertTrue(PendingVerification.shouldForget(afterResendError: "UserNotFoundException"))
-        XCTAssertTrue(PendingVerification.shouldForget(afterResendError: "NotAuthorizedException"))
-        XCTAssertFalse(PendingVerification.shouldForget(afterResendError: "LimitExceededException"),
-                       "回数制限で唯一の手がかりを捨てない")
-        XCTAssertFalse(PendingVerification.shouldForget(afterResendError: "NetworkError"))
-    }
 }
 
 /// 登録のときに入れた表示名。
