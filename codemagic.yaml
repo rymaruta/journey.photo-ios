@@ -21,8 +21,11 @@ workflows:
     environment:
       xcode: latest
       vars:
-        # App Store Connect のアプリの ID（数字）。画面の URL に出ている
-        APP_APPLE_ID: 0000000000
+        # **App Store Connect のアプリの ID（数字）は、CI が自分で引く**
+        # （`Tools/app-apple-id.sh` が Bundle ID から探す）。
+        # 引けないとき（API キーが未設定・アプリ未登録）だけ、ここに
+        # 画面の URL に出ている数字を書く
+        APP_APPLE_ID: ""
         BUNDLE_ID: com.journeyphoto.JourneyPhoto
       ios_signing:
         distribution_type: app_store
@@ -38,14 +41,23 @@ workflows:
 
       - name: ビルド番号を決める
         script: |
-          # **TestFlight にある最大の番号 + 1。** 手で上げ忘れて
-          # はねられる事故が無くなる
-          if [ "$APP_APPLE_ID" = "0000000000" ]; then
-            echo "APP_APPLE_ID が仮の値のままです。"
-            echo "App Store Connect でアプリを開いたときの URL に出ている数字に"
-            echo "codemagic.yaml を直してください（docs/NO_MAC.md の手順2）。"
+          # **アプリの Apple ID は Bundle ID から引く。** 人が画面から
+          # 写してこない（写し忘れでビルドが始まらない時間を作らない）
+          if [ -z "${APP_APPLE_ID:-}" ]; then
+            APP_APPLE_ID="$(bash Tools/app-apple-id.sh "$BUNDLE_ID" || true)"
+          fi
+          if [ -z "${APP_APPLE_ID:-}" ]; then
+            echo "App Store Connect に $BUNDLE_ID のアプリが見つかりませんでした。"
+            echo "  - まだアプリを作っていない → App Store Connect で新規作成する"
+            echo "  - 作ってある → codemagic.yaml の APP_APPLE_ID に"
+            echo "    アプリを開いたときの URL の数字を書く（docs/NO_MAC.md の手順2）"
             exit 1
           fi
+          echo "アプリの Apple ID: $APP_APPLE_ID"
+          # あとの段（公開）からも見えるようにする
+          echo "APP_APPLE_ID=$APP_APPLE_ID" >> "$CM_ENV"
+          # **TestFlight にある最大の番号 + 1。** 手で上げ忘れて
+          # はねられる事故が無くなる
           LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" || echo 0)
           bash Tools/set-build-number.sh $(( LATEST + 1 ))
 

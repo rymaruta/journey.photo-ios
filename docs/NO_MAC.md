@@ -86,10 +86,15 @@ owner:「Mac もってない」
    - Name: **`JourneyPhotoASC`**（`codemagic.yaml` に書いてある名前と**同じに**）
    - Issuer ID / Key ID / `.p8` を入れる
 
-### 5. ビルドする前に1か所だけ直す
+### 5. ここで直すものは**ありません**
 
-`codemagic.yaml` の `APP_APPLE_ID` を、**手順2で控えた数字**に変えます。
-この会話で「アプリの Apple ID は 1234567890」と伝えてもらえれば、こちらで直します。
+以前は `codemagic.yaml` の `APP_APPLE_ID`（アプリの数字の ID）を手で書く
+必要がありましたが、**CI が Bundle ID から自分で引く**ようにしました
+（`Tools/app-apple-id.sh`）。手順2でアプリを作ってあれば、そのまま進めます。
+
+> 引けなかったときは、ログに理由が出ます（たいていは
+> 「まだ App Store Connect にアプリを作っていない」）。どうしても引けない
+> ときだけ、`codemagic.yaml` の `APP_APPLE_ID: ""` に数字を書きます。
 
 ### 6. ビルドする
 

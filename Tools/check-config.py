@@ -157,6 +157,16 @@ if codemagic_path.exists():
                      f"Production.xcconfig の JP_BUNDLE_ID（{bundle_id}）と違います"
                      f"（署名が通らず、CI で10分待ったあとに落ちます）")
 
+# ---- 9. ビルド番号の段が、仮の値に戻っていないか ---------------------------
+#
+# **`APP_APPLE_ID` は CI が Bundle ID から引く**（`Tools/app-apple-id.sh`）。
+# 仮の数字（`0000000000`）が書き戻されると、**その数字のアプリ**を探しに行き、
+# 他人のアプリの枠を見に行くか、意味の分からない失敗になる。
+if codemagic_path.exists():
+    if "0000000000" in codemagic_text:
+        fail("codemagic.yaml に仮の APP_APPLE_ID（0000000000）が残っています"
+             "（空にすると Bundle ID から自動で引きます）")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:
