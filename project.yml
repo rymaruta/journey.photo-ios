@@ -1,0 +1,99 @@
+# XcodeGen のプロジェクト定義。
+#
+# .xcodeproj はコミットしない（マージのたびに競合し、どの設定が効いているか
+# 読めなくなるため）。Mac 側で次を実行して生成する:
+#
+#     brew install xcodegen
+#     xcodegen generate
+#     open JourneyPhoto.xcodeproj
+#
+# 設定の唯一の出どころはこのファイルと Config/*.xcconfig。
+
+name: JourneyPhoto
+options:
+  bundleIdPrefix: com.journeyphoto
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+configs:
+  Debug: debug
+  Release: release
+
+packages:
+  Amplify:
+    url: https://github.com/aws-amplify/amplify-swift
+    from: 2.27.0
+
+targets:
+  JourneyPhoto:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/JourneyPhoto
+    dependencies:
+      - package: Amplify
+        product: Amplify
+      - package: Amplify
+        product: AWSCognitoAuthPlugin
+    configFiles:
+      Debug: Config/Staging.xcconfig
+      Release: Config/Production.xcconfig
+    info:
+      path: Sources/JourneyPhoto/Info.plist
+      properties:
+        CFBundleDisplayName: $(APP_DISPLAY_NAME)
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+        # 実行時に読む環境値。値は xcconfig 側で切り替える
+        JPUserApiBaseURL: $(JP_USER_API_BASE_URL)
+        JPSiteBaseURL: $(JP_SITE_BASE_URL)
+        JPCognitoUserPoolId: $(JP_COGNITO_USER_POOL_ID)
+        JPCognitoClientId: $(JP_COGNITO_CLIENT_ID)
+        JPCognitoRegion: $(JP_COGNITO_REGION)
+        JPEnvironmentName: $(JP_ENV_NAME)
+        # 5.1.1 / 4.2 で審査官が読む利用目的。日本語と英語の両方を出す
+        NSCameraUsageDescription: 写真を撮って投稿するためにカメラを使います。
+        NSPhotoLibraryUsageDescription: 端末の写真を選んで投稿するために使います。
+        NSPhotoLibraryAddUsageDescription: 撮った写真を端末に保存するために使います。
+        NSLocationWhenInUseUsageDescription: 撮影地を写真に添えるために現在地を使います。位置は約1kmに丸めて保存します。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(JP_BUNDLE_ID)
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        SWIFT_STRICT_CONCURRENCY: minimal
+
+  JourneyPhotoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/JourneyPhotoTests
+    dependencies:
+      - target: JourneyPhoto
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
+
+schemes:
+  JourneyPhoto:
+    build:
+      targets:
+        JourneyPhoto: all
+        JourneyPhotoTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - JourneyPhotoTests
+    archive:
+      config: Release

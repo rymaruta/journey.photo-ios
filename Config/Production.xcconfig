@@ -1,0 +1,19 @@
+// 本番（journey-photo.com）。Release ビルドで使う。
+//
+// ここに書く値はどれも秘密ではない（Web 版も同じものをバンドルに載せている）。
+// 秘密にすべき値はここにも Info.plist にも置かない。
+//
+// **本番値のフォールバックは AppConfig.swift 側に置かないこと。**
+// 値が欠けたら落ちる（= 気づける）ようにしてある。フォールバックを置くと
+// staging ビルドが黙って本番を読み書きする。
+
+JP_ENV_NAME = production
+JP_BUNDLE_ID = com.journeyphoto.JourneyPhoto
+APP_DISPLAY_NAME = Journey Photo
+
+JP_SITE_BASE_URL = https:/$()/journey-photo.com
+JP_USER_API_BASE_URL = https:/$()/gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com
+
+JP_COGNITO_REGION = ap-northeast-1
+JP_COGNITO_USER_POOL_ID = ap-northeast-1_ZbuhDQsWz
+JP_COGNITO_CLIENT_ID = 21cs4cd8dkttmg3snloj72u8mu

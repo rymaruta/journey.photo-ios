@@ -1,0 +1,86 @@
+import Foundation
+
+/// 1枚の写真。`api-user/src/types.ts` の `Photo` に対応する。
+///
+/// **非公開のフィールドは持たない。** `srcOriginal`（EXIF 除去前の原本・GPS 入り）
+/// と `key` は公開 JSON から落とされている（`lib/server/photos.ts` の
+/// `PRIVATE_FIELDS`）。ここで定義すると「取れるはず」と勘違いした実装を誘うので、
+/// 自分の写真を編集する経路で必要になるまで足さない。
+struct Photo: Identifiable, Decodable, Equatable {
+    let id: String
+    /// 詳細表示用の画像（≤1600）
+    let src: String
+    /// 一覧グリッド用の軽量サムネイル（512px WebP）。無い写真は src を使う
+    let thumbSrc: String?
+    let src256: String?
+    let thumbAvif: String?
+    let thumbSm: String?
+    let thumbSmAvif: String?
+    let srcAvif: String?
+    /// 極小ぼかしプレビュー（data:image/webp;base64,...）
+    let blurDataURL: String?
+
+    let title: LocalizedText?
+    let description: LocalizedParagraphs?
+    let category: String?
+    let tags: [String]?
+    let location: String?
+    let published: Bool?
+
+    let userId: String?
+    let uploadedBy: String?
+    let displayName: String?
+    let createdAt: String?
+    let updatedAt: String?
+
+    /// 撮影地（約1km精度に丸め済み）
+    let coords: Coords?
+    /// 正方形に切り抜くときの中心（0〜1）。未設定なら中央
+    let focalPoint: FocalPoint?
+    let exif: Exif?
+
+    struct Coords: Decodable, Equatable {
+        let lat: Double
+        let lng: Double
+    }
+
+    struct FocalPoint: Decodable, Equatable {
+        let x: Double
+        let y: Double
+    }
+
+    struct Exif: Decodable, Equatable {
+        let camera: String?
+        let lens: String?
+        let aperture: String?
+        let exposure: String?
+        let iso: Int?
+        let focalLength: String?
+        let whiteBalance: String?
+        let imageSize: String?
+        let dateTimeOriginal: String?
+    }
+
+    // MARK: - 表示のための導出
+
+    var displayTitle: String { title?.resolved() ?? "" }
+    var paragraphs: [String] { description?.resolved() ?? [] }
+
+    /// 一覧に出す画像。軽い順に落としていく。
+    var gridImageURL: URL? {
+        URL(string: thumbSrc ?? src256 ?? src)
+    }
+
+    var detailImageURL: URL? {
+        URL(string: src)
+    }
+
+    /// 読み上げ用の代替テキスト。題が無ければ撮影地で補う
+    /// （Web 側 `lib/utils/photoAlt.ts` と同じ考え方）。
+    var accessibilityText: String {
+        let title = displayTitle
+        if !title.isEmpty { return title }
+        if let location, !location.isEmpty { return "\(location) の写真" }
+        return "写真"
+    }
+}
