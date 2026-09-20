@@ -21,13 +21,13 @@ struct GalleryView: View {
                 }
             case .loaded(let photos):
                 if photos.isEmpty {
-                    ErrorBanner(message: "まだ写真がありません")
+                    ErrorBanner(message: Labels.Gallery.empty)
                 } else {
                     grid(photos)
                 }
             }
         }
-        .navigationTitle("ギャラリー")
+        .navigationTitle(Labels.Navigation.gallery)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { PhotoMapView() } label: {
@@ -49,7 +49,7 @@ struct GalleryView: View {
                     Button {
                         model.select(category: selected ? nil : category)
                     } label: {
-                        Text(category)
+                        Text(Labels.Category.name(category))
                             .font(.caption)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)

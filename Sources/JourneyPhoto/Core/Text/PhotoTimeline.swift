@@ -46,10 +46,11 @@ enum PhotoTimeline {
         var sections = buckets.keys.sorted(by: >).map { key -> Section in
             let year = key.prefix(4)
             let month = Int(key.suffix(2)) ?? 0
-            return Section(id: key, title: "\(year)年 \(month)月", photos: buckets[key] ?? [])
+            let title = L("\(year)年 \(month)月", "\(Labels.monthName(month)) \(year)")
+            return Section(id: key, title: title, photos: buckets[key] ?? [])
         }
         if !unknown.isEmpty {
-            sections.append(Section(id: "unknown", title: "日付なし", photos: unknown))
+            sections.append(Section(id: "unknown", title: L("日付なし", "No date"), photos: unknown))
         }
         return sections
     }

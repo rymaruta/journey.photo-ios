@@ -20,23 +20,23 @@ struct DeleteAccountView: View {
     var body: some View {
         Form {
             Section {
-                Text("アカウントを削除すると、次のものが消えます。")
+                Text(L("アカウントを削除すると、次のものが消えます。", "Deleting your account removes:"))
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("投稿した写真と画像ファイル", systemImage: "photo")
-                    Label("プロフィール（名前・自己紹介・アイコン）", systemImage: "person.crop.circle")
-                    Label("フォロー・いいね・お知らせ", systemImage: "heart")
+                    Label(L("投稿した写真と画像ファイル", "Your photos and image files"), systemImage: "photo")
+                    Label(L("プロフィール（名前・自己紹介・アイコン）", "Your profile (name, bio, avatar)"), systemImage: "person.crop.circle")
+                    Label(L("フォロー・いいね・お知らせ", "Follows, likes and activity"), systemImage: "heart")
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
             } footer: {
                 // 嘘をつかない。実装がそうなっている（コメントは読むときに
                 // 名前を伏せる扱いで、行そのものは残る）
-                Text("他の人の写真に書いたコメントの本文は残りますが、名前は「退会したユーザー」に変わります。")
+                Text(L("他の人の写真に書いたコメントの本文は残りますが、名前は「退会したユーザー」に変わります。", "Comments you left on other photos remain, but your name becomes “Deleted user”."))
             }
 
             Section {
-                Text("**この操作は取り消せません。**")
-                TextField("確認のため「\(Self.confirmWord)」と入力", text: $typed)
+                Text(L("**この操作は取り消せません。**", "**This cannot be undone.**"))
+                TextField(L("確認のため「\(Self.confirmWord)」と入力", "Type “\(Self.confirmWord)” to confirm"), text: $typed)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             }
@@ -50,15 +50,15 @@ struct DeleteAccountView: View {
                     Task { await deleteAccount() }
                 } label: {
                     if isWorking {
-                        HStack { ProgressView(); Text("削除しています…") }
+                        HStack { ProgressView(); Text(L("削除しています…", "Deleting…")) }
                     } else {
-                        Text("アカウントを削除する")
+                        Text(L("アカウントを削除する", "Delete my account"))
                     }
                 }
                 .disabled(isWorking || typed.trimmingCharacters(in: .whitespaces) != Self.confirmWord)
             }
         }
-        .navigationTitle("アカウントの削除")
+        .navigationTitle(L("アカウントの削除", "Delete account"))
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -74,7 +74,7 @@ struct DeleteAccountView: View {
             await auth.signOut()
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "削除できませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
     }
 }

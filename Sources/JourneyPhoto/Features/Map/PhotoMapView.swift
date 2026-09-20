@@ -35,7 +35,7 @@ struct PhotoMapView: View {
                 }
             }
         }
-        .navigationTitle("地図")
+        .navigationTitle(Labels.Navigation.map)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .sheet(item: $selected) { pin in
@@ -48,7 +48,7 @@ struct PhotoMapView: View {
                             RemoteImage(url: photo.gridImageURL)
                                 .frame(width: 44, height: 44)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
-                            Text(photo.displayTitle.isEmpty ? (photo.location ?? "写真") : photo.displayTitle)
+                            Text(photo.displayTitle.isEmpty ? (photo.location ?? L("写真", "Photo")) : photo.displayTitle)
                         }
                     }
                 }
@@ -82,7 +82,7 @@ struct MapPin: Identifiable, Equatable {
         }
         return buckets.compactMap { key, photos in
             guard let coords = photos.first?.coords else { return nil }
-            let title = photos.first(where: { !($0.location ?? "").isEmpty })?.location ?? "撮影地"
+            let title = photos.first(where: { !($0.location ?? "").isEmpty })?.location ?? L("撮影地", "Place")
             return MapPin(
                 id: key,
                 coordinate: CLLocationCoordinate2D(latitude: coords.lat, longitude: coords.lng),

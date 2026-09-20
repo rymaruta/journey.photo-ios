@@ -10,7 +10,10 @@
  *     配られていないと、その画面を開いた瞬間に落ちる。コンパイルは通る。
  *  2. **同じ型を2か所で宣言している**
  *     これはコンパイルエラーだが、ファイルをまたぐと目で気づけない。
- *  3. **`@MainActor` の型の静的メンバを、テストから呼んでいる**
+ *  3. **画面に出る文字が日本語だけになっている**
+ *     Web 版は ja / en の2つを持つ。片方だけの文字列を足すと、英語の端末で
+ *     そこだけ日本語が残る。`L("ja", "en")` か `Labels.*` を通すこと。
+ *  4. **`@MainActor` の型の静的メンバを、テストから呼んでいる**
  *     `XCTestCase` のメソッドは isolation を持たないので
  *     "Call to main actor-isolated static method in a synchronous
  *     nonisolated context" でコンパイルが落ちる。実際に2回踏んだ。
@@ -72,6 +75,10 @@ for (const file of files) {
                 continue;
             }
             if (kind === "class_declaration" || kind === "protocol_declaration") {
+                // **`extension` は数えない。** 解析器は `extension` も
+                // `class_declaration` として返すので、そのままだと
+                // 「同じ型を2回宣言している」と誤報になる
+                if (child.text.startsWith("extension")) { collect(child, prefix); continue; }
                 const nameNode = child.childForFieldName("name");
                 if (nameNode) {
                     const full = prefix ? `${prefix}.${nameNode.text}` : nameNode.text;
@@ -100,7 +107,24 @@ for (const file of files) {
     }
 }
 
-// 3. @MainActor の型の静的メンバをテストから呼んでいないか
+// 3. 画面に出る文字が二言語になっているか
+{
+    // 文字を受け取る口。ここに日本語の直書きがあれば、英語の端末で日本語が残る
+    const uiCall = /\b(Text|Button|Label|TextField|SecureField|Toggle|Section|Picker|Link|navigationTitle|alert)\(\s*"([^"]*[\u3040-\u30ff\u4e00-\u9faf][^"]*)"/g;
+    for (const file of files) {
+        // 模型と、値だけを持つ層は対象外（画面に出ない）
+        if (!file.includes("/Features/") && !file.includes("/App/")) continue;
+        const source = fs.readFileSync(file, "utf8");
+        for (const match of source.matchAll(uiCall)) {
+            problems.push(
+                `${path.relative(process.cwd(), file)}: 「${match[2]}」が日本語だけです` +
+                `（L("…", "…") か Labels.* を通してください）`
+            );
+        }
+    }
+}
+
+// 4. @MainActor の型の静的メンバをテストから呼んでいないか
 if (testRoot) {
     const mainActorTypes = new Set();
     for (const file of files) {

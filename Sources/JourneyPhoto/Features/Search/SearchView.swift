@@ -10,7 +10,7 @@ struct SearchView: View {
     var body: some View {
         List {
             if !model.users.isEmpty {
-                Section("人") {
+                Section(L("人", "People")) {
                     ForEach(model.users) { user in
                         NavigationLink {
                             UserProfileView(userId: user.userId)
@@ -27,7 +27,7 @@ struct SearchView: View {
             }
 
             if !model.photos.isEmpty {
-                Section("写真") {
+                Section(L("写真", "Photos")) {
                     ForEach(model.photos) { photo in
                         NavigationLink {
                             PhotoDetailView(photo: photo)
@@ -55,17 +55,17 @@ struct SearchView: View {
             }
 
             if query.isEmpty {
-                Section("よく使われているタグ") {
+                Section(L("よく使われているタグ", "Popular tags")) {
                     ForEach(model.popularTags, id: \.self) { tag in
                         Button(tag) { query = tag }
                     }
                 }
             } else if model.users.isEmpty && model.photos.isEmpty && !model.isSearching {
-                Text("見つかりませんでした").foregroundStyle(.secondary)
+                Text(L("見つかりませんでした", "No results")).foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("さがす")
-        .searchable(text: $query, prompt: "撮影地・タグ・人")
+        .navigationTitle(L("さがす", "Search"))
+        .searchable(text: $query, prompt: L("撮影地・タグ・人", "Places, tags, people"))
         .task { await model.loadPhotos(environment: environment) }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }

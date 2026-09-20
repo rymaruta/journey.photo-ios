@@ -12,7 +12,7 @@ struct RelatedPhotosRow: View {
         Group {
             if !related.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("近い写真").font(.subheadline.weight(.semibold))
+                    Text(L("近い写真", "Similar photos")).font(.subheadline.weight(.semibold))
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(related) { item in

@@ -38,7 +38,7 @@ struct SongPickerView: View {
                               ? "pause.circle.fill" : "play.circle")
                     }
                     .buttonStyle(.borderless)
-                    Button("選ぶ") {
+                    Button(L("選ぶ", "Choose")) {
                         player.stop()
                         onSelect(song.asPhotoSong)
                         dismiss()
@@ -47,9 +47,9 @@ struct SongPickerView: View {
                 }
             }
         }
-        .navigationTitle("曲を選ぶ")
+        .navigationTitle(L("曲を選ぶ", "Choose a song"))
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "曲名・アーティスト")
+        .searchable(text: $query, prompt: L("曲名・アーティスト", "Title or artist"))
         .onSubmit(of: .search) { Task { await search() } }
         .onChange(of: query) { _, value in
             if value.isEmpty { results = [] }
@@ -58,7 +58,7 @@ struct SongPickerView: View {
         .onDisappear { player.stop() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("閉じる") { dismiss() }
+                Button(Labels.Common.close) { dismiss() }
             }
         }
     }
@@ -69,9 +69,9 @@ struct SongPickerView: View {
         defer { isSearching = false }
         do {
             results = try await environment.discovery.searchSongs(query)
-            if results.isEmpty { message = "見つかりませんでした" }
+            if results.isEmpty { message = L("見つかりませんでした", "No results") }
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? "検索できませんでした"
+            message = (error as? LocalizedError)?.errorDescription ?? L("検索できませんでした", "Search failed")
         }
     }
 }

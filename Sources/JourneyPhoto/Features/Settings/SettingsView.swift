@@ -15,25 +15,25 @@ struct SettingsView: View {
     var body: some View {
         List {
             if auth.userId != nil {
-                Section("安全") {
-                    NavigationLink("ブロックした人") { BlockedUsersView() }
+                Section(L("安全", "Safety")) {
+                    NavigationLink(L("ブロックした人", "Blocked people")) { BlockedUsersView() }
                 }
             }
 
-            Section("このアプリについて") {
-                Link("利用規約", destination: LegalConsent.termsURL)
-                Link("プライバシーポリシー", destination: LegalConsent.privacyURL)
+            Section(L("このアプリについて", "About")) {
+                Link(L("利用規約", "Terms of Use"), destination: LegalConsent.termsURL)
+                Link(L("プライバシーポリシー", "Privacy Policy"), destination: LegalConsent.privacyURL)
                 if let contact = LegalConsent.contactURL {
-                    Link("問い合わせ", destination: contact)
+                    Link(L("問い合わせ", "Contact"), destination: contact)
                 }
                 HStack {
-                    Text("バージョン")
+                    Text(L("バージョン", "Version"))
                     Spacer()
                     Text(version).foregroundStyle(.secondary)
                 }
                 if AppConfig.environment == .staging {
                     HStack {
-                        Text("接続先")
+                        Text(L("接続先", "Environment"))
                         Spacer()
                         Text("staging").foregroundStyle(.orange)
                     }
@@ -42,14 +42,14 @@ struct SettingsView: View {
 
             if auth.userId != nil {
                 Section {
-                    Button("ログアウト") { Task { await auth.signOut() } }
+                    Button(Labels.Navigation.logout) { Task { await auth.signOut() } }
                 }
                 Section {
-                    NavigationLink("アカウントの削除") { DeleteAccountView() }
+                    NavigationLink(L("アカウントの削除", "Delete account")) { DeleteAccountView() }
                         .foregroundStyle(.red)
                 }
             }
         }
-        .navigationTitle("設定")
+        .navigationTitle(L("設定", "Settings"))
     }
 }

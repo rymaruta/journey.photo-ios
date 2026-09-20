@@ -41,11 +41,11 @@ enum ImagePreparer {
         var errorDescription: String? {
             switch self {
             case .unreadable:
-                return "画像を読み取れませんでした"
+                return L("画像を読み取れませんでした", "Couldn't read the image")
             case .encodeFailed:
-                return "画像を変換できませんでした"
+                return L("画像を変換できませんでした", "Couldn't convert the image")
             case .metadataRemains:
-                return "この画像から撮影情報を取り除けませんでした。別の写真をお試しください"
+                return L("この画像から撮影情報を取り除けませんでした。別の写真をお試しください", "Couldn't strip metadata from this image. Please try another photo.")
             }
         }
     }

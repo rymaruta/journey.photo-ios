@@ -24,7 +24,7 @@ struct StoriesRow: View {
                                     .font(.title3)
                                     .frame(width: 64, height: 64)
                                     .background(Color(.secondarySystemBackground), in: Circle())
-                                Text("ストーリー")
+                                Text(L("ストーリー", "Story"))
                                     .font(.caption2)
                                     .frame(width: 68)
                             }

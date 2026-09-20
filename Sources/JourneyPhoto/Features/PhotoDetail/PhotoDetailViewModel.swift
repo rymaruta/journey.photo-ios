@@ -55,7 +55,7 @@ final class PhotoDetailViewModel: ObservableObject {
     /// それを使う（二重に押した回や既に押していた回でずれる）。
     func toggleLike() async {
         guard isSignedIn else {
-            errorMessage = "いいねするにはログインしてください"
+            errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
             return
         }
         let wasLiked = liked
@@ -66,7 +66,7 @@ final class PhotoDetailViewModel: ObservableObject {
             liked = result.liked
             if let likes = result.likes { self.likes = likes }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "うまくいきませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
     }
 
@@ -74,7 +74,7 @@ final class PhotoDetailViewModel: ObservableObject {
         let text = draftComment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         guard isSignedIn else {
-            errorMessage = "コメントするにはログインしてください"
+            errorMessage = L("コメントするにはログインしてください", "Sign in to comment")
             return
         }
         isPosting = true
@@ -85,7 +85,7 @@ final class PhotoDetailViewModel: ObservableObject {
             commentCount += 1
             draftComment = ""
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "コメントできませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
         }
     }
 
@@ -95,7 +95,7 @@ final class PhotoDetailViewModel: ObservableObject {
             comments.removeAll { $0.id == comment.id }
             commentCount = max(0, commentCount - 1)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "削除できませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
     }
 }

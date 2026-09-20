@@ -28,13 +28,13 @@ struct ModerationService {
 
         var label: String {
             switch self {
-            case .copyright: return "自分の写真を無断で使われている"
-            case .privacy: return "写っている人・場所の権利を害している"
-            case .sexual: return "わいせつな内容"
-            case .violence: return "暴力的・残虐な内容"
-            case .harassment: return "特定の人への攻撃・いやがらせ"
-            case .spam: return "広告・勧誘・スパム"
-            case .other: return "その他"
+            case .copyright: return L("自分の写真を無断で使われている", "My photo is used without permission")
+            case .privacy: return L("写っている人・場所の権利を害している", "Violates someone's privacy or rights")
+            case .sexual: return L("わいせつな内容", "Sexually explicit")
+            case .violence: return L("暴力的・残虐な内容", "Violent or graphic")
+            case .harassment: return L("特定の人への攻撃・いやがらせ", "Harassment of a person")
+            case .spam: return L("広告・勧誘・スパム", "Spam or advertising")
+            case .other: return L("その他", "Something else")
             }
         }
     }

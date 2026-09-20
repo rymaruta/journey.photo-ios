@@ -134,7 +134,7 @@ struct StoryViewer: Decodable, Identifiable, Equatable {
     var id: String { userId }
 
     var name: String {
-        if deleted == true { return "退会したユーザー" }
+        if deleted == true { return Labels.Common.deletedUser }
         if let displayName, !displayName.isEmpty { return displayName }
         return String(userId.prefix(8))
     }

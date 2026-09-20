@@ -24,7 +24,7 @@ struct MyPageView: View {
                 content
             }
         }
-        .navigationTitle("マイページ")
+        .navigationTitle(Labels.Navigation.mypage)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { SettingsView() } label: {
@@ -50,7 +50,7 @@ struct MyPageView: View {
                 Button {
                     showPostSheet = true
                 } label: {
-                    Label("投稿する", systemImage: "plus")
+                    Label(L("投稿する", "Create"), systemImage: "plus")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -61,11 +61,11 @@ struct MyPageView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        NavigationLink("プロフィールを編集") { ProfileEditView() }
+                        NavigationLink(L("プロフィールを編集", "Edit profile")) { ProfileEditView() }
                             .buttonStyle(.bordered)
-                        NavigationLink("アルバム") { AlbumsView() }
+                        NavigationLink(Labels.Navigation.albums) { AlbumsView() }
                             .buttonStyle(.bordered)
-                        NavigationLink("お気に入り") { FavoritesView() }
+                        NavigationLink(Labels.Navigation.favorites) { FavoritesView() }
                             .buttonStyle(.bordered)
                     }
                     .padding(.horizontal, 16)
@@ -83,7 +83,7 @@ struct MyPageView: View {
                 if let error = model.errorMessage {
                     ErrorBanner(message: error) { Task { await model.load() } }
                 } else if model.photos.isEmpty && !model.isLoading {
-                    ErrorBanner(message: "まだ写真がありません")
+                    ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
                 } else if tab == .timeline {
                     PhotoTimelineView(photos: model.photos)
                 } else {
@@ -97,7 +97,7 @@ struct MyPageView: View {
                                     // 公開したつもりの写真が出ていない、が
                                     // いちばん困る
                                     if photo.published == false {
-                                        Text("下書き")
+                                        Text(L("下書き", "Draft"))
                                             .font(.caption2)
                                             .padding(.horizontal, 6)
                                             .padding(.vertical, 2)
@@ -179,7 +179,7 @@ final class MyPageViewModel: ObservableObject {
             self.profile = try await profile
             self.photos = try await photos
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "読み込めませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
     }
 }

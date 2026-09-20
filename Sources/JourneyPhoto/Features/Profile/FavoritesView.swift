@@ -18,7 +18,7 @@ struct FavoritesView: View {
     var body: some View {
         ScrollView {
             if photos.isEmpty && !isLoading {
-                ErrorBanner(message: "まだお気に入りがありません")
+                ErrorBanner(message: L("まだお気に入りがありません", "No liked photos yet"))
             } else {
                 LazyVGrid(columns: columns, spacing: 2) {
                     ForEach(photos) { photo in
@@ -31,7 +31,7 @@ struct FavoritesView: View {
                 }
             }
         }
-        .navigationTitle("お気に入り")
+        .navigationTitle(Labels.Navigation.favorites)
         .task { await load() }
         .refreshable { await load() }
     }

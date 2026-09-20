@@ -24,25 +24,25 @@ struct PostSheet: View {
         NavigationStack {
             VStack(spacing: 12) {
                 choice(
-                    title: "写真を投稿",
-                    detail: "撮影地やタグを付けて残します。ずっと出ます。",
+                    title: L("写真を投稿", "Post a photo"),
+                    detail: L("撮影地やタグを付けて残します。ずっと出ます。", "Keep it with a place and tags. It stays."),
                     systemImage: "photo",
                     kind: .photo
                 )
                 choice(
-                    title: "ストーリーを投稿",
-                    detail: "24時間で消えます。見た人が分かります。",
+                    title: L("ストーリーを投稿", "Post a story"),
+                    detail: L("24時間で消えます。見た人が分かります。", "Disappears in 24 hours. You can see who viewed it."),
                     systemImage: "clock",
                     kind: .story
                 )
                 Spacer()
             }
             .padding(16)
-            .navigationTitle("投稿する")
+            .navigationTitle(L("投稿する", "Create"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") { dismiss() }
+                    Button(Labels.Common.close) { dismiss() }
                 }
             }
         }

@@ -26,14 +26,14 @@ struct ReportSheet: View {
             Form {
                 if done {
                     Section {
-                        Label("受け付けました。内容を確認します。", systemImage: "checkmark.circle")
+                        Label(L("受け付けました。内容を確認します。", "Received. We'll review it."), systemImage: "checkmark.circle")
                     } footer: {
                         // 「対応しました」とは言わない——読むのは人で、すぐには終わらない
-                        Text("結果をお伝えできない場合があります。")
+                        Text(L("結果をお伝えできない場合があります。", "We may not be able to tell you the outcome."))
                     }
                 } else {
-                    Section("理由") {
-                        Picker("理由", selection: $reason) {
+                    Section(L("理由", "Reason")) {
+                        Picker(L("理由", "Reason"), selection: $reason) {
                             ForEach(ModerationService.ReportReason.allCases) { reason in
                                 Text(reason.label).tag(reason)
                             }
@@ -42,16 +42,16 @@ struct ReportSheet: View {
                         .labelsHidden()
                     }
 
-                    Section("補足（任意）") {
-                        TextField("状況を書いてください", text: $note, axis: .vertical)
+                    Section(L("補足（任意）", "Details (optional)")) {
+                        TextField(L("状況を書いてください", "Tell us what happened"), text: $note, axis: .vertical)
                             .lineLimit(2...5)
                     }
 
                     if ownerId != nil {
                         Section {
-                            Toggle("この人をブロックする", isOn: $alsoBlock)
+                            Toggle(L("この人をブロックする", "Also block this person"), isOn: $alsoBlock)
                         } footer: {
-                            Text("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。")
+                            Text(L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."))
                         }
                     }
 
@@ -60,16 +60,16 @@ struct ReportSheet: View {
                     }
 
                     Section {
-                        Button("通報する") { Task { await submit() } }
+                        Button(L("通報する", "Report")) { Task { await submit() } }
                             .disabled(isWorking)
                     }
                 }
             }
-            .navigationTitle("通報")
+            .navigationTitle(L("通報", "Report"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") { dismiss() }
+                    Button(Labels.Common.close) { dismiss() }
                 }
             }
         }
@@ -99,13 +99,13 @@ struct ReportSheet: View {
                     try await environment.moderation.block(userId: ownerId)
                     hidden.block(ownerId)
                 } catch {
-                    errorMessage = "通報は受け付けました。ブロックはうまくいきませんでした。設定からもう一度お試しください。"
+                    errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。設定からもう一度お試しください。", "Your report was received, but blocking failed. Try again from Settings.")
                 }
             }
             await applyHidden()
             done = true
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "通報を受け付けられませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("通報を受け付けられませんでした", "Couldn't submit the report")
         }
     }
 }

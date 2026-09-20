@@ -18,13 +18,13 @@ enum APIError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .notAuthenticated:
-            return "ログインが必要です"
+            return Labels.Common.signInRequired
         case .unreachable:
-            return "通信できませんでした。電波の良いところでもう一度お試しください"
+            return Labels.Common.unreachable
         case .server(let status, let message):
-            return message.isEmpty ? "サーバーエラー（\(status)）" : message
+            return message.isEmpty ? L("サーバーエラー（\(status)）", "Server error (\(status))") : message
         case .decoding:
-            return "応答を読み取れませんでした"
+            return L("応答を読み取れませんでした", "Couldn't read the response")
         }
     }
 

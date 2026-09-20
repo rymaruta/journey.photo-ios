@@ -10,12 +10,12 @@ struct NotificationsView: View {
     var body: some View {
         Group {
             if auth.userId == nil {
-                SignInView(reason: "お知らせを見るにはログインしてください")
+                SignInView(reason: L("お知らせを見るにはログインしてください", "Sign in to see your activity"))
             } else {
                 list
             }
         }
-        .navigationTitle("お知らせ")
+        .navigationTitle(L("お知らせ", "Activity"))
     }
 
     private var list: some View {
@@ -23,7 +23,7 @@ struct NotificationsView: View {
             if let message = model.errorMessage {
                 Text(message).foregroundStyle(.red).font(.callout)
             } else if model.rows.isEmpty && !model.isLoading {
-                Text("まだ届いていません").foregroundStyle(.secondary)
+                Text(L("まだ届いていません", "Nothing yet")).foregroundStyle(.secondary)
             }
 
             ForEach(model.rows) { row in
@@ -84,7 +84,7 @@ final class NotificationsViewModel: ObservableObject {
                 unread = 0
             }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "読み込めませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
     }
 }

@@ -35,7 +35,7 @@ final class GalleryViewModel: ObservableObject {
             categories = Self.categories(in: all)
             state = .loaded(filtered())
         } catch {
-            state = .failed((error as? APIError)?.errorDescription ?? "読み込めませんでした")
+            state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
         }
     }
 

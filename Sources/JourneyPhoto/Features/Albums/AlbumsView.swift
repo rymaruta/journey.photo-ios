@@ -14,12 +14,12 @@ struct AlbumsView: View {
     var body: some View {
         Group {
             if auth.userId == nil {
-                SignInView(reason: "アルバムを使うにはログインしてください")
+                SignInView(reason: L("アルバムを使うにはログインしてください", "Sign in to use albums"))
             } else {
                 list
             }
         }
-        .navigationTitle("アルバム")
+        .navigationTitle(Labels.Navigation.albums)
     }
 
     private var list: some View {
@@ -27,13 +27,13 @@ struct AlbumsView: View {
             if let message = model.errorMessage {
                 Text(message).foregroundStyle(.red).font(.callout)
             } else if model.albums.isEmpty && !model.isLoading {
-                Text("まだアルバムがありません").foregroundStyle(.secondary)
+                Text(L("まだアルバムがありません", "No albums yet")).foregroundStyle(.secondary)
             }
 
             ForEach(model.albums) { album in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(album.title.isEmpty ? "無題のアルバム" : album.title)
-                    Text("\(album.members) 人")
+                    Text(album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title)
+                    Text(L("\(album.members) 人", "\(album.members) members"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if let token = album.inviteToken {
@@ -41,11 +41,11 @@ struct AlbumsView: View {
                             // 招待リンクはサイトの URL で共有する
                             // （アプリを入れていない人にも開ける）
                             ShareLink(item: model.inviteURL(token: token)) {
-                                Label("招待リンクを共有", systemImage: "square.and.arrow.up")
+                                Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
                                     .font(.caption)
                             }
                             Spacer()
-                            Button("取り消す") {
+                            Button(L("取り消す", "Revoke")) {
                                 Task { await model.revokeInvite(album.id, environment: environment) }
                             }
                             .font(.caption)
@@ -54,7 +54,7 @@ struct AlbumsView: View {
                             .buttonStyle(.borderless)
                         }
                     } else {
-                        Button("招待リンクを作る") {
+                        Button(L("招待リンクを作る", "Create invite link")) {
                             Task { await model.createInvite(album.id, environment: environment) }
                         }
                         .font(.caption)
@@ -65,7 +65,7 @@ struct AlbumsView: View {
                     Button(role: .destructive) {
                         Task { await model.delete(album.id, environment: environment) }
                     } label: {
-                        Label("削除", systemImage: "trash")
+                        Label(Labels.Common.delete, systemImage: "trash")
                     }
                 }
             }
@@ -73,32 +73,32 @@ struct AlbumsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("アルバムを作る") { showCreate = true }
-                    Button("招待リンクから参加") { showJoin = true }
+                    Button(L("アルバムを作る", "New album")) { showCreate = true }
+                    Button(L("招待リンクから参加", "Join with a link")) { showJoin = true }
                 } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .alert("招待リンクから参加", isPresented: $showJoin) {
-            TextField("リンクか招待コード", text: $inviteText)
-            Button("参加する") {
+        .alert(L("招待リンクから参加", "Join with a link"), isPresented: $showJoin) {
+            TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
+            Button(L("参加する", "Join")) {
                 let text = inviteText
                 inviteText = ""
                 Task { await model.join(inviteText: text, environment: environment) }
             }
-            Button("やめる", role: .cancel) { inviteText = "" }
+            Button(Labels.Common.cancel, role: .cancel) { inviteText = "" }
         } message: {
-            Text("受け取ったリンク（https://journey-photo.com/j?t=…）をそのまま貼れます。")
+            Text(L("受け取ったリンク（https://journey-photo.com/j?t=…）をそのまま貼れます。", "You can paste the link you received as-is."))
         }
-        .alert("アルバムを作る", isPresented: $showCreate) {
-            TextField("名前", text: $newTitle)
-            Button("作る") {
+        .alert(L("アルバムを作る", "New album"), isPresented: $showCreate) {
+            TextField(L("名前", "Name"), text: $newTitle)
+            Button(L("作る", "Create")) {
                 let title = newTitle
                 newTitle = ""
                 Task { await model.create(title: title, environment: environment) }
             }
-            Button("やめる", role: .cancel) { newTitle = "" }
+            Button(Labels.Common.cancel, role: .cancel) { newTitle = "" }
         }
         .task { await model.load(environment: environment) }
         .refreshable { await model.load(environment: environment) }
@@ -125,7 +125,7 @@ final class AlbumsViewModel: ObservableObject {
         do {
             albums = try await environment.albums.list()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "読み込めませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
     }
 
@@ -136,7 +136,7 @@ final class AlbumsViewModel: ObservableObject {
             let album = try await environment.albums.create(title: trimmed)
             albums.insert(album, at: 0)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "作れませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
         }
     }
 
@@ -147,14 +147,14 @@ final class AlbumsViewModel: ObservableObject {
     func join(inviteText: String, environment: AppEnvironment) async {
         let token = InviteLink.token(from: inviteText)
         guard !token.isEmpty else {
-            errorMessage = "招待リンクを読み取れませんでした"
+            errorMessage = L("招待リンクを読み取れませんでした", "Couldn't read that invite link")
             return
         }
         do {
             _ = try await environment.albums.join(token: token)
             await load(environment: environment)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "参加できませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("参加できませんでした", "Couldn't join")
         }
     }
 
@@ -163,7 +163,7 @@ final class AlbumsViewModel: ObservableObject {
             try await environment.albums.delete(id: id)
             albums.removeAll { $0.id == id }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "削除できませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
     }
 
@@ -172,7 +172,7 @@ final class AlbumsViewModel: ObservableObject {
             _ = try await environment.albums.createInvite(albumId: id)
             await load(environment: environment)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "招待リンクを作れませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("招待リンクを作れませんでした", "Couldn't create the invite link")
         }
     }
 
@@ -181,7 +181,7 @@ final class AlbumsViewModel: ObservableObject {
             try await environment.albums.revokeInvite(albumId: id)
             await load(environment: environment)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "取り消せませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("取り消せませんでした", "Couldn't revoke")
         }
     }
 }

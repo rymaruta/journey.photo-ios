@@ -25,7 +25,7 @@ struct RootView: View {
         }
         .overlay(alignment: .top) {
             if let configurationError {
-                Text("認証の初期化に失敗しました: \(configurationError)")
+                Text(L("認証の初期化に失敗しました: \(configurationError)", "Sign-in setup failed: \(configurationError)"))
                     .font(.footnote)
                     .padding(8)
                     .background(.thinMaterial)
@@ -50,26 +50,26 @@ struct RootView: View {
             NavigationStack {
                 GalleryView()
             }
-            .tabItem { Label("ギャラリー", systemImage: "photo.on.rectangle.angled") }
+            .tabItem { Label(Labels.Navigation.gallery, systemImage: "photo.on.rectangle.angled") }
             .tag(Tab.gallery)
 
             NavigationStack {
                 SearchView()
             }
-            .tabItem { Label("さがす", systemImage: "magnifyingglass") }
+            .tabItem { Label(L("さがす", "Search"), systemImage: "magnifyingglass") }
             .tag(Tab.search)
 
             NavigationStack {
                 NotificationsView()
             }
-            .tabItem { Label("お知らせ", systemImage: "bell") }
+            .tabItem { Label(L("お知らせ", "Activity"), systemImage: "bell") }
             .badge(unread)
             .tag(Tab.notifications)
 
             NavigationStack {
                 MyPageView()
             }
-            .tabItem { Label("マイページ", systemImage: "person.crop.circle") }
+            .tabItem { Label(Labels.Navigation.mypage, systemImage: "person.crop.circle") }
             .tag(Tab.mypage)
         }
         .task(id: auth.userId) { await refreshUnread() }

@@ -34,21 +34,21 @@ struct EditPhotoView: View {
                     .frame(maxHeight: 200)
             }
 
-            Section("この写真について") {
-                TextField("題", text: $title)
-                TextField("説明", text: $caption, axis: .vertical)
+            Section(L("この写真について", "About this photo")) {
+                TextField(L("題", "Title"), text: $title)
+                TextField(L("説明", "Description"), text: $caption, axis: .vertical)
                     .lineLimit(3...8)
-                TextField("撮影地", text: $location)
-                TextField("タグ（カンマ区切り）", text: $tagsText)
+                TextField(L("撮影地", "Place"), text: $location)
+                TextField(L("タグ（カンマ区切り）", "Tags (comma separated)"), text: $tagsText)
                     .textInputAutocapitalization(.never)
-                TextField("撮影日（YYYY-MM-DD）", text: $date)
+                TextField(L("撮影日（YYYY-MM-DD）", "Date taken (YYYY-MM-DD)"), text: $date)
                     .keyboardType(.numbersAndPunctuation)
             }
 
             Section {
-                Toggle("公開する", isOn: $published)
+                Toggle(L("公開する", "Public"), isOn: $published)
             } footer: {
-                Text("非公開にすると、サイトの一覧と個別ページから消えます（反映まで数分）。")
+                Text(L("非公開にすると、サイトの一覧と個別ページから消えます（反映まで数分）。", "Making it private removes it from the site within a few minutes."))
             }
 
             if let message {
@@ -60,15 +60,15 @@ struct EditPhotoView: View {
                     Task { await save() }
                 } label: {
                     if isSaving {
-                        HStack { ProgressView(); Text("保存中…") }
+                        HStack { ProgressView(); Text(L("保存中…", "Saving…")) }
                     } else {
-                        Text("保存する")
+                        Text(Labels.Common.save)
                     }
                 }
                 .disabled(isSaving)
             }
         }
-        .navigationTitle("写真を編集")
+        .navigationTitle(L("写真を編集", "Edit photo"))
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -91,7 +91,7 @@ struct EditPhotoView: View {
             try await environment.photos.update(photoId: photo.id, patch: patch)
             dismiss()
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? "保存できませんでした"
+            message = (error as? LocalizedError)?.errorDescription ?? L("保存できませんでした", "Couldn't save")
         }
     }
 

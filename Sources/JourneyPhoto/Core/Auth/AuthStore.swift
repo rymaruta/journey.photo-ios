@@ -92,37 +92,38 @@ final class AuthStore: ObservableObject {
 enum AuthMessage {
 
     static let passwordRule =
-        "パスワードは8文字以上で、英大文字・小文字・数字・記号（!@#$%など）をそれぞれ1文字以上含める必要があります"
+        L("パスワードは8文字以上で、英大文字・小文字・数字・記号（!@#$%など）をそれぞれ1文字以上含める必要があります",
+          "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a symbol (!@#$% etc.)")
 
     static func text(for error: AuthError) -> String {
         let underlying = String(describing: error)
         if underlying.contains("UsernameExists") || underlying.contains("AliasExists") {
-            return "このメールアドレスはすでに登録されています"
+            return L("このメールアドレスはすでに登録されています", "This email is already registered")
         }
         if underlying.contains("InvalidPassword") {
             return passwordRule
         }
         if underlying.contains("InvalidParameter") {
-            return "メールアドレスの形式か、\(passwordRule)"
+            return L("メールアドレスの形式か、\(passwordRule)", "Check the email address, or: \(passwordRule)")
         }
         if underlying.contains("NotAuthorized") {
-            return "メールアドレスかパスワードが違います"
+            return L("メールアドレスかパスワードが違います", "Wrong email or password")
         }
         if underlying.contains("UserNotConfirmed") {
-            return "メールに届いた確認コードで登録を完了してください"
+            return L("メールに届いた確認コードで登録を完了してください", "Finish sign up with the code we emailed you")
         }
         if underlying.contains("CodeMismatch") {
-            return "確認コードが違います"
+            return L("確認コードが違います", "That code is wrong")
         }
         if underlying.contains("ExpiredCode") {
-            return "確認コードの有効期限が切れています。再送してください"
+            return L("確認コードの有効期限が切れています。再送してください", "That code expired. Send a new one.")
         }
         if underlying.contains("LimitExceeded") || underlying.contains("TooManyRequests") {
-            return "回数が多すぎます。しばらく待ってからお試しください"
+            return L("回数が多すぎます。しばらく待ってからお試しください", "Too many attempts. Please wait and try again.")
         }
         if underlying.contains("Network") {
-            return "通信できませんでした。電波の良いところでもう一度お試しください"
+            return Labels.Common.unreachable
         }
-        return "うまくいきませんでした。しばらくしてからもう一度お試しください"
+        return L("うまくいきませんでした。しばらくしてからもう一度お試しください", "That didn't work. Please try again in a moment.")
     }
 }

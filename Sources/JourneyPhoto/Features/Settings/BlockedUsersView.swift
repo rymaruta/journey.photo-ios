@@ -17,13 +17,13 @@ struct BlockedUsersView: View {
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red).font(.callout)
             } else if users.isEmpty && !isLoading {
-                Text("ブロックしている人はいません").foregroundStyle(.secondary)
+                Text(L("ブロックしている人はいません", "No one is blocked")).foregroundStyle(.secondary)
             }
             ForEach(users) { user in
                 HStack {
                     Text(user.displayName)
                     Spacer()
-                    Button("解除") {
+                    Button(L("解除", "Unblock")) {
                         Task { await unblock(user.id) }
                     }
                     // 行の中のボタンは borderless にしないと、行のどこを
@@ -32,7 +32,7 @@ struct BlockedUsersView: View {
                 }
             }
         }
-        .navigationTitle("ブロックした人")
+        .navigationTitle(L("ブロックした人", "Blocked people"))
         .task { await load() }
         .refreshable { await load() }
         .overlay { if isLoading { ProgressView() } }
@@ -50,7 +50,7 @@ struct BlockedUsersView: View {
             hidden.replaceBlocked(with: list.blockedIds)
             await apply()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "読み込めませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
     }
 
@@ -69,7 +69,7 @@ struct BlockedUsersView: View {
             await apply()
             users.removeAll { $0.id == userId }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "解除できませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("解除できませんでした", "Couldn't unblock")
         }
     }
 }

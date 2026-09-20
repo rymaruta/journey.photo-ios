@@ -74,12 +74,12 @@ struct AppNotification: Decodable, Identifiable, Equatable {
 
     /// 画面に出す1行。種類が分からないものは nil を返して**描かない**。
     var summary: String? {
-        let who = (deleted == true) ? "退会したユーザー" : (byName ?? "だれか")
+        let who = (deleted == true) ? Labels.Common.deletedUser : (byName ?? L("だれか", "Someone"))
         switch kind {
-        case .like: return "\(who) さんがいいねしました"
-        case .comment: return "\(who) さんがコメントしました"
-        case .follow: return "\(who) さんがフォローしました"
-        case .storyreply: return "\(who) さんがストーリーに返信しました"
+        case .like: return L("\(who) さんがいいねしました", "\(who) liked your photo")
+        case .comment: return L("\(who) さんがコメントしました", "\(who) commented")
+        case .follow: return L("\(who) さんがフォローしました", "\(who) followed you")
+        case .storyreply: return L("\(who) さんがストーリーに返信しました", "\(who) replied to your story")
         case .none: return nil
         }
     }

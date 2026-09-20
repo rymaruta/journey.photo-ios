@@ -36,12 +36,12 @@ struct SignInView: View {
     private var credentialsSection: some View {
         Group {
             Section {
-                TextField("メールアドレス", text: $email)
+                TextField(L("メールアドレス", "Email"), text: $email)
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                SecureField("パスワード", text: $password)
+                SecureField(L("パスワード", "Password"), text: $password)
                     .textContentType(mode == .signUp ? .newPassword : .password)
             } footer: {
                 if mode == .signUp {
@@ -50,7 +50,7 @@ struct SignInView: View {
             }
 
             Section {
-                Button(mode == .signIn ? "ログイン" : "登録する") {
+                Button(mode == .signIn ? Labels.Navigation.login : L("登録する", "Create account")) {
                     Task {
                         if mode == .signIn {
                             await auth.signIn(email: email, password: password)
@@ -61,7 +61,7 @@ struct SignInView: View {
                 }
                 .disabled(auth.isWorking || email.isEmpty || password.isEmpty)
 
-                Button(mode == .signIn ? "アカウントを作る" : "ログインに戻る") {
+                Button(mode == .signIn ? L("アカウントを作る", "Create an account") : L("ログインに戻る", "Back to sign in")) {
                     mode = mode == .signIn ? .signUp : .signIn
                     auth.errorMessage = nil
                 }
@@ -72,13 +72,13 @@ struct SignInView: View {
 
     private func confirmSection(username: String) -> some View {
         Section {
-            Text("メールに届いた確認コードを入力してください")
+            Text(L("メールに届いた確認コードを入力してください", "Enter the code we emailed you"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            TextField("確認コード", text: $code)
+            TextField(L("確認コード", "Verification code"), text: $code)
                 .keyboardType(.numberPad)
                 .textContentType(.oneTimeCode)
-            Button("登録を完了する") {
+            Button(L("登録を完了する", "Finish sign up")) {
                 Task {
                     if await auth.confirmSignUp(username: username, code: code) {
                         pendingUsername = nil

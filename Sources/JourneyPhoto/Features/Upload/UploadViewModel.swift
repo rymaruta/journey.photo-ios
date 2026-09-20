@@ -57,7 +57,7 @@ final class UploadViewModel: ObservableObject {
         } catch {
             self.prepared = nil
             self.previewImage = nil
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "写真を読み込めませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")
         }
     }
 
@@ -71,7 +71,7 @@ final class UploadViewModel: ObservableObject {
 
         do {
             guard let data = try await pickerItem.loadTransferable(type: Data.self) else {
-                errorMessage = "写真を読み込めませんでした"
+                errorMessage = L("写真を読み込めませんでした", "Couldn't load the photo")
                 return
             }
             // **`itemIdentifier` をファイル名にしない。** スラッシュを含む
@@ -85,7 +85,7 @@ final class UploadViewModel: ObservableObject {
         } catch {
             self.prepared = nil
             self.previewImage = nil
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "写真を読み込めませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")
         }
     }
 
@@ -125,12 +125,12 @@ final class UploadViewModel: ObservableObject {
                 do {
                     try await photoService.update(photoId: id, patch: patch)
                 } catch {
-                    errorMessage = "写真は投稿しましたが、曲を付けられませんでした"
+                    errorMessage = L("写真は投稿しましたが、曲を付けられませんでした", "Posted, but the song couldn't be attached")
                 }
             }
             reset()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "投稿できませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("投稿できませんでした", "Couldn't post")
         }
     }
 

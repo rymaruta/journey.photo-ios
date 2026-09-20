@@ -91,7 +91,11 @@ final class UploadServiceTests: XCTestCase {
             )
             XCTFail("投げるはず")
         } catch {
-            XCTAssertTrue((error as? APIError)?.errorDescription?.contains("大きすぎ") == true)
+            // **文言で確かめない。** 表示は端末の言語で変わる。見るのは形
+            guard case .server(let status, _)? = error as? APIError else {
+                return XCTFail("形が違う: \(error)")
+            }
+            XCTAssertEqual(status, 400)
         }
         XCTAssertTrue(ScriptedProtocol.calls.isEmpty, "手前で弾かずに投げている")
     }
@@ -105,7 +109,10 @@ final class UploadServiceTests: XCTestCase {
             )
             XCTFail("投げるはず")
         } catch {
-            XCTAssertTrue((error as? APIError)?.errorDescription?.contains("対応していない") == true)
+            guard case .server(let status, _)? = error as? APIError else {
+                return XCTFail("形が違う: \(error)")
+            }
+            XCTAssertEqual(status, 400)
         }
         XCTAssertTrue(ScriptedProtocol.calls.isEmpty)
     }

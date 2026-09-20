@@ -88,11 +88,11 @@ struct PhotoDetailView: View {
         .sheet(isPresented: $showEdit) {
             NavigationStack { EditPhotoView(photo: photo) }
         }
-        .alert("この写真を削除しますか？", isPresented: $showDeleteConfirm) {
-            Button("削除", role: .destructive) { Task { await deletePhoto() } }
-            Button("やめる", role: .cancel) {}
+        .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
+            Button(Labels.Common.delete, role: .destructive) { Task { await deletePhoto() } }
+            Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
-            Text("元に戻せません。画像そのものも消えます。")
+            Text(L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
         }
     }
 
@@ -101,25 +101,25 @@ struct PhotoDetailView: View {
     private var menu: some View {
         Menu {
             if let url = photo.detailImageURL {
-                ShareLink(item: url) { Label("共有", systemImage: "square.and.arrow.up") }
+                ShareLink(item: url) { Label(L("共有", "Share"), systemImage: "square.and.arrow.up") }
             }
             if isMine {
                 // **Menu の中に NavigationLink を置かない。** メニューの中身は
                 // ナビゲーションの外側に出るので押しても進まない。シートで出す
                 Button { showEdit = true } label: {
-                    Label("編集", systemImage: "pencil")
+                    Label(L("編集", "Edit"), systemImage: "pencil")
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
-                    Label("削除", systemImage: "trash")
+                    Label(Labels.Common.delete, systemImage: "trash")
                 }
             } else {
                 // **通報とブロックは1タップで届くところに置く**（審査で見られる）
                 Button { showReport = true } label: {
-                    Label("通報する", systemImage: "flag")
+                    Label(L("通報する", "Report"), systemImage: "flag")
                 }
                 if let ownerId {
                     Button(role: .destructive) { Task { await block(ownerId) } } label: {
-                        Label("この人をブロック", systemImage: "hand.raised")
+                        Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
                     }
                 }
             }
@@ -152,7 +152,7 @@ struct PhotoDetailView: View {
                     NavigationLink {
                         UserProfileView(userId: ownerId)
                     } label: {
-                        Text(photo.displayName ?? "投稿者")
+                        Text(photo.displayName ?? L("投稿者", "Poster"))
                             .font(.footnote)
                     }
                 }
@@ -167,10 +167,10 @@ struct PhotoDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             if auth.userId != nil {
                 HStack {
-                    TextField("コメントを書く", text: $model.draftComment, axis: .vertical)
+                    TextField(L("コメントを書く", "Write a comment"), text: $model.draftComment, axis: .vertical)
                         .lineLimit(1...4)
                         .textFieldStyle(.roundedBorder)
-                    Button("送信") { Task { await model.postComment() } }
+                    Button(Labels.Common.send) { Task { await model.postComment() } }
                         .disabled(model.isPosting || model.draftComment.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -190,7 +190,7 @@ struct PhotoDetailView: View {
                         }
                         Spacer()
                         if comment.uid == auth.userId {
-                            Button("削除") { Task { await model.deleteComment(comment) } }
+                            Button(Labels.Common.delete) { Task { await model.deleteComment(comment) } }
                                 .font(.caption2)
                         }
                     }
@@ -210,18 +210,18 @@ struct PhotoDetailView: View {
                 userIds: hidden.blockedUserIds,
                 photoIds: hidden.reportedPhotoIds
             )
-            actionError = "ブロックしました。おたがいの投稿が見えなくなります。"
+            actionError = L("ブロックしました。おたがいの投稿が見えなくなります。", "Blocked. You won't see each other's posts.")
         } catch {
-            actionError = (error as? LocalizedError)?.errorDescription ?? "ブロックできませんでした"
+            actionError = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }
 
     private func deletePhoto() async {
         do {
             try await environment.photos.delete(photoId: photo.id)
-            actionError = "削除しました。一覧への反映には少し時間がかかります。"
+            actionError = L("削除しました。一覧への反映には少し時間がかかります。", "Deleted. It may take a moment to disappear from lists.")
         } catch {
-            actionError = (error as? LocalizedError)?.errorDescription ?? "削除できませんでした"
+            actionError = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
     }
 }
@@ -259,12 +259,12 @@ private struct ExifRow: View {
 
     private var items: [Item] {
         let candidates: [(String, String?)] = [
-            ("カメラ", exif.camera),
-            ("レンズ", exif.lens),
-            ("絞り", exif.aperture),
-            ("シャッター", exif.exposure),
+            (L("カメラ", "Camera"), exif.camera),
+            (L("レンズ", "Lens"), exif.lens),
+            (L("絞り", "Aperture"), exif.aperture),
+            (L("シャッター", "Shutter"), exif.exposure),
             ("ISO", exif.iso.map { String($0) }),
-            ("焦点距離", exif.focalLength),
+            (L("焦点距離", "Focal length"), exif.focalLength),
         ]
         return candidates.compactMap { label, value in
             guard let value, !value.isEmpty else { return nil }

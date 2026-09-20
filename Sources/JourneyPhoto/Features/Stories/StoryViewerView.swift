@@ -52,7 +52,7 @@ struct StoryViewerView: View {
                 List(viewers) { viewer in
                     Text(viewer.name)
                 }
-                .navigationTitle("見た人 \(viewers.count)")
+                .navigationTitle(L("見た人 \(viewers.count)", "\(viewers.count) viewers"))
                 .navigationBarTitleDisplayMode(.inline)
             }
         }
@@ -78,18 +78,18 @@ struct StoryViewerView: View {
     private var footer: some View {
         if isMine {
             HStack(spacing: 16) {
-                Button("見た人 \(viewers.count)") { showViewers = true }
+                Button(L("見た人 \(viewers.count)", "\(viewers.count) viewers")) { showViewers = true }
                 // 24時間で消える前に、自分の写真として残す
-                Button("残す") { Task { await keep() } }
-                Button("削除", role: .destructive) { Task { await deleteStory() } }
+                Button(L("残す", "Keep")) { Task { await keep() } }
+                Button(Labels.Common.delete, role: .destructive) { Task { await deleteStory() } }
             }
             .font(.footnote)
             .padding(16)
         } else {
             HStack {
-                TextField("返信する", text: $reply)
+                TextField(L("返信する", "Reply"), text: $reply)
                     .textFieldStyle(.roundedBorder)
-                Button("送信") { Task { await sendReply() } }
+                Button(Labels.Common.send) { Task { await sendReply() } }
                     .disabled(reply.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(16)
@@ -100,18 +100,18 @@ struct StoryViewerView: View {
         do {
             try await environment.stories.reply(id: story.id, text: reply)
             reply = ""
-            message = "送りました"
+            message = L("送りました", "Sent")
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? "送れませんでした"
+            message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
         }
     }
 
     private func keep() async {
         do {
             try await environment.stories.keep(id: story.id)
-            message = "自分の写真として残しました"
+            message = L("自分の写真として残しました", "Kept as a photo")
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? "残せませんでした"
+            message = (error as? LocalizedError)?.errorDescription ?? L("残せませんでした", "Couldn't keep it")
         }
     }
 
@@ -120,7 +120,7 @@ struct StoryViewerView: View {
             try await environment.stories.delete(id: story.id)
             dismiss()
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? "削除できませんでした"
+            message = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
     }
 }

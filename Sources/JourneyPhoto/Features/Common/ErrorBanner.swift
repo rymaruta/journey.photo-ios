@@ -15,7 +15,7 @@ struct ErrorBanner: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             if let retry {
-                Button("もう一度試す", action: retry)
+                Button(Labels.Common.retry, action: retry)
                     .buttonStyle(.bordered)
             }
         }

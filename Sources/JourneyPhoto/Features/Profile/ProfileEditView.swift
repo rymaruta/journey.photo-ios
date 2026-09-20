@@ -23,30 +23,30 @@ struct ProfileEditView: View {
 
     var body: some View {
         Form {
-            Section("画像") {
+            Section(L("画像", "Images")) {
                 PhotosPicker(selection: $avatarItem, matching: .images) {
-                    Label("アイコンを変える", systemImage: "person.crop.circle")
+                    Label(L("アイコンを変える", "Change avatar"), systemImage: "person.crop.circle")
                 }
                 PhotosPicker(selection: $coverItem, matching: .images) {
-                    Label("カバーを変える", systemImage: "photo")
+                    Label(L("カバーを変える", "Change cover"), systemImage: "photo")
                 }
             }
 
-            Section("プロフィール") {
-                TextField("表示名", text: $displayName)
-                TextField("ユーザー名（半角英数）", text: $username)
+            Section(Labels.Navigation.profile) {
+                TextField(L("表示名", "Display name"), text: $displayName)
+                TextField(L("ユーザー名（半角英数）", "Username (letters and numbers)"), text: $username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                TextField("自己紹介", text: $bio, axis: .vertical)
+                TextField(L("自己紹介", "Bio"), text: $bio, axis: .vertical)
                     .lineLimit(2...6)
-                TextField("ひとこと", text: $statusText)
+                TextField(L("ひとこと", "Status"), text: $statusText)
             }
 
-            Section("リンク") {
-                TextField("ウェブサイト", text: $website)
+            Section(L("リンク", "Links")) {
+                TextField(L("ウェブサイト", "Website"), text: $website)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
-                TextField("Instagram（@なし）", text: $instagram)
+                TextField(L("Instagram（@なし）", "Instagram (without @)"), text: $instagram)
                     .textInputAutocapitalization(.never)
             }
 
@@ -59,15 +59,15 @@ struct ProfileEditView: View {
                     Task { await save() }
                 } label: {
                     if isSaving {
-                        HStack { ProgressView(); Text("保存中…") }
+                        HStack { ProgressView(); Text(L("保存中…", "Saving…")) }
                     } else {
-                        Text("保存する")
+                        Text(Labels.Common.save)
                     }
                 }
                 .disabled(isSaving)
             }
         }
-        .navigationTitle("プロフィールの編集")
+        .navigationTitle(L("プロフィールの編集", "Edit profile"))
         .navigationBarTitleDisplayMode(.inline)
         .overlay { if isLoading { ProgressView() } }
         .task { await load() }
@@ -83,7 +83,7 @@ struct ProfileEditView: View {
         isLoading = true
         defer { isLoading = false }
         guard let profile = try? await environment.profiles.myProfile() else {
-            message = "読み込めませんでした"
+            message = Labels.Common.loadFailed
             return
         }
         displayName = profile.displayName ?? ""
@@ -113,7 +113,7 @@ struct ProfileEditView: View {
             try await environment.profiles.update(patch)
             dismiss()
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? "保存できませんでした"
+            message = (error as? LocalizedError)?.errorDescription ?? L("保存できませんでした", "Couldn't save")
         }
     }
 
@@ -126,9 +126,9 @@ struct ProfileEditView: View {
             // そのまま上げない**（撮影地が入っていることがある）
             let prepared = try ImagePreparer.prepare(data: data, fileName: "profile")
             try await environment.profiles.uploadProfileImage(kind: kind, jpeg: prepared.data)
-            message = kind == .avatar ? "アイコンを変えました" : "カバーを変えました"
+            message = kind == .avatar ? L("アイコンを変えました", "Avatar updated") : L("カバーを変えました", "Cover updated")
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? "画像を変えられませんでした"
+            message = (error as? LocalizedError)?.errorDescription ?? L("画像を変えられませんでした", "Couldn't update the image")
         }
     }
 }

@@ -136,7 +136,7 @@ struct FollowUser: Decodable, Identifiable, Equatable {
     let deleted: Bool?
 
     var displayName: String {
-        if deleted == true { return "退会したユーザー" }
+        if deleted == true { return Labels.Common.deletedUser }
         if let name, !name.isEmpty { return name }
         return String(id.prefix(8))
     }

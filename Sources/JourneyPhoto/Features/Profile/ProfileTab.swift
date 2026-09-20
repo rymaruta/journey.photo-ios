@@ -9,8 +9,8 @@ enum ProfileTab: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .posts: return "投稿"
-        case .timeline: return "年表"
+        case .posts: return L("投稿", "Posts")
+        case .timeline: return L("年表", "Timeline")
         }
     }
 }

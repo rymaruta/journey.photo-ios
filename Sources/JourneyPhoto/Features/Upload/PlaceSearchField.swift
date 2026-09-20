@@ -20,7 +20,7 @@ struct PlaceSearchField: View {
 
     var body: some View {
         Group {
-            TextField("撮影地（例: 高屋神社, 香川）", text: $location)
+            TextField(L("撮影地（例: 高屋神社, 香川）", "Place (e.g. Takaya Shrine, Kagawa)"), text: $location)
                 .onChange(of: location) { _, value in schedule(value) }
 
             ForEach(suggestions) { place in
@@ -36,7 +36,7 @@ struct PlaceSearchField: View {
             }
 
             if isSearching {
-                Text("探しています…").font(.caption).foregroundStyle(.secondary)
+                Text(L("探しています…", "Searching…")).font(.caption).foregroundStyle(.secondary)
             }
         }
     }

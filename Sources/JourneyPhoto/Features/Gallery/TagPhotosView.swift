@@ -23,7 +23,7 @@ struct TagPhotosView: View {
     var body: some View {
         ScrollView {
             if photos.isEmpty && !isLoading {
-                ErrorBanner(message: "この条件の写真はまだありません")
+                ErrorBanner(message: Labels.Gallery.empty)
             } else {
                 LazyVGrid(columns: columns, spacing: 2) {
                     ForEach(photos) { photo in

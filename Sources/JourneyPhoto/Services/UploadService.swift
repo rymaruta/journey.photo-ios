@@ -92,7 +92,7 @@ struct UploadService {
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw APIError.server(status: http.statusCode, message: "画像のアップロードに失敗しました")
+            throw APIError.server(status: http.statusCode, message: L("画像のアップロードに失敗しました", "Image upload failed"))
         }
     }
 
@@ -125,10 +125,10 @@ struct UploadService {
     /// 1〜3 を通す。途中で落ちたら S3 の迷子を片付けてから投げ直す。
     func upload(data: Data, fileName: String, fileType: String, draft: PhotoDraft) async throws -> Photo? {
         guard data.count <= Self.maxFileSize else {
-            throw APIError.server(status: 400, message: "ファイルサイズが大きすぎます（最大50MB）")
+            throw APIError.server(status: 400, message: L("ファイルサイズが大きすぎます（最大50MB）", "File is too large (50 MB max)"))
         }
         guard Self.allowedImageTypes.contains(fileType) else {
-            throw APIError.server(status: 400, message: "対応していない形式です（JPEG・PNG・WebP・AVIF・HEIC）")
+            throw APIError.server(status: 400, message: L("対応していない形式です（JPEG・PNG・WebP・AVIF・HEIC）", "Unsupported format (JPEG, PNG, WebP, AVIF, HEIC)"))
         }
 
         let presigned = try await presign(fileName: fileName, fileType: fileType, fileSize: data.count)

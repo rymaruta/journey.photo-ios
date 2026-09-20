@@ -28,22 +28,22 @@ struct StoryComposerView: View {
                 }
                 if CameraPicker.isAvailable {
                     Button { showCamera = true } label: {
-                        Label("写真を撮る", systemImage: "camera")
+                        Label(L("写真を撮る", "Take a photo"), systemImage: "camera")
                     }
                 }
                 PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Label(preview == nil ? "写真を選ぶ" : "別の写真を選ぶ", systemImage: "photo.badge.plus")
+                    Label(preview == nil ? L("写真を選ぶ", "Choose a photo") : L("別の写真を選ぶ", "Choose another photo"), systemImage: "photo.badge.plus")
                 }
             } footer: {
-                Text("ストーリーは24時間で消えます。撮影情報（EXIF）は端末で取り除いてから送ります。")
+                Text(L("ストーリーは24時間で消えます。撮影情報（EXIF）は端末で取り除いてから送ります。", "Stories disappear after 24 hours. Photo metadata is removed on your device."))
             }
 
             Section {
-                TextField("ひとこと", text: $caption)
-                TextField("撮影地（任意）", text: $location)
+                TextField(L("ひとこと", "Caption"), text: $caption)
+                TextField(L("撮影地（任意）", "Place (optional)"), text: $location)
             } footer: {
                 // 座標は地名とセットのときだけ送る（名前の無い点は画面に出しようがない）
-                Text("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。")
+                Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。", "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
             }
 
             if let message {
@@ -55,15 +55,15 @@ struct StoryComposerView: View {
                     Task { await post() }
                 } label: {
                     if isWorking {
-                        HStack { ProgressView(); Text("送信中…") }
+                        HStack { ProgressView(); Text(L("送信中…", "Sending…")) }
                     } else {
-                        Text("ストーリーに投稿")
+                        Text(L("ストーリーに投稿", "Post story"))
                     }
                 }
                 .disabled(isWorking || prepared == nil)
             }
         }
-        .navigationTitle("ストーリー")
+        .navigationTitle(L("ストーリー", "Story"))
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { data in accept(data) }
@@ -78,7 +78,7 @@ struct StoryComposerView: View {
         guard let item else { return }
         let data = try? await item.loadTransferable(type: Data.self)
         guard let data else {
-            message = "写真を読み込めませんでした"
+            message = L("写真を読み込めませんでした", "Couldn't load the photo")
             return
         }
         accept(data)
@@ -93,7 +93,7 @@ struct StoryComposerView: View {
         } catch {
             self.prepared = nil
             self.preview = nil
-            message = (error as? LocalizedError)?.errorDescription ?? "写真を読み込めませんでした"
+            message = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")
         }
     }
 
@@ -111,7 +111,7 @@ struct StoryComposerView: View {
             )
             dismiss()
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? "投稿できませんでした"
+            message = (error as? LocalizedError)?.errorDescription ?? L("投稿できませんでした", "Couldn't post")
         }
     }
 }

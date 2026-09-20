@@ -36,7 +36,7 @@ struct UserProfileView: View {
                         Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
                     }
                 } else if model.photos.isEmpty && !model.isLoading {
-                    ErrorBanner(message: "公開された写真はまだありません")
+                    ErrorBanner(message: L("公開された写真はまだありません", "No public photos yet"))
                 } else if tab == .timeline {
                     PhotoTimelineView(photos: model.photos)
                 } else {
@@ -52,14 +52,14 @@ struct UserProfileView: View {
                 }
             }
         }
-        .navigationTitle(model.profile?.name ?? "プロフィール")
+        .navigationTitle(model.profile?.name ?? Labels.Navigation.profile)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if auth.userId != nil && auth.userId != userId {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button(role: .destructive) { showBlockConfirm = true } label: {
-                            Label("この人をブロック", systemImage: "hand.raised")
+                            Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -67,13 +67,13 @@ struct UserProfileView: View {
                 }
             }
         }
-        .alert("この人をブロックしますか？", isPresented: $showBlockConfirm) {
-            Button("ブロック", role: .destructive) {
+        .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
+            Button(L("ブロック", "Block"), role: .destructive) {
                 Task { await model.block(userId: userId, environment: environment, store: hidden) }
             }
-            Button("やめる", role: .cancel) {}
+            Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
-            Text("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。")
+            Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
         }
         .task(id: userId) {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
@@ -92,12 +92,12 @@ struct UserProfileView: View {
                         NavigationLink {
                             FollowListView(userId: userId, kind: .followers)
                         } label: {
-                            Text("フォロワー \(model.followers)")
+                            Text(L("フォロワー \(model.followers)", "\(model.followers) followers"))
                         }
                         NavigationLink {
                             FollowListView(userId: userId, kind: .following)
                         } label: {
-                            Text("フォロー中 \(model.following)")
+                            Text(L("フォロー中 \(model.following)", "\(model.following) following"))
                         }
                     }
                     .font(.caption)
@@ -128,7 +128,7 @@ struct UserProfileView: View {
         Button {
             Task { await model.toggleFollow(userId: userId, environment: environment) }
         } label: {
-            Text(model.isFollowing ? "フォロー中" : "フォローする")
+            Text(model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"))
                 .frame(maxWidth: .infinity)
         }
         .disabled(model.isWorking)
@@ -160,13 +160,13 @@ final class UserProfileViewModel: ObservableObject {
         } catch let error as APIError {
             // **「取れなかった」と「退会した」を混ぜない**
             if case .server(let status, _) = error, status == 404 {
-                errorMessage = "このユーザーは見つかりません（退会した可能性があります）"
+                errorMessage = L("このユーザーは見つかりません（退会した可能性があります）", "This user was not found (they may have deleted their account)")
                 return
             }
             errorMessage = error.errorDescription
             return
         } catch {
-            errorMessage = "読み込めませんでした"
+            errorMessage = Labels.Common.loadFailed
             return
         }
 
@@ -197,7 +197,7 @@ final class UserProfileViewModel: ObservableObject {
             isFollowing = result.following
             followers = result.followers
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "うまくいきませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
     }
 
@@ -211,9 +211,9 @@ final class UserProfileViewModel: ObservableObject {
             )
             isFollowing = false
             photos = []
-            errorMessage = "ブロックしました。設定から解除できます。"
+            errorMessage = L("ブロックしました。設定から解除できます。", "Blocked. You can undo this in Settings.")
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "ブロックできませんでした"
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }
 }
