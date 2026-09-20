@@ -8,27 +8,37 @@ API Gateway）をそのまま叩く。
 
 ## ⚠️ 最初に読むこと
 
-**このコードは一度もコンパイルされていない。**
+**画面を持たない層は本当にビルドしてテストまで通っている。画面側は通っていない。**
 
-作った環境（Linux コンテナ）に Swift ツールチェーンを入れられなかった
-——`download.swift.org` も GitHub のリリース資産も、ネットワークポリシーで
-遮断されている。そのため**型検査もビルドもテストも通っていない**。
-
-代わりに、機械で見られるところだけを見る仕組みを置いてある:
+| 層 | 状態 |
+|---|---|
+| Config・Core・Models・サービス12本（`Package.swift` に並べたもの） | `swift build` と `swift test` が通る（**52件 緑**） |
+| SwiftUI / UIKit / ImageIO / Amplify に触るファイル | **一度もコンパイルしていない**（iOS SDK が要る） |
 
 ```bash
 bash Tools/verify.sh
 ```
 
-- `Tools/check-swift-syntax.js` … tree-sitter で全 Swift の**構文**を見る
-- `Tools/check-config.py` … plist・JSON・YAML の形と、**ファイルをまたいだ約束**
-  （`AppConfig` が読むキーが `project.yml` にあるか、`$(VAR)` が prod と
-  staging の**両方**にあるか、など）
-- Mac で実行すると、続けて `xcodegen generate` と `xcodebuild build test` まで走る
+- `Tools/check-swift-syntax.js` … tree-sitter で全 Swift の**構文**
+- `Tools/check-swift-refs.js` … 配られていない `@EnvironmentObject`・型の重複・
+  `@MainActor` の静的メンバをテストから呼んでいないか
+- `Tools/check-api-parity.py` … Web 版の `api-user` と**叩く口の突き合わせ**
+- `Tools/check-config.py` … plist・JSON・YAML と、ファイルをまたいだ約束
+- Swift があれば `swift build` と `swift test`
+- Mac なら続けて `xcodegen generate` と `xcodebuild build test`
 
-**構文検査が緑でも「ビルドが通る」とは言えない。** 型・名前解決・
-SwiftUI の ViewBuilder の制約は見ていない。**最初に Xcode で開いたとき
-エラーが出る前提**で読むこと。
+### Linux に Swift を入れる
+
+公式の配布元（`download.swift.org`）が塞がれた環境でも、**公式の Docker
+イメージの中身は取り出せる**（docker は要らない）:
+
+```bash
+sudo bash Tools/install-swift-linux.sh
+export PATH=/opt/swift/bin:$PATH
+```
+
+入るのは Linux 用の Swift。**iOS SDK は入らない**ので、SwiftUI に触る
+ファイルは Mac でしかビルドできない。
 
 ## 動かし方
 
@@ -127,6 +137,15 @@ GPS 入りの HEIC が公開 URL で配信されていた（`lib/utils/image.ts`
 **macOS ランナーは分数が10倍で課金される。** GitHub Actions の枠は
 アカウント共通で、2026-09 時点で残り約193分。iOS のビルド1回で
 `photo-gallery` のデプロイを止めかねない。検証は手元の Xcode で行う。
+
+## Web 版との同期
+
+`docs/WEB_SYNC.md`。**契約は API、意匠は追う、SEO は追わない**。
+
+```bash
+git -C ../photo-gallery fetch origin main
+bash Tools/web-changes.sh ../photo-gallery   # 変わったところと突き合わせ
+```
 
 ## リリース
 
