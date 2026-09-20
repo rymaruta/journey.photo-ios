@@ -151,3 +151,65 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(StubProtocol.lastRequest)
     }
 }
+
+/// お知らせを押したときの行き先。**空振りを作らない。**
+@MainActor
+final class NotificationDestinationTests: XCTestCase {
+
+    private func notification(_ json: String) throws -> AppNotification {
+        try JSONDecoder.api.decode(AppNotification.self, from: Data(json.utf8))
+    }
+
+    private func model(feed: [Photo]) -> NotificationsViewModel {
+        let model = NotificationsViewModel()
+        model.setFeedForTesting(feed)
+        return model
+    }
+
+    private func photo(id: String) throws -> Photo {
+        try JSONDecoder.api.decode(
+            Photo.self, from: Data(#"{"id":"\#(id)","src":"https://x/\#(id).jpg"}"#.utf8)
+        )
+    }
+
+    func testFollowGoesToTheProfile() async throws {
+        let n = try notification(#"{"type":"follow","targetUserId":"u1","byId":"u1"}"#)
+        guard case .user(let id) = model(feed: []).destination(for: n) else {
+            return XCTFail("プロフィールへ行かない")
+        }
+        XCTAssertEqual(id, "u1")
+    }
+
+    /// **退会した人のプロフィールへは行かせない。**
+    func testFollowFromDeletedUserGoesNowhere() async throws {
+        let n = try notification(#"{"type":"follow","targetUserId":"u1","deleted":true}"#)
+        guard case .none = model(feed: []).destination(for: n) else {
+            return XCTFail("退会した人へ飛ばしている")
+        }
+    }
+
+    func testLikeGoesToThePhoto() async throws {
+        let n = try notification(#"{"type":"like","photoId":"p1"}"#)
+        guard case .photo(let photo) = model(feed: [try photo(id: "p1")]).destination(for: n) else {
+            return XCTFail("写真へ行かない")
+        }
+        XCTAssertEqual(photo.id, "p1")
+    }
+
+    /// **手元の一覧に無い写真は押せないまま。** 非公開にされた／消された
+    /// 写真を押して空振りさせない。
+    func testLikeForAMissingPhotoGoesNowhere() async throws {
+        let n = try notification(#"{"type":"like","photoId":"gone"}"#)
+        guard case .none = model(feed: []).destination(for: n) else {
+            return XCTFail("無い写真へ飛ばしている")
+        }
+    }
+
+    /// ストーリーへの返信は行き先が無い（24時間で消えるため）。
+    func testStoryReplyGoesNowhere() async throws {
+        let n = try notification(#"{"type":"storyreply","photoId":"s1"}"#)
+        guard case .none = model(feed: []).destination(for: n) else {
+            return XCTFail("消えるものへ飛ばしている")
+        }
+    }
+}
