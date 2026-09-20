@@ -38,59 +38,14 @@ struct PhotoDetailView: View {
     private var ownerId: String? { photo.userId ?? photo.uploadedBy }
     private var isMine: Bool { ownerId != nil && ownerId == auth.userId }
 
+    // **段ごとに割ってある。** 一本の長い `ScrollView { … }` にすると、Swift の
+    // 型検査が現実的な時間で終わらなくなることがある
+    // （"unable to type-check this expression in reasonable time"）。
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // 押すと大きく見る（隣の写真へも送れる）
-                Button {
-                    showViewer = true
-                } label: {
-                    RemoteImage(url: photo.detailImageURL, contentMode: .fit)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel(photo.accessibilityText)
-                }
-                .buttonStyle(.plain)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    if !photo.displayTitle.isEmpty {
-                        Text(photo.displayTitle)
-                            .font(.title3.weight(.semibold))
-                    }
-
-                    if let location = photo.location, !location.isEmpty {
-                        NavigationLink {
-                            TagPhotosView(kind: .location(location))
-                        } label: {
-                            Label(location, systemImage: "mappin.and.ellipse")
-                                .font(.subheadline)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    ForEach(Array(photo.paragraphs.enumerated()), id: \.offset) { _, paragraph in
-                        Text(paragraph)
-                            .font(.body)
-                    }
-
-                    if let tags = photo.tags, !tags.isEmpty {
-                        TagRow(tags: tags)
-                    }
-
-                    if let exif = photo.exif {
-                        ExifRow(exif: exif)
-                    }
-
-                    if let song = photo.song {
-                        SongRow(song: song)
-                    }
-
-                    Divider().padding(.vertical, 4)
-
-                    socialBar
-                    commentSection
-                    RelatedPhotosRow(photo: photo)
-                }
-                .padding(.horizontal, 16)
+                imageButton
+                details
             }
             .padding(.bottom, 32)
         }
@@ -114,6 +69,73 @@ struct PhotoDetailView: View {
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
             Text(L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
+        }
+    }
+
+    /// 押すと大きく見る（隣の写真へも送れる）
+    private var imageButton: some View {
+        Button {
+            showViewer = true
+        } label: {
+            RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel(photo.accessibilityText)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            titleText
+            locationLink
+            paragraphs
+            metaRows
+            Divider().padding(.vertical, 4)
+            socialBar
+            commentSection
+            RelatedPhotosRow(photo: photo)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private var titleText: some View {
+        if !photo.displayTitle.isEmpty {
+            Text(photo.displayTitle)
+                .font(.title3.weight(.semibold))
+        }
+    }
+
+    @ViewBuilder
+    private var locationLink: some View {
+        if let location = photo.location, !location.isEmpty {
+            NavigationLink {
+                TagPhotosView(kind: .location(location))
+            } label: {
+                Label(location, systemImage: "mappin.and.ellipse")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var paragraphs: some View {
+        ForEach(Array(photo.paragraphs.enumerated()), id: \.offset) { _, paragraph in
+            Text(paragraph)
+                .font(.body)
+        }
+    }
+
+    @ViewBuilder
+    private var metaRows: some View {
+        if let tags = photo.tags, !tags.isEmpty {
+            TagRow(tags: tags)
+        }
+        if let exif = photo.exif {
+            ExifRow(exif: exif)
+        }
+        if let song = photo.song {
+            SongRow(song: song)
         }
     }
 

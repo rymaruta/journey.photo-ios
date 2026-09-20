@@ -24,87 +24,115 @@ struct AlbumsView: View {
         .navigationTitle(Labels.Navigation.albums)
     }
 
+    // **段ごとに割ってある。** 一本の長い `List { … }` にすると、Swift の
+    // 型検査が現実的な時間で終わらなくなることがある
+    // （"unable to type-check this expression in reasonable time"）。
     private var list: some View {
         List {
-            if let message = model.errorMessage {
-                Text(message).foregroundStyle(.red).font(.callout)
-            } else if model.albums.isEmpty && !model.isLoading {
-                Text(L("まだアルバムがありません", "No albums yet")).foregroundStyle(.secondary)
-            }
-
+            statusRow
             ForEach(model.albums) { album in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title)
-                    Text(L("\(album.members) 人", "\(album.members) members"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let token = album.inviteToken {
-                        HStack {
-                            // 招待リンクはサイトの URL で共有する
-                            // （アプリを入れていない人にも開ける）
-                            ShareLink(item: model.inviteURL(token: token)) {
-                                Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
-                                    .font(.caption)
-                            }
-                            Spacer()
-                            Button(L("取り消す", "Revoke")) {
-                                Task { await model.revokeInvite(album.id, environment: environment) }
-                            }
-                            .font(.caption)
-                            // **行に複数のボタンを置くときは borderless。**
-                            // 既定だと行のどこを押しても両方が反応する
-                            .buttonStyle(.borderless)
-                        }
-                    } else {
-                        Button(L("招待リンクを作る", "Create invite link")) {
-                            Task { await model.createInvite(album.id, environment: environment) }
-                        }
-                        .font(.caption)
-                        .buttonStyle(.borderless)
-                    }
-                }
-                .swipeActions {
-                    Button(role: .destructive) {
-                        Task { await model.delete(album.id, environment: environment) }
-                    } label: {
-                        Label(Labels.Common.delete, systemImage: "trash")
-                    }
-                }
+                row(album)
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button(L("アルバムを作る", "New album")) { showCreate = true }
-                    Button(L("招待リンクから参加", "Join with a link")) { showJoin = true }
-                } label: {
-                    Image(systemName: "plus")
-                        .accessibilityLabel(L("アルバムの操作", "Album actions"))
-                }
-            }
-        }
+        .toolbar { addMenu }
         .alert(L("招待リンクから参加", "Join with a link"), isPresented: $showJoin) {
-            TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
-            Button(L("参加する", "Join")) {
-                let text = inviteText
-                inviteText = ""
-                Task { await model.join(inviteText: text, environment: environment) }
-            }
-            Button(Labels.Common.cancel, role: .cancel) { inviteText = "" }
+            joinAlertButtons
         } message: {
             Text(L("受け取ったリンク（https://journey-photo.com/j?t=…）をそのまま貼れます。", "You can paste the link you received as-is."))
         }
         .alert(L("アルバムを作る", "New album"), isPresented: $showCreate) {
-            TextField(L("名前", "Name"), text: $newTitle)
-            Button(L("作る", "Create")) {
-                let title = newTitle
-                newTitle = ""
-                Task { await model.create(title: title, environment: environment) }
-            }
-            Button(Labels.Common.cancel, role: .cancel) { newTitle = "" }
+            createAlertButtons
         }
         .task { await model.load(environment: environment) }
         .refreshable { await model.load(environment: environment) }
+    }
+
+    @ViewBuilder
+    private var statusRow: some View {
+        if let message = model.errorMessage {
+            Text(message).foregroundStyle(.red).font(.callout)
+        } else if model.albums.isEmpty && !model.isLoading {
+            Text(L("まだアルバムがありません", "No albums yet")).foregroundStyle(.secondary)
+        }
+    }
+
+    private func row(_ album: Album) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title)
+            Text(L("\(album.members) 人", "\(album.members) members"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            inviteControls(album)
+        }
+        .swipeActions {
+            Button(role: .destructive) {
+                Task { await model.delete(album.id, environment: environment) }
+            } label: {
+                Label(Labels.Common.delete, systemImage: "trash")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func inviteControls(_ album: Album) -> some View {
+        if let token = album.inviteToken {
+            HStack {
+                // 招待リンクはサイトの URL で共有する
+                // （アプリを入れていない人にも開ける）
+                ShareLink(item: model.inviteURL(token: token)) {
+                    Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
+                        .font(.caption)
+                }
+                Spacer()
+                Button(L("取り消す", "Revoke")) {
+                    Task { await model.revokeInvite(album.id, environment: environment) }
+                }
+                .font(.caption)
+                // **行に複数のボタンを置くときは borderless。**
+                // 既定だと行のどこを押しても両方が反応する
+                .buttonStyle(.borderless)
+            }
+        } else {
+            Button(L("招待リンクを作る", "Create invite link")) {
+                Task { await model.createInvite(album.id, environment: environment) }
+            }
+            .font(.caption)
+            .buttonStyle(.borderless)
+        }
+    }
+
+    private var addMenu: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Button(L("アルバムを作る", "New album")) { showCreate = true }
+                Button(L("招待リンクから参加", "Join with a link")) { showJoin = true }
+            } label: {
+                Image(systemName: "plus")
+                    .accessibilityLabel(L("アルバムの操作", "Album actions"))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var joinAlertButtons: some View {
+        TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
+        Button(L("参加する", "Join")) {
+            let text = inviteText
+            inviteText = ""
+            Task { await model.join(inviteText: text, environment: environment) }
+        }
+        Button(Labels.Common.cancel, role: .cancel) { inviteText = "" }
+    }
+
+    @ViewBuilder
+    private var createAlertButtons: some View {
+        TextField(L("名前", "Name"), text: $newTitle)
+        Button(L("作る", "Create")) {
+            let title = newTitle
+            newTitle = ""
+            Task { await model.create(title: title, environment: environment) }
+        }
+        Button(Labels.Common.cancel, role: .cancel) { newTitle = "" }
     }
 }
 

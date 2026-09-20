@@ -42,78 +42,19 @@ struct MyPageView: View {
         }
     }
 
+    /// **段ごとに割ってある**（`UploadView` と同じ理由——長い ViewBuilder は
+    /// 型検査が終わらなくなることがある。落ちたときに場所も分かりやすい）。
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let profile = model.profile {
                     header(profile)
                 }
-
-                // **投稿の入口はここ1つ。** Web も 2026-09-20 に画面右下の
-                // 「＋」を撤去して、マイページの「投稿する」に集めた
-                Button {
-                    showPostSheet = true
-                } label: {
-                    Label(L("投稿する", "Create"), systemImage: "plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(.horizontal, 16)
-
-                // ストーリーもマイページに置く（Web と同じ並び）
+                postButton
                 StoriesRow()
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        NavigationLink(L("プロフィールを編集", "Edit profile")) { ProfileEditView() }
-                            .buttonStyle(.bordered)
-                        NavigationLink(Labels.Navigation.albums) { AlbumsView() }
-                            .buttonStyle(.bordered)
-                        NavigationLink(Labels.Navigation.favorites) { FavoritesView() }
-                            .buttonStyle(.bordered)
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .font(.footnote)
-
-                Picker("", selection: $tab) {
-                    ForEach(ProfileTab.allCases) { tab in
-                        Text(tab.label).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-
-                if let error = model.errorMessage {
-                    ErrorBanner(message: error) { Task { await model.load() } }
-                } else if model.photos.isEmpty && !model.isLoading {
-                    ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
-                } else if tab == .timeline {
-                    PhotoTimelineView(photos: model.photos)
-                } else {
-                    LazyVGrid(columns: columns, spacing: 2) {
-                        ForEach(model.photos) { photo in
-                            NavigationLink { PhotoDetailView(photo: photo, fromPublicFeed: false, context: model.photos) } label: {
-                                ZStack(alignment: .topTrailing) {
-                                    RemoteImage(url: photo.gridImageURL)
-                                        .aspectRatio(1, contentMode: .fill)
-                                    // 下書き（非公開）は一目で分かるようにする。
-                                    // 公開したつもりの写真が出ていない、が
-                                    // いちばん困る
-                                    if photo.published == false {
-                                        Text(L("下書き", "Draft"))
-                                            .font(.caption2)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(.ultraThinMaterial, in: Capsule())
-                                            .padding(4)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
+                shortcuts
+                tabPicker
+                photoArea
             }
         }
         .refreshable { await model.load() }
@@ -148,6 +89,83 @@ struct MyPageView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
+    }
+
+    private var postButton: some View {
+        // **投稿の入口はここ1つ。** Web も 2026-09-20 に画面右下の
+        // 「＋」を撤去して、マイページの「投稿する」に集めた
+        Button {
+            showPostSheet = true
+        } label: {
+            Label(L("投稿する", "Create"), systemImage: "plus")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .padding(.horizontal, 16)
+    }
+
+    private var shortcuts: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                NavigationLink(L("プロフィールを編集", "Edit profile")) { ProfileEditView() }
+                    .buttonStyle(.bordered)
+                NavigationLink(Labels.Navigation.albums) { AlbumsView() }
+                    .buttonStyle(.bordered)
+                NavigationLink(Labels.Navigation.favorites) { FavoritesView() }
+                    .buttonStyle(.bordered)
+            }
+            .padding(.horizontal, 16)
+        }
+        .font(.footnote)
+    }
+
+    private var tabPicker: some View {
+        Picker("", selection: $tab) {
+            ForEach(ProfileTab.allCases) { tab in
+                Text(tab.label).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private var photoArea: some View {
+        if let error = model.errorMessage {
+            ErrorBanner(message: error) { Task { await model.load() } }
+        } else if model.photos.isEmpty && !model.isLoading {
+            ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
+        } else if tab == .timeline {
+            PhotoTimelineView(photos: model.photos)
+        } else {
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(model.photos) { photo in
+                    NavigationLink {
+                        PhotoDetailView(photo: photo, fromPublicFeed: false, context: model.photos)
+                    } label: {
+                        gridCell(photo)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    /// 一覧の1枚。**下書き（非公開）は一目で分かるようにする**
+    /// ——公開したつもりの写真が出ていない、がいちばん困る。
+    private func gridCell(_ photo: Photo) -> some View {
+        ZStack(alignment: .topTrailing) {
+            RemoteImage(url: photo.gridImageURL)
+                .aspectRatio(1, contentMode: .fill)
+            if photo.published == false {
+                Text(L("下書き", "Draft"))
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(4)
+            }
+        }
     }
 }
 
