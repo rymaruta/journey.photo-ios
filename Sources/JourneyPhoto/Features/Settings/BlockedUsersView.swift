@@ -25,7 +25,9 @@ struct BlockedUsersView: View {
                     Button("解除") {
                         Task { await unblock(user.id) }
                     }
-                    .buttonStyle(.bordered)
+                    // 行の中のボタンは borderless にしないと、行のどこを
+                    // 押しても反応する
+                    .buttonStyle(.borderless)
                 }
             }
         }

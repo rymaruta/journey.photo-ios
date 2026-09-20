@@ -37,6 +37,9 @@ targets:
         product: Amplify
       - package: Amplify
         product: AWSCognitoAuthPlugin
+      # ID トークンを取り出す `AuthCognitoTokensProvider` がここに居る
+      - package: Amplify
+        product: AWSPluginsCore
     configFiles:
       Debug: Config/Staging.xcconfig
       Release: Config/Production.xcconfig

@@ -49,12 +49,16 @@ struct AlbumsView: View {
                                 Task { await model.revokeInvite(album.id, environment: environment) }
                             }
                             .font(.caption)
+                            // **行に複数のボタンを置くときは borderless。**
+                            // 既定だと行のどこを押しても両方が反応する
+                            .buttonStyle(.borderless)
                         }
                     } else {
                         Button("招待リンクを作る") {
                             Task { await model.createInvite(album.id, environment: environment) }
                         }
                         .font(.caption)
+                        .buttonStyle(.borderless)
                     }
                 }
                 .swipeActions {

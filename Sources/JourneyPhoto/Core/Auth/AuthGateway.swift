@@ -1,6 +1,9 @@
 import Foundation
 import Amplify
 import AWSCognitoAuthPlugin
+// `AuthCognitoTokensProvider`（ID トークンを取り出す口）はこちらに居る。
+// プラグイン側が再輸出している保証がないので明示的に入れる
+import AWSPluginsCore
 
 /// Cognito との入出力をここに閉じ込める。
 ///
