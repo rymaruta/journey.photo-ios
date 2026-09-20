@@ -6,7 +6,9 @@ struct RootView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var consent: LegalConsent
+    @EnvironmentObject private var environment: AppEnvironment
     @State private var selection: Tab = .gallery
+    @State private var unread = 0
 
     enum Tab: Hashable {
         case gallery, search, upload, notifications, mypage
@@ -29,6 +31,18 @@ struct RootView: View {
                     .background(.thinMaterial)
             }
         }
+    }
+
+    /// 未読の数だけを取りに行く。
+    ///
+    /// **開いたことにはしない。** 既読にするのは `NotificationsView` が
+    /// 一覧を読めたときだけ——ここで既読にすると、バッジを見ただけで消える。
+    private func refreshUnread() async {
+        guard auth.userId != nil else {
+            unread = 0
+            return
+        }
+        unread = (try? await environment.notifications.fetch().unread) ?? 0
     }
 
     private var tabs: some View {
@@ -55,6 +69,7 @@ struct RootView: View {
                 NotificationsView()
             }
             .tabItem { Label("お知らせ", systemImage: "bell") }
+            .badge(unread)
             .tag(Tab.notifications)
 
             NavigationStack {
@@ -62,6 +77,13 @@ struct RootView: View {
             }
             .tabItem { Label("マイページ", systemImage: "person.crop.circle") }
             .tag(Tab.mypage)
+        }
+        .task(id: auth.userId) { await refreshUnread() }
+        .onChange(of: selection) { _, tab in
+            // お知らせを開いたら、閉じたときに数え直す
+            if tab != .notifications {
+                Task { await refreshUnread() }
+            }
         }
     }
 }

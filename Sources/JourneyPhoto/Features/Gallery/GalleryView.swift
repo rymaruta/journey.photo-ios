@@ -39,9 +39,40 @@ struct GalleryView: View {
         .refreshable { await model.load() }
     }
 
+    /// カテゴリの絞り込み。Web の `FilterBar` にあたる。
+    /// **押し直すと外れる**（`role="switch"` と同じ振る舞い）。
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(model.categories, id: \.self) { category in
+                    let selected = model.category == category
+                    Button {
+                        model.select(category: selected ? nil : category)
+                    } label: {
+                        Text(category)
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                selected ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.secondarySystemBackground)),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(selected ? Color.white : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+    }
+
     private func grid(_ photos: [Photo]) -> some View {
         ScrollView {
             StoriesRow()
+            if !model.categories.isEmpty {
+                filterBar
+            }
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(photos) { photo in
                     NavigationLink(value: photo.id) {
