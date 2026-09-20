@@ -13,7 +13,8 @@ API Gateway）をそのまま叩く。
 | 何 | 状態 |
 |---|---|
 | 全 70 ファイル | `swift build` が通る（`Shims/` の模型に向けて） |
-| テスト 52件 | `swift test` が通る |
+| テスト 60件 | `swift test` が通る |
+| `project.yml` | **Linux で `xcodegen generate` が通る**（設定の書き間違いはここで消える） |
 | 本物の SwiftUI での検査 | **していない**（iOS SDK が要る＝Mac が要る） |
 
 `Shims/` は **Linux で型検査するためだけの模型**で、SwiftUI・UIKit・PhotosUI・
@@ -41,6 +42,15 @@ bash Tools/verify.sh
 - `Tools/check-config.py` … plist・JSON・YAML と、ファイルをまたいだ約束
 - Swift があれば `swift build` と `swift test`
 - Mac なら続けて `xcodegen generate` と `xcodebuild build test`
+
+### Linux に XcodeGen を入れる（`project.yml` の検証用）
+
+```bash
+bash Tools/install-xcodegen-linux.sh   # 素の Swift パッケージなので Linux で動く
+```
+
+生成した `.xcodeproj` を**開ける**のは Mac だけだが、**生成が通るか**は
+ここで分かる。
 
 ### Linux に Swift を入れる
 

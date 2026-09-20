@@ -47,6 +47,21 @@ else
 fi
 
 echo
+echo "== Xcode プロジェクトの生成 =="
+# **Mac を待たずに project.yml を検証する。** XcodeGen は素の Swift パッケージ
+# なので Linux でも動く。生成が通れば、設定の書き間違いはここで消える
+XCODEGEN=""
+command -v xcodegen >/dev/null 2>&1 && XCODEGEN=xcodegen
+[ -x /opt/xcodegen/xcodegen ] && XCODEGEN=/opt/xcodegen/xcodegen
+if [ -n "$XCODEGEN" ]; then
+    # Linux のコンテナには実在の利用者が居ないことがある（XcodeGen が名前を引く）
+    USER="${USER:-claude}" LOGNAME="${LOGNAME:-claude}" "$XCODEGEN" generate --quiet
+    echo "   生成できました（JourneyPhoto.xcodeproj）"
+else
+    echo "   xcodegen がありません: bash Tools/install-xcodegen-linux.sh"
+fi
+
+echo
 if command -v xcodebuild >/dev/null 2>&1; then
     echo "== Xcode プロジェクトの生成とビルド =="
     command -v xcodegen >/dev/null 2>&1 || { echo "xcodegen がありません: brew install xcodegen"; exit 1; }
