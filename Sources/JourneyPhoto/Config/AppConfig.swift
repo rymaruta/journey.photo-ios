@@ -13,8 +13,19 @@ enum AppConfig {
         case staging
     }
 
+    /// **テストから差し替えるための口。本番では必ず nil。**
+    ///
+    /// Info.plist を持たない環境（Linux 上の `swift test`）で
+    /// `AppConfig` を触る型を検査するために要る。
+    /// **本番値のフォールバックではない**——nil のままなら今までどおり、
+    /// 値が欠けていれば落ちる。
+    /// （`nonisolated(unsafe)` は付けない——構文解析器がまだ読めず、
+    /// Swift 5 モードでは付けなくても通る。Swift 6 モードへ上げるときに足す）
+    static var testOverrides: [String: String]?
+
     /// Info.plist から必須の文字列を読む。無ければ設定ミスなので即座に落とす。
     private static func require(_ key: String) -> String {
+        if let value = testOverrides?[key] { return value }
         guard let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
             fatalError("Info.plist に \(key) がありません。Config/*.xcconfig を確認してください。")
         }
@@ -33,23 +44,23 @@ enum AppConfig {
         return url
     }
 
-    static let environment: Environment = {
+    static var environment: Environment {
         let raw = require("JPEnvironmentName")
         guard let env = Environment(rawValue: raw) else {
             fatalError("JPEnvironmentName が production / staging のどちらでもありません: \(raw)")
         }
         return env
-    }()
+    }
 
     /// ユーザー API（api-user）の根。末尾にスラッシュは付けない。
-    static let userAPIBaseURL: URL = requireURL("JPUserApiBaseURL")
+    static var userAPIBaseURL: URL { requireURL("JPUserApiBaseURL") }
 
     /// 静的サイトの根。公開写真の一覧 JSON をここから取る。
-    static let siteBaseURL: URL = requireURL("JPSiteBaseURL")
+    static var siteBaseURL: URL { requireURL("JPSiteBaseURL") }
 
-    static let cognitoUserPoolId: String = require("JPCognitoUserPoolId")
-    static let cognitoClientId: String = require("JPCognitoClientId")
-    static let cognitoRegion: String = require("JPCognitoRegion")
+    static var cognitoUserPoolId: String { require("JPCognitoUserPoolId") }
+    static var cognitoClientId: String { require("JPCognitoClientId") }
+    static var cognitoRegion: String { require("JPCognitoRegion") }
 
     /// 公開写真の一覧。`scripts/deploy-static-site.js` が
     /// `app/data/photos.json` としてサイト直下に置いている（非公開の

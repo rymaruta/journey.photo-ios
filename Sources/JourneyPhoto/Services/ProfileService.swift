@@ -1,5 +1,12 @@
 import Foundation
 
+// Linux では URLSession が別モジュールに居る。**iOS では何も起きない**が、
+// これがないと Linux 上で `swift build` / `swift test` ができない
+// （Xcode の無い環境で型検査できる唯一の層なので、そこを塞がない）
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// プロフィールの読み書き。
 struct ProfileService {
 

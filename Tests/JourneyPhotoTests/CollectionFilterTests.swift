@@ -21,7 +21,7 @@ final class CollectionFilterTests: XCTestCase {
             try photo(id: "b", location: "パリ, フランス"),
             try photo(id: "c", location: "ロンドン"),
         ]
-        let hits = TagPhotosView.filter(photos, by: .location("パリ"))
+        let hits = PhotoQuery.photos(photos, in: .location("パリ"))
         XCTAssertEqual(hits.map(\.id), ["a", "b"])
     }
 
@@ -32,14 +32,14 @@ final class CollectionFilterTests: XCTestCase {
             try photo(id: "a", tags: ["Sauna"]),
             try photo(id: "b", tags: ["sau"]),
         ]
-        XCTAssertEqual(TagPhotosView.filter(photos, by: .tag("sauna")).map(\.id), ["a"])
+        XCTAssertEqual(PhotoQuery.photos(photos, in: .tag("sauna")).map(\.id), ["a"])
     }
 
     /// 関連写真に自分自身を入れない。
     func testRelatedExcludesSelf() throws {
         let subject = try photo(id: "a", location: "パリ", tags: ["街"])
         let others = [subject, try photo(id: "b", location: "パリ")]
-        let related = RelatedPhotosRow.pick(from: others, like: subject)
+        let related = PhotoQuery.related(to: subject, from: others)
         XCTAssertEqual(related.map(\.id), ["b"])
     }
 
@@ -51,7 +51,7 @@ final class CollectionFilterTests: XCTestCase {
             try photo(id: "tagOnly", tags: ["街"]),
             try photo(id: "sameLocation", location: "パリ"),
         ]
-        let related = RelatedPhotosRow.pick(from: photos, like: subject)
+        let related = PhotoQuery.related(to: subject, from: photos)
         XCTAssertEqual(related.first?.id, "sameLocation")
     }
 

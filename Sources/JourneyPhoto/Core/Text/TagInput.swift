@@ -43,6 +43,64 @@ enum PhotoQuery {
         }
     }
 
+    /// タグ・撮影地・カテゴリでの絞り込み。
+    ///
+    /// **撮影地はゆるく一致させる。** Web 側の `photosInCollection` が
+    /// 「パリ」「パリ, フランス」「オペラ・ガルニエ（パリ）」を寄せているので、
+    /// 完全一致で絞ると結果が食い違う。
+    enum Collection: Equatable {
+        case tag(String)
+        case location(String)
+        case category(String)
+
+        var title: String {
+            switch self {
+            case .tag(let value): return "#\(value)"
+            case .location(let value): return value
+            case .category(let value): return value
+            }
+        }
+    }
+
+    static func photos(_ photos: [Photo], in collection: Collection) -> [Photo] {
+        switch collection {
+        case .tag(let value):
+            let needle = value.lowercased()
+            return photos.filter { ($0.tags ?? []).contains { $0.lowercased() == needle } }
+        case .category(let value):
+            return photos.filter { $0.category == value }
+        case .location(let value):
+            let needle = value.lowercased()
+            return photos.filter {
+                guard let location = $0.location?.lowercased() else { return false }
+                return location == needle || location.contains(needle) || needle.contains(location)
+            }
+        }
+    }
+
+    /// 「この写真に近いもの」。同じ撮影地を先に、足りなければタグが重なるもので埋める。
+    /// **自分自身は入れない。**
+    static func related(to photo: Photo, from photos: [Photo], limit: Int = 12) -> [Photo] {
+        let others = photos.filter { $0.id != photo.id }
+        var picked: [Photo] = []
+        var seen = Set<String>()
+
+        if let location = photo.location?.lowercased(), !location.isEmpty {
+            for item in others where (item.location?.lowercased() ?? "") == location {
+                if seen.insert(item.id).inserted { picked.append(item) }
+            }
+        }
+
+        let tags = Set((photo.tags ?? []).map { $0.lowercased() })
+        if !tags.isEmpty {
+            for item in others where !tags.isDisjoint(with: Set((item.tags ?? []).map { $0.lowercased() })) {
+                if picked.count >= limit { break }
+                if seen.insert(item.id).inserted { picked.append(item) }
+            }
+        }
+        return Array(picked.prefix(limit))
+    }
+
     /// 多い順にタグを数える。**種類が少ないので全部数えてよい**（30枚・59種）。
     static func topTags(in photos: [Photo], limit: Int = 12) -> [String] {
         var counts: [String: Int] = [:]

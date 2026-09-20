@@ -1,5 +1,12 @@
 import Foundation
 
+// Linux では URLSession が別モジュールに居る。**iOS では何も起きない**が、
+// これがないと Linux 上で `swift build` / `swift test` ができない
+// （Xcode の無い環境で型検査できる唯一の層なので、そこを塞がない）
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// 認証トークンの出どころ。テストで差し替えられるように protocol にしてある。
 protocol TokenProviding: Sendable {
     /// Cognito の **ID トークン**を返す。未ログインなら nil。
@@ -34,7 +41,11 @@ actor APIClient {
         } else {
             let config = URLSessionConfiguration.default
             config.timeoutIntervalForRequest = APIClient.requestTimeout
+            // **繋がるまで待たない。** 圏外なら早く諦めて、控えを出す方へ倒す。
+            // Linux の corelibs では読み取り専用なので、Apple 側だけで設定する
+            #if canImport(Darwin)
             config.waitsForConnectivity = false
+            #endif
             self.session = URLSession(configuration: config)
         }
     }

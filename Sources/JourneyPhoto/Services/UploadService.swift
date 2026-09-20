@@ -1,5 +1,12 @@
 import Foundation
 
+// Linux では URLSession が別モジュールに居る。**iOS では何も起きない**が、
+// これがないと Linux 上で `swift build` / `swift test` ができない
+// （Xcode の無い環境で型検査できる唯一の層なので、そこを塞がない）
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// 写真の投稿。3手で済む:
 ///
 ///     1. POST /upload/presigned-url  … 置き場所と署名付き URL をもらう
@@ -148,7 +155,7 @@ struct PhotoDraft {
     var coords: Photo.Coords?
     var albumId: String?
     /// 原本から読み取った撮影情報。**GPS は含まない**
-    var exif: ImagePreparer.ExifFields?
+    var exif: ExifFields?
 
     /// `POST /upload/save` に送る形。
     ///
@@ -185,7 +192,7 @@ struct PhotoDraft {
         let date: String?
         let coords: Coords?
         let albumId: String?
-        let exif: ImagePreparer.ExifFields?
+        let exif: ExifFields?
 
         struct Coords: Encodable {
             let lat: Double

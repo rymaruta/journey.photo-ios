@@ -33,31 +33,7 @@ struct RelatedPhotosRow: View {
         }
         .task(id: photo.id) {
             let all = (try? await environment.gallery.fetchPhotos()) ?? []
-            related = Self.pick(from: all, like: photo)
+            related = PhotoQuery.related(to: photo, from: all)
         }
-    }
-
-    /// 撮影地が同じものを先に、足りなければタグが重なるもので埋める。
-    /// **自分自身は入れない。**
-    static func pick(from photos: [Photo], like photo: Photo, limit: Int = 12) -> [Photo] {
-        let others = photos.filter { $0.id != photo.id }
-        var picked: [Photo] = []
-        var seen = Set<String>()
-
-        if let location = photo.location?.lowercased(), !location.isEmpty {
-            for item in others where (item.location?.lowercased() ?? "") == location {
-                if seen.insert(item.id).inserted { picked.append(item) }
-            }
-        }
-
-        let tags = Set((photo.tags ?? []).map { $0.lowercased() })
-        if !tags.isEmpty {
-            for item in others where !tags.isDisjoint(with: Set((item.tags ?? []).map { $0.lowercased() })) {
-                if picked.count >= limit { break }
-                if seen.insert(item.id).inserted { picked.append(item) }
-            }
-        }
-
-        return Array(picked.prefix(limit))
     }
 }

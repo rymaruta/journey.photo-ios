@@ -2,8 +2,12 @@
 #
 # 手元でできるだけの検査を通す。**Mac なら最後にビルドまで行く。**
 #
-# Mac 以外（この作業環境のような Linux）では Swift ツールチェーンが無いので、
-# 構文と設定だけを見る。**これが緑でも「ビルドが通る」とは言えない。**
+# Linux では:
+#   - 画面を持たない層（Package.swift に並べたファイル）は**本当に**
+#     ビルドしてテストまで走る
+#   - SwiftUI / UIKit / ImageIO / Amplify に触るファイルは iOS SDK が要るので、
+#     構文と参照の検査までしか見られない
+# **緑でも「アプリのビルドが通る」とは言えない。**
 #
 #     bash Tools/verify.sh
 set -euo pipefail
@@ -25,6 +29,19 @@ echo "== 設定ファイル =="
 python3 Tools/check-config.py
 
 echo
+echo "== 画面を持たない層のビルドとテスト（Swift があるときだけ） =="
+if [ -x /opt/swift/bin/swift ]; then
+    export PATH=/opt/swift/bin:$PATH
+fi
+if command -v swift >/dev/null 2>&1; then
+    swift build
+    swift test
+else
+    echo "   Swift がありません。入れるには: sudo bash Tools/install-swift-linux.sh"
+    echo "   （SwiftUI に触るファイルは iOS SDK が要るので、どのみち Mac が必要）"
+fi
+
+echo
 if command -v xcodebuild >/dev/null 2>&1; then
     echo "== Xcode プロジェクトの生成とビルド =="
     command -v xcodegen >/dev/null 2>&1 || { echo "xcodegen がありません: brew install xcodegen"; exit 1; }
@@ -33,8 +50,9 @@ if command -v xcodebuild >/dev/null 2>&1; then
         -destination 'platform=iOS Simulator,name=iPhone 15' \
         -quiet build test
 else
-    echo "== ビルドは飛ばす =="
-    echo "   Xcode が無い環境です。**型検査もテストも行っていません。**"
+    echo "== 画面側のビルドは飛ばす =="
+    echo "   Xcode が無い環境です。**SwiftUI に触るファイルは型検査していません。**"
+    echo "   （画面を持たない層は上でビルドとテストまで通っています）"
     echo "   Mac で次を実行してください:"
     echo "     xcodegen generate && xcodebuild -scheme JourneyPhoto \\"
     echo "       -destination 'platform=iOS Simulator,name=iPhone 15' build test"
