@@ -23,6 +23,9 @@ struct SettingsView: View {
             Section("このアプリについて") {
                 Link("利用規約", destination: LegalConsent.termsURL)
                 Link("プライバシーポリシー", destination: LegalConsent.privacyURL)
+                if let contact = LegalConsent.contactURL {
+                    Link("問い合わせ", destination: contact)
+                }
                 HStack {
                     Text("バージョン")
                     Spacer()

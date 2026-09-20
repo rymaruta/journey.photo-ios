@@ -34,4 +34,18 @@ final class LegalConsent: ObservableObject {
     /// （2か所に置くと必ず食い違う）。
     static var termsURL: URL { AppConfig.siteBaseURL.appendingPathComponent("terms") }
     static var privacyURL: URL { AppConfig.siteBaseURL.appendingPathComponent("privacy") }
+
+    /// 問い合わせ先。
+    ///
+    /// **審査で要る。** 利用者が作った内容を載せるアプリは、通報の受け皿に
+    /// 連絡が取れる必要がある（ガイドライン 1.2）。サイトの規約ページと
+    /// 同じ宛先を使う（`.github/workflows/deploy.yml` の `contactEmail`）。
+    /// 2か所に別の宛先を書くと、どちらかが必ず死ぬ。
+    static let contactEmail = "journey.photo.official@gmail.com"
+
+    static var contactURL: URL? {
+        URL(string: "mailto:\(contactEmail)?subject=" +
+            ("Journey Photo（iOS）について".addingPercentEncoding(
+                withAllowedCharacters: .urlQueryAllowed) ?? ""))
+    }
 }
