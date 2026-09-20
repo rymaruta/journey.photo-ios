@@ -39,10 +39,21 @@ struct InviteView: View {
             } else if let preview {
                 content(preview)
             } else {
-                // **取り消された招待もここに来る。** 持ち主が取り消すと 404
-                Text(message ?? L("この招待リンクは使えません", "This invite link isn't valid"))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // **取り消された招待もここに来る**（30日で失効・作り直しでも失効）。
+                // 参加済みなら、見られないだけで**投稿はできる**——
+                // サーバーは会員かどうかで通す（`upload.ts` の `isAlbumMember`）
+                VStack(spacing: 8) {
+                    Text(message ?? L("この招待リンクは使えません", "This invite link isn't valid"))
+                    if joined.entries.contains(where: { $0.token == token }) {
+                        Text(L("参加しているアルバムは、投稿画面で行き先に選べます。",
+                               "You can still choose this album when you post."))
+                            .font(.footnote)
+                    }
+                }
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .navigationTitle(L("アルバムの招待", "Album invite"))

@@ -35,15 +35,13 @@ private struct StoryVideo: View {
 
     var body: some View {
         VideoPlayer(player: player)
+            // **既にあるなら作り直さない。** 「見た人」のシートを閉じて
+            // 戻るたびに `onAppear` は呼ばれるので、毎回作ると 0:00 に戻る
             .onAppear {
-                let player = AVPlayer(url: url)
-                player.play()
-                self.player = player
+                if player == nil { player = AVPlayer(url: url) }
+                player?.play()
             }
-            .onDisappear {
-                player?.pause()
-                player = nil
-            }
+            .onDisappear { player?.pause() }
             .accessibilityLabel(L("動画のストーリー", "Video story"))
     }
 }

@@ -68,9 +68,14 @@ struct AlbumsView: View {
     /// ——出さないと、参加した瞬間にアルバムへの入口が消える。
     @ViewBuilder
     private var joinedSection: some View {
-        if !joined.entries.isEmpty {
+        // **自分が作ったアルバムとは重ねない。** 自分のリンクを自分で開くと
+        // サーバーは 200（`already: true`）を返すので、控えにも入る
+        // ——弾かないと同じアルバムが上下に2行出る（投稿画面は弾いている）
+        let mine = Set(model.albums.map { $0.id })
+        let others = joined.entries.filter { !mine.contains($0.id) }
+        if !others.isEmpty {
             Section(L("参加しているアルバム", "Albums you joined")) {
-                ForEach(joined.entries) { entry in
+                ForEach(others) { entry in
                     Button {
                         openedToken = InviteToken(id: entry.token)
                     } label: {
