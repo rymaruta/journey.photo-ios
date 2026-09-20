@@ -17,6 +17,7 @@ actor PublicGalleryService {
 
     private let url: URL
     private let session: URLSession
+    private let snapshot = PhotoSnapshotStore()
 
     init(url: URL = AppConfig.publicPhotosURL, session: URLSession? = nil) {
         self.url = url
@@ -38,21 +39,32 @@ actor PublicGalleryService {
         do {
             (data, response) = try await session.data(from: url)
         } catch {
+            // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
+            if let cached = snapshot.load() { return visible(cached) }
             throw APIError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
+            if let cached = snapshot.load() { return visible(cached) }
             throw APIError.server(status: http.statusCode, message: "")
         }
         do {
             let photos = try JSONDecoder.api.decode([Photo].self, from: data)
-            // 公開 JSON には非公開の写真は載らないが、`published` が
-            // 明示的に false の行が混ざっても出さない（二重の守り）
-            return photos.filter { $0.published != false }
+            // **読めたものだけを控える。** 壊れた応答（キャプティブポータルの
+            // ログイン HTML など）を控えると、次から圏外でそれが出る
+            snapshot.save(data)
+            return visible(photos)
         } catch {
+            if let cached = snapshot.load() { return visible(cached) }
             throw APIError.decoding(String(describing: error))
         }
+    }
+
+    /// 公開 JSON には非公開の写真は載らないが、`published` が明示的に
+    /// false の行が混ざっても出さない（二重の守り）。
+    private func visible(_ photos: [Photo]) -> [Photo] {
+        photos.filter { $0.published != false }
     }
 }

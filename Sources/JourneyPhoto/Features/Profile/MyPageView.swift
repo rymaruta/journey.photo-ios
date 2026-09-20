@@ -41,14 +41,18 @@ struct MyPageView: View {
                     header(profile)
                 }
 
-                HStack(spacing: 12) {
-                    NavigationLink("プロフィールを編集") { ProfileEditView() }
-                        .buttonStyle(.bordered)
-                    NavigationLink("アルバム") { AlbumsView() }
-                        .buttonStyle(.bordered)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        NavigationLink("プロフィールを編集") { ProfileEditView() }
+                            .buttonStyle(.bordered)
+                        NavigationLink("アルバム") { AlbumsView() }
+                            .buttonStyle(.bordered)
+                        NavigationLink("お気に入り") { FavoritesView() }
+                            .buttonStyle(.bordered)
+                    }
+                    .padding(.horizontal, 16)
                 }
                 .font(.footnote)
-                .padding(.horizontal, 16)
 
                 if let error = model.errorMessage {
                     ErrorBanner(message: error) { Task { await model.load() } }

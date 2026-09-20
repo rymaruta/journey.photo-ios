@@ -24,6 +24,17 @@ struct PhotoService {
         )
     }
 
+    /// 写真の中身を書き換える。`PUT /photos/{id}`。
+    ///
+    /// **送った項目だけが変わる。** 何も送らないと 400「更新項目がありません」。
+    func update(photoId: String, patch: PhotoPatch) async throws {
+        try await api.authorizedVoid(
+            .put,
+            "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)",
+            body: patch
+        )
+    }
+
     /// 削除。**画像の実体と CloudFront の控えもサーバー側で消える**
     /// （`cloudfrontDistributionId` が渡されていれば。渡し忘れると
     /// 消した写真が最大1年 公開URLに残る——CLAUDE.md の LEFT-4）。
@@ -32,5 +43,23 @@ struct PhotoService {
             .delete,
             "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)"
         )
+    }
+}
+
+/// 写真の部分更新。nil は JSON に載らない＝「触らない」。
+///
+/// **撮影日は 1990年以降・未来でない日付**でないとサーバーが 400 を返す。
+struct PhotoPatch: Encodable {
+    var title: String?
+    var description: String?
+    var location: String?
+    var category: String?
+    var tags: [String]?
+    var date: String?
+    var published: Bool?
+
+    var isEmpty: Bool {
+        title == nil && description == nil && location == nil
+            && category == nil && tags == nil && date == nil && published == nil
     }
 }

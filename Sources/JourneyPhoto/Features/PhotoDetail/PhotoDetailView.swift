@@ -6,6 +6,7 @@ struct PhotoDetailView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var favorites: FavoritesStore
     @StateObject private var model: PhotoDetailViewModel
     @State private var showReport = false
     @State private var showDeleteConfirm = false
@@ -89,6 +90,9 @@ struct PhotoDetailView: View {
                 ShareLink(item: url) { Label("共有", systemImage: "square.and.arrow.up") }
             }
             if isMine {
+                NavigationLink { EditPhotoView(photo: photo) } label: {
+                    Label("編集", systemImage: "pencil")
+                }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     Label("削除", systemImage: "trash")
                 }
@@ -112,7 +116,11 @@ struct PhotoDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 16) {
                 Button {
-                    Task { await model.toggleLike() }
+                    Task {
+                        await model.toggleLike()
+                        // 端末側のハートも合わせる（圏外でも一覧が出る）
+                        favorites.set(photo.id, favorite: model.liked)
+                    }
                 } label: {
                     Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
                         .foregroundStyle(model.liked ? .pink : .primary)
