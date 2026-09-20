@@ -61,6 +61,49 @@ final class AuthStore: ObservableObject {
         return username
     }
 
+    /// 確認コードを送り直す。**届かない／消したときの出口**が無いと、
+    /// 登録の途中で詰んだ人はアカウントを作り直すしかなくなる。
+    func resendSignUpCode(username: String) async -> Bool {
+        var ok = false
+        await run {
+            try await AuthGateway.resendSignUpCode(username: username)
+            ok = true
+        }
+        return ok
+    }
+
+    /// ログインしたままパスワードを変える。
+    func changePassword(current: String, new: String) async -> Bool {
+        var ok = false
+        await run {
+            try await AuthGateway.changePassword(current: current, new: new)
+            ok = true
+        }
+        return ok
+    }
+
+    /// パスワードの再設定を始める（メールにコードが届く）。
+    func startPasswordReset(email: String) async -> Bool {
+        var ok = false
+        await run {
+            try await AuthGateway.resetPassword(email: email)
+            ok = true
+        }
+        return ok
+    }
+
+    /// 届いたコードで新しいパスワードを決める。
+    func confirmPasswordReset(email: String, code: String, newPassword: String) async -> Bool {
+        var ok = false
+        await run {
+            try await AuthGateway.confirmResetPassword(
+                email: email, newPassword: newPassword, code: code
+            )
+            ok = true
+        }
+        return ok
+    }
+
     func confirmSignUp(username: String, code: String) async -> Bool {
         var ok = false
         await run {

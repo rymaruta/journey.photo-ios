@@ -1,0 +1,9 @@
+/* 権限を求めるときに OS が出す文。**端末の言語で出る。**
+   ここが日本語だけだと、英語の端末に日本語のダイアログが出る
+   （画面の文字は二言語にしてあるのに、ここだけ取り残される）。 */
+
+"NSCameraUsageDescription" = "写真を撮って投稿するためにカメラを使います。";
+"NSPhotoLibraryUsageDescription" = "端末の写真を選んで投稿するために使います。";
+"NSPhotoLibraryAddUsageDescription" = "撮った写真を端末に保存するために使います。";
+"NSLocationWhenInUseUsageDescription" = "撮影地を写真に添えるために現在地を使います。位置は約1kmに丸めて保存します。";
+"CFBundleDisplayName" = "Journey Photo";

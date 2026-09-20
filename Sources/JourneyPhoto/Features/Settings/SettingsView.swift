@@ -42,6 +42,7 @@ struct SettingsView: View {
 
             if auth.userId != nil {
                 Section {
+                    NavigationLink(L("パスワードを変える", "Change password")) { ChangePasswordView() }
                     Button(Labels.Navigation.logout) { Task { await auth.signOut() } }
                 }
                 Section {

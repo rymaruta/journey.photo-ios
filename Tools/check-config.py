@@ -92,6 +92,25 @@ for name in ("Production", "Staging"):
     for var in sorted(used_vars - builtin - defined):
         fail(f"{name}.xcconfig に {var} がありません（この構成のビルドは起動直後に落ちます）")
 
+# ---- 6. 権限を求める文が2言語そろっているか -------------------------------
+#
+# **ここが片方だけだと、その言語の端末に別の言語のダイアログが出る。**
+# 画面の文字は `check-swift-refs.js` が見張っているが、OS が出す文は
+# InfoPlist.strings 側なので、ここで見る。
+usage_keys = {k for k in project_text.split() if k.startswith("NS") and k.endswith("UsageDescription:")}
+usage_keys = {k.rstrip(":") for k in usage_keys}
+strings_dir = ROOT / "Sources/JourneyPhoto/Resources"
+for lang in ("ja", "en"):
+    path = strings_dir / f"{lang}.lproj" / "InfoPlist.strings"
+    if not path.exists():
+        fail(f"{lang}.lproj/InfoPlist.strings がありません")
+        continue
+    text = path.read_text(encoding="utf-8")
+    for key in sorted(usage_keys):
+        if f'"{key}"' not in text:
+            fail(f"{lang}.lproj/InfoPlist.strings に {key} がありません"
+                 f"（この言語の端末に別の言語のダイアログが出ます）")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:

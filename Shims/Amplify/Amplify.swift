@@ -75,5 +75,6 @@ public enum Amplify {
         }
         public static func confirmResetPassword(for username: String, with newPassword: String,
                                                 confirmationCode: String) async throws {}
+        public static func update(oldPassword: String, to newPassword: String) async throws {}
     }
 }

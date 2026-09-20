@@ -119,6 +119,11 @@ enum AuthGateway {
         )
     }
 
+    /// ログインしたままパスワードを変える。
+    static func changePassword(current: String, new: String) async throws {
+        try await Amplify.Auth.update(oldPassword: current, to: new)
+    }
+
     static func confirmResetPassword(email: String, newPassword: String, code: String) async throws {
         try await Amplify.Auth.confirmResetPassword(
             for: email.trimmingCharacters(in: .whitespacesAndNewlines),
