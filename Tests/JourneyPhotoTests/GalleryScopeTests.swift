@@ -66,3 +66,33 @@ final class StoryDurationTests: XCTestCase {
         XCTAssertEqual(StoryService.storedDuration(10), 10)
     }
 }
+
+/// まとめて投稿したときの結果の伝え方。
+///
+/// **何枚上がって、何枚残ったかを必ず出す。** Web の反省——落ちた枚数が
+/// 伝わらないと、利用者は「なぜか1枚少ない」まま公開する。
+final class UploadSummaryTests: XCTestCase {
+
+    func testAllDoneSaysNothing() {
+        XCTAssertNil(UploadSummary.message(done: 3, failures: [], cancelled: false))
+    }
+
+    func testStoppedSaysHowManyMadeIt() throws {
+        let stopped = try XCTUnwrap(UploadSummary.message(done: 2, failures: [], cancelled: true))
+        XCTAssertTrue(stopped.contains("2"), "上がった枚数が出る: \(stopped)")
+        XCTAssertNotNil(UploadSummary.message(done: 0, failures: [], cancelled: true))
+    }
+
+    func testPartialFailureSaysHowManyMadeItAndWhy() throws {
+        let message = try XCTUnwrap(
+            UploadSummary.message(done: 1, failures: ["通信できませんでした"], cancelled: false))
+        XCTAssertTrue(message.contains("1"), "上がった枚数が出る: \(message)")
+        XCTAssertTrue(message.contains("通信できませんでした"), "理由も出る: \(message)")
+    }
+
+    func testTotalFailureDoesNotClaimAnyWereposted() throws {
+        let message = try XCTUnwrap(
+            UploadSummary.message(done: 0, failures: ["だめでした"], cancelled: false))
+        XCTAssertFalse(message.contains("0 枚は投稿しました"))
+    }
+}

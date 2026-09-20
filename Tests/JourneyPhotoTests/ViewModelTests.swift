@@ -150,6 +150,22 @@ final class ViewModelTests: XCTestCase {
         await model.postComment()
         XCTAssertNil(StubProtocol.lastRequest)
     }
+    /// 投稿を待っている1枚（テスト用。本物は `ImagePreparer` が作る）。
+    private func pending(location: String = "") -> PendingPhoto {
+        var photo = PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data([0xff]), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: Photo.Coords(lat: 34.28, lng: 133.8), takenOn: nil))
+        photo.location = location
+        return photo
+    }
+
+    private func uploadModel() -> UploadViewModel {
+        UploadViewModel(uploads: UploadService(api: api(), session: session),
+                        albums: AlbumService(api: api()),
+                        photos: PhotoService(api: api()),
+                        discovery: DiscoveryService(api: api()))
+    }
+
     /// **撮影地は、写真の座標から先に埋める**（Web の `reverseGeocode` と同じ）。
     ///
     /// 実データでは公開30枚のうち13枚が空だった。撮影地 → 地図 →
@@ -157,14 +173,12 @@ final class ViewModelTests: XCTestCase {
     func testPlaceNameIsFilledFromTheCoordinates() async throws {
         prepare()
         StubProtocol.respond(status: 200, body: #"{"place":"高松市"}"#)
-        let model = UploadViewModel(uploads: UploadService(api: api(), session: session),
-                                    albums: AlbumService(api: api()),
-                                    photos: PhotoService(api: api()),
-                                    discovery: DiscoveryService(api: api()))
+        let model = uploadModel()
+        model.items = [pending()]
 
-        await model.fillPlaceName(lat: 34.28, lng: 133.8)
+        await model.fillPlaceName(for: model.items[0].id, lat: 34.28, lng: 133.8)
 
-        XCTAssertEqual(model.location, "高松市")
+        XCTAssertEqual(model.items[0].location, "高松市")
     }
 
     /// **打ってあるものは奪わない。** 本人が入れた固有名詞の方が、
@@ -172,30 +186,40 @@ final class ViewModelTests: XCTestCase {
     func testTypedPlaceIsNotOverwritten() async throws {
         prepare()
         StubProtocol.respond(status: 200, body: #"{"place":"高松市"}"#)
-        let model = UploadViewModel(uploads: UploadService(api: api(), session: session),
-                                    albums: AlbumService(api: api()),
-                                    photos: PhotoService(api: api()),
-                                    discovery: DiscoveryService(api: api()))
-        model.location = "高屋神社"
+        let model = uploadModel()
+        model.items = [pending(location: "高屋神社")]
 
-        await model.fillPlaceName(lat: 34.28, lng: 133.8)
+        await model.fillPlaceName(for: model.items[0].id, lat: 34.28, lng: 133.8)
 
-        XCTAssertEqual(model.location, "高屋神社")
+        XCTAssertEqual(model.items[0].location, "高屋神社")
     }
 
     /// 引けなくても投稿は止めない（空のまま進む）。
     func testFailureLeavesThePlaceEmpty() async throws {
         prepare()
         StubProtocol.respond(status: 500, body: #"{"error":"だめでした"}"#)
-        let model = UploadViewModel(uploads: UploadService(api: api(), session: session),
-                                    albums: AlbumService(api: api()),
-                                    photos: PhotoService(api: api()),
-                                    discovery: DiscoveryService(api: api()))
+        let model = uploadModel()
+        model.items = [pending()]
 
-        await model.fillPlaceName(lat: 34.28, lng: 133.8)
+        await model.fillPlaceName(for: model.items[0].id, lat: 34.28, lng: 133.8)
 
-        XCTAssertEqual(model.location, "")
+        XCTAssertEqual(model.items[0].location, "")
         XCTAssertNil(model.errorMessage, "引けなかったことを画面のエラーにしない")
+    }
+
+    /// **地名は「その写真」に入る。** 並びが変わっても番号ではなく id で
+    /// 引き直すので、待っている間に1枚外しても別の写真に入らない。
+    func testPlaceGoesToItsOwnPhotoEvenIfTheListChanges() async throws {
+        prepare()
+        StubProtocol.respond(status: 200, body: #"{"place":"高松市"}"#)
+        let model = uploadModel()
+        model.items = [pending(), pending(location: "先に打った")]
+        let second = model.items[1].id
+        model.items.removeFirst()
+
+        await model.fillPlaceName(for: second, lat: 34.28, lng: 133.8)
+
+        XCTAssertEqual(model.items[0].location, "先に打った", "打ってあるものは奪わない")
     }
 
     /// **参加しているアルバムも投稿の行き先に出る。**
@@ -206,10 +230,7 @@ final class ViewModelTests: XCTestCase {
     func testJoinedAlbumsAppearInTheUploadPicker() async throws {
         prepare()
         StubProtocol.respond(status: 200, body: #"{"albums":[{"id":"mine","title":"自分の"}]}"#)
-        let model = UploadViewModel(uploads: UploadService(api: api(), session: session),
-                                    albums: AlbumService(api: api()),
-                                    photos: PhotoService(api: api()),
-                                    discovery: DiscoveryService(api: api()))
+        let model = uploadModel()
 
         await model.loadAlbums(joined: [
             JoinedAlbumsStore.Entry(id: "joined", title: "呼ばれた方", token: "t1"),

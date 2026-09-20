@@ -21,5 +21,11 @@ public struct PhotosPicker: View {
                          matching filter: PHPickerFilter? = nil,
                          photoLibrary: PHPhotoLibraryShim? = nil,
                          @ViewBuilder label: () -> L) {}
+    /// まとめて選ぶ側（本物にもある）。
+    public init<L: View>(selection: Binding<[PhotosPickerItem]>,
+                         maxSelectionCount: Int? = nil,
+                         matching filter: PHPickerFilter? = nil,
+                         photoLibrary: PHPhotoLibraryShim? = nil,
+                         @ViewBuilder label: () -> L) {}
     public var body: Never { fatalError("模型") }
 }

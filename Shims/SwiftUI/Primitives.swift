@@ -26,7 +26,33 @@ public struct State<Value>: DynamicProperty {
     }
 }
 
+/// **`ForEach($items) { $item in … }` のための適合**（本物も同じ）。
+/// 書き換えられる並びを包んだ `Binding` は、それ自身が並びとして歩ける。
+extension Binding: Sequence, Collection, BidirectionalCollection, RandomAccessCollection
+where Value: MutableCollection & RandomAccessCollection {
+    public typealias Element = Binding<Value.Element>
+    public typealias Index = Value.Index
+    public var startIndex: Value.Index { wrappedValue.startIndex }
+    public var endIndex: Value.Index { wrappedValue.endIndex }
+    public func index(after i: Value.Index) -> Value.Index { wrappedValue.index(after: i) }
+    public func index(before i: Value.Index) -> Value.Index { wrappedValue.index(before: i) }
+    public subscript(position: Value.Index) -> Binding<Value.Element> {
+        Binding<Value.Element>(
+            get: { wrappedValue[position] },
+            set: { newValue in
+                var copy = wrappedValue
+                copy[position] = newValue
+                wrappedValue = copy
+            })
+    }
+}
+
+extension Binding: Identifiable where Value: Identifiable {
+    public var id: Value.ID { wrappedValue.id }
+}
+
 @propertyWrapper
+@dynamicMemberLookup
 public struct Binding<Value> {
     private let getter: () -> Value
     private let setter: (Value) -> Void
@@ -39,8 +65,19 @@ public struct Binding<Value> {
         nonmutating set { setter(newValue) }
     }
     public var projectedValue: Binding<Value> { self }
+    /// クロージャの `$item` のために要る（本物も持っている）。
+    public init(projectedValue: Binding<Value>) { self = projectedValue }
     public static func constant(_ value: Value) -> Binding<Value> {
         Binding(get: { value }, set: { _ in })
+    }
+    /// `$item.title` のための橋（本物も同じ形）。
+    public subscript<T>(dynamicMember keyPath: WritableKeyPath<Value, T>) -> Binding<T> {
+        Binding<T>(get: { wrappedValue[keyPath: keyPath] },
+                   set: { newValue in
+                       var copy = wrappedValue
+                       copy[keyPath: keyPath] = newValue
+                       wrappedValue = copy
+                   })
     }
 }
 
