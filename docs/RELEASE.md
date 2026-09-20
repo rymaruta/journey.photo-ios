@@ -17,6 +17,8 @@
 
 ## 1. 手元でビルドを通す
 
+> 1〜3 は `bash Tools/mac-release.sh` で一度に走る。
+
 ```bash
 brew install xcodegen
 xcodegen generate
