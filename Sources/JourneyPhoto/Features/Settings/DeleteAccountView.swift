@@ -35,7 +35,12 @@ struct DeleteAccountView: View {
             }
 
             Section {
-                Text(L("**この操作は取り消せません。**", "**This cannot be undone.**"))
+                // **`**` を書かない。** Markdown として太字になるのは
+                // `Text` に**文字列リテラル**を渡したときだけで、`L(…)` の
+                // 戻り値（ただの String）では記号がそのまま見える。
+                // 太字にしたいなら font で言う
+                Text(L("この操作は取り消せません。", "This cannot be undone."))
+                    .font(.body.weight(.semibold))
                 TextField(L("確認のため「\(Self.confirmWord)」と入力", "Type “\(Self.confirmWord)” to confirm"), text: $typed)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()

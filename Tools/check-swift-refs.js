@@ -13,7 +13,10 @@
  *  3. **画面に出る文字が日本語だけになっている**
  *     Web 版は ja / en の2つを持つ。片方だけの文字列を足すと、英語の端末で
  *     そこだけ日本語が残る。`L("ja", "en")` か `Labels.*` を通すこと。
- *  4. **`@MainActor` の型の静的メンバを、テストから呼んでいる**
+ *  4. **`Text` に渡す実行時の文字列に Markdown を書いている**
+ *     `Text("**太字**")` が太字になるのは**文字列リテラル**のときだけ。
+ *     `L(…)` の戻り値（ただの String）では記号がそのまま見える。
+ *  5. **`@MainActor` の型の静的メンバを、テストから呼んでいる**
  *     `XCTestCase` のメソッドは isolation を持たないので
  *     "Call to main actor-isolated static method in a synchronous
  *     nonisolated context" でコンパイルが落ちる。実際に2回踏んだ。
@@ -124,7 +127,21 @@ for (const file of files) {
     }
 }
 
-// 4. @MainActor の型の静的メンバをテストから呼んでいないか
+// 4. 実行時の文字列に Markdown を書いていないか
+{
+    const markdownInRuntimeText = /Text\(\s*(?:L\(|Labels\.)[^)]*\*\*/g;
+    for (const file of files) {
+        const source = fs.readFileSync(file, "utf8");
+        for (const match of source.matchAll(markdownInRuntimeText)) {
+            problems.push(
+                `${path.relative(process.cwd(), file)}: Text に渡す実行時の文字列に ` +
+                `Markdown（**）があります（リテラルでないので記号がそのまま見えます）`
+            );
+        }
+    }
+}
+
+// 5. @MainActor の型の静的メンバをテストから呼んでいないか
 if (testRoot) {
     const mainActorTypes = new Set();
     for (const file of files) {

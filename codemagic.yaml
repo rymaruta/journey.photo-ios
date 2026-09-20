@@ -29,20 +29,23 @@ workflows:
         bundle_identifier: com.journeyphoto.JourneyPhoto
 
     scripts:
-      - name: 検査（構文・参照・設定・突き合わせ）
+      - name: 設定の検査
         script: |
-          # **上げる前に手元と同じ検査を通す。** ここで落ちれば、
-          # 10分かけてビルドしてから気づくことがなくなる
-          brew install node python@3.12 || true
-          (cd Tools && npm install --silent)
-          node Tools/check-swift-syntax.js Sources Tests
-          node Tools/check-swift-refs.js Sources Tests
+          # **標準の python3 だけで動くものに絞る。** 構文と参照の検査は
+          # node と tree-sitter が要り、ここで入れると落ちる面が増える
+          # （それらは push 前に手元で通している）
           python3 Tools/check-config.py
 
       - name: ビルド番号を決める
         script: |
           # **TestFlight にある最大の番号 + 1。** 手で上げ忘れて
           # はねられる事故が無くなる
+          if [ "$APP_APPLE_ID" = "0000000000" ]; then
+            echo "APP_APPLE_ID が仮の値のままです。"
+            echo "App Store Connect でアプリを開いたときの URL に出ている数字に"
+            echo "codemagic.yaml を直してください（docs/NO_MAC.md の手順2）。"
+            exit 1
+          fi
           LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" || echo 0)
           bash Tools/set-build-number.sh $(( LATEST + 1 ))
 
@@ -51,7 +54,18 @@ workflows:
           brew install xcodegen
           xcodegen generate
 
-      - name: ビルドとテスト
+      - name: テスト（本物の SwiftUI で型検査される最初の機会）
+        script: |
+          # **ここが「実機の SDK で通るか」を見る本番。** 手元（Linux）の
+          # ビルドは SwiftUI の模型に向けたものなので、ここで初めて本物に当たる。
+          # 分数を節約したくなったら、この段を消してもよい（次の段が
+          # アプリ本体は同じ SDK でビルドする）
+          xcode-project run-tests \
+            --project JourneyPhoto.xcodeproj \
+            --scheme JourneyPhoto \
+            --device "iPhone 15"
+
+      - name: ビルド
         script: |
           xcode-project use-profiles
           xcode-project build-ipa \
@@ -61,6 +75,8 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+      # テストの結果。落ちたときに何が落ちたか読める形で残す
+      - build/ios/test/*.xml
 
     publishing:
       app_store_connect:

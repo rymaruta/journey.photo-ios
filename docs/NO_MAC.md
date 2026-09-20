@@ -26,6 +26,14 @@ owner:「Mac もってない」
 
 ## 手順（全部ブラウザ）
 
+### 0. 加入待ちの間にできること
+
+加入の返事（1〜2日）を待つ間に、これだけ先に済ませられます:
+
+- **Codemagic にサインアップして、GitHub と繋ぐ**（手順4の1〜2）。
+  API キーの登録（手順4の3）だけは加入後
+- **iPhone に「TestFlight」アプリを入れておく**（App Store・無料）
+
 ### 1. Apple Developer Program に入る
 
 <https://developer.apple.com/programs/enroll> → Individual → **年 12,980円**。

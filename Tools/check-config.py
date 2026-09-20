@@ -126,6 +126,23 @@ for key, setting in (("CFBundleShortVersionString", "MARKETING_VERSION"),
         fail(f"project.yml の {key} は $({setting}) にしてください"
              f"（直の値だとビルド設定と食い違い、TestFlight にはねられます）: {line.strip()}")
 
+# ---- 8. Bundle ID が CI と揃っているか -------------------------------------
+#
+# **ずれていると署名が通らない。** しかも気づくのは CI で10分待ったあと。
+# ID を取り替える場面（誰かに取られていた）で必ず踏む。
+codemagic_path = ROOT / "codemagic.yaml"
+if codemagic_path.exists():
+    codemagic_text = codemagic_path.read_text(encoding="utf-8")
+    prod = (ROOT / "Config/Production.xcconfig").read_text(encoding="utf-8")
+    m = re.search(r"^\s*JP_BUNDLE_ID\s*=\s*(\S+)", prod, re.MULTILINE)
+    bundle_id = m.group(1) if m else ""
+    for key in ("bundle_identifier", "BUNDLE_ID"):
+        for found in re.findall(rf"{key}:\s*(\S+)", codemagic_text):
+            if found != bundle_id:
+                fail(f"codemagic.yaml の {key}（{found}）が "
+                     f"Production.xcconfig の JP_BUNDLE_ID（{bundle_id}）と違います"
+                     f"（署名が通らず、CI で10分待ったあとに落ちます）")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:
