@@ -7,6 +7,7 @@ struct PhotoDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var moderation: ModerationStore
     @StateObject private var model: PhotoDetailViewModel
     @State private var showReport = false
     @State private var showDeleteConfirm = false
@@ -203,6 +204,12 @@ struct PhotoDetailView: View {
     private func block(_ userId: String) async {
         do {
             try await environment.moderation.block(userId: userId)
+            // 押したあと実際に消す（公開一覧は静的なので端末で落とす）
+            moderation.block(userId)
+            await environment.gallery.setHidden(
+                userIds: moderation.blockedUserIds,
+                photoIds: moderation.reportedPhotoIds
+            )
             actionError = "ブロックしました。おたがいの投稿が見えなくなります。"
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? "ブロックできませんでした"

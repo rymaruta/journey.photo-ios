@@ -10,6 +10,7 @@ struct UserProfileView: View {
     @StateObject private var model = UserProfileViewModel()
     @State private var showBlockConfirm = false
     @State private var tab: ProfileTab = .posts
+    @EnvironmentObject private var moderation: ModerationStore
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -68,7 +69,7 @@ struct UserProfileView: View {
         }
         .alert("この人をブロックしますか？", isPresented: $showBlockConfirm) {
             Button("ブロック", role: .destructive) {
-                Task { await model.block(userId: userId, environment: environment) }
+                Task { await model.block(userId: userId, environment: environment, store: moderation) }
             }
             Button("やめる", role: .cancel) {}
         } message: {
@@ -200,10 +201,16 @@ final class UserProfileViewModel: ObservableObject {
         }
     }
 
-    func block(userId: String, environment: AppEnvironment) async {
+    func block(userId: String, environment: AppEnvironment, store: ModerationStore) async {
         do {
             try await environment.moderation.block(userId: userId)
+            store.block(userId)
+            await environment.gallery.setHidden(
+                userIds: store.blockedUserIds,
+                photoIds: store.reportedPhotoIds
+            )
             isFollowing = false
+            photos = []
             errorMessage = "ブロックしました。設定から解除できます。"
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "ブロックできませんでした"

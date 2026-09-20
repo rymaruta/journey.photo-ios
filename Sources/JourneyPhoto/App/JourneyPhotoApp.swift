@@ -7,6 +7,7 @@ struct JourneyPhotoApp: App {
     @StateObject private var environment = AppEnvironment()
     @StateObject private var consent = LegalConsent()
     @StateObject private var favorites = FavoritesStore()
+    @StateObject private var moderation = ModerationStore()
     @State private var configurationError: String? = nil
 
     init() {
@@ -33,6 +34,17 @@ struct JourneyPhotoApp: App {
         )
     }
 
+    /// 「見せない」を公開一覧の側へ渡す。
+    ///
+    /// 出すところ（`PublicGalleryService`）で落とすので、ギャラリー・検索・
+    /// 地図・関連写真・お気に入りの**全部に一度に効く**。
+    private func applyModeration() async {
+        await environment.gallery.setHidden(
+            userIds: moderation.blockedUserIds,
+            photoIds: moderation.reportedPhotoIds
+        )
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView(configurationError: configurationError)
@@ -40,11 +52,22 @@ struct JourneyPhotoApp: App {
                 .environmentObject(environment)
                 .environmentObject(consent)
                 .environmentObject(favorites)
+                .environmentObject(moderation)
                 .task {
                     await auth.restore()
-                    // **ハートはアカウントごと。** ログイン状態が決まってから
-                    // 読み込む（先に読むと未ログインぶんが見える）
+                    // **アカウントごとの控えは、ログイン状態が決まってから。**
+                    // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)
+                    moderation.use(userId: auth.userId)
+                    await applyModeration()
+                    // ログイン中なら、ブロック一覧をサーバーに合わせる
+                    if auth.userId != nil {
+                        let blocks = try? await environment.moderation.blocks()
+                        if let blocks {
+                            moderation.replaceBlocked(with: blocks.blockedIds)
+                            await applyModeration()
+                        }
+                    }
                 }
         }
     }

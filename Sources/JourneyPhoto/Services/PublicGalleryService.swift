@@ -19,6 +19,21 @@ actor PublicGalleryService {
     private let session: URLSession
     private let snapshot = PhotoSnapshotStore()
 
+    /// 見せない相手と、見せない写真。
+    ///
+    /// **公開一覧は静的な JSON なので、サーバー側では絞れない。**
+    /// `GET /stories` はブロックを両向きに落として返すが、`photos.json` は
+    /// ビルド時に焼いた全員ぶん。ブロックした相手の写真がそのまま出ると、
+    /// 「ブロックしたのに見える」になる（審査 1.2 で見られるところでもある）。
+    /// だから**出すところで落とす**。
+    private var hiddenUserIds: Set<String> = []
+    private var hiddenPhotoIds: Set<String> = []
+
+    func setHidden(userIds: Set<String>, photoIds: Set<String>) {
+        hiddenUserIds = userIds
+        hiddenPhotoIds = photoIds
+    }
+
     init(url: URL = AppConfig.publicPhotosURL, session: URLSession? = nil) {
         self.url = url
         if let session {
@@ -73,7 +88,14 @@ actor PublicGalleryService {
 
     /// 公開 JSON には非公開の写真は載らないが、`published` が明示的に
     /// false の行が混ざっても出さない（二重の守り）。
+    /// あわせて、ブロックした相手と、自分が通報した写真を落とす。
     private func visible(_ photos: [Photo]) -> [Photo] {
-        photos.filter { $0.published != false }
+        photos.filter { photo in
+            guard photo.published != false else { return false }
+            guard !hiddenPhotoIds.contains(photo.id) else { return false }
+            let owner = photo.userId ?? photo.uploadedBy
+            guard let owner else { return true }
+            return !hiddenUserIds.contains(owner)
+        }
     }
 }

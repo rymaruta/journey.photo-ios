@@ -11,7 +11,8 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > 閲覧はログイン不要、投稿にはメールアドレスでのアカウント登録が必要です。
 >
 > ・不適切な投稿は各写真の「…」メニューから通報でき、同じ場所で投稿者を
->   ブロックできます。ブロックの解除は「マイページ → 設定 → ブロックした人」。
+>   ブロックできます。**通報・ブロックした内容は、その場で一覧から消えます。**
+>   ブロックの解除は「マイページ → 設定 → ブロックした人」。
 > ・初回起動時に、不適切な内容を認めない旨を含む利用規約への同意を求めます。
 > ・アカウントは「マイページ → 設定 → アカウントの削除」でアプリ内から削除できます。
 > ・通報の宛先は journey.photo.official@gmail.com です。
@@ -22,7 +23,8 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > posting requires an email sign-up.
 >
 > - Objectionable content can be reported from the "…" menu on any photo, and
->   the poster can be blocked from the same menu. Blocks can be lifted under
+>   the poster can be blocked from the same menu. Reported and blocked content
+>   disappears from that user's feeds immediately. Blocks can be lifted under
 >   My Page → Settings → Blocked people.
 > - On first launch the user must accept terms that prohibit objectionable content.
 > - Accounts can be deleted in-app under My Page → Settings → Delete account.
@@ -44,7 +46,8 @@ App Store Connect の Demo Account に入れる。
 |---|---|---|---|
 | 4.2 Minimum Functionality | Web サイトを包んだだけは不可 | カメラからの直接投稿、端末側での EXIF 除去、オフライン表示 | `CameraPicker.swift` / `ImagePreparer.swift` / `PhotoSnapshotStore.swift` |
 | 1.2 UGC | 規約への同意 | 初回起動時の同意画面 | `LegalGateView.swift` |
-| 1.2 UGC | 不適切な内容の通報 | 写真ごとの「…」→ 通報（理由7種＋補足） | `ReportSheet.swift` |
+| 1.2 UGC | 不適切な内容の通報 | 写真ごとの「…」→ 通報（理由7種＋補足）。**通報した写真はその場で一覧から消える** | `ReportSheet.swift` / `ModerationStore.swift` |
+| 1.2 UGC | 不適切な内容を出さない仕組み | ブロックした相手の写真を、ギャラリー・検索・地図・関連写真から**端末側で落とす**。公開の写真一覧はビルド時に焼いた静的 JSON なのでサーバー側では絞れない | `PublicGalleryService.setHidden` |
 | 1.2 UGC | 迷惑な利用者のブロック | 通報と同じ場所＋プロフィールから。解除は設定 | `ModerationService.swift` / `BlockedUsersView.swift` |
 | 1.2 UGC | 連絡先の公開 | 設定に「問い合わせ」。サイトの規約ページと同じ宛先 | `LegalConsent.contactEmail` |
 | 5.1.1(v) | アプリ内でのアカウント削除 | 設定 → アカウントの削除（確認語の入力つき） | `DeleteAccountView.swift` |
@@ -75,6 +78,8 @@ App Store Connect の Demo Account に入れる。
 項目は無いが、UGC があることを質問票で申告する）。
 
 投稿の事前審査は行っておらず、**通報を受けてから owner が確認して消す**運用。
+ただし通報・ブロックは**押した瞬間に、その人の画面から消える**
+（サーバーの判断を待たない）。
 質問票の「ユーザー生成コンテンツ」には「はい」と答え、通報・ブロックの
 仕組みがあることを Notes に書く（上の文面に含めてある）。
 

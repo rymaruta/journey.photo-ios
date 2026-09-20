@@ -11,6 +11,7 @@ struct ReportSheet: View {
     let ownerId: String?
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var moderation: ModerationStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var reason: ModerationService.ReportReason = .harassment
@@ -74,21 +75,34 @@ struct ReportSheet: View {
         }
     }
 
+    /// 落とす相手を公開一覧の側へ渡し直す。
+    private func applyHidden() async {
+        await environment.gallery.setHidden(
+            userIds: moderation.blockedUserIds,
+            photoIds: moderation.reportedPhotoIds
+        )
+    }
+
     private func submit() async {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
         do {
             try await environment.moderation.report(photoId: photoId, reason: reason, note: note)
+            // **押したあと実際に消す。** 通報が受け付けられただけで、
+            // 通報した人の画面に出続けるなら意味がない
+            moderation.markReported(photoId)
             if alsoBlock, let ownerId {
                 // **ブロックが落ちても通報は成立している。** ここで投げ直すと
                 // 「通報できなかった」と誤解させるので、文言を分ける
                 do {
                     try await environment.moderation.block(userId: ownerId)
+                    moderation.block(ownerId)
                 } catch {
                     errorMessage = "通報は受け付けました。ブロックはうまくいきませんでした。設定からもう一度お試しください。"
                 }
             }
+            await applyHidden()
             done = true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "通報を受け付けられませんでした"
