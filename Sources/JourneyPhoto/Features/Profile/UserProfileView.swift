@@ -81,12 +81,21 @@ struct UserProfileView: View {
         }
     }
 
+    @ViewBuilder
+    private func themeRing(_ hex: String?) -> some View {
+        if let hex, let color = Color(hex: hex) {
+            Circle().strokeBorder(color, lineWidth: 3)
+        }
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 RemoteImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
                     .frame(width: 64, height: 64)
                     .clipShape(Circle())
+                    // 本人が選んだ色を輪にする（Web の `themeRingGradient`）
+                    .overlay(themeRing(model.profile?.themeColor))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.profile?.name ?? "—").font(.headline)
                     HStack(spacing: 12) {

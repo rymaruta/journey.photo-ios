@@ -33,6 +33,20 @@ struct ProfileService {
     }
 
     /// 更新。**送った項目だけが変わる**（未指定は「触らない」）。
+    /// ピン留めの増減。**成功したら、サーバーが持っている一覧を返す。**
+    ///
+    /// 3枚を超えると 409（「ピン留めは3枚までです」）で、そのときの本体にも
+    /// 今の一覧が入っている——画面はそれに揃えないと、断られ続けるだけで
+    /// 直せない（`userProfile.ts` の `pinLimitCurrent`）。
+    struct PinResult: Decodable { let pinnedPhotoIds: [String]? }
+
+    @discardableResult
+    func setPinned(photoId: String, pinned: Bool) async throws -> [String] {
+        let patch = ProfilePatch(pinPhotoId: photoId, pin: pinned)
+        let result = try await api.authorized(.put, "/user/profile", body: patch, as: PinResult.self)
+        return result.pinnedPhotoIds ?? []
+    }
+
     func update(_ patch: ProfilePatch) async throws {
         try await api.authorizedVoid(.put, "/user/profile", body: patch)
     }
@@ -102,5 +116,11 @@ struct ProfilePatch: Encodable {
     var instagram: String?
     var statusText: String?
     var themeColor: String?
+    /// **配列ごと送らない。** サーバーは「1枚単位の増減」で受ける
+    /// （`userProfile.ts` の `pinOp`）。配列を送ると、PC のタブを開いたまま
+    /// スマホで留めたときに**古い配列で上書き**して、片方の操作が消える。
     var pinnedPhotoIds: [String]?
+    /// 留める／外す写真（1枚）。`pin` と対で送る。
+    var pinPhotoId: String?
+    var pin: Bool?
 }

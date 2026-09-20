@@ -13,6 +13,7 @@ struct ProfileEditView: View {
     @State private var website = ""
     @State private var instagram = ""
     @State private var statusText = ""
+    @State private var themeColor = ""
 
     @State private var avatarItem: PhotosPickerItem?
     @State private var coverItem: PhotosPickerItem?
@@ -40,6 +41,7 @@ struct ProfileEditView: View {
                 TextField(L("自己紹介", "Bio"), text: $bio, axis: .vertical)
                     .lineLimit(2...6)
                 TextField(L("ひとこと", "Status"), text: $statusText)
+                ThemeColorField(themeColor: $themeColor)
             }
 
             Section(L("リンク", "Links")) {
@@ -92,6 +94,7 @@ struct ProfileEditView: View {
         website = profile.website ?? ""
         instagram = profile.instagram ?? ""
         statusText = profile.statusText ?? ""
+        themeColor = profile.themeColor ?? ""
     }
 
     private func save() async {
@@ -106,7 +109,7 @@ struct ProfileEditView: View {
             website: website,
             instagram: instagram,
             statusText: statusText,
-            themeColor: nil,
+            themeColor: themeColor,
             pinnedPhotoIds: nil
         )
         do {

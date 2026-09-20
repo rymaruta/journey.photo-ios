@@ -22,6 +22,86 @@ enum TagInput {
         }
         return result
     }
+
+    // MARK: - 候補チップ（Web の `lib/utils/ownValues.ts` と対）
+
+    /// いまの欄にそのタグが入っているか。**大小・`#`・日英の別名は畳んで見る。**
+    static func has(_ current: String, tag: String) -> Bool {
+        let key = TagChoices.key(tag)
+        guard !key.isEmpty else { return false }
+        return current.split(separator: ",").contains { TagChoices.key(String($0)) == key }
+    }
+
+    /// 欄の文字列を組み直す。**末尾に区切りを残す。**
+    ///
+    /// 残さないと、**チップを押した直後に打つと前のタグに繋がる**
+    /// ——`桜` を押して `京都` と打つと `"桜京都"` という1つの嘘のタグになる。
+    private static func join(_ parts: [String]) -> String {
+        let kept = parts.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return kept.isEmpty ? "" : kept.joined(separator: ", ") + ", "
+    }
+
+    /// タグを足す。**同じ鍵のものが既にあれば何もしない**
+    /// （`fuji` の欄に `Fuji` を押して2つ並ぶのを避ける）。
+    static func append(_ current: String, tag: String) -> String {
+        let add = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !add.isEmpty else { return current }
+        let parts = current.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let key = TagChoices.key(add)
+        if parts.contains(where: { TagChoices.key($0) == key }) { return current }
+        return join(parts + [add])
+    }
+
+    /// チップの押下。**入っていれば外す、入っていなければ足す。**
+    ///
+    /// 足すだけだと、**既に付いているタグのチップを押しても何も起きない**
+    /// （一覧の絞り込みは押し直して外せるのに、投稿側だけ古いままだった）。
+    static func toggle(_ current: String, tag: String) -> String {
+        let t = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard has(current, tag: t) else { return append(current, tag: t) }
+        let key = TagChoices.key(t)
+        return join(current.split(separator: ",")
+            .map { String($0) }
+            .filter { TagChoices.key($0) != key })
+    }
+
+    /// 欄の**最後の欠片**が「打ちかけ」なら返す（候補と丸ごと同じなら
+    /// 「選び終えた1つ」なので空）。
+    ///
+    /// **この判定を2か所に書かない。** 絞る側（`suggest`）と、チップを押した
+    /// ときに欠片を捨てる側（`dropFragment`）が同じ答えを使う。別々に書いた
+    /// Web の版は、**打って絞ってチップを押すと欠片がタグとして残った**。
+    static func typingFragment(_ all: [String], current: String) -> String {
+        let frag = (current.split(separator: ",", omittingEmptySubsequences: false).last.map(String.init) ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        guard !frag.isEmpty else { return "" }
+        let key = TagChoices.key(frag)
+        return all.contains { TagChoices.key($0) == key } ? "" : frag
+    }
+
+    /// 打ちかけの欠片を欄から落とす（チップを押すときに使う）。
+    static func dropFragment(_ all: [String], current: String) -> String {
+        guard !typingFragment(all, current: current).isEmpty else { return current }
+        guard let cut = current.lastIndex(of: ",") else { return "" }
+        return String(current[current.startIndex..<cut])
+    }
+
+    /// 候補を、**打ちかけの文字で絞る**。
+    ///
+    /// 何も打っていなければ全部出す（20語は全部並ぶ——Web は
+    /// `suggestTags(TAG_CHOICES, …, TAG_CHOICES.length)` で呼んでいる）。
+    static func suggest(_ all: [String], current: String) -> [String] {
+        let frag = typingFragment(all, current: current)
+        guard !frag.isEmpty else { return all }
+        var raw = frag.lowercased()
+        while raw.hasPrefix("#") { raw.removeFirst() }
+        let key = TagChoices.key(frag)
+        return all.filter { tag in
+            var r = tag.lowercased()
+            while r.hasPrefix("#") { r.removeFirst() }
+            return r.contains(raw) || TagChoices.key(tag).contains(key)
+        }
+    }
 }
 
 enum PhotoQuery {

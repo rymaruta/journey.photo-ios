@@ -107,8 +107,7 @@ struct UploadView: View {
             TextField(L("説明", "Description"), text: $model.caption, axis: .vertical)
                 .lineLimit(3...8)
             PlaceSearchField(location: $model.location, coords: $model.pickedCoords)
-            TextField(L("タグ（カンマ区切り）", "Tags (comma separated)"), text: $model.tagsText)
-                .textInputAutocapitalization(.never)
+            TagField(tagsText: $model.tagsText)
             CategoryField(category: $model.category)
         }
     }

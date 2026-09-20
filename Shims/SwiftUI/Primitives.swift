@@ -118,6 +118,8 @@ public struct Color: View, ShapeStyle, Hashable {
     nonisolated public init() {}
     nonisolated public init(_ name: String) {}
     nonisolated public init(_ ui: UIColorShim) {}
+    nonisolated public init(red: Double, green: Double, blue: Double) {}
+    public static let gray = Color()
     nonisolated public func opacity(_ v: Double) -> Color { self }
     public var body: Never { fatalError("模型") }
 }

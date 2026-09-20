@@ -168,6 +168,7 @@ public struct TabView: View {
 public struct Circle: View, Shape {
     public init() {}
     public func strokeBorder<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Circle { self }
+    public func fill<S: ShapeStyle>(_ style: S) -> Circle { self }
     public var body: Never { fatalError("模型") }
 }
 public struct Capsule: View, Shape {

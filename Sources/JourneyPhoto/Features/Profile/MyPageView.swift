@@ -74,11 +74,21 @@ struct MyPageView: View {
         }
     }
 
+    @ViewBuilder
+    private func themeRing(_ hex: String?) -> some View {
+        if let hex, let color = Color(hex: hex) {
+            Circle().strokeBorder(color, lineWidth: 3)
+        }
+    }
+
     private func header(_ profile: UserProfile) -> some View {
         HStack(spacing: 12) {
             RemoteImage(url: profile.avatarURL(cacheBust: model.avatarCacheBust))
                 .frame(width: 64, height: 64)
                 .clipShape(Circle())
+                // **本人が選んだ色を輪にする**（Web の `themeRingGradient` と
+                // 同じ置き場所）。選んでいなければ輪を出さない
+                .overlay(themeRing(profile.themeColor))
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.name).font(.headline)
                 if let bio = profile.bio, !bio.isEmpty {
@@ -146,6 +156,18 @@ struct MyPageView: View {
                         gridCell(photo)
                     }
                     .buttonStyle(.plain)
+                    // **長押しでピン留め**（Web の「先頭にピン留め」と同じ操作）。
+                    // 一覧の見た目は変えず、操作だけ足す
+                    .contextMenu {
+                        let pinned = model.isPinned(photo.id)
+                        Button {
+                            Task { await model.setPinned(photo.id, pinned: !pinned) }
+                        } label: {
+                            Label(pinned ? L("ピン留めを解除", "Unpin")
+                                         : L("先頭にピン留め", "Pin to top"),
+                                  systemImage: pinned ? "pin.slash" : "pin")
+                        }
+                    }
                 }
             }
         }
@@ -157,6 +179,14 @@ struct MyPageView: View {
         ZStack(alignment: .topTrailing) {
             RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                 .aspectRatio(1, contentMode: .fill)
+            if model.isPinned(photo.id) {
+                Image(systemName: "pin.fill")
+                    .font(.caption2)
+                    .padding(4)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(4)
+                    .accessibilityLabel(L("ピン留め中", "Pinned"))
+            }
             if photo.published == false {
                 Text(L("下書き", "Draft"))
                     .font(.caption2)
@@ -173,6 +203,9 @@ struct MyPageView: View {
 final class MyPageViewModel: ObservableObject {
 
     @Published private(set) var profile: UserProfile?
+    /// 留めている写真。**サーバーが返した一覧をそのまま持つ**
+    /// （増減の結果は向こうが決める——3枚の上限も、消えた写真の掃除も）
+    @Published private(set) var pinnedIds: [String] = []
     @Published private(set) var photos: [Photo] = []
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
@@ -200,10 +233,29 @@ final class MyPageViewModel: ObservableObject {
             async let photos = self.photoService.myPhotos()
             self.profile = try await profile
             // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
-            self.photos = PhotoPinning.pinnedFirst(
-                try await photos, pinned: self.profile?.pinnedPhotoIds ?? [])
+            self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
+            self.photos = PhotoPinning.pinnedFirst(try await photos, pinned: self.pinnedIds)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+        }
+    }
+
+    func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }
+
+    /// ピン留めの増減。
+    ///
+    /// **画面を先に動かさない。** 3枚の上限はサーバーが持っていて
+    /// （`userProfile.ts`）、断られたときにそのときの一覧も返ってくる。
+    /// 先に動かすと「留まったように見えて、次の読み込みで戻る」になる。
+    func setPinned(_ photoId: String, pinned: Bool) async {
+        do {
+            pinnedIds = try await profiles.setPinned(photoId: photoId, pinned: pinned)
+            photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)
+            errorMessage = nil
+        } catch {
+            // 上限（409）のときは、サーバーが「ピン留めは3枚までです」を返す
+            errorMessage = (error as? LocalizedError)?.errorDescription
+                ?? L("ピン留めを変えられませんでした", "Couldn't change the pin")
         }
     }
 }

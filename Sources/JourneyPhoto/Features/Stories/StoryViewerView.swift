@@ -18,6 +18,8 @@ struct StoryViewerView: View {
     /// 返信を読めなかった。**空の一覧と区別する**（数は出ているのに
     /// 何も無い画面は「消えた」に見える）
     @State private var repliesFailed = false
+    /// 送っている最中。**二度押しで2件送らない**
+    @State private var isSending = false
 
     var body: some View {
         ZStack {
@@ -124,11 +126,26 @@ struct StoryViewerView: View {
             .font(.footnote)
             .padding(16)
         } else {
-            HStack {
-                TextField(L("返信する", "Reply"), text: $reply)
-                    .textFieldStyle(.roundedBorder)
-                Button(Labels.Common.send) { Task { await sendReply() } }
-                    .disabled(reply.trimmingCharacters(in: .whitespaces).isEmpty)
+            VStack(spacing: 8) {
+                // **押すだけで返せる**（Web の StoryViewer と同じ6つ）。
+                // 打つより先に、これで十分な場面の方が多い
+                HStack(spacing: 12) {
+                    ForEach(StoryService.reactions, id: \.self) { emoji in
+                        Button {
+                            Task { await sendReaction(emoji) }
+                        } label: {
+                            Text(emoji).font(.title3)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSending)
+                    }
+                }
+                HStack {
+                    TextField(L("返信する", "Reply"), text: $reply)
+                        .textFieldStyle(.roundedBorder)
+                    Button(Labels.Common.send) { Task { await sendReply() } }
+                        .disabled(isSending || reply.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
             }
             .padding(16)
         }
@@ -137,7 +154,23 @@ struct StoryViewerView: View {
     /// 出す返信の数。一覧を読めていればその数、まだなら `replyCount`。
     private var replyBadge: Int { max(replies.count, story.replyCount ?? 0) }
 
+    /// 定型の反応を送る。
+    private func sendReaction(_ emoji: String) async {
+        guard !isSending else { return }
+        isSending = true
+        defer { isSending = false }
+        do {
+            try await environment.stories.react(id: story.id, emoji: emoji)
+            message = L("送りました", "Sent")
+        } catch {
+            message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
+        }
+    }
+
     private func sendReply() async {
+        guard !isSending else { return }
+        isSending = true
+        defer { isSending = false }
         do {
             try await environment.stories.reply(id: story.id, text: reply)
             reply = ""

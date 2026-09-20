@@ -94,6 +94,16 @@ struct StoryService {
         try await api.authorizedVoid(.post, "/stories/\(encoded(id))/replies", body: Body(text: text))
     }
 
+    /// 定型の反応。**サーバーが受けるのはこの6つだけ**
+    /// （`api-user/src/storyReplies.ts` の `REACTIONS`。一覧に無い絵文字は
+    /// 本文として扱われ、上限と切り詰めを通る）。
+    static let reactions = ["❤️", "😍", "😂", "😮", "😢", "👏"]
+
+    func react(id: String, emoji: String) async throws {
+        struct Body: Encodable { let emoji: String }
+        try await api.authorizedVoid(.post, "/stories/\(encoded(id))/replies", body: Body(emoji: emoji))
+    }
+
     /// 24時間で消える前に、自分の写真として残す。
     func keep(id: String) async throws {
         try await api.authorizedVoid(.post, "/stories/\(encoded(id))/keep")
