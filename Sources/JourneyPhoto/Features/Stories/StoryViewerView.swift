@@ -13,6 +13,8 @@ struct StoryViewerView: View {
     @State private var message: String?
     @State private var viewers: [StoryViewer] = []
     @State private var showViewers = false
+    @State private var replies: [StoryReply] = []
+    @State private var showReplies = false
 
     var body: some View {
         ZStack {
@@ -45,6 +47,23 @@ struct StoryViewerView: View {
             await environment.stories.markViewed(id: story.id)
             if isMine {
                 viewers = (try? await environment.stories.viewers(id: story.id)) ?? []
+                // **返信は本人だけが読める。** 読めないと、送られた返信が
+                // どこにも出ない（送る側の画面だけあった）
+                replies = (try? await environment.stories.replies(id: story.id)) ?? []
+            }
+        }
+        .sheet(isPresented: $showReplies) {
+            NavigationStack {
+                List(replies) { reply in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(reply.name ?? L("だれか", "Someone"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(reply.text ?? "")
+                    }
+                }
+                .navigationTitle(L("返信 \(replies.count)", "\(replies.count) replies"))
+                .navigationBarTitleDisplayMode(.inline)
             }
         }
         .sheet(isPresented: $showViewers) {
@@ -80,6 +99,9 @@ struct StoryViewerView: View {
         if isMine {
             HStack(spacing: 16) {
                 Button(L("見た人 \(viewers.count)", "\(viewers.count) viewers")) { showViewers = true }
+                // **返信の数はサーバーが持っている**（`replyCount`）。
+                // 読み込み前でも数が出るよう、取れた一覧より多い方を出す
+                Button(L("返信 \(replyBadge)", "\(replyBadge) replies")) { showReplies = true }
                 // 24時間で消える前に、自分の写真として残す
                 Button(L("残す", "Keep")) { Task { await keep() } }
                 Button(Labels.Common.delete, role: .destructive) { Task { await deleteStory() } }
@@ -96,6 +118,9 @@ struct StoryViewerView: View {
             .padding(16)
         }
     }
+
+    /// 出す返信の数。一覧を読めていればその数、まだなら `replyCount`。
+    private var replyBadge: Int { max(replies.count, story.replyCount ?? 0) }
 
     private func sendReply() async {
         do {

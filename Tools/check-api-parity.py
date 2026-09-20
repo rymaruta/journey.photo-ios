@@ -87,6 +87,33 @@ def app_calls(root: Path):
     return calls
 
 
+def notification_kind_problems(root: Path):
+    """お知らせの種別が、サーバーとアプリで揃っているか。
+
+    **増えたときに気づけない。** `notify.ts` の union に種別が足されても、
+    アプリ側の `Kind` に無ければ復号は通り（`Kind?` なので nil になる）、
+    一覧に**高さゼロの空の行**が並ぶだけになる——落ちも警告も出ない。
+    """
+    notify = (root / "api-user" / "src" / "notify.ts").read_text(encoding="utf-8")
+    found = re.search(r'type:\s*((?:"\w+"\s*\|?\s*)+);', notify)
+    if not found:
+        return ["notify.ts から通知の種別を読み取れませんでした（書き方が変わった？）"]
+
+    server_kinds = set(re.findall(r'"(\w+)"', found.group(1)))
+    swift = (HERE / "Sources/JourneyPhoto/Services/NotificationService.swift").read_text(encoding="utf-8")
+    declared = re.search(r"enum Kind: String, Decodable \{\s*case ([^\n]+)", swift)
+    app_kinds = {k.strip() for k in declared.group(1).split(",")} if declared else set()
+
+    out = []
+    for kind in sorted(server_kinds - app_kinds):
+        out.append(f"お知らせの種別 {kind} をアプリが知りません"
+                   f"（一覧に空の行が出ます。NotificationService の Kind と summary に足してください）")
+    for kind in sorted(app_kinds - server_kinds):
+        out.append(f"お知らせの種別 {kind} はサーバーに無くなりました（NotificationService から外してください）")
+    return out
+
+
+
 def main() -> int:
     raw = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PHOTO_GALLERY", "../photo-gallery")
     root = Path(raw).expanduser().resolve()
@@ -105,6 +132,8 @@ def main() -> int:
             continue
         if server[(method, path)] and not authed:
             problems.append(f"{where}: {method} {path} は認証が要るのに未認証で叩いています（401 になります）")
+
+    problems += notification_kind_problems(root)
 
     unused = sorted(k for k in server if k not in calls)
 

@@ -13,6 +13,9 @@ struct AlbumsView: View {
     @State private var inviteText = ""
     /// 開いている招待。リンクを貼った直後と、参加済みの行を押したとき
     @State private var openedToken: InviteToken?
+    /// 名前を変えている最中のアルバム（Web の `/user/albums` と同じ操作）
+    @State private var renaming: Album?
+    @State private var renameTitle = ""
 
     var body: some View {
         Group {
@@ -39,6 +42,20 @@ struct AlbumsView: View {
             joinedSection
         }
         .toolbar { addMenu }
+        .alert(L("名前を変える", "Rename"), isPresented: Binding(
+            get: { renaming != nil },
+            set: { if !$0 { renaming = nil } }
+        )) {
+            TextField(L("名前", "Name"), text: $renameTitle)
+            Button(Labels.Common.save) {
+                if let album = renaming {
+                    let title = renameTitle
+                    Task { await model.rename(album.id, title: title, environment: environment) }
+                }
+                renaming = nil
+            }
+            Button(Labels.Common.cancel, role: .cancel) { renaming = nil }
+        }
         .sheet(item: $openedToken) { opened in
             NavigationStack { InviteView(token: opened.token) }
         }
@@ -115,6 +132,12 @@ struct AlbumsView: View {
                 Task { await model.delete(album.id, environment: environment) }
             } label: {
                 Label(Labels.Common.delete, systemImage: "trash")
+            }
+            Button {
+                renameTitle = album.title
+                renaming = album
+            } label: {
+                Label(L("名前を変える", "Rename"), systemImage: "pencil")
             }
         }
     }
@@ -219,6 +242,25 @@ final class AlbumsViewModel: ObservableObject {
             albums.insert(album, at: 0)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
+        }
+    }
+
+    /// 名前を変える。**画面はサーバーが受けてから直す**
+    /// （先に直すと、断られたときに画面だけ新しい名前になる）。
+    func rename(_ id: String, title: String, environment: AppEnvironment) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try await environment.albums.rename(id: id, title: trimmed)
+            albums = albums.map { album in
+                guard album.id == id else { return album }
+                return Album(id: album.id, title: trimmed, createdAt: album.createdAt,
+                             memberCount: album.memberCount, inviteToken: album.inviteToken,
+                             inviteExpiresAt: album.inviteExpiresAt)
+            }
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription
+                ?? L("名前を変えられませんでした", "Couldn't rename")
         }
     }
 

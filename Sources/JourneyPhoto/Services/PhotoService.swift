@@ -14,16 +14,6 @@ struct PhotoService {
         try await api.authorized(.get, "/user/photos", as: [Photo].self)
     }
 
-    /// 公開 / 非公開の切り替え。`PUT /photos/{id}`。
-    func setPublished(photoId: String, published: Bool) async throws {
-        struct Body: Encodable { let published: Bool }
-        try await api.authorizedVoid(
-            .put,
-            "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)",
-            body: Body(published: published)
-        )
-    }
-
     /// 写真の中身を書き換える。`PUT /photos/{id}`。
     ///
     /// **送った項目だけが変わる。** 何も送らないと 400「更新項目がありません」。
