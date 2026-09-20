@@ -37,5 +37,7 @@ struct RemoteImage: View {
         Image(systemName: "photo")
             .font(.title2)
             .foregroundStyle(.tertiary)
+            // 飾り。読み上げの邪魔をしない
+            .accessibilityHidden(true)
     }
 }

@@ -26,6 +26,8 @@ struct SongRow: View {
             } label: {
                 Image(systemName: player.isPlaying(song.previewURL) ? "pause.circle.fill" : "play.circle.fill")
                     .font(.title2)
+                    .accessibilityLabel(player.isPlaying(song.previewURL)
+                                        ? L("止める", "Pause") : L("試し聴き", "Preview"))
             }
             .buttonStyle(.plain)
         }

@@ -10,6 +10,7 @@ struct ErrorBanner: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.title2)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.callout)
                 .multilineTextAlignment(.center)

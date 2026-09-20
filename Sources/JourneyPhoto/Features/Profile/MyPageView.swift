@@ -29,6 +29,7 @@ struct MyPageView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { SettingsView() } label: {
                     Image(systemName: "gearshape")
+                        .accessibilityLabel(L("設定", "Settings"))
                 }
             }
         }

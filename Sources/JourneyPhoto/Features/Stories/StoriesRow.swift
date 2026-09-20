@@ -22,6 +22,7 @@ struct StoriesRow: View {
                             VStack(spacing: 4) {
                                 Image(systemName: "plus")
                                     .font(.title3)
+                                    .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
                                     .frame(width: 64, height: 64)
                                     .background(Color(.secondarySystemBackground), in: Circle())
                                 Text(L("ストーリー", "Story"))

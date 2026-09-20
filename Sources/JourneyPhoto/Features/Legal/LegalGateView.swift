@@ -12,6 +12,7 @@ struct LegalGateView: View {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 44))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
             Text("Journey Photo")
                 .font(.title2.weight(.semibold))

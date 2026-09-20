@@ -63,6 +63,7 @@ struct UserProfileView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
+                            .accessibilityLabel(L("この人の操作", "More actions"))
                     }
                 }
             }

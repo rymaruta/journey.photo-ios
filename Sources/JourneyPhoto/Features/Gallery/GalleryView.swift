@@ -32,6 +32,7 @@ struct GalleryView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { PhotoMapView() } label: {
                     Image(systemName: "map")
+                        .accessibilityLabel(Labels.Navigation.map)
                 }
             }
         }

@@ -36,6 +36,7 @@ struct SongPickerView: View {
                     } label: {
                         Image(systemName: player.isPlaying(URL(string: song.previewUrl))
                               ? "pause.circle.fill" : "play.circle")
+                            .accessibilityLabel(L("試し聴き", "Preview"))
                     }
                     .buttonStyle(.borderless)
                     Button(L("選ぶ", "Choose")) {

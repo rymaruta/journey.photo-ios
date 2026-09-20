@@ -69,6 +69,7 @@ struct StoryViewerView: View {
             } label: {
                 Image(systemName: "xmark")
                     .foregroundStyle(.white)
+                    .accessibilityLabel(Labels.Common.close)
             }
         }
         .padding(16)

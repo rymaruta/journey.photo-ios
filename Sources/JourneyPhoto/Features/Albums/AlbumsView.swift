@@ -77,6 +77,7 @@ struct AlbumsView: View {
                     Button(L("招待リンクから参加", "Join with a link")) { showJoin = true }
                 } label: {
                     Image(systemName: "plus")
+                        .accessibilityLabel(L("アルバムの操作", "Album actions"))
                 }
             }
         }

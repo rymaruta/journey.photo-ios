@@ -58,6 +58,7 @@ struct PostSheet: View {
                 Image(systemName: systemImage)
                     .font(.title2)
                     .frame(width: 32)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.headline)
                     Text(detail).font(.caption).foregroundStyle(.secondary)
