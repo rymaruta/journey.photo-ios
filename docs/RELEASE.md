@@ -32,11 +32,15 @@ open JourneyPhoto.xcodeproj
 bash Tools/verify.sh    # 構文・設定・（Mac なら）ビルドとテスト
 ```
 
-> ⚠️ **このリポジトリのコードは、作成環境（Linux）で一度もコンパイルされて
-> いない。** Swift ツールチェーンを入れられなかったため（`download.swift.org`
-> も GitHub のリリース資産もネットワークポリシーで遮断）。
-> **最初の `xcodegen generate` でエラーが出る前提**で読むこと。
-> `Tools/verify.sh` が見ているのは構文と設定の食い違いまでで、型は見ていない。
+> ⚠️ **ここまでに Linux で確かめてあること**（`Tools/verify.sh`）:
+> 全 70 ファイルのコンパイル（`Shims/` の模型に向けて）・テスト60件・
+> `xcodegen generate` の成功・`api-user` との突き合わせ（50/50）・設定の整合。
+>
+> ⚠️ **確かめていないこと**: 本物の SwiftUI での型検査と、実機での挙動。
+> 模型の修飾子は素通しなので、ViewBuilder の枝の数・`some View` の同一性・
+> 修飾子の順序・レイアウト・実行時の挙動は見ていない。
+> **最初の `xcodebuild` で SwiftUI 固有のエラーが出る前提**で読むこと
+> （自分たちのコードの綴り違いや型の取り違えは、もう出ないはず）。
 
 ## 2. staging で動作を見る
 
