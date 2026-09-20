@@ -161,16 +161,19 @@ final class UserProfileViewModel: ObservableObject {
             return
         }
 
-        if let stats = try? await environment.social.followStats(userId: userId) {
+        let stats = try? await environment.social.followStats(userId: userId)
+        if let stats {
             followers = stats.followers
             following = stats.following
         }
-        if viewerId != nil, let ids = try? await environment.social.myFollowingIds() {
-            isFollowing = ids.contains(userId)
+        if viewerId != nil {
+            let ids = try? await environment.social.myFollowingIds()
+            isFollowing = ids?.contains(userId) ?? false
         }
         // **その人の写真は公開 JSON から絞る。** 「ある人の公開写真」を返す
         // 口が api-user に無いため（Web も静的ページを書き出している）
-        if let all = try? await environment.gallery.fetchPhotos() {
+        let all = try? await environment.gallery.fetchPhotos()
+        if let all {
             photos = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
         }
     }

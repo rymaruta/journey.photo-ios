@@ -49,12 +49,12 @@ struct ModerationService {
             let reason: String
             let note: String?
         }
-        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = (note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         try await api.authorizedVoid(
             .post, "/photos/\(encoded(photoId))/report",
             body: Body(
                 reason: reason.rawValue,
-                note: (trimmed?.isEmpty ?? true) ? nil : String(trimmed!.prefix(Self.reportNoteMax))
+                note: trimmed.isEmpty ? nil : String(trimmed.prefix(Self.reportNoteMax))
             )
         )
     }

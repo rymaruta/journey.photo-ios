@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""設定ファイルの形と、ファイルをまたいだ約束を確かめる。
+
+Xcode が無い環境で踏みやすいのは「設定の食い違い」で、しかも**ビルドは通って
+実行時に落ちる**（`AppConfig` は値が欠けていたら `fatalError` で止める）。
+機械で見られるところは見る:
+
+  1. project.yml が YAML として読めて、必要なキーがある
+  2. PrivacyInfo.xcprivacy が plist として読める
+  3. Assets の Contents.json が JSON として読めて、参照する画像が在る
+  4. **AppConfig が読む Info.plist のキーが、project.yml に全部ある**
+  5. **project.yml が参照する $(VAR) が、prod と staging の両方にある**
+     ——片方だけだと、その構成のビルドが起動直後に落ちる
+"""
+import json
+import plistlib
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+errors = []
+
+
+def fail(message):
+    errors.append(message)
+
+
+# ---- 1. project.yml -------------------------------------------------------
+project_text = (ROOT / "project.yml").read_text(encoding="utf-8")
+try:
+    import yaml  # type: ignore
+    project = yaml.safe_load(project_text)
+except ModuleNotFoundError:
+    project = None
+    print("[skip] PyYAML が無いので project.yml の構造検査は飛ばす（文字列の検査だけ行う）")
+
+if project is not None:
+    for key in ("name", "targets", "schemes", "packages"):
+        if key not in project:
+            fail(f"project.yml に {key} がありません")
+    target = (project.get("targets") or {}).get("JourneyPhoto")
+    if not target:
+        fail("project.yml に JourneyPhoto ターゲットがありません")
+    else:
+        configs = target.get("configFiles") or {}
+        for build in ("Debug", "Release"):
+            path = configs.get(build)
+            if not path:
+                fail(f"configFiles に {build} がありません")
+            elif not (ROOT / path).exists():
+                fail(f"{build} の xcconfig が見つかりません: {path}")
+
+# ---- 2. プライバシーマニフェスト -------------------------------------------
+privacy_path = ROOT / "Sources/JourneyPhoto/Resources/PrivacyInfo.xcprivacy"
+try:
+    privacy = plistlib.loads(privacy_path.read_bytes())
+except Exception as e:  # noqa: BLE001
+    privacy = {}
+    fail(f"PrivacyInfo.xcprivacy を plist として読めません: {e}")
+else:
+    for key in ("NSPrivacyTracking", "NSPrivacyCollectedDataTypes", "NSPrivacyAccessedAPITypes"):
+        if key not in privacy:
+            fail(f"PrivacyInfo.xcprivacy に {key} がありません")
+
+# ---- 3. アセットカタログ ---------------------------------------------------
+for contents in (ROOT / "Sources/JourneyPhoto/Assets.xcassets").rglob("Contents.json"):
+    try:
+        data = json.loads(contents.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        fail(f"{contents.relative_to(ROOT)} が JSON として読めません: {e}")
+        continue
+    for image in data.get("images", []):
+        name = image.get("filename")
+        if name and not (contents.parent / name).exists():
+            fail(f"{contents.relative_to(ROOT)} が参照する {name} がありません")
+
+# ---- 4. AppConfig が読むキー ----------------------------------------------
+app_config = (ROOT / "Sources/JourneyPhoto/Config/AppConfig.swift").read_text(encoding="utf-8")
+needed_plist_keys = set(re.findall(r'require(?:URL)?\("([^"]+)"\)', app_config))
+for key in sorted(needed_plist_keys):
+    if key not in project_text:
+        fail(f"AppConfig が読む Info.plist のキー {key} が project.yml にありません")
+
+# ---- 5. xcconfig の変数 ----------------------------------------------------
+used_vars = set(re.findall(r"\$\(([A-Z0-9_]+)\)", project_text))
+# Xcode が自前で持つ変数は対象外
+builtin = {"PRODUCT_NAME", "EXECUTABLE_NAME", "SRCROOT", "PROJECT_DIR", "TARGET_NAME"}
+for name in ("Production", "Staging"):
+    text = (ROOT / f"Config/{name}.xcconfig").read_text(encoding="utf-8")
+    defined = set(re.findall(r"^\s*([A-Z0-9_]+)\s*=", text, re.MULTILINE))
+    for var in sorted(used_vars - builtin - defined):
+        fail(f"{name}.xcconfig に {var} がありません（この構成のビルドは起動直後に落ちます）")
+
+# ---- 結果 -----------------------------------------------------------------
+if errors:
+    for message in errors:
+        print(f"NG  {message}")
+    sys.exit(1)
+print("設定ファイルの検査: 問題なし")

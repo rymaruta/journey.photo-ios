@@ -40,9 +40,10 @@ final class PhotoDetailViewModel: ObservableObject {
             mine = nil
         }
         likes = await count ?? likes
-        if let page = await page {
-            comments = page.items
-            commentCount = page.count
+        let loaded = await page
+        if let loaded {
+            comments = loaded.items
+            commentCount = loaded.count
         }
         liked = mine ?? false
     }

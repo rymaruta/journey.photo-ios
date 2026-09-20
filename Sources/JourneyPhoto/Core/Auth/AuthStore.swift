@@ -28,7 +28,8 @@ final class AuthStore: ObservableObject {
             state = .signedOut
             return
         }
-        if let id = try? await AuthGateway.currentUserId() {
+        let id = try? await AuthGateway.currentUserId()
+        if let id {
             state = .signedIn(userId: id)
         } else {
             state = .signedOut

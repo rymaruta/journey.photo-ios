@@ -10,6 +10,7 @@ struct PhotoDetailView: View {
     @StateObject private var model: PhotoDetailViewModel
     @State private var showReport = false
     @State private var showDeleteConfirm = false
+    @State private var showEdit = false
     @State private var actionError: String?
 
     init(photo: Photo) {
@@ -83,6 +84,9 @@ struct PhotoDetailView: View {
         .sheet(isPresented: $showReport) {
             ReportSheet(photoId: photo.id, ownerId: ownerId)
         }
+        .sheet(isPresented: $showEdit) {
+            NavigationStack { EditPhotoView(photo: photo) }
+        }
         .alert("この写真を削除しますか？", isPresented: $showDeleteConfirm) {
             Button("削除", role: .destructive) { Task { await deletePhoto() } }
             Button("やめる", role: .cancel) {}
@@ -99,7 +103,9 @@ struct PhotoDetailView: View {
                 ShareLink(item: url) { Label("共有", systemImage: "square.and.arrow.up") }
             }
             if isMine {
-                NavigationLink { EditPhotoView(photo: photo) } label: {
+                // **Menu の中に NavigationLink を置かない。** メニューの中身は
+                // ナビゲーションの外側に出るので押しても進まない。シートで出す
+                Button { showEdit = true } label: {
                     Label("編集", systemImage: "pencil")
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {

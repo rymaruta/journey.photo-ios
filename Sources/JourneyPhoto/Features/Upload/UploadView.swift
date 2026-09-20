@@ -73,6 +73,16 @@ struct UploadView: View {
                 }
             }
 
+            // **投稿できたことを言う。** 何も出ないと、送れたのか分からず
+            // 二重に押される
+            if model.savedPhoto != nil {
+                Section {
+                    Label("投稿しました。サイトへの反映には数分かかります。",
+                          systemImage: "checkmark.circle")
+                        .font(.callout)
+                }
+            }
+
             Section {
                 Button {
                     Task { await model.submit() }
