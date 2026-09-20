@@ -33,11 +33,13 @@ final class UploadViewModel: ObservableObject {
     private let uploads: UploadService
     private let albumService: AlbumService
     private let photoService: PhotoService
+    private let discovery: DiscoveryService
 
-    init(uploads: UploadService, albums: AlbumService, photos: PhotoService) {
+    init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
         self.uploads = uploads
         self.albumService = albums
         self.photoService = photos
+        self.discovery = discovery
     }
 
     /// アルバムは無いことの方が多い。**取れなくても投稿は止めない。**
@@ -58,6 +60,34 @@ final class UploadViewModel: ObservableObject {
     }
 
     var canSubmit: Bool { prepared != nil && !isWorking }
+
+    /// 写真の座標から撮影地を引いて、**空のときだけ**入れる。
+    ///
+    /// **なぜ埋めるか。** 撮影地 → 地図 → `/location/<スラッグ>` → 検索流入 が
+    /// このサイトの価値で（CLAUDE.md）、実データでは 30枚中13枚が空だった。
+    /// 手で打つ人は少ない。Web は 2026-08 からこれを埋めている。
+    ///
+    /// **5秒で諦める。** Web 側の `REVERSE_GEOCODE_TIMEOUT_MS` と同じ。
+    /// あちらは返らないと公開ボタンが押せなくなる作りだったが、こちらは
+    /// 押せるままなので、遅れて届いた地名が**打っている最中に割り込む**のを
+    /// 止めるのが目的（書きかけを奪わない）。
+    func fillPlaceName(lat: Double, lng: Double) async {
+        // 引く前に一度（打ってあるなら、そもそも引かない）
+        guard PlaceFill.value(current: location, found: "-") != nil else { return }
+        let found = await withTaskGroup(of: String?.self) { group -> String? in
+            group.addTask { [discovery] in try? await discovery.placeName(lat: lat, lng: lng) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        // **待っている間に打ち始めていたら、入れない。** 書きかけを奪わない
+        guard let next = PlaceFill.value(current: location, found: found) else { return }
+        location = next
+    }
 
     /// カメラで撮った画像を受ける。
     ///
@@ -96,8 +126,12 @@ final class UploadViewModel: ObservableObject {
             let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
             self.prepared = prepared
             self.previewImage = Self.image(from: prepared.data)
-            // 撮影地は自動で埋めない（撮影地欄は検索で効く固有名詞を入れる場所で、
-            // 座標とは別物。CLAUDE.md の「地名をタグに書いている」問題と同じ話）
+            // **撮影地を、写真の座標から先に埋めておく**（Web と同じ）。
+            // `lib/utils/exif.ts` の `reverseGeocode` が同じことをしている。
+            // 埋めるのは提案で、上から書き直せる
+            if let coords = prepared.coords {
+                await fillPlaceName(lat: coords.lat, lng: coords.lng)
+            }
         } catch {
             self.prepared = nil
             self.previewImage = nil

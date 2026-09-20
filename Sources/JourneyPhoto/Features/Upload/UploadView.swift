@@ -17,7 +17,8 @@ struct UploadView: View {
         _model = StateObject(wrappedValue: UploadViewModel(
             uploads: UploadService(api: api),
             albums: AlbumService(api: api),
-            photos: PhotoService(api: api)
+            photos: PhotoService(api: api),
+            discovery: DiscoveryService(api: api)
         ))
     }
 

@@ -173,3 +173,23 @@ final class FocalCropTests: XCTestCase {
         XCTAssertEqual(photo(#"{"x":0.8,"y":0.5}"#).gridCrop, .trailing)
     }
 }
+
+/// 撮影地の自動補完（Web の `reverseGeocode` と同じ扱い）。
+final class PlaceFillTests: XCTestCase {
+
+    func testEmptyPlaceIsFilled() {
+        XCTAssertEqual(PlaceFill.value(current: "", found: "高松市"), "高松市")
+        XCTAssertEqual(PlaceFill.value(current: "   ", found: " 高松市 "), "高松市")
+    }
+
+    /// **打ってあるものは奪わない。** 引いている最中に打ち始めた人からも同じ
+    /// ——入れる直前にもう一度ここを通すので、この一行が割り込みを止めている。
+    func testTypedPlaceIsKept() {
+        XCTAssertNil(PlaceFill.value(current: "高屋神社", found: "観音寺市"))
+    }
+
+    func testNothingFoundChangesNothing() {
+        XCTAssertNil(PlaceFill.value(current: "", found: nil))
+        XCTAssertNil(PlaceFill.value(current: "", found: "  "))
+    }
+}

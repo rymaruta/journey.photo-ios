@@ -150,6 +150,54 @@ final class ViewModelTests: XCTestCase {
         await model.postComment()
         XCTAssertNil(StubProtocol.lastRequest)
     }
+    /// **撮影地は、写真の座標から先に埋める**（Web の `reverseGeocode` と同じ）。
+    ///
+    /// 実データでは公開30枚のうち13枚が空だった。撮影地 → 地図 →
+    /// `/location/*` → 検索流入 がこのサイトの価値なので、空のまま出さない。
+    func testPlaceNameIsFilledFromTheCoordinates() async throws {
+        prepare()
+        StubProtocol.respond(status: 200, body: #"{"place":"高松市"}"#)
+        let model = UploadViewModel(uploads: UploadService(api: api(), session: session),
+                                    albums: AlbumService(api: api()),
+                                    photos: PhotoService(api: api()),
+                                    discovery: DiscoveryService(api: api()))
+
+        await model.fillPlaceName(lat: 34.28, lng: 133.8)
+
+        XCTAssertEqual(model.location, "高松市")
+    }
+
+    /// **打ってあるものは奪わない。** 本人が入れた固有名詞の方が、
+    /// 市区町村レベルの地名より強い（`/location/*` に効く語はそちら）。
+    func testTypedPlaceIsNotOverwritten() async throws {
+        prepare()
+        StubProtocol.respond(status: 200, body: #"{"place":"高松市"}"#)
+        let model = UploadViewModel(uploads: UploadService(api: api(), session: session),
+                                    albums: AlbumService(api: api()),
+                                    photos: PhotoService(api: api()),
+                                    discovery: DiscoveryService(api: api()))
+        model.location = "高屋神社"
+
+        await model.fillPlaceName(lat: 34.28, lng: 133.8)
+
+        XCTAssertEqual(model.location, "高屋神社")
+    }
+
+    /// 引けなくても投稿は止めない（空のまま進む）。
+    func testFailureLeavesThePlaceEmpty() async throws {
+        prepare()
+        StubProtocol.respond(status: 500, body: #"{"error":"だめでした"}"#)
+        let model = UploadViewModel(uploads: UploadService(api: api(), session: session),
+                                    albums: AlbumService(api: api()),
+                                    photos: PhotoService(api: api()),
+                                    discovery: DiscoveryService(api: api()))
+
+        await model.fillPlaceName(lat: 34.28, lng: 133.8)
+
+        XCTAssertEqual(model.location, "")
+        XCTAssertNil(model.errorMessage, "引けなかったことを画面のエラーにしない")
+    }
+
     /// **参加しているアルバムも投稿の行き先に出る。**
     ///
     /// `GET /albums` は自分が作ったものしか返さない（`albums.ts` が
@@ -160,7 +208,8 @@ final class ViewModelTests: XCTestCase {
         StubProtocol.respond(status: 200, body: #"{"albums":[{"id":"mine","title":"自分の"}]}"#)
         let model = UploadViewModel(uploads: UploadService(api: api(), session: session),
                                     albums: AlbumService(api: api()),
-                                    photos: PhotoService(api: api()))
+                                    photos: PhotoService(api: api()),
+                                    discovery: DiscoveryService(api: api()))
 
         await model.loadAlbums(joined: [
             JoinedAlbumsStore.Entry(id: "joined", title: "呼ばれた方", token: "t1"),
