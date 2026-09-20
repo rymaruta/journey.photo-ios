@@ -15,6 +15,9 @@ struct SignInView: View {
     @State private var code = ""
     /// signUp が返す UUID。確認コードの送り先を指す
     @State private var pendingUsername: String?
+    /// **端末に残る控え。** これが無いと、確認前にアプリを閉じた人が
+    /// 二度と入れない（`PendingVerification` の長い注記）
+    private let pending = PendingVerificationStore()
     /// 案内（送りました、など）。エラーとは別に出す
     @State private var notice: String?
 
@@ -100,8 +103,39 @@ struct SignInView: View {
         clearMessages()
         if mode == .signIn {
             await auth.signIn(email: email, password: password)
-        } else {
-            pendingUsername = await auth.signUp(email: email, password: password)
+            // **未確認のまま戻ってきた人を、確認画面へ送る。**
+            // 文言だけ出して入口が無いと、登録し直しても
+            // 「すでに登録されています」で詰む（パスワード再設定も効かない）
+            if auth.lastFailureWasUnconfirmed { await resumeVerification() }
+            return
+        }
+
+        let username = await auth.signUp(email: email, password: password)
+        if let username {
+            // **UUID を端末に残す。** 画面の `@State` だけだと、
+            // アプリを閉じた時点で送り直す手段が消える
+            pending.remember(email: email, username: username)
+            pendingUsername = username
+            return
+        }
+        // 「すでに登録されています」＝**確認前の自分**かもしれない
+        if auth.lastFailureWasExistingAccount { await resumeVerification() }
+    }
+
+    /// 控えてある UUID で確認画面に戻る。コードも送り直す。
+    private func resumeVerification() async {
+        guard let saved = pending.username(for: email) else { return }
+        if await auth.resendSignUpCode(username: saved) {
+            pendingUsername = saved
+            notice = L("確認コードを送り直しました。メールをご確認ください。",
+                       "We sent a new code. Please check your email.")
+            return
+        }
+        // **捨てるのは「この控えはもう使えない」ときだけ。**
+        // 回数制限や圏外で捨てると、唯一の手がかりを失う
+        if let failure = auth.lastFailure,
+           PendingVerification.shouldForget(afterResendError: failure) {
+            pending.forget(email: email)
         }
     }
 
@@ -120,6 +154,7 @@ struct SignInView: View {
                 Task {
                     clearMessages()
                     if await auth.confirmSignUp(username: username, code: code) {
+                        pending.forget(email: email)
                         pendingUsername = nil
                         // 確認が済んだらそのままログインする
                         await auth.signIn(email: email, password: password)

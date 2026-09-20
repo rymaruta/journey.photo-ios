@@ -46,6 +46,20 @@ final class AuthStore: ObservableObject {
         }
     }
 
+    /// 直近の失敗（Cognito の生の説明）。**文言ではなく種類で分岐する**ために持つ。
+    @Published private(set) var lastFailure: String?
+
+    /// 直近の失敗が「まだ確認していないアカウント」か。
+    var lastFailureWasUnconfirmed: Bool {
+        lastFailure?.contains("UserNotConfirmed") ?? false
+    }
+
+    /// 直近の失敗が「もう登録されているメールアドレス」か。
+    var lastFailureWasExistingAccount: Bool {
+        guard let lastFailure else { return false }
+        return lastFailure.contains("UsernameExists") || lastFailure.contains("AliasExists")
+    }
+
     func signIn(email: String, password: String) async {
         await run {
             _ = try await AuthGateway.signIn(email: email, password: password)
@@ -123,12 +137,18 @@ final class AuthStore: ObservableObject {
     private func run(_ work: () async throws -> Void) async {
         isWorking = true
         errorMessage = nil
+        lastFailure = nil
         defer { isWorking = false }
         do {
             try await work()
         } catch let error as AuthError {
+            // **文言だけでなく、種類も残す。** 画面は「未確認だから確認へ送る」
+            // のような分岐をしたい——文言で判定すると、言い回しを直すたびに
+            // 静かに壊れる
+            lastFailure = String(describing: error)
             errorMessage = AuthMessage.text(for: error)
         } catch {
+            lastFailure = String(describing: error)
             errorMessage = error.localizedDescription
         }
     }
