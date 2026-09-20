@@ -21,7 +21,7 @@ struct StoryViewerView: View {
             VStack(spacing: 0) {
                 header
 
-                RemoteImage(url: story.imageURL, contentMode: .fit)
+                StoryMedia(story: story)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if let caption = story.caption, !caption.isEmpty {

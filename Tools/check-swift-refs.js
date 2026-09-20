@@ -163,6 +163,26 @@ for (const file of files) {
     }
 }
 
+// 4.6 ストーリーを「必ず画像」として描いていないか
+//
+// **ストーリーは写真とは限らない**（Web は mp4 を受ける）。
+// `RemoteImage` に動画の URL を渡すと、読み込みに失敗して**真っ黒のまま**
+// になる——落ちないので気づけない。動画かどうかを見る場所は
+// `StoryMedia.swift` の1か所に寄せてある。
+{
+    for (const file of files) {
+        if (!file.includes("/Features/Stories/")) continue;
+        if (file.endsWith("StoryMedia.swift")) continue;
+        const source = fs.readFileSync(file, "utf8");
+        if (/RemoteImage\(\s*url:\s*story\./.test(source)) {
+            problems.push(
+                `${path.relative(process.cwd(), file)}: ストーリーを RemoteImage で直接描いています` +
+                `（動画のストーリーが真っ黒になります。StoryMedia / StoryThumb を使ってください）`
+            );
+        }
+    }
+}
+
 // 5. @MainActor の型の静的メンバをテストから呼んでいないか
 if (testRoot) {
     const mainActorTypes = new Set();

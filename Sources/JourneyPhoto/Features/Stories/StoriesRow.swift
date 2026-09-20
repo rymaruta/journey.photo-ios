@@ -37,9 +37,7 @@ struct StoriesRow: View {
                                 opened = story
                             } label: {
                                 VStack(spacing: 4) {
-                                    RemoteImage(url: story.imageURL)
-                                        .frame(width: 64, height: 64)
-                                        .clipShape(Circle())
+                                    StoryThumb(story: story)
                                         .overlay(Circle().strokeBorder(.tint, lineWidth: 2))
                                     Text(story.authorName)
                                         .font(.caption2)
