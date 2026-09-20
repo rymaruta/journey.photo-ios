@@ -70,7 +70,13 @@ Xcode の **Product → Archive**（スキームの Archive は Release ＝本�
 
 Organizer → **Distribute App → App Store Connect → Upload**。
 
-## 4. TestFlight で自分の端末に入れて確かめる
+## 4. 実機で確かめる
+
+**はじめてなら `docs/DEVICE_TEST.md` を見ること。** 無料の Apple ID で
+自分の iPhone に入れられる（有料の Developer Program は TestFlight と
+提出にだけ要る）。
+
+## 4b. TestFlight で自分の端末に入れて確かめる
 
 シミュレータでは確かめられないものがここで初めて見られる:
 
