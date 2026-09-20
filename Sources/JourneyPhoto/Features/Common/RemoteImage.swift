@@ -17,13 +17,17 @@ struct RemoteImage: View {
     var alignment: Alignment = .center
 
     var body: some View {
-        ZStack(alignment: alignment) {
+        ZStack {
             Color(.secondarySystemBackground)
             if let url {
                 AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.15))) { phase in
                     switch phase {
                     case .success(let image):
+                        // **寄せるのは写真だけ。** `ZStack` ごと寄せると、
+                        // 読み込み中の輪と失敗の記号まで隅に寄って、
+                        // 44〜56pt の枠では切れて見えなくなる
                         image.resizable().aspectRatio(contentMode: contentMode)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
                     case .failure:
                         placeholder
                     case .empty:

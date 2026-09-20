@@ -27,9 +27,18 @@ struct AlbumService {
         ).album
     }
 
-    func rename(id: String, title: String) async throws {
+    private struct Renamed: Decodable { let title: String? }
+
+    /// 名前を変える。**サーバーが直した名前を返す**——60字
+    /// （`invite.ts` の `ALBUM_TITLE_MAX`）で切られ、制御文字も落ちるので、
+    /// 送った文字をそのまま画面に出すと次の読み込みで戻って見える。
+    @discardableResult
+    func rename(id: String, title: String) async throws -> String {
         struct Body: Encodable { let title: String }
-        try await api.authorizedVoid(.patch, "/albums/\(encoded(id))", body: Body(title: title))
+        let result = try await api.authorized(
+            .patch, "/albums/\(encoded(id))", body: Body(title: title), as: Renamed.self
+        )
+        return result.title ?? title
     }
 
     func delete(id: String) async throws {

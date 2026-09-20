@@ -19,7 +19,8 @@ struct PhotoMapView: View {
                         selected = pin
                     } label: {
                         ZStack(alignment: .topTrailing) {
-                            RemoteImage(url: pin.photos.first?.gridImageURL)
+                            RemoteImage(url: pin.photos.first?.gridImageURL,
+                                        alignment: pin.photos.first?.gridAlignment ?? .center)
                                 .frame(width: 44, height: 44)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             if pin.photos.count > 1 {
@@ -45,7 +46,7 @@ struct PhotoMapView: View {
                         PhotoDetailView(photo: photo)
                     } label: {
                         HStack(spacing: 10) {
-                            RemoteImage(url: photo.gridImageURL)
+                            RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                                 .frame(width: 44, height: 44)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                             Text(photo.displayTitle.isEmpty ? (photo.location ?? L("写真", "Photo")) : photo.displayTitle)

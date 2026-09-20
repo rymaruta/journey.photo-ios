@@ -146,12 +146,18 @@ struct StoryReply: Decodable, Identifiable, Equatable {
     let uid: String?
     let name: String?
     let text: String?
+    /// **定型の反応**（❤️😍😂😮😢👏）。`api-user/src/storyReplies.ts` は
+    /// これを `text` ではなく `emoji` に入れて返す——見ていないと**空行**になる
+    let emoji: String?
     let t: String?
 
     var id: String { rawId ?? [(uid ?? ""), (t ?? "")].joined(separator: "|") }
 
+    /// 画面に出す中身。絵文字の反応は `emoji` に入っている。
+    var body: String { (text?.isEmpty == false ? text : nil) ?? emoji ?? "" }
+
     private enum CodingKeys: String, CodingKey {
         case rawId = "id"
-        case uid, name, text, t
+        case uid, name, text, emoji, t
     }
 }

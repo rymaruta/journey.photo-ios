@@ -14,7 +14,11 @@ struct AlbumsView: View {
     /// 開いている招待。リンクを貼った直後と、参加済みの行を押したとき
     @State private var openedToken: InviteToken?
     /// 名前を変えている最中のアルバム（Web の `/user/albums` と同じ操作）
-    @State private var renaming: Album?
+    /// **シートの表示と、対象と、入力を別々に持つ。** ひとつの `Album?` で
+    /// 兼ねると、`isPresented` の setter が閉じる合図で対象を nil にするため、
+    /// 「保存」の中身が走るときには対象が消えていることがある（黙って何も起きない）
+    @State private var showRename = false
+    @State private var renamingId = ""
     @State private var renameTitle = ""
 
     var body: some View {
@@ -42,19 +46,14 @@ struct AlbumsView: View {
             joinedSection
         }
         .toolbar { addMenu }
-        .alert(L("名前を変える", "Rename"), isPresented: Binding(
-            get: { renaming != nil },
-            set: { if !$0 { renaming = nil } }
-        )) {
+        .alert(L("名前を変える", "Rename"), isPresented: $showRename) {
             TextField(L("名前", "Name"), text: $renameTitle)
             Button(Labels.Common.save) {
-                if let album = renaming {
-                    let title = renameTitle
-                    Task { await model.rename(album.id, title: title, environment: environment) }
-                }
-                renaming = nil
+                let id = renamingId
+                let title = renameTitle
+                Task { await model.rename(id, title: title, environment: environment) }
             }
-            Button(Labels.Common.cancel, role: .cancel) { renaming = nil }
+            Button(Labels.Common.cancel, role: .cancel) {}
         }
         .sheet(item: $openedToken) { opened in
             NavigationStack { InviteView(token: opened.token) }
@@ -135,7 +134,8 @@ struct AlbumsView: View {
             }
             Button {
                 renameTitle = album.title
-                renaming = album
+                renamingId = album.id
+                showRename = true
             } label: {
                 Label(L("名前を変える", "Rename"), systemImage: "pencil")
             }
@@ -251,10 +251,11 @@ final class AlbumsViewModel: ObservableObject {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
-            try await environment.albums.rename(id: id, title: trimmed)
+            // **サーバーが直した名前を採る**（60字で切られる・制御文字が落ちる）
+            let saved = try await environment.albums.rename(id: id, title: trimmed)
             albums = albums.map { album in
                 guard album.id == id else { return album }
-                return Album(id: album.id, title: trimmed, createdAt: album.createdAt,
+                return Album(id: album.id, title: saved, createdAt: album.createdAt,
                              memberCount: album.memberCount, inviteToken: album.inviteToken,
                              inviteExpiresAt: album.inviteExpiresAt)
             }

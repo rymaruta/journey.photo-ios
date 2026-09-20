@@ -15,6 +15,9 @@ struct StoryViewerView: View {
     @State private var showViewers = false
     @State private var replies: [StoryReply] = []
     @State private var showReplies = false
+    /// 返信を読めなかった。**空の一覧と区別する**（数は出ているのに
+    /// 何も無い画面は「消えた」に見える）
+    @State private var repliesFailed = false
 
     var body: some View {
         ZStack {
@@ -49,17 +52,29 @@ struct StoryViewerView: View {
                 viewers = (try? await environment.stories.viewers(id: story.id)) ?? []
                 // **返信は本人だけが読める。** 読めないと、送られた返信が
                 // どこにも出ない（送る側の画面だけあった）
-                replies = (try? await environment.stories.replies(id: story.id)) ?? []
+                do {
+                    replies = try await environment.stories.replies(id: story.id)
+                    repliesFailed = false
+                } catch {
+                    repliesFailed = true
+                }
             }
         }
         .sheet(isPresented: $showReplies) {
             NavigationStack {
-                List(replies) { reply in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(reply.name ?? L("だれか", "Someone"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(reply.text ?? "")
+                List {
+                    if repliesFailed {
+                        Text(Labels.Common.loadFailed).foregroundStyle(.secondary)
+                    } else if replies.isEmpty {
+                        Text(L("まだ返信はありません", "No replies yet")).foregroundStyle(.secondary)
+                    }
+                    ForEach(replies) { reply in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(reply.name ?? L("だれか", "Someone"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(reply.body)
+                        }
                     }
                 }
                 .navigationTitle(L("返信 \(replies.count)", "\(replies.count) replies"))

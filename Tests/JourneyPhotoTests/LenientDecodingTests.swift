@@ -54,3 +54,37 @@ final class LenientDecodingTests: XCTestCase {
         XCTAssertEqual(list.photos.first?.paragraphs, ["一行目", "二行目"])
     }
 }
+
+/// ストーリーの返信。
+///
+/// **定型の反応は `text` ではなく `emoji` に入って返る**
+/// （`api-user/src/storyReplies.ts` の `REACTIONS`）。見ていないと、
+/// 返信の一覧に**名前だけの空行**が並ぶ。
+final class StoryReplyDecodingTests: XCTestCase {
+
+    private func reply(_ json: String) throws -> StoryReply {
+        try JSONDecoder.api.decode(StoryReply.self, from: Data(json.utf8))
+    }
+
+    func testEmojiReactionIsShown() throws {
+        let r = try reply(#"{"id":"1","uid":"u","name":"だれか","emoji":"❤️","t":"2026-09-20T00:00:00Z"}"#)
+        XCTAssertEqual(r.body, "❤️")
+    }
+
+    func testTextReplyIsShown() throws {
+        let r = try reply(#"{"id":"1","uid":"u","text":"いいね","t":"2026-09-20T00:00:00Z"}"#)
+        XCTAssertEqual(r.body, "いいね")
+    }
+
+    /// 両方あれば本文を出す（サーバーは片方しか入れないが、決めておく）。
+    func testTextWinsWhenBothArePresent() throws {
+        let r = try reply(#"{"id":"1","text":"いいね","emoji":"❤️"}"#)
+        XCTAssertEqual(r.body, "いいね")
+    }
+
+    /// `id` を持たない回がある——相手と時刻で作る（無いと `ForEach` が壊れる）。
+    func testMissingIdFallsBackToSenderAndTime() throws {
+        let r = try reply(#"{"uid":"u1","t":"2026-09-20T00:00:00Z","text":"やあ"}"#)
+        XCTAssertEqual(r.id, "u1|2026-09-20T00:00:00Z")
+    }
+}
