@@ -141,7 +141,7 @@ final class AlbumsViewModel: ObservableObject {
     /// **リンクをそのまま貼れるようにする。** 受け取った人は `?t=` の後ろだけを
     /// 取り出す作業をしたくない（URL を貼って弾かれるのがいちばん多い失敗）。
     func join(inviteText: String, environment: AppEnvironment) async {
-        let token = Self.token(from: inviteText)
+        let token = InviteLink.token(from: inviteText)
         guard !token.isEmpty else {
             errorMessage = "招待リンクを読み取れませんでした"
             return
@@ -152,17 +152,6 @@ final class AlbumsViewModel: ObservableObject {
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "参加できませんでした"
         }
-    }
-
-    /// `https://…/j?t=<トークン>` からトークンを取り出す。
-    /// URL でなければ、打たれた文字列そのものをトークンとみなす。
-    static func token(from text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let components = URLComponents(string: trimmed) else { return trimmed }
-        if let value = components.queryItems?.first(where: { $0.name == "t" })?.value {
-            return value
-        }
-        return components.scheme == nil ? trimmed : ""
     }
 
     func delete(_ id: String, environment: AppEnvironment) async {

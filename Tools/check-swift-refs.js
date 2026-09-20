@@ -10,6 +10,10 @@
  *     配られていないと、その画面を開いた瞬間に落ちる。コンパイルは通る。
  *  2. **同じ型を2か所で宣言している**
  *     これはコンパイルエラーだが、ファイルをまたぐと目で気づけない。
+ *  3. **`@MainActor` の型の静的メンバを、テストから呼んでいる**
+ *     `XCTestCase` のメソッドは isolation を持たないので
+ *     "Call to main actor-isolated static method in a synchronous
+ *     nonisolated context" でコンパイルが落ちる。実際に2回踏んだ。
  *
  *     node Tools/check-swift-refs.js Sources
  */
@@ -20,9 +24,10 @@ const Swift = require("tree-sitter-swift");
 
 const roots = process.argv.slice(2);
 if (roots.length === 0) {
-    console.error("使い方: node check-swift-refs.js <ディレクトリ...>");
+    console.error("使い方: node check-swift-refs.js <Sources> [Tests]");
     process.exit(2);
 }
+const [sourceRoot, testRoot] = roots;
 
 function walkFiles(dir, out = []) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -36,7 +41,7 @@ function walkFiles(dir, out = []) {
 const parser = new Parser();
 parser.setLanguage(Swift);
 
-const files = roots.flatMap((root) => walkFiles(root));
+const files = walkFiles(sourceRoot);
 
 /** 宣言された型 → 宣言したファイル（複数なら重複） */
 const declaredIn = new Map();
@@ -92,6 +97,33 @@ for (const file of files) {
     }
     for (const match of source.matchAll(/(?:@StateObject|@State|let|var)\s+(?:private\s+)?var?\s*([a-z]\w*)\s*(?::\s*[\w<>\[\], ?]+)?\s*=\s*([A-Z]\w*)\s*\(/g)) {
         bindings.set(match[1], match[2]);
+    }
+}
+
+// 3. @MainActor の型の静的メンバをテストから呼んでいないか
+if (testRoot) {
+    const mainActorTypes = new Set();
+    for (const file of files) {
+        const source = fs.readFileSync(file, "utf8");
+        for (const match of source.matchAll(
+            /@MainActor\s*(?:\n\s*)?(?:public\s+|internal\s+|private\s+|final\s+)*(?:class|struct|enum|actor)\s+([A-Z]\w*)/g
+        )) {
+            mainActorTypes.add(match[1]);
+        }
+    }
+    for (const file of walkFiles(testRoot)) {
+        const source = fs.readFileSync(file, "utf8");
+        const isMainActorTest = /@MainActor\s*(?:final\s+)?class/.test(source);
+        if (isMainActorTest) continue;
+        for (const match of source.matchAll(/\b([A-Z]\w*)\.[a-z]\w*\s*\(/g)) {
+            if (mainActorTypes.has(match[1])) {
+                problems.push(
+                    `${path.relative(process.cwd(), file)} が @MainActor の ` +
+                    `${match[1]} の静的メンバを呼んでいます` +
+                    `（XCTestCase は isolation を持たないのでコンパイルが落ちます）`
+                );
+            }
+        }
     }
 }
 

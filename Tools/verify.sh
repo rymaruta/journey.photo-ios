@@ -18,7 +18,7 @@ node Tools/check-swift-syntax.js Sources Tests
 
 echo
 echo "== 参照（配られていない EnvironmentObject・型の重複） =="
-node Tools/check-swift-refs.js Sources
+node Tools/check-swift-refs.js Sources Tests
 
 echo
 echo "== 設定ファイル =="

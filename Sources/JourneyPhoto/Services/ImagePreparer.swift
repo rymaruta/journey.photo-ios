@@ -109,8 +109,10 @@ enum ImagePreparer {
             throw PrepareError.encodeFailed
         }
         let output = NSMutableData()
+        // `CGImageDestinationCreateWithData` は `CFMutableData` を取る。
+        // NSMutableData からの橋渡しは明示的に書く（暗黙に通る保証がない）
         guard let destination = CGImageDestinationCreateWithData(
-            output, UTType.jpeg.identifier as CFString, 1, nil
+            output as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil
         ) else {
             throw PrepareError.encodeFailed
         }
