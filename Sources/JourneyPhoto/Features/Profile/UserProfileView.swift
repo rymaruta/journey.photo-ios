@@ -88,11 +88,19 @@ struct UserProfileView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.profile?.name ?? "—").font(.headline)
                     HStack(spacing: 12) {
-                        Text("フォロワー \(model.followers)")
-                        Text("フォロー中 \(model.following)")
+                        NavigationLink {
+                            FollowListView(userId: userId, kind: .followers)
+                        } label: {
+                            Text("フォロワー \(model.followers)")
+                        }
+                        NavigationLink {
+                            FollowListView(userId: userId, kind: .following)
+                        } label: {
+                            Text("フォロー中 \(model.following)")
+                        }
                     }
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
                 }
                 Spacer()
             }

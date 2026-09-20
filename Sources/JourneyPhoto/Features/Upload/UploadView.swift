@@ -10,8 +10,10 @@ struct UploadView: View {
     init() {
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
         // ため、ここでは既定の組み立てを使う
+        let api = APIClient(tokenProvider: CognitoTokenProvider())
         _model = StateObject(wrappedValue: UploadViewModel(
-            uploads: UploadService(api: APIClient(tokenProvider: CognitoTokenProvider()))
+            uploads: UploadService(api: api),
+            albums: AlbumService(api: api)
         ))
     }
 
@@ -61,6 +63,18 @@ struct UploadView: View {
                     .textInputAutocapitalization(.never)
             }
 
+            if !model.albums.isEmpty {
+                Section("アルバム") {
+                    Picker("入れるアルバム", selection: $model.selectedAlbumId) {
+                        Text("入れない").tag(String?.none)
+                        ForEach(model.albums) { album in
+                            Text(album.title.isEmpty ? "無題のアルバム" : album.title)
+                                .tag(String?.some(album.id))
+                        }
+                    }
+                }
+            }
+
             Section {
                 Toggle("すぐ公開する", isOn: $model.published)
             } footer: {
@@ -96,6 +110,7 @@ struct UploadView: View {
                 .disabled(!model.canSubmit)
             }
         }
+        .task { await model.loadAlbums() }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { data in
                 model.accept(capturedJPEG: data)

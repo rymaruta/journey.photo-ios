@@ -29,3 +29,25 @@ final class UploadDraftTests: XCTestCase {
         XCTAssertEqual(TagInput.parse("a、b"), ["a", "b"])
     }
 }
+
+final class InviteTokenTests: XCTestCase {
+
+    /// **リンクをそのまま貼れること。** 受け取った人に `?t=` の後ろだけを
+    /// 取り出させない（URL を貼って弾かれるのがいちばん多い失敗）。
+    func testTakesTokenFromInviteURL() {
+        XCTAssertEqual(
+            AlbumsViewModel.token(from: "https://journey-photo.com/j?t=abc123"),
+            "abc123"
+        )
+    }
+
+    func testAcceptsBareToken() {
+        XCTAssertEqual(AlbumsViewModel.token(from: "  abc123 "), "abc123")
+    }
+
+    /// トークンを持たない URL は「読み取れなかった」にする——
+    /// URL 全体をトークンとして送ると、サーバーに無意味な問い合わせが飛ぶ。
+    func testRejectsURLWithoutToken() {
+        XCTAssertEqual(AlbumsViewModel.token(from: "https://journey-photo.com/"), "")
+    }
+}

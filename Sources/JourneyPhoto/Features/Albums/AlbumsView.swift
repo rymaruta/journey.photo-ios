@@ -8,6 +8,8 @@ struct AlbumsView: View {
     @StateObject private var model = AlbumsViewModel()
     @State private var newTitle = ""
     @State private var showCreate = false
+    @State private var showJoin = false
+    @State private var inviteText = ""
 
     var body: some View {
         Group {
@@ -66,8 +68,24 @@ struct AlbumsView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showCreate = true } label: { Image(systemName: "plus") }
+                Menu {
+                    Button("アルバムを作る") { showCreate = true }
+                    Button("招待リンクから参加") { showJoin = true }
+                } label: {
+                    Image(systemName: "plus")
+                }
             }
+        }
+        .alert("招待リンクから参加", isPresented: $showJoin) {
+            TextField("リンクか招待コード", text: $inviteText)
+            Button("参加する") {
+                let text = inviteText
+                inviteText = ""
+                Task { await model.join(inviteText: text, environment: environment) }
+            }
+            Button("やめる", role: .cancel) { inviteText = "" }
+        } message: {
+            Text("受け取ったリンク（https://journey-photo.com/j?t=…）をそのまま貼れます。")
         }
         .alert("アルバムを作る", isPresented: $showCreate) {
             TextField("名前", text: $newTitle)
@@ -116,6 +134,35 @@ final class AlbumsViewModel: ObservableObject {
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "作れませんでした"
         }
+    }
+
+    /// 招待リンクでも招待コードでも受ける。
+    ///
+    /// **リンクをそのまま貼れるようにする。** 受け取った人は `?t=` の後ろだけを
+    /// 取り出す作業をしたくない（URL を貼って弾かれるのがいちばん多い失敗）。
+    func join(inviteText: String, environment: AppEnvironment) async {
+        let token = Self.token(from: inviteText)
+        guard !token.isEmpty else {
+            errorMessage = "招待リンクを読み取れませんでした"
+            return
+        }
+        do {
+            _ = try await environment.albums.join(token: token)
+            await load(environment: environment)
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "参加できませんでした"
+        }
+    }
+
+    /// `https://…/j?t=<トークン>` からトークンを取り出す。
+    /// URL でなければ、打たれた文字列そのものをトークンとみなす。
+    static func token(from text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let components = URLComponents(string: trimmed) else { return trimmed }
+        if let value = components.queryItems?.first(where: { $0.name == "t" })?.value {
+            return value
+        }
+        return components.scheme == nil ? trimmed : ""
     }
 
     func delete(_ id: String, environment: AppEnvironment) async {

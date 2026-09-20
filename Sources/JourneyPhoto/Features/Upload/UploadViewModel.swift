@@ -17,14 +17,23 @@ final class UploadViewModel: ObservableObject {
     @Published var tagsText = ""
     @Published var published = true
 
+    @Published private(set) var albums: [Album] = []
+    @Published var selectedAlbumId: String?
     @Published private(set) var isWorking = false
     @Published var errorMessage: String?
     @Published private(set) var savedPhoto: Photo?
 
     private let uploads: UploadService
+    private let albumService: AlbumService
 
-    init(uploads: UploadService) {
+    init(uploads: UploadService, albums: AlbumService) {
         self.uploads = uploads
+        self.albumService = albums
+    }
+
+    /// アルバムは無いことの方が多い。**取れなくても投稿は止めない。**
+    func loadAlbums() async {
+        albums = (try? await albumService.list()) ?? []
     }
 
     var canSubmit: Bool { prepared != nil && !isWorking }
@@ -90,6 +99,7 @@ final class UploadViewModel: ObservableObject {
         draft.coords = prepared.coords
         draft.date = prepared.takenOn
         draft.exif = prepared.exif
+        draft.albumId = selectedAlbumId
 
         do {
             savedPhoto = try await uploads.upload(
@@ -113,6 +123,7 @@ final class UploadViewModel: ObservableObject {
         location = ""
         tagsText = ""
         published = true
+        selectedAlbumId = nil
     }
 
     private static func image(from data: Data) -> Image? {

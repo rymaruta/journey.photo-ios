@@ -7,12 +7,30 @@ struct StoriesRow: View {
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = StoriesViewModel()
     @State private var opened: Story?
+    @State private var showComposer = false
 
     var body: some View {
         Group {
-            if auth.userId != nil && !model.stories.isEmpty {
+            if auth.userId != nil {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
+                        // **自分の入口を先頭に置く。** ストーリーが1本も
+                        // 無いときに行ごと消すと、投稿する場所が無くなる
+                        Button {
+                            showComposer = true
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                    .font(.title3)
+                                    .frame(width: 64, height: 64)
+                                    .background(Color(.secondarySystemBackground), in: Circle())
+                                Text("ストーリー")
+                                    .font(.caption2)
+                                    .frame(width: 68)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
                         ForEach(model.stories) { story in
                             Button {
                                 opened = story
@@ -42,6 +60,11 @@ struct StoriesRow: View {
         }
         .fullScreenCover(item: $opened) { story in
             StoryViewerView(story: story, isMine: story.userId == auth.userId)
+        }
+        .sheet(isPresented: $showComposer, onDismiss: {
+            Task { await model.load(environment: environment) }
+        }) {
+            NavigationStack { StoryComposerView() }
         }
     }
 }
