@@ -8,12 +8,27 @@ API Gateway）をそのまま叩く。
 
 ## ⚠️ 最初に読むこと
 
-**画面を持たない層は本当にビルドしてテストまで通っている。画面側は通っていない。**
+**全ファイルがコンパイルでき、テストも走っている。ただし SwiftUI は模型。**
 
-| 層 | 状態 |
+| 何 | 状態 |
 |---|---|
-| Config・Core・Models・サービス12本（`Package.swift` に並べたもの） | `swift build` と `swift test` が通る（**52件 緑**） |
-| SwiftUI / UIKit / ImageIO / Amplify に触るファイル | **一度もコンパイルしていない**（iOS SDK が要る） |
+| 全 70 ファイル | `swift build` が通る（`Shims/` の模型に向けて） |
+| テスト 52件 | `swift test` が通る |
+| 本物の SwiftUI での検査 | **していない**（iOS SDK が要る＝Mac が要る） |
+
+`Shims/` は **Linux で型検査するためだけの模型**で、SwiftUI・UIKit・PhotosUI・
+MapKit・AVFoundation・ImageIO・Combine・Amplify の「使っている口の形」だけを
+宣言してある。実機のビルドには一切入らない（Xcode は `project.yml` から作られ、
+`Package.swift` を見ない）。
+
+**模型の修飾子は素通し**なので、SwiftUI 側の制約（ViewBuilder の枝の数・
+`some View` の同一性・修飾子の順序・実行時の挙動）は見ていない。
+見えるのは**自分たちのコードの誤り**——綴り違い・無いプロパティ・
+引数ラベルの不一致・型の取り違え・分離（`@MainActor`）の誤り。
+
+> これを入れた時点で、**Xcode でも落ちる誤りが実際に8ファイル見つかった**
+> ——`ObservableObject` と `@Published` を使うのに `Combine` も `SwiftUI` も
+> import していなかった（`Foundation` だけでは通らない）。
 
 ```bash
 bash Tools/verify.sh

@@ -1,4 +1,7 @@
 import Foundation
+// `ObservableObject` と `@Published` は Combine のもの。SwiftUI を読む
+// ファイルは再輸出で使えるが、ここは読んでいないので明示する
+import Combine
 
 /// 規約への同意。
 ///

@@ -2,12 +2,13 @@
 #
 # 手元でできるだけの検査を通す。**Mac なら最後にビルドまで行く。**
 #
-# Linux では:
-#   - 画面を持たない層（Package.swift に並べたファイル）は**本当に**
-#     ビルドしてテストまで走る
-#   - SwiftUI / UIKit / ImageIO / Amplify に触るファイルは iOS SDK が要るので、
-#     構文と参照の検査までしか見られない
-# **緑でも「アプリのビルドが通る」とは言えない。**
+# Linux では **全ファイル**をビルドしてテストまで走る。
+# SwiftUI・UIKit・ImageIO・Amplify は `Shims/` の模型に向けてコンパイルする。
+#
+# **緑でも「Xcode のビルドが通る」とは言えない。** 模型の修飾子は素通しなので、
+# SwiftUI 側の制約（ViewBuilder の枝の数・`some View` の同一性・修飾子の順序・
+# 実行時の挙動）は見ていない。見えているのは**自分たちのコードの誤り**——
+# 綴り違い・無いプロパティ・引数ラベルの不一致・型の取り違え・分離の誤り。
 #
 #     bash Tools/verify.sh
 set -euo pipefail
@@ -33,7 +34,7 @@ echo "== 設定ファイル =="
 python3 Tools/check-config.py
 
 echo
-echo "== 画面を持たない層のビルドとテスト（Swift があるときだけ） =="
+echo "== ビルドとテスト（模型に向けて・Swift があるときだけ） =="
 if [ -x /opt/swift/bin/swift ]; then
     export PATH=/opt/swift/bin:$PATH
 fi
@@ -54,9 +55,9 @@ if command -v xcodebuild >/dev/null 2>&1; then
         -destination 'platform=iOS Simulator,name=iPhone 15' \
         -quiet build test
 else
-    echo "== 画面側のビルドは飛ばす =="
-    echo "   Xcode が無い環境です。**SwiftUI に触るファイルは型検査していません。**"
-    echo "   （画面を持たない層は上でビルドとテストまで通っています）"
+    echo "== 実機向けのビルドは飛ばす =="
+    echo "   Xcode が無い環境です。**本物の SwiftUI では確かめていません。**"
+    echo "   （上のビルドは Shims/ の模型に向けたもの）"
     echo "   Mac で次を実行してください:"
     echo "     xcodegen generate && xcodebuild -scheme JourneyPhoto \\"
     echo "       -destination 'platform=iOS Simulator,name=iPhone 15' build test"

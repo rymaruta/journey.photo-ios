@@ -68,7 +68,12 @@ for (const root of roots) {
         // Swift 5.10 で入った指定で、tree-sitter-swift 0.7 は解析に失敗する
         // （本物のコンパイラは通る）。誤報で緑が濁ると検査を見なくなるので、
         // 意味を変えない範囲で落としてから読む
-        const source = fs.readFileSync(file, "utf8").replace(/\bnonisolated\(unsafe\)\s+/g, "");
+        const source = fs.readFileSync(file, "utf8")
+            .replace(/\bnonisolated\(unsafe\)\s+/g, "")
+            // **条件付きコンパイルの行を落としてから読む。** `#if` で属性だけを
+            // 囲む書き方（`#if !SWIFT_PACKAGE` + `@main`）を解析器が読めない。
+            // 両方の枝を残すと意味は重複するが、見ているのは構文だけなので困らない
+            .replace(/^[ \t]*#(if|elseif|else|endif)\b.*$/gm, "");
         const tree = parser.parse(source);
         if (!tree.rootNode.hasError) continue;
         broken++;

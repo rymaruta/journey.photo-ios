@@ -1,6 +1,15 @@
 import SwiftUI
+// Linux では URLCache が別モジュールに居る（iOS では何も起きない）
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
+// **`@main` は Xcode のビルドだけ。** SPM（Linux での型検査）では
+// ライブラリとして読むので、付いたままだとテスト実行子の `main` と衝突する。
+// `SWIFT_PACKAGE` は SwiftPM が自動で定義し、Xcode は定義しない
+#if !SWIFT_PACKAGE
 @main
+#endif
 struct JourneyPhotoApp: App {
 
     @StateObject private var auth = AuthStore()
@@ -28,10 +37,19 @@ struct JourneyPhotoApp: App {
     /// 入れ物に 80件だけ控えているのと同じ役目**（`public/sw.js`）。
     /// 端末側は容量で押し出してくれるので、件数ではなく容量で切る。
     private static func configureImageCache() {
+        // Linux の corelibs は `diskPath` が必須。iOS では省略できる
+        #if canImport(Darwin)
         URLCache.shared = URLCache(
             memoryCapacity: 32 * 1024 * 1024,
             diskCapacity: 256 * 1024 * 1024
         )
+        #else
+        URLCache.shared = URLCache(
+            memoryCapacity: 32 * 1024 * 1024,
+            diskCapacity: 256 * 1024 * 1024,
+            diskPath: nil
+        )
+        #endif
     }
 
     /// 「見せない」を公開一覧の側へ渡す。
