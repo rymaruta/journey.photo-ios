@@ -12,7 +12,7 @@ struct PhotoTimelineView: View {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
                         ForEach(section.photos) { photo in
                             NavigationLink { PhotoDetailView(photo: photo) } label: {
-                                RemoteImage(url: photo.gridImageURL)
+                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                                     .aspectRatio(1, contentMode: .fill)
                             }
                             .buttonStyle(.plain)

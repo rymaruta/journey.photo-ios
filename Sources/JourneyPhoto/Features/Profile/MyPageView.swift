@@ -155,7 +155,7 @@ struct MyPageView: View {
     /// ——公開したつもりの写真が出ていない、がいちばん困る。
     private func gridCell(_ photo: Photo) -> some View {
         ZStack(alignment: .topTrailing) {
-            RemoteImage(url: photo.gridImageURL)
+            RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                 .aspectRatio(1, contentMode: .fill)
             if photo.published == false {
                 Text(L("下書き", "Draft"))
@@ -199,7 +199,9 @@ final class MyPageViewModel: ObservableObject {
             async let profile = self.profiles.myProfile()
             async let photos = self.photoService.myPhotos()
             self.profile = try await profile
-            self.photos = try await photos
+            // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
+            self.photos = PhotoPinning.pinnedFirst(
+                try await photos, pinned: self.profile?.pinnedPhotoIds ?? [])
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }

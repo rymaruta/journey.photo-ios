@@ -87,7 +87,7 @@ struct InviteView: View {
                             PhotoDetailView(photo: photo, fromPublicFeed: false, context: preview.photos)
                         } label: {
                             HStack(spacing: 12) {
-                                RemoteImage(url: photo.gridImageURL)
+                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                                     .frame(width: 56, height: 56)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                                 Text(photo.displayTitle)

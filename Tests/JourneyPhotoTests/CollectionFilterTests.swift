@@ -102,3 +102,74 @@ final class PhotoLinkTests: XCTestCase {
         XCTAssertNil(PhotoLink.url(photoId: "", isPublished: true))
     }
 }
+
+/// ピン留め（持ち主が選んだ並び）。
+///
+/// `pinnedPhotoIds` は復号していたのにどこでも見ておらず、**Web で留めた
+/// 写真がアプリでは普通の位置に沈んでいた**。
+final class PinnedOrderTests: XCTestCase {
+
+    private func photo(_ id: String) -> Photo {
+        let json = #"{"id":"\#(id)","src":"https://x.test/\#(id).jpg"}"#
+        return try! JSONDecoder.api.decode(Photo.self, from: Data(json.utf8))
+    }
+
+    func testPinnedPhotosComeFirstInTheOrderTheyWerePinned() {
+        let photos = ["a", "b", "c", "d"].map(photo)
+        let sorted = PhotoPinning.pinnedFirst(photos, pinned: ["c", "a"])
+        XCTAssertEqual(sorted.map { $0.id }, ["c", "a", "b", "d"])
+    }
+
+    func testNothingPinnedKeepsTheOriginalOrder() {
+        let photos = ["a", "b"].map(photo)
+        XCTAssertEqual(PhotoPinning.pinnedFirst(photos, pinned: []).map { $0.id }, ["a", "b"])
+    }
+
+    /// **消えた写真の ID が残っていても落ちない。** ピンはプロフィールに
+    /// 残り続けるので、写真を消したあとの ID が混ざる。
+    func testUnknownPinnedIdsAreIgnored() {
+        let photos = ["a", "b"].map(photo)
+        let sorted = PhotoPinning.pinnedFirst(photos, pinned: ["gone", "b"])
+        XCTAssertEqual(sorted.map { $0.id }, ["b", "a"])
+    }
+
+    /// 同じ写真が2回出ない（ピンに入っているものを後ろでも出さない）。
+    func testPinnedPhotoIsNotListedTwice() {
+        let photos = ["a", "b"].map(photo)
+        let sorted = PhotoPinning.pinnedFirst(photos, pinned: ["a"])
+        XCTAssertEqual(sorted.count, 2)
+    }
+}
+
+/// 切り抜きで残す側（`Photo.focalPoint`）。
+///
+/// owner が Web で掴んで動かした位置。**アプリは復号していながら見ておらず**、
+/// 動かした写真がアプリでだけ中央で切られていた。
+final class FocalCropTests: XCTestCase {
+
+    private func photo(_ focal: String?) -> Photo {
+        let extra = focal.map { ",\"focalPoint\":\($0)" } ?? ""
+        let json = #"{"id":"a","src":"https://x.test/a.jpg"\#(extra)}"#
+        return try! JSONDecoder.api.decode(Photo.self, from: Data(json.utf8))
+    }
+
+    func testNoFocalPointStaysCentered() {
+        XCTAssertEqual(photo(nil).gridCrop, .center)
+        XCTAssertEqual(photo(#"{"x":0.5,"y":0.5}"#).gridCrop, .center)
+    }
+
+    func testCornersRoundToTheNearestCorner() {
+        XCTAssertEqual(photo(#"{"x":0.05,"y":0.05}"#).gridCrop, .topLeading)
+        XCTAssertEqual(photo(#"{"x":0.95,"y":0.95}"#).gridCrop, .bottomTrailing)
+        XCTAssertEqual(photo(#"{"x":0.95,"y":0.1}"#).gridCrop, .topTrailing)
+        XCTAssertEqual(photo(#"{"x":0.1,"y":0.95}"#).gridCrop, .bottomLeading)
+    }
+
+    /// 人物の顔は上に寄っていることが多い——ここが中央に丸まると意味がない。
+    func testUpperMiddleRoundsToTop() {
+        XCTAssertEqual(photo(#"{"x":0.5,"y":0.2}"#).gridCrop, .top)
+        XCTAssertEqual(photo(#"{"x":0.5,"y":0.8}"#).gridCrop, .bottom)
+        XCTAssertEqual(photo(#"{"x":0.2,"y":0.5}"#).gridCrop, .leading)
+        XCTAssertEqual(photo(#"{"x":0.8,"y":0.5}"#).gridCrop, .trailing)
+    }
+}

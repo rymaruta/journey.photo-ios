@@ -184,7 +184,7 @@ public enum TextAlignment { case leading, center, trailing }
 public struct Alignment {
     public static let center = Alignment(), leading = Alignment(), trailing = Alignment()
     public static let top = Alignment(), topTrailing = Alignment(), topLeading = Alignment()
-    public static let bottom = Alignment()
+    public static let bottom = Alignment(), bottomLeading = Alignment(), bottomTrailing = Alignment()
 }
 public struct HorizontalAlignment { public static let leading = HorizontalAlignment(), center = HorizontalAlignment() }
 public struct VerticalAlignment { public static let center = VerticalAlignment(), top = VerticalAlignment() }

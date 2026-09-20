@@ -9,9 +9,15 @@ struct RemoteImage: View {
 
     let url: URL?
     var contentMode: ContentMode = .fill
+    /// 枠からはみ出したぶんを、どちら側に残すか。
+    ///
+    /// **切り抜きの中心は写真ごとに違う**（`Photo.focalPoint`。owner が
+    /// Web で掴んで動かせる）。既定の中央のままだと、動かした写真が
+    /// アプリでだけ別の切り抜きで出る。
+    var alignment: Alignment = .center
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: alignment) {
             Color(.secondarySystemBackground)
             if let url {
                 AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.15))) { phase in

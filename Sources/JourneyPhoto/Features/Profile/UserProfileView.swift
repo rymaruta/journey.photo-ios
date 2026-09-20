@@ -43,7 +43,7 @@ struct UserProfileView: View {
                     LazyVGrid(columns: columns, spacing: 2) {
                         ForEach(model.photos) { photo in
                             NavigationLink { PhotoDetailView(photo: photo, context: model.photos) } label: {
-                                RemoteImage(url: photo.gridImageURL)
+                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                                     .aspectRatio(1, contentMode: .fill)
                             }
                             .buttonStyle(.plain)
@@ -184,7 +184,8 @@ final class UserProfileViewModel: ObservableObject {
         // 口が api-user に無いため（Web も静的ページを書き出している）
         let all = try? await environment.gallery.fetchPhotos()
         if let all {
-            photos = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
+            photos = PhotoPinning.pinnedFirst(all.filter { ($0.userId ?? $0.uploadedBy) == userId },
+                                      pinned: profile?.pinnedPhotoIds ?? [])
         }
     }
 

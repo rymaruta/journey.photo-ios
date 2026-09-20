@@ -78,7 +78,7 @@ struct GalleryView: View {
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(photos) { photo in
                     NavigationLink(value: photo.id) {
-                        RemoteImage(url: photo.gridImageURL)
+                        RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                             .aspectRatio(1, contentMode: .fill)
                             .accessibilityLabel(photo.accessibilityText)
                     }

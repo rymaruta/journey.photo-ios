@@ -19,7 +19,7 @@ struct RelatedPhotosRow: View {
                                 NavigationLink {
                                     PhotoDetailView(photo: item)
                                 } label: {
-                                    RemoteImage(url: item.gridImageURL)
+                                    RemoteImage(url: item.gridImageURL, alignment: item.gridAlignment)
                                         .frame(width: 96, height: 96)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                 }

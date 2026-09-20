@@ -96,6 +96,12 @@ struct Photo: Identifiable, Decodable, Equatable {
         URL(string: thumbSrc ?? src256 ?? src)
     }
 
+    /// 一覧で切り抜くときに残す側。**持ち主が選んだ位置**（`focalPoint`）。
+    var gridCrop: FocalCrop {
+        guard let focalPoint else { return .center }
+        return FocalCrop.bucket(x: focalPoint.x, y: focalPoint.y)
+    }
+
     var detailImageURL: URL? {
         URL(string: src)
     }

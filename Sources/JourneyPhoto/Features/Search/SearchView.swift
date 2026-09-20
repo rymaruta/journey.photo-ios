@@ -33,7 +33,7 @@ struct SearchView: View {
                             PhotoDetailView(photo: photo)
                         } label: {
                             HStack(spacing: 10) {
-                                RemoteImage(url: photo.gridImageURL)
+                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                                     .frame(width: 44, height: 44)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                                 // **題が無くても「無題」と名乗らせない。**
