@@ -219,3 +219,13 @@ public struct UIImageShim {
     public init() {}
     public func jpegData(compressionQuality: Double) -> Data? { nil }
 }
+
+
+/// `@FocusState` の模型。本物は入力欄に焦点が当たっているかを持つ。
+@propertyWrapper
+public struct FocusState<Value>: DynamicProperty {
+    public var wrappedValue: Value
+    public init(wrappedValue: Value) { self.wrappedValue = wrappedValue }
+    public init() where Value == Bool { self.wrappedValue = false }
+    public var projectedValue: Binding<Value> { Binding(get: { wrappedValue }, set: { _ in }) }
+}

@@ -34,6 +34,11 @@ final class UploadViewModel: ObservableObject {
     private let albumService: AlbumService
     private let photoService: PhotoService
     private let discovery: DiscoveryService
+    /// 自動で入れた撮影地。**手で打ったものと区別する**ために覚える
+    /// （選び直したときに前の写真の地名を残さない）
+    private var autoFilledPlace: String?
+    /// 引いている最中の問い合わせ。写真を選び直したら捨てる
+    private var placeTask: Task<Void, Never>?
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
         self.uploads = uploads
@@ -85,8 +90,10 @@ final class UploadViewModel: ObservableObject {
             return first
         }
         // **待っている間に打ち始めていたら、入れない。** 書きかけを奪わない
+        guard !Task.isCancelled else { return }
         guard let next = PlaceFill.value(current: location, found: found) else { return }
         location = next
+        autoFilledPlace = next
     }
 
     /// カメラで撮った画像を受ける。
@@ -126,11 +133,20 @@ final class UploadViewModel: ObservableObject {
             let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
             self.prepared = prepared
             self.previewImage = Self.image(from: prepared.data)
+            // **前の写真の地名を残さない。** 自動で入れたものだけ消す
+            // （手で打ったものは、写真を選び直しても本人のもの）
+            location = PlaceFill.keptForNewPhoto(current: location, autoFilled: autoFilledPlace)
+            if location.isEmpty { autoFilledPlace = nil }
             // **撮影地を、写真の座標から先に埋めておく**（Web と同じ）。
             // `lib/utils/exif.ts` の `reverseGeocode` が同じことをしている。
-            // 埋めるのは提案で、上から書き直せる
+            // **待たない**——ここで待つと、引き終わるまで投稿ボタンが
+            // 押せないままになる（最大5秒）。埋めるのは提案で、
+            // 打ってあれば入れない（`PlaceFill`）
+            placeTask?.cancel()
             if let coords = prepared.coords {
-                await fillPlaceName(lat: coords.lat, lng: coords.lng)
+                placeTask = Task { [weak self] in
+                    await self?.fillPlaceName(lat: coords.lat, lng: coords.lng)
+                }
             }
         } catch {
             self.prepared = nil
@@ -197,6 +213,8 @@ final class UploadViewModel: ObservableObject {
         pickedCoords = nil
         song = nil
         tagsText = ""
+        placeTask?.cancel()
+        autoFilledPlace = nil
         category = ""
         published = true
         selectedAlbumId = nil

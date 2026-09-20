@@ -16,4 +16,14 @@ enum PlaceFill {
         let trimmed = found.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
+
+    /// 写真を選び直したときに残す撮影地。
+    ///
+    /// **自動で入れたものだけ消す。** 京都の写真で自動補完 → 札幌の写真に
+    /// 差し替え、で「撮影地 京都・座標 札幌」の投稿ができてしまう。
+    /// 手で打ったものは、写真を替えても本人のものなので残す。
+    static func keptForNewPhoto(current: String, autoFilled: String?) -> String {
+        guard let autoFilled, current == autoFilled else { return current }
+        return ""
+    }
 }
