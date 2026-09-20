@@ -24,7 +24,7 @@ actor PublicGalleryService {
 
     private let url: URL
     private let session: URLSession
-    private let snapshot = PhotoSnapshotStore()
+    private let snapshot: PhotoSnapshotStore
 
     /// 見せない相手と、見せない写真。
     ///
@@ -41,8 +41,11 @@ actor PublicGalleryService {
         hiddenPhotoIds = photoIds
     }
 
-    init(url: URL = AppConfig.publicPhotosURL, session: URLSession? = nil) {
+    init(url: URL = AppConfig.publicPhotosURL,
+         session: URLSession? = nil,
+         snapshot: PhotoSnapshotStore = PhotoSnapshotStore()) {
         self.url = url
+        self.snapshot = snapshot
         if let session {
             self.session = session
         } else {
