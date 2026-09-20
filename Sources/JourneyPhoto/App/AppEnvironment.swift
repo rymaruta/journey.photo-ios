@@ -18,6 +18,7 @@ final class AppEnvironment: ObservableObject {
     let albums: AlbumService
     let stories: StoryService
     let search: UserSearchService
+    let discovery: DiscoveryService
 
     init(tokenProvider: TokenProviding = CognitoTokenProvider()) {
         let api = APIClient(tokenProvider: tokenProvider)
@@ -33,5 +34,6 @@ final class AppEnvironment: ObservableObject {
         self.albums = AlbumService(api: api)
         self.stories = StoryService(api: api)
         self.search = UserSearchService(api: api)
+        self.discovery = DiscoveryService(api: api)
     }
 }

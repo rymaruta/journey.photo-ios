@@ -57,9 +57,13 @@ struct PhotoPatch: Encodable {
     var tags: [String]?
     var date: String?
     var published: Bool?
+    /// 写真に付ける曲。**`POST /upload/save` は受け取らない**ので、
+    /// 投稿のあとに `PUT /photos/{id}` で付ける（`api-user/src/upload.ts` の
+    /// 本文には song が無く、`photoUpdate.ts` にはある）
+    var song: Photo.Song?
 
     var isEmpty: Bool {
         title == nil && description == nil && location == nil
-            && category == nil && tags == nil && date == nil && published == nil
+            && category == nil && tags == nil && date == nil && published == nil && song == nil
     }
 }

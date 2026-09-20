@@ -53,7 +53,15 @@ struct Photo: Identifiable, Decodable, Equatable {
         let y: Double
     }
 
-    struct Song: Decodable, Equatable {
+    struct Song: Codable, Equatable {
+        init(title: String, artist: String?, artwork: String?, previewUrl: String, trackUrl: String?) {
+            self.title = title
+            self.artist = artist
+            self.artwork = artwork
+            self.previewUrl = previewUrl
+            self.trackUrl = trackUrl
+        }
+
         let title: String
         let artist: String?
         let artwork: String?
@@ -79,7 +87,8 @@ struct Photo: Identifiable, Decodable, Equatable {
 
     // MARK: - 表示のための導出
 
-    var displayTitle: String { title?.resolved() ?? "" }
+    /// **サーバーが入れていた「無題」は題として扱わない**（`PhotoTitle`）。
+    var displayTitle: String { PhotoTitle.display(title?.resolved()) }
     var paragraphs: [String] { description?.resolved() ?? [] }
 
     /// 一覧に出す画像。軽い順に落としていく。

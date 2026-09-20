@@ -6,6 +6,9 @@ struct MyPageView: View {
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = MyPageViewModel()
     @State private var tab: ProfileTab = .posts
+    @State private var showPostSheet = false
+    @State private var showPhotoUpload = false
+    @State private var showStoryComposer = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -41,6 +44,20 @@ struct MyPageView: View {
                 if let profile = model.profile {
                     header(profile)
                 }
+
+                // **投稿の入口はここ1つ。** Web も 2026-09-20 に画面右下の
+                // 「＋」を撤去して、マイページの「投稿する」に集めた
+                Button {
+                    showPostSheet = true
+                } label: {
+                    Label("投稿する", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.horizontal, 16)
+
+                // ストーリーもマイページに置く（Web と同じ並び）
+                StoriesRow()
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -96,6 +113,20 @@ struct MyPageView: View {
             }
         }
         .refreshable { await model.load() }
+        .sheet(isPresented: $showPostSheet) {
+            PostSheet { kind in
+                switch kind {
+                case .photo: showPhotoUpload = true
+                case .story: showStoryComposer = true
+                }
+            }
+        }
+        .sheet(isPresented: $showPhotoUpload, onDismiss: { Task { await model.load() } }) {
+            NavigationStack { UploadView() }
+        }
+        .sheet(isPresented: $showStoryComposer) {
+            NavigationStack { StoryComposerView() }
+        }
     }
 
     private func header(_ profile: UserProfile) -> some View {

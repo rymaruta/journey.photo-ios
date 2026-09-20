@@ -6,6 +6,7 @@ struct UploadView: View {
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model: UploadViewModel
     @State private var showCamera = false
+    @State private var showSongPicker = false
 
     init() {
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
@@ -13,7 +14,8 @@ struct UploadView: View {
         let api = APIClient(tokenProvider: CognitoTokenProvider())
         _model = StateObject(wrappedValue: UploadViewModel(
             uploads: UploadService(api: api),
-            albums: AlbumService(api: api)
+            albums: AlbumService(api: api),
+            photos: PhotoService(api: api)
         ))
     }
 
@@ -58,9 +60,24 @@ struct UploadView: View {
                 TextField("題（例: 高屋神社の雲海）", text: $model.title)
                 TextField("説明", text: $model.caption, axis: .vertical)
                     .lineLimit(3...8)
-                TextField("撮影地（例: 高屋神社, 香川）", text: $model.location)
+                PlaceSearchField(location: $model.location, coords: $model.pickedCoords)
                 TextField("タグ（カンマ区切り）", text: $model.tagsText)
                     .textInputAutocapitalization(.never)
+            }
+
+            Section("曲（任意）") {
+                if let song = model.song {
+                    SongRow(song: song)
+                    Button("曲を外す") { model.song = nil }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                } else {
+                    Button {
+                        showSongPicker = true
+                    } label: {
+                        Label("曲を付ける", systemImage: "music.note")
+                    }
+                }
             }
 
             if !model.albums.isEmpty {
@@ -111,6 +128,11 @@ struct UploadView: View {
             }
         }
         .task { await model.loadAlbums() }
+        .sheet(isPresented: $showSongPicker) {
+            NavigationStack {
+                SongPickerView { song in model.song = song }
+            }
+        }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { data in
                 model.accept(capturedJPEG: data)

@@ -11,7 +11,7 @@ struct RootView: View {
     @State private var unread = 0
 
     enum Tab: Hashable {
-        case gallery, search, upload, notifications, mypage
+        case gallery, search, notifications, mypage
     }
 
     var body: some View {
@@ -58,12 +58,6 @@ struct RootView: View {
             }
             .tabItem { Label("さがす", systemImage: "magnifyingglass") }
             .tag(Tab.search)
-
-            NavigationStack {
-                UploadView()
-            }
-            .tabItem { Label("投稿", systemImage: "camera") }
-            .tag(Tab.upload)
 
             NavigationStack {
                 NotificationsView()

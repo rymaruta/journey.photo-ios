@@ -69,7 +69,8 @@ struct GalleryView: View {
 
     private func grid(_ photos: [Photo]) -> some View {
         ScrollView {
-            StoriesRow()
+            // **ストーリーはここに置かない。** 2026-09-20 に Web が
+            // トップから外してマイページへ移した（投稿も閲覧もマイページに集める）
             if !model.categories.isEmpty {
                 filterBar
             }

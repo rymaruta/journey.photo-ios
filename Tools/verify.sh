@@ -25,6 +25,10 @@ echo "== 参照（配られていない EnvironmentObject・型の重複） =="
 node Tools/check-swift-refs.js Sources Tests
 
 echo
+echo "== Web 版との突き合わせ =="
+python3 Tools/check-api-parity.py "${PHOTO_GALLERY:-../photo-gallery}"
+
+echo
 echo "== 設定ファイル =="
 python3 Tools/check-config.py
 

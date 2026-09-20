@@ -64,7 +64,11 @@ let broken = 0;
 for (const root of roots) {
     for (const file of walkFiles(root)) {
         files++;
-        const source = fs.readFileSync(file, "utf8");
+        // **解析器がまだ読めない書き方を先に外す。** `nonisolated(unsafe)` は
+        // Swift 5.10 で入った指定で、tree-sitter-swift 0.7 は解析に失敗する
+        // （本物のコンパイラは通る）。誤報で緑が濁ると検査を見なくなるので、
+        // 意味を変えない範囲で落としてから読む
+        const source = fs.readFileSync(file, "utf8").replace(/\bnonisolated\(unsafe\)\s+/g, "");
         const tree = parser.parse(source);
         if (!tree.rootNode.hasError) continue;
         broken++;

@@ -14,6 +14,9 @@ final class UploadViewModel: ObservableObject {
     @Published var title = ""
     @Published var caption = ""
     @Published var location = ""
+    /// 撮影地を候補から選んだときに入る座標（写真の EXIF より優先）
+    @Published var pickedCoords: Photo.Coords?
+    @Published var song: Photo.Song?
     @Published var tagsText = ""
     @Published var published = true
 
@@ -25,10 +28,12 @@ final class UploadViewModel: ObservableObject {
 
     private let uploads: UploadService
     private let albumService: AlbumService
+    private let photoService: PhotoService
 
-    init(uploads: UploadService, albums: AlbumService) {
+    init(uploads: UploadService, albums: AlbumService, photos: PhotoService) {
         self.uploads = uploads
         self.albumService = albums
+        self.photoService = photos
     }
 
     /// アルバムは無いことの方が多い。**取れなくても投稿は止めない。**
@@ -96,18 +101,33 @@ final class UploadViewModel: ObservableObject {
         draft.location = location.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.tags = TagInput.parse(tagsText)
         draft.published = published
-        draft.coords = prepared.coords
+        // **選んだ撮影地の座標を優先する。** 写真に残っていた位置より、
+        // 本人が選んだ地名の方が正しい（丸めはどちらも約1km）
+        draft.coords = pickedCoords ?? prepared.coords
         draft.date = prepared.takenOn
         draft.exif = prepared.exif
         draft.albumId = selectedAlbumId
 
         do {
-            savedPhoto = try await uploads.upload(
+            let photo = try await uploads.upload(
                 data: prepared.data,
                 fileName: prepared.fileName,
                 fileType: prepared.contentType,
                 draft: draft
             )
+            savedPhoto = photo
+            // **曲は保存のあと。** `POST /upload/save` は song を受け取らない
+            // ので、`PUT /photos/{id}` で付ける。ここが落ちても写真は
+            // 上がっているので、投稿そのものは失敗にしない
+            if let song, let id = photo?.id {
+                var patch = PhotoPatch()
+                patch.song = song
+                do {
+                    try await photoService.update(photoId: id, patch: patch)
+                } catch {
+                    errorMessage = "写真は投稿しましたが、曲を付けられませんでした"
+                }
+            }
             reset()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "投稿できませんでした"
@@ -121,6 +141,8 @@ final class UploadViewModel: ObservableObject {
         title = ""
         caption = ""
         location = ""
+        pickedCoords = nil
+        song = nil
         tagsText = ""
         published = true
         selectedAlbumId = nil

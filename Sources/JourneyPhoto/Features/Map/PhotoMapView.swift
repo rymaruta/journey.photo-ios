@@ -48,7 +48,7 @@ struct PhotoMapView: View {
                             RemoteImage(url: photo.gridImageURL)
                                 .frame(width: 44, height: 44)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
-                            Text(photo.displayTitle.isEmpty ? (photo.location ?? "無題") : photo.displayTitle)
+                            Text(photo.displayTitle.isEmpty ? (photo.location ?? "写真") : photo.displayTitle)
                         }
                     }
                 }

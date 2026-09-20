@@ -36,10 +36,16 @@ struct SearchView: View {
                                 RemoteImage(url: photo.gridImageURL)
                                     .frame(width: 44, height: 44)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
+                                // **題が無くても「無題」と名乗らせない。**
+                                // 題も撮影地も無ければ、行は写真だけになる
                                 VStack(alignment: .leading) {
-                                    Text(photo.displayTitle.isEmpty ? "無題" : photo.displayTitle)
+                                    if !photo.displayTitle.isEmpty {
+                                        Text(photo.displayTitle)
+                                    }
                                     if let location = photo.location, !location.isEmpty {
-                                        Text(location).font(.caption).foregroundStyle(.secondary)
+                                        Text(location)
+                                            .font(photo.displayTitle.isEmpty ? .body : .caption)
+                                            .foregroundStyle(photo.displayTitle.isEmpty ? .primary : .secondary)
                                     }
                                 }
                             }
