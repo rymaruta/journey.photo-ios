@@ -7,7 +7,7 @@ import SwiftUI
 struct BlockedUsersView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
-    @EnvironmentObject private var moderation: ModerationStore
+    @EnvironmentObject private var hidden: ModerationStore
     @State private var users: [FollowUser] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -47,7 +47,7 @@ struct BlockedUsersView: View {
             users = list.users
             // **サーバーの一覧で上書きする。** 端末のぶんを足し合わせると、
             // 別の端末で解除したのに「見えないまま」になる
-            moderation.replaceBlocked(with: list.blockedIds)
+            hidden.replaceBlocked(with: list.blockedIds)
             await apply()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "読み込めませんでした"
@@ -57,15 +57,15 @@ struct BlockedUsersView: View {
     /// 「見せない」を公開一覧の側へ渡し直す。
     private func apply() async {
         await environment.gallery.setHidden(
-            userIds: moderation.blockedUserIds,
-            photoIds: moderation.reportedPhotoIds
+            userIds: hidden.blockedUserIds,
+            photoIds: hidden.reportedPhotoIds
         )
     }
 
     private func unblock(_ userId: String) async {
         do {
             try await environment.moderation.unblock(userId: userId)
-            moderation.unblock(userId)
+            hidden.unblock(userId)
             await apply()
             users.removeAll { $0.id == userId }
         } catch {

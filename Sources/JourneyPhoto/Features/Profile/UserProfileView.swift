@@ -10,7 +10,7 @@ struct UserProfileView: View {
     @StateObject private var model = UserProfileViewModel()
     @State private var showBlockConfirm = false
     @State private var tab: ProfileTab = .posts
-    @EnvironmentObject private var moderation: ModerationStore
+    @EnvironmentObject private var hidden: ModerationStore
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -69,7 +69,7 @@ struct UserProfileView: View {
         }
         .alert("この人をブロックしますか？", isPresented: $showBlockConfirm) {
             Button("ブロック", role: .destructive) {
-                Task { await model.block(userId: userId, environment: environment, store: moderation) }
+                Task { await model.block(userId: userId, environment: environment, store: hidden) }
             }
             Button("やめる", role: .cancel) {}
         } message: {
