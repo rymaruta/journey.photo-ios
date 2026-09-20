@@ -70,6 +70,11 @@ struct EditPhotoView: View {
         }
         .navigationTitle(L("写真を編集", "Edit photo"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button(Labels.Common.close) { dismiss() }
+            }
+        }
     }
 
     private func save() async {

@@ -7,6 +7,7 @@ struct UploadView: View {
     @StateObject private var model: UploadViewModel
     @State private var showCamera = false
     @State private var showSongPicker = false
+    @Environment(\.dismiss) private var dismiss
 
     init() {
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
@@ -30,6 +31,18 @@ struct UploadView: View {
             }
         }
         .navigationTitle(L("投稿", "Post"))
+        // **閉じる口を置く。** シートで出しているので、下に払う以外の
+        // 出口が無いと戻れないと思う人が出る
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button(Labels.Common.close) { dismiss() }
+            }
+        }
+        .onChange(of: model.savedPhoto?.id) { _, id in
+            // 投稿できたら閉じる。**マイページが読み直して、その写真が並ぶ**
+            // ——それが何よりの手応えになる
+            if id != nil { dismiss() }
+        }
     }
 
     private var form: some View {
@@ -103,16 +116,6 @@ struct UploadView: View {
             if let error = model.errorMessage {
                 Section {
                     Text(error).foregroundStyle(.red).font(.callout)
-                }
-            }
-
-            // **投稿できたことを言う。** 何も出ないと、送れたのか分からず
-            // 二重に押される
-            if model.savedPhoto != nil {
-                Section {
-                    Label(L("投稿しました。サイトへの反映には数分かかります。", "Posted. It will appear on the site in a few minutes."),
-                          systemImage: "checkmark.circle")
-                        .font(.callout)
                 }
             }
 

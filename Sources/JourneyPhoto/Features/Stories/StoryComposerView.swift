@@ -65,6 +65,11 @@ struct StoryComposerView: View {
         }
         .navigationTitle(L("ストーリー", "Story"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button(Labels.Common.close) { dismiss() }
+            }
+        }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { data in accept(data) }
                 .ignoresSafeArea()
