@@ -47,8 +47,12 @@ targets:
       path: Sources/JourneyPhoto/Info.plist
       properties:
         CFBundleDisplayName: $(APP_DISPLAY_NAME)
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        # **版番号は1か所にだけ書く。** ここに直の値を書くと、下の
+        # MARKETING_VERSION / CURRENT_PROJECT_VERSION と食い違っても
+        # 気づけない（Info.plist の値が勝つ）。TestFlight は同じビルド番号を
+        # 受け付けないので、ここが古いと毎回はねられる
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # **起動画面は真っ白にしない。** 既定（空の辞書）だと白か黒の板が
         # 出るだけで、アイコンから本編への繋がりが切れる
         UILaunchScreen:

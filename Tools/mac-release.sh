@@ -31,7 +31,8 @@ cat <<'NEXT'
 
 ここまで緑なら、残りは Xcode の画面でやる工程:
 
-  1. 実機で一巡する（やり方: docs/DEVICE_TEST.md）
+  1. TestFlight に上げて実機で一巡する（docs/TESTFLIGHT.md）
+     お金をかけずに試すなら docs/DEVICE_TEST.md（無料・7日・staging）
      - カメラから投稿（シミュレータにカメラが無いのでここが初回）
      - ライブラリから投稿 → 撮影地が勝手に入らないこと
      - 通報・ブロック・解除 → アカウント削除
@@ -42,6 +43,7 @@ cat <<'NEXT'
      **人の顔と他人の投稿は入れない**
 
   3. Product → Archive → Distribute App → App Store Connect
+     （2回目以降は bash Tools/testflight.sh で同じことができる）
 
   4. App Store Connect で docs/APP_REVIEW.md の内容を写す
      - App Review Information の Notes（あの文面をそのまま）

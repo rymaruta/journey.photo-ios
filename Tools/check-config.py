@@ -85,7 +85,11 @@ for key in sorted(needed_plist_keys):
 # ---- 5. xcconfig の変数 ----------------------------------------------------
 used_vars = set(re.findall(r"\$\(([A-Z0-9_]+)\)", project_text))
 # Xcode が自前で持つ変数は対象外
-builtin = {"PRODUCT_NAME", "EXECUTABLE_NAME", "SRCROOT", "PROJECT_DIR", "TARGET_NAME"}
+builtin = {"PRODUCT_NAME", "EXECUTABLE_NAME", "SRCROOT", "PROJECT_DIR", "TARGET_NAME",
+           "DEVELOPMENT_LANGUAGE"}
+# **project.yml の settings で定義している変数も対象外。**
+# 版番号のように、xcconfig ではなくビルド設定側に置くものがある
+builtin |= set(re.findall(r"^\s+([A-Z][A-Z0-9_]+):", project_text, re.MULTILINE))
 for name in ("Production", "Staging"):
     text = (ROOT / f"Config/{name}.xcconfig").read_text(encoding="utf-8")
     defined = set(re.findall(r"^\s*([A-Z0-9_]+)\s*=", text, re.MULTILINE))
@@ -110,6 +114,17 @@ for lang in ("ja", "en"):
         if f'"{key}"' not in text:
             fail(f"{lang}.lproj/InfoPlist.strings に {key} がありません"
                  f"（この言語の端末に別の言語のダイアログが出ます）")
+
+# ---- 7. 版番号が1か所か -----------------------------------------------------
+#
+# **Info.plist に直の値を書かない。** ビルド設定と食い違っても気づけず、
+# TestFlight は同じビルド番号を受け付けないので毎回はねられる。
+for key, setting in (("CFBundleShortVersionString", "MARKETING_VERSION"),
+                     ("CFBundleVersion", "CURRENT_PROJECT_VERSION")):
+    line = next((l for l in project_text.splitlines() if l.strip().startswith(f"{key}:")), "")
+    if f"$({setting})" not in line:
+        fail(f"project.yml の {key} は $({setting}) にしてください"
+             f"（直の値だとビルド設定と食い違い、TestFlight にはねられます）: {line.strip()}")
 
 # ---- 結果 -----------------------------------------------------------------
 if errors:

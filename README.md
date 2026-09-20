@@ -16,7 +16,11 @@ API Gateway）をそのまま叩く。
 bash Tools/mac-release.sh    # 生成 → ビルド → テスト → 次にやることを出す
 ```
 
-そのあと実機で一巡（**やり方は `docs/DEVICE_TEST.md`**）→ スクリーンショット → Archive → 提出。
+そのあと **TestFlight に上げて確かめる**（`docs/TESTFLIGHT.md`）→
+スクリーンショット → 提出。TestFlight を通ったビルドは、そのまま審査に出せる。
+
+お金をかけずに自分の iPhone だけで試すなら `docs/DEVICE_TEST.md`
+（無料。ただし7日で切れ、繋がるのは staging）。
 提出時に答える内容は `docs/APP_REVIEW.md`（Notes の文面・年齢制限の質問票・
 プライバシーの回答・最終確認のチェックリスト）にそのまま写せる形で置いてある。
 

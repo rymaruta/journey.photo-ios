@@ -76,7 +76,13 @@ Organizer → **Distribute App → App Store Connect → Upload**。
 自分の iPhone に入れられる（有料の Developer Program は TestFlight と
 提出にだけ要る）。
 
-## 4b. TestFlight で自分の端末に入れて確かめる
+## 4b. TestFlight で確かめる
+
+**手順は `docs/TESTFLIGHT.md`。** 加入・App Store Connect でのアプリ作成・
+Archive・配布まで書いてある。ビルド番号は `bash Tools/bump-build.sh` で上げる
+（同じ番号は受け付けられない）。
+
+### 以前の記述
 
 シミュレータでは確かめられないものがここで初めて見られる:
 
