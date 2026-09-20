@@ -60,10 +60,13 @@ workflows:
           # ビルドは SwiftUI の模型に向けたものなので、ここで初めて本物に当たる。
           # 分数を節約したくなったら、この段を消してもよい（次の段が
           # アプリ本体は同じ SDK でビルドする）
+          # 機種名は固定しない（その場にある いちばん新しい iPhone を選ぶ）
+          DEVICE=$(python3 Tools/pick-simulator.py) || exit 1
+          echo "テストに使うシミュレータ: $DEVICE"
           xcode-project run-tests \
             --project JourneyPhoto.xcodeproj \
             --scheme JourneyPhoto \
-            --device "iPhone 15"
+            --device "$DEVICE"
 
       - name: ビルド
         script: |

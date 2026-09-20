@@ -66,14 +66,17 @@ if command -v xcodebuild >/dev/null 2>&1; then
     echo "== Xcode プロジェクトの生成とビルド =="
     command -v xcodegen >/dev/null 2>&1 || { echo "xcodegen がありません: brew install xcodegen"; exit 1; }
     xcodegen generate
+    # 機種名は固定しない（Xcode が上がると入っているシミュレータが入れ替わる）
+    DEVICE="$(python3 Tools/pick-simulator.py)"
+    echo "   シミュレータ: $DEVICE"
     xcodebuild -scheme JourneyPhoto \
-        -destination 'platform=iOS Simulator,name=iPhone 15' \
+        -destination "platform=iOS Simulator,name=$DEVICE" \
         -quiet build test
 else
     echo "== 実機向けのビルドは飛ばす =="
     echo "   Xcode が無い環境です。**本物の SwiftUI では確かめていません。**"
     echo "   （上のビルドは Shims/ の模型に向けたもの）"
     echo "   Mac で次を実行してください:"
-    echo "     xcodegen generate && xcodebuild -scheme JourneyPhoto \\"
-    echo "       -destination 'platform=iOS Simulator,name=iPhone 15' build test"
+    echo "     bash Tools/mac-release.sh"
+    echo "   （中で xcodegen と xcodebuild を、その場にあるシミュレータで回す）"
 fi

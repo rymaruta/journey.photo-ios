@@ -126,6 +126,20 @@ for key, setting in (("CFBundleShortVersionString", "MARKETING_VERSION"),
         fail(f"project.yml の {key} は $({setting}) にしてください"
              f"（直の値だとビルド設定と食い違い、TestFlight にはねられます）: {line.strip()}")
 
+# ---- 7.5 SWIFT_VERSION が Xcode の受け取る値か ------------------------------
+#
+# **ツールチェーンの版（5.9・6.0.3）ではなく「言語モード」を書く欄。**
+# Xcode が受けるのは 4.0 / 4.2 / 5.0 / 6.0 だけで、それ以外は
+#   error: SWIFT_VERSION '5.9' is unsupported
+# で**ビルドの最初に落ちる**。手元（swift build）は project.yml を読まないので
+# 気づけない＝CI で初めて分かる種類の間違い。
+ALLOWED_SWIFT_VERSIONS = {"4.0", "4.2", "5.0", "6.0"}
+for found in re.findall(r'SWIFT_VERSION:\s*"?([0-9.]+)"?', project_text):
+    if found not in ALLOWED_SWIFT_VERSIONS:
+        fail(f"project.yml の SWIFT_VERSION（{found}）は Xcode が受け取りません"
+             f"（言語モードを書く欄です。使えるのは "
+             f"{' / '.join(sorted(ALLOWED_SWIFT_VERSIONS))}）")
+
 # ---- 8. Bundle ID が CI と揃っているか -------------------------------------
 #
 # **ずれていると署名が通らない。** しかも気づくのは CI で10分待ったあと。
