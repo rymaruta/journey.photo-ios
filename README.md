@@ -22,10 +22,20 @@ MapKit・AVFoundation・ImageIO・Combine・Amplify の「使っている口の�
 宣言してある。実機のビルドには一切入らない（Xcode は `project.yml` から作られ、
 `Package.swift` を見ない）。
 
-**模型の修飾子は素通し**なので、SwiftUI 側の制約（ViewBuilder の枝の数・
-`some View` の同一性・修飾子の順序・実行時の挙動）は見ていない。
-見えるのは**自分たちのコードの誤り**——綴り違い・無いプロパティ・
-引数ラベルの不一致・型の取り違え・分離（`@MainActor`）の誤り。
+模型は**本物の形に寄せてある**ので、SwiftUI 特有の制約もいくつかは検査される:
+
+| 制約 | 検査される | 確かめ方 |
+|---|---|---|
+| `some View` の同一性（枝ごとに違う修飾） | **される** | 47 の修飾子が `ModifiedContent<Self, …>` を返す |
+| `ViewBuilder` の枝の数（10本まで） | **される** | `buildBlock` は 10 引数まで |
+| ツールバーの中身は `ToolbarContent` | **される** | `@ToolbarContentBuilder` |
+| 地図の中身は `MapContent` | **される** | `@MapContentBuilder`（素の View を置くと落ちる） |
+| `@MainActor` の分離 | **される** | `View` を `@MainActor` にしてある |
+| 修飾子の順序・レイアウト・実行時の挙動 | **されない** | Mac でしか分からない |
+| 「型検査が終わらない」式の重さ | **されない** | 同上 |
+
+いずれも**わざと壊して落ちることを確かめてある**（`some View` の食い違い・
+地図に `Text` を置く）。
 
 > これを入れた時点で、**Xcode でも落ちる誤りが実際に8ファイル見つかった**
 > ——`ObservableObject` と `@Published` を使うのに `Combine` も `SwiftUI` も

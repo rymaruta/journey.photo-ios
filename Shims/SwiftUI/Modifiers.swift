@@ -1,8 +1,12 @@
-// 修飾子（模型）。**どれも素通し**——`Self` を返すだけ。
+// 修飾子（模型）。
 //
-// つまり SwiftUI 側の制約（修飾子の順序・`some View` の同一性・
-// ViewBuilder の枝の数）は**見ていない**。ここで見えるのは、修飾子に渡した
-// 式の中にある自分たちのコードの誤りだけ。
+// **戻り値は `ModifiedContent<Self, …>`** で、本物と同じく**型が変わる**。
+// `Self` を返す作りにしていた頃は、`some View` の同一性——「枝ごとに違う
+// 修飾を付けると型が食い違う」という SwiftUI 特有の制約——を見逃していた。
+// いまは ViewBuilder を通らない場所（計算プロパティの if/else など）で
+// 食い違えば落ちる。
+//
+// なお修飾子の**順序**と実行時の挙動は、これでも見ていない。
 import Foundation
 
 public struct ToolbarItemPlacement {
@@ -11,9 +15,32 @@ public struct ToolbarItemPlacement {
     public static let cancellationAction = ToolbarItemPlacement()
     public static let confirmationAction = ToolbarItemPlacement()
 }
-public struct ToolbarItem: View {
+/// **ツールバーの中身は `View` ではなく `ToolbarContent`。** 本物と同じ形に
+/// しておかないと、置けないものを置いても模型では通ってしまう。
+public protocol ToolbarContent {}
+
+@resultBuilder
+public struct ToolbarContentBuilder {
+    public static func buildBlock() -> EmptyToolbarContent { EmptyToolbarContent() }
+    public static func buildBlock<C: ToolbarContent>(_ c: C) -> C { c }
+    public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent>(_ c1: C1, _ c2: C2) -> EmptyToolbarContent { EmptyToolbarContent() }
+    public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3) -> EmptyToolbarContent { EmptyToolbarContent() }
+    public static func buildIf<C: ToolbarContent>(_ c: C?) -> C? { c }
+    public static func buildOptional<C: ToolbarContent>(_ c: C?) -> C? { c }
+    public static func buildEither<T: ToolbarContent>(first: T) -> EmptyToolbarContent { EmptyToolbarContent() }
+    public static func buildEither<F: ToolbarContent>(second: F) -> EmptyToolbarContent { EmptyToolbarContent() }
+    public static func buildExpression<C: ToolbarContent>(_ c: C) -> C { c }
+    /// 素の View を1つだけ置く書き方も本物は受ける
+    public static func buildExpression<V: View>(_ v: V) -> EmptyToolbarContent { EmptyToolbarContent() }
+}
+
+public struct EmptyToolbarContent: ToolbarContent {
+    public init() {}
+}
+extension Optional: ToolbarContent where Wrapped: ToolbarContent {}
+
+public struct ToolbarItem: ToolbarContent {
     public init<C: View>(placement: ToolbarItemPlacement = .topBarTrailing, @ViewBuilder content: () -> C) {}
-    public var body: Never { fatalError("模型") }
 }
 
 public enum NavigationBarItem { public enum TitleDisplayMode { case inline, large, automatic } }
@@ -64,57 +91,73 @@ public struct SubmitTriggerShim {
     public static let search = SubmitTriggerShim()
 }
 
+/// 修飾を1枚かぶせた View。本物と同じく**かぶせるたびに型が変わる**。
+public struct ModifiedContent<Content, Modifier>: View {
+    nonisolated public init() {}
+    public var body: Never { fatalError("模型") }
+}
+
+/// 修飾子の種類。型を分けるためだけの印。
+public enum Mod {
+    public enum Layout {}
+    public enum Style {}
+    public enum Input {}
+    public enum Navigation {}
+    public enum Lifecycle {}
+    public enum Accessibility {}
+}
+
 extension View {
     // 並びと大きさ
-    public func frame(width: Double? = nil, height: Double? = nil, alignment: Alignment = .center) -> Self { self }
+    public func frame(width: Double? = nil, height: Double? = nil, alignment: Alignment = .center) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func frame(minWidth: Double? = nil, maxWidth: Double? = nil, minHeight: Double? = nil,
                       maxHeight: Double? = nil, alignment: Alignment = .center) -> Self { self }
-    public func padding(_ length: Double? = nil) -> Self { self }
-    public func padding(_ edges: Edge.Set, _ length: Double? = nil) -> Self { self }
-    public func aspectRatio(_ ratio: Double? = nil, contentMode: ContentMode) -> Self { self }
-    public func offset(x: Double = 0, y: Double = 0) -> Self { self }
-    public func clipped() -> Self { self }
-    public func clipShape<S: Shape>(_ shape: S) -> Self { self }
-    public func ignoresSafeArea() -> Self { self }
-    public func lineLimit(_ n: Int) -> Self { self }
-    public func lineLimit(_ range: ClosedRange<Int>) -> Self { self }
-    public func lineLimit(_ range: PartialRangeFrom<Int>) -> Self { self }
-    public func multilineTextAlignment(_ a: TextAlignment) -> Self { self }
+    public func padding(_ length: Double? = nil) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func padding(_ edges: Edge.Set, _ length: Double? = nil) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func aspectRatio(_ ratio: Double? = nil, contentMode: ContentMode) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func offset(x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func lineLimit(_ n: Int) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func lineLimit(_ range: ClosedRange<Int>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func lineLimit(_ range: PartialRangeFrom<Int>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func multilineTextAlignment(_ a: TextAlignment) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
 
     // 見た目
-    public func font(_ f: Font?) -> Self { self }
-    public func foregroundStyle<S: ShapeStyle>(_ s: S) -> Self { self }
-    public func background<S: ShapeStyle>(_ s: S) -> Self { self }
-    public func background<S: ShapeStyle, T: Shape>(_ s: S, in shape: T) -> Self { self }
-    public func tint(_ c: Color?) -> Self { self }
-    public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> Self { self }
-    public func overlay<V: View>(_ content: V, alignment: Alignment = .center) -> Self { self }
-    public func buttonStyle(_ s: PrimitiveButtonStyleShim) -> Self { self }
-    public func pickerStyle(_ s: PickerStyleShim) -> Self { self }
-    public func textFieldStyle(_ s: TextFieldStyleShim) -> Self { self }
-    public func controlSize(_ s: ControlSizeShim) -> Self { self }
-    public func labelsHidden() -> Self { self }
-    public func disabled(_ v: Bool) -> Self { self }
-    public func tag<V: Hashable>(_ v: V) -> Self { self }
-    public func badge(_ count: Int) -> Self { self }
-    public func id<V: Hashable>(_ v: V) -> Self { self }
+    public func font(_ f: Font?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func foregroundStyle<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func background<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func background<S: ShapeStyle, T: Shape>(_ s: S, in shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func tint(_ c: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func overlay<V: View>(_ content: V, alignment: Alignment = .center) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func buttonStyle(_ s: PrimitiveButtonStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func pickerStyle(_ s: PickerStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func textFieldStyle(_ s: TextFieldStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func controlSize(_ s: ControlSizeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func labelsHidden() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func disabled(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func tag<V: Hashable>(_ v: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func badge(_ count: Int) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func id<V: Hashable>(_ v: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 
     // 入力
-    public func keyboardType(_ t: UIKeyboardTypeShim) -> Self { self }
-    public func textContentType(_ t: UITextContentTypeShim) -> Self { self }
-    public func textInputAutocapitalization(_ a: TextInputAutocapitalization) -> Self { self }
-    public func autocorrectionDisabled(_ disabled: Bool = true) -> Self { self }
+    public func keyboardType(_ t: UIKeyboardTypeShim) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    public func textContentType(_ t: UITextContentTypeShim) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    public func textInputAutocapitalization(_ a: TextInputAutocapitalization) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    public func autocorrectionDisabled(_ disabled: Bool = true) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func searchable(text: Binding<String>, placement: SearchFieldPlacementShim = .automatic,
                            prompt: String? = nil) -> Self { self }
-    public func onSubmit(of t: SubmitTriggerShim = .search, _ action: @escaping () -> Void) -> Self { self }
+    public func onSubmit(of t: SubmitTriggerShim = .search, _ action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
 
     // 画面遷移と入れ物
-    public func navigationTitle(_ title: String) -> Self { self }
-    public func navigationBarTitleDisplayMode(_ m: NavigationBarItem.TitleDisplayMode) -> Self { self }
+    public func navigationTitle(_ title: String) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+    public func navigationBarTitleDisplayMode(_ m: NavigationBarItem.TitleDisplayMode) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func navigationDestination<D: Hashable, V: View>(
         for data: D.Type, @ViewBuilder destination: @escaping (D) -> V) -> Self { self }
-    public func toolbar<C: View>(@ViewBuilder content: () -> C) -> Self { self }
-    public func tabItem<V: View>(@ViewBuilder _ label: () -> V) -> Self { self }
+    public func toolbar<C: ToolbarContent>(@ToolbarContentBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+    public func tabItem<V: View>(@ViewBuilder _ label: () -> V) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func sheet<C: View>(isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil,
                                @ViewBuilder content: @escaping () -> C) -> Self { self }
     public func sheet<Item: Identifiable, C: View>(item: Binding<Item?>, onDismiss: (() -> Void)? = nil,
@@ -130,19 +173,19 @@ extension View {
                                @ViewBuilder actions: () -> A) -> Self { self }
 
     // 仕掛け
-    public func task(priority: TaskPriority = .userInitiated, _ action: @escaping () async -> Void) -> Self { self }
+    public func task(priority: TaskPriority = .userInitiated, _ action: @escaping () async -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
     public func task<T: Equatable>(id value: T, priority: TaskPriority = .userInitiated,
                                    _ action: @escaping () async -> Void) -> Self { self }
-    public func refreshable(action: @escaping () async -> Void) -> Self { self }
-    public func onAppear(perform action: (() -> Void)? = nil) -> Self { self }
-    public func onDisappear(perform action: (() -> Void)? = nil) -> Self { self }
-    public func onChange<V: Equatable>(of value: V, _ action: @escaping (V, V) -> Void) -> Self { self }
-    public func environmentObject<T: ObservableObject>(_ object: T) -> Self { self }
+    public func refreshable(action: @escaping () async -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
+    public func onAppear(perform action: (() -> Void)? = nil) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
+    public func onDisappear(perform action: (() -> Void)? = nil) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
+    public func onChange<V: Equatable>(of value: V, _ action: @escaping (V, V) -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
+    public func environmentObject<T: ObservableObject>(_ object: T) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
 
     // 読み上げ
-    public func accessibilityLabel(_ label: String) -> Self { self }
-    public func accessibilityAddTraits(_ traits: AccessibilityTraits) -> Self { self }
+    public func accessibilityLabel(_ label: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    public func accessibilityAddTraits(_ traits: AccessibilityTraits) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
 
     // 一覧の操作
-    public func swipeActions<C: View>(@ViewBuilder content: () -> C) -> Self { self }
+    public func swipeActions<C: View>(@ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
 }
