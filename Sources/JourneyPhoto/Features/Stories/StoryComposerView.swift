@@ -1,5 +1,7 @@
 import SwiftUI
 import PhotosUI
+// UIImage を使う（SwiftUI / PhotosUI から見えることに頼らない）
+import UIKit
 
 /// ストーリーを投稿する。24時間で消える。
 struct StoryComposerView: View {

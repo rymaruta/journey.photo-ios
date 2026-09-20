@@ -141,6 +141,28 @@ for (const file of files) {
     }
 }
 
+// 4.5 UIKit の記号を、import 無しで使っていないか
+//
+// **他のフレームワークから透けて見えることに頼らない。** `import SwiftUI` や
+// `import PhotosUI` だけでも UIKit の型が見えることがある（ObjC のモジュールが
+// 再輸出するため）が、それは保証ではない。手元（Linux）は Shims/SwiftUI が
+// `UIImage` の別名を持っているので必ず通り、**Xcode で初めて
+// "cannot find 'UIImage' in scope" になる**種類の間違い。
+{
+    const uikitSymbols = /\b(UIImage|UIApplication|UIScreen|UIPasteboard|UIDevice|UIColor|UIViewController|UIView|UIFont)\b/;
+    for (const file of files) {
+        const source = fs.readFileSync(file, "utf8");
+        const code = source.split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
+        const found = code.match(uikitSymbols);
+        if (found && !/^import UIKit$/m.test(source)) {
+            problems.push(
+                `${path.relative(process.cwd(), file)}: ${found[1]} を使っていますが ` +
+                `import UIKit がありません（手元では Shims が肩代わりするので通り、Xcode で落ちます）`
+            );
+        }
+    }
+}
+
 // 5. @MainActor の型の静的メンバをテストから呼んでいないか
 if (testRoot) {
     const mainActorTypes = new Set();

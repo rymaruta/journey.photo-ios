@@ -1,6 +1,8 @@
 import Foundation
 import SwiftUI
 import PhotosUI
+// UIImage を使う（SwiftUI / PhotosUI から見えることに頼らない）
+import UIKit
 
 @MainActor
 final class UploadViewModel: ObservableObject {

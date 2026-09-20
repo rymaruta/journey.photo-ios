@@ -10,15 +10,25 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CURRENT=$(grep -E '^\s+CURRENT_PROJECT_VERSION:' project.yml | grep -oE '[0-9]+' | head -1)
-NEXT=$((CURRENT + 1))
-sed -i.bak -E "s/^(\s+CURRENT_PROJECT_VERSION: )\"?[0-9]+\"?/\1\"$NEXT\"/" project.yml
+# **`\s` は使わない**（BSD grep / BSD sed は読まない＝macOS で黙って外れる）。
+# 詳しくは Tools/set-build-number.sh の注記
+CURRENT=$(grep -E '^[[:space:]]+CURRENT_PROJECT_VERSION:' project.yml | grep -oE '[0-9]+' | head -1)
+if [ -z "${CURRENT:-}" ]; then
+    echo "project.yml から今のビルド番号を読めませんでした"
+    exit 1
+fi
+
+# 書き換えと確認は1か所にまとめる（CI も同じものを使う）
+bash Tools/set-build-number.sh "$((CURRENT + 1))"
 
 if [ $# -ge 1 ]; then
-    sed -i.bak -E "s/^(\s+MARKETING_VERSION: )\"?[0-9.]+\"?/\1\"$1\"/" project.yml
+    sed -i.bak -E "s/^([[:space:]]+MARKETING_VERSION: )\"?[0-9.]+\"?/\1\"$1\"/" project.yml
+    rm -f project.yml.bak
+    if ! grep -qE "^[[:space:]]+MARKETING_VERSION: \"$1\"" project.yml; then
+        echo "project.yml の表に出る版を書き換えられませんでした（$1 にならなかった）"
+        exit 1
+    fi
     echo "表に出る版: $1"
 fi
-rm -f project.yml.bak
 
-echo "ビルド番号: $CURRENT → $NEXT"
 python3 Tools/check-config.py
