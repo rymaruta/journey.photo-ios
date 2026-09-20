@@ -100,3 +100,31 @@ struct Photo: Identifiable, Decodable, Equatable {
         return "写真"
     }
 }
+
+/// 1件ずつ復号して、**読めなかった行だけを落とす**入れ物。
+///
+/// `[Photo]` としてまとめて復号すると、**1行の型違いで一覧が丸ごと消える**。
+/// Web 側も同じ判断をしている（`lib/utils/apiRows.ts` の `usablePhotoRows`
+/// ——「おかしい項目だけを落とし、読める項目は出す」）。
+struct LenientPhotoList: Decodable {
+
+    let photos: [Photo]
+    /// 落とした行の数。**黙って捨てない**ために数えておく
+    let dropped: Int
+
+    init(from decoder: Decoder) throws {
+        // **要素の復号を絶対に失敗させない形にする。** 失敗させて
+        // `catch` で読み飛ばす書き方だと、失敗時に添字が進んだかどうかが
+        // `JSONDecoder` の実装依存になり、good な行を1つ余計に捨てうる。
+        let rows = try [Row](from: decoder)
+        photos = rows.compactMap(\.photo)
+        dropped = rows.count - photos.count
+    }
+
+    private struct Row: Decodable {
+        let photo: Photo?
+        init(from decoder: Decoder) throws {
+            photo = try? Photo(from: decoder)
+        }
+    }
+}

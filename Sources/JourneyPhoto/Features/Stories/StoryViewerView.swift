@@ -11,7 +11,7 @@ struct StoryViewerView: View {
 
     @State private var reply = ""
     @State private var message: String?
-    @State private var viewers: [FollowUser] = []
+    @State private var viewers: [StoryViewer] = []
     @State private var showViewers = false
 
     var body: some View {
@@ -50,7 +50,7 @@ struct StoryViewerView: View {
         .sheet(isPresented: $showViewers) {
             NavigationStack {
                 List(viewers) { viewer in
-                    Text(viewer.displayName)
+                    Text(viewer.name)
                 }
                 .navigationTitle("見た人 \(viewers.count)")
                 .navigationBarTitleDisplayMode(.inline)

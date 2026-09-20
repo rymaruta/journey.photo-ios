@@ -22,6 +22,7 @@ struct PhotoSnapshotStore {
 
     func load() -> [Photo]? {
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder.api.decode([Photo].self, from: data)
+        // 控えの側も1行の型違いで全部消さない（`LenientPhotoList` の理由）
+        return try? JSONDecoder.api.decode(LenientPhotoList.self, from: data).photos
     }
 }

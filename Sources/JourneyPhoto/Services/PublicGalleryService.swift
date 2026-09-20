@@ -51,10 +51,19 @@ actor PublicGalleryService {
             throw APIError.server(status: http.statusCode, message: "")
         }
         do {
-            let photos = try JSONDecoder.api.decode([Photo].self, from: data)
+            let list = try JSONDecoder.api.decode(LenientPhotoList.self, from: data)
+            if list.dropped > 0 {
+                // 黙って捨てない。**どの写真が出ていないのか**を追えるように
+                print("[gallery] 読めなかった写真の行を \(list.dropped) 件落としました")
+            }
+            let photos = list.photos
             // **読めたものだけを控える。** 壊れた応答（キャプティブポータルの
-            // ログイン HTML など）を控えると、次から圏外でそれが出る
-            snapshot.save(data)
+            // ログイン HTML など）を控えると、次から圏外でそれが出る。
+            // 1件も読めなかった回も控えない——**前回の良い控えを空で上書き
+            // しない**（写真が本当に0枚なら dropped も0なので控える）
+            if !photos.isEmpty || list.dropped == 0 {
+                snapshot.save(data)
+            }
             return visible(photos)
         } catch {
             if let cached = snapshot.load() { return visible(cached) }

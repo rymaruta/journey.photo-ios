@@ -74,11 +74,13 @@ struct StoryService {
         _ = try? await api.authorizedVoid(.post, "/stories/\(encoded(id))/view")
     }
 
-    struct Viewers: Decodable { let users: [FollowUser]? }
+    /// **応答の鍵は `viewers`**（`users` ではない）。`api-user/src/stories.ts`
+    /// の `getStoryViewers` が `{ viewers, count }` を返す。
+    struct ViewerList: Decodable { let viewers: [StoryViewer]? }
 
-    /// 見た人の一覧。**本人だけが読める。**
-    func viewers(id: String) async throws -> [FollowUser] {
-        try await api.authorized(.get, "/stories/\(encoded(id))/viewers", as: Viewers.self).users ?? []
+    /// 見た人の一覧。**本人だけが読める**（他人が叩くと 403）。
+    func viewers(id: String) async throws -> [StoryViewer] {
+        try await api.authorized(.get, "/stories/\(encoded(id))/viewers", as: ViewerList.self).viewers ?? []
     }
 
     struct ReplyList: Decodable { let items: [StoryReply]? }
@@ -118,6 +120,23 @@ struct Story: Decodable, Identifiable, Equatable {
     var authorName: String {
         if let displayName, !displayName.isEmpty { return displayName }
         return String((userId ?? "").prefix(8))
+    }
+}
+
+/// ストーリーを見た人。名前を出していない人は `displayName` が無い。
+struct StoryViewer: Decodable, Identifiable, Equatable {
+    let userId: String
+    let displayName: String?
+    let deleted: Bool?
+    /// 見た時刻（ISO8601）
+    let at: String?
+
+    var id: String { userId }
+
+    var name: String {
+        if deleted == true { return "退会したユーザー" }
+        if let displayName, !displayName.isEmpty { return displayName }
+        return String(userId.prefix(8))
     }
 }
 

@@ -44,9 +44,17 @@ enum LocalizedParagraphs: Decodable, Equatable {
         let container = try decoder.singleValueContainer()
         if let text = try? container.decode(String.self) {
             self = .plain(text)
-        } else {
-            self = .byLocale(try container.decode([String: [String]].self))
+            return
         }
+        if let map = try? container.decode([String: [String]].self) {
+            self = .byLocale(map)
+            return
+        }
+        // **`{ ja: "一行" }` も受ける。** 保存する入口が3つあり、段落に
+        // 割っているのは1つだけだった（`lib/data/photos.ts` の経緯）。
+        // ここで弾くと、その写真1枚のために一覧全体の復号が落ちる
+        let flat = try container.decode([String: String].self)
+        self = .byLocale(flat.mapValues { [$0] })
     }
 
     /// 段落に割って返す。
