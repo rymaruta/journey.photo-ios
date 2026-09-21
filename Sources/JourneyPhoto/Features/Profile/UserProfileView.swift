@@ -64,6 +64,7 @@ struct UserProfileView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
+                            .webToolbarIcon()
                             .accessibilityLabel(L("この人の操作", "More actions"))
                     }
                 }

@@ -37,6 +37,7 @@ struct MyPageView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { SettingsView() } label: {
                     Image(systemName: "gearshape")
+                        .webToolbarIcon()
                         .accessibilityLabel(L("設定", "Settings"))
                 }
             }

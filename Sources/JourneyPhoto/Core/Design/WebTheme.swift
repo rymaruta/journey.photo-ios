@@ -85,6 +85,21 @@ extension View {
     }
 
 
+    /// バー（上のツールバー）の中のアイコン。
+    ///
+    /// **ここは「当たり判定だけ広げる」では足りない。** owner の指摘は
+    /// 地図・「…」・歯車のような**絵そのものが小さい**という話で、
+    /// 押しやすさの前に**見つけにくい**。既定は 17pt 相当で、
+    /// 黒地の上では特に沈む。
+    ///
+    /// 22pt の太めにして、当たりは 44pt。
+    func webToolbarIcon() -> some View {
+        self
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(WebTheme.foreground)
+            .webTappable()
+    }
+
     /// 押せるものの当たり判定を 44pt 以上にする（見た目は変えない）。
     func webTappable() -> some View {
         self

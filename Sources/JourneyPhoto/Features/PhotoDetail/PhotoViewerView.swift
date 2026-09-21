@@ -60,8 +60,8 @@ struct PhotoViewerView: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.headline)
-                    .padding(12)
+                    .font(.system(size: 20, weight: .bold))
+                    .padding(14)
                     .background(.ultraThinMaterial, in: Circle())
             }
             .padding(16)

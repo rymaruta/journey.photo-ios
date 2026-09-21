@@ -104,6 +104,7 @@ struct StoryViewerView: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
+                    .webToolbarIcon()
                     .foregroundStyle(.white)
                     .accessibilityLabel(Labels.Common.close)
             }

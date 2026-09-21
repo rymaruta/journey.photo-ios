@@ -226,8 +226,7 @@ struct PhotoDetailView: View {
             }
         } label: {
             Image(systemName: "ellipsis.circle")
-                .font(.title3)
-                .webTappable()
+                .webToolbarIcon()
                 .accessibilityLabel(L("この写真の操作", "More actions"))
         }
     }
