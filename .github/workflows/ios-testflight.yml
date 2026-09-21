@@ -66,7 +66,35 @@ jobs:
             --scheme JourneyPhoto \
             --device "$DEVICE"
 
+      # **秘密がまだ無くてもテストまでは回す。** App Store Connect の API キーは
+      # 人が画面から落としてくるもので、揃う前にも「本物の SwiftUI で通るか」を
+      # 見たい。揃っていない回は署名から先を飛ばし、**緑で終わらせる**
+      # （赤にすると「コンパイルが通ったのか」が読み取れなくなる）
+      - name: 秘密が揃っているかを見る
+        id: secrets
+        env:
+          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          CERT: ${{ secrets.CERTIFICATE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${ISSUER:-}" ] || missing="$missing APP_STORE_CONNECT_ISSUER_ID"
+          [ -n "${KEY_ID:-}" ] || missing="$missing APP_STORE_CONNECT_KEY_ID"
+          [ -n "${KEY:-}" ]    || missing="$missing APP_STORE_CONNECT_PRIVATE_KEY"
+          [ -n "${CERT:-}" ]   || missing="$missing CERTIFICATE_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "signing=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::署名に要る Secrets が足りません（$missing ）。テストまでで終わります。docs/GITHUB_ACTIONS.md を参照"
+            echo "### 署名から先は飛ばしました" >> "$GITHUB_STEP_SUMMARY"
+            echo "足りない Secrets:$missing" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "signing=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 署名の用意（証明書とプロファイルを API キーから作る）
+        if: ${{ steps.secrets.outputs.signing == 'true' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -89,6 +117,7 @@ jobs:
           xcode-project use-profiles
 
       - name: ビルド番号を決める
+        if: ${{ steps.secrets.outputs.signing == 'true' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -110,6 +139,7 @@ jobs:
           xcode-project use-profiles
 
       - name: ビルド
+        if: ${{ steps.secrets.outputs.signing == 'true' }}
         run: |
           set -euo pipefail
           xcode-project build-ipa \
@@ -117,7 +147,7 @@ jobs:
             --scheme JourneyPhoto
 
       - name: TestFlight に上げる
-        if: ${{ inputs.submit }}
+        if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
