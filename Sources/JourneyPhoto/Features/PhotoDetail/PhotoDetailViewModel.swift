@@ -48,7 +48,15 @@ final class PhotoDetailViewModel: ObservableObject {
             comments = loaded.items
             commentCount = loaded.count
         }
-        liked = mine ?? false
+        // **引けなかった回に「押していない」と言わない。** 電波が悪いだけで
+        // ハートが白に戻ると、押した人は「取り消された」と読む
+        // （押し直しても数は増えない＝サーバーは冪等なので、実害は
+        //  見え方だけ——だがその見え方がいちばん不安にさせる）
+        if let mine {
+            liked = mine
+        } else if !isSignedIn {
+            liked = false
+        }
     }
 
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、

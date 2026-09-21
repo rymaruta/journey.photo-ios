@@ -236,7 +236,12 @@ struct PhotoDetailView: View {
                             }
                         }
                         Spacer()
-                        if comment.uid == auth.userId {
+                        // **写真の持ち主も消せる。** サーバーは持ち主にも
+                        // 許している（`comments.ts` の `ownerId !== uid`）のに、
+                        // アプリは自分が書いたぶんしか出していなかった
+                        // ——UGC のアプリは「不快な書き込みを持ち主が取り除ける」
+                        // ことを審査（1.2）で見られる
+                        if comment.uid == auth.userId || isMine {
                             Button(Labels.Common.delete) { Task { await model.deleteComment(comment) } }
                                 .font(.caption2)
                         }

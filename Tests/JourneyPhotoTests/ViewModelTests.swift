@@ -166,6 +166,26 @@ final class ViewModelTests: XCTestCase {
                         discovery: DiscoveryService(api: api()))
     }
 
+    /// **引けなかった回に「押していない」と言わない。**
+    /// 電波が悪いだけでハートが白に戻ると、押した人は「取り消された」と読む。
+    func testLikeStateSurvivesAFailedReload() async throws {
+        prepare()
+        // いいね数・コメント・自分のいいね、の3本のうち最後だけ落とす
+        StubProtocol.respond(status: 200, body: #"{"likes":3}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        await model.load()
+        XCTAssertFalse(model.liked, "まだ押していない")
+
+        StubProtocol.respond(status: 200, body: #"{"liked":true}"#)
+        await model.load()
+        XCTAssertTrue(model.liked)
+
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.load()
+        XCTAssertTrue(model.liked, "圏外でハートが白に戻らない")
+    }
+
     /// **撮影地は、写真の座標から先に埋める**（Web の `reverseGeocode` と同じ）。
     ///
     /// 実データでは公開30枚のうち13枚が空だった。撮影地 → 地図 →
