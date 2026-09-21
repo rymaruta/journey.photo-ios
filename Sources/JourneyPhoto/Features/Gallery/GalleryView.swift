@@ -382,6 +382,8 @@ struct GalleryView: View {
                 }
             }
             .padding(.top, 8)
+            // 最後のカードがタブバーに掛からないようにする
+            .padding(.bottom, 24)
         }
     }
 

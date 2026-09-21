@@ -61,7 +61,9 @@ struct HomeFeedCard: View {
             actions
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 12)
+        // **下をしっかり空ける。** タグの行がタブバーに隠れかけていた
+        // （実機の絵で確認）。カード同士の境目も見えやすくなる
+        .padding(.bottom, 20)
         .onAppear {
             if let ownerId = photo.userId { isFollowing = following.contains(ownerId) }
         }
