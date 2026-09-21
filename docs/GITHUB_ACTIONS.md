@@ -82,3 +82,32 @@ GitHub → **Actions** → **TestFlight** → **Run workflow** →
 | ビルド番号 | **TestFlight にある最大 + 1**（上げ忘れではねられない） |
 | ビルド | `xcode-project build-ipa` |
 | 提出 | `app-store-connect publish --testflight`（**審査には自動で出さない**） |
+
+---
+
+## プッシュ通知を動かすための追加設定（サーバー側）
+
+アプリ側は入っています（設定 →「プッシュ通知を受け取る」）。**届くようにするには
+`photo-gallery` 側に鍵を1つ入れて、api-user を配り直します。**
+
+1. `photo-gallery` → **Settings → Secrets and variables → Actions** →
+   **New repository secret**
+   - 名前: `APNS_PRIVATE_KEY`
+   - 中身: Apple Developer で作った **APNs キー（`AuthKey_DDYJB5893J.p8`）の全文**
+     （`-----BEGIN PRIVATE KEY-----` から `-----END PRIVATE KEY-----` まで）
+2. `api-user/**` を含む変更が `main`（本番）か `develop`（staging）に入れば、
+   `Deploy API Lambdas` が自動で配ります（約4.5分）
+
+Key ID（`DDYJB5893J`）と Team ID（`5428GX5UM8`）は**秘密ではない**ので
+ワークフローに直書きしてあります。**鍵が未設定でも通知は積まれます**
+（アプリを開けば読める）——端末に飛ばないだけです。
+
+### 届かないときの見かた
+
+| 症状 | 見るところ |
+|---|---|
+| 設定のトグルが入らない | iPhone の「設定 → 通知 → Journey Photo」で許可されているか |
+| 許可したのに届かない | CloudWatch の `likePhoto` などのログに `APNs <番号>` が出ていないか |
+| `400 BadDeviceToken` | ビルドの `aps-environment` と `apnsHost` のずれ（`check-config.py` が見張る） |
+| `403 InvalidProviderToken` | `APNS_PRIVATE_KEY` の中身が `.p8` の全文か（改行ごと貼る） |
+| 通知に `NOTIF_LIKE` と出る | `Localizable.strings` に鍵が無い（`check-config.py` が見張る） |
