@@ -29,6 +29,10 @@ env:
 
 jobs:
   build:
+    # **絵を置く枝（`screenshots`）へ押すのに書き込みが要る。**
+    # 既定は上の `permissions` のとおり読み取りだけ。ここだけ開ける
+    permissions:
+      contents: write
     # **`macos-latest` に固定しない。** ランナーの既定 Xcode が上がると
     # 挙動が変わるので、上げるときは意図して上げる
     runs-on: macos-15
@@ -230,6 +234,17 @@ jobs:
           app-store-connect publish \
             --path "build/ios/ipa/*.ipa" \
             --testflight
+
+      # **見た目を確かめられる場所はここしか無い。** 開発は Linux で進めて
+      # いて、手元にあるのは `Shims/` の模型（修飾子は素通し＝配置も色も
+      # 再現しない）。実際に描かれた絵は、このランナーのシミュレータに
+      # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
+      # `Tools/export-screenshots.sh` の頭に書いた
+      - name: 画面の絵を `screenshots` の枝に置く
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash Tools/export-screenshots.sh build/ios/test/Test.xcresult
 
       - name: 落ちたときに読むものを集める
         if: ${{ always() }}
