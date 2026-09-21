@@ -28,7 +28,8 @@ final class GalleryViewModel: ObservableObject {
     /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中の既定は「自分」**
     @Published private(set) var scope: GalleryScope = .all
     /// フォローしている人。`following` のときだけ要る
-    private var followingIds: Set<String> = []
+    /// フォロー先。**カードのフォローボタンにも渡す**（モック1）
+    private(set) var followingIds: Set<String> = []
     private var viewerId: String?
 
     /// 絞り込みに出すカテゴリ。**写真が1枚もない種類は出さない**

@@ -15,6 +15,12 @@ struct SearchView: View {
                 searchField
                 categoryChips
                 tagChips
+                // **何も打っていないときは「発見」の顔**（モック2）。
+                // 打ち始めたら結果に切り替わる
+                if query.isEmpty && model.category == nil {
+                    popularSpots
+                    seasonal
+                }
                 results
             }
             .padding(.top, 8)
@@ -117,6 +123,84 @@ struct SearchView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    // MARK: - 発見
+
+    /// 人気スポット（モック2）。**写真から数えた件数**を出す。
+    ///
+    /// モックの「富士山 12,421件」のような数は、場所そのものの台帳が
+    /// 無いので出せない（`api-user` に場所のマスタは無い）。
+    /// **この写真たちの中で何枚あるか**なら正確に言える。
+    @ViewBuilder
+    private var popularSpots: some View {
+        let spots = model.popularSpots
+        if !spots.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader(L("人気スポット", "Popular places"))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(spots) { spot in
+                            NavigationLink {
+                                TagPhotosView(kind: .location(spot.id))
+                            } label: {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Color.clear
+                                        .aspectRatio(1, contentMode: .fit)
+                                        .overlay {
+                                            RemoteImage(url: spot.cover.gridImageURL,
+                                                        alignment: spot.cover.gridAlignment)
+                                        }
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    Text(spot.id)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(WebTheme.foreground)
+                                        .lineLimit(1)
+                                    Text(L("\(spot.count)枚", "\(spot.count) photos"))
+                                        .font(.caption)
+                                        .foregroundStyle(WebTheme.faint)
+                                }
+                                .frame(width: 128)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
+    /// 季節のおすすめ（モック2）。**いまの季節のタグ**から新しい順に。
+    @ViewBuilder
+    private var seasonal: some View {
+        let photos = model.seasonal
+        if !photos.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader(L("季節のおすすめ", "In season now"))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(photos) { photo in
+                            NavigationLink {
+                                PhotoDetailView(photo: photo, context: photos)
+                            } label: {
+                                PhotoFrame(photo: photo, aspect: 3.0 / 4.0, corner: 12)
+                                    .frame(width: 128)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.title3.weight(.bold))
+            .foregroundStyle(WebTheme.foreground)
+            .padding(.horizontal, 16)
+    }
+
     // MARK: - 結果
 
     @ViewBuilder
@@ -198,6 +282,9 @@ final class SearchViewModel: ObservableObject {
     /// 候補タグと枚数（提案の絵の「winter 13」）
     @Published private(set) var tagCounts: [(tag: String, count: Int)] = []
     @Published private(set) var categories: [String] = []
+    /// 発見の塊（モック2）
+    @Published private(set) var popularSpots: [DiscoverySections.Spot] = []
+    @Published private(set) var seasonal: [Photo] = []
     @Published private(set) var category: String?
     @Published private(set) var sort: GallerySort = .new
 
@@ -246,6 +333,8 @@ final class SearchViewModel: ObservableObject {
         allPhotos = (try? await environment.gallery.fetchPhotos()) ?? []
         popularTags = PhotoQuery.topTags(in: allPhotos)
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
+        popularSpots = DiscoverySections.popularSpots(in: allPhotos)
+        seasonal = DiscoverySections.seasonal(in: allPhotos)
         categories = CategoryChoices.all.filter { choice in
             allPhotos.contains { CategoryChoices.isChosen(current: $0.category ?? "", choice: choice) }
         }

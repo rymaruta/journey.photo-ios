@@ -370,10 +370,15 @@ struct GalleryView: View {
     private func feed(_ photos: [Photo]) -> some View {
         ScrollView {
             LazyVStack(spacing: 24) {
+                // **ストーリーはホームの一番上**（モック1）。
+                // 2026-09-20 に Web がトップから外してマイページへ移したが、
+                // アプリの提案図では**ホームに戻っている**ので合わせる
+                // ——「いま誰が旅に出ているか」は開いた瞬間に見たいもの
+                StoriesRow()
                 feedPicker
                 featuredSections
                 ForEach(photos) { photo in
-                    HomeFeedCard(photo: photo)
+                    HomeFeedCard(photo: photo, following: model.followingIds)
                 }
             }
             .padding(.top, 8)

@@ -22,6 +22,13 @@ struct HomeFeedCard: View {
     var onMore: () -> Void = {}
 
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var environment: AppEnvironment
+    /// この人をフォローしているか。**外から渡される**（一覧が持っている）
+    @State private var isFollowing = false
+    @State private var isFollowWorking = false
+    /// 一覧が持っているフォロー先。開いたときに合わせる
+    var following: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -55,6 +62,9 @@ struct HomeFeedCard: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
+        .onAppear {
+            if let ownerId = photo.userId { isFollowing = following.contains(ownerId) }
+        }
     }
 
     /// 写真に重ねる題と撮影地。**暗くするのは下だけ**（全面に膜を
@@ -139,6 +149,7 @@ struct HomeFeedCard: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            followButton
             Button(action: onMore) {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 18, weight: .semibold))
@@ -147,6 +158,45 @@ struct HomeFeedCard: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("この写真の操作", "More actions"))
+        }
+    }
+
+    /// フォロー（モック1）。**自分の写真には出さない**し、
+    /// 未ログインでも出さない（押しても 401 になるだけ）
+    @ViewBuilder
+    private var followButton: some View {
+        if let ownerId = photo.userId, let me = auth.userId, ownerId != me {
+            Button {
+                Task { await toggleFollow(ownerId) }
+            } label: {
+                Text(isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"))
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .background(isFollowing ? AnyShapeStyle(WebTheme.surface)
+                                            : AnyShapeStyle(Color.clear),
+                                in: Capsule())
+                    .overlay(Capsule().strokeBorder(
+                        isFollowing ? Color.clear : Color.white.opacity(0.35), lineWidth: 1))
+                    .foregroundStyle(WebTheme.foreground)
+            }
+            .buttonStyle(.plain)
+            .disabled(isFollowWorking)
+        }
+    }
+
+    private func toggleFollow(_ userId: String) async {
+        guard !isFollowWorking else { return }
+        isFollowWorking = true
+        defer { isFollowWorking = false }
+        // **返ってきた状態を使う。** 自分で反転すると、失敗した回に
+        // 画面だけフォロー中になる
+        if isFollowing {
+            let result = try? await environment.social.unfollow(userId: userId)
+            if let result { isFollowing = result.following }
+        } else {
+            let result = try? await environment.social.follow(userId: userId)
+            if let result { isFollowing = result.following }
         }
     }
 
@@ -184,6 +234,20 @@ struct HomeFeedCard: View {
             .buttonStyle(.plain)
 
             Spacer()
+
+            // **保存＝端末に覚えるお気に入り**（モック1 の 🔖）。
+            // いいねはサーバー、保存は手元、と役割が違う
+            Button {
+                favorites.toggle(photo.id)
+            } label: {
+                Label {
+                    Text(L("保存", "Save"))
+                } icon: {
+                    Image(systemName: favorites.contains(photo.id) ? "bookmark.fill" : "bookmark")
+                }
+                .foregroundStyle(WebTheme.foreground)
+            }
+            .buttonStyle(.plain)
 
             if let url = PhotoLink.url(photoId: photo.id, isPublished: photo.published != false) {
                 ShareLink(item: url) {
