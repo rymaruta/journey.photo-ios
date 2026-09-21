@@ -65,3 +65,30 @@ final class TextOverlayTests: XCTestCase {
         XCTAssertEqual(overlay.size, TextOverlay.maxSize, accuracy: 0.0001)
     }
 }
+
+/// 焼き込みの入口。**実際に描けるかは iOS でしか確かめられない**
+/// （`UIGraphicsImageRenderer` は模型では何も描かない）ので、
+/// ここで見張るのは「描かない回に元のデータを壊さないこと」。
+final class TextOverlayRendererTests: XCTestCase {
+
+    private let original = Data("これは画像のつもり".utf8)
+
+    /// 文字が無ければ**元のデータをそのまま返す**
+    /// （読み書きの往復で画質を落とさない）
+    func testNoOverlaysReturnsTheOriginal() {
+        XCTAssertEqual(TextOverlayRenderer.burn([], into: original), original)
+    }
+
+    /// 空白だけの文字も「無い」扱い
+    func testBlankOverlaysReturnTheOriginal() {
+        let blank = [TextOverlay(text: "   "), TextOverlay(text: "\n")]
+        XCTAssertEqual(TextOverlayRenderer.burn(blank, into: original), original)
+    }
+
+    /// 画像として読めないデータは**素通しする**。
+    /// ここで投げると、投稿そのものが落ちる（文字が乗らないだけで済ませる）
+    func testUnreadableImageIsPassedThrough() {
+        XCTAssertEqual(TextOverlayRenderer.burn([TextOverlay(text: "秋")], into: original),
+                       original)
+    }
+}

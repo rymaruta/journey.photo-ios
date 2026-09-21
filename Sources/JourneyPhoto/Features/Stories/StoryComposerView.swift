@@ -12,6 +12,9 @@ struct StoryComposerView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var prepared: ImagePreparer.Prepared?
     @State private var preview: Image?
+    /// 写真の上に置いた文字。**投稿するときに画像へ焼き込む**
+    /// （サーバーの `caption` は文字列1本で、位置を持てない）
+    @State private var overlays: [TextOverlay] = []
     @State private var caption = ""
     @State private var location = ""
     @State private var showCamera = false
@@ -26,11 +29,9 @@ struct StoryComposerView: View {
         Form {
             Section {
                 if let preview {
-                    preview
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: 240)
-                        .frame(maxWidth: .infinity)
+                    // **写真の上を直接つまんで文字を置く。**
+                    // 入力欄で座標を打たせない
+                    TextOverlayEditor(preview: preview, overlays: $overlays)
                 }
                 if CameraPicker.isAvailable {
                     Button { showCamera = true } label: {
@@ -137,6 +138,9 @@ struct StoryComposerView: View {
             let prepared = try ImagePreparer.prepare(data: data, fileName: "story")
             self.prepared = prepared
             self.preview = UIImage(data: prepared.data).map { Image(uiImage: $0) }
+            // **写真を選び直したら文字は外す。** 別の写真に前の文字が
+            // 残ると、置いた場所の意味が変わる
+            self.overlays = []
             self.message = nil
         } catch {
             self.prepared = nil
@@ -152,7 +156,9 @@ struct StoryComposerView: View {
         defer { isWorking = false }
         do {
             _ = try await environment.stories.create(
-                imageData: prepared.data,
+                // **焼き込んでから送る。** 文字が無ければ元のデータを
+                // そのまま渡す（読み書きの往復で画質を落とさない）
+                imageData: TextOverlayRenderer.burn(overlays, into: prepared.data),
                 caption: caption.trimmingCharacters(in: .whitespacesAndNewlines),
                 location: location.trimmingCharacters(in: .whitespacesAndNewlines),
                 coords: prepared.coords,
