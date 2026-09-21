@@ -89,4 +89,13 @@ enum AppConfig {
     static var publicPhotosURL: URL {
         siteBaseURL.appendingPathComponent("app/data/photos.json")
     }
+
+    /// 撮影スポットの台帳。写真と同じく**静的な JSON**で、
+    /// `scripts/sync-photos-from-ddb.js` が写真と同じ1回の Scan から書き出し、
+    /// `scripts/deploy-static-site.js` がサイト直下に配る。
+    ///
+    /// **スポットのための API は足していない。**
+    static var publicSpotsURL: URL {
+        siteBaseURL.appendingPathComponent("app/data/spots.json")
+    }
 }

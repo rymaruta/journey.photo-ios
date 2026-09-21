@@ -46,6 +46,12 @@ struct Photo: Identifiable, Decodable, Equatable {
 
     /// 撮影地（約1km精度に丸め済み）
     let coords: Coords?
+    /// 撮影スポット台帳（`app/data/spots.json`）への参照。
+    ///
+    /// **確定した紐づけにだけ入る。** 空の写真は今までどおり
+    /// `location` の文字列だけを持つ——台帳はその上に足す情報で、
+    /// 撮影地を置き換えるものではない。
+    let spotId: String?
     /// 正方形に切り抜くときの中心（0〜1）。未設定なら中央
     let focalPoint: FocalPoint?
     let exif: Exif?
