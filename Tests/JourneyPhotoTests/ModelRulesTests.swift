@@ -146,3 +146,33 @@ final class AppLanguageTests: XCTestCase {
         XCTAssertEqual(photo.displayTitle, "雲海")
     }
 }
+
+/// 写真を2回叩いたとき。Web のモーダル（`GalleryModal/index.tsx` の
+/// `handleImageTap`）と同じ約束にする。
+final class DoubleTapLikeTests: XCTestCase {
+
+    /// **いいね済みなら解除しない。** うっかり2回叩いて消えても、
+    /// 押した本人は気づけない（数は他人のぶんも含むので 1 減っても
+    /// おかしく見えない）
+    func testDoesNotUnlike() {
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: true, signedIn: true),
+                       .burstOnly)
+    }
+
+    func testLikesWhenNotLikedYet() {
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: false, signedIn: true),
+                       .like)
+    }
+
+    /// **拡大中は倍率を戻す側。** 拡大したまま迷子になる出口を潰さない
+    func testZoomWins() {
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: true, alreadyLiked: false, signedIn: true),
+                       .resetZoom)
+    }
+
+    /// 未ログインでは何も送らない（断り書きで写真の邪魔をしない）
+    func testSignedOutSendsNothing() {
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: false, signedIn: false),
+                       .burstOnly)
+    }
+}

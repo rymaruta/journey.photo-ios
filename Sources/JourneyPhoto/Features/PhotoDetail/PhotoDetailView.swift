@@ -72,7 +72,13 @@ struct PhotoDetailView: View {
             NavigationStack { EditPhotoView(photo: shown) }
         }
         .fullScreenCover(isPresented: $showViewer) {
-            PhotoViewerView(photos: siblings, index: siblings.firstIndex(where: { $0.id == photo.id }) ?? 0)
+            PhotoViewerView(
+                photos: siblings,
+                index: siblings.firstIndex(where: { $0.id == photo.id }) ?? 0,
+                isLiked: model.liked,
+                isSignedIn: auth.userId != nil,
+                onDoubleTapLike: { Task { await model.toggleLike() } }
+            )
         }
         .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
             Button(Labels.Common.delete, role: .destructive) { Task { await deletePhoto() } }

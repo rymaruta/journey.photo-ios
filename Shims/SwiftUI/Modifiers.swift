@@ -97,6 +97,12 @@ public struct ToolbarPlacementShim {
     public static let tabBar = ToolbarPlacementShim()
 }
 
+public struct AnyTransitionShim {
+    public static let scale = AnyTransitionShim()
+    public static let opacity = AnyTransitionShim()
+    public func combined(with other: AnyTransitionShim) -> AnyTransitionShim { self }
+}
+
 public struct ControlSizeShim {
     public static let large = ControlSizeShim()
     public static let regular = ControlSizeShim()
@@ -148,6 +154,9 @@ extension View {
     public func background<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func background<S: ShapeStyle, T: Shape>(_ s: S, in shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tint(_ c: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func shadow(radius: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func transition(_ t: AnyTransitionShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func allowsHitTesting(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func contentShape<T: Shape>(_ shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     // 黒地に揃えるために使う（`WebTheme`）。模型なので何も描かない
     public func scrollContentBackground(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
