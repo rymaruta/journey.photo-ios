@@ -10,13 +10,6 @@ struct GalleryView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = GalleryViewModel()
 
-    // **Web と同じ組み方**（`GalleryGrid.tsx` の `grid-cols-2 gap-1`）。
-    // 以前は3列・隙間2で、同じ写真でも1枚がだいぶ小さく見えていた
-    private let columns = Array(
-        repeating: GridItem(.flexible(), spacing: WebTheme.gridSpacing),
-        count: WebTheme.gridColumns
-    )
-
     var body: some View {
         VStack(spacing: 0) {
             // **タブは写真が0枚でも出す。** 中に入れると、1枚も無い人
@@ -143,49 +136,6 @@ struct GalleryView: View {
         }
     }
 
-    /// 1枚ぶん。**Web の `GalleryGrid.tsx` と同じ形**——4:3（`paddingTop: 75%`）で、
-    /// 下に黒のグラデーションを敷いて題と分類を重ねる。角は丸めない。
-    ///
-    /// 以前は正方形の写真だけで、題も分類も出していなかった。同じ写真でも
-    /// 別のサイトに見える一番大きな差がここだった。
-    private func tile(_ photo: Photo) -> some View {
-        RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-            .aspectRatio(4.0 / 3.0, contentMode: .fill)
-            .clipped()
-            .overlay(alignment: .bottom) {
-                // **題も分類も無い写真には帯を出さない。** 空の黒帯が
-                // 乗るだけで、写真が欠けて見える
-                let title = photo.displayTitle
-                let category = photo.category.map { Labels.Category.name($0) } ?? ""
-                if !title.isEmpty || !category.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        if !title.isEmpty {
-                            Text(title)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(WebTheme.foreground)
-                                .lineLimit(1)
-                        }
-                        if !category.isEmpty {
-                            Text(category)
-                                .font(.caption)
-                                .foregroundStyle(WebTheme.faint)
-                                .lineLimit(1)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.black.opacity(0), Color.black.opacity(0.6)],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
-                }
-            }
-            .accessibilityLabel(photo.accessibilityText)
-    }
-
     private func grid(_ photos: [Photo]) -> some View {
         ScrollView {
             // **ストーリーはここに置かない。** 2026-09-20 に Web が
@@ -193,17 +143,7 @@ struct GalleryView: View {
             if !model.categories.isEmpty {
                 filterBar
             }
-            LazyVGrid(columns: columns, spacing: WebTheme.gridSpacing) {
-                ForEach(photos) { photo in
-                    NavigationLink(value: photo.id) {
-                        tile(photo)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .navigationDestination(for: String.self) { id in
-            if let photo = photos.first(where: { $0.id == id }) {
+            PhotoGrid(photos: photos) { photo in
                 PhotoDetailView(photo: photo, context: photos)
             }
         }

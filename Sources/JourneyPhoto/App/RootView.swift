@@ -9,6 +9,10 @@ struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @State private var selection: Tab = .gallery
     @State private var unread = 0
+    /// 投稿の「＋」から開くもの
+    @State private var showPostChoice = false
+    @State private var showPhotoUpload = false
+    @State private var showStoryComposer = false
     /// 通知を押して開いたか（`AppDelegate` から届く）
     @StateObject private var router = NotificationRouter.shared
 
@@ -87,6 +91,44 @@ struct RootView: View {
         // 「変わっていない」と見なされて2回目が効かなくなるため
         .onChange(of: router.openActivityRequests) { _, _ in
             selection = .notifications
+        }
+        // **どの画面からでも投稿できるようにする。** Web も同じ理由で
+        // 全ページに「＋」を置いている（`app/components/PostFab.tsx`——
+        // owner の「どこに投稿する機能があるか分かりづらい」から）。
+        // アプリは入口がマイページの中だけで、同じ分かりにくさがあった。
+        // **投稿・ストーリーの画面はシートで全面に出る**ので、
+        // Web のような「出さないページ」の判定は要らない
+        .overlay(alignment: .bottomTrailing) {
+            if auth.userId != nil {
+                Button {
+                    showPostChoice = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .frame(width: 56, height: 56)
+                        .background(WebTheme.accentBackground, in: Circle())
+                }
+                .accessibilityLabel(L("投稿する", "Post"))
+                .accessibilityIdentifier("post.fab")
+                // タブバーの上に逃がす（Web も下の物の上に置いている）
+                .padding(.trailing, 16)
+                .padding(.bottom, 72)
+            }
+        }
+        .sheet(isPresented: $showPostChoice) {
+            PostSheet { kind in
+                switch kind {
+                case .photo: showPhotoUpload = true
+                case .story: showStoryComposer = true
+                }
+            }
+        }
+        .sheet(isPresented: $showPhotoUpload) {
+            NavigationStack { UploadView() }
+        }
+        .sheet(isPresented: $showStoryComposer) {
+            NavigationStack { StoryComposerView() }
         }
         .onChange(of: selection) { _, tab in
             // お知らせを開いたら、閉じたときに数え直す

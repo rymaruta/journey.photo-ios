@@ -132,12 +132,16 @@ enum PhotoQuery {
         case tag(String)
         case location(String)
         case category(String)
+        /// 機材。Web の `/camera/*`。**値は `CameraName.deduped` を通したもの**
+        /// ——生のままだと同じ機種が2つに割れる
+        case camera(String)
 
         var title: String {
             switch self {
             case .tag(let value): return "#\(value)"
             case .location(let value): return value
             case .category(let value): return value
+            case .camera(let value): return value
             }
         }
     }
@@ -155,6 +159,12 @@ enum PhotoQuery {
                 guard let location = $0.location?.lowercased() else { return false }
                 return location == needle || location.contains(needle) || needle.contains(location)
             }
+        case .camera(let value):
+            // **必ず `CameraName.deduped` を通して比べる。** 保存済みの値には
+            // メーカー名が二重に残っている行があり（実データ）、生のまま
+            // 比べると同じ機種の写真が集まらない
+            let needle = CameraName.deduped(value)?.lowercased()
+            return photos.filter { CameraName.deduped($0.exif?.camera)?.lowercased() == needle }
         }
     }
 

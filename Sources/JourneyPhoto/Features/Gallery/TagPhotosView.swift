@@ -14,28 +14,17 @@ struct TagPhotosView: View {
     @State private var photos: [Photo] = []
     @State private var isLoading = true
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-    ]
-
     var body: some View {
         ScrollView {
             if photos.isEmpty && !isLoading {
                 ErrorBanner(message: Labels.Gallery.empty)
             } else {
-                LazyVGrid(columns: columns, spacing: 2) {
-                    ForEach(photos) { photo in
-                        NavigationLink { PhotoDetailView(photo: photo, context: photos) } label: {
-                            RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-                                .aspectRatio(1, contentMode: .fill)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                PhotoGrid(photos: photos) { photo in
+                    PhotoDetailView(photo: photo, context: photos)
                 }
             }
         }
+        .webScreen()
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }

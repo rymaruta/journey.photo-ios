@@ -249,3 +249,62 @@ final class PlaceFillTests: XCTestCase {
         XCTAssertNil(PlaceFill.value(current: "", found: "  "))
     }
 }
+
+/// 機種名の整えと、機材での絞り込み。
+///
+/// Web（`lib/utils/cameraName.ts`）と同じに揃える。保存済みの値には
+/// **メーカー名が二重に残っている行がある**（実データに
+/// `"Hasselblad Hasselblad X2D II 100C"`）。
+final class CameraNameTests: XCTestCase {
+
+    func testDropsTheRepeatedMakerOnce() {
+        XCTAssertEqual(CameraName.deduped("Hasselblad Hasselblad X2D II 100C"),
+                       "Hasselblad X2D II 100C")
+    }
+
+    /// **重なっていない名前は触らない**（`Canon EOS R5` が `EOS R5` になってはいけない）
+    func testKeepsANormalName() {
+        XCTAssertEqual(CameraName.deduped("Canon EOS R5"), "Canon EOS R5")
+    }
+
+    /// 落とすのは**1つぶんだけ**
+    func testDropsOnlyOne() {
+        XCTAssertEqual(CameraName.deduped("Sony Sony Sony A7"), "Sony Sony A7")
+    }
+
+    /// **語の切れ目まで見る。** `startsWith(first)` だけで判定すると、
+    /// 先頭の語が**次の語の一部**でしかない並びまで削ってしまう
+    /// （`Sony SonyA7` → `SonyA7`＝メーカー名が消える）。
+    /// 変異試験で実際に生き残った穴。
+    func testOnlyDropsWhenTheRepeatEndsAtAWordBoundary() {
+        XCTAssertEqual(CameraName.deduped("Sony SonyA7"), "Sony SonyA7")
+    }
+
+    func testEmptyIsNil() {
+        XCTAssertNil(CameraName.deduped("   "))
+        XCTAssertNil(CameraName.deduped(nil))
+    }
+
+    /// 1語だけの名前（空白が無い）
+    func testSingleWord() {
+        XCTAssertEqual(CameraName.deduped("iPhone"), "iPhone")
+    }
+
+    /// 二重のまま保存された写真も、整えた名前で集まる
+    func testCameraCollectionMatchesAcrossDuplicatedNames() throws {
+        let photos = [
+            try photo(id: "a", camera: "Hasselblad Hasselblad X2D II 100C"),
+            try photo(id: "b", camera: "Hasselblad X2D II 100C"),
+            try photo(id: "c", camera: "Canon EOS R5"),
+        ]
+        let found = PhotoQuery.photos(photos, in: .camera("Hasselblad X2D II 100C"))
+        XCTAssertEqual(found.map(\.id), ["a", "b"])
+    }
+
+    private func photo(id: String, camera: String) throws -> Photo {
+        let json = """
+        {"id":"\(id)","src":"https://x/\(id).jpg","exif":{"camera":"\(camera)"}}
+        """
+        return try JSONDecoder.api.decode(Photo.self, from: Data(json.utf8))
+    }
+}

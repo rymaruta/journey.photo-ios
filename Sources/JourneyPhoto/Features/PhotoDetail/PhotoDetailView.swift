@@ -330,9 +330,13 @@ private struct ExifRow: View {
         let value: String
     }
 
+    /// 機種名。**`CameraName.deduped` を通す**——保存済みの値には
+    /// メーカー名が二重に残っている行があり（実データ）、そのまま出すと
+    /// 「Hasselblad Hasselblad X2D II 100C」と画面に見える
+    var camera: String? { CameraName.deduped(exif.camera) }
+
     private var items: [Item] {
         let candidates: [(String, String?)] = [
-            (L("カメラ", "Camera"), exif.camera),
             (L("レンズ", "Lens"), exif.lens),
             (L("絞り", "Aperture"), exif.aperture),
             (L("シャッター", "Shutter"), exif.exposure),
@@ -346,8 +350,24 @@ private struct ExifRow: View {
     }
 
     var body: some View {
-        if !items.isEmpty {
+        if !items.isEmpty || camera != nil {
             VStack(alignment: .leading, spacing: 4) {
+                // **機材だけリンクにする。** Web に `/camera/*` の集約ページが
+                // あり、同じ機材で撮った写真をまとめて見られる（他の項目には
+                // 集約が無いので、押せる見た目にしない）
+                if let camera {
+                    NavigationLink {
+                        TagPhotosView(kind: .camera(camera))
+                    } label: {
+                        HStack {
+                            Text(L("カメラ", "Camera")).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(camera)
+                        }
+                        .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                }
                 ForEach(items) { item in
                     HStack {
                         Text(item.id).foregroundStyle(.secondary)
