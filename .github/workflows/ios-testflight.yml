@@ -129,6 +129,17 @@ jobs:
             --path "build/ios/ipa/*.ipa" \
             --testflight
 
+      - name: 落ちたときに読むものを集める
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          # **`~` は upload-artifact が展開しない**（常に0件になり、
+          # `if-no-files-found: ignore` が黙らせる）。シェルで集めてから渡す
+          find "$HOME/Library/Developer/Xcode/DerivedData" -name "*.xcresult" -maxdepth 4             -exec cp -R {} build/logs/ \; 2>/dev/null || true
+          cp -R /tmp/xcodebuild_logs build/logs/ 2>/dev/null || true
+          ls -la build/logs || true
+
       - name: 落ちたときに読むもの
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -138,6 +149,6 @@ jobs:
           path: |
             build/ios/ipa/*.ipa
             build/ios/test/*.xml
-            ~/Library/Developer/Xcode/DerivedData/**/Logs/**/*.xcresult
+            build/logs/**
           retention-days: 7
           if-no-files-found: ignore

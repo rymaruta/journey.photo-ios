@@ -47,15 +47,13 @@ struct NotificationsView: View {
             }
         }
         .task {
-            await model.load(environment: environment)
-            // **読んだらアイコンの数字も消す。** サーバーは未読数を載せるが、
-            // 既読にしたことは端末のアイコンに伝わらない——誰も消さないと
-            // 増える一方になる
-            await push.clearBadge()
+            // **読めたときだけ消す。** サーバーは未読数を載せるが、既読に
+            // したことは端末のアイコンに伝わらない——誰も消さないと増える
+            // 一方。ただし圏外で開いた回に消すと、タブは 3・アイコンは 0 に割れる
+            if await model.load(environment: environment) { await push.clearBadge() }
         }
         .refreshable {
-            await model.load(environment: environment)
-            await push.clearBadge()
+            if await model.load(environment: environment) { await push.clearBadge() }
         }
     }
 }
@@ -129,7 +127,11 @@ final class NotificationsViewModel: ObservableObject {
         }
     }
 
-    func load(environment: AppEnvironment) async {
+    /// - Returns: 読めたか。**バッジを消してよいかの拠り所**——
+    ///   取得に失敗した回にアイコンだけ 0 にすると、タブのバッジは 3 のまま
+    ///   アイコンは 0、という食い違いが残る。
+    @discardableResult
+    func load(environment: AppEnvironment) async -> Bool {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -145,8 +147,10 @@ final class NotificationsViewModel: ObservableObject {
                 try? await environment.notifications.markRead()
                 unread = 0
             }
+            return true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+            return false
         }
     }
 }

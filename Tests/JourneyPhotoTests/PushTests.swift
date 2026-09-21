@@ -98,3 +98,43 @@ final class PushServiceTests: XCTestCase {
         }
     }
 }
+
+/// 「受け取る」の意思。
+///
+/// **画面の拠り所をどこに置くかで3通りの壊れ方がある**（全部踏んだ）:
+/// - 「預けられたか」で見る → APNs のトークンは遅れて届くので、押した直後は
+///   必ずオフに戻る
+/// - 「端末の許可」で見る → 自分でオフにしたのに、再起動で復活する
+///   （OS の許可は残るため）
+/// - どこにも残さない → 再起動のたびに判断できない
+@MainActor
+final class PushIntentTests: XCTestCase {
+
+    private func center(_ suite: String) -> (PushCenter, UserDefaults) {
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return (PushCenter(service: { PushService(api: APIClient(tokenProvider: StubTokenProvider(token: nil))) },
+                           defaults: defaults), defaults)
+    }
+
+    func testStartsOff() async {
+        let (push, _) = center("push-1")
+        XCTAssertFalse(push.isEnabled)
+    }
+
+    /// **オフにした意思は残る**（次の起動で勝手に復活しない）。
+    func testTurningOffSurvivesRelaunch() async {
+        let (push, defaults) = center("push-2")
+        defaults.set(true, forKey: "photo-gallery-push-enabled")
+
+        let reopened = PushCenter(service: { PushService(api: APIClient(tokenProvider: StubTokenProvider(token: nil))) },
+                                  defaults: defaults)
+        XCTAssertTrue(reopened.isEnabled, "オンのまま開き直せる")
+
+        await reopened.disable()
+        let again = PushCenter(service: { PushService(api: APIClient(tokenProvider: StubTokenProvider(token: nil))) },
+                               defaults: defaults)
+        XCTAssertFalse(again.isEnabled, "オフにしたら、次の起動でもオフ")
+        _ = push
+    }
+}

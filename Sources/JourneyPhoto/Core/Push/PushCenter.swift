@@ -17,8 +17,15 @@ final class PushCenter: ObservableObject {
 
     /// 端末が許可しているか（システム設定の状態）。
     @Published private(set) var isAuthorized = false
-    /// サーバーに預けてある状態（＝実際に届く状態）。
+    /// サーバーに預けてある状態（＝いま実際に届く状態）。
     @Published private(set) var isRegistered = false
+    /// **本人が「受け取る」と言ったか。** これが画面の拠り所。
+    ///
+    /// 預けられたか（`isRegistered`）で見ると、APNs のトークンは少し遅れて
+    /// 届くので**押した直後は必ず false**——画面に入り直すたびにオフへ戻る。
+    /// 逆に端末の許可だけで見ると、**自分でオフにしたのに再起動で復活**する
+    /// （OS の許可は残るため）。意思は端末に残す。
+    @Published private(set) var isEnabled = false
     @Published var errorMessage: String?
 
     /// APNs から受け取ったトークン。
@@ -40,6 +47,7 @@ final class PushCenter: ObservableObject {
         }
     }
     private static let tokenKey = "photo-gallery-apns-token"
+    private static let enabledKey = "photo-gallery-push-enabled"
     private let defaults: UserDefaults
     private var userId: String?
     private let service: () -> PushService
@@ -48,6 +56,7 @@ final class PushCenter: ObservableObject {
          defaults: UserDefaults = .standard) {
         self.service = service
         self.defaults = defaults
+        self.isEnabled = defaults.bool(forKey: Self.enabledKey)
     }
 
     /// 起動時とログイン状態が変わるたびに呼ぶ。
@@ -62,13 +71,13 @@ final class PushCenter: ObservableObject {
             try? await service().unregister(token: token)
             isRegistered = false
         }
-        guard userId != nil, isAuthorized else { return }
-        // **許可済みなら、起動のたびに APNs へ繋ぎ直す。**
-        // トークンは復元や入れ直しで変わる——`enable()` のときだけ繋ぐと、
-        // 変わったことに気づけないまま「許可したのに届かない」になる
+        // **「受け取る」と言った人にだけ繋ぎ直す。** 端末の許可だけで
+        // 判断すると、自分でオフにしたのに再起動で復活する
+        guard userId != nil, isEnabled, isAuthorized else { return }
+        // トークンは復元や入れ直しで変わる。**預け直すのは APNs が
+        // 返してきた新しいトークン**——手元の古い値を送ると、他人の端末の
+        // 枠（`DEVICES_MAX`）を食ったまま 410 が出るまで残る
         UIApplication.shared.registerForRemoteNotifications()
-        // 許可済みで入り直したなら、黙って預け直す（Set なので増えない）
-        await registerIfPossible()
     }
 
     /// システムの許可状態を読み直す。
@@ -90,7 +99,11 @@ final class PushCenter: ObservableObject {
             let granted = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .badge, .sound])
             isAuthorized = granted
-            guard granted else { return false }
+            guard granted else {
+                setEnabled(false)
+                return false
+            }
+            setEnabled(true)
         } catch {
             errorMessage = L("通知の許可を確かめられませんでした", "Couldn't check notification permission")
             return false
@@ -104,6 +117,9 @@ final class PushCenter: ObservableObject {
     /// 設定画面の「受け取らない」。**端末の許可は取り消せない**ので、
     /// サーバーから宛先を外す（届かなくなる）。
     func disable() async {
+        // **意思を残す。** 残さないと、OS の許可が生きているので
+        // 次の起動で勝手に復活する
+        setEnabled(false)
         defer { isRegistered = false }
         guard let token, userId != nil else { return }
         do {
@@ -119,6 +135,8 @@ final class PushCenter: ObservableObject {
         let hex = PushToken.hex(from: deviceToken)
         guard PushToken.isValid(hex) else { return }
         token = hex
+        // **オフにした直後に遅れて届いた回に、勝手に戻さない**
+        guard isEnabled else { return }
         Task { await registerIfPossible() }
     }
 
@@ -143,8 +161,13 @@ final class PushCenter: ObservableObject {
         try? await UNUserNotificationCenter.current().setBadgeCount(0)
     }
 
+    private func setEnabled(_ value: Bool) {
+        isEnabled = value
+        defaults.set(value, forKey: Self.enabledKey)
+    }
+
     private func registerIfPossible() async {
-        guard let token, userId != nil, isAuthorized else { return }
+        guard let token, userId != nil, isEnabled, isAuthorized else { return }
         do {
             try await service().register(token: token)
             isRegistered = true

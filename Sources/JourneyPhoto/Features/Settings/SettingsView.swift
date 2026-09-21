@@ -21,20 +21,19 @@ struct SettingsView: View {
         list
             .task {
                 await push.refreshAuthorization()
-                // **サーバーに預けてあるかで見る。** 端末が許可していても
-                // 宛先を預けていなければ届かない＝「オン」と言ってはいけない
-                wantsPush = push.isRegistered
+                // **本人の意思で見る。** 「預けられたか」で見ると、
+                // シミュレータや圏外では必ず false になり、画面に入り直す
+                // たびにオフへ戻る。端末の許可だけで見ると、オフにしたのに
+                // 復活する（OS の許可は残る）
+                wantsPush = push.isEnabled && push.isAuthorized
             }
     }
 
     /// 受け取る／受け取らないを切り替える。
+    /// 押されたあとの本体（門は呼ぶ側で閉じてある）。
     private func apply(on: Bool) async {
-        guard !isApplying else { return }
-        isApplying = true
         showDeniedHint = false
         defer { isApplying = false }
-        // 押した瞬間にその形にする（待っている間の見た目を裏返さない）
-        wantsPush = on
         if on {
             // **許可されたかだけで決める。** 宛先を預け終えたかで見ると、
             // APNs のトークンは少し遅れて届くので**必ず false になる**
@@ -58,7 +57,15 @@ struct SettingsView: View {
                     // 押された瞬間だけを受ける形にする
                     Toggle(L("プッシュ通知を受け取る", "Push notifications"),
                            isOn: Binding(get: { wantsPush },
-                                         set: { on in Task { await apply(on: on) } }))
+                                         set: { on in
+                                             // **門は同期で閉じる。** `Task` の
+                                             // 中で立てると、連打の2発目が来る
+                                             // 時点ではまだ開いている
+                                             guard !isApplying else { return }
+                                             isApplying = true
+                                             wantsPush = on
+                                             Task { await apply(on: on) }
+                                         }))
                         .disabled(isApplying)
                     if showDeniedHint {
                         // **端末の許可は取り消せない。** 断られたあとは

@@ -223,13 +223,36 @@ for name, want in expected.items():
         fail(f"{name} の aps-environment が {got}（{want} のはず）"
              f"——サーバーの送り先とずれると、APNs の 400 で宛先が消えます")
 
-# project.yml が構成ごとに entitlements を指しているか（1つに固定しない）
+# project.yml が構成ごとに entitlements を指しているか。
+#
+# **名前が出てくるかだけでは見張れない。** Debug と Release を入れ替えても
+# 「両方の名前がある」ので素通りする——それは、この検査が防ごうとしている
+# 事故（Release を development で署名し、本番の APNs へ送って宛先が消える）
+# そのもの。構成ごとの割り当てを見る。
+assigned = {}
+try:
+    import yaml  # 手元にはある。CI（macOS ランナー）に無ければ下の綴りで見る
+    configs = (yaml.safe_load(project_text).get("targets", {})
+               .get("JourneyPhoto", {}).get("settings", {}).get("configs", {}))
+    assigned = {name: (configs.get(name) or {}).get("CODE_SIGN_ENTITLEMENTS")
+                for name in expected}
+except ImportError:
+    for name in expected:
+        found = re.search(rf"^\s*{name}:\s*\n\s*CODE_SIGN_ENTITLEMENTS:\s*(\S+)",
+                          project_text, re.MULTILINE)
+        assigned[name] = found.group(1) if found else None
+
 for name in expected:
-    if f"JourneyPhoto.{name}.entitlements" not in project_text:
-        fail(f"project.yml が {name} の entitlements を指していません"
-             f"（1つに固定すると、片方の環境で宛先が消えます）")
+    want = f"Sources/JourneyPhoto/JourneyPhoto.{name}.entitlements"
+    if assigned.get(name) != want:
+        fail(f"project.yml の {name} が {want} を指していません"
+             f"（いまは {assigned.get(name)}）"
+             f"——入れ替わると、その環境で端末の宛先が消えます")
 
 workflow = ROOT.parent / "photo-gallery" / ".github" / "workflows" / "deploy-api.yml"
+if not workflow.exists():
+    # §10 と同じ理由で、**黙って飛ばさない**（CI では必ず飛ぶ）
+    print("--  サーバーの送り先との突き合わせは飛ばした（photo-gallery が隣に無い）")
 if workflow.exists():
     text = workflow.read_text(encoding="utf-8")
     # 本番は production の APNs、staging は sandbox
