@@ -43,6 +43,10 @@ struct LegalGateView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            // **スモークから指すための名札。** 文字で探すと、CI の
+            // シミュレータが英語なので日本語では当たらないし、
+            // 上に並ぶ「利用規約」のリンクを先に掴んで Safari が開く
+            .accessibilityIdentifier("legal.agree")
         }
         .padding(24)
     }

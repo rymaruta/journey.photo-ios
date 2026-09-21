@@ -186,6 +186,9 @@ extension View {
 
     // 読み上げ
     public func accessibilityLabel(_ label: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 起動スモーク（`UITests/`）から画面の部品を名札で指すためのもの。
+    /// **模型にも置く**——置かないと Linux 側のビルドだけが落ちる
+    public func accessibilityIdentifier(_ id: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityAddTraits(_ traits: AccessibilityTraits) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityHidden(_ hidden: Bool) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
 

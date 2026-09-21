@@ -124,17 +124,37 @@ targets:
         # 署名まわりは要らない（シミュレータでしか動かさない）
         CODE_SIGNING_ALLOWED: NO
 
+  # **起動スモーク。** 単体テストでは捕まらない「起動直後に落ちる」類を見る
+  # （Info.plist の欠け・`@EnvironmentObject` の配り忘れ・Amplify の初期化）。
+  # Web 側が実ブラウザのスモークを必ず通しているのと同じ役目
+  JourneyPhotoUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests/JourneyPhotoUITests
+    dependencies:
+      - target: JourneyPhoto
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.journeyphoto.JourneyPhotoUITests
+        CODE_SIGNING_ALLOWED: NO
+        TEST_TARGET_NAME: JourneyPhoto
+
 schemes:
   JourneyPhoto:
     build:
       targets:
         JourneyPhoto: all
         JourneyPhotoTests: [test]
+        JourneyPhotoUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - JourneyPhotoTests
+        - JourneyPhotoUITests
     archive:
       config: Release
