@@ -308,3 +308,79 @@ final class CameraNameTests: XCTestCase {
         return try JSONDecoder.api.decode(Photo.self, from: Data(json.utf8))
     }
 }
+
+/// 並び替え（Web の `FilterBar`：新しい順／古い順／人気順）と、
+/// おすすめの塊（`lib/utils/featured.ts`）。**どちらもアプリに無かった。**
+final class GallerySortTests: XCTestCase {
+
+    private func photo(_ id: String, at date: String?, likes: Int? = nil,
+                       featured: Bool? = nil, category: String? = nil,
+                       published: Bool? = nil) throws -> Photo {
+        var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\""]
+        if let date { fields.append("\"createdAt\":\"\(date)\"") }
+        if let likes { fields.append("\"likes\":\(likes)") }
+        if let featured { fields.append("\"featured\":\(featured)") }
+        if let category { fields.append("\"category\":\"\(category)\"") }
+        if let published { fields.append("\"published\":\(published)") }
+        return try JSONDecoder.api.decode(Photo.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
+    }
+
+    func testNewestFirst() throws {
+        let photos = [try photo("a", at: "2026-01-01"), try photo("b", at: "2026-05-01")]
+        XCTAssertEqual(GallerySort.new.apply(photos).map(\.id), ["b", "a"])
+    }
+
+    func testOldestFirst() throws {
+        let photos = [try photo("a", at: "2026-05-01"), try photo("b", at: "2026-01-01")]
+        XCTAssertEqual(GallerySort.old.apply(photos).map(\.id), ["b", "a"])
+    }
+
+    /// **日付を持たない写真は、古い順でも末尾。** 先頭に来ると
+    /// 「いちばん古い写真」として日付不明のものが並ぶ
+    func testUndatedStaysLastEvenWhenOldestFirst() throws {
+        let photos = [try photo("none", at: nil), try photo("b", at: "2026-01-01")]
+        XCTAssertEqual(GallerySort.old.apply(photos).map(\.id), ["b", "none"])
+    }
+
+    /// 人気順。**`likes` を持たない写真は 0 として扱う**（Web と同じ）
+    func testPopularUsesLikesAndTreatsMissingAsZero() throws {
+        let photos = [
+            try photo("a", at: "2026-01-01", likes: 2),
+            try photo("b", at: "2026-01-02"),
+            try photo("c", at: "2026-01-03", likes: 9),
+        ]
+        XCTAssertEqual(GallerySort.popular.apply(photos).map(\.id), ["c", "a", "b"])
+    }
+
+    /// 同点は新しい順（押すたびに並びが変わって見えないように）
+    func testPopularBreaksTiesByDate() throws {
+        let photos = [
+            try photo("old", at: "2026-01-01", likes: 3),
+            try photo("new", at: "2026-02-01", likes: 3),
+        ]
+        XCTAssertEqual(GallerySort.popular.apply(photos).map(\.id), ["new", "old"])
+    }
+
+    func testFeaturedGroupsOnlyTakeMarkedAndPublishedPhotos() throws {
+        let photos = [
+            try photo("a", at: "2026-01-01", featured: true, category: "landscape"),
+            try photo("b", at: "2026-01-02", featured: true, category: "landscape"),
+            try photo("hidden", at: "2026-01-03", featured: true, category: "landscape", published: false),
+            try photo("plain", at: "2026-01-04", category: "landscape"),
+            try photo("nocat", at: "2026-01-05", featured: true),
+        ]
+        let groups = FeaturedGroups.groups(from: photos)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.photos.map(\.id), ["b", "a"])
+    }
+
+    /// 塊は**多い順**。同数なら名前順で、毎回同じ並びにする
+    func testFeaturedGroupsAreSortedByCount() throws {
+        let photos = [
+            try photo("a", at: "2026-01-01", featured: true, category: "food"),
+            try photo("b", at: "2026-01-02", featured: true, category: "landscape"),
+            try photo("c", at: "2026-01-03", featured: true, category: "landscape"),
+        ]
+        XCTAssertEqual(FeaturedGroups.groups(from: photos).map(\.id), ["landscape", "food"])
+    }
+}

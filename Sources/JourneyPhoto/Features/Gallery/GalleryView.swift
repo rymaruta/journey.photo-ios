@@ -137,8 +137,75 @@ struct GalleryView: View {
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
+
+                // 並び替え。**Web も同じ列に置いている**（`FilterBar` の
+                // 右端のメニュー）。新しい順／古い順／人気順の3つ
+                Menu {
+                    ForEach(GallerySort.allCases) { option in
+                        Button {
+                            model.select(sort: option)
+                        } label: {
+                            if model.sort == option {
+                                Label(option.label, systemImage: "checkmark")
+                            } else {
+                                Text(option.label)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(model.sort.label)
+                        Image(systemName: "chevron.down")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                }
+                .accessibilityIdentifier("gallery.sort")
             }
             .padding(.horizontal, 12)
+        }
+    }
+
+    /// owner が選んだ「おすすめ」。Web はトップの一覧の上に、
+    /// カテゴリごとの横並びで出している（`FeaturedSections`）。
+    @ViewBuilder
+    private var featuredSections: some View {
+        ForEach(model.featured) { group in
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(group.label)
+                        .font(.headline)
+                        .foregroundStyle(WebTheme.foreground)
+                    Spacer()
+                    NavigationLink {
+                        TagPhotosView(kind: .category(group.id))
+                    } label: {
+                        Text(L("すべて見る", "See all"))
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                }
+                .padding(.horizontal, 12)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: WebTheme.gridSpacing) {
+                        ForEach(group.photos) { photo in
+                            NavigationLink {
+                                PhotoDetailView(photo: photo, context: group.photos)
+                            } label: {
+                                PhotoTile(photo: photo)
+                                    .frame(width: 220)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                }
+            }
+            .padding(.bottom, 8)
         }
     }
 
@@ -149,6 +216,7 @@ struct GalleryView: View {
             if !model.categories.isEmpty {
                 filterBar
             }
+            featuredSections
             PhotoGrid(photos: photos) { photo in
                 PhotoDetailView(photo: photo, context: photos)
             }

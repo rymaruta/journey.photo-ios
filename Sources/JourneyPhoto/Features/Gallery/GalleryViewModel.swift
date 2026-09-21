@@ -15,6 +15,8 @@ final class GalleryViewModel: ObservableObject {
     @Published private(set) var state: State = .loading
     /// 選ばれているカテゴリ。nil は「すべて」
     @Published var category: String?
+    /// 並び替え。**Web の `FilterBar` と同じ3つ**（新しい順／古い順／人気順）
+    @Published var sort: GallerySort = .new
     /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中の既定は「自分」**
     @Published private(set) var scope: GalleryScope = .all
     /// フォローしている人。`following` のときだけ要る
@@ -116,16 +118,22 @@ final class GalleryViewModel: ObservableObject {
         return result.sorted()
     }
 
-    /// 新しい順。`createdAt` は欠けている写真があるので、無い行は末尾へ送る
-    /// （Web 側 `lib/utils/photoOrder.ts` と同じ考え方）。
+    /// 並びは `GallerySort` に置いてある（画面を持たない層なので
+    /// Linux 上の `swift test` で検証できる）。
     private func sorted(_ photos: [Photo]) -> [Photo] {
-        photos.sorted { lhs, rhs in
-            switch (lhs.createdAt, rhs.createdAt) {
-            case let (l?, r?): return l > r
-            case (_?, nil): return true
-            case (nil, _?): return false
-            case (nil, nil): return lhs.id < rhs.id
-            }
-        }
+        sort.apply(photos)
+    }
+
+    func select(sort: GallerySort) {
+        self.sort = sort
+        all = sort.apply(all)
+        state = .loaded(filtered())
+    }
+
+    /// トップに出す「おすすめ」。**絞り込みが掛かっているときは出さない**
+    /// ——絞った結果の上に別の並びが出ると、何を見ているのか分からなくなる
+    var featured: [FeaturedGroups.Group] {
+        guard category == nil else { return [] }
+        return FeaturedGroups.groups(from: all)
     }
 }

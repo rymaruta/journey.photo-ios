@@ -27,6 +27,15 @@ struct Photo: Identifiable, Decodable, Equatable {
     let location: String?
     let published: Bool?
 
+    /// いいねの数。**並び替えの「人気順」で使う。**
+    /// `scripts/sync-photos-from-ddb.js` が公開 JSON に載せている
+    /// （落とすと人気順が**黙って効かなくなる**ので落としていない、と
+    ///  あちらのコメントが書いている）。持たない写真は 0 として扱う。
+    let likes: Int?
+    /// owner が手で選んだ「おすすめ」。トップのカテゴリ別の特集に出る
+    /// （Web の `lib/utils/featured.ts`）。
+    let featured: Bool?
+
     let userId: String?
     let uploadedBy: String?
     let displayName: String?
