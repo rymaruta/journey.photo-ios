@@ -14,6 +14,7 @@ struct NotificationsView: View {
     /// アイコンの数字も残っていた。
     @ObservedObject private var router = NotificationRouter.shared
     @StateObject private var model = NotificationsViewModel()
+    @State private var filter: NotificationFilter = .all
 
     var body: some View {
         Group {
@@ -29,15 +30,59 @@ struct NotificationsView: View {
         .navigationTitle(L("お知らせ", "Activity"))
     }
 
+    /// 種類で絞る（提案の絵）。**数の多い順ではなく決まった並び**
+    /// ——押すたびに位置が変わると、目で追えない
+    private var filterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(NotificationFilter.allCases) { option in
+                    let selected = filter == option
+                    Button {
+                        filter = option
+                    } label: {
+                        Text(option.label)
+                            .font(.subheadline.weight(selected ? .semibold : .regular))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(selected ? AnyShapeStyle(WebTheme.foreground)
+                                                 : AnyShapeStyle(WebTheme.surface),
+                                        in: Capsule())
+                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private var shownRows: [AppNotification] {
+        // **種類の分からないお知らせは「すべて」にだけ出す。**
+        // 捨てると届いたことが伝わらないし、当て推量で仕分けると嘘になる
+        model.rows.filter { row in
+            guard let kind = row.kind else { return filter == .all }
+            return filter.matches(kind)
+        }
+    }
+
     private var list: some View {
         List {
+            filterChips
+                .listRowBackground(Color.clear)
+
             if let message = model.errorMessage {
                 Text(message).foregroundStyle(.red).font(.callout)
-            } else if model.rows.isEmpty && !model.isLoading {
-                Text(L("まだ届いていません", "Nothing yet")).foregroundStyle(.secondary)
+            } else if shownRows.isEmpty && !model.isLoading {
+                // **「1件も無い」と「この種類が無い」を分ける**
+                Text(model.rows.isEmpty
+                     ? L("まだ届いていません", "Nothing yet")
+                     : L("この種類のお知らせはありません", "Nothing of this kind"))
+                    .foregroundStyle(.secondary)
             }
 
-            ForEach(model.rows) { row in
+            ForEach(shownRows) { row in
                 // **押せるようにする。** 行き止まりの一覧は「壊れている」に見える。
                 // 行き先が分からないものは押せないまま出す（空振りを作らない）
                 switch model.destination(for: row) {

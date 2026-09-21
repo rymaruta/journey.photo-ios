@@ -230,3 +230,32 @@ final class ToastCenterTests: XCTestCase {
         XCTAssertNil(center.current)
     }
 }
+
+/// お知らせの絞り込み（提案の絵・モック10）。
+final class NotificationFilterTests: XCTestCase {
+
+    func testAllKeepsEverything() {
+        for kind in [AppNotification.Kind.like, .comment, .follow, .storyreply] {
+            XCTAssertTrue(NotificationFilter.all.matches(kind))
+        }
+    }
+
+    /// **ストーリーの返信は「コメント」に入れる。**
+    /// どちらも「言葉が届いた」で、分けても探しやすくならない
+    func testStoryRepliesCountAsComments() {
+        XCTAssertTrue(NotificationFilter.comment.matches(.storyreply))
+        XCTAssertTrue(NotificationFilter.comment.matches(.comment))
+        XCTAssertFalse(NotificationFilter.comment.matches(.like))
+    }
+
+    func testLikeAndFollowAreSeparate() {
+        XCTAssertTrue(NotificationFilter.like.matches(.like))
+        XCTAssertFalse(NotificationFilter.like.matches(.follow))
+        XCTAssertTrue(NotificationFilter.follow.matches(.follow))
+    }
+
+    /// **サーバーが知らない種類を作らない**（4つだけ）
+    func testOnlyFourFilters() {
+        XCTAssertEqual(NotificationFilter.allCases.count, 4)
+    }
+}

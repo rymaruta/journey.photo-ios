@@ -408,6 +408,12 @@ private struct TagRow: View {
 private struct ExifRow: View {
     let exif: Photo.Exif
 
+    /// **畳んでおく。** 指示書 7-3:「一般ユーザーにとって情報が多すぎない
+    /// よう、折りたたみ可能な撮影情報セクションにまとめてください」。
+    /// 写真を見に来た人には要らないが、**カメラ好きには外せない**ので
+    /// 消しはしない。開いた状態は画面を離れるまで覚える
+    @State private var expanded = false
+
     /// 機種名。**`CameraName.deduped` を通す**——保存済みの値には
     /// メーカー名が二重に残っている行があり（実データ）、そのまま出すと
     /// 「Hasselblad Hasselblad X2D II 100C」と画面に見える
@@ -445,17 +451,28 @@ private struct ExifRow: View {
     var body: some View {
         if !primary.isEmpty || !secondary.isEmpty {
             VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    Text(L("撮影情報", "Shot with"))
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(WebTheme.foreground)
-                    Spacer()
-                    Image(systemName: "camera")
-                        .font(.title3)
-                        .foregroundStyle(Color.white.opacity(0.4))
+                Button {
+                    expanded.toggle()
+                } label: {
+                    HStack {
+                        Text(L("撮影情報", "Shot with"))
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(WebTheme.foreground)
+                        Spacer()
+                        Image(systemName: "camera")
+                            .font(.title3)
+                            .foregroundStyle(Color.white.opacity(0.4))
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(WebTheme.muted2)
+                    }
+                    .frame(minHeight: WebTheme.minTapTarget)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(expanded ? L("撮影情報を閉じる", "Hide camera info")
+                                             : L("撮影情報を開く", "Show camera info"))
 
-                if !primary.isEmpty {
+                if expanded, !primary.isEmpty {
                     HStack(alignment: .top, spacing: 16) {
                         ForEach(primary) { item in
                             VStack(alignment: .leading, spacing: 4) {
@@ -474,13 +491,14 @@ private struct ExifRow: View {
                     }
                 }
 
-                if !primary.isEmpty && !secondary.isEmpty {
+                if expanded, !primary.isEmpty, !secondary.isEmpty {
                     Rectangle()
                         .fill(Color.white.opacity(0.12))
                         .frame(height: 1)
                 }
 
-                VStack(alignment: .leading, spacing: 16) {
+                if expanded {
+                    VStack(alignment: .leading, spacing: 16) {
                     ForEach(secondary) { item in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(item.id.uppercased())
@@ -505,6 +523,7 @@ private struct ExifRow: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     }
                 }
             }
