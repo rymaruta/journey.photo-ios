@@ -131,3 +131,35 @@ final class MyPhotoLookupTests: XCTestCase {
         XCTAssertNil(found)
     }
 }
+
+/// 写真を直すときに送る本文。
+///
+/// **キーがある＝指定した、値が空＝消す**（`api-user/src/photoUpdate.ts` の
+/// `applyMeta`）。載せる／載せないを取り違えると、直したつもりのない項目が
+/// 消える。
+final class PhotoPatchBodyTests: XCTestCase {
+
+    private func keys(_ patch: PhotoPatch) throws -> Set<String> {
+        let data = try JSONEncoder().encode(patch)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return Set(object.keys)
+    }
+
+    /// **選んでいない回は座標を載せない。** 載せると、地名を手で直した
+    /// だけの回に既存の座標を上書きしてしまう。
+    func testCoordsAreOmittedWhenNotPicked() throws {
+        var patch = PhotoPatch()
+        patch.location = "パリ"
+        XCTAssertEqual(try keys(patch), ["location"], "頼んでいない項目まで送っている")
+    }
+
+    /// **候補から選んだ回は座標も送る。** 送らないと、サーバーが
+    /// 地名から起こした座標（`geoApprox`）を消し、**写真が地図から消える**。
+    func testCoordsAreSentWhenPicked() throws {
+        var patch = PhotoPatch()
+        patch.location = "パリ"
+        patch.coords = Photo.Coords(lat: 48.86, lng: 2.35)
+        XCTAssertEqual(try keys(patch), ["location", "coords"])
+    }
+}

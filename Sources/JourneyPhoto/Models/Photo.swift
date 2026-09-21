@@ -43,7 +43,9 @@ struct Photo: Identifiable, Decodable, Equatable {
     /// 写真に付けた曲。30秒の試聴だけを持つ（`previewUrl` は必須）
     let song: Song?
 
-    struct Coords: Decodable, Equatable {
+    /// **送る側にもなる。** 写真を直すときに座標も一緒に送るので
+    /// `Encodable` が要る（`PhotoPatch.coords`）。
+    struct Coords: Codable, Equatable {
         let lat: Double
         let lng: Double
     }

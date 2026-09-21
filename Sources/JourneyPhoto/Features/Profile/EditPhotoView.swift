@@ -12,6 +12,8 @@ struct EditPhotoView: View {
     @State private var title: String
     @State private var caption: String
     @State private var location: String
+    /// 候補から選んだときに入る座標。**選んだ回だけ送る**
+    @State private var pickedCoords: Photo.Coords?
     @State private var tagsText: String
     @State private var category: String
     @State private var date: String
@@ -57,7 +59,11 @@ struct EditPhotoView: View {
                 TextField(L("題", "Title"), text: $title)
                 TextField(L("説明", "Description"), text: $caption, axis: .vertical)
                     .lineLimit(3...8)
-                TextField(L("撮影地", "Place"), text: $location)
+                // **候補から選べるようにする**（投稿画面と同じ）。
+                // ただの入力欄だと座標が付かず、直した瞬間に
+                // サーバーが `geoApprox` の座標を消す＝地図から消える。
+                // アプリには戻す口が無かった（Web の `/user/edit` にはある）
+                PlaceSearchField(location: $location, coords: $pickedCoords)
                 TagField(tagsText: $tagsText)
                 CategoryField(category: $category)
                 TextField(L("撮影日（YYYY-MM-DD）", "Date taken (YYYY-MM-DD)"), text: $date)
@@ -136,6 +142,9 @@ struct EditPhotoView: View {
         patch.title = title
         patch.description = caption
         patch.location = location
+        // **選んだ回だけ載せる。** nil は「触らない」なので、
+        // 地名を手で直しただけの回に既存の座標を壊さない
+        patch.coords = pickedCoords
         patch.tags = TagInput.parse(tagsText)
         patch.category = category.trimmingCharacters(in: .whitespacesAndNewlines)
         patch.published = published

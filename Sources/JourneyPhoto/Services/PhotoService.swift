@@ -115,6 +115,14 @@ struct PhotoPatch: Encodable {
     var tags: [String]?
     var date: String?
     var published: Bool?
+    /// 撮影地の座標。**候補から選んだときだけ送る。**
+    ///
+    /// 送らずに `location` だけ変えると、サーバーは
+    /// 「地名から起こした座標（`geoApprox`）」を**消す**
+    /// （`photoUpdate.ts`。新しい地名に古い近似座標は合わないため）。
+    /// ＝**撮影地を直した写真が地図から消える**。候補から選んだ回は
+    /// 座標も一緒に送って、地図に残す。
+    var coords: Photo.Coords?
     /// 写真に付ける曲。**`POST /upload/save` は受け取らない**ので、
     /// 投稿のあとに `PUT /photos/{id}` で付ける（`api-user/src/upload.ts` の
     /// 本文には song が無く、`photoUpdate.ts` にはある）
@@ -122,6 +130,7 @@ struct PhotoPatch: Encodable {
 
     var isEmpty: Bool {
         title == nil && description == nil && location == nil
-            && category == nil && tags == nil && date == nil && published == nil && song == nil
+            && category == nil && tags == nil && date == nil && published == nil
+            && song == nil && coords == nil
     }
 }
