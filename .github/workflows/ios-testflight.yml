@@ -61,6 +61,15 @@ jobs:
           # 機種名は固定しない（Xcode が上がると入っているシミュレータが替わる）
           DEVICE="$(python3 Tools/pick-simulator.py)"
           echo "テストに使うシミュレータ: $DEVICE"
+          # **アーキテクチャを1つに絞る。** macos-15 のランナーは
+          # Apple Silicon で、シミュレータの行き先は arm64 と x86_64 の
+          # **両方に一致する**（run #4 のログが "Using the first of
+          # multiple matching destinations" と言っている）。絞らないと
+          # xcodebuild は x86_64 でも組み立てようとし、arm64 でしか
+          # 作られていない依存（Amplify → aws-sdk-swift → smithy-swift）で
+          #   could not find module 'Smithy' for target 'x86_64-apple-ios-simulator'
+          # と落ちる（run #6）。
+          #
           # **`xcode-project run-tests` を使わない。** 出力を
           # `/tmp/xcodebuild_logs` に伏せるので、コンパイルが通らない回に
           # 「0件で失敗」としか残らない。run #1〜#3 をこれで空振りさせた
@@ -71,7 +80,8 @@ jobs:
             -project JourneyPhoto.xcodeproj \
             -scheme JourneyPhoto \
             -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=$DEVICE" \
+            -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
+            ONLY_ACTIVE_ARCH=YES \
             -resultBundlePath build/ios/test/Test.xcresult \
             -skipPackagePluginValidation \
             -skipMacroValidation \
