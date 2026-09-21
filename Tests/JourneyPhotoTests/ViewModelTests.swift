@@ -332,6 +332,25 @@ final class NotificationDestinationTests: XCTestCase {
         )
     }
 
+    /// **投稿直後の写真でも押せる。**
+    ///
+    /// いいね・コメントの相手は必ず自分の写真。ところが公開一覧は
+    /// ビルド時に固まる静的 JSON で、投稿直後はまだ載っていない
+    /// （下書きに至っては一生載らない）。公開一覧しか見ていなかった頃は、
+    /// **押しても何も起きない行**になっていた。
+    func testLikeOnAPhotoNotYetInTheFeedStillOpens() async throws {
+        let n = try notification(#"{"type":"like","photoId":"p1"}"#)
+        let model = NotificationsViewModel()
+        model.setFeedForTesting([])                       // 公開一覧にはまだ無い
+        model.setMineForTesting([try photo(id: "p1")])    // 自分の一覧にはある
+
+        guard case .photo(let photo, let fromPublicFeed) = model.destination(for: n) else {
+            return XCTFail("押しても何も起きない")
+        }
+        XCTAssertEqual(photo.id, "p1")
+        XCTAssertFalse(fromPublicFeed, "個別ページがまだ無いのに公開扱いしている")
+    }
+
     func testFollowGoesToTheProfile() async throws {
         let n = try notification(#"{"type":"follow","targetUserId":"u1","byId":"u1"}"#)
         guard case .user(let id) = model(feed: []).destination(for: n) else {
@@ -350,7 +369,7 @@ final class NotificationDestinationTests: XCTestCase {
 
     func testLikeGoesToThePhoto() async throws {
         let n = try notification(#"{"type":"like","photoId":"p1"}"#)
-        guard case .photo(let photo) = model(feed: [try photo(id: "p1")]).destination(for: n) else {
+        guard case .photo(let photo, _) = model(feed: [try photo(id: "p1")]).destination(for: n) else {
             return XCTFail("写真へ行かない")
         }
         XCTAssertEqual(photo.id, "p1")
