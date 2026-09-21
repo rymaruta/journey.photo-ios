@@ -4,6 +4,8 @@ import SwiftUI
 struct SearchView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// **「見せない」が変わったら控えを捨てるため**に見ている
+    @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = SearchViewModel()
     @State private var query = ""
 
@@ -70,6 +72,21 @@ struct SearchView: View {
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }
+        // **ブロック／通報の直後に消す。** `loadPhotos` は
+        // `guard allPhotos.isEmpty` で二度と読まない作りなので、
+        // 控えを捨ててから読み直す
+        .onChange(of: hidden.blockedUserIds) { _, _ in
+            Task {
+                await model.reloadPhotos(environment: environment)
+                await model.search(query, environment: environment)
+            }
+        }
+        .onChange(of: hidden.reportedPhotoIds) { _, _ in
+            Task {
+                await model.reloadPhotos(environment: environment)
+                await model.search(query, environment: environment)
+            }
+        }
     }
 }
 
@@ -87,8 +104,16 @@ final class SearchViewModel: ObservableObject {
 
     func loadPhotos(environment: AppEnvironment) async {
         guard allPhotos.isEmpty else { return }
+        await reloadPhotos(environment: environment)
+    }
+
+    /// 控えがあっても読み直す。**ブロック／通報のあとに使う**
+    /// ——`loadPhotos` は一度読んだら二度と読まないので、そのままだと
+    /// ブロックした相手の写真が検索結果に残り続ける。
+    func reloadPhotos(environment: AppEnvironment) async {
         allPhotos = (try? await environment.gallery.fetchPhotos()) ?? []
         popularTags = PhotoQuery.topTags(in: allPhotos)
+        photos = []
     }
 
     func search(_ query: String, environment: AppEnvironment) async {

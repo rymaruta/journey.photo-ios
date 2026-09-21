@@ -23,10 +23,14 @@ final class AppEnvironment: ObservableObject {
     let search: UserSearchService
     let discovery: DiscoveryService
 
-    init(tokenProvider: TokenProviding = CognitoTokenProvider()) {
+    /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
+    ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
+    ///   画面の頭を動かすテストが書けなかった）。
+    init(tokenProvider: TokenProviding = CognitoTokenProvider(),
+         gallery: PublicGalleryService = PublicGalleryService()) {
         let api = APIClient(tokenProvider: tokenProvider)
         self.api = api
-        self.gallery = PublicGalleryService()
+        self.gallery = gallery
         self.photos = PhotoService(api: api)
         self.profiles = ProfileService(api: api)
         self.uploads = UploadService(api: api)

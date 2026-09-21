@@ -73,6 +73,8 @@ jobs:
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,name=$DEVICE" \
             -resultBundlePath build/ios/test/Test.xcresult \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
             test 2>&1 | tee /tmp/xcodebuild-full.log | tail -n 400 || {
               echo "::group::error: の行だけ"
               grep -E "error:" /tmp/xcodebuild-full.log | sort -u | head -200 || true
@@ -156,9 +158,14 @@ jobs:
         if: ${{ steps.secrets.outputs.signing == 'true' }}
         run: |
           set -euo pipefail
+          # **プラグインの関所はビルドにも立つ。** Amplify →
+          # aws-sdk-swift → smithy-swift がビルドツールプラグインを持ち、
+          # Xcode 15 以降は人が「Trust & Enable」を押す前提になっている
+          # （run #4 のテストがこれで止まった）。CI には押す人がいない
           xcode-project build-ipa \
             --project JourneyPhoto.xcodeproj \
-            --scheme JourneyPhoto
+            --scheme JourneyPhoto \
+            -- -skipPackagePluginValidation -skipMacroValidation
 
       - name: TestFlight に上げる
         if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}

@@ -4,6 +4,10 @@ struct GalleryView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
+    /// **「見せない」が変わったら読み直すため**に見ている。
+    /// この画面はタブの根なので一度出たら生き続け、`.task` は二度と走らない
+    /// ——ブロックしても、戻ってくるとその人の写真がまだ並んでいた
+    @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model: GalleryViewModel = GalleryViewModel(gallery: PublicGalleryService())
 
     private let columns = [
@@ -56,6 +60,11 @@ struct GalleryView: View {
             model.use(viewerId: auth.userId, following: Set(ids))
         }
         .refreshable { await model.load() }
+        // **ブロック／通報の直後に消す。** 出すところ（`PublicGalleryService`）
+        // は新しい集合で絞れるようになっているが、**手元に読み終えた配列が
+        // 残っている**ので、読み直さないと画面は変わらない
+        .onChange(of: hidden.blockedUserIds) { _, _ in Task { await model.load() } }
+        .onChange(of: hidden.reportedPhotoIds) { _, _ in Task { await model.load() } }
     }
 
     /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中だけ出す**

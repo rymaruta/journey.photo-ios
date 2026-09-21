@@ -101,6 +101,29 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(message.isEmpty)
     }
 
+    /// **ブロックしたら、探す画面からもすぐ消える。**
+    ///
+    /// `loadPhotos` は `guard allPhotos.isEmpty` で一度しか読まない作りなので、
+    /// 読み直す口（`reloadPhotos`）が無いと、ブロックした相手の写真が
+    /// 検索結果に残り続けた（アプリを閉じるまで消えない）。
+    func testSearchRereadsAfterBlocking() async {
+        let service = gallery(feed)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+
+        await model.loadPhotos(environment: env)
+        let firstCount = StubProtocol.requestCount
+        // 二度目は読まない（ここは今までどおり）
+        await model.loadPhotos(environment: env)
+        XCTAssertEqual(StubProtocol.requestCount, firstCount, "控えがあるのに読み直している")
+
+        // ブロックしたことにして、読み直す口を使う
+        await service.setHidden(userIds: ["u2"], photoIds: ["a"])
+        await model.reloadPhotos(environment: env)
+        XCTAssertEqual(StubProtocol.requestCount, firstCount + 1,
+                       "ブロックのあとも控えのままで、消えない")
+    }
+
     // MARK: - 写真の詳細
 
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。
