@@ -152,7 +152,11 @@ enum PhotoQuery {
             let needle = value.lowercased()
             return photos.filter { ($0.tags ?? []).contains { $0.lowercased() == needle } }
         case .category(let value):
-            return photos.filter { $0.category == value }
+            // **綴りではなく鍵で。** `建築` と `architecture` は同じ分類
+            // （Web の `slugify(_, "category")`）。生の値で比べると
+            // 同じ主題が2つに割れる
+            let key = CategoryChoices.key(value)
+            return photos.filter { CategoryChoices.key($0.category ?? "") == key }
         case .location(let value):
             let needle = value.lowercased()
             return photos.filter {

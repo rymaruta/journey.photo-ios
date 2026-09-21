@@ -99,12 +99,14 @@ final class GalleryViewModel: ObservableObject {
         // 押すと空になる（押しても空になるボタンを置かない）
         categories = Self.categories(in: inScope)
         // 範囲を変えて、選んでいたカテゴリが消えたら絞りも外す
-        if let category, !categories.contains(category) {
+        if let category, !categories.contains(where: { CategoryChoices.isChosen(current: $0, choice: category) }) {
             self.category = nil
             return inScope
         }
         guard let category else { return inScope }
-        return inScope.filter { $0.category == category }
+        // 綴りではなく鍵で比べる（`建築` を押したら `architecture` も出る）
+        let key = CategoryChoices.key(category)
+        return inScope.filter { CategoryChoices.key($0.category ?? "") == key }
     }
 
     /// 出てくる順に、重複を落として並べる。**件数の多い順にしない**
@@ -112,10 +114,15 @@ final class GalleryViewModel: ObservableObject {
     static func categories(in photos: [Photo]) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
+        // **日英を畳んでから数える。** 実データには `architecture` と `建築`、
+        // `landscape` と `風景` が両方ある（30枚中の実測）。生の値で
+        // 並べると**同じ「建築」のチップが2つ出て、押すと結果も割れる**
+        // ——Web は `slugify(_, "category")` で畳んでいる。
+        // **代表は最初に出てきた綴り**（どちらを押しても同じ結果になる）
         for category in photos.compactMap(\.category) where !category.isEmpty {
-            if seen.insert(category).inserted { result.append(category) }
+            if seen.insert(CategoryChoices.key(category)).inserted { result.append(category) }
         }
-        return result.sorted()
+        return result.sorted { Labels.Category.name($0) < Labels.Category.name($1) }
     }
 
     /// 並びは `GallerySort` に置いてある（画面を持たない層なので

@@ -384,3 +384,39 @@ final class GallerySortTests: XCTestCase {
         XCTAssertEqual(FeaturedGroups.groups(from: photos).map(\.id), ["landscape", "food"])
     }
 }
+
+/// カテゴリの日英が割れていた件。
+///
+/// 実データ（30枚）には `architecture` 3枚と `建築` 2枚、
+/// `landscape` 12枚と `風景` 4枚、`nature` 3枚と `自然` 2枚が**両方**ある。
+/// Web は `slugify(_, "category")` で畳んでいるのに、アプリは生の値で
+/// 比べていたので、**同じ「建築」のチップが2つ並び、押すと結果も割れた**
+/// （実機の絵で見つけた）。
+final class CategorySynonymTests: XCTestCase {
+
+    private func photo(_ id: String, category: String) throws -> Photo {
+        let json = #"{"id":"\#(id)","src":"https://x/\#(id).jpg","category":"\#(category)"}"#
+        return try JSONDecoder.api.decode(Photo.self, from: Data(json.utf8))
+    }
+
+    func testCollectionMatchesAcrossLanguages() throws {
+        let photos = [
+            try photo("a", category: "architecture"),
+            try photo("b", category: "建築"),
+            try photo("c", category: "建物"),
+            try photo("d", category: "landscape"),
+        ]
+        XCTAssertEqual(PhotoQuery.photos(photos, in: .category("建築")).map(\.id), ["a", "b", "c"])
+        XCTAssertEqual(PhotoQuery.photos(photos, in: .category("architecture")).map(\.id), ["a", "b", "c"])
+    }
+
+    /// おすすめの塊も畳む（同じ分類が2つの塊にならない）
+    func testFeaturedGroupsCollapseSynonyms() throws {
+        let json = { (id: String, cat: String) in
+            #"{"id":"\#(id)","src":"https://x/\#(id).jpg","category":"\#(cat)","featured":true,"createdAt":"2026-01-0\#(id)"}"#
+        }
+        let photos = try [json("1", "architecture"), json("2", "建築")]
+            .map { try JSONDecoder.api.decode(Photo.self, from: Data($0.utf8)) }
+        XCTAssertEqual(FeaturedGroups.groups(from: photos).count, 1)
+    }
+}

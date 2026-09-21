@@ -32,7 +32,8 @@ enum FeaturedGroups {
             guard photo.featured == true, photo.published != false else { continue }
             guard let category = photo.category?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !category.isEmpty else { continue }
-            let key = category.lowercased()
+            // 日英を畳む（`建築` と `architecture` を別の塊にしない）
+            let key = CategoryChoices.key(category)
             if byCategory[key] == nil { order.append(key) }
             byCategory[key, default: []].append(photo)
         }
