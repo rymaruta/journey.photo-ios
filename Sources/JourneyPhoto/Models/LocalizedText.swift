@@ -83,9 +83,16 @@ enum LocalizedParagraphs: Decodable, Equatable {
 }
 
 extension Locale {
-    /// 画面に出す言語。Web 版は ja / en の2つしか持たないので、それに揃える。
-    static var preferredAppLanguage: String {
-        let code = Locale.preferredLanguages.first?.prefix(2).lowercased() ?? "ja"
-        return code == "en" ? "en" : "ja"
-    }
+    /// 画面に出す言語。**日本語で固定。**
+    ///
+    /// Web は言語切替の UI を廃止して**日本語のみ**になっている
+    /// （`app/i18n/context.tsx`——`locale` は常に `"ja"` で、残っていた
+    /// `"en"` の記録は見つけ次第消して戻している）。
+    ///
+    /// アプリだけ端末の言語で英語に切り替わると、**同じ人が同じ写真を
+    /// 別の言葉で見る**ことになる（写真の題と説明は言語ごとに保存されて
+    /// いるので、中身まで変わる）。Web に揃えて日本語で固定する。
+    ///
+    /// 英語に戻すときは、**Web と同時に**戻すこと。
+    static var preferredAppLanguage: String { "ja" }
 }

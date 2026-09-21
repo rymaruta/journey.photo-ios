@@ -66,6 +66,21 @@ extension View {
         self
             .scrollContentBackground(.hidden)
             .background(WebTheme.background)
+            // **バーも黒に。** 既定の半透明は白っぽく浮き、黒地の上で
+            // 帯だけ明るく見える。Web のヘッダーは `bg-black/60` に
+            // 下辺 `border-white/10`
+            .toolbarBackground(WebTheme.background, for: .navigationBar, .tabBar)
+            .toolbarColorScheme(.dark, for: .navigationBar, .tabBar)
+    }
+
+    /// Web の丸いチップ。`bg-white/5`＋`ring-white/10`＋小さめの字。
+    /// タグ・撮影地・カテゴリで同じ形を使っている。
+    func webChip(prominent: Bool = false) -> some View {
+        self
+            .padding(.horizontal, prominent ? 10 : 12)
+            .padding(.vertical, prominent ? 4 : 6)
+            .background(prominent ? WebTheme.raised : Color.white.opacity(0.05), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
     }
 
     /// Web の「押せるもの」の形（白地・黒字・丸）。

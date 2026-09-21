@@ -121,3 +121,28 @@ final class FollowCountsTests: XCTestCase {
         XCTAssertFalse(FollowCounts.isTappable(signedIn: true, count: 0))
     }
 }
+
+/// 画面の言語。
+///
+/// **Web は言語切替を廃止して日本語のみ**（`app/i18n/context.tsx` の
+/// `locale` は常に `"ja"`）。アプリだけ端末の言語で英語に切り替わると、
+/// 同じ人が同じ写真を別の言葉で見ることになる（題も説明も言語ごとに
+/// 保存されているので中身まで変わる）。
+final class AppLanguageTests: XCTestCase {
+
+    func testAlwaysJapanese() {
+        XCTAssertEqual(Locale.preferredAppLanguage, "ja")
+    }
+
+    /// `L()` も日本語を返す（英語の端末でも）
+    func testLabelsAreJapanese() {
+        XCTAssertEqual(L("ギャラリー", "Gallery"), "ギャラリー")
+    }
+
+    /// 写真の中身も日本語側を選ぶ
+    func testPhotoTextPrefersJapanese() throws {
+        let json = #"{"id":"a","src":"https://x/a.jpg","title":{"ja":"雲海","en":"Sea of clouds"}}"#
+        let photo = try JSONDecoder.api.decode(Photo.self, from: Data(json.utf8))
+        XCTAssertEqual(photo.displayTitle, "雲海")
+    }
+}

@@ -34,6 +34,10 @@ final class ScreenshotTests: XCTestCase {
         // そのまま撮ると「No photos found.」ばかりで、人が見る画面の確認に
         // ならない。API とログインは staging のまま（ここでは誰もログインしない）
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        // **日本語の端末として撮る。** CI のシミュレータは英語で、
+        // そのまま撮ると「戻る」「キャンセル」など OS 側の文字まで英語になり、
+        // 実際に人が見る画面と違う絵になる（アプリ自身の文字は日本語で固定）
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]

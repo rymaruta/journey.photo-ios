@@ -94,11 +94,18 @@ struct PhotoDetailView: View {
         .buttonStyle(.plain)
     }
 
+    /// **Web の写真ページ（`app/photo/[id]/PhotoPageClient.tsx`）と同じ順・同じ寸法。**
+    ///
+    ///     題        text-2xl font-bold
+    ///     カテゴリ   丸チップ（bg-white/10・ring-white/10・text-xs・white/70）
+    ///     説明      text-sm/base・white/80・段落の間は mt-3
+    ///     撮影地     丸チップ（ピンは sky-400）
+    ///     タグ      小さい丸チップ（white/50）
     private var details: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             titleText
-            locationLink
             paragraphs
+            locationLink
             metaRows
             Divider().padding(.vertical, 4)
             socialBar
@@ -106,13 +113,31 @@ struct PhotoDetailView: View {
             RelatedPhotosRow(photo: shown)
         }
         .padding(.horizontal, 16)
+        .padding(.top, 16)
     }
 
     @ViewBuilder
     private var titleText: some View {
-        if !shown.displayTitle.isEmpty {
-            Text(shown.displayTitle)
-                .font(.title3.weight(.semibold))
+        let category = shown.category.map { Labels.Category.name($0) } ?? ""
+        if !shown.displayTitle.isEmpty || !category.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                if !shown.displayTitle.isEmpty {
+                    Text(shown.displayTitle)
+                        .font(.title.weight(.bold))
+                        .foregroundStyle(WebTheme.foreground)
+                }
+                if !category.isEmpty {
+                    NavigationLink {
+                        TagPhotosView(kind: .category(shown.category ?? ""))
+                    } label: {
+                        Text(category)
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.muted2)
+                            .webChip(prominent: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 
@@ -122,17 +147,31 @@ struct PhotoDetailView: View {
             NavigationLink {
                 TagPhotosView(kind: .location(location))
             } label: {
-                Label(location, systemImage: "mappin.and.ellipse")
-                    .font(.subheadline)
+                HStack(spacing: 6) {
+                    // Web はピンだけ色を持たせている（`text-sky-400`）
+                    Image(systemName: "mappin.and.ellipse")
+                        .foregroundStyle(Color(red: 0.22, green: 0.65, blue: 0.98))
+                    Text(location)
+                        .foregroundStyle(Color.white.opacity(0.75))
+                        .lineLimit(1)
+                }
+                .font(.subheadline)
+                .webChip()
             }
             .buttonStyle(.plain)
         }
     }
 
+    /// 説明。Web は `text-white/80` に `leading-relaxed`、段落の間は `mt-3`
     private var paragraphs: some View {
-        ForEach(Array(shown.paragraphs.enumerated()), id: \.offset) { _, paragraph in
-            Text(paragraph)
-                .font(.body)
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(shown.paragraphs.enumerated()), id: \.offset) { _, paragraph in
+                Text(paragraph)
+                    .font(.callout)
+                    .lineSpacing(4)
+                    .foregroundStyle(Color.white.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -308,11 +347,11 @@ private struct TagRow: View {
                 NavigationLink {
                     TagPhotosView(kind: .tag(tag))
                 } label: {
+                    // Web: `bg-white/5 ring-1 ring-white/10 text-xs text-white/50`
                     Text(tag)
                         .font(.caption)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color(.secondarySystemBackground), in: Capsule())
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .webChip()
                 }
                 .buttonStyle(.plain)
             }

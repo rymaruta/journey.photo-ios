@@ -179,6 +179,8 @@ public struct Stepper: View {
     public var body: Never { fatalError("模型") }
 }
 public struct Capsule: View, Shape {
+    public func strokeBorder<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Capsule { self }
+    public func fill<S: ShapeStyle>(_ style: S) -> Capsule { self }
     public init() {}
     public var body: Never { fatalError("模型") }
 }

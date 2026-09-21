@@ -34,7 +34,13 @@ struct GalleryView: View {
             }
         }
         .webScreen()
-        .navigationTitle(Labels.Navigation.gallery)
+        // **Web のヘッダーと同じ名前を出す。** あちらは全ページ共通で
+        // 「Journey Photo」を左上に出している（`app/layout.tsx` の
+        // `<header>`・高さ64・`bg-black/60`・下辺 `border-white/10`）。
+        // 大見出しで「ギャラリー」と出していたので、開いた瞬間に
+        // 別のサイトに見えていた
+        .navigationTitle("Journey Photo")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { PhotoMapView() } label: {
