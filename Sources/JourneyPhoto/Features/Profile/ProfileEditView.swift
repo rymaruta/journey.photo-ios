@@ -20,6 +20,9 @@ struct ProfileEditView: View {
 
     @State private var isLoading = true
     @State private var isSaving = false
+    /// いまの内容を読めたか。**読めるまで保存させない**
+    /// ——読めていない空の欄で上書きすると、プロフィールが丸ごと消える
+    @State private var loaded = false
     @State private var message: String?
 
     var body: some View {
@@ -66,7 +69,9 @@ struct ProfileEditView: View {
                         Text(Labels.Common.save)
                     }
                 }
-                .disabled(isSaving)
+                // **読めるまで押させない。** 押せてしまうと、
+                // 空の欄がそのまま「消す」として送られる
+                .disabled(isSaving || !loaded)
             }
         }
         .navigationTitle(L("プロフィールの編集", "Edit profile"))
@@ -85,7 +90,8 @@ struct ProfileEditView: View {
         isLoading = true
         defer { isLoading = false }
         guard let profile = try? await environment.profiles.myProfile() else {
-            message = Labels.Common.loadFailed
+            message = L("いまの内容を読み込めませんでした。開き直してください（このまま保存すると消えてしまいます）",
+                        "Couldn't load your current profile. Please reopen this screen (saving now would erase it).")
             return
         }
         displayName = profile.displayName ?? ""
@@ -95,9 +101,22 @@ struct ProfileEditView: View {
         instagram = profile.instagram ?? ""
         statusText = profile.statusText ?? ""
         themeColor = profile.themeColor ?? ""
+        loaded = true
     }
 
     private func save() async {
+        // **読めていない内容で上書きしない。**
+        //
+        // 読み込みに失敗すると欄は全部空のまま出る。サーバーは
+        // 「キーがある＝指定した、値が空＝消す」で読む
+        // （`api-user/src/userProfile.ts` の `apply`）ので、そのまま
+        // 保存すると**表示名・ユーザー名・自己紹介・リンク・ひとこと・
+        // テーマ色が全部消える**。取り返しがつかない。
+        guard loaded else {
+            message = L("いまの内容を読み込めていないので保存できません。開き直してください",
+                        "Can't save before your current profile is loaded. Please reopen this screen.")
+            return
+        }
         isSaving = true
         message = nil
         defer { isSaving = false }
