@@ -70,7 +70,21 @@ jobs:
             --scheme JourneyPhoto \
             --device "$DEVICE"; then
             echo "::group::コンパイルエラー"
-            grep -hE "error:" /tmp/xcodebuild_logs/*.log 2>/dev/null | sort -u | head -200 || echo "(xcodebuild のログが見つからない)"
+            # **`*.log` で直に当てない。** run #2 がこれで空振りした
+            # ——`/tmp/xcodebuild_logs` の下はさらに1階層掘ってある。
+            # 再帰で拾い、それでも無ければ xcresult から読む
+            found=$(grep -rhE "error:" /tmp/xcodebuild_logs 2>/dev/null | sort -u | head -200 || true)
+            if [ -n "$found" ]; then
+              echo "$found"
+            else
+              echo "(xcodebuild のログに error: が無い。xcresult を読む)"
+              RESULT=$(find "$HOME/Library/Developer/Xcode/DerivedData" -name "*.xcresult" -maxdepth 5 | head -1)
+              if [ -n "$RESULT" ]; then
+                xcrun xcresulttool get build-results --path "$RESULT" --format json 2>/dev/null \
+                  | python3 -c "import json,sys;d=json.load(sys.stdin);[print(i.get('issueType'),i.get('targetName'),i.get('documentLocationInCreatingWorkspace',{}).get('url',''),i.get('message')) for i in d.get('issues',{}).get('errors',[])]" \
+                  || xcrun xcresulttool get --legacy --path "$RESULT" --format json 2>/dev/null | head -400
+              fi
+            fi
             echo "::endgroup::"
             exit 1
           fi
