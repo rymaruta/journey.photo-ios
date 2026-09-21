@@ -14,6 +14,16 @@ struct PhotoService {
         try await api.authorized(.get, "/user/photos", as: [Photo].self)
     }
 
+    /// 自分の写真を1枚だけ引き直す。
+    ///
+    /// **編集したあとに画面を作り直すため。** 個別に引く口はサーバーに
+    /// 無いので、自分の一覧から拾う（編集できるのは本人だけなので足りる）。
+    /// **見つからなくても投げない**——消した直後などに 1件も無いのは
+    /// 異常ではなく、呼ぶ側は「変えない」で済ませたい。
+    func myPhoto(id: String) async throws -> Photo? {
+        try await myPhotos().first { $0.id == id }
+    }
+
     /// 写真の中身を書き換える。`PUT /photos/{id}`。
     ///
     /// **送った項目だけが変わる。** 何も送らないと 400「更新項目がありません」。

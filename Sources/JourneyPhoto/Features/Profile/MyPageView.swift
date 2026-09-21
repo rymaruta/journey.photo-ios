@@ -9,6 +9,8 @@ struct MyPageView: View {
     @State private var showPostSheet = false
     @State private var showPhotoUpload = false
     @State private var showStoryComposer = false
+    /// ストーリーの行に「読み直せ」と言うための数
+    @State private var storiesReload = 0
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -51,7 +53,7 @@ struct MyPageView: View {
                     header(profile)
                 }
                 postButton
-                StoriesRow()
+                StoriesRow(reloadToken: storiesReload)
                 shortcuts
                 tabPicker
                 photoArea
@@ -69,7 +71,9 @@ struct MyPageView: View {
         .sheet(isPresented: $showPhotoUpload, onDismiss: { Task { await model.load() } }) {
             NavigationStack { UploadView() }
         }
-        .sheet(isPresented: $showStoryComposer) {
+        // **帰ってきたら読み直す。** `StoriesRow` は自分の `+` から出した
+        // シートしか見ていないので、ここから出した回は投稿しても並ばなかった
+        .sheet(isPresented: $showStoryComposer, onDismiss: { storiesReload += 1 }) {
             NavigationStack { StoryComposerView() }
         }
     }

@@ -3,6 +3,14 @@ import SwiftUI
 /// ギャラリーの上に出す、ストーリーの横並び。
 struct StoriesRow: View {
 
+    /// **外から「読み直せ」と言うための数**。
+    ///
+    /// この行は自分の投稿口（`+`）からの帰りは自分で読み直すが、
+    /// **`MyPageView` の「投稿」ボタンから出したストーリー**は別のシートなので
+    /// 気づけず、投稿したのに自分のストーリーが並ばなかった。
+    /// 真偽値にしないのは `NotificationRouter` と同じ理由（2回目が効かない）。
+    var reloadToken: Int = 0
+
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = StoriesViewModel()
@@ -53,7 +61,7 @@ struct StoriesRow: View {
                 }
             }
         }
-        .task(id: auth.userId) {
+        .task(id: "\(auth.userId ?? "-")#\(reloadToken)") {
             guard auth.userId != nil else { return }
             await model.load(environment: environment)
         }

@@ -19,6 +19,13 @@ struct PhotoDetailView: View {
     @State private var showEdit = false
     @State private var showViewer = false
     @State private var actionError: String?
+    /// 編集して保存したあとの姿。**`photo` は `let` で書き換えられない**
+    /// ——編集シートを閉じても題も説明も古いままだった（保存はできていた
+    /// ので、戻って入り直すまで「保存されていない」ように見えた）
+    @State private var edited: Photo?
+
+    /// 画面に描く1枚。編集していれば新しい方。
+    private var shown: Photo { edited ?? photo }
 
     init(photo: Photo, fromPublicFeed: Bool = true, context: [Photo] = []) {
         self.photo = photo
@@ -58,8 +65,10 @@ struct PhotoDetailView: View {
         .sheet(isPresented: $showReport) {
             ReportSheet(photoId: photo.id, ownerId: ownerId)
         }
-        .sheet(isPresented: $showEdit) {
-            NavigationStack { EditPhotoView(photo: photo) }
+        // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
+        // 保存できていないように見える
+        .sheet(isPresented: $showEdit, onDismiss: { Task { await reloadPhoto() } }) {
+            NavigationStack { EditPhotoView(photo: shown) }
         }
         .fullScreenCover(isPresented: $showViewer) {
             PhotoViewerView(photos: siblings, index: siblings.firstIndex(where: { $0.id == photo.id }) ?? 0)
@@ -77,9 +86,9 @@ struct PhotoDetailView: View {
         Button {
             showViewer = true
         } label: {
-            RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+            RemoteImage(url: shown.detailImageURL, contentMode: .fit)
                 .frame(maxWidth: .infinity)
-                .accessibilityLabel(photo.accessibilityText)
+                .accessibilityLabel(shown.accessibilityText)
         }
         .buttonStyle(.plain)
     }
@@ -93,22 +102,22 @@ struct PhotoDetailView: View {
             Divider().padding(.vertical, 4)
             socialBar
             commentSection
-            RelatedPhotosRow(photo: photo)
+            RelatedPhotosRow(photo: shown)
         }
         .padding(.horizontal, 16)
     }
 
     @ViewBuilder
     private var titleText: some View {
-        if !photo.displayTitle.isEmpty {
-            Text(photo.displayTitle)
+        if !shown.displayTitle.isEmpty {
+            Text(shown.displayTitle)
                 .font(.title3.weight(.semibold))
         }
     }
 
     @ViewBuilder
     private var locationLink: some View {
-        if let location = photo.location, !location.isEmpty {
+        if let location = shown.location, !location.isEmpty {
             NavigationLink {
                 TagPhotosView(kind: .location(location))
             } label: {
@@ -120,7 +129,7 @@ struct PhotoDetailView: View {
     }
 
     private var paragraphs: some View {
-        ForEach(Array(photo.paragraphs.enumerated()), id: \.offset) { _, paragraph in
+        ForEach(Array(shown.paragraphs.enumerated()), id: \.offset) { _, paragraph in
             Text(paragraph)
                 .font(.body)
         }
@@ -128,13 +137,13 @@ struct PhotoDetailView: View {
 
     @ViewBuilder
     private var metaRows: some View {
-        if let tags = photo.tags, !tags.isEmpty {
+        if let tags = shown.tags, !tags.isEmpty {
             TagRow(tags: tags)
         }
-        if let exif = photo.exif {
+        if let exif = shown.exif {
             ExifRow(exif: exif)
         }
-        if let song = photo.song {
+        if let song = shown.song {
             SongRow(song: song)
         }
     }
@@ -146,7 +155,7 @@ struct PhotoDetailView: View {
             // **共有するのは画像ではなくページ。** 生の画像を送ると、
             // 受け取った人に題も説明も撮影地も出ない
             if let url = PhotoLink.url(photoId: photo.id,
-                                       isPublished: fromPublicFeed && photo.published != false) {
+                                       isPublished: fromPublicFeed && shown.published != false) {
                 ShareLink(item: url) { Label(L("共有", "Share"), systemImage: "square.and.arrow.up") }
             }
             if isMine {
@@ -199,7 +208,7 @@ struct PhotoDetailView: View {
                     NavigationLink {
                         UserProfileView(userId: ownerId)
                     } label: {
-                        Text(photo.displayName ?? L("投稿者", "Poster"))
+                        Text(shown.displayName ?? L("投稿者", "Poster"))
                             .font(.footnote)
                     }
                 }
@@ -266,6 +275,15 @@ struct PhotoDetailView: View {
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
+    }
+
+    /// 編集の帰りに、自分の一覧から1枚だけ引き直す。
+    ///
+    /// **引けなくても画面は壊さない**（圏外なら古いまま出す方がまし）。
+    private func reloadPhoto() async {
+        guard isMine else { return }
+        guard let fresh = try? await environment.photos.myPhoto(id: photo.id) else { return }
+        edited = fresh
     }
 
     private func deletePhoto() async {

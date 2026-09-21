@@ -94,3 +94,40 @@ final class PhotoReplaceTests: XCTestCase {
         }
     }
 }
+
+/// 編集したあとに1枚だけ引き直す口。
+///
+/// **`photo` は `let`** なので、引き直さないと詳細画面は古い題を出し続ける
+/// （保存はできているのに「保存されていない」ように見える）。
+final class MyPhotoLookupTests: XCTestCase {
+
+    private func service(_ body: String) -> (PhotoService, URLSession) {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: body)
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"),
+                            session: session)
+        return (PhotoService(api: api), session)
+    }
+
+    func testFindsTheEditedPhotoById() async throws {
+        let (photos, _) = service("""
+        [{"id":"a","src":"https://x/a.jpg","title":"ふるい"},
+         {"id":"b","src":"https://x/b.jpg","title":"あたらしい題"}]
+        """)
+        let found = try await photos.myPhoto(id: "b")
+        XCTAssertEqual(found?.id, "b")
+        XCTAssertEqual(found?.displayTitle, "あたらしい題")
+    }
+
+    /// **無くても投げない。** 消した直後に引き直す回があるので、
+    /// 「見つからない」は異常ではない。
+    func testMissingPhotoIsNotAnError() async throws {
+        let (photos, _) = service("[]")
+        let found = try await photos.myPhoto(id: "b")
+        XCTAssertNil(found)
+    }
+}
