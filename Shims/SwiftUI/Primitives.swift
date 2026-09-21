@@ -245,14 +245,17 @@ public struct Transaction {
     public init(animation: Animation?) {}
 }
 
-public struct CGPoint { public var x: Double; public var y: Double
-    public init(x: Double, y: Double) { self.x = x; self.y = y } }
-public struct CGSize { public var width: Double; public var height: Double
-    public init(width: Double, height: Double) { self.width = width; self.height = height } }
-public struct CGRect {
-    public var minX: Double = 0, minY: Double = 0, maxX: Double = 0, maxY: Double = 0
-}
-public typealias CGFloat = Double
+// **Foundation の同じ型をそのまま使う。**
+//
+// 以前はここで独自に定義していたが、Linux の Foundation も
+// `CGPoint` / `CGSize` / `CGRect` を持っているので、両方を読む
+// ファイル（UIKit の模型を使う側）で **`CGSize` が曖昧**になり
+// コンパイルできなかった。本物の iOS では CoreGraphics の1つだけなので、
+// 模型も1つに寄せる。
+public typealias CGPoint = Foundation.CGPoint
+public typealias CGSize = Foundation.CGSize
+public typealias CGRect = Foundation.CGRect
+public typealias CGFloat = Foundation.CGFloat
 
 
 public struct UIImageShim {

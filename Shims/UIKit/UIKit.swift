@@ -57,3 +57,59 @@ extension UIViewControllerRepresentable {
 public struct UIViewControllerRepresentableContext<R: UIViewControllerRepresentable> {
     public var coordinator: R.Coordinator { fatalError("模型") }
 }
+
+// MARK: - 描画（写真に文字を焼き込むために要るぶんだけ）
+//
+// **本物の UIKit の同じ名前に合わせてある。** iOS では本物が使われるので、
+// ここは「Linux で型検査を通すための形」だけ。中身は何も描かない。
+
+// `UIImage` は SwiftUI 側の模型（`UIImageShim`）が既に名乗っている。
+// 描画に要るぶんだけ足す
+extension UIImageShim {
+    public var size: CGSize { CGSize(width: 0, height: 0) }
+    public func draw(in rect: CGRect) {}
+}
+
+public final class UIColor {
+    public static let white = UIColor()
+    public static let black = UIColor()
+    public static let clear = UIColor()
+    public init() {}
+    public init(white: Double, alpha: Double) {}
+    public func withAlphaComponent(_ alpha: Double) -> UIColor { self }
+    public func setFill() {}
+}
+
+public final class UIFont {
+    public struct Weight {
+        public static let regular = Weight(), medium = Weight(), semibold = Weight(), bold = Weight(), heavy = Weight()
+    }
+    public static func systemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
+}
+
+public struct UIGraphicsImageRendererContext {}
+
+public final class UIGraphicsImageRenderer {
+    public init(size: CGSize) {}
+    public func jpegData(withCompressionQuality quality: Double,
+                         actions: (UIGraphicsImageRendererContext) -> Void) -> Data {
+        actions(UIGraphicsImageRendererContext())
+        return Data()
+    }
+}
+
+public func UIRectFill(_ rect: CGRect) {}
+
+extension NSAttributedString.Key {
+    public static let font = NSAttributedString.Key("font")
+    public static let foregroundColor = NSAttributedString.Key("foregroundColor")
+    public static let strokeColor = NSAttributedString.Key("strokeColor")
+    public static let strokeWidth = NSAttributedString.Key("strokeWidth")
+}
+
+extension NSString {
+    public func size(withAttributes attrs: [NSAttributedString.Key: Any]?) -> CGSize {
+        CGSize(width: 0, height: 0)
+    }
+    public func draw(at point: CGPoint, withAttributes attrs: [NSAttributedString.Key: Any]?) {}
+}

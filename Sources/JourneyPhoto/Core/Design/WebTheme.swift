@@ -50,6 +50,17 @@ enum WebTheme {
     static let gridSpacing: CGFloat = 4
     /// スマホの列数。Web は `grid-cols-2`（`sm:` 以上で3〜4列）
     static let gridColumns = 2
+
+    /// **押せるものは 44pt 以上。**
+    ///
+    /// Apple のガイドライン（HIG）が指で押す最小として挙げている寸法。
+    /// Web の寸法をそのまま写していたので、チップは上下 6pt ＋ 13pt の字＝
+    /// **約26pt しかなく、指では狙いにくかった**（owner の指摘。実測）。
+    /// マウスの Web と違い、指は当たりが太い。
+    ///
+    /// **見た目は太らせない。** 当たり判定だけを広げるので、並びの詰まりは
+    /// そのまま（`contentShape` で余白まで押せるようにする）。
+    static let minTapTarget: CGFloat = 44
 }
 
 /// 画面ぜんぶを黒地にする。
@@ -71,6 +82,14 @@ extension View {
             // 下辺 `border-white/10`
             .toolbarBackground(WebTheme.background, for: .navigationBar, .tabBar)
             .toolbarColorScheme(.dark, for: .navigationBar, .tabBar)
+    }
+
+
+    /// 押せるものの当たり判定を 44pt 以上にする（見た目は変えない）。
+    func webTappable() -> some View {
+        self
+            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
     }
 
     /// Web の丸いチップ。`bg-white/5`＋`ring-white/10`＋小さめの字。

@@ -226,6 +226,8 @@ struct PhotoDetailView: View {
             }
         } label: {
             Image(systemName: "ellipsis.circle")
+                .font(.title3)
+                .webTappable()
                 .accessibilityLabel(L("この写真の操作", "More actions"))
         }
     }
@@ -240,13 +242,19 @@ struct PhotoDetailView: View {
                         favorites.set(photo.id, favorite: model.liked)
                     }
                 } label: {
+                    // **いちばん押されるボタンがいちばん小さかった。**
+                    // 既定の字のままで 20pt ほどしか無く、指では狙いにくい
                     Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
-                        .foregroundStyle(model.liked ? .pink : .primary)
+                        .font(.title3)
+                        .foregroundStyle(model.liked ? .pink : WebTheme.muted)
+                        .webTappable()
                 }
                 .buttonStyle(.plain)
 
                 Label("\(model.commentCount)", systemImage: "bubble.right")
-                    .foregroundStyle(.secondary)
+                    .font(.title3)
+                    .foregroundStyle(WebTheme.faint)
+                    .frame(minHeight: WebTheme.minTapTarget)
 
                 Spacer()
 

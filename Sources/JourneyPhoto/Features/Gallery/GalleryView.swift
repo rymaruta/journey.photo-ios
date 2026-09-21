@@ -122,9 +122,10 @@ struct GalleryView: View {
                         model.select(category: selected ? nil : category)
                     } label: {
                         Text(Labels.Category.name(category))
-                            .font(.caption)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
+                            // **字も小さすぎた。** caption(13) → subheadline(15)
+                            .font(.subheadline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 11)
                             // Web の `FilterBar`: 選択中は白地に黒字、
                             // それ以外は白7%の地に白70%の字
                             // 選択中は白地に黒字（Web の約束）。未選択は
@@ -166,10 +167,10 @@ struct GalleryView: View {
                         Text(model.sort.label)
                         Image(systemName: "chevron.down")
                     }
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(WebTheme.muted2)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 11)
                     .background(.ultraThinMaterial, in: Capsule())
                     .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
                 }
@@ -190,9 +191,9 @@ struct GalleryView: View {
                         model.toggle(tag: tag)
                     } label: {
                         Text("#\(tag)")
-                            .font(.caption)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
+                            .font(.subheadline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 11)
                             .background(
                                 selected ? AnyShapeStyle(WebTheme.foreground)
                                          : AnyShapeStyle(.ultraThinMaterial),

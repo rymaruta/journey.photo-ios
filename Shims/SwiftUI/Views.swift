@@ -256,3 +256,30 @@ public struct Rectangle: View, Shape {
     public init() {}
     public var body: Never { fatalError() }
 }
+
+/// 置き場所の大きさを測る入れ物（写真の上に文字を置くのに要る）。
+public struct GeometryProxy {
+    public var size: CGSize { CGSize(width: 0, height: 0) }
+}
+
+public struct GeometryReader<Content: View>: View {
+    public init(@ViewBuilder content: @escaping (GeometryProxy) -> Content) {}
+    public var body: Never { fatalError("模型") }
+}
+
+/// 指でつまんで動かす。
+public struct DragGesture: Gesture {
+    public struct Value {
+        public var translation: CGSize { CGSize(width: 0, height: 0) }
+        public var location: CGPoint { CGPoint(x: 0, y: 0) }
+    }
+    public init(minimumDistance: Double = 10) {}
+    public func onChanged(_ action: @escaping (Value) -> Void) -> DragGesture { self }
+    public func onEnded(_ action: @escaping (Value) -> Void) -> DragGesture { self }
+}
+
+/// つまみ（文字の大きさを決めるのに使う）。
+public struct Slider: View {
+    public init(value: Binding<Double>, in range: ClosedRange<Double>) {}
+    public var body: Never { fatalError("模型") }
+}
