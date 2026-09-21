@@ -1,0 +1,109 @@
+# Mac を持っていなくても、ここで**ビルドして TestFlight まで上げる**。
+#
+# 設定はブラウザだけで済む（`docs/NO_MAC.md`）:
+#   1. App Store Connect で API キーを作る
+#   2. Codemagic に GitHub と API キーを繋ぐ
+#   3. このファイルが読まれて、ビルド → TestFlight
+#
+# **署名の証明書は Codemagic が作る。** Mac も Keychain も要らない
+# （`ios_signing` に書いた Bundle ID で、API キー経由で発行される）。
+
+workflows:
+  ios-testflight:
+    name: TestFlight へ上げる
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    integrations:
+      # Codemagic の画面で登録したキーの名前。**ここを合わせること**
+      app_store_connect: JourneyPhotoASC
+
+    environment:
+      xcode: latest
+      vars:
+        # **App Store Connect のアプリの ID（数字）は、CI が自分で引く**
+        # （`Tools/app-apple-id.sh` が Bundle ID から探す）。
+        # 引けないとき（API キーが未設定・アプリ未登録）だけ、ここに
+        # 画面の URL に出ている数字を書く
+        APP_APPLE_ID: ""
+        BUNDLE_ID: com.journeyphoto.JourneyPhoto
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.journeyphoto.JourneyPhoto
+
+    scripts:
+      - name: 設定の検査
+        script: |
+          # **標準の python3 だけで動くものに絞る。** 構文と参照の検査は
+          # node と tree-sitter が要り、ここで入れると落ちる面が増える
+          # （それらは push 前に手元で通している）
+          python3 Tools/check-config.py
+
+      - name: ビルド番号を決める
+        script: |
+          # **アプリの Apple ID は Bundle ID から引く。** 人が画面から
+          # 写してこない（写し忘れでビルドが始まらない時間を作らない）
+          if [ -z "${APP_APPLE_ID:-}" ]; then
+            APP_APPLE_ID="$(bash Tools/app-apple-id.sh "$BUNDLE_ID" || true)"
+          fi
+          if [ -z "${APP_APPLE_ID:-}" ]; then
+            echo "App Store Connect に $BUNDLE_ID のアプリが見つかりませんでした。"
+            echo "  - まだアプリを作っていない → App Store Connect で新規作成する"
+            echo "  - 作ってある → codemagic.yaml の APP_APPLE_ID に"
+            echo "    アプリを開いたときの URL の数字を書く（docs/NO_MAC.md の手順2）"
+            exit 1
+          fi
+          echo "アプリの Apple ID: $APP_APPLE_ID"
+          # あとの段（公開）からも見えるようにする
+          echo "APP_APPLE_ID=$APP_APPLE_ID" >> "$CM_ENV"
+          # **TestFlight にある最大の番号 + 1。** 手で上げ忘れて
+          # はねられる事故が無くなる
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" || echo 0)
+          bash Tools/set-build-number.sh $(( LATEST + 1 ))
+
+      - name: Xcode プロジェクトを作る
+        script: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: テスト（本物の SwiftUI で型検査される最初の機会）
+        script: |
+          # **ここが「実機の SDK で通るか」を見る本番。** 手元（Linux）の
+          # ビルドは SwiftUI の模型に向けたものなので、ここで初めて本物に当たる。
+          # 分数を節約したくなったら、この段を消してもよい（次の段が
+          # アプリ本体は同じ SDK でビルドする）
+          # 機種名は固定しない（その場にある いちばん新しい iPhone を選ぶ）
+          DEVICE=$(python3 Tools/pick-simulator.py) || exit 1
+          echo "テストに使うシミュレータ: $DEVICE"
+          xcode-project run-tests \
+            --project JourneyPhoto.xcodeproj \
+            --scheme JourneyPhoto \
+            --device "$DEVICE"
+
+      - name: ビルド
+        script: |
+          xcode-project use-profiles
+          xcode-project build-ipa \
+            --project JourneyPhoto.xcodeproj \
+            --scheme JourneyPhoto
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      # テストの結果。落ちたときに何が落ちたか読める形で残す
+      - build/ios/test/*.xml
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        # **TestFlight まで。審査には自動で出さない**
+        # （出す前にスクリーンショットと説明文を入れる必要がある）
+        submit_to_testflight: true
+        submit_to_app_store: false
+
+      email:
+        recipients:
+          - journey.photo.official@gmail.com
+        notify:
+          success: true
+          failure: true

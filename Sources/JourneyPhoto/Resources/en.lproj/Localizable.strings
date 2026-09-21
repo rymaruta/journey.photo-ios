@@ -1,0 +1,10 @@
+/* Push notification text. The server sends only the key
+   (`api-user/src/notify.ts`), because it doesn't know the reader's language.
+
+   ⚠️ Add every new key to ja.lproj too — otherwise iOS shows the raw key
+   (`NOTIF_LIKE`) in the notification. `Tools/check-config.py` checks this. */
+
+"NOTIF_LIKE" = "%@ liked your photo";
+"NOTIF_COMMENT" = "%@ commented on your photo";
+"NOTIF_FOLLOW" = "%@ started following you";
+"NOTIF_STORY_REPLY" = "%@ replied to your story";

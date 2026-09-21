@@ -1,0 +1,7 @@
+/* System permission prompts. Shown in the device's language. */
+
+"NSCameraUsageDescription" = "Used to take photos you post.";
+"NSPhotoLibraryUsageDescription" = "Used to pick photos from your library to post.";
+"NSPhotoLibraryAddUsageDescription" = "Used to save photos you take back to your library.";
+"NSLocationWhenInUseUsageDescription" = "Used to attach a place to your photo. Coordinates are rounded to about 1 km before saving.";
+"CFBundleDisplayName" = "Journey Photo";

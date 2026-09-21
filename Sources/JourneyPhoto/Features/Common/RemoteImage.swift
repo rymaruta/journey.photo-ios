@@ -1,0 +1,53 @@
+import SwiftUI
+
+/// 写真を出す。読み込み中と失敗をはっきり分ける。
+///
+/// **失敗を「ただの空白」にしない。** Web 側は水和のあとサムネイルが消える
+/// 不具合を踏んでいて（CLAUDE.md の `24f9df2c`）、無言で消えると
+/// 「そういう写真」に見えてしまい原因に気づけない。
+struct RemoteImage: View {
+
+    let url: URL?
+    var contentMode: ContentMode = .fill
+    /// 枠からはみ出したぶんを、どちら側に残すか。
+    ///
+    /// **切り抜きの中心は写真ごとに違う**（`Photo.focalPoint`。owner が
+    /// Web で掴んで動かせる）。既定の中央のままだと、動かした写真が
+    /// アプリでだけ別の切り抜きで出る。
+    var alignment: Alignment = .center
+
+    var body: some View {
+        ZStack {
+            Color(.secondarySystemBackground)
+            if let url {
+                AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.15))) { phase in
+                    switch phase {
+                    case .success(let image):
+                        // **寄せるのは写真だけ。** `ZStack` ごと寄せると、
+                        // 読み込み中の輪と失敗の記号まで隅に寄って、
+                        // 44〜56pt の枠では切れて見えなくなる
+                        image.resizable().aspectRatio(contentMode: contentMode)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+                    case .failure:
+                        placeholder
+                    case .empty:
+                        ProgressView()
+                    @unknown default:
+                        placeholder
+                    }
+                }
+            } else {
+                placeholder
+            }
+        }
+        .clipped()
+    }
+
+    private var placeholder: some View {
+        Image(systemName: "photo")
+            .font(.title2)
+            .foregroundStyle(.tertiary)
+            // 飾り。読み上げの邪魔をしない
+            .accessibilityHidden(true)
+    }
+}

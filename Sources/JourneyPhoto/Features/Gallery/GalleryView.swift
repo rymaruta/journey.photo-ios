@@ -1,0 +1,129 @@
+import SwiftUI
+
+struct GalleryView: View {
+
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var environment: AppEnvironment
+    @StateObject private var model: GalleryViewModel = GalleryViewModel(gallery: PublicGalleryService())
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2),
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // **タブは写真が0枚でも出す。** 中に入れると、1枚も無い人
+            // （ログイン直後の既定は「自分」）に空の帯だけが出て、
+            // **「すべて」に戻せない**——行き止まりを作らない
+            if auth.userId != nil {
+                scopePicker
+            }
+            switch model.state {
+            case .loading:
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .failed(let message):
+                ErrorBanner(message: message) {
+                    Task { await model.load() }
+                }
+            case .loaded(let photos):
+                if photos.isEmpty {
+                    ErrorBanner(message: Labels.Gallery.empty)
+                } else {
+                    grid(photos)
+                }
+            }
+        }
+        .navigationTitle(Labels.Navigation.gallery)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { PhotoMapView() } label: {
+                    Image(systemName: "map")
+                        .accessibilityLabel(Labels.Navigation.map)
+                }
+            }
+        }
+        .task { await model.load() }
+        // **ログイン状態が決まってから範囲を決める**（既定は「自分」）。
+        // フォロー中の一覧は、その範囲を選ぶ人にだけ要る
+        .task(id: auth.userId) {
+            guard auth.userId != nil else {
+                model.use(viewerId: nil, following: [])
+                return
+            }
+            let ids = (try? await environment.social.myFollowingIds()) ?? []
+            model.use(viewerId: auth.userId, following: Set(ids))
+        }
+        .refreshable { await model.load() }
+    }
+
+    /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中だけ出す**
+    /// ——未ログインには絞る相手が無い（Web も同じ）。
+    private var scopePicker: some View {
+        Picker("", selection: Binding(
+            get: { model.scope },
+            set: { model.select(scope: $0) }
+        )) {
+            ForEach(GalleryScope.allCases) { scope in
+                Text(scope.label).tag(scope)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+    }
+
+    /// カテゴリの絞り込み。Web の `FilterBar` にあたる。
+    /// **押し直すと外れる**（`role="switch"` と同じ振る舞い）。
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(model.categories, id: \.self) { category in
+                    let selected = model.category == category
+                    Button {
+                        model.select(category: selected ? nil : category)
+                    } label: {
+                        Text(Labels.Category.name(category))
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                selected ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.secondarySystemBackground)),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(selected ? Color.white : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+    }
+
+    private func grid(_ photos: [Photo]) -> some View {
+        ScrollView {
+            // **ストーリーはここに置かない。** 2026-09-20 に Web が
+            // トップから外してマイページへ移した（投稿も閲覧もマイページに集める）
+            if !model.categories.isEmpty {
+                filterBar
+            }
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(photos) { photo in
+                    NavigationLink(value: photo.id) {
+                        RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                            .aspectRatio(1, contentMode: .fill)
+                            .accessibilityLabel(photo.accessibilityText)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .navigationDestination(for: String.self) { id in
+            if let photo = photos.first(where: { $0.id == id }) {
+                PhotoDetailView(photo: photo, context: photos)
+            }
+        }
+    }
+}

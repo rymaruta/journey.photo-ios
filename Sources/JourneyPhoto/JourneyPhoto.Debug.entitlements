@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Debug 構成の権限。
+
+  **`aps-environment` はビルドの署名と対。** Debug は
+  Xcode から直接入れる開発用ビルド（staging）なので `development`。
+  サーバーの送り先（`deploy-api.yml` の `apnsHost`）と必ず揃えること
+  ——ずれると APNs が 400 を返し、**サーバーが宛先を消す**。
+  `Tools/check-config.py` が突き合わせている。
+-->
+<plist version="1.0">
+<dict>
+    <key>aps-environment</key>
+    <string>development</string>
+</dict>
+</plist>

@@ -1,0 +1,111 @@
+import SwiftUI
+
+/// 写真を通報する。
+///
+/// **審査で見られる導線。** 写真ごとに1タップで届くところに置く
+/// （設定の奥に隠さない）。
+struct ReportSheet: View {
+
+    let photoId: String
+    /// 通報と同時にブロックもできるようにする。相手が分からない場合は nil
+    let ownerId: String?
+
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var hidden: ModerationStore
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var reason: ModerationService.ReportReason = .harassment
+    @State private var note = ""
+    @State private var alsoBlock = false
+    @State private var isWorking = false
+    @State private var errorMessage: String?
+    @State private var done = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if done {
+                    Section {
+                        Label(L("受け付けました。内容を確認します。", "Received. We'll review it."), systemImage: "checkmark.circle")
+                    } footer: {
+                        // 「対応しました」とは言わない——読むのは人で、すぐには終わらない
+                        Text(L("結果をお伝えできない場合があります。", "We may not be able to tell you the outcome."))
+                    }
+                } else {
+                    Section(L("理由", "Reason")) {
+                        Picker(L("理由", "Reason"), selection: $reason) {
+                            ForEach(ModerationService.ReportReason.allCases) { reason in
+                                Text(reason.label).tag(reason)
+                            }
+                        }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
+                    }
+
+                    Section(L("補足（任意）", "Details (optional)")) {
+                        TextField(L("状況を書いてください", "Tell us what happened"), text: $note, axis: .vertical)
+                            .lineLimit(2...5)
+                    }
+
+                    if ownerId != nil {
+                        Section {
+                            Toggle(L("この人をブロックする", "Also block this person"), isOn: $alsoBlock)
+                        } footer: {
+                            Text(L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."))
+                        }
+                    }
+
+                    if let errorMessage {
+                        Section { Text(errorMessage).foregroundStyle(.red).font(.callout) }
+                    }
+
+                    Section {
+                        Button(L("通報する", "Report")) { Task { await submit() } }
+                            .disabled(isWorking)
+                    }
+                }
+            }
+            .navigationTitle(L("通報", "Report"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(Labels.Common.close) { dismiss() }
+                }
+            }
+        }
+    }
+
+    /// 落とす相手を公開一覧の側へ渡し直す。
+    private func applyHidden() async {
+        await environment.gallery.setHidden(
+            userIds: hidden.blockedUserIds,
+            photoIds: hidden.reportedPhotoIds
+        )
+    }
+
+    private func submit() async {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            try await environment.moderation.report(photoId: photoId, reason: reason, note: note)
+            // **押したあと実際に消す。** 通報が受け付けられただけで、
+            // 通報した人の画面に出続けるなら意味がない
+            hidden.markReported(photoId)
+            if alsoBlock, let ownerId {
+                // **ブロックが落ちても通報は成立している。** ここで投げ直すと
+                // 「通報できなかった」と誤解させるので、文言を分ける
+                do {
+                    try await environment.moderation.block(userId: ownerId)
+                    hidden.block(ownerId)
+                } catch {
+                    errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。設定からもう一度お試しください。", "Your report was received, but blocking failed. Try again from Settings.")
+                }
+            }
+            await applyHidden()
+            done = true
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("通報を受け付けられませんでした", "Couldn't submit the report")
+        }
+    }
+}

@@ -1,0 +1,18 @@
+// ステージング。Debug ビルドで使う。
+//
+// staging には写真もユーザーも入っていない（本番からコピーしていない）ので、
+// 動作を見るには staging 側で新規登録する。
+//
+// `//` は xcconfig ではコメント開始なので、URL の `https://` は
+// `https:/$()/` と書いて割る（$() は空文字に展開される）。
+
+JP_ENV_NAME = staging
+JP_BUNDLE_ID = com.journeyphoto.JourneyPhoto.staging
+APP_DISPLAY_NAME = JP (staging)
+
+JP_SITE_BASE_URL = https:/$()/d15fn3rcaiymu9.cloudfront.net
+JP_USER_API_BASE_URL = https:/$()/y9f8ajacc2.execute-api.ap-northeast-1.amazonaws.com
+
+JP_COGNITO_REGION = ap-northeast-1
+JP_COGNITO_USER_POOL_ID = ap-northeast-1_DSQ16c6vO
+JP_COGNITO_CLIENT_ID = 1qjl9c8gmqidigps55jhv4foi

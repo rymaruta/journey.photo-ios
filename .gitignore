@@ -1,0 +1,28 @@
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+!*.xcodeproj/project.pbxproj
+xcuserdata/
+DerivedData/
+build/
+*.xcuserstate
+
+# XcodeGen が生成するプロジェクトはコミットしない（project.yml が唯一の定義）
+JourneyPhoto.xcodeproj/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# macOS
+.DS_Store
+
+# 環境ごとの実値（コミットしない）
+Config/Local.xcconfig
+Sources/JourneyPhoto/Info.plist
+
+# 構文検査の依存（Tools/ で npm install して作る）
+Tools/node_modules/
+Tools/package-lock.json
+__pycache__/
