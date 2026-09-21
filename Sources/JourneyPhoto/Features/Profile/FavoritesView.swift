@@ -6,8 +6,15 @@ struct FavoritesView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var favorites: FavoritesStore
-    @State private var photos: [Photo] = []
+    /// 取ってきた全部。**絞ったものを持たない。**
+    ///
+    /// 絞った配列を `@State` に置くと、この一覧から写真を開いて
+    /// ハートを外して戻ってきても消えない（`.task` は戻りでは走らない）。
+    /// 描くたびに絞れば、`FavoritesStore` が変わった時点で消える。
+    @State private var all: [Photo] = []
     @State private var isLoading = true
+
+    private var photos: [Photo] { all.filter { favorites.contains($0.id) } }
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -39,7 +46,6 @@ struct FavoritesView: View {
     private func load() async {
         isLoading = true
         defer { isLoading = false }
-        let all = (try? await environment.gallery.fetchPhotos()) ?? []
-        photos = all.filter { favorites.contains($0.id) }
+        all = (try? await environment.gallery.fetchPhotos()) ?? []
     }
 }
