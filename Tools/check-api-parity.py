@@ -128,6 +128,71 @@ def notification_kind_problems(root: Path):
 
 
 
+
+# ---- 決まった選択肢の突き合わせ ------------------------------------------
+#
+# **「同じ並び」とコメントに書くだけでは守られない。** 片方を直した回に
+# もう片方が置き去りになる。実際 `PushToken.isValid` は「サーバーと同じ
+# 判定」と書いてありながら全角を通していた（`isHexDigit` の罠）。
+# 並びが割れると、タグ・カテゴリのスラッグが分かれて集約ページが割れ、
+# 通報は 400 で返る。
+
+def _quoted(text: str) -> list:
+    return re.findall(r'"([^"]+)"', text)
+
+
+def _ts_list(path, name):
+    """`export const NAME ... = [ ... ]` の中の文字列を順番どおりに。"""
+    if not path.exists():
+        return None
+    m = re.search(rf"export const {name}[^=]*=\s*\[(.*?)\]", path.read_text(encoding="utf-8"), re.S)
+    return _quoted(m.group(1)) if m else None
+
+
+def _swift_list(path, name):
+    """`static let NAME = [ ... ]` の中の文字列を順番どおりに。"""
+    if not path.exists():
+        return None
+    m = re.search(rf"static let {name}\s*=\s*\[(.*?)\]", path.read_text(encoding="utf-8"), re.S)
+    return _quoted(m.group(1)) if m else None
+
+
+def choice_problems(root) -> list:
+    problems = []
+    checks = [
+        ("タグの選択肢",
+         _ts_list(root / "lib/utils/tagChoices.ts", "TAG_CHOICES"),
+         _swift_list(HERE / "Sources/JourneyPhoto/Core/Text/TagChoices.swift", "all")),
+        ("カテゴリの選択肢",
+         _ts_list(root / "lib/utils/categoryChoices.ts", "CATEGORY_CHOICES"),
+         _swift_list(HERE / "Sources/JourneyPhoto/Core/Text/CategoryChoices.swift", "all")),
+        ("通報の理由",
+         _ts_list(root / "api-user/src/report.ts", "REPORT_REASONS"),
+         _report_reasons_swift()),
+    ]
+    for label, web, app in checks:
+        # **読めなかったら落とす。** 黙って飛ばすと、片方が消えた回に
+        # 「問題なし」と言ってしまう
+        if web is None:
+            problems.append(f"{label}: Web 側の一覧を読めませんでした（場所が変わった？）")
+        elif app is None:
+            problems.append(f"{label}: アプリ側の一覧を読めませんでした（場所が変わった？）")
+        elif web != app:
+            problems.append(f"{label}が食い違っています\n      Web : {web}\n      アプリ: {app}")
+    return problems
+
+
+def _report_reasons_swift():
+    """`enum ReportReason ... { case a, b, c }` の並び。"""
+    path = HERE / "Sources/JourneyPhoto/Services/ModerationService.swift"
+    if not path.exists():
+        return None
+    m = re.search(r"enum ReportReason[^{]*\{\s*case ([^\n]+)", path.read_text(encoding="utf-8"))
+    if not m:
+        return None
+    return [x.strip() for x in m.group(1).split(",") if x.strip()]
+
+
 def main() -> int:
     raw = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PHOTO_GALLERY", "../photo-gallery")
     root = Path(raw).expanduser().resolve()
@@ -148,6 +213,7 @@ def main() -> int:
             problems.append(f"{where}: {method} {path} は認証が要るのに未認証で叩いています（401 になります）")
 
     problems += notification_kind_problems(root)
+    problems += choice_problems(root)
 
     unused = sorted(k for k in server if k not in calls)
 
