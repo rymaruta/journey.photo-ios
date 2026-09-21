@@ -13,6 +13,7 @@ struct StoriesRow: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = StoriesViewModel()
     @State private var opened: Story?
     @State private var showComposer = false
@@ -63,16 +64,34 @@ struct StoriesRow: View {
         }
         .task(id: "\(auth.userId ?? "-")#\(reloadToken)") {
             guard auth.userId != nil else { return }
-            await model.load(environment: environment)
+            await reload()
+        }
+        // 閲覧画面で通報・ブロックしたら読み直す（`GalleryView` と同じ形）。
+        // 読み直さないと、消したはずの輪が並んだまま
+        .onChange(of: hidden.revision) { _, _ in
+            Task { await reload() }
         }
         .fullScreenCover(item: $opened) { story in
-            StoryViewerView(story: story, isMine: story.userId == auth.userId)
+            viewer(for: story)
         }
         .sheet(isPresented: $showComposer, onDismiss: {
-            Task { await model.load(environment: environment) }
+            Task { await reload() }
         }) {
             NavigationStack { StoryComposerView() }
         }
+    }
+
+    private func reload() async {
+        await model.load(environment: environment,
+                         blockedUserIds: hidden.blockedUserIds,
+                         reportedPhotoIds: hidden.reportedPhotoIds)
+    }
+
+    /// 押した1本と同じ投稿者の兄弟をまとめて渡す。輪は1本＝1つのままで、
+    /// 閲覧画面の中だけ続けて見られる
+    private func viewer(for story: Story) -> some View {
+        let group = StoryPlayback.siblings(of: story, in: model.stories)
+        return StoryViewerView(stories: group.stories, startIndex: group.index, viewerId: auth.userId)
     }
 }
 
@@ -81,8 +100,12 @@ final class StoriesViewModel: ObservableObject {
 
     @Published private(set) var stories: [Story] = []
 
-    func load(environment: AppEnvironment) async {
+    func load(environment: AppEnvironment, blockedUserIds: Set<String> = [],
+              reportedPhotoIds: Set<String> = []) async {
         // 取れなくても画面は壊さない（ストーリーは添え物）
-        stories = (try? await environment.stories.list()) ?? []
+        let fetched = (try? await environment.stories.list()) ?? []
+        // 通報した1本はサーバーが落とさないので端末で消す
+        stories = StoryPlayback.visible(fetched, blockedUserIds: blockedUserIds,
+                                        reportedPhotoIds: reportedPhotoIds)
     }
 }

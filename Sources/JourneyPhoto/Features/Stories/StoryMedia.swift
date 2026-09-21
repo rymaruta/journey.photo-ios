@@ -12,12 +12,21 @@ import AVKit
 struct StoryMedia: View {
 
     let story: Story
+    /// 動画の音を消す（写真には効かない——鳴らしている音が無い）
+    var isMuted = false
+    /// 止める。長押し・メニュー・シートの間、動画も止まる
+    var isPaused = false
+    /// 動画が鳴り終わった（写真には来ない。写真は閲覧画面の時計が送る）
+    var onEnded: (() -> Void)? = nil
+    /// 写真の読み込みが片付いた（出た＝true・出せない＝false）。
+    /// 動画には出どころが無いので呼ばない
+    var onSettled: ((Bool) -> Void)? = nil
 
     var body: some View {
         if story.isVideo, let url = story.imageURL {
-            StoryVideo(url: url)
+            StoryVideo(url: url, isMuted: isMuted, isPaused: isPaused, onEnded: onEnded)
         } else {
-            RemoteImage(url: story.imageURL, contentMode: .fit)
+            RemoteImage(url: story.imageURL, contentMode: .fit, onSettled: onSettled)
         }
     }
 }
@@ -30,18 +39,54 @@ struct StoryMedia: View {
 private struct StoryVideo: View {
 
     let url: URL
+    var isMuted = false
+    var isPaused = false
+    var onEnded: (() -> Void)? = nil
 
     @State private var player: AVPlayer?
+    /// 鳴り終わりの見張り。外さないと画面を閉じたあとも `onEnded` が飛ぶ
+    @State private var endObserver: NSObjectProtocol?
 
     var body: some View {
         VideoPlayer(player: player)
             // **既にあるなら作り直さない。** 「見た人」のシートを閉じて
             // 戻るたびに `onAppear` は呼ばれるので、毎回作ると 0:00 に戻る
             .onAppear {
-                if player == nil { player = AVPlayer(url: url) }
-                player?.play()
+                if player == nil {
+                    let made = AVPlayer(url: url)
+                    made.isMuted = isMuted
+                    player = made
+                    // 鳴り終わりで次へ（`MusicPreviewPlayer` と同じ形）。
+                    // 見張らないと動画のストーリーだけ永久に止まったままになる。
+                    // 通知の閉包は main actor の外なので、先に手元へ写してから
+                    // メインへ戻して呼ぶ
+                    let ended = onEnded
+                    endObserver = NotificationCenter.default.addObserver(
+                        forName: .AVPlayerItemDidPlayToEndTime,
+                        object: made.currentItem,
+                        queue: .main
+                    ) { _ in
+                        Task { @MainActor in ended?() }
+                    }
+                }
+                if !isPaused { player?.play() }
             }
-            .onDisappear { player?.pause() }
+            .onDisappear {
+                player?.pause()
+                if let endObserver {
+                    NotificationCenter.default.removeObserver(endObserver)
+                    self.endObserver = nil
+                }
+            }
+            // 止める・再開するのは外の都合（長押し・メニュー・シート）。
+            // ここで `play()` を呼び直すので、`onAppear` 側と二重にならないよう
+            // 変化したときだけ
+            .onChange(of: isPaused) { _, paused in
+                if paused { player?.pause() } else { player?.play() }
+            }
+            .onChange(of: isMuted) { _, muted in
+                player?.isMuted = muted
+            }
             .accessibilityLabel(L("動画のストーリー", "Video story"))
     }
 }
