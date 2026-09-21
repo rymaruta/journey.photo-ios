@@ -61,33 +61,24 @@ jobs:
           # 機種名は固定しない（Xcode が上がると入っているシミュレータが替わる）
           DEVICE="$(python3 Tools/pick-simulator.py)"
           echo "テストに使うシミュレータ: $DEVICE"
-          # **落ちた理由はここに出ない**——`run-tests` は xcodebuild の出力を
-          # `/tmp/xcodebuild_logs` に伏せるので、本文には「0件で失敗」としか
-          # 残らない（実際 run #1 がそうだった）。artifact を落としに行かずに
-          # 済むよう、落ちた回だけ `error:` の行を取り出して本文に出す
-          if ! xcode-project run-tests \
-            --project JourneyPhoto.xcodeproj \
-            --scheme JourneyPhoto \
-            --device "$DEVICE"; then
-            echo "::group::コンパイルエラー"
-            # **`*.log` で直に当てない。** run #2 がこれで空振りした
-            # ——`/tmp/xcodebuild_logs` の下はさらに1階層掘ってある。
-            # 再帰で拾い、それでも無ければ xcresult から読む
-            found=$(grep -rhE "error:" /tmp/xcodebuild_logs 2>/dev/null | sort -u | head -200 || true)
-            if [ -n "$found" ]; then
-              echo "$found"
-            else
-              echo "(xcodebuild のログに error: が無い。xcresult を読む)"
-              RESULT=$(find "$HOME/Library/Developer/Xcode/DerivedData" -name "*.xcresult" -maxdepth 5 | head -1)
-              if [ -n "$RESULT" ]; then
-                xcrun xcresulttool get build-results --path "$RESULT" --format json 2>/dev/null \
-                  | python3 -c "import json,sys;d=json.load(sys.stdin);[print(i.get('issueType'),i.get('targetName'),i.get('documentLocationInCreatingWorkspace',{}).get('url',''),i.get('message')) for i in d.get('issues',{}).get('errors',[])]" \
-                  || xcrun xcresulttool get --legacy --path "$RESULT" --format json 2>/dev/null | head -400
-              fi
-            fi
-            echo "::endgroup::"
-            exit 1
-          fi
+          # **`xcode-project run-tests` を使わない。** 出力を
+          # `/tmp/xcodebuild_logs` に伏せるので、コンパイルが通らない回に
+          # 「0件で失敗」としか残らない。run #1〜#3 をこれで空振りさせた
+          # （伏せ先から拾い直す小細工も2回外した）。**xcodebuild を直に
+          # 叩いて、出力をそのままログに出す**のが結局いちばん短い。
+          set -o pipefail
+          xcodebuild \
+            -project JourneyPhoto.xcodeproj \
+            -scheme JourneyPhoto \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            -resultBundlePath build/ios/test/Test.xcresult \
+            test 2>&1 | tee /tmp/xcodebuild-full.log | tail -n 400 || {
+              echo "::group::error: の行だけ"
+              grep -E "error:" /tmp/xcodebuild-full.log | sort -u | head -200 || true
+              echo "::endgroup::"
+              exit 1
+            }
 
       # **秘密がまだ無くてもテストまでは回す。** App Store Connect の API キーは
       # 人が画面から落としてくるもので、揃う前にも「本物の SwiftUI で通るか」を
