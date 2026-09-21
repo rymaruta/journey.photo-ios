@@ -251,12 +251,24 @@ struct PhotoDetailView: View {
                 Spacer()
 
                 if let ownerId, !isMine {
+                    // Web の `ProfileLink`: 丸いアバター（`ring-white/20`）＋
+                    // 名前。名前だけだと、誰の写真か一目で分からない
                     NavigationLink {
                         UserProfileView(userId: ownerId)
                     } label: {
-                        Text(shown.displayName ?? L("投稿者", "Poster"))
-                            .font(.footnote)
+                        HStack(spacing: 8) {
+                            RemoteImage(url: UserProfile.profileAssetURL(
+                                userId: ownerId, suffix: nil, cacheBust: nil))
+                                .frame(width: 28, height: 28)
+                                .clipShape(Circle())
+                                .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                            Text(shown.displayName ?? L("投稿者", "Poster"))
+                                .font(.footnote)
+                                .foregroundStyle(WebTheme.faint)
+                                .lineLimit(1)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
             }
             if let message = model.errorMessage ?? actionError {
@@ -394,34 +406,99 @@ private struct ExifRow: View {
         }
     }
 
+    /// 2つずつ並べたときの1行。**レンズだけは横いっぱい**（長いので）
+    private struct Row: Identifiable {
+        let id: String
+        let first: Item
+        let second: Item?
+        let wide: Bool
+    }
+
+    private var rows: [Row] {
+        var result: [Row] = []
+        var queue = items
+        while let first = queue.first {
+            queue.removeFirst()
+            // レンズは機種名がまるごと入ることがあるので横いっぱい
+            if first.id == L("レンズ", "Lens") {
+                result.append(Row(id: first.id, first: first, second: nil, wide: true))
+                continue
+            }
+            let second = queue.first
+            if second != nil { queue.removeFirst() }
+            result.append(Row(id: first.id, first: first, second: second, wide: false))
+        }
+        return result
+    }
+
+    @ViewBuilder
+    private func spec(_ label: String, _ value: String, underlined: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption2)
+                .tracking(0.8)
+                .foregroundStyle(Color.white.opacity(0.5))
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(Color.white.opacity(0.85))
+                .underline(underlined, color: Color.white.opacity(0.3))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     var body: some View {
         if !items.isEmpty || camera != nil {
-            VStack(alignment: .leading, spacing: 4) {
-                // **機材だけリンクにする。** Web に `/camera/*` の集約ページが
-                // あり、同じ機材で撮った写真をまとめて見られる（他の項目には
-                // 集約が無いので、押せる見た目にしない）
+            // **Web の `ExifSpecs` と同じ「札」。**
+            //
+            //     rounded-2xl bg-white/5 ring-1 ring-white/10 p-4
+            //     見出し  10px・字間広め・大文字・white/50
+            //     値      13px・white/85
+            //     並び    2列。**長い値（レンズ）は横いっぱい**
+            //
+            // 以前は「見出し 左 / 値 右」の1行ずつで、レンズ名
+            // （`iPhone 16 Pro Max back triple camera 6.765mm f/1.78`）が
+            // 画面の端から端まで詰まって読めなかった（実機の絵で確認）
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemName: "camera")
+                        .font(.caption2)
+                    Text(L("撮影情報", "CAMERA"))
+                        .font(.caption2)
+                        .tracking(1.5)
+                }
+                .foregroundStyle(Color.white.opacity(0.5))
+
                 if let camera {
+                    // **機材だけリンクにする**（`/camera/*` の集約がある）
                     NavigationLink {
                         TagPhotosView(kind: .camera(camera))
                     } label: {
-                        HStack {
-                            Text(L("カメラ", "Camera")).foregroundStyle(.secondary)
-                            Spacer()
-                            Text(camera)
-                        }
-                        .font(.caption)
+                        spec(L("カメラ", "Camera"), camera, underlined: true)
                     }
                     .buttonStyle(.plain)
                 }
-                ForEach(items) { item in
-                    HStack {
-                        Text(item.id).foregroundStyle(.secondary)
-                        Spacer()
-                        Text(item.value)
+
+                // 短い値は2つずつ並べる（Web の `grid-cols-2`）
+                ForEach(rows) { row in
+                    if row.wide {
+                        spec(row.first.id, row.first.value)
+                    } else {
+                        HStack(alignment: .top, spacing: 16) {
+                            spec(row.first.id, row.first.value)
+                            if let second = row.second {
+                                spec(second.id, second.value)
+                            } else {
+                                Spacer()
+                            }
+                        }
                     }
-                    .font(.caption)
                 }
             }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
             .padding(.top, 8)
         }
     }

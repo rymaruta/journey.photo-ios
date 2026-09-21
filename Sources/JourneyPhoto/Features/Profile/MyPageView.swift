@@ -59,11 +59,43 @@ struct MyPageView: View {
 
     /// **段ごとに割ってある**（`UploadView` と同じ理由——長い ViewBuilder は
     /// 型検査が終わらなくなることがある。落ちたときに場所も分かりやすい）。
+    /// 表示名がまだ無い人へ。**Web の `ProfileSetupBanner` と同じ。**
+    /// 名前を決めない限り、検索に出てこず「（IDの頭）」で呼ばれる。
+    /// 本人には気づきようがないので、こちらから伝える。
+    @ViewBuilder
+    private func profileSetupNotice(_ profile: UserProfile) -> some View {
+        if ProfileSetup.needsName(displayName: profile.displayName, username: profile.username) {
+            NavigationLink {
+                ProfileEditView()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.text.rectangle")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("名前を決めましょう", "Choose a display name"))
+                            .font(.subheadline.weight(.semibold))
+                        Text(L("名前が無いと、ほかの人の検索に出てきません",
+                               "Without a name you won't appear in search"))
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption)
+                }
+                .foregroundStyle(WebTheme.foreground)
+                .padding(12)
+                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+        }
+    }
+
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let profile = model.profile {
                     header(profile)
+                    profileSetupNotice(profile)
                 }
                 postButton
                 StoriesRow(reloadToken: storiesReload)

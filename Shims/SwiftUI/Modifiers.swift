@@ -147,6 +147,8 @@ extension View {
     public func lineLimit(_ range: PartialRangeFrom<Int>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func multilineTextAlignment(_ a: TextAlignment) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineSpacing(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func tracking(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func underline(_ on: Bool, color: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 
     // 見た目
     public func font(_ f: Font?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

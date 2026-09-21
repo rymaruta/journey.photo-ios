@@ -176,3 +176,21 @@ final class DoubleTapLikeTests: XCTestCase {
                        .burstOnly)
     }
 }
+
+/// 表示名を決めてもらう案内を出すか（Web の `ProfileSetupBanner`）。
+final class ProfileSetupTests: XCTestCase {
+
+    func testAsksWhenBothAreEmpty() {
+        XCTAssertTrue(ProfileSetup.needsName(displayName: nil, username: nil))
+        XCTAssertTrue(ProfileSetup.needsName(displayName: "  ", username: ""))
+    }
+
+    /// **username があれば出さない。** 検索も表示もそちらで代用できる
+    func testUsernameIsEnough() {
+        XCTAssertFalse(ProfileSetup.needsName(displayName: nil, username: "luzhj"))
+    }
+
+    func testDisplayNameIsEnough() {
+        XCTAssertFalse(ProfileSetup.needsName(displayName: "たろう", username: nil))
+    }
+}

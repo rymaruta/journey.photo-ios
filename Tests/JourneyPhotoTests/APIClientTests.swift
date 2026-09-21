@@ -225,8 +225,17 @@ final class AuthExpiryTests: XCTestCase {
                           "サーバーの英文をそのまま出している")
     }
 
-    func testForbiddenIsAlsoTreatedAsExpired() {
-        XCTAssertTrue(APIError.server(status: 403, message: "").isAuthExpired)
+    /// **403 は「期限切れ」ではない（2026-09-21 に改めた）。**
+    ///
+    /// 以前は 401 とまとめて「ログインし直してください」と出していたが、
+    /// 403 は**ログインできているのに権限が無い**状態で、ログインし直しても
+    /// 直らない（登録直後に権限を配る処理が落ちたとき）。Web は同じ
+    /// 取り違えで、ログイン画面と元の画面を**無限に往復**させていた
+    /// （`lib/hooks/useMemberGate.ts` の経緯）。言い分けは
+    /// `AuthStatusMessageTests` が見張る。
+    func testForbiddenIsNotExpiry() {
+        XCTAssertFalse(APIError.server(status: 403, message: "").isAuthExpired)
+        XCTAssertTrue(APIError.server(status: 403, message: "").isForbidden)
     }
 
     /// ほかの失敗は巻き込まない（400 は打ち直せば直る）。
@@ -234,5 +243,28 @@ final class AuthExpiryTests: XCTestCase {
         let bad = APIError.server(status: 400, message: "理由を選んでください")
         XCTAssertFalse(bad.isAuthExpired)
         XCTAssertEqual(bad.errorDescription, "理由を選んでください")
+    }
+}
+
+/// 401 と 403 の言い分け。
+///
+/// **403 は「ログインし直して」ではない。** ログインできているのに権限が
+/// 無い状態で、ログインし直しても直らない（登録直後に権限を配る処理が
+/// 落ちたときに起きる）。Web は同じ取り違えで、ログイン画面と元の画面を
+/// **無限に往復**させていた（`lib/hooks/useMemberGate.ts` の経緯）。
+final class AuthStatusMessageTests: XCTestCase {
+
+    func testExpiredSessionFor401() {
+        let error = APIError.server(status: 401, message: "")
+        XCTAssertTrue(error.isAuthExpired)
+        XCTAssertFalse(error.isForbidden)
+        XCTAssertTrue(error.errorDescription?.contains("ログインし直して") == true)
+    }
+
+    func testForbiddenIsNotASessionProblem() {
+        let error = APIError.server(status: 403, message: "")
+        XCTAssertFalse(error.isAuthExpired, "403 で再ログインを促してはいけない")
+        XCTAssertTrue(error.isForbidden)
+        XCTAssertTrue(error.errorDescription?.contains("権限がありません") == true)
     }
 }

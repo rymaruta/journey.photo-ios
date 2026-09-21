@@ -24,9 +24,19 @@ enum APIError: LocalizedError, Equatable {
         case .server(let status, let message):
             // **認証切れは「サーバーエラー」と言わない。** 直し方が違う
             // ——押し直しても直らず、ログインし直すしかない
-            if status == 401 || status == 403 {
+            if status == 401 {
                 return L("ログインの有効期限が切れました。ログインし直してください",
                          "Your session expired. Please sign in again.")
+            }
+            // **403 を「ログインし直して」と言わない。** 401 と混ぜていたが、
+            // 403 は**ログインできているのに権限が無い**状態で、
+            // ログインし直しても直らない（登録直後に権限を配る処理が
+            // 落ちたときに起きる。Cognito 側に無いので本人には直せない）。
+            // Web は同じ取り違えで**ログイン画面と元の画面を無限に往復**
+            // させていた（`lib/hooks/useMemberGate.ts` の経緯）。
+            if status == 403 {
+                return L("この操作をする権限がありません。登録直後にこの状態になった場合は、お手数ですがお問い合わせください（ログインし直しても直りません）",
+                         "You don't have permission for this. If this started right after signing up, please contact us — signing in again won't fix it.")
             }
             return message.isEmpty ? L("サーバーエラー（\(status)）", "Server error (\(status))") : message
         case .decoding:
@@ -34,9 +44,18 @@ enum APIError: LocalizedError, Equatable {
         }
     }
 
-    /// 認証が切れている（再ログインを促すべき）応答か
+    /// 認証が切れている（再ログインを促すべき）応答か。
+    ///
+    /// **403 は含めない。** あちらはログインできているのに権限が無い状態で、
+    /// ログインし直しても直らない（上の注記）。
     var isAuthExpired: Bool {
-        if case .server(let status, _) = self { return status == 401 || status == 403 }
+        if case .server(let status, _) = self { return status == 401 }
+        return false
+    }
+
+    /// ログイン済みなのに権限が無い（Web の `MemberOnlyNotice` が出る状態）
+    var isForbidden: Bool {
+        if case .server(let status, _) = self { return status == 403 }
         return false
     }
 }
