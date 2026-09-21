@@ -38,7 +38,7 @@ final class SmokeTests: XCTestCase {
 
         // **数を決め打つ。** `0..<count` を回すだけだと、`count` が 0 でも
         // ループが1周も回らずに緑になる（何も触っていないのに合格）
-        let expected = 4      // ギャラリー / さがす / お知らせ / マイページ
+        let expected = 5      // ギャラリー / 旅 / さがす / お知らせ / マイページ
         XCTAssertEqual(tabBar.buttons.count, expected, "タブの数が違う")
 
         for index in 0..<expected {

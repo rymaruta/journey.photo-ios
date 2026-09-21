@@ -17,7 +17,7 @@ struct RootView: View {
     @StateObject private var router = NotificationRouter.shared
 
     enum Tab: Hashable {
-        case gallery, search, notifications, mypage
+        case gallery, trips, search, notifications, mypage
     }
 
     var body: some View {
@@ -66,6 +66,14 @@ struct RootView: View {
             }
             .tabItem { Label(Labels.Navigation.gallery, systemImage: "photo.on.rectangle.angled") }
             .tag(Tab.gallery)
+
+            // **旅が単位の画面。** 写真を並べるのではなく、
+            // 同じころに撮った写真が勝手に一冊になって並ぶ（`TripBook`）
+            NavigationStack {
+                TripsView()
+            }
+            .tabItem { Label(L("旅", "Trips"), systemImage: "book.closed") }
+            .tag(Tab.trips)
 
             NavigationStack {
                 SearchView()

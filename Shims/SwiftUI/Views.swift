@@ -254,6 +254,8 @@ public struct LayoutSubview {
 /// 四角。`contentShape` に渡して「押せる範囲」を決めるのに使う。
 public struct Rectangle: View, Shape {
     public init() {}
+    public func fill<S: ShapeStyle>(_ style: S) -> Rectangle { self }
+    public func strokeBorder<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Rectangle { self }
     public var body: Never { fatalError() }
 }
 

@@ -52,7 +52,7 @@ final class ScreenshotTests: XCTestCase {
             return
         }
 
-        let names = ["ギャラリー", "さがす", "お知らせ", "マイページ"]
+        let names = ["ギャラリー", "旅", "さがす", "お知らせ", "マイページ"]
         for (index, name) in names.enumerated() where index < tabBar.buttons.count {
             tabBar.buttons.element(boundBy: index).tap()
             _ = app.navigationBars.firstMatch.waitForExistence(timeout: 15)
