@@ -1,19 +1,55 @@
 # TestFlight を回す前の最終確認（2026-09-21）
 
-**アプリ側の実装は終わっています。** 残っているのは、私からは触れない
-「Apple と GitHub の画面での操作」だけです。
+## 確かめたこと（推測ではなく、CI の記録）
+
+**本物の SwiftUI でコンパイルが通り、シミュレータ上でテストが全部通りました。**
+`Run #9`（`c352654`）の記録:
+
+    Test Suite 'All tests' passed
+      Executed 166 tests, with 0 failures (0 unexpected)
+    ** TEST SUCCEEDED **
+
+iPhone 17 Pro Max / iOS 26.2 のシミュレータ。114ファイル。
+**実 SwiftUI 固有のコンパイルエラーは1件も出ていません。**
+
+それまでの `Run #1`〜`#8` は全部**プロジェクト設定側の関門**で止まっていて、
+Swift のコードは1行もコンパイルされていませんでした。潰した順:
+
+| 関門 | 直し方 |
+|---|---|
+| `xcode-project run-tests` がエラー本文を伏せる | `xcodebuild` を直に叩く |
+| SwiftPM プラグインの「Trust & Enable」を CI で押せない | `-skipPackagePluginValidation` |
+| テストの的に Info.plist が無い | `GENERATE_INFOPLIST_FILE: YES` |
+| arm64 ランナーで x86_64 も組もうとする | `-sdk` を外し `ARCHS=arm64` |
+| 依存の組み直しで60分の上限に当たる | 上限120分＋依存の控え |
 
 ---
 
 ## 1. owner がやること（これだけ）
 
-| # | やること | 場所 |
+| # | やること | 状態 |
 |---|---|---|
-| 1 | リポジトリを **public** にする | GitHub → journey.photo-ios → Settings → Danger Zone |
-| 2 | App Store Connect で**アプリの枠**を作る（Bundle ID `com.journeyphoto.JourneyPhoto`） | appstoreconnect.apple.com → マイ App → ＋ |
-| 3 | **App Store Connect API キー**を作る（App Manager） | appstoreconnect.apple.com/access/integrations/api |
-| 4 | **Secrets を4つ**入れる（下） | GitHub → journey.photo-ios → Settings → Secrets → Actions |
-| 5 | **Actions → TestFlight → Run workflow**（ブランチ **main**） | GitHub |
+| 1 | リポジトリを **public** にする | ✅ 済み（API で `"private": false` を確認） |
+| 2 | App Store Connect で**アプリの枠**を作る | ✅ 済み（Journey Photo — 旅の写真） |
+| 3 | **App Store Connect API キー**を作る | ⚠️ 作成済みだが `.p8` を落とせていない |
+| 4 | **Secrets を4つ**入れる（下） | 2/4（`ISSUER_ID`・`KEY_ID` は入った） |
+| 5 | **Actions → TestFlight → Run workflow**（ブランチ **main**） | 残り2つが揃ってから |
+
+### 3 でつまずいたときの手（実際につまずいた）
+
+iPhone の Safari だと `.p8` のダウンロードが「エラーが発生しました」で
+止まることがある。**失敗してもキーは消費されない**（ダウンロードの
+リンクは残る）ので、落ち着いて次を順に試す:
+
+1. **ポップアップブロックを切る**（設定 → アプリ → Safari）。
+   ダウンロードは新しいウィンドウを開く実装なので、ここで止まる
+2. **Chrome を入れて、そこから落とす**
+3. **PC か iPad を1回だけ借りる**（Mac である必要は無い）
+
+落ちた `.p8` は iOS では中身が見られない。**ファイル App で長押し →
+名称変更 → 拡張子を `.txt` にする**と、タップしてテキストとして開ける。
+それも駄目なら、ショートカット App で「ファイルを取得 → 入力から
+テキストを取得 → クリップボードにコピー」の3手を作る。
 
 ### Secrets（journey.photo-ios）
 
