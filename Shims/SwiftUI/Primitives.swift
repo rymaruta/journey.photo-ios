@@ -235,6 +235,8 @@ public struct Edge {
         public static let top = Set(), bottom = Set(), leading = Set(), trailing = Set()
     }
 }
+/// `safeAreaInset(edge:)` が受ける上下。本物は `CaseIterable` の enum
+public enum VerticalEdge { case top, bottom }
 
 public struct Animation {
     public static func easeOut(duration: Double) -> Animation { Animation() }

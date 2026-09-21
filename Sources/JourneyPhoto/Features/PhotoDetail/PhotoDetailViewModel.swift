@@ -9,7 +9,14 @@ final class PhotoDetailViewModel: ObservableObject {
     @Published private(set) var likes: Int = 0
     @Published private(set) var liked = false
     @Published private(set) var comments: [PhotoComment] = []
-    @Published private(set) var commentCount = 0
+    /// コメントの総数。**サーバーから取れたときだけ入る**（取れなければ nil）。
+    ///
+    /// 以前は `Int = 0` で、読み込み前も圏外も「0」と描いていた。
+    /// 0 は「まだ無い」と読まれるので、分からない回に出すと嘘になる。
+    @Published private(set) var commentCount: Int?
+    /// 直近の読み込みでコメントが引けなかった。
+    /// **「まだ無い」と「取れなかった」を画面で分ける**ためのもの
+    @Published private(set) var commentsUnavailable = false
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
@@ -55,6 +62,7 @@ final class PhotoDetailViewModel: ObservableObject {
             comments = loaded.items
             commentCount = loaded.count
         }
+        commentsUnavailable = loaded == nil
         // **引けなかった回に「押していない」と言わない。** 電波が悪いだけで
         // ハートが白に戻ると、押した人は「取り消された」と読む
         // （押し直しても数は増えない＝サーバーは冪等なので、実害は
@@ -100,7 +108,9 @@ final class PhotoDetailViewModel: ObservableObject {
         do {
             let comment = try await social.postComment(photoId: photoId, text: text)
             comments.insert(comment, at: 0)
-            commentCount += 1
+            // **総数が分からない回は分からないまま。** 取れていない数に
+            // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
+            commentCount = commentCount.map { $0 + 1 }
             draftComment = ""
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
@@ -111,7 +121,7 @@ final class PhotoDetailViewModel: ObservableObject {
         do {
             try await social.deleteComment(photoId: photoId, commentId: comment.id)
             comments.removeAll { $0.id == comment.id }
-            commentCount = max(0, commentCount - 1)
+            commentCount = commentCount.map { max(0, $0 - 1) }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }

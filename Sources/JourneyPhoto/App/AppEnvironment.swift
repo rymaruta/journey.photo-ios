@@ -22,6 +22,8 @@ final class AppEnvironment: ObservableObject {
     let stories: StoryService
     let search: UserSearchService
     let discovery: DiscoveryService
+    /// 撮影スポットの台帳。写真と同じく静的 JSON を読むだけ
+    let spots: SpotService
 
     /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
     ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
@@ -42,5 +44,6 @@ final class AppEnvironment: ObservableObject {
         self.stories = StoryService(api: api)
         self.search = UserSearchService(api: api)
         self.discovery = DiscoveryService(api: api)
+        self.spots = SpotService()
     }
 }
