@@ -209,9 +209,10 @@ public struct Font {
     public static let headline = Font(), subheadline = Font(), body = Font()
     public static let callout = Font(), footnote = Font(), caption = Font(), caption2 = Font()
     public static func system(size: Double) -> Font { Font() }
+    public static func system(size: Double, weight: Weight) -> Font { Font() }
     public func weight(_ w: Weight) -> Font { self }
     public var bold: Font { self }
-    public struct Weight { public static let bold = Weight(), semibold = Weight(), medium = Weight() }
+    public struct Weight { public static let bold = Weight(), semibold = Weight(), medium = Weight(), regular = Weight(), heavy = Weight() }
 }
 extension Font {
     public var weight: (Weight) -> Font { { _ in self } }

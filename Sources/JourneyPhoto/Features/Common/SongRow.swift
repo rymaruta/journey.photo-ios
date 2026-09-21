@@ -22,7 +22,7 @@ struct SongRow: View {
             }
             Spacer()
             Button {
-                player.toggle(song.previewURL)
+                player.toggle(song.previewURL, song: song)
             } label: {
                 Image(systemName: player.isPlaying(song.previewURL) ? "pause.circle.fill" : "play.circle.fill")
                     .font(.title2)
@@ -33,9 +33,10 @@ struct SongRow: View {
         }
         .padding(10)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-        // 画面を離れたら止める。**鳴ったまま戻れなくしない**
-        .onDisappear {
-            if player.isPlaying(song.previewURL) { player.stop() }
-        }
+        // **画面を離れても止めない（2026-09-21 に改めた）。**
+        // 以前はここで止めていたので、曲を鳴らしたまま別の画面へ行けなかった
+        // ——Web は移動しても鳴り続け、下のバー（`MiniPlayer`）から止められる。
+        // 鳴ったまま戻れなくなる心配は `MiniPlayerBar` が引き受ける
+        // （鳴っている間はどの画面にも出て、そこから止められる）
     }
 }

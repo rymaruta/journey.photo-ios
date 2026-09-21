@@ -127,12 +127,21 @@ struct GalleryView: View {
                             .padding(.vertical, 6)
                             // Web の `FilterBar`: 選択中は白地に黒字、
                             // それ以外は白7%の地に白70%の字
+                            // 選択中は白地に黒字（Web の約束）。未選択は
+                            // **すりガラス**——黒地に白7%のベタより、
+                            // 写真の上を流れるときに馴染む
                             .background(
                                 selected ? AnyShapeStyle(WebTheme.foreground)
-                                         : AnyShapeStyle(WebTheme.surface),
+                                         : AnyShapeStyle(.ultraThinMaterial),
                                 in: Capsule()
                             )
-                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted)
+                            .overlay(
+                                Capsule().strokeBorder(
+                                    selected ? Color.clear : Color.white.opacity(0.12),
+                                    lineWidth: 1
+                                )
+                            )
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])
@@ -161,7 +170,8 @@ struct GalleryView: View {
                     .foregroundStyle(WebTheme.muted2)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
                 }
                 .accessibilityIdentifier("gallery.sort")
             }
@@ -177,7 +187,7 @@ struct GalleryView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(group.label)
-                        .font(.headline)
+                        .font(.title3.weight(.bold))
                         .foregroundStyle(WebTheme.foreground)
                     Spacer()
                     NavigationLink {
@@ -196,8 +206,8 @@ struct GalleryView: View {
                             NavigationLink {
                                 PhotoDetailView(photo: photo, context: group.photos)
                             } label: {
-                                PhotoTile(photo: photo)
-                                    .frame(width: 220)
+                                PhotoTile(photo: photo, aspect: 3.0 / 4.0)
+                                    .frame(width: 240)
                             }
                             .buttonStyle(.plain)
                         }

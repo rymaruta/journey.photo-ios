@@ -18,6 +18,9 @@ final class MusicPreviewPlayer: ObservableObject {
     static let shared = MusicPreviewPlayer()
 
     @Published private(set) var playingURL: URL?
+    /// いま鳴っている曲。**画面をまたいで操作するために要る**
+    /// （`MiniPlayerBar` が題と絵を出す）。URL だけでは何の曲か分からない
+    @Published private(set) var playingSong: Photo.Song?
 
     private var player: AVPlayer?
     /// 鳴り終わりの見張り。**外さないと積み上がる**
@@ -39,7 +42,7 @@ final class MusicPreviewPlayer: ObservableObject {
         return playingURL == url
     }
 
-    func toggle(_ url: URL?) {
+    func toggle(_ url: URL?, song: Photo.Song? = nil) {
         guard let url else { return }
         if playingURL == url {
             stop()
@@ -55,6 +58,7 @@ final class MusicPreviewPlayer: ObservableObject {
         let player = AVPlayer(url: url)
         self.player = player
         playingURL = url
+        playingSong = song
         // **30秒で鳴り終わったら自分で止める。**
         //
         // 見張らないと (1) ボタンが「一時停止」のまま固まる
@@ -76,6 +80,7 @@ final class MusicPreviewPlayer: ObservableObject {
         player?.pause()
         player = nil
         playingURL = nil
+        playingSong = nil
         // **止めたら場を返す。** 返さないと、止めたあとも他のアプリの
         // 音楽が戻らない（`.playback` で奪ったまま）。
         //

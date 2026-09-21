@@ -1,39 +1,59 @@
 import SwiftUI
 
-/// 写真の格子。**Web の `GalleryGrid.tsx` と同じ組み方**
-/// （`grid-cols-2 gap-1`・4:3・下に黒のグラデーションで題と分類）。
+/// 写真の一覧。**等間隔の格子をやめ、強弱のあるリズムで組む**
+/// （`EditorialLayout`——大きい1枚 → 2枚 → 2枚 の繰り返し）。
 ///
-/// **2か所に書かない。** 以前はトップ（`GalleryView`）と集約
-/// （`TagPhotosView`）が別々に格子を書いていて、トップだけ直すと
-/// **同じアプリの中で見た目が割れた**。
+/// 角は丸め（18）、題は写真の上に重ねる。Web の「黒地・写真が主役」は
+/// そのままに、組みだけ iOS らしくする。
 struct PhotoGrid<Destination: View>: View {
 
     let photos: [Photo]
     @ViewBuilder let destination: (Photo) -> Destination
 
-    private let columns = Array(
-        repeating: GridItem(.flexible(), spacing: WebTheme.gridSpacing),
-        count: WebTheme.gridColumns
-    )
+    /// 段どうし・段の中の隙間
+    private let gap: CGFloat = 10
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: WebTheme.gridSpacing) {
-            ForEach(photos) { photo in
-                NavigationLink {
-                    destination(photo)
-                } label: {
-                    PhotoTile(photo: photo)
+        VStack(spacing: gap) {
+            ForEach(EditorialLayout.rows(photos)) { row in
+                switch row {
+                case .hero(let photo):
+                    link(photo, aspect: 16.0 / 10.0)
+                case .pair(let first, let second):
+                    if let second {
+                        HStack(spacing: gap) {
+                            link(first, aspect: 1)
+                            link(second, aspect: 1)
+                        }
+                    } else {
+                        // **相方が無い段は1枚で横いっぱい。**
+                        // 半分だけ写真がある段を作らない
+                        link(first, aspect: 16.0 / 10.0)
+                    }
                 }
-                .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, gap)
+    }
+
+    private func link(_ photo: Photo, aspect: CGFloat) -> some View {
+        NavigationLink {
+            destination(photo)
+        } label: {
+            PhotoTile(photo: photo, aspect: aspect)
+        }
+        .buttonStyle(.plain)
     }
 }
 
-/// 1枚ぶん。角は丸めない（Web も丸めていない）。
+/// 1枚ぶん。
 struct PhotoTile: View {
 
     let photo: Photo
+    var aspect: CGFloat = 1
+
+    /// 角の丸み。iOS の今の作法に寄せて大きめ
+    static let corner: CGFloat = 18
 
     var body: some View {
         // **枠の形は「空の四角」で決める。**
@@ -41,16 +61,18 @@ struct PhotoTile: View {
         // 写真そのものに `.aspectRatio(_, contentMode: .fill)` を掛けると、
         // 枠を決める側が居ないので**写真がセルからはみ出して隣に重なる**
         // （実機の絵で確認。staging には写真が無く、空の格子では
-        //  一度も見えなかった壊れ方）。**先に 4:3 の場所を取り**、
+        //  一度も見えなかった壊れ方）。**先に場所を取り**、
         // そこへ写真を流し込んでから切り抜く。
         Color.clear
-            .aspectRatio(4.0 / 3.0, contentMode: .fit)
+            .aspectRatio(aspect, contentMode: .fit)
             .overlay {
                 RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
             }
-            .clipped()
-            .contentShape(Rectangle())
-            .overlay(alignment: .bottom) { caption }
+            .clipShape(RoundedRectangle(cornerRadius: Self.corner))
+            .overlay(RoundedRectangle(cornerRadius: Self.corner)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: Self.corner))
+            .overlay(alignment: .bottomLeading) { caption }
             .accessibilityLabel(photo.accessibilityText)
     }
 
@@ -61,42 +83,44 @@ struct PhotoTile: View {
         let title = photo.displayTitle
         let category = photo.category.map { Labels.Category.name($0) } ?? ""
         if !title.isEmpty || !category.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                if !category.isEmpty {
+                    // 分類は小さく、字間を開けて上に置く（見出しの上の肩書き）
+                    Text(category.uppercased())
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(Color.white.opacity(0.75))
+                }
                 if !title.isEmpty {
                     Text(title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.headline)
                         .foregroundStyle(WebTheme.foreground)
-                        .lineLimit(1)
-                }
-                if !category.isEmpty {
-                    Text(category)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
             }
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
             .background(
                 LinearGradient(
-                    colors: [Color.black.opacity(0), Color.black.opacity(0.6)],
+                    colors: [Color.black.opacity(0), Color.black.opacity(0.75)],
                     startPoint: .top, endPoint: .bottom
                 )
             )
+            .clipShape(RoundedRectangle(cornerRadius: PhotoTile.corner))
         }
     }
 }
 
-/// 決まった縦横比の枠に写真を流し込む。
+/// 決まった縦横比の枠に写真を流し込む（一覧以外の小さい格子で使う）。
 ///
 /// **写真そのものに `.aspectRatio(_, contentMode: .fill)` を掛けない。**
-/// 枠を決める側が居ないので、写真がセルからはみ出して隣に重なる
-/// （実機の絵で確認）。**先に場所を取ってから**流し込む。
+/// 枠を決める側が居ないので、写真がセルからはみ出して隣に重なる。
 struct PhotoFrame: View {
 
     let photo: Photo
     var aspect: CGFloat = 1
+    var corner: CGFloat = 12
 
     var body: some View {
         Color.clear
@@ -104,7 +128,7 @@ struct PhotoFrame: View {
             .overlay {
                 RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
             }
-            .clipped()
-            .contentShape(Rectangle())
+            .clipShape(RoundedRectangle(cornerRadius: corner))
+            .contentShape(RoundedRectangle(cornerRadius: corner))
     }
 }

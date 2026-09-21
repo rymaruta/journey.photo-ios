@@ -98,6 +98,10 @@ struct RootView: View {
         // アプリは入口がマイページの中だけで、同じ分かりにくさがあった。
         // **投稿・ストーリーの画面はシートで全面に出る**ので、
         // Web のような「出さないページ」の判定は要らない
+        // 鳴っている間だけ、どの画面にも出る（Web の `MiniPlayer`）
+        .overlay(alignment: .bottom) {
+            MiniPlayerBar().padding(.bottom, 56)
+        }
         .overlay(alignment: .bottomTrailing) {
             if auth.userId != nil {
                 Button {
@@ -108,6 +112,7 @@ struct RootView: View {
                         .foregroundStyle(WebTheme.accentText)
                         .frame(width: 56, height: 56)
                         .background(WebTheme.accentBackground, in: Circle())
+                        .shadow(radius: 12)
                 }
                 .accessibilityLabel(L("投稿する", "Post"))
                 .accessibilityIdentifier("post.fab")
