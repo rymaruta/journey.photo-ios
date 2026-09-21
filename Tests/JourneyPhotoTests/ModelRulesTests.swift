@@ -101,3 +101,23 @@ final class AuthResolvingTests: XCTestCase {
                       "確かめる前から「ログインしていない」と決めている")
     }
 }
+
+/// フォロワー／フォロー中の数字を押せるか。
+///
+/// 一覧の口は**認証必須**なので、未ログインで押せると
+/// 「ログインしてください」の赤字だけの行き止まりに着く。
+final class FollowCountsTests: XCTestCase {
+
+    func testSignedOutCannotOpenTheList() {
+        XCTAssertFalse(FollowCounts.isTappable(signedIn: false, count: 5))
+    }
+
+    func testSignedInWithSomeoneCanOpenTheList() {
+        XCTAssertTrue(FollowCounts.isTappable(signedIn: true, count: 1))
+    }
+
+    /// 0人なら開いても「まだいません」しか無い
+    func testZeroIsNotTappableEvenWhenSignedIn() {
+        XCTAssertFalse(FollowCounts.isTappable(signedIn: true, count: 0))
+    }
+}

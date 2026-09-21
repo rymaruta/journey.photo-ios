@@ -81,6 +81,22 @@ struct UserProfileView: View {
         }
     }
 
+    /// 数字の札。**押して一覧を開けるのは、ログインしていて1人以上いるときだけ**
+    /// （`FollowCounts.isTappable`）。一覧の口は認証が要るので、未ログインで
+    /// 押せると赤字だけの行き止まりになる。
+    @ViewBuilder
+    private func followCount(_ label: String, count: Int, kind: FollowListView.Kind) -> some View {
+        if FollowCounts.isTappable(signedIn: auth.userId != nil, count: count) {
+            NavigationLink {
+                FollowListView(userId: userId, kind: kind)
+            } label: {
+                Text(label)
+            }
+        } else {
+            Text(label)
+        }
+    }
+
     @ViewBuilder
     private func themeRing(_ hex: String?) -> some View {
         if let hex, let color = Color(hex: hex) {
@@ -99,16 +115,14 @@ struct UserProfileView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.profile?.name ?? "—").font(.headline)
                     HStack(spacing: 12) {
-                        NavigationLink {
-                            FollowListView(userId: userId, kind: .followers)
-                        } label: {
-                            Text(L("フォロワー \(model.followers)", "\(model.followers) followers"))
-                        }
-                        NavigationLink {
-                            FollowListView(userId: userId, kind: .following)
-                        } label: {
-                            Text(L("フォロー中 \(model.following)", "\(model.following) following"))
-                        }
+                        followCount(
+                            L("フォロワー \(model.followers)", "\(model.followers) followers"),
+                            count: model.followers, kind: .followers
+                        )
+                        followCount(
+                            L("フォロー中 \(model.following)", "\(model.following) following"),
+                            count: model.following, kind: .following
+                        )
                     }
                     .font(.caption)
                     .buttonStyle(.plain)
