@@ -17,6 +17,9 @@ final class GalleryViewModel: ObservableObject {
     @Published var category: String?
     /// 並び替え。**Web の `FilterBar` と同じ3つ**（新しい順／古い順／人気順）
     @Published var sort: GallerySort = .new
+    /// ホームのフィード（おすすめ / フォロー中 / 新着）。
+    /// **範囲と並びの組に名前を付けたもの**（`HomeFeed`）
+    @Published private(set) var feed: HomeFeed = .recommended
     /// 選んでいるタグ。**複数選べて、全部を持つ写真だけが残る**
     /// （Web の `selectedTags` と同じ）
     @Published private(set) var selectedTags: [String] = []
@@ -87,13 +90,18 @@ final class GalleryViewModel: ObservableObject {
 
     /// ログイン状態が決まったら呼ぶ。
     ///
-    /// **未ログインとログアウトは「すべて」に戻す。** 絞れないので絞らない
-    /// （Web も同じ——検索の着地点はみんなの写真）。
-    /// ログインしたら「自分」へ倒す（owner の指示）。
+    /// **範囲はいま選んでいるフィードが決める**（指示書のホームは
+    /// おすすめ／フォロー中／新着）。以前はここで「自分」へ倒していたが、
+    /// それだと**押したフィードが即座に打ち消される**。
+    ///
+    /// **フォロー中は未ログインだと中身が無い。** 絞れないので
+    /// 「おすすめ」へ戻す（空の画面に置き去りにしない）。
     func use(viewerId: String?, following: Set<String>) {
         self.viewerId = viewerId
         self.followingIds = following
-        scope = viewerId == nil ? .all : .mine
+        if viewerId == nil && feed.needsSignIn { feed = .recommended }
+        scope = feed.scope
+        sort = feed.sort
         if case .loaded = state { state = .loaded(filtered()) }
     }
 
@@ -170,6 +178,20 @@ final class GalleryViewModel: ObservableObject {
     var tags: [String] {
         let present = Set(all.flatMap { $0.tags ?? [] }.map { TagChoices.key($0) })
         return TagChoices.all.filter { present.contains(TagChoices.key($0)) }
+    }
+
+    /// フィードを選ぶ。**範囲と並びを一緒に切り替える**。
+    ///
+    /// **`use(viewerId:following:)` は呼ばない。** あちらは範囲を
+    /// 「自分」に倒すので、押したフィードが即座に打ち消される
+    /// （組み込んだ直後に踏んだ）。
+    func select(feed: HomeFeed, viewerId: String?) {
+        self.feed = feed
+        self.scope = feed.scope
+        self.sort = feed.sort
+        self.viewerId = viewerId
+        all = feed.arrange(all)
+        state = .loaded(filtered())
     }
 
     func select(sort: GallerySort) {

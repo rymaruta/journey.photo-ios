@@ -47,11 +47,6 @@ struct GalleryView: View {
         // 別のサイトに見えていた
         .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
-        // **探すのは検索窓、選ぶのはチップ**、と役割を分ける。
-        // チップは決まった20語だけなので、地名（helsinki など）は
-        // ここから探す
-        .searchable(text: $model.query,
-                    prompt: L("題・撮影地・説明でさがす", "Search titles, places, notes"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -332,17 +327,50 @@ struct GalleryView: View {
         }
     }
 
+    /// フィードの切り替え（おすすめ / フォロー中 / 新着）。
+    ///
+    /// **推薦の口は無い**ので、おすすめの規則を下に1行で出す
+    /// （指示書 5-2——実装済みであるかのように見せない）。
+    private var feedPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                ForEach(HomeFeed.allCases) { feed in
+                    let selected = model.feed == feed
+                    Button {
+                        model.select(feed: feed, viewerId: auth.userId)
+                    } label: {
+                        Text(feed.label)
+                            .font(.subheadline.weight(selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(selected ? AnyShapeStyle(WebTheme.foreground)
+                                                 : AnyShapeStyle(Color.clear),
+                                        in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .padding(4)
+            .background(WebTheme.surface, in: Capsule())
+
+            if let note = model.feed.note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+                    .padding(.horizontal, 8)
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
     /// ホームは**縦1列のフィード**（提案の絵・2026-09-21）。
     /// 格子は集約ページ（タグ・撮影地・機材）で使い続ける。
     private func feed(_ photos: [Photo]) -> some View {
         ScrollView {
             LazyVStack(spacing: 24) {
-                if !model.categories.isEmpty {
-                    filterBar
-                }
-                if showsTags && !model.tags.isEmpty {
-                    tagBar
-                }
+                feedPicker
                 featuredSections
                 ForEach(photos) { photo in
                     HomeFeedCard(photo: photo)

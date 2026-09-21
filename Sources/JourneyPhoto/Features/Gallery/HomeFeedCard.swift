@@ -33,24 +33,81 @@ struct HomeFeedCard: View {
                     .overlay {
                         RemoteImage(url: photo.detailImageURL, alignment: photo.gridAlignment)
                     }
+                    // **題と撮影地は写真の上に置く**（提案の絵）。
+                    // 下に並べるより、どの写真の話か迷わない
+                    .overlay(alignment: .bottomLeading) { titleOverlay }
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                     .contentShape(RoundedRectangle(cornerRadius: 18))
             }
             .buttonStyle(.plain)
 
             author
-            actions
 
             if !caption.isEmpty {
                 Text(caption)
                     .font(.callout)
                     .lineSpacing(3)
-                    .foregroundStyle(Color.white.opacity(0.75))
+                    .foregroundStyle(Color.white.opacity(0.85))
                     .lineLimit(3)
             }
+            tags
+            actions
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
+    }
+
+    /// 写真に重ねる題と撮影地。**暗くするのは下だけ**（全面に膜を
+    /// 掛けると写真が濁る）
+    @ViewBuilder
+    private var titleOverlay: some View {
+        let title = photo.displayTitle
+        let place = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty || !place.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                if !title.isEmpty {
+                    Text(title)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(WebTheme.foreground)
+                        .lineLimit(2)
+                }
+                if !place.isEmpty {
+                    HStack(spacing: 5) {
+                        Image(systemName: "mappin.circle.fill")
+                        Text(place).lineLimit(1)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white.opacity(0.85))
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.7)],
+                               startPoint: .top, endPoint: .bottom)
+            )
+        }
+    }
+
+    /// タグ。**押すとそのタグの写真へ**（提案の絵の青い `#長崎`）
+    @ViewBuilder
+    private var tags: some View {
+        let list = Array((photo.tags ?? []).prefix(4))
+        if !list.isEmpty {
+            HStack(spacing: 10) {
+                ForEach(list, id: \.self) { tag in
+                    NavigationLink {
+                        TagPhotosView(kind: .tag(tag))
+                    } label: {
+                        Text("#\(tag)")
+                            .font(.subheadline)
+                            .foregroundStyle(Color(red: 0.42, green: 0.68, blue: 1.0))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+        }
     }
 
     /// 撮った人。**名前の下に「どこの・何の写真か」を添える**
@@ -93,14 +150,23 @@ struct HomeFeedCard: View {
         }
     }
 
-    /// いいね・コメント・共有・保存。**押せる大きさを守る**（44pt）
+    /// いいね・コメント・保存・共有。**数も出す**（提案の絵）。
+    /// 押せる大きさは 44pt を守る。
+    ///
+    /// **数は「サーバーが知っている数」ではない。** 公開 JSON の `likes`
+    /// はビルド時の値なので、**自分が押したぶんだけ即座に足す**
+    /// （詳細画面を開けば、サーバーの数で描き直される）
     private var actions: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 22) {
             Button {
                 favorites.toggle(photo.id)
             } label: {
-                Image(systemName: favorites.contains(photo.id) ? "heart.fill" : "heart")
-                    .foregroundStyle(favorites.contains(photo.id) ? .pink : WebTheme.foreground)
+                Label {
+                    Text("\(likeCount)")
+                } icon: {
+                    Image(systemName: liked ? "heart.fill" : "heart")
+                }
+                .foregroundStyle(liked ? .pink : WebTheme.foreground)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("いいね", "Like"))
@@ -108,24 +174,38 @@ struct HomeFeedCard: View {
             NavigationLink {
                 PhotoDetailView(photo: photo)
             } label: {
-                Image(systemName: "bubble.right")
-                    .foregroundStyle(WebTheme.foreground)
+                Label {
+                    Text(L("コメント", "Comments"))
+                } icon: {
+                    Image(systemName: "bubble.right")
+                }
+                .foregroundStyle(WebTheme.foreground)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("コメント", "Comments"))
+
+            Spacer()
 
             if let url = PhotoLink.url(photoId: photo.id, isPublished: photo.published != false) {
                 ShareLink(item: url) {
-                    Image(systemName: "paperplane")
-                        .foregroundStyle(WebTheme.foreground)
+                    Label {
+                        Text(L("シェア", "Share"))
+                    } icon: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .foregroundStyle(WebTheme.foreground)
                 }
-                .accessibilityLabel(L("共有", "Share"))
             }
-
-            Spacer()
         }
-        .font(.system(size: 22, weight: .regular))
+        .font(.subheadline)
         .frame(minHeight: WebTheme.minTapTarget)
+    }
+
+    private var liked: Bool { favorites.contains(photo.id) }
+
+    /// 出すいいねの数。**押した瞬間に 1 足す**（サーバーの数は詳細で直る）
+    private var likeCount: Int {
+        let base = photo.likes ?? 0
+        return liked ? base + 1 : base
     }
 
     /// 「日本・風景写真」にあたる行。撮影地と分類から作る

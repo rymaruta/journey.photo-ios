@@ -17,6 +17,8 @@ public struct Image: View {
 }
 
 public struct Label: View {
+    /// 題と絵を別々に渡す版（数字と記号を組にするときに使う）
+    public init<T: View, I: View>(@ViewBuilder _ title: () -> T, @ViewBuilder icon: () -> I) {}
     public init(_ title: String, systemImage: String) {}
     public init<S: StringProtocol>(_ title: S, systemImage: String) {}
     public var body: Never { fatalError("模型") }
