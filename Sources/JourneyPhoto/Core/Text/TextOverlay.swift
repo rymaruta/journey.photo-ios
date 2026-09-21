@@ -28,6 +28,32 @@ struct TextOverlay: Identifiable, Equatable {
     /// （大きい写真でも小さい写真でも同じ見た目になる）
     var size: Double
     var style: Style
+    /// 何の札か。**場所と曲は投稿の項目としても送る**ので、
+    /// ここに置くのは「写真の上の見た目」だけ
+    var kind: Kind
+
+    enum Kind: String, Equatable {
+        /// 自由な文字
+        case text
+        /// 撮影地（ピンの印を付ける）
+        case place
+        /// 曲（音符の印を付ける）
+        case song
+
+        /// 札の頭に付ける印。**文字だけの札には付けない**
+        var symbol: String? {
+            switch self {
+            case .text: return nil
+            case .place: return "📍"
+            case .song: return "♪"
+            }
+        }
+
+        /// 場所と曲は**必ず帯**にする（写真の上で読めなくならないように）
+        var forcedStyle: Style? {
+            self == .text ? nil : .banner
+        }
+    }
 
     enum Style: String, CaseIterable, Identifiable {
         /// 白い文字に影（写真の上でいちばん読める）
@@ -61,14 +87,25 @@ struct TextOverlay: Identifiable, Equatable {
     static let maxLength = 200
 
     init(id: UUID = UUID(), text: String, x: Double = 0.5, y: Double = 0.5,
-         size: Double = TextOverlay.defaultSize, style: Style = .light) {
+         size: Double = TextOverlay.defaultSize, style: Style = .light,
+         kind: Kind = .text) {
         self.id = id
         self.text = String(text.prefix(Self.maxLength))
         self.x = Self.clampPosition(x)
         self.y = Self.clampPosition(y)
         self.size = Self.clampSize(size)
-        self.style = style
+        // 場所と曲は帯で固定（見た目を選ばせない＝読めない札を作らせない）
+        self.style = kind.forcedStyle ?? style
+        self.kind = kind
     }
+
+    /// 画面と画像に出す文字（印つき）。
+    static func display(text: String, kind: Kind) -> String {
+        guard let symbol = kind.symbol else { return text }
+        return "\(symbol) \(text)"
+    }
+
+    var displayText: String { Self.display(text: text, kind: kind) }
 
     /// **画面の外に出さない。** 端まで動かせるが、出てしまうと
     /// 掴み直せなくなる（消す手段も無くなる）

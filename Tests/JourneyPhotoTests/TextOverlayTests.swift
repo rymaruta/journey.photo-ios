@@ -92,3 +92,26 @@ final class TextOverlayRendererTests: XCTestCase {
                        original)
     }
 }
+
+/// 札の種類（文字・場所・曲）。モック4 のステッカー。
+final class TextOverlayKindTests: XCTestCase {
+
+    /// **場所と曲は帯で固定。** 見た目を選ばせると、白い文字を明るい空に
+    /// 置いて読めない札ができる
+    func testPlaceAndSongAreAlwaysBanners() {
+        XCTAssertEqual(TextOverlay(text: "フィンランド", style: .light, kind: .place).style, .banner)
+        XCTAssertEqual(TextOverlay(text: "Sayonara", style: .dark, kind: .song).style, .banner)
+    }
+
+    /// 自由な文字は選んだ見た目のまま
+    func testPlainTextKeepsItsStyle() {
+        XCTAssertEqual(TextOverlay(text: "また来たい", style: .dark, kind: .text).style, .dark)
+    }
+
+    /// 印は場所と曲にだけ付く
+    func testSymbols() {
+        XCTAssertEqual(TextOverlay.display(text: "京都", kind: .place), "📍 京都")
+        XCTAssertEqual(TextOverlay.display(text: "海の音", kind: .song), "♪ 海の音")
+        XCTAssertEqual(TextOverlay.display(text: "また来たい", kind: .text), "また来たい")
+    }
+}

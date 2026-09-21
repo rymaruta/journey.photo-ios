@@ -42,7 +42,8 @@ enum TextOverlayRenderer {
     private static func draw(_ overlay: TextOverlay, on size: CGSize, shortSide: Double) {
         let fontSize = shortSide * overlay.size
         let attributes = attributes(for: overlay.style, fontSize: fontSize)
-        let text = overlay.text as NSString
+        // 場所と曲は印（📍 ♪）を頭に付けて焼く
+        let text = overlay.displayText as NSString
         let bounds = text.size(withAttributes: attributes)
         // 位置は中心で持っている（0...1 の相対値）
         let center = CGPoint(x: size.width * overlay.x, y: size.height * overlay.y)

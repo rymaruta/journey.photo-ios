@@ -48,7 +48,7 @@ struct TextOverlayEditor: View {
 
     private func text(_ overlay: TextOverlay, canvas: CGSize) -> some View {
         let moving = dragId == overlay.id
-        return Text(overlay.text)
+        return Text(overlay.displayText)
             .font(.system(size: max(12, canvas.height * overlay.size), weight: .bold))
             .foregroundStyle(overlay.style == .dark ? Color.black : Color.white)
             .padding(.horizontal, overlay.style == .banner ? 8 : 0)
@@ -94,9 +94,13 @@ struct TextOverlayEditor: View {
                     }
 
                 HStack(spacing: 8) {
-                    ForEach(TextOverlay.Style.allCases) { style in
-                        Button(style.label) { overlays[index].style = style }
-                            .buttonStyle(.bordered)
+                    // **場所と曲は帯で固定**（読めない札を作らせない）ので
+                    // 見た目の選択を出さない
+                    if overlays[index].kind == .text {
+                        ForEach(TextOverlay.Style.allCases) { style in
+                            Button(style.label) { overlays[index].style = style }
+                                .buttonStyle(.bordered)
+                        }
                     }
                     Spacer()
                     Button(role: .destructive) {
@@ -120,19 +124,41 @@ struct TextOverlayEditor: View {
                 }
             }
         } else {
-            Button {
-                add()
-            } label: {
-                Label(L("文字を置く", "Add text"), systemImage: "textformat")
+            // モック4 の下の並び（テキスト／場所／BGM）。
+            // **場所と曲は投稿の項目としても送る**ので、ここに置くのは
+            // 「写真の上に見た目として残すか」だけ
+            HStack(spacing: 10) {
+                addButton(L("テキスト", "Text"), systemImage: "textformat", kind: .text)
+                addButton(L("場所", "Place"), systemImage: "mappin", kind: .place)
+                addButton(L("BGM", "Music"), systemImage: "music.note", kind: .song)
             }
-            .disabled(overlays.count >= TextOverlay.maxCount)
-            .accessibilityIdentifier("story.addText")
         }
     }
 
-    private func add() {
-        // **真ん中より少し上に置く。** 真ん中だと写真の主役に重なりやすい
-        let overlay = TextOverlay(text: "", x: 0.5, y: 0.35)
+    private func addButton(_ title: String, systemImage: String,
+                           kind: TextOverlay.Kind) -> some View {
+        Button {
+            add(kind: kind)
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: systemImage).font(.title3)
+                Text(title).font(.caption)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+            .foregroundStyle(WebTheme.foreground)
+        }
+        .buttonStyle(.plain)
+        .disabled(overlays.count >= TextOverlay.maxCount)
+        .accessibilityIdentifier("story.add.\(kind.rawValue)")
+    }
+
+    private func add(kind: TextOverlay.Kind) {
+        // **真ん中より少し上に置く。** 真ん中だと写真の主役に重なりやすい。
+        // 場所と曲は少し下（文字の札と重なりにくい）
+        let y = kind == .text ? 0.35 : 0.6
+        let overlay = TextOverlay(text: "", x: 0.5, y: y, kind: kind)
         overlays.append(overlay)
         startEditing(overlay)
     }
