@@ -21,6 +21,20 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 
 
+def _branch_of(root) -> str:
+    """相手の photo-gallery が今どのブランチか。読めなければそう言う。"""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        name = out.stdout.strip()
+        return name or "ブランチを読めませんでした"
+    except Exception:
+        return "ブランチを読めませんでした"
+
+
 def strip_interpolation(path: str) -> str:
     """Swift の文字列補間 `\(...)` を `{}` に潰す。
 
@@ -137,6 +151,14 @@ def main() -> int:
 
     unused = sorted(k for k in server if k not in calls)
 
+    # **どのブランチと突き合わせたかを必ず言う。**
+    #
+    # この道具が見ているのは「いま checkout されている photo-gallery」で、
+    # **デプロイされているもの**ではない。実際、プッシュ通知の
+    # `/user/devices` は feature ブランチにしか無いのに、そのブランチで
+    # 突き合わせると緑になる——「口は在る」と読んで TestFlight に出すと、
+    # 本番で 404 になる。緑を読み違えないよう、相手を明示する。
+    print(f"突き合わせた相手: {root} （{_branch_of(root)}）")
     print(f"サーバーの口 {len(server)} / アプリが叩いている {len(calls)}")
     if unused:
         print(f"\nアプリが使っていない口（{len(unused)}）:")

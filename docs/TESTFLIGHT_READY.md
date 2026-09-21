@@ -25,6 +25,26 @@ Swift のコードは1行もコンパイルされていませんでした。潰�
 
 ---
 
+## ⚠️ プッシュ通知は、いま出しても動かない
+
+アプリは `POST /user/devices` に端末を預けるが、**その口は
+`photo-gallery` の feature ブランチにしか無い**。確かめた:
+
+    origin/main        api-user/src/devices.ts: 無い
+    origin/develop     api-user/src/devices.ts: 無い
+    claude/journey-photo-ios-app-ffos85: ある
+
+このまま TestFlight に出すと、設定の「プッシュ通知を受け取る」を押した
+ときに **404** になる（画面には赤字で理由が出るので、黙っては壊れない）。
+
+**直すには `photo-gallery` 側を出す必要がある**——CLAUDE.md の決まりで
+`develop` に入れて staging で確かめてから `main`。これは owner の判断で、
+私からは触れない（指定ブランチ以外に push しない）。
+
+通知以外の機能は、この有無に関係なく動く。
+
+---
+
 ## 1. owner がやること（これだけ）
 
 | # | やること | 状態 |
