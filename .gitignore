@@ -25,3 +25,4 @@ Sources/JourneyPhoto/Info.plist
 # 構文検査の依存（Tools/ で npm install して作る）
 Tools/node_modules/
 Tools/package-lock.json
+__pycache__/
