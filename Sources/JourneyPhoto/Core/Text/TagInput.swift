@@ -241,6 +241,26 @@ enum PhotoQuery {
         }
     }
 
+    /// 候補のタグと、その枚数。**決まった20語だけ**（`TagChoices.all`）を
+    /// 多い順に。0枚の語は出さない（押しても空になるチップを置かない）。
+    ///
+    /// 提案の絵の「winter 13 / finland 12 …」にあたる。**数を出すのは、
+    /// 押す前に手応えが分かるから**——1枚しか無い語を押すのは徒労になる。
+    static func tagCounts(in photos: [Photo], limit: Int = 12) -> [(tag: String, count: Int)] {
+        var counts: [String: Int] = [:]
+        for tag in photos.flatMap({ $0.tags ?? [] }) {
+            counts[TagChoices.key(tag), default: 0] += 1
+        }
+        return TagChoices.all
+            .compactMap { choice -> (tag: String, count: Int)? in
+                let count = counts[TagChoices.key(choice)] ?? 0
+                return count > 0 ? (tag: choice, count: count) : nil
+            }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.tag < $1.tag }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     /// 選んだタグで絞る。**全部を持つ写真だけ**（Web の `wanted.every`）。
     /// 比べるのは鍵（`#` と大小、日英の別名を無視する）。
     static func photos(_ photos: [Photo], withAllTags tags: [String]) -> [Photo] {

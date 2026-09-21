@@ -79,6 +79,7 @@ public struct PickerStyleShim {
     public static let menu = PickerStyleShim()
 }
 public struct TextFieldStyleShim {
+    public static let plain = TextFieldStyleShim()
     public static let roundedBorder = TextFieldStyleShim()
 }
 public struct VisibilityShim {

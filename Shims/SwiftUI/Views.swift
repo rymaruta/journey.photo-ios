@@ -64,6 +64,7 @@ public struct Group: View {
     public var body: Never { fatalError("模型") }
 }
 public struct Spacer: View {
+    public init(minLength: Double) {}
     public init() {}
     public var body: Never { fatalError("模型") }
 }

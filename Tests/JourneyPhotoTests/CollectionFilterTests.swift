@@ -507,3 +507,40 @@ final class GallerySearchTests: XCTestCase {
         XCTAssertEqual(PhotoQuery.photos(photos, matching: "   ").count, 2)
     }
 }
+
+/// 候補タグと枚数（提案の絵の「winter 13 / finland 12」）。
+final class TagCountsTests: XCTestCase {
+
+    private func photo(_ id: String, tags: [String]) throws -> Photo {
+        let list = tags.map { "\"\($0)\"" }.joined(separator: ",")
+        let json = "{\"id\":\"\(id)\",\"src\":\"https://x/\(id).jpg\",\"tags\":[\(list)]}"
+        return try JSONDecoder.api.decode(Photo.self, from: Data(json.utf8))
+    }
+
+    /// **多い順**。数は日英を畳んでから数える
+    func testCountsAreCollapsedAndSorted() throws {
+        let photos = [
+            try photo("a", tags: ["冬"]),
+            try photo("b", tags: ["winter"]),
+            try photo("c", tags: ["海"]),
+        ]
+        let counts = PhotoQuery.tagCounts(in: photos)
+        XCTAssertEqual(counts.first?.tag, "冬")
+        XCTAssertEqual(counts.first?.count, 2, "`冬` と `winter` が別々に数えられている")
+    }
+
+    /// **0枚の語は出さない**（押しても空になるチップを置かない）
+    func testEmptyChoicesAreLeftOut() throws {
+        let counts = PhotoQuery.tagCounts(in: [try photo("a", tags: ["冬"])])
+        XCTAssertEqual(counts.map(\.tag), ["冬"])
+    }
+
+    /// **決まった20語だけ。** 地名のような固有名詞は候補にしない
+    func testProperNounsAreNotOffered() throws {
+        let counts = PhotoQuery.tagCounts(in: [
+            try photo("a", tags: ["helsinki"]),
+            try photo("b", tags: ["helsinki"]),
+        ])
+        XCTAssertTrue(counts.isEmpty, "固有名詞が候補に出ている")
+    }
+}

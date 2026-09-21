@@ -10,75 +10,26 @@ struct SearchView: View {
     @State private var query = ""
 
     var body: some View {
-        List {
-            if !model.users.isEmpty {
-                Section(L("人", "People")) {
-                    ForEach(model.users) { user in
-                        NavigationLink {
-                            UserProfileView(userId: user.userId)
-                        } label: {
-                            HStack(spacing: 10) {
-                                RemoteImage(url: user.avatarURL())
-                                    .frame(width: 36, height: 36)
-                                    .clipShape(Circle())
-                                Text(user.name)
-                            }
-                        }
-                    }
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                searchField
+                categoryChips
+                tagChips
+                results
             }
-
-            if !model.photos.isEmpty {
-                Section(L("写真", "Photos")) {
-                    ForEach(model.photos) { photo in
-                        NavigationLink {
-                            PhotoDetailView(photo: photo)
-                        } label: {
-                            HStack(spacing: 10) {
-                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-                                    .frame(width: 44, height: 44)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                // **題が無くても「無題」と名乗らせない。**
-                                // 題も撮影地も無ければ、行は写真だけになる
-                                VStack(alignment: .leading) {
-                                    if !photo.displayTitle.isEmpty {
-                                        Text(photo.displayTitle)
-                                    }
-                                    if let location = photo.location, !location.isEmpty {
-                                        Text(location)
-                                            .font(photo.displayTitle.isEmpty ? .body : .caption)
-                                            .foregroundStyle(photo.displayTitle.isEmpty ? .primary : .secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if query.isEmpty {
-                Section(L("よく使われているタグ", "Popular tags")) {
-                    ForEach(model.popularTags, id: \.self) { tag in
-                        Button(tag) { query = tag }
-                    }
-                }
-            } else if model.users.isEmpty && model.photos.isEmpty && !model.isSearching {
-                Text(L("見つかりませんでした", "No results")).foregroundStyle(.secondary)
-            }
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
         .webScreen()
         .navigationTitle(L("さがす", "Search"))
-        .searchable(text: $query, prompt: L("撮影地・タグ・人", "Places, tags, people"))
+        .navigationBarTitleDisplayMode(.inline)
         .task { await model.loadPhotos(environment: environment) }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }
         // **ブロック／通報の直後に消す。** `loadPhotos` は
         // `guard allPhotos.isEmpty` で二度と読まない作りなので、
-        // 控えを捨ててから読み直す。
-        //
-        // **集合を自分で渡してから読む**（`GalleryView` と同じ理由——
-        // 呼んだ側の `setHidden` を待つと古い集合のまま取ってしまう）
+        // 控えを捨ててから読み直す
         .onChange(of: hidden.revision) { _, _ in
             Task {
                 await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
@@ -86,6 +37,153 @@ struct SearchView: View {
                 await model.reloadPhotos(environment: environment)
                 await model.search(query, environment: environment)
             }
+        }
+    }
+
+    // MARK: - 探す口
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(WebTheme.faint)
+            TextField(L("写真を検索（題・説明・タグなど）", "Search photos"),
+                      text: $query)
+                .textFieldStyle(.plain)
+                .foregroundStyle(WebTheme.foreground)
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(WebTheme.faint)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("消す", "Clear"))
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 52)
+        .background(WebTheme.surface, in: Capsule())
+        .padding(.horizontal, 16)
+    }
+
+    /// カテゴリ。**「すべて」を先頭に置く**（戻れない絞り込みを作らない）
+    private var categoryChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                chip(L("すべて", "All"), selected: model.category == nil) {
+                    model.select(category: nil)
+                }
+                ForEach(model.categories, id: \.self) { category in
+                    chip(Labels.Category.name(category),
+                         selected: model.category.map {
+                             CategoryChoices.isChosen(current: $0, choice: category)
+                         } ?? false) {
+                        model.select(category: category)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    /// タグ。**枚数を添える**（押す前に手応えが分かる）
+    private var tagChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(model.tagCounts, id: \.tag) { item in
+                    chip("\(item.tag)  \(item.count)",
+                         selected: TagChoices.key(query) == TagChoices.key(item.tag)) {
+                        query = TagChoices.key(query) == TagChoices.key(item.tag) ? "" : item.tag
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(selected ? .semibold : .regular))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+                .background(selected ? AnyShapeStyle(WebTheme.foreground)
+                                     : AnyShapeStyle(WebTheme.surface),
+                            in: Capsule())
+                .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    // MARK: - 結果
+
+    @ViewBuilder
+    private var results: some View {
+        // 人は写真より先に出す（名前で探しているなら、それが目当て）
+        if !model.users.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(L("人", "People"))
+                    .font(.headline)
+                    .foregroundStyle(WebTheme.foreground)
+                ForEach(model.users) { user in
+                    NavigationLink {
+                        UserProfileView(userId: user.userId)
+                    } label: {
+                        HStack(spacing: 12) {
+                            RemoteImage(url: user.avatarURL())
+                                .frame(width: 44, height: 44)
+                                .clipShape(Circle())
+                            Text(user.name)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(WebTheme.foreground)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(WebTheme.faint)
+                        }
+                        .frame(minHeight: WebTheme.minTapTarget)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+
+        // **件数と並び替えは結果の上**（提案の絵）
+        HStack {
+            Text(L("検索結果: \(model.shown.count) 件", "\(model.shown.count) results"))
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.muted2)
+            Spacer()
+            Menu {
+                ForEach(GallerySort.allCases) { option in
+                    Button(option.label) { model.select(sort: option) }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(model.sort.label)
+                    Image(systemName: "chevron.down").font(.caption2)
+                }
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.muted2)
+                .frame(minHeight: WebTheme.minTapTarget)
+            }
+        }
+        .padding(.horizontal, 16)
+
+        if model.shown.isEmpty {
+            // **「まだ何も打っていない」と「見つからなかった」を分ける**
+            Text(query.isEmpty
+                 ? L("タグやカテゴリから探せます", "Start from a tag or a category")
+                 : L("見つかりませんでした", "No results"))
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.faint)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 24)
+        } else {
+            SearchGrid(photos: model.shown)
         }
     }
 }
@@ -97,6 +195,40 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var users: [UserProfile] = []
     @Published private(set) var popularTags: [String] = []
     @Published private(set) var isSearching = false
+    /// 候補タグと枚数（提案の絵の「winter 13」）
+    @Published private(set) var tagCounts: [(tag: String, count: Int)] = []
+    @Published private(set) var categories: [String] = []
+    @Published private(set) var category: String?
+    @Published private(set) var sort: GallerySort = .new
+
+    /// 画面に出す写真。**打っていないときはカテゴリ／タグの結果を出す**
+    /// ——空の画面にしない（探しに来た人を手ぶらで帰さない）
+    var shown: [Photo] {
+        let base = photos.isEmpty && query.isEmpty ? allPhotos : photos
+        let byCategory: [Photo]
+        if let category {
+            let key = CategoryChoices.key(category)
+            byCategory = base.filter { CategoryChoices.key($0.category ?? "") == key }
+        } else {
+            byCategory = base
+        }
+        return sort.apply(byCategory)
+    }
+
+    /// いま打っている文字（`shown` の出し分けに使う）
+    private var query = ""
+
+    func select(category: String?) {
+        // 押し直したら外す
+        if let category, let current = self.category,
+           CategoryChoices.isChosen(current: current, choice: category) {
+            self.category = nil
+        } else {
+            self.category = category
+        }
+    }
+
+    func select(sort: GallerySort) { self.sort = sort }
 
     private var allPhotos: [Photo] = []
     /// 打つたびに投げない。**最後の打鍵から少し待つ**
@@ -113,11 +245,16 @@ final class SearchViewModel: ObservableObject {
     func reloadPhotos(environment: AppEnvironment) async {
         allPhotos = (try? await environment.gallery.fetchPhotos()) ?? []
         popularTags = PhotoQuery.topTags(in: allPhotos)
+        tagCounts = PhotoQuery.tagCounts(in: allPhotos)
+        categories = CategoryChoices.all.filter { choice in
+            allPhotos.contains { CategoryChoices.isChosen(current: $0.category ?? "", choice: choice) }
+        }
         photos = []
     }
 
     func search(_ query: String, environment: AppEnvironment) async {
         searchTask?.cancel()
+        self.query = query
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             photos = []
