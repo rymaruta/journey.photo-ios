@@ -61,10 +61,19 @@ jobs:
           # 機種名は固定しない（Xcode が上がると入っているシミュレータが替わる）
           DEVICE="$(python3 Tools/pick-simulator.py)"
           echo "テストに使うシミュレータ: $DEVICE"
-          xcode-project run-tests \
+          # **落ちた理由はここに出ない**——`run-tests` は xcodebuild の出力を
+          # `/tmp/xcodebuild_logs` に伏せるので、本文には「0件で失敗」としか
+          # 残らない（実際 run #1 がそうだった）。artifact を落としに行かずに
+          # 済むよう、落ちた回だけ `error:` の行を取り出して本文に出す
+          if ! xcode-project run-tests \
             --project JourneyPhoto.xcodeproj \
             --scheme JourneyPhoto \
-            --device "$DEVICE"
+            --device "$DEVICE"; then
+            echo "::group::コンパイルエラー"
+            grep -hE "error:" /tmp/xcodebuild_logs/*.log 2>/dev/null | sort -u | head -200 || echo "(xcodebuild のログが見つからない)"
+            echo "::endgroup::"
+            exit 1
+          fi
 
       # **秘密がまだ無くてもテストまでは回す。** App Store Connect の API キーは
       # 人が画面から落としてくるもので、揃う前にも「本物の SwiftUI で通るか」を
