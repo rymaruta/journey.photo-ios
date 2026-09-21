@@ -198,25 +198,10 @@ struct StoryInsightsView: View {
         ago(from: story.createdAt).map { L("\($0)に投稿", "Posted \($0)") }
     }
 
-    /// 「2時間前」。**サーバーの時刻が読めなければ何も出さない**
-    /// （「0分前」と書くより、書かない方が正しい）
+    /// 「2時間前」。決まりは閲覧画面と共用（`StoryPlayback.ago`）
     private func ago(from iso: String?) -> String? {
-        guard let iso, let date = StoryInsightsView.formatter.date(from: iso) else { return nil }
-        let seconds = Date().timeIntervalSince(date)
-        guard seconds >= 0 else { return nil }
-        let minutes = Int(seconds / 60)
-        if minutes < 1 { return L("たった今", "just now") }
-        if minutes < 60 { return L("\(minutes)分前", "\(minutes)m ago") }
-        let hours = minutes / 60
-        if hours < 24 { return L("\(hours)時間前", "\(hours)h ago") }
-        return L("\(hours / 24)日前", "\(hours / 24)d ago")
+        StoryPlayback.ago(from: iso)
     }
-
-    private static let formatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
 
     private func load() async {
         isLoading = true

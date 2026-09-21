@@ -57,6 +57,26 @@ final class LenientDecodingTests: XCTestCase {
 
 /// ストーリーの返信。
 ///
+/// 投稿者が選んだ表示秒数（`stories.ts` が 3〜15 で保存）。
+/// **復号していない頃は、投稿画面で選んだ秒数が閲覧で一度も効いていなかった。**
+final class StoryDurationDecodingTests: XCTestCase {
+
+    private func story(_ json: String) throws -> Story {
+        try JSONDecoder.api.decode(Story.self, from: Data(json.utf8))
+    }
+
+    func testDurationSecIsDecoded() throws {
+        let s = try story(#"{"id":"story-1","src":"https://x.test/1.jpg","durationSec":7}"#)
+        XCTAssertEqual(s.durationSec, 7)
+    }
+
+    /// 既定の5はサーバーが保存しないので、無ければ `nil`（画面側が 5 にする）。
+    func testMissingDurationIsNil() throws {
+        let s = try story(#"{"id":"story-1","src":"https://x.test/1.jpg"}"#)
+        XCTAssertNil(s.durationSec)
+    }
+}
+
 /// **定型の反応は `text` ではなく `emoji` に入って返る**
 /// （`api-user/src/storyReplies.ts` の `REACTIONS`）。見ていないと、
 /// 返信の一覧に**名前だけの空行**が並ぶ。

@@ -6,6 +6,8 @@ open class AVPlayerItem {}
 
 open class AVPlayer {
     public private(set) var currentItem: AVPlayerItem? = AVPlayerItem()
+    /// 本物と同じ形。ミュートの実体
+    public var isMuted: Bool = false
     public init(url: URL) {}
     public func play() {}
     public func pause() {}

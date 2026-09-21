@@ -142,6 +142,9 @@ struct Story: Decodable, Identifiable, Equatable {
     let expiresAt: String?
     /// **本人にしか返らない**（見た人には落として返る）
     let replyCount: Int?
+    /// 投稿者が選んだ表示秒数（3〜15）。**既定の5は保存されないので `nil`**。
+    /// 復号していなかった頃は、投稿画面で選んだ秒数が閲覧では一度も効いていなかった
+    let durationSec: Int?
 
     var imageURL: URL? { URL(string: src) }
     var isVideo: Bool { mediaType == "video" }

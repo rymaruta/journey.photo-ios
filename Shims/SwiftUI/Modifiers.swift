@@ -221,6 +221,11 @@ extension View {
                                         @ViewBuilder message: () -> M) -> Self { self }
     public func alert<A: View>(_ title: String, isPresented: Binding<Bool>,
                                @ViewBuilder actions: () -> A) -> Self { self }
+    /// 下から出る選択肢（本物は iOS 15 以降）。`Menu` と違い `isPresented` を
+    /// 持つので、開いている間に自動送りを止められる
+    public func confirmationDialog<A: View>(_ title: String, isPresented: Binding<Bool>,
+                                            titleVisibility: VisibilityShim = .automatic,
+                                            @ViewBuilder actions: () -> A) -> Self { self }
 
     // 仕掛け
     public func task(priority: TaskPriority = .userInitiated, _ action: @escaping () async -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
@@ -276,6 +281,11 @@ extension TabViewStyleShim {
 extension View {
     public func gesture<G: Gesture>(_ gesture: G) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// 長押し。`onPressingChanged` は指の着地で true・離れで false を返す
+    /// （本物の SwiftUI と同じ形。押している間だけ止める、に使う）
+    public func onLongPressGesture(minimumDuration: Double = 0.5, maximumDistance: CGFloat = 10,
+                                   perform action: @escaping () -> Void,
+                                   onPressingChanged: ((Bool) -> Void)? = nil) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func scaleEffect(_ scale: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func animation<V: Equatable>(_ animation: Animation?, value: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tabViewStyle(_ style: TabViewStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

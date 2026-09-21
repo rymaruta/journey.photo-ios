@@ -15,6 +15,10 @@ struct RemoteImage: View {
     /// Web で掴んで動かせる）。既定の中央のままだと、動かした写真が
     /// アプリでだけ別の切り抜きで出る。
     var alignment: Alignment = .center
+    /// 読み込みが片付いたときに呼ぶ（出た＝true・出せないと分かった＝false）。
+    /// ストーリーが「絵が出る前から秒数を減らす」のを防ぐためのもの。
+    /// 既定は何もしない（他の呼び出しは変わらない）
+    var onSettled: ((Bool) -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -28,8 +32,10 @@ struct RemoteImage: View {
                         // 44〜56pt の枠では切れて見えなくなる
                         image.resizable().aspectRatio(contentMode: contentMode)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+                            .onAppear { onSettled?(true) }
                     case .failure:
                         placeholder
+                            .onAppear { onSettled?(false) }
                     case .empty:
                         ProgressView()
                     @unknown default:
