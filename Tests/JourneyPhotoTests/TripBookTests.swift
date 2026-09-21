@@ -5,9 +5,13 @@ import XCTest
 /// 1つの旅に紛れ込む**——一冊の意味が壊れるので、規則ごとに見張る。
 final class TripBookTests: XCTestCase {
 
+    /// **投稿者を必ず入れる。** 旅は1人のものなので、身元の分からない
+    /// 写真は束ねない規則（`TripOwnershipTests`）。実データの写真は
+    /// 全部 `userId` を持っている（30/30）
     private func photo(_ id: String, date: String?, place: String? = nil,
-                       likes: Int? = nil) throws -> Photo {
-        var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\""]
+                       likes: Int? = nil, user: String = "owner") throws -> Photo {
+        var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\"",
+                      "\"userId\":\"\(user)\""]
         if let date { fields.append("\"date\":\"\(date)\"") }
         if let place { fields.append("\"location\":\"\(place)\"") }
         if let likes { fields.append("\"likes\":\(likes)") }
@@ -97,7 +101,8 @@ final class TripBookTests: XCTestCase {
 final class TripRouteTests: XCTestCase {
 
     private func photo(_ id: String, place: String?) throws -> Photo {
-        var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\""]
+        var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\"",
+                      "\"userId\":\"owner\""]
         if let place { fields.append("\"location\":\"\(place)\"") }
         return try JSONDecoder.api.decode(Photo.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
     }
@@ -132,5 +137,43 @@ final class TripRouteTests: XCTestCase {
             try photo("c", place: "金沢"),
         ]
         XCTAssertEqual(TripBook.route(of: photos), ["金沢", "福井", "金沢"])
+    }
+}
+
+/// **旅は1人のもの。**
+///
+/// 公開一覧は全員の写真が入っているので、日付だけで束ねると
+/// **同じ日に別の人が撮った写真が1つの旅に混ざる**。人が増えた瞬間に起きる。
+final class TripOwnershipTests: XCTestCase {
+
+    private func photo(_ id: String, user: String?, date: String) throws -> Photo {
+        var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\"",
+                      "\"date\":\"\(date)\""]
+        if let user { fields.append("\"userId\":\"\(user)\"") }
+        return try JSONDecoder.api.decode(Photo.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
+    }
+
+    func testPhotosFromDifferentPeopleAreDifferentTrips() throws {
+        let trips = TripBook.trips(from: [
+            try photo("a1", user: "A", date: "2026-05-01"),
+            try photo("b1", user: "B", date: "2026-05-01"),
+            try photo("a2", user: "A", date: "2026-05-02"),
+            try photo("b2", user: "B", date: "2026-05-02"),
+        ])
+        XCTAssertEqual(trips.count, 2, "別の人の写真が1つの旅に混ざっている")
+        for trip in trips {
+            let owners = Set(trip.photos.compactMap(\.userId))
+            XCTAssertEqual(owners.count, 1, "1つの旅に2人ぶんの写真が入っている")
+        }
+    }
+
+    /// **投稿者が分からない写真どうしを束ねない。** 空を鍵にすると、
+    /// 身元の分からない写真が「同じ人の旅」になる
+    func testUnknownOwnersDoNotFormATrip() throws {
+        let trips = TripBook.trips(from: [
+            try photo("x", user: nil, date: "2026-05-01"),
+            try photo("y", user: nil, date: "2026-05-02"),
+        ])
+        XCTAssertTrue(trips.isEmpty)
     }
 }

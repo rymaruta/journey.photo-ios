@@ -46,7 +46,23 @@ enum TripBook {
     }
 
     /// 新しい旅が先頭。
+    ///
+    /// **旅は1人のもの。** 投稿者ごとに分けてからまとめる——日付だけで
+    /// 束ねると、**同じ日に別の人が撮った写真が1つの旅に混ざる**
+    /// （公開一覧は全員のぶんが入っているので、人が増えた瞬間に起きる）。
     static func trips(from photos: [Photo]) -> [Trip] {
+        var byUser: [String: [Photo]] = [:]
+        for photo in photos {
+            // 投稿者が分からない写真は**それだけで1つの束**にしない。
+            // 空文字を鍵にすると、身元の分からない写真どうしが
+            // 「同じ人の旅」になってしまう
+            byUser[photo.userId ?? "unknown-\(photo.id)", default: []].append(photo)
+        }
+        return byUser.values.flatMap { tripsForOnePerson($0) }
+            .sorted { $0.start > $1.start }
+    }
+
+    private static func tripsForOnePerson(_ photos: [Photo]) -> [Trip] {
         // **日付を持たない写真は旅に入れない。** いつの旅か決まらないものを
         // 混ぜると、関係ない写真が一冊に紛れ込む
         let dated = photos.compactMap { photo -> (Photo, Date)? in
@@ -77,8 +93,6 @@ enum TripBook {
                     photos: photos
                 )
             }
-            // 新しい旅から見せる（いちばん近い記憶が先）
-            .sorted { $0.start > $1.start }
     }
 
     /// 通った順に並べた撮影地。**同じ場所が続いたらまとめる**
