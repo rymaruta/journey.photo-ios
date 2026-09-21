@@ -84,10 +84,13 @@ struct GalleryView: View {
         .task(id: auth.userId) {
             guard auth.userId != nil else {
                 model.use(viewerId: nil, following: [])
+                await model.loadMyPhotos(environment.photos, viewerId: nil)
                 return
             }
             let ids = (try? await environment.social.myFollowingIds()) ?? []
             model.use(viewerId: auth.userId, following: Set(ids))
+            // 今日のテーマに参加したかの判定に要る（API から読む）
+            await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
         }
         .refreshable { await model.load(force: true) }
         // **ブロック／通報の直後に消す。** 手元に読み終えた配列が残るので、
@@ -375,6 +378,8 @@ struct GalleryView: View {
                 // アプリの提案図では**ホームに戻っている**ので合わせる
                 // ——「いま誰が旅に出ているか」は開いた瞬間に見たいもの
                 StoriesRow()
+                // **今日のテーマ**（モック1）。通信はしない——日付から決まる
+                DailyThemeCard(photos: model.allPhotosForTheme, myPhotos: model.myPhotos)
                 feedPicker
                 featuredSections
                 ForEach(photos) { photo in

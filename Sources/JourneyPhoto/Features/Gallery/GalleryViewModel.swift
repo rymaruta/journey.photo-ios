@@ -70,6 +70,24 @@ final class GalleryViewModel: ObservableObject {
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
     private var all: [Photo] = []
 
+    /// 今日のテーマの背景に使う公開写真（絞り込みの影響を受けない全件）
+    var allPhotosForTheme: [Photo] { all }
+
+    /// 自分の写真。**今日のテーマに参加したかの判定に使う。**
+    ///
+    /// 公開一覧（静的 JSON）ではなく**API から読む**——投稿したばかりの
+    /// 写真は再ビルドまで公開一覧に載らないので、公開一覧だけを見ると
+    /// 「参加したのに参加済みにならない」が数分続く。
+    @Published private(set) var myPhotos: [Photo] = []
+
+    func loadMyPhotos(_ photos: PhotoService, viewerId: String?) async {
+        guard viewerId != nil else {
+            myPhotos = []
+            return
+        }
+        myPhotos = (try? await photos.myPhotos()) ?? []
+    }
+
     func select(category: String?) {
         self.category = category
         state = .loaded(filtered())

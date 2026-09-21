@@ -146,6 +146,8 @@ extension View {
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 見た目の薄さ。**押せなくはならない**（本物と同じ。押せなくするのは `disabled`）
     public func opacity(_ value: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 折り返しを縦に伸ばす（本物と同じ）。長い説明文が1行に潰れないように
+    public func fixedSize(horizontal: Bool, vertical: Bool) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineLimit(_ n: Int) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// **nil は「制限しない」**（本物と同じ）。折りたたみの展開で使う
     public func lineLimit(_ n: Int?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
@@ -162,6 +164,9 @@ extension View {
     public func foregroundStyle<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func background<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func background<S: ShapeStyle, T: Shape>(_ s: S, in shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 後ろに View を敷く版（本物にもある）。`alignment` で寄せる
+    public func background<V: View>(alignment: Alignment = .center,
+                                    @ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tint(_ c: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func listRowBackground<V: View>(_ view: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

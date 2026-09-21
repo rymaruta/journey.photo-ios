@@ -10,7 +10,12 @@ struct UploadView: View {
     @State private var showSongPicker = false
     @Environment(\.dismiss) private var dismiss
 
-    init() {
+    /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき）。
+    /// **入れるだけで、消せる**——決めつけない
+    private let initialTag: String?
+
+    init(initialTag: String? = nil) {
+        self.initialTag = initialTag
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
         // ため、ここでは既定の組み立てを使う
         let api = APIClient(tokenProvider: CognitoTokenProvider())
@@ -65,6 +70,10 @@ struct UploadView: View {
             submitSection
         }
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
+        .onAppear {
+            // **今日のテーマから来たときだけ。** 既に何か打っていれば触らない
+            if let initialTag, model.tagsText.isEmpty { model.tagsText = initialTag }
+        }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { song in model.song = song }

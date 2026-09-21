@@ -12,6 +12,9 @@ struct RootView: View {
     /// 投稿の「＋」から開くもの
     @State private var showPostChoice = false
     @State private var showPhotoUpload = false
+    /// 今日のテーマから来たときのタグ（投稿画面に最初から入れておく）
+    @State private var pendingThemeTag: String?
+    @ObservedObject private var missions = MissionRouter.shared
     @State private var showStoryComposer = false
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
@@ -128,6 +131,16 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             ToastOverlay().padding(.bottom, 116)
         }
+        // 「参加する」が押されたら、投稿画面をそのタグで開く
+        .onChange(of: missions.requests) { _, _ in
+            pendingThemeTag = missions.tag
+            showPhotoUpload = true
+        }
+        // 今日のテーマの「参加する」から来たときのタグ。
+        // **投稿画面を閉じたら忘れる**（次の投稿に引きずらない）
+        .onChange(of: showPhotoUpload) { _, shown in
+            if !shown { pendingThemeTag = nil }
+        }
         .sheet(isPresented: $showPostChoice) {
             PostSheet { kind in
                 switch kind {
@@ -137,7 +150,7 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $showPhotoUpload) {
-            NavigationStack { UploadView() }
+            NavigationStack { UploadView(initialTag: pendingThemeTag) }
         }
         .sheet(isPresented: $showStoryComposer) {
             NavigationStack { StoryComposerView() }
