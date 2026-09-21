@@ -20,6 +20,7 @@ struct SearchView: View {
                 if query.isEmpty && model.category == nil {
                     popularSpots
                     seasonal
+                    gear
                 }
                 results
             }
@@ -135,35 +136,36 @@ struct SearchView: View {
         let spots = model.popularSpots
         if !spots.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(L("人気スポット", "Popular places"))
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(spots) { spot in
-                            NavigationLink {
-                                TagPhotosView(kind: .location(spot.id))
-                            } label: {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Color.clear
-                                        .aspectRatio(1, contentMode: .fit)
-                                        .overlay {
-                                            RemoteImage(url: spot.cover.gridImageURL,
-                                                        alignment: spot.cover.gridAlignment)
-                                        }
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    Text(spot.id)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(WebTheme.foreground)
-                                        .lineLimit(1)
-                                    Text(L("\(spot.count)枚", "\(spot.count) photos"))
-                                        .font(.caption)
-                                        .foregroundStyle(WebTheme.faint)
-                                }
-                                .frame(width: 128)
-                            }
-                            .buttonStyle(.plain)
+                sectionHeader(L("注目スポット", "Featured places"))
+                // **大きく2枚**（モック9）。小さな正方形が並ぶより、
+                // 「行ってみたい」が立ち上がる
+                HStack(spacing: 10) {
+                    ForEach(spots.prefix(2)) { spot in
+                        NavigationLink {
+                            TagPhotosView(kind: .location(spot.id))
+                        } label: {
+                            spotCard(spot)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 16)
+                }
+                .padding(.horizontal, 16)
+
+                if spots.count > 2 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(spots.dropFirst(2)) { spot in
+                                NavigationLink {
+                                    TagPhotosView(kind: .location(spot.id))
+                                } label: {
+                                    spotCard(spot)
+                                        .frame(width: 150)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
                 }
             }
         }
@@ -175,7 +177,16 @@ struct SearchView: View {
         let photos = model.seasonal
         if !photos.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(L("季節のおすすめ", "In season now"))
+                // モックの「今週末に行きたい場所」にあたる棚。
+                // **「おすすめ」とは書かない**——推薦の口は無く、
+                // 中身は「いまの季節のタグが付いた写真」そのもの
+                VStack(alignment: .leading, spacing: 2) {
+                    sectionHeader(L("いまの季節の写真", "This season"))
+                    Text(L("いまの季節のタグが付いた写真から", "Photos tagged for this season"))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .padding(.horizontal, 16)
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(photos) { photo in
@@ -192,6 +203,90 @@ struct SearchView: View {
                 }
             }
         }
+    }
+
+    /// 撮影地の札（モック9 の大きな絵）。**枚数は数えたもの**
+    private func spotCard(_ spot: DiscoverySections.Spot) -> some View {
+        Color.clear
+            .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            .overlay {
+                RemoteImage(url: spot.cover.gridImageURL, alignment: spot.cover.gridAlignment)
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(spot.id)
+                        .font(.headline)
+                        .foregroundStyle(WebTheme.foreground)
+                        .lineLimit(2)
+                    Text(L("\(spot.count)枚の写真", "\(spot.count) photos"))
+                        .font(.caption)
+                        .foregroundStyle(Color.white.opacity(0.85))
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.8)],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// 機材から探す（モック9）。
+    ///
+    /// **分け方を隠さない**——見出しの下に「〜35mm」を出す。
+    /// レンズ名で分けないのは、ズーム1本が広角も望遠も撮れるから。
+    @ViewBuilder
+    private var gear: some View {
+        let sections = model.gear
+        if !sections.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader(L("機材から探す", "Browse by gear"))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(sections) { section in
+                            NavigationLink {
+                                GearPhotosView(section: section)
+                            } label: {
+                                gearCard(section)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
+    private func gearCard(_ section: GearGroups.Section) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear
+                .aspectRatio(16.0 / 10.0, contentMode: .fit)
+                .overlay {
+                    RemoteImage(url: section.photos.first?.gridImageURL,
+                                alignment: section.photos.first?.gridAlignment ?? .center)
+                }
+                .clipped()
+            VStack(alignment: .leading, spacing: 3) {
+                Text(section.group.label)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(WebTheme.foreground)
+                Text(section.group.note)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                Text(L("\(section.group.range)・\(section.count)枚",
+                       "\(section.group.range) · \(section.count)"))
+                    .font(.caption2)
+                    .foregroundStyle(WebTheme.faint)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: 200)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -285,6 +380,9 @@ final class SearchViewModel: ObservableObject {
     /// 発見の塊（モック2）
     @Published private(set) var popularSpots: [DiscoverySections.Spot] = []
     @Published private(set) var seasonal: [Photo] = []
+    /// 機材から探す（モック9）。**焦点距離で分ける**——レンズ名では
+    /// ズーム1本が広角も望遠も含んでしまう
+    @Published private(set) var gear: [GearGroups.Section] = []
     @Published private(set) var category: String?
     @Published private(set) var sort: GallerySort = .new
 
@@ -335,6 +433,7 @@ final class SearchViewModel: ObservableObject {
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
         seasonal = DiscoverySections.seasonal(in: allPhotos)
+        gear = GearGroups.sections(in: allPhotos)
         categories = CategoryChoices.all.filter { choice in
             allPhotos.contains { CategoryChoices.isChosen(current: $0.category ?? "", choice: choice) }
         }
