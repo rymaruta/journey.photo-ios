@@ -239,7 +239,10 @@ jobs:
           # **`~` は upload-artifact が展開しない**（常に0件になり、
           # `if-no-files-found: ignore` が黙らせる）。シェルで集めてから渡す
           find "$HOME/Library/Developer/Xcode/DerivedData" -name "*.xcresult" -maxdepth 4             -exec cp -R {} build/logs/ \; 2>/dev/null || true
-          cp -R /tmp/xcodebuild_logs build/logs/ 2>/dev/null || true
+          # **xcodebuild を直に叩くようにしたので、伏せ先はもう無い。**
+          # 拾うのは自分で書いた全文ログと、`-resultBundlePath` の結果
+          cp /tmp/xcodebuild-full.log build/logs/ 2>/dev/null || true
+          cp -R build/ios/test/Test.xcresult build/logs/ 2>/dev/null || true
           ls -la build/logs || true
 
       - name: 落ちたときに読むもの
@@ -248,9 +251,12 @@ jobs:
         with:
           name: build-logs
           # テストの結果とビルドのログ。落ちた理由はここに残る
+          # **`*.xml` はもう出ない。** `xcode-project run-tests` をやめた
+          # 時点で JUnit の書き出しも無くなったので、ここだけ残していると
+          # 「0件で何も上がらない」のを `if-no-files-found: ignore` が
+          # 黙らせる（run #9 が実際そうだった）
           path: |
             build/ios/ipa/*.ipa
-            build/ios/test/*.xml
             build/logs/**
           retention-days: 7
           if-no-files-found: ignore
