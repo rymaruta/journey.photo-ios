@@ -67,6 +67,53 @@ struct NotificationsView: View {
         }
     }
 
+    /// 1件ぶん。**押せるようにする**——行き止まりの一覧は「壊れている」に見える。
+    /// 行き先が分からないものは押せないまま出す（空振りを作らない）
+    @ViewBuilder
+    private func rowLink(_ row: AppNotification) -> some View {
+        switch model.destination(for: row) {
+        case .photo(let photo, let fromPublicFeed):
+            NavigationLink {
+                PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed)
+            } label: {
+                NotificationRow(notification: row, following: model.following,
+                                onFollowBack: { await model.followBack($0, environment: environment) })
+            }
+        case .user(let userId):
+            NavigationLink { UserProfileView(userId: userId) } label: {
+                NotificationRow(notification: row, following: model.following,
+                                onFollowBack: { await model.followBack($0, environment: environment) })
+            }
+        case .none:
+            NotificationRow(notification: row, following: model.following,
+                            onFollowBack: { await model.followBack($0, environment: environment) })
+        }
+    }
+
+    /// 何も無いときの画面（モック10 の「まだ通知はありません」）。
+    /// **「1件も無い」と「この種類が無い」を分ける**
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "bell")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(WebTheme.faint)
+            Text(model.rows.isEmpty
+                 ? L("まだお知らせはありません", "Nothing yet")
+                 : L("この種類のお知らせはありません", "Nothing of this kind"))
+                .font(.headline)
+                .foregroundStyle(WebTheme.foreground)
+            if model.rows.isEmpty {
+                Text(L("新しいいいねやコメント、フォローが届くとここに出ます。",
+                       "Likes, comments and follows will show up here."))
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.muted2)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+
     private var list: some View {
         List {
             filterChips
@@ -75,29 +122,21 @@ struct NotificationsView: View {
             if let message = model.errorMessage {
                 Text(message).foregroundStyle(.red).font(.callout)
             } else if shownRows.isEmpty && !model.isLoading {
-                // **「1件も無い」と「この種類が無い」を分ける**
-                Text(model.rows.isEmpty
-                     ? L("まだ届いていません", "Nothing yet")
-                     : L("この種類のお知らせはありません", "Nothing of this kind"))
-                    .foregroundStyle(.secondary)
+                emptyState
+                    .listRowBackground(Color.clear)
             }
 
-            ForEach(shownRows) { row in
-                // **押せるようにする。** 行き止まりの一覧は「壊れている」に見える。
-                // 行き先が分からないものは押せないまま出す（空振りを作らない）
-                switch model.destination(for: row) {
-                case .photo(let photo, let fromPublicFeed):
-                    NavigationLink {
-                        PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed)
-                    } label: {
-                        NotificationRow(notification: row)
+            // **時間ごとにまとめる**（モック10）。並べ替えはしない
+            // ——サーバーが返した新しい順のまま切るだけ
+            ForEach(NotificationGroups.grouped(shownRows)) { group in
+                Section {
+                    ForEach(group.rows) { row in
+                        rowLink(row)
                     }
-                case .user(let userId):
-                    NavigationLink { UserProfileView(userId: userId) } label: {
-                        NotificationRow(notification: row)
-                    }
-                case .none:
-                    NotificationRow(notification: row)
+                } header: {
+                    Text(group.bucket.label)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(WebTheme.foreground)
                 }
             }
         }
@@ -105,10 +144,10 @@ struct NotificationsView: View {
             // **読めたときだけ消す。** サーバーは未読数を載せるが、既読に
             // したことは端末のアイコンに伝わらない——誰も消さないと増える
             // 一方。ただし圏外で開いた回に消すと、タブは 3・アイコンは 0 に割れる
-            if await model.load(environment: environment) { await push.clearBadge() }
+            if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge() }
         }
         .refreshable {
-            if await model.load(environment: environment) { await push.clearBadge() }
+            if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge() }
         }
     }
 }
@@ -116,6 +155,12 @@ struct NotificationsView: View {
 private struct NotificationRow: View {
 
     let notification: AppNotification
+    /// いまフォローしている人。**フォロー通知の「フォローバック」を
+    /// 出すかどうかの判断に使う**——既にフォローしている相手に出さない
+    var following: Set<String> = []
+    var onFollowBack: ((String) async -> Void)?
+
+    @State private var busy = false
 
     var body: some View {
         // 知らない種類は描かない（既定の文言で嘘を出さない）
@@ -133,8 +178,37 @@ private struct NotificationRow: View {
                     }
                 }
                 Spacer()
+                followBackButton
             }
             .padding(.vertical, 2)
+        }
+    }
+
+    /// フォローバック（モック10）。
+    ///
+    /// **出すのはフォロー通知で、まだフォローしていない相手のときだけ。**
+    /// 既にフォローしている相手に出すと、押しても何も変わらないボタンになる。
+    @ViewBuilder
+    private var followBackButton: some View {
+        if notification.kind == .follow, let userId = notification.byId ?? notification.targetUserId,
+           !following.contains(userId), let onFollowBack {
+            Button {
+                busy = true
+                Task {
+                    await onFollowBack(userId)
+                    busy = false
+                }
+            } label: {
+                Text(L("フォローバック", "Follow back"))
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
+                    .background(WebTheme.foreground, in: Capsule())
+                    .foregroundStyle(WebTheme.accentText)
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .opacity(busy ? 0.5 : 1)
         }
     }
 }
@@ -163,6 +237,8 @@ final class NotificationsViewModel: ObservableObject {
     /// 一生載らない。引き当てられないと**押しても何も起きない行**になる。
     private var mine: [Photo] = []
     @Published private(set) var unread = 0
+    /// いまフォローしている人。**フォローバックを出すかの判断だけに使う**
+    @Published private(set) var following: Set<String> = []
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
 
@@ -203,7 +279,21 @@ final class NotificationsViewModel: ObservableObject {
     ///   取得に失敗した回にアイコンだけ 0 にすると、タブのバッジは 3 のまま
     ///   アイコンは 0、という食い違いが残る。
     @discardableResult
-    func load(environment: AppEnvironment) async -> Bool {
+    /// いまフォローしている人を読む。**自分の userId が要る**
+    private func loadFollowing(environment: AppEnvironment, viewerId: String?) async {
+        guard let me = viewerId, !me.isEmpty else { return }
+        guard let list = try? await environment.social.following(userId: me) else { return }
+        following = Set(list.users.map(\.id))
+    }
+
+    /// フォローバック。**成功したときだけ**印を更新する
+    /// （失敗したのにボタンが消えると、フォローできたように見える）
+    func followBack(_ userId: String, environment: AppEnvironment) async {
+        guard (try? await environment.social.follow(userId: userId)) != nil else { return }
+        following.insert(userId)
+    }
+
+    func load(environment: AppEnvironment, viewerId: String?) async -> Bool {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -213,6 +303,9 @@ final class NotificationsViewModel: ObservableObject {
             mine = (try? await environment.photos.myPhotos()) ?? []
             let page = try await environment.notifications.fetch()
             rows = page.items
+            // **フォローバックを出すかの判断に要る。** 取れなくても
+            // お知らせ自体は出す（ボタンが出ないだけ）
+            await loadFollowing(environment: environment, viewerId: viewerId)
             unread = page.unread
             // **開いたときに1回だけ既読にする。** 読めたあとに呼ぶので、
             // 取得に失敗した回でバッジだけ消える事故が起きない

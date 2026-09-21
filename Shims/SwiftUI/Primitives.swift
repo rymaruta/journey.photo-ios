@@ -212,7 +212,7 @@ public struct Font {
     public static func system(size: Double, weight: Weight) -> Font { Font() }
     public func weight(_ w: Weight) -> Font { self }
     public var bold: Font { self }
-    public struct Weight { public static let bold = Weight(), semibold = Weight(), medium = Weight(), regular = Weight(), heavy = Weight() }
+    public struct Weight { public static let bold = Weight(), semibold = Weight(), medium = Weight(), regular = Weight(), heavy = Weight(), light = Weight(), thin = Weight(), ultraLight = Weight() }
 }
 extension Font {
     public var weight: (Weight) -> Font { { _ in self } }

@@ -144,6 +144,8 @@ extension View {
     public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 見た目の薄さ。**押せなくはならない**（本物と同じ。押せなくするのは `disabled`）
+    public func opacity(_ value: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func lineLimit(_ n: Int) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// **nil は「制限しない」**（本物と同じ）。折りたたみの展開で使う
     public func lineLimit(_ n: Int?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
