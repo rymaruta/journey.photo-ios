@@ -146,6 +146,7 @@ public struct Color: View, ShapeStyle, Hashable {
     // `ShapeStyle` の静的プロパティから作るので、アクタに属さない init が要る
     public static let white = Color()
     public static let black = Color()
+    public static let clear = Color()
     public static let red = Color()
     public static let pink = Color()
     public static let orange = Color()

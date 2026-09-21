@@ -36,9 +36,20 @@ struct PhotoTile: View {
     let photo: Photo
 
     var body: some View {
-        RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-            .aspectRatio(4.0 / 3.0, contentMode: .fill)
+        // **枠の形は「空の四角」で決める。**
+        //
+        // 写真そのものに `.aspectRatio(_, contentMode: .fill)` を掛けると、
+        // 枠を決める側が居ないので**写真がセルからはみ出して隣に重なる**
+        // （実機の絵で確認。staging には写真が無く、空の格子では
+        //  一度も見えなかった壊れ方）。**先に 4:3 の場所を取り**、
+        // そこへ写真を流し込んでから切り抜く。
+        Color.clear
+            .aspectRatio(4.0 / 3.0, contentMode: .fit)
+            .overlay {
+                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+            }
             .clipped()
+            .contentShape(Rectangle())
             .overlay(alignment: .bottom) { caption }
             .accessibilityLabel(photo.accessibilityText)
     }
@@ -74,5 +85,26 @@ struct PhotoTile: View {
                 )
             )
         }
+    }
+}
+
+/// 決まった縦横比の枠に写真を流し込む。
+///
+/// **写真そのものに `.aspectRatio(_, contentMode: .fill)` を掛けない。**
+/// 枠を決める側が居ないので、写真がセルからはみ出して隣に重なる
+/// （実機の絵で確認）。**先に場所を取ってから**流し込む。
+struct PhotoFrame: View {
+
+    let photo: Photo
+    var aspect: CGFloat = 1
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(aspect, contentMode: .fit)
+            .overlay {
+                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+            }
+            .clipped()
+            .contentShape(Rectangle())
     }
 }

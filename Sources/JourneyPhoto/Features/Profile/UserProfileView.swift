@@ -43,8 +43,7 @@ struct UserProfileView: View {
                     LazyVGrid(columns: columns, spacing: 2) {
                         ForEach(model.photos) { photo in
                             NavigationLink { PhotoDetailView(photo: photo, context: model.photos) } label: {
-                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-                                    .aspectRatio(1, contentMode: .fill)
+                                PhotoFrame(photo: photo)
                             }
                             .buttonStyle(.plain)
                         }

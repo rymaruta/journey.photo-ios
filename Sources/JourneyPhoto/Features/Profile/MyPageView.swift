@@ -201,8 +201,7 @@ struct MyPageView: View {
     /// ——公開したつもりの写真が出ていない、がいちばん困る。
     private func gridCell(_ photo: Photo) -> some View {
         ZStack(alignment: .topTrailing) {
-            RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-                .aspectRatio(1, contentMode: .fill)
+            PhotoFrame(photo: photo)
             if model.isPinned(photo.id) {
                 Image(systemName: "pin.fill")
                     .font(.caption2)

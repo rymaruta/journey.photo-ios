@@ -246,3 +246,9 @@ public struct LayoutSubview {
     public func sizeThatFits(_ proposal: ProposedViewSize) -> CGSize { CGSize(width: 0, height: 0) }
     public func place(at: CGPoint, proposal: ProposedViewSize) {}
 }
+
+/// 四角。`contentShape` に渡して「押せる範囲」を決めるのに使う。
+public struct Rectangle: View, Shape {
+    public init() {}
+    public var body: Never { fatalError() }
+}
