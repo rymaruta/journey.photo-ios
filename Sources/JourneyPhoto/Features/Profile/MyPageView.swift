@@ -7,6 +7,7 @@ struct MyPageView: View {
     @StateObject private var model = MyPageViewModel()
     @State private var tab: ProfileTab = .posts
     @State private var showPostSheet = false
+    @State private var showDistanceNote = false
     @State private var showPhotoUpload = false
     @State private var showStoryComposer = false
     /// ストーリーの行に「読み直せ」と言うための数
@@ -123,6 +124,8 @@ struct MyPageView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if let profile = model.profile {
                     header(profile)
+                    stats
+                    distancePill
                     profileSetupNotice(profile)
                 }
                 postButton
@@ -177,6 +180,93 @@ struct MyPageView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
+    }
+
+
+    /// 数の並び（提案の絵）。**投稿・いいね・フォロワー・フォロー中**
+    private var stats: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                statPill(systemImage: "photo.on.rectangle",
+                         value: "\(model.photos.count)", label: L("投稿", "Posts"))
+                NavigationLink {
+                    FollowListView(userId: model.profile?.userId ?? "", kind: .followers)
+                } label: {
+                    statPill(systemImage: "person.2", value: "\(model.followers)",
+                             label: L("フォロワー", "Followers"))
+                }
+                .buttonStyle(.plain)
+                NavigationLink {
+                    FollowListView(userId: model.profile?.userId ?? "", kind: .following)
+                } label: {
+                    statPill(systemImage: "person", value: "\(model.following)",
+                             label: L("フォロー中", "Following"))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func statPill(systemImage: String, value: String, label: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.muted2)
+            Text(value)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(WebTheme.foreground)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(WebTheme.surface, in: Capsule())
+    }
+
+    /// 写真をつないだ距離。**実際に移動した距離ではない**ので、そう書く
+    /// （指示書 8-3）。押すと計算の中身を出す。
+    @ViewBuilder
+    private var distancePill: some View {
+        let km = TravelDistance.total(of: model.photos)
+        if km > 0 {
+            Button {
+                showDistanceNote = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "globe.asia.australia")
+                        .foregroundStyle(Color(red: 0.42, green: 0.68, blue: 1.0))
+                    Text(L("写真をつないだ距離", "Distance between photos"))
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.muted2)
+                    Text("\(TravelDistance.formatted(km)) km")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(WebTheme.foreground)
+                    Image(systemName: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .background(WebTheme.surface, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .alert(L("写真をつないだ距離", "Distance between photos"),
+                   isPresented: $showDistanceNote) {
+                Button(Labels.Common.close, role: .cancel) {}
+            } message: {
+                Text(distanceNote)
+            }
+        }
+    }
+
+    /// **「旅した距離」とだけ書かない。** 実際に歩いた・乗った距離だと
+    /// 読まれる（指示書 8-3）。
+    private var distanceNote: String {
+        L("撮影地の分かる写真を、古い順に直線で結んだ合計です。実際に歩いた・乗った距離ではありません（道のりではなく直線で、撮っていない区間は飛び、座標は約1kmに丸めてあります）。",
+          "The straight-line total between photos that have coordinates, oldest first. Not the distance you actually travelled.")
     }
 
     private var postButton: some View {
@@ -307,11 +397,19 @@ final class MyPageViewModel: ObservableObject {
 
     private let profiles: ProfileService
     private let photoService: PhotoService
+    private let social: SocialService
+
+    /// フォロワー／フォロー中の数（提案の絵の並び）。
+    /// **数え札はサーバーが持っている**（`followstats#`）ので、
+    /// 一覧の長さから数えない——50人で切ったぶんが落ちる
+    @Published private(set) var followers = 0
+    @Published private(set) var following = 0
 
     /// - Parameter api: 叩き先。**テストで差し替えるため**に開けてある。
     init(api: APIClient = APIClient(tokenProvider: CognitoTokenProvider())) {
         self.profiles = ProfileService(api: api)
         self.photoService = PhotoService(api: api)
+        self.social = SocialService(api: api)
     }
 
     func load() async {
@@ -331,6 +429,18 @@ final class MyPageViewModel: ObservableObject {
             // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
             self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
             self.photos = PhotoPinning.pinnedFirst(try await photos, pinned: self.pinnedIds)
+            // **数が取れなくても画面は出す**（0 のままになるだけ）。
+            //
+            // **`if let x = try? await …` と書かない。** 手元の構文検査
+            // （tree-sitter）が読めず、`verify.sh` が「構文が壊れている」と
+            // 言う（CLAUDE.md に記録のある制約）。文を分ける
+            if let userId = self.profile?.userId {
+                let stats = try? await self.social.followStats(userId: userId)
+                if let stats {
+                    self.followers = stats.followers
+                    self.following = stats.following
+                }
+            }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
