@@ -138,3 +138,21 @@ final class PushIntentTests: XCTestCase {
         _ = push
     }
 }
+
+/// 通知を押したときの行き先。
+///
+/// **真偽値にしない**——お知らせタブを開いたまま2回続けて押すと、
+/// 「変わっていない」と見なされて2回目が効かなくなる。画面側は
+/// この数を `.task(id:)` に渡して読み直している。
+@MainActor
+final class NotificationRouterTests: XCTestCase {
+
+    func testEachTapIsDistinguishable() async {
+        let router = NotificationRouter.shared
+        let before = router.openActivityRequests
+        router.openActivity()
+        router.openActivity()
+        XCTAssertEqual(router.openActivityRequests, before + 2,
+                       "2回押したのに1回ぶんしか数えていない")
+    }
+}

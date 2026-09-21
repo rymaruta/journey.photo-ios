@@ -6,6 +6,13 @@ struct NotificationsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
+    /// **通知を押すたびに読み直すため**に見ている。
+    ///
+    /// お知らせタブを開いたまま通知を押した回は、`RootView` の
+    /// `selection` が既に `.notifications` なので何も変わらない
+    /// ——`.task` は一度きりなので、**押した当の通知が出ないまま**
+    /// アイコンの数字も残っていた。
+    @ObservedObject private var router = NotificationRouter.shared
     @StateObject private var model = NotificationsViewModel()
 
     var body: some View {
@@ -46,7 +53,7 @@ struct NotificationsView: View {
                 }
             }
         }
-        .task {
+        .task(id: router.openActivityRequests) {
             // **読めたときだけ消す。** サーバーは未読数を載せるが、既読に
             // したことは端末のアイコンに伝わらない——誰も消さないと増える
             // 一方。ただし圏外で開いた回に消すと、タブは 3・アイコンは 0 に割れる
