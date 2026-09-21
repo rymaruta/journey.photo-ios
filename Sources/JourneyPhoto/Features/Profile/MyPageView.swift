@@ -279,8 +279,12 @@ final class MyPageViewModel: ObservableObject {
             // 外せない**ので、画面の中に直す手立てが無くなる
             // （`userProfile.ts` が 409 の本体にも今の一覧を入れているのは
             //  そのため。`APIError` は本体を持ち歩かないので引き直す）。
-            if let fresh = try? await profiles.myProfile().pinnedPhotoIds {
-                pinnedIds = fresh
+            // `if let x = try? await …` と1行で書かない
+            // ——`Tools/check-swift-syntax.js` が使っている tree-sitter の
+            // 文法が解釈できず、検査が赤くなる（Swift としては正しい）
+            let fresh = try? await profiles.myProfile()
+            if let ids = fresh?.pinnedPhotoIds {
+                pinnedIds = ids
                 photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)
             }
         }
