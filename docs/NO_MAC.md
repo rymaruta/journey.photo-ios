@@ -106,7 +106,7 @@ photo-gallery の枠に影響しません）。
 ### 6. ビルドする
 
 Codemagic の画面でリポジトリを開き、ブランチを
-`claude/journey-photo-ios-app-ffos85` にして **Start new build**。
+**`main`** にして **Start new build**。
 
 だいたい **10〜20分**。終わると:
 

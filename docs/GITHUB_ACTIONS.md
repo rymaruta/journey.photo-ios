@@ -65,7 +65,7 @@ GitHub → `journey.photo-ios` → **Settings** → **Secrets and variables** �
 ## 手順4: 流す
 
 GitHub → **Actions** → **TestFlight** → **Run workflow** →
-ブランチ `claude/journey-photo-ios-app-ffos85` → **Run**
+ブランチ **`main`** → **Run**（作業は main にマージ済み）
 
 - 「ビルドだけ試す」なら `submit` を **false** に（TestFlight へは上げません）
 - 所要 20〜40分（初回は道具の取得ぶん長め）

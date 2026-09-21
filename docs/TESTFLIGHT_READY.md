@@ -13,7 +13,7 @@
 | 2 | App Store Connect で**アプリの枠**を作る（Bundle ID `com.journeyphoto.JourneyPhoto`） | appstoreconnect.apple.com → マイ App → ＋ |
 | 3 | **App Store Connect API キー**を作る（App Manager） | appstoreconnect.apple.com/access/integrations/api |
 | 4 | **Secrets を4つ**入れる（下） | GitHub → journey.photo-ios → Settings → Secrets → Actions |
-| 5 | **Actions → TestFlight → Run workflow** | GitHub |
+| 5 | **Actions → TestFlight → Run workflow**（ブランチ **main**） | GitHub |
 
 ### Secrets（journey.photo-ios）
 
