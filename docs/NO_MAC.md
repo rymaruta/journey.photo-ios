@@ -9,7 +9,14 @@ owner:「Mac もってない」
 
 ## 何を使うか
 
-**Codemagic**（CI サービス）を勧めます。
+**owner の選択（2026-09-21）: GitHub Actions**。手順は
+**`docs/GITHUB_ACTIONS.md`** にあります。
+**リポジトリを public にすることが前提**です（private だと macOS は
+分数10倍で、photo-gallery のデプロイ枠を食い潰す）。
+
+以下は Codemagic 版の手順で、**そのまま残してあります**——public に
+したくない場合はこちらを使ってください（無料枠が別勘定で、
+photo-gallery の枠に影響しません）。
 
 | 案 | Mac | 費用 | 向き不向き |
 |---|---|---|---|

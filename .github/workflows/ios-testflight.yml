@@ -1,0 +1,143 @@
+# TestFlight に上げる（GitHub Actions・macOS ランナー）。
+#
+# **公開リポジトリでだけ回す想定。** macOS ランナーは private だと
+# **分数が10倍**で課金され、枠は owner のアカウント共通
+# ——`photo-gallery` のデプロイ（毎回18分）が何回分も消える。
+# CLAUDE.md が「枠切れ＝何も出せなくなる」と書いている状況そのもの
+# （2026-08 に実際に20日間止まっている）。public なら標準ランナーは無料。
+#
+# **Mac は要らない。** 証明書もプロファイルも、App Store Connect の API キーから
+# `codemagic-cli-tools`（Codemagic が公開している CLI・pip で入る）が作る。
+# Codemagic の設定（`codemagic.yaml`）も残してあるので、どちらでも回せる。
+name: TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: "TestFlight に上げる（false ならビルドだけ）"
+        type: boolean
+        default: true
+
+# **渡していない権限は漏らせない**（photo-gallery の IAM-3 と同じ方針）。
+# checkout に要るのは読み取りだけ。
+permissions:
+  contents: read
+
+env:
+  BUNDLE_ID: com.journeyphoto.JourneyPhoto
+
+jobs:
+  build:
+    # **`macos-latest` に固定しない。** ランナーの既定 Xcode が上がると
+    # 挙動が変わるので、上げるときは意図して上げる
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 設定の検査
+        run: python3 Tools/check-config.py
+
+      - name: 道具を入れる
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          # 署名・ビルド・提出をまとめて行う CLI（Codemagic が公開しているもの）。
+          # **pipx が無い回に備える**——ランナーの構成は黙って変わる
+          if command -v pipx >/dev/null 2>&1; then
+            pipx install codemagic-cli-tools
+          else
+            python3 -m pip install --break-system-packages codemagic-cli-tools
+          fi
+
+      - name: Xcode プロジェクトを作る
+        run: xcodegen generate
+
+      - name: テスト（本物の SwiftUI で型検査される最初の機会）
+        run: |
+          set -euo pipefail
+          # 機種名は固定しない（Xcode が上がると入っているシミュレータが替わる）
+          DEVICE="$(python3 Tools/pick-simulator.py)"
+          echo "テストに使うシミュレータ: $DEVICE"
+          xcode-project run-tests \
+            --project JourneyPhoto.xcodeproj \
+            --scheme JourneyPhoto \
+            --device "$DEVICE"
+
+      - name: 署名の用意（証明書とプロファイルを API キーから作る）
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          CERTIFICATE_PRIVATE_KEY: ${{ secrets.CERTIFICATE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # **鍵を自分で持つ。** 渡さないと CLI は毎回あたらしい配布証明書を
+          # 作り、Apple の上限（配布証明書は2枚まで）にすぐ当たる
+          if [ -z "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
+            echo "::error::CERTIFICATE_PRIVATE_KEY が未設定です（docs/GITHUB_ACTIONS.md の手順2）"
+            exit 1
+          fi
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: ビルド番号を決める
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # **アプリの Apple ID は Bundle ID から引く**（人が画面から写さない）
+          APP_APPLE_ID="$(bash Tools/app-apple-id.sh "$BUNDLE_ID" || true)"
+          if [ -z "$APP_APPLE_ID" ]; then
+            echo "::error::App Store Connect に $BUNDLE_ID のアプリが見つかりません（先にアプリの枠を作る）"
+            exit 1
+          fi
+          echo "アプリの Apple ID: $APP_APPLE_ID"
+          # **TestFlight にある最大の番号 + 1**（上げ忘れではねられる事故をなくす）
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" || echo 0)
+          bash Tools/set-build-number.sh $(( LATEST + 1 ))
+          # ビルド番号は project.yml に書くので、プロジェクトを作り直す
+          xcodegen generate
+          xcode-project use-profiles
+
+      - name: ビルド
+        run: |
+          set -euo pipefail
+          xcode-project build-ipa \
+            --project JourneyPhoto.xcodeproj \
+            --scheme JourneyPhoto
+
+      - name: TestFlight に上げる
+        if: ${{ inputs.submit }}
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # **審査には自動で出さない**（出す前にスクリーンショットと説明文が要る）
+          app-store-connect publish \
+            --path "build/ios/ipa/*.ipa" \
+            --testflight
+
+      - name: 落ちたときに読むもの
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          # テストの結果とビルドのログ。落ちた理由はここに残る
+          path: |
+            build/ios/ipa/*.ipa
+            build/ios/test/*.xml
+            ~/Library/Developer/Xcode/DerivedData/**/Logs/**/*.xcresult
+          retention-days: 7
+          if-no-files-found: ignore
