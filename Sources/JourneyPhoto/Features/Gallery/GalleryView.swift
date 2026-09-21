@@ -9,6 +9,9 @@ struct GalleryView: View {
     /// ——ブロックしても、戻ってくるとその人の写真がまだ並んでいた
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = GalleryViewModel()
+    /// タグの行を出しているか。**既定は畳む**——チップが2行あると
+    /// ファーストビューが「ボタンだらけ」になり、写真が下へ押し下げられる
+    @State private var showsTags = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -148,6 +151,39 @@ struct GalleryView: View {
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
 
+                // タグの開け閉め。**選んでいる数を出す**——畳んだままでも
+                // 「何かで絞っている」ことが分かるように
+                if !model.tags.isEmpty {
+                    Button {
+                        showsTags.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "number")
+                            if model.selectedTags.isEmpty {
+                                Text(L("タグ", "Tags"))
+                            } else {
+                                Text("\(model.selectedTags.count)")
+                            }
+                            Image(systemName: showsTags ? "chevron.up" : "chevron.down")
+                                .font(.caption2)
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(model.selectedTags.isEmpty ? WebTheme.muted2 : WebTheme.accentText)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 11)
+                        .background(
+                            model.selectedTags.isEmpty ? AnyShapeStyle(.ultraThinMaterial)
+                                                       : AnyShapeStyle(WebTheme.foreground),
+                            in: Capsule()
+                        )
+                        .overlay(Capsule().strokeBorder(
+                            model.selectedTags.isEmpty ? Color.white.opacity(0.12) : Color.clear,
+                            lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("gallery.tagsToggle")
+                }
+
                 // 並び替え。**Web も同じ列に置いている**（`FilterBar` の
                 // 右端のメニュー）。新しい順／古い順／人気順の3つ
                 Menu {
@@ -177,6 +213,13 @@ struct GalleryView: View {
                 .accessibilityIdentifier("gallery.sort")
             }
             .padding(.horizontal, 12)
+        }
+        // 端の見切れをぼかす（タグの行と同じ）
+        .mask {
+            LinearGradient(
+                colors: [Color.black, Color.black, Color.black.opacity(0)],
+                startPoint: .leading, endPoint: .trailing
+            )
         }
     }
 
@@ -212,6 +255,14 @@ struct GalleryView: View {
                 }
             }
             .padding(.horizontal, 12)
+        }
+        // **端の見切れをぼかす。** 横に続いていることが伝わり、
+        // 切れ方が雑に見えない
+        .mask {
+            LinearGradient(
+                colors: [Color.black, Color.black, Color.black.opacity(0)],
+                startPoint: .leading, endPoint: .trailing
+            )
         }
     }
 
@@ -262,7 +313,7 @@ struct GalleryView: View {
             if !model.categories.isEmpty {
                 filterBar
             }
-            if !model.tags.isEmpty {
+            if showsTags && !model.tags.isEmpty {
                 tagBar
             }
             // チップの列と写真の間に息を入れる（実機の絵で詰まって見えた）

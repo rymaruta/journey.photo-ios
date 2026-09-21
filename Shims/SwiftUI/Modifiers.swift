@@ -157,6 +157,7 @@ extension View {
     public func background<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func background<S: ShapeStyle, T: Shape>(_ s: S, in shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tint(_ c: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(radius: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func transition(_ t: AnyTransitionShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func allowsHitTesting(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
