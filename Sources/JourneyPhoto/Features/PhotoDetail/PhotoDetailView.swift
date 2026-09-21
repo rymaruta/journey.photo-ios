@@ -128,9 +128,11 @@ struct PhotoDetailView: View {
         if !shown.displayTitle.isEmpty || !category.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 if !shown.displayTitle.isEmpty {
+                    // **題は写真の次に来る主役。** 28 → 34pt の太字
                     Text(shown.displayTitle)
-                        .font(.title.weight(.bold))
+                        .font(.system(size: 34, weight: .bold))
                         .foregroundStyle(WebTheme.foreground)
+                        .lineSpacing(2)
                 }
                 if !category.isEmpty {
                     NavigationLink {
@@ -153,18 +155,16 @@ struct PhotoDetailView: View {
             NavigationLink {
                 TagPhotosView(kind: .location(location))
             } label: {
-                HStack(spacing: 6) {
-                    // Web はピンだけ色を持たせている（`text-sky-400`）
-                    Image(systemName: "mappin.and.ellipse")
-                        .foregroundStyle(Color(red: 0.22, green: 0.65, blue: 0.98))
+                // **札（チップ）をやめた。** 題のすぐ下に置くと、
+                // 丸い背景が題の邪魔をする。素の行の方が写真に近い
+                HStack(spacing: 8) {
+                    Image(systemName: "mappin.circle")
                     Text(location)
-                        .foregroundStyle(Color.white.opacity(0.9))
                         .lineLimit(1)
                 }
-                // **小さすぎた。** ここは写真の次に読まれる情報
-                .font(.body)
-                .padding(.vertical, 4)
-                .webChip()
+                .font(.title3)
+                .foregroundStyle(Color.white.opacity(0.65))
+                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
             }
             .buttonStyle(.plain)
         }
@@ -386,136 +386,135 @@ private struct TagRow: View {
     }
 }
 
+/// 撮影情報の札。
+///
+/// **提案どおりの二段構え**（2026-09-21・owner から絵で）:
+///
+///     撮影情報                              📷
+///     絞り        シャッター      ISO
+///     f/1.8       1/277s         64        ← 大きく（28pt）
+///     ──────────────────────────
+///     CAMERA
+///     Apple iPhone 16 Pro Max              ← 22pt
+///     LENS
+///     iPhone 16 Pro Max back triple camera
+///     FOCAL LENGTH
+///     7mm
+///
+/// **撮った条件（絞り・シャッター・ISO）を主役にする。** 写真を見て
+/// 「どう撮ったか」を知りたい人がまず探すのはこの3つで、機材名は
+/// その次。以前は6項目を同じ大きさで並べていたので、**どれも目に
+/// 入らなかった**。
 private struct ExifRow: View {
     let exif: Photo.Exif
-
-    /// タプルには KeyPath を張れないので（`\.0` は書けない）、
-    /// `ForEach` の id 用に小さな型を置く
-    private struct Item: Identifiable {
-        let id: String
-        let value: String
-    }
 
     /// 機種名。**`CameraName.deduped` を通す**——保存済みの値には
     /// メーカー名が二重に残っている行があり（実データ）、そのまま出すと
     /// 「Hasselblad Hasselblad X2D II 100C」と画面に見える
     var camera: String? { CameraName.deduped(exif.camera) }
 
-    private var items: [Item] {
-        let candidates: [(String, String?)] = [
-            (L("レンズ", "Lens"), exif.lens),
+    private struct Item: Identifiable {
+        let id: String
+        let value: String
+    }
+
+    /// 上段（大きく出す3つ）。**無いものは詰める**——空の柱を立てない
+    private var primary: [Item] {
+        [
             (L("絞り", "Aperture"), exif.aperture),
             (L("シャッター", "Shutter"), exif.exposure),
             ("ISO", exif.iso.map { String($0) }),
-            (L("焦点距離", "Focal length"), exif.focalLength),
-        ]
-        return candidates.compactMap { label, value in
+        ].compactMap { label, value in
             guard let value, !value.isEmpty else { return nil }
             return Item(id: label, value: value)
         }
     }
 
-    /// 2つずつ並べたときの1行。**レンズだけは横いっぱい**（長いので）
-    private struct Row: Identifiable {
-        let id: String
-        let first: Item
-        let second: Item?
-        let wide: Bool
-    }
-
-    private var rows: [Row] {
-        var result: [Row] = []
-        var queue = items
-        while let first = queue.first {
-            queue.removeFirst()
-            // レンズは機種名がまるごと入ることがあるので横いっぱい
-            if first.id == L("レンズ", "Lens") {
-                result.append(Row(id: first.id, first: first, second: nil, wide: true))
-                continue
-            }
-            let second = queue.first
-            if second != nil { queue.removeFirst() }
-            result.append(Row(id: first.id, first: first, second: second, wide: false))
+    /// 下段（機材）。長い値があるので縦に積む
+    private var secondary: [Item] {
+        [
+            (L("カメラ", "CAMERA"), camera),
+            (L("レンズ", "LENS"), exif.lens),
+            (L("焦点距離", "FOCAL LENGTH"), exif.focalLength),
+        ].compactMap { label, value in
+            guard let value, !value.isEmpty else { return nil }
+            return Item(id: label, value: value)
         }
-        return result
-    }
-
-    @ViewBuilder
-    private func spec(_ label: String, _ value: String, underlined: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            // 見出し 11pt・値 12pt では読めない。13 / 16 に上げる
-            Text(label)
-                .font(.caption)
-                .tracking(0.5)
-                .foregroundStyle(Color.white.opacity(0.55))
-            Text(value)
-                .font(.body)
-                .foregroundStyle(Color.white.opacity(0.9))
-                .underline(underlined, color: Color.white.opacity(0.3))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     var body: some View {
-        if !items.isEmpty || camera != nil {
-            // **Web の `ExifSpecs` と同じ「札」。**
-            //
-            //     rounded-2xl bg-white/5 ring-1 ring-white/10 p-4
-            //     見出し  10px・字間広め・大文字・white/50
-            //     値      13px・white/85
-            //     並び    2列。**長い値（レンズ）は横いっぱい**
-            //
-            // 以前は「見出し 左 / 値 右」の1行ずつで、レンズ名
-            // （`iPhone 16 Pro Max back triple camera 6.765mm f/1.78`）が
-            // 画面の端から端まで詰まって読めなかった（実機の絵で確認）
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 6) {
+        if !primary.isEmpty || !secondary.isEmpty {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text(L("撮影情報", "Shot with"))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(WebTheme.foreground)
+                    Spacer()
                     Image(systemName: "camera")
-                        .font(.subheadline)
-                    Text(L("撮影情報", "CAMERA"))
-                        .font(.subheadline.weight(.semibold))
-                        .tracking(1.2)
-                }
-                .foregroundStyle(Color.white.opacity(0.5))
-
-                if let camera {
-                    // **機材だけリンクにする**（`/camera/*` の集約がある）
-                    NavigationLink {
-                        TagPhotosView(kind: .camera(camera))
-                    } label: {
-                        spec(L("カメラ", "Camera"), camera, underlined: true)
-                    }
-                    .buttonStyle(.plain)
+                        .font(.title3)
+                        .foregroundStyle(Color.white.opacity(0.4))
                 }
 
-                // 短い値は2つずつ並べる（Web の `grid-cols-2`）
-                ForEach(rows) { row in
-                    if row.wide {
-                        spec(row.first.id, row.first.value)
-                    } else {
-                        HStack(alignment: .top, spacing: 16) {
-                            spec(row.first.id, row.first.value)
-                            if let second = row.second {
-                                spec(second.id, second.value)
-                            } else {
-                                Spacer()
+                if !primary.isEmpty {
+                    HStack(alignment: .top, spacing: 16) {
+                        ForEach(primary) { item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.id)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.white.opacity(0.5))
+                                Text(item.value)
+                                    // **ここがいちばん読まれる。** 28pt の太字
+                                    .font(.system(size: 28, weight: .bold))
+                                    .foregroundStyle(WebTheme.foreground)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.6)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
+
+                if !primary.isEmpty && !secondary.isEmpty {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 1)
+                }
+
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(secondary) { item in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(item.id.uppercased())
+                                .font(.subheadline)
+                                .tracking(0.8)
+                                .foregroundStyle(Color.white.opacity(0.5))
+                            // **機材だけリンクにする**（`/camera/*` の集約がある）
+                            if item.id == L("カメラ", "CAMERA"), let camera {
+                                NavigationLink {
+                                    TagPhotosView(kind: .camera(camera))
+                                } label: {
+                                    Text(item.value)
+                                        .font(.title3)
+                                        .foregroundStyle(WebTheme.foreground)
+                                        .underline(true, color: Color.white.opacity(0.25))
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                Text(item.value)
+                                    .font(.title3)
+                                    .foregroundStyle(WebTheme.foreground)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
             }
-            .padding(16)
+            .padding(22)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-            .padding(.top, 8)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 24))
         }
     }
 }
 
-/// タグを折り返して並べる。iOS 17 の `Layout` で書く（`LazyVGrid` だと
-/// 文字数の違うタグが不自然に伸びる）。
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
 
