@@ -92,3 +92,45 @@ final class TripBookTests: XCTestCase {
         XCTAssertEqual(trips.first?.days, 1)
     }
 }
+
+/// 足取り（たどった場所）の出し方。
+final class TripRouteTests: XCTestCase {
+
+    private func photo(_ id: String, place: String?) throws -> Photo {
+        var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\""]
+        if let place { fields.append("\"location\":\"\(place)\"") }
+        return try JSONDecoder.api.decode(Photo.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
+    }
+
+    /// **同じ場所が続いたらまとめる**（「金沢・金沢・福井」→「金沢・福井」）
+    func testCollapsesRepeatedPlaces() throws {
+        let photos = [
+            try photo("a", place: "金沢"),
+            try photo("b", place: "金沢"),
+            try photo("c", place: "福井"),
+        ]
+        XCTAssertEqual(TripBook.route(of: photos), ["金沢", "福井"])
+    }
+
+    /// **1か所しか無い旅では出さない。** 点が1つあるだけの「足取り」は
+    /// かえって壊れて見える（実機の絵で見つけた）
+    func testASinglePlaceIsNotARoute() throws {
+        let photos = [try photo("a", place: "三条市, 日本"), try photo("b", place: "三条市, 日本")]
+        XCTAssertTrue(TripBook.route(of: photos).isEmpty)
+    }
+
+    /// 撮影地が1枚も無ければ空
+    func testNoPlacesMeansNoRoute() throws {
+        XCTAssertTrue(TripBook.route(of: [try photo("a", place: nil)]).isEmpty)
+    }
+
+    /// 離れた場所へ戻ってきた場合は、戻りも1歩として残す
+    func testGoingBackIsPartOfTheRoute() throws {
+        let photos = [
+            try photo("a", place: "金沢"),
+            try photo("b", place: "福井"),
+            try photo("c", place: "金沢"),
+        ]
+        XCTAssertEqual(TripBook.route(of: photos), ["金沢", "福井", "金沢"])
+    }
+}

@@ -103,7 +103,9 @@ struct TripBookView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, index == 0 ? 28 : 0)
+                // **表紙とページの間は広く取る。** 詰まっていると、
+                // 表紙が「1枚目の写真」に見えてページが始まらない
+                .padding(.top, index == 0 ? 44 : 0)
             }
         }
     }
@@ -161,15 +163,7 @@ struct TripBookView: View {
         return max(1, Int(date.timeIntervalSince(trip.start) / 86_400) + 1)
     }
 
-    /// 通った順に並べた撮影地。**同じ場所が続いたらまとめる**
-    /// （「金沢・金沢・金沢」と並べても足取りにならない）
-    private var orderedPlaces: [String] {
-        var result: [String] = []
-        for place in trip.photos.compactMap(\.location) {
-            let trimmed = place.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, result.last != trimmed else { continue }
-            result.append(trimmed)
-        }
-        return result
-    }
+    /// 足取り。規則は `TripBook.route` にある（画面を持たない層に置いて、
+    /// Linux 上の `swift test` で検証できるようにしてある）。
+    private var orderedPlaces: [String] { TripBook.route(of: trip.photos) }
 }

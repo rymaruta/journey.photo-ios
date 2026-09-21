@@ -81,6 +81,22 @@ enum TripBook {
             .sorted { $0.start > $1.start }
     }
 
+    /// 通った順に並べた撮影地。**同じ場所が続いたらまとめる**
+    /// （「金沢・金沢・金沢」と並べても足取りにならない）。
+    ///
+    /// **2か所以上のときだけ意味がある。** 1か所しか無い旅で線を引くと、
+    /// 点が1つあるだけの「足取り」になり、かえって壊れて見える
+    /// （実機の絵で確認）。呼ぶ側は `isEmpty` で出し分ける。
+    static func route(of photos: [Photo]) -> [String] {
+        var result: [String] = []
+        for place in photos.compactMap(\.location) {
+            let trimmed = place.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, result.last != trimmed else { continue }
+            result.append(trimmed)
+        }
+        return result.count >= 2 ? result : []
+    }
+
     /// その写真の日。**撮影日を優先**し、無ければ投稿日で代用する
     /// （撮った日の方が旅の順番に合う）。
     static func day(of photo: Photo) -> Date? {
