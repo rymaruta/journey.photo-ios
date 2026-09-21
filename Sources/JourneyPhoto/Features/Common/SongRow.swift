@@ -15,9 +15,9 @@ struct SongRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(song.title).font(.footnote.weight(.medium)).lineLimit(1)
+                Text(song.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                 if let artist = song.artist, !artist.isEmpty {
-                    Text(artist).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Text(artist).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer()

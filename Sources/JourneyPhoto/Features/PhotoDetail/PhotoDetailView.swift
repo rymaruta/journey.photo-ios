@@ -158,10 +158,12 @@ struct PhotoDetailView: View {
                     Image(systemName: "mappin.and.ellipse")
                         .foregroundStyle(Color(red: 0.22, green: 0.65, blue: 0.98))
                     Text(location)
-                        .foregroundStyle(Color.white.opacity(0.75))
+                        .foregroundStyle(Color.white.opacity(0.9))
                         .lineLimit(1)
                 }
-                .font(.subheadline)
+                // **小さすぎた。** ここは写真の次に読まれる情報
+                .font(.body)
+                .padding(.vertical, 4)
                 .webChip()
             }
             .buttonStyle(.plain)
@@ -244,14 +246,14 @@ struct PhotoDetailView: View {
                     // **いちばん押されるボタンがいちばん小さかった。**
                     // 既定の字のままで 20pt ほどしか無く、指では狙いにくい
                     Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
-                        .font(.title3)
+                        .font(.title2)
                         .foregroundStyle(model.liked ? .pink : WebTheme.muted)
                         .webTappable()
                 }
                 .buttonStyle(.plain)
 
                 Label("\(model.commentCount)", systemImage: "bubble.right")
-                    .font(.title3)
+                    .font(.title2)
                     .foregroundStyle(WebTheme.faint)
                     .frame(minHeight: WebTheme.minTapTarget)
 
@@ -266,12 +268,12 @@ struct PhotoDetailView: View {
                         HStack(spacing: 8) {
                             RemoteImage(url: UserProfile.profileAssetURL(
                                 userId: ownerId, suffix: nil, cacheBust: nil))
-                                .frame(width: 28, height: 28)
+                                .frame(width: 36, height: 36)
                                 .clipShape(Circle())
                                 .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                             Text(shown.displayName ?? L("投稿者", "Poster"))
-                                .font(.footnote)
-                                .foregroundStyle(WebTheme.faint)
+                                .font(.subheadline)
+                                .foregroundStyle(WebTheme.muted)
                                 .lineLimit(1)
                         }
                     }
@@ -441,13 +443,14 @@ private struct ExifRow: View {
     @ViewBuilder
     private func spec(_ label: String, _ value: String, underlined: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
+            // 見出し 11pt・値 12pt では読めない。13 / 16 に上げる
             Text(label)
-                .font(.caption2)
-                .tracking(0.8)
-                .foregroundStyle(Color.white.opacity(0.5))
-            Text(value)
                 .font(.caption)
-                .foregroundStyle(Color.white.opacity(0.85))
+                .tracking(0.5)
+                .foregroundStyle(Color.white.opacity(0.55))
+            Text(value)
+                .font(.body)
+                .foregroundStyle(Color.white.opacity(0.9))
                 .underline(underlined, color: Color.white.opacity(0.3))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -468,10 +471,10 @@ private struct ExifRow: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 6) {
                     Image(systemName: "camera")
-                        .font(.caption2)
+                        .font(.subheadline)
                     Text(L("撮影情報", "CAMERA"))
-                        .font(.caption2)
-                        .tracking(1.5)
+                        .font(.subheadline.weight(.semibold))
+                        .tracking(1.2)
                 }
                 .foregroundStyle(Color.white.opacity(0.5))
 

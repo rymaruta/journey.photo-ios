@@ -15,7 +15,7 @@ struct ToastOverlay: View {
                 Image(systemName: message.kind == .success
                       ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 Text(message.text)
-                    .font(.footnote)
+                    .font(.subheadline)
                     .lineLimit(2)
             }
             .foregroundStyle(WebTheme.foreground)

@@ -237,7 +237,7 @@ struct MyPageView: View {
             PhotoFrame(photo: photo)
             if model.isPinned(photo.id) {
                 Image(systemName: "pin.fill")
-                    .font(.caption2)
+                    .font(.caption)
                     .padding(4)
                     .background(.ultraThinMaterial, in: Circle())
                     .padding(4)
@@ -245,7 +245,7 @@ struct MyPageView: View {
             }
             if photo.published == false {
                 Text(L("下書き", "Draft"))
-                    .font(.caption2)
+                    .font(.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(.ultraThinMaterial, in: Capsule())

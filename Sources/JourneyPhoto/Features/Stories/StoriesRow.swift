@@ -34,7 +34,7 @@ struct StoriesRow: View {
                                     .frame(width: 64, height: 64)
                                     .background(Color(.secondarySystemBackground), in: Circle())
                                 Text(L("ストーリー", "Story"))
-                                    .font(.caption2)
+                                    .font(.caption)
                                     .frame(width: 68)
                             }
                         }
@@ -48,7 +48,7 @@ struct StoriesRow: View {
                                     StoryThumb(story: story)
                                         .overlay(Circle().strokeBorder(.tint, lineWidth: 2))
                                     Text(story.authorName)
-                                        .font(.caption2)
+                                        .font(.caption)
                                         .lineLimit(1)
                                         .frame(width: 68)
                                 }

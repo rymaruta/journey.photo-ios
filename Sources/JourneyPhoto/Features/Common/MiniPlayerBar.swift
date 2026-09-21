@@ -22,12 +22,12 @@ struct MiniPlayerBar: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(song.title)
-                        .font(.footnote.weight(.medium))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
                     if let artist = song.artist, !artist.isEmpty {
                         Text(artist)
-                            .font(.caption2)
+                            .font(.footnote)
                             .foregroundStyle(WebTheme.faint)
                             .lineLimit(1)
                     }
