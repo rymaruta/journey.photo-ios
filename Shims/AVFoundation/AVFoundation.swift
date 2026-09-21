@@ -12,5 +12,12 @@ public final class AVAudioSession {
     public struct Mode { public static let `default` = Mode() }
     public static func sharedInstance() -> AVAudioSession { AVAudioSession() }
     public func setCategory(_ c: Category, mode: Mode) throws {}
-    public func setActive(_ active: Bool) throws {}
+    /// **本物と同じ形にする。** 引数を省いた模型にしておくと、
+    /// `options:` を渡すコードが Linux では通らず、Mac でしか気づけない
+    public struct SetActiveOptions: OptionSet {
+        public let rawValue: UInt
+        public init(rawValue: UInt) { self.rawValue = rawValue }
+        public static let notifyOthersOnDeactivation = SetActiveOptions(rawValue: 1)
+    }
+    public func setActive(_ active: Bool, options: SetActiveOptions = []) throws {}
 }

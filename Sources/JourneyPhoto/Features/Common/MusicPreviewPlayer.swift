@@ -34,9 +34,11 @@ final class MusicPreviewPlayer: ObservableObject {
             stop()
             return
         }
-        // **他のアプリの音を止めない。** 試聴は添え物なので、
-        // `.ambient` にして音楽アプリの再生を奪わない
-        try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
+        // **`.ambient` にしない。** あれは消音スイッチに従うので、
+        // 本人が ▶ を押したのに**マナーモードだと何も鳴らない**
+        // ——「壊れている」としか読めない。押したのは本人の意思なので
+        // `.playback` にする（他のアプリの音は止まるが、それが普通の作法）
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
 
         let player = AVPlayer(url: url)
@@ -49,5 +51,8 @@ final class MusicPreviewPlayer: ObservableObject {
         player?.pause()
         player = nil
         playingURL = nil
+        // **止めたら場を返す。** 返さないと、止めたあとも他のアプリの
+        // 音楽が戻らない（`.playback` で奪ったまま）
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }
