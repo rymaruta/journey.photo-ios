@@ -40,6 +40,17 @@ final class TimelineTests: XCTestCase {
 
     /// **年月が読めない写真を落とさない。** 落とすと「一覧には在るのに
     /// 年表に出ない」写真ができる。
+    /// **「2026-09」だけでも読む。** 7文字ちょうどが境目で、
+    /// 変異試験で `>= 7` を `> 7` にしても誰も気づかなかった
+    /// ——年月しか持たない写真が「日付なし」に落ちる壊れ方。
+    func testAcceptsYearMonthOnly() throws {
+        let photo = try JSONDecoder.api.decode(
+            Photo.self, from: Data(#"{"id":"a","src":"https://x/a.jpg","date":"2026-09"}"#.utf8))
+        let ym = try XCTUnwrap(PhotoTimeline.yearMonth(of: photo), "年月だけの日付を読めていない")
+        XCTAssertEqual(ym.year, 2026)
+        XCTAssertEqual(ym.month, 9)
+    }
+
     func testUndatedPhotosGoToTheirOwnSection() throws {
         let sections = PhotoTimeline.group([
             try photo(id: "a", date: "2024-10-01"),

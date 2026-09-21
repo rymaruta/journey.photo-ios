@@ -174,6 +174,12 @@ enum PhotoQuery {
         let tags = Set((photo.tags ?? []).map { $0.lowercased() })
         if !tags.isEmpty {
             for item in others where !tags.isDisjoint(with: Set((item.tags ?? []).map { $0.lowercased() })) {
+                // **この境目はテストで殺せない（等価変異）。**
+                // `>=` を `>` にしても、最後の `prefix(limit)` が
+                // 同じ形に削るので外からは区別できない——変異を当てて
+                // 確かめた。早く抜けるためだけの条件なので、見張りが
+                // 無いことを承知で残す（`photo-gallery` の
+                // `shouldScan` と同じ扱い）
                 if picked.count >= limit { break }
                 if seen.insert(item.id).inserted { picked.append(item) }
             }

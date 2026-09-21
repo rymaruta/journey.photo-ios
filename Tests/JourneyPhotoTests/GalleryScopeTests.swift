@@ -124,6 +124,18 @@ final class UploadSummaryTests: XCTestCase {
                       "やめた回に曲のことを言っていない: \(message)")
     }
 
+    /// **やめた回に失敗も混ざっていたら、失敗の方を伝える。**
+    ///
+    /// 変異試験で `cancelled && failures.isEmpty` を `||` にしても
+    /// 気づかなかった——「やめました」だけを出して、**落ちた写真がある
+    /// ことを伝えない**壊れ方が素通りしていた。
+    func testStoppedWithFailuresStillReportsTheFailure() throws {
+        let message = try XCTUnwrap(
+            UploadSummary.message(done: 1, failures: ["通信できませんでした"], cancelled: true))
+        XCTAssertTrue(message.contains("通信できませんでした"),
+                      "落ちた理由を伝えていない: \(message)")
+    }
+
     /// 他の写真が落ちた回も同じ。
     func testSongFailureIsReportedAlongsideOtherFailures() throws {
         let message = try XCTUnwrap(
