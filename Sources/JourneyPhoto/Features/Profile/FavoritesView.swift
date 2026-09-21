@@ -6,15 +6,16 @@ struct FavoritesView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var favorites: FavoritesStore
-    /// 取ってきた全部。**絞ったものを持たない。**
-    ///
-    /// 絞った配列を `@State` に置くと、この一覧から写真を開いて
-    /// ハートを外して戻ってきても消えない（`.task` は戻りでは走らない）。
-    /// 描くたびに絞れば、`FavoritesStore` が変わった時点で消える。
+    /// 取ってきた全部。
     @State private var all: [Photo] = []
+    /// 画面に出す分。**描画のたびに絞らない。**
+    ///
+    /// 絞りを計算に変えると、詳細画面でハートを外した瞬間に
+    /// 元の `NavigationLink` が `ForEach` から消え、**見ている詳細画面が
+    /// その場で閉じる**（SwiftUI は押した先を、押した元の存在に紐付ける）。
+    /// 絞り直すのは**戻ってきたとき**（`.onAppear`）。
+    @State private var photos: [Photo] = []
     @State private var isLoading = true
-
-    private var photos: [Photo] { all.filter { favorites.contains($0.id) } }
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -41,11 +42,15 @@ struct FavoritesView: View {
         .navigationTitle(Labels.Navigation.favorites)
         .task { await load() }
         .refreshable { await load() }
+        // **戻ってきたら絞り直す。** 詳細画面でハートを外したぶんは、
+        // その画面を閉じたこの時点で消える（見ている最中には消さない）
+        .onAppear { photos = all.filter { favorites.contains($0.id) } }
     }
 
     private func load() async {
         isLoading = true
         defer { isLoading = false }
         all = (try? await environment.gallery.fetchPhotos()) ?? []
+        photos = all.filter { favorites.contains($0.id) }
     }
 }

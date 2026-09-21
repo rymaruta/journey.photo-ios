@@ -157,6 +157,13 @@ struct MyPageView: View {
 
     @ViewBuilder
     private var photoArea: some View {
+        if let action = model.actionMessage {
+            // **一覧の代わりではなく、一覧に添える。**
+            Text(action)
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .padding(.horizontal, 16)
+        }
         if let error = model.errorMessage {
             ErrorBanner(message: error) { Task { await model.load() } }
         } else if model.photos.isEmpty && !model.isLoading {
@@ -224,7 +231,14 @@ final class MyPageViewModel: ObservableObject {
     @Published private(set) var pinnedIds: [String] = []
     @Published private(set) var photos: [Photo] = []
     @Published private(set) var isLoading = false
+    /// **読み込みに失敗した**。画面はこの時だけ一覧の代わりに知らせを出す。
     @Published var errorMessage: String?
+    /// **操作が断られた**（ピン留めの上限など）。一覧は出したまま添える。
+    ///
+    /// 読み込みの失敗と混ぜると、ピン留めを断られた瞬間に写真グリッドごと
+    /// 知らせに差し替わり、**解除する長押しメニューまで消える**——
+    /// 断られた人が直す手立てを画面から奪ってしまう。
+    @Published var actionMessage: String?
 
     /// アイコンは固定キーで中身が差し替わる（サーバーは `no-store`）。
     /// 読み直すたびに別の URL にして、古い絵が残らないようにする。
@@ -240,6 +254,11 @@ final class MyPageViewModel: ObservableObject {
     }
 
     func load() async {
+        // **2本同時に走らせない。** タブの出入りでは `.task(id:)` と
+        // `.onAppear` の両方が走ることがあり、`defer` で片方が先に
+        // `isLoading` を解くと、もう片方の途中で「まだ写真がありません」が
+        // 一瞬出る。片方が失敗すれば知らせに差し替わる
+        guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -267,10 +286,11 @@ final class MyPageViewModel: ObservableObject {
         do {
             pinnedIds = try await profiles.setPinned(photoId: photoId, pinned: pinned)
             photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)
-            errorMessage = nil
+            actionMessage = nil
         } catch {
-            // 上限（409）のときは、サーバーが「ピン留めは3枚までです」を返す
-            errorMessage = (error as? LocalizedError)?.errorDescription
+            // 上限（409）のときは、サーバーが「ピン留めは3枚までです」を返す。
+            // **一覧を消さない側に入れる**——消すと解除する手立てが無くなる
+            actionMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("ピン留めを変えられませんでした", "Couldn't change the pin")
             // **断られたら、サーバーが持っている一覧に揃える。**
             //

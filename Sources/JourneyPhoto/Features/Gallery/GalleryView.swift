@@ -93,7 +93,10 @@ struct GalleryView: View {
                 // 誰かをフォローしても、この画面には一生出てこなかった
                 guard scope == .following, auth.userId != nil else { return }
                 Task {
-                    let ids = (try? await environment.social.myFollowingIds()) ?? []
+                    // **取れなかった回に空で潰さない。** `?? []` にすると、
+                    // 圏外でタブを押しただけで「フォロー中」が
+                    // 何の知らせも無く空一覧になる
+                    guard let ids = try? await environment.social.myFollowingIds() else { return }
                     model.refreshFollowing(Set(ids))
                 }
             }

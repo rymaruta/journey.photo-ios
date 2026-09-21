@@ -155,7 +155,11 @@ final class ViewModelTests: XCTestCase {
 
         await model.setPinned("d", pinned: true)
 
-        XCTAssertNotNil(model.errorMessage, "断られたことを伝えていない")
+        // **一覧を消さない側に入っていること。** `errorMessage` に入れると
+        // 画面が写真グリッドごと知らせに差し替わり、解除する長押しメニューも
+        // 消えて、断られた人が直す手立てを失う
+        XCTAssertNotNil(model.actionMessage, "断られたことを伝えていない")
+        XCTAssertNil(model.errorMessage, "一覧を消す側に入れている")
         XCTAssertEqual(model.pinnedIds, ["a", "b", "c"],
                        "断られたのにサーバーの一覧へ揃えていない")
     }

@@ -61,6 +61,11 @@ jobs:
           # 機種名は固定しない（Xcode が上がると入っているシミュレータが替わる）
           DEVICE="$(python3 Tools/pick-simulator.py)"
           echo "テストに使うシミュレータ: $DEVICE"
+          # **`-sdk iphonesimulator` は渡さない。** `-destination` と
+          # 併用すると SDK 側の arch 一覧（arm64 と x86_64）が勝ち、
+          # 行き先に `arch=arm64` を書いても x86_64 で組み立てにいく
+          # （run #7 がそれ。run #6 と同じ `Smithy` のエラーが出続けた）。
+          #
           # **アーキテクチャを1つに絞る。** macos-15 のランナーは
           # Apple Silicon で、シミュレータの行き先は arm64 と x86_64 の
           # **両方に一致する**（run #4 のログが "Using the first of
@@ -79,8 +84,8 @@ jobs:
           xcodebuild \
             -project JourneyPhoto.xcodeproj \
             -scheme JourneyPhoto \
-            -sdk iphonesimulator \
             -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
+            ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES \
             -resultBundlePath build/ios/test/Test.xcresult \
             -skipPackagePluginValidation \

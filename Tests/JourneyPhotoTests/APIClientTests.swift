@@ -152,6 +152,9 @@ final class StubProtocol: URLProtocol {
         self.status = status
         self.body = Data(body.utf8)
         self.error = nil
+        // **順番返しの残りを捨てる。** 残すとこの指定が黙って無視され、
+        // 「落ちるはずの経路」を通らないまま緑になる
+        self.queue = []
     }
 
     /// 1回目・2回目…と順番に返す。
@@ -162,6 +165,7 @@ final class StubProtocol: URLProtocol {
 
     static func fail(with error: Error) {
         self.error = error
+        self.queue = []
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
