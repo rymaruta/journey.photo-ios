@@ -44,10 +44,26 @@ final class LegalConsentTests: XCTestCase {
     }
 
     /// **規約を変えたら、もう一度出す。**
+    ///
+    /// `currentVersion` が 1 のあいだ「古い版」は 0（＝既定値）としか
+    /// 書けず、それだと `<` を `== 0` に変えても落ちない
+    /// ——**何も検証していないテスト**になる（実際そう書いた）。
+    /// 求める版を差し替えて、比較そのものを見る。
     func testOlderAcceptanceStillNeedsConsent() async {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        defaults.set(LegalConsent.currentVersion - 1, forKey: "legal.consent.version")
-        XCTAssertTrue(LegalConsent(defaults: defaults).needsConsent,
-                      "古い版に同意しただけで通している")
+        defaults.set(1, forKey: "legal.consent.version")   // 版1には同意済み
+
+        XCTAssertFalse(LegalConsent(defaults: defaults, requiredVersion: 1).needsConsent,
+                       "同じ版なのにもう一度聞いている")
+        XCTAssertTrue(LegalConsent(defaults: defaults, requiredVersion: 2).needsConsent,
+                      "版を上げたのに聞き直していない")
+    }
+
+    /// **先の版に同意している端末を、巻き戻して聞き直さない**
+    /// （版を下げる操作は無いが、`<` を `!=` と書き間違えると起きる）。
+    func testNewerAcceptanceDoesNotAskAgain() async {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(5, forKey: "legal.consent.version")
+        XCTAssertFalse(LegalConsent(defaults: defaults, requiredVersion: 2).needsConsent)
     }
 }

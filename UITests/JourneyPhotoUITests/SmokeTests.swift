@@ -36,13 +36,22 @@ final class SmokeTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 20), "タブが出ない")
 
-        // **全部のタブを踏む。** 描けないタブはここで落ちる
-        for index in 0..<tabBar.buttons.count {
+        // **数を決め打つ。** `0..<count` を回すだけだと、`count` が 0 でも
+        // ループが1周も回らずに緑になる（何も触っていないのに合格）
+        let expected = 4      // ギャラリー / さがす / お知らせ / マイページ
+        XCTAssertEqual(tabBar.buttons.count, expected, "タブの数が違う")
+
+        for index in 0..<expected {
             let tab = tabBar.buttons.element(boundBy: index)
-            guard tab.exists else { continue }
+            XCTAssertTrue(tab.exists, "タブ \(index) が無い")
             tab.tap()
-            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10),
-                          "タブ \(index) を開いてアプリが落ちた")
+
+            // **「生きているか」では見ない。** `runningForeground` は
+            // 呼んだ瞬間に真なので、固い落ち方しか捕まらない。
+            // どのタブも `navigationTitle` を持つので、**題が描けたか**を見る
+            // ——描けないタブはここで落ちる
+            XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 15),
+                          "タブ \(index) の中身が描けない")
         }
     }
 }

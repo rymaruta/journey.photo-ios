@@ -1,5 +1,11 @@
 # Mac を持っていなくても、ここで**ビルドして TestFlight まで上げる**。
 #
+# **こちらは動かしていない。** 2026-09-21 に GitHub Actions へ移したので、
+# 実際に回して確かめているのは `.github/workflows/ios-testflight.yml` の方。
+# ここには Actions 側で実測して分かった直し（プラグインの関所・arm64 への
+# 絞り込み・出力を伏せない）を写してあるが、**Codemagic で通したことは
+# 一度もない**。使うときは、まずこの段が緑になることから確かめること。
+#
 # 設定はブラウザだけで済む（`docs/NO_MAC.md`）:
 #   1. App Store Connect で API キーを作る
 #   2. Codemagic に GitHub と API キーを繋ぐ
@@ -75,23 +81,42 @@ workflows:
           # 機種名は固定しない（その場にある いちばん新しい iPhone を選ぶ）
           DEVICE=$(python3 Tools/pick-simulator.py) || exit 1
           echo "テストに使うシミュレータ: $DEVICE"
-          xcode-project run-tests \
-            --project JourneyPhoto.xcodeproj \
-            --scheme JourneyPhoto \
-            --device "$DEVICE"
+          # **`run-tests` を使わない。** xcodebuild の出力を
+          # `/tmp/xcodebuild_logs` に伏せるので、コンパイルが通らない回の
+          # ログに「0件で失敗」としか残らない（GitHub Actions 側で
+          # run #1〜#3 をこれで空振りさせた）。
+          #
+          # `-sdk` は渡さない・`arch=arm64` に絞る・プラグインの関所を
+          # 抜ける——どれも Actions 側で実測して分かったもの
+          set -o pipefail
+          xcodebuild \
+            -project JourneyPhoto.xcodeproj \
+            -scheme JourneyPhoto \
+            -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            -resultBundlePath build/ios/test/Test.xcresult \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            test 2>&1 | tee /tmp/xcodebuild-full.log | tail -n 400
 
       - name: ビルド
         script: |
           xcode-project use-profiles
+          # プラグインの関所はビルドにも立つ。素通しする口は
+          # `--archive-flags`（`--` の後ろには置けない）
           xcode-project build-ipa \
             --project JourneyPhoto.xcodeproj \
-            --scheme JourneyPhoto
+            --scheme JourneyPhoto \
+            --archive-flags="-skipPackagePluginValidation -skipMacroValidation"
 
     artifacts:
       - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
-      # テストの結果。落ちたときに何が落ちたか読める形で残す
-      - build/ios/test/*.xml
+      # 伏せ先（`/tmp/xcodebuild_logs`）も JUnit の XML も、
+      # `run-tests` をやめた時点で出なくなった。自分で書いた全文ログと
+      # `-resultBundlePath` の結果を残す
+      - /tmp/xcodebuild-full.log
+      - build/ios/test/Test.xcresult
 
     publishing:
       app_store_connect:

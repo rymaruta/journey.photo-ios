@@ -19,7 +19,9 @@ if [ ! -d Tools/node_modules ]; then
     echo "-- tree-sitter を入れる（初回だけ）"
     (cd Tools && npm install --silent)
 fi
-node Tools/check-swift-syntax.js Sources Tests
+# **UITests も見る。** 通さないと、スモークの打ち間違いは
+# macOS の CI が1回まるごと走ってから分かる
+node Tools/check-swift-syntax.js Sources Tests UITests
 
 echo
 echo "== 参照（配られていない EnvironmentObject・型の重複） =="

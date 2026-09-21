@@ -13,7 +13,15 @@ import Combine
 final class LegalConsent: ObservableObject {
 
     /// 規約を変えたら上げる。上げると全員にもう一度出る。
-    static let currentVersion = 1
+    nonisolated static let currentVersion = 1
+
+    /// この画面が求める版。**テストから差し替えるために開けてある。**
+    ///
+    /// 開けていないと、`currentVersion` が 1 のあいだは
+    /// 「古い版に同意済み」が 0（＝既定値）としか書けず、
+    /// **`< ` を `== 0` に変えても落ちないテスト**しか書けない
+    /// （実際そう書いてしまい、変異で当てて気づいた）。
+    let requiredVersion: Int
 
     private static let key = "legal.consent.version"
 
@@ -21,16 +29,17 @@ final class LegalConsent: ObservableObject {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, requiredVersion: Int = LegalConsent.currentVersion) {
         self.defaults = defaults
+        self.requiredVersion = requiredVersion
         self.acceptedVersion = defaults.integer(forKey: Self.key)
     }
 
-    var needsConsent: Bool { acceptedVersion < Self.currentVersion }
+    var needsConsent: Bool { acceptedVersion < requiredVersion }
 
     func accept() {
-        defaults.set(Self.currentVersion, forKey: Self.key)
-        acceptedVersion = Self.currentVersion
+        defaults.set(requiredVersion, forKey: Self.key)
+        acceptedVersion = requiredVersion
     }
 
     /// 規約とプライバシーポリシーの場所。サイトと同じ文面を出す
