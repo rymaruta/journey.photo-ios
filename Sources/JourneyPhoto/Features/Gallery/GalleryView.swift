@@ -64,7 +64,7 @@ struct GalleryView: View {
             let ids = (try? await environment.social.myFollowingIds()) ?? []
             model.use(viewerId: auth.userId, following: Set(ids))
         }
-        .refreshable { await model.load() }
+        .refreshable { await model.load(force: true) }
         // **ブロック／通報の直後に消す。** 手元に読み終えた配列が残るので、
         // 読み直さないと画面は変わらない。
         //

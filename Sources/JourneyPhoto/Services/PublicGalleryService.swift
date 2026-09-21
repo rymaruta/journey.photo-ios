@@ -58,7 +58,30 @@ actor PublicGalleryService {
         }
     }
 
-    func fetchPhotos() async throws -> [Photo] {
+    /// 直前に取れた一覧と、その時刻。**短い間だけ使い回す。**
+    ///
+    /// この口は**画面を開くたびに全員が叩く**——一覧・検索・地図・
+    /// お気に入り・タグ・お知らせ、そして写真を1枚開くたびに
+    /// 「近い写真」（`RelatedPhotosRow`）まで。サイト側は一覧 JSON を
+    /// `no-store` で配っている（HTML と同じ扱い）ので、**毎回まるごと
+    /// 落とし直していた**。写真をぽんぽん開くだけで往復が積み上がる。
+    ///
+    /// 絞り込み（`visible`）は返すときに掛けるので、控えを使い回しても
+    /// ブロックの反映は遅れない。
+    private var cached: [Photo]?
+    private var cachedAt: Date?
+    static let cacheLifetime: TimeInterval = 60
+
+    private var freshCache: [Photo]? {
+        guard let cached, let cachedAt,
+              Date().timeIntervalSince(cachedAt) < Self.cacheLifetime else { return nil }
+        return cached
+    }
+
+    /// - Parameter force: 控えを無視して取り直す。**引き下げ更新はこちら**
+    ///   ——利用者が自分で引いたのに古いものを出さない。
+    func fetchPhotos(force: Bool = false) async throws -> [Photo] {
+        if !force, let fresh = freshCache { return visible(fresh) }
         let data: Data
         let response: URLResponse
         do {
@@ -89,6 +112,8 @@ actor PublicGalleryService {
             if !photos.isEmpty || list.dropped == 0 {
                 snapshot.save(data)
             }
+            cached = photos
+            cachedAt = Date()
             return visible(photos)
         } catch {
             if let cached = snapshot.load() { return visible(cached) }

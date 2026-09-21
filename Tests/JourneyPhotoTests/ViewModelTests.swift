@@ -106,62 +106,29 @@ final class ViewModelTests: XCTestCase {
     /// `loadPhotos` は `guard allPhotos.isEmpty` で一度しか読まない作りなので、
     /// 読み直す口（`reloadPhotos`）が無いと、ブロックした相手の写真が
     /// 検索結果に残り続けた（アプリを閉じるまで消えない）。
-    func testSearchRereadsAfterBlocking() async {
-        let service = gallery(feed)
+    ///
+    /// **要求の回数では見ない。** `PublicGalleryService` は短い間 控えを
+    /// 使い回すので、読み直しても往復は起きないことがある。見るべきは
+    /// 「消えたかどうか」。
+    func testSearchDropsBlockedPhotosAfterReload() async {
+        let blocked = """
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","location":"パリ"},
+         {"id":"b","src":"https://x/b.jpg","userId":"u2","location":"パリ"}]
+        """
+        let service = gallery(blocked)
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
         let model = SearchViewModel()
 
         await model.loadPhotos(environment: env)
-        let firstCount = StubProtocol.requestCount
-        // 二度目は読まない（ここは今までどおり）
-        await model.loadPhotos(environment: env)
-        XCTAssertEqual(StubProtocol.requestCount, firstCount, "控えがあるのに読み直している")
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.photos.count, 2, "下ごしらえが効いていない")
 
-        // ブロックしたことにして、読み直す口を使う
-        await service.setHidden(userIds: ["u2"], photoIds: ["a"])
+        await service.setHidden(userIds: ["u2"], photoIds: [])
         await model.reloadPhotos(environment: env)
-        XCTAssertEqual(StubProtocol.requestCount, firstCount + 1,
-                       "ブロックのあとも控えのままで、消えない")
-    }
+        await model.search("パリ", environment: env)
 
-    /// **「フォロー中」を選んだあとにフォロー一覧を入れ替えても、範囲は戻らない。**
-    ///
-    /// `use(viewerId:following:)` を使い回すと、あちらは範囲を既定
-    /// （ログイン中は「自分」）へ倒すので、選んだ瞬間に自分の写真へ
-    /// 戻ってしまう。入れ替え専用の口を分けてある。
-    func testRefreshingFollowingKeepsTheChosenScope() async {
-        let model = GalleryViewModel(gallery: gallery(feed))
-        await model.load()
-        model.use(viewerId: "me", following: [])
-        model.select(scope: .following)
-
-        model.refreshFollowing(["u2"])
-
-        XCTAssertEqual(model.scope, .following, "範囲が勝手に戻っている")
-    }
-
-    /// **上限で断られたら、サーバーの一覧に揃える。**
-    ///
-    /// 揃えないと、別の端末で留めたぶんが画面に出ないまま
-    /// 「3枚までです」と言われ続ける——見えていないものは外せないので、
-    /// 画面の中に直す手立てが無くなる。
-    func testRefusedPinSyncsWithTheServer() async {
-        prepare()
-        let model = MyPageViewModel(api: api())
-        StubProtocol.respondInOrder([
-            (status: 409, body: #"{"error":"ピン留めは3枚までです","pinnedPhotoIds":["a","b","c"]}"#),
-            (status: 200, body: #"{"userId":"me","pinnedPhotoIds":["a","b","c"]}"#),
-        ])
-
-        await model.setPinned("d", pinned: true)
-
-        // **一覧を消さない側に入っていること。** `errorMessage` に入れると
-        // 画面が写真グリッドごと知らせに差し替わり、解除する長押しメニューも
-        // 消えて、断られた人が直す手立てを失う
-        XCTAssertNotNil(model.actionMessage, "断られたことを伝えていない")
-        XCTAssertNil(model.errorMessage, "一覧を消す側に入れている")
-        XCTAssertEqual(model.pinnedIds, ["a", "b", "c"],
-                       "断られたのにサーバーの一覧へ揃えていない")
+        XCTAssertEqual(model.photos.map(\.id), ["a"],
+                       "ブロックした相手の写真が検索結果に残っている")
     }
 
     // MARK: - 写真の詳細

@@ -43,11 +43,12 @@ final class GalleryViewModel: ObservableObject {
         self.gallery = gallery
     }
 
-    func load() async {
+    /// - Parameter force: 控えを無視して取り直す（引き下げ更新）。
+    func load(force: Bool = false) async {
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         do {
-            let photos = try await gallery.fetchPhotos()
+            let photos = try await gallery.fetchPhotos(force: force)
             all = sorted(photos)
             state = .loaded(filtered())
         } catch {

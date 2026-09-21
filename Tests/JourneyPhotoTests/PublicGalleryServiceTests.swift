@@ -109,3 +109,49 @@ final class PublicGalleryServiceTests: XCTestCase {
         XCTAssertEqual(offline.map(\.id), ["a", "b"], "読めない応答で控えが潰れた")
     }
 }
+
+/// 公開一覧の控え。
+///
+/// **この口は画面を開くたびに全員が叩く**——一覧・検索・地図・お気に入り・
+/// タグ・お知らせ、そして写真を1枚開くたびに「近い写真」まで。
+/// サイト側は `no-store` で配るので、控えが無いと毎回まるごと落ちてくる。
+final class GalleryCacheTests: XCTestCase {
+
+    private func service() -> PublicGalleryService {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"[{"id":"a","src":"https://x/a.jpg"}]"#)
+        return PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: URLSession(configuration: config),
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
+        )
+    }
+
+    func testSecondReadUsesTheCache() async throws {
+        let gallery = service()
+        _ = try await gallery.fetchPhotos()
+        let after = StubProtocol.requestCount
+        _ = try await gallery.fetchPhotos()
+        XCTAssertEqual(StubProtocol.requestCount, after, "控えがあるのに落とし直している")
+    }
+
+    /// **引き下げ更新は控えを無視する。** 自分で引いたのに古いものを出さない。
+    func testForcedReadIgnoresTheCache() async throws {
+        let gallery = service()
+        _ = try await gallery.fetchPhotos()
+        let after = StubProtocol.requestCount
+        _ = try await gallery.fetchPhotos(force: true)
+        XCTAssertEqual(StubProtocol.requestCount, after + 1, "引き下げても取り直していない")
+    }
+
+    /// **控えを返す回も絞り込みは掛かる。** ブロックの反映が遅れない。
+    func testCachedReadStillHides() async throws {
+        let gallery = service()
+        _ = try await gallery.fetchPhotos()
+        await gallery.setHidden(userIds: [], photoIds: ["a"])
+        let photos = try await gallery.fetchPhotos()
+        XCTAssertTrue(photos.isEmpty, "控えを返すときに絞り込みを飛ばしている")
+    }
+}
