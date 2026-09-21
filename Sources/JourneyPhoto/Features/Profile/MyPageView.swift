@@ -233,8 +233,8 @@ final class MyPageViewModel: ObservableObject {
     private let profiles: ProfileService
     private let photoService: PhotoService
 
-    init() {
-        let api = APIClient(tokenProvider: CognitoTokenProvider())
+    /// - Parameter api: 叩き先。**テストで差し替えるため**に開けてある。
+    init(api: APIClient = APIClient(tokenProvider: CognitoTokenProvider())) {
         self.profiles = ProfileService(api: api)
         self.photoService = PhotoService(api: api)
     }
@@ -272,6 +272,17 @@ final class MyPageViewModel: ObservableObject {
             // 上限（409）のときは、サーバーが「ピン留めは3枚までです」を返す
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("ピン留めを変えられませんでした", "Couldn't change the pin")
+            // **断られたら、サーバーが持っている一覧に揃える。**
+            //
+            // 揃えないと、別の端末で留めたぶんが画面に出ないまま
+            // 「3枚までです」と言われ続ける——**見えていないものは
+            // 外せない**ので、画面の中に直す手立てが無くなる
+            // （`userProfile.ts` が 409 の本体にも今の一覧を入れているのは
+            //  そのため。`APIError` は本体を持ち歩かないので引き直す）。
+            if let fresh = try? await profiles.myProfile().pinnedPhotoIds {
+                pinnedIds = fresh
+                photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)
+            }
         }
     }
 }

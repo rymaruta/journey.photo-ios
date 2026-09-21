@@ -134,6 +134,9 @@ final class StubProtocol: URLProtocol {
     nonisolated(unsafe) static var lastBody: Data?
     /// 何回叩かれたか。**二度押しを止められているか**を見るのに使う
     nonisolated(unsafe) static var requestCount = 0
+    /// 順番に返す応答。**使い切ったら最後のものを返し続ける**
+    /// （「断られてから引き直す」のような2手の流れを書くのに要る）
+    nonisolated(unsafe) private static var queue: [(Int, Data)] = []
 
     static func reset() {
         status = 200
@@ -142,12 +145,19 @@ final class StubProtocol: URLProtocol {
         lastRequest = nil
         lastBody = nil
         requestCount = 0
+        queue = []
     }
 
     static func respond(status: Int, body: String) {
         self.status = status
         self.body = Data(body.utf8)
         self.error = nil
+    }
+
+    /// 1回目・2回目…と順番に返す。
+    static func respondInOrder(_ pairs: [(status: Int, body: String)]) {
+        queue = pairs.map { ($0.status, Data($0.body.utf8)) }
+        error = nil
     }
 
     static func fail(with error: Error) {
@@ -166,11 +176,20 @@ final class StubProtocol: URLProtocol {
             client?.urlProtocol(self, didFailWithError: error)
             return
         }
+        var status = StubProtocol.status
+        var body = StubProtocol.body
+        if !StubProtocol.queue.isEmpty {
+            let next = StubProtocol.queue.count > 1
+                ? StubProtocol.queue.removeFirst()
+                : StubProtocol.queue[0]
+            status = next.0
+            body = next.1
+        }
         let response = HTTPURLResponse(
-            url: request.url!, statusCode: StubProtocol.status, httpVersion: "HTTP/1.1", headerFields: nil
+            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: StubProtocol.body)
+        client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
     }
 

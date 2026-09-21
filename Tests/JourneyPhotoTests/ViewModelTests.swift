@@ -140,6 +140,26 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.scope, .following, "範囲が勝手に戻っている")
     }
 
+    /// **上限で断られたら、サーバーの一覧に揃える。**
+    ///
+    /// 揃えないと、別の端末で留めたぶんが画面に出ないまま
+    /// 「3枚までです」と言われ続ける——見えていないものは外せないので、
+    /// 画面の中に直す手立てが無くなる。
+    func testRefusedPinSyncsWithTheServer() async {
+        prepare()
+        let model = MyPageViewModel(api: api())
+        StubProtocol.respondInOrder([
+            (status: 409, body: #"{"error":"ピン留めは3枚までです","pinnedPhotoIds":["a","b","c"]}"#),
+            (status: 200, body: #"{"userId":"me","pinnedPhotoIds":["a","b","c"]}"#),
+        ])
+
+        await model.setPinned("d", pinned: true)
+
+        XCTAssertNotNil(model.errorMessage, "断られたことを伝えていない")
+        XCTAssertEqual(model.pinnedIds, ["a", "b", "c"],
+                       "断られたのにサーバーの一覧へ揃えていない")
+    }
+
     // MARK: - 写真の詳細
 
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。
