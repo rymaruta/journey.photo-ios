@@ -12,6 +12,7 @@ struct StoryViewerView: View {
     @State private var reply = ""
     @State private var message: String?
     @State private var viewers: [StoryViewer] = []
+    @State private var showInsights = false
     @State private var showViewers = false
     @State private var replies: [StoryReply] = []
     @State private var showReplies = false
@@ -83,6 +84,9 @@ struct StoryViewerView: View {
                 .navigationBarTitleDisplayMode(.inline)
             }
         }
+        .sheet(isPresented: $showInsights) {
+            NavigationStack { StoryInsightsView(story: story) }
+        }
         .sheet(isPresented: $showViewers) {
             NavigationStack {
                 List(viewers) { viewer in
@@ -116,9 +120,9 @@ struct StoryViewerView: View {
     private var footer: some View {
         if isMine {
             HStack(spacing: 16) {
-                Button(L("見た人 \(viewers.count)", "\(viewers.count) viewers")) { showViewers = true }
-                // **返信の数はサーバーが持っている**（`replyCount`）。
-                // 読み込み前でも数が出るよう、取れた一覧より多い方を出す
+                // **反応はまとめて1画面に**（提案の絵）。見た人・いいね・返信が
+                // 別々のシートに割れていると、全体がどうだったか分からない
+                Button(L("反応を見る", "Insights")) { showInsights = true }
                 Button(L("返信 \(replyBadge)", "\(replyBadge) replies")) { showReplies = true }
                 // 24時間で消える前に、自分の写真として残す
                 Button(L("残す", "Keep")) { Task { await keep() } }
