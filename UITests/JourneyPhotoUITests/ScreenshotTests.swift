@@ -52,7 +52,7 @@ final class ScreenshotTests: XCTestCase {
             return
         }
 
-        let names = ["ホーム", "探す", "投稿", "旅", "マイページ"]
+        let names = ["ホーム", "探す", "投稿", "マップ", "マイページ"]
         // 中央（投稿）はシートが出るので、一巡の中では触らない
         for (index, name) in names.enumerated() where index < tabBar.buttons.count && index != 2 {
             tabBar.buttons.element(boundBy: index).tap()
@@ -64,8 +64,12 @@ final class ScreenshotTests: XCTestCase {
         }
 
         // **旅を1冊開く。** 表紙・ページ・足取りは、開かないと絵にならない
-        if tabBar.buttons.count > 3 {
-            tabBar.buttons.element(boundBy: 3).tap()
+        // （タブから外したので、マイページの「旅の記録」から入る）
+        if tabBar.buttons.count > 4 {
+            tabBar.buttons.element(boundBy: 4).tap()
+            Thread.sleep(forTimeInterval: 2)
+            let tripsEntry = app.buttons.matching(identifier: "旅の記録").firstMatch
+            if tripsEntry.waitForExistence(timeout: 8) { tripsEntry.tap() }
             Thread.sleep(forTimeInterval: 4)
             let firstTrip = app.scrollViews.buttons.firstMatch
             if firstTrip.waitForExistence(timeout: 10) {

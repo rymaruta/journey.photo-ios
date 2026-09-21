@@ -91,6 +91,33 @@ struct MyPageView: View {
         }
     }
 
+    /// 旅の一冊へ。**撮った本人の記録なので、持ち場はここ**
+    /// （タブは指示書の並び——ホーム／探す／投稿／マップ／マイページ）。
+    private var tripsLink: some View {
+        NavigationLink {
+            TripsView()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "book.closed")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("旅の記録", "Your trips"))
+                        .font(.subheadline.weight(.semibold))
+                    Text(L("同じころに撮った写真が、ひとつの旅になります",
+                           "Photos taken around the same time become a trip"))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption)
+            }
+            .foregroundStyle(WebTheme.foreground)
+            .padding(12)
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+    }
+
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -100,6 +127,7 @@ struct MyPageView: View {
                 }
                 postButton
                 StoriesRow(reloadToken: storiesReload)
+                tripsLink
                 shortcuts
                 tabPicker
                 photoArea

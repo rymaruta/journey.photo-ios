@@ -22,7 +22,7 @@ struct RootView: View {
         // **提案の並び**（owner の絵・2026-09-21）:
         // ホーム / 探す / 投稿 / 旅 / マイページ。
         // 通知はタブを1つ使わずヘッダーへ移した（絵と同じ）
-        case home, search, post, trips, mypage
+        case home, search, post, map, mypage
     }
 
     var body: some View {
@@ -84,17 +84,13 @@ struct RootView: View {
                 .tabItem { Label(L("投稿", "Post"), systemImage: "plus.app") }
                 .tag(Tab.post)
 
-            // **旅が単位の画面。** 写真を並べるのではなく、
-            // 同じころに撮った写真が勝手に一冊になって並ぶ（`TripBook`）。
-            //
-            // 提案の絵では4つ目が「マップ」だったが、**地図は旅の中**
-            // （足取り）に置ける。一冊の方はこのアプリにしか無いので、
-            // タブに出す価値はこちらが上だと判断した
+            // **4つ目は地図**（指示書 4-1 の並び）。旅の一冊は
+            // マイページから開く——撮った本人の記録なので持ち場が合う
             NavigationStack {
-                TripsView()
+                PhotoMapView()
             }
-            .tabItem { Label(L("旅", "Trips"), systemImage: "book.closed") }
-            .tag(Tab.trips)
+            .tabItem { Label(L("マップ", "Map"), systemImage: "map") }
+            .tag(Tab.map)
 
             NavigationStack {
                 MyPageView()

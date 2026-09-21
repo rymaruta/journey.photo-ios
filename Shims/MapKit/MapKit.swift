@@ -16,7 +16,34 @@ public protocol MapContent {}
 
 public struct Map: View {
     public init<C: MapContent>(@MapContentBuilder content: () -> C) {}
+    /// 見ている場所を持たせる版（初期表示を写真に合わせるのに使う）
+    public init<C: MapContent>(position: Binding<MapCameraPosition>,
+                               @MapContentBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
+}
+
+/// 地図がどこを見ているか。
+public struct MapCameraPosition {
+    public static let automatic = MapCameraPosition()
+    public static func region(_ region: MKCoordinateRegion) -> MapCameraPosition { MapCameraPosition() }
+}
+
+public struct MKCoordinateSpan {
+    public var latitudeDelta: Double
+    public var longitudeDelta: Double
+    public init(latitudeDelta: Double, longitudeDelta: Double) {
+        self.latitudeDelta = latitudeDelta
+        self.longitudeDelta = longitudeDelta
+    }
+}
+
+public struct MKCoordinateRegion {
+    public var center: CLLocationCoordinate2D
+    public var span: MKCoordinateSpan
+    public init(center: CLLocationCoordinate2D, span: MKCoordinateSpan) {
+        self.center = center
+        self.span = span
+    }
 }
 
 @resultBuilder
