@@ -11,6 +11,7 @@ struct UserProfileView: View {
     @State private var showBlockConfirm = false
     @State private var tab: ProfileTab = .posts
     @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -70,7 +71,7 @@ struct UserProfileView: View {
         }
         .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
             Button(L("ブロック", "Block"), role: .destructive) {
-                Task { await model.block(userId: userId, environment: environment, store: hidden) }
+                Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
@@ -226,7 +227,8 @@ final class UserProfileViewModel: ObservableObject {
         }
     }
 
-    func block(userId: String, environment: AppEnvironment, store: ModerationStore) async {
+    func block(userId: String, environment: AppEnvironment, store: ModerationStore,
+               toasts: ToastCenter) async {
         do {
             try await environment.moderation.block(userId: userId)
             store.block(userId)
@@ -236,7 +238,10 @@ final class UserProfileViewModel: ObservableObject {
             )
             isFollowing = false
             photos = []
-            errorMessage = L("ブロックしました。設定から解除できます。", "Blocked. You can undo this in Settings.")
+            // **成功を赤字で出さない。** それまで `errorMessage` に入れて
+            // いたので、うまくいった操作が「失敗」の見た目で出ていた
+            toasts.show(L("ブロックしました。設定から解除できます。",
+                          "Blocked. You can undo this in Settings."))
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }

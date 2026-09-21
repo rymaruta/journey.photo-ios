@@ -102,6 +102,10 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             MiniPlayerBar().padding(.bottom, 56)
         }
+        // 短い知らせ（Web の `Toast`）。ミニプレイヤーより上に出す
+        .overlay(alignment: .bottom) {
+            ToastOverlay().padding(.bottom, 116)
+        }
         .overlay(alignment: .bottomTrailing) {
             if auth.userId != nil {
                 Button {

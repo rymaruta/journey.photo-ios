@@ -12,6 +12,7 @@ struct ReportSheet: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
 
     @State private var reason: ModerationService.ReportReason = .harassment
@@ -103,6 +104,10 @@ struct ReportSheet: View {
                 }
             }
             await applyHidden()
+            // **受け付けたことを伝える。** それまでは黙って閉じるだけで、
+            // 押した人には届いたのか分からなかった
+            toasts.show(L("通報を受け付けました。ありがとうございます。",
+                          "Thanks — your report was received."))
             done = true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("通報を受け付けられませんでした", "Couldn't submit the report")

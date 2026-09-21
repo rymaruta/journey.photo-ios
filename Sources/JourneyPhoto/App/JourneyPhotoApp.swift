@@ -21,6 +21,8 @@ struct JourneyPhotoApp: App {
     @StateObject private var hidden = ModerationStore()
     @StateObject private var joinedAlbums = JoinedAlbumsStore()
     @StateObject private var push = PushCenter()
+    /// 短い知らせ（Web の `useToast`）。**1つだけ出す**
+    @StateObject private var toasts = ToastCenter()
     /// **APNs のトークンは `UIApplicationDelegate` にしか返ってこない。**
     /// SwiftUI だけでは受け取れないので、この1本だけ UIKit を繋ぐ
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -80,6 +82,7 @@ struct JourneyPhotoApp: App {
                 .environmentObject(hidden)
                 .environmentObject(joinedAlbums)
                 .environmentObject(push)
+                .environmentObject(toasts)
                 .task { await auth.restore() }
                 // **ログイン状態が変わるたびに読み直す。** `.task` のままだと
                 // 起動時に1回しか走らず、あとからログインした人には

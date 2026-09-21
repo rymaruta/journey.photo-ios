@@ -194,3 +194,39 @@ final class ProfileSetupTests: XCTestCase {
         XCTAssertFalse(ProfileSetup.needsName(displayName: "たろう", username: nil))
     }
 }
+
+/// 短い知らせ（Web の `useToast`）。
+@MainActor
+final class ToastCenterTests: XCTestCase {
+
+    func testShowsTheMessage() async {
+        let center = ToastCenter()
+        center.show("ブロックしました")
+        XCTAssertEqual(center.current?.text, "ブロックしました")
+        XCTAssertEqual(center.current?.kind, .success)
+    }
+
+    /// **空の知らせは出さない**（何も伝えない帯が画面を覆う）
+    func testBlankIsIgnored() async {
+        let center = ToastCenter()
+        center.show("   \n ")
+        XCTAssertNil(center.current)
+    }
+
+    /// **積まない。** iPhone の幅では読み切る前に次が来るので、最後の1つだけ
+    func testLatestReplacesThePrevious() async {
+        let center = ToastCenter()
+        center.show("1つ目")
+        center.show("2つ目", kind: .failure)
+        XCTAssertEqual(center.current?.text, "2つ目")
+        XCTAssertEqual(center.current?.kind, .failure)
+    }
+
+    /// 押したら消せる（読み終わった人を待たせない）
+    func testDismiss() async {
+        let center = ToastCenter()
+        center.show("あ")
+        center.dismiss()
+        XCTAssertNil(center.current)
+    }
+}
