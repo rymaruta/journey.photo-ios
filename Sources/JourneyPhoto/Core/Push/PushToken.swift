@@ -19,6 +19,10 @@ enum PushToken {
     static func isValid(_ token: String) -> Bool {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (32...200).contains(trimmed.count) else { return false }
-        return trimmed.allSatisfy { $0.isHexDigit }
+        // **`isHexDigit` を使わない。** Swift のそれは**全角**の `ａ` や `９`
+        // も真にする（実測）。サーバーの `/^[0-9a-f]{32,200}$/i` は通さないので、
+        // 「サーバーと同じ判定」と言いながら手前で通してしまい、
+        // **通らない要求を出す**ことになる
+        return trimmed.allSatisfy { $0.isASCII && $0.isHexDigit }
     }
 }

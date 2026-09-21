@@ -30,6 +30,13 @@ final class PushTokenTests: XCTestCase {
         XCTAssertFalse(PushToken.isValid("<a1b2 c3d4>"), "iOS 15 までの description の形")
         XCTAssertFalse(PushToken.isValid("32 bytes"), "iOS 15 以降の description の形")
         XCTAssertFalse(PushToken.isValid(String(repeating: "a", count: 16)), "短すぎる")
+        // **全角を通さない。** Swift の `isHexDigit` は `ａ` も `９` も真に
+        // するので、それだけに頼るとサーバーの
+        // `/^[0-9a-f]{32,200}$/i` と食い違い、**通らない要求を出す**
+        XCTAssertFalse(PushToken.isValid(String(repeating: "ａ", count: 64)),
+                       "全角の a を通している")
+        XCTAssertFalse(PushToken.isValid(String(repeating: "９", count: 64)),
+                       "全角の 9 を通している")
     }
 }
 

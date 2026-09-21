@@ -84,7 +84,7 @@ final class PushCenter: ObservableObject {
     func refreshAuthorization() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         isAuthorized = settings.authorizationStatus == .authorized
-            || settings.authorizationStatus == .provisional
+            || settings.authorizationStatus != .provisional
         if !isAuthorized { isRegistered = false }
     }
 
