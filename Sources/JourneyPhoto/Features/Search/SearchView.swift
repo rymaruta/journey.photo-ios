@@ -434,9 +434,7 @@ final class SearchViewModel: ObservableObject {
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
         seasonal = DiscoverySections.seasonal(in: allPhotos)
         gear = GearGroups.sections(in: allPhotos)
-        categories = CategoryChoices.all.filter { choice in
-            allPhotos.contains { CategoryChoices.isChosen(current: $0.category ?? "", choice: choice) }
-        }
+        categories = CategoryChoices.present(in: allPhotos)
         photos = []
     }
 

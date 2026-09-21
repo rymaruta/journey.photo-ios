@@ -53,4 +53,12 @@ enum CategoryChoices {
     static func toggle(current: String, choice: String) -> String {
         isChosen(current: current, choice: choice) ? "" : choice
     }
+
+    /// その写真たちに**実際にある**選択肢だけ（`all` の並びのまま）。
+    /// 押しても空になるチップを置かないため。探す画面と地図で同じ答えを使う
+    static func present(in photos: [Photo]) -> [String] {
+        all.filter { choice in
+            photos.contains { isChosen(current: $0.category ?? "", choice: choice) }
+        }
+    }
 }
