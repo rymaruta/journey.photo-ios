@@ -13,6 +13,13 @@ final class PhotoDetailViewModel: ObservableObject {
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
+    /// いいねを送っている最中。**二度押しで2回投げない。**
+    ///
+    /// コメントには `isPosting` があったのに、いいねには何も無かった。
+    /// 素早く2回叩くと、1回目の応答が返る前に2回目が `liked` の古い値を
+    /// 見て走り、**「いいね」と「取り消し」が同時に飛ぶ**。どちらが後に
+    /// 返るかで最終的なハートの色が決まるので、押した結果と食い違う。
+    @Published private(set) var isLiking = false
 
     private let photoId: String
     private let social: SocialService
@@ -66,6 +73,9 @@ final class PhotoDetailViewModel: ObservableObject {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
             return
         }
+        guard !isLiking else { return }
+        isLiking = true
+        defer { isLiking = false }
         let wasLiked = liked
         do {
             let result = wasLiked

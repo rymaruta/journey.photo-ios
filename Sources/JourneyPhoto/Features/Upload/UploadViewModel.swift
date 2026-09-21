@@ -59,7 +59,6 @@ final class UploadViewModel: ObservableObject {
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
     @Published private(set) var uploadingIndex = 0
     @Published var errorMessage: String?
-    @Published private(set) var savedPhoto: Photo?
 
     private let uploads: UploadService
     private let albumService: AlbumService
@@ -223,6 +222,8 @@ final class UploadViewModel: ObservableObject {
 
         var done: [UUID] = []
         var failures: [String] = []
+        /// 写真は上がったが曲を付けられなかった枚数。**成功に数えない**
+        var songFailures = 0
         let queue = items.map(\.id)
         for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
@@ -232,8 +233,8 @@ final class UploadViewModel: ObservableObject {
             // 始めたときの写しで送ると、直した題が古い値で上がる
             guard let item = items.first(where: { $0.id == id }) else { continue }
             do {
-                let photo = try await upload(item)
-                savedPhoto = photo ?? savedPhoto
+                let songAttached = try await upload(item)
+                if !songAttached { songFailures += 1 }
                 done.append(item.id)
             } catch {
                 failures.append((error as? LocalizedError)?.errorDescription
@@ -244,15 +245,22 @@ final class UploadViewModel: ObservableObject {
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
         items.removeAll { done.contains($0.id) }
-        if items.isEmpty && failures.isEmpty {
+        // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
+        // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
+        if items.isEmpty && failures.isEmpty && songFailures == 0 {
             didPostAll = done.count > 0
             reset()
         } else {
-            errorMessage = UploadSummary.message(done: done.count, failures: failures, cancelled: cancelled)
+            errorMessage = UploadSummary.message(done: done.count, failures: failures,
+                                                 cancelled: cancelled, songFailures: songFailures)
         }
     }
 
-    private func upload(_ item: PendingPhoto) async throws -> Photo? {
+    /// - Returns: 曲まで含めて狙いどおりに終わったか。写真は上がったが
+    ///   曲を付けられなかったときだけ `false`。**ここで `errorMessage` に
+    ///   書かない**——呼び出し元が最後にまとめて出す（途中で書くと、
+    ///   全部成功と見なされた `reset()` のあとに画面が閉じて消える）
+    private func upload(_ item: PendingPhoto) async throws -> Bool {
         var draft = PhotoDraft()
         draft.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.description = item.caption
@@ -284,10 +292,10 @@ final class UploadViewModel: ObservableObject {
             do {
                 try await photoService.update(photoId: id, patch: patch)
             } catch {
-                errorMessage = L("写真は投稿しましたが、曲を付けられませんでした", "Posted, but the song couldn't be attached")
+                return false
             }
         }
-        return photo
+        return true
     }
 
     private func reset() {

@@ -132,6 +132,8 @@ final class StubProtocol: URLProtocol {
     /// `URLProtocol` は `httpBody` を落とすことがあるので、
     /// `httpBodyStream` から読み直して覚えておく
     nonisolated(unsafe) static var lastBody: Data?
+    /// 何回叩かれたか。**二度押しを止められているか**を見るのに使う
+    nonisolated(unsafe) static var requestCount = 0
 
     static func reset() {
         status = 200
@@ -139,6 +141,7 @@ final class StubProtocol: URLProtocol {
         error = nil
         lastRequest = nil
         lastBody = nil
+        requestCount = 0
     }
 
     static func respond(status: Int, body: String) {
@@ -155,6 +158,7 @@ final class StubProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        StubProtocol.requestCount += 1
         StubProtocol.lastRequest = request
         StubProtocol.lastBody = request.httpBody ?? StubProtocol.readStream(request.httpBodyStream)
 

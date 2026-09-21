@@ -95,4 +95,23 @@ final class UploadSummaryTests: XCTestCase {
             UploadSummary.message(done: 0, failures: ["だめでした"], cancelled: false))
         XCTAssertFalse(message.contains("0 枚は投稿しました"))
     }
+
+    /// **曲が付かなかったのに「何も言うことは無い」を返さない。**
+    /// nil を返すと `UploadViewModel` が「全部成功」と見なし、
+    /// `didPostAll` で画面が閉じて警告が一度も描かれなかった。
+    func testSongFailureIsReportedEvenWhenEveryPhotoWentUp() throws {
+        let message = try XCTUnwrap(
+            UploadSummary.message(done: 2, failures: [], cancelled: false, songFailures: 1),
+            "曲が付かなかった回は黙らない")
+        XCTAssertTrue(message.contains("2"), "上がった枚数は出る: \(message)")
+        // **言語を決め打ちしない。** `L()` は実行環境の言語で返すので、
+        // 日本語だけを見ると英語のランナー（CI）で落ちる
+        XCTAssertTrue(message.contains("曲") || message.lowercased().contains("song"),
+                      "曲のことだと分かる: \(message)")
+    }
+
+    /// 曲が絡まない回まで喋らせない（既存の静かさを壊さない）。
+    func testNoSongFailureStillSaysNothing() {
+        XCTAssertNil(UploadSummary.message(done: 2, failures: [], cancelled: false, songFailures: 0))
+    }
 }

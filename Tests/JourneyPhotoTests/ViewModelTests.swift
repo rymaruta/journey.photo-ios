@@ -116,6 +116,25 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.likes, 42, "手元で足し算している")
     }
 
+    /// **素早く2回叩いても1回しか投げない。**
+    ///
+    /// 押さえが無いと、1回目の応答が返る前に2回目が古い `liked` を見て走り、
+    /// 「いいね」と「取り消し」が同時に飛ぶ。どちらが後に返るかでハートの
+    /// 色が決まるので、押した結果と食い違う。
+    func testDoubleTapLikesOnlyOnce() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":1}"#)
+
+        async let first: Void = model.toggleLike()
+        async let second: Void = model.toggleLike()
+        _ = await (first, second)
+
+        XCTAssertEqual(StubProtocol.requestCount, 1, "二度押しで2回投げている")
+        XCTAssertTrue(model.liked)
+    }
+
     /// 未ログインでいいねを押したら、**通信せずに**案内を出す。
     func testLikeWithoutSignInAsksToSignIn() async {
         prepare()
