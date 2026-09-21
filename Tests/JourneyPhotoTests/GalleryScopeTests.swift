@@ -147,13 +147,27 @@ final class ModerationRevisionTests: XCTestCase {
         return store
     }
 
-    /// **人が変わったときも数える。** 数えないと、画面は読み直さず、
+    /// **人が変わって中身も変わったら数える。** 数えないと、画面は読み直さず、
     /// 前の人の絞り込みで読んだ一覧が新しい人に見えたままになる。
     func testSwitchingAccountsBumpsTheRevision() async {
         let store = self.store()
+        store.block("a")           // u1 はこの人をブロックしている
         let before = store.revision
-        store.use(userId: "u2")
+        store.use(userId: "u2")    // u2 は誰もブロックしていない
+        XCTAssertTrue(store.blockedUserIds.isEmpty, "前の人のブロックが残っている")
         XCTAssertGreaterThan(store.revision, before, "人が変わったのに数が増えていない")
+    }
+
+    /// **変わっていない回は数えない。** 「ブロックした人」の画面は開くたびに
+    /// サーバーの一覧で上書きするので、無条件に数えると開くたびに
+    /// 公開一覧を丸ごと取り直すことになる。
+    func testNoChangeDoesNotBumpTheRevision() async {
+        let store = self.store()
+        store.block("a")
+        let before = store.revision
+        store.replaceBlocked(with: ["a"])   // 同じ中身で上書き
+        store.block("a")                    // すでに入っている
+        XCTAssertEqual(store.revision, before, "変わっていないのに数が増えている")
     }
 
     func testEveryChangeBumpsTheRevision() async {

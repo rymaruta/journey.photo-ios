@@ -29,12 +29,24 @@ final class ModerationStore: ObservableObject {
         self.defaults = defaults
     }
 
+    /// **本当に変わったときだけ数を進める。**
+    ///
+    /// 何も変わっていないのに進めると、画面が全件取得をやり直す。
+    /// 「ブロックした人」の画面は開くたびにサーバーの一覧で上書きする
+    /// （`replaceBlocked`）ので、そこを無条件に数えると**開くたびに
+    /// 公開一覧を丸ごと取り直す**ことになる。
+    private func bumpIfChanged(blocked: Set<String>, reported: Set<String>) {
+        guard blocked != blockedUserIds || reported != reportedPhotoIds else { return }
+        revision += 1
+    }
+
     private func key(_ suffix: String) -> String {
         "moderation.\(suffix).\(userId ?? "anonymous")"
     }
 
     /// ログイン状態が決まったら呼ぶ。端末に残っているぶんを読む。
     func use(userId: String?) {
+        let before = (blockedUserIds, reportedPhotoIds)
         self.userId = userId
         blockedUserIds = Set(defaults.stringArray(forKey: key("blocked")) ?? [])
         reportedPhotoIds = Set(defaults.stringArray(forKey: key("reported")) ?? [])
@@ -42,7 +54,7 @@ final class ModerationStore: ObservableObject {
         // `.onChange(of: revision)` を見ているので読み直さず、
         // **前の人の絞り込みで読んだ一覧**が新しい人に見えたままになる
         // （前の人がブロックした相手の写真が、新しい人には出てこない）
-        revision += 1
+        bumpIfChanged(blocked: before.0, reported: before.1)
     }
 
     /// サーバーの一覧で上書きする。
@@ -50,28 +62,32 @@ final class ModerationStore: ObservableObject {
     /// **端末のぶんを足し合わせない。** 解除したのに端末に残っていると、
     /// 「解除したのに見えない」になり、直す手立てが画面に無い。
     func replaceBlocked(with ids: [String]) {
+        let before = (blockedUserIds, reportedPhotoIds)
         blockedUserIds = Set(ids)
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
-        revision += 1
+        bumpIfChanged(blocked: before.0, reported: before.1)
     }
 
     func block(_ id: String) {
+        let before = (blockedUserIds, reportedPhotoIds)
         blockedUserIds.insert(id)
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
-        revision += 1
+        bumpIfChanged(blocked: before.0, reported: before.1)
     }
 
     func unblock(_ id: String) {
+        let before = (blockedUserIds, reportedPhotoIds)
         blockedUserIds.remove(id)
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
-        revision += 1
+        bumpIfChanged(blocked: before.0, reported: before.1)
     }
 
     /// 通報した写真は、その人の画面からは即座に消す。
     /// **サーバーは消さない**（読むのは人で、すぐには終わらない）。
     func markReported(_ photoId: String) {
+        let before = (blockedUserIds, reportedPhotoIds)
         reportedPhotoIds.insert(photoId)
         defaults.set(Array(reportedPhotoIds), forKey: key("reported"))
-        revision += 1
+        bumpIfChanged(blocked: before.0, reported: before.1)
     }
 }
