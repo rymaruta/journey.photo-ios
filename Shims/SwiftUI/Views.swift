@@ -148,11 +148,15 @@ public struct Menu: View {
 }
 public struct Link: View {
     public init(_ title: String, destination: URL) {}
+    public init<L: View>(destination: URL, @ViewBuilder label: () -> L) {}
     public var body: Never { fatalError("模型") }
 }
 public struct ShareLink: View {
     public init(item: URL) {}
     public init<L: View>(item: URL, @ViewBuilder label: () -> L) {}
+    /// 文字を配る版（本物にもある）。URL を持たないもの——地点の名前など——を配る
+    public init(item: String) {}
+    public init<L: View>(item: String, @ViewBuilder label: () -> L) {}
     public var body: Never { fatalError("模型") }
 }
 

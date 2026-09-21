@@ -14,6 +14,10 @@ struct Spot: Identifiable, Decodable, Equatable {
     let slug: String
     /// 正式名
     let name: String
+    /// 読み（ふりがな）。モック5 の「イアのゆうけい」にあたる
+    let reading: String?
+    /// 概要。**台帳に書かれたものだけ**を出す（自動生成しない）
+    let summary: String?
     /// 別名・旧称・英語表記
     let aliases: [String]?
     /// 住所（1行）
