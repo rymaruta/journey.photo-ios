@@ -4,6 +4,7 @@ import SwiftUI
 struct MyPageView: View {
 
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var favorites: FavoritesStore
     @StateObject private var model = MyPageViewModel()
     @State private var tab: ProfileTab = .posts
     @State private var showPostSheet = false
@@ -297,13 +298,30 @@ struct MyPageView: View {
         .font(.footnote)
     }
 
+    /// モック11 の3つ（投稿 / マップ / お気に入り）。
+    /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
     private var tabPicker: some View {
-        Picker("", selection: $tab) {
-            ForEach(ProfileTab.allCases) { tab in
-                Text(tab.label).tag(tab)
+        HStack(spacing: 6) {
+            ForEach(ProfileTab.allCases) { option in
+                let selected = tab == option
+                Button {
+                    tab = option
+                } label: {
+                    Text(option.label)
+                        .font(.subheadline.weight(selected ? .semibold : .regular))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(selected ? AnyShapeStyle(WebTheme.foreground)
+                                             : AnyShapeStyle(Color.clear),
+                                    in: Capsule())
+                        .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        .pickerStyle(.segmented)
+        .padding(4)
+        .background(WebTheme.surface, in: Capsule())
         .padding(.horizontal, 16)
     }
 
@@ -320,8 +338,20 @@ struct MyPageView: View {
             ErrorBanner(message: error) { Task { await model.load() } }
         } else if model.photos.isEmpty && !model.isLoading {
             ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
-        } else if tab == .timeline {
-            PhotoTimelineView(photos: model.photos)
+        } else if tab == .map {
+            // **自分の写真だけの地図。** 全員の地図はマップのタブにある
+            MyPhotosMap(photos: model.photos)
+        } else if tab == .favorites {
+            // **保存は端末に覚えている**（`FavoritesStore`）ので、
+            // ここに出せるのは「いま手元にある写真のうち保存したもの」
+            let saved = model.photos.filter { favorites.contains($0.id) }
+            if saved.isEmpty {
+                ErrorBanner(message: L("保存した写真はまだありません", "Nothing saved yet"))
+            } else {
+                PhotoGrid(photos: saved) { photo in
+                    PhotoDetailView(photo: photo, fromPublicFeed: false, context: saved)
+                }
+            }
         } else {
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(model.photos) { photo in

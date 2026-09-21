@@ -76,20 +76,50 @@ struct SignInView: View {
 
     // MARK: - ログイン・新規登録
 
+    private var canSubmit: Bool {
+        !auth.isWorking && !email.isEmpty && !password.isEmpty
+    }
+
+    /// 見出し付きの入力欄。**黒地の上で「押せる場所」を見せる**
+    @ViewBuilder
+    private func field<Content: View>(_ title: String,
+                                      @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+            content()
+                .padding(.horizontal, 14)
+                .frame(height: 48)
+                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        }
+        .padding(.vertical, 4)
+    }
+
     private var credentialsSection: some View {
         Group {
             Section {
-                TextField(L("メールアドレス", "Email"), text: $email)
-                    .keyboardType(.emailAddress)
-                    .textContentType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                SecureField(L("パスワード", "Password"), text: $password)
-                    .textContentType(mode == .signUp ? .newPassword : .password)
+                // **黒地では枠が要る。** 既定の入力欄は下線も背景も無く、
+                // 黒の上では**どこを押すのか分からない**（実機の絵で確認）。
+                // 見出しを添えて、枠と地を付ける
+                field(L("メールアドレス", "Email")) {
+                    TextField("", text: $email)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                field(L("パスワード", "Password")) {
+                    SecureField("", text: $password)
+                        .textContentType(mode == .signUp ? .newPassword : .password)
+                }
                 if mode == .signUp {
-                    TextField(L("表示名（あとで変えられます）", "Display name (you can change it later)"),
-                              text: $displayName)
-                        .textContentType(.name)
+                    field(L("表示名（あとで変えられます）", "Display name (you can change it later)")) {
+                        TextField("", text: $displayName)
+                            .textContentType(.name)
+                    }
                 }
             } footer: {
                 if mode == .signUp {
@@ -98,10 +128,20 @@ struct SignInView: View {
             }
 
             Section {
-                Button(mode == .signIn ? Labels.Navigation.login : L("登録する", "Create account")) {
+                Button {
                     Task { await submitCredentials() }
+                } label: {
+                    // **いちばん押される場所を白い大ボタンに**（投稿と同じ作法）
+                    Text(mode == .signIn ? Labels.Navigation.login : L("登録する", "Create account"))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(canSubmit ? WebTheme.accentBackground : WebTheme.surface,
+                                    in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(canSubmit ? WebTheme.accentText : WebTheme.faint)
                 }
-                .disabled(auth.isWorking || email.isEmpty || password.isEmpty)
+                .buttonStyle(.plain)
+                .disabled(!canSubmit)
 
                 Button(mode == .signIn
                        ? L("アカウントを作る", "Create an account")

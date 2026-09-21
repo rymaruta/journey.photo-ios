@@ -1,4 +1,8 @@
 import SwiftUI
+// Linux では `URLCache` が別モジュールに居る（iOS では何も起きない）
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// 設定。**審査で必要な導線をここに集める**
 /// （規約・プライバシー・ブロック一覧・退会・問い合わせ）。
@@ -47,6 +51,16 @@ struct SettingsView: View {
         }
     }
 
+    /// 端末に溜まっている画像の控え。**見えないものは消せない**ので数を出す
+    @State private var cacheSize: String = SettingsView.formattedCacheSize()
+
+    static func formattedCacheSize() -> String {
+        let bytes = URLCache.shared.currentDiskUsage + URLCache.shared.currentMemoryUsage
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytes))
+    }
+
     private var list: some View {
         List {
             if auth.userId != nil {
@@ -86,12 +100,33 @@ struct SettingsView: View {
                            "Get likes, comments, follows and story replies even when the app is closed."))
                 }
 
-                Section(L("安全", "Safety")) {
+                Section(L("プライバシー", "Privacy")) {
                     NavigationLink(L("ブロックした人", "Blocked people")) { BlockedUsersView() }
+                    Link(L("プライバシーポリシー", "Privacy Policy"), destination: LegalConsent.privacyURL)
                 }
             }
 
-            Section(L("このアプリについて", "About")) {
+            // **データとストレージ**（モック12）。写真の控えは端末に溜まる
+            Section {
+                HStack {
+                    Text(L("写真の控え", "Cached photos"))
+                    Spacer()
+                    Text(cacheSize).foregroundStyle(.secondary)
+                }
+                Button(L("控えを空にする", "Clear cache")) {
+                    // **消すのは画像の控えだけ。** ログインの情報や
+                    // 保存した写真の印（`FavoritesStore`）は消さない
+                    URLCache.shared.removeAllCachedResponses()
+                    cacheSize = Self.formattedCacheSize()
+                }
+            } header: {
+                Text(L("データとストレージ", "Data & storage"))
+            } footer: {
+                Text(L("一度見た写真を端末に控えています。空にすると、次に見るときだけ通信します。",
+                       "Photos you have seen are kept on this device. Clearing frees space."))
+            }
+
+            Section(L("サポート", "Support")) {
                 Link(L("利用規約", "Terms of Use"), destination: LegalConsent.termsURL)
                 Link(L("プライバシーポリシー", "Privacy Policy"), destination: LegalConsent.privacyURL)
                 if let contact = LegalConsent.contactURL {
@@ -112,7 +147,7 @@ struct SettingsView: View {
             }
 
             if auth.userId != nil {
-                Section {
+                Section(L("アカウント", "Account")) {
                     NavigationLink(L("パスワードを変える", "Change password")) { ChangePasswordView() }
                     Button(Labels.Navigation.logout) {
                         Task {
