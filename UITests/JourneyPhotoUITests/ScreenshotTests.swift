@@ -29,6 +29,11 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesEveryScreen() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
+        // **写真の出どころだけ本番に向ける。** テストは Debug＝staging 設定で
+        // 走るが、staging には写真が1枚も無い（本番の写真はコピーしない方針）。
+        // そのまま撮ると「No photos found.」ばかりで、人が見る画面の確認に
+        // ならない。API とログインは staging のまま（ここでは誰もログインしない）
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]

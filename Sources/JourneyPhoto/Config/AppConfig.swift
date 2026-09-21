@@ -26,6 +26,24 @@ enum AppConfig {
     /// Info.plist から必須の文字列を読む。無ければ設定ミスなので即座に落とす。
     private static func require(_ key: String) -> String {
         if let value = testOverrides?[key] { return value }
+        #if DEBUG
+        // **Debug ビルドだけ、起動引数で上書きできる。**
+        //
+        // UI テストは Debug＝staging 設定で走る。staging には写真が
+        // **1枚も無い**（本番の写真はコピーしない方針・photo-gallery の
+        // CLAUDE.md）ので、撮れる絵は「No photos found.」ばかりで、
+        // 人が実際に見る画面の確認にならない。起動引数
+        // （`-JPSiteBaseURL https://journey-photo.com`）で**写真の出どころ
+        // だけ**を本番に向けられるようにする。
+        //
+        // **Release には入れない**（`#if DEBUG`）。出荷する側に
+        // 「外から向き先を変えられる口」を残さないため。
+        if let overridden = UserDefaults.standard.string(forKey: key)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !overridden.isEmpty {
+            return overridden
+        }
+        #endif
         guard let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
             fatalError("Info.plist に \(key) がありません。Config/*.xcconfig を確認してください。")
         }
