@@ -44,6 +44,11 @@ struct GalleryView: View {
         // 別のサイトに見えていた
         .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
+        // **探すのは検索窓、選ぶのはチップ**、と役割を分ける。
+        // チップは決まった20語だけなので、地名（helsinki など）は
+        // ここから探す
+        .searchable(text: $model.query,
+                    prompt: L("題・撮影地・説明でさがす", "Search titles, places, notes"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { PhotoMapView() } label: {

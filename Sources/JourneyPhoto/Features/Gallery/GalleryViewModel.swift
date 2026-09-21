@@ -20,6 +20,8 @@ final class GalleryViewModel: ObservableObject {
     /// 選んでいるタグ。**複数選べて、全部を持つ写真だけが残る**
     /// （Web の `selectedTags` と同じ）
     @Published private(set) var selectedTags: [String] = []
+    /// 打った文字。題・説明・撮影地・タグを見る
+    @Published var query: String = "" { didSet { state = .loaded(filtered()) } }
     /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中の既定は「自分」**
     @Published private(set) var scope: GalleryScope = .all
     /// フォローしている人。`following` のときだけ要る
@@ -106,12 +108,20 @@ final class GalleryViewModel: ObservableObject {
             self.category = nil
             return inScope
         }
-        guard let category else { return PhotoQuery.photos(inScope, withAllTags: selectedTags) }
+        guard let category else {
+            return PhotoQuery.photos(
+                PhotoQuery.photos(inScope, withAllTags: selectedTags),
+                matching: query
+            )
+        }
         // 綴りではなく鍵で比べる（`建築` を押したら `architecture` も出る）
         let key = CategoryChoices.key(category)
         return PhotoQuery.photos(
-            inScope.filter { CategoryChoices.key($0.category ?? "") == key },
-            withAllTags: selectedTags
+            PhotoQuery.photos(
+                inScope.filter { CategoryChoices.key($0.category ?? "") == key },
+                withAllTags: selectedTags
+            ),
+            matching: query
         )
     }
 
@@ -148,8 +158,19 @@ final class GalleryViewModel: ObservableObject {
         state = .loaded(filtered())
     }
 
-    /// 絞り込みに出すタグ（多い順）
-    var tags: [String] { PhotoQuery.topTags(in: all, limit: 12) }
+    /// 絞り込みに出すタグ。
+    ///
+    /// **決まった20語だけ**（`TagChoices.all`）。owner の指示:
+    /// 「タグみたいなの多すぎる／フィンランドみたいな個別なのは候補に
+    /// 置きたくない」。以前は写真に付いている語をそのまま多い順に出して
+    /// いたので、`finland`・`helsinki` のような**その旅にしか出てこない
+    /// 固有名詞**が候補に並んでいた（次の写真で押す相手ではない）。
+    ///
+    /// **1枚も無い語は出さない。** 押しても空になるチップを置かない。
+    var tags: [String] {
+        let present = Set(all.flatMap { $0.tags ?? [] }.map { TagChoices.key($0) })
+        return TagChoices.all.filter { present.contains(TagChoices.key($0)) }
+    }
 
     func select(sort: GallerySort) {
         self.sort = sort

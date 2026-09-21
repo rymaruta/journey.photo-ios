@@ -220,6 +220,27 @@ enum PhotoQuery {
             .compactMap { labels[$0.key] }
     }
 
+    /// 打った文字で絞る。**題・説明・撮影地・タグ**を見る
+    /// （Web の `useGallery` の `query` と同じ範囲）。
+    ///
+    /// **地名もここで拾う。** チップの候補は決まった20語だけにしたので
+    /// （`TagChoices.all`——地名や一回きりの名詞は候補にしない方針）、
+    /// 「helsinki」のような固有名詞はここから探す。
+    static func photos(_ photos: [Photo], matching query: String) -> [Photo] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return photos }
+        return photos.filter { photo in
+            let haystack = [
+                photo.displayTitle,
+                photo.location ?? "",
+                photo.paragraphs.joined(separator: " "),
+                (photo.tags ?? []).joined(separator: " "),
+                photo.category ?? "",
+            ].joined(separator: " ").lowercased()
+            return haystack.contains(needle)
+        }
+    }
+
     /// 選んだタグで絞る。**全部を持つ写真だけ**（Web の `wanted.every`）。
     /// 比べるのは鍵（`#` と大小、日英の別名を無視する）。
     static func photos(_ photos: [Photo], withAllTags tags: [String]) -> [Photo] {

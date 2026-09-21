@@ -464,3 +464,46 @@ final class TagFilterTests: XCTestCase {
         XCTAssertEqual(top.first, "風景", "多い方（畳んで2枚）が先頭")
     }
 }
+
+/// 打った文字での絞り込みと、チップに出すタグの決め方。
+///
+/// owner の指示:「タグみたいなの多すぎるので検索窓とか、あとは
+/// 固定のから選びたい／フィンランドみたいな個別なのは候補に置きたくない」。
+final class GallerySearchTests: XCTestCase {
+
+    private func photo(_ id: String, title: String? = nil, place: String? = nil,
+                       tags: [String] = []) throws -> Photo {
+        var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\""]
+        if let title { fields.append("\"title\":\"\(title)\"") }
+        if let place { fields.append("\"location\":\"\(place)\"") }
+        if !tags.isEmpty {
+            fields.append("\"tags\":[\(tags.map { "\"\($0)\"" }.joined(separator: ","))]")
+        }
+        return try JSONDecoder.api.decode(Photo.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
+    }
+
+    /// **地名は検索窓から拾う**（チップの候補には置かない方針なので）
+    func testFindsByPlace() throws {
+        let photos = [
+            try photo("a", place: "Helsinki, Finland"),
+            try photo("b", place: "三条市, 日本"),
+        ]
+        XCTAssertEqual(PhotoQuery.photos(photos, matching: "helsinki").map(\.id), ["a"])
+    }
+
+    func testFindsByTitleIgnoringCase() throws {
+        let photos = [try photo("a", title: "Arktikum"), try photo("b", title: "高屋神社")]
+        XCTAssertEqual(PhotoQuery.photos(photos, matching: "arkti").map(\.id), ["a"])
+    }
+
+    func testFindsByTag() throws {
+        let photos = [try photo("a", tags: ["sauna"]), try photo("b", tags: ["冬"])]
+        XCTAssertEqual(PhotoQuery.photos(photos, matching: "sauna").map(\.id), ["a"])
+    }
+
+    /// 空の検索は素通し（打ちかけで一覧が消えない）
+    func testEmptyQueryKeepsEverything() throws {
+        let photos = [try photo("a"), try photo("b")]
+        XCTAssertEqual(PhotoQuery.photos(photos, matching: "   ").count, 2)
+    }
+}
