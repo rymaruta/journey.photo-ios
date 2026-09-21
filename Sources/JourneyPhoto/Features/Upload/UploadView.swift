@@ -32,12 +32,13 @@ struct UploadView: View {
                 form
             }
         }
-        .navigationTitle(L("投稿", "Post"))
+        .navigationTitle(L("新規投稿", "New post"))
+        .navigationBarTitleDisplayMode(.inline)
         // **閉じる口を置く。** シートで出しているので、下に払う以外の
         // 出口が無いと戻れないと思う人が出る
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(Labels.Common.close) { dismiss() }
+                Button(Labels.Common.cancel) { dismiss() }
             }
         }
         .onChange(of: model.didPostAll) { _, posted in
@@ -116,9 +117,23 @@ struct UploadView: View {
                         .frame(maxHeight: 260)
                         .frame(maxWidth: .infinity)
                 }
-                TextField(L("題（例: 高屋神社の雲海）", "Title (e.g. Sea of clouds at Takaya)"), text: $item.title)
-                TextField(L("説明", "Description"), text: $item.caption, axis: .vertical)
-                    .lineLimit(3...8)
+                labeled(L("タイトル", "Title"), required: true,
+                        text: item.title, limit: PostLimits.title) {
+                    TextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
+                              text: $item.title)
+                        .onChange(of: item.title) { _, value in
+                            item.title = PostLimits.clamp(value, limit: PostLimits.title)
+                        }
+                }
+                labeled(L("説明文", "Description"), required: false,
+                        text: item.caption, limit: PostLimits.description) {
+                    TextField(L("どんな写真ですか", "What is this photo about?"),
+                              text: $item.caption, axis: .vertical)
+                        .lineLimit(3...8)
+                        .onChange(of: item.caption) { _, value in
+                            item.caption = PostLimits.clamp(value, limit: PostLimits.description)
+                        }
+                }
                 PlaceSearchField(location: $item.location, coords: $item.pickedCoords)
                 if model.items.count > 1 {
                     Button(role: .destructive) {
@@ -182,12 +197,80 @@ struct UploadView: View {
         }
     }
 
+    /// 公開設定。**切り替えではなく2択**（提案の絵）。
+    /// トグル1つだと「いまどちらなのか」を言葉で確かめられない。
     private var publishSection: some View {
         Section {
-            Toggle(L("すぐ公開する", "Publish now"), isOn: $model.published)
+            HStack(spacing: 10) {
+                publishChoice(L("公開", "Public"),
+                              note: L("みんなに見てもらえる", "Everyone can see it"),
+                              systemImage: "globe", selected: model.published) {
+                    model.published = true
+                }
+                publishChoice(L("非公開", "Private"),
+                              note: L("自分だけが見られる", "Only you can see it"),
+                              systemImage: "lock", selected: !model.published) {
+                    model.published = false
+                }
+            }
+        } header: {
+            Text(L("公開設定", "Visibility"))
         } footer: {
-            Text(L("公開すると、数分後にサイトの個別ページとサイトマップにも載ります。", "Once published, it appears on the site within a few minutes."))
+            Text(model.published
+                 ? L("公開すると、数分後にサイトの個別ページとサイトマップにも載ります。",
+                     "Once published, it appears on the site within a few minutes.")
+                 : L("非公開の写真は、あなた以外には見えません。あとから公開できます。",
+                     "Private photos stay yours. You can publish them later."))
         }
+    }
+
+    private func publishChoice(_ title: String, note: String, systemImage: String,
+                               selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.title3)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(selected ? WebTheme.foreground : Color.clear, lineWidth: 2))
+            .foregroundStyle(WebTheme.foreground)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// 見出し＋必須の印＋（上限が近いときだけ）文字数。
+    ///
+    /// **数はいつも出さない。** 書いている最中に数字が目に入ると、
+    /// 書ける文章を短く削ってしまう。2割を切ってから出す（`PostLimits`）
+    @ViewBuilder
+    private func labeled<Field: View>(_ title: String, required: Bool, text: String,
+                                      limit: Int, @ViewBuilder field: () -> Field) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(required ? L("必須", "Required") : L("任意", "Optional"))
+                    .font(.caption)
+                    .foregroundStyle(required ? WebTheme.muted2 : WebTheme.faint)
+                Spacer()
+                if PostLimits.shouldShowCount(text, limit: limit) {
+                    Text("\(text.count)/\(limit)")
+                        .font(.caption)
+                        .foregroundStyle(text.count >= limit ? .pink : WebTheme.faint)
+                }
+            }
+            field()
+        }
+        .padding(.vertical, 4)
     }
 
     @ViewBuilder
@@ -217,11 +300,20 @@ struct UploadView: View {
                              : L("送信中…", "Sending…"))
                     }
                 } else {
+                    // **提案の絵の白い大ボタン。** 画面でいちばん強い場所を
+                    // 「投稿する」に渡す
                     Text(model.items.count > 1
                          ? L("\(model.items.count) 枚を投稿する", "Post \(model.items.count) photos")
                          : L("投稿する", "Post"))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(model.canSubmit ? WebTheme.accentBackground : WebTheme.surface,
+                                    in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(model.canSubmit ? WebTheme.accentText : WebTheme.faint)
                 }
             }
+            .buttonStyle(.plain)
             .disabled(!model.canSubmit)
 
             if model.isWorking && model.items.count > 1 {

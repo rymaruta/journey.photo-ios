@@ -259,3 +259,29 @@ final class NotificationFilterTests: XCTestCase {
         XCTAssertEqual(NotificationFilter.allCases.count, 4)
     }
 }
+
+/// 投稿の長さの上限。**サーバーの値を写しているか**を見張る。
+final class PostLimitsTests: XCTestCase {
+
+    /// `api-user/src/sanitize.ts` の実際の値
+    func testMatchesTheServer() {
+        XCTAssertEqual(PostLimits.title, 200)
+        XCTAssertEqual(PostLimits.description, 2_000)
+        XCTAssertEqual(PostLimits.location, 200)
+        XCTAssertEqual(PostLimits.storyCaption, 200)
+    }
+
+    /// **いつも数を出さない**（数字が気になって書けなくなる）。
+    /// 2割を切ってから
+    func testCountAppearsOnlyNearTheLimit() {
+        XCTAssertFalse(PostLimits.shouldShowCount(String(repeating: "あ", count: 10), limit: 200))
+        XCTAssertTrue(PostLimits.shouldShowCount(String(repeating: "あ", count: 160), limit: 200))
+    }
+
+    /// 画面側で止める（サーバーに黙って切らせない）
+    func testClamp() {
+        let long = String(repeating: "あ", count: 300)
+        XCTAssertEqual(PostLimits.clamp(long, limit: PostLimits.title).count, 200)
+        XCTAssertEqual(PostLimits.clamp("短い", limit: 200), "短い")
+    }
+}
