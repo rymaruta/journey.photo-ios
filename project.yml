@@ -40,6 +40,15 @@ targets:
       # ID トークンを取り出す `AuthCognitoTokensProvider` がここに居る
       - package: Amplify
         product: AWSPluginsCore
+    entitlements:
+      path: Sources/JourneyPhoto/JourneyPhoto.entitlements
+      properties:
+        # **プッシュ通知。** `production` は TestFlight と App Store の
+        # ビルド（配布用プロファイル）向け。Xcode から直接入れる開発用
+        # ビルドを使うときだけ `development` に変える。
+        # ここを付けるには App ID 側で Push Notifications が有効である必要が
+        # あり、有効でないと**署名の段で落ちる**（逆は落ちない）
+        aps-environment: production
     configFiles:
       Debug: Config/Staging.xcconfig
       Release: Config/Production.xcconfig

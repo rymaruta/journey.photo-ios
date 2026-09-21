@@ -167,6 +167,32 @@ if codemagic_path.exists():
         fail("codemagic.yaml に仮の APP_APPLE_ID（0000000000）が残っています"
              "（空にすると Bundle ID から自動で引きます）")
 
+# ---- 10. 通知の文面が、両方の言語に在るか -----------------------------------
+#
+# **片方だけだと、iOS は鍵の文字列をそのまま通知に出す**
+# （「NOTIF_LIKE」と書かれた通知が届く）。サーバーは鍵しか送らないので
+# （`api-user/src/notify.ts` の `LOC_KEYS`）、ここが唯一の文面。
+notif_keys = {}
+for lang in ("ja", "en"):
+    path = ROOT / f"Sources/JourneyPhoto/Resources/{lang}.lproj/Localizable.strings"
+    if not path.exists():
+        fail(f"{lang}.lproj/Localizable.strings がありません（通知の文面がそこにしか無い）")
+        continue
+    text = path.read_text(encoding="utf-8")
+    notif_keys[lang] = set(re.findall(r'"(NOTIF_[A-Z_]+)"\s*=', text))
+
+if len(notif_keys) == 2:
+    for lang, other in (("ja", "en"), ("en", "ja")):
+        for key in sorted(notif_keys[lang] - notif_keys[other]):
+            fail(f"通知の文面 {key} が {other}.lproj にありません"
+                 f"（その言語の端末に「{key}」という文字列が通知として届きます）")
+    # サーバーが送る鍵と揃っているか（写し間違いを黙って通さない）
+    server = ROOT.parent / "photo-gallery" / "api-user" / "src" / "notify.ts"
+    if server.exists():
+        sent = set(re.findall(r'"(NOTIF_[A-Z_]+)"', server.read_text(encoding="utf-8")))
+        for key in sorted(sent - notif_keys["ja"]):
+            fail(f"サーバーが送る通知の鍵 {key} が Localizable.strings にありません")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:

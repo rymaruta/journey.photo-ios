@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UserNotifications
 // Linux では URLCache が別モジュールに居る（iOS では何も起きない）
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -18,6 +20,10 @@ struct JourneyPhotoApp: App {
     @StateObject private var favorites = FavoritesStore()
     @StateObject private var hidden = ModerationStore()
     @StateObject private var joinedAlbums = JoinedAlbumsStore()
+    @StateObject private var push = PushCenter()
+    /// **APNs のトークンは `UIApplicationDelegate` にしか返ってこない。**
+    /// SwiftUI だけでは受け取れないので、この1本だけ UIKit を繋ぐ
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var configurationError: String? = nil
 
     init() {
@@ -73,6 +79,7 @@ struct JourneyPhotoApp: App {
                 .environmentObject(favorites)
                 .environmentObject(hidden)
                 .environmentObject(joinedAlbums)
+                .environmentObject(push)
                 .task { await auth.restore() }
                 // **ログイン状態が変わるたびに読み直す。** `.task` のままだと
                 // 起動時に1回しか走らず、あとからログインした人には
@@ -85,6 +92,11 @@ struct JourneyPhotoApp: App {
                     favorites.use(userId: auth.userId)
                     hidden.use(userId: auth.userId)
                     joinedAlbums.use(userId: auth.userId)
+                    // **通知の宛先も、人が変わったら預け直す**
+                    // （外さないと、次にこの端末を使う人へ前の人あての
+                    //  通知が届く）
+                    AppDelegate.push = push
+                    await push.use(userId: auth.userId)
                     await applyModeration()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     if auth.userId != nil {

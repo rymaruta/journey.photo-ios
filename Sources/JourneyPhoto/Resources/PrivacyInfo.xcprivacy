@@ -93,6 +93,24 @@
             </array>
         </dict>
 
+        <!--
+          プッシュ通知の宛先（APNs の端末トークン）。
+          **通知を許可した人だけ**。本人と結びつけて保存するので Linked。
+          広告にも解析にも使わない（トラッキングは false）。
+        -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeDeviceID</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
         <!-- Cognito の sub（ユーザーID）。公開ページの URL にも出る -->
         <dict>
             <key>NSPrivacyCollectedDataType</key>

@@ -268,3 +268,20 @@ public struct FocusState<Value>: DynamicProperty {
     public init() where Value == Bool { self.wrappedValue = false }
     public var projectedValue: Binding<Value> { Binding(get: { wrappedValue }, set: { _ in }) }
 }
+
+
+/// `@UIApplicationDelegateAdaptor` の模型。
+/// 本物は UIKit の delegate を SwiftUI の `App` に繋ぐ。
+@propertyWrapper
+public struct UIApplicationDelegateAdaptor<DelegateType: AnyObject>: DynamicProperty {
+    public var wrappedValue: DelegateType
+    public init(_ type: DelegateType.Type) where DelegateType: NSObjectProtocolShim {
+        wrappedValue = DelegateType.init()
+    }
+}
+
+/// `NSObject` の代わり（Linux には Foundation の NSObject はあるが、
+/// `init()` が要ることだけを写した軽い約束）。
+public protocol NSObjectProtocolShim: AnyObject {
+    init()
+}

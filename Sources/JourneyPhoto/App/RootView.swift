@@ -9,6 +9,8 @@ struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @State private var selection: Tab = .gallery
     @State private var unread = 0
+    /// 通知を押して開いたか（`AppDelegate` から届く）
+    @StateObject private var router = NotificationRouter.shared
 
     enum Tab: Hashable {
         case gallery, search, notifications, mypage
@@ -73,6 +75,11 @@ struct RootView: View {
             .tag(Tab.mypage)
         }
         .task(id: auth.userId) { await refreshUnread() }
+        // **押した通知の行き先。** 数で見るのは、2回続けて押したときに
+        // 「変わっていない」と見なされて2回目が効かなくなるため
+        .onChange(of: router.openActivityRequests) { _, _ in
+            selection = .notifications
+        }
         .onChange(of: selection) { _, tab in
             // お知らせを開いたら、閉じたときに数え直す
             if tab != .notifications {

@@ -8,6 +8,7 @@ struct DeleteAccountView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var push: PushCenter
     @Environment(\.dismiss) private var dismiss
 
     /// 押し間違いで消えないように、決まった語を打たせる（`ConfirmWord`）。
@@ -75,6 +76,9 @@ struct DeleteAccountView: View {
         errorMessage = nil
         defer { isWorking = false }
         do {
+            // **宛先は消す前に外す。** アカウントが消えたあとでは認証が
+            // 通らず、`devices#<uid>` の行だけが残る
+            await push.signingOut()
             try await environment.account.deleteAccount()
             // **消えたあとのトークンは残さない。** API Gateway の JWT 検証は
             // 署名と exp しか見ないので、残ったトークンは期限まで通る
