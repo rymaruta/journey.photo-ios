@@ -22,6 +22,13 @@ struct PlaceSearchField: View {
     /// 入った瞬間に `.onChange` が走ると、頼んでいない検索が飛び、
     /// **勝手に候補が開く**（選んだ覚えのない地名が並ぶ）
     @FocusState private var focused: Bool
+    /// 候補から選んだときの地名。**手で直されたら座標を捨てるため**に覚える。
+    ///
+    /// 覚えていないと、「パリ」を選んでから文字を「ロンドン」に直した回に
+    /// **パリの座標がロンドンとして保存される**。しかもサーバーは
+    /// 明示的な座標を「正確」と見て `geoApprox` を外すので
+    /// （`photoUpdate.ts`）、間違った場所に確定で刺さる。
+    @State private var pickedLabel: String?
 
     var body: some View {
         Group {
@@ -31,8 +38,12 @@ struct PlaceSearchField: View {
 
             ForEach(suggestions) { place in
                 Button {
-                    location = place.label
+                    // **`location` より先に覚える。** あとにすると
+                    // `.onChange(of: location)` が「選んだ地名ではない」と
+                    // 読んで、選んだそばから座標を捨てることがある
+                    pickedLabel = place.label
                     coords = place.coords
+                    location = place.label
                     suggestions = []
                 } label: {
                     Label(place.label, systemImage: "mappin.circle")
@@ -50,6 +61,12 @@ struct PlaceSearchField: View {
     /// **打つたびに投げない。** 最後の打鍵から少し待つ（検索と同じ間合い）。
     private func schedule(_ value: String) {
         searchTask?.cancel()
+        // **選んだ地名から離れたら座標を捨てる。** 残すと、別の地名に
+        // 前の座標が付いたまま保存される（しかも「正確」として扱われる）
+        if !PlacePick.keepsCoords(typed: value, pickedLabel: pickedLabel) {
+            pickedLabel = nil
+            coords = nil
+        }
         // 自分で入れた値（自動補完・候補の選択）では探しに行かない
         guard focused else {
             suggestions = []

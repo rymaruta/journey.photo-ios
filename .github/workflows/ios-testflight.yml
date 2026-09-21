@@ -49,6 +49,10 @@ jobs:
       #
       # **鍵に Sources を含めない。** 含めると1文字直すたびに控えが
       # 外れて、いちばん高い依存のビルドからやり直しになる
+      # 控えの鍵に混ぜる（Xcode が変わったら作り直す）
+      - name: Xcode の版を読む
+        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
+
       - name: 前回の作りかけを控えから戻す
         uses: actions/cache@v4
         with:
@@ -56,9 +60,13 @@ jobs:
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
             ~/Library/Caches/org.swift.swiftpm
-          key: xcode-deps-${{ runner.os }}-${{ hashFiles('project.yml', 'Package.swift') }}
+          # **Xcode の版を鍵に入れる。** 入れないと、ランナーの像が
+          # 上がって Xcode が変わった回に**古い中間生成物が混ざる**。
+          # しかも鍵は当たり続けるので控えは作り直されず、以後ずっと
+          # 同じ壊れた控えから始まる（原因のいちばん見えにくい壊れ方）
+          key: xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}
           restore-keys: |
-            xcode-deps-${{ runner.os }}-
+            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
 
       - name: 設定の検査
         run: python3 Tools/check-config.py

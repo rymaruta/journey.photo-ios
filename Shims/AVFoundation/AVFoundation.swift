@@ -1,10 +1,20 @@
 // AVFoundation の模型。
 import Foundation
 
+/// 本物と同じ形にしておく。**足りないと Mac でしか気づけない**
+open class AVPlayerItem {}
+
 open class AVPlayer {
+    public private(set) var currentItem: AVPlayerItem? = AVPlayerItem()
     public init(url: URL) {}
     public func play() {}
     public func pause() {}
+}
+
+extension NSNotification.Name {
+    /// 鳴り終わりの知らせ（本物は AVFoundation が出す）
+    public static let AVPlayerItemDidPlayToEndTime =
+        NSNotification.Name("AVPlayerItemDidPlayToEndTime")
 }
 
 public final class AVAudioSession {

@@ -20,8 +20,19 @@ final class MusicPreviewPlayer: ObservableObject {
     @Published private(set) var playingURL: URL?
 
     private var player: AVPlayer?
+    /// 鳴り終わりの見張り。**外さないと積み上がる**
+    private var endObserver: NSObjectProtocol?
 
     private init() {}
+
+    deinit { removeEndObserver() }
+
+    private func removeEndObserver() {
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
+        }
+    }
 
     func isPlaying(_ url: URL?) -> Bool {
         guard let url else { return false }
@@ -44,15 +55,36 @@ final class MusicPreviewPlayer: ObservableObject {
         let player = AVPlayer(url: url)
         self.player = player
         playingURL = url
+        // **30秒で鳴り終わったら自分で止める。**
+        //
+        // 見張らないと (1) ボタンが「一時停止」のまま固まる
+        // (2) `.playback` で奪った場を返さないので、**他のアプリの音楽が
+        // 二度と戻らない**——止めるつもりで押した人しか回復できない
+        removeEndObserver()
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stop()
+        }
         player.play()
     }
 
     func stop() {
+        removeEndObserver()
         player?.pause()
         player = nil
         playingURL = nil
         // **止めたら場を返す。** 返さないと、止めたあとも他のアプリの
-        // 音楽が戻らない（`.playback` で奪ったまま）
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // 音楽が戻らない（`.playback` で奪ったまま）。
+        //
+        // **少し待ってから返す。** 止めた直後は `isBusy` で断られることが
+        // あり、`try?` で握り潰すと場を占めたままになる
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            try? AVAudioSession.sharedInstance()
+                .setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 }
