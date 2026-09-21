@@ -17,6 +17,9 @@ final class GalleryViewModel: ObservableObject {
     @Published var category: String?
     /// 並び替え。**Web の `FilterBar` と同じ3つ**（新しい順／古い順／人気順）
     @Published var sort: GallerySort = .new
+    /// 選んでいるタグ。**複数選べて、全部を持つ写真だけが残る**
+    /// （Web の `selectedTags` と同じ）
+    @Published private(set) var selectedTags: [String] = []
     /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中の既定は「自分」**
     @Published private(set) var scope: GalleryScope = .all
     /// フォローしている人。`following` のときだけ要る
@@ -103,10 +106,13 @@ final class GalleryViewModel: ObservableObject {
             self.category = nil
             return inScope
         }
-        guard let category else { return inScope }
+        guard let category else { return PhotoQuery.photos(inScope, withAllTags: selectedTags) }
         // 綴りではなく鍵で比べる（`建築` を押したら `architecture` も出る）
         let key = CategoryChoices.key(category)
-        return inScope.filter { CategoryChoices.key($0.category ?? "") == key }
+        return PhotoQuery.photos(
+            inScope.filter { CategoryChoices.key($0.category ?? "") == key },
+            withAllTags: selectedTags
+        )
     }
 
     /// 出てくる順に、重複を落として並べる。**件数の多い順にしない**
@@ -130,6 +136,20 @@ final class GalleryViewModel: ObservableObject {
     private func sorted(_ photos: [Photo]) -> [Photo] {
         sort.apply(photos)
     }
+
+    /// タグのチップ。**押し直すと外れる**（カテゴリと同じ約束）
+    func toggle(tag: String) {
+        let key = TagChoices.key(tag)
+        if let index = selectedTags.firstIndex(where: { TagChoices.key($0) == key }) {
+            selectedTags.remove(at: index)
+        } else {
+            selectedTags.append(tag)
+        }
+        state = .loaded(filtered())
+    }
+
+    /// 絞り込みに出すタグ（多い順）
+    var tags: [String] { PhotoQuery.topTags(in: all, limit: 12) }
 
     func select(sort: GallerySort) {
         self.sort = sort

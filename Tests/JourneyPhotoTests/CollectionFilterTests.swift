@@ -420,3 +420,47 @@ final class CategorySynonymTests: XCTestCase {
         XCTAssertEqual(FeaturedGroups.groups(from: photos).count, 1)
     }
 }
+
+/// タグでの絞り込み（Web の `FilterBar` のタグチップ）。
+final class TagFilterTests: XCTestCase {
+
+    private func photo(_ id: String, tags: [String]) throws -> Photo {
+        let list = tags.map { "\"\($0)\"" }.joined(separator: ",")
+        let json = "{\"id\":\"\(id)\",\"src\":\"https://x/\(id).jpg\",\"tags\":[\(list)]}"
+        return try JSONDecoder.api.decode(Photo.self, from: Data(json.utf8))
+    }
+
+    /// **全部を持つ写真だけ**（Web の `wanted.every`）。
+    /// 片方だけ持つ写真が混ざると、2つ選んだ意味が無くなる
+    func testAllSelectedTagsMustMatch() throws {
+        let photos = [
+            try photo("both", tags: ["sauna", "finland"]),
+            try photo("one", tags: ["sauna"]),
+        ]
+        XCTAssertEqual(PhotoQuery.photos(photos, withAllTags: ["sauna", "finland"]).map(\.id), ["both"])
+    }
+
+    /// 鍵で比べる（`#` と大小、日英の別名を無視）
+    func testMatchesByKey() throws {
+        let photos = [try photo("a", tags: ["風景"])]
+        XCTAssertEqual(PhotoQuery.photos(photos, withAllTags: ["#Landscape"]).map(\.id), ["a"])
+    }
+
+    func testNoTagsMeansNoFilter() throws {
+        let photos = [try photo("a", tags: ["x"]), try photo("b", tags: [])]
+        XCTAssertEqual(PhotoQuery.photos(photos, withAllTags: []).count, 2)
+    }
+
+    /// よく使われるタグも**畳んでから数える**
+    /// （`風景` と `landscape` を別々に数えない）
+    func testTopTagsCollapseSynonyms() throws {
+        let photos = [
+            try photo("a", tags: ["風景"]),
+            try photo("b", tags: ["landscape"]),
+            try photo("c", tags: ["sauna"]),
+        ]
+        let top = PhotoQuery.topTags(in: photos, limit: 5)
+        XCTAssertEqual(top.count, 2, "同じ主題が2つに割れている")
+        XCTAssertEqual(top.first, "風景", "多い方（畳んで2枚）が先頭")
+    }
+}

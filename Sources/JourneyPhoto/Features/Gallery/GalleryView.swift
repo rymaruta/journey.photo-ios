@@ -179,6 +179,41 @@ struct GalleryView: View {
         }
     }
 
+    /// タグのチップ。**Web の `FilterBar` にある側**（あちらは数も出す）。
+    /// 複数選べて、**全部を持つ写真だけ**が残る。押し直すと外れる。
+    private var tagBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(model.tags, id: \.self) { tag in
+                    let selected = model.selectedTags.contains { TagChoices.key($0) == TagChoices.key(tag) }
+                    Button {
+                        model.toggle(tag: tag)
+                    } label: {
+                        Text("#\(tag)")
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                selected ? AnyShapeStyle(WebTheme.foreground)
+                                         : AnyShapeStyle(.ultraThinMaterial),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                            .overlay(
+                                Capsule().strokeBorder(
+                                    selected ? Color.clear : Color.white.opacity(0.12),
+                                    lineWidth: 1
+                                )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+    }
+
     /// owner が選んだ「おすすめ」。Web はトップの一覧の上に、
     /// カテゴリごとの横並びで出している（`FeaturedSections`）。
     @ViewBuilder
@@ -226,6 +261,11 @@ struct GalleryView: View {
             if !model.categories.isEmpty {
                 filterBar
             }
+            if !model.tags.isEmpty {
+                tagBar
+            }
+            // チップの列と写真の間に息を入れる（実機の絵で詰まって見えた）
+            Color.clear.frame(height: 4)
             featuredSections
             PhotoGrid(photos: photos) { photo in
                 PhotoDetailView(photo: photo, context: photos)
