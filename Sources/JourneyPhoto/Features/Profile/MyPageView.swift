@@ -31,6 +31,7 @@ struct MyPageView: View {
                 content
             }
         }
+        .webScreen()
         .navigationTitle(Labels.Navigation.mypage)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

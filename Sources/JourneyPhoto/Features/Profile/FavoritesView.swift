@@ -39,6 +39,7 @@ struct FavoritesView: View {
                 }
             }
         }
+        .webScreen()
         .navigationTitle(Labels.Navigation.favorites)
         .task { await load() }
         .refreshable { await load(force: true) }

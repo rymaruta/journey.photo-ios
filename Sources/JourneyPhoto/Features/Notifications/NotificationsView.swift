@@ -25,6 +25,7 @@ struct NotificationsView: View {
                 list
             }
         }
+        .webScreen()
         .navigationTitle(L("お知らせ", "Activity"))
     }
 

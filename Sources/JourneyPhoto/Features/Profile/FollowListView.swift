@@ -53,6 +53,7 @@ struct FollowListView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .webScreen()
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }

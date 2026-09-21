@@ -25,6 +25,14 @@ struct RootView: View {
                 tabs
             }
         }
+        // **Web と同じ「固定ダーク」にする。** `app/globals.css` が
+        // `color-scheme: dark` で明暗の切り替えを持たない＝端末が
+        // ライトでも黒地。ここで端末に従うと、ライトの人だけ別アプリに見える
+        .preferredColorScheme(.dark)
+        // 押せるものは白（Web の `--accent-bg` は白92%）。既定の橙は
+        // Web のどこにも出てこない色だった
+        .tint(WebTheme.foreground)
+        .background(WebTheme.background)
         .overlay(alignment: .top) {
             if let configurationError {
                 Text(L("認証の初期化に失敗しました: \(configurationError)", "Sign-in setup failed: \(configurationError)"))

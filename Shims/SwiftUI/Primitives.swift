@@ -285,3 +285,19 @@ public struct UIApplicationDelegateAdaptor<DelegateType: AnyObject>: DynamicProp
 public protocol NSObjectProtocolShim: AnyObject {
     init()
 }
+
+/// 線形グラデーション。写真の下に敷く帯（Web の `linear-gradient`）で使う。
+/// 模型なので何も描かない。
+public struct UnitPoint: Hashable, Sendable {
+    public static let top = UnitPoint()
+    public static let bottom = UnitPoint()
+    public static let leading = UnitPoint()
+    public static let trailing = UnitPoint()
+    public static let center = UnitPoint()
+    public init() {}
+}
+
+public struct LinearGradient: View, ShapeStyle {
+    public init(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {}
+    public var body: Never { fatalError() }
+}

@@ -1,0 +1,81 @@
+import SwiftUI
+
+/// Web 版（journey-photo.com）と同じ見た目の決まりごと。
+///
+/// **出どころは `photo-gallery/app/globals.css` の design tokens。**
+/// あちらは「dark fixed」と書いてあるとおり、明暗の切り替えを持たない
+/// **黒地・白文字の固定**。アプリだけ白地＋橙だったので、同じサイトの
+/// アプリに見えなかった。値は勝手に決めず、向こうの CSS から写す。
+///
+///     --color-background: #000000
+///     --color-foreground: #ffffff
+///     --fg:        rgba(255,255,255,0.95)
+///     --muted:     rgba(255,255,255,0.82)
+///     --muted-2:   rgba(255,255,255,0.72)
+///     --outer-border: rgba(255,255,255,0.12)
+///     --accent-bg: rgba(255,255,255,0.92)
+///     --accent-text: #07090a
+///
+/// **端末の明暗設定には従わない。** Web が従っていないので、ここで
+/// 従うと「iPhone をライトにしている人だけ別アプリ」になる。
+@MainActor
+enum WebTheme {
+
+    static let background = Color.black
+    static let foreground = Color.white
+
+    /// 本文。`--fg`
+    static let text = Color.white.opacity(0.95)
+    /// 副次の文字。`--muted`
+    static let muted = Color.white.opacity(0.82)
+    /// さらに弱い文字（説明・日付）。`--muted-2` と、実際の部品で多い `white/60`
+    static let muted2 = Color.white.opacity(0.72)
+    static let faint = Color.white.opacity(0.6)
+    /// 入力欄のプレースホルダ（`placeholder:text-white/35`）
+    static let placeholder = Color.white.opacity(0.35)
+
+    /// 境目。`--outer-border`（部品では `ring-white/10`〜`border-white/15`）
+    static let border = Color.white.opacity(0.12)
+
+    /// 押せるものの地。`--accent-bg` / `--accent-text`
+    static let accentBackground = Color.white.opacity(0.92)
+    static let accentText = Color(red: 0x07 / 255, green: 0x09 / 255, blue: 0x0a / 255)
+
+    /// 選ばれていないチップ・入力欄の地（`bg-white/[0.07]`・`bg-white/[0.06]`）
+    static let surface = Color.white.opacity(0.07)
+    /// 少し浮かせる面（ピル・カード。`bg-black/30` ＋ `ring-white/10`）
+    static let raised = Color.white.opacity(0.10)
+
+    /// 写真の格子の隙間。Web は `gap-1`（4px）で、角も丸めない
+    static let gridSpacing: CGFloat = 4
+    /// スマホの列数。Web は `grid-cols-2`（`sm:` 以上で3〜4列）
+    static let gridColumns = 2
+}
+
+/// 画面ぜんぶを黒地にする。
+///
+/// **`preferredColorScheme(.dark)` だけでは黒にならない。** `List` /
+/// `Form` の地は「暗い灰（`systemGroupedBackground`）」で、Web の
+/// 真っ黒とは別の色。地を消してから敷き直す。
+///
+/// （`ViewModifier` では書かない——`Shims/` の模型が持っておらず、
+/// Linux での型検査が通らなくなる。素の `extension` で足りる）
+extension View {
+
+    func webScreen() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background(WebTheme.background)
+    }
+
+    /// Web の「押せるもの」の形（白地・黒字・丸）。
+    /// `FilterBar` の選択中チップ（`bg-white text-black font-medium`）と同じ。
+    func webPrimaryButton() -> some View {
+        self
+            .font(.callout.weight(.medium))
+            .foregroundStyle(WebTheme.accentText)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 20)
+            .background(WebTheme.accentBackground, in: Capsule())
+    }
+}

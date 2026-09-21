@@ -49,5 +49,7 @@ struct LegalGateView: View {
             .accessibilityIdentifier("legal.agree")
         }
         .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(WebTheme.background)
     }
 }

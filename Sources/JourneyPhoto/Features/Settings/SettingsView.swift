@@ -130,6 +130,7 @@ struct SettingsView: View {
                 }
             }
         }
+        .webScreen()
         .navigationTitle(L("設定", "Settings"))
     }
 }

@@ -52,6 +52,7 @@ struct UserProfileView: View {
                 }
             }
         }
+        .webScreen()
         .navigationTitle(model.profile?.name ?? Labels.Navigation.profile)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

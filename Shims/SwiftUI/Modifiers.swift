@@ -81,6 +81,22 @@ public struct PickerStyleShim {
 public struct TextFieldStyleShim {
     public static let roundedBorder = TextFieldStyleShim()
 }
+public struct VisibilityShim {
+    public static let automatic = VisibilityShim()
+    public static let visible = VisibilityShim()
+    public static let hidden = VisibilityShim()
+}
+
+public struct ColorSchemeShim {
+    public static let light = ColorSchemeShim()
+    public static let dark = ColorSchemeShim()
+}
+
+public struct ToolbarPlacementShim {
+    public static let navigationBar = ToolbarPlacementShim()
+    public static let tabBar = ToolbarPlacementShim()
+}
+
 public struct ControlSizeShim {
     public static let large = ControlSizeShim()
     public static let regular = ControlSizeShim()
@@ -131,6 +147,11 @@ extension View {
     public func background<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func background<S: ShapeStyle, T: Shape>(_ s: S, in shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tint(_ c: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    // 黒地に揃えるために使う（`WebTheme`）。模型なので何も描かない
+    public func scrollContentBackground(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func preferredColorScheme(_ s: ColorSchemeShim?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func toolbarBackground<S: ShapeStyle>(_ s: S, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func toolbarColorScheme(_ s: ColorSchemeShim?, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(_ content: V, alignment: Alignment = .center) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func buttonStyle(_ s: PrimitiveButtonStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

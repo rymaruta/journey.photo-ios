@@ -66,6 +66,7 @@ struct SearchView: View {
                 Text(L("見つかりませんでした", "No results")).foregroundStyle(.secondary)
             }
         }
+        .webScreen()
         .navigationTitle(L("さがす", "Search"))
         .searchable(text: $query, prompt: L("撮影地・タグ・人", "Places, tags, people"))
         .task { await model.loadPhotos(environment: environment) }

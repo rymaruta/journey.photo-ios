@@ -10,11 +10,12 @@ struct GalleryView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = GalleryViewModel()
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-    ]
+    // **Web と同じ組み方**（`GalleryGrid.tsx` の `grid-cols-2 gap-1`）。
+    // 以前は3列・隙間2で、同じ写真でも1枚がだいぶ小さく見えていた
+    private let columns = Array(
+        repeating: GridItem(.flexible(), spacing: WebTheme.gridSpacing),
+        count: WebTheme.gridColumns
+    )
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,6 +40,7 @@ struct GalleryView: View {
                 }
             }
         }
+        .webScreen()
         .navigationTitle(Labels.Navigation.gallery)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -124,11 +126,14 @@ struct GalleryView: View {
                             .font(.caption)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
+                            // Web の `FilterBar`: 選択中は白地に黒字、
+                            // それ以外は白7%の地に白70%の字
                             .background(
-                                selected ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.secondarySystemBackground)),
+                                selected ? AnyShapeStyle(WebTheme.foreground)
+                                         : AnyShapeStyle(WebTheme.surface),
                                 in: Capsule()
                             )
-                            .foregroundStyle(selected ? Color.white : Color.primary)
+                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])
@@ -138,6 +143,49 @@ struct GalleryView: View {
         }
     }
 
+    /// 1枚ぶん。**Web の `GalleryGrid.tsx` と同じ形**——4:3（`paddingTop: 75%`）で、
+    /// 下に黒のグラデーションを敷いて題と分類を重ねる。角は丸めない。
+    ///
+    /// 以前は正方形の写真だけで、題も分類も出していなかった。同じ写真でも
+    /// 別のサイトに見える一番大きな差がここだった。
+    private func tile(_ photo: Photo) -> some View {
+        RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+            .aspectRatio(4.0 / 3.0, contentMode: .fill)
+            .clipped()
+            .overlay(alignment: .bottom) {
+                // **題も分類も無い写真には帯を出さない。** 空の黒帯が
+                // 乗るだけで、写真が欠けて見える
+                let title = photo.displayTitle
+                let category = photo.category.map { Labels.Category.name($0) } ?? ""
+                if !title.isEmpty || !category.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if !title.isEmpty {
+                            Text(title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(WebTheme.foreground)
+                                .lineLimit(1)
+                        }
+                        if !category.isEmpty {
+                            Text(category)
+                                .font(.caption)
+                                .foregroundStyle(WebTheme.faint)
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.black.opacity(0), Color.black.opacity(0.6)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                }
+            }
+            .accessibilityLabel(photo.accessibilityText)
+    }
+
     private func grid(_ photos: [Photo]) -> some View {
         ScrollView {
             // **ストーリーはここに置かない。** 2026-09-20 に Web が
@@ -145,12 +193,10 @@ struct GalleryView: View {
             if !model.categories.isEmpty {
                 filterBar
             }
-            LazyVGrid(columns: columns, spacing: 2) {
+            LazyVGrid(columns: columns, spacing: WebTheme.gridSpacing) {
                 ForEach(photos) { photo in
                     NavigationLink(value: photo.id) {
-                        RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
-                            .aspectRatio(1, contentMode: .fill)
-                            .accessibilityLabel(photo.accessibilityText)
+                        tile(photo)
                     }
                     .buttonStyle(.plain)
                 }
