@@ -37,6 +37,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # **依存の作り直しに毎回30分以上かかる。**
+      # Amplify → aws-sdk-swift → smithy-swift は桁違いに大きく、
+      # 素のランナーでは丸ごと組み直す。落としてきたソースと、組んだ
+      # 中間生成物を控える（Xcode は古くなったものを自分で捨てる）。
+      #
+      # **鍵に Sources を含めない。** 含めると1文字直すたびに控えが
+      # 外れて、いちばん高い依存のビルドからやり直しになる
+      - name: 前回の作りかけを控えから戻す
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            ~/Library/Caches/org.swift.swiftpm
+          key: xcode-deps-${{ runner.os }}-${{ hashFiles('project.yml', 'Package.swift') }}
+          restore-keys: |
+            xcode-deps-${{ runner.os }}-
+
       - name: 設定の検査
         run: python3 Tools/check-config.py
 
