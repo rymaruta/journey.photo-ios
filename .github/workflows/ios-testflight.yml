@@ -162,10 +162,15 @@ jobs:
           # aws-sdk-swift → smithy-swift がビルドツールプラグインを持ち、
           # Xcode 15 以降は人が「Trust & Enable」を押す前提になっている
           # （run #4 のテストがこれで止まった）。CI には押す人がいない
+          # **`--` の後ろに置けない。** `codemagic-cli-tools` の
+          # `cli_app.py` は `parse_args()`（`parse_known_args` ではない）で、
+          # `build-ipa` に位置引数は無い＝`unrecognized arguments` で終わる。
+          # 素通しする口は `--archive-flags`（0.69.0 の
+          # `_xcode_project/arguments.py` で確認）
           xcode-project build-ipa \
             --project JourneyPhoto.xcodeproj \
             --scheme JourneyPhoto \
-            -- -skipPackagePluginValidation -skipMacroValidation
+            --archive-flags="-skipPackagePluginValidation -skipMacroValidation"
 
       - name: TestFlight に上げる
         if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}

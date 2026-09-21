@@ -25,9 +25,21 @@ final class GalleryViewModel: ObservableObject {
     /// （押しても空になるボタンを置かない）
     @Published private(set) var categories: [String] = []
 
-    private let gallery: PublicGalleryService
+    /// 公開一覧の出どころ。**`let` にしない。**
+    ///
+    /// `@StateObject` の初期化時には `EnvironmentObject` を読めないので、
+    /// 画面が出てから本物（`AppEnvironment.gallery`）に差し替える。
+    /// 自前の `PublicGalleryService()` を持ったままだと、
+    /// `setHidden` は環境側の1つにしか届かず、**ブロックした相手の写真が
+    /// ギャラリーから一生消えない**（再起動しても消えない）。
+    private var gallery: PublicGalleryService
 
-    init(gallery: PublicGalleryService) {
+    init(gallery: PublicGalleryService = PublicGalleryService()) {
+        self.gallery = gallery
+    }
+
+    /// 画面が出たら、環境が持っている1つに繋ぎ直す。
+    func use(gallery: PublicGalleryService) {
         self.gallery = gallery
     }
 

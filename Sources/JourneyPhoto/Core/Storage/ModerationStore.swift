@@ -16,6 +16,11 @@ final class ModerationStore: ObservableObject {
 
     @Published private(set) var blockedUserIds: Set<String> = []
     @Published private(set) var reportedPhotoIds: Set<String> = []
+    /// 中身が変わるたびに増える。**画面が「読み直せ」を1回で受け取るため。**
+    ///
+    /// 2つの集合を別々に見ると、通報とブロックを続けて行う回
+    /// （`ReportSheet` の「通報してブロックもする」）に全件取得が2回走る。
+    @Published private(set) var revision = 0
 
     private let defaults: UserDefaults
     private var userId: String?
@@ -42,16 +47,19 @@ final class ModerationStore: ObservableObject {
     func replaceBlocked(with ids: [String]) {
         blockedUserIds = Set(ids)
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
+        revision += 1
     }
 
     func block(_ id: String) {
         blockedUserIds.insert(id)
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
+        revision += 1
     }
 
     func unblock(_ id: String) {
         blockedUserIds.remove(id)
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
+        revision += 1
     }
 
     /// 通報した写真は、その人の画面からは即座に消す。
@@ -59,5 +67,6 @@ final class ModerationStore: ObservableObject {
     func markReported(_ photoId: String) {
         reportedPhotoIds.insert(photoId)
         defaults.set(Array(reportedPhotoIds), forKey: key("reported"))
+        revision += 1
     }
 }

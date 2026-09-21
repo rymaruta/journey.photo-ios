@@ -110,6 +110,19 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "5.0"
+        # **テストの束にも Info.plist が要る。** 無いと署名の段で
+        #   Cannot code sign because the target does not have an Info.plist
+        # と言われ、**1行もコンパイルされないまま**テストが止まる
+        # （run #5 がこれ。アプリ側は `info:` で作っているが、
+        #  テスト側には何も無かった）。中身を持たせる理由は無いので、
+        # Xcode に自動生成させる
+        GENERATE_INFOPLIST_FILE: YES
+        # **リテラルで書く。** XcodeGen は既定で `$(JP_BUNDLE_ID).tests`
+        # を置くが、この的には `configFiles` が無く `$(JP_BUNDLE_ID)` は
+        # 空なので、識別子が `.tests` だけになって束を入れられない
+        PRODUCT_BUNDLE_IDENTIFIER: com.journeyphoto.JourneyPhotoTests
+        # 署名まわりは要らない（シミュレータでしか動かさない）
+        CODE_SIGNING_ALLOWED: NO
 
 schemes:
   JourneyPhoto:

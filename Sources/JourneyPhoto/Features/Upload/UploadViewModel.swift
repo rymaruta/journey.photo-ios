@@ -247,8 +247,19 @@ final class UploadViewModel: ObservableObject {
         items.removeAll { done.contains($0.id) }
         // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
         // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
-        if items.isEmpty && failures.isEmpty && songFailures == 0 {
-            didPostAll = done.count > 0
+        if items.isEmpty && failures.isEmpty {
+            // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
+            // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
+            if songFailures == 0 {
+                didPostAll = done.count > 0
+            } else {
+                errorMessage = UploadSummary.message(done: done.count, failures: failures,
+                                                     cancelled: cancelled, songFailures: songFailures)
+            }
+            // **どちらにしても選択は捨てる。** 残すと `pickerItems` に
+            // 投稿済みの写真が選ばれたまま残り、次に写真を選び直した瞬間に
+            // `didSet` が走って**同じ写真がもう一度上がる**
+            // （`errorMessage` は `reset()` では消えないので警告は残る）
             reset()
         } else {
             errorMessage = UploadSummary.message(done: done.count, failures: failures,

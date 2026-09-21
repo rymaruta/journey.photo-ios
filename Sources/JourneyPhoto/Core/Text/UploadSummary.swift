@@ -20,14 +20,23 @@ enum UploadSummary {
                      "Posted \(done), but the song couldn't be attached")
         }
         if cancelled && failures.isEmpty {
-            return done == 0
+            let head = done == 0
                 ? L("やめました", "Stopped")
                 : L("やめました（\(done) 枚は投稿しました）", "Stopped (\(done) posted)")
+            return head + songNote(songFailures)
         }
         let head = done == 0
             ? L("投稿できませんでした", "Couldn't post")
             : L("\(done) 枚は投稿しました。残りは投稿できていません", "\(done) posted; the rest didn't go through")
-        guard let reason = failures.first else { return head }
-        return "\(head)（\(reason)）"
+        guard let reason = failures.first else { return head + songNote(songFailures) }
+        return "\(head)（\(reason)）" + songNote(songFailures)
+    }
+
+    /// **曲のことは、どの結末でも言う。** 先頭の分岐でしか見ていなかった頃は、
+    /// 途中でやめた回・他の写真が失敗した回に、曲が付かなかったことが
+    /// 一度も伝わらなかった。
+    private static func songNote(_ songFailures: Int) -> String {
+        guard songFailures > 0 else { return "" }
+        return L("　曲は付けられませんでした。", " The song couldn't be attached.")
     }
 }

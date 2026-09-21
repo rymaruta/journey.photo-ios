@@ -74,15 +74,14 @@ struct SearchView: View {
         }
         // **ブロック／通報の直後に消す。** `loadPhotos` は
         // `guard allPhotos.isEmpty` で二度と読まない作りなので、
-        // 控えを捨ててから読み直す
-        .onChange(of: hidden.blockedUserIds) { _, _ in
+        // 控えを捨ててから読み直す。
+        //
+        // **集合を自分で渡してから読む**（`GalleryView` と同じ理由——
+        // 呼んだ側の `setHidden` を待つと古い集合のまま取ってしまう）
+        .onChange(of: hidden.revision) { _, _ in
             Task {
-                await model.reloadPhotos(environment: environment)
-                await model.search(query, environment: environment)
-            }
-        }
-        .onChange(of: hidden.reportedPhotoIds) { _, _ in
-            Task {
+                await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
+                                                    photoIds: hidden.reportedPhotoIds)
                 await model.reloadPhotos(environment: environment)
                 await model.search(query, environment: environment)
             }

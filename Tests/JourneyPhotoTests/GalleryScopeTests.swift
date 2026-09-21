@@ -114,4 +114,46 @@ final class UploadSummaryTests: XCTestCase {
     func testNoSongFailureStillSaysNothing() {
         XCTAssertNil(UploadSummary.message(done: 2, failures: [], cancelled: false, songFailures: 0))
     }
+
+    /// **途中でやめた回にも曲のことを言う。** 先頭の分岐でしか見ていなかった
+    /// 頃は、やめた回・他の写真が失敗した回に一度も伝わらなかった。
+    func testSongFailureIsReportedWhenStopped() throws {
+        let message = try XCTUnwrap(
+            UploadSummary.message(done: 1, failures: [], cancelled: true, songFailures: 1))
+        XCTAssertTrue(message.contains("曲") || message.lowercased().contains("song"),
+                      "やめた回に曲のことを言っていない: \(message)")
+    }
+
+    /// 他の写真が落ちた回も同じ。
+    func testSongFailureIsReportedAlongsideOtherFailures() throws {
+        let message = try XCTUnwrap(
+            UploadSummary.message(done: 1, failures: ["通信できませんでした"],
+                                  cancelled: false, songFailures: 1))
+        XCTAssertTrue(message.contains("曲") || message.lowercased().contains("song"),
+                      "他が落ちた回に曲のことを言っていない: \(message)")
+    }
+}
+
+/// 「見せない」が変わったことを、画面が1回で受け取れるか。
+///
+/// 2つの集合を別々に見ると、通報してブロックもする回に全件取得が2回走る。
+@MainActor
+final class ModerationRevisionTests: XCTestCase {
+
+    private func store() -> ModerationStore {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let store = ModerationStore(defaults: defaults)
+        store.use(userId: "u1")
+        return store
+    }
+
+    func testEveryChangeBumpsTheRevision() async {
+        let store = self.store()
+        let start = store.revision
+        store.block("a")
+        store.markReported("p")
+        store.unblock("a")
+        store.replaceBlocked(with: ["b"])
+        XCTAssertEqual(store.revision, start + 4, "変わったのに数が増えていない")
+    }
 }

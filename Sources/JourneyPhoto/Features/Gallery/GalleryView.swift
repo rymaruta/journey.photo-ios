@@ -8,7 +8,7 @@ struct GalleryView: View {
     /// この画面はタブの根なので一度出たら生き続け、`.task` は二度と走らない
     /// ——ブロックしても、戻ってくるとその人の写真がまだ並んでいた
     @EnvironmentObject private var hidden: ModerationStore
-    @StateObject private var model: GalleryViewModel = GalleryViewModel(gallery: PublicGalleryService())
+    @StateObject private var model = GalleryViewModel()
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -48,7 +48,12 @@ struct GalleryView: View {
                 }
             }
         }
-        .task { await model.load() }
+        .task {
+            // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
+            // `setHidden` が届かず、ブロックが一生効かない
+            model.use(gallery: environment.gallery)
+            await model.load()
+        }
         // **ログイン状態が決まってから範囲を決める**（既定は「自分」）。
         // フォロー中の一覧は、その範囲を選ぶ人にだけ要る
         .task(id: auth.userId) {
@@ -60,11 +65,20 @@ struct GalleryView: View {
             model.use(viewerId: auth.userId, following: Set(ids))
         }
         .refreshable { await model.load() }
-        // **ブロック／通報の直後に消す。** 出すところ（`PublicGalleryService`）
-        // は新しい集合で絞れるようになっているが、**手元に読み終えた配列が
-        // 残っている**ので、読み直さないと画面は変わらない
-        .onChange(of: hidden.blockedUserIds) { _, _ in Task { await model.load() } }
-        .onChange(of: hidden.reportedPhotoIds) { _, _ in Task { await model.load() } }
+        // **ブロック／通報の直後に消す。** 手元に読み終えた配列が残るので、
+        // 読み直さないと画面は変わらない。
+        //
+        // **集合を自分で渡してから読む。** 呼んだ側（`ReportSheet`）は
+        // 通報とブロックを挟んでから `setHidden` を呼ぶので、その中断中に
+        // 走るとこちらは**古い集合のまま**取ってしまう。
+        // 1本にまとめてあるのは、2本だと全件取得が同時に2回走るため
+        .onChange(of: hidden.revision) { _, _ in
+            Task {
+                await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
+                                                    photoIds: hidden.reportedPhotoIds)
+                await model.load()
+            }
+        }
     }
 
     /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中だけ出す**
