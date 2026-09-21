@@ -11,6 +11,8 @@ struct MyPageView: View {
     @State private var showStoryComposer = false
     /// ストーリーの行に「読み直せ」と言うための数
     @State private var storiesReload = 0
+    /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
+    @State private var didAppear = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -41,6 +43,16 @@ struct MyPageView: View {
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
             await model.load()
+        }
+        // **戻ってきたら読み直す。** この画面から押して出る先
+        // （プロフィール編集・写真の詳細）はどれも `NavigationLink` で、
+        // 閉じる合図を受け取る口が無い。保存しても削除しても、
+        // マイページは古いままだった。
+        // 初回は `.task` が読むので、2度目以降だけ走らせる
+        .onAppear {
+            guard didAppear else { didAppear = true; return }
+            guard auth.userId != nil else { return }
+            Task { await model.load() }
         }
     }
 

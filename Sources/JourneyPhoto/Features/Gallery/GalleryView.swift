@@ -86,7 +86,17 @@ struct GalleryView: View {
     private var scopePicker: some View {
         Picker("", selection: Binding(
             get: { model.scope },
-            set: { model.select(scope: $0) }
+            set: { scope in
+                model.select(scope: scope)
+                // **選んだときに引き直す。** フォロー一覧は
+                // `.task(id: auth.userId)` で一度しか引いていないので、
+                // 誰かをフォローしても、この画面には一生出てこなかった
+                guard scope == .following, auth.userId != nil else { return }
+                Task {
+                    let ids = (try? await environment.social.myFollowingIds()) ?? []
+                    model.refreshFollowing(Set(ids))
+                }
+            }
         )) {
             ForEach(GalleryScope.allCases) { scope in
                 Text(scope.label).tag(scope)

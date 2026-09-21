@@ -124,6 +124,22 @@ final class ViewModelTests: XCTestCase {
                        "ブロックのあとも控えのままで、消えない")
     }
 
+    /// **「フォロー中」を選んだあとにフォロー一覧を入れ替えても、範囲は戻らない。**
+    ///
+    /// `use(viewerId:following:)` を使い回すと、あちらは範囲を既定
+    /// （ログイン中は「自分」）へ倒すので、選んだ瞬間に自分の写真へ
+    /// 戻ってしまう。入れ替え専用の口を分けてある。
+    func testRefreshingFollowingKeepsTheChosenScope() async {
+        let model = GalleryViewModel(gallery: gallery(feed))
+        await model.load()
+        model.use(viewerId: "me", following: [])
+        model.select(scope: .following)
+
+        model.refreshFollowing(["u2"])
+
+        XCTAssertEqual(model.scope, .following, "範囲が勝手に戻っている")
+    }
+
     // MARK: - 写真の詳細
 
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。

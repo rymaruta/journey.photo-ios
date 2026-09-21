@@ -68,6 +68,15 @@ final class GalleryViewModel: ObservableObject {
         state = .loaded(filtered())
     }
 
+    /// フォローしている人だけ入れ替える。
+    ///
+    /// **`use(viewerId:following:)` を使い回さない**——あちらは範囲を
+    /// 既定へ倒すので、「フォロー中」を選んだ直後に「自分」へ戻ってしまう。
+    func refreshFollowing(_ following: Set<String>) {
+        self.followingIds = following
+        if case .loaded = state { state = .loaded(filtered()) }
+    }
+
     /// ログイン状態が決まったら呼ぶ。
     ///
     /// **未ログインとログアウトは「すべて」に戻す。** 絞れないので絞らない

@@ -13,6 +13,7 @@ struct PhotoDetailView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var favorites: FavoritesStore
     @EnvironmentObject private var hidden: ModerationStore
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var model: PhotoDetailViewModel
     @State private var showReport = false
     @State private var showDeleteConfirm = false
@@ -289,7 +290,9 @@ struct PhotoDetailView: View {
     private func deletePhoto() async {
         do {
             try await environment.photos.delete(photoId: photo.id)
-            actionError = L("削除しました。一覧への反映には少し時間がかかります。", "Deleted. It may take a moment to disappear from lists.")
+            // **消した写真の画面に留まらせない。** 残ると、もう無いものを
+            // 編集したり、もう一度削除を押したりできてしまう
+            dismiss()
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
