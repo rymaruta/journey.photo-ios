@@ -52,8 +52,9 @@ final class ScreenshotTests: XCTestCase {
             return
         }
 
-        let names = ["ギャラリー", "旅", "さがす", "お知らせ", "マイページ"]
-        for (index, name) in names.enumerated() where index < tabBar.buttons.count {
+        let names = ["ホーム", "探す", "投稿", "旅", "マイページ"]
+        // 中央（投稿）はシートが出るので、一巡の中では触らない
+        for (index, name) in names.enumerated() where index < tabBar.buttons.count && index != 2 {
             tabBar.buttons.element(boundBy: index).tap()
             _ = app.navigationBars.firstMatch.waitForExistence(timeout: 15)
             // **少し待ってから撮る。** 写真は通信で来るので、描いた直後は
@@ -63,8 +64,8 @@ final class ScreenshotTests: XCTestCase {
         }
 
         // **旅を1冊開く。** 表紙・ページ・足取りは、開かないと絵にならない
-        if tabBar.buttons.count > 1 {
-            tabBar.buttons.element(boundBy: 1).tap()
+        if tabBar.buttons.count > 3 {
+            tabBar.buttons.element(boundBy: 3).tap()
             Thread.sleep(forTimeInterval: 4)
             let firstTrip = app.scrollViews.buttons.firstMatch
             if firstTrip.waitForExistence(timeout: 10) {

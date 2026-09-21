@@ -7,17 +7,22 @@ struct RootView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var consent: LegalConsent
     @EnvironmentObject private var environment: AppEnvironment
-    @State private var selection: Tab = .gallery
+    @State private var selection: Tab = .home
     @State private var unread = 0
     /// 投稿の「＋」から開くもの
     @State private var showPostChoice = false
     @State private var showPhotoUpload = false
     @State private var showStoryComposer = false
+    /// お知らせ（タブから外してヘッダーへ移した）
+    @State private var showNotifications = false
     /// 通知を押して開いたか（`AppDelegate` から届く）
     @StateObject private var router = NotificationRouter.shared
 
     enum Tab: Hashable {
-        case gallery, trips, search, notifications, mypage
+        // **提案の並び**（owner の絵・2026-09-21）:
+        // ホーム / 探す / 投稿 / 旅 / マイページ。
+        // 通知はタブを1つ使わずヘッダーへ移した（絵と同じ）
+        case home, search, post, trips, mypage
     }
 
     var body: some View {
@@ -62,13 +67,29 @@ struct RootView: View {
     private var tabs: some View {
         TabView(selection: $selection) {
             NavigationStack {
-                GalleryView()
+                GalleryView(unread: unread, onOpenNotifications: { showNotifications = true })
             }
-            .tabItem { Label(Labels.Navigation.gallery, systemImage: "photo.on.rectangle.angled") }
-            .tag(Tab.gallery)
+            .tabItem { Label(L("ホーム", "Home"), systemImage: "house") }
+            .tag(Tab.home)
+
+            NavigationStack {
+                SearchView()
+            }
+            .tabItem { Label(L("探す", "Search"), systemImage: "magnifyingglass") }
+            .tag(Tab.search)
+
+            // **中央は投稿。** 押すと写真／ストーリーの2択が出る。
+            // **画面は持たない**——`onChange` でシートを出し、元のタブへ戻す
+            Color.clear
+                .tabItem { Label(L("投稿", "Post"), systemImage: "plus.app") }
+                .tag(Tab.post)
 
             // **旅が単位の画面。** 写真を並べるのではなく、
-            // 同じころに撮った写真が勝手に一冊になって並ぶ（`TripBook`）
+            // 同じころに撮った写真が勝手に一冊になって並ぶ（`TripBook`）。
+            //
+            // 提案の絵では4つ目が「マップ」だったが、**地図は旅の中**
+            // （足取り）に置ける。一冊の方はこのアプリにしか無いので、
+            // タブに出す価値はこちらが上だと判断した
             NavigationStack {
                 TripsView()
             }
@@ -76,29 +97,26 @@ struct RootView: View {
             .tag(Tab.trips)
 
             NavigationStack {
-                SearchView()
-            }
-            .tabItem { Label(L("さがす", "Search"), systemImage: "magnifyingglass") }
-            .tag(Tab.search)
-
-            NavigationStack {
-                NotificationsView()
-            }
-            .tabItem { Label(L("お知らせ", "Activity"), systemImage: "bell") }
-            .badge(unread)
-            .tag(Tab.notifications)
-
-            NavigationStack {
                 MyPageView()
             }
-            .tabItem { Label(Labels.Navigation.mypage, systemImage: "person.crop.circle") }
+            .tabItem { Label(Labels.Navigation.mypage, systemImage: "person") }
             .tag(Tab.mypage)
         }
         .task(id: auth.userId) { await refreshUnread() }
         // **押した通知の行き先。** 数で見るのは、2回続けて押したときに
         // 「変わっていない」と見なされて2回目が効かなくなるため
         .onChange(of: router.openActivityRequests) { _, _ in
-            selection = .notifications
+            // 通知はタブではなくなったので、ホームのヘッダーから開く
+            selection = .home
+            showNotifications = true
+        }
+        // **中央の「投稿」はタブではなく入口。** 選ばれたら2択を出して、
+        // タブは元へ戻す（空の画面を見せない）
+        .onChange(of: selection) { previous, tab in
+            if tab == .post {
+                selection = previous == .post ? .home : previous
+                showPostChoice = true
+            }
         }
         // **どの画面からでも投稿できるようにする。** Web も同じ理由で
         // 全ページに「＋」を置いている（`app/components/PostFab.tsx`——
@@ -114,25 +132,6 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             ToastOverlay().padding(.bottom, 116)
         }
-        .overlay(alignment: .bottomTrailing) {
-            if auth.userId != nil {
-                Button {
-                    showPostChoice = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(WebTheme.accentText)
-                        .frame(width: 56, height: 56)
-                        .background(WebTheme.accentBackground, in: Circle())
-                        .shadow(radius: 12)
-                }
-                .accessibilityLabel(L("投稿する", "Post"))
-                .accessibilityIdentifier("post.fab")
-                // タブバーの上に逃がす（Web も下の物の上に置いている）
-                .padding(.trailing, 16)
-                .padding(.bottom, 72)
-            }
-        }
         .sheet(isPresented: $showPostChoice) {
             PostSheet { kind in
                 switch kind {
@@ -147,11 +146,9 @@ struct RootView: View {
         .sheet(isPresented: $showStoryComposer) {
             NavigationStack { StoryComposerView() }
         }
-        .onChange(of: selection) { _, tab in
-            // お知らせを開いたら、閉じたときに数え直す
-            if tab != .notifications {
-                Task { await refreshUnread() }
-            }
+        // お知らせを閉じたら数え直す（タブではなくシートになったので）
+        .sheet(isPresented: $showNotifications, onDismiss: { Task { await refreshUnread() } }) {
+            NavigationStack { NotificationsView() }
         }
     }
 }

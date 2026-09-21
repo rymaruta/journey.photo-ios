@@ -12,6 +12,9 @@ struct GalleryView: View {
     /// タグの行を出しているか。**既定は畳む**——チップが2行あると
     /// ファーストビューが「ボタンだらけ」になり、写真が下へ押し下げられる
     @State private var showsTags = false
+    /// ヘッダーのベル用（タブから外したので、ここから開く）
+    var unread: Int = 0
+    var onOpenNotifications: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,7 +35,7 @@ struct GalleryView: View {
                 if photos.isEmpty {
                     ErrorBanner(message: Labels.Gallery.empty)
                 } else {
-                    grid(photos)
+                    feed(photos)
                 }
             }
         }
@@ -50,6 +53,23 @@ struct GalleryView: View {
         .searchable(text: $model.query,
                     prompt: L("題・撮影地・説明でさがす", "Search titles, places, notes"))
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    onOpenNotifications()
+                } label: {
+                    Image(systemName: "bell")
+                        .webToolbarIcon()
+                        .overlay(alignment: .topTrailing) {
+                            // 未読があることだけ伝える（数は開けば分かる）
+                            if unread > 0 {
+                                Circle().fill(Color.pink).frame(width: 8, height: 8)
+                                    .offset(x: -8, y: 10)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("お知らせ", "Activity"))
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { PhotoMapView() } label: {
                     Image(systemName: "map")
@@ -309,6 +329,26 @@ struct GalleryView: View {
                 }
             }
             .padding(.bottom, 8)
+        }
+    }
+
+    /// ホームは**縦1列のフィード**（提案の絵・2026-09-21）。
+    /// 格子は集約ページ（タグ・撮影地・機材）で使い続ける。
+    private func feed(_ photos: [Photo]) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 24) {
+                if !model.categories.isEmpty {
+                    filterBar
+                }
+                if showsTags && !model.tags.isEmpty {
+                    tagBar
+                }
+                featuredSections
+                ForEach(photos) { photo in
+                    HomeFeedCard(photo: photo)
+                }
+            }
+            .padding(.top, 8)
         }
     }
 

@@ -40,6 +40,9 @@ final class FavoritesStore: ObservableObject {
 
     func contains(_ id: String) -> Bool { ids.contains(id) }
 
+    /// 押すたびに入れ替える（ホームのフィードから1タップで）
+    func toggle(_ id: String) { set(id, favorite: !contains(id)) }
+
     func set(_ id: String, favorite: Bool) {
         if favorite {
             ids.insert(id)

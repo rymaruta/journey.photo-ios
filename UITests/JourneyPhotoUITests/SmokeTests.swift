@@ -38,10 +38,14 @@ final class SmokeTests: XCTestCase {
 
         // **数を決め打つ。** `0..<count` を回すだけだと、`count` が 0 でも
         // ループが1周も回らずに緑になる（何も触っていないのに合格）
-        let expected = 5      // ギャラリー / 旅 / さがす / お知らせ / マイページ
+        let expected = 5      // ホーム / 探す / 投稿 / 旅 / マイページ
         XCTAssertEqual(tabBar.buttons.count, expected, "タブの数が違う")
 
-        for index in 0..<expected {
+        // **中央（投稿）は画面を持たない。** 押すとシートが出てタブは
+        // 元へ戻るので、ほかと同じ判定（題が描けたか）は当たらない
+        let postTab = 2
+
+        for index in 0..<expected where index != postTab {
             let tab = tabBar.buttons.element(boundBy: index)
             XCTAssertTrue(tab.exists, "タブ \(index) が無い")
             tab.tap()
@@ -53,5 +57,12 @@ final class SmokeTests: XCTestCase {
             XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 15),
                           "タブ \(index) の中身が描けない")
         }
+
+        // **中央のタブも触る。** 触らないと「押しても何も出ない」が
+        // 見張られない（投稿の入口はここだけになった）
+        tabBar.buttons.element(boundBy: postTab).tap()
+        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 15)
+                      || app.buttons["投稿"].waitForExistence(timeout: 5),
+                      "投稿の2択が出ない")
     }
 }
