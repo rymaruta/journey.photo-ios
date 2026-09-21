@@ -147,6 +147,15 @@ final class ModerationRevisionTests: XCTestCase {
         return store
     }
 
+    /// **人が変わったときも数える。** 数えないと、画面は読み直さず、
+    /// 前の人の絞り込みで読んだ一覧が新しい人に見えたままになる。
+    func testSwitchingAccountsBumpsTheRevision() async {
+        let store = self.store()
+        let before = store.revision
+        store.use(userId: "u2")
+        XCTAssertGreaterThan(store.revision, before, "人が変わったのに数が増えていない")
+    }
+
     func testEveryChangeBumpsTheRevision() async {
         let store = self.store()
         let start = store.revision

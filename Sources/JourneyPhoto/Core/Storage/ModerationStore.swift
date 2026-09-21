@@ -38,6 +38,11 @@ final class ModerationStore: ObservableObject {
         self.userId = userId
         blockedUserIds = Set(defaults.stringArray(forKey: key("blocked")) ?? [])
         reportedPhotoIds = Set(defaults.stringArray(forKey: key("reported")) ?? [])
+        // **人が変わったときも数を進める。** 進めないと、画面は
+        // `.onChange(of: revision)` を見ているので読み直さず、
+        // **前の人の絞り込みで読んだ一覧**が新しい人に見えたままになる
+        // （前の人がブロックした相手の写真が、新しい人には出てこない）
+        revision += 1
     }
 
     /// サーバーの一覧で上書きする。
