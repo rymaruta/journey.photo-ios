@@ -62,6 +62,26 @@ final class ScreenshotTests: XCTestCase {
             shoot(app, "1\(index)-\(name)")
         }
 
+        // **旅を1冊開く。** 表紙・ページ・足取りは、開かないと絵にならない
+        if tabBar.buttons.count > 1 {
+            tabBar.buttons.element(boundBy: 1).tap()
+            Thread.sleep(forTimeInterval: 4)
+            let firstTrip = app.scrollViews.buttons.firstMatch
+            if firstTrip.waitForExistence(timeout: 10) {
+                firstTrip.tap()
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "30-旅の一冊")
+                // 下まで流して、足取りのところも撮る
+                app.swipeUp()
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "31-旅の足取り")
+                if app.navigationBars.buttons.firstMatch.exists {
+                    app.navigationBars.buttons.firstMatch.tap()
+                }
+            }
+        }
+
         // ギャラリーに戻って、1枚目の写真を開いたところ
         tabBar.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 2)
