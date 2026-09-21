@@ -5,6 +5,7 @@ struct NotificationsView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var push: PushCenter
     @StateObject private var model = NotificationsViewModel()
 
     var body: some View {
@@ -45,8 +46,17 @@ struct NotificationsView: View {
                 }
             }
         }
-        .task { await model.load(environment: environment) }
-        .refreshable { await model.load(environment: environment) }
+        .task {
+            await model.load(environment: environment)
+            // **読んだらアイコンの数字も消す。** サーバーは未読数を載せるが、
+            // 既読にしたことは端末のアイコンに伝わらない——誰も消さないと
+            // 増える一方になる
+            await push.clearBadge()
+        }
+        .refreshable {
+            await model.load(environment: environment)
+            await push.clearBadge()
+        }
     }
 }
 

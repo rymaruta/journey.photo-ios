@@ -40,15 +40,6 @@ targets:
       # ID トークンを取り出す `AuthCognitoTokensProvider` がここに居る
       - package: Amplify
         product: AWSPluginsCore
-    entitlements:
-      path: Sources/JourneyPhoto/JourneyPhoto.entitlements
-      properties:
-        # **プッシュ通知。** `production` は TestFlight と App Store の
-        # ビルド（配布用プロファイル）向け。Xcode から直接入れる開発用
-        # ビルドを使うときだけ `development` に変える。
-        # ここを付けるには App ID 側で Push Notifications が有効である必要が
-        # あり、有効でないと**署名の段で落ちる**（逆は落ちない）
-        aps-environment: production
     configFiles:
       Debug: Config/Staging.xcconfig
       Release: Config/Production.xcconfig
@@ -96,6 +87,18 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      # **プッシュの環境は構成ごとに変える。**
+      # 端末が受け取るトークンは、ビルドの `aps-environment` で
+      # sandbox / production のどちらかに決まる。ここを1つに固定すると、
+      # staging（`deploy-api.yml` が sandbox に送る）へ production の
+      # トークンが登録され、APNs が `400 BadDeviceToken` を返し、
+      # サーバーが**その宛先を無効と判じて消す**——「許可したのに
+      # 二度と届かない」という、いちばん追いにくい壊れ方になる。
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Sources/JourneyPhoto/JourneyPhoto.Debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Sources/JourneyPhoto/JourneyPhoto.Release.entitlements
 
   JourneyPhotoTests:
     type: bundle.unit-test

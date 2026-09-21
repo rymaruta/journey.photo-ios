@@ -8,6 +8,8 @@ struct SettingsView: View {
     @EnvironmentObject private var push: PushCenter
     @State private var wantsPush = false
     @State private var showDeniedHint = false
+    /// 切り替えている最中。二度押しで登録と解除が交差しないようにする
+    @State private var isApplying = false
 
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -27,11 +29,18 @@ struct SettingsView: View {
 
     /// 受け取る／受け取らないを切り替える。
     private func apply(on: Bool) async {
+        guard !isApplying else { return }
+        isApplying = true
         showDeniedHint = false
+        defer { isApplying = false }
+        // 押した瞬間にその形にする（待っている間の見た目を裏返さない）
+        wantsPush = on
         if on {
+            // **許可されたかだけで決める。** 宛先を預け終えたかで見ると、
+            // APNs のトークンは少し遅れて届くので**必ず false になる**
+            // ——押した直後に自分でオフへ戻る
             let granted = await push.enable()
-            // **断られたら見た目も戻す**（オンのまま届かない、を作らない）
-            wantsPush = granted && push.isRegistered
+            wantsPush = granted
             showDeniedHint = !granted
         } else {
             await push.disable()
@@ -43,10 +52,14 @@ struct SettingsView: View {
         List {
             if auth.userId != nil {
                 Section {
-                    Toggle(L("プッシュ通知を受け取る", "Push notifications"), isOn: $wantsPush)
-                        .onChange(of: wantsPush) { _, on in
-                            Task { await apply(on: on) }
-                        }
+                    // **`onChange` で拾わない。** 画面側から `wantsPush` を
+                    // 戻したときにも発火し、**許可した直後に自分でオフへ
+                    // 戻す**（`enable()` の返りは APNs のトークンより先に来る）。
+                    // 押された瞬間だけを受ける形にする
+                    Toggle(L("プッシュ通知を受け取る", "Push notifications"),
+                           isOn: Binding(get: { wantsPush },
+                                         set: { on in Task { await apply(on: on) } }))
+                        .disabled(isApplying)
                     if showDeniedHint {
                         // **端末の許可は取り消せない。** 断られたあとは
                         // 設定アプリへ行ってもらうしかない——黙って

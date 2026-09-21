@@ -21,14 +21,33 @@ final class PushCenter: ObservableObject {
     @Published private(set) var isRegistered = false
     @Published var errorMessage: String?
 
-    /// APNs から受け取ったトークン。**許可の直後に届く**ので、
-    /// ログインより先に来ることがある——来た時点で預けられなければ覚えておく。
-    private var token: String?
+    /// APNs から受け取ったトークン。
+    ///
+    /// **端末に残す。** メモリだけだと、アプリを閉じた時点で消えて
+    /// (1) 設定のトグルが毎回オフに見える（サーバーは送り続ける）
+    /// (2) **ログアウトで外せない**＝次にこの端末を使う人へ前の人あての
+    ///     通知が飛ぶ
+    /// (3) トークンが変わった（復元・入れ直し）ことに気づけない
+    /// という3つが同時に起きる。秘密ではない（宛先の番号）ので素で持つ。
+    private var token: String? {
+        get { defaults.string(forKey: Self.tokenKey) }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Self.tokenKey)
+            } else {
+                defaults.removeObject(forKey: Self.tokenKey)
+            }
+        }
+    }
+    private static let tokenKey = "photo-gallery-apns-token"
+    private let defaults: UserDefaults
     private var userId: String?
     private let service: () -> PushService
 
-    init(service: @escaping () -> PushService = { PushService(api: APIClient(tokenProvider: CognitoTokenProvider())) }) {
+    init(service: @escaping () -> PushService = { PushService(api: APIClient(tokenProvider: CognitoTokenProvider())) },
+         defaults: UserDefaults = .standard) {
         self.service = service
+        self.defaults = defaults
     }
 
     /// 起動時とログイン状態が変わるたびに呼ぶ。
@@ -44,6 +63,10 @@ final class PushCenter: ObservableObject {
             isRegistered = false
         }
         guard userId != nil, isAuthorized else { return }
+        // **許可済みなら、起動のたびに APNs へ繋ぎ直す。**
+        // トークンは復元や入れ直しで変わる——`enable()` のときだけ繋ぐと、
+        // 変わったことに気づけないまま「許可したのに届かない」になる
+        UIApplication.shared.registerForRemoteNotifications()
         // 許可済みで入り直したなら、黙って預け直す（Set なので増えない）
         await registerIfPossible()
     }
@@ -110,6 +133,14 @@ final class PushCenter: ObservableObject {
         guard let token, userId != nil else { return }
         try? await service().unregister(token: token)
         isRegistered = false
+    }
+
+    /// お知らせを読んだので、アイコンの数字を消す。
+    ///
+    /// **誰も消さないと増える一方。** サーバーは未読数をそのまま載せるが、
+    /// 既読にしたことは端末のアイコンに伝わらない。
+    func clearBadge() async {
+        try? await UNUserNotificationCenter.current().setBadgeCount(0)
     }
 
     private func registerIfPossible() async {

@@ -26,6 +26,8 @@ public final class UNUserNotificationCenter: @unchecked Sendable {
     public func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool { false }
     public func notificationSettings() async -> UNNotificationSettings { UNNotificationSettings() }
     public var delegate: UNUserNotificationCenterDelegate?
+    /// iOS 16 以降の口（`applicationIconBadgeNumber` は iOS 17 で非推奨）
+    public func setBadgeCount(_ count: Int) async throws {}
 }
 
 public protocol UNUserNotificationCenterDelegate: AnyObject {}

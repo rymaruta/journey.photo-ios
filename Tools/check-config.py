@@ -192,6 +192,51 @@ if len(notif_keys) == 2:
         sent = set(re.findall(r'"(NOTIF_[A-Z_]+)"', server.read_text(encoding="utf-8")))
         for key in sorted(sent - notif_keys["ja"]):
             fail(f"サーバーが送る通知の鍵 {key} が Localizable.strings にありません")
+    else:
+        # **黙って飛ばさない。** CI は photo-gallery を取ってこないので
+        # ここは必ず飛ぶ——「見張っている」と書いたまま見ていない、を作らない
+        print("--  サーバー側の鍵との突き合わせは飛ばした（photo-gallery が隣に無い）")
+
+# ---- 11. プッシュの環境が、サーバーの送り先と揃っているか -------------------
+#
+# **ここがずれると、宛先が消える。** 端末のトークンはビルドの
+# `aps-environment` で sandbox / production のどちらかに決まる。
+# サーバー（`deploy-api.yml` の `apnsHost`）が別の側へ送ると APNs は
+# `400 BadDeviceToken` を返し、`apns.ts` はそれを「無効な宛先」と判じて
+# **消す**——「許可したのに二度と届かない」という、いちばん追いにくい
+# 壊れ方になる。
+APS_ENVIRONMENTS = {}
+for name in ("Debug", "Release"):
+    path = ROOT / f"Sources/JourneyPhoto/JourneyPhoto.{name}.entitlements"
+    if not path.exists():
+        fail(f"{name} の entitlements がありません（プッシュの環境を決める唯一の場所）")
+        continue
+    try:
+        APS_ENVIRONMENTS[name] = plistlib.loads(path.read_bytes()).get("aps-environment")
+    except Exception as e:  # noqa: BLE001
+        fail(f"{path.name} を plist として読めません: {e}")
+
+expected = {"Debug": "development", "Release": "production"}
+for name, want in expected.items():
+    got = APS_ENVIRONMENTS.get(name)
+    if name in APS_ENVIRONMENTS and got != want:
+        fail(f"{name} の aps-environment が {got}（{want} のはず）"
+             f"——サーバーの送り先とずれると、APNs の 400 で宛先が消えます")
+
+# project.yml が構成ごとに entitlements を指しているか（1つに固定しない）
+for name in expected:
+    if f"JourneyPhoto.{name}.entitlements" not in project_text:
+        fail(f"project.yml が {name} の entitlements を指していません"
+             f"（1つに固定すると、片方の環境で宛先が消えます）")
+
+workflow = ROOT.parent / "photo-gallery" / ".github" / "workflows" / "deploy-api.yml"
+if workflow.exists():
+    text = workflow.read_text(encoding="utf-8")
+    # 本番は production の APNs、staging は sandbox
+    if "apnsHost=api.push.apple.com" not in text:
+        fail("deploy-api.yml が本番の APNs（api.push.apple.com）を指していません")
+    if "apnsHost=api.sandbox.push.apple.com" not in text:
+        fail("deploy-api.yml が staging の APNs（sandbox）を指していません")
 
 # ---- 結果 -----------------------------------------------------------------
 if errors:
