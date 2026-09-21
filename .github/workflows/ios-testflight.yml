@@ -32,7 +32,12 @@ jobs:
     # **`macos-latest` に固定しない。** ランナーの既定 Xcode が上がると
     # 挙動が変わるので、上げるときは意図して上げる
     runs-on: macos-15
-    timeout-minutes: 60
+    # **初回は控えが無く、依存を丸ごと組む。** Amplify →
+    # aws-sdk-swift → smithy-swift はテストの段だけで50分を超えた
+    # （run #8）。60分で切ると `actions/cache` の後片付けまで
+    # 巻き添えで止まり、**次の回もまた冷たい状態から始まる**。
+    # 一度でも最後まで通せば、以後は控えから戻って短くなる
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
