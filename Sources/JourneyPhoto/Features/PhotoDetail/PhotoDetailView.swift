@@ -367,7 +367,9 @@ struct PhotoDetailView: View {
     /// 「2024年5月12日 ・ サントリーニ島, ギリシャ」。**持っているものだけ**
     private var takenLine: String? {
         let place = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
-        let day = shown.date ?? ""
+        // **生の値を出さない。** ここは `date` をそのまま描いていたので、
+        // 実機の絵に `2026-09-19T17:46:27` と出ていた（run 51）
+        let day = TakenDay.label(shown.date) ?? ""
         let parts = [day, place].filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " ・ ")
     }

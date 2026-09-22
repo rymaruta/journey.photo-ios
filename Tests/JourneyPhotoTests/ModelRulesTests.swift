@@ -49,9 +49,14 @@ final class UserProfileNameTests: XCTestCase {
         XCTAssertEqual(p.name, "ryo", "空の表示名を名前として出している")
     }
 
-    func testEmptyUsernameFallsBackToTheIdHead() throws {
+    /// 🔴 **名前が1つも無いとき、利用者 ID を出さない。**
+    /// 以前はここが「ID の頭8文字」で、実機の絵（run 51）に
+    /// **`d7e4da78`** と人の名前の場所に出ていた。内部の値が漏れて
+    /// いるうえ、壊れているようにも見える。Web 版も ID は出さない
+    func testNoNamesShowsAWordNotTheId() throws {
         let p = try profile(#"{"userId":"abcdefgh1234","displayName":"","username":""}"#)
-        XCTAssertEqual(p.name, "abcdefgh")
+        XCTAssertEqual(p.name, Labels.Common.unnamedUser)
+        XCTAssertFalse(p.name.contains("abcdefgh"), "ID が名前として出ている")
     }
 }
 

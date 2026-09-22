@@ -69,6 +69,17 @@ enum Labels {
         static var loadFailed: String { L("読み込めませんでした", "Couldn't load") }
         static var signInRequired: String { L("ログインが必要です", "Please sign in") }
         static var deletedUser: String { L("退会したユーザー", "Deleted user") }
+
+        /// 名前を入れていない人の呼び方。
+        ///
+        /// 🔴 **利用者 ID を名前として出さない。** ここは長いあいだ
+        /// `String(userId.prefix(8))` で、実機の絵（run 51）に
+        /// **`d7e4da78`** と人の名前の場所に出ていた。内部の値が漏れて
+        /// いるうえ、壊れているようにも見える。
+        ///
+        /// Web 版も ID は出さない（`app/users/search/page.tsx` などが
+        /// 「ユーザー」）。同じ言葉に揃える。
+        static var unnamedUser: String { L("ユーザー", "User") }
     }
 }
 

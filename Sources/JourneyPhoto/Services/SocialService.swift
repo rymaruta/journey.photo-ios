@@ -184,6 +184,6 @@ struct FollowUser: Decodable, Identifiable, Equatable {
     var displayName: String {
         if deleted == true { return Labels.Common.deletedUser }
         if let name, !name.isEmpty { return name }
-        return String(id.prefix(8))
+        return Labels.Common.unnamedUser
     }
 }

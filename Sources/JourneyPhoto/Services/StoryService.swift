@@ -160,7 +160,7 @@ struct Story: Decodable, Identifiable, Equatable {
 
     var authorName: String {
         if let displayName, !displayName.isEmpty { return displayName }
-        return String((userId ?? "").prefix(8))
+        return Labels.Common.unnamedUser
     }
 }
 
@@ -177,7 +177,7 @@ struct StoryViewer: Decodable, Identifiable, Equatable {
     var name: String {
         if deleted == true { return Labels.Common.deletedUser }
         if let displayName, !displayName.isEmpty { return displayName }
-        return String(userId.prefix(8))
+        return Labels.Common.unnamedUser
     }
 }
 

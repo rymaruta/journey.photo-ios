@@ -51,7 +51,7 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     var name: String {
         if let displayName, !displayName.isEmpty { return displayName }
         if let username, !username.isEmpty { return username }
-        return String(userId.prefix(8))
+        return Labels.Common.unnamedUser
     }
 
     /// アイコン。`profiles/<uid>` は**固定キーで中身が差し替わる**ので、
