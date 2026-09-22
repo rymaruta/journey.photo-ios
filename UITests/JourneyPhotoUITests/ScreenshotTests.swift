@@ -87,6 +87,34 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
+        // **地図のピンの札**（モック3-3）。押さないと絵にならない部分で、
+        // ここまで一度も撮れていなかった
+        if tabBar.buttons.count > 3 {
+            tabBar.buttons.element(boundBy: 3).tap()
+            Thread.sleep(forTimeInterval: 5)
+            // ピンは地図の上の押せるもの。**最初の1つ**でよい
+            let pin = app.maps.firstMatch.buttons.firstMatch
+            if pin.waitForExistence(timeout: 10) {
+                pin.tap()
+                Thread.sleep(forTimeInterval: 3)
+                shoot(app, "40-地図のピンの札")
+            }
+        }
+
+        // **撮影スポットの詳細**（モック5）。「探す」の注目スポットから入る
+        // ——ログインが要らない経路なので、この巡回でも撮れる
+        tabBar.buttons.element(boundBy: 1).tap()
+        Thread.sleep(forTimeInterval: 4)
+        let spot = app.scrollViews.buttons.firstMatch
+        if spot.waitForExistence(timeout: 10) {
+            spot.tap()
+            Thread.sleep(forTimeInterval: 4)
+            shoot(app, "50-スポットか集まりの画面")
+            if app.navigationBars.buttons.firstMatch.exists {
+                app.navigationBars.buttons.firstMatch.tap()
+            }
+        }
+
         // ギャラリーに戻って、1枚目の写真を開いたところ
         tabBar.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 2)
