@@ -40,7 +40,8 @@ struct SignInView: View {
     var body: some View {
         Form {
             if let reason {
-                Section { Text(reason).font(.callout).foregroundStyle(.secondary) }
+                Section { Text(reason).font(.callout).foregroundStyle(WebTheme.muted2) }
+                    .listRowBackground(Color.clear)
             }
 
             if let pendingUsername {
@@ -55,10 +56,12 @@ struct SignInView: View {
             }
 
             if let notice {
-                Section { Text(notice).font(.callout).foregroundStyle(.secondary) }
+                Section { Text(notice).font(.callout).foregroundStyle(WebTheme.muted2) }
+                    .listRowBackground(Color.clear)
             }
             if let error = auth.errorMessage {
                 Section { Text(error).foregroundStyle(.red).font(.callout) }
+                    .listRowBackground(Color.clear)
             }
             if offerVerification && pendingUsername == nil {
                 Section {
@@ -70,8 +73,14 @@ struct SignInView: View {
                     }
                     .disabled(auth.isWorking)
                 }
+                .listRowBackground(Color.clear)
             }
         }
+        // **黒地にする。** 付け忘れていたので、ここだけ既定の灰色の
+        // 段が並び、アプリの中で1枚だけ別のアプリに見えていた
+        // （実機の絵で確認・run 38）
+        .webScreen()
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: - ログイン・新規登録
@@ -126,6 +135,7 @@ struct SignInView: View {
                     Text(AuthMessage.passwordRule)
                 }
             }
+            .listRowBackground(Color.clear)
 
             Section {
                 Button {
@@ -159,6 +169,7 @@ struct SignInView: View {
                     .font(.footnote)
                 }
             }
+            .listRowBackground(Color.clear)
         }
     }
 
@@ -276,6 +287,7 @@ struct SignInView: View {
             .font(.footnote)
             .disabled(auth.isWorking)
         }
+        .listRowBackground(Color.clear)
     }
 
     // MARK: - パスワードの再設定
@@ -303,6 +315,7 @@ struct SignInView: View {
                      : L("登録したメールアドレスに、確認コードを送ります。",
                          "We'll email a verification code to your address."))
             }
+            .listRowBackground(Color.clear)
 
             Section {
                 if mode == .resetRequested {
@@ -346,6 +359,7 @@ struct SignInView: View {
                 }
                 .font(.footnote)
             }
+            .listRowBackground(Color.clear)
         }
     }
 
