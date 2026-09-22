@@ -229,7 +229,7 @@ public struct Alignment {
     public static let bottom = Alignment(), bottomLeading = Alignment(), bottomTrailing = Alignment()
 }
 public struct HorizontalAlignment { public static let leading = HorizontalAlignment(), center = HorizontalAlignment() }
-public struct VerticalAlignment { public static let center = VerticalAlignment(), top = VerticalAlignment() }
+public struct VerticalAlignment { public static let center = VerticalAlignment(), top = VerticalAlignment(), bottom = VerticalAlignment(), firstTextBaseline = VerticalAlignment(), lastTextBaseline = VerticalAlignment() }
 public struct Edge {
     public struct Set {
         public static let all = Set(), horizontal = Set(), vertical = Set()

@@ -223,33 +223,34 @@ struct PhotoMapView: View {
             ))
         }
         .overlay(alignment: .top) { statusLine }
-        .overlay(alignment: .topLeading) {
-            areaControl
-                .padding(.leading, 16)
-                .padding(.top, 56)
-        }
-        // 近くの写真への入口。**現在地が取れた回だけ**出す
-        .overlay(alignment: .bottomTrailing) {
-            if here != nil && selected == nil {
-                nearbyButton
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 16)
-            }
-        }
         .overlay(alignment: .topTrailing) {
             mapControls
                 .padding(.trailing, 16)
                 .padding(.top, 56)
         }
-        // 押したピンの札。**地図を覆わない**ので、押したまま周りを見られる
+        // **下の帯にまとめる**（モック3）。上に置いていた「このエリアを検索」は
+        // 左上のピンと重なっていた（実機の絵・run 45）。札が出ているときは
+        // その上に乗る
         .overlay(alignment: .bottom) {
-            // **消えたピンの札は出さない。** 絞り込みを変えるとピンは
-            // 入れ替わるが、札は値の写しなので残ってしまう
-            if let selected, model.stillShown(selected) {
-                pinCard(selected)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .bottom) {
+                    areaControl
+                    Spacer(minLength: 8)
+                    // 近くの写真への入口。**現在地が取れた回だけ**出す
+                    if here != nil {
+                        nearbyButton
+                    }
+                }
+                .padding(.horizontal, 16)
+
+                // **消えたピンの札は出さない。** 絞り込みを変えるとピンは
+                // 入れ替わるが、札は値の写しなので残ってしまう
+                if let selected, model.stillShown(selected) {
+                    pinCard(selected)
+                        .padding(.horizontal, 16)
+                }
             }
+            .padding(.bottom, 16)
         }
     }
 
