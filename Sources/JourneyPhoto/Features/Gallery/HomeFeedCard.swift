@@ -298,6 +298,9 @@ struct HomeFeedCard: View {
 
     private var liked: Bool { favorites.contains(photo.id) }
 
+    /// 押した回にサーバーが答えた数。**答えが来るまでは nil**
+    @State private var serverLikes: Int?
+
     /// いいね。**サーバーへ送る。**
     ///
     /// 🔴 ここは長いあいだ端末の控えを反転するだけで、**押しても
@@ -308,11 +311,12 @@ struct HomeFeedCard: View {
         // 先に画面を変える（押した手応えを待たせない）
         favorites.set(photo.id, favorite: !wasLiked)
         do {
-            if wasLiked {
-                _ = try await environment.social.unlike(photoId: photo.id)
-            } else {
-                _ = try await environment.social.like(photoId: photo.id)
-            }
+            let result = wasLiked
+                ? try await environment.social.unlike(photoId: photo.id)
+                : try await environment.social.like(photoId: photo.id)
+            // **返ってきた数と状態を使う。** 自分で数えない
+            if let likes = result.likes { serverLikes = likes }
+            favorites.set(photo.id, favorite: result.liked)
         } catch {
             // **届かなかったら戻す。** 画面だけ「いいね済み」にしない
             favorites.set(photo.id, favorite: wasLiked)
@@ -336,7 +340,17 @@ struct HomeFeedCard: View {
     }
 
     /// 出すいいねの数。**押した瞬間に 1 足す**（サーバーの数は詳細で直る）
+    /// 出すいいねの数。
+    ///
+    /// **サーバーが答えた数があれば、それを出す**（押した回に返ってくる）。
+    /// 無い間は静的 JSON の値に、押した手応えぶんだけ足す。
+    ///
+    /// ⚠️ **足した数は厳密ではない。** 前に押したぶんは JSON の値に
+    /// 既に入っているので、その写真では1多く見える。押せばサーバーの数に
+    /// 直るし、詳細画面でも直る——**数の出どころを1つに寄せられない**
+    /// のは、一覧が静的 JSON で来るため。
     private var likeCount: Int {
+        if let known = serverLikes { return known }
         let base = photo.likes ?? 0
         return liked ? base + 1 : base
     }
