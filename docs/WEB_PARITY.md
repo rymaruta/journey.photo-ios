@@ -18,7 +18,7 @@ API の口そのものは `Tools/check-api-parity.py` が毎回突き合わせ�
 | お知らせ（未読つき） | `NotificationsBell` | `NotificationsView` |
 | ストーリー（投稿・閲覧・返信） | `stories/` | `Features/Stories/` |
 | 撮影地マップ | `PhotoMap` | `PhotoMapView` |
-| 年表 | `TimelineFeed` | `PhotoTimelineView` |
+| フォロー中の流れ | `TimelineFeed`（マイページのタブ） | ホームのフィード切り替え「フォロー中」 |
 | 集約（タグ / 撮影地 / カテゴリ / 機材） | `/tag` `/location` `/category` `/camera` | `TagPhotosView` |
 | 投稿（切り抜き・タグ・カテゴリ・撮影地・曲） | `/user/upload` | `UploadView` |
 | 下書き | `/user/drafts` | マイページの一覧に「下書き」の印 |
@@ -37,6 +37,13 @@ API の口そのものは `Tools/check-api-parity.py` が毎回突き合わせ�
 | 機材の集約 `/camera/*` | `lib/utils/collections.ts` | `819451f` |
 | どの画面からも投稿できる「＋」 | `PostFab` | `819451f` |
 | 写真を2回叩いていいね | `GalleryModal` の `handleImageTap` | `7356a26` |
+| いいねした写真をサーバーからも引く | `GET /user/likes` / `useMyServerLikes` | `d49f4cd` |
+| 見たストーリーの輪を分ける（アカウントごとの鍵） | `lib/stories.ts` | `87ae54f` |
+
+> **年表（`PhotoTimelineView`）は消した。** 参照がどこからも無くなっていた
+> ——マイページの札を 投稿／マップ／お気に入り に替えたときの取り残し。
+> 同じ写真を日付で並べ直すだけの見せ方は、`TripBook`（旅の一冊）が
+> より強く果たしている。
 
 > `likes` と `featured` は**アプリの `Photo` に項目すら無かった**ので、
 > owner が Web で設定してもアプリでは何も起きなかった。
@@ -45,10 +52,6 @@ API の口そのものは `Tools/check-api-parity.py` が毎回突き合わせ�
 
 | # | 機能 | Web での出どころ | 無いと何が起きるか | 見立て |
 |---|---|---|---|---|
-| 1 | **投稿の権限が無い人への案内** | `MemberOnlyNotice` / `useMemberGate` | ログイン済みでも投稿できない人が、**理由の分からない失敗**に当たる（本人に直す手段は無い） | 小 |
-| 2 | **表示名を決めてもらう案内** | `ProfileSetupBanner` | 名前未設定のままだと**検索に出ず**「名前未設定さん」と出る。本人は気づけない | 小 |
-| 3 | **画面をまたぐ音楽の操作** | `MiniPlayer` | 曲を鳴らしたまま別の画面へ行くと**止める手段が無い** | 中 |
-| 4 | **操作結果の短い知らせ（トースト）** | `Toast` / `ToastProvider` | いまは赤い帯か無反応。成功が伝わらない | 中 |
 | 5 | **トップでのタグ絞り込み・キーワード** | `FilterBar` のタグチップと検索欄 | 「さがす」タブに分かれている（機能としては届く） | 中 |
 | 6 | **写真の上に文字を置く**（owner の要望） | Web にも無い（`caption` 1本のみ） | 新規。**実装中** | 大 |
 
