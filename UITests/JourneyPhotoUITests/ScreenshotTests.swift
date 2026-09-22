@@ -140,6 +140,32 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
+        // ギャラリーに戻って、1枚目の写真を開いたところ。
+        //
+        // 🔴 **この節を、旅の節を書き直したときに巻き添えで消していた**
+        // （run 62 で `20-写真の詳細` と `21-人のページ` が丸ごと欠けた）。
+        // 消えたことは**絵の枚数が減った**ことでしか分からない——
+        // 巡回は「出なければ撮らない」ので、赤くもならない。
+        tabBar.buttons.element(boundBy: 0).tap()
+        Thread.sleep(forTimeInterval: 2)
+        // **写真そのものを名指しで押す**（`feed.photo`）。
+        // 位置で探していたときは、今日のテーマの「参加する」に当たって
+        // **ログイン画面を「写真の詳細」として撮って**いた（run 49）。
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        if firstPhoto.waitForExistence(timeout: 10), firstPhoto.isHittable {
+            firstPhoto.tap()
+            Thread.sleep(forTimeInterval: 4)
+            shoot(app, "20-写真の詳細")
+
+            // **人のページ**（モック2 と同じ部品で組んである）。
+            let toAuthor = app.buttons["photo.author"].firstMatch
+            if toAuthor.waitForExistence(timeout: 5), toAuthor.isHittable {
+                toAuthor.tap()
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "21-人のページ（マイページと同じ部品）")
+            }
+        }
+
         // **撮影スポットの画面**（モック5）。
         //
         // 🔴 **写真の詳細からは撮れない。** run 54 で試して撮れなかった
