@@ -472,16 +472,17 @@ struct MyPageView: View {
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 16)
 
-            if wanted.isEmpty {
-                // **「まだ無い」と「台帳が取れていない」を分ける**
-                if spots.isEmpty && !wishlist.spotIds.isEmpty {
-                    ErrorBanner(message: L("スポットの一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
-                                           "Couldn't load the places. Pull to refresh."))
-                } else {
-                    ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
-                                           "Nothing yet. Tap “Want to go” on a place."))
-                }
-            } else {
+            // **「まだ無い」と「台帳が取れていない」を分ける**（`ProfileSections`）
+            switch ProfileSections.wishlist(ledgerCount: spots.count,
+                                            wantedCount: wanted.count,
+                                            savedIdCount: wishlist.spotIds.count) {
+            case .couldNotLoad:
+                ErrorBanner(message: L("スポットの一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
+                                       "Couldn't load the places. Pull to refresh."))
+            case .empty:
+                ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
+                                       "Nothing yet. Tap “Want to go” on a place."))
+            case .list:
                 ForEach(wanted) { spot in
                     NavigationLink {
                         SpotDetailView(spot: spot, photos: model.photos, ledger: spots)

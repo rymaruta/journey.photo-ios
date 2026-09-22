@@ -27,7 +27,8 @@ struct HighlightsRow: View {
         VStack(alignment: .leading, spacing: 8) {
             // **取れる前は何も出さない。** 空と「まだ読んでいない」を分ける
             // ——先に「まだありません」を出すと、読み終わった瞬間に入れ替わる
-            if loaded && (isMine || !highlights.isEmpty) {
+            if ProfileSections.showsHighlights(loaded: loaded, isMine: isMine,
+                                               count: highlights.count) {
                 header
                 circles
             }
