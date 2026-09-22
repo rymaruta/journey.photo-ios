@@ -32,6 +32,9 @@ struct HomeFeedCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // **作者は写真の上**（モック1）。誰の一枚かを先に伝える
+            author
+
             NavigationLink {
                 PhotoDetailView(photo: photo)
             } label: {
@@ -40,17 +43,20 @@ struct HomeFeedCard: View {
                     .overlay {
                         RemoteImage(url: photo.detailImageURL, alignment: photo.gridAlignment)
                     }
-                    // **題と撮影地は写真の上に置く**（提案の絵）。
-                    // 下に並べるより、どの写真の話か迷わない
-                    .overlay(alignment: .bottomLeading) { titleOverlay }
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                     .contentShape(RoundedRectangle(cornerRadius: 18))
             }
             .buttonStyle(.plain)
 
-            author
-
-            if !caption.isEmpty {
+            // **題は写真の下**（モック1）。写真に重ねていたが、モックは
+            // 重ねず、説明と同じ塊で読ませる
+            if !photo.displayTitle.isEmpty {
+                Text(photo.displayTitle)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(2)
+            }
+            if !caption.isEmpty, caption != photo.displayTitle {
                 Text(caption)
                     .font(.callout)
                     .lineSpacing(3)
@@ -66,38 +72,6 @@ struct HomeFeedCard: View {
         .padding(.bottom, 20)
         .onAppear {
             if let ownerId = photo.userId { isFollowing = following.contains(ownerId) }
-        }
-    }
-
-    /// 写真に重ねる題と撮影地。**暗くするのは下だけ**（全面に膜を
-    /// 掛けると写真が濁る）
-    @ViewBuilder
-    private var titleOverlay: some View {
-        let title = photo.displayTitle
-        let place = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !title.isEmpty || !place.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                if !title.isEmpty {
-                    Text(title)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(WebTheme.foreground)
-                        .lineLimit(2)
-                }
-                if !place.isEmpty {
-                    HStack(spacing: 5) {
-                        Image(systemName: "mappin.circle.fill")
-                        Text(place).lineLimit(1)
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.85))
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.7)],
-                               startPoint: .top, endPoint: .bottom)
-            )
         }
     }
 
@@ -141,16 +115,27 @@ struct HomeFeedCard: View {
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(WebTheme.foreground)
                             if !subtitle.isEmpty {
-                                Text(subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(WebTheme.faint)
+                                HStack(spacing: 3) {
+                                    Image(systemName: "mappin.circle.fill")
+                                        .font(.caption2)
+                                    Text(subtitle).lineLimit(1)
+                                }
+                                .font(.caption)
+                                .foregroundStyle(WebTheme.faint)
                             }
                         }
                     }
                 }
                 .buttonStyle(.plain)
             }
-            Spacer()
+            Spacer(minLength: 6)
+            // **いつ出されたか**（モック1 の「3時間前」）。読めなければ出さない
+            if let ago = StoryPlayback.ago(from: photo.createdAt) {
+                Text(ago)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+                    .lineLimit(1)
+            }
             followButton
             Button(action: onMore) {
                 Image(systemName: "ellipsis")
@@ -275,10 +260,10 @@ struct HomeFeedCard: View {
     }
 
     /// 「日本・風景写真」にあたる行。撮影地と分類から作る
+    /// 名前の下の1行。**撮影地だけ**（モック1）。分類まで並べると、
+    /// 撮影地の無い写真では分類だけが「場所」の位置に出て紛らわしい
     private var subtitle: String {
-        let place = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let category = photo.category.map { Labels.Category.name($0) } ?? ""
-        return [place, category].filter { !$0.isEmpty }.joined(separator: " · ")
+        (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 説明の1段落目。無ければ題で代える
