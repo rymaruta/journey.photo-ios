@@ -9,11 +9,20 @@
 // なお修飾子の**順序**と実行時の挙動は、これでも見ていない。
 import Foundation
 
+/// `accessibilityElement(children:)` の指定（本物と同じ名前）
+public struct AccessibilityChildBehavior {
+    public static let ignore = AccessibilityChildBehavior()
+    public static let combine = AccessibilityChildBehavior()
+    public static let contain = AccessibilityChildBehavior()
+}
+
 public struct ToolbarItemPlacement {
     public static let topBarTrailing = ToolbarItemPlacement()
     public static let topBarLeading = ToolbarItemPlacement()
     public static let cancellationAction = ToolbarItemPlacement()
     public static let confirmationAction = ToolbarItemPlacement()
+    /// 見出しの中央。自前のロゴを置くのに要る（本物にある）
+    public static let principal = ToolbarItemPlacement()
 }
 /// **ツールバーの中身は `View` ではなく `ToolbarContent`。** 本物と同じ形に
 /// しておかないと、置けないものを置いても模型では通ってしまう。
@@ -276,6 +285,9 @@ extension View {
 
     // 読み上げ
     public func accessibilityLabel(_ label: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 中身の読み上げをまとめる（本物と同じ）。ロゴのように
+    /// 「記号＋2語」で1つの名前になるものに要る
+    public func accessibilityElement(children: AccessibilityChildBehavior = .ignore) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     /// 起動スモーク（`UITests/`）から画面の部品を名札で指すためのもの。
     /// **模型にも置く**——置かないと Linux 側のビルドだけが落ちる
     public func accessibilityIdentifier(_ id: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }

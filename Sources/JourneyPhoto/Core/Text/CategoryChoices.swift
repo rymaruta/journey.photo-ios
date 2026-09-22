@@ -12,6 +12,23 @@ enum CategoryChoices {
     /// 画面に出す7つ。**Web の `CATEGORY_CHOICES` と同じ並び**。
     static let all = ["風景", "建築", "自然", "街", "人物", "動物", "食べ物"]
 
+    /// チップに添える記号（モック3-1・モック9）。
+    ///
+    /// **持っている分類にだけ付ける。** 知らない語には記号を返さない
+    /// ——適当な記号を当てると、分類と絵が食い違ったチップが並ぶ。
+    static func symbol(_ value: String) -> String? {
+        switch key(value) {
+        case key("風景"): return "photo"
+        case key("建築"): return "building.columns"
+        case key("自然"): return "leaf"
+        case key("街"): return "building.2"
+        case key("人物"): return "person"
+        case key("動物"): return "pawprint"
+        case key("食べ物"): return "fork.knife"
+        default: return nil
+        }
+    }
+
     /// 同じ主題を指す綴り（Web の `CATEGORY_ALIASES`）。
     ///
     /// **選択肢に載せた語はここにも要る。** 載せないと日本語のまま

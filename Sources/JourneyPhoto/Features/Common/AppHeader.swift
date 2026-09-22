@@ -24,6 +24,11 @@ struct AppHeaderItems: ToolbarContent {
 
     @ToolbarContentBuilder
     var body: some ToolbarContent {
+        // ロゴ。**`navigationTitle` の文字の代わりに置く**——モックは
+        // どの画面も記号＋ワードマークで、字だけだと別のアプリに見える
+        ToolbarItem(placement: .principal) {
+            AppLogo()
+        }
         ToolbarItem(placement: .topBarTrailing) {
             Button(action: onOpenNotifications) {
                 Image(systemName: "bell")

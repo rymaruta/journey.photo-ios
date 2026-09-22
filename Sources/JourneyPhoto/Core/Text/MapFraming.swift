@@ -74,3 +74,27 @@ enum MapFraming {
             && abs(a.longitude - b.longitude) <= clusterDegrees
     }
 }
+
+extension MapFraming {
+    /// 拡大・縮小の1段（モック3-4 の `+` / `−`）。
+    ///
+    /// **倍率は2倍ずつ。** 細かく刻むと何度も押すことになり、
+    /// 大きく刻むと行き過ぎる。
+    ///
+    /// **上限と下限で止める。** 止めないと、押し続けたときに
+    /// 地球儀（span 180）や1点（span 0）になって**戻れなくなる**。
+    static func zoomed(_ frame: Frame, by factor: Double) -> Frame {
+        let lat = min(maxSpan, max(minSpan, frame.latitudeSpan * factor))
+        let lng = min(maxSpan, max(minSpan, frame.longitudeSpan * factor))
+        return Frame(latitude: frame.latitude, longitude: frame.longitude,
+                     latitudeSpan: lat, longitudeSpan: lng)
+    }
+
+    /// いちばん寄れるところ。**約100m**——座標は約1kmに丸めてあるので、
+    /// これ以上寄ってもピンは動かない
+    static let minSpan = 0.001
+    /// いちばん引けるところ（地球儀にしない）
+    static let maxSpan = 90.0
+    /// 1回ぶんの倍率
+    static let zoomStep = 2.0
+}

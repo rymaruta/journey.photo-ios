@@ -136,6 +136,7 @@ struct PhotoMapView: View {
                 }
                 ForEach(model.categories, id: \.self) { category in
                     chip(Labels.Category.name(category),
+                         symbol: CategoryChoices.symbol(category),
                          selected: model.category.map {
                              CategoryChoices.isChosen(current: $0, choice: category)
                          } ?? false) {
@@ -149,10 +150,18 @@ struct PhotoMapView: View {
     }
 
     /// 探す画面のチップと同じ形（白地＝選択中）。当たりは上下 11pt ＋ 字で 44pt に届く
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func chip(_ title: String, symbol: String? = nil, selected: Bool,
+                      action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(selected ? .semibold : .regular))
+            HStack(spacing: 5) {
+                // **記号は持っている分類にだけ**（`CategoryChoices.symbol`）。
+                // 知らない語に当てずっぽうの絵を付けない
+                if let symbol {
+                    Image(systemName: symbol).font(.caption)
+                }
+                Text(title)
+                    .font(.subheadline.weight(selected ? .semibold : .regular))
+            }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 11)
                 .background(selected ? AnyShapeStyle(WebTheme.foreground)
@@ -228,7 +237,7 @@ struct PhotoMapView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            locateButton
+            mapControls
                 .padding(.trailing, 16)
                 .padding(.top, 56)
         }
@@ -326,6 +335,37 @@ struct PhotoMapView: View {
             // 範囲がまだ届いていない間は押せない（何も起きないボタンにしない）
             .disabled(!model.canSearchArea)
         }
+    }
+
+    /// 地図の操作（モック3-4）。現在地・拡大・縮小を縦に重ねる。
+    private var mapControls: some View {
+        VStack(spacing: 8) {
+            locateButton
+            VStack(spacing: 0) {
+                zoomButton(systemImage: "plus", factor: 1 / MapFraming.zoomStep,
+                           label: L("拡大", "Zoom in"))
+                Divider().frame(width: 28)
+                zoomButton(systemImage: "minus", factor: MapFraming.zoomStep,
+                           label: L("縮小", "Zoom out"))
+            }
+            .background(WebTheme.raised, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    /// **いま見えている枠から数える。** `camera` は `.automatic` のことも
+    /// あるので読めない——見えている枠は `onMapCameraChange` が控えている
+    private func zoomButton(systemImage: String, factor: Double, label: String) -> some View {
+        Button {
+            guard let now = model.visibleFrame else { return }
+            frame(MapFraming.zoomed(now, by: factor))
+        } label: {
+            Image(systemName: systemImage)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(WebTheme.foreground)
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     /// 近くの写真へ。**現在地は端末の中だけ**（送らない・残さない）
