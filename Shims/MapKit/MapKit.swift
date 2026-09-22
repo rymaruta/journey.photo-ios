@@ -1,15 +1,9 @@
 // MapKit の模型。
 import Foundation
 import SwiftUI
-
-public struct CLLocationCoordinate2D {
-    public var latitude: Double
-    public var longitude: Double
-    public init(latitude: Double, longitude: Double) {
-        self.latitude = latitude
-        self.longitude = longitude
-    }
-}
+// `CLLocationCoordinate2D` は CoreLocation の型。本物も MapKit を読めば
+// 透けて見えるので、同じ見え方にしておく
+@_exported import CoreLocation
 
 /// **地図の中身は `View` ではなく `MapContent`。** 本物と同じ形にしておく。
 public protocol MapContent {}
@@ -26,6 +20,25 @@ public struct Map: View {
 public struct MapCameraPosition {
     public static let automatic = MapCameraPosition()
     public static func region(_ region: MKCoordinateRegion) -> MapCameraPosition { MapCameraPosition() }
+}
+
+/// `onMapCameraChange` が知らせる頻度。**動かし終わったとき**（`.onEnd`）だけを
+/// 使う——動かすたびに絞ると「消えた」に見える
+public enum MapCameraUpdateFrequency {
+    case continuous, onEnd
+}
+
+/// カメラが動いたときに渡ってくるもの。本物は `camera` / `rect` も持つが、
+/// 使う `region` だけを写している
+public struct MapCameraUpdateContext {
+    public let region: MKCoordinateRegion
+}
+
+/// 本物は MapKit が `View` に生やしている iOS 17 の口
+extension View {
+    public func onMapCameraChange(frequency: MapCameraUpdateFrequency = .onEnd,
+                                  _ action: @escaping (MapCameraUpdateContext) -> Void)
+        -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
 }
 
 public struct MKCoordinateSpan {
