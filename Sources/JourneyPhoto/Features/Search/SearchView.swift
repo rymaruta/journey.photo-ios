@@ -6,6 +6,7 @@ struct SearchView: View {
     /// 見出しはどの画面でも同じ（`AppHeaderItems`）。未読の数と、
     /// お知らせを開く口は `RootView` が持っている
     var unread: Int = 0
+    var avatarURL: URL?
     var onOpenNotifications: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -35,7 +36,7 @@ struct SearchView: View {
         .webScreen()
         .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
         .task { await model.loadPhotos(environment: environment) }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }

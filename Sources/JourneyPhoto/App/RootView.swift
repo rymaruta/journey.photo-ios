@@ -68,16 +68,22 @@ struct RootView: View {
         unread = (try? await environment.notifications.fetch().unread) ?? 0
     }
 
+    /// 見出しに出す自分のアイコン。**ここで1回だけ作る**
+    /// （`ToolbarContent` に環境から注げないので、値で渡す）
+    private var avatarURL: URL? {
+        auth.userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil) }
+    }
+
     private var tabs: some View {
         TabView(selection: $selection) {
             NavigationStack {
-                GalleryView(unread: unread, onOpenNotifications: { showNotifications = true })
+                GalleryView(unread: unread, avatarURL: avatarURL, onOpenNotifications: { showNotifications = true })
             }
             .tabItem { Label(L("ホーム", "Home"), systemImage: "house") }
             .tag(Tab.home)
 
             NavigationStack {
-                SearchView(unread: unread, onOpenNotifications: { showNotifications = true })
+                SearchView(unread: unread, avatarURL: avatarURL, onOpenNotifications: { showNotifications = true })
             }
             .tabItem { Label(L("探す", "Search"), systemImage: "magnifyingglass") }
             .tag(Tab.search)
@@ -91,7 +97,7 @@ struct RootView: View {
             // **4つ目は地図**（指示書 4-1 の並び）。旅の一冊は
             // マイページから開く——撮った本人の記録なので持ち場が合う
             NavigationStack {
-                PhotoMapView(unread: unread, onOpenNotifications: { showNotifications = true })
+                PhotoMapView(unread: unread, avatarURL: avatarURL, onOpenNotifications: { showNotifications = true })
             }
             .tabItem { Label(L("マップ", "Map"), systemImage: "map") }
             .tag(Tab.map)

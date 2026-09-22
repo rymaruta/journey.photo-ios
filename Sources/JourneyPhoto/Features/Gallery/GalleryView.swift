@@ -14,6 +14,7 @@ struct GalleryView: View {
     @State private var showsTags = false
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
+    var avatarURL: URL?
     var onOpenNotifications: () -> Void = {}
 
     var body: some View {
@@ -50,7 +51,7 @@ struct GalleryView: View {
         // 見出しはどの画面でも同じ（`AppHeaderItems`）。
         // **地図のアイコンは外した**——下の札に「マップ」があり、
         // 同じ場所への入口が2つあった
-        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
         .task {
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない

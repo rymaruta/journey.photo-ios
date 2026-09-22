@@ -15,9 +15,12 @@ import SwiftUI
 struct AppHeaderItems: ToolbarContent {
 
     let unread: Int
+    /// 自分のアイコン。**値で受け取る**——`ToolbarContent` は `View` では
+    /// ないので、`@EnvironmentObject` が注ぎ込まれる保証が無い
+    /// （注がれないと実機で「見つからない」と言って落ちる。手元の模型は
+    /// 素通しするので、ここでは絶対に出ない）
+    let avatarURL: URL?
     let onOpenNotifications: () -> Void
-
-    @EnvironmentObject private var auth: AuthStore
 
     @ToolbarContentBuilder
     var body: some ToolbarContent {
@@ -52,10 +55,7 @@ struct AppHeaderItems: ToolbarContent {
     /// 自分のアイコン。**未ログインなら人型**（誰かの顔を借りない）
     @ViewBuilder
     private var avatar: some View {
-        let url = auth.userId.flatMap {
-            UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil)
-        }
-        if let url {
+        if let url = avatarURL {
             RemoteImage(url: url)
                 .frame(width: 30, height: 30)
                 .clipShape(Circle())
