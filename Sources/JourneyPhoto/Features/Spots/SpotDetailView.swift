@@ -92,7 +92,7 @@ struct SpotDetailView: View {
 
                 // **「1/10」は数えた数**（紐づいた公開写真の枚数そのもの）
                 if hero.count > 1 {
-                    Text("\(min(page + 1, hero.count))/\(hero.count)")
+                    Text(SpotScreen.pagerLabel(page: page, count: hero.count) ?? "")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.white)
                         .padding(.horizontal, 10)
@@ -204,13 +204,10 @@ struct SpotDetailView: View {
         .padding(.horizontal, 16)
     }
 
-    /// 配る文。**名前と、あれば地図のリンク**。
-    /// 住所は台帳にあるときだけ足す（無い行に空行を作らない）
+    /// 配る文（`SpotScreen`）。**この画面は実機の絵で確かめられない**
+    /// ので、決まりは外に出してテストで動かしている
     private var shareText: String {
-        var parts = [spot.name]
-        if let line = spot.region?.line, !line.isEmpty { parts.append(line) }
-        if let url = mapURL { parts.append(url.absoluteString) }
-        return parts.joined(separator: "\n")
+        SpotScreen.shareText(name: spot.name, region: spot.region?.line, mapURL: mapURL)
     }
 
     private func actionLabel(icon: String, title: String, filled: Bool) -> some View {
@@ -225,16 +222,8 @@ struct SpotDetailView: View {
         .foregroundStyle(filled ? WebTheme.accentText : WebTheme.foreground)
     }
 
-    /// 端末の地図アプリへ。**座標があるときだけ**
-    private var mapURL: URL? {
-        guard let coords = spot.coords else { return nil }
-        var components = URLComponents(string: "https://maps.apple.com/")
-        components?.queryItems = [
-            URLQueryItem(name: "ll", value: "\(coords.lat),\(coords.lng)"),
-            URLQueryItem(name: "q", value: spot.name),
-        ]
-        return components?.url
-    }
+    /// 端末の地図アプリへ。**座標があるときだけ**（`SpotScreen`）
+    private var mapURL: URL? { SpotScreen.mapURL(name: spot.name, coords: spot.coords) }
 
     /// 数えられるものだけ。**評価・口コミ・行きたい人数は出さない**
     private var stats: some View {

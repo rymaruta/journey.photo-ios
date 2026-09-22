@@ -224,6 +224,39 @@ for (const file of files) {
     }
 }
 
+// 4.6d 生の日時を、そのまま画面に描いていないか
+//
+// **サーバーの値をそのまま `Text` に渡さない。** 写真詳細は撮影日を
+// 素通しで描いていたので、実機の絵に **`2026-09-19T17:46:27`** と
+// 出ていた（run 51）。`date` は `YYYY-MM-DD` で持つ約束だが、
+// **時刻まで入っている行が実在する**——出す側で受け止める。
+//
+// 手元の模型は `Text` の中身を見ないので、**ここでは絶対に出ない**。
+// 実機の絵でしか見つからず、しかもその絵は長いあいだ**別の画面を
+// 撮っていた**（名前と中身が食い違っていた）ので、誰も見ていなかった。
+//
+// 通してよいのは、言葉に直す関数を通した値だけ（`TakenDay` /
+// `StoryPlayback.ago` / `NotificationGroups` / `timeAgo`）。
+{
+    // `Text(photo.date)` `Text("\(item.createdAt)")` のような形を拾う。
+    // **関数を通していれば括弧の中に名前が出る**ので、そこで免除する
+    const rawDate = /Text\(\s*"?\\?\(?\s*[A-Za-z_][A-Za-z0-9_.?]*\.(date|createdAt|updatedAt|expiresAt|takenOn|at)\b/g;
+    const formatters = /(TakenDay|StoryPlayback|NotificationGroups|timeAgo|ago\(|DateFormatter|formatted)/;
+    for (const file of files) {
+        if (!file.includes("/Features/")) continue;
+        const source = fs.readFileSync(file, "utf8");
+        for (const line of source.split("\n")) {
+            rawDate.lastIndex = 0;
+            if (!rawDate.test(line)) continue;
+            if (formatters.test(line)) continue;
+            problems.push(
+                `${path.relative(process.cwd(), file)}: 生の日時をそのまま描いています` +
+                `（\`${line.trim().slice(0, 60)}\`。実機に 2026-09-19T17:46:27 のような値が出ます）`
+            );
+        }
+    }
+}
+
 // 4.7 入力と突き合わせる語を、日本語に固定していないか
 //
 // **その人の言葉で打たせる。** 退会の確認は「削除」と打たせていたので、
