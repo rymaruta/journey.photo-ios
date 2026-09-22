@@ -95,53 +95,36 @@ final class ScreenshotTests: XCTestCase {
             shoot(app, "15-マイページ（下）")
         }
 
-        // **旅を1冊開く。** 表紙・ページ・足取りは、開かないと絵にならない
-        // （タブから外したので、マイページの「旅の記録」から入る）
+        // **旅を1冊開く。** 表紙・ページ・足取りは、開かないと絵にならない。
+        //
+        // 🔴 **位置で探さない。** run 60 はここで一覧の1つ目を位置で押して、
+        // マイページの「投稿する」に当たり、**「30-旅の一冊」という名前で
+        // 投稿の札を撮って**いた。同じ失敗は run 49（写真の詳細＝ログイン画面）・
+        // run 55（マイページ＝ログイン画面）に続いて**3回目**。
+        //
+        // 名前の付いた入口だけを押し、**見つからなければ1枚も撮らない**
+        // ——名前と中身が食い違う絵は、無い絵より悪い。
         if tabBar.buttons.count > 4 {
             tabBar.buttons.element(boundBy: 4).tap()
             Thread.sleep(forTimeInterval: 2)
-            let tripsEntry = app.buttons.matching(identifier: "旅の記録").firstMatch
-            if tripsEntry.waitForExistence(timeout: 8) { tripsEntry.tap() }
-            Thread.sleep(forTimeInterval: 4)
-            let firstTrip = app.scrollViews.buttons.firstMatch
-            if firstTrip.waitForExistence(timeout: 10) {
-                firstTrip.tap()
+            let tripsEntry = app.buttons["trips.entry"].firstMatch
+            if tripsEntry.waitForExistence(timeout: 8), tripsEntry.isHittable {
+                tripsEntry.tap()
                 Thread.sleep(forTimeInterval: 4)
-                shoot(app, "30-旅の一冊")
-                // 下まで流して、足取りのところも撮る
-                app.swipeUp()
-                app.swipeUp()
-                Thread.sleep(forTimeInterval: 2)
-                shoot(app, "31-旅の足取り")
+                let firstTrip = app.buttons["trips.book"].firstMatch
+                if firstTrip.waitForExistence(timeout: 10), firstTrip.isHittable {
+                    firstTrip.tap()
+                    Thread.sleep(forTimeInterval: 4)
+                    shoot(app, "30-旅の一冊")
+                    // 下まで流して、足取りのところも撮る
+                    app.swipeUp()
+                    app.swipeUp()
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, "31-旅の足取り")
+                }
                 if app.navigationBars.buttons.firstMatch.exists {
                     app.navigationBars.buttons.firstMatch.tap()
                 }
-            }
-        }
-
-        // ギャラリーに戻って、1枚目の写真を開いたところ
-        tabBar.buttons.element(boundBy: 0).tap()
-        Thread.sleep(forTimeInterval: 2)
-        // **写真そのものを名指しで押す**（`feed.photo`）。
-        // 位置で探していたときは、今日のテーマの「参加する」に当たって
-        // **ログイン画面を「写真の詳細」として撮って**いた（run 49）。
-        // 絵の名前と中身が食い違うと、見た人が「直っている」と誤読する。
-        let firstPhoto = app.buttons["feed.photo"].firstMatch
-        if firstPhoto.waitForExistence(timeout: 10), firstPhoto.isHittable {
-            firstPhoto.tap()
-            Thread.sleep(forTimeInterval: 4)
-            shoot(app, "20-写真の詳細")
-
-            // **人のページ**（モック2 と同じ部品で組んである）。
-            // マイページそのものは CI では撮れない——巡回はログインしない。
-            // だが**ハイライトの輪・写真の格子・数え**は人のページにも
-            // 同じものが出るので、少なくともそこは実機で見られる。
-            // 「マイページを撮った」とは書かない（撮っていない）
-            let toAuthor = app.buttons["photo.author"].firstMatch
-            if toAuthor.waitForExistence(timeout: 5), toAuthor.isHittable {
-                toAuthor.tap()
-                Thread.sleep(forTimeInterval: 4)
-                shoot(app, "21-人のページ（マイページと同じ部品）")
             }
         }
 

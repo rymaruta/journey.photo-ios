@@ -31,6 +31,10 @@ struct TripsView: View {
                             shelf(trip)
                         }
                         .buttonStyle(.plain)
+                        // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で
+                        // 探させない**——run 60 は一覧の1つ目を位置で押して、
+                        // マイページの「投稿する」に当たっていた
+                        .accessibilityIdentifier("trips.book")
                     }
                 }
                 .padding(16)

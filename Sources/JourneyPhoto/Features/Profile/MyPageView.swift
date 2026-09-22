@@ -137,6 +137,8 @@ struct MyPageView: View {
             .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+        // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
+        .accessibilityIdentifier("trips.entry")
         .padding(.horizontal, 16)
     }
 
