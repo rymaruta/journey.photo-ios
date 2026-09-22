@@ -14,6 +14,7 @@ struct SearchView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = SearchViewModel()
     @State private var query = ""
+    @State private var showSort = false
 
     var body: some View {
         ScrollView {
@@ -34,6 +35,15 @@ struct SearchView: View {
             .padding(.bottom, 24)
         }
         .webScreen()
+        // 並び替えの札（モック9-7）。**いまの選択に印を付ける**
+        .confirmationDialog(L("並び替え", "Sort"), isPresented: $showSort, titleVisibility: .visible) {
+            ForEach(GallerySort.allCases) { option in
+                Button(option == model.sort ? "\(option.label) ✓" : option.label) {
+                    model.select(sort: option)
+                }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        }
         .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
@@ -64,6 +74,17 @@ struct SearchView: View {
                       text: $query)
                 .textFieldStyle(.plain)
                 .foregroundStyle(WebTheme.foreground)
+            // **並び替えはここから開く**（モック9-1 の右端の印）。
+            // 結果の上にも同じ札を出したままにする——探している人は
+            // 結果を見ながら並べ替えたい
+            Button {
+                showSort = true
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(model.sort == .new ? WebTheme.faint : WebTheme.foreground)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("並び替え", "Sort"))
             if !query.isEmpty {
                 Button {
                     query = ""
@@ -81,24 +102,61 @@ struct SearchView: View {
         .padding(.horizontal, 16)
     }
 
-    /// カテゴリ。**「すべて」を先頭に置く**（戻れない絞り込みを作らない）
+    /// カテゴリ（モック9-2 の丸い札）。**絵はその分類でいちばん人気の1枚**
+    /// ——決め打ちの絵を持たないので、写真が増えれば札の顔も変わる。
+    /// **「すべて」を先頭に置く**（戻れない絞り込みを作らない）
     private var categoryChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip(L("すべて", "All"), selected: model.category == nil) {
+            HStack(alignment: .top, spacing: 14) {
+                circleChip(label: L("すべて", "All"), selected: model.category == nil) {
                     model.select(category: nil)
+                } face: {
+                    Image(systemName: "square.grid.2x2.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(model.category == nil ? WebTheme.accentText : WebTheme.muted2)
                 }
-                ForEach(model.categories, id: \.self) { category in
-                    chip(Labels.Category.name(category),
-                         selected: model.category.map {
-                             CategoryChoices.isChosen(current: $0, choice: category)
-                         } ?? false) {
-                        model.select(category: category)
+
+                ForEach(model.categoryCovers) { item in
+                    let selected = model.category.map {
+                        CategoryChoices.isChosen(current: $0, choice: item.category)
+                    } ?? false
+                    circleChip(label: Labels.Category.name(item.category), selected: selected) {
+                        model.select(category: item.category)
+                    } face: {
+                        RemoteImage(url: item.cover.gridImageURL, alignment: item.cover.gridAlignment)
                     }
                 }
             }
             .padding(.horizontal, 16)
+            .padding(.vertical, 2)
         }
+    }
+
+    /// 丸い札。選んでいる間は**白い輪**で囲む（色だけだと分かりにくい）
+    private func circleChip<Face: View>(label: String, selected: Bool,
+                                        action: @escaping () -> Void,
+                                        @ViewBuilder face: () -> Face) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                face()
+                    .frame(width: 56, height: 56)
+                    .background(selected ? AnyShapeStyle(WebTheme.foreground)
+                                         : AnyShapeStyle(WebTheme.surface),
+                                in: Circle())
+                    .clipShape(Circle())
+                    .overlay(Circle().strokeBorder(
+                        selected ? WebTheme.foreground : Color.white.opacity(0.15),
+                        lineWidth: selected ? 2.5 : 1))
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(selected ? WebTheme.foreground : WebTheme.muted2)
+                    .lineLimit(1)
+            }
+            .frame(width: 68)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     /// タグ。**枚数を添える**（押す前に手応えが分かる）
@@ -384,6 +442,8 @@ final class SearchViewModel: ObservableObject {
     /// 候補タグと枚数（提案の絵の「winter 13」）
     @Published private(set) var tagCounts: [(tag: String, count: Int)] = []
     @Published private(set) var categories: [String] = []
+    /// 丸い札に出す分類と、その代表写真（モック9-2）
+    @Published private(set) var categoryCovers: [CategoryCovers.Item] = []
     /// 発見の塊（モック2）
     @Published private(set) var popularSpots: [DiscoverySections.Spot] = []
     @Published private(set) var seasonal: [Photo] = []
@@ -441,6 +501,7 @@ final class SearchViewModel: ObservableObject {
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
         seasonal = DiscoverySections.seasonal(in: allPhotos)
         gear = GearGroups.sections(in: allPhotos)
+        categoryCovers = CategoryCovers.items(in: allPhotos)
         categories = CategoryChoices.present(in: allPhotos)
         photos = []
     }
