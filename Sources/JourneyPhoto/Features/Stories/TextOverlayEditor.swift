@@ -82,7 +82,8 @@ struct TextOverlayEditor<Extra: View>: View {
                         dragOffset = .zero
                     }
             )
-            // 押すと文字を直せる（消すのも同じ入口）
+            // 押すと文字を直せる（消すのも同じ入口）。
+            // **時刻と日付も押せる**——直せないが、消す口はここにしか無い
             .onTapGesture { startEditing(overlay) }
             .accessibilityLabel(overlay.text)
     }
@@ -98,11 +99,19 @@ struct TextOverlayEditor<Extra: View>: View {
     private var controls: some View {
         if let editingId, let index = overlays.firstIndex(where: { $0.id == editingId }) {
             VStack(spacing: 8) {
-                TextField(L("文字", "Text"), text: $draft)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: draft) { _, value in
-                        overlays[index].text = String(value.prefix(TextOverlay.maxLength))
-                    }
+                // **端末から採った札は直させない**（時刻・日付）。
+                // 直せると「いつの話か」が嘘になる
+                if overlays[index].kind.isEditable {
+                    TextField(L("文字", "Text"), text: $draft)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: draft) { _, value in
+                            overlays[index].text = String(value.prefix(TextOverlay.maxLength))
+                        }
+                } else {
+                    Text(overlays[index].displayText)
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.muted)
+                }
 
                 HStack(spacing: 8) {
                     // **場所と曲は帯で固定**（読めない札を作らせない）ので
@@ -133,16 +142,22 @@ struct TextOverlayEditor<Extra: View>: View {
                     if overlays[index].isEmpty { overlays.remove(at: index) }
                     self.editingId = nil
                 }
+                .accessibilityIdentifier("story.overlay.done")
             }
         } else {
             // モック4 の下の並び（テキスト／場所／BGM）。
             // **場所と曲は投稿の項目としても送る**ので、ここに置くのは
             // 「写真の上に見た目として残すか」だけ
-            HStack(spacing: 10) {
-                extraTools()
-                addButton(L("テキスト", "Text"), systemImage: "textformat", kind: .text)
-                addButton(L("場所", "Place"), systemImage: "mappin", kind: .place)
-                addButton(L("BGM", "Music"), systemImage: "music.note", kind: .song)
+            // **横に流す。** モック4-3 のスタンプ板にあたる数（6〜8つ）を
+            // 1画面に詰めると、1つずつが 44pt を下回る
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    extraTools()
+                    ForEach(TextOverlay.Kind.allCases, id: \.rawValue) { kind in
+                        addButton(kind.toolLabel, systemImage: kind.toolSymbol, kind: kind)
+                    }
+                }
+                .padding(.vertical, 2)
             }
         }
     }
@@ -175,9 +190,13 @@ struct TextOverlayEditor<Extra: View>: View {
         // **真ん中より少し上に置く。** 真ん中だと写真の主役に重なりやすい。
         // 場所と曲は少し下（文字の札と重なりにくい）
         let y = kind == .text ? 0.35 : 0.6
-        let overlay = TextOverlay(text: "", x: 0.5, y: y, kind: kind)
+        let overlay = TextOverlay(text: kind.initialText(), x: 0.5, y: y, kind: kind)
         overlays.append(overlay)
-        startEditing(overlay)
+        // **時刻と日付は直させない**（端末から採った値なので、直せると嘘になる）。
+        // 入力欄を出さずにそのまま置く
+        if kind.isEditable {
+            startEditing(overlay)
+        }
     }
 
     private func startEditing(_ overlay: TextOverlay) {

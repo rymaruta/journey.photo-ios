@@ -115,3 +115,56 @@ final class TextOverlayKindTests: XCTestCase {
         XCTAssertEqual(TextOverlay.display(text: "また来たい", kind: .text), "また来たい")
     }
 }
+
+// MARK: - スタンプ（モック4-3）
+
+extension TextOverlayTests {
+
+    private var noon: Date { Date(timeIntervalSince1970: 1_800_000_000) }
+
+    private var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    /// **時刻と日付は端末から採る。** 打たせるものではないし、
+    /// 打たせると嘘を書ける
+    func testTimeAndDateComeFromTheClock() {
+        let time = TextOverlay.Kind.time.initialText(now: noon, calendar: utc)
+        XCTAssertTrue(time.contains(":"), time)
+        let date = TextOverlay.Kind.date.initialText(now: noon, calendar: utc)
+        XCTAssertFalse(date.isEmpty)
+    }
+
+    /// 打って置く札は空から始まる（打つ前に何かが入っていない）
+    func testTypedKindsStartEmpty() {
+        for kind in [TextOverlay.Kind.text, .place, .song, .hashtag] {
+            XCTAssertEqual(kind.initialText(now: noon, calendar: utc), "", "\(kind)")
+        }
+    }
+
+    /// **端末から採った札は直させない**（直せると「いつの話か」が嘘になる）
+    func testClockKindsAreNotEditable() {
+        XCTAssertFalse(TextOverlay.Kind.time.isEditable)
+        XCTAssertFalse(TextOverlay.Kind.date.isEditable)
+        XCTAssertTrue(TextOverlay.Kind.text.isEditable)
+        XCTAssertTrue(TextOverlay.Kind.hashtag.isEditable)
+    }
+
+    /// 自由な文字以外は**必ず帯**（写真の上で読めなくならないように）
+    func testOnlyFreeTextKeepsItsStyle() {
+        for kind in TextOverlay.Kind.allCases where kind != .text {
+            XCTAssertEqual(kind.forcedStyle, .banner, "\(kind)")
+        }
+        XCTAssertNil(TextOverlay.Kind.text.forcedStyle)
+    }
+
+    /// どの札にも道具の名前と絵がある（板に並べるため）
+    func testEveryKindHasATool() {
+        for kind in TextOverlay.Kind.allCases {
+            XCTAssertFalse(kind.toolLabel.isEmpty, "\(kind)")
+            XCTAssertFalse(kind.toolSymbol.isEmpty, "\(kind)")
+        }
+    }
+}

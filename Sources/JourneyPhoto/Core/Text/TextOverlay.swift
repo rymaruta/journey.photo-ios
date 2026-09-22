@@ -34,13 +34,24 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// ここに置くのは「写真の上の見た目」だけ
     var kind: Kind
 
-    enum Kind: String, Equatable, Codable {
+    /// 札の種類（モック4-3 のスタンプ）。
+    ///
+    /// **持っているデータのものだけ。** モックには天気・食べ物・質問も
+    /// あるが、天気は引く先が無く、質問は答えを受け取る箱が無い
+    /// ——置くだけで何も起きない札は作らない。
+    enum Kind: String, Equatable, Codable, CaseIterable {
         /// 自由な文字
         case text
         /// 撮影地（ピンの印を付ける）
         case place
         /// 曲（音符の印を付ける）
         case song
+        /// いまの時刻（端末の時計）
+        case time
+        /// 今日の日付（端末の暦）
+        case date
+        /// ハッシュタグ
+        case hashtag
 
         /// 札の頭に付ける印。**文字だけの札には付けない**
         var symbol: String? {
@@ -48,12 +59,60 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .text: return nil
             case .place: return "📍"
             case .song: return "♪"
+            case .time: return "🕘"
+            case .date: return "📅"
+            case .hashtag: return "#"
             }
         }
 
-        /// 場所と曲は**必ず帯**にする（写真の上で読めなくならないように）
+        /// 自由な文字以外は**必ず帯**にする（写真の上で読めなくならないように）
         var forcedStyle: Style? {
             self == .text ? nil : .banner
+        }
+
+        /// 置いたときに入っている文字。**時刻と日付は端末から採る**
+        /// ——打たせるものではないし、打たせると嘘を書ける
+        func initialText(now: Date = Date(), calendar: Calendar = .current) -> String {
+            switch self {
+            case .time:
+                let hour = calendar.component(.hour, from: now)
+                let minute = calendar.component(.minute, from: now)
+                return String(format: "%d:%02d", hour, minute)
+            case .date:
+                let month = calendar.component(.month, from: now)
+                let day = calendar.component(.day, from: now)
+                return L("\(month)月\(day)日", "\(month)/\(day)")
+            default:
+                return ""
+            }
+        }
+
+        /// 置いたあとに文字を直せるか。**時刻と日付は直させない**
+        /// （端末から採った値なので、直せると「いつの話か」が嘘になる）
+        var isEditable: Bool {
+            self != .time && self != .date
+        }
+
+        var toolLabel: String {
+            switch self {
+            case .text: return L("テキスト", "Text")
+            case .place: return L("場所", "Place")
+            case .song: return L("BGM", "Music")
+            case .time: return L("時刻", "Time")
+            case .date: return L("日付", "Date")
+            case .hashtag: return L("ハッシュタグ", "Hashtag")
+            }
+        }
+
+        var toolSymbol: String {
+            switch self {
+            case .text: return "textformat"
+            case .place: return "mappin"
+            case .song: return "music.note"
+            case .time: return "clock"
+            case .date: return "calendar"
+            case .hashtag: return "number"
+            }
         }
     }
 
