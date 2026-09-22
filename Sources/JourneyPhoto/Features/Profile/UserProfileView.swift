@@ -25,7 +25,8 @@ struct UserProfileView: View {
                 header
 
                 Picker("", selection: $tab) {
-                    ForEach(ProfileTab.allCases) { tab in
+                    // **端末にしか無い札は出さない**（`ProfileTab.tabs`）
+                    ForEach(ProfileTab.tabs(isMe: false)) { tab in
                         Text(tab.label).tag(tab)
                     }
                 }
@@ -41,11 +42,6 @@ struct UserProfileView: View {
                 } else if tab == .map {
                     // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）
                     MyPhotosMap(photos: model.photos)
-                } else if tab == .favorites {
-                    // **他人の保存は見えない。** 保存は端末に覚えているもので、
-                    // サーバーに無い（＝他人のぶんは取りようがない）
-                    ErrorBanner(message: L("保存した写真は本人だけが見られます",
-                                           "Saved photos are private to each person"))
                 } else {
                     LazyVGrid(columns: columns, spacing: 2) {
                         ForEach(model.photos) { photo in

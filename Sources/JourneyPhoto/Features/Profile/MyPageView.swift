@@ -5,7 +5,11 @@ struct MyPageView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var wishlist: WishlistStore
+    @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = MyPageViewModel()
+    /// 「行きたい場所」に出す台帳。取れなければ空（その旨を画面に出す）
+    @State private var spots: [Spot] = []
     @State private var tab: ProfileTab = .posts
     @State private var showPostSheet = false
     @State private var showDistanceNote = false
@@ -47,6 +51,11 @@ struct MyPageView: View {
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
             await model.load()
+        }
+        // 台帳は写真より変わらないので、一度読めば足りる
+        .task {
+            guard spots.isEmpty else { return }
+            spots = await environment.spots.fetchSpots()
         }
         // **戻ってきたら読み直す。** この画面から押して出る先
         // （プロフィール編集・写真の詳細）はどれも `NavigationLink` で、
@@ -298,11 +307,87 @@ struct MyPageView: View {
         .font(.footnote)
     }
 
-    /// モック11 の3つ（投稿 / マップ / お気に入り）。
+    /// 行きたい場所（モック2）。**この端末に覚えたもの**で、
+    /// サーバーには無い（`WishlistStore`）。
+    @ViewBuilder
+    private var wishlistArea: some View {
+        let wanted = wishlist.spots(in: spots)
+        VStack(alignment: .leading, spacing: 10) {
+            // **どこに残るかを書く。** 機種を変えると消えるものを、
+            // 消えないものと同じ顔で出さない
+            Text(L("この端末に覚えています（他の端末や Web には出ません）",
+                   "Kept on this device only"))
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+                .padding(.horizontal, 16)
+
+            if wanted.isEmpty {
+                // **「まだ無い」と「台帳が取れていない」を分ける**
+                if spots.isEmpty && !wishlist.spotIds.isEmpty {
+                    ErrorBanner(message: L("スポットの一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
+                                           "Couldn't load the places. Pull to refresh."))
+                } else {
+                    ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
+                                           "Nothing yet. Tap “Want to go” on a place."))
+                }
+            } else {
+                ForEach(wanted) { spot in
+                    NavigationLink {
+                        SpotDetailView(spot: spot, photos: model.photos, ledger: spots)
+                    } label: {
+                        wishlistRow(spot)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func wishlistRow(_ spot: Spot) -> some View {
+        HStack(spacing: 12) {
+            // 代表写真は台帳の指定か、紐づいた写真のいちばん人気
+            // （`SpotDirectory.cover`）。どちらも無ければ枠だけ
+            RemoteImage(url: SpotDirectory.cover(of: spot, in: model.photos)?.gridImageURL)
+                .frame(width: 56, height: 56)
+                .background(WebTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(spot.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(1)
+                let place = spot.region?.line ?? ""
+                if !place.isEmpty {
+                    Text(place)
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.muted2)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+
+            // **一覧からも外せる。** 外すのに詳細まで行かせない
+            Button {
+                wishlist.set(spot.spotId, wanted: false)
+            } label: {
+                Image(systemName: "heart.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.foreground)
+                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("\(spot.name) を「行きたい」から外す", "Remove \(spot.name)"))
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 72)
+    }
+
+    /// モック2・11 の4つ（投稿 / 行きたい場所 / マップ / お気に入り）。
     /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
     private var tabPicker: some View {
         HStack(spacing: 6) {
-            ForEach(ProfileTab.allCases) { option in
+            ForEach(ProfileTab.tabs(isMe: true)) { option in
                 let selected = tab == option
                 Button {
                     tab = option
@@ -336,7 +421,14 @@ struct MyPageView: View {
         }
         if let error = model.errorMessage {
             ErrorBanner(message: error) { Task { await model.load() } }
+        } else if tab == .wishlist {
+            // **写真の有無とは無関係。** 行きたい場所は台帳の話で、
+            // 1枚も撮っていない人にも中身がある
+            wishlistArea
         } else if model.photos.isEmpty && !model.isLoading {
+            // **この文言は「投稿」の話。** 以前はタブの判定より前に
+            // 置いてあったので、写真が0枚の人は地図もお気に入りも
+            // 「まだ写真がありません」に潰れていた
             ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
         } else if tab == .map {
             // **自分の写真だけの地図。** 全員の地図はマップのタブにある
