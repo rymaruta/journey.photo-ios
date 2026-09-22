@@ -216,6 +216,9 @@ final class ViewModelTests: XCTestCase {
     }
 
     /// コメントは送ったら**その場で先頭に出す**（再読み込みを待たせない）。
+    ///
+    /// **総数が分からない回は分からないまま。** 取れていない数に +1 すると
+    /// 「1」という嘘の総数になる。一覧には載るので、数だけ無いのが正直
     func testPostedCommentAppearsImmediately() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
@@ -226,8 +229,49 @@ final class ViewModelTests: XCTestCase {
         await model.postComment()
 
         XCTAssertEqual(model.comments.first?.text, "きれい")
-        XCTAssertEqual(model.commentCount, 1)
+        XCTAssertNil(model.commentCount, "総数を引いていないのに数を作っている")
         XCTAssertEqual(model.draftComment, "", "送ったのに入力欄が残っている")
+
+        // 総数が取れているなら、そこに足す
+        StubProtocol.respond(status: 200, body: #"{"items":[],"count":3}"#)
+        await model.load()
+        XCTAssertEqual(model.commentCount, 3)
+
+        model.draftComment = "すてき"
+        StubProtocol.respond(status: 200, body: #"{"comment":{"id":"c2","uid":"u1","name":"たろう","text":"すてき"}}"#)
+        await model.postComment()
+        XCTAssertEqual(model.commentCount, 4)
+    }
+
+    /// **引けなかった回に「0」を出さない。** 0 は「まだ無い」と読まれる
+    func testCommentCountIsUnknownWhenFetchFails() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(false)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.load()
+        XCTAssertNil(model.commentCount, "圏外なのに数を出している")
+        XCTAssertTrue(model.commentsUnavailable, "取れなかったことを画面に伝えていない")
+    }
+
+    /// **数はサーバーの総数。** 手元の1ページ分を数え直さない
+    /// （items が1件でも count が 24 なら 24）
+    func testCommentCountFollowsServerPage() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(false)
+        StubProtocol.respond(status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}],"count":24}"#)
+        await model.load()
+        XCTAssertEqual(model.commentCount, 24, "1ページ分を数え直している")
+        XCTAssertEqual(model.comments.count, 1)
+        XCTAssertFalse(model.commentsUnavailable)
+
+        // 消したら総数からも引く（0 未満にはしない）
+        StubProtocol.respond(status: 200, body: "{}")
+        await model.deleteComment(model.comments[0])
+        XCTAssertEqual(model.commentCount, 23)
+        XCTAssertTrue(model.comments.isEmpty)
     }
 
     /// 空のコメントは送らない。

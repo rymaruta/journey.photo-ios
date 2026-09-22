@@ -24,6 +24,18 @@ struct PhotoDetailView: View {
     /// ——編集シートを閉じても題も説明も古いままだった（保存はできていた
     /// ので、戻って入り直すまで「保存されていない」ように見えた）
     @State private var edited: Photo?
+    /// 下段の切り替え（モック6）。コメントが既定
+    @State private var tab: PhotoDetailTab = .comments
+    /// 「この場所のスポット」の行き先。**台帳にも写真にも辿り着けたときだけ入る**
+    @State private var spotLead: SpotLead?
+
+    /// スポット詳細に渡すもの一式。台帳の1件と、突き合わせる公開写真と、
+    /// 近くのスポットを出すための台帳全体
+    private struct SpotLead {
+        let spot: Spot
+        let photos: [Photo]
+        let ledger: [Spot]
+    }
 
     /// 画面に描く1枚。編集していれば新しい方。
     private var shown: Photo { edited ?? photo }
@@ -57,12 +69,18 @@ struct PhotoDetailView: View {
             }
             .padding(.bottom, 32)
         }
+        // **入力欄は画面の下に貼る**（モック6）。コメント欄が本文の
+        // 途中にあると、長い説明の写真では入力欄まで辿り着く前に
+        // 書く気が失せる。`safeAreaInset` はスクロールの底の余白も
+        // 足してくれるので、最後のコメントが入力欄の下に隠れない
+        .safeAreaInset(edge: .bottom) { composer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
         .task(id: auth.userId) {
             model.setSignedIn(auth.userId != nil)
             await model.load()
         }
+        .task(id: shown.spotId) { await loadSpotLead() }
         .sheet(isPresented: $showReport) {
             ReportSheet(photoId: photo.id, ownerId: ownerId)
         }
@@ -112,11 +130,12 @@ struct PhotoDetailView: View {
             titleText
             paragraphs
             locationLink
+            spotLink
             metaRows
             Divider().padding(.vertical, 4)
             socialBar
-            commentSection
-            RelatedPhotosRow(photo: shown)
+            tabPicker
+            tabContent
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
@@ -170,6 +189,45 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// 「この場所のスポット」（モック6 の撮影地の行に添える導線）。
+    ///
+    /// **台帳に無ければ出さない。** 写真の `spotId` は撮影者が付けたものだが、
+    /// 台帳から消えていることも、台帳自体が取れないこともある。
+    /// 行き先（`SpotDetailView`）は突き合わせる写真も要るので、
+    /// それが引けなかった回も出さない——「この場所の写真（0）」と
+    /// 見せるより、行を出さない方が正直。
+    ///
+    /// 行の文字は台帳の名前。写真の `location` と綴りが違うことがあるので、
+    /// 一般語（「この場所」）ではなく**行き先の名前**を出す
+    @ViewBuilder
+    private var spotLink: some View {
+        if let lead = spotLead {
+            NavigationLink {
+                SpotDetailView(spot: lead.spot, photos: lead.photos, ledger: lead.ledger)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "camera.viewfinder")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(lead.spot.name)
+                            .font(.title3)
+                            .foregroundStyle(Color.white.opacity(0.65))
+                            .lineLimit(1)
+                        Text(L("撮影スポットの詳細", "Photo spot details"))
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.muted2)
+                }
+                .foregroundStyle(Color.white.opacity(0.65))
+                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     /// 説明。Web は `text-white/80` に `leading-relaxed`、段落の間は `mt-3`
     private var paragraphs: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -201,7 +259,11 @@ struct PhotoDetailView: View {
     private var menu: some View {
         Menu {
             // **共有するのは画像ではなくページ。** 生の画像を送ると、
-            // 受け取った人に題も説明も撮影地も出ない
+            // 受け取った人に題も説明も撮影地も出ない。
+            // モック6 の SNS 別ボタン（Instagram・X・LINE…）は作らない
+            // ——各社の URL スキームを `LSApplicationQueriesSchemes` に
+            // 登録し、入っていないアプリの分を隠す仕掛けが要る。標準の
+            // 共有シートなら入っているアプリだけが並ぶ
             if let url = PhotoLink.url(photoId: photo.id,
                                        isPublished: fromPublicFeed && shown.published != false) {
                 ShareLink(item: url) { Label(L("共有", "Share"), systemImage: "square.and.arrow.up") }
@@ -252,10 +314,25 @@ struct PhotoDetailView: View {
                 }
                 .buttonStyle(.plain)
 
-                Label("\(model.commentCount)", systemImage: "bubble.right")
-                    .font(.title2)
-                    .foregroundStyle(WebTheme.faint)
-                    .frame(minHeight: WebTheme.minTapTarget)
+                // 吹き出しを押すとコメントの札へ。**数は取れたときだけ**
+                // ——読み込み前・圏外に「0」を出すと「まだ無い」と読まれる
+                Button {
+                    tab = .comments
+                } label: {
+                    if let count = model.commentCount {
+                        Label("\(count)", systemImage: "bubble.right")
+                            .font(.title2)
+                            .foregroundStyle(WebTheme.faint)
+                            .webTappable()
+                    } else {
+                        Image(systemName: "bubble.right")
+                            .font(.title2)
+                            .foregroundStyle(WebTheme.faint)
+                            .webTappable()
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(PhotoDetailTab.comments.label(commentCount: model.commentCount))
 
                 Spacer()
 
@@ -286,18 +363,80 @@ struct PhotoDetailView: View {
         }
     }
 
-    private var commentSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if auth.userId != nil {
-                HStack {
-                    TextField(L("コメントを書く", "Write a comment"), text: $model.draftComment, axis: .vertical)
-                        .lineLimit(1...4)
-                        .textFieldStyle(.roundedBorder)
-                    Button(Labels.Common.send) { Task { await model.postComment() } }
-                        .disabled(model.isPosting || model.draftComment.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+    /// 下段の札（モック6: コメント（N） / 関連写真）。
+    /// 一覧の絞り込みや `UserProfileView` と同じ `Picker(.segmented)`
+    private var tabPicker: some View {
+        Picker("", selection: $tab) {
+            ForEach(PhotoDetailTab.allCases) { item in
+                Text(item.label(commentCount: model.commentCount)).tag(item)
             }
+        }
+        .pickerStyle(.segmented)
+        .padding(.top, 4)
+    }
 
+    @ViewBuilder
+    private var tabContent: some View {
+        switch tab {
+        case .comments:
+            commentSection
+        case .related:
+            RelatedPhotosRow(photo: shown, showsHeading: false)
+        }
+    }
+
+    /// 画面の下に貼る入力欄。**ログイン中で、コメントの札を開いているときだけ**
+    /// ——関連写真を見ている下に「コメントを書く」が居座ると、何への
+    /// コメントか分からなくなる
+    @ViewBuilder
+    private var composer: some View {
+        if auth.userId != nil, tab == .comments {
+            HStack(spacing: 8) {
+                TextField(L("コメントを書く", "Write a comment"), text: $model.draftComment, axis: .vertical)
+                    .lineLimit(1...4)
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    Task { await model.postComment() }
+                } label: {
+                    Image(systemName: "paperplane")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                        .webTappable()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Labels.Common.send)
+                .disabled(model.isPosting || model.draftComment.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(WebTheme.background)
+        }
+    }
+
+    @ViewBuilder
+    private var commentSection: some View {
+        if model.comments.isEmpty {
+            // **空の理由を分ける。** 引けなかった回に「まだありません」と
+            // 出すと、書いてあるコメントが消えたように見える
+            if model.commentsUnavailable {
+                Text(L("コメントを読み込めませんでした", "Couldn't load comments"))
+                    .font(.callout)
+                    .foregroundStyle(WebTheme.faint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+            } else if model.commentCount == 0 {
+                Text(L("まだコメントはありません", "No comments yet"))
+                    .font(.callout)
+                    .foregroundStyle(WebTheme.faint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+        }
+        VStack(alignment: .leading, spacing: 12) {
             ForEach(model.comments) { comment in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
@@ -327,6 +466,20 @@ struct PhotoDetailView: View {
                 .padding(.vertical, 2)
             }
         }
+    }
+
+    /// 「この場所のスポット」の行き先を揃える。
+    ///
+    /// 台帳（`SpotService`）は取れなければ空を返すので、`spotId` が
+    /// 引き当たらなければ行は出ない。**本番の台帳は 2026-09-21 時点で
+    /// 0件・`spotId` を持つ写真も 0/30** なので、いまはどの写真でも出ない
+    private func loadSpotLead() async {
+        spotLead = nil
+        guard let spotId = shown.spotId, !spotId.isEmpty else { return }
+        let ledger = await environment.spots.fetchSpots()
+        guard let spot = SpotDirectory.spot(id: spotId, in: ledger) else { return }
+        guard let photos = try? await environment.gallery.fetchPhotos() else { return }
+        spotLead = SpotLead(spot: spot, photos: photos, ledger: ledger)
     }
 
     private func block(_ userId: String) async {

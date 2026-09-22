@@ -144,6 +144,11 @@ extension View {
     public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 画面の端に貼り付く帯（iOS 15+）。本物はスクロールの底の余白も足す。
+    /// 模型は素通し——キーボードで持ち上がるかは Mac で見る
+    public func safeAreaInset<V: View>(edge: VerticalEdge, alignment: HorizontalAlignment = .center,
+                                       spacing: CGFloat? = nil,
+                                       @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 見た目の薄さ。**押せなくはならない**（本物と同じ。押せなくするのは `disabled`）
     public func opacity(_ value: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 折り返しを縦に伸ばす（本物と同じ）。長い説明文が1行に潰れないように
