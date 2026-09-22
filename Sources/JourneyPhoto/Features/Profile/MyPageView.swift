@@ -19,6 +19,7 @@ struct MyPageView: View {
     @State private var tab: ProfileTab = .posts
     @State private var showPostSheet = false
     @State private var showDistanceNote = false
+    @State private var showCountriesNote = false
     @State private var showPhotoUpload = false
     @State private var showStoryComposer = false
     /// ストーリーの行に「読み直せ」と言うための数
@@ -143,7 +144,7 @@ struct MyPageView: View {
                 if let profile = model.profile {
                     header(profile)
                     stats
-                    distancePill
+                    travelRecord
                     bgmCard(profile)
                     profileSetupNotice(profile)
                 }
@@ -246,6 +247,53 @@ struct MyPageView: View {
         .padding(.horizontal, 14)
         .frame(height: 44)
         .background(WebTheme.surface, in: Capsule())
+    }
+
+    /// 旅の実績（モック2-3）。**訪れた国・地域**と**写真をつないだ距離**を横に並べる。
+    ///
+    /// どちらも**数えた値**で、どちらも**そのままの意味ではない**ので、
+    /// それぞれ押すと計算の中身が出る。
+    @ViewBuilder
+    private var travelRecord: some View {
+        let countries = VisitedCountries.count(in: model.photos, spots: spots)
+        VStack(spacing: 8) {
+            // **0 のときは出さない。** 「訪れた国 0」は実績にならないし、
+            // 「まだ国名を書いていない」を「行っていない」と読ませてしまう
+            if countries > 0 {
+                Button {
+                    showCountriesNote = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "globe")
+                            .foregroundStyle(Color(red: 0.42, green: 0.68, blue: 1.0))
+                        Text(L("訪れた国・地域", "Countries and regions"))
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.muted2)
+                        Text("\(countries)")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(WebTheme.foreground)
+                        Image(systemName: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 44)
+                    .background(WebTheme.surface, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .alert(L("訪れた国・地域", "Countries and regions"),
+                       isPresented: $showCountriesNote) {
+                    Button(Labels.Common.close, role: .cancel) {}
+                } message: {
+                    // **数え方をそのまま書く。** 「思ったより少ない」の答えが
+                    // ここにある（国名を書いた写真しか数えていない）
+                    Text(L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
+                           "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number."))
+                }
+            }
+            distancePill
+        }
     }
 
     /// 写真をつないだ距離。**実際に移動した距離ではない**ので、そう書く
