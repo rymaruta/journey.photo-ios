@@ -21,6 +21,10 @@ struct PhotoMapView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
+    /// 取れた現在地。**この画面が開いている間だけ**持つ
+    /// （保存も送信もしない——`CurrentLocation` の約束をここでも守る）
+    @State private var here: Photo.Coords?
+    @State private var showNearby = false
     /// 押したピン。**下の札に出す**（シートで画面を覆うと地図が見えない）
     @State private var selected: MapPin?
     /// 一覧を開くとき（札の「写真を見る →」・リストの行）
@@ -57,11 +61,18 @@ struct PhotoMapView: View {
             guard model.areaFrame == nil else { return }
             frame(model.frame)
         }
-        // 現在地が取れたら、そこへ寄せるだけ。**周辺の写真に絞りはしない**
+        // 現在地が取れたら、そこへ寄せる。**絞りはしない**——代わりに
+        // 「近くの写真」の入口を出す（押すまで何も変えない）
         .onChange(of: location.state) { _, state in
             guard case .located(let latitude, let longitude) = state else { return }
+            here = Photo.Coords(lat: latitude, lng: longitude)
             frame(MapFraming.Frame(latitude: latitude, longitude: longitude,
                                    latitudeSpan: 0.05, longitudeSpan: 0.05))
+        }
+        .sheet(isPresented: $showNearby) {
+            if let here {
+                NearbyPhotosSheet(center: here, photos: model.photos)
+            }
         }
         .sheet(item: $listing) { pin in
             NavigationStack {
@@ -208,6 +219,14 @@ struct PhotoMapView: View {
                 .padding(.leading, 16)
                 .padding(.top, 56)
         }
+        // 近くの写真への入口。**現在地が取れた回だけ**出す
+        .overlay(alignment: .bottomTrailing) {
+            if here != nil && selected == nil {
+                nearbyButton
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 16)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             locateButton
                 .padding(.trailing, 16)
@@ -307,6 +326,21 @@ struct PhotoMapView: View {
             // 範囲がまだ届いていない間は押せない（何も起きないボタンにしない）
             .disabled(!model.canSearchArea)
         }
+    }
+
+    /// 近くの写真へ。**現在地は端末の中だけ**（送らない・残さない）
+    private var nearbyButton: some View {
+        Button {
+            showNearby = true
+        } label: {
+            Label(L("近くの写真", "Photos near me"), systemImage: "location.magnifyingglass")
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(WebTheme.accentBackground, in: Capsule())
+                .foregroundStyle(WebTheme.accentText)
+        }
+        .buttonStyle(.plain)
     }
 
     /// 現在地。**1回取って寄せるだけ**（追跡も保存もしない）
