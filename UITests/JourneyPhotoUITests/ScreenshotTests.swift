@@ -86,13 +86,25 @@ final class ScreenshotTests: XCTestCase {
         }
 
         // **マイページの下半分**（モック2）。ハイライトの輪・作品の格子・
-        // 行きたい場所は1画面に収まらないので、送ってもう1枚撮る
+        // 行きたい場所は1画面に収まらないので、送ってもう1枚撮る。
+        //
+        // 🔴 **送れたときだけ撮る。** run 61 の `15-マイページ（下）` は
+        // 14 と**同じ絵**だった——鍵なしログインでは作品の格子が出ないので
+        // 中身が1画面に収まり、送っても動かない。「（下）」という名前で
+        // 上と同じ絵を置くのは、名前と中身が食い違う絵の変種。
+        //
+        // 動いたかは**名前の付いた目印の位置**で見る（`trips.entry`）。
         if tabBar.buttons.count > 4 {
             tabBar.buttons.element(boundBy: 4).tap()
             Thread.sleep(forTimeInterval: 3)
+            let mark = app.buttons["trips.entry"].firstMatch
+            let before = mark.exists ? mark.frame.origin.y : nil
             app.swipeUp()
             Thread.sleep(forTimeInterval: 2)
-            shoot(app, "15-マイページ（下）")
+            let after = mark.exists ? mark.frame.origin.y : nil
+            if let before, let after, abs(before - after) > 1 {
+                shoot(app, "15-マイページ（下）")
+            }
         }
 
         // **旅を1冊開く。** 表紙・ページ・足取りは、開かないと絵にならない。
