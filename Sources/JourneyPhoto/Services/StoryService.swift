@@ -30,9 +30,11 @@ struct StoryService {
     /// 自分のストーリーを消すだけで相手のファイルを消せた
     /// （`api-user/src/stories.ts` の注記）。
     @discardableResult
+    /// 🔴 **公開範囲は受け取らない。** ストーリーはフォロワーだけが見る
+    /// （2026-09-22・owner の判断。`api-user/src/storyVisibility.ts`）。
+    /// サーバーは `visibility` を読まないので、送っても何も起きない。
     func create(imageData: Data, caption: String?, location: String?, coords: Photo.Coords?,
-                song: Photo.Song? = nil, durationSec: Int? = nil,
-                audience: Audience = .everyone) async throws -> Story? {
+                song: Photo.Song? = nil, durationSec: Int? = nil) async throws -> Story? {
         let presigned = try await uploads.presign(
             fileName: "story.jpg", fileType: "image/jpeg", fileSize: imageData.count
         )
@@ -54,8 +56,6 @@ struct StoryService {
             let song: Photo.Song?
             /// 表示秒数。**3〜15**（`stories.ts` が丸める）。既定の5なら送らない
             let durationSec: Int?
-            /// 公開範囲。`followers` のときだけ送る
-            let audience: String?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
@@ -66,8 +66,7 @@ struct StoryService {
             location: location?.isEmpty == true ? nil : location,
             coords: (location?.isEmpty == false) ? coords.map { Body.Coords(lat: $0.lat, lng: $0.lng) } : nil,
             song: song,
-            durationSec: Self.storedDuration(durationSec),
-            audience: audience.wireValue
+            durationSec: Self.storedDuration(durationSec)
         )
         do {
             return try await api.authorized(.post, "/stories", body: body, as: Created.self).story

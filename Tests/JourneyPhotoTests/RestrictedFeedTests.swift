@@ -107,3 +107,26 @@ final class AudiencePatchTests: XCTestCase {
         XCTAssertFalse(patch.isEmpty)
     }
 }
+
+/// もとは `StoryPlaybackTests` に在った。ストーリーの公開範囲は owner の
+/// 判断で無くなった（`api-user/src/storyVisibility.ts`）ので、**写真だけが
+/// この三択を使う**。検査もこちらへ移す。
+final class AudienceChoicesTests: XCTestCase {
+
+    /// 三択ぶん、言葉が揃っていること（空の札を並べない）
+    func testEveryChoiceHasWords() {
+        XCTAssertEqual(Audience.allCases.count, 3)
+        for choice in Audience.allCases {
+            XCTAssertFalse(choice.label.isEmpty)
+            XCTAssertFalse(choice.note.isEmpty)
+            XCTAssertFalse(choice.photoNote.isEmpty)
+        }
+    }
+
+    /// 送る値は**サーバーが受け取る綴りちょうど**
+    /// （`api-user/src/sanitize.ts` の `sanitizeAudience`）
+    func testWireValuesMatchTheServer() {
+        XCTAssertEqual(Audience.followers.wireValue, "followers")
+        XCTAssertEqual(Audience.closeFriends.wireValue, "closeFriends")
+    }
+}

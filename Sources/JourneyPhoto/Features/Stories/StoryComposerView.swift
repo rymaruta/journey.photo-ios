@@ -29,7 +29,6 @@ struct StoryComposerView: View {
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
     /// 公開範囲（モック4-7）。**サーバーが守れるものだけ出す**
-    @State private var audience: Audience = .everyone
 
     var body: some View {
         Form {
@@ -91,27 +90,19 @@ struct StoryComposerView: View {
             }
             .listRowBackground(Color.clear)
 
-            // 公開範囲（モック4-7）。**3つともサーバーが守る**
-            // （`GET /stories` が実行時に落とす）。守れないものは出さない
+            // 🔴 **ストーリーはフォロワーだけが見る**（2026-09-22・owner の
+            // 判断。`api-user/src/storyVisibility.ts`）。選択そのものが
+            // 無くなったので、**選ばせない**——サーバーが読まない値を
+            // 選ばせると、押しても効かない切り替えになる。
+            // 代わりに「誰に届くか」を1行で言う
             Section {
-                // **3つを横に並べない。** 1つあたりが 44pt を下回り、
-                // 説明も入らない（「親しい友達」は言葉が長い）
-                ForEach(Audience.allCases) { choice in
-                    audienceChoice(choice)
-                }
-                // **選ぶ先が空なら誰にも見えない。** 選びに行く口をここに置く
-                if audience == .closeFriends {
-                    NavigationLink {
-                        CloseFriendsView()
-                    } label: {
-                        Label(L("親しい友達を選ぶ", "Pick close friends"), systemImage: "star")
-                            .font(.subheadline)
-                    }
-                }
-            } header: {
-                Text(L("公開範囲", "Who can see it"))
+                Label(L("フォロワーが見られます", "Your followers can see it"),
+                      systemImage: "person.2")
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.muted2)
             } footer: {
-                Text(audience.note)
+                Text(L("ストーリーは24時間で消えます。フォローしていない人には届きません。",
+                       "Stories vanish after 24 hours. People who don't follow you won't see them."))
             }
             .listRowBackground(Color.clear)
 
@@ -246,33 +237,6 @@ struct StoryComposerView: View {
         message = nil
     }
 
-    /// 公開範囲の札。**切り替えではなく2択**——トグル1つだと
-    /// 「いまどちらなのか」を言葉で確かめられない（投稿画面と同じ形）
-    private func audienceChoice(_ choice: Audience) -> some View {
-        let selected = audience == choice
-        return Button {
-            audience = choice
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: choice.systemImage).font(.title3)
-                Text(choice.label)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Spacer()
-                if selected {
-                    Image(systemName: "checkmark").font(.subheadline.weight(.bold))
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                 : AnyShapeStyle(WebTheme.surface),
-                        in: RoundedRectangle(cornerRadius: 12))
-            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
 
     /// 写真そのものの道具（モック4-6 の「カメラ」「ライブラリ」）。
     /// 文字の道具と同じ見た目・同じ行に並べる
@@ -306,8 +270,7 @@ struct StoryComposerView: View {
                 location: location.trimmingCharacters(in: .whitespacesAndNewlines),
                 coords: prepared.coords,
                 song: song,
-                durationSec: durationSec,
-                audience: audience
+                durationSec: durationSec
             )
             // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）
             drafts.clear()
