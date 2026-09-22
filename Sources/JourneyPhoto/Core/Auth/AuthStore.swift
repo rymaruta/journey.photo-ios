@@ -35,6 +35,31 @@ final class AuthStore: ObservableObject {
     /// 混ぜない**——圏外なだけの人をログイン画面に飛ばさないため、
     /// 判定できない回は `.unknown` のままにする。
     func restore() async {
+        #if DEBUG
+        // **絵を撮るためだけの、鍵を持たないログイン**（Debug のみ・owner 承認済み）。
+        //
+        // CI の巡回はログインしない（資格情報が無い）ので、マイページは
+        // **実機の絵を1枚も撮れていなかった**——`docs/MOCK_PARITY.md` が
+        // その1画面だけ ❌ にしていた理由。
+        //
+        // ここで入れるのは**利用者 ID だけ**で、トークンは1つも作らない:
+        //
+        //  - 公開の写真から「この人のぶん」を選り分ける画面（作品の格子・
+        //    訪問した国・数え）は**本物のデータで描かれる**
+        //  - 鍵の要る口（ハイライト・行きたい場所・投稿）は 401 になり、
+        //    画面はその「取れなかった」側を出す。**嘘の中身は出ない**
+        //
+        // **Release には入らない**（`#if DEBUG`）。TestFlight に上げる
+        // ビルドは Release なので、出荷物にこの口は無い。既存の
+        // `-JPSiteBaseURL`（`AppConfig`）とまったく同じ形。
+        // 渡す値は公開 API が返している `userId` そのもので、資格情報ではない。
+        if let previewId = UserDefaults.standard.string(forKey: "JPPreviewUserId")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !previewId.isEmpty {
+            state = .signedIn(userId: previewId)
+            return
+        }
+        #endif
         guard await AuthGateway.isSignedIn() else {
             state = .signedOut
             return

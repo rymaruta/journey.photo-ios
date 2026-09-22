@@ -17,6 +17,13 @@ final class ScreenshotTests: XCTestCase {
         continueAfterFailure = true
     }
 
+    /// 絵を撮るときに「この人」として見る利用者。
+    ///
+    /// **公開 API が誰にでも返している値**（写真の行の `userId`）で、
+    /// 資格情報ではない。この人の公開写真が本物のデータで並ぶので、
+    /// マイページが**空の枠ではなく実物**で撮れる。
+    private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"
+
     private func shoot(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = name
@@ -38,6 +45,12 @@ final class ScreenshotTests: XCTestCase {
         // そのまま撮ると「戻る」「キャンセル」など OS 側の文字まで英語になり、
         // 実際に人が見る画面と違う絵になる（アプリ自身の文字は日本語で固定）
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        // **マイページを撮るための、鍵を持たないログイン**（Debug のみ・
+        // owner 承認済み・`AuthStore.restore()`）。トークンは1つも作らないので
+        // 鍵の要る口は 401 になり、画面はその「取れなかった」側を出す
+        // ——**嘘の中身は出ない**。渡す値は公開 API が返している `userId`
+        // そのもので、資格情報ではない。
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -70,6 +83,16 @@ final class ScreenshotTests: XCTestCase {
             let signedOut = app.descendants(matching: .any)
                 .matching(identifier: "signin.form").firstMatch.exists
             shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
+        }
+
+        // **マイページの下半分**（モック2）。ハイライトの輪・作品の格子・
+        // 行きたい場所は1画面に収まらないので、送ってもう1枚撮る
+        if tabBar.buttons.count > 4 {
+            tabBar.buttons.element(boundBy: 4).tap()
+            Thread.sleep(forTimeInterval: 3)
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "15-マイページ（下）")
         }
 
         // **旅を1冊開く。** 表紙・ページ・足取りは、開かないと絵にならない
