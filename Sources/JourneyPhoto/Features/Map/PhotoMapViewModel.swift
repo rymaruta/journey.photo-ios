@@ -23,23 +23,41 @@ final class PhotoMapViewModel: ObservableObject {
     /// 台帳。取れなければ空のまま（札のスポット導線が出ないだけ）
     @Published private(set) var spots: [Spot] = []
     @Published private(set) var loaded = false
-    @Published var query = ""
+    @Published var query = "" { didSet { refresh() } }
     @Published private(set) var category: String?
     @Published var mode: Mode = .map
-    /// いま地図に見えている範囲。`onMapCameraChange` が届くたびに更新する。
-    /// **見えているだけでは絞らない**（`applyArea` を押したときだけ）
-    @Published private(set) var visibleFrame: MapFraming.Frame?
     /// 「このエリアを検索」で固定した範囲
     @Published private(set) var areaFrame: MapFraming.Frame?
 
-    /// 条件に合う写真。座標の無い写真は入らない（`MapSearch` の約束）
-    var shown: [Photo] {
-        MapSearch.photos(photos, filter: MapSearch.Filter(query: query, category: category, frame: areaFrame),
-                         spots: spots)
-    }
+    /// いま地図に見えている範囲。`onMapCameraChange` が届くたびに入れ替わる。
+    ///
+    /// **`@Published` にしない。** 地図を動かすたびに知らせを出すと、
+    /// 画面 → 描き直し → カメラの知らせ → 画面… と回り続ける。
+    /// 実機で**マップのタブを押すとアプリが固まった**（CI の UI テストが
+    /// 4分待って応答を得られず落ちた・run 37）。**見えている範囲は
+    /// 描画に要らない**——押したときに読めればよい。
+    private(set) var visibleFrame: MapFraming.Frame?
+
+    /// 「このエリアを検索」を押せるか。**一度 false → true になるだけ**
+    /// （ここだけは画面に要るので知らせるが、回り続けない）
+    @Published private(set) var canSearchArea = false
+
+    /// 条件に合う写真。座標の無い写真は入らない（`MapSearch` の約束）。
+    ///
+    /// **計算のたびに絞り直さない。** 画面は1回描くあいだに `shown` と
+    /// `pins` を5回以上読む（空の判定・件数・ピン・札・リスト）ので、
+    /// 計算属性のままだと写真の数だけ何度も走る。
+    @Published private(set) var shown: [Photo] = []
 
     /// ピン。**リストの行もこれ**（同じ束ね）
-    var pins: [MapPin] { MapPin.group(shown) }
+    @Published private(set) var pins: [MapPin] = []
+
+    /// 絞り直す。条件が変わったときにだけ呼ぶ
+    private func refresh() {
+        shown = MapSearch.photos(photos, filter: MapSearch.Filter(query: query, category: category, frame: areaFrame),
+                                 spots: spots)
+        pins = MapPin.group(shown)
+    }
 
     /// チップに出すカテゴリ。**座標のある写真だけ**から数える——座標の無い
     /// 写真しか持たないカテゴリのチップは、押しても地図が空になる
@@ -56,30 +74,39 @@ final class PhotoMapViewModel: ObservableObject {
         photos = (try? await environment.gallery.fetchPhotos()) ?? []
         spots = await environment.spots.fetchSpots()
         loaded = true
+        refresh()
     }
 
     /// チップ。**押し直すと外れる**（`CategoryChoices.toggle` と同じ約束）
     func select(category choice: String?) {
         guard let choice else {
             category = nil
+            refresh()
             return
         }
         let next = CategoryChoices.toggle(current: category ?? "", choice: choice)
         category = next.isEmpty ? nil : next
+        refresh()
     }
 
+    /// 地図が落ち着いたときに呼ばれる。**知らせを出さない**
+    /// （出すと描き直し → カメラの知らせ → … で回り続ける）。
+    /// 押せるようになったことだけは、一度だけ知らせる
     func update(visible frame: MapFraming.Frame) {
         visibleFrame = frame
+        if !canSearchArea { canSearchArea = true }
     }
 
     /// 「このエリアを検索」。**押したときの範囲**で固定する
     func applyArea() {
         guard let visibleFrame else { return }
         areaFrame = visibleFrame
+        refresh()
     }
 
     func clearArea() {
         areaFrame = nil
+        refresh()
     }
 
     /// **その札をまだ出してよいか。**

@@ -179,3 +179,37 @@ extension PhotoMapViewModelTests {
         XCTAssertFalse(model.stillShown(nil))
     }
 }
+
+// MARK: - 地図を動かしたときの静けさ
+
+extension PhotoMapViewModelTests {
+
+    /// **地図を動かしても結果は入れ替わらない。**
+    ///
+    /// 見えている範囲で絞るのは「このエリアを検索」を押したときだけ。
+    /// ここが動くと、地図を動かすたびに絞り直し → 描き直し →
+    /// またカメラの知らせ、と回り続ける（実機で固まった形）。
+    func testMovingTheMapDoesNotChangeTheResult() async {
+        let model = await loaded()
+        let before = model.shown.map(\.id)
+        for i in 0..<5 {
+            model.update(visible: MapFraming.Frame(latitude: 35.0 + Double(i), longitude: 139.0,
+                                                   latitudeSpan: 0.2, longitudeSpan: 0.2))
+        }
+        XCTAssertEqual(model.shown.map(\.id), before)
+        XCTAssertNil(model.areaFrame)
+    }
+
+    /// 「このエリアを検索」は**押せるようになったら、それきり**
+    /// （動かすたびに知らせを出さないための形）
+    func testCanSearchAreaFlipsOnce() async {
+        let model = await loaded()
+        XCTAssertFalse(model.canSearchArea)
+        model.update(visible: MapFraming.Frame(latitude: 35.0, longitude: 139.0,
+                                               latitudeSpan: 0.2, longitudeSpan: 0.2))
+        XCTAssertTrue(model.canSearchArea)
+        model.update(visible: MapFraming.Frame(latitude: 36.0, longitude: 140.0,
+                                               latitudeSpan: 0.2, longitudeSpan: 0.2))
+        XCTAssertTrue(model.canSearchArea)
+    }
+}

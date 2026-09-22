@@ -299,7 +299,7 @@ struct PhotoMapView: View {
             }
             .buttonStyle(.plain)
             // 範囲がまだ届いていない間は押せない（何も起きないボタンにしない）
-            .disabled(model.visibleFrame == nil)
+            .disabled(!model.canSearchArea)
         }
     }
 
