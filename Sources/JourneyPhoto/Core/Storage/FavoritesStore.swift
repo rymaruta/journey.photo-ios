@@ -43,6 +43,17 @@ final class FavoritesStore: ObservableObject {
     /// 押すたびに入れ替える（ホームのフィードから1タップで）
     func toggle(_ id: String) { set(id, favorite: !contains(id)) }
 
+    /// サーバーのいいね一覧に合わせる。**取れた回だけ呼ぶこと**
+    /// ——取れなかった回に空で上書きすると、控えごと消える。
+    ///
+    /// 🔴 **入れ替える（足すのではない）理由。** 保存といいねが同じ入れ物を
+    /// 使っていた頃の端末には、**保存しただけの写真の id がここに残っている**。
+    /// 足すだけだと、その古い混ざりものが「いいねした写真」に出続ける。
+    func replace(with photoIds: [String]) {
+        ids = Set(photoIds)
+        defaults.set(Array(ids), forKey: key(for: userId))
+    }
+
     func set(_ id: String, favorite: Bool) {
         if favorite {
             ids.insert(id)

@@ -94,6 +94,17 @@ struct JourneyPhotoApp: App {
         await environment.gallery.setRestrictedLoader { try await photos.restrictedFeed() }
     }
 
+    /// いいねした写真をサーバーに合わせる。
+    ///
+    /// **取れた回だけ入れ替える。** 足すのではなく入れ替えるのは、
+    /// 保存といいねが同じ入れ物を使っていた頃の端末に、**保存しただけの
+    /// 写真の id が残っている**ため（足すだけだと出続ける）。
+    private func syncLikes() async {
+        guard auth.userId != nil else { return }
+        let ids = try? await environment.social.myLikedPhotoIds()
+        if let ids { favorites.replace(with: ids) }
+    }
+
     /// 保存した写真をサーバーに合わせる。
     ///
     /// **取れた回だけ上書きする。** 圏外で空にすると、端末の控えごと
@@ -145,6 +156,7 @@ struct JourneyPhotoApp: App {
                     await applyModeration()
                     await applyRestrictedFeed()
                     await syncSaves()
+                    await syncLikes()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     if auth.userId != nil {
                         let blocks = try? await environment.moderation.blocks()

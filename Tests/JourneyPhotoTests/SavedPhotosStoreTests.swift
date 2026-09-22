@@ -64,3 +64,19 @@ final class SavedPhotosStoreTests: XCTestCase {
         XCTAssertTrue(saves.ids.isEmpty)
     }
 }
+
+/// いいねの控えを、サーバーの一覧に合わせるところ。
+@MainActor
+final class FavoritesSyncTests: XCTestCase {
+
+    /// 🔴 **足すのではなく入れ替える。** 保存といいねが同じ入れ物だった頃の
+    /// 端末には、**保存しただけの写真の id が残っている**——足すだけだと、
+    /// その古い混ざりものが「いいねした写真」に出続ける
+    func testSyncReplacesInsteadOfMerging() async {
+        let likes = FavoritesStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        likes.use(userId: "u1")
+        likes.set("保存しただけの古い写真", favorite: true)
+        likes.replace(with: ["本当にいいねした写真"])
+        XCTAssertEqual(likes.ids, ["本当にいいねした写真"])
+    }
+}
