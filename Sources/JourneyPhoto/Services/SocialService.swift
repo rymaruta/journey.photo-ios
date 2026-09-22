@@ -26,6 +26,20 @@ struct SocialService {
         try await api.anonymous(.get, "/photos/\(encoded(photoId))/like", as: LikeCount.self).likes
     }
 
+    struct MyLikes: Decodable { let photoIds: [String] }
+
+    /// **自分がいいねした写真の ID**（新しい順・要ログイン）。
+    ///
+    /// これが無かった頃、「お気に入り」は**この端末に覚えたぶんしか**
+    /// 出せなかった——別の端末で押したいいねは0件に見えるのに、同じ写真の
+    /// 詳細は「いいね済み」と出る（Web が実際に踏んだ食い違い）。
+    ///
+    /// **返るのは ID だけ。** 中身は手元の一覧から引く（サーバーで写真を
+    /// 引くと、1000件のいいねで 1000回の取得になる）。
+    func myLikedPhotoIds() async throws -> [String] {
+        try await api.authorized(.get, "/user/likes", as: MyLikes.self).photoIds
+    }
+
     /// 自分が押しているか（要ログイン）。
     func myLike(photoId: String) async throws -> Bool {
         try await api.authorized(.get, "/user/likes/\(encoded(photoId))", as: MyLike.self).liked

@@ -10,6 +10,12 @@ struct MyPageView: View {
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい場所」に出す台帳。取れなければ空（その旨を画面に出す）
     @State private var spots: [Spot] = []
+    /// いいねした写真を引き当てる先。**公開一覧**——自分の写真だけを
+    /// 探していたので、**他人の写真へのいいねが一度も出なかった**
+    @State private var feed: [Photo] = []
+    /// サーバーが返したいいねの ID。取れなければ nil（端末の控えだけ出す）
+    @State private var serverLikeIds: [String]?
+    @State private var likesStatus: LikedPhotos.Status = .loading
     @State private var tab: ProfileTab = .posts
     @State private var showPostSheet = false
     @State private var showDistanceNote = false
@@ -57,6 +63,8 @@ struct MyPageView: View {
             guard spots.isEmpty else { return }
             spots = await environment.spots.fetchSpots()
         }
+        // いいねした写真。**ログイン状態が決まってから**聞く
+        .task(id: auth.userId) { await loadLikes() }
         // **戻ってきたら読み直す。** この画面から押して出る先
         // （プロフィール編集・写真の詳細）はどれも `NavigationLink` で、
         // 閉じる合図を受け取る口が無い。保存しても削除しても、
@@ -307,6 +315,40 @@ struct MyPageView: View {
         .font(.footnote)
     }
 
+    /// いいねした写真。**サーバーの一覧と、この端末の控えの和**。
+    ///
+    /// 以前は**自分の写真の中から**端末の控えに一致するものを探していたので、
+    /// **他人の写真へのいいねが一度も出なかった**（自分の写真を自分で
+    /// いいねしたときだけ出る状態）。さらに別の端末で押したぶんも
+    /// 出なかった——同じ写真の詳細は「いいね済み」と出るのに。
+    @ViewBuilder
+    private var favoritesArea: some View {
+        let ids = LikedPhotos.ids(serverIds: serverLikeIds, deviceIds: favorites.ids)
+        let liked = LikedPhotos.resolve(ids, in: [feed, model.photos])
+        VStack(alignment: .leading, spacing: 10) {
+            if likesStatus == .partial {
+                // **端末のぶんは消さない。** 足りていないことだけ伝える
+                ErrorBanner(message: L("サーバーのいいねを取れませんでした。この端末に覚えているぶんだけ出しています",
+                                       "Couldn't reach the server — showing what's on this device")) {
+                    Task { await loadLikes() }
+                }
+            }
+            if liked.isEmpty {
+                // **「まだ」と「0件」を混ぜない。** 取得中に「ありません」と
+                // 言い切ると、別の端末で押したぶんが届く前に「無い」と読まれる
+                if likesStatus == .loading {
+                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+                } else {
+                    ErrorBanner(message: L("いいねした写真はまだありません", "No liked photos yet"))
+                }
+            } else {
+                PhotoGrid(photos: liked) { photo in
+                    PhotoDetailView(photo: photo, context: liked)
+                }
+            }
+        }
+    }
+
     /// 行きたい場所（モック2）。**この端末に覚えたもの**で、
     /// サーバーには無い（`WishlistStore`）。
     @ViewBuilder
@@ -410,6 +452,29 @@ struct MyPageView: View {
         .padding(.horizontal, 16)
     }
 
+    /// いいねした写真を読む。**未ログインなら聞きに行かない**
+    /// （端末の控えが答え）。
+    private func loadLikes() async {
+        guard auth.userId != nil else {
+            serverLikeIds = nil
+            likesStatus = .deviceOnly
+            return
+        }
+        likesStatus = .loading
+        // 引き当て先。公開一覧が取れなくても、自分の写真の分は出せる
+        async let feedTask = environment.gallery.fetchPhotos()
+        async let idsTask = environment.social.myLikedPhotoIds()
+        feed = (try? await feedTask) ?? feed
+        let ids = try? await idsTask
+        if let ids {
+            serverLikeIds = ids
+            likesStatus = .ready
+        } else {
+            serverLikeIds = nil
+            likesStatus = .partial
+        }
+    }
+
     @ViewBuilder
     private var photoArea: some View {
         if let action = model.actionMessage {
@@ -434,16 +499,7 @@ struct MyPageView: View {
             // **自分の写真だけの地図。** 全員の地図はマップのタブにある
             MyPhotosMap(photos: model.photos)
         } else if tab == .favorites {
-            // **保存は端末に覚えている**（`FavoritesStore`）ので、
-            // ここに出せるのは「いま手元にある写真のうち保存したもの」
-            let saved = model.photos.filter { favorites.contains($0.id) }
-            if saved.isEmpty {
-                ErrorBanner(message: L("保存した写真はまだありません", "Nothing saved yet"))
-            } else {
-                PhotoGrid(photos: saved) { photo in
-                    PhotoDetailView(photo: photo, fromPublicFeed: false, context: saved)
-                }
-            }
+            favoritesArea
         } else {
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(model.photos) { photo in
