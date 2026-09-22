@@ -27,6 +27,7 @@ struct SearchView: View {
                 if query.isEmpty && model.category == nil {
                     popularSpots
                     seasonal
+                    colors
                     gear
                 }
                 results
@@ -298,6 +299,60 @@ struct SearchView: View {
             .contentShape(RoundedRectangle(cornerRadius: 16))
     }
 
+    /// 色から探す（モック9-5）。
+    ///
+    /// **色を持たない写真は出さない。** 代表色はアップロードのときに
+    /// 計算して保存するもので、持っていない写真は「色が分からない」の
+    /// であって「黒い」のではない。
+    @ViewBuilder
+    private var colors: some View {
+        let sections = model.colors
+        if !sections.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader(L("色から探す", "Browse by colour"))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(sections) { section in
+                            NavigationLink {
+                                ColorPhotosView(section: section)
+                            } label: {
+                                colorCard(section)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
+    private func colorCard(_ section: ColorFamilies.Section) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear
+                .aspectRatio(1.4, contentMode: .fit)
+                .overlay {
+                    RemoteImage(url: section.photos.first?.gridImageURL,
+                                alignment: section.photos.first?.gridAlignment ?? .center)
+                }
+                .clipped()
+            VStack(alignment: .leading, spacing: 2) {
+                Text(section.family.label)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(WebTheme.foreground)
+                Text(L("（\(section.family.note)）・\(section.count)枚",
+                       "\(section.family.note) · \(section.count)"))
+                    .font(.caption2)
+                    .foregroundStyle(WebTheme.muted2)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: 128)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+    }
+
     /// 機材から探す（モック9）。
     ///
     /// **分け方を隠さない**——見出しの下に「〜35mm」を出す。
@@ -450,6 +505,8 @@ final class SearchViewModel: ObservableObject {
     /// 機材から探す（モック9）。**焦点距離で分ける**——レンズ名では
     /// ズーム1本が広角も望遠も含んでしまう
     @Published private(set) var gear: [GearGroups.Section] = []
+    /// 色から探す（モック9-5）
+    @Published private(set) var colors: [ColorFamilies.Section] = []
     @Published private(set) var category: String?
     @Published private(set) var sort: GallerySort = .new
 
@@ -502,6 +559,7 @@ final class SearchViewModel: ObservableObject {
         seasonal = DiscoverySections.seasonal(in: allPhotos)
         gear = GearGroups.sections(in: allPhotos)
         categoryCovers = CategoryCovers.items(in: allPhotos)
+        colors = ColorFamilies.sections(in: allPhotos)
         categories = CategoryChoices.present(in: allPhotos)
         photos = []
     }

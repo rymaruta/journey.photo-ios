@@ -19,6 +19,9 @@ struct Photo: Identifiable, Decodable, Equatable {
     let srcAvif: String?
     /// 極小ぼかしプレビュー（data:image/webp;base64,...）
     let blurDataURL: String?
+    /// 代表色（`#rrggbb`）。**読み込み中の地の色**と「色から探す」に使う。
+    /// 持たない写真もある（アプリが送り始めたのは 2026-09-22 から）
+    let dominantColor: String?
 
     let title: LocalizedText?
     let description: LocalizedParagraphs?
