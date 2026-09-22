@@ -169,20 +169,20 @@ final class StoryAudienceTests: XCTestCase {
     /// **「全体に公開」は送らない。** サーバーも属性を書かない形で持つので、
     /// 既にある行と同じ形に揃える
     func testEveryoneSendsNothing() {
-        XCTAssertNil(StoryService.Audience.everyone.wireValue)
+        XCTAssertNil(Audience.everyone.wireValue)
     }
 
     /// 送る値は**サーバーが受け取る綴りちょうど**（`stories.ts` の
     /// `sanitizeAudience` は "followers" しか受け取らない）
     func testFollowersSendsTheExactWord() {
-        XCTAssertEqual(StoryService.Audience.followers.wireValue, "followers")
+        XCTAssertEqual(Audience.followers.wireValue, "followers")
     }
 
     /// **3つともサーバーが守る**（`GET /stories` が実行時に落とす）
     func testThreeChoices() {
-        XCTAssertEqual(StoryService.Audience.allCases.count, 3)
-        XCTAssertEqual(StoryService.Audience.closeFriends.wireValue, "closeFriends")
-        for choice in StoryService.Audience.allCases {
+        XCTAssertEqual(Audience.allCases.count, 3)
+        XCTAssertEqual(Audience.closeFriends.wireValue, "closeFriends")
+        for choice in Audience.allCases {
             XCTAssertFalse(choice.label.isEmpty)
             XCTAssertFalse(choice.note.isEmpty)
         }

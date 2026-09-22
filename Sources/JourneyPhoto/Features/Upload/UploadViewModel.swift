@@ -46,6 +46,14 @@ final class UploadViewModel: ObservableObject {
     /// カテゴリ。**決まった選択肢から選ぶ**（`CategoryChoices`）
     @Published var category = ""
     @Published var published = true
+    /// 公開範囲。**`published` が false のときは意味を持たない**
+    /// （非公開は誰にも見えないので、絞りようが無い）。
+    /// 送るのは `audienceToSend` 経由——画面が「公開」に戻すのを忘れても、
+    /// 非公開の行に絞りの印が付かないようにする。
+    @Published var audience: Audience = .everyone
+
+    /// サーバーへ送る公開範囲。**非公開なら送らない。**
+    var audienceToSend: Audience { published ? audience : .everyone }
     /// 選んだ写真を**1つの投稿としてまとめる**か（モック8）。
     ///
     /// **行は1枚ずつのまま。** まとめても個別ページとサイトマップは
@@ -296,6 +304,7 @@ final class UploadViewModel: ObservableObject {
         let trimmedCategory = category.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.category = trimmedCategory.isEmpty ? nil : trimmedCategory
         draft.published = published
+        draft.audience = audienceToSend
         // **選んだ撮影地の座標を優先する。** 写真に残っていた位置より、
         // 本人が選んだ地名の方が正しい（丸めはどちらも約1km）
         draft.coords = item.pickedCoords ?? item.prepared.coords
@@ -337,6 +346,7 @@ final class UploadViewModel: ObservableObject {
         tagsText = ""
         category = ""
         published = true
+        audience = .everyone
         selectedAlbumId = nil
     }
 

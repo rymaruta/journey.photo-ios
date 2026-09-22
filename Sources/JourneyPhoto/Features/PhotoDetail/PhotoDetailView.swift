@@ -173,8 +173,13 @@ struct PhotoDetailView: View {
     ///     タグ      小さい丸チップ（white/50）
     private var details: some View {
         VStack(alignment: .leading, spacing: 16) {
-            titleText
-            authorRow
+            // **`Group` で1つにまとめる。** `VStack` の中身は10個までで、
+            // 印を足したところで溢れた（`extra argument in call`）
+            Group {
+                audienceBadge
+                titleText
+                authorRow
+            }
             paragraphs
             locationLink
             spotLink
@@ -186,6 +191,21 @@ struct PhotoDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
+    }
+
+    /// 「フォロワーのみ」「親しい友達」の印。
+    ///
+    /// **出さないと、絞ったつもりが伝わらない。** 投稿した本人が
+    /// 「ちゃんと絞れているか」を確かめられる場所がここしか無い。
+    /// 知らない値のときは `RestrictedFeed.badge` がぼかす（広げない）。
+    @ViewBuilder
+    private var audienceBadge: some View {
+        if let text = RestrictedFeed.badge(shown) {
+            Label(text, systemImage: "lock")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(WebTheme.muted2)
+                .webChip(prominent: true)
+        }
     }
 
     @ViewBuilder

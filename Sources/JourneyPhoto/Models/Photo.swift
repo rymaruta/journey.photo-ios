@@ -44,6 +44,12 @@ struct Photo: Identifiable, Decodable, Equatable {
     /// アプリだけが1つのカードに束ねる
     let groupId: String?
 
+    /// 公開範囲（`followers` / `closeFriends`）。**付いていない＝全体に公開**。
+    ///
+    /// 付いている行は静的サイトの一覧に載らないので、ここに値が入るのは
+    /// `GET /feed/restricted` と `GET /user/photos` から来た写真だけ。
+    let audience: String?
+
     let userId: String?
     let uploadedBy: String?
     let displayName: String?

@@ -168,6 +168,11 @@ struct PhotoDraft {
     /// 同じ投稿としてまとめる印。**行は1枚ずつのまま**
     var groupId: String?
 
+    /// 公開範囲。**既定は全体に公開**（これまでと同じ）。
+    /// 絞ると静的サイトに載らない＝検索から辿り着けなくなる
+    /// （`Audience.photoNote` に書いてある）。
+    var audience: Audience = .everyone
+
     /// `POST /upload/save` に送る形。
     ///
     /// **座標は端末側でも丸めてから送る。** サーバーも約1km（小数第2位）に
@@ -189,7 +194,8 @@ struct PhotoDraft {
             albumId: albumId,
             exif: exif,
             dominantColor: dominantColor,
-            groupId: groupId
+            groupId: groupId,
+            audience: audience.wireValue
         )
     }
 
@@ -208,6 +214,8 @@ struct PhotoDraft {
         let exif: ExifFields?
         let dominantColor: String?
         let groupId: String?
+        /// 公開範囲。**全体に公開のときは送らない**（属性を書かない形に揃える）
+        let audience: String?
 
         struct Coords: Encodable {
             let lat: Double

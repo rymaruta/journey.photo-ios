@@ -41,6 +41,45 @@ actor PublicGalleryService {
         hiddenPhotoIds = photoIds
     }
 
+    /// 公開範囲を絞った写真の取り方。**ログインしている間だけ入る**
+    /// （`JourneyPhotoApp` が入れ替える）。
+    ///
+    /// ここに置く理由は `setHidden` と同じ——**出すところで足せば、
+    /// 一覧・検索・地図・関連写真・お気に入りの全部に一度に効く**。
+    /// 画面ごとに `restrictedFeed()` を呼んで回ると、必ずどこかが漏れる。
+    private var restrictedLoader: (@Sendable () async throws -> [Photo])?
+
+    func setRestrictedLoader(_ loader: (@Sendable () async throws -> [Photo])?) {
+        restrictedLoader = loader
+        // ログインし直した人に、前の人ぶんを見せない
+        restrictedCache = nil
+        restrictedCachedAt = nil
+    }
+
+    private var restrictedCache: [Photo]?
+    private var restrictedCachedAt: Date?
+
+    /// 絞られたぶんを取る。**失敗しても公開一覧は出す。**
+    /// ここで投げると、絞った写真が1枚も無い大多数の人まで
+    /// 「読み込めませんでした」になる。
+    private func restrictedPhotos(force: Bool) async -> [Photo] {
+        guard let restrictedLoader else { return [] }
+        if !force, let restrictedCache, let restrictedCachedAt,
+           Date().timeIntervalSince(restrictedCachedAt) < Self.cacheLifetime {
+            return restrictedCache
+        }
+        do {
+            let photos = try await restrictedLoader()
+            restrictedCache = photos
+            restrictedCachedAt = Date()
+            return photos
+        } catch {
+            print("[gallery] 公開範囲を絞った写真を取れませんでした: \(error)")
+            // 直前に取れていたぶんは出す（圏外で消える方が驚かれる）
+            return restrictedCache ?? []
+        }
+    }
+
     init(url: URL = AppConfig.publicPhotosURL,
          session: URLSession? = nil,
          snapshot: PhotoSnapshotStore = PhotoSnapshotStore()) {
@@ -81,21 +120,21 @@ actor PublicGalleryService {
     /// - Parameter force: 控えを無視して取り直す。**引き下げ更新はこちら**
     ///   ——利用者が自分で引いたのに古いものを出さない。
     func fetchPhotos(force: Bool = false) async throws -> [Photo] {
-        if !force, let fresh = freshCache { return visible(fresh) }
+        if !force, let fresh = freshCache { return await merged(fresh, force: force) }
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(from: url)
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
-            if let cached = snapshot.load() { return visible(cached) }
+            if let cached = snapshot.load() { return await merged(cached, force: force) }
             throw APIError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
-            if let cached = snapshot.load() { return visible(cached) }
+            if let cached = snapshot.load() { return await merged(cached, force: force) }
             throw APIError.server(status: http.statusCode, message: "")
         }
         do {
@@ -114,11 +153,22 @@ actor PublicGalleryService {
             }
             cached = photos
             cachedAt = Date()
-            return visible(photos)
+            return await merged(photos, force: force)
         } catch {
-            if let cached = snapshot.load() { return visible(cached) }
+            if let cached = snapshot.load() { return await merged(cached, force: force) }
             throw APIError.decoding(String(describing: error))
         }
+    }
+
+    /// 公開一覧に、絞られたぶんを足してから絞り込む。
+    ///
+    /// **`visible` は最後に通す**——ブロックした相手の「フォロワーのみ」の
+    /// 写真も落とすため。サーバー側（`restrictedFeed.ts`）でも落としているが、
+    /// 端末にしか無い「通報した写真」はここでしか落とせない。
+    private func merged(_ photos: [Photo], force: Bool) async -> [Photo] {
+        let extra = await restrictedPhotos(force: force)
+        if extra.isEmpty { return visible(photos) }
+        return visible(RestrictedFeed.merge(publicPhotos: photos, restricted: extra))
     }
 
     /// 公開 JSON には非公開の写真は載らないが、`published` が明示的に

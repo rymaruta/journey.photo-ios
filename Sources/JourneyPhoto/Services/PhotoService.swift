@@ -14,6 +14,15 @@ struct PhotoService {
         try await api.authorized(.get, "/user/photos", as: [Photo].self)
     }
 
+    /// 公開範囲を絞った写真のうち、**自分に見えるぶん**。`GET /feed/restricted`。
+    ///
+    /// これらは静的サイトの一覧（`app/data/photos.json`）に載らないので、
+    /// ここで取らないとアプリからも見えない。サーバーが
+    /// 「フォロワーか」「親しい友達か」を判定して返す——**端末では決めない**。
+    func restrictedFeed() async throws -> [Photo] {
+        try await api.authorized(.get, "/feed/restricted", as: [Photo].self)
+    }
+
     /// 自分の写真を1枚だけ引き直す。
     ///
     /// **編集したあとに画面を作り直すため。** 個別に引く口はサーバーに

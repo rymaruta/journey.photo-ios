@@ -29,48 +29,6 @@ struct StoryService {
     /// 受け取っていた頃は、自分の正当な URL と一緒に他人のキーを送り、
     /// 自分のストーリーを消すだけで相手のファイルを消せた
     /// （`api-user/src/stories.ts` の注記）。
-    /// 公開範囲。**「全体に公開」は送らない**——サーバーも属性を書かない形で
-    /// 持つので、既にある行と同じ形に揃える。
-    enum Audience: String, CaseIterable, Identifiable {
-        case everyone
-        case followers
-        /// 自分が選んだ人だけ（`api-user/src/closeFriends.ts`）
-        case closeFriends
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .everyone: return L("全体に公開", "Everyone")
-            case .followers: return L("フォロワーのみ", "Followers")
-            case .closeFriends: return L("親しい友達", "Close friends")
-            }
-        }
-
-        var note: String {
-            switch self {
-            case .everyone: return L("ログインしている人なら誰でも見られます",
-                                     "Anyone signed in can see it")
-            case .followers: return L("自分をフォローしている人だけが見られます",
-                                      "Only people who follow you")
-            case .closeFriends: return L("自分が選んだ人だけが見られます（相手には知らせません）",
-                                         "Only people you picked — they aren't told")
-            }
-        }
-
-        var systemImage: String {
-            switch self {
-            case .everyone: return "globe"
-            case .followers: return "person.2"
-            case .closeFriends: return "star"
-            }
-        }
-
-        /// サーバーへ送る値。**全体に公開は送らない**
-        /// （サーバーも属性を書かない形で持つ）
-        var wireValue: String? { self == .everyone ? nil : rawValue }
-    }
-
     @discardableResult
     func create(imageData: Data, caption: String?, location: String?, coords: Photo.Coords?,
                 song: Photo.Song? = nil, durationSec: Int? = nil,

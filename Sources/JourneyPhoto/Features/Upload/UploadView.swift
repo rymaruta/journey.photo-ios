@@ -66,6 +66,7 @@ struct UploadView: View {
             songSection
             albumSection
             publishSection
+            audienceSection
             errorSection
             submitSection
         }
@@ -319,6 +320,61 @@ struct UploadView: View {
                      "Private photos stay yours. You can publish them later."))
         }
         .listRowBackground(Color.clear)
+    }
+
+    /// 誰に見せるか。**「公開」を選んだときだけ出す**
+    /// ——非公開は誰にも見えないので、そこに絞りを重ねても意味が無い。
+    @ViewBuilder
+    private var audienceSection: some View {
+        if model.published {
+            Section {
+                ForEach(Audience.allCases) { choice in
+                    audienceChoice(choice)
+                }
+                // **選ぶ先が空なら誰にも見えない。** 選びに行く口をここに置く
+                if model.audience == .closeFriends {
+                    NavigationLink {
+                        CloseFriendsView()
+                    } label: {
+                        Label(L("親しい友達を選ぶ", "Pick close friends"), systemImage: "star")
+                            .font(.subheadline)
+                    }
+                }
+            } header: {
+                Text(L("誰に見せるか", "Who can see it"))
+            } footer: {
+                Text(model.audience.photoNote)
+            }
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    /// 公開範囲の札。ストーリー側（`StoryComposerView`）と同じ形。
+    /// **3つを横に並べない**——1つあたりが 44pt を下回る。
+    private func audienceChoice(_ choice: Audience) -> some View {
+        let selected = model.audience == choice
+        return Button {
+            model.audience = choice
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: choice.systemImage).font(.title3)
+                Text(choice.label)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark").font(.subheadline.weight(.bold))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(selected ? AnyShapeStyle(WebTheme.foreground)
+                                 : AnyShapeStyle(WebTheme.surface),
+                        in: RoundedRectangle(cornerRadius: 12))
+            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func publishChoice(_ title: String, note: String, systemImage: String,

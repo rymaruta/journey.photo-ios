@@ -78,6 +78,20 @@ struct JourneyPhotoApp: App {
         )
     }
 
+    /// 公開範囲を絞った写真の取り口を、公開一覧へ渡す。
+    ///
+    /// **ログアウトしたら外す。** 外さないと、次にこの端末を使う人の画面に
+    /// 前の人あての「フォロワーのみ」が出る（控えも `setRestrictedLoader`
+    /// が捨てる）。未ログインでは口そのものが 401 なので、入れない。
+    private func applyRestrictedFeed() async {
+        guard auth.userId != nil else {
+            await environment.gallery.setRestrictedLoader(nil)
+            return
+        }
+        let photos = environment.photos
+        await environment.gallery.setRestrictedLoader { try await photos.restrictedFeed() }
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView(configurationError: configurationError)
@@ -113,6 +127,7 @@ struct JourneyPhotoApp: App {
                     AppDelegate.push = push
                     await push.use(userId: auth.userId)
                     await applyModeration()
+                    await applyRestrictedFeed()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     if auth.userId != nil {
                         let blocks = try? await environment.moderation.blocks()

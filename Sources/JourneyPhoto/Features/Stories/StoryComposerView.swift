@@ -29,7 +29,7 @@ struct StoryComposerView: View {
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
     /// 公開範囲（モック4-7）。**サーバーが守れるものだけ出す**
-    @State private var audience: StoryService.Audience = .everyone
+    @State private var audience: Audience = .everyone
 
     var body: some View {
         Form {
@@ -96,7 +96,7 @@ struct StoryComposerView: View {
             Section {
                 // **3つを横に並べない。** 1つあたりが 44pt を下回り、
                 // 説明も入らない（「親しい友達」は言葉が長い）
-                ForEach(StoryService.Audience.allCases) { choice in
+                ForEach(Audience.allCases) { choice in
                     audienceChoice(choice)
                 }
                 // **選ぶ先が空なら誰にも見えない。** 選びに行く口をここに置く
@@ -248,7 +248,7 @@ struct StoryComposerView: View {
 
     /// 公開範囲の札。**切り替えではなく2択**——トグル1つだと
     /// 「いまどちらなのか」を言葉で確かめられない（投稿画面と同じ形）
-    private func audienceChoice(_ choice: StoryService.Audience) -> some View {
+    private func audienceChoice(_ choice: Audience) -> some View {
         let selected = audience == choice
         return Button {
             audience = choice
