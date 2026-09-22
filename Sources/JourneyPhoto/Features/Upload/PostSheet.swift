@@ -71,5 +71,7 @@ struct PostSheet: View {
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
+        // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
+        .accessibilityIdentifier("post.choice.\(kind == .photo ? "photo" : "story")")
     }
 }

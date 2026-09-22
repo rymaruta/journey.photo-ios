@@ -64,9 +64,11 @@ final class ScreenshotTests: XCTestCase {
             // 回に**ログイン画面**が出るので、そのまま「14-マイページ」と
             // 名付けると、見た人が「マイページはこういう画面だ」と誤読する
             // （run 55 までそうなっていた）
-            let signedOut = app.otherElements["signin.form"].exists
-                || app.scrollViews["signin.form"].exists
-                || app.tables["signin.form"].exists
+            // **種別を決め打ちしない。** `Form` は OS の版で `table` にも
+            // `collectionView` にもなる（run 57 はここを外して、名前に
+            // 何も付かなかった）。**どの種別でも拾う**
+            let signedOut = app.descendants(matching: .any)
+                .matching(identifier: "signin.form").firstMatch.exists
             shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
         }
 
@@ -106,6 +108,36 @@ final class ScreenshotTests: XCTestCase {
             firstPhoto.tap()
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "20-写真の詳細")
+
+            // **人のページ**（モック2 と同じ部品で組んである）。
+            // マイページそのものは CI では撮れない——巡回はログインしない。
+            // だが**ハイライトの輪・写真の格子・数え**は人のページにも
+            // 同じものが出るので、少なくともそこは実機で見られる。
+            // 「マイページを撮った」とは書かない（撮っていない）
+            let toAuthor = app.buttons["photo.author"].firstMatch
+            if toAuthor.waitForExistence(timeout: 5), toAuthor.isHittable {
+                toAuthor.tap()
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "21-人のページ（マイページと同じ部品）")
+            }
+        }
+
+        // **投稿の2択と、ストーリー作成**（モック4）。
+        // 中央のタブは画面ではなく入口で、押すと2択の札が出る。
+        // ログインしていない回に何が出るかも**そのまま撮る**
+        // ——出ているものを名前に書く（「撮れなかった」を隠さない）
+        if tabBar.buttons.count > 2 {
+            tabBar.buttons.element(boundBy: 2).tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "40-投稿の2択")
+            let toStory = app.buttons["post.choice.story"].firstMatch
+            if toStory.waitForExistence(timeout: 5), toStory.isHittable {
+                toStory.tap()
+                Thread.sleep(forTimeInterval: 4)
+                let signedOut = app.descendants(matching: .any)
+                    .matching(identifier: "signin.form").firstMatch.exists
+                shoot(app, "41-ストーリー作成\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
+            }
         }
 
         // **撮影スポットの画面**（モック5）。

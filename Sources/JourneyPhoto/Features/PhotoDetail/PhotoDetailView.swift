@@ -350,6 +350,10 @@ struct PhotoDetailView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                // 実機の絵の道しるべ（`ScreenshotTests`）。
+                // **マイページは CI では撮れない**（ログインしないため）が、
+                // 人のページは同じ部品で組んである——ここから撮る
+                .accessibilityIdentifier("photo.author")
 
                 Spacer(minLength: 8)
 
