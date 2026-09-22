@@ -156,3 +156,26 @@ final class PhotoMapViewModelTests: XCTestCase {
         XCTAssertTrue(model.loaded)
     }
 }
+
+// MARK: - 押した札の始末
+
+extension PhotoMapViewModelTests {
+
+    /// **絞り込みで消えたピンの札は出さない。**
+    /// 札は値の写しなので、消えても無関係な地図の上に浮いたまま残っていた
+    func testDropsTheCardWhenItsPinIsFilteredOut() async throws {
+        let model = await loaded()
+        let tokyo = try XCTUnwrap(model.pins.first { $0.photos.contains { $0.id == "c" } })
+        XCTAssertTrue(model.stillShown(tokyo))
+
+        model.query = "パリ"
+        XCTAssertFalse(model.stillShown(tokyo))
+        // 残っている方の札は出したまま
+        XCTAssertTrue(model.stillShown(model.pins.first))
+    }
+
+    func testNilIsNeverShown() async {
+        let model = await loaded()
+        XCTAssertFalse(model.stillShown(nil))
+    }
+}

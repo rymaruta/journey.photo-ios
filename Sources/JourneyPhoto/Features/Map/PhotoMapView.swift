@@ -209,7 +209,9 @@ struct PhotoMapView: View {
         }
         // 押したピンの札。**地図を覆わない**ので、押したまま周りを見られる
         .overlay(alignment: .bottom) {
-            if let selected {
+            // **消えたピンの札は出さない。** 絞り込みを変えるとピンは
+            // 入れ替わるが、札は値の写しなので残ってしまう
+            if let selected, model.stillShown(selected) {
                 pinCard(selected)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)

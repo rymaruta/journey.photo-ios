@@ -82,6 +82,16 @@ final class PhotoMapViewModel: ObservableObject {
         areaFrame = nil
     }
 
+    /// **その札をまだ出してよいか。**
+    ///
+    /// 絞り込みを変えると、押していたピンが消えることがある。札は値の写しを
+    /// 持っているので、消えても**無関係な地図の上に浮いたまま**残っていた。
+    /// 「写真を見る」を押すと、いま絞り込んだ結果に居ない写真が出る。
+    func stillShown(_ pin: MapPin?) -> Bool {
+        guard let pin else { return false }
+        return pins.contains { $0.id == pin.id }
+    }
+
     /// 札に出すスポット（台帳に実在するものだけ）
     func spots(for pin: MapPin) -> [Spot] {
         MapSearch.spots(for: pin.photos, in: spots)
