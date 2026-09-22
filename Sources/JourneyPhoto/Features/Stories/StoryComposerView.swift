@@ -11,7 +11,9 @@ struct StoryComposerView: View {
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var pickerItem: PhotosPickerItem?
+    /// ライブラリから選んだもの。**まとめて選べる**（モック4-5）
+    /// ——1枚ずつしか選べないと、10枚出すのに10回開くことになる
+    @State private var pickerItems: [PhotosPickerItem] = []
     /// 選んだ写真の並び（モック4-5 のメディアストリップ）。
     ///
     /// **1枚＝1本のストーリー。** サーバーは `POST /stories` に1枚ずつ渡す形で、
@@ -202,19 +204,33 @@ struct StoryComposerView: View {
             CameraPicker { data in accept(data) }
                 .ignoresSafeArea()
         }
-        .onChange(of: pickerItem) { _, item in
-            Task { await load(item) }
+        .onChange(of: pickerItems) { _, items in
+            Task { await load(items) }
         }
     }
 
-    private func load(_ item: PhotosPickerItem?) async {
-        guard let item else { return }
-        let data = try? await item.loadTransferable(type: Data.self)
-        guard let data else {
-            message = L("写真を読み込めませんでした", "Couldn't load the photo")
-            return
+    /// 選ばれたぶんを順に足す。**1枚も読めなかったときだけ断りを出す**
+    /// ——何枚か読めた回に「読み込めませんでした」だけ出すと、
+    /// 並んでいるものが見えているのに失敗したように読める。
+    private func load(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        var failed = 0
+        for item in items {
+            let data = try? await item.loadTransferable(type: Data.self)
+            if let data {
+                accept(data)
+            } else {
+                failed += 1
+            }
         }
-        accept(data)
+        if failed > 0 {
+            message = failed == items.count
+                ? L("写真を読み込めませんでした", "Couldn't load the photos")
+                : L("\(failed)枚を読み込めませんでした", "Couldn't load \(failed) of them")
+        }
+        // **選び終えたら空にする。** 残すと、次に同じ写真を選んでも
+        // `onChange` が動かない（同じ値なので知らせが来ない）
+        pickerItems = []
     }
 
     /// 1枚受け取る。**足す**（選び直しではない）。
@@ -363,7 +379,10 @@ struct StoryComposerView: View {
             }
             .buttonStyle(.plain)
         }
-        PhotosPicker(selection: $pickerItem, matching: .images) {
+        PhotosPicker(selection: $pickerItems,
+                     maxSelectionCount: StoryQueue.maxShots,
+                     matching: .images,
+                     photoLibrary: .shared()) {
             TextOverlayEditor<EmptyView>.toolLabel(
                 shots.isEmpty ? L("ライブラリ", "Library") : L("追加", "Add"),
                 systemImage: "photo.badge.plus")
