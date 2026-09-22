@@ -19,6 +19,8 @@ struct StoryComposerView: View {
     @State private var overlays: [TextOverlay] = []
     @State private var caption = ""
     @State private var location = ""
+    /// 24時間のあとも残すか（ハイライトの材料になる）
+    @State private var keepInArchive = false
     @State private var showCamera = false
     @State private var isWorking = false
     /// ストーリーのBGM（30秒の試聴だけ）と、表示秒数
@@ -87,6 +89,21 @@ struct StoryComposerView: View {
                 // 3秒未満は読み切れず、15秒を超えると見る側が飽きる（Web と同じ範囲）
                 Text(L("3〜15秒。曲は30秒の試聴だけを使います。",
                        "3–15 seconds. Songs use the 30-second preview only."))
+            }
+            .listRowBackground(Color.clear)
+
+            // 24時間のあとも残すか。**ハイライトに入れられるのは残したものだけ**
+            // （`api-user/src/highlights.ts`）。既定は残さない——消えることが
+            // ストーリーの約束なので、残す方を選ばせる
+            Section {
+                Toggle(isOn: $keepInArchive) {
+                    Label(L("24時間のあとも自分用に残す", "Keep it for myself after 24 hours"),
+                          systemImage: "archivebox")
+                        .font(.subheadline)
+                }
+            } footer: {
+                Text(L("残すと、消えたあとも自分だけが見られます。ハイライトに入れられるのは残したものだけです。",
+                       "Kept stories stay visible to you alone, and only kept stories can go into a highlight."))
             }
             .listRowBackground(Color.clear)
 
@@ -270,7 +287,8 @@ struct StoryComposerView: View {
                 location: location.trimmingCharacters(in: .whitespacesAndNewlines),
                 coords: prepared.coords,
                 song: song,
-                durationSec: durationSec
+                durationSec: durationSec,
+                archive: keepInArchive
             )
             // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）
             drafts.clear()

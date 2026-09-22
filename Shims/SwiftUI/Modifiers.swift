@@ -257,6 +257,13 @@ extension View {
                                             titleVisibility: VisibilityShim = .automatic,
                                             @ViewBuilder actions: () -> A) -> Self { self }
 
+    /// 本物にある `message:` 付きの形（iOS 15 以降）。確認の前に
+    /// 「何が起きるか」を1行添える画面で使う
+    public func confirmationDialog<A: View, M: View>(_ title: String, isPresented: Binding<Bool>,
+                                                     titleVisibility: VisibilityShim = .automatic,
+                                                     @ViewBuilder actions: () -> A,
+                                                     @ViewBuilder message: () -> M) -> Self { self }
+
     // 仕掛け
     public func task(priority: TaskPriority = .userInitiated, _ action: @escaping () async -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
     public func task<T: Equatable>(id value: T, priority: TaskPriority = .userInitiated,

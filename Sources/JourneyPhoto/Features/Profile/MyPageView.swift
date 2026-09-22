@@ -319,64 +319,17 @@ struct MyPageView: View {
         .font(.footnote)
     }
 
-    /// 旅のハイライト（モック2-5 の丸い並び）。
+    /// ストーリーハイライト（モック2-5）。
     ///
-    /// **新しい箱は作らない。** モックの「ストーリーハイライト」は
-    /// 束ねたものに名前を付けて並べるものだが、このアプリには既に
-    /// **旅の一冊**（`TripBook`——撮影日の近い写真を自動で束ねる）がある。
-    /// 同じ用途の箱を2つ持つと、どちらに入れたか分からなくなる。
-    ///
-    /// 題は**いちばん多い撮影地**、表紙は**いいねがいちばん多い1枚**
-    /// ——どちらも数えたもので、名前を打たせない（打たせると空の名前が並ぶ）。
+    /// **サーバーにある本物の輪**（`api-user/src/highlights.ts`）。
+    /// 以前はここに「旅の一冊」の丸い並びを出していた——サーバーに
+    /// ハイライトが無かったので、いちばん近いものを当てていた。
+    /// develop でハイライトそのものが入ったので、本物に差し替える。
+    /// **旅の一冊は消していない**（上の「旅の記録」から入る）。
     @ViewBuilder
     private var highlightsRow: some View {
-        let trips = TripBook.trips(from: model.photos)
-        if !trips.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(L("旅のハイライト", "Trip highlights"))
-                        .font(.headline)
-                        .foregroundStyle(WebTheme.foreground)
-                    Spacer()
-                    NavigationLink {
-                        TripsView()
-                    } label: {
-                        Text(L("すべて見る", "See all"))
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
-                    }
-                }
-                .padding(.horizontal, 16)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 14) {
-                        ForEach(trips) { trip in
-                            NavigationLink {
-                                TripBookView(trip: trip)
-                            } label: {
-                                VStack(spacing: 6) {
-                                    RemoteImage(url: trip.cover?.gridImageURL,
-                                                alignment: trip.cover?.gridAlignment ?? .center)
-                                        .frame(width: 64, height: 64)
-                                        .clipShape(Circle())
-                                        .overlay(Circle().strokeBorder(
-                                            Color.white.opacity(0.25), lineWidth: 1))
-                                    Text(trip.place.isEmpty
-                                         ? L("\(trip.days)日間の旅", "\(trip.days)-day trip")
-                                         : trip.place)
-                                        .font(.caption)
-                                        .foregroundStyle(WebTheme.muted2)
-                                        .lineLimit(1)
-                                }
-                                .frame(width: 76)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-            }
+        if let userId = auth.userId {
+            HighlightsRow(userId: userId, isMine: true)
         }
     }
 

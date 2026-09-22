@@ -59,6 +59,16 @@ public struct ZStack: View {
     public init<C: View>(alignment: Alignment = .center, @ViewBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
 }
+/// 線の引き方（破線など）。本物と同じ引数名で持つ
+public struct StrokeStyle {
+    public var lineWidth: Double
+    public var dash: [Double]
+    public init(lineWidth: Double = 1, dash: [Double] = []) {
+        self.lineWidth = lineWidth
+        self.dash = dash
+    }
+}
+
 public struct Group: View {
     public init<C: View>(@ViewBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
@@ -180,6 +190,7 @@ public struct TabView: View {
 public struct Circle: View, Shape {
     public init() {}
     public func strokeBorder<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Circle { self }
+    public func strokeBorder<S: ShapeStyle>(_ style: S, style strokeStyle: StrokeStyle) -> Circle { self }
     public func fill<S: ShapeStyle>(_ style: S) -> Circle { self }
     public var body: Never { fatalError("模型") }
 }

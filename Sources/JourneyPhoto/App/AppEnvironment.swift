@@ -20,6 +20,8 @@ final class AppEnvironment: ObservableObject {
     let account: AccountService
     let albums: AlbumService
     let stories: StoryService
+    /// ストーリーハイライト（アーカイブを束ねた輪）
+    let highlights: HighlightService
     let search: UserSearchService
     let discovery: DiscoveryService
     /// 撮影スポットの台帳。写真と同じく静的サイトの JSON を読むだけ
@@ -43,6 +45,7 @@ final class AppEnvironment: ObservableObject {
         self.account = AccountService(api: api)
         self.albums = AlbumService(api: api)
         self.stories = StoryService(api: api)
+        self.highlights = HighlightService(api: api)
         self.search = UserSearchService(api: api)
         self.discovery = DiscoveryService(api: api)
         self.spots = spots

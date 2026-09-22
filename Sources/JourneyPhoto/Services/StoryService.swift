@@ -34,7 +34,8 @@ struct StoryService {
     /// （2026-09-22・owner の判断。`api-user/src/storyVisibility.ts`）。
     /// サーバーは `visibility` を読まないので、送っても何も起きない。
     func create(imageData: Data, caption: String?, location: String?, coords: Photo.Coords?,
-                song: Photo.Song? = nil, durationSec: Int? = nil) async throws -> Story? {
+                song: Photo.Song? = nil, durationSec: Int? = nil,
+                archive: Bool = false) async throws -> Story? {
         let presigned = try await uploads.presign(
             fileName: "story.jpg", fileType: "image/jpeg", fileSize: imageData.count
         )
@@ -56,6 +57,10 @@ struct StoryService {
             let song: Photo.Song?
             /// 表示秒数。**3〜15**（`stories.ts` が丸める）。既定の5なら送らない
             let durationSec: Int?
+            /// 24時間のあとも自分用に残すか。**`true` のときだけ送る**
+            /// ——サーバーは `archive === true` だけを見る（`stories.ts`）。
+            /// 残したものだけがハイライトに入れられる
+            let archive: Bool?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
@@ -66,7 +71,8 @@ struct StoryService {
             location: location?.isEmpty == true ? nil : location,
             coords: (location?.isEmpty == false) ? coords.map { Body.Coords(lat: $0.lat, lng: $0.lng) } : nil,
             song: song,
-            durationSec: Self.storedDuration(durationSec)
+            durationSec: Self.storedDuration(durationSec),
+            archive: archive ? true : nil
         )
         do {
             return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
