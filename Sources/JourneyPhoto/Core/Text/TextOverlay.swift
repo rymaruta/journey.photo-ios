@@ -17,7 +17,9 @@ import Foundation
 ///
 /// **位置は 0...1 の相対値**で持つ。画面の大きさ（編集中）と画像の
 /// 大きさ（焼き込み）は違うので、点ではなく割合で覚える。
-struct TextOverlay: Identifiable, Equatable {
+/// **`Codable` なのは下書きのため**（`StoryDraftStore`）。投稿すると画像に
+/// 焼き込まれて消えるので、保存する形はここだけで使う。
+struct TextOverlay: Identifiable, Equatable, Codable {
 
     let id: UUID
     var text: String
@@ -32,7 +34,7 @@ struct TextOverlay: Identifiable, Equatable {
     /// ここに置くのは「写真の上の見た目」だけ
     var kind: Kind
 
-    enum Kind: String, Equatable {
+    enum Kind: String, Equatable, Codable {
         /// 自由な文字
         case text
         /// 撮影地（ピンの印を付ける）
@@ -55,7 +57,7 @@ struct TextOverlay: Identifiable, Equatable {
         }
     }
 
-    enum Style: String, CaseIterable, Identifiable {
+    enum Style: String, CaseIterable, Identifiable, Codable {
         /// 白い文字に影（写真の上でいちばん読める）
         case light
         /// 黒い文字に白の縁

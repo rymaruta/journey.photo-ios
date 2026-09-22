@@ -7,6 +7,8 @@ import UIKit
 struct StoryComposerView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var drafts: StoryDraftStore
+    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var pickerItem: PhotosPickerItem?
@@ -24,6 +26,8 @@ struct StoryComposerView: View {
     @State private var durationSec = StoryService.defaultDurationSec
     @State private var showSongPicker = false
     @State private var message: String?
+    /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
+    @State private var showRestore = false
 
     var body: some View {
         Form {
@@ -113,6 +117,26 @@ struct StoryComposerView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button(Labels.Common.close) { dismiss() }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                // **写真が無ければ下書きにできない。** 文字だけ残しても
+                // 「続きから」で出すものが無い
+                Button(L("下書き保存", "Save draft")) { saveDraft() }
+                    .disabled(prepared == nil || isWorking)
+            }
+        }
+        // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
+        // 新しく作りにきた人が前の写真に驚く
+        .onAppear {
+            drafts.use(userId: auth.userId)
+            if drafts.draft != nil, prepared == nil { showRestore = true }
+        }
+        .alert(L("書きかけの下書きがあります", "You have a saved draft"), isPresented: $showRestore) {
+            Button(L("続きから", "Continue")) { restoreDraft() }
+            Button(L("捨てる", "Discard"), role: .destructive) { drafts.clear() }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(L("この端末に残しておいたものです。続きから編集できます。",
+                   "Kept on this device. You can pick up where you left off."))
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { data in accept(data) }
@@ -149,6 +173,51 @@ struct StoryComposerView: View {
         }
     }
 
+    /// 下書きにする。**焼き込む前の文字のまま残す**
+    /// ——焼いてしまうと位置も色も直せなくなる（投稿と同じ片道になる）
+    private func saveDraft() {
+        guard let prepared else { return }
+        let ok = drafts.save(
+            imageData: prepared.data,
+            fileName: prepared.fileName,
+            contentType: prepared.contentType,
+            coords: prepared.coords,
+            caption: caption,
+            location: location,
+            overlays: overlays,
+            song: song,
+            durationSec: durationSec,
+            savedAt: ISO8601DateFormatter().string(from: Date())
+        )
+        // **書けなかったことを黙らない。** 「保存しました」とだけ出して
+        // 実際は消えている、が いちばん困る
+        message = ok
+            ? L("下書きに保存しました（この端末にだけ残ります）", "Saved as a draft on this device")
+            : L("下書きを保存できませんでした（端末の空き容量を確かめてください）",
+                "Couldn't save the draft — check your device's free space")
+        if ok { dismiss() }
+    }
+
+    /// 「続きから」。**画像が読めなければ何も戻さない**
+    private func restoreDraft() {
+        guard let draft = drafts.draft, let data = drafts.imageData() else {
+            drafts.clear()
+            message = L("下書きの写真を読み込めませんでした", "Couldn't load the draft photo")
+            return
+        }
+        prepared = ImagePreparer.Prepared(data: data, fileName: draft.fileName,
+                                          contentType: draft.contentType,
+                                          // EXIF は下書きに残していない（ストーリーは送らない）
+                                          exif: nil, coords: draft.coords, takenOn: nil)
+        preview = UIImage(data: data).map { Image(uiImage: $0) }
+        overlays = draft.overlays
+        caption = draft.caption
+        location = draft.location
+        song = draft.song
+        durationSec = draft.durationSec
+        message = nil
+    }
+
     private func post() async {
         guard let prepared else { return }
         isWorking = true
@@ -165,6 +234,8 @@ struct StoryComposerView: View {
                 song: song,
                 durationSec: durationSec
             )
+            // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）
+            drafts.clear()
             dismiss()
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("投稿できませんでした", "Couldn't post")
