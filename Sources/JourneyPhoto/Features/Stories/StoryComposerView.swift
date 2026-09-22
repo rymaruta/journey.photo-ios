@@ -34,16 +34,13 @@ struct StoryComposerView: View {
             Section {
                 if let preview {
                     // **写真の上を直接つまんで文字を置く。**
-                    // 入力欄で座標を打たせない
-                    TextOverlayEditor(preview: preview, overlays: $overlays)
-                }
-                if CameraPicker.isAvailable {
-                    Button { showCamera = true } label: {
-                        Label(L("写真を撮る", "Take a photo"), systemImage: "camera")
+                    // 入力欄で座標を打たせない。道具は1列に並べる（モック4-6）
+                    TextOverlayEditor(preview: preview, overlays: $overlays) {
+                        photoTools
                     }
-                }
-                PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Label(preview == nil ? L("写真を選ぶ", "Choose a photo") : L("別の写真を選ぶ", "Choose another photo"), systemImage: "photo.badge.plus")
+                } else {
+                    // まだ1枚も選んでいないときは、写真の道具だけ
+                    HStack(spacing: 10) { photoTools }
                 }
             } footer: {
                 Text(L("ストーリーは24時間で消えます。撮影情報（EXIF）は端末で取り除いてから送ります。", "Stories disappear after 24 hours. Photo metadata is removed on your device."))
@@ -221,6 +218,24 @@ struct StoryComposerView: View {
         song = draft.song
         durationSec = draft.durationSec
         message = nil
+    }
+
+    /// 写真そのものの道具（モック4-6 の「カメラ」「ライブラリ」）。
+    /// 文字の道具と同じ見た目・同じ行に並べる
+    @ViewBuilder
+    private var photoTools: some View {
+        if CameraPicker.isAvailable {
+            Button { showCamera = true } label: {
+                TextOverlayEditor<EmptyView>.toolLabel(L("カメラ", "Camera"), systemImage: "camera")
+            }
+            .buttonStyle(.plain)
+        }
+        PhotosPicker(selection: $pickerItem, matching: .images) {
+            TextOverlayEditor<EmptyView>.toolLabel(
+                preview == nil ? L("ライブラリ", "Library") : L("選び直す", "Replace"),
+                systemImage: "photo.badge.plus")
+        }
+        .buttonStyle(.plain)
     }
 
     private func post() async {

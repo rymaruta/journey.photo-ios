@@ -8,10 +8,21 @@ import SwiftUI
 /// 写真の上を直接つまんで動かす。位置は 0...1 の相対値で持つので
 /// （`TextOverlay`）、編集中の大きさと実際の画像の大きさが違っても
 /// 同じところに出る。
-struct TextOverlayEditor: View {
+struct TextOverlayEditor<Extra: View>: View {
 
     let preview: Image
     @Binding var overlays: [TextOverlay]
+    /// 同じ行に並べる、写真そのものの道具（カメラ・ライブラリ）。
+    /// **モック4 は6つを1列に並べる**ので、写真の道具と文字の道具を
+    /// 別の場所に置かない
+    @ViewBuilder var extraTools: () -> Extra
+
+    init(preview: Image, overlays: Binding<[TextOverlay]>,
+         @ViewBuilder extraTools: @escaping () -> Extra = { EmptyView() }) {
+        self.preview = preview
+        self._overlays = overlays
+        self.extraTools = extraTools
+    }
 
     /// いま編集している文字。nil なら入力欄を出さない
     @State private var editingId: UUID?
@@ -128,6 +139,7 @@ struct TextOverlayEditor: View {
             // **場所と曲は投稿の項目としても送る**ので、ここに置くのは
             // 「写真の上に見た目として残すか」だけ
             HStack(spacing: 10) {
+                extraTools()
                 addButton(L("テキスト", "Text"), systemImage: "textformat", kind: .text)
                 addButton(L("場所", "Place"), systemImage: "mappin", kind: .place)
                 addButton(L("BGM", "Music"), systemImage: "music.note", kind: .song)
@@ -135,19 +147,24 @@ struct TextOverlayEditor: View {
         }
     }
 
+    /// 道具1つぶんの見た目（外の道具も同じ形にするために公開）
+    static func toolLabel(_ title: String, systemImage: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: systemImage).font(.title3)
+            Text(title).font(.caption).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 56)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+        .foregroundStyle(WebTheme.foreground)
+    }
+
     private func addButton(_ title: String, systemImage: String,
                            kind: TextOverlay.Kind) -> some View {
         Button {
             add(kind: kind)
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: systemImage).font(.title3)
-                Text(title).font(.caption)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 56)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-            .foregroundStyle(WebTheme.foreground)
+            Self.toolLabel(title, systemImage: systemImage)
         }
         .buttonStyle(.plain)
         .disabled(overlays.count >= TextOverlay.maxCount)
