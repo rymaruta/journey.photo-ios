@@ -18,6 +18,12 @@ struct EditPhotoView: View {
     @State private var category: String
     @State private var date: String
     @State private var published: Bool
+    /// 公開範囲。**既にある値から始める**——分からない値のときは
+    /// 触らせない（`audienceKnown` が false のとき、この段を出さない）。
+    /// 知らない値に上書きさせると、サーバーが選択肢を増やした直後に
+    /// 古いアプリが**意図しない範囲へ広げる**。
+    @State private var audience: Audience
+    private let audienceKnown: Bool
     @State private var isSaving = false
     @State private var message: String?
     /// 直近の知らせが「できた」か。**成功を赤で出さない**
@@ -35,6 +41,10 @@ struct EditPhotoView: View {
         _category = State(initialValue: photo.category ?? "")
         _date = State(initialValue: photo.exif?.dateTimeOriginal.flatMap(Self.isoDay) ?? "")
         _published = State(initialValue: photo.published != false)
+        let raw = photo.audience ?? ""
+        let known = raw.isEmpty ? Audience.everyone : Audience(rawValue: raw)
+        _audience = State(initialValue: known ?? .everyone)
+        audienceKnown = known != nil
     }
 
     var body: some View {
@@ -78,6 +88,30 @@ struct EditPhotoView: View {
                 Text(L("非公開にすると、サイトの一覧と個別ページから消えます（反映まで数分）。", "Making it private removes it from the site within a few minutes."))
             }
             .listRowBackground(Color.clear)
+
+            // 誰に見せるか。**公開しているときだけ**出す
+            // （非公開は誰にも見えないので絞りようが無い）。
+            // 知らない値が入っている写真では出さない——上書きで広げないため
+            if published && audienceKnown {
+                Section {
+                    Picker(L("誰に見せるか", "Who can see it"), selection: $audience) {
+                        ForEach(Audience.allCases) { choice in
+                            Text(choice.label).tag(choice)
+                        }
+                    }
+                    if audience == .closeFriends {
+                        NavigationLink {
+                            CloseFriendsView()
+                        } label: {
+                            Label(L("親しい友達を選ぶ", "Pick close friends"), systemImage: "star")
+                                .font(.subheadline)
+                        }
+                    }
+                } footer: {
+                    Text(audience.photoNote)
+                }
+                .listRowBackground(Color.clear)
+            }
 
             if let message {
                 Section {
@@ -154,6 +188,9 @@ struct EditPhotoView: View {
         patch.tags = TagInput.parse(tagsText)
         patch.category = category.trimmingCharacters(in: .whitespacesAndNewlines)
         patch.published = published
+        // **知らない値の写真では送らない。** キーを外せばサーバーは
+        // 既にある印をそのまま残す（広げも狭めもしない）
+        if audienceKnown { patch.audience = (published ? audience : .everyone).patchValue }
         // **空なら送らない。** 空文字を送ると api-user の日付検査に落ちる
         let day = date.trimmingCharacters(in: .whitespaces)
         patch.date = day.isEmpty ? nil : day

@@ -48,6 +48,12 @@ enum Audience: String, CaseIterable, Identifiable {
     var wireValue: String? { self == .everyone ? nil : rawValue }
 }
 extension Audience {
+    /// `PUT /photos/{id}` に送る値。**「全体に公開」は空文字**
+    /// （`wireValue` の `nil` だと本文からキーごと消え、サーバーは
+    /// 既にある印をそのまま残す＝**絞りを外せなくなる**）。
+    var patchValue: String { wireValue ?? "" }
+
+
     /// 写真に付けたときの但し書き。**ストーリーとは効き方が違う。**
     ///
     /// 絞った写真は静的サイト（`app/data/photos.json`）に載らない

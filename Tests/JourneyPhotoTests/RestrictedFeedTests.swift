@@ -80,3 +80,30 @@ final class RestrictedFeedTests: XCTestCase {
         XCTAssertEqual(Audience.closeFriends.wireValue, "closeFriends")
     }
 }
+
+/// `PUT /photos/{id}` に載せる公開範囲。
+final class AudiencePatchTests: XCTestCase {
+
+    /// **「全体に公開」は空文字で送る。** キーごと消えると、サーバーは
+    /// 既にある印をそのまま残す＝一度絞ったら二度と外せない
+    func testEveryoneIsSentAsAnEmptyString() {
+        XCTAssertEqual(Audience.everyone.patchValue, "")
+        XCTAssertEqual(Audience.followers.patchValue, "followers")
+    }
+
+    /// 送らない回は「触らない」。`isEmpty` が拾わないと、公開範囲だけ
+    /// 変えた保存が「更新項目がありません」で捨てられる
+    func testPatchWithOnlyAudienceIsNotEmpty() {
+        var patch = PhotoPatch()
+        XCTAssertTrue(patch.isEmpty)
+        patch.audience = Audience.followers.patchValue
+        XCTAssertFalse(patch.isEmpty)
+    }
+
+    /// 空文字も「触る」——外す指示そのものなので、捨ててはいけない
+    func testClearingAudienceIsAlsoAChange() {
+        var patch = PhotoPatch()
+        patch.audience = Audience.everyone.patchValue
+        XCTAssertFalse(patch.isEmpty)
+    }
+}

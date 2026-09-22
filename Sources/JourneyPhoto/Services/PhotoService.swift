@@ -137,9 +137,14 @@ struct PhotoPatch: Encodable {
     /// 本文には song が無く、`photoUpdate.ts` にはある）
     var song: Photo.Song?
 
+    /// 公開範囲。**`nil` は「触らない」**。外すときは空文字を送る
+    /// ——キーが本文に無いと、サーバーは既にある印をそのまま残す
+    /// （`photoUpdate.ts` の `hasAudience`）。`Audience.patchValue` が作る。
+    var audience: String?
+
     var isEmpty: Bool {
         title == nil && description == nil && location == nil
             && category == nil && tags == nil && date == nil && published == nil
-            && song == nil && coords == nil
+            && song == nil && coords == nil && audience == nil
     }
 }
