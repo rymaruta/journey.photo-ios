@@ -183,6 +183,17 @@ struct SpotDetailView: View {
             }
             .buttonStyle(.plain)
 
+            // **シェアは文字で配る**（モック5-6）。
+            //
+            // 🔴 **journey-photo.com のリンクは付けない。** スポットの
+            // ページ（`/spots/<スラッグ>`）はまだ作っていない（Phase 1.5）ので、
+            // 付けると**開けないリンクを配る**ことになる。代わりに
+            // 名前と地図のリンクを配る——受け取った人がその場所へ行ける。
+            ShareLink(item: shareText) {
+                actionLabel(icon: "square.and.arrow.up", title: L("シェア", "Share"), filled: false)
+            }
+            .buttonStyle(.plain)
+
             if let url = mapURL {
                 Link(destination: url) {
                     actionLabel(icon: "map", title: L("地図で見る", "Open in Maps"), filled: false)
@@ -191,6 +202,15 @@ struct SpotDetailView: View {
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    /// 配る文。**名前と、あれば地図のリンク**。
+    /// 住所は台帳にあるときだけ足す（無い行に空行を作らない）
+    private var shareText: String {
+        var parts = [spot.name]
+        if let line = spot.region?.line, !line.isEmpty { parts.append(line) }
+        if let url = mapURL { parts.append(url.absoluteString) }
+        return parts.joined(separator: "\n")
     }
 
     private func actionLabel(icon: String, title: String, filled: Bool) -> some View {
