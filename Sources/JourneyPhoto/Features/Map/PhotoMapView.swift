@@ -13,6 +13,10 @@ import MapKit
 /// 出す数は全部 `shown` から数えたもの。
 struct PhotoMapView: View {
 
+    /// 見出しはどの画面でも同じ（`AppHeaderItems`）
+    var unread: Int = 0
+    var onOpenNotifications: () -> Void = {}
+
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
@@ -35,8 +39,9 @@ struct PhotoMapView: View {
             }
         }
         .webScreen()
-        .navigationTitle(Labels.Navigation.map)
+        .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
         .task {
             await model.load(environment: environment)
             frame(model.frame)

@@ -17,8 +17,25 @@ public struct ToolbarItemPlacement {
 }
 /// **ツールバーの中身は `View` ではなく `ToolbarContent`。** 本物と同じ形に
 /// しておかないと、置けないものを置いても模型では通ってしまう。
-public protocol ToolbarContent {}
+/// 本物と同じく**自分で組み立てる型**も作れる（`var body: some ToolbarContent`）。
+/// 見出しを全画面で共有するのに要る（`AppHeaderItems`）
+// 本物も `View` と同じく主アクタに縛られている（付けないと、
+// 中で SwiftUI の部品を組む型が「nonisolated の要求を満たせない」と怒られる）
+@MainActor
+public protocol ToolbarContent {
+    associatedtype Body: ToolbarContent
+    // **`@ToolbarContentBuilder` を要求に付けない**（`View` の模型と同じ）。
+    // 付けると `body: Never { fatalError(...) }` の中身まで組み立てに回され、
+    // `Never` が `View` でもあるために曖昧になる。組み立てが要る側は
+    // 自分で `@ToolbarContentBuilder` と書く
+    var body: Body { get }
+}
+/// 置くだけの部品（`ToolbarItem` など）は本物と同じく `Never`
+/// （`body` は `View` の側で既に生えている——本物も1つで両方を満たす）
+extension Never: ToolbarContent {}
 
+// 中身（`ToolbarContent`）が主アクタなので、組み立てる側も揃える
+@MainActor
 @resultBuilder
 public struct ToolbarContentBuilder {
     public static func buildBlock() -> EmptyToolbarContent { EmptyToolbarContent() }
@@ -36,11 +53,15 @@ public struct ToolbarContentBuilder {
 
 public struct EmptyToolbarContent: ToolbarContent {
     public init() {}
+    public var body: Never { fatalError("模型") }
 }
-extension Optional: ToolbarContent where Wrapped: ToolbarContent {}
+extension Optional: ToolbarContent where Wrapped: ToolbarContent {
+    public var body: Never { fatalError("模型") }
+}
 
 public struct ToolbarItem: ToolbarContent {
     public init<C: View>(placement: ToolbarItemPlacement = .topBarTrailing, @ViewBuilder content: () -> C) {}
+    public var body: Never { fatalError("模型") }
 }
 
 public enum NavigationBarItem { public enum TitleDisplayMode { case inline, large, automatic } }

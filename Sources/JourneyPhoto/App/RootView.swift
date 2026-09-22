@@ -15,6 +15,7 @@ struct RootView: View {
     /// 今日のテーマから来たときのタグ（投稿画面に最初から入れておく）
     @State private var pendingThemeTag: String?
     @ObservedObject private var missions = MissionRouter.shared
+    @ObservedObject private var tabRouter = TabRouter.shared
     @State private var showStoryComposer = false
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
@@ -76,7 +77,7 @@ struct RootView: View {
             .tag(Tab.home)
 
             NavigationStack {
-                SearchView()
+                SearchView(unread: unread, onOpenNotifications: { showNotifications = true })
             }
             .tabItem { Label(L("探す", "Search"), systemImage: "magnifyingglass") }
             .tag(Tab.search)
@@ -90,7 +91,7 @@ struct RootView: View {
             // **4つ目は地図**（指示書 4-1 の並び）。旅の一冊は
             // マイページから開く——撮った本人の記録なので持ち場が合う
             NavigationStack {
-                PhotoMapView()
+                PhotoMapView(unread: unread, onOpenNotifications: { showNotifications = true })
             }
             .tabItem { Label(L("マップ", "Map"), systemImage: "map") }
             .tag(Tab.map)
@@ -130,6 +131,10 @@ struct RootView: View {
         // 短い知らせ（Web の `Toast`）。ミニプレイヤーより上に出す
         .overlay(alignment: .bottom) {
             ToastOverlay().padding(.bottom, 116)
+        }
+        // 見出しの自分のアイコンが押されたら、マイページの札へ移る
+        .onChange(of: tabRouter.myPageRequests) { _, _ in
+            selection = .mypage
         }
         // 「参加する」が押されたら、投稿画面をそのタグで開く
         .onChange(of: missions.requests) { _, _ in

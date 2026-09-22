@@ -3,6 +3,11 @@ import SwiftUI
 /// 探す。写真（題・撮影地・タグ）と人の両方を1画面で。
 struct SearchView: View {
 
+    /// 見出しはどの画面でも同じ（`AppHeaderItems`）。未読の数と、
+    /// お知らせを開く口は `RootView` が持っている
+    var unread: Int = 0
+    var onOpenNotifications: () -> Void = {}
+
     @EnvironmentObject private var environment: AppEnvironment
     /// **「見せない」が変わったら控えを捨てるため**に見ている
     @EnvironmentObject private var hidden: ModerationStore
@@ -28,8 +33,9 @@ struct SearchView: View {
             .padding(.bottom, 24)
         }
         .webScreen()
-        .navigationTitle(L("さがす", "Search"))
+        .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
         .task { await model.loadPhotos(environment: environment) }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }

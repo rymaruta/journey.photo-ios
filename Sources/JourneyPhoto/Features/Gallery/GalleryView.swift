@@ -47,32 +47,10 @@ struct GalleryView: View {
         // 別のサイトに見えていた
         .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    onOpenNotifications()
-                } label: {
-                    Image(systemName: "bell")
-                        .webToolbarIcon()
-                        .overlay(alignment: .topTrailing) {
-                            // 未読があることだけ伝える（数は開けば分かる）
-                            if unread > 0 {
-                                Circle().fill(Color.pink).frame(width: 8, height: 8)
-                                    .offset(x: -8, y: 10)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("お知らせ", "Activity"))
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { PhotoMapView() } label: {
-                    Image(systemName: "map")
-                        .webToolbarIcon()
-                        .accessibilityLabel(Labels.Navigation.map)
-                }
-            }
-        }
+        // 見出しはどの画面でも同じ（`AppHeaderItems`）。
+        // **地図のアイコンは外した**——下の札に「マップ」があり、
+        // 同じ場所への入口が2つあった
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
         .task {
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない
