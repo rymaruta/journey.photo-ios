@@ -112,6 +112,22 @@ final class ScreenshotTests: XCTestCase {
             firstPhoto.tap()
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "20-写真の詳細")
+
+            // **撮影スポットの画面**（モック5）。写真詳細からの導線を
+            // 名指しで押す。
+            //
+            // 出るのは「同じ撮影地の写真が2枚以上ある」ときだけなので、
+            // 無ければ何もしない——**無いものを探して巡回を落とさない**
+            // （run 46・47 でそれを2回やった）。
+            let toSpot = app.buttons["photo.spotLink"].firstMatch
+            if toSpot.waitForExistence(timeout: 5), toSpot.isHittable {
+                toSpot.tap()
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "60-撮影スポット")
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "61-撮影スポット（下）")
+            }
         }
     }
 }

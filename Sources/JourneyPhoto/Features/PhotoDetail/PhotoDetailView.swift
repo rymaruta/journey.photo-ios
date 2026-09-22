@@ -292,6 +292,9 @@ struct PhotoDetailView: View {
                 .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
             }
             .buttonStyle(.plain)
+            // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
+            // ——今日それで「写真の詳細」としてログイン画面を撮っていた
+            .accessibilityIdentifier("photo.spotLink")
         }
     }
 
