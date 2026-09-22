@@ -20,21 +20,21 @@ struct HighlightsRow: View {
     @State private var showEditor = false
 
     var body: some View {
-        // **取れる前は何も出さない。** 空と「まだ読んでいない」を分ける
-        // ——先に「まだありません」を出すと、読み終わった瞬間に入れ替わる
-        if loaded && (isMine || !highlights.isEmpty) {
-            VStack(alignment: .leading, spacing: 8) {
+        // **入れ物は必ず1つ置く。** 中身の有無で枝を分けて、それぞれに
+        // `.task` を付けていたので、読み終わった瞬間に枝が入れ替わり
+        // **同じ取得が2回**走っていた（無限にはならないが、開くたびに
+        // 往復が1つ余る）。見張りは1本ずつ、が `getStories` の戒めと同じ。
+        VStack(alignment: .leading, spacing: 8) {
+            // **取れる前は何も出さない。** 空と「まだ読んでいない」を分ける
+            // ——先に「まだありません」を出すと、読み終わった瞬間に入れ替わる
+            if loaded && (isMine || !highlights.isEmpty) {
                 header
                 circles
             }
-            .task(id: userId) { await load() }
-            .sheet(isPresented: $showEditor, onDismiss: { Task { await load() } }) {
-                HighlightEditorView(existing: nil)
-            }
-        } else {
-            Color.clear
-                .frame(height: 0)
-                .task(id: userId) { await load() }
+        }
+        .task(id: userId) { await load() }
+        .sheet(isPresented: $showEditor, onDismiss: { Task { await load() } }) {
+            HighlightEditorView(existing: nil)
         }
     }
 
