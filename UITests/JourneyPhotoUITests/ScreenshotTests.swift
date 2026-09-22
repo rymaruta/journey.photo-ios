@@ -103,8 +103,12 @@ final class ScreenshotTests: XCTestCase {
         // ギャラリーに戻って、1枚目の写真を開いたところ
         tabBar.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 2)
-        let firstPhoto = app.scrollViews.buttons.firstMatch
-        if firstPhoto.waitForExistence(timeout: 10) {
+        // **写真そのものを名指しで押す**（`feed.photo`）。
+        // 位置で探していたときは、今日のテーマの「参加する」に当たって
+        // **ログイン画面を「写真の詳細」として撮って**いた（run 49）。
+        // 絵の名前と中身が食い違うと、見た人が「直っている」と誤読する。
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        if firstPhoto.waitForExistence(timeout: 10), firstPhoto.isHittable {
             firstPhoto.tap()
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "20-写真の詳細")

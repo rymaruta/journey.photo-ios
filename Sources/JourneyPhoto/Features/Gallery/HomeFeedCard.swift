@@ -117,6 +117,10 @@ struct HomeFeedCard: View {
                 .contentShape(RoundedRectangle(cornerRadius: 18))
         }
         .buttonStyle(.plain)
+        // **実機の絵の道しるべ。** 「一覧の1枚目」を位置で探すと、
+        // 今日のテーマの「参加する」に当たって**ログイン画面を
+        // 『写真の詳細』として撮って**いた（run 49 の絵で判明）
+        .accessibilityIdentifier("feed.photo")
     }
 
     /// タグ。**押すとそのタグの写真へ**（提案の絵の青い `#長崎`）
