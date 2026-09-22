@@ -23,17 +23,15 @@ struct SaveService {
     }
 
     private struct SavedList: Decodable { let photoIds: [String] }
-    private struct SavedOne: Decodable { let saved: Bool }
-
     /// 自分が保存した写真の id（新しい順）
     func mySaves() async throws -> [String] {
         try await api.authorized(.get, "/user/saves", as: SavedList.self).photoIds
     }
 
-    /// この写真を保存しているか
-    func isSaved(photoId: String) async throws -> Bool {
-        try await api.authorized(.get, "/user/saves/\(encoded(photoId))", as: SavedOne.self).saved
-    }
+    // ⚠️ **`GET /user/saves/{id}`（1枚ぶんの問い合わせ）は呼んでいない。**
+    // ログインのときに一覧をまとめて取って控えに入れるので、画面ごとに
+    // 聞き直す必要が無い。使わない口の薄い包みを置かない
+    // （置くと、次の人が「どちらを使うのか」を考えることになる）。
 
     /// 保存する（冪等）
     func save(photoId: String) async throws {
