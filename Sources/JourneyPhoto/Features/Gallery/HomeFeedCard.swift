@@ -106,7 +106,8 @@ struct HomeFeedCard: View {
                 } label: {
                     HStack(spacing: 10) {
                         RemoteImage(url: UserProfile.profileAssetURL(
-                            userId: userId, suffix: nil, cacheBust: nil))
+                            userId: userId, suffix: nil, cacheBust: nil),
+                                    placeholderSymbol: "person.crop.circle.fill")
                             .frame(width: 34, height: 34)
                             .clipShape(Circle())
                             .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))

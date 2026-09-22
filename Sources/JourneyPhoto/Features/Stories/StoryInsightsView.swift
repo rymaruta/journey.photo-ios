@@ -145,7 +145,8 @@ struct StoryInsightsView: View {
     private func viewerRow(_ viewer: StoryViewer) -> some View {
         HStack(spacing: 12) {
             RemoteImage(url: UserProfile.profileAssetURL(
-                userId: viewer.userId, suffix: nil, cacheBust: nil))
+                userId: viewer.userId, suffix: nil, cacheBust: nil),
+                        placeholderSymbol: "person.crop.circle.fill")
                 .frame(width: 44, height: 44)
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {

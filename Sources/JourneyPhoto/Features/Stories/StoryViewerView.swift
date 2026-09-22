@@ -247,7 +247,8 @@ struct StoryViewerView: View {
     private func header(for story: Story) -> some View {
         HStack(spacing: 10) {
             if let userId = story.userId {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil))
+                RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
+                            placeholderSymbol: "person.crop.circle.fill")
                     .frame(width: 36, height: 36)
                     .clipShape(Circle())
             }

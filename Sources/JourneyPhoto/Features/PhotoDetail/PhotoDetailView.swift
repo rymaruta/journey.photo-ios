@@ -268,7 +268,8 @@ struct PhotoDetailView: View {
                 } label: {
                     HStack(spacing: 10) {
                         RemoteImage(url: UserProfile.profileAssetURL(
-                            userId: ownerId, suffix: nil, cacheBust: nil))
+                            userId: ownerId, suffix: nil, cacheBust: nil),
+                                    placeholderSymbol: "person.crop.circle.fill")
                             .frame(width: 44, height: 44)
                             .clipShape(Circle())
                             .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))

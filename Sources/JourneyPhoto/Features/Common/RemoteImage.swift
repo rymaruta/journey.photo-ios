@@ -19,6 +19,13 @@ struct RemoteImage: View {
     /// ストーリーが「絵が出る前から秒数を減らす」のを防ぐためのもの。
     /// 既定は何もしない（他の呼び出しは変わらない）
     var onSettled: ((Bool) -> Void)? = nil
+    /// 出せないときに置く記号。
+    ///
+    /// **人のアイコンに「壊れた写真」の記号を出さない。** アバターを
+    /// 設定していない人は珍しくないのに、丸の中に写真の記号が出て
+    /// 「読み込みに失敗した」ように見えていた（実機の絵・run 40）。
+    /// 人を指す場所では人型を置く。
+    var placeholderSymbol: String = "photo"
 
     var body: some View {
         ZStack {
@@ -50,7 +57,7 @@ struct RemoteImage: View {
     }
 
     private var placeholder: some View {
-        Image(systemName: "photo")
+        Image(systemName: placeholderSymbol)
             .font(.title2)
             .foregroundStyle(.tertiary)
             // 飾り。読み上げの邪魔をしない

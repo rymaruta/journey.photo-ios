@@ -56,7 +56,7 @@ struct AppHeaderItems: ToolbarContent {
     @ViewBuilder
     private var avatar: some View {
         if let url = avatarURL {
-            RemoteImage(url: url)
+            RemoteImage(url: url, placeholderSymbol: "person.crop.circle.fill")
                 .frame(width: 30, height: 30)
                 .clipShape(Circle())
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
