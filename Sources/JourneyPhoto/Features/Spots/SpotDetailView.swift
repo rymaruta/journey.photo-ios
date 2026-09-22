@@ -241,10 +241,9 @@ struct SpotDetailView: View {
         HStack(spacing: 8) {
             statPill(icon: "camera", value: "\(linked.count)",
                      label: L("この場所の写真", "Photos here"))
-            if wishlist.contains(spot.spotId) {
-                statPill(icon: "heart.fill", value: "—",
-                         label: L("行きたい（この端末）", "On your list"))
-            }
+            // **「—」の数え札を並べない。** 数えていないものを数の形に
+            // 置くと、読み込み中の 0 に見える。「行きたい」に入れたことは
+            // 上のボタンが灯って伝えている
         }
         .padding(.horizontal, 16)
     }
@@ -334,9 +333,10 @@ struct SpotDetailView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                // **距離は計算したもの。** 座標は約1km丸めなので「約」を付ける
-                Text(L("約\(distanceText(from: here, to: other))",
-                       "about \(distanceText(from: here, to: other))"))
+                // **距離は計算したもの。** 言い方は「近くの写真」と
+                // 同じ関数に寄せる（`NearbyPhotos.label`）——2つ持つと、
+                // 同じ距離が画面によって「約42.7km」と「約43km」に割れる
+                Text(distanceText(from: here, to: other))
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
             }
@@ -348,10 +348,11 @@ struct SpotDetailView: View {
         .contentShape(RoundedRectangle(cornerRadius: 14))
     }
 
+    /// 距離の言い方。**「近くの写真」と同じ関数**を通す。
+    /// 座標が無い相手は測れないので、何も言わない（「0km」と書かない）
     private func distanceText(from: Photo.Coords, to other: Spot) -> String {
-        guard let there = other.coords else { return "—" }
-        let km = TravelDistance.kilometers(from: from, to: there)
-        return km < 1 ? "1km" : String(format: "%.1fkm", km)
+        guard let there = other.coords else { return "" }
+        return NearbyPhotos.label(km: TravelDistance.kilometers(from: from, to: there))
     }
 
     @ViewBuilder
