@@ -189,7 +189,10 @@ struct MyPageView: View {
                 // 同じ置き場所）。選んでいなければ輪を出さない
                 .overlay(themeRing(profile.themeColor))
             VStack(alignment: .leading, spacing: 2) {
-                Text(profile.name).font(.headline)
+                HStack(spacing: 4) {
+                    Text(profile.name).font(.headline)
+                    VerifiedBadge(isVerified: profile.verified)
+                }
                 if let bio = profile.bio, !bio.isEmpty {
                     Text(bio).font(.footnote).foregroundStyle(.secondary)
                 }

@@ -310,10 +310,13 @@ struct PhotoDetailView: View {
                             .clipShape(Circle())
                             .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(model.owner?.name ?? shown.displayName ?? L("投稿者", "Poster"))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(WebTheme.foreground)
-                                .lineLimit(1)
+                            HStack(spacing: 4) {
+                                Text(model.owner?.name ?? shown.displayName ?? L("投稿者", "Poster"))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(WebTheme.foreground)
+                                    .lineLimit(1)
+                                VerifiedBadge(isVerified: model.owner?.verified)
+                            }
                             if let username = model.owner?.username, !username.isEmpty {
                                 Text("@\(username)")
                                     .font(.caption)

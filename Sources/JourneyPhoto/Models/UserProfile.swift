@@ -17,6 +17,12 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     let website: String?
     let instagram: String?
     let statusText: String?
+    /// 認証済みの印（名前の横のバッジ）。
+    ///
+    /// **立てられるのは運営だけ**（`api-user` の更新の経路は受け取らない）。
+    /// 誰も立てていなければ誰にも出ない——それは正しい状態であって
+    /// 「機能が無い」のではない。
+    let verified: Bool?
     let themeColor: String?
     let pinnedPhotoIds: [String]?
 

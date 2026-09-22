@@ -117,7 +117,10 @@ struct UserProfileView: View {
                     // 本人が選んだ色を輪にする（Web の `themeRingGradient`）
                     .overlay(themeRing(model.profile?.themeColor))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.profile?.name ?? "—").font(.headline)
+                    HStack(spacing: 4) {
+                        Text(model.profile?.name ?? "—").font(.headline)
+                        VerifiedBadge(isVerified: model.profile?.verified)
+                    }
                     HStack(spacing: 12) {
                         followCount(
                             L("フォロワー \(model.followers)", "\(model.followers) followers"),
