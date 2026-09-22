@@ -40,6 +40,38 @@ struct SocialService {
         try await api.authorized(.get, "/user/likes", as: MyLikes.self).photoIds
     }
 
+    // MARK: - 親しい友達（ストーリーの公開範囲）
+
+    struct CloseFriends: Decodable { let userIds: [String] }
+    struct CloseFriendResult: Decodable { let userId: String; let closeFriend: Bool }
+
+    /// 自分が選んだ「親しい友達」。**他人の一覧は引けない**
+    /// （誰が入っているかは本人だけのもの）。
+    func closeFriendIds() async throws -> [String] {
+        try await api.authorized(.get, "/user/close-friends", as: CloseFriends.self).userIds
+    }
+
+    /// 入れる / 外す。**返ってきた状態を使う**（自分で反転しない）。
+    ///
+    /// **道は文字列のまま書き下す。** 口の突き合わせ
+    /// （`Tools/check-api-parity.py`）はソースの見た目で数えるので、
+    /// メソッドを三項演算子で選んだり、道を変数に入れたりすると
+    /// **どちらも「使っていない」**に見えて、サーバーに在るのに誰も
+    /// 叩いていない口として報告される。
+    ///
+    /// ⚠️ **コメントに呼び出しの形を書かない。** 検査はコメントも本文も
+    /// 区別しないので、例として書くと**在りもしない口を叩いている**ことに
+    /// なる（これを書いた最初の版で実際にそうなった）
+    func setCloseFriend(userId: String, wanted: Bool) async throws -> Bool {
+        let id = encoded(userId)
+        if wanted {
+            return try await api.authorized(.put, "/user/close-friends/\(id)",
+                                            as: CloseFriendResult.self).closeFriend
+        }
+        return try await api.authorized(.delete, "/user/close-friends/\(id)",
+                                        as: CloseFriendResult.self).closeFriend
+    }
+
     /// 自分が押しているか（要ログイン）。
     func myLike(photoId: String) async throws -> Bool {
         try await api.authorized(.get, "/user/likes/\(encoded(photoId))", as: MyLike.self).liked

@@ -34,6 +34,8 @@ struct StoryService {
     enum Audience: String, CaseIterable, Identifiable {
         case everyone
         case followers
+        /// 自分が選んだ人だけ（`api-user/src/closeFriends.ts`）
+        case closeFriends
 
         var id: String { rawValue }
 
@@ -41,6 +43,7 @@ struct StoryService {
             switch self {
             case .everyone: return L("全体に公開", "Everyone")
             case .followers: return L("フォロワーのみ", "Followers")
+            case .closeFriends: return L("親しい友達", "Close friends")
             }
         }
 
@@ -50,6 +53,8 @@ struct StoryService {
                                      "Anyone signed in can see it")
             case .followers: return L("自分をフォローしている人だけが見られます",
                                       "Only people who follow you")
+            case .closeFriends: return L("自分が選んだ人だけが見られます（相手には知らせません）",
+                                         "Only people you picked — they aren't told")
             }
         }
 
@@ -57,11 +62,13 @@ struct StoryService {
             switch self {
             case .everyone: return "globe"
             case .followers: return "person.2"
+            case .closeFriends: return "star"
             }
         }
 
         /// サーバーへ送る値。**全体に公開は送らない**
-        var wireValue: String? { self == .followers ? rawValue : nil }
+        /// （サーバーも属性を書かない形で持つ）
+        var wireValue: String? { self == .everyone ? nil : rawValue }
     }
 
     @discardableResult

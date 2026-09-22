@@ -178,10 +178,10 @@ final class StoryAudienceTests: XCTestCase {
         XCTAssertEqual(StoryService.Audience.followers.wireValue, "followers")
     }
 
-    /// **出すのは2つだけ。** モックの「親しい友達」を選ばせる箱は
-    /// サーバーに無い——選べるのに守られない切り替えは作らない
-    func testOnlyTwoChoices() {
-        XCTAssertEqual(StoryService.Audience.allCases.count, 2)
+    /// **3つともサーバーが守る**（`GET /stories` が実行時に落とす）
+    func testThreeChoices() {
+        XCTAssertEqual(StoryService.Audience.allCases.count, 3)
+        XCTAssertEqual(StoryService.Audience.closeFriends.wireValue, "closeFriends")
         for choice in StoryService.Audience.allCases {
             XCTAssertFalse(choice.label.isEmpty)
             XCTAssertFalse(choice.note.isEmpty)

@@ -28,7 +28,7 @@ struct StoryComposerView: View {
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
-    /// 公開範囲（モック4-7）。**出すのはサーバーが守れる2つだけ**
+    /// 公開範囲（モック4-7）。**サーバーが守れるものだけ出す**
     @State private var audience: StoryService.Audience = .everyone
 
     var body: some View {
@@ -91,13 +91,21 @@ struct StoryComposerView: View {
             }
             .listRowBackground(Color.clear)
 
-            // 公開範囲（モック4-7）。**出すのはサーバーが守れる2つだけ。**
-            // モックには「親しい友達」もあるが、それを選ばせる箱は
-            // サーバーに無い——選べるのに守られない切り替えは作らない
+            // 公開範囲（モック4-7）。**3つともサーバーが守る**
+            // （`GET /stories` が実行時に落とす）。守れないものは出さない
             Section {
-                HStack(spacing: 10) {
-                    ForEach(StoryService.Audience.allCases) { choice in
-                        audienceChoice(choice)
+                // **3つを横に並べない。** 1つあたりが 44pt を下回り、
+                // 説明も入らない（「親しい友達」は言葉が長い）
+                ForEach(StoryService.Audience.allCases) { choice in
+                    audienceChoice(choice)
+                }
+                // **選ぶ先が空なら誰にも見えない。** 選びに行く口をここに置く
+                if audience == .closeFriends {
+                    NavigationLink {
+                        CloseFriendsView()
+                    } label: {
+                        Label(L("親しい友達を選ぶ", "Pick close friends"), systemImage: "star")
+                            .font(.subheadline)
                     }
                 }
             } header: {
@@ -245,11 +253,15 @@ struct StoryComposerView: View {
         return Button {
             audience = choice
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
                 Image(systemName: choice.systemImage).font(.title3)
                 Text(choice.label)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark").font(.subheadline.weight(.bold))
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)

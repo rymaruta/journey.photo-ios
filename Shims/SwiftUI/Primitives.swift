@@ -149,6 +149,7 @@ public struct Color: View, ShapeStyle, Hashable {
     public static let clear = Color()
     public static let red = Color()
     public static let pink = Color()
+    public static let yellow = Color()
     public static let orange = Color()
     public static let primary = Color()
     public static let secondary = Color()
