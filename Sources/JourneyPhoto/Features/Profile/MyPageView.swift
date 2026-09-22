@@ -46,7 +46,15 @@ struct MyPageView: View {
         }
         .webScreen()
         .navigationTitle(Labels.Navigation.mypage)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // **ここだけ見出しが違っていた。** 他の札（ホーム・さがす・
+            // マップ）はロゴを出すのに、マイページは大きな字で
+            // 「マイページ」——実機の絵（run 47）で、札を移った瞬間に
+            // 別のアプリに見えた。`AppHeader` の注記が避けると書いていた形
+            ToolbarItem(placement: .principal) {
+                AppLogo()
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { SettingsView() } label: {
                     Image(systemName: "gearshape")
