@@ -25,6 +25,19 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     let verified: Bool?
     let themeColor: String?
     let pinnedPhotoIds: [String]?
+    /// プロフィールのBGM（モック2-4）。**最大5曲**でサーバーが持っている
+    /// （`api-user/src/userProfile.ts` の `songs`・`PROFILE_SONGS_MAX`）。
+    ///
+    /// 以前ここに「プロフィールに曲の項目が無い」と書いて ⛔ にしていたのは
+    /// **誤り**——`toPublicProfile` は前から返していた。アプリが復号して
+    /// いなかっただけ。
+    let songs: [Photo.Song]?
+
+    /// 画面に出す1曲。**先頭だけ**（モックのカードは1枚）
+    var bgm: Photo.Song? {
+        guard let songs else { return nil }
+        return songs.first { !$0.title.isEmpty && $0.previewURL != nil }
+    }
 
     var id: String { userId }
 

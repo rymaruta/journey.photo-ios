@@ -144,6 +144,7 @@ struct MyPageView: View {
                     header(profile)
                     stats
                     distancePill
+                    bgmCard(profile)
                     profileSetupNotice(profile)
                 }
                 postButton
@@ -317,6 +318,22 @@ struct MyPageView: View {
             .padding(.horizontal, 16)
         }
         .font(.footnote)
+    }
+
+    /// プロフィールのBGM（モック2-4）。
+    ///
+    /// **入れている人にだけ出す。** サーバーは前から `songs` を返していて、
+    /// アプリが復号していなかっただけだった（⛔ にしていたのは誤り）。
+    /// 曲は `MusicPreviewPlayer` に通す——**専用の再生器を作らない**
+    /// （画面をまたいだ操作は `MiniPlayerBar` が受け持っている）。
+    @ViewBuilder
+    private func bgmCard(_ profile: UserProfile) -> some View {
+        if let song = profile.bgm {
+            SongRow(song: song)
+                .padding(12)
+                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal, 16)
+        }
     }
 
     /// ストーリーハイライト（モック2-5）。

@@ -14,6 +14,10 @@ struct ProfileEditView: View {
     @State private var instagram = ""
     @State private var statusText = ""
     @State private var themeColor = ""
+    /// いま持っている曲。**丸ごと覚えておく**——Web 版は5曲まで持てるので、
+    /// 1曲だけ送ると残りが消える。アプリが触るのは**先頭だけ**
+    @State private var songs: [Photo.Song] = []
+    @State private var showSongPicker = false
 
     @State private var avatarItem: PhotosPickerItem?
     @State private var coverItem: PhotosPickerItem?
@@ -48,6 +52,8 @@ struct ProfileEditView: View {
                 ThemeColorField(themeColor: $themeColor)
             }
             .listRowBackground(Color.clear)
+
+            bgmSection
 
             Section(L("リンク", "Links")) {
                 TextField(L("ウェブサイト", "Website"), text: $website)
@@ -91,6 +97,45 @@ struct ProfileEditView: View {
         }
     }
 
+    /// BGM（モック2-9 の「BGM」の行）。**先頭の1曲だけを触る。**
+    /// Web 版の2曲目以降は残したまま送り返す
+    private var bgmSection: some View {
+        Section {
+            if let song = songs.first {
+                SongRow(song: song)
+                Button(L("別の曲にする", "Pick another")) { showSongPicker = true }
+                Button(role: .destructive) {
+                    // **先頭だけ外す。** 丸ごと消すと Web のプレイリストを壊す
+                    if !songs.isEmpty { songs.removeFirst() }
+                } label: {
+                    Text(L("BGM を外す", "Remove BGM"))
+                }
+            } else {
+                Button {
+                    showSongPicker = true
+                } label: {
+                    Label(L("BGM を選ぶ", "Choose BGM"), systemImage: "music.note")
+                }
+            }
+        } header: {
+            Text(L("BGM", "BGM"))
+        } footer: {
+            Text(songs.count > 1
+                 ? L("マイページには先頭の1曲が出ます。ほかに\(songs.count - 1)曲あります（ウェブで並べ替えられます）。",
+                     "Your page shows the first track. \(songs.count - 1) more are saved (reorder them on the web).")
+                 : L("30秒の試聴が、あなたのマイページで流せるようになります。",
+                     "A 30-second preview people can play on your page."))
+        }
+        .listRowBackground(Color.clear)
+        .sheet(isPresented: $showSongPicker) {
+            SongPickerView { picked in
+                // 先頭に据える。**同じ曲が下に残らないように**取り除いてから
+                songs.removeAll { $0.previewUrl == picked.previewUrl }
+                songs.insert(picked, at: 0)
+            }
+        }
+    }
+
     private func load() async {
         isLoading = true
         defer { isLoading = false }
@@ -106,6 +151,7 @@ struct ProfileEditView: View {
         instagram = profile.instagram ?? ""
         statusText = profile.statusText ?? ""
         themeColor = profile.themeColor ?? ""
+        songs = profile.songs ?? []
         loaded = true
     }
 
@@ -134,6 +180,7 @@ struct ProfileEditView: View {
             instagram: instagram,
             statusText: statusText,
             themeColor: themeColor,
+            songs: songs,
             pinnedPhotoIds: nil
         )
         do {

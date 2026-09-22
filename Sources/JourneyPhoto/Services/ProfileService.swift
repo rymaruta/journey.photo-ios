@@ -116,6 +116,12 @@ struct ProfilePatch: Encodable {
     var instagram: String?
     var statusText: String?
     var themeColor: String?
+    /// プロフィールのBGM。**一覧ごと送る**（サーバーは配列を丸ごと受ける）。
+    ///
+    /// ⚠️ **持っているぶんを全部入れて送ること。** Web 版は最大5曲の
+    /// プレイリストを持てるので、アプリが1曲だけ送ると**残りが消える**。
+    /// `nil` は「触らない」、`[]` は「全部消す」。
+    var songs: [Photo.Song]?
     /// **配列ごと送らない。** サーバーは「1枚単位の増減」で受ける
     /// （`userProfile.ts` の `pinOp`）。配列を送ると、PC のタブを開いたまま
     /// スマホで留めたときに**古い配列で上書き**して、片方の操作が消える。
