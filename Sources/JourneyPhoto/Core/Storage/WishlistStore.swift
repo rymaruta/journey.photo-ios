@@ -3,6 +3,11 @@ import Combine
 
 /// 「行きたい場所」（モック5・モック2）。
 ///
+/// 🔴 **鍵は `/location/<スラッグ>` のスラッグ**（`LocationSlug`）。
+/// サーバーの「行きたい場所」（`spots#<uid>`）に入っているのと**同じ文字列**で、
+/// Web の一覧とも突き合わさる。以前は台帳の `spotId` を鍵にしていたが、
+/// 本番が台帳を持たないと決めた（`docs/spot-master.md`）ので、鍵も揃えた。
+///
 /// **端末に残る。サーバーには無い。** api-user に「行きたい」の口は
 /// （いいね・保存・フォローはあるが）無いので、押した事実はこの端末にしか
 /// 残らない。だから画面でもそう書く——**他人の「行きたい」数は出さない**
@@ -54,10 +59,4 @@ final class WishlistStore: ObservableObject {
         defaults.set(Array(spotIds), forKey: key(for: userId))
     }
 
-    /// 台帳と突き合わせて「行きたい」に入れたスポットを並べる。
-    /// **台帳から消えた ID は出さない**（消えた地点の空の札を作らない）
-    func spots(in spots: [Spot]) -> [Spot] {
-        spots.filter { spotIds.contains($0.spotId) }
-            .sorted { $0.name < $1.name }
-    }
 }

@@ -17,11 +17,6 @@ final class PhotoMapViewModelTests: XCTestCase {
      {"id":"e","src":"https://x/e.jpg","spotId":"sp_a1","category":"landscape","coords":{"lat":34.14,"lng":133.68}}]
     """
 
-    private let spotsJSON = """
-    [{"spotId":"sp_a1","slug":"takaya-jinja","name":"高屋神社","aliases":["天空の鳥居"],
-      "coords":{"lat":34.14,"lng":133.68}}]
-    """
-
     /// 通信は `URLProtocol` で差し替える（写真 → 台帳の順に返す）
     private func environment() -> AppEnvironment {
         let config = URLSessionConfiguration.ephemeral
@@ -36,15 +31,13 @@ final class PhotoMapViewModelTests: XCTestCase {
             "JPCognitoClientId": "client",
             "JPCognitoRegion": "ap-northeast-1",
         ]
-        StubProtocol.respondInOrder([(status: 200, body: photosJSON), (status: 200, body: spotsJSON)])
+        StubProtocol.respond(status: 200, body: photosJSON)
         let gallery = PublicGalleryService(
             url: URL(string: "https://site.example.test/app/data/photos.json")!,
             session: session,
             snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
         )
-        let spots = SpotService(url: URL(string: "https://site.example.test/app/data/spots.json")!,
-                                session: session)
-        return AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: gallery, spots: spots)
+        return AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: gallery)
     }
 
     private func loaded() async -> PhotoMapViewModel {
@@ -97,18 +90,6 @@ final class PhotoMapViewModelTests: XCTestCase {
         XCTAssertEqual(model.pins.flatMap(\.photos).count, model.shown.count)
     }
 
-    /// 台帳の名前でも絞れ、札のスポット導線は台帳にあるものだけ
-    func testSpotNameFiltersAndCardLinksOnlyLedgerSpots() async {
-        let model = await loaded()
-        model.query = "天空の鳥居"
-        XCTAssertEqual(model.shown.map(\.id), ["e"])
-        guard let pin = model.pins.first else { return XCTFail("ピンが無い") }
-        XCTAssertEqual(model.spots(for: pin).map(\.spotId), ["sp_a1"])
-
-        model.query = "パリ"
-        guard let paris = model.pins.first else { return XCTFail("ピンが無い") }
-        XCTAssertTrue(model.spots(for: paris).isEmpty)
-    }
 
     /// 座標の無い写真だけが持つ種類（動物）はチップに出ない。並びは `all` の順
     func testCategoriesOnlyThoseWithCoordinates() async {
@@ -146,13 +127,12 @@ final class PhotoMapViewModelTests: XCTestCase {
     }
 
     /// 台帳が取れなくても写真は出る（導線が無いだけ）
-    func testLoadsPhotosEvenWhenLedgerFails() async {
+    func testLoadsPhotos() async {
         let model = PhotoMapViewModel()
         let env = environment()
-        StubProtocol.respondInOrder([(status: 200, body: photosJSON), (status: 500, body: "")])
+        StubProtocol.respond(status: 200, body: photosJSON)
         await model.load(environment: env)
         XCTAssertEqual(model.shown.count, 4)
-        XCTAssertTrue(model.spots.isEmpty)
         XCTAssertTrue(model.loaded)
     }
 }

@@ -9,10 +9,6 @@ final class WishlistStoreTests: XCTestCase {
         return (WishlistStore(defaults: suite), suite)
     }
 
-    private func spot(_ id: String, name: String) throws -> Spot {
-        try JSONDecoder.api.decode(Spot.self, from: Data(
-            "{\"spotId\":\"\(id)\",\"slug\":\"\(id)\",\"name\":\"\(name)\"}".utf8))
-    }
 
     func testTogglesAndPersists() async {
         let (wishlist, defaults) = store()
@@ -46,12 +42,4 @@ final class WishlistStoreTests: XCTestCase {
         XCTAssertTrue(wishlist.spotIds.isEmpty)
     }
 
-    func testListsOnlySpotsStillInTheLedger() async throws {
-        let (wishlist, _) = store()
-        wishlist.use(userId: "u1")
-        wishlist.set("sp_1", wanted: true)
-        wishlist.set("sp_gone", wanted: true)
-        let ledger = [try spot("sp_1", name: "高屋神社"), try spot("sp_2", name: "山中湖")]
-        XCTAssertEqual(wishlist.spots(in: ledger).map(\.spotId), ["sp_1"])
-    }
 }

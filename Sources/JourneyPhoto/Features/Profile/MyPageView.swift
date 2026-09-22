@@ -9,7 +9,6 @@ struct MyPageView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい場所」に出す台帳。取れなければ空（その旨を画面に出す）
-    @State private var spots: [Spot] = []
     /// いいねした写真を引き当てる先。**公開一覧**——自分の写真だけを
     /// 探していたので、**他人の写真へのいいねが一度も出なかった**
     @State private var feed: [Photo] = []
@@ -66,11 +65,6 @@ struct MyPageView: View {
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
             await model.load()
-        }
-        // 台帳は写真より変わらないので、一度読めば足りる
-        .task {
-            guard spots.isEmpty else { return }
-            spots = await environment.spots.fetchSpots()
         }
         // いいねした写真。**ログイン状態が決まってから**聞く
         .task(id: auth.userId) { await loadLikes() }
@@ -281,7 +275,7 @@ struct MyPageView: View {
     /// それぞれ押すと計算の中身が出る。
     @ViewBuilder
     private var travelRecord: some View {
-        let countries = VisitedCountries.count(in: model.photos, spots: spots)
+        let countries = VisitedCountries.count(in: model.photos)
         VStack(spacing: 8) {
             // **0 のときは出さない。** 「訪れた国 0」は実績にならないし、
             // 「まだ国名を書いていない」を「行っていない」と読ませてしまう
@@ -462,7 +456,10 @@ struct MyPageView: View {
     /// サーバーには無い（`WishlistStore`）。
     @ViewBuilder
     private var wishlistArea: some View {
-        let wanted = wishlist.spots(in: spots)
+        // **撮影地から導いた地点**のうち、「行きたい」に入れたもの。
+        // 台帳は引かない（本番は台帳を持たない——`DerivedSpot` の注記）
+        let places = DerivedSpot.all(in: model.photos)
+        let wanted = places.filter { wishlist.contains($0.slug) }
         VStack(alignment: .leading, spacing: 10) {
             // **どこに残るかを書く。** 機種を変えると消えるものを、
             // 消えないものと同じ顔で出さない
@@ -473,21 +470,21 @@ struct MyPageView: View {
                 .padding(.horizontal, 16)
 
             // **「まだ無い」と「台帳が取れていない」を分ける**（`ProfileSections`）
-            switch ProfileSections.wishlist(ledgerCount: spots.count,
+            switch ProfileSections.wishlist(ledgerCount: places.count,
                                             wantedCount: wanted.count,
                                             savedIdCount: wishlist.spotIds.count) {
             case .couldNotLoad:
-                ErrorBanner(message: L("スポットの一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
-                                       "Couldn't load the places. Pull to refresh."))
+                ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
+                                       "Couldn't load the photos. Pull to refresh."))
             case .empty:
                 ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
                                        "Nothing yet. Tap “Want to go” on a place."))
             case .list:
-                ForEach(wanted) { spot in
+                ForEach(wanted) { place in
                     NavigationLink {
-                        SpotDetailView(spot: spot, photos: model.photos, ledger: spots)
+                        SpotDetailView(spot: place, photos: model.photos)
                     } label: {
-                        wishlistRow(spot)
+                        wishlistRow(place)
                     }
                     .buttonStyle(.plain)
                 }
@@ -495,21 +492,20 @@ struct MyPageView: View {
         }
     }
 
-    private func wishlistRow(_ spot: Spot) -> some View {
+    private func wishlistRow(_ spot: DerivedSpot.Place) -> some View {
         HStack(spacing: 12) {
-            // 代表写真は台帳の指定か、紐づいた写真のいちばん人気
-            // （`SpotDirectory.cover`）。どちらも無ければ枠だけ
-            RemoteImage(url: SpotDirectory.cover(of: spot, in: model.photos)?.gridImageURL)
+            // 代表写真は**いちばん多く押された1枚**（数えた値）
+            RemoteImage(url: spot.cover?.gridImageURL)
                 .frame(width: 56, height: 56)
                 .background(WebTheme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(spot.name)
+                Text(spot.label)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                let place = spot.region?.line ?? ""
+                let place = spot.broader.joined(separator: " ・ ")
                 if !place.isEmpty {
                     Text(place)
                         .font(.caption)
@@ -521,7 +517,7 @@ struct MyPageView: View {
 
             // **一覧からも外せる。** 外すのに詳細まで行かせない
             Button {
-                wishlist.set(spot.spotId, wanted: false)
+                wishlist.set(spot.slug, wanted: false)
             } label: {
                 Image(systemName: "heart.fill")
                     .font(.subheadline)
@@ -529,7 +525,7 @@ struct MyPageView: View {
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("\(spot.name) を「行きたい」から外す", "Remove \(spot.name)"))
+            .accessibilityLabel(L("\(spot.label) を「行きたい」から外す", "Remove \(spot.label)"))
         }
         .padding(.horizontal, 16)
         .frame(minHeight: 72)

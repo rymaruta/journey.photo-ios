@@ -409,7 +409,13 @@ struct PhotoMapView: View {
     ///     │📷│ この周辺の写真 12枚
     ///     └──┘ 写真を見る →   詳細を見る（台帳にあるときだけ）
     private func pinCard(_ pin: MapPin) -> some View {
-        let spots = model.spots(for: pin)
+        // **撮影地を地点として引く。** 名前の無いピンには出さない。
+        // 1枚だけの地点も出さない——その写真の個別ページと中身が同じになる
+        let spotPlace: DerivedSpot.Place? = {
+            guard pin.hasPlaceName else { return nil }
+            guard let place = DerivedSpot.place(pin.title, in: model.photos) else { return nil }
+            return place.count >= 2 ? place : nil
+        }()
         return HStack(alignment: .top, spacing: 12) {
             RemoteImage(url: pin.photos.first?.gridImageURL,
                         alignment: pin.photos.first?.gridAlignment ?? .center)
@@ -460,15 +466,16 @@ struct PhotoMapView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                // 台帳に実在するスポットにだけ導線を出す。無ければ何も置かない
-                // （「spotId はあるが台帳に無い」で空の詳細に落とさない）
-                ForEach(spots) { spot in
+                // **撮影地を地点として開く。** 台帳は引かない（本番は
+                // 台帳を持たない——`DerivedSpot` の注記）。
+                // 名前の無いピン・1枚だけの地点には出さない
+                if let place = spotPlace {
                     NavigationLink {
-                        SpotDetailView(spot: spot, photos: model.photos, ledger: model.spots)
+                        SpotDetailView(spot: place, photos: model.photos)
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "mappin.and.ellipse")
-                            Text(L("\(spot.name) の詳細を見る", "About \(spot.name)"))
+                            Text(L("\(place.label) の詳細を見る", "About \(place.label)"))
                             Image(systemName: "chevron.right").font(.caption2)
                         }
                         .font(.subheadline.weight(.semibold))

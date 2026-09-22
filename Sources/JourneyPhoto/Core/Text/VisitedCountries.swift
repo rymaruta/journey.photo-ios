@@ -52,20 +52,13 @@ enum VisitedCountries {
 
     /// 写真に書かれている国・地域。**同じ国は1つ**。
     ///
-    /// 撮影地のほか、**スポットの国**も見る（台帳は国を持っている）。
-    static func names(in photos: [Photo], spots: [Spot] = []) -> Set<String> {
-        let spotCountry = Dictionary(spots.compactMap { spot -> (String, String)? in
-            guard let country = spot.region?.country, !country.isEmpty else { return nil }
-            return (spot.spotId, country)
-        }, uniquingKeysWith: { a, _ in a })
-
+    /// ⚠️ **見るのは撮影地の文字列だけ。** 以前は台帳（`spot#` 行）の国も
+    /// 見ていたが、本番が「台帳を持たない」と決めた
+    /// （`photo-gallery/docs/spot-master.md`）ので、引く先が無い。
+    static func names(in photos: [Photo]) -> Set<String> {
         var found = Set<String>()
         for photo in photos {
-            var text = photo.location ?? ""
-            if let spotId = photo.spotId, let country = spotCountry[spotId] {
-                text += " \(country)"
-            }
-            if let name = country(in: text) { found.insert(name) }
+            if let name = country(in: photo.location ?? "") { found.insert(name) }
         }
         return found
     }
@@ -86,8 +79,8 @@ enum VisitedCountries {
     }
 
     /// 数。**0 のときは画面に出さない**（0 の実績は励ましにならない）
-    static func count(in photos: [Photo], spots: [Spot] = []) -> Int {
-        names(in: photos, spots: spots).count
+    static func count(in photos: [Photo]) -> Int {
+        names(in: photos).count
     }
 
     private static func fold(_ value: String) -> String {

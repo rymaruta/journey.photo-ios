@@ -40,15 +40,14 @@ final class VisitedCountriesTests: XCTestCase {
         XCTAssertEqual(VisitedCountries.country(in: "オークランド, ニュージーランド"), "ニュージーランド")
     }
 
-    /// スポット台帳の国も見る（台帳は国を持っている）
-    func testSpotLedgerCountryIsUsed() throws {
-        let spot = try JSONDecoder.api.decode(Spot.self, from: Data(#"""
-        {"spotId":"s1","slug":"takaya","name":"高屋神社","region":{"country":"日本"}}
-        """#.utf8))
-        let photos = [try photo("a", location: "天空の鳥居", spotId: "s1")]
-        XCTAssertEqual(VisitedCountries.count(in: photos, spots: [spot]), 1)
-        // 台帳が無ければ数えない（推測しない）
-        XCTAssertEqual(VisitedCountries.count(in: photos), 0)
+    /// ⚠️ **台帳の国はもう見ない。** 本番が「台帳を持たない」と決めた
+    /// （`photo-gallery/docs/spot-master.md`）ので、引く先が無い。
+    /// 見るのは**撮影地の文字列だけ**
+    func testOnlyTheLocationTextIsRead() throws {
+        let photos = [try photo("a", location: "天空の鳥居")]
+        XCTAssertEqual(VisitedCountries.count(in: photos), 0, "地名から国を当てている")
+        let written = [try photo("b", location: "天空の鳥居, 日本")]
+        XCTAssertEqual(VisitedCountries.count(in: written), 1)
     }
 
     /// 表に同じ国を2行書かない（二重に数える）

@@ -3,18 +3,24 @@ import MapKit
 
 /// 撮影スポットの詳細（モック5）。
 ///
-/// 出すのは**台帳に実際に入っているものと、数えられるものだけ**。
+/// 🔴 **台帳を持たない。** 2026-09-22 に本番がそう決めた
+/// （`photo-gallery/docs/spot-master.md`——9項目のうち7項目は
+/// いまある写真から導出できるので、新しい入れ物も第二の ID も作らない）。
 ///
+/// アプリは一度「`spot#` 行の台帳」で作ったが、**本番と逆の設計**だった。
+/// 台帳は空のままで、この画面は誰にも出なかった。いまは
+/// **撮影地の集まり**（`DerivedSpot`）をスポットとして出す。
+///
+/// 出すのは**写真が実際に持っている値と、数えたものだけ**。
 /// **モックにあって出さないもの**: ★評価・口コミ件数・「行きたい」人数。
-/// どれも集計していないので、置けば嘘になる。「行きたい」は押せるが
-/// **この端末にしか残らない**ので、数ではなく状態だけを出す。
+/// どれも集計していないので、置けば嘘になる。
+/// **ふりがな・概要も出さない**——Web は `content/spot-master.json` に
+/// 人が書いたぶんだけ持つ形で、アプリへ配る経路がまだ無い（いまは空）。
 struct SpotDetailView: View {
 
-    let spot: Spot
+    let spot: DerivedSpot.Place
     /// 突き合わせる写真。呼び出し側が持っている一覧をそのまま渡す
     let photos: [Photo]
-    /// 近くのスポットを出すための台帳（無ければその棚は出ない）
-    var ledger: [Spot] = []
 
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
@@ -23,18 +29,16 @@ struct SpotDetailView: View {
     @State private var expanded = false
     @State private var camera: MapCameraPosition = .automatic
 
-    private var linked: [Photo] { SpotDirectory.photos(of: spot, in: photos) }
+    private var linked: [Photo] { spot.photos }
 
-    /// 見出しの写真。台帳の代表写真を先頭に、残りを新しい順
+    /// 見出しの写真。いちばん多く押された1枚を先頭に、残りを新しい順
     private var hero: [Photo] {
-        guard let cover = SpotDirectory.cover(of: spot, in: photos) else { return [] }
+        guard let cover = spot.cover else { return [] }
         return [cover] + linked.filter { $0.id != cover.id }
     }
 
-    private var nearby: [Spot] {
-        guard let coords = spot.coords else { return [] }
-        return SpotDirectory.nearby(coords, in: ledger, radiusKm: 30, limit: 8)
-            .filter { $0.spotId != spot.spotId }
+    private var nearby: [(place: DerivedSpot.Place, km: Double)] {
+        DerivedSpot.nearby(spot, in: photos)
     }
 
     var body: some View {
@@ -52,11 +56,11 @@ struct SpotDetailView: View {
             .padding(.bottom, 32)
         }
         .webScreen()
-        .navigationTitle(spot.name)
+        .navigationTitle(spot.label)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: spot.name) {
+                ShareLink(item: shareText) {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .webToolbarIcon()
@@ -108,14 +112,12 @@ struct SpotDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(spot.name)
+            Text(spot.label)
                 .font(.system(size: 28, weight: .bold))
                 .foregroundStyle(WebTheme.foreground)
-            if let reading = spot.reading, !reading.isEmpty {
-                Text(reading)
-                    .font(.footnote)
-                    .foregroundStyle(WebTheme.faint)
-            }
+            // ⚠️ **ふりがなは出さない。** Web は `content/spot-master.json` に
+            // 人が書いたぶんだけ持つ形で（いまは空）、アプリへ配る経路が無い。
+            // 空の行を置くより、**項目ごと出さない**
             if let line = placeLine, !line.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "mappin.and.ellipse")
@@ -126,54 +128,44 @@ struct SpotDetailView: View {
                         .foregroundStyle(WebTheme.muted)
                 }
             }
-            if let category = spot.category, !category.isEmpty {
-                Text(category)
-                    .font(.footnote.weight(.semibold))
-                    .webChip()
+            // 分類のチップ。**写真が実際に持っているものだけ**（多い順）
+            if !spot.categories.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(spot.categories.prefix(4), id: \.self) { category in
+                        Text(Labels.Category.name(category))
+                            .font(.footnote.weight(.semibold))
+                            .webChip()
+                    }
+                }
             }
         }
         .padding(.horizontal, 16)
     }
 
-    /// 住所があれば住所、無ければ地域の行。**両方出して同じことを2回言わない**
+    /// より広い撮影地（「パリ, フランス」に対する「パリ」「フランス」）。
+    ///
+    /// **推測しない。** 同じ一覧に実際に在って、含む関係にあるものだけ
+    /// （`DerivedSpot.broader`）。無ければ行ごと出さない。
     private var placeLine: String? {
-        if let address = spot.address?.trimmingCharacters(in: .whitespaces), !address.isEmpty {
-            return address
-        }
-        let region = spot.region?.line ?? ""
-        return region.isEmpty ? nil : region
+        spot.broader.isEmpty ? nil : spot.broader.joined(separator: " ・ ")
     }
 
+    /// 概要。
+    ///
+    /// ⚠️ **いまは出せない。** Web は人が書いたぶんだけを
+    /// `content/spot-master.json` に持つ形で（2026-09-22 時点で**空**）、
+    /// アプリへ配る経路がまだ無い。**文章は生成しない**（owner の指示）ので、
+    /// 空の枠も置かない——書かれたものが配られるようになったら出す。
     @ViewBuilder
     private var summary: some View {
-        if let text = spot.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(text)
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted)
-                    .lineSpacing(4)
-                    .lineLimit(expanded ? nil : 3)
-                Button {
-                    expanded.toggle()
-                } label: {
-                    Text(expanded ? L("閉じる", "Show less") : L("もっと見る", "Show more"))
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
-                }
-                .buttonStyle(.plain)
-                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
-            }
-            .padding(.horizontal, 16)
-        }
+        EmptyView()
     }
-
-    // MARK: - 操作
 
     private var actions: some View {
         HStack(spacing: 10) {
-            let wanted = wishlist.contains(spot.spotId)
+            let wanted = wishlist.contains(spot.slug)
             Button {
-                let now = wishlist.toggle(spot.spotId)
+                let now = wishlist.toggle(spot.slug)
                 toasts.show(now
                     ? L("「行きたい」に追加しました（この端末に保存）", "Added to your wishlist on this device")
                     : L("「行きたい」から外しました", "Removed from your wishlist"))
@@ -207,7 +199,7 @@ struct SpotDetailView: View {
     /// 配る文（`SpotScreen`）。**この画面は実機の絵で確かめられない**
     /// ので、決まりは外に出してテストで動かしている
     private var shareText: String {
-        SpotScreen.shareText(name: spot.name, region: spot.region?.line, mapURL: mapURL)
+        SpotScreen.shareText(name: spot.label, region: placeLine, mapURL: mapURL)
     }
 
     private func actionLabel(icon: String, title: String, filled: Bool) -> some View {
@@ -223,7 +215,7 @@ struct SpotDetailView: View {
     }
 
     /// 端末の地図アプリへ。**座標があるときだけ**（`SpotScreen`）
-    private var mapURL: URL? { SpotScreen.mapURL(name: spot.name, coords: spot.coords) }
+    private var mapURL: URL? { SpotScreen.mapURL(name: spot.label, coords: spot.coords) }
 
     /// 数えられるものだけ。**評価・口コミ・行きたい人数は出さない**
     private var stats: some View {
@@ -288,16 +280,16 @@ struct SpotDetailView: View {
     @ViewBuilder
     private var nearbySpots: some View {
         let near = nearby
-        if !near.isEmpty, let here = spot.coords {
+        if !near.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 sectionHeader(L("近くの撮影スポット", "Nearby places"))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
-                        ForEach(near) { other in
+                        ForEach(near, id: \.place.id) { item in
                             NavigationLink {
-                                SpotDetailView(spot: other, photos: photos, ledger: ledger)
+                                SpotDetailView(spot: item.place, photos: photos)
                             } label: {
-                                nearbyCard(other, from: here)
+                                nearbyCard(item.place, km: item.km)
                             }
                             .buttonStyle(.plain)
                         }
@@ -308,24 +300,23 @@ struct SpotDetailView: View {
         }
     }
 
-    private func nearbyCard(_ other: Spot, from here: Photo.Coords) -> some View {
+    private func nearbyCard(_ other: DerivedSpot.Place, km: Double) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear
                 .aspectRatio(16.0 / 10.0, contentMode: .fit)
                 .overlay {
-                    RemoteImage(url: SpotDirectory.cover(of: other, in: photos)?.gridImageURL,
-                                alignment: .center)
+                    RemoteImage(url: other.cover?.gridImageURL, alignment: .center)
                 }
                 .clipped()
             VStack(alignment: .leading, spacing: 3) {
-                Text(other.name)
+                Text(other.label)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
                 // **距離は計算したもの。** 言い方は「近くの写真」と
                 // 同じ関数に寄せる（`NearbyPhotos.label`）——2つ持つと、
                 // 同じ距離が画面によって「約42.7km」と「約43km」に割れる
-                Text(distanceText(from: here, to: other))
+                Text(NearbyPhotos.label(km: km))
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
             }
@@ -337,13 +328,6 @@ struct SpotDetailView: View {
         .contentShape(RoundedRectangle(cornerRadius: 14))
     }
 
-    /// 距離の言い方。**「近くの写真」と同じ関数**を通す。
-    /// 座標が無い相手は測れないので、何も言わない（「0km」と書かない）
-    private func distanceText(from: Photo.Coords, to other: Spot) -> String {
-        guard let there = other.coords else { return "" }
-        return NearbyPhotos.label(km: TravelDistance.kilometers(from: from, to: there))
-    }
-
     @ViewBuilder
     private var map: some View {
         if let coords = spot.coords {
@@ -351,7 +335,7 @@ struct SpotDetailView: View {
             VStack(alignment: .leading, spacing: 10) {
                 sectionHeader(L("地図", "Map"))
                 Map(position: $camera) {
-                    Annotation(spot.name, coordinate: center) {
+                    Annotation(spot.label, coordinate: center) {
                         Image(systemName: "mappin.circle.fill")
                             .font(.system(size: 28, weight: .semibold))
                             .foregroundStyle(WebTheme.foreground)
@@ -367,7 +351,7 @@ struct SpotDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .padding(.horizontal, 16)
                 .allowsHitTesting(false)
-                .accessibilityLabel(L("\(spot.name) の地図", "Map of \(spot.name)"))
+                .accessibilityLabel(L("\(spot.label) の地図", "Map of \(spot.label)"))
             }
         }
     }

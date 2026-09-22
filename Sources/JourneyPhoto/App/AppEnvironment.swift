@@ -26,15 +26,12 @@ final class AppEnvironment: ObservableObject {
     let highlights: HighlightService
     let search: UserSearchService
     let discovery: DiscoveryService
-    /// 撮影スポットの台帳。写真と同じく静的サイトの JSON を読むだけ
-    let spots: SpotService
 
     /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
     ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
     ///   画面の頭を動かすテストが書けなかった）。
     init(tokenProvider: TokenProviding = CognitoTokenProvider(),
-         gallery: PublicGalleryService = PublicGalleryService(),
-         spots: SpotService = SpotService()) {
+         gallery: PublicGalleryService = PublicGalleryService()) {
         let api = APIClient(tokenProvider: tokenProvider)
         self.api = api
         self.gallery = gallery
@@ -51,6 +48,5 @@ final class AppEnvironment: ObservableObject {
         self.highlights = HighlightService(api: api)
         self.search = UserSearchService(api: api)
         self.discovery = DiscoveryService(api: api)
-        self.spots = spots
     }
 }

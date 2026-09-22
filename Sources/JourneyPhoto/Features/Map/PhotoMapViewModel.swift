@@ -20,8 +20,6 @@ final class PhotoMapViewModel: ObservableObject {
     }
 
     @Published private(set) var photos: [Photo] = []
-    /// 台帳。取れなければ空のまま（札のスポット導線が出ないだけ）
-    @Published private(set) var spots: [Spot] = []
     @Published private(set) var loaded = false
     @Published var query = "" { didSet { refresh() } }
     @Published private(set) var category: String?
@@ -54,8 +52,7 @@ final class PhotoMapViewModel: ObservableObject {
 
     /// 絞り直す。条件が変わったときにだけ呼ぶ
     private func refresh() {
-        shown = MapSearch.photos(photos, filter: MapSearch.Filter(query: query, category: category, frame: areaFrame),
-                                 spots: spots)
+        shown = MapSearch.photos(photos, filter: MapSearch.Filter(query: query, category: category, frame: areaFrame))
         pins = MapPin.group(shown)
     }
 
@@ -72,7 +69,6 @@ final class PhotoMapViewModel: ObservableObject {
 
     func load(environment: AppEnvironment) async {
         photos = (try? await environment.gallery.fetchPhotos()) ?? []
-        spots = await environment.spots.fetchSpots()
         loaded = true
         refresh()
     }
@@ -117,11 +113,6 @@ final class PhotoMapViewModel: ObservableObject {
     func stillShown(_ pin: MapPin?) -> Bool {
         guard let pin else { return false }
         return pins.contains { $0.id == pin.id }
-    }
-
-    /// 札に出すスポット（台帳に実在するものだけ）
-    func spots(for pin: MapPin) -> [Spot] {
-        MapSearch.spots(for: pin.photos, in: spots)
     }
 
     /// いまのピンに合わせた枠（無ければ nil＝地図の既定に任せる）

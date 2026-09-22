@@ -34,12 +34,11 @@ struct PhotoDetailView: View {
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）
     @State private var heroPage = 0
 
-    /// スポット詳細に渡すもの一式。台帳の1件と、突き合わせる公開写真と、
-    /// 近くのスポットを出すための台帳全体
+    /// スポット詳細に渡すもの一式。**撮影地から導いた地点**と、
+    /// 突き合わせる公開写真（近くの地点もここから出す）
     private struct SpotLead {
-        let spot: Spot
+        let spot: DerivedSpot.Place
         let photos: [Photo]
-        let ledger: [Spot]
     }
 
     /// 画面に描く1枚。編集していれば新しい方。
@@ -85,7 +84,7 @@ struct PhotoDetailView: View {
             model.setSignedIn(auth.userId != nil)
             await model.load()
         }
-        .task(id: shown.spotId) { await loadSpotLead() }
+        .task(id: shown.location) { await loadSpotLead() }
         .task(id: ownerId) {
             await model.loadOwner(ownerId, profiles: environment.profiles)
             // **フォローしているかは、その人を見に行かずに知りたい。**
@@ -271,12 +270,12 @@ struct PhotoDetailView: View {
     private var spotLink: some View {
         if let lead = spotLead {
             NavigationLink {
-                SpotDetailView(spot: lead.spot, photos: lead.photos, ledger: lead.ledger)
+                SpotDetailView(spot: lead.spot, photos: lead.photos)
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "camera.viewfinder")
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(lead.spot.name)
+                        Text(lead.spot.label)
                             .font(.title3)
                             .foregroundStyle(Color.white.opacity(0.65))
                             .lineLimit(1)
@@ -645,13 +644,21 @@ struct PhotoDetailView: View {
     /// 台帳（`SpotService`）は取れなければ空を返すので、`spotId` が
     /// 引き当たらなければ行は出ない。**本番の台帳は 2026-09-21 時点で
     /// 0件・`spotId` を持つ写真も 0/30** なので、いまはどの写真でも出ない
+    /// この写真の撮影地を「地点」として引く。
+    ///
+    /// **台帳は引かない**（本番は台帳を持たない——`DerivedSpot` の注記）。
+    /// 撮影地が書かれていない写真には、この行を出さない。
     private func loadSpotLead() async {
         spotLead = nil
-        guard let spotId = shown.spotId, !spotId.isEmpty else { return }
-        let ledger = await environment.spots.fetchSpots()
-        guard let spot = SpotDirectory.spot(id: spotId, in: ledger) else { return }
-        guard let photos = try? await environment.gallery.fetchPhotos() else { return }
-        spotLead = SpotLead(spot: spot, photos: photos, ledger: ledger)
+        let label = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
+        guard !label.isEmpty else { return }
+        let photos = try? await environment.gallery.fetchPhotos()
+        guard let photos else { return }
+        guard let place = DerivedSpot.place(label, in: photos) else { return }
+        // **1枚しか無い地点には出さない。** この写真の個別ページと
+        // 中身が同じになる（Web の `MIN_INDEXABLE_LOCATION` と同じ考え）
+        guard place.count >= 2 else { return }
+        spotLead = SpotLead(spot: place, photos: photos)
     }
 
     private func block(_ userId: String) async {
