@@ -60,7 +60,14 @@ final class ScreenshotTests: XCTestCase {
             // **少し待ってから撮る。** 写真は通信で来るので、描いた直後は
             // 枠だけの絵になる（それを「表示が壊れている」と読み違える）
             Thread.sleep(forTimeInterval: 3)
-            shoot(app, "1\(index)-\(name)")
+            // **出ているものを名前に書く。** マイページはログインしていない
+            // 回に**ログイン画面**が出るので、そのまま「14-マイページ」と
+            // 名付けると、見た人が「マイページはこういう画面だ」と誤読する
+            // （run 55 までそうなっていた）
+            let signedOut = app.otherElements["signin.form"].exists
+                || app.scrollViews["signin.form"].exists
+                || app.tables["signin.form"].exists
+            shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
         }
 
         // **旅を1冊開く。** 表紙・ページ・足取りは、開かないと絵にならない

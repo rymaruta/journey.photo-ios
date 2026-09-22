@@ -334,7 +334,7 @@ struct PhotoDetailView: View {
                             .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 4) {
-                                Text(model.owner?.name ?? shown.displayName ?? L("投稿者", "Poster"))
+                                Text(AuthorName.shown(profile: model.owner, photoDisplayName: shown.displayName))
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(WebTheme.foreground)
                                     .lineLimit(1)

@@ -76,6 +76,11 @@ struct SignInView: View {
                 .listRowBackground(Color.clear)
             }
         }
+        // 実機の絵の道しるべ（`ScreenshotTests`）。**この画面が出ている回は、
+        // 絵の名前にそう書く**——「14-マイページ」という名前で**ログイン画面**を
+        // 撮っていた（run 55 まで）。名前と中身が食い違うと、見た人が
+        // 「マイページはこういう画面だ」と誤読する
+        .accessibilityIdentifier("signin.form")
         // **黒地にする。** 付け忘れていたので、ここだけ既定の灰色の
         // 段が並び、アプリの中で1枚だけ別のアプリに見えていた
         // （実機の絵で確認・run 38）

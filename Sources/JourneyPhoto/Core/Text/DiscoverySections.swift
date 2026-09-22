@@ -42,6 +42,13 @@ enum DiscoverySections {
                 // 札に「2枚の写真」と書いて開くと3枚出ていた（run 55 の実機の絵）。
                 // Web は同じ食い違いを `collectEntries` で直してある——
                 // 「見出しの（N枚）と実際に並ぶ枚数が食い違う」と名指しで書いてある
+                //
+                // **表紙はここを変えない。** 表紙の元（`list`）は撮影地の文字列で
+                // 分けた束なので**互いに重ならない**＝2枚の札が同じ表紙になることは
+                // 無い。run 56 の絵を見て「フランス」と「フランス ヴェルサイユ」が
+                // 同じ絵に見えたので重複よけを書いたが、**変異を当てたら1件も
+                // 落ちなかった**——よく見ると別の写真（柱頭と列柱）で、
+                // 直す対象が最初から無かった。消した
                 let counted = PhotoQuery.photos(photos, in: .location(place)).count
                 return Spot(id: place, count: counted, cover: cover)
             }

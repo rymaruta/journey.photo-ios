@@ -160,7 +160,7 @@ struct HomeFeedCard: View {
                             .clipShape(Circle())
                             .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(photo.displayName ?? L("投稿者", "Poster"))
+                            Text(AuthorName.shown(profile: nil, photoDisplayName: photo.displayName))
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(WebTheme.foreground)
                             if !subtitle.isEmpty {
