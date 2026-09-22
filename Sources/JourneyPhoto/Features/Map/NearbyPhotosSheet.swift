@@ -36,9 +36,17 @@ struct NearbyPhotosSheet: View {
                 .listRowBackground(Color.clear)
 
                 Section {
-                    if found.isEmpty {
-                        // **「無い」と「取れない」を分ける。** ここは手元の
-                        // 配列を測っただけなので、無いときは本当に無い
+                    if photos.isEmpty {
+                        // 🔴 **「無い」と「取れていない」を分ける。**
+                        // 地図が1枚も持っていないのは「この範囲に無い」では
+                        // なく「まだ読めていない」——同じ文で出すと、
+                        // 圏外の人に「近くには何も無い」と言うことになる
+                        Text(L("写真をまだ読み込めていません。地図を引き下げて読み直してください。",
+                               "Photos haven't loaded yet. Pull to refresh the map."))
+                            .font(.callout)
+                            .foregroundStyle(WebTheme.muted2)
+                    } else if found.isEmpty {
+                        // ここまで来たら、測った結果として本当に無い
                         Text(L("この範囲には、まだ写真がありません。", "No photos in this range yet."))
                             .font(.callout)
                             .foregroundStyle(WebTheme.muted2)
