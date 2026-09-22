@@ -12,11 +12,15 @@ struct StoryComposerView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var pickerItem: PhotosPickerItem?
-    @State private var prepared: ImagePreparer.Prepared?
-    @State private var preview: Image?
-    /// 写真の上に置いた文字。**投稿するときに画像へ焼き込む**
-    /// （サーバーの `caption` は文字列1本で、位置を持てない）
-    @State private var overlays: [TextOverlay] = []
+    /// 選んだ写真の並び（モック4-5 のメディアストリップ）。
+    ///
+    /// **1枚＝1本のストーリー。** サーバーは `POST /stories` に1枚ずつ渡す形で、
+    /// 複数枚を1本に入れる口は無い。閲覧側は同じ人のストーリーを順に流すので、
+    /// **並びの順に出せば、モックの「スライドショー」になる**。
+    /// 文字は**写真ごと**に持つ（焼き込みは写真ごとに起きるため）。
+    @State private var shots: [StoryShot] = []
+    /// いま編集している写真の位置
+    @State private var current = 0
     @State private var caption = ""
     @State private var location = ""
     /// 24時間のあとも残すか（ハイライトの材料になる）
@@ -32,15 +36,35 @@ struct StoryComposerView: View {
     @State private var showRestore = false
     /// 公開範囲（モック4-7）。**サーバーが守れるものだけ出す**
 
+    /// いま編集している写真。**無ければ nil**（まだ1枚も選んでいない）
+    private var prepared: ImagePreparer.Prepared? {
+        shots.indices.contains(current) ? shots[current].prepared : nil
+    }
+
+    private var preview: Image? {
+        shots.indices.contains(current) ? shots[current].preview : nil
+    }
+
+    /// いま編集している写真の文字。**`shots` の中を直に書き換える**
+    /// ——別に持つと、写真を切り替えた瞬間にどちらが本物か分からなくなる
+    private var overlays: Binding<[TextOverlay]> {
+        Binding(
+            get: { shots.indices.contains(current) ? shots[current].overlays : [] },
+            set: { if shots.indices.contains(current) { shots[current].overlays = $0 } }
+        )
+    }
+
     var body: some View {
         Form {
             Section {
                 if let preview {
                     // **写真の上を直接つまんで文字を置く。**
                     // 入力欄で座標を打たせない。道具は1列に並べる（モック4-6）
-                    TextOverlayEditor(preview: preview, overlays: $overlays) {
+                    TextOverlayEditor(preview: preview, overlays: overlays) {
                         photoTools
                     }
+                    // 2枚以上あるときだけ並びを出す（1枚のときは邪魔なだけ）
+                    if shots.count > 1 { mediaStrip }
                 } else {
                     // まだ1枚も選んでいないときは、写真の道具だけ
                     HStack(spacing: 10) { photoTools }
@@ -193,20 +217,91 @@ struct StoryComposerView: View {
         accept(data)
     }
 
+    /// 1枚受け取る。**足す**（選び直しではない）。
+    ///
+    /// 文字は写真ごとに持つので、足した写真には何も付いていない状態で
+    /// 始まる——前の写真の文字が別の絵に残ると、置いた場所の意味が変わる。
     private func accept(_ data: Data) {
         do {
             let prepared = try ImagePreparer.prepare(data: data, fileName: "story")
-            self.prepared = prepared
-            self.preview = UIImage(data: prepared.data).map { Image(uiImage: $0) }
-            // **写真を選び直したら文字は外す。** 別の写真に前の文字が
-            // 残ると、置いた場所の意味が変わる
-            self.overlays = []
+            guard shots.count < StoryQueue.maxShots else {
+                message = L("一度に出せるのは\(StoryQueue.maxShots)枚までです",
+                            "You can post up to \(StoryQueue.maxShots) at once")
+                return
+            }
+            let shot = StoryShot(prepared: prepared,
+                                 preview: UIImage(data: prepared.data).map { Image(uiImage: $0) })
+            shots.append(shot)
+            // 足したらそれを編集する（選んだ直後に文字を置ける）
+            current = shots.count - 1
             self.message = nil
         } catch {
-            self.prepared = nil
-            self.preview = nil
             message = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")
         }
+    }
+
+
+    /// 並び（モック4-5）。**順番がそのまま出る順**。
+    private var mediaStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(shots.enumerated()), id: \.element.id) { index, shot in
+                    Button {
+                        current = index
+                    } label: {
+                        thumb(shot, index: index)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func thumb(_ shot: StoryShot, index: Int) -> some View {
+        let isCurrent = index == current
+        return Group {
+            if let preview = shot.preview {
+                preview.resizable().aspectRatio(contentMode: .fill)
+            } else {
+                Color.gray.opacity(0.3)
+            }
+        }
+        .frame(width: 56, height: 84)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(isCurrent ? AnyShapeStyle(WebTheme.accentBackground)
+                                    : AnyShapeStyle(Color.white.opacity(0.15)),
+                          lineWidth: isCurrent ? 2 : 1))
+        .overlay(alignment: .topLeading) {
+            // **何番目に出るか**を出す（並びが出る順そのものなので）
+            Text("\(index + 1)")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(Color.white)
+                .shadow(radius: 2)
+                .padding(4)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                remove(at: index)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.white)
+                    .shadow(radius: 2)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("この写真を外す", "Remove this photo"))
+        }
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+
+    /// 1枚外す。**編集中の位置がずれないように直す**
+    /// ——直さないと、外した瞬間に別の写真の文字を触ることになる
+    private func remove(at index: Int) {
+        guard shots.indices.contains(index) else { return }
+        shots.remove(at: index)
+        current = StoryQueue.currentAfterRemoving(index, current: current, count: shots.count)
     }
 
     /// 下書きにする。**焼き込む前の文字のまま残す**
@@ -220,7 +315,7 @@ struct StoryComposerView: View {
             coords: prepared.coords,
             caption: caption,
             location: location,
-            overlays: overlays,
+            overlays: shots.indices.contains(current) ? shots[current].overlays : [],
             song: song,
             durationSec: durationSec,
             savedAt: ISO8601DateFormatter().string(from: Date())
@@ -241,12 +336,15 @@ struct StoryComposerView: View {
             message = L("下書きの写真を読み込めませんでした", "Couldn't load the draft photo")
             return
         }
-        prepared = ImagePreparer.Prepared(data: data, fileName: draft.fileName,
-                                          contentType: draft.contentType,
-                                          // EXIF は下書きに残していない（ストーリーは送らない）
-                                          exif: nil, coords: draft.coords, takenOn: nil)
-        preview = UIImage(data: data).map { Image(uiImage: $0) }
-        overlays = draft.overlays
+        let restored = ImagePreparer.Prepared(data: data, fileName: draft.fileName,
+                                              contentType: draft.contentType,
+                                              // EXIF は下書きに残していない（ストーリーは送らない）
+                                              exif: nil, coords: draft.coords, takenOn: nil)
+        // **下書きは1枚だけ**（端末に1件）。戻すときは並びを作り直す
+        shots = [StoryShot(prepared: restored,
+                           preview: UIImage(data: data).map { Image(uiImage: $0) },
+                           overlays: draft.overlays)]
+        current = 0
         caption = draft.caption
         location = draft.location
         song = draft.song
@@ -267,34 +365,64 @@ struct StoryComposerView: View {
         }
         PhotosPicker(selection: $pickerItem, matching: .images) {
             TextOverlayEditor<EmptyView>.toolLabel(
-                preview == nil ? L("ライブラリ", "Library") : L("選び直す", "Replace"),
+                shots.isEmpty ? L("ライブラリ", "Library") : L("追加", "Add"),
                 systemImage: "photo.badge.plus")
         }
         .buttonStyle(.plain)
     }
 
+    /// 出す。**並びの順に、1枚ずつ**。
+    ///
+    /// 🔴 **途中で失敗したら、そこで止める。** 残りを出し続けると、
+    /// 「何本出たのか」が誰にも分からなくなる。出たぶんはそのまま残し
+    /// （消しに行かない——消す方が失敗したときに二重に分からなくなる）、
+    /// **何枚出て何枚残ったか**を画面に出す。
     private func post() async {
-        guard let prepared else { return }
+        guard !shots.isEmpty else { return }
         isWorking = true
         message = nil
         defer { isWorking = false }
-        do {
-            _ = try await environment.stories.create(
-                // **焼き込んでから送る。** 文字が無ければ元のデータを
-                // そのまま渡す（読み書きの往復で画質を落とさない）
-                imageData: TextOverlayRenderer.burn(overlays, into: prepared.data),
-                caption: caption.trimmingCharacters(in: .whitespacesAndNewlines),
-                location: location.trimmingCharacters(in: .whitespacesAndNewlines),
-                coords: prepared.coords,
-                song: song,
-                durationSec: durationSec,
-                archive: keepInArchive
-            )
-            // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）
-            drafts.clear()
-            dismiss()
-        } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? L("投稿できませんでした", "Couldn't post")
+        let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        var posted = 0
+        for shot in shots {
+            do {
+                _ = try await environment.stories.create(
+                    // **焼き込んでから送る。** 文字が無ければ元のデータを
+                    // そのまま渡す（読み書きの往復で画質を落とさない）
+                    imageData: TextOverlayRenderer.burn(shot.overlays, into: shot.prepared.data),
+                    caption: caption,
+                    location: place,
+                    coords: shot.prepared.coords,
+                    song: song,
+                    durationSec: durationSec,
+                    archive: keepInArchive
+                )
+                posted += 1
+            } catch {
+                let reason = (error as? LocalizedError)?.errorDescription
+                    ?? L("投稿できませんでした", "Couldn't post")
+                message = StoryQueue.partialFailure(posted: posted, total: shots.count, reason: reason)
+                // **出せたぶんは並びから外す。** 押し直したときに
+                // 同じ写真をもう一度出さないため
+                shots.removeFirst(posted)
+                current = 0
+                return
+            }
         }
+        // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）
+        drafts.clear()
+        dismiss()
     }
+}
+
+/// 出す写真1枚ぶん（モック4-5 のストリップの1コマ）。
+///
+/// **文字を写真ごとに持つ。** 焼き込みは写真ごとに起きるので、
+/// まとめて1つ持つと、切り替えた瞬間に別の絵へ前の文字が乗る。
+struct StoryShot: Identifiable {
+    let id = UUID()
+    var prepared: ImagePreparer.Prepared
+    var preview: Image?
+    var overlays: [TextOverlay] = []
 }
