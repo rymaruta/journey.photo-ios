@@ -29,9 +29,45 @@ struct StoryService {
     /// 受け取っていた頃は、自分の正当な URL と一緒に他人のキーを送り、
     /// 自分のストーリーを消すだけで相手のファイルを消せた
     /// （`api-user/src/stories.ts` の注記）。
+    /// 公開範囲。**「全体に公開」は送らない**——サーバーも属性を書かない形で
+    /// 持つので、既にある行と同じ形に揃える。
+    enum Audience: String, CaseIterable, Identifiable {
+        case everyone
+        case followers
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .everyone: return L("全体に公開", "Everyone")
+            case .followers: return L("フォロワーのみ", "Followers")
+            }
+        }
+
+        var note: String {
+            switch self {
+            case .everyone: return L("ログインしている人なら誰でも見られます",
+                                     "Anyone signed in can see it")
+            case .followers: return L("自分をフォローしている人だけが見られます",
+                                      "Only people who follow you")
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .everyone: return "globe"
+            case .followers: return "person.2"
+            }
+        }
+
+        /// サーバーへ送る値。**全体に公開は送らない**
+        var wireValue: String? { self == .followers ? rawValue : nil }
+    }
+
     @discardableResult
     func create(imageData: Data, caption: String?, location: String?, coords: Photo.Coords?,
-                song: Photo.Song? = nil, durationSec: Int? = nil) async throws -> Story? {
+                song: Photo.Song? = nil, durationSec: Int? = nil,
+                audience: Audience = .everyone) async throws -> Story? {
         let presigned = try await uploads.presign(
             fileName: "story.jpg", fileType: "image/jpeg", fileSize: imageData.count
         )
@@ -53,6 +89,8 @@ struct StoryService {
             let song: Photo.Song?
             /// 表示秒数。**3〜15**（`stories.ts` が丸める）。既定の5なら送らない
             let durationSec: Int?
+            /// 公開範囲。`followers` のときだけ送る
+            let audience: String?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
@@ -63,7 +101,8 @@ struct StoryService {
             location: location?.isEmpty == true ? nil : location,
             coords: (location?.isEmpty == false) ? coords.map { Body.Coords(lat: $0.lat, lng: $0.lng) } : nil,
             song: song,
-            durationSec: Self.storedDuration(durationSec)
+            durationSec: Self.storedDuration(durationSec),
+            audience: audience.wireValue
         )
         do {
             return try await api.authorized(.post, "/stories", body: body, as: Created.self).story

@@ -28,6 +28,8 @@ struct StoryComposerView: View {
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
+    /// 公開範囲（モック4-7）。**出すのはサーバーが守れる2つだけ**
+    @State private var audience: StoryService.Audience = .everyone
 
     var body: some View {
         Form {
@@ -86,6 +88,22 @@ struct StoryComposerView: View {
                 // 3秒未満は読み切れず、15秒を超えると見る側が飽きる（Web と同じ範囲）
                 Text(L("3〜15秒。曲は30秒の試聴だけを使います。",
                        "3–15 seconds. Songs use the 30-second preview only."))
+            }
+            .listRowBackground(Color.clear)
+
+            // 公開範囲（モック4-7）。**出すのはサーバーが守れる2つだけ。**
+            // モックには「親しい友達」もあるが、それを選ばせる箱は
+            // サーバーに無い——選べるのに守られない切り替えは作らない
+            Section {
+                HStack(spacing: 10) {
+                    ForEach(StoryService.Audience.allCases) { choice in
+                        audienceChoice(choice)
+                    }
+                }
+            } header: {
+                Text(L("公開範囲", "Who can see it"))
+            } footer: {
+                Text(audience.note)
             }
             .listRowBackground(Color.clear)
 
@@ -220,6 +238,30 @@ struct StoryComposerView: View {
         message = nil
     }
 
+    /// 公開範囲の札。**切り替えではなく2択**——トグル1つだと
+    /// 「いまどちらなのか」を言葉で確かめられない（投稿画面と同じ形）
+    private func audienceChoice(_ choice: StoryService.Audience) -> some View {
+        let selected = audience == choice
+        return Button {
+            audience = choice
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: choice.systemImage).font(.title3)
+                Text(choice.label)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(selected ? AnyShapeStyle(WebTheme.foreground)
+                                 : AnyShapeStyle(WebTheme.surface),
+                        in: RoundedRectangle(cornerRadius: 12))
+            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
     /// 写真そのものの道具（モック4-6 の「カメラ」「ライブラリ」）。
     /// 文字の道具と同じ見た目・同じ行に並べる
     @ViewBuilder
@@ -252,7 +294,8 @@ struct StoryComposerView: View {
                 location: location.trimmingCharacters(in: .whitespacesAndNewlines),
                 coords: prepared.coords,
                 song: song,
-                durationSec: durationSec
+                durationSec: durationSec,
+                audience: audience
             )
             // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）
             drafts.clear()

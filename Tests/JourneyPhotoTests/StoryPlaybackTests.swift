@@ -161,3 +161,30 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(StoryPlayback.ago(from: "2027-01-15T07:55:00Z", now: now), L("5分前", "5m ago"))
     }
 }
+
+// MARK: - 公開範囲
+
+final class StoryAudienceTests: XCTestCase {
+
+    /// **「全体に公開」は送らない。** サーバーも属性を書かない形で持つので、
+    /// 既にある行と同じ形に揃える
+    func testEveryoneSendsNothing() {
+        XCTAssertNil(StoryService.Audience.everyone.wireValue)
+    }
+
+    /// 送る値は**サーバーが受け取る綴りちょうど**（`stories.ts` の
+    /// `sanitizeAudience` は "followers" しか受け取らない）
+    func testFollowersSendsTheExactWord() {
+        XCTAssertEqual(StoryService.Audience.followers.wireValue, "followers")
+    }
+
+    /// **出すのは2つだけ。** モックの「親しい友達」を選ばせる箱は
+    /// サーバーに無い——選べるのに守られない切り替えは作らない
+    func testOnlyTwoChoices() {
+        XCTAssertEqual(StoryService.Audience.allCases.count, 2)
+        for choice in StoryService.Audience.allCases {
+            XCTAssertFalse(choice.label.isEmpty)
+            XCTAssertFalse(choice.note.isEmpty)
+        }
+    }
+}
