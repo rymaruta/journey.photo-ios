@@ -257,6 +257,40 @@ for (const file of files) {
     }
 }
 
+// 4.6e `.borderedProminent` を使っていないか（白地に白い字になる）
+//
+// 🔴 **このアプリでは、押せることが見えなくなる。** `RootView` が
+// `.tint(WebTheme.foreground)`（**白**）を配っているので、
+// `.borderedProminent` は**白地**を敷き、その上に SwiftUI が**白い字**を
+// 置く——出来上がるのは**ただの白い帯**。
+//
+// run 60 の実機の絵で2か所見つかった:
+//
+//   - **同意画面の「同意してはじめる」**——誰もが最初に見る画面の
+//     **唯一のボタン**が読めなかった
+//   - マイページの「投稿する」——一番上が白い帯だった
+//
+// 手元の模型（`Shims/`）は修飾子を素通しするので、**ここでは絶対に
+// 出ない**。実機の絵でしか見つからない種類（4.6d と同じ）。
+//
+// Web は白地に**黒い字**（`--accent-text: #07090a`）で、その形は
+// `webPrimaryButton()` に在る。**そちらを使う。**
+{
+    for (const file of files) {
+        if (!file.includes("/Features/") && !file.includes("/App/")) continue;
+        const source = fs.readFileSync(file, "utf8");
+        source.split("\n").forEach((line, i) => {
+            if (line.trim().startsWith("//")) return;
+            if (!line.includes(".borderedProminent")) return;
+            problems.push(
+                `${path.relative(process.cwd(), file)}:${i + 1}: ` +
+                "`.borderedProminent` は白地に白い字になります" +
+                "（`RootView` の tint が白）。`webPrimaryButton()` を使ってください"
+            );
+        });
+    }
+}
+
 // 4.7 入力と突き合わせる語を、日本語に固定していないか
 //
 // **その人の言葉で打たせる。** 退会の確認は「削除」と打たせていたので、

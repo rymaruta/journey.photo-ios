@@ -38,11 +38,19 @@ struct LegalGateView: View {
             Button {
                 consent.accept()
             } label: {
+                // 🔴 **`.borderedProminent` を使わない。** `RootView` が
+                // `.tint(WebTheme.foreground)`（白）を配っているので、
+                // 白地に**白い字**が乗って**ただの白い帯**になる。
+                // run 60 の実機の絵で、**誰もが最初に見る画面の唯一の
+                // ボタンが読めなく**なっていた（Shims の模型は修飾子を
+                // 素通しするので、手元では一生見えない）。
+                // Web は白地に**黒い字**（`--accent-text: #07090a`）で、
+                // その形は `webPrimaryButton()` に在る
                 Text(L("同意してはじめる", "Agree and continue"))
                     .frame(maxWidth: .infinity)
+                    .webPrimaryButton()
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .buttonStyle(.plain)
             // **スモークから指すための名札。** 文字で探すと、CI の
             // シミュレータが英語なので日本語では当たらないし、
             // 上に並ぶ「利用規約」のリンクを先に掴んで Safari が開く

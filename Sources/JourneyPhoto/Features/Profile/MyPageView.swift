@@ -366,10 +366,15 @@ struct MyPageView: View {
         Button {
             showPostSheet = true
         } label: {
+            // 🔴 **`.borderedProminent` を使わない**（同意画面と同じ理由）。
+            // `RootView` の `.tint(WebTheme.foreground)` が白なので、
+            // 白地に白い字＝**ただの白い帯**になる。run 60 の実機の絵で、
+            // マイページの一番上がそうなっていた
             Label(L("投稿する", "Create"), systemImage: "plus")
                 .frame(maxWidth: .infinity)
+                .webPrimaryButton()
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.plain)
         .padding(.horizontal, 16)
     }
 

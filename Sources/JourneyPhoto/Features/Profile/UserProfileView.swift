@@ -142,12 +142,15 @@ struct UserProfileView: View {
             }
 
             if auth.userId != nil && auth.userId != userId {
-                // **押している状態を色で分ける。** `.bordered` と
-                // `.borderedProminent` は型が違うので三項演算子では書けない
+                // **押している状態を色で分ける。**
+                // 🔴 `.borderedProminent` は使わない——`RootView` の
+                // `.tint(WebTheme.foreground)` が白なので、白地に白い字＝
+                // **ただの白い帯**になる（run 60 の実機の絵で2か所そうだった）。
+                // 白地に黒い字は `webPrimaryButton()`
                 if model.isFollowing {
                     followButton.buttonStyle(.bordered)
                 } else {
-                    followButton.buttonStyle(.borderedProminent)
+                    followButton.webPrimaryButton().buttonStyle(.plain)
                 }
             }
         }
