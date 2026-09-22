@@ -12,6 +12,7 @@ struct PhotoDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model: PhotoDetailViewModel
@@ -497,13 +498,17 @@ struct PhotoDetailView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(PhotoDetailTab.comments.label(commentCount: model.commentCount))
 
-                // **保存**（端末に覚える。サーバーのいいねとは別）
+                // **保存**。いいねとは別の入れ物（`saves#<uid>`）。
+                //
+                // 🔴 以前はいいねの控え（`FavoritesStore`）を共用していたので、
+                // 保存を押すとハートが灯り、マイページの「いいねした写真」に
+                // **保存しただけの写真が並んで**いた。
                 Button {
-                    favorites.toggle(photo.id)
+                    Task { await toggleSave() }
                 } label: {
-                    Image(systemName: favorites.contains(photo.id) ? "bookmark.fill" : "bookmark")
+                    Image(systemName: savedPhotos.contains(photo.id) ? "bookmark.fill" : "bookmark")
                         .font(.title2)
-                        .foregroundStyle(favorites.contains(photo.id) ? WebTheme.foreground : WebTheme.faint)
+                        .foregroundStyle(savedPhotos.contains(photo.id) ? WebTheme.foreground : WebTheme.faint)
                         .webTappable()
                 }
                 .buttonStyle(.plain)
@@ -665,6 +670,21 @@ struct PhotoDetailView: View {
     /// 編集の帰りに、自分の一覧から1枚だけ引き直す。
     ///
     /// **引けなくても画面は壊さない**（圏外なら古いまま出す方がまし）。
+    /// 保存を入れ替える。**サーバーが本体**で、控えは送れたときだけ合わせる
+    private func toggleSave() async {
+        let wasSaved = savedPhotos.contains(photo.id)
+        savedPhotos.set(photo.id, saved: !wasSaved)
+        do {
+            if wasSaved {
+                try await environment.saves.unsave(photoId: photo.id)
+            } else {
+                try await environment.saves.save(photoId: photo.id)
+            }
+        } catch {
+            savedPhotos.set(photo.id, saved: wasSaved)
+        }
+    }
+
     private func reloadPhoto() async {
         guard isMine else { return }
         guard let fresh = try? await environment.photos.myPhoto(id: photo.id) else { return }

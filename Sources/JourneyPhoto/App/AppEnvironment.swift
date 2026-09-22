@@ -15,6 +15,8 @@ final class AppEnvironment: ObservableObject {
     let profiles: ProfileService
     let uploads: UploadService
     let social: SocialService
+    /// 写真の保存（ブックマーク）。**いいねとは別の入れ物**
+    let saves: SaveService
     let notifications: NotificationService
     let moderation: ModerationService
     let account: AccountService
@@ -40,6 +42,7 @@ final class AppEnvironment: ObservableObject {
         self.profiles = ProfileService(api: api)
         self.uploads = UploadService(api: api)
         self.social = SocialService(api: api)
+        self.saves = SaveService(api: api)
         self.notifications = NotificationService(api: api)
         self.moderation = ModerationService(api: api)
         self.account = AccountService(api: api)

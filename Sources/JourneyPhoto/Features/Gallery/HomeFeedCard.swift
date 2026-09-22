@@ -22,6 +22,7 @@ struct HomeFeedCard: View {
     var onMore: () -> Void = {}
 
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
     /// この人をフォローしているか。**外から渡される**（一覧が持っている）
@@ -240,7 +241,7 @@ struct HomeFeedCard: View {
     private var actions: some View {
         HStack(spacing: 22) {
             Button {
-                favorites.toggle(photo.id)
+                Task { await toggleLike() }
             } label: {
                 Label {
                     Text("\(likeCount)")
@@ -269,12 +270,12 @@ struct HomeFeedCard: View {
             // **保存＝端末に覚えるお気に入り**（モック1 の 🔖）。
             // いいねはサーバー、保存は手元、と役割が違う
             Button {
-                favorites.toggle(photo.id)
+                Task { await toggleSave() }
             } label: {
                 Label {
                     Text(L("保存", "Save"))
                 } icon: {
-                    Image(systemName: favorites.contains(photo.id) ? "bookmark.fill" : "bookmark")
+                    Image(systemName: savedPhotos.contains(photo.id) ? "bookmark.fill" : "bookmark")
                 }
                 .foregroundStyle(WebTheme.foreground)
             }
@@ -296,6 +297,43 @@ struct HomeFeedCard: View {
     }
 
     private var liked: Bool { favorites.contains(photo.id) }
+
+    /// いいね。**サーバーへ送る。**
+    ///
+    /// 🔴 ここは長いあいだ端末の控えを反転するだけで、**押しても
+    /// サーバーには一度も届いていなかった**（詳細画面を開くと
+    /// 押していない状態に戻る）。控えは送れたときだけ合わせる。
+    private func toggleLike() async {
+        let wasLiked = liked
+        // 先に画面を変える（押した手応えを待たせない）
+        favorites.set(photo.id, favorite: !wasLiked)
+        do {
+            if wasLiked {
+                _ = try await environment.social.unlike(photoId: photo.id)
+            } else {
+                _ = try await environment.social.like(photoId: photo.id)
+            }
+        } catch {
+            // **届かなかったら戻す。** 画面だけ「いいね済み」にしない
+            favorites.set(photo.id, favorite: wasLiked)
+        }
+    }
+
+    /// 保存。**いいねとは別の入れ物**（`saves#<uid>`）。
+    /// 以前は同じ控えを使っていたので、保存を押すとハートが灯っていた。
+    private func toggleSave() async {
+        let wasSaved = savedPhotos.contains(photo.id)
+        savedPhotos.set(photo.id, saved: !wasSaved)
+        do {
+            if wasSaved {
+                try await environment.saves.unsave(photoId: photo.id)
+            } else {
+                try await environment.saves.save(photoId: photo.id)
+            }
+        } catch {
+            savedPhotos.set(photo.id, saved: wasSaved)
+        }
+    }
 
     /// 出すいいねの数。**押した瞬間に 1 足す**（サーバーの数は詳細で直る）
     private var likeCount: Int {

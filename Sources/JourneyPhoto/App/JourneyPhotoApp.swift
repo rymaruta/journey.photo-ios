@@ -18,6 +18,8 @@ struct JourneyPhotoApp: App {
     @StateObject private var environment = AppEnvironment()
     @StateObject private var consent = LegalConsent()
     @StateObject private var favorites = FavoritesStore()
+    /// 保存（ブックマーク）の控え。**いいねとは別の入れ物**
+    @StateObject private var savedPhotos = SavedPhotosStore()
     @StateObject private var hidden = ModerationStore()
     @StateObject private var joinedAlbums = JoinedAlbumsStore()
     /// 「行きたい」スポット。**この端末にしか残らない**（サーバーに口が無い）
@@ -92,6 +94,18 @@ struct JourneyPhotoApp: App {
         await environment.gallery.setRestrictedLoader { try await photos.restrictedFeed() }
     }
 
+    /// 保存した写真をサーバーに合わせる。
+    ///
+    /// **取れた回だけ上書きする。** 圏外で空にすると、端末の控えごと
+    /// 消えて「保存した写真が全部消えた」になる。
+    /// ログアウトしたら控えは鍵ごと切り替わる（`use(userId:)`）ので、
+    /// ここでは何もしない。
+    private func syncSaves() async {
+        guard auth.userId != nil else { return }
+        let ids = try? await environment.saves.mySaves()
+        if let ids { savedPhotos.replace(with: ids) }
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView(configurationError: configurationError)
@@ -99,6 +113,7 @@ struct JourneyPhotoApp: App {
                 .environmentObject(environment)
                 .environmentObject(consent)
                 .environmentObject(favorites)
+                .environmentObject(savedPhotos)
                 .environmentObject(hidden)
                 .environmentObject(joinedAlbums)
                 .environmentObject(wishlist)
@@ -116,6 +131,7 @@ struct JourneyPhotoApp: App {
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)
+                    savedPhotos.use(userId: auth.userId)
                     hidden.use(userId: auth.userId)
                     joinedAlbums.use(userId: auth.userId)
                     wishlist.use(userId: auth.userId)
@@ -128,6 +144,7 @@ struct JourneyPhotoApp: App {
                     await push.use(userId: auth.userId)
                     await applyModeration()
                     await applyRestrictedFeed()
+                    await syncSaves()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     if auth.userId != nil {
                         let blocks = try? await environment.moderation.blocks()
