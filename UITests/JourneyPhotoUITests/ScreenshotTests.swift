@@ -122,24 +122,6 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
-        // **投稿の2択と、ストーリー作成**（モック4）。
-        // 中央のタブは画面ではなく入口で、押すと2択の札が出る。
-        // ログインしていない回に何が出るかも**そのまま撮る**
-        // ——出ているものを名前に書く（「撮れなかった」を隠さない）
-        if tabBar.buttons.count > 2 {
-            tabBar.buttons.element(boundBy: 2).tap()
-            Thread.sleep(forTimeInterval: 2)
-            shoot(app, "40-投稿の2択")
-            let toStory = app.buttons["post.choice.story"].firstMatch
-            if toStory.waitForExistence(timeout: 5), toStory.isHittable {
-                toStory.tap()
-                Thread.sleep(forTimeInterval: 4)
-                let signedOut = app.descendants(matching: .any)
-                    .matching(identifier: "signin.form").firstMatch.exists
-                shoot(app, "41-ストーリー作成\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
-            }
-        }
-
         // **撮影スポットの画面**（モック5）。
         //
         // 🔴 **写真の詳細からは撮れない。** run 54 で試して撮れなかった
@@ -161,6 +143,28 @@ final class ScreenshotTests: XCTestCase {
             app.swipeUp()
             Thread.sleep(forTimeInterval: 2)
             shoot(app, "61-撮影スポット（下）")
+        }
+        // **投稿の2択と、ストーリー作成**（モック4）。**巡回の最後に置く。**
+        //
+        // 🔴 run 58 はこれを途中に置いて落ちた——ストーリー作成は**札（sheet）**で
+        // 出るので、閉じないまま次の手に進むと**タブの帯が覆われて**押せない
+        // （`kAXErrorCannotComplete`。runs 46・47 と同じ形）。
+        // 閉じる手を足すより、**後ろに何も無い場所に置く**方が確実。
+        // 中央のタブは画面ではなく入口で、押すと2択の札が出る。
+        // ログインしていない回に何が出るかも**そのまま撮る**
+        // ——出ているものを名前に書く（「撮れなかった」を隠さない）
+        if tabBar.buttons.count > 2 {
+            tabBar.buttons.element(boundBy: 2).tap()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "40-投稿の2択")
+            let toStory = app.buttons["post.choice.story"].firstMatch
+            if toStory.waitForExistence(timeout: 5), toStory.isHittable {
+                toStory.tap()
+                Thread.sleep(forTimeInterval: 4)
+                let signedOut = app.descendants(matching: .any)
+                    .matching(identifier: "signin.form").firstMatch.exists
+                shoot(app, "41-ストーリー作成\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
+            }
         }
     }
 }

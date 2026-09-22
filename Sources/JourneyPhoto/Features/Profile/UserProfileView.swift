@@ -55,7 +55,7 @@ struct UserProfileView: View {
             }
         }
         .webScreen()
-        .navigationTitle(model.profile?.name ?? Labels.Navigation.profile)
+        .navigationTitle(model.shownName ?? Labels.Navigation.profile)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if auth.userId != nil && auth.userId != userId {
@@ -118,7 +118,7 @@ struct UserProfileView: View {
                     .overlay(themeRing(model.profile?.themeColor))
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        Text(model.profile?.name ?? "—").font(.headline)
+                        Text(model.shownName ?? "—").font(.headline)
                         VerifiedBadge(isVerified: model.profile?.verified)
                     }
                     HStack(spacing: 12) {
@@ -218,6 +218,19 @@ final class UserProfileViewModel: ObservableObject {
                                       pinned: profile?.pinnedPhotoIds ?? [])
         }
     }
+
+    /// 画面に出す名前。
+    ///
+    /// 🔴 **プロフィールの名前だけを見ていた。** `UserProfile.name` は
+    /// 名前が無いとき「ユーザー」を返す＝**nil にならない**ので、
+    /// この人の写真に添えられている名前（`displayName`）まで降りてこない。
+    /// run 58 の実機の絵では、ホームと写真詳細が `luzhj` を出しているのに
+    /// **人のページだけ「ユーザー」**だった（写真詳細で直したのと同じ形が
+    /// ここにも残っていた＝3か所目）。
+    ///
+    /// **まだ何も取れていないうちは nil**——「ユーザー」と出してから
+    /// 名前に入れ替わると、読み込みの途中が壊れて見える
+    var shownName: String? { AuthorName.forProfilePage(profile: profile, photos: photos) }
 
     func toggleFollow(userId: String, environment: AppEnvironment) async {
         isWorking = true

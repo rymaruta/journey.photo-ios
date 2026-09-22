@@ -41,4 +41,16 @@ enum AuthorName {
     static func shown(profile: UserProfile?, photoDisplayName: String?) -> String {
         real(profile) ?? trimmed(photoDisplayName) ?? Labels.Common.unnamedUser
     }
+
+    /// **人のページの見出し**（`UserProfileView`）。
+    ///
+    /// 写真の詳細と同じ順番だが、写真は1枚ではなく**その人の一覧**から拾う。
+    ///
+    /// **まだ何も取れていないうちは nil。** 先に「ユーザー」と出してから
+    /// 名前に入れ替わると、読み込みの途中が壊れて見える
+    static func forProfilePage(profile: UserProfile?, photos: [Photo]) -> String? {
+        if let real = real(profile) { return real }
+        if let fromPhoto = photos.lazy.compactMap({ trimmed($0.displayName) }).first { return fromPhoto }
+        return profile == nil && photos.isEmpty ? nil : Labels.Common.unnamedUser
+    }
 }

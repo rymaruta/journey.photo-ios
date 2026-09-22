@@ -47,4 +47,41 @@ final class AuthorNameTests: XCTestCase {
         XCTAssertEqual(empty.name, Labels.Common.unnamedUser)
         XCTAssertNil(AuthorName.real(empty))
     }
+
+    private func photo(_ id: String, name: String?) throws -> Photo {
+        let n = name.map { ",\"displayName\":\"\($0)\"" } ?? ""
+        return try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(n)}".utf8))
+    }
+
+    /// 🔴 run 58 の形。ホームと写真詳細は `luzhj`、**人のページだけ「ユーザー」**
+    func testProfilePageFallsBackToThePhotoName() throws {
+        let empty = try profile("{\"userId\":\"u1\"}")
+        XCTAssertEqual(
+            AuthorName.forProfilePage(profile: empty, photos: [try photo("a", name: "luzhj")]),
+            "luzhj")
+    }
+
+    /// **何も取れていないうちは nil**（「ユーザー」と出してから入れ替えない）
+    func testProfilePageIsSilentBeforeAnythingLoads() {
+        XCTAssertNil(AuthorName.forProfilePage(profile: nil, photos: []))
+    }
+
+    /// 取れていて、どちらにも名前が無ければ「ユーザー」
+    func testProfilePageFallsBackToThePlaceholder() throws {
+        let empty = try profile("{\"userId\":\"u1\"}")
+        XCTAssertEqual(AuthorName.forProfilePage(profile: empty, photos: []), Labels.Common.unnamedUser)
+        XCTAssertEqual(
+            AuthorName.forProfilePage(profile: nil, photos: [try photo("a", name: nil)]),
+            Labels.Common.unnamedUser)
+    }
+
+    /// 名前を持たない写真は飛ばして、持っている写真を拾う
+    func testProfilePageSkipsPhotosWithoutAName() throws {
+        XCTAssertEqual(
+            AuthorName.forProfilePage(profile: nil, photos: [
+                try photo("a", name: nil), try photo("b", name: "  "), try photo("c", name: "luzhj"),
+            ]),
+            "luzhj")
+    }
 }
