@@ -286,6 +286,9 @@ final class UploadViewModel: ObservableObject {
         draft.coords = item.pickedCoords ?? item.prepared.coords
         draft.date = item.prepared.takenOn
         draft.exif = item.prepared.exif
+        // **読み込み中の地の色。** Web は前から送っていて、アプリだけ
+        // 送っていなかった（同じ一覧でアプリの写真の枠だけ黒いまま残る）
+        draft.dominantColor = item.prepared.dominantColor
         draft.albumId = selectedAlbumId
 
         let photo = try await uploads.upload(

@@ -9,7 +9,34 @@ public typealias CFMutableData = NSMutableData
 
 public final class CGImageSource {}
 public final class CGImageDestination {}
-public final class CGImage {}
+public final class CGImage {
+    public var width: Int { 0 }
+    public var height: Int { 0 }
+}
+
+// MARK: - 画素を読むための最小限（CoreGraphics。本物にある口だけ）
+
+public final class CGColorSpace {}
+public func CGColorSpaceCreateDeviceRGB() -> CGColorSpace { CGColorSpace() }
+
+public struct CGBitmapInfo: OptionSet {
+    public let rawValue: UInt32
+    public init(rawValue: UInt32) { self.rawValue = rawValue }
+    public static let byteOrder32Big = CGBitmapInfo(rawValue: 1 << 0)
+}
+
+public enum CGImageAlphaInfo: UInt32 {
+    case premultipliedLast = 1
+    case noneSkipLast = 6
+}
+
+public final class CGContext {
+    /// 自前の入れ物に描く版（代表色を数えるのに使う）
+    public init?(data: UnsafeMutableRawPointer?, width: Int, height: Int,
+                 bitsPerComponent: Int, bytesPerRow: Int,
+                 space: CGColorSpace, bitmapInfo: UInt32) { return nil }
+    public func draw(_ image: CGImage, in rect: CGRect) {}
+}
 
 public func CGImageSourceCreateWithData(_ data: CFData, _ options: CFDictionary?) -> CGImageSource? { nil }
 public func CGImageSourceGetCount(_ source: CGImageSource) -> Int { 0 }

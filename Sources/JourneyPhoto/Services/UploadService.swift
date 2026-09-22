@@ -162,6 +162,9 @@ struct PhotoDraft {
     var albumId: String?
     /// 原本から読み取った撮影情報。**GPS は含まない**
     var exif: ExifFields?
+    /// 代表色（`#rrggbb`）。**読み込み中の地の色**。
+    /// Web は前から送っていて、アプリだけ送っていなかった
+    var dominantColor: String?
 
     /// `POST /upload/save` に送る形。
     ///
@@ -182,7 +185,8 @@ struct PhotoDraft {
             coords: coords.map { SaveBody.Coords(lat: ($0.lat * 100).rounded() / 100,
                                                  lng: ($0.lng * 100).rounded() / 100) },
             albumId: albumId,
-            exif: exif
+            exif: exif,
+            dominantColor: dominantColor
         )
     }
 
@@ -199,6 +203,7 @@ struct PhotoDraft {
         let coords: Coords?
         let albumId: String?
         let exif: ExifFields?
+        let dominantColor: String?
 
         struct Coords: Encodable {
             let lat: Double

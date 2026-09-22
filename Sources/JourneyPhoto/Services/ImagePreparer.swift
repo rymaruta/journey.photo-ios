@@ -30,6 +30,12 @@ enum ImagePreparer {
         let coords: Photo.Coords?
         /// 撮影日（YYYY-MM-DD）
         let takenOn: String?
+        /// 代表色（`#rrggbb`）。**読み込み中の地の色**に使う。
+        /// 取れなければ nil——投稿は止めない
+        ///
+        /// 既定を持たせてあるのは、**組み立て直す側**（下書きの復元・テスト）
+        /// が色を知らないため。色は原本からしか取れない
+        var dominantColor: String? = nil
     }
 
     enum PrepareError: LocalizedError {
@@ -70,7 +76,10 @@ enum ImagePreparer {
             contentType: "image/jpeg",
             exif: exif.isEmpty ? nil : exif,
             coords: coords,
-            takenOn: takenOn
+            takenOn: takenOn,
+            // **原本から取る。** 焼き込みや再圧縮のあとでは色がわずかに動く
+            // ——読み込み中の地の色なので実害は無いが、Web と同じものを出す
+            dominantColor: DominantColorExtractor.hex(from: data)
         )
     }
 
