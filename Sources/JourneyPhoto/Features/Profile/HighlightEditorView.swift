@@ -200,7 +200,11 @@ struct HighlightEditorView: View {
             if let contents {
                 let inArchive = Set(archive.map(\.id))
                 picked = contents.items.map(\.id).filter { inArchive.contains($0) }
-                coverId = contents.coverStoryId ?? picked.first
+                // **表紙は必ず並びの中のものにする。** サーバーは並びに
+                // 無い表紙を断る（400）ので、アーカイブから外れた写真が
+                // 表紙だった輪は、直そうとした瞬間に保存できなくなる
+                let cover = contents.coverStoryId
+                coverId = (cover != nil && picked.contains(cover!)) ? cover : picked.first
             }
         }
         loading = false
