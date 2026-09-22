@@ -207,12 +207,7 @@ struct SearchView: View {
                 // 「行ってみたい」が立ち上がる
                 HStack(spacing: 10) {
                     ForEach(spots.prefix(2)) { spot in
-                        NavigationLink {
-                            TagPhotosView(kind: .location(spot.id))
-                        } label: {
-                            spotCard(spot)
-                        }
-                        .buttonStyle(.plain)
+                        spotLink(spot) { spotCard(spot) }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -221,13 +216,7 @@ struct SearchView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(spots.dropFirst(2)) { spot in
-                                NavigationLink {
-                                    TagPhotosView(kind: .location(spot.id))
-                                } label: {
-                                    spotCard(spot)
-                                        .frame(width: 150)
-                                }
-                                .buttonStyle(.plain)
+                                spotLink(spot) { spotCard(spot).frame(width: 150) }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -235,6 +224,36 @@ struct SearchView: View {
                 }
             }
         }
+    }
+
+    /// 「注目スポット」の札の行き先。
+    ///
+    /// **2枚以上ある地点は、スポットの画面へ**（モック5）。この札が
+    /// 指しているのは写真ではなく**場所**で、スポットの画面はその場所の
+    /// 写真も並べる（`spotPhotos`）ので、集約へ行くより出るものが多い。
+    ///
+    /// 🔴 **ここを繋ぐまで、モック5 は誰にも出なかった。** 入口は
+    /// 写真の詳細と地図のピンの2つだけで、どちらも「開いた写真の撮影地に
+    /// 2枚以上あるか」「ピンをうまく押せるか」に左右される。実際 run 54 の
+    /// 巡回では、いちばん新しい写真の撮影地（三条市, 日本）が1枚だったので
+    /// 導線が出ず、**実機の絵を1枚も撮れなかった**。
+    ///
+    /// 1枚だけの地点は今までどおり集約（`TagPhotosView`）へ。
+    @ViewBuilder
+    private func spotLink<Label: View>(_ spot: DiscoverySections.Spot,
+                                       @ViewBuilder label: () -> Label) -> some View {
+        NavigationLink {
+            if let place = DerivedSpot.openable(spot.id, in: model.everything) {
+                SpotDetailView(spot: place, photos: model.everything)
+            } else {
+                TagPhotosView(kind: .location(spot.id))
+            }
+        } label: {
+            label()
+        }
+        .buttonStyle(.plain)
+        // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
+        .accessibilityIdentifier("search.spot")
     }
 
     /// 季節のおすすめ（モック2）。**いまの季節のタグ**から新しい順に。
@@ -539,6 +558,11 @@ final class SearchViewModel: ObservableObject {
     }
 
     func select(sort: GallerySort) { self.sort = sort }
+
+    /// 読み込んだ写真そのもの。**スポットの画面に渡す**
+    /// ——`shown` は絞り込んだあとなので、突き合わせ（近くの地点など）に
+    /// 使うと、絞った瞬間に「近く」が消える
+    var everything: [Photo] { allPhotos }
 
     private var allPhotos: [Photo] = []
     /// 打つたびに投げない。**最後の打鍵から少し待つ**

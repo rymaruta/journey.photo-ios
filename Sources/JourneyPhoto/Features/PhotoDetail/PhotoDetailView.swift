@@ -657,10 +657,9 @@ struct PhotoDetailView: View {
         guard !label.isEmpty else { return }
         let photos = try? await environment.gallery.fetchPhotos()
         guard let photos else { return }
-        guard let place = DerivedSpot.place(label, in: photos) else { return }
-        // **1枚しか無い地点には出さない。** この写真の個別ページと
-        // 中身が同じになる（Web の `MIN_INDEXABLE_LOCATION` と同じ考え）
-        guard place.count >= 2 else { return }
+        // **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
+        // この写真の個別ページと中身が同じになる
+        guard let place = DerivedSpot.openable(label, in: photos) else { return }
         spotLead = SpotLead(spot: place, photos: photos)
     }
 

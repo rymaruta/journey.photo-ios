@@ -413,8 +413,7 @@ struct PhotoMapView: View {
         // 1枚だけの地点も出さない——その写真の個別ページと中身が同じになる
         let spotPlace: DerivedSpot.Place? = {
             guard pin.hasPlaceName else { return nil }
-            guard let place = DerivedSpot.place(pin.title, in: model.photos) else { return nil }
-            return place.count >= 2 ? place : nil
+            return DerivedSpot.openable(pin.title, in: model.photos)
         }()
         return HStack(alignment: .top, spacing: 12) {
             RemoteImage(url: pin.photos.first?.gridImageURL,

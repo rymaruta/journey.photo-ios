@@ -87,19 +87,6 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
-        // ⚠️ **スポットの画面は、この巡回では撮れない。** 2回試して2回とも
-        // 外した（run 46・47）:
-        //
-        //   - 地図のピン → 当たったのは地図に重ねた操作ボタンで
-        //     `kAXErrorCannotComplete`
-        //   - 探すの1つ目の押せるもの → 当たったのは「並び替え」で、
-        //     出た札が戻るボタンを覆って次の手が詰まった
-        //
-        // そもそも**台帳が0件なのでスポットの画面は存在しない**
-        // （`docs/MOCK_PARITY.md`）。無いものを撮ろうとして巡回を
-        // 2回落とした。台帳に最初の数件が入ってから、決まった入口
-        // （識別子を付けた導線）で撮る。
-
         // ギャラリーに戻って、1枚目の写真を開いたところ
         tabBar.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 2)
@@ -112,22 +99,29 @@ final class ScreenshotTests: XCTestCase {
             firstPhoto.tap()
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "20-写真の詳細")
+        }
 
-            // **撮影スポットの画面**（モック5）。写真詳細からの導線を
-            // 名指しで押す。
-            //
-            // 出るのは「同じ撮影地の写真が2枚以上ある」ときだけなので、
-            // 無ければ何もしない——**無いものを探して巡回を落とさない**
-            // （run 46・47 でそれを2回やった）。
-            let toSpot = app.buttons["photo.spotLink"].firstMatch
-            if toSpot.waitForExistence(timeout: 5), toSpot.isHittable {
-                toSpot.tap()
-                Thread.sleep(forTimeInterval: 4)
-                shoot(app, "60-撮影スポット")
-                app.swipeUp()
-                Thread.sleep(forTimeInterval: 2)
-                shoot(app, "61-撮影スポット（下）")
-            }
+        // **撮影スポットの画面**（モック5）。
+        //
+        // 🔴 **写真の詳細からは撮れない。** run 54 で試して撮れなかった
+        // ——導線（`photo.spotLink`）が出るのは「開いた写真の撮影地に
+        // 2枚以上ある」ときだけで、いちばん新しい写真の撮影地
+        // （三条市, 日本）は1枚だった。**データ次第で出たり出なかったり
+        // する入口では、絵は撮れない。**
+        //
+        // 「探す」の**注目スポットの札**は、写真の多い地点から順に並ぶ
+        // （`DiscoverySections.popularSpots`）。先頭は必ず最多の地点なので、
+        // 写真が2枚以上ある地点が1つでもあれば必ず出る。
+        tabBar.buttons.element(boundBy: 1).tap()
+        Thread.sleep(forTimeInterval: 4)
+        let toSpot = app.buttons["search.spot"].firstMatch
+        if toSpot.waitForExistence(timeout: 10), toSpot.isHittable {
+            toSpot.tap()
+            Thread.sleep(forTimeInterval: 4)
+            shoot(app, "60-撮影スポット")
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "61-撮影スポット（下）")
         }
     }
 }

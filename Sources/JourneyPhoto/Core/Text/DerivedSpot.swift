@@ -52,6 +52,22 @@ enum DerivedSpot {
         )
     }
 
+    /// **スポットの画面を開いてよい地点か。**
+    ///
+    /// 3か所（写真の詳細・地図のピン・「注目スポット」の札）が同じ判断を
+    /// していた。同じものを三度書くと、線を動かしたとき1か所だけ残る。
+    ///
+    /// 線は **2枚**。1枚だけの地点にスポットの画面を出すと、その写真の
+    /// 個別ページと中身が同じになる（Web の `MIN_INDEXABLE_LOCATION` と
+    /// 同じ考え）。
+    static func openable(_ label: String, in photos: [Photo]) -> Place? {
+        guard let place = place(label, in: photos) else { return nil }
+        return place.count >= minPhotosForSpotPage ? place : nil
+    }
+
+    /// スポットの画面を出す最低の枚数（Web の `MIN_INDEXABLE_LOCATION` と同じ）
+    static let minPhotosForSpotPage = 2
+
     /// 一覧にある撮影地すべて。**枚数の多い順**
     static func all(in photos: [Photo]) -> [Place] {
         var seen = Set<String>()

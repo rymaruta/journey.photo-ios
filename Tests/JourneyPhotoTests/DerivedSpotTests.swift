@@ -122,4 +122,38 @@ final class DerivedSpotTests: XCTestCase {
         XCTAssertEqual(cats.first, "建築")
         XCTAssertEqual(cats.count, 2)
     }
+
+    // MARK: - 画面を開いてよい地点か（`openable`）
+
+    /// **1枚だけの地点には、スポットの画面を出さない。**
+    /// その写真の個別ページと中身が同じになる
+    func testOnePhotoPlaceDoesNotOpen() throws {
+        let photos = [try photo("a", location: "三条市, 日本")]
+        XCTAssertNotNil(DerivedSpot.place("三条市, 日本", in: photos))
+        XCTAssertNil(DerivedSpot.openable("三条市, 日本", in: photos))
+    }
+
+    /// 2枚あれば開く（線は `minPhotosForSpotPage`）
+    func testTwoPhotosOpen() throws {
+        let place = try XCTUnwrap(DerivedSpot.openable("山中湖", in: [
+            try photo("a", location: "山中湖"),
+            try photo("b", location: "山中湖"),
+        ]))
+        XCTAssertEqual(place.count, 2)
+    }
+
+    /// **ゆるい一致で数える。** 「パリ」は「パリ, フランス」の1枚と
+    /// 合わせて2枚なので開く——`place` と同じ数え方であること
+    func testCountsLooselyLikeThePlaceItself() throws {
+        XCTAssertNotNil(DerivedSpot.openable("パリ", in: [
+            try photo("a", location: "パリ"),
+            try photo("b", location: "パリ, フランス"),
+        ]))
+    }
+
+    /// 撮影地が書かれていない写真しか無ければ開かない
+    func testNoLocationDoesNotOpen() throws {
+        XCTAssertNil(DerivedSpot.openable("", in: [try photo("a", location: nil)]))
+        XCTAssertNil(DerivedSpot.openable("山中湖", in: [try photo("a", location: nil)]))
+    }
 }
