@@ -250,7 +250,10 @@ struct PhotoMapView: View {
                         .padding(.horizontal, 16)
                 }
             }
-            .padding(.bottom, 16)
+            // **地図の出どころの表示を覆わない。** Apple の地図は左下に
+            // 「法律に基づく情報」を出す決まりで、実機の絵（run 47）では
+            // 「このエリアを検索」がそこへ重なっていた
+            .padding(.bottom, 34)
         }
     }
 

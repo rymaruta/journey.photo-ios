@@ -87,23 +87,18 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
-        // **撮影スポットの詳細**（モック5）。「探す」の注目スポットから入る
-        // ——ログインが要らない経路なので、この巡回でも撮れる。
+        // ⚠️ **スポットの画面は、この巡回では撮れない。** 2回試して2回とも
+        // 外した（run 46・47）:
         //
-        // ⚠️ **押せないものを押さない。** 最初に地図のピンも撮ろうとして
-        // `app.maps.buttons.firstMatch` を押したが、当たったのは地図の上に
-        // 重ねた操作ボタンで、`kAXErrorCannotComplete` で**巡回ごと落ちた**
-        // （run 46）。絵を1枚撮れないことでテストを落とさない。
-        tabBar.buttons.element(boundBy: 1).tap()
-        Thread.sleep(forTimeInterval: 4)
-        let spot = app.scrollViews.buttons.firstMatch
-        if spot.waitForExistence(timeout: 10), spot.isHittable {
-            spot.tap()
-            Thread.sleep(forTimeInterval: 4)
-            shoot(app, "50-スポットか集まりの画面")
-            let back = app.navigationBars.buttons.firstMatch
-            if back.exists, back.isHittable { back.tap() }
-        }
+        //   - 地図のピン → 当たったのは地図に重ねた操作ボタンで
+        //     `kAXErrorCannotComplete`
+        //   - 探すの1つ目の押せるもの → 当たったのは「並び替え」で、
+        //     出た札が戻るボタンを覆って次の手が詰まった
+        //
+        // そもそも**台帳が0件なのでスポットの画面は存在しない**
+        // （`docs/MOCK_PARITY.md`）。無いものを撮ろうとして巡回を
+        // 2回落とした。台帳に最初の数件が入ってから、決まった入口
+        // （識別子を付けた導線）で撮る。
 
         // ギャラリーに戻って、1枚目の写真を開いたところ
         tabBar.buttons.element(boundBy: 0).tap()
