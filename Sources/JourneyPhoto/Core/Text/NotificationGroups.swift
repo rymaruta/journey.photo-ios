@@ -37,8 +37,12 @@ enum NotificationGroups {
     static func bucket(of row: AppNotification, now: Date = Date(),
                        calendar: Calendar = .current) -> Bucket {
         guard let text = row.t, let date = parse(text) else { return .earlier }
-        if calendar.isDateInToday(date) { return .today }
-        if calendar.isDateInYesterday(date) { return .yesterday }
+        // **`now` から数える。** `isDateInToday` / `isDateInYesterday` は
+        // 渡した `now` を見ずに**システムの時計**を見るので、混ぜると
+        // 引数が嘘になる（テストは日付が変わるまで通り、翌日に落ちた）。
+        if calendar.isDate(date, inSameDayAs: now) { return .today }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, inSameDayAs: yesterday) { return .yesterday }
         // **7日で切る**（週の始まりに依らない。月曜に開いた人だけ
         // 「今週」が空、という揺れを作らない）
         if let days = calendar.dateComponents([.day], from: date, to: now).day, days < 7, days >= 0 {

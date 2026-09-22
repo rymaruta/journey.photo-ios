@@ -36,6 +36,17 @@ final class NotificationGroupsTests: XCTestCase {
                                                  now: now, calendar: calendar), .earlier)
     }
 
+    /// **`now` から数えているか。** システムの時計を見ていると、
+    /// このテストは書いた日だけ通って翌日に落ちる（実際に落ちた）
+    func testCountsFromTheGivenNowNotTheSystemClock() throws {
+        // システムの時計では遠い過去。`now` から見れば「今日」
+        let past = NotificationGroups.parse("2001-01-02T09:00:00.000Z")!
+        XCTAssertEqual(NotificationGroups.bucket(of: try row("2001-01-02T01:00:00.000Z"),
+                                                 now: past, calendar: calendar), .today)
+        XCTAssertEqual(NotificationGroups.bucket(of: try row("2001-01-01T23:00:00.000Z"),
+                                                 now: past, calendar: calendar), .yesterday)
+    }
+
     /// 時刻の読めないお知らせは**捨てない**。「今日」にも置かない
     func testUnknownTimeGoesToEarlier() throws {
         XCTAssertEqual(NotificationGroups.bucket(of: try row(nil), now: now, calendar: calendar), .earlier)
