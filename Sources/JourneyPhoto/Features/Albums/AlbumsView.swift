@@ -45,6 +45,7 @@ struct AlbumsView: View {
             }
             joinedSection
         }
+        .webScreen()
         .toolbar { addMenu }
         .alert(L("名前を変える", "Rename"), isPresented: $showRename) {
             TextField(L("名前", "Name"), text: $renameTitle)
@@ -115,6 +116,7 @@ struct AlbumsView: View {
                     }
                 }
             }
+            .listRowBackground(Color.clear)
         }
     }
 

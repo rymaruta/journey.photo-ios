@@ -69,6 +69,7 @@ struct UploadView: View {
             errorSection
             submitSection
         }
+        .webScreen()
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
         .onAppear {
             // **今日のテーマから来たときだけ。** 既に何か打っていれば触らない
@@ -112,6 +113,7 @@ struct UploadView: View {
         } footer: {
             Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
         }
+        .listRowBackground(Color.clear)
     }
 
     /// 選んだ写真ごとの欄。**題・説明・撮影地は1枚ずつ**（Web と同じ）。
@@ -158,6 +160,7 @@ struct UploadView: View {
                      ? L("\(indexOf(item) ) 枚目", "Photo \(indexOf(item))")
                      : L("この写真について", "About this photo"))
             }
+            .listRowBackground(Color.clear)
         }
     }
 
@@ -172,6 +175,7 @@ struct UploadView: View {
             TagField(tagsText: $model.tagsText)
             CategoryField(category: $model.category)
         }
+        .listRowBackground(Color.clear)
     }
 
     private var songSection: some View {
@@ -189,6 +193,7 @@ struct UploadView: View {
                 }
             }
         }
+        .listRowBackground(Color.clear)
     }
 
     @ViewBuilder
@@ -203,6 +208,7 @@ struct UploadView: View {
                     }
                 }
             }
+            .listRowBackground(Color.clear)
         }
     }
 
@@ -231,6 +237,7 @@ struct UploadView: View {
                  : L("非公開の写真は、あなた以外には見えません。あとから公開できます。",
                      "Private photos stay yours. You can publish them later."))
         }
+        .listRowBackground(Color.clear)
     }
 
     private func publishChoice(_ title: String, note: String, systemImage: String,
@@ -288,6 +295,7 @@ struct UploadView: View {
             Section {
                 Text(error).foregroundStyle(.red).font(.callout)
             }
+            .listRowBackground(Color.clear)
         }
     }
 
@@ -333,5 +341,6 @@ struct UploadView: View {
                 }
             }
         }
+        .listRowBackground(Color.clear)
     }
 }

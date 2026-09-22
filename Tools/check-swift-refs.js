@@ -205,6 +205,25 @@ for (const file of files) {
     }
 }
 
+// 4.6c 画面の地を黒にし忘れていないか
+//
+// `Form` / `List` は既定で**灰色の段**を描く。このアプリは黒地なので、
+// 付け忘れた画面だけ**1枚だけ別のアプリに見える**——実機の絵で
+// ログイン画面がそうなっていた（run 38）。まとめて直したので、
+// 次に画面を足す人が同じ穴に落ちないように見張る。
+{
+    for (const file of files) {
+        if (!file.includes("/Features/")) continue;
+        const source = fs.readFileSync(file, "utf8");
+        if (!/\b(Form|List)\s*[({]/.test(source)) continue;
+        if (source.includes("webScreen()")) continue;
+        problems.push(
+            `${path.relative(process.cwd(), file)}: Form / List に webScreen() がありません` +
+            `（既定の灰色の段が並び、この画面だけ別のアプリに見えます）`
+        );
+    }
+}
+
 // 4.7 入力と突き合わせる語を、日本語に固定していないか
 //
 // **その人の言葉で打たせる。** 退会の確認は「削除」と打たせていたので、

@@ -32,6 +32,7 @@ struct BlockedUsersView: View {
                 }
             }
         }
+        .webScreen()
         .navigationTitle(L("ブロックした人", "Blocked people"))
         .task { await load() }
         .refreshable { await load() }

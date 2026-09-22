@@ -22,6 +22,7 @@ struct ChangePasswordView: View {
             } footer: {
                 Text(AuthMessage.passwordRule)
             }
+            .listRowBackground(Color.clear)
 
             if let error = auth.errorMessage {
                 Section { Text(error).foregroundStyle(.red).font(.callout) }
@@ -38,7 +39,9 @@ struct ChangePasswordView: View {
                 }
                 .disabled(auth.isWorking || current.isEmpty || updated.isEmpty)
             }
+            .listRowBackground(Color.clear)
         }
+        .webScreen()
         .navigationTitle(L("パスワードを変える", "Change password"))
         .navigationBarTitleDisplayMode(.inline)
     }

@@ -54,6 +54,7 @@ struct EditPhotoView: View {
                 Text(L("題や説明はそのままで、写真だけを入れ替えます。反映まで数分かかります。",
                        "Swaps the image only, keeping the title and description. It takes a few minutes to appear."))
             }
+            .listRowBackground(Color.clear)
 
             Section(L("この写真について", "About this photo")) {
                 TextField(L("題", "Title"), text: $title)
@@ -69,18 +70,21 @@ struct EditPhotoView: View {
                 TextField(L("撮影日（YYYY-MM-DD）", "Date taken (YYYY-MM-DD)"), text: $date)
                     .keyboardType(.numbersAndPunctuation)
             }
+            .listRowBackground(Color.clear)
 
             Section {
                 Toggle(L("公開する", "Public"), isOn: $published)
             } footer: {
                 Text(L("非公開にすると、サイトの一覧と個別ページから消えます（反映まで数分）。", "Making it private removes it from the site within a few minutes."))
             }
+            .listRowBackground(Color.clear)
 
             if let message {
                 Section {
                     Text(message).font(.callout)
                         .foregroundStyle(messageIsError ? Color.red : Color.secondary)
                 }
+                .listRowBackground(Color.clear)
             }
 
             Section {
@@ -95,7 +99,9 @@ struct EditPhotoView: View {
                 }
                 .disabled(isSaving)
             }
+            .listRowBackground(Color.clear)
         }
+        .webScreen()
         .navigationTitle(L("写真を編集", "Edit photo"))
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: replaceItem) { _, item in

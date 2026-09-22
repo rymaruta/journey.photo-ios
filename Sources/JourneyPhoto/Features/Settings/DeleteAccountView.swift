@@ -34,6 +34,7 @@ struct DeleteAccountView: View {
                 // 名前を伏せる扱いで、行そのものは残る）
                 Text(L("他の人の写真に書いたコメントの本文は残りますが、名前は「退会したユーザー」に変わります。", "Comments you left on other photos remain, but your name becomes “Deleted user”."))
             }
+            .listRowBackground(Color.clear)
 
             Section {
                 // **`**` を書かない。** Markdown として太字になるのは
@@ -46,6 +47,7 @@ struct DeleteAccountView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             }
+            .listRowBackground(Color.clear)
 
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(.red).font(.callout) }
@@ -66,7 +68,9 @@ struct DeleteAccountView: View {
                 // ——灰色のまま理由も出ない画面にしない
                 .disabled(isWorking || !ConfirmWord.matches(typed, word: Self.confirmWord))
             }
+            .listRowBackground(Color.clear)
         }
+        .webScreen()
         .navigationTitle(L("アカウントの削除", "Delete account"))
         .navigationBarTitleDisplayMode(.inline)
     }

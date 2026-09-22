@@ -197,7 +197,10 @@ struct StoryViewerView: View {
             NavigationStack {
                 List(viewers) { viewer in
                     Text(viewer.name)
+                        .foregroundStyle(WebTheme.foreground)
+                        .listRowBackground(Color.clear)
                 }
+                .webScreen()
                 .navigationTitle(L("見た人 \(viewers.count)", "\(viewers.count) viewers"))
                 .navigationBarTitleDisplayMode(.inline)
             }

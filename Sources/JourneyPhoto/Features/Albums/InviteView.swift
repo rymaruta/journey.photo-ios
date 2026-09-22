@@ -76,6 +76,7 @@ struct InviteView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .listRowBackground(Color.clear)
 
             if preview.photos.isEmpty {
                 Section { Text(L("まだ写真がありません", "No photos yet")).foregroundStyle(.secondary) }
@@ -96,6 +97,7 @@ struct InviteView: View {
                         }
                     }
                 }
+                .listRowBackground(Color.clear)
             }
 
             if let message {
@@ -123,7 +125,9 @@ struct InviteView: View {
                     .disabled(isJoining)
                 }
             }
+            .listRowBackground(Color.clear)
         }
+        .webScreen()
     }
 
     private func load() async {

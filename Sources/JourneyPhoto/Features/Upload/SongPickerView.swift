@@ -48,6 +48,7 @@ struct SongPickerView: View {
                 }
             }
         }
+        .webScreen()
         .navigationTitle(L("曲を選ぶ", "Choose a song"))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: L("曲名・アーティスト", "Title or artist"))

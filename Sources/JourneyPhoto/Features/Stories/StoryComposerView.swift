@@ -48,6 +48,7 @@ struct StoryComposerView: View {
             } footer: {
                 Text(L("ストーリーは24時間で消えます。撮影情報（EXIF）は端末で取り除いてから送ります。", "Stories disappear after 24 hours. Photo metadata is removed on your device."))
             }
+            .listRowBackground(Color.clear)
 
             Section {
                 TextField(L("ひとこと", "Caption"), text: $caption)
@@ -56,6 +57,7 @@ struct StoryComposerView: View {
                 // 座標は地名とセットのときだけ送る（名前の無い点は画面に出しようがない）
                 Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。", "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
             }
+            .listRowBackground(Color.clear)
 
             // **`Section(_:content:footer:)` は本物の SwiftUI に無い**
             // （題付きは `init(_:content:)` だけ）。header / footer で書く
@@ -88,6 +90,7 @@ struct StoryComposerView: View {
                 Text(L("3〜15秒。曲は30秒の試聴だけを使います。",
                        "3–15 seconds. Songs use the 30-second preview only."))
             }
+            .listRowBackground(Color.clear)
 
             if let message {
                 Section { Text(message).font(.callout) }
@@ -105,7 +108,9 @@ struct StoryComposerView: View {
                 }
                 .disabled(isWorking || prepared == nil)
             }
+            .listRowBackground(Color.clear)
         }
+        .webScreen()
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { picked in song = picked }

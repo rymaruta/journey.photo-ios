@@ -35,6 +35,7 @@ struct ProfileEditView: View {
                     Label(L("カバーを変える", "Change cover"), systemImage: "photo")
                 }
             }
+            .listRowBackground(Color.clear)
 
             Section(Labels.Navigation.profile) {
                 TextField(L("表示名", "Display name"), text: $displayName)
@@ -46,6 +47,7 @@ struct ProfileEditView: View {
                 TextField(L("ひとこと", "Status"), text: $statusText)
                 ThemeColorField(themeColor: $themeColor)
             }
+            .listRowBackground(Color.clear)
 
             Section(L("リンク", "Links")) {
                 TextField(L("ウェブサイト", "Website"), text: $website)
@@ -54,6 +56,7 @@ struct ProfileEditView: View {
                 TextField(L("Instagram（@なし）", "Instagram (without @)"), text: $instagram)
                     .textInputAutocapitalization(.never)
             }
+            .listRowBackground(Color.clear)
 
             if let message {
                 Section { Text(message).font(.callout) }
@@ -73,7 +76,9 @@ struct ProfileEditView: View {
                 // 空の欄がそのまま「消す」として送られる
                 .disabled(isSaving || !loaded)
             }
+            .listRowBackground(Color.clear)
         }
+        .webScreen()
         .navigationTitle(L("プロフィールの編集", "Edit profile"))
         .navigationBarTitleDisplayMode(.inline)
         .overlay { if isLoading { ProgressView() } }

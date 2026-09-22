@@ -32,6 +32,7 @@ struct ReportSheet: View {
                         // 「対応しました」とは言わない——読むのは人で、すぐには終わらない
                         Text(L("結果をお伝えできない場合があります。", "We may not be able to tell you the outcome."))
                     }
+                    .listRowBackground(Color.clear)
                 } else {
                     Section(L("理由", "Reason")) {
                         Picker(L("理由", "Reason"), selection: $reason) {
@@ -42,11 +43,13 @@ struct ReportSheet: View {
                         .pickerStyle(.inline)
                         .labelsHidden()
                     }
+                    .listRowBackground(Color.clear)
 
                     Section(L("補足（任意）", "Details (optional)")) {
                         TextField(L("状況を書いてください", "Tell us what happened"), text: $note, axis: .vertical)
                             .lineLimit(2...5)
                     }
+                    .listRowBackground(Color.clear)
 
                     if ownerId != nil {
                         Section {
@@ -54,6 +57,7 @@ struct ReportSheet: View {
                         } footer: {
                             Text(L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."))
                         }
+                        .listRowBackground(Color.clear)
                     }
 
                     if let errorMessage {
@@ -64,8 +68,10 @@ struct ReportSheet: View {
                         Button(L("通報する", "Report")) { Task { await submit() } }
                             .disabled(isWorking)
                     }
+                    .listRowBackground(Color.clear)
                 }
             }
+            .webScreen()
             .navigationTitle(L("通報", "Report"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
