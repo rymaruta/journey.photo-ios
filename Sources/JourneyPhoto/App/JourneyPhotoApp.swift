@@ -24,6 +24,8 @@ struct JourneyPhotoApp: App {
     @StateObject private var wishlist = WishlistStore()
     /// ストーリーの書きかけ。**この端末にだけ残る**（サーバーに口が無い）
     @StateObject private var storyDrafts = StoryDraftStore()
+    /// 見たストーリー（輪の色）。**サーバーに口が無いので端末に覚える**
+    @StateObject private var seenStories = SeenStoriesStore()
     @StateObject private var push = PushCenter()
     /// 短い知らせ（Web の `useToast`）。**1つだけ出す**
     @StateObject private var toasts = ToastCenter()
@@ -87,6 +89,7 @@ struct JourneyPhotoApp: App {
                 .environmentObject(joinedAlbums)
                 .environmentObject(wishlist)
                 .environmentObject(storyDrafts)
+                .environmentObject(seenStories)
                 .environmentObject(push)
                 .environmentObject(toasts)
                 .task { await auth.restore() }
@@ -103,6 +106,7 @@ struct JourneyPhotoApp: App {
                     joinedAlbums.use(userId: auth.userId)
                     wishlist.use(userId: auth.userId)
                     storyDrafts.use(userId: auth.userId)
+                    seenStories.use(userId: auth.userId)
                     // **通知の宛先も、人が変わったら預け直す**
                     // （外さないと、次にこの端末を使う人へ前の人あての
                     //  通知が届く）

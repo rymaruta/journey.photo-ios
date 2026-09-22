@@ -14,6 +14,8 @@ struct StoriesRow: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var hidden: ModerationStore
+    /// 見たかどうか（リングの色）。**サーバーに口が無いので端末に覚える**
+    @EnvironmentObject private var seen: SeenStoriesStore
     @StateObject private var model = StoriesViewModel()
     @State private var opened: Story?
     @State private var showComposer = false
@@ -46,8 +48,14 @@ struct StoriesRow: View {
                                 opened = story
                             } label: {
                                 VStack(spacing: 4) {
+                                    // **見たものは輪を落とす。** 全部同じ輪だと
+                                    // 「どれがまだか」が分からず、行が意味を失う
+                                    let unseen = seen.hasUnseen(model.siblings(of: story))
                                     StoryThumb(story: story)
-                                        .overlay(Circle().strokeBorder(.tint, lineWidth: 2))
+                                        .overlay(Circle().strokeBorder(
+                                            unseen ? AnyShapeStyle(.tint)
+                                                   : AnyShapeStyle(Color.white.opacity(0.25)),
+                                            lineWidth: 2))
                                     Text(story.authorName)
                                         .font(.caption)
                                         .lineLimit(1)
@@ -74,6 +82,11 @@ struct StoriesRow: View {
         .fullScreenCover(item: $opened) { story in
             viewer(for: story)
         }
+        .onChange(of: opened?.id) { _, id in
+            // **開いた1本を見たことにする。** 閲覧画面の中で次へ送ったぶんは
+            // あちらが知らせる（この行は開いた1本しか知らない）
+            if let id { seen.markSeen(id) }
+        }
         .sheet(isPresented: $showComposer, onDismiss: {
             Task { await reload() }
         }) {
@@ -91,7 +104,8 @@ struct StoriesRow: View {
     /// 閲覧画面の中だけ続けて見られる
     private func viewer(for story: Story) -> some View {
         let group = StoryPlayback.siblings(of: story, in: model.stories)
-        return StoryViewerView(stories: group.stories, startIndex: group.index, viewerId: auth.userId)
+        return StoryViewerView(stories: group.stories, startIndex: group.index,
+                               viewerId: auth.userId, onSeen: { seen.markSeen($0) })
     }
 }
 
@@ -99,6 +113,12 @@ struct StoriesRow: View {
 final class StoriesViewModel: ObservableObject {
 
     @Published private(set) var stories: [Story] = []
+
+    /// その1本と**同じ投稿者の束**（輪の色は束ごとに決める——1本でも
+    /// 未読なら点ける）
+    func siblings(of story: Story) -> [Story] {
+        StoryPlayback.siblings(of: story, in: stories).stories
+    }
 
     func load(environment: AppEnvironment, blockedUserIds: Set<String> = [],
               reportedPhotoIds: Set<String> = []) async {

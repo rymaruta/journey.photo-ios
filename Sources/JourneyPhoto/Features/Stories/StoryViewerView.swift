@@ -53,9 +53,15 @@ struct StoryViewerView: View {
     /// 送っている最中。**二度押しで2件送らない**。自動送りも止める
     @State private var isSending = false
 
-    init(stories: [Story], startIndex: Int, viewerId: String?) {
+    /// 見終えた1本を知らせる。**送るたびに呼ぶ**——次へ送ったぶんも
+    /// 既読にしないと、閉じたときに輪が点いたまま残る
+    let onSeen: ((String) -> Void)?
+
+    init(stories: [Story], startIndex: Int, viewerId: String?,
+         onSeen: ((String) -> Void)? = nil) {
         self.stories = stories
         self.viewerId = viewerId
+        self.onSeen = onSeen
         let start = stories.indices.contains(startIndex) ? startIndex : 0
         _index = State(initialValue: start)
         _mediaReady = State(initialValue: stories.indices.contains(start) ? stories[start].isVideo : false)
@@ -126,6 +132,9 @@ struct StoryViewerView: View {
             footer(for: story)
         }
         .task(id: story.id) {
+            // 端末の既読（輪の色）。**サーバーの応答を待たない**
+            // ——圏外でも、見たものは見たことにする
+            onSeen?(story.id)
             // **見たことを伝えるのは1回。** 失敗しても画面は止めない
             await environment.stories.markViewed(id: story.id)
             if isMine(story) {
