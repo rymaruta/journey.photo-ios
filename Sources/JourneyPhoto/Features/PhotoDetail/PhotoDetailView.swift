@@ -28,6 +28,8 @@ struct PhotoDetailView: View {
     @State private var tab: PhotoDetailTab = .comments
     /// 「この場所のスポット」の行き先。**台帳にも写真にも辿り着けたときだけ入る**
     @State private var spotLead: SpotLead?
+    @State private var isFollowing = false
+    @State private var isFollowWorking = false
 
     /// スポット詳細に渡すもの一式。台帳の1件と、突き合わせる公開写真と、
     /// 近くのスポットを出すための台帳全体
@@ -81,6 +83,14 @@ struct PhotoDetailView: View {
             await model.load()
         }
         .task(id: shown.spotId) { await loadSpotLead() }
+        .task(id: ownerId) {
+            await model.loadOwner(ownerId, profiles: environment.profiles)
+            // **フォローしているかは、その人を見に行かずに知りたい。**
+            // 自分のフォロー一覧から引く（相手のページを開かずに済む）
+            guard let me = auth.userId, let ownerId, me != ownerId else { return }
+            let ids = (try? await environment.social.myFollowingIds()) ?? []
+            isFollowing = ids.contains(ownerId)
+        }
         .sheet(isPresented: $showReport) {
             ReportSheet(photoId: photo.id, ownerId: ownerId)
         }
@@ -128,6 +138,7 @@ struct PhotoDetailView: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 16) {
             titleText
+            authorRow
             paragraphs
             locationLink
             spotLink
@@ -241,6 +252,98 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// 作者（モック6-2）。アバター・名前・@ユーザー名・フォロー。
+    ///
+    /// **@ユーザー名は取れたときだけ。** 写真の行は表示名しか持っていない
+    /// ので、投稿者の公開プロフィールを1回だけ引く。取れなければ名前だけ
+    /// ——「@」だけの行を作らない。
+    ///
+    /// **認証バッジは出さない**（モックにはあるが、サーバーに判定が無い）。
+    @ViewBuilder
+    private var authorRow: some View {
+        if let ownerId {
+            HStack(spacing: 10) {
+                NavigationLink {
+                    UserProfileView(userId: ownerId)
+                } label: {
+                    HStack(spacing: 10) {
+                        RemoteImage(url: UserProfile.profileAssetURL(
+                            userId: ownerId, suffix: nil, cacheBust: nil))
+                            .frame(width: 44, height: 44)
+                            .clipShape(Circle())
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(model.owner?.name ?? shown.displayName ?? L("投稿者", "Poster"))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(WebTheme.foreground)
+                                .lineLimit(1)
+                            if let username = model.owner?.username, !username.isEmpty {
+                                Text("@\(username)")
+                                    .font(.caption)
+                                    .foregroundStyle(WebTheme.faint)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 8)
+
+                if !isMine, auth.userId != nil {
+                    followButton(ownerId)
+                }
+            }
+            // 撮影日時と撮影地は作者の下に1行で（モック6-2）
+            if let line = takenLine {
+                Text(line)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+            }
+        }
+    }
+
+    /// 「2024年5月12日 ・ サントリーニ島, ギリシャ」。**持っているものだけ**
+    private var takenLine: String? {
+        let place = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
+        let day = shown.date ?? ""
+        let parts = [day, place].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " ・ ")
+    }
+
+    private func followButton(_ userId: String) -> some View {
+        Button {
+            Task { await toggleFollow(userId) }
+        } label: {
+            Text(isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"))
+                .font(.footnote.weight(.semibold))
+                .padding(.horizontal, 16)
+                .frame(height: 34)
+                .background(isFollowing ? AnyShapeStyle(WebTheme.surface)
+                                        : AnyShapeStyle(WebTheme.accentBackground),
+                            in: Capsule())
+                .foregroundStyle(isFollowing ? WebTheme.foreground : WebTheme.accentText)
+        }
+        .buttonStyle(.plain)
+        .disabled(isFollowWorking)
+        .opacity(isFollowWorking ? 0.5 : 1)
+    }
+
+    /// **返ってきた状態を使う。** 自分で反転すると、失敗した回に
+    /// 画面だけフォロー中になる
+    private func toggleFollow(_ userId: String) async {
+        guard !isFollowWorking else { return }
+        isFollowWorking = true
+        defer { isFollowWorking = false }
+        if isFollowing {
+            let result = try? await environment.social.unfollow(userId: userId)
+            if let result { isFollowing = result.following }
+        } else {
+            let result = try? await environment.social.follow(userId: userId)
+            if let result { isFollowing = result.following }
+        }
+    }
+
     @ViewBuilder
     private var metaRows: some View {
         if let tags = shown.tags, !tags.isEmpty {
@@ -334,28 +437,30 @@ struct PhotoDetailView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(PhotoDetailTab.comments.label(commentCount: model.commentCount))
 
-                Spacer()
-
-                if let ownerId, !isMine {
-                    // Web の `ProfileLink`: 丸いアバター（`ring-white/20`）＋
-                    // 名前。名前だけだと、誰の写真か一目で分からない
-                    NavigationLink {
-                        UserProfileView(userId: ownerId)
-                    } label: {
-                        HStack(spacing: 8) {
-                            RemoteImage(url: UserProfile.profileAssetURL(
-                                userId: ownerId, suffix: nil, cacheBust: nil))
-                                .frame(width: 36, height: 36)
-                                .clipShape(Circle())
-                                .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
-                            Text(shown.displayName ?? L("投稿者", "Poster"))
-                                .font(.subheadline)
-                                .foregroundStyle(WebTheme.muted)
-                                .lineLimit(1)
-                        }
-                    }
-                    .buttonStyle(.plain)
+                // **保存**（端末に覚える。サーバーのいいねとは別）
+                Button {
+                    favorites.toggle(photo.id)
+                } label: {
+                    Image(systemName: favorites.contains(photo.id) ? "bookmark.fill" : "bookmark")
+                        .font(.title2)
+                        .foregroundStyle(favorites.contains(photo.id) ? WebTheme.foreground : WebTheme.faint)
+                        .webTappable()
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("保存", "Save"))
+
+                // **シェア**（配るのは画像ではなくページ）
+                if let url = PhotoLink.url(photoId: photo.id,
+                                           isPublished: fromPublicFeed && shown.published != false) {
+                    ShareLink(item: url) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.title2)
+                            .foregroundStyle(WebTheme.faint)
+                            .webTappable()
+                    }
+                }
+
+                Spacer()
             }
             if let message = model.errorMessage ?? actionError {
                 Text(message).font(.footnote).foregroundStyle(.red)

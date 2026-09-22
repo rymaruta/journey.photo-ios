@@ -27,6 +27,9 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 見て走り、**「いいね」と「取り消し」が同時に飛ぶ**。どちらが後に
     /// 返るかで最終的なハートの色が決まるので、押した結果と食い違う。
     @Published private(set) var isLiking = false
+    /// 投稿者の公開プロフィール。**@ユーザー名を出すため**（写真の行は
+    /// 表示名しか持っていない）。取れなければ nil——名前だけ出す
+    @Published private(set) var owner: UserProfile?
 
     private let photoId: String
     private let social: SocialService
@@ -47,6 +50,12 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     /// いいね数とコメントは未認証でも読める。自分が押しているかだけ要ログイン。
+    /// 投稿者を読む。**写真の主が分かっているときだけ**
+    func loadOwner(_ userId: String?, profiles: ProfileService) async {
+        guard let userId, !userId.isEmpty, owner == nil else { return }
+        owner = try? await profiles.publicProfile(userId: userId)
+    }
+
     func load() async {
         async let count = try? social.likeCount(photoId: photoId)
         async let page = try? social.comments(photoId: photoId)
