@@ -41,7 +41,40 @@ struct PhotoViewerView: View {
                         .tag(offset)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
+            .tabViewStyle(.page(indexDisplayMode: .never))
+
+            // **何枚目か**（モック6 の「3/10」）。点の列より数の方が、
+            // 20枚あるときに現在地が分かる
+            if photos.count > 1 {
+                Text("\(index + 1)/\(photos.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.black.opacity(0.55), in: Capsule())
+                    .padding(.top, 20)
+                    .padding(.trailing, 76)
+                    .allowsHitTesting(false)
+            }
+
+            // 撮影地とサムネイルの帯（モック6 の状態例）。**下に重ねる**
+            VStack(spacing: 10) {
+                Spacer()
+                if let place = currentPlace {
+                    HStack(spacing: 5) {
+                        Image(systemName: "mappin.circle.fill")
+                        Text(place).lineLimit(1)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white.opacity(0.9))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.55), in: Capsule())
+                }
+                thumbnailStrip
+            }
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
 
             // ダブルタップの演出。Web も同じ位置（画面の中央）で出す
             if burst > 0 {
@@ -68,6 +101,43 @@ struct PhotoViewerView: View {
             .accessibilityLabel(Labels.Common.close)
         }
         .statusBarHidden()
+    }
+
+    /// いま見ている写真の撮影地（無ければ出さない）
+    private var currentPlace: String? {
+        guard photos.indices.contains(index) else { return nil }
+        let place = (photos[index].location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return place.isEmpty ? nil : place
+    }
+
+    /// サムネイルの帯。**1枚しか無いときは出さない**（送る先が無い）
+    @ViewBuilder
+    private var thumbnailStrip: some View {
+        if photos.count > 1 {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(photos.enumerated()), id: \.offset) { offset, photo in
+                        Button {
+                            index = offset
+                            // 送ったら倍率は戻す（拡大したまま別の写真に移らない）
+                            scale = 1
+                        } label: {
+                            RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                                .frame(width: 52, height: 52)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(
+                                    offset == index ? Color.white : Color.white.opacity(0.25),
+                                    lineWidth: offset == index ? 2.5 : 1))
+                                .opacity(offset == index ? 1 : 0.65)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L("\(offset + 1)枚目", "Photo \(offset + 1)"))
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .frame(height: 60)
+        }
     }
 
     private func handleDoubleTap() {
