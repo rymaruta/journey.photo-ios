@@ -46,6 +46,17 @@ final class UploadViewModel: ObservableObject {
     /// カテゴリ。**決まった選択肢から選ぶ**（`CategoryChoices`）
     @Published var category = ""
     @Published var published = true
+    /// 選んだ写真を**1つの投稿としてまとめる**か（モック8）。
+    ///
+    /// **行は1枚ずつのまま。** まとめても個別ページとサイトマップは
+    /// 変わらない——写真1枚＝1ページがこのサイトの検索での面積なので、
+    /// 1行にまとめると出せるページが減る。束ねるのは見せ方だけ。
+    ///
+    /// 既定は**まとめない**（今までと同じ）。2枚以上選んだときだけ選べる
+    @Published var groupsAsOnePost = false
+
+    /// この回の束の印。**送り始めるときに1つだけ作る**
+    private var groupId: String?
 
     @Published private(set) var albums: [Album] = []
     @Published var selectedAlbumId: String?
@@ -220,6 +231,10 @@ final class UploadViewModel: ObservableObject {
             uploadingIndex = 0
         }
 
+        // **まとめるのは2枚以上のときだけ。** 1枚に印を付けても意味が無く、
+        // 「1/1」の送りが出るだけになる
+        groupId = (groupsAsOnePost && items.count > 1) ? UUID().uuidString : nil
+
         var done: [UUID] = []
         var failures: [String] = []
         /// 写真は上がったが曲を付けられなかった枚数。**成功に数えない**
@@ -290,6 +305,7 @@ final class UploadViewModel: ObservableObject {
         // 送っていなかった（同じ一覧でアプリの写真の枠だけ黒いまま残る）
         draft.dominantColor = item.prepared.dominantColor
         draft.albumId = selectedAlbumId
+        draft.groupId = groupId
 
         let photo = try await uploads.upload(
             data: item.prepared.data,

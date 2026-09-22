@@ -136,6 +136,8 @@ public struct SecureField: View {
 }
 public struct Toggle: View {
     public init(_ title: String, isOn: Binding<Bool>) {}
+    /// 札を自分で組む版（本物にもある。説明を2行にするのに使う）
+    public init<L: View>(isOn: Binding<Bool>, @ViewBuilder label: () -> L) {}
     public var body: Never { fatalError("模型") }
 }
 public struct Picker: View {

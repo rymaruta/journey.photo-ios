@@ -113,11 +113,33 @@ struct UploadView: View {
             // 選んだ写真の帯（モック8-1）。**1枚ずつ外せる**
             if model.items.count > 1 {
                 selectedStrip
+                groupToggle
             }
         } footer: {
             Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
         }
         .listRowBackground(Color.clear)
+    }
+
+    /// 「1つの投稿にまとめる」（モック8）。
+    ///
+    /// **行は1枚ずつのまま。** まとめても個別ページとサイトマップは変わらない
+    /// ——写真1枚＝1ページがこのサイトの検索での面積なので、1行にまとめると
+    /// 出せるページが減る。束ねるのは見せ方だけ。
+    private var groupToggle: some View {
+        Toggle(isOn: $model.groupsAsOnePost) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("1つの投稿にまとめる", "Post as one"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                Text(model.groupsAsOnePost
+                     ? L("一覧では1枚のカードにまとまり、左右に送れます（題と説明は1枚ずつ書きます）",
+                         "Shown as one card you can swipe")
+                     : L("それぞれ別の投稿として並びます", "Shown as separate posts"))
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+            }
+        }
     }
 
     /// 選んだ写真の帯。
@@ -127,8 +149,11 @@ struct UploadView: View {
     /// 帯の上にそう書く——見た目だけ真似て、できないことを匂わせない。
     private var selectedStrip: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L("選んだ写真 \(model.items.count)枚（**それぞれ別の投稿**になります）",
-                   "\(model.items.count) photos — each becomes its own post"))
+            Text(model.groupsAsOnePost
+                 ? L("選んだ写真 \(model.items.count)枚（1つの投稿にまとめます）",
+                     "\(model.items.count) photos — posted as one")
+                 : L("選んだ写真 \(model.items.count)枚（それぞれ別の投稿になります）",
+                     "\(model.items.count) photos — each becomes its own post"))
                 .font(.caption)
                 .foregroundStyle(WebTheme.faint)
             ScrollView(.horizontal, showsIndicators: false) {

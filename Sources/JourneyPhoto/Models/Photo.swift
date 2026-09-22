@@ -39,6 +39,11 @@ struct Photo: Identifiable, Decodable, Equatable {
     /// （Web の `lib/utils/featured.ts`）。
     let featured: Bool?
 
+    /// 同じ投稿としてまとめる印。**行は1枚ずつのまま**
+    /// （個別ページもサイトマップもこれまでどおり）で、
+    /// アプリだけが1つのカードに束ねる
+    let groupId: String?
+
     let userId: String?
     let uploadedBy: String?
     let displayName: String?

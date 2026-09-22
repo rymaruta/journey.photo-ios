@@ -30,6 +30,8 @@ struct PhotoDetailView: View {
     @State private var spotLead: SpotLead?
     @State private var isFollowing = false
     @State private var isFollowWorking = false
+    /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）
+    @State private var heroPage = 0
 
     /// スポット詳細に渡すもの一式。台帳の1件と、突き合わせる公開写真と、
     /// 近くのスポットを出すための台帳全体
@@ -116,16 +118,50 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// 押すと大きく見る（隣の写真へも送れる）
+    /// 押すと大きく見る（隣の写真へも送れる）。
+    ///
+    /// **同じ投稿が2枚以上なら、ここで左右に送れる**（モック6-1 の「1/10」）。
+    /// 束は `groupId` が作る——行は1枚ずつのままなので、個別ページは変わらない
+    @ViewBuilder
     private var imageButton: some View {
-        Button {
-            showViewer = true
-        } label: {
-            RemoteImage(url: shown.detailImageURL, contentMode: .fit)
-                .frame(maxWidth: .infinity)
-                .accessibilityLabel(shown.accessibilityText)
+        let group = PhotoGroups.siblings(of: shown, in: siblings)
+        if group.count > 1 {
+            ZStack(alignment: .topTrailing) {
+                TabView(selection: $heroPage) {
+                    ForEach(Array(group.enumerated()), id: \.element.id) { index, item in
+                        Button {
+                            showViewer = true
+                        } label: {
+                            RemoteImage(url: item.detailImageURL, contentMode: .fit)
+                                .frame(maxWidth: .infinity)
+                                .accessibilityLabel(item.accessibilityText)
+                        }
+                        .buttonStyle(.plain)
+                        .tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .always))
+                .aspectRatio(4.0 / 3.0, contentMode: .fit)
+
+                Text("\(min(heroPage + 1, group.count))/\(group.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.black.opacity(0.55), in: Capsule())
+                    .padding(12)
+                    .allowsHitTesting(false)
+            }
+        } else {
+            Button {
+                showViewer = true
+            } label: {
+                RemoteImage(url: shown.detailImageURL, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel(shown.accessibilityText)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
     /// **Web の写真ページ（`app/photo/[id]/PhotoPageClient.tsx`）と同じ順・同じ寸法。**

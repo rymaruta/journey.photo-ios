@@ -165,6 +165,8 @@ struct PhotoDraft {
     /// 代表色（`#rrggbb`）。**読み込み中の地の色**。
     /// Web は前から送っていて、アプリだけ送っていなかった
     var dominantColor: String?
+    /// 同じ投稿としてまとめる印。**行は1枚ずつのまま**
+    var groupId: String?
 
     /// `POST /upload/save` に送る形。
     ///
@@ -186,7 +188,8 @@ struct PhotoDraft {
                                                  lng: ($0.lng * 100).rounded() / 100) },
             albumId: albumId,
             exif: exif,
-            dominantColor: dominantColor
+            dominantColor: dominantColor,
+            groupId: groupId
         )
     }
 
@@ -204,6 +207,7 @@ struct PhotoDraft {
         let albumId: String?
         let exif: ExifFields?
         let dominantColor: String?
+        let groupId: String?
 
         struct Coords: Encodable {
             let lat: Double

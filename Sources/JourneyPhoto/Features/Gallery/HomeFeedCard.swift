@@ -29,24 +29,23 @@ struct HomeFeedCard: View {
     @State private var isFollowWorking = false
     /// 一覧が持っているフォロー先。開いたときに合わせる
     var following: Set<String> = []
+    /// 同じ投稿の写真（`photo` を含む）。2枚以上なら送れるようにする
+    var siblings: [Photo] = []
+
+    /// いま出している1枚（送りの位置）
+    @State private var page = 0
+
+    /// 出す写真たち。**渡されなければこの1枚だけ**
+    private var shown: [Photo] {
+        siblings.isEmpty ? [photo] : siblings
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // **作者は写真の上**（モック1）。誰の一枚かを先に伝える
             author
 
-            NavigationLink {
-                PhotoDetailView(photo: photo)
-            } label: {
-                Color.clear
-                    .aspectRatio(4.0 / 5.0, contentMode: .fit)
-                    .overlay {
-                        RemoteImage(url: photo.detailImageURL, alignment: photo.gridAlignment)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .contentShape(RoundedRectangle(cornerRadius: 18))
-            }
-            .buttonStyle(.plain)
+            photoArea
 
             // **題は写真の下**（モック1）。写真に重ねていたが、モックは
             // 重ねず、説明と同じ塊で読ませる
@@ -73,6 +72,50 @@ struct HomeFeedCard: View {
         .onAppear {
             if let ownerId = photo.userId { isFollowing = following.contains(ownerId) }
         }
+    }
+
+    /// 写真。**同じ投稿が2枚以上なら左右に送れる**（モック6 の「1/10」）。
+    /// 1枚だけなら送りの飾りは出さない（送る先が無い）
+    @ViewBuilder
+    private var photoArea: some View {
+        let photos = shown
+        ZStack(alignment: .topTrailing) {
+            if photos.count > 1 {
+                TabView(selection: $page) {
+                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, item in
+                        link(to: item, in: photos).tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .always))
+                .aspectRatio(4.0 / 5.0, contentMode: .fit)
+
+                Text("\(min(page + 1, photos.count))/\(photos.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.black.opacity(0.55), in: Capsule())
+                    .padding(12)
+                    .allowsHitTesting(false)
+            } else {
+                link(to: photo, in: photos)
+            }
+        }
+    }
+
+    private func link(to item: Photo, in context: [Photo]) -> some View {
+        NavigationLink {
+            PhotoDetailView(photo: item, context: context)
+        } label: {
+            Color.clear
+                .aspectRatio(4.0 / 5.0, contentMode: .fit)
+                .overlay {
+                    RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .contentShape(RoundedRectangle(cornerRadius: 18))
+        }
+        .buttonStyle(.plain)
     }
 
     /// タグ。**押すとそのタグの写真へ**（提案の絵の青い `#長崎`）

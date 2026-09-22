@@ -361,8 +361,11 @@ struct GalleryView: View {
                 DailyThemeCard(photos: model.allPhotosForTheme, myPhotos: model.myPhotos)
                 feedPicker
                 featuredSections
-                ForEach(photos) { photo in
-                    HomeFeedCard(photo: photo, following: model.followingIds)
+                // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
+                // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
+                ForEach(PhotoGroups.group(photos)) { group in
+                    HomeFeedCard(photo: group.cover, following: model.followingIds,
+                                 siblings: group.photos)
                 }
             }
             .padding(.top, 8)
