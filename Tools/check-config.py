@@ -16,9 +16,16 @@ import json
 import plistlib
 import re
 import sys
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# **Web 側の置き場は差し替えられる。** `Tools/verify.sh` は
+# `check-api-parity.py` に `PHOTO_GALLERY` を渡せるのに、こちらは
+# 隣の `../photo-gallery` 固定だった——別の作業枝を出しているときに
+# 「サーバーにその設定が無い」と誤って赤くなる。**同じ口を見る**
+WEB = Path(os.environ.get("PHOTO_GALLERY") or (ROOT.parent / "photo-gallery")).resolve()
 errors = []
 
 
@@ -187,7 +194,7 @@ if len(notif_keys) == 2:
             fail(f"通知の文面 {key} が {other}.lproj にありません"
                  f"（その言語の端末に「{key}」という文字列が通知として届きます）")
     # サーバーが送る鍵と揃っているか（写し間違いを黙って通さない）
-    server = ROOT.parent / "photo-gallery" / "api-user" / "src" / "notify.ts"
+    server = WEB / "api-user" / "src" / "notify.ts"
     if server.exists():
         sent = set(re.findall(r'"(NOTIF_[A-Z_]+)"', server.read_text(encoding="utf-8")))
         for key in sorted(sent - notif_keys["ja"]):
@@ -249,7 +256,7 @@ for name in expected:
              f"（いまは {assigned.get(name)}）"
              f"——入れ替わると、その環境で端末の宛先が消えます")
 
-workflow = ROOT.parent / "photo-gallery" / ".github" / "workflows" / "deploy-api.yml"
+workflow = WEB / ".github" / "workflows" / "deploy-api.yml"
 if not workflow.exists():
     # §10 と同じ理由で、**黙って飛ばさない**（CI では必ず飛ぶ）
     print("--  サーバーの送り先との突き合わせは飛ばした（photo-gallery が隣に無い）")

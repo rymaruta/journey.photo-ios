@@ -38,7 +38,12 @@ enum DiscoverySections {
         return byPlace
             .compactMap { place, list -> Spot? in
                 guard let cover = GallerySort.popular.apply(list).first else { return nil }
-                return Spot(id: place, count: list.count, cover: cover)
+                // 🔴 **数えるのは行き先と同じ関数で。** 完全一致で数えていたので、
+                // 札に「2枚の写真」と書いて開くと3枚出ていた（run 55 の実機の絵）。
+                // Web は同じ食い違いを `collectEntries` で直してある——
+                // 「見出しの（N枚）と実際に並ぶ枚数が食い違う」と名指しで書いてある
+                let counted = PhotoQuery.photos(photos, in: .location(place)).count
+                return Spot(id: place, count: counted, cover: cover)
             }
             .sorted { $0.count != $1.count ? $0.count > $1.count : $0.id < $1.id }
             .prefix(limit)

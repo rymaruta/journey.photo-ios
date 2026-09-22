@@ -103,17 +103,50 @@ enum DerivedSpot {
 
     /// 近くの撮影地。**座標を持っているものだけ**（距離を測れないものは出さない）。
     /// 近い順に返す。
+    ///
+    /// 🔴 **含む関係にある撮影地は「近く」に出さない。** run 55 の実機の絵で
+    /// 2つ出ていた:
+    ///
+    ///  - 「フランス ヴェルサイユ」の近くに **「フランス」が 1km 以内**
+    ///    ——広い方は見出しの下に既に出ている（`broader`）し、その写真は
+    ///    この画面の一覧にも入っている。**同じものを2度出していた**
+    ///  - 「パリ」と「パリ, フランス」が**別々の札**で並んでいた
+    ///    ——綴り違いで、写真は片方がもう片方に丸ごと入っている
+    ///
+    /// だから2つ落とす。**文字で決めるのは自分との関係だけ**で、
+    /// 候補どうしは**実際の写真の集合**で見る（綴りの当てものにしない）。
     static func nearby(_ place: Place, in photos: [Photo], limit: Int = 6) -> [(place: Place, km: Double)] {
         guard let here = place.coords else { return [] }
-        return all(in: photos)
+        let needle = place.label.lowercased()
+        let candidates = all(in: photos)
             .filter { $0.slug != place.slug }
+            // **自分を含む／自分に含まれる撮影地は出さない。**
+            // 広い方は `broader`、狭い方の写真はこの画面の一覧に入っている
+            .filter { other in
+                let key = other.label.lowercased()
+                return !needle.contains(key) && !key.contains(needle)
+            }
             .compactMap { other -> (Place, Double)? in
                 guard let there = other.coords else { return nil }
                 return (other, TravelDistance.kilometers(from: here, to: there))
             }
-            .sorted { $0.1 < $1.1 }
-            .prefix(limit)
-            .map { (place: $0.0, km: $0.1) }
+            .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.label.count < $1.0.label.count }
+
+        // **写真が丸ごと他方に入っている札は落とす**（「パリ, フランス」→「パリ」）。
+        // 残すのは広い方（枚数が多い方）。同じ集合なら短い名前
+        var kept: [(Place, Double)] = []
+        for candidate in candidates {
+            let mine = Set(candidate.0.photos.map(\.id))
+            let swallowed = candidates.contains { other in
+                guard other.0.slug != candidate.0.slug else { return false }
+                let theirs = Set(other.0.photos.map(\.id))
+                guard mine.isSubset(of: theirs) else { return false }
+                // 同じ集合なら短い名前を残す（どちらも落とさない／どちらも残さない、を避ける）
+                return mine.count < theirs.count || other.0.label.count < candidate.0.label.count
+            }
+            if !swallowed { kept.append(candidate) }
+        }
+        return kept.prefix(limit).map { (place: $0.0, km: $0.1) }
     }
 
     /// 写真が持っている分類（多い順）。**空は入れない**

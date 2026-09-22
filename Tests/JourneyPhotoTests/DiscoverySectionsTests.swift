@@ -66,4 +66,24 @@ final class DiscoverySectionsTests: XCTestCase {
         let seasonal = DiscoverySections.seasonal(in: photos, now: december, calendar: calendar)
         XCTAssertEqual(seasonal.map(\.id), ["new", "old"], "夏のタグが混ざっている / 並びが古い順")
     }
+
+    /// 🔴 **札の枚数と、開いた先の枚数を一致させる。**
+    /// run 55 の実機の絵では札が「2枚の写真」・開いた先が「3枚」だった。
+    /// Web は同じ食い違いを `collectEntries` で直してある
+    func testCardCountMatchesWhatTheDestinationShows() throws {
+        let photos = [
+            try photo("p1", place: "パリ"),
+            try photo("p2", place: "パリ, フランス"),
+            try photo("t", place: "東京"),
+        ]
+        let spots = DiscoverySections.popularSpots(in: photos)
+        for spot in spots {
+            XCTAssertEqual(spot.count,
+                           PhotoQuery.photos(photos, in: .location(spot.id)).count,
+                           "「\(spot.id)」の札の枚数が、開いた先と違う")
+        }
+        // 「パリ」は自分＋「パリ, フランス」の2枚、「パリ, フランス」は自分だけ
+        XCTAssertEqual(spots.first { $0.id == "パリ" }?.count, 2)
+        XCTAssertEqual(spots.first { $0.id == "パリ, フランス" }?.count, 1)
+    }
 }

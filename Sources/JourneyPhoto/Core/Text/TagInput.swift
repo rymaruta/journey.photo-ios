@@ -158,11 +158,10 @@ enum PhotoQuery {
             let key = CategoryChoices.key(value)
             return photos.filter { CategoryChoices.key($0.category ?? "") == key }
         case .location(let value):
-            let needle = value.lowercased()
-            return photos.filter {
-                guard let location = $0.location?.lowercased() else { return false }
-                return location == needle || location.contains(needle) || needle.contains(location)
-            }
+            // **向きを見る**（`LocationMatch.photoIsIn`）。対称に見ていたので、
+            // 撮影地が「フランス」の写真が `/location/フランス-ヴェルサイユ` に
+            // 載っていた（run 55 の実機の絵で3枚と出ていた当のもの）
+            return photos.filter { LocationMatch.photoIsIn($0.location, value) }
         case .camera(let value):
             // **必ず `CameraName.deduped` を通して比べる。** 保存済みの値には
             // メーカー名が二重に残っている行があり（実データ）、生のまま

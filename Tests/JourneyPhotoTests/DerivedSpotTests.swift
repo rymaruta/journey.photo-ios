@@ -156,4 +156,70 @@ final class DerivedSpotTests: XCTestCase {
         XCTAssertNil(DerivedSpot.openable("", in: [try photo("a", location: nil)]))
         XCTAssertNil(DerivedSpot.openable("山中湖", in: [try photo("a", location: nil)]))
     }
+
+    // MARK: - 「近くの撮影スポット」に同じものを2度出さない（run 55 の絵）
+
+    /// 🔴 **広い撮影地を「近く」に出さない。** run 55 の実機の絵で
+    /// 「フランス ヴェルサイユ」の近くに **「フランス」が 1km 以内**と
+    /// 出ていた。広い方は見出しの下（`broader`）に既に出ているし、
+    /// その写真はこの画面の一覧にも入っている
+    func testBroaderPlaceIsNotAlsoNearby() throws {
+        let photos = [
+            try photo("v", location: "フランス ヴェルサイユ", lat: 48.80, lng: 2.13),
+            try photo("f", location: "フランス", lat: 48.80, lng: 2.13),
+            try photo("p", location: "パリ", lat: 48.86, lng: 2.35),
+        ]
+        let here = try XCTUnwrap(DerivedSpot.place("フランス ヴェルサイユ", in: photos))
+        XCTAssertTrue(here.broader.contains("フランス"))
+        let near = DerivedSpot.nearby(here, in: photos).map(\.place.label)
+        XCTAssertFalse(near.contains("フランス"), "広い撮影地が「近く」にも出ている: \(near)")
+    }
+
+    /// **狭い方も出さない。** 「パリ」から見た「パリ, フランス」の写真は、
+    /// この画面の一覧（ゆるい一致）に既に入っている
+    func testNarrowerPlaceIsNotNearbyEither() throws {
+        let photos = [
+            try photo("a", location: "パリ", lat: 48.86, lng: 2.35),
+            try photo("b", location: "パリ, フランス", lat: 48.86, lng: 2.35),
+            try photo("c", location: "東京", lat: 35.68, lng: 139.77),
+        ]
+        let here = try XCTUnwrap(DerivedSpot.place("パリ", in: photos))
+        XCTAssertEqual(DerivedSpot.nearby(here, in: photos).map(\.place.label), ["東京"])
+    }
+
+    /// 🔴 **綴り違いの2枚札を並べない。** run 55 の絵では「パリ」と
+    /// 「パリ, フランス」が別々の札で、どちらも約253km と出ていた。
+    /// 写真が丸ごと他方に入っている方を落とす（残るのは広い方）
+    func testNearbyDropsTheSpellingThatIsSwallowed() throws {
+        let photos = [
+            try photo("v", location: "フランス ヴェルサイユ", lat: 48.80, lng: 2.13),
+            try photo("p1", location: "パリ", lat: 48.86, lng: 2.35),
+            try photo("p2", location: "パリ, フランス", lat: 48.86, lng: 2.35),
+        ]
+        let here = try XCTUnwrap(DerivedSpot.place("フランス ヴェルサイユ", in: photos))
+        let near = DerivedSpot.nearby(here, in: photos).map(\.place.label)
+        XCTAssertEqual(near, ["パリ"], "綴り違いが2つ並んでいる: \(near)")
+    }
+
+    /// **関係の無い地点は落とさない**（落としすぎの見張り）
+    func testUnrelatedPlacesSurvive() throws {
+        let photos = [
+            try photo("a", location: "東京", lat: 35.68, lng: 139.77),
+            try photo("b", location: "横浜", lat: 35.44, lng: 139.64),
+            try photo("c", location: "大阪", lat: 34.69, lng: 135.50),
+        ]
+        let here = try XCTUnwrap(DerivedSpot.place("東京", in: photos))
+        XCTAssertEqual(DerivedSpot.nearby(here, in: photos).map(\.place.label), ["横浜", "大阪"])
+    }
+
+    /// 🔴 **広い撮影地の写真を、狭いスポットに数えない**（run 55 の絵で3枚）
+    func testBroadPhotoIsNotCountedInTheNarrowSpot() throws {
+        let place = try XCTUnwrap(DerivedSpot.place("フランス ヴェルサイユ", in: [
+            try photo("v1", location: "フランス ヴェルサイユ"),
+            try photo("v2", location: "フランス ヴェルサイユ"),
+            try photo("f", location: "フランス"),
+        ]))
+        XCTAssertEqual(place.count, 2, "撮影地が「フランス」の写真まで数えている")
+        XCTAssertFalse(place.photos.contains { $0.id == "f" })
+    }
 }
