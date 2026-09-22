@@ -110,10 +110,66 @@ struct UploadView: View {
                                           : L("選び直す", "Choose again"),
                       systemImage: "photo.badge.plus")
             }
+            // 選んだ写真の帯（モック8-1）。**1枚ずつ外せる**
+            if model.items.count > 1 {
+                selectedStrip
+            }
         } footer: {
             Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
         }
         .listRowBackground(Color.clear)
+    }
+
+    /// 選んだ写真の帯。
+    ///
+    /// **モックは「1つの投稿に10枚」だが、ここは違う。** サーバーは
+    /// 1行＝1枚で、**選んだ枚数ぶんの投稿**になる（題も説明も1枚ずつ）。
+    /// 帯の上にそう書く——見た目だけ真似て、できないことを匂わせない。
+    private var selectedStrip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("選んだ写真 \(model.items.count)枚（**それぞれ別の投稿**になります）",
+                   "\(model.items.count) photos — each becomes its own post"))
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
+                        ZStack(alignment: .topTrailing) {
+                            Group {
+                                if let preview = item.preview {
+                                    preview.resizable().aspectRatio(contentMode: .fill)
+                                } else {
+                                    WebTheme.surface
+                                }
+                            }
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .overlay(alignment: .bottomLeading) {
+                                Text("\(index + 1)")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(Color.white)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(Color.black.opacity(0.6), in: Capsule())
+                                    .padding(4)
+                            }
+
+                            Button {
+                                model.remove(item.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(Color.white, Color.black.opacity(0.6))
+                                    .padding(4)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("\(index + 1)枚目を外す", "Remove photo \(index + 1)"))
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
     }
 
     /// 選んだ写真ごとの欄。**題・説明・撮影地は1枚ずつ**（Web と同じ）。
