@@ -10,6 +10,10 @@ struct PhotoGrid<Destination: View>: View {
     let photos: [Photo]
     @ViewBuilder let destination: (Photo) -> Destination
 
+    /// 1つの投稿に2枚以上入っている写真。**この並びの中で数える**
+    /// ——兄弟が見えていないのに「複数枚」と出さない
+    private var multiple: Set<String> { PhotoGroups.multiPhotoIds(photos) }
+
     /// 段どうし・段の中の隙間
     private let gap: CGFloat = 10
 
@@ -40,7 +44,7 @@ struct PhotoGrid<Destination: View>: View {
         NavigationLink {
             destination(photo)
         } label: {
-            PhotoTile(photo: photo, aspect: aspect)
+            PhotoTile(photo: photo, aspect: aspect, isMultiple: multiple.contains(photo.id))
         }
         .buttonStyle(.plain)
     }
@@ -51,6 +55,9 @@ struct PhotoTile: View {
 
     let photo: Photo
     var aspect: CGFloat = 1
+    /// 1つの投稿に2枚以上入っているか（モック2-7 の格子の右上の印）。
+    /// **呼ぶ側が並びの中で数えた結果**を受け取る——写真1枚では決められない
+    var isMultiple = false
 
     /// 角の丸み。iOS の今の作法に寄せて大きめ
     static let corner: CGFloat = 18
@@ -73,7 +80,21 @@ struct PhotoTile: View {
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: Self.corner))
             .overlay(alignment: .bottomLeading) { caption }
+            .overlay(alignment: .topTrailing) { multipleMark }
             .accessibilityLabel(photo.accessibilityText)
+    }
+
+    /// 複数枚の印。**束ねた写真が2枚以上この並びに在るときだけ**
+    @ViewBuilder
+    private var multipleMark: some View {
+        if isMultiple {
+            Image(systemName: "square.on.square")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.white)
+                .shadow(radius: 3)
+                .padding(10)
+                .accessibilityLabel(L("複数枚の投稿", "Multiple photos"))
+        }
     }
 
     /// **題も分類も無い写真には帯を出さない。** 空の黒帯が乗るだけで、

@@ -48,6 +48,21 @@ enum PhotoGroups {
 
     /// 束ねる鍵。**`groupId` と持ち主の組**。
     /// どちらかが無ければ、その写真だけの束にする
+    /// **1つの投稿に2枚以上入っている写真の id**（モック2-7 の格子の印）。
+    ///
+    /// 印は「束ねた印を持っている」だけでは出せない——**兄弟が同じ並びに
+    /// 居るときだけ**。1枚しか見えていないのに「複数枚」と出すと、
+    /// 押しても1枚しか出てこない。
+    static func multiPhotoIds(_ photos: [Photo]) -> Set<String> {
+        var byKey: [String: [String]] = [:]
+        for photo in photos {
+            let key = groupKey(of: photo)
+            // 束ねていない写真の鍵は写真ごとに違うので、ここには積まれない
+            byKey[key, default: []].append(photo.id)
+        }
+        return Set(byKey.values.filter { $0.count > 1 }.flatMap { $0 })
+    }
+
     static func groupKey(of photo: Photo) -> String {
         guard let groupId = photo.groupId?.trimmingCharacters(in: .whitespaces),
               !groupId.isEmpty,

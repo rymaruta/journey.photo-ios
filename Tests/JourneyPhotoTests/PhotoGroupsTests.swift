@@ -72,3 +72,37 @@ final class PhotoGroupsTests: XCTestCase {
         XCTAssertEqual(PhotoGroups.siblings(of: lonely, in: []).map(\.id), ["z"])
     }
 }
+
+/// 格子の「複数枚」の印（モック2-7）。
+final class MultiPhotoMarkTests: XCTestCase {
+
+    private func photo(_ id: String, group: String? = nil, user: String? = "me") throws -> Photo {
+        let g = group.map { ",\"groupId\":\"\($0)\"" } ?? ""
+        let u = user.map { ",\"userId\":\"\($0)\"" } ?? ""
+        return try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(g)\(u)}".utf8))
+    }
+
+    /// 束ねた写真が2枚以上あれば、その全部に印
+    func testBothSiblingsAreMarked() throws {
+        let ids = PhotoGroups.multiPhotoIds([
+            try photo("a", group: "g1"), try photo("b", group: "g1"), try photo("c"),
+        ])
+        XCTAssertEqual(ids, ["a", "b"])
+    }
+
+    /// 🔴 **兄弟が並びに居ないなら印を出さない。** 押しても1枚しか
+    /// 出てこないものに「複数枚」と出さない（絞り込みで片方が消えた画面）
+    func testLoneMemberOfAGroupIsNotMarked() throws {
+        XCTAssertTrue(PhotoGroups.multiPhotoIds([try photo("a", group: "g1")]).isEmpty)
+    }
+
+    /// 別の人の同じ印は別の束（`groupKey` が持ち主を含む）
+    func testGroupsDoNotCrossOwners() throws {
+        let ids = PhotoGroups.multiPhotoIds([
+            try photo("a", group: "g1", user: "me"),
+            try photo("b", group: "g1", user: "you"),
+        ])
+        XCTAssertTrue(ids.isEmpty)
+    }
+}
