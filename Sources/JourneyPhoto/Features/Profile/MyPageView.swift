@@ -196,8 +196,26 @@ struct MyPageView: View {
                     Text(profile.name).font(.headline)
                     VerifiedBadge(isVerified: profile.verified)
                 }
+                // ユーザー名（モック2-1 の `@yuki_travel`）。
+                // **名前と同じ行に置かない**——長い名前で片方が切れる
+                if let username = profile.username, !username.isEmpty {
+                    Text("@\(username)")
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.faint)
+                }
+                // ひとこと。**持っているのに一度も出していなかった**
+                if let status = profile.statusText, !status.isEmpty {
+                    Text(status).font(.footnote).foregroundStyle(WebTheme.muted2)
+                }
                 if let bio = profile.bio, !bio.isEmpty {
                     Text(bio).font(.footnote).foregroundStyle(.secondary)
+                }
+                // 居住地（モック2-1 の「📍Tokyo, Japan」）。
+                // **地図には出さない**——住んでいる場所はピンにしない
+                if let home = profile.homeLocation, !home.isEmpty {
+                    Label(home, systemImage: "mappin.and.ellipse")
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
                 }
             }
             Spacer()

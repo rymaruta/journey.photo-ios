@@ -115,6 +115,8 @@ struct ProfilePatch: Encodable {
     var website: String?
     var instagram: String?
     var statusText: String?
+    /// 居住地。空文字は「消す」、`nil` は「触らない」
+    var homeLocation: String?
     var themeColor: String?
     /// プロフィールのBGM。**一覧ごと送る**（サーバーは配列を丸ごと受ける）。
     ///

@@ -56,3 +56,38 @@ final class ProfileBgmTests: XCTestCase {
         XCTAssertNil(patch.songs)
     }
 }
+
+/// プロフィールの項目（モック2-1 / 2-9）。
+final class ProfileFieldsTests: XCTestCase {
+
+    private func profile(_ json: String) throws -> UserProfile {
+        try JSONDecoder.api.decode(UserProfile.self, from: Data(json.utf8))
+    }
+
+    /// 居住地を復号する（モック2-1 の「📍Tokyo, Japan」）
+    func testHomeLocationIsDecoded() throws {
+        let p = try profile(#"{"userId":"u1","homeLocation":"Tokyo, Japan"}"#)
+        XCTAssertEqual(p.homeLocation, "Tokyo, Japan")
+    }
+
+    /// 🔴 **写真の撮影地とは別の項目。** 同じ名前にすると、住んでいる場所が
+    /// `/location/*` と地図に混ざる
+    func testHomeLocationIsNotThePhotoLocationField() throws {
+        let p = try profile(#"{"userId":"u1","location":"サントリーニ島"}"#)
+        XCTAssertNil(p.homeLocation, "写真の location を居住地として読んでいる")
+    }
+
+    /// **`nil` は「触らない」。** 名前だけの保存で居住地が消えない
+    func testNilHomeLocationMeansUntouched() {
+        var patch = ProfilePatch()
+        patch.displayName = "ゆき"
+        XCTAssertNil(patch.homeLocation)
+    }
+
+    /// 空文字は「消す」（消す手段を残す）
+    func testEmptyStringClearsIt() {
+        var patch = ProfilePatch()
+        patch.homeLocation = ""
+        XCTAssertEqual(patch.homeLocation, "")
+    }
+}

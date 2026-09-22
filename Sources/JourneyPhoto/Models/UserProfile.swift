@@ -17,6 +17,12 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     let website: String?
     let instagram: String?
     let statusText: String?
+    /// 居住地（モック2-1 の「📍Tokyo, Japan」）。**自由入力の1行**。
+    ///
+    /// **写真の撮影地とは別物。** あちらは `/location/*` と地図に効くが、
+    /// こちらは自己紹介の一部で、集約にも地図にも使わない
+    /// （使うと、住んでいる場所が地図にピンとして出る）。
+    let homeLocation: String?
     /// 認証済みの印（名前の横のバッジ）。
     ///
     /// **立てられるのは運営だけ**（`api-user` の更新の経路は受け取らない）。

@@ -13,6 +13,8 @@ struct ProfileEditView: View {
     @State private var website = ""
     @State private var instagram = ""
     @State private var statusText = ""
+    /// 居住地（モック2-9 の「居住地」の行）
+    @State private var homeLocation = ""
     @State private var themeColor = ""
     /// いま持っている曲。**丸ごと覚えておく**——Web 版は5曲まで持てるので、
     /// 1曲だけ送ると残りが消える。アプリが触るのは**先頭だけ**
@@ -49,6 +51,7 @@ struct ProfileEditView: View {
                 TextField(L("自己紹介", "Bio"), text: $bio, axis: .vertical)
                     .lineLimit(2...6)
                 TextField(L("ひとこと", "Status"), text: $statusText)
+                TextField(L("居住地", "Where you're based"), text: $homeLocation)
                 ThemeColorField(themeColor: $themeColor)
             }
             .listRowBackground(Color.clear)
@@ -150,6 +153,7 @@ struct ProfileEditView: View {
         website = profile.website ?? ""
         instagram = profile.instagram ?? ""
         statusText = profile.statusText ?? ""
+        homeLocation = profile.homeLocation ?? ""
         themeColor = profile.themeColor ?? ""
         songs = profile.songs ?? []
         loaded = true
@@ -179,6 +183,7 @@ struct ProfileEditView: View {
             website: website,
             instagram: instagram,
             statusText: statusText,
+            homeLocation: homeLocation,
             themeColor: themeColor,
             songs: songs,
             pinnedPhotoIds: nil
