@@ -421,6 +421,32 @@ struct PhotoMapView: View {
                        "\(pin.photos.count) photos nearby"))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
+                // 何が写っているかの見本（モック3-3）。**3枚まで＋残りの数**
+                // ——数は数えた値。押すと一覧へ（下のボタンと同じ行き先）
+                if pin.photos.count > 1 {
+                    Button {
+                        listing = pin
+                    } label: {
+                        HStack(spacing: 4) {
+                            ForEach(pin.photos.prefix(3)) { photo in
+                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                                    .frame(width: 36, height: 36)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            if pin.photos.count > 3 {
+                                Text("+\(pin.photos.count - 3)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(WebTheme.muted2)
+                                    .frame(width: 36, height: 36)
+                                    .background(WebTheme.raised, in: RoundedRectangle(cornerRadius: 6))
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("この場所の写真を見る", "See photos here"))
+                }
+
                 Button {
                     listing = pin
                 } label: {
