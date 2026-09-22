@@ -21,6 +21,20 @@ struct StoryInsightsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @State private var viewers: [StoryViewer] = []
     @State private var replies: [StoryReply] = []
+    /// 一覧の絞り（モック7）。**同じ一覧を絞るだけ**——別の口から
+    /// 引き直さない（リアクションは見た人の一部で、数え方も1つ）
+    @State private var scope: Scope = .viewers
+
+    enum Scope: String, CaseIterable, Identifiable {
+        case viewers, reactions
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .viewers: return L("閲覧者", "Viewers")
+            case .reactions: return L("リアクション", "Reactions")
+            }
+        }
+    }
     @State private var isLoading = true
     @State private var errorMessage: String?
 
@@ -114,32 +128,41 @@ struct StoryInsightsView: View {
     @ViewBuilder
     private var viewerList: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(L("見た人", "Viewers"))
-                    .font(.headline)
-                    .foregroundStyle(WebTheme.foreground)
-                Spacer()
-                Text(L("\(viewers.count)人", "\(viewers.count)"))
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.faint)
+            // 閲覧者 / リアクション（モック7）。数はどちらも**数えたもの**
+            Picker("", selection: $scope) {
+                ForEach(Scope.allCases) { option in
+                    Text("\(option.label) \(count(for: option))").tag(option)
+                }
             }
+            .pickerStyle(.segmented)
 
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if let errorMessage {
                 Text(errorMessage).font(.footnote).foregroundStyle(.red)
-            } else if viewers.isEmpty {
+            } else if shownViewers.isEmpty {
                 // **「まだ0人」と「読めなかった」を混ぜない**
-                Text(L("まだ誰も見ていません", "No one has seen it yet"))
+                Text(scope == .reactions
+                     ? L("まだリアクションはありません", "No reactions yet")
+                     : L("まだ誰も見ていません", "No one has seen it yet"))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
             } else {
-                ForEach(viewers) { viewer in
+                ForEach(shownViewers) { viewer in
                     viewerRow(viewer)
                 }
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    /// 絞ったあとの一覧。**リアクションは見た人の一部**（別の口では引かない）
+    private var shownViewers: [StoryViewer] {
+        scope == .reactions ? viewers.filter { hasReaction(from: $0.userId) } : viewers
+    }
+
+    private func count(for scope: Scope) -> Int {
+        scope == .reactions ? viewers.filter { hasReaction(from: $0.userId) }.count : viewers.count
     }
 
     private func viewerRow(_ viewer: StoryViewer) -> some View {
