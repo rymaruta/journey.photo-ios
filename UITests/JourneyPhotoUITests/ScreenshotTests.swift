@@ -41,6 +41,19 @@ final class ScreenshotTests: XCTestCase {
         // そのまま撮ると「No photos found.」ばかりで、人が見る画面の確認に
         // ならない。API とログインは staging のまま（ここでは誰もログインしない）
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        // **プロフィールも同じ本番から読む。** 巡回のビルドは Debug＝
+        // `Config/Staging.xcconfig` なので、写真だけ本番・プロフィールは
+        // staging という食い違った絵になっていた。staging にこの人は
+        // 居ないので `/profile/{id}` が 404 になり、run 65 のマイページは
+        // 本物の写真36枚の上に**「ユーザー」「名前を決めましょう」**が
+        // 載っていた（この人の本当の名前は「丸田 竜平」）。
+        //
+        // **鍵は持たないままなので、叩けるのは公開の GET だけ**
+        // （プロフィール・フォロー数・いいね数）。書き込む口は 401 で断られる。
+        app.launchArguments += [
+            "-JPUserApiBaseURL",
+            "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com",
+        ]
         // **日本語の端末として撮る。** CI のシミュレータは英語で、
         // そのまま撮ると「戻る」「キャンセル」など OS 側の文字まで英語になり、
         // 実際に人が見る画面と違う絵になる（アプリ自身の文字は日本語で固定）
@@ -119,7 +132,22 @@ final class ScreenshotTests: XCTestCase {
         if tabBar.buttons.count > 4 {
             tabBar.buttons.element(boundBy: 4).tap()
             Thread.sleep(forTimeInterval: 2)
+            // 🔴 **上まで戻してから探す。** 1つ上の節（`15-マイページ（下）`）が
+            // 画面を送りっぱなしにしていて、同じタブをもう一度押しても
+            // **先頭には戻らない**（既に選ばれているタブの二度押しは
+            // スクロールを戻すが、それは `List` / `ScrollView` の
+            // `scrollToTop` が効く形のときだけ）。run 65 では `trips.entry` が
+            // 画面の上に流れたままで `isHittable == false` になり、
+            // **`30-旅の一冊` と `31-旅の足取り` が黙って消えた**
+            // ——マイページに中身が出るようになった副作用で、run 64 までは
+            // 送っても動かなかったので起きなかった。
             let tripsEntry = app.buttons["trips.entry"].firstMatch
+            var pullDowns = 0
+            while tripsEntry.exists, !tripsEntry.isHittable, pullDowns < 4 {
+                app.swipeDown()
+                Thread.sleep(forTimeInterval: 1)
+                pullDowns += 1
+            }
             if tripsEntry.waitForExistence(timeout: 8), tripsEntry.isHittable {
                 tripsEntry.tap()
                 Thread.sleep(forTimeInterval: 4)

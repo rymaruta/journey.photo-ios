@@ -60,6 +60,41 @@ for f in "$OUT"/*.png; do
         && rm -f "$f"
 done
 
+# 🔴 **撮れなかった画面を、ここで名指しにする。**
+#
+# 巡回は「出なければ撮らない」作りなので、画面が1つ撮れなくても**赤くならない**。
+# run 62 は `20-写真の詳細`・`21-人のページ` が、run 65 は `30-旅の一冊`・
+# `31-旅の足取り` が黙って消えた。どちらも**枚数を数えるまで気づかなかった**。
+#
+# `check-swift-refs.js` の 4.6f が見るのは「撮る**手**が消えていないか」
+# （手元で読める）。ここが見るのは**手はあるのに絵が出なかった**回。
+#
+# **落とさない**（この台本の約束）。出すのは警告と、まとめへの1行。
+python3 - "$OUT" <<'SHOTS'
+import pathlib, sys
+
+out = pathlib.Path(sys.argv[1])
+# **条件つきの1枚**。送って動いたときだけ撮るので、無くても異常ではない
+optional = {"15-マイページ（下）"}
+wanted = [
+    "01-同意画面", "10-ホーム", "11-探す", "13-マップ", "14-マイページ",
+    "15-マイページ（下）", "20-写真の詳細", "21-人のページ",
+    "30-旅の一冊", "31-旅の足取り", "40-投稿の2択", "41-ストーリー作成",
+    "60-撮影スポット", "61-撮影スポット（下）",
+]
+got = [f.name for f in out.iterdir()]
+missing = [w for w in wanted
+           if w not in optional and not any(n.startswith(w) for n in got)]
+skipped = [w for w in wanted
+           if w in optional and not any(n.startswith(w) for n in got)]
+if missing:
+    print("::warning::撮れなかった画面: " + " / ".join(missing))
+line = "撮れなかった画面: " + (" / ".join(missing) if missing else "なし")
+if skipped:
+    line += "（条件つきで撮らなかった: " + " / ".join(skipped) + "）"
+pathlib.Path("/tmp/shots-report.md").write_text(line + "\n")
+SHOTS
+
 cd "$OUT"
 {
     echo "# 画面の絵（$(date -u +%Y-%m-%dT%H:%MZ)）"
@@ -68,6 +103,8 @@ cd "$OUT"
     echo "- 実行: ${GITHUB_RUN_NUMBER:-?}"
     echo
     echo "**この枝は毎回まるごと置き換わる。** 手で何かを足さないこと。"
+    echo
+    cat /tmp/shots-report.md 2>/dev/null || true
 } > README.md
 
 git init -q
@@ -81,5 +118,8 @@ git push -q -f \
 
 echo "画面の絵 $count 枚を screenshots の枝に置きました"
 [ -n "${GITHUB_STEP_SUMMARY:-}" ] && \
-    echo "### 画面の絵 $count 枚を \`screenshots\` の枝に置きました" >> "$GITHUB_STEP_SUMMARY"
+    {
+        echo "### 画面の絵 $count 枚を \`screenshots\` の枝に置きました"
+        cat /tmp/shots-report.md 2>/dev/null || true
+    } >> "$GITHUB_STEP_SUMMARY"
 exit 0
