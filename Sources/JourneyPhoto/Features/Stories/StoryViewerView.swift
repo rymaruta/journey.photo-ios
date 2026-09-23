@@ -307,6 +307,22 @@ struct StoryViewerView: View {
                 .onTapGesture { advance() }
                 .onLongPressGesture(minimumDuration: 0.35, perform: {}, onPressingChanged: { pressing = $0 })
         }
+        // **払っても動く。** 他のアプリのストーリーは全部そうなので、
+        // タップしか効かないと「反応しない」と受け取られる。
+        // 行き先はタップと同じに寄せた（`StoryPlayback.swipe`）——同じ画面で
+        // 「押すと進む」と「払うと別の動き」が並ぶと、人が覚えられない
+        .simultaneousGesture(
+            DragGesture(minimumDistance: StoryPlayback.swipeThreshold)
+                .onEnded { value in
+                    switch StoryPlayback.swipe(
+                        dx: value.translation.width, dy: value.translation.height) {
+                    case .next: advance()
+                    case .back: leftTap()
+                    case .close: dismiss()
+                    case .ignore: break
+                    }
+                }
+        )
     }
 
     private func leftTap() {

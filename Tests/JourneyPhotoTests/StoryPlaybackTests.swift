@@ -160,4 +160,43 @@ final class StoryPlaybackTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         XCTAssertEqual(StoryPlayback.ago(from: "2027-01-15T07:55:00Z", now: now), L("5分前", "5m ago"))
     }
+
+    // MARK: - スワイプ（モック7・最後に残っていた ⛔）
+
+    /// **払った向きと進む向きを合わせる**（左へ払う＝次。紙をめくる向き）
+    func testSwipeDirection() {
+        XCTAssertEqual(StoryPlayback.swipe(dx: -120, dy: 0), .next)
+        XCTAssertEqual(StoryPlayback.swipe(dx: 120, dy: 0), .back)
+    }
+
+    /// 下へ払うと閉じる
+    func testSwipeDownCloses() {
+        XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: 120), .close)
+    }
+
+    /// 🔴 **上への払いは何もしない。** モックに無いし、他のアプリでは
+    /// 「詳細を開く」に割り当てられている——同じ動きで違うことが起きる方が悪い
+    func testSwipeUpDoesNothing() {
+        XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: -120), .ignore)
+    }
+
+    /// **短い払いは指の揺れ。** 押しただけで送られない
+    func testShortSwipeIsIgnored() {
+        XCTAssertEqual(StoryPlayback.swipe(dx: -20, dy: 0), .ignore)
+        XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: 20), .ignore)
+        XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: 0), .ignore)
+    }
+
+    /// 🔴 **斜めは何もしない。** 「次へ」と読むと、閉じようとして進む
+    /// ——戻る手が無い操作ほど慎重に倒す
+    func testDiagonalIsIgnored() {
+        XCTAssertEqual(StoryPlayback.swipe(dx: -100, dy: 100), .ignore)
+        XCTAssertEqual(StoryPlayback.swipe(dx: 100, dy: 90), .ignore)
+    }
+
+    /// 境目ちょうどは通す（44pt＝押せるものの最小）
+    func testThresholdIsInclusive() {
+        XCTAssertEqual(StoryPlayback.swipe(dx: -StoryPlayback.swipeThreshold, dy: 0), .next)
+        XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: StoryPlayback.swipeThreshold), .close)
+    }
 }

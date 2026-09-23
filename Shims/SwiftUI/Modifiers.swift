@@ -329,6 +329,10 @@ extension TabViewStyleShim {
 
 extension View {
     public func gesture<G: Gesture>(_ gesture: G) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// 本物の SwiftUI に在るので、模型にも置く。**無いと、実機で通る書き方が
+    /// 手元だけで落ちる**（ストーリーのスワイプで実際にそうなった）
+    public func simultaneousGesture<G: Gesture>(_ gesture: G) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    public func highPriorityGesture<G: Gesture>(_ gesture: G) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     /// 長押し。`onPressingChanged` は指の着地で true・離れで false を返す
     /// （本物の SwiftUI と同じ形。押している間だけ止める、に使う）

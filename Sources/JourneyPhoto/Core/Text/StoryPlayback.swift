@@ -96,6 +96,51 @@ enum StoryPlayback {
         return .previous(index - 1)
     }
 
+    // MARK: - スワイプ
+
+    /// スワイプで何をするか。
+    ///
+    /// **左右タップと同じ行き先に寄せる**（`leftTap` / `next`）——同じ
+    /// 画面に「押すと進む」と「払うと別の動き」が並ぶと、どちらが本当かを
+    /// 人が覚えられない。
+    enum Swipe: Equatable {
+        /// 次の1本へ（無ければ閉じる）
+        case next
+        /// 前の1本へ／今のを最初から（`leftTap` と同じ判断）
+        case back
+        /// 閉じる
+        case close
+        /// 何もしない（短すぎる・斜め）
+        case ignore
+    }
+
+    /// これ未満は払ったと見なさない（指の揺れ）。
+    /// Apple の標準的な線（44pt＝押せるものの最小）に合わせる
+    static let swipeThreshold: CGFloat = 44
+
+    /// **縦横で迷ったら何もしない。** 斜めの払いを「次へ」と読むと、
+    /// 閉じようとして進んでしまう——戻る手が無い操作ほど慎重に倒す。
+    /// 縦横の差がこの倍率に満たなければ捨てる
+    static let swipeDominance: CGFloat = 1.5
+
+    /// - Parameters:
+    ///   - dx: 横の移動（右が正）
+    ///   - dy: 縦の移動（下が正）
+    static func swipe(dx: CGFloat, dy: CGFloat) -> Swipe {
+        let ax = abs(dx), ay = abs(dy)
+        // **上への払いは何もしない。** モックには無いし、他のアプリでは
+        // 「詳細を開く」に割り当てられていることが多い——同じ動きで
+        // 違うことが起きる方が悪い
+        if ay > ax * swipeDominance {
+            return dy >= swipeThreshold ? .close : .ignore
+        }
+        if ax > ay * swipeDominance, ax >= swipeThreshold {
+            // **払った向きと進む向きを合わせる。** 左へ払う＝次（紙をめくる向き）
+            return dx < 0 ? .next : .back
+        }
+        return .ignore
+    }
+
     // MARK: - 兄弟
 
     /// 押した1本と同じ投稿者のストーリーを、古い順に並べる。
