@@ -71,7 +71,19 @@ done
 #
 # **落とさない**（この台本の約束）。出すのは警告と、まとめへの1行。
 python3 - "$OUT" <<'SHOTS'
-import pathlib, sys
+import pathlib, sys, unicodedata
+
+# 🔴 **macOS のファイル名は NFD で返る。** 「マップ」の「プ」は
+# 「フ」＋濁点の2文字になっていて、台本に書いた NFC の「プ」とは
+# 別の並びになる。run 66 はこれで、**在る絵を5枚「撮れなかった」**と
+# 名指しした——名指しの中身が濁点・半濁点を持つ名前と**丸ごと一致**
+# していて、それで気づいた（13-マップ・14-マイページ・21-人のページ・
+# 60/61-撮影スポット）。
+#
+# 手元（Linux・git の取り出し）は NFC なので、**手元の試しでは出ない**。
+# 揃えてから比べる。
+def key(text):
+    return unicodedata.normalize("NFC", text)
 
 out = pathlib.Path(sys.argv[1])
 # **条件つきの1枚**。送って動いたときだけ撮るので、無くても異常ではない
@@ -82,11 +94,11 @@ wanted = [
     "30-旅の一冊", "31-旅の足取り", "40-投稿の2択", "41-ストーリー作成",
     "60-撮影スポット", "61-撮影スポット（下）",
 ]
-got = [f.name for f in out.iterdir()]
+got = [key(f.name) for f in out.iterdir()]
 missing = [w for w in wanted
-           if w not in optional and not any(n.startswith(w) for n in got)]
+           if w not in optional and not any(n.startswith(key(w)) for n in got)]
 skipped = [w for w in wanted
-           if w in optional and not any(n.startswith(w) for n in got)]
+           if w in optional and not any(n.startswith(key(w)) for n in got)]
 if missing:
     print("::warning::撮れなかった画面: " + " / ".join(missing))
 line = "撮れなかった画面: " + (" / ".join(missing) if missing else "なし")
