@@ -696,11 +696,18 @@ final class MyPageViewModel: ObservableObject {
     @Published private(set) var followers = 0
     @Published private(set) var following = 0
 
-    /// - Parameter api: 叩き先。**テストで差し替えるため**に開けてある。
-    init(api: APIClient = APIClient(tokenProvider: CognitoTokenProvider())) {
+    /// 公開一覧。**鍵の要らない経路で描くときだけ使う**（下の `loadPublicly`）。
+    private let gallery: PublicGalleryService
+
+    /// - Parameters:
+    ///   - api: 叩き先。**テストで差し替えるため**に開けてある。
+    ///   - gallery: 公開写真の出どころ。同上（既定は本物のサイトを叩く）。
+    init(api: APIClient = APIClient(tokenProvider: CognitoTokenProvider()),
+         gallery: PublicGalleryService = PublicGalleryService()) {
         self.profiles = ProfileService(api: api)
         self.photoService = PhotoService(api: api)
         self.social = SocialService(api: api)
+        self.gallery = gallery
     }
 
     func load() async {
@@ -713,6 +720,22 @@ final class MyPageViewModel: ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
         avatarCacheBust = String(Int(Date().timeIntervalSince1970))
+        // 🔴 **鍵を持たずに入っている回は、鍵の要る口を叩かない。**
+        //
+        // `AuthStore` の `PreviewSession`（Debug のみ）は利用者 ID だけを
+        // 入れてトークンを作らない。そこに書いてある約束は「作品の格子は
+        // **本物のデータで描かれる**」だったが、ここは `/user/profile` と
+        // `/user/photos`（どちらも鍵が要る）しか見ていなかったので、
+        // **読み込みごと失敗して「ログインが必要です」しか出ていなかった**
+        // （run 63・64 のマイページの絵がそれ）。
+        //
+        // 逃がす先は**人のページと同じ経路**（`UserProfileView`）——
+        // 公開プロフィールと、公開一覧から自分のぶんを選り分ける。
+        // **嘘の中身は出ない**（下書き＝非公開は公開一覧に無いので出ない）。
+        if let previewId = PreviewSession.userId {
+            await loadPublicly(userId: previewId)
+            return
+        }
         do {
             async let profile = self.profiles.myProfile()
             async let photos = self.photoService.myPhotos()
@@ -734,6 +757,26 @@ final class MyPageViewModel: ObservableObject {
             }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+        }
+    }
+
+    /// 鍵を持たない回の読み込み（`PreviewSession` のときだけ通る）。
+    ///
+    /// **`myPhotos()` を使わない**——あれは下書きまで返す代わりに鍵が要る。
+    /// ここは公開されているぶんだけで足りる。
+    private func loadPublicly(userId: String) async {
+        let publicProfile = try? await self.profiles.publicProfile(userId: userId)
+        self.profile = publicProfile
+        self.pinnedIds = publicProfile?.pinnedPhotoIds ?? []
+        let all = try? await self.gallery.fetchPhotos()
+        if let all {
+            let mine = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
+            self.photos = PhotoPinning.pinnedFirst(mine, pinned: self.pinnedIds)
+        }
+        let stats = try? await self.social.followStats(userId: userId)
+        if let stats {
+            self.followers = stats.followers
+            self.following = stats.following
         }
     }
 

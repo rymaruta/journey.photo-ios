@@ -137,6 +137,10 @@ final class StubProtocol: URLProtocol {
     /// 順番に返す応答。**使い切ったら最後のものを返し続ける**
     /// （「断られてから引き直す」のような2手の流れを書くのに要る）
     nonisolated(unsafe) private static var queue: [(Int, Data)] = []
+    /// 道ごとの応答。**1つの試験で2つの口を叩き分ける**のに要る
+    /// （公開プロフィールと公開一覧は別の入れ物から来る）。
+    /// 空のときは今までどおり `status`/`body`/`queue` だけで返す
+    nonisolated(unsafe) private static var routes: [(path: String, status: Int, body: Data)] = []
 
     static func reset() {
         status = 200
@@ -146,6 +150,7 @@ final class StubProtocol: URLProtocol {
         lastBody = nil
         requestCount = 0
         queue = []
+        routes = []
     }
 
     static func respond(status: Int, body: String) {
@@ -155,6 +160,12 @@ final class StubProtocol: URLProtocol {
         // **順番返しの残りを捨てる。** 残すとこの指定が黙って無視され、
         // 「落ちるはずの経路」を通らないまま緑になる
         self.queue = []
+    }
+
+    /// 道（URL のパス）で選んで返す。**当てはまる道が1つも無い要求は
+    /// 404 で返す**——「叩かないはずの口」を叩いたら緑にならないように。
+    static func respond(path: String, status: Int, body: String) {
+        routes.append((path, status, Data(body.utf8)))
     }
 
     /// 1回目・2回目…と順番に返す。
@@ -182,7 +193,12 @@ final class StubProtocol: URLProtocol {
         }
         var status = StubProtocol.status
         var body = StubProtocol.body
-        if !StubProtocol.queue.isEmpty {
+        if !StubProtocol.routes.isEmpty {
+            let path = request.url?.path ?? ""
+            let hit = StubProtocol.routes.first { path.contains($0.path) }
+            status = hit?.status ?? 404
+            body = hit?.body ?? Data("{\"error\":\"no route\"}".utf8)
+        } else if !StubProtocol.queue.isEmpty {
             let next = StubProtocol.queue.count > 1
                 ? StubProtocol.queue.removeFirst()
                 : StubProtocol.queue[0]

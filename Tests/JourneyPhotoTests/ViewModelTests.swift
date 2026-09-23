@@ -171,6 +171,51 @@ final class ViewModelTests: XCTestCase {
                        "断られたのにサーバーの一覧へ揃えていない")
     }
 
+    #if DEBUG
+    /// 🔴 **鍵を持たずに入っている回、マイページが丸ごと「ログインが必要です」
+    /// になっていた。**
+    ///
+    /// `PreviewSession`（Debug のみ・絵を撮るための ID だけのログイン）は
+    /// 「作品の格子は本物のデータで描かれる」と書いてあったのに、
+    /// `load()` は鍵の要る `/user/profile` と `/user/photos` しか見ておらず、
+    /// トークンが無いので**何も出ないまま知らせだけ**が出ていた
+    /// （run 63・64 のマイページの絵）。
+    ///
+    /// 逃がす先は人のページと同じ経路＝公開プロフィール＋公開一覧の絞り込み。
+    func testPreviewSessionDrawsMyPageWithoutAToken() async {
+        prepare()
+        UserDefaults.standard.set("u1", forKey: PreviewSession.defaultsKey)
+        defer { UserDefaults.standard.removeObject(forKey: PreviewSession.defaultsKey) }
+
+        // **道ごとに返す。** 鍵の要る口（`/user/...`）には何も置かないので、
+        // そこを叩いたら 404 になり、写真は1枚も入らない
+        StubProtocol.respond(path: "/profile/u1",
+                             status: 200,
+                             body: #"{"userId":"u1","displayName":"ルズ","pinnedPhotoIds":["b"]}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: """
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","createdAt":"2026-01-02T00:00:00Z"},
+         {"id":"b","src":"https://x/b.jpg","userId":"u1","createdAt":"2026-01-01T00:00:00Z"},
+         {"id":"z","src":"https://x/z.jpg","userId":"other","createdAt":"2026-03-04T00:00:00Z"}]
+        """)
+
+        // **トークンは渡さない**（鍵を持たないログインの再現）
+        let model = MyPageViewModel(
+            api: api(token: nil),
+            gallery: PublicGalleryService(
+                url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                session: session,
+                snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
+            )
+        )
+        await model.load()
+
+        XCTAssertNil(model.errorMessage, "鍵が無いだけで画面ごと知らせに差し替わっている")
+        XCTAssertEqual(model.photos.map(\.id), ["b", "a"],
+                       "自分の公開写真が出ていない（留めたぶんが先頭）")
+        XCTAssertEqual(model.profile?.displayName, "ルズ", "公開プロフィールを見ていない")
+    }
+    #endif
+
     // MARK: - 写真の詳細
 
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。

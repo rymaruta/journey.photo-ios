@@ -53,9 +53,7 @@ final class AuthStore: ObservableObject {
         // ビルドは Release なので、出荷物にこの口は無い。既存の
         // `-JPSiteBaseURL`（`AppConfig`）とまったく同じ形。
         // 渡す値は公開 API が返している `userId` そのもので、資格情報ではない。
-        if let previewId = UserDefaults.standard.string(forKey: "JPPreviewUserId")?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !previewId.isEmpty {
+        if let previewId = PreviewSession.userId {
             state = .signedIn(userId: previewId)
             return
         }
