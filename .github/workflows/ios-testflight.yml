@@ -54,6 +54,53 @@ jobs:
       # **鍵に Sources を含めない。** 含めると1文字直すたびに控えが
       # 外れて、いちばん高い依存のビルドからやり直しになる
       # 控えの鍵に混ぜる（Xcode が変わったら作り直す）
+      # **いちばん先に見る。** 以前はテストの**あと**に置いていたので、
+      # 秘密が1つ足りないだけの回でも**11分待たないと分からなかった**
+      # （run 66 がそれ——TestFlight に上げるつもりで流して、11分後に
+      # 「署名から先は飛ばしました」だけが残った）。何が足りないかは
+      # **30秒で**分かるべきで、テストの結果とは何の関係も無い。
+      #
+      # **秘密がまだ無くてもテストまでは回す**（この節の元の意図）。
+      # App Store Connect の API キーは人が画面から落としてくるもので、
+      # 揃う前にも「本物の SwiftUI で通るか」を見たい。揃っていない回は
+      # 署名から先を飛ばし、**緑で終わらせる**（赤にすると
+      # 「コンパイルが通ったのか」が読み取れなくなる）
+      - name: 秘密が揃っているかを見る
+        id: secrets
+        env:
+          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          CERT: ${{ secrets.CERTIFICATE_PRIVATE_KEY }}
+          SUBMIT: ${{ inputs.submit }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${ISSUER:-}" ] || missing="$missing APP_STORE_CONNECT_ISSUER_ID"
+          [ -n "${KEY_ID:-}" ] || missing="$missing APP_STORE_CONNECT_KEY_ID"
+          [ -n "${KEY:-}" ]    || missing="$missing APP_STORE_CONNECT_PRIVATE_KEY"
+          [ -n "${CERT:-}" ]   || missing="$missing CERTIFICATE_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "signing=false" >> "$GITHUB_OUTPUT"
+            echo "### 署名から先は飛ばしました" >> "$GITHUB_STEP_SUMMARY"
+            echo "足りない Secrets:$missing" >> "$GITHUB_STEP_SUMMARY"
+            # **二重引用符の中で逆引用符を使わない**（コマンドとして走る。
+            # `setup-private-delivery.sh` で一度踏んだ）。単引用符で出す
+            echo '（docs/GITHUB_ACTIONS.md の手順1〜3）' >> "$GITHUB_STEP_SUMMARY"
+            # **「上げる」つもりで流した回は、緑で終わらせない。**
+            # run 66 は上げるつもりで流して**成功**と記録され、上がって
+            # いないことは11分後の小さな警告にしか出なかった。
+            # 上げないつもり（submit=false）の回は今までどおり警告だけ。
+            if [ "${SUBMIT:-}" = "true" ]; then
+              echo "::error::TestFlight に上げる指定ですが、署名に要る Secrets が足りません（$missing ）。docs/GITHUB_ACTIONS.md の手順1〜3"
+              exit 1
+            fi
+            echo "::warning::署名に要る Secrets が足りません（$missing ）。テストまでで終わります。docs/GITHUB_ACTIONS.md を参照"
+          else
+            echo "signing=true" >> "$GITHUB_OUTPUT"
+          fi
+
+
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
@@ -131,33 +178,6 @@ jobs:
               echo "::endgroup::"
               exit 1
             }
-
-      # **秘密がまだ無くてもテストまでは回す。** App Store Connect の API キーは
-      # 人が画面から落としてくるもので、揃う前にも「本物の SwiftUI で通るか」を
-      # 見たい。揃っていない回は署名から先を飛ばし、**緑で終わらせる**
-      # （赤にすると「コンパイルが通ったのか」が読み取れなくなる）
-      - name: 秘密が揃っているかを見る
-        id: secrets
-        env:
-          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-          CERT: ${{ secrets.CERTIFICATE_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          missing=""
-          [ -n "${ISSUER:-}" ] || missing="$missing APP_STORE_CONNECT_ISSUER_ID"
-          [ -n "${KEY_ID:-}" ] || missing="$missing APP_STORE_CONNECT_KEY_ID"
-          [ -n "${KEY:-}" ]    || missing="$missing APP_STORE_CONNECT_PRIVATE_KEY"
-          [ -n "${CERT:-}" ]   || missing="$missing CERTIFICATE_PRIVATE_KEY"
-          if [ -n "$missing" ]; then
-            echo "signing=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::署名に要る Secrets が足りません（$missing ）。テストまでで終わります。docs/GITHUB_ACTIONS.md を参照"
-            echo "### 署名から先は飛ばしました" >> "$GITHUB_STEP_SUMMARY"
-            echo "足りない Secrets:$missing" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "signing=true" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: 署名の用意（証明書とプロファイルを API キーから作る）
         if: ${{ steps.secrets.outputs.signing == 'true' }}
