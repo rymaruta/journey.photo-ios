@@ -117,29 +117,49 @@ jobs:
       # 上げない回（`submit=false`）は止めない——絵を撮る用途は古い SDK でも
       # 成立するし、そちらまで赤くすると「本物の SwiftUI で通るか」が
       # 読めなくなる（秘密の点検と同じ考え）。
+      # 🔴 **iOS 26 SDK より古いと App Store Connect が受け取らない。**
+      #
+      # run 68 は署名もビルドも通ったのに、最後の1段だけで落ちた:
+      #
+      #     Validation failed (409) SDK version issue.
+      #     This app was built with the iOS 18.5 SDK. All iOS and iPadOS apps
+      #     must be built with the iOS 26 SDK or later, included in Xcode 26
+      #     or later, in order to be uploaded to App Store Connect.
+      #
+      # ランナーの既定は Xcode 16.4（iOS 18.5 SDK）だった。**Xcode 26.3 は
+      # 入っている**（run 69 で実測）ので、選び直せばよい。
+      #
+      # 🔴 **版は名前から読む。** 最初は各 `Xcode*.app` の `xcodebuild -version`
+      # を呼んで調べたら、**その1つが SIGABRT で落ちて段ごと死んだ**
+      # （run 69・exit 134）。GitHub の `run:` は `bash -e` なので、
+      # **20個のうち1個でも落ちれば終わり**。外部コマンドを20回叩く必要は
+      # 無い——名前が `Xcode_26.3.0.app` の形なので、そこから取って
+      # `sort -V` で並べれば足りる（実測の一覧で確認済み）。
       - name: Xcode を選ぶ（iOS 26 SDK が要る）
         env:
           SUBMIT: ${{ inputs.submit }}
         run: |
-          set -uo pipefail
+          # **`-e` を外す。** 調べものの段で、1つの失敗で死なせない
+          set +e
+          set -u
+
           echo "::group::入っている Xcode"
           ls -d /Applications/Xcode*.app 2>/dev/null || echo "（/Applications に Xcode*.app が無い）"
           echo "::endgroup::"
 
-          # **版の数字で選ぶ。** 名前の並び順だと Xcode_9 が Xcode_26 より
-          # 後ろに来る（文字列比較）
-          best=""; bestv=0
-          for app in /Applications/Xcode*.app; do
-            [ -d "$app" ] || continue
-            v="$("$app/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | head -1 | sed 's/[^0-9.]//g')"
-            major="${v%%.*}"
-            case "$major" in ''|*[!0-9]*) continue ;; esac
-            if [ "$major" -gt "$bestv" ]; then bestv="$major"; best="$app"; fi
-          done
-          if [ -n "$best" ]; then
-            echo "DEVELOPER_DIR=$best/Contents/Developer" >> "$GITHUB_ENV"
-            export DEVELOPER_DIR="$best/Contents/Developer"
-            echo "選んだ Xcode: $best（メジャー $bestv）"
+          # `Xcode_26.3.0.app` → `26.3.0`。数字とドットだけのものに限る
+          # （`Xcode.app` や `Xcode_beta.app` は版が読めないので外す）
+          ver="$(ls -d /Applications/Xcode_*.app 2>/dev/null \
+                 | sed 's#.*/Xcode_##; s#\.app$##' \
+                 | grep -E '^[0-9]+(\.[0-9]+)*$' \
+                 | sort -V | tail -1)"
+          if [ -n "$ver" ] && [ -d "/Applications/Xcode_$ver.app/Contents/Developer" ]; then
+            echo "DEVELOPER_DIR=/Applications/Xcode_$ver.app/Contents/Developer" >> "$GITHUB_ENV"
+            export DEVELOPER_DIR="/Applications/Xcode_$ver.app/Contents/Developer"
+            echo "選んだ Xcode: $ver"
+          else
+            echo "::warning::版の読める Xcode が見つかりません。既定のまま進みます"
+            ver="不明"
           fi
 
           echo "::group::使える iOS SDK"
@@ -148,15 +168,16 @@ jobs:
 
           sdk="$(xcodebuild -showsdks 2>/dev/null | grep -io 'iphoneos[0-9][0-9.]*' | sed 's/iphoneos//' | sort -V | tail -1)"
           sdkmajor="${sdk%%.*}"
-          echo "いちばん新しい iOS SDK: ${sdk:-不明}"
-          {
-            echo "### Xcode $bestv / iOS SDK ${sdk:-不明}"
-          } >> "$GITHUB_STEP_SUMMARY"
-
           case "$sdkmajor" in ''|*[!0-9]*) sdkmajor=0 ;; esac
+          echo "いちばん新しい iOS SDK: ${sdk:-不明}"
+          echo "### Xcode $ver / iOS SDK ${sdk:-不明}" >> "$GITHUB_STEP_SUMMARY"
+
+          # **上げない回は止めない。** 絵を撮る用途は古い SDK でも成立するし、
+          # そちらまで赤くすると「本物の SwiftUI で通るか」が読めなくなる
+          # （秘密の点検と同じ考え）
           if [ "$sdkmajor" -lt 26 ]; then
             if [ "${SUBMIT:-}" = "true" ]; then
-              echo "::error::iOS ${sdk:-?} SDK では App Store Connect が受け取りません（iOS 26 SDK 以上が要る）。上の「入っている Xcode」を見て、runs-on か DEVELOPER_DIR を変えてください"
+              echo "::error::iOS ${sdk:-?} SDK では App Store Connect が受け取りません（iOS 26 SDK 以上が要る）。上の「入っている Xcode」を見てください"
               exit 1
             fi
             echo "::warning::iOS ${sdk:-?} SDK です。上げるには iOS 26 SDK 以上が要ります（この回は上げないので続けます）"
