@@ -133,7 +133,7 @@ App Store Connect → **配信** タブ →「審査用に提出」。
 | `No profiles for 'com.…' were found` | Team を有料チームにしていない／その Bundle ID を Identifiers に登録していない |
 | `The bundle version must be higher than…` | ビルド番号を上げていない（`CURRENT_PROJECT_VERSION`） |
 | `Missing Info.plist value CFBundleIconName` | アイコンが読めていない。`Assets.xcassets/AppIcon` に 1024 の PNG が在るか（`python3 Tools/check-config.py`） |
-| `Invalid Bundle. ... alpha channel` | アイコンに透明が含まれている。`python3 Tools/make_app_icon.py` で作り直す（透明を持たない形で書いている） |
+| `Invalid Bundle. ... alpha channel` | アイコンに透明が含まれている。`NODE_PATH=../photo-gallery/node_modules node Tools/make-brand-assets.cjs` で作り直す（透明を持たない形で書く）。`Tools/check-config.py` が手元で先に落とす |
 | 処理中のまま1時間以上 | 稀にある。もう一度ビルド番号を上げて上げ直す |
 | テスターに招待が届かない | 内部テストは「App Store Connect ユーザ」に登録された人だけ。外部は Beta App Review 待ち |
 | **「利用可能なビルドなし」** と出る | グループに**テスターだけ入れて、ビルドを入れていない**。テスターの招待はビルドが無くても出る。ビルドの画面 →「グループ」→ ＋ で内部グループを足す |

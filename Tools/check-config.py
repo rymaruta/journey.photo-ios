@@ -268,6 +268,34 @@ if workflow.exists():
     if "apnsHost=api.sandbox.push.apple.com" not in text:
         fail("deploy-api.yml が staging の APNs（sandbox）を指していません")
 
+# ---- アプリアイコン（App Store が弾く形になっていないか）------------------
+#
+# **透明を持った PNG は App Store が受け取らない**（`Invalid Bundle ... alpha
+# channel`）。アイコンは `Tools/make-brand-assets.cjs` が透明なしで書くが、
+# 手で差し替えたり別の道具で書き出したりすると簡単に混ざる。13分かけて
+# アップロードの段で知るより、ここで落とす。
+#
+# PNG の頭（IHDR）だけ読む。Pillow はこの作業環境に無い。
+icon = ROOT / "Sources/JourneyPhoto/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+if not icon.exists():
+    fail(f"{icon.relative_to(ROOT)} がありません（App Store に出すアイコン）")
+else:
+    head = icon.read_bytes()[:33]
+    if head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+        fail(f"{icon.name} が PNG として読めません")
+    else:
+        width = int.from_bytes(head[16:20], "big")
+        height = int.from_bytes(head[20:24], "big")
+        color_type = head[25]
+        if (width, height) != (1024, 1024):
+            fail(f"{icon.name} が {width}x{height} です（1024x1024 が要る）")
+        # 4 = 灰色＋透明・6 = RGB＋透明。3（パレット）は tRNS で透明を持ちうる
+        if color_type in (4, 6):
+            fail(f"{icon.name} が透明を持っています（App Store が弾きます）。"
+                 "`Tools/make-brand-assets.cjs` で作り直してください")
+        elif color_type == 3 and b"tRNS" in icon.read_bytes()[:4096]:
+            fail(f"{icon.name} がパレットの透明（tRNS）を持っています（App Store が弾きます）")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:
