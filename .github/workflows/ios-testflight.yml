@@ -101,6 +101,67 @@ jobs:
           fi
 
 
+      # 🔴 **iOS 26 SDK より古いと App Store Connect が受け取らない。**
+      #
+      # run 68 は署名もビルドも通ったのに、最後の1段だけで落ちた:
+      #
+      #     Validation failed (409) SDK version issue.
+      #     This app was built with the iOS 18.5 SDK. All iOS and iPadOS apps
+      #     must be built with the iOS 26 SDK or later, included in Xcode 26
+      #     or later, in order to be uploaded to App Store Connect.
+      #
+      # ランナーの既定は Xcode 16.4（iOS 18.5 SDK）だった。**13分使って
+      # 最後に分かる**のは高いので、ここで**入っている Xcode の中から
+      # いちばん新しいものを選び**、それでも足りなければ**30秒で止める**。
+      #
+      # 上げない回（`submit=false`）は止めない——絵を撮る用途は古い SDK でも
+      # 成立するし、そちらまで赤くすると「本物の SwiftUI で通るか」が
+      # 読めなくなる（秘密の点検と同じ考え）。
+      - name: Xcode を選ぶ（iOS 26 SDK が要る）
+        env:
+          SUBMIT: ${{ inputs.submit }}
+        run: |
+          set -uo pipefail
+          echo "::group::入っている Xcode"
+          ls -d /Applications/Xcode*.app 2>/dev/null || echo "（/Applications に Xcode*.app が無い）"
+          echo "::endgroup::"
+
+          # **版の数字で選ぶ。** 名前の並び順だと Xcode_9 が Xcode_26 より
+          # 後ろに来る（文字列比較）
+          best=""; bestv=0
+          for app in /Applications/Xcode*.app; do
+            [ -d "$app" ] || continue
+            v="$("$app/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | head -1 | sed 's/[^0-9.]//g')"
+            major="${v%%.*}"
+            case "$major" in ''|*[!0-9]*) continue ;; esac
+            if [ "$major" -gt "$bestv" ]; then bestv="$major"; best="$app"; fi
+          done
+          if [ -n "$best" ]; then
+            echo "DEVELOPER_DIR=$best/Contents/Developer" >> "$GITHUB_ENV"
+            export DEVELOPER_DIR="$best/Contents/Developer"
+            echo "選んだ Xcode: $best（メジャー $bestv）"
+          fi
+
+          echo "::group::使える iOS SDK"
+          xcodebuild -showsdks 2>/dev/null | grep -i iphoneos || echo "（iphoneos の SDK が読めない）"
+          echo "::endgroup::"
+
+          sdk="$(xcodebuild -showsdks 2>/dev/null | grep -io 'iphoneos[0-9][0-9.]*' | sed 's/iphoneos//' | sort -V | tail -1)"
+          sdkmajor="${sdk%%.*}"
+          echo "いちばん新しい iOS SDK: ${sdk:-不明}"
+          {
+            echo "### Xcode $bestv / iOS SDK ${sdk:-不明}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          case "$sdkmajor" in ''|*[!0-9]*) sdkmajor=0 ;; esac
+          if [ "$sdkmajor" -lt 26 ]; then
+            if [ "${SUBMIT:-}" = "true" ]; then
+              echo "::error::iOS ${sdk:-?} SDK では App Store Connect が受け取りません（iOS 26 SDK 以上が要る）。上の「入っている Xcode」を見て、runs-on か DEVELOPER_DIR を変えてください"
+              exit 1
+            fi
+            echo "::warning::iOS ${sdk:-?} SDK です。上げるには iOS 26 SDK 以上が要ります（この回は上げないので続けます）"
+          fi
+
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
