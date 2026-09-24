@@ -17,6 +17,8 @@ struct PhotoMapView: View {
     var unread: Int = 0
     var avatarURL: URL?
     var onOpenNotifications: () -> Void = {}
+    /// 投稿の入口（`RootView` の2択）。地点に写真が無いときの「写真を投稿する」から開く
+    var onPost: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = PhotoMapViewModel()
@@ -29,6 +31,11 @@ struct PhotoMapView: View {
     @State private var selected: MapPin?
     /// 一覧を開くとき（札の「写真を見る →」・リストの行）
     @State private var listing: MapPin?
+    /// 押した地点（Apple の地図が描く POI）。**iOS 18 以降だけ**入る
+    /// （`PlaceSelectableMap`）。ピンの札とは同時に出さない
+    @State private var chosenPlace: ChosenPlace?
+    /// Apple の詳細カードに出す地点（札の「場所の詳細」）
+    @State private var placeDetail: MKMapItem?
     /// 地図の見ている場所。**写真に合わせてから開く**（指示書 9-2）
     @State private var camera: MapCameraPosition = .automatic
 
@@ -60,6 +67,11 @@ struct PhotoMapView: View {
         .onChange(of: model.category) { _, _ in
             guard model.areaFrame == nil else { return }
             frame(model.frame)
+        }
+        // リストへ切り替えたら地点の札は下げる（地図に戻ると選択の印が
+        // 消えているので、札だけ残ると何を指しているか分からない）
+        .onChange(of: model.mode) { _, _ in
+            chosenPlace = nil
         }
         // 現在地が取れたら、そこへ寄せる。**絞りはしない**——代わりに
         // 「近くの写真」の入口を出す（押すまで何も変えない）
@@ -188,40 +200,7 @@ struct PhotoMapView: View {
     // MARK: - 地図
 
     private var mapArea: some View {
-        Map(position: $camera) {
-            ForEach(model.pins) { pin in
-                Annotation(pin.title, coordinate: pin.coordinate) {
-                    Button {
-                        selected = pin
-                    } label: {
-                        ZStack(alignment: .topTrailing) {
-                            RemoteImage(url: pin.photos.first?.gridImageURL,
-                                        alignment: pin.photos.first?.gridAlignment ?? .center)
-                                .frame(width: 44, height: 44)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                            // **数えた枚数**（モックのクラスタの数字にあたる）
-                            if pin.photos.count > 1 {
-                                Text("\(pin.photos.count)")
-                                    .font(.caption2.weight(.bold))
-                                    .padding(4)
-                                    .background(.thinMaterial, in: Circle())
-                                    .offset(x: 6, y: -6)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        // 見えている範囲を控えるだけ。**絞るのはボタンを押したとき**
-        .onMapCameraChange(frequency: .onEnd) { context in
-            model.update(visible: MapFraming.Frame(
-                latitude: context.region.center.latitude,
-                longitude: context.region.center.longitude,
-                latitudeSpan: context.region.span.latitudeDelta,
-                longitudeSpan: context.region.span.longitudeDelta
-            ))
-        }
+        mapCanvas
         .overlay(alignment: .top) { statusLine }
         .overlay(alignment: .topTrailing) {
             mapControls
@@ -248,6 +227,9 @@ struct PhotoMapView: View {
                 if let selected, model.stillShown(selected) {
                     pinCard(selected)
                         .padding(.horizontal, 16)
+                } else if let chosenPlace {
+                    placeCard(chosenPlace)
+                        .padding(.horizontal, 16)
                 }
             }
             // **地図の出どころの表示を覆わない。** Apple の地図は左下に
@@ -255,6 +237,70 @@ struct PhotoMapView: View {
             // 「このエリアを検索」がそこへ重なっていた
             .padding(.bottom, 34)
         }
+        // 地点を選んだら、ピンの札は下げる（札は1枚だけ）
+        .onChange(of: chosenPlace) { _, place in
+            if place != nil { selected = nil }
+        }
+    }
+
+    /// **地点を押せるのは iOS 18 以降。** 17 では今まで通りの地図
+    /// （Apple の地点は描かれるが押しても何も起きない）
+    @ViewBuilder
+    private var mapCanvas: some View {
+        if #available(iOS 18.0, *) {
+            PlaceSelectableMap(camera: $camera,
+                               chosen: $chosenPlace,
+                               detail: $placeDetail,
+                               onCameraChange: cameraChanged) {
+                pinMarkers
+            }
+        } else {
+            Map(position: $camera) {
+                pinMarkers
+            }
+            .onMapCameraChange(frequency: .onEnd) { context in
+                cameraChanged(context)
+            }
+        }
+    }
+
+    /// 写真のピン。同じ座標の写真は1つにまとめてある（`MapPin.group`）
+    @MapContentBuilder
+    private var pinMarkers: some MapContent {
+        ForEach(model.pins) { pin in
+            Annotation(pin.title, coordinate: pin.coordinate) {
+                Button {
+                    selected = pin
+                    chosenPlace = nil
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        RemoteImage(url: pin.photos.first?.gridImageURL,
+                                    alignment: pin.photos.first?.gridAlignment ?? .center)
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        // **数えた枚数**（モックのクラスタの数字にあたる）
+                        if pin.photos.count > 1 {
+                            Text("\(pin.photos.count)")
+                                .font(.caption2.weight(.bold))
+                                .padding(4)
+                                .background(.thinMaterial, in: Circle())
+                                .offset(x: 6, y: -6)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// 見えている範囲を控えるだけ。**絞るのはボタンを押したとき**
+    private func cameraChanged(_ context: MapCameraUpdateContext) {
+        model.update(visible: MapFraming.Frame(
+            latitude: context.region.center.latitude,
+            longitude: context.region.center.longitude,
+            latitudeSpan: context.region.span.latitudeDelta,
+            longitudeSpan: context.region.span.longitudeDelta
+        ))
     }
 
     /// 地図の上に1行。**空の状態を隠さない**——ピンが消えただけの画面にしない
@@ -502,6 +548,140 @@ struct PhotoMapView: View {
         .overlay(RoundedRectangle(cornerRadius: 18)
             .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
         .accessibilityIdentifier("map.pinCard")
+    }
+
+    /// 押した地点の札（デザイン 04b）:
+    ///
+    ///     金沢21世紀美術館                         ✕
+    ///     [ 経路 ]  [ 場所の詳細 ]
+    ///     この付近で撮られた写真 12枚     スポットを見る
+    ///     ┌──┐┌──┐┌──┐┌──┐ →
+    ///
+    /// 「経路」「場所の詳細」は Apple の地点情報（MKMapItem）が引けてから押せる。
+    /// 写真は**手元の写真から数えたもの**（`PlacePhotos`）。
+    private func placeCard(_ place: ChosenPlace) -> some View {
+        let photos = PlacePhotos.photos(model.photos, name: place.name, at: place.coords)
+        // **名前がそのまま撮影地になっている地点だけ**スポットとして開く。
+        // 付近の写真の撮影地から当て推量で選ばない
+        let spot = DerivedSpot.openable(place.name, in: model.photos)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Text(place.name)
+                    .font(.headline)
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(2)
+                Spacer()
+                Button {
+                    chosenPlace = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(WebTheme.muted2)
+                        .webTappable()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Labels.Common.close)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    place.mapItem?.openInMaps(launchOptions: [
+                        MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
+                    ])
+                } label: {
+                    Label(L("経路", "Directions"), systemImage: "arrow.triangle.turn.up.right.diamond")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                        .background(WebTheme.foreground, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                Button {
+                    placeDetail = place.mapItem
+                } label: {
+                    Label(L("場所の詳細", "Details"), systemImage: "info.circle")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                        .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            // 引けるまでは押せない（押しても何も起きないボタンにしない）
+            .disabled(place.mapItem == nil)
+            .opacity(place.mapItem == nil ? 0.5 : 1)
+
+            placePhotos(photos, spot: spot)
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18)
+            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .accessibilityIdentifier("map.placeCard")
+    }
+
+    /// 札の写真の段。**「読めていない」と「無い」を分ける**（`NearbyPhotosSheet` と同じ）
+    @ViewBuilder
+    private func placePhotos(_ photos: [Photo], spot: DerivedSpot.Place?) -> some View {
+        if !model.loaded {
+            ProgressView()
+                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+        } else if photos.isEmpty {
+            HStack(spacing: 8) {
+                Text(L("この付近の写真はまだありません", "No photos near here yet"))
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.muted2)
+                Spacer(minLength: 8)
+                Button(action: onPost) {
+                    Text(L("写真を投稿する", "Post a photo"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(L("この付近で撮られた写真", "Photos taken near here"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                    Text(L("\(photos.count)枚", "\(photos.count) photos"))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.muted2)
+                    Spacer(minLength: 8)
+                    if let spot {
+                        NavigationLink {
+                            SpotDetailView(spot: spot, photos: model.photos)
+                        } label: {
+                            Text(L("スポットを見る", "See spot"))
+                                .font(.subheadline)
+                                .foregroundStyle(WebTheme.muted2)
+                                .frame(minHeight: WebTheme.minTapTarget)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 6) {
+                        ForEach(photos) { photo in
+                            NavigationLink {
+                                PhotoDetailView(photo: photo, context: photos)
+                            } label: {
+                                RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                                    .frame(width: 72, height: 90)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("写真を開く", "Open photo"))
+                        }
+                    }
+                }
+                .frame(height: 90)
+            }
+        }
     }
 
     // MARK: - リスト

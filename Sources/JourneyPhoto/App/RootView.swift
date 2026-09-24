@@ -97,7 +97,9 @@ struct RootView: View {
             // **4つ目は地図**（指示書 4-1 の並び）。旅の一冊は
             // マイページから開く——撮った本人の記録なので持ち場が合う
             NavigationStack {
-                PhotoMapView(unread: unread, avatarURL: avatarURL, onOpenNotifications: { showNotifications = true })
+                PhotoMapView(unread: unread, avatarURL: avatarURL,
+                             onOpenNotifications: { showNotifications = true },
+                             onPost: { showPostChoice = true })
             }
             .tabItem { Label(L("マップ", "Map"), systemImage: "map") }
             .tag(Tab.map)
