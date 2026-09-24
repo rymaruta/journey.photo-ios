@@ -1,5 +1,7 @@
 # journey.photo-ios
 
+実装時のデザイン正本: [画面画像・仕様・実装順](docs/design/README.md)（2026-09-25、実装前）。サイトのアイコンは変更しません。
+
 [journey-photo.com](https://journey-photo.com)（リポジトリ: `rymaruta/photo-gallery`）の
 iOS アプリ版。SwiftUI のネイティブアプリで、既存の `api-user`（AWS Lambda +
 API Gateway）をそのまま叩く。
