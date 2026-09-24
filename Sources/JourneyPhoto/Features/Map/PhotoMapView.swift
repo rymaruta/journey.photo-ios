@@ -38,6 +38,9 @@ struct PhotoMapView: View {
     @State private var placeDetail: MKMapItem?
     /// 地図の見ている場所。**写真に合わせてから開く**（指示書 9-2）
     @State private var camera: MapCameraPosition = .automatic
+    /// 方位磁針を地図の外（右の操作列）に置くための名前。
+    /// 置かないと、iOS が右上に出す方位磁針が操作列と重なる
+    @Namespace private var mapScope
 
     var body: some View {
         VStack(spacing: 0) {
@@ -201,6 +204,8 @@ struct PhotoMapView: View {
 
     private var mapArea: some View {
         mapCanvas
+        // 方位磁針・現在地・拡大縮小を**1本の列にまとめる**（`mapControls`）
+        .mapScope(mapScope)
         .overlay(alignment: .top) { statusLine }
         .overlay(alignment: .topTrailing) {
             mapControls
@@ -249,14 +254,19 @@ struct PhotoMapView: View {
     private var mapCanvas: some View {
         if #available(iOS 18.0, *) {
             PlaceSelectableMap(camera: $camera,
+                               scope: mapScope,
                                chosen: $chosenPlace,
                                detail: $placeDetail,
                                onCameraChange: cameraChanged) {
                 pinMarkers
             }
         } else {
-            Map(position: $camera) {
+            Map(position: $camera, scope: mapScope) {
                 pinMarkers
+            }
+            .mapControls {
+                // 既定の方位磁針は消す——`mapControls` の列に置いた方を使う
+                MapCompass().mapControlVisibility(.hidden)
             }
             .onMapCameraChange(frequency: .onEnd) { context in
                 cameraChanged(context)
@@ -387,9 +397,14 @@ struct PhotoMapView: View {
         }
     }
 
-    /// 地図の操作（モック3-4）。現在地・拡大・縮小を縦に重ねる。
+    /// 地図の操作（モック3-4）。方位磁針・現在地・拡大・縮小を縦に重ねる。
+    ///
+    /// **方位磁針もこの列に入れる。** 既定のままだと iOS が右上に置き、
+    /// この列と重なった（実機の絵・2026-09-25）。方位磁針は北を向いて
+    /// いる間は出ない——そのときは現在地のボタンが一番上に来る
     private var mapControls: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: WebTheme.mapControlSpacing) {
+            MapCompass(scope: mapScope)
             locateButton
             VStack(spacing: 0) {
                 zoomButton(systemImage: "plus", factor: 1 / MapFraming.zoomStep,

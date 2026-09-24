@@ -30,6 +30,8 @@ struct ChosenPlace: Identifiable, Equatable {
 struct PlaceSelectableMap<Pins: MapContent>: View {
 
     @Binding var camera: MapCameraPosition
+    /// 方位磁針を地図の外に置くための名前（`PhotoMapView.mapScope`）
+    let scope: Namespace.ID
     @Binding var chosen: ChosenPlace?
     /// Apple の詳細カードに出す地点。nil で閉じる
     @Binding var detail: MKMapItem?
@@ -40,11 +42,13 @@ struct PlaceSelectableMap<Pins: MapContent>: View {
     @State private var selection: MapSelection<String>?
 
     init(camera: Binding<MapCameraPosition>,
+         scope: Namespace.ID,
          chosen: Binding<ChosenPlace?>,
          detail: Binding<MKMapItem?>,
          onCameraChange: @escaping (MapCameraUpdateContext) -> Void,
          @MapContentBuilder pins: @escaping () -> Pins) {
         _camera = camera
+        self.scope = scope
         _chosen = chosen
         _detail = detail
         self.onCameraChange = onCameraChange
@@ -52,8 +56,12 @@ struct PlaceSelectableMap<Pins: MapContent>: View {
     }
 
     var body: some View {
-        Map(position: $camera, selection: $selection) {
+        Map(position: $camera, selection: $selection, scope: scope) {
             pins()
+        }
+        .mapControls {
+            // 既定の方位磁針は消す——`PhotoMapView.mapControls` の列に置いた方を使う
+            MapCompass().mapControlVisibility(.hidden)
         }
         // **押せるのは地点だけ。** 地名（都市・国）や山・川を押しても
         // 「この付近の写真」の範囲（約1km）と噛み合わない

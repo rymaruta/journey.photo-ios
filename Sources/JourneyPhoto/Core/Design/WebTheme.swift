@@ -61,6 +61,9 @@ enum WebTheme {
     /// **見た目は太らせない。** 当たり判定だけを広げるので、並びの詰まりは
     /// そのまま（`contentShape` で余白まで押せるようにする）。
     static let minTapTarget: CGFloat = 44
+    /// 地図の右の操作（方位磁針・現在地・拡大縮小）の間隔。
+    /// 8pt では丸いボタンどうしが接して見え、押し間違えやすかった
+    static let mapControlSpacing: CGFloat = 12
 }
 
 /// 画面ぜんぶを黒地にする。
