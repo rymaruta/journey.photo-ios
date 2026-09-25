@@ -29,6 +29,9 @@ struct PhotoMapView: View {
     @State private var showNearby = false
     /// 押したピン。**下の札に出す**（シートで画面を覆うと地図が見えない）
     @State private var selected: MapPin?
+    /// 押した撮影スポットのピン（台帳）。札は同時に1枚——写真のピン・
+    /// Apple の地点と取り合わせず、どれかを押したら他は下げる
+    @State private var selectedOfficial: OfficialPins.Pin?
     /// 一覧を開くとき（札の「写真を見る →」・リストの行）
     @State private var listing: MapPin?
     /// 押した地点（Apple の地図が描く POI）。**iOS 18 以降だけ**入る
@@ -239,6 +242,9 @@ struct PhotoMapView: View {
                 if let selected, model.stillShown(selected) {
                     pinCard(selected)
                         .padding(.horizontal, 16)
+                } else if let selectedOfficial, model.stillShown(official: selectedOfficial) {
+                    officialCard(selectedOfficial)
+                        .padding(.horizontal, 16)
                 } else if let chosenPlace {
                     placeCard(chosenPlace)
                         .padding(.horizontal, 16)
@@ -251,7 +257,10 @@ struct PhotoMapView: View {
         }
         // 地点を選んだら、ピンの札は下げる（札は1枚だけ）
         .onChange(of: chosenPlace) { _, place in
-            if place != nil { selected = nil }
+            if place != nil {
+                selected = nil
+                selectedOfficial = nil
+            }
         }
     }
 
@@ -287,6 +296,10 @@ struct PhotoMapView: View {
     /// 寄せるだけで、**自分がどこにいてどちらを向いているか**が地図に
     /// 出なかった（owner の指摘・2026-09-25）。点は位置の権限があるときだけ
     /// 出て、これ自体は権限を尋ねない
+    ///
+    /// **撮影スポット（台帳）のピンは3つ目。** 出るのは寄せたときと名前で
+    /// 絞ったときだけで、その判断は頭（`OfficialPins.visible`）にある。
+    /// 名前は写真のピンと同じく `Annotation` の題として MapKit が下に描く
     @MapContentBuilder
     private var pinMarkers: some MapContent {
         UserAnnotation()
@@ -294,6 +307,7 @@ struct PhotoMapView: View {
             Annotation(pin.title, coordinate: pin.coordinate) {
                 Button {
                     selected = pin
+                    selectedOfficial = nil
                     chosenPlace = nil
                 } label: {
                     ZStack(alignment: .topTrailing) {
@@ -314,6 +328,33 @@ struct PhotoMapView: View {
                 .buttonStyle(.plain)
             }
         }
+        ForEach(model.officialPins) { pin in
+            Annotation(pin.name, coordinate: CLLocationCoordinate2D(latitude: pin.coords.lat,
+                                                                      longitude: pin.coords.lng)) {
+                Button {
+                    selectedOfficial = pin
+                    selected = nil
+                    chosenPlace = nil
+                } label: {
+                    officialMarker
+                }
+                .buttonStyle(.plain)
+                // 読み上げでも下書きだと分かるように（画面の札と同じ語）
+                .accessibilityLabel(pin.isDraft ? L("\(pin.name)（下書き）", "\(pin.name) (draft)") : pin.name)
+            }
+        }
+    }
+
+    /// 撮影スポットの印（デザイン 04）。**写真のピンと見分けがつく小さな丸**:
+    /// 28pt・地は rgba(40,40,44,0.92)・1.5pt の白っぽい縁・小さな記号。
+    /// 写真の札（44pt の写真）より小さいので、重なっても写真が前に見える
+    private var officialMarker: some View {
+        Image(systemName: "mappin")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color.white.opacity(0.85))
+            .frame(width: 28, height: 28)
+            .background(Color(red: 40 / 255, green: 40 / 255, blue: 44 / 255).opacity(0.92), in: Circle())
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.5), lineWidth: 1.5))
     }
 
     /// 見えている範囲を控えるだけ。**絞るのはボタンを押したとき**
@@ -585,8 +626,9 @@ struct PhotoMapView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                // **撮影地を地点として開く。** 台帳は引かない（本番は
-                // 台帳を持たない——`DerivedSpot` の注記）。
+                // **撮影地を地点として開く。** 台帳（`OfficialSpot`）は
+                // ここでは引かない——写真のピンは撮影地の文字列の話で、
+                // 台帳のスポットは自分のピン（`officialCard`）から開く。
                 // 名前の無いピン・1枚だけの地点には出さない
                 if let place = spotPlace {
                     NavigationLink {
@@ -622,6 +664,85 @@ struct PhotoMapView: View {
         .overlay(RoundedRectangle(cornerRadius: 18)
             .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
         .accessibilityIdentifier("map.pinCard")
+    }
+
+    /// 押した撮影スポット（台帳）の札。地点の札（`placeCard`）と同じ並び:
+    ///
+    ///     ◎ 高屋神社                                 ✕
+    ///       香川県 · 観音寺市  下書き
+    ///     [ 経路 ]  [ スポットを見る ]
+    ///
+    /// 「経路」は端末の地図アプリ（`SpotScreen.mapURL`）。「スポットを見る」は
+    /// モック13の画面（`OfficialSpotView`）。**「公式」とは書かない**——
+    /// 索引の全件が運営未確認の下書きなので、その語を札に置く
+    private func officialCard(_ pin: OfficialPins.Pin) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                officialMarker
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(pin.name)
+                        .font(.headline)
+                        .foregroundStyle(WebTheme.foreground)
+                        .lineLimit(2)
+                    HStack(spacing: 8) {
+                        if let region = pin.regionLabel {
+                            Text(region)
+                                .font(.subheadline)
+                                .foregroundStyle(WebTheme.faint)
+                                .lineLimit(1)
+                        }
+                        if pin.isDraft {
+                            Text(L("下書き", "Draft"))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(WebTheme.muted2)
+                                .webChip()
+                        }
+                    }
+                }
+                Spacer()
+                Button {
+                    selectedOfficial = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(WebTheme.muted2)
+                        .webTappable()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Labels.Common.close)
+            }
+
+            HStack(spacing: 8) {
+                if let url = SpotScreen.mapURL(name: pin.name, coords: pin.coords) {
+                    Link(destination: url) {
+                        Label(L("経路", "Directions"), systemImage: "arrow.triangle.turn.up.right.diamond")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(WebTheme.accentText)
+                            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                            .background(WebTheme.foreground, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if let spot = model.officialSpot(for: pin) {
+                    NavigationLink {
+                        OfficialSpotView(spot: spot, spots: model.officialSpots, photos: model.photos)
+                    } label: {
+                        Label(L("スポットを見る", "See spot"), systemImage: "mappin.and.ellipse")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(WebTheme.foreground)
+                            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                            .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("map.officialCard.open")
+                }
+            }
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18)
+            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .accessibilityIdentifier("map.officialCard")
     }
 
     /// 押した地点の札（デザイン 04b）:

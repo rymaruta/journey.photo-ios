@@ -464,7 +464,9 @@ struct MyPageView: View {
     @ViewBuilder
     private var wishlistArea: some View {
         // **撮影地から導いた地点**のうち、「行きたい」に入れたもの。
-        // 台帳は引かない（本番は台帳を持たない——`DerivedSpot` の注記）
+        // ⚠️ 台帳の撮影スポットの鍵（`SPOT-<slug>`・`SavedSpotKey`）は
+        // **ここに並べていない**（モック2に無い行を足すかは owner の判断待ち）。
+        // その鍵だけを持つ人は、下の判定では「まだ無い」側に落ちる
         let places = DerivedSpot.all(in: model.photos)
         let wanted = places.filter { wishlist.contains($0.slug) }
         VStack(alignment: .leading, spacing: 10) {
