@@ -65,4 +65,29 @@ final class SmokeTests: XCTestCase {
                       || app.buttons["投稿"].waitForExistence(timeout: 5),
                       "投稿の2択が出ない")
     }
+
+    /// **お知らせは開いたら閉じられること。** タブからシートへ移したときに
+    /// 閉じるボタンを付け忘れ、「開いたら閉じられない」になった（2026-09-25）。
+    /// ログインしていなくても同じシートが出る（中身がログインの案内になるだけ）
+    func testNotificationsSheetCloses() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        XCTAssertTrue(agree.waitForExistence(timeout: 30), "起動画面が出ない（落ちている可能性）")
+        agree.tap()
+
+        let bell = app.buttons["header.notifications"]
+        XCTAssertTrue(bell.waitForExistence(timeout: 20), "見出しのお知らせが無い")
+        bell.tap()
+
+        let close = app.buttons["notifications.close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 15), "お知らせに閉じるボタンが無い")
+        close.tap()
+
+        // 閉じたら見出しのベルがまた押せる（シートが残っていない）
+        XCTAssertTrue(close.waitForNonExistence(timeout: 10), "閉じるを押してもお知らせが閉じない")
+        XCTAssertTrue(bell.isHittable, "閉じた後にホームへ戻っていない")
+    }
 }
