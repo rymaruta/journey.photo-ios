@@ -53,4 +53,16 @@ final class ProfileSectionsTests: XCTestCase {
         XCTAssertEqual(ProfileSections.wishlist(ledgerCount: 10, wantedCount: 0, savedIdCount: 3),
                        .empty)
     }
+
+    /// 🔴 **台帳の撮影スポットだけを入れた人に「まだありません」と言わない。**
+    /// 呼ぶ側は `wantedCount` に撮影地の行とスポットの行（`OfficialWishlist.rows`）を
+    /// 足して渡す——撮影地の集まりが1つも当たらなくても、スポットの行があれば並べる
+    func testOfficialOnlyWishlistIsAList() {
+        let official = OfficialWishlist.rows(keys: ["SPOT-takaya-jinja"], index: [])
+        XCTAssertEqual(ProfileSections.wishlist(ledgerCount: 10, wantedCount: 0 + official.count, savedIdCount: 1),
+                       .list)
+        // 写真の一覧が取れていない回でも、スポットの行は slug から起こせるので並べる
+        XCTAssertEqual(ProfileSections.wishlist(ledgerCount: 0, wantedCount: official.count, savedIdCount: 1),
+                       .list)
+    }
 }

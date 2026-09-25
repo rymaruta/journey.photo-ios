@@ -27,6 +27,7 @@ API の口そのものは `Tools/check-api-parity.py` が毎回突き合わせ�
 | 通報・ブロック | `ReportDialog` | `ReportSheet` / `BlockedUsersView` |
 | 退会・パスワード変更 | `DeleteAccountModal` | `DeleteAccountView` / `ChangePasswordView` |
 | ユーザー検索・曲検索・地名検索 | `useUserSearch` ほか | `UserSearchService` / `DiscoveryService` |
+| 撮影スポットのガイド（**下書き**） | `/spots` ＋ `/spots/<slug>`（`content/spots.json`・review 段階・noindex） | `OfficialSpotView`（**索引 `app/data/spots.json` だけを読む・v1**）。入口は地図のピン（寄せたとき・名前で絞ったとき）。見どころ・季節・アクセスの本文は出さない。「行きたい」は `SPOT-<slug>` で端末に保存（`SavedSpotKey`＝Web の `savedSpotKey.ts`）し、マイページの一覧にも並ぶ（`OfficialWishlist`） |
 
 ## 2. 今日その場で埋めたもの
 

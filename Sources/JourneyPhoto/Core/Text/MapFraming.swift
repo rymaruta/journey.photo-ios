@@ -97,4 +97,54 @@ extension MapFraming {
     static let maxSpan = 90.0
     /// 1回ぶんの倍率
     static let zoomStep = 2.0
+
+    /// 拡大・縮小を**続けて押したとき**の土台。
+    ///
+    /// 見えている枠は地図が落ち着いたとき（`onMapCameraChange(.onEnd)`）に
+    /// しか届かない。届く前に次を押すと、**古い枠から計算し直す**ので:
+    ///
+    ///     ＋ ＋   → 2回押したのに1段しか寄らない
+    ///     ＋ −   → 元の枠の2倍（押す前より引いた所）へ飛ぶ＝逆に見える
+    ///
+    /// だから**直前に押してから `window` 秒のあいだは、前に頼んだ枠を土台に
+    /// する**。それを過ぎたら見えている枠に戻る（指で動かした地図に従う）。
+    struct ZoomChain {
+        static let window: TimeInterval = 1.0
+        private var last: (frame: Frame, at: Date)?
+
+        init() {}
+
+        mutating func step(from visible: Frame?, by factor: Double,
+                           now: Date = Date()) -> Frame? {
+            let base: Frame?
+            if let last, now.timeIntervalSince(last.at) < Self.window {
+                base = last.frame
+            } else {
+                base = visible
+            }
+            guard let base else { return nil }
+            let next = MapFraming.zoomed(base, by: factor)
+            last = (next, now)
+            return next
+        }
+
+        /// 地図が落ち着いたとき。**頼んだ枠から中心が離れていたら忘れる**
+        /// ——指で払った・現在地へ寄せたなど、ボタン以外で動いた印。
+        /// 忘れないと、1秒以内の次の＋−で払う前の場所へ引き戻す
+        mutating func observe(_ visible: Frame) {
+            guard let last else { return }
+            let latDrift = abs(visible.latitude - last.frame.latitude)
+            let lngDrift = abs(visible.longitude - last.frame.longitude)
+            if latDrift > last.frame.latitudeSpan * Self.driftTolerance
+                || lngDrift > last.frame.longitudeSpan * Self.driftTolerance {
+                self.last = nil
+            }
+        }
+
+        /// ボタン以外がカメラを動かしたとき（絞り込み・現在地）
+        mutating func reset() { last = nil }
+
+        /// 中心のずれをどこまで「同じ枠」と見なすか（幅に対する割合）
+        static let driftTolerance = 0.25
+    }
 }

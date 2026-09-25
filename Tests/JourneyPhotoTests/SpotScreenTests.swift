@@ -61,4 +61,50 @@ final class SpotScreenTests: XCTestCase {
         XCTAssertFalse(url.absoluteString.contains(" "), "URL に生の空白が入っている")
         XCTAssertTrue(url.absoluteString.contains("ll=34.1,133.6"))
     }
+
+    // MARK: - 撮影スポット（台帳の索引・モック13）の頭
+
+    /// 🔴 **下書きを「公式」「PHOTO SPOT」と名乗らない。** 索引の全件が
+    /// 運営未確認の下書き（2026-09-25）なので、小見出しからそう言う
+    func testEyebrowSaysDraftForUnreviewedSpots() {
+        XCTAssertEqual(SpotScreen.eyebrow(review: true), L("下書き・未確認", "DRAFT · UNREVIEWED"))
+        XCTAssertNotEqual(SpotScreen.eyebrow(review: true), SpotScreen.eyebrow(review: false))
+        XCTAssertFalse(SpotScreen.eyebrow(review: true).lowercased().contains("photo spot"))
+        XCTAssertFalse(SpotScreen.eyebrow(review: true).contains("公式"))
+    }
+
+    /// 注意文は下書きのときだけ。**日付は文に組み込んで返す**（生の値を `Text` に渡さない）
+    func testReviewNoticeCarriesTheDraftedDay() throws {
+        XCTAssertNil(SpotScreen.reviewNotice(review: false, draftedAt: "2026-09-24"))
+        let notice = try XCTUnwrap(SpotScreen.reviewNotice(review: true, draftedAt: "2026-09-24"))
+        XCTAssertEqual(notice, L("運営の下書きです。まだ確認していません（下書き作成 2026-09-24）",
+                                 "Unreviewed draft by our team (drafted 2026-09-24)"))
+    }
+
+    /// 時刻まで入った値が来ても、出すのは日付まで。読めない値・無い値なら日付の括弧ごと出さない
+    func testReviewNoticeNeverLeaksRawTimestamps() throws {
+        let withTime = try XCTUnwrap(SpotScreen.reviewNotice(review: true, draftedAt: "2026-09-24T00:00:00.000Z"))
+        XCTAssertTrue(withTime.contains("2026-09-24"))
+        XCTAssertFalse(withTime.contains("T00:00"), "生の日時が漏れている")
+        let none = try XCTUnwrap(SpotScreen.reviewNotice(review: true, draftedAt: nil))
+        XCTAssertEqual(none, L("運営の下書きです。まだ確認していません", "Unreviewed draft by our team"))
+        XCTAssertEqual(SpotScreen.reviewNotice(review: true, draftedAt: "not-a-date"), none)
+    }
+
+    /// 「[都道府県] · [市区町村] · N枚の写真」。地域が無ければ枚数だけ
+    func testSubtitleJoinsRegionAndCount() {
+        XCTAssertEqual(SpotScreen.subtitle(region: "香川県 · 観音寺市", photoCount: 3),
+                       L("香川県 · 観音寺市 · 3枚の写真", "香川県 · 観音寺市 · 3 photos"))
+        XCTAssertEqual(SpotScreen.subtitle(region: nil, photoCount: 0), L("0枚の写真", "0 photos"))
+        XCTAssertEqual(SpotScreen.subtitle(region: "  ", photoCount: 1), L("1枚の写真", "1 photo"))
+    }
+
+    /// 台帳のスポットのシェア文にも journey-photo.com は入れない（本番 main に /spots は無い）
+    func testOfficialShareTextHasNoSiteLink() {
+        let url = SpotScreen.mapURL(name: "高屋神社", coords: Photo.Coords(lat: 34.14, lng: 133.68))
+        let text = SpotScreen.shareText(name: "高屋神社", region: "香川県 · 観音寺市", mapURL: url)
+        XCTAssertFalse(text.contains("journey-photo.com"))
+        XCTAssertFalse(text.contains("/spots/"))
+        XCTAssertTrue(text.contains("maps.apple.com"))
+    }
 }

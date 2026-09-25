@@ -26,9 +26,12 @@ enum MapSearch {
     /// 条件に合う写真。**座標の無い写真は最初から入れない**
     /// ——地図に置けないものをリストにだけ出すと、切り替えた瞬間に
     /// 件数が変わる。
-    /// ⚠️ **台帳（`spot#` 行）は引かない。** 本番が「台帳を持たない」と
-    /// 決めた（`photo-gallery/docs/spot-master.md`）ので、スポットの名前・
-    /// 別名で引く経路は無くなった。**当たるのは撮影地の文字列だけ**。
+    ///
+    /// ⚠️ **ここで当たるのは撮影地の文字列だけ。** 撮影スポットの台帳は
+    /// Web が `content/spots.json`（review 段階の下書き）として持ち、アプリは
+    /// `OfficialSpot` として**別に**読む（`OfficialSpotIndex.matches` が名前・
+    /// 読み・地域で引き、`OfficialPins` が地図に置く）。写真との紐付けは
+    /// `Photo.spotId` だけで、**写真の絞り込みにスポットの名前は効かない**。
     static func photos(_ photos: [Photo], filter: Filter) -> [Photo] {
         let needle = fold(filter.query)
         let categoryKey = filter.category.map { CategoryChoices.key($0) }
@@ -59,7 +62,9 @@ enum MapSearch {
             && abs(longitude - frame.longitude) <= frame.longitudeSpan / 2
     }
 
-    private static func fold(_ value: String) -> String {
+    /// 突き合わせる前の揃え方（前後の空白・全角半角・大小）。
+    /// スポットの索引（`OfficialSpotIndex`）も同じ揃え方で引く
+    static func fold(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
     }

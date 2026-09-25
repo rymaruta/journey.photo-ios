@@ -75,9 +75,9 @@ targets:
         NSCameraUsageDescription: 写真を撮って投稿するためにカメラを使います。
         NSPhotoLibraryUsageDescription: 端末の写真を選んで投稿するために使います。
         NSPhotoLibraryAddUsageDescription: 撮った写真を端末に保存するために使います。
-        # 実際に位置を要求するのは撮影地マップの現在地ボタン（地図を寄せるだけ・保存しない）。
+        # 実際に位置を要求するのは撮影地マップの現在地ボタン（寄せる・点と向きを描く・保存しない）。
         # 投稿の撮影地は写真の EXIF から読むので、ここで取った位置は使わない
-        NSLocationWhenInUseUsageDescription: 撮影地マップで地図を現在地の周りへ寄せるために使います。位置は保存も送信もしません。
+        NSLocationWhenInUseUsageDescription: 撮影地マップで、現在地と向いている方向を表示し、地図をその周りへ寄せるために使います。位置は保存も送信もしません。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(JP_BUNDLE_ID)

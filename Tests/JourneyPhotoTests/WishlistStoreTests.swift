@@ -42,4 +42,24 @@ final class WishlistStoreTests: XCTestCase {
         XCTAssertTrue(wishlist.spotIds.isEmpty)
     }
 
+    /// **台帳のスポットの鍵（`SPOT-<slug>`）は撮影地の鍵と混ざらない。**
+    /// 同じ綴りの撮影地「takaya-jinja」を押しても、スポットの側は灯らない
+    func testOfficialKeysDoNotMixWithLocationKeys() async {
+        let (wishlist, defaults) = store()
+        wishlist.use(userId: "u1")
+        let official = SavedSpotKey.official("takaya-jinja")
+        XCTAssertTrue(wishlist.toggle(official))
+        XCTAssertTrue(wishlist.contains(official))
+        XCTAssertFalse(wishlist.contains("takaya-jinja"), "撮影地の鍵まで灯っている")
+
+        wishlist.set("takaya-jinja", wanted: true)
+        XCTAssertEqual(wishlist.spotIds, ["SPOT-takaya-jinja", "takaya-jinja"])
+        XCTAssertFalse(wishlist.toggle(official))
+        XCTAssertTrue(wishlist.contains("takaya-jinja"), "スポットを外したら撮影地まで外れた")
+
+        let reopened = WishlistStore(defaults: defaults)
+        reopened.use(userId: "u1")
+        XCTAssertEqual(reopened.spotIds, ["takaya-jinja"])
+    }
+
 }
