@@ -53,7 +53,7 @@ struct HomeFeedCard: View {
             // 重ねず、説明と同じ塊で読ませる
             if !photo.displayTitle.isEmpty {
                 Text(photo.displayTitle)
-                    .font(.callout.weight(.semibold))
+                    .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(2)
             }
@@ -92,7 +92,7 @@ struct HomeFeedCard: View {
                 .aspectRatio(4.0 / 5.0, contentMode: .fit)
 
                 Text("\(min(page + 1, photos.count))/\(photos.count)")
-                    .font(.caption.weight(.semibold))
+                    .font(JPFont.mono(12, medium: true))
                     .foregroundStyle(Color.white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
@@ -136,7 +136,7 @@ struct HomeFeedCard: View {
                     } label: {
                         Text("#\(tag)")
                             .font(.subheadline)
-                            .foregroundStyle(Color(red: 0.42, green: 0.68, blue: 1.0))
+                            .foregroundStyle(WebTheme.accent)
                     }
                     .buttonStyle(.plain)
                 }
@@ -257,10 +257,12 @@ struct HomeFeedCard: View {
                 } icon: {
                     Image(systemName: liked ? "heart.fill" : "heart")
                 }
-                .foregroundStyle(liked ? .pink : WebTheme.foreground)
+                .foregroundStyle(WebTheme.foreground)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("いいね", "Like"))
+            // 色で分けるのをやめたので、押したかどうかは形と読み上げで伝える
+            .accessibilityAddTraits(liked ? .isSelected : [])
 
             NavigationLink {
                 PhotoDetailView(photo: photo)

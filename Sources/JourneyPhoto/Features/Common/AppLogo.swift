@@ -21,12 +21,15 @@ struct AppLogo: View {
         HStack(spacing: 8) {
             mark
             Text("Journey Photo")
-                .font(.system(size: 22, weight: .bold, design: .serif))
+                .font(JPFont.wordmark)
                 .tracking(-0.55)
-                .foregroundStyle(Color.white)
+                .foregroundStyle(WebTheme.foreground)
                 // 見出しの幅が足りない端末で2行に割れないように
                 .lineLimit(1)
-                .fixedSize()
+                // **狭い端末では少しだけ縮める。** 右にベルとアバター（44pt×2）が
+                // 並ぶので、375pt 幅だと中央に使えるのは約150pt。縮めずに固定すると
+                // ベルに重なる（レビューの見積もり・実機で未確認）
+                .minimumScaleFactor(0.8)
         }
         // **読み上げは1つの名前として。** 記号と2つの語がばらばらに
         // 読まれると、開くたびに3回喋る
@@ -41,6 +44,6 @@ struct AppLogo: View {
             .interpolation(.high)
             .scaledToFit()
             .frame(width: 28, height: 28)
-            .foregroundStyle(Color.white)
+            .foregroundStyle(WebTheme.foreground)
     }
 }

@@ -26,7 +26,7 @@ struct FollowListView: View {
     var body: some View {
         List {
             if let errorMessage {
-                Text(errorMessage).foregroundStyle(.red).font(.callout)
+                Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout)
             } else if users.isEmpty && !isLoading {
                 Text(L("まだいません", "No one yet")).foregroundStyle(.secondary)
             }

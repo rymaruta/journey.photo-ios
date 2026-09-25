@@ -331,6 +331,43 @@ try:
 except ModuleNotFoundError:
     print("[skip] PyYAML が無いのでワークフローの鍵の重複は見ない")
 
+# ---- 同梱の書体 -----------------------------------------------------------
+# **名前を1字でも違えると、iOS は黙ってシステム書体で描く**（落ちもしない・
+# ビルドも通る）。見出しが明朝にならないまま気づけないので、ここで3つを揃える:
+#   project.yml の UIAppFonts ／ Resources/Fonts/ の実物 ／ JPFont が引く名前
+FONTS_DIR = ROOT / "Sources/JourneyPhoto/Resources/Fonts"
+listed = re.findall(r"""^\s+-\s+["']?([^\s"']+\.(?:ttf|otf))["']?\s*$""",
+                    project_text.split("UIAppFonts:", 1)[1].split("CFBundleDevelopmentRegion", 1)[0],
+                    re.M) if "UIAppFonts:" in project_text else []
+if not listed:
+    fail("project.yml の UIAppFonts が空です（見出しの明朝・数字の等幅が出ません）")
+for name in listed:
+    if not (FONTS_DIR / name).exists():
+        fail(f"UIAppFonts の {name} が Resources/Fonts/ にありません")
+for stray in sorted(p.name for p in FONTS_DIR.glob("*.[ot]tf")):
+    if stray not in listed:
+        fail(f"Resources/Fonts/{stray} が UIAppFonts に載っていません（同梱されても使えない）")
+jpfont = (ROOT / "Sources/JourneyPhoto/Core/Design/JPFont.swift").read_text(encoding="utf-8")
+for ps in re.findall(r'static let \w+Name = "([^"]+)"', jpfont):
+    # この repo はファイル名＝PostScript 名にしてある（`Tools/make-display-font.py`）
+    if f"{ps}.ttf" not in listed and f"{ps}.otf" not in listed:
+        fail(f"JPFont が引く {ps} に当たる書体が UIAppFonts にありません")
+for lic in ("OFL-ShipporiMincho.txt", "OFL-IBMPlexMono.txt"):
+    if not (FONTS_DIR / lic).exists():
+        fail(f"書体のライセンス {lic} がありません（OFL は同梱が条件）")
+
+# **`$名前` の直後に全角文字を置かない**（`${名前}` と書く）。
+# macOS の /bin/bash（3.2）は `$MARKETING（` の「（」のバイトまで名前として
+# 読み、`set -u` の下で「unbound variable」で止まる。Linux の bash では
+# 起きないので手元では気づけない（TestFlight run #92 がここで落ちた）
+for shell_file in sorted([*(ROOT / ".github/workflows").glob("*.yml"), *(ROOT / "Tools").glob("*.sh"),
+                          ROOT / "codemagic.yaml"]):
+    if not shell_file.exists():
+        continue
+    for number, line in enumerate(shell_file.read_text(encoding="utf-8").splitlines(), 1):
+        if re.search(r"\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]", line):
+            fail(f"{shell_file.relative_to(ROOT)}:{number} の変数の直後に全角文字（${{名前}} と書く）")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:

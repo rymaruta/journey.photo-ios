@@ -626,7 +626,7 @@ struct PhotoMapView: View {
                 } label: {
                     Text(L("写真を見る →", "See photos →"))
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.22, green: 0.65, blue: 0.98))
+                        .foregroundStyle(WebTheme.foreground)
                         .frame(minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                 }

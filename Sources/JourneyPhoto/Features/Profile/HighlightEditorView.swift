@@ -34,7 +34,7 @@ struct HighlightEditorView: View {
                 pickerSection
                 if existing != nil { deleteSection }
                 if let message {
-                    Section { Text(message).font(.callout).foregroundStyle(Color.red) }
+                    Section { Text(message).font(.callout).foregroundStyle(WebTheme.danger) }
                         .listRowBackground(Color.clear)
                 }
             }

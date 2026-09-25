@@ -74,7 +74,7 @@ struct AlbumsView: View {
     @ViewBuilder
     private var statusRow: some View {
         if let message = model.errorMessage {
-            Text(message).foregroundStyle(.red).font(.callout)
+            Text(message).foregroundStyle(WebTheme.danger).font(.callout)
         } else if model.albums.isEmpty && !model.isLoading {
             Text(L("まだアルバムがありません", "No albums yet")).foregroundStyle(.secondary)
         }

@@ -64,7 +64,7 @@ struct TripsView: View {
             )
             VStack(alignment: .leading, spacing: 4) {
                 Text(trip.place.isEmpty ? L("旅の記録", "A trip") : trip.place)
-                    .font(.title2.weight(.bold))
+                    .font(JPFont.cardTitle)
                     .foregroundStyle(WebTheme.foreground)
                 Text(L("\(trip.days)日間 · \(trip.photos.count)枚",
                        "\(trip.days) days · \(trip.photos.count) photos"))

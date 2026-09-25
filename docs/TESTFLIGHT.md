@@ -80,7 +80,11 @@ open JourneyPhoto.xcodeproj
 > ⚠️ **ビルド番号は毎回上げる。** 同じ番号は受け付けられない。
 > `project.yml` の `CURRENT_PROJECT_VERSION`（と `CFBundleVersion`）を
 > 1 → 2 → 3 と増やして `xcodegen generate`。
-> 表に出るバージョン（`MARKETING_VERSION` / `0.1.0`）は据え置きでよい。
+> 表に出るバージョン（`MARKETING_VERSION`）は、**GitHub Actions で上げるときは
+> 毎回自動で最後の数字が1つ上がる**（0.2.0 → 0.2.1 …・`Tools/next-marketing-version.sh`。
+> 出した版は `testflight/<版>` のタグで覚える）。大きく変わる版で真ん中の数字を
+> 上げたいときは `bash Tools/bump-build.sh 0.3.0` でコミットしてから流す。
+> Xcode から手で上げるときは、この自動は働かないので自分で上げる。
 
 ### コマンドで上げる（2回目以降はこちらが楽）
 

@@ -1,20 +1,17 @@
 import SwiftUI
 
-/// Web 版（journey-photo.com）と同じ見た目の決まりごと。
+/// 画面の見た目の決まりごと。
 ///
-/// **出どころは `photo-gallery/app/globals.css` の design tokens。**
-/// あちらは「dark fixed」と書いてあるとおり、明暗の切り替えを持たない
-/// **黒地・白文字の固定**。アプリだけ白地＋橙だったので、同じサイトの
-/// アプリに見えなかった。値は勝手に決めず、向こうの CSS から写す。
+/// **出どころはデザインシステム「黒塗りの真鍮」（2026-09-25）。** 値そのものは
+/// `BrandPalette`（比をテストで見張っている）。ここはそれを `Color` にして
+/// 部品に配る場所。
 ///
-///     --color-background: #000000
-///     --color-foreground: #ffffff
-///     --fg:        rgba(255,255,255,0.95)
-///     --muted:     rgba(255,255,255,0.82)
-///     --muted-2:   rgba(255,255,255,0.72)
-///     --outer-border: rgba(255,255,255,0.12)
-///     --accent-bg: rgba(255,255,255,0.92)
-///     --accent-text: #07090a
+/// 以前は `photo-gallery/app/globals.css` の黒地・白の透過を写していたが、
+/// サイトはその後 紺＋青（`#050e17` / `#2080f6`）に変わり、アプリと割れていた。
+/// 0から考え直して**黒＋白＋真鍮**に決めた（サイトも同じ値に揃える予定）。
+///
+/// **規則は1行: 白＝位置と選択、真鍮＝合図と手がかり。
+/// 写真の上には白しか置かない。**
 ///
 /// **端末の明暗設定には従わない。** Web が従っていないので、ここで
 /// 従うと「iPhone をライトにしている人だけ別アプリ」になる。
@@ -31,15 +28,47 @@ enum WebTheme {
     /// さらに弱い文字（説明・日付）。`--muted-2` と、実際の部品で多い `white/60`
     static let muted2 = Color.white.opacity(0.72)
     static let faint = Color.white.opacity(0.6)
-    /// 入力欄のプレースホルダ（`placeholder:text-white/35`）
-    static let placeholder = Color.white.opacity(0.35)
+    /// 入力欄のプレースホルダ。**35% → 50%**（35% は入力欄の上で 3.0 しか無く、
+    /// 文字の線 4.5 に届かなかった）
+    static let placeholder = Color.white.opacity(0.5)
 
-    /// 境目。`--outer-border`（部品では `ring-white/10`〜`border-white/15`）
+    /// 境目（装飾の髪線）。**部品の縁には使わない**（黒の上で 1.27）
     static let border = Color.white.opacity(0.12)
+    /// 入力欄・枠線ボタンの縁。部品の縁は 3:1 が要る（黒 3.66・入力欄 3.03）
+    static let outline = rgb(BrandPalette.outline)
 
-    /// 押せるものの地。`--accent-bg` / `--accent-text`
+    // MARK: 真鍮（合図と手がかり）
+
+    /// 文字・アイコン・未読の点・ストーリーの輪・リンク・眉ラベル。**黒か面の上だけ**
+    static let accent = rgb(BrandPalette.accent)
+    static let accentStrong = rgb(BrandPalette.accentStrong)
+    /// 写真の無い画面の主ボタン（ログイン・送信）。**上の字は墨**（`accentText`）
+    static let accentFill = rgb(BrandPalette.accentFill)
+    /// 白を載せる暗い真鍮。トグルの軌道・地図の印
+    static let accentDeep = rgb(BrandPalette.accentDeep)
+    /// 案内の帯（今日のテーマ）。選択状態は担わない
+    static let accentSoft = rgb(BrandPalette.accentSoft)
+
+    // MARK: 意味の色
+
+    /// 削除・通報・エラーの文字とアイコン（`.red` の代わり）
+    static let danger = rgb(BrandPalette.danger)
+    /// 「アカウントを削除」の確定ボタンだけ（白文字）
+    static let dangerFill = rgb(BrandPalette.dangerFill)
+    static let success = rgb(BrandPalette.success)
+    /// 地図の現在地だけ
+    static let location = rgb(BrandPalette.location)
+
+    private static func rgb(_ hex: UInt32) -> Color {
+        Color(red: Double((hex >> 16) & 0xFF) / 255,
+              green: Double((hex >> 8) & 0xFF) / 255,
+              blue: Double(hex & 0xFF) / 255)
+    }
+
+    /// **写真を持つ画面の主ボタンと選択中のチップ**の地（白 92%）と、その上の墨。
+    /// 名前は歴史的なもの——ここは真鍮ではなく白。1画面に白の塗りは1つ
     static let accentBackground = Color.white.opacity(0.92)
-    static let accentText = Color(red: 0x07 / 255, green: 0x09 / 255, blue: 0x0a / 255)
+    static let accentText = rgb(BrandPalette.ink)
 
     /// 選ばれていないチップ・入力欄の地（`bg-white/[0.07]`・`bg-white/[0.06]`）
     static let surface = Color.white.opacity(0.07)

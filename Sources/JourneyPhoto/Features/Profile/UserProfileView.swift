@@ -119,7 +119,7 @@ struct UserProfileView: View {
                     .overlay(themeRing(model.profile?.themeColor))
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        Text(model.shownName ?? "—").font(.headline)
+                        Text(model.shownName ?? "—").font(JPFont.display(20, relativeTo: .title3))
                         VerifiedBadge(isVerified: model.profile?.verified)
                     }
                     HStack(spacing: 12) {

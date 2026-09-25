@@ -68,7 +68,7 @@ struct PostSheet: View {
             .padding(16)
             // 押せる面を大きく取る（Web 側も 88px 以上で固定している）
             .frame(minHeight: 88)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
         // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**

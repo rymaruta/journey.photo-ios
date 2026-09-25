@@ -54,6 +54,9 @@ struct ReportSheet: View {
                     if ownerId != nil {
                         Section {
                             Toggle(L("この人をブロックする", "Also block this person"), isOn: $alsoBlock)
+                            // **軌道は暗い真鍮。** 既定の tint（白）だと、入れたときに白い軌道に
+                            // 白いつまみが乗り、入か切かが見えない
+                            .tint(WebTheme.accentDeep)
                         } footer: {
                             Text(L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."))
                         }
@@ -61,7 +64,7 @@ struct ReportSheet: View {
                     }
 
                     if let errorMessage {
-                        Section { Text(errorMessage).foregroundStyle(.red).font(.callout) }
+                        Section { Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout) }
                     }
 
                     Section {

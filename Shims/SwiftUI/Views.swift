@@ -6,6 +6,7 @@ public struct Text: View {
     public init(_ s: Substring) {}
     public init<S: StringProtocol>(_ s: S) {}
     public var body: Never { fatalError("模型") }
+    public enum Case { case uppercase, lowercase }
 }
 
 public struct Image: View {

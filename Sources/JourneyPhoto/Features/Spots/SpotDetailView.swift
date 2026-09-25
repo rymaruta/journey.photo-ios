@@ -110,7 +110,7 @@ struct SpotDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(spot.label)
-                .font(.system(size: 28, weight: .bold))
+                .font(JPFont.display(28, relativeTo: .title))
                 .foregroundStyle(WebTheme.foreground)
             // ⚠️ **ふりがなは出さない。** Web は `content/spot-master.json` に
             // 人が書いたぶんだけ持つ形で（いまは空）、アプリへ配る経路が無い。

@@ -106,7 +106,7 @@ struct StoryThumb: View {
                 .font(.title2)
                 .foregroundStyle(.secondary)
                 .frame(width: 64, height: 64)
-                .background(Color(.secondarySystemBackground), in: Circle())
+                .background(WebTheme.surface, in: Circle())
                 .accessibilityLabel(L("動画のストーリー", "Video story"))
         } else {
             RemoteImage(url: story.imageURL)

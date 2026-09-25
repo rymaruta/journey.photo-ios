@@ -13,7 +13,7 @@ struct VerifiedBadge: View {
         if isVerified == true {
             Image(systemName: "checkmark.seal.fill")
                 .font(.caption)
-                .foregroundStyle(Color(red: 0.22, green: 0.65, blue: 0.98))
+                .foregroundStyle(WebTheme.foreground)
                 .accessibilityLabel(L("認証済み", "Verified"))
         }
     }

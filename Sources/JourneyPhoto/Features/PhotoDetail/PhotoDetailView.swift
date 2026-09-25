@@ -215,11 +215,11 @@ struct PhotoDetailView: View {
         if !shown.displayTitle.isEmpty || !category.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 if !shown.displayTitle.isEmpty {
-                    // **題は写真の次に来る主役。** 28 → 34pt の太字
+                    // **題は写真の次に来る主役。** 明朝 30pt（文字サイズの設定で伸びる）。
+                    // 行送りは書体の自然値（1.45em）で足りるので、足さない
                     Text(shown.displayTitle)
-                        .font(.system(size: 34, weight: .bold))
+                        .font(JPFont.photoTitle)
                         .foregroundStyle(WebTheme.foreground)
-                        .lineSpacing(2)
                 }
                 if !category.isEmpty {
                     NavigationLink {
@@ -486,10 +486,11 @@ struct PhotoDetailView: View {
                     // 既定の字のままで 20pt ほどしか無く、指では狙いにくい
                     Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
                         .font(.title2)
-                        .foregroundStyle(model.liked ? .pink : WebTheme.muted)
+                        .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
                         .webTappable()
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(model.liked ? .isSelected : [])
 
                 // 吹き出しを押すとコメントの札へ。**数は取れたときだけ**
                 // ——読み込み前・圏外に「0」を出すと「まだ無い」と読まれる
@@ -541,7 +542,7 @@ struct PhotoDetailView: View {
                 Spacer()
             }
             if let message = model.errorMessage ?? actionError {
-                Text(message).font(.footnote).foregroundStyle(.red)
+                Text(message).font(.footnote).foregroundStyle(WebTheme.danger)
             }
         }
     }
@@ -813,7 +814,7 @@ private struct ExifRow: View {
                 } label: {
                     HStack {
                         Text(L("撮影情報", "Shot with"))
-                            .font(.title3.weight(.bold))
+                            .font(JPFont.rowTitle)
                             .foregroundStyle(WebTheme.foreground)
                         Spacer()
                         Image(systemName: "camera")
@@ -837,8 +838,8 @@ private struct ExifRow: View {
                                     .font(.subheadline)
                                     .foregroundStyle(Color.white.opacity(0.5))
                                 Text(item.value)
-                                    // **ここがいちばん読まれる。** 28pt の太字
-                                    .font(.system(size: 28, weight: .bold))
+                                    // **ここがいちばん読まれる。** 数字なので等幅（f/8・1/125・ISO 100）
+                                    .font(JPFont.mono(24, medium: true, relativeTo: .title))
                                     .foregroundStyle(WebTheme.foreground)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.6)
@@ -846,6 +847,11 @@ private struct ExifRow: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
+                    // **大きい文字の設定で「1/4000s」が切れないように上限を置く。**
+                    // 3列で1列 約89pt。等幅 24pt の .title は AX2 で 43pt まで伸び、
+                    // 縮小の下限 0.6 をかけても 93pt で「1/40…」と切れる（レビューの見積もり）。
+                    // xxxLarge（.title = 34pt）なら 7字 × 0.6em × 34 × 0.6 ≈ 86pt で収まる
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 }
 
                 if expanded, !primary.isEmpty, !secondary.isEmpty {

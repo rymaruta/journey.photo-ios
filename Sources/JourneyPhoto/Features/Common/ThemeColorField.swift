@@ -22,11 +22,12 @@ struct ThemeColorField: View {
                         .font(.caption)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(themeColor.isEmpty ? Color.accentColor.opacity(0.2)
-                                                       : Color(.secondarySystemBackground),
+                        .foregroundStyle(themeColor.isEmpty ? WebTheme.accentText : WebTheme.muted)
+                        .background(themeColor.isEmpty ? WebTheme.accentBackground : WebTheme.surface,
                                     in: Capsule())
                 }
                 .buttonStyle(.borderless)
+                .accessibilityAddTraits(themeColor.isEmpty ? .isSelected : [])
             }
         }
     }

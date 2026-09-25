@@ -41,7 +41,7 @@ enum SpotDetailParts {
     /// 節の見出し
     static func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.headline)
+            .font(JPFont.rowTitle)
             .foregroundStyle(WebTheme.foreground)
             .padding(.horizontal, 16)
     }

@@ -29,7 +29,7 @@ struct RemoteImage: View {
 
     var body: some View {
         ZStack {
-            Color(.secondarySystemBackground)
+            WebTheme.surface
             if let url {
                 AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.15))) { phase in
                     switch phase {
