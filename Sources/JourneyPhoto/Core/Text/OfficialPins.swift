@@ -8,7 +8,9 @@ import Foundation
 ///   - **寄せたとき**（緯度幅 `maxLatitudeSpan` 未満 ≈ 55km）、枠の中を
 ///     中心に近い順に最大 `limit` 本
 ///   - **名前で絞っているとき**は倍率に関係なく、当たったものを最大 `limit` 本
-///     （owner が名前でスポットを探す入口——検索の画面には節を足さない）
+///     （owner が名前でスポットを探す入口——検索の画面には節を足さない）。
+///     **枠は捨てない**——枠の中の候補を近い順に先、そのあと枠の外を中心から
+///     近い順。京都に寄せて「寺」なら京都の寺が先頭に来る
 ///
 /// 画面を持たない層（`MapKit` を読まない）に置いてあるので、
 /// Linux の `swift test` で確かめられる。
@@ -38,7 +40,23 @@ enum OfficialPins {
     static func visible(_ spots: [OfficialSpot], frame: MapFraming.Frame?, query: String = "") -> [Pin] {
         if !MapSearch.fold(query).isEmpty {
             // 索引の側で名前の一致順（名前 → 地域）に並んでいる。座標の無い行は置けない
-            return OfficialSpotIndex.matches(spots, query: query, limit: limit).compactMap(pin)
+            let matched = OfficialSpotIndex.matches(spots, query: query).compactMap(pin)
+            // 枠が無ければその並びのまま。あれば**枠の中を先に・近い順**
+            guard let frame else { return Array(matched.prefix(limit)) }
+            let center = Photo.Coords(lat: frame.latitude, lng: frame.longitude)
+            return matched
+                .map { pin -> (Pin, Bool, Double) in
+                    (pin,
+                     MapSearch.contains(frame, latitude: pin.coords.lat, longitude: pin.coords.lng),
+                     TravelDistance.kilometers(from: center, to: pin.coords))
+                }
+                .sorted {
+                    if $0.1 != $1.1 { return $0.1 }
+                    if $0.2 != $1.2 { return $0.2 < $1.2 }
+                    return $0.0.slug < $1.0.slug
+                }
+                .prefix(limit)
+                .map(\.0)
         }
         guard let frame, frame.latitudeSpan < maxLatitudeSpan else { return [] }
         let center = Photo.Coords(lat: frame.latitude, lng: frame.longitude)

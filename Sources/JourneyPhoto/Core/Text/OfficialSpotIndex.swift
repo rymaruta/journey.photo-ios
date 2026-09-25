@@ -10,19 +10,21 @@ enum OfficialSpotIndex {
     /// **空の語は何も当てない**（「絞っていない」）。全角半角・大小は区別しない。
     ///
     /// **名前で当たったものが先**、地域だけで当たったものはその後ろ。
-    /// 同じ段の中は slug 順（毎回同じ並びにする）
-    static func matches(_ spots: [OfficialSpot], query: String, limit: Int = 60) -> [OfficialSpot] {
+    /// 同じ段の中は slug 順（毎回同じ並びにする）。`limit` が nil なら全部
+    /// （地図は枠で並べ直してから切るので、ここでは切らない）
+    static func matches(_ spots: [OfficialSpot], query: String, limit: Int? = nil) -> [OfficialSpot] {
         let needle = MapSearch.fold(query)
         guard !needle.isEmpty else { return [] }
-        return spots
+        let ranked = spots
             .compactMap { spot -> (OfficialSpot, Int)? in
                 if nameMatches(spot, needle: needle) { return (spot, 0) }
                 if regionMatches(spot, needle: needle) { return (spot, 1) }
                 return nil
             }
             .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.slug < $1.0.slug }
-            .prefix(limit)
             .map(\.0)
+        guard let limit else { return ranked }
+        return Array(ranked.prefix(limit))
     }
 
     private static func nameMatches(_ spot: OfficialSpot, needle: String) -> Bool {

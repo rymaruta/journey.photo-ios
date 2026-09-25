@@ -97,16 +97,16 @@ final class OfficialSpotServiceTests: XCTestCase {
         }
     }
 
-    /// **本番は Web が main に入るまで 404。** 控えがあればそれを、無ければ投げる
-    /// （写真の機能は呼ぶ側で守る——`PhotoMapViewModelTests`）
+    /// **5xx は控えに落ちる**（サーバーの都合。索引が消えたわけではない）。
+    /// 控えが無ければ投げる（写真の機能は呼ぶ側で守る——`PhotoMapViewModelTests`）
     func testServerErrorFallsBackToSnapshotOrThrows() async throws {
         let name = UUID().uuidString
-        StubProtocol.respond(status: 404, body: "not found")
+        StubProtocol.respond(status: 500, body: "oops")
         do {
             _ = try await service(snapshot: name).fetchIndex()
             XCTFail("控えが無いのに投げていない")
         } catch {
-            XCTAssertEqual(error as? APIError, .server(status: 404, message: ""))
+            XCTAssertEqual(error as? APIError, .server(status: 500, message: ""))
         }
 
         StubProtocol.respond(status: 200, body: Self.threeSpots)
@@ -114,6 +114,26 @@ final class OfficialSpotServiceTests: XCTestCase {
         StubProtocol.respond(status: 500, body: "oops")
         let after = try await service(snapshot: name).fetchIndex()
         XCTAssertEqual(after.count, 3, "500 で控えに落ちていない")
+    }
+
+    /// 🔴 **404 は「索引を下げた」。** 古い控えを出し続けない——空を返して
+    /// 控えも消す（本番は Web が main に入るまでこの姿。何も出ないだけ）
+    func testNotFoundMeansTheIndexIsGone() async throws {
+        let name = UUID().uuidString
+        StubProtocol.respond(status: 200, body: Self.threeSpots)
+        _ = try await service(snapshot: name).fetchIndex()
+
+        StubProtocol.respond(status: 404, body: "not found")
+        let gone = try await service(snapshot: name).fetchIndex()
+        XCTAssertTrue(gone.isEmpty, "下げた索引を控えから出している")
+
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        do {
+            _ = try await service(snapshot: name).fetchIndex()
+            XCTFail("404 のあとも控えが残っている")
+        } catch {
+            XCTAssertEqual(error as? APIError, .unreachable)
+        }
     }
 
     /// **200 の HTML を控えない。** キャプティブポータル（ホテルの Wi-Fi）は

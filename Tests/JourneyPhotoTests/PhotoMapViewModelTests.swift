@@ -26,8 +26,9 @@ final class PhotoMapViewModelTests: XCTestCase {
     """
 
     /// 通信は `URLProtocol` で差し替える。**写真と索引は別の口**なので道で
-    /// 叩き分ける。`spots` が nil なら索引の口は 404（本番の今の姿）
-    private func environment(spots: String? = nil) -> AppEnvironment {
+    /// 叩き分ける。`spots` が nil なら索引の口は 404（本番の今の姿）。
+    /// `indexDelay` は索引の応答を遅らせる秒数
+    private func environment(spots: String? = nil, indexDelay: TimeInterval = 0) -> AppEnvironment {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)
@@ -42,7 +43,7 @@ final class PhotoMapViewModelTests: XCTestCase {
         ]
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: photosJSON)
         if let spots {
-            StubProtocol.respond(path: "/app/data/spots.json", status: 200, body: spots)
+            StubProtocol.respond(path: "/app/data/spots.json", status: 200, body: spots, delay: indexDelay)
         }
         let gallery = PublicGalleryService(
             url: URL(string: "https://site.example.test/app/data/photos.json")!,
@@ -57,9 +58,11 @@ final class PhotoMapViewModelTests: XCTestCase {
         return AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: gallery, spots: index)
     }
 
-    private func loaded() async -> PhotoMapViewModel {
+    /// 写真も索引も届いた状態（索引は写真と並行に来るので、両方待つ）
+    private func loaded(spots: String? = nil) async -> PhotoMapViewModel {
         let model = PhotoMapViewModel()
-        await model.load(environment: environment())
+        await model.load(environment: environment(spots: spots))
+        await model.awaitIndex()
         return model
     }
 
@@ -165,8 +168,7 @@ extension PhotoMapViewModelTests {
 
     /// 引いているうちは出ない。**寄せたら枠の中だけ**出る
     func testOfficialPinsAppearOnlyWhenZoomedIn() async {
-        let model = PhotoMapViewModel()
-        await model.load(environment: environment(spots: spotsJSON))
+        let model = await loaded(spots: spotsJSON)
         XCTAssertTrue(model.officialPins.isEmpty, "枠が届く前に置いている")
 
         model.update(visible: MapFraming.Frame(latitude: 36, longitude: 138, latitudeSpan: 12, longitudeSpan: 12))
@@ -181,8 +183,7 @@ extension PhotoMapViewModelTests {
     /// **同じ枠で2回届いても入れ替えない。** 入れ替えるたびに描き直し →
     /// カメラの知らせ → … と回るのが run 37 の固まり方
     func testSameFrameDoesNotRepublishOfficialPins() async {
-        let model = PhotoMapViewModel()
-        await model.load(environment: environment(spots: spotsJSON))
+        let model = await loaded(spots: spotsJSON)
         model.update(visible: narrow())
         let after = model.officialPinsUpdates
         XCTAssertGreaterThan(after, 0)
@@ -193,8 +194,7 @@ extension PhotoMapViewModelTests {
 
     /// **索引が 404 でも写真のピンは出る**（本番は Web が main に入るまでこの姿）
     func testPhotoPinsSurviveAMissingIndex() async {
-        let model = PhotoMapViewModel()
-        await model.load(environment: environment(spots: nil))
+        let model = await loaded(spots: nil)
         model.update(visible: narrow())
         XCTAssertTrue(model.loaded)
         XCTAssertEqual(model.shown.count, 4)
@@ -204,8 +204,7 @@ extension PhotoMapViewModelTests {
 
     /// 「このエリアを検索」のあとは**押したときの枠**で数える（写真と同じ）
     func testAppliedAreaDrivesOfficialPins() async {
-        let model = PhotoMapViewModel()
-        await model.load(environment: environment(spots: spotsJSON))
+        let model = await loaded(spots: spotsJSON)
         model.update(visible: narrow())
         model.applyArea()
         // 地図を網走へ動かしても、固定した範囲のぶんが出たまま
@@ -217,8 +216,7 @@ extension PhotoMapViewModelTests {
 
     /// 名前で絞っているときは倍率に関係なく当たったものが出る（owner が名前で探す入口）
     func testQueryShowsMatchingSpotsRegardlessOfZoom() async {
-        let model = PhotoMapViewModel()
-        await model.load(environment: environment(spots: spotsJSON))
+        let model = await loaded(spots: spotsJSON)
         model.query = "たかや"
         XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja"])
         model.query = ""
@@ -226,10 +224,60 @@ extension PhotoMapViewModelTests {
         XCTAssertTrue(model.stillShown(official: nil) == false)
     }
 
+    /// 🔴 **名前で絞ってスポットだけ当たった回に「見つかりませんでした」と言わない。**
+    /// 帯は写真もスポットも無いときだけ
+    func testNoResultsOnlyWhenNeitherPhotosNorSpotsMatch() async {
+        let model = await loaded(spots: spotsJSON)
+        XCTAssertFalse(model.hasNothingToShow)
+        model.query = "たかや"
+        XCTAssertTrue(model.shown.isEmpty, "下ごしらえ: 写真は当たらない")
+        XCTAssertFalse(model.hasNothingToShow, "スポットが出ているのに「見つかりませんでした」")
+        model.query = "どこにもない場所"
+        XCTAssertTrue(model.hasNothingToShow)
+    }
+
+    /// 🔴 **名前で当たったスポットへ寄せる。** 写真が当たらずスポットだけ
+    /// 当たった回は、その座標群から枠を作る（写真が当たれば今までどおり写真の枠）
+    func testFrameFallsBackToMatchingSpots() async throws {
+        let model = await loaded(spots: spotsJSON)
+        model.query = "たかや"
+        let frame = try XCTUnwrap(model.frame, "スポットだけ当たった回に枠が無い")
+        XCTAssertEqual(frame.latitude, 34.14, accuracy: 0.01)
+        XCTAssertEqual(frame.longitude, 133.68, accuracy: 0.01)
+
+        model.query = "パリ"
+        let paris = try XCTUnwrap(model.frame)
+        XCTAssertEqual(paris.latitude, 48.85, accuracy: 0.01, "写真が当たる回は写真の枠")
+
+        model.query = "どこにもない場所"
+        XCTAssertNil(model.frame)
+    }
+
+    /// 🔴 **写真は索引を待たない。** 索引が遅い回（1秒）でも写真が届いた時点で
+    /// `loaded` になり、索引はあとから届いてピンだけ入れ替わる。
+    /// 直列に待つと、写真のピンと最初の寄せが最大20秒（通信の上限）遅れる
+    func testPhotosDoNotWaitForTheIndex() async throws {
+        let model = PhotoMapViewModel()
+        let env = environment(spots: spotsJSON, indexDelay: 1.0)
+        let loading = Task { await model.load(environment: env) }
+        var waited = 0.0
+        while !model.loaded && waited < 0.5 {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            waited += 0.05
+        }
+        XCTAssertTrue(model.loaded, "索引を待ってから写真を出している（\(waited)秒待った）")
+        XCTAssertEqual(model.shown.count, 4)
+        XCTAssertTrue(model.officialSpots.isEmpty, "索引はまだ届いていないはず")
+
+        await loading.value
+        await model.awaitIndex()
+        model.update(visible: narrow())
+        XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja", "kotohira"])
+    }
+
     /// 札は**いま出ているピンのぶんだけ**（写真の札と同じ約束）
     func testOfficialCardFollowsThePins() async throws {
-        let model = PhotoMapViewModel()
-        await model.load(environment: environment(spots: spotsJSON))
+        let model = await loaded(spots: spotsJSON)
         model.update(visible: narrow())
         let pin = try XCTUnwrap(model.officialPins.first)
         XCTAssertTrue(model.stillShown(official: pin))

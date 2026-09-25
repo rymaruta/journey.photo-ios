@@ -18,6 +18,10 @@ import FoundationNetworking
 /// `main` に入るまでこの URL が 404 で、そのあいだ地図はスポットのピンを
 /// 出さないだけ——呼ぶ側（`PhotoMapViewModel`）は `try?` で受ける。
 ///
+/// **404 だけは控えに落とさない。** 404 は「索引を下げた」なので、空を返して
+/// 控えも消す（下げたものを圏外で出し続けない）。5xx（サーバーの都合）と
+/// 圏外は控えがあればそれを出す。
+///
 /// **スポットのための API は足していない**（`AppConfig.publicSpotsURL` の注記）。
 actor OfficialSpotService {
 
@@ -70,6 +74,14 @@ actor OfficialSpotService {
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 404 {
+                // 索引が無い＝下げた。古い控えを出さず、控えも消す。
+                // 60秒は「無い」を覚える（地図を開くたびに叩き直さない）
+                snapshot.clear()
+                cached = []
+                cachedAt = Date()
+                return []
+            }
             if let cached = snapshot.load() { return cached }
             throw APIError.server(status: http.statusCode, message: "")
         }

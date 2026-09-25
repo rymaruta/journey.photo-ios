@@ -21,6 +21,11 @@ struct SpotSnapshotStore {
         try? data.write(to: url, options: .atomic)
     }
 
+    /// 控えを消す。**索引が下げられた（404）とき**——古い控えを出し続けない
+    func clear() {
+        try? FileManager.default.removeItem(at: url)
+    }
+
     func load() -> [OfficialSpot]? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         // 控えの側も1行の型違いで全部消さない（`LenientOfficialSpotList` の理由）

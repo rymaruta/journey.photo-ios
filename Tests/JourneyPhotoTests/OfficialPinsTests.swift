@@ -88,6 +88,24 @@ final class OfficialPinsTests: XCTestCase {
                       "空白だけは「絞っていない」")
     }
 
+    /// 🔴 **語で絞っても枠は捨てない。** 京都に寄せて「寺」と打てば京都の寺が
+    /// 先頭（枠の中・近い順）、そのあとに枠の外を中心から近い順。
+    /// slug 順の先頭60本にすると、寄せた場所と無関係な寺が並ぶ
+    func testQueryPrefersSpotsInsideTheFrameThenByDistance() throws {
+        let spots = [
+            try spot("asakusa", lat: 35.71, lng: 139.80, name: "浅草寺"),
+            try spot("kiyomizu", lat: 34.99, lng: 135.78, name: "清水寺"),
+            try spot("zenkoji", lat: 36.66, lng: 138.19, name: "善光寺"),
+            try spot("kinkaku", lat: 35.04, lng: 135.73, name: "金閣寺"),
+        ]
+        let kyoto = frame(lat: 35.01, lng: 135.76, span: 0.3)
+        XCTAssertEqual(OfficialPins.visible(spots, frame: kyoto, query: "寺").map(\.slug),
+                       ["kiyomizu", "kinkaku", "zenkoji", "asakusa"])
+        // 枠が無ければ名前の一致順（slug 順）のまま
+        XCTAssertEqual(OfficialPins.visible(spots, frame: nil, query: "寺").map(\.slug),
+                       ["asakusa", "kinkaku", "kiyomizu", "zenkoji"])
+    }
+
     func testQueryMatchesStopAtTheLimit() throws {
         let spots = try (0..<80).map { i in
             try spot(String(format: "s%03d", i), lat: 35.0 + Double(i) * 0.001, lng: 135.0, name: "神社 \(i)")
