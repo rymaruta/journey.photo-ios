@@ -90,9 +90,18 @@ enum AppConfig {
         siteBaseURL.appendingPathComponent("app/data/photos.json")
     }
 
-    /// 撮影スポットの台帳。写真と同じく**静的な JSON**で、
-    /// `scripts/sync-photos-from-ddb.js` が写真と同じ1回の Scan から書き出し、
-    /// `scripts/deploy-static-site.js` がサイト直下に配る。
+    /// 撮影スポットの**索引**。写真と同じく**静的な JSON**で、API ではない。
+    ///
+    /// 出どころは DynamoDB ではなく Web の `content/spots.json`（人が持つ台帳）。
+    /// Next のルートハンドラ（`app/app/data/spots.json`）が、ビルド時にそこから
+    /// アプリ向けの薄い索引（`spotId`・`slug`・名前・読み・地域・座標・
+    /// 分類・概要・`stage`・日付）を書き出し、`scripts/deploy-static-site.js` が
+    /// 他の静的ファイルと一緒にサイト直下へ配る。**1件ごとの詳細 JSON は
+    /// v1 では読まない**（索引だけ）。
+    ///
+    /// **本番は Web のその変更が `main` に入るまで 404。** そのあいだ
+    /// `OfficialSpotService.fetchIndex` は投げ、地図はスポットのピンを
+    /// 出さないだけで、写真の機能には触らない。
     ///
     /// **スポットのための API は足していない。**
     static var publicSpotsURL: URL {

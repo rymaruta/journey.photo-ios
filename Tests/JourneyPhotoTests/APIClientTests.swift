@@ -141,6 +141,10 @@ final class StubProtocol: URLProtocol {
     /// （公開プロフィールと公開一覧は別の入れ物から来る）。
     /// 空のときは今までどおり `status`/`body`/`queue` だけで返す
     nonisolated(unsafe) private static var routes: [(path: String, status: Int, body: Data)] = []
+    /// 応答に付ける種別（`Content-Type`）。**既定は付けない**——本物の
+    /// 応答を写しているのは「キャプティブポータルが 200 で HTML を返す」
+    /// 経路だけで、そこを試すときにだけ指定する
+    nonisolated(unsafe) private static var contentType: String?
 
     static func reset() {
         status = 200
@@ -151,12 +155,14 @@ final class StubProtocol: URLProtocol {
         requestCount = 0
         queue = []
         routes = []
+        contentType = nil
     }
 
-    static func respond(status: Int, body: String) {
+    static func respond(status: Int, body: String, contentType: String? = nil) {
         self.status = status
         self.body = Data(body.utf8)
         self.error = nil
+        self.contentType = contentType
         // **順番返しの残りを捨てる。** 残すとこの指定が黙って無視され、
         // 「落ちるはずの経路」を通らないまま緑になる
         self.queue = []
@@ -205,8 +211,9 @@ final class StubProtocol: URLProtocol {
             status = next.0
             body = next.1
         }
+        let headers = StubProtocol.contentType.map { ["Content-Type": $0] }
         let response = HTTPURLResponse(
-            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil
+            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: body)
