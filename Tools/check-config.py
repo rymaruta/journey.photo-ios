@@ -336,7 +336,7 @@ except ModuleNotFoundError:
 # ビルドも通る）。見出しが明朝にならないまま気づけないので、ここで3つを揃える:
 #   project.yml の UIAppFonts ／ Resources/Fonts/ の実物 ／ JPFont が引く名前
 FONTS_DIR = ROOT / "Sources/JourneyPhoto/Resources/Fonts"
-listed = re.findall(r"^\s+-\s+(\S+\.(?:ttf|otf))\s*$",
+listed = re.findall(r"""^\s+-\s+["']?([^\s"']+\.(?:ttf|otf))["']?\s*$""",
                     project_text.split("UIAppFonts:", 1)[1].split("CFBundleDevelopmentRegion", 1)[0],
                     re.M) if "UIAppFonts:" in project_text else []
 if not listed:

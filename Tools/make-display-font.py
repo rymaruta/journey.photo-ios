@@ -9,12 +9,12 @@
 **原本は 15 MB**（sha256 d20f3981…25a、google/fonts の ofl/shipporiminchob1）。
 そのまま入れるとアプリが 15 MB 太る。見出しにしか使わないので、次だけを残す:
 
-- JIS X 0208 の非漢字（1〜8区: 記号・英数・かな・ギリシャ・キリル・罫線）
+- JIS X 0208 の非漢字（1〜8区: 記号・英数・かな・ギリシャ・キリル・罫線）と13区
 - JIS X 0208 の第1水準漢字（16〜47区・2,965字）
 - ASCII と Latin-1 の印字可能な字
 
-**外の字（髙・﨑・𠮷・第2水準の地名など）は、画面側でヒラギノ明朝 W6 へ落とす**
-（`JPFont.display` の `cascadeList`）。明朝から明朝へ落ちるので、字形の差は小さい。
+**外の字（髙・﨑・𠮷・第2水準の地名など）は、端末のゴシックで出る**
+（理由は `JPFont.swift` の冒頭。本番39枚の題と撮影地では「諧」の1字だけ）。
 
 **名前は変えない。** Shippori Mincho は OFL だが Reserved Font Name を
 宣言していない（同梱の `OFL-ShipporiMincho.txt` の1行目）ので、削った版が
@@ -33,17 +33,28 @@ SOURCE_SHA256 = "d20f3981afb8bceda5fdf8f0fb29ba51eb21518644612ccd8a183e5bd433e25
 OUT = Path(__file__).resolve().parent.parent / "Sources/JourneyPhoto/Resources/Fonts/ShipporiMinchoB1-Bold.ttf"
 
 
-def jis_x_0208(rows):
-    """EUC-JP で区点を回し、Unicode の字を集める（Python の codec に任せる）。"""
+def jis_rows(rows):
+    """区点を回して Unicode の字を集める（Python の codec に任せる）。
+
+    **2つの対応表の和を取る。** `euc_jp` は JIS の表どおり ― を U+2015、
+    〜 を U+301C に割り当てるが、Windows や Mac の入力では同じ字が
+    U+2014（—）・U+FF5E（～）で来る。片方だけだと、題に打った全角の
+    波線やダッシュがその字だけゴシックで出る（レビューで見つかった）。
+    `euc_jis_2004` は13区（①〜⑳・Ⅰ〜Ⅹ・㈱）も読める。
+    """
     chars = set()
-    for row in rows:
-        for cell in range(1, 95):
-            try:
-                ch = bytes([0xA0 + row, 0xA0 + cell]).decode("euc_jp")
-            except UnicodeDecodeError:
-                continue
-            chars.add(ch)
+    for codec in ("euc_jp", "euc_jis_2004"):
+        for row in rows:
+            for cell in range(1, 95):
+                try:
+                    chars.add(bytes([0xA0 + row, 0xA0 + cell]).decode(codec))
+                except UnicodeDecodeError:
+                    continue
     return chars
+
+
+# 同じ区点の字が、入力元によって別の符号で来るもの（Windows・Mac の変換表）
+VARIANTS = "—～－￠￡￢∥™"
 
 
 def main():
@@ -57,8 +68,9 @@ def main():
         sys.exit(f"原本が違います（sha256 {digest}）。google/fonts の ofl/shipporiminchob1 から取り直してください")
 
     chars = set()
-    chars |= jis_x_0208(range(1, 9))     # 非漢字
-    chars |= jis_x_0208(range(16, 48))   # 第1水準
+    chars |= jis_rows([*range(1, 9), 13])   # 非漢字（13区の丸数字・ローマ数字を含む）
+    chars |= jis_rows(range(16, 48))        # 第1水準
+    chars |= set(VARIANTS)
     chars |= {chr(c) for c in range(0x20, 0x7F)}
     chars |= {chr(c) for c in range(0xA0, 0x100)}
 
@@ -70,7 +82,9 @@ def main():
     options.glyph_names = False
     options.hinting = True
 
-    font = TTFont(src)
+    # **時刻を書き換えない。** 既定だと保存のたびに head の更新時刻が変わり、
+    # 同じ原本から作っても毎回ちがうファイルになる（差分が出て気づけない）
+    font = TTFont(src, recalcTimestamp=False)
     sub = subset.Subsetter(options)
     sub.populate(text="".join(sorted(chars)))
     sub.subset(font)
