@@ -195,6 +195,7 @@ extension View {
     public func lineSpacing(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func minimumScaleFactor(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func tracking(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func textCase(_ c: Text.Case?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func underline(_ on: Bool, color: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 
     // 見た目

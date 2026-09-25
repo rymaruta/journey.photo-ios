@@ -215,8 +215,12 @@ public struct Font {
     /// 省略できるが、模型で両方に既定値を付けると上の2つと曖昧になるので `design` は必須
     public static func system(size: Double, weight: Weight = .regular, design: Design) -> Font { Font() }
     public enum Design { case `default`, serif, rounded, monospaced }
+    public static func custom(_ name: String, size: Double, relativeTo textStyle: TextStyle) -> Font { Font() }
+    public static func custom(_ name: String, fixedSize: Double) -> Font { Font() }
     public func weight(_ w: Weight) -> Font { self }
+    public func monospacedDigit() -> Font { self }
     public var bold: Font { self }
+    public enum TextStyle { case largeTitle, title, title2, title3, headline, subheadline, body, callout, footnote, caption, caption2 }
     public struct Weight { public static let bold = Weight(), semibold = Weight(), medium = Weight(), regular = Weight(), heavy = Weight(), light = Weight(), thin = Weight(), ultraLight = Weight() }
 }
 extension Font {

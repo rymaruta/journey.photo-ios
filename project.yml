@@ -59,6 +59,13 @@ targets:
           UIColorName: LaunchBackground
           UIImageRespectsSafeAreaInsets: true
         # 既定の言語は日本語。英語も持つ（画面の文字も権限の文も二言語）
+        # **同梱の書体。** 名前は Resources/Fonts/ のファイル名（`JPFont` が
+        # PostScript 名で引く）。見出しの明朝は第1水準まで削った版
+        # （`Tools/make-display-font.py`）、等幅は原本。ライセンスは同じ場所の OFL-*.txt
+        UIAppFonts:
+          - ShipporiMinchoB1-Bold.ttf
+          - IBMPlexMono-Regular.ttf
+          - IBMPlexMono-Medium.ttf
         CFBundleDevelopmentRegion: ja
         CFBundleLocalizations: [ja, en]
         UISupportedInterfaceOrientations:
