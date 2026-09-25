@@ -38,6 +38,8 @@ struct PhotoMapView: View {
     @State private var placeDetail: MKMapItem?
     /// 地図の見ている場所。**写真に合わせてから開く**（指示書 9-2）
     @State private var camera: MapCameraPosition = .automatic
+    /// 拡大・縮小を続けて押したときの土台（`MapFraming.ZoomChain`）
+    @State private var zoomChain = MapFraming.ZoomChain()
     /// 方位磁針を地図の外（右の操作列）に置くための名前。
     /// 置かないと、iOS が右上に出す方位磁針が操作列と重なる
     @Namespace private var mapScope
@@ -406,28 +408,40 @@ struct PhotoMapView: View {
         VStack(spacing: WebTheme.mapControlSpacing) {
             MapCompass(scope: mapScope)
             locateButton
-            VStack(spacing: 0) {
+            VStack(spacing: WebTheme.mapControlSpacing) {
                 zoomButton(systemImage: "plus", factor: 1 / MapFraming.zoomStep,
                            label: L("拡大", "Zoom in"))
-                Divider().frame(width: 28)
                 zoomButton(systemImage: "minus", factor: MapFraming.zoomStep,
                            label: L("縮小", "Zoom out"))
             }
-            .background(WebTheme.raised, in: RoundedRectangle(cornerRadius: 12))
+            // **＋と−の間の隙間を地図へ素通しさせない。** 素通しすると、
+            // −を狙って隙間を2回叩いたとき地図のダブルタップ（＝拡大）になる。
+            // 方位磁針（中身は UIKit）には掛けない——親の手振りと取り合わせない
+            .contentShape(Rectangle())
+            .onTapGesture {}
         }
     }
 
     /// **いま見えている枠から数える。** `camera` は `.automatic` のことも
-    /// あるので読めない——見えている枠は `onMapCameraChange` が控えている
+    /// あるので読めない——見えている枠は `onMapCameraChange` が控えている。
+    /// 続けて押したときは `ZoomChain` が前に頼んだ枠を土台にする。
+    ///
+    /// **丸ごと押せるようにする（`contentShape`）。** `.plain` のボタンは
+    /// 描いた所しか当たらないので、以前は**記号の線だけ**が押せた——
+    /// −は横棒1本ぶんの高さしか無く、外れた指は下の地図に届いていた
+    /// （owner の「押すと少し変」・2026-09-25）。
+    /// 現在地のボタンと同じ丸にして、1つずつ離して置く
     private func zoomButton(systemImage: String, factor: Double, label: String) -> some View {
         Button {
-            guard let now = model.visibleFrame else { return }
-            frame(MapFraming.zoomed(now, by: factor))
+            frame(zoomChain.step(from: model.visibleFrame, by: factor))
         } label: {
             Image(systemName: systemImage)
-                .font(.subheadline.weight(.bold))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(WebTheme.foreground)
-                .frame(width: 44, height: 44)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .background(Color.black.opacity(0.7), in: Circle())
+                .overlay(Circle().strokeBorder(WebTheme.border, lineWidth: 1))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
