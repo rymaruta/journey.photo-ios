@@ -31,6 +31,7 @@ struct PhotoDetailView: View {
     @State private var spotLead: SpotLead?
     @State private var isFollowing = false
     @State private var isFollowWorking = false
+    @State private var showUnfollowConfirm = false
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）
     @State private var heroPage = 0
 
@@ -382,7 +383,8 @@ struct PhotoDetailView: View {
 
     private func followButton(_ userId: String) -> some View {
         Button {
-            Task { await toggleFollow(userId) }
+            // 外すときだけ確認を挟む（`unfollowConfirmation`）
+            if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(userId) } }
         } label: {
             Text(isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"))
                 .font(.footnote.weight(.semibold))
@@ -396,6 +398,9 @@ struct PhotoDetailView: View {
         .buttonStyle(.plain)
         .disabled(isFollowWorking)
         .opacity(isFollowWorking ? 0.5 : 1)
+        .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
+            Task { await toggleFollow(userId) }
+        }
     }
 
     /// **返ってきた状態を使う。** 自分で反転すると、失敗した回に

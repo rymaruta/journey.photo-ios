@@ -9,6 +9,7 @@ struct UserProfileView: View {
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = UserProfileViewModel()
     @State private var showBlockConfirm = false
+    @State private var showUnfollowConfirm = false
     @State private var tab: ProfileTab = .posts
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var toasts: ToastCenter
@@ -160,12 +161,20 @@ struct UserProfileView: View {
 
     private var followButton: some View {
         Button {
-            Task { await model.toggleFollow(userId: userId, environment: environment) }
+            // 外すときだけ確認を挟む（`unfollowConfirmation`）
+            if model.isFollowing {
+                showUnfollowConfirm = true
+            } else {
+                Task { await model.toggleFollow(userId: userId, environment: environment) }
+            }
         } label: {
             Text(model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"))
                 .frame(maxWidth: .infinity)
         }
         .disabled(model.isWorking)
+        .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
+            Task { await model.toggleFollow(userId: userId, environment: environment) }
+        }
     }
 }
 
