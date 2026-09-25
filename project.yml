@@ -77,7 +77,7 @@ targets:
         NSPhotoLibraryAddUsageDescription: 撮った写真を端末に保存するために使います。
         # 実際に位置を要求するのは撮影地マップの現在地ボタン（地図を寄せるだけ・保存しない）。
         # 投稿の撮影地は写真の EXIF から読むので、ここで取った位置は使わない
-        NSLocationWhenInUseUsageDescription: 撮影地マップで地図を現在地の周りへ寄せるために使います。位置は保存も送信もしません。
+        NSLocationWhenInUseUsageDescription: 撮影地を写真に添えるためと、撮影地マップに現在地と向きを表示するために使います。写真の位置は約1kmに丸めて保存し、地図の表示に使った位置は保存も送信もしません。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(JP_BUNDLE_ID)

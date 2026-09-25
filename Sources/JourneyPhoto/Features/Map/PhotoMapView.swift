@@ -80,11 +80,15 @@ struct PhotoMapView: View {
         }
         // 現在地が取れたら、そこへ寄せる。**絞りはしない**——代わりに
         // 「近くの写真」の入口を出す（押すまで何も変えない）
+        //
+        // **寄せたあとは自分の位置を追う**（普通の地図アプリと同じ）。
+        // 追うのは地図（MapKit）の中だけで、位置は保存も送信もしない
         .onChange(of: location.state) { _, state in
             guard case .located(let latitude, let longitude) = state else { return }
             here = Photo.Coords(lat: latitude, lng: longitude)
-            frame(MapFraming.Frame(latitude: latitude, longitude: longitude,
-                                   latitudeSpan: 0.05, longitudeSpan: 0.05))
+            camera = .userLocation(fallback: .region(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))))
         }
         .sheet(isPresented: $showNearby) {
             if let here {
@@ -277,8 +281,14 @@ struct PhotoMapView: View {
     }
 
     /// 写真のピン。同じ座標の写真は1つにまとめてある（`MapPin.group`）
+    ///
+    /// **自分の位置（青い点と向き）も描く。** 以前は現在地のボタンで地図を
+    /// 寄せるだけで、**自分がどこにいてどちらを向いているか**が地図に
+    /// 出なかった（owner の指摘・2026-09-25）。点は位置の権限があるときだけ
+    /// 出て、これ自体は権限を尋ねない
     @MapContentBuilder
     private var pinMarkers: some MapContent {
+        UserAnnotation()
         ForEach(model.pins) { pin in
             Annotation(pin.title, coordinate: pin.coordinate) {
                 Button {
@@ -462,12 +472,25 @@ struct PhotoMapView: View {
         .buttonStyle(.plain)
     }
 
-    /// 現在地。**1回取って寄せるだけ**（追跡も保存もしない）
+    /// 現在地。押すたびに**普通の地図アプリと同じ3段**で切り替わる:
+    ///
+    ///     location                 → 現在地へ寄せて、自分を追う
+    ///     location.fill（追っている）→ 向いている方向に地図を回す
+    ///     location.north.line.fill → 回すのをやめる（追うのは続ける）
+    ///
+    /// 指で地図を動かすと MapKit が追うのをやめ、最初の段に戻る。
+    /// 位置は**保存も送信もしない**（地図に描くだけ）
     private var locateButton: some View {
         Button {
-            location.locate()
+            if camera.followsUserHeading {
+                camera = .userLocation(fallback: camera)
+            } else if camera.followsUserLocation {
+                camera = .userLocation(followsHeading: true, fallback: camera)
+            } else {
+                location.locate()
+            }
         } label: {
-            Image(systemName: "location")
+            Image(systemName: locateSymbol)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(WebTheme.foreground)
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
@@ -475,7 +498,19 @@ struct PhotoMapView: View {
                 .overlay(Circle().strokeBorder(WebTheme.border, lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(L("現在地へ", "Go to my location"))
+        .accessibilityLabel(locateLabel)
+    }
+
+    private var locateSymbol: String {
+        if camera.followsUserHeading { return "location.north.line.fill" }
+        if camera.followsUserLocation { return "location.fill" }
+        return "location"
+    }
+
+    private var locateLabel: String {
+        if camera.followsUserHeading { return L("向きに合わせるのをやめる", "Stop following heading") }
+        if camera.followsUserLocation { return L("向いている方向に合わせる", "Follow my heading") }
+        return L("現在地へ", "Go to my location")
     }
 
     /// 押したピンの札:

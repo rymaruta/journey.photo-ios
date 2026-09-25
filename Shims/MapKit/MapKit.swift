@@ -28,6 +28,14 @@ public struct Map: View {
 public struct MapCameraPosition {
     public static let automatic = MapCameraPosition()
     public static func region(_ region: MKCoordinateRegion) -> MapCameraPosition { MapCameraPosition() }
+    /// 自分の位置を追う（iOS 17）。`followsHeading` で向きにも合わせて地図を回す
+    public static func userLocation(followsHeading: Bool = false,
+                                    fallback: MapCameraPosition) -> MapCameraPosition {
+        MapCameraPosition()
+    }
+    /// 本物は利用者が地図を動かすと false に戻る
+    public var followsUserLocation: Bool { false }
+    public var followsUserHeading: Bool { false }
 }
 
 /// `onMapCameraChange` が知らせる頻度。**動かし終わったとき**（`.onEnd`）だけを
@@ -74,6 +82,16 @@ public struct MapContentBuilder {
     public static func buildIf<C: MapContent>(_ c: C?) -> C? { c }
     public static func buildOptional<C: MapContent>(_ c: C?) -> C? { c }
     public static func buildExpression<C: MapContent>(_ c: C) -> C { c }
+    /// 2つ並べる（本物は任意個）
+    public static func buildBlock<C0: MapContent, C1: MapContent>(_ c0: C0, _ c1: C1) -> TupleMapContent { TupleMapContent() }
+}
+
+public struct TupleMapContent: MapContent {}
+
+/// 自分の位置の青い点（iOS 17）。**権限があるときだけ描かれ、自分では
+/// 権限を尋ねない**（本物と同じ）
+public struct UserAnnotation: MapContent {
+    public init() {}
 }
 
 public struct EmptyMapContent: MapContent {

@@ -5,5 +5,5 @@
 "NSCameraUsageDescription" = "写真を撮って投稿するためにカメラを使います。";
 "NSPhotoLibraryUsageDescription" = "端末の写真を選んで投稿するために使います。";
 "NSPhotoLibraryAddUsageDescription" = "撮った写真を端末に保存するために使います。";
-"NSLocationWhenInUseUsageDescription" = "撮影地を写真に添えるために現在地を使います。位置は約1kmに丸めて保存します。";
+"NSLocationWhenInUseUsageDescription" = "撮影地を写真に添えるためと、撮影地マップに現在地と向きを表示するために使います。写真の位置は約1kmに丸めて保存し、地図の表示に使った位置は保存も送信もしません。";
 "CFBundleDisplayName" = "Journey Photo";
