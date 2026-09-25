@@ -11,12 +11,48 @@ struct ChosenPlace: Identifiable, Equatable {
     let id: String
     let name: String
     let coords: Photo.Coords
-    /// Apple の詳細カード・経路に使う。**引けるまで（引けなければずっと）nil**
-    /// ——nil の間はその2つのボタンを押せなくする
-    let mapItem: MKMapItem?
+    /// Apple の地点情報がどこまで引けたか
+    let lookup: Lookup
+
+    enum Lookup {
+        /// 引いている途中。経路・詳細はまだ押せない
+        case loading
+        /// Apple の地点情報が引けた（住所・電話・Web・詳細カード）
+        case found(MKMapItem)
+        /// 引けなかった。**経路だけは座標から出せる**——ボタンを押せないまま
+        /// 残すと「押しても中身が見えない」になる（2026-09-25 owner）
+        case coordinateOnly(MKMapItem)
+    }
+
+    /// 経路に使う地点（引けなかったときも座標から起こしたものがある）
+    var mapItem: MKMapItem? {
+        switch lookup {
+        case .loading: return nil
+        case .found(let item), .coordinateOnly(let item): return item
+        }
+    }
+
+    /// Apple の詳細カードに出せる地点。**座標だけの地点は出さない**（中身が空のカードになる）
+    var detailItem: MKMapItem? {
+        if case .found(let item) = lookup { return item }
+        return nil
+    }
+
+    var isLoading: Bool {
+        if case .loading = lookup { return true }
+        return false
+    }
 
     static func == (lhs: ChosenPlace, rhs: ChosenPlace) -> Bool {
-        lhs.id == rhs.id && (lhs.mapItem == nil) == (rhs.mapItem == nil)
+        lhs.id == rhs.id && lhs.stage == rhs.stage
+    }
+
+    private var stage: Int {
+        switch lookup {
+        case .loading: return 0
+        case .found: return 1
+        case .coordinateOnly: return 2
+        }
     }
 }
 
@@ -95,13 +131,41 @@ struct PlaceSelectableMap<Pins: MapContent>: View {
         let name = feature.title ?? L("名前のない場所", "Unnamed place")
         let id = "\(coordinate.latitude),\(coordinate.longitude),\(name)"
         let coords = Photo.Coords(lat: coordinate.latitude, lng: coordinate.longitude)
-        chosen = ChosenPlace(id: id, name: name, coords: coords, mapItem: nil)
+        chosen = ChosenPlace(id: id, name: name, coords: coords, lookup: .loading)
 
         Task {
-            let item = try? await MKMapItemRequest(feature: feature).mapItem
+            let lookup = await Self.lookUp(feature: feature, name: name, coords: coords)
             // **引いている間に別の地点へ移っていたら捨てる**
-            guard let item, chosen?.id == id else { return }
-            chosen = ChosenPlace(id: id, name: name, coords: coords, mapItem: item)
+            guard chosen?.id == id else { return }
+            chosen = ChosenPlace(id: id, name: name, coords: coords, lookup: lookup)
         }
+    }
+
+    /// 地点情報を引く。**Apple の地点 → 名前で検索し直す → 座標だけ** の順に落とす。
+    ///
+    /// `MKMapItemRequest` は地点によって失敗する。失敗したまま待たせると札の
+    /// ボタンが永久に押せない。名前で検索し直した結果は、押した場所の
+    /// すぐ近く（`PlaceLookup.sameSpotKm`）のものだけを同じ地点とみなす
+    private static func lookUp(feature: MapFeature, name: String, coords: Photo.Coords) async -> ChosenPlace.Lookup {
+        let requested = try? await MKMapItemRequest(feature: feature).mapItem
+        if let requested {
+            return .found(requested)
+        }
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = name
+        request.region = MKCoordinateRegion(center: feature.coordinate,
+                                            span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02))
+        let searched = try? await MKLocalSearch(request: request).start()
+        if let items = searched?.mapItems {
+            let candidates = items.map {
+                Photo.Coords(lat: $0.placemark.coordinate.latitude, lng: $0.placemark.coordinate.longitude)
+            }
+            if let index = PlaceLookup.nearestIndex(of: candidates, to: coords) {
+                return .found(items[index])
+            }
+        }
+        let item = MKMapItem(placemark: MKPlacemark(coordinate: feature.coordinate))
+        item.name = name
+        return .coordinateOnly(item)
     }
 }

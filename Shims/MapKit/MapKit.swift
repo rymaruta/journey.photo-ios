@@ -152,17 +152,21 @@ public struct MapSelection<Value: Hashable>: Hashable {
     public var feature: MapFeature?
 }
 
-/// 座標だけの地点（本物は `CLPlacemark` の子。使う口は `init(coordinate:)` だけ）
+/// 地点（本物は `CLPlacemark` の子）。`title` は1行の住所
 open class MKPlacemark: NSObject {
     public let coordinate: CLLocationCoordinate2D
+    public var title: String? { nil }
     public init(coordinate: CLLocationCoordinate2D) { self.coordinate = coordinate }
 }
 
 open class MKMapItem: NSObject {
     public var name: String?
-    public override init() {}
+    public var phoneNumber: String?
+    public var url: URL?
+    public let placemark: MKPlacemark
+    public override init() { placemark = MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0)) }
     /// 座標から起こす（経路を Apple の地図に頼むとき）
-    public init(placemark: MKPlacemark) {}
+    public init(placemark: MKPlacemark) { self.placemark = placemark }
     @discardableResult
     open func openInMaps(launchOptions: [String: Any]? = nil) -> Bool { true }
 }
@@ -174,6 +178,21 @@ public let MKLaunchOptionsDirectionsModeDefault = "MKLaunchOptionsDirectionsMode
 public final class MKMapItemRequest {
     public init(feature: MapFeature) {}
     public var mapItem: MKMapItem { get async throws { MKMapItem() } }
+}
+
+/// 名前で地点を探す（地図の地点情報が引けなかったときの拾い直し）
+public final class MKLocalSearch {
+    public final class Request {
+        public var naturalLanguageQuery: String?
+        public var region = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                                               span: MKCoordinateSpan(latitudeDelta: 0, longitudeDelta: 0))
+        public init() {}
+    }
+    public final class Response {
+        public var mapItems: [MKMapItem] = []
+    }
+    public init(request: Request) {}
+    public func start() async throws -> Response { Response() }
 }
 
 extension View {

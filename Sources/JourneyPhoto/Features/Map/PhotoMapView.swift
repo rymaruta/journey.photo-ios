@@ -796,6 +796,8 @@ struct PhotoMapView: View {
                 .accessibilityLabel(Labels.Common.close)
             }
 
+            placeInfo(place)
+
             HStack(spacing: 8) {
                 Button {
                     place.mapItem?.openInMaps(launchOptions: [
@@ -809,8 +811,9 @@ struct PhotoMapView: View {
                         .background(WebTheme.foreground, in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .disabled(place.mapItem == nil)
                 Button {
-                    placeDetail = place.mapItem
+                    placeDetail = place.detailItem
                 } label: {
                     Label(L("場所の詳細", "Details"), systemImage: "info.circle")
                         .font(.subheadline.weight(.semibold))
@@ -819,10 +822,11 @@ struct PhotoMapView: View {
                         .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
+                // 座標だけの地点では出さない（中身の無い詳細カードになる）
+                .disabled(place.detailItem == nil)
+                .opacity(place.detailItem == nil ? 0.5 : 1)
             }
-            // 引けるまでは押せない（押しても何も起きないボタンにしない）
-            .disabled(place.mapItem == nil)
-            .opacity(place.mapItem == nil ? 0.5 : 1)
+            .opacity(place.isLoading ? 0.5 : 1)
 
             placePhotos(photos, spot: spot)
         }
@@ -831,6 +835,57 @@ struct PhotoMapView: View {
         .overlay(RoundedRectangle(cornerRadius: 18)
             .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
         .accessibilityIdentifier("map.placeCard")
+    }
+
+    /// 地点の中身（住所・電話・Web）。**引けたものだけ出す**。
+    ///
+    /// 以前は名前しか出ず、中身は「場所の詳細」を開かないと見えなかった。
+    /// その詳細も地点情報が引けないと押せないままで、owner には
+    /// 「押しても中身が見えない」と映った（2026-09-25）
+    @ViewBuilder
+    private func placeInfo(_ place: ChosenPlace) -> some View {
+        switch place.lookup {
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView()
+                Text(L("場所の情報を読み込んでいます", "Loading place info"))
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.muted2)
+            }
+        case .coordinateOnly:
+            Text(L("Apple のマップにこの場所の詳しい情報がありませんでした。経路は出せます。",
+                   "Apple Maps has no details for this place. Directions still work."))
+                .font(.footnote)
+                .foregroundStyle(WebTheme.muted2)
+                .fixedSize(horizontal: false, vertical: true)
+        case .found(let item):
+            VStack(alignment: .leading, spacing: 6) {
+                if let address = item.placemark.title, !address.isEmpty {
+                    Label(address, systemImage: "mappin.and.ellipse")
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.muted2)
+                        .lineLimit(2)
+                }
+                HStack(spacing: 16) {
+                    if let phone = item.phoneNumber, !phone.isEmpty,
+                       let tel = URL(string: "tel:" + phone.filter { $0.isNumber || $0 == "+" }) {
+                        Link(destination: tel) {
+                            Label(phone, systemImage: "phone")
+                                .font(.footnote)
+                                .frame(minHeight: WebTheme.minTapTarget)
+                        }
+                    }
+                    if let site = item.url {
+                        Link(destination: site) {
+                            Label(L("Webサイト", "Website"), systemImage: "safari")
+                                .font(.footnote)
+                                .frame(minHeight: WebTheme.minTapTarget)
+                        }
+                    }
+                }
+                .foregroundStyle(WebTheme.foreground)
+            }
+        }
     }
 
     /// 札の写真の段。**「読めていない」と「無い」を分ける**（`NearbyPhotosSheet` と同じ）
