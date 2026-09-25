@@ -296,6 +296,41 @@ else:
         elif color_type == 3 and b"tRNS" in icon.read_bytes()[:4096]:
             fail(f"{icon.name} がパレットの透明（tRNS）を持っています（App Store が弾きます）")
 
+# ---- ワークフローの鍵の重複 -----------------------------------------------
+#
+# **同じ段に `env:` を2つ書くと、GitHub はワークフローごと読めなくなる**
+# （`'env' is already defined`・実行ボタンを押した瞬間に落ちる）。ところが
+# PyYAML は重複を**黙って後勝ち**で読むので、`yaml.safe_load` の検査は
+# 素通りした（`7a4ed12` で実際に main を壊した）。重複を拒む読み方で読む。
+try:
+    import yaml  # type: ignore
+
+    class _StrictLoader(yaml.SafeLoader):
+        pass
+
+    def _no_duplicates(loader, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            key = loader.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"鍵 {key!r} が重複しています", key_node.start_mark)
+            seen.add(key)
+        return loader.construct_mapping(node, deep)
+
+    _StrictLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_duplicates)
+    for path in [*sorted((ROOT / ".github" / "workflows").glob("*.y*ml")),
+                 ROOT / "codemagic.yaml", ROOT / "project.yml"]:
+        if not path.exists():
+            continue
+        try:
+            yaml.load(path.read_text(encoding="utf-8"), Loader=_StrictLoader)
+        except yaml.YAMLError as e:
+            fail(f"{path.relative_to(ROOT)} を読めません（GitHub / XcodeGen も弾きます）: {e}")
+except ModuleNotFoundError:
+    print("[skip] PyYAML が無いのでワークフローの鍵の重複は見ない")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:
