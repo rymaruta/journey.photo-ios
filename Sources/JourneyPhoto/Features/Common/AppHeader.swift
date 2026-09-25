@@ -7,7 +7,7 @@ import SwiftUI
 /// | 画面 | 見出し |
 /// |---|---|
 /// | ホーム | ロゴ（`.logo`） |
-/// | 探す | 明朝の題「探す」（`.title`） |
+/// | 探す | 置かない（`.none`）。明朝の題「探す」は画面の中身の頭に置く |
 /// | マップ | 何も置かない（`.none`）——検索窓が画面の頭になる |
 ///
 /// 以前は、モック1・3・9・10（サイトの一次資料）に合わせて**全部ロゴ**に
@@ -25,7 +25,8 @@ struct AppHeaderItems: ToolbarContent {
     /// 見出しの左（中央）に何を置くか
     enum Leading: Equatable {
         case logo
-        case title(String)
+        /// 置かない。題が要る画面は**画面の中身の頭**に明朝で置く
+        /// （バーの項目にすると iOS 26 が「…」にたたむ・run 95）
         case none
     }
 
@@ -45,26 +46,6 @@ struct AppHeaderItems: ToolbarContent {
             // ロゴ。**`navigationTitle` の文字の代わりに置く**
             ToolbarItem(placement: .principal) {
                 AppLogo()
-            }
-        case .title(let text):
-            // 画面の題（明朝）。**左寄せ**——アーティファクトの題は左上に立つ
-            ToolbarItem(placement: .topBarLeading) {
-                Text(text)
-                    .font(JPFont.screenTitle)
-                    .foregroundStyle(WebTheme.foreground)
-                    .lineLimit(1)
-                    // 大きい文字設定では止める（バーの高さを超えて切れる）。
-                    // その先は長押しの拡大表示に回す——システムの題と同じ扱い
-                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                    .accessibilityShowsLargeContentViewer()
-                    .accessibilityAddTraits(.isHeader)
-            }
-            // 中央は空で埋める。埋めないと `navigationTitle` の字が
-            // 中央にも出て、題が2つ並ぶ
-            ToolbarItem(placement: .principal) {
-                // `EmptyView` だと「無いもの」として捨てられ、既定の題に
-                // 戻ることがある。**中身のある透明な部品**で埋める
-                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
             }
         case .none:
             // 置かない。空で埋めないと `navigationTitle` の字が中央に出る
