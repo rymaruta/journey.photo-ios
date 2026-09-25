@@ -651,15 +651,14 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// 「この場所のスポット」の行き先を揃える。
+    /// 「この場所のスポット」の行き先＝この写真の撮影地を**撮影地の集まり**
+    /// （`DerivedSpot.openable`・2枚以上）として引く。撮影地が書かれて
+    /// いない写真には、この行を出さない。
     ///
-    /// 台帳（`SpotService`）は取れなければ空を返すので、`spotId` が
-    /// 引き当たらなければ行は出ない。**本番の台帳は 2026-09-21 時点で
-    /// 0件・`spotId` を持つ写真も 0/30** なので、いまはどの写真でも出ない
-    /// この写真の撮影地を「地点」として引く。
-    ///
-    /// **台帳は引かない**（本番は台帳を持たない——`DerivedSpot` の注記）。
-    /// 撮影地が書かれていない写真には、この行を出さない。
+    /// ⚠️ 台帳の撮影スポット（Web の `content/spots.json`・アプリは
+    /// `OfficialSpot` として別に読む）は**ここでは引かない**。紐付けは
+    /// `Photo.spotId` だけで、本番の公開写真はまだ1枚も持っていない
+    /// （持つ写真が出てきたら `OfficialSpotView` への行を足す）。
     private func loadSpotLead() async {
         spotLead = nil
         let label = (shown.location ?? "").trimmingCharacters(in: .whitespaces)

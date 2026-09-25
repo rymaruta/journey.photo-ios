@@ -8,7 +8,9 @@ struct MyPageView: View {
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = MyPageViewModel()
-    /// 「行きたい場所」に出す台帳。取れなければ空（その旨を画面に出す）
+    /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
+    /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
+    @State private var officialSpots: [OfficialSpot] = []
     /// いいねした写真を引き当てる先。**公開一覧**——自分の写真だけを
     /// 探していたので、**他人の写真へのいいねが一度も出なかった**
     @State private var feed: [Photo] = []
@@ -68,6 +70,11 @@ struct MyPageView: View {
         }
         // いいねした写真。**ログイン状態が決まってから**聞く
         .task(id: auth.userId) { await loadLikes() }
+        // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
+        .task(id: auth.userId) {
+            guard auth.userId != nil else { return }
+            officialSpots = (try? await environment.spots.fetchIndex()) ?? officialSpots
+        }
         // **戻ってきたら読み直す。** この画面から押して出る先
         // （プロフィール編集・写真の詳細）はどれも `NavigationLink` で、
         // 閉じる合図を受け取る口が無い。保存しても削除しても、
@@ -488,10 +495,13 @@ struct MyPageView: View {
     /// サーバーには無い（`WishlistStore`）。
     @ViewBuilder
     private var wishlistArea: some View {
-        // **撮影地から導いた地点**のうち、「行きたい」に入れたもの。
-        // 台帳は引かない（本番は台帳を持たない——`DerivedSpot` の注記）
+        // **撮影地から導いた地点**のうち、「行きたい」に入れたもの
         let places = DerivedSpot.all(in: model.photos)
         let wanted = places.filter { wishlist.contains($0.slug) }
+        // 台帳の撮影スポット（`SPOT-<slug>`）。索引と突き合わせて名前を引く。
+        // **索引が無くても行は出す**（`OfficialWishlist`）——スポットの画面で
+        // 押した直後に「まだありません」と言わない
+        let officialRows = OfficialWishlist.rows(keys: wishlist.spotIds, index: officialSpots)
         VStack(alignment: .leading, spacing: 10) {
             // **どこに残るかを書く。** 機種を変えると消えるものを、
             // 消えないものと同じ顔で出さない
@@ -501,9 +511,10 @@ struct MyPageView: View {
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 16)
 
-            // **「まだ無い」と「台帳が取れていない」を分ける**（`ProfileSections`）
+            // **「まだ無い」と「台帳が取れていない」を分ける**（`ProfileSections`）。
+            // 数えるのは撮影地の行とスポットの行の両方
             switch ProfileSections.wishlist(ledgerCount: places.count,
-                                            wantedCount: wanted.count,
+                                            wantedCount: wanted.count + officialRows.count,
                                             savedIdCount: wishlist.spotIds.count) {
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
@@ -520,8 +531,69 @@ struct MyPageView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                // 台帳のスポット。**索引に無い鍵は行だけ**（開く先が無い）
+                ForEach(officialRows) { row in
+                    if let spot = row.spot {
+                        NavigationLink {
+                            OfficialSpotView(spot: spot, spots: officialSpots, photos: model.photos)
+                        } label: {
+                            officialWishlistRow(row)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        officialWishlistRow(row)
+                    }
+                }
             }
         }
+    }
+
+    /// 台帳のスポットの行。撮影地の行と同じ並びで、表紙の代わりに印（写真が無い）
+    private func officialWishlistRow(_ row: OfficialWishlist.Row) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mappin.circle")
+                .font(.title3)
+                .foregroundStyle(WebTheme.muted2)
+                .frame(width: 56, height: 56)
+                .background(WebTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    if let region = row.regionLabel {
+                        Text(region)
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.muted2)
+                            .lineLimit(1)
+                    }
+                    if row.spot?.isDraft ?? false {
+                        Text(L("下書き", "Draft"))
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                }
+            }
+            Spacer(minLength: 8)
+
+            // **一覧からも外せる。** 索引に無い鍵はここでしか外せない
+            Button {
+                wishlist.set(row.key, wanted: false)
+            } label: {
+                Image(systemName: "heart.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.foreground)
+                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("\(row.name) を「行きたい」から外す", "Remove \(row.name)"))
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 72)
+        .accessibilityIdentifier("mypage.officialWish")
     }
 
     private func wishlistRow(_ spot: DerivedSpot.Place) -> some View {

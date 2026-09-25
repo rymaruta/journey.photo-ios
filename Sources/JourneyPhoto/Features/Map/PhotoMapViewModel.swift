@@ -50,10 +50,53 @@ final class PhotoMapViewModel: ObservableObject {
     /// ピン。**リストの行もこれ**（同じ束ね）
     @Published private(set) var pins: [MapPin] = []
 
+    /// 撮影スポットの索引（`app/data/spots.json`）。**取れなければ空**
+    /// ——本番は Web の変更が main に入るまで 404 で、そのあいだピンが
+    /// 出ないだけ（写真の機能は止めない）。描画には `officialPins` を使うので
+    /// ここは知らせない
+    private(set) var officialSpots: [OfficialSpot] = []
+
+    /// 地図に置く撮影スポットのピン。**寄せたときと、名前で絞ったときだけ**
+    /// （`OfficialPins.visible`）。
+    ///
+    /// **id の集まりが変わったときだけ入れ替える。** `update(visible:)` は
+    /// 地図が落ち着くたびに届くので、届くたびに入れ替えると
+    /// 描き直し → カメラの知らせ → … と回る（run 37 の固まり方）
+    @Published private(set) var officialPins: [OfficialPins.Pin] = []
+
+    /// `officialPins` を何回入れ替えたか。**回り続けていないことを試験で
+    /// 数えるためだけ**にある（模型の Combine には `objectWillChange` が無い）
+    private(set) var officialPinsUpdates = 0
+
+    /// 索引の取得。**写真を待たせない**ために別の Task で走らせ、届いたら
+    /// ピンだけ入れ替える（`load` は写真が届いた時点で戻る）
+    private var indexTask: Task<Void, Never>?
+
+    /// 索引が届くまで待つ。**試験のためだけ**（画面は待たない——届いたら
+    /// `officialPins` が入れ替わって描き直される）
+    func awaitIndex() async {
+        await indexTask?.value
+    }
+
+    /// 「見つかりませんでした」を出してよいか。**写真もスポットも無いときだけ**
+    /// ——名前で絞ってスポットだけ当たった回に、ピンの上に帯を出さない
+    var hasNothingToShow: Bool {
+        loaded && shown.isEmpty && officialPins.isEmpty
+    }
+
     /// 絞り直す。条件が変わったときにだけ呼ぶ
     private func refresh() {
         shown = MapSearch.photos(photos, filter: MapSearch.Filter(query: query, category: category, frame: areaFrame))
         pins = MapPin.group(shown)
+        refreshOfficialPins()
+    }
+
+    /// 「このエリアを検索」中はその枠、そうでなければ見えている枠で数える
+    private func refreshOfficialPins() {
+        let next = OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame, query: query)
+        guard OfficialPins.changed(officialPins, next) else { return }
+        officialPins = next
+        officialPinsUpdates += 1
     }
 
     /// チップに出すカテゴリ。**座標のある写真だけ**から数える——座標の無い
@@ -68,6 +111,14 @@ final class PhotoMapViewModel: ObservableObject {
     }
 
     func load(environment: AppEnvironment) async {
+        // **索引は写真と並行に取る。** 直列に待つと、索引が遅い回に写真の
+        // ピンと最初の寄せまで遅れる（通信の上限は20秒）。届いたらピンだけ
+        // 入れ替える。取れなくても写真は出す——索引は無くても地図は成り立つ
+        indexTask = Task { [weak self] in
+            let spots = (try? await environment.spots.fetchIndex()) ?? []
+            self?.officialSpots = spots
+            self?.refreshOfficialPins()
+        }
         photos = (try? await environment.gallery.fetchPhotos()) ?? []
         loaded = true
         refresh()
@@ -88,9 +139,13 @@ final class PhotoMapViewModel: ObservableObject {
     /// 地図が落ち着いたときに呼ばれる。**知らせを出さない**
     /// （出すと描き直し → カメラの知らせ → … で回り続ける）。
     /// 押せるようになったことだけは、一度だけ知らせる
+    ///
+    /// 撮影スポットのピンだけは枠から数える——ただし**集まりが変わった
+    /// ときだけ**入れ替える（`refreshOfficialPins`）
     func update(visible frame: MapFraming.Frame) {
         visibleFrame = frame
         if !canSearchArea { canSearchArea = true }
+        refreshOfficialPins()
     }
 
     /// 「このエリアを検索」。**押したときの範囲**で固定する
@@ -115,8 +170,27 @@ final class PhotoMapViewModel: ObservableObject {
         return pins.contains { $0.id == pin.id }
     }
 
-    /// いまのピンに合わせた枠（無ければ nil＝地図の既定に任せる）
+    /// 撮影スポットの札も同じ約束（いま出ているピンのぶんだけ）
+    func stillShown(official pin: OfficialPins.Pin?) -> Bool {
+        guard let pin else { return false }
+        return officialPins.contains { $0.id == pin.id }
+    }
+
+    /// ピンの元の行（画面へ渡す。概要・近くのスポットはここから）
+    func officialSpot(for pin: OfficialPins.Pin) -> OfficialSpot? {
+        officialSpots.first { $0.spotId == pin.spotId }
+    }
+
+    /// いまのピンに合わせた枠（無ければ nil＝地図の既定に任せる）。
+    ///
+    /// **写真が当たらず、名前でスポットだけ当たった回はスポットの座標群で作る**
+    /// ——「たかや」と打って高屋神社のピンが出たのに、地図がパリに居たままに
+    /// しない。名前で絞っていないとき（寄せただけで出ているピン）には使わない
     var frame: MapFraming.Frame? {
-        MapFraming.frame(for: pins.map { (latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) })
+        if let photos = MapFraming.frame(for: pins.map { (latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }) {
+            return photos
+        }
+        guard !MapSearch.fold(query).isEmpty else { return nil }
+        return MapFraming.frame(for: officialPins.map { (latitude: $0.coords.lat, longitude: $0.coords.lng) })
     }
 }

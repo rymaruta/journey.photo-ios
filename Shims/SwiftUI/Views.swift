@@ -102,6 +102,16 @@ public struct ProgressView: View {
     public var body: Never { fatalError("模型") }
 }
 
+/// `ScrollViewReader` が中に渡す操作。本物と同じく `scrollTo(_:anchor:)`
+public struct ScrollViewProxy {
+    public func scrollTo<ID: Hashable>(_ id: ID, anchor: UnitPoint? = nil) {}
+}
+
+public struct ScrollViewReader<Content: View>: View {
+    public init(@ViewBuilder content: @escaping (ScrollViewProxy) -> Content) {}
+    public var body: Never { fatalError("模型") }
+}
+
 public struct ScrollView: View {
     public init<C: View>(_ axes: Axis = .vertical, showsIndicators: Bool = true,
                          @ViewBuilder content: () -> C) {}

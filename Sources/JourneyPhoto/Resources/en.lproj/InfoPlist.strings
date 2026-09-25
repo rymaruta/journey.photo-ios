@@ -3,5 +3,5 @@
 "NSCameraUsageDescription" = "Used to take photos you post.";
 "NSPhotoLibraryUsageDescription" = "Used to pick photos from your library to post.";
 "NSPhotoLibraryAddUsageDescription" = "Used to save photos you take back to your library.";
-"NSLocationWhenInUseUsageDescription" = "Used to attach a place to your photo. Coordinates are rounded to about 1 km before saving.";
+"NSLocationWhenInUseUsageDescription" = "Used on the photo map to show where you are and which way you face, and to move the map around you. Your location is never saved or sent.";
 "CFBundleDisplayName" = "Journey Photo";

@@ -47,4 +47,40 @@ enum SpotScreen {
         ]
         return components?.url
     }
+
+    // MARK: - 台帳の撮影スポット（モック13・`OfficialSpotView`）
+
+    /// 小見出し（モックの "PHOTO SPOT"）。
+    ///
+    /// 🔴 **下書きを「公式」と名乗らない。** 索引の全件が運営未確認の下書き
+    /// （機械が1日で書いた・2026-09-25）なので、`published` になるまで
+    /// 小見出しの段階でそう言う（`isDraft`）
+    static func eyebrow(review: Bool) -> String {
+        review ? L("下書き・未確認", "DRAFT · UNREVIEWED") : L("撮影スポット", "PHOTO SPOT")
+    }
+
+    /// 下書きの注意文。**下書きでなければ nil**（帯ごと出さない）。
+    ///
+    /// **日付は文に組み込んで返す**——生の値を `Text` に渡さない（4.6d の趣旨）。
+    /// 時刻まで入った値が来ても日付までに切り、読めない値なら括弧ごと落とす
+    static func reviewNotice(review: Bool, draftedAt: String?) -> String? {
+        guard review else { return nil }
+        guard let (y, m, d) = TakenDay.ymd(draftedAt) else {
+            return L("運営の下書きです。まだ確認していません", "Unreviewed draft by our team")
+        }
+        let day = String(format: "%04d-%02d-%02d", y, m, d)
+        return L("運営の下書きです。まだ確認していません（下書き作成 \(day)）",
+                 "Unreviewed draft by our team (drafted \(day))")
+    }
+
+    /// 「[都道府県] · [市区町村] · N枚の写真」。地域が無ければ枚数だけ
+    /// （N は `Photo.spotId` で紐づいた公開写真を数えた値）
+    static func subtitle(region: String?, photoCount: Int) -> String {
+        var parts: [String] = []
+        if let region = region?.trimmingCharacters(in: .whitespaces), !region.isEmpty {
+            parts.append(region)
+        }
+        parts.append(L("\(photoCount)枚の写真", photoCount == 1 ? "1 photo" : "\(photoCount) photos"))
+        return parts.joined(separator: " · ")
+    }
 }

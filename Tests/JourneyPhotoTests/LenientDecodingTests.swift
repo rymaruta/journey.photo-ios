@@ -53,6 +53,46 @@ final class LenientDecodingTests: XCTestCase {
         XCTAssertEqual(list.dropped, 0)
         XCTAssertEqual(list.photos.first?.paragraphs, ["一行目", "二行目"])
     }
+
+    // MARK: - 撮影スポットの索引（同じ判断）
+
+    private func decodeSpots(_ json: String) throws -> LenientOfficialSpotList {
+        try JSONDecoder.api.decode(LenientOfficialSpotList.self, from: Data(json.utf8))
+    }
+
+    /// 索引も1件の型違いで丸ごと消さない。**知らない項目は読み飛ばす**
+    func testSpotIndexDropsOnlyTheBadItem() throws {
+        let list = try decodeSpots("""
+        [
+          {"spotId":"sp_1","slug":"a","name":"A","stage":"review","future":"unknown"},
+          {"spotId":"sp_2","slug":"b","name":"B","stage":"review","coords":{"lat":"x","lng":1}},
+          {"spotId":"sp_3","slug":"c","name":"C","stage":"published"}
+        ]
+        """)
+        XCTAssertEqual(list.spots.map(\.slug), ["a", "c"])
+        XCTAssertEqual(list.dropped, 1)
+    }
+
+    /// **鍵になる3つが無い行は落とす。** `slug` が空だと「行きたい」の鍵が
+    /// `SPOT-` だけになり、名前が空だと札に何も出ない
+    func testSpotIndexRequiresIdSlugAndName() throws {
+        let list = try decodeSpots("""
+        [
+          {"spotId":"sp_1","slug":"","name":"A","stage":"review"},
+          {"spotId":"sp_2","slug":"b","name":" ","stage":"review"},
+          {"slug":"c","name":"C","stage":"review"},
+          {"spotId":"sp_4","slug":"d","name":"D","stage":"review"}
+        ]
+        """)
+        XCTAssertEqual(list.spots.map(\.slug), ["d"])
+        XCTAssertEqual(list.dropped, 3)
+    }
+
+    /// `stage` が知らない値なら**下書きとして扱う**（確かめたと言えるのは published だけ）
+    func testUnknownStageIsTreatedAsDraft() throws {
+        let list = try decodeSpots(#"[{"spotId":"sp_1","slug":"a","name":"A","stage":"whatever"}]"#)
+        XCTAssertEqual(list.spots.first?.isDraft, true)
+    }
 }
 
 /// ストーリーの返信。
