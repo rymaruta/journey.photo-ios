@@ -256,6 +256,8 @@ struct HomeFeedCard: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("いいね", "Like"))
+            // 色で分けるのをやめたので、押したかどうかは形と読み上げで伝える
+            .accessibilityAddTraits(liked ? .isSelected : [])
 
             NavigationLink {
                 PhotoDetailView(photo: photo)

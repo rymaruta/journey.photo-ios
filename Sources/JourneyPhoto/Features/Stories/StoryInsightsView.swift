@@ -99,18 +99,17 @@ struct StoryInsightsView: View {
     private var counts: some View {
         HStack(spacing: 10) {
             countBox(L("閲覧", "Views"), systemImage: "eye", value: viewers.count)
-            countBox(L("いいね", "Likes"), systemImage: "heart.fill", value: reactionCount, tint: WebTheme.foreground)
+            countBox(L("いいね", "Likes"), systemImage: "heart.fill", value: reactionCount)
             countBox(L("返信", "Replies"), systemImage: "bubble.right", value: textReplyCount)
         }
         .padding(.horizontal, 16)
     }
 
-    private func countBox(_ label: String, systemImage: String, value: Int,
-                          tint: Color? = nil) -> some View {
+    private func countBox(_ label: String, systemImage: String, value: Int) -> some View {
         VStack(spacing: 6) {
             Image(systemName: systemImage)
                 .font(.title3)
-                .foregroundStyle(tint ?? WebTheme.foreground)
+                .foregroundStyle(WebTheme.foreground)
             Text(label)
                 .font(.caption)
                 .foregroundStyle(WebTheme.faint)

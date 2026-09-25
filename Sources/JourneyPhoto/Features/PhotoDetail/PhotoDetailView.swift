@@ -485,6 +485,7 @@ struct PhotoDetailView: View {
                         .webTappable()
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(model.liked ? .isSelected : [])
 
                 // 吹き出しを押すとコメントの札へ。**数は取れたときだけ**
                 // ——読み込み前・圏外に「0」を出すと「まだ無い」と読まれる

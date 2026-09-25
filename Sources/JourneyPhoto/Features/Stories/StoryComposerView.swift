@@ -123,9 +123,14 @@ struct StoryComposerView: View {
             // ストーリーの約束なので、残す方を選ばせる
             Section {
                 Toggle(isOn: $keepInArchive) {
-                    Label(L("24時間のあとも自分用に残す", "Keep it for myself after 24 hours"),
-                          systemImage: "archivebox")
-                        .font(.subheadline)
+                    // 絵の色は明示する（List の中の Label の絵は tint で描かれ、
+                    // すぐ下の `.tint` の暗い真鍮に染まる）
+                    Label {
+                        Text(L("24時間のあとも自分用に残す", "Keep it for myself after 24 hours"))
+                    } icon: {
+                        Image(systemName: "archivebox").foregroundStyle(WebTheme.foreground)
+                    }
+                    .font(.subheadline)
                 }
                 // **軌道は暗い真鍮。** 既定の tint（白）だと、入れたときに白い軌道に
                 // 白いつまみが乗り、入か切かが見えない

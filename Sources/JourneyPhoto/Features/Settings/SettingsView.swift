@@ -144,7 +144,7 @@ struct SettingsView: View {
                     HStack {
                         Text(L("接続先", "Environment"))
                         Spacer()
-                        Text("staging").foregroundStyle(WebTheme.faint)
+                        Text("staging").foregroundStyle(WebTheme.accent)   // いま本番ではない＝合図
                     }
                 }
             }

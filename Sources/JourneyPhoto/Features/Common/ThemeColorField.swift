@@ -27,6 +27,7 @@ struct ThemeColorField: View {
                                     in: Capsule())
                 }
                 .buttonStyle(.borderless)
+                .accessibilityAddTraits(themeColor.isEmpty ? .isSelected : [])
             }
         }
     }
