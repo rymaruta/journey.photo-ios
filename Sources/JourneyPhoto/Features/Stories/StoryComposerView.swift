@@ -397,7 +397,11 @@ struct StoryComposerView: View {
     /// （消しに行かない——消す方が失敗したときに二重に分からなくなる）、
     /// **何枚出て何枚残ったか**を画面に出す。
     private func post() async {
-        guard !shots.isEmpty else { return }
+        // 🔴 **二度押しで二重に出さない。** ボタンの `.disabled(isWorking)` は
+        // 次の描画まで効かないので、素早く2回押すと `post()` が2本走り、
+        // 同じストーリーが2本出ていた（2026-09-25 owner「2重投稿」）。
+        // ここは主アクタの上で `await` より前なので、2本目は必ず止まる
+        guard !isWorking, !shots.isEmpty else { return }
         isWorking = true
         message = nil
         defer { isWorking = false }

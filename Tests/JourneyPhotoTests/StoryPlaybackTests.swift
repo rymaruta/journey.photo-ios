@@ -117,6 +117,31 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(group.index, 0)
     }
 
+    /// 輪は1人＝1つ。2本出した人が2人に見えない（owner 2026-09-25「わたしが2人いる」）
+    func testRingsAreOnePerPerson() {
+        let all = [
+            story("b", user: "me", createdAt: "2026-09-25T02:00:00.000Z"),
+            story("x", user: "them", createdAt: "2026-09-25T01:30:00.000Z"),
+            story("a", user: "me", createdAt: "2026-09-25T01:00:00.000Z"),
+            story("z", user: nil),
+            story("y", user: nil),
+        ]
+        let rings = StoryPlayback.rings(all, isSeen: { _ in false })
+        // 並びは最初に出てきた順。束の代表は一番古い1本。userId の無い行は1本ずつ
+        XCTAssertEqual(rings.map(\.id), ["a", "x", "z", "y"])
+    }
+
+    /// 輪の代表は「まだ見ていない中で一番古いもの」。全部見ていれば一番古いもの
+    func testRingStartsAtTheFirstUnseen() {
+        let all = [
+            story("a", user: "me", createdAt: "2026-09-25T01:00:00.000Z"),
+            story("b", user: "me", createdAt: "2026-09-25T02:00:00.000Z"),
+            story("c", user: "me", createdAt: "2026-09-25T03:00:00.000Z"),
+        ]
+        XCTAssertEqual(StoryPlayback.rings(all, isSeen: { $0 == "a" }).map(\.id), ["b"])
+        XCTAssertEqual(StoryPlayback.rings(all, isSeen: { _ in true }).map(\.id), ["a"])
+    }
+
     /// 通報した1本とブロックした人のぶんは端末で落とす。
     func testVisibleDropsReportedAndBlocked() {
         let all = [story("a", user: "u1"), story("b", user: "u2"), story("c", user: "u3")]
