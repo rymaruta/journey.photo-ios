@@ -237,27 +237,44 @@ struct MyPageView: View {
 
 
     /// 数の並び（提案の絵）。**投稿・いいね・フォロワー・フォロー中**
+    ///
+    /// **両端を 16pt の余白に揃える。** 下の「旅の実績」が端から端までの
+    /// 帯なので、ここが左詰めのままだと右端だけ段違いになる。
+    /// 丸の幅は中身のまま（数字の大きさを変えない）で、**間を均等に開ける**。
+    /// 収まらない幅（英語表記・桁の多い数）では、これまでどおり横に流す
     private var stats: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                statPill(systemImage: "photo.on.rectangle",
-                         value: "\(model.photos.count)", label: L("投稿", "Posts"))
-                NavigationLink {
-                    FollowListView(userId: model.profile?.userId ?? "", kind: .followers)
-                } label: {
-                    statPill(systemImage: "person.2", value: "\(model.followers)",
-                             label: L("フォロワー", "Followers"))
-                }
-                .buttonStyle(.plain)
-                NavigationLink {
-                    FollowListView(userId: model.profile?.userId ?? "", kind: .following)
-                } label: {
-                    statPill(systemImage: "person", value: "\(model.following)",
-                             label: L("フォロー中", "Following"))
-                }
-                .buttonStyle(.plain)
+        ViewThatFits(in: .horizontal) {
+            statsRow(spread: true)
+                .padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+                statsRow(spread: false)
+                    .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 16)
+        }
+    }
+
+    @ViewBuilder
+    private func statsRow(spread: Bool) -> some View {
+        // 間の Spacer は最小 0 なので、詰めたときの間隔は `spacing` の 8 のまま
+        HStack(spacing: 8) {
+            statPill(systemImage: "photo.on.rectangle",
+                     value: "\(model.photos.count)", label: L("投稿", "Posts"))
+            if spread { Spacer(minLength: 0) }
+            NavigationLink {
+                FollowListView(userId: model.profile?.userId ?? "", kind: .followers)
+            } label: {
+                statPill(systemImage: "person.2", value: "\(model.followers)",
+                         label: L("フォロワー", "Followers"))
+            }
+            .buttonStyle(.plain)
+            if spread { Spacer(minLength: 0) }
+            NavigationLink {
+                FollowListView(userId: model.profile?.userId ?? "", kind: .following)
+            } label: {
+                statPill(systemImage: "person", value: "\(model.following)",
+                         label: L("フォロー中", "Following"))
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -278,7 +295,11 @@ struct MyPageView: View {
         .background(WebTheme.surface, in: Capsule())
     }
 
-    /// 旅の実績（モック2-3）。**訪れた国・地域**と**写真をつないだ距離**を横に並べる。
+    /// 旅の実績（モック2-3）。**訪れた国・地域**と**写真をつないだ距離**を縦に並べる。
+    ///
+    /// **2本とも端から端までの帯にする。** 中身の幅のまま中央に寄せていた頃は、
+    /// 長さの違う2本が互いにも上の段ともずれていた。項目名は左、**数字は右に
+    /// 揃える**ので、2つの数字が縦に並んで読める。
     ///
     /// どちらも**数えた値**で、どちらも**そのままの意味ではない**ので、
     /// それぞれ押すと計算の中身が出る。
@@ -298,6 +319,7 @@ struct MyPageView: View {
                         Text(L("訪れた国・地域", "Countries and regions"))
                             .font(.subheadline)
                             .foregroundStyle(WebTheme.muted2)
+                        Spacer(minLength: 8)
                         Text("\(countries)")
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(WebTheme.foreground)
@@ -306,7 +328,8 @@ struct MyPageView: View {
                             .foregroundStyle(WebTheme.faint)
                     }
                     .padding(.horizontal, 14)
-                    .frame(height: 44)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Capsule())
                     .background(WebTheme.surface, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -340,6 +363,7 @@ struct MyPageView: View {
                     Text(L("写真をつないだ距離", "Distance between photos"))
                         .font(.subheadline)
                         .foregroundStyle(WebTheme.muted2)
+                    Spacer(minLength: 8)
                     Text("\(TravelDistance.formatted(km)) km")
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(WebTheme.foreground)
@@ -348,7 +372,8 @@ struct MyPageView: View {
                         .foregroundStyle(WebTheme.faint)
                 }
                 .padding(.horizontal, 14)
-                .frame(height: 44)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Capsule())
                 .background(WebTheme.surface, in: Capsule())
             }
             .buttonStyle(.plain)
