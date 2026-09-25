@@ -1,0 +1,371 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "01 ホーム",
+      "is_interactive": true
+    },
+    "PhotoDetail.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "02 写真の詳細",
+      "is_interactive": true
+    },
+    "TripBook.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "03 旅の一冊",
+      "is_interactive": true
+    },
+    "Map.dc.html": {
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "04 マップ",
+      "is_interactive": true
+    },
+    "MyPage.dc.html": {
+      "x": 1880,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "05 マイページ",
+      "is_interactive": true
+    },
+    "Search.dc.html": {
+      "x": 0,
+      "y": 1300,
+      "w": 390,
+      "h": 1080,
+      "title": "11 探す",
+      "is_interactive": true
+    },
+    "TagPhotos.dc.html": {
+      "x": 470,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "12 タグ・色・機材の写真",
+      "is_interactive": true
+    },
+    "SpotDetail.dc.html": {
+      "x": 940,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "13 スポット",
+      "is_interactive": true
+    },
+    "PhotoViewer.dc.html": {
+      "x": 1410,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "14 写真ビューア",
+      "is_interactive": true
+    },
+    "Notifications.dc.html": {
+      "x": 1880,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "15 お知らせ",
+      "is_interactive": true
+    },
+    "Trips.dc.html": {
+      "x": 2350,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "16 旅の記録",
+      "is_interactive": true
+    },
+    "PostSheet.dc.html": {
+      "x": 0,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "21 投稿の選択",
+      "is_interactive": true
+    },
+    "Upload.dc.html": {
+      "x": 470,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "22 新規投稿",
+      "is_interactive": true
+    },
+    "SongPicker.dc.html": {
+      "x": 940,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "23 曲を選ぶ",
+      "is_interactive": true
+    },
+    "StoryComposer.dc.html": {
+      "x": 1410,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "24 ストーリーを作る",
+      "is_interactive": true
+    },
+    "StoryViewer.dc.html": {
+      "x": 1880,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "25 ストーリー",
+      "is_interactive": true
+    },
+    "StoryInsights.dc.html": {
+      "x": 2350,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "26 ストーリーの反応",
+      "is_interactive": true
+    },
+    "UserProfile.dc.html": {
+      "x": 0,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "31 ユーザーのプロフィール",
+      "is_interactive": true
+    },
+    "ProfileEdit.dc.html": {
+      "x": 470,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "32 プロフィールの編集",
+      "is_interactive": true
+    },
+    "EditPhoto.dc.html": {
+      "x": 940,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "33 写真を編集",
+      "is_interactive": true
+    },
+    "FollowList.dc.html": {
+      "x": 1410,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "34 フォロー一覧",
+      "is_interactive": true
+    },
+    "Favorites.dc.html": {
+      "x": 1880,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "35 お気に入り",
+      "is_interactive": true
+    },
+    "Albums.dc.html": {
+      "x": 2350,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "36 アルバム",
+      "is_interactive": true
+    },
+    "Invite.dc.html": {
+      "x": 2820,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "37 アルバムの招待",
+      "is_interactive": true
+    },
+    "HighlightPlayer.dc.html": {
+      "x": 3290,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "38 ハイライト",
+      "is_interactive": true
+    },
+    "CloseFriends.dc.html": {
+      "x": 3760,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "39 親しい友達",
+      "is_interactive": true
+    },
+    "SignIn.dc.html": {
+      "x": 0,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "41 ログイン",
+      "is_interactive": true
+    },
+    "LegalGate.dc.html": {
+      "x": 470,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "42 はじめる前に",
+      "is_interactive": true
+    },
+    "Settings.dc.html": {
+      "x": 940,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "43 設定",
+      "is_interactive": true
+    },
+    "ChangePassword.dc.html": {
+      "x": 1410,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "44 パスワードを変える",
+      "is_interactive": true
+    },
+    "BlockedUsers.dc.html": {
+      "x": 1880,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "45 ブロックした人",
+      "is_interactive": true
+    },
+    "DeleteAccount.dc.html": {
+      "x": 2350,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "46 アカウントの削除",
+      "is_interactive": true
+    },
+    "Report.dc.html": {
+      "x": 2820,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "47 通報",
+      "is_interactive": true
+    },
+    "MainThemeJoined.dc.html": {
+      "x": 2350,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "01b ホーム（テーマ参加済み）",
+      "is_interactive": true
+    },
+    "MapPlace.dc.html": {
+      "x": 2820,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "04b マップ（場所を選んだとき）",
+      "is_interactive": true
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-09-24T21:10:54.182Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "row0": {
+      "w": 240,
+      "x": 0,
+      "y": -260,
+      "text": "journey.photo iOS — Night Editorial · 主要画面",
+      "kind": "title1",
+      "maxW": 3210
+    },
+    "row1": {
+      "x": 0,
+      "y": 1040,
+      "text": "02 探す・発見",
+      "kind": "title1",
+      "maxW": 2740
+    },
+    "row2": {
+      "x": 0,
+      "y": 2580,
+      "text": "03 投稿・ストーリー",
+      "kind": "title1",
+      "maxW": 2740
+    },
+    "row3": {
+      "x": 0,
+      "y": 3880,
+      "text": "04 プロフィール・つながり",
+      "kind": "title1",
+      "maxW": 4150
+    },
+    "row4": {
+      "x": 0,
+      "y": 5180,
+      "text": "05 はじめる・安全・設定",
+      "kind": "title1",
+      "maxW": 3210
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "MainThemeJoined.dc.html",
+    "PhotoDetail.dc.html",
+    "TripBook.dc.html",
+    "Map.dc.html",
+    "MapPlace.dc.html",
+    "MyPage.dc.html",
+    "Search.dc.html",
+    "TagPhotos.dc.html",
+    "SpotDetail.dc.html",
+    "PhotoViewer.dc.html",
+    "Notifications.dc.html",
+    "Trips.dc.html",
+    "PostSheet.dc.html",
+    "Upload.dc.html",
+    "SongPicker.dc.html",
+    "StoryComposer.dc.html",
+    "StoryViewer.dc.html",
+    "StoryInsights.dc.html",
+    "UserProfile.dc.html",
+    "ProfileEdit.dc.html",
+    "EditPhoto.dc.html",
+    "FollowList.dc.html",
+    "Favorites.dc.html",
+    "Albums.dc.html",
+    "Invite.dc.html",
+    "HighlightPlayer.dc.html",
+    "CloseFriends.dc.html",
+    "SignIn.dc.html",
+    "LegalGate.dc.html",
+    "Settings.dc.html",
+    "ChangePassword.dc.html",
+    "BlockedUsers.dc.html",
+    "DeleteAccount.dc.html",
+    "Report.dc.html"
+  ],
+  "pages": [],
+  "title": "journey.photo iOS"
+}
