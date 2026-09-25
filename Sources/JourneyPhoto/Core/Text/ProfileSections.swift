@@ -32,9 +32,11 @@ enum ProfileSections {
     }
 
     /// - Parameters:
-    ///   - ledgerCount: 取れている台帳の件数
-    ///   - wantedCount: 台帳と突き合わせて残った件数
-    ///   - savedIdCount: この端末が覚えている id の数
+    ///   - ledgerCount: 取れている撮影地（`DerivedSpot.all`）の件数
+    ///   - wantedCount: 突き合わせて残った件数。**撮影地の行と台帳のスポットの行
+    ///     （`OfficialWishlist.rows`）を足したもの**——スポットだけ入れた人を
+    ///     「まだ無い」にしない
+    ///   - savedIdCount: この端末が覚えている鍵の数
     ///
     /// 🔴 **「まだ無い」と「取れていない」を分ける。** 入れた覚えがあるのに
     /// 「まだありません」と出ると、消えたように見える。
