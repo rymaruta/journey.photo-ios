@@ -75,7 +75,16 @@ struct RootView: View {
     }
 
     private var tabs: some View {
-        TabView(selection: $selection) {
+        // **同じ札をもう一度押したことを拾う。** `$selection` のままだと
+        // 値が変わらないので何も届かない。本物の TabView は選ばれている札を
+        // 押しても setter を呼ぶので、そこで比べる
+        TabView(selection: Binding(
+            get: { selection },
+            set: { tapped in
+                tabRouter.tabTapped(isHome: tapped == .home, alreadySelected: tapped == selection)
+                selection = tapped
+            }
+        )) {
             NavigationStack {
                 GalleryView(unread: unread, avatarURL: avatarURL, onOpenNotifications: { showNotifications = true })
             }
@@ -170,7 +179,20 @@ struct RootView: View {
         }
         // お知らせを閉じたら数え直す（タブではなくシートになったので）
         .sheet(isPresented: $showNotifications, onDismiss: { Task { await refreshUnread() } }) {
-            NavigationStack { NotificationsView() }
+            NavigationStack {
+                NotificationsView()
+                    // **閉じる口を画面に置く。** タブからシートへ移したとき
+                    // 閉じるボタンを足しておらず、下へ払う以外に閉じる手段が
+                    // 無かった——owner は「✕が見えない、閉じられない」と
+                    // 受け取った（2026-09-25）。置き場所はほかのシート
+                    // （写真の編集・曲の選択）と同じ `cancellationAction`
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(Labels.Common.close) { showNotifications = false }
+                                .accessibilityIdentifier("notifications.close")
+                        }
+                    }
+            }
         }
     }
 }

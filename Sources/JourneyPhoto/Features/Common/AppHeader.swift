@@ -46,6 +46,7 @@ struct AppHeaderItems: ToolbarContent {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("お知らせ", "Activity"))
+            .accessibilityIdentifier("header.notifications")
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button {

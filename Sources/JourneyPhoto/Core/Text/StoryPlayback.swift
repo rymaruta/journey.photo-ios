@@ -156,6 +156,39 @@ enum StoryPlayback {
         return (same, index)
     }
 
+    /// 横並びの輪。**1人＝1つ。**
+    ///
+    /// 1本＝1つにしていた頃は、2本出した人が輪2つで並び、owner の目には
+    /// 「わたしが2人いる」と映った（2026-09-25）。押すと同じ束が開くので、
+    /// 輪を分けても見られるものは増えない。
+    ///
+    /// - 並びは一覧で最初に出てきた順（サーバーの並びを崩さない）
+    /// - 輪に出す1本は**まだ見ていない中で一番古いもの**、全部見ていれば
+    ///   一番古いもの。押すとそこから始まる（見たものを見直させない）
+    /// - `userId` の無い行は束ねようがないので、1本ずつ
+    static func rings(_ stories: [Story], isSeen: (String) -> Bool) -> [Story] {
+        var order: [String] = []
+        var groups: [String: [Story]] = [:]
+        var loose: [String: Story] = [:]
+        for story in stories {
+            if let userId = story.userId, !userId.isEmpty {
+                let key = "u:" + userId
+                if groups[key] == nil { order.append(key) }
+                groups[key, default: []].append(story)
+            } else {
+                let key = "s:" + story.id
+                if loose[key] == nil { order.append(key) }
+                loose[key] = story
+            }
+        }
+        return order.compactMap { key in
+            if let single = loose[key] { return single }
+            guard let group = groups[key] else { return nil }
+            let oldestFirst = group.sorted { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
+            return oldestFirst.first { !isSeen($0.id) } ?? oldestFirst.first
+        }
+    }
+
     /// 端末側で落とす。
     ///
     /// サーバーの一覧はブロックを両向きに落として返すが、**通報した1本は

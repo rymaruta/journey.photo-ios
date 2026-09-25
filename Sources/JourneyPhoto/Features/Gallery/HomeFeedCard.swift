@@ -28,6 +28,7 @@ struct HomeFeedCard: View {
     /// この人をフォローしているか。**外から渡される**（一覧が持っている）
     @State private var isFollowing = false
     @State private var isFollowWorking = false
+    @State private var showUnfollowConfirm = false
     /// 一覧が持っているフォロー先。開いたときに合わせる
     var following: Set<String> = []
     /// 同じ投稿の写真（`photo` を含む）。2枚以上なら送れるようにする
@@ -203,7 +204,8 @@ struct HomeFeedCard: View {
     private var followButton: some View {
         if let ownerId = photo.userId, let me = auth.userId, ownerId != me {
             Button {
-                Task { await toggleFollow(ownerId) }
+                // 外すときだけ確認を挟む（`unfollowConfirmation`）
+                if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(ownerId) } }
             } label: {
                 Text(isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"))
                     .font(.footnote.weight(.semibold))
@@ -218,6 +220,9 @@ struct HomeFeedCard: View {
             }
             .buttonStyle(.plain)
             .disabled(isFollowWorking)
+            .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
+                Task { await toggleFollow(ownerId) }
+            }
         }
     }
 

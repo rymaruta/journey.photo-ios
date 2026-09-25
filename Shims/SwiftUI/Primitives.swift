@@ -229,6 +229,14 @@ extension Font {
 
 public enum ContentMode { case fit, fill }
 public enum Axis { case horizontal, vertical }
+extension Axis {
+    /// `ViewThatFits(in:)` が受ける軸の組
+    public struct Set: ExpressibleByArrayLiteral {
+        public static let horizontal = Set(), vertical = Set()
+        public init() {}
+        public init(arrayLiteral elements: Set...) {}
+    }
+}
 public enum TextAlignment { case leading, center, trailing }
 
 public struct Alignment {
@@ -250,6 +258,11 @@ public enum VerticalEdge { case top, bottom }
 public struct Animation {
     public static func easeOut(duration: Double) -> Animation { Animation() }
     public static let `default` = Animation()
+}
+/// 本物は `Result` を返す。模型は中身を1回呼ぶだけ
+@discardableResult
+public func withAnimation<Result>(_ animation: Animation? = .default, _ body: () throws -> Result) rethrows -> Result {
+    try body()
 }
 public struct Transaction {
     public init() {}

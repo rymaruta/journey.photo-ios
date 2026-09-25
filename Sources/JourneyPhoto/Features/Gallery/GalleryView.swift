@@ -9,6 +9,8 @@ struct GalleryView: View {
     /// ——ブロックしても、戻ってくるとその人の写真がまだ並んでいた
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = GalleryViewModel()
+    /// 「ホーム」をもう一度押した合図（一番上へ戻る）
+    @ObservedObject private var tabRouter = TabRouter.shared
     /// タグの行を出しているか。**既定は畳む**——チップが2行あると
     /// ファーストビューが「ボタンだらけ」になり、写真が下へ押し下げられる
     @State private var showsTags = false
@@ -350,8 +352,11 @@ struct GalleryView: View {
     /// ホームは**縦1列のフィード**（提案の絵・2026-09-21）。
     /// 格子は集約ページ（タグ・撮影地・機材）で使い続ける。
     private func feed(_ photos: [Photo]) -> some View {
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(spacing: 24) {
+                // 「ホーム」をもう一度押したときに戻る先（高さ0の目印）
+                Color.clear.frame(height: 0).id(Self.feedTopID)
                 // **ストーリーはホームの一番上**（モック1）。
                 // 2026-09-20 に Web がトップから外してマイページへ移したが、
                 // アプリの提案図では**ホームに戻っている**ので合わせる
@@ -372,7 +377,17 @@ struct GalleryView: View {
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
         }
+        // **ホームを開いたまま「ホーム」をもう一度押したら一番上へ**
+        // （`TabRouter.homeTopRequests`）
+        .onChange(of: tabRouter.homeTopRequests) { _, _ in
+            withAnimation(.easeOut(duration: 0.3)) {
+                proxy.scrollTo(Self.feedTopID, anchor: .top)
+            }
+        }
+        }
     }
+
+    private static let feedTopID = "home-feed-top"
 
     private func grid(_ photos: [Photo]) -> some View {
         ScrollView {

@@ -55,6 +55,9 @@ struct MyPhotosMap: View {
                         .webScreen()
                         .navigationTitle(pin.title)
                         .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                        }
                     }
                 }
             }

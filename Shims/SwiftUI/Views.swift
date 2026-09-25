@@ -81,6 +81,10 @@ public struct StrokeStyle {
     }
 }
 
+public struct ViewThatFits: View {
+    public init<C: View>(in axes: Axis.Set = [.horizontal, .vertical], @ViewBuilder content: () -> C) {}
+    public var body: Never { fatalError("模型") }
+}
 public struct Group: View {
     public init<C: View>(@ViewBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
@@ -96,6 +100,16 @@ public struct Divider: View {
 }
 public struct ProgressView: View {
     public init() {}
+    public var body: Never { fatalError("模型") }
+}
+
+/// `ScrollViewReader` が中に渡す操作。本物と同じく `scrollTo(_:anchor:)`
+public struct ScrollViewProxy {
+    public func scrollTo<ID: Hashable>(_ id: ID, anchor: UnitPoint? = nil) {}
+}
+
+public struct ScrollViewReader<Content: View>: View {
+    public init(@ViewBuilder content: @escaping (ScrollViewProxy) -> Content) {}
     public var body: Never { fatalError("模型") }
 }
 

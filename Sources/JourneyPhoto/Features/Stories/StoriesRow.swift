@@ -43,7 +43,8 @@ struct StoriesRow: View {
                         }
                         .buttonStyle(.plain)
 
-                        ForEach(model.stories) { story in
+                        // **1人＝1つの輪**（`StoryPlayback.rings`）
+                        ForEach(StoryPlayback.rings(model.stories, isSeen: { seen.contains($0) })) { story in
                             Button {
                                 opened = story
                             } label: {
@@ -100,8 +101,8 @@ struct StoriesRow: View {
                          reportedPhotoIds: hidden.reportedPhotoIds)
     }
 
-    /// 押した1本と同じ投稿者の兄弟をまとめて渡す。輪は1本＝1つのままで、
-    /// 閲覧画面の中だけ続けて見られる
+    /// 押した輪と同じ投稿者の兄弟をまとめて渡す。輪は1人＝1つで、
+    /// 開くのは輪に出していた1本から
     private func viewer(for story: Story) -> some View {
         let group = StoryPlayback.siblings(of: story, in: model.stories)
         return StoryViewerView(stories: group.stories, startIndex: group.index,
