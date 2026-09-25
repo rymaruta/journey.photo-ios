@@ -71,7 +71,7 @@ IPA=$(find "$BUILD_DIR/export" -name "*.ipa" | head -1)
 [ -n "$IPA" ] || { echo "ipa が作られませんでした"; exit 1; }
 
 echo
-echo "== 上げる（$IPA）"
+echo "== 上げる（${IPA}）"
 xcrun altool --upload-app -f "$IPA" -t ios \
     -u "$APPLE_ID" -p "$APPLE_APP_PASSWORD"
 

@@ -20,7 +20,7 @@ DEST="${DEST:-/opt/swift}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "== マニフェストを引く（$TAG）"
+echo "== マニフェストを引く（${TAG}）"
 TOKEN=$(curl -sS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/swift:pull" \
     | python3 -c "import json,sys;print(json.load(sys.stdin)['token'])")
 curl -sS -H "Authorization: Bearer $TOKEN" \

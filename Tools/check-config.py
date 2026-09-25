@@ -356,6 +356,18 @@ for lic in ("OFL-ShipporiMincho.txt", "OFL-IBMPlexMono.txt"):
     if not (FONTS_DIR / lic).exists():
         fail(f"書体のライセンス {lic} がありません（OFL は同梱が条件）")
 
+# **`$名前` の直後に全角文字を置かない**（`${名前}` と書く）。
+# macOS の /bin/bash（3.2）は `$MARKETING（` の「（」のバイトまで名前として
+# 読み、`set -u` の下で「unbound variable」で止まる。Linux の bash では
+# 起きないので手元では気づけない（TestFlight run #92 がここで落ちた）
+for shell_file in sorted([*(ROOT / ".github/workflows").glob("*.yml"), *(ROOT / "Tools").glob("*.sh"),
+                          ROOT / "codemagic.yaml"]):
+    if not shell_file.exists():
+        continue
+    for number, line in enumerate(shell_file.read_text(encoding="utf-8").splitlines(), 1):
+        if re.search(r"\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]", line):
+            fail(f"{shell_file.relative_to(ROOT)}:{number} の変数の直後に全角文字（${{名前}} と書く）")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:
