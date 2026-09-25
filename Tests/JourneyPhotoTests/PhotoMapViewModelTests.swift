@@ -17,8 +17,17 @@ final class PhotoMapViewModelTests: XCTestCase {
      {"id":"e","src":"https://x/e.jpg","spotId":"sp_a1","category":"landscape","coords":{"lat":34.14,"lng":133.68}}]
     """
 
-    /// 通信は `URLProtocol` で差し替える（写真 → 台帳の順に返す）
-    private func environment() -> AppEnvironment {
+    /// 撮影スポットの索引（`app/data/spots.json`）。2件は写真 e の座標のすぐそば
+    private let spotsJSON = """
+    [{"spotId":"sp_a1","slug":"takaya-jinja","name":"高屋神社","reading":"たかやじんじゃ",
+      "region":{"prefecture":"香川県","city":"観音寺市"},"coords":{"lat":34.14,"lng":133.68},"stage":"review","draftedAt":"2026-09-24"},
+     {"spotId":"sp_b2","slug":"kotohira","name":"金刀比羅宮","coords":{"lat":34.18,"lng":133.81},"stage":"review"},
+     {"spotId":"sp_c3","slug":"abashiri-ryuhyo","name":"網走の流氷","coords":{"lat":44.02,"lng":144.28},"stage":"review"}]
+    """
+
+    /// 通信は `URLProtocol` で差し替える。**写真と索引は別の口**なので道で
+    /// 叩き分ける。`spots` が nil なら索引の口は 404（本番の今の姿）
+    private func environment(spots: String? = nil) -> AppEnvironment {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)
@@ -31,13 +40,21 @@ final class PhotoMapViewModelTests: XCTestCase {
             "JPCognitoClientId": "client",
             "JPCognitoRegion": "ap-northeast-1",
         ]
-        StubProtocol.respond(status: 200, body: photosJSON)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: photosJSON)
+        if let spots {
+            StubProtocol.respond(path: "/app/data/spots.json", status: 200, body: spots)
+        }
         let gallery = PublicGalleryService(
             url: URL(string: "https://site.example.test/app/data/photos.json")!,
             session: session,
             snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
         )
-        return AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: gallery)
+        let index = OfficialSpotService(
+            url: URL(string: "https://site.example.test/app/data/spots.json")!,
+            session: session,
+            snapshot: SpotSnapshotStore(fileName: UUID().uuidString)
+        )
+        return AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: gallery, spots: index)
     }
 
     private func loaded() async -> PhotoMapViewModel {
@@ -130,10 +147,95 @@ final class PhotoMapViewModelTests: XCTestCase {
     func testLoadsPhotos() async {
         let model = PhotoMapViewModel()
         let env = environment()
-        StubProtocol.respond(status: 200, body: photosJSON)
         await model.load(environment: env)
         XCTAssertEqual(model.shown.count, 4)
         XCTAssertTrue(model.loaded)
+    }
+}
+
+// MARK: - 撮影スポットのピン
+
+extension PhotoMapViewModelTests {
+
+    /// 寄せた枠（幅 0.3° ≈ 33km・線の 0.5° より狭い）。既定の中心は高屋神社で、
+    /// 金刀比羅宮（経度 +0.13°）が枠に入り、網走は入らない
+    private func narrow(lat: Double = 34.14, lng: Double = 133.68) -> MapFraming.Frame {
+        MapFraming.Frame(latitude: lat, longitude: lng, latitudeSpan: 0.3, longitudeSpan: 0.3)
+    }
+
+    /// 引いているうちは出ない。**寄せたら枠の中だけ**出る
+    func testOfficialPinsAppearOnlyWhenZoomedIn() async {
+        let model = PhotoMapViewModel()
+        await model.load(environment: environment(spots: spotsJSON))
+        XCTAssertTrue(model.officialPins.isEmpty, "枠が届く前に置いている")
+
+        model.update(visible: MapFraming.Frame(latitude: 36, longitude: 138, latitudeSpan: 12, longitudeSpan: 12))
+        XCTAssertTrue(model.officialPins.isEmpty, "日本全体の倍率で置いている")
+
+        model.update(visible: narrow())
+        XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja", "kotohira"])
+        // 写真のピンは今までどおり
+        XCTAssertEqual(model.shown.count, 4)
+    }
+
+    /// **同じ枠で2回届いても入れ替えない。** 入れ替えるたびに描き直し →
+    /// カメラの知らせ → … と回るのが run 37 の固まり方
+    func testSameFrameDoesNotRepublishOfficialPins() async {
+        let model = PhotoMapViewModel()
+        await model.load(environment: environment(spots: spotsJSON))
+        model.update(visible: narrow())
+        let after = model.officialPinsUpdates
+        XCTAssertGreaterThan(after, 0)
+        model.update(visible: narrow())
+        model.update(visible: narrow(lat: 34.141, lng: 133.681))
+        XCTAssertEqual(model.officialPinsUpdates, after, "同じ集まりなのに入れ替えている")
+    }
+
+    /// **索引が 404 でも写真のピンは出る**（本番は Web が main に入るまでこの姿）
+    func testPhotoPinsSurviveAMissingIndex() async {
+        let model = PhotoMapViewModel()
+        await model.load(environment: environment(spots: nil))
+        model.update(visible: narrow())
+        XCTAssertTrue(model.loaded)
+        XCTAssertEqual(model.shown.count, 4)
+        XCTAssertFalse(model.pins.isEmpty)
+        XCTAssertTrue(model.officialPins.isEmpty)
+    }
+
+    /// 「このエリアを検索」のあとは**押したときの枠**で数える（写真と同じ）
+    func testAppliedAreaDrivesOfficialPins() async {
+        let model = PhotoMapViewModel()
+        await model.load(environment: environment(spots: spotsJSON))
+        model.update(visible: narrow())
+        model.applyArea()
+        // 地図を網走へ動かしても、固定した範囲のぶんが出たまま
+        model.update(visible: narrow(lat: 44.02, lng: 144.28))
+        XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja", "kotohira"])
+        model.clearArea()
+        XCTAssertEqual(model.officialPins.map(\.slug), ["abashiri-ryuhyo"])
+    }
+
+    /// 名前で絞っているときは倍率に関係なく当たったものが出る（owner が名前で探す入口）
+    func testQueryShowsMatchingSpotsRegardlessOfZoom() async {
+        let model = PhotoMapViewModel()
+        await model.load(environment: environment(spots: spotsJSON))
+        model.query = "たかや"
+        XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja"])
+        model.query = ""
+        XCTAssertTrue(model.officialPins.isEmpty)
+        XCTAssertTrue(model.stillShown(official: nil) == false)
+    }
+
+    /// 札は**いま出ているピンのぶんだけ**（写真の札と同じ約束）
+    func testOfficialCardFollowsThePins() async throws {
+        let model = PhotoMapViewModel()
+        await model.load(environment: environment(spots: spotsJSON))
+        model.update(visible: narrow())
+        let pin = try XCTUnwrap(model.officialPins.first)
+        XCTAssertTrue(model.stillShown(official: pin))
+        XCTAssertEqual(model.officialSpot(for: pin)?.name, "高屋神社")
+        model.update(visible: narrow(lat: 44.02, lng: 144.28))
+        XCTAssertFalse(model.stillShown(official: pin))
     }
 }
 

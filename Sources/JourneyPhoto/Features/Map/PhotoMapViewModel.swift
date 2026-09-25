@@ -50,10 +50,37 @@ final class PhotoMapViewModel: ObservableObject {
     /// ピン。**リストの行もこれ**（同じ束ね）
     @Published private(set) var pins: [MapPin] = []
 
+    /// 撮影スポットの索引（`app/data/spots.json`）。**取れなければ空**
+    /// ——本番は Web の変更が main に入るまで 404 で、そのあいだピンが
+    /// 出ないだけ（写真の機能は止めない）。描画には `officialPins` を使うので
+    /// ここは知らせない
+    private(set) var officialSpots: [OfficialSpot] = []
+
+    /// 地図に置く撮影スポットのピン。**寄せたときと、名前で絞ったときだけ**
+    /// （`OfficialPins.visible`）。
+    ///
+    /// **id の集まりが変わったときだけ入れ替える。** `update(visible:)` は
+    /// 地図が落ち着くたびに届くので、届くたびに入れ替えると
+    /// 描き直し → カメラの知らせ → … と回る（run 37 の固まり方）
+    @Published private(set) var officialPins: [OfficialPins.Pin] = []
+
+    /// `officialPins` を何回入れ替えたか。**回り続けていないことを試験で
+    /// 数えるためだけ**にある（模型の Combine には `objectWillChange` が無い）
+    private(set) var officialPinsUpdates = 0
+
     /// 絞り直す。条件が変わったときにだけ呼ぶ
     private func refresh() {
         shown = MapSearch.photos(photos, filter: MapSearch.Filter(query: query, category: category, frame: areaFrame))
         pins = MapPin.group(shown)
+        refreshOfficialPins()
+    }
+
+    /// 「このエリアを検索」中はその枠、そうでなければ見えている枠で数える
+    private func refreshOfficialPins() {
+        let next = OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame, query: query)
+        guard OfficialPins.changed(officialPins, next) else { return }
+        officialPins = next
+        officialPinsUpdates += 1
     }
 
     /// チップに出すカテゴリ。**座標のある写真だけ**から数える——座標の無い
@@ -69,6 +96,8 @@ final class PhotoMapViewModel: ObservableObject {
 
     func load(environment: AppEnvironment) async {
         photos = (try? await environment.gallery.fetchPhotos()) ?? []
+        // **取れなくても写真は出す。** 索引は無くても地図は成り立つ
+        officialSpots = (try? await environment.spots.fetchIndex()) ?? []
         loaded = true
         refresh()
     }
@@ -88,9 +117,13 @@ final class PhotoMapViewModel: ObservableObject {
     /// 地図が落ち着いたときに呼ばれる。**知らせを出さない**
     /// （出すと描き直し → カメラの知らせ → … で回り続ける）。
     /// 押せるようになったことだけは、一度だけ知らせる
+    ///
+    /// 撮影スポットのピンだけは枠から数える——ただし**集まりが変わった
+    /// ときだけ**入れ替える（`refreshOfficialPins`）
     func update(visible frame: MapFraming.Frame) {
         visibleFrame = frame
         if !canSearchArea { canSearchArea = true }
+        refreshOfficialPins()
     }
 
     /// 「このエリアを検索」。**押したときの範囲**で固定する
@@ -113,6 +146,17 @@ final class PhotoMapViewModel: ObservableObject {
     func stillShown(_ pin: MapPin?) -> Bool {
         guard let pin else { return false }
         return pins.contains { $0.id == pin.id }
+    }
+
+    /// 撮影スポットの札も同じ約束（いま出ているピンのぶんだけ）
+    func stillShown(official pin: OfficialPins.Pin?) -> Bool {
+        guard let pin else { return false }
+        return officialPins.contains { $0.id == pin.id }
+    }
+
+    /// ピンの元の行（画面へ渡す。概要・近くのスポットはここから）
+    func officialSpot(for pin: OfficialPins.Pin) -> OfficialSpot? {
+        officialSpots.first { $0.spotId == pin.spotId }
     }
 
     /// いまのピンに合わせた枠（無ければ nil＝地図の既定に任せる）
