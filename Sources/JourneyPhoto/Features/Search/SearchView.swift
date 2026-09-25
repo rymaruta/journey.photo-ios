@@ -430,7 +430,7 @@ struct SearchView: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.title3.weight(.bold))
+            .font(JPFont.rowTitle)
             .foregroundStyle(WebTheme.foreground)
             .padding(.horizontal, 16)
     }

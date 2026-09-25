@@ -214,11 +214,11 @@ struct PhotoDetailView: View {
         if !shown.displayTitle.isEmpty || !category.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 if !shown.displayTitle.isEmpty {
-                    // **題は写真の次に来る主役。** 28 → 34pt の太字
+                    // **題は写真の次に来る主役。** 明朝 30pt（文字サイズの設定で伸びる）。
+                    // 行送りは書体の自然値（1.45em）で足りるので、足さない
                     Text(shown.displayTitle)
-                        .font(.system(size: 34, weight: .bold))
+                        .font(JPFont.photoTitle)
                         .foregroundStyle(WebTheme.foreground)
-                        .lineSpacing(2)
                 }
                 if !category.isEmpty {
                     NavigationLink {
@@ -833,8 +833,8 @@ private struct ExifRow: View {
                                     .font(.subheadline)
                                     .foregroundStyle(Color.white.opacity(0.5))
                                 Text(item.value)
-                                    // **ここがいちばん読まれる。** 28pt の太字
-                                    .font(.system(size: 28, weight: .bold))
+                                    // **ここがいちばん読まれる。** 数字なので等幅（f/8・1/125・ISO 100）
+                                    .font(JPFont.mono(24, medium: true, relativeTo: .title))
                                     .foregroundStyle(WebTheme.foreground)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.6)

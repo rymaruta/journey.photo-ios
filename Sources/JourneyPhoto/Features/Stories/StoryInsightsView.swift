@@ -114,7 +114,7 @@ struct StoryInsightsView: View {
                 .font(.caption)
                 .foregroundStyle(WebTheme.faint)
             Text("\(value)")
-                .font(.title2.weight(.bold))
+                .font(JPFont.mono(22, medium: true, relativeTo: .title2))
                 .foregroundStyle(WebTheme.foreground)
         }
         .frame(maxWidth: .infinity)

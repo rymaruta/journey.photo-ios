@@ -204,7 +204,7 @@ struct MyPageView: View {
                 .overlay(themeRing(profile.themeColor))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(profile.name).font(.headline)
+                    Text(profile.name).font(JPFont.display(20, relativeTo: .title3))
                     VerifiedBadge(isVerified: profile.verified)
                 }
                 // ユーザー名（モック2-1 の `@yuki_travel`）。
@@ -267,7 +267,7 @@ struct MyPageView: View {
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.muted2)
             Text(value)
-                .font(.subheadline.weight(.bold))
+                .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
                 .foregroundStyle(WebTheme.foreground)
             Text(label)
                 .font(.caption)
@@ -299,7 +299,7 @@ struct MyPageView: View {
                             .font(.subheadline)
                             .foregroundStyle(WebTheme.muted2)
                         Text("\(countries)")
-                            .font(.subheadline.weight(.bold))
+                            .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
                             .foregroundStyle(WebTheme.foreground)
                         Image(systemName: "info.circle")
                             .font(.caption)
@@ -341,7 +341,7 @@ struct MyPageView: View {
                         .font(.subheadline)
                         .foregroundStyle(WebTheme.muted2)
                     Text("\(TravelDistance.formatted(km)) km")
-                        .font(.subheadline.weight(.bold))
+                        .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
                         .foregroundStyle(WebTheme.foreground)
                     Image(systemName: "info.circle")
                         .font(.caption)

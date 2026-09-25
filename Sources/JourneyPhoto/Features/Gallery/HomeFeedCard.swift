@@ -52,7 +52,7 @@ struct HomeFeedCard: View {
             // 重ねず、説明と同じ塊で読ませる
             if !photo.displayTitle.isEmpty {
                 Text(photo.displayTitle)
-                    .font(.callout.weight(.semibold))
+                    .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(2)
             }
@@ -91,7 +91,7 @@ struct HomeFeedCard: View {
                 .aspectRatio(4.0 / 5.0, contentMode: .fit)
 
                 Text("\(min(page + 1, photos.count))/\(photos.count)")
-                    .font(.caption.weight(.semibold))
+                    .font(JPFont.mono(12, medium: true))
                     .foregroundStyle(Color.white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)

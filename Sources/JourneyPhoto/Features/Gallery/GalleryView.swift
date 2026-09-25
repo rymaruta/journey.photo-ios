@@ -277,7 +277,7 @@ struct GalleryView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(group.label)
-                        .font(.title3.weight(.bold))
+                        .font(JPFont.rowTitle)
                         .foregroundStyle(WebTheme.foreground)
                     Spacer()
                     NavigationLink {

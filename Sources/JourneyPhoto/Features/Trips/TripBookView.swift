@@ -46,7 +46,7 @@ struct TripBookView: View {
                     .tracking(1.5)
                     .foregroundStyle(Color.white.opacity(0.7))
                 Text(trip.place.isEmpty ? L("旅の記録", "A trip") : trip.place)
-                    .font(.largeTitle.weight(.bold))
+                    .font(JPFont.display(34, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.foreground)
                 Text(L("\(trip.days)日間 · \(trip.photos.count)枚",
                        "\(trip.days) days · \(trip.photos.count) photos"))

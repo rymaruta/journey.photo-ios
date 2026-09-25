@@ -41,7 +41,7 @@ struct DailyThemeCard: View {
             .foregroundStyle(WebTheme.muted)
 
             Text(theme.title)
-                .font(.system(size: 26, weight: .bold))
+                .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.foreground)
 
             Text(theme.prompt)

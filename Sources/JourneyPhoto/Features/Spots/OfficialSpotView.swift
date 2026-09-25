@@ -112,7 +112,7 @@ struct OfficialSpotView: View {
                 .tracking(1.6)
                 .foregroundStyle(WebTheme.faint)
             Text(spot.name)
-                .font(.system(size: 28, weight: .bold))
+                .font(JPFont.display(28, relativeTo: .title))
                 .foregroundStyle(WebTheme.foreground)
             // 「[都道府県] · [市区町村] · N枚の写真」。N は数えた値
             Text(SpotScreen.subtitle(region: spot.regionLabel, photoCount: linked.count))
