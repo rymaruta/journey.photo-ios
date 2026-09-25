@@ -13,6 +13,14 @@ public struct Map: View {
     /// 見ている場所を持たせる版（初期表示を写真に合わせるのに使う）
     public init<C: MapContent>(position: Binding<MapCameraPosition>,
                                @MapContentBuilder content: () -> C) {}
+    /// 操作部品（方位磁針など）を地図の外に置く版（iOS 17）
+    public init<C: MapContent>(position: Binding<MapCameraPosition>, scope: Namespace.ID,
+                               @MapContentBuilder content: () -> C) {}
+    /// Apple の地点を押して選ぶ版（iOS 18・`MapSelection`）
+    public init<V: Hashable, C: MapContent>(position: Binding<MapCameraPosition>,
+                                            selection: Binding<MapSelection<V>?>,
+                                            scope: Namespace.ID? = nil,
+                                            @MapContentBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
 }
 
@@ -86,4 +94,61 @@ extension ForEach: MapContent {
 public struct Annotation: MapContent {
     public init<C: View>(_ title: String, coordinate: CLLocationCoordinate2D,
                          @ViewBuilder content: () -> C) {}
+}
+
+// MARK: - 地図の操作部品（iOS 17）
+
+/// 方位磁針。`scope` を渡すと地図の外（`mapScope` を付けた範囲）に置ける
+public struct MapCompass: View {
+    public init(scope: Namespace.ID? = nil) {}
+    public var body: Never { fatalError("模型") }
+}
+
+extension View {
+    /// 地図の既定の操作部品を差し替える
+    public func mapControls<C: View>(@ViewBuilder _ content: () -> C) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func mapControlVisibility(_ visibility: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// この範囲の中なら、地図の外に置いた操作部品が地図とつながる
+    public func mapScope(_ scope: Namespace.ID) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+}
+
+// MARK: - 地点（iOS 18）
+
+/// Apple の地図が描く地点（POI・地名・山や川）
+public struct MapFeature: Hashable {
+    public enum FeatureKind { case pointOfInterest, territory, physicalFeature }
+    public var coordinate: CLLocationCoordinate2D
+    public var title: String?
+    public var kind: FeatureKind
+    private let token = UUID()
+    public static func == (a: MapFeature, b: MapFeature) -> Bool { a.token == b.token }
+    public func hash(into h: inout Hasher) { h.combine(token) }
+}
+
+/// 地図で選ばれたもの。自分で tag した値か、Apple の地点のどちらか
+public struct MapSelection<Value: Hashable>: Hashable {
+    public var value: Value?
+    public var feature: MapFeature?
+}
+
+open class MKMapItem: NSObject {
+    public var name: String?
+    @discardableResult
+    open func openInMaps(launchOptions: [String: Any]? = nil) -> Bool { true }
+}
+
+public let MKLaunchOptionsDirectionsModeKey = "MKLaunchOptionsDirectionsMode"
+public let MKLaunchOptionsDirectionsModeDefault = "MKLaunchOptionsDirectionsModeDefault"
+
+/// 地点から `MKMapItem`（名前・住所・Apple の詳細カード用）を引く（iOS 18）
+public final class MKMapItemRequest {
+    public init(feature: MapFeature) {}
+    public var mapItem: MKMapItem { get async throws { MKMapItem() } }
+}
+
+extension View {
+    /// 押せる地点を絞る（iOS 18）
+    public func mapFeatureSelectionDisabled(_ isDisabled: @escaping (MapFeature) -> Bool) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// Apple の詳細カード（iOS 18）。`item` が nil で閉じる
+    public func mapItemDetailSheet(item: Binding<MKMapItem?>, displaysMap: Bool = true) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
 }

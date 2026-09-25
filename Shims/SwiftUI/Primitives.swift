@@ -211,6 +211,10 @@ public struct Font {
     public static let callout = Font(), footnote = Font(), caption = Font(), caption2 = Font()
     public static func system(size: Double) -> Font { Font() }
     public static func system(size: Double, weight: Weight) -> Font { Font() }
+    /// 書体の系統（`serif` は iPhone で New York）。本物は `weight` も `design` も
+    /// 省略できるが、模型で両方に既定値を付けると上の2つと曖昧になるので `design` は必須
+    public static func system(size: Double, weight: Weight = .regular, design: Design) -> Font { Font() }
+    public enum Design { case `default`, serif, rounded, monospaced }
     public func weight(_ w: Weight) -> Font { self }
     public var bold: Font { self }
     public struct Weight { public static let bold = Weight(), semibold = Weight(), medium = Weight(), regular = Weight(), heavy = Weight(), light = Weight(), thin = Weight(), ultraLight = Weight() }
@@ -308,4 +312,12 @@ public struct UnitPoint: Hashable, Sendable {
 public struct LinearGradient: View, ShapeStyle {
     public init(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {}
     public var body: Never { fatalError() }
+}
+
+/// `@Namespace`。地図の操作部品を地図の外に置く（`mapScope` / `MapCompass(scope:)`）のに使う
+@propertyWrapper
+public struct Namespace {
+    public struct ID: Hashable { public init() {} }
+    public init() {}
+    public var wrappedValue: ID { ID() }
 }

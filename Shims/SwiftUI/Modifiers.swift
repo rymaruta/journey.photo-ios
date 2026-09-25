@@ -183,6 +183,9 @@ extension View {
     public func opacity(_ value: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 折り返しを縦に伸ばす（本物と同じ）。長い説明文が1行に潰れないように
     public func fixedSize(horizontal: Bool, vertical: Bool) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func fixedSize() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func scaledToFit() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func scaledToFill() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineLimit(_ n: Int) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// **nil は「制限しない」**（本物と同じ）。折りたたみの展開で使う
     public func lineLimit(_ n: Int?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }

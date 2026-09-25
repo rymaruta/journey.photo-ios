@@ -11,7 +11,13 @@ public struct Text: View {
 public struct Image: View {
     public init(systemName: String) {}
     public init(uiImage: UIImageShim) {}
+    /// アセットカタログの名前で引く（`BrandMark` など）
+    public init(_ name: String) {}
     public func resizable() -> Image { self }
+    public func renderingMode(_ mode: TemplateRenderingMode?) -> Image { self }
+    public func interpolation(_ interpolation: Interpolation) -> Image { self }
+    public enum TemplateRenderingMode { case template, original }
+    public enum Interpolation { case none, low, medium, high }
     public func aspectRatio(_ ratio: Double? = nil, contentMode: ContentMode) -> Image { self }
     public var body: Never { fatalError("模型") }
 }
@@ -42,6 +48,11 @@ public struct VStack: View {
 }
 public struct LazyVStack: View {
     public init<C: View>(alignment: HorizontalAlignment = .center, spacing: Double? = nil,
+                         pinnedViews: PinnedScrollableViews = [], @ViewBuilder content: () -> C) {}
+    public var body: Never { fatalError("模型") }
+}
+public struct LazyHStack: View {
+    public init<C: View>(alignment: VerticalAlignment = .center, spacing: Double? = nil,
                          pinnedViews: PinnedScrollableViews = [], @ViewBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
 }
