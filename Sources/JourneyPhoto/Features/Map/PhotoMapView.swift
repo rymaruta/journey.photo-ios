@@ -391,9 +391,11 @@ struct PhotoMapView: View {
         }
     }
 
-    /// 「無い」と「見つからない」を分ける
+    /// 「無い」と「見つからない」を分ける。**スポットのピンが1本でも出ていれば
+    /// 帯は出さない**（名前で絞ってスポットだけ当たった回に、ピンの上に
+    /// 「見つかりませんでした」が乗っていた）
     private var emptyMessage: String? {
-        guard model.loaded, model.shown.isEmpty else { return nil }
+        guard model.hasNothingToShow else { return nil }
         if model.isFiltering {
             return L("見つかりませんでした", "No results")
         }
@@ -713,16 +715,18 @@ struct PhotoMapView: View {
             }
 
             HStack(spacing: 8) {
-                if let url = SpotScreen.mapURL(name: pin.name, coords: pin.coords) {
-                    Link(destination: url) {
-                        Label(L("経路", "Directions"), systemImage: "arrow.triangle.turn.up.right.diamond")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(WebTheme.accentText)
-                            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                            .background(WebTheme.foreground, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
+                // **地点の札の「経路」と同じ挙動**（Apple の地図で経路を出す）。
+                // 同じ語で片方だけ「地点を表示」にしない
+                Button {
+                    openDirections(to: pin)
+                } label: {
+                    Label(L("経路", "Directions"), systemImage: "arrow.triangle.turn.up.right.diamond")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                        .background(WebTheme.foreground, in: Capsule())
                 }
+                .buttonStyle(.plain)
                 if let spot = model.officialSpot(for: pin) {
                     NavigationLink {
                         OfficialSpotView(spot: spot, spots: model.officialSpots, photos: model.photos)
@@ -743,6 +747,17 @@ struct PhotoMapView: View {
         .overlay(RoundedRectangle(cornerRadius: 18)
             .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
         .accessibilityIdentifier("map.officialCard")
+    }
+
+    /// 撮影スポットへの経路を Apple の地図で開く。座標から `MKMapItem` を
+    /// 起こし、`placeCard` と同じ `directions` の起動指定で渡す
+    private func openDirections(to pin: OfficialPins.Pin) {
+        let coordinate = CLLocationCoordinate2D(latitude: pin.coords.lat, longitude: pin.coords.lng)
+        let item = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
+        item.name = pin.name
+        item.openInMaps(launchOptions: [
+            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
+        ])
     }
 
     /// 押した地点の札（デザイン 04b）:
@@ -882,7 +897,10 @@ struct PhotoMapView: View {
     // MARK: - リスト
 
     /// 同じ絞り込みの結果を、**ピンと同じ束ね**で行にする（行の数＝ピンの数）。
-    /// 枚数は数えた値。いいね数・保存は出さない（モックにはあるが求められていない）
+    /// 枚数は数えた値。いいね数・保存は出さない（モックにはあるが求められていない）。
+    ///
+    /// **撮影スポットのピンも行にする**（写真の行のあと）。地図に出ている
+    /// ものがリストに無いと「ピンの数＝行の数」が崩れる
     @ViewBuilder
     private var listArea: some View {
         if let message = emptyMessage {
@@ -899,10 +917,58 @@ struct PhotoMapView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    ForEach(model.officialPins) { pin in
+                        if let spot = model.officialSpot(for: pin) {
+                            NavigationLink {
+                                OfficialSpotView(spot: spot, spots: model.officialSpots, photos: model.photos)
+                            } label: {
+                                officialRow(pin)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("map.officialRow")
+                        }
+                    }
                 }
                 .padding(.bottom, 24)
             }
         }
+    }
+
+    /// 撮影スポットの行。写真の行と同じ並び（印 → 名前と地域 → 矢印）。
+    /// 印は地図のピンと同じ丸（写真の代わり）
+    private func officialRow(_ pin: OfficialPins.Pin) -> some View {
+        HStack(spacing: 12) {
+            officialMarker
+                .frame(width: 56, height: 56)
+                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pin.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    if let region = pin.regionLabel {
+                        Text(region)
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.muted2)
+                            .lineLimit(1)
+                    }
+                    if pin.isDraft {
+                        Text(L("下書き", "Draft"))
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(minHeight: WebTheme.minTapTarget)
+        .contentShape(Rectangle())
     }
 
     private func listRow(_ pin: MapPin) -> some View {

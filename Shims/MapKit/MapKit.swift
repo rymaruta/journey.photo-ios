@@ -152,8 +152,17 @@ public struct MapSelection<Value: Hashable>: Hashable {
     public var feature: MapFeature?
 }
 
+/// 座標だけの地点（本物は `CLPlacemark` の子。使う口は `init(coordinate:)` だけ）
+open class MKPlacemark: NSObject {
+    public let coordinate: CLLocationCoordinate2D
+    public init(coordinate: CLLocationCoordinate2D) { self.coordinate = coordinate }
+}
+
 open class MKMapItem: NSObject {
     public var name: String?
+    public override init() {}
+    /// 座標から起こす（経路を Apple の地図に頼むとき）
+    public init(placemark: MKPlacemark) {}
     @discardableResult
     open func openInMaps(launchOptions: [String: Any]? = nil) -> Bool { true }
 }
