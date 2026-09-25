@@ -67,6 +67,31 @@ final class MapZoomTests: XCTestCase {
         XCTAssertEqual(next?.latitudeSpan ?? 0, 2.0, accuracy: 0.0001)
     }
 
+    /// 🔴 **押したあとに指で払ったら、払った先から数える。** 控えを忘れないと
+    /// 1秒以内の次の＋−で払う前の場所へ引き戻す
+    func testPanningAfterAZoomForgetsTheChain() {
+        var chain = MapFraming.ZoomChain()
+        _ = chain.step(from: frame, by: 1 / MapFraming.zoomStep, now: t0)
+        let panned = MapFraming.Frame(latitude: 36.0, longitude: 135.0,
+                                      latitudeSpan: 0.5, longitudeSpan: 0.5)
+        chain.observe(panned)
+        let next = chain.step(from: panned, by: MapFraming.zoomStep,
+                              now: t0.addingTimeInterval(0.4))
+        XCTAssertEqual(next?.latitude, 36.0)
+    }
+
+    /// 自分の＋で落ち着いた知らせ（中心はほぼ同じ）では控えを忘れない
+    func testOwnZoomSettlingKeepsTheChain() {
+        var chain = MapFraming.ZoomChain()
+        _ = chain.step(from: frame, by: 1 / MapFraming.zoomStep, now: t0)
+        // MapKit は画面の縦横比に合わせて幅を広げて返す
+        chain.observe(MapFraming.Frame(latitude: 35.001, longitude: 135.0,
+                                       latitudeSpan: 0.9, longitudeSpan: 0.5))
+        let second = chain.step(from: frame, by: 1 / MapFraming.zoomStep,
+                                now: t0.addingTimeInterval(0.3))
+        XCTAssertEqual(second?.latitudeSpan ?? 0, 0.25, accuracy: 0.0001)
+    }
+
     /// 見えている枠がまだ無い（地図が一度も落ち着いていない）なら動かさない
     func testNothingToZoomFromMeansNoMove() {
         var chain = MapFraming.ZoomChain()

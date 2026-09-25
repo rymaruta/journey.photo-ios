@@ -86,6 +86,7 @@ struct PhotoMapView: View {
         .onChange(of: location.state) { _, state in
             guard case .located(let latitude, let longitude) = state else { return }
             here = Photo.Coords(lat: latitude, lng: longitude)
+            zoomChain.reset()
             camera = .userLocation(fallback: .region(MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
                 span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))))
@@ -317,12 +318,14 @@ struct PhotoMapView: View {
 
     /// 見えている範囲を控えるだけ。**絞るのはボタンを押したとき**
     private func cameraChanged(_ context: MapCameraUpdateContext) {
-        model.update(visible: MapFraming.Frame(
+        let visible = MapFraming.Frame(
             latitude: context.region.center.latitude,
             longitude: context.region.center.longitude,
             latitudeSpan: context.region.span.latitudeDelta,
             longitudeSpan: context.region.span.longitudeDelta
-        ))
+        )
+        model.update(visible: visible)
+        zoomChain.observe(visible)
     }
 
     /// 地図の上に1行。**空の状態を隠さない**——ピンが消えただけの画面にしない
@@ -412,11 +415,14 @@ struct PhotoMapView: View {
     /// 地図の操作（モック3-4）。方位磁針・現在地・拡大・縮小を縦に重ねる。
     ///
     /// **方位磁針もこの列に入れる。** 既定のままだと iOS が右上に置き、
-    /// この列と重なった（実機の絵・2026-09-25）。方位磁針は北を向いて
-    /// いる間は出ない——そのときは現在地のボタンが一番上に来る
+    /// この列と重なった（実機の絵・2026-09-25）
     private var mapControls: some View {
         VStack(spacing: WebTheme.mapControlSpacing) {
+            // **常に出す。** 北向きの間だけ消えると列が1段詰まり、
+            // 回したとき（現在地の2回目）に＋−の位置が1段ずれて、
+            // 同じ所を叩いても別のボタンに当たる
             MapCompass(scope: mapScope)
+                .mapControlVisibility(.visible)
             locateButton
             VStack(spacing: WebTheme.mapControlSpacing) {
                 zoomButton(systemImage: "plus", factor: 1 / MapFraming.zoomStep,
@@ -424,7 +430,8 @@ struct PhotoMapView: View {
                 zoomButton(systemImage: "minus", factor: MapFraming.zoomStep,
                            label: L("縮小", "Zoom out"))
             }
-            // **＋と−の間の隙間を地図へ素通しさせない。** 素通しすると、
+            // **＋と−の間の隙間は地図へ素通しさせない**（現在地と＋の間は
+            // 素通しする——外の列には方位磁針が入っている）。素通しすると、
             // −を狙って隙間を2回叩いたとき地図のダブルタップ（＝拡大）になる。
             // 方位磁針（中身は UIKit）には掛けない——親の手振りと取り合わせない
             .contentShape(Rectangle())
@@ -443,7 +450,7 @@ struct PhotoMapView: View {
     /// 現在地のボタンと同じ丸にして、1つずつ離して置く
     private func zoomButton(systemImage: String, factor: Double, label: String) -> some View {
         Button {
-            frame(zoomChain.step(from: model.visibleFrame, by: factor))
+            move(to: zoomChain.step(from: model.visibleFrame, by: factor))
         } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 20, weight: .semibold))
@@ -482,10 +489,13 @@ struct PhotoMapView: View {
     /// 位置は**保存も送信もしない**（地図に描くだけ）
     private var locateButton: some View {
         Button {
+            zoomChain.reset()
+            // 控えは元の控えを引き継ぐ（押すたびに入れ子を深くしない）
+            let fallback = camera.fallbackPosition ?? camera
             if camera.followsUserHeading {
-                camera = .userLocation(fallback: camera)
+                camera = .userLocation(fallback: fallback)
             } else if camera.followsUserLocation {
-                camera = .userLocation(followsHeading: true, fallback: camera)
+                camera = .userLocation(followsHeading: true, fallback: fallback)
             } else {
                 location.locate()
             }
@@ -804,7 +814,15 @@ struct PhotoMapView: View {
     // MARK: - カメラ
 
     /// 地図をその枠へ寄せる。nil なら動かさない（既定に戻して地球儀にしない）
+    ///
+    /// ＋−の続け押しの控え（`ZoomChain`）は忘れる——ボタン以外で動いた
     private func frame(_ frame: MapFraming.Frame?) {
+        zoomChain.reset()
+        move(to: frame)
+    }
+
+    /// 枠へ動かすだけ（＋−から。続け押しの控えは残す）
+    private func move(to frame: MapFraming.Frame?) {
         guard let frame else { return }
         camera = .region(MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: frame.latitude, longitude: frame.longitude),

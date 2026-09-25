@@ -127,5 +127,24 @@ extension MapFraming {
             last = (next, now)
             return next
         }
+
+        /// 地図が落ち着いたとき。**頼んだ枠から中心が離れていたら忘れる**
+        /// ——指で払った・現在地へ寄せたなど、ボタン以外で動いた印。
+        /// 忘れないと、1秒以内の次の＋−で払う前の場所へ引き戻す
+        mutating func observe(_ visible: Frame) {
+            guard let last else { return }
+            let latDrift = abs(visible.latitude - last.frame.latitude)
+            let lngDrift = abs(visible.longitude - last.frame.longitude)
+            if latDrift > last.frame.latitudeSpan * Self.driftTolerance
+                || lngDrift > last.frame.longitudeSpan * Self.driftTolerance {
+                self.last = nil
+            }
+        }
+
+        /// ボタン以外がカメラを動かしたとき（絞り込み・現在地）
+        mutating func reset() { last = nil }
+
+        /// 中心のずれをどこまで「同じ枠」と見なすか（幅に対する割合）
+        static let driftTolerance = 0.25
     }
 }

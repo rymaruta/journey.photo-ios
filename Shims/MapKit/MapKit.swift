@@ -36,6 +36,8 @@ public struct MapCameraPosition {
     /// 本物は利用者が地図を動かすと false に戻る
     public var followsUserLocation: Bool { false }
     public var followsUserHeading: Bool { false }
+    /// 自分の位置が取れないときに代わりに見る所
+    public var fallbackPosition: MapCameraPosition? { nil }
 }
 
 /// `onMapCameraChange` が知らせる頻度。**動かし終わったとき**（`.onEnd`）だけを
