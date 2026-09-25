@@ -306,7 +306,12 @@ jobs:
           # **TestFlight にある最大の番号 + 1**（上げ忘れではねられる事故をなくす）
           LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" || echo 0)
           bash Tools/set-build-number.sh $(( LATEST + 1 ))
-          # ビルド番号は project.yml に書くので、プロジェクトを作り直す
+          # **表に出る版も毎回上げる**（0.2.0 → 0.2.1 …・owner の依頼 2026-09-25）。
+          # どこまで出したかは `testflight/<版>` のタグで覚える（下の「版の印を付ける」）
+          MARKETING="$(bash Tools/next-marketing-version.sh)"
+          echo "MARKETING=$MARKETING" >> "$GITHUB_ENV"
+          echo "表に出る版: $MARKETING（ビルド番号 $(( LATEST + 1 ))）"
+          # ビルド番号と版は project.yml に書くので、プロジェクトを作り直す
           xcodegen generate
           xcode-project use-profiles
 
@@ -359,6 +364,21 @@ jobs:
             app-store-connect publish --path "build/ios/ipa/*.ipa"
             echo "### TestFlight に上げました（内部テストはすぐ配れます）" >> "$GITHUB_STEP_SUMMARY"
             echo "外部テスターにも配るなら、App Store Connect の「テスト情報」を埋めてから \`betaReview: true\` で流し直してください" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # **上げるのに成功した回だけ印を付ける。** 次の回の版はこの続きになる
+      # （`Tools/next-marketing-version.sh`）。失敗した回は印が無いので、
+      # 同じ版がもう一度使われる。印を押せなくても**赤にしない**——
+      # TestFlight には既に上がっている（次の回が同じ版を使うだけで、
+      # ビルド番号は上がるので受け付けられる）
+      - name: 版の印を付ける
+        if: ${{ inputs.submit && steps.secrets.outputs.signing == 'true' }}
+        run: |
+          set -uo pipefail
+          if git tag "testflight/$MARKETING" && git push origin "testflight/$MARKETING"; then
+            echo "### 表に出る版: $MARKETING" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::版の印 testflight/$MARKETING を押せませんでした（次の回も同じ版になります）"
           fi
 
       # **見た目を確かめられる場所はここしか無い。** 開発は Linux で進めて
