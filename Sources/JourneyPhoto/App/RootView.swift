@@ -170,7 +170,17 @@ struct RootView: View {
         }
         // お知らせを閉じたら数え直す（タブではなくシートになったので）
         .sheet(isPresented: $showNotifications, onDismiss: { Task { await refreshUnread() } }) {
-            NavigationStack { NotificationsView() }
+            NavigationStack {
+                NotificationsView()
+                    // **閉じるボタンを必ず置く。** 一覧は `.refreshable` なので、
+                    // 下に引く操作は「閉じる」ではなく「読み直す」に取られる
+                    // ——ボタンが無いと閉じる手段が無くなる（実機で踏んだ）
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(Labels.Common.close) { showNotifications = false }
+                        }
+                    }
+            }
         }
     }
 }
