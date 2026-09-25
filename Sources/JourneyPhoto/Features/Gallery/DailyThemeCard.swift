@@ -27,10 +27,11 @@ struct DailyThemeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.caption)
-                Text(L("今日のテーマ", "Today's theme"))
-                    .font(.caption.weight(.semibold))
+                // 眉ラベル（アーティファクトの `TODAY'S THEME`）。札の地は黒なので真鍮
+                Text("TODAY'S THEME")
+                    .jpEyebrow()
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityLabel(L("今日のテーマ", "Today's theme"))
                 Spacer()
                 Text("#\(theme.tag)")
                     .font(.caption.weight(.semibold))

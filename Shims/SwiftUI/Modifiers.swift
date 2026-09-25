@@ -79,6 +79,7 @@ public struct AccessibilityTraits: OptionSet {
     public init(rawValue: Int) { self.rawValue = rawValue }
     public static let isSelected = AccessibilityTraits(rawValue: 1)
     public static let isButton = AccessibilityTraits(rawValue: 2)
+    public static let isHeader = AccessibilityTraits(rawValue: 4)
 }
 public struct TextInputAutocapitalization {
     public static let never = TextInputAutocapitalization()

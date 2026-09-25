@@ -45,9 +45,9 @@ struct SearchView: View {
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         }
-        .navigationTitle("Journey Photo")
+        .navigationTitle(L("探す", "Explore"))  // 次の画面の「戻る」と読み上げに使う。見た目は AppHeaderItems
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(leading: .title(L("探す", "Explore")), unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
         .task { await model.loadPhotos(environment: environment) }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }

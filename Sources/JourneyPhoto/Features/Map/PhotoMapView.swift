@@ -59,9 +59,9 @@ struct PhotoMapView: View {
             }
         }
         .webScreen()
-        .navigationTitle("Journey Photo")
+        .navigationTitle(L("マップ", "Map"))  // 次の画面の「戻る」と読み上げに使う。見た目は AppHeaderItems
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(leading: .none, unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
         .task {
             await model.load(environment: environment)
             frame(model.frame)

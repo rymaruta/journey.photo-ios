@@ -107,10 +107,10 @@ struct OfficialSpotView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             // 小見出し（モックの "PHOTO SPOT"）。**下書きなら「下書き・未確認」**
+            // 眉ラベルの部品に揃える。黒地なので真鍮（下書きの札は色で目立たせない）
             Text(SpotScreen.eyebrow(review: spot.isDraft))
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.6)
-                .foregroundStyle(WebTheme.faint)
+                .jpEyebrow()
+                .foregroundStyle(spot.isDraft ? WebTheme.muted : WebTheme.accent)
             Text(spot.name)
                 .font(JPFont.display(28, relativeTo: .title))
                 .foregroundStyle(WebTheme.foreground)

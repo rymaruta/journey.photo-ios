@@ -1,11 +1,19 @@
 import SwiftUI
 
-/// どの画面でも同じ見出し（モック1・3・9・10 はどれも
-/// **ロゴ ＋ 通知 ＋ 自分のアイコン**）。
+/// タブの画面の見出し。**右は どの画面も通知 ＋ 自分のアイコン**。
 ///
-/// 揃える前は、ホームだけ「Journey Photo」で、さがすは「さがす」、
-/// マップは「マップ」——**タブを移るたびに別のアプリに見えていた**
-/// （実機の絵で確認・run 37）。
+/// 左（中央）は画面ごと（アーティファクト「journey.photo iOS」＝ iOS の正・2026-09-25）:
+///
+/// | 画面 | 見出し |
+/// |---|---|
+/// | ホーム | ロゴ（`.logo`） |
+/// | 探す | 明朝の題「探す」（`.title`） |
+/// | マップ | 何も置かない（`.none`）——検索窓が画面の頭になる |
+///
+/// 以前は、モック1・3・9・10（サイトの一次資料）に合わせて**全部ロゴ**に
+/// 揃えていた（揃える前は字だけの題がばらばらで、タブを移るたびに別の
+/// アプリに見えていた・run 37）。いまの題は**明朝で書体を揃える**ので、
+/// その問題は書体の統一で受ける。
 ///
 /// **ホームにあった地図のアイコンは外した。** 下のタブに「マップ」が
 /// あるので、同じ場所への入口が2つあった（モックにも無い）。
@@ -14,6 +22,14 @@ import SwiftUI
 @MainActor
 struct AppHeaderItems: ToolbarContent {
 
+    /// 見出しの左（中央）に何を置くか
+    enum Leading: Equatable {
+        case logo
+        case title(String)
+        case none
+    }
+
+    var leading: Leading = .logo
     let unread: Int
     /// 自分のアイコン。**値で受け取る**——`ToolbarContent` は `View` では
     /// ないので、`@EnvironmentObject` が注ぎ込まれる保証が無い
@@ -24,10 +40,31 @@ struct AppHeaderItems: ToolbarContent {
 
     @ToolbarContentBuilder
     var body: some ToolbarContent {
-        // ロゴ。**`navigationTitle` の文字の代わりに置く**——モックは
-        // どの画面も記号＋ワードマークで、字だけだと別のアプリに見える
-        ToolbarItem(placement: .principal) {
-            AppLogo()
+        switch leading {
+        case .logo:
+            // ロゴ。**`navigationTitle` の文字の代わりに置く**
+            ToolbarItem(placement: .principal) {
+                AppLogo()
+            }
+        case .title(let text):
+            // 画面の題（明朝）。**左寄せ**——アーティファクトの題は左上に立つ
+            ToolbarItem(placement: .topBarLeading) {
+                Text(text)
+                    .font(JPFont.screenTitle)
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            // 中央は空で埋める。埋めないと `navigationTitle` の字が
+            // 中央にも出て、題が2つ並ぶ
+            ToolbarItem(placement: .principal) {
+                EmptyView()
+            }
+        case .none:
+            // 置かない。空で埋めないと `navigationTitle` の字が中央に出る
+            ToolbarItem(placement: .principal) {
+                EmptyView()
+            }
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button(action: onOpenNotifications) {
