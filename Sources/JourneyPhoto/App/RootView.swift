@@ -75,7 +75,16 @@ struct RootView: View {
     }
 
     private var tabs: some View {
-        TabView(selection: $selection) {
+        // **同じ札をもう一度押したことを拾う。** `$selection` のままだと
+        // 値が変わらないので何も届かない。本物の TabView は選ばれている札を
+        // 押しても setter を呼ぶので、そこで比べる
+        TabView(selection: Binding(
+            get: { selection },
+            set: { tapped in
+                tabRouter.tabTapped(isHome: tapped == .home, alreadySelected: tapped == selection)
+                selection = tapped
+            }
+        )) {
             NavigationStack {
                 GalleryView(unread: unread, avatarURL: avatarURL, onOpenNotifications: { showNotifications = true })
             }
