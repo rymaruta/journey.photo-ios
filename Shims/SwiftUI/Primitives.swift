@@ -225,6 +225,14 @@ extension Font {
 
 public enum ContentMode { case fit, fill }
 public enum Axis { case horizontal, vertical }
+extension Axis {
+    /// `ViewThatFits(in:)` が受ける軸の組
+    public struct Set: ExpressibleByArrayLiteral {
+        public static let horizontal = Set(), vertical = Set()
+        public init() {}
+        public init(arrayLiteral elements: Set...) {}
+    }
+}
 public enum TextAlignment { case leading, center, trailing }
 
 public struct Alignment {

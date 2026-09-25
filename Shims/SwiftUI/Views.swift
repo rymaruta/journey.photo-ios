@@ -80,6 +80,10 @@ public struct StrokeStyle {
     }
 }
 
+public struct ViewThatFits: View {
+    public init<C: View>(in axes: Axis.Set = [.horizontal, .vertical], @ViewBuilder content: () -> C) {}
+    public var body: Never { fatalError("模型") }
+}
 public struct Group: View {
     public init<C: View>(@ViewBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
