@@ -248,6 +248,11 @@ struct StoryViewerView: View {
                 if let fill {
                     Capsule().fill(Color.white)
                         .frame(width: geo.size.width * fill)
+                        // **刻みの間を線でつなぐ。** 時計は `clockStep` ごとにしか
+                        // 進まないので、そのままでは1秒に20回の段差で伸びる
+                        // （owner「進行バーが滑らかになってない」2026-09-25）。
+                        // 0 へ戻るとき（次の1本・前へ戻る）はつながず、すぐ戻す
+                        .animation(fill > 0 ? Animation.linear(duration: Self.clockStep) : nil, value: fill)
                 }
             }
         }
@@ -371,12 +376,15 @@ struct StoryViewerView: View {
 
     /// 写真の時計。**動画は回さない**（鳴り終わりが送る）。
     /// 経過は実際の時刻の差で進める——`sleep` は指定より遅れることがある
+    /// 時計の刻み。進行バーの動きもこの長さで次の刻みへつなぐ
+    private static let clockStep: TimeInterval = 0.05
+
     private func runClock(for story: Story) async {
         guard !story.isVideo else { return }
         let duration = StoryPlayback.duration(seconds: story.durationSec)
         while !Task.isCancelled {
             let before = Date()
-            try? await Task.sleep(for: .milliseconds(50))
+            try? await Task.sleep(for: .milliseconds(Int(Self.clockStep * 1000)))
             if Task.isCancelled { return }
             let dt = Date().timeIntervalSince(before)
             var progress = StoryPlayback.Progress(elapsed: elapsed, duration: duration)
