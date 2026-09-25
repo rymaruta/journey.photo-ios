@@ -294,7 +294,7 @@ struct MyPageView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "globe")
-                            .foregroundStyle(Color(red: 0.42, green: 0.68, blue: 1.0))
+                            .foregroundStyle(WebTheme.accent)
                         Text(L("訪れた国・地域", "Countries and regions"))
                             .font(.subheadline)
                             .foregroundStyle(WebTheme.muted2)
@@ -336,7 +336,7 @@ struct MyPageView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "globe.asia.australia")
-                        .foregroundStyle(Color(red: 0.42, green: 0.68, blue: 1.0))
+                        .foregroundStyle(WebTheme.accent)
                     Text(L("写真をつないだ距離", "Distance between photos"))
                         .font(.subheadline)
                         .foregroundStyle(WebTheme.muted2)
@@ -666,7 +666,7 @@ struct MyPageView: View {
             // **一覧の代わりではなく、一覧に添える。**
             Text(action)
                 .font(.footnote)
-                .foregroundStyle(.red)
+                .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, 16)
         }
         if let error = model.errorMessage {

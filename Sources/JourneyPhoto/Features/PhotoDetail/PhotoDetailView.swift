@@ -481,7 +481,7 @@ struct PhotoDetailView: View {
                     // 既定の字のままで 20pt ほどしか無く、指では狙いにくい
                     Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
                         .font(.title2)
-                        .foregroundStyle(model.liked ? .pink : WebTheme.muted)
+                        .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
                         .webTappable()
                 }
                 .buttonStyle(.plain)
@@ -536,7 +536,7 @@ struct PhotoDetailView: View {
                 Spacer()
             }
             if let message = model.errorMessage ?? actionError {
-                Text(message).font(.footnote).foregroundStyle(.red)
+                Text(message).font(.footnote).foregroundStyle(WebTheme.danger)
             }
         }
     }

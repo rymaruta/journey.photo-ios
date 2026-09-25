@@ -36,7 +36,10 @@ struct AppHeaderItems: ToolbarContent {
                     .overlay(alignment: .topTrailing) {
                         // 未読があることだけ伝える（数は開けば分かる）
                         if unread > 0 {
-                            Circle().fill(Color.pink).frame(width: 8, height: 8)
+                            // 真鍮＝合図。黒の縁で、どの地の上でも点が割れない
+                            Circle().fill(WebTheme.accent).frame(width: 8, height: 8)
+                                .overlay(Circle().strokeBorder(WebTheme.background, lineWidth: 2)
+                                    .padding(-2))
                                 .offset(x: -8, y: 10)
                         }
                     }

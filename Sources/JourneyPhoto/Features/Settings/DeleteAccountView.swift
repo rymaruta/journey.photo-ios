@@ -50,7 +50,7 @@ struct DeleteAccountView: View {
             .listRowBackground(Color.clear)
 
             if let errorMessage {
-                Section { Text(errorMessage).foregroundStyle(.red).font(.callout) }
+                Section { Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout) }
             }
 
             Section {

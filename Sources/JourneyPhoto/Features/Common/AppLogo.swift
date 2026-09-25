@@ -21,9 +21,9 @@ struct AppLogo: View {
         HStack(spacing: 8) {
             mark
             Text("Journey Photo")
-                .font(.system(size: 22, weight: .bold, design: .serif))
+                .font(JPFont.wordmark)
                 .tracking(-0.55)
-                .foregroundStyle(Color.white)
+                .foregroundStyle(WebTheme.foreground)
                 // 見出しの幅が足りない端末で2行に割れないように
                 .lineLimit(1)
                 .fixedSize()
@@ -41,6 +41,6 @@ struct AppLogo: View {
             .interpolation(.high)
             .scaledToFit()
             .frame(width: 28, height: 28)
-            .foregroundStyle(Color.white)
+            .foregroundStyle(WebTheme.foreground)
     }
 }

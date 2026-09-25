@@ -81,6 +81,9 @@ struct SettingsView: View {
                                              Task { await apply(on: on) }
                                          }))
                         .disabled(isApplying)
+                        // **軌道は暗い真鍮。** 既定の tint（白）だと、入れたときに白い軌道に
+                        // 白いつまみが乗り、入か切かが見えない
+                        .tint(WebTheme.accentDeep)
                     if showDeniedHint {
                         // **端末の許可は取り消せない。** 断られたあとは
                         // 設定アプリへ行ってもらうしかない——黙って
@@ -91,7 +94,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     if let message = push.errorMessage {
-                        Text(message).font(.caption).foregroundStyle(.red)
+                        Text(message).font(.caption).foregroundStyle(WebTheme.danger)
                     }
                 } header: {
                     Text(L("お知らせ", "Activity"))
@@ -141,7 +144,7 @@ struct SettingsView: View {
                     HStack {
                         Text(L("接続先", "Environment"))
                         Spacer()
-                        Text("staging").foregroundStyle(.orange)
+                        Text("staging").foregroundStyle(WebTheme.faint)
                     }
                 }
             }
@@ -161,7 +164,7 @@ struct SettingsView: View {
                 }
                 Section {
                     NavigationLink(L("アカウントの削除", "Delete account")) { DeleteAccountView() }
-                        .foregroundStyle(.red)
+                        .foregroundStyle(WebTheme.danger)
                 }
             }
         }

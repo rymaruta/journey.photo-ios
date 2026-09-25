@@ -34,7 +34,10 @@ struct CategoryField: View {
                 .font(.caption)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(chosen ? Color.accentColor.opacity(0.2) : Color(.secondarySystemBackground),
+                // **選んでいるものは白の塗りに墨の字**（白＝選択）。以前は
+                // AccentColor の 20% で、黒地の上ではほとんど見分けがつかなかった
+                .foregroundStyle(chosen ? WebTheme.accentText : WebTheme.muted)
+                .background(chosen ? WebTheme.accentBackground : WebTheme.surface,
                             in: Capsule())
         }
         .buttonStyle(.borderless)

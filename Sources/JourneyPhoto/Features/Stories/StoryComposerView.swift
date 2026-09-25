@@ -127,6 +127,9 @@ struct StoryComposerView: View {
                           systemImage: "archivebox")
                         .font(.subheadline)
                 }
+                // **軌道は暗い真鍮。** 既定の tint（白）だと、入れたときに白い軌道に
+                // 白いつまみが乗り、入か切かが見えない
+                .tint(WebTheme.accentDeep)
             } footer: {
                 Text(L("残すと、消えたあとも自分だけが見られます。ハイライトに入れられるのは残したものだけです。",
                        "Kept stories stay visible to you alone, and only kept stories can go into a highlight."))

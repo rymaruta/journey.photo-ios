@@ -60,7 +60,7 @@ struct SignInView: View {
                     .listRowBackground(Color.clear)
             }
             if let error = auth.errorMessage {
-                Section { Text(error).foregroundStyle(.red).font(.callout) }
+                Section { Text(error).foregroundStyle(WebTheme.danger).font(.callout) }
                     .listRowBackground(Color.clear)
             }
             if offerVerification && pendingUsername == nil {

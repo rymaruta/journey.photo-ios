@@ -32,7 +32,7 @@ struct SongRow: View {
             .buttonStyle(.plain)
         }
         .padding(10)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 10))
         // **画面を離れても止めない（2026-09-21 に改めた）。**
         // 以前はここで止めていたので、曲を鳴らしたまま別の画面へ行けなかった
         // ——Web は移動しても鳴り続け、下のバー（`MiniPlayer`）から止められる。

@@ -141,6 +141,9 @@ struct UploadView: View {
                     .foregroundStyle(WebTheme.faint)
             }
         }
+        // **軌道は暗い真鍮。** 既定の tint（白）だと、入れたときに白い軌道に
+        // 白いつまみが乗り、入か切かが見えない
+        .tint(WebTheme.accentDeep)
     }
 
     /// 選んだ写真の帯。
@@ -418,7 +421,7 @@ struct UploadView: View {
                 if PostLimits.shouldShowCount(text, limit: limit) {
                     Text("\(text.count)/\(limit)")
                         .font(.caption)
-                        .foregroundStyle(text.count >= limit ? .pink : WebTheme.faint)
+                        .foregroundStyle(text.count >= limit ? WebTheme.danger : WebTheme.faint)
                 }
             }
             field()
@@ -430,7 +433,7 @@ struct UploadView: View {
     private var errorSection: some View {
         if let error = model.errorMessage {
             Section {
-                Text(error).foregroundStyle(.red).font(.callout)
+                Text(error).foregroundStyle(WebTheme.danger).font(.callout)
             }
             .listRowBackground(Color.clear)
         }

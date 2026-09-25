@@ -99,7 +99,7 @@ struct StoryInsightsView: View {
     private var counts: some View {
         HStack(spacing: 10) {
             countBox(L("閲覧", "Views"), systemImage: "eye", value: viewers.count)
-            countBox(L("いいね", "Likes"), systemImage: "heart.fill", value: reactionCount, tint: .pink)
+            countBox(L("いいね", "Likes"), systemImage: "heart.fill", value: reactionCount, tint: WebTheme.foreground)
             countBox(L("返信", "Replies"), systemImage: "bubble.right", value: textReplyCount)
         }
         .padding(.horizontal, 16)
@@ -139,7 +139,7 @@ struct StoryInsightsView: View {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if let errorMessage {
-                Text(errorMessage).font(.footnote).foregroundStyle(.red)
+                Text(errorMessage).font(.footnote).foregroundStyle(WebTheme.danger)
             } else if shownViewers.isEmpty {
                 // **「まだ0人」と「読めなかった」を混ぜない**
                 Text(scope == .reactions
@@ -192,7 +192,7 @@ struct StoryInsightsView: View {
             Spacer()
             if hasReaction(from: viewer.userId) {
                 Image(systemName: "heart.fill")
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(WebTheme.foreground)
             }
         }
         .frame(minHeight: WebTheme.minTapTarget)

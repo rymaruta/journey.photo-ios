@@ -35,7 +35,7 @@ struct StoriesRow: View {
                                     .font(.title3)
                                     .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
                                     .frame(width: 64, height: 64)
-                                    .background(Color(.secondarySystemBackground), in: Circle())
+                                    .background(WebTheme.surface, in: Circle())
                                 Text(L("ストーリー", "Story"))
                                     .font(.caption)
                                     .frame(width: 68)
@@ -53,8 +53,8 @@ struct StoriesRow: View {
                                     let unseen = seen.hasUnseen(model.siblings(of: story))
                                     StoryThumb(story: story)
                                         .overlay(Circle().strokeBorder(
-                                            unseen ? AnyShapeStyle(.tint)
-                                                   : AnyShapeStyle(Color.white.opacity(0.25)),
+                                            unseen ? AnyShapeStyle(WebTheme.accent)
+                                                   : AnyShapeStyle(WebTheme.outline),
                                             lineWidth: 2))
                                     Text(story.authorName)
                                         .font(.caption)

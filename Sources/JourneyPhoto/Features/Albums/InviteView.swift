@@ -101,7 +101,7 @@ struct InviteView: View {
             }
 
             if let message {
-                Section { Text(message).font(.callout).foregroundStyle(.red) }
+                Section { Text(message).font(.callout).foregroundStyle(WebTheme.danger) }
             }
 
             Section {

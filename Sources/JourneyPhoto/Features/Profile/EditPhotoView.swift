@@ -84,6 +84,9 @@ struct EditPhotoView: View {
 
             Section {
                 Toggle(L("公開する", "Public"), isOn: $published)
+                // **軌道は暗い真鍮。** 既定の tint（白）だと、入れたときに白い軌道に
+                // 白いつまみが乗り、入か切かが見えない
+                .tint(WebTheme.accentDeep)
             } footer: {
                 Text(L("非公開にすると、サイトの一覧と個別ページから消えます（反映まで数分）。", "Making it private removes it from the site within a few minutes."))
             }
@@ -116,7 +119,7 @@ struct EditPhotoView: View {
             if let message {
                 Section {
                     Text(message).font(.callout)
-                        .foregroundStyle(messageIsError ? Color.red : Color.secondary)
+                        .foregroundStyle(messageIsError ? WebTheme.danger : WebTheme.faint)
                 }
                 .listRowBackground(Color.clear)
             }

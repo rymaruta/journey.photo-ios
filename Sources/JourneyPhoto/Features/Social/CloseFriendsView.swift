@@ -78,7 +78,7 @@ struct CloseFriendsView: View {
                     .foregroundStyle(WebTheme.foreground)
                 Spacer()
                 Image(systemName: picked ? "star.fill" : "star")
-                    .foregroundStyle(picked ? Color.yellow : WebTheme.faint)
+                    .foregroundStyle(picked ? WebTheme.accent : WebTheme.faint)
             }
             .frame(minHeight: WebTheme.minTapTarget)
             .contentShape(Rectangle())

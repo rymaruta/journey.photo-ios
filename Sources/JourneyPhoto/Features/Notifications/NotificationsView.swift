@@ -120,7 +120,7 @@ struct NotificationsView: View {
                 .listRowBackground(Color.clear)
 
             if let message = model.errorMessage {
-                Text(message).foregroundStyle(.red).font(.callout)
+                Text(message).foregroundStyle(WebTheme.danger).font(.callout)
             } else if shownRows.isEmpty && !model.isLoading {
                 emptyState
                     .listRowBackground(Color.clear)

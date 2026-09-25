@@ -135,7 +135,7 @@ struct HomeFeedCard: View {
                     } label: {
                         Text("#\(tag)")
                             .font(.subheadline)
-                            .foregroundStyle(Color(red: 0.42, green: 0.68, blue: 1.0))
+                            .foregroundStyle(WebTheme.accent)
                     }
                     .buttonStyle(.plain)
                 }
@@ -252,7 +252,7 @@ struct HomeFeedCard: View {
                 } icon: {
                     Image(systemName: liked ? "heart.fill" : "heart")
                 }
-                .foregroundStyle(liked ? .pink : WebTheme.foreground)
+                .foregroundStyle(WebTheme.foreground)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("いいね", "Like"))
