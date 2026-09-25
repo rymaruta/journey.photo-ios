@@ -188,10 +188,18 @@ struct StoryViewerView: View {
                 }
                 .navigationTitle(L("返信 \(replies.count)", "\(replies.count) replies"))
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                }
             }
         }
         .sheet(isPresented: $showInsights) {
-            NavigationStack { StoryInsightsView(story: story) }
+            NavigationStack {
+                StoryInsightsView(story: story)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                    }
+            }
         }
         .sheet(isPresented: $showViewers) {
             NavigationStack {
@@ -203,6 +211,9 @@ struct StoryViewerView: View {
                 .webScreen()
                 .navigationTitle(L("見た人 \(viewers.count)", "\(viewers.count) viewers"))
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                }
             }
         }
     }

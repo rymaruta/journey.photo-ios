@@ -115,6 +115,9 @@ struct PhotoMapView: View {
                 }
                 .navigationTitle(pin.hasPlaceName ? pin.title : L("場所の名前なし", "No place name"))
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                }
             }
         }
     }

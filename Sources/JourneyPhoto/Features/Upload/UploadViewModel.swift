@@ -230,7 +230,10 @@ final class UploadViewModel: ObservableObject {
     }
 
     func submit() async {
-        guard !items.isEmpty else { return }
+        // 🔴 **二度押しで二重に出さない**（`StoryComposerView.post` と同じ穴）。
+        // ボタンの `.disabled` は次の描画まで効かず、素早い2回押しで
+        // `submit()` が2本走る
+        guard !isWorking, !items.isEmpty else { return }
         isWorking = true
         errorMessage = nil
         cancelled = false
