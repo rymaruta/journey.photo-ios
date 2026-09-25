@@ -197,6 +197,7 @@ extension View {
     public func minimumScaleFactor(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func tracking(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func dynamicTypeSize(_ range: PartialRangeThrough<DynamicTypeSize>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func accessibilityShowsLargeContentViewer() -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func textCase(_ c: Text.Case?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func underline(_ on: Bool, color: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 

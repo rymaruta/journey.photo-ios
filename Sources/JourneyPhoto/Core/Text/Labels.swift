@@ -21,6 +21,10 @@ enum Labels {
         static var gallery: String { L("ギャラリー", "Gallery") }
         static var favorites: String { L("いいねした写真", "Liked Photos") }
         static var map: String { L("撮影地マップ", "Map") }
+        /// 下のタブの札と、その画面の見出し・戻る。**同じ語を1か所で持つ**
+        /// （札が「Search」で見出しが「Explore」のように英語で割れていた）
+        static var searchTab: String { L("探す", "Search") }
+        static var mapTab: String { L("マップ", "Map") }
         static var mypage: String { L("マイページ", "My Page") }
         static var albums: String { L("共同アルバム", "Shared Albums") }
         static var account: String { L("アカウント", "Account") }

@@ -94,7 +94,7 @@ struct RootView: View {
             NavigationStack {
                 SearchView(unread: unread, avatarURL: avatarURL, onOpenNotifications: { showNotifications = true })
             }
-            .tabItem { Label(L("探す", "Search"), systemImage: "magnifyingglass") }
+            .tabItem { Label(Labels.Navigation.searchTab, systemImage: "magnifyingglass") }
             .tag(Tab.search)
 
             // **中央は投稿。** 押すと写真／ストーリーの2択が出る。
@@ -110,7 +110,7 @@ struct RootView: View {
                              onOpenNotifications: { showNotifications = true },
                              onPost: { showPostChoice = true })
             }
-            .tabItem { Label(L("マップ", "Map"), systemImage: "map") }
+            .tabItem { Label(Labels.Navigation.mapTab, systemImage: "map") }
             .tag(Tab.map)
 
             NavigationStack {

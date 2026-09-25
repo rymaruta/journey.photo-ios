@@ -53,17 +53,25 @@ struct AppHeaderItems: ToolbarContent {
                     .font(JPFont.screenTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
+                    // 大きい文字設定では止める（バーの高さを超えて切れる）。
+                    // その先は長押しの拡大表示に回す——システムの題と同じ扱い
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .accessibilityShowsLargeContentViewer()
                     .accessibilityAddTraits(.isHeader)
             }
             // 中央は空で埋める。埋めないと `navigationTitle` の字が
             // 中央にも出て、題が2つ並ぶ
             ToolbarItem(placement: .principal) {
-                EmptyView()
+                // `EmptyView` だと「無いもの」として捨てられ、既定の題に
+                // 戻ることがある。**中身のある透明な部品**で埋める
+                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
             }
         case .none:
             // 置かない。空で埋めないと `navigationTitle` の字が中央に出る
             ToolbarItem(placement: .principal) {
-                EmptyView()
+                // `EmptyView` だと「無いもの」として捨てられ、既定の題に
+                // 戻ることがある。**中身のある透明な部品**で埋める
+                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
             }
         }
         ToolbarItem(placement: .topBarTrailing) {

@@ -50,7 +50,7 @@ struct GalleryView: View {
         // 別のサイトに見えていた
         .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
-        // 見出しはどの画面でも同じ（`AppHeaderItems`）。
+        // 見出しの右（通知・自分のアイコン）はどの画面も同じ、左は画面ごと（`AppHeaderItems`）。
         // **地図のアイコンは外した**——下の札に「マップ」があり、
         // 同じ場所への入口が2つあった
         .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }

@@ -3,7 +3,7 @@ import SwiftUI
 /// 探す。写真（題・撮影地・タグ）と人の両方を1画面で。
 struct SearchView: View {
 
-    /// 見出しはどの画面でも同じ（`AppHeaderItems`）。未読の数と、
+    /// 見出しの右（通知・自分のアイコン）はどの画面も同じ、左は画面ごと（`AppHeaderItems`）。未読の数と、
     /// お知らせを開く口は `RootView` が持っている
     var unread: Int = 0
     var avatarURL: URL?
@@ -45,9 +45,9 @@ struct SearchView: View {
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         }
-        .navigationTitle(L("探す", "Explore"))  // 次の画面の「戻る」と読み上げに使う。見た目は AppHeaderItems
+        .navigationTitle(Labels.Navigation.searchTab)  // 次の画面の「戻る」と読み上げに使う。見た目は AppHeaderItems
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(leading: .title(L("探す", "Explore")), unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(leading: .title(Labels.Navigation.searchTab), unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
         .task { await model.loadPhotos(environment: environment) }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
