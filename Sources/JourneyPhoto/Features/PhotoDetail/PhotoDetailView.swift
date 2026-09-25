@@ -809,7 +809,7 @@ private struct ExifRow: View {
                 } label: {
                     HStack {
                         Text(L("撮影情報", "Shot with"))
-                            .font(.title3.weight(.bold))
+                            .font(JPFont.rowTitle)
                             .foregroundStyle(WebTheme.foreground)
                         Spacer()
                         Image(systemName: "camera")
@@ -842,6 +842,11 @@ private struct ExifRow: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
+                    // **大きい文字の設定で「1/4000s」が切れないように上限を置く。**
+                    // 3列で1列 約89pt。等幅 24pt の .title は AX2 で 43pt まで伸び、
+                    // 縮小の下限 0.6 をかけても 93pt で「1/40…」と切れる（レビューの見積もり）。
+                    // xxxLarge（.title = 34pt）なら 7字 × 0.6em × 34 × 0.6 ≈ 86pt で収まる
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 }
 
                 if expanded, !primary.isEmpty, !secondary.isEmpty {

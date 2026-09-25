@@ -325,3 +325,9 @@ public struct Namespace {
     public init() {}
     public var wrappedValue: ID { ID() }
 }
+
+/// 文字サイズの段（本物と同じ並び）。上限を置く `dynamicTypeSize(...)` で使う
+public enum DynamicTypeSize: Comparable {
+    case xSmall, small, medium, large, xLarge, xxLarge, xxxLarge
+    case accessibility1, accessibility2, accessibility3, accessibility4, accessibility5
+}
