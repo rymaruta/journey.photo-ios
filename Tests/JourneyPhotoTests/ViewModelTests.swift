@@ -171,6 +171,24 @@ final class ViewModelTests: XCTestCase {
                        "断られたのにサーバーの一覧へ揃えていない")
     }
 
+    /// **人が替わったら前の人の写真を手放す。** 残すと、次の人の読み込みが
+    /// 落ちたとき前の人の写真（非公開を含む）が保存の引き当て先に残る
+    func testForgetPhotosDropsThePreviousUsersPhotos() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"a","pinnedPhotoIds":["p1"]}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg","published":false}]"#)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "前提: 前の人の写真を読めていない")
+
+        model.forgetPhotos()
+
+        XCTAssertTrue(model.photos.isEmpty, "前の人の写真が残っている")
+        XCTAssertTrue(model.pinnedIds.isEmpty, "前の人の留めた写真が残っている")
+    }
+
     #if DEBUG
     /// 🔴 **鍵を持たずに入っている回、マイページが丸ごと「ログインが必要です」
     /// になっていた。**

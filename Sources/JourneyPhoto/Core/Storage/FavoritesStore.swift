@@ -17,6 +17,15 @@ final class FavoritesStore: ObservableObject {
 
     @Published private(set) var ids: Set<String> = []
 
+    /// **この起動中に、この端末で外した** ID（人が替わると捨てる）。
+    ///
+    /// 「いいねした写真」の画面はサーバーの一覧と控えの和を出すが、サーバーの
+    /// 一覧の読み取りは強い整合でなく（`userList.ts` の `readUserRows`）、
+    /// 外した直後に開くと**外したいいねが古い一覧で戻ってくる**。その画面は
+    /// ここに載っているものを引く（`listedIds(server:)`）。控えそのものは
+    /// 書き換えない——書き換えるのは起動時の `syncLikes` だけ
+    private(set) var removedHere: Set<String> = []
+
     private let defaults: UserDefaults
     private var userId: String?
 
@@ -36,6 +45,19 @@ final class FavoritesStore: ObservableObject {
     func use(userId: String?) {
         self.userId = userId
         ids = Set(defaults.stringArray(forKey: key(for: userId)) ?? [])
+        removedHere = []
+    }
+
+    /// 「いいねした写真」に並べる ID。**サーバーの一覧 ∪ 端末の控え − この起動中に
+    /// この端末で外したもの**。
+    ///
+    /// - サーバーの一覧は**別の端末で押したぶん**を足す
+    /// - 控えは、サーバーの一覧の書き込みが落ちた回（`likes.ts` の `noteLiked` は
+    ///   失敗しても成功を返す）の救済。**ここで入れ替えない**——入れ替えると
+    ///   その救済を画面を開くたびに消し、古い一覧で外したいいねを控えに戻す
+    /// - Parameter server: 取れなければ nil（控えだけ）
+    func listedIds(server: [String]?) -> Set<String> {
+        ids.union(server ?? []).subtracting(removedHere)
     }
 
     func contains(_ id: String) -> Bool { ids.contains(id) }
@@ -57,8 +79,10 @@ final class FavoritesStore: ObservableObject {
     func set(_ id: String, favorite: Bool) {
         if favorite {
             ids.insert(id)
+            removedHere.remove(id)
         } else {
             ids.remove(id)
+            removedHere.insert(id)
         }
         defaults.set(Array(ids), forKey: key(for: userId))
     }

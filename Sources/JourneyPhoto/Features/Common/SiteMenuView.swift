@@ -7,13 +7,15 @@ import SwiftUI
 /// もう1つ積むと、戻る先が2通りになる。札に無い場所（いいねした写真・
 /// 共同アルバム・設定）はこの中で開く。
 ///
-/// 板にある「保存した写真」と「管理（管理者のときだけ）」は**まだ置かない**。
-/// どちらもアプリに行き先の画面が無く、押しても何も出ない行になる。
+/// 「保存した写真」は板 35 の一覧（`SavedPhotosView`）。「管理」は**管理者のときだけ**
+/// （ID トークンの群・Web と同じ判定）で、アプリに管理の画面は作らず**サイトの
+/// /admin をブラウザで開く**（管理の口は Web にしか無い）。
 struct SiteMenuView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         ScrollView {
@@ -36,6 +38,12 @@ struct SiteMenuView: View {
                             JPRowLabel(title: Labels.Navigation.favorites, systemImage: "heart")
                         }
                         .buttonStyle(JPRowButtonStyle())
+                        JPCardDivider()
+                        NavigationLink { SavedPhotosView() } label: {
+                            JPRowLabel(title: L("保存した写真", "Saved photos"), systemImage: "bookmark")
+                        }
+                        .buttonStyle(JPRowButtonStyle())
+                        .accessibilityIdentifier("menu.saved")
                     }
                 }
                 section(L("アカウント", "Account")) {
@@ -56,6 +64,15 @@ struct SiteMenuView: View {
                         JPRowLabel(title: L("設定", "Settings"), systemImage: "gearshape")
                     }
                     .buttonStyle(JPRowButtonStyle())
+                    if auth.isAdmin {
+                        JPCardDivider()
+                        Button {
+                            openURL(AppConfig.siteBaseURL.appendingPathComponent("admin"))
+                        } label: {
+                            JPRowLabel(title: L("管理", "Admin"), systemImage: "wrench.and.screwdriver")
+                        }
+                        .buttonStyle(JPRowButtonStyle())
+                    }
                 }
                 // **ログアウトはログイン中だけ。** 設定の最下部と同じ手順
                 // （通知の宛先を外してから抜ける・`SettingsView.logoutSection`）

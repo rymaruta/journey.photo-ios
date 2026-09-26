@@ -4,24 +4,39 @@ import SwiftUI
 struct MyPageView: View {
 
     @EnvironmentObject private var auth: AuthStore
-    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
     /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
     @State private var officialSpots: [OfficialSpot] = []
-    /// いいねした写真を引き当てる先。**公開一覧**——自分の写真だけを
-    /// 探していたので、**他人の写真へのいいねが一度も出なかった**
+    /// 保存した写真を引き当てる先のうち**公開一覧**。もう一方の自分の写真は
+    /// `model.photos`（`myPhotos()`・`PhotoPools` と同じ口）。公開一覧が無いと
+    /// **他人の写真の保存が一度も出ない**
     @State private var feed: [Photo] = []
-    /// サーバーが返したいいねの ID。取れなければ nil（端末の控えだけ出す）
-    @State private var serverLikeIds: [String]?
-    @State private var likesStatus: LikedPhotos.Status = .loading
+    /// 公開一覧を読み終えたか（「まだ」と「0件」を混ぜない）
+    @State private var feedLoaded = false
+    /// 最後の公開一覧の読み込みが失敗したか（「読み込めませんでした」はこの回だけ）
+    @State private var feedFailed = false
+    /// 「お気に入り」タブに出す保存の ID。**描画のたびに `savedPhotos.ids` を
+    /// 読まない**——詳細でしおりを外した瞬間に `ForEach` から元の
+    /// `NavigationLink` が消え、**見ている詳細が閉じる**（`SavedPhotosView`・
+    /// `FavoritesView` と同じ理由）。取り直すのは戻ってきたとき・タブを開いたとき・
+    /// 引き当て先を読み終えたとき（`refreshSavedIds`）。
+    /// 写真の束ではなく ID を控えるのは、投稿を閉じた合図などで `model.photos`
+    /// が読み直されても、控えた ID のぶんは引き当て直せるように
+    @State private var savedIds: Set<String> = []
     @State private var tab: ProfileTab = .posts
     @State private var showDistanceNote = false
     @State private var showCountriesNote = false
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
+    /// いまこの画面が出ているか（`onAppear`〜`onDisappear`）。詳細を上に
+    /// 積んでいる間もこの画面は `savedPhotos.ids` を購読し続けるので、
+    /// **出ていない間は保存の ID を取り込まない**——取り込むと格子の段の ID
+    /// （`EditorialLayout.Row.id` は隣の写真まで含む）が変わり、開いている詳細が閉じる
+    @State private var isOnScreen = false
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
@@ -67,8 +82,8 @@ struct MyPageView: View {
             guard auth.userId != nil else { return }
             await model.load()
         }
-        // いいねした写真。**ログイン状態が決まってから**聞く
-        .task(id: auth.userId) { await loadLikes() }
+        // 保存した写真の引き当て先（公開一覧）
+        .task(id: auth.userId) { await loadFeed() }
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
@@ -86,10 +101,41 @@ struct MyPageView: View {
             Task { await model.load() }
         }
         .onAppear {
+            isOnScreen = true
+            // 詳細でしおりを外したぶんは、戻ってきたこの時点で落とす
+            refreshSavedIds()
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
             Task { await model.load() }
         }
+        .onChange(of: tab) { _, next in
+            if next == .favorites { refreshSavedIds() }
+        }
+        .onDisappear { isOnScreen = false }
+        // 起動時の同期（`syncSaves`）が後から届いたぶんは拾う。**増えたときだけ**
+        // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる。
+        // **画面に出ている間だけ**（`isOnScreen`）。詳細の上で保存しても
+        // 増えるので、そこで取り込むと詳細が閉じる。戻れば `onAppear` が拾う
+        .onChange(of: savedPhotos.ids) { _, next in
+            guard isOnScreen else { return }
+            if next.isSuperset(of: savedIds) { savedIds = next }
+        }
+        // **人が替わったら前の人のぶんを持ち越さない。** 控えた保存の ID が
+        // 前の人のままだと、次の人の ID は上位集合にならず取り込まれない
+        // （公開一覧を読み終えるまで前の人の保存が見える）。空にしておけば
+        // 次は必ず取り込まれる。自分の写真・公開一覧（フォロワー限定を含む）も
+        // 前の人のもので、次の人の読み込みが落ちると引き当て先に残る
+        .onChange(of: auth.userId) { _, _ in
+            savedIds = []
+            feed = []
+            feedLoaded = false
+            feedFailed = false
+            model.forgetPhotos()
+        }
+    }
+
+    private func refreshSavedIds() {
+        savedIds = savedPhotos.ids
     }
 
     /// **段ごとに割ってある**（`UploadView` と同じ理由——長い ViewBuilder は
@@ -195,7 +241,16 @@ struct MyPageView: View {
                 .simultaneousGesture(tabSwipe)
             }
         }
-        .refreshable { await model.load() }
+        .refreshable {
+            await model.load()
+            // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
+            // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
+            // 読み取りも強い整合でなく（`userList.ts` の `readUserRows`）、外した
+            // 直後に入れ替えると外した保存が控えに戻る（いいねで踏んだのと同じ形）。
+            // サーバーに合わせるのは起動時・ログイン時の `syncSaves` だけ
+            await loadFeed(force: true)
+            refreshSavedIds()
+        }
     }
 
     /// 右上の設定（板: 44pt のガラスの丸）。**上のバーを出さないので、ここが入口**
@@ -425,36 +480,34 @@ struct MyPageView: View {
         }
     }
 
-    /// いいねした写真。**サーバーの一覧と、この端末の控えの和**。
+    /// お気に入り＝**保存した写真**（板 05c のタブ「お気に入り」・しおりの印・板 35）。
     ///
-    /// 以前は**自分の写真の中から**端末の控えに一致するものを探していたので、
-    /// **他人の写真へのいいねが一度も出なかった**（自分の写真を自分で
-    /// いいねしたときだけ出る状態）。さらに別の端末で押したぶんも
-    /// 出なかった——同じ写真の詳細は「いいね済み」と出るのに。
+    /// 以前の中身はいいねした写真で、見出し（英語は "Saved"）と食い違い、
+    /// 保存した写真を見返す場所がどこにも無かった（2026-09-26 のキャンバスとの
+    /// 突き合わせ 6・8）。いいねした写真はメニューと設定から開く（`FavoritesView`）
     @ViewBuilder
     private var favoritesArea: some View {
-        let ids = LikedPhotos.ids(serverIds: serverLikeIds, deviceIds: favorites.ids)
-        let liked = LikedPhotos.resolve(ids, in: [feed, model.photos])
-        VStack(alignment: .leading, spacing: 10) {
-            if likesStatus == .partial {
-                // **端末のぶんは消さない。** 足りていないことだけ伝える
-                ErrorBanner(message: L("サーバーのいいねを取れませんでした。この端末に覚えているぶんだけ出しています",
-                                       "Couldn't reach the server — showing what's on this device")) {
-                    Task { await loadLikes() }
+        let saved = LikedPhotos.resolve(savedIds, in: [feed, model.photos])
+        if saved.isEmpty {
+            switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
+                                          failed: feedFailed) {
+            case .loading:
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+            case .none:
+                ErrorBanner(message: SavedPhotosView.emptyMessage)
+            case .nothingShown:
+                ErrorBanner(message: LikedPhotos.nothingShownMessage)
+            case .unresolved:
+                ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
+                    Task {
+                        await loadFeed()
+                        await model.load()
+                    }
                 }
             }
-            if liked.isEmpty {
-                // **「まだ」と「0件」を混ぜない。** 取得中に「ありません」と
-                // 言い切ると、別の端末で押したぶんが届く前に「無い」と読まれる
-                if likesStatus == .loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
-                } else {
-                    ErrorBanner(message: L("いいねした写真はまだありません", "No liked photos yet"))
-                }
-            } else {
-                PhotoGrid(photos: liked) { photo in
-                    PhotoDetailView(photo: photo, context: liked)
-                }
+        } else {
+            PhotoGrid(photos: saved) { photo in
+                PhotoDetailView(photo: photo, context: saved)
             }
         }
     }
@@ -641,27 +694,15 @@ struct MyPageView: View {
         }
     }
 
-    /// いいねした写真を読む。**未ログインなら聞きに行かない**
-    /// （端末の控えが答え）。
-    private func loadLikes() async {
-        guard auth.userId != nil else {
-            serverLikeIds = nil
-            likesStatus = .deviceOnly
-            return
-        }
-        likesStatus = .loading
-        // 引き当て先。公開一覧が取れなくても、自分の写真の分は出せる
-        async let feedTask = environment.gallery.fetchPhotos()
-        async let idsTask = environment.social.myLikedPhotoIds()
-        feed = (try? await feedTask) ?? feed
-        let ids = try? await idsTask
-        if let ids {
-            serverLikeIds = ids
-            likesStatus = .ready
-        } else {
-            serverLikeIds = nil
-            likesStatus = .partial
-        }
+    /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。
+    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` がタブごと知らせる
+    private func loadFeed(force: Bool = false) async {
+        let fetched = try? await environment.gallery.fetchPhotos(force: force)
+        guard !Task.isCancelled else { return }
+        feedFailed = fetched == nil
+        feed = fetched ?? feed
+        feedLoaded = true
+        refreshSavedIds()
     }
 
     @ViewBuilder
@@ -682,13 +723,14 @@ struct MyPageView: View {
             // **写真の有無とは無関係。** 行きたい場所は台帳の話で、
             // 1枚も撮っていない人にも中身がある
             wishlistArea
+        } else if tab == .favorites {
+            // **写真の有無とは無関係。** 保存は他人の写真にもする
+            favoritesArea
         } else if model.photos.isEmpty && !model.isLoading {
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
             ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
-        } else if tab == .favorites {
-            favoritesArea
         } else {
             let multiple = PhotoGroups.multiPhotoIds(model.photos)
             LazyVGrid(columns: columns, spacing: 4) {
@@ -878,6 +920,13 @@ final class MyPageViewModel: ObservableObject {
             self.followers = stats.followers
             self.following = stats.following
         }
+    }
+
+    /// 人が替わったとき、前の人の写真を手放す。次の人の読み込みが落ちても、
+    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように
+    func forgetPhotos() {
+        photos = []
+        pinnedIds = []
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }
