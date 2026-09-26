@@ -6,7 +6,6 @@ struct SearchView: View {
     /// 見出しはどの画面でも同じ（`AppHeaderItems`）。未読の数と、
     /// お知らせを開く口は `RootView` が持っている
     var unread: Int = 0
-    var avatarURL: URL?
     var onOpenNotifications: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -47,7 +46,7 @@ struct SearchView: View {
         }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
         .task { await model.loadPhotos(environment: environment) }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }

@@ -15,7 +15,6 @@ struct PhotoMapView: View {
 
     /// 見出しはどの画面でも同じ（`AppHeaderItems`）
     var unread: Int = 0
-    var avatarURL: URL?
     var onOpenNotifications: () -> Void = {}
     /// 投稿の入口（`RootView` の2択）。地点に写真が無いときの「写真を投稿する」から開く
     var onPost: () -> Void = {}
@@ -73,7 +72,7 @@ struct PhotoMapView: View {
         .webScreen()
         .navigationTitle(Labels.Navigation.mapTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
         .task {
             if !autoLocateStarted {
                 autoLocateStarted = true

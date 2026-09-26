@@ -51,6 +51,9 @@ public struct ToolbarContentBuilder {
     public static func buildBlock<C: ToolbarContent>(_ c: C) -> C { c }
     public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent>(_ c1: C1, _ c2: C2) -> EmptyToolbarContent { EmptyToolbarContent() }
     public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3) -> EmptyToolbarContent { EmptyToolbarContent() }
+    // 本物は10個まで受ける。見出し（ロゴ・探す・お知らせ・メニュー）で4つ要る
+    public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent, C4: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3, _ c4: C4) -> EmptyToolbarContent { EmptyToolbarContent() }
+    public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent, C4: ToolbarContent, C5: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3, _ c4: C4, _ c5: C5) -> EmptyToolbarContent { EmptyToolbarContent() }
     public static func buildIf<C: ToolbarContent>(_ c: C?) -> C? { c }
     public static func buildOptional<C: ToolbarContent>(_ c: C?) -> C? { c }
     public static func buildEither<T: ToolbarContent>(first: T) -> EmptyToolbarContent { EmptyToolbarContent() }
