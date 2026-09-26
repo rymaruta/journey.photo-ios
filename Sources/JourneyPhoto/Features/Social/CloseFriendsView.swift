@@ -28,8 +28,8 @@ struct CloseFriendsView: View {
         List {
             Section {
                 // **効くのは写真だけ。** ストーリーは常にフォロワーだけに出る
-                // （`api-user/src/storyVisibility.ts`・2026-09-22）。この画面の
-                // 入口も写真の公開範囲（投稿・編集）だけ
+                // （`api-user/src/storyVisibility.ts`・2026-09-22）。入口は写真の
+                // 公開範囲（投稿・編集）と設定のプライバシー（2026-09-26）
                 Text(L("公開範囲を「親しい友達」にした写真は、選んだ人だけが見られます。相手には知らせません。",
                        "Photos shared with Close friends are visible only to people you pick. They aren't told."))
                     .font(.footnote)
