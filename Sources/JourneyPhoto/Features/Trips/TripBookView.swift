@@ -41,6 +41,12 @@ struct TripBookView: View {
                 startPoint: .center, endPoint: .bottom
             )
             VStack(alignment: .leading, spacing: 6) {
+                // 眉ラベル（アーティファクトの `TRIP BOOK`）。**写真の上なので白**
+                // （真鍮は夕日の写真の上で読めなくなる・`BrandPalette` の規則）
+                Text("TRIP BOOK")
+                    .jpEyebrow()
+                    .foregroundStyle(Color.white.opacity(0.85))
+                    .accessibilityLabel(L("旅の一冊", "Trip book"))
                 Text(period)
                     .font(.caption)
                     .tracking(1.5)

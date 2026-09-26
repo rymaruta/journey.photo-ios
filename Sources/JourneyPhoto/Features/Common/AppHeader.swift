@@ -1,11 +1,19 @@
 import SwiftUI
 
-/// どの画面でも同じ見出し（モック1・3・9・10 はどれも
-/// **ロゴ ＋ 通知 ＋ 自分のアイコン**）。
+/// タブの画面の見出し。**右は どの画面も通知 ＋ 自分のアイコン**。
 ///
-/// 揃える前は、ホームだけ「Journey Photo」で、さがすは「さがす」、
-/// マップは「マップ」——**タブを移るたびに別のアプリに見えていた**
-/// （実機の絵で確認・run 37）。
+/// 左（中央）は画面ごと（アーティファクト「journey.photo iOS」＝ iOS の正・2026-09-25）:
+///
+/// | 画面 | 見出し |
+/// |---|---|
+/// | ホーム | ロゴ（`.logo`） |
+/// | 探す | 置かない（`.none`）。明朝の題「探す」は画面の中身の頭に置く |
+/// | マップ | 何も置かない（`.none`）——検索窓が画面の頭になる |
+///
+/// 以前は、モック1・3・9・10（サイトの一次資料）に合わせて**全部ロゴ**に
+/// 揃えていた（揃える前は字だけの題がばらばらで、タブを移るたびに別の
+/// アプリに見えていた・run 37）。いまの題は**明朝で書体を揃える**ので、
+/// その問題は書体の統一で受ける。
 ///
 /// **ホームにあった地図のアイコンは外した。** 下のタブに「マップ」が
 /// あるので、同じ場所への入口が2つあった（モックにも無い）。
@@ -14,6 +22,15 @@ import SwiftUI
 @MainActor
 struct AppHeaderItems: ToolbarContent {
 
+    /// 見出しの左（中央）に何を置くか
+    enum Leading: Equatable {
+        case logo
+        /// 置かない。題が要る画面は**画面の中身の頭**に明朝で置く
+        /// （バーの項目にすると iOS 26 が「…」にたたむ・run 95）
+        case none
+    }
+
+    var leading: Leading = .logo
     let unread: Int
     /// 自分のアイコン。**値で受け取る**——`ToolbarContent` は `View` では
     /// ないので、`@EnvironmentObject` が注ぎ込まれる保証が無い
@@ -24,10 +41,19 @@ struct AppHeaderItems: ToolbarContent {
 
     @ToolbarContentBuilder
     var body: some ToolbarContent {
-        // ロゴ。**`navigationTitle` の文字の代わりに置く**——モックは
-        // どの画面も記号＋ワードマークで、字だけだと別のアプリに見える
-        ToolbarItem(placement: .principal) {
-            AppLogo()
+        switch leading {
+        case .logo:
+            // ロゴ。**`navigationTitle` の文字の代わりに置く**
+            ToolbarItem(placement: .principal) {
+                AppLogo()
+            }
+        case .none:
+            // 置かない。空で埋めないと `navigationTitle` の字が中央に出る
+            ToolbarItem(placement: .principal) {
+                // `EmptyView` だと「無いもの」として捨てられ、既定の題に
+                // 戻ることがある。**中身のある透明な部品**で埋める
+                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+            }
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button(action: onOpenNotifications) {

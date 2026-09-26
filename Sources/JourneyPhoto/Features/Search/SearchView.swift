@@ -3,7 +3,7 @@ import SwiftUI
 /// 探す。写真（題・撮影地・タグ）と人の両方を1画面で。
 struct SearchView: View {
 
-    /// 見出しはどの画面でも同じ（`AppHeaderItems`）。未読の数と、
+    /// 見出しの右（通知・自分のアイコン）はどの画面も同じ、左は画面ごと（`AppHeaderItems`）。未読の数と、
     /// お知らせを開く口は `RootView` が持っている
     var unread: Int = 0
     var avatarURL: URL?
@@ -19,6 +19,16 @@ struct SearchView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                // 画面の題（明朝）。**バーの項目にはしない**——iOS 26 は
+                // 収まらない項目を「…」にたたむので、26pt の題が消えて
+                // 「…」のボタンになった（run 95 の絵）。アーティファクトも
+                // 題は画面の頭に置いている
+                Text(Labels.Navigation.searchTab)
+                    .font(JPFont.screenTitle)
+                    .foregroundStyle(WebTheme.foreground)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, 16)
                 searchField
                 categoryChips
                 tagChips
@@ -45,9 +55,9 @@ struct SearchView: View {
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         }
-        .navigationTitle("Journey Photo")
+        .navigationTitle(Labels.Navigation.searchTab)  // 次の画面の「戻る」と読み上げに使う。見た目は AppHeaderItems
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(leading: .none, unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
         .task { await model.loadPhotos(environment: environment) }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }

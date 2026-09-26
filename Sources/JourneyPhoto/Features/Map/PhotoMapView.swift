@@ -13,7 +13,7 @@ import MapKit
 /// 出す数は全部 `shown` から数えたもの。
 struct PhotoMapView: View {
 
-    /// 見出しはどの画面でも同じ（`AppHeaderItems`）
+    /// 見出しの右（通知・自分のアイコン）はどの画面も同じ、左は画面ごと（`AppHeaderItems`）
     var unread: Int = 0
     var avatarURL: URL?
     var onOpenNotifications: () -> Void = {}
@@ -59,9 +59,9 @@ struct PhotoMapView: View {
             }
         }
         .webScreen()
-        .navigationTitle("Journey Photo")
+        .navigationTitle(Labels.Navigation.mapTab)  // 次の画面の「戻る」と読み上げに使う。見た目は AppHeaderItems
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(leading: .none, unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
         .task {
             await model.load(environment: environment)
             frame(model.frame)
