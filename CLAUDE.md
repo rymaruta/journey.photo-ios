@@ -26,5 +26,11 @@
 
 `bash Tools/verify.sh`（構文・参照・Web 版との突き合わせ・設定）。この環境では
 本物の Xcode でのコンパイルはできない——最初の確認は TestFlight のワークフローの
-テスト段になる。`check-config.py` の APNs の NG 2件は隣の photo-gallery 側の設定との
-突き合わせで、前から出ている。
+テスト段になる。
+
+**NG は0件が正しい。** Web 版との突き合わせは隣の `../photo-gallery` の作業ツリーを
+読むので、**そこが古い枝のままだと、サーバーに在る口を「無い」と言う**
+（2026-09-26: `/user/devices` と APNs の計4件を「前から出ている」と扱い、
+バグ探しで「サーバーに無い」と誤報した。本番には 9/25 から出ている）。
+流す前に `git -C ../photo-gallery checkout origin/develop` でそろえるか、
+`PHOTO_GALLERY=<最新の photo-gallery>` を渡す。
