@@ -121,8 +121,11 @@ struct PhotoDetailView: View {
             model.setSignedIn(auth.userId != nil)
             await model.load()
         }
-        .task(id: shown.location) { await loadSpotLead() }
-        .task(id: shown.id) { await loadNearby() }
+        // **ブロック・通報で絞り直す**（`hidden.revision`）。この画面で
+        // その場でブロック／通報しても、近くの写真とスポットの行き先が
+        // 古い一覧のまま残っていた
+        .task(id: "\(shown.location ?? "")#\(hidden.revision)") { await loadSpotLead() }
+        .task(id: "\(shown.id)#\(hidden.revision)") { await loadNearby() }
         .task(id: ownerId) {
             await model.loadOwner(ownerId, profiles: environment.profiles)
             // **フォローしているかは、その人を見に行かずに知りたい。**
@@ -846,23 +849,33 @@ struct PhotoDetailView: View {
     /// `Photo.spotId` だけで、本番の公開写真はまだ1枚も持っていない
     /// （持つ写真が出てきたら `OfficialSpotView` への行を足す）。
     private func loadSpotLead() async {
-        spotLead = nil
+        // 途中で消さずに、答えが出てから入れ替える（絞り直しで行がちらつかない）
         let label = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
-        guard !label.isEmpty else { return }
-        let photos = try? await environment.gallery.fetchPhotos()
-        guard let photos else { return }
+        guard !label.isEmpty,
+              let fetched = try? await environment.gallery.fetchPhotos() else {
+            spotLead = nil
+            return
+        }
+        // 見せない写真を落としてから数える（`ModerationStore.visible`）。
+        // `blockAndHide` は一覧の側（`setHidden`）より先に `revision` を
+        // 進めるので、一覧から取った直後でもここで落とす
+        let photos = hidden.visible(fetched)
         // **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
         // この写真の個別ページと中身が同じになる
-        guard let place = DerivedSpot.openable(label, in: photos) else { return }
-        spotLead = SpotLead(spot: place, photos: photos)
+        spotLead = DerivedSpot.openable(label, in: photos).map { SpotLead(spot: $0, photos: photos) }
     }
 
-    /// 近くの写真を、読み込み済みの公開写真から拾う（通信は一覧の控えだけ）
+    /// 近くの写真を、読み込み済みの公開写真から拾う（通信は一覧の控えだけ）。
+    ///
+    /// 見せない写真（ブロック・通報）は落とす。上の束（`heroGroup`）と同じ
+    /// 並び（`siblings`）を渡し、**上に出ている写真だけ**を除く
     private func loadNearby() async {
-        nearby = []
-        guard shown.coords != nil else { return }
-        guard let photos = try? await environment.gallery.fetchPhotos() else { return }
-        nearby = NearbyPhotos.around(shown, in: photos)
+        guard shown.coords != nil,
+              let fetched = try? await environment.gallery.fetchPhotos() else {
+            nearby = []
+            return
+        }
+        nearby = NearbyPhotos.around(shown, in: hidden.visible(fetched), context: siblings)
     }
 
     private func block(_ userId: String) async {

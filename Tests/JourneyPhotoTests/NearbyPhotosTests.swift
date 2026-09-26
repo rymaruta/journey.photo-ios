@@ -60,11 +60,13 @@ final class NearbyPhotosTests: XCTestCase {
 /// 写真の詳細の「この近くで撮られた写真」（板 02）
 final class NearbyAroundPhotoTests: XCTestCase {
 
-    private func photo(_ id: String, lat: Double?, lng: Double?, group: String? = nil) throws -> Photo {
+    private func photo(_ id: String, lat: Double?, lng: Double?, group: String? = nil,
+                       owner: String? = nil) throws -> Photo {
         let c = (lat != nil && lng != nil) ? ",\"coords\":{\"lat\":\(lat!),\"lng\":\(lng!)}" : ""
         let g = group.map { ",\"groupId\":\"\($0)\"" } ?? ""
+        let o = owner.map { ",\"userId\":\"\($0)\"" } ?? ""
         return try JSONDecoder.api.decode(Photo.self, from: Data(
-            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(c)\(g)}".utf8))
+            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(c)\(g)\(o)}".utf8))
     }
 
     /// 近い順・自分は入らない・遠いものは落ちる
@@ -84,11 +86,38 @@ final class NearbyAroundPhotoTests: XCTestCase {
     }
 
     /// 同じ投稿の束は上で送れるので、ここに二度並べない
+    /// （上の束＝開いた一覧の中の兄弟）
     func testSameGroupIsLeftOut() throws {
+        let me = try photo("me", lat: 35.68, lng: 139.77, group: "g1", owner: "u1")
+        let sibling = try photo("sib", lat: 35.68, lng: 139.77, group: "g1", owner: "u1")
+        let other = try photo("other", lat: 35.68, lng: 139.77, group: "g2", owner: "u1")
+        XCTAssertEqual(NearbyPhotos.around(me, in: [sibling, other], context: [me, sibling]).map(\.id),
+                       ["other"])
+    }
+
+    /// 🔴 **上に出ていない兄弟は落とさない。** 上の束は開いた一覧の中だけ
+    /// なので、全公開写真から兄弟を落とすと**どこにも出ない**写真ができる
+    /// （以前の実装。一覧にこの1枚しか居なかった回）
+    func testSiblingNotShownAboveStaysNearby() throws {
+        let me = try photo("me", lat: 35.68, lng: 139.77, group: "g1", owner: "u1")
+        let sibling = try photo("sib", lat: 35.68, lng: 139.77, group: "g1", owner: "u1")
+        XCTAssertEqual(NearbyPhotos.around(me, in: [me, sibling], context: [me]).map(\.id), ["sib"])
+    }
+
+    /// 🔴 **持ち主の違う写真は、同じ `groupId` でも束ではない**
+    /// （`PhotoGroups.groupKey`）。文字だけで比べると巻き添えで消える
+    func testSameGroupIdOfAnotherOwnerIsKept() throws {
+        let me = try photo("me", lat: 35.68, lng: 139.77, group: "g1", owner: "u1")
+        let stranger = try photo("theirs", lat: 35.68, lng: 139.77, group: "g1", owner: "u2")
+        XCTAssertEqual(NearbyPhotos.around(me, in: [stranger], context: [me, stranger]).map(\.id),
+                       ["theirs"])
+    }
+
+    /// 持ち主の無い写真は束にしない（`groupKey` と同じ）。同じ `groupId` でも残す
+    func testGroupIdWithoutOwnerIsNotAGroup() throws {
         let me = try photo("me", lat: 35.68, lng: 139.77, group: "g1")
-        let sibling = try photo("sib", lat: 35.68, lng: 139.77, group: "g1")
-        let other = try photo("other", lat: 35.68, lng: 139.77, group: "g2")
-        XCTAssertEqual(NearbyPhotos.around(me, in: [sibling, other]).map(\.id), ["other"])
+        let other = try photo("other", lat: 35.68, lng: 139.77, group: "g1")
+        XCTAssertEqual(NearbyPhotos.around(me, in: [other], context: [me, other]).map(\.id), ["other"])
     }
 
     /// 同じ写真が2回来ても1回だけ・上限で切る
