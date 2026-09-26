@@ -4,8 +4,8 @@ import SwiftUI
 ///
 /// **並びはアーティファクト 34 の「フォロー一覧」**（2026-09-26）:
 /// 題はその人の名前、下に「フォロワー N ／ フォロー中 N」の切り替え、
-/// 行はアイコン・名前・フォローの札。板の @username は、この一覧の応答が
-/// 持たないので出さない。
+/// 行はアイコン・名前と @ユーザー名・フォローの札。@ユーザー名は一覧の応答が
+/// 各行に持つ（2026-09-26 から）。無い人・退会した人は名前だけ（`PersonNameLines`）。
 ///
 /// **呼び出し方は変えていない**（`userId` と最初に開く `kind`）。
 /// マイページと人のプロフィールの2か所から開く。
@@ -147,8 +147,7 @@ struct FollowListView: View {
                 .frame(width: 44, height: 44)
                 .background(WebTheme.surface)
                 .clipShape(Circle())
-            Text(user.displayName)
-                .font(.subheadline.weight(.semibold))
+            PersonNameLines(user: user)
             Spacer(minLength: 0)
         }
     }
