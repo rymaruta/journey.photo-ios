@@ -240,6 +240,16 @@ public struct RoundedRectangle: View, Shape {
     public var body: Never { fatalError("模型") }
 }
 public protocol Shape {}
+extension Shape {
+    /// 縁を引く（本物は `some View` を返す）
+    public func stroke<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Rectangle { Rectangle() }
+}
+/// 角ごとに丸みを変える四角（iOS 16+）。ストーリーの写真は下の角だけ丸める
+public struct UnevenRoundedRectangle: View, Shape {
+    public init(topLeadingRadius: Double = 0, bottomLeadingRadius: Double = 0,
+                bottomTrailingRadius: Double = 0, topTrailingRadius: Double = 0) {}
+    public var body: Never { fatalError("模型") }
+}
 
 public struct AsyncImage: View {
     public init<C: View>(url: URL?, transaction: Transaction = Transaction(),

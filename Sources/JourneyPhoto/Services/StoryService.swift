@@ -154,13 +154,49 @@ struct Story: Decodable, Identifiable, Equatable {
     /// 投稿者が選んだ表示秒数（3〜15）。**既定の5は保存されないので `nil`**。
     /// 復号していなかった頃は、投稿画面で選んだ秒数が閲覧では一度も効いていなかった
     let durationSec: Int?
+    /// 付けた曲（`stories.ts` が保存して返している）。**復号していなかったので、
+    /// 曲つきのストーリーでも閲覧画面に曲名が出なかった**
+    let song: Photo.Song?
 
     var imageURL: URL? { URL(string: src) }
+
+    /// 曲の行に出す文字（「曲名 · アーティスト」）。曲が無ければ nil
+    var songLine: String? {
+        guard let song else { return nil }
+        let title = song.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        let artist = song.artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return artist.isEmpty ? title : "\(title) · \(artist)"
+    }
     var isVideo: Bool { mediaType == "video" }
 
     var authorName: String {
         if let displayName, !displayName.isEmpty { return displayName }
         return Labels.Common.unnamedUser
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id, src, userId, displayName, caption, mediaType, location, coords
+        case createdAt, expiresAt, replyCount, durationSec, song
+    }
+
+    /// **曲だけは壊れていても捨てる。** 一覧は配列1本で復号するので、
+    /// 1本の曲の形が崩れていると**全員のストーリーが消える**。曲は飾りなので、
+    /// 読めなければ曲なしとして出す
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        src = try c.decode(String.self, forKey: .src)
+        userId = try c.decodeIfPresent(String.self, forKey: .userId)
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
+        caption = try c.decodeIfPresent(String.self, forKey: .caption)
+        mediaType = try c.decodeIfPresent(String.self, forKey: .mediaType)
+        location = try c.decodeIfPresent(String.self, forKey: .location)
+        coords = try c.decodeIfPresent(Photo.Coords.self, forKey: .coords)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        expiresAt = try c.decodeIfPresent(String.self, forKey: .expiresAt)
+        replyCount = try c.decodeIfPresent(Int.self, forKey: .replyCount)
+        durationSec = try c.decodeIfPresent(Int.self, forKey: .durationSec)
+        song = (try? c.decodeIfPresent(Photo.Song.self, forKey: .song)) ?? nil
     }
 }
 

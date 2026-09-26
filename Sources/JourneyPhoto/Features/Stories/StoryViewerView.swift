@@ -48,6 +48,8 @@ struct StoryViewerView: View {
     @State private var showMenu = false
     @State private var showReport = false
     @State private var showBlockConfirm = false
+    /// 見出しの名前を押して開く投稿者のページ
+    @State private var showAuthor = false
 
     // 返信と反応
     @State private var reply = ""
@@ -94,7 +96,8 @@ struct StoryViewerView: View {
             pressing: pressing,
             paused: paused,
             menuOpen: showMenu,
-            sheetOpen: showReplies || showInsights || showViewers || showReport || showBlockConfirm,
+            sheetOpen: showReplies || showInsights || showViewers || showReport || showBlockConfirm
+                || showAuthor,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -112,42 +115,27 @@ struct StoryViewerView: View {
         }
     }
 
+    /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る。板は 844 のうち 84）
+    private static let footerHeight: CGFloat = 60
+
+    /// **写真を画面いっぱいに敷き、全部をその上に重ねる**（ストーリーの板）。
+    ///
+    /// 以前は 進行バー → 見出し → 写真（`.fit`）→ ひとこと → 足元 と縦に積んでいて、
+    /// 写真の上下に黒い帯が出ていた。板は写真が上端まで伸び、下の角だけ丸く、
+    /// その下の黒い帯に返信欄が乗る
     private func content(for story: Story) -> some View {
-        VStack(spacing: 0) {
-            progressBar(for: story)
-            header(for: story)
-
-            StoryMedia(
-                story: story,
-                isMuted: muted,
-                isPaused: frozen,
-                onEnded: { advance() },
-                // 出せないと分かった回も進める——止めたままだと永久に固まる
-                // （Web の `!mediaReady && !mediaError` と同じ）
-                onSettled: { _ in mediaReady = true }
-            )
-            // 🔴 **1本ごとに作り直す。** 同じ型・同じ場所のままだと SwiftUI は
-            // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
-            // まま残る——動画が2本続くと、2本目は1本目の終わりの絵で止まり、
-            // 鳴り終わりの合図も来ないので先へ進めなかった
-            .id(story.id)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay { tapZones }
-
-            if !captionHidden, let caption = story.caption, !caption.isEmpty {
-                Text(caption)
-                    .foregroundStyle(.white)
-                    .padding(12)
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                photoArea(for: story)
+                    .ignoresSafeArea(edges: .top)
+                footer(for: story)
+                    .frame(minHeight: Self.footerHeight)
             }
-
-            if let message {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.8))
-                    .padding(.bottom, 4)
+            VStack(spacing: 9) {
+                progressBar(for: story)
+                header(for: story)
             }
-
-            footer(for: story)
+            .padding(.top, 5)
         }
         .task(id: story.id) {
             // 端末の既読（輪の色）。**サーバーの応答を待たない**
@@ -213,6 +201,16 @@ struct StoryViewerView: View {
                 }
             }
         }
+        .sheet(isPresented: $showAuthor) {
+            if let userId = story.userId {
+                NavigationStack {
+                    UserProfileView(userId: userId)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                        }
+                }
+            }
+        }
         .sheet(isPresented: $showInsights) {
             NavigationStack {
                 StoryInsightsView(story: story)
@@ -238,6 +236,113 @@ struct StoryViewerView: View {
         }
     }
 
+    // MARK: - 写真
+
+    /// 写真・上下の暗がり・指の操作・ひとこと。**下の角だけ丸める**（板は半径24）
+    private func photoArea(for story: Story) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            // **写真は「透明な枠の上に重ねる」形で置く。** `.fill` の絵は枠より
+            // 大きい寸法を申告するので、そのまま並べると ZStack ごと画面より
+            // 広がり、上に重ねた文字や操作が画面の外へずれる
+            Color.black
+            Color.clear.overlay {
+            StoryMedia(
+                story: story,
+                isMuted: muted,
+                isPaused: frozen,
+                onEnded: { advance() },
+                // 出せないと分かった回も進める——止めたままだと永久に固まる
+                // （Web の `!mediaReady && !mediaError` と同じ）
+                onSettled: { _ in mediaReady = true }
+            )
+            // 🔴 **1本ごとに作り直す。** 同じ型・同じ場所のままだと SwiftUI は
+            // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
+            // まま残る——動画が2本続くと、2本目は1本目の終わりの絵で止まり、
+            // 鳴り終わりの合図も来ないので先へ進めなかった
+            .id(story.id)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+
+            // 上と下の暗がり（白い文字を写真の明るさに負けさせない。板は上180・下200）
+            VStack(spacing: 0) {
+                LinearGradient(colors: [Color.black.opacity(0.65), Color.black.opacity(0)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 180)
+                Spacer(minLength: 0)
+                LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.7)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 200)
+            }
+            .allowsHitTesting(false)
+
+            tapZones
+
+            captionBlock(for: story)
+                .padding(.horizontal, 32)
+                .padding(.bottom, 96)
+                .allowsHitTesting(false)
+
+            if let message {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .jpGlass(in: Capsule())
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 24)
+                    .allowsHitTesting(false)
+                    // **少しで消す。** 画面の外の知らせ（`ToastCenter`）は全画面の
+                    // 上には出ないので、ここで出して自分で片づける
+                    .task(id: message) {
+                        try? await Task.sleep(nanoseconds: 2_500_000_000)
+                        if !Task.isCancelled { self.message = nil }
+                    }
+            }
+        }
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+    }
+
+    /// ひとこと（明朝30・影）・撮影地・曲。**写真の左下に重ねる**（板の配置）。
+    /// 撮影地は以前は見出しの2行目にあった
+    @ViewBuilder
+    private func captionBlock(for story: Story) -> some View {
+        let caption = captionHidden ? nil : story.caption.flatMap { $0.isEmpty ? nil : $0 }
+        let place = story.location.flatMap { $0.isEmpty ? nil : $0 }
+        let song = story.songLine
+        if caption != nil || place != nil || song != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                if let caption {
+                    Text(caption)
+                        .font(JPFont.display(30, relativeTo: .largeTitle))
+                        .lineSpacing(6)
+                        .foregroundStyle(.white)
+                        .jpPhotoTextShadow()
+                }
+                if let place {
+                    photoMeta(symbol: "mappin", text: place)
+                }
+                if let song {
+                    photoMeta(symbol: "music.note", text: song)
+                }
+            }
+        }
+    }
+
+    /// 写真の上の小さい行（ピン・音符＋12pt）
+    private func photoMeta(symbol: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 12))
+            Text(text)
+                .font(.system(size: 12))
+                .lineLimit(1)
+        }
+        .foregroundStyle(WebTheme.muted)
+        .jpPhotoTextShadow()
+    }
+
     // MARK: - 進行バー
 
     /// 1本ごとの区切り。**写真だけ経過を塗る。** 動画の区切りは経過の
@@ -256,8 +361,7 @@ struct StoryViewerView: View {
             }
         }
         .frame(height: 3)
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
+        .padding(.horizontal, 10)
         .accessibilityLabel(L("\(visible.count)本中\(index + 1)本目", "\(index + 1) of \(visible.count)"))
     }
 
@@ -280,52 +384,58 @@ struct StoryViewerView: View {
 
     // MARK: - 見出し
 
+    /// アバター34・名前14・経過時間12を1行に。右に「…」と ✕（地なし・44）。
+    /// 名前を押すと投稿者のページ（板のリンク）
     private func header(for story: Story) -> some View {
         HStack(spacing: 10) {
-            if let userId = story.userId {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
-                    .frame(width: 36, height: 36)
-                    .clipShape(Circle())
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(story.authorName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                if let line = subtitle(for: story) {
-                    Text(line)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.muted)
+            Button {
+                showAuthor = true
+            } label: {
+                HStack(spacing: 10) {
+                    if let userId = story.userId {
+                        RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
+                                    placeholderSymbol: "person.crop.circle.fill")
+                            .frame(width: 34, height: 34)
+                            .clipShape(Circle())
+                    }
+                    Text(story.authorName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
                         .lineLimit(1)
+                    if let ago = StoryPlayback.ago(from: story.createdAt) {
+                        Text(ago)
+                            .font(.system(size: 12))
+                            .foregroundStyle(WebTheme.muted)
+                            .lineLimit(1)
+                    }
                 }
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
             }
-            Spacer()
+            .buttonStyle(.plain)
+            .disabled(story.userId == nil)
+            Spacer(minLength: 0)
             Button {
                 showMenu = true
             } label: {
                 Image(systemName: "ellipsis")
-                    .webToolbarIcon()
+                    .font(.system(size: 20))
+                    .foregroundStyle(.white)
+                    .webTappable()
                     .accessibilityLabel(L("その他の操作", "More actions"))
             }
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .webToolbarIcon()
+                    .font(.system(size: 20))
                     .foregroundStyle(.white)
+                    .webTappable()
                     .accessibilityLabel(Labels.Common.close)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
-
-    /// 撮影地と時刻。**どちらも無ければ行ごと出さない**（空の点を打たない）
-    private func subtitle(for story: Story) -> String? {
-        var parts: [String] = []
-        if let place = story.location, !place.isEmpty { parts.append(place) }
-        if let ago = StoryPlayback.ago(from: story.createdAt) { parts.append(ago) }
-        return parts.isEmpty ? nil : parts.joined(separator: "  ")
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
     }
 
     // MARK: - 指の操作
@@ -508,31 +618,52 @@ struct StoryViewerView: View {
             .font(.footnote)
             .padding(16)
         } else {
-            VStack(spacing: 8) {
-                // **押すだけで返せる**（Web の StoryViewer と同じ6つ）。
-                // 打つより先に、これで十分な場面の方が多い
-                HStack(spacing: 12) {
-                    ForEach(StoryService.reactions, id: \.self) { emoji in
-                        Button {
-                            Task { await sendReaction(emoji, to: story) }
-                        } label: {
-                            Text(emoji).font(.title3)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isSending)
+            // 返信欄（ガラスの丸）と ♡。**打ち始めたら ♡ が送信の白い丸に替わる**
+            HStack(spacing: 6) {
+                TextField(L("返信する", "Reply"), text: $reply)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    // 打っている間は止める（打ち終わる前に次へ送られない）
+                    .focused($replyFocused)
+                    .submitLabel(.send)
+                    .onSubmit { Task { await sendReply(to: story) } }
+                    .padding(.horizontal, 16)
+                    .frame(height: 46)
+                    .jpGlass(in: Capsule(), border: replyFocused ? 0.6 : 0.35)
+                if canSend {
+                    Button {
+                        Task { await sendReply(to: story) }
+                    } label: {
+                        Image(systemName: "paperplane")
+                            .font(.system(size: 18))
+                            .foregroundStyle(WebTheme.accentText)
+                            .frame(width: 46, height: 46)
+                            .background(WebTheme.accentBackground, in: Circle())
                     }
-                }
-                HStack {
-                    TextField(L("返信する", "Reply"), text: $reply)
-                        .textFieldStyle(.roundedBorder)
-                        // 打っている間は止める（打ち終わる前に次へ送られない）
-                        .focused($replyFocused)
-                    Button(Labels.Common.send) { Task { await sendReply(to: story) } }
-                        .disabled(isSending || reply.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(isSending)
+                    .accessibilityLabel(Labels.Common.send)
+                } else {
+                    // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）
+                    Button {
+                        Task { await sendReaction(StoryService.reactions[0], to: story) }
+                    } label: {
+                        Image(systemName: "heart")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white)
+                            .webTappable()
+                    }
+                    .disabled(isSending)
+                    .accessibilityLabel(L("いいね", "Like"))
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
         }
+    }
+
+    /// 送信の丸を出すか。**打っている間か、文字が入っているとき**
+    private var canSend: Bool {
+        !reply.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     /// 出す返信の数。一覧を読めていればその数、まだなら `replyCount`。
@@ -545,7 +676,7 @@ struct StoryViewerView: View {
         defer { isSending = false }
         do {
             try await environment.stories.react(id: story.id, emoji: emoji)
-            message = L("送りました", "Sent")
+            message = L("いいねを送りました", "Like sent")
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
         }

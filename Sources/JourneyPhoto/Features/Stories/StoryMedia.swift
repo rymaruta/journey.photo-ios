@@ -26,7 +26,9 @@ struct StoryMedia: View {
         if story.isVideo, let url = story.imageURL {
             StoryVideo(url: url, isMuted: isMuted, isPaused: isPaused, onEnded: onEnded)
         } else {
-            RemoteImage(url: story.imageURL, contentMode: .fit, onSettled: onSettled)
+            // **画面いっぱいに敷く**（板は `object-fit: cover`）。はみ出しは
+            // 閲覧画面が切る
+            RemoteImage(url: story.imageURL, contentMode: .fill, onSettled: onSettled)
         }
     }
 }
