@@ -371,6 +371,12 @@ final class NotificationsViewModel: ObservableObject {
     /// （既読化の前に読んだ `unread` を持つ）が、読み直しで消した未読の点を
     /// 和で戻したり、取り消しのエラーを出したりしないため
     private var generation = 0
+    /// **画面に移した中でいちばん新しい回。** 古い回を捨てる基準は「もっと新しい回が
+    /// 始まった」ではなく「もっと新しい回が**移し終えた**」——新しい回が圏外で
+    /// 失敗したとき、先に成功していた古い回まで捨てると、行も既読化も飛ぶ
+    private var appliedGeneration = 0
+    /// 手元の一覧（`feed` / `mine`）を書いた中でいちばん新しい回（同じ理由）
+    private var poolsGeneration = 0
 
     /// テストから手元の一覧を差し替える口。
     func setFeedForTesting(_ photos: [Photo]) { feed = photos }
@@ -442,11 +448,14 @@ final class NotificationsViewModel: ObservableObject {
     /// 入れ替えるのは**引っぱって読み直したときだけ**（「読んだ」の合図）。
     /// 一覧から消えた行の id は落とす
     /// - Parameter generation: `beginLoad()` の返り値。より新しい読み込みが
-    ///   始まっていたら何もしない（nil なら世代を見ない）
+    ///   **既に画面に移していたら**何もしない（nil なら世代を見ない）
     /// - Returns: 画面に移したか
     @discardableResult
     func apply(_ page: NotificationService.Page, refreshing: Bool, generation: Int? = nil) -> Bool {
-        if let generation, generation != self.generation { return false }
+        if let generation {
+            guard generation >= appliedGeneration else { return false }
+            appliedGeneration = generation
+        }
         rows = page.items
         let fresh = NotificationText.unreadIds(page.items, unread: page.unread)
         if refreshing {
@@ -456,6 +465,13 @@ final class NotificationsViewModel: ObservableObject {
             unreadIds = fresh.union(unreadIds.intersection(present))
         }
         unread = page.unread
+        return true
+    }
+
+    /// 手元の一覧を書いてよい回か（より新しい回が書いていたら false）
+    func claimPools(_ generation: Int) -> Bool {
+        guard generation >= poolsGeneration else { return false }
+        poolsGeneration = generation
         return true
     }
 
@@ -482,10 +498,16 @@ final class NotificationsViewModel: ObservableObject {
         defer { if generation == self.generation { isLoading = false } }
         do {
             // 一覧は控えから即返るので、押し先の引き当てのために先に読む
+            // **より新しい回が書いたあとの一覧を、古い回で上書きしない**
+            // （遅れて返った古い回の失敗が `[]` を書くと、行が押せなくなる）
             let fetchedFeed = try? await environment.gallery.fetchPhotos()
-            feed = Self.kept(fetchedFeed, previous: feed, cancelled: Task.isCancelled)
+            if claimPools(generation) {
+                feed = Self.kept(fetchedFeed, previous: feed, cancelled: Task.isCancelled)
+            }
             let fetchedMine = try? await environment.photos.myPhotos()
-            mine = Self.kept(fetchedMine, previous: mine, cancelled: Task.isCancelled)
+            if claimPools(generation) {
+                mine = Self.kept(fetchedMine, previous: mine, cancelled: Task.isCancelled)
+            }
             let page = try await environment.notifications.fetch()
             // 古い読み込みは画面に移さない（既読化も新しい方に任せる）
             guard apply(page, refreshing: refreshing, generation: generation) else { return false }

@@ -199,6 +199,28 @@ final class NotificationsUnreadKeepTests: XCTestCase {
         XCTAssertTrue(model.unreadIds.isEmpty, "古い読み込みで未読の点が戻った")
     }
 
+    /// **新しい回が失敗しても、先に成功した古い回は画面に移す。**
+    /// 「新しい回が始まった」だけで捨てると、圏外で読み直した瞬間に
+    /// 行も既読化も飛び、エラーだけが残っていた
+    func testOlderLoadAppliesWhenNewerNeverApplied() async throws {
+        let model = NotificationsViewModel()
+        let task = model.beginLoad()
+        _ = model.beginLoad()                             // 読み直し（このあと失敗して何も移さない）
+        XCTAssertTrue(model.apply(try page(["a"], unread: 1), refreshing: false, generation: task),
+                      "新しい回が移していないのに古い回を捨てた")
+        XCTAssertEqual(model.rows.count, 1)
+    }
+
+    /// **より新しい回が書いた手元の一覧を、遅れた古い回で上書きしない**
+    func testStaleLoadDoesNotOverwritePools() async {
+        let model = NotificationsViewModel()
+        let old = model.beginLoad()
+        let new = model.beginLoad()
+        XCTAssertTrue(model.claimPools(new))
+        XCTAssertFalse(model.claimPools(old), "古い回が一覧を上書きできる")
+        XCTAssertTrue(model.claimPools(new), "同じ回の2つ目（自分の写真）は書ける")
+    }
+
     /// 引っぱって読み直したときは入れ替える（点が消える）
     func testPullToRefreshReplaces() async throws {
         let model = NotificationsViewModel()
