@@ -106,7 +106,7 @@ struct StoryComposerView: View {
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
-                SongPickerView { picked in song = picked }
+                SongPickerView { picked in applySong(picked) }
             }
         }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
@@ -270,7 +270,7 @@ struct StoryComposerView: View {
                 // 付けた曲は変える・外すを選ぶ（外す口が無かった）
                 Menu {
                     Button(L("曲を変える", "Change song")) { showSongPicker = true }
-                    Button(L("曲を外す", "Remove song"), role: .destructive) { song = nil }
+                    Button(L("曲を外す", "Remove song"), role: .destructive) { applySong(nil) }
                 } label: {
                     toolIcon("music.note")
                 }
@@ -304,7 +304,8 @@ struct StoryComposerView: View {
             .jpGlass(in: Circle())
     }
 
-    /// 写真の上のひとこと（明朝32・影）と、撮影地・曲の札。**ひとことはその場で打つ**
+    /// 写真の上のひとこと（明朝32・影）と撮影地の札。**ひとことはその場で打つ**。
+    /// 曲は動かせる札として写真に置く（`SongSticker`）
     private var captionBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField(L("ひとことを書く", "Write a caption"), text: Binding(
@@ -319,9 +320,6 @@ struct StoryComposerView: View {
                 .jpPhotoTextShadow()
             if !location.isEmpty {
                 photoChip(symbol: "mappin", text: location)
-            }
-            if let song {
-                photoChip(symbol: "music.note", text: song.title)
             }
         }
     }
@@ -549,6 +547,26 @@ struct StoryComposerView: View {
                 if let i = list.firstIndex(where: { $0.id == id }) { list[i] = value; overlays.wrappedValue = list }
             }
         )
+    }
+
+    /// 曲を付ける・変える・外す。**写真の上の曲の札も合わせる**——付けたら
+    /// いま見ている1枚に動かせる札を置き、変えたら札の文字を差し替え、外したら消す。
+    /// 曲は全部の写真に共通なので、差し替えと削除は全部の写真で行う
+    private func applySong(_ new: Photo.Song?) {
+        let old = song
+        song = new
+        var found = false
+        for i in shots.indices {
+            let result = SongSticker.retext(shots[i].overlays, from: old, to: new)
+            shots[i].overlays = result.overlays
+            found = found || result.found
+        }
+        // 前の札が無ければ（初めて付けた・自分で消していた）いまの1枚に置く。
+        // 札が上限なら置かない（曲は投稿の項目として送られ、閲覧画面の ♪ に出る）
+        guard !found, let new, let sticker = SongSticker.make(for: new),
+              shots.indices.contains(current),
+              shots[current].overlays.count < TextOverlay.maxCount else { return }
+        shots[current].overlays.append(sticker)
     }
 
     private func add(kind: TextOverlay.Kind) {
