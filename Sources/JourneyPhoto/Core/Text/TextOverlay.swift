@@ -115,15 +115,18 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     }
 
     /// **見た目を切り替える。** 読めない組になる色だけ寄せ、他の色は残す
-    /// （白→黒は墨・黒→白／帯は白。真鍮・空色・珊瑚はどの見た目でもそのまま）。
-    /// 札（撮影地など）は帯で固定なので切り替えない
+    /// （白→黒は墨・帯に墨は白。真鍮・空色・珊瑚はどの見た目でもそのまま）。
+    /// **黒→白だけは墨を白に戻す**——黒の既定の墨を白の見た目へ持ち越すと、
+    /// 白→黒→白で文字が墨のまま残る。白の見た目で墨を自分で選んだ人の墨は残す。
+    /// 同じ見た目の押し直しと、札（撮影地など・帯で固定）は何もしない
     func withStyle(_ newStyle: Style) -> TextOverlay {
-        guard kind.forcedStyle == nil else { return self }
+        guard kind.forcedStyle == nil, newStyle != style else { return self }
         var next = self
         next.style = newStyle
         switch (newStyle, ink) {
         case (.dark, .white): next.ink = .ink
-        case (.light, .ink), (.banner, .ink): next.ink = .white
+        case (.banner, .ink): next.ink = .white
+        case (.light, .ink) where style == .dark: next.ink = .white
         default: break
         }
         return next

@@ -289,6 +289,10 @@ extension TextOverlayTests {
         XCTAssertEqual(white.withStyle(.dark).ink, .ink)
         XCTAssertEqual(white.withStyle(.dark).withStyle(.light).ink, .white)
         XCTAssertEqual(white.withStyle(.dark).withStyle(.banner).ink, .white)
+        // 白の見た目で自分で選んだ墨は、押し直しても帯を経ない限り残る
+        let inked = TextOverlay(text: "a", style: .light, ink: .ink)
+        XCTAssertEqual(inked.withStyle(.light).ink, .ink)
+        XCTAssertEqual(inked.withStyle(.banner).ink, .white)
         let coral = TextOverlay(text: "a", style: .light, ink: .coral)
         XCTAssertEqual(coral.withStyle(.dark).ink, .coral)
         XCTAssertEqual(coral.withStyle(.dark).withStyle(.light).ink, .coral)
@@ -300,9 +304,8 @@ extension TextOverlayTests {
             for ink in TextOverlay.Ink.allCases {
                 for next in TextOverlay.Style.allCases {
                     let o = TextOverlay(text: "a", style: start, ink: ink).withStyle(next)
-                    if TextOverlay.inks(for: start).contains(ink) {
-                        XCTAssertEqual(o.ink, o.drawnInk, "\(start) \(ink) → \(next)")
-                    }
+                    guard TextOverlay.inks(for: start).contains(ink) else { continue }
+                    XCTAssertEqual(o.ink, o.drawnInk, "\(start) \(ink) → \(next)")
                 }
             }
         }
