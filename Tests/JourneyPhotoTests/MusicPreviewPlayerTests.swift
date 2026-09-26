@@ -7,11 +7,12 @@ final class MusicPreviewPlayerTests: XCTestCase {
 
     /// 通信しない URL（シミュレータで本物の AVPlayer が読みに行かないように）
     private let url = URL(fileURLWithPath: "/nonexistent/a.m4a")
+    private let tokens = [UUID(), UUID()]
 
     override func tearDown() {
         let player = MusicPreviewPlayer.shared
         player.stop(releaseSession: false)
-        while player.activeStoryViewers > 0 { player.endStoryViewing() }
+        for token in tokens { player.endStoryViewing(token) }
         super.tearDown()
     }
 
@@ -50,18 +51,30 @@ final class MusicPreviewPlayerTests: XCTestCase {
     /// **最後の1つ**が閉じたとき——作り直しで新旧が前後しても崩れない
     func testSessionIsReleasedOnlyAfterLastViewerCloses() {
         let player = MusicPreviewPlayer.shared
-        player.beginStoryViewing()
+        let (old, new) = (tokens[0], tokens[1])
+        player.beginStoryViewing(old)
         player.play(url)
         player.stop()
         XCTAssertFalse(player.hasPendingRelease, "開いている間は返す予約を入れない")
 
         // 作り直し: 新しい画面が先に開き、古い画面があとで閉じる
-        player.beginStoryViewing()
-        player.endStoryViewing()
+        player.beginStoryViewing(new)
+        player.endStoryViewing(old)
         XCTAssertFalse(player.hasPendingRelease, "まだ1つ開いている")
 
-        player.endStoryViewing()
+        player.endStoryViewing(new)
         XCTAssertTrue(player.hasPendingRelease, "最後が閉じたら返す")
+    }
+
+    /// onAppear が2回来ても数がずれない（ずれると永久に場を返さない）
+    func testRepeatedAppearDoesNotLeakViewer() {
+        let player = MusicPreviewPlayer.shared
+        let token = tokens[0]
+        player.beginStoryViewing(token)
+        player.beginStoryViewing(token)
+        player.endStoryViewing(token)
+        XCTAssertEqual(player.activeStoryViewers, 0)
+        XCTAssertTrue(player.hasPendingRelease)
     }
 
     /// 開いたら、直前に止めた曲の返す予約を取り消す
@@ -70,9 +83,9 @@ final class MusicPreviewPlayerTests: XCTestCase {
         player.play(url)
         player.stop()
         XCTAssertTrue(player.hasPendingRelease)
-        player.beginStoryViewing()
+        player.beginStoryViewing(tokens[0])
         XCTAssertFalse(player.hasPendingRelease)
-        player.endStoryViewing()
+        player.endStoryViewing(tokens[0])
         XCTAssertTrue(player.hasPendingRelease, "持ったままの場は閉じたときに返す")
     }
 }

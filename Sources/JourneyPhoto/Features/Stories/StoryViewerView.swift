@@ -44,6 +44,8 @@ struct StoryViewerView: View {
     @State private var muted = false
     /// この画面が鳴らした曲の回（`MusicPreviewPlayer.session`）。鳴らしていなければ nil
     @State private var songSession: Int?
+    /// この画面の札（`MusicPreviewPlayer.beginStoryViewing`）。作り直すと新しくなる
+    @State private var viewingToken = UUID()
     @State private var captionHidden = false
     /// 絵が出た（動画は出どころが無いので最初から true）
     @State private var mediaReady: Bool
@@ -145,7 +147,7 @@ struct StoryViewerView: View {
         // 曲（板の「♪」）。**鳴らしていなかった**——曲名を文字で出すだけだった
         .onAppear {
             // 開いている間は場を返さない（動画の音を切らない）。返すのは閉じたとき
-            MusicPreviewPlayer.shared.beginStoryViewing()
+            MusicPreviewPlayer.shared.beginStoryViewing(viewingToken)
             // **ほかで鳴っている曲は止める**（Web の `stopGlobalMusic`）。止めないと
             // 動画の音と重なり、「音を消す」がその曲を消音していた
             if MusicPreviewPlayer.shared.playingURL != nil {
@@ -162,7 +164,7 @@ struct StoryViewerView: View {
         // 閉じたときに返す（返さないと他のアプリの音楽が戻らない）
         .onDisappear {
             stopSong()
-            MusicPreviewPlayer.shared.endStoryViewing()
+            MusicPreviewPlayer.shared.endStoryViewing(viewingToken)
         }
     }
 

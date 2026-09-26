@@ -148,25 +148,32 @@ final class MusicPreviewPlayer: ObservableObject {
         scheduleRelease()
     }
 
-    /// 開いているストーリーの閲覧画面の数。**1つでも開いている間は場を返さない**
-    /// ——閲覧画面の動画も同じ場で鳴っているので、返すとその音が切れる。
-    /// 返すのは最後の1つが閉じたとき（`endStoryViewing`）。数で持つのは、
-    /// ハイライトの作り直しで新旧の onAppear / onDisappear が前後しても崩れないように
-    private(set) var activeStoryViewers = 0
+    /// 開いているストーリーの閲覧画面（画面ごとの札）。**1つでも開いている間は
+    /// 場を返さない**——閲覧画面の動画も同じ場で鳴っているので、返すとその音が切れる。
+    /// 返すのは最後の1つが閉じたとき（`endStoryViewing`）。
+    ///
+    /// **数ではなく札の集合で持つ。** onAppear が2回来ても同じ札なので増えず、
+    /// 対の無い onDisappear は何も抜かない——数だと一度ずれたら永久に場を返さない
+    /// （他のアプリの音楽が戻らない）。作り直しで新旧が前後しても札が別なので崩れない
+    private var storyViewers: Set<UUID> = []
+    var activeStoryViewers: Int { storyViewers.count }
 
     /// 返す予約が残っているか（テスト用に読める）
     var hasPendingRelease: Bool { deactivateTask != nil }
 
-    func beginStoryViewing() {
-        activeStoryViewers += 1
+    func beginStoryViewing(_ token: UUID) {
+        storyViewers.insert(token)
         // 直前に止めた曲の予約が、この画面の動画の音を切らないように
         deactivateTask?.cancel()
         deactivateTask = nil
     }
 
-    func endStoryViewing() {
-        activeStoryViewers = max(0, activeStoryViewers - 1)
-        guard activeStoryViewers == 0, player == nil, sessionHeld else { return }
+    /// **`sessionHeld` を見ない。** 閲覧画面の動画（`StoryMedia`）はこの再生器を
+    /// 通らずに場を有効にするので、曲を鳴らしていなくても返す（有効でない場を
+    /// 返しても害は無い）
+    func endStoryViewing(_ token: UUID) {
+        storyViewers.remove(token)
+        guard storyViewers.isEmpty, player == nil else { return }
         scheduleRelease()
     }
 
