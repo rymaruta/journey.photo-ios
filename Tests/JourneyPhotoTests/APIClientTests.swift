@@ -43,6 +43,22 @@ final class APIClientTests: XCTestCase {
     }
 
     /// 認証が要る呼び出しで、トークンが無ければ**通信しない**。
+    /// 🔴 **退会だけは待ち時間を延ばす。** サーバーは写真の多い人で最長およそ23秒
+    /// 掛かり、一律の20秒で切ると「失敗」と出たのにデータは消えていた。
+    /// ほかの口は今までどおり延ばさない
+    func testAccountDeletionWaitsLongerThanOtherCalls() async throws {
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        let api = client(token: "ID-TOKEN")
+        try await AccountService(api: api).deleteAccount()
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/user/account")
+        XCTAssertEqual(StubProtocol.lastRequest?.timeoutInterval ?? 0, 35, accuracy: 0.001)
+        XCTAssertGreaterThan(AccountService.deleteTimeout, APIClient.requestTimeout)
+
+        _ = try await api.authorizedVoid(.get, "/user/profile")
+        XCTAssertNotEqual(StubProtocol.lastRequest?.timeoutInterval ?? 0, 35, "ほかの口まで延ばしている")
+    }
+
     func testDoesNotCallServerWhenSignedOut() async {
         StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
         do {

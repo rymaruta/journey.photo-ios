@@ -661,7 +661,8 @@ struct PhotoDetailView: View {
             }
         }
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(model.comments) { comment in
+            // ブロックした人のコメントは出さない（数の表示はサーバーの値のまま）
+            ForEach(BlockFilter.comments(model.comments, blocked: hidden.blockedUserIds)) { comment in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         // **退会した人にはプロフィールへの導線を出さない**
@@ -714,13 +715,8 @@ struct PhotoDetailView: View {
 
     private func block(_ userId: String) async {
         do {
-            try await environment.moderation.block(userId: userId)
             // 押したあと実際に消す（公開一覧は静的なので端末で落とす）
-            hidden.block(userId)
-            await environment.gallery.setHidden(
-                userIds: hidden.blockedUserIds,
-                photoIds: hidden.reportedPhotoIds
-            )
+            try await hidden.blockAndHide(userId, environment: environment)
             actionError = L("ブロックしました。おたがいの投稿が見えなくなります。", "Blocked. You won't see each other's posts.")
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")

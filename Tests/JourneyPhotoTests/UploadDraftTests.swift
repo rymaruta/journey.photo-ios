@@ -31,6 +31,10 @@ final class UploadDraftTests: XCTestCase {
         // 別の地名を入れ直した → また送る
         item.location = "高屋神社"
         XCTAssertNotNil(item.coordsToSend)
+        // 消したあと空白だけ打った → 送るときは空なので、座標も送らない
+        item.location = ""
+        item.location = "  "
+        XCTAssertNil(item.coordsToSend)
     }
 
     /// **押し直しでも束の印を変えない。** 送るたびに作り直すと、5枚のうち2枚が

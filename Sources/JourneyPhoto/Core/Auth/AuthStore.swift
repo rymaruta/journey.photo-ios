@@ -94,6 +94,15 @@ final class AuthStore: ObservableObject {
         state = .signedOut
     }
 
+    /// 退会の最後の一歩: Cognito の利用者を消す（`AuthGateway.deleteUser`）。
+    /// 消せたらサインアウトの扱いにする。**失敗は投げる**——呼び手が
+    /// 「データは消えたがアカウントが残っている」と言い分ける
+    func deleteCognitoUser() async throws {
+        try await AuthGateway.deleteUser()
+        await AuthGateway.signOut()
+        state = .signedOut
+    }
+
     /// - Returns: 確認コード送信に使う UUID。失敗したら nil。
     func signUp(email: String, password: String) async -> String? {
         var username: String?

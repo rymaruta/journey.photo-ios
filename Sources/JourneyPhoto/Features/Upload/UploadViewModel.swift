@@ -21,8 +21,12 @@ struct PendingPhoto: Identifiable {
     /// （選んですぐ投稿・圏外・候補なし）ときは Web と同じく座標を送る
     var location = "" {
         didSet {
-            if location.isEmpty, !oldValue.isEmpty { locationClearedByUser = true }
-            else if !location.isEmpty { locationClearedByUser = false }
+            // 空白だけは空と同じに見る（送るときは trim で空になるのに、
+            // 印だけ解けて座標が送られていた）
+            let now = location.trimmingCharacters(in: .whitespacesAndNewlines)
+            let before = oldValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if now.isEmpty, !before.isEmpty { locationClearedByUser = true }
+            else if !now.isEmpty { locationClearedByUser = false }
         }
     }
     /// 撮影地を候補から選んだときに入る座標（写真の EXIF より優先）
