@@ -90,13 +90,17 @@ struct StoryViewerView: View {
         let onEdit: (() -> Void)?
     }
     let highlight: HighlightContext?
+    /// 外の画面が止めている（ハイライトの編集シートなど）
+    let holds: Bool
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
+         holds: Bool = false,
          onSeen: ((String) -> Void)? = nil) {
         self.stories = stories
         self.viewerId = viewerId
         self.highlight = highlight
+        self.holds = holds
         self.onSeen = onSeen
         let start = stories.indices.contains(startIndex) ? startIndex : 0
         _index = State(initialValue: start)
@@ -120,7 +124,7 @@ struct StoryViewerView: View {
             paused: paused,
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
-                || showAuthor || showDeleteConfirm,
+                || showAuthor || showDeleteConfirm || holds,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -446,7 +450,8 @@ struct StoryViewerView: View {
             Spacer(minLength: 0)
             // **自分のストーリーには「…」を置かない**（板 25e は ✕ だけ）。
             // ただし**動画は音を消す口がここにしか無い**ので出す
-            if (!isMine(story) && highlight == nil) || story.isVideo {
+            // 他人のハイライトにも出す（通報とブロックの入口はここだけ。審査 1.2）
+            if !isMine(story) || story.isVideo {
                 Button {
                     showMenu = true
                 } label: {

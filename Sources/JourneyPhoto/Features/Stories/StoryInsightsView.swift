@@ -19,6 +19,8 @@ struct StoryInsightsView: View {
     let story: Story
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// ブロックした人は一覧から外す（行からその人のページへ行き、ブロックできる）
+    @EnvironmentObject private var hidden: ModerationStore
     @State private var viewers: [StoryViewer] = []
     @State private var replies: [StoryReply] = []
     /// 一覧の絞り（モック7）。**同じ一覧を絞るだけ**——別の口から
@@ -168,7 +170,8 @@ struct StoryInsightsView: View {
 
     /// 絞ったあとの一覧。**リアクションは見た人の一部**（別の口では引かない）
     private var shownViewers: [StoryViewer] {
-        scope == .reactions ? viewers.filter { hasReaction(from: $0.userId) } : viewers
+        let visible = viewers.filter { !hidden.blockedUserIds.contains($0.userId) }
+        return scope == .reactions ? visible.filter { hasReaction(from: $0.userId) } : visible
     }
 
     /// 顔・名前・時刻。右に、反応なら真鍮のハート、文章の返信なら「…」。
@@ -192,6 +195,13 @@ struct StoryInsightsView: View {
                             Text(ago)
                                 .font(.system(size: 12))
                                 .foregroundStyle(WebTheme.faint)
+                        }
+                        // いいねと返信の両方をした人は、返信の文を名前の下に
+                        if hasReaction(from: viewer.userId), let reply = replyText(from: viewer.userId) {
+                            Text("「\(reply)」")
+                                .font(.system(size: 12))
+                                .foregroundStyle(WebTheme.muted2)
+                                .lineLimit(1)
                         }
                     }
                     Spacer(minLength: 0)

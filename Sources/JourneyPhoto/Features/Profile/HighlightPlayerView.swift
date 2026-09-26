@@ -25,9 +25,16 @@ struct HighlightPlayerView: View {
                     stories: contents.items, startIndex: 0, viewerId: auth.userId,
                     highlight: .init(title: highlight.displayTitle,
                                      coverURL: highlight.coverURL,
-                                     count: highlight.count ?? contents.items.count,
-                                     onEdit: isMine ? { showEditor = true } : nil)
+                                     // **並んでいる本数を出す**（サーバーの数はアーカイブから
+                                     // 外れたぶんも数えていて、進行バーの区切りと割れる）
+                                     count: contents.items.count,
+                                     onEdit: isMine ? { showEditor = true } : nil),
+                    // 編集のシートを開いている間は止める（時間切れで画面ごと戻されない）
+                    holds: showEditor
                 )
+                // 🔴 **並びが変わったら作り直す。** 編集で減らすと、前の位置（`@State index`）が
+                // 並びの外を指したまま残り、真っ黒な画面から出られなくなった（バーも隠している）
+                .id(contents.items.map(\.id))
                 .toolbar(.hidden, for: .navigationBar)
             } else if failed {
                 // **「取れなかった」と「空」を分ける。** 同じ絵にすると、

@@ -328,23 +328,35 @@ enum StoryPlayback {
     /// 投稿した日時（反応の画面の副題「9月24日 18:20に投稿」）。**端末の時刻帯で**
     static func postedAt(_ iso: String?, timeZone: TimeZone = .current) -> String? {
         guard let iso, let date = parse(iso) else { return nil }
-        let f = DateFormatter()
-        f.timeZone = timeZone
-        f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = "M月d日 HH:mm"
-        let ja = f.string(from: date)
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "MMM d, HH:mm"
-        return L("\(ja)に投稿", "Posted \(f.string(from: date))")
+        return L("\(format(date, "M月d日 HH:mm", locale: "ja_JP", timeZone))に投稿",
+                 "Posted \(format(date, "MMM d, HH:mm", locale: "en_US_POSIX", timeZone))")
     }
 
     /// ハイライトの左下の日付（「2026.09.12」・等幅で出す）
     static func dotDate(_ iso: String?, timeZone: TimeZone = .current) -> String? {
         guard let iso, let date = parse(iso) else { return nil }
-        let f = DateFormatter()
-        f.timeZone = timeZone
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy.MM.dd"
+        return format(date, "yyyy.MM.dd", locale: "en_US_POSIX", timeZone)
+    }
+
+    /// **書式器は使い回す。** ハイライトの足元は時計の刻み（1秒に20回）ごとに
+    /// 描き直されるので、呼ぶたびに作ると重い
+    private static var formatters: [String: DateFormatter] = [:]
+    private static let formattersLock = NSLock()
+
+    private static func format(_ date: Date, _ pattern: String, locale: String, _ timeZone: TimeZone) -> String {
+        let key = "\(pattern)|\(locale)|\(timeZone.identifier)"
+        formattersLock.lock()
+        defer { formattersLock.unlock() }
+        let f: DateFormatter
+        if let cached = formatters[key] {
+            f = cached
+        } else {
+            f = DateFormatter()
+            f.locale = Locale(identifier: locale)
+            f.timeZone = timeZone
+            f.dateFormat = pattern
+            formatters[key] = f
+        }
         return f.string(from: date)
     }
 
