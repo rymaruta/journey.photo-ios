@@ -173,6 +173,21 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         XCTAssertNotNil(r.likesAsOf)
     }
 
+    /// 🔴 **取得の途中で引き下げ更新したら、自分でも取りに行く。**
+    /// 途中の要求の結果で済ませていた版は、その要求が失敗していれば
+    /// 利用者が引いたのに、いまの数なしで返っていた
+    func testForceDuringInFlightFetchesAgain() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}", delay: 0.3)
+        let gallery = service(live: liveURL)
+        async let first = gallery.fetchPhotos()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        async let forced = gallery.fetchPhotos(force: true)
+        _ = try await (first, forced)
+        // 静的 JSON 2回 ＋ いまの数 2回（途中の1回に相乗りしない）
+        XCTAssertEqual(StubProtocol.requestCount, 4)
+    }
+
     /// 口が設定されていなければ叩かない（既存の試験・未設定の環境）
     func testSkipsWhenNotConfigured() async throws {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)

@@ -245,10 +245,17 @@ actor PublicGalleryService {
         let task = Task { await self.loadLiveCounts(from: liveURL, startedAt: startedAt) }
         liveInFlight = task
         await task.value
-        liveInFlight = nil
     }
 
+    /// 🔴 **「取得中」の印は、ここ（要求の中）で消す。** 始めた呼び出し元が
+    /// 戻ったときに消すと、待っていた引き下げ更新の方が先に再開した場合に
+    /// **終わった要求**を「始め直された要求」と見分けられず、自分では
+    /// 取りに行かずに返っていた（Swift は後から待った方を先に起こすらしく、
+    /// 手元の再現では毎回そうなった）。印を立てるのは `refreshLiveCounts`
+    /// で、この本体はそのあとにしか actor の上で走らないので、消すのは
+    /// 必ずこの要求の印
     private func loadLiveCounts(from liveURL: URL, startedAt: Date) async {
+        defer { liveInFlight = nil }
         var request = URLRequest(url: liveURL)
         request.timeoutInterval = Self.liveTimeout
         do {
