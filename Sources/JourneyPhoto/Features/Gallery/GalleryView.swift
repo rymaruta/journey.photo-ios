@@ -58,7 +58,7 @@ struct GalleryView: View {
             model.use(gallery: environment.gallery)
             await model.load()
         }
-        // **ログイン状態が決まってから範囲を決める**（既定は「自分」）。
+        // **ログイン状態が決まってから範囲を決める**（範囲は選んでいるフィードが決める）。
         // フォロー中の一覧は、その範囲を選ぶ人にだけ要る
         .task(id: auth.userId) {
             guard auth.userId != nil else {
@@ -283,7 +283,8 @@ struct GalleryView: View {
     /// フィードの切り替え（おすすめ / フォロー中 / 新着）。
     ///
     /// **推薦の口は無い**ので、おすすめの規則を下に1行で出す
-    /// （指示書 5-2——実装済みであるかのように見せない）。
+    /// （指示書 5-2——実装済みであるかのように見せない）。**その一文は
+    /// 整理案 01c で画面から外した**（owner の承認・2026-09-26）。文言は `HomeFeed.note`
     private var feedPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {

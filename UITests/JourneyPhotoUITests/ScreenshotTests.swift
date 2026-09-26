@@ -167,9 +167,12 @@ final class ScreenshotTests: XCTestCase {
                     app.swipeUp()
                     Thread.sleep(forTimeInterval: 2)
                     shoot(app, "31-旅の足取り")
-                }
-                if app.navigationBars.buttons.firstMatch.exists {
-                    app.navigationBars.buttons.firstMatch.tap()
+                    // **押し込めた回だけ戻る。** 旅が無い回に押すと、戻るではなく
+                    // マイページの歯車（設定）に当たる（旅の一覧をタブへ畳んだので、
+                    // 押し込み先が必ずあるとは限らなくなった）
+                    if app.navigationBars.buttons.firstMatch.exists {
+                        app.navigationBars.buttons.firstMatch.tap()
+                    }
                 }
             }
         }

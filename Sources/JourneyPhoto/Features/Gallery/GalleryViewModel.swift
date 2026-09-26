@@ -25,7 +25,7 @@ final class GalleryViewModel: ObservableObject {
     @Published private(set) var selectedTags: [String] = []
     /// 打った文字。題・説明・撮影地・タグを見る
     @Published var query: String = "" { didSet { state = .loaded(filtered()) } }
-    /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中の既定は「自分」**
+    /// 出す範囲（自分 / フォロー中 / すべて）。**選んでいるフィードが決める**（`HomeFeed.scope`）
     @Published private(set) var scope: GalleryScope = .all
     /// フォローしている人。`following` のときだけ要る
     /// フォロー先。**カードのフォローボタンにも渡す**（モック1）

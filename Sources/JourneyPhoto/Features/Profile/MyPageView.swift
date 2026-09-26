@@ -368,7 +368,7 @@ struct MyPageView: View {
     /// 以前はここに「旅の一冊」の丸い並びを出していた——サーバーに
     /// ハイライトが無かったので、いちばん近いものを当てていた。
     /// develop でハイライトそのものが入ったので、本物に差し替える。
-    /// **旅の一冊は消していない**（上の「旅の記録」から入る）。
+    /// **旅の一冊は消していない**（下のタブの「旅の記録」から入る）。
     @ViewBuilder
     private var highlightsRow: some View {
         if let userId = auth.userId {
@@ -586,12 +586,18 @@ struct MyPageView: View {
 
     /// 旅の記録（旅の一冊の棚）。**自分の公開写真から**その場でまとめる
     /// ——下書きは旅に入れない（見せていない写真が一冊に紛れ込む）。
-    /// 旅の一覧（`TripsView`）と同じ背表紙（`TripShelf`）を使う
+    /// 背表紙は `TripShelf`。**旅の一覧の画面（`TripsView`）はここへ畳んだ**
+    /// ——入口がマイページの札1つだけだった
     @ViewBuilder
     private var tripsArea: some View {
         let trips = TripBook.trips(from: model.photos.filter { $0.published != false })
-        if trips.isEmpty {
-            // **なぜ空なのかを言う**（`TripsView` の空と同じ文言）
+        if trips.isEmpty && model.isLoading {
+            // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(24)
+        } else if trips.isEmpty {
+            // **なぜ空なのかを言う**
             Text(L("同じころに撮った写真が2枚たまると、ひとつの旅にまとまります",
                    "Two or more photos taken around the same time become a trip"))
                 .font(.footnote)
