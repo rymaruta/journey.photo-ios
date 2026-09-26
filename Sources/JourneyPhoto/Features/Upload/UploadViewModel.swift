@@ -206,6 +206,8 @@ final class UploadViewModel: ObservableObject {
     /// **1枚でも読めたら、読めたぶんは受ける。** 全部捨てると、
     /// 1枚の壊れた写真のために選び直しになる（Web も落ちた枚数だけ伝える）。
     private func loadPicked(_ picked: [PhotosPickerItem]) async {
+        // 走り出す前に取り消された回は、古い選択で一覧を削らない
+        guard !Task.isCancelled else { return }
         // **選び直しは差分で。** 外した分だけ落とし、足した分だけ読む。
         // 以前は丸ごと入れ替えていて、「追加」を押すと打った題やカメラで撮った
         // 分まで消えていた（2026-09-26 のレビュー）
@@ -216,6 +218,10 @@ final class UploadViewModel: ObservableObject {
             placeTasks[id] = nil
         }
         items.removeAll { dropped.contains($0.id) }
+        // **束の印を捨てるのは、前の写真が1枚も残らないときだけ。** 「追加」は
+        // 前の写真を残すので、押し直しで公開済みの分と同じ投稿に入るべき
+        // （印を捨てると、途中まで上がった投稿が2つに割れる）
+        if items.isEmpty { groupId = nil }
         guard !diff.added.isEmpty else { return }
 
         // 🔴 **選び直しの競合。** 前の読み込みは取り消されても `await` から戻ってくる。
@@ -226,8 +232,6 @@ final class UploadViewModel: ObservableObject {
         isLoadingPicked = true
         errorMessage = nil
         didPostAll = false
-        // 選び直したら、前の選択で作った束の印は使わない
-        groupId = nil
         defer { if generation == pickGeneration { isLoadingPicked = false } }
 
         var failed = 0
@@ -249,6 +253,8 @@ final class UploadViewModel: ObservableObject {
             }
         }
 
+        // 取り消された回の「読めなかった」は嘘になる（新しい回が読み直している）
+        guard !Task.isCancelled, generation == pickGeneration else { return }
         if failed > 0 {
             // **黙って減らさない。** 「なぜか1枚少ない」まま公開させない
             errorMessage = items.isEmpty

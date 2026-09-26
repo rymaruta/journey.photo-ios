@@ -206,6 +206,8 @@ struct UploadView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // 送っている間は並びを変えさせない（送る順の番号がずれる）
+            .disabled(model.isWorking)
             .offset(x: 14, y: -14)
             .accessibilityLabel(L("\(index + 1)枚目を外す", "Remove photo \(index + 1)"))
         }
@@ -235,6 +237,9 @@ struct UploadView: View {
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .accessibilityLabel(L("写真を追加", "Add photos"))
+        // 🔴 **送っている間は足させない。** 足した写真は送信の終わりの `reset()` で
+        // 黙って消え、送っている束の印まで変わっていた
+        .disabled(model.isWorking)
     }
 
     /// 「1つの投稿にまとめる／それぞれ別の投稿」（板: 2択・選んでいる側は白）。

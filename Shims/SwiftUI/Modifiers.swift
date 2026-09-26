@@ -281,8 +281,6 @@ extension View {
     public func textFieldStyle(_ s: TextFieldStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func controlSize(_ s: ControlSizeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func labelsHidden() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
-    /// 下へ払って閉じるのを止める（本物と同じ）
-    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// スクロールでキーボードを下げる（本物と同じ）
     public func scrollDismissesKeyboard(_ mode: ScrollDismissesKeyboardModeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func focused(_ condition: Binding<Bool>) -> Self { self }
