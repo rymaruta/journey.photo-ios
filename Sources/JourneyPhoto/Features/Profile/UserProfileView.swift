@@ -184,7 +184,7 @@ struct UserProfileView: View {
                     Text(model.shownName ?? "—")
                         .font(JPFont.display(26, relativeTo: .title))
                         .foregroundStyle(Color.white)
-                    VerifiedBadge(isVerified: model.profile?.verified)
+                    VerifiedBadge(isVerified: model.profile?.verified, nameSize: 26, relativeTo: .title)
                 }
                 // 公開プロフィールの口（`toPublicProfile`）が username と居住地を返す
                 if let line = ProfileLine.handleAndHome(username: model.profile?.username,
