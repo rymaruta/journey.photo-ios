@@ -62,7 +62,6 @@ struct StoryViewerView: View {
     @State private var message: String?
     @State private var viewers: [StoryViewer] = []
     @State private var showInsights = false
-    @State private var showViewers = false
     @State private var replies: [StoryReply] = []
     @State private var showReplies = false
     /// 返信を読めなかった。**空の一覧と区別する**（数は出ているのに
@@ -101,7 +100,7 @@ struct StoryViewerView: View {
             pressing: pressing,
             paused: paused,
             menuOpen: showMenu,
-            sheetOpen: showReplies || showInsights || showViewers || showReport || showBlockConfirm
+            sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
                 || showAuthor || showDeleteConfirm,
             replyFocused: replyFocused,
             isSending: isSending,
@@ -199,28 +198,7 @@ struct StoryViewerView: View {
             ReportSheet(photoId: story.id, ownerId: story.userId)
         }
         .sheet(isPresented: $showReplies) {
-            NavigationStack {
-                List {
-                    if repliesFailed {
-                        Text(Labels.Common.loadFailed).foregroundStyle(.secondary)
-                    } else if replies.isEmpty {
-                        Text(L("まだ返信はありません", "No replies yet")).foregroundStyle(.secondary)
-                    }
-                    ForEach(replies) { reply in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(reply.name ?? L("だれか", "Someone"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(reply.body)
-                        }
-                    }
-                }
-                .navigationTitle(L("返信 \(replies.count)", "\(replies.count) replies"))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
-                }
-            }
+            repliesSheet
         }
         // **ページの中でブロックしたら、閲覧画面ごと閉じる**（「…」からの
         // ブロックと同じ後始末）。閉じないとブロックした人のストーリーが流れ続ける
@@ -242,21 +220,6 @@ struct StoryViewerView: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
                     }
-            }
-        }
-        .sheet(isPresented: $showViewers) {
-            NavigationStack {
-                List(viewers) { viewer in
-                    Text(viewer.name)
-                        .foregroundStyle(WebTheme.foreground)
-                        .listRowBackground(Color.clear)
-                }
-                .webScreen()
-                .navigationTitle(L("見た人 \(viewers.count)", "\(viewers.count) viewers"))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
-                }
             }
         }
     }
@@ -434,23 +397,42 @@ struct StoryViewerView: View {
                             .frame(width: 34, height: 34)
                             .clipShape(Circle())
                     }
-                    Text(story.authorName)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    if let ago = StoryPlayback.ago(from: story.createdAt) {
-                        Text(ago)
-                            .font(.system(size: 12))
-                            .foregroundStyle(WebTheme.muted)
+                    if isMine(story) {
+                        // 自分: 「あなた」と、下に等幅で「2時間前 · あと 22 時間で消えます」（板 25e）
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(L("あなた", "You"))
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                            if let line = ownTimeLine(for: story) {
+                                Text(line)
+                                    .font(JPFont.mono(11))
+                                    .foregroundStyle(WebTheme.muted2)
+                                    .lineLimit(1)
+                            }
+                        }
+                    } else {
+                        Text(story.authorName)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
                             .lineLimit(1)
+                        if let ago = StoryPlayback.ago(from: story.createdAt) {
+                            Text(ago)
+                                .font(.system(size: 12))
+                                .foregroundStyle(WebTheme.muted)
+                                .lineLimit(1)
+                        }
                     }
                 }
                 .frame(minHeight: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(story.userId == nil)
+            // 自分の名前は押せない（自分のページはマイページ）
+            .disabled(story.userId == nil || isMine(story))
             Spacer(minLength: 0)
+            // **自分のストーリーに「…」は置かない**（板 25e は ✕ だけ）。
+            // 止めるのは長押しでできる
+            if !isMine(story) {
             Button {
                 showMenu = true
             } label: {
@@ -459,6 +441,7 @@ struct StoryViewerView: View {
                     .foregroundStyle(.white)
                     .webTappable()
                     .accessibilityLabel(L("その他の操作", "More actions"))
+            }
             }
             Button {
                 dismiss()
@@ -816,20 +799,56 @@ struct StoryViewerView: View {
     @ViewBuilder
     private func footer(for story: Story) -> some View {
         if isMine(story) {
-            HStack(spacing: 16) {
+            // 見た人の行と、4つの操作（板 25e）
+            VStack(spacing: 10) {
                 // **反応はまとめて1画面に**（提案の絵）。見た人・いいね・返信が
                 // 別々のシートに割れていると、全体がどうだったか分からない
-                Button(L("反応を見る", "Insights")) { showInsights = true }
-                Button(L("返信 \(replyBadge(for: story))", "\(replyBadge(for: story)) replies")) { showReplies = true }
-                // 24時間で消える前に、自分の写真として残す
-                Button(L("残す", "Keep")) { Task { await keep(story) } }
+                Button {
+                    showInsights = true
+                } label: {
+                    HStack(spacing: 10) {
+                        viewerFaces
+                        HStack(spacing: 0) {
+                            Text("\(viewers.count)").font(JPFont.mono(13, medium: true))
+                            Text(L(" 人が見ました · いいね ", " viewers · likes "))
+                                .font(.system(size: 13))
+                            Text("\(replies.reactionCount)").font(JPFont.mono(13, medium: true))
+                        }
+                        .foregroundStyle(.white)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13))
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                    .frame(minHeight: 36)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                HStack(spacing: 4) {
+                    ownAction(symbol: "eye", title: L("反応を見る", "Insights")) { showInsights = true }
+                    ownAction(symbol: "bubble.left",
+                              title: L("返信 \(replyBadge(for: story))", "\(replyBadge(for: story)) replies")) {
+                        showReplies = true
+                    }
+                    // 24時間で消える前に、自分の写真として残す
+                    ownAction(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
+                        Task { await keep(story) }
+                    }
                     .disabled(isSending)
-                // **確かめてから消す**（以前は押した瞬間に消えていた）
-                Button(Labels.Common.delete, role: .destructive) { showDeleteConfirm = true }
+                    // **確かめてから消す**（以前は押した瞬間に消えていた）
+                    ownAction(symbol: "trash", title: Labels.Common.delete, color: Self.storyDanger) {
+                        showDeleteConfirm = true
+                    }
                     .disabled(isSending)
+                }
+                .padding(.top, 4)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
+                }
             }
-            .font(.footnote)
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
         } else {
             // 返信欄（ガラスの丸）と ♡。**書いている間は ♡ が送信の白い丸に替わり、
             // 上に一言の候補と「だれに届くか」が出る**（板「25d 返信を書く」）
@@ -910,8 +929,139 @@ struct StoryViewerView: View {
         !reply.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    /// 出す返信の数。一覧を読めていればその数、まだなら `replyCount`。
-    private func replyBadge(for story: Story) -> Int { max(replies.count, story.replyCount ?? 0) }
+    /// 出す返信の数。**文章の返信だけ**（反応は「いいね」に数える）。
+    /// 一覧をまだ読めていなければサーバーの `replyCount`（反応も含む数）
+    private func replyBadge(for story: Story) -> Int {
+        replies.isEmpty && !repliesFailed ? (story.replyCount ?? 0) : replies.textReplies.count
+    }
+
+    /// 自分のストーリーの見出しの2行目（「2時間前 · あと 22 時間で消えます」）
+    private func ownTimeLine(for story: Story) -> String? {
+        let parts = [StoryPlayback.ago(from: story.createdAt),
+                     StoryPlayback.remaining(until: story.expiresAt)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// 見た人の顔を3つ重ねる（26pt・黒の縁・8pt ずつ重ねる）
+    private var viewerFaces: some View {
+        HStack(spacing: -8) {
+            ForEach(Array(viewers.prefix(3))) { viewer in
+                RemoteImage(url: UserProfile.profileAssetURL(userId: viewer.userId, suffix: nil, cacheBust: nil),
+                            placeholderSymbol: "person.crop.circle.fill")
+                    .frame(width: 26, height: 26)
+                    .clipShape(Circle())
+                    .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// 自分のストーリーの足元の操作（絵の下に11ptのラベル・高さ56）
+    private func ownAction(symbol: String, title: String, color: Color = .white,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: 20))
+                Text(title)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 返信の一覧（自分）
+
+    /// 板「26b 返信（自分）」。**文章の返信だけ**を並べ、顔を押すとその人のページ
+    private var repliesSheet: some View {
+        let items = replies.textReplies
+        return NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if repliesFailed {
+                        Text(Labels.Common.loadFailed)
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.muted2)
+                            .padding(.vertical, 16)
+                    } else if items.isEmpty {
+                        Text(L("まだ返信はありません", "No replies yet"))
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.muted2)
+                            .padding(.vertical, 16)
+                    }
+                    ForEach(items) { item in
+                        replyRow(item)
+                    }
+                    Text(L("返信はあなたにだけ見えています。ストーリーが消えると、返信も一緒に消えます。",
+                           "Only you can see replies. They disappear with the story."))
+                        .font(.system(size: 12))
+                        .lineSpacing(4)
+                        .foregroundStyle(WebTheme.faint)
+                        .padding(.vertical, 16)
+                }
+                .padding(.horizontal, 16)
+            }
+            .background(Self.repliesBackground)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 4) {
+                        Text(L("返信", "Replies")).font(.system(size: 16, weight: .semibold))
+                        Text("\(items.count)").font(JPFont.mono(16, medium: true))
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
+            .toolbarBackground(Self.repliesBackground, for: .navigationBar)
+        }
+        .presentationBackground(Self.repliesBackground)
+        .presentationDragIndicator(.visible)
+    }
+
+    /// 返信のシートの地（板の `#0c0c0d`）
+    private static let repliesBackground = Color(red: 0x0C / 255.0, green: 0x0C / 255.0, blue: 0x0D / 255.0)
+
+    private func replyRow(_ item: StoryReply) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            if let uid = item.uid {
+                NavigationLink {
+                    UserProfileView(userId: uid)
+                } label: {
+                    RemoteImage(url: UserProfile.profileAssetURL(userId: uid, suffix: nil, cacheBust: nil),
+                                placeholderSymbol: "person.crop.circle.fill")
+                        .frame(width: 40, height: 40)
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel(L("\(item.name ?? "") のプロフィール", "\(item.name ?? "")'s profile"))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(item.name ?? L("だれか", "Someone"))
+                        .font(.system(size: 14, weight: .semibold))
+                    if let ago = StoryPlayback.ago(from: item.t) {
+                        Text(ago)
+                            .font(.system(size: 11))
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                }
+                Text(item.body)
+                    .font(.system(size: 14))
+                    .lineSpacing(6)
+            }
+            .foregroundStyle(.white)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 12)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+        }
+    }
 
     /// 定型の反応を送る。
     private func sendReaction(_ emoji: String, to story: Story) async {

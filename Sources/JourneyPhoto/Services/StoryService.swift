@@ -233,8 +233,19 @@ struct StoryReply: Decodable, Identifiable, Equatable {
     /// 画面に出す中身。絵文字の反応は `emoji` に入っている。
     var body: String { (text?.isEmpty == false ? text : nil) ?? emoji ?? "" }
 
+    /// 定型の反応（♡ など）か。**返信の数・一覧には数えない**
+    /// ——反応の画面（`StoryInsightsView`）の「いいね」と「返信」の分け方と同じ
+    var isReaction: Bool { emoji?.isEmpty == false }
+
     private enum CodingKeys: String, CodingKey {
         case rawId = "id"
         case uid, name, text, emoji, t
     }
+}
+
+extension Array where Element == StoryReply {
+    /// 文章の返信だけ（反応を除く）
+    var textReplies: [StoryReply] { filter { !$0.isReaction } }
+    /// 反応（いいね）の数
+    var reactionCount: Int { filter(\.isReaction).count }
 }

@@ -289,4 +289,27 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertFalse(c.hidesChrome)
         XCTAssertFalse(c.showsPill)
     }
+
+    /// 「あと N 時間で消えます」。1時間を切ったら分、過ぎたら出さない
+    func testRemaining() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func iso(_ seconds: TimeInterval) -> String {
+            let f = ISO8601DateFormatter()
+            return f.string(from: now.addingTimeInterval(seconds))
+        }
+        XCTAssertEqual(StoryPlayback.remaining(until: iso(22 * 3600 + 120), now: now),
+                       L("あと 22 時間で消えます", "Disappears in 22h"))
+        XCTAssertEqual(StoryPlayback.remaining(until: iso(30 * 60 + 5), now: now),
+                       L("あと 30 分で消えます", "Disappears in 30m"))
+        XCTAssertNil(StoryPlayback.remaining(until: iso(-60), now: now))
+        XCTAssertNil(StoryPlayback.remaining(until: "not a date", now: now))
+    }
+
+    /// 🔴 **返信の数に反応を混ぜない。** 反応の画面と数が割れていた
+    func testRepliesExcludeReactions() throws {
+        let json = #"[{"uid":"a","text":"きれい","t":"1"},{"uid":"b","emoji":"❤️","t":"2"},{"uid":"c","text":"どこ？","t":"3"}]"#
+        let replies = try JSONDecoder.api.decode([StoryReply].self, from: Data(json.utf8))
+        XCTAssertEqual(replies.textReplies.map(\.body), ["きれい", "どこ？"])
+        XCTAssertEqual(replies.reactionCount, 1)
+    }
 }

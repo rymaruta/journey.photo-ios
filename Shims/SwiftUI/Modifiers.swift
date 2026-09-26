@@ -220,6 +220,8 @@ extension View {
     public func shadow(color: Color, radius: Double, x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func transition(_ t: AnyTransitionShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func allowsHitTesting(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func presentationBackground<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func presentationDragIndicator(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func contentShape<T: Shape>(_ shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     // 黒地に揃えるために使う（`WebTheme`）。模型なので何も描かない
     public func scrollContentBackground(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

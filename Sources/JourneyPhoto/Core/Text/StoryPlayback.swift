@@ -312,6 +312,19 @@ enum StoryPlayback {
         return L("\(hours / 24)日前", "\(hours / 24)d ago")
     }
 
+    /// 「あと 22 時間で消えます」（自分のストーリーの見出し・板 25e）。
+    /// **1時間を切ったら分で言う**。読めない・過ぎているときは出さない
+    static func remaining(until iso: String?, now: Date = Date()) -> String? {
+        guard let iso, let date = parse(iso) else { return nil }
+        let seconds = date.timeIntervalSince(now)
+        guard seconds > 0 else { return nil }
+        let minutes = Int(seconds / 60)
+        if minutes < 60 {
+            return L("あと \(max(1, minutes)) 分で消えます", "Disappears in \(max(1, minutes))m")
+        }
+        return L("あと \(minutes / 60) 時間で消えます", "Disappears in \(minutes / 60)h")
+    }
+
     /// サーバーは `toISOString()`（小数秒つき）だが、小数秒の無い ISO8601 も
     /// 読めるようにしておく——片方だけだと**時刻が丸ごと消える**
     private static func parse(_ iso: String) -> Date? {
