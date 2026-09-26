@@ -120,10 +120,10 @@ struct HighlightsRow: View {
                             .foregroundStyle(WebTheme.faint))
                 }
             }
-            // 板: 62pt の枠（白25%）の内側 3pt に写真
-            .frame(width: 56, height: 56)
+            // 板: 62pt の枠（縁 1pt・白25%）の内側 3pt に写真（54pt）
+            .frame(width: 54, height: 54)
             .clipShape(Circle())
-            .padding(3)
+            .padding(4)
             .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
 
             Text(highlight.displayTitle)

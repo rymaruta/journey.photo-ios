@@ -26,8 +26,6 @@ struct MyPageView: View {
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
-    /// BGM の再生の丸（再生中かどうかで印を変える）
-    @ObservedObject private var player = MusicPreviewPlayer.shared
 
     /// 板 05c: 3列・隙間 4pt・角なし
     private let columns = [
@@ -383,48 +381,12 @@ struct MyPageView: View {
     /// 曲は `MusicPreviewPlayer` に通す——**専用の再生器を作らない**
     /// （画面をまたいだ操作は `MiniPlayerBar` が受け持っている）。
     ///
-    /// 板 05c: 高さ 48pt の札（地 白7%・縁 白8%・角丸12）。36pt の絵、
-    /// 「曲名 · アーティスト」と「BGM · 30秒の試聴」、右に白い 40pt の再生の丸
+    /// 見た目は `ProfileBgmCard`（再生器の見張りを札の中に閉じる）
     @ViewBuilder
     private func bgmCard(_ profile: UserProfile) -> some View {
         if let song = profile.bgm {
-            let playing = player.isPlaying(song.previewURL)
-            HStack(spacing: 10) {
-                RemoteImage(url: song.artworkURL)
-                    .frame(width: 36, height: 36)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(SongSticker.text(for: song) ?? song.title)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(WebTheme.foreground)
-                        .lineLimit(1)
-                    Text(L("BGM · 30秒の試聴", "BGM · 30-second preview"))
-                        .font(.caption2)
-                        .foregroundStyle(WebTheme.faint)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Button {
-                    player.toggle(song.previewURL, song: song)
-                } label: {
-                    Image(systemName: playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(WebTheme.accentText)
-                        .frame(width: 40, height: 40)
-                        .background(WebTheme.accentBackground, in: Circle())
-                        // 見た目は 40pt、押せる範囲は 44pt
-                        .padding(2)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(playing ? L("止める", "Pause") : L("再生", "Play"))
-            }
-            .padding(.leading, 6)
-            .padding(.trailing, 4)
-            .frame(minHeight: 48)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-            .padding(.horizontal, 20)
+            ProfileBgmCard(song: song)
+                .padding(.horizontal, 20)
         }
     }
 
@@ -631,13 +593,16 @@ struct MyPageView: View {
                 Button {
                     tab = option
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: option.systemImage)
-                            .font(.system(size: 13))
-                        Text(option.label)
-                            .font(.footnote.weight(selected ? .semibold : .regular))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                    // **入らなければ印を外して字だけ**（大きい文字・幅の狭い端末で
+                    // 「行きたい場所」が「…」で切れていた）
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            Image(systemName: option.systemImage)
+                                .font(.system(size: 13))
+                                .accessibilityHidden(true)
+                            tabLabel(option, selected: selected)
+                        }
+                        tabLabel(option, selected: selected)
                     }
                     .foregroundStyle(selected ? Color.white : WebTheme.faint)
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -659,6 +624,13 @@ struct MyPageView: View {
             Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
         }
         .padding(.horizontal, 16)
+    }
+
+    private func tabLabel(_ option: ProfileTab, selected: Bool) -> some View {
+        Text(option.label)
+            .font(.footnote.weight(selected ? .semibold : .regular))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
     }
 
     /// 旅の記録（旅の一冊の棚）。**自分の公開写真から**その場でまとめる
@@ -746,14 +718,17 @@ struct MyPageView: View {
         } else if tab == .favorites {
             favoritesArea
         } else {
+            let multiple = PhotoGroups.multiPhotoIds(model.photos)
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(model.photos) { photo in
                     NavigationLink {
                         PhotoDetailView(photo: photo, fromPublicFeed: false, context: model.photos)
                     } label: {
-                        gridCell(photo)
+                        gridCell(photo, multiple: multiple.contains(photo.id))
                     }
                     .buttonStyle(.plain)
+                    // 何の写真かを読む（印だけが読まれていた）
+                    .accessibilityLabel(photo.accessibilityText)
                     // **長押しでピン留め**（Web の「先頭にピン留め」と同じ操作）。
                     // 一覧の見た目は変えず、操作だけ足す
                     .contextMenu {
@@ -773,9 +748,20 @@ struct MyPageView: View {
 
     /// 一覧の1枚。**下書き（非公開）は一目で分かるようにする**
     /// ——公開したつもりの写真が出ていない、がいちばん困る。
-    /// 印は左上（板 05c: ピンは 22pt の黒い丸、下書きは黒い小さな札）
-    private func gridCell(_ photo: Photo) -> some View {
+    /// 印は左上（板 05c: ピンは 22pt の黒い丸、下書きは黒い小さな札）、
+    /// 複数枚の投稿は右上
+    private func gridCell(_ photo: Photo, multiple: Bool) -> some View {
         PhotoFrame(photo: photo, corner: 0)
+            .overlay(alignment: .topTrailing) {
+                if multiple {
+                    Image(systemName: "square.on.square")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.white)
+                        .shadow(radius: 3)
+                        .padding(6)
+                        .accessibilityLabel(L("複数枚の投稿", "Multiple photos"))
+                }
+            }
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 4) {
                     if model.isPinned(photo.id) {
