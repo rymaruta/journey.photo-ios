@@ -38,7 +38,12 @@ struct FollowListView: View {
     @State private var myFollowing: Set<String>?
     /// いま送っている相手（二度押しで2回投げない）
     @State private var working: Set<String> = []
-    @State private var unfollowTarget: FollowUser?
+    /// 外す確認。**出すかどうかと相手は別々に持つ**——1つの Optional で兼ねると、
+    /// 閉じる合図で相手が先に nil になり「外す」が黙って効かない（`AlbumsView` の注記と同じ）
+    @State private var showUnfollow = false
+    @State private var unfollowTargetId: String?
+    /// フォローの操作に失敗した。**アラートで出す**（一覧の先頭の知らせは下に流すと見えない）
+    @State private var actionError: String?
     @State private var isLoading = true
     @State private var errorMessage: String?
 
@@ -75,11 +80,18 @@ struct FollowListView: View {
         .navigationTitle(ownerName ?? current.title)
         .navigationBarTitleDisplayMode(.inline)
         .overlay { if isLoading && lists.isEmpty { ProgressView() } }
-        .unfollowConfirmation(isPresented: Binding(get: { unfollowTarget != nil },
-                                                   set: { if !$0 { unfollowTarget = nil } })) {
-            if let target = unfollowTarget {
-                Task { await setFollowing(target.id, to: false) }
+        .unfollowConfirmation(isPresented: $showUnfollow) {
+            if let id = unfollowTargetId {
+                unfollowTargetId = nil
+                Task { await setFollowing(id, to: false) }
             }
+        }
+        .alert(L("うまくいきませんでした", "That didn't work"),
+               isPresented: Binding(get: { actionError != nil },
+                                    set: { if !$0 { actionError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "")
         }
         .task { await load() }
         .refreshable { await load() }
@@ -150,7 +162,8 @@ struct FollowListView: View {
             Button {
                 if isFollowing {
                     // 外すときだけ確認を挟む（`unfollowConfirmation`）
-                    unfollowTarget = user
+                    unfollowTargetId = user.id
+                    showUnfollow = true
                 } else {
                     Task { await setFollowing(user.id, to: true) }
                 }
@@ -211,8 +224,8 @@ struct FollowListView: View {
                 myFollowing?.remove(id)
             }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription
-                ?? L("うまくいきませんでした", "That didn't work")
+            actionError = (error as? LocalizedError)?.errorDescription
+                ?? L("もう一度お試しください", "Please try again")
         }
     }
 }
