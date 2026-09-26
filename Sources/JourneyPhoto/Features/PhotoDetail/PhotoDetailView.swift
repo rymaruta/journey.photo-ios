@@ -112,7 +112,9 @@ struct PhotoDetailView: View {
                 // 隣の写真は端末の控え（ホームのハートと同じ出どころ）
                 isLiked: { shown in shown.id == photo.id ? model.liked : favorites.contains(shown.id) },
                 isSignedIn: auth.userId != nil,
-                onDoubleTapLike: { shown in Task { await likeFromViewer(shown) } }
+                onDoubleTapLike: { shown in Task { await likeFromViewer(shown) } },
+                onToggleLike: { shown in Task { await toggleLikeFromViewer(shown) } },
+                shareURL: { shown in shareURL(for: shown) }
             )
         }
         .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
@@ -498,6 +500,38 @@ struct PhotoDetailView: View {
         } catch {
             favorites.set(shown.id, favorite: false)
         }
+    }
+
+    /// 大きく見る画面の下のハート（板 14）。**付け外しの両方**。
+    ///
+    /// この画面の1枚なら下のハートと同じ道。隣の写真は、先に灯して／消して
+    /// から送り、届かなければ元に戻す（ダブルタップと同じ控え方）
+    private func toggleLikeFromViewer(_ shown: Photo) async {
+        if shown.id == photo.id {
+            await model.toggleLike()
+            favorites.set(photo.id, favorite: model.liked)
+            shareLikeCount()
+            return
+        }
+        let wasLiked = favorites.contains(shown.id)
+        favorites.set(shown.id, favorite: !wasLiked)
+        do {
+            let result = wasLiked
+                ? try await environment.social.unlike(photoId: shown.id)
+                : try await environment.social.like(photoId: shown.id)
+            favorites.set(shown.id, favorite: result.liked)
+            if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
+        } catch {
+            favorites.set(shown.id, favorite: wasLiked)
+        }
+    }
+
+    /// 共有するページ。**個別ページが在る写真だけ**（`PhotoLink`）。
+    /// 隣の写真も同じ一覧から来ているので、同じ判断で足りる
+    private func shareURL(for item: Photo) -> URL? {
+        let current = item.id == photo.id ? shown : item
+        return PhotoLink.url(photoId: item.id,
+                             isPublished: fromPublicFeed && current.published != false)
     }
 
     /// **押した回の**答えを、ホームのカードと検索の格子にも渡す。
