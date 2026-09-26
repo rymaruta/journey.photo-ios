@@ -202,7 +202,7 @@ struct TripPlanDetailView: View {
                         .tracking(0.5)
                     if let date = TripPlanText.dayDate(index: di, day: day, start: start, end: end),
                        let label = TakenDay.label(date) {
-                        Text("・\(label)").font(JPFont.mono(12))
+                        Text(L("・\(label)", " · \(label)")).font(JPFont.mono(12))
                     }
                 }
                 .foregroundStyle(WebTheme.faint)

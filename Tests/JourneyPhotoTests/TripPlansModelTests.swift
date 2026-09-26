@@ -130,19 +130,28 @@ final class TripPlansModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage, "成功したのに赤い行が残っている")
     }
 
-    /// **打ち切りは失敗にしない**（画面を離れて `.task` が打ち切られただけ）
+    /// **打ち切りは失敗にしない**（画面を離れて `.task` が打ち切られただけ）。
+    ///
+    /// 打ち切るのは**トークンを待っている間**。通信の途中で打ち切ると、Linux の
+    /// FoundationNetworking が遅れて届く後始末でプロセスごと落ちる（実測）ので、
+    /// 通信に入る前の await で打ち切る——画面で起きるのと同じ「待っている間の打ち切り」
     func testCancelledLoadIsNotAFailure() async {
         let env = environment()
         let model = TripPlansModel()
         StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#)
         await model.load(environment: env)
-        StubProtocol.respond(path: "/user/trips", status: 200, body: #"{"plans":[]}"#, delay: 0.5)
-        let task = Task { await model.load(environment: env) }
+        let slow = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                  gallery: env.gallery, spots: env.spots,
+                                  trips: TripPlanService(api: APIClient(
+                                      baseURL: URL(string: "https://api.example.test")!,
+                                      tokenProvider: SlowTokenProvider())))
+        let task = Task { await model.load(environment: slow) }
         try? await Task.sleep(nanoseconds: 50_000_000)
         task.cancel()
         await task.value
-        XCTAssertNil(model.errorMessage, "打ち切りを「通信できませんでした」にしている")
+        XCTAssertNil(model.errorMessage, "打ち切りを失敗の文にしている")
         XCTAssertEqual(model.status, .loaded)
+        XCTAssertEqual(model.plans.map(\.planId), ["p1"])
     }
 
     /// 失敗したあとも `busy` は戻る（戻らないと、以後どのボタンも押せない）
@@ -153,5 +162,13 @@ final class TripPlansModelTests: XCTestCase {
         _ = await model.create(title: "冬", environment: env)
         XCTAssertNil(model.busy)
         XCTAssertNotNil(model.errorMessage)
+    }
+}
+
+/// トークンを返すまで待つ（その間に打ち切られると `CancellationError`）
+private struct SlowTokenProvider: TokenProviding {
+    func idToken() async throws -> String? {
+        try await Task.sleep(nanoseconds: 2_000_000_000)
+        return "t"
     }
 }
