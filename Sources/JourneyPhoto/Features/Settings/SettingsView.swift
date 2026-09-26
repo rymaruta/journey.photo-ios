@@ -114,12 +114,13 @@ struct SettingsView: View {
                 // ——マイページの横並びだけだと見つからなかった
                 Section(L("プライバシー", "Privacy")) {
                     NavigationLink { BlockedUsersView() } label: {
-                        Label(L("ブロックした人", "Blocked people"), systemImage: "hand.raised")
+                        Label(L("ブロックした人", "Blocked people"), systemImage: "shield")
                     }
                     NavigationLink { CloseFriendsView() } label: {
-                        Label(L("親しい友達", "Close friends"), systemImage: "star")
+                        Label(L("親しい友達", "Close friends"), systemImage: "person.badge.plus")
                     }
-                    // 板の文言は「お気に入り」だが、アプリの画面名（01d のメニューも同じ）に揃える
+                    // 板の文言は「お気に入り」（しおりの印）だが、アプリの画面名（01d の
+                    // メニューも同じ）に揃える。しおりはアプリでは「保存」の印なので、ハート
                     NavigationLink { FavoritesView() } label: {
                         Label(Labels.Navigation.favorites, systemImage: "heart")
                     }
@@ -132,7 +133,7 @@ struct SettingsView: View {
             // **データとストレージ**（モック12）。写真の控えは端末に溜まる
             Section {
                 HStack {
-                    Label(L("写真の控え", "Cached photos"), systemImage: "externaldrive")
+                    Label(L("写真の控え", "Cached photos"), systemImage: "photo")
                     Spacer()
                     Text(cacheSize).foregroundStyle(.secondary)
                 }
@@ -154,20 +155,32 @@ struct SettingsView: View {
             Section {
                 if auth.userId != nil {
                     NavigationLink { ChangePasswordView() } label: {
-                        Label(L("パスワードを変える", "Change password"), systemImage: "key")
+                        Label(L("パスワードを変える", "Change password"), systemImage: "lock")
                     }
                 }
                 NavigationLink { LegalLinksView() } label: {
-                    Label(L("利用規約・プライバシーポリシー", "Terms & Privacy"), systemImage: "doc.text")
+                    Label(L("利用規約・プライバシーポリシー", "Terms & Privacy"), systemImage: "flag")
                 }
                 if let contact = LegalConsent.contactURL {
                     Link(destination: contact) {
-                        Label(L("問い合わせ", "Contact"), systemImage: "envelope")
+                        Label(L("問い合わせ", "Contact"), systemImage: "bubble.left")
                     }
                 }
                 if auth.userId != nil {
-                    // **ログアウトは板に無いが、まだ外せない。** 板ではメニュー（01d）に
-                    // あり、そのメニューがアプリに無い間はここが唯一の出口
+                    NavigationLink { DeleteAccountView() } label: {
+                        Label(L("アカウントの削除", "Delete account"), systemImage: "trash")
+                    }
+                    .foregroundStyle(WebTheme.danger)
+                }
+            } header: {
+                if auth.userId != nil { Text(L("アカウント", "Account")) }
+            }
+
+            // **ログアウトは板に無いが、まだ外せない。** 板ではメニュー（01d）に
+            // あり、そのメニューがアプリに無い間はここが唯一の出口。
+            // 確認なしで効くので、**削除と同じ節に並べない**（押し間違い）
+            Section {
+                if auth.userId != nil {
                     Button {
                         Task {
                             // **通知の宛先は、ログアウトの前に外す。**
@@ -179,13 +192,7 @@ struct SettingsView: View {
                     } label: {
                         Label(Labels.Navigation.logout, systemImage: "rectangle.portrait.and.arrow.right")
                     }
-                    NavigationLink { DeleteAccountView() } label: {
-                        Label(L("アカウントの削除", "Delete account"), systemImage: "trash")
-                    }
-                    .foregroundStyle(WebTheme.danger)
                 }
-            } header: {
-                if auth.userId != nil { Text(L("アカウント", "Account")) }
             } footer: {
                 // 板の最下部の1行「バージョン [0.0.0] · 接続先 [本番]」
                 Text(versionLine)
