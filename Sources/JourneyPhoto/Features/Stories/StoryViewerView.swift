@@ -38,6 +38,8 @@ struct StoryViewerView: View {
     // 進行
     @State private var elapsed: TimeInterval = 0
     @State private var pressing = false
+    /// 0.35秒押し続けた（`pressing` は触れた瞬間に立つので、見た目はこちらで決める）
+    @State private var longHeld = false
     @State private var paused = false
     @State private var muted = false
     @State private var captionHidden = false
@@ -135,18 +137,18 @@ struct StoryViewerView: View {
                     .frame(minHeight: Self.footerHeight)
                     // 止めている間は足元を隠す（板「25b」は進行バーだけ残す）。
                     // 場所は残す——消すと写真の枠が伸び縮みする
-                    .opacity(isHolding ? 0 : 1)
-                    .allowsHitTesting(!isHolding)
+                    .opacity(chrome.hidesChrome ? 0 : 1)
+                    .allowsHitTesting(!chrome.hidesChrome)
             }
             VStack(spacing: 9) {
                 progressBar(for: story)
                 header(for: story)
-                    .opacity(isHolding ? 0 : 1)
-                    .allowsHitTesting(!isHolding)
+                    .opacity(chrome.hidesChrome ? 0 : 1)
+                    .allowsHitTesting(!chrome.hidesChrome)
             }
             .padding(.top, 5)
 
-            if isHolding {
+            if chrome.showsPill {
                 pausedPill
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(false)
@@ -159,7 +161,7 @@ struct StoryViewerView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: showMenu)
-        .animation(.easeOut(duration: 0.18), value: isHolding)
+        .animation(.easeOut(duration: 0.18), value: chrome)
         .task(id: story.id) {
             // 端末の既読（輪の色）。**サーバーの応答を待たない**
             // ——圏外でも、見たものは見たことにする
@@ -481,13 +483,19 @@ struct StoryViewerView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { leftTap() }
-                .onLongPressGesture(minimumDuration: 0.35, perform: {}, onPressingChanged: { pressing = $0 })
+                .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
+                    pressing = pressedNow
+                    if !pressedNow { longHeld = false }
+                })
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
                     if paused { paused = false } else { advance() }
                 }
-                .onLongPressGesture(minimumDuration: 0.35, perform: {}, onPressingChanged: { pressing = $0 })
+                .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
+                    pressing = pressedNow
+                    if !pressedNow { longHeld = false }
+                })
         }
         // **払っても動く。** 他のアプリのストーリーは全部そうなので、
         // タップしか効かないと「反応しない」と受け取られる。
@@ -533,6 +541,8 @@ struct StoryViewerView: View {
         guard visible.indices.contains(target) else { return }
         index = target
         elapsed = 0
+        // 別の1本へ移ったら止めていたのを解く（払って移ると止まったまま進んでいた）
+        paused = false
         mediaReady = visible[target].isVideo
         captionHidden = false
         reply = ""
@@ -568,9 +578,12 @@ struct StoryViewerView: View {
 
     // MARK: - 「…」のメニュー
 
-    /// 止めている（長押し・メニューの「一時停止」）。**メニューを開いている間は
+    /// 止めている間の見せ方（`StoryPlayback.chrome`）。**メニューを開いている間は
     /// 数えない**——メニューの板は見出しを見せたまま暗くするだけ
-    private var isHolding: Bool { (pressing || paused) && !showMenu && !showDeleteConfirm }
+    private var chrome: StoryPlayback.Chrome {
+        StoryPlayback.chrome(longHeld: longHeld, paused: paused,
+                             overlayOpen: showMenu || showDeleteConfirm)
+    }
 
     private var dimOpacity: Double {
         if showDeleteConfirm { return 0.55 }
@@ -588,7 +601,7 @@ struct StoryViewerView: View {
         HStack(spacing: 8) {
             Image(systemName: "pause")
                 .font(.system(size: 14))
-            Text(StoryPlayback.pausedNote(pressing: pressing))
+            Text(StoryPlayback.pausedNote(pressing: chrome.pillSaysRelease))
                 .font(.system(size: 13))
         }
         .foregroundStyle(.white)
@@ -671,6 +684,8 @@ struct StoryViewerView: View {
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
         }
+        // 読み上げでも裏（見出し・返信欄）に触れさせない
+        .accessibilityAddTraits(.isModal)
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 

@@ -252,4 +252,41 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertNotEqual(StoryPlayback.pausedNote(pressing: true),
                           StoryPlayback.pausedNote(pressing: false))
     }
+
+    /// 🔴 **触れただけでは隠さない。** 長押しが決まるまで何も変えない
+    /// （以前はタップのたびに見出しと足元が点滅した）
+    func testTapDoesNotHideTheChrome() {
+        let c = StoryPlayback.chrome(longHeld: false, paused: false, overlayOpen: false)
+        XCTAssertFalse(c.hidesChrome)
+        XCTAssertFalse(c.showsPill)
+    }
+
+    /// 長押しの間は見出しと足元を隠し、「指を離すと」の札
+    func testLongHoldHidesChrome() {
+        let c = StoryPlayback.chrome(longHeld: true, paused: false, overlayOpen: false)
+        XCTAssertTrue(c.hidesChrome)
+        XCTAssertTrue(c.showsPill)
+        XCTAssertTrue(c.pillSaysRelease)
+    }
+
+    /// 🔴 **メニューで止めたときは見出しを残す**（隠すと ✕ と「再開」に届かない）
+    func testMenuPauseKeepsTheHeader() {
+        let c = StoryPlayback.chrome(longHeld: false, paused: true, overlayOpen: false)
+        XCTAssertFalse(c.hidesChrome)
+        XCTAssertTrue(c.showsPill)
+        XCTAssertFalse(c.pillSaysRelease)
+    }
+
+    /// 止めている間に長押ししても、離して続くとは言わない
+    func testHoldWhilePausedDoesNotPromiseRelease() {
+        let c = StoryPlayback.chrome(longHeld: true, paused: true, overlayOpen: false)
+        XCTAssertFalse(c.pillSaysRelease)
+    }
+
+    /// メニューや確認を開いている間は札を出さない
+    func testOverlayWins() {
+        let c = StoryPlayback.chrome(longHeld: true, paused: true, overlayOpen: true)
+        XCTAssertFalse(c.hidesChrome)
+        XCTAssertFalse(c.showsPill)
+    }
 }

@@ -261,6 +261,32 @@ enum StoryPlayback {
 
     // MARK: - 一時停止の札
 
+    /// 止めている間の画面の出し方。
+    ///
+    /// - `longHeld`: **0.35秒押し続けた**（指が触れただけでは立てない——
+    ///   `onPressingChanged` は触れた瞬間に true になるので、それで隠すと
+    ///   ふつうのタップのたびに見出しと足元が点滅した）
+    /// - `paused`: メニューの「一時停止」で止めた
+    ///
+    /// 見出しと足元を隠すのは**長押しの間だけ**（板 25b）。メニューで止めた
+    /// ときに隠すと、「…」（再開）と ✕ に手が届かなくなる
+    struct Chrome: Equatable {
+        let hidesChrome: Bool
+        let showsPill: Bool
+        /// 札の言い方。長押しなら「指を離すと」
+        let pillSaysRelease: Bool
+    }
+
+    static func chrome(longHeld: Bool, paused: Bool, overlayOpen: Bool) -> Chrome {
+        guard !overlayOpen else {
+            return Chrome(hidesChrome: false, showsPill: false, pillSaysRelease: false)
+        }
+        return Chrome(hidesChrome: longHeld,
+                      showsPill: longHeld || paused,
+                      // 両方立っているときは、離しても続かないので「押すと」
+                      pillSaysRelease: longHeld && !paused)
+    }
+
     /// 止めている間に出す札の文言。**長押しなら「指を離すと」、メニューから
     /// 止めたなら「押すと」**——メニューで止めた人に「指を離すと」と言っても
     /// 離す指が無い
