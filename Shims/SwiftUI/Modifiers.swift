@@ -209,6 +209,8 @@ extension View {
     public func foregroundStyle<S1: ShapeStyle, S2: ShapeStyle>(_ primary: S1, _ secondary: S2)
         -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func background<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 安全域まで伸ばす辺を言う版（本物は既定が `.all`）
+    public func background<S: ShapeStyle>(_ s: S, ignoresSafeAreaEdges edges: Edge.Set) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func background<S: ShapeStyle, T: Shape>(_ s: S, in shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 後ろに View を敷く版（本物にもある）。`alignment` で寄せる
     public func background<V: View>(alignment: Alignment = .center,
@@ -217,6 +219,8 @@ extension View {
     public func listRowBackground<V: View>(_ view: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 行の余白（本物と同じ）。`ProfileEditView` のカバーを端まで広げるのに使う
     public func listRowInsets(_ insets: EdgeInsets?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 行の区切り線を出すか（本物と同じ。`.listRowBackground(.clear)` では線は消えない）
+    public func listRowSeparator(_ visibility: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(radius: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(color: Color, radius: Double, x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

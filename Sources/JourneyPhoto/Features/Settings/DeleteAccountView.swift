@@ -59,11 +59,11 @@ struct DeleteAccountView: View {
                         .autocorrectionDisabled()
                 }
             }
-            .listRowBackground(Color.clear)
+            .jpFormRow()
 
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout) }
-                    .listRowBackground(Color.clear)
+                    .jpFormRow()
             }
 
         }

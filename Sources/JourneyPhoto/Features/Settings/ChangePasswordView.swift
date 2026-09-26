@@ -28,11 +28,11 @@ struct ChangePasswordView: View {
                 // 板には無いが残す——決まりを知らずに打つと、送ってから断られる
                 Text(AuthMessage.passwordRule)
             }
-            .listRowBackground(Color.clear)
+            .jpFormRow()
 
             if let error = auth.errorMessage {
                 Section { Text(error).foregroundStyle(WebTheme.danger).font(.callout) }
-                    .listRowBackground(Color.clear)
+                    .jpFormRow()
             }
 
             Section {
@@ -52,7 +52,7 @@ struct ChangePasswordView: View {
                 .disabled(auth.isWorking || current.isEmpty || updated.isEmpty)
                 .opacity(auth.isWorking || current.isEmpty || updated.isEmpty ? 0.4 : 1)
             }
-            .listRowBackground(Color.clear)
+            .jpFormRow()
         }
         .webScreen()
         .navigationTitle(L("パスワードを変える", "Change password"))

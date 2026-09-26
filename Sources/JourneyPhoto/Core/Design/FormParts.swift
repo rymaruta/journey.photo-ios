@@ -66,6 +66,16 @@ enum JPPillStyle {
 
 extension View {
 
+    /// `Form` の行に JPField を置くときの行の作法（板は左右 16・区切り線なし）。
+    /// **行の内側の余白を消す**——消さないと、同じ画面の札より欄が左右 20pt 狭く、
+    /// 端が揃わない。**区切り線も消す**（`listRowBackground(.clear)` では消えない）
+    func jpFormRow() -> some View {
+        self
+            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+
     func jpPillButton(_ style: JPPillStyle = .primary) -> some View {
         self
             .font(.callout.weight(.semibold))
@@ -85,8 +95,9 @@ extension View {
             .padding(.top, 12)
             .padding(.bottom, 8)
             .frame(maxWidth: .infinity)
-            .background(Color.black.opacity(0.55))
-            .background(.ultraThinMaterial)
+            // 家のバーの下まで同じ色に（ぼかしも黒も安全域へ伸ばす）
+            .background(Color.black.opacity(0.55), ignoresSafeAreaEdges: .bottom)
+            .background(.ultraThinMaterial, ignoresSafeAreaEdges: .bottom)
             .overlay(alignment: .top) {
                 Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
             }
