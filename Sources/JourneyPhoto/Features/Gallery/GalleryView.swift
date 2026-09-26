@@ -166,7 +166,7 @@ struct GalleryView: View {
                 // 並び替え。**Web も同じ列に置いている**（`FilterBar` の
                 // 右端のメニュー）。新しい順／古い順／人気順の3つ
                 Menu {
-                    ForEach(GallerySort.allCases) { option in
+                    ForEach(GallerySort.feedChoices) { option in
                         Button {
                             model.select(sort: option)
                         } label: {

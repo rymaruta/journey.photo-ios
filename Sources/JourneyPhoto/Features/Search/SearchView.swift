@@ -37,7 +37,7 @@ struct SearchView: View {
         .webScreen()
         // 並び替えの札（モック9-7）。**いまの選択に印を付ける**
         .confirmationDialog(L("並び替え", "Sort"), isPresented: $showSort, titleVisibility: .visible) {
-            ForEach(GallerySort.allCases) { option in
+            ForEach(GallerySort.feedChoices) { option in
                 Button(option == model.sort ? "\(option.label) ✓" : option.label) {
                     model.select(sort: option)
                 }
@@ -478,7 +478,7 @@ struct SearchView: View {
                 .foregroundStyle(WebTheme.muted2)
             Spacer()
             Menu {
-                ForEach(GallerySort.allCases) { option in
+                ForEach(GallerySort.feedChoices) { option in
                     Button(option.label) { model.select(sort: option) }
                 }
             } label: {
