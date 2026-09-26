@@ -25,6 +25,8 @@ enum OfficialPins {
         let coords: Photo.Coords
         /// 札に「下書き」と書くため（`published` 以外は全部 true）
         let isDraft: Bool
+        /// 写真（あれば地図の印を「写真の丸・真鍮の縁」にし、札に出典を出す）
+        var photo: SpotImage? = nil
 
         var id: String { spotId }
     }
@@ -81,6 +83,7 @@ enum OfficialPins {
     private static func pin(_ spot: OfficialSpot) -> Pin? {
         guard let coords = spot.coords else { return nil }
         return Pin(spotId: spot.spotId, slug: spot.slug, name: spot.name,
-                   regionLabel: spot.regionLabel, coords: coords, isDraft: spot.isDraft)
+                   regionLabel: spot.regionLabel, coords: coords, isDraft: spot.isDraft,
+                   photo: spot.photo)
     }
 }

@@ -350,7 +350,7 @@ struct PhotoMapView: View {
                     selected = nil
                     chosenPlace = nil
                 } label: {
-                    officialMarker
+                    officialMarker(pin)
                 }
                 .buttonStyle(.plain)
                 // 読み上げでも下書きだと分かるように（画面の札と同じ語）
@@ -359,14 +359,33 @@ struct PhotoMapView: View {
         }
     }
 
-    /// 撮影スポットの印（デザイン 07「真鍮の丸」・2026-09-26）。**写真のピンと見分けがつく丸**:
-    /// 32pt・地は真鍮・記号は墨のカメラ・2pt の白い縁・影。
+    /// 撮影スポットの印（デザイン 07・2026-09-26）。2種類:
+    ///
+    ///     写真あり  写真の丸 40pt・真鍮の縁 3pt（写真は Wikimedia Commons。
+    ///               owner が確かめた行だけ索引に載る）
+    ///     写真なし  真鍮の丸 32pt・墨のカメラ・白い縁 2pt（`brassMarker`）
     ///
     /// 以前は灰色の丸（地 rgba(40,40,44,0.92)）で、緑の地図に沈んで見つけにくかった
-    /// （owner の指摘）。写真のピン（44pt・角丸の写真）より小さいので、重なっても
-    /// 写真が前に見える。スポットに写真が結び付いたら「写真の丸・真鍮の縁」に
-    /// 替える案がデザイン 07 にある（写真はまだ0件）
-    private var officialMarker: some View {
+    /// （owner の指摘）。写真の出典は札（`officialCard`）に出す
+    @ViewBuilder
+    private func officialMarker(_ pin: OfficialPins.Pin) -> some View {
+        if let photo = pin.photo {
+            // 写真の丸・真鍮の縁（デザイン 07「写真あり」）。**縁を真鍮にして**
+            // Apple の名所（白い縁の丸）とユーザーの写真のピン（角丸の四角）から見分ける。
+            // 読めなかったときは真鍮の地が見える（空の枠にしない）
+            RemoteImage(url: photo.url)
+                .frame(width: 40, height: 40)
+                .background(WebTheme.accent)
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(WebTheme.accent, lineWidth: 3))
+                .shadow(color: .black.opacity(0.5), radius: 5, y: 3)
+                .accessibilityHidden(true)
+        } else {
+            brassMarker
+        }
+    }
+
+    private var brassMarker: some View {
         Image(systemName: "camera.fill")
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(WebTheme.accentText)
@@ -705,7 +724,7 @@ struct PhotoMapView: View {
     private func officialCard(_ pin: OfficialPins.Pin) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                officialMarker
+                officialMarker(pin)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(pin.name)
                         .font(.headline)
@@ -724,6 +743,13 @@ struct PhotoMapView: View {
                                 .foregroundStyle(WebTheme.muted2)
                                 .webChip()
                         }
+                    }
+                    // **出典は写真と必ず一緒に**（CC BY・CC BY-SA の条件）
+                    if let photo = pin.photo {
+                        Text(photo.credit)
+                            .font(.caption2)
+                            .foregroundStyle(WebTheme.muted2)
+                            .lineLimit(1)
                     }
                 }
                 Spacer()
@@ -1018,7 +1044,7 @@ struct PhotoMapView: View {
     /// 印は地図のピンと同じ丸（写真の代わり）
     private func officialRow(_ pin: OfficialPins.Pin) -> some View {
         HStack(spacing: 12) {
-            officialMarker
+            officialMarker(pin)
                 .frame(width: 56, height: 56)
                 .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 3) {
