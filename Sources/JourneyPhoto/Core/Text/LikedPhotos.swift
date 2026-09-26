@@ -3,10 +3,10 @@ import Foundation
 /// 保存した写真（`SavedPhotosView`・マイページの「お気に入り」タブ）と
 /// いいねした写真（`FavoritesView`）を、ID から写真に引き当てる決まり。
 ///
-/// いいねした写真の ID は**端末の控え（`FavoritesStore`）だけ**を見る。
-/// サーバー（`GET /user/likes`）が取れた回は、先に控えをサーバーに**入れ替えて**
-/// から見る（起動時の `syncLikes` と同じ）——和を取ると、詳細でハートを
-/// 外したぶんが一覧に残り続ける（控えから消えてもサーバーの写しに残るため）。
+/// いいねした写真の ID は `FavoritesStore.listedIds(server:)`——サーバーの一覧
+/// （`GET /user/likes`）と端末の控えの和から、**この起動中にこの端末で外した
+/// もの**を引く。控えを入れ替えるのは起動時の `syncLikes` だけ（画面を開くたびに
+/// 入れ替えると、強い整合でない古い一覧で外したいいねが控えに戻る）。
 /// 取れなかった回は控えのまま出す（圏外でも一覧は出る）。
 ///
 /// **「まだ」「引き当てられなかった」「0件」を混ぜない**（`emptyState`）。
@@ -24,11 +24,27 @@ enum LikedPhotos {
     }
 
     /// - Parameters:
-    ///   - idCount: 引き当てようとした ID の数
+    ///   - idCount: 引き当てようとした ID の数。**非表示（ブロック・通報）で
+    ///     落ちたぶんは数えない**（`countExcludingHidden`）——数えると、全部が
+    ///     非表示の人に「読み込めませんでした」と再試行が出続ける
     ///   - loaded: 引き当て先（公開一覧・自分の写真）を読み終えたか
     static func emptyState(idCount: Int, loaded: Bool) -> EmptyState {
         guard loaded else { return .loading }
         return idCount == 0 ? .none : .unresolved
+    }
+
+    /// ID の数から、**非表示で落ちただけの ID** を引いた数（`emptyState` に渡す）。
+    ///
+    /// 「引き当て先に無い」（読み込みの失敗・消された写真）と「あるが非表示で
+    /// 落ちた」を分ける。後者は読み直しても出ないので、「読み込めませんでした」
+    /// と言わない。
+    /// - Parameters:
+    ///   - pools: 絞る前の引き当て先
+    ///   - visiblePools: 非表示を落とした後の引き当て先（`pools` と同じ並び）
+    static func countExcludingHidden(_ ids: Set<String>, pools: [[Photo]], visiblePools: [[Photo]]) -> Int {
+        let found = Set(resolve(ids, in: pools).map(\.id))
+        let shown = Set(resolve(ids, in: visiblePools).map(\.id))
+        return ids.count - found.subtracting(shown).count
     }
 
     /// ID を写真に引き当てる（新しい順）。

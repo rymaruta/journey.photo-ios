@@ -30,6 +30,11 @@ struct MyPageView: View {
     @State private var showCountriesNote = false
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
+    /// いまこの画面が出ているか（`onAppear`〜`onDisappear`）。詳細を上に
+    /// 積んでいる間もこの画面は `savedPhotos.ids` を購読し続けるので、
+    /// **出ていない間は保存の ID を取り込まない**——取り込むと格子の段の ID
+    /// （`EditorialLayout.Row.id` は隣の写真まで含む）が変わり、開いている詳細が閉じる
+    @State private var isOnScreen = false
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
@@ -94,6 +99,7 @@ struct MyPageView: View {
             Task { await model.load() }
         }
         .onAppear {
+            isOnScreen = true
             // 詳細でしおりを外したぶんは、戻ってきたこの時点で落とす
             refreshSavedIds()
             guard didAppear else { didAppear = true; return }
@@ -103,10 +109,25 @@ struct MyPageView: View {
         .onChange(of: tab) { _, next in
             if next == .favorites { refreshSavedIds() }
         }
+        .onDisappear { isOnScreen = false }
         // 起動時の同期（`syncSaves`）が後から届いたぶんは拾う。**増えたときだけ**
-        // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる
+        // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる。
+        // **画面に出ている間だけ**（`isOnScreen`）。詳細の上で保存しても
+        // 増えるので、そこで取り込むと詳細が閉じる。戻れば `onAppear` が拾う
         .onChange(of: savedPhotos.ids) { _, next in
+            guard isOnScreen else { return }
             if next.isSuperset(of: savedIds) { savedIds = next }
+        }
+        // **人が替わったら前の人のぶんを持ち越さない。** 控えた保存の ID が
+        // 前の人のままだと、次の人の ID は上位集合にならず取り込まれない
+        // （公開一覧を読み終えるまで前の人の保存が見える）。空にしておけば
+        // 次は必ず取り込まれる。自分の写真・公開一覧（フォロワー限定を含む）も
+        // 前の人のもので、次の人の読み込みが落ちると引き当て先に残る
+        .onChange(of: auth.userId) { _, _ in
+            savedIds = []
+            feed = []
+            feedLoaded = false
+            model.forgetPhotos()
         }
     }
 
@@ -224,7 +245,11 @@ struct MyPageView: View {
                 .simultaneousGesture(tabSwipe)
             }
         }
-        .refreshable { await model.load() }
+        .refreshable {
+            await model.load()
+            // 保存の一覧も取り直す（`onAppear` を待たずに引き下げで揃う）
+            refreshSavedIds()
+        }
     }
 
     /// 右上の設定（板: 44pt のガラスの丸）。**上のバーを出さないので、ここが入口**
@@ -999,6 +1024,13 @@ final class MyPageViewModel: ObservableObject {
             self.followers = stats.followers
             self.following = stats.following
         }
+    }
+
+    /// 人が替わったとき、前の人の写真を手放す。次の人の読み込みが落ちても、
+    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように
+    func forgetPhotos() {
+        photos = []
+        pinnedIds = []
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

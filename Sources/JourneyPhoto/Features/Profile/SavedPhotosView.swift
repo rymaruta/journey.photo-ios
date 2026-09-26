@@ -16,13 +16,15 @@ struct SavedPhotosView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var hidden: ModerationStore
-    /// 引き当て先（公開一覧＋自分の写真・`PhotoPools`）
+    /// 引き当て先（公開一覧＋自分の写真・`PhotoPools`）。公開一覧は**絞る前**を
+    /// 持つ（非表示で落ちた ID を数え分けるため・`refilter`）
     @State private var feed: [Photo] = []
     @State private var mine: [Photo] = []
     /// 画面に出す分。**戻ってきたときに絞り直す**（`FavoritesView` と同じ理由——
     /// 見ている詳細でしおりを外した瞬間に元の行が消えると、詳細が閉じる）
     @State private var photos: [Photo] = []
-    /// 絞ったときの ID の数（「0件」と「引き当てられなかった」を分ける）
+    /// 絞ったときの ID の数（「0件」と「引き当てられなかった」を分ける）。
+    /// 非表示で落ちたぶんは数えない（`LikedPhotos.countExcludingHidden`）
     @State private var idCount = 0
     /// 引き当て先を一度でも読み終えたか（「まだ」と「0件」を混ぜない）
     @State private var loaded = false
@@ -69,10 +71,10 @@ struct SavedPhotosView: View {
     // 引き当ての決まり（id を手元の写真の束から探す・重複は1枚に）はいいねと同じ
     // （`LikedPhotos.resolve`）。保存のために同じ関数をもう1つ作らない
     private func refilter() {
-        feed = hidden.visible(feed)
+        let visibleFeed = hidden.visible(feed)
         let ids = savedPhotos.ids
-        idCount = ids.count
-        photos = LikedPhotos.resolve(ids, in: [feed, mine])
+        idCount = LikedPhotos.countExcludingHidden(ids, pools: [feed, mine], visiblePools: [visibleFeed, mine])
+        photos = LikedPhotos.resolve(ids, in: [visibleFeed, mine])
     }
 
     private func load(force: Bool = false) async {

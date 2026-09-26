@@ -53,4 +53,30 @@ final class LikedPhotosTests: XCTestCase {
         ]
         XCTAssertEqual(LikedPhotos.resolve(["old", "new"], in: [feed]).map(\.id), ["new", "old"])
     }
+
+    /// 🔴 **非表示（ブロック・通報）で落ちただけの ID は数えない。** 数えると、
+    /// 全部が非表示で消えた人に「読み込めませんでした」と再試行が出続ける
+    /// （読み直しても出ない）
+    func testHiddenOnlyIdsAreNotCountedAsUnresolved() throws {
+        let blocked = try photo("blocked", createdAt: "2026-01-01")
+        let n = LikedPhotos.countExcludingHidden(["blocked"], pools: [[blocked], []], visiblePools: [[], []])
+        XCTAssertEqual(n, 0)
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: n, loaded: true), .none)
+    }
+
+    /// 引き当て先に**無い** ID（読み込みの失敗・消された写真）は数える
+    /// ——こちらは読み直せば出るかもしれない
+    func testMissingIdsAreStillCounted() throws {
+        let blocked = try photo("blocked", createdAt: "2026-01-01")
+        let n = LikedPhotos.countExcludingHidden(["blocked", "missing"],
+                                                 pools: [[blocked]], visiblePools: [[]])
+        XCTAssertEqual(n, 1)
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: n, loaded: true), .unresolved)
+    }
+
+    /// 非表示でも、別の束（自分の写真）で出せるなら落ちていない
+    func testIdShownFromAnotherPoolIsNotHidden() throws {
+        let p = try photo("x", createdAt: "2026-01-01")
+        XCTAssertEqual(LikedPhotos.countExcludingHidden(["x"], pools: [[p], [p]], visiblePools: [[], [p]]), 1)
+    }
 }

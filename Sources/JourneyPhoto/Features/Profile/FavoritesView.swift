@@ -1,14 +1,17 @@
 import SwiftUI
 
-/// いいねした写真。**端末の控え（`FavoritesStore`）を、取れた回にサーバーへ
-/// 入れ替えてから**出す（起動時の `syncLikes` と同じ・`LikedPhotos`）。
+/// いいねした写真。**サーバーの一覧 ∪ 端末の控え − この起動中にこの端末で
+/// 外したもの**を出す（`FavoritesStore.listedIds(server:)`）。
 /// 以前マイページの「お気に入り」タブにあった一覧をここへ移した（2026-09-26。
 /// タブの中身は保存した写真＝`SavedPhotosView` になった）。
 ///
-/// サーバーの一覧を画面に写しで持って控えと和を取ると、**詳細でハートを外して
-/// 戻っても一覧に残る**（写しは開いた時点のまま）。控えだけを見れば、
-/// 別の端末で押したぶん（入れ替えで足される）も、ここで外したぶん
-/// （`favorites.set` で引かれる）も両方効く。
+/// サーバーの一覧の写しと控えの和だけだと、**詳細でハートを外して戻っても
+/// 一覧に残る**（写しは開いた時点のまま）。だから外したぶんを引く。
+/// 🔴 **ここで控えを入れ替えない**（`favorites.replace`）。サーバーの一覧の
+/// 読み取りは強い整合でなく、外した直後に開くと古い一覧で外したいいねが
+/// **控えに戻って保存される**。一覧の書き込みはベストエフォート
+/// （`likes.ts` の `noteLiked`）で、控えがその救済——入れ替えるのは起動時の
+/// `syncLikes` だけ。
 /// 控えがあるので**圏外でも一覧は出る**（画像そのものは一度見たものだけ）。
 struct FavoritesView: View {
 
@@ -21,6 +24,9 @@ struct FavoritesView: View {
     /// 自分の非公開の写真へのいいねが落ちる
     @State private var feed: [Photo] = []
     @State private var mine: [Photo] = []
+    /// 今回取れたサーバーのいいね一覧（取れなければ nil）。
+    /// 控えは書き換えず、絞るときに和を取る（`refilter`）
+    @State private var serverIds: [String]?
     /// 画面に出す分。**描画のたびに絞らない。**
     ///
     /// 絞りを計算に変えると、詳細画面でハートを外した瞬間に
@@ -28,7 +34,8 @@ struct FavoritesView: View {
     /// その場で閉じる**（SwiftUI は押した先を、押した元の存在に紐付ける）。
     /// 絞り直すのは**戻ってきたとき**（`.onAppear`）。
     @State private var photos: [Photo] = []
-    /// 絞ったときの ID の数（「0件」と「引き当てられなかった」を分ける）
+    /// 絞ったときの ID の数（「0件」と「引き当てられなかった」を分ける）。
+    /// 非表示で落ちたぶんは数えない（`LikedPhotos.countExcludingHidden`）
     @State private var idCount = 0
     /// 引き当て先を一度でも読み終えたか（「まだ」と「0件」を混ぜない）
     @State private var loaded = false
@@ -86,10 +93,10 @@ struct FavoritesView: View {
     }
 
     private func refilter() {
-        feed = hidden.visible(feed)
-        let ids = favorites.ids
-        idCount = ids.count
-        photos = LikedPhotos.resolve(ids, in: [feed, mine])
+        let visibleFeed = hidden.visible(feed)
+        let ids = favorites.listedIds(server: serverIds)
+        idCount = LikedPhotos.countExcludingHidden(ids, pools: [feed, mine], visiblePools: [visibleFeed, mine])
+        photos = LikedPhotos.resolve(ids, in: [visibleFeed, mine])
     }
 
     private func load(force: Bool = false) async {
@@ -98,11 +105,11 @@ struct FavoritesView: View {
         async let poolsTask = PhotoPools.load(environment, signedIn: signedIn, force: force)
         // **未ログインなら聞きに行かない**（端末の控えが答え）
         var failed = false
+        var fetched: [String]?
         if signedIn {
             do {
-                let serverIds = try await environment.social.myLikedPhotoIds()
-                // 取れた回だけ控えをサーバーに入れ替える（足し算と引き算の両方）
-                if !Task.isCancelled { favorites.replace(with: serverIds) }
+                // 控えは書き換えない（上の説明）。和は `refilter` で取る
+                fetched = try await environment.social.myLikedPhotoIds()
             } catch {
                 // 取り消し（画面を離れた・読み直しに追い越された）は「聞けなかった」ではない
                 failed = !(error is CancellationError) && !Task.isCancelled
@@ -111,6 +118,9 @@ struct FavoritesView: View {
         let pools = await poolsTask
         guard !Task.isCancelled else { return }
         partial = failed
+        // 取れなかった回は前の一覧を**残さない**（控えだけ出す）。残すと、人が
+        // 替わった直後に取れなかったとき、前の人のいいねが次の人に見える
+        serverIds = fetched
         feed = pools.feed ?? feed
         // ログアウトしたら前の人の写真を残さない
         mine = signedIn ? (pools.mine ?? mine) : []
