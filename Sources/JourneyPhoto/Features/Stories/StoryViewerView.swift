@@ -18,8 +18,17 @@ struct StoryViewerView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var toasts: ToastCenter
-    /// 前面に居るか（ホームへ戻ったら時計と動画を止める）
+    /// アプリの状態（前面・通知センターを出した・ホームへ戻った）
     @Environment(\.scenePhase) private var scenePhase
+    /// 前面に居るか。**`scenePhase` を直に読まず、ここへ写してから読む。**
+    ///
+    /// 時計（`runClock`）は1本ごとに一度だけ始まり、始めた瞬間の画面の
+    /// 写しを持ち続ける。`@State` は入れ物を指しているので写しからでも
+    /// 今の値が見えるが、`@Environment` は値を写しの中に持つので、
+    /// 始めた瞬間の値のまま固まる——通知センターを出している間に次の1本へ
+    /// 送られると、前面へ戻っても「止まっている」を見続け、その1本が
+    /// 進まなくなる（2026-09-26 のレビューで見つかった）
+    @State private var isForeground = true
     @Environment(\.dismiss) private var dismiss
 
     @State private var index: Int
@@ -90,7 +99,7 @@ struct StoryViewerView: View {
             isSending: isSending,
             mediaReady: mediaReady,
             // 前面に居ない間は止める（動画も止まり、戻ると続きから）
-            inBackground: scenePhase != .active
+            inBackground: !isForeground
         )
     }
 
@@ -161,6 +170,8 @@ struct StoryViewerView: View {
         // 時計は読み込みと別に回す。同じ task に入れると、見た人の一覧を
         // 待っている間、写真が出ているのに秒数が始まらない
         .task(id: story.id) { await runClock(for: story) }
+        .onAppear { isForeground = scenePhase == .active }
+        .onChange(of: scenePhase) { _, phase in isForeground = phase == .active }
         .confirmationDialog(L("ストーリーの操作", "Story options"), isPresented: $showMenu,
                             titleVisibility: .hidden) {
             menuButtons(for: story)

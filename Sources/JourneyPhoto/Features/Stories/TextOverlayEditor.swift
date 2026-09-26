@@ -69,18 +69,26 @@ struct TextOverlayEditor<Extra: View>: View {
 
     private func text(_ overlay: TextOverlay, photo: CGRect) -> some View {
         let moving = dragId == overlay.id
-        // 大きさは焼き込みと同じ関数（写真の短い辺に対する割合）
+        // 大きさと位置は焼き込みと同じ関数（写真の短い辺に対する割合・
+        // 写真に対する位置）。**下限で持ち上げない**——持ち上げると、
+        // スライダーを下げても見た目が変わらないのに投稿される文字だけ
+        // 小さくなる（2026-09-26 のレビュー）
         let fontSize = TextOverlay.fontSize(overlay.size, in: photo.size)
+        let center = overlay.center(in: photo)
         return Text(overlay.displayText)
-            .font(.system(size: max(12, fontSize), weight: .bold))
+            .font(.system(size: fontSize, weight: .bold))
             .foregroundStyle(overlay.style == .dark ? Color.black : Color.white)
             // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
-            .padding(.horizontal, overlay.style == .banner ? fontSize * 0.35 : 0)
-            .padding(.vertical, overlay.style == .banner ? fontSize * 0.175 : 0)
+            .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
+            .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
             .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
             .shadow(radius: overlay.style == .light ? 6 : 0)
-            .position(x: photo.minX + photo.width * overlay.x + (moving ? dragOffset.width : 0),
-                      y: photo.minY + photo.height * overlay.y + (moving ? dragOffset.height : 0))
+            // 小さい文字でも指で掴めるように、**押せる範囲だけ**広げる
+            // （帯の見た目は広げない＝`background` より後ろに置く）
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+            .position(x: center.x + (moving ? dragOffset.width : 0),
+                      y: center.y + (moving ? dragOffset.height : 0))
             .gesture(
                 DragGesture()
                     .onChanged { value in

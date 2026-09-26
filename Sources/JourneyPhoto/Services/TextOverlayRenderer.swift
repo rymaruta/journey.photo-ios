@@ -51,7 +51,7 @@ enum TextOverlayRenderer {
         let text = overlay.displayText as NSString
         let bounds = text.size(withAttributes: attributes)
         // 位置は中心で持っている（0...1 の相対値）
-        let center = CGPoint(x: size.width * overlay.x, y: size.height * overlay.y)
+        let center = overlay.center(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
         let origin = CGPoint(x: center.x - bounds.width / 2, y: center.y - bounds.height / 2)
 
         if overlay.style == .banner {

@@ -190,6 +190,12 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         min(image.width, image.height) * size
     }
 
+    /// 文字の中心。`photo` は写真が占める場所（焼き込みでは画像全体、
+    /// 編集画面では枠の中に収まった写真）。**両方ともここを通る**
+    func center(in photo: CGRect) -> CGPoint {
+        CGPoint(x: photo.minX + photo.width * x, y: photo.minY + photo.height * y)
+    }
+
     /// `canvas` の中に `image` を縦横比のまま収めたときの、画像の場所。
     ///
     /// 位置（`x` / `y`）は**画像に対する割合**で持つ。編集画面は 3:4 の枠に

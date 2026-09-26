@@ -78,11 +78,13 @@ final class TextOverlayTests: XCTestCase {
                        TextOverlay.fontSize(overlay.size, in: image) * shrink, accuracy: 0.0001)
         XCTAssertEqual(TextOverlay.fontSize(overlay.size, in: image), 300, accuracy: 0.0001)
 
-        // 位置: 写真の左上から、写真に対する割合で
-        let editorY = photo.minY + photo.height * overlay.y
-        let burnedY = image.height * overlay.y
-        XCTAssertEqual(editorY, photo.minY + burnedY * shrink, accuracy: 0.0001)
-        XCTAssertEqual(editorY, 87.5 + 22.5, accuracy: 0.0001)
+        // 位置: 編集画面（枠の中の写真）と焼き込み（画像全体）が同じ関数を通り、
+        // 縮めると重なる。**枠に対して置くと y は 400 × 0.1 = 40 になっていた**
+        let editor = overlay.center(in: photo)
+        let burned = overlay.center(in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        XCTAssertEqual(editor.x, photo.minX + burned.x * shrink, accuracy: 0.0001)
+        XCTAssertEqual(editor.y, photo.minY + burned.y * shrink, accuracy: 0.0001)
+        XCTAssertEqual(editor.y, 87.5 + 22.5, accuracy: 0.0001)
     }
 
     /// 空白だけの文字は「無い」扱い（見えない物を焼き込まない）
