@@ -37,6 +37,12 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     let draftedAt: String?
     /// 人が確かめた日。`published` の行だけが持つ
     let verifiedAt: String?
+    /// スポットの写真（Wikimedia Commons・2026-09-26〜）。**owner が写真を確かめた
+    /// 公開済みの行だけ**が持つ。壊れていても行ごと落とさない（`LenientSpotImage`）
+    let image: LenientSpotImage?
+
+    /// 出してよい写真。作者とライセンスが揃っていて、https の画像だけ
+    var photo: SpotImage? { image?.value }
 
     struct Region: Decodable, Equatable {
         let prefecture: String?
@@ -54,6 +60,43 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
             .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+/// スポットの写真。**作者とライセンスは必ず一緒に出す**（CC BY・CC BY-SA の条件）
+struct SpotImage: Equatable {
+    let url: URL
+    let author: String
+    let license: String
+    /// 出典のページ（Commons のファイルのページ）
+    let pageUrl: URL?
+
+    /// 札の隅に出す出典の1行
+    var credit: String { L("写真: \(author) / \(license)", "Photo: \(author) / \(license)") }
+}
+
+/// 写真の欄を**決して投げずに**読む入れ物。写真が壊れていても、スポットの行は
+/// 落とさない（写真はおまけで、場所の情報が本体）。条件を満たさなければ `value` は nil:
+///   - 画像の URL が https
+///   - 作者とライセンスが空でない（表示が使う条件。欠けていれば出さない）
+struct LenientSpotImage: Decodable, Equatable {
+    let value: SpotImage?
+
+    private struct Raw: Decodable {
+        let url: String?
+        let author: String?
+        let license: String?
+        let pageUrl: String?
+    }
+
+    init(from decoder: Decoder) throws {
+        guard let raw = try? Raw(from: decoder) else { value = nil; return }
+        let author = raw.author?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let license = raw.license?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let s = raw.url, let url = URL(string: s), url.scheme == "https",
+              !author.isEmpty, !license.isEmpty else { value = nil; return }
+        let page = raw.pageUrl.flatMap(URL.init(string:)).flatMap { $0.scheme == "https" ? $0 : nil }
+        value = SpotImage(url: url, author: author, license: license, pageUrl: page)
     }
 }
 

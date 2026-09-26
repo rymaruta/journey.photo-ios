@@ -254,15 +254,18 @@ public struct Capsule: View, Shape {
 public struct RoundedRectangle: View, Shape {
     public init(cornerRadius: Double) {}
     public func strokeBorder<S: ShapeStyle>(_ style: S, lineWidth: Double) -> RoundedRectangle { self }
+    /// 破線の縁（本物は `StrokeStyle` の `dash` を使う）
     public func strokeBorder<S: ShapeStyle>(_ style: S, style strokeStyle: StrokeStyle) -> RoundedRectangle { self }
     public func fill<S: ShapeStyle>(_ style: S) -> RoundedRectangle { self }
     public var body: Never { fatalError("模型") }
 }
 public protocol Shape {}
-@MainActor extension Shape {
-    /// 縁を引く（本物は `some View` を返す）
-    public func stroke<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Rectangle { Rectangle() }
-    public func stroke<S: ShapeStyle>(_ style: S, style strokeStyle: StrokeStyle) -> Rectangle { Rectangle() }
+extension Shape {
+    /// 縁を引く（本物は `some View` を返す）。
+    /// `Rectangle()` の初期化は MainActor に隔離されているので、呼ぶ側も合わせる
+    /// （本物の `View` の修飾子も MainActor の上で呼ばれる）
+    @MainActor public func stroke<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Rectangle { Rectangle() }
+    @MainActor public func stroke<S: ShapeStyle>(_ style: S, style strokeStyle: StrokeStyle) -> Rectangle { Rectangle() }
 }
 /// 角ごとに丸みを変える四角（iOS 16+）。ストーリーの写真は下の角だけ丸める
 public struct UnevenRoundedRectangle: View, Shape {

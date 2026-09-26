@@ -31,6 +31,16 @@ final class AuthFailureTests: XCTestCase {
         XCTAssertEqual(AuthFailure(.notAuthorized("", "", nil)), .notAuthorized)
     }
 
+    /// 退会の押し直し: Cognito 側で消えていれば「消せた」扱い。
+    /// **通信や認可の失敗まで「消せた」にしない**——アカウントが残ったまま
+    /// サインアウトさせてしまう
+    func testOnlyMissingUserCountsAsAlreadyDeleted() {
+        XCTAssertTrue(AuthFailure(service(.userNotFound)).meansUserAlreadyGone)
+        XCTAssertFalse(AuthFailure(service(.network)).meansUserAlreadyGone)
+        XCTAssertFalse(AuthFailure(.notAuthorized("", "", nil)).meansUserAlreadyGone)
+        XCTAssertFalse(AuthFailure(service(.limitExceeded)).meansUserAlreadyGone)
+    }
+
     /// **回数制限は「恒久的」ではない**——ここで控えを捨てると、
     /// 確認画面に二度と戻れない（Web が踏んだ穴）。
     func testOnlyPermanentFailuresAllowForgettingThePendingEntry() {

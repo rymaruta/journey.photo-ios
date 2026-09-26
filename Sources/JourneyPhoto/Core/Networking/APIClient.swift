@@ -78,9 +78,10 @@ actor APIClient {
         _ method: Method,
         _ path: String,
         query: [String: String] = [:],
-        body: (any Encodable)? = nil
+        body: (any Encodable)? = nil,
+        timeout: TimeInterval? = nil
     ) async throws -> Data {
-        try await send(method, path, query: query, body: body, authorized: true)
+        try await send(method, path, query: query, body: body, authorized: true, timeout: timeout)
     }
 
     /// 認証なしで叩く（公開プロフィール・いいね数・コメント取得など）。
@@ -102,10 +103,13 @@ actor APIClient {
         _ path: String,
         query: [String: String],
         body: (any Encodable)?,
-        authorized: Bool
+        authorized: Bool,
+        timeout: TimeInterval? = nil
     ) async throws -> Data {
         var request = URLRequest(url: try url(for: path, query: query))
         request.httpMethod = method.rawValue
+        // **長く掛かると分かっている口だけ延ばす**（退会: サーバーは最長29秒）
+        if let timeout { request.timeoutInterval = timeout }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         if let body {

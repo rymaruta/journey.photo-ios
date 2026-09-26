@@ -146,11 +146,6 @@ public struct SearchFieldPlacementShim {
 public struct SubmitTriggerShim {
     public static let search = SubmitTriggerShim()
 }
-/// キーボードの改行キーの札（`.submitLabel(.send)`）
-public struct SubmitLabelShim {
-    public static let done = SubmitLabelShim(), send = SubmitLabelShim(), search = SubmitLabelShim()
-    public static let go = SubmitLabelShim(), next = SubmitLabelShim(), `return` = SubmitLabelShim()
-}
 
 /// 修飾を1枚かぶせた View。本物と同じく**かぶせるたびに型が変わる**。
 public struct ModifiedContent<Content, Modifier>: View {
@@ -181,6 +176,7 @@ extension View {
     public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 端を選んで安全領域を無視する（本物は `regions:` も取る）
     public func ignoresSafeArea(edges: Edge.Set) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 画面の端に貼り付く帯（iOS 15+）。本物はスクロールの底の余白も足す。
     /// 模型は素通し——キーボードで持ち上がるかは Mac で見る
@@ -258,8 +254,11 @@ extension View {
     public func autocorrectionDisabled(_ disabled: Bool = true) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func searchable(text: Binding<String>, placement: SearchFieldPlacementShim = .automatic,
                            prompt: String? = nil) -> Self { self }
-    public func submitLabel(_ l: SubmitLabelShim) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func onSubmit(of t: SubmitTriggerShim = .search, _ action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// シートを下へ払って閉じるのを止める（iOS 15+）
+    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> Self { self }
+    /// キーボードの確定キーの文言（iOS 15+）
+    public func submitLabel(_ label: SubmitLabel) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
 
     // 画面遷移と入れ物
     public func navigationTitle(_ title: String) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
@@ -384,4 +383,10 @@ extension View {
 public struct EdgeInsets {
     public init() {}
     public init(top: Double, leading: Double, bottom: Double, trailing: Double) {}
+}
+
+/// `submitLabel(_:)` が受ける確定キーの文言。本物は struct
+public struct SubmitLabel {
+    public static let done = SubmitLabel(), go = SubmitLabel(), send = SubmitLabel(),
+                      search = SubmitLabel(), next = SubmitLabel(), `return` = SubmitLabel()
 }

@@ -94,6 +94,23 @@ final class AuthStore: ObservableObject {
         state = .signedOut
     }
 
+    /// 退会の最後の一歩: Cognito の利用者を消す（`AuthGateway.deleteUser`）。
+    /// 消せたらサインアウトの扱いにする。**失敗は投げる**——呼び手が
+    /// 「データは消えたがアカウントが残っている」と言い分ける
+    ///
+    /// **「もう居ない」は消せた扱い。** Cognito 側で消えたのに返事だけ落ちた回は、
+    /// 押し直すと手元のトークンで DeleteUser を呼び直して `userNotFound` が返る。
+    /// 失敗として投げると「もう一度押して」が永久に続き、抜けられない
+    func deleteCognitoUser() async throws {
+        do {
+            try await AuthGateway.deleteUser()
+        } catch let error as AuthError where AuthFailure(error).meansUserAlreadyGone {
+            // 消えている。下のサインアウトへ進む
+        }
+        await AuthGateway.signOut()
+        state = .signedOut
+    }
+
     /// - Returns: 確認コード送信に使う UUID。失敗したら nil。
     func signUp(email: String, password: String) async -> String? {
         var username: String?
@@ -221,6 +238,9 @@ enum AuthFailure: Equatable {
         default: self = .other
         }
     }
+
+    /// 相手の利用者がもう存在しない（退会の押し直しで「消せた」とみなす）。
+    var meansUserAlreadyGone: Bool { self == .userNotFound }
 
     /// 控えを捨ててよい失敗か（**この控えはもう使えない**ときだけ）。
     var isPermanent: Bool {

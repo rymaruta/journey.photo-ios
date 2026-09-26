@@ -21,6 +21,13 @@ struct PhotoMapView: View {
     var onPost: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
+    @EnvironmentObject private var hidden: ModerationStore
+    /// ブロック／通報があったが、まだピンから落としていない。
+    /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
+    /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
+    /// 通報の「受け付けました」も見えない。戻ってきたとき（`onAppear`）に絞る
+    @State private var needsDrop = false
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
     /// 取れた現在地。**この画面が開いている間だけ**持つ
@@ -73,11 +80,15 @@ struct PhotoMapView: View {
                 location.locate(requestedByUser: false)
             }
             await model.load(environment: environment)
+            // 読んでいる間に通報された回、古い集合で絞った結果を残さない
+            dropHidden()
             // 現在地が先に取れていたら、写真の読み込みで引き戻さない
             if here == nil { frame(model.frame) }
         }
         // 絞りが変わったら、残ったピンに寄せ直す（範囲で絞ったときは
         // 見ている場所を動かさない——押した範囲がそのまま答え）
+        .onChange(of: hidden.revision) { _, _ in needsDrop = true }
+        .onAppear { if needsDrop { dropHidden() } }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
             frame(model.frame)
@@ -104,12 +115,15 @@ struct PhotoMapView: View {
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
                 span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))))
         }
-        .sheet(isPresented: $showNearby) {
+        // 近くの写真のシートの中でブロックした回も同じ（地図は見え続けている）
+        .sheet(isPresented: $showNearby, onDismiss: { if needsDrop { dropHidden() } }) {
             if let here {
                 NearbyPhotosSheet(center: here, photos: model.photos)
             }
         }
-        .sheet(item: $listing) { pin in
+        // 一覧のシートの中の詳細でブロックした回は、地図は見え続けていて
+        // `onAppear` が来ない。閉じたときに落とす
+        .sheet(item: $listing, onDismiss: { if needsDrop { dropHidden() } }) { pin in
             NavigationStack {
                 List(pin.photos) { photo in
                     NavigationLink {
@@ -350,7 +364,7 @@ struct PhotoMapView: View {
                     selected = nil
                     chosenPlace = nil
                 } label: {
-                    officialMarker
+                    officialMarker(pin)
                 }
                 .buttonStyle(.plain)
                 // 読み上げでも下書きだと分かるように（画面の札と同じ語）
@@ -359,14 +373,33 @@ struct PhotoMapView: View {
         }
     }
 
-    /// 撮影スポットの印（デザイン 07「真鍮の丸」・2026-09-26）。**写真のピンと見分けがつく丸**:
-    /// 32pt・地は真鍮・記号は墨のカメラ・2pt の白い縁・影。
+    /// 撮影スポットの印（デザイン 07・2026-09-26）。2種類:
+    ///
+    ///     写真あり  写真の丸 40pt・真鍮の縁 3pt（写真は Wikimedia Commons。
+    ///               owner が確かめた行だけ索引に載る）
+    ///     写真なし  真鍮の丸 32pt・墨のカメラ・白い縁 2pt（`brassMarker`）
     ///
     /// 以前は灰色の丸（地 rgba(40,40,44,0.92)）で、緑の地図に沈んで見つけにくかった
-    /// （owner の指摘）。写真のピン（44pt・角丸の写真）より小さいので、重なっても
-    /// 写真が前に見える。スポットに写真が結び付いたら「写真の丸・真鍮の縁」に
-    /// 替える案がデザイン 07 にある（写真はまだ0件）
-    private var officialMarker: some View {
+    /// （owner の指摘）。写真の出典は札（`officialCard`）に出す
+    @ViewBuilder
+    private func officialMarker(_ pin: OfficialPins.Pin) -> some View {
+        if let photo = pin.photo {
+            // 写真の丸・真鍮の縁（デザイン 07「写真あり」）。**縁を真鍮にして**
+            // Apple の名所（白い縁の丸）とユーザーの写真のピン（角丸の四角）から見分ける。
+            // 読めなかったときは真鍮の地が見える（空の枠にしない）
+            RemoteImage(url: photo.url)
+                .frame(width: 40, height: 40)
+                .background(WebTheme.accent)
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(WebTheme.accent, lineWidth: 3))
+                .shadow(color: .black.opacity(0.5), radius: 5, y: 3)
+                .accessibilityHidden(true)
+        } else {
+            brassMarker
+        }
+    }
+
+    private var brassMarker: some View {
         Image(systemName: "camera.fill")
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(WebTheme.accentText)
@@ -705,7 +738,7 @@ struct PhotoMapView: View {
     private func officialCard(_ pin: OfficialPins.Pin) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                officialMarker
+                officialMarker(pin)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(pin.name)
                         .font(.headline)
@@ -724,6 +757,13 @@ struct PhotoMapView: View {
                                 .foregroundStyle(WebTheme.muted2)
                                 .webChip()
                         }
+                    }
+                    // **出典は写真と必ず一緒に**（CC BY・CC BY-SA の条件）
+                    if let photo = pin.photo {
+                        Text(photo.credit)
+                            .font(.caption2)
+                            .foregroundStyle(WebTheme.muted2)
+                            .lineLimit(1)
                     }
                 }
                 Spacer()
@@ -1018,7 +1058,7 @@ struct PhotoMapView: View {
     /// 印は地図のピンと同じ丸（写真の代わり）
     private func officialRow(_ pin: OfficialPins.Pin) -> some View {
         HStack(spacing: 12) {
-            officialMarker
+            officialMarker(pin)
                 .frame(width: 56, height: 56)
                 .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 3) {
@@ -1079,6 +1119,16 @@ struct PhotoMapView: View {
     }
 
     // MARK: - カメラ
+
+    /// 手元のピンからブロック／通報したぶんを落とす。選んでいた札が
+    /// 落ちた写真を持っていたら下げる（札は押した時点のピンの写しを持つ）
+    private func dropHidden() {
+        needsDrop = false
+        model.drop(hiddenBy: hidden)
+        if let pin = selected, hidden.visible(pin.photos).count != pin.photos.count {
+            selected = nil
+        }
+    }
 
     /// 地図をその枠へ寄せる。nil なら動かさない（既定に戻して地球儀にしない）
     ///

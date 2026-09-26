@@ -33,6 +33,12 @@ struct ReportSheet: View {
                         Text(L("結果をお伝えできない場合があります。", "We may not be able to tell you the outcome."))
                     }
                     .listRowBackground(Color.clear)
+                    // **受け付けたあとにも出す。** 「通報は通ったがブロックは落ちた」は
+                    // `done` になってから伝える文言で、以前は else 側にしか置いて
+                    // いなかったので一度も見えなかった
+                    if let errorMessage {
+                        Section { Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout) }
+                    }
                 } else {
                     Section(L("理由", "Reason")) {
                         Picker(L("理由", "Reason"), selection: $reason) {
