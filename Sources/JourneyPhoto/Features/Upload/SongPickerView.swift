@@ -16,6 +16,8 @@ struct SongPickerView: View {
     /// この端末で最近選んだ曲。**欄が空のときだけ出す**（`SongPickerText` の説明）
     @State private var recent: [Photo.Song] = []
     @State private var isSearching = false
+    /// 検索の回の番号。くるくるを戻すのは最新の回だけ
+    @State private var searchRuns = SongPickerText.SearchRuns()
     @State private var message: String?
 
     private let recentStore = RecentSongsStore()
@@ -85,7 +87,8 @@ struct SongPickerView: View {
         // 上に重なっていて、シートがそれを覆うので、ここでは見えない。
         // 部品と再生の係は全体のバーと同じもの（二重に作らない）
         .safeAreaInset(edge: .bottom) {
-            // 鳴っていないときは場所を取らない（余白ごと出さない）
+            // 鳴っていないときは場所を取らない（余白ごと出さない）。
+            // 前から鳴っていた曲も出す（全体のバーはシートの下で見えない）
             if SongPickerText.showsBar(playingFrom: player.origin, inSongPicker: true) {
                 MiniPlayerBar(inSongPicker: true)
                     .padding(.bottom, 8)
@@ -101,7 +104,10 @@ struct SongPickerView: View {
     private func search() async {
         isSearching = true
         message = nil
-        defer { isSearching = false }
+        // **最新の回だけが戻す。** 古い検索が遅れて終わったとき、新しい検索の
+        // 途中のくるくるを消さない
+        let run = searchRuns.begin()
+        defer { if searchRuns.isLatest(run) { isSearching = false } }
         // 送ったときの語。**返事が届いたとき欄が変わっていたら捨てる**
         let sent = query
         do {

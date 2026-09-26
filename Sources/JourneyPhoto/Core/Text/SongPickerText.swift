@@ -53,18 +53,37 @@ enum SongPickerText {
             == now.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 再生バーを出すか。**曲選びの中のバーは、曲選びで鳴らした曲だけ**
-    /// （「· 試し聴き中」と出すので、前から鳴っていた曲には出さない）。
-    /// **全体のバーはその逆**——曲選びのシートを下へ引いて閉じる途中に、
-    /// 下の全体のバーとシートの中のバーが二重に見えないように
+    /// 再生バーを出すか。**曲選びの中のバーは、鳴っている曲なら何でも出す**
+    /// ——全体のバーはシートに覆われて見えないので、前から鳴っていた曲
+    /// （マイページの BGM など）を出さないと、鳴っているのに止める口が画面に無い。
+    /// **全体のバーは曲選びで鳴らした曲を出さない**——シートを下へ引いて閉じる
+    /// 途中に2本並ばないように。前から鳴っていた曲（`.app`）だけは閉じる途中に
+    /// 2本見えうるが、止める口が無いよりよい
     static func showsBar(playingFrom origin: PlaybackOrigin?, inSongPicker: Bool) -> Bool {
         guard let origin else { return false }
-        return inSongPicker ? origin == .songPicker : origin != .songPicker
+        return inSongPicker ? true : origin != .songPicker
+    }
+
+    /// バーの1行目。**「· 試し聴き中」は曲選びで鳴らした曲をシートの中で出すときだけ**
+    /// （前から鳴っていた曲は試し聴きではない）
+    static func barTitle(_ title: String, playingFrom origin: PlaybackOrigin?, inSongPicker: Bool) -> String {
+        inSongPicker && origin == .songPicker ? nowPreviewing(title) : title
     }
 
     /// シートの中の再生バーの1行目（板 23「[曲名] · 試し聴き中」）
     static func nowPreviewing(_ title: String) -> String {
         L("\(title) · 試し聴き中", "\(title) · Previewing")
+    }
+
+    /// 検索の回の番号。**くるくるを戻すのは最新の回だけ**（`isCurrent` と同じ考え方）。
+    /// 古い検索の返事が遅れて届いたとき、新しい検索の途中の表示を消さないため
+    struct SearchRuns {
+        private(set) var latest = 0
+        mutating func begin() -> Int {
+            latest += 1
+            return latest
+        }
+        func isLatest(_ run: Int) -> Bool { run == latest }
     }
 }
 
