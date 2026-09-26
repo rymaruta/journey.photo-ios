@@ -52,8 +52,8 @@ struct UploadView: View {
                 }
                 .accessibilityLabel(Labels.Common.close)
             }
-            ToolbarItem(placement: .confirmationAction) {
-                if auth.userId != nil { submitButton }
+            if auth.userId != nil {
+                ToolbarItem(placement: .confirmationAction) { submitButton }
             }
         }
         .onChange(of: model.didPostAll) { _, posted in
@@ -71,12 +71,13 @@ struct UploadView: View {
     private var form: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // **知らせは上に。** 投稿は右上で押すので、下に出すと画面の外になる
+                progressAndErrors
                 strip
                 if model.items.count > 1 { groupChoice }
                 detailSection
                 rowsCard
                 tagsAndCategory
-                progressAndErrors
                 // 板: 本文の最後に 11px の注記
                 Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
                     .font(.caption2)
@@ -109,7 +110,10 @@ struct UploadView: View {
         .photosPicker(isPresented: $showLibrary,
                       selection: $model.pickerItems,
                       maxSelectionCount: UploadViewModel.maxSelection,
-                      matching: .images)
+                      matching: .images,
+                      // **前の選択に印を付けて開く。** 無いと毎回まっさらで開き、
+                      // 「追加」が選び直しになる（前の写真と打った題が消える）
+                      photoLibrary: .shared())
     }
 
     /// 右上の「投稿する」（板: 真鍮・15pt semibold）。送信中は何枚目かを出す
@@ -212,9 +216,7 @@ struct UploadView: View {
                 }
             }
             Button { showLibrary = true } label: {
-                Label(model.items.isEmpty ? L("写真を選ぶ", "Choose photos")
-                                          : L("選び直す", "Choose again"),
-                      systemImage: "photo.on.rectangle")
+                Label(L("ライブラリから選ぶ", "Choose from library"), systemImage: "photo.on.rectangle")
             }
         } label: {
             VStack(spacing: 6) {
@@ -295,7 +297,10 @@ struct UploadView: View {
                         }
                 }
                 count(item.caption, limit: PostLimits.description)
-                PlaceSearchField(location: $item.location, coords: $item.pickedCoords)
+                VStack(alignment: .leading, spacing: 6) {
+                    JPSectionTitle(L("撮影地", "Place"))
+                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords)
+                }
             }
         }
     }
@@ -352,6 +357,10 @@ struct UploadView: View {
                                value: model.category.isEmpty ? L("選ぶ", "Choose") : model.category)
                 }
                 .buttonStyle(JPRowButtonStyle())
+            }
+            // 付けた曲は試し聴きできる形で出す（アートワーク・アーティスト・再生）
+            if let song = model.song {
+                SongRow(song: song)
             }
             // 公開範囲の説明（何が起きるかを先に言う）
             Text(model.published

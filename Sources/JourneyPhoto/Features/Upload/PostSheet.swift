@@ -60,7 +60,8 @@ struct PostSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 20)
-        .presentationDetents([.height(320)])
+        // 文字を大きくしたときに切れないよう、全画面にも伸ばせる
+        .presentationDetents([.height(320), .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Self.sheetBackground)
         .task {

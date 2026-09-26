@@ -18,6 +18,9 @@ struct PendingPhoto: Identifiable {
     var location = ""
     /// 撮影地を候補から選んだときに入る座標（写真の EXIF より優先）
     var pickedCoords: Photo.Coords?
+    /// ライブラリから選んだ写真の印（カメラで撮った分は nil）。
+    /// 選び直しのときに「まだ選ばれているか」を見るのに使う
+    var pickerItem: PhotosPickerItem?
 }
 
 @MainActor
@@ -164,7 +167,13 @@ final class UploadViewModel: ObservableObject {
     func remove(_ photoId: UUID) {
         placeTasks[photoId]?.cancel()
         placeTasks[photoId] = nil
+        let removed = items.first { $0.id == photoId }
         items.removeAll { $0.id == photoId }
+        // **ライブラリの選択からも外す。** 残すと、次に「追加」を開いたときに
+        // 選ばれたままで、閉じると外したはずの写真が戻ってくる
+        if let key = removed?.pickerItem {
+            pickerItems.removeAll { $0 == key }
+        }
     }
 
     /// 選ばれた写真を読み、**その場で EXIF を落とす**。
@@ -173,19 +182,25 @@ final class UploadViewModel: ObservableObject {
     /// **1枚でも読めたら、読めたぶんは受ける。** 全部捨てると、
     /// 1枚の壊れた写真のために選び直しになる（Web も落ちた枚数だけ伝える）。
     private func loadPicked(_ picked: [PhotosPickerItem]) async {
-        guard !picked.isEmpty else { return }
+        // **選び直しは差分で。** 外した分だけ落とし、足した分だけ読む。
+        // 以前は丸ごと入れ替えていて、「追加」を押すと打った題やカメラで撮った
+        // 分まで消えていた（2026-09-26 のレビュー）
+        let diff = PickerReconcile.reconcile(existing: items.map(\.pickerItem), picked: picked)
+        let dropped = zip(items, diff.keep).filter { !$0.1 }.map { $0.0.id }
+        for id in dropped {
+            placeTasks[id]?.cancel()
+            placeTasks[id] = nil
+        }
+        items.removeAll { dropped.contains($0.id) }
+        guard !diff.added.isEmpty else { return }
+
         isLoadingPicked = true
         errorMessage = nil
         didPostAll = false
         defer { isLoadingPicked = false }
 
-        // 選び直しは**入れ替え**（前の選択が残ると、何が上がるのか読めない）
-        placeTasks.values.forEach { $0.cancel() }
-        placeTasks = [:]
-        items = []
-
         var failed = 0
-        for item in picked {
+        for item in diff.added {
             if Task.isCancelled { return }
             do {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
@@ -195,7 +210,7 @@ final class UploadViewModel: ObservableObject {
                 // **`itemIdentifier` をファイル名にしない。** スラッシュを含む
                 // 端末内部の ID で、キーの組み立てを壊す。拡張子は
                 // `ImagePreparer` が .jpg に付け替える
-                append(try ImagePreparer.prepare(data: data, fileName: "photo"))
+                append(try ImagePreparer.prepare(data: data, fileName: "photo"), pickerItem: item)
             } catch {
                 failed += 1
             }
@@ -210,8 +225,9 @@ final class UploadViewModel: ObservableObject {
     }
 
     /// 1枚を待ち行列に足し、撮影地を引き始める。
-    private func append(_ prepared: ImagePreparer.Prepared) {
+    private func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil) {
         var photo = PendingPhoto(prepared: prepared)
+        photo.pickerItem = pickerItem
         photo.preview = Self.image(from: prepared.data)
         items.append(photo)
         // **撮影地を、写真の座標から先に埋めておく**（Web と同じ）。
@@ -356,5 +372,23 @@ final class UploadViewModel: ObservableObject {
     private static func image(from data: Data) -> Image? {
         guard let uiImage = UIImage(data: data) else { return nil }
         return Image(uiImage: uiImage)
+    }
+}
+
+/// 新規投稿の「追加」（ライブラリの選び直し）の差分。画面の状態を持たない計算だけ
+enum PickerReconcile {
+
+    /// 選び直しの差分。**残す印と、新しく読む印**を返す。
+    ///
+    /// ライブラリは前の選択に印を付けて開く（`photoLibrary: .shared()`）ので、
+    /// 返ってくる選択は「前の分＋足した分−外した分」。前の分を読み直さずに
+    /// 残せば、1枚ずつ打った題・説明・撮影地が消えない。カメラの分（nil）は常に残す
+    static func reconcile<Key: Hashable>(existing: [Key?], picked: [Key]) -> (keep: [Bool], added: [Key]) {
+        let chosen = Set(picked)
+        let keep = existing.map { key in key.map { chosen.contains($0) } ?? true }
+        let known = Set(existing.compactMap { $0 })
+        var seen = Set<Key>()
+        let added = picked.filter { !known.contains($0) && seen.insert($0).inserted }
+        return (keep, added)
     }
 }
