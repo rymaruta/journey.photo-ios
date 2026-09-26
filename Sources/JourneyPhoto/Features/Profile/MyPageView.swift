@@ -137,16 +137,9 @@ struct MyPageView: View {
             ZStack(alignment: .top) {
                 scroll(topInset: geo.safeAreaInsets.top)
                     .ignoresSafeArea(edges: hasCover ? .top : [])
-                // **時計の裏に黒のぼかし**。上のバーを出さないので、流した写真が
-                // 時計・電池の字の真下を通って字が読めなくなっていた。
-                // GeometryReader の原点は安全域の下なので、その分だけ上へずらす。
-                // 押す操作は下へ通す
-                LinearGradient(colors: [Color.black.opacity(0.7), Color.black.opacity(0)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: geo.safeAreaInsets.top + 16)
-                    .offset(y: -geo.safeAreaInsets.top)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                // **時計の裏に黒のぼかし**（`TopBarScrim`）。上のバーを出さないので、
+                // 流した写真が時計・電池の字の真下を通って字が読めなくなっていた
+                TopBarScrim(topInset: geo.safeAreaInsets.top)
             }
         }
     }

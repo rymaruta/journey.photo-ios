@@ -34,63 +34,34 @@ struct UserProfileView: View {
         GridItem(.flexible(), spacing: 4),
     ]
 
-    /// ログインしていて、自分以外のページか（フォローとブロックはこの時だけ）
-    private var canAct: Bool { auth.userId != nil && auth.userId != userId }
+    /// ログインしていて、自分以外で、ブロック中でないページか
+    /// （フォロー・一覧の丸・ハイライト・ブロックはこの時だけ。`ProfileLine.canAct`）。
+    /// ブロックはこの画面でも起きるので、`hidden` の中身を毎回見る
+    private var canAct: Bool {
+        ProfileLine.canAct(viewerId: auth.userId, userId: userId, blocked: hidden.blockedUserIds)
+    }
+    private var isBlocked: Bool { hidden.blockedUserIds.contains(userId) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // 板: 見出し・数・ハイライトの間は 12pt、その下の札と格子は 16pt
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ProfileCover(url: model.profile?.coverURL(cacheBust: model.cacheBust),
-                                     reserve: hasCover) { hasCover = $0 }
-                        header
-                    }
-                    if model.profile != nil {
-                        counts
-                        // 板 31 の丸の列。**無い人には何も出さない**（`ProfileSections.showsHighlights`）
-                        HighlightsRow(userId: userId, isMine: false)
-                    }
-                }
-
-                // **端末にしか無い札は出さない**（`ProfileTab.tabs`）
-                ProfileTabBar(tabs: ProfileTab.tabs(isMe: false), selection: $tab)
-
-                photoArea
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                scroll
+                    // カバーがあれば画面の上端から敷く（戻るの丸がカバーの上に乗る）。
+                    // 無ければ帯も灰色の空き地も置かず、バーの下から始める
+                    .ignoresSafeArea(edges: hasCover ? .top : [])
+                // **時計とバーの裏に黒のぼかし**（マイページと同じ `TopBarScrim`）。
+                // バーの地を透かしているので、敷かないと上へ送った写真が時計・戻る・
+                // 「…」の真下を流れて読めない。iOS 17〜25 は丸に地が無く、明るい
+                // カバーの上でも矢印が沈む
+                TopBarScrim(topInset: geo.safeAreaInsets.top)
             }
         }
-        // カバーがあれば画面の上端から敷く（戻るの丸がカバーの上に乗る）。
-        // 無ければ帯も灰色の空き地も置かず、バーの下から始める
-        .ignoresSafeArea(edges: hasCover ? .top : [])
         .webScreen()
         // 題は戻る文字（次の画面）と読み上げのために持つ。見えるところには出さない
         .navigationTitle(model.shownName ?? Labels.Navigation.profile)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar {
-            // **中央は空けておく**（`AppHeader` と同じ塞ぎ方）。名前は下の見出しにある
-            ToolbarItem(placement: .principal) {
-                Color.clear.frame(width: 1, height: 1)
-                    .accessibilityHidden(true)
-            }
-            if canAct {
-                ToolbarItem(placement: .topBarTrailing) {
-                    // **通報は置かない。** サーバーが受けるのは写真の通報だけ
-                    // （`POST /photos/{id}/report`）で、人を通報する口が無い。
-                    // 押しても何も起きない項目は作らない（写真の詳細から通報できる）
-                    Menu {
-                        Button(role: .destructive) { showBlockConfirm = true } label: {
-                            Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .webToolbarIcon()
-                            .accessibilityLabel(L("この人の操作", "More actions"))
-                    }
-                }
-            }
-        }
+        .toolbar { toolbarItems }
         .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
             Button(L("ブロック", "Block"), role: .destructive) {
                 Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
@@ -104,10 +75,72 @@ struct UserProfileView: View {
         }
     }
 
+    private var scroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // 板: 見出し・数・ハイライトの間は 12pt、その下の札と格子は 16pt
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ProfileCover(url: model.profile?.coverURL(cacheBust: model.cacheBust),
+                                     reserve: hasCover) { hasCover = $0 }
+                        header
+                    }
+                    if model.profile != nil {
+                        counts
+                        if canAct {
+                            // 板 31 の丸の列。**無い人には何も出さない**（`ProfileSections.showsHighlights`）。
+                            // 見られるのは本人とフォロワーだけなので、**フォローを変えたら
+                            // 作り直して読み直す**（鍵が変わる）。そのままだと外した後も
+                            // 輪が残り、押すと 404 になる
+                            HighlightsRow(userId: userId, isMine: false)
+                                .id(ProfileLine.highlightsKey(userId: userId,
+                                                              isFollowing: model.isFollowing))
+                        }
+                    }
+                }
+
+                // **端末にしか無い札は出さない**（`ProfileTab.tabs`）
+                ProfileTabBar(tabs: ProfileTab.tabs(isMe: false), selection: $tab)
+
+                photoArea
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarItems: some ToolbarContent {
+        // **中央は空けておく**（`AppHeader` と同じ塞ぎ方）。名前は下の見出しにある
+        ToolbarItem(placement: .principal) {
+            Color.clear.frame(width: 1, height: 1)
+                .accessibilityHidden(true)
+        }
+        if canAct {
+            ToolbarItem(placement: .topBarTrailing) {
+                // **通報は置かない。** サーバーが受けるのは写真の通報だけ
+                // （`POST /photos/{id}/report`）で、人を通報する口が無い。
+                // 押しても何も起きない項目は作らない（写真の詳細から通報できる）
+                Menu {
+                    Button(role: .destructive) { showBlockConfirm = true } label: {
+                        Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .webToolbarIcon()
+                        .accessibilityLabel(L("この人の操作", "More actions"))
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var photoArea: some View {
         if let message = model.errorMessage {
             ErrorBanner(message: message) {
+                Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
+            }
+        } else if model.photos.isEmpty && model.photoCount == .failed {
+            // **取れなかったのを「まだありません」と言わない**（数の札も「—」）
+            ErrorBanner(message: Labels.Common.loadFailed) {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
             }
         } else if model.photos.isEmpty && !model.isLoading {
@@ -174,14 +207,16 @@ struct UserProfileView: View {
 
     /// 数の1行（板 31: 「000 フォロワー　000 フォロー中　000 写真」・数が先）。
     ///
-    /// 写真の数は**公開一覧から選り分けた枚数**（下の格子と同じ数）。
+    /// 写真の数は**下の格子に並べている枚数そのもの**（公開一覧からこの人のぶんを
+    /// 選り分けたもの）。**読み終えるまで出さず、取れなければ「—」**（`PhotoCount`）。
+    /// ブロックして一覧を伏せたあとも出さない。
     /// 押して一覧を開けるのは、ログインしていて1人以上いるときだけ
     /// （`FollowCounts.isTappable`）。一覧の口は認証が要るので、未ログインで
     /// 押せると赤字だけの行き止まりになる。
     private var counts: some View {
         HStack(spacing: 20) {
             ForEach(ProfileLine.counts(followers: model.followers, following: model.following,
-                                       photos: model.photos.count)) { item in
+                                       photos: isBlocked ? .pending : model.photoCount)) { item in
                 switch item.kind {
                 case .followers:
                     countLink(item, kind: .followers, count: model.followers)
@@ -298,6 +333,8 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var followers = 0
     @Published private(set) var following = 0
     @Published private(set) var isFollowing = false
+    /// 写真の数を言えるか。**配列の長さを直接出さない**（読み込み中・失敗で 0 になる）
+    @Published private(set) var photoCount: ProfileLine.PhotoCount = .pending
     @Published private(set) var isLoading = false
     @Published private(set) var isWorking = false
     @Published var errorMessage: String?
@@ -340,6 +377,13 @@ final class UserProfileViewModel: ObservableObject {
         if let all {
             photos = PhotoPinning.pinnedFirst(all.filter { ($0.userId ?? $0.uploadedBy) == userId },
                                       pinned: profile?.pinnedPhotoIds ?? [])
+            photoCount = .loaded(photos.count)
+        } else {
+            // 前の回に取れていた一覧は残す（数もそのまま）。一度も取れていなければ「—」
+            switch photoCount {
+            case .loaded: break
+            case .pending, .failed: photoCount = .failed
+            }
         }
     }
 
