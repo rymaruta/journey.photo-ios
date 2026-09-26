@@ -114,6 +114,12 @@ public struct TextFieldStyleShim {
     public static let plain = TextFieldStyleShim()
     public static let roundedBorder = TextFieldStyleShim()
 }
+public struct ScrollDismissesKeyboardModeShim {
+    public static let automatic = ScrollDismissesKeyboardModeShim()
+    public static let immediately = ScrollDismissesKeyboardModeShim()
+    public static let interactively = ScrollDismissesKeyboardModeShim()
+    public static let never = ScrollDismissesKeyboardModeShim()
+}
 public struct VisibilityShim {
     public static let automatic = VisibilityShim()
     public static let visible = VisibilityShim()
@@ -244,6 +250,10 @@ extension View {
     public func textFieldStyle(_ s: TextFieldStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func controlSize(_ s: ControlSizeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func labelsHidden() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 下へ払って閉じるのを止める（本物と同じ）
+    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// スクロールでキーボードを下げる（本物と同じ）
+    public func scrollDismissesKeyboard(_ mode: ScrollDismissesKeyboardModeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func focused(_ condition: Binding<Bool>) -> Self { self }
     public func disabled(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tag<V: Hashable>(_ v: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

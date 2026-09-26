@@ -46,15 +46,18 @@ struct ReportSheet: View {
                             }
                         }
                     }
-                    if let errorMessage {
-                        Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout)
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 16)
             }
+            // 複数行の欄は Return が改行なので、払って下げる口を残す
+            .scrollDismissesKeyboard(.interactively)
         }
+        // **送っている間は閉じさせない。** 閉じた瞬間に呼び出し側の後始末
+        // （ストーリーの `afterReport`）が走り、まだ記録されていない通報を
+        // 見落とす。そのあと送信が成立しても後始末は二度と呼ばれない
+        .interactiveDismissDisabled(isWorking)
         .safeAreaInset(edge: .bottom) { footer }
         .background(Self.sheetBackground)
         .presentationBackground(Self.sheetBackground)
@@ -78,6 +81,7 @@ struct ReportSheet: View {
                     .webTappable()
             }
             .buttonStyle(.plain)
+            .disabled(isWorking)
             .accessibilityLabel(Labels.Common.close)
         }
         .padding(.leading, 20)
@@ -106,12 +110,24 @@ struct ReportSheet: View {
 
     private var footer: some View {
         VStack(spacing: 8) {
+            // **赤字はボタンのすぐ上。** 札の末尾に置くと、理由7行の下で
+            // スクロールしないと見えず、押しても何も起きないように見える
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.callout)
+                    .foregroundStyle(WebTheme.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Button {
                 if done { dismiss() } else { Task { await submit() } }
             } label: {
                 Group {
                     if isWorking {
-                        ProgressView()
+                        // 白いカプセルの上なので回転は墨で。文字も添える（読み上げが空にならない）
+                        HStack(spacing: 8) {
+                            ProgressView().tint(WebTheme.accentText)
+                            Text(L("送っています…", "Sending…"))
+                        }
                     } else {
                         Text(done ? Labels.Common.close : L("通報する", "Report"))
                     }
@@ -159,12 +175,14 @@ struct ReportSheet: View {
             await applyHidden()
             // **受け付けたことを伝える。** それまでは黙って閉じるだけで、
             // 押した人には届いたのか分からなかった
-            toasts.show(L("通報を受け付けました。ありがとうございます。",
-                          "Thanks — your report was received."))
             // **知らせは1つ。** 全部うまくいけば閉じてトーストで伝える
             // （以前はシートの完了画面とトーストの二重だった）。ブロックだけ
-            // 落ちたときは閉じずに、その旨を読ませる
+            // 落ちたときは閉じずに、その旨を読ませる。
+            // ストーリーは全画面の上なのでトーストが見えない——閲覧画面が
+            // 自分の知らせで伝える（`StoryViewerView.afterReport`）
             if errorMessage == nil {
+                toasts.show(L("通報を受け付けました。ありがとうございます。",
+                              "Thanks — your report was received."))
                 dismiss()
             } else {
                 done = true
