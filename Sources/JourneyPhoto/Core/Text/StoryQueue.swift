@@ -28,6 +28,12 @@ enum StoryQueue {
         return current
     }
 
+    /// 途中で失敗したあと、出せたぶんを並びから外す。**id で外す**——
+    /// 送っている間に並びが変わると、数で先頭から外す形は範囲外で落ちる
+    static func dropPosted<Item: Identifiable>(_ items: [Item], posted: Set<Item.ID>) -> [Item] {
+        items.filter { !posted.contains($0.id) }
+    }
+
     /// あと何枚足せるか。**上限に達していたら 0**
     static func remaining(_ count: Int) -> Int { max(0, maxShots - count) }
 

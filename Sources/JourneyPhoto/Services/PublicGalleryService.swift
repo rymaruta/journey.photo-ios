@@ -274,12 +274,7 @@ actor PublicGalleryService {
     /// false の行が混ざっても出さない（二重の守り）。
     /// あわせて、ブロックした相手と、自分が通報した写真を落とす。
     private func visible(_ photos: [Photo]) -> [Photo] {
-        photos.filter { photo in
-            guard photo.published != false else { return false }
-            guard !hiddenPhotoIds.contains(photo.id) else { return false }
-            let owner = photo.userId ?? photo.uploadedBy
-            guard let owner else { return true }
-            return !hiddenUserIds.contains(owner)
-        }
+        BlockFilter.photos(photos.filter { $0.published != false },
+                           blocked: hiddenUserIds, reported: hiddenPhotoIds)
     }
 }

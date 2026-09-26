@@ -95,6 +95,8 @@ public enum Amplify {
             fatalError("模型")
         }
         public static func signOut() async -> AuthSignOutResult { AuthSignOutResult() }
+        /// サインイン中の利用者を Cognito から消す（本物は済むとローカルのサインアウトもする）
+        public static func deleteUser() async throws {}
         public static func resetPassword(for username: String) async throws -> AuthResetPasswordResult {
             fatalError("模型")
         }

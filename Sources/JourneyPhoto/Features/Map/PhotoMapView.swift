@@ -21,6 +21,13 @@ struct PhotoMapView: View {
     var onPost: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
+    @EnvironmentObject private var hidden: ModerationStore
+    /// ブロック／通報があったが、まだピンから落としていない。
+    /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
+    /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
+    /// 通報の「受け付けました」も見えない。戻ってきたとき（`onAppear`）に絞る
+    @State private var needsDrop = false
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
     /// 取れた現在地。**この画面が開いている間だけ**持つ
@@ -73,11 +80,15 @@ struct PhotoMapView: View {
                 location.locate(requestedByUser: false)
             }
             await model.load(environment: environment)
+            // 読んでいる間に通報された回、古い集合で絞った結果を残さない
+            dropHidden()
             // 現在地が先に取れていたら、写真の読み込みで引き戻さない
             if here == nil { frame(model.frame) }
         }
         // 絞りが変わったら、残ったピンに寄せ直す（範囲で絞ったときは
         // 見ている場所を動かさない——押した範囲がそのまま答え）
+        .onChange(of: hidden.revision) { _, _ in needsDrop = true }
+        .onAppear { if needsDrop { dropHidden() } }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
             frame(model.frame)
@@ -104,12 +115,15 @@ struct PhotoMapView: View {
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
                 span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))))
         }
-        .sheet(isPresented: $showNearby) {
+        // 近くの写真のシートの中でブロックした回も同じ（地図は見え続けている）
+        .sheet(isPresented: $showNearby, onDismiss: { if needsDrop { dropHidden() } }) {
             if let here {
                 NearbyPhotosSheet(center: here, photos: model.photos)
             }
         }
-        .sheet(item: $listing) { pin in
+        // 一覧のシートの中の詳細でブロックした回は、地図は見え続けていて
+        // `onAppear` が来ない。閉じたときに落とす
+        .sheet(item: $listing, onDismiss: { if needsDrop { dropHidden() } }) { pin in
             NavigationStack {
                 List(pin.photos) { photo in
                     NavigationLink {
@@ -1079,6 +1093,16 @@ struct PhotoMapView: View {
     }
 
     // MARK: - カメラ
+
+    /// 手元のピンからブロック／通報したぶんを落とす。選んでいた札が
+    /// 落ちた写真を持っていたら下げる（札は押した時点のピンの写しを持つ）
+    private func dropHidden() {
+        needsDrop = false
+        model.drop(hiddenBy: hidden)
+        if let pin = selected, hidden.visible(pin.photos).count != pin.photos.count {
+            selected = nil
+        }
+    }
 
     /// 地図をその枠へ寄せる。nil なら動かさない（既定に戻して地球儀にしない）
     ///

@@ -11,6 +11,7 @@ struct TagPhotosView: View {
     let kind: PhotoQuery.Collection
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var hidden: ModerationStore
     @State private var photos: [Photo] = []
     @State private var isLoading = true
 
@@ -28,12 +29,16 @@ struct TagPhotosView: View {
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        // 詳細でブロック／通報して**戻ってきたとき**に落とす。
+        // 見ている最中に絞ると、押した元が消えて詳細が閉じる
+        .onAppear { photos = hidden.visible(photos) }
     }
 
     private func load() async {
         isLoading = true
         defer { isLoading = false }
         let all = (try? await environment.gallery.fetchPhotos()) ?? []
-        photos = PhotoQuery.photos(all, in: kind)
+        // 読んでいる間に通報された回、古い集合で絞った結果で上書きしない
+        photos = hidden.visible(PhotoQuery.photos(all, in: kind))
     }
 }

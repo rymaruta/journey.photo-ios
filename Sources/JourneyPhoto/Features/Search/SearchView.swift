@@ -439,13 +439,15 @@ struct SearchView: View {
 
     @ViewBuilder
     private var results: some View {
-        // 人は写真より先に出す（名前で探しているなら、それが目当て）
-        if !model.users.isEmpty {
+        // 人は写真より先に出す（名前で探しているなら、それが目当て）。
+        // ブロックした人は出さない（`/users/search` はブロックを知らない）
+        let users = BlockFilter.users(model.users, blocked: hidden.blockedUserIds)
+        if !users.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text(L("人", "People"))
                     .font(.headline)
                     .foregroundStyle(WebTheme.foreground)
-                ForEach(model.users) { user in
+                ForEach(users) { user in
                     NavigationLink {
                         UserProfileView(userId: user.userId)
                     } label: {
