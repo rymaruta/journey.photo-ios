@@ -140,7 +140,9 @@ enum PhotoQuery {
             switch self {
             case .tag(let value): return "#\(value)"
             case .location(let value): return value
-            case .category(let value): return value
+            // 生の値（`landscape`）ではなく画面の名前（「風景」）。行き先の題が、押した
+            // 札の「おすすめ · 風景」と食い違わないように
+            case .category(let value): return Labels.Category.name(value)
             case .camera(let value): return value
             }
         }
