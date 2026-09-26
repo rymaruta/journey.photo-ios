@@ -67,4 +67,12 @@ final class UnnamedUserTests: XCTestCase {
             #"{"id":"s1","src":"/uploads/s1.jpg","userId":"d7e4da78-1111"}"#.utf8))
         XCTAssertEqual(story.authorName, Labels.Common.unnamedUser)
     }
+
+    /// 「2026年9月19日」の書き方（旅行プランの日の見出し）。時刻は落とす・読めない値は nil
+    func testLabelForTripPlanDays() {
+        XCTAssertEqual(TakenDay.label("2024-05-12", locale: "ja"), "2024年5月12日")
+        XCTAssertEqual(TakenDay.label("2024-05-12", locale: "en"), "May 12, 2024")
+        XCTAssertEqual(TakenDay.label("2026-09-19T17:46:27", locale: "ja"), "2026年9月19日")
+        XCTAssertNil(TakenDay.label("2026-13-01"))
+    }
 }

@@ -59,6 +59,18 @@ struct SiteMenuView: View {
                         JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack")
                     }
                     .buttonStyle(JPRowButtonStyle())
+                    // 旅行プラン（本人だけ・中身は本人しか読めない `/user/trips`）。
+                    // 以前はマイページの横並びのボタンにあったが、そのボタン列は
+                    // マイページを板 05c に寄せたときに無くなった。板に入口が無いので、
+                    // 札に無い場所を開くこのメニューに置く
+                    if auth.userId != nil {
+                        JPCardDivider()
+                        NavigationLink { TripPlansView() } label: {
+                            JPRowLabel(title: L("旅行プラン", "Trip plans"), systemImage: "calendar")
+                        }
+                        .buttonStyle(JPRowButtonStyle())
+                        .accessibilityIdentifier("menu.tripPlans")
+                    }
                     JPCardDivider()
                     NavigationLink { SettingsView() } label: {
                         JPRowLabel(title: L("設定", "Settings"), systemImage: "gearshape")
