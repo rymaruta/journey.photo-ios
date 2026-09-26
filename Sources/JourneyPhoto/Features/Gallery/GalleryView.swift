@@ -33,11 +33,11 @@ struct GalleryView: View {
                     Task { await model.load() }
                 }
             case .loaded(let photos):
-                if photos.isEmpty {
-                    ErrorBanner(message: Labels.Gallery.empty)
-                } else {
-                    feed(photos)
-                }
+                // 🔴 **0枚でもフィードごと描く**（切り替えのタブを残す）。
+                // 空の知らせで画面ごと置き換えると、「フォロー中」を押して
+                // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の
+                // 切り替えが逃げ道だったが、整理案 01c で外した
+                feed(photos)
             }
         }
         .webScreen()
@@ -337,12 +337,23 @@ struct GalleryView: View {
                 // 2026-09-20 に Web がトップから外してマイページへ移したが、
                 // アプリの提案図では**ホームに戻っている**ので合わせる
                 // ——「いま誰が旅に出ているか」は開いた瞬間に見たいもの
-                StoriesRow()
+                StoriesRow(reloadToken: tabRouter.postSheetsClosed)
                 feedPicker
                 featuredSections
                 // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
                 // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
                 let groups = PhotoGroups.group(photos)
+                if groups.isEmpty {
+                    Text(model.feed == .following
+                         ? L("フォロー中の人の写真はまだありません", "No photos from people you follow yet")
+                         : Labels.Gallery.empty)
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.muted2)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                        .padding(.horizontal, 24)
+                }
                 if let first = groups.first {
                     HomeFeedCard(photo: first.cover, following: model.followingIds,
                                  siblings: first.photos)

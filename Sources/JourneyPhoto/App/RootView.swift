@@ -171,10 +171,12 @@ struct RootView: View {
                 }
             }
         }
-        .sheet(isPresented: $showPhotoUpload) {
+        // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの
+        // 格子とストーリーの行はこれを見て読み直す
+        .sheet(isPresented: $showPhotoUpload, onDismiss: { tabRouter.postSheetClosed() }) {
             NavigationStack { UploadView(initialTag: pendingThemeTag) }
         }
-        .sheet(isPresented: $showStoryComposer) {
+        .sheet(isPresented: $showStoryComposer, onDismiss: { tabRouter.postSheetClosed() }) {
             NavigationStack { StoryComposerView() }
         }
         // お知らせを閉じたら数え直す（タブではなくシートになったので）

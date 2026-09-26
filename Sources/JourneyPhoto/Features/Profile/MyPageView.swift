@@ -22,6 +22,8 @@ struct MyPageView: View {
     @State private var showCountriesNote = false
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
+    /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
+    @ObservedObject private var tabRouter = TabRouter.shared
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -75,6 +77,12 @@ struct MyPageView: View {
         // 閉じる合図を受け取る口が無い。保存しても削除しても、
         // マイページは古いままだった。
         // 初回は `.task` が読むので、2度目以降だけ走らせる
+        // **下の「投稿」から投稿して閉じたら読み直す。** シートは `RootView` に
+        // あるので、閉じても `onAppear` は来ない
+        .onChange(of: tabRouter.postSheetsClosed) { _, _ in
+            guard auth.userId != nil else { return }
+            Task { await model.load() }
+        }
         .onAppear {
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
