@@ -13,7 +13,9 @@ protocol LocationRequesting: AnyObject {
 
 extension CLLocationManager: LocationRequesting {}
 
-/// 現在地を**1回だけ**取る（モック3 の現在地ボタン）。
+/// 現在地を**1回だけ**取る。取りにいくのは2つの時だけ:
+/// **地図を開いた最初の1回**（既定の場所を自分の今の場所にする・owner 2026-09-26）と、
+/// **現在地ボタン**（モック3）。
 ///
 /// 使い道は「地図をそこへ寄せる」と「近くの写真」の中心。**このクラスは
 /// 追跡しない・保存しない・送らない**——取った座標はカメラに渡して終わり。
@@ -41,6 +43,11 @@ final class CurrentLocation: NSObject, ObservableObject {
 
     @Published private(set) var state: State = .idle
 
+    /// 自分でボタンを押して取りにいった回か。**地図を開いたときの自動の回は
+    /// `false`**——その回の拒否・失敗は画面が言葉にしない（断った人に、
+    /// 地図を開くたび「許可されていません」を出さない）。押した回は必ず言う
+    @Published private(set) var requestedByUser = false
+
     private let manager: LocationRequesting
 
     /// - Parameter manager: 省略すると本物。テストは偽物を渡す
@@ -57,8 +64,10 @@ final class CurrentLocation: NSObject, ObservableObject {
         }
     }
 
-    /// ボタンを押したとき。権限が無ければ尋ね、あれば1回だけ位置を取る
-    func locate() {
+    /// 権限が無ければ尋ね、あれば1回だけ位置を取る。
+    /// - Parameter requestedByUser: ボタンから `true`（既定）、地図を開いたときの自動は `false`
+    func locate(requestedByUser: Bool = true) {
+        self.requestedByUser = requestedByUser
         switch manager.authorizationStatus {
         case .notDetermined:
             state = .asking

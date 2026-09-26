@@ -78,4 +78,36 @@ final class CurrentLocationTests: XCTestCase {
         location.handle(error: URLError(.unknown))
         XCTAssertEqual(location.state, .failed)
     }
+
+    /// 地図を開いたときの自動の回は「押していない」と分かる。
+    /// 断られても画面が黙れるように（開くたびに「許可されていません」を出さない）
+    func testAutomaticLocateIsMarkedAsNotRequestedByUser() async {
+        let fake = FakeRequester(status: .denied)
+        let location = CurrentLocation(manager: fake)
+        location.locate(requestedByUser: false)
+        XCTAssertEqual(location.state, .denied)
+        XCTAssertFalse(location.requestedByUser)
+        XCTAssertEqual(fake.authorizationRequests, 0)
+    }
+
+    /// 自動の回のあとにボタンを押したら、その回は「押した」になる（拒否を言葉にする）
+    func testButtonAfterAutomaticIsRequestedByUser() async {
+        let fake = FakeRequester(status: .denied)
+        let location = CurrentLocation(manager: fake)
+        location.locate(requestedByUser: false)
+        location.locate()
+        XCTAssertEqual(location.state, .denied)
+        XCTAssertTrue(location.requestedByUser)
+    }
+
+    /// 自動の回でも、許可があれば位置は1回だけ取りにいく
+    func testAutomaticLocateRequestsOnceWhenAuthorized() async {
+        let fake = FakeRequester(status: .authorizedWhenInUse)
+        let location = CurrentLocation(manager: fake)
+        location.locate(requestedByUser: false)
+        XCTAssertEqual(location.state, .locating)
+        XCTAssertEqual(fake.locationRequests, 1)
+        location.handle(latitude: 35.68, longitude: 139.76)
+        XCTAssertEqual(location.state, .located(latitude: 35.68, longitude: 139.76))
+    }
 }
