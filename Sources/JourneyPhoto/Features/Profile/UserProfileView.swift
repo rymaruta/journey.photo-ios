@@ -23,12 +23,76 @@ struct UserProfileView: View {
     ]
 
     var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                scroll
+                    // **カバーは画面の上端から**（板 31: 時計の裏まで）。無い人は安全域の下から
+                    .ignoresSafeArea(edges: hasCover ? .top : [])
+                // 上のバーを透かしたので、カバーの上で戻る・「…」と時計が読めるよう
+                // 上端だけ黒へ寄せる（押す操作は下へ通す）
+                LinearGradient(colors: [Color.black.opacity(0.6), Color.black.opacity(0)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: geo.safeAreaInsets.top + 16)
+                    .offset(y: -geo.safeAreaInsets.top)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .webScreen()
+        // **上のバーは消さない**（`toolbar(.hidden)` で消すと、端から払って戻る操作まで
+        // 効かなくなることがある）。見え方は既定（`.automatic`）のまま＝**一番上では
+        // 透けてカバーの上に戻ると「…」だけ**（板 31）、流すと `webScreen` の黒が出る。
+        // 常に透かすと、流した写真が時計や戻るの裏をそのまま通って読めなくなる
+        // 題は出さない（名前は見出しにある）。次の画面の「戻る」の名前には使われる
+        .navigationTitle(model.shownName ?? Labels.Navigation.profile)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // 題は出さない（板 31）。空の `EmptyView` は捨てられて題が出ることがあるので、
+            // 見えない1点を置く。画面の見出しは名前の字（`.isHeader`）が受け持つ
+            ToolbarItem(placement: .principal) {
+                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+            }
+            if auth.userId != nil && auth.userId != userId {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button(role: .destructive) { showBlockConfirm = true } label: {
+                            Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .webToolbarIcon()
+                            .accessibilityLabel(L("この人の操作", "More actions"))
+                    }
+                }
+            }
+        }
+        .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
+            Button(L("ブロック", "Block"), role: .destructive) {
+                Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
+        }
+        .task(id: userId) {
+            await model.load(userId: userId, environment: environment, viewerId: auth.userId)
+        }
+    }
+
+    private var scroll: some View {
         ScrollView {
+            // 板 31: 段の間は 16pt
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 0) {
                     ProfileCover(url: model.profile?.coverURL(cacheBust: model.cacheBust),
                                  reserve: hasCover) { hasCover = $0 }
                     header
+                }
+                // ストーリーハイライト（板 31）。**見られるのはフォロワーだけ**で、
+                // そうでなければサーバーが0件を返し、この行は黙って消える
+                // **フォローしたら読み直す**（見られるようになる）。**ブロックしたら出さない**
+                if !hidden.blockedUserIds.contains(userId) {
+                    HighlightsRow(userId: userId, isMine: false, reloadKey: model.isFollowing)
                 }
 
                 Picker("", selection: $tab) {
@@ -61,105 +125,99 @@ struct UserProfileView: View {
                 }
             }
         }
-        .webScreen()
-        .navigationTitle(model.shownName ?? Labels.Navigation.profile)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if auth.userId != nil && auth.userId != userId {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button(role: .destructive) { showBlockConfirm = true } label: {
-                            Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .webToolbarIcon()
-                            .accessibilityLabel(L("この人の操作", "More actions"))
-                    }
-                }
-            }
-        }
-        .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
-            Button(L("ブロック", "Block"), role: .destructive) {
-                Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
-            }
-            Button(Labels.Common.cancel, role: .cancel) {}
-        } message: {
-            Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
-        }
-        .task(id: userId) {
-            await model.load(userId: userId, environment: environment, viewerId: auth.userId)
-        }
     }
 
     /// 数字の札。**押して一覧を開けるのは、ログインしていて1人以上いるときだけ**
     /// （`FollowCounts.isTappable`）。一覧の口は認証が要るので、未ログインで
     /// 押せると赤字だけの行き止まりになる。
     @ViewBuilder
-    private func followCount(_ label: String, count: Int, kind: FollowListView.Kind) -> some View {
-        if FollowCounts.isTappable(signedIn: auth.userId != nil, count: count) {
+    private func followCount(value: Int, label: String, kind: FollowListView.Kind) -> some View {
+        if FollowCounts.isTappable(signedIn: auth.userId != nil, count: value) {
             NavigationLink {
                 FollowListView(userId: userId, kind: kind)
             } label: {
-                Text(label)
+                countLabel(value: value, label: label)
             }
         } else {
-            Text(label)
+            countLabel(value: value, label: label)
         }
     }
 
+    /// 見出し（板 31）: 84pt のアイコン（黒い 3pt の縁）と右にフォローの札、その下に
+    /// 明朝 26 の名前・「@ユーザー名 · 居住地」・ひとこと、数の1行。
+    /// **マイページ（板 05c）と同じ部品**（`ProfileHandleLine`・`ProfileAbout`）
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
+            HStack(alignment: .bottom) {
                 RemoteImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
-                    .frame(width: 64, height: 64)
+                    .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
                     .clipShape(Circle())
                     // **板どおり黒の 3pt の縁**（板 31）。本人が選んだ色の輪（`themeColor`）は
                     // 出さない——マイページ（板 05c）と揃える（owner の判断・2026-09-26）。
                     // 色はプロフィール編集で選べ、Web（`themeRingGradient`）には出る
                     .coverCutout(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
-                        Text(model.shownName ?? "—").font(JPFont.display(20, relativeTo: .title3))
-                        VerifiedBadge(isVerified: model.profile?.verified, nameSize: 20, relativeTo: .title3)
-                    }
-                    HStack(spacing: 12) {
-                        followCount(
-                            L("フォロワー \(model.followers)", "\(model.followers) followers"),
-                            count: model.followers, kind: .followers
-                        )
-                        followCount(
-                            L("フォロー中 \(model.following)", "\(model.following) following"),
-                            count: model.following, kind: .following
-                        )
-                    }
-                    .font(.caption)
-                    .buttonStyle(.plain)
-                }
-                Spacer()
-            }
-
-            if let bio = model.profile?.bio, !bio.isEmpty {
-                Text(bio).font(.callout)
-            }
-
-            if auth.userId != nil && auth.userId != userId {
-                // **押している状態を色で分ける。**
-                // 🔴 `.borderedProminent` は使わない——`RootView` の
-                // `.tint(WebTheme.foreground)` が白なので、白地に白い字＝
-                // **ただの白い帯**になる（run 60 の実機の絵で2か所そうだった）。
-                // 白地に黒い字は `webPrimaryButton()`
-                if model.isFollowing {
-                    followButton.buttonStyle(.bordered)
-                } else {
-                    followButton.webPrimaryButton().buttonStyle(.plain)
+                Spacer(minLength: 8)
+                if auth.userId != nil && auth.userId != userId {
+                    followButton
                 }
             }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(model.shownName ?? "—")
+                        .font(JPFont.display(26, relativeTo: .title))
+                        .foregroundStyle(Color.white)
+                        .accessibilityAddTraits(.isHeader)
+                    VerifiedBadge(isVerified: model.profile?.verified, nameSize: 26, relativeTo: .title)
+                }
+                if let line = ProfileLine.handleAndHome(username: model.profile?.username,
+                                                        home: model.profile?.homeLocation) {
+                    ProfileHandleLine(line: line)
+                }
+                ProfileAbout(status: model.profile?.statusText, bio: model.profile?.bio)
+            }
+            // 板 31: 「000 フォロワー　000 フォロー中　000 写真」（13px・数は等幅の白・間 20）
+            HStack(spacing: 20) {
+                followCount(value: model.followers, label: L("フォロワー", "followers"),
+                            kind: .followers)
+                followCount(value: model.following, label: L("フォロー中", "following"),
+                            kind: .following)
+                // **数え終わるまで出さない**（「0 写真」を一瞬見せない・取れなければ出さない）
+                if let count = model.photoCount {
+                    countLabel(value: count, label: L("写真", "photos"))
+                }
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
+        // カバーがあればアイコンを下端に重ねる（板: 帯に 84pt の丸を 50pt）
         .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 8)
     }
 
+    /// 数の札の中身（数は等幅の白・名前は白72%）
+    private func countLabel(value: Int, label: String) -> some View {
+        HStack(spacing: 4) {
+            Text("\(value)")
+                .font(JPFont.mono(13, relativeTo: .footnote))
+                .foregroundStyle(Color.white)
+            Text(label)
+                .font(.footnote)
+                .foregroundStyle(WebTheme.muted2)
+        }
+        .frame(minHeight: WebTheme.minTapTarget)
+        .contentShape(Rectangle())
+        // **押せる高さは 44pt のまま、並びの上では字の高さに近づける**
+        // （マイページの数の札と同じ考え方）。上は字だけの段なので重なっても害は無い
+        .padding(.vertical, -Self.countTapSlack)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 数の札の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）
+    private static let countTapSlack: CGFloat = 10
+
+    /// フォローの札（板 31: 高さ 36・13px の太字）。**押している状態を色で分ける**
+    /// ——まだなら白地に墨の字、フォロー中なら白12%の地に白の字と縁。
+    /// 🔴 `.borderedProminent` は使わない（`RootView` の `.tint` が白なので、
+    /// 白地に白い字＝ただの白い帯になる。run 60 の実機の絵）
     private var followButton: some View {
         Button {
             // 外すときだけ確認を挟む（`unfollowConfirmation`）
@@ -170,8 +228,25 @@ struct UserProfileView: View {
             }
         } label: {
             Text(model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"))
-                .frame(maxWidth: .infinity)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(model.isFollowing ? Color.white : WebTheme.accentText)
+                .padding(.horizontal, 14)
+                .frame(minWidth: 44, minHeight: 36)
+                .background(model.isFollowing ? Color.white.opacity(0.12) : Color.white.opacity(0.92),
+                            in: Capsule())
+                .overlay {
+                    if model.isFollowing {
+                        Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                    }
+                }
+                // 見た目は 36pt、押せる高さは 44pt
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .padding(.bottom, 4)
+        // 送っている間は薄くする（押したことが見て分かる。二度押しは `disabled` で防ぐ）
+        .opacity(model.isWorking ? 0.6 : 1)
         .disabled(model.isWorking)
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
             Task { await model.toggleFollow(userId: userId, environment: environment) }
@@ -184,6 +259,8 @@ final class UserProfileViewModel: ObservableObject {
 
     @Published private(set) var profile: UserProfile?
     @Published private(set) var photos: [Photo] = []
+    /// 公開写真の数。**数え終わるまで nil**（見出しの「写真」の数に使う）
+    @Published private(set) var photoCount: Int?
     @Published private(set) var followers = 0
     @Published private(set) var following = 0
     @Published private(set) var isFollowing = false
@@ -229,6 +306,7 @@ final class UserProfileViewModel: ObservableObject {
         if let all {
             photos = PhotoPinning.pinnedFirst(all.filter { ($0.userId ?? $0.uploadedBy) == userId },
                                       pinned: profile?.pinnedPhotoIds ?? [])
+            photoCount = photos.count
         }
     }
 
@@ -270,6 +348,7 @@ final class UserProfileViewModel: ObservableObject {
             )
             isFollowing = false
             photos = []
+            photoCount = nil
             // **成功を赤字で出さない。** それまで `errorMessage` に入れて
             // いたので、うまくいった操作が「失敗」の見た目で出ていた
             toasts.show(L("ブロックしました。設定から解除できます。",

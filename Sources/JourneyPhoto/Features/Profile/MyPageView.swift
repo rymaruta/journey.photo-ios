@@ -225,7 +225,7 @@ struct MyPageView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .bottom) {
                 RemoteImage(url: profile.avatarURL(cacheBust: model.avatarCacheBust))
-                    .frame(width: Self.avatarSize, height: Self.avatarSize)
+                    .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
                     .clipShape(Circle())
                     // **板どおり黒の 3pt の縁**（写真の上でも丸が割れない）。
                     // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
@@ -247,7 +247,8 @@ struct MyPageView: View {
                 .accessibilityIdentifier("mypage.edit")
             }
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
+                // 名前と印の間は板の 6pt（人のページと同じ）
+                HStack(spacing: 6) {
                     Text(profile.name)
                         .font(JPFont.display(26, relativeTo: .title))
                         .foregroundStyle(Color.white)
@@ -255,50 +256,17 @@ struct MyPageView: View {
                 }
                 if let line = ProfileLine.handleAndHome(username: profile.username,
                                                         home: profile.homeLocation) {
-                    // 居住地は**地図には出さない**（住んでいる場所はピンにしない）。
-                    // 頭の印は板どおり**線のピン**（11pt）——絵文字の「📍」は赤く出ていた
-                    HStack(spacing: 4) {
-                        if let handle = line.handle {
-                            // 狭いときは居住地の方を先に詰める（名前と「·」を残す）
-                            Text(handle)
-                                .lineLimit(1)
-                                .layoutPriority(1)
-                        }
-                        if line.handle != nil && line.home != nil {
-                            Text("·")
-                                .layoutPriority(1)
-                        }
-                        if let home = line.home {
-                            Image(systemName: "mappin")
-                                .font(.system(size: 11))
-                            Text(home)
-                                .lineLimit(1)
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(line.spoken)
+                    ProfileHandleLine(line: line)
                 }
                 // ひとこと。**持っているのに一度も出していなかった**
-                ForEach(ProfileLine.about(status: profile.statusText, bio: profile.bio), id: \.self) { text in
-                    Text(text)
-                        .font(.footnote)
-                        .lineSpacing(4)
-                        .foregroundStyle(WebTheme.muted2)
-                }
+                ProfileAbout(status: profile.statusText, bio: profile.bio)
             }
         }
         .padding(.horizontal, 20)
         // カバーがあればアイコンを下端に重ねる（板: 180pt の帯に 84pt の丸を 50pt）。
         // 無ければ右上の設定の丸の下から（板 05d）
-        .padding(.top, hasCover ? -Self.avatarOverlap : 49)
+        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 49)
     }
-
-    /// 見出しのアイコン（板 84pt）と、カバーの下端へ引き上げる量（板 50pt）。
-    /// 人のページ（64pt・28pt）とは別——あちらは板 31
-    private static let avatarSize: CGFloat = 84
-    private static let avatarOverlap: CGFloat = 50
 
     /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・等幅の数字 18 と名前）。
     /// 列は幅を三等分し、押せる高さは 44pt

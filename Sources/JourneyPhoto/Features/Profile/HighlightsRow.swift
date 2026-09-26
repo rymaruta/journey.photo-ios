@@ -11,6 +11,8 @@ struct HighlightsRow: View {
     let userId: String
     /// 自分のページか。**新規と編集はここだけ**
     let isMine: Bool
+    /// 変わったら読み直す合図（人のページ: フォローしたら見られるようになる）
+    var reloadKey: Bool = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -33,7 +35,7 @@ struct HighlightsRow: View {
                 circles
             }
         }
-        .task(id: userId) { await load() }
+        .task(id: "\(userId)|\(reloadKey)") { await load() }
         .sheet(isPresented: $showEditor, onDismiss: { Task { await load() } }) {
             HighlightEditorView(existing: nil)
         }
