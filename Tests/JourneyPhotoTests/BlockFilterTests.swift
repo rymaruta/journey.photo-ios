@@ -22,4 +22,36 @@ final class BlockFilterTests: XCTestCase {
         XCTAssertEqual(BlockFilter.users(users, blocked: ["a"]).map(\.userId), ["b"])
         XCTAssertEqual(BlockFilter.users(users, blocked: []).map(\.userId), ["a", "b"])
     }
+
+    private func photo(_ id: String, userId: String? = nil, uploadedBy: String? = nil) throws -> Photo {
+        let u = userId.map { ",\"userId\":\"\($0)\"" } ?? ""
+        let b = uploadedBy.map { ",\"uploadedBy\":\"\($0)\"" } ?? ""
+        return try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(u)\(b)}".utf8))
+    }
+
+    /// 🔴 **ブロックした人の写真が地図・タグ・お気に入り・スポットに残っていた**
+    /// （読み込み済みの画面は公開一覧を読み直さない）。基準は公開一覧と同じ:
+    /// 通報した1枚・ブロックした人の写真（`uploadedBy` しか無い行も）を落とす
+    func testHiddenPhotosAreDropped() throws {
+        let photos = [
+            try photo("p1", userId: "a"),
+            try photo("p2", uploadedBy: "a"),
+            try photo("p3", userId: "b"),
+            try photo("p4"),
+        ]
+        XCTAssertEqual(BlockFilter.photos(photos, blocked: ["a"], reported: ["p3"]).map(\.id), ["p4"])
+        XCTAssertEqual(BlockFilter.photos(photos, blocked: [], reported: []).map(\.id), ["p1", "p2", "p3", "p4"])
+    }
+
+    /// 画面が使う入口（`ModerationStore.visible`）が、その人の控えを通すこと
+    @MainActor
+    func testStoreDropsWhatItHides() async throws {
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        store.use(userId: "me")
+        store.block("a")
+        store.markReported("p3")
+        let photos = [try photo("p1", userId: "a"), try photo("p3", userId: "b"), try photo("p4", userId: "b")]
+        XCTAssertEqual(store.visible(photos).map(\.id), ["p4"])
+    }
 }

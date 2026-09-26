@@ -21,6 +21,9 @@ struct PhotoMapView: View {
     var onPost: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// **ブロック／通報の直後に消す。** 地図はタブの根で `.task` が二度と
+    /// 走らないので、ブロックした人のピンが残り続けていた
+    @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
     /// 取れた現在地。**この画面が開いている間だけ**持つ
@@ -78,6 +81,7 @@ struct PhotoMapView: View {
         }
         // 絞りが変わったら、残ったピンに寄せ直す（範囲で絞ったときは
         // 見ている場所を動かさない——押した範囲がそのまま答え）
+        .onChange(of: hidden.revision) { _, _ in model.drop(hiddenBy: hidden) }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
             frame(model.frame)

@@ -110,6 +110,12 @@ final class PhotoMapViewModel: ObservableObject {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || category != nil || areaFrame != nil
     }
 
+    /// ブロック／通報の直後に、読み込み済みのピンから落とす（通信しない）
+    func drop(hiddenBy hidden: ModerationStore) {
+        photos = hidden.visible(photos)
+        refresh()
+    }
+
     func load(environment: AppEnvironment) async {
         // **索引は写真と並行に取る。** 直列に待つと、索引が遅い回に写真の
         // ピンと最初の寄せまで遅れる（通信の上限は20秒）。届いたらピンだけ

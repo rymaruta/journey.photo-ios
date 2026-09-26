@@ -26,11 +26,13 @@ struct OfficialSpotView: View {
 
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
+    /// 渡された写真は開いた時点の写しなので、ブロック／通報をここで反映する
+    @EnvironmentObject private var hidden: ModerationStore
 
     @State private var camera: MapCameraPosition = .automatic
 
     /// **確定した紐づけだけ**（`Photo.spotId`）。撮影地の文字列では当てない
-    private var linked: [Photo] { photos.filter { $0.spotId == spot.spotId } }
+    private var linked: [Photo] { hidden.visible(photos.filter { $0.spotId == spot.spotId }) }
 
     private var nearby: [(spot: OfficialSpot, km: Double)] {
         OfficialSpotIndex.nearby(spot, in: spots)

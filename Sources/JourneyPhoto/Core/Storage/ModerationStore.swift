@@ -68,6 +68,13 @@ final class ModerationStore: ObservableObject {
         bumpIfChanged(blocked: before.0, reported: before.1)
     }
 
+    /// 手元に持っている写真の一覧から、いま「見せない」ものを落とす。
+    /// **読み込み済みの画面が、ブロック／通報の直後に消すため**
+    /// （公開一覧の側は次に読んだときに落ちるが、画面はもう持っている）
+    func visible(_ photos: [Photo]) -> [Photo] {
+        BlockFilter.photos(photos, blocked: blockedUserIds, reported: reportedPhotoIds)
+    }
+
     func block(_ id: String) {
         let before = (blockedUserIds, reportedPhotoIds)
         blockedUserIds.insert(id)

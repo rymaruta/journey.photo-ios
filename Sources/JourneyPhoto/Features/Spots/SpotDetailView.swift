@@ -21,21 +21,24 @@ struct SpotDetailView: View {
 
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
+    /// 渡された写真は開いた時点の写しなので、ブロック／通報をここで反映する
+    @EnvironmentObject private var hidden: ModerationStore
 
     @State private var page = 0
     @State private var expanded = false
     @State private var camera: MapCameraPosition = .automatic
 
-    private var linked: [Photo] { spot.photos }
+    private var linked: [Photo] { hidden.visible(spot.photos) }
 
     /// 見出しの写真。いちばん多く押された1枚を先頭に、残りを新しい順
     private var hero: [Photo] {
         guard let cover = spot.cover else { return [] }
+        guard linked.contains(where: { $0.id == cover.id }) else { return linked }
         return [cover] + linked.filter { $0.id != cover.id }
     }
 
     private var nearby: [(place: DerivedSpot.Place, km: Double)] {
-        DerivedSpot.nearby(spot, in: photos)
+        DerivedSpot.nearby(spot, in: hidden.visible(photos))
     }
 
     var body: some View {

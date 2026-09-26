@@ -11,6 +11,7 @@ struct TagPhotosView: View {
     let kind: PhotoQuery.Collection
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var hidden: ModerationStore
     @State private var photos: [Photo] = []
     @State private var isLoading = true
 
@@ -28,6 +29,8 @@ struct TagPhotosView: View {
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        // 詳細でブロック／通報して戻ってきたとき、もう持っている一覧から落とす
+        .onChange(of: hidden.revision) { _, _ in photos = hidden.visible(photos) }
     }
 
     private func load() async {
