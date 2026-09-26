@@ -211,3 +211,59 @@ struct JPToggleRow: View {
         .frame(minHeight: 54)
     }
 }
+
+/// 札の中の1行の見た目（板 43: 最小54pt・左に白72% のアイコン・15px の名前・
+/// 11px の説明・右に値（等幅）と矢印）。押す口は呼ぶ側（NavigationLink・Link・
+/// Button）が包む——包むときは `.buttonStyle(.plain)`
+struct JPRowLabel: View {
+
+    let title: String
+    var systemImage: String?
+    var detail: String?
+    /// 右に出す値（控えの大きさなど）。等幅
+    var value: String?
+    /// 行き先がある行だけ矢印を出す（押すとその場で効く行には出さない）
+    var chevron = true
+    /// 危ない行（アカウントの削除）はアイコンだけ赤（板どおり、名前は白のまま）
+    var iconColor: Color = WebTheme.muted2
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 17))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.text)
+                if let detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(WebTheme.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let value {
+                Text(value)
+                    .font(JPFont.mono(13, relativeTo: .footnote))
+                    .foregroundStyle(WebTheme.faint)
+                    .lineLimit(1)
+            }
+            if chevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.35))
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .frame(minHeight: 54)
+        .contentShape(Rectangle())
+    }
+}
