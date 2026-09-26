@@ -314,6 +314,7 @@ public struct ProposedViewSize {
     public var height: Double?
     public init() {}
     public init(_ size: CGSize) {}
+    public init(width: Double?, height: Double?) { self.width = width; self.height = height }
     public static let unspecified = ProposedViewSize()
 }
 public struct LayoutSubviews: RandomAccessCollection {

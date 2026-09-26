@@ -589,7 +589,8 @@ struct MyPageView: View {
     ///
     /// **入らなければ4つとも印を外して字だけ**（大きい文字・狭い端末で「行きたい
     /// 場所」が「…」で切れていた）。札ごとに決めると、印のある札と無い札が混ざり、
-    /// 押すたびに太字の幅で印が出たり消えたりする
+    /// 押すたびに太字の幅で印が出たり消えたりする。並べ方は `TabRowLayout`（中身の
+    /// 幅＋余りの等分）——判定（理想の幅の和）と実際の幅を一致させる
     private var tabPicker: some View {
         ViewThatFits(in: .horizontal) {
             tabRow(icons: true)
@@ -602,7 +603,7 @@ struct MyPageView: View {
     }
 
     private func tabRow(icons: Bool) -> some View {
-        HStack(spacing: 0) {
+        TabRowLayout {
             ForEach(ProfileTab.tabs(isMe: true)) { option in
                 let selected = tab == option
                 Button {
@@ -642,6 +643,7 @@ struct MyPageView: View {
             .font(.footnote.weight(.semibold))
             .lineLimit(1)
             .hidden()
+            .accessibilityHidden(true)
             .overlay {
                 Text(option.label)
                     .font(.footnote.weight(selected ? .semibold : .regular))
