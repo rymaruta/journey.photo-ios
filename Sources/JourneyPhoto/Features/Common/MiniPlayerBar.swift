@@ -10,6 +10,11 @@ import SwiftUI
 /// **出すのは鳴っているときだけ。** 何も鳴っていないのに場所を取らない。
 struct MiniPlayerBar: View {
 
+    /// 試し聴きとして出す（「曲を選ぶ」のシートの中・板 23）。1行目が
+    /// 「曲名 · 試し聴き中」になる。**シートは下の全体のバーを覆う**ので、
+    /// 曲選びは自分のシートの中にこのバーを置く
+    var previewing = false
+
     @ObservedObject private var player = MusicPreviewPlayer.shared
 
     var body: some View {
@@ -21,7 +26,7 @@ struct MiniPlayerBar: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(song.title)
+                    Text(previewing ? SongPickerText.nowPreviewing(song.title) : song.title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
