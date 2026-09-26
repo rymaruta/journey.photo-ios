@@ -35,7 +35,7 @@ final class AppEnvironment: ObservableObject {
     ///   画面の頭を動かすテストが書けなかった）。
     /// - Parameter spots: 撮影スポットの索引の出どころ。同じ理由で開けてある
     init(tokenProvider: TokenProviding = CognitoTokenProvider(),
-         gallery: PublicGalleryService = PublicGalleryService(),
+         gallery: PublicGalleryService = PublicGalleryService(liveURL: AppConfig.livePhotosURL),
          spots: OfficialSpotService = OfficialSpotService()) {
         let api = APIClient(tokenProvider: tokenProvider)
         self.api = api

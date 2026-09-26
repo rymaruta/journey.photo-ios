@@ -80,10 +80,24 @@ actor PublicGalleryService {
         }
     }
 
+    /// いいねの**いまの数**を取る口（管理 API の `GET /photos`）。nil なら叩かない。
+    ///
+    /// **既定は nil。** 本物の口は `AppEnvironment` が `AppConfig.livePhotosURL`
+    /// を渡す——既定に置くと、設定を入れていない試験がここで落ちる
+    private let liveURL: URL?
+    private var liveCounts: [String: Int]?
+    private var liveCountsAt: Date?
+
+    /// いまの数を待つ上限。**一覧を出すのをこれ以上遅らせない**
+    /// （Lambda の起き抜けは数秒かかる。間に合わなければ静的 JSON の数で出す）
+    static let liveTimeout: TimeInterval = 4
+
     init(url: URL = AppConfig.publicPhotosURL,
+         liveURL: URL? = nil,
          session: URLSession? = nil,
          snapshot: PhotoSnapshotStore = PhotoSnapshotStore()) {
         self.url = url
+        self.liveURL = liveURL
         self.snapshot = snapshot
         if let session {
             self.session = session
@@ -120,21 +134,34 @@ actor PublicGalleryService {
     /// - Parameter force: 控えを無視して取り直す。**引き下げ更新はこちら**
     ///   ——利用者が自分で引いたのに古いものを出さない。
     func fetchPhotos(force: Bool = false) async throws -> [Photo] {
-        if !force, let fresh = freshCache { return await merged(fresh, force: force) }
+        if !force, let fresh = freshCache {
+            await refreshLiveCounts(force: false)
+            return await merged(fresh, force: force)
+        }
+        // **いいねのいまの数は、一覧と同時に取りに行く**
+        // （順に待つと、起き抜けの Lambda のぶん一覧が遅れる）
+        async let live: Void = refreshLiveCounts(force: force)
+        let photos = try await fetchStaticList()
+        await live
+        return await merged(photos, force: force)
+    }
+
+    /// 静的 JSON を取る。**圏外・壊れた応答なら前回の控え**。
+    private func fetchStaticList() async throws -> [Photo] {
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(from: url)
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
-            if let cached = snapshot.load() { return await merged(cached, force: force) }
+            if let cached = snapshot.load() { return cached }
             throw APIError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
-            if let cached = snapshot.load() { return await merged(cached, force: force) }
+            if let cached = snapshot.load() { return cached }
             throw APIError.server(status: http.statusCode, message: "")
         }
         do {
@@ -153,9 +180,9 @@ actor PublicGalleryService {
             }
             cached = photos
             cachedAt = Date()
-            return await merged(photos, force: force)
+            return photos
         } catch {
-            if let cached = snapshot.load() { return await merged(cached, force: force) }
+            if let cached = snapshot.load() { return cached }
             throw APIError.decoding(String(describing: error))
         }
     }
@@ -165,10 +192,36 @@ actor PublicGalleryService {
     /// **`visible` は最後に通す**——ブロックした相手の「フォロワーのみ」の
     /// 写真も落とすため。サーバー側（`restrictedFeed.ts`）でも落としているが、
     /// 端末にしか無い「通報した写真」はここでしか落とせない。
+    ///
+    /// いいねの数は**ここで**いまの数に差し替える（`LiveLikes`）。
+    /// 取れていなければ静的 JSON の数のまま。
     private func merged(_ photos: [Photo], force: Bool) async -> [Photo] {
+        let counted = LiveLikes.apply(liveCounts ?? [:], to: photos)
         let extra = await restrictedPhotos(force: force)
-        if extra.isEmpty { return visible(photos) }
-        return visible(RestrictedFeed.merge(publicPhotos: photos, restricted: extra))
+        if extra.isEmpty { return visible(counted) }
+        return visible(RestrictedFeed.merge(publicPhotos: counted, restricted: extra))
+    }
+
+    /// いいねのいまの数を取り直す。**失敗しても何も投げない**
+    /// ——直前に取れた数か、静的 JSON の数のまま出す。
+    private func refreshLiveCounts(force: Bool) async {
+        guard let liveURL else { return }
+        if !force, liveCounts != nil, let liveCountsAt,
+           Date().timeIntervalSince(liveCountsAt) < Self.cacheLifetime {
+            return
+        }
+        var request = URLRequest(url: liveURL)
+        request.timeoutInterval = Self.liveTimeout
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  let counts = LiveLikes.counts(from: data) else { return }
+            liveCounts = counts
+            liveCountsAt = Date()
+        } catch {
+            print("[gallery] いいねのいまの数を取れませんでした: \(error)")
+        }
     }
 
     /// 公開 JSON には非公開の写真は載らないが、`published` が明示的に
