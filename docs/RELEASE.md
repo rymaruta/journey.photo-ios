@@ -64,8 +64,15 @@ Debug ビルド = staging（`Config/Staging.xcconfig`）。
 Xcode の **Product → Archive**（スキームの Archive は Release ＝本番設定）。
 
 - [ ] `Config/Production.xcconfig` の向き先が本番になっている
-- [ ] バージョン（`MARKETING_VERSION`）とビルド番号（`CURRENT_PROJECT_VERSION`）を上げた
-      ——**ビルド番号は提出のたびに必ず上げる**。同じ番号は受け付けられない
+- [ ] 版を上げた。**リリースのたびに必ず上げる**（2026-09-26 owner のルール）
+      - **GitHub Actions（`ios-testflight.yml`）で上げるなら何もしなくてよい。**
+        表に出る版（`MARKETING_VERSION`）の最後の数字は毎回自動で +1
+        （1.0.0 → 1.0.1 …・`Tools/next-marketing-version.sh`）、ビルド番号は
+        TestFlight の最新 +1。出した版は `testflight/<版>` のタグで覚える
+      - **手元の Xcode から上げるときだけ**、`bash Tools/bump-build.sh 1.0.1` の
+        ように版とビルド番号を自分で上げる。同じ番号は受け付けられない
+      - 真ん中・先頭の数字（1.1.0・2.0.0）を上げるのは、大きく変わる版のときに
+        人が決める：`bash Tools/bump-build.sh 1.1.0` でコミットしてから流す
 - [ ] アイコンが入っている（`Assets.xcassets/AppIcon`）
 
 Organizer → **Distribute App → App Store Connect → Upload**。
