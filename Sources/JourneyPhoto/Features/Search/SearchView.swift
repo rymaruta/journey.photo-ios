@@ -14,43 +14,35 @@ struct SearchView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = SearchViewModel()
     @State private var query = ""
-    @State private var showSort = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 searchField
-                categoryChips
-                tagChips
-                // **何も打っていないときは「発見」の顔**（モック2）。
-                // 打ち始めたら結果に切り替わる
-                if query.isEmpty && model.category == nil {
-                    popularSpots
-                    seasonal
-                    colors
-                    gear
+                scopeChips
+                // **何も打っていないときは、絞りごとの入口**（板 11）。
+                // 「すべて」は発見の顔、「写真」は新しい順の全部、「タグ」「撮影地」は
+                // 選べる一覧、「人」は探し方の案内。打ち始めたら結果に切り替わる
+                if query.isEmpty {
+                    browse
+                } else {
+                    results
                 }
-                results
             }
             .padding(.top, 8)
             .padding(.bottom, 24)
         }
         .webScreen()
-        // 並び替えの札（モック9-7）。**いまの選択に印を付ける**
-        .confirmationDialog(L("並び替え", "Sort"), isPresented: $showSort, titleVisibility: .visible) {
-            ForEach(GallerySort.allCases) { option in
-                Button(option == model.sort ? "\(option.label) ✓" : option.label) {
-                    model.select(sort: option)
-                }
-            }
-            Button(Labels.Common.cancel, role: .cancel) {}
-        }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
         .task { await model.loadPhotos(environment: environment) }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
+        }
+        // 絞りを変えたら、打ってある語で当て直す（人を聞きに行くかも変わる）
+        .onChange(of: model.scope) { _, _ in
+            Task { await model.search(query, environment: environment) }
         }
         // **ブロック／通報の直後に消す。** `loadPhotos` は
         // `guard allPhotos.isEmpty` で二度と読まない作りなので、
@@ -67,127 +59,189 @@ struct SearchView: View {
 
     // MARK: - 探す口
 
+    /// 検索の欄（板 11: 高さ 44・角丸 12・白8% の地に白6% の縁・15px）。
+    /// **並び替えの印は置かない**（板どおりに外した。結果は新しい順）
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.faint)
+                .accessibilityHidden(true)
             TextField(L("写真を検索（題・説明・タグなど）", "Search photos"),
                       text: $query)
                 .textFieldStyle(.plain)
+                .font(.subheadline)
                 .foregroundStyle(WebTheme.foreground)
-            // **並び替えはここから開く**（モック9-1 の右端の印）。
-            // 結果の上にも同じ札を出したままにする——探している人は
-            // 結果を見ながら並べ替えたい
-            Button {
-                showSort = true
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .foregroundStyle(model.sort == .new ? WebTheme.faint : WebTheme.foreground)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("並び替え", "Sort"))
+                .submitLabel(.search)
             if !query.isEmpty {
                 Button {
                     query = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(WebTheme.faint)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("消す", "Clear"))
             }
         }
+        .padding(.leading, 14)
+        .padding(.trailing, query.isEmpty ? 14 : 0)
+        .frame(height: 44)
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
         .padding(.horizontal, 16)
-        .frame(height: 52)
-        .background(WebTheme.surface, in: Capsule())
-        .padding(.horizontal, 16)
     }
 
-    /// カテゴリ（モック9-2 の丸い札）。**絵はその分類でいちばん人気の1枚**
-    /// ——決め打ちの絵を持たないので、写真が増えれば札の顔も変わる。
-    /// **「すべて」を先頭に置く**（戻れない絞り込みを作らない）
-    private var categoryChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 14) {
-                circleChip(label: L("すべて", "All"), selected: model.category == nil) {
-                    model.select(category: nil)
-                } face: {
-                    Image(systemName: "square.grid.2x2.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(model.category == nil ? WebTheme.accentText : WebTheme.muted2)
-                }
-
-                ForEach(model.categoryCovers) { item in
-                    let selected = model.category.map {
-                        CategoryChoices.isChosen(current: $0, choice: item.category)
-                    } ?? false
-                    circleChip(label: Labels.Category.name(item.category), selected: selected) {
-                        model.select(category: item.category)
-                    } face: {
-                        RemoteImage(url: item.cover.gridImageURL, alignment: item.cover.gridAlignment)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 2)
-        }
-    }
-
-    /// 丸い札。選んでいる間は**白い輪**で囲む（色だけだと分かりにくい）
-    private func circleChip<Face: View>(label: String, selected: Bool,
-                                        action: @escaping () -> Void,
-                                        @ViewBuilder face: () -> Face) -> some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                face()
-                    .frame(width: 56, height: 56)
-                    .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                         : AnyShapeStyle(WebTheme.surface),
-                                in: Circle())
-                    .clipShape(Circle())
-                    .overlay(Circle().strokeBorder(
-                        selected ? WebTheme.foreground : Color.white.opacity(0.15),
-                        lineWidth: selected ? 2.5 : 1))
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(selected ? WebTheme.foreground : WebTheme.muted2)
-                    .lineLimit(1)
-            }
-            .frame(width: 68)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    /// タグ。**枚数を添える**（押す前に手応えが分かる）
-    private var tagChips: some View {
+    /// 絞り（板 11: すべて / 写真 / 人 / タグ / 撮影地）。選んでいる札は白地に墨の字
+    private var scopeChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(model.tagCounts, id: \.tag) { item in
-                    chip("\(item.tag)  \(item.count)",
-                         selected: TagChoices.key(query) == TagChoices.key(item.tag)) {
-                        query = TagChoices.key(query) == TagChoices.key(item.tag) ? "" : item.tag
+                ForEach(SearchScope.allCases) { scope in
+                    let selected = model.scope == scope
+                    Button {
+                        model.scope = scope
+                    } label: {
+                        Text(scope.label)
+                            .font(.footnote.weight(selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? WebTheme.accentText : Color.white.opacity(0.82))
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 36)
+                            .background(selected ? Color.white.opacity(0.92) : Color.white.opacity(0.05),
+                                        in: Capsule())
+                            .overlay(Capsule().strokeBorder(
+                                selected ? Color.white.opacity(0.92) : Color.white.opacity(0.10),
+                                lineWidth: 1))
+                            // 見た目は 36pt、押せる高さは 44pt
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                    .accessibilityIdentifier("search.scope.\(scope.rawValue)")
                 }
             }
             .padding(.horizontal, 16)
         }
     }
 
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(selected ? .semibold : .regular))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
-                .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                     : AnyShapeStyle(WebTheme.surface),
-                            in: Capsule())
-                .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+    /// 何も打っていないときの中身。**どの札を押しても何かが出る**（押して何も
+    /// 変わらない札を作らない）
+    @ViewBuilder
+    private var browse: some View {
+        switch model.scope {
+        case .all:
+            popularSpots
+            seasonal
+            colors
+            gear
+        case .photos:
+            SearchGrid(photos: model.shown)
+        case .people:
+            hint(L("名前やユーザー名で探せます", "Search by name or username"))
+        case .tags:
+            tagChips
+        case .places:
+            placeRows
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func hint(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(WebTheme.faint)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+    }
+
+    /// 「タグ」の絞りで何も打っていないとき: 使われているタグを多い順に、枚数を添えて
+    /// （押す前に手応えが分かる）。押すとそのタグで当てる
+    @ViewBuilder
+    private var tagChips: some View {
+        if model.tagCounts.isEmpty {
+            hint(L("タグの付いた写真はまだありません", "No tagged photos yet"))
+        } else {
+            listCard(model.tagCounts.map { (id: $0.tag, title: "#\($0.tag)", count: $0.count) }) { row in
+                query = row.id
+            }
+        }
+    }
+
+    /// 「撮影地」の絞りで何も打っていないとき: 撮影地を写真の多い順に。押すと
+    /// 注目スポットと同じ行き先（2枚以上の地点はスポットの画面）
+    @ViewBuilder
+    private var placeRows: some View {
+        if model.places.isEmpty {
+            hint(L("撮影地の分かる写真はまだありません", "No photos with a place yet"))
+        } else {
+            cardBox {
+                ForEach(Array(model.places.enumerated()), id: \.element.id) { index, spot in
+                    spotLink(spot) {
+                        listRow(title: spot.id, count: spot.count, divider: index > 0)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 札の中の行の並び（板 11 の「機材から探す」と同じ形）
+    private func listCard(_ rows: [(id: String, title: String, count: Int)],
+                          action: @escaping ((id: String, title: String, count: Int)) -> Void) -> some View {
+        cardBox {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                Button { action(row) } label: {
+                    listRow(title: row.title, count: row.count, divider: index > 0)
+                }
+                .buttonStyle(.plain)
+                // 読み上げは「#」を除いて（「シャープ」と読ませない）
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L("\(row.id)、\(row.count)枚", "\(row.id), \(row.count) photos"))
+                .accessibilityAddTraits(.isButton)
+            }
+        }
+    }
+
+    /// 行を束ねる札（板 11: 角丸 16・白7% の地・白8% の縁）
+    private func cardBox<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(spacing: 0) { content() }
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 16)
+    }
+
+    /// 1行（板 11: 高さ 54・15px の名前・等幅 13px の枚数・右に矢印・上に 8% の線）
+    private func listRow(title: String, count: Int, divider: Bool,
+                         systemImage: String? = nil) -> some View {
+        HStack(spacing: 12) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18))
+                    .foregroundStyle(WebTheme.muted2)
+                    .frame(width: 22)
+                    .accessibilityHidden(true)
+            }
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.foreground)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(L("\(count)枚", "\(count)"))
+                .font(JPFont.mono(13, relativeTo: .footnote))
+                .foregroundStyle(WebTheme.faint)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.35))
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 54)
+        .overlay(alignment: .top) {
+            if divider {
+                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+            }
+        }
+        .contentShape(Rectangle())
     }
 
     // MARK: - 発見
@@ -441,7 +495,8 @@ struct SearchView: View {
     private var results: some View {
         // 人は写真より先に出す（名前で探しているなら、それが目当て）。
         // ブロックした人は出さない（`/users/search` はブロックを知らない）
-        let users = BlockFilter.users(model.users, blocked: hidden.blockedUserIds)
+        let users = model.scope.showsPeople
+            ? BlockFilter.users(model.users, blocked: hidden.blockedUserIds) : []
         if !users.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text(L("人", "People"))
@@ -472,55 +527,35 @@ struct SearchView: View {
             .padding(.horizontal, 16)
         }
 
-        // **件数と並び替えは結果の上**（提案の絵）
-        HStack {
-            Text(L("検索結果: \(model.shown.count) 件", "\(model.shown.count) results"))
+        if model.scope.showsPhotos {
+            // **件数は結果の上**。並び替えは置かない（板 11。新しい順）
+            Text(L("写真 \(model.shown.count) 件", "\(model.shown.count) photos"))
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.muted2)
-            Spacer()
-            Menu {
-                ForEach(GallerySort.allCases) { option in
-                    Button(option.label) { model.select(sort: option) }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(model.sort.label)
-                    Image(systemName: "chevron.down").font(.caption2)
-                }
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
-                .frame(minHeight: WebTheme.minTapTarget)
-            }
-        }
-        .padding(.horizontal, 16)
-
-        if model.shown.isEmpty {
-            // **「まだ何も打っていない」と「見つからなかった」を分ける**
-            Text(query.isEmpty
-                 ? L("タグやカテゴリから探せます", "Start from a tag or a category")
-                 : L("見つかりませんでした", "No results"))
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 24)
-        } else {
-            SearchGrid(photos: model.shown)
+            if model.shown.isEmpty {
+                hint(L("見つかりませんでした", "No results"))
+            } else {
+                SearchGrid(photos: model.shown)
+            }
+        } else if users.isEmpty && model.peopleSearched {
+            // **聞き終わってから言う**（待ちの間や取り消しの直後に一瞬出さない）
+            hint(L("見つかりませんでした", "No results"))
         }
     }
 }
-
 @MainActor
 final class SearchViewModel: ObservableObject {
 
     @Published private(set) var photos: [Photo] = []
     @Published private(set) var users: [UserProfile] = []
-    @Published private(set) var popularTags: [String] = []
     @Published private(set) var isSearching = false
-    /// 候補タグと枚数（提案の絵の「winter 13」）
+    /// いまの語で人を聞き終えたか（「見つかりませんでした」を出してよいか）
+    @Published private(set) var peopleSearched = false
+    /// 使われているタグと枚数（「タグ」の絞りの一覧）
     @Published private(set) var tagCounts: [(tag: String, count: Int)] = []
-    @Published private(set) var categories: [String] = []
-    /// 丸い札に出す分類と、その代表写真（モック9-2）
-    @Published private(set) var categoryCovers: [CategoryCovers.Item] = []
+    /// 撮影地と枚数（「撮影地」の絞りの一覧）。写真の多い順
+    @Published private(set) var places: [DiscoverySections.Spot] = []
     /// 発見の塊（モック2）
     @Published private(set) var popularSpots: [DiscoverySections.Spot] = []
     @Published private(set) var seasonal: [Photo] = []
@@ -529,37 +564,17 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var gear: [GearGroups.Section] = []
     /// 色から探す（モック9-5）
     @Published private(set) var colors: [ColorFamilies.Section] = []
-    @Published private(set) var category: String?
-    @Published private(set) var sort: GallerySort = .new
+    /// 絞り（板 11）
+    @Published var scope: SearchScope = .all
 
-    /// 画面に出す写真。**打っていないときはカテゴリ／タグの結果を出す**
-    /// ——空の画面にしない（探しに来た人を手ぶらで帰さない）
+    /// 画面に出す写真。**打っていないときは全部**（「写真」の絞りの一覧）。
+    /// 並びは新しい順（並び替えは板どおりに外した）
     var shown: [Photo] {
-        let base = photos.isEmpty && query.isEmpty ? allPhotos : photos
-        let byCategory: [Photo]
-        if let category {
-            let key = CategoryChoices.key(category)
-            byCategory = base.filter { CategoryChoices.key($0.category ?? "") == key }
-        } else {
-            byCategory = base
-        }
-        return sort.apply(byCategory)
+        GallerySort.new.apply(query.isEmpty ? allPhotos : photos)
     }
 
     /// いま打っている文字（`shown` の出し分けに使う）
     private var query = ""
-
-    func select(category: String?) {
-        // 押し直したら外す
-        if let category, let current = self.category,
-           CategoryChoices.isChosen(current: current, choice: category) {
-            self.category = nil
-        } else {
-            self.category = category
-        }
-    }
-
-    func select(sort: GallerySort) { self.sort = sort }
 
     /// 読み込んだ写真そのもの。**スポットの画面に渡す**
     /// ——`shown` は絞り込んだあとなので、突き合わせ（近くの地点など）に
@@ -580,36 +595,44 @@ final class SearchViewModel: ObservableObject {
     /// ブロックした相手の写真が検索結果に残り続ける。
     func reloadPhotos(environment: AppEnvironment) async {
         allPhotos = (try? await environment.gallery.fetchPhotos()) ?? []
-        popularTags = PhotoQuery.topTags(in: allPhotos)
-        tagCounts = PhotoQuery.tagCounts(in: allPhotos)
+        tagCounts = PhotoQuery.tagCounts(in: allPhotos, limit: 40)
+        places = DiscoverySections.popularSpots(in: allPhotos, limit: 40)
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
         seasonal = DiscoverySections.seasonal(in: allPhotos)
         gear = GearGroups.sections(in: allPhotos)
-        categoryCovers = CategoryCovers.items(in: allPhotos)
         colors = ColorFamilies.sections(in: allPhotos)
-        categories = CategoryChoices.present(in: allPhotos)
         photos = []
     }
 
     func search(_ query: String, environment: AppEnvironment) async {
         searchTask?.cancel()
         self.query = query
+        peopleSearched = false
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             photos = []
             users = []
             return
         }
-        // 写真は手元の一覧から即座に絞る（往復しない）
-        photos = PhotoQuery.match(allPhotos, query: trimmed)
+        // 写真は手元の一覧から即座に絞る（往復しない）。どの欄で当てるかは絞りで変わる
+        photos = scope.match(allPhotos, query: trimmed)
+        // **人を出さない絞りでは聞きに行かない**
+        guard scope.showsPeople else {
+            users = []
+            return
+        }
 
         searchTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             isSearching = true
-            defer { isSearching = false }
-            users = (try? await environment.search.search(query: trimmed)) ?? []
+            let found = try? await environment.search.search(query: trimmed)
+            // **取り消された回は書き込まない**（前の語の人が新しい語の下に出る）
+            guard !Task.isCancelled else { return }
+            isSearching = false
+            users = found ?? []
+            peopleSearched = true
         }
     }
-
 }
+
