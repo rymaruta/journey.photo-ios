@@ -37,9 +37,13 @@ enum SongSticker {
     /// 字の幅は目安で、全角1・半角0.6・帯の左右の余白に1字ぶん。**下限（`minSize`）
     /// でも収まらないほど長い曲名は、はみ出したまま置く**（既知の限界）
     static func fittedSize(for text: String) -> Double {
-        let ems = text.reduce(1.0) { width, char in width + (char.isASCII ? 0.6 : 1.0) }
-        let fit = fitWidth / ems
+        let fit = fitWidth / ems(text)
         return max(TextOverlay.minSize, min(TextOverlay.defaultSize, fit))
+    }
+
+    /// 1行の幅の目安（字の大きさを1とした幅）。全角1・半角0.6・帯の余白に1字ぶん
+    static func ems(_ text: String) -> Double {
+        text.reduce(1.0) { width, char in width + (char.isASCII ? 0.6 : 1.0) }
     }
 
     /// 曲を変えた・外したときに、**前の曲の札だけ**を直す（変えたら文字を
@@ -59,9 +63,15 @@ enum SongSticker {
             guard isOld(overlay) else { return overlay }
             var changed = overlay
             changed.text = String(newText.prefix(TextOverlay.maxLength))
-            // 長い曲名に変えたら縮める（縮めるだけ——自分で小さくした分は残す）
-            changed.size = min(overlay.size,
-                               fittedSize(for: TextOverlay.display(text: changed.text, kind: .song)))
+            // **札の幅がそろうよう、文字の長さの比で大きさを変える**（長い曲名に
+            // 変えたら縮む）。ただし大きくするのは「いまの大きさ」か「新しい曲名で
+            // 置いたときの大きさ」まで——自分で大きくした分は残し、長い曲名を経由して
+            // 戻したときは元の大きさに戻り、既定より大きくはならない
+            let oldEms = ems(TextOverlay.display(text: overlay.text, kind: .song))
+            let newDisplay = TextOverlay.display(text: changed.text, kind: .song)
+            let keepsWidth = overlay.size * oldEms / ems(newDisplay)
+            let ceiling = max(overlay.size, fittedSize(for: newDisplay))
+            changed.size = TextOverlay.clampSize(min(keepsWidth, ceiling))
             return changed
         }
         return (updated, true)

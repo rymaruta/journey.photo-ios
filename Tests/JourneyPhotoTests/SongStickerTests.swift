@@ -18,7 +18,7 @@ final class SongStickerTests: XCTestCase {
         XCTAssertNil(SongSticker.make(for: song("  ")))
     }
 
-    /// 曲を変えたら前の曲の札の文字を差し替える（位置・大きさは残す）
+    /// 曲を変えたら前の曲の札の文字を差し替える（位置は残す。大きさは文字の長さの比で変わる）
     func testChangeRetextsOldSticker() {
         var sticker = SongSticker.make(for: song("海へ"))!
         sticker.x = 0.2
@@ -64,15 +64,19 @@ final class SongStickerTests: XCTestCase {
         XCTAssertEqual(story.songLine, SongSticker.make(for: song("海へ", "誰か"))?.text)
     }
 
-    /// 長い曲名に変えたら札を縮める（縮めるだけ。自分で小さくした分は残す）
-    func testChangingToLongerTitleShrinksSticker() {
+    /// 曲を変えたら文字の長さの比で大きさを変える。自分で大きくした分は残り、
+    /// 長い曲名を経由して戻しても元の大きさに戻る
+    func testChangingSongScalesStickerByWidth() {
         let sticker = SongSticker.make(for: song("海へ"))!
         let longer = SongSticker.retext([sticker], from: song("海へ"), to: song("Bohemian Rhapsody", "Queen"))
-        XCTAssertLessThan(longer.overlays[0].size, sticker.size)
+        XCTAssertLessThan(longer.overlays[0].size, sticker.size, "長い曲名に変えたら縮む")
 
-        var small = sticker
-        small.size = TextOverlay.minSize
-        let shorter = SongSticker.retext([small], from: song("海へ"), to: song("山"))
-        XCTAssertEqual(shorter.overlays[0].size, TextOverlay.minSize, "自分で小さくした分は残す")
+        let back = SongSticker.retext(longer.overlays, from: song("Bohemian Rhapsody", "Queen"), to: song("海へ"))
+        XCTAssertEqual(back.overlays[0].size, sticker.size, accuracy: 1e-9, "戻したら元の大きさ")
+
+        var big = sticker
+        big.size = 0.15
+        let same = SongSticker.retext([big], from: song("海へ"), to: song("山へ"))
+        XCTAssertEqual(same.overlays[0].size, 0.15, accuracy: 1e-9, "同じ長さなら自分で大きくした分は残す")
     }
 }
