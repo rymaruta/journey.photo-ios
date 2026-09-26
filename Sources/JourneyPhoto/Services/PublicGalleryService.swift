@@ -86,6 +86,12 @@ actor PublicGalleryService {
     /// を渡す——既定に置くと、設定を入れていない試験がここで落ちる
     private let liveURL: URL?
     private var liveCounts: [String: Int]?
+    /// `liveCounts` を**取りに行った時刻**（写した写真の `likesAsOf` になる）
+    private var liveCountsAsOf: Date?
+    /// 取りに行っている最中の要求。**同時に来た呼び出しはこれを待つ**
+    /// （待たずに返すと、その画面だけ静的 JSON の古い数で出て、
+    ///  控えの間は取り直さない）
+    private var liveInFlight: Task<Void, Never>?
     /// **最後に取りに行った時刻**（取れたかどうかは問わない）。
     /// 取れた時刻で見ると、失敗した後は控えがある間も呼ぶたびに
     /// 叩き直し、一覧を最大 `liveTimeout` ずつ待たせる
@@ -199,7 +205,7 @@ actor PublicGalleryService {
     /// いいねの数は**ここで**いまの数に差し替える（`LiveLikes`）。
     /// 取れていなければ静的 JSON の数のまま。
     private func merged(_ photos: [Photo], force: Bool) async -> [Photo] {
-        let counted = LiveLikes.apply(liveCounts ?? [:], to: photos)
+        let counted = LiveLikes.apply(liveCounts ?? [:], asOf: liveCountsAsOf ?? .distantPast, to: photos)
         let extra = await restrictedPhotos(force: force)
         if extra.isEmpty { return visible(counted) }
         return visible(RestrictedFeed.merge(publicPhotos: counted, restricted: extra))
@@ -209,11 +215,25 @@ actor PublicGalleryService {
     /// ——直前に取れた数か、静的 JSON の数のまま出す。
     private func refreshLiveCounts(force: Bool) async {
         guard let liveURL else { return }
+        if let liveInFlight {
+            await liveInFlight.value
+            return
+        }
         if !force, let liveAttemptedAt,
            Date().timeIntervalSince(liveAttemptedAt) < Self.cacheLifetime {
             return
         }
-        liveAttemptedAt = Date()
+        let startedAt = Date()
+        liveAttemptedAt = startedAt
+        // **呼んだ側の取り消しに巻き込まない**（巻き込まれると、控えの間は
+        // 取り直さないので、別の画面まで古い数のままになる）
+        let task = Task { await self.loadLiveCounts(from: liveURL, startedAt: startedAt) }
+        liveInFlight = task
+        await task.value
+        liveInFlight = nil
+    }
+
+    private func loadLiveCounts(from liveURL: URL, startedAt: Date) async {
         var request = URLRequest(url: liveURL)
         request.timeoutInterval = Self.liveTimeout
         do {
@@ -222,6 +242,7 @@ actor PublicGalleryService {
                   (200..<300).contains(http.statusCode),
                   let counts = LiveLikes.counts(from: data) else { return }
             liveCounts = counts
+            liveCountsAsOf = startedAt
         } catch {
             print("[gallery] いいねのいまの数を取れませんでした: \(error)")
         }

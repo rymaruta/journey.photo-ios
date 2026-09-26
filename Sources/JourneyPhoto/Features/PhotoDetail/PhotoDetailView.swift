@@ -86,7 +86,6 @@ struct PhotoDetailView: View {
         .task(id: auth.userId) {
             model.setSignedIn(auth.userId != nil)
             await model.load()
-            shareLikeCount()
         }
         .task(id: shown.location) { await loadSpotLead() }
         .task(id: ownerId) {
@@ -111,7 +110,14 @@ struct PhotoDetailView: View {
                 index: siblings.firstIndex(where: { $0.id == photo.id }) ?? 0,
                 isLiked: model.liked,
                 isSignedIn: auth.userId != nil,
-                onDoubleTapLike: { Task { await model.toggleLike() } }
+                onDoubleTapLike: {
+                    Task {
+                        await model.toggleLike()
+                        // 下のハートと同じく、端末の控えとホームの数にも渡す
+                        favorites.set(photo.id, favorite: model.liked)
+                        shareLikeCount()
+                    }
+                }
             )
         }
         .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
@@ -475,12 +481,15 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// ここで分かったいいねの数を、ホームのカードと検索の格子にも渡す。
-    /// **渡さないと、詳細で押して戻ったときに数が押す前のまま**になる
-    /// （ホームは戻っても一覧を読み直さない）
+    /// **押した回の**答えを、ホームのカードと検索の格子にも渡す。
+    /// 渡さないと、詳細で押して戻ったときに数が押す前のままになる
+    /// （ホームは戻っても一覧を読み直さない）。
+    ///
+    /// 開いたときに読んだ数は渡さない（`LikeCountStore` の注記）。
+    /// 答えが無かった回（失敗・数を返さない答え）も渡さない
     private func shareLikeCount() {
-        guard model.likesKnown else { return }
-        likeCounts.set(photo.id, count: model.likes)
+        guard let answer = model.lastLikeAnswer else { return }
+        likeCounts.set(photo.id, count: answer)
     }
 
     private var socialBar: some View {

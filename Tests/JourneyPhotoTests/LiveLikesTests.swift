@@ -41,14 +41,43 @@ final class LiveLikesTests: XCTestCase {
 
     func testOverwritesStaleCountsAndLeavesUnknownPhotos() throws {
         let photos = [try photo("a", likes: 5), try photo("b", likes: nil), try photo("restricted", likes: 7)]
-        let out = LiveLikes.apply(["a": 2, "b": 4], to: photos)
+        let asOf = Date(timeIntervalSince1970: 100)
+        let out = LiveLikes.apply(["a": 2, "b": 4], asOf: asOf, to: photos)
         XCTAssertEqual(out.map(\.likes), [2, 4, 7])
+        XCTAssertEqual(out.map(\.likesAsOf), [asOf, asOf, nil])
     }
 
     /// 取り消されて 0 になった写真は、古い数を残さず 0 にする
     func testDropsToZero() throws {
-        let out = LiveLikes.apply(["a": 0], to: [try photo("a", likes: 3)])
+        let out = LiveLikes.apply(["a": 0], asOf: Date(), to: [try photo("a", likes: 3)])
         XCTAssertEqual(out.first?.likes, 0)
+    }
+
+    // MARK: - 押した答えと一覧の、新しい方
+
+    private func entry(_ count: Int, at seconds: TimeInterval) -> LikeCountStore.Entry {
+        LikeCountStore.Entry(count: count, at: Date(timeIntervalSince1970: seconds))
+    }
+
+    /// 詳細で押して戻った（答えの方が新しい）→ 答え
+    func testAnswerNewerThanListWins() throws {
+        var p = try photo("a", likes: 4)
+        p.likesAsOf = Date(timeIntervalSince1970: 100)
+        XCTAssertEqual(LiveLikes.base(for: p, stored: entry(5, at: 200)), 5)
+    }
+
+    /// 🔴 そのあと引き下げ更新でいまの数が取れた（一覧の方が新しい）→ 一覧。
+    /// 答えを無条件に優先していた版は、ここで古い答えに止まっていた
+    func testListNewerThanAnswerWins() throws {
+        var p = try photo("a", likes: 7)
+        p.likesAsOf = Date(timeIntervalSince1970: 300)
+        XCTAssertEqual(LiveLikes.base(for: p, stored: entry(5, at: 200)), 7)
+    }
+
+    /// 静的 JSON のまま（いまの数が取れていない）はどの答えより古い
+    func testStaticListLosesToAnswer() throws {
+        XCTAssertEqual(LiveLikes.base(for: try photo("a", likes: 9), stored: entry(5, at: 0)), 5)
+        XCTAssertEqual(LiveLikes.base(for: try photo("a", likes: 9), stored: nil), 9)
     }
 
     // MARK: - カードに出す数
@@ -135,12 +164,10 @@ final class LikeCountStoreTests: XCTestCase {
 
     func testKeepsServerAnswers() async {
         let store = LikeCountStore()
-        XCTAssertNil(store.count(for: "a"))
-        store.set("a", count: 5)
-        XCTAssertEqual(store.count(for: "a"), 5)
-        store.set("a", count: 4)
-        XCTAssertEqual(store.count(for: "a"), 4)
+        XCTAssertNil(store.entry(for: "a"))
+        store.set("a", count: 5, at: Date(timeIntervalSince1970: 1))
+        XCTAssertEqual(store.entry(for: "a"), LikeCountStore.Entry(count: 5, at: Date(timeIntervalSince1970: 1)))
         store.set("b", count: -1)
-        XCTAssertEqual(store.count(for: "b"), 0)
+        XCTAssertEqual(store.entry(for: "b")?.count, 0)
     }
 }

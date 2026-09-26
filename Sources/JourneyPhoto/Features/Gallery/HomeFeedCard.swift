@@ -361,15 +361,15 @@ struct HomeFeedCard: View {
 
     /// 出すいいねの数。
     ///
-    /// **サーバーが答えた数（`LikeCountStore`）があれば、それが土台**。
-    /// ここで押した回も、詳細画面で押した回も入る。無ければ一覧の数
-    /// （いまの数に差し替え済み）。待っている間だけ ±1 を足す。
+    /// 土台は、押した答え（`LikeCountStore`・ここで押した回も詳細で押した回も
+    /// 入る）と一覧の数（いまの数に差し替え済み）の**新しい方**。
+    /// 待っている間だけ ±1 を足す。
     ///
     /// 🔴 以前は「端末でいいね済みなら一覧の数に +1」だった。一覧の数には
     /// **自分のいいねが既に入っている**ので、押したことのある写真は
     /// いつも1つ多く出ていた（しかも一覧の数はサイトを建てた時点の古い数）。
     private var likeCount: Int {
-        LiveLikes.displayCount(base: likeCounts.count(for: photo.id) ?? photo.likes,
+        LiveLikes.displayCount(base: LiveLikes.base(for: photo, stored: likeCounts.entry(for: photo.id)),
                                pendingDelta: pendingDelta)
     }
 

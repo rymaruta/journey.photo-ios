@@ -40,6 +40,10 @@ struct Photo: Identifiable, Decodable, Equatable {
     /// 管理 API の `GET /photos`（DynamoDB を直に読む）の数で上書きする
     /// （`LiveLikes`）。Web の `usePhotos` が同じ口で差し替えているのと同じ
     var likes: Int?
+    /// `likes` が**いつ時点の数か**（いまの数を取りに行った時刻）。
+    /// 静的 JSON のままなら nil（＝サイトを建てた時点・どの答えより古い）。
+    /// サーバーに無い項目なので、読むときは常に nil で来る
+    var likesAsOf: Date?
     /// owner が手で選んだ「おすすめ」。トップのカテゴリ別の特集に出る
     /// （Web の `lib/utils/featured.ts`）。
     let featured: Bool?

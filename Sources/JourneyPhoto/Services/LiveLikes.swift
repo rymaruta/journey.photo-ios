@@ -34,14 +34,32 @@ enum LiveLikes {
     /// 数を写す。**`counts` に無い写真は触らない**
     /// （公開範囲を絞った写真は `GET /photos` に載らない。そちらは
     ///  `GET /feed/restricted` がいまの数を持ってくる）。
-    static func apply(_ counts: [String: Int], to photos: [Photo]) -> [Photo] {
+    ///
+    /// - Parameter asOf: いまの数を取りに行った時刻。写した写真に付ける
+    ///   （`LikeCountStore` の答えとどちらが新しいかを比べるため）
+    static func apply(_ counts: [String: Int], asOf: Date, to photos: [Photo]) -> [Photo] {
         guard !counts.isEmpty else { return photos }
         return photos.map { photo in
-            guard let live = counts[photo.id], live != (photo.likes ?? 0) else { return photo }
+            guard let live = counts[photo.id] else { return photo }
             var copy = photo
             copy.likes = live
+            copy.likesAsOf = asOf
             return copy
         }
+    }
+
+    /// 土台にする数。**新しい方**を使う。
+    ///
+    /// - `stored`: 押した回にサーバーが答えた数（`LikeCountStore`）
+    /// - 一覧の数: `photo.likes`（`likesAsOf` がその時刻。nil は静的 JSON）
+    ///
+    /// 答えの方が新しければ答え。一覧をあとで読み直していま数が取れたら、
+    /// そちらが新しいので一覧の数（他の人が押したぶんも入る）。
+    /// 以前は答えを無条件に優先していて、一度入ると引き下げ更新でも動かなかった。
+    static func base(for photo: Photo, stored: LikeCountStore.Entry?) -> Int? {
+        guard let stored else { return photo.likes }
+        if let asOf = photo.likesAsOf, asOf >= stored.at { return photo.likes }
+        return stored.count
     }
 
     /// カードに出す数。
