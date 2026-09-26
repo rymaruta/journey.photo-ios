@@ -19,7 +19,16 @@ struct HighlightPlayerView: View {
     var body: some View {
         Group {
             if let contents, !contents.items.isEmpty {
-                StoryViewerView(stories: contents.items, startIndex: 0, viewerId: auth.userId)
+                // **写真の上に題と ✕ を重ねる**（板 38）。上のバーは隠す——
+                // 出したままだと写真がバーの裏から始まり、題が2か所に出る
+                StoryViewerView(
+                    stories: contents.items, startIndex: 0, viewerId: auth.userId,
+                    highlight: .init(title: highlight.displayTitle,
+                                     coverURL: highlight.coverURL,
+                                     count: highlight.count ?? contents.items.count,
+                                     onEdit: isMine ? { showEditor = true } : nil)
+                )
+                .toolbar(.hidden, for: .navigationBar)
             } else if failed {
                 // **「取れなかった」と「空」を分ける。** 同じ絵にすると、
                 // 圏外で開いた人が「消えた」と思う
@@ -39,7 +48,8 @@ struct HighlightPlayerView: View {
         .webScreen()
         .navigationTitle(highlight.displayTitle)
         .toolbar {
-            if isMine {
+            // 中身が出ている間は写真の上の「編集」を使う。空・失敗のときだけバーに
+            if isMine && (contents?.items.isEmpty ?? true) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("編集", "Edit")) { showEditor = true }
                 }

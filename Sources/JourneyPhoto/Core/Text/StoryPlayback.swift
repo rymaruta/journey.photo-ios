@@ -325,6 +325,29 @@ enum StoryPlayback {
         return L("あと \(minutes / 60) 時間で消えます", "Disappears in \(minutes / 60)h")
     }
 
+    /// 投稿した日時（反応の画面の副題「9月24日 18:20に投稿」）。**端末の時刻帯で**
+    static func postedAt(_ iso: String?, timeZone: TimeZone = .current) -> String? {
+        guard let iso, let date = parse(iso) else { return nil }
+        let f = DateFormatter()
+        f.timeZone = timeZone
+        f.locale = Locale(identifier: "ja_JP")
+        f.dateFormat = "M月d日 HH:mm"
+        let ja = f.string(from: date)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMM d, HH:mm"
+        return L("\(ja)に投稿", "Posted \(f.string(from: date))")
+    }
+
+    /// ハイライトの左下の日付（「2026.09.12」・等幅で出す）
+    static func dotDate(_ iso: String?, timeZone: TimeZone = .current) -> String? {
+        guard let iso, let date = parse(iso) else { return nil }
+        let f = DateFormatter()
+        f.timeZone = timeZone
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy.MM.dd"
+        return f.string(from: date)
+    }
+
     /// サーバーは `toISOString()`（小数秒つき）だが、小数秒の無い ISO8601 も
     /// 読めるようにしておく——片方だけだと**時刻が丸ごと消える**
     private static func parse(_ iso: String) -> Date? {

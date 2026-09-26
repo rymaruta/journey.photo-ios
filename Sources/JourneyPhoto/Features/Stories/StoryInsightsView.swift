@@ -40,101 +40,112 @@ struct StoryInsightsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                counts
+            VStack(alignment: .leading, spacing: 16) {
+                summary
+                tabs
                 viewerList
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
             .padding(.bottom, 24)
         }
         .webScreen()
-        .navigationTitle(L("ストーリーの反応", "Story insights"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // 題と、下に「9月24日 18:20に投稿」（板 26）
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 1) {
+                    Text(L("ストーリーの反応", "Story insights"))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                    if let posted = StoryPlayback.postedAt(story.createdAt) {
+                        Text(posted)
+                            .font(.system(size: 11))
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                }
+            }
+        }
         .task { await load() }
         .refreshable { await load() }
     }
 
-    // MARK: - 見出し
+    // MARK: - 写真と数
 
-    private var header: some View {
-        ZStack(alignment: .bottomLeading) {
-            Color.clear
-                .aspectRatio(16.0 / 11.0, contentMode: .fit)
-                // **`RemoteImage` で直接描かない。** 動画のストーリーは
-                // 真っ黒になる（`Tools/check-swift-refs.js` がこれを見張って
-                // いて、実際にここで捕まえてもらった）
-                .overlay { StoryThumb(story: story) }
-                .clipped()
-            LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.8)],
-                           startPoint: .center, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 4) {
-                if let caption = story.caption, !caption.isEmpty {
-                    Text(caption)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(WebTheme.foreground)
-                        .lineLimit(2)
-                }
-                if let place = story.location, !place.isEmpty {
-                    HStack(spacing: 5) {
-                        Image(systemName: "mappin.circle.fill")
-                        Text(place)
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.85))
-                }
-                if let posted = postedAgo {
-                    Text(posted)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
-                }
+    /// 左に縦長の写真（72×112）、右に3つの数を1枚の格子で（板 26）
+    private var summary: some View {
+        HStack(spacing: 12) {
+            thumbnail
+                .frame(width: 72, height: 112)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            HStack(spacing: 1) {
+                countCell(L("閲覧", "Views"), value: viewers.count)
+                countCell(L("いいね", "Likes"), value: replies.reactionCount)
+                countCell(L("返信", "Replies"), value: replies.textReplies.count)
             }
-            .padding(16)
+            .background(Color.white.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
         }
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .padding(.horizontal, 16)
     }
 
-    // MARK: - 数
-
-    private var counts: some View {
-        HStack(spacing: 10) {
-            countBox(L("閲覧", "Views"), systemImage: "eye", value: viewers.count)
-            countBox(L("いいね", "Likes"), systemImage: "heart.fill", value: reactionCount)
-            countBox(L("返信", "Replies"), systemImage: "bubble.right", value: textReplyCount)
-        }
-        .padding(.horizontal, 16)
+    /// 写真ならそのまま、動画は記号（`StoryPoster`）
+    private var thumbnail: some View {
+        StoryPoster(story: story)
     }
 
-    private func countBox(_ label: String, systemImage: String, value: Int) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.title3)
-                .foregroundStyle(WebTheme.foreground)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+    private func countCell(_ label: String, value: Int) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
             Text("\(value)")
-                .font(JPFont.mono(22, medium: true, relativeTo: .title2))
-                .foregroundStyle(WebTheme.foreground)
+                .font(JPFont.mono(18, relativeTo: .title3))
+                .foregroundStyle(.white)
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(WebTheme.faint)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .background(Self.cellColor)
+    }
+
+    /// 数の升の地（板の `#0b0b0c`）
+    private static let cellColor = Color(red: 0x0B / 255.0, green: 0x0B / 255.0, blue: 0x0C / 255.0)
+
+    // MARK: - 絞り
+
+    /// 閲覧者 / リアクション。**下線のタブ**（板 26）。数は上の格子にある
+    private var tabs: some View {
+        HStack(spacing: 0) {
+            ForEach(Scope.allCases) { option in
+                let selected = scope == option
+                Button {
+                    scope = option
+                } label: {
+                    Text(option.label)
+                        .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? Color.white : WebTheme.faint)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(selected ? Color.white : Color.clear).frame(height: 2)
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+        }
     }
 
     // MARK: - 見た人
 
     @ViewBuilder
     private var viewerList: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // 閲覧者 / リアクション（モック7）。数はどちらも**数えたもの**
-            Picker("", selection: $scope) {
-                ForEach(Scope.allCases) { option in
-                    Text("\(option.label) \(count(for: option))").tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-
+        VStack(alignment: .leading, spacing: 0) {
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if let errorMessage {
@@ -146,13 +157,13 @@ struct StoryInsightsView: View {
                      : L("まだ誰も見ていません", "No one has seen it yet"))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
+                    .padding(.vertical, 12)
             } else {
                 ForEach(shownViewers) { viewer in
                     viewerRow(viewer)
                 }
             }
         }
-        .padding(.horizontal, 16)
     }
 
     /// 絞ったあとの一覧。**リアクションは見た人の一部**（別の口では引かない）
@@ -160,54 +171,51 @@ struct StoryInsightsView: View {
         scope == .reactions ? viewers.filter { hasReaction(from: $0.userId) } : viewers
     }
 
-    private func count(for scope: Scope) -> Int {
-        scope == .reactions ? viewers.filter { hasReaction(from: $0.userId) }.count : viewers.count
-    }
-
+    /// 顔・名前・時刻。右に、反応なら真鍮のハート、文章の返信なら「…」。
+    /// **押すとその人のページ**
     private func viewerRow(_ viewer: StoryViewer) -> some View {
         HStack(spacing: 12) {
-            RemoteImage(url: UserProfile.profileAssetURL(
-                userId: viewer.userId, suffix: nil, cacheBust: nil),
-                        placeholderSymbol: "person.crop.circle.fill")
-                .frame(width: 44, height: 44)
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text(viewer.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.foreground)
-                if let ago = ago(from: viewer.at) {
-                    Text(ago)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+            NavigationLink {
+                UserProfileView(userId: viewer.userId)
+            } label: {
+                HStack(spacing: 12) {
+                    RemoteImage(url: UserProfile.profileAssetURL(
+                        userId: viewer.userId, suffix: nil, cacheBust: nil),
+                                placeholderSymbol: "person.crop.circle.fill")
+                        .frame(width: 44, height: 44)
+                        .clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(viewer.name)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                        if let ago = ago(from: viewer.at) {
+                            Text(ago)
+                                .font(.system(size: 12))
+                                .foregroundStyle(WebTheme.faint)
+                        }
+                    }
+                    Spacer(minLength: 0)
                 }
-                // その人からの返信があれば、そのまま続けて出す
-                if let reply = replyText(from: viewer.userId) {
-                    Text(reply)
-                        .font(.footnote)
-                        .foregroundStyle(Color.white.opacity(0.8))
-                        .lineLimit(2)
-                }
+                .contentShape(Rectangle())
             }
-            Spacer()
+            .buttonStyle(.plain)
+            .disabled(viewer.deleted == true)
             if hasReaction(from: viewer.userId) {
                 Image(systemName: "heart.fill")
-                    .foregroundStyle(WebTheme.foreground)
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityLabel(L("いいね", "Liked"))
+            } else if let reply = replyText(from: viewer.userId) {
+                Text("「\(reply)」")
+                    .font(.system(size: 12))
+                    .foregroundStyle(WebTheme.muted2)
+                    .lineLimit(1)
+                    .frame(maxWidth: 140, alignment: .trailing)
             }
         }
-        .frame(minHeight: WebTheme.minTapTarget)
+        .frame(minHeight: 62)
     }
 
     // MARK: - 数え方
-
-    /// 定型の反応（❤️😍😂😮😢👏）。**返信の一種として届く**
-    private var reactionCount: Int {
-        replies.filter { $0.emoji?.isEmpty == false }.count
-    }
-
-    /// 文章の返信だけ（反応は上で数えている）
-    private var textReplyCount: Int {
-        replies.filter { ($0.emoji ?? "").isEmpty }.count
-    }
 
     private func replyText(from userId: String) -> String? {
         replies.first { $0.uid == userId && ($0.emoji ?? "").isEmpty }?.text
@@ -215,10 +223,6 @@ struct StoryInsightsView: View {
 
     private func hasReaction(from userId: String) -> Bool {
         replies.contains { $0.uid == userId && ($0.emoji ?? "").isEmpty == false }
-    }
-
-    private var postedAgo: String? {
-        ago(from: story.createdAt).map { L("\($0)に投稿", "Posted \($0)") }
     }
 
     /// 「2時間前」。決まりは閲覧画面と共用（`StoryPlayback.ago`）

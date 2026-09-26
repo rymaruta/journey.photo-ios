@@ -312,4 +312,14 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(replies.textReplies.map(\.body), ["きれい", "どこ？"])
         XCTAssertEqual(replies.reactionCount, 1)
     }
+
+    /// 反応の画面の副題と、ハイライトの日付（端末の時刻帯で読む）
+    func testPostedAtAndDotDate() {
+        let tokyo = TimeZone(identifier: "Asia/Tokyo")!
+        XCTAssertEqual(StoryPlayback.postedAt("2026-09-24T09:20:00.000Z", timeZone: tokyo),
+                       L("9月24日 18:20に投稿", "Posted Sep 24, 18:20"))
+        XCTAssertEqual(StoryPlayback.dotDate("2026-09-11T20:00:00Z", timeZone: tokyo), "2026.09.12")
+        XCTAssertNil(StoryPlayback.postedAt(nil))
+        XCTAssertNil(StoryPlayback.dotDate("?"))
+    }
 }

@@ -117,3 +117,28 @@ struct StoryThumb: View {
         }
     }
 }
+
+/// ストーリーの四角いサムネ（反応の画面の 72×112 など）。**枠いっぱいに敷く。**
+///
+/// 動画は `StoryThumb` と同じく1コマ目を出さず、記号を置く。
+/// 大きさと角丸は呼ぶ側が決める
+struct StoryPoster: View {
+
+    let story: Story
+
+    var body: some View {
+        if story.isVideo {
+            ZStack {
+                WebTheme.surface
+                Image(systemName: "play.circle")
+                    .font(.title2)
+                    .foregroundStyle(WebTheme.faint)
+            }
+            .accessibilityLabel(L("動画のストーリー", "Video story"))
+        } else {
+            // `.fill` の絵は枠より大きい寸法を申告するので、透明な枠に重ねる
+            Color.clear.overlay { RemoteImage(url: story.imageURL) }
+                .clipped()
+        }
+    }
+}

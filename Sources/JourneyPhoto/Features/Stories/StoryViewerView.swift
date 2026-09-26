@@ -79,10 +79,24 @@ struct StoryViewerView: View {
     /// 既読にしないと、閉じたときに輪が点いたまま残る
     let onSeen: ((String) -> Void)?
 
+    /// ハイライトとして見ている（板 38）。**期限の切れたストーリーの並び**なので、
+    /// 返信欄・見た人・削除を出さない（返信はサーバーが期限切れを断り、
+    /// 削除はハイライトではなくストーリーそのものを消してしまう）
+    struct HighlightContext {
+        let title: String
+        let coverURL: URL?
+        let count: Int
+        /// 自分のハイライトなら「編集」
+        let onEdit: (() -> Void)?
+    }
+    let highlight: HighlightContext?
+
     init(stories: [Story], startIndex: Int, viewerId: String?,
+         highlight: HighlightContext? = nil,
          onSeen: ((String) -> Void)? = nil) {
         self.stories = stories
         self.viewerId = viewerId
+        self.highlight = highlight
         self.onSeen = onSeen
         let start = stories.indices.contains(startIndex) ? startIndex : 0
         _index = State(initialValue: start)
@@ -134,6 +148,15 @@ struct StoryViewerView: View {
     /// その下の黒い帯に返信欄が乗る
     private func content(for story: Story) -> some View {
         ZStack(alignment: .top) {
+            if let highlight {
+                // ハイライトは写真を画面いっぱい（角丸なし）に敷き、足元も重ねる
+                photoArea(for: story)
+                    .ignoresSafeArea()
+                    .overlay(alignment: .bottom) {
+                        highlightFooter(for: story, highlight: highlight)
+                            .opacity(chrome.hidesChrome ? 0 : 1)
+                    }
+            } else {
             VStack(spacing: 0) {
                 photoArea(for: story)
                     .ignoresSafeArea(edges: .top)
@@ -143,6 +166,7 @@ struct StoryViewerView: View {
                     // 場所は残す——消すと写真の枠が伸び縮みする
                     .opacity(chrome.hidesChrome ? 0 : 1)
                     .allowsHitTesting(!chrome.hidesChrome)
+            }
             }
             VStack(spacing: 9) {
                 progressBar(for: story)
@@ -170,6 +194,9 @@ struct StoryViewerView: View {
             // 端末の既読（輪の色）。**サーバーの応答を待たない**
             // ——圏外でも、見たものは見たことにする
             onSeen?(story.id)
+            // ハイライトは期限切れの並び。見た印も見た人・返信も、サーバーは
+            // 期限で消しているので叩かない
+            guard highlight == nil else { return }
             // **見たことを伝えるのは1回。** 失敗しても画面は止めない
             await environment.stories.markViewed(id: story.id)
             if isMine(story) {
@@ -290,7 +317,7 @@ struct StoryViewerView: View {
 
             captionBlock(for: story)
                 .padding(.horizontal, 32)
-                .padding(.bottom, 96)
+                .padding(.bottom, highlight == nil ? 96 : 150)
                 .allowsHitTesting(false)
 
             if let message {
@@ -311,7 +338,8 @@ struct StoryViewerView: View {
                     }
             }
         }
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: highlight == nil ? 24 : 0,
+                                          bottomTrailingRadius: highlight == nil ? 24 : 0))
     }
 
     /// ひとこと（明朝30・影）・撮影地・曲。**写真の左下に重ねる**（板の配置）。
@@ -403,7 +431,9 @@ struct StoryViewerView: View {
         HStack(spacing: 10) {
             // 自分の名前は押せない形で描く（自分のページはマイページ）。
             // 無効のボタンにすると薄く描かれ、読み上げも「使用不可」になる
-            if isMine(story) || story.userId == nil {
+            if let highlight {
+                highlightLabel(highlight)
+            } else if isMine(story) || story.userId == nil {
                 authorLabel(for: story)
             } else {
                 Button {
@@ -416,7 +446,7 @@ struct StoryViewerView: View {
             Spacer(minLength: 0)
             // **自分のストーリーには「…」を置かない**（板 25e は ✕ だけ）。
             // ただし**動画は音を消す口がここにしか無い**ので出す
-            if !isMine(story) || story.isVideo {
+            if (!isMine(story) && highlight == nil) || story.isVideo {
                 Button {
                     showMenu = true
                 } label: {
@@ -439,6 +469,57 @@ struct StoryViewerView: View {
         }
         .padding(.leading, 12)
         .padding(.trailing, 4)
+    }
+
+    /// ハイライトの見出し（表紙・題・「ストーリーハイライト · 5件」。板 38）
+    private func highlightLabel(_ highlight: HighlightContext) -> some View {
+        HStack(spacing: 10) {
+            Group {
+                if let url = highlight.coverURL {
+                    RemoteImage(url: url)
+                } else {
+                    Circle().fill(WebTheme.surface)
+                }
+            }
+            .frame(width: 34, height: 34)
+            .clipShape(Circle())
+            .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(highlight.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(L("ストーリーハイライト · \(highlight.count)件", "Story highlight · \(highlight.count)"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(WebTheme.muted)
+            }
+        }
+        .frame(minHeight: WebTheme.minTapTarget)
+    }
+
+    /// ハイライトの足元（左に等幅の日付、右に自分なら「編集」）
+    private func highlightFooter(for story: Story, highlight: HighlightContext) -> some View {
+        HStack {
+            if let date = StoryPlayback.dotDate(story.createdAt) {
+                Text(L("\(date) · 残したストーリー", "\(date) · Kept story"))
+                    .font(JPFont.mono(11))
+                    .foregroundStyle(WebTheme.muted)
+            }
+            Spacer(minLength: 0)
+            if let onEdit = highlight.onEdit {
+                Button(action: onEdit) {
+                    Text(L("編集", "Edit"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 40)
+                        .jpGlass(in: Capsule(), border: 0.4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
     }
 
     /// 見出しの左（アバター・名前・時刻）

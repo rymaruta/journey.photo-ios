@@ -228,6 +228,7 @@ extension View {
     public func preferredColorScheme(_ s: ColorSchemeShim?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarBackground<S: ShapeStyle>(_ s: S, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarColorScheme(_ s: ColorSchemeShim?, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func toolbar(_ v: VisibilityShim, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(_ content: V, alignment: Alignment = .center) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func buttonStyle(_ s: PrimitiveButtonStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
