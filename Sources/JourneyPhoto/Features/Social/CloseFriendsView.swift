@@ -27,8 +27,11 @@ struct CloseFriendsView: View {
     var body: some View {
         List {
             Section {
-                Text(L("選んだ人だけがストーリーを見られます。相手には知らせません。",
-                       "Only people you pick can see it. They aren't told."))
+                // **効くのは写真だけ。** ストーリーは常にフォロワーだけに出る
+                // （`api-user/src/storyVisibility.ts`・2026-09-22）。この画面の
+                // 入口も写真の公開範囲（投稿・編集）だけ
+                Text(L("公開範囲を「親しい友達」にした写真は、選んだ人だけが見られます。相手には知らせません。",
+                       "Photos shared with Close friends are visible only to people you pick. They aren't told."))
                     .font(.footnote)
                     .foregroundStyle(WebTheme.muted2)
             }
@@ -60,19 +63,22 @@ struct CloseFriendsView: View {
                     } header: {
                         Text(L("フォロー中の一覧に出ない人", "Not in your following list"))
                     } footer: {
-                        Text(L("フォローを外した人などです。星を外すと、ストーリーが見えなくなります。",
-                               "People you unfollowed, for example. Remove the star to hide your stories from them."))
+                        Text(L("フォローを外した人などです。星を外すと、「親しい友達」の写真が見えなくなります。",
+                               "People you unfollowed, for example. Remove the star to hide your Close friends photos from them."))
                     }
                     .listRowBackground(Color.clear)
                 }
-                Section {
-                    ForEach(following) { user in
-                        row(user)
+                // フォローが0人のときは段ごと出さない（見出しだけの段を作らない）
+                if !following.isEmpty {
+                    Section {
+                        ForEach(following) { user in
+                            row(user)
+                        }
+                    } header: {
+                        Text(L("選んだ人 \(chosen.count)", "\(chosen.count) picked"))
                     }
-                } header: {
-                    Text(L("選んだ人 \(chosen.count)", "\(chosen.count) picked"))
+                    .listRowBackground(Color.clear)
                 }
-                .listRowBackground(Color.clear)
             }
         }
         .webScreen()
@@ -126,23 +132,63 @@ struct CloseFriendsView: View {
         others = await names(of: rows.others)
     }
 
+    /// 名前を引くときに同時に送る数の上限。
+    ///
+    /// 親しい友達は最大200人（`CLOSE_FRIENDS_MAX`）。全員を一度に引くと、
+    /// アカウント全体で10本しかない Lambda の同時実行枠を埋め、
+    /// 他の人の要求まで待たせる
+    private static let lookupWidth = 8
+
+    /// 引いた結果。**退会した人（404）は「取れなかった」と分ける**
+    /// （`ProfileService.publicProfile` の注記）
+    private enum Lookup: Sendable {
+        case name(String?)
+        case deleted
+    }
+
+    /// 1人ぶん引く
+    nonisolated private static func lookup(_ id: String, profiles: ProfileService) async -> (String, Lookup) {
+        do {
+            let profile = try await profiles.publicProfile(userId: id)
+            return (id, .name(AuthorName.real(profile)))
+        } catch APIError.server(let status, _) where status == 404 {
+            return (id, .deleted)
+        } catch {
+            return (id, .name(nil))
+        }
+    }
+
     /// フォロー外の人の名前。**引けなくても行は出す**（名前より外せることが先）
     private func names(of ids: [String]) async -> [FollowUser] {
         let profiles = environment.profiles
-        let found = await withTaskGroup(of: (String, String?).self) { group in
-            for id in ids {
-                group.addTask {
-                    let profile = try? await profiles.publicProfile(userId: id)
-                    return (id, profile?.displayName ?? profile?.username)
+        let width = Self.lookupWidth
+        let found = await withTaskGroup(of: (String, Lookup).self,
+                                        returning: [String: Lookup].self) { group in
+            var results: [String: Lookup] = [:]
+            var next = 0
+            // 最初の数本を出し、1本返るたびに次の1本を出す（同時に width 本まで）
+            while next < min(width, ids.count) {
+                let id = ids[next]
+                group.addTask { await Self.lookup(id, profiles: profiles) }
+                next += 1
+            }
+            while let done = await group.next() {
+                results[done.0] = done.1
+                if next < ids.count {
+                    let id = ids[next]
+                    group.addTask { await Self.lookup(id, profiles: profiles) }
+                    next += 1
                 }
             }
-            var names: [String: String] = [:]
-            for await (id, name) in group {
-                if let name { names[id] = name }
-            }
-            return names
+            return results
         }
-        return ids.map { FollowUser(id: $0, name: found[$0], deleted: nil) }
+        return ids.map { id in
+            switch found[id] {
+            case .deleted: return FollowUser(id: id, name: nil, deleted: true)
+            case .name(let name): return FollowUser(id: id, name: name, deleted: nil)
+            case nil: return FollowUser(id: id, name: nil, deleted: nil)
+            }
+        }
     }
 
     /// **返ってきた状態を使う。** 自分で反転すると、失敗した回に

@@ -9,7 +9,7 @@ final class CloseFriendsRowsTests: XCTestCase {
     }
 
     /// 🔴 **フォロー中に居ない親しい友達も並べる。** 並べないと外せず、
-    /// フォローを外した相手が限定公開のストーリーを見続けられた
+    /// フォローを外した相手が「親しい友達」の写真を見続けられた
     func testChosenPeopleOutsideTheFollowingListAreListed() {
         let rows = CloseFriendsRows.split(following: [user("a"), user("b")],
                                           chosen: ["b", "gone", "past50"])
