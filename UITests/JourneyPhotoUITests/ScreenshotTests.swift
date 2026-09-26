@@ -33,6 +33,28 @@ final class ScreenshotTests: XCTestCase {
         add(shot)
     }
 
+    /// **撮影スポットのピンを撮る。** 公開済みのスポットは国内の4件だけで、
+    /// 地図の既定の範囲（写真のあるフランス）には1本も出ない。名前で絞ると
+    /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
+    /// 見つからなければ撮らない（名前と中身が食い違う絵は、無い絵より悪い）
+    private func shootSpotPin(_ app: XCUIApplication) {
+        let field = app.textFields["map.search"].firstMatch
+        guard field.waitForExistence(timeout: 5) else { return }
+        field.tap()
+        field.typeText("鍋ヶ滝\n")
+        Thread.sleep(forTimeInterval: 3)
+        let pin = app.buttons["鍋ヶ滝"].firstMatch
+        guard pin.waitForExistence(timeout: 10) else { return }
+        shoot(app, "13b-マップ（撮影スポットのピン）")
+        pin.tap()
+        if app.descendants(matching: .any).matching(identifier: "map.officialCard").firstMatch.waitForExistence(timeout: 5) {
+            shoot(app, "13c-マップ（撮影スポットの札）")
+        }
+        // 絞りを解いて、あとの画面に持ち越さない
+        let clear = app.buttons["消す"].firstMatch
+        if clear.exists { clear.tap() }
+    }
+
     func testCapturesEveryScreen() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -96,6 +118,7 @@ final class ScreenshotTests: XCTestCase {
             let signedOut = app.descendants(matching: .any)
                 .matching(identifier: "signin.form").firstMatch.exists
             shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
+            if name == "マップ" { shootSpotPin(app) }
         }
 
         // **マイページの下半分**（モック2）。ハイライトの輪・作品の格子・
