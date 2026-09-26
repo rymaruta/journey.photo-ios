@@ -56,6 +56,17 @@ final class TextOverlayTests: XCTestCase {
         XCTAssertEqual(rect.minY, 87.5, accuracy: 0.0001)
     }
 
+    /// 縦長の写真（9:16）は**左右に**余白が出る。中心は余白のぶん右へずれる
+    func testCenterIncludesTheSideBands() {
+        let photo = TextOverlay.fittedRect(image: CGSize(width: 900, height: 1600),
+                                           in: CGSize(width: 300, height: 400))
+        XCTAssertEqual(photo.width, 225, accuracy: 0.0001)
+        XCTAssertEqual(photo.minX, 37.5, accuracy: 0.0001)
+        let center = TextOverlay(text: "ここ", x: 0.2, y: 0.5).center(in: photo)
+        XCTAssertEqual(center.x, 37.5 + 45, accuracy: 0.0001)
+        XCTAssertEqual(center.y, 200, accuracy: 0.0001)
+    }
+
     /// 大きさが分からないときは枠いっぱい（0 で割らない）
     func testFittedRectWithUnknownImageFillsTheCanvas() {
         let rect = TextOverlay.fittedRect(image: CGSize(width: 0, height: 0),
