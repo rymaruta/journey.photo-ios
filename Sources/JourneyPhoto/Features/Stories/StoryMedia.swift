@@ -101,18 +101,20 @@ private struct StoryVideo: View {
 struct StoryThumb: View {
 
     let story: Story
+    /// 丸の直径（輪の内側に置くときは 52）
+    var size: CGFloat = 64
 
     var body: some View {
         if story.isVideo {
             Image(systemName: "play.circle")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-                .frame(width: 64, height: 64)
+                .frame(width: size, height: size)
                 .background(WebTheme.surface, in: Circle())
                 .accessibilityLabel(L("動画のストーリー", "Video story"))
         } else {
             RemoteImage(url: story.imageURL)
-                .frame(width: 64, height: 64)
+                .frame(width: size, height: size)
                 .clipShape(Circle())
         }
     }

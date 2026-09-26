@@ -75,13 +75,20 @@ public struct ZStack: View {
     public var body: Never { fatalError("模型") }
 }
 /// 線の引き方（破線など）。本物と同じ引数名で持つ
+public enum LineCapShim { case butt, round, square }
 public struct StrokeStyle {
     public var lineWidth: Double
+    public var lineCap: LineCapShim
     public var dash: [Double]
-    public init(lineWidth: Double = 1, dash: [Double] = []) {
+    public init(lineWidth: Double = 1, lineCap: LineCapShim = .butt, dash: [Double] = []) {
         self.lineWidth = lineWidth
+        self.lineCap = lineCap
         self.dash = dash
     }
+}
+/// 角度（`rotationEffect(.degrees(-90))`）
+public struct Angle {
+    public static func degrees(_ v: Double) -> Angle { Angle() }
 }
 
 public struct ViewThatFits: View {
@@ -221,6 +228,8 @@ public struct Circle: View, Shape {
     public func strokeBorder<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Circle { self }
     public func strokeBorder<S: ShapeStyle>(_ style: S, style strokeStyle: StrokeStyle) -> Circle { self }
     public func fill<S: ShapeStyle>(_ style: S) -> Circle { self }
+    /// 輪の一部だけ（ストーリーの輪を本数で区切る）
+    public func trim(from: Double, to: Double) -> Circle { self }
     public var body: Never { fatalError("模型") }
 }
 public struct Stepper: View {
@@ -243,6 +252,7 @@ public protocol Shape {}
 extension Shape {
     /// 縁を引く（本物は `some View` を返す）
     public func stroke<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Rectangle { Rectangle() }
+    public func stroke<S: ShapeStyle>(_ style: S, style strokeStyle: StrokeStyle) -> Rectangle { Rectangle() }
 }
 /// 角ごとに丸みを変える四角（iOS 16+）。ストーリーの写真は下の角だけ丸める
 public struct UnevenRoundedRectangle: View, Shape {

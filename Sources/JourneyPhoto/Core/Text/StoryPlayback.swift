@@ -208,6 +208,28 @@ enum StoryPlayback {
         }
     }
 
+    /// ホームの輪の並び（板 27「いつもの並び」）。**自分は先頭に別に取り出し、
+    /// 残りは未読 → 既読の順**。未読どうし・既読どうしはサーバーの並びのまま
+    /// （同じ順を保つ——開くたびに輪が入れ替わると覚えられない）
+    static func orderedRings(_ rings: [Story], me: String?,
+                             isUnseen: (Story) -> Bool) -> (mine: Story?, others: [Story]) {
+        let mine = me.flatMap { id in rings.first { $0.userId == id } }
+        let others = rings.filter { me == nil || $0.userId != me }
+        let unseen = others.filter(isUnseen)
+        let seen = others.filter { !isUnseen($0) }
+        return (mine, unseen + seen)
+    }
+
+    /// 輪を本数で区切るときの1区切り（0...1 の始まりと終わり）。
+    /// **1本なら切れ目の無い輪**。切れ目は円周のうち `gap` の割合
+    static func ringSegments(count: Int, gap: Double = 4.0 / 182.2) -> [(start: Double, end: Double)] {
+        guard count > 1 else { return [(0, 1)] }
+        let step = 1.0 / Double(count)
+        return (0..<count).map { i in
+            (Double(i) * step + gap / 2, Double(i + 1) * step - gap / 2)
+        }
+    }
+
     /// 端末側で落とす。
     ///
     /// サーバーの一覧はブロックを両向きに落として返すが、**通報した1本は

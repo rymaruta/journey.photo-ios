@@ -24,50 +24,31 @@ struct StoriesRow: View {
         Group {
             if auth.userId != nil {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        // **自分の入口を先頭に置く。** ストーリーが1本も
-                        // 無いときに行ごと消すと、投稿する場所が無くなる
-                        Button {
-                            showComposer = true
-                        } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "plus")
-                                    .font(.title3)
-                                    .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
-                                    .frame(width: 64, height: 64)
-                                    .background(WebTheme.surface, in: Circle())
-                                Text(L("ストーリー", "Story"))
-                                    .font(.caption)
-                                    .frame(width: 68)
-                            }
-                        }
-                        .buttonStyle(.plain)
-
-                        // **1人＝1つの輪**（`StoryPlayback.rings`）
-                        ForEach(StoryPlayback.rings(model.stories, isSeen: { seen.contains($0) })) { story in
+                    HStack(alignment: .top, spacing: 12) {
+                        // **1人＝1つの輪。自分は先頭、未読 → 既読の順**（板 27）
+                        let ordered = StoryPlayback.orderedRings(
+                            StoryPlayback.rings(model.stories, isSeen: { seen.contains($0) }),
+                            me: auth.userId,
+                            isUnseen: { seen.hasUnseen(model.siblings(of: $0)) })
+                        mineRing(ordered.mine)
+                        ForEach(ordered.others) { story in
+                            // **見たものは輪を落とす。** 全部同じ輪だと
+                            // 「どれがまだか」が分からず、行が意味を失う
+                            let unseen = seen.hasUnseen(model.siblings(of: story))
                             Button {
                                 opened = story
                             } label: {
-                                VStack(spacing: 4) {
-                                    // **見たものは輪を落とす。** 全部同じ輪だと
-                                    // 「どれがまだか」が分からず、行が意味を失う
-                                    let unseen = seen.hasUnseen(model.siblings(of: story))
-                                    StoryThumb(story: story)
-                                        .overlay(Circle().strokeBorder(
-                                            unseen ? AnyShapeStyle(WebTheme.accent)
-                                                   : AnyShapeStyle(WebTheme.outline),
-                                            lineWidth: 2))
-                                    Text(story.authorName)
-                                        .font(.caption)
-                                        .lineLimit(1)
-                                        .frame(width: 68)
-                                }
+                                ringItem(story: story,
+                                         count: model.siblings(of: story).count,
+                                         color: unseen ? WebTheme.accent : Color.white.opacity(0.18),
+                                         name: story.authorName, emphasized: unseen)
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 2)
+                    .padding(.bottom, 8)
                 }
             }
         }
@@ -93,6 +74,92 @@ struct StoriesRow: View {
         }) {
             NavigationStack { StoryComposerView() }
         }
+    }
+
+    // MARK: - 輪
+
+    /// 自分の輪。**ストーリーがあれば真鍮の区切り輪と「＋」の札、無ければ破線の丸**。
+    /// どちらも名前は「あなた」（板 27）
+    @ViewBuilder
+    private func mineRing(_ mine: Story?) -> some View {
+        if let mine {
+            ZStack(alignment: .topTrailing) {
+                Button {
+                    opened = mine
+                } label: {
+                    ringItem(story: mine, count: model.siblings(of: mine).count,
+                             color: WebTheme.accent, name: L("あなた", "You"), emphasized: false)
+                }
+                .buttonStyle(.plain)
+                // 右下の「＋」: もう1本足す
+                Button {
+                    showComposer = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .frame(width: 22, height: 22)
+                        .background(Color.white, in: Circle())
+                        .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
+                .offset(x: 12, y: 30)
+            }
+        } else {
+            // **自分の入口を先頭に置く。** ストーリーが1本も無いときに
+            // 行ごと消すと、投稿する場所が無くなる
+            Button {
+                showComposer = true
+            } label: {
+                VStack(spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .strokeBorder(Color.white.opacity(0.35),
+                                          style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                        Image(systemName: "plus")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 62, height: 62)
+                    ringName(L("あなた", "You"), emphasized: false)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
+        }
+    }
+
+    /// 輪1つ（外径62・線2・内側に5の隙間・写真52・下に名前10pt）
+    private func ringItem(story: Story, count: Int, color: Color,
+                          name: String, emphasized: Bool) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                // **本数で区切る**（1本は切れ目なし）。上から時計回り
+                ForEach(Array(StoryPlayback.ringSegments(count: count).enumerated()), id: \.offset) { _, seg in
+                    Circle()
+                        .trim(from: seg.start, to: seg.end)
+                        .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .padding(1)
+                }
+                StoryThumb(story: story, size: 52)
+            }
+            .frame(width: 62, height: 62)
+            ringName(name, emphasized: emphasized)
+        }
+        .frame(width: 64)
+    }
+
+    /// 名前。**未読は太く白く、既読は細く薄く**（板 27）
+    private func ringName(_ name: String, emphasized: Bool) -> some View {
+        Text(name)
+            .font(.system(size: 10, weight: emphasized ? .semibold : .regular))
+            .foregroundStyle(emphasized ? WebTheme.text : WebTheme.faint)
+            .lineLimit(1)
+            .frame(maxWidth: 64)
     }
 
     private func reload() async {

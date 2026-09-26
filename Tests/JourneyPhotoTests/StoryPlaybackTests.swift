@@ -322,4 +322,30 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertNil(StoryPlayback.postedAt(nil))
         XCTAssertNil(StoryPlayback.dotDate("?"))
     }
+
+    /// 🔴 **自分は先頭、残りは未読 → 既読**（板 27）。同じ組の中はサーバーの並びのまま
+    func testRingsOrderMeFirstThenUnseen() throws {
+        func story(_ id: String, _ user: String) throws -> Story {
+            try JSONDecoder.api.decode(Story.self, from: Data(
+                #"{"id":"\#(id)","src":"https://x.test/\#(id).jpg","userId":"\#(user)"}"#.utf8))
+        }
+        let rings = try [story("s1", "a"), story("s2", "me"), story("s3", "b"), story("s4", "c")]
+        let seen: Set<String> = ["s1"]
+        let ordered = StoryPlayback.orderedRings(rings, me: "me", isUnseen: { !seen.contains($0.id) })
+        XCTAssertEqual(ordered.mine?.id, "s2")
+        XCTAssertEqual(ordered.others.map(\.id), ["s3", "s4", "s1"])
+        // ログインしていなければ自分の輪は無い
+        XCTAssertNil(StoryPlayback.orderedRings(rings, me: nil, isUnseen: { _ in true }).mine)
+    }
+
+    /// 輪を本数で区切る。1本は切れ目なし、2本は半分ずつで間に切れ目
+    func testRingSegments() {
+        XCTAssertEqual(StoryPlayback.ringSegments(count: 1).count, 1)
+        XCTAssertEqual(StoryPlayback.ringSegments(count: 1)[0].start, 0)
+        XCTAssertEqual(StoryPlayback.ringSegments(count: 1)[0].end, 1)
+        let two = StoryPlayback.ringSegments(count: 2, gap: 0.02)
+        XCTAssertEqual(two.count, 2)
+        XCTAssertEqual(two[0].end, 0.49, accuracy: 0.0001)
+        XCTAssertEqual(two[1].start, 0.51, accuracy: 0.0001)
+    }
 }
