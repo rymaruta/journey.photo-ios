@@ -34,7 +34,7 @@ enum JPFont {
     }
 
     /// 写真の題（詳細画面のいちばん大きい見出し）
-    static let photoTitle = display(30, relativeTo: .largeTitle)
+    static let photoTitle = display(32, relativeTo: .largeTitle)
     /// 画面の題・人の名前
     static let screenTitle = display(26, relativeTo: .title)
     /// カードの題（写真の上・大きい札）
