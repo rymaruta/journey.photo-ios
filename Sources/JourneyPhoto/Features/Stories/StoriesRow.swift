@@ -91,6 +91,7 @@ struct StoriesRow: View {
                              color: WebTheme.accent, name: L("あなた", "You"), emphasized: false)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(L("あなたのストーリー", "Your story"))
                 // 右下の「＋」: もう1本足す
                 Button {
                     showComposer = true
@@ -101,12 +102,15 @@ struct StoriesRow: View {
                         .frame(width: 22, height: 22)
                         .background(Color.white, in: Circle())
                         .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                        // **押せる範囲は丸で小さく。** 44の四角にすると自分の写真の
+                        // 右下4分の1を奪い、ストーリーを開くつもりで投稿画面が開いた
+                        .frame(width: 30, height: 30)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
-                .offset(x: 12, y: 30)
+                // 白丸の中心を輪の右下の線の上へ（板 27 の位置）
+                .offset(x: 5, y: 37)
             }
         } else {
             // **自分の入口を先頭に置く。** ストーリーが1本も無いときに
@@ -132,7 +136,7 @@ struct StoriesRow: View {
         }
     }
 
-    /// 輪1つ（外径62・線2・内側に5の隙間・写真52・下に名前10pt）
+    /// 輪1つ（外径62・線2・写真52・下に名前10pt。板 27 の寸法）
     private func ringItem(story: Story, count: Int, color: Color,
                           name: String, emphasized: Bool) -> some View {
         VStack(spacing: 6) {
