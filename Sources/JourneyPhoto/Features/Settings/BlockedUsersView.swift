@@ -11,6 +11,8 @@ struct BlockedUsersView: View {
     @State private var users: [FollowUser] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    /// いま解除を送っている相手（二度押しで2回投げない）
+    @State private var working: Set<String> = []
 
     var body: some View {
         List {
@@ -33,8 +35,8 @@ struct BlockedUsersView: View {
                     Button {
                         Task { await unblock(user.id) }
                     } label: {
-                        // 余白と枠は**中身の側**に置く。外に付けると、押せるのは文字だけで、
-                        // 枠の縁を押しても何も起きない
+                        // 余白と枠は**中身の側**に置く。外に付けると押せるのは文字だけで、
+                        // 枠の縁を押すと行の方が反応していた
                         Text(L("解除", "Unblock"))
                             .font(.footnote.weight(.semibold))
                             .padding(.horizontal, 14)
@@ -45,6 +47,7 @@ struct BlockedUsersView: View {
                     // 行の中のボタンは borderless にしないと、行のどこを
                     // 押しても反応する
                     .buttonStyle(.borderless)
+                    .disabled(working.contains(user.id))
                 }
             }
         }
@@ -93,6 +96,9 @@ struct BlockedUsersView: View {
     }
 
     private func unblock(_ userId: String) async {
+        guard !working.contains(userId) else { return }
+        working.insert(userId)
+        defer { working.remove(userId) }
         do {
             try await environment.moderation.unblock(userId: userId)
             hidden.unblock(userId)
