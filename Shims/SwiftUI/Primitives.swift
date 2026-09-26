@@ -259,9 +259,12 @@ public struct ViewDimensions {
 public struct VerticalAlignment { public static let center = VerticalAlignment(), top = VerticalAlignment(), bottom = VerticalAlignment(), firstTextBaseline = VerticalAlignment(), lastTextBaseline = VerticalAlignment() }
 public struct Edge {
     public static let top = Edge(), bottom = Edge(), leading = Edge(), trailing = Edge()
-    public struct Set {
+    /// 本物は `OptionSet`（`[]` で「どの端も無し」を書ける）
+    public struct Set: ExpressibleByArrayLiteral {
         public static let all = Set(), horizontal = Set(), vertical = Set()
         public static let top = Set(), bottom = Set(), leading = Set(), trailing = Set()
+        public init() {}
+        public init(arrayLiteral elements: Set...) {}
     }
 }
 /// `safeAreaInset(edge:)` が受ける上下。本物は `CaseIterable` の enum
