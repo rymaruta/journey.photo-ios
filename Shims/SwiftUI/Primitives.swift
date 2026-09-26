@@ -249,6 +249,13 @@ public struct Alignment {
     public static let bottom = Alignment(), bottomLeading = Alignment(), bottomTrailing = Alignment()
 }
 public struct HorizontalAlignment { public static let leading = HorizontalAlignment(), center = HorizontalAlignment() }
+/// 揃えの計算に渡る寸法（本物と同じ形）
+public struct ViewDimensions {
+    public var width: Double { 0 }
+    public var height: Double { 0 }
+    public subscript(guide: VerticalAlignment) -> Double { 0 }
+    public subscript(guide: HorizontalAlignment) -> Double { 0 }
+}
 public struct VerticalAlignment { public static let center = VerticalAlignment(), top = VerticalAlignment(), bottom = VerticalAlignment(), firstTextBaseline = VerticalAlignment(), lastTextBaseline = VerticalAlignment() }
 public struct Edge {
     public static let top = Edge(), bottom = Edge(), leading = Edge(), trailing = Edge()

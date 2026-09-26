@@ -130,24 +130,8 @@ struct SignInView: View {
     /// 大きいロゴと一文（板: マーク＋serif 40・「旅の写真を、一冊の記録に。」）
     private var brand: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                Image("BrandMark")
-                    .renderingMode(.template)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: 44, height: 44)
-                    .foregroundStyle(WebTheme.foreground)
-                Text("Journey Photo")
-                    .font(.system(size: 40, weight: .bold, design: .serif))
-                    .tracking(-1.0)
-                    .foregroundStyle(WebTheme.foreground)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Journey Photo")
-            .accessibilityAddTraits(.isHeader)
+            AppLogo(size: .hero)
+                .accessibilityAddTraits(.isHeader)
             Text(L("旅の写真を、一冊の記録に。", "Your travels, bound into one book."))
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.muted2)
