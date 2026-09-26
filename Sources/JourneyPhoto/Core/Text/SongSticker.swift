@@ -28,11 +28,17 @@ enum SongSticker {
                            kind: .song, face: .gothic)
     }
 
-    /// 1行で短い辺の 85% に収まる大きさ（大きさ＝短い辺に対する字の高さの割合）。
-    /// 字の幅は目安で、全角1・半角0.6・帯の左右の余白に1字ぶん
+    /// 1行で収まる幅（短い辺に対する割合）。**写真の幅ではなく見えている幅に合わせる**
+    /// ——作成画面も閲覧画面も写真を画面いっぱいに敷いて端を切るので、3:4 の縦写真
+    /// だと見えるのは幅の約6割
+    static let fitWidth = 0.55
+
+    /// 1行で `fitWidth` に収まる大きさ（大きさ＝短い辺に対する字のポイント数の割合）。
+    /// 字の幅は目安で、全角1・半角0.6・帯の左右の余白に1字ぶん。**下限（`minSize`）
+    /// でも収まらないほど長い曲名は、はみ出したまま置く**（既知の限界）
     static func fittedSize(for text: String) -> Double {
         let ems = text.reduce(1.0) { width, char in width + (char.isASCII ? 0.6 : 1.0) }
-        let fit = 0.85 / ems
+        let fit = fitWidth / ems
         return max(TextOverlay.minSize, min(TextOverlay.defaultSize, fit))
     }
 
@@ -53,6 +59,9 @@ enum SongSticker {
             guard isOld(overlay) else { return overlay }
             var changed = overlay
             changed.text = String(newText.prefix(TextOverlay.maxLength))
+            // 長い曲名に変えたら縮める（縮めるだけ——自分で小さくした分は残す）
+            changed.size = min(overlay.size,
+                               fittedSize(for: TextOverlay.display(text: changed.text, kind: .song)))
             return changed
         }
         return (updated, true)

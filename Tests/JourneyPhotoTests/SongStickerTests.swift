@@ -52,9 +52,9 @@ final class SongStickerTests: XCTestCase {
         let long = SongSticker.make(for: song("Bohemian Rhapsody", "Queen"))!
         XCTAssertLessThan(long.size, TextOverlay.defaultSize)
         XCTAssertGreaterThanOrEqual(long.size, TextOverlay.minSize)
-        // 字の幅の目安（半角0.6・全角1）で、短い辺の 85% に収まる
+        // 字の幅の目安（半角0.6・全角1）で、見えている幅に収まる
         let ems = long.displayText.reduce(1.0) { $0 + ($1.isASCII ? 0.6 : 1.0) }
-        XCTAssertLessThanOrEqual(ems * long.size, 0.85 + 1e-9)
+        XCTAssertLessThanOrEqual(ems * long.size, SongSticker.fitWidth + 1e-9)
     }
 
     /// 閲覧画面の ♪ 行と札は同じ文字（片方だけ変わらないように）
@@ -62,5 +62,17 @@ final class SongStickerTests: XCTestCase {
         let json = #"{"id":"s","src":"https://x.test/s.jpg","song":{"title":"海へ","artist":"誰か","previewUrl":"https://audio-ssl.itunes.apple.com/p.m4a"}}"#
         let story = try JSONDecoder.api.decode(Story.self, from: Data(json.utf8))
         XCTAssertEqual(story.songLine, SongSticker.make(for: song("海へ", "誰か"))?.text)
+    }
+
+    /// 長い曲名に変えたら札を縮める（縮めるだけ。自分で小さくした分は残す）
+    func testChangingToLongerTitleShrinksSticker() {
+        let sticker = SongSticker.make(for: song("海へ"))!
+        let longer = SongSticker.retext([sticker], from: song("海へ"), to: song("Bohemian Rhapsody", "Queen"))
+        XCTAssertLessThan(longer.overlays[0].size, sticker.size)
+
+        var small = sticker
+        small.size = TextOverlay.minSize
+        let shorter = SongSticker.retext([small], from: song("海へ"), to: song("山"))
+        XCTAssertEqual(shorter.overlays[0].size, TextOverlay.minSize, "自分で小さくした分は残す")
     }
 }

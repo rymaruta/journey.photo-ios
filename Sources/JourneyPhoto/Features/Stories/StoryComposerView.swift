@@ -36,6 +36,8 @@ struct StoryComposerView: View {
     @State private var durationSec = StoryService.defaultDurationSec
     @State private var showSongPicker = false
     @State private var message: String?
+    /// 曲の札を置けなかったときの一言（`message` とは別。曲を選び直すと消える）
+    @State private var songNote: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
 
@@ -485,6 +487,9 @@ struct StoryComposerView: View {
             if let message, prepared != nil {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.muted2)
             }
+            if let songNote, prepared != nil {
+                Text(songNote).font(.footnote).foregroundStyle(WebTheme.muted2)
+            }
             HStack(spacing: 8) {
                 // 🔴 **ストーリーはフォロワーだけが見る**（2026-09-22・owner の
                 // 判断。`api-user/src/storyVisibility.ts`）。選ぶ口は置かない
@@ -568,6 +573,7 @@ struct StoryComposerView: View {
     private func applySong(_ new: Photo.Song?) {
         let old = song
         song = new
+        songNote = nil
         var found = false
         for i in shots.indices {
             let result = SongSticker.retext(shots[i].overlays, from: old, to: new)
@@ -579,9 +585,11 @@ struct StoryComposerView: View {
         guard !found, let new, let sticker = SongSticker.make(for: new),
               shots.indices.contains(current) else { return }
         guard shots[current].overlays.count < TextOverlay.maxCount else {
-            // 黙って置かないと「曲の札が出ない」と読める。曲はチップで見せている
-            message = L("文字と札がいっぱいなので、曲の札は置けませんでした",
-                        "Couldn't add the song sticker — too many stickers on this photo")
+            // 黙って置かないと「曲の札が出ない」と読める。曲はチップで見せている。
+            // **写真や投稿の知らせ（`message`）とは別の欄**——投稿の途中失敗の知らせ
+            // （何本出たか）を上書きしない
+            songNote = L("文字と札がいっぱいなので、曲の札は置けませんでした",
+                         "Couldn't add the song sticker — too many stickers on this photo")
             return
         }
         shots[current].overlays.append(sticker)
