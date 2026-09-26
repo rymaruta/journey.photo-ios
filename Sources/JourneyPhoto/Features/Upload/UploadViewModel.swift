@@ -254,7 +254,7 @@ final class UploadViewModel: ObservableObject {
             uploadingIndex = 0
         }
 
-        groupId = Self.groupIdForSubmit(current: groupId, grouping: groupsAsOnePost,
+        groupId = UploadGrouping.groupIdForSubmit(current: groupId, grouping: groupsAsOnePost,
                                         count: items.count, make: { UUID().uuidString })
 
         var done: [UUID] = []
@@ -349,20 +349,6 @@ final class UploadViewModel: ObservableObject {
             }
         }
         return true
-    }
-
-    /// 送るときの束の印。
-    ///
-    /// **まとめるのは2枚以上のときだけ。** 1枚に印を付けても意味が無く、
-    /// 「1/1」の送りが出るだけになる。
-    /// 🔴 **押し直しでは同じ印を使い続ける。** 5枚のうち2枚が失敗して押し直すと、
-    /// 送るたびに作り直していたので 3枚と2枚の2つの束に割れ、残りが1枚なら
-    /// 印の無い単独の投稿になっていた。印を捨てるのは選び直しと `reset()` だけ
-    nonisolated static func groupIdForSubmit(current: String?, grouping: Bool, count: Int,
-                                 make: () -> String) -> String? {
-        guard grouping else { return nil }
-        if let current { return current }
-        return count > 1 ? make() : nil
     }
 
     private func reset() {

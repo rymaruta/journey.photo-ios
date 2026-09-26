@@ -30,15 +30,15 @@ final class UploadDraftTests: XCTestCase {
     func testGroupIdIsKeptAcrossRetries() {
         var made = 0
         let make = { () -> String in made += 1; return "g\(made)" }
-        let first = UploadViewModel.groupIdForSubmit(current: nil, grouping: true, count: 5, make: make)
+        let first = UploadGrouping.groupIdForSubmit(current: nil, grouping: true, count: 5, make: make)
         XCTAssertEqual(first, "g1")
         // 2枚失敗して押し直す／1枚だけ残って押し直す
-        XCTAssertEqual(UploadViewModel.groupIdForSubmit(current: first, grouping: true, count: 2, make: make), "g1")
-        XCTAssertEqual(UploadViewModel.groupIdForSubmit(current: first, grouping: true, count: 1, make: make), "g1")
+        XCTAssertEqual(UploadGrouping.groupIdForSubmit(current: first, grouping: true, count: 2, make: make), "g1")
+        XCTAssertEqual(UploadGrouping.groupIdForSubmit(current: first, grouping: true, count: 1, make: make), "g1")
         XCTAssertEqual(made, 1)
         // 最初から1枚なら印は付けない。まとめない設定なら付けない
-        XCTAssertNil(UploadViewModel.groupIdForSubmit(current: nil, grouping: true, count: 1, make: make))
-        XCTAssertNil(UploadViewModel.groupIdForSubmit(current: "g1", grouping: false, count: 5, make: make))
+        XCTAssertNil(UploadGrouping.groupIdForSubmit(current: nil, grouping: true, count: 1, make: make))
+        XCTAssertNil(UploadGrouping.groupIdForSubmit(current: "g1", grouping: false, count: 5, make: make))
     }
 
     /// 空の項目は送らない（api-user は「未指定＝触らない」と読む）。
