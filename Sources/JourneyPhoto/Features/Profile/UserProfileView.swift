@@ -17,9 +17,9 @@ struct UserProfileView: View {
     @EnvironmentObject private var toasts: ToastCenter
 
     private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 4),
+        GridItem(.flexible(), spacing: 4),
+        GridItem(.flexible(), spacing: 4),
     ]
 
     var body: some View {
@@ -95,14 +95,9 @@ struct UserProfileView: View {
                     HighlightsRow(userId: userId, isMine: false, reloadKey: model.isFollowing)
                 }
 
-                Picker("", selection: $tab) {
-                    // **端末にしか無い札は出さない**（`ProfileTab.tabs`）
-                    ForEach(ProfileTab.tabs(isMe: false)) { tab in
-                        Text(tab.label).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
+                // 下線の札（板 31: 投稿 / マップ）。**マイページと同じ部品**。
+                // 横に払う切り替えは付けない——マップの札の中身は地図で、横に動かすと地図が動く
+                ProfileTabBar(tabs: ProfileTab.tabs(isMe: false), selection: $tab)
 
                 if let message = model.errorMessage {
                     ErrorBanner(message: message) {
@@ -114,10 +109,11 @@ struct UserProfileView: View {
                     // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）
                     MyPhotosMap(photos: model.photos)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 2) {
+                    // 板 31: 隙間 4pt・角なし（マイページと同じ）
+                    LazyVGrid(columns: columns, spacing: 4) {
                         ForEach(model.photos) { photo in
                             NavigationLink { PhotoDetailView(photo: photo, context: model.photos) } label: {
-                                PhotoFrame(photo: photo)
+                                PhotoFrame(photo: photo, corner: 0)
                             }
                             .buttonStyle(.plain)
                         }
