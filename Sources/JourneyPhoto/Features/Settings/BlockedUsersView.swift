@@ -17,15 +17,19 @@ struct BlockedUsersView: View {
     var body: some View {
         List {
             // 板 45 の説明。**同じ言い方をアプリの他の入口（通報・プロフィール）でも使っている**
+            // 板: 11px・白60%
             Text(L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。",
                    "Blocking hides each other's posts, stories and notifications."))
-                .font(.caption)
-                .foregroundStyle(WebTheme.muted2)
-                .listRowBackground(Color.clear)
+                .font(.caption2)
+                .foregroundStyle(WebTheme.faint)
+                .padding(.horizontal, 4)
+                .plainRow()
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout)
+                    .plainRow()
             } else if users.isEmpty && !isLoading {
-                Text(L("ブロックしている人はいません", "No one is blocked")).foregroundStyle(.secondary)
+                Text(L("ブロックしている人はいません", "No one is blocked")).foregroundStyle(WebTheme.faint)
+                    .plainRow()
             }
             ForEach(users) { user in
                 HStack(spacing: 12) {
@@ -49,8 +53,12 @@ struct BlockedUsersView: View {
                     .buttonStyle(.borderless)
                     .disabled(working.contains(user.id))
                 }
+                // 板は札も区切り線も無い素の並び（最小62pt）
+                .frame(minHeight: 44)
+                .plainRow(vertical: 9)
             }
         }
+        .listStyle(.plain)
         .webScreen()
         .navigationTitle(L("ブロックした人", "Blocked people"))
         .task { await load() }
@@ -67,6 +75,7 @@ struct BlockedUsersView: View {
                 .clipShape(Circle())
             Text(user.displayName)
                 .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
             Spacer(minLength: 0)
         }
     }
@@ -107,5 +116,15 @@ struct BlockedUsersView: View {
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("解除できませんでした", "Couldn't unblock")
         }
+    }
+}
+
+private extension View {
+    /// 板 45 の素の行: 地も区切り線も無く、左右は画面の 16
+    func plainRow(vertical: Double = 6) -> some View {
+        self
+            .listRowInsets(EdgeInsets(top: vertical, leading: 16, bottom: vertical, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 }

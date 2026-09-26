@@ -131,6 +131,10 @@ public struct ScrollDismissesKeyboardModeShim {
     public static let interactively = ScrollDismissesKeyboardModeShim()
     public static let never = ScrollDismissesKeyboardModeShim()
 }
+public struct ListStyleShim {
+    public static let plain = ListStyleShim()
+    public static let insetGrouped = ListStyleShim()
+}
 public struct VisibilityShim {
     public static let automatic = VisibilityShim()
     public static let visible = VisibilityShim()
@@ -237,6 +241,8 @@ extension View {
     public func listRowBackground<V: View>(_ view: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 行の余白（本物と同じ）。`ProfileEditView` のカバーを端まで広げるのに使う
     public func listRowInsets(_ insets: EdgeInsets?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 一覧の形（本物と同じ）
+    public func listStyle(_ style: ListStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 行の区切り線を出すか（本物と同じ。`.listRowBackground(.clear)` では線は消えない）
     public func listRowSeparator(_ visibility: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
