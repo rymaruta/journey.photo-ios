@@ -260,6 +260,15 @@ extension Shape {
     @MainActor public func stroke<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Rectangle { Rectangle() }
     @MainActor public func stroke<S: ShapeStyle>(_ style: S, style strokeStyle: StrokeStyle) -> Rectangle { Rectangle() }
 }
+/// 自由な線（旅の一冊のルート図）。本物と同じく、閉包の中で点を足していく
+public struct Path: View, Shape {
+    public init() {}
+    public init(_ callback: (inout Path) -> Void) {}
+    public mutating func move(to point: CGPoint) {}
+    public mutating func addLine(to point: CGPoint) {}
+    public mutating func addCurve(to point: CGPoint, control1: CGPoint, control2: CGPoint) {}
+    public var body: Never { fatalError("模型") }
+}
 /// 角ごとに丸みを変える四角（iOS 16+）。ストーリーの写真は下の角だけ丸める
 public struct UnevenRoundedRectangle: View, Shape {
     public init(topLeadingRadius: Double = 0, bottomLeadingRadius: Double = 0,

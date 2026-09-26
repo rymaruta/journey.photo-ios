@@ -625,7 +625,7 @@ struct MyPageView: View {
 
     /// 旅の記録（旅の一冊の棚）。**自分の公開写真から**その場でまとめる
     /// ——下書きは旅に入れない（見せていない写真が一冊に紛れ込む）。
-    /// 背表紙は `TripShelf`。**旅の一覧の画面（`TripsView`）はここへ畳んだ**
+    /// 棚は `TripShelfList`。**旅の一覧の画面（`TripsView`）はここへ畳んだ**
     /// ——入口がマイページの札1つだけだった
     @ViewBuilder
     private var tripsArea: some View {
@@ -635,27 +635,9 @@ struct MyPageView: View {
             ProgressView()
                 .frame(maxWidth: .infinity)
                 .padding(24)
-        } else if trips.isEmpty {
-            // **なぜ空なのかを言う**
-            Text(L("同じころに撮った写真が2枚たまると、ひとつの旅にまとまります",
-                   "Two or more photos taken around the same time become a trip"))
-                .font(.footnote)
-                .foregroundStyle(WebTheme.faint)
-                .frame(maxWidth: .infinity)
-                .padding(24)
         } else {
-            LazyVStack(spacing: 16) {
-                ForEach(trips) { trip in
-                    NavigationLink {
-                        TripBookView(trip: trip)
-                    } label: {
-                        TripShelf(trip: trip)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("trips.book")
-                }
-            }
-            .padding(.horizontal, 16)
+            // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
+            TripShelfList(trips: trips)
         }
     }
 

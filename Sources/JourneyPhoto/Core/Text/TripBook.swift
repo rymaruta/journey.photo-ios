@@ -32,16 +32,20 @@ enum TripBook {
         let end: Date
         /// 時間順（古い順＝旅の進む向き）
         let photos: [Photo]
+        /// 投稿日時を暦の日に直すときの時刻帯（`day(of:in:)`）。
+        /// 日の段・ルート図もこれで数え直す
+        var timeZone: TimeZone = .current
 
         /// 表紙。**いいねがいちばん多い1枚**、並びが同じなら最初の1枚
         var cover: Photo? {
             photos.max { ($0.likes ?? 0) < ($1.likes ?? 0) } ?? photos.first
         }
 
-        /// 何日間の旅か（同じ日なら1日）
+        /// 何日間の旅か（同じ日なら1日）。**暦の日で数える**——経過秒で割ると、
+        /// 時刻を持つ写真（投稿日で代用したもの）で「2026.05.01 — 05.03」の旅が
+        /// 「2日間」になり、並べて出す期間の範囲と食い違う
         var days: Int {
-            let seconds = end.timeIntervalSince(start)
-            return max(1, Int(seconds / 86_400) + 1)
+            max(1, TripBook.calendarDays(from: start, to: end) + 1)
         }
     }
 
@@ -50,7 +54,7 @@ enum TripBook {
     /// **旅は1人のもの。** 投稿者ごとに分けてからまとめる——日付だけで
     /// 束ねると、**同じ日に別の人が撮った写真が1つの旅に混ざる**
     /// （公開一覧は全員のぶんが入っているので、人が増えた瞬間に起きる）。
-    static func trips(from photos: [Photo]) -> [Trip] {
+    static func trips(from photos: [Photo], timeZone: TimeZone = .current) -> [Trip] {
         var byUser: [String: [Photo]] = [:]
         for photo in photos {
             // 投稿者が分からない写真は**それだけで1つの束**にしない。
@@ -58,17 +62,17 @@ enum TripBook {
             // 「同じ人の旅」になってしまう
             byUser[photo.userId ?? "unknown-\(photo.id)", default: []].append(photo)
         }
-        return byUser.values.flatMap { tripsForOnePerson($0) }
+        return byUser.values.flatMap { tripsForOnePerson($0, timeZone: timeZone) }
             .sorted { $0.start > $1.start }
     }
 
-    private static func tripsForOnePerson(_ photos: [Photo]) -> [Trip] {
+    private static func tripsForOnePerson(_ photos: [Photo], timeZone: TimeZone) -> [Trip] {
         // **日付を持たない写真は旅に入れない。** いつの旅か決まらないものを
         // 混ぜると、関係ない写真が一冊に紛れ込む
-        let dated = photos.compactMap { photo -> (Photo, Date)? in
-            guard let date = day(of: photo) else { return nil }
+        let dated = inOrder(photos, timeZone: timeZone).compactMap { photo -> (Photo, Date)? in
+            guard let date = day(of: photo, in: timeZone) else { return nil }
             return (photo, date)
-        }.sorted { $0.1 < $1.1 }
+        }
 
         var groups: [[(Photo, Date)]] = []
         for item in dated {
@@ -90,41 +94,54 @@ enum TripBook {
                     place: mainPlace(of: photos),
                     start: start,
                     end: end,
-                    photos: photos
+                    photos: photos,
+                    timeZone: timeZone
                 )
             }
     }
 
-    /// 通った順に並べた撮影地。**同じ場所が続いたらまとめる**
-    /// （「金沢・金沢・金沢」と並べても足取りにならない）。
-    ///
-    /// **2か所以上のときだけ意味がある。** 1か所しか無い旅で線を引くと、
-    /// 点が1つあるだけの「足取り」になり、かえって壊れて見える
-    /// （実機の絵で確認）。呼ぶ側は `isEmpty` で出し分ける。
-    static func route(of photos: [Photo]) -> [String] {
-        var result: [String] = []
-        for place in photos.compactMap(\.location) {
-            let trimmed = place.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, result.last != trimmed else { continue }
-            result.append(trimmed)
-        }
-        return result.count >= 2 ? result : []
-    }
-
     /// その写真の日。**撮影日を優先**し、無ければ投稿日で代用する
     /// （撮った日の方が旅の順番に合う）。
-    static func day(of photo: Photo) -> Date? {
+    ///
+    /// **返すのは「その日の UTC 0 時」**——撮影日（`2026-05-02`）はそう読むので、
+    /// 投稿日時も同じ基準に揃える。投稿日時は UTC の瞬間（`…T22:00:00Z`）なので、
+    /// **撮った人の時刻帯の暦日に直してから** 0 時にする。直さないと、
+    /// 日本時間の 0〜9 時の投稿が前の日になり（JST 5/2 07:00 は UTC では 5/1）、
+    /// 同じ日の2枚が「05.01 — 05.02・2日間」に割れる
+    static func day(of photo: Photo, in timeZone: TimeZone = .current) -> Date? {
         if let date = photo.date, let parsed = dayFormatter.date(from: String(date.prefix(10))) {
             return parsed
         }
-        if let created = photo.createdAt, let parsed = isoFormatter.date(from: created) {
-            return parsed
-        }
-        if let created = photo.createdAt,
-           let parsed = dayFormatter.date(from: String(created.prefix(10))) {
-            return parsed
+        if let created = photo.createdAt {
+            if let instant = instant(created) {
+                var local = Calendar(identifier: .gregorian)
+                local.timeZone = timeZone
+                let parts = local.dateComponents([.year, .month, .day], from: instant)
+                return utcCalendar.date(from: parts)
+            }
+            // 時刻の無い日付だけの投稿日は、撮影日と同じく書いてある日のまま
+            return dayFormatter.date(from: String(created.prefix(10)))
         }
         return nil
+    }
+
+    /// 旅の進む向きに並べる。**日で並べ、同じ日の中は投稿の時刻順**
+    /// （日に丸めたあとで並べると、同じ日の写真の順が崩れる）。
+    /// 日の決まらない写真は後ろ（旅には入らない）
+    static func inOrder(_ photos: [Photo], timeZone: TimeZone = .current) -> [Photo] {
+        photos.enumerated().sorted { lhs, rhs in
+            let l = day(of: lhs.element, in: timeZone) ?? .distantFuture
+            let r = day(of: rhs.element, in: timeZone) ?? .distantFuture
+            if l != r { return l < r }
+            let lt = lhs.element.createdAt.flatMap(instant) ?? .distantPast
+            let rt = rhs.element.createdAt.flatMap(instant) ?? .distantPast
+            if lt != rt { return lt < rt }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    private static func instant(_ text: String) -> Date? {
+        isoFormatter.date(from: text) ?? isoFormatterNoFraction.date(from: text)
     }
 
     /// その旅でいちばん多い撮影地。同数なら**先に出てきた方**
@@ -147,6 +164,12 @@ enum TripBook {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private static let isoFormatterNoFraction: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
 

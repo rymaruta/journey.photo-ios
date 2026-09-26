@@ -224,10 +224,23 @@ final class ScreenshotTests: XCTestCase {
                     firstTrip.tap()
                     Thread.sleep(forTimeInterval: 4)
                     shoot(app, "30-旅の一冊")
-                    // 下まで流して、足取りのところも撮る
-                    app.swipeUp()
-                    app.swipeUp()
-                    Thread.sleep(forTimeInterval: 2)
+                    // **足取り（ルート図）が画面に収まるところまで送って撮る。**
+                    // 板 03 に合わせてルート図は表紙のすぐ下へ移った（前は一番下）。
+                    // 決め打ちで2回送ると通り過ぎて、名前と中身が食い違う。
+                    // ルート図は2か所以上の旅にしか出ないので、無ければ数字の3枠で代える
+                    let routeShown = app.descendants(matching: .any)["trips.route"].firstMatch
+                    let target = routeShown.waitForExistence(timeout: 3)
+                        ? routeShown
+                        : app.descendants(matching: .any)["trips.stats"].firstMatch
+                    // 下の余白はタブバーのぶん
+                    let visibleBottom = app.windows.firstMatch.frame.maxY - 100
+                    var pushes = 0
+                    while target.exists, target.frame.maxY > visibleBottom, pushes < 3 {
+                        app.swipeUp()
+                        Thread.sleep(forTimeInterval: 1)
+                        pushes += 1
+                    }
+                    Thread.sleep(forTimeInterval: 1)
                     shoot(app, "31-旅の足取り")
                     // **押し込めた回だけ戻る。** 旅が無い回に押すと、戻るではなく
                     // マイページの歯車（設定）に当たる（旅の一覧をタブへ畳んだので、
