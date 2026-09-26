@@ -73,6 +73,20 @@ enum AppConfig {
     /// ユーザー API（api-user）の根。末尾にスラッシュは付けない。
     static var userAPIBaseURL: URL { requireURL("JPUserApiBaseURL") }
 
+    /// 管理 API（photo-gallery の `api/`）の `GET /photos`。**未認証で読める、
+    /// いまの一覧**。
+    ///
+    /// **いいねの数だけ**に使う（`LiveLikes`）。一覧そのものの出どころは
+    /// 今までどおり静的 JSON——こちらは失敗しても一覧は出る。
+    ///
+    /// テストで `testOverrides` を入れていて、このキーを持たない回は nil
+    /// ＝叩かない（既存の試験が知らない口を叩いて落ちないように）。
+    /// 本物のビルドでキーが無いのは設定ミスなので、今までどおり落とす。
+    static var livePhotosURL: URL? {
+        if let overrides = testOverrides, overrides["JPApiBaseURL"] == nil { return nil }
+        return requireURL("JPApiBaseURL").appendingPathComponent("photos")
+    }
+
     /// 静的サイトの根。公開写真の一覧 JSON をここから取る。
     static var siteBaseURL: URL { requireURL("JPSiteBaseURL") }
 
