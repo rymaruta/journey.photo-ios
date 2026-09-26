@@ -279,6 +279,8 @@ extension View {
     public func scrollContentBackground(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func preferredColorScheme(_ s: ColorSchemeShim?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarBackground<S: ShapeStyle>(_ s: S, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    // 本物は `toolbarBackground(_ visibility: Visibility, for: ToolbarPlacement...)`（iOS 16+）
+    public func toolbarBackground(_ v: VisibilityShim, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarColorScheme(_ s: ColorSchemeShim?, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbar(_ v: VisibilityShim, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

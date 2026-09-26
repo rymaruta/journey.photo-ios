@@ -28,6 +28,14 @@ final class ProfileLineTests: XCTestCase {
         XCTAssertEqual(ProfileLine.handleAndHome(username: "yuki", home: nil)?.spoken, "@yuki")
     }
 
+    /// 人のページの数（板 31）: フォロワー・フォロー中・写真の順で、数が先
+    func testCountsOrderAndValues() {
+        let counts = ProfileLine.counts(followers: 12, following: 3, photos: 0)
+        XCTAssertEqual(counts.map(\.kind), [.followers, .following, .photos])
+        XCTAssertEqual(counts.map(\.value), ["12", "3", "0"])
+        XCTAssertEqual(counts.map(\.label), ["フォロワー", "フォロー中", "写真"])
+    }
+
     /// 空は出さず、同じ文は二度出さない
     func testAboutSkipsEmptyAndDuplicates() {
         XCTAssertEqual(ProfileLine.about(status: "旅が好き", bio: "旅が好き"), ["旅が好き"])

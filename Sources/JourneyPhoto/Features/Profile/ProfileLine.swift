@@ -29,6 +29,25 @@ enum ProfileLine {
         return HandleAndHome(handle: handle, home: place)
     }
 
+    /// 人のページの数の並び（板 31: 「000 フォロワー　000 フォロー中　000 写真」）。
+    /// **数が先・名前が後**の1行で、マイページ（板 05c: 数の下に名前の3列）とは別の形。
+    /// 押して一覧を開けるかは画面が決める（`FollowCounts.isTappable`）
+    struct Count: Equatable, Identifiable {
+        enum Kind: Equatable { case followers, following, photos }
+        let kind: Kind
+        let value: String
+        let label: String
+        var id: Kind { kind }
+    }
+
+    static func counts(followers: Int, following: Int, photos: Int) -> [Count] {
+        [Count(kind: .followers, value: "\(followers)",
+               label: L("フォロワー", followers == 1 ? "follower" : "followers")),
+         Count(kind: .following, value: "\(following)", label: L("フォロー中", "following")),
+         Count(kind: .photos, value: "\(photos)",
+               label: L("写真", photos == 1 ? "photo" : "photos"))]
+    }
+
     /// ひとことと自己紹介（板は「ひとことプロフィール」の1段落）。**空は出さない・
     /// 同じ文は二度出さない**（Web で両方に同じ文を入れている人がいる）
     static func about(status: String?, bio: String?) -> [String] {
