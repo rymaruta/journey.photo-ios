@@ -44,6 +44,14 @@ final class StoryUploadCenter: ObservableObject {
     private var total = 0
     private var send: ((Job) async throws -> Void)?
     private var onAllSent: (() -> Void)?
+    private var onFailed: ((String) -> Void)?
+    /// 🔴 **誰の投稿か。** 係はアプリに1つなので、ログインし直した別の人の
+    /// トークンで前の人の写真を出してしまわないよう、送る前に毎回照らす
+    private var ownerId: String?
+    private var currentUserId: (() -> String?)?
+    /// 🔴 **捨てた並びの送信を続けさせない番号。** 送信の返事を待つ間に捨てる
+    /// （ログアウト・やめる）と、戻ってきた `run` が空の並びから取り出して落ちる
+    private var generation = 0
 
     /// 送っている最中か、失敗した残りを持っているか（新しい投稿を受けない）
     var isBusy: Bool { phase != .idle }
@@ -52,13 +60,19 @@ final class StoryUploadCenter: ObservableObject {
     /// 2つの並びが混ざると、どれが出たのか分からなくなる
     @discardableResult
     func start(_ jobs: [Job],
+               ownerId: String,
+               currentUserId: @escaping () -> String?,
                send: @escaping (Job) async throws -> Void,
-               onAllSent: @escaping () -> Void = {}) -> Bool {
-        guard !isBusy, !jobs.isEmpty else { return false }
+               onAllSent: @escaping () -> Void = {},
+               onFailed: @escaping (String) -> Void = { _ in }) -> Bool {
+        guard !isBusy, !jobs.isEmpty, !ownerId.isEmpty else { return false }
         pending = jobs
         total = jobs.count
+        self.ownerId = ownerId
+        self.currentUserId = currentUserId
         self.send = send
         self.onAllSent = onAllSent
+        self.onFailed = onFailed
         // 🔴 **その場で「送信中」にする。** 裏の `Task` が動き出すまで `.idle` のままだと、
         // その隙の二度押しをもう1本として受けてしまう（テストで捕まえた）。
         // 輪もこの瞬間から「送信中…」を出せる
@@ -80,20 +94,38 @@ final class StoryUploadCenter: ObservableObject {
         reset()
     }
 
+    /// ログインしている人が変わった（ログアウト・別の人でログイン・退会）。
+    /// **投稿した本人でなくなったら、送っている最中でも残りを捨てる**
+    func userChanged(to userId: String?) {
+        guard isBusy, userId != ownerId else { return }
+        reset()
+    }
+
     private func run() async {
         guard let send else { return }
+        let myGeneration = generation
         phase = .sending(done: total - pending.count, total: total)
         while let job = pending.first {
+            // **本人のままか、送る前に毎回照らす**（別の人のトークンで出さない）
+            guard currentUserId?() == ownerId else {
+                reset()
+                return
+            }
             do {
                 try await send(job)
+                // 待っている間に捨てられた並びなら、ここで手を引く
+                guard myGeneration == generation else { return }
                 pending.removeFirst()
                 phase = .sending(done: total - pending.count, total: total)
             } catch {
+                guard myGeneration == generation else { return }
                 let reason = (error as? LocalizedError)?.errorDescription
                     ?? L("投稿できませんでした", "Couldn't post")
-                phase = .failed(message: StoryQueue.partialFailure(posted: total - pending.count,
-                                                                   total: total, reason: reason),
-                                remaining: pending.count)
+                let message = StoryQueue.partialFailure(posted: total - pending.count,
+                                                        total: total, reason: reason)
+                phase = .failed(message: message, remaining: pending.count)
+                // **失敗は知らせる。** ホームの輪が見えない画面にいる人にも届くように
+                onFailed?(message)
                 return
             }
         }
@@ -103,10 +135,14 @@ final class StoryUploadCenter: ObservableObject {
     }
 
     private func reset() {
+        generation += 1
         pending = []
         total = 0
         send = nil
         onAllSent = nil
+        onFailed = nil
+        ownerId = nil
+        currentUserId = nil
         phase = .idle
     }
 }

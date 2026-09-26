@@ -15,6 +15,17 @@ final class StoryUploadCenterTests: XCTestCase {
                               song: nil, durationSec: 5, archive: false)
     }
 
+    @discardableResult
+    private func startIn(_ center: StoryUploadCenter, _ jobs: [StoryUploadCenter.Job],
+                         send: @escaping (StoryUploadCenter.Job) async throws -> Void,
+                         onAllSent: @escaping () -> Void = {}) -> Bool {
+        center.start(jobs, ownerId: "me", currentUserId: { [unowned self] in self.currentUser },
+                     send: send, onAllSent: onAllSent)
+    }
+
+    /// テスト用: いまログインしている人（既定は投稿した本人）
+    private var currentUser: String? = "me"
+
     /// 係の中の `Task` が片付くまで待つ（送っている間は `.sending`）
     private func settle(_ center: StoryUploadCenter) async {
         for _ in 0..<200 {
@@ -27,7 +38,7 @@ final class StoryUploadCenterTests: XCTestCase {
         let center = StoryUploadCenter()
         var sent: [UInt8] = []
         var cleared = false
-        XCTAssertTrue(center.start([job(1), job(2), job(3)], send: { sent.append($0.imageData[0]) },
+        XCTAssertTrue(startIn(center, [job(1), job(2), job(3)], send: { sent.append($0.imageData[0]) },
                                    onAllSent: { cleared = true }))
         await settle(center)
         XCTAssertEqual(sent, [1, 2, 3])
@@ -41,7 +52,7 @@ final class StoryUploadCenterTests: XCTestCase {
         let center = StoryUploadCenter()
         var sent: [UInt8] = []
         var cleared = false
-        center.start([job(1), job(2), job(3)], send: { j in
+        startIn(center, [job(1), job(2), job(3)], send: { j in
             if j.imageData[0] == 2 { throw Boom() }
             sent.append(j.imageData[0])
         }, onAllSent: { cleared = true })
@@ -61,7 +72,7 @@ final class StoryUploadCenterTests: XCTestCase {
         let center = StoryUploadCenter()
         var sent: [UInt8] = []
         var failOnce = true
-        center.start([job(1), job(2), job(3)], send: { j in
+        startIn(center, [job(1), job(2), job(3)], send: { j in
             if j.imageData[0] == 2 && failOnce { failOnce = false; throw Boom() }
             sent.append(j.imageData[0])
         })
@@ -75,7 +86,7 @@ final class StoryUploadCenterTests: XCTestCase {
 
     func testDiscardDropsTheRestWithoutCountingFinished() async {
         let center = StoryUploadCenter()
-        center.start([job(1), job(2)], send: { _ in throw Boom() })
+        startIn(center, [job(1), job(2)], send: { _ in throw Boom() })
         await settle(center)
         center.discard()
         XCTAssertEqual(center.phase, .idle)
@@ -87,9 +98,68 @@ final class StoryUploadCenterTests: XCTestCase {
     /// どれが出たのか分からない。二度押しの二重投稿もここで止まる）
     func testRejectsNewJobsWhileFailedOrSending() async {
         let center = StoryUploadCenter()
-        center.start([job(1)], send: { _ in throw Boom() })
+        startIn(center, [job(1)], send: { _ in throw Boom() })
         await settle(center)
-        XCTAssertFalse(center.start([job(9)], send: { _ in XCTFail("受けてしまった") }))
-        XCTAssertFalse(center.start([], send: { _ in }), "空の並びも受けない")
+        XCTAssertFalse(startIn(center, [job(9)], send: { _ in XCTFail("受けてしまった") }))
+        XCTAssertFalse(startIn(center, [], send: { _ in }), "空の並びも受けない")
+    }
+
+    /// 🔴 **二度押し。** 1回目の直後（係の Task が動き出す前）でも2回目を受けない
+    func testRejectsSecondStartImmediately() async {
+        let center = StoryUploadCenter()
+        var sent = 0
+        XCTAssertTrue(startIn(center, [job(1)], send: { _ in sent += 1 }))
+        XCTAssertFalse(startIn(center, [job(2)], send: { _ in sent += 100 }),
+                       "Task が動き出す前の2回目を受けた")
+        await settle(center)
+        XCTAssertEqual(sent, 1)
+    }
+
+    /// 🔴 **別の人でログインし直したら、前の人の残りを送らない**
+    func testDoesNotSendAsAnotherUser() async {
+        let center = StoryUploadCenter()
+        var sent: [UInt8] = []
+        startIn(center, [job(1), job(2)], send: { j in
+            if j.imageData[0] == 1 { throw Boom() }
+            sent.append(j.imageData[0])
+        })
+        await settle(center)
+        currentUser = "someone-else"
+        center.retry()
+        await settle(center)
+        XCTAssertEqual(sent, [], "別の人として送った")
+        XCTAssertEqual(center.phase, .idle, "残りを捨てていない")
+    }
+
+    /// 🔴 **送っている最中にログアウトしたら、残りを捨てて落ちない**
+    /// （返事を待つ間に並びを空にすると、戻った `run` が空から取り出して落ちていた）
+    func testUserChangeWhileSendingDropsTheRestWithoutCrashing() async {
+        let center = StoryUploadCenter()
+        var sent: [UInt8] = []
+        var inFlight = false
+        var release = false
+        startIn(center, [job(1), job(2), job(3)], send: { j in
+            // **返事を待っている最中**を作る（ここで止まっている間にログアウトさせる）
+            inFlight = true
+            while !release { await Task.yield() }
+            sent.append(j.imageData[0])
+        })
+        for _ in 0..<200 where !inFlight { await Task.yield() }
+        XCTAssertTrue(inFlight, "1本目の送信が始まらない")
+        center.userChanged(to: nil)
+        release = true
+        for _ in 0..<200 { await Task.yield() }
+        XCTAssertEqual(sent, [1], "ログアウトのあとも2本目以降を送った")
+        XCTAssertEqual(center.phase, .idle)
+        XCTAssertEqual(center.finished, 0)
+    }
+
+    func testFailureIsReportedOnce() async {
+        let center = StoryUploadCenter()
+        var reported: [String] = []
+        center.start([job(1)], ownerId: "me", currentUserId: { "me" },
+                     send: { _ in throw Boom() }, onFailed: { reported.append($0) })
+        await settle(center)
+        XCTAssertEqual(reported.count, 1)
     }
 }

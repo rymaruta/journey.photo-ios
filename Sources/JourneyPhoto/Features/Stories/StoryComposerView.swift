@@ -11,6 +11,7 @@ struct StoryComposerView: View {
     /// 送るのは裏の係（画面を閉じても続く・板 27）
     @ObservedObject private var uploads = StoryUploadCenter.shared
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
 
     /// ライブラリから選んだもの。**まとめて選べる**（モック4-5）
@@ -32,6 +33,8 @@ struct StoryComposerView: View {
     @State private var showCamera = false
     /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
     @State private var keepExistingDraft = false
+    /// 前に送れなかったストーリーが残っているときの問い（開いた直後に1回）
+    @State private var showPendingFailure = false
     /// ストーリーのBGM（30秒の試聴だけ）と、表示秒数
     @State private var song: Photo.Song?
     @State private var durationSec = StoryService.defaultDurationSec
@@ -126,7 +129,26 @@ struct StoryComposerView: View {
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
             drafts.use(userId: auth.userId)
-            if drafts.draft != nil, prepared == nil { showRestore = true }
+            // **送れなかった残りが先。** 片付くまで新しい投稿は受けないので、
+            // ここでも出口を出す（ホームの輪が見えない人のため）
+            if case .failed = uploads.phase {
+                showPendingFailure = true
+            } else if drafts.draft != nil, prepared == nil {
+                showRestore = true
+            }
+        }
+        .confirmationDialog(L("送れなかったストーリーがあります", "A story didn't finish sending"),
+                            isPresented: $showPendingFailure, titleVisibility: .visible) {
+            Button(L("もう一度送る", "Try again")) {
+                uploads.retry()
+                dismiss()
+            }
+            Button(L("やめる", "Discard"), role: .destructive) { uploads.discard() }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            if case .failed(let message, _) = uploads.phase {
+                Text(message)
+            }
         }
         .alert(L("書きかけの下書きがあります", "You have a saved draft"), isPresented: $showRestore) {
             Button(L("続きから", "Continue")) { restoreDraft() }
@@ -785,7 +807,7 @@ struct StoryComposerView: View {
         // 🔴 **二度押しで二重に出さない**（2026-09-25 owner「2重投稿」）。
         // ここは同期で、1回目で画面を閉じ係に渡す。2回目は係が「片付いていない
         // 並びがある」で受けない
-        guard !shots.isEmpty else { return }
+        guard !shots.isEmpty, let ownerId = auth.userId else { return }
         message = nil
         let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -800,7 +822,14 @@ struct StoryComposerView: View {
         let stories = environment.stories
         let drafts = drafts
         let keepExistingDraft = keepExistingDraft
-        let started = uploads.start(jobs, send: { job in
+        // 🔴 **押した時点の下書きの印。** 送り終えたときに下書きが入れ替わって
+        // いたら（送信中にもう一度開いて保存した）、それは消さない
+        let draftStamp = drafts.draft?.savedAt
+        let auth = auth
+        let toasts = toasts
+        let started = uploads.start(jobs, ownerId: ownerId,
+                                    currentUserId: { auth.userId },
+                                    send: { job in
             _ = try await stories.create(imageData: job.imageData, caption: job.caption,
                                          location: job.location, coords: job.coords,
                                          song: job.song, durationSec: job.durationSec,
@@ -808,7 +837,9 @@ struct StoryComposerView: View {
         }, onAllSent: {
             // 出し終えたら下書きは要らない（残すと次に開いたときにまた尋ねる）。
             // 🔴 **ただし復元を保留した古い下書きは消さない**——この回の投稿とは別物
-            if !keepExistingDraft { drafts.clear() }
+            if !keepExistingDraft, drafts.draft?.savedAt == draftStamp { drafts.clear() }
+        }, onFailed: { message in
+            toasts.show(message, kind: .failure)
         })
         guard started else {
             // 係が片付いていない。**送っている最中か、失敗した残りを持っているか**で言い分けを変える

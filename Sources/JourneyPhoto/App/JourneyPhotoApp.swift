@@ -150,6 +150,9 @@ struct JourneyPhotoApp: App {
                     joinedAlbums.use(userId: auth.userId)
                     wishlist.use(userId: auth.userId)
                     storyDrafts.use(userId: auth.userId)
+                    // 🔴 投稿した本人でなくなったら、裏で送っている残りを捨てる
+                    // （別の人のアカウントで前の人のストーリーを出さない）
+                    StoryUploadCenter.shared.userChanged(to: auth.userId)
                     seenStories.use(userId: auth.userId)
                     // **通知の宛先も、人が変わったら預け直す**
                     // （外さないと、次にこの端末を使う人へ前の人あての
