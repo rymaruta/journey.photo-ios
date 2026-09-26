@@ -27,11 +27,16 @@ struct SiteMenuView: View {
                         JPRowLabel(title: L("撮影地マップ", "Photo map"), systemImage: "map")
                     }
                     .buttonStyle(JPRowButtonStyle())
-                    JPCardDivider()
-                    NavigationLink { FavoritesView() } label: {
-                        JPRowLabel(title: Labels.Navigation.favorites, systemImage: "heart")
+                    .accessibilityIdentifier("menu.map")
+                    // **ログイン中だけ。** 未ログインの人に中身の無い画面を開かせない
+                    // （設定でもこの行はログイン中だけ出している）
+                    if auth.userId != nil {
+                        JPCardDivider()
+                        NavigationLink { FavoritesView() } label: {
+                            JPRowLabel(title: Labels.Navigation.favorites, systemImage: "heart")
+                        }
+                        .buttonStyle(JPRowButtonStyle())
                     }
-                    .buttonStyle(JPRowButtonStyle())
                 }
                 section(L("アカウント", "Account")) {
                     Button {
@@ -81,7 +86,6 @@ struct SiteMenuView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
         }
-        .accessibilityIdentifier("menu.sheet")
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

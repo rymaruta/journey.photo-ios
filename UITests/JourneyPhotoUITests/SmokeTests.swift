@@ -90,4 +90,28 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(close.waitForNonExistence(timeout: 10), "閉じるを押してもお知らせが閉じない")
         XCTAssertTrue(bell.isHittable, "閉じた後にホームへ戻っていない")
     }
+
+    /// 見出しの「メニュー（≡）」でメニューが出て、「撮影地マップ」でシートが閉じて
+    /// マップの札へ移る（板 01d・2026-09-26）
+    func testHeaderMenuOpensAndRoutesToMap() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        XCTAssertTrue(agree.waitForExistence(timeout: 30), "起動画面が出ない（落ちている可能性）")
+        agree.tap()
+
+        let menu = app.buttons["header.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 20), "見出しにメニューが無い")
+        menu.tap()
+
+        let map = app.buttons["menu.map"]
+        XCTAssertTrue(map.waitForExistence(timeout: 15), "メニューが開かない")
+        map.tap()
+
+        XCTAssertTrue(map.waitForNonExistence(timeout: 10), "撮影地マップを押してもメニューが閉じない")
+        // マップの札が選ばれている（下の札の4つ目）
+        XCTAssertTrue(app.tabBars.buttons.element(boundBy: 3).isSelected, "マップの札へ移っていない")
+    }
 }

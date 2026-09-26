@@ -34,6 +34,13 @@ struct AppHeaderItems: ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             AppLogo()
         }
+        // **中央は空けておく。** ロゴを左へ移したので、何も置かないと各画面の
+        // `navigationTitle`（「探す」「マップ」——戻る文字と読み上げのために持つ）が
+        // バーの中央に文字で出てしまう。設定の画面と同じく見えない部品で塞ぐ
+        ToolbarItem(placement: .principal) {
+            Color.clear.frame(width: 1, height: 1)
+                .accessibilityHidden(true)
+        }
         if showsSearch {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
