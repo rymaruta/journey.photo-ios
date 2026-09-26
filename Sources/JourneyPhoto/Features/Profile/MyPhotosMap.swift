@@ -11,9 +11,10 @@ struct MyPhotosMap: View {
 
     let photos: [Photo]
     /// 開いた写真に個別ページが在るか（`PhotoDetailView.fromPublicFeed`）。
-    /// **呼び元の値を引き継ぐ**——写真の詳細の「地図で見る」から来たとき、
-    /// 個別ページの無い自分の写真に共有を出さない
-    var fromPublicFeed: Bool = true
+    /// **写真ごとに決める**——写真の詳細の「地図で見る」から来たとき、
+    /// 個別ページの無い自分の写真に共有を出さず、近くの公開写真には出す
+    /// （`NearbyPhotos.fromPublicFeed`）
+    var fromPublicFeed: (Photo) -> Bool = { _ in true }
 
     @State private var camera: MapCameraPosition = .automatic
     @State private var selected: MapPin?
@@ -52,7 +53,7 @@ struct MyPhotosMap: View {
                     NavigationStack {
                         ScrollView {
                             PhotoGrid(photos: pin.photos) { photo in
-                                PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed, context: pin.photos)
+                                PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed(photo), context: pin.photos)
                             }
                             .padding(.vertical, 16)
                         }

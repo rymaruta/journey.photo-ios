@@ -91,4 +91,13 @@ enum LiveLikes {
     static func displayCount(base: Int?, pendingDelta: Int) -> Int {
         max(0, (base ?? 0) + pendingDelta)
     }
+
+    /// ダブルタップ（付けるだけ）が届かなかったときの状態＝**押す前の値**。
+    ///
+    /// 以前は無条件に「外した」にしていたので、元からいいね済みの写真で
+    /// 送りに失敗すると、端末の控えでは外れた扱いになった
+    /// （ハートのほうは前から押す前の値に戻している）
+    static func likedAfterFailedDoubleTap(wasLiked: Bool) -> Bool {
+        wasLiked
+    }
 }

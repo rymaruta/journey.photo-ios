@@ -57,6 +57,17 @@ enum NearbyPhotos {
         return picked
     }
 
+    /// 「地図で見る」（`NearbyMapScreen`）のピンから開いた写真に、個別ページが
+    /// 在るとみなすか（`PhotoDetailView.fromPublicFeed`）。
+    ///
+    /// **呼び元の値は開いた1枚にだけ効かせる。** 近くの写真は公開一覧
+    /// （`around` に渡す `fetchPhotos`）から来たので `true`。以前は開いた
+    /// 1枚の値を全ピンに渡していて、マイページの下書きから開くと、近くの
+    /// 他人の公開写真まで共有がトップ（`/?photo=`）に落ちていた
+    static func fromPublicFeed(_ photo: Photo, openedId: String, openedFromPublicFeed: Bool) -> Bool {
+        photo.id == openedId ? openedFromPublicFeed : true
+    }
+
     /// 距離の言い方。**必ず「約」を付ける**（丸めた座標から出した値なので）。
     ///
     /// 1km 未満は「1km以内」——「0.3km」と書くと、持っていない精度を

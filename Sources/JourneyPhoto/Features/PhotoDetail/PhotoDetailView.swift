@@ -121,11 +121,16 @@ struct PhotoDetailView: View {
             model.setSignedIn(auth.userId != nil)
             await model.load()
         }
+        .task(id: shown.location) { await loadSpotLead() }
+        .task(id: shown.id) { await loadNearby() }
         // **ブロック・通報で絞り直す**（`hidden.revision`）。この画面で
         // その場でブロック／通報しても、近くの写真とスポットの行き先が
-        // 古い一覧のまま残っていた
-        .task(id: "\(shown.location ?? "")#\(hidden.revision)") { await loadSpotLead() }
-        .task(id: "\(shown.id)#\(hidden.revision)") { await loadNearby() }
+        // 古い一覧のまま残っていた。
+        //
+        // **通信はしない。** 手元の並びから落とすだけ——ブロック・通報は
+        // 減らす向きにしか効かない。以前は鍵に `revision` を入れていて、
+        // 押すたびに公開一覧を2本（通報＋ブロックで4本）取り直していた
+        .onChange(of: hidden.revision) { _, _ in refilterHidden() }
         .task(id: ownerId) {
             await model.loadOwner(ownerId, profiles: environment.profiles)
             // **フォローしているかは、その人を見に行かずに知りたい。**
@@ -552,7 +557,9 @@ struct PhotoDetailView: View {
         }
         guard viewerLikesInFlight.insert(shown.id).inserted else { return }
         defer { viewerLikesInFlight.remove(shown.id) }
-        // 先に灯す（押した手応えを待たせない）。届かなければ戻す
+        // 先に灯す（押した手応えを待たせない）。届かなければ**押す前に**戻す
+        // ——元からいいね済みの写真を「外した」扱いにしない
+        let wasLiked = favorites.contains(shown.id)
         favorites.set(shown.id, favorite: true)
         do {
             let result = try await environment.social.like(photoId: shown.id)
@@ -560,7 +567,7 @@ struct PhotoDetailView: View {
             // 押した回の答えだけを渡す（`LikeCountStore` の注記）
             if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
         } catch {
-            favorites.set(shown.id, favorite: false)
+            favorites.set(shown.id, favorite: LiveLikes.likedAfterFailedDoubleTap(wasLiked: wasLiked))
         }
     }
 
@@ -699,7 +706,7 @@ struct PhotoDetailView: View {
                         .foregroundStyle(WebTheme.foreground)
                     Spacer()
                     NavigationLink {
-                        NearbyMapScreen(photos: [shown] + nearby, fromPublicFeed: fromPublicFeed)
+                        NearbyMapScreen(opened: shown, nearby: nearby, openedFromPublicFeed: fromPublicFeed)
                     } label: {
                         HStack(spacing: 4) {
                             Text(L("地図で見る", "View on map"))
@@ -851,18 +858,38 @@ struct PhotoDetailView: View {
     private func loadSpotLead() async {
         // 途中で消さずに、答えが出てから入れ替える（絞り直しで行がちらつかない）
         let label = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
-        guard !label.isEmpty,
-              let fetched = try? await environment.gallery.fetchPhotos() else {
+        guard !label.isEmpty else {
+            spotLead = nil
+            return
+        }
+        let fetched = try? await environment.gallery.fetchPhotos()
+        // **取り消された回は何も書かない。** `try?` が取り消しを nil に
+        // 変えるので、書くと後の回が入れた行き先を消しうる
+        guard !Task.isCancelled else { return }
+        guard let fetched else {
             spotLead = nil
             return
         }
         // 見せない写真を落としてから数える（`ModerationStore.visible`）。
         // `blockAndHide` は一覧の側（`setHidden`）より先に `revision` を
         // 進めるので、一覧から取った直後でもここで落とす
-        let photos = hidden.visible(fetched)
-        // **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
-        // この写真の個別ページと中身が同じになる
-        spotLead = DerivedSpot.openable(label, in: photos).map { SpotLead(spot: $0, photos: photos) }
+        spotLead = Self.makeSpotLead(label, in: hidden.visible(fetched))
+    }
+
+    /// **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
+    /// この写真の個別ページと中身が同じになる
+    private static func makeSpotLead(_ label: String, in photos: [Photo]) -> SpotLead? {
+        DerivedSpot.openable(label, in: photos).map { SpotLead(spot: $0, photos: photos) }
+    }
+
+    /// ブロック・通報のあと、**手元の並びだけ**を絞り直す（通信しない）。
+    /// スポットの行き先は落としたあとで**数え直す**——2枚を割れば行を消す
+    private func refilterHidden() {
+        nearby = hidden.visible(nearby)
+        if let lead = spotLead {
+            let label = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
+            spotLead = Self.makeSpotLead(label, in: hidden.visible(lead.photos))
+        }
     }
 
     /// 近くの写真を、読み込み済みの公開写真から拾う（通信は一覧の控えだけ）。
@@ -870,8 +897,13 @@ struct PhotoDetailView: View {
     /// 見せない写真（ブロック・通報）は落とす。上の束（`heroGroup`）と同じ
     /// 並び（`siblings`）を渡し、**上に出ている写真だけ**を除く
     private func loadNearby() async {
-        guard shown.coords != nil,
-              let fetched = try? await environment.gallery.fetchPhotos() else {
+        guard shown.coords != nil else {
+            nearby = []
+            return
+        }
+        let fetched = try? await environment.gallery.fetchPhotos()
+        guard !Task.isCancelled else { return }
+        guard let fetched else {
             nearby = []
             return
         }
@@ -929,14 +961,20 @@ struct PhotoDetailView: View {
 /// 地図の部品はプロフィールの「マップ」（`MyPhotosMap`）をそのまま使う
 /// ——初期の枠取り（`MapFraming`）もピンを押したときの一覧も同じでよい
 private struct NearbyMapScreen: View {
-    let photos: [Photo]
-    /// 開いた写真の値を引き継ぐ。既定の `true` に戻ると、個別ページの無い
-    /// 自分の写真（マイページから開いた下書きなど）に共有が出る
-    let fromPublicFeed: Bool
+    let opened: Photo
+    let nearby: [Photo]
+    /// **開いた1枚にだけ**引き継ぐ（`NearbyPhotos.fromPublicFeed`）。
+    /// 既定の `true` に戻ると、個別ページの無い自分の写真（マイページから
+    /// 開いた下書きなど）に共有が出る。逆に全ピンへ渡すと、近くの他人の
+    /// 公開写真まで共有がトップ（`/?photo=`）に落ちる
+    let openedFromPublicFeed: Bool
 
     var body: some View {
         ScrollView {
-            MyPhotosMap(photos: photos, fromPublicFeed: fromPublicFeed)
+            MyPhotosMap(photos: [opened] + nearby, fromPublicFeed: { photo in
+                NearbyPhotos.fromPublicFeed(photo, openedId: opened.id,
+                                            openedFromPublicFeed: openedFromPublicFeed)
+            })
                 .padding(.vertical, 16)
         }
         .webScreen()

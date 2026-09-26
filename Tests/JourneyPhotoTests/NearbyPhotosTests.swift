@@ -128,4 +128,14 @@ final class NearbyAroundPhotoTests: XCTestCase {
         let c = try photo("c", lat: 35.68, lng: 139.77)
         XCTAssertEqual(NearbyPhotos.around(me, in: [a, a, b, c], limit: 2).map(\.id), ["a", "b"])
     }
+
+    /// 「地図で見る」のピンから開く写真。**呼び元の値は開いた1枚にだけ**。
+    /// マイページの下書き（`false`）から開いても、近くの公開写真は `true`
+    func testMapKeepsCallerValueOnlyForOpenedPhoto() throws {
+        let opened = try photo("draft", lat: 35.68, lng: 139.77)
+        let neighbour = try photo("public", lat: 35.69, lng: 139.77)
+        XCTAssertFalse(NearbyPhotos.fromPublicFeed(opened, openedId: "draft", openedFromPublicFeed: false))
+        XCTAssertTrue(NearbyPhotos.fromPublicFeed(neighbour, openedId: "draft", openedFromPublicFeed: false))
+        XCTAssertTrue(NearbyPhotos.fromPublicFeed(opened, openedId: "draft", openedFromPublicFeed: true))
+    }
 }
