@@ -50,6 +50,9 @@ struct StoryViewerView: View {
     @State private var showBlockConfirm = false
     /// 見出しの名前を押して開く投稿者のページ
     @State private var showAuthor = false
+    /// 自分のストーリーを消す前の確認（板「25f 削除の確認」）。
+    /// **以前は確認なしで即座に消えていた**
+    @State private var showDeleteConfirm = false
 
     // 返信と反応
     @State private var reply = ""
@@ -97,7 +100,7 @@ struct StoryViewerView: View {
             paused: paused,
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showViewers || showReport || showBlockConfirm
-                || showAuthor,
+                || showAuthor || showDeleteConfirm,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -130,13 +133,33 @@ struct StoryViewerView: View {
                     .ignoresSafeArea(edges: .top)
                 footer(for: story)
                     .frame(minHeight: Self.footerHeight)
+                    // 止めている間は足元を隠す（板「25b」は進行バーだけ残す）。
+                    // 場所は残す——消すと写真の枠が伸び縮みする
+                    .opacity(isHolding ? 0 : 1)
+                    .allowsHitTesting(!isHolding)
             }
             VStack(spacing: 9) {
                 progressBar(for: story)
                 header(for: story)
+                    .opacity(isHolding ? 0 : 1)
+                    .allowsHitTesting(!isHolding)
             }
             .padding(.top, 5)
+
+            if isHolding {
+                pausedPill
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+            }
+            if showMenu {
+                menuSheet(for: story)
+            }
+            if showDeleteConfirm {
+                deleteConfirm(for: story)
+            }
         }
+        .animation(.easeOut(duration: 0.18), value: showMenu)
+        .animation(.easeOut(duration: 0.18), value: isHolding)
         .task(id: story.id) {
             // 端末の既読（輪の色）。**サーバーの応答を待たない**
             // ——圏外でも、見たものは見たことにする
@@ -160,10 +183,6 @@ struct StoryViewerView: View {
         .task(id: story.id) { await runClock(for: story) }
         .onAppear { isForeground = scenePhase == .active }
         .onChange(of: scenePhase) { _, phase in isForeground = phase == .active }
-        .confirmationDialog(L("ストーリーの操作", "Story options"), isPresented: $showMenu,
-                            titleVisibility: .hidden) {
-            menuButtons(for: story)
-        }
         .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
             Button(L("ブロック", "Block"), role: .destructive) {
                 Task { await block(story) }
@@ -284,6 +303,11 @@ struct StoryViewerView: View {
             }
 
             tapZones
+
+            // 暗幕。メニュー45%・返信を書いている間35%・削除の確認55%（板の値）
+            Color.black
+                .opacity(dimOpacity)
+                .allowsHitTesting(false)
 
             captionBlock(for: story)
                 .padding(.horizontal, 32)
@@ -460,7 +484,9 @@ struct StoryViewerView: View {
                 .onLongPressGesture(minimumDuration: 0.35, perform: {}, onPressingChanged: { pressing = $0 })
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture { advance() }
+                .onTapGesture {
+                    if paused { paused = false } else { advance() }
+                }
                 .onLongPressGesture(minimumDuration: 0.35, perform: {}, onPressingChanged: { pressing = $0 })
         }
         // **払っても動く。** 他のアプリのストーリーは全部そうなので、
@@ -482,6 +508,8 @@ struct StoryViewerView: View {
     }
 
     private func leftTap() {
+        // **メニューで止めているなら、押すと続きから**（板「25b」）
+        if paused { paused = false; return }
         switch StoryPlayback.leftTap(index: index, elapsed: elapsed) {
         case .restart:
             elapsed = 0
@@ -540,35 +568,194 @@ struct StoryViewerView: View {
 
     // MARK: - 「…」のメニュー
 
+    /// 止めている（長押し・メニューの「一時停止」）。**メニューを開いている間は
+    /// 数えない**——メニューの板は見出しを見せたまま暗くするだけ
+    private var isHolding: Bool { (pressing || paused) && !showMenu && !showDeleteConfirm }
+
+    private var dimOpacity: Double {
+        if showDeleteConfirm { return 0.55 }
+        if showMenu { return 0.45 }
+        if replyFocused { return 0.35 }
+        return 0
+    }
+
+    /// 危ない操作の文字（ブロック・通報・削除）。**板の色 `#ff8a80`**——写真の上の
+    /// 暗い面で読める明るさにしてある（`WebTheme.danger` は黒地用）
+    private static let storyDanger = Color(red: 1.0, green: 0x8A / 255.0, blue: 0x80 / 255.0)
+
+    /// 板「25b 長押しで一時停止」の札（ガラスの丸・13pt）
+    private var pausedPill: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pause")
+                .font(.system(size: 14))
+            Text(StoryPlayback.pausedNote(pressing: pressing))
+                .font(.system(size: 13))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .jpGlass(in: Capsule(), border: 0)
+    }
+
+    // MARK: - 「…」のメニュー
+
+    /// 板「25c」の下からのシート。**開いている間は止まる**ことを上に書く。
     /// 出す項目は `StoryPlayback.menuItems` が決める（押しても何も起きない
-    /// 項目は出さない）。
-    @ViewBuilder
-    private func menuButtons(for story: Story) -> some View {
+    /// 項目は出さない）
+    private func menuSheet(for story: Story) -> some View {
         let items = StoryPlayback.menuItems(
             isMine: isMine(story),
             isVideo: story.isVideo,
             hasCaption: story.caption?.isEmpty == false,
             hasOwner: story.userId != nil
         )
-        if items.contains(.pause) {
-            Button(paused ? L("再開", "Resume") : L("一時停止", "Pause")) { paused.toggle() }
+        return ZStack(alignment: .bottom) {
+            // 外を押したら閉じる
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { showMenu = false }
+                .ignoresSafeArea()
+            VStack(spacing: 8) {
+                VStack(spacing: 0) {
+                    Text(L("開いている間は止まっています", "Paused while this is open"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(WebTheme.faint)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 12)
+                        .padding(.bottom, 10)
+                    if items.contains(.pause) {
+                        menuRow(symbol: paused ? "play" : "pause",
+                                title: paused ? L("再開", "Resume") : L("一時停止", "Pause")) {
+                            paused.toggle()
+                        }
+                    }
+                    if items.contains(.mute) {
+                        menuRow(symbol: muted ? "speaker.wave.2" : "speaker.slash",
+                                title: muted ? L("音を出す", "Unmute") : L("音を消す", "Mute")) {
+                            muted.toggle()
+                        }
+                    }
+                    if items.contains(.hideCaption) {
+                        menuRow(symbol: "textformat",
+                                title: captionHidden ? L("テキストを表示", "Show text") : L("テキストを非表示", "Hide text")) {
+                            captionHidden.toggle()
+                        }
+                    }
+                    if items.contains(.block) {
+                        // 「非表示」とは書かない。サーバーにあるのは両向きのブロックだけで、
+                        // 片向きに隠す口は無い（相手からも見えなくなる）
+                        menuRow(symbol: "nosign", title: L("\(story.authorName) をブロック", "Block \(story.authorName)"),
+                                danger: true) {
+                            showBlockConfirm = true
+                        }
+                    }
+                    if items.contains(.report) {
+                        menuRow(symbol: "flag", title: L("通報する", "Report"), danger: true) {
+                            showReport = true
+                        }
+                    }
+                }
+                .background(Self.sheetColor, in: RoundedRectangle(cornerRadius: 16))
+
+                Button {
+                    showMenu = false
+                } label: {
+                    Text(Labels.Common.cancel)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(Self.sheetColor, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
         }
-        if items.contains(.mute) {
-            Button(muted ? L("ミュート解除", "Unmute") : L("ミュート", "Mute")) { muted.toggle() }
-        }
-        if items.contains(.hideCaption) {
-            Button(captionHidden ? L("テキストを表示", "Show text") : L("テキストを非表示", "Hide text")) {
-                captionHidden.toggle()
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    /// シートの地（板の `#161618`）
+    private static let sheetColor = Color(red: 0x16 / 255.0, green: 0x16 / 255.0, blue: 0x18 / 255.0)
+
+    /// メニューの1行。**押したらメニューを閉じてから動く**
+    private func menuRow(symbol: String, title: String, danger: Bool = false,
+                         action: @escaping () -> Void) -> some View {
+        Button {
+            showMenu = false
+            action()
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18))
+                    .frame(width: 22)
+                Text(title)
+                    .font(.system(size: 16))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(danger ? Self.storyDanger : WebTheme.text)
+            .padding(.horizontal, 18)
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
             }
         }
-        if items.contains(.block) {
-            // 「非表示」とは書かない。サーバーにあるのは両向きのブロックだけで、
-            // 片向きに隠す口は無い（相手からも見えなくなる）
-            Button(L("この人をブロック", "Block this person"), role: .destructive) { showBlockConfirm = true }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 削除の確認
+
+    /// 板「25f」。**見た人の記録と返信も消える**ことを書く（`stories.ts` の
+    /// deleteStory が返信と票を消してから行を消す）
+    private func deleteConfirm(for story: Story) -> some View {
+        ZStack {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { showDeleteConfirm = false }
+                .ignoresSafeArea()
+            VStack(spacing: 0) {
+                VStack(spacing: 6) {
+                    Text(L("このストーリーを削除しますか？", "Delete this story?"))
+                        .font(.system(size: 16, weight: .semibold))
+                    Text(L("見た人の記録と返信も消えます。元に戻せません。",
+                           "Viewers and replies are deleted too. This can't be undone."))
+                        .font(.system(size: 13))
+                        .foregroundStyle(WebTheme.muted2)
+                        .lineSpacing(4)
+                }
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.top, 20)
+                .padding(.bottom, 16)
+                confirmButton(L("削除", "Delete"), color: Self.storyDanger, weight: .semibold) {
+                    showDeleteConfirm = false
+                    Task { await deleteStory(story) }
+                }
+                confirmButton(L("やめる", "Cancel"), color: .white, weight: .regular) {
+                    showDeleteConfirm = false
+                }
+            }
+            .frame(width: 280)
+            .background(Color(red: 0x1E / 255.0, green: 0x1E / 255.0, blue: 0x20 / 255.0),
+                        in: RoundedRectangle(cornerRadius: 16))
         }
-        if items.contains(.report) {
-            Button(L("ストーリーを報告", "Report story")) { showReport = true }
+        .accessibilityAddTraits(.isModal)
+    }
+
+    private func confirmButton(_ title: String, color: Color, weight: Font.Weight,
+                               action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 16, weight: weight))
+                .foregroundStyle(color)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .contentShape(Rectangle())
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
+                }
         }
+        .buttonStyle(.plain)
     }
 
     /// ブロックの手順は `UserProfileViewModel.block` と同じ
@@ -622,50 +809,80 @@ struct StoryViewerView: View {
                 // 24時間で消える前に、自分の写真として残す
                 Button(L("残す", "Keep")) { Task { await keep(story) } }
                     .disabled(isSending)
-                Button(Labels.Common.delete, role: .destructive) { Task { await deleteStory(story) } }
+                // **確かめてから消す**（以前は押した瞬間に消えていた）
+                Button(Labels.Common.delete, role: .destructive) { showDeleteConfirm = true }
                     .disabled(isSending)
             }
             .font(.footnote)
             .padding(16)
         } else {
-            // 返信欄（ガラスの丸）と ♡。**打ち始めたら ♡ が送信の白い丸に替わる**
-            HStack(spacing: 6) {
-                TextField(L("返信する", "Reply"), text: $reply)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
-                    // 打っている間は止める（打ち終わる前に次へ送られない）
-                    .focused($replyFocused)
-                    .submitLabel(.send)
-                    // **空なら送らない**（送信キーは空でも押せる。空の本文は
-                    // サーバーが 400 で断り、その間は再生も止まっていた）
-                    .onSubmit { if canSend { Task { await sendReply(to: story) } } }
-                    .padding(.horizontal, 16)
-                    .frame(height: 46)
-                    .jpGlass(in: Capsule(), border: replyFocused ? 0.6 : 0.35)
-                if canSend {
-                    Button {
-                        Task { await sendReply(to: story) }
-                    } label: {
-                        Image(systemName: "paperplane")
-                            .font(.system(size: 18))
-                            .foregroundStyle(WebTheme.accentText)
-                            .frame(width: 46, height: 46)
-                            .background(WebTheme.accentBackground, in: Circle())
+            // 返信欄（ガラスの丸）と ♡。**書いている間は ♡ が送信の白い丸に替わり、
+            // 上に一言の候補と「だれに届くか」が出る**（板「25d 返信を書く」）
+            VStack(alignment: .leading, spacing: 10) {
+                if replyFocused {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(StoryPlayback.quickReplies.indices, id: \.self) { i in
+                                let text = L(StoryPlayback.quickReplies[i], StoryPlayback.quickRepliesEnglish[i])
+                                Button {
+                                    Task { await sendReply(text, to: story) }
+                                } label: {
+                                    Text(text)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 14)
+                                        .frame(minHeight: 36)
+                                        .jpGlass(in: Capsule(), border: 0.14)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isSending)
+                            }
+                        }
                     }
-                    .disabled(isSending)
-                    .accessibilityLabel(Labels.Common.send)
-                } else {
-                    // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）
-                    Button {
-                        Task { await sendReaction(StoryService.reactions[0], to: story) }
-                    } label: {
-                        Image(systemName: "heart")
-                            .font(.system(size: 22))
-                            .foregroundStyle(.white)
-                            .webTappable()
+                    Text(L("返信は \(story.authorName) さんにだけ届きます", "Only \(story.authorName) sees your reply"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(WebTheme.muted2)
+                        .padding(.leading, 4)
+                }
+                HStack(spacing: 6) {
+                    TextField(L("返信する", "Reply"), text: $reply)
+                        .accessibilityLabel(L("\(story.authorName) さんに返信", "Reply to \(story.authorName)"))
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white)
+                        // 打っている間は止める（打ち終わる前に次へ送られない）
+                        .focused($replyFocused)
+                        .submitLabel(.send)
+                        // **空なら送らない**（送信キーは空でも押せる。空の本文は
+                        // サーバーが 400 で断り、その間は再生も止まっていた）
+                        .onSubmit { if canSend { Task { await sendReply(to: story) } } }
+                        .padding(.horizontal, 16)
+                        .frame(height: 46)
+                        .jpGlass(in: Capsule(), border: replyFocused ? 0.6 : 0.35)
+                    if canSend || replyFocused {
+                        Button {
+                            Task { await sendReply(to: story) }
+                        } label: {
+                            Image(systemName: "paperplane")
+                                .font(.system(size: 18))
+                                .foregroundStyle(WebTheme.accentText)
+                                .frame(width: 46, height: 46)
+                                .background(WebTheme.accentBackground, in: Circle())
+                        }
+                        .disabled(isSending || !canSend)
+                        .accessibilityLabel(Labels.Common.send)
+                    } else {
+                        // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）
+                        Button {
+                            Task { await sendReaction(StoryService.reactions[0], to: story) }
+                        } label: {
+                            Image(systemName: "heart")
+                                .font(.system(size: 22))
+                                .foregroundStyle(.white)
+                                .webTappable()
+                        }
+                        .disabled(isSending)
+                        .accessibilityLabel(L("いいね", "Like"))
                     }
-                    .disabled(isSending)
-                    .accessibilityLabel(L("いいね", "Like"))
                 }
             }
             .padding(.horizontal, 12)
@@ -695,12 +912,19 @@ struct StoryViewerView: View {
     }
 
     private func sendReply(to story: Story) async {
-        guard !isSending, canSend else { return }
+        guard canSend else { return }
+        await sendReply(reply, to: story, clearsDraft: true)
+    }
+
+    /// 返信を送る。候補の一言は**下書きを消さない**（書きかけの文を残す）
+    private func sendReply(_ text: String, to story: Story, clearsDraft: Bool = false) async {
+        guard !isSending, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         isSending = true
         defer { isSending = false }
         do {
-            try await environment.stories.reply(id: story.id, text: reply)
-            reply = ""
+            try await environment.stories.reply(id: story.id, text: text)
+            if clearsDraft { reply = "" }
+            replyFocused = false
             message = L("送りました", "Sent")
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")

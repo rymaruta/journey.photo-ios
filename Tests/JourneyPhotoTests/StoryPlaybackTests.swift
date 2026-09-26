@@ -239,4 +239,17 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(StoryPlayback.swipe(dx: -StoryPlayback.swipeThreshold, dy: 0), .next)
         XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: StoryPlayback.swipeThreshold), .close)
     }
+
+    /// 返信の候補は板の3つ。空の一言は送らない
+    func testQuickRepliesMatchTheBoard() {
+        XCTAssertEqual(StoryPlayback.quickReplies, ["きれい", "行ってみたい", "どこですか？"])
+        XCTAssertFalse(StoryPlayback.quickReplies.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+        XCTAssertEqual(StoryPlayback.quickReplies.count, StoryPlayback.quickRepliesEnglish.count)
+    }
+
+    /// 止め方で札の言い方を変える（メニューで止めた人に「指を離すと」と言わない）
+    func testPausedNoteDependsOnHowItWasPaused() {
+        XCTAssertNotEqual(StoryPlayback.pausedNote(pressing: true),
+                          StoryPlayback.pausedNote(pressing: false))
+    }
 }

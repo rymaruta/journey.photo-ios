@@ -252,6 +252,24 @@ enum StoryPlayback {
         return items
     }
 
+    // MARK: - 返信の候補
+
+    /// 返信欄の上に並べる一言（板「25d 返信を書く」）。**押すとそのまま送る**
+    /// ——ふつうの返信（`text`）として送るので、サーバーの変更は要らない
+    static let quickReplies = ["きれい", "行ってみたい", "どこですか？"]
+    static let quickRepliesEnglish = ["Beautiful", "I want to go", "Where is this?"]
+
+    // MARK: - 一時停止の札
+
+    /// 止めている間に出す札の文言。**長押しなら「指を離すと」、メニューから
+    /// 止めたなら「押すと」**——メニューで止めた人に「指を離すと」と言っても
+    /// 離す指が無い
+    static func pausedNote(pressing: Bool) -> String {
+        pressing
+            ? L("一時停止中 — 指を離すと続きから", "Paused — release to continue")
+            : L("一時停止中 — 押すと続きから", "Paused — tap to continue")
+    }
+
     // MARK: - 時刻
 
     /// 「2時間前」。**サーバーの時刻が読めなければ何も出さない**
