@@ -7,6 +7,9 @@ public struct Text: View {
     public init<S: StringProtocol>(_ s: S) {}
     public var body: Never { fatalError("模型") }
     public enum Case { case uppercase, lowercase }
+    /// 一部だけ太くする（`Text(a).bold() + Text(b)`）。本物は Text を返す
+    public func bold() -> Text { self }
+    public static func + (lhs: Text, rhs: Text) -> Text { lhs }
 }
 
 public struct Image: View {
