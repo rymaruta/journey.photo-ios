@@ -180,6 +180,20 @@ final class DoubleTapLikeTests: XCTestCase {
         XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: false, signedIn: false),
                        .burstOnly)
     }
+
+    /// 🔴 **いいねの行き先は、いま見ている1枚。** 隣へ送ってから叩くと
+    /// 開いたときの1枚に付いていた
+    func testTargetsThePhotoOnScreen() throws {
+        let photos = try ["a", "b", "c"].map { id in
+            try JSONDecoder.api.decode(
+                Photo.self, from: Data(#"{"id":"\#(id)","src":"https://x/\#(id).jpg"}"#.utf8))
+        }
+        XCTAssertEqual(DoubleTapLike.shown(photos, at: 2)?.id, "c")
+        XCTAssertEqual(DoubleTapLike.shown(photos, at: 0)?.id, "a")
+        // 並びの外（読み直しで減った直後など）には送らない
+        XCTAssertNil(DoubleTapLike.shown(photos, at: 3))
+        XCTAssertNil(DoubleTapLike.shown(photos, at: -1))
+    }
 }
 
 /// 表示名を決めてもらう案内を出すか（Web の `ProfileSetupBanner`）。

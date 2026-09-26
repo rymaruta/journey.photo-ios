@@ -18,15 +18,12 @@ struct MyPageView: View {
     @State private var serverLikeIds: [String]?
     @State private var likesStatus: LikedPhotos.Status = .loading
     @State private var tab: ProfileTab = .posts
-    @State private var showPostSheet = false
     @State private var showDistanceNote = false
     @State private var showCountriesNote = false
-    @State private var showPhotoUpload = false
-    @State private var showStoryComposer = false
-    /// ストーリーの行に「読み直せ」と言うための数
-    @State private var storiesReload = 0
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
+    /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
+    @ObservedObject private var tabRouter = TabRouter.shared
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -80,6 +77,12 @@ struct MyPageView: View {
         // 閉じる合図を受け取る口が無い。保存しても削除しても、
         // マイページは古いままだった。
         // 初回は `.task` が読むので、2度目以降だけ走らせる
+        // **下の「投稿」から投稿して閉じたら読み直す。** シートは `RootView` に
+        // あるので、閉じても `onAppear` は来ない
+        .onChange(of: tabRouter.postSheetsClosed) { _, _ in
+            guard auth.userId != nil else { return }
+            Task { await model.load() }
+        }
         .onAppear {
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
@@ -122,32 +125,6 @@ struct MyPageView: View {
 
     /// 旅の一冊へ。**撮った本人の記録なので、持ち場はここ**
     /// （タブは指示書の並び——ホーム／探す／投稿／マップ／マイページ）。
-    private var tripsLink: some View {
-        NavigationLink {
-            TripsView()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "book.closed")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L("旅の記録", "Your trips"))
-                        .font(.subheadline.weight(.semibold))
-                    Text(L("同じころに撮った写真が、ひとつの旅になります",
-                           "Photos taken around the same time become a trip"))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption)
-            }
-            .foregroundStyle(WebTheme.foreground)
-            .padding(12)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-        }
-        .buttonStyle(.plain)
-        // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
-        .accessibilityIdentifier("trips.entry")
-        .padding(.horizontal, 16)
-    }
 
     private var content: some View {
         ScrollView {
@@ -159,9 +136,9 @@ struct MyPageView: View {
                     bgmCard(profile)
                     profileSetupNotice(profile)
                 }
-                postButton
-                StoriesRow(reloadToken: storiesReload)
-                tripsLink
+                // **「投稿する」とストーリーの行は置かない**（整理案 05c）。
+                // 下の札の「投稿」とホームのストーリーの行と入口が重なっていた。
+                // 旅の記録は下のタブへ移した
                 shortcuts
                 highlightsRow
                 tabPicker
@@ -169,22 +146,6 @@ struct MyPageView: View {
             }
         }
         .refreshable { await model.load() }
-        .sheet(isPresented: $showPostSheet) {
-            PostSheet { kind in
-                switch kind {
-                case .photo: showPhotoUpload = true
-                case .story: showStoryComposer = true
-                }
-            }
-        }
-        .sheet(isPresented: $showPhotoUpload, onDismiss: { Task { await model.load() } }) {
-            NavigationStack { UploadView() }
-        }
-        // **帰ってきたら読み直す。** `StoriesRow` は自分の `+` から出した
-        // シートしか見ていないので、ここから出した回は投稿しても並ばなかった
-        .sheet(isPresented: $showStoryComposer, onDismiss: { storiesReload += 1 }) {
-            NavigationStack { StoryComposerView() }
-        }
     }
 
     @ViewBuilder
@@ -295,96 +256,71 @@ struct MyPageView: View {
         .background(WebTheme.surface, in: Capsule())
     }
 
-    /// 旅の実績（モック2-3）。**訪れた国・地域**と**写真をつないだ距離**を縦に並べる。
-    ///
-    /// **2本とも端から端までの帯にする。** 中身の幅のまま中央に寄せていた頃は、
-    /// 長さの違う2本が互いにも上の段ともずれていた。項目名は左、**数字は右に
-    /// 揃える**ので、2つの数字が縦に並んで読める。
+    /// 旅の実績（モック2-3）。**訪れた国・地域**と**写真をつないだ距離**を
+    /// **小さな1行**で出す（整理案 05c・2026-09-26）。以前は幅いっぱいの
+    /// 帯を2本重ねていて、自分の写真が画面の下へ押し出されていた。
     ///
     /// どちらも**数えた値**で、どちらも**そのままの意味ではない**ので、
-    /// それぞれ押すと計算の中身が出る。
+    /// それぞれ押すと計算の中身が出る。**0 のものは出さない**——
+    /// 「訪れた国 0」は実績にならず、「まだ国名を書いていない」を
+    /// 「行っていない」と読ませてしまう
     @ViewBuilder
     private var travelRecord: some View {
         let countries = VisitedCountries.count(in: model.photos)
-        VStack(spacing: 8) {
-            // **0 のときは出さない。** 「訪れた国 0」は実績にならないし、
-            // 「まだ国名を書いていない」を「行っていない」と読ませてしまう
-            if countries > 0 {
-                Button {
-                    showCountriesNote = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "globe")
-                            .foregroundStyle(WebTheme.accent)
-                        Text(L("訪れた国・地域", "Countries and regions"))
-                            .font(.subheadline)
-                            .foregroundStyle(WebTheme.muted2)
-                        Spacer(minLength: 8)
-                        Text("\(countries)")
-                            .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
-                            .foregroundStyle(WebTheme.foreground)
-                        Image(systemName: "info.circle")
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
+        let km = TravelDistance.total(of: model.photos)
+        if countries > 0 || km > 0 {
+            HStack(spacing: 14) {
+                if countries > 0 {
+                    recordItem(label: L("訪れた国・地域", "Countries"), value: "\(countries)") {
+                        showCountriesNote = true
                     }
-                    .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(Capsule())
-                    .background(WebTheme.surface, in: Capsule())
+                    .alert(L("訪れた国・地域", "Countries and regions"),
+                           isPresented: $showCountriesNote) {
+                        Button(Labels.Common.close, role: .cancel) {}
+                    } message: {
+                        // **数え方をそのまま書く。** 「思ったより少ない」の答えが
+                        // ここにある（国名を書いた写真しか数えていない）
+                        Text(L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
+                               "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number."))
+                    }
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .alert(L("訪れた国・地域", "Countries and regions"),
-                       isPresented: $showCountriesNote) {
-                    Button(Labels.Common.close, role: .cancel) {}
-                } message: {
-                    // **数え方をそのまま書く。** 「思ったより少ない」の答えが
-                    // ここにある（国名を書いた写真しか数えていない）
-                    Text(L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
-                           "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number."))
+                if km > 0 {
+                    recordItem(label: L("写真をつないだ距離", "Distance between photos"),
+                               value: "\(TravelDistance.formatted(km)) km") {
+                        showDistanceNote = true
+                    }
+                    .alert(L("写真をつないだ距離", "Distance between photos"),
+                           isPresented: $showDistanceNote) {
+                        Button(Labels.Common.close, role: .cancel) {}
+                    } message: {
+                        Text(distanceNote)
+                    }
                 }
+                Spacer(minLength: 0)
             }
-            distancePill
+            .padding(.horizontal, 16)
         }
     }
 
-    /// 写真をつないだ距離。**実際に移動した距離ではない**ので、そう書く
-    /// （指示書 8-3）。押すと計算の中身を出す。
-    @ViewBuilder
-    private var distancePill: some View {
-        let km = TravelDistance.total(of: model.photos)
-        if km > 0 {
-            Button {
-                showDistanceNote = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "globe.asia.australia")
-                        .foregroundStyle(WebTheme.accent)
-                    Text(L("写真をつないだ距離", "Distance between photos"))
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.muted2)
-                    Spacer(minLength: 8)
-                    Text("\(TravelDistance.formatted(km)) km")
-                        .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
-                        .foregroundStyle(WebTheme.foreground)
-                    Image(systemName: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
-                }
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(Capsule())
-                .background(WebTheme.surface, in: Capsule())
+    /// 1行の中の1項目。**押せる高さは 44pt**（見た目は小さな字のまま）
+    private func recordItem(label: String, value: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                    // 幅の狭い端末（SE など）で2項目が1行に収まるように、折り返さずに少しだけ縮める
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(value)
+                    .font(JPFont.mono(13, medium: true, relativeTo: .caption))
+                    .foregroundStyle(WebTheme.foreground)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .alert(L("写真をつないだ距離", "Distance between photos"),
-                   isPresented: $showDistanceNote) {
-                Button(Labels.Common.close, role: .cancel) {}
-            } message: {
-                Text(distanceNote)
-            }
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityHint(L("数え方を表示", "Shows how this is counted"))
     }
 
     /// **「旅した距離」とだけ書かない。** 実際に歩いた・乗った距離だと
@@ -394,23 +330,6 @@ struct MyPageView: View {
           "The straight-line total between photos that have coordinates, oldest first. Not the distance you actually travelled.")
     }
 
-    private var postButton: some View {
-        // **投稿の入口はここ1つ。** Web も 2026-09-20 に画面右下の
-        // 「＋」を撤去して、マイページの「投稿する」に集めた
-        Button {
-            showPostSheet = true
-        } label: {
-            // 🔴 **`.borderedProminent` を使わない**（同意画面と同じ理由）。
-            // `RootView` の `.tint(WebTheme.foreground)` が白なので、
-            // 白地に白い字＝**ただの白い帯**になる。run 60 の実機の絵で、
-            // マイページの一番上がそうなっていた
-            Label(L("投稿する", "Create"), systemImage: "plus")
-                .frame(maxWidth: .infinity)
-                .webPrimaryButton()
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 16)
-    }
 
     private var shortcuts: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -449,7 +368,7 @@ struct MyPageView: View {
     /// 以前はここに「旅の一冊」の丸い並びを出していた——サーバーに
     /// ハイライトが無かったので、いちばん近いものを当てていた。
     /// develop でハイライトそのものが入ったので、本物に差し替える。
-    /// **旅の一冊は消していない**（上の「旅の記録」から入る）。
+    /// **旅の一冊は消していない**（下のタブの「旅の記録」から入る）。
     @ViewBuilder
     private var highlightsRow: some View {
         if let userId = auth.userId {
@@ -635,7 +554,7 @@ struct MyPageView: View {
         .frame(minHeight: 72)
     }
 
-    /// モック2・11 の4つ（投稿 / 行きたい場所 / マップ / お気に入り）。
+    /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
     /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
     private var tabPicker: some View {
         HStack(spacing: 6) {
@@ -655,11 +574,50 @@ struct MyPageView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
+                // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
+                // ——以前は写真の上の「旅の記録」の札に付けていた
+                .accessibilityIdentifier("profile.tab.\(option.rawValue)")
             }
         }
         .padding(4)
         .background(WebTheme.surface, in: Capsule())
         .padding(.horizontal, 16)
+    }
+
+    /// 旅の記録（旅の一冊の棚）。**自分の公開写真から**その場でまとめる
+    /// ——下書きは旅に入れない（見せていない写真が一冊に紛れ込む）。
+    /// 背表紙は `TripShelf`。**旅の一覧の画面（`TripsView`）はここへ畳んだ**
+    /// ——入口がマイページの札1つだけだった
+    @ViewBuilder
+    private var tripsArea: some View {
+        let trips = TripBook.trips(from: model.photos.filter { $0.published != false })
+        if trips.isEmpty && model.isLoading {
+            // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(24)
+        } else if trips.isEmpty {
+            // **なぜ空なのかを言う**
+            Text(L("同じころに撮った写真が2枚たまると、ひとつの旅にまとまります",
+                   "Two or more photos taken around the same time become a trip"))
+                .font(.footnote)
+                .foregroundStyle(WebTheme.faint)
+                .frame(maxWidth: .infinity)
+                .padding(24)
+        } else {
+            LazyVStack(spacing: 16) {
+                ForEach(trips) { trip in
+                    NavigationLink {
+                        TripBookView(trip: trip)
+                    } label: {
+                        TripShelf(trip: trip)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("trips.book")
+                }
+            }
+            .padding(.horizontal, 16)
+        }
     }
 
     /// いいねした写真を読む。**未ログインなら聞きに行かない**
@@ -696,6 +654,9 @@ struct MyPageView: View {
         }
         if let error = model.errorMessage {
             ErrorBanner(message: error) { Task { await model.load() } }
+        } else if tab == .trips {
+            // **写真の有無とは無関係に、ここで空の理由まで言う**
+            tripsArea
         } else if tab == .wishlist {
             // **写真の有無とは無関係。** 行きたい場所は台帳の話で、
             // 1枚も撮っていない人にも中身がある
@@ -705,9 +666,6 @@ struct MyPageView: View {
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
             ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
-        } else if tab == .map {
-            // **自分の写真だけの地図。** 全員の地図はマップのタブにある
-            MyPhotosMap(photos: model.photos)
         } else if tab == .favorites {
             favoritesArea
         } else {

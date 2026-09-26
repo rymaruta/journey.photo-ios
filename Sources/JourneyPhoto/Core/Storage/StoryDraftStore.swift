@@ -69,6 +69,47 @@ final class StoryDraftStore: ObservableObject {
     func use(userId: String?) {
         self.userId = userId
         draft = load()
+        sweepOrphans()
+    }
+
+    /// 画像の置き場の名前。**鍵から毎回同じ名前を作る。**
+    ///
+    /// 以前は `hashValue` から作っていたが、Swift の文字列の `hashValue` は
+    /// **起動のたびに変わる**。起動をまたいで保存し直すと別の名前で書かれ、
+    /// 前の画像はどこからも指されないまま端末に残り続けた（数MBずつ・
+    /// 2026-09-26 のバグ探し）。鍵の文字を16進にするので、人ごとに必ず別の名前になる
+    static func imageFileName(forKey key: String) -> String {
+        let hex = key.utf8.map { String(format: "%02x", $0) }.joined()
+        return "\(filePrefix)\(hex).jpg"
+    }
+
+    private static let filePrefix = "story-draft-"
+
+    /// 下書きの記録から画像の名前だけを読む形
+    private struct ImageRef: Decodable {
+        let imageFile: String
+    }
+
+    /// **どの下書きからも指されていない画像を消す**（古い名前で残ったもの）。
+    ///
+    /// 同じ端末の別の人の下書きは消さない——`UserDefaults` にある下書きを
+    /// 全員ぶん読み、指されている名前は残す。
+    ///
+    /// **読むのは画像の名前だけ**（`ImageRef`）。`Draft` 全体で読むと、
+    /// 将来 `Draft` の形を変えたときに読めない記録が「画像を指していない」
+    /// 扱いになり、画像だけ消える
+    private func sweepOrphans() {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        let referenced = Set(defaults.dictionaryRepresentation().compactMap { entry -> String? in
+            guard entry.key == Self.key || entry.key.hasPrefix("\(Self.key):"),
+                  let data = entry.value as? Data,
+                  let saved = try? JSONDecoder().decode(ImageRef.self, from: data) else { return nil }
+            return saved.imageFile
+        })
+        for name in names where name.hasPrefix(Self.filePrefix) && name.hasSuffix(".jpg")
+            && !referenced.contains(name) {
+            try? FileManager.default.removeItem(at: fileURL(name))
+        }
     }
 
     private func load() -> Draft? {
@@ -100,10 +141,15 @@ final class StoryDraftStore: ObservableObject {
               coords: Photo.Coords?, caption: String, location: String,
               overlays: [TextOverlay], song: Photo.Song?, durationSec: Int,
               savedAt: String) -> Bool {
-        let file = "story-draft-\(abs(key(for: userId).hashValue)).jpg"
+        let file = Self.imageFileName(forKey: key(for: userId))
+        // 前の下書きが別の名前（`hashValue` 時代）なら、書き終えたあとに消す
+        let previous = defaults.data(forKey: key(for: userId))
+            .flatMap { try? JSONDecoder().decode(ImageRef.self, from: $0) }?.imageFile
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try imageData.write(to: fileURL(file))
+            // **一時ファイルに書いてから差し替える。** 名前が毎回同じなので、
+            // 途中で失敗すると（容量不足など）唯一の画像を壊してしまう
+            try imageData.write(to: fileURL(file), options: .atomic)
         } catch {
             return false
         }
@@ -114,6 +160,9 @@ final class StoryDraftStore: ObservableObject {
         guard let data = try? JSONEncoder().encode(saved) else { return false }
         defaults.set(data, forKey: key(for: userId))
         draft = saved
+        if let previous, previous != file {
+            try? FileManager.default.removeItem(at: fileURL(previous))
+        }
         return true
     }
 

@@ -89,8 +89,14 @@ public final class UIFont {
 
 public struct UIGraphicsImageRendererContext {}
 
+public final class UIGraphicsImageRendererFormat {
+    public init() {}
+    public var scale: Double = 3
+}
+
 public final class UIGraphicsImageRenderer {
     public init(size: CGSize) {}
+    public init(size: CGSize, format: UIGraphicsImageRendererFormat) {}
     public func jpegData(withCompressionQuality quality: Double,
                          actions: (UIGraphicsImageRendererContext) -> Void) -> Data {
         actions(UIGraphicsImageRendererContext())

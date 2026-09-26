@@ -368,6 +368,17 @@ for shell_file in sorted([*(ROOT / ".github/workflows").glob("*.yml"), *(ROOT / 
         if re.search(r"\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]", line):
             fail(f"{shell_file.relative_to(ROOT)}:{number} の変数の直後に全角文字（${{名前}} と書く）")
 
+# **リリースのたびに版を上げる**（2026-09-26 owner のルール・CLAUDE.md）。
+# 上げているのは TestFlight のワークフローなので、その段が消えていないかを見る。
+# 消えると、同じ版のまま TestFlight に並び、どのビルドか見分けられなくなる
+testflight_yml = ROOT / ".github/workflows/ios-testflight.yml"
+if testflight_yml.exists():
+    flow = testflight_yml.read_text(encoding="utf-8")
+    if "Tools/next-marketing-version.sh" not in flow:
+        fail("ios-testflight.yml が表に出る版を上げていません（Tools/next-marketing-version.sh を呼ぶ）")
+    if "testflight/" not in flow:
+        fail("ios-testflight.yml が出した版の印（testflight/<版> のタグ）を付けていません")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:

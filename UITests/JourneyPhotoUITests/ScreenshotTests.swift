@@ -106,11 +106,11 @@ final class ScreenshotTests: XCTestCase {
         // 中身が1画面に収まり、送っても動かない。「（下）」という名前で
         // 上と同じ絵を置くのは、名前と中身が食い違う絵の変種。
         //
-        // 動いたかは**名前の付いた目印の位置**で見る（`trips.entry`）。
+        // 動いたかは**名前の付いた目印の位置**で見る（`profile.tab.trips`）。
         if tabBar.buttons.count > 4 {
             tabBar.buttons.element(boundBy: 4).tap()
             Thread.sleep(forTimeInterval: 3)
-            let mark = app.buttons["trips.entry"].firstMatch
+            let mark = app.buttons["profile.tab.trips"].firstMatch
             let before = mark.exists ? mark.frame.origin.y : nil
             app.swipeUp()
             Thread.sleep(forTimeInterval: 2)
@@ -141,7 +141,7 @@ final class ScreenshotTests: XCTestCase {
             // **`30-旅の一冊` と `31-旅の足取り` が黙って消えた**
             // ——マイページに中身が出るようになった副作用で、run 64 までは
             // 送っても動かなかったので起きなかった。
-            let tripsEntry = app.buttons["trips.entry"].firstMatch
+            let tripsEntry = app.buttons["profile.tab.trips"].firstMatch
             var pullDowns = 0
             while tripsEntry.exists, !tripsEntry.isHittable, pullDowns < 4 {
                 app.swipeDown()
@@ -152,6 +152,12 @@ final class ScreenshotTests: XCTestCase {
                 tripsEntry.tap()
                 Thread.sleep(forTimeInterval: 4)
                 let firstTrip = app.buttons["trips.book"].firstMatch
+                // 旅の棚はタブの下に出る（整理案 05c でタブへ移した）。
+                // **画面の下に隠れていたら1回だけ送る**
+                if firstTrip.waitForExistence(timeout: 10), !firstTrip.isHittable {
+                    app.swipeUp()
+                    Thread.sleep(forTimeInterval: 2)
+                }
                 if firstTrip.waitForExistence(timeout: 10), firstTrip.isHittable {
                     firstTrip.tap()
                     Thread.sleep(forTimeInterval: 4)
@@ -161,9 +167,12 @@ final class ScreenshotTests: XCTestCase {
                     app.swipeUp()
                     Thread.sleep(forTimeInterval: 2)
                     shoot(app, "31-旅の足取り")
-                }
-                if app.navigationBars.buttons.firstMatch.exists {
-                    app.navigationBars.buttons.firstMatch.tap()
+                    // **押し込めた回だけ戻る。** 旅が無い回に押すと、戻るではなく
+                    // マイページの歯車（設定）に当たる（旅の一覧をタブへ畳んだので、
+                    // 押し込み先が必ずあるとは限らなくなった）
+                    if app.navigationBars.buttons.firstMatch.exists {
+                        app.navigationBars.buttons.firstMatch.tap()
+                    }
                 }
             }
         }

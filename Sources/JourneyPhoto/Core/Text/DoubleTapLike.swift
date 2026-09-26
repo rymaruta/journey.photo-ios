@@ -22,6 +22,12 @@ enum DoubleTapLike {
         case resetZoom
     }
 
+    /// **いいねの行き先は、いま見ている1枚。** 左右に送れる画面では、
+    /// 開いたときの1枚とは限らない
+    static func shown(_ photos: [Photo], at index: Int) -> Photo? {
+        photos.indices.contains(index) ? photos[index] : nil
+    }
+
     static func action(isZoomed: Bool, alreadyLiked: Bool, signedIn: Bool) -> Action {
         if isZoomed { return .resetZoom }
         // **ログインしていない人には何も起きない。** 断り書きを出しても、

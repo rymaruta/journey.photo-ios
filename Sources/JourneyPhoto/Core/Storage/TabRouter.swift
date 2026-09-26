@@ -24,6 +24,17 @@ final class TabRouter: ObservableObject {
     /// 下の札が押された。**選ばれている札をもう一度押したときだけ**
     /// 合図を出す（別の札から来たときは何もしない＝開き直しで勝手に
     /// 上へ飛ばない）。いまはホームだけが受け取る
+    /// **下の「投稿」から出した写真・ストーリーの画面を閉じた回数。**
+    ///
+    /// 投稿の入口は下の札の「投稿」1つ（整理案 05c でマイページの
+    /// 「投稿する」を外した）。そのシートは `RootView` にあり、マイページや
+    /// ストーリーの行からは閉じたことが見えない——投稿しても、マイページの
+    /// 格子とストーリーの行が引き下げるまで古いままだった。
+    /// 回数で伝えるのは上と同じ理由
+    @Published private(set) var postSheetsClosed = 0
+
+    func postSheetClosed() { postSheetsClosed += 1 }
+
     func tabTapped(isHome: Bool, alreadySelected: Bool) {
         guard isHome, alreadySelected else { return }
         homeTopRequests += 1

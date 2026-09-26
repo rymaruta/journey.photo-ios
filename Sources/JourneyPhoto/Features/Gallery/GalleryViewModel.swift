@@ -25,7 +25,7 @@ final class GalleryViewModel: ObservableObject {
     @Published private(set) var selectedTags: [String] = []
     /// 打った文字。題・説明・撮影地・タグを見る
     @Published var query: String = "" { didSet { state = .loaded(filtered()) } }
-    /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中の既定は「自分」**
+    /// 出す範囲（自分 / フォロー中 / すべて）。**選んでいるフィードが決める**（`HomeFeed.scope`）
     @Published private(set) var scope: GalleryScope = .all
     /// フォローしている人。`following` のときだけ要る
     /// フォロー先。**カードのフォローボタンにも渡す**（モック1）
@@ -69,9 +69,6 @@ final class GalleryViewModel: ObservableObject {
 
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
     private var all: [Photo] = []
-
-    /// 今日のテーマの背景に使う公開写真（絞り込みの影響を受けない全件）
-    var allPhotosForTheme: [Photo] { all }
 
     /// 自分の写真。**今日のテーマに参加したかの判定に使う。**
     ///

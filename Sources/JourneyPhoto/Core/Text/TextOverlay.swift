@@ -178,6 +178,40 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         min(max(value, minSize), maxSize)
     }
 
+    // MARK: - 編集画面と焼き込みで同じ形にする
+
+    /// 文字の大きさ。**画像の短い辺に対する割合**で決める。
+    ///
+    /// 編集画面（`TextOverlayEditor`）と焼き込み（`TextOverlayRenderer`）が
+    /// **両方ともここを通る**。以前は編集画面が「3:4 の枠の高さ」、焼き込みが
+    /// 「画像の短い辺」で別々に計算していて、横長の写真だと投稿した文字が
+    /// 編集中より小さく出ていた（2026-09-26 のバグ探し）
+    static func fontSize(_ size: Double, in image: CGSize) -> Double {
+        min(image.width, image.height) * size
+    }
+
+    /// 文字の中心。`photo` は写真が占める場所（焼き込みでは画像全体、
+    /// 編集画面では枠の中に収まった写真）。**両方ともここを通る**
+    func center(in photo: CGRect) -> CGPoint {
+        CGPoint(x: photo.minX + photo.width * x, y: photo.minY + photo.height * y)
+    }
+
+    /// `canvas` の中に `image` を縦横比のまま収めたときの、画像の場所。
+    ///
+    /// 位置（`x` / `y`）は**画像に対する割合**で持つ。編集画面は 3:4 の枠に
+    /// 写真を収めるので、枠と写真の形が違うと上下か左右に余白が出る——
+    /// 枠に対する割合で置くと、その余白の分だけ焼き込みとずれていた
+    static func fittedRect(image: CGSize, in canvas: CGSize) -> CGRect {
+        guard image.width > 0, image.height > 0, canvas.width > 0, canvas.height > 0 else {
+            return CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height)
+        }
+        let scale = min(canvas.width / image.width, canvas.height / image.height)
+        let width = image.width * scale
+        let height = image.height * scale
+        return CGRect(x: (canvas.width - width) / 2, y: (canvas.height - height) / 2,
+                      width: width, height: height)
+    }
+
     /// 掴んで動かした結果の位置。`translation` は画面上の移動量、
     /// `canvas` はその画面の大きさ。
     func moved(by translation: CGSize, in canvas: CGSize) -> TextOverlay {

@@ -11,15 +11,20 @@ import SwiftUI
 struct TextOverlayEditor<Extra: View>: View {
 
     let preview: Image
+    /// 写真の本当の大きさ（画素）。**文字の位置と大きさはこれに対する割合**
+    /// ——焼き込み（`TextOverlayRenderer`）が同じ基準で描く。
+    /// 分からないとき（nil）は枠いっぱいを写真とみなす
+    let imageSize: CGSize?
     @Binding var overlays: [TextOverlay]
     /// 同じ行に並べる、写真そのものの道具（カメラ・ライブラリ）。
     /// **モック4 は6つを1列に並べる**ので、写真の道具と文字の道具を
     /// 別の場所に置かない
     @ViewBuilder var extraTools: () -> Extra
 
-    init(preview: Image, overlays: Binding<[TextOverlay]>,
+    init(preview: Image, imageSize: CGSize?, overlays: Binding<[TextOverlay]>,
          @ViewBuilder extraTools: @escaping () -> Extra = { EmptyView() }) {
         self.preview = preview
+        self.imageSize = imageSize
         self._overlays = overlays
         self.extraTools = extraTools
     }
@@ -34,6 +39,11 @@ struct TextOverlayEditor<Extra: View>: View {
     var body: some View {
         VStack(spacing: 12) {
             GeometryReader { geometry in
+                // 🔴 **文字は「枠」ではなく「枠の中の写真」に対して置く。**
+                // 枠は 3:4 で、写真の形が違うと余白が出る。焼き込みは写真
+                // そのものに描くので、ここも写真の場所を基準にしないとずれる
+                let photo = TextOverlay.fittedRect(image: imageSize ?? geometry.size,
+                                                   in: geometry.size)
                 ZStack {
                     preview
                         .resizable()
@@ -41,7 +51,7 @@ struct TextOverlayEditor<Extra: View>: View {
                         .frame(width: geometry.size.width, height: geometry.size.height)
 
                     ForEach(overlays) { overlay in
-                        text(overlay, canvas: geometry.size)
+                        text(overlay, photo: photo)
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
@@ -57,17 +67,28 @@ struct TextOverlayEditor<Extra: View>: View {
 
     // MARK: - 文字
 
-    private func text(_ overlay: TextOverlay, canvas: CGSize) -> some View {
+    private func text(_ overlay: TextOverlay, photo: CGRect) -> some View {
         let moving = dragId == overlay.id
+        // 大きさと位置は焼き込みと同じ関数（写真の短い辺に対する割合・
+        // 写真に対する位置）。**下限で持ち上げない**——持ち上げると、
+        // スライダーを下げても見た目が変わらないのに投稿される文字だけ
+        // 小さくなる（2026-09-26 のレビュー）
+        let fontSize = TextOverlay.fontSize(overlay.size, in: photo.size)
+        let center = overlay.center(in: photo)
         return Text(overlay.displayText)
-            .font(.system(size: max(12, canvas.height * overlay.size), weight: .bold))
+            .font(.system(size: fontSize, weight: .bold))
             .foregroundStyle(overlay.style == .dark ? Color.black : Color.white)
-            .padding(.horizontal, overlay.style == .banner ? 8 : 0)
-            .padding(.vertical, overlay.style == .banner ? 4 : 0)
+            // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
+            .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
+            .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
             .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
             .shadow(radius: overlay.style == .light ? 6 : 0)
-            .position(x: canvas.width * overlay.x + (moving ? dragOffset.width : 0),
-                      y: canvas.height * overlay.y + (moving ? dragOffset.height : 0))
+            // 小さい文字でも指で掴めるように、**押せる範囲だけ**広げる
+            // （帯の見た目は広げない＝`background` より後ろに置く）
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+            .position(x: center.x + (moving ? dragOffset.width : 0),
+                      y: center.y + (moving ? dragOffset.height : 0))
             .gesture(
                 DragGesture()
                     .onChanged { value in
@@ -77,7 +98,7 @@ struct TextOverlayEditor<Extra: View>: View {
                     .onEnded { value in
                         // **離したときに位置へ入れる。** 動かしている最中に
                         // 入れると、はみ出しの丸めが毎フレーム効いて指から離れる
-                        move(overlay, by: value.translation, in: canvas)
+                        move(overlay, by: value.translation, in: photo.size)
                         dragId = nil
                         dragOffset = .zero
                     }

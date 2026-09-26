@@ -65,6 +65,21 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertTrue(frozen(isSending: true))
         // 絵が出る前から秒数を減らさない
         XCTAssertTrue(frozen(mediaReady: false))
+        // 前面に居ない間（ホームへ戻った）は止める
+        XCTAssertTrue(StoryPlayback.isFrozen(pressing: false, paused: false, menuOpen: false,
+                                             sheetOpen: false, replyFocused: false, isSending: false,
+                                             mediaReady: true, inBackground: true))
+    }
+
+    /// **アプリが止まっていた時間を1回の刻みに入れない。** 入れると、
+    /// 戻った瞬間に表示時間を使い切って次の1本へ飛ぶ
+    func testTickDeltaIsCapped() {
+        XCTAssertEqual(StoryPlayback.tickDelta(0.05), 0.05, accuracy: 0.0001)
+        XCTAssertEqual(StoryPlayback.tickDelta(30), StoryPlayback.maxTickSeconds)
+        XCTAssertEqual(StoryPlayback.tickDelta(-2), 0)
+        // 5秒の写真が、30秒止まって戻っても使い切らない
+        var progress = StoryPlayback.Progress(elapsed: 1, duration: 5)
+        XCTAssertEqual(progress.tick(StoryPlayback.tickDelta(30), frozen: false), .running)
     }
 
     /// 凍っている間は進まず、解けたら進み、使い切ったら次へ。
