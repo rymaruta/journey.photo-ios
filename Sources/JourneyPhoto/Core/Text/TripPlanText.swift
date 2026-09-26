@@ -146,11 +146,14 @@ enum TripPlanText {
             }
             .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
             .filter { seen.insert($0.id).inserted }
+        // 同じスラッグの地点が2つあるときは**`places` の先に来る方**の名前を採る。
+        // 日程に入ったあとの行の名前（`label(for:)`）と同じ規則——並べ替えてから
+        // 1件に寄せると、選んだ名前と入った行の名前が食い違う
         let locations = places
             .filter { !$0.slug.isEmpty && wishlistKeys.contains($0.slug) && !SavedSpotKey.isOfficial($0.slug) }
             .map { Choice(item: .location(slug: $0.slug, note: nil), name: $0.label, regionLabel: nil) }
-            .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
             .filter { seen.insert($0.id).inserted }
+            .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
         return spots + locations
     }
 

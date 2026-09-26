@@ -52,7 +52,8 @@ final class TripPlanTests: XCTestCase {
     /// 落とすと3日目以降の「N 日目」がずれ、次の保存で空の日が消える
     func testUnreadableDaysStayAsEmptyDays() throws {
         let list = try plans(#"{"plans":[{"planId":"p","days":[{"items":[{"kind":"location","slug":"a"}]},null,7,{"items":[]}]}]}"#)
-        XCTAssertEqual(list[0].days.count, 4)
+        // 件数が外れたら先へ進まない（外れたまま `days[2]` を読むとプロセスごと落ち、以降の試験が報告されない）
+        guard list[0].days.count == 4 else { return XCTFail("読めない日を落としている: \(list[0].days.count) 日") }
         XCTAssertEqual(list[0].days[1], TripDay())
         XCTAssertEqual(list[0].days[2], TripDay())
     }
@@ -171,6 +172,18 @@ final class TripPlanTests: XCTestCase {
         let choices = TripPlanText.choices(wishlistKeys: slugs, places: places, index: [])
         XCTAssertEqual(choices.count, 1)
         XCTAssertEqual(Set(choices.map(\.id)).count, choices.count, "同じ id が2つ（ForEach で行が重なる）")
+        // **選んだ名前と、日程に入った行の名前が同じ**
+        let chosen = try XCTUnwrap(choices.first)
+        XCTAssertEqual(chosen.name, TripPlanText.label(for: chosen.item, index: [], places: places),
+                       "候補の名前と日程の行の名前が食い違う")
+    }
+
+    /// 撮影スポットも同じ `spotId` は1件（前後の空白が違う鍵が同じスポットを指す）
+    func testSameSpotAppearsOnce() throws {
+        let index = [try spot("takaya-jinja", name: "高屋神社")]
+        let choices = TripPlanText.choices(wishlistKeys: ["SPOT-takaya-jinja", " SPOT-takaya-jinja"],
+                                           places: [], index: index)
+        XCTAssertEqual(choices.count, 1)
     }
 
     /// 何も保存していなければ候補は0（画面は「先に保存してください」を出す）

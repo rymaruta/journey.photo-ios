@@ -37,6 +37,9 @@ struct TripPlanService {
     /// （権限を配る処理が落ちた人向けの文）ので、そのままだと51件目を作ろうと
     /// した人にその文が出る。**本文があるときだけ**ここで包み直す——本文の無い
     /// 403（API Gateway の門前払い）は今まで通り権限の文にする
+    ///
+    /// ⚠️ **呼ぶ側は `as? APIError` で読まない。** `(error as? LocalizedError)?.errorDescription`
+    /// で読む（`APIError` ではないので、`as? APIError` だと断り文が「読み込めませんでした」に化ける）
     struct Refused: LocalizedError, Equatable {
         let message: String
         var errorDescription: String? { message }
