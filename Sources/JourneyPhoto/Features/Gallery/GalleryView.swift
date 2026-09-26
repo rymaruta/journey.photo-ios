@@ -21,12 +21,10 @@ struct GalleryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // **タブは写真が0枚でも出す。** 中に入れると、1枚も無い人
-            // （ログイン直後の既定は「自分」）に空の帯だけが出て、
-            // **「すべて」に戻せない**——行き止まりを作らない
-            if auth.userId != nil {
-                scopePicker
-            }
+            // **範囲の切り替え（自分／フォロー中／すべて）は置かない。**
+            // 下のフィード（おすすめ／フォロー中／新着）が範囲も決めるので、
+            // 「フォロー中」が2段に並んでいた（整理案 01c・2026-09-26）。
+            // 自分の写真はマイページが持ち場
             switch model.state {
             case .loading:
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -88,35 +86,6 @@ struct GalleryView: View {
                 await model.load()
             }
         }
-    }
-
-    /// 出す範囲（自分 / フォロー中 / すべて）。**ログイン中だけ出す**
-    /// ——未ログインには絞る相手が無い（Web も同じ）。
-    private var scopePicker: some View {
-        Picker("", selection: Binding(
-            get: { model.scope },
-            set: { scope in
-                model.select(scope: scope)
-                // **選んだときに引き直す。** フォロー一覧は
-                // `.task(id: auth.userId)` で一度しか引いていないので、
-                // 誰かをフォローしても、この画面には一生出てこなかった
-                guard scope == .following, auth.userId != nil else { return }
-                Task {
-                    // **取れなかった回に空で潰さない。** `?? []` にすると、
-                    // 圏外でタブを押しただけで「フォロー中」が
-                    // 何の知らせも無く空一覧になる
-                    guard let ids = try? await environment.social.myFollowingIds() else { return }
-                    model.refreshFollowing(Set(ids))
-                }
-            }
-        )) {
-            ForEach(GalleryScope.allCases) { scope in
-                Text(scope.label).tag(scope)
-            }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
     }
 
     /// カテゴリの絞り込み。Web の `FilterBar` にあたる。
@@ -322,6 +291,17 @@ struct GalleryView: View {
                     let selected = model.feed == feed
                     Button {
                         model.select(feed: feed, viewerId: auth.userId)
+                        // **選んだときにフォロー一覧を引き直す。** 一覧は
+                        // `.task(id: auth.userId)` で一度しか引いていないので、
+                        // 誰かをフォローしても「フォロー中」に出てこない
+                        // （上の段にあった範囲の切り替えが持っていた処理を移した）
+                        guard feed == .following, auth.userId != nil else { return }
+                        Task {
+                            // **取れなかった回に空で潰さない**（圏外で押しただけで
+                            // 「フォロー中」が知らせも無く空になる）
+                            guard let ids = try? await environment.social.myFollowingIds() else { return }
+                            model.refreshFollowing(Set(ids))
+                        }
                     } label: {
                         Text(feed.label)
                             .font(.subheadline.weight(selected ? .semibold : .regular))
@@ -338,13 +318,9 @@ struct GalleryView: View {
             }
             .padding(4)
             .background(WebTheme.surface, in: Capsule())
-
-            if let note = model.feed.note {
-                Text(note)
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
-                    .padding(.horizontal, 8)
-            }
+            // **規則の一文は出さない**（整理案 01c）。写真より先に
+            // 説明が並ぶと、開いた瞬間に読むものが増える。
+            // 文言は `HomeFeed.note` に残してある
         }
         .padding(.horizontal, 16)
     }
@@ -362,13 +338,20 @@ struct GalleryView: View {
                 // アプリの提案図では**ホームに戻っている**ので合わせる
                 // ——「いま誰が旅に出ているか」は開いた瞬間に見たいもの
                 StoriesRow()
-                // **今日のテーマ**（モック1）。通信はしない——日付から決まる
-                DailyThemeCard(photos: model.allPhotosForTheme, myPhotos: model.myPhotos)
                 feedPicker
                 featuredSections
                 // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
                 // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
-                ForEach(PhotoGroups.group(photos)) { group in
+                let groups = PhotoGroups.group(photos)
+                if let first = groups.first {
+                    HomeFeedCard(photo: first.cover, following: model.followingIds,
+                                 siblings: first.photos)
+                }
+                // **今日のテーマは1枚目の写真の後ろに細い帯で**（整理案 01c）。
+                // 先頭に大きな札を置くと、開いた瞬間に写真が見えなかった。
+                // 通信はしない——日付から決まる
+                DailyThemeCard(myPhotos: model.myPhotos)
+                ForEach(Array(groups.dropFirst())) { group in
                     HomeFeedCard(photo: group.cover, following: model.followingIds,
                                  siblings: group.photos)
                 }
