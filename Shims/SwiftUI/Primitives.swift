@@ -251,10 +251,10 @@ public struct Alignment {
 public struct HorizontalAlignment { public static let leading = HorizontalAlignment(), center = HorizontalAlignment() }
 /// 揃えの計算に渡る寸法（本物と同じ形）
 public struct ViewDimensions {
-    public var width: Double { 0 }
-    public var height: Double { 0 }
-    public subscript(guide: VerticalAlignment) -> Double { 0 }
-    public subscript(guide: HorizontalAlignment) -> Double { 0 }
+    public var width: CGFloat { 0 }
+    public var height: CGFloat { 0 }
+    public subscript(guide: VerticalAlignment) -> CGFloat { 0 }
+    public subscript(guide: HorizontalAlignment) -> CGFloat { 0 }
 }
 public struct VerticalAlignment { public static let center = VerticalAlignment(), top = VerticalAlignment(), bottom = VerticalAlignment(), firstTextBaseline = VerticalAlignment(), lastTextBaseline = VerticalAlignment() }
 public struct Edge {

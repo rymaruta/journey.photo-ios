@@ -25,10 +25,10 @@
 | 文字 | **`Journey Photo`**（半角スペース1つ・**ドット無し**） | `Text("Journey Photo")` |
 | 書体 | `font-serif` ＝ Tailwind 4 の既定 `ui-serif, Georgia, …`。**iPhone の Safari では New York** | `.font(.system(size: 22, weight: .bold, design: .serif))`（＝New York） |
 | 太さ | `font-bold`（700） | `.bold` |
-| 字間 | `tracking-tight` ＝ **-0.025em**（22px なら -0.55px） | `.tracking(-0.55)` |
+| 字間 | `tracking-tight` ＝ **-0.025em**（22px なら -0.55px） | `.tracking(-fontSize * 0.025)`（22pt で -0.55） |
 | 色 | **白1色**（`text-white`）。**「Photo」だけ色を変えていない** | `.foregroundStyle(.white)` |
 | 大きさ | 22px。幅 360px 未満の端末だけ 20px、768px 以上で 26px | 22pt（アプリは電話の幅だけなので 22 固定でよい） |
-| マーク | 白いアパーチャ 28px（768px 以上で 32px）、文字との間 8px | 余白なしの絵を 18pt（サイトの 28px の枠の中の絵と同じ大きさ）・`spacing: 8`・大文字の高さの真ん中に揃える |
+| マーク | 白いアパーチャ 28px（768px 以上で 32px）、文字との間 8px | 余白2%の絵を枠 19pt（見える絵は約18pt＝サイトの 28px の枠の中の絵と同じ大きさ）・`spacing: 8`・大文字の高さの真ん中に揃える。ログイン画面の大きいロゴ（`AppLogo(size: .hero)`）は 40pt の文字・枠 29.5pt（見える絵約28pt）・間 12pt（板 41） |
 | 読み上げ | マークは装飾（`aria-hidden`・空の `alt`）。読むのは文字だけ | 全体で1つの名前 `"Journey Photo"` |
 | 下地 | ヘッダーは紺 `#0b1420`（`--color-bar`）の 70%＋ぼかし | アプリの `WebTheme.background` は黒。見出しの白文字はどちらでも読める |
 

@@ -14,7 +14,7 @@ import SwiftUI
 ///
 /// **文字もサイトと同じ**（`docs/BRAND.md`）: `Journey Photo`（ドット無し）、
 /// serif の Bold（iPhone では New York）、字間 -0.025em、白1色、22pt。
-/// 間 8pt もサイトの値。マークは**見える絵で 18pt**（サイトの 28px の枠に余白込みと
+/// 間 8pt もサイトの値。マークは**見える絵で約18pt**（サイトの 28px の枠に余白込みと
 /// 同じ見た目の大きさ）。以前の「Photo だけ青」はサイトに無い。
 struct AppLogo: View {
 
@@ -25,12 +25,17 @@ struct AppLogo: View {
 
     /// 文字の大きさ（見出しはサイトと同じ 22pt 固定）
     private var fontSize: Double { size == .header ? 22 : 40 }
-    /// **見える絵の大きさ。** 絵は余白なしで切り出してあるので、枠＝絵。
-    /// 以前（28pt の枠に余白 17% 込み）の見た目の大きさ約18pt を保つ
-    private var markSize: Double { size == .header ? 18 : 33 }
-    /// 絵と文字の間（サイトの `gap-2` = 8px。大きいロゴは同じ比で）
-    private var spacing: Double { size == .header ? 8 : 14 }
-    /// New York Bold の大文字の高さ（字の大きさに対する割合）
+    /// **絵の枠の大きさ。** 絵は余白 2% で切り出してあるので、見える絵は枠の約96%。
+    /// **見える大きさは以前のまま**（見出し: 28pt の枠に余白 17% 込み＝約18pt、
+    /// 大きいロゴ: 44pt の枠＝約28pt）——直したのは「ずれ」で、大きさではない
+    private var markSize: Double { size == .header ? 19 : 29.5 }
+    /// 絵と文字の間。見出しはサイトの `gap-2` = 8px、大きいロゴは板 41 の 12px。
+    /// 以前は透明な余白のぶん、これより約5〜8pt 広く見えていた
+    private var spacing: Double { size == .header ? 8 : 12 }
+    /// New York Bold の大文字の高さ（字の大きさに対する割合）。
+    /// **文字が縮んだとき（minimumScaleFactor）は縮む前の大きさで計算する**ので、
+    /// 絵は最大で見出し 1.5pt・大きいロゴ 3pt ほど上に寄る。縮むのは狭い端末で
+    /// 文字が入り切らないときだけ（見積もり・実機で未確認）
     private static let capHeightRatio = 0.70
 
     var body: some View {
