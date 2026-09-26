@@ -64,19 +64,32 @@ final class SongStickerTests: XCTestCase {
         XCTAssertEqual(story.songLine, SongSticker.make(for: song("海へ", "誰か"))?.text)
     }
 
-    /// 曲を変えたら文字の長さの比で大きさを変える。自分で大きくした分は残り、
-    /// 長い曲名を経由して戻しても元の大きさに戻る
-    func testChangingSongScalesStickerByWidth() {
-        let sticker = SongSticker.make(for: song("海へ"))!
-        let longer = SongSticker.retext([sticker], from: song("海へ"), to: song("Bohemian Rhapsody", "Queen"))
-        XCTAssertLessThan(longer.overlays[0].size, sticker.size, "長い曲名に変えたら縮む")
+    /// 曲を変えたら、置いたときの大きさの比で大きさを変える
+    func testChangingSongScalesStickerByFittedSize() {
+        func change(_ size: Double, _ from: String, _ to: String) -> Double {
+            var sticker = SongSticker.make(for: song(from))!
+            sticker.size = size
+            return SongSticker.retext([sticker], from: song(from), to: song(to)).overlays[0].size
+        }
+        let fittedLemon = SongSticker.make(for: song("Lemon · 米津玄師"))!.size
+        let fittedLong = SongSticker.make(for: song("Bohemian Rhapsody · Queen"))!.size
 
-        let back = SongSticker.retext(longer.overlays, from: song("Bohemian Rhapsody", "Queen"), to: song("海へ"))
-        XCTAssertEqual(back.overlays[0].size, sticker.size, accuracy: 1e-9, "戻したら元の大きさ")
+        // 手を付けていない札は、新しい曲名で置いたときと同じ大きさ
+        XCTAssertEqual(change(TextOverlay.defaultSize, "海へ", "Lemon · 米津玄師"), fittedLemon, accuracy: 1e-9)
+        XCTAssertEqual(change(TextOverlay.defaultSize, "山", "海へ"), TextOverlay.defaultSize, accuracy: 1e-9,
+                       "短い曲どうしは変わらない")
+        XCTAssertEqual(change(TextOverlay.defaultSize, "海へ", "Bohemian Rhapsody · Queen"), fittedLong, accuracy: 1e-9)
 
-        var big = sticker
-        big.size = 0.15
-        let same = SongSticker.retext([big], from: song("海へ"), to: song("山へ"))
-        XCTAssertEqual(same.overlays[0].size, 0.15, accuracy: 1e-9, "同じ長さなら自分で大きくした分は残す")
+        // 自分で大きくした分は倍率として残り、行き来しても元に戻る
+        let big = change(0.10, "海へ", "Lemon · 米津玄師")
+        XCTAssertEqual(big, 0.10 * fittedLemon / TextOverlay.defaultSize, accuracy: 1e-9)
+        var sticker = SongSticker.make(for: song("Lemon · 米津玄師"))!
+        sticker.size = big
+        let back = SongSticker.retext([sticker], from: song("Lemon · 米津玄師"), to: song("海へ")).overlays[0].size
+        XCTAssertEqual(back, 0.10, accuracy: 1e-9, "戻したら元の大きさ")
+
+        // 短い曲どうしなら、自分で小さく・大きくした分はそのまま
+        XCTAssertEqual(change(TextOverlay.minSize, "海へ", "山"), TextOverlay.minSize, accuracy: 1e-9)
+        XCTAssertEqual(change(0.15, "海へ", "山へ"), 0.15, accuracy: 1e-9)
     }
 }

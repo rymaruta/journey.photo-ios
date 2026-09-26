@@ -63,15 +63,12 @@ enum SongSticker {
             guard isOld(overlay) else { return overlay }
             var changed = overlay
             changed.text = String(newText.prefix(TextOverlay.maxLength))
-            // **札の幅がそろうよう、文字の長さの比で大きさを変える**（長い曲名に
-            // 変えたら縮む）。ただし大きくするのは「いまの大きさ」か「新しい曲名で
-            // 置いたときの大きさ」まで——自分で大きくした分は残し、長い曲名を経由して
-            // 戻したときは元の大きさに戻り、既定より大きくはならない
-            let oldEms = ems(TextOverlay.display(text: overlay.text, kind: .song))
-            let newDisplay = TextOverlay.display(text: changed.text, kind: .song)
-            let keepsWidth = overlay.size * oldEms / ems(newDisplay)
-            let ceiling = max(overlay.size, fittedSize(for: newDisplay))
-            changed.size = TextOverlay.clampSize(min(keepsWidth, ceiling))
+            // **置いたときの大きさの比で変える。** 手を付けていない札は新しい曲名で
+            // 置いたときと同じ大きさになり、自分で大きく・小さくした分は倍率として残る。
+            // 曲を行き来しても元に戻る（下限・上限で切られたときだけは戻りきらない）
+            let before = fittedSize(for: TextOverlay.display(text: overlay.text, kind: .song))
+            let after = fittedSize(for: TextOverlay.display(text: changed.text, kind: .song))
+            changed.size = TextOverlay.clampSize(overlay.size * after / before)
             return changed
         }
         return (updated, true)
