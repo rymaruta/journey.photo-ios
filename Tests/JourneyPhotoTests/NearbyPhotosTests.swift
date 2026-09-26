@@ -55,6 +55,27 @@ final class NearbyPhotosTests: XCTestCase {
         XCTAssertTrue(NearbyPhotos.heading(radiusKm: 5, count: 0).contains("0"))
         XCTAssertTrue(NearbyPhotos.heading(radiusKm: 5, count: 12).contains("12"))
     }
+
+    // MARK: - 近くに写真が無い
+
+    /// 最大の半径（50km）の外にしか写真が無ければ真（パリの写真だけの人が東京にいる）
+    func testNoneNearbyWhenAllPhotosAreFar() throws {
+        let paris = try photo("paris", lat: 48.86, lng: 2.35)
+        XCTAssertTrue(NearbyPhotos.noneNearby([paris], here: here))
+    }
+
+    /// 1枚でも最大の半径の内にあれば偽（約27km は 50km の内）
+    func testNotNoneNearbyWhenOneIsWithinLargestRadius() throws {
+        let paris = try photo("paris", lat: 48.86, lng: 2.35)
+        let yokohama = try photo("yokohama", lat: 35.45, lng: 139.63)
+        XCTAssertFalse(NearbyPhotos.noneNearby([paris, yokohama], here: here))
+    }
+
+    /// **撮影地の分かる写真が0枚なら偽**——「全体」が無いので、別の帯が答える
+    func testNotNoneNearbyWithoutAnyCoords() throws {
+        XCTAssertFalse(NearbyPhotos.noneNearby([], here: here))
+        XCTAssertFalse(NearbyPhotos.noneNearby([try photo("no", lat: nil, lng: nil)], here: here))
+    }
 }
 
 /// 写真の詳細の「この近くで撮られた写真」（板 02）
