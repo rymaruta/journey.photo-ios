@@ -12,6 +12,8 @@ struct PhotoDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var favorites: FavoritesStore
+    /// サーバーが答えたいいねの数。**ここで読んだ・押した数をホームにも出す**
+    @EnvironmentObject private var likeCounts: LikeCountStore
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
@@ -108,7 +110,14 @@ struct PhotoDetailView: View {
                 index: siblings.firstIndex(where: { $0.id == photo.id }) ?? 0,
                 isLiked: model.liked,
                 isSignedIn: auth.userId != nil,
-                onDoubleTapLike: { Task { await model.toggleLike() } }
+                onDoubleTapLike: {
+                    Task {
+                        await model.toggleLike()
+                        // 下のハートと同じく、端末の控えとホームの数にも渡す
+                        favorites.set(photo.id, favorite: model.liked)
+                        shareLikeCount()
+                    }
+                }
             )
         }
         .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
@@ -472,6 +481,17 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// **押した回の**答えを、ホームのカードと検索の格子にも渡す。
+    /// 渡さないと、詳細で押して戻ったときに数が押す前のままになる
+    /// （ホームは戻っても一覧を読み直さない）。
+    ///
+    /// 開いたときに読んだ数は渡さない（`LikeCountStore` の注記）。
+    /// 答えが無かった回（失敗・数を返さない答え）も渡さない
+    private func shareLikeCount() {
+        guard let answer = model.lastLikeAnswer else { return }
+        likeCounts.set(photo.id, count: answer)
+    }
+
     private var socialBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 16) {
@@ -480,6 +500,7 @@ struct PhotoDetailView: View {
                         await model.toggleLike()
                         // 端末側のハートも合わせる（圏外でも一覧が出る）
                         favorites.set(photo.id, favorite: model.liked)
+                        shareLikeCount()
                     }
                 } label: {
                     // **いちばん押されるボタンがいちばん小さかった。**

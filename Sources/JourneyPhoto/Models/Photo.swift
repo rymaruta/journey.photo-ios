@@ -34,7 +34,16 @@ struct Photo: Identifiable, Decodable, Equatable {
     /// `scripts/sync-photos-from-ddb.js` が公開 JSON に載せている
     /// （落とすと人気順が**黙って効かなくなる**ので落としていない、と
     ///  あちらのコメントが書いている）。持たない写真は 0 として扱う。
-    let likes: Int?
+    ///
+    /// **`var` なのは、公開 JSON の数が古いから。** JSON はサイトを建てた
+    /// 時点の数で、いいねでは建て直らない。`PublicGalleryService` が
+    /// 管理 API の `GET /photos`（DynamoDB を直に読む）の数で上書きする
+    /// （`LiveLikes`）。Web の `usePhotos` が同じ口で差し替えているのと同じ
+    var likes: Int?
+    /// `likes` が**いつ時点の数か**（いまの数を取りに行った時刻）。
+    /// 静的 JSON のままなら nil（＝サイトを建てた時点・どの答えより古い）。
+    /// サーバーに無い項目なので、読むときは常に nil で来る
+    var likesAsOf: Date?
     /// owner が手で選んだ「おすすめ」。トップのカテゴリ別の特集に出る
     /// （Web の `lib/utils/featured.ts`）。
     let featured: Bool?

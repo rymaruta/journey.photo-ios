@@ -758,7 +758,7 @@ final class MyPageViewModel: ObservableObject {
     ///   - api: 叩き先。**テストで差し替えるため**に開けてある。
     ///   - gallery: 公開写真の出どころ。同上（既定は本物のサイトを叩く）。
     init(api: APIClient = APIClient(tokenProvider: CognitoTokenProvider()),
-         gallery: PublicGalleryService = PublicGalleryService()) {
+         gallery: PublicGalleryService = PublicGalleryService(liveURL: AppConfig.livePhotosURL)) {
         self.profiles = ProfileService(api: api)
         self.photoService = PhotoService(api: api)
         self.social = SocialService(api: api)

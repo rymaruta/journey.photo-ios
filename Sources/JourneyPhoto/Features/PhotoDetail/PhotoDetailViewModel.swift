@@ -7,6 +7,9 @@ import Combine
 final class PhotoDetailViewModel: ObservableObject {
 
     @Published private(set) var likes: Int = 0
+    /// **直前に押した回に**サーバーが答えた数。答えが無かった回は nil。
+    /// ホームへ渡すのはこれだけ（`LikeCountStore`——開いたときに読んだ数は渡さない）
+    @Published private(set) var lastLikeAnswer: Int?
     @Published private(set) var liked = false
     @Published private(set) var comments: [PhotoComment] = []
     /// コメントの総数。**サーバーから取れたときだけ入る**（取れなければ nil）。
@@ -86,6 +89,9 @@ final class PhotoDetailViewModel: ObservableObject {
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、
     /// それを使う（二重に押した回や既に押していた回でずれる）。
     func toggleLike() async {
+        // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
+        // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
+        lastLikeAnswer = nil
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
             return
@@ -99,7 +105,10 @@ final class PhotoDetailViewModel: ObservableObject {
                 ? try await social.unlike(photoId: photoId)
                 : try await social.like(photoId: photoId)
             liked = result.liked
-            if let likes = result.likes { self.likes = likes }
+            if let likes = result.likes {
+                self.likes = likes
+                lastLikeAnswer = likes
+            }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
