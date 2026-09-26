@@ -113,7 +113,8 @@ final class PublicGalleryServiceTests: XCTestCase {
 /// 公開一覧の控え。
 ///
 /// **この口は画面を開くたびに全員が叩く**——一覧・検索・地図・お気に入り・
-/// タグ・お知らせ、そして写真を1枚開くたびに「近い写真」まで。
+/// タグ・お知らせ、そして写真を1枚開くたびに「この近くで撮られた写真」と
+/// 撮影スポットの行まで（`PhotoDetailView`）。
 /// サイト側は `no-store` で配るので、控えが無いと毎回まるごと落ちてくる。
 final class GalleryCacheTests: XCTestCase {
 

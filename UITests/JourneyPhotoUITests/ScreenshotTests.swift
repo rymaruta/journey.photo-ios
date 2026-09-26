@@ -257,7 +257,17 @@ final class ScreenshotTests: XCTestCase {
             shoot(app, "20-写真の詳細")
 
             // **人のページ**（モック2 と同じ部品で組んである）。
+            //
+            // **画面の下に隠れていたら送る（上限あり）。** 作者の行は説明の
+            // 後ろにあるので、長い説明の写真では画面の外（ログイン中は入力欄の下）
+            // に出て `isHittable == false` になり、`21` が**黙って欠ける**
             let toAuthor = app.buttons["photo.author"].firstMatch
+            var pushUps = 0
+            while toAuthor.waitForExistence(timeout: 5), !toAuthor.isHittable, pushUps < 3 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                pushUps += 1
+            }
             if toAuthor.waitForExistence(timeout: 5), toAuthor.isHittable {
                 toAuthor.tap()
                 Thread.sleep(forTimeInterval: 4)

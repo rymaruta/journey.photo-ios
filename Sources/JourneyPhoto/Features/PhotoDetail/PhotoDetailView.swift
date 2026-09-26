@@ -36,6 +36,11 @@ struct PhotoDetailView: View {
     @State private var showUnfollowConfirm = false
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）
     @State private var heroPage = 0
+    /// 大きく見る画面で、**この画面の1枚以外**のいいねを送っている写真。
+    /// 写真ごとに持って再入を止める——ダブルタップの直後にハートを押すと、
+    /// 2本目が1本目の答えの前に逆向きを送り、画面とサーバーが食い違う
+    /// （この画面の1枚は `PhotoDetailViewModel.isLiking` が止めている）
+    @State private var viewerLikesInFlight: Set<String> = []
 
     /// スポット詳細に渡すもの一式。**撮影地から導いた地点**と、
     /// 突き合わせる公開写真（近くの地点もここから出す）
@@ -75,20 +80,29 @@ struct PhotoDetailView: View {
     // 型検査が現実的な時間で終わらなくなることがある
     // （"unable to type-check this expression in reasonable time"）。
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    imageButton
-                    details(proxy)
-                        // **題は写真の下の方に重ねる**（板 02: 写真 460pt の 366pt から）。
-                        // 写真の裾は黒へ溶かしてあるので、白い字が沈まない
-                        .padding(.top, -Self.heroOverlap)
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            imageButton
+                            details(proxy)
+                                // **題は写真の下の方に重ねる**（板 02: 写真 460pt の 366pt から）。
+                                // 写真の裾は黒へ溶かしてあるので、白い字が沈まない
+                                .padding(.top, -Self.heroOverlap)
+                        }
+                        .padding(.bottom, 32)
+                    }
+                    // **写真を画面の上端から敷く**（板 02）。戻る・「…」は上のバーに
+                    // 残したまま、バーの地を消して写真の上に浮かせる
+                    .ignoresSafeArea(edges: .top)
                 }
-                .padding(.bottom, 32)
+                // **時計とバーの裏に黒のぼかし**（人のページ・マイページと同じ
+                // `TopBarScrim`。流れずに上端に留まる）。バーの地を消しているので、
+                // 敷かないと明るい写真の上で白い戻る「‹」・時計が沈み、下へ送ると
+                // 本文が戻る・「…」・時計の真下を流れて重なる
+                TopBarScrim(topInset: geo.safeAreaInsets.top)
             }
-            // **写真を画面の上端から敷く**（板 02）。戻る・「…」は上のバーに
-            // 残したまま、バーの地を消して写真の上に浮かせる
-            .ignoresSafeArea(edges: .top)
         }
         // **入力欄は画面の下に貼る**（モック6）。コメント欄が本文の
         // 途中にあると、長い説明の写真では入力欄まで辿り着く前に
@@ -341,7 +355,9 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// 板: 12pt・白・下線（白 60%）、添え書きは白 50%。写真の裾に乗るので影を付ける
+    /// 板: 12pt・白・下線（白 60%）、添え書きは白 50%。写真の裾に乗るので影を付ける。
+    /// **添え書きは白 72% に上げてある**——50% だと明るい写真の裾で読めなかった
+    /// （影を付けても足りない）。本文の2次の字（`muted2`）と同じ濃さ
     private func placeLabel(_ location: String, spotSuffix: Bool) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "mappin")
@@ -351,7 +367,7 @@ struct PhotoDetailView: View {
                 .lineLimit(1)
             if spotSuffix {
                 Text(PhotoMetaLine.separator + L("撮影スポットの詳細", "Photo spot details"))
-                    .foregroundStyle(WebTheme.placeholder)
+                    .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
             }
         }
@@ -531,6 +547,8 @@ struct PhotoDetailView: View {
             shareLikeCount()
             return
         }
+        guard viewerLikesInFlight.insert(shown.id).inserted else { return }
+        defer { viewerLikesInFlight.remove(shown.id) }
         // 先に灯す（押した手応えを待たせない）。届かなければ戻す
         favorites.set(shown.id, favorite: true)
         do {
@@ -554,6 +572,8 @@ struct PhotoDetailView: View {
             shareLikeCount()
             return
         }
+        guard viewerLikesInFlight.insert(shown.id).inserted else { return }
+        defer { viewerLikesInFlight.remove(shown.id) }
         let wasLiked = favorites.contains(shown.id)
         favorites.set(shown.id, favorite: !wasLiked)
         do {
@@ -676,7 +696,7 @@ struct PhotoDetailView: View {
                         .foregroundStyle(WebTheme.foreground)
                     Spacer()
                     NavigationLink {
-                        NearbyMapScreen(photos: [shown] + nearby)
+                        NearbyMapScreen(photos: [shown] + nearby, fromPublicFeed: fromPublicFeed)
                     } label: {
                         HStack(spacing: 4) {
                             Text(L("地図で見る", "View on map"))
@@ -897,10 +917,13 @@ struct PhotoDetailView: View {
 /// ——初期の枠取り（`MapFraming`）もピンを押したときの一覧も同じでよい
 private struct NearbyMapScreen: View {
     let photos: [Photo]
+    /// 開いた写真の値を引き継ぐ。既定の `true` に戻ると、個別ページの無い
+    /// 自分の写真（マイページから開いた下書きなど）に共有が出る
+    let fromPublicFeed: Bool
 
     var body: some View {
         ScrollView {
-            MyPhotosMap(photos: photos)
+            MyPhotosMap(photos: photos, fromPublicFeed: fromPublicFeed)
                 .padding(.vertical, 16)
         }
         .webScreen()
