@@ -221,7 +221,7 @@ extension View {
     public func tracking(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func dynamicTypeSize(_ range: PartialRangeThrough<DynamicTypeSize>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func textCase(_ c: Text.Case?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
-    public func underline(_ on: Bool, color: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func underline(_ on: Bool = true, color: Color? = nil) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 
     // 見た目
     public func font(_ f: Font?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
