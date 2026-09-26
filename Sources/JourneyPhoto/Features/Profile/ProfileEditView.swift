@@ -41,6 +41,9 @@ struct ProfileEditView: View {
     /// ——読めていない空の欄で上書きすると、プロフィールが丸ごと消える
     @State private var loaded = false
     @State private var message: String?
+    /// 保存の失敗。**アラートで出す**——保存は右上なので、フォームの中に出すと
+    /// 下に流していれば上の画面外、上にいれば下の画面外になる
+    @State private var saveError: String?
 
     var body: some View {
         Form {
@@ -50,6 +53,7 @@ struct ProfileEditView: View {
             // 「押しても何も起きない」に見える（読めなかった警告も同じ）
             if let message {
                 Section { Text(message).font(.callout) }
+                    .listRowBackground(Color.clear)
             }
 
             Section {
@@ -120,6 +124,13 @@ struct ProfileEditView: View {
             }
         }
         .overlay { if isLoading { ProgressView() } }
+        .alert(L("保存できませんでした", "Couldn't save"),
+               isPresented: Binding(get: { saveError != nil },
+                                    set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveError ?? "")
+        }
         .task { await load() }
         .onChange(of: avatarItem) { _, item in
             Task { await upload(item, kind: .avatar) }
@@ -181,6 +192,8 @@ struct ProfileEditView: View {
             Text(title)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(WebTheme.muted)
+                // 欄そのものに同じ名前を付けてあるので、見出しは読まない（2回読まれる）
+                .accessibilityHidden(true)
             // 見出しは別の Text なので、欄そのものに名前を付ける（無いと読み上げが「テキストフィールド」だけになる）
             field()
                 .accessibilityLabel(title)
@@ -281,7 +294,7 @@ struct ProfileEditView: View {
             try await environment.profiles.update(patch)
             dismiss()
         } catch {
-            message = (error as? LocalizedError)?.errorDescription ?? L("保存できませんでした", "Couldn't save")
+            saveError = (error as? LocalizedError)?.errorDescription ?? L("もう一度お試しください", "Please try again")
         }
     }
 
