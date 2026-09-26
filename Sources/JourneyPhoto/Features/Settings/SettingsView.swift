@@ -174,13 +174,18 @@ struct SettingsView: View {
                 }
             } header: {
                 if auth.userId != nil { Text(L("アカウント", "Account")) }
+            } footer: {
+                // 未ログインでは下のログアウトの節ごと無いので、バージョンはここに出す
+                if auth.userId == nil { Text(versionLine) }
             }
 
             // **ログアウトは板に無いが、まだ外せない。** 板ではメニュー（01d）に
             // あり、そのメニューがアプリに無い間はここが唯一の出口。
             // 確認なしで効くので、**削除と同じ節に並べない**（押し間違い）
-            Section {
-                if auth.userId != nil {
+            // **行の無い節を作らない**（足元ごと省かれると、未ログインの画面から
+            // バージョンが消える）。ログインしているときだけ節を置く
+            if auth.userId != nil {
+                Section {
                     Button {
                         Task {
                             // **通知の宛先は、ログアウトの前に外す。**
@@ -192,10 +197,10 @@ struct SettingsView: View {
                     } label: {
                         Label(Labels.Navigation.logout, systemImage: "rectangle.portrait.and.arrow.right")
                     }
+                } footer: {
+                    // 板の最下部の1行「バージョン [0.0.0] · 接続先 [本番]」
+                    Text(versionLine)
                 }
-            } footer: {
-                // 板の最下部の1行「バージョン [0.0.0] · 接続先 [本番]」
-                Text(versionLine)
             }
         }
         .webScreen()
