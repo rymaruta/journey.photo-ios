@@ -5,7 +5,8 @@ import XCTest
 /// 見るのは「再生中の表示」と「自分が鳴らした回か」の決まりだけ
 final class MusicPreviewPlayerTests: XCTestCase {
 
-    private let url = URL(string: "https://audio-ssl.itunes.apple.com/a.m4a")!
+    /// 通信しない URL（シミュレータで本物の AVPlayer が読みに行かないように）
+    private let url = URL(fileURLWithPath: "/nonexistent/a.m4a")
 
     override func tearDown() {
         MusicPreviewPlayer.shared.stop(releaseSession: false)

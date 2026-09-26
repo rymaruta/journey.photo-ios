@@ -144,13 +144,19 @@ final class MusicPreviewPlayer: ObservableObject {
         playingURL = nil
         playingSong = nil
         isPaused = false
-        guard releaseSession else {
-            // 返す予約が残っていれば取り消す（この後に鳴る動画の音を切らない）
-            deactivateTask?.cancel()
-            deactivateTask = nil
-            return
-        }
+        guard releaseSession else { return }
         scheduleRelease()
+    }
+
+    /// 返す予約を取り消す。**ストーリーの閲覧画面が開いたとき用**——直前に
+    /// 止めた曲（SongRow・閉じたばかりの前の閲覧画面）の予約が 200ms 後に届くと、
+    /// 開いた画面の動画の音を切る。場は持ったままになるので `sessionHeld` は残す
+    /// （閉じたときの `releaseSessionIfIdle()` が返す）
+    func cancelPendingRelease() {
+        guard deactivateTask != nil else { return }
+        deactivateTask?.cancel()
+        deactivateTask = nil
+        sessionHeld = true
     }
 
     /// 何も鳴らしていないのに場を持ったままなら返す。**ストーリーを閉じたとき用**
@@ -172,9 +178,13 @@ final class MusicPreviewPlayer: ObservableObject {
             try? await Task.sleep(nanoseconds: 200_000_000)
             // 待つ間に鳴らし直していたら返さない
             guard !Task.isCancelled, self?.player == nil else { return }
-            try? AVAudioSession.sharedInstance()
-                .setActive(false, options: .notifyOthersOnDeactivation)
-            self?.sessionHeld = false
+            // 返せなかった（isBusy など）ときは覚えたまま残す——次の
+            // `releaseSessionIfIdle()` で返し直せるように
+            do {
+                try AVAudioSession.sharedInstance()
+                    .setActive(false, options: .notifyOthersOnDeactivation)
+                self?.sessionHeld = false
+            } catch {}
         }
     }
 }

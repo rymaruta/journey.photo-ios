@@ -144,6 +144,8 @@ struct StoryViewerView: View {
         }
         // 曲（板の「♪」）。**鳴らしていなかった**——曲名を文字で出すだけだった
         .onAppear {
+            // 直前に止めた曲の「場を返す」予約が、この画面の動画の音を切らないように
+            MusicPreviewPlayer.shared.cancelPendingRelease()
             // **ほかで鳴っている曲は止める**（Web の `stopGlobalMusic`）。止めないと
             // 動画の音と重なり、「音を消す」がその曲を消音していた
             if MusicPreviewPlayer.shared.playingURL != nil {
