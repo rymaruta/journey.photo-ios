@@ -163,7 +163,7 @@ struct UserProfileView: View {
                         .font(JPFont.display(26, relativeTo: .title))
                         .foregroundStyle(Color.white)
                         .accessibilityAddTraits(.isHeader)
-                    VerifiedBadge(isVerified: model.profile?.verified, nameSize: 26, relativeTo: .title)
+                    VerifiedBadge(isVerified: model.profile?.verified, nameSize: 26, relativeTo: .title, fit: .mincho)
                 }
                 if let line = ProfileLine.handleAndHome(username: model.profile?.username,
                                                         home: model.profile?.homeLocation) {
