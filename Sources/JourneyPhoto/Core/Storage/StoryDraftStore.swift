@@ -85,16 +85,25 @@ final class StoryDraftStore: ObservableObject {
 
     private static let filePrefix = "story-draft-"
 
+    /// 下書きの記録から画像の名前だけを読む形
+    private struct ImageRef: Decodable {
+        let imageFile: String
+    }
+
     /// **どの下書きからも指されていない画像を消す**（古い名前で残ったもの）。
     ///
     /// 同じ端末の別の人の下書きは消さない——`UserDefaults` にある下書きを
-    /// 全員ぶん読み、指されている名前は残す
+    /// 全員ぶん読み、指されている名前は残す。
+    ///
+    /// **読むのは画像の名前だけ**（`ImageRef`）。`Draft` 全体で読むと、
+    /// 将来 `Draft` の形を変えたときに読めない記録が「画像を指していない」
+    /// 扱いになり、画像だけ消える
     private func sweepOrphans() {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
         let referenced = Set(defaults.dictionaryRepresentation().compactMap { entry -> String? in
             guard entry.key == Self.key || entry.key.hasPrefix("\(Self.key):"),
                   let data = entry.value as? Data,
-                  let saved = try? JSONDecoder().decode(Draft.self, from: data) else { return nil }
+                  let saved = try? JSONDecoder().decode(ImageRef.self, from: data) else { return nil }
             return saved.imageFile
         })
         for name in names where name.hasPrefix(Self.filePrefix) && name.hasSuffix(".jpg")
@@ -135,10 +144,12 @@ final class StoryDraftStore: ObservableObject {
         let file = Self.imageFileName(forKey: key(for: userId))
         // 前の下書きが別の名前（`hashValue` 時代）なら、書き終えたあとに消す
         let previous = defaults.data(forKey: key(for: userId))
-            .flatMap { try? JSONDecoder().decode(Draft.self, from: $0) }?.imageFile
+            .flatMap { try? JSONDecoder().decode(ImageRef.self, from: $0) }?.imageFile
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try imageData.write(to: fileURL(file))
+            // **一時ファイルに書いてから差し替える。** 名前が毎回同じなので、
+            // 途中で失敗すると（容量不足など）唯一の画像を壊してしまう
+            try imageData.write(to: fileURL(file), options: .atomic)
         } catch {
             return false
         }

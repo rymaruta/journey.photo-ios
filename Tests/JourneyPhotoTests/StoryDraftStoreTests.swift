@@ -96,6 +96,9 @@ final class StoryDraftStoreTests: XCTestCase {
         XCTAssertTrue(a.hasPrefix("story-draft-"))
         XCTAssertTrue(a.hasSuffix(".jpg"))
         XCTAssertFalse(a.contains("/"))
+        // **期待する文字列そのもので見る。** 同じ起動の中で2回比べるだけだと
+        // `hashValue` に戻しても通ってしまう（値が変わるのは起動をまたいだとき）
+        XCTAssertEqual(StoryDraftStore.imageFileName(forKey: "ab"), "story-draft-6162.jpg")
     }
 
     /// 何度保存しても**画像は1つ**
@@ -122,6 +125,25 @@ final class StoryDraftStoreTests: XCTestCase {
         reopened.use(userId: "u1")
         XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: kept.path))
+    }
+
+    /// アップデート直後の起動: 古い名前を**指している**画像は片づけで消さない
+    /// （下書きはそのまま戻る）
+    func testKeepsTheImageAnOldDraftStillPointsTo() async throws {
+        let (store, defaults, dir) = make()
+        store.use(userId: "u1")
+        save(store)
+        var draft = try XCTUnwrap(store.draft)
+        let legacy = dir.appendingPathComponent("story-draft-77.jpg")
+        try Data("old".utf8).write(to: legacy)
+        try FileManager.default.removeItem(at: dir.appendingPathComponent(draft.imageFile))
+        draft.imageFile = "story-draft-77.jpg"
+        defaults.set(try JSONEncoder().encode(draft), forKey: "journey-photo-story-draft:u1")
+
+        let reopened = StoryDraftStore(defaults: defaults, directory: dir)
+        reopened.use(userId: "u1")
+        XCTAssertNotNil(reopened.draft)
+        XCTAssertEqual(reopened.imageData(), Data("old".utf8))
     }
 
     /// 下書きが古い名前を指していたら、保存し直したときに古い画像を消す
