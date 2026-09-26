@@ -98,6 +98,22 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         }
     }
 
+    /// この見た目で選べる色。**帯に墨・黒の見た目に白は読めない**ので出さない
+    /// （帯は黒 65% の地、黒の見た目は白い縁——どちらも同じ色だと文字が消える）
+    static func inks(for style: Style) -> [Ink] {
+        switch style {
+        case .light: return Ink.allCases
+        case .dark: return Ink.allCases.filter { $0 != .white }
+        case .banner: return Ink.allCases.filter { $0 != .ink }
+        }
+    }
+
+    /// **描くときの色。** 選べない組（見た目を後から変えた・札で帯に固定された）は
+    /// 読める色に寄せる。画面も焼き込みもこれを通す
+    var drawnInk: Ink {
+        Self.inks(for: style).contains(ink) ? ink : (style == .dark ? .ink : .white)
+    }
+
     /// 札の種類（モック4-3 のスタンプ）。
     ///
     /// **持っているデータのものだけ。** モックには天気・食べ物・質問も

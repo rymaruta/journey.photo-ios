@@ -75,7 +75,7 @@ enum TextOverlayRenderer {
         // 同梱の書体（明朝・手書き風）。読めなければゴシック（端末の字）
         let font = overlay.face.fontName.flatMap { UIFont(name: $0, size: fontSize) }
             ?? UIFont.systemFont(ofSize: fontSize, weight: .bold)
-        let color = uiColor(overlay.ink)
+        let color = uiColor(overlay.drawnInk)
         switch overlay.style {
         case .light, .banner:
             return [.font: font, .foregroundColor: color]

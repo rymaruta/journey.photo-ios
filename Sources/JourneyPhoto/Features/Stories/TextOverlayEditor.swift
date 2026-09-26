@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 写真と、その上の文字（作る画面の全面・板 24 / 24b）。
 ///
@@ -46,6 +47,23 @@ struct StoryCanvas: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
+            // 2本指で**選んでいる札を**回す（板 24b「指で動かす・2本指で回す」）。
+            // 札そのものに付けると、2本とも小さな札の中に置かないと効かない
+            .simultaneousGesture(
+                RotationGesture()
+                    .onChanged { angle in
+                        guard let id = selectedId else { return }
+                        rotateId = id
+                        liveRotation = angle.radians
+                    }
+                    .onEnded { angle in
+                        if let id = rotateId, let i = overlays.firstIndex(where: { $0.id == id }) {
+                            overlays[i].rotation += angle.radians
+                        }
+                        rotateId = nil
+                        liveRotation = 0
+                    }
+            )
             .onAppear { remember(geometry.size) }
             .onChange(of: geometry.size) { _, size in remember(size) }
         }
@@ -54,7 +72,11 @@ struct StoryCanvas: View {
     /// 書体（同梱の明朝・手書き風。ゴシックは端末の太字）。**大きさは固定**——
     /// 焼き込みは画像の画素で描くので、文字の大きさの設定に追従させると割れる
     static func font(_ face: TextOverlay.Face, size: Double) -> Font {
-        if let name = face.fontName { return .custom(name, fixedSize: size) }
+        // **読めなかったときは焼き込みと同じ端末の太字に落とす。** `Font.custom` は
+        // 黙って標準の太さに落ちるので、画面だけ細くなる
+        if let name = face.fontName, UIFont(name: name, size: size) != nil {
+            return .custom(name, fixedSize: size)
+        }
         return .system(size: size, weight: .bold)
     }
 
@@ -84,14 +106,12 @@ struct StoryCanvas: View {
         return Text(overlay.displayText)
             // 書体と色は焼き込みと同じもの（`TextOverlayRenderer.attributes`）
             .font(Self.font(overlay.face, size: fontSize))
-            .foregroundStyle(Self.color(overlay.ink))
+            .foregroundStyle(Self.color(overlay.drawnInk))
             // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
             .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
             .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
             .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
             .shadow(radius: overlay.style == .light ? 6 : 0)
-            // 回しは中心の周り（焼き込みも中心の周り）
-            .rotationEffect(.radians(rotation))
             // 選んでいる札は破線で囲む（板 24b）
             .overlay {
                 if selectedId == overlay.id {
@@ -104,6 +124,9 @@ struct StoryCanvas: View {
             // （帯の見た目は広げない＝`background` より後ろに置く）
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
+            // 回しは中心の周り（焼き込みも中心の周り）。**破線と押せる範囲より後ろ**に
+            // 置いて一緒に回す——前に置くと、縦に回した文字の端を押しても掴めない
+            .rotationEffect(.radians(rotation))
             .position(x: center.x + (moving ? dragOffset.width : 0),
                       y: center.y + (moving ? dragOffset.height : 0))
             .gesture(
@@ -118,21 +141,6 @@ struct StoryCanvas: View {
                         move(overlay, by: value.translation, photo: photo, canvas: canvas)
                         dragId = nil
                         dragOffset = .zero
-                    }
-            )
-            // 2本指で回す（板 24b「指で動かす・2本指で回す」）
-            .simultaneousGesture(
-                RotationGesture()
-                    .onChanged { angle in
-                        rotateId = overlay.id
-                        liveRotation = angle.radians
-                    }
-                    .onEnded { angle in
-                        if let i = overlays.firstIndex(where: { $0.id == overlay.id }) {
-                            overlays[i].rotation += angle.radians
-                        }
-                        rotateId = nil
-                        liveRotation = 0
                     }
             )
             // 押すと選ぶ（直す・消すのも同じ入口）。
@@ -199,8 +207,9 @@ struct OverlayPanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
-                ForEach(TextOverlay.Ink.allCases) { ink in
-                    let selected = overlay.ink == ink
+                // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）
+                ForEach(TextOverlay.inks(for: overlay.style)) { ink in
+                    let selected = overlay.drawnInk == ink
                     Button {
                         overlay.ink = ink
                     } label: {
@@ -225,9 +234,10 @@ struct OverlayPanel: View {
                     ForEach(TextOverlay.Style.allCases) { style in
                         OverlayChip(title: style.label, selected: overlay.style == style) {
                             overlay.style = style
-                            // 白・黒を選んだら文字の色もそれに合わせる（黒の見た目に白い文字は読めない）
+                            // 黒を選んだら文字は墨に
                             if style == .dark { overlay.ink = .ink }
-                            if style == .light, overlay.ink == .ink { overlay.ink = .white }
+                            // 帯・白に墨が残っていたら白へ（帯の上の墨は読めない）
+                            overlay.ink = overlay.drawnInk
                         }
                     }
                 }

@@ -268,4 +268,16 @@ extension TextOverlayTests {
         XCTAssertEqual(TextOverlay(text: "a", style: .dark).ink, .ink)
         XCTAssertEqual(TextOverlay(text: "a", style: .light).ink, .white)
     }
+
+    /// 🔴 **帯に墨・黒の見た目に白は描かない**（地や縁と同じ色で文字が消える）。
+    /// 札（撮影地など）は帯に固定なので、墨を選んでいても白で描く
+    func testUnreadableInkIsNotDrawn() {
+        XCTAssertEqual(TextOverlay(text: "a", style: .banner, ink: .ink).drawnInk, .white)
+        XCTAssertEqual(TextOverlay(text: "a", style: .dark, ink: .white).drawnInk, .ink)
+        XCTAssertEqual(TextOverlay(text: "港", style: .light, kind: .place, ink: .ink).drawnInk, .white)
+        XCTAssertEqual(TextOverlay(text: "a", style: .banner, ink: .brass).drawnInk, .brass)
+        XCTAssertFalse(TextOverlay.inks(for: .banner).contains(.ink))
+        XCTAssertFalse(TextOverlay.inks(for: .dark).contains(.white))
+        XCTAssertEqual(TextOverlay.inks(for: .light), TextOverlay.Ink.allCases)
+    }
 }
