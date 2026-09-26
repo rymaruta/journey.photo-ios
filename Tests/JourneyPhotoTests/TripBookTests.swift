@@ -165,6 +165,19 @@ final class TripRouteTests: XCTestCase {
         XCTAssertEqual(sampled.last?.place, "P7")
         XCTAssertEqual(TripBook.sampledStops(Array(stops.prefix(3)), limit: 4).count, 3, "少なければそのまま")
     }
+
+    /// 間引いたあとに**同じ地名が隣り合わない**（行って戻った旅 A,B,A,B,C）
+    func testSamplingDoesNotLeaveRepeatedNeighbours() {
+        let stops = ["A", "B", "A", "B", "C"].enumerated().map {
+            TripBook.RouteStop(day: $0.offset + 1, place: $0.element)
+        }
+        let places = TripBook.sampledStops(stops, limit: 4).map(\.place)
+        XCTAssertEqual(places.first, "A")
+        XCTAssertEqual(places.last, "C")
+        for (left, right) in zip(places, places.dropFirst()) {
+            XCTAssertNotEqual(left, right, "同じ地名の点が隣に並んでいる: \(places)")
+        }
+    }
 }
 
 /// 旅の一冊・背表紙に出す文字と数（板 03・16）。
@@ -210,15 +223,41 @@ final class TripBookFactsTests: XCTestCase {
         XCTAssertEqual(TripBook.monthDay(utc("2026-09-03")), "09.03")
     }
 
-    /// **暦の日で数える。** 投稿日で代用した写真は時刻を持つので、経過秒で
-    /// 割ると 5/1 20:00 → 5/3 08:00 が「2日間」になり、範囲（05.01 — 05.03）と食い違う
-    func testDaysCountCalendarDaysNotElapsedTime() throws {
+    /// **投稿日時は撮った人の時刻帯の暦日で数える。** 日本時間の朝（0〜9 時）の
+    /// 投稿は UTC ではまだ前の日——UTC のまま数えると、同じ日の2枚が
+    /// 「05.01 — 05.02・2日間」に割れる（レビューで見つかった回帰）
+    func testPostedTimesUseTheLocalDayInTokyo() throws {
+        let tokyo = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
         let trip = try XCTUnwrap(TripBook.trips(from: [
-            try photo("a", created: "2026-05-01T20:00:00.000Z"),
-            try photo("b", created: "2026-05-03T08:00:00.000Z"),
-        ]).first)
-        XCTAssertEqual(trip.days, 3)
+            try photo("morning", created: "2026-05-01T22:00:00.000Z"),   // JST 5/2 07:00
+            try photo("evening", created: "2026-05-02T10:00:00.000Z"),   // JST 5/2 19:00
+        ], timeZone: tokyo).first)
+        XCTAssertEqual(TripBook.dateRange(from: trip.start, to: trip.end), "2026.05.02")
+        XCTAssertEqual(trip.days, 1)
+        XCTAssertEqual(TripBook.days(of: trip).map(\.number), [1])
+        XCTAssertEqual(trip.photos.map(\.id), ["morning", "evening"], "同じ日の中は投稿の時刻順")
+    }
+
+    /// 西の時刻帯でも同じ規則。**暦の日で数える**——経過秒で割ると
+    /// 5/1 20:00 → 5/3 08:00（36時間）が「2日間」になり、範囲と食い違う
+    func testPostedTimesUseTheLocalDayInLosAngeles() throws {
+        let losAngeles = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let trip = try XCTUnwrap(TripBook.trips(from: [
+            try photo("a", created: "2026-05-02T03:00:00.000Z"),   // LA 5/1 20:00
+            try photo("b", created: "2026-05-03T15:00:00.000Z"),   // LA 5/3 08:00
+        ], timeZone: losAngeles).first)
         XCTAssertEqual(TripBook.dateRange(from: trip.start, to: trip.end), "2026.05.01 — 05.03")
+        XCTAssertEqual(trip.days, 3)
+        XCTAssertEqual(TripBook.days(of: trip).map(\.number), [1, 3])
+    }
+
+    /// 撮影日（日付だけ）は時刻帯に関係なく書いてある日のまま
+    func testTakenDateIgnoresTheTimeZone() throws {
+        let losAngeles = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let trip = try XCTUnwrap(TripBook.trips(from: [
+            try photo("a", date: "2026-09-12"), try photo("b", date: "2026-09-14"),
+        ], timeZone: losAngeles).first)
+        XCTAssertEqual(TripBook.dateRange(from: trip.start, to: trip.end), "2026.09.12 — 09.14")
     }
 
     // MARK: 題

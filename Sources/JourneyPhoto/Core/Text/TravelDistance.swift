@@ -37,13 +37,10 @@ enum TravelDistance {
     ///
     /// **座標と日時の両方を持つ写真だけ**を古い順につなぐ。
     static func total(of photos: [Photo]) -> Double {
-        let points = photos
-            .compactMap { photo -> (Date, Photo.Coords)? in
-                guard let coords = photo.coords, let day = TripBook.day(of: photo) else { return nil }
-                return (day, coords)
-            }
-            .sorted { $0.0 < $1.0 }
-            .map(\.1)
+        // 並びは旅と同じ（日の順、同じ日の中は投稿の時刻順・`TripBook.inOrder`）
+        let points = TripBook.inOrder(photos)
+            .filter { TripBook.day(of: $0) != nil }
+            .compactMap(\.coords)
 
         guard points.count >= 2 else { return 0 }
         var total = 0.0

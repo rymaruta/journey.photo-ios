@@ -65,6 +65,8 @@ struct TripBookView: View {
                 Text(L("TRIP BOOK · 自動でまとまった旅", "TRIP BOOK · Put together for you"))
                     .jpEyebrow()
                     .foregroundStyle(Color.white.opacity(0.85))
+                    // 読み上げは「旅の一冊」（「トリップブック」と英語で読ませない）
+                    .accessibilityLabel(L("旅の一冊 · 自動でまとまった旅", "Trip book · Put together for you"))
                 Text(TripBook.title(of: trip))
                     .font(JPFont.display(44, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.foreground)
@@ -92,6 +94,10 @@ struct TripBookView: View {
         .background(Color.white.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        // 3枠を1つの要素に（読み上げは「12 枚、3 撮影地、…」と続けて読む）。
+        // スクリーンショットの `31-旅の足取り` がルート図の無い旅で代わりに探す
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("trips.stats")
     }
 
     /// 升1つ。形はストーリーの反応（`StoryInsightsView.countCell`）と同じ板の部品
@@ -142,6 +148,8 @@ struct TripBookView: View {
                 .background(Self.cellColor, in: RoundedRectangle(cornerRadius: 14))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(stops.map { "DAY \($0.day) \($0.place)" }.joined(separator: "、"))
+                // スクリーンショットの `31-旅の足取り` がここまで送って撮る
+                .accessibilityIdentifier("trips.route")
             }
         }
     }

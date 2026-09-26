@@ -4,9 +4,10 @@ import Foundation
 ///
 /// 画面を持たない層に置いて、Linux の `swift test` で見張る。
 ///
-/// **日付は全部 UTC の暦で数える。** `TripBook.day(of:)` が撮影日を
-/// UTC の 0 時として読むので、端末の時刻帯で書くと西の国では
-/// 「09.12」が「09.11」にずれる。
+/// **日は「その日の UTC 0 時」で持ち、UTC の暦で数える。** `TripBook.day(of:in:)` が
+/// 撮影日をそう読み、投稿日時も**撮った人の時刻帯の暦日に直してから**同じ形に
+/// 揃える。だからここで端末の時刻帯を使って書くと、西の国では
+/// 「09.12」が「09.11」にずれる（時刻帯を効かせるのは `day(of:in:)` の1か所だけ）。
 extension TripBook {
 
     // MARK: - 題
@@ -90,7 +91,7 @@ extension TripBook {
             current = []
         }
         for photo in trip.photos {
-            let date = day(of: photo) ?? trip.start
+            let date = day(of: photo, in: trip.timeZone) ?? trip.start
             let number = calendarDays(from: trip.start, to: date) + 1
             if number != currentNumber { flush(); currentNumber = number; currentDate = date }
             current.append(photo)
@@ -116,7 +117,7 @@ extension TripBook {
         for photo in trip.photos {
             guard let place = photo.location?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !place.isEmpty, stops.last?.place != place else { continue }
-            let day = calendarDays(from: trip.start, to: TripBook.day(of: photo) ?? trip.start) + 1
+            let day = calendarDays(from: trip.start, to: TripBook.day(of: photo, in: trip.timeZone) ?? trip.start) + 1
             stops.append(RouteStop(day: day, place: place))
         }
         return stops.count >= 2 ? stops : []
@@ -128,9 +129,16 @@ extension TripBook {
     static func sampledStops(_ stops: [RouteStop], limit: Int = 4) -> [RouteStop] {
         guard stops.count > limit, limit >= 2 else { return stops }
         let last = stops.count - 1
-        return (0..<limit).map { index in
+        let picked = (0..<limit).map { index in
             stops[Int((Double(index) * Double(last) / Double(limit - 1)).rounded())]
         }
+        // **間引いたあとにも隣の同名をまとめる。** 行って戻った旅（A,B,A,B,C）は
+        // 間の点を抜くと B,B が隣り合い、同じ地名の点が2つ並ぶ
+        var result: [RouteStop] = []
+        for stop in picked where result.last?.place != stop.place {
+            result.append(stop)
+        }
+        return result
     }
 
     // MARK: - 共有
