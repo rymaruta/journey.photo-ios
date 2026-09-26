@@ -367,9 +367,9 @@ struct StoryComposerView: View {
     @ViewBuilder
     private var topBar: some View {
         if textMode {
-            // 板 24b: やめる／文字と札／できた
+            // 板 24b: キャンセル／文字と札／完了（owner: 「やめる・できた」は幼い）
             HStack {
-                Button(L("やめる", "Cancel")) {
+                Button(L("キャンセル", "Cancel")) {
                     // **入ったときの写真へ戻す**（表示中の写真が移っていても取り違えない）
                     if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
                         shots[i].overlays = overlaySnapshot
@@ -384,7 +384,7 @@ struct StoryComposerView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(WebTheme.muted2)
                 Spacer()
-                Button(L("できた", "Done")) {
+                Button(L("完了", "Done")) {
                     // 空のまま閉じたら置かない（見えない物を焼き込まない）
                     if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
                         shots[i].overlays.removeAll { $0.isEmpty }
