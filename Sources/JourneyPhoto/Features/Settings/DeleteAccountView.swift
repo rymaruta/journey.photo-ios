@@ -27,7 +27,7 @@ struct DeleteAccountView: View {
             Section {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(L("アカウントを削除すると、次のものが消えます。", "Deleting your account removes:"))
-                        .font(.body.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                     VStack(alignment: .leading, spacing: 10) {
                         removed(L("投稿した写真と画像ファイル", "Your photos and image files"))
                         removed(L("プロフィール（名前・自己紹介・アイコン）", "Your profile (name, bio, avatar)"))
@@ -53,24 +53,20 @@ struct DeleteAccountView: View {
                 // 戻り値（ただの String）では記号がそのまま見える。
                 // 太字にしたいなら font で言う
                 Text(L("この操作は取り消せません。", "This cannot be undone."))
-                    .font(.body.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.danger)
                 // 板は欄の上に見出し、欄の中は語そのものの下書き
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L("確認のため「\(Self.confirmWord)」と入力", "Type “\(Self.confirmWord)” to confirm"))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(WebTheme.muted2)
-                        .accessibilityHidden(true)
+                JPField(L("確認のため「\(Self.confirmWord)」と入力", "Type “\(Self.confirmWord)” to confirm")) {
                     TextField(Self.confirmWord, text: $typed)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .accessibilityLabel(L("確認のため「\(Self.confirmWord)」と入力", "Type “\(Self.confirmWord)” to confirm"))
                 }
             }
-            .listRowBackground(Color.clear)
+            .jpFormRow()
 
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout) }
+                    .jpFormRow()
             }
 
         }
@@ -99,19 +95,13 @@ struct DeleteAccountView: View {
                     Text(L("アカウントを削除する", "Delete my account"))
                 }
             }
-            .font(.body.weight(.semibold))
-            .foregroundStyle(Color.white)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(WebTheme.dangerFill, in: Capsule())
+            .jpPillButton(.danger)
         }
         .buttonStyle(.plain)
         .disabled(!canDelete)
         // 消している最中は薄くしない（押せないのは同じ・進み具合を見せる）
         .opacity(canDelete || isWorking ? 1 : 0.4)
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .background(.ultraThinMaterial)
+        .jpBottomBar()
     }
 
     /// 消えるものの1行（板の赤い ×）

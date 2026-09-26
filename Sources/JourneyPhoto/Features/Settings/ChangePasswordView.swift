@@ -16,11 +16,11 @@ struct ChangePasswordView: View {
         Form {
             // 板 44: 欄の上に小さい見出し
             Section {
-                labeled(L("いまのパスワード", "Current password")) {
+                JPField(L("いまのパスワード", "Current password")) {
                     SecureField("", text: $current)
                         .textContentType(.password)
                 }
-                labeled(L("新しいパスワード", "New password")) {
+                JPField(L("新しいパスワード", "New password")) {
                     SecureField("", text: $updated)
                         .textContentType(.newPassword)
                 }
@@ -28,10 +28,11 @@ struct ChangePasswordView: View {
                 // 板には無いが残す——決まりを知らずに打つと、送ってから断られる
                 Text(AuthMessage.passwordRule)
             }
-            .listRowBackground(Color.clear)
+            .jpFormRow()
 
             if let error = auth.errorMessage {
                 Section { Text(error).foregroundStyle(WebTheme.danger).font(.callout) }
+                    .jpFormRow()
             }
 
             Section {
@@ -45,28 +46,16 @@ struct ChangePasswordView: View {
                     }
                 } label: {
                     Text(L("変える", "Change"))
-                        .frame(maxWidth: .infinity)
-                        .webPrimaryButton()
+                        .jpPillButton()
                 }
                 .buttonStyle(.plain)
                 .disabled(auth.isWorking || current.isEmpty || updated.isEmpty)
                 .opacity(auth.isWorking || current.isEmpty || updated.isEmpty ? 0.4 : 1)
             }
-            .listRowBackground(Color.clear)
+            .jpFormRow()
         }
         .webScreen()
         .navigationTitle(L("パスワードを変える", "Change password"))
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func labeled<Field: View>(_ title: String, @ViewBuilder field: () -> Field) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(WebTheme.muted2)
-                .accessibilityHidden(true)
-            field()
-                .accessibilityLabel(title)
-        }
     }
 }

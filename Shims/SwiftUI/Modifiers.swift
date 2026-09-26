@@ -80,6 +80,7 @@ public struct AccessibilityTraits: OptionSet {
     public static let isSelected = AccessibilityTraits(rawValue: 1)
     public static let isModal = AccessibilityTraits(rawValue: 1 << 5)
     public static let isButton = AccessibilityTraits(rawValue: 2)
+    public static let isHeader = AccessibilityTraits(rawValue: 1 << 3)
 }
 public struct TextInputAutocapitalization {
     public static let never = TextInputAutocapitalization()
@@ -98,6 +99,17 @@ public struct UITextContentTypeShim {
     public static let oneTimeCode = UITextContentTypeShim()
     public static let name = UITextContentTypeShim()
 }
+/// 自前の押し方の模型（本物と同じ形）。`makeBody` に押している間かが来る
+public protocol ButtonStyle {
+    associatedtype Body: View
+    typealias Configuration = ButtonStyleConfiguration
+    @ViewBuilder func makeBody(configuration: Configuration) -> Body
+}
+public struct ButtonStyleConfiguration {
+    public struct Label: View { public var body: Never { fatalError("模型") } }
+    public let label: Label
+    public let isPressed: Bool
+}
 public struct PrimitiveButtonStyleShim {
     public static let plain = PrimitiveButtonStyleShim()
     public static let bordered = PrimitiveButtonStyleShim()
@@ -112,6 +124,16 @@ public struct PickerStyleShim {
 public struct TextFieldStyleShim {
     public static let plain = TextFieldStyleShim()
     public static let roundedBorder = TextFieldStyleShim()
+}
+public struct ScrollDismissesKeyboardModeShim {
+    public static let automatic = ScrollDismissesKeyboardModeShim()
+    public static let immediately = ScrollDismissesKeyboardModeShim()
+    public static let interactively = ScrollDismissesKeyboardModeShim()
+    public static let never = ScrollDismissesKeyboardModeShim()
+}
+public struct ListStyleShim {
+    public static let plain = ListStyleShim()
+    public static let insetGrouped = ListStyleShim()
 }
 public struct VisibilityShim {
     public static let automatic = VisibilityShim()
@@ -176,6 +198,8 @@ extension View {
     public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 揃えの位置を自分で決める（本物と同じ）
+    public func alignmentGuide(_ g: VerticalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 端を選んで安全領域を無視する（本物は `regions:` も取る）
     public func ignoresSafeArea(edges: Edge.Set) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 画面の端に貼り付く帯（iOS 15+）。本物はスクロールの底の余白も足す。
@@ -201,7 +225,7 @@ extension View {
     public func tracking(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func dynamicTypeSize(_ range: PartialRangeThrough<DynamicTypeSize>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func textCase(_ c: Text.Case?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
-    public func underline(_ on: Bool, color: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func underline(_ on: Bool = true, color: Color? = nil) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 
     // 見た目
     public func font(_ f: Font?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -211,6 +235,8 @@ extension View {
     public func foregroundStyle<S1: ShapeStyle, S2: ShapeStyle>(_ primary: S1, _ secondary: S2)
         -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func background<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 安全域まで伸ばす辺を言う版（本物は既定が `.all`）
+    public func background<S: ShapeStyle>(_ s: S, ignoresSafeAreaEdges edges: Edge.Set) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func background<S: ShapeStyle, T: Shape>(_ s: S, in shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 後ろに View を敷く版（本物にもある）。`alignment` で寄せる
     public func background<V: View>(alignment: Alignment = .center,
@@ -219,6 +245,10 @@ extension View {
     public func listRowBackground<V: View>(_ view: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 行の余白（本物と同じ）。`ProfileEditView` のカバーを端まで広げるのに使う
     public func listRowInsets(_ insets: EdgeInsets?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 一覧の形（本物と同じ）
+    public func listStyle(_ style: ListStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 行の区切り線を出すか（本物と同じ。`.listRowBackground(.clear)` では線は消えない）
+    public func listRowSeparator(_ visibility: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(radius: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(color: Color, radius: Double, x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -237,10 +267,16 @@ extension View {
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(_ content: V, alignment: Alignment = .center) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func buttonStyle(_ s: PrimitiveButtonStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 自前の押し方（本物と同じ）
+    public func buttonStyle<S: ButtonStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func pickerStyle(_ s: PickerStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func textFieldStyle(_ s: TextFieldStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func controlSize(_ s: ControlSizeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func labelsHidden() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 下へ払って閉じるのを止める（本物と同じ）
+    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// スクロールでキーボードを下げる（本物と同じ）
+    public func scrollDismissesKeyboard(_ mode: ScrollDismissesKeyboardModeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func focused(_ condition: Binding<Bool>) -> Self { self }
     public func disabled(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tag<V: Hashable>(_ v: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -316,6 +352,7 @@ extension View {
     /// 読み上げの補足（本物と同じ）。`DailyThemeCard` が使う——**模型に無いと
     /// Linux 側のビルドだけが落ちる**（75f98e2 で main がそうなっていた）
     public func accessibilityHint(_ hint: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    public func accessibilityValue(_ value: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
 
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
