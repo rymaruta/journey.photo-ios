@@ -21,8 +21,7 @@ struct PhotoMapView: View {
     var onPost: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
-    /// **ブロック／通報の直後に消す。** 地図はタブの根で `.task` が二度と
-    /// 走らないので、ブロックした人のピンが残り続けていた
+    /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
     @EnvironmentObject private var hidden: ModerationStore
     /// ブロック／通報があったが、まだピンから落としていない。
     /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
@@ -116,7 +115,8 @@ struct PhotoMapView: View {
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
                 span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))))
         }
-        .sheet(isPresented: $showNearby) {
+        // 近くの写真のシートの中でブロックした回も同じ（地図は見え続けている）
+        .sheet(isPresented: $showNearby, onDismiss: { if needsDrop { dropHidden() } }) {
             if let here {
                 NearbyPhotosSheet(center: here, photos: model.photos)
             }
@@ -1094,9 +1094,6 @@ struct PhotoMapView: View {
 
     // MARK: - カメラ
 
-    /// 地図をその枠へ寄せる。nil なら動かさない（既定に戻して地球儀にしない）
-    ///
-    /// ＋−の続け押しの控え（`ZoomChain`）は忘れる——ボタン以外で動いた
     /// 手元のピンからブロック／通報したぶんを落とす。選んでいた札が
     /// 落ちた写真を持っていたら下げる（札は押した時点のピンの写しを持つ）
     private func dropHidden() {
@@ -1107,6 +1104,9 @@ struct PhotoMapView: View {
         }
     }
 
+    /// 地図をその枠へ寄せる。nil なら動かさない（既定に戻して地球儀にしない）
+    ///
+    /// ＋−の続け押しの控え（`ZoomChain`）は忘れる——ボタン以外で動いた
     private func frame(_ frame: MapFraming.Frame?) {
         zoomChain.reset()
         move(to: frame)
