@@ -42,8 +42,12 @@ struct StoryComposerView: View {
     @State private var textMode = false
     /// 選んでいる札
     @State private var selectedId: UUID?
-    /// 編集に入ったときの写し（「やめる」で戻す）
+    /// 編集に入ったときの写し（「やめる」で戻す）と、**どの写真の編集か**。
+    /// 編集中に並びが増えて表示中の写真が移っても、戻す先を取り違えない
     @State private var overlaySnapshot: [TextOverlay] = []
+    @State private var editingShotId: UUID?
+    /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
+    @FocusState private var captionFocused: Bool
     /// 撮影地を打つ（右の列の「撮影地」）
     @State private var showPlaceEditor = false
     /// 写真を選ぶ画面（「＋」のメニューと、写真が無いときの入口から開く）
@@ -149,8 +153,9 @@ struct StoryComposerView: View {
                 StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays,
                             selectedId: textMode ? selectedId : nil,
                             onTap: { overlay in
-                                // 押したら文字と札の編集へ（その札を選んだ状態で）
-                                enterTextMode()
+                                // 押したら文字と札の編集へ（その札を選んだ状態で）。
+                                // **編集中に押したときは写しを取り直さない**（「やめる」の戻り先が変わる）
+                                if !textMode { enterTextMode() }
                                 selectedId = overlay.id
                             })
             } else {
@@ -178,6 +183,8 @@ struct StoryComposerView: View {
         .overlay(alignment: .topTrailing) {
             if !textMode && preview != nil {
                 toolColumn
+                    // 送っている間は触らせない（失敗すると並びが詰め直される）
+                    .disabled(isWorking)
                     .padding(.trailing, 12)
                     .padding(.top, 120)
             }
@@ -204,10 +211,10 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if textMode, let index = selectedIndex {
-                OverlayPanel(overlay: overlaysBinding(at: index)) {
-                    overlays.wrappedValue.remove(at: index)
-                    selectedId = nil
+            if textMode, let selectedId, selectedIndex != nil {
+                OverlayPanel(overlay: overlayBinding(id: selectedId)) {
+                    overlays.wrappedValue.removeAll { $0.id == selectedId }
+                    self.selectedId = nil
                 }
             }
         }
@@ -244,7 +251,18 @@ struct StoryComposerView: View {
     private var toolColumn: some View {
         VStack(spacing: 10) {
             toolButton(symbol: "textformat", label: L("文字と札", "Text and stickers")) { enterTextMode() }
-            toolButton(symbol: "music.note", label: L("曲を付ける", "Add a song")) { showSongPicker = true }
+            if song == nil {
+                toolButton(symbol: "music.note", label: L("曲を付ける", "Add a song")) { showSongPicker = true }
+            } else {
+                // 付けた曲は変える・外すを選ぶ（外す口が無かった）
+                Menu {
+                    Button(L("曲を変える", "Change song")) { showSongPicker = true }
+                    Button(L("曲を外す", "Remove song"), role: .destructive) { song = nil }
+                } label: {
+                    toolIcon("music.note")
+                }
+                .accessibilityLabel(L("曲", "Song"))
+            }
             toolButton(symbol: "mappin", label: L("撮影地", "Place")) {
                 placeDraft = location
                 showPlaceEditor = true
@@ -276,7 +294,12 @@ struct StoryComposerView: View {
     /// 写真の上のひとこと（明朝32・影）と、撮影地・曲の札。**ひとことはその場で打つ**
     private var captionBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField(L("ひとことを書く", "Write a caption"), text: $caption, axis: .vertical)
+            TextField(L("ひとことを書く", "Write a caption"), text: Binding(
+                get: { caption },
+                // サーバーが 200字で切る（`stories.ts`）。**改行は入れない**（見る画面は1段落）
+                set: { caption = String($0.replacingOccurrences(of: "\n", with: " ").prefix(200)) }
+            ), axis: .vertical)
+                .focused($captionFocused)
                 .font(JPFont.display(32, relativeTo: .largeTitle))
                 .foregroundStyle(.white)
                 .lineLimit(1...4)
@@ -342,7 +365,10 @@ struct StoryComposerView: View {
             // 板 24b: やめる／文字と札／できた
             HStack {
                 Button(L("やめる", "Cancel")) {
-                    overlays.wrappedValue = overlaySnapshot
+                    // **入ったときの写真へ戻す**（表示中の写真が移っていても取り違えない）
+                    if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
+                        shots[i].overlays = overlaySnapshot
+                    }
                     leaveTextMode()
                 }
                 .font(.system(size: 16))
@@ -355,7 +381,9 @@ struct StoryComposerView: View {
                 Spacer()
                 Button(L("できた", "Done")) {
                     // 空のまま閉じたら置かない（見えない物を焼き込まない）
-                    overlays.wrappedValue.removeAll { $0.isEmpty }
+                    if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
+                        shots[i].overlays.removeAll { $0.isEmpty }
+                    }
                     leaveTextMode()
                 }
                 .font(.system(size: 16, weight: .semibold))
@@ -377,6 +405,18 @@ struct StoryComposerView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Labels.Common.close)
                 Spacer()
+                if captionFocused {
+                    // ひとことのキーボードを閉じる（複数行なので Return では閉じない）
+                    Button { captionFocused = false } label: {
+                        Text(L("完了", "Done"))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(WebTheme.accentText)
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 36)
+                            .background(WebTheme.accentBackground, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                } else {
                 // **写真が無ければ下書きにできない。** 文字だけ残しても
                 // 「続きから」で出すものが無い
                 Button { saveDraft() } label: {
@@ -390,6 +430,7 @@ struct StoryComposerView: View {
                 .buttonStyle(.plain)
                 .disabled(prepared == nil || isWorking)
                 .opacity(prepared == nil ? 0.4 : 1)
+                }
             }
         }
     }
@@ -465,13 +506,17 @@ struct StoryComposerView: View {
     // MARK: - 文字と札の出入り
 
     private func enterTextMode() {
-        overlaySnapshot = overlays.wrappedValue
+        guard shots.indices.contains(current) else { return }
+        captionFocused = false
+        overlaySnapshot = shots[current].overlays
+        editingShotId = shots[current].id
         textMode = true
     }
 
     private func leaveTextMode() {
         textMode = false
         selectedId = nil
+        editingShotId = nil
     }
 
     private var selectedIndex: Int? {
@@ -479,12 +524,14 @@ struct StoryComposerView: View {
         return overlays.wrappedValue.firstIndex { $0.id == selectedId }
     }
 
-    private func overlaysBinding(at index: Int) -> Binding<TextOverlay> {
+    /// 選んだ札への窓。**位置ではなく id で引く**（消した直後に変換中の文字が
+    /// 確定して書き込みが走っても、隣の札を書き換えない）
+    private func overlayBinding(id: UUID) -> Binding<TextOverlay> {
         Binding(
-            get: { overlays.wrappedValue.indices.contains(index) ? overlays.wrappedValue[index] : TextOverlay(text: "") },
+            get: { overlays.wrappedValue.first { $0.id == id } ?? TextOverlay(text: "") },
             set: { value in
                 var list = overlays.wrappedValue
-                if list.indices.contains(index) { list[index] = value; overlays.wrappedValue = list }
+                if let i = list.firstIndex(where: { $0.id == id }) { list[i] = value; overlays.wrappedValue = list }
             }
         )
     }
@@ -547,8 +594,9 @@ struct StoryComposerView: View {
             }
             let shot = StoryShot(prepared: prepared, image: UIImage(data: prepared.data))
             shots.append(shot)
-            // 足したらそれを編集する（選んだ直後に文字を置ける）
-            current = shots.count - 1
+            // 足したらそれを編集する（選んだ直後に文字を置ける）。
+            // **文字と札の編集中は移らない**（編集している写真が入れ替わる）
+            if !textMode { current = shots.count - 1 }
             self.message = nil
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")
@@ -572,6 +620,8 @@ struct StoryComposerView: View {
                         Label(L("この写真を外す", "Remove this photo"), systemImage: "trash")
                     }
                 }
+                // 読み上げからも外せる（長押しのメニューは見つけにくい）
+                .accessibilityAction(named: L("この写真を外す", "Remove this photo")) { remove(at: index) }
             }
             if shots.count < StoryQueue.maxShots {
                 Menu {

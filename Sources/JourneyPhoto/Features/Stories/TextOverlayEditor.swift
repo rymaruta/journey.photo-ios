@@ -24,6 +24,9 @@ struct StoryCanvas: View {
     /// つまんでいる最中の見た目の移動量（離したときに位置へ反映する）
     @State private var dragId: UUID?
     @State private var dragOffset: CGSize = .zero
+    /// **キーボードで縮む前の枠の大きさ。** 見えている範囲はこれで決める——
+    /// 縮んだ枠で決めると、キーボードを閉じたあとに画面の外へ出る札を作れた
+    @State private var stableSize: CGSize = .zero
 
     var body: some View {
         GeometryReader { geometry in
@@ -40,6 +43,15 @@ struct StoryCanvas: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
+            .onAppear { remember(geometry.size) }
+            .onChange(of: geometry.size) { _, size in remember(size) }
+        }
+    }
+
+    /// 幅が変わったら測り直し、同じ幅なら高い方を覚える
+    private func remember(_ size: CGSize) {
+        if size.width != stableSize.width || size.height > stableSize.height {
+            stableSize = size
         }
     }
 
@@ -95,9 +107,12 @@ struct StoryCanvas: View {
 
     private func move(_ overlay: TextOverlay, by translation: CGSize, photo: CGRect, canvas: CGSize) {
         guard let index = overlays.firstIndex(where: { $0.id == overlay.id }) else { return }
+        // 見えている範囲は縮む前の枠で決める
+        let full = stableSize == .zero ? canvas : stableSize
+        let fullPhoto = TextOverlay.filledRect(image: imageSize ?? full, in: full)
         overlays[index] = overlays[index]
             .moved(by: translation, in: photo.size)
-            .clamped(toVisible: photo, canvas: canvas)
+            .clamped(toVisible: fullPhoto, canvas: full)
     }
 }
 
@@ -121,6 +136,12 @@ struct OverlayPanel: View {
                 .frame(height: 44)
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            } else {
+                // 時刻・日付は端末から採った値（直せない）。何の札かだけ見せる
+                Text(overlay.displayText)
+                    .font(.system(size: 15))
+                    .foregroundStyle(WebTheme.muted)
+                    .frame(minHeight: 44)
             }
 
             HStack(spacing: 8) {
