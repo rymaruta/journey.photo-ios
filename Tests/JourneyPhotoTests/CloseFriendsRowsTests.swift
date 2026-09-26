@@ -97,8 +97,10 @@ final class CloseFriendsSaveTests: XCTestCase {
         XCTAssertEqual(outcome.done, 1)
         XCTAssertEqual(outcome.total, 3)
         XCTAssertFalse(outcome.finished)
-        let message = CloseFriendsRows.partialMessage(outcome) ?? ""
-        XCTAssertTrue(message.contains("1") && message.contains("3") && message.contains("2"), message)
+        // **文そのもので比べる**（数字が含まれるかだけでは、保存できた数と
+        // 残りの取り違えを捕まえられない）
+        XCTAssertEqual(CloseFriendsRows.partialMessage(outcome),
+                       "変更 3 件のうち 1 件を保存しました。残りの 2 件は保存できていません。もう一度「保存」を押してください。")
         // もう一度押したときに送るのは残りだけ
         let rest = CloseFriendsRows.changes(saved: outcome.saved, picked: ["b", "c"], order: ["a", "b", "c"])
         XCTAssertEqual(rest.map(\.userId), ["b", "c"])
@@ -111,5 +113,29 @@ final class CloseFriendsSaveTests: XCTestCase {
         }
         XCTAssertEqual(outcome.saved, [])
         XCTAssertTrue(outcome.finished)
+    }
+
+    /// 1件も送れなかったときは「0件保存」と言わない
+    func testMessageWhenNothingWasSaved() {
+        let outcome = CloseFriendsRows.SaveOutcome(saved: [], done: 0, total: 2)
+        XCTAssertEqual(CloseFriendsRows.partialMessage(outcome),
+                       "保存できませんでした。もう一度「保存」を押してください。")
+    }
+
+    /// 上限はサーバーの `CLOSE_FRIENDS_MAX`（200）。**超えている間は保存させない**
+    /// ——サーバーは断らずに古い人を黙って押し出す
+    func testOverLimitBlocksSaving() {
+        let ids = (0..<201).map { "u\($0)" }
+        XCTAssertEqual(CloseFriendsRows.limit, 200)
+        XCTAssertFalse(CloseFriendsRows.overLimit(Set(ids.prefix(200))))
+        XCTAssertTrue(CloseFriendsRows.overLimit(Set(ids)))
+    }
+
+    /// 🔴 **送っていない変更があるまま黙って戻らせない。** 送っている最中は戻らせない
+    func testLeavingAsksWhenThereAreUnsavedChanges() {
+        XCTAssertEqual(CloseFriendsRows.leave(hasChanges: false, isSaving: false), .now)
+        XCTAssertEqual(CloseFriendsRows.leave(hasChanges: true, isSaving: false), .confirm)
+        XCTAssertEqual(CloseFriendsRows.leave(hasChanges: true, isSaving: true), .wait)
+        XCTAssertEqual(CloseFriendsRows.leave(hasChanges: false, isSaving: true), .wait)
     }
 }

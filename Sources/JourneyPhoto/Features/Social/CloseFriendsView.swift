@@ -14,8 +14,13 @@ import SwiftUI
 /// **選んでから右上の「保存」で送る**（板 39・2026-09-26）。以前は押すたびに
 /// その場で保存していた。サーバーにまとめて書く口は無いので、保存では
 /// **差分だけを1件ずつ**送り、途中で失敗したら止めて「何件保存できたか」を
-/// 出す（`CloseFriendsRows.save`）。全部送れたら閉じる。保存していない選択は
-/// 画面を離れると消える（戻るときの確認はまだ無い）。
+/// 出す（`CloseFriendsRows.save`）。全部送れたら閉じる。
+///
+/// 🔴 **送っていない変更があるまま黙って戻らせない。** 投稿・写真の編集の
+/// 「親しい友達を選ぶ」から来た人は、以前の「押したら保存」の癖で戻る。
+/// 黙って捨てると0人のまま「親しい友達」限定の写真が出て、誰にも見えない。
+/// 変更がある間・送っている間は標準の戻る（と左端の払い）を隠し、自前の戻るで
+/// 「保存して戻る／変更を捨てる／キャンセル」を確かめる（`CloseFriendsRows.leave`）。
 ///
 /// 板との意図的な差: 説明文は「写真」向け（下の注記）・「フォロー中の一覧に
 /// 出ない人」の段がある（上の注記）・選択の印は星（板はチェック）。
@@ -40,11 +45,20 @@ struct CloseFriendsView: View {
     @State private var isSaving = false
     /// 保存が途中で止まった／失敗した知らせ。**アラートで出す**
     @State private var saveError: String?
+    /// 「保存して戻る／変更を捨てる」の確認
+    @State private var confirmLeave = false
 
     /// 送るもの（外す方が先・画面の並び）
     private var pending: [CloseFriendsRows.Change] {
         CloseFriendsRows.changes(saved: saved, picked: chosen,
                                  order: (others + following).map(\.id))
+    }
+    private var canSave: Bool {
+        !pending.isEmpty && !overLimit && !isLoading && errorMessage == nil
+    }
+    private var overLimit: Bool { CloseFriendsRows.overLimit(chosen) }
+    private var leave: CloseFriendsRows.Leave {
+        CloseFriendsRows.leave(hasChanges: !pending.isEmpty, isSaving: isSaving)
     }
     private var shownOthers: [FollowUser] { ListIdentity.filter(others, query: query) }
     private var shownFollowing: [FollowUser] { ListIdentity.filter(following, query: query) }
@@ -82,6 +96,13 @@ struct CloseFriendsView: View {
             } else {
                 Section {
                     searchField
+                    if overLimit {
+                        // **保存を押せない理由を出す**（黙って灰色にしない）
+                        Text(L("選べるのは \(CloseFriendsRows.limit) 人までです（いま \(chosen.count) 人）。減らすと保存できます。",
+                               "You can pick up to \(CloseFriendsRows.limit) people (now \(chosen.count)). Remove some to save."))
+                            .font(.footnote)
+                            .foregroundStyle(WebTheme.danger)
+                    }
                 }
                 .listRowBackground(Color.clear)
                 if shownOthers.isEmpty && shownFollowing.isEmpty {
@@ -123,8 +144,25 @@ struct CloseFriendsView: View {
         .webScreen()
         .navigationTitle(L("親しい友達", "Close friends"))
         .navigationBarTitleDisplayMode(.inline)
+        // 変更がある間・送っている間は標準の戻るを隠す（左端から払って戻るのも止まる）
+        .navigationBarBackButtonHidden(leave != .now)
         .toolbar {
-            // **保存は右上**（板 39）。変えたものが無い間は押せない
+            if leave != .now {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        if leave == .confirm { confirmLeave = true }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    // 送っている最中は戻らせない（途中の失敗が消えた画面に出る）
+                    .disabled(leave == .wait)
+                    .accessibilityLabel(L("戻る", "Back"))
+                }
+            }
+            // **保存は右上**（板 39）。変えたものが無い間・上限を超えている間は押せない
             ToolbarItem(placement: .topBarTrailing) {
                 if isSaving {
                     ProgressView()
@@ -134,10 +172,26 @@ struct CloseFriendsView: View {
                     }
                     .font(.body.weight(.semibold))
                     // 押せない間は真鍮にしない（明示した色は disabled でも薄くならない）
-                    .foregroundStyle(pending.isEmpty ? WebTheme.muted2 : WebTheme.accent)
-                    .disabled(pending.isEmpty || isLoading || errorMessage != nil)
+                    .foregroundStyle(canSave ? WebTheme.accent : WebTheme.muted2)
+                    .disabled(!canSave)
                 }
             }
+        }
+        .confirmationDialog(L("変更を保存しますか？", "Save your changes?"),
+                            isPresented: $confirmLeave, titleVisibility: .visible) {
+            // 上限を超えている間は保存できないので、選択肢に出さない
+            if !overLimit {
+                Button(L("保存して戻る", "Save and go back")) {
+                    Task { await save() }
+                }
+            }
+            Button(L("変更を捨てる", "Discard changes"), role: .destructive) {
+                dismiss()
+            }
+            Button(L("キャンセル", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(L("保存しないで戻ると、選んだ人は「親しい友達」に入りません。",
+                   "If you go back without saving, your picks won't be applied."))
         }
         .alert(L("保存できませんでした", "Couldn't save"),
                isPresented: Binding(get: { saveError != nil },
@@ -286,7 +340,7 @@ struct CloseFriendsView: View {
     /// ——もう一度「保存」を押すと残りだけが送られる
     private func save() async {
         let changes = pending
-        guard !isSaving, !changes.isEmpty else { return }
+        guard !isSaving, !changes.isEmpty, !overLimit else { return }
         isSaving = true
         defer { isSaving = false }
         let social = environment.social

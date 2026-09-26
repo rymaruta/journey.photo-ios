@@ -77,7 +77,7 @@ struct BlockedUsersView: View {
                 .frame(width: 44, height: 44)
                 .background(WebTheme.surface)
                 .clipShape(Circle())
-            PersonNameLines(user: user)
+            PersonNameLines(user: user, lineLimit: 1)
             Spacer(minLength: 0)
         }
     }

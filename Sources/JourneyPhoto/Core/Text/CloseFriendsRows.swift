@@ -26,10 +26,40 @@ enum CloseFriendsRows {
 
     // MARK: - 「保存」（板 39）
 
-    /// 保存で送るもの。**外す方を先に送る**——サーバーの一覧は上限
-    /// （`CLOSE_FRIENDS_MAX` = 200）を超えると**古い人を黙って押し出す**
-    /// （`api-user/src/userList.ts` の `slice(0, max)`）。足す方を先に送ると、
-    /// 満杯のときに外すつもりの無い人が落ちる。
+    /// 選べる上限。サーバーの `CLOSE_FRIENDS_MAX`（`api-user/src/closeFriends.ts`）と同じ値。
+    ///
+    /// サーバーは上限を超えて足されると**断らずに古い人を黙って押し出す**
+    /// （`api-user/src/userList.ts` の `slice(0, max)`）＝応答は成功のまま。
+    /// だから**画面で止める**: 選んだ数が上限を超えている間は「保存」を押せない
+    static let limit = 200
+
+    static func overLimit(_ picked: Set<String>) -> Bool {
+        picked.count > limit
+    }
+
+    /// 戻ろうとしたときの扱い。
+    enum Leave: Equatable {
+        /// そのまま戻る（送っていない変更が無い）
+        case now
+        /// 「保存して戻る／変更を捨てる／キャンセル」を確かめる
+        case confirm
+        /// 送っている最中は戻らせない（途中の失敗が消えた画面に出る）
+        case wait
+    }
+
+    static func leave(hasChanges: Bool, isSaving: Bool) -> Leave {
+        if isSaving { return .wait }
+        return hasChanges ? .confirm : .now
+    }
+
+    /// 保存で送るもの。**外す方を先に送る**。
+    ///
+    /// 押し出しを防いでいるのは**2つの組み合わせ**: 選んだ結果が上限以内
+    /// （`overLimit` で画面が止める）かつ外す方が先。外し終えてから足すので、
+    /// 途中の人数は最後の人数を超えない＝上限にも届かない。足す方を先に送ると、
+    /// 満杯のときに途中で上限を超え、外すつもりの無い人が落ちる。
+    /// ⚠️ 読んだあとに**別の端末で足した**ぶんは見えていないので、その場合は
+    /// まだ押し出しうる（画面を開き直せば見える）
     ///
     /// 並びは画面の並び（`order`）に従う。`order` に居ない id は後ろに id 順で足す
     /// （呼び出しごとに順番が揺れない）。

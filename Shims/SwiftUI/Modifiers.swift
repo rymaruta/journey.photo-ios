@@ -314,6 +314,8 @@ extension View {
     // 画面遷移と入れ物
     public func navigationTitle(_ title: String) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func navigationBarTitleDisplayMode(_ m: NavigationBarItem.TitleDisplayMode) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+    /// 標準の戻るを隠す（本物は iOS 13 以降）。左端から払って戻るのも止まる
+    public func navigationBarBackButtonHidden(_ hidesBackButton: Bool = true) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func navigationDestination<D: Hashable, V: View>(
         for data: D.Type, @ViewBuilder destination: @escaping (D) -> V) -> Self { self }
     public func toolbar<C: ToolbarContent>(@ToolbarContentBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
