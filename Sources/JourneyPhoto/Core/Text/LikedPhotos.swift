@@ -1,22 +1,34 @@
 import Foundation
 
-/// 「いいねした写真」（`FavoritesView`）に出すもの。
+/// 保存した写真（`SavedPhotosView`・マイページの「お気に入り」タブ）と
+/// いいねした写真（`FavoritesView`）を、ID から写真に引き当てる決まり。
 ///
-/// **サーバーの一覧と、この端末の控えの和。** Web の `useMyServerLikes` と
-/// 同じ約束:
+/// いいねした写真の ID は**端末の控え（`FavoritesStore`）だけ**を見る。
+/// サーバー（`GET /user/likes`）が取れた回は、先に控えをサーバーに**入れ替えて**
+/// から見る（起動時の `syncLikes` と同じ）——和を取ると、詳細でハートを
+/// 外したぶんが一覧に残り続ける（控えから消えてもサーバーの写しに残るため）。
+/// 取れなかった回は控えのまま出す（圏外でも一覧は出る）。
 ///
-/// - サーバー（`GET /user/likes`）は**別の端末で押したぶん**を拾う
-/// - 端末（`FavoritesStore`）は**未ログイン中に押したぶん**と、
-///   一覧の書き込みが落ちた回を拾う
-///
-/// **「まだ」「聞けなかった」「0件」を混ぜない。** 取得中に「ありません」と
-/// 言い切ると、別の端末で押したぶんが届く前に「無い」と読まれる。
+/// **「まだ」「引き当てられなかった」「0件」を混ぜない**（`emptyState`）。
 enum LikedPhotos {
 
-    /// 出す ID の集合。
-    /// - Parameter serverIds: 取れなければ nil（端末の控えだけ出す）
-    static func ids(serverIds: [String]?, deviceIds: Set<String>) -> Set<String> {
-        deviceIds.union(serverIds ?? [])
+    /// 出す写真が0枚のときに、何を言うか。
+    enum EmptyState: Equatable {
+        /// 引き当て先をまだ読んでいる。「ありません」と言い切らない
+        case loading
+        /// 本当に0件（ID が1つも無い）
+        case none
+        /// ID はあるのに1枚も引き当てられなかった（読み込みの失敗・
+        /// 消された写真・非公開に戻された写真）。「まだありません」と言うと嘘になる
+        case unresolved
+    }
+
+    /// - Parameters:
+    ///   - idCount: 引き当てようとした ID の数
+    ///   - loaded: 引き当て先（公開一覧・自分の写真）を読み終えたか
+    static func emptyState(idCount: Int, loaded: Bool) -> EmptyState {
+        guard loaded else { return .loading }
+        return idCount == 0 ? .none : .unresolved
     }
 
     /// ID を写真に引き当てる（新しい順）。
@@ -26,9 +38,9 @@ enum LikedPhotos {
     /// 置くより、並ばない方が正直。
     ///
     /// - Parameter pools: 探す先。**公開一覧と自分の写真の両方**を渡す
-    ///   ——公開一覧だけだと他人の写真しか出ず、自分の写真だけだと
-    ///   他人の写真が出ない（アプリは後者で、他人の写真へのいいねが
-    ///   **一度も出なかった**）。
+    ///   （`PhotoPools`）——公開一覧だけだと自分の非公開の写真が出ず、
+    ///   自分の写真だけだと他人の写真が出ない（アプリは後者で、他人の写真への
+    ///   いいねが**一度も出なかった**）。3つの画面で同じ先を見ること
     static func resolve(_ ids: Set<String>, in pools: [[Photo]]) -> [Photo] {
         var seen = Set<String>()
         var found: [Photo] = []

@@ -11,11 +11,20 @@ struct MyPageView: View {
     /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
     /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
     @State private var officialSpots: [OfficialSpot] = []
-    /// 保存した写真を引き当てる先。**公開一覧**——自分の写真だけを
-    /// 探すと、**他人の写真の保存が一度も出ない**
+    /// 保存した写真を引き当てる先のうち**公開一覧**。もう一方の自分の写真は
+    /// `model.photos`（`myPhotos()`・`PhotoPools` と同じ口）。公開一覧が無いと
+    /// **他人の写真の保存が一度も出ない**
     @State private var feed: [Photo] = []
     /// 公開一覧を読み終えたか（「まだ」と「0件」を混ぜない）
     @State private var feedLoaded = false
+    /// 「お気に入り」タブに出す保存の ID。**描画のたびに `savedPhotos.ids` を
+    /// 読まない**——詳細でしおりを外した瞬間に `ForEach` から元の
+    /// `NavigationLink` が消え、**見ている詳細が閉じる**（`SavedPhotosView`・
+    /// `FavoritesView` と同じ理由）。取り直すのは戻ってきたとき・タブを開いたとき・
+    /// 引き当て先を読み終えたとき（`refreshSavedIds`）。
+    /// 写真の束ではなく ID を控えるのは、投稿を閉じた合図などで `model.photos`
+    /// が読み直されても、控えた ID のぶんは引き当て直せるように
+    @State private var savedIds: Set<String> = []
     @State private var tab: ProfileTab = .posts
     @State private var showDistanceNote = false
     @State private var showCountriesNote = false
@@ -66,7 +75,7 @@ struct MyPageView: View {
             guard auth.userId != nil else { return }
             await model.load()
         }
-        // いいねした写真。**ログイン状態が決まってから**聞く
+        // 保存した写真の引き当て先（公開一覧）
         .task(id: auth.userId) { await loadFeed() }
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
         .task(id: auth.userId) {
@@ -85,10 +94,24 @@ struct MyPageView: View {
             Task { await model.load() }
         }
         .onAppear {
+            // 詳細でしおりを外したぶんは、戻ってきたこの時点で落とす
+            refreshSavedIds()
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
             Task { await model.load() }
         }
+        .onChange(of: tab) { _, next in
+            if next == .favorites { refreshSavedIds() }
+        }
+        // 起動時の同期（`syncSaves`）が後から届いたぶんは拾う。**増えたときだけ**
+        // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる
+        .onChange(of: savedPhotos.ids) { _, next in
+            if next.isSuperset(of: savedIds) { savedIds = next }
+        }
+    }
+
+    private func refreshSavedIds() {
+        savedIds = savedPhotos.ids
     }
 
     /// **段ごとに割ってある**（`UploadView` と同じ理由——長い ViewBuilder は
@@ -466,12 +489,20 @@ struct MyPageView: View {
     /// 突き合わせ 6・8）。いいねした写真はメニューと設定から開く（`FavoritesView`）
     @ViewBuilder
     private var favoritesArea: some View {
-        let saved = LikedPhotos.resolve(savedPhotos.ids, in: [feed, model.photos])
+        let saved = LikedPhotos.resolve(savedIds, in: [feed, model.photos])
         if saved.isEmpty {
-            if !feedLoaded {
+            switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading) {
+            case .loading:
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
-            } else {
+            case .none:
                 ErrorBanner(message: SavedPhotosView.emptyMessage)
+            case .unresolved:
+                ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
+                    Task {
+                        await loadFeed()
+                        await model.load()
+                    }
+                }
             }
         } else {
             PhotoGrid(photos: saved) { photo in
@@ -746,9 +777,11 @@ struct MyPageView: View {
 
     /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる
     private func loadFeed() async {
-        feedLoaded = false
-        feed = (try? await environment.gallery.fetchPhotos()) ?? feed
+        let fetched = try? await environment.gallery.fetchPhotos()
+        guard !Task.isCancelled else { return }
+        feed = fetched ?? feed
         feedLoaded = true
+        refreshSavedIds()
     }
 
     @ViewBuilder

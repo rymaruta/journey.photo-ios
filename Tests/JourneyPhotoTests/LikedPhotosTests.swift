@@ -9,15 +9,21 @@ final class LikedPhotosTests: XCTestCase {
             "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(created)}".utf8))
     }
 
-    /// **和を取る。** サーバーは別の端末のぶん、端末は未ログイン中のぶん
-    func testUnionOfServerAndDevice() {
-        XCTAssertEqual(LikedPhotos.ids(serverIds: ["a", "b"], deviceIds: ["b", "c"]),
-                       ["a", "b", "c"])
+    /// **「まだ」と「0件」を混ぜない。** 引き当て先を読み終える前は、ID が0でも
+    /// 「ありません」と言わない（以前の「いいねした写真」は取得中に空の格子だった）
+    func testLoadingWhileThePoolsAreNotLoaded() {
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: 0, loaded: false), .loading)
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: 3, loaded: false), .loading)
     }
 
-    /// サーバーに聞けなかった回でも**端末の控えは消さない**
-    func testKeepsDeviceIdsWhenServerIsUnreachable() {
-        XCTAssertEqual(LikedPhotos.ids(serverIds: nil, deviceIds: ["c"]), ["c"])
+    func testNoneOnlyWhenThereAreNoIds() {
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: 0, loaded: true), .none)
+    }
+
+    /// **ID があるのに1枚も引き当てられない回は「まだありません」ではない。**
+    /// 読み込みに失敗しただけの人に「保存が消えた」と読ませない
+    func testUnresolvedWhenIdsExistButNothingMatched() {
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: 2, loaded: true), .unresolved)
     }
 
     /// **他人の写真が出る。** 自分の写真だけを探していたのが元のバグ
