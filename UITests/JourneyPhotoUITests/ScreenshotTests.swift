@@ -34,6 +34,28 @@ final class ScreenshotTests: XCTestCase {
         add(shot)
     }
 
+    /// **撮影スポットのピンを撮る。** 公開済みのスポットは国内の4件だけで、
+    /// 地図を開いた範囲（シミュレータの現在地＝パリ）には1本も出ない。名前で絞ると
+    /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
+    /// 見つからなければ撮らない（名前と中身が食い違う絵は、無い絵より悪い）
+    private func shootSpotPin(_ app: XCUIApplication) {
+        let field = app.textFields["map.search"].firstMatch
+        guard field.waitForExistence(timeout: 5) else { return }
+        field.tap()
+        field.typeText("鍋ヶ滝\n")
+        Thread.sleep(forTimeInterval: 3)
+        let pin = app.buttons["鍋ヶ滝"].firstMatch
+        guard pin.waitForExistence(timeout: 10) else { return }
+        shoot(app, "13b-マップ（撮影スポットのピン）")
+        pin.tap()
+        if app.descendants(matching: .any).matching(identifier: "map.officialCard").firstMatch.waitForExistence(timeout: 5) {
+            shoot(app, "13c-マップ（撮影スポットの札）")
+        }
+        // 絞りを解いて、あとの画面に持ち越さない
+        let clear = app.buttons["消す"].firstMatch
+        if clear.exists { clear.tap() }
+    }
+
     /// **位置の許可の札に答える。** 地図は開いた最初の1回に現在地を取りにいく
     /// （2026-09-26〜）ので、初めて開くと iOS が許可を尋ねる。この札は
     /// アプリの外（SpringBoard）に出て、**残るとあとのタブが押せなくなる**。
@@ -129,6 +151,7 @@ final class ScreenshotTests: XCTestCase {
             let signedOut = app.descendants(matching: .any)
                 .matching(identifier: "signin.form").firstMatch.exists
             shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
+            if name == "マップ" { shootSpotPin(app) }
         }
 
         // **マイページの下半分**（モック2）。ハイライトの輪・作品の格子・
