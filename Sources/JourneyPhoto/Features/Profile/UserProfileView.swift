@@ -108,22 +108,16 @@ struct UserProfileView: View {
         }
     }
 
-    @ViewBuilder
-    private func themeRing(_ hex: String?) -> some View {
-        if let hex, let color = Color(hex: hex) {
-            Circle().strokeBorder(color, lineWidth: 3)
-        }
-    }
-
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 RemoteImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
                     .frame(width: 64, height: 64)
                     .clipShape(Circle())
-                    // 本人が選んだ色を輪にする（Web の `themeRingGradient`）
-                    .overlay(themeRing(model.profile?.themeColor))
-                    .coverCutout(hasCover)
+                    // **板どおり黒の 3pt の縁**（板 31）。本人が選んだ色の輪（`themeColor`）は
+                    // 出さない——マイページ（板 05c）と揃える（owner の判断・2026-09-26）。
+                    // 色はプロフィール編集で選べ、Web（`themeRingGradient`）には出る
+                    .coverCutout(true)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         Text(model.shownName ?? "—").font(JPFont.display(20, relativeTo: .title3))
