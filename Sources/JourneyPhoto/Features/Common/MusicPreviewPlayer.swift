@@ -34,6 +34,9 @@ final class MusicPreviewPlayer: ObservableObject {
     /// 場を返す予約。**鳴らし直したら取り消す**——止めた直後（200ms 以内）に
     /// 次の曲を鳴らすと、遅れて届いた `setActive(false)` が新しい曲を止めていた
     private var deactivateTask: Task<Void, Never>?
+    /// 場（`.playback`）を持ったまま返していないか。`stop(releaseSession: false)`
+    /// のあと、あとで `releaseSessionIfIdle()` で返すために覚えておく
+    private var sessionHeld = false
     /// 鳴り終わりの見張り。**外さないと積み上がる**
     private var endObserver: NSObjectProtocol?
 
@@ -55,7 +58,9 @@ final class MusicPreviewPlayer: ObservableObject {
 
     func toggle(_ url: URL?, song: Photo.Song? = nil) {
         guard let url else { return }
-        if playingURL == url {
+        // **鳴っているときだけ止める。** 一時停止中の同じ曲は ▶ を出しているので、
+        // 押したら鳴らす（止めると、▶ を押したのに何も起きない）
+        if isPlaying(url) {
             stop()
             return
         }
@@ -97,6 +102,7 @@ final class MusicPreviewPlayer: ObservableObject {
         deactivateTask = nil
         session += 1
         isPaused = false
+        sessionHeld = true
         // **`.ambient` にしない。** あれは消音スイッチに従うので、
         // 本人が ▶ を押したのに**マナーモードだと何も鳴らない**
         // ——「壊れている」としか読めない。押したのは本人の意思なので
@@ -138,7 +144,24 @@ final class MusicPreviewPlayer: ObservableObject {
         playingURL = nil
         playingSong = nil
         isPaused = false
-        guard releaseSession else { return }
+        guard releaseSession else {
+            // 返す予約が残っていれば取り消す（この後に鳴る動画の音を切らない）
+            deactivateTask?.cancel()
+            deactivateTask = nil
+            return
+        }
+        scheduleRelease()
+    }
+
+    /// 何も鳴らしていないのに場を持ったままなら返す。**ストーリーを閉じたとき用**
+    /// ——曲の無い1本へ移ったときは返さずに止めるので、閉じるまで他のアプリの
+    /// 音楽が戻らなかった
+    func releaseSessionIfIdle() {
+        guard player == nil, sessionHeld else { return }
+        scheduleRelease()
+    }
+
+    private func scheduleRelease() {
         // **止めたら場を返す。** 返さないと、止めたあとも他のアプリの
         // 音楽が戻らない（`.playback` で奪ったまま）。
         //
@@ -151,6 +174,7 @@ final class MusicPreviewPlayer: ObservableObject {
             guard !Task.isCancelled, self?.player == nil else { return }
             try? AVAudioSession.sharedInstance()
                 .setActive(false, options: .notifyOthersOnDeactivation)
+            self?.sessionHeld = false
         }
     }
 }

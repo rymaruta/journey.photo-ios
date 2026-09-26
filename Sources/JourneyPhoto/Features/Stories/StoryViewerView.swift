@@ -159,8 +159,12 @@ struct StoryViewerView: View {
         .onChange(of: muted) { _, now in
             if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
         }
-        // 閉じたら止めて場を返す（閉じたあとも鳴り続けないように）
-        .onDisappear { stopSong(releaseSession: true) }
+        // 閉じたら止めて場を返す（閉じたあとも鳴り続けないように）。曲の無い1本で
+        // 閉じたときも、途中で持った場は返す（返さないと他のアプリの音楽が戻らない）
+        .onDisappear {
+            stopSong(releaseSession: true)
+            MusicPreviewPlayer.shared.releaseSessionIfIdle()
+        }
     }
 
     // MARK: - 曲

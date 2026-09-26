@@ -283,6 +283,19 @@ enum StoryPlayback {
         return items
     }
 
+    /// 読み直したあとの一覧。
+    ///
+    /// - 取れた → それを絞り込む（通報した1本はサーバーが落とさないので端末で消す）
+    /// - **取れなかった → 前の一覧を残す**（閉じるたびに読み直すので、圏外で1本
+    ///   見て閉じると輪が全部消えていた）。ただし**絞り込みはかけ直す**——
+    ///   圏外で通報・ブロックした1本が残らないように
+    /// - 取れなかったうえに見ている人が変わった → 空（前の人の輪を見せない）
+    static func afterLoad(fetched: [Story]?, previous: [Story], sameViewer: Bool,
+                          blockedUserIds: Set<String>, reportedPhotoIds: Set<String>) -> [Story] {
+        guard let base = fetched ?? (sameViewer ? previous : nil) else { return [] }
+        return visible(base, blockedUserIds: blockedUserIds, reportedPhotoIds: reportedPhotoIds)
+    }
+
     // MARK: - 曲
 
     /// 鳴らす曲。題の無い曲・URL の無い曲は鳴らさない（曲名の行を出さない条件と同じ）。

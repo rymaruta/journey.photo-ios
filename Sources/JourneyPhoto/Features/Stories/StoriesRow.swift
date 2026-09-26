@@ -171,7 +171,7 @@ struct StoriesRow: View {
     }
 
     private func reload() async {
-        await model.load(environment: environment,
+        await model.load(environment: environment, viewerId: auth.userId,
                          blockedUserIds: hidden.blockedUserIds,
                          reportedPhotoIds: hidden.reportedPhotoIds)
     }
@@ -196,16 +196,18 @@ final class StoriesViewModel: ObservableObject {
         StoryPlayback.siblings(of: story, in: stories).stories
     }
 
-    func load(environment: AppEnvironment, blockedUserIds: Set<String> = [],
+    /// いまの一覧を読んだ人（切り替えたら前の人の一覧を残さない）
+    private var loadedFor: String?
+
+    func load(environment: AppEnvironment, viewerId: String?, blockedUserIds: Set<String> = [],
               reportedPhotoIds: Set<String> = []) async {
-        // 取れなくても画面は壊さない（ストーリーは添え物）。**取れなかった回は
-        // 前の一覧を残す**——閉じるたびに読み直すので、圏外で1本見て閉じると
-        // 輪が全部消えていた
+        // 取れなくても画面は壊さない（ストーリーは添え物）
         // ⚠️ `if let x = try? await …` は構文検査（tree-sitter）が読めない。2文に割る
-        let result = try? await environment.stories.list()
-        guard let fetched = result else { return }
-        // 通報した1本はサーバーが落とさないので端末で消す
-        stories = StoryPlayback.visible(fetched, blockedUserIds: blockedUserIds,
-                                        reportedPhotoIds: reportedPhotoIds)
+        let fetched = try? await environment.stories.list()
+        stories = StoryPlayback.afterLoad(fetched: fetched, previous: stories,
+                                          sameViewer: loadedFor == viewerId,
+                                          blockedUserIds: blockedUserIds,
+                                          reportedPhotoIds: reportedPhotoIds)
+        if fetched != nil { loadedFor = viewerId }
     }
 }

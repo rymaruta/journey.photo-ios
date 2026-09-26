@@ -210,6 +210,24 @@ final class StoryPlaybackTests: XCTestCase {
                      "https だけ")
     }
 
+    /// 読み直しに失敗したら前の輪を残す。ただし絞り込みはかけ直し、
+    /// 見ている人が変わっていたら空にする
+    func testAfterLoadKeepsPreviousOnFailure() {
+        let previous = [story("a", user: "u1"), story("b", user: "u2")]
+        let fresh = [story("c", user: "u3")]
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: fresh, previous: previous, sameViewer: true,
+                                               blockedUserIds: [], reportedPhotoIds: []).map(\.id), ["c"])
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: nil, previous: previous, sameViewer: true,
+                                               blockedUserIds: [], reportedPhotoIds: []).map(\.id), ["a", "b"],
+                       "圏外で閉じても輪を消さない")
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: nil, previous: previous, sameViewer: true,
+                                               blockedUserIds: ["u2"], reportedPhotoIds: []).map(\.id), ["a"],
+                       "圏外でブロックした人の輪は消す")
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: nil, previous: previous, sameViewer: false,
+                                               blockedUserIds: [], reportedPhotoIds: []), [],
+                       "別の人に切り替わったら前の人の輪を見せない")
+    }
+
     /// 曲のある写真にも「音を消す」を出す（Web の `hasAudio = isVideo || !!item.song`）
     func testMenuOffersMuteWhenSongAttached() {
         XCTAssertTrue(StoryPlayback.menuItems(isMine: false, isVideo: false, hasSong: true,
