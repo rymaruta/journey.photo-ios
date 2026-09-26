@@ -11,6 +11,7 @@ import PhotosUI
 struct ProfileEditView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var displayName = ""
@@ -32,7 +33,7 @@ struct ProfileEditView: View {
     /// いまのアイコン・カバーを見せるための持ち主の ID（読めたら入る）
     @State private var userId: String?
     /// 画像を変えたら URL の末尾を変える（同じ URL だと古い絵の控えが出る）
-    @State private var imageBust = String(Int(Date().timeIntervalSince1970))
+    @State private var imageBust = UUID().uuidString
 
     @State private var isLoading = true
     @State private var isSaving = false
@@ -45,6 +46,12 @@ struct ProfileEditView: View {
         Form {
             imagesHeader
 
+            // **知らせは上に出す。** 保存は右上なので、下に出すと失敗しても
+            // 「押しても何も起きない」に見える（読めなかった警告も同じ）
+            if let message {
+                Section { Text(message).font(.callout) }
+            }
+
             Section {
                 labeled(L("表示名", "Display name")) {
                     TextField("", text: $displayName)
@@ -55,7 +62,9 @@ struct ProfileEditView: View {
                         .autocorrectionDisabled()
                 }
                 labeled(L("自己紹介", "Bio")) {
-                    TextField(L("ひとこと", "A few words"), text: $bio, axis: .vertical)
+                    // 板の下書き「ひとこと」は付けない——下の「そのほか」に同じ名前の欄
+                    // （statusText）があり、どちらに書くのか紛れる
+                    TextField("", text: $bio, axis: .vertical)
                         .lineLimit(2...6)
                 }
                 // 板は居住地と Instagram を横に2つ並べる
@@ -88,9 +97,6 @@ struct ProfileEditView: View {
             }
             .listRowBackground(Color.clear)
 
-            if let message {
-                Section { Text(message).font(.callout) }
-            }
         }
         .webScreen()
         .navigationTitle(L("プロフィールの編集", "Edit profile"))
@@ -105,7 +111,8 @@ struct ProfileEditView: View {
                         Task { await save() }
                     }
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(WebTheme.accent)
+                    // 押せない間は真鍮にしない（明示した色は disabled でも薄くならない）
+                    .foregroundStyle(loaded ? WebTheme.accent : WebTheme.muted2)
                     // **読めるまで押させない。** 押せてしまうと、
                     // 空の欄がそのまま「消す」として送られる
                     .disabled(!loaded)
@@ -126,7 +133,7 @@ struct ProfileEditView: View {
     private var imagesHeader: some View {
         Section {
             ZStack(alignment: .topLeading) {
-                RemoteImage(url: userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: "cover", cacheBust: imageBust) })
+                RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: "cover", cacheBust: imageBust) })
                     .frame(maxWidth: .infinity)
                     .frame(height: 132)
                     .background(WebTheme.surface)
@@ -139,10 +146,13 @@ struct ProfileEditView: View {
                                 .frame(minHeight: 36)
                                 .background(Color.black.opacity(0.55), in: Capsule())
                         }
+                        // **行の中に押せるものが2つある。** 既定の形だと行全体が
+                        // 1つのボタンになり、押した方と違う選択が開く（`ThemeColorField` と同じ手当て）
+                        .buttonStyle(.borderless)
                         .padding(12)
                     }
                 PhotosPicker(selection: $avatarItem, matching: .images) {
-                    RemoteImage(url: userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: imageBust) })
+                    RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: imageBust) })
                         .frame(width: 84, height: 84)
                         .background(WebTheme.surface)
                         .clipShape(Circle())
@@ -154,6 +164,7 @@ struct ProfileEditView: View {
                                 .background(Color.black.opacity(0.55), in: Circle())
                         }
                 }
+                .buttonStyle(.borderless)
                 .accessibilityLabel(L("アイコンを変える", "Change avatar"))
                 .padding(.leading, 20)
                 .padding(.top, 92)
@@ -170,7 +181,9 @@ struct ProfileEditView: View {
             Text(title)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(WebTheme.muted)
+            // 見出しは別の Text なので、欄そのものに名前を付ける（無いと読み上げが「テキストフィールド」だけになる）
             field()
+                .accessibilityLabel(title)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -281,7 +294,7 @@ struct ProfileEditView: View {
             // そのまま上げない**（撮影地が入っていることがある）
             let prepared = try ImagePreparer.prepare(data: data, fileName: "profile")
             try await environment.profiles.uploadProfileImage(kind: kind, jpeg: prepared.data)
-            imageBust = String(Int(Date().timeIntervalSince1970))
+            imageBust = UUID().uuidString
             message = kind == .avatar ? L("アイコンを変えました", "Avatar updated") : L("カバーを変えました", "Cover updated")
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("画像を変えられませんでした", "Couldn't update the image")
