@@ -176,6 +176,8 @@ extension View {
     public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 端を選んで安全領域を無視する（本物は `regions:` も取る）
+    public func ignoresSafeArea(edges: Edge.Set) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 画面の端に貼り付く帯（iOS 15+）。本物はスクロールの底の余白も足す。
     /// 模型は素通し——キーボードで持ち上がるかは Mac で見る
     public func safeAreaInset<V: View>(edge: VerticalEdge, alignment: HorizontalAlignment = .center,
@@ -253,6 +255,8 @@ extension View {
     public func searchable(text: Binding<String>, placement: SearchFieldPlacementShim = .automatic,
                            prompt: String? = nil) -> Self { self }
     public func onSubmit(of t: SubmitTriggerShim = .search, _ action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// キーボードの確定キーの文言（iOS 15+）
+    public func submitLabel(_ label: SubmitLabel) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
 
     // 画面遷移と入れ物
     public func navigationTitle(_ title: String) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
@@ -374,4 +378,10 @@ extension View {
 public struct EdgeInsets {
     public init() {}
     public init(top: Double, leading: Double, bottom: Double, trailing: Double) {}
+}
+
+/// `submitLabel(_:)` が受ける確定キーの文言。本物は struct
+public struct SubmitLabel {
+    public static let done = SubmitLabel(), go = SubmitLabel(), send = SubmitLabel(),
+                      search = SubmitLabel(), next = SubmitLabel(), `return` = SubmitLabel()
 }
