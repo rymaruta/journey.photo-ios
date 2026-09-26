@@ -49,9 +49,13 @@ final class BlockFilterTests: XCTestCase {
     func testStoreDropsWhatItHides() async throws {
         let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         store.use(userId: "me")
+        // 画面が開いた時点の写しは、あとのブロックで**変わらない**（見ている最中に縮めない）
+        let before = store.snapshot
         store.block("a")
         store.markReported("p3")
         let photos = [try photo("p1", userId: "a"), try photo("p3", userId: "b"), try photo("p4", userId: "b")]
         XCTAssertEqual(store.visible(photos).map(\.id), ["p4"])
+        XCTAssertEqual(store.snapshot.visible(photos).map(\.id), ["p4"])
+        XCTAssertEqual(before.visible(photos).map(\.id), ["p1", "p3", "p4"])
     }
 }

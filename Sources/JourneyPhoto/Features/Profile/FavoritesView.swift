@@ -45,18 +45,17 @@ struct FavoritesView: View {
         .refreshable { await load(force: true) }
         // **戻ってきたら絞り直す。** 詳細画面でハートを外したぶんは、
         // その画面を閉じたこの時点で消える（見ている最中には消さない）
-        // `all` からも落とす——ここで絞り直すので、`photos` だけ落とすと戻ってくる
-        .onAppear { photos = all.filter { favorites.contains($0.id) } }
-        .onChange(of: hidden.revision) { _, _ in
+        // ブロック／通報したぶんも、同じく戻ってきたときに落とす（`all` ごと）
+        .onAppear {
             all = hidden.visible(all)
-            photos = hidden.visible(photos)
+            photos = all.filter { favorites.contains($0.id) }
         }
     }
 
     private func load(force: Bool = false) async {
         isLoading = true
         defer { isLoading = false }
-        all = (try? await environment.gallery.fetchPhotos(force: force)) ?? []
+        all = hidden.visible((try? await environment.gallery.fetchPhotos(force: force)) ?? [])
         photos = all.filter { favorites.contains($0.id) }
     }
 }

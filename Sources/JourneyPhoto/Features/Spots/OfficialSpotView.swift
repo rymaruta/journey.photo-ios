@@ -26,13 +26,17 @@ struct OfficialSpotView: View {
 
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
-    /// 渡された写真は開いた時点の写しなので、ブロック／通報をここで反映する
+    /// 渡された写真は開いた時点の写しなので、ブロック／通報をここで反映する。
+    /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
+    /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
+    /// 通報の「受け付けました」も見えない。戻ってきたとき（`onAppear`）に絞る
     @EnvironmentObject private var hidden: ModerationStore
+    @State private var dropped = ModerationSnapshot()
 
     @State private var camera: MapCameraPosition = .automatic
 
     /// **確定した紐づけだけ**（`Photo.spotId`）。撮影地の文字列では当てない
-    private var linked: [Photo] { hidden.visible(photos.filter { $0.spotId == spot.spotId }) }
+    private var linked: [Photo] { dropped.visible(photos.filter { $0.spotId == spot.spotId }) }
 
     private var nearby: [(spot: OfficialSpot, km: Double)] {
         OfficialSpotIndex.nearby(spot, in: spots)
@@ -64,6 +68,7 @@ struct OfficialSpotView: View {
             }
             .padding(.bottom, 32)
         }
+        .onAppear { dropped = hidden.snapshot }
         .webScreen()
         .navigationTitle(spot.name)
         .navigationBarTitleDisplayMode(.inline)
