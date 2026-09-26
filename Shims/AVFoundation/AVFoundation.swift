@@ -11,6 +11,12 @@ open class AVPlayer {
     public init(url: URL) {}
     public func play() {}
     public func pause() {}
+    /// 頭出し（本物は CoreMedia の CMTime。AVFoundation が再輸出する）
+    public func seek(to time: CMTime) {}
+}
+
+public struct CMTime {
+    public static let zero = CMTime()
 }
 
 extension NSNotification.Name {

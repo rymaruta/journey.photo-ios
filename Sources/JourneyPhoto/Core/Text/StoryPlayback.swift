@@ -265,21 +265,63 @@ enum StoryPlayback {
 
     /// 出す項目。**押しても何も起きない項目は出さない。**
     ///
-    /// - ミュートは動画だけ（写真のストーリーは音を鳴らしていない。
-    ///   `Story.song` を復号しておらず BGM も無い）
+    /// - ミュートは音が出るときだけ＝動画か、曲が付いているとき
+    ///   （Web の `hasAudio = isVideo || !!item.song`）
     /// - 「テキストを非表示」はサーバーの `caption` があるときだけ。
     ///   写真に焼き込んだ文字は消せない
     /// - ブロック・通報は他人の投稿だけ（自分は通報できない。サーバーも 400）。
     ///   ブロックは相手が分かるときだけ
-    static func menuItems(isMine: Bool, isVideo: Bool, hasCaption: Bool, hasOwner: Bool) -> [MenuItem] {
+    static func menuItems(isMine: Bool, isVideo: Bool, hasSong: Bool = false,
+                          hasCaption: Bool, hasOwner: Bool) -> [MenuItem] {
         var items: [MenuItem] = [.pause]
-        if isVideo { items.append(.mute) }
+        if isVideo || hasSong { items.append(.mute) }
         if hasCaption { items.append(.hideCaption) }
         if !isMine {
             if hasOwner { items.append(.block) }
             items.append(.report)
         }
         return items
+    }
+
+    /// 読み直したあとの一覧。
+    ///
+    /// - 取れた → それを絞り込む（通報した1本はサーバーが落とさないので端末で消す）
+    /// - **取れなかった → 前の一覧を残す**（閉じるたびに読み直すので、圏外で1本
+    ///   見て閉じると輪が全部消えていた）。ただし**絞り込みはかけ直す**——
+    ///   圏外で通報・ブロックした1本が残らないように
+    /// - 取れなかったうえに見ている人が変わった → 空（前の人の輪を見せない）
+    static func afterLoad(fetched: [Story]?, previous: [Story], sameViewer: Bool,
+                          blockedUserIds: Set<String>, reportedPhotoIds: Set<String>) -> [Story] {
+        guard let base = fetched ?? (sameViewer ? previous : nil) else { return [] }
+        return visible(base, blockedUserIds: blockedUserIds, reportedPhotoIds: reportedPhotoIds)
+    }
+
+    // MARK: - 曲
+
+    /// 鳴らす曲。題の無い曲・URL の無い曲は鳴らさない（曲名の行を出さない条件と同じ）。
+    ///
+    /// 🔴 **音源のホストを確かめる。** ストーリーは開いた瞬間に曲を取りに行くので、
+    /// 任意の URL が入った行があると、トレイから開いた全員の IP と時刻がその先へ
+    /// 渡る（Web の `safeSongPreviewUrl`・`lib/utils/mediaHosts.ts` と同じ規則）
+    static func songURL(for story: Story) -> URL? {
+        guard story.songLine != nil, let url = story.song?.previewURL,
+              isAllowedPreview(url) else { return nil }
+        return url
+    }
+
+    /// 試聴の配信元（iTunes Search API が返すホスト）。**完全一致かサブドメインだけ**
+    /// ——末尾一致だと `evil-mzstatic.com` が通る
+    static let previewHosts = ["itunes.apple.com", "mzstatic.com"]
+
+    static func isAllowedPreview(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
+        return previewHosts.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    /// 動画の音を消すか。**曲が付いている動画は動画側を常に消す**
+    /// （2つ重ねて鳴らさない。Web の `muted={muted || !!item.song}`）
+    static func videoMuted(muted: Bool, hasSong: Bool) -> Bool {
+        muted || hasSong
     }
 
     // MARK: - 返信の候補

@@ -61,7 +61,11 @@ struct StoriesRow: View {
         .onChange(of: hidden.revision) { _, _ in
             Task { await reload() }
         }
-        .fullScreenCover(item: $opened) { story in
+        // 🔴 **閉じたら読み直す。** 閲覧画面で自分のストーリーを消しても、
+        // 閉じるだけで一覧を読み直さず、消した輪が並んだままだった
+        .fullScreenCover(item: $opened, onDismiss: {
+            Task { await reload() }
+        }) { story in
             viewer(for: story)
         }
         .onChange(of: opened?.id) { _, id in
@@ -167,7 +171,7 @@ struct StoriesRow: View {
     }
 
     private func reload() async {
-        await model.load(environment: environment,
+        await model.load(environment: environment, viewerId: auth.userId,
                          blockedUserIds: hidden.blockedUserIds,
                          reportedPhotoIds: hidden.reportedPhotoIds)
     }
@@ -192,12 +196,18 @@ final class StoriesViewModel: ObservableObject {
         StoryPlayback.siblings(of: story, in: stories).stories
     }
 
-    func load(environment: AppEnvironment, blockedUserIds: Set<String> = [],
+    /// いまの一覧を読んだ人（切り替えたら前の人の一覧を残さない）
+    private var loadedFor: String?
+
+    func load(environment: AppEnvironment, viewerId: String?, blockedUserIds: Set<String> = [],
               reportedPhotoIds: Set<String> = []) async {
         // 取れなくても画面は壊さない（ストーリーは添え物）
-        let fetched = (try? await environment.stories.list()) ?? []
-        // 通報した1本はサーバーが落とさないので端末で消す
-        stories = StoryPlayback.visible(fetched, blockedUserIds: blockedUserIds,
-                                        reportedPhotoIds: reportedPhotoIds)
+        // ⚠️ `if let x = try? await …` は構文検査（tree-sitter）が読めない。2文に割る
+        let fetched = try? await environment.stories.list()
+        stories = StoryPlayback.afterLoad(fetched: fetched, previous: stories,
+                                          sameViewer: loadedFor == viewerId,
+                                          blockedUserIds: blockedUserIds,
+                                          reportedPhotoIds: reportedPhotoIds)
+        if fetched != nil { loadedFor = viewerId }
     }
 }
