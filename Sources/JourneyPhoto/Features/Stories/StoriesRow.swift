@@ -198,8 +198,12 @@ final class StoriesViewModel: ObservableObject {
 
     func load(environment: AppEnvironment, blockedUserIds: Set<String> = [],
               reportedPhotoIds: Set<String> = []) async {
-        // 取れなくても画面は壊さない（ストーリーは添え物）
-        let fetched = (try? await environment.stories.list()) ?? []
+        // 取れなくても画面は壊さない（ストーリーは添え物）。**取れなかった回は
+        // 前の一覧を残す**——閉じるたびに読み直すので、圏外で1本見て閉じると
+        // 輪が全部消えていた
+        // ⚠️ `if let x = try? await …` は構文検査（tree-sitter）が読めない。2文に割る
+        let result = try? await environment.stories.list()
+        guard let fetched = result else { return }
         // 通報した1本はサーバーが落とさないので端末で消す
         stories = StoryPlayback.visible(fetched, blockedUserIds: blockedUserIds,
                                         reportedPhotoIds: reportedPhotoIds)

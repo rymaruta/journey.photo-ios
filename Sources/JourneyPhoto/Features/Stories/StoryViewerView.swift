@@ -42,6 +42,8 @@ struct StoryViewerView: View {
     @State private var longHeld = false
     @State private var paused = false
     @State private var muted = false
+    /// この画面が鳴らした曲の回（`MusicPreviewPlayer.session`）。鳴らしていなければ nil
+    @State private var songSession: Int?
     @State private var captionHidden = false
     /// 絵が出た（動画は出どころが無いので最初から true）
     @State private var mediaReady: Bool
@@ -141,12 +143,24 @@ struct StoryViewerView: View {
             }
         }
         // 曲（板の「♪」）。**鳴らしていなかった**——曲名を文字で出すだけだった
-        .onAppear { syncSong(restart: true) }
+        .onAppear {
+            // **ほかで鳴っている曲は止める**（Web の `stopGlobalMusic`）。止めないと
+            // 動画の音と重なり、「音を消す」がその曲を消音していた
+            if MusicPreviewPlayer.shared.playingURL != nil {
+                // 場を返すのは、最初の1本が音を出さない（曲も動画も無い）ときだけ。
+                // 返すと、遅れて届く `setActive(false)` が動画の音を切る
+                let silent = current.map { !$0.isVideo && StoryPlayback.songURL(for: $0) == nil } ?? true
+                MusicPreviewPlayer.shared.stop(releaseSession: silent)
+            }
+            syncSong(restart: true)
+        }
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
         .onChange(of: frozen) { _, _ in syncSong(restart: false) }
-        .onChange(of: muted) { _, now in MusicPreviewPlayer.shared.setMuted(now) }
-        // 閉じたら止める（閉じたあとも鳴り続けないように）
-        .onDisappear { stopSong() }
+        .onChange(of: muted) { _, now in
+            if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
+        }
+        // 閉じたら止めて場を返す（閉じたあとも鳴り続けないように）
+        .onDisappear { stopSong(releaseSession: true) }
     }
 
     // MARK: - 曲
@@ -159,23 +173,33 @@ struct StoryViewerView: View {
     private func syncSong(restart: Bool) {
         let player = MusicPreviewPlayer.shared
         guard let story = current, let url = StoryPlayback.songURL(for: story) else {
-            stopSong()
+            // 曲の無い1本では止めるが、場は返さない（その1本の動画の音を切らない）
+            stopSong(releaseSession: false)
             return
         }
-        if restart || !player.isPlaying(url) {
-            player.play(url, song: story.song)
+        if restart || songSession == nil {
+            // `song` は渡さない——ストーリーの曲は画面の下の再生バーに出す曲ではない
+            songSession = player.play(url, song: nil, loops: true)
         }
+        // 自分の曲でなくなっていたら（ほかの画面が鳴らした）触らない
+        guard ownsSong else { return }
         player.setMuted(muted)
         if frozen { player.pause() } else { player.resume() }
     }
 
-    /// **自分が鳴らした曲だけ止める。** 何も鳴っていないのに止めると、場を返す
-    /// 処理（`setActive(false)`）が動画の音まで切ることがある
-    private func stopSong() {
-        let player = MusicPreviewPlayer.shared
-        guard let url = player.playingURL,
-              visible.contains(where: { StoryPlayback.songURL(for: $0) == url }) else { return }
-        player.stop()
+    /// いま鳴っているのがこの画面の鳴らした曲か
+    private var ownsSong: Bool {
+        songSession != nil && songSession == MusicPreviewPlayer.shared.session
+            && MusicPreviewPlayer.shared.playingURL != nil
+    }
+
+    /// **自分が鳴らした曲だけ止める。** 見分けは URL ではなく鳴らした回の番号
+    /// ——通報で並びから外れた1本の曲も止まり、同じ曲を別の画面が鳴らし直しても
+    /// そちらは止めない
+    private func stopSong(releaseSession: Bool) {
+        defer { songSession = nil }
+        guard ownsSong else { return }
+        MusicPreviewPlayer.shared.stop(releaseSession: releaseSession)
     }
 
     /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る。板は 844 のうち 84）
@@ -488,7 +512,8 @@ struct StoryViewerView: View {
             // **自分のストーリーには「…」を置かない**（板 25e は ✕ だけ）。
             // ただし**動画は音を消す口がここにしか無い**ので出す
             // 他人のハイライトにも出す（通報とブロックの入口はここだけ。審査 1.2）
-            if !isMine(story) || story.isVideo {
+            // 自分の写真でも、曲が付いていれば「音を消す」のために出す
+            if !isMine(story) || story.isVideo || StoryPlayback.songURL(for: story) != nil {
                 Button {
                     showMenu = true
                 } label: {

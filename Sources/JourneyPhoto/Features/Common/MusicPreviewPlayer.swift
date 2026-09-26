@@ -22,7 +22,18 @@ final class MusicPreviewPlayer: ObservableObject {
     /// （`MiniPlayerBar` が題と絵を出す）。URL だけでは何の曲か分からない
     @Published private(set) var playingSong: Photo.Song?
 
+    /// 一時停止中か。**止めた（stop）とは別。** 一時停止の間も `playingURL` は
+    /// 残るので、これを見ないと他の画面の ▶ が「再生中」のままになる
+    @Published private(set) var isPaused = false
+    /// 鳴らし始めるたびに増える番号。**「自分が鳴らした曲か」を URL ではなく
+    /// これで見分ける**——同じ曲を別の画面が鳴らし直したとき、前の画面の後始末が
+    /// 新しい方を止めないように
+    private(set) var session = 0
+
     private var player: AVPlayer?
+    /// 場を返す予約。**鳴らし直したら取り消す**——止めた直後（200ms 以内）に
+    /// 次の曲を鳴らすと、遅れて届いた `setActive(false)` が新しい曲を止めていた
+    private var deactivateTask: Task<Void, Never>?
     /// 鳴り終わりの見張り。**外さないと積み上がる**
     private var endObserver: NSObjectProtocol?
 
@@ -39,7 +50,7 @@ final class MusicPreviewPlayer: ObservableObject {
 
     func isPlaying(_ url: URL?) -> Bool {
         guard let url else { return false }
-        return playingURL == url
+        return playingURL == url && !isPaused
     }
 
     func toggle(_ url: URL?, song: Photo.Song? = nil) {
@@ -52,20 +63,28 @@ final class MusicPreviewPlayer: ObservableObject {
     }
 
     /// 頭から鳴らす（鳴っていても頭出しし直す）。ストーリーの曲に使う——
-    /// **同じ曲のストーリーが2本続いても、2本目は頭から**（Web の `itemChanged` と同じ）
-    func play(_ url: URL?, song: Photo.Song? = nil) {
-        guard let url else { return }
-        start(url, song: song)
+    /// **同じ曲のストーリーが2本続いても、2本目は頭から**（Web の `itemChanged` と同じ）。
+    /// `loops` なら鳴り終わっても止めずに頭から繰り返す（Web の `onEnded`）。
+    /// 戻り値は `session`（後始末で「自分の曲か」を見分ける）
+    @discardableResult
+    func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false) -> Int {
+        guard let url else { return session }
+        start(url, song: song, loops: loops)
+        return session
     }
 
     /// 止めずに一時停止する（場は返さない。すぐ `resume()` するため）
     func pause() {
+        guard player != nil else { return }
         player?.pause()
+        isPaused = true
     }
 
     /// `pause()` の続きから鳴らす。鳴らしていなければ何もしない
     func resume() {
+        guard player != nil else { return }
         player?.play()
+        isPaused = false
     }
 
     /// 消音。**止めない**——消音を解いたとき、映像と同じ位置で鳴っていてほしい
@@ -73,7 +92,11 @@ final class MusicPreviewPlayer: ObservableObject {
         player?.isMuted = muted
     }
 
-    private func start(_ url: URL, song: Photo.Song?) {
+    private func start(_ url: URL, song: Photo.Song?, loops: Bool = false) {
+        deactivateTask?.cancel()
+        deactivateTask = nil
+        session += 1
+        isPaused = false
         // **`.ambient` にしない。** あれは消音スイッチに従うので、
         // 本人が ▶ を押したのに**マナーモードだと何も鳴らない**
         // ——「壊れている」としか読めない。押したのは本人の意思なので
@@ -95,25 +118,37 @@ final class MusicPreviewPlayer: ObservableObject {
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player.currentItem,
             queue: .main
-        ) { [weak self] _ in
-            self?.stop()
+        ) { [weak self, weak player] _ in
+            if loops, let player {
+                player.seek(to: .zero)
+                player.play()
+            } else {
+                self?.stop()
+            }
         }
         player.play()
     }
 
-    func stop() {
+    /// 止める。`releaseSession` が false なら場は返さない——ストーリーの中で
+    /// 曲の無い1本に移るとき、場を返すと**その1本の動画の音まで切れる**
+    func stop(releaseSession: Bool = true) {
         removeEndObserver()
         player?.pause()
         player = nil
         playingURL = nil
         playingSong = nil
+        isPaused = false
+        guard releaseSession else { return }
         // **止めたら場を返す。** 返さないと、止めたあとも他のアプリの
         // 音楽が戻らない（`.playback` で奪ったまま）。
         //
         // **少し待ってから返す。** 止めた直後は `isBusy` で断られることが
         // あり、`try?` で握り潰すと場を占めたままになる
-        Task { @MainActor in
+        deactivateTask?.cancel()
+        deactivateTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 200_000_000)
+            // 待つ間に鳴らし直していたら返さない
+            guard !Task.isCancelled, self?.player == nil else { return }
             try? AVAudioSession.sharedInstance()
                 .setActive(false, options: .notifyOthersOnDeactivation)
         }

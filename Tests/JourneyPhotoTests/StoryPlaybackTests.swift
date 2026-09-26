@@ -186,15 +186,28 @@ final class StoryPlaybackTests: XCTestCase {
 
     // MARK: - 曲
 
-    private let songJSON = #""song":{"title":"海へ","artist":"誰か","previewUrl":"https://audio.test/p.m4a"}"#
+    private let songJSON = #""song":{"title":"海へ","artist":"誰か","previewUrl":"https://audio-ssl.itunes.apple.com/p.m4a"}"#
 
     /// 曲が付いていれば鳴らす。題の無い曲は鳴らさない（曲名の行も出ない）
     func testSongURL() {
         XCTAssertEqual(StoryPlayback.songURL(for: story("a", song: songJSON))?.absoluteString,
-                       "https://audio.test/p.m4a")
+                       "https://audio-ssl.itunes.apple.com/p.m4a")
         XCTAssertNil(StoryPlayback.songURL(for: story("b")))
-        let untitled = #""song":{"title":"  ","previewUrl":"https://audio.test/p.m4a"}"#
+        let untitled = #""song":{"title":"  ","previewUrl":"https://audio-ssl.itunes.apple.com/p.m4a"}"#
         XCTAssertNil(StoryPlayback.songURL(for: story("c", song: untitled)))
+    }
+
+    /// 音源は iTunes の配信元だけ。**開いた瞬間に取りに行く**ので、任意の URL を
+    /// 通すと開いた人の IP が外へ渡る（Web の `safeSongPreviewUrl` と同じ規則）
+    func testSongURLRejectsForeignHosts() {
+        func url(_ s: String) -> String { #""song":{"title":"海へ","previewUrl":"\#(s)"}"# }
+        XCTAssertNotNil(StoryPlayback.songURL(for: story("a", song: url("https://audio-ssl.itunes.apple.com/x.m4a"))))
+        XCTAssertNotNil(StoryPlayback.songURL(for: story("b", song: url("https://a1.mzstatic.com/x.m4a"))))
+        XCTAssertNil(StoryPlayback.songURL(for: story("c", song: url("https://evil-mzstatic.com/x.m4a"))),
+                     "末尾一致では通さない")
+        XCTAssertNil(StoryPlayback.songURL(for: story("d", song: url("https://tracker.example/x.m4a"))))
+        XCTAssertNil(StoryPlayback.songURL(for: story("e", song: url("http://audio-ssl.itunes.apple.com/x.m4a"))),
+                     "https だけ")
     }
 
     /// 曲のある写真にも「音を消す」を出す（Web の `hasAudio = isVideo || !!item.song`）

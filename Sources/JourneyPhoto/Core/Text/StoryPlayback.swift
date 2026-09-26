@@ -285,10 +285,24 @@ enum StoryPlayback {
 
     // MARK: - 曲
 
-    /// 鳴らす曲。題の無い曲・URL の無い曲は鳴らさない（曲名の行を出さない条件と同じ）
+    /// 鳴らす曲。題の無い曲・URL の無い曲は鳴らさない（曲名の行を出さない条件と同じ）。
+    ///
+    /// 🔴 **音源のホストを確かめる。** ストーリーは開いた瞬間に曲を取りに行くので、
+    /// 任意の URL が入った行があると、トレイから開いた全員の IP と時刻がその先へ
+    /// 渡る（Web の `safeSongPreviewUrl`・`lib/utils/mediaHosts.ts` と同じ規則）
     static func songURL(for story: Story) -> URL? {
-        guard story.songLine != nil else { return nil }
-        return story.song?.previewURL
+        guard story.songLine != nil, let url = story.song?.previewURL,
+              isAllowedPreview(url) else { return nil }
+        return url
+    }
+
+    /// 試聴の配信元（iTunes Search API が返すホスト）。**完全一致かサブドメインだけ**
+    /// ——末尾一致だと `evil-mzstatic.com` が通る
+    static let previewHosts = ["itunes.apple.com", "mzstatic.com"]
+
+    static func isAllowedPreview(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
+        return previewHosts.contains { host == $0 || host.hasSuffix("." + $0) }
     }
 
     /// 動画の音を消すか。**曲が付いている動画は動画側を常に消す**
