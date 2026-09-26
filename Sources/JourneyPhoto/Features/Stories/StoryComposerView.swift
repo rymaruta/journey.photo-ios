@@ -106,7 +106,7 @@ struct StoryComposerView: View {
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
-                SongPickerView { picked in song = picked }
+                SongPickerView { picked in applySong(picked) }
             }
         }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
@@ -155,7 +155,7 @@ struct StoryComposerView: View {
     // MARK: - 写真
 
     /// 写真を画面いっぱいに（下の角だけ半径24）。上下の暗がり、右の道具の列、
-    /// 写真の上のひとこと・撮影地・曲、左下の並び、右下の秒数（板 24）
+    /// 写真の上のひとこと・撮影地（曲は動かせる札）、左下の並び、右下の秒数（板 24）
     private var photoArea: some View {
         ZStack(alignment: .bottomLeading) {
             Color(red: 0x0A / 255.0, green: 0x10 / 255.0, blue: 0x30 / 255.0).opacity(preview == nil ? 0 : 1)
@@ -270,7 +270,7 @@ struct StoryComposerView: View {
                 // 付けた曲は変える・外すを選ぶ（外す口が無かった）
                 Menu {
                     Button(L("曲を変える", "Change song")) { showSongPicker = true }
-                    Button(L("曲を外す", "Remove song"), role: .destructive) { song = nil }
+                    Button(L("曲を外す", "Remove song"), role: .destructive) { applySong(nil) }
                 } label: {
                     toolIcon("music.note")
                 }
@@ -304,7 +304,8 @@ struct StoryComposerView: View {
             .jpGlass(in: Circle())
     }
 
-    /// 写真の上のひとこと（明朝32・影）と、撮影地・曲の札。**ひとことはその場で打つ**
+    /// 写真の上のひとこと（明朝32・影）と撮影地の札。**ひとことはその場で打つ**。
+    /// 曲は動かせる札として写真に置く（`SongSticker`）
     private var captionBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField(L("ひとことを書く", "Write a caption"), text: Binding(
@@ -320,10 +321,35 @@ struct StoryComposerView: View {
             if !location.isEmpty {
                 photoChip(symbol: "mappin", text: location)
             }
-            if let song {
-                photoChip(symbol: "music.note", text: song.title)
+            // **曲が付いていることは必ず見せる。** 札はいまの1枚にしか置かないので、
+            // 札を消した・別の写真に切り替えた・札が上限で置けなかったときに、
+            // 曲が付いているのに画面から何も分からなくなる
+            if let song, !currentHasSongSticker, let text = SongSticker.text(for: song) {
+                photoChip(symbol: "music.note", text: text)
             }
         }
+    }
+
+    /// 曲の札を置けない理由の一言。**状態から毎回決める**（覚えておくと、写真を
+    /// 切り替えた・札を消したあとも「置けませんでした」が残る）。写真や投稿の
+    /// 知らせ（`message`）とは別の欄——投稿の途中失敗の知らせを上書きしない
+    /// **どの写真にもいまの曲の札が無いときだけ出す**（札は1枚にしか置かないので、
+    /// 別の写真に置いてあれば足りている）
+    private var songNote: String? {
+        guard let song, let text = SongSticker.text(for: song), !currentHasSongSticker,
+              overlays.wrappedValue.count >= TextOverlay.maxCount else { return nil }
+        let placed = String(text.prefix(TextOverlay.maxLength))
+        guard !shots.contains(where: { $0.overlays.contains { $0.kind == .song && $0.text == placed } })
+        else { return nil }
+        return L("文字と札がいっぱいなので、曲の札は置けません",
+                 "No room for the song sticker on this photo")
+    }
+
+    /// いまの1枚に、付けた曲の札が置いてあるか
+    private var currentHasSongSticker: Bool {
+        guard let song, let text = SongSticker.text(for: song) else { return false }
+        let placed = String(text.prefix(TextOverlay.maxLength))
+        return overlays.wrappedValue.contains { $0.kind == .song && $0.text == placed }
     }
 
     private func photoChip(symbol: String, text: String) -> some View {
@@ -474,6 +500,9 @@ struct StoryComposerView: View {
             if let message, prepared != nil {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.muted2)
             }
+            if let songNote, prepared != nil {
+                Text(songNote).font(.footnote).foregroundStyle(WebTheme.muted2)
+            }
             HStack(spacing: 8) {
                 // 🔴 **ストーリーはフォロワーだけが見る**（2026-09-22・owner の
                 // 判断。`api-user/src/storyVisibility.ts`）。選ぶ口は置かない
@@ -549,6 +578,28 @@ struct StoryComposerView: View {
                 if let i = list.firstIndex(where: { $0.id == id }) { list[i] = value; overlays.wrappedValue = list }
             }
         )
+    }
+
+    /// 曲を付ける・変える・外す。**写真の上の曲の札も合わせる**——付けたら
+    /// いま見ている1枚に動かせる札を置き、変えたら札の文字を差し替え、外したら消す。
+    /// 曲は全部の写真に共通なので、差し替えと削除は全部の写真で行う
+    private func applySong(_ new: Photo.Song?) {
+        let old = song
+        song = new
+        var found = false
+        for i in shots.indices {
+            let result = SongSticker.retext(shots[i].overlays, from: old, to: new)
+            shots[i].overlays = result.overlays
+            found = found || result.found
+        }
+        // 前の札が無ければ（初めて付けた・自分で消していた）いまの1枚に置く。
+        // 札が上限なら置かない（曲は投稿の項目として送られ、閲覧画面の ♪ に出る）
+        guard !found, let new, let sticker = SongSticker.make(for: new),
+              shots.indices.contains(current) else { return }
+        guard shots[current].overlays.count < TextOverlay.maxCount else {
+            return
+        }
+        shots[current].overlays.append(sticker)
     }
 
     private func add(kind: TextOverlay.Kind) {

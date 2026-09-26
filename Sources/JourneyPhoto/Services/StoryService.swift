@@ -161,12 +161,9 @@ struct Story: Decodable, Identifiable, Equatable {
     var imageURL: URL? { URL(string: src) }
 
     /// 曲の行に出す文字（「曲名 · アーティスト」）。曲が無ければ nil
+    /// **作成画面の曲の札と同じ文字**（`SongSticker.text`。2か所で作ると片方だけ変わる）
     var songLine: String? {
-        guard let song else { return nil }
-        let title = song.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return nil }
-        let artist = song.artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return artist.isEmpty ? title : "\(title) · \(artist)"
+        song.flatMap(SongSticker.text(for:))
     }
     var isVideo: Bool { mediaType == "video" }
 
