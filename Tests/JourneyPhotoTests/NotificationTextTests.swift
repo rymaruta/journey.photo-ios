@@ -140,3 +140,108 @@ final class NotificationTextTests: XCTestCase {
         XCTAssertNil(ago("2026-09-22T10:00:00.000Z"))   // 未来
     }
 }
+
+/// 未読の点が「読み直すまで」残るか（ビューモデル）。
+///
+/// 開いた回の最後に既読にするので、**行を押して戻っただけ**で `.task` が
+/// 走り直すと、サーバーは `unread=0` を返す。それで点が消えてはいけない。
+@MainActor
+final class NotificationsUnreadKeepTests: XCTestCase {
+
+    private func page(_ ids: [String], unread: Int) throws -> NotificationService.Page {
+        let items = ids.map {
+            "{\"type\":\"like\",\"byId\":\"\($0)\",\"photoId\":\"p-\($0)\",\"t\":\"2026-09-21T10:00:00.000Z\"}"
+        }.joined(separator: ",")
+        return try JSONDecoder.api.decode(NotificationService.Page.self,
+                                          from: Data("{\"items\":[\(items)],\"unread\":\(unread)}".utf8))
+    }
+
+    func testDotsSurviveAReloadAfterMarkingRead() async throws {
+        let model = NotificationsViewModel()
+        let first = try page(["a", "b", "c"], unread: 2)
+        model.apply(first, refreshing: false)
+        XCTAssertEqual(model.unreadIds, Set(first.items.prefix(2).map(\.id)))
+        // 戻ってきて読み直した回（既読化のあと）
+        model.apply(try page(["a", "b", "c"], unread: 0), refreshing: false)
+        XCTAssertEqual(model.unreadIds, Set(first.items.prefix(2).map(\.id)))
+    }
+
+    /// 同じ画面にいる間に届いたぶんは足す
+    func testNewArrivalsAreAdded() async throws {
+        let model = NotificationsViewModel()
+        model.apply(try page(["a", "b"], unread: 1), refreshing: false)
+        let next = try page(["n", "a", "b"], unread: 1)
+        model.apply(next, refreshing: false)
+        XCTAssertEqual(model.unreadIds, Set([next.items[0].id, next.items[1].id]))
+    }
+
+    /// 引っぱって読み直したときは入れ替える（点が消える）
+    func testPullToRefreshReplaces() async throws {
+        let model = NotificationsViewModel()
+        model.apply(try page(["a", "b"], unread: 2), refreshing: false)
+        model.apply(try page(["a", "b"], unread: 0), refreshing: true)
+        XCTAssertTrue(model.unreadIds.isEmpty)
+    }
+}
+
+/// プッシュ通知の文面（`Localizable.strings`）が一覧の文言と同じか。
+/// **サーバーは鍵だけ送る**ので、文面はここにしか無い
+final class NotificationPushStringsTests: XCTestCase {
+
+    private func strings(_ lang: String) throws -> [String: String] {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Resources/\(lang).lproj/Localizable.strings")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        var out: [String: String] = [:]
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: "\"", omittingEmptySubsequences: false)
+            if parts.count >= 4, parts[1].hasPrefix("NOTIF_") { out[String(parts[1])] = String(parts[3]) }
+        }
+        return out
+    }
+
+    func testJapaneseMatchesTheList() throws {
+        let ja = try strings("ja")
+        XCTAssertEqual(ja["NOTIF_LIKE"], "%@ があなたの写真にいいねしました")
+        XCTAssertEqual(ja["NOTIF_COMMENT"], "%@ がコメントしました")
+        XCTAssertEqual(ja["NOTIF_FOLLOW"], "%@ があなたをフォローしました")
+        XCTAssertEqual(ja["NOTIF_STORY_REPLY"], "%@ がストーリーに返信しました")
+    }
+
+    func testEnglishMatchesTheList() throws {
+        let en = try strings("en")
+        XCTAssertEqual(en["NOTIF_LIKE"], "%@ liked your photo")
+        XCTAssertEqual(en["NOTIF_COMMENT"], "%@ commented on your photo")
+        XCTAssertEqual(en["NOTIF_FOLLOW"], "%@ followed you")
+        XCTAssertEqual(en["NOTIF_STORY_REPLY"], "%@ replied to your story")
+    }
+}
+
+/// 行を `NavigationLink` で包まなくなったので、行き先は id で持つ。
+/// 開くときに引き直せるか（公開一覧 → 自分の写真の順）
+@MainActor
+final class NotificationRouteTests: XCTestCase {
+
+    private func photo(_ id: String) throws -> Photo {
+        try JSONDecoder.api.decode(Photo.self, from: Data(#"{"id":"\#(id)","src":"https://x/\#(id).jpg"}"#.utf8))
+    }
+
+    private func notification(_ json: String) throws -> AppNotification {
+        try JSONDecoder.api.decode(AppNotification.self, from: Data(json.utf8))
+    }
+
+    func testRoutesResolveBackToTheScreen() async throws {
+        let model = NotificationsViewModel()
+        model.setFeedForTesting([try photo("pub")])
+        model.setMineForTesting([try photo("draft")])
+        let like = try notification(#"{"type":"like","photoId":"draft","byId":"u"}"#)
+        XCTAssertEqual(model.route(for: like), .photo("draft", fromPublicFeed: false))
+        XCTAssertEqual(model.photo(id: "draft")?.id, "draft")
+        XCTAssertEqual(model.photo(id: "pub")?.id, "pub")
+        let follow = try notification(#"{"type":"follow","byId":"u","targetUserId":"u"}"#)
+        XCTAssertEqual(model.route(for: follow), .user("u"))
+        let reply = try notification(#"{"type":"storyreply","photoId":"s","byId":"u"}"#)
+        XCTAssertNil(model.route(for: reply))
+    }
+}

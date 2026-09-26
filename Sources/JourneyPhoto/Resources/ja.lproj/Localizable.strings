@@ -5,7 +5,7 @@
    鍵の文字列（`NOTIF_LIKE`）をそのまま通知に出す。
    `Tools/check-config.py` が両方に在ることを見張っている。 */
 
-"NOTIF_LIKE" = "%@ さんがいいねしました";
-"NOTIF_COMMENT" = "%@ さんがコメントしました";
-"NOTIF_FOLLOW" = "%@ さんがフォローしました";
-"NOTIF_STORY_REPLY" = "%@ さんがストーリーに返信しました";
+"NOTIF_LIKE" = "%@ があなたの写真にいいねしました";
+"NOTIF_COMMENT" = "%@ がコメントしました";
+"NOTIF_FOLLOW" = "%@ があなたをフォローしました";
+"NOTIF_STORY_REPLY" = "%@ がストーリーに返信しました";

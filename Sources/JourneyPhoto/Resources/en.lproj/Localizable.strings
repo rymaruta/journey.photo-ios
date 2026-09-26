@@ -6,5 +6,5 @@
 
 "NOTIF_LIKE" = "%@ liked your photo";
 "NOTIF_COMMENT" = "%@ commented on your photo";
-"NOTIF_FOLLOW" = "%@ started following you";
+"NOTIF_FOLLOW" = "%@ followed you";
 "NOTIF_STORY_REPLY" = "%@ replied to your story";
