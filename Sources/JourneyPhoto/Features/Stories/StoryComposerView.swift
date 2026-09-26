@@ -8,6 +8,8 @@ struct StoryComposerView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var drafts: StoryDraftStore
+    /// 送るのは裏の係（画面を閉じても続く・板 27）
+    @ObservedObject private var uploads = StoryUploadCenter.shared
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
 
@@ -28,7 +30,6 @@ struct StoryComposerView: View {
     /// 24時間のあとも残すか（ハイライトの材料になる）
     @State private var keepInArchive = false
     @State private var showCamera = false
-    @State private var isWorking = false
     /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
     @State private var keepExistingDraft = false
     /// ストーリーのBGM（30秒の試聴だけ）と、表示秒数
@@ -121,8 +122,6 @@ struct StoryComposerView: View {
             Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。",
                    "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
         }
-        // 🔴 **送っている間は下へ払っても閉じない**（✕ と同じ。閉じても送信は裏で続く）
-        .interactiveDismissDisabled(isWorking)
         // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
@@ -193,8 +192,6 @@ struct StoryComposerView: View {
         .overlay(alignment: .topTrailing) {
             if !textMode && preview != nil {
                 toolColumn
-                    // 送っている間は触らせない（失敗すると並びが詰め直される）
-                    .disabled(isWorking)
                     .padding(.trailing, 12)
                     .padding(.top, 120)
             }
@@ -211,9 +208,6 @@ struct StoryComposerView: View {
                 mediaStrip
                     .padding(.leading, 16)
                     .padding(.bottom, 20)
-                    // 🔴 **送っている間は並びを変えさせない。** 送信は始めたときの写しを
-                    // 回すので、外した写真も出てしまい、失敗時の片付けが範囲外で落ちていた
-                    .disabled(isWorking)
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -442,8 +436,6 @@ struct StoryComposerView: View {
                         .jpGlass(in: Circle())
                 }
                 .buttonStyle(.plain)
-                // 送っている間は閉じさせない（閉じても送信は裏で続く）
-                .disabled(isWorking)
                 .accessibilityLabel(Labels.Common.close)
                 Spacer()
                 if captionFocused {
@@ -469,7 +461,7 @@ struct StoryComposerView: View {
                         .jpGlass(in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(prepared == nil || isWorking)
+                .disabled(prepared == nil)
                 .opacity(prepared == nil ? 0.4 : 1)
                 }
             }
@@ -524,24 +516,18 @@ struct StoryComposerView: View {
             .foregroundStyle(WebTheme.muted2)
 
             Button {
-                Task { await post() }
+                post()
             } label: {
-                HStack(spacing: 8) {
-                    if isWorking {
-                        ProgressView().tint(WebTheme.accentText)
-                        Text(L("送信中…", "Sending…"))
-                    } else {
-                        Text(L("ストーリーに投稿", "Post story"))
-                    }
-                }
+                // 押したら画面を閉じる。**送信中は自分の輪に出る**（板 27）
+                Text(L("ストーリーに投稿", "Post story"))
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(WebTheme.accentText)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background(WebTheme.accentBackground, in: Capsule())
-                .opacity(isWorking || prepared == nil ? 0.5 : 1)
+                .opacity(prepared == nil ? 0.5 : 1)
             }
             .buttonStyle(.plain)
-            .disabled(isWorking || prepared == nil)
+            .disabled(prepared == nil)
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
@@ -789,57 +775,52 @@ struct StoryComposerView: View {
     }
 
 
-    /// 出す。**並びの順に、1枚ずつ**。
+    /// 出す。**送るのは裏の係（`StoryUploadCenter`）**——画面はすぐ閉じ、
+    /// ホームの自分の輪が進み具合と「送信中…」を出す（板 27「投稿した直後」）。
     ///
-    /// 🔴 **途中で失敗したら、そこで止める。** 残りを出し続けると、
-    /// 「何本出たのか」が誰にも分からなくなる。出たぶんはそのまま残し
-    /// （消しに行かない——消す方が失敗したときに二重に分からなくなる）、
-    /// **何枚出て何枚残ったか**を画面に出す。
-    private func post() async {
-        // 🔴 **二度押しで二重に出さない。** ボタンの `.disabled(isWorking)` は
-        // 次の描画まで効かないので、素早く2回押すと `post()` が2本走り、
-        // 同じストーリーが2本出ていた（2026-09-25 owner「2重投稿」）。
-        // ここは主アクタの上で `await` より前なので、2本目は必ず止まる
-        guard !isWorking, !shots.isEmpty else { return }
-        isWorking = true
+    /// 以前はここで送り終えるまで待ち、その間は画面を閉じられなかった。
+    /// 途中で失敗したときの決まり（止める・出たぶんは残す・残りを持つ）は
+    /// 係の側へそのまま移した。
+    private func post() {
+        // 🔴 **二度押しで二重に出さない**（2026-09-25 owner「2重投稿」）。
+        // ここは同期で、1回目で画面を閉じ係に渡す。2回目は係が「片付いていない
+        // 並びがある」で受けない
+        guard !shots.isEmpty else { return }
         message = nil
-        defer { isWorking = false }
         let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
-        var posted = 0
-        var postedIds: Set<StoryShot.ID> = []
-        for shot in shots {
-            do {
-                _ = try await environment.stories.create(
-                    // **焼き込んでから送る。** 文字が無ければ元のデータを
-                    // そのまま渡す（読み書きの往復で画質を落とさない）
-                    imageData: TextOverlayRenderer.burn(shot.overlays, into: shot.prepared.data),
-                    caption: caption,
-                    location: place,
-                    coords: shot.prepared.coords,
-                    song: song,
-                    durationSec: durationSec,
-                    archive: keepInArchive
-                )
-                posted += 1
-                postedIds.insert(shot.id)
-            } catch {
-                let reason = (error as? LocalizedError)?.errorDescription
-                    ?? L("投稿できませんでした", "Couldn't post")
-                message = StoryQueue.partialFailure(posted: posted, total: shots.count, reason: reason)
-                // **出せたぶんは並びから外す。** 押し直したときに
-                // 同じ写真をもう一度出さないため
-                // **数ではなく id で外す**——並びが変わっていると
-                // `removeFirst(posted)` は範囲外で落ちる
-                shots = StoryQueue.dropPosted(shots, posted: postedIds)
-                current = 0
-                return
-            }
+        // **焼き込んでから渡す。** 文字が無ければ元のデータをそのまま渡す
+        // （読み書きの往復で画質を落とさない）
+        let jobs = shots.map { shot in
+            StoryUploadCenter.Job(
+                imageData: TextOverlayRenderer.burn(shot.overlays, into: shot.prepared.data),
+                caption: caption, location: place, coords: shot.prepared.coords,
+                song: song, durationSec: durationSec, archive: keepInArchive)
         }
-        // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）。
-        // 🔴 **ただし復元を保留した古い下書きは消さない**——この回の投稿とは別物で、
-        // 「残す」を選んだのに黙って消えていた
-        if !keepExistingDraft { drafts.clear() }
+        let stories = environment.stories
+        let drafts = drafts
+        let keepExistingDraft = keepExistingDraft
+        let started = uploads.start(jobs, send: { job in
+            _ = try await stories.create(imageData: job.imageData, caption: job.caption,
+                                         location: job.location, coords: job.coords,
+                                         song: job.song, durationSec: job.durationSec,
+                                         archive: job.archive)
+        }, onAllSent: {
+            // 出し終えたら下書きは要らない（残すと次に開いたときにまた尋ねる）。
+            // 🔴 **ただし復元を保留した古い下書きは消さない**——この回の投稿とは別物
+            if !keepExistingDraft { drafts.clear() }
+        })
+        guard started else {
+            // 係が片付いていない。**送っている最中か、失敗した残りを持っているか**で言い分けを変える
+            if case .failed = uploads.phase {
+                message = L("送れなかったストーリーが残っています。ホームの自分の輪から、送り直すかやめるかを選んでください",
+                            "A story that failed to send is waiting. Retry or discard it from your ring on Home.")
+            } else {
+                message = L("前のストーリーをまだ送っています。ホームの自分の輪で進み具合を確かめてください",
+                            "Your previous story is still sending. Check your ring on Home.")
+            }
+            return
+        }
         dismiss()
     }
 }
