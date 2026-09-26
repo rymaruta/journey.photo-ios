@@ -266,6 +266,9 @@ extension View {
     public func navigationBarTitleDisplayMode(_ m: NavigationBarItem.TitleDisplayMode) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func navigationDestination<D: Hashable, V: View>(
         for data: D.Type, @ViewBuilder destination: @escaping (D) -> V) -> Self { self }
+    /// 旗が立ったら押し込む版（iOS 16+）。作った直後にその画面を開くのに使う
+    public func navigationDestination<V: View>(
+        isPresented: Binding<Bool>, @ViewBuilder destination: () -> V) -> Self { self }
     public func toolbar<C: ToolbarContent>(@ToolbarContentBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func tabItem<V: View>(@ViewBuilder _ label: () -> V) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func sheet<C: View>(isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil,

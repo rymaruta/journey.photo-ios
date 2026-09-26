@@ -182,6 +182,13 @@ public struct SecureField: View {
     public init(_ title: String, text: Binding<String>) {}
     public var body: Never { fatalError("模型") }
 }
+/// 日付を選ぶ部品。本物は押すと暦が開く（`.compact`）
+public struct DatePicker: View {
+    public struct Components { public static let date = Components(), hourAndMinute = Components() }
+    public init(_ title: String, selection: Binding<Date>, displayedComponents: Components) {}
+    public init(_ title: String, selection: Binding<Date>, in range: PartialRangeFrom<Date>, displayedComponents: Components) {}
+    public var body: Never { fatalError("模型") }
+}
 public struct Toggle: View {
     public init(_ title: String, isOn: Binding<Bool>) {}
     /// 札を自分で組む版（本物にもある。説明を2行にするのに使う）

@@ -113,7 +113,7 @@
 | | 外部テスター | owner | App Store Connect の「テスト情報」（フィードバック用メール・連絡先）を埋めてから `betaReview: true` |
 | | CloudFront の署名配信 | owner | `photo-gallery/scripts/setup-private-delivery.sh --apply` ＋ Secrets 2つ。手順は `photo-gallery/docs/restricted-image-delivery.md` |
 | | 本番反映（develop → main） | owner の判断 | 「まだ出さない」のまま。#136（署名）・#159（課金）は develop まで |
-| | `/user/spots`・`/user/trips` を使うか | 未定 | サーバーにはあるがアプリは使っていない（下の 4-3）。「行きたい場所」は**端末に保存**していて機種変で消える |
+| | `/user/spots` を使うか | 未定 | サーバーにはあるがアプリは使っていない（下の 4-3）。「行きたい場所」は**端末に保存**していて機種変で消える。**旅行プランの候補もこの端末の「行きたい」から出す**ので、Web で押した場所はアプリの候補に出ない（逆も同じ）。`/user/trips` は 2026-09-26 に使い始めた（キャンバス 17・17b・17c） |
 
 **App Store Connect で owner が答えるもの**は `docs/APP_REVIEW.md` に貼れる形である
 （Notes の和英文・App のプライバシー・年齢制限の質問票）。
@@ -187,10 +187,10 @@
               POST|DELETE /albums/{id}/invite  POST /invites/{token}/join
     その他    GET /geocode/search  GET /geocode/reverse  GET /music/search
 
-**サーバーにあるが、アプリは使っていない（9本）**
+**サーバーにあるが、アプリは使っていない（5本）**——`/user/trips` の4本は
+2026-09-26 に使い始めた（`TripPlanService`）
 
     GET|POST /user/spots   DELETE /user/spots/{slug}     行きたい場所（サーバー保存）
-    GET|POST /user/trips   PUT|DELETE /user/trips/{planId}   旅行プラン（S-8）
     GET /user/saves/{id}   POST /stories/{id}/vote
 
 **アプリが叩いているが、サーバーに無い（2本）** ⛔

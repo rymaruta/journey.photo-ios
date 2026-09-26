@@ -340,6 +340,11 @@ struct MyPageView: View {
                     .buttonStyle(.bordered)
                 NavigationLink(Labels.Navigation.favorites) { FavoritesView() }
                     .buttonStyle(.bordered)
+                // 旅行プラン（本人だけ）。Web も本人のプロフィールにだけ出す
+                // ——中身は本人しか読めない（`/user/trips`）
+                NavigationLink(L("旅行プラン", "Trip plans")) { TripPlansView() }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("mypage.tripPlans")
             }
             .padding(.horizontal, 16)
         }
