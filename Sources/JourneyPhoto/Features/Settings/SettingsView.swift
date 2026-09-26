@@ -171,24 +171,24 @@ struct SettingsView: View {
             NavigationLink { BlockedUsersView() } label: {
                 JPRowLabel(title: L("ブロックした人", "Blocked people"), systemImage: "shield")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JPRowButtonStyle())
             JPCardDivider()
             NavigationLink { CloseFriendsView() } label: {
                 JPRowLabel(title: L("親しい友達", "Close friends"), systemImage: "person.badge.plus")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JPRowButtonStyle())
             JPCardDivider()
             // 板の文言は「お気に入り」（しおりの印）だが、アプリの画面名（01d の
             // メニューも同じ）に揃える。しおりはアプリでは「保存」の印なので、ハート
             NavigationLink { FavoritesView() } label: {
                 JPRowLabel(title: Labels.Navigation.favorites, systemImage: "heart")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JPRowButtonStyle())
             JPCardDivider()
             NavigationLink { AlbumsView() } label: {
                 JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JPRowButtonStyle())
         }
     }
 
@@ -199,7 +199,12 @@ struct SettingsView: View {
                        detail: L("一度見た写真を端末に控えています。空にすると、次に見るときだけ通信します。",
                                  "Photos you have seen are kept on this device. Clearing frees space."),
                        value: cacheSize, chevron: false)
-                .accessibilityElement(children: .combine)
+                // 読み上げは「写真の控え、12 MB」を先に（長い説明は後ろのヒントへ）
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L("写真の控え", "Cached photos"))
+                .accessibilityValue(cacheSize)
+                .accessibilityHint(L("一度見た写真を端末に控えています。空にすると、次に見るときだけ通信します。",
+                                     "Photos you have seen are kept on this device. Clearing frees space."))
             JPCardDivider()
             Button {
                 // **消すのは画像の控えだけ。** ログインの情報や
@@ -209,7 +214,7 @@ struct SettingsView: View {
             } label: {
                 JPRowLabel(title: L("控えを空にする", "Clear cache"), chevron: false)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JPRowButtonStyle())
         }
     }
 
@@ -221,19 +226,19 @@ struct SettingsView: View {
                 NavigationLink { ChangePasswordView() } label: {
                     JPRowLabel(title: L("パスワードを変える", "Change password"), systemImage: "lock")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(JPRowButtonStyle())
                 JPCardDivider()
             }
             NavigationLink { LegalLinksView() } label: {
                 JPRowLabel(title: L("利用規約・プライバシーポリシー", "Terms & Privacy"), systemImage: "flag")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JPRowButtonStyle())
             if let contact = LegalConsent.contactURL {
                 JPCardDivider()
                 Link(destination: contact) {
                     JPRowLabel(title: L("問い合わせ", "Contact"), systemImage: "bubble.left")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(JPRowButtonStyle())
             }
             if auth.userId != nil {
                 JPCardDivider()
@@ -242,7 +247,7 @@ struct SettingsView: View {
                     JPRowLabel(title: L("アカウントの削除", "Delete account"), systemImage: "trash",
                                chevron: false, iconColor: WebTheme.danger)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(JPRowButtonStyle())
             }
         }
     }
@@ -264,7 +269,7 @@ struct SettingsView: View {
                 JPRowLabel(title: Labels.Navigation.logout,
                            systemImage: "rectangle.portrait.and.arrow.right", chevron: false)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JPRowButtonStyle())
         }
     }
 }

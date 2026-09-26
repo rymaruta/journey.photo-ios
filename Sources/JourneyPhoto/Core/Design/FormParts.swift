@@ -214,7 +214,7 @@ struct JPToggleRow: View {
 
 /// 札の中の1行の見た目（板 43: 最小54pt・左に白72% のアイコン・15px の名前・
 /// 11px の説明・右に値（等幅）と矢印）。押す口は呼ぶ側（NavigationLink・Link・
-/// Button）が包む——包むときは `.buttonStyle(.plain)`
+/// Button）が包む——包むときは `.buttonStyle(JPRowButtonStyle())`
 struct JPRowLabel: View {
 
     let title: String
@@ -222,7 +222,8 @@ struct JPRowLabel: View {
     var detail: String?
     /// 右に出す値（控えの大きさなど）。等幅
     var value: String?
-    /// 行き先がある行だけ矢印を出す（押すとその場で効く行には出さない）
+    /// 矢印。行き先がある行に出す（押すとその場で効く行には出さない）。
+    /// 例外はアカウントの削除——板は行き先があっても矢印を出さない
     var chevron = true
     /// 危ない行（アカウントの削除）はアイコンだけ赤（板どおり、名前は白のまま）
     var iconColor: Color = WebTheme.muted2
@@ -265,5 +266,16 @@ struct JPRowLabel: View {
         .padding(.vertical, 13)
         .frame(minHeight: 54)
         .contentShape(Rectangle())
+    }
+}
+
+/// 札の中の行を押したときの手応え（押している間だけ行の地を白6%に）。
+///
+/// **`.plain` では足りない。** List の行は押すと灰色になったが、`.plain` は字が
+/// 少し薄くなるだけで、押せる行と表示だけの行の見分けがつかなかった
+struct JPRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(Color.white.opacity(configuration.isPressed ? 0.06 : 0))
     }
 }

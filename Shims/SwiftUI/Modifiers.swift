@@ -99,6 +99,17 @@ public struct UITextContentTypeShim {
     public static let oneTimeCode = UITextContentTypeShim()
     public static let name = UITextContentTypeShim()
 }
+/// 自前の押し方の模型（本物と同じ形）。`makeBody` に押している間かが来る
+public protocol ButtonStyle {
+    associatedtype Body: View
+    typealias Configuration = ButtonStyleConfiguration
+    @ViewBuilder func makeBody(configuration: Configuration) -> Body
+}
+public struct ButtonStyleConfiguration {
+    public struct Label: View { public var body: Never { fatalError("模型") } }
+    public let label: Label
+    public let isPressed: Bool
+}
 public struct PrimitiveButtonStyleShim {
     public static let plain = PrimitiveButtonStyleShim()
     public static let bordered = PrimitiveButtonStyleShim()
@@ -246,6 +257,8 @@ extension View {
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(_ content: V, alignment: Alignment = .center) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func buttonStyle(_ s: PrimitiveButtonStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 自前の押し方（本物と同じ）
+    public func buttonStyle<S: ButtonStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func pickerStyle(_ s: PickerStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func textFieldStyle(_ s: TextFieldStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func controlSize(_ s: ControlSizeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -325,6 +338,7 @@ extension View {
     /// 読み上げの補足（本物と同じ）。`DailyThemeCard` が使う——**模型に無いと
     /// Linux 側のビルドだけが落ちる**（75f98e2 で main がそうなっていた）
     public func accessibilityHint(_ hint: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    public func accessibilityValue(_ value: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
 
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
