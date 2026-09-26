@@ -11,7 +11,10 @@ public struct Text: View {
 
 public struct Image: View {
     public init(systemName: String) {}
-    public init(uiImage: UIImageShim) {}
+    /// 本物の `Image` は main actor に縛られない（どこからでも作れる）。模型の
+    /// `View` は main actor なので、**ここだけ外す**——外さないと、画面の外で
+    /// 絵を作る `StoryComposerView` の下書きが Linux 側だけで落ちる（013182d）
+    nonisolated public init(uiImage: UIImageShim) {}
     /// アセットカタログの名前で引く（`BrandMark` など）
     public init(_ name: String) {}
     public func resizable() -> Image { self }

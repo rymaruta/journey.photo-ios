@@ -298,6 +298,9 @@ extension View {
     public func accessibilityIdentifier(_ id: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityAddTraits(_ traits: AccessibilityTraits) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityHidden(_ hidden: Bool) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 読み上げの補足（本物と同じ）。`DailyThemeCard` が使う——**模型に無いと
+    /// Linux 側のビルドだけが落ちる**（75f98e2 で main がそうなっていた）
+    public func accessibilityHint(_ hint: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
 
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }

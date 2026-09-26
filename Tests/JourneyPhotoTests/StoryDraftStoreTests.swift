@@ -89,7 +89,7 @@ final class StoryDraftStoreTests: XCTestCase {
 
     /// 画像の名前は**起動をまたいでも同じ**で、人ごとに別。
     /// 以前は `hashValue`（起動のたびに変わる）から作っていた
-    func testImageFileNameIsStable() {
+    func testImageFileNameIsStable() async {
         let a = StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u1")
         XCTAssertEqual(a, StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u1"))
         XCTAssertNotEqual(a, StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u2"))
