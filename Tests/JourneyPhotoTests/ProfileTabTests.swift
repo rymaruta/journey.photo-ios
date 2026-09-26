@@ -3,9 +3,16 @@ import XCTest
 
 final class ProfileTabTests: XCTestCase {
 
-    /// モック2 の並び（投稿 → 行きたい場所 → マップ）を崩さない
+    /// 整理案 05c の並び（投稿 → 旅の記録 → 行きたい場所 → お気に入り）。
+    /// **本人のページに「マップ」は出さない**——下の札の「マップ」と重なる
     func testMyPageOrder() {
-        XCTAssertEqual(ProfileTab.tabs(isMe: true), [.posts, .wishlist, .map, .favorites])
+        XCTAssertEqual(ProfileTab.tabs(isMe: true), [.posts, .trips, .wishlist, .favorites])
+        XCTAssertFalse(ProfileTab.tabs(isMe: true).contains(.map))
+    }
+
+    /// 旅の記録は本人の記録。**他人のページには出さない**
+    func testOthersPageHasNoTrips() {
+        XCTAssertFalse(ProfileTab.tabs(isMe: false).contains(.trips))
     }
 
     /// **端末にしか無いものは他人のページに出さない。**
