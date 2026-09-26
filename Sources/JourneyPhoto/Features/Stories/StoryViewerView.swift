@@ -201,7 +201,11 @@ struct StoryViewerView: View {
                 }
             }
         }
-        .sheet(isPresented: $showAuthor) {
+        // **ページの中でブロックしたら、閲覧画面ごと閉じる**（「…」からの
+        // ブロックと同じ後始末）。閉じないとブロックした人のストーリーが流れ続ける
+        .sheet(isPresented: $showAuthor, onDismiss: {
+            if let userId = story.userId, hidden.blockedUserIds.contains(userId) { dismiss() }
+        }) {
             if let userId = story.userId {
                 NavigationStack {
                     UserProfileView(userId: userId)
@@ -263,18 +267,21 @@ struct StoryViewerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-
-            // 上と下の暗がり（白い文字を写真の明るさに負けさせない。板は上180・下200）
-            VStack(spacing: 0) {
+            // 上と下の暗がり（白い文字を写真の明るさに負けさせない。板は上180・下200）。
+            // **重ねて置き、寸法の申告に加えない。** 縦に積むと合わせて 380pt を
+            // 求め、キーボードで写真の枠が縮んだときに枠ごと画面からあふれた
+            .overlay(alignment: .top) {
                 LinearGradient(colors: [Color.black.opacity(0.65), Color.black.opacity(0)],
                                startPoint: .top, endPoint: .bottom)
                     .frame(height: 180)
-                Spacer(minLength: 0)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottom) {
                 LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.7)],
                                startPoint: .top, endPoint: .bottom)
                     .frame(height: 200)
+                    .allowsHitTesting(false)
             }
-            .allowsHitTesting(false)
 
             tapZones
 
@@ -317,6 +324,9 @@ struct StoryViewerView: View {
                     Text(caption)
                         .font(JPFont.display(30, relativeTo: .largeTitle))
                         .lineSpacing(6)
+                        // 長い文でも写真の枠を押し広げない（ひとことは200字まで）
+                        .lineLimit(5)
+                        .minimumScaleFactor(0.7)
                         .foregroundStyle(.white)
                         .jpPhotoTextShadow()
                 }
@@ -626,7 +636,9 @@ struct StoryViewerView: View {
                     // 打っている間は止める（打ち終わる前に次へ送られない）
                     .focused($replyFocused)
                     .submitLabel(.send)
-                    .onSubmit { Task { await sendReply(to: story) } }
+                    // **空なら送らない**（送信キーは空でも押せる。空の本文は
+                    // サーバーが 400 で断り、その間は再生も止まっていた）
+                    .onSubmit { if canSend { Task { await sendReply(to: story) } } }
                     .padding(.horizontal, 16)
                     .frame(height: 46)
                     .jpGlass(in: Capsule(), border: replyFocused ? 0.6 : 0.35)
@@ -661,7 +673,7 @@ struct StoryViewerView: View {
         }
     }
 
-    /// 送信の丸を出すか。**打っている間か、文字が入っているとき**
+    /// 送信の丸を出すか（送れるか）。**空白だけでない文字が入っているとき**
     private var canSend: Bool {
         !reply.trimmingCharacters(in: .whitespaces).isEmpty
     }
@@ -683,7 +695,7 @@ struct StoryViewerView: View {
     }
 
     private func sendReply(to story: Story) async {
-        guard !isSending else { return }
+        guard !isSending, canSend else { return }
         isSending = true
         defer { isSending = false }
         do {
