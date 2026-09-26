@@ -333,12 +333,14 @@ struct StoryComposerView: View {
     /// 曲の札を置けない理由の一言。**状態から毎回決める**（覚えておくと、写真を
     /// 切り替えた・札を消したあとも「置けませんでした」が残る）。写真や投稿の
     /// 知らせ（`message`）とは別の欄——投稿の途中失敗の知らせを上書きしない
-    /// **どの写真にも曲の札が無いときだけ出す**（札は1枚にしか置かないので、
-    /// 別の写真に置いてあれば足りている。自分で打ち直した曲の札もあるとみなす）
+    /// **どの写真にもいまの曲の札が無いときだけ出す**（札は1枚にしか置かないので、
+    /// 別の写真に置いてあれば足りている）
     private var songNote: String? {
-        guard song != nil, !currentHasSongSticker,
-              overlays.wrappedValue.count >= TextOverlay.maxCount,
-              !shots.contains(where: { $0.overlays.contains { $0.kind == .song } }) else { return nil }
+        guard let song, let text = SongSticker.text(for: song), !currentHasSongSticker,
+              overlays.wrappedValue.count >= TextOverlay.maxCount else { return nil }
+        let placed = String(text.prefix(TextOverlay.maxLength))
+        guard !shots.contains(where: { $0.overlays.contains { $0.kind == .song && $0.text == placed } })
+        else { return nil }
         return L("文字と札がいっぱいなので、曲の札は置けません",
                  "No room for the song sticker on this photo")
     }
