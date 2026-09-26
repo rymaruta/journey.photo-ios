@@ -178,6 +178,27 @@ final class TripRouteTests: XCTestCase {
             XCTAssertNotEqual(left, right, "同じ地名の点が隣に並んでいる: \(places)")
         }
     }
+
+    /// **行き来した旅は、間引いてまとめると点1つになる**（A,B,A,B,A,B,A → A,A,A,A）。
+    /// 点1つの図は出さない（空を返す＝呼ぶ側は `isEmpty` で図ごと出さない）
+    func testSamplingThatCollapsesToOnePlaceShowsNoRoute() {
+        let stops = ["A", "B", "A", "B", "A", "B", "A"].enumerated().map {
+            TripBook.RouteStop(day: $0.offset + 1, place: $0.element)
+        }
+        XCTAssertEqual(TripBook.sampledStops(stops, limit: 4), [])
+    }
+
+    /// まとめた終点は**最後の日**を残す（終点の DAY が旅の途中の日にならない）
+    func testSamplingKeepsTheLastDayAtTheEnd() {
+        // 7か所・limit 4 → 0,2,4,6 番目 = X, A(3日目), B, B(7日目)
+        let stops = ["X", "Y", "A", "Z", "B", "C", "B"].enumerated().map {
+            TripBook.RouteStop(day: $0.offset + 1, place: $0.element)
+        }
+        XCTAssertEqual(TripBook.sampledStops(stops, limit: 4),
+                       [TripBook.RouteStop(day: 1, place: "X"),
+                        TripBook.RouteStop(day: 3, place: "A"),
+                        TripBook.RouteStop(day: 7, place: "B")])
+    }
 }
 
 /// 旅の一冊・背表紙に出す文字と数（板 03・16）。
@@ -193,6 +214,8 @@ final class TripBookFactsTests: XCTestCase {
         if let lat, let lng { fields.append("\"coords\":{\"lat\":\(lat),\"lng\":\(lng)}") }
         return try JSONDecoder.api.decode(Photo.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
     }
+
+    private let tokyo = TimeZone(identifier: "Asia/Tokyo")!
 
     private func utc(_ text: String) -> Date {
         let formatter = ISO8601DateFormatter()
@@ -223,7 +246,7 @@ final class TripBookFactsTests: XCTestCase {
         XCTAssertEqual(TripBook.monthDay(utc("2026-09-03")), "09.03")
     }
 
-    /// **投稿日時は撮った人の時刻帯の暦日で数える。** 日本時間の朝（0〜9 時）の
+    /// **投稿日時は渡した時刻帯（アプリでは端末の時刻帯）の暦日で数える。** 日本時間の朝（0〜9 時）の
     /// 投稿は UTC ではまだ前の日——UTC のまま数えると、同じ日の2枚が
     /// 「05.01 — 05.02・2日間」に割れる（レビューで見つかった回帰）
     func testPostedTimesUseTheLocalDayInTokyo() throws {
@@ -291,20 +314,37 @@ final class TripBookFactsTests: XCTestCase {
             try photo("b", date: "2026-09-13"),                            // 座標なし
             try photo("c", date: "2026-09-14", lat: 36.06, lng: 136.22),   // 福井
         ]
-        let km = try XCTUnwrap(TravelDistance.countableTotal(of: photos))
+        let km = try XCTUnwrap(TravelDistance.countableTotal(of: photos, timeZone: tokyo))
         XCTAssertEqual(km, 67, accuracy: 3)
+    }
+
+    /// 移動（直線）は**旅の一冊と同じ並び**（`trip.timeZone` の暦日→投稿の時刻順）で
+    /// つなぐ。端末の時刻帯で並べ直すと、ルート図と数字の順が食い違う
+    func testTripDistanceUsesTheTripTimeZone() throws {
+        let photos = [
+            try photo("d", created: "2026-05-02T20:00:00.000Z", lat: 48.86, lng: 2.35),    // 東京 5/3
+            try photo("b", created: "2026-05-02T03:00:00.000Z", lat: 60.17, lng: 24.94),   // 東京 5/2
+            try photo("a", date: "2026-05-02", created: "2026-05-03T00:00:00.000Z", lat: 34.69, lng: 135.50),
+            try photo("c", date: "2026-05-01", lat: 35.68, lng: 139.76),
+        ]
+        let ordered = TripBook.inOrder(photos, timeZone: tokyo)
+        XCTAssertEqual(ordered.map(\.id), ["c", "b", "a", "d"])
+        let km = try XCTUnwrap(TravelDistance.countableTotal(of: photos, timeZone: tokyo))
+        XCTAssertEqual(km, TravelDistance.connect(ordered), accuracy: 0.001)
+        XCTAssertNotEqual(km, TravelDistance.connect(TripBook.inOrder(photos, timeZone: TimeZone(identifier: "UTC")!)),
+                          accuracy: 1, "旅の時刻帯ではなく UTC で並べてつないでいる")
     }
 
     /// **数えられないときは「—」。** 0 km（同じ場所で2枚）とは分ける
     func testDistanceIsUnknownWithFewerThanTwoPoints() throws {
         let one = [try photo("a", date: "2026-09-12", lat: 36.56, lng: 136.65),
                    try photo("b", date: "2026-09-13")]
-        XCTAssertNil(TravelDistance.countableTotal(of: one))
+        XCTAssertNil(TravelDistance.countableTotal(of: one, timeZone: tokyo))
         XCTAssertEqual(TripBook.distanceText(nil), "—")
 
         let same = [try photo("a", date: "2026-09-12", lat: 36.56, lng: 136.65),
                     try photo("b", date: "2026-09-13", lat: 36.56, lng: 136.65)]
-        XCTAssertEqual(TravelDistance.countableTotal(of: same), 0)
+        XCTAssertEqual(TravelDistance.countableTotal(of: same, timeZone: tokyo), 0)
         XCTAssertEqual(TripBook.distanceText(0), "0")
     }
 

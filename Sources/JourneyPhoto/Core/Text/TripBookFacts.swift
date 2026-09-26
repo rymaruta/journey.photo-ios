@@ -5,8 +5,8 @@ import Foundation
 /// 画面を持たない層に置いて、Linux の `swift test` で見張る。
 ///
 /// **日は「その日の UTC 0 時」で持ち、UTC の暦で数える。** `TripBook.day(of:in:)` が
-/// 撮影日をそう読み、投稿日時も**撮った人の時刻帯の暦日に直してから**同じ形に
-/// 揃える。だからここで端末の時刻帯を使って書くと、西の国では
+/// 撮影日をそう読み、投稿日時も**旅の時刻帯（`Trip.timeZone`＝既定は端末の時刻帯）の
+/// 暦日に直してから**同じ形に揃える。だからここで端末の時刻帯を使って書くと、西の国では
 /// 「09.12」が「09.11」にずれる（時刻帯を効かせるのは `day(of:in:)` の1か所だけ）。
 extension TripBook {
 
@@ -125,7 +125,11 @@ extension TripBook {
 
     /// 図に載せる点を `limit` 個まで間引く。**最初と最後は必ず残す**
     /// （どこから始まってどこで終わったか、が図のいちばんの情報）。
-    /// 幅 350pt に地名の札を並べると、5つ目から重なる
+    /// 幅 350pt に地名の札を並べると、5つ目から重なる。
+    ///
+    /// **まとめたあとに2か所未満なら空を返す**（呼ぶ側は `isEmpty` で図を出さない。
+    /// `routeStops` と同じ約束）。行き来した旅（A,B,A,B,A,B,A）は間引くと
+    /// A,A,A,A になり、点1つの図になる
     static func sampledStops(_ stops: [RouteStop], limit: Int = 4) -> [RouteStop] {
         guard stops.count > limit, limit >= 2 else { return stops }
         let last = stops.count - 1
@@ -133,12 +137,19 @@ extension TripBook {
             stops[Int((Double(index) * Double(last) / Double(limit - 1)).rounded())]
         }
         // **間引いたあとにも隣の同名をまとめる。** 行って戻った旅（A,B,A,B,C）は
-        // 間の点を抜くと B,B が隣り合い、同じ地名の点が2つ並ぶ
+        // 間の点を抜くと B,B が隣り合い、同じ地名の点が2つ並ぶ。
+        // 終点の並びは**最後の1つ**を残す（終点の DAY は旅の終わりの日）
         var result: [RouteStop] = []
-        for stop in picked where result.last?.place != stop.place {
+        for (index, stop) in picked.enumerated() {
+            if result.last?.place == stop.place {
+                if index == picked.count - 1, result.count >= 2 {
+                    result[result.count - 1] = stop
+                }
+                continue
+            }
             result.append(stop)
         }
-        return result
+        return result.count >= 2 ? result : []
     }
 
     // MARK: - 共有
@@ -172,11 +183,16 @@ extension TripBook {
 
 extension TravelDistance {
 
-    /// 写真をつないだ合計（km）。**座標と日時を持つ写真が2枚未満なら nil**
+    /// 旅の一冊の「移動（直線）」（km）。**座標と日時を持つ写真が2枚未満なら nil**
     /// ——`total` はそのとき 0 を返すので、「0 km」と「数えられない」を
-    /// 見分けられない
-    static func countableTotal(of photos: [Photo]) -> Double? {
-        let countable = photos.filter { $0.coords != nil && TripBook.day(of: $0) != nil }
-        return countable.count >= 2 ? total(of: countable) : nil
+    /// 見分けられない。
+    ///
+    /// つなぐ順は**旅の一冊と同じ**（`TripBook.inOrder`・`trip.timeZone` の暦日）。
+    /// ルート図・日の段と同じ順でつなぐので、図と数字が食い違わない。
+    /// プロフィールの合計（`total`）は Web に合わせた別の並び
+    static func countableTotal(of photos: [Photo], timeZone: TimeZone) -> Double? {
+        let countable = TripBook.inOrder(photos, timeZone: timeZone)
+            .filter { $0.coords != nil && TripBook.day(of: $0, in: timeZone) != nil }
+        return countable.count >= 2 ? connect(countable) : nil
     }
 }
