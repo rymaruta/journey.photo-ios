@@ -167,12 +167,16 @@ struct SignInView: View {
             Text(L("メールアドレスの確認がまだ終わっていません。",
                    "This email hasn't been verified yet."))
                 .font(.callout)
-            Button(L("確認コードを入力・再送する", "Enter or resend the code")) {
+            Button {
                 Task { await resumeVerification() }
+            } label: {
+                // 形は**中身の側**に付ける（`.plain` は外の枠を押せる範囲にしない）
+                Text(L("確認コードを入力・再送する", "Enter or resend the code"))
+                    .jpPillButton(.outline)
             }
-            .jpPillButton(.outline)
             .buttonStyle(.plain)
             .disabled(auth.isWorking)
+            .opacity(auth.isWorking ? 0.4 : 1)
         }
     }
 
@@ -208,13 +212,18 @@ struct SignInView: View {
             }
             if mode == .signIn {
                 // 板: 欄の下に右寄せ・13px・白72%
-                Button(L("パスワードを忘れた", "Forgot password?")) {
+                Button {
                     mode = .resetRequested
                     clearMessages()
+                } label: {
+                    // 押せる範囲は文字の周りの 44pt（外に付けた枠は広げない）
+                    Text(L("パスワードを忘れた", "Forgot password?"))
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.muted2)
+                        .webTappable()
                 }
-                .font(.footnote)
-                .foregroundStyle(WebTheme.muted2)
-                .frame(maxWidth: .infinity, minHeight: 32, alignment: .trailing)
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
             // **いちばん押される場所を白い大ボタンに**（板: 52pt・白のカプセル）
@@ -350,7 +359,7 @@ struct SignInView: View {
             .opacity(auth.isWorking || code.isEmpty ? 0.4 : 1)
 
             // **届かないときの出口。** 無いと作り直すしかなくなる
-            Button(L("コードを送り直す", "Send a new code")) {
+            Button {
                 Task {
                     clearMessages()
                     if await auth.resendSignUpCode(username: username) {
@@ -358,10 +367,13 @@ struct SignInView: View {
                                    "Sent. Please check your email.")
                     }
                 }
+            } label: {
+                Text(L("コードを送り直す", "Send a new code"))
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.muted2)
+                    .webTappable()
             }
-            .font(.footnote)
-            .foregroundStyle(WebTheme.muted2)
-            .frame(minHeight: 32)
+            .buttonStyle(.plain)
             .disabled(auth.isWorking)
         }
     }
