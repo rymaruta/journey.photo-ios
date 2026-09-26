@@ -65,6 +65,8 @@ final class UploadViewModel: ObservableObject {
 
     /// この回の束の印。**送り始めるときに1つだけ作る**
     private var groupId: String?
+    /// 何回目の選択か。選び直した後に、前の読み込みの結果を混ぜないための目印
+    private var pickGeneration = 0
 
     @Published private(set) var albums: [Album] = []
     @Published var selectedAlbumId: String?
@@ -114,7 +116,8 @@ final class UploadViewModel: ObservableObject {
         albums = mine + extra
     }
 
-    var canSubmit: Bool { !items.isEmpty && !isWorking }
+    /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
+    var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked }
 
     /// 写真の座標から撮影地を引いて、**空のときだけ**入れる。
     ///
@@ -174,10 +177,17 @@ final class UploadViewModel: ObservableObject {
     /// 1枚の壊れた写真のために選び直しになる（Web も落ちた枚数だけ伝える）。
     private func loadPicked(_ picked: [PhotosPickerItem]) async {
         guard !picked.isEmpty else { return }
+        // 🔴 **選び直しの競合。** 前の読み込みは取り消されても `await` から戻ってくる。
+        // 戻った先で確かめずに足すと、選び直した一覧に外したはずの写真が混ざり、
+        // 前の読み込みの後片付けが「読み込み中」を早く消していた
+        pickGeneration += 1
+        let generation = pickGeneration
         isLoadingPicked = true
         errorMessage = nil
         didPostAll = false
-        defer { isLoadingPicked = false }
+        // 選び直したら、前の選択で作った束の印は使わない
+        groupId = nil
+        defer { if generation == pickGeneration { isLoadingPicked = false } }
 
         // 選び直しは**入れ替え**（前の選択が残ると、何が上がるのか読めない）
         placeTasks.values.forEach { $0.cancel() }
@@ -192,6 +202,8 @@ final class UploadViewModel: ObservableObject {
                     failed += 1
                     continue
                 }
+                // 読んでいる間に選び直されたら、この結果は捨てる
+                guard !Task.isCancelled, generation == pickGeneration else { return }
                 // **`itemIdentifier` をファイル名にしない。** スラッシュを含む
                 // 端末内部の ID で、キーの組み立てを壊す。拡張子は
                 // `ImagePreparer` が .jpg に付け替える
@@ -242,9 +254,8 @@ final class UploadViewModel: ObservableObject {
             uploadingIndex = 0
         }
 
-        // **まとめるのは2枚以上のときだけ。** 1枚に印を付けても意味が無く、
-        // 「1/1」の送りが出るだけになる
-        groupId = (groupsAsOnePost && items.count > 1) ? UUID().uuidString : nil
+        groupId = Self.groupIdForSubmit(current: groupId, grouping: groupsAsOnePost,
+                                        count: items.count, make: { UUID().uuidString })
 
         var done: [UUID] = []
         var failures: [String] = []
@@ -340,11 +351,26 @@ final class UploadViewModel: ObservableObject {
         return true
     }
 
+    /// 送るときの束の印。
+    ///
+    /// **まとめるのは2枚以上のときだけ。** 1枚に印を付けても意味が無く、
+    /// 「1/1」の送りが出るだけになる。
+    /// 🔴 **押し直しでは同じ印を使い続ける。** 5枚のうち2枚が失敗して押し直すと、
+    /// 送るたびに作り直していたので 3枚と2枚の2つの束に割れ、残りが1枚なら
+    /// 印の無い単独の投稿になっていた。印を捨てるのは選び直しと `reset()` だけ
+    nonisolated static func groupIdForSubmit(current: String?, grouping: Bool, count: Int,
+                                 make: () -> String) -> String? {
+        guard grouping else { return nil }
+        if let current { return current }
+        return count > 1 ? make() : nil
+    }
+
     private func reset() {
         pickerItems = []
         placeTasks.values.forEach { $0.cancel() }
         placeTasks = [:]
         items = []
+        groupId = nil
         song = nil
         tagsText = ""
         category = ""

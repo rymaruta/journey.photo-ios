@@ -255,6 +255,8 @@ extension View {
     public func searchable(text: Binding<String>, placement: SearchFieldPlacementShim = .automatic,
                            prompt: String? = nil) -> Self { self }
     public func onSubmit(of t: SubmitTriggerShim = .search, _ action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// シートを下へ払って閉じるのを止める（iOS 15+）
+    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> Self { self }
     /// キーボードの確定キーの文言（iOS 15+）
     public func submitLabel(_ label: SubmitLabel) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
 
