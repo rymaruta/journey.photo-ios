@@ -121,13 +121,13 @@ final class ViewModelTests: XCTestCase {
 
         await model.loadPhotos(environment: env)
         await model.search("パリ", environment: env)
-        XCTAssertEqual(model.photos.count, 2, "下ごしらえが効いていない")
+        XCTAssertEqual(model.shown.count, 2, "下ごしらえが効いていない")
 
         await service.setHidden(userIds: ["u2"], photoIds: [])
         await model.reloadPhotos(environment: env)
         await model.search("パリ", environment: env)
 
-        XCTAssertEqual(model.photos.map(\.id), ["a"],
+        XCTAssertEqual(model.shown.map(\.id), ["a"],
                        "ブロックした相手の写真が検索結果に残っている")
     }
 
