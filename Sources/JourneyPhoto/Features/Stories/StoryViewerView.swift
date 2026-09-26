@@ -63,6 +63,11 @@ struct StoryViewerView: View {
     @State private var viewers: [StoryViewer] = []
     @State private var showInsights = false
     @State private var replies: [StoryReply] = []
+    /// 返信を読み終えた（**「まだ」と「0件」を分ける**——同じ空の配列で
+    /// 見分けていたので、読み込み中に反応込みの数を出して後で減っていた）
+    @State private var repliesLoaded = false
+    /// 見た人を読めたか。nil＝読み込み中、false＝読めなかった
+    @State private var viewersLoaded: Bool?
     @State private var showReplies = false
     /// 返信を読めなかった。**空の一覧と区別する**（数は出ているのに
     /// 何も無い画面は「消えた」に見える）
@@ -168,12 +173,18 @@ struct StoryViewerView: View {
             // **見たことを伝えるのは1回。** 失敗しても画面は止めない
             await environment.stories.markViewed(id: story.id)
             if isMine(story) {
-                viewers = (try? await environment.stories.viewers(id: story.id)) ?? []
+                do {
+                    viewers = try await environment.stories.viewers(id: story.id)
+                    viewersLoaded = true
+                } catch {
+                    viewersLoaded = false
+                }
                 // **返信は本人だけが読める。** 読めないと、送られた返信が
                 // どこにも出ない（送る側の画面だけあった）
                 do {
                     replies = try await environment.stories.replies(id: story.id)
                     repliesFailed = false
+                    repliesLoaded = true
                 } catch {
                     repliesFailed = true
                 }
@@ -197,7 +208,10 @@ struct StoryViewerView: View {
             // ストーリー行（`story-<uuid>`）も `src` を持つので通る
             ReportSheet(photoId: story.id, ownerId: story.userId)
         }
-        .sheet(isPresented: $showReplies) {
+        // 一覧から開いたページでブロックしたら、その人の返信を外す
+        .sheet(isPresented: $showReplies, onDismiss: {
+            replies.removeAll { reply in reply.uid.map { hidden.blockedUserIds.contains($0) } ?? false }
+        }) {
             repliesSheet
         }
         // **ページの中でブロックしたら、閲覧画面ごと閉じる**（「…」からの
@@ -387,61 +401,31 @@ struct StoryViewerView: View {
     /// 名前を押すと投稿者のページ（板のリンク）
     private func header(for story: Story) -> some View {
         HStack(spacing: 10) {
-            Button {
-                showAuthor = true
-            } label: {
-                HStack(spacing: 10) {
-                    if let userId = story.userId {
-                        RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
-                                    placeholderSymbol: "person.crop.circle.fill")
-                            .frame(width: 34, height: 34)
-                            .clipShape(Circle())
-                    }
-                    if isMine(story) {
-                        // 自分: 「あなた」と、下に等幅で「2時間前 · あと 22 時間で消えます」（板 25e）
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(L("あなた", "You"))
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
-                            if let line = ownTimeLine(for: story) {
-                                Text(line)
-                                    .font(JPFont.mono(11))
-                                    .foregroundStyle(WebTheme.muted2)
-                                    .lineLimit(1)
-                            }
-                        }
-                    } else {
-                        Text(story.authorName)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                        if let ago = StoryPlayback.ago(from: story.createdAt) {
-                            Text(ago)
-                                .font(.system(size: 12))
-                                .foregroundStyle(WebTheme.muted)
-                                .lineLimit(1)
-                        }
-                    }
+            // 自分の名前は押せない形で描く（自分のページはマイページ）。
+            // 無効のボタンにすると薄く描かれ、読み上げも「使用不可」になる
+            if isMine(story) || story.userId == nil {
+                authorLabel(for: story)
+            } else {
+                Button {
+                    showAuthor = true
+                } label: {
+                    authorLabel(for: story)
                 }
-                .frame(minHeight: WebTheme.minTapTarget)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            // 自分の名前は押せない（自分のページはマイページ）
-            .disabled(story.userId == nil || isMine(story))
             Spacer(minLength: 0)
-            // **自分のストーリーに「…」は置かない**（板 25e は ✕ だけ）。
-            // 止めるのは長押しでできる
-            if !isMine(story) {
-            Button {
-                showMenu = true
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.white)
-                    .webTappable()
-                    .accessibilityLabel(L("その他の操作", "More actions"))
-            }
+            // **自分のストーリーには「…」を置かない**（板 25e は ✕ だけ）。
+            // ただし**動画は音を消す口がここにしか無い**ので出す
+            if !isMine(story) || story.isVideo {
+                Button {
+                    showMenu = true
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white)
+                        .webTappable()
+                        .accessibilityLabel(L("その他の操作", "More actions"))
+                }
             }
             Button {
                 dismiss()
@@ -455,6 +439,45 @@ struct StoryViewerView: View {
         }
         .padding(.leading, 12)
         .padding(.trailing, 4)
+    }
+
+    /// 見出しの左（アバター・名前・時刻）
+    private func authorLabel(for story: Story) -> some View {
+        HStack(spacing: 10) {
+            if let userId = story.userId {
+                RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
+                            placeholderSymbol: "person.crop.circle.fill")
+                    .frame(width: 34, height: 34)
+                    .clipShape(Circle())
+            }
+            if isMine(story) {
+                // 自分: 「あなた」と、下に等幅で「2時間前 · あと 22 時間で消えます」（板 25e）
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L("あなた", "You"))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                    if let line = ownTimeLine(for: story) {
+                        Text(line)
+                            .font(JPFont.mono(11))
+                            .foregroundStyle(WebTheme.muted2)
+                            .lineLimit(1)
+                    }
+                }
+            } else {
+                Text(story.authorName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                if let ago = StoryPlayback.ago(from: story.createdAt) {
+                    Text(ago)
+                        .font(.system(size: 12))
+                        .foregroundStyle(WebTheme.muted)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .frame(minHeight: WebTheme.minTapTarget)
+        .contentShape(Rectangle())
     }
 
     // MARK: - 指の操作
@@ -533,6 +556,8 @@ struct StoryViewerView: View {
         viewers = []
         replies = []
         repliesFailed = false
+        repliesLoaded = false
+        viewersLoaded = nil
     }
 
     /// 時計の刻み。進行バーの動きもこの長さで次の刻みへつなぐ
@@ -803,6 +828,7 @@ struct StoryViewerView: View {
             VStack(spacing: 10) {
                 // **反応はまとめて1画面に**（提案の絵）。見た人・いいね・返信が
                 // 別々のシートに割れていると、全体がどうだったか分からない
+                if !isExpired(story), viewersLoaded == true {
                 Button {
                     showInsights = true
                 } label: {
@@ -824,12 +850,16 @@ struct StoryViewerView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                }
 
                 HStack(spacing: 4) {
-                    ownAction(symbol: "eye", title: L("反応を見る", "Insights")) { showInsights = true }
-                    ownAction(symbol: "bubble.left",
-                              title: L("返信 \(replyBadge(for: story))", "\(replyBadge(for: story)) replies")) {
-                        showReplies = true
+                    if !isExpired(story) {
+                        ownAction(symbol: "eye", title: L("反応を見る", "Insights")) { showInsights = true }
+                    }
+                    if !isExpired(story) {
+                        ownAction(symbol: "bubble.left", title: replyTitle(for: story)) {
+                            showReplies = true
+                        }
                     }
                     // 24時間で消える前に、自分の写真として残す
                     ownAction(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
@@ -931,8 +961,22 @@ struct StoryViewerView: View {
 
     /// 出す返信の数。**文章の返信だけ**（反応は「いいね」に数える）。
     /// 一覧をまだ読めていなければサーバーの `replyCount`（反応も含む数）
-    private func replyBadge(for story: Story) -> Int {
-        replies.isEmpty && !repliesFailed ? (story.replyCount ?? 0) : replies.textReplies.count
+    private func replyBadge(for story: Story) -> Int? {
+        if repliesLoaded { return replies.textReplies.count }
+        // 読めなかったときはサーバーの数（反応も含む）を残す。読み込み中は出さない
+        return repliesFailed ? story.replyCount : nil
+    }
+
+    /// 「返信 3」。数が分からないうちは「返信」だけ
+    private func replyTitle(for story: Story) -> String {
+        guard let n = replyBadge(for: story) else { return L("返信", "Replies") }
+        return L("返信 \(n)", "\(n) replies")
+    }
+
+    /// 期限が切れた（ハイライト・アーカイブから開いた）。**見た人と返信の記録は
+    /// サーバーが期限で消す**ので、「0 人が見ました」と言い切らない
+    private func isExpired(_ story: Story) -> Bool {
+        story.expiresAt != nil && StoryPlayback.remaining(until: story.expiresAt) == nil
     }
 
     /// 自分のストーリーの見出しの2行目（「2時間前 · あと 22 時間で消えます」）
