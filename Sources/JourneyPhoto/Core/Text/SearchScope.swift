@@ -25,6 +25,21 @@ enum SearchScope: String, CaseIterable, Identifiable {
     var showsPeople: Bool { self == .all || self == .people }
     /// 写真の結果を出すか
     var showsPhotos: Bool { self != .people }
+    /// 検索欄の右の並び替え（とその確認の札）を出すか。
+    /// **並べ替えるのは写真だけ**——人の結果は並び替えが効かないので、
+    /// 押せても何も変わらない札を置かない
+    var showsSort: Bool { showsPhotos }
+    /// タグのチップ（「winter 13」）を出すか。
+    /// **撮影地では出さない**——押すとタグの語が撮影地の欄に当たり、
+    /// チップの枚数（タグを持つ写真の数）と結果が合わなくなる
+    var showsTagChips: Bool { self == .all || self == .photos || self == .tags }
+    /// 検索欄の案内。人を探しているときは人向けに
+    var prompt: String {
+        switch self {
+        case .people: return L("人を検索（名前）", "Search people")
+        default: return L("写真を検索（題・説明・タグなど）", "Search photos")
+        }
+    }
 
     /// 写真を種類で絞る。
     ///

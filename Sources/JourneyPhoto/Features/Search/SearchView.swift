@@ -23,6 +23,9 @@ struct SearchView: View {
                 // 人を探しているときは写真の絞り込みを出さない（効かない札を置かない）
                 if model.scope.showsPhotos {
                     categoryChips
+                }
+                // 撮影地ではタグのチップを出さない（押しても枚数と結果が合わない）
+                if model.scope.showsTagChips {
                     tagChips
                 }
                 // **何も打っていないときは「発見」の顔**（モック2）。
@@ -73,21 +76,23 @@ struct SearchView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.faint)
-            TextField(L("写真を検索（題・説明・タグなど）", "Search photos"),
-                      text: $query)
+            TextField(model.scope.prompt, text: $query)
                 .textFieldStyle(.plain)
                 .foregroundStyle(WebTheme.foreground)
             // **並び替えはここから開く**（モック9-1 の右端の印）。
             // 結果の上にも同じ札を出したままにする——探している人は
-            // 結果を見ながら並べ替えたい
-            Button {
-                showSort = true
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .foregroundStyle(model.sort == .new ? WebTheme.faint : WebTheme.foreground)
+            // 結果を見ながら並べ替えたい。**人を探しているときは出さない**
+            // （人の結果は並び替えが効かない）
+            if model.scope.showsSort {
+                Button {
+                    showSort = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .foregroundStyle(model.sort == .new ? WebTheme.faint : WebTheme.foreground)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("並び替え", "Sort"))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("並び替え", "Sort"))
             if !query.isEmpty {
                 Button {
                     query = ""
@@ -438,8 +443,7 @@ struct SearchView: View {
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("\(section.family.note)・\(section.count)枚",
-                              "\(section.family.note), \(section.count) photos"))
+        .accessibilityLabel(ColorFamilies.accessibilityLabel(section.family, count: section.count))
     }
 
     /// 機材から探す（モック9）。
@@ -705,6 +709,9 @@ final class SearchViewModel: ObservableObject {
     private var allPhotos: [Photo] = []
     /// 打つたびに投げない。**最後の打鍵から少し待つ**
     private var searchTask: Task<Void, Never>?
+    /// 何回目の検索か。**返事を反映してよいのは、いちばん新しい回だけ**
+    /// ——取り消した回の返事が後から届いても捨てる
+    private var searchGeneration = 0
 
     func loadPhotos(environment: AppEnvironment) async {
         guard allPhotos.isEmpty else { return }
@@ -729,21 +736,41 @@ final class SearchViewModel: ObservableObject {
     }
 
     func search(_ query: String, environment: AppEnvironment) async {
+        let service = environment.search
+        await search(query) { try await service.search(query: $0) }
+    }
+
+    /// 人の検索の本体。**引き先を差し替えられる**（テストで返事の順を操るため）。
+    ///
+    /// - 待ちの間（打鍵のあとの 300ms）も**探している扱い**にする。
+    ///   そうしないと、その間だけ「見つかりませんでした」がちらつく
+    /// - 返事を反映するのは**いちばん新しい回だけ**。取り消した回の返事が
+    ///   後から届いて人の一覧を上書きしたり、新しい回の途中で
+    ///   「探しています…」を消したりしない
+    /// - 空にしたら人の一覧も空にする（前の語の人を残さない）
+    func search(_ query: String,
+                debounce: Duration = .milliseconds(300),
+                fetchUsers: @escaping @MainActor (String) async throws -> [UserProfile]) async {
         searchTask?.cancel()
+        searchGeneration += 1
+        let generation = searchGeneration
         self.query = query
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             users = []
+            isSearching = false
             return
         }
         // 写真は手元の一覧から即座に絞る（往復しない・`shown` が `query` から導く）
 
+        isSearching = true
         searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            isSearching = true
-            defer { isSearching = false }
-            users = (try? await environment.search.search(query: trimmed)) ?? []
+            try? await Task.sleep(for: debounce)
+            guard !Task.isCancelled, generation == self.searchGeneration else { return }
+            let found = (try? await fetchUsers(trimmed)) ?? []
+            guard !Task.isCancelled, generation == self.searchGeneration else { return }
+            users = found
+            isSearching = false
         }
     }
 

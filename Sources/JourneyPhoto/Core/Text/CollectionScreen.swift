@@ -7,10 +7,13 @@ import Foundation
 enum CollectionScreen {
 
     /// 題の下の小さい字（板 12 の「00枚 · いまの季節」）。
-    /// **枚数は並ぶ写真を数えたもの。** 添え書きが無ければ枚数だけ
-    static func subtitle(count: Int, note: String?) -> String {
-        let counted = L("\(count)枚", "\(count) photos")
+    /// **枚数は並ぶ写真を数えたもの。** 添え書きが無ければ枚数だけ。
+    /// **読み込み中は枚数を出さない**——まだ数えていないものを「0枚」と言わない
+    /// （添え書きだけ、それも無ければ空）
+    static func subtitle(count: Int, note: String?, isLoading: Bool = false) -> String {
         let extra = (note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if isLoading { return extra }
+        let counted = L("\(count)枚", "\(count) photos")
         return extra.isEmpty ? counted : "\(counted) · \(extra)"
     }
 

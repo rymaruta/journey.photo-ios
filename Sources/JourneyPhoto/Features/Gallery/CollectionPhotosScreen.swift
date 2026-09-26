@@ -14,6 +14,10 @@ struct CollectionPhotosScreen: View {
     /// 集約の種類。**シェアで Web のページを指せるか**に使う（色・季節は nil）
     var kind: PhotoQuery.Collection?
     var isLoading = false
+    /// 一覧の上に置く一言（機材の「ダイナミックな風景」）。
+    /// 板 12 に寄せる前から画面の上にあった字で、**なぜこの写真が
+    /// 並んでいるのか**を言う。無ければ出さない
+    var lede: String?
 
     /// 板 12 は「人気」を選んだ形で描いてある
     @State private var sort: GallerySort = .popular
@@ -23,6 +27,12 @@ struct CollectionPhotosScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if let lede, !lede.isEmpty {
+                    Text(lede)
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.muted)
+                        .padding(.horizontal, 16)
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(GallerySort.collectionChoices) { option in
@@ -57,10 +67,14 @@ struct CollectionPhotosScreen: View {
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
-                    Text(CollectionScreen.subtitle(count: photos.count, note: note))
-                        .font(.caption2)
-                        .foregroundStyle(WebTheme.faint)
-                        .lineLimit(1)
+                    let subtitle = CollectionScreen.subtitle(count: photos.count, note: note,
+                                                             isLoading: isLoading)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption2)
+                            .foregroundStyle(WebTheme.faint)
+                            .lineLimit(1)
+                    }
                 }
                 .accessibilityElement(children: .combine)
             }

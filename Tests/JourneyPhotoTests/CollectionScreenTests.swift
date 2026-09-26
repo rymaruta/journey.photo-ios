@@ -76,6 +76,14 @@ final class CollectionScreenTests: XCTestCase {
         XCTAssertEqual(CollectionScreen.subtitle(count: 3, note: nil), L("3枚", "3 photos"))
     }
 
+    /// **読み込み中は枚数を出さない**（まだ数えていないのに「0枚」と言わない）
+    func testSubtitleHidesCountWhileLoading() {
+        XCTAssertEqual(CollectionScreen.subtitle(count: 0, note: nil, isLoading: true), "")
+        XCTAssertEqual(CollectionScreen.subtitle(count: 0, note: L("焦点距離 〜35mm", "〜35mm"), isLoading: true),
+                       L("焦点距離 〜35mm", "〜35mm"))
+        XCTAssertEqual(CollectionScreen.subtitle(count: 0, note: nil, isLoading: false), L("0枚", "0 photos"))
+    }
+
     /// 大きい字は撮影地、無ければ題、どちらも無ければ出さない
     func testLeadHeadlinePrefersPlaceThenTitle() throws {
         XCTAssertEqual(CollectionScreen.leadHeadline(try photo(["id": "a", "location": " 山中湖 ",

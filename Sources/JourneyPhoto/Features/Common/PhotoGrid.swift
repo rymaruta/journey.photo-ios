@@ -29,8 +29,11 @@ struct PhotoGrid<Destination: View>: View {
                         NavigationLink {
                             destination(photo)
                         } label: {
+                            // **札自身の字は消す。** 残すと題の帯の上に
+                            // `LeadCaption` が重なり、字が二重に見える
                             PhotoTile(photo: photo, aspect: 16.0 / 10.0,
-                                      isMultiple: multiple.contains(photo.id))
+                                      isMultiple: multiple.contains(photo.id),
+                                      showsCaption: false)
                                 .overlay(alignment: .bottom) { LeadCaption(photo: photo) }
                                 .clipShape(RoundedRectangle(cornerRadius: PhotoTile.corner))
                         }
@@ -127,6 +130,9 @@ struct PhotoTile: View {
     /// 1つの投稿に2枚以上入っているか（モック2-7 の格子の右上の印）。
     /// **呼ぶ側が並びの中で数えた結果**を受け取る——写真1枚では決められない
     var isMultiple = false
+    /// 題と分類の帯を出すか。**上に別の字を重ねる呼び手（先頭の大きい1枚）は
+    /// 切る**——両方出すと字が二重に重なる
+    var showsCaption = true
 
     /// 角の丸み。iOS の今の作法に寄せて大きめ
     static let corner: CGFloat = 18
@@ -172,7 +178,7 @@ struct PhotoTile: View {
     private var caption: some View {
         let title = photo.displayTitle
         let category = photo.category.map { Labels.Category.name($0) } ?? ""
-        if !title.isEmpty || !category.isEmpty {
+        if showsCaption && (!title.isEmpty || !category.isEmpty) {
             VStack(alignment: .leading, spacing: 3) {
                 if !category.isEmpty {
                     // 分類は小さく、字間を開けて上に置く（見出しの上の肩書き）

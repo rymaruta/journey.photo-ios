@@ -62,6 +62,26 @@ final class SearchScopeTests: XCTestCase {
                         L("タグ", "Tags"), L("撮影地", "Places")])
     }
 
+    /// **人の種類では並び替えを出さない**（人の結果は並べ替えが効かない）。
+    /// 案内も人向けに
+    func testPeopleScopeHidesSortAndAsksForAName() {
+        XCTAssertFalse(SearchScope.people.showsSort)
+        XCTAssertEqual(SearchScope.allCases.filter(\.showsSort), [.all, .photos, .tags, .places])
+        XCTAssertNotEqual(SearchScope.people.prompt, SearchScope.photos.prompt)
+        XCTAssertEqual(SearchScope.people.prompt, L("人を検索（名前）", "Search people"))
+        XCTAssertEqual(SearchScope.all.prompt, L("写真を検索（題・説明・タグなど）", "Search photos"))
+    }
+
+    /// **撮影地ではタグのチップを出さない。** 押すとタグの語が撮影地に当たり、
+    /// チップの枚数と結果の枚数が合わない
+    func testTagChipsAreHiddenForPlacesAndPeople() throws {
+        XCTAssertEqual(SearchScope.allCases.filter(\.showsTagChips), [.all, .photos, .tags])
+        // 食い違いの実例: タグ「冬」の写真は1枚だが、撮影地で「冬」を探すと別の1枚が出る
+        let photos = try sample()
+        XCTAssertNotEqual(SearchScope.places.photos(photos, query: "冬").map(\.id),
+                          SearchScope.tags.photos(photos, query: "冬").map(\.id))
+    }
+
     // MARK: - 段
 
     /// 板 11 の並び: 注目 → おすすめ → 色 → 季節 → 機材。無い段は飛ばす
