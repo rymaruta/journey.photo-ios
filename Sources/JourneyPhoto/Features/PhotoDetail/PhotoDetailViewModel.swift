@@ -89,6 +89,9 @@ final class PhotoDetailViewModel: ObservableObject {
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、
     /// それを使う（二重に押した回や既に押していた回でずれる）。
     func toggleLike() async {
+        // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
+        // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
+        lastLikeAnswer = nil
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
             return
@@ -97,7 +100,6 @@ final class PhotoDetailViewModel: ObservableObject {
         isLiking = true
         defer { isLiking = false }
         let wasLiked = liked
-        lastLikeAnswer = nil
         do {
             let result = wasLiked
                 ? try await social.unlike(photoId: photoId)

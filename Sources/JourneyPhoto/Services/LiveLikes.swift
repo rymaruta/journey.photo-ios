@@ -33,7 +33,8 @@ enum LiveLikes {
 
     /// 数を写す。**`counts` に無い写真は触らない**
     /// （公開範囲を絞った写真は `GET /photos` に載らない。そちらは
-    ///  `GET /feed/restricted` がいまの数を持ってくる）。
+    ///  `GET /feed/restricted` がいまの数を持ってくる——時刻は
+    ///  `PublicGalleryService.restrictedPhotos` が付ける）。
     ///
     /// - Parameter asOf: いまの数を取りに行った時刻。写した写真に付ける
     ///   （`LikeCountStore` の答えとどちらが新しいかを比べるため）
@@ -56,11 +57,27 @@ enum LiveLikes {
     /// 答えの方が新しければ答え。一覧をあとで読み直していま数が取れたら、
     /// そちらが新しいので一覧の数（他の人が押したぶんも入る）。
     /// 以前は答えを無条件に優先していて、一度入ると引き下げ更新でも動かなかった。
+    ///
+    /// 🔴 **`likesAsOf` は「要求を出した時刻」で、「データの時点」ではない。**
+    /// 管理 API の `GET /photos` は Lambda の中に10秒の控えを持つ
+    /// （photo-gallery の `api/src/photos.ts` の `LIST_CACHE_TTL_MS`）うえ、
+    /// DynamoDB の Scan は書いた直後だと古い値を返しうる。押して数秒で
+    /// 引き下げ更新すると、要求は新しくても中身は押す前の数が返ってくる。
+    /// だから一覧を勝たせるのは、答えより `serverStaleness` 以上あとに
+    /// 取りに行った数だけ。
     static func base(for photo: Photo, stored: LikeCountStore.Entry?) -> Int? {
         guard let stored else { return photo.likes }
-        if let asOf = photo.likesAsOf, asOf >= stored.at { return photo.likes }
+        if let asOf = photo.likesAsOf,
+           asOf >= stored.at.addingTimeInterval(serverStaleness) {
+            return photo.likes
+        }
         return stored.count
     }
+
+    /// サーバーの数が遅れうる幅。Lambda の控え（10秒）に、
+    /// DynamoDB の「あとで揃う」読み方と端末・サーバーの時計のずれの余裕を足す。
+    /// **API 側の控えを延ばしたら、ここも延ばすこと**
+    static let serverStaleness: TimeInterval = 30
 
     /// カードに出す数。
     ///

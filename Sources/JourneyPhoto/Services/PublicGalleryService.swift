@@ -68,8 +68,16 @@ actor PublicGalleryService {
            Date().timeIntervalSince(restrictedCachedAt) < Self.cacheLifetime {
             return restrictedCache
         }
+        let startedAt = Date()
         do {
-            let photos = try await restrictedLoader()
+            // **いまの数の時刻を付ける。** この口は DynamoDB から直に来るので
+            // 数は新しい。付けないと、押した答え（`LikeCountStore`）が
+            // 永久に勝ち、他の人のいいねが引き下げ更新でも出ない
+            let photos = try await restrictedLoader().map { photo -> Photo in
+                var stamped = photo
+                stamped.likesAsOf = startedAt
+                return stamped
+            }
             restrictedCache = photos
             restrictedCachedAt = Date()
             return photos
@@ -217,7 +225,14 @@ actor PublicGalleryService {
         guard let liveURL else { return }
         if let liveInFlight {
             await liveInFlight.value
-            return
+            // **引き下げ更新は、途中の要求の結果で済ませない。**
+            // 最大 `liveTimeout` 前に始まった要求で、失敗していることもある
+            guard force else { return }
+            // 待っている間に別の呼び出しが取り直し始めていたら、それを待つ
+            if let restarted = self.liveInFlight {
+                await restarted.value
+                return
+            }
         }
         if !force, let liveAttemptedAt,
            Date().timeIntervalSince(liveAttemptedAt) < Self.cacheLifetime {

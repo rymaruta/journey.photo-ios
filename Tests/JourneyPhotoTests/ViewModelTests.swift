@@ -244,6 +244,20 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.lastLikeAnswer)
     }
 
+    /// 未ログインで押した回も、前の答えを残さない（呼び出し側が「いま」の
+    /// 答えとしてホームへ渡し直すため）
+    func testSignedOutPressClearsAnswer() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.toggleLike()
+        XCTAssertEqual(model.lastLikeAnswer, 5)
+        model.setSignedIn(false)
+        await model.toggleLike()
+        XCTAssertNil(model.lastLikeAnswer)
+    }
+
     /// 押して失敗したら、前の答えも残さない（古い答えをホームへ渡さない）
     func testFailedLikeClearsAnswer() async {
         prepare()

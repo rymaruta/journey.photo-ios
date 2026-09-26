@@ -74,6 +74,16 @@ final class LiveLikesTests: XCTestCase {
         XCTAssertEqual(LiveLikes.base(for: p, stored: entry(5, at: 200)), 7)
     }
 
+    /// 🔴 押して数秒で引き下げ更新した回。要求は答えより新しいが、サーバーの
+    /// 控え（Lambda の10秒）で中身は押す前の数でありうる → 答えを出す
+    func testListWithinServerStalenessLosesToAnswer() throws {
+        var p = try photo("a", likes: 4)
+        p.likesAsOf = Date(timeIntervalSince1970: 205)
+        XCTAssertEqual(LiveLikes.base(for: p, stored: entry(5, at: 200)), 5)
+        p.likesAsOf = Date(timeIntervalSince1970: 200 + LiveLikes.serverStaleness)
+        XCTAssertEqual(LiveLikes.base(for: p, stored: entry(5, at: 200)), 4)
+    }
+
     /// 静的 JSON のまま（いまの数が取れていない）はどの答えより古い
     func testStaticListLosesToAnswer() throws {
         XCTAssertEqual(LiveLikes.base(for: try photo("a", likes: 9), stored: entry(5, at: 0)), 5)
@@ -147,6 +157,20 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         // 取れた時刻で見ていた版は、呼ぶたびに管理 API を待ってから一覧を返した
         _ = try await gallery.fetchPhotos()
         XCTAssertEqual(StubProtocol.requestCount, 2)
+    }
+
+    /// 公開範囲を絞った写真にも、いまの数の時刻が付く。付かないと
+    /// 押した答えが永久に勝ち、引き下げ更新でも他の人のいいねが出ない
+    func testRestrictedPhotosAreStamped() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        let gallery = service(live: nil)
+        let restricted = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"r","src":"https://x/r.jpg","likes":8,"audience":"followers"}"#.utf8))
+        await gallery.setRestrictedLoader { [restricted] }
+        let photos = try await gallery.fetchPhotos()
+        let r = try XCTUnwrap(photos.first { $0.id == "r" })
+        XCTAssertEqual(r.likes, 8)
+        XCTAssertNotNil(r.likesAsOf)
     }
 
     /// 口が設定されていなければ叩かない（既存の試験・未設定の環境）
