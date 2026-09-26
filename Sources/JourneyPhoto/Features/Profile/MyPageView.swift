@@ -4,19 +4,18 @@ import SwiftUI
 struct MyPageView: View {
 
     @EnvironmentObject private var auth: AuthStore
-    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
     /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
     @State private var officialSpots: [OfficialSpot] = []
-    /// いいねした写真を引き当てる先。**公開一覧**——自分の写真だけを
-    /// 探していたので、**他人の写真へのいいねが一度も出なかった**
+    /// 保存した写真を引き当てる先。**公開一覧**——自分の写真だけを
+    /// 探すと、**他人の写真の保存が一度も出ない**
     @State private var feed: [Photo] = []
-    /// サーバーが返したいいねの ID。取れなければ nil（端末の控えだけ出す）
-    @State private var serverLikeIds: [String]?
-    @State private var likesStatus: LikedPhotos.Status = .loading
+    /// 公開一覧を読み終えたか（「まだ」と「0件」を混ぜない）
+    @State private var feedLoaded = false
     @State private var tab: ProfileTab = .posts
     @State private var showDistanceNote = false
     @State private var showCountriesNote = false
@@ -68,7 +67,7 @@ struct MyPageView: View {
             await model.load()
         }
         // いいねした写真。**ログイン状態が決まってから**聞く
-        .task(id: auth.userId) { await loadLikes() }
+        .task(id: auth.userId) { await loadFeed() }
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
@@ -460,36 +459,23 @@ struct MyPageView: View {
         }
     }
 
-    /// いいねした写真。**サーバーの一覧と、この端末の控えの和**。
+    /// お気に入り＝**保存した写真**（板 05c のタブ「お気に入り」・しおりの印・板 35）。
     ///
-    /// 以前は**自分の写真の中から**端末の控えに一致するものを探していたので、
-    /// **他人の写真へのいいねが一度も出なかった**（自分の写真を自分で
-    /// いいねしたときだけ出る状態）。さらに別の端末で押したぶんも
-    /// 出なかった——同じ写真の詳細は「いいね済み」と出るのに。
+    /// 以前の中身はいいねした写真で、見出し（英語は "Saved"）と食い違い、
+    /// 保存した写真を見返す場所がどこにも無かった（2026-09-26 のキャンバスとの
+    /// 突き合わせ 6・8）。いいねした写真はメニューと設定から開く（`FavoritesView`）
     @ViewBuilder
     private var favoritesArea: some View {
-        let ids = LikedPhotos.ids(serverIds: serverLikeIds, deviceIds: favorites.ids)
-        let liked = LikedPhotos.resolve(ids, in: [feed, model.photos])
-        VStack(alignment: .leading, spacing: 10) {
-            if likesStatus == .partial {
-                // **端末のぶんは消さない。** 足りていないことだけ伝える
-                ErrorBanner(message: L("サーバーのいいねを取れませんでした。この端末に覚えているぶんだけ出しています",
-                                       "Couldn't reach the server — showing what's on this device")) {
-                    Task { await loadLikes() }
-                }
-            }
-            if liked.isEmpty {
-                // **「まだ」と「0件」を混ぜない。** 取得中に「ありません」と
-                // 言い切ると、別の端末で押したぶんが届く前に「無い」と読まれる
-                if likesStatus == .loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
-                } else {
-                    ErrorBanner(message: L("いいねした写真はまだありません", "No liked photos yet"))
-                }
+        let saved = LikedPhotos.resolve(savedPhotos.ids, in: [feed, model.photos])
+        if saved.isEmpty {
+            if !feedLoaded {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             } else {
-                PhotoGrid(photos: liked) { photo in
-                    PhotoDetailView(photo: photo, context: liked)
-                }
+                ErrorBanner(message: SavedPhotosView.emptyMessage)
+            }
+        } else {
+            PhotoGrid(photos: saved) { photo in
+                PhotoDetailView(photo: photo, context: saved)
             }
         }
     }
@@ -758,27 +744,11 @@ struct MyPageView: View {
         }
     }
 
-    /// いいねした写真を読む。**未ログインなら聞きに行かない**
-    /// （端末の控えが答え）。
-    private func loadLikes() async {
-        guard auth.userId != nil else {
-            serverLikeIds = nil
-            likesStatus = .deviceOnly
-            return
-        }
-        likesStatus = .loading
-        // 引き当て先。公開一覧が取れなくても、自分の写真の分は出せる
-        async let feedTask = environment.gallery.fetchPhotos()
-        async let idsTask = environment.social.myLikedPhotoIds()
-        feed = (try? await feedTask) ?? feed
-        let ids = try? await idsTask
-        if let ids {
-            serverLikeIds = ids
-            likesStatus = .ready
-        } else {
-            serverLikeIds = nil
-            likesStatus = .partial
-        }
+    /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる
+    private func loadFeed() async {
+        feedLoaded = false
+        feed = (try? await environment.gallery.fetchPhotos()) ?? feed
+        feedLoaded = true
     }
 
     @ViewBuilder
@@ -799,13 +769,14 @@ struct MyPageView: View {
             // **写真の有無とは無関係。** 行きたい場所は台帳の話で、
             // 1枚も撮っていない人にも中身がある
             wishlistArea
+        } else if tab == .favorites {
+            // **写真の有無とは無関係。** 保存は他人の写真にもする
+            favoritesArea
         } else if model.photos.isEmpty && !model.isLoading {
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
             ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
-        } else if tab == .favorites {
-            favoritesArea
         } else {
             let multiple = PhotoGroups.multiPhotoIds(model.photos)
             LazyVGrid(columns: columns, spacing: 4) {

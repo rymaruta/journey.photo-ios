@@ -1,6 +1,6 @@
 import Foundation
 
-/// 「お気に入り（いいねした写真）」に出すもの。
+/// 「いいねした写真」（`FavoritesView`）に出すもの。
 ///
 /// **サーバーの一覧と、この端末の控えの和。** Web の `useMyServerLikes` と
 /// 同じ約束:
@@ -13,19 +13,8 @@ import Foundation
 /// 言い切ると、別の端末で押したぶんが届く前に「無い」と読まれる。
 enum LikedPhotos {
 
-    enum Status: Equatable {
-        /// ログイン確認中・取得中
-        case loading
-        /// サーバーにも聞けた
-        case ready
-        /// 聞けなかった。**端末の控えは出す**（足りていないことだけ伝える）
-        case partial
-        /// 未ログイン。端末の控えが答え（聞きに行かない）
-        case deviceOnly
-    }
-
     /// 出す ID の集合。
-    /// - Parameter serverIds: 取れなければ nil（`partial` のとき）
+    /// - Parameter serverIds: 取れなければ nil（端末の控えだけ出す）
     static func ids(serverIds: [String]?, deviceIds: Set<String>) -> Set<String> {
         deviceIds.union(serverIds ?? [])
     }

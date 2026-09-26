@@ -18,6 +18,9 @@ final class AuthStore: ObservableObject {
     @Published private(set) var state: State = .unknown
     @Published var errorMessage: String?
     @Published private(set) var isWorking = false
+    /// 管理者か（ID トークンの `cognito:groups` に admin）。**メニューの「管理」の
+    /// 出し分けだけ**に使う——権限の判断はサーバーがする（`IdTokenClaims`）
+    @Published private(set) var isAdmin = false
 
     var userId: String? {
         if case .signedIn(let id) = state { return id }
@@ -60,14 +63,23 @@ final class AuthStore: ObservableObject {
         #endif
         guard await AuthGateway.isSignedIn() else {
             state = .signedOut
+            isAdmin = false
             return
         }
         let id = try? await AuthGateway.currentUserId()
         if let id {
             state = .signedIn(userId: id)
+            await refreshAdmin()
         } else {
             state = .signedOut
+            isAdmin = false
         }
+    }
+
+    /// ID トークンから管理者かを読み直す。**取れなければ管理を出さない**
+    private func refreshAdmin() async {
+        let token = try? await AuthGateway.idToken()
+        isAdmin = token.map { IdTokenClaims.isAdmin(jwt: $0) } ?? false
     }
 
     /// 直近の失敗の種類。**文言でも綴りでもなく、型で分岐する。**
@@ -86,12 +98,14 @@ final class AuthStore: ObservableObject {
             _ = try await AuthGateway.signIn(email: email, password: password)
             let id = try await AuthGateway.currentUserId()
             self.state = .signedIn(userId: id)
+            await refreshAdmin()
         }
     }
 
     func signOut() async {
         await AuthGateway.signOut()
         state = .signedOut
+        isAdmin = false
     }
 
     /// 退会の最後の一歩: Cognito の利用者を消す（`AuthGateway.deleteUser`）。
@@ -109,6 +123,7 @@ final class AuthStore: ObservableObject {
         }
         await AuthGateway.signOut()
         state = .signedOut
+        isAdmin = false
     }
 
     /// - Returns: 確認コード送信に使う UUID。失敗したら nil。
