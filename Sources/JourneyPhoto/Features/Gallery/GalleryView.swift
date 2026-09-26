@@ -326,8 +326,8 @@ struct GalleryView: View {
         .padding(.horizontal, 16)
     }
 
-    /// ホームは**縦1列のフィード**（提案の絵・2026-09-21）。
-    /// 格子は集約ページ（タグ・撮影地・機材）で使い続ける。
+    /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
+    /// 集約ページ（タグ・撮影地・機材）は角丸の `PhotoGrid` のまま。
     private func feed(_ photos: [Photo]) -> some View {
         ScrollViewReader { proxy in
         ScrollView {
@@ -359,10 +359,8 @@ struct GalleryView: View {
                         .padding(.vertical, 40)
                         .padding(.horizontal, 24)
                 }
-                ForEach(groups) { group in
-                    HomeFeedCard(photo: group.cover, following: model.followingIds,
-                                 siblings: group.photos)
-                }
+                // 板 01c: 大きく1枚 → 2枚 → 2枚、端から端まで・隙間 4pt
+                HomeMosaic(groups: groups)
             }
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
