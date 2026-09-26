@@ -9,6 +9,9 @@ import XCTest
 final class SearchPeopleTests: XCTestCase {
 
     /// 呼ばれた語ごとに止まって待つ引き先
+    /// **本体と同じ MainActor に置く。** 置かないと、止まって待つ側（別スレッド）と
+    /// テスト本体の `isWaiting` が同じ辞書を同時に読み書きする（ThreadSanitizer で検出）
+    @MainActor
     private final class PendingFetch {
         private var waiting: [String: CheckedContinuation<[UserProfile], Never>] = [:]
         private(set) var called: [String] = []
