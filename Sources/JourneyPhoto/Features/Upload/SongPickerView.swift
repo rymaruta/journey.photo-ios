@@ -45,7 +45,7 @@ struct SongPickerView: View {
                     Button {
                         // **曲も渡す。** 渡さないと再生の係が何の曲か知らず、
                         // 下の再生バー（`MiniPlayerBar`）が出ない
-                        player.toggle(song.previewURL, song: song)
+                        player.toggle(song.previewURL, song: song, origin: .songPicker)
                     } label: {
                         Image(systemName: player.isPlaying(song.previewURL)
                               ? "pause.circle.fill" : "play.circle")
@@ -86,8 +86,8 @@ struct SongPickerView: View {
         // 部品と再生の係は全体のバーと同じもの（二重に作らない）
         .safeAreaInset(edge: .bottom) {
             // 鳴っていないときは場所を取らない（余白ごと出さない）
-            if player.playingSong != nil {
-                MiniPlayerBar(previewing: true)
+            if SongPickerText.showsBar(playingFrom: player.origin, inSongPicker: true) {
+                MiniPlayerBar(inSongPicker: true)
                     .padding(.bottom, 8)
             }
         }
@@ -102,10 +102,15 @@ struct SongPickerView: View {
         isSearching = true
         message = nil
         defer { isSearching = false }
+        // 送ったときの語。**返事が届いたとき欄が変わっていたら捨てる**
+        let sent = query
         do {
-            results = try await environment.discovery.searchSongs(query)
-            if results.isEmpty { message = L("見つかりませんでした", "No results") }
+            let found = try await environment.discovery.searchSongs(sent)
+            guard SongPickerText.isCurrent(sent: sent, now: query) else { return }
+            results = found
+            if found.isEmpty { message = L("見つかりませんでした", "No results") }
         } catch {
+            guard SongPickerText.isCurrent(sent: sent, now: query) else { return }
             message = (error as? LocalizedError)?.errorDescription ?? L("検索できませんでした", "Search failed")
         }
     }

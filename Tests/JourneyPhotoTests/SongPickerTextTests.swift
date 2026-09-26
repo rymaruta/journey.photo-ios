@@ -44,6 +44,30 @@ final class SongPickerTextTests: XCTestCase {
         XCTAssertEqual(SongPickerText.previewButtonLabel(isPlaying: false), "試し聴き")
     }
 
+    /// 🔴 遅れて届いた返事は、欄が変わっていたら入れない
+    /// （欄を空にしたあとに古い「見つかりませんでした」が出ていた）
+    func testLateResponseIsDropped() {
+        XCTAssertTrue(SongPickerText.isCurrent(sent: "海", now: "海"))
+        XCTAssertTrue(SongPickerText.isCurrent(sent: "海", now: " 海 "))
+        XCTAssertFalse(SongPickerText.isCurrent(sent: "海", now: ""), "欄を空にした")
+        XCTAssertFalse(SongPickerText.isCurrent(sent: "海", now: "山"), "打ち直した")
+    }
+
+    /// 🔴 バーは二重に出さない。曲選びで鳴らした曲はシートの中だけ、
+    /// それ以外は全体のバーだけ。前から鳴っていた曲に「· 試し聴き中」を出さない
+    func testBarIsShownInExactlyOnePlace() {
+        let origins: [PlaybackOrigin?] = [nil, .app, .songPicker]
+        for origin in origins {
+            let inPicker = SongPickerText.showsBar(playingFrom: origin, inSongPicker: true)
+            let global = SongPickerText.showsBar(playingFrom: origin, inSongPicker: false)
+            XCTAssertFalse(inPicker && global, "\(String(describing: origin)) が二重に出る")
+        }
+        XCTAssertTrue(SongPickerText.showsBar(playingFrom: .songPicker, inSongPicker: true))
+        XCTAssertFalse(SongPickerText.showsBar(playingFrom: .app, inSongPicker: true), "前から鳴っていた曲")
+        XCTAssertTrue(SongPickerText.showsBar(playingFrom: .app, inSongPicker: false))
+        XCTAssertFalse(SongPickerText.showsBar(playingFrom: nil, inSongPicker: false))
+    }
+
     // MARK: - 控え
 
     private func defaults() -> UserDefaults {

@@ -39,13 +39,39 @@ enum SongPickerText {
     }
 
     /// 試し聴きの丸ボタンの読み上げ。**鳴っている間は「止める」**
-    /// （押すと止まるので）。`SongRow` と同じ語
+    /// （押すと `stop()`——頭に戻る。一時停止ではないので英語も "Stop"）。
+    /// `SongRow` と同じ語
     static func previewButtonLabel(isPlaying: Bool) -> String {
-        isPlaying ? L("止める", "Pause") : L("試し聴き", "Preview")
+        isPlaying ? L("止める", "Stop") : L("試し聴き", "Preview")
+    }
+
+    /// 検索の返事を画面に入れてよいか。**送ったときの語といまの欄が同じときだけ。**
+    /// 返事が遅れて届くと、欄を空にした（または打ち直した）あとに古い
+    /// 「見つかりませんでした」や前の語の結果が出る
+    static func isCurrent(sent: String, now: String) -> Bool {
+        sent.trimmingCharacters(in: .whitespacesAndNewlines)
+            == now.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 再生バーを出すか。**曲選びの中のバーは、曲選びで鳴らした曲だけ**
+    /// （「· 試し聴き中」と出すので、前から鳴っていた曲には出さない）。
+    /// **全体のバーはその逆**——曲選びのシートを下へ引いて閉じる途中に、
+    /// 下の全体のバーとシートの中のバーが二重に見えないように
+    static func showsBar(playingFrom origin: PlaybackOrigin?, inSongPicker: Bool) -> Bool {
+        guard let origin else { return false }
+        return inSongPicker ? origin == .songPicker : origin != .songPicker
     }
 
     /// シートの中の再生バーの1行目（板 23「[曲名] · 試し聴き中」）
     static func nowPreviewing(_ title: String) -> String {
         L("\(title) · 試し聴き中", "\(title) · Previewing")
     }
+}
+
+/// 曲をどこで鳴らしたか（`MusicPreviewPlayer.origin`）
+enum PlaybackOrigin: Equatable {
+    /// 写真・プロフィール・ストーリーなど、ふつうの画面
+    case app
+    /// 「曲を選ぶ」の試し聴き
+    case songPicker
 }

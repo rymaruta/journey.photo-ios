@@ -24,6 +24,23 @@ final class MusicPreviewPlayerTests: XCTestCase {
         XCTAssertGreaterThan(second, first)
     }
 
+    /// どこで鳴らしたかを覚え、止めたら忘れる。`play` はふつうの画面の扱い
+    /// （曲選びの試し聴きだけを全体のバーから外すため）
+    func testOriginFollowsWhoPlayed() {
+        let player = MusicPreviewPlayer.shared
+        player.toggle(url, origin: .songPicker)
+        XCTAssertEqual(player.origin, .songPicker)
+        player.toggle(url)
+        XCTAssertNil(player.origin, "止めたら忘れる")
+        player.play(url)
+        XCTAssertEqual(player.origin, .app)
+        player.toggle(url, origin: .songPicker)
+        XCTAssertNil(player.origin, "鳴っている曲を押せば止まる")
+        player.play(url)
+        player.toggle(URL(fileURLWithPath: "/nonexistent/b.m4a"), origin: .songPicker)
+        XCTAssertEqual(player.origin, .songPicker, "別の曲を鳴らしたら持ち主が替わる")
+    }
+
     /// 一時停止中は「再生中」と言わない（ほかの画面の ▶ が ⏸ のままになる）
     func testPausedIsNotPlaying() {
         let player = MusicPreviewPlayer.shared
