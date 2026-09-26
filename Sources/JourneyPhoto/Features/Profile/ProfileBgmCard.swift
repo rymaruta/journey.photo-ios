@@ -42,7 +42,7 @@ struct ProfileBgmCard: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(playing ? L("止める", "Pause") : L("再生", "Play"))
+            .accessibilityLabel(playing ? L("止める", "Stop") : L("再生", "Play"))
         }
         .padding(.leading, 6)
         .padding(.trailing, 4)

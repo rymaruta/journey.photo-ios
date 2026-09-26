@@ -10,10 +10,16 @@ import SwiftUI
 /// **出すのは鳴っているときだけ。** 何も鳴っていないのに場所を取らない。
 struct MiniPlayerBar: View {
 
+    /// 「曲を選ぶ」のシートの中のバー（板 23）。1行目が「曲名 · 試し聴き中」に
+    /// なる。**シートは下の全体のバーを覆う**ので、曲選びは自分のシートの中に
+    /// このバーを置く。どちらのバーに出すかは `SongPickerText.showsBar`
+    var inSongPicker = false
+
     @ObservedObject private var player = MusicPreviewPlayer.shared
 
     var body: some View {
-        if let song = player.playingSong {
+        if let song = player.playingSong,
+           SongPickerText.showsBar(playingFrom: player.origin, inSongPicker: inSongPicker) {
             HStack(spacing: 10) {
                 if let artwork = song.artworkURL {
                     RemoteImage(url: artwork)
@@ -21,7 +27,7 @@ struct MiniPlayerBar: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(song.title)
+                    Text(inSongPicker ? SongPickerText.nowPreviewing(song.title) : song.title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)

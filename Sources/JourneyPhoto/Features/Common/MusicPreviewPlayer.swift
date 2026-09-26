@@ -21,6 +21,9 @@ final class MusicPreviewPlayer: ObservableObject {
     /// いま鳴っている曲。**画面をまたいで操作するために要る**
     /// （`MiniPlayerBar` が題と絵を出す）。URL だけでは何の曲か分からない
     @Published private(set) var playingSong: Photo.Song?
+    /// どの画面で鳴らしたか。**曲選びで鳴らした曲は全体のバーに出さない**
+    /// （`SongPickerText.showsBar`）。止めたら nil
+    @Published private(set) var origin: PlaybackOrigin?
 
     /// 一時停止中か。**止めた（stop）とは別。** 一時停止の間も `playingURL` は
     /// 残るので、これを見ないと他の画面の ▶ が「再生中」のままになる
@@ -56,7 +59,7 @@ final class MusicPreviewPlayer: ObservableObject {
         return playingURL == url && !isPaused
     }
 
-    func toggle(_ url: URL?, song: Photo.Song? = nil) {
+    func toggle(_ url: URL?, song: Photo.Song? = nil, origin: PlaybackOrigin = .app) {
         guard let url else { return }
         // **鳴っているときだけ止める。** 一時停止中の同じ曲は ▶ を出しているので、
         // 押したら鳴らす（止めると、▶ を押したのに何も起きない）
@@ -64,7 +67,7 @@ final class MusicPreviewPlayer: ObservableObject {
             stop()
             return
         }
-        start(url, song: song)
+        start(url, song: song, origin: origin)
     }
 
     /// 頭から鳴らす（鳴っていても頭出しし直す）。ストーリーの曲に使う——
@@ -97,7 +100,8 @@ final class MusicPreviewPlayer: ObservableObject {
         player?.isMuted = muted
     }
 
-    private func start(_ url: URL, song: Photo.Song?, loops: Bool = false) {
+    private func start(_ url: URL, song: Photo.Song?, loops: Bool = false,
+                       origin: PlaybackOrigin = .app) {
         deactivateTask?.cancel()
         deactivateTask = nil
         session += 1
@@ -114,6 +118,7 @@ final class MusicPreviewPlayer: ObservableObject {
         self.player = player
         playingURL = url
         playingSong = song
+        self.origin = origin
         // **30秒で鳴り終わったら自分で止める。**
         //
         // 見張らないと (1) ボタンが「一時停止」のまま固まる
@@ -143,6 +148,7 @@ final class MusicPreviewPlayer: ObservableObject {
         player = nil
         playingURL = nil
         playingSong = nil
+        origin = nil
         isPaused = false
         guard releaseSession else { return }
         scheduleRelease()
