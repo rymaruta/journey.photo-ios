@@ -80,6 +80,7 @@ public struct AccessibilityTraits: OptionSet {
     public static let isSelected = AccessibilityTraits(rawValue: 1)
     public static let isModal = AccessibilityTraits(rawValue: 1 << 5)
     public static let isButton = AccessibilityTraits(rawValue: 2)
+    public static let isHeader = AccessibilityTraits(rawValue: 1 << 3)
 }
 public struct TextInputAutocapitalization {
     public static let never = TextInputAutocapitalization()

@@ -103,3 +103,111 @@ extension View {
             }
     }
 }
+
+// MARK: - 札と行（板 43 設定・47 通報）
+
+/// 行を束ねる札（板: 角丸16・地 白7%・縁 白8%）。行の間の線は `JPCardDivider`
+struct JPCard<Content: View>: View {
+
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(spacing: 0) { content }
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+/// 札の中の行と行の間の線（板: 白8%・1pt）
+struct JPCardDivider: View {
+    var body: some View {
+        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+    }
+}
+
+/// 札の上の小さい見出し（板: 12px・medium・白60%）
+struct JPSectionTitle: View {
+
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(WebTheme.faint)
+            .padding(.horizontal, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// 1つだけ選ぶ行（板 47 の理由: 最小54pt・右に 22pt の丸、選ぶと白い輪と点）。
+///
+/// **iOS 既定のチェックマークにしない**（板は丸）。読み上げは「選択中」で言う
+struct JPRadioRow: View {
+
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ZStack {
+                    Circle()
+                        .strokeBorder(Color.white.opacity(selected ? 1 : 0.35), lineWidth: selected ? 2 : 1.5)
+                    if selected {
+                        Circle().fill(Color.white).frame(width: 10, height: 10)
+                    }
+                }
+                .frame(width: 22, height: 22)
+                .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .frame(minHeight: 54)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// 説明付きの入切の行（板: 15px の名前の下に 11px・白60% の説明、軌道は暗い真鍮）
+struct JPToggleRow: View {
+
+    let title: String
+    var detail: String?
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.text)
+                if let detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(WebTheme.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        // **軌道は暗い真鍮。** 既定の tint（白）だと、入れたときに白い軌道に
+        // 白いつまみが乗り、入か切かが見えない
+        .tint(WebTheme.accentDeep)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .frame(minHeight: 54)
+    }
+}
