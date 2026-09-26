@@ -215,6 +215,8 @@ extension View {
                                     @ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tint(_ c: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func listRowBackground<V: View>(_ view: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 行の余白（本物と同じ）。`ProfileEditView` のカバーを端まで広げるのに使う
+    public func listRowInsets(_ insets: EdgeInsets?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func mask<V: View>(@ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(radius: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func shadow(color: Color, radius: Double, x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -366,4 +368,10 @@ extension View {
     public func animation<V: Equatable>(_ animation: Animation?, value: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tabViewStyle(_ style: TabViewStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func statusBarHidden(_ hidden: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+}
+
+/// 行の余白（本物と同じ形）
+public struct EdgeInsets {
+    public init() {}
+    public init(top: Double, leading: Double, bottom: Double, trailing: Double) {}
 }
