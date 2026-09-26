@@ -180,8 +180,14 @@ struct MyPageView: View {
                 // ボタンの列も置かない**——編集は見出しの右、お気に入りは下のタブ、
                 // アルバムは設定から入る（`SettingsView`）
                 highlightsRow
-                tabPicker
-                photoArea
+                // **札と中身は横に払っても切り替わる**（札を押すのと同じ）。
+                // 払いを受けるのは札から下だけ——上のハイライトの列は横に流れる
+                VStack(alignment: .leading, spacing: 14) {
+                    tabPicker
+                    photoArea
+                }
+                .contentShape(Rectangle())
+                .simultaneousGesture(tabSwipe)
             }
         }
         .refreshable { await model.load() }
@@ -632,6 +638,20 @@ struct MyPageView: View {
                 .accessibilityIdentifier("profile.tab.\(option.rawValue)")
             }
         }
+    }
+
+    /// 横の払いでタブを切り替える。**`simultaneousGesture` で付ける**——`gesture` に
+    /// すると縦のスクロールと写真を押す操作を奪う。判定は `ProfileTab.swiped`
+    /// （はっきり横に動いたときだけ・端で回り込まない）
+    private var tabSwipe: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onEnded { value in
+                guard let next = ProfileTab.swiped(from: tab, in: ProfileTab.tabs(isMe: true),
+                                                   dx: Double(value.translation.width),
+                                                   dy: Double(value.translation.height))
+                else { return }
+                tab = next
+            }
     }
 
     /// 名前。**幅は太字で測る**（選ぶたびに幅が変わって印が出入りしないように）。

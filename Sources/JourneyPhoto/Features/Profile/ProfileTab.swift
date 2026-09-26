@@ -52,4 +52,21 @@ enum ProfileTab: String, CaseIterable, Identifiable {
     static func tabs(isMe: Bool) -> [ProfileTab] {
         isMe ? [.posts, .trips, .wishlist, .favorites] : [.posts, .map]
     }
+
+    /// 横に払ったときの行き先。**指を左へ払うと右隣、右へ払うと左隣**
+    /// （写真アプリ・Instagram と同じ向き）。端では回り込まない。
+    ///
+    /// 縦のスクロールを奪わないよう、**はっきり横に動いたときだけ**切り替える
+    /// ——横の距離が `minDistance` 以上で、縦の `horizontalRatio` 倍より大きいこと。
+    /// 斜めに流した縦スクロールでタブが変わると、見ていた一覧が突然消える
+    static func swiped(from current: ProfileTab, in tabs: [ProfileTab],
+                       dx: Double, dy: Double) -> ProfileTab? {
+        guard abs(dx) >= swipeMinDistance, abs(dx) > abs(dy) * swipeHorizontalRatio,
+              let index = tabs.firstIndex(of: current) else { return nil }
+        let next = dx < 0 ? index + 1 : index - 1
+        return tabs.indices.contains(next) ? tabs[next] : nil
+    }
+
+    static let swipeMinDistance: Double = 50
+    static let swipeHorizontalRatio: Double = 1.5
 }
