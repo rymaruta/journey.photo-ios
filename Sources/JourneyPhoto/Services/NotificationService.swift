@@ -72,15 +72,5 @@ struct AppNotification: Decodable, Identifiable, Equatable {
         self.deleted = try container.decodeIfPresent(Bool.self, forKey: .deleted)
     }
 
-    /// 画面に出す1行。種類が分からないものは nil を返して**描かない**。
-    var summary: String? {
-        let who = (deleted == true) ? Labels.Common.deletedUser : (byName ?? L("だれか", "Someone"))
-        switch kind {
-        case .like: return L("\(who) さんがいいねしました", "\(who) liked your photo")
-        case .comment: return L("\(who) さんがコメントしました", "\(who) commented")
-        case .follow: return L("\(who) さんがフォローしました", "\(who) followed you")
-        case .storyreply: return L("\(who) さんがストーリーに返信しました", "\(who) replied to your story")
-        case .none: return nil
-        }
-    }
+    // 画面の文言は `NotificationText.line(for:)`（まとめ表示と一緒に決めるため）
 }

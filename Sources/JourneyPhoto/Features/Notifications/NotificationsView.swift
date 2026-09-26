@@ -15,6 +15,13 @@ struct NotificationsView: View {
     @ObservedObject private var router = NotificationRouter.shared
     @StateObject private var model = NotificationsViewModel()
     @State private var filter: NotificationFilter = .all
+    /// 押した先。**行を `NavigationLink` で包まない**——行の中にアイコンの
+    /// ボタン（プロフィール）とフォローバックが並ぶので、包むと
+    /// リンクの中にボタンが入れ子になり、押した所によって二重に遷移したり、
+    /// VoiceOver が行を1つにまとめて中のボタンへ届かなかったりする。
+    /// 行の本体・アイコンをそれぞれ横並びの別ボタンにして、押したら
+    /// ここに行き先を立て、一覧の外（`navigationDestination`）から開く
+    @State private var route: NotificationsViewModel.Route?
 
     var body: some View {
         Group {
@@ -28,6 +35,18 @@ struct NotificationsView: View {
         }
         .webScreen()
         .navigationTitle(L("お知らせ", "Activity"))
+        // **通知の設定**（板 15 の右上の歯車）。行き先は設定の画面——
+        // プッシュ通知の入／切はそこにある。閉じる口は `RootView` が
+        // 左に置いているので、右に置いてぶつからない
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { SettingsView() } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel(L("通知の設定", "Notification settings"))
+                .accessibilityIdentifier("notifications.settings")
+            }
+        }
     }
 
     /// 種類で絞る（提案の絵）。**数の多い順ではなく決まった並び**
@@ -69,24 +88,24 @@ struct NotificationsView: View {
 
     /// 1件ぶん。**押せるようにする**——行き止まりの一覧は「壊れている」に見える。
     /// 行き先が分からないものは押せないまま出す（空振りを作らない）
+    private func rowLink(_ entry: NotificationText.Entry) -> some View {
+        let target = model.route(for: entry.lead)
+        return NotificationRow(entry: entry, following: model.following,
+                               onFollowBack: { await model.followBack($0, environment: environment) },
+                               onOpen: target.map { target in { route = target } },
+                               onOpenProfile: { route = .user($0) })
+    }
+
+    /// 行き先の画面。写真は開く時点で手元の一覧から引き直す
     @ViewBuilder
-    private func rowLink(_ row: AppNotification) -> some View {
-        switch model.destination(for: row) {
-        case .photo(let photo, let fromPublicFeed):
-            NavigationLink {
+    private func destinationView(_ route: NotificationsViewModel.Route) -> some View {
+        switch route {
+        case .photo(let id, let fromPublicFeed):
+            if let photo = model.photo(id: id) {
                 PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed)
-            } label: {
-                NotificationRow(notification: row, following: model.following,
-                                onFollowBack: { await model.followBack($0, environment: environment) })
             }
         case .user(let userId):
-            NavigationLink { UserProfileView(userId: userId) } label: {
-                NotificationRow(notification: row, following: model.following,
-                                onFollowBack: { await model.followBack($0, environment: environment) })
-            }
-        case .none:
-            NotificationRow(notification: row, following: model.following,
-                            onFollowBack: { await model.followBack($0, environment: environment) })
+            UserProfileView(userId: userId)
         }
     }
 
@@ -130,8 +149,11 @@ struct NotificationsView: View {
             // ——サーバーが返した新しい順のまま切るだけ
             ForEach(NotificationGroups.grouped(shownRows)) { group in
                 Section {
-                    ForEach(group.rows) { row in
-                        rowLink(row)
+                    // 同じ写真へのいいねは1行にまとめる（板の「ほか N人」）。
+                    // まとめるのは見出しの中だけ——昨日のいいねを今日の行に
+                    // 吸い込むと、見出しの「今日」が嘘になる
+                    ForEach(NotificationText.collapse(group.rows, unreadIds: model.unreadIds)) { entry in
+                        rowLink(entry)
                     }
                 } header: {
                     Text(group.bucket.label)
@@ -140,6 +162,9 @@ struct NotificationsView: View {
                 }
             }
         }
+        .navigationDestination(item: $route) { route in
+            destinationView(route)
+        }
         .task(id: router.openActivityRequests) {
             // **読めたときだけ消す。** サーバーは未読数を載せるが、既読に
             // したことは端末のアイコンに伝わらない——誰も消さないと増える
@@ -147,40 +172,112 @@ struct NotificationsView: View {
             if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge() }
         }
         .refreshable {
-            if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge() }
+            if await model.load(environment: environment, viewerId: auth.userId, refreshing: true) {
+                await push.clearBadge()
+            }
         }
     }
 }
 
 private struct NotificationRow: View {
 
-    let notification: AppNotification
+    let entry: NotificationText.Entry
     /// いまフォローしている人。**フォロー通知の「フォローバック」を
     /// 出すかどうかの判断に使う**——既にフォローしている相手に出さない
     var following: Set<String> = []
     var onFollowBack: ((String) async -> Void)?
+    /// 行の本体を押したとき。nil なら押せない（行き先が無い）
+    var onOpen: (() -> Void)?
+    /// 左のアイコンを押したとき（相手のプロフィールを開く）
+    var onOpenProfile: ((String) -> Void)?
 
     @State private var busy = false
 
+    private var notification: AppNotification { entry.lead }
+
     var body: some View {
         // 知らない種類は描かない（既定の文言で嘘を出さない）
-        if let summary = notification.summary {
+        if let line = NotificationText.line(for: entry) {
             HStack(spacing: 12) {
+                avatar
+                main(line)
+                followBackButton
+            }
+            .frame(minHeight: 66)
+            // **未読の印は行の頭の真鍮の点**（板 15）。真鍮＝合図
+            .overlay(alignment: .leading) {
+                if entry.unread {
+                    Circle()
+                        .fill(WebTheme.accent)
+                        .frame(width: 6, height: 6)
+                        .offset(x: -12)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+    }
+
+    /// 文言と写真の小窓。**押せる行はここ全体が1つのボタン**
+    /// （アイコン・フォローバックとは横に並ぶ別のボタン＝入れ子にしない）
+    @ViewBuilder
+    private func main(_ line: NotificationText.Line) -> some View {
+        let label = entry.unread ? L("未読、", "Unread, ") + line.plain : line.plain
+        if let onOpen {
+            Button(action: onOpen) { mainContent(line) }
+                .buttonStyle(.plain)
+                .accessibilityLabel(label)
+        } else {
+            mainContent(line)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(label)
+        }
+    }
+
+    private func mainContent(_ line: NotificationText.Line) -> some View {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    (Text(line.who).bold() + Text(line.rest))
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.text)
+                    if let ago = NotificationText.ago(notification.t) {
+                        Text(ago)
+                            .font(.caption2)
+                            .foregroundStyle(WebTheme.faint)
+                    }
+                }
+                Spacer(minLength: 0)
+                // 写真の小窓は右（板 15）。フォローは写真を伴わない
                 if let src = notification.photoSrc, let url = URL(string: src) {
                     RemoteImage(url: url)
                         .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .background(WebTheme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .accessibilityHidden(true)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(summary).font(.callout)
-                    if let at = notification.atLocation, !at.isEmpty {
-                        Text(at).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                followBackButton
             }
-            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+            .contentShape(Rectangle())
+    }
+
+    /// 相手のアイコン（左・丸）。**押すとプロフィール。**
+    ///
+    /// 退会した人は顔も導線も出さない（サーバーが `deleted` を付けて
+    /// 名前を伏せているのと揃える）。id の無い古い通知も押せないまま
+    @ViewBuilder
+    private var avatar: some View {
+        let userId = notification.byId.flatMap { $0.isEmpty ? nil : $0 }
+        let face = RemoteImage(url: notification.deleted == true ? nil
+                               : userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil) })
+            .frame(width: 42, height: 42)
+            .background(WebTheme.surface)
+            .clipShape(Circle())
+        if let userId, notification.deleted != true, let onOpenProfile {
+            Button { onOpenProfile(userId) } label: { face }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("\(notification.byName ?? "") のプロフィールを開く",
+                                      "Open \(notification.byName ?? "")'s profile"))
+        } else {
+            face.accessibilityHidden(true)
         }
     }
 
@@ -226,6 +323,13 @@ final class NotificationsViewModel: ObservableObject {
         case none
     }
 
+    /// 押した先（`navigationDestination(item:)` に渡すので Hashable）。
+    /// 写真は id だけ持ち、開くときに `photo(id:)` で引き直す
+    enum Route: Hashable {
+        case photo(String, fromPublicFeed: Bool)
+        case user(String)
+    }
+
     @Published private(set) var rows: [AppNotification] = []
     /// 写真を引き当てるための手元の一覧（公開のぶん）
     private var feed: [Photo] = []
@@ -237,6 +341,9 @@ final class NotificationsViewModel: ObservableObject {
     /// 一生載らない。引き当てられないと**押しても何も起きない行**になる。
     private var mine: [Photo] = []
     @Published private(set) var unread = 0
+    /// 未読の行（真鍮の点）。**既読にする前の数から決める**——開いたときに
+    /// 既読化するので、`unread` はすぐ 0 になる。読み直すまでは点を残す
+    @Published private(set) var unreadIds: Set<String> = []
     /// いまフォローしている人。**フォローバックを出すかの判断だけに使う**
     @Published private(set) var following: Set<String> = []
     @Published private(set) var isLoading = false
@@ -275,6 +382,19 @@ final class NotificationsViewModel: ObservableObject {
         }
     }
 
+    func route(for notification: AppNotification) -> Route? {
+        switch destination(for: notification) {
+        case .photo(let photo, let fromPublicFeed): return .photo(photo.id, fromPublicFeed: fromPublicFeed)
+        case .user(let id): return .user(id)
+        case .none: return nil
+        }
+    }
+
+    /// 公開一覧 → 自分の写真の順に引き当てる（`destination(for:)` と同じ順）
+    func photo(id: String) -> Photo? {
+        feed.first(where: { $0.id == id }) ?? mine.first(where: { $0.id == id })
+    }
+
     /// - Returns: 読めたか。**バッジを消してよいかの拠り所**——
     ///   取得に失敗した回にアイコンだけ 0 にすると、タブのバッジは 3 のまま
     ///   アイコンは 0、という食い違いが残る。
@@ -293,7 +413,31 @@ final class NotificationsViewModel: ObservableObject {
         following.insert(userId)
     }
 
-    func load(environment: AppEnvironment, viewerId: String?) async -> Bool {
+    /// 読めた1ページを画面の状態に移す。
+    ///
+    /// - Parameter refreshing: 引っぱって読み直した回か。
+    ///
+    /// **未読の点は、同じ画面にいる間は前のぶんを保つ（和をとる）。**
+    /// 開いた回の最後に既読にするので、行・歯車・アイコンを押して戻った
+    /// だけで `.task` が走り直すと、サーバーは `unread=0` を返す。
+    /// 入れ替えると、読んでもいないのに点が消える。
+    /// 入れ替えるのは**引っぱって読み直したときだけ**（「読んだ」の合図）。
+    /// 一覧から消えた行の id は落とす
+    func apply(_ page: NotificationService.Page, refreshing: Bool) {
+        rows = page.items
+        let fresh = NotificationText.unreadIds(page.items, unread: page.unread)
+        if refreshing {
+            unreadIds = fresh
+        } else {
+            let present = Set(page.items.map(\.id))
+            unreadIds = fresh.union(unreadIds.intersection(present))
+        }
+        unread = page.unread
+    }
+
+    /// - Parameter refreshing: 引っぱって読み直した回。**このときだけ**未読の点を
+    ///   サーバーの数で入れ替える（`apply` を参照）
+    func load(environment: AppEnvironment, viewerId: String?, refreshing: Bool = false) async -> Bool {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -302,11 +446,16 @@ final class NotificationsViewModel: ObservableObject {
             feed = (try? await environment.gallery.fetchPhotos()) ?? []
             mine = (try? await environment.photos.myPhotos()) ?? []
             let page = try await environment.notifications.fetch()
-            rows = page.items
+            apply(page, refreshing: refreshing)
             // **フォローバックを出すかの判断に要る。** 取れなくても
             // お知らせ自体は出す（ボタンが出ないだけ）
             await loadFollowing(environment: environment, viewerId: viewerId)
-            unread = page.unread
+            // ⚠️ **取得と既読化のすきまに届いた通知は、一度も未読に見えない。**
+            // サーバーの既読化（`api-user/src/notifications.ts` の
+            // `readNotifications`）は無条件の `SET unread = :z` なので、
+            // fetch のあとに積まれたぶんも既読に数えてしまう。直すにはサーバーが
+            // 「読んだ件数」か「最後に見た時刻」を受け取り、その差だけ減らす
+            // 必要がある（端末側だけでは直せない）。
             // **開いたときに1回だけ既読にする。** 読めたあとに呼ぶので、
             // 取得に失敗した回でバッジだけ消える事故が起きない
             if page.unread > 0 {
