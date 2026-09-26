@@ -67,9 +67,28 @@ enum StoryPlayback {
     /// `isSending` を外さない——Web が実際に踏んだ穴で、送信中に次へ送られて
     /// 「送りました」が別のストーリーの画面に出た。`mediaReady` は
     /// 「絵が出る前から秒数が減る」を防ぐ（回線が遅いと表示時間が短くなる）。
+    ///
+    /// `inBackground` は**アプリが前面に居ない間**（ホームへ戻った・電話・
+    /// 通知センター）。見ていない時間で秒数を減らさない
     static func isFrozen(pressing: Bool, paused: Bool, menuOpen: Bool, sheetOpen: Bool,
-                         replyFocused: Bool, isSending: Bool, mediaReady: Bool) -> Bool {
+                         replyFocused: Bool, isSending: Bool, mediaReady: Bool,
+                         inBackground: Bool = false) -> Bool {
         pressing || paused || menuOpen || sheetOpen || replyFocused || isSending || !mediaReady
+            || inBackground
+    }
+
+    /// 1回の刻みで進める秒数の上限。
+    ///
+    /// 経過は「前の刻みからの実際の時刻の差」で足すので、**アプリが止まって
+    /// いた時間もまとめて1回に入る**——ホームへ戻って帰ってくると、その瞬間に
+    /// 表示時間を使い切って次の1本へ飛んでいた（2026-09-26 のバグ探し）。
+    /// 止まる条件（`inBackground`）で防ぐが、前面に戻る合図より先に刻みが
+    /// 走ることもあるので、ここでも抑える
+    static let maxTickSeconds: TimeInterval = 0.25
+
+    /// 刻みの差を上限と下限（負の差＝時計の巻き戻し）で抑える
+    static func tickDelta(_ seconds: TimeInterval) -> TimeInterval {
+        min(max(0, seconds), maxTickSeconds)
     }
 
     // MARK: - 前後

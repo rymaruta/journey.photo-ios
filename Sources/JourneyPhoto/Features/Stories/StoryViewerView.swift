@@ -18,6 +18,8 @@ struct StoryViewerView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var toasts: ToastCenter
+    /// 前面に居るか（ホームへ戻ったら時計と動画を止める）
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
 
     @State private var index: Int
@@ -86,7 +88,9 @@ struct StoryViewerView: View {
             sheetOpen: showReplies || showInsights || showViewers || showReport || showBlockConfirm,
             replyFocused: replyFocused,
             isSending: isSending,
-            mediaReady: mediaReady
+            mediaReady: mediaReady,
+            // 前面に居ない間は止める（動画も止まり、戻ると続きから）
+            inBackground: scenePhase != .active
         )
     }
 
@@ -113,6 +117,11 @@ struct StoryViewerView: View {
                 // （Web の `!mediaReady && !mediaError` と同じ）
                 onSettled: { _ in mediaReady = true }
             )
+            // 🔴 **1本ごとに作り直す。** 同じ型・同じ場所のままだと SwiftUI は
+            // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
+            // まま残る——動画が2本続くと、2本目は1本目の終わりの絵で止まり、
+            // 鳴り終わりの合図も来ないので先へ進めなかった
+            .id(story.id)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay { tapZones }
 
@@ -374,11 +383,12 @@ struct StoryViewerView: View {
         repliesFailed = false
     }
 
-    /// 写真の時計。**動画は回さない**（鳴り終わりが送る）。
-    /// 経過は実際の時刻の差で進める——`sleep` は指定より遅れることがある
     /// 時計の刻み。進行バーの動きもこの長さで次の刻みへつなぐ
     private static let clockStep: TimeInterval = 0.05
 
+    /// 写真の時計。**動画は回さない**（鳴り終わりが送る）。
+    /// 経過は実際の時刻の差で進める——`sleep` は指定より遅れることがある。
+    /// **差は `StoryPlayback.tickDelta` で抑える**（アプリが止まっていた時間を足さない）
     private func runClock(for story: Story) async {
         guard !story.isVideo else { return }
         let duration = StoryPlayback.duration(seconds: story.durationSec)
@@ -386,7 +396,7 @@ struct StoryViewerView: View {
             let before = Date()
             try? await Task.sleep(for: .milliseconds(Int(Self.clockStep * 1000)))
             if Task.isCancelled { return }
-            let dt = Date().timeIntervalSince(before)
+            let dt = StoryPlayback.tickDelta(Date().timeIntervalSince(before))
             var progress = StoryPlayback.Progress(elapsed: elapsed, duration: duration)
             let tick = progress.tick(dt, frozen: frozen)
             elapsed = progress.elapsed
