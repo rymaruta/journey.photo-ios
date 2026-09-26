@@ -1,4 +1,5 @@
 import XCTest
+import CoreLocation
 
 /// 各画面を撮る。
 ///
@@ -52,6 +53,17 @@ final class ScreenshotTests: XCTestCase {
         alert.buttons.element(boundBy: 0).tap()
     }
 
+    /// **シミュレータに現在地を持たせる。** 持たせないと CI のシミュレータは
+    /// 位置を返さず、地図は「現在地を探しています…」のまま写真に合わせた
+    /// 絵になる（run 100）——既定の場所が現在地になる動きが絵で確かめられない。
+    /// 場所はパリ（本番の写真がある所。ピンと現在地が同じ絵に入る）
+    private func simulateLocation() {
+        if #available(iOS 16.4, *) {
+            XCUIDevice.shared.location = XCUILocation(
+                location: CLLocation(latitude: 48.8566, longitude: 2.3522))
+        }
+    }
+
     func testCapturesEveryScreen() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -100,6 +112,7 @@ final class ScreenshotTests: XCTestCase {
         let names = ["ホーム", "探す", "投稿", "マップ", "マイページ"]
         // 中央（投稿）はシートが出るので、一巡の中では触らない
         for (index, name) in names.enumerated() where index < tabBar.buttons.count && index != 2 {
+            if name == "マップ" { simulateLocation() }
             tabBar.buttons.element(boundBy: index).tap()
             if name == "マップ" { answerLocationPrompt() }
             _ = app.navigationBars.firstMatch.waitForExistence(timeout: 15)
