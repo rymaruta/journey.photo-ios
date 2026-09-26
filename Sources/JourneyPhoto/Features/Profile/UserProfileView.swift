@@ -121,7 +121,7 @@ struct UserProfileView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         Text(model.shownName ?? "—").font(JPFont.display(20, relativeTo: .title3))
-                        VerifiedBadge(isVerified: model.profile?.verified)
+                        VerifiedBadge(isVerified: model.profile?.verified, nameSize: 20, relativeTo: .title3)
                     }
                     HStack(spacing: 12) {
                         followCount(

@@ -251,7 +251,7 @@ struct MyPageView: View {
                     Text(profile.name)
                         .font(JPFont.display(26, relativeTo: .title))
                         .foregroundStyle(Color.white)
-                    VerifiedBadge(isVerified: profile.verified)
+                    VerifiedBadge(isVerified: profile.verified, nameSize: 26, relativeTo: .title)
                 }
                 if let line = ProfileLine.handleAndHome(username: profile.username,
                                                         home: profile.homeLocation) {
