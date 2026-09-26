@@ -34,8 +34,8 @@ final class MusicPreviewPlayer: ObservableObject {
     /// 場を返す予約。**鳴らし直したら取り消す**——止めた直後（200ms 以内）に
     /// 次の曲を鳴らすと、遅れて届いた `setActive(false)` が新しい曲を止めていた
     private var deactivateTask: Task<Void, Never>?
-    /// 場（`.playback`）を持ったまま返していないか。`stop(releaseSession: false)`
-    /// のあと、あとで `releaseSessionIfIdle()` で返すために覚えておく
+    /// 場（`.playback`）を持ったまま返していないか。閲覧画面が開いている間に
+    /// 止めた曲の場を、閉じたとき（`endStoryViewing`）に返すために覚えておく
     private var sessionHeld = false
     /// 鳴り終わりの見張り。**外さないと積み上がる**
     private var endObserver: NSObjectProtocol?
@@ -148,22 +148,25 @@ final class MusicPreviewPlayer: ObservableObject {
         scheduleRelease()
     }
 
-    /// 返す予約を取り消す。**ストーリーの閲覧画面が開いたとき用**——直前に
-    /// 止めた曲（SongRow・閉じたばかりの前の閲覧画面）の予約が 200ms 後に届くと、
-    /// 開いた画面の動画の音を切る。場は持ったままになるので `sessionHeld` は残す
-    /// （閉じたときの `releaseSessionIfIdle()` が返す）
-    func cancelPendingRelease() {
-        guard deactivateTask != nil else { return }
+    /// 開いているストーリーの閲覧画面の数。**1つでも開いている間は場を返さない**
+    /// ——閲覧画面の動画も同じ場で鳴っているので、返すとその音が切れる。
+    /// 返すのは最後の1つが閉じたとき（`endStoryViewing`）。数で持つのは、
+    /// ハイライトの作り直しで新旧の onAppear / onDisappear が前後しても崩れないように
+    private(set) var activeStoryViewers = 0
+
+    /// 返す予約が残っているか（テスト用に読める）
+    var hasPendingRelease: Bool { deactivateTask != nil }
+
+    func beginStoryViewing() {
+        activeStoryViewers += 1
+        // 直前に止めた曲の予約が、この画面の動画の音を切らないように
         deactivateTask?.cancel()
         deactivateTask = nil
-        sessionHeld = true
     }
 
-    /// 何も鳴らしていないのに場を持ったままなら返す。**ストーリーを閉じたとき用**
-    /// ——曲の無い1本へ移ったときは返さずに止めるので、閉じるまで他のアプリの
-    /// 音楽が戻らなかった
-    func releaseSessionIfIdle() {
-        guard player == nil, sessionHeld else { return }
+    func endStoryViewing() {
+        activeStoryViewers = max(0, activeStoryViewers - 1)
+        guard activeStoryViewers == 0, player == nil, sessionHeld else { return }
         scheduleRelease()
     }
 
@@ -173,17 +176,21 @@ final class MusicPreviewPlayer: ObservableObject {
         //
         // **少し待ってから返す。** 止めた直後は `isBusy` で断られることが
         // あり、`try?` で握り潰すと場を占めたままになる
+        // 閲覧画面が開いている間は返さない（閉じたときに返す）
+        guard activeStoryViewers == 0 else { return }
         deactivateTask?.cancel()
         deactivateTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 200_000_000)
-            // 待つ間に鳴らし直していたら返さない
-            guard !Task.isCancelled, self?.player == nil else { return }
-            // 返せなかった（isBusy など）ときは覚えたまま残す——次の
-            // `releaseSessionIfIdle()` で返し直せるように
+            guard !Task.isCancelled else { return }
+            self?.deactivateTask = nil
+            // 待つ間に鳴らし直した・閲覧画面が開いたなら返さない
+            guard let self, self.player == nil, self.activeStoryViewers == 0 else { return }
+            // 返せなかった（isBusy など）ときは覚えたまま残す（次に止めたとき・
+            // 閲覧画面を閉じたときに返し直す）
             do {
                 try AVAudioSession.sharedInstance()
                     .setActive(false, options: .notifyOthersOnDeactivation)
-                self?.sessionHeld = false
+                self.sessionHeld = false
             } catch {}
         }
     }

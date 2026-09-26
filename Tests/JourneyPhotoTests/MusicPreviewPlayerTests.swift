@@ -9,7 +9,9 @@ final class MusicPreviewPlayerTests: XCTestCase {
     private let url = URL(fileURLWithPath: "/nonexistent/a.m4a")
 
     override func tearDown() {
-        MusicPreviewPlayer.shared.stop(releaseSession: false)
+        let player = MusicPreviewPlayer.shared
+        player.stop(releaseSession: false)
+        while player.activeStoryViewers > 0 { player.endStoryViewing() }
         super.tearDown()
     }
 
@@ -42,5 +44,35 @@ final class MusicPreviewPlayerTests: XCTestCase {
         XCTAssertGreaterThan(player.session, before, "利用者の曲として鳴らし直す")
         player.toggle(url)
         XCTAssertFalse(player.isPlaying(url), "鳴っているときは止める")
+    }
+
+    /// 閲覧画面が開いている間は場を返さない（動画の音を切らない）。返すのは
+    /// **最後の1つ**が閉じたとき——作り直しで新旧が前後しても崩れない
+    func testSessionIsReleasedOnlyAfterLastViewerCloses() {
+        let player = MusicPreviewPlayer.shared
+        player.beginStoryViewing()
+        player.play(url)
+        player.stop()
+        XCTAssertFalse(player.hasPendingRelease, "開いている間は返す予約を入れない")
+
+        // 作り直し: 新しい画面が先に開き、古い画面があとで閉じる
+        player.beginStoryViewing()
+        player.endStoryViewing()
+        XCTAssertFalse(player.hasPendingRelease, "まだ1つ開いている")
+
+        player.endStoryViewing()
+        XCTAssertTrue(player.hasPendingRelease, "最後が閉じたら返す")
+    }
+
+    /// 開いたら、直前に止めた曲の返す予約を取り消す
+    func testOpeningViewerCancelsPendingRelease() {
+        let player = MusicPreviewPlayer.shared
+        player.play(url)
+        player.stop()
+        XCTAssertTrue(player.hasPendingRelease)
+        player.beginStoryViewing()
+        XCTAssertFalse(player.hasPendingRelease)
+        player.endStoryViewing()
+        XCTAssertTrue(player.hasPendingRelease, "持ったままの場は閉じたときに返す")
     }
 }

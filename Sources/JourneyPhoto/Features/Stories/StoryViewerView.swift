@@ -144,15 +144,12 @@ struct StoryViewerView: View {
         }
         // 曲（板の「♪」）。**鳴らしていなかった**——曲名を文字で出すだけだった
         .onAppear {
-            // 直前に止めた曲の「場を返す」予約が、この画面の動画の音を切らないように
-            MusicPreviewPlayer.shared.cancelPendingRelease()
+            // 開いている間は場を返さない（動画の音を切らない）。返すのは閉じたとき
+            MusicPreviewPlayer.shared.beginStoryViewing()
             // **ほかで鳴っている曲は止める**（Web の `stopGlobalMusic`）。止めないと
             // 動画の音と重なり、「音を消す」がその曲を消音していた
             if MusicPreviewPlayer.shared.playingURL != nil {
-                // 場を返すのは、最初の1本が音を出さない（曲も動画も無い）ときだけ。
-                // 返すと、遅れて届く `setActive(false)` が動画の音を切る
-                let silent = current.map { !$0.isVideo && StoryPlayback.songURL(for: $0) == nil } ?? true
-                MusicPreviewPlayer.shared.stop(releaseSession: silent)
+                MusicPreviewPlayer.shared.stop(releaseSession: false)
             }
             syncSong(restart: true)
         }
@@ -161,11 +158,11 @@ struct StoryViewerView: View {
         .onChange(of: muted) { _, now in
             if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
         }
-        // 閉じたら止めて場を返す（閉じたあとも鳴り続けないように）。曲の無い1本で
-        // 閉じたときも、途中で持った場は返す（返さないと他のアプリの音楽が戻らない）
+        // 閉じたら止める（閉じたあとも鳴り続けないように）。場は最後の閲覧画面が
+        // 閉じたときに返す（返さないと他のアプリの音楽が戻らない）
         .onDisappear {
-            stopSong(releaseSession: true)
-            MusicPreviewPlayer.shared.releaseSessionIfIdle()
+            stopSong()
+            MusicPreviewPlayer.shared.endStoryViewing()
         }
     }
 
@@ -180,7 +177,7 @@ struct StoryViewerView: View {
         let player = MusicPreviewPlayer.shared
         guard let story = current, let url = StoryPlayback.songURL(for: story) else {
             // 曲の無い1本では止めるが、場は返さない（その1本の動画の音を切らない）
-            stopSong(releaseSession: false)
+            stopSong()
             return
         }
         if restart || songSession == nil {
@@ -202,10 +199,11 @@ struct StoryViewerView: View {
     /// **自分が鳴らした曲だけ止める。** 見分けは URL ではなく鳴らした回の番号
     /// ——通報で並びから外れた1本の曲も止まり、同じ曲を別の画面が鳴らし直しても
     /// そちらは止めない
-    private func stopSong(releaseSession: Bool) {
+    private func stopSong() {
         defer { songSession = nil }
         guard ownsSong else { return }
-        MusicPreviewPlayer.shared.stop(releaseSession: releaseSession)
+        // 場は返さない（閉じたときに `endStoryViewing` が返す）
+        MusicPreviewPlayer.shared.stop(releaseSession: false)
     }
 
     /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る。板は 844 のうち 84）
