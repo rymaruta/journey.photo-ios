@@ -15,9 +15,25 @@ struct PendingPhoto: Identifiable {
     var preview: Image?
     var title = ""
     var caption = ""
-    var location = ""
+    /// 🔴 **入っていた撮影地を本人が空にしたら、座標も送らない。** 撮影地は写真の
+    /// 位置から自動で入るので、自宅の地名を知られたくなくて消しても、座標（約1km）は
+    /// 送られて地図に出ていた。**空にした操作だけを見る**——自動入力が間に合わない
+    /// （選んですぐ投稿・圏外・候補なし）ときは Web と同じく座標を送る
+    var location = "" {
+        didSet {
+            if location.isEmpty, !oldValue.isEmpty { locationClearedByUser = true }
+            else if !location.isEmpty { locationClearedByUser = false }
+        }
+    }
     /// 撮影地を候補から選んだときに入る座標（写真の EXIF より優先）
     var pickedCoords: Photo.Coords?
+    /// 入っていた撮影地を空にしたか（`location` の didSet だけが書く）
+    private(set) var locationClearedByUser = false
+
+    /// 送る座標。空にした撮影地の座標は送らない
+    var coordsToSend: Photo.Coords? {
+        locationClearedByUser ? nil : (pickedCoords ?? prepared.coords)
+    }
 }
 
 @MainActor
@@ -321,7 +337,7 @@ final class UploadViewModel: ObservableObject {
         draft.audience = audienceToSend
         // **選んだ撮影地の座標を優先する。** 写真に残っていた位置より、
         // 本人が選んだ地名の方が正しい（丸めはどちらも約1km）
-        draft.coords = item.pickedCoords ?? item.prepared.coords
+        draft.coords = item.coordsToSend
         draft.date = item.prepared.takenOn
         draft.exif = item.prepared.exif
         // **読み込み中の地の色。** Web は前から送っていて、アプリだけ

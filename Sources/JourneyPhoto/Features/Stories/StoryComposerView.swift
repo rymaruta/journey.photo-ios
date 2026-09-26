@@ -121,6 +121,8 @@ struct StoryComposerView: View {
             Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。",
                    "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
         }
+        // 🔴 **送っている間は下へ払っても閉じない**（✕ と同じ。閉じても送信は裏で続く）
+        .interactiveDismissDisabled(isWorking)
         // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {

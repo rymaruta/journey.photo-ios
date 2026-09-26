@@ -7,22 +7,30 @@ final class UploadDraftTests: XCTestCase {
     /// 丸める前の値を電波に乗せる理由が無い。
     func testCoordsAreRoundedToAboutOneKilometer() throws {
         var draft = PhotoDraft()
-        draft.location = "高屋神社"
         draft.coords = Photo.Coords(lat: 34.123456, lng: 133.987654)
         let body = draft.saveBody(key: "uploads/u/1.jpg", publicUrl: "https://x/1.jpg")
         XCTAssertEqual(body.coords?.lat, 34.12)
         XCTAssertEqual(body.coords?.lng, 133.99)
     }
 
-    /// **撮影地を消したら座標も送らない。** 撮影地は写真の位置から自動で入るので、
-    /// 自宅の地名を消しても座標（約1km）が送られて地図に出ていた
-    func testCoordsAreNotSentWithoutLocation() throws {
-        var draft = PhotoDraft()
-        draft.coords = Photo.Coords(lat: 34.123456, lng: 133.987654)
-        draft.location = ""
-        XCTAssertNil(draft.saveBody(key: "k", publicUrl: "u").coords)
-        draft.location = "高屋神社"
-        XCTAssertNotNil(draft.saveBody(key: "k", publicUrl: "u").coords)
+    /// **入っていた撮影地を本人が空にしたら、座標も送らない。**
+    /// 自宅の地名を消しても座標（約1km）が送られて地図に出ていた。
+    /// ただし**自動入力が間に合わなかっただけ**なら送る（Web と同じ・d525… の回帰の芽）
+    func testCoordsFollowWhetherTheUserClearedThePlace() {
+        let prepared = ImagePreparer.Prepared(data: Data(), fileName: "p.jpg", contentType: "image/jpeg",
+                                              exif: nil, coords: Photo.Coords(lat: 34.12, lng: 133.99), takenOn: nil)
+        var item = PendingPhoto(prepared: prepared)
+        // 撮影地がまだ入っていない（自動入力が間に合わない）→ 送る
+        XCTAssertNotNil(item.coordsToSend)
+        // 自動で入った → 送る
+        item.location = "観音寺市"
+        XCTAssertNotNil(item.coordsToSend)
+        // 本人が空にした → 送らない
+        item.location = ""
+        XCTAssertNil(item.coordsToSend)
+        // 別の地名を入れ直した → また送る
+        item.location = "高屋神社"
+        XCTAssertNotNil(item.coordsToSend)
     }
 
     /// **押し直しでも束の印を変えない。** 送るたびに作り直すと、5枚のうち2枚が

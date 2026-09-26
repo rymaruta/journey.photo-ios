@@ -178,10 +178,6 @@ struct PhotoDraft {
     /// **座標は端末側でも丸めてから送る。** サーバーも約1km（小数第2位）に
     /// 丸めるが（`sanitize.ts` の `sanitizeCoords`）、丸める前の値を
     /// 電波に乗せる理由が無い。
-    ///
-    /// 🔴 **撮影地が空なら座標も送らない。** 撮影地は写真の位置から自動で入るので、
-    /// 自宅で撮った写真の地名を知られたくなくて消しても、座標（約1km）は送られ、
-    /// 地図に出ていた。ストーリー（`StoryService`）は前から「地名があるときだけ」
     func saveBody(key: String, publicUrl: String) -> SaveBody {
         SaveBody(
             key: key,
@@ -193,8 +189,8 @@ struct PhotoDraft {
             tags: tags.isEmpty ? nil : tags,
             published: published,
             date: date,
-            coords: location.isEmpty ? nil : coords.map { SaveBody.Coords(lat: ($0.lat * 100).rounded() / 100,
-                                                                          lng: ($0.lng * 100).rounded() / 100) },
+            coords: coords.map { SaveBody.Coords(lat: ($0.lat * 100).rounded() / 100,
+                                                 lng: ($0.lng * 100).rounded() / 100) },
             albumId: albumId,
             exif: exif,
             dominantColor: dominantColor,
