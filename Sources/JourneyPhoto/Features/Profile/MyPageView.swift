@@ -585,22 +585,34 @@ struct MyPageView: View {
     /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
     /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
     /// 板 05c: 下線の札（印＋名前・13px・高さ 44）。選んでいる札は白い字と
-    /// 下の 2pt の白い線、下に白12% の1本線
+    /// 下の 2pt の白い線、下に白12% の1本線。
+    ///
+    /// **入らなければ4つとも印を外して字だけ**（大きい文字・狭い端末で「行きたい
+    /// 場所」が「…」で切れていた）。札ごとに決めると、印のある札と無い札が混ざり、
+    /// 押すたびに太字の幅で印が出たり消えたりする
     private var tabPicker: some View {
+        ViewThatFits(in: .horizontal) {
+            tabRow(icons: true)
+            tabRow(icons: false)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func tabRow(icons: Bool) -> some View {
         HStack(spacing: 0) {
             ForEach(ProfileTab.tabs(isMe: true)) { option in
                 let selected = tab == option
                 Button {
                     tab = option
                 } label: {
-                    // **入らなければ印を外して字だけ**（大きい文字・幅の狭い端末で
-                    // 「行きたい場所」が「…」で切れていた）
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        if icons {
                             Image(systemName: option.systemImage)
                                 .font(.system(size: 13))
                                 .accessibilityHidden(true)
-                            tabLabel(option, selected: selected)
                         }
                         tabLabel(option, selected: selected)
                     }
@@ -620,17 +632,22 @@ struct MyPageView: View {
                 .accessibilityIdentifier("profile.tab.\(option.rawValue)")
             }
         }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-        }
-        .padding(.horizontal, 16)
     }
 
+    /// 名前。**幅は太字で測る**（選ぶたびに幅が変わって印が出入りしないように）。
+    /// 太さは選んでいる札だけ変える
     private func tabLabel(_ option: ProfileTab, selected: Bool) -> some View {
+        // 太字の幅で場所を取り、見える字は選んでいるときだけ太字
         Text(option.label)
-            .font(.footnote.weight(selected ? .semibold : .regular))
+            .font(.footnote.weight(.semibold))
             .lineLimit(1)
-            .minimumScaleFactor(0.8)
+            .hidden()
+            .overlay {
+                Text(option.label)
+                    .font(.footnote.weight(selected ? .semibold : .regular))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
     }
 
     /// 旅の記録（旅の一冊の棚）。**自分の公開写真から**その場でまとめる
@@ -727,8 +744,13 @@ struct MyPageView: View {
                         gridCell(photo, multiple: multiple.contains(photo.id))
                     }
                     .buttonStyle(.plain)
-                    // 何の写真かを読む（印だけが読まれていた）
+                    // 何の写真か（題）を名前に、印（ピン・下書き・複数枚）を値にして読む。
+                    // 名前だけ差し替えると中の印が読まれなくなる
                     .accessibilityLabel(photo.accessibilityText)
+                    .accessibilityValue(ProfileLine.gridState(
+                        pinned: model.isPinned(photo.id),
+                        draft: photo.published == false,
+                        multiple: multiple.contains(photo.id)))
                     // **長押しでピン留め**（Web の「先頭にピン留め」と同じ操作）。
                     // 一覧の見た目は変えず、操作だけ足す
                     .contextMenu {
@@ -749,7 +771,7 @@ struct MyPageView: View {
     /// 一覧の1枚。**下書き（非公開）は一目で分かるようにする**
     /// ——公開したつもりの写真が出ていない、がいちばん困る。
     /// 印は左上（板 05c: ピンは 22pt の黒い丸、下書きは黒い小さな札）、
-    /// 複数枚の投稿は右上
+    /// 複数枚の投稿は右上。**印は読み上げない**（格子の1枚の値として読む）
     private func gridCell(_ photo: Photo, multiple: Bool) -> some View {
         PhotoFrame(photo: photo, corner: 0)
             .overlay(alignment: .topTrailing) {
@@ -759,7 +781,7 @@ struct MyPageView: View {
                         .foregroundStyle(Color.white)
                         .shadow(radius: 3)
                         .padding(6)
-                        .accessibilityLabel(L("複数枚の投稿", "Multiple photos"))
+                        .accessibilityHidden(true)
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -770,7 +792,7 @@ struct MyPageView: View {
                             .foregroundStyle(Color.white)
                             .frame(width: 22, height: 22)
                             .background(Color.black.opacity(0.55), in: Circle())
-                            .accessibilityLabel(L("ピン留め中", "Pinned"))
+                            .accessibilityHidden(true)
                     }
                     if photo.published == false {
                         Text(L("下書き", "Draft"))
@@ -779,6 +801,7 @@ struct MyPageView: View {
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
                             .background(Color.black.opacity(0.6), in: Capsule())
+                            .accessibilityHidden(true)
                     }
                 }
                 .padding(6)

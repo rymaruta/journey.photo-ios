@@ -203,6 +203,8 @@ extension View {
     public func offset(x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func position(x: Double, y: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 場所は取るが描かない（本物と同じ）
+    public func hidden() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 重なりの順（本物と同じ）
     public func zIndex(_ value: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }

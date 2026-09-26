@@ -18,4 +18,13 @@ final class ProfileLineTests: XCTestCase {
         XCTAssertEqual(ProfileLine.about(status: "春", bio: "写真"), ["春", "写真"])
         XCTAssertEqual(ProfileLine.about(status: nil, bio: nil), [])
     }
+
+    /// 格子の印は値として全部読む（題だけにすると下書きが読まれない）
+    func testGridStateListsAllMarks() {
+        let all = ProfileLine.gridState(pinned: true, draft: true, multiple: true)
+        XCTAssertTrue(all.contains(L("ピン留め中", "Pinned")))
+        XCTAssertTrue(all.contains(L("下書き", "Draft")))
+        XCTAssertTrue(all.contains(L("複数枚の投稿", "Multiple photos")))
+        XCTAssertEqual(ProfileLine.gridState(pinned: false, draft: false, multiple: false), "")
+    }
 }

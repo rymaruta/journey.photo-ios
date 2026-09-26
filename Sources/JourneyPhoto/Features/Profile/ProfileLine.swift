@@ -26,4 +26,14 @@ enum ProfileLine {
         }
         return lines
     }
+
+    /// 格子の1枚の状態の読み上げ（ピン・下書き・複数枚）。**印は絵では見えるが
+    /// 読まれないので、値として読む**
+    static func gridState(pinned: Bool, draft: Bool, multiple: Bool) -> String {
+        [pinned ? L("ピン留め中", "Pinned") : nil,
+         draft ? L("下書き", "Draft") : nil,
+         multiple ? L("複数枚の投稿", "Multiple photos") : nil]
+            .compactMap { $0 }
+            .joined(separator: L("、", ", "))
+    }
 }
