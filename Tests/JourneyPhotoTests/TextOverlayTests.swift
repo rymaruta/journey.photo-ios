@@ -280,4 +280,31 @@ extension TextOverlayTests {
         XCTAssertFalse(TextOverlay.inks(for: .dark).contains(.white))
         XCTAssertEqual(TextOverlay.inks(for: .light), TextOverlay.Ink.allCases)
     }
+
+    /// 🔴 **見た目を切り替えても読める色に寄る。** 白→黒→白で墨が残り、
+    /// 白の見た目に墨の文字になっていた（2026-09-26 のレビュー）。
+    /// 真鍮などの色は切り替えても残る
+    func testStyleSwitchKeepsTextReadable() {
+        let white = TextOverlay(text: "a", style: .light)
+        XCTAssertEqual(white.withStyle(.dark).ink, .ink)
+        XCTAssertEqual(white.withStyle(.dark).withStyle(.light).ink, .white)
+        XCTAssertEqual(white.withStyle(.dark).withStyle(.banner).ink, .white)
+        let coral = TextOverlay(text: "a", style: .light, ink: .coral)
+        XCTAssertEqual(coral.withStyle(.dark).ink, .coral)
+        XCTAssertEqual(coral.withStyle(.dark).withStyle(.light).ink, .coral)
+        // 札は帯で固定（切り替えない）
+        let place = TextOverlay(text: "港", kind: .place)
+        XCTAssertEqual(place.withStyle(.dark).style, .banner)
+        // どの切り替えのあとも、保存される色がそのまま描かれる色
+        for start in TextOverlay.Style.allCases {
+            for ink in TextOverlay.Ink.allCases {
+                for next in TextOverlay.Style.allCases {
+                    let o = TextOverlay(text: "a", style: start, ink: ink).withStyle(next)
+                    if TextOverlay.inks(for: start).contains(ink) {
+                        XCTAssertEqual(o.ink, o.drawnInk, "\(start) \(ink) → \(next)")
+                    }
+                }
+            }
+        }
+    }
 }

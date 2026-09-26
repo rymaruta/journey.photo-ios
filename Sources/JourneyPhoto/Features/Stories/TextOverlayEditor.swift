@@ -233,11 +233,8 @@ struct OverlayPanel: View {
                 if overlay.kind == .text {
                     ForEach(TextOverlay.Style.allCases) { style in
                         OverlayChip(title: style.label, selected: overlay.style == style) {
-                            overlay.style = style
-                            // 黒を選んだら文字は墨に
-                            if style == .dark { overlay.ink = .ink }
-                            // 帯・白に墨が残っていたら白へ（帯の上の墨は読めない）
-                            overlay.ink = overlay.drawnInk
+                            // 色の寄せ方は `TextOverlay.withStyle`（読めない組だけ直す）
+                            overlay = overlay.withStyle(style)
                         }
                     }
                 }

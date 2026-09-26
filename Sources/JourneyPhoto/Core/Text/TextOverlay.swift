@@ -114,6 +114,21 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         Self.inks(for: style).contains(ink) ? ink : (style == .dark ? .ink : .white)
     }
 
+    /// **見た目を切り替える。** 読めない組になる色だけ寄せ、他の色は残す
+    /// （白→黒は墨・黒→白／帯は白。真鍮・空色・珊瑚はどの見た目でもそのまま）。
+    /// 札（撮影地など）は帯で固定なので切り替えない
+    func withStyle(_ newStyle: Style) -> TextOverlay {
+        guard kind.forcedStyle == nil else { return self }
+        var next = self
+        next.style = newStyle
+        switch (newStyle, ink) {
+        case (.dark, .white): next.ink = .ink
+        case (.light, .ink), (.banner, .ink): next.ink = .white
+        default: break
+        }
+        return next
+    }
+
     /// 札の種類（モック4-3 のスタンプ）。
     ///
     /// **持っているデータのものだけ。** モックには天気・食べ物・質問も
