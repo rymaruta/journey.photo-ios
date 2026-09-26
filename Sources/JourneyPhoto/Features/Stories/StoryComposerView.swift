@@ -36,7 +36,19 @@ struct StoryComposerView: View {
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
-    /// 公開範囲（モック4-7）。**サーバーが守れるものだけ出す**
+
+    // 板 24b「文字と札」の編集
+    /// 文字と札を編集している（写真を暗くし、上に札の種類、下に操作欄）
+    @State private var textMode = false
+    /// 選んでいる札
+    @State private var selectedId: UUID?
+    /// 編集に入ったときの写し（「やめる」で戻す）
+    @State private var overlaySnapshot: [TextOverlay] = []
+    /// 撮影地を打つ（右の列の「撮影地」）
+    @State private var showPlaceEditor = false
+    /// 写真を選ぶ画面（「＋」のメニューと、写真が無いときの入口から開く）
+    @State private var showLibrary = false
+    @State private var placeDraft = ""
 
     /// いま編集している写真。**無ければ nil**（まだ1枚も選んでいない）
     private var prepared: ImagePreparer.Prepared? {
@@ -62,142 +74,41 @@ struct StoryComposerView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                if let preview {
-                    // **写真の上を直接つまんで文字を置く。**
-                    // 入力欄で座標を打たせない。道具は1列に並べる（モック4-6）
-                    TextOverlayEditor(preview: preview, imageSize: previewSize, overlays: overlays) {
-                        photoTools
-                    }
-                    // 2枚以上あるときだけ並びを出す（1枚のときは邪魔なだけ）
-                    if shots.count > 1 { mediaStrip }
-                } else {
-                    // まだ1枚も選んでいないときは、写真の道具だけ
-                    HStack(spacing: 10) { photoTools }
+        ZStack(alignment: .top) {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 0) {
+                photoArea
+                    .ignoresSafeArea(edges: .top)
+                if !textMode {
+                    footer
                 }
-            } footer: {
-                Text(L("ストーリーは24時間で消えます。撮影情報（EXIF）は端末で取り除いてから送ります。", "Stories disappear after 24 hours. Photo metadata is removed on your device."))
             }
-            .listRowBackground(Color.clear)
-
-            Section {
-                TextField(L("ひとこと", "Caption"), text: $caption)
-                TextField(L("撮影地（任意）", "Place (optional)"), text: $location)
-            } footer: {
-                // 座標は地名とセットのときだけ送る（名前の無い点は画面に出しようがない）
-                Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。", "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
+            topBar
+                .padding(.horizontal, 8)
+                .padding(.top, 2)
+            if textMode {
+                kindChips
+                    .padding(.top, 56)
             }
-            .listRowBackground(Color.clear)
-
-            // **`Section(_:content:footer:)` は本物の SwiftUI に無い**
-            // （題付きは `init(_:content:)` だけ）。header / footer で書く
-            Section {
-                if let song {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(song.title).font(.callout)
-                            if let artist = song.artist, !artist.isEmpty {
-                                Text(artist).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        Button(L("外す", "Remove")) { self.song = nil }
-                            .font(.caption)
-                            .buttonStyle(.borderless)
-                    }
-                } else {
-                    Button { showSongPicker = true } label: {
-                        Label(L("曲を付ける", "Add a song"), systemImage: "music.note")
-                    }
-                }
-                Stepper(value: $durationSec, in: StoryService.durationRange) {
-                    Text(L("表示 \(durationSec) 秒", "\(durationSec) seconds"))
-                }
-            } header: {
-                Text(L("音と長さ", "Sound and length"))
-            } footer: {
-                // 3秒未満は読み切れず、15秒を超えると見る側が飽きる（Web と同じ範囲）
-                Text(L("3〜15秒。曲は30秒の試聴だけを使います。",
-                       "3–15 seconds. Songs use the 30-second preview only."))
-            }
-            .listRowBackground(Color.clear)
-
-            // 24時間のあとも残すか。**ハイライトに入れられるのは残したものだけ**
-            // （`api-user/src/highlights.ts`）。既定は残さない——消えることが
-            // ストーリーの約束なので、残す方を選ばせる
-            Section {
-                Toggle(isOn: $keepInArchive) {
-                    // 絵の色は明示する（List の中の Label の絵は tint で描かれ、
-                    // すぐ下の `.tint` の暗い真鍮に染まる）
-                    Label {
-                        Text(L("24時間のあとも自分用に残す", "Keep it for myself after 24 hours"))
-                    } icon: {
-                        Image(systemName: "archivebox").foregroundStyle(WebTheme.foreground)
-                    }
-                    .font(.subheadline)
-                }
-                // **軌道は暗い真鍮。** 既定の tint（白）だと、入れたときに白い軌道に
-                // 白いつまみが乗り、入か切かが見えない
-                .tint(WebTheme.accentDeep)
-            } footer: {
-                Text(L("残すと、消えたあとも自分だけが見られます。ハイライトに入れられるのは残したものだけです。",
-                       "Kept stories stay visible to you alone, and only kept stories can go into a highlight."))
-            }
-            .listRowBackground(Color.clear)
-
-            // 🔴 **ストーリーはフォロワーだけが見る**（2026-09-22・owner の
-            // 判断。`api-user/src/storyVisibility.ts`）。選択そのものが
-            // 無くなったので、**選ばせない**——サーバーが読まない値を
-            // 選ばせると、押しても効かない切り替えになる。
-            // 代わりに「誰に届くか」を1行で言う
-            Section {
-                Label(L("フォロワーが見られます", "Your followers can see it"),
-                      systemImage: "person.2")
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
-            } footer: {
-                Text(L("ストーリーは24時間で消えます。フォローしていない人には届きません。",
-                       "Stories vanish after 24 hours. People who don't follow you won't see them."))
-            }
-            .listRowBackground(Color.clear)
-
-            if let message {
-                Section { Text(message).font(.callout) }
-            }
-
-            Section {
-                Button {
-                    Task { await post() }
-                } label: {
-                    if isWorking {
-                        HStack { ProgressView(); Text(L("送信中…", "Sending…")) }
-                    } else {
-                        Text(L("ストーリーに投稿", "Post story"))
-                    }
-                }
-                .disabled(isWorking || prepared == nil)
-            }
-            .listRowBackground(Color.clear)
         }
-        .webScreen()
+        // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { picked in song = picked }
             }
         }
-        .navigationTitle(L("ストーリー", "Story"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button(Labels.Common.close) { dismiss() }
+        .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
+            TextField(L("撮影地（任意）", "Place (optional)"), text: $placeDraft)
+            Button(L("決める", "Set")) { location = placeDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if !location.isEmpty {
+                Button(L("外す", "Remove"), role: .destructive) { location = "" }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                // **写真が無ければ下書きにできない。** 文字だけ残しても
-                // 「続きから」で出すものが無い
-                Button(L("下書き保存", "Save draft")) { saveDraft() }
-                    .disabled(prepared == nil || isWorking)
-            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            // 座標は地名とセットのときだけ送る（名前の無い点は画面に出しようがない）
+            Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。",
+                   "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
         }
         // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
         // 新しく作りにきた人が前の写真に驚く
@@ -217,9 +128,385 @@ struct StoryComposerView: View {
             CameraPicker { data in accept(data) }
                 .ignoresSafeArea()
         }
+        // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
+        // 開かないことがあるので、旗で開く
+        .photosPicker(isPresented: $showLibrary, selection: $pickerItems,
+                      maxSelectionCount: max(1, StoryQueue.maxShots - shots.count),
+                      matching: .images)
         .onChange(of: pickerItems) { _, items in
             Task { await load(items) }
         }
+    }
+
+    // MARK: - 写真
+
+    /// 写真を画面いっぱいに（下の角だけ半径24）。上下の暗がり、右の道具の列、
+    /// 写真の上のひとこと・撮影地・曲、左下の並び、右下の秒数（板 24）
+    private var photoArea: some View {
+        ZStack(alignment: .bottomLeading) {
+            Color(red: 0x0A / 255.0, green: 0x10 / 255.0, blue: 0x30 / 255.0).opacity(preview == nil ? 0 : 1)
+            if let preview {
+                StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays,
+                            selectedId: textMode ? selectedId : nil,
+                            onTap: { overlay in
+                                // 押したら文字と札の編集へ（その札を選んだ状態で）
+                                enterTextMode()
+                                selectedId = overlay.id
+                            })
+            } else {
+                emptyPhoto
+            }
+        }
+        .overlay(alignment: .top) {
+            LinearGradient(colors: [Color.black.opacity(0.6), Color.black.opacity(0)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 150)
+                .allowsHitTesting(false)
+        }
+        .overlay(alignment: .bottom) {
+            LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.6)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 170)
+                .allowsHitTesting(false)
+        }
+        // 文字と札の編集中は写真を30%暗くする（板 24b）
+        .overlay {
+            if textMode {
+                Color.black.opacity(0.3).allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if !textMode && preview != nil {
+                toolColumn
+                    .padding(.trailing, 12)
+                    .padding(.top, 120)
+            }
+        }
+        .overlay(alignment: .leading) {
+            if !textMode && preview != nil {
+                captionBlock
+                    .padding(.leading, 36)
+                    .padding(.trailing, 70)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if !textMode && preview != nil {
+                mediaStrip
+                    .padding(.leading, 16)
+                    .padding(.bottom, 20)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if !textMode && preview != nil {
+                durationMenu
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 30)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if textMode, let index = selectedIndex {
+                OverlayPanel(overlay: overlaysBinding(at: index)) {
+                    overlays.wrappedValue.remove(at: index)
+                    selectedId = nil
+                }
+            }
+        }
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: textMode ? 0 : 24,
+                                          bottomTrailingRadius: textMode ? 0 : 24))
+    }
+
+    /// まだ1枚も選んでいないとき。**写真の道具だけを真ん中に**
+    private var emptyPhoto: some View {
+        VStack(spacing: 14) {
+            Text(L("写真を選ぶ", "Choose a photo"))
+                .font(JPFont.display(26, relativeTo: .title))
+                .foregroundStyle(.white)
+            HStack(spacing: 10) {
+                Button { showLibrary = true } label: {
+                    glassPill(L("ライブラリ", "Library"), systemImage: "photo")
+                }
+                .buttonStyle(.plain)
+                if CameraPicker.isAvailable {
+                    Button { showCamera = true } label: {
+                        glassPill(L("カメラ", "Camera"), systemImage: "camera")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if let message {
+                Text(message).font(.footnote).foregroundStyle(WebTheme.muted2)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 右の縦の列（文字と札・曲・撮影地・表示秒数。44のガラスの丸）
+    private var toolColumn: some View {
+        VStack(spacing: 10) {
+            toolButton(symbol: "textformat", label: L("文字と札", "Text and stickers")) { enterTextMode() }
+            toolButton(symbol: "music.note", label: L("曲を付ける", "Add a song")) { showSongPicker = true }
+            toolButton(symbol: "mappin", label: L("撮影地", "Place")) {
+                placeDraft = location
+                showPlaceEditor = true
+            }
+            // 表示秒数は右下の札から選ぶ（ここは同じ札を開く入口）
+            Menu {
+                durationOptions
+            } label: {
+                toolIcon("timer")
+            }
+            .accessibilityLabel(L("表示秒数", "Duration"))
+        }
+    }
+
+    private func toolButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { toolIcon(symbol) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label)
+    }
+
+    private func toolIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 18))
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 44)
+            .jpGlass(in: Circle())
+    }
+
+    /// 写真の上のひとこと（明朝32・影）と、撮影地・曲の札。**ひとことはその場で打つ**
+    private var captionBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField(L("ひとことを書く", "Write a caption"), text: $caption, axis: .vertical)
+                .font(JPFont.display(32, relativeTo: .largeTitle))
+                .foregroundStyle(.white)
+                .lineLimit(1...4)
+                .jpPhotoTextShadow()
+            if !location.isEmpty {
+                photoChip(symbol: "mappin", text: location)
+            }
+            if let song {
+                photoChip(symbol: "music.note", text: song.title)
+            }
+        }
+    }
+
+    private func photoChip(symbol: String, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol).font(.system(size: 12))
+            Text(text).font(.system(size: 12)).lineLimit(1)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .jpGlass(in: Capsule(), border: 0)
+    }
+
+    /// 右下の「表示 5 秒」（等幅・ガラスの札）。押すと 3〜15秒から選ぶ
+    private var durationMenu: some View {
+        Menu {
+            durationOptions
+        } label: {
+            Text(L("表示 \(durationSec) 秒", "\(durationSec)s"))
+                .font(JPFont.mono(11))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .jpGlass(in: Capsule(), border: 0)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(L("表示 \(durationSec) 秒", "\(durationSec) seconds"))
+    }
+
+    /// 3〜15秒（3秒未満は読み切れず、15秒を超えると見る側が飽きる。Web と同じ範囲）
+    @ViewBuilder
+    private var durationOptions: some View {
+        ForEach(Array(StoryService.durationRange), id: \.self) { sec in
+            Button {
+                durationSec = sec
+            } label: {
+                if sec == durationSec {
+                    Label(L("\(sec) 秒", "\(sec)s"), systemImage: "checkmark")
+                } else {
+                    Text(L("\(sec) 秒", "\(sec)s"))
+                }
+            }
+        }
+    }
+
+    // MARK: - 上のバー
+
+    @ViewBuilder
+    private var topBar: some View {
+        if textMode {
+            // 板 24b: やめる／文字と札／できた
+            HStack {
+                Button(L("やめる", "Cancel")) {
+                    overlays.wrappedValue = overlaySnapshot
+                    leaveTextMode()
+                }
+                .font(.system(size: 16))
+                .frame(minHeight: 44)
+                .padding(.horizontal, 10)
+                Spacer()
+                Text(L("文字と札", "Text and stickers"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(WebTheme.muted2)
+                Spacer()
+                Button(L("できた", "Done")) {
+                    // 空のまま閉じたら置かない（見えない物を焼き込まない）
+                    overlays.wrappedValue.removeAll { $0.isEmpty }
+                    leaveTextMode()
+                }
+                .font(.system(size: 16, weight: .semibold))
+                .frame(minHeight: 44)
+                .padding(.horizontal, 10)
+                .accessibilityIdentifier("story.overlay.done")
+            }
+            .foregroundStyle(.white)
+            .buttonStyle(.plain)
+        } else {
+            HStack {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .jpGlass(in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Labels.Common.close)
+                Spacer()
+                // **写真が無ければ下書きにできない。** 文字だけ残しても
+                // 「続きから」で出すものが無い
+                Button { saveDraft() } label: {
+                    Text(L("下書き保存", "Save draft"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .jpGlass(in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(prepared == nil || isWorking)
+                .opacity(prepared == nil ? 0.4 : 1)
+            }
+        }
+    }
+
+    /// 札の種類（文字・撮影地・曲・時刻・日付・タグ）。押すと足して選ぶ
+    private var kindChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(TextOverlay.Kind.allCases, id: \.rawValue) { kind in
+                    OverlayChip(title: kind.toolLabel, systemImage: kind.toolSymbol) {
+                        add(kind: kind)
+                    }
+                    .disabled(overlays.wrappedValue.count >= TextOverlay.maxCount)
+                    .accessibilityIdentifier("story.add.\(kind.rawValue)")
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+    }
+
+    // MARK: - 足元
+
+    /// 「フォロワーが見られます」・自分用に残す・投稿ボタン（板 24）
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let message, prepared != nil {
+                Text(message).font(.footnote).foregroundStyle(WebTheme.muted2)
+            }
+            HStack(spacing: 8) {
+                // 🔴 **ストーリーはフォロワーだけが見る**（2026-09-22・owner の
+                // 判断。`api-user/src/storyVisibility.ts`）。選ぶ口は置かない
+                Image(systemName: "eye").font(.system(size: 14))
+                Text(L("フォロワーが見られます", "Your followers can see it"))
+                    .font(.system(size: 13))
+                Spacer(minLength: 8)
+                // 24時間のあとも残すか。**ハイライトに入れられるのは残したものだけ**
+                // （`api-user/src/highlights.ts`）。既定は残さない——消えることが
+                // ストーリーの約束なので、残す方を選ばせる
+                Toggle(isOn: $keepInArchive) {
+                    Text(L("自分用に残す", "Keep for me"))
+                        .font(.system(size: 13))
+                }
+                .fixedSize()
+                // **軌道は暗い真鍮。** 既定（白）だと白い軌道に白いつまみが乗る
+                .tint(WebTheme.accentDeep)
+            }
+            .foregroundStyle(WebTheme.muted2)
+
+            Button {
+                Task { await post() }
+            } label: {
+                HStack(spacing: 8) {
+                    if isWorking {
+                        ProgressView().tint(WebTheme.accentText)
+                        Text(L("送信中…", "Sending…"))
+                    } else {
+                        Text(L("ストーリーに投稿", "Post story"))
+                    }
+                }
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(WebTheme.accentText)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(WebTheme.accentBackground, in: Capsule())
+                .opacity(isWorking || prepared == nil ? 0.5 : 1)
+            }
+            .buttonStyle(.plain)
+            .disabled(isWorking || prepared == nil)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+    }
+
+    // MARK: - 文字と札の出入り
+
+    private func enterTextMode() {
+        overlaySnapshot = overlays.wrappedValue
+        textMode = true
+    }
+
+    private func leaveTextMode() {
+        textMode = false
+        selectedId = nil
+    }
+
+    private var selectedIndex: Int? {
+        guard let selectedId else { return nil }
+        return overlays.wrappedValue.firstIndex { $0.id == selectedId }
+    }
+
+    private func overlaysBinding(at index: Int) -> Binding<TextOverlay> {
+        Binding(
+            get: { overlays.wrappedValue.indices.contains(index) ? overlays.wrappedValue[index] : TextOverlay(text: "") },
+            set: { value in
+                var list = overlays.wrappedValue
+                if list.indices.contains(index) { list[index] = value; overlays.wrappedValue = list }
+            }
+        )
+    }
+
+    private func add(kind: TextOverlay.Kind) {
+        // **真ん中より少し上に置く。** 真ん中だと写真の主役に重なりやすい。
+        // 場所と曲は少し下（文字の札と重なりにくい）
+        let y = kind == .text ? 0.35 : 0.6
+        let overlay = TextOverlay(text: kind.initialText(), x: 0.5, y: y, kind: kind)
+        overlays.wrappedValue.append(overlay)
+        selectedId = overlay.id
+    }
+
+    // MARK: - 共通
+
+    private func glassPill(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .frame(minHeight: 44)
+            .jpGlass(in: Capsule())
     }
 
     /// 選ばれたぶんを順に足す。**1枚も読めなかったときだけ断りを出す**
@@ -269,20 +556,44 @@ struct StoryComposerView: View {
     }
 
 
-    /// 並び（モック4-5）。**順番がそのまま出る順**。
+    /// 左下の並び（板 24。44×56・選んでいる1枚は白の輪・他は薄く、最後に「＋」）。
+    /// **順番がそのまま出る順**。長押しで外せる
     private var mediaStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Array(shots.enumerated()), id: \.element.id) { index, shot in
-                    Button {
-                        current = index
-                    } label: {
-                        thumb(shot, index: index)
+        HStack(spacing: 8) {
+            ForEach(Array(shots.enumerated()), id: \.element.id) { index, shot in
+                Button {
+                    current = index
+                } label: {
+                    thumb(shot, index: index)
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button(role: .destructive) { remove(at: index) } label: {
+                        Label(L("この写真を外す", "Remove this photo"), systemImage: "trash")
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            .padding(.vertical, 4)
+            if shots.count < StoryQueue.maxShots {
+                Menu {
+                    Button { showLibrary = true } label: {
+                        Label(L("ライブラリ", "Library"), systemImage: "photo")
+                    }
+                    if CameraPicker.isAvailable {
+                        Button { showCamera = true } label: {
+                            Label(L("カメラ", "Camera"), systemImage: "camera")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 56)
+                        .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                }
+                .accessibilityLabel(L("写真を追加", "Add a photo"))
+            }
         }
     }
 
@@ -290,37 +601,17 @@ struct StoryComposerView: View {
         let isCurrent = index == current
         return Group {
             if let preview = shot.preview {
-                preview.resizable().aspectRatio(contentMode: .fill)
+                Color.clear.overlay { preview.resizable().aspectRatio(contentMode: .fill) }
             } else {
                 Color.gray.opacity(0.3)
             }
         }
-        .frame(width: 56, height: 84)
+        .frame(width: 44, height: 56)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8)
-            .strokeBorder(isCurrent ? AnyShapeStyle(WebTheme.accentBackground)
-                                    : AnyShapeStyle(Color.white.opacity(0.15)),
-                          lineWidth: isCurrent ? 2 : 1))
-        .overlay(alignment: .topLeading) {
-            // **何番目に出るか**を出す（並びが出る順そのものなので）
-            Text("\(index + 1)")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(Color.white)
-                .shadow(radius: 2)
-                .padding(4)
-        }
-        .overlay(alignment: .topTrailing) {
-            Button {
-                remove(at: index)
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(Color.white)
-                    .shadow(radius: 2)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("この写真を外す", "Remove this photo"))
-        }
+            .strokeBorder(Color.white, lineWidth: isCurrent ? 2 : 0))
+        .opacity(isCurrent ? 1 : 0.7)
+        .accessibilityLabel(L("\(index + 1)枚目", "Photo \(index + 1)"))
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 
@@ -379,27 +670,6 @@ struct StoryComposerView: View {
         message = nil
     }
 
-
-    /// 写真そのものの道具（モック4-6 の「カメラ」「ライブラリ」）。
-    /// 文字の道具と同じ見た目・同じ行に並べる
-    @ViewBuilder
-    private var photoTools: some View {
-        if CameraPicker.isAvailable {
-            Button { showCamera = true } label: {
-                TextOverlayEditor<EmptyView>.toolLabel(L("カメラ", "Camera"), systemImage: "camera")
-            }
-            .buttonStyle(.plain)
-        }
-        PhotosPicker(selection: $pickerItems,
-                     maxSelectionCount: StoryQueue.maxShots,
-                     matching: .images,
-                     photoLibrary: .shared()) {
-            TextOverlayEditor<EmptyView>.toolLabel(
-                shots.isEmpty ? L("ライブラリ", "Library") : L("追加", "Add"),
-                systemImage: "photo.badge.plus")
-        }
-        .buttonStyle(.plain)
-    }
 
     /// 出す。**並びの順に、1枚ずつ**。
     ///

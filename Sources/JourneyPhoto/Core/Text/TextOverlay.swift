@@ -95,12 +95,13 @@ struct TextOverlay: Identifiable, Equatable, Codable {
 
         var toolLabel: String {
             switch self {
-            case .text: return L("テキスト", "Text")
-            case .place: return L("場所", "Place")
-            case .song: return L("BGM", "Music")
+            // 板 24b「文字と札」のチップの言い方
+            case .text: return L("文字", "Text")
+            case .place: return L("撮影地", "Place")
+            case .song: return L("曲", "Music")
             case .time: return L("時刻", "Time")
             case .date: return L("日付", "Date")
-            case .hashtag: return L("ハッシュタグ", "Hashtag")
+            case .hashtag: return L("タグ", "Tag")
             }
         }
 
@@ -182,7 +183,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
 
     /// 文字の大きさ。**画像の短い辺に対する割合**で決める。
     ///
-    /// 編集画面（`TextOverlayEditor`）と焼き込み（`TextOverlayRenderer`）が
+    /// 編集画面（`StoryCanvas`）と焼き込み（`TextOverlayRenderer`）が
     /// **両方ともここを通る**。以前は編集画面が「3:4 の枠の高さ」、焼き込みが
     /// 「画像の短い辺」で別々に計算していて、横長の写真だと投稿した文字が
     /// 編集中より小さく出ていた（2026-09-26 のバグ探し）
@@ -194,6 +195,38 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 編集画面では枠の中に収まった写真）。**両方ともここを通る**
     func center(in photo: CGRect) -> CGPoint {
         CGPoint(x: photo.minX + photo.width * x, y: photo.minY + photo.height * y)
+    }
+
+    /// `canvas` を `image` で縦横比のまま**埋めた**ときの、画像の場所
+    /// （はみ出した部分は画面の外。作る画面は写真を画面いっぱいに敷く・板 24）。
+    ///
+    /// 文字の位置は画像に対する割合のままなので、焼き込みと同じところに出る。
+    /// 閲覧画面も同じく埋めて出すので、**作る画面で見えている範囲が
+    /// 見る人にもほぼ同じに見える**
+    static func filledRect(image: CGSize, in canvas: CGSize) -> CGRect {
+        guard image.width > 0, image.height > 0, canvas.width > 0, canvas.height > 0 else {
+            return CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height)
+        }
+        let scale = max(canvas.width / image.width, canvas.height / image.height)
+        let width = image.width * scale
+        let height = image.height * scale
+        return CGRect(x: (canvas.width - width) / 2, y: (canvas.height - height) / 2,
+                      width: width, height: height)
+    }
+
+    /// 画面に見えている範囲の中へ寄せる（埋めて出すと画像の端が画面の外に出る。
+    /// そこへ動かすと掴み直せず、消すこともできなくなる）
+    func clamped(toVisible photo: CGRect, canvas: CGSize) -> TextOverlay {
+        guard photo.width > 0, photo.height > 0 else { return self }
+        let margin = 0.02
+        let minX = max(0, -photo.minX / photo.width) + margin
+        let maxX = min(1, (canvas.width - photo.minX) / photo.width) - margin
+        let minY = max(0, -photo.minY / photo.height) + margin
+        let maxY = min(1, (canvas.height - photo.minY) / photo.height) - margin
+        var result = self
+        result.x = min(max(x, minX), max(minX, maxX))
+        result.y = min(max(y, minY), max(minY, maxY))
+        return result
     }
 
     /// `canvas` の中に `image` を縦横比のまま収めたときの、画像の場所。

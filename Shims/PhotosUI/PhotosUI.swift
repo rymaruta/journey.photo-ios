@@ -29,3 +29,12 @@ public struct PhotosPicker: View {
                          @ViewBuilder label: () -> L) {}
     public var body: Never { fatalError("模型") }
 }
+
+extension View {
+    /// 選ぶ画面を旗で開く（本物にもある）。メニューの中に `PhotosPicker` を置くと
+    /// 開かないことがあるので、こちらを使う
+    public func photosPicker(isPresented: Binding<Bool>,
+                             selection: Binding<[PhotosPickerItem]>,
+                             maxSelectionCount: Int? = nil,
+                             matching filter: PHPickerFilter? = nil) -> some View { self }
+}

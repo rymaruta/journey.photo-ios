@@ -67,6 +67,29 @@ final class TextOverlayTests: XCTestCase {
         XCTAssertEqual(center.y, 200, accuracy: 0.0001)
     }
 
+    /// 埋めて敷く（作る画面）。縦長の枠に横長の写真を敷くと左右がはみ出す
+    func testFilledRectOverflowsSideways() {
+        let rect = TextOverlay.filledRect(image: CGSize(width: 4000, height: 3000),
+                                          in: CGSize(width: 390, height: 700))
+        XCTAssertEqual(rect.height, 700, accuracy: 0.0001)
+        XCTAssertEqual(rect.width, 700 * 4.0 / 3.0, accuracy: 0.0001)
+        XCTAssertLessThan(rect.minX, 0)
+    }
+
+    /// 🔴 **見えている範囲の外へ出さない。** はみ出した端へ動かすと掴み直せない
+    func testClampedToVisibleKeepsTextOnScreen() {
+        let canvas = CGSize(width: 390, height: 700)
+        let photo = TextOverlay.filledRect(image: CGSize(width: 4000, height: 3000), in: canvas)
+        let overlay = TextOverlay(text: "端", x: 0.02, y: 0.5)
+        let clamped = overlay.clamped(toVisible: photo, canvas: canvas)
+        let center = clamped.center(in: photo)
+        XCTAssertGreaterThanOrEqual(center.x, 0)
+        XCTAssertLessThanOrEqual(center.x, canvas.width)
+        // 真ん中は動かさない
+        let middle = TextOverlay(text: "中", x: 0.5, y: 0.5).clamped(toVisible: photo, canvas: canvas)
+        XCTAssertEqual(middle.x, 0.5, accuracy: 0.0001)
+    }
+
     /// 大きさが分からないときは枠いっぱい（0 で割らない）
     func testFittedRectWithUnknownImageFillsTheCanvas() {
         let rect = TextOverlay.fittedRect(image: CGSize(width: 0, height: 0),
