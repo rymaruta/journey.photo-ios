@@ -27,20 +27,25 @@ enum TextOverlayRenderer {
         let size = image.size
         guard size.width > 0, size.height > 0 else { return data }
 
-        let renderer = UIGraphicsImageRenderer(size: size)
+        // 🔴 **倍率は 1 に固定する。** 既定の書式は端末の画面の倍率（3x）を
+        // 継ぐので、`size`（＝元の画像の画素数）の3倍の画素で書き出していた。
+        // 送る画像が縦横3倍・画素数9倍になり、`ImagePreparer` が抑えた
+        // 大きさを台無しにしていた（2026-09-26 のバグ探し）
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.jpegData(withCompressionQuality: quality) { _ in
             image.draw(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
-            // **短い辺に対する割合で大きさを決める。** 長辺で決めると、
-            // 横長と縦長で同じ指定が別の見え方になる
-            let short = min(size.width, size.height)
             for overlay in visible {
-                draw(overlay, on: size, shortSide: short)
+                draw(overlay, on: size)
             }
         }
     }
 
-    private static func draw(_ overlay: TextOverlay, on size: CGSize, shortSide: Double) {
-        let fontSize = shortSide * overlay.size
+    private static func draw(_ overlay: TextOverlay, on size: CGSize) {
+        // **短い辺に対する割合で大きさを決める。** 長辺で決めると、
+        // 横長と縦長で同じ指定が別の見え方になる。編集画面と同じ関数を通す
+        let fontSize = TextOverlay.fontSize(overlay.size, in: size)
         let attributes = attributes(for: overlay.style, fontSize: fontSize)
         // 場所と曲は印（📍 ♪）を頭に付けて焼く
         let text = overlay.displayText as NSString

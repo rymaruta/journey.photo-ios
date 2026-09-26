@@ -45,6 +45,46 @@ final class TextOverlayTests: XCTestCase {
         XCTAssertEqual(moved.y, 0.98, accuracy: 0.0001)
     }
 
+    /// 写真は枠の中に縦横比のまま収まる。横長の写真を 3:4 の枠に入れると
+    /// 上下に余白が出る
+    func testFittedRectLeavesBandsAroundAWidePhoto() {
+        let rect = TextOverlay.fittedRect(image: CGSize(width: 4000, height: 3000),
+                                          in: CGSize(width: 300, height: 400))
+        XCTAssertEqual(rect.minX, 0, accuracy: 0.0001)
+        XCTAssertEqual(rect.width, 300, accuracy: 0.0001)
+        XCTAssertEqual(rect.height, 225, accuracy: 0.0001)
+        XCTAssertEqual(rect.minY, 87.5, accuracy: 0.0001)
+    }
+
+    /// 大きさが分からないときは枠いっぱい（0 で割らない）
+    func testFittedRectWithUnknownImageFillsTheCanvas() {
+        let rect = TextOverlay.fittedRect(image: CGSize(width: 0, height: 0),
+                                          in: CGSize(width: 300, height: 400))
+        XCTAssertEqual(rect.width, 300, accuracy: 0.0001)
+        XCTAssertEqual(rect.height, 400, accuracy: 0.0001)
+    }
+
+    /// 🔴 **編集画面の文字は、焼き込んだ画像を縮めたものと重なる。**
+    /// 以前は編集画面が「枠の高さ」「枠に対する位置」で描いていて、
+    /// 横長の写真だと大きさも位置も投稿後と違っていた
+    func testEditorMatchesTheBurnedImage() {
+        let image = CGSize(width: 4000, height: 3000)
+        let overlay = TextOverlay(text: "ここ", x: 0.2, y: 0.1, size: 0.1)
+        let photo = TextOverlay.fittedRect(image: image, in: CGSize(width: 300, height: 400))
+        let shrink = photo.width / image.width
+
+        // 大きさ: 焼き込み（画像の短い辺 3000 × 0.1 = 300）を縮めたもの
+        XCTAssertEqual(TextOverlay.fontSize(overlay.size, in: photo.size),
+                       TextOverlay.fontSize(overlay.size, in: image) * shrink, accuracy: 0.0001)
+        XCTAssertEqual(TextOverlay.fontSize(overlay.size, in: image), 300, accuracy: 0.0001)
+
+        // 位置: 写真の左上から、写真に対する割合で
+        let editorY = photo.minY + photo.height * overlay.y
+        let burnedY = image.height * overlay.y
+        XCTAssertEqual(editorY, photo.minY + burnedY * shrink, accuracy: 0.0001)
+        XCTAssertEqual(editorY, 87.5 + 22.5, accuracy: 0.0001)
+    }
+
     /// 空白だけの文字は「無い」扱い（見えない物を焼き込まない）
     func testBlankTextIsEmpty() {
         XCTAssertTrue(TextOverlay(text: "   \n ").isEmpty)
