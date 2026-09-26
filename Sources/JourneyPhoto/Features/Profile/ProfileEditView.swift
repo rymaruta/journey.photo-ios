@@ -2,6 +2,12 @@ import SwiftUI
 import PhotosUI
 
 /// プロフィールの編集。名前・自己紹介・リンクと、アイコン／カバー。
+///
+/// **並びはアーティファクト 32 の「プロフィールの編集」**（2026-09-26）:
+/// カバーとアイコンの見本 → 表示名 → ユーザー名 → 自己紹介 → 居住地・Instagram
+/// → BGM、保存は右上。板に無い「ひとこと・テーマ色・ウェブサイト」は
+/// **消さずに最後の「そのほか」へ**（プロフィールに値が入っている人がいて、
+/// 消すとアプリから直せなくなる）。
 struct ProfileEditView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -23,6 +29,10 @@ struct ProfileEditView: View {
 
     @State private var avatarItem: PhotosPickerItem?
     @State private var coverItem: PhotosPickerItem?
+    /// いまのアイコン・カバーを見せるための持ち主の ID（読めたら入る）
+    @State private var userId: String?
+    /// 画像を変えたら URL の末尾を変える（同じ URL だと古い絵の控えが出る）
+    @State private var imageBust = String(Int(Date().timeIntervalSince1970))
 
     @State private var isLoading = true
     @State private var isSaving = false
@@ -33,63 +43,75 @@ struct ProfileEditView: View {
 
     var body: some View {
         Form {
-            Section(L("画像", "Images")) {
-                PhotosPicker(selection: $avatarItem, matching: .images) {
-                    Label(L("アイコンを変える", "Change avatar"), systemImage: "person.crop.circle")
-                }
-                PhotosPicker(selection: $coverItem, matching: .images) {
-                    Label(L("カバーを変える", "Change cover"), systemImage: "photo")
-                }
-            }
-            .listRowBackground(Color.clear)
+            imagesHeader
 
-            Section(Labels.Navigation.profile) {
-                TextField(L("表示名", "Display name"), text: $displayName)
-                TextField(L("ユーザー名（半角英数）", "Username (letters and numbers)"), text: $username)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                TextField(L("自己紹介", "Bio"), text: $bio, axis: .vertical)
-                    .lineLimit(2...6)
-                TextField(L("ひとこと", "Status"), text: $statusText)
-                TextField(L("居住地", "Where you're based"), text: $homeLocation)
-                ThemeColorField(themeColor: $themeColor)
+            Section {
+                labeled(L("表示名", "Display name")) {
+                    TextField("", text: $displayName)
+                }
+                labeled(L("ユーザー名（半角英数）", "Username (letters and numbers)")) {
+                    TextField("", text: $username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                labeled(L("自己紹介", "Bio")) {
+                    TextField(L("ひとこと", "A few words"), text: $bio, axis: .vertical)
+                        .lineLimit(2...6)
+                }
+                // 板は居住地と Instagram を横に2つ並べる
+                HStack(alignment: .top, spacing: 10) {
+                    labeled(L("居住地", "Where you're based")) {
+                        TextField("", text: $homeLocation)
+                    }
+                    labeled(L("Instagram（@なし）", "Instagram (without @)")) {
+                        TextField("", text: $instagram)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                }
             }
             .listRowBackground(Color.clear)
 
             bgmSection
 
-            Section(L("リンク", "Links")) {
-                TextField(L("ウェブサイト", "Website"), text: $website)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                TextField(L("Instagram（@なし）", "Instagram (without @)"), text: $instagram)
-                    .textInputAutocapitalization(.never)
+            // **板に無い3つ。** 消すとアプリから直せなくなるので、最後にまとめて残す
+            Section(L("そのほか", "More")) {
+                labeled(L("ひとこと", "Status")) {
+                    TextField("", text: $statusText)
+                }
+                ThemeColorField(themeColor: $themeColor)
+                labeled(L("ウェブサイト", "Website")) {
+                    TextField("", text: $website)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                }
             }
             .listRowBackground(Color.clear)
 
             if let message {
                 Section { Text(message).font(.callout) }
             }
-
-            Section {
-                Button {
-                    Task { await save() }
-                } label: {
-                    if isSaving {
-                        HStack { ProgressView(); Text(L("保存中…", "Saving…")) }
-                    } else {
-                        Text(Labels.Common.save)
-                    }
-                }
-                // **読めるまで押させない。** 押せてしまうと、
-                // 空の欄がそのまま「消す」として送られる
-                .disabled(isSaving || !loaded)
-            }
-            .listRowBackground(Color.clear)
         }
         .webScreen()
         .navigationTitle(L("プロフィールの編集", "Edit profile"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // **保存は右上**（板）。以前はフォームの一番下にあり、長い画面では見えなかった
+            ToolbarItem(placement: .topBarTrailing) {
+                if isSaving {
+                    ProgressView()
+                } else {
+                    Button(L("保存", "Save")) {
+                        Task { await save() }
+                    }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(WebTheme.accent)
+                    // **読めるまで押させない。** 押せてしまうと、
+                    // 空の欄がそのまま「消す」として送られる
+                    .disabled(!loaded)
+                }
+            }
+        }
         .overlay { if isLoading { ProgressView() } }
         .task { await load() }
         .onChange(of: avatarItem) { _, item in
@@ -98,6 +120,59 @@ struct ProfileEditView: View {
         .onChange(of: coverItem) { _, item in
             Task { await upload(item, kind: .cover) }
         }
+    }
+
+    /// カバーとアイコンの見本（板の上端）。**押すとそのまま選び直せる**
+    private var imagesHeader: some View {
+        Section {
+            ZStack(alignment: .topLeading) {
+                RemoteImage(url: userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: "cover", cacheBust: imageBust) })
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 132)
+                    .background(WebTheme.surface)
+                    .clipped()
+                    .overlay(alignment: .topTrailing) {
+                        PhotosPicker(selection: $coverItem, matching: .images) {
+                            Label(L("カバーを変える", "Change cover"), systemImage: "photo")
+                                .font(.footnote.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 36)
+                                .background(Color.black.opacity(0.55), in: Capsule())
+                        }
+                        .padding(12)
+                    }
+                PhotosPicker(selection: $avatarItem, matching: .images) {
+                    RemoteImage(url: userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: imageBust) })
+                        .frame(width: 84, height: 84)
+                        .background(WebTheme.surface)
+                        .clipShape(Circle())
+                        .overlay(Circle().strokeBorder(Color.black, lineWidth: 3))
+                        .overlay {
+                            Image(systemName: "camera")
+                                .font(.footnote)
+                                .frame(width: 32, height: 32)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                        }
+                }
+                .accessibilityLabel(L("アイコンを変える", "Change avatar"))
+                .padding(.leading, 20)
+                .padding(.top, 92)
+            }
+            .frame(height: 178, alignment: .top)
+        }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+    }
+
+    /// 欄の上に小さい見出し（板の「表示名」などの置き方）
+    private func labeled<Field: View>(_ title: String, @ViewBuilder field: () -> Field) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(WebTheme.muted)
+            field()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// BGM（モック2-9 の「BGM」の行）。**先頭の1曲だけを触る。**
@@ -147,6 +222,7 @@ struct ProfileEditView: View {
                         "Couldn't load your current profile. Please reopen this screen (saving now would erase it).")
             return
         }
+        userId = profile.userId
         displayName = profile.displayName ?? ""
         username = profile.username ?? ""
         bio = profile.bio ?? ""
@@ -205,6 +281,7 @@ struct ProfileEditView: View {
             // そのまま上げない**（撮影地が入っていることがある）
             let prepared = try ImagePreparer.prepare(data: data, fileName: "profile")
             try await environment.profiles.uploadProfileImage(kind: kind, jpeg: prepared.data)
+            imageBust = String(Int(Date().timeIntervalSince1970))
             message = kind == .avatar ? L("アイコンを変えました", "Avatar updated") : L("カバーを変えました", "Cover updated")
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("画像を変えられませんでした", "Couldn't update the image")
