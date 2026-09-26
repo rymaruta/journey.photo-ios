@@ -137,16 +137,9 @@ struct MyPageView: View {
             ZStack(alignment: .top) {
                 scroll(topInset: geo.safeAreaInsets.top)
                     .ignoresSafeArea(edges: hasCover ? .top : [])
-                // **時計の裏に黒のぼかし**。上のバーを出さないので、流した写真が
-                // 時計・電池の字の真下を通って字が読めなくなっていた。
-                // GeometryReader の原点は安全域の下なので、その分だけ上へずらす。
-                // 押す操作は下へ通す
-                LinearGradient(colors: [Color.black.opacity(0.7), Color.black.opacity(0)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: geo.safeAreaInsets.top + 16)
-                    .offset(y: -geo.safeAreaInsets.top)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                // **時計の裏に黒のぼかし**（`TopBarScrim`）。上のバーを出さないので、
+                // 流した写真が時計・電池の字の真下を通って字が読めなくなっていた
+                TopBarScrim(topInset: geo.safeAreaInsets.top)
             }
         }
     }
@@ -225,7 +218,7 @@ struct MyPageView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .bottom) {
                 RemoteImage(url: profile.avatarURL(cacheBust: model.avatarCacheBust))
-                    .frame(width: Self.avatarSize, height: Self.avatarSize)
+                    .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
                     .clipShape(Circle())
                     // **板どおり黒の 3pt の縁**（写真の上でも丸が割れない）。
                     // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
@@ -255,30 +248,7 @@ struct MyPageView: View {
                 }
                 if let line = ProfileLine.handleAndHome(username: profile.username,
                                                         home: profile.homeLocation) {
-                    // 居住地は**地図には出さない**（住んでいる場所はピンにしない）。
-                    // 頭の印は板どおり**線のピン**（11pt）——絵文字の「📍」は赤く出ていた
-                    HStack(spacing: 4) {
-                        if let handle = line.handle {
-                            // 狭いときは居住地の方を先に詰める（名前と「·」を残す）
-                            Text(handle)
-                                .lineLimit(1)
-                                .layoutPriority(1)
-                        }
-                        if line.handle != nil && line.home != nil {
-                            Text("·")
-                                .layoutPriority(1)
-                        }
-                        if let home = line.home {
-                            Image(systemName: "mappin")
-                                .font(.system(size: 11))
-                            Text(home)
-                                .lineLimit(1)
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(line.spoken)
+                    ProfileHandleLine(line: line, showsPin: true)
                 }
                 // ひとこと。**持っているのに一度も出していなかった**
                 ForEach(ProfileLine.about(status: profile.statusText, bio: profile.bio), id: \.self) { text in
@@ -292,13 +262,8 @@ struct MyPageView: View {
         .padding(.horizontal, 20)
         // カバーがあればアイコンを下端に重ねる（板: 180pt の帯に 84pt の丸を 50pt）。
         // 無ければ右上の設定の丸の下から（板 05d）
-        .padding(.top, hasCover ? -Self.avatarOverlap : 49)
+        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 49)
     }
-
-    /// 見出しのアイコン（板 84pt）と、カバーの下端へ引き上げる量（板 50pt）。
-    /// 人のページ（64pt・28pt）とは別——あちらは板 31
-    private static let avatarSize: CGFloat = 84
-    private static let avatarOverlap: CGFloat = 50
 
     /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・等幅の数字 18 と名前）。
     /// 列は幅を三等分し、押せる高さは 44pt
@@ -639,56 +604,9 @@ struct MyPageView: View {
     }
 
     /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
-    /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
-    /// 板 05c: 下線の札（印＋名前・13px・高さ 44）。選んでいる札は白い字と
-    /// 下の 2pt の白い線、下に白12% の1本線。
-    ///
-    /// **入らなければ4つとも印を外して字だけ**（大きい文字・狭い端末で「行きたい
-    /// 場所」が「…」で切れていた）。札ごとに決めると、印のある札と無い札が混ざり、
-    /// 押すたびに太字の幅で印が出たり消えたりする。並べ方は `TabRowLayout`（中身の
-    /// 幅＋余りの等分）——判定（理想の幅の和）と実際の幅を一致させる
+    /// 見た目は人のページと同じ下線の札（`ProfileTabBar`）
     private var tabPicker: some View {
-        ViewThatFits(in: .horizontal) {
-            tabRow(icons: true)
-            tabRow(icons: false)
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private func tabRow(icons: Bool) -> some View {
-        TabRowLayout {
-            ForEach(ProfileTab.tabs(isMe: true)) { option in
-                let selected = tab == option
-                Button {
-                    tab = option
-                } label: {
-                    HStack(spacing: 6) {
-                        if icons {
-                            Image(systemName: option.systemImage)
-                                .font(.system(size: 16))
-                                .accessibilityHidden(true)
-                        }
-                        tabLabel(option, selected: selected)
-                    }
-                    .foregroundStyle(selected ? Color.white : WebTheme.faint)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(selected ? Color.white : Color.clear)
-                            .frame(height: 2)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-                // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
-                // ——以前は写真の上の「旅の記録」の札に付けていた
-                .accessibilityIdentifier("profile.tab.\(option.rawValue)")
-            }
-        }
+        ProfileTabBar(tabs: ProfileTab.tabs(isMe: true), selection: $tab)
     }
 
     /// 横の払いでタブを切り替える。**`simultaneousGesture` で付ける**——`gesture` に
@@ -702,23 +620,6 @@ struct MyPageView: View {
                                                    dy: Double(value.translation.height))
                 else { return }
                 tab = next
-            }
-    }
-
-    /// 名前。**幅は太字で測る**（選ぶたびに幅が変わって印が出入りしないように）。
-    /// 太さは選んでいる札だけ変える
-    private func tabLabel(_ option: ProfileTab, selected: Bool) -> some View {
-        // 太字の幅で場所を取り、見える字は選んでいるときだけ太字
-        Text(option.label)
-            .font(.footnote.weight(.semibold))
-            .lineLimit(1)
-            .hidden()
-            .accessibilityHidden(true)
-            .overlay {
-                Text(option.label)
-                    .font(.footnote.weight(selected ? .semibold : .regular))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
     }
 

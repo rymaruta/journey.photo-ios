@@ -29,6 +29,61 @@ enum ProfileLine {
         return HandleAndHome(handle: handle, home: place)
     }
 
+    /// 人のページの数の並び（板 31: 「000 フォロワー　000 フォロー中　000 写真」）。
+    /// **数が先・名前が後**の1行で、マイページ（板 05c: 数の下に名前の3列）とは別の形。
+    /// 押して一覧を開けるかは画面が決める（`FollowCounts.isTappable`）
+    struct Count: Equatable, Identifiable {
+        enum Kind: Equatable { case followers, following, photos }
+        let kind: Kind
+        let value: String
+        let label: String
+        var id: Kind { kind }
+    }
+
+    /// 写真の数の状態。**読み終えるまで数を言わない**——写真は読み込みの最後に
+    /// 取り、取れなくても画面は出すので、配列の長さをそのまま出すと
+    /// 読み込み中・失敗のあいだ「0 写真」と嘘をつく
+    enum PhotoCount: Equatable {
+        /// 読み込み中（ブロックして一覧を伏せたときも）。**札ごと出さない**
+        case pending
+        /// 取れなかった。「—」を出す（0 とは言わない）
+        case failed
+        case loaded(Int)
+    }
+
+    static func counts(followers: Int, following: Int, photos: PhotoCount) -> [Count] {
+        var items = [
+            Count(kind: .followers, value: "\(followers)",
+                  label: L("フォロワー", followers == 1 ? "follower" : "followers")),
+            Count(kind: .following, value: "\(following)", label: L("フォロー中", "following")),
+        ]
+        switch photos {
+        case .pending:
+            break
+        case .failed:
+            items.append(Count(kind: .photos, value: "—", label: L("写真", "photos")))
+        case .loaded(let n):
+            items.append(Count(kind: .photos, value: "\(n)",
+                               label: L("写真", n == 1 ? "photo" : "photos")))
+        }
+        return items
+    }
+
+    /// 人のページでフォロー・一覧の丸・ハイライト・ブロックを出すか。
+    /// **ログインしていて、自分でなく、ブロック中でない**とき。ブロック中の相手に
+    /// 「フォローする」を出すと、押してもサーバーに断られる
+    static func canAct(viewerId: String?, userId: String, blocked: Set<String>) -> Bool {
+        guard let viewerId else { return false }
+        return viewerId != userId && !blocked.contains(userId)
+    }
+
+    /// ハイライトの列を作り直す鍵。**見られるかはフォローの状態で変わる**
+    /// （本人とフォロワーだけ）ので、フォローを変えたら読み直す。
+    /// `HighlightsRow` は `userId` が変わったときしか読み直さない
+    static func highlightsKey(userId: String, isFollowing: Bool) -> String {
+        "\(userId)|\(isFollowing ? "following" : "not-following")"
+    }
+
     /// ひとことと自己紹介（板は「ひとことプロフィール」の1段落）。**空は出さない・
     /// 同じ文は二度出さない**（Web で両方に同じ文を入れている人がいる）
     static func about(status: String?, bio: String?) -> [String] {

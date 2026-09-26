@@ -28,6 +28,36 @@ final class ProfileLineTests: XCTestCase {
         XCTAssertEqual(ProfileLine.handleAndHome(username: "yuki", home: nil)?.spoken, "@yuki")
     }
 
+    /// 人のページの数（板 31）: フォロワー・フォロー中・写真の順で、数が先
+    func testCountsOrderAndValues() {
+        let counts = ProfileLine.counts(followers: 12, following: 3, photos: .loaded(0))
+        XCTAssertEqual(counts.map(\.kind), [.followers, .following, .photos])
+        XCTAssertEqual(counts.map(\.value), ["12", "3", "0"])
+        XCTAssertEqual(counts.map(\.label), ["フォロワー", "フォロー中", "写真"])
+    }
+
+    /// **読み終える前と失敗したときに「0 写真」と言わない**
+    func testPhotoCountIsNotZeroUntilLoaded() {
+        let pending = ProfileLine.counts(followers: 1, following: 1, photos: .pending)
+        XCTAssertEqual(pending.map(\.kind), [.followers, .following])
+        let failed = ProfileLine.counts(followers: 1, following: 1, photos: .failed)
+        XCTAssertEqual(failed.last?.value, "—")
+    }
+
+    /// ブロック中の相手には、フォロー・一覧・ハイライト・ブロックを出さない
+    func testCanActExcludesBlockedSelfAndSignedOut() {
+        XCTAssertTrue(ProfileLine.canAct(viewerId: "me", userId: "u", blocked: []))
+        XCTAssertFalse(ProfileLine.canAct(viewerId: "me", userId: "u", blocked: ["u"]))
+        XCTAssertFalse(ProfileLine.canAct(viewerId: "u", userId: "u", blocked: []))
+        XCTAssertFalse(ProfileLine.canAct(viewerId: nil, userId: "u", blocked: []))
+    }
+
+    /// フォローを変えたらハイライトの列を読み直す（鍵が変わる）
+    func testHighlightsKeyChangesWithFollowing() {
+        XCTAssertNotEqual(ProfileLine.highlightsKey(userId: "u", isFollowing: true),
+                          ProfileLine.highlightsKey(userId: "u", isFollowing: false))
+    }
+
     /// 空は出さず、同じ文は二度出さない
     func testAboutSkipsEmptyAndDuplicates() {
         XCTAssertEqual(ProfileLine.about(status: "旅が好き", bio: "旅が好き"), ["旅が好き"])
