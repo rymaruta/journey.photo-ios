@@ -337,6 +337,8 @@ public struct Rectangle: View, Shape {
 /// 置き場所の大きさを測る入れ物（写真の上に文字を置くのに要る）。
 public struct GeometryProxy {
     public var size: CGSize { CGSize(width: 0, height: 0) }
+    /// 本物と同じ（安全域の幅）
+    public var safeAreaInsets: EdgeInsets { EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0) }
 }
 
 public struct GeometryReader<Content: View>: View {

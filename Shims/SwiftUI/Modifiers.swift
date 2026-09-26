@@ -422,8 +422,13 @@ extension View {
 
 /// 行の余白（本物と同じ形）
 public struct EdgeInsets {
+    /// 本物と同じく4辺を読める（`GeometryProxy.safeAreaInsets.top` など）
+    public var top: CGFloat = 0, leading: CGFloat = 0, bottom: CGFloat = 0, trailing: CGFloat = 0
     public init() {}
-    public init(top: Double, leading: Double, bottom: Double, trailing: Double) {}
+    public init(top: Double, leading: Double, bottom: Double, trailing: Double) {
+        self.top = CGFloat(top); self.leading = CGFloat(leading)
+        self.bottom = CGFloat(bottom); self.trailing = CGFloat(trailing)
+    }
 }
 
 /// `submitLabel(_:)` が受ける確定キーの文言。本物は struct

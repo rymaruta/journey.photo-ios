@@ -127,28 +127,40 @@ struct MyPageView: View {
     /// 旅の一冊へ。**撮った本人の記録なので、持ち場はここ**
     /// （タブは指示書の並び——ホーム／探す／投稿／マップ／マイページ）。
 
-    /// **設定の丸は安全域の内側に置く**（スクロールはカバーのために上端まで伸ばすので、
-    /// そちらに重ねると時計の裏に入る）
+    /// **カバーは画面の上端から**（時計の裏まで）。無い人は安全域の下から。
+    /// 安全域を無視した GeometryReader も、元の安全域の高さは `safeAreaInsets` で
+    /// 教えてくれる——設定の丸はこの高さぶん下げて、時計の裏に入れない
     private var content: some View {
-        ZStack(alignment: .topTrailing) {
-            scroll
-            settingsButton
+        GeometryReader { geo in
+            scroll(topInset: geo.safeAreaInsets.top)
         }
+        .ignoresSafeArea(edges: hasCover ? .top : [])
     }
 
-    private var scroll: some View {
+    private func scroll(topInset: CGFloat) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if let profile = model.profile {
-                    // カバーと見出しは間を空けずに重ねる（板 05c）。カバーが無ければ
-                    // 右上の設定の丸の下から始める（板 05d）
-                    VStack(alignment: .leading, spacing: 12) {
-                        ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
-                                     reserve: hasCover) { hasCover = $0 }
-                        header(profile)
-                        stats
-                        travelRecord
+                // **設定の丸は中身と一緒に流す。** 画面に留めると、送ったときに
+                // 格子の右上の写真に被さり、そこを押すと設定が開いた
+                ZStack(alignment: .topTrailing) {
+                    if let profile = model.profile {
+                        // カバーと見出しは間を空けずに重ねる（板 05c）。カバーが無ければ
+                        // 右上の設定の丸の下から始める（板 05d）
+                        VStack(alignment: .leading, spacing: 0) {
+                            ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
+                                         reserve: hasCover) { hasCover = $0 }
+                            header(profile)
+                        }
+                    } else {
+                        // 読み込み中・失敗: 丸の高さだけ空けて、下の中身に被せない
+                        Color.clear.frame(height: 44)
                     }
+                    settingsButton
+                        .padding(.top, hasCover ? topInset : 0)
+                }
+                if let profile = model.profile {
+                    stats
+                    travelRecord
                     bgmCard(profile)
                     profileSetupNotice(profile)
                 }
@@ -162,9 +174,7 @@ struct MyPageView: View {
                 photoArea
             }
         }
-        // **カバーは画面の上端から**（時計の裏まで）。無い人は安全域の下から
         .refreshable { await model.load() }
-        .ignoresSafeArea(edges: hasCover ? .top : [])
     }
 
     /// 右上の設定（板: 44pt のガラスの丸）。**上のバーを出さないので、ここが入口**
@@ -190,7 +200,8 @@ struct MyPageView: View {
                     .frame(width: Self.avatarSize, height: Self.avatarSize)
                     .clipShape(Circle())
                     // **板どおり黒の 3pt の縁**（写真の上でも丸が割れない）。
-                    // 本人の色の輪（`themeColor`）は板に無いので出さない（板 31 と同じ判断）
+                    // 本人の色の輪（`themeColor`）は板に無いので出さない。
+                    // ⚠️ 人のページ（`UserProfileView`）はまだ色の輪を出している（板 31 で揃える）
                     .coverCutout(true)
                 Spacer(minLength: 8)
                 NavigationLink { ProfileEditView() } label: {
@@ -240,12 +251,8 @@ struct MyPageView: View {
     private static let avatarSize: CGFloat = 84
     private static let avatarOverlap: CGFloat = 50
 
-    /// 数の並び（提案の絵）。**投稿・いいね・フォロワー・フォロー中**
-    ///
-    /// **両端を 16pt の余白に揃える。** 下の「旅の実績」が端から端までの
-    /// 帯なので、ここが左詰めのままだと右端だけ段違いになる。
-    /// 丸の幅は中身のまま（数字の大きさを変えない）で、**間を均等に開ける**。
-    /// 収まらない幅（英語表記・桁の多い数）では、これまでどおり横に流す
+    /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・等幅の数字 18 と名前）。
+    /// 列は幅を三等分し、押せる高さは 44pt
     private var stats: some View {
         // 板: 3列の等幅。等幅の数字（18）の下に小さい名前（10）
         HStack(alignment: .top, spacing: 8) {

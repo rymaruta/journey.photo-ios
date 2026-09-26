@@ -137,7 +137,12 @@ final class ScreenshotTests: XCTestCase {
             if name == "マップ" { simulateLocation() }
             tabBar.buttons.element(boundBy: index).tap()
             if name == "マップ" { answerLocationPrompt() }
-            _ = app.navigationBars.firstMatch.waitForExistence(timeout: 15)
+            // **マイページは上のバーを出さない**（板 05c）。バーを待つと 15 秒空振りする
+            if name == "マイページ" {
+                _ = app.buttons["profile.tab.posts"].firstMatch.waitForExistence(timeout: 15)
+            } else {
+                _ = app.navigationBars.firstMatch.waitForExistence(timeout: 15)
+            }
             // **少し待ってから撮る。** 写真は通信で来るので、描いた直後は
             // 枠だけの絵になる（それを「表示が壊れている」と読み違える）
             Thread.sleep(forTimeInterval: 3)
