@@ -293,7 +293,7 @@ struct TripBookView: View {
     // MARK: - 計算
 
     /// 移動（直線）。数えられなければ nil（枠には「—」）
-    private var distance: Double? { TravelDistance.countableTotal(of: trip.photos) }
+    private var distance: Double? { TravelDistance.countableTotal(of: trip.photos, timeZone: trip.timeZone) }
 
     /// 数の升・ルート図の地（板の `#0b0b0c`）
     private static let cellColor = Color(red: 0x0B / 255.0, green: 0x0B / 255.0, blue: 0x0C / 255.0)
