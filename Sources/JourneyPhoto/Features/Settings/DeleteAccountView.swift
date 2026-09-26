@@ -103,7 +103,8 @@ struct DeleteAccountView: View {
         }
         .buttonStyle(.plain)
         .disabled(!canDelete)
-        .opacity(canDelete ? 1 : 0.4)
+        // 消している最中は薄くしない（押せないのは同じ・進み具合を見せる）
+        .opacity(canDelete || isWorking ? 1 : 0.4)
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 8)

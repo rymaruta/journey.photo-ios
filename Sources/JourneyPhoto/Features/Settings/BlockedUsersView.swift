@@ -27,23 +27,24 @@ struct BlockedUsersView: View {
             }
             ForEach(users) { user in
                 HStack(spacing: 12) {
-                    // 板はアイコンと名前でプロフィールへ。**退会した人には導線を出さない**
-                    if user.deleted == true {
-                        person(user)
-                    } else {
-                        NavigationLink { UserProfileView(userId: user.id) } label: { person(user) }
-                    }
-                    Button(L("解除", "Unblock")) {
+                    // **プロフィールへは飛ばさない**（板はリンク）。プロフィール画面は
+                    // ブロック中を見ておらず、「フォローする」が出て押すとサーバーに断られる
+                    person(user)
+                    Button {
                         Task { await unblock(user.id) }
+                    } label: {
+                        // 余白と枠は**中身の側**に置く。外に付けると、押せるのは文字だけで、
+                        // 枠の縁を押しても何も起きない
+                        Text(L("解除", "Unblock"))
+                            .font(.footnote.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .frame(minWidth: 44, minHeight: 36)
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
+                            .contentShape(Capsule())
                     }
-                    .font(.footnote.weight(.semibold))
-                    .padding(.horizontal, 14)
-                    .frame(minWidth: 44, minHeight: 36)
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
                     // 行の中のボタンは borderless にしないと、行のどこを
                     // 押しても反応する
                     .buttonStyle(.borderless)
-                    .foregroundStyle(WebTheme.foreground)
                 }
             }
         }
