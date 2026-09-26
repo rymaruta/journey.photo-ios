@@ -144,6 +144,7 @@ struct PhotoMapView: View {
             TextField(L("撮影地・スポット名で絞る", "Filter by place or spot"),
                       text: $model.query)
                 .textFieldStyle(.plain)
+                .accessibilityIdentifier("map.search")
                 .foregroundStyle(WebTheme.foreground)
             if !model.query.isEmpty {
                 Button {
@@ -358,16 +359,21 @@ struct PhotoMapView: View {
         }
     }
 
-    /// 撮影スポットの印（デザイン 04）。**写真のピンと見分けがつく小さな丸**:
-    /// 28pt・地は rgba(40,40,44,0.92)・1.5pt の白っぽい縁・小さな記号。
-    /// 写真の札（44pt の写真）より小さいので、重なっても写真が前に見える
+    /// 撮影スポットの印（デザイン 07「真鍮の丸」・2026-09-26）。**写真のピンと見分けがつく丸**:
+    /// 32pt・地は真鍮・記号は墨のカメラ・2pt の白い縁・影。
+    ///
+    /// 以前は灰色の丸（地 rgba(40,40,44,0.92)）で、緑の地図に沈んで見つけにくかった
+    /// （owner の指摘）。写真のピン（44pt・角丸の写真）より小さいので、重なっても
+    /// 写真が前に見える。スポットに写真が結び付いたら「写真の丸・真鍮の縁」に
+    /// 替える案がデザイン 07 にある（写真はまだ0件）
     private var officialMarker: some View {
-        Image(systemName: "mappin")
+        Image(systemName: "camera.fill")
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Color.white.opacity(0.85))
-            .frame(width: 28, height: 28)
-            .background(Color(red: 40 / 255, green: 40 / 255, blue: 44 / 255).opacity(0.92), in: Circle())
-            .overlay(Circle().strokeBorder(Color.white.opacity(0.5), lineWidth: 1.5))
+            .foregroundStyle(WebTheme.accentText)
+            .frame(width: 32, height: 32)
+            .background(WebTheme.accent, in: Circle())
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.92), lineWidth: 2))
+            .shadow(color: .black.opacity(0.45), radius: 5, y: 3)
     }
 
     /// 見えている範囲を控えるだけ。**絞るのはボタンを押したとき**
