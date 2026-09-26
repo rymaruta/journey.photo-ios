@@ -21,6 +21,12 @@ struct SettingsView: View {
         return "\(short) (\(build))"
     }
 
+    /// 最下部の1行。接続先は**いつも出す**（本番かどうかを見分けるため）
+    private var versionLine: String {
+        let env = AppConfig.environment == .staging ? "staging" : L("本番", "production")
+        return L("バージョン \(version) · 接続先 \(env)", "Version \(version) · \(env)")
+    }
+
     var body: some View {
         list
             .task {
@@ -103,16 +109,30 @@ struct SettingsView: View {
                            "Get likes, comments, follows and story replies even when the app is closed."))
                 }
 
+                // **並びはアーティファクト 43 の「設定」**（2026-09-26）。
+                // 親しい友達・お気に入り・共同アルバムの入口をここにも置く
+                // ——マイページの横並びだけだと見つからなかった
                 Section(L("プライバシー", "Privacy")) {
-                    NavigationLink(L("ブロックした人", "Blocked people")) { BlockedUsersView() }
-                    Link(L("プライバシーポリシー", "Privacy Policy"), destination: LegalConsent.privacyURL)
+                    NavigationLink { BlockedUsersView() } label: {
+                        Label(L("ブロックした人", "Blocked people"), systemImage: "hand.raised")
+                    }
+                    NavigationLink { CloseFriendsView() } label: {
+                        Label(L("親しい友達", "Close friends"), systemImage: "star")
+                    }
+                    // 板の文言は「お気に入り」だが、アプリの画面名（01d のメニューも同じ）に揃える
+                    NavigationLink { FavoritesView() } label: {
+                        Label(Labels.Navigation.favorites, systemImage: "heart")
+                    }
+                    NavigationLink { AlbumsView() } label: {
+                        Label(Labels.Navigation.albums, systemImage: "rectangle.stack")
+                    }
                 }
             }
 
             // **データとストレージ**（モック12）。写真の控えは端末に溜まる
             Section {
                 HStack {
-                    Text(L("写真の控え", "Cached photos"))
+                    Label(L("写真の控え", "Cached photos"), systemImage: "externaldrive")
                     Spacer()
                     Text(cacheSize).foregroundStyle(.secondary)
                 }
@@ -129,30 +149,26 @@ struct SettingsView: View {
                        "Photos you have seen are kept on this device. Clearing frees space."))
             }
 
-            Section(L("サポート", "Support")) {
-                Link(L("利用規約", "Terms of Use"), destination: LegalConsent.termsURL)
-                Link(L("プライバシーポリシー", "Privacy Policy"), destination: LegalConsent.privacyURL)
-                if let contact = LegalConsent.contactURL {
-                    Link(L("問い合わせ", "Contact"), destination: contact)
-                }
-                HStack {
-                    Text(L("バージョン", "Version"))
-                    Spacer()
-                    Text(version).foregroundStyle(.secondary)
-                }
-                if AppConfig.environment == .staging {
-                    HStack {
-                        Text(L("接続先", "Environment"))
-                        Spacer()
-                        Text("staging").foregroundStyle(WebTheme.accent)   // いま本番ではない＝合図
+            // **規約・問い合わせは未ログインでも出す**（審査 1.2 の連絡先）。
+            // 見出しの「アカウント」はログインしているときだけ
+            Section {
+                if auth.userId != nil {
+                    NavigationLink { ChangePasswordView() } label: {
+                        Label(L("パスワードを変える", "Change password"), systemImage: "key")
                     }
                 }
-            }
-
-            if auth.userId != nil {
-                Section(L("アカウント", "Account")) {
-                    NavigationLink(L("パスワードを変える", "Change password")) { ChangePasswordView() }
-                    Button(Labels.Navigation.logout) {
+                NavigationLink { LegalLinksView() } label: {
+                    Label(L("利用規約・プライバシーポリシー", "Terms & Privacy"), systemImage: "doc.text")
+                }
+                if let contact = LegalConsent.contactURL {
+                    Link(destination: contact) {
+                        Label(L("問い合わせ", "Contact"), systemImage: "envelope")
+                    }
+                }
+                if auth.userId != nil {
+                    // **ログアウトは板に無いが、まだ外せない。** 板ではメニュー（01d）に
+                    // あり、そのメニューがアプリに無い間はここが唯一の出口
+                    Button {
                         Task {
                             // **通知の宛先は、ログアウトの前に外す。**
                             // あとだと認証が通らず、外せないまま次にこの端末を
@@ -160,12 +176,19 @@ struct SettingsView: View {
                             await push.signingOut()
                             await auth.signOut()
                         }
+                    } label: {
+                        Label(Labels.Navigation.logout, systemImage: "rectangle.portrait.and.arrow.right")
                     }
+                    NavigationLink { DeleteAccountView() } label: {
+                        Label(L("アカウントの削除", "Delete account"), systemImage: "trash")
+                    }
+                    .foregroundStyle(WebTheme.danger)
                 }
-                Section {
-                    NavigationLink(L("アカウントの削除", "Delete account")) { DeleteAccountView() }
-                        .foregroundStyle(WebTheme.danger)
-                }
+            } header: {
+                if auth.userId != nil { Text(L("アカウント", "Account")) }
+            } footer: {
+                // 板の最下部の1行「バージョン [0.0.0] · 接続先 [本番]」
+                Text(versionLine)
             }
         }
         .webScreen()
