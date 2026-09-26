@@ -339,6 +339,10 @@ struct GalleryView: View {
                 // アプリの提案図では**ホームに戻っている**ので合わせる
                 // ——「いま誰が旅に出ているか」は開いた瞬間に見たいもの
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed)
+                // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
+                // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
+                // 「前の方が好きだった」で先頭の大きな札に戻した（2026-09-26）
+                DailyThemeCard(photos: model.allPhotosForTheme, myPhotos: model.myPhotos)
                 feedPicker
                 featuredSections
                 // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
@@ -355,15 +359,7 @@ struct GalleryView: View {
                         .padding(.vertical, 40)
                         .padding(.horizontal, 24)
                 }
-                if let first = groups.first {
-                    HomeFeedCard(photo: first.cover, following: model.followingIds,
-                                 siblings: first.photos)
-                }
-                // **今日のテーマは1枚目の写真の後ろに細い帯で**（整理案 01c）。
-                // 先頭に大きな札を置くと、開いた瞬間に写真が見えなかった。
-                // 通信はしない——日付から決まる
-                DailyThemeCard(myPhotos: model.myPhotos)
-                ForEach(Array(groups.dropFirst())) { group in
+                ForEach(groups) { group in
                     HomeFeedCard(photo: group.cover, following: model.followingIds,
                                  siblings: group.photos)
                 }

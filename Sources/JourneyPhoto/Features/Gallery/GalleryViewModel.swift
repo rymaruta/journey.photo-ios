@@ -70,6 +70,9 @@ final class GalleryViewModel: ObservableObject {
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
     private var all: [Photo] = []
 
+    /// 今日のテーマの背景に使う公開写真（絞り込みの影響を受けない全件）
+    var allPhotosForTheme: [Photo] { all }
+
     /// 自分の写真。**今日のテーマに参加したかの判定に使う。**
     ///
     /// 公開一覧（静的 JSON）ではなく**API から読む**——投稿したばかりの
