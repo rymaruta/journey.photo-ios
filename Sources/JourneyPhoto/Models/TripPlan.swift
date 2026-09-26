@@ -49,7 +49,9 @@ struct TripPlan: Decodable, Identifiable, Equatable {
         self.title = (try? c.decode(String.self, forKey: .title)) ?? ""
         self.startDate = try? c.decode(String.self, forKey: .startDate)
         self.endDate = try? c.decode(String.self, forKey: .endDate)
-        self.days = (try? c.decode([Lenient<TripDay>].self, forKey: .days))?.compactMap(\.value) ?? []
+        // **読めない日は空の日として残す**（Web の `usableTripPlan` と同じ）。落とすと
+        // 3日目以降の「N 日目」がずれ、次の保存で空の日がサーバーから消える
+        self.days = (try? c.decode([Lenient<TripDay>].self, forKey: .days))?.map { $0.value ?? TripDay() } ?? []
         self.createdAt = try? c.decode(String.self, forKey: .createdAt)
         self.updatedAt = try? c.decode(String.self, forKey: .updatedAt)
     }

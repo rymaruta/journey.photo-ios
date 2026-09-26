@@ -41,7 +41,8 @@ enum TripPlanText {
 
     /// その日の日付（`YYYY-MM-DD`）。上の規則で決められなければ nil
     static func dayDate(index: Int, day: TripDay, start: String?, end: String?) -> String? {
-        if let own = day.date, TakenDay.ymd(own) != nil { return own }
+        // **実在する日だけ**（`date(fromYMD:)` と同じ基準。2月31日を出さない）
+        if let own = day.date, date(fromYMD: own) != nil { return own }
         guard let first = date(fromYMD: start),
               let shifted = calendar.date(byAdding: .day, value: index, to: first) else { return nil }
         if let last = date(fromYMD: end), shifted > last { return nil }
@@ -66,7 +67,8 @@ enum TripPlanText {
         return date
     }
 
-    /// 日付 → `YYYY-MM-DD`（サーバーが受ける形）
+    /// 日付（**この型の UTC の暦で作った値**）→ `YYYY-MM-DD`。
+    /// ⚠️ **ピッカーの値を渡さない**——端末のゾーンのその日なので `ymd(pickedIn:)` を使う
     static func ymd(_ date: Date) -> String {
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
@@ -84,7 +86,8 @@ enum TripPlanText {
     /// `YYYY-MM-DD` を、端末のゾーンのその日の正午にする（ピッカーに渡す値）。
     /// 正午にするのは、夏時間の切り替わりで日がずれないため
     static func pickerDate(fromYMD raw: String?, in zone: TimeZone) -> Date? {
-        guard let (y, m, d) = TakenDay.ymd(raw) else { return nil }
+        // 実在しない日は渡さない（2月30日を3月2日に繰り上げてピッカーに出さない）
+        guard date(fromYMD: raw) != nil, let (y, m, d) = TakenDay.ymd(raw) else { return nil }
         var local = Calendar(identifier: .gregorian)
         local.timeZone = zone
         return local.date(from: DateComponents(year: y, month: m, day: d, hour: 12))
@@ -132,6 +135,9 @@ enum TripPlanText {
                         places: [DerivedSpot.Place],
                         index: [OfficialSpot]) -> [Choice] {
         let bySlug = Dictionary(index.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
+        // **同じ鍵は1件に。** 撮影地は綴りの揺れ（空白の数・「/」）で同じスラッグに
+        // なることがあり、そのまま並べると同じ行が2つ出る（Web はスラッグで1件）
+        var seen = Set<String>()
         let spots = wishlistKeys
             .compactMap { key -> Choice? in
                 guard let slug = SavedSpotKey.slug(fromOfficial: key), let spot = bySlug[slug] else { return nil }
@@ -139,10 +145,12 @@ enum TripPlanText {
                               regionLabel: spot.regionLabel)
             }
             .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
+            .filter { seen.insert($0.id).inserted }
         let locations = places
             .filter { !$0.slug.isEmpty && wishlistKeys.contains($0.slug) && !SavedSpotKey.isOfficial($0.slug) }
             .map { Choice(item: .location(slug: $0.slug, note: nil), name: $0.label, regionLabel: nil) }
             .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
+            .filter { seen.insert($0.id).inserted }
         return spots + locations
     }
 

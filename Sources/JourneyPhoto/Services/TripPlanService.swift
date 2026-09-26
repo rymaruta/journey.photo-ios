@@ -23,9 +23,31 @@ struct TripPlanService {
     static let titleMax = 100
     static let daysMax = 60
     static let itemsPerDayMax = 20
+    /// 項目に添えるひとこと（`TRIP_NOTE_MAX`）。**入れる画面はまだ無い**（Web にも無い）
+    static let noteMax = 200
 
     private func encoded(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
+    }
+
+    /// 上限で断られた（サーバーの `TripLimitError`）。**言い分をそのまま出す**。
+    ///
+    /// サーバーは上限を **403** で返す（50件・1プランの予算・行ぜんぶの予算）。
+    /// `APIError` は 403 を「権限がありません…お問い合わせください」に置き換える
+    /// （権限を配る処理が落ちた人向けの文）ので、そのままだと51件目を作ろうと
+    /// した人にその文が出る。**本文があるときだけ**ここで包み直す——本文の無い
+    /// 403（API Gateway の門前払い）は今まで通り権限の文にする
+    struct Refused: LocalizedError, Equatable {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    private func refusing<T>(_ call: () async throws -> T) async throws -> T {
+        do {
+            return try await call()
+        } catch let APIError.server(status, message) where status == 403 && !message.isEmpty {
+            throw Refused(message: message)
+        }
     }
 
     func list() async throws -> [TripPlan] {
@@ -35,7 +57,9 @@ struct TripPlanService {
     private struct CreateBody: Encodable { let title: String }
 
     func create(title: String) async throws -> [TripPlan] {
-        try await api.authorized(.post, "/user/trips", body: CreateBody(title: title), as: TripPlanList.self).plans
+        try await refusing {
+            try await api.authorized(.post, "/user/trips", body: CreateBody(title: title), as: TripPlanList.self).plans
+        }
     }
 
     /// **送った項目だけが差し替わる**（サーバーは無い鍵を「触らない」と読む）。
@@ -48,7 +72,9 @@ struct TripPlanService {
     }
 
     func update(planId: String, _ patch: Patch) async throws -> [TripPlan] {
-        try await api.authorized(.put, "/user/trips/\(encoded(planId))", body: patch, as: TripPlanList.self).plans
+        try await refusing {
+            try await api.authorized(.put, "/user/trips/\(encoded(planId))", body: patch, as: TripPlanList.self).plans
+        }
     }
 
     func delete(planId: String) async throws -> [TripPlan] {

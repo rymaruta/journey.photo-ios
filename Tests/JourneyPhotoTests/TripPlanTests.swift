@@ -48,6 +48,15 @@ final class TripPlanTests: XCTestCase {
         XCTAssertEqual(list[1].days, [])
     }
 
+    /// **読めない日は空の日として残す**（Web の `usableTripPlan` と同じ）。
+    /// 落とすと3日目以降の「N 日目」がずれ、次の保存で空の日が消える
+    func testUnreadableDaysStayAsEmptyDays() throws {
+        let list = try plans(#"{"plans":[{"planId":"p","days":[{"items":[{"kind":"location","slug":"a"}]},null,7,{"items":[]}]}]}"#)
+        XCTAssertEqual(list[0].days.count, 4)
+        XCTAssertEqual(list[0].days[1], TripDay())
+        XCTAssertEqual(list[0].days[2], TripDay())
+    }
+
     /// **`plans` の無い応答は「0件」ではなく失敗**（通信に失敗しただけの人に「まだ無い」と言わない）
     func testMissingPlansIsAnErrorNotEmpty() {
         XCTAssertThrowsError(try plans(#"{"error":"x"}"#))
@@ -84,7 +93,11 @@ final class TripPlanTests: XCTestCase {
                        "2 日目・2027年1月1日", "年をまたいで数えられていない")
         XCTAssertEqual(TripPlanText.dayHeading(index: 2, day: empty, start: "2026-12-24", end: "2026-12-25"),
                        "3 日目", "帰着日を越えた日に日付を付けている")
+        XCTAssertEqual(TripPlanText.dayHeading(index: 1, day: empty, start: "2026-12-24", end: "2026-12-25"),
+                       "2 日目・2026年12月25日", "帰着日そのものに日付を付けていない")
         XCTAssertEqual(TripPlanText.dayHeading(index: 0, day: empty, start: nil, end: nil), "1 日目")
+        XCTAssertEqual(TripPlanText.dayHeading(index: 0, day: TripDay(date: "2026-02-31"), start: nil, end: nil),
+                       "1 日目", "実在しない日を出している")
         XCTAssertEqual(TripPlanText.dayHeading(index: 0, day: TripDay(date: "2026-11-03"), start: "2026-12-24", end: nil),
                        "1 日目・2026年11月3日", "その日が持っている日付より数えた日付を優先している")
     }
@@ -92,6 +105,8 @@ final class TripPlanTests: XCTestCase {
     /// 実在しない日は日付にしない（2月30日を3月2日に繰り上げない）
     func testImpossibleDateIsNotADate() {
         XCTAssertNil(TripPlanText.date(fromYMD: "2026-02-30"))
+        XCTAssertNil(TripPlanText.pickerDate(fromYMD: "2026-02-30", in: TimeZone(identifier: "Asia/Tokyo")!),
+                     "ピッカーに3月2日として渡している")
         XCTAssertNotNil(TripPlanText.date(fromYMD: "2028-02-29"))
     }
 
@@ -144,6 +159,18 @@ final class TripPlanTests: XCTestCase {
         XCTAssertTrue(choices[0].isOfficial)
         XCTAssertEqual(choices[1].item, .location(slug: kanazawa.slug, note: nil))
         XCTAssertFalse(choices[1].isOfficial)
+    }
+
+    /// **同じスラッグの撮影地は1件**（綴りの揺れで2つの地点が同じ鍵になる）
+    func testSameSlugAppearsOnce() throws {
+        let places = DerivedSpot.all(in: [try photo("a", location: "Paris, France"),
+                                          try photo("b", location: "Paris,  France")])
+        let slugs = Set(places.map(\.slug))
+        XCTAssertEqual(slugs.count, 1, "前提: 2つの綴りが同じスラッグになる")
+        XCTAssertEqual(places.count, 2, "前提: 地点は2つある")
+        let choices = TripPlanText.choices(wishlistKeys: slugs, places: places, index: [])
+        XCTAssertEqual(choices.count, 1)
+        XCTAssertEqual(Set(choices.map(\.id)).count, choices.count, "同じ id が2つ（ForEach で行が重なる）")
     }
 
     /// 何も保存していなければ候補は0（画面は「先に保存してください」を出す）
@@ -213,6 +240,10 @@ final class TripPlanTests: XCTestCase {
         let after = #"{"plans":[{"planId":"4f0c2b1e-8a3d-4c5e-9f10-2b3c4d5e6f70","title":"冬","days":[]}]}"#
         StubProtocol.respond(status: 200, body: after)
 
+        _ = try await service().list()
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "GET")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/user/trips")
+
         let created = try await service().create(title: "冬")
         XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
         XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/user/trips")
@@ -227,16 +258,38 @@ final class TripPlanTests: XCTestCase {
 
         _ = try await service().delete(planId: "4f0c2b1e-8a3d-4c5e-9f10-2b3c4d5e6f70")
         XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/user/trips/4f0c2b1e-8a3d-4c5e-9f10-2b3c4d5e6f70")
     }
 
     /// **上限で断られたら、サーバーの言い分をそのまま出す**（「保存に失敗しました」に潰さない）
     func testLimitRefusalKeepsTheServerMessage() async {
-        StubProtocol.respond(status: 400, body: #"{"error":"この旅程はこれ以上増やせません"}"#)
+        // サーバーは上限を **403** で返す（`tripPlans.ts` の `jsonError(403, e.reason)`）
+        StubProtocol.respond(status: 403, body: #"{"error":"この旅程はこれ以上増やせません"}"#)
         do {
             _ = try await service().update(planId: "p1", TripPlanService.Patch(days: []))
             XCTFail("投げるはず")
         } catch {
-            XCTAssertEqual((error as? LocalizedError)?.errorDescription, "この旅程はこれ以上増やせません")
+            XCTAssertEqual((error as? LocalizedError)?.errorDescription, "この旅程はこれ以上増やせません",
+                           "上限の断り文を「権限がありません」に置き換えている")
+        }
+        // 作るときも同じ（51件目）
+        StubProtocol.respond(status: 403, body: #"{"error":"旅行プランは50個までです"}"#)
+        do {
+            _ = try await service().create(title: "x")
+            XCTFail("投げるはず")
+        } catch {
+            XCTAssertEqual((error as? LocalizedError)?.errorDescription, "旅行プランは50個までです")
+        }
+    }
+
+    /// **本文の無い 403**（API Gateway の門前払い）は今まで通り権限の文
+    func testBare403StaysAPermissionError() async {
+        StubProtocol.respond(status: 403, body: #"{"message":"Forbidden"}"#)
+        do {
+            _ = try await service().create(title: "x")
+            XCTFail("投げるはず")
+        } catch {
+            XCTAssertEqual(error as? APIError, .server(status: 403, message: ""))
         }
     }
 }
