@@ -61,7 +61,7 @@ enum Labels {
 
     enum Common {
         static var close: String { L("閉じる", "Close") }
-        static var cancel: String { L("やめる", "Cancel") }
+        static var cancel: String { L("キャンセル", "Cancel") }
         static var delete: String { L("削除", "Delete") }
         static var save: String { L("保存する", "Save") }
         static var retry: String { L("もう一度試す", "Try again") }
