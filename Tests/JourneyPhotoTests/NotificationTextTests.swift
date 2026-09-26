@@ -56,6 +56,14 @@ final class NotificationTextTests: XCTestCase {
                        L("Aki ほか 3人 がいいねしました", "Aki and 3 others liked your photo"))
     }
 
+    /// アイコンの読み上げ。名前の無い通知でも「だれか」で補う（行の文言と同じ）
+    func testOpenProfileLabelFillsMissingName() throws {
+        XCTAssertEqual(NotificationText.openProfileLabel(try row("follow", name: nil, photo: nil)),
+                       L("だれか のプロフィールを開く", "Open Someone's profile"))
+        XCTAssertEqual(NotificationText.openProfileLabel(try row("follow", photo: nil)),
+                       L("Aki のプロフィールを開く", "Open Aki's profile"))
+    }
+
     func testUnknownKindAndDeletedUser() throws {
         XCTAssertNil(NotificationText.line(for: single(try row("inspired"))))
         XCTAssertEqual(NotificationText.line(for: single(try row("like", deleted: true)))?.who,
@@ -175,6 +183,44 @@ final class NotificationsUnreadKeepTests: XCTestCase {
         XCTAssertEqual(model.unreadIds, Set([next.items[0].id, next.items[1].id]))
     }
 
+    /// **遅れて返った古い読み込みで点が戻らない。**
+    /// `.task`（古い）が既読化の前に読んだ `unread` を抱えたまま、読み直しで点を
+    /// 消したあとに返ってくると、和で点が戻っていた
+    func testStaleLoadDoesNotBringDotsBack() async throws {
+        let model = NotificationsViewModel()
+        let task = model.beginLoad()                      // `.task` が始まる（返りが遅い）
+        let pull1 = model.beginLoad()
+        XCTAssertTrue(model.apply(try page(["a", "b"], unread: 2), refreshing: true, generation: pull1))
+        let pull2 = model.beginLoad()                     // 既読化のあとの読み直し
+        XCTAssertTrue(model.apply(try page(["a", "b"], unread: 0), refreshing: true, generation: pull2))
+        XCTAssertTrue(model.unreadIds.isEmpty)
+        // 既読化の前に読んだ `.task` の結果がいま返る
+        model.apply(try page(["a", "b"], unread: 2), refreshing: false, generation: task)
+        XCTAssertTrue(model.unreadIds.isEmpty, "古い読み込みで未読の点が戻った")
+    }
+
+    /// **新しい回が失敗しても、先に成功した古い回は画面に移す。**
+    /// 「新しい回が始まった」だけで捨てると、圏外で読み直した瞬間に
+    /// 行も既読化も飛び、エラーだけが残っていた
+    func testOlderLoadAppliesWhenNewerNeverApplied() async throws {
+        let model = NotificationsViewModel()
+        let task = model.beginLoad()
+        _ = model.beginLoad()                             // 読み直し（このあと失敗して何も移さない）
+        XCTAssertTrue(model.apply(try page(["a"], unread: 1), refreshing: false, generation: task),
+                      "新しい回が移していないのに古い回を捨てた")
+        XCTAssertEqual(model.rows.count, 1)
+    }
+
+    /// **より新しい回が書いた手元の一覧を、遅れた古い回で上書きしない**
+    func testStaleLoadDoesNotOverwritePools() async {
+        let model = NotificationsViewModel()
+        let old = model.beginLoad()
+        let new = model.beginLoad()
+        XCTAssertTrue(model.claimPools(new))
+        XCTAssertFalse(model.claimPools(old), "古い回が一覧を上書きできる")
+        XCTAssertTrue(model.claimPools(new), "同じ回の2つ目（自分の写真）は書ける")
+    }
+
     /// 引っぱって読み直したときは入れ替える（点が消える）
     func testPullToRefreshReplaces() async throws {
         let model = NotificationsViewModel()
@@ -236,12 +282,34 @@ final class NotificationRouteTests: XCTestCase {
         model.setFeedForTesting([try photo("pub")])
         model.setMineForTesting([try photo("draft")])
         let like = try notification(#"{"type":"like","photoId":"draft","byId":"u"}"#)
-        XCTAssertEqual(model.route(for: like), .photo("draft", fromPublicFeed: false))
-        XCTAssertEqual(model.photo(id: "draft")?.id, "draft")
-        XCTAssertEqual(model.photo(id: "pub")?.id, "pub")
+        XCTAssertEqual(model.route(for: like), .photo(try photo("draft"), fromPublicFeed: false))
+        let pub = try notification(#"{"type":"like","photoId":"pub","byId":"u"}"#)
+        XCTAssertEqual(model.route(for: pub), .photo(try photo("pub"), fromPublicFeed: true))
         let follow = try notification(#"{"type":"follow","byId":"u","targetUserId":"u"}"#)
         XCTAssertEqual(model.route(for: follow), .user("u"))
         let reply = try notification(#"{"type":"storyreply","photoId":"s","byId":"u"}"#)
         XCTAssertNil(model.route(for: reply))
+    }
+
+    /// **押したあとで手元の一覧が空になっても、行き先の写真は残る。**
+    /// 遷移で一覧の `.task` が取り消される・読み直しが失敗する等で一覧が空に
+    /// なると、id から引き直す作りでは詳細が白紙になっていた
+    func testRouteKeepsThePhotoAfterTheListEmpties() async throws {
+        let model = NotificationsViewModel()
+        model.setMineForTesting([try photo("draft")])
+        let like = try notification(#"{"type":"like","photoId":"draft","byId":"u"}"#)
+        let route = try XCTUnwrap(model.route(for: like))
+        model.setMineForTesting([])
+        model.setFeedForTesting([])
+        guard case .photo(let held, false) = route else { return XCTFail("行き先が写真でない") }
+        XCTAssertEqual(held.src, "https://x/draft.jpg")
+    }
+
+    /// 取り消された回は手元の一覧を空で上書きしない（取り消し以外の失敗は空にする）
+    func testCancelledFetchKeepsThePreviousList() async throws {
+        let before = [try photo("a")]
+        XCTAssertEqual(NotificationsViewModel.kept(nil, previous: before, cancelled: true).map(\.id), ["a"])
+        XCTAssertTrue(NotificationsViewModel.kept(nil, previous: before, cancelled: false).isEmpty)
+        XCTAssertEqual(NotificationsViewModel.kept([try photo("b")], previous: before, cancelled: true).map(\.id), ["b"])
     }
 }

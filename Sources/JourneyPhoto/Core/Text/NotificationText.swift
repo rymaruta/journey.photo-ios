@@ -87,11 +87,23 @@ enum NotificationText {
 
     // MARK: - 文言
 
+    /// 行に出す名前。退会した人は伏せ、名前の無い古い通知は「だれか」で補う
+    static func who(_ row: AppNotification) -> String {
+        (row.deleted == true) ? Labels.Common.deletedUser : (row.byName ?? L("だれか", "Someone"))
+    }
+
+    /// 左のアイコン（プロフィールを開く）の読み上げ。**名前は行と同じ `who` で補う**
+    /// ——素のまま埋めると、名前の無い通知で「 のプロフィールを開く」と読まれる
+    static func openProfileLabel(_ row: AppNotification) -> String {
+        let name = who(row)
+        return L("\(name) のプロフィールを開く", "Open \(name)'s profile")
+    }
+
     /// 板の文言（「[user] があなたの写真にいいねしました」）。
     /// 種類の分からないものは nil——**既定の文言で嘘を出さない**。
     static func line(for entry: Entry) -> Line? {
         let row = entry.lead
-        let who = (row.deleted == true) ? Labels.Common.deletedUser : (row.byName ?? L("だれか", "Someone"))
+        let who = self.who(row)
         let rest: String
         switch row.kind {
         case .like:

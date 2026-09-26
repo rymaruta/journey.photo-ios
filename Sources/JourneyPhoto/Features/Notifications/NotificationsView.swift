@@ -96,14 +96,12 @@ struct NotificationsView: View {
                                onOpenProfile: { route = .user($0) })
     }
 
-    /// 行き先の画面。写真は開く時点で手元の一覧から引き直す
+    /// 行き先の画面。写真は**押した時点の値**で開く（`Route` を参照）
     @ViewBuilder
     private func destinationView(_ route: NotificationsViewModel.Route) -> some View {
         switch route {
-        case .photo(let id, let fromPublicFeed):
-            if let photo = model.photo(id: id) {
-                PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed)
-            }
+        case .photo(let photo, let fromPublicFeed):
+            PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed)
         case .user(let userId):
             UserProfileView(userId: userId)
         }
@@ -274,8 +272,7 @@ private struct NotificationRow: View {
         if let userId, notification.deleted != true, let onOpenProfile {
             Button { onOpenProfile(userId) } label: { face }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("\(notification.byName ?? "") のプロフィールを開く",
-                                      "Open \(notification.byName ?? "")'s profile"))
+                .accessibilityLabel(NotificationText.openProfileLabel(notification))
         } else {
             face.accessibilityHidden(true)
         }
@@ -324,10 +321,30 @@ final class NotificationsViewModel: ObservableObject {
     }
 
     /// 押した先（`navigationDestination(item:)` に渡すので Hashable）。
-    /// 写真は id だけ持ち、開くときに `photo(id:)` で引き直す
+    ///
+    /// **写真は押した時点の値で持つ**（同じかどうかは id で見る）。id だけ持って
+    /// 開くときに手元の一覧から引き直すと、遷移で一覧の `.task` が取り消されたり
+    /// 読み直しが失敗したりして一覧が空になった回に、詳細が白紙になる
     enum Route: Hashable {
-        case photo(String, fromPublicFeed: Bool)
+        case photo(Photo, fromPublicFeed: Bool)
         case user(String)
+
+        static func == (lhs: Route, rhs: Route) -> Bool {
+            switch (lhs, rhs) {
+            case let (.photo(a, fa), .photo(b, fb)): return a.id == b.id && fa == fb
+            case let (.user(a), .user(b)): return a == b
+            default: return false
+            }
+        }
+
+        func hash(into hasher: inout Hasher) {
+            switch self {
+            case .photo(let photo, let fromPublicFeed):
+                hasher.combine(0); hasher.combine(photo.id); hasher.combine(fromPublicFeed)
+            case .user(let id):
+                hasher.combine(1); hasher.combine(id)
+            }
+        }
     }
 
     @Published private(set) var rows: [AppNotification] = []
@@ -348,6 +365,18 @@ final class NotificationsViewModel: ObservableObject {
     @Published private(set) var following: Set<String> = []
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
+    /// 読み込みの世代。**あとから始まった読み込みがあれば、古い方の結果は捨てる。**
+    ///
+    /// `.task` と引っぱって読み直しは同時に走りうる。遅れて返った `.task`
+    /// （既読化の前に読んだ `unread` を持つ）が、読み直しで消した未読の点を
+    /// 和で戻したり、取り消しのエラーを出したりしないため
+    private var generation = 0
+    /// **画面に移した中でいちばん新しい回。** 古い回を捨てる基準は「もっと新しい回が
+    /// 始まった」ではなく「もっと新しい回が**移し終えた**」——新しい回が圏外で
+    /// 失敗したとき、先に成功していた古い回まで捨てると、行も既読化も飛ぶ
+    private var appliedGeneration = 0
+    /// 手元の一覧（`feed` / `mine`）を書いた中でいちばん新しい回（同じ理由）
+    private var poolsGeneration = 0
 
     /// テストから手元の一覧を差し替える口。
     func setFeedForTesting(_ photos: [Photo]) { feed = photos }
@@ -384,15 +413,10 @@ final class NotificationsViewModel: ObservableObject {
 
     func route(for notification: AppNotification) -> Route? {
         switch destination(for: notification) {
-        case .photo(let photo, let fromPublicFeed): return .photo(photo.id, fromPublicFeed: fromPublicFeed)
+        case .photo(let photo, let fromPublicFeed): return .photo(photo, fromPublicFeed: fromPublicFeed)
         case .user(let id): return .user(id)
         case .none: return nil
         }
-    }
-
-    /// 公開一覧 → 自分の写真の順に引き当てる（`destination(for:)` と同じ順）
-    func photo(id: String) -> Photo? {
-        feed.first(where: { $0.id == id }) ?? mine.first(where: { $0.id == id })
     }
 
     /// - Returns: 読めたか。**バッジを消してよいかの拠り所**——
@@ -423,7 +447,15 @@ final class NotificationsViewModel: ObservableObject {
     /// 入れ替えると、読んでもいないのに点が消える。
     /// 入れ替えるのは**引っぱって読み直したときだけ**（「読んだ」の合図）。
     /// 一覧から消えた行の id は落とす
-    func apply(_ page: NotificationService.Page, refreshing: Bool) {
+    /// - Parameter generation: `beginLoad()` の返り値。より新しい読み込みが
+    ///   **既に画面に移していたら**何もしない（nil なら世代を見ない）
+    /// - Returns: 画面に移したか
+    @discardableResult
+    func apply(_ page: NotificationService.Page, refreshing: Bool, generation: Int? = nil) -> Bool {
+        if let generation {
+            guard generation >= appliedGeneration else { return false }
+            appliedGeneration = generation
+        }
         rows = page.items
         let fresh = NotificationText.unreadIds(page.items, unread: page.unread)
         if refreshing {
@@ -433,20 +465,52 @@ final class NotificationsViewModel: ObservableObject {
             unreadIds = fresh.union(unreadIds.intersection(present))
         }
         unread = page.unread
+        return true
+    }
+
+    /// 手元の一覧を書いてよい回か（より新しい回が書いていたら false）
+    func claimPools(_ generation: Int) -> Bool {
+        guard generation >= poolsGeneration else { return false }
+        poolsGeneration = generation
+        return true
+    }
+
+    /// 読み込みを1本始める（世代を進める）
+    func beginLoad() -> Int {
+        generation += 1
+        return generation
+    }
+
+    /// 手元の一覧を取り直した結果。**取り消された回は前の値を保つ**
+    /// ——遷移で `.task` が取り消されると `try?` が nil になり、空で上書きすると
+    /// 戻ったときに行が押せなくなる。取り消し以外の失敗は従来どおり空にする
+    static func kept(_ fetched: [Photo]?, previous: [Photo], cancelled: Bool) -> [Photo] {
+        if let fetched { return fetched }
+        return cancelled ? previous : []
     }
 
     /// - Parameter refreshing: 引っぱって読み直した回。**このときだけ**未読の点を
     ///   サーバーの数で入れ替える（`apply` を参照）
     func load(environment: AppEnvironment, viewerId: String?, refreshing: Bool = false) async -> Bool {
+        let generation = beginLoad()
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer { if generation == self.generation { isLoading = false } }
         do {
             // 一覧は控えから即返るので、押し先の引き当てのために先に読む
-            feed = (try? await environment.gallery.fetchPhotos()) ?? []
-            mine = (try? await environment.photos.myPhotos()) ?? []
+            // **より新しい回が書いたあとの一覧を、古い回で上書きしない**
+            // （遅れて返った古い回の失敗が `[]` を書くと、行が押せなくなる）
+            let fetchedFeed = try? await environment.gallery.fetchPhotos()
+            if claimPools(generation) {
+                feed = Self.kept(fetchedFeed, previous: feed, cancelled: Task.isCancelled)
+            }
+            let fetchedMine = try? await environment.photos.myPhotos()
+            if claimPools(generation) {
+                mine = Self.kept(fetchedMine, previous: mine, cancelled: Task.isCancelled)
+            }
             let page = try await environment.notifications.fetch()
-            apply(page, refreshing: refreshing)
+            // 古い読み込みは画面に移さない（既読化も新しい方に任せる）
+            guard apply(page, refreshing: refreshing, generation: generation) else { return false }
             // **フォローバックを出すかの判断に要る。** 取れなくても
             // お知らせ自体は出す（ボタンが出ないだけ）
             await loadFollowing(environment: environment, viewerId: viewerId)
@@ -464,6 +528,8 @@ final class NotificationsViewModel: ObservableObject {
             }
             return true
         } catch {
+            // 取り消し・古い読み込みの失敗は出さない（戻ったときに読み直す／新しい方が出す）
+            guard generation == self.generation, !Task.isCancelled else { return false }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
             return false
         }
