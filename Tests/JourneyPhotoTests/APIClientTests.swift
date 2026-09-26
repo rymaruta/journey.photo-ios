@@ -42,7 +42,6 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer ID-TOKEN")
     }
 
-    /// 認証が要る呼び出しで、トークンが無ければ**通信しない**。
     /// 🔴 **退会だけは待ち時間を延ばす。** サーバーは写真の多い人で最長およそ23秒
     /// 掛かり、一律の20秒で切ると「失敗」と出たのにデータは消えていた。
     /// ほかの口は今までどおり延ばさない
@@ -59,6 +58,7 @@ final class APIClientTests: XCTestCase {
         XCTAssertNotEqual(StubProtocol.lastRequest?.timeoutInterval ?? 0, 35, "ほかの口まで延ばしている")
     }
 
+    /// 認証が要る呼び出しで、トークンが無ければ**通信しない**。
     func testDoesNotCallServerWhenSignedOut() async {
         StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
         do {

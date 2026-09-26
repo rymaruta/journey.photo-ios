@@ -14,6 +14,9 @@ struct GalleryView: View {
     /// タグの行を出しているか。**既定は畳む**——チップが2行あると
     /// ファーストビューが「ボタンだらけ」になり、写真が下へ押し下げられる
     @State private var showsTags = false
+    /// 通報している写真。**シートはカードではなくここに付ける**
+    /// （`HomeFeedCard.onReport` の注記）
+    @State private var reportTarget: Photo?
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
     var avatarURL: URL?
@@ -72,6 +75,9 @@ struct GalleryView: View {
             await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
         }
         .refreshable { await model.load(force: true) }
+        .sheet(item: $reportTarget) { target in
+            ReportSheet(photoId: target.id, ownerId: target.userId)
+        }
         // **ブロック／通報の直後に消す。** 手元に読み終えた配列が残るので、
         // 読み直さないと画面は変わらない。
         //
@@ -360,8 +366,10 @@ struct GalleryView: View {
                         .padding(.horizontal, 24)
                 }
                 ForEach(groups) { group in
+                    // **いま見ている1枚**を通報する（束の2枚目を見ていれば2枚目）
                     HomeFeedCard(photo: group.cover, following: model.followingIds,
-                                 siblings: group.photos)
+                                 siblings: group.photos,
+                                 onReport: { reportTarget = $0 })
                 }
             }
             .padding(.top, 8)

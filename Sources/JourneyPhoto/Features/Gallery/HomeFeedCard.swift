@@ -27,8 +27,7 @@ struct HomeFeedCard: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var toasts: ToastCenter
-    /// 「…」の通報とブロック（審査 1.2・写真詳細と同じ中身）
-    @State private var showReport = false
+    /// 「…」のブロック（審査 1.2・写真詳細と同じ中身）
     @State private var showBlockConfirm = false
     /// この人をフォローしているか。**外から渡される**（一覧が持っている）
     @State private var isFollowing = false
@@ -38,6 +37,10 @@ struct HomeFeedCard: View {
     var following: Set<String> = []
     /// 同じ投稿の写真（`photo` を含む）。2枚以上なら送れるようにする
     var siblings: [Photo] = []
+    /// 「通報する」を押したとき。**シートは一覧（`GalleryView`）が出す。**
+    /// カードに付けると、通報で一覧が読み直されてカードごと消え、
+    /// 「受け付けました」やブロック失敗の文言を見る前にシートが閉じる
+    var onReport: (Photo) -> Void = { _ in }
 
     /// いま出している1枚（送りの位置）
     @State private var page = 0
@@ -204,7 +207,7 @@ struct HomeFeedCard: View {
     private var moreMenu: some View {
         if photo.userId == nil || photo.userId != auth.userId {
             Menu {
-                Button { showReport = true } label: {
+                Button { onReport(currentPhoto) } label: {
                     Label(L("通報する", "Report"), systemImage: "flag")
                 }
                 if photo.userId != nil {
@@ -219,10 +222,6 @@ struct HomeFeedCard: View {
                     .webTappable()
             }
             .accessibilityLabel(L("この写真の操作", "More actions"))
-            .sheet(isPresented: $showReport) {
-                // **いま見ている1枚**を通報する（束の2枚目を見ていれば2枚目）
-                ReportSheet(photoId: currentPhoto.id, ownerId: currentPhoto.userId)
-            }
             .confirmationDialog(L("この人をブロックしますか？", "Block this person?"),
                                 isPresented: $showBlockConfirm, titleVisibility: .visible) {
                 Button(L("ブロック", "Block"), role: .destructive) { Task { await block() } }
