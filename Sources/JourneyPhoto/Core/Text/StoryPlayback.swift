@@ -224,10 +224,18 @@ enum StoryPlayback {
     /// **1本なら切れ目の無い輪**。切れ目は円周のうち `gap` の割合
     static func ringSegments(count: Int, gap: Double = 4.0 / 182.2) -> [(start: Double, end: Double)] {
         guard count > 1 else { return [(0, 1)] }
-        let step = 1.0 / Double(count)
-        return (0..<count).map { i in
-            (Double(i) * step + gap / 2, Double(i + 1) * step - gap / 2)
+        // **型を言い切って1式ずつ書く。** 名前付きの組を返す式を1行で書くと、
+        // Xcode の型検査が時間切れで止まる（TestFlight run #113）
+        let step: Double = 1.0 / Double(count)
+        let half: Double = gap / 2
+        var segments: [(start: Double, end: Double)] = []
+        segments.reserveCapacity(count)
+        for i in 0..<count {
+            let start: Double = Double(i) * step + half
+            let end: Double = Double(i + 1) * step - half
+            segments.append((start: start, end: end))
         }
+        return segments
     }
 
     /// 端末側で落とす。
