@@ -43,4 +43,24 @@ final class SongStickerTests: XCTestCase {
         XCTAssertFalse(SongSticker.retext([], from: nil, to: song("海へ")).found)
         XCTAssertFalse(SongSticker.retext([TextOverlay(text: "x")], from: song("海へ"), to: song("山へ")).found)
     }
+
+    /// 長い曲名は小さくして置く（焼き込みは1行。既定の大きさだと写真の幅を超える）
+    func testLongTitleIsShrunkToFit() {
+        let short = SongSticker.make(for: song("海へ"))!
+        XCTAssertEqual(short.size, TextOverlay.defaultSize, "短い曲名は既定の大きさ")
+
+        let long = SongSticker.make(for: song("Bohemian Rhapsody", "Queen"))!
+        XCTAssertLessThan(long.size, TextOverlay.defaultSize)
+        XCTAssertGreaterThanOrEqual(long.size, TextOverlay.minSize)
+        // 字の幅の目安（半角0.6・全角1）で、短い辺の 85% に収まる
+        let ems = long.displayText.reduce(1.0) { $0 + ($1.isASCII ? 0.6 : 1.0) }
+        XCTAssertLessThanOrEqual(ems * long.size, 0.85 + 1e-9)
+    }
+
+    /// 閲覧画面の ♪ 行と札は同じ文字（片方だけ変わらないように）
+    func testViewerSongLineMatchesSticker() throws {
+        let json = #"{"id":"s","src":"https://x.test/s.jpg","song":{"title":"海へ","artist":"誰か","previewUrl":"https://audio-ssl.itunes.apple.com/p.m4a"}}"#
+        let story = try JSONDecoder.api.decode(Story.self, from: Data(json.utf8))
+        XCTAssertEqual(story.songLine, SongSticker.make(for: song("海へ", "誰か"))?.text)
+    }
 }

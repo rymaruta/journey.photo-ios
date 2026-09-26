@@ -155,7 +155,7 @@ struct StoryComposerView: View {
     // MARK: - 写真
 
     /// 写真を画面いっぱいに（下の角だけ半径24）。上下の暗がり、右の道具の列、
-    /// 写真の上のひとこと・撮影地・曲、左下の並び、右下の秒数（板 24）
+    /// 写真の上のひとこと・撮影地（曲は動かせる札）、左下の並び、右下の秒数（板 24）
     private var photoArea: some View {
         ZStack(alignment: .bottomLeading) {
             Color(red: 0x0A / 255.0, green: 0x10 / 255.0, blue: 0x30 / 255.0).opacity(preview == nil ? 0 : 1)
@@ -321,7 +321,20 @@ struct StoryComposerView: View {
             if !location.isEmpty {
                 photoChip(symbol: "mappin", text: location)
             }
+            // **曲が付いていることは必ず見せる。** 札はいまの1枚にしか置かないので、
+            // 札を消した・別の写真に切り替えた・札が上限で置けなかったときに、
+            // 曲が付いているのに画面から何も分からなくなる
+            if let song, !currentHasSongSticker, let text = SongSticker.text(for: song) {
+                photoChip(symbol: "music.note", text: text)
+            }
         }
+    }
+
+    /// いまの1枚に、付けた曲の札が置いてあるか
+    private var currentHasSongSticker: Bool {
+        guard let song, let text = SongSticker.text(for: song) else { return false }
+        let placed = String(text.prefix(TextOverlay.maxLength))
+        return overlays.wrappedValue.contains { $0.kind == .song && $0.text == placed }
     }
 
     private func photoChip(symbol: String, text: String) -> some View {
@@ -564,8 +577,13 @@ struct StoryComposerView: View {
         // 前の札が無ければ（初めて付けた・自分で消していた）いまの1枚に置く。
         // 札が上限なら置かない（曲は投稿の項目として送られ、閲覧画面の ♪ に出る）
         guard !found, let new, let sticker = SongSticker.make(for: new),
-              shots.indices.contains(current),
-              shots[current].overlays.count < TextOverlay.maxCount else { return }
+              shots.indices.contains(current) else { return }
+        guard shots[current].overlays.count < TextOverlay.maxCount else {
+            // 黙って置かないと「曲の札が出ない」と読める。曲はチップで見せている
+            message = L("文字と札がいっぱいなので、曲の札は置けませんでした",
+                        "Couldn't add the song sticker — too many stickers on this photo")
+            return
+        }
         shots[current].overlays.append(sticker)
     }
 

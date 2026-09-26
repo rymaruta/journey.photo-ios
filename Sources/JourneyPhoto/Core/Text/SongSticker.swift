@@ -18,10 +18,22 @@ enum SongSticker {
         return artist.isEmpty ? title : "\(title) · \(artist)"
     }
 
-    /// 新しく置く札。場所は撮影地の札と同じ少し下（文字の札と重なりにくい）
+    /// 新しく置く札。場所は撮影地の札と同じ少し下（文字の札と重なりにくい）。
+    /// **長い曲名は小さくして置く**（焼き込みは1行で折り返さないので、既定の
+    /// 大きさだと「Bohemian Rhapsody · Queen」で写真の幅を超えて両端が切れる）
     static func make(for song: Photo.Song) -> TextOverlay? {
         guard let text = text(for: song) else { return nil }
-        return TextOverlay(text: text, x: 0.5, y: 0.6, kind: .song, face: .gothic)
+        let display = TextOverlay.display(text: text, kind: .song)
+        return TextOverlay(text: text, x: 0.5, y: 0.6, size: fittedSize(for: display),
+                           kind: .song, face: .gothic)
+    }
+
+    /// 1行で短い辺の 85% に収まる大きさ（大きさ＝短い辺に対する字の高さの割合）。
+    /// 字の幅は目安で、全角1・半角0.6・帯の左右の余白に1字ぶん
+    static func fittedSize(for text: String) -> Double {
+        let ems = text.reduce(1.0) { width, char in width + (char.isASCII ? 0.6 : 1.0) }
+        let fit = 0.85 / ems
+        return max(TextOverlay.minSize, min(TextOverlay.defaultSize, fit))
     }
 
     /// 曲を変えた・外したときに、**前の曲の札だけ**を直す（変えたら文字を
@@ -29,7 +41,9 @@ enum SongSticker {
     /// 別の文字の札には触らない。戻り値の `found` は前の曲の札があったか
     static func retext(_ overlays: [TextOverlay], from old: Photo.Song?,
                        to new: Photo.Song?) -> (overlays: [TextOverlay], found: Bool) {
-        guard let old, let oldText = text(for: old) else { return (overlays, false) }
+        // 置くときに上限で切っているので、比べる側も切ってそろえる
+        guard let old, let oldText = text(for: old).map({ String($0.prefix(TextOverlay.maxLength)) })
+        else { return (overlays, false) }
         let isOld: (TextOverlay) -> Bool = { $0.kind == .song && $0.text == oldText }
         guard overlays.contains(where: isOld) else { return (overlays, false) }
         guard let new, let newText = text(for: new) else {
