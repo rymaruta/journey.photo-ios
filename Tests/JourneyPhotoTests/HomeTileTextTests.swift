@@ -14,7 +14,25 @@ final class HomeTileTextTests: XCTestCase {
     func testPlaceEmpty() {
         XCTAssertEqual(HomeTileText.place(nil), "")
         XCTAssertEqual(HomeTileText.place("  "), "")
+    }
+
+    /// 先頭が空の区切りは飛ばす（空の撮影地にしない）
+    func testPlaceSkipsEmptyLeadingSegment() {
         XCTAssertEqual(HomeTileText.place(", フランス"), "フランス")
+    }
+
+    /// 題のある写真でも、絵の上の撮影地・名前・複数枚を読む
+    func testReadoutIncludesOverlayText() {
+        XCTAssertEqual(HomeTileText.readout(base: "朝の運河", place: "パリ", byline: "旅人 · 2日前", multiple: "複数枚の投稿"),
+                       "朝の運河, パリ, 旅人 · 2日前, 複数枚の投稿")
+        XCTAssertEqual(HomeTileText.readout(base: "朝の運河", place: "", byline: "旅人", multiple: nil),
+                       "朝の運河, 旅人")
+    }
+
+    /// 題が無い写真は base が撮影地を含むので、撮影地を二度読まない
+    func testReadoutDoesNotRepeatPlace() {
+        XCTAssertEqual(HomeTileText.readout(base: "パリ, フランス の写真", place: "パリ", byline: "旅人", multiple: nil),
+                       "パリ, フランス の写真, 旅人")
     }
 
     func testBylineAddsAgoOnlyWhenGiven() {

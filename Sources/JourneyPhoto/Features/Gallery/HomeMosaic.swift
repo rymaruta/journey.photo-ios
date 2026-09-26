@@ -77,15 +77,25 @@ struct HomeFeedTile: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(photo.accessibilityText)
+            // 絵の上の文字（撮影地・撮った人・複数枚の印）も読む。題だけにすると、
+            // 題のある写真では**画面に出ている撮影地と名前が読まれない**
+            .accessibilityLabel(HomeTileText.readout(
+                base: photo.accessibilityText,
+                place: HomeTileText.place(photo.location),
+                byline: byline,
+                multiple: siblings.count > 1 ? L("複数枚の投稿", "Multiple photos") : nil))
             // **実機の絵の道しるべ。** 「一覧の1枚目」を位置で探すと、
             // 今日のテーマの「参加する」に当たって**ログイン画面を
             // 『写真の詳細』として撮って**いた（run 49 の絵で判明）
             .accessibilityIdentifier("feed.photo")
 
             likeButton
-                .padding(6)
         }
+    }
+
+    private var byline: String {
+        HomeTileText.byline(author: AuthorName.shown(profile: nil, photoDisplayName: photo.displayName),
+                            ago: large ? StoryPlayback.ago(from: photo.createdAt) : nil)
     }
 
     /// 撮影地と撮った人（板: 明朝の撮影地、その下に 11pt）。**撮影地が無い写真は
@@ -100,8 +110,7 @@ struct HomeFeedTile: View {
                     .foregroundStyle(Color.white)
                     .shadow(color: Color.black.opacity(0.4), radius: 4, x: 0, y: 1)
                     .lineLimit(1)
-                Text(HomeTileText.byline(author: AuthorName.shown(profile: nil, photoDisplayName: photo.displayName),
-                                         ago: large ? StoryPlayback.ago(from: photo.createdAt) : nil))
+                Text(byline)
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.82))
                     .lineLimit(1)
@@ -157,7 +166,10 @@ struct HomeFeedTile: View {
             .frame(minWidth: 44, minHeight: 32)
             .background(Color.black.opacity(0.55), in: Capsule())
             .background(.ultraThinMaterial, in: Capsule())
-            .contentShape(Capsule())
+            // **押せる範囲は丸の外まで広げる**（見た目は 32pt のまま、押せる高さは
+            // 44pt）。丸の縁の少し上を押すと、背後の写真が拾って詳細が開いていた
+            .padding(6)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L("いいね \(likeCount)", "Like, \(likeCount)"))
@@ -224,6 +236,16 @@ enum HomeTileText {
         let trimmed = (location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let head = trimmed.split(whereSeparator: { ",、，".contains($0) }).first.map(String.init) ?? trimmed
         return head.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 読み上げ（題 → 撮影地 → 撮った人 → 複数枚）。題が無い写真は
+    /// `base` が既に撮影地を含む（「パリ, フランス の写真」）ので二度読まない
+    static func readout(base: String, place: String, byline: String, multiple: String?) -> String {
+        var parts = [base]
+        if !place.isEmpty, !base.contains(place) { parts.append(place) }
+        if !byline.isEmpty { parts.append(byline) }
+        if let multiple, !multiple.isEmpty { parts.append(multiple) }
+        return parts.joined(separator: ", ")
     }
 
     /// 撮影地の下の1行（板: 「名前 · 2日前」、2枚の段は名前だけ）
