@@ -94,17 +94,23 @@ struct TripPlansView: View {
                 .accessibilityLabel(L("旅行プランのタイトル", "Trip title"))
                 .padding(.horizontal, 14)
                 .frame(minHeight: WebTheme.minTapTarget)
-                .background(WebTheme.raised, in: RoundedRectangle(cornerRadius: 12))
+                // 板の入力欄（白8%・縁6%）
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
             // **写真の無い画面の主ボタン1つ＝真鍮の塗り＋墨の字**（デザインシステムの決まり）
-            Button(L("作る", "New")) { create() }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(WebTheme.accentText)
-                .padding(.horizontal, 16)
-                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                .background(WebTheme.accentFill, in: Capsule())
-                .opacity(canCreate ? 1 : 0.5)
-                .disabled(!canCreate)
-                .buttonStyle(.plain)
+            // 余白・大きさ・塗りは **label の中に**（外に付けると押せるのが文字の上だけになる）
+            Button { create() } label: {
+                Text(L("作る", "New"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.accentText)
+                    .padding(.horizontal, 16)
+                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    .background(WebTheme.accentFill, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .opacity(canCreate ? 1 : 0.5)
+            .disabled(!canCreate)
         }
     }
 
@@ -206,13 +212,22 @@ final class TripPlansModel: ObservableObject {
 
     func plan(_ planId: String) -> TripPlan? { plans.first { $0.planId == planId } }
 
+    /// 前の画面の失敗の文を消す（**一覧と詳細で1つを共有している**ので、
+    /// プランAの失敗をプランBを開いたときに出さない）
+    func clearError() { errorMessage = nil }
+
     func load(environment: AppEnvironment) async {
         // 取り直している間も、取れていた一覧は出したまま（引き下げ更新で消さない）
         if status != .loaded { status = .loading }
         do {
             plans = try await environment.trips.list()
             status = .loaded
+            // **取れたら前の失敗の文を消す。** 残すと、成功したあとも赤い行が出続ける
+            errorMessage = nil
         } catch {
+            // **打ち切りは失敗ではない。** 画面を離れると `.task` が打ち切られ、
+            // `APIClient` はそれを「通信できませんでした」に変えて上げてくる
+            if Task.isCancelled { return }
             if status == .loaded {
                 // 取れていた一覧は残し、取り直せなかったことだけ言う
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed

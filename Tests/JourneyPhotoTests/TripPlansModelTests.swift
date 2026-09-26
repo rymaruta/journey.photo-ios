@@ -115,4 +115,43 @@ final class TripPlansModelTests: XCTestCase {
         XCTAssertEqual(model.plans.map(\.planId), ["p1"])
         XCTAssertEqual(model.errorMessage, "旅行プランは50個までです")
     }
+
+    /// **取り直しが成功したら、前の失敗の文は消える**（残ると一覧にも詳細にも出続ける）
+    func testSuccessfulReloadClearsTheError() async {
+        let env = environment()
+        let model = TripPlansModel()
+        StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#)
+        await model.load(environment: env)
+        StubProtocol.respond(status: 500, body: "")
+        await model.load(environment: env)
+        XCTAssertNotNil(model.errorMessage, "前提: 失敗の文が出ている")
+        StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#)
+        await model.load(environment: env)
+        XCTAssertNil(model.errorMessage, "成功したのに赤い行が残っている")
+    }
+
+    /// **打ち切りは失敗にしない**（画面を離れて `.task` が打ち切られただけ）
+    func testCancelledLoadIsNotAFailure() async {
+        let env = environment()
+        let model = TripPlansModel()
+        StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#)
+        await model.load(environment: env)
+        StubProtocol.respond(path: "/user/trips", status: 200, body: #"{"plans":[]}"#, delay: 0.5)
+        let task = Task { await model.load(environment: env) }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        task.cancel()
+        await task.value
+        XCTAssertNil(model.errorMessage, "打ち切りを「通信できませんでした」にしている")
+        XCTAssertEqual(model.status, .loaded)
+    }
+
+    /// 失敗したあとも `busy` は戻る（戻らないと、以後どのボタンも押せない）
+    func testBusyResetsAfterFailure() async {
+        let env = environment()
+        let model = TripPlansModel()
+        StubProtocol.respond(status: 500, body: "")
+        _ = await model.create(title: "冬", environment: env)
+        XCTAssertNil(model.busy)
+        XCTAssertNotNil(model.errorMessage)
+    }
 }

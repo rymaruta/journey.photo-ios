@@ -25,6 +25,9 @@ struct TripPlanDetailView: View {
     /// 名前を引く材料（取れなくても画面は出る——名前が鍵のままになるだけ）
     @State private var photos: [Photo] = []
     @State private var index: [OfficialSpot] = []
+    /// 候補の材料（写真の一覧・スポットの索引）を**取れなかった**か。
+    /// 「聞けなかった」を「まだ保存していない」と言わないために持つ
+    @State private var sourcesFailed = false
 
     private struct PickTarget: Identifiable { let day: Int; var id: Int { day } }
 
@@ -47,14 +50,21 @@ struct TripPlanDetailView: View {
             ToolbarItem(placement: .topBarTrailing) { saveButton }
         }
         .task {
-            photos = (try? await environment.gallery.fetchPhotos()) ?? []
-            index = (try? await environment.spots.fetchIndex()) ?? []
+            let fetchedPhotos = try? await environment.gallery.fetchPhotos()
+            let fetchedIndex = try? await environment.spots.fetchIndex()
+            photos = fetchedPhotos ?? []
+            index = fetchedIndex ?? []
+            sourcesFailed = fetchedPhotos == nil || fetchedIndex == nil
         }
-        .onAppear { resetIfNeeded() }
+        .onAppear {
+            model.clearError()
+            resetIfNeeded()
+        }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
         .sheet(item: $picking) { target in
             NavigationStack {
                 TripPlanPickSheet(dayIndex: target.day,
+                                  sourcesFailed: sourcesFailed,
                                   choices: TripPlanText.choices(wishlistKeys: wishlist.spotIds,
                                                                 places: places, index: index)) { choice in
                     add(choice.item, to: target.day)
@@ -162,6 +172,7 @@ struct TripPlanDetailView: View {
                             .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(L("\(title)の日付を入れる", "Set \(title) date"))
                 }
             }
             .padding(.horizontal, 12)
@@ -184,11 +195,21 @@ struct TripPlanDetailView: View {
     private func daySection(_ di: Int, _ day: TripDay) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(TripPlanText.dayHeading(index: di, day: day, start: start, end: end))
-                    .font(JPFont.mono(12))
-                    .foregroundStyle(WebTheme.faint)
+                // 板どおり「1 日目」は普通の字、日付だけ等幅
+                HStack(spacing: 0) {
+                    Text(L("\(di + 1) 日目", "Day \(di + 1)"))
+                        .font(.caption.weight(.medium))
+                        .tracking(0.5)
+                    if let date = TripPlanText.dayDate(index: di, day: day, start: start, end: end),
+                       let label = TakenDay.label(date) {
+                        Text("・\(label)").font(JPFont.mono(12))
+                    }
+                }
+                .foregroundStyle(WebTheme.faint)
+                .accessibilityElement(children: .combine)
                 Spacer()
                 Button {
+                    guard days.indices.contains(di) else { return }
                     days.remove(at: di)
                 } label: {
                     Image(systemName: "trash")
@@ -230,6 +251,8 @@ struct TripPlanDetailView: View {
             itemLink(item, name: name)
             // **外す。** 日の削除（赤いゴミ箱）と見分けるため × にする
             Button {
+                // 添字を確かめる（`add` と同じ）。描き直す前の古い添字で消さない
+                guard days.indices.contains(di), days[di].items.indices.contains(ii) else { return }
                 days[di].items.remove(at: ii)
             } label: {
                 Image(systemName: "xmark")
@@ -384,6 +407,7 @@ struct TripPlanDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(model.busy != nil)
+                        .opacity(model.busy == nil ? 1 : 0.5)
                         Button {
                             confirmingDelete = false
                         } label: {

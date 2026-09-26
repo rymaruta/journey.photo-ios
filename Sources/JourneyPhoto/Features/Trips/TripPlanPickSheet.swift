@@ -8,6 +8,8 @@ import SwiftUI
 struct TripPlanPickSheet: View {
 
     let dayIndex: Int
+    /// 候補の材料を取れなかった（圏外など）。**「まだ保存していない」と混ぜない**
+    var sourcesFailed = false
     let choices: [TripPlanText.Choice]
     let onPick: (TripPlanText.Choice) -> Void
 
@@ -35,7 +37,15 @@ struct TripPlanPickSheet: View {
                 }
                 .padding(.horizontal, 4)
 
-                if choices.isEmpty {
+                if choices.isEmpty && sourcesFailed {
+                    Text(L("行きたい場所を読み込めませんでした。通信を確かめて、開き直してください",
+                           "Couldn't load your saved places. Check your connection and try again."))
+                        .font(.callout)
+                        .foregroundStyle(WebTheme.muted2)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                } else if choices.isEmpty {
                     Text(L("先に「行きたい場所」に保存してください", "Save places first"))
                         .font(.callout)
                         .foregroundStyle(WebTheme.muted2)
@@ -109,6 +119,8 @@ struct TripPlanPickSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(L("\(choice.name) を追加", "Add \(choice.name)"))
+        // 名前だけにしない（「公式」と県・市も読む）
+        .accessibilityLabel(L("\(choice.name)\(choice.isOfficial ? "・公式" : "")\(choice.regionLabel.map { "・" + $0 } ?? "") を追加",
+                              "Add \(choice.name)\(choice.regionLabel.map { ", " + $0 } ?? "")"))
     }
 }
