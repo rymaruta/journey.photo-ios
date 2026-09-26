@@ -137,9 +137,10 @@ final class ScreenshotTests: XCTestCase {
             if name == "マップ" { simulateLocation() }
             tabBar.buttons.element(boundBy: index).tap()
             if name == "マップ" { answerLocationPrompt() }
-            // **マイページは上のバーを出さない**（板 05c）。バーを待つと 15 秒空振りする
+            // **マイページは上のバーを出さない**（板 05c）。バーを待つと 15 秒空振りする。
+            // 見出しの「プロフィールを編集」を待つ（タブは読み込み中にも出ている）
             if name == "マイページ" {
-                _ = app.buttons["profile.tab.posts"].firstMatch.waitForExistence(timeout: 15)
+                _ = app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15)
             } else {
                 _ = app.navigationBars.firstMatch.waitForExistence(timeout: 15)
             }

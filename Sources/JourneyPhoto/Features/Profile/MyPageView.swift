@@ -128,13 +128,14 @@ struct MyPageView: View {
     /// （タブは指示書の並び——ホーム／探す／投稿／マップ／マイページ）。
 
     /// **カバーは画面の上端から**（時計の裏まで）。無い人は安全域の下から。
-    /// 安全域を無視した GeometryReader も、元の安全域の高さは `safeAreaInsets` で
-    /// 教えてくれる——設定の丸はこの高さぶん下げて、時計の裏に入れない
+    /// 安全域の高さは GeometryReader で測り（こちらは安全域を無視させない）、
+    /// 上端まで伸ばすのは中のスクロールだけ。設定の丸はこの高さぶん下げて、
+    /// 時計の裏に入れない
     private var content: some View {
         GeometryReader { geo in
             scroll(topInset: geo.safeAreaInsets.top)
+                .ignoresSafeArea(edges: hasCover ? .top : [])
         }
-        .ignoresSafeArea(edges: hasCover ? .top : [])
     }
 
     private func scroll(topInset: CGFloat) -> some View {
@@ -142,25 +143,33 @@ struct MyPageView: View {
             VStack(alignment: .leading, spacing: 14) {
                 // **設定の丸は中身と一緒に流す。** 画面に留めると、送ったときに
                 // 格子の右上の写真に被さり、そこを押すと設定が開いた
-                ZStack(alignment: .topTrailing) {
-                    if let profile = model.profile {
-                        // カバーと見出しは間を空けずに重ねる（板 05c）。カバーが無ければ
-                        // 右上の設定の丸の下から始める（板 05d）
-                        VStack(alignment: .leading, spacing: 0) {
-                            ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
-                                         reserve: hasCover) { hasCover = $0 }
-                            header(profile)
+                // 板: 見出し・数・旅の実績の間は 12pt、その下の段は 14pt
+                VStack(alignment: .leading, spacing: 12) {
+                    ZStack(alignment: .topTrailing) {
+                        // **丸を先に置く**（読み上げで見出しの途中に「設定」が挟まらない）。
+                        // 見た目は前に出す
+                        settingsButton
+                            .padding(.top, hasCover ? topInset : 0)
+                            .zIndex(1)
+                        if let profile = model.profile {
+                            // カバーと見出しは間を空けずに重ねる（板 05c）。カバーが無ければ
+                            // 右上の設定の丸の下から始める（板 05d）
+                            VStack(alignment: .leading, spacing: 0) {
+                                ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
+                                             reserve: hasCover) { hasCover = $0 }
+                                header(profile)
+                            }
+                        } else {
+                            // 読み込み中・失敗: 丸の高さだけ空けて、下の中身に被せない
+                            Color.clear.frame(height: 44)
                         }
-                    } else {
-                        // 読み込み中・失敗: 丸の高さだけ空けて、下の中身に被せない
-                        Color.clear.frame(height: 44)
                     }
-                    settingsButton
-                        .padding(.top, hasCover ? topInset : 0)
+                    if model.profile != nil {
+                        stats
+                        travelRecord
+                    }
                 }
                 if let profile = model.profile {
-                    stats
-                    travelRecord
                     bgmCard(profile)
                     profileSetupNotice(profile)
                 }
@@ -216,6 +225,8 @@ struct MyPageView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // 実機の絵の道しるべ（見出しが描けた＝読み込みが済んだ目印）
+                .accessibilityIdentifier("mypage.edit")
             }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
