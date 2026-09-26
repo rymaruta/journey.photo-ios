@@ -27,6 +27,8 @@ struct SignInView: View {
     @State private var notice: String?
     /// 「まだ確認していない」ことが分かったので、確認への入口を出す
     @State private var offerVerification = false
+    /// 上に敷く写真のタイル（板 41 の 3×3）。取れなければ地の色のまま
+    @State private var tiles: [Photo] = []
 
     enum Mode {
         case signIn
@@ -38,44 +40,42 @@ struct SignInView: View {
     }
 
     var body: some View {
-        Form {
-            if let reason {
-                Section { Text(reason).font(.callout).foregroundStyle(WebTheme.muted2) }
-                    .listRowBackground(Color.clear)
-            }
-
-            if let pendingUsername {
-                confirmSignUpSection(username: pendingUsername)
-            } else {
-                switch mode {
-                case .signIn, .signUp:
-                    credentialsSection
-                case .resetRequested, .resetConfirm:
-                    resetSection
-                }
-            }
-
-            if let notice {
-                Section { Text(notice).font(.callout).foregroundStyle(WebTheme.muted2) }
-                    .listRowBackground(Color.clear)
-            }
-            if let error = auth.errorMessage {
-                Section { Text(error).foregroundStyle(WebTheme.danger).font(.callout) }
-                    .listRowBackground(Color.clear)
-            }
-            if offerVerification && pendingUsername == nil {
-                Section {
-                    Text(L("メールアドレスの確認がまだ終わっていません。",
-                           "This email hasn't been verified yet."))
-                        .font(.callout)
-                    Button(L("確認コードを入力・再送する", "Enter or resend the code")) {
-                        Task { await resumeVerification() }
+        // 板 41: 上に写真のタイル、その下へ溶かしてロゴと一文、欄、2つの大きいボタン
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                tileHeader
+                VStack(alignment: .leading, spacing: 14) {
+                    brand
+                    if let reason {
+                        Text(reason).font(.callout).foregroundStyle(WebTheme.muted2)
                     }
-                    .disabled(auth.isWorking)
+                    if let pendingUsername {
+                        confirmSignUpSection(username: pendingUsername)
+                    } else {
+                        switch mode {
+                        case .signIn, .signUp:
+                            credentialsSection
+                        case .resetRequested, .resetConfirm:
+                            resetSection
+                        }
+                    }
+                    if let notice {
+                        Text(notice).font(.callout).foregroundStyle(WebTheme.muted2)
+                    }
+                    if let error = auth.errorMessage {
+                        Text(error).foregroundStyle(WebTheme.danger).font(.callout)
+                    }
+                    if offerVerification && pendingUsername == nil {
+                        verificationOffer
+                    }
                 }
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 24)
+                // 写真の下の暗がりに重ねる（板は写真 340 の上から 262 で本文が始まる）
+                .padding(.top, -78)
+                .padding(.bottom, 30)
             }
         }
+        .scrollDismissesKeyboard(.interactively)
         // 実機の絵の道しるべ（`ScreenshotTests`）。**この画面が出ている回は、
         // 絵の名前にそう書く**——「14-マイページ」という名前で**ログイン画面**を
         // 撮っていた（run 55 まで）。名前と中身が食い違うと、見た人が
@@ -85,7 +85,95 @@ struct SignInView: View {
         // 段が並び、アプリの中で1枚だけ別のアプリに見えていた
         // （実機の絵で確認・run 38）
         .webScreen()
-        .scrollContentBackground(.hidden)
+        .task { await loadTiles() }
+    }
+
+    // MARK: - 上の写真とロゴ
+
+    /// 3×3 の写真（板: 高さ340・隙間3、下 212 を黒へ溶かす）。飾りなので読み上げない
+    private var tileHeader: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
+        return LazyVGrid(columns: columns, spacing: 3) {
+            ForEach(0..<9, id: \.self) { index in
+                tile(index < tiles.count ? tiles[index] : nil)
+            }
+        }
+        .frame(height: 340, alignment: .top)
+        .clipped()
+        .overlay(alignment: .bottom) {
+            LinearGradient(colors: [Color.black.opacity(0), Color.black],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 212)
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// 1枚。**読めたときだけ描く**（読み込み中の回転や壊れた記号を並べない）
+    private func tile(_ photo: Photo?) -> some View {
+        WebTheme.surface
+            .frame(height: 112)
+            .overlay {
+                if let photo {
+                    AsyncImage(url: photo.gridImageURL,
+                               transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
+                        if case .success(let image) = phase {
+                            image.resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: photo.gridAlignment)
+                        }
+                    }
+                }
+            }
+            .clipped()
+    }
+
+    /// 大きいロゴと一文（板: マーク＋serif 40・「旅の写真を、一冊の記録に。」）
+    private var brand: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Image("BrandMark")
+                    .renderingMode(.template)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 44, height: 44)
+                    .foregroundStyle(WebTheme.foreground)
+                Text("Journey Photo")
+                    .font(.system(size: 40, weight: .bold, design: .serif))
+                    .tracking(-1.0)
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Journey Photo")
+            .accessibilityAddTraits(.isHeader)
+            Text(L("旅の写真を、一冊の記録に。", "Your travels, bound into one book."))
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.muted2)
+        }
+        .padding(.bottom, 6)
+    }
+
+    /// 公開一覧の先頭9枚（端末で落とした人・写真は一覧の側で除かれている）。
+    /// **失敗しても黙る**（飾りなので、地の色のまま）
+    private func loadTiles() async {
+        guard tiles.isEmpty, let photos = try? await environment.gallery.fetchPhotos() else { return }
+        tiles = Array(photos.filter { $0.gridImageURL != nil }.prefix(9))
+    }
+
+    private var verificationOffer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L("メールアドレスの確認がまだ終わっていません。",
+                   "This email hasn't been verified yet."))
+                .font(.callout)
+            Button(L("確認コードを入力・再送する", "Enter or resend the code")) {
+                Task { await resumeVerification() }
+            }
+            .jpPillButton(.outline)
+            .buttonStyle(.plain)
+            .disabled(auth.isWorking)
+        }
     }
 
     // MARK: - ログイン・新規登録
@@ -94,87 +182,63 @@ struct SignInView: View {
         !auth.isWorking && !email.isEmpty && !password.isEmpty
     }
 
-    /// 見出し付きの入力欄。**黒地の上で「押せる場所」を見せる**
-    @ViewBuilder
-    private func field<Content: View>(_ title: String,
-                                      @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
-            content()
-                .padding(.horizontal, 14)
-                .frame(height: 48)
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-        }
-        .padding(.vertical, 4)
-    }
-
     private var credentialsSection: some View {
-        Group {
-            Section {
-                // **黒地では枠が要る。** 既定の入力欄は下線も背景も無く、
-                // 黒の上では**どこを押すのか分からない**（実機の絵で確認）。
-                // 見出しを添えて、枠と地を付ける
-                field(L("メールアドレス", "Email")) {
-                    TextField("", text: $email)
-                        .keyboardType(.emailAddress)
-                        .textContentType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-                field(L("パスワード", "Password")) {
-                    SecureField("", text: $password)
-                        .textContentType(mode == .signUp ? .newPassword : .password)
-                }
-                if mode == .signUp {
-                    field(L("表示名（あとで変えられます）", "Display name (you can change it later)")) {
-                        TextField("", text: $displayName)
-                            .textContentType(.name)
-                    }
-                }
-            } footer: {
-                if mode == .signUp {
-                    Text(AuthMessage.passwordRule)
-                }
+        VStack(alignment: .leading, spacing: 14) {
+            // **黒地では枠が要る。** 既定の入力欄は下線も背景も無く、
+            // 黒の上では**どこを押すのか分からない**（実機の絵で確認）
+            JPField(L("メールアドレス", "Email")) {
+                TextField("you@example.com", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             }
-            .listRowBackground(Color.clear)
-
-            Section {
-                Button {
-                    Task { await submitCredentials() }
-                } label: {
-                    // **いちばん押される場所を白い大ボタンに**（投稿と同じ作法）
-                    Text(mode == .signIn ? Labels.Navigation.login : L("登録する", "Create account"))
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(canSubmit ? WebTheme.accentBackground : WebTheme.surface,
-                                    in: RoundedRectangle(cornerRadius: 14))
-                        .foregroundStyle(canSubmit ? WebTheme.accentText : WebTheme.faint)
+            JPField(L("パスワード", "Password")) {
+                SecureField("", text: $password)
+                    .textContentType(mode == .signUp ? .newPassword : .password)
+            }
+            if mode == .signUp {
+                JPField(L("表示名（あとで変えられます）", "Display name (you can change it later)")) {
+                    TextField("", text: $displayName)
+                        .textContentType(.name)
                 }
-                .buttonStyle(.plain)
-                .disabled(!canSubmit)
-
-                Button(mode == .signIn
-                       ? L("アカウントを作る", "Create an account")
-                       : L("ログインに戻る", "Back to sign in")) {
-                    mode = mode == .signIn ? .signUp : .signIn
+                Text(AuthMessage.passwordRule)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+            }
+            if mode == .signIn {
+                // 板: 欄の下に右寄せ・13px・白72%
+                Button(L("パスワードを忘れた", "Forgot password?")) {
+                    mode = .resetRequested
                     clearMessages()
                 }
                 .font(.footnote)
-
-                if mode == .signIn {
-                    Button(L("パスワードを忘れた", "Forgot password?")) {
-                        mode = .resetRequested
-                        clearMessages()
-                    }
-                    .font(.footnote)
-                }
+                .foregroundStyle(WebTheme.muted2)
+                .frame(maxWidth: .infinity, minHeight: 32, alignment: .trailing)
             }
-            .listRowBackground(Color.clear)
+
+            // **いちばん押される場所を白い大ボタンに**（板: 52pt・白のカプセル）
+            Button {
+                Task { await submitCredentials() }
+            } label: {
+                Text(mode == .signIn ? Labels.Navigation.login : L("登録する", "Create account"))
+                    .jpPillButton()
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSubmit)
+            .opacity(canSubmit ? 1 : 0.4)
+
+            // 2番手は枠線のカプセル（板）
+            Button {
+                mode = mode == .signIn ? .signUp : .signIn
+                clearMessages()
+            } label: {
+                Text(mode == .signIn
+                     ? L("アカウントを作る", "Create an account")
+                     : L("ログインに戻る", "Back to sign in"))
+                    .jpPillButton(.outline)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -243,15 +307,17 @@ struct SignInView: View {
     // MARK: - 登録の確認
 
     private func confirmSignUpSection(username: String) -> some View {
-        Section {
+        VStack(alignment: .leading, spacing: 14) {
             Text(L("メールに届いた確認コードを入力してください", "Enter the code we emailed you"))
                 .font(.callout)
-                .foregroundStyle(.secondary)
-            TextField(L("確認コード", "Verification code"), text: $code)
-                .keyboardType(.numberPad)
-                .textContentType(.oneTimeCode)
+                .foregroundStyle(WebTheme.muted2)
+            JPField(L("確認コード", "Verification code")) {
+                TextField("", text: $code)
+                    .keyboardType(.numberPad)
+                    .textContentType(.oneTimeCode)
+            }
 
-            Button(L("登録を完了する", "Finish sign up")) {
+            Button {
                 Task {
                     clearMessages()
                     if await auth.confirmSignUp(username: username, code: code) {
@@ -276,8 +342,12 @@ struct SignInView: View {
                         }
                     }
                 }
+            } label: {
+                Text(L("登録を完了する", "Finish sign up")).jpPillButton()
             }
+            .buttonStyle(.plain)
             .disabled(auth.isWorking || code.isEmpty)
+            .opacity(auth.isWorking || code.isEmpty ? 0.4 : 1)
 
             // **届かないときの出口。** 無いと作り直すしかなくなる
             Button(L("コードを送り直す", "Send a new code")) {
@@ -290,81 +360,92 @@ struct SignInView: View {
                 }
             }
             .font(.footnote)
+            .foregroundStyle(WebTheme.muted2)
+            .frame(minHeight: 32)
             .disabled(auth.isWorking)
         }
-        .listRowBackground(Color.clear)
     }
 
     // MARK: - パスワードの再設定
 
     private var resetSection: some View {
-        Group {
-            Section {
-                TextField(L("メールアドレス", "Email"), text: $email)
+        VStack(alignment: .leading, spacing: 14) {
+            JPField(L("メールアドレス", "Email")) {
+                TextField("you@example.com", text: $email)
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .disabled(mode == .resetConfirm)
-
-                if mode == .resetConfirm {
-                    TextField(L("確認コード", "Verification code"), text: $code)
+            }
+            if mode == .resetConfirm {
+                JPField(L("確認コード", "Verification code")) {
+                    TextField("", text: $code)
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
-                    SecureField(L("新しいパスワード", "New password"), text: $password)
+                }
+                JPField(L("新しいパスワード", "New password")) {
+                    SecureField("", text: $password)
                         .textContentType(.newPassword)
                 }
-            } footer: {
-                Text(mode == .resetConfirm
-                     ? AuthMessage.passwordRule
-                     : L("登録したメールアドレスに、確認コードを送ります。",
-                         "We'll email a verification code to your address."))
             }
-            .listRowBackground(Color.clear)
+            Text(mode == .resetConfirm
+                 ? AuthMessage.passwordRule
+                 : L("登録したメールアドレスに、確認コードを送ります。",
+                     "We'll email a verification code to your address."))
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
 
-            Section {
-                if mode == .resetRequested {
-                    Button(L("コードを送る", "Send code")) {
-                        Task {
-                            clearMessages()
-                            if await auth.startPasswordReset(email: email) {
-                                mode = .resetConfirm
-                                notice = L("送りました。メールをご確認ください。",
-                                           "Sent. Please check your email.")
+            if mode == .resetRequested {
+                Button {
+                    Task {
+                        clearMessages()
+                        if await auth.startPasswordReset(email: email) {
+                            mode = .resetConfirm
+                            notice = L("送りました。メールをご確認ください。",
+                                       "Sent. Please check your email.")
+                        }
+                    }
+                } label: {
+                    Text(L("コードを送る", "Send code")).jpPillButton()
+                }
+                .buttonStyle(.plain)
+                .disabled(auth.isWorking || email.isEmpty)
+                .opacity(auth.isWorking || email.isEmpty ? 0.4 : 1)
+            } else {
+                Button {
+                    Task {
+                        clearMessages()
+                        let done = await auth.confirmPasswordReset(
+                            email: email, code: code, newPassword: password
+                        )
+                        if done {
+                            // そのままログインまで通す（もう一度打たせない）
+                            await auth.signIn(email: email, password: password)
+                            if auth.userId == nil {
+                                mode = .signIn
+                                notice = L("変えました。新しいパスワードでログインしてください。",
+                                           "Changed. Please sign in with your new password.")
                             }
                         }
                     }
-                    .disabled(auth.isWorking || email.isEmpty)
-                } else {
-                    Button(L("パスワードを変える", "Change password")) {
-                        Task {
-                            clearMessages()
-                            let done = await auth.confirmPasswordReset(
-                                email: email, code: code, newPassword: password
-                            )
-                            if done {
-                                // そのままログインまで通す（もう一度打たせない）
-                                await auth.signIn(email: email, password: password)
-                                if auth.userId == nil {
-                                    mode = .signIn
-                                    notice = L("変えました。新しいパスワードでログインしてください。",
-                                               "Changed. Please sign in with your new password.")
-                                }
-                            }
-                        }
-                    }
-                    .disabled(auth.isWorking || code.isEmpty || password.isEmpty)
+                } label: {
+                    Text(L("パスワードを変える", "Change password")).jpPillButton()
                 }
-
-                Button(L("ログインに戻る", "Back to sign in")) {
-                    mode = .signIn
-                    code = ""
-                    password = ""
-                    clearMessages()
-                }
-                .font(.footnote)
+                .buttonStyle(.plain)
+                .disabled(auth.isWorking || code.isEmpty || password.isEmpty)
+                .opacity(auth.isWorking || code.isEmpty || password.isEmpty ? 0.4 : 1)
             }
-            .listRowBackground(Color.clear)
+
+            Button {
+                mode = .signIn
+                code = ""
+                password = ""
+                clearMessages()
+            } label: {
+                Text(L("ログインに戻る", "Back to sign in")).jpPillButton(.outline)
+            }
+            .buttonStyle(.plain)
         }
     }
 

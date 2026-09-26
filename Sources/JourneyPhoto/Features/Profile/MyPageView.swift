@@ -51,7 +51,11 @@ struct MyPageView: View {
             // 「マイページ」——実機の絵（run 47）で、札を移った瞬間に
             // 別のアプリに見えた。`AppHeader` の注記が避けると書いていた形
             ToolbarItem(placement: .principal) {
-                AppLogo()
+                // **未ログインでは出さない。** ログイン画面が大きいロゴを持つので
+                // （板 41）、バーにも出すとロゴが2つ並ぶ
+                if auth.userId != nil {
+                    AppLogo()
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { SettingsView() } label: {
