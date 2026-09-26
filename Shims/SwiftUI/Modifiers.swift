@@ -319,6 +319,13 @@ extension View {
 
 public protocol Gesture {}
 
+/// 2本指で回す（文字と札の回し）
+public struct RotationGesture: Gesture {
+    public init() {}
+    public func onChanged(_ action: @escaping (Angle) -> Void) -> RotationGesture { self }
+    public func onEnded(_ action: @escaping (Angle) -> Void) -> RotationGesture { self }
+}
+
 public struct MagnificationGesture: Gesture {
     public init(minimumScaleDelta: Double = 0.01) {}
     public func onChanged(_ action: @escaping (Double) -> Void) -> MagnificationGesture { self }

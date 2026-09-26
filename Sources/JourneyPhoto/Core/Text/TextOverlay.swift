@@ -33,6 +33,70 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 何の札か。**場所と曲は投稿の項目としても送る**ので、
     /// ここに置くのは「写真の上の見た目」だけ
     var kind: Kind
+    /// 書体（板 24b の「明朝・ゴシック・手書き風」）
+    var face: Face
+    /// 文字の色（板 24b の5色）
+    var ink: Ink
+    /// 回し（ラジアン。2本指で回す）
+    var rotation: Double
+
+    /// 書体。**アプリに同梱した字だけ**（端末に無い書体を選ばせると、
+    /// 画面と焼き込みで見た目が割れる）
+    enum Face: String, Codable, CaseIterable, Identifiable {
+        /// Shippori Mincho B1 Bold（見出しの明朝）
+        case mincho
+        /// 端末のゴシック（太字）。**以前の文字はすべてこれ**
+        case gothic
+        /// Klee One SemiBold（手書き風）
+        case hand
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .mincho: return L("明朝", "Serif")
+            case .gothic: return L("ゴシック", "Sans")
+            case .hand: return L("手書き風", "Handwritten")
+            }
+        }
+
+        /// 同梱の書体の名前（PostScript 名）。ゴシックは端末の字なので nil
+        var fontName: String? {
+            switch self {
+            case .mincho: return "ShipporiMinchoB1-Bold"
+            case .gothic: return nil
+            case .hand: return "KleeOne-SemiBold"
+            }
+        }
+    }
+
+    /// 文字の色（板 24b: 白・墨・真鍮・空色・珊瑚）
+    enum Ink: String, Codable, CaseIterable, Identifiable {
+        case white, ink, brass, sky, coral
+
+        var id: String { rawValue }
+
+        /// 0xRRGGBB
+        var hex: UInt32 {
+            switch self {
+            case .white: return 0xFFFFFF
+            case .ink: return 0x07090A
+            case .brass: return 0xC9A66B
+            case .sky: return 0x9CC3E6
+            case .coral: return 0xFF8A80
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .white: return L("白", "White")
+            case .ink: return L("墨", "Ink")
+            case .brass: return L("真鍮", "Brass")
+            case .sky: return L("空色", "Sky")
+            case .coral: return L("珊瑚", "Coral")
+            }
+        }
+    }
 
     /// 札の種類（モック4-3 のスタンプ）。
     ///
@@ -150,15 +214,41 @@ struct TextOverlay: Identifiable, Equatable, Codable {
 
     init(id: UUID = UUID(), text: String, x: Double = 0.5, y: Double = 0.5,
          size: Double = TextOverlay.defaultSize, style: Style = .light,
-         kind: Kind = .text) {
+         kind: Kind = .text, face: Face = .gothic, ink: Ink? = nil, rotation: Double = 0) {
         self.id = id
         self.text = String(text.prefix(Self.maxLength))
         self.x = Self.clampPosition(x)
         self.y = Self.clampPosition(y)
         self.size = Self.clampSize(size)
         // 場所と曲は帯で固定（見た目を選ばせない＝読めない札を作らせない）
-        self.style = kind.forcedStyle ?? style
+        let resolved = kind.forcedStyle ?? style
+        self.style = resolved
         self.kind = kind
+        self.face = face
+        // 色を言わなければ見た目に合わせる（黒は墨、他は白）
+        self.ink = ink ?? (resolved == .dark ? .ink : .white)
+        self.rotation = rotation
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, text, x, y, size, style, kind, face, ink, rotation
+    }
+
+    /// **前の版の下書きも読む。** 書体・色・回しは後から足した項目なので、
+    /// 無ければ以前の見た目（ゴシック・見た目に合わせた色・回しなし）にする
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let style = try c.decode(Style.self, forKey: .style)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.text = try c.decode(String.self, forKey: .text)
+        self.x = try c.decode(Double.self, forKey: .x)
+        self.y = try c.decode(Double.self, forKey: .y)
+        self.size = try c.decode(Double.self, forKey: .size)
+        self.style = style
+        self.kind = try c.decode(Kind.self, forKey: .kind)
+        self.face = (try? c.decodeIfPresent(Face.self, forKey: .face)) ?? .gothic
+        self.ink = (try? c.decodeIfPresent(Ink.self, forKey: .ink)) ?? (style == .dark ? .ink : .white)
+        self.rotation = (try? c.decodeIfPresent(Double.self, forKey: .rotation)) ?? 0
     }
 
     /// 画面と画像に出す文字（印つき）。

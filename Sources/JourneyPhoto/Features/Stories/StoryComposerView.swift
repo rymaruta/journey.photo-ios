@@ -91,8 +91,13 @@ struct StoryComposerView: View {
                 .padding(.horizontal, 8)
                 .padding(.top, 2)
             if textMode {
-                kindChips
-                    .padding(.top, 56)
+                VStack(spacing: 8) {
+                    kindChips
+                    Text(L("指で動かす・2本指で回す", "Drag to move · twist with two fingers to rotate"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(WebTheme.muted2)
+                }
+                .padding(.top, 56)
             }
         }
         // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）
@@ -540,7 +545,9 @@ struct StoryComposerView: View {
         // **真ん中より少し上に置く。** 真ん中だと写真の主役に重なりやすい。
         // 場所と曲は少し下（文字の札と重なりにくい）
         let y = kind == .text ? 0.35 : 0.6
-        let overlay = TextOverlay(text: kind.initialText(), x: 0.5, y: y, kind: kind)
+        // 新しい文字は明朝から（板 24b の既定の選択）。札（撮影地・曲など）はゴシックの帯
+        let overlay = TextOverlay(text: kind.initialText(), x: 0.5, y: y, kind: kind,
+                                  face: kind == .text ? .mincho : .gothic)
         overlays.wrappedValue.append(overlay)
         selectedId = overlay.id
     }

@@ -243,4 +243,29 @@ extension TextOverlayTests {
             XCTAssertFalse(kind.toolSymbol.isEmpty, "\(kind)")
         }
     }
+
+    /// 🔴 **前の版の下書きも読める。** 書体・色・回しは後から足した項目で、
+    /// 無いと下書きごと捨てられていた（`StoryDraftStore` が読めない記録を捨てる）
+    func testOldDraftOverlayStillDecodes() throws {
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"港","x":0.4,"y":0.3,"size":0.07,"style":"dark","kind":"text"}"#
+        let overlay = try JSONDecoder().decode(TextOverlay.self, from: Data(json.utf8))
+        XCTAssertEqual(overlay.face, .gothic)
+        XCTAssertEqual(overlay.ink, .ink)
+        XCTAssertEqual(overlay.rotation, 0)
+    }
+
+    /// 書体・色・回しは下書きを行き来しても残る
+    func testFaceInkRotationRoundTrip() throws {
+        let overlay = TextOverlay(text: "港", face: .hand, ink: .brass, rotation: 0.4)
+        let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(overlay))
+        XCTAssertEqual(back.face, .hand)
+        XCTAssertEqual(back.ink, .brass)
+        XCTAssertEqual(back.rotation, 0.4, accuracy: 0.0001)
+    }
+
+    /// 色を言わなければ見た目に合わせる（黒の見た目は墨の文字）
+    func testDefaultInkFollowsStyle() {
+        XCTAssertEqual(TextOverlay(text: "a", style: .dark).ink, .ink)
+        XCTAssertEqual(TextOverlay(text: "a", style: .light).ink, .white)
+    }
 }

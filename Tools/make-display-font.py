@@ -22,6 +22,13 @@
 あちらは削らずに原本のまま入れる（このスクリプトは触らない）。
 
 名前テーブル（著作権・ライセンスの文）は全部残す。
+
+**手書き風の文字（Klee One SemiBold）も同じ字の組で削る**（ストーリーの
+「文字と札」の書体・板 24b）。原本は 8.9 MB。Klee One も OFL で Reserved Font
+Name を宣言していない（`OFL-KleeOne.txt` の1行目）ので、同じ名前のまま入れる。
+
+    curl -sSfLO https://raw.githubusercontent.com/google/fonts/main/ofl/kleeone/KleeOne-SemiBold.ttf
+    python3 Tools/make-display-font.py KleeOne-SemiBold.ttf
 """
 import sys
 from pathlib import Path
@@ -29,8 +36,12 @@ from pathlib import Path
 from fontTools import subset
 from fontTools.ttLib import TTFont
 
-SOURCE_SHA256 = "d20f3981afb8bceda5fdf8f0fb29ba51eb21518644612ccd8a183e5bd433e25a"
-OUT = Path(__file__).resolve().parent.parent / "Sources/JourneyPhoto/Resources/Fonts/ShipporiMinchoB1-Bold.ttf"
+# 受け付ける原本（ファイル名 → sha256）。**取り違えた原本からは作らない**
+SOURCES = {
+    "ShipporiMinchoB1-Bold.ttf": "d20f3981afb8bceda5fdf8f0fb29ba51eb21518644612ccd8a183e5bd433e25a",
+    "KleeOne-SemiBold.ttf": "b031ec426c23ca1143ef1f7d58bee7a79efe119ed654152f121c922202b303fd",
+}
+FONTS = Path(__file__).resolve().parent.parent / "Sources/JourneyPhoto/Resources/Fonts"
 
 
 def jis_rows(rows):
@@ -63,9 +74,13 @@ def main():
     src = Path(sys.argv[1])
 
     import hashlib
+    expected = SOURCES.get(src.name)
+    if expected is None:
+        sys.exit(f"知らない原本です: {src.name}（{', '.join(SOURCES)} のどれか）")
     digest = hashlib.sha256(src.read_bytes()).hexdigest()
-    if digest != SOURCE_SHA256:
-        sys.exit(f"原本が違います（sha256 {digest}）。google/fonts の ofl/shipporiminchob1 から取り直してください")
+    if digest != expected:
+        sys.exit(f"原本が違います（sha256 {digest}）。google/fonts の ofl から取り直してください")
+    OUT = FONTS / src.name
 
     chars = set()
     chars |= jis_rows([*range(1, 9), 13])   # 非漢字（13区の丸数字・ローマ数字を含む）

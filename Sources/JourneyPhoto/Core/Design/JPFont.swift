@@ -8,6 +8,7 @@ import SwiftUI
 /// | 本文・ボタン・注記 | SF Pro ＋ ヒラギノ角ゴ（システム） | しない |
 /// | 数字（撮影情報・距離・件数）・眉ラベル | IBM Plex Mono 400 / 500 | 原本のまま（0.26 MB） |
 /// | ワードマーク | New York Bold 22・白1色（`docs/BRAND.md`） | しない |
+/// | ストーリーの文字の「手書き風」 | Klee One SemiBold | JIS 第1水準まで（4.0 MB・同じスクリプト）。`TextOverlay.Face` だけが使う |
 ///
 /// **どれも `relativeTo:` を付けて、文字サイズの設定（Dynamic Type）に追従させる。**
 /// 固定の大きさにすると、大きい文字を選んでいる人にだけ見出しが小さく残る。

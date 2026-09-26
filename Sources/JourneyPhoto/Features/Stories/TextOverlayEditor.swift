@@ -27,6 +27,9 @@ struct StoryCanvas: View {
     /// **キーボードで縮む前の枠の大きさ。** 見えている範囲はこれで決める——
     /// 縮んだ枠で決めると、キーボードを閉じたあとに画面の外へ出る札を作れた
     @State private var stableSize: CGSize = .zero
+    /// 2本指で回している最中の札と、その角度（離したときに回しへ足す）
+    @State private var rotateId: UUID?
+    @State private var liveRotation: Double = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -48,6 +51,20 @@ struct StoryCanvas: View {
         }
     }
 
+    /// 書体（同梱の明朝・手書き風。ゴシックは端末の太字）。**大きさは固定**——
+    /// 焼き込みは画像の画素で描くので、文字の大きさの設定に追従させると割れる
+    static func font(_ face: TextOverlay.Face, size: Double) -> Font {
+        if let name = face.fontName { return .custom(name, fixedSize: size) }
+        return .system(size: size, weight: .bold)
+    }
+
+    static func color(_ ink: TextOverlay.Ink) -> Color {
+        let hex = ink.hex
+        return Color(red: Double((hex >> 16) & 0xFF) / 255,
+                     green: Double((hex >> 8) & 0xFF) / 255,
+                     blue: Double(hex & 0xFF) / 255)
+    }
+
     /// 幅が変わったら測り直し、同じ幅なら高い方を覚える
     private func remember(_ size: CGSize) {
         if size.width != stableSize.width || size.height > stableSize.height {
@@ -63,14 +80,18 @@ struct StoryCanvas: View {
         // 小さくなる（2026-09-26 のレビュー）
         let fontSize = TextOverlay.fontSize(overlay.size, in: photo.size)
         let center = overlay.center(in: photo)
+        let rotation = overlay.rotation + (rotateId == overlay.id ? liveRotation : 0)
         return Text(overlay.displayText)
-            .font(.system(size: fontSize, weight: .bold))
-            .foregroundStyle(overlay.style == .dark ? Color.black : Color.white)
+            // 書体と色は焼き込みと同じもの（`TextOverlayRenderer.attributes`）
+            .font(Self.font(overlay.face, size: fontSize))
+            .foregroundStyle(Self.color(overlay.ink))
             // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
             .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
             .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
             .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
             .shadow(radius: overlay.style == .light ? 6 : 0)
+            // 回しは中心の周り（焼き込みも中心の周り）
+            .rotationEffect(.radians(rotation))
             // 選んでいる札は破線で囲む（板 24b）
             .overlay {
                 if selectedId == overlay.id {
@@ -97,6 +118,21 @@ struct StoryCanvas: View {
                         move(overlay, by: value.translation, photo: photo, canvas: canvas)
                         dragId = nil
                         dragOffset = .zero
+                    }
+            )
+            // 2本指で回す（板 24b「指で動かす・2本指で回す」）
+            .simultaneousGesture(
+                RotationGesture()
+                    .onChanged { angle in
+                        rotateId = overlay.id
+                        liveRotation = angle.radians
+                    }
+                    .onEnded { angle in
+                        if let i = overlays.firstIndex(where: { $0.id == overlay.id }) {
+                            overlays[i].rotation += angle.radians
+                        }
+                        rotateId = nil
+                        liveRotation = 0
                     }
             )
             // 押すと選ぶ（直す・消すのも同じ入口）。
@@ -144,12 +180,54 @@ struct OverlayPanel: View {
                     .frame(minHeight: 44)
             }
 
+            // 書体（明朝・ゴシック・手書き風）
+            HStack(spacing: 8) {
+                Text(L("書体", "Font"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(WebTheme.faint)
+                    .frame(width: 36, alignment: .leading)
+                ForEach(TextOverlay.Face.allCases) { face in
+                    OverlayChip(title: face.label, selected: overlay.face == face) {
+                        overlay.face = face
+                    }
+                }
+            }
+
+            // 色（白・墨・真鍮・空色・珊瑚）
+            HStack(spacing: 10) {
+                Text(L("色", "Color"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(WebTheme.faint)
+                    .frame(width: 36, alignment: .leading)
+                ForEach(TextOverlay.Ink.allCases) { ink in
+                    let selected = overlay.ink == ink
+                    Button {
+                        overlay.ink = ink
+                    } label: {
+                        Circle()
+                            .fill(StoryCanvas.color(ink))
+                            .frame(width: 30, height: 30)
+                            .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0.5),
+                                                           lineWidth: selected ? 3 : 2))
+                            .overlay(Circle().strokeBorder(Color.black, lineWidth: selected ? 1 : 0).padding(-2))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("文字の色 \(ink.label)", "Text color \(ink.label)"))
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+
             HStack(spacing: 8) {
                 // **場所と曲は帯で固定**（読めない札を作らせない）ので見た目の選択を出さない
                 if overlay.kind == .text {
                     ForEach(TextOverlay.Style.allCases) { style in
                         OverlayChip(title: style.label, selected: overlay.style == style) {
                             overlay.style = style
+                            // 白・黒を選んだら文字の色もそれに合わせる（黒の見た目に白い文字は読めない）
+                            if style == .dark { overlay.ink = .ink }
+                            if style == .light, overlay.ink == .ink { overlay.ink = .white }
                         }
                     }
                 }

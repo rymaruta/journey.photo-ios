@@ -89,6 +89,8 @@ public struct StrokeStyle {
 /// 角度（`rotationEffect(.degrees(-90))`）
 public struct Angle {
     public static func degrees(_ v: Double) -> Angle { Angle() }
+    public static func radians(_ v: Double) -> Angle { Angle() }
+    public var radians: Double { 0 }
 }
 
 public struct ViewThatFits: View {
