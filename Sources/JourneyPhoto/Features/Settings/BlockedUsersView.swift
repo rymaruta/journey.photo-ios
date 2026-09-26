@@ -23,12 +23,15 @@ struct BlockedUsersView: View {
                 .font(.caption2)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 4)
-                .plainRow()
+                // 板: 上 16・説明と一覧の間 12（＝ここの下 3 ＋ 行の上 9）
+                .plainRow(top: 16, bottom: 3)
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout)
+                    .padding(.horizontal, 4)
                     .plainRow()
             } else if users.isEmpty && !isLoading {
                 Text(L("ブロックしている人はいません", "No one is blocked")).foregroundStyle(WebTheme.faint)
+                    .padding(.horizontal, 4)
                     .plainRow()
             }
             ForEach(users) { user in
@@ -55,7 +58,7 @@ struct BlockedUsersView: View {
                 }
                 // 板は札も区切り線も無い素の並び（最小62pt）
                 .frame(minHeight: 44)
-                .plainRow(vertical: 9)
+                .plainRow(top: 9, bottom: 9)
             }
         }
         .listStyle(.plain)
@@ -121,9 +124,9 @@ struct BlockedUsersView: View {
 
 private extension View {
     /// 板 45 の素の行: 地も区切り線も無く、左右は画面の 16
-    func plainRow(vertical: Double = 6) -> some View {
+    func plainRow(top: CGFloat = 6, bottom: CGFloat = 6) -> some View {
         self
-            .listRowInsets(EdgeInsets(top: vertical, leading: 16, bottom: vertical, trailing: 16))
+            .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
     }
