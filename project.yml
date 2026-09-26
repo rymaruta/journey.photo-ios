@@ -73,6 +73,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # 実行時に読む環境値。値は xcconfig 側で切り替える
         JPUserApiBaseURL: $(JP_USER_API_BASE_URL)
+        JPApiBaseURL: $(JP_API_BASE_URL)
         JPSiteBaseURL: $(JP_SITE_BASE_URL)
         JPCognitoUserPoolId: $(JP_COGNITO_USER_POOL_ID)
         JPCognitoClientId: $(JP_COGNITO_CLIENT_ID)

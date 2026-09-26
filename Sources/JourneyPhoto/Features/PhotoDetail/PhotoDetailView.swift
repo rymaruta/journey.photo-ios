@@ -12,6 +12,8 @@ struct PhotoDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var favorites: FavoritesStore
+    /// サーバーが答えたいいねの数。**ここで読んだ・押した数をホームにも出す**
+    @EnvironmentObject private var likeCounts: LikeCountStore
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
@@ -106,9 +108,11 @@ struct PhotoDetailView: View {
             PhotoViewerView(
                 photos: siblings,
                 index: siblings.firstIndex(where: { $0.id == photo.id }) ?? 0,
-                isLiked: model.liked,
+                // **写真ごとに答える。** この画面の1枚は画面が持つ値、
+                // 隣の写真は端末の控え（ホームのハートと同じ出どころ）
+                isLiked: { shown in shown.id == photo.id ? model.liked : favorites.contains(shown.id) },
                 isSignedIn: auth.userId != nil,
-                onDoubleTapLike: { Task { await model.toggleLike() } }
+                onDoubleTapLike: { shown in Task { await likeFromViewer(shown) } }
             )
         }
         .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
@@ -472,6 +476,41 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// 大きく見る画面でのダブルタップ。**いま見ている写真に**付ける。
+    ///
+    /// この画面の1枚なら下のハートと同じ道（数と状態を画面にも出す）。
+    /// 隣の写真なら、その写真に直接送る——**解除はしない**ので `like` だけ
+    private func likeFromViewer(_ shown: Photo) async {
+        if shown.id == photo.id {
+            await model.toggleLike()
+            // 下のハートと同じく、端末の控えとホームの数にも渡す
+            favorites.set(photo.id, favorite: model.liked)
+            shareLikeCount()
+            return
+        }
+        // 先に灯す（押した手応えを待たせない）。届かなければ戻す
+        favorites.set(shown.id, favorite: true)
+        do {
+            let result = try await environment.social.like(photoId: shown.id)
+            favorites.set(shown.id, favorite: result.liked)
+            // 押した回の答えだけを渡す（`LikeCountStore` の注記）
+            if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
+        } catch {
+            favorites.set(shown.id, favorite: false)
+        }
+    }
+
+    /// **押した回の**答えを、ホームのカードと検索の格子にも渡す。
+    /// 渡さないと、詳細で押して戻ったときに数が押す前のままになる
+    /// （ホームは戻っても一覧を読み直さない）。
+    ///
+    /// 開いたときに読んだ数は渡さない（`LikeCountStore` の注記）。
+    /// 答えが無かった回（失敗・数を返さない答え）も渡さない
+    private func shareLikeCount() {
+        guard let answer = model.lastLikeAnswer else { return }
+        likeCounts.set(photo.id, count: answer)
+    }
+
     private var socialBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 16) {
@@ -480,6 +519,7 @@ struct PhotoDetailView: View {
                         await model.toggleLike()
                         // 端末側のハートも合わせる（圏外でも一覧が出る）
                         favorites.set(photo.id, favorite: model.liked)
+                        shareLikeCount()
                     }
                 } label: {
                     // **いちばん押されるボタンがいちばん小さかった。**

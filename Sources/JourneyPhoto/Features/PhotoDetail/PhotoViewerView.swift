@@ -8,11 +8,16 @@ struct PhotoViewerView: View {
 
     let photos: [Photo]
     @State var index: Int
-    /// いま見ている写真にいいねを付けているか（詳細画面が持っている）
-    var isLiked: Bool = false
+    /// その写真にいいねを付けているか（詳細画面が知っている）。
+    ///
+    /// 🔴 **写真ごとに聞く。** 以前は詳細画面の1枚の値を1つ受け取り、
+    /// 隣へ送ってから2回叩くと**元の1枚にいいねが付いていた**
+    /// （元の1枚がいいね済みなら、隣の写真には何も起きなかった）
+    var isLiked: (Photo) -> Bool = { _ in false }
     var isSignedIn: Bool = false
-    /// ダブルタップでいいねを送る。**解除はしない**（`DoubleTapLike`）
-    var onDoubleTapLike: () -> Void = {}
+    /// ダブルタップでいいねを送る。**いま見ている写真**を渡す。
+    /// 解除はしない（`DoubleTapLike`）
+    var onDoubleTapLike: (Photo) -> Void = { _ in }
 
     @Environment(\.dismiss) private var dismiss
     @State private var scale: Double = 1
@@ -141,11 +146,12 @@ struct PhotoViewerView: View {
     }
 
     private func handleDoubleTap() {
-        switch DoubleTapLike.action(isZoomed: scale > 1, alreadyLiked: isLiked, signedIn: isSignedIn) {
+        guard let shown = DoubleTapLike.shown(photos, at: index) else { return }
+        switch DoubleTapLike.action(isZoomed: scale > 1, alreadyLiked: isLiked(shown), signedIn: isSignedIn) {
         case .resetZoom:
             scale = 1
         case .like:
-            onDoubleTapLike()
+            onDoubleTapLike(shown)
             showBurst()
         case .burstOnly:
             showBurst()

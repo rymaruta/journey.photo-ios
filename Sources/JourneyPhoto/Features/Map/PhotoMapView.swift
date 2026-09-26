@@ -39,8 +39,13 @@ struct PhotoMapView: View {
     @State private var chosenPlace: ChosenPlace?
     /// Apple の詳細カードに出す地点（札の「場所の詳細」）
     @State private var placeDetail: MKMapItem?
-    /// 地図の見ている場所。**写真に合わせてから開く**（指示書 9-2）
+    /// 地図の見ている場所。**現在地が取れたらそこ、取れなければ写真に合わせる**
+    /// （以前は写真に合わせるだけ・指示書 9-2。既定を自分の今の場所にしたのは
+    /// owner の判断 2026-09-26）
     @State private var camera: MapCameraPosition = .automatic
+    /// 開いたときに現在地を取りにいったか。**最初の1回だけ**——タブを
+    /// 行き来するたびに取り直して、指で動かした場所から引き戻さない
+    @State private var autoLocateStarted = false
     /// 拡大・縮小を続けて押したときの土台（`MapFraming.ZoomChain`）
     @State private var zoomChain = MapFraming.ZoomChain()
     /// 方位磁針を地図の外（右の操作列）に置くための名前。
@@ -63,8 +68,13 @@ struct PhotoMapView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
         .task {
+            if !autoLocateStarted {
+                autoLocateStarted = true
+                location.locate(requestedByUser: false)
+            }
             await model.load(environment: environment)
-            frame(model.frame)
+            // 現在地が先に取れていたら、写真の読み込みで引き戻さない
+            if here == nil { frame(model.frame) }
         }
         // 絞りが変わったら、残ったピンに寄せ直す（範囲で絞ったときは
         // 見ている場所を動かさない——押した範囲がそのまま答え）
@@ -411,14 +421,20 @@ struct PhotoMapView: View {
         return L("撮影地の分かる写真がありません", "No photos with a place yet")
     }
 
-    /// 現在地の様子。**取れる前・拒否・失敗を言葉にする**（黙って何も起きない状態にしない）
+    /// 現在地の様子。**取れる前・拒否・失敗を言葉にする**（黙って何も起きない状態にしない）。
+    /// ただし拒否・失敗は**ボタンを押した回だけ**——開いたときの自動の回は、
+    /// 写真に合わせた地図がそのまま答えになる（断った人に毎回出さない）
     private var locationNote: String? {
         switch location.state {
         case .idle, .located: return nil
         case .asking, .locating: return L("現在地を探しています…", "Finding your location…")
-        case .denied: return L("位置情報が許可されていません（設定で変更できます）",
-                               "Location access is off (you can change it in Settings)")
-        case .failed: return L("現在地を取れませんでした", "Couldn't get your location")
+        case .denied:
+            guard location.requestedByUser else { return nil }
+            return L("位置情報が許可されていません（設定で変更できます）",
+                     "Location access is off (you can change it in Settings)")
+        case .failed:
+            guard location.requestedByUser else { return nil }
+            return L("現在地を取れませんでした", "Couldn't get your location")
         }
     }
 

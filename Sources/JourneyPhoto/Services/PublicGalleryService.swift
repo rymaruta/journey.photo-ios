@@ -68,8 +68,16 @@ actor PublicGalleryService {
            Date().timeIntervalSince(restrictedCachedAt) < Self.cacheLifetime {
             return restrictedCache
         }
+        let startedAt = Date()
         do {
-            let photos = try await restrictedLoader()
+            // **いまの数の時刻を付ける。** この口は DynamoDB から直に来るので
+            // 数は新しい。付けないと、押した答え（`LikeCountStore`）が
+            // 永久に勝ち、他の人のいいねが引き下げ更新でも出ない
+            let photos = try await restrictedLoader().map { photo -> Photo in
+                var stamped = photo
+                stamped.likesAsOf = startedAt
+                return stamped
+            }
             restrictedCache = photos
             restrictedCachedAt = Date()
             return photos
@@ -80,10 +88,33 @@ actor PublicGalleryService {
         }
     }
 
+    /// いいねの**いまの数**を取る口（管理 API の `GET /photos`）。nil なら叩かない。
+    ///
+    /// **既定は nil。** 本物の口は `AppEnvironment` が `AppConfig.livePhotosURL`
+    /// を渡す——既定に置くと、設定を入れていない試験がここで落ちる
+    private let liveURL: URL?
+    private var liveCounts: [String: Int]?
+    /// `liveCounts` を**取りに行った時刻**（写した写真の `likesAsOf` になる）
+    private var liveCountsAsOf: Date?
+    /// 取りに行っている最中の要求。**同時に来た呼び出しはこれを待つ**
+    /// （待たずに返すと、その画面だけ静的 JSON の古い数で出て、
+    ///  控えの間は取り直さない）
+    private var liveInFlight: Task<Void, Never>?
+    /// **最後に取りに行った時刻**（取れたかどうかは問わない）。
+    /// 取れた時刻で見ると、失敗した後は控えがある間も呼ぶたびに
+    /// 叩き直し、一覧を最大 `liveTimeout` ずつ待たせる
+    private var liveAttemptedAt: Date?
+
+    /// いまの数を待つ上限。**一覧を出すのをこれ以上遅らせない**
+    /// （Lambda の起き抜けは数秒かかる。間に合わなければ静的 JSON の数で出す）
+    static let liveTimeout: TimeInterval = 4
+
     init(url: URL = AppConfig.publicPhotosURL,
+         liveURL: URL? = nil,
          session: URLSession? = nil,
          snapshot: PhotoSnapshotStore = PhotoSnapshotStore()) {
         self.url = url
+        self.liveURL = liveURL
         self.snapshot = snapshot
         if let session {
             self.session = session
@@ -120,21 +151,34 @@ actor PublicGalleryService {
     /// - Parameter force: 控えを無視して取り直す。**引き下げ更新はこちら**
     ///   ——利用者が自分で引いたのに古いものを出さない。
     func fetchPhotos(force: Bool = false) async throws -> [Photo] {
-        if !force, let fresh = freshCache { return await merged(fresh, force: force) }
+        if !force, let fresh = freshCache {
+            await refreshLiveCounts(force: false)
+            return await merged(fresh, force: force)
+        }
+        // **いいねのいまの数は、一覧と同時に取りに行く**
+        // （順に待つと、起き抜けの Lambda のぶん一覧が遅れる）
+        async let live: Void = refreshLiveCounts(force: force)
+        let photos = try await fetchStaticList()
+        await live
+        return await merged(photos, force: force)
+    }
+
+    /// 静的 JSON を取る。**圏外・壊れた応答なら前回の控え**。
+    private func fetchStaticList() async throws -> [Photo] {
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(from: url)
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
-            if let cached = snapshot.load() { return await merged(cached, force: force) }
+            if let cached = snapshot.load() { return cached }
             throw APIError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
-            if let cached = snapshot.load() { return await merged(cached, force: force) }
+            if let cached = snapshot.load() { return cached }
             throw APIError.server(status: http.statusCode, message: "")
         }
         do {
@@ -153,9 +197,9 @@ actor PublicGalleryService {
             }
             cached = photos
             cachedAt = Date()
-            return await merged(photos, force: force)
+            return photos
         } catch {
-            if let cached = snapshot.load() { return await merged(cached, force: force) }
+            if let cached = snapshot.load() { return cached }
             throw APIError.decoding(String(describing: error))
         }
     }
@@ -165,10 +209,65 @@ actor PublicGalleryService {
     /// **`visible` は最後に通す**——ブロックした相手の「フォロワーのみ」の
     /// 写真も落とすため。サーバー側（`restrictedFeed.ts`）でも落としているが、
     /// 端末にしか無い「通報した写真」はここでしか落とせない。
+    ///
+    /// いいねの数は**ここで**いまの数に差し替える（`LiveLikes`）。
+    /// 取れていなければ静的 JSON の数のまま。
     private func merged(_ photos: [Photo], force: Bool) async -> [Photo] {
+        let counted = LiveLikes.apply(liveCounts ?? [:], asOf: liveCountsAsOf ?? .distantPast, to: photos)
         let extra = await restrictedPhotos(force: force)
-        if extra.isEmpty { return visible(photos) }
-        return visible(RestrictedFeed.merge(publicPhotos: photos, restricted: extra))
+        if extra.isEmpty { return visible(counted) }
+        return visible(RestrictedFeed.merge(publicPhotos: counted, restricted: extra))
+    }
+
+    /// いいねのいまの数を取り直す。**失敗しても何も投げない**
+    /// ——直前に取れた数か、静的 JSON の数のまま出す。
+    private func refreshLiveCounts(force: Bool) async {
+        guard let liveURL else { return }
+        if let liveInFlight {
+            await liveInFlight.value
+            // **引き下げ更新は、途中の要求の結果で済ませない。**
+            // 最大 `liveTimeout` 前に始まった要求で、失敗していることもある
+            guard force else { return }
+            // 待っている間に別の呼び出しが取り直し始めていたら、それを待つ
+            if let restarted = self.liveInFlight {
+                await restarted.value
+                return
+            }
+        }
+        if !force, let liveAttemptedAt,
+           Date().timeIntervalSince(liveAttemptedAt) < Self.cacheLifetime {
+            return
+        }
+        let startedAt = Date()
+        liveAttemptedAt = startedAt
+        // **呼んだ側の取り消しに巻き込まない**（巻き込まれると、控えの間は
+        // 取り直さないので、別の画面まで古い数のままになる）
+        let task = Task { await self.loadLiveCounts(from: liveURL, startedAt: startedAt) }
+        liveInFlight = task
+        await task.value
+    }
+
+    /// 🔴 **「取得中」の印は、ここ（要求の中）で消す。** 始めた呼び出し元が
+    /// 戻ったときに消すと、待っていた引き下げ更新の方が先に再開した場合に
+    /// **終わった要求**を「始め直された要求」と見分けられず、自分では
+    /// 取りに行かずに返っていた（Swift は後から待った方を先に起こすらしく、
+    /// 手元の再現では毎回そうなった）。印を立てるのは `refreshLiveCounts`
+    /// で、この本体はそのあとにしか actor の上で走らないので、消すのは
+    /// 必ずこの要求の印
+    private func loadLiveCounts(from liveURL: URL, startedAt: Date) async {
+        defer { liveInFlight = nil }
+        var request = URLRequest(url: liveURL)
+        request.timeoutInterval = Self.liveTimeout
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  let counts = LiveLikes.counts(from: data) else { return }
+            liveCounts = counts
+            liveCountsAsOf = startedAt
+        } catch {
+            print("[gallery] いいねのいまの数を取れませんでした: \(error)")
+        }
     }
 
     /// 公開 JSON には非公開の写真は載らないが、`published` が明示的に

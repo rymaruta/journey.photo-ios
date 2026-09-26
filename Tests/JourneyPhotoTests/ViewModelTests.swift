@@ -229,6 +229,46 @@ final class ViewModelTests: XCTestCase {
 
         XCTAssertTrue(model.liked)
         XCTAssertEqual(model.likes, 42, "手元で足し算している")
+        // ホームへ渡すのは押した答え
+        XCTAssertEqual(model.lastLikeAnswer, 42)
+    }
+
+    /// **開いて読んだ数は、ホームへ渡す答えにしない。** 読み取りは
+    /// 「あとで揃う」ので、押した直後に開くと押す前の数が返りうる
+    func testLoadedCountIsNotAnAnswer() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        StubProtocol.respond(status: 200, body: #"{"likes":4}"#)
+        await model.load()
+        XCTAssertEqual(model.likes, 4)
+        XCTAssertNil(model.lastLikeAnswer)
+    }
+
+    /// 未ログインで押した回も、前の答えを残さない（呼び出し側が「いま」の
+    /// 答えとしてホームへ渡し直すため）
+    func testSignedOutPressClearsAnswer() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.toggleLike()
+        XCTAssertEqual(model.lastLikeAnswer, 5)
+        model.setSignedIn(false)
+        await model.toggleLike()
+        XCTAssertNil(model.lastLikeAnswer)
+    }
+
+    /// 押して失敗したら、前の答えも残さない（古い答えをホームへ渡さない）
+    func testFailedLikeClearsAnswer() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.toggleLike()
+        XCTAssertEqual(model.lastLikeAnswer, 5)
+        StubProtocol.respond(status: 500, body: "{}")
+        await model.toggleLike()
+        XCTAssertNil(model.lastLikeAnswer)
     }
 
     /// **素早く2回叩いても1回しか投げない。**

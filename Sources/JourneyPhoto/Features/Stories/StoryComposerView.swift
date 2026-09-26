@@ -47,6 +47,11 @@ struct StoryComposerView: View {
         shots.indices.contains(current) ? shots[current].preview : nil
     }
 
+    /// いま編集している写真の大きさ（文字を焼き込みと同じ基準で置くため）
+    private var previewSize: CGSize? {
+        shots.indices.contains(current) ? shots[current].imageSize : nil
+    }
+
     /// いま編集している写真の文字。**`shots` の中を直に書き換える**
     /// ——別に持つと、写真を切り替えた瞬間にどちらが本物か分からなくなる
     private var overlays: Binding<[TextOverlay]> {
@@ -62,7 +67,7 @@ struct StoryComposerView: View {
                 if let preview {
                     // **写真の上を直接つまんで文字を置く。**
                     // 入力欄で座標を打たせない。道具は1列に並べる（モック4-6）
-                    TextOverlayEditor(preview: preview, overlays: overlays) {
+                    TextOverlayEditor(preview: preview, imageSize: previewSize, overlays: overlays) {
                         photoTools
                     }
                     // 2枚以上あるときだけ並びを出す（1枚のときは邪魔なだけ）
@@ -253,8 +258,7 @@ struct StoryComposerView: View {
                             "You can post up to \(StoryQueue.maxShots) at once")
                 return
             }
-            let shot = StoryShot(prepared: prepared,
-                                 preview: UIImage(data: prepared.data).map { Image(uiImage: $0) })
+            let shot = StoryShot(prepared: prepared, image: UIImage(data: prepared.data))
             shots.append(shot)
             // 足したらそれを編集する（選んだ直後に文字を置ける）
             current = shots.count - 1
@@ -365,8 +369,7 @@ struct StoryComposerView: View {
                                               // EXIF は下書きに残していない（ストーリーは送らない）
                                               exif: nil, coords: draft.coords, takenOn: nil)
         // **下書きは1枚だけ**（端末に1件）。戻すときは並びを作り直す
-        shots = [StoryShot(prepared: restored,
-                           preview: UIImage(data: data).map { Image(uiImage: $0) },
+        shots = [StoryShot(prepared: restored, image: UIImage(data: data),
                            overlays: draft.overlays)]
         current = 0
         caption = draft.caption
@@ -455,5 +458,15 @@ struct StoryShot: Identifiable {
     let id = UUID()
     var prepared: ImagePreparer.Prepared
     var preview: Image?
+    /// 写真の大きさ。**焼き込みと同じ `UIImage(data:)` から採る**ので、
+    /// 編集画面の文字は投稿される画像と同じ基準で置かれる
+    var imageSize: CGSize?
     var overlays: [TextOverlay] = []
+
+    init(prepared: ImagePreparer.Prepared, image: UIImage?, overlays: [TextOverlay] = []) {
+        self.prepared = prepared
+        self.preview = image.map { Image(uiImage: $0) }
+        self.imageSize = image?.size
+        self.overlays = overlays
+    }
 }

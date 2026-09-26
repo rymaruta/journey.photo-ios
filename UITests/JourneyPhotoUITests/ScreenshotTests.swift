@@ -1,4 +1,5 @@
 import XCTest
+import CoreLocation
 
 /// 各画面を撮る。
 ///
@@ -34,7 +35,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **撮影スポットのピンを撮る。** 公開済みのスポットは国内の4件だけで、
-    /// 地図の既定の範囲（写真のあるフランス）には1本も出ない。名前で絞ると
+    /// 地図を開いた範囲（シミュレータの現在地＝パリ）には1本も出ない。名前で絞ると
     /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
     /// 見つからなければ撮らない（名前と中身が食い違う絵は、無い絵より悪い）
     private func shootSpotPin(_ app: XCUIApplication) {
@@ -53,6 +54,36 @@ final class ScreenshotTests: XCTestCase {
         // 絞りを解いて、あとの画面に持ち越さない
         let clear = app.buttons["消す"].firstMatch
         if clear.exists { clear.tap() }
+    }
+
+    /// **位置の許可の札に答える。** 地図は開いた最初の1回に現在地を取りにいく
+    /// （2026-09-26〜）ので、初めて開くと iOS が許可を尋ねる。この札は
+    /// アプリの外（SpringBoard）に出て、**残るとあとのタブが押せなくなる**。
+    /// 「使用中は許可」を押す——既定の場所が現在地になる、いまの動きを撮るため
+    private func answerLocationPrompt() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let alert = springboard.alerts.firstMatch
+        guard alert.waitForExistence(timeout: 5) else { return }
+        for label in ["アプリの使用中は許可", "Allow While Using App", "1度だけ許可", "Allow Once"] {
+            let button = alert.buttons[label]
+            if button.exists {
+                button.tap()
+                return
+            }
+        }
+        // 文言が変わっていても札は残さない（残すと以降が全部撮れない）
+        alert.buttons.element(boundBy: 0).tap()
+    }
+
+    /// **シミュレータに現在地を持たせる。** 持たせないと CI のシミュレータは
+    /// 位置を返さず、地図は「現在地を探しています…」のまま写真に合わせた
+    /// 絵になる（run 100）——既定の場所が現在地になる動きが絵で確かめられない。
+    /// 場所はパリ（本番の写真がある所。ピンと現在地が同じ絵に入る）
+    private func simulateLocation() {
+        if #available(iOS 16.4, *) {
+            XCUIDevice.shared.location = XCUILocation(
+                location: CLLocation(latitude: 48.8566, longitude: 2.3522))
+        }
     }
 
     func testCapturesEveryScreen() {
@@ -103,7 +134,9 @@ final class ScreenshotTests: XCTestCase {
         let names = ["ホーム", "探す", "投稿", "マップ", "マイページ"]
         // 中央（投稿）はシートが出るので、一巡の中では触らない
         for (index, name) in names.enumerated() where index < tabBar.buttons.count && index != 2 {
+            if name == "マップ" { simulateLocation() }
             tabBar.buttons.element(boundBy: index).tap()
+            if name == "マップ" { answerLocationPrompt() }
             _ = app.navigationBars.firstMatch.waitForExistence(timeout: 15)
             // **少し待ってから撮る。** 写真は通信で来るので、描いた直後は
             // 枠だけの絵になる（それを「表示が壊れている」と読み違える）
@@ -129,11 +162,11 @@ final class ScreenshotTests: XCTestCase {
         // 中身が1画面に収まり、送っても動かない。「（下）」という名前で
         // 上と同じ絵を置くのは、名前と中身が食い違う絵の変種。
         //
-        // 動いたかは**名前の付いた目印の位置**で見る（`trips.entry`）。
+        // 動いたかは**名前の付いた目印の位置**で見る（`profile.tab.trips`）。
         if tabBar.buttons.count > 4 {
             tabBar.buttons.element(boundBy: 4).tap()
             Thread.sleep(forTimeInterval: 3)
-            let mark = app.buttons["trips.entry"].firstMatch
+            let mark = app.buttons["profile.tab.trips"].firstMatch
             let before = mark.exists ? mark.frame.origin.y : nil
             app.swipeUp()
             Thread.sleep(forTimeInterval: 2)
@@ -164,7 +197,7 @@ final class ScreenshotTests: XCTestCase {
             // **`30-旅の一冊` と `31-旅の足取り` が黙って消えた**
             // ——マイページに中身が出るようになった副作用で、run 64 までは
             // 送っても動かなかったので起きなかった。
-            let tripsEntry = app.buttons["trips.entry"].firstMatch
+            let tripsEntry = app.buttons["profile.tab.trips"].firstMatch
             var pullDowns = 0
             while tripsEntry.exists, !tripsEntry.isHittable, pullDowns < 4 {
                 app.swipeDown()
@@ -175,6 +208,12 @@ final class ScreenshotTests: XCTestCase {
                 tripsEntry.tap()
                 Thread.sleep(forTimeInterval: 4)
                 let firstTrip = app.buttons["trips.book"].firstMatch
+                // 旅の棚はタブの下に出る（整理案 05c でタブへ移した）。
+                // **画面の下に隠れていたら1回だけ送る**
+                if firstTrip.waitForExistence(timeout: 10), !firstTrip.isHittable {
+                    app.swipeUp()
+                    Thread.sleep(forTimeInterval: 2)
+                }
                 if firstTrip.waitForExistence(timeout: 10), firstTrip.isHittable {
                     firstTrip.tap()
                     Thread.sleep(forTimeInterval: 4)
@@ -184,9 +223,12 @@ final class ScreenshotTests: XCTestCase {
                     app.swipeUp()
                     Thread.sleep(forTimeInterval: 2)
                     shoot(app, "31-旅の足取り")
-                }
-                if app.navigationBars.buttons.firstMatch.exists {
-                    app.navigationBars.buttons.firstMatch.tap()
+                    // **押し込めた回だけ戻る。** 旅が無い回に押すと、戻るではなく
+                    // マイページの歯車（設定）に当たる（旅の一覧をタブへ畳んだので、
+                    // 押し込み先が必ずあるとは限らなくなった）
+                    if app.navigationBars.buttons.firstMatch.exists {
+                        app.navigationBars.buttons.firstMatch.tap()
+                    }
                 }
             }
         }

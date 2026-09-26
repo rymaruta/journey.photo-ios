@@ -9,7 +9,7 @@
 | やること | どこで | 備考 |
 |---|---|---|
 | Apple Developer Program に加入 | developer.apple.com | 年 12,980円（2026年時点）。加入待ちで1〜2日かかることがある |
-| App ID の作成 | Developer → Identifiers | `com.journeyphoto.JourneyPhoto`。**Capability は追加不要**（プッシュも Sign in with Apple も使っていない） |
+| App ID の作成 | Developer → Identifiers | `com.journeyphoto.JourneyPhoto`。Capability は **Push Notifications** だけ（`aps-environment` を構成ごとに変える・`project.yml` の注記）。Sign in with Apple は使っていない |
 | App の作成 | App Store Connect | 名前・プライマリ言語（日本語）・Bundle ID・SKU |
 
 `project.yml` の `JP_BUNDLE_ID` は `Config/Production.xcconfig` から入る。
@@ -64,8 +64,15 @@ Debug ビルド = staging（`Config/Staging.xcconfig`）。
 Xcode の **Product → Archive**（スキームの Archive は Release ＝本番設定）。
 
 - [ ] `Config/Production.xcconfig` の向き先が本番になっている
-- [ ] バージョン（`MARKETING_VERSION`）とビルド番号（`CURRENT_PROJECT_VERSION`）を上げた
-      ——**ビルド番号は提出のたびに必ず上げる**。同じ番号は受け付けられない
+- [ ] 版を上げた。**リリースのたびに必ず上げる**（2026-09-26 owner のルール）
+      - **GitHub Actions（`ios-testflight.yml`）で上げるなら何もしなくてよい。**
+        表に出る版（`MARKETING_VERSION`）の最後の数字は毎回自動で +1
+        （1.0.0 → 1.0.1 …・`Tools/next-marketing-version.sh`）、ビルド番号は
+        TestFlight の最新 +1。出した版は `testflight/<版>` のタグで覚える
+      - **手元の Xcode から上げるときだけ**、`bash Tools/bump-build.sh 1.0.1` の
+        ように版とビルド番号を自分で上げる。同じ番号は受け付けられない
+      - 真ん中・先頭の数字（1.1.0・2.0.0）を上げるのは、大きく変わる版のときに
+        人が決める：`bash Tools/bump-build.sh 1.1.0` でコミットしてから流す
 - [ ] アイコンが入っている（`Assets.xcassets/AppIcon`）
 
 Organizer → **Distribute App → App Store Connect → Upload**。
@@ -111,7 +118,15 @@ Archive・配布まで書いてある。ビルド番号は `bash Tools/bump-buil
 
 ## 費用と枠についての注意
 
-**GitHub Actions に iOS のビルドを載せていない。** macOS ランナーは
-**分数が10倍**で課金され、枠はアカウント共通（2026-09 時点で残り約193分）。
-1回のビルドで `photo-gallery` のデプロイを止めかねない。
-枠に余裕ができるまで、ビルドは手元の Xcode で行う。
+**TestFlight へは GitHub Actions（`ios-testflight.yml`・手動実行）で上げる。**
+このリポジトリは public なので、標準の macOS ランナーは無料
+（private に戻すと分数が10倍で課金され、枠は `photo-gallery` と共通になる。
+あちらの枠は 2026-09 に超過している見込み）。
+
+**並行して上げると版が進む。** 版は `testflight/<版>` のタグを見て毎回 +1
+するので、別の作業が先に上げると番号が1つずれる（2026-09-26 に
+1.0.1〜1.0.3 が1時間で進んだ）。App Store Connect で選ぶときは、
+中身（どのコミットか）をタグで確かめる:
+
+    git fetch --force origin 'refs/tags/testflight/*:refs/tags/testflight/*'
+    git log -1 --oneline testflight/1.0.3

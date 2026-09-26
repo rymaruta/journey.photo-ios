@@ -123,8 +123,12 @@ public struct Environment<Value>: DynamicProperty {
 
 public protocol DynamicProperty {}
 
+/// アプリが前面に居るか（本物は `@Environment(\.scenePhase)`）
+public enum ScenePhase: Equatable { case active, inactive, background }
+
 public struct EnvironmentValues {
     public var dismiss: DismissAction { DismissAction() }
+    public var scenePhase: ScenePhase { .active }
     public var openURL: OpenURLAction { OpenURLAction() }
     public var colorScheme: ColorScheme { .light }
 }

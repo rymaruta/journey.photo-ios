@@ -13,6 +13,7 @@ APP_DISPLAY_NAME = Journey Photo
 
 JP_SITE_BASE_URL = https:/$()/journey-photo.com
 JP_USER_API_BASE_URL = https:/$()/gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com
+JP_API_BASE_URL = https:/$()/ionr4ik01e.execute-api.ap-northeast-1.amazonaws.com
 
 JP_COGNITO_REGION = ap-northeast-1
 JP_COGNITO_USER_POOL_ID = ap-northeast-1_ZbuhDQsWz
