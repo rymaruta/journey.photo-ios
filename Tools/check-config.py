@@ -352,7 +352,17 @@ for ps in re.findall(r'static let \w+Name = "([^"]+)"', jpfont):
     # この repo はファイル名＝PostScript 名にしてある（`Tools/make-display-font.py`）
     if f"{ps}.ttf" not in listed and f"{ps}.otf" not in listed:
         fail(f"JPFont が引く {ps} に当たる書体が UIAppFonts にありません")
-for lic in ("OFL-ShipporiMincho.txt", "OFL-IBMPlexMono.txt"):
+# ストーリーの文字の書体（`TextOverlay.Face.fontName`）も同じく突き合わせる
+overlay_src = (ROOT / "Sources/JourneyPhoto/Core/Text/TextOverlay.swift").read_text(encoding="utf-8")
+face_block = overlay_src.split("var fontName: String? {", 1)[1].split("\n        }\n", 1)[0] \
+    if "var fontName: String? {" in overlay_src else ""
+face_names = re.findall(r'return "([^"]+)"', face_block)
+if not face_names:
+    fail("TextOverlay.Face.fontName が読めません（ストーリーの書体を突き合わせられない）")
+for ps in face_names:
+    if f"{ps}.ttf" not in listed and f"{ps}.otf" not in listed:
+        fail(f"ストーリーの文字が引く {ps} に当たる書体が UIAppFonts にありません")
+for lic in ("OFL-ShipporiMincho.txt", "OFL-IBMPlexMono.txt", "OFL-KleeOne.txt"):
     if not (FONTS_DIR / lic).exists():
         fail(f"書体のライセンス {lic} がありません（OFL は同梱が条件）")
 

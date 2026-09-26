@@ -115,6 +115,26 @@ final class StoryDurationDecodingTests: XCTestCase {
         let s = try story(#"{"id":"story-1","src":"https://x.test/1.jpg"}"#)
         XCTAssertNil(s.durationSec)
     }
+
+    /// 付けた曲を読む（閲覧画面の「曲名 · アーティスト」の行）
+    func testSongIsDecoded() throws {
+        let s = try story(#"{"id":"story-1","src":"https://x.test/1.jpg","song":{"title":"夜に駆ける","artist":"YOASOBI","previewUrl":"https://audio.test/p.m4a"}}"#)
+        XCTAssertEqual(s.songLine, "夜に駆ける · YOASOBI")
+    }
+
+    /// アーティストが無ければ曲名だけ
+    func testSongWithoutArtist() throws {
+        let s = try story(#"{"id":"story-1","src":"https://x.test/1.jpg","song":{"title":"雨","previewUrl":"https://audio.test/p.m4a"}}"#)
+        XCTAssertEqual(s.songLine, "雨")
+    }
+
+    /// 🔴 **曲の形が崩れていても、ストーリーは読める。** 一覧は配列1本で
+    /// 復号するので、ここで落ちると全員のストーリーが消える
+    func testBrokenSongDoesNotDropTheStory() throws {
+        let s = try story(#"{"id":"story-1","src":"https://x.test/1.jpg","durationSec":7,"song":{"artist":"題が無い"}}"#)
+        XCTAssertNil(s.song)
+        XCTAssertEqual(s.durationSec, 7)
+    }
 }
 
 /// **定型の反応は `text` ではなく `emoji` に入って返る**

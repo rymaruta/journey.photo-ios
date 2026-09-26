@@ -34,25 +34,30 @@ enum TextOverlayRenderer {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        return renderer.jpegData(withCompressionQuality: quality) { _ in
+        return renderer.jpegData(withCompressionQuality: quality) { context in
             image.draw(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
             for overlay in visible {
-                draw(overlay, on: size)
+                draw(overlay, on: size, context: context.cgContext)
             }
         }
     }
 
-    private static func draw(_ overlay: TextOverlay, on size: CGSize) {
+    private static func draw(_ overlay: TextOverlay, on size: CGSize, context: CGContext) {
         // **短い辺に対する割合で大きさを決める。** 長辺で決めると、
         // 横長と縦長で同じ指定が別の見え方になる。編集画面と同じ関数を通す
         let fontSize = TextOverlay.fontSize(overlay.size, in: size)
-        let attributes = attributes(for: overlay.style, fontSize: fontSize)
+        let attributes = attributes(for: overlay, fontSize: fontSize)
         // 場所と曲は印（📍 ♪）を頭に付けて焼く
         let text = overlay.displayText as NSString
         let bounds = text.size(withAttributes: attributes)
-        // 位置は中心で持っている（0...1 の相対値）
+        // 位置は中心で持っている（0...1 の相対値）。**回しは中心の周りで**
+        // （編集画面の `rotationEffect` も中心の周り）
         let center = overlay.center(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
-        let origin = CGPoint(x: center.x - bounds.width / 2, y: center.y - bounds.height / 2)
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.translateBy(x: center.x, y: center.y)
+        context.rotate(by: overlay.rotation)
+        let origin = CGPoint(x: -bounds.width / 2, y: -bounds.height / 2)
 
         if overlay.style == .banner {
             // 帯は文字より少し広く取る（角まで文字が届くと読みにくい）
@@ -65,19 +70,27 @@ enum TextOverlayRenderer {
         text.draw(at: origin, withAttributes: attributes)
     }
 
-    private static func attributes(for style: TextOverlay.Style,
+    private static func attributes(for overlay: TextOverlay,
                                    fontSize: Double) -> [NSAttributedString.Key: Any] {
-        let font = UIFont.systemFont(ofSize: fontSize, weight: .bold)
-        switch style {
-        case .light:
-            return [.font: font, .foregroundColor: UIColor.white]
+        // 同梱の書体（明朝・手書き風）。読めなければゴシック（端末の字）
+        let font = overlay.face.fontName.flatMap { UIFont(name: $0, size: fontSize) }
+            ?? UIFont.systemFont(ofSize: fontSize, weight: .bold)
+        let color = uiColor(overlay.drawnInk)
+        switch overlay.style {
+        case .light, .banner:
+            return [.font: font, .foregroundColor: color]
         case .dark:
-            // **黒い文字には白い縁を付ける。** 暗い写真の上では黒だけだと消える。
+            // **黒の見た目には白い縁を付ける。** 暗い写真の上では縁が無いと消える。
             // `strokeWidth` は負で「塗り＋縁」（正だと中抜きになる）
-            return [.font: font, .foregroundColor: UIColor.black,
+            return [.font: font, .foregroundColor: color,
                     .strokeColor: UIColor.white, .strokeWidth: -3.0]
-        case .banner:
-            return [.font: font, .foregroundColor: UIColor.white]
         }
+    }
+
+    private static func uiColor(_ ink: TextOverlay.Ink) -> UIColor {
+        let hex = ink.hex
+        return UIColor(red: Double((hex >> 16) & 0xFF) / 255,
+                       green: Double((hex >> 8) & 0xFF) / 255,
+                       blue: Double(hex & 0xFF) / 255, alpha: 1)
     }
 }

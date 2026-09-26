@@ -63,6 +63,7 @@ targets:
         # （`Tools/make-display-font.py`）、等幅は原本。ライセンスは同じ場所の OFL-*.txt
         UIAppFonts:
           - ShipporiMinchoB1-Bold.ttf
+          - KleeOne-SemiBold.ttf
           - IBMPlexMono-Regular.ttf
           - IBMPlexMono-Medium.ttf
         # 既定の言語は日本語。英語も持つ（画面の文字も権限の文も二言語）

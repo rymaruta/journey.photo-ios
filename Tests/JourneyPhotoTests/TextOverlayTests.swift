@@ -67,6 +67,29 @@ final class TextOverlayTests: XCTestCase {
         XCTAssertEqual(center.y, 200, accuracy: 0.0001)
     }
 
+    /// 埋めて敷く（作る画面）。縦長の枠に横長の写真を敷くと左右がはみ出す
+    func testFilledRectOverflowsSideways() {
+        let rect = TextOverlay.filledRect(image: CGSize(width: 4000, height: 3000),
+                                          in: CGSize(width: 390, height: 700))
+        XCTAssertEqual(rect.height, 700, accuracy: 0.0001)
+        XCTAssertEqual(rect.width, 700 * 4.0 / 3.0, accuracy: 0.0001)
+        XCTAssertLessThan(rect.minX, 0)
+    }
+
+    /// 🔴 **見えている範囲の外へ出さない。** はみ出した端へ動かすと掴み直せない
+    func testClampedToVisibleKeepsTextOnScreen() {
+        let canvas = CGSize(width: 390, height: 700)
+        let photo = TextOverlay.filledRect(image: CGSize(width: 4000, height: 3000), in: canvas)
+        let overlay = TextOverlay(text: "端", x: 0.02, y: 0.5)
+        let clamped = overlay.clamped(toVisible: photo, canvas: canvas)
+        let center = clamped.center(in: photo)
+        XCTAssertGreaterThanOrEqual(center.x, 0)
+        XCTAssertLessThanOrEqual(center.x, canvas.width)
+        // 真ん中は動かさない
+        let middle = TextOverlay(text: "中", x: 0.5, y: 0.5).clamped(toVisible: photo, canvas: canvas)
+        XCTAssertEqual(middle.x, 0.5, accuracy: 0.0001)
+    }
+
     /// 大きさが分からないときは枠いっぱい（0 で割らない）
     func testFittedRectWithUnknownImageFillsTheCanvas() {
         let rect = TextOverlay.fittedRect(image: CGSize(width: 0, height: 0),
@@ -218,6 +241,73 @@ extension TextOverlayTests {
         for kind in TextOverlay.Kind.allCases {
             XCTAssertFalse(kind.toolLabel.isEmpty, "\(kind)")
             XCTAssertFalse(kind.toolSymbol.isEmpty, "\(kind)")
+        }
+    }
+
+    /// 🔴 **前の版の下書きも読める。** 書体・色・回しは後から足した項目で、
+    /// 無いと下書きごと捨てられていた（`StoryDraftStore` が読めない記録を捨てる）
+    func testOldDraftOverlayStillDecodes() throws {
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"港","x":0.4,"y":0.3,"size":0.07,"style":"dark","kind":"text"}"#
+        let overlay = try JSONDecoder().decode(TextOverlay.self, from: Data(json.utf8))
+        XCTAssertEqual(overlay.face, .gothic)
+        XCTAssertEqual(overlay.ink, .ink)
+        XCTAssertEqual(overlay.rotation, 0)
+    }
+
+    /// 書体・色・回しは下書きを行き来しても残る
+    func testFaceInkRotationRoundTrip() throws {
+        let overlay = TextOverlay(text: "港", face: .hand, ink: .brass, rotation: 0.4)
+        let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(overlay))
+        XCTAssertEqual(back.face, .hand)
+        XCTAssertEqual(back.ink, .brass)
+        XCTAssertEqual(back.rotation, 0.4, accuracy: 0.0001)
+    }
+
+    /// 色を言わなければ見た目に合わせる（黒の見た目は墨の文字）
+    func testDefaultInkFollowsStyle() {
+        XCTAssertEqual(TextOverlay(text: "a", style: .dark).ink, .ink)
+        XCTAssertEqual(TextOverlay(text: "a", style: .light).ink, .white)
+    }
+
+    /// 🔴 **帯に墨・黒の見た目に白は描かない**（地や縁と同じ色で文字が消える）。
+    /// 札（撮影地など）は帯に固定なので、墨を選んでいても白で描く
+    func testUnreadableInkIsNotDrawn() {
+        XCTAssertEqual(TextOverlay(text: "a", style: .banner, ink: .ink).drawnInk, .white)
+        XCTAssertEqual(TextOverlay(text: "a", style: .dark, ink: .white).drawnInk, .ink)
+        XCTAssertEqual(TextOverlay(text: "港", style: .light, kind: .place, ink: .ink).drawnInk, .white)
+        XCTAssertEqual(TextOverlay(text: "a", style: .banner, ink: .brass).drawnInk, .brass)
+        XCTAssertFalse(TextOverlay.inks(for: .banner).contains(.ink))
+        XCTAssertFalse(TextOverlay.inks(for: .dark).contains(.white))
+        XCTAssertEqual(TextOverlay.inks(for: .light), TextOverlay.Ink.allCases)
+    }
+
+    /// 🔴 **見た目を切り替えても読める色に寄る。** 白→黒→白で墨が残り、
+    /// 白の見た目に墨の文字になっていた（2026-09-26 のレビュー）。
+    /// 真鍮などの色は切り替えても残る
+    func testStyleSwitchKeepsTextReadable() {
+        let white = TextOverlay(text: "a", style: .light)
+        XCTAssertEqual(white.withStyle(.dark).ink, .ink)
+        XCTAssertEqual(white.withStyle(.dark).withStyle(.light).ink, .white)
+        XCTAssertEqual(white.withStyle(.dark).withStyle(.banner).ink, .white)
+        // 白の見た目で自分で選んだ墨は、押し直しても帯を経ない限り残る
+        let inked = TextOverlay(text: "a", style: .light, ink: .ink)
+        XCTAssertEqual(inked.withStyle(.light).ink, .ink)
+        XCTAssertEqual(inked.withStyle(.banner).ink, .white)
+        let coral = TextOverlay(text: "a", style: .light, ink: .coral)
+        XCTAssertEqual(coral.withStyle(.dark).ink, .coral)
+        XCTAssertEqual(coral.withStyle(.dark).withStyle(.light).ink, .coral)
+        // 札は帯で固定（切り替えない）
+        let place = TextOverlay(text: "港", kind: .place)
+        XCTAssertEqual(place.withStyle(.dark).style, .banner)
+        // どの切り替えのあとも、保存される色がそのまま描かれる色
+        for start in TextOverlay.Style.allCases {
+            for ink in TextOverlay.Ink.allCases {
+                for next in TextOverlay.Style.allCases {
+                    let o = TextOverlay(text: "a", style: start, ink: ink).withStyle(next)
+                    guard TextOverlay.inks(for: start).contains(ink) else { continue }
+                    XCTAssertEqual(o.ink, o.drawnInk, "\(start) \(ink) → \(next)")
+                }
+            }
         }
     }
 }

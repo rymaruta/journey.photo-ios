@@ -33,6 +33,104 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 何の札か。**場所と曲は投稿の項目としても送る**ので、
     /// ここに置くのは「写真の上の見た目」だけ
     var kind: Kind
+    /// 書体（板 24b の「明朝・ゴシック・手書き風」）
+    var face: Face
+    /// 文字の色（板 24b の5色）
+    var ink: Ink
+    /// 回し（ラジアン。2本指で回す）
+    var rotation: Double
+
+    /// 書体。**アプリに同梱した字だけ**（端末に無い書体を選ばせると、
+    /// 画面と焼き込みで見た目が割れる）
+    enum Face: String, Codable, CaseIterable, Identifiable {
+        /// Shippori Mincho B1 Bold（見出しの明朝）
+        case mincho
+        /// 端末のゴシック（太字）。**以前の文字はすべてこれ**
+        case gothic
+        /// Klee One SemiBold（手書き風）
+        case hand
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .mincho: return L("明朝", "Serif")
+            case .gothic: return L("ゴシック", "Sans")
+            case .hand: return L("手書き風", "Handwritten")
+            }
+        }
+
+        /// 同梱の書体の名前（PostScript 名）。ゴシックは端末の字なので nil
+        var fontName: String? {
+            switch self {
+            case .mincho: return "ShipporiMinchoB1-Bold"
+            case .gothic: return nil
+            case .hand: return "KleeOne-SemiBold"
+            }
+        }
+    }
+
+    /// 文字の色（板 24b: 白・墨・真鍮・空色・珊瑚）
+    enum Ink: String, Codable, CaseIterable, Identifiable {
+        case white, ink, brass, sky, coral
+
+        var id: String { rawValue }
+
+        /// 0xRRGGBB
+        var hex: UInt32 {
+            switch self {
+            case .white: return 0xFFFFFF
+            case .ink: return 0x07090A
+            case .brass: return 0xC9A66B
+            case .sky: return 0x9CC3E6
+            case .coral: return 0xFF8A80
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .white: return L("白", "White")
+            case .ink: return L("墨", "Ink")
+            case .brass: return L("真鍮", "Brass")
+            case .sky: return L("空色", "Sky")
+            case .coral: return L("珊瑚", "Coral")
+            }
+        }
+    }
+
+    /// この見た目で選べる色。**帯に墨・黒の見た目に白は読めない**ので出さない
+    /// （帯は黒 65% の地、黒の見た目は白い縁——どちらも同じ色だと文字が消える）
+    static func inks(for style: Style) -> [Ink] {
+        switch style {
+        case .light: return Ink.allCases
+        case .dark: return Ink.allCases.filter { $0 != .white }
+        case .banner: return Ink.allCases.filter { $0 != .ink }
+        }
+    }
+
+    /// **描くときの色。** 選べない組（見た目を後から変えた・札で帯に固定された）は
+    /// 読める色に寄せる。画面も焼き込みもこれを通す
+    var drawnInk: Ink {
+        Self.inks(for: style).contains(ink) ? ink : (style == .dark ? .ink : .white)
+    }
+
+    /// **見た目を切り替える。** 読めない組になる色だけ寄せ、他の色は残す
+    /// （白→黒は墨・帯に墨は白。真鍮・空色・珊瑚はどの見た目でもそのまま）。
+    /// **黒→白だけは墨を白に戻す**——黒の既定の墨を白の見た目へ持ち越すと、
+    /// 白→黒→白で文字が墨のまま残る。白の見た目で墨を自分で選んだ人の墨は残す。
+    /// 同じ見た目の押し直しと、札（撮影地など・帯で固定）は何もしない
+    func withStyle(_ newStyle: Style) -> TextOverlay {
+        guard kind.forcedStyle == nil, newStyle != style else { return self }
+        var next = self
+        next.style = newStyle
+        switch (newStyle, ink) {
+        case (.dark, .white): next.ink = .ink
+        case (.banner, .ink): next.ink = .white
+        case (.light, .ink) where style == .dark: next.ink = .white
+        default: break
+        }
+        return next
+    }
 
     /// 札の種類（モック4-3 のスタンプ）。
     ///
@@ -95,12 +193,13 @@ struct TextOverlay: Identifiable, Equatable, Codable {
 
         var toolLabel: String {
             switch self {
-            case .text: return L("テキスト", "Text")
-            case .place: return L("場所", "Place")
-            case .song: return L("BGM", "Music")
+            // 板 24b「文字と札」のチップの言い方
+            case .text: return L("文字", "Text")
+            case .place: return L("撮影地", "Place")
+            case .song: return L("曲", "Music")
             case .time: return L("時刻", "Time")
             case .date: return L("日付", "Date")
-            case .hashtag: return L("ハッシュタグ", "Hashtag")
+            case .hashtag: return L("タグ", "Tag")
             }
         }
 
@@ -149,15 +248,41 @@ struct TextOverlay: Identifiable, Equatable, Codable {
 
     init(id: UUID = UUID(), text: String, x: Double = 0.5, y: Double = 0.5,
          size: Double = TextOverlay.defaultSize, style: Style = .light,
-         kind: Kind = .text) {
+         kind: Kind = .text, face: Face = .gothic, ink: Ink? = nil, rotation: Double = 0) {
         self.id = id
         self.text = String(text.prefix(Self.maxLength))
         self.x = Self.clampPosition(x)
         self.y = Self.clampPosition(y)
         self.size = Self.clampSize(size)
         // 場所と曲は帯で固定（見た目を選ばせない＝読めない札を作らせない）
-        self.style = kind.forcedStyle ?? style
+        let resolved = kind.forcedStyle ?? style
+        self.style = resolved
         self.kind = kind
+        self.face = face
+        // 色を言わなければ見た目に合わせる（黒は墨、他は白）
+        self.ink = ink ?? (resolved == .dark ? .ink : .white)
+        self.rotation = rotation
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, text, x, y, size, style, kind, face, ink, rotation
+    }
+
+    /// **前の版の下書きも読む。** 書体・色・回しは後から足した項目なので、
+    /// 無ければ以前の見た目（ゴシック・見た目に合わせた色・回しなし）にする
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let style = try c.decode(Style.self, forKey: .style)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.text = try c.decode(String.self, forKey: .text)
+        self.x = try c.decode(Double.self, forKey: .x)
+        self.y = try c.decode(Double.self, forKey: .y)
+        self.size = try c.decode(Double.self, forKey: .size)
+        self.style = style
+        self.kind = try c.decode(Kind.self, forKey: .kind)
+        self.face = (try? c.decodeIfPresent(Face.self, forKey: .face)) ?? .gothic
+        self.ink = (try? c.decodeIfPresent(Ink.self, forKey: .ink)) ?? (style == .dark ? .ink : .white)
+        self.rotation = (try? c.decodeIfPresent(Double.self, forKey: .rotation)) ?? 0
     }
 
     /// 画面と画像に出す文字（印つき）。
@@ -182,7 +307,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
 
     /// 文字の大きさ。**画像の短い辺に対する割合**で決める。
     ///
-    /// 編集画面（`TextOverlayEditor`）と焼き込み（`TextOverlayRenderer`）が
+    /// 編集画面（`StoryCanvas`）と焼き込み（`TextOverlayRenderer`）が
     /// **両方ともここを通る**。以前は編集画面が「3:4 の枠の高さ」、焼き込みが
     /// 「画像の短い辺」で別々に計算していて、横長の写真だと投稿した文字が
     /// 編集中より小さく出ていた（2026-09-26 のバグ探し）
@@ -194,6 +319,38 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 編集画面では枠の中に収まった写真）。**両方ともここを通る**
     func center(in photo: CGRect) -> CGPoint {
         CGPoint(x: photo.minX + photo.width * x, y: photo.minY + photo.height * y)
+    }
+
+    /// `canvas` を `image` で縦横比のまま**埋めた**ときの、画像の場所
+    /// （はみ出した部分は画面の外。作る画面は写真を画面いっぱいに敷く・板 24）。
+    ///
+    /// 文字の位置は画像に対する割合のままなので、焼き込みと同じところに出る。
+    /// 閲覧画面も同じく埋めて出すので、**作る画面で見えている範囲が
+    /// 見る人にもほぼ同じに見える**
+    static func filledRect(image: CGSize, in canvas: CGSize) -> CGRect {
+        guard image.width > 0, image.height > 0, canvas.width > 0, canvas.height > 0 else {
+            return CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height)
+        }
+        let scale = max(canvas.width / image.width, canvas.height / image.height)
+        let width = image.width * scale
+        let height = image.height * scale
+        return CGRect(x: (canvas.width - width) / 2, y: (canvas.height - height) / 2,
+                      width: width, height: height)
+    }
+
+    /// 画面に見えている範囲の中へ寄せる（埋めて出すと画像の端が画面の外に出る。
+    /// そこへ動かすと掴み直せず、消すこともできなくなる）
+    func clamped(toVisible photo: CGRect, canvas: CGSize) -> TextOverlay {
+        guard photo.width > 0, photo.height > 0 else { return self }
+        let margin = 0.02
+        let minX = max(0, -photo.minX / photo.width) + margin
+        let maxX = min(1, (canvas.width - photo.minX) / photo.width) - margin
+        let minY = max(0, -photo.minY / photo.height) + margin
+        let maxY = min(1, (canvas.height - photo.minY) / photo.height) - margin
+        var result = self
+        result.x = min(max(x, minX), max(minX, maxX))
+        result.y = min(max(y, minY), max(minY, maxY))
+        return result
     }
 
     /// `canvas` の中に `image` を縦横比のまま収めたときの、画像の場所。

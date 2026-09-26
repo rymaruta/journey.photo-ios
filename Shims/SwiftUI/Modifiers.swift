@@ -78,6 +78,7 @@ public struct AccessibilityTraits: OptionSet {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
     public static let isSelected = AccessibilityTraits(rawValue: 1)
+    public static let isModal = AccessibilityTraits(rawValue: 1 << 5)
     public static let isButton = AccessibilityTraits(rawValue: 2)
 }
 public struct TextInputAutocapitalization {
@@ -131,6 +132,7 @@ public struct ToolbarPlacementShim {
 public struct AnyTransitionShim {
     public static let scale = AnyTransitionShim()
     public static let opacity = AnyTransitionShim()
+    public static func move(edge: Edge) -> AnyTransitionShim { AnyTransitionShim() }
     public func combined(with other: AnyTransitionShim) -> AnyTransitionShim { self }
 }
 
@@ -220,12 +222,16 @@ extension View {
     public func shadow(color: Color, radius: Double, x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func transition(_ t: AnyTransitionShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func allowsHitTesting(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func rotationEffect(_ a: Angle) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func presentationBackground<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func presentationDragIndicator(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func contentShape<T: Shape>(_ shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     // 黒地に揃えるために使う（`WebTheme`）。模型なので何も描かない
     public func scrollContentBackground(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func preferredColorScheme(_ s: ColorSchemeShim?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarBackground<S: ShapeStyle>(_ s: S, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarColorScheme(_ s: ColorSchemeShim?, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func toolbar(_ v: VisibilityShim, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(_ content: V, alignment: Alignment = .center) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func buttonStyle(_ s: PrimitiveButtonStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -307,12 +313,20 @@ extension View {
 
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+    public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func swipeActions<C: View>(@ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
 }
 
 // MARK: - 指の操作（模型）
 
 public protocol Gesture {}
+
+/// 2本指で回す（文字と札の回し）
+public struct RotationGesture: Gesture {
+    public init() {}
+    public func onChanged(_ action: @escaping (Angle) -> Void) -> RotationGesture { self }
+    public func onEnded(_ action: @escaping (Angle) -> Void) -> RotationGesture { self }
+}
 
 public struct MagnificationGesture: Gesture {
     public init(minimumScaleDelta: Double = 0.01) {}

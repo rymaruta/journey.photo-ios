@@ -239,4 +239,113 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(StoryPlayback.swipe(dx: -StoryPlayback.swipeThreshold, dy: 0), .next)
         XCTAssertEqual(StoryPlayback.swipe(dx: 0, dy: StoryPlayback.swipeThreshold), .close)
     }
+
+    /// 返信の候補は板の3つ。空の一言は送らない
+    func testQuickRepliesMatchTheBoard() {
+        XCTAssertEqual(StoryPlayback.quickReplies, ["きれい", "行ってみたい", "どこですか？"])
+        XCTAssertFalse(StoryPlayback.quickReplies.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+        XCTAssertEqual(StoryPlayback.quickReplies.count, StoryPlayback.quickRepliesEnglish.count)
+    }
+
+    /// 止め方で札の言い方を変える（メニューで止めた人に「指を離すと」と言わない）
+    func testPausedNoteDependsOnHowItWasPaused() {
+        XCTAssertNotEqual(StoryPlayback.pausedNote(pressing: true),
+                          StoryPlayback.pausedNote(pressing: false))
+    }
+
+    /// 🔴 **触れただけでは隠さない。** 長押しが決まるまで何も変えない
+    /// （以前はタップのたびに見出しと足元が点滅した）
+    func testTapDoesNotHideTheChrome() {
+        let c = StoryPlayback.chrome(longHeld: false, paused: false, overlayOpen: false)
+        XCTAssertFalse(c.hidesChrome)
+        XCTAssertFalse(c.showsPill)
+    }
+
+    /// 長押しの間は見出しと足元を隠し、「指を離すと」の札
+    func testLongHoldHidesChrome() {
+        let c = StoryPlayback.chrome(longHeld: true, paused: false, overlayOpen: false)
+        XCTAssertTrue(c.hidesChrome)
+        XCTAssertTrue(c.showsPill)
+        XCTAssertTrue(c.pillSaysRelease)
+    }
+
+    /// 🔴 **メニューで止めたときは見出しを残す**（隠すと ✕ と「再開」に届かない）
+    func testMenuPauseKeepsTheHeader() {
+        let c = StoryPlayback.chrome(longHeld: false, paused: true, overlayOpen: false)
+        XCTAssertFalse(c.hidesChrome)
+        XCTAssertTrue(c.showsPill)
+        XCTAssertFalse(c.pillSaysRelease)
+    }
+
+    /// 止めている間に長押ししても、離して続くとは言わない
+    func testHoldWhilePausedDoesNotPromiseRelease() {
+        let c = StoryPlayback.chrome(longHeld: true, paused: true, overlayOpen: false)
+        XCTAssertFalse(c.pillSaysRelease)
+    }
+
+    /// メニューや確認を開いている間は札を出さない
+    func testOverlayWins() {
+        let c = StoryPlayback.chrome(longHeld: true, paused: true, overlayOpen: true)
+        XCTAssertFalse(c.hidesChrome)
+        XCTAssertFalse(c.showsPill)
+    }
+
+    /// 「あと N 時間で消えます」。1時間を切ったら分、過ぎたら出さない
+    func testRemaining() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func iso(_ seconds: TimeInterval) -> String {
+            let f = ISO8601DateFormatter()
+            return f.string(from: now.addingTimeInterval(seconds))
+        }
+        XCTAssertEqual(StoryPlayback.remaining(until: iso(22 * 3600 + 120), now: now),
+                       L("あと 22 時間で消えます", "Disappears in 22h"))
+        XCTAssertEqual(StoryPlayback.remaining(until: iso(30 * 60 + 5), now: now),
+                       L("あと 30 分で消えます", "Disappears in 30m"))
+        XCTAssertNil(StoryPlayback.remaining(until: iso(-60), now: now))
+        XCTAssertNil(StoryPlayback.remaining(until: "not a date", now: now))
+    }
+
+    /// 🔴 **返信の数に反応を混ぜない。** 反応の画面と数が割れていた
+    func testRepliesExcludeReactions() throws {
+        let json = #"[{"uid":"a","text":"きれい","t":"1"},{"uid":"b","emoji":"❤️","t":"2"},{"uid":"c","text":"どこ？","t":"3"}]"#
+        let replies = try JSONDecoder.api.decode([StoryReply].self, from: Data(json.utf8))
+        XCTAssertEqual(replies.textReplies.map(\.body), ["きれい", "どこ？"])
+        XCTAssertEqual(replies.reactionCount, 1)
+    }
+
+    /// 反応の画面の副題と、ハイライトの日付（端末の時刻帯で読む）
+    func testPostedAtAndDotDate() {
+        let tokyo = TimeZone(identifier: "Asia/Tokyo")!
+        XCTAssertEqual(StoryPlayback.postedAt("2026-09-24T09:20:00.000Z", timeZone: tokyo),
+                       L("9月24日 18:20に投稿", "Posted Sep 24, 18:20"))
+        XCTAssertEqual(StoryPlayback.dotDate("2026-09-11T20:00:00Z", timeZone: tokyo), "2026.09.12")
+        XCTAssertNil(StoryPlayback.postedAt(nil))
+        XCTAssertNil(StoryPlayback.dotDate("?"))
+    }
+
+    /// 🔴 **自分は先頭、残りは未読 → 既読**（板 27）。同じ組の中はサーバーの並びのまま
+    func testRingsOrderMeFirstThenUnseen() throws {
+        func story(_ id: String, _ user: String) throws -> Story {
+            try JSONDecoder.api.decode(Story.self, from: Data(
+                #"{"id":"\#(id)","src":"https://x.test/\#(id).jpg","userId":"\#(user)"}"#.utf8))
+        }
+        let rings = try [story("s1", "a"), story("s2", "me"), story("s3", "b"), story("s4", "c")]
+        let seen: Set<String> = ["s1"]
+        let ordered = StoryPlayback.orderedRings(rings, me: "me", isUnseen: { !seen.contains($0.id) })
+        XCTAssertEqual(ordered.mine?.id, "s2")
+        XCTAssertEqual(ordered.others.map(\.id), ["s3", "s4", "s1"])
+        // ログインしていなければ自分の輪は無い
+        XCTAssertNil(StoryPlayback.orderedRings(rings, me: nil, isUnseen: { _ in true }).mine)
+    }
+
+    /// 輪を本数で区切る。1本は切れ目なし、2本は半分ずつで間に切れ目
+    func testRingSegments() {
+        XCTAssertEqual(StoryPlayback.ringSegments(count: 1).count, 1)
+        XCTAssertEqual(StoryPlayback.ringSegments(count: 1)[0].start, 0)
+        XCTAssertEqual(StoryPlayback.ringSegments(count: 1)[0].end, 1)
+        let two = StoryPlayback.ringSegments(count: 2, gap: 0.02)
+        XCTAssertEqual(two.count, 2)
+        XCTAssertEqual(two[0].end, 0.49, accuracy: 0.0001)
+        XCTAssertEqual(two[1].start, 0.51, accuracy: 0.0001)
+    }
 }

@@ -76,6 +76,7 @@ public final class UIColor {
     public static let clear = UIColor()
     public init() {}
     public init(white: Double, alpha: Double) {}
+    public init(red: Double, green: Double, blue: Double, alpha: Double) {}
     public func withAlphaComponent(_ alpha: Double) -> UIColor { self }
     public func setFill() {}
 }
@@ -85,9 +86,21 @@ public final class UIFont {
         public static let regular = Weight(), medium = Weight(), semibold = Weight(), bold = Weight(), heavy = Weight()
     }
     public static func systemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
+    public init() {}
+    public init?(name: String, size: Double) {}
 }
 
-public struct UIGraphicsImageRendererContext {}
+/// 描き込み先（回して描くのに使うぶんだけ）
+public final class CGContext {
+    public func saveGState() {}
+    public func restoreGState() {}
+    public func translateBy(x: Double, y: Double) {}
+    public func rotate(by angle: Double) {}
+}
+
+public struct UIGraphicsImageRendererContext {
+    public var cgContext: CGContext { CGContext() }
+}
 
 public final class UIGraphicsImageRendererFormat {
     public init() {}

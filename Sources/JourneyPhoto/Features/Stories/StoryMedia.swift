@@ -26,7 +26,9 @@ struct StoryMedia: View {
         if story.isVideo, let url = story.imageURL {
             StoryVideo(url: url, isMuted: isMuted, isPaused: isPaused, onEnded: onEnded)
         } else {
-            RemoteImage(url: story.imageURL, contentMode: .fit, onSettled: onSettled)
+            // **画面いっぱいに敷く**（板は `object-fit: cover`）。はみ出しは
+            // 閲覧画面が切る
+            RemoteImage(url: story.imageURL, contentMode: .fill, onSettled: onSettled)
         }
     }
 }
@@ -99,19 +101,46 @@ private struct StoryVideo: View {
 struct StoryThumb: View {
 
     let story: Story
+    /// 丸の直径（輪の内側に置くときは 52）
+    var size: CGFloat = 64
 
     var body: some View {
         if story.isVideo {
             Image(systemName: "play.circle")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-                .frame(width: 64, height: 64)
+                .frame(width: size, height: size)
                 .background(WebTheme.surface, in: Circle())
                 .accessibilityLabel(L("動画のストーリー", "Video story"))
         } else {
             RemoteImage(url: story.imageURL)
-                .frame(width: 64, height: 64)
+                .frame(width: size, height: size)
                 .clipShape(Circle())
+        }
+    }
+}
+
+/// ストーリーの四角いサムネ（反応の画面の 72×112 など）。**枠いっぱいに敷く。**
+///
+/// 動画は `StoryThumb` と同じく1コマ目を出さず、記号を置く。
+/// 大きさと角丸は呼ぶ側が決める
+struct StoryPoster: View {
+
+    let story: Story
+
+    var body: some View {
+        if story.isVideo {
+            ZStack {
+                WebTheme.surface
+                Image(systemName: "play.circle")
+                    .font(.title2)
+                    .foregroundStyle(WebTheme.faint)
+            }
+            .accessibilityLabel(L("動画のストーリー", "Video story"))
+        } else {
+            // `.fill` の絵は枠より大きい寸法を申告するので、透明な枠に重ねる
+            Color.clear.overlay { RemoteImage(url: story.imageURL) }
+                .clipped()
         }
     }
 }

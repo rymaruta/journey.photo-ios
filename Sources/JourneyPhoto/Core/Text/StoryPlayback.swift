@@ -208,6 +208,36 @@ enum StoryPlayback {
         }
     }
 
+    /// ホームの輪の並び（板 27「いつもの並び」）。**自分は先頭に別に取り出し、
+    /// 残りは未読 → 既読の順**。未読どうし・既読どうしはサーバーの並びのまま
+    /// （同じ順を保つ——開くたびに輪が入れ替わると覚えられない）
+    static func orderedRings(_ rings: [Story], me: String?,
+                             isUnseen: (Story) -> Bool) -> (mine: Story?, others: [Story]) {
+        let mine = me.flatMap { id in rings.first { $0.userId == id } }
+        let others = rings.filter { me == nil || $0.userId != me }
+        let unseen = others.filter(isUnseen)
+        let seen = others.filter { !isUnseen($0) }
+        return (mine, unseen + seen)
+    }
+
+    /// 輪を本数で区切るときの1区切り（0...1 の始まりと終わり）。
+    /// **1本なら切れ目の無い輪**。切れ目は円周のうち `gap` の割合
+    static func ringSegments(count: Int, gap: Double = 4.0 / 182.2) -> [(start: Double, end: Double)] {
+        guard count > 1 else { return [(0, 1)] }
+        // **型を言い切って1式ずつ書く。** 名前付きの組を返す式を1行で書くと、
+        // Xcode の型検査が時間切れで止まる（TestFlight run #113）
+        let step: Double = 1.0 / Double(count)
+        let half: Double = gap / 2
+        var segments: [(start: Double, end: Double)] = []
+        segments.reserveCapacity(count)
+        for i in 0..<count {
+            let start: Double = Double(i) * step + half
+            let end: Double = Double(i + 1) * step - half
+            segments.append((start: start, end: end))
+        }
+        return segments
+    }
+
     /// 端末側で落とす。
     ///
     /// サーバーの一覧はブロックを両向きに落として返すが、**通報した1本は
@@ -252,6 +282,50 @@ enum StoryPlayback {
         return items
     }
 
+    // MARK: - 返信の候補
+
+    /// 返信欄の上に並べる一言（板「25d 返信を書く」）。**押すとそのまま送る**
+    /// ——ふつうの返信（`text`）として送るので、サーバーの変更は要らない
+    static let quickReplies = ["きれい", "行ってみたい", "どこですか？"]
+    static let quickRepliesEnglish = ["Beautiful", "I want to go", "Where is this?"]
+
+    // MARK: - 一時停止の札
+
+    /// 止めている間の画面の出し方。
+    ///
+    /// - `longHeld`: **0.35秒押し続けた**（指が触れただけでは立てない——
+    ///   `onPressingChanged` は触れた瞬間に true になるので、それで隠すと
+    ///   ふつうのタップのたびに見出しと足元が点滅した）
+    /// - `paused`: メニューの「一時停止」で止めた
+    ///
+    /// 見出しと足元を隠すのは**長押しの間だけ**（板 25b）。メニューで止めた
+    /// ときに隠すと、「…」（再開）と ✕ に手が届かなくなる
+    struct Chrome: Equatable {
+        let hidesChrome: Bool
+        let showsPill: Bool
+        /// 札の言い方。長押しなら「指を離すと」
+        let pillSaysRelease: Bool
+    }
+
+    static func chrome(longHeld: Bool, paused: Bool, overlayOpen: Bool) -> Chrome {
+        guard !overlayOpen else {
+            return Chrome(hidesChrome: false, showsPill: false, pillSaysRelease: false)
+        }
+        return Chrome(hidesChrome: longHeld,
+                      showsPill: longHeld || paused,
+                      // 両方立っているときは、離しても続かないので「押すと」
+                      pillSaysRelease: longHeld && !paused)
+    }
+
+    /// 止めている間に出す札の文言。**長押しなら「指を離すと」、メニューから
+    /// 止めたなら「押すと」**——メニューで止めた人に「指を離すと」と言っても
+    /// 離す指が無い
+    static func pausedNote(pressing: Bool) -> String {
+        pressing
+            ? L("一時停止中 — 指を離すと続きから", "Paused — release to continue")
+            : L("一時停止中 — 押すと続きから", "Paused — tap to continue")
+    }
+
     // MARK: - 時刻
 
     /// 「2時間前」。**サーバーの時刻が読めなければ何も出さない**
@@ -266,6 +340,54 @@ enum StoryPlayback {
         let hours = minutes / 60
         if hours < 24 { return L("\(hours)時間前", "\(hours)h ago") }
         return L("\(hours / 24)日前", "\(hours / 24)d ago")
+    }
+
+    /// 「あと 22 時間で消えます」（自分のストーリーの見出し・板 25e）。
+    /// **1時間を切ったら分で言う**。読めない・過ぎているときは出さない
+    static func remaining(until iso: String?, now: Date = Date()) -> String? {
+        guard let iso, let date = parse(iso) else { return nil }
+        let seconds = date.timeIntervalSince(now)
+        guard seconds > 0 else { return nil }
+        let minutes = Int(seconds / 60)
+        if minutes < 60 {
+            return L("あと \(max(1, minutes)) 分で消えます", "Disappears in \(max(1, minutes))m")
+        }
+        return L("あと \(minutes / 60) 時間で消えます", "Disappears in \(minutes / 60)h")
+    }
+
+    /// 投稿した日時（反応の画面の副題「9月24日 18:20に投稿」）。**端末の時刻帯で**
+    static func postedAt(_ iso: String?, timeZone: TimeZone = .current) -> String? {
+        guard let iso, let date = parse(iso) else { return nil }
+        return L("\(format(date, "M月d日 HH:mm", locale: "ja_JP", timeZone))に投稿",
+                 "Posted \(format(date, "MMM d, HH:mm", locale: "en_US_POSIX", timeZone))")
+    }
+
+    /// ハイライトの左下の日付（「2026.09.12」・等幅で出す）
+    static func dotDate(_ iso: String?, timeZone: TimeZone = .current) -> String? {
+        guard let iso, let date = parse(iso) else { return nil }
+        return format(date, "yyyy.MM.dd", locale: "en_US_POSIX", timeZone)
+    }
+
+    /// **書式器は使い回す。** ハイライトの足元は時計の刻み（1秒に20回）ごとに
+    /// 描き直されるので、呼ぶたびに作ると重い
+    private static var formatters: [String: DateFormatter] = [:]
+    private static let formattersLock = NSLock()
+
+    private static func format(_ date: Date, _ pattern: String, locale: String, _ timeZone: TimeZone) -> String {
+        let key = "\(pattern)|\(locale)|\(timeZone.identifier)"
+        formattersLock.lock()
+        defer { formattersLock.unlock() }
+        let f: DateFormatter
+        if let cached = formatters[key] {
+            f = cached
+        } else {
+            f = DateFormatter()
+            f.locale = Locale(identifier: locale)
+            f.timeZone = timeZone
+            f.dateFormat = pattern
+            formatters[key] = f
+        }
+        return f.string(from: date)
     }
 
     /// サーバーは `toISOString()`（小数秒つき）だが、小数秒の無い ISO8601 も
