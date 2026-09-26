@@ -11,8 +11,9 @@ struct PostSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
 
-    /// 札の絵に敷く写真（板 21: 絵の後ろに写真・85%）。取れなければ地の色のまま
+    /// 札の絵に敷く写真（板 21: 絵の後ろに写真・85%）。**本人の写真だけ**。無ければ地の色のまま
     @State private var thumbs: [URL] = []
 
     /// 選ばれたもの。閉じたあとに呼び手が開く
@@ -65,9 +66,19 @@ struct PostSheet: View {
         .presentationDragIndicator(.visible)
         .presentationBackground(Self.sheetBackground)
         .task {
-            // 公開一覧の先頭2枚（一覧は60秒控えてあるので、通信はほぼ増えない）
-            guard thumbs.isEmpty, let photos = try? await environment.gallery.fetchPhotos() else { return }
-            thumbs = Array(photos.lazy.compactMap(\.gridImageURL).prefix(2))
+            // **自分が最近出した写真**（`PostSheetThumbs`）。取れない・まだ無いときは
+            // 印だけの無地のまま——**他人の写真で埋めない**
+            // ログインしていなければ聞きに行かない（無地のまま）
+            guard let userId = auth.userId else { return }
+            if let cached = PostSheetThumbs.cache.urls(for: userId) {
+                thumbs = cached
+                return
+            }
+            // **取れなかったときは控えない**（次に開いたときに取り直す）
+            guard let mine = try? await environment.photos.myPhotos() else { return }
+            let picked = PostSheetThumbs.pick(fromMine: mine)
+            PostSheetThumbs.cache.store(picked, for: userId)
+            thumbs = picked
         }
     }
 

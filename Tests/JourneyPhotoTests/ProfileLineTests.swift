@@ -5,10 +5,27 @@ import XCTest
 final class ProfileLineTests: XCTestCase {
 
     func testHandleAndHome() {
-        XCTAssertEqual(ProfileLine.handleAndHome(username: "yuki", home: "東京"), "@yuki · 📍東京")
-        XCTAssertEqual(ProfileLine.handleAndHome(username: "yuki", home: " "), "@yuki")
-        XCTAssertEqual(ProfileLine.handleAndHome(username: nil, home: "東京"), "📍東京")
+        XCTAssertEqual(ProfileLine.handleAndHome(username: "yuki", home: "東京"),
+                       .init(handle: "@yuki", home: "東京"))
+        XCTAssertEqual(ProfileLine.handleAndHome(username: "yuki", home: " "),
+                       .init(handle: "@yuki", home: nil))
+        XCTAssertEqual(ProfileLine.handleAndHome(username: nil, home: "東京"),
+                       .init(handle: nil, home: "東京"))
         XCTAssertNil(ProfileLine.handleAndHome(username: "", home: nil))
+    }
+
+    /// **居住地に絵文字のピンを混ぜない**（板は線のピンの印で、画面側で描く）
+    func testHomeHasNoEmojiPin() {
+        let line = ProfileLine.handleAndHome(username: "yuki", home: "東京")
+        XCTAssertEqual(line?.home, "東京")
+        XCTAssertFalse(line?.spoken.contains("📍") ?? true)
+    }
+
+    /// 印は読まれないので、読み上げでは「居住地」と言葉で添える
+    func testSpokenNamesTheHome() {
+        XCTAssertEqual(ProfileLine.handleAndHome(username: "yuki", home: "東京")?.spoken,
+                       "@yuki、居住地 東京")
+        XCTAssertEqual(ProfileLine.handleAndHome(username: "yuki", home: nil)?.spoken, "@yuki")
     }
 
     /// 空は出さず、同じ文は二度出さない

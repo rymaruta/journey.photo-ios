@@ -134,8 +134,20 @@ struct MyPageView: View {
     /// 時計の裏に入れない
     private var content: some View {
         GeometryReader { geo in
-            scroll(topInset: geo.safeAreaInsets.top)
-                .ignoresSafeArea(edges: hasCover ? .top : [])
+            ZStack(alignment: .top) {
+                scroll(topInset: geo.safeAreaInsets.top)
+                    .ignoresSafeArea(edges: hasCover ? .top : [])
+                // **時計の裏に黒のぼかし**。上のバーを出さないので、流した写真が
+                // 時計・電池の字の真下を通って字が読めなくなっていた。
+                // GeometryReader の原点は安全域の下なので、その分だけ上へずらす。
+                // 押す操作は下へ通す
+                LinearGradient(colors: [Color.black.opacity(0.7), Color.black.opacity(0)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: geo.safeAreaInsets.top + 16)
+                    .offset(y: -geo.safeAreaInsets.top)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
     }
 
@@ -180,8 +192,14 @@ struct MyPageView: View {
                 // ボタンの列も置かない**——編集は見出しの右、お気に入りは下のタブ、
                 // アルバムは設定から入る（`SettingsView`）
                 highlightsRow
-                tabPicker
-                photoArea
+                // **札と中身は横に払っても切り替わる**（札を押すのと同じ）。
+                // 払いを受けるのは札から下だけ——上のハイライトの列は横に流れる
+                VStack(alignment: .leading, spacing: 14) {
+                    tabPicker
+                    photoArea
+                }
+                .contentShape(Rectangle())
+                .simultaneousGesture(tabSwipe)
             }
         }
         .refreshable { await model.load() }
@@ -202,7 +220,7 @@ struct MyPageView: View {
     }
 
     /// 見出し（板 05c・05d）: 84pt のアイコン（黒い 3pt の縁）と右に「プロフィールを
-    /// 編集」、その下に明朝 26 の名前・「@ユーザー名 · 📍居住地」・ひとこと
+    /// 編集」、その下に明朝 26 の名前・「@ユーザー名 · (線のピン)居住地」・ひとこと
     private func header(_ profile: UserProfile) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .bottom) {
@@ -237,10 +255,30 @@ struct MyPageView: View {
                 }
                 if let line = ProfileLine.handleAndHome(username: profile.username,
                                                         home: profile.homeLocation) {
-                    // 居住地は**地図には出さない**（住んでいる場所はピンにしない）
-                    Text(line)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                    // 居住地は**地図には出さない**（住んでいる場所はピンにしない）。
+                    // 頭の印は板どおり**線のピン**（11pt）——絵文字の「📍」は赤く出ていた
+                    HStack(spacing: 4) {
+                        if let handle = line.handle {
+                            // 狭いときは居住地の方を先に詰める（名前と「·」を残す）
+                            Text(handle)
+                                .lineLimit(1)
+                                .layoutPriority(1)
+                        }
+                        if line.handle != nil && line.home != nil {
+                            Text("·")
+                                .layoutPriority(1)
+                        }
+                        if let home = line.home {
+                            Image(systemName: "mappin")
+                                .font(.system(size: 11))
+                            Text(home)
+                                .lineLimit(1)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(line.spoken)
                 }
                 // ひとこと。**持っているのに一度も出していなかった**
                 ForEach(ProfileLine.about(status: profile.statusText, bio: profile.bio), id: \.self) { text in
@@ -295,8 +333,18 @@ struct MyPageView: View {
         }
         .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
         .contentShape(Rectangle())
+        // **押せる高さは 44pt のまま、並びの上では字の高さだけ取る**（板: 数の下は
+        // すぐ 12pt で旅の実績の行）。44pt で場所を取ると、数と旅の実績の間が
+        // 板の倍近く空いていた。押せる範囲は下の旅の実績の行と重ならない量だけ詰める
+        .padding(.vertical, -Self.statTapSlack)
         .accessibilityElement(children: .combine)
     }
+
+    /// 数の札の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）
+    private static let statTapSlack: CGFloat = 5
+    /// 旅の実績の札の同じ量（上下同じ）。数の札の張り出しと足して間の 12pt に収まる量。
+    /// **上下で変えない**——変えると、間の「·」（素の字）だけが項目の字とずれる
+    private static let recordTapSlack: CGFloat = 6
 
     /// 旅の実績（モック2-3）。**訪れた国・地域**と**写真をつないだ距離**を
     /// **小さな1行**で出す（整理案 05c・2026-09-26）。以前は幅いっぱいの
@@ -311,7 +359,8 @@ struct MyPageView: View {
         let countries = VisitedCountries.count(in: model.photos)
         let km = TravelDistance.total(of: model.photos)
         if countries > 0 || km > 0 {
-            HStack(spacing: 14) {
+            // 板: 「訪れた国・地域 00 · 写真をつないだ距離 000 km」（12px・間 6px）
+            HStack(spacing: 6) {
                 if countries > 0 {
                     recordItem(label: L("訪れた国・地域", "Countries"), value: "\(countries)") {
                         showCountriesNote = true
@@ -325,6 +374,12 @@ struct MyPageView: View {
                         Text(L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
                                "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number."))
                     }
+                }
+                if countries > 0 && km > 0 {
+                    Text("·")
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .accessibilityHidden(true)
                 }
                 if km > 0 {
                     recordItem(label: L("写真をつないだ距離", "Distance between photos"),
@@ -347,20 +402,22 @@ struct MyPageView: View {
     /// 1行の中の1項目。**押せる高さは 44pt**（見た目は小さな字のまま）
     private func recordItem(label: String, value: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Text(label)
                     .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.faint)
                     // 幅の狭い端末（SE など）で2項目が1行に収まるように、折り返さずに少しだけ縮める
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Text(value)
-                    .font(JPFont.mono(13, medium: true, relativeTo: .caption))
-                    .foregroundStyle(WebTheme.foreground)
+                    .font(JPFont.mono(12, relativeTo: .caption))
+                    .foregroundStyle(Color.white)
             }
             .frame(minHeight: WebTheme.minTapTarget)
             .contentShape(Rectangle())
         }
+        // 数の札と同じく、押せる高さは 44pt のまま並びの上では詰める
+        .padding(.vertical, -Self.recordTapSlack)
         .buttonStyle(.plain)
         .accessibilityHint(L("数え方を表示", "Shows how this is counted"))
     }
@@ -611,7 +668,7 @@ struct MyPageView: View {
                     HStack(spacing: 6) {
                         if icons {
                             Image(systemName: option.systemImage)
-                                .font(.system(size: 13))
+                                .font(.system(size: 16))
                                 .accessibilityHidden(true)
                         }
                         tabLabel(option, selected: selected)
@@ -632,6 +689,20 @@ struct MyPageView: View {
                 .accessibilityIdentifier("profile.tab.\(option.rawValue)")
             }
         }
+    }
+
+    /// 横の払いでタブを切り替える。**`simultaneousGesture` で付ける**——`gesture` に
+    /// すると縦のスクロールと写真を押す操作を奪う。判定は `ProfileTab.swiped`
+    /// （はっきり横に動いたときだけ・端で回り込まない）
+    private var tabSwipe: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onEnded { value in
+                guard let next = ProfileTab.swiped(from: tab, in: ProfileTab.tabs(isMe: true),
+                                                   dx: Double(value.translation.width),
+                                                   dy: Double(value.translation.height))
+                else { return }
+                tab = next
+            }
     }
 
     /// 名前。**幅は太字で測る**（選ぶたびに幅が変わって印が出入りしないように）。
