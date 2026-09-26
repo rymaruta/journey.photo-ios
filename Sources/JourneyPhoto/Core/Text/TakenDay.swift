@@ -11,14 +11,10 @@ import Foundation
 /// 時刻は「アップロードした時刻」が混ざっている可能性がある
 /// （`date` が空のときにサーバーが埋める経路は無いが、過去の行は分からない）。
 /// 分からない精度を出さない。
+///
+/// 画面に出す書式は `PhotoMetaLine.stamp`（板 02 の「2026.09.12 · 17:42」）。
+/// 時刻はそちらが EXIF の撮影時刻からだけ足す。
 enum TakenDay {
-
-    /// 「2026年9月19日」。**読めない値は nil**（生のまま出すくらいなら出さない）
-    static func label(_ raw: String?, locale: String = L("ja", "en")) -> String? {
-        guard let head = ymd(raw) else { return nil }
-        let (y, m, d) = head
-        return locale == "ja" ? "\(y)年\(m)月\(d)日" : "\(monthName(m)) \(d), \(y)"
-    }
 
     /// `YYYY-MM-DD` の頭だけを取り出して数にする。
     /// **月日の妥当さまで見る**——`2026-13-40` のような行を「13月40日」と
@@ -31,11 +27,5 @@ enum TakenDay {
               let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]),
               y >= 1826, y <= 2200, m >= 1, m <= 12, d >= 1, d <= 31 else { return nil }
         return (y, m, d)
-    }
-
-    private static func monthName(_ month: Int) -> String {
-        let names = ["January", "February", "March", "April", "May", "June",
-                     "July", "August", "September", "October", "November", "December"]
-        return names[max(0, min(11, month - 1))]
     }
 }

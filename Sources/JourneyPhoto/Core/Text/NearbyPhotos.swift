@@ -28,6 +28,29 @@ enum NearbyPhotos {
         .map { (photo: $0.0, km: $0.1) }
     }
 
+    /// 写真の詳細の「この近くで撮られた写真」（板 02）。
+    ///
+    /// **その写真の座標から測る。** 座標の無い写真には節ごと出さない
+    /// （空の配列を返す）——撮影地の文字が同じでも、座標の無い写真は
+    /// 「近い」と言えない。
+    ///
+    /// **自分と、同じ投稿の束（`groupId`）は入れない。** 束は上の写真で
+    /// 左右に送れるので、ここに並べると同じ写真が二度出る
+    static func around(_ photo: Photo, in all: [Photo],
+                       withinKm radius: Double = defaultRadius, limit: Int = 12) -> [Photo] {
+        guard let center = photo.coords else { return [] }
+        let group = (photo.groupId ?? "").isEmpty ? nil : photo.groupId
+        var seen: Set<String> = [photo.id]
+        var picked: [Photo] = []
+        for (item, _) in photos(all, near: center, withinKm: radius) {
+            if let group, item.groupId == group { continue }
+            guard seen.insert(item.id).inserted else { continue }
+            picked.append(item)
+            if picked.count >= limit { break }
+        }
+        return picked
+    }
+
     /// 距離の言い方。**必ず「約」を付ける**（丸めた座標から出した値なので）。
     ///
     /// 1km 未満は「1km以内」——「0.3km」と書くと、持っていない精度を

@@ -56,3 +56,47 @@ final class NearbyPhotosTests: XCTestCase {
         XCTAssertTrue(NearbyPhotos.heading(radiusKm: 5, count: 12).contains("12"))
     }
 }
+
+/// 写真の詳細の「この近くで撮られた写真」（板 02）
+final class NearbyAroundPhotoTests: XCTestCase {
+
+    private func photo(_ id: String, lat: Double?, lng: Double?, group: String? = nil) throws -> Photo {
+        let c = (lat != nil && lng != nil) ? ",\"coords\":{\"lat\":\(lat!),\"lng\":\(lng!)}" : ""
+        let g = group.map { ",\"groupId\":\"\($0)\"" } ?? ""
+        return try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(c)\(g)}".utf8))
+    }
+
+    /// 近い順・自分は入らない・遠いものは落ちる
+    func testNearestFirstWithoutSelf() throws {
+        let me = try photo("me", lat: 35.68, lng: 139.77)
+        let near = try photo("near", lat: 35.69, lng: 139.77)
+        let mid = try photo("mid", lat: 35.71, lng: 139.77)
+        let far = try photo("far", lat: 34.69, lng: 135.50)
+        XCTAssertEqual(NearbyPhotos.around(me, in: [far, mid, me, near]).map(\.id), ["near", "mid"])
+    }
+
+    /// **座標の無い写真には節ごと出さない**
+    func testNoCoordsMeansNothing() throws {
+        let me = try photo("me", lat: nil, lng: nil)
+        let near = try photo("near", lat: 35.69, lng: 139.77)
+        XCTAssertTrue(NearbyPhotos.around(me, in: [near]).isEmpty)
+    }
+
+    /// 同じ投稿の束は上で送れるので、ここに二度並べない
+    func testSameGroupIsLeftOut() throws {
+        let me = try photo("me", lat: 35.68, lng: 139.77, group: "g1")
+        let sibling = try photo("sib", lat: 35.68, lng: 139.77, group: "g1")
+        let other = try photo("other", lat: 35.68, lng: 139.77, group: "g2")
+        XCTAssertEqual(NearbyPhotos.around(me, in: [sibling, other]).map(\.id), ["other"])
+    }
+
+    /// 同じ写真が2回来ても1回だけ・上限で切る
+    func testDedupAndLimit() throws {
+        let me = try photo("me", lat: 35.68, lng: 139.77)
+        let a = try photo("a", lat: 35.68, lng: 139.77)
+        let b = try photo("b", lat: 35.68, lng: 139.77)
+        let c = try photo("c", lat: 35.68, lng: 139.77)
+        XCTAssertEqual(NearbyPhotos.around(me, in: [a, a, b, c], limit: 2).map(\.id), ["a", "b"])
+    }
+}

@@ -74,7 +74,7 @@ struct JourneyPhotoApp: App {
     /// 「見せない」を公開一覧の側へ渡す。
     ///
     /// 出すところ（`PublicGalleryService`）で落とすので、ギャラリー・検索・
-    /// 地図・関連写真・お気に入りの**全部に一度に効く**。
+    /// 地図・近くの写真・お気に入りの**全部に一度に効く**。
     private func applyModeration() async {
         await environment.gallery.setHidden(
             userIds: hidden.blockedUserIds,
