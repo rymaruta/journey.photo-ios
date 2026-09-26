@@ -26,11 +26,14 @@ struct MyPageView: View {
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// BGM の再生の丸（再生中かどうかで印を変える）
+    @ObservedObject private var player = MusicPreviewPlayer.shared
 
+    /// 板 05c: 3列・隙間 4pt・角なし
     private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 4),
+        GridItem(.flexible(), spacing: 4),
+        GridItem(.flexible(), spacing: 4),
     ]
 
     var body: some View {
@@ -379,13 +382,49 @@ struct MyPageView: View {
     /// アプリが復号していなかっただけだった（⛔ にしていたのは誤り）。
     /// 曲は `MusicPreviewPlayer` に通す——**専用の再生器を作らない**
     /// （画面をまたいだ操作は `MiniPlayerBar` が受け持っている）。
+    ///
+    /// 板 05c: 高さ 48pt の札（地 白7%・縁 白8%・角丸12）。36pt の絵、
+    /// 「曲名 · アーティスト」と「BGM · 30秒の試聴」、右に白い 40pt の再生の丸
     @ViewBuilder
     private func bgmCard(_ profile: UserProfile) -> some View {
         if let song = profile.bgm {
-            SongRow(song: song)
-                .padding(12)
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-                .padding(.horizontal, 16)
+            let playing = player.isPlaying(song.previewURL)
+            HStack(spacing: 10) {
+                RemoteImage(url: song.artworkURL)
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(SongSticker.text(for: song) ?? song.title)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(WebTheme.foreground)
+                        .lineLimit(1)
+                    Text(L("BGM · 30秒の試聴", "BGM · 30-second preview"))
+                        .font(.caption2)
+                        .foregroundStyle(WebTheme.faint)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    player.toggle(song.previewURL, song: song)
+                } label: {
+                    Image(systemName: playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .frame(width: 40, height: 40)
+                        .background(WebTheme.accentBackground, in: Circle())
+                        // 見た目は 40pt、押せる範囲は 44pt
+                        .padding(2)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(playing ? L("止める", "Pause") : L("再生", "Play"))
+            }
+            .padding(.leading, 6)
+            .padding(.trailing, 4)
+            .frame(minHeight: 48)
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .padding(.horizontal, 20)
         }
     }
 
@@ -583,21 +622,31 @@ struct MyPageView: View {
 
     /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
     /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
+    /// 板 05c: 下線の札（印＋名前・13px・高さ 44）。選んでいる札は白い字と
+    /// 下の 2pt の白い線、下に白12% の1本線
     private var tabPicker: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             ForEach(ProfileTab.tabs(isMe: true)) { option in
                 let selected = tab == option
                 Button {
                     tab = option
                 } label: {
-                    Text(option.label)
-                        .font(.subheadline.weight(selected ? .semibold : .regular))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                             : AnyShapeStyle(Color.clear),
-                                    in: Capsule())
-                        .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                    HStack(spacing: 6) {
+                        Image(systemName: option.systemImage)
+                            .font(.system(size: 13))
+                        Text(option.label)
+                            .font(.footnote.weight(selected ? .semibold : .regular))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(selected ? Color.white : WebTheme.faint)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(selected ? Color.white : Color.clear)
+                            .frame(height: 2)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
@@ -606,8 +655,9 @@ struct MyPageView: View {
                 .accessibilityIdentifier("profile.tab.\(option.rawValue)")
             }
         }
-        .padding(4)
-        .background(WebTheme.surface, in: Capsule())
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+        }
         .padding(.horizontal, 16)
     }
 
@@ -696,7 +746,7 @@ struct MyPageView: View {
         } else if tab == .favorites {
             favoritesArea
         } else {
-            LazyVGrid(columns: columns, spacing: 2) {
+            LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(model.photos) { photo in
                     NavigationLink {
                         PhotoDetailView(photo: photo, fromPublicFeed: false, context: model.photos)
@@ -723,26 +773,30 @@ struct MyPageView: View {
 
     /// 一覧の1枚。**下書き（非公開）は一目で分かるようにする**
     /// ——公開したつもりの写真が出ていない、がいちばん困る。
+    /// 印は左上（板 05c: ピンは 22pt の黒い丸、下書きは黒い小さな札）
     private func gridCell(_ photo: Photo) -> some View {
-        ZStack(alignment: .topTrailing) {
-            PhotoFrame(photo: photo)
-            if model.isPinned(photo.id) {
-                Image(systemName: "pin.fill")
-                    .font(.caption)
-                    .padding(4)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .padding(4)
-                    .accessibilityLabel(L("ピン留め中", "Pinned"))
+        PhotoFrame(photo: photo, corner: 0)
+            .overlay(alignment: .topLeading) {
+                HStack(spacing: 4) {
+                    if model.isPinned(photo.id) {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 22, height: 22)
+                            .background(Color.black.opacity(0.55), in: Circle())
+                            .accessibilityLabel(L("ピン留め中", "Pinned"))
+                    }
+                    if photo.published == false {
+                        Text(L("下書き", "Draft"))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.black.opacity(0.6), in: Capsule())
+                    }
+                }
+                .padding(6)
             }
-            if photo.published == false {
-                Text(L("下書き", "Draft"))
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(4)
-            }
-        }
     }
 }
 
