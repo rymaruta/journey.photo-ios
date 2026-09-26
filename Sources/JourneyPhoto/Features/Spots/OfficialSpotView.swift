@@ -98,6 +98,9 @@ struct OfficialSpotView: View {
                 .aspectRatio(4 / 3, contentMode: .fit)
                 .overlay(RemoteImage(url: photo.url))
                 .clipped()
+                // `Color.clear` は読み上げの対象にならないので、1つの画像としてまとめて名前を付ける
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isImage)
                 .accessibilityLabel(L("\(spot.name) の写真", "Photo of \(spot.name)"))
             Group {
                 if let page = photo.pageUrl {
