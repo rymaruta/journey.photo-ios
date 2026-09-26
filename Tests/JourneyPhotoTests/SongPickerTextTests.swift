@@ -53,19 +53,35 @@ final class SongPickerTextTests: XCTestCase {
         XCTAssertFalse(SongPickerText.isCurrent(sent: "海", now: "山"), "打ち直した")
     }
 
-    /// 🔴 バーは二重に出さない。曲選びで鳴らした曲はシートの中だけ、
-    /// それ以外は全体のバーだけ。前から鳴っていた曲に「· 試し聴き中」を出さない
-    func testBarIsShownInExactlyOnePlace() {
-        let origins: [PlaybackOrigin?] = [nil, .app, .songPicker]
-        for origin in origins {
-            let inPicker = SongPickerText.showsBar(playingFrom: origin, inSongPicker: true)
-            let global = SongPickerText.showsBar(playingFrom: origin, inSongPicker: false)
-            XCTAssertFalse(inPicker && global, "\(String(describing: origin)) が二重に出る")
-        }
+    /// 🔴 シートの中のバーは、鳴っている曲なら**どこで鳴らしたかに関わらず**出す。
+    /// 全体のバーはシートに覆われて見えないので、前から鳴っていた曲（マイページの
+    /// BGM など）を出さないと、鳴っているのに止める口が画面に無くなる
+    func testPickerBarShowsAnyPlayingSong() {
         XCTAssertTrue(SongPickerText.showsBar(playingFrom: .songPicker, inSongPicker: true))
-        XCTAssertFalse(SongPickerText.showsBar(playingFrom: .app, inSongPicker: true), "前から鳴っていた曲")
+        XCTAssertTrue(SongPickerText.showsBar(playingFrom: .app, inSongPicker: true), "前から鳴っていた曲")
+        XCTAssertFalse(SongPickerText.showsBar(playingFrom: nil, inSongPicker: true))
+        // 全体のバー: 曲選びで鳴らした曲は出さない（閉じる途中に2本並ばない）
         XCTAssertTrue(SongPickerText.showsBar(playingFrom: .app, inSongPicker: false))
+        XCTAssertFalse(SongPickerText.showsBar(playingFrom: .songPicker, inSongPicker: false))
         XCTAssertFalse(SongPickerText.showsBar(playingFrom: nil, inSongPicker: false))
+    }
+
+    /// 「· 試し聴き中」は曲選びで鳴らした曲を、シートの中で出すときだけ。
+    /// 前から鳴っていた曲は試し聴きではないので題だけ
+    func testPreviewingSuffixOnlyForPickerSongs() {
+        XCTAssertEqual(SongPickerText.barTitle("海へ", playingFrom: .songPicker, inSongPicker: true), "海へ · 試し聴き中")
+        XCTAssertEqual(SongPickerText.barTitle("海へ", playingFrom: .app, inSongPicker: true), "海へ")
+        XCTAssertEqual(SongPickerText.barTitle("海へ", playingFrom: .app, inSongPicker: false), "海へ")
+    }
+
+    /// 🔴 くるくるを戻すのは最新の検索の回だけ。古い検索が遅れて終わっても、
+    /// 新しい検索の途中の表示を消さない
+    func testOnlyLatestSearchEndsSpinner() {
+        var runs = SongPickerText.SearchRuns()
+        let first = runs.begin()
+        let second = runs.begin()
+        XCTAssertFalse(runs.isLatest(first), "古い検索")
+        XCTAssertTrue(runs.isLatest(second))
     }
 
     // MARK: - 控え
