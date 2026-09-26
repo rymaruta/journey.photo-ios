@@ -17,6 +17,8 @@ struct MyPageView: View {
     @State private var feed: [Photo] = []
     /// 公開一覧を読み終えたか（「まだ」と「0件」を混ぜない）
     @State private var feedLoaded = false
+    /// 最後の公開一覧の読み込みが失敗したか（「読み込めませんでした」はこの回だけ）
+    @State private var feedFailed = false
     /// 「お気に入り」タブに出す保存の ID。**描画のたびに `savedPhotos.ids` を
     /// 読まない**——詳細でしおりを外した瞬間に `ForEach` から元の
     /// `NavigationLink` が消え、**見ている詳細が閉じる**（`SavedPhotosView`・
@@ -127,6 +129,7 @@ struct MyPageView: View {
             savedIds = []
             feed = []
             feedLoaded = false
+            feedFailed = false
             model.forgetPhotos()
         }
     }
@@ -247,7 +250,12 @@ struct MyPageView: View {
         }
         .refreshable {
             await model.load()
-            // 保存の一覧も取り直す（`onAppear` を待たずに引き下げで揃う）
+            // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
+            // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
+            // 読み取りも強い整合でなく（`userList.ts` の `readUserRows`）、外した
+            // 直後に入れ替えると外した保存が控えに戻る（いいねで踏んだのと同じ形）。
+            // サーバーに合わせるのは起動時・ログイン時の `syncSaves` だけ
+            await loadFeed(force: true)
             refreshSavedIds()
         }
     }
@@ -516,11 +524,14 @@ struct MyPageView: View {
     private var favoritesArea: some View {
         let saved = LikedPhotos.resolve(savedIds, in: [feed, model.photos])
         if saved.isEmpty {
-            switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading) {
+            switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
+                                          failed: feedFailed) {
             case .loading:
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             case .none:
                 ErrorBanner(message: SavedPhotosView.emptyMessage)
+            case .nothingShown:
+                ErrorBanner(message: LikedPhotos.nothingShownMessage)
             case .unresolved:
                 ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
                     Task {
@@ -800,10 +811,12 @@ struct MyPageView: View {
         }
     }
 
-    /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる
-    private func loadFeed() async {
-        let fetched = try? await environment.gallery.fetchPhotos()
+    /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。
+    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` がタブごと知らせる
+    private func loadFeed(force: Bool = false) async {
+        let fetched = try? await environment.gallery.fetchPhotos(force: force)
         guard !Task.isCancelled else { return }
+        feedFailed = fetched == nil
         feed = fetched ?? feed
         feedLoaded = true
         refreshSavedIds()

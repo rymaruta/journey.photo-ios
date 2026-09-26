@@ -16,27 +16,29 @@ struct SavedPhotosView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var hidden: ModerationStore
-    /// 引き当て先（公開一覧＋自分の写真・`PhotoPools`）。公開一覧は**絞る前**を
-    /// 持つ（非表示で落ちた ID を数え分けるため・`refilter`）
+    /// 引き当て先（公開一覧＋自分の写真・`PhotoPools`）
     @State private var feed: [Photo] = []
     @State private var mine: [Photo] = []
     /// 画面に出す分。**戻ってきたときに絞り直す**（`FavoritesView` と同じ理由——
     /// 見ている詳細でしおりを外した瞬間に元の行が消えると、詳細が閉じる）
     @State private var photos: [Photo] = []
-    /// 絞ったときの ID の数（「0件」と「引き当てられなかった」を分ける）。
-    /// 非表示で落ちたぶんは数えない（`LikedPhotos.countExcludingHidden`）
+    /// 絞ったときの ID の数（「0件」と「出せる写真が無い」を分ける）
     @State private var idCount = 0
     /// 引き当て先を一度でも読み終えたか（「まだ」と「0件」を混ぜない）
     @State private var loaded = false
+    /// 最後の読み込みで引き当て先が取れなかったか（「読み込めませんでした」はこの回だけ）
+    @State private var failed = false
 
     var body: some View {
         ScrollView {
             if photos.isEmpty {
-                switch LikedPhotos.emptyState(idCount: idCount, loaded: loaded) {
+                switch LikedPhotos.emptyState(idCount: idCount, loaded: loaded, failed: failed) {
                 case .loading:
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
                 case .none:
                     ErrorBanner(message: Self.emptyMessage)
+                case .nothingShown:
+                    ErrorBanner(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:
                     ErrorBanner(message: Self.unresolvedMessage) {
                         Task { await load(force: true) }
@@ -61,7 +63,8 @@ struct SavedPhotosView: View {
           "No saved photos yet. Tap the bookmark on a photo to save it.")
     }
 
-    /// 保存はあるのに1枚も引き当てられなかった回（マイページのタブでも使う）。
+    /// 保存はあるのに、引き当て先の読み込みが失敗して1枚も出せなかった回
+    /// （マイページのタブでも使う）。
     /// 「まだありません」と言うと、保存が消えたように読める
     static var unresolvedMessage: String {
         L("保存した写真を読み込めませんでした。通信の状態を確かめるか、消された写真かもしれません",
@@ -71,21 +74,22 @@ struct SavedPhotosView: View {
     // 引き当ての決まり（id を手元の写真の束から探す・重複は1枚に）はいいねと同じ
     // （`LikedPhotos.resolve`）。保存のために同じ関数をもう1つ作らない
     private func refilter() {
-        let visibleFeed = hidden.visible(feed)
         let ids = savedPhotos.ids
-        idCount = LikedPhotos.countExcludingHidden(ids, pools: [feed, mine], visiblePools: [visibleFeed, mine])
-        photos = LikedPhotos.resolve(ids, in: [visibleFeed, mine])
+        idCount = ids.count
+        photos = LikedPhotos.resolve(ids, in: [hidden.visible(feed), mine])
     }
 
     private func load(force: Bool = false) async {
         // ログインの確認中は待つ（決まったら `.task(id:)` が読み直す）
         guard !auth.isResolving else { return }
-        let pools = await PhotoPools.load(environment, signedIn: auth.userId != nil, force: force)
+        let signedIn = auth.userId != nil
+        let pools = await PhotoPools.load(environment, signedIn: signedIn, force: force)
         // 取り消された回（画面を離れた・読み直しに追い越された）は何も書かない
         guard !Task.isCancelled else { return }
+        failed = pools.feed == nil || (signedIn && pools.mine == nil)
         feed = pools.feed ?? feed
         // ログアウトしたら前の人の写真を残さない
-        mine = auth.userId == nil ? [] : (pools.mine ?? mine)
+        mine = signedIn ? (pools.mine ?? mine) : []
         loaded = true
         refilter()
     }

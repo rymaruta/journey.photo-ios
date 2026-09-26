@@ -18,33 +18,32 @@ enum LikedPhotos {
         case loading
         /// 本当に0件（ID が1つも無い）
         case none
-        /// ID はあるのに1枚も引き当てられなかった（読み込みの失敗・
-        /// 消された写真・非公開に戻された写真）。「まだありません」と言うと嘘になる
+        /// ID はあり、引き当て先も読めたが、出せる写真が1枚も無い（消された・
+        /// 非公開に戻された・ブロックや通報で非表示）。読み直しても出ないので
+        /// エラーにせず、再試行も出さない（`nothingShownMessage`）
+        case nothingShown
+        /// ID はあるのに、**引き当て先の読み込みが失敗した**ので出せなかった。
+        /// 「まだありません」と言うと、保存やいいねが消えたように読める
         case unresolved
     }
 
     /// - Parameters:
-    ///   - idCount: 引き当てようとした ID の数。**非表示（ブロック・通報）で
-    ///     落ちたぶんは数えない**（`countExcludingHidden`）——数えると、全部が
-    ///     非表示の人に「読み込めませんでした」と再試行が出続ける
+    ///   - idCount: 引き当てようとした ID の数
     ///   - loaded: 引き当て先（公開一覧・自分の写真）を読み終えたか
-    static func emptyState(idCount: Int, loaded: Bool) -> EmptyState {
+    ///   - failed: 最後の読み込みで引き当て先が取れなかったか（`PhotoPools` の
+    ///     `feed` が nil など）。**「読み込めませんでした」はこの回だけ。**
+    ///     公開一覧はブロック・通報を落として返る（`PublicGalleryService`）ので、
+    ///     「引き当て先に無い」を失敗と数えると、全部が非表示の人に再試行が出続ける
+    static func emptyState(idCount: Int, loaded: Bool, failed: Bool) -> EmptyState {
         guard loaded else { return .loading }
-        return idCount == 0 ? .none : .unresolved
+        if idCount == 0 { return .none }
+        return failed ? .unresolved : .nothingShown
     }
 
-    /// ID の数から、**非表示で落ちただけの ID** を引いた数（`emptyState` に渡す）。
-    ///
-    /// 「引き当て先に無い」（読み込みの失敗・消された写真）と「あるが非表示で
-    /// 落ちた」を分ける。後者は読み直しても出ないので、「読み込めませんでした」
-    /// と言わない。
-    /// - Parameters:
-    ///   - pools: 絞る前の引き当て先
-    ///   - visiblePools: 非表示を落とした後の引き当て先（`pools` と同じ並び）
-    static func countExcludingHidden(_ ids: Set<String>, pools: [[Photo]], visiblePools: [[Photo]]) -> Int {
-        let found = Set(resolve(ids, in: pools).map(\.id))
-        let shown = Set(resolve(ids, in: visiblePools).map(\.id))
-        return ids.count - found.subtracting(shown).count
+    /// `.nothingShown` の文（保存した写真・いいねした写真・マイページのタブで共通）。
+    /// 保存やいいねが消えたとは言わない——ID は残っていて、出せる写真が無いだけ
+    static var nothingShownMessage: String {
+        L("表示できる写真はありません", "No photos to show")
     }
 
     /// ID を写真に引き当てる（新しい順）。

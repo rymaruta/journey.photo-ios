@@ -34,11 +34,12 @@ struct FavoritesView: View {
     /// その場で閉じる**（SwiftUI は押した先を、押した元の存在に紐付ける）。
     /// 絞り直すのは**戻ってきたとき**（`.onAppear`）。
     @State private var photos: [Photo] = []
-    /// 絞ったときの ID の数（「0件」と「引き当てられなかった」を分ける）。
-    /// 非表示で落ちたぶんは数えない（`LikedPhotos.countExcludingHidden`）
+    /// 絞ったときの ID の数（「0件」と「出せる写真が無い」を分ける）
     @State private var idCount = 0
     /// 引き当て先を一度でも読み終えたか（「まだ」と「0件」を混ぜない）
     @State private var loaded = false
+    /// 最後の読み込みで引き当て先が取れなかったか（「読み込めませんでした」はこの回だけ）
+    @State private var poolsFailed = false
     /// サーバーに聞けなかった回（端末のぶんは消さない。足りないことだけ伝える）
     @State private var partial = false
 
@@ -57,12 +58,14 @@ struct FavoritesView: View {
                 }
             }
             if photos.isEmpty {
-                switch LikedPhotos.emptyState(idCount: idCount, loaded: loaded) {
+                switch LikedPhotos.emptyState(idCount: idCount, loaded: loaded, failed: poolsFailed) {
                 case .loading:
                     // 取得中に空の格子を出さない（以前のタブと同じく ProgressView）
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
                 case .none:
                     ErrorBanner(message: L("まだお気に入りがありません", "No liked photos yet"))
+                case .nothingShown:
+                    ErrorBanner(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:
                     ErrorBanner(message: L("いいねした写真を読み込めませんでした。通信の状態を確かめるか、消された写真かもしれません",
                                            "Couldn't load your liked photos. Check your connection — some may have been removed.")) {
@@ -93,10 +96,9 @@ struct FavoritesView: View {
     }
 
     private func refilter() {
-        let visibleFeed = hidden.visible(feed)
         let ids = favorites.listedIds(server: serverIds)
-        idCount = LikedPhotos.countExcludingHidden(ids, pools: [feed, mine], visiblePools: [visibleFeed, mine])
-        photos = LikedPhotos.resolve(ids, in: [visibleFeed, mine])
+        idCount = ids.count
+        photos = LikedPhotos.resolve(ids, in: [hidden.visible(feed), mine])
     }
 
     private func load(force: Bool = false) async {
@@ -121,6 +123,7 @@ struct FavoritesView: View {
         // 取れなかった回は前の一覧を**残さない**（控えだけ出す）。残すと、人が
         // 替わった直後に取れなかったとき、前の人のいいねが次の人に見える
         serverIds = fetched
+        poolsFailed = pools.feed == nil || (signedIn && pools.mine == nil)
         feed = pools.feed ?? feed
         // ログアウトしたら前の人の写真を残さない
         mine = signedIn ? (pools.mine ?? mine) : []

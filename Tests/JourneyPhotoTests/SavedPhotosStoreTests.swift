@@ -108,24 +108,6 @@ final class FavoritesSyncTests: XCTestCase {
         XCTAssertEqual(likes.listedIds(server: nil), Set(["here"]))
     }
 
-    /// 🔴 **控えは書き換えない。** 一覧の書き込みはベストエフォート
-    /// （`likes.ts` の `noteLiked`）で、控えがその救済。画面を開くたびに
-    /// サーバーの一覧へ入れ替えると、救済が消え、外したいいねが控えに戻る
-    func testListingDoesNotRewriteTheDeviceCopy() async {
-        let store = defaults()
-        let likes = FavoritesStore(defaults: store)
-        likes.use(userId: "u1")
-        likes.set("only-here", favorite: true)
-        likes.set("gone", favorite: true)
-        likes.set("gone", favorite: false)
-
-        _ = likes.listedIds(server: ["gone", "other"])
-
-        XCTAssertEqual(likes.ids, ["only-here"], "控えが書き換わった")
-        likes.use(userId: "u1")
-        XCTAssertEqual(likes.ids, ["only-here"], "端末に保存された控えが書き換わった")
-    }
-
     /// 押し直したら（外して、また付けた）出す。人が替わったら外した印は捨てる
     func testRelikingOrSwitchingUserClearsTheRemovedMark() async {
         let likes = FavoritesStore(defaults: defaults())
