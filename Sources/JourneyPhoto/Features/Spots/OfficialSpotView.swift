@@ -56,7 +56,12 @@ struct OfficialSpotView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                heroMap
+                // 写真があれば写真を主役に（モック13の代表画像の位置）。無ければ地図
+                if let photo = spot.photo {
+                    heroPhoto(photo)
+                } else {
+                    heroMap
+                }
                 header
                 if let notice = SpotScreen.reviewNotice(review: spot.isDraft, draftedAt: spot.draftedAt) {
                     draftNotice(notice)
@@ -83,7 +88,34 @@ struct OfficialSpotView: View {
         .accessibilityIdentifier("spot.official")
     }
 
-    // MARK: - 地図（モックの代表画像の位置。写真が0枚なので地図を置く）
+    // MARK: - 代表写真（Wikimedia Commons・2026-09-26）
+
+    /// 横いっぱい・4:3 の写真と、その下に出典の1行。
+    /// **出典は写真と必ず一緒に**（CC BY・CC BY-SA の条件）。押すと Commons のページへ
+    private func heroPhoto(_ photo: SpotImage) -> some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            Color.clear
+                .aspectRatio(4 / 3, contentMode: .fit)
+                .overlay(RemoteImage(url: photo.url))
+                .clipped()
+                .accessibilityLabel(L("\(spot.name) の写真", "Photo of \(spot.name)"))
+            Group {
+                if let page = photo.pageUrl {
+                    Link(photo.credit, destination: page)
+                } else {
+                    Text(photo.credit)
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(WebTheme.muted2)
+            .lineLimit(2)
+            .multilineTextAlignment(.trailing)
+            .padding(.horizontal, 16)
+            .accessibilityIdentifier("spot.official.photoCredit")
+        }
+    }
+
+    // MARK: - 地図（写真が無いスポットは、代表画像の位置に地図を置く）
 
     /// **押せない地図**（`SpotDetailView.map` と同じ形）。動かしたい人は「地図で見る」へ
     @ViewBuilder

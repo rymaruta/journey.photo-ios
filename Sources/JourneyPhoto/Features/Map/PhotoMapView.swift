@@ -737,6 +737,15 @@ struct PhotoMapView: View {
     /// 索引の全件が運営未確認の下書きなので、その語を札に置く
     private func officialCard(_ pin: OfficialPins.Pin) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            // **写真があれば札の頭に大きく**（ピンの丸 40pt だけでは何の場所か
+            // 分からない・owner の指摘 2026-09-26）。出典は下の名前の行に出す
+            if let photo = pin.photo {
+                Color.clear
+                    .frame(height: 150)
+                    .overlay(RemoteImage(url: photo.url))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .accessibilityHidden(true)
+            }
             HStack(alignment: .top, spacing: 12) {
                 officialMarker(pin)
                 VStack(alignment: .leading, spacing: 4) {
