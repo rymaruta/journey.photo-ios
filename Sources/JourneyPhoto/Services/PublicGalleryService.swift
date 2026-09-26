@@ -86,7 +86,10 @@ actor PublicGalleryService {
     /// を渡す——既定に置くと、設定を入れていない試験がここで落ちる
     private let liveURL: URL?
     private var liveCounts: [String: Int]?
-    private var liveCountsAt: Date?
+    /// **最後に取りに行った時刻**（取れたかどうかは問わない）。
+    /// 取れた時刻で見ると、失敗した後は控えがある間も呼ぶたびに
+    /// 叩き直し、一覧を最大 `liveTimeout` ずつ待たせる
+    private var liveAttemptedAt: Date?
 
     /// いまの数を待つ上限。**一覧を出すのをこれ以上遅らせない**
     /// （Lambda の起き抜けは数秒かかる。間に合わなければ静的 JSON の数で出す）
@@ -206,10 +209,11 @@ actor PublicGalleryService {
     /// ——直前に取れた数か、静的 JSON の数のまま出す。
     private func refreshLiveCounts(force: Bool) async {
         guard let liveURL else { return }
-        if !force, liveCounts != nil, let liveCountsAt,
-           Date().timeIntervalSince(liveCountsAt) < Self.cacheLifetime {
+        if !force, let liveAttemptedAt,
+           Date().timeIntervalSince(liveAttemptedAt) < Self.cacheLifetime {
             return
         }
+        liveAttemptedAt = Date()
         var request = URLRequest(url: liveURL)
         request.timeoutInterval = Self.liveTimeout
         do {
@@ -218,7 +222,6 @@ actor PublicGalleryService {
                   (200..<300).contains(http.statusCode),
                   let counts = LiveLikes.counts(from: data) else { return }
             liveCounts = counts
-            liveCountsAt = Date()
         } catch {
             print("[gallery] いいねのいまの数を取れませんでした: \(error)")
         }

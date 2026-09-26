@@ -18,6 +18,8 @@ struct JourneyPhotoApp: App {
     @StateObject private var environment = AppEnvironment()
     @StateObject private var consent = LegalConsent()
     @StateObject private var favorites = FavoritesStore()
+    /// サーバーが答えたいいねの数。**詳細で押した数をホームにも出す**
+    @StateObject private var likeCounts = LikeCountStore()
     /// 保存（ブックマーク）の控え。**いいねとは別の入れ物**
     @StateObject private var savedPhotos = SavedPhotosStore()
     @StateObject private var hidden = ModerationStore()
@@ -124,6 +126,7 @@ struct JourneyPhotoApp: App {
                 .environmentObject(environment)
                 .environmentObject(consent)
                 .environmentObject(favorites)
+                .environmentObject(likeCounts)
                 .environmentObject(savedPhotos)
                 .environmentObject(hidden)
                 .environmentObject(joinedAlbums)

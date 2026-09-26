@@ -46,15 +46,14 @@ enum LiveLikes {
 
     /// カードに出す数。
     ///
-    /// - `serverLikes`: その場で押して、サーバーが答えた数。あればそれが正しい
-    /// - `base`: 一覧の数（`apply` 済みならいまの数）
+    /// - `base`: サーバーが答えた数（`LikeCountStore`）、無ければ一覧の数
+    ///   （`apply` 済みならいまの数）
     /// - `pendingDelta`: **押して答えを待っている間だけ**の +1 / −1
     ///
     /// 以前は「端末でいいね済みなら一覧の数に +1」だった。一覧の数には
     /// **自分のいいねが既に入っている**ので、押したことのある写真は
     /// 1つ多く出ていた。
-    static func displayCount(serverLikes: Int?, base: Int?, pendingDelta: Int) -> Int {
-        if let serverLikes { return max(0, serverLikes) }
-        return max(0, (base ?? 0) + pendingDelta)
+    static func displayCount(base: Int?, pendingDelta: Int) -> Int {
+        max(0, (base ?? 0) + pendingDelta)
     }
 }

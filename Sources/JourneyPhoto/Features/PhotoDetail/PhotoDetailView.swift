@@ -12,6 +12,8 @@ struct PhotoDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var favorites: FavoritesStore
+    /// サーバーが答えたいいねの数。**ここで読んだ・押した数をホームにも出す**
+    @EnvironmentObject private var likeCounts: LikeCountStore
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
@@ -84,6 +86,7 @@ struct PhotoDetailView: View {
         .task(id: auth.userId) {
             model.setSignedIn(auth.userId != nil)
             await model.load()
+            shareLikeCount()
         }
         .task(id: shown.location) { await loadSpotLead() }
         .task(id: ownerId) {
@@ -472,6 +475,14 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// ここで分かったいいねの数を、ホームのカードと検索の格子にも渡す。
+    /// **渡さないと、詳細で押して戻ったときに数が押す前のまま**になる
+    /// （ホームは戻っても一覧を読み直さない）
+    private func shareLikeCount() {
+        guard model.likesKnown else { return }
+        likeCounts.set(photo.id, count: model.likes)
+    }
+
     private var socialBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 16) {
@@ -480,6 +491,7 @@ struct PhotoDetailView: View {
                         await model.toggleLike()
                         // 端末側のハートも合わせる（圏外でも一覧が出る）
                         favorites.set(photo.id, favorite: model.liked)
+                        shareLikeCount()
                     }
                 } label: {
                     // **いちばん押されるボタンがいちばん小さかった。**

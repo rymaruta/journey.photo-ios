@@ -56,13 +56,13 @@ final class LiveLikesTests: XCTestCase {
     /// 🔴 以前は「いいね済みなら一覧の数に +1」で、**一覧の数に自分のぶんが
     /// 既に入っている**写真は1つ多く出ていた。待っていない間は一覧の数そのまま
     func testDoesNotAddOwnLikeTwice() {
-        XCTAssertEqual(LiveLikes.displayCount(serverLikes: nil, base: 3, pendingDelta: 0), 3)
+        XCTAssertEqual(LiveLikes.displayCount(base: 3, pendingDelta: 0), 3)
     }
 
-    func testPendingDeltaAndServerAnswer() {
-        XCTAssertEqual(LiveLikes.displayCount(serverLikes: nil, base: 3, pendingDelta: 1), 4)
-        XCTAssertEqual(LiveLikes.displayCount(serverLikes: nil, base: 0, pendingDelta: -1), 0)
-        XCTAssertEqual(LiveLikes.displayCount(serverLikes: 9, base: 3, pendingDelta: 1), 9)
+    func testPendingDelta() {
+        XCTAssertEqual(LiveLikes.displayCount(base: 3, pendingDelta: 1), 4)
+        XCTAssertEqual(LiveLikes.displayCount(base: nil, pendingDelta: 1), 1)
+        XCTAssertEqual(LiveLikes.displayCount(base: 0, pendingDelta: -1), 0)
     }
 }
 
@@ -107,9 +107,17 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
     func testFallsBackWhenLiveFails() async throws {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
         StubProtocol.respond(path: "/photos", status: 500, body: "{}")
-        let photos = try await service(live: liveURL).fetchPhotos()
+        let gallery = service(live: liveURL)
+        let photos = try await gallery.fetchPhotos()
         XCTAssertEqual(photos.map(\.id), ["a", "b"])
         XCTAssertEqual(photos.map(\.likes), [5, nil])
+        // 取りに行ったうえで諦めている（一度も叩かない実装を通さない）
+        XCTAssertEqual(StubProtocol.requestCount, 2)
+
+        // 🔴 失敗した後も、控えがある間は**叩き直さない**。
+        // 取れた時刻で見ていた版は、呼ぶたびに管理 API を待ってから一覧を返した
+        _ = try await gallery.fetchPhotos()
+        XCTAssertEqual(StubProtocol.requestCount, 2)
     }
 
     /// 口が設定されていなければ叩かない（既存の試験・未設定の環境）
@@ -118,5 +126,21 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         let photos = try await service(live: nil).fetchPhotos()
         XCTAssertEqual(photos.map(\.likes), [5, nil])
         XCTAssertEqual(StubProtocol.requestCount, 1)
+    }
+}
+
+/// 詳細で押した数を、ホームと検索に渡す入れ物
+@MainActor
+final class LikeCountStoreTests: XCTestCase {
+
+    func testKeepsServerAnswers() async {
+        let store = LikeCountStore()
+        XCTAssertNil(store.count(for: "a"))
+        store.set("a", count: 5)
+        XCTAssertEqual(store.count(for: "a"), 5)
+        store.set("a", count: 4)
+        XCTAssertEqual(store.count(for: "a"), 4)
+        store.set("b", count: -1)
+        XCTAssertEqual(store.count(for: "b"), 0)
     }
 }

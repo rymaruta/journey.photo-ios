@@ -8,6 +8,9 @@ struct SearchGrid: View {
 
     let photos: [Photo]
 
+    /// サーバーが答えたいいねの数。**詳細で押して戻ったぶんを出す**
+    @EnvironmentObject private var likeCounts: LikeCountStore
+
     private let columns = [
         GridItem(.flexible(), spacing: 10),
         GridItem(.flexible(), spacing: 10),
@@ -43,7 +46,7 @@ struct SearchGrid: View {
     private func caption(_ photo: Photo) -> some View {
         let title = photo.displayTitle
         let place = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let likes = photo.likes ?? 0
+        let likes = likeCounts.count(for: photo.id) ?? photo.likes ?? 0
         // **何も無い写真に帯を出さない**（空の黒帯は写真を欠けさせる）
         if !title.isEmpty || !place.isEmpty || likes > 0 {
             VStack(alignment: .leading, spacing: 3) {

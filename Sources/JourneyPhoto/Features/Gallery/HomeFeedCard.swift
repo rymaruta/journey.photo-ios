@@ -22,6 +22,8 @@ struct HomeFeedCard: View {
     var onMore: () -> Void = {}
 
     @EnvironmentObject private var favorites: FavoritesStore
+    /// サーバーが答えたいいねの数（詳細画面で押したぶんもここに来る）
+    @EnvironmentObject private var likeCounts: LikeCountStore
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
@@ -309,9 +311,6 @@ struct HomeFeedCard: View {
 
     private var liked: Bool { favorites.contains(photo.id) }
 
-    /// 押した回にサーバーが答えた数。**答えが来るまでは nil**
-    @State private var serverLikes: Int?
-
     /// いいね。**サーバーへ送る。**
     ///
     /// 🔴 ここは長いあいだ端末の控えを反転するだけで、**押しても
@@ -325,24 +324,18 @@ struct HomeFeedCard: View {
         let wasLiked = liked
         // 先に画面を変える（押した手応えを待たせない）
         favorites.set(photo.id, favorite: !wasLiked)
-        // 前に押した回の答えがあれば、そこから ±1（無ければ一覧の数から）
-        if let known = serverLikes {
-            serverLikes = nil
-            pendingBase = known
-        }
         pendingDelta = wasLiked ? -1 : 1
-        defer { pendingDelta = 0; pendingBase = nil }
+        defer { pendingDelta = 0 }
         do {
             let result = wasLiked
                 ? try await environment.social.unlike(photoId: photo.id)
                 : try await environment.social.like(photoId: photo.id)
-            // **返ってきた数と状態を使う。** 自分で数えない
+            // **返ってきた数と状態を使う。** 自分で数えない。
             // 数を返さない答えなら、押したあとに見えていた数で止める
-            serverLikes = result.likes ?? likeCount
+            likeCounts.set(photo.id, count: result.likes ?? likeCount)
             favorites.set(photo.id, favorite: result.liked)
         } catch {
             // **届かなかったら戻す。** 画面だけ「いいね済み」にしない
-            serverLikes = pendingBase
             favorites.set(photo.id, favorite: wasLiked)
         }
     }
@@ -365,20 +358,18 @@ struct HomeFeedCard: View {
 
     /// 押して答えを待っている間だけの ±1。**答えが来たら 0 に戻す**
     @State private var pendingDelta = 0
-    /// 待っている間の土台。前に押した回の答えがあればそれ、無ければ nil（＝一覧の数）
-    @State private var pendingBase: Int?
 
     /// 出すいいねの数。
     ///
-    /// **サーバーが答えた数があれば、それを出す**（押した回に返ってくる）。
-    /// 無い間は一覧の数（いまの数に差し替え済み）に、待っている間の ±1 だけ足す。
+    /// **サーバーが答えた数（`LikeCountStore`）があれば、それが土台**。
+    /// ここで押した回も、詳細画面で押した回も入る。無ければ一覧の数
+    /// （いまの数に差し替え済み）。待っている間だけ ±1 を足す。
     ///
     /// 🔴 以前は「端末でいいね済みなら一覧の数に +1」だった。一覧の数には
     /// **自分のいいねが既に入っている**ので、押したことのある写真は
     /// いつも1つ多く出ていた（しかも一覧の数はサイトを建てた時点の古い数）。
     private var likeCount: Int {
-        LiveLikes.displayCount(serverLikes: serverLikes,
-                               base: pendingBase ?? photo.likes,
+        LiveLikes.displayCount(base: likeCounts.count(for: photo.id) ?? photo.likes,
                                pendingDelta: pendingDelta)
     }
 

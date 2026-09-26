@@ -7,6 +7,9 @@ import Combine
 final class PhotoDetailViewModel: ObservableObject {
 
     @Published private(set) var likes: Int = 0
+    /// `likes` がサーバーの答えか。**読めていない 0 を、ホームへ写さない**
+    /// （`LikeCountStore` に入れるのはサーバーの数だけ）
+    @Published private(set) var likesKnown = false
     @Published private(set) var liked = false
     @Published private(set) var comments: [PhotoComment] = []
     /// コメントの総数。**サーバーから取れたときだけ入る**（取れなければ nil）。
@@ -65,7 +68,11 @@ final class PhotoDetailViewModel: ObservableObject {
         } else {
             mine = nil
         }
-        likes = await count ?? likes
+        let fetched = await count
+        if let fetched {
+            likes = fetched
+            likesKnown = true
+        }
         let loaded = await page
         if let loaded {
             comments = loaded.items
@@ -99,7 +106,10 @@ final class PhotoDetailViewModel: ObservableObject {
                 ? try await social.unlike(photoId: photoId)
                 : try await social.like(photoId: photoId)
             liked = result.liked
-            if let likes = result.likes { self.likes = likes }
+            if let likes = result.likes {
+                self.likes = likes
+                likesKnown = true
+            }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
