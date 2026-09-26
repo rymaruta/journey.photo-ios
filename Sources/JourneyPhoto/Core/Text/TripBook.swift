@@ -38,10 +38,11 @@ enum TripBook {
             photos.max { ($0.likes ?? 0) < ($1.likes ?? 0) } ?? photos.first
         }
 
-        /// 何日間の旅か（同じ日なら1日）
+        /// 何日間の旅か（同じ日なら1日）。**暦の日で数える**——経過秒で割ると、
+        /// 時刻を持つ写真（投稿日で代用したもの）で「2026.05.01 — 05.03」の旅が
+        /// 「2日間」になり、並べて出す期間の範囲と食い違う
         var days: Int {
-            let seconds = end.timeIntervalSince(start)
-            return max(1, Int(seconds / 86_400) + 1)
+            max(1, TripBook.calendarDays(from: start, to: end) + 1)
         }
     }
 
@@ -93,22 +94,6 @@ enum TripBook {
                     photos: photos
                 )
             }
-    }
-
-    /// 通った順に並べた撮影地。**同じ場所が続いたらまとめる**
-    /// （「金沢・金沢・金沢」と並べても足取りにならない）。
-    ///
-    /// **2か所以上のときだけ意味がある。** 1か所しか無い旅で線を引くと、
-    /// 点が1つあるだけの「足取り」になり、かえって壊れて見える
-    /// （実機の絵で確認）。呼ぶ側は `isEmpty` で出し分ける。
-    static func route(of photos: [Photo]) -> [String] {
-        var result: [String] = []
-        for place in photos.compactMap(\.location) {
-            let trimmed = place.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, result.last != trimmed else { continue }
-            result.append(trimmed)
-        }
-        return result.count >= 2 ? result : []
     }
 
     /// その写真の日。**撮影日を優先**し、無ければ投稿日で代用する
