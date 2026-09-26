@@ -210,8 +210,7 @@ struct MyPageView: View {
                     .frame(width: Self.avatarSize, height: Self.avatarSize)
                     .clipShape(Circle())
                     // **板どおり黒の 3pt の縁**（写真の上でも丸が割れない）。
-                    // 本人の色の輪（`themeColor`）は板に無いので出さない。
-                    // ⚠️ 人のページ（`UserProfileView`）はまだ色の輪を出している（板 31 で揃える）
+                    // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
                     .coverCutout(true)
                 Spacer(minLength: 8)
                 NavigationLink { ProfileEditView() } label: {
