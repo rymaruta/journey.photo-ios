@@ -21,21 +21,30 @@ struct SpotDetailView: View {
 
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
+    /// 渡された写真は開いた時点の写しなので、ブロック／通報をここで反映する。
+    /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
+    /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
+    /// 通報の「受け付けました」も見えない。戻ってきたとき（`onAppear`）に絞る
+    @EnvironmentObject private var hidden: ModerationStore
+    @State private var dropped = ModerationSnapshot()
 
     @State private var page = 0
     @State private var expanded = false
     @State private var camera: MapCameraPosition = .automatic
 
-    private var linked: [Photo] { spot.photos }
+    private var linked: [Photo] { dropped.visible(spot.photos) }
 
     /// 見出しの写真。いちばん多く押された1枚を先頭に、残りを新しい順
     private var hero: [Photo] {
-        guard let cover = spot.cover else { return [] }
+        // 表紙が落ちた回は、残りから同じ基準（いちばん押された1枚）で選び直す
+        let cover = spot.cover.flatMap { c in linked.contains(where: { $0.id == c.id }) ? c : nil }
+            ?? GallerySort.popular.apply(linked).first
+        guard let cover else { return [] }
         return [cover] + linked.filter { $0.id != cover.id }
     }
 
     private var nearby: [(place: DerivedSpot.Place, km: Double)] {
-        DerivedSpot.nearby(spot, in: photos)
+        DerivedSpot.nearby(spot, in: dropped.visible(photos))
     }
 
     var body: some View {
@@ -51,6 +60,11 @@ struct SpotDetailView: View {
                 map
             }
             .padding(.bottom, 32)
+        }
+        .onAppear {
+            dropped = hidden.snapshot
+            // 写真が減ったら、ページ送りを範囲に戻す（どの札にも当たらず空白になる）
+            if page >= hero.count { page = max(0, hero.count - 1) }
         }
         .webScreen()
         .navigationTitle(spot.label)

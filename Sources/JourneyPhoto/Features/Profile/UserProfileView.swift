@@ -11,6 +11,8 @@ struct UserProfileView: View {
     @State private var showBlockConfirm = false
     @State private var showUnfollowConfirm = false
     @State private var tab: ProfileTab = .posts
+    /// カバー写真が出せたか（板 31。出せなければ帯を出さない）
+    @State private var hasCover = false
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var toasts: ToastCenter
 
@@ -23,7 +25,11 @@ struct UserProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                header
+                VStack(alignment: .leading, spacing: 0) {
+                    ProfileCover(url: model.profile?.coverURL(cacheBust: model.cacheBust),
+                                 reserve: hasCover) { hasCover = $0 }
+                    header
+                }
 
                 Picker("", selection: $tab) {
                     // **端末にしか無い札は出さない**（`ProfileTab.tabs`）
@@ -117,6 +123,7 @@ struct UserProfileView: View {
                     .clipShape(Circle())
                     // 本人が選んだ色を輪にする（Web の `themeRingGradient`）
                     .overlay(themeRing(model.profile?.themeColor))
+                    .coverCutout(hasCover)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         Text(model.shownName ?? "—").font(JPFont.display(20, relativeTo: .title3))
@@ -156,7 +163,7 @@ struct UserProfileView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 8)
     }
 
     private var followButton: some View {

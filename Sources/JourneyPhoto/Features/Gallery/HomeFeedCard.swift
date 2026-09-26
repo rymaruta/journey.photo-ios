@@ -18,8 +18,6 @@ import SwiftUI
 struct HomeFeedCard: View {
 
     let photo: Photo
-    /// 「…」を押したとき（通報・ブロックなど）
-    var onMore: () -> Void = {}
 
     @EnvironmentObject private var favorites: FavoritesStore
     /// サーバーが答えたいいねの数（詳細画面で押したぶんもここに来る）
@@ -27,6 +25,10 @@ struct HomeFeedCard: View {
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
+    /// 「…」のブロック（審査 1.2・写真詳細と同じ中身）
+    @State private var showBlockConfirm = false
     /// この人をフォローしているか。**外から渡される**（一覧が持っている）
     @State private var isFollowing = false
     @State private var isFollowWorking = false
@@ -35,6 +37,10 @@ struct HomeFeedCard: View {
     var following: Set<String> = []
     /// 同じ投稿の写真（`photo` を含む）。2枚以上なら送れるようにする
     var siblings: [Photo] = []
+    /// 「通報する」を押したとき。**シートは一覧（`GalleryView`）が出す。**
+    /// カードに付けると、通報で一覧が読み直されてカードごと消え、
+    /// 「受け付けました」やブロック失敗の文言を見る前にシートが閉じる
+    var onReport: (Photo) -> Void = { _ in }
 
     /// いま出している1枚（送りの位置）
     @State private var page = 0
@@ -189,14 +195,55 @@ struct HomeFeedCard: View {
                     .lineLimit(1)
             }
             followButton
-            Button(action: onMore) {
+            moreMenu
+        }
+    }
+
+    /// 「…」。🔴 **押しても何も起きなかった**——押したときの処理を誰も渡して
+    /// いなかった（`onMore` の既定は空）。審査メモの「各写真の『…』から通報・
+    /// ブロックできる」が、最初に見るホームで成り立っていなかった。
+    /// 中身は写真詳細の「…」と同じ。**自分の写真には出さない**（編集は詳細で）
+    @ViewBuilder
+    private var moreMenu: some View {
+        if photo.userId == nil || photo.userId != auth.userId {
+            Menu {
+                Button { onReport(currentPhoto) } label: {
+                    Label(L("通報する", "Report"), systemImage: "flag")
+                }
+                if photo.userId != nil {
+                    Button(role: .destructive) { showBlockConfirm = true } label: {
+                        Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                    }
+                }
+            } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(WebTheme.muted2)
                     .webTappable()
             }
-            .buttonStyle(.plain)
             .accessibilityLabel(L("この写真の操作", "More actions"))
+            .confirmationDialog(L("この人をブロックしますか？", "Block this person?"),
+                                isPresented: $showBlockConfirm, titleVisibility: .visible) {
+                Button(L("ブロック", "Block"), role: .destructive) { Task { await block() } }
+            } message: {
+                Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。", "You won't see each other's posts, stories, or notifications."))
+            }
+        }
+    }
+
+    /// いま出している1枚（束なら送った先）
+    private var currentPhoto: Photo {
+        shown.indices.contains(page) ? shown[page] : photo
+    }
+
+    private func block() async {
+        guard let ownerId = photo.userId else { return }
+        do {
+            try await hidden.blockAndHide(ownerId, environment: environment)
+            toasts.show(L("ブロックしました", "Blocked"))
+        } catch {
+            toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
+                        kind: .failure)
         }
     }
 

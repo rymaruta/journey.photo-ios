@@ -111,6 +111,14 @@ enum AuthGateway {
         _ = await Amplify.Auth.signOut()
     }
 
+    /// Cognito の利用者そのものを消す。**サーバーの `DELETE /user/account` は
+    /// Cognito を消さない**（データと墓石だけ）——Web も同じく画面側で消している
+    /// （`lib/auth/cognito.ts` の `deleteAccount`）。消さないと、退会したのに
+    /// 同じメールとパスワードでログインでき、そのメールで登録し直すこともできない
+    static func deleteUser() async throws {
+        try await Amplify.Auth.deleteUser()
+    }
+
     // MARK: - パスワード
 
     static func resetPassword(email: String) async throws {

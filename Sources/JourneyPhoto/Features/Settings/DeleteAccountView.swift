@@ -17,6 +17,9 @@ struct DeleteAccountView: View {
     @State private var typed = ""
     @State private var isWorking = false
     @State private var errorMessage: String?
+    /// サーバーのデータは消えたが、Cognito の利用者がまだ残っているか。
+    /// 押し直したときは Cognito だけをやり直す（データの削除は済んでいる）
+    @State private var dataDeleted = false
 
     var body: some View {
         Form {
@@ -114,18 +117,26 @@ struct DeleteAccountView: View {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
-        do {
-            // **宛先は消す前に外す。** アカウントが消えたあとでは認証が
-            // 通らず、`devices#<uid>` の行だけが残る
+        if !dataDeleted {
+            do {
+                try await environment.account.deleteAccount()
+                dataDeleted = true
+            } catch {
+                // 失敗ならアカウントは残っている。通知の宛先も外さない
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
+                return
+            }
+            // 端末の宛先（サーバーは `devices#` を消し済み。ここは端末側の後片付け）
             await push.signingOut()
-            try await environment.account.deleteAccount()
-            // **消えたあとのトークンは残さない。** API Gateway の JWT 検証は
-            // 署名と exp しか見ないので、残ったトークンは期限まで通る
-            // （`api-user/src/types.ts` の墓石の話）
-            await auth.signOut()
+        }
+        do {
+            // 🔴 **Cognito の利用者も消す。** サーバーは消さないので、これが無いと
+            // 退会したのに同じメールとパスワードでログインできた（審査 5.1.1(v)）
+            try await auth.deleteCognitoUser()
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
+            errorMessage = L("写真とプロフィールは削除されました。アカウント自体の削除だけが残っています。もう一度「アカウントを削除する」を押してください",
+                             "Your photos and profile were deleted, but the account itself wasn't. Tap “Delete my account” again.")
         }
     }
 }

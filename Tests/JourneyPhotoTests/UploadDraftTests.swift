@@ -13,6 +13,46 @@ final class UploadDraftTests: XCTestCase {
         XCTAssertEqual(body.coords?.lng, 133.99)
     }
 
+    /// **入っていた撮影地を本人が空にしたら、座標も送らない。**
+    /// 自宅の地名を消しても座標（約1km）が送られて地図に出ていた。
+    /// ただし**自動入力が間に合わなかっただけ**なら送る（Web と同じ・d525… の回帰の芽）
+    func testCoordsFollowWhetherTheUserClearedThePlace() {
+        let prepared = ImagePreparer.Prepared(data: Data(), fileName: "p.jpg", contentType: "image/jpeg",
+                                              exif: nil, coords: Photo.Coords(lat: 34.12, lng: 133.99), takenOn: nil)
+        var item = PendingPhoto(prepared: prepared)
+        // 撮影地がまだ入っていない（自動入力が間に合わない）→ 送る
+        XCTAssertNotNil(item.coordsToSend)
+        // 自動で入った → 送る
+        item.location = "観音寺市"
+        XCTAssertNotNil(item.coordsToSend)
+        // 本人が空にした → 送らない
+        item.location = ""
+        XCTAssertNil(item.coordsToSend)
+        // 別の地名を入れ直した → また送る
+        item.location = "高屋神社"
+        XCTAssertNotNil(item.coordsToSend)
+        // 消したあと空白だけ打った → 送るときは空なので、座標も送らない
+        item.location = ""
+        item.location = "  "
+        XCTAssertNil(item.coordsToSend)
+    }
+
+    /// **押し直しでも束の印を変えない。** 送るたびに作り直すと、5枚のうち2枚が
+    /// 失敗して押し直したとき 3枚と2枚の2つの束に割れ、1枚だけ残ると印が消えていた
+    func testGroupIdIsKeptAcrossRetries() {
+        var made = 0
+        let make = { () -> String in made += 1; return "g\(made)" }
+        let first = UploadGrouping.groupIdForSubmit(current: nil, grouping: true, count: 5, make: make)
+        XCTAssertEqual(first, "g1")
+        // 2枚失敗して押し直す／1枚だけ残って押し直す
+        XCTAssertEqual(UploadGrouping.groupIdForSubmit(current: first, grouping: true, count: 2, make: make), "g1")
+        XCTAssertEqual(UploadGrouping.groupIdForSubmit(current: first, grouping: true, count: 1, make: make), "g1")
+        XCTAssertEqual(made, 1)
+        // 最初から1枚なら印は付けない。まとめない設定なら付けない
+        XCTAssertNil(UploadGrouping.groupIdForSubmit(current: nil, grouping: true, count: 1, make: make))
+        XCTAssertNil(UploadGrouping.groupIdForSubmit(current: "g1", grouping: false, count: 5, make: make))
+    }
+
     /// 空の項目は送らない（api-user は「未指定＝触らない」と読む）。
     func testEmptyFieldsAreOmitted() throws {
         let body = PhotoDraft().saveBody(key: "k", publicUrl: "u")
