@@ -103,7 +103,9 @@ public struct UITextContentTypeShim {
 public protocol ButtonStyle {
     associatedtype Body: View
     typealias Configuration = ButtonStyleConfiguration
-    @ViewBuilder func makeBody(configuration: Configuration) -> Body
+    /// 本物の SwiftUI と同じく `@MainActor`（`JPRowButtonStyle` が
+    /// `.background` を呼べずに模型のビルドが止まっていた）
+    @ViewBuilder @MainActor func makeBody(configuration: Configuration) -> Body
 }
 public struct ButtonStyleConfiguration {
     public struct Label: View { public var body: Never { fatalError("模型") } }
@@ -291,8 +293,6 @@ extension View {
     public func searchable(text: Binding<String>, placement: SearchFieldPlacementShim = .automatic,
                            prompt: String? = nil) -> Self { self }
     public func onSubmit(of t: SubmitTriggerShim = .search, _ action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
-    /// シートを下へ払って閉じるのを止める（iOS 15+）
-    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> Self { self }
     /// キーボードの確定キーの文言（iOS 15+）
     public func submitLabel(_ label: SubmitLabel) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
 
