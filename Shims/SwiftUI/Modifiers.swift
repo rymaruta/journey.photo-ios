@@ -135,6 +135,12 @@ public struct ListStyleShim {
     public static let plain = ListStyleShim()
     public static let insetGrouped = ListStyleShim()
 }
+/// シートの高さの段（本物と同じ形）
+public struct PresentationDetent: Hashable {
+    public static let medium = PresentationDetent()
+    public static let large = PresentationDetent()
+    public static func height(_ h: CGFloat) -> PresentationDetent { PresentationDetent() }
+}
 public struct VisibilityShim {
     public static let automatic = VisibilityShim()
     public static let visible = VisibilityShim()
@@ -257,6 +263,8 @@ extension View {
     public func rotationEffect(_ a: Angle) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func presentationBackground<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func presentationDragIndicator(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// シートの高さ（本物と同じ）
+    public func presentationDetents(_ detents: Set<PresentationDetent>) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func contentShape<T: Shape>(_ shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     // 黒地に揃えるために使う（`WebTheme`）。模型なので何も描かない
     public func scrollContentBackground(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -273,8 +281,6 @@ extension View {
     public func textFieldStyle(_ s: TextFieldStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func controlSize(_ s: ControlSizeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func labelsHidden() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
-    /// 下へ払って閉じるのを止める（本物と同じ）
-    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// スクロールでキーボードを下げる（本物と同じ）
     public func scrollDismissesKeyboard(_ mode: ScrollDismissesKeyboardModeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func focused(_ condition: Binding<Bool>) -> Self { self }

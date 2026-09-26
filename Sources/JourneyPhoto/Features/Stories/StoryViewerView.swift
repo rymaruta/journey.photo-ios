@@ -841,7 +841,7 @@ struct StoryViewerView: View {
                     showDeleteConfirm = false
                     Task { await deleteStory(story) }
                 }
-                confirmButton(L("やめる", "Cancel"), color: .white, weight: .regular) {
+                confirmButton(Labels.Common.cancel, color: .white, weight: .regular) {
                     showDeleteConfirm = false
                 }
             }

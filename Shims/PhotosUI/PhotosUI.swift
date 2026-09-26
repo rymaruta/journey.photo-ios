@@ -36,5 +36,6 @@ extension View {
     public func photosPicker(isPresented: Binding<Bool>,
                              selection: Binding<[PhotosPickerItem]>,
                              maxSelectionCount: Int? = nil,
-                             matching filter: PHPickerFilter? = nil) -> some View { self }
+                             matching filter: PHPickerFilter? = nil,
+                             photoLibrary: PHPhotoLibraryShim) -> some View { self }
 }

@@ -346,8 +346,15 @@ public struct UnitPoint: Hashable, Sendable {
     public init() {}
 }
 
+/// 色の位置（本物は `Gradient.Stop`）
+public struct Gradient {
+    public struct Stop {
+        public init(color: Color, location: Double) {}
+    }
+}
 public struct LinearGradient: View, ShapeStyle {
     public init(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {}
+    public init(stops: [Gradient.Stop], startPoint: UnitPoint, endPoint: UnitPoint) {}
     public var body: Never { fatalError() }
 }
 
