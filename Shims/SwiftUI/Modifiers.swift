@@ -146,6 +146,11 @@ public struct SearchFieldPlacementShim {
 public struct SubmitTriggerShim {
     public static let search = SubmitTriggerShim()
 }
+/// キーボードの改行キーの札（`.submitLabel(.send)`）
+public struct SubmitLabelShim {
+    public static let done = SubmitLabelShim(), send = SubmitLabelShim(), search = SubmitLabelShim()
+    public static let go = SubmitLabelShim(), next = SubmitLabelShim(), `return` = SubmitLabelShim()
+}
 
 /// 修飾を1枚かぶせた View。本物と同じく**かぶせるたびに型が変わる**。
 public struct ModifiedContent<Content, Modifier>: View {
@@ -176,6 +181,7 @@ extension View {
     public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func ignoresSafeArea(edges: Edge.Set) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 画面の端に貼り付く帯（iOS 15+）。本物はスクロールの底の余白も足す。
     /// 模型は素通し——キーボードで持ち上がるかは Mac で見る
     public func safeAreaInset<V: View>(edge: VerticalEdge, alignment: HorizontalAlignment = .center,
@@ -252,6 +258,7 @@ extension View {
     public func autocorrectionDisabled(_ disabled: Bool = true) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func searchable(text: Binding<String>, placement: SearchFieldPlacementShim = .automatic,
                            prompt: String? = nil) -> Self { self }
+    public func submitLabel(_ l: SubmitLabelShim) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func onSubmit(of t: SubmitTriggerShim = .search, _ action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
 
     // 画面遷移と入れ物
