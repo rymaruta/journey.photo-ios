@@ -61,7 +61,11 @@ struct StoriesRow: View {
         .onChange(of: hidden.revision) { _, _ in
             Task { await reload() }
         }
-        .fullScreenCover(item: $opened) { story in
+        // 🔴 **閉じたら読み直す。** 閲覧画面で自分のストーリーを消しても、
+        // 閉じるだけで一覧を読み直さず、消した輪が並んだままだった
+        .fullScreenCover(item: $opened, onDismiss: {
+            Task { await reload() }
+        }) { story in
             viewer(for: story)
         }
         .onChange(of: opened?.id) { _, id in

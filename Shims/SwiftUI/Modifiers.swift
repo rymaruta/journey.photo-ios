@@ -100,7 +100,8 @@ public struct UITextContentTypeShim {
     public static let name = UITextContentTypeShim()
 }
 /// 自前の押し方の模型（本物と同じ形）。`makeBody` に押している間かが来る
-public protocol ButtonStyle {
+/// 本物は `@MainActor`（`makeBody` の中で修飾子を呼べるのはそのため）
+@MainActor public protocol ButtonStyle {
     associatedtype Body: View
     typealias Configuration = ButtonStyleConfiguration
     @ViewBuilder func makeBody(configuration: Configuration) -> Body

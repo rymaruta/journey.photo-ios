@@ -265,21 +265,36 @@ enum StoryPlayback {
 
     /// 出す項目。**押しても何も起きない項目は出さない。**
     ///
-    /// - ミュートは動画だけ（写真のストーリーは音を鳴らしていない。
-    ///   `Story.song` を復号しておらず BGM も無い）
+    /// - ミュートは音が出るときだけ＝動画か、曲が付いているとき
+    ///   （Web の `hasAudio = isVideo || !!item.song`）
     /// - 「テキストを非表示」はサーバーの `caption` があるときだけ。
     ///   写真に焼き込んだ文字は消せない
     /// - ブロック・通報は他人の投稿だけ（自分は通報できない。サーバーも 400）。
     ///   ブロックは相手が分かるときだけ
-    static func menuItems(isMine: Bool, isVideo: Bool, hasCaption: Bool, hasOwner: Bool) -> [MenuItem] {
+    static func menuItems(isMine: Bool, isVideo: Bool, hasSong: Bool = false,
+                          hasCaption: Bool, hasOwner: Bool) -> [MenuItem] {
         var items: [MenuItem] = [.pause]
-        if isVideo { items.append(.mute) }
+        if isVideo || hasSong { items.append(.mute) }
         if hasCaption { items.append(.hideCaption) }
         if !isMine {
             if hasOwner { items.append(.block) }
             items.append(.report)
         }
         return items
+    }
+
+    // MARK: - 曲
+
+    /// 鳴らす曲。題の無い曲・URL の無い曲は鳴らさない（曲名の行を出さない条件と同じ）
+    static func songURL(for story: Story) -> URL? {
+        guard story.songLine != nil else { return nil }
+        return story.song?.previewURL
+    }
+
+    /// 動画の音を消すか。**曲が付いている動画は動画側を常に消す**
+    /// （2つ重ねて鳴らさない。Web の `muted={muted || !!item.song}`）
+    static func videoMuted(muted: Bool, hasSong: Bool) -> Bool {
+        muted || hasSong
     }
 
     // MARK: - 返信の候補

@@ -38,4 +38,9 @@ extension View {
                              maxSelectionCount: Int? = nil,
                              matching filter: PHPickerFilter? = nil,
                              photoLibrary: PHPhotoLibraryShim) -> some View { self }
+    /// 写真の場所（撮影地）を読まない版（本物にもある）
+    public func photosPicker(isPresented: Binding<Bool>,
+                             selection: Binding<[PhotosPickerItem]>,
+                             maxSelectionCount: Int? = nil,
+                             matching filter: PHPickerFilter? = nil) -> some View { self }
 }

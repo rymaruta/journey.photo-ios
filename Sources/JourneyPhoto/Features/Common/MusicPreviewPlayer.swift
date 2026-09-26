@@ -48,6 +48,32 @@ final class MusicPreviewPlayer: ObservableObject {
             stop()
             return
         }
+        start(url, song: song)
+    }
+
+    /// 頭から鳴らす（鳴っていても頭出しし直す）。ストーリーの曲に使う——
+    /// **同じ曲のストーリーが2本続いても、2本目は頭から**（Web の `itemChanged` と同じ）
+    func play(_ url: URL?, song: Photo.Song? = nil) {
+        guard let url else { return }
+        start(url, song: song)
+    }
+
+    /// 止めずに一時停止する（場は返さない。すぐ `resume()` するため）
+    func pause() {
+        player?.pause()
+    }
+
+    /// `pause()` の続きから鳴らす。鳴らしていなければ何もしない
+    func resume() {
+        player?.play()
+    }
+
+    /// 消音。**止めない**——消音を解いたとき、映像と同じ位置で鳴っていてほしい
+    func setMuted(_ muted: Bool) {
+        player?.isMuted = muted
+    }
+
+    private func start(_ url: URL, song: Photo.Song?) {
         // **`.ambient` にしない。** あれは消音スイッチに従うので、
         // 本人が ▶ を押したのに**マナーモードだと何も鳴らない**
         // ——「壊れている」としか読めない。押したのは本人の意思なので

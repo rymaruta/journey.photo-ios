@@ -140,6 +140,42 @@ struct StoryViewerView: View {
                 content(for: story)
             }
         }
+        // 曲（板の「♪」）。**鳴らしていなかった**——曲名を文字で出すだけだった
+        .onAppear { syncSong(restart: true) }
+        .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
+        .onChange(of: frozen) { _, _ in syncSong(restart: false) }
+        .onChange(of: muted) { _, now in MusicPreviewPlayer.shared.setMuted(now) }
+        // 閉じたら止める（閉じたあとも鳴り続けないように）
+        .onDisappear { stopSong() }
+    }
+
+    // MARK: - 曲
+
+    /// 表示中の1本に合わせて曲を鳴らす・止める。
+    ///
+    /// - 別の1本に移った・頭から見直した（`restart`）→ 頭から
+    /// - 止めている間（長押し・一時停止・メニュー・シート・背面）→ 一時停止、解けたら続きから
+    /// - 曲の無い1本 → 止める
+    private func syncSong(restart: Bool) {
+        let player = MusicPreviewPlayer.shared
+        guard let story = current, let url = StoryPlayback.songURL(for: story) else {
+            stopSong()
+            return
+        }
+        if restart || !player.isPlaying(url) {
+            player.play(url, song: story.song)
+        }
+        player.setMuted(muted)
+        if frozen { player.pause() } else { player.resume() }
+    }
+
+    /// **自分が鳴らした曲だけ止める。** 何も鳴っていないのに止めると、場を返す
+    /// 処理（`setActive(false)`）が動画の音まで切ることがある
+    private func stopSong() {
+        let player = MusicPreviewPlayer.shared
+        guard let url = player.playingURL,
+              visible.contains(where: { StoryPlayback.songURL(for: $0) == url }) else { return }
+        player.stop()
     }
 
     /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る。板は 844 のうち 84）
@@ -281,7 +317,8 @@ struct StoryViewerView: View {
             Color.clear.overlay {
             StoryMedia(
                 story: story,
-                isMuted: muted,
+                isMuted: StoryPlayback.videoMuted(muted: muted,
+                                                  hasSong: StoryPlayback.songURL(for: story) != nil),
                 isPaused: frozen,
                 onEnded: { advance() },
                 // 出せないと分かった回も進める——止めたままだと永久に固まる
@@ -613,6 +650,7 @@ struct StoryViewerView: View {
         switch StoryPlayback.leftTap(index: index, elapsed: elapsed) {
         case .restart:
             elapsed = 0
+            syncSong(restart: true)
         case .previous(let target):
             go(to: target)
         }
@@ -713,6 +751,7 @@ struct StoryViewerView: View {
         let items = StoryPlayback.menuItems(
             isMine: isMine(story),
             isVideo: story.isVideo,
+            hasSong: StoryPlayback.songURL(for: story) != nil,
             hasCaption: story.caption?.isEmpty == false,
             hasOwner: story.userId != nil
         )
