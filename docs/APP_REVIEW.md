@@ -13,8 +13,11 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > ・不適切な投稿は各写真の「…」メニューから通報でき、同じ場所で投稿者を
 >   ブロックできます。**通報・ブロックした内容は、その場で一覧から消えます。**
 >   ブロックの解除は「マイページ → 設定 → ブロックした人」。
+> ・審査用アカウントには写真を投稿済みです。「投稿」タブから新しい写真を投稿できます。
 > ・初回起動時に、不適切な内容を認めない旨を含む利用規約への同意を求めます。
+> ・プッシュ通知は「マイページ → 設定 → プッシュ通知を受け取る」でオンにできます。
 > ・アカウントは「マイページ → 設定 → アカウントの削除」でアプリ内から削除できます。
+>   審査用アカウントは削除していただいて構いません。
 > ・通報の宛先は journey.photo.official@gmail.com です。
 > ・写真の撮影情報（EXIF）は端末側で取り除いてから送信し、位置は約1kmに
 >   丸めて保存します。精細な位置情報は保存していません。
@@ -26,8 +29,11 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 >   the poster can be blocked from the same menu. Reported and blocked content
 >   disappears from that user's feeds immediately. Blocks can be lifted under
 >   My Page → Settings → Blocked people.
+> - The demo account already has a photo posted. New photos can be posted from the "Post" tab.
 > - On first launch the user must accept terms that prohibit objectionable content.
+> - Push notifications can be turned on under My Page → Settings → Receive push notifications.
 > - Accounts can be deleted in-app under My Page → Settings → Delete account.
+>   Feel free to delete the demo account.
 > - Reports reach journey.photo.official@gmail.com.
 > - EXIF is stripped on device before upload; coordinates are rounded to ~1km.
 
@@ -37,8 +43,12 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 App Store Connect の Demo Account に入れる。
 
 - 登録は「投稿」タブ →「アカウントを作る」。確認コードがメールで届く
+- **owner 本人のアカウントは渡さない。** 審査官はアカウント削除も試す
 - **写真を1枚は投稿しておく**。空のマイページだけだと、審査官が
   「投稿機能を確かめられない」として差し戻すことがある
+- 審査官に消されたら、次の提出の前に作り直す
+- App Store Connect の「App Review に関する情報」→「サインインが必要です」に入れる。
+  連絡先の電話番号は国番号から（`+81 90 1234 5678`。先頭の 0 を取る）
 
 ## ガイドライン別の対応
 
@@ -69,12 +79,18 @@ App Store Connect の Demo Account に入れる。
 | その他のユーザーコンテンツ（コメント） | はい | アプリの機能 | はい | いいえ |
 | おおよその位置 | はい | アプリの機能 | はい | いいえ |
 | ユーザーID | はい | アプリの機能 | はい | いいえ |
+| デバイスID（プッシュ通知の宛先） | はい | アプリの機能 | はい | いいえ |
 
 **精細な位置（Precise Location）は「いいえ」。** 保存前に約1kmへ丸めている。
 
+**デバイスID を落とさない。** 以前この表から抜けていたが、`PrivacyInfo.xcprivacy`
+は申告している（APNs の端末トークン・通知を許可した人だけ）。食い違うと
+差し戻される（2026-09-26 に表を直した）。
+
 ## 年齢制限の質問票（App Store Connect でそのまま答える）
 
-**「なし」以外を選ぶのはユーザー生成コンテンツの1問だけ。**
+**「なし」以外を選ぶのは、ユーザー生成コンテンツと（聞かれたら）メッセージの2問。**
+ストーリーには返信でき、相手に届くので、メッセージ／チャットの問いには「はい」。
 
 | 質問 | 答え |
 |---|---|
@@ -87,6 +103,7 @@ App Store Connect の Demo Account に入れる。
 | 医療・医学情報 | なし |
 | コンテスト | なし |
 | **ユーザー生成コンテンツ（UGC）** | **あり（頻繁でない／軽度）** |
+| **メッセージ／チャット**（質問票にある場合） | **はい**（ストーリーへの返信） |
 | 無制限のウェブアクセス | なし |
 | 賭博とコンテスト | なし |
 
@@ -102,12 +119,16 @@ owner が消す運用で、押した本人の画面からはその場で消え�
 
 - [ ] `bash Tools/mac-release.sh` が通る（生成・ビルド・テスト）
 - [ ] 実機で一巡（カメラ・ライブラリ・通報・ブロック・退会・機内モード）
-- [ ] スクリーンショット 6.7インチ 3枚以上（人の顔と他人の投稿を入れない）
+- [ ] スクリーンショット 3枚以上（人の顔・他人の投稿・他社のロゴを入れない）。
+      寸法は枠ごとに厳密——6.5インチ枠は 1242×2688 / 1284×2778、
+      6.9インチ枠は 1290×2796 / 1320×2868。無印・Pro の iPhone（1179×2556）で
+      撮ったものはそのままではどの枠にも入らない（拡大して 1284×2778 にする）
 - [ ] 審査用アカウントを**本番**に作り、写真を1枚投稿
 - [ ] App のプライバシーの回答が `PrivacyInfo.xcprivacy` と一致
 - [ ] 年齢制限の質問票（上の表）
 - [ ] サポート URL・プライバシーポリシー URL（`docs/APP_STORE_METADATA.md`）
-- [ ] ビルド番号を上げた
+- [ ] App Store Connect の「バージョン」欄と、ビルドの版（`testflight/<版>` のタグ）が一致
+      （版は CI が毎回 +1 する。並行して上げると番号が進むので、提出するビルドの版を見る）
 - [ ] Notes に上の文面を貼った
 
 ### 想定される区分
@@ -132,10 +153,7 @@ owner が消す運用で、押した本人の画面からはその場で消え�
 
 - **投稿数が少ないと「中身が薄い」と見られることがある。** 公開写真は30枚
   規模。審査前に何枚か足しておくと安全
-- 🔴 **プッシュ通知のトグルは在るが、押すと 404 になる。** 以前ここに
-  「プッシュ通知は入れていない」と書いていたが誤り——アプリ側（設定の
-  「プッシュ通知を受け取る」・`PushService`）は出来ていて、叩き先の
-  `POST /user/devices` が `photo-gallery` の main/develop に**まだ無い**
-  （#63 が未マージ・2026-09-24 に確認）。画面に理由が赤字で出るので黙っては
-  壊れないが、**審査官が触りうる導線**なので、出す前に #63 を入れるか
-  トグルを隠すかを決める。4.2 はカメラで満たしているので通知は必須ではない
+- ✅ **プッシュ通知の叩き先は本番にある**（2026-09-25）。`photo-gallery` の
+  #177 で `POST /user/devices` が本番に入った。未ログインで叩くと 401、
+  無い道は 404 で区別できることを確かめた。**実機で届くところまでは未確認**
+  （TestFlight で確かめる）。以前ここにあった「押すと 404」は解消済み
