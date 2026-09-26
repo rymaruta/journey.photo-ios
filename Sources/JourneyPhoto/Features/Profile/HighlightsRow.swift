@@ -41,9 +41,10 @@ struct HighlightsRow: View {
 
     private var header: some View {
         HStack {
+            // 板 05c: 12px・medium・白60% の見出し
             Text(L("ストーリーハイライト", "Story highlights"))
-                .font(.headline)
-                .foregroundStyle(WebTheme.foreground)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(WebTheme.faint)
             Spacer()
             // **すべて見るは、2つ以上あるときだけ。** 1つしかない画面で
             // 「すべて見る」を押すと同じものがもう一度出るだけになる
@@ -51,18 +52,22 @@ struct HighlightsRow: View {
                 NavigationLink {
                     HighlightsListView(userId: userId, isMine: isMine)
                 } label: {
-                    Text(L("すべて見る", "See all"))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                    HStack(spacing: 4) {
+                        Text(L("すべて見る", "See all"))
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                    .frame(minHeight: 28)
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
     }
 
     private var circles: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: 8) {
                 if isMine { newButton }
                 ForEach(highlights) { highlight in
                     NavigationLink {
@@ -73,7 +78,7 @@ struct HighlightsRow: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
         }
     }
 
@@ -82,19 +87,20 @@ struct HighlightsRow: View {
             showEditor = true
         } label: {
             VStack(spacing: 6) {
+                // 板: 62pt の点線の丸（白35%）
                 Circle()
-                    .strokeBorder(WebTheme.faint.opacity(0.5),
+                    .strokeBorder(Color.white.opacity(0.35),
                                   style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .frame(width: 64, height: 64)
+                    .frame(width: 62, height: 62)
                     .overlay(Image(systemName: "plus")
-                        .font(.title3)
-                        .foregroundStyle(WebTheme.muted2))
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.white))
                 Text(L("新規", "New"))
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
             }
-            .frame(width: 76)
+            .frame(width: 66)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -114,16 +120,18 @@ struct HighlightsRow: View {
                             .foregroundStyle(WebTheme.faint))
                 }
             }
-            .frame(width: 64, height: 64)
+            // 板: 62pt の枠（縁 1pt・白25%）の内側 3pt に写真（54pt）
+            .frame(width: 54, height: 54)
             .clipShape(Circle())
+            .padding(4)
             .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
 
             Text(highlight.displayTitle)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(WebTheme.muted2)
                 .lineLimit(1)
         }
-        .frame(width: 76)
+        .frame(width: 66)
         .contentShape(Rectangle())
     }
 

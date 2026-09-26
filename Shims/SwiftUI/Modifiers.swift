@@ -203,6 +203,10 @@ extension View {
     public func offset(x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func position(x: Double, y: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 場所は取るが描かない（本物と同じ）
+    public func hidden() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 重なりの順（本物と同じ）
+    public func zIndex(_ value: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 揃えの位置を自分で決める（本物と同じ）
@@ -422,8 +426,13 @@ extension View {
 
 /// 行の余白（本物と同じ形）
 public struct EdgeInsets {
+    /// 本物と同じく4辺を読める（`GeometryProxy.safeAreaInsets.top` など）
+    public var top: CGFloat = 0, leading: CGFloat = 0, bottom: CGFloat = 0, trailing: CGFloat = 0
     public init() {}
-    public init(top: Double, leading: Double, bottom: Double, trailing: Double) {}
+    public init(top: Double, leading: Double, bottom: Double, trailing: Double) {
+        self.top = CGFloat(top); self.leading = CGFloat(leading)
+        self.bottom = CGFloat(bottom); self.trailing = CGFloat(trailing)
+    }
 }
 
 /// `submitLabel(_:)` が受ける確定キーの文言。本物は struct

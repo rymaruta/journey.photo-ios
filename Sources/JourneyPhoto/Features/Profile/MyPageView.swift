@@ -27,10 +27,11 @@ struct MyPageView: View {
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
 
+    /// 板 05c: 3列・隙間 4pt・角なし
     private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 4),
+        GridItem(.flexible(), spacing: 4),
+        GridItem(.flexible(), spacing: 4),
     ]
 
     var body: some View {
@@ -47,23 +48,18 @@ struct MyPageView: View {
         .webScreen()
         .navigationTitle(Labels.Navigation.mypage)
         .navigationBarTitleDisplayMode(.inline)
+        // **ログイン中は上のバーを出さない**（板 05c・05d）。カバーが画面の上端から
+        // 敷かれ、設定は右上のガラスの丸（`settingsButton`）。未ログインでは
+        // ログイン画面なので、これまでどおりバーに設定だけ置く
+        .toolbar(auth.userId == nil ? .automatic : .hidden, for: .navigationBar)
         .toolbar {
-            // **ここだけ見出しが違っていた。** 他の札（ホーム・さがす・
-            // マップ）はロゴを出すのに、マイページは大きな字で
-            // 「マイページ」——実機の絵（run 47）で、札を移った瞬間に
-            // 別のアプリに見えた。`AppHeader` の注記が避けると書いていた形
-            ToolbarItem(placement: .principal) {
-                // **未ログインでは出さない。** ログイン画面が大きいロゴを持つので
-                // （板 41）、バーにも出すとロゴが2つ並ぶ
-                if auth.userId != nil {
-                    AppLogo()
-                }
-            }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { SettingsView() } label: {
-                    Image(systemName: "gearshape")
-                        .webToolbarIcon()
-                        .accessibilityLabel(L("設定", "Settings"))
+                if auth.userId == nil {
+                    NavigationLink { SettingsView() } label: {
+                        Image(systemName: "gearshape")
+                            .webToolbarIcon()
+                            .accessibilityLabel(L("設定", "Settings"))
+                    }
                 }
             }
         }
@@ -132,25 +128,57 @@ struct MyPageView: View {
     /// 旅の一冊へ。**撮った本人の記録なので、持ち場はここ**
     /// （タブは指示書の並び——ホーム／探す／投稿／マップ／マイページ）。
 
+    /// **カバーは画面の上端から**（時計の裏まで）。無い人は安全域の下から。
+    /// 安全域の高さは GeometryReader で測り（こちらは安全域を無視させない）、
+    /// 上端まで伸ばすのは中のスクロールだけ。設定の丸はこの高さぶん下げて、
+    /// 時計の裏に入れない
     private var content: some View {
+        GeometryReader { geo in
+            scroll(topInset: geo.safeAreaInsets.top)
+                .ignoresSafeArea(edges: hasCover ? .top : [])
+        }
+    }
+
+    private func scroll(topInset: CGFloat) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let profile = model.profile {
-                    // カバーと見出しは間を空けずに重ねる（板 05c）
-                    VStack(alignment: .leading, spacing: 0) {
-                        ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
-                                     reserve: hasCover) { hasCover = $0 }
-                        header(profile)
+            VStack(alignment: .leading, spacing: 14) {
+                // **設定の丸は中身と一緒に流す。** 画面に留めると、送ったときに
+                // 格子の右上の写真に被さり、そこを押すと設定が開いた
+                // 板: 見出し・数・旅の実績の間は 12pt、その下の段は 14pt
+                VStack(alignment: .leading, spacing: 12) {
+                    ZStack(alignment: .topTrailing) {
+                        // **丸を先に置く**（読み上げで見出しの途中に「設定」が挟まらない）。
+                        // 見た目は前に出す
+                        settingsButton
+                            .padding(.top, hasCover ? topInset : 0)
+                            .zIndex(1)
+                        if let profile = model.profile {
+                            // カバーと見出しは間を空けずに重ねる（板 05c）。カバーが無ければ
+                            // 右上の設定の丸の下から始める（板 05d）
+                            VStack(alignment: .leading, spacing: 0) {
+                                ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
+                                             reserve: hasCover) { hasCover = $0 }
+                                header(profile)
+                            }
+                        } else {
+                            // 読み込み中・失敗: 丸の高さだけ空けて、下の中身に被せない
+                            Color.clear.frame(height: 44)
+                        }
                     }
-                    stats
-                    travelRecord
+                    if model.profile != nil {
+                        stats
+                        travelRecord
+                    }
+                }
+                if let profile = model.profile {
                     bgmCard(profile)
                     profileSetupNotice(profile)
                 }
                 // **「投稿する」とストーリーの行は置かない**（整理案 05c）。
                 // 下の札の「投稿」とホームのストーリーの行と入口が重なっていた。
-                // 旅の記録は下のタブへ移した
-                shortcuts
+                // 旅の記録は下のタブへ移した。**編集・アルバム・お気に入りの
+                // ボタンの列も置かない**——編集は見出しの右、お気に入りは下のタブ、
+                // アルバムは設定から入る（`SettingsView`）
                 highlightsRow
                 tabPicker
                 photoArea
@@ -159,114 +187,116 @@ struct MyPageView: View {
         .refreshable { await model.load() }
     }
 
-    @ViewBuilder
-    private func themeRing(_ hex: String?) -> some View {
-        if let hex, let color = Color(hex: hex) {
-            Circle().strokeBorder(color, lineWidth: 3)
+    /// 右上の設定（板: 44pt のガラスの丸）。**上のバーを出さないので、ここが入口**
+    private var settingsButton: some View {
+        NavigationLink { SettingsView() } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(Color.white)
+                .frame(width: 44, height: 44)
+                .jpGlass(in: Circle())
         }
+        .buttonStyle(.plain)
+        .padding(.trailing, 8)
+        .accessibilityLabel(L("設定", "Settings"))
     }
 
+    /// 見出し（板 05c・05d）: 84pt のアイコン（黒い 3pt の縁）と右に「プロフィールを
+    /// 編集」、その下に明朝 26 の名前・「@ユーザー名 · 📍居住地」・ひとこと
     private func header(_ profile: UserProfile) -> some View {
-        HStack(spacing: 12) {
-            RemoteImage(url: profile.avatarURL(cacheBust: model.avatarCacheBust))
-                .frame(width: 64, height: 64)
-                .clipShape(Circle())
-                // **本人が選んだ色を輪にする**（Web の `themeRingGradient` と
-                // 同じ置き場所）。選んでいなければ輪を出さない
-                .overlay(themeRing(profile.themeColor))
-                .coverCutout(hasCover)
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .bottom) {
+                RemoteImage(url: profile.avatarURL(cacheBust: model.avatarCacheBust))
+                    .frame(width: Self.avatarSize, height: Self.avatarSize)
+                    .clipShape(Circle())
+                    // **板どおり黒の 3pt の縁**（写真の上でも丸が割れない）。
+                    // 本人の色の輪（`themeColor`）は板に無いので出さない。
+                    // ⚠️ 人のページ（`UserProfileView`）はまだ色の輪を出している（板 31 で揃える）
+                    .coverCutout(true)
+                Spacer(minLength: 8)
+                NavigationLink { ProfileEditView() } label: {
+                    Text(L("プロフィールを編集", "Edit profile"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
+                        // 見た目は 36pt、押せる高さは 44pt
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                // 実機の絵の道しるべ（見出しが描けた＝読み込みが済んだ目印）
+                .accessibilityIdentifier("mypage.edit")
+            }
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    Text(profile.name).font(JPFont.display(20, relativeTo: .title3))
+                    Text(profile.name)
+                        .font(JPFont.display(26, relativeTo: .title))
+                        .foregroundStyle(Color.white)
                     VerifiedBadge(isVerified: profile.verified)
                 }
-                // ユーザー名（モック2-1 の `@yuki_travel`）。
-                // **名前と同じ行に置かない**——長い名前で片方が切れる
-                if let username = profile.username, !username.isEmpty {
-                    Text("@\(username)")
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.faint)
-                }
-                // ひとこと。**持っているのに一度も出していなかった**
-                if let status = profile.statusText, !status.isEmpty {
-                    Text(status).font(.footnote).foregroundStyle(WebTheme.muted2)
-                }
-                if let bio = profile.bio, !bio.isEmpty {
-                    Text(bio).font(.footnote).foregroundStyle(.secondary)
-                }
-                // 居住地（モック2-1 の「📍Tokyo, Japan」）。
-                // **地図には出さない**——住んでいる場所はピンにしない
-                if let home = profile.homeLocation, !home.isEmpty {
-                    Label(home, systemImage: "mappin.and.ellipse")
+                if let line = ProfileLine.handleAndHome(username: profile.username,
+                                                        home: profile.homeLocation) {
+                    // 居住地は**地図には出さない**（住んでいる場所はピンにしない）
+                    Text(line)
                         .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                 }
+                // ひとこと。**持っているのに一度も出していなかった**
+                ForEach(ProfileLine.about(status: profile.statusText, bio: profile.bio), id: \.self) { text in
+                    Text(text)
+                        .font(.footnote)
+                        .lineSpacing(4)
+                        .foregroundStyle(WebTheme.muted2)
+                }
             }
-            Spacer()
         }
-        .padding(.horizontal, 16)
-        // カバーがあればアイコンを下端に半分ほど重ねる（板 05c）
-        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 8)
+        .padding(.horizontal, 20)
+        // カバーがあればアイコンを下端に重ねる（板: 180pt の帯に 84pt の丸を 50pt）。
+        // 無ければ右上の設定の丸の下から（板 05d）
+        .padding(.top, hasCover ? -Self.avatarOverlap : 49)
     }
 
+    /// 見出しのアイコン（板 84pt）と、カバーの下端へ引き上げる量（板 50pt）。
+    /// 人のページ（64pt・28pt）とは別——あちらは板 31
+    private static let avatarSize: CGFloat = 84
+    private static let avatarOverlap: CGFloat = 50
 
-    /// 数の並び（提案の絵）。**投稿・いいね・フォロワー・フォロー中**
-    ///
-    /// **両端を 16pt の余白に揃える。** 下の「旅の実績」が端から端までの
-    /// 帯なので、ここが左詰めのままだと右端だけ段違いになる。
-    /// 丸の幅は中身のまま（数字の大きさを変えない）で、**間を均等に開ける**。
-    /// 収まらない幅（英語表記・桁の多い数）では、これまでどおり横に流す
+    /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・等幅の数字 18 と名前）。
+    /// 列は幅を三等分し、押せる高さは 44pt
     private var stats: some View {
-        ViewThatFits(in: .horizontal) {
-            statsRow(spread: true)
-                .padding(.horizontal, 16)
-            ScrollView(.horizontal, showsIndicators: false) {
-                statsRow(spread: false)
-                    .padding(.horizontal, 16)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func statsRow(spread: Bool) -> some View {
-        // 間の Spacer は最小 0 なので、詰めたときの間隔は `spacing` の 8 のまま
-        HStack(spacing: 8) {
-            statPill(systemImage: "photo.on.rectangle",
-                     value: "\(model.photos.count)", label: L("投稿", "Posts"))
-            if spread { Spacer(minLength: 0) }
+        // 板: 3列の等幅。等幅の数字（18）の下に小さい名前（10）
+        HStack(alignment: .top, spacing: 8) {
+            statCell(value: "\(model.photos.count)", label: L("投稿", "Posts"))
             NavigationLink {
                 FollowListView(userId: model.profile?.userId ?? "", kind: .followers)
             } label: {
-                statPill(systemImage: "person.2", value: "\(model.followers)",
-                         label: L("フォロワー", "Followers"))
+                statCell(value: "\(model.followers)", label: L("フォロワー", "Followers"))
             }
             .buttonStyle(.plain)
-            if spread { Spacer(minLength: 0) }
             NavigationLink {
                 FollowListView(userId: model.profile?.userId ?? "", kind: .following)
             } label: {
-                statPill(systemImage: "person", value: "\(model.following)",
-                         label: L("フォロー中", "Following"))
+                statCell(value: "\(model.following)", label: L("フォロー中", "Following"))
             }
             .buttonStyle(.plain)
         }
+        .padding(.horizontal, 20)
     }
 
-    private func statPill(systemImage: String, value: String, label: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
+    private func statCell(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
-                .foregroundStyle(WebTheme.foreground)
+                .font(JPFont.mono(18, relativeTo: .title3))
+                .foregroundStyle(Color.white)
             Text(label)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(WebTheme.faint)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 44)
-        .background(WebTheme.surface, in: Capsule())
+        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     /// 旅の実績（モック2-3）。**訪れた国・地域**と**写真をつないだ距離**を
@@ -311,7 +341,7 @@ struct MyPageView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
         }
     }
 
@@ -344,34 +374,19 @@ struct MyPageView: View {
     }
 
 
-    private var shortcuts: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                NavigationLink(L("プロフィールを編集", "Edit profile")) { ProfileEditView() }
-                    .buttonStyle(.bordered)
-                NavigationLink(Labels.Navigation.albums) { AlbumsView() }
-                    .buttonStyle(.bordered)
-                NavigationLink(Labels.Navigation.favorites) { FavoritesView() }
-                    .buttonStyle(.bordered)
-            }
-            .padding(.horizontal, 16)
-        }
-        .font(.footnote)
-    }
-
     /// プロフィールのBGM（モック2-4）。
     ///
     /// **入れている人にだけ出す。** サーバーは前から `songs` を返していて、
     /// アプリが復号していなかっただけだった（⛔ にしていたのは誤り）。
     /// 曲は `MusicPreviewPlayer` に通す——**専用の再生器を作らない**
     /// （画面をまたいだ操作は `MiniPlayerBar` が受け持っている）。
+    ///
+    /// 見た目は `ProfileBgmCard`（再生器の見張りを札の中に閉じる）
     @ViewBuilder
     private func bgmCard(_ profile: UserProfile) -> some View {
         if let song = profile.bgm {
-            SongRow(song: song)
-                .padding(12)
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-                .padding(.horizontal, 16)
+            ProfileBgmCard(song: song)
+                .padding(.horizontal, 20)
         }
     }
 
@@ -569,21 +584,47 @@ struct MyPageView: View {
 
     /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
     /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
+    /// 板 05c: 下線の札（印＋名前・13px・高さ 44）。選んでいる札は白い字と
+    /// 下の 2pt の白い線、下に白12% の1本線。
+    ///
+    /// **入らなければ4つとも印を外して字だけ**（大きい文字・狭い端末で「行きたい
+    /// 場所」が「…」で切れていた）。札ごとに決めると、印のある札と無い札が混ざり、
+    /// 押すたびに太字の幅で印が出たり消えたりする。並べ方は `TabRowLayout`（中身の
+    /// 幅＋余りの等分）——判定（理想の幅の和）と実際の幅を一致させる
     private var tabPicker: some View {
-        HStack(spacing: 6) {
+        ViewThatFits(in: .horizontal) {
+            tabRow(icons: true)
+            tabRow(icons: false)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func tabRow(icons: Bool) -> some View {
+        TabRowLayout {
             ForEach(ProfileTab.tabs(isMe: true)) { option in
                 let selected = tab == option
                 Button {
                     tab = option
                 } label: {
-                    Text(option.label)
-                        .font(.subheadline.weight(selected ? .semibold : .regular))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                             : AnyShapeStyle(Color.clear),
-                                    in: Capsule())
-                        .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                    HStack(spacing: 6) {
+                        if icons {
+                            Image(systemName: option.systemImage)
+                                .font(.system(size: 13))
+                                .accessibilityHidden(true)
+                        }
+                        tabLabel(option, selected: selected)
+                    }
+                    .foregroundStyle(selected ? Color.white : WebTheme.faint)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(selected ? Color.white : Color.clear)
+                            .frame(height: 2)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
@@ -592,9 +633,23 @@ struct MyPageView: View {
                 .accessibilityIdentifier("profile.tab.\(option.rawValue)")
             }
         }
-        .padding(4)
-        .background(WebTheme.surface, in: Capsule())
-        .padding(.horizontal, 16)
+    }
+
+    /// 名前。**幅は太字で測る**（選ぶたびに幅が変わって印が出入りしないように）。
+    /// 太さは選んでいる札だけ変える
+    private func tabLabel(_ option: ProfileTab, selected: Bool) -> some View {
+        // 太字の幅で場所を取り、見える字は選んでいるときだけ太字
+        Text(option.label)
+            .font(.footnote.weight(.semibold))
+            .lineLimit(1)
+            .hidden()
+            .accessibilityHidden(true)
+            .overlay {
+                Text(option.label)
+                    .font(.footnote.weight(selected ? .semibold : .regular))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
     }
 
     /// 旅の記録（旅の一冊の棚）。**自分の公開写真から**その場でまとめる
@@ -682,14 +737,22 @@ struct MyPageView: View {
         } else if tab == .favorites {
             favoritesArea
         } else {
-            LazyVGrid(columns: columns, spacing: 2) {
+            let multiple = PhotoGroups.multiPhotoIds(model.photos)
+            LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(model.photos) { photo in
                     NavigationLink {
                         PhotoDetailView(photo: photo, fromPublicFeed: false, context: model.photos)
                     } label: {
-                        gridCell(photo)
+                        gridCell(photo, multiple: multiple.contains(photo.id))
                     }
                     .buttonStyle(.plain)
+                    // 何の写真か（題）を名前に、印（ピン・下書き・複数枚）を値にして読む。
+                    // 名前だけ差し替えると中の印が読まれなくなる
+                    .accessibilityLabel(photo.accessibilityText)
+                    .accessibilityValue(ProfileLine.gridState(
+                        pinned: model.isPinned(photo.id),
+                        draft: photo.published == false,
+                        multiple: multiple.contains(photo.id)))
                     // **長押しでピン留め**（Web の「先頭にピン留め」と同じ操作）。
                     // 一覧の見た目は変えず、操作だけ足す
                     .contextMenu {
@@ -709,26 +772,42 @@ struct MyPageView: View {
 
     /// 一覧の1枚。**下書き（非公開）は一目で分かるようにする**
     /// ——公開したつもりの写真が出ていない、がいちばん困る。
-    private func gridCell(_ photo: Photo) -> some View {
-        ZStack(alignment: .topTrailing) {
-            PhotoFrame(photo: photo)
-            if model.isPinned(photo.id) {
-                Image(systemName: "pin.fill")
-                    .font(.caption)
-                    .padding(4)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .padding(4)
-                    .accessibilityLabel(L("ピン留め中", "Pinned"))
+    /// 印は左上（板 05c: ピンは 22pt の黒い丸、下書きは黒い小さな札）、
+    /// 複数枚の投稿は右上。**印は読み上げない**（格子の1枚の値として読む）
+    private func gridCell(_ photo: Photo, multiple: Bool) -> some View {
+        PhotoFrame(photo: photo, corner: 0)
+            .overlay(alignment: .topTrailing) {
+                if multiple {
+                    Image(systemName: "square.on.square")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.white)
+                        .shadow(radius: 3)
+                        .padding(6)
+                        .accessibilityHidden(true)
+                }
             }
-            if photo.published == false {
-                Text(L("下書き", "Draft"))
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(4)
+            .overlay(alignment: .topLeading) {
+                HStack(spacing: 4) {
+                    if model.isPinned(photo.id) {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 22, height: 22)
+                            .background(Color.black.opacity(0.55), in: Circle())
+                            .accessibilityHidden(true)
+                    }
+                    if photo.published == false {
+                        Text(L("下書き", "Draft"))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.black.opacity(0.6), in: Capsule())
+                            .accessibilityHidden(true)
+                    }
+                }
+                .padding(6)
             }
-        }
     }
 }
 
