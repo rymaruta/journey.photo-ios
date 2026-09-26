@@ -304,11 +304,18 @@ public struct UIImageShim {
 
 /// `@FocusState` の模型。本物は入力欄に焦点が当たっているかを持つ。
 @propertyWrapper
+/// **本物は画面（`View` の struct）の中から書き換えられる**（`nonmutating set`）。
+/// 模型も `@State` と同じ箱で持つ——値型のまま持つと `captionFocused = false` が
+/// 「self は変えられない」で落ち、模型のビルドが止まっていた（2026-09-26）。
 public struct FocusState<Value>: DynamicProperty {
-    public var wrappedValue: Value
-    public init(wrappedValue: Value) { self.wrappedValue = wrappedValue }
-    public init() where Value == Bool { self.wrappedValue = false }
-    public var projectedValue: Binding<Value> { Binding(get: { wrappedValue }, set: { _ in }) }
+    private let box: Box<Value>
+    public init(wrappedValue: Value) { box = Box(wrappedValue) }
+    public init() where Value == Bool { box = Box(false) }
+    public var wrappedValue: Value {
+        get { box.value }
+        nonmutating set { box.value = newValue }
+    }
+    public var projectedValue: Binding<Value> { Binding(get: { box.value }, set: { box.value = $0 }) }
 }
 
 

@@ -9,10 +9,15 @@ import SwiftUI
 /// 以前は縦1列の札（作者・写真・題・説明・タグ・4つの操作）だった
 /// （提案の絵・2026-09-21）。owner の「ホームをアーティファクト通りに・
 /// 主に写真の表示部分」（2026-09-26）で板 01c の組みにした。
-/// 題・説明・保存・共有・フォロー・通報は写真の詳細にある
+/// 題・説明・保存・共有・フォローは写真の詳細にある。**通報とブロックは
+/// 各写真の「…」にも残す**（審査 1.2・審査メモの「各写真の『…』から」）
 struct HomeMosaic: View {
 
     let groups: [PhotoGroups.Group]
+    /// 「通報する」を押したとき。**シートは一覧（`GalleryView`）が出す。**
+    /// 写真に付けると、通報で一覧が読み直されて写真ごと消え、
+    /// 「受け付けました」やブロック失敗の文言を見る前にシートが閉じる
+    var onReport: (Photo) -> Void = { _ in }
 
     /// 段どうし・段の中の隙間（板: 4px）
     private let gap: CGFloat = 4
@@ -42,7 +47,7 @@ struct HomeMosaic: View {
     @ViewBuilder
     private func tile(_ photo: Photo, byCover: [String: PhotoGroups.Group], large: Bool) -> some View {
         let group = byCover[photo.id]
-        HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large)
+        HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large, onReport: onReport)
     }
 }
 
@@ -54,8 +59,14 @@ struct HomeFeedTile: View {
     var siblings: [Photo] = []
     /// 大きい段（16:9・撮影地 22pt・投稿した時期も出す）か、2枚の段（1:1・18pt）か
     var large = false
+    var onReport: (Photo) -> Void = { _ in }
 
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
+    /// 「…」のブロックの確認
+    @State private var showBlockConfirm = false
     /// サーバーが答えたいいねの数（詳細画面で押したぶんもここに来る）
     @EnvironmentObject private var likeCounts: LikeCountStore
     @EnvironmentObject private var environment: AppEnvironment
@@ -73,7 +84,10 @@ struct HomeFeedTile: View {
                     }
                     .clipped()
                     .overlay(alignment: .bottomLeading) { caption }
-                    .overlay(alignment: .topTrailing) { multipleMark }
+                    .overlay(alignment: .topTrailing) {
+                        // 「…」の丸と重ならないよう、印はその左
+                        multipleMark.padding(.trailing, showsMore ? 44 : 0)
+                    }
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -90,6 +104,55 @@ struct HomeFeedTile: View {
             .accessibilityIdentifier("feed.photo")
 
             likeButton
+        }
+        .overlay(alignment: .topTrailing) { moreMenu }
+    }
+
+    /// 自分の写真には出さない（編集は詳細で）
+    private var showsMore: Bool { photo.userId == nil || photo.userId != auth.userId }
+
+    /// 「…」（通報・ブロック）。中身は写真詳細の「…」と同じ。見た目はいいねと
+    /// 同じガラスの丸（32pt）で、押せる範囲は 44pt
+    @ViewBuilder
+    private var moreMenu: some View {
+        if showsMore {
+            Menu {
+                Button { onReport(photo) } label: {
+                    Label(L("通報する", "Report"), systemImage: "flag")
+                }
+                if photo.userId != nil {
+                    Button(role: .destructive) { showBlockConfirm = true } label: {
+                        Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 32, height: 32)
+                    .background(Color.black.opacity(0.55), in: Circle())
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(6)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(L("この写真の操作", "More actions"))
+            .confirmationDialog(L("この人をブロックしますか？", "Block this person?"),
+                                isPresented: $showBlockConfirm, titleVisibility: .visible) {
+                Button(L("ブロック", "Block"), role: .destructive) { Task { await block() } }
+            } message: {
+                Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。", "You won't see each other's posts, stories, or notifications."))
+            }
+        }
+    }
+
+    private func block() async {
+        guard let ownerId = photo.userId else { return }
+        do {
+            try await hidden.blockAndHide(ownerId, environment: environment)
+            toasts.show(L("ブロックしました", "Blocked"))
+        } catch {
+            toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
+                        kind: .failure)
         }
     }
 

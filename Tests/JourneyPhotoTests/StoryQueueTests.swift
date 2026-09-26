@@ -6,6 +6,18 @@ final class StoryQueueTests: XCTestCase {
 
     /// 🔴 **自分より前を外したら1つ繰り上がる。** ずらさないと、
     /// 画面に出ている絵と触っている文字が1つずれる
+    /// 🔴 **出せたぶんは id で外す。** 送っている間に並びが変わると、
+    /// `removeFirst(出せた数)` は範囲外で落ちていた（3枚で送り始め、送信中に2枚外し、
+    /// 3本目で失敗 → 出せた2 > 残り1）
+    func testDropPostedRemovesByIdEvenIfTheListShrank() {
+        struct Shot: Identifiable { let id: Int }
+        let now = [Shot(id: 3)]                       // 送信中に1と2を外した後の並び
+        XCTAssertEqual(StoryQueue.dropPosted(now, posted: [1, 2]).map(\.id), [3])
+        let all = [Shot(id: 1), Shot(id: 2), Shot(id: 3)]
+        XCTAssertEqual(StoryQueue.dropPosted(all, posted: [1, 2]).map(\.id), [3])
+        XCTAssertEqual(StoryQueue.dropPosted(all, posted: []).map(\.id), [1, 2, 3])
+    }
+
     func testRemovingBeforeCurrentShiftsDown() {
         // 3枚のうち添字0を外した（残り2枚）。編集中は添字2だった
         XCTAssertEqual(StoryQueue.currentAfterRemoving(0, current: 2, count: 2), 1)

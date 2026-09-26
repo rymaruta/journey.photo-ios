@@ -19,8 +19,9 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > ・アカウントは「マイページ → 設定 → アカウントの削除」でアプリ内から削除できます。
 >   審査用アカウントは削除していただいて構いません。
 > ・通報の宛先は journey.photo.official@gmail.com です。
-> ・写真の撮影情報（EXIF）は端末側で取り除いてから送信し、位置は約1kmに
->   丸めて保存します。精細な位置情報は保存していません。
+> ・写真ファイルに埋め込まれた撮影情報（EXIF・GPS）は端末側で取り除いてから
+>   送信し、位置は約1kmに丸めて保存します。精細な位置情報は保存していません。
+>   カメラの機種・レンズ・撮影日は、写真ページの「撮影情報」に表示します。
 
 > This app is a personal travel photo gallery. Browsing requires no account;
 > posting requires an email sign-up.
@@ -35,7 +36,9 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > - Accounts can be deleted in-app under My Page → Settings → Delete account.
 >   Feel free to delete the demo account.
 > - Reports reach journey.photo.official@gmail.com.
-> - EXIF is stripped on device before upload; coordinates are rounded to ~1km.
+> - Embedded EXIF/GPS metadata is stripped from the image file on device before
+>   upload; coordinates are rounded to ~1km. Camera model, lens and capture date
+>   are shown publicly in the photo's "Shooting info" section.
 
 ## 審査用アカウント
 

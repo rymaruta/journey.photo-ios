@@ -29,6 +29,8 @@ struct StoryComposerView: View {
     @State private var keepInArchive = false
     @State private var showCamera = false
     @State private var isWorking = false
+    /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
+    @State private var keepExistingDraft = false
     /// ストーリーのBGM（30秒の試聴だけ）と、表示秒数
     @State private var song: Photo.Song?
     @State private var durationSec = StoryService.defaultDurationSec
@@ -119,6 +121,8 @@ struct StoryComposerView: View {
             Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。",
                    "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
         }
+        // 🔴 **送っている間は下へ払っても閉じない**（✕ と同じ。閉じても送信は裏で続く）
+        .interactiveDismissDisabled(isWorking)
         // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
@@ -128,7 +132,8 @@ struct StoryComposerView: View {
         .alert(L("書きかけの下書きがあります", "You have a saved draft"), isPresented: $showRestore) {
             Button(L("続きから", "Continue")) { restoreDraft() }
             Button(L("捨てる", "Discard"), role: .destructive) { drafts.clear() }
-            Button(Labels.Common.cancel, role: .cancel) {}
+            // 「キャンセル」は**残す**。この回の投稿が成功しても消さない
+            Button(Labels.Common.cancel, role: .cancel) { keepExistingDraft = true }
         } message: {
             Text(L("この端末に残しておいたものです。続きから編集できます。",
                    "Kept on this device. You can pick up where you left off."))
@@ -206,6 +211,9 @@ struct StoryComposerView: View {
                 mediaStrip
                     .padding(.leading, 16)
                     .padding(.bottom, 20)
+                    // 🔴 **送っている間は並びを変えさせない。** 送信は始めたときの写しを
+                    // 回すので、外した写真も出てしまい、失敗時の片付けが範囲外で落ちていた
+                    .disabled(isWorking)
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -408,6 +416,8 @@ struct StoryComposerView: View {
                         .jpGlass(in: Circle())
                 }
                 .buttonStyle(.plain)
+                // 送っている間は閉じさせない（閉じても送信は裏で続く）
+                .disabled(isWorking)
                 .accessibilityLabel(Labels.Common.close)
                 Spacer()
                 if captionFocused {
@@ -746,6 +756,7 @@ struct StoryComposerView: View {
         let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
         var posted = 0
+        var postedIds: Set<StoryShot.ID> = []
         for shot in shots {
             do {
                 _ = try await environment.stories.create(
@@ -760,19 +771,24 @@ struct StoryComposerView: View {
                     archive: keepInArchive
                 )
                 posted += 1
+                postedIds.insert(shot.id)
             } catch {
                 let reason = (error as? LocalizedError)?.errorDescription
                     ?? L("投稿できませんでした", "Couldn't post")
                 message = StoryQueue.partialFailure(posted: posted, total: shots.count, reason: reason)
                 // **出せたぶんは並びから外す。** 押し直したときに
                 // 同じ写真をもう一度出さないため
-                shots.removeFirst(posted)
+                // **数ではなく id で外す**——並びが変わっていると
+                // `removeFirst(posted)` は範囲外で落ちる
+                shots = StoryQueue.dropPosted(shots, posted: postedIds)
                 current = 0
                 return
             }
         }
-        // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）
-        drafts.clear()
+        // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）。
+        // 🔴 **ただし復元を保留した古い下書きは消さない**——この回の投稿とは別物で、
+        // 「残す」を選んだのに黙って消えていた
+        if !keepExistingDraft { drafts.clear() }
         dismiss()
     }
 }

@@ -6,6 +6,7 @@ struct FavoritesView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var hidden: ModerationStore
     /// 取ってきた全部。
     @State private var all: [Photo] = []
     /// 画面に出す分。**描画のたびに絞らない。**
@@ -44,13 +45,17 @@ struct FavoritesView: View {
         .refreshable { await load(force: true) }
         // **戻ってきたら絞り直す。** 詳細画面でハートを外したぶんは、
         // その画面を閉じたこの時点で消える（見ている最中には消さない）
-        .onAppear { photos = all.filter { favorites.contains($0.id) } }
+        // ブロック／通報したぶんも、同じく戻ってきたときに落とす（`all` ごと）
+        .onAppear {
+            all = hidden.visible(all)
+            photos = all.filter { favorites.contains($0.id) }
+        }
     }
 
     private func load(force: Bool = false) async {
         isLoading = true
         defer { isLoading = false }
-        all = (try? await environment.gallery.fetchPhotos(force: force)) ?? []
+        all = hidden.visible((try? await environment.gallery.fetchPhotos(force: force)) ?? [])
         photos = all.filter { favorites.contains($0.id) }
     }
 }

@@ -68,6 +68,19 @@ final class ModerationStore: ObservableObject {
         bumpIfChanged(blocked: before.0, reported: before.1)
     }
 
+    /// 手元に持っている写真の一覧から、いま「見せない」ものを落とす。
+    /// **読み込み済みの画面が、ブロック／通報の直後に消すため**
+    /// （公開一覧の側は次に読んだときに落ちるが、画面はもう持っている）
+    func visible(_ photos: [Photo]) -> [Photo] {
+        BlockFilter.photos(photos, blocked: blockedUserIds, reported: reportedPhotoIds)
+    }
+
+    /// いまの「見せない」の写し。**画面が絞る時点を自分で選ぶため**
+    /// （描画のたびに `visible` を呼ぶと、見ている最中に一覧が縮む）
+    var snapshot: ModerationSnapshot {
+        ModerationSnapshot(blocked: blockedUserIds, reported: reportedPhotoIds)
+    }
+
     func block(_ id: String) {
         let before = (blockedUserIds, reportedPhotoIds)
         blockedUserIds.insert(id)
@@ -89,5 +102,15 @@ final class ModerationStore: ObservableObject {
         reportedPhotoIds.insert(photoId)
         defaults.set(Array(reportedPhotoIds), forKey: key("reported"))
         bumpIfChanged(blocked: before.0, reported: before.1)
+    }
+}
+
+/// `ModerationStore.snapshot` の中身。値なので `@State` に置ける
+struct ModerationSnapshot: Equatable {
+    var blocked: Set<String> = []
+    var reported: Set<String> = []
+
+    func visible(_ photos: [Photo]) -> [Photo] {
+        BlockFilter.photos(photos, blocked: blocked, reported: reported)
     }
 }

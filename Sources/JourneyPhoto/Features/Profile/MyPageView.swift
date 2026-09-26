@@ -22,6 +22,8 @@ struct MyPageView: View {
     @State private var showCountriesNote = false
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
+    /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
+    @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
 
@@ -134,7 +136,12 @@ struct MyPageView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let profile = model.profile {
-                    header(profile)
+                    // カバーと見出しは間を空けずに重ねる（板 05c）
+                    VStack(alignment: .leading, spacing: 0) {
+                        ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
+                                     reserve: hasCover) { hasCover = $0 }
+                        header(profile)
+                    }
                     stats
                     travelRecord
                     bgmCard(profile)
@@ -167,6 +174,7 @@ struct MyPageView: View {
                 // **本人が選んだ色を輪にする**（Web の `themeRingGradient` と
                 // 同じ置き場所）。選んでいなければ輪を出さない
                 .overlay(themeRing(profile.themeColor))
+                .coverCutout(hasCover)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(profile.name).font(JPFont.display(20, relativeTo: .title3))
@@ -197,7 +205,8 @@ struct MyPageView: View {
             Spacer()
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        // カバーがあればアイコンを下端に半分ほど重ねる（板 05c）
+        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 8)
     }
 
 

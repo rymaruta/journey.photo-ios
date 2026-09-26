@@ -51,11 +51,16 @@ struct UploadView: View {
                         .foregroundStyle(WebTheme.foreground)
                 }
                 .accessibilityLabel(Labels.Common.close)
+                // 🔴 **送っている間は閉じさせない。** 閉じても送信は裏で続き、
+                // 残りの写真が公開され、失敗の知らせは閉じた画面に書かれていた。
+                // 途中でやめるのは送信中の「やめる」（`model.cancel()`）
+                .disabled(model.isWorking)
             }
             if auth.userId != nil {
                 ToolbarItem(placement: .confirmationAction) { submitButton }
             }
         }
+        .interactiveDismissDisabled(model.isWorking)
         .onChange(of: model.didPostAll) { _, posted in
             // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
             // 選び直しの読み込み中（一度空にする）にも閉じてしまい、
