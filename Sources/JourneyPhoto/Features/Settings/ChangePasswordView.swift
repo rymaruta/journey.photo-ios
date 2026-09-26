@@ -14,12 +14,18 @@ struct ChangePasswordView: View {
 
     var body: some View {
         Form {
+            // 板 44: 欄の上に小さい見出し
             Section {
-                SecureField(L("いまのパスワード", "Current password"), text: $current)
-                    .textContentType(.password)
-                SecureField(L("新しいパスワード", "New password"), text: $updated)
-                    .textContentType(.newPassword)
+                labeled(L("いまのパスワード", "Current password")) {
+                    SecureField("", text: $current)
+                        .textContentType(.password)
+                }
+                labeled(L("新しいパスワード", "New password")) {
+                    SecureField("", text: $updated)
+                        .textContentType(.newPassword)
+                }
             } footer: {
+                // 板には無いが残す——決まりを知らずに打つと、送ってから断られる
                 Text(AuthMessage.passwordRule)
             }
             .listRowBackground(Color.clear)
@@ -29,20 +35,38 @@ struct ChangePasswordView: View {
             }
 
             Section {
-                Button(L("変える", "Change")) {
+                // 板は幅いっぱいの白いカプセル
+                Button {
                     Task {
                         auth.errorMessage = nil
                         if await auth.changePassword(current: current, new: updated) {
                             dismiss()
                         }
                     }
+                } label: {
+                    Text(L("変える", "Change"))
+                        .frame(maxWidth: .infinity)
+                        .webPrimaryButton()
                 }
+                .buttonStyle(.plain)
                 .disabled(auth.isWorking || current.isEmpty || updated.isEmpty)
+                .opacity(auth.isWorking || current.isEmpty || updated.isEmpty ? 0.4 : 1)
             }
             .listRowBackground(Color.clear)
         }
         .webScreen()
         .navigationTitle(L("パスワードを変える", "Change password"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func labeled<Field: View>(_ title: String, @ViewBuilder field: () -> Field) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(WebTheme.muted2)
+                .accessibilityHidden(true)
+            field()
+                .accessibilityLabel(title)
+        }
     }
 }
