@@ -30,7 +30,7 @@ enum ProfileTab: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .posts: return "square.grid.3x3"
+        case .posts: return "square.grid.2x2"  // 板 05c: 2×2 の格子
         case .trips: return "book.closed"
         case .wishlist: return "heart"
         case .map: return "map"

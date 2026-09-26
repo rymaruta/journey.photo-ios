@@ -4,15 +4,29 @@ import Foundation
 enum ProfileLine {
 
     /// 「@ユーザー名 · 居住地」の1行（板: 12px・白60%）。片方だけならその片方、
-    /// どちらも無ければ出さない。居住地の頭のピンは文字で付ける（1行で折り返す
-    /// ときに印だけ取り残されないように）
-    static func handleAndHome(username: String?, home: String?) -> String? {
+    /// どちらも無ければ出さない。
+    ///
+    /// **居住地の頭のピンは線の印**（板: 11px の線のピン）で、画面側で描く。
+    /// 以前は絵文字の「📍」を文字に混ぜていて、板と違う赤いピンが出ていた
+    struct HandleAndHome: Equatable {
+        let handle: String?
+        let home: String?
+
+        /// 読み上げ。印は読まれないので「居住地」と言葉で添える
+        var spoken: String {
+            [handle, home.map { L("居住地 \($0)", "Lives in \($0)") }]
+                .compactMap { $0 }
+                .joined(separator: L("、", ", "))
+        }
+    }
+
+    static func handleAndHome(username: String?, home: String?) -> HandleAndHome? {
         let handle = username.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .flatMap { $0.isEmpty ? nil : "@\($0)" }
         let place = home.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .flatMap { $0.isEmpty ? nil : "📍\($0)" }
-        let parts = [handle, place].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+            .flatMap { $0.isEmpty ? nil : $0 }
+        guard handle != nil || place != nil else { return nil }
+        return HandleAndHome(handle: handle, home: place)
     }
 
     /// ひとことと自己紹介（板は「ひとことプロフィール」の1段落）。**空は出さない・

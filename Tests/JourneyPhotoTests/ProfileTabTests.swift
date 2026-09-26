@@ -31,6 +31,11 @@ final class ProfileTabTests: XCTestCase {
         }
     }
 
+    /// 板 05c の印（投稿は 2×2 の格子）
+    func testPostsIconMatchesBoard() {
+        XCTAssertEqual(ProfileTab.posts.systemImage, "square.grid.2x2")
+    }
+
     // MARK: - 横に払って切り替える
 
     private let mine = ProfileTab.tabs(isMe: true)
