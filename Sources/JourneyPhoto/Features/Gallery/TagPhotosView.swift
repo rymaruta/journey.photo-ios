@@ -16,22 +16,12 @@ struct TagPhotosView: View {
     @State private var isLoading = true
 
     var body: some View {
-        ScrollView {
-            if photos.isEmpty && !isLoading {
-                ErrorBanner(message: Labels.Gallery.empty)
-            } else {
-                PhotoGrid(photos: photos) { photo in
-                    PhotoDetailView(photo: photo, context: photos)
-                }
-            }
-        }
-        .webScreen()
-        .navigationTitle(kind.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
-        // 詳細でブロック／通報して**戻ってきたとき**に落とす。
-        // 見ている最中に絞ると、押した元が消えて詳細が閉じる
-        .onAppear { photos = hidden.visible(photos) }
+        // 形は色・機材・いまの季節と同じ（板 12）
+        CollectionPhotosScreen(title: kind.title, photos: photos, kind: kind, isLoading: isLoading)
+            .task { await load() }
+            // 詳細でブロック／通報して**戻ってきたとき**に落とす。
+            // 見ている最中に絞ると、押した元が消えて詳細が閉じる
+            .onAppear { photos = hidden.visible(photos) }
     }
 
     private func load() async {

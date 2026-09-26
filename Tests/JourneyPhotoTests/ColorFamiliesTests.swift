@@ -56,4 +56,13 @@ final class ColorFamiliesTests: XCTestCase {
         XCTAssertEqual(sections.map(\.family), [.blue, .orange])
         XCTAssertEqual(sections.first?.photos.map(\.id), ["b2", "b1"])
     }
+
+    /// **色の丸の読み上げに色の名前を入れる。** 丸の下の字は「空・海」だけなので、
+    /// 読み上げでは何色か分からなかった
+    func testAccessibilityLabelSaysTheColourName() {
+        let label = ColorFamilies.accessibilityLabel(.blue, count: 5)
+        XCTAssertTrue(label.contains(ColorFamilies.Family.blue.label), label)
+        XCTAssertTrue(label.contains(ColorFamilies.Family.blue.note), label)
+        XCTAssertTrue(label.contains("5"), label)
+    }
 }
