@@ -34,6 +34,8 @@ struct PhotoMapView: View {
     /// （保存も送信もしない——`CurrentLocation` の約束をここでも守る）
     @State private var here: Photo.Coords?
     @State private var showNearby = false
+    /// 「全体を見る」を押したか。押したら帯を下げる（現在地を取り直したら、また出す）
+    @State private var showedAll = false
     /// 押したピン。**下の札に出す**（シートで画面を覆うと地図が見えない）
     @State private var selected: MapPin?
     /// 押した撮影スポットのピン（台帳）。札は同時に1枚——写真のピン・
@@ -110,6 +112,7 @@ struct PhotoMapView: View {
         .onChange(of: location.state) { _, state in
             guard case .located(let latitude, let longitude) = state else { return }
             here = Photo.Coords(lat: latitude, lng: longitude)
+            showedAll = false
             zoomChain.reset()
             camera = .userLocation(fallback: .region(MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
@@ -440,6 +443,36 @@ struct PhotoMapView: View {
                 .padding(.vertical, 8)
                 .background(Color.black.opacity(0.7), in: Capsule())
                 .padding(.top, 12)
+        } else if !showedAll, model.areaFrame == nil, !model.isFiltering,
+                  model.frame != nil, let here,
+                  NearbyPhotos.noneNearby(model.photos, here: here) {
+            // **現在地のまわりに写真が無い**ときの出口。押すと写真全体に寄せる
+            // （現在地を追うのはやめる。現在地のボタンでいつでも戻れる）。
+            // - 現在地の様子（探しています・取れませんでした）が先。押した回の答えを隠さない
+            // - 絞り込み中は出さない（絞ると地図はもう残ったピンへ寄っている）
+            // - 寄せる先が無ければ出さない（押しても動かないボタンにしない）
+            Button {
+                showedAll = true
+                frame(model.frame)
+            } label: {
+                HStack(spacing: 6) {
+                    Text(L("近くに写真はありません", "No photos nearby"))
+                    Text("·").accessibilityHidden(true)
+                    Text(L("全体を見る", "Show all")).font(.subheadline.weight(.semibold))
+                }
+                .font(.subheadline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .foregroundStyle(WebTheme.foreground)
+                .padding(.horizontal, 14)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .background(Color.black.opacity(0.7), in: Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            // 右上の操作列（上から 56pt）と縦に重ならないよう、上は 8pt（下端 52pt）
+            .padding(.top, 8)
+            .accessibilityIdentifier("map.showAll")
         }
     }
 

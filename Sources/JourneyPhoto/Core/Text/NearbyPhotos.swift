@@ -28,6 +28,19 @@ enum NearbyPhotos {
         .map { (photo: $0.0, km: $0.1) }
     }
 
+    /// 現在地のまわり（選べる**最大**の半径）に、撮影地の分かる写真が1枚も無いか。
+    ///
+    /// 地図は開くと現在地へ寄るので、写真の無い土地にいる人には**ピンが1本も無い
+    /// 地図**が出ていた（「アプリ再起動したら現在地になる」の答えの続き）。
+    /// これが真のとき、地図は「近くに写真はありません · 全体を見る」を出す。
+    /// **撮影地の分かる写真が0枚なら偽**——そのときは別の帯（「撮影地の分かる写真が
+    /// ありません」）が答えで、「全体」も無い
+    static func noneNearby(_ photos: [Photo], here: Photo.Coords) -> Bool {
+        let located = photos.filter { $0.coords != nil }
+        guard !located.isEmpty else { return false }
+        return self.photos(located, near: here, withinKm: radiusChoices.max() ?? defaultRadius).isEmpty
+    }
+
     /// 距離の言い方。**必ず「約」を付ける**（丸めた座標から出した値なので）。
     ///
     /// 1km 未満は「1km以内」——「0.3km」と書くと、持っていない精度を
