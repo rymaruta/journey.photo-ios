@@ -133,10 +133,23 @@ final class TripPlanTests: XCTestCase {
 
     // MARK: - 行きたい場所から選ぶ
 
-    private func spot(_ slug: String, name: String, prefecture: String? = nil) throws -> OfficialSpot {
+    private func spot(_ slug: String, name: String, prefecture: String? = nil,
+                      stage: String = "review") throws -> OfficialSpot {
         let region = prefecture.map { ",\"region\":{\"prefecture\":\"\($0)\"}" } ?? ""
         return try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
-            "{\"spotId\":\"sp_\(slug)\",\"slug\":\"\(slug)\",\"name\":\"\(name)\",\"stage\":\"review\"\(region)}".utf8))
+            "{\"spotId\":\"sp_\(slug)\",\"slug\":\"\(slug)\",\"name\":\"\(name)\",\"stage\":\"\(stage)\"\(region)}".utf8))
+    }
+
+    /// 🔴 **候補は下書きかどうかを持つ。** 選ぶ画面は「公式」と書かず、
+    /// 下書きのときだけ「下書き」の札を付ける——その判断の材料
+    func testChoicesCarryTheDraftMark() throws {
+        let index = [try spot("takaya-jinja", name: "高屋神社"),
+                     try spot("chichibu", name: "秩父", stage: "published")]
+        let choices = TripPlanText.choices(wishlistKeys: ["SPOT-takaya-jinja", "SPOT-chichibu"],
+                                           places: [], index: index)
+        let byName = Dictionary(uniqueKeysWithValues: choices.map { ($0.name, $0) })
+        XCTAssertEqual(byName["高屋神社"]?.isDraft, true, "下書きのスポットが下書きと分からない")
+        XCTAssertEqual(byName["秩父"]?.isDraft, false)
     }
 
     private func photo(_ id: String, location: String) throws -> Photo {

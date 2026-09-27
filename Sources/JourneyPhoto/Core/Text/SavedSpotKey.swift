@@ -11,10 +11,11 @@ import Foundation
 /// 接頭辞が `SPOT-` なのは、撮影地のスラッグ（`LocationSlug.make`＝Web の
 /// `slugify`）が**小文字にする**ため——出力に大文字は現れず、撮影地の名前が
 /// 偶然この形になることは原理的に無い。記号を含まないので URL のパス片にも
-/// そのまま置ける（サーバーの `DELETE /user/spots/{slug}` に乗せる日のため）。
+/// そのまま置ける（外すときはサーバーの `DELETE /user/spots/{slug}` のパスに乗る）。
 ///
-/// **鍵は端末の中だけ**（`WishlistStore`）。サーバーの `/user/spots` へ寄せる
-/// かは owner の判断待ちで、今回は鍵の形だけ Web と揃えておく。
+/// **ログイン中はサーバーの `/user/spots` に入る**（`WishlistSync`）。Web の
+/// `useSavedSpots` と同じ入れ物・同じ鍵なので、アプリで押したスポットが Web の
+/// 一覧にも並ぶ（2026-09-27・owner 了承）。
 enum SavedSpotKey {
 
     /// 撮影スポットの鍵に付ける頭。**`LocationSlug.make` の出力には現れない**

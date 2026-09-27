@@ -21,6 +21,7 @@ struct SpotDetailView: View {
 
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var environment: AppEnvironment
     /// 渡された写真は開いた時点の写しなので、ブロック／通報をここで反映する。
     /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
@@ -190,17 +191,23 @@ struct SpotDetailView: View {
 
     private var actions: some View {
         HStack(spacing: 10) {
-            let wanted = wishlist.contains(spot.slug)
-            Button {
-                let now = wishlist.toggle(spot.slug)
-                toasts.show(now
-                    ? L("「行きたい」に追加しました（この端末に保存）", "Added to your wishlist on this device")
-                    : L("「行きたい」から外しました", "Removed from your wishlist"))
-            } label: {
-                SpotDetailParts.actionLabel(icon: wanted ? "heart.fill" : "heart",
-                                            title: L("行きたい", "Want to go"), filled: wanted)
+            // 🔴 **鍵（スラッグ）が空の地点には「行きたい」を出さない。** 記号だけの
+            // 撮影地（「---」など）はスラッグが空になり、押しても `WishlistStore` は
+            // 何も残さない——以前は押すと「追加しました」と知らせて、どこにも出なかった
+            if !spot.slug.isEmpty {
+                let wanted = wishlist.contains(spot.slug)
+                Button {
+                    // ログイン中はサーバーへ送る。失敗したら戻して知らせる（`WishlistSync`）
+                    Task {
+                        let outcome = await WishlistSync.toggle(spot.slug, store: wishlist, service: environment.savedSpots)
+                        if let notice = WishlistSync.notice(for: outcome) { toasts.show(notice.text, kind: notice.kind) }
+                    }
+                } label: {
+                    SpotDetailParts.actionLabel(icon: wanted ? "heart.fill" : "heart",
+                                                title: L("行きたい", "Want to go"), filled: wanted)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             // **シェアは文字で配る**（モック5-6）。
             //

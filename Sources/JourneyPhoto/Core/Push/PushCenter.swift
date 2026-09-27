@@ -171,7 +171,17 @@ final class PushCenter: ObservableObject {
         // 待っている間に次の `use` が始まっていたら、そちらに任せる
         guard self.userId == userId else { return }
 
-        if let previous, previous != userId { isRegistered = false }
+        if let previous, previous != userId {
+            isRegistered = false
+            // **アイコンの未読の数を消す**（前の人の数が、次の人がお知らせを開くまで
+            // 残った）。ログアウト・期限切れ・人の切り替えをここで拾う。起動時の
+            // nil → 人 では消さない（その人の未読の数のまま）。起動し直した後の
+            // 期限切れ（前の人が分からない）は拾えない
+            await clearPreviousUserTraces()
+            // 待っている間に次の `use` が始まっていたら、そちらに任せる（前の人の宛先の
+            // 後始末で、次の人の登録を端末ごと外さない）
+            guard self.userId == userId else { return }
+        }
         // 🔴 **前の人の宛先が残っている**（ログアウトの前に外せなかった:
         // ログインの期限切れ・圏外・退会の途中）。前の人の認証はもう無いので
         // サーバーからは外せない。**端末ごと APNs から外す**——サーバーは
@@ -315,9 +325,10 @@ final class PushCenter: ObservableObject {
         // **アイコンの数字と通知センターの通知は、登録の有無に関係なく消す。**
         // 残すと、次にこの端末を触る人（や別の人でログインし直した自分）に
         // 前の人の未読数と通知の本文が見えたままになる
-        let center = UNUserNotificationCenter.current()
-        try? await center.setBadgeCount(0)
-        center.removeAllDeliveredNotifications()
+        // 宛先は待つ前に取る（待っている間に `use` が人を入れ替えても、外すのはこの人の宛先）
+        let token = self.token
+        let userId = self.userId
+        await clearPreviousUserTraces()
         guard let token, let userId else { return }
         // **外せた回だけ、自分の印だけ消す。** 前の人の印（預け直しが落ちて
         // 残ったもの）は、この人の認証では外れていないので残す
@@ -381,6 +392,15 @@ final class PushCenter: ObservableObject {
     ///
     /// **誰も消さないと増える一方。** サーバーは未読数をそのまま載せるが、
     /// 既読にしたことは端末のアイコンに伝わらない。
+    /// 人が替わったときの後始末。**アイコンの数字と通知センターの通知**を消す
+    /// （ログアウトの口と、期限切れ・切り替えを拾う `use` の両方から——片方だけだと
+    /// 期限切れの後に前の人の通知の本文が通知センターに残った）
+    func clearPreviousUserTraces() async {
+        let center = UNUserNotificationCenter.current()
+        try? await center.setBadgeCount(0)
+        center.removeAllDeliveredNotifications()
+    }
+
     func clearBadge() async {
         try? await UNUserNotificationCenter.current().setBadgeCount(0)
     }

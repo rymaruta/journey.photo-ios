@@ -37,21 +37,6 @@ enum CloseFriendsRows {
         picked.count > limit
     }
 
-    /// 戻ろうとしたときの扱い。
-    enum Leave: Equatable {
-        /// そのまま戻る（送っていない変更が無い）
-        case now
-        /// 「保存して戻る／変更を捨てる／キャンセル」を確かめる
-        case confirm
-        /// 送っている最中は戻らせない（途中の失敗が消えた画面に出る）
-        case wait
-    }
-
-    static func leave(hasChanges: Bool, isSaving: Bool) -> Leave {
-        if isSaving { return .wait }
-        return hasChanges ? .confirm : .now
-    }
-
     /// 保存で送るもの。**外す方を先に送る**。
     ///
     /// 押し出しを防いでいるのは**2つの組み合わせ**: 選んだ結果が上限以内

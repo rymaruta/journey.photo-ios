@@ -137,7 +137,8 @@ struct HighlightEditorView: View {
 
     private func thumbnail(_ story: Story) -> some View {
         let order = picked.firstIndex(of: story.id)
-        return RemoteImage(url: story.imageURL)
+        // 動画は絵として読めない（壊れた絵になる）ので、動画の印を出す部品を使う
+        return StoryPoster(story: story)
             .frame(width: 72, height: 110)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10)
@@ -215,9 +216,9 @@ struct HighlightEditorView: View {
             // **いまの並びが取れなければ保存させない**（`canSave` の注記）
             if contents == nil { loadFailed = true }
             if let contents {
-                // 題は**取れた中身から**入れる（呼び元の highlight は編集前の古い題のことがある）。
-                // 打ちかけの名前（最初に入れた題から変えたもの）は戻さない
-                if title.isEmpty || title == existing.title { title = contents.title }
+                // 名前は**いまの中身**から（一覧の行は開いたときの古い名前で、名前を変えた
+                // 後に開き直すと古い名前が入り、そのまま保存すると元に戻った）。打ちかけは触らない
+                if title == existing.title, !contents.title.isEmpty { title = contents.title }
                 let inArchive = Set(archive.map(\.id))
                 picked = contents.items.map(\.id).filter { inArchive.contains($0) }
                 // **表紙は必ず並びの中のものにする。** サーバーは並びに

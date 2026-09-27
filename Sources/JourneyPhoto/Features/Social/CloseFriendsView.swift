@@ -20,7 +20,8 @@ import SwiftUI
 /// 「親しい友達を選ぶ」から来た人は、以前の「押したら保存」の癖で戻る。
 /// 黙って捨てると0人のまま「親しい友達」限定の写真が出て、誰にも見えない。
 /// 変更がある間・送っている間は標準の戻る（と左端の払い）を隠し、自前の戻るで
-/// 「保存して戻る／変更を捨てる／キャンセル」を確かめる（`CloseFriendsRows.leave`）。
+/// 「保存して戻る／変更を捨てる／キャンセル」を確かめる（`UnsavedLeave`・`unsavedLeaveGuard`。
+/// 旅行プランの日程と共用）。
 ///
 /// 板との意図的な差: 説明文は「写真」向け（下の注記）・「フォロー中の一覧に
 /// 出ない人」の段がある（上の注記）・選択の印は星（板はチェック）。
@@ -60,8 +61,8 @@ struct CloseFriendsView: View {
         !pending.isEmpty && !overLimit && !isLoading && errorMessage == nil
     }
     private var overLimit: Bool { CloseFriendsRows.overLimit(chosen) }
-    private var leave: CloseFriendsRows.Leave {
-        CloseFriendsRows.leave(hasChanges: !pending.isEmpty, isSaving: isSaving)
+    private var leave: UnsavedLeave {
+        UnsavedLeave.decide(hasChanges: !pending.isEmpty, isSaving: isSaving)
     }
     private var shownOthers: [FollowUser] { ListIdentity.filter(others, query: query) }
     private var shownFollowing: [FollowUser] { ListIdentity.filter(following, query: query) }
@@ -147,24 +148,15 @@ struct CloseFriendsView: View {
         .webScreen()
         .navigationTitle(L("親しい友達", "Close friends"))
         .navigationBarTitleDisplayMode(.inline)
-        // 変更がある間・送っている間は標準の戻るを隠す（左端から払って戻るのも止まる）
-        .navigationBarBackButtonHidden(leave != .now)
+        // 変更がある間・送っている間は標準の戻るを隠し、自前の戻るで確かめる
+        // （左端から払って戻るのも止まる）。上限を超えている間は保存できないので、
+        // 「保存して戻る」を選択肢に出さない
+        .unsavedLeaveGuard(leave, isPresented: $confirmLeave, canSave: !overLimit,
+                           message: L("保存しないで戻ると、選んだ人は「親しい友達」に入りません。",
+                                      "If you go back without saving, your picks won't be applied."),
+                           onSave: { Task { await save() } },
+                           onDiscard: { dismiss() })
         .toolbar {
-            if leave != .now {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        if leave == .confirm { confirmLeave = true }
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.body.weight(.semibold))
-                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                            .contentShape(Rectangle())
-                    }
-                    // 送っている最中は戻らせない（途中の失敗が消えた画面に出る）
-                    .disabled(leave == .wait)
-                    .accessibilityLabel(L("戻る", "Back"))
-                }
-            }
             // **保存は右上**（板 39）。変えたものが無い間・上限を超えている間は押せない
             ToolbarItem(placement: .topBarTrailing) {
                 if isSaving {
@@ -179,22 +171,6 @@ struct CloseFriendsView: View {
                     .disabled(!canSave)
                 }
             }
-        }
-        .confirmationDialog(L("変更を保存しますか？", "Save your changes?"),
-                            isPresented: $confirmLeave, titleVisibility: .visible) {
-            // 上限を超えている間は保存できないので、選択肢に出さない
-            if !overLimit {
-                Button(L("保存して戻る", "Save and go back")) {
-                    Task { await save() }
-                }
-            }
-            Button(L("変更を捨てる", "Discard changes"), role: .destructive) {
-                dismiss()
-            }
-            Button(L("キャンセル", "Cancel"), role: .cancel) {}
-        } message: {
-            Text(L("保存しないで戻ると、選んだ人は「親しい友達」に入りません。",
-                   "If you go back without saving, your picks won't be applied."))
         }
         .alert(L("保存できませんでした", "Couldn't save"),
                isPresented: Binding(get: { saveError != nil },

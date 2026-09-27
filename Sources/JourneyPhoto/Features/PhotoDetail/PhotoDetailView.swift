@@ -224,8 +224,10 @@ struct PhotoDetailView: View {
             NavigationStack { EditPhotoView(photo: shown) }
         }
         .fullScreenCover(isPresented: $showViewer) {
-            // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）
-            let lineup = PhotoDetailRules.viewerLineup(siblings, current: current, hiding: dropped)
+            // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）。
+            // 編集して保存した写真は新しい姿で（題・撮影地が古いまま出ていた）
+            let lineup = PhotoDetailRules.viewerLineup(siblings.map { edits[$0.id] ?? $0 },
+                                                       current: shown, hiding: dropped)
             PhotoViewerView(
                 photos: lineup.photos,
                 index: lineup.index,
@@ -280,7 +282,7 @@ struct PhotoDetailView: View {
                 TabView(selection: $heroPage) {
                     ForEach(Array(group.enumerated()), id: \.element.id) { index, item in
                         // 編集して保存した1枚は新しい姿で（切り抜きの中心など）
-                        heroImage(item.id == shown.id ? shown : item).tag(index)
+                        heroImage(edits[item.id] ?? item).tag(index)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -752,6 +754,13 @@ struct PhotoDetailView: View {
     /// 隣の写真も同じ一覧から来ているので、同じ判断で足りる
     private func shareURL(for item: Photo) -> URL? {
         let latest = item.id == current.id ? shown : item
+        // 🔴 **公開範囲を絞った写真は配らない（共有を出さない）。** 一覧には
+        // `/feed/restricted` の写真も混ざる（`published: true`）が、`photos.json` に
+        // 載らず個別ページが建たない。Web は絞った写真を読まないので、ホームの
+        // `?photo=` に振り替えても「見つかりませんでした」になる——受け取った人
+        // （フォロワー本人も）が開けない。自分のページから開いた自分の写真も同じ
+        // 下書き（非公開）も同じ（Web が読む一覧に載らない）
+        guard CollectionScreen.isShareable(latest) else { return nil }
         return PhotoLink.url(photoId: item.id,
                              isPublished: fromPublicFeed && latest.published != false)
     }
@@ -1149,10 +1158,15 @@ struct PhotoDetailView: View {
             savedPhotos.set(id, saved: wasSaved, for: owner)
         } catch {
             savedPhotos.set(id, saved: wasSaved, for: owner)
-            // **失敗を黙らない**（いいねと同じく、理由を出す）。404 で保存が残っている回は
-            // `SaveService.save` が成功として返すので、ここには来ない
-            actionError = (error as? LocalizedError)?.errorDescription
-                ?? L("保存できませんでした", "Couldn't save")
+            // **黙らない**（いいね・フォローと同じ）。404 で保存が残っている回は
+            // `SaveService.save` が成功として返すのでここには来ない。残る 404 は
+            // 下書き（公開していない写真）——サーバーの「見つかりません」では分からない
+            if !wasSaved, SocialService.isNotFound(error) {
+                actionError = L("公開中の写真だけ保存できます", "Only published photos can be saved")
+            } else {
+                actionError = (error as? LocalizedError)?.errorDescription
+                    ?? L("保存できませんでした", "Couldn't save")
+            }
         }
     }
 

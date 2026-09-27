@@ -27,22 +27,70 @@ enum ProfileSections {
         case list
         /// まだ1つも入れていない
         case empty
-        /// **入れてあるのに台帳が取れていない**（「無い」と言わない）
+        /// 入れてあるが、引き当て先（公開一覧）をまだ読み終えていない
+        case loading
+        /// **入れてあるのに引き当て先が取れていない**（「無い」と言わない）
         case couldNotLoad
     }
 
+    /// 「行きたい」の撮影地の行を引き当てる写真。**公開一覧と自分の写真を合わせる**。
+    ///
+    /// 🔴 **自分の写真だけでは足りない。** 「行きたい」を押すスポットの画面は、
+    /// 地図・検索・写真の詳細から**他人の写真で**開くのがふつう（地図は公開一覧を
+    /// 読む）。以前は `model.photos`（自分の写真）だけから地点を導いていたので、
+    /// 他人の写真の撮影地に押した「行きたい」が**一度もマイページに出なかった**。
+    ///
+    /// 同じ写真が両方に在る（自分の公開写真）ので **ID で1枚に寄せる**——寄せないと
+    /// 地点の枚数が倍になる。**自分の写真を先に採る**（非公開も含む、手元でいちばん新しい姿）
+    static func wishlistPool(feed: [Photo], mine: [Photo]) -> [Photo] {
+        var seen = Set<String>()
+        var pool: [Photo] = []
+        for photo in mine + feed where seen.insert(photo.id).inserted {
+            pool.append(photo)
+        }
+        return pool
+    }
+
+    /// 「行きたい」に入れた撮影地の行（`wishlistPool` から導いた地点のうち、鍵が入っているもの）
+    static func wantedPlaces(keys: Set<String>, feed: [Photo], mine: [Photo]) -> [DerivedSpot.Place] {
+        wantedPlaces(keys: keys, pool: wishlistPool(feed: feed, mine: mine))
+    }
+
+    /// 引き当て先を先に絞った（ブロック・通報を外した）束から導く。
+    ///
+    /// 鍵（スラッグ）で1行に寄せた地点から引く（`DerivedSpot.allMergedBySlug`・旅行プランと同じ行）
+    static func wantedPlaces(keys: Set<String>, pool: [Photo]) -> [DerivedSpot.Place] {
+        DerivedSpot.allMergedBySlug(in: pool).filter { keys.contains($0.slug) }
+    }
+
+    /// 並べられた行が覚えている鍵より少なく、**引き当て先が取れていない**。
+    /// 一部だけ自分の写真で見つかった回に、欠けた行を黙って落とさない（一行添える）
+    static func wishlistPartlyMissing(shownCount: Int, savedIdCount: Int, sourceFailed: Bool) -> Bool {
+        sourceFailed && shownCount < savedIdCount
+    }
+
     /// - Parameters:
-    ///   - ledgerCount: 取れている撮影地（`DerivedSpot.all`）の件数
     ///   - wantedCount: 突き合わせて残った件数。**撮影地の行と台帳のスポットの行
     ///     （`OfficialWishlist.rows`）を足したもの**——スポットだけ入れた人を
     ///     「まだ無い」にしない
-    ///   - savedIdCount: この端末が覚えている鍵の数
+    ///   - savedIdCount: 控え（`WishlistStore`）が持っている鍵の数
+    ///   - loaded: 引き当て先（公開一覧）を読み終えたか
+    ///   - sourceFailed: 引き当て先（公開一覧）の最後の読み込みが失敗したか
     ///
     /// 🔴 **「まだ無い」と「取れていない」を分ける。** 入れた覚えがあるのに
     /// 「まだありません」と出ると、消えたように見える。
-    static func wishlist(ledgerCount: Int, wantedCount: Int, savedIdCount: Int) -> WishlistState {
+    ///
+    /// 🔴 **「取れていない」は読み込みの失敗で決める。件数の食い違いでは決めない。**
+    /// 以前は「導いた地点が0件なら取れていない」と見ていたので、写真を1枚も
+    /// 上げていない人（地点0件）は、公開一覧が取れていても「写真の一覧を取れません
+    /// でした」と出ていた。逆に自分の写真が1枚でもあれば、公開一覧が取れていなくても
+    /// 「まだありません」と言っていた
+    static func wishlist(wantedCount: Int, savedIdCount: Int,
+                         loaded: Bool, sourceFailed: Bool) -> WishlistState {
         if wantedCount > 0 { return .list }
-        if ledgerCount == 0 && savedIdCount > 0 { return .couldNotLoad }
+        guard savedIdCount > 0 else { return .empty }
+        if sourceFailed { return .couldNotLoad }
+        if !loaded { return .loading }
         return .empty
     }
 }

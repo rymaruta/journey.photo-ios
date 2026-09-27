@@ -118,6 +118,11 @@ struct HighlightsRow: View {
             Group {
                 if let url = highlight.coverURL {
                     RemoteImage(url: url)
+                } else if highlight.cover?.isVideo == true {
+                    // 表紙が動画（絵として読めない）。空の輪（✦）と見分ける
+                    Circle().fill(WebTheme.surface)
+                        .overlay(Image(systemName: "play.circle")
+                            .foregroundStyle(WebTheme.faint))
                 } else {
                     Circle().fill(WebTheme.surface)
                         .overlay(Image(systemName: "sparkles")
