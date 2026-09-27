@@ -74,4 +74,12 @@ final class ProfileLineTests: XCTestCase {
         XCTAssertTrue(all.contains(L("複数枚の投稿", "Multiple photos")))
         XCTAssertEqual(ProfileLine.gridState(pinned: false, draft: false, multiple: false), "")
     }
+
+    /// 🔴 写真の数は**格子に並べた枚数**で言う。ブロック・通報した写真を
+    /// 格子から落としても、札が落とす前の枚数のままだった
+    func testPhotoCountFollowsShownPhotos() {
+        XCTAssertEqual(ProfileLine.PhotoCount.loaded(5).shown(3), .loaded(3))
+        XCTAssertEqual(ProfileLine.PhotoCount.pending.shown(0), .pending)
+        XCTAssertEqual(ProfileLine.PhotoCount.failed.shown(2), .failed)
+    }
 }

@@ -726,7 +726,14 @@ struct MyPageView: View {
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, 16)
         }
-        if let error = model.errorMessage {
+        // **一度読めた中身は、読み直しの失敗で消さない。** 詳細から戻るたびに
+        // 読み直すので、一瞬の圏外で格子・旅の記録・保存した写真まで
+        // 知らせ1枚に置き換わっていた（`load` は失敗の回に手元の写真を残す）。
+        // 手元に何も無いときだけ、タブごと知らせに替える
+        if let error = model.errorMessage, !model.photos.isEmpty {
+            ErrorBanner(message: error) { Task { await model.load() } }
+        }
+        if let error = model.errorMessage, model.photos.isEmpty {
             ErrorBanner(message: error) { Task { await model.load() } }
         } else if tab == .trips {
             // **写真の有無とは無関係に、ここで空の理由まで言う**

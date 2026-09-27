@@ -142,6 +142,13 @@ struct UserProfileView: View {
 
     @ViewBuilder
     private var photoArea: some View {
+        if let action = model.actionMessage {
+            // **一覧の代わりではなく、一覧に添える**（マイページと同じ）
+            Text(action)
+                .font(.footnote)
+                .foregroundStyle(WebTheme.danger)
+                .padding(.horizontal, 16)
+        }
         if let message = model.errorMessage {
             ErrorBanner(message: message) {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
@@ -225,7 +232,7 @@ struct UserProfileView: View {
     private var counts: some View {
         HStack(spacing: 20) {
             ForEach(ProfileLine.counts(followers: model.followers, following: model.following,
-                                       photos: isBlocked ? .pending : model.photoCount)) { item in
+                                       photos: isBlocked ? .pending : model.photoCount.shown(shownPhotos.count))) { item in
                 switch item.kind {
                 case .followers:
                     countLink(item, kind: .followers, count: model.followers)
@@ -347,6 +354,9 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var isWorking = false
     @Published var errorMessage: String?
+    /// フォロー・ブロックの失敗。**読み込みの失敗（`errorMessage`）と分ける**
+    /// ——同じ欄だと、押し損ねただけで格子と地図が知らせ1枚に置き換わっていた
+    @Published private(set) var actionMessage: String?
 
     private(set) var cacheBust = ""
 
@@ -411,6 +421,7 @@ final class UserProfileViewModel: ObservableObject {
 
     func toggleFollow(userId: String, environment: AppEnvironment) async {
         isWorking = true
+        actionMessage = nil
         defer { isWorking = false }
         do {
             let result = isFollowing
@@ -419,12 +430,13 @@ final class UserProfileViewModel: ObservableObject {
             isFollowing = result.following
             followers = result.followers
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
+            actionMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
     }
 
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
+        actionMessage = nil
         do {
             try await environment.moderation.block(userId: userId)
             store.block(userId)
@@ -439,7 +451,7 @@ final class UserProfileViewModel: ObservableObject {
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
+            actionMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }
 }
