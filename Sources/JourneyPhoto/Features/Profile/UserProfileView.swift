@@ -466,10 +466,12 @@ final class UserProfileViewModel: ObservableObject {
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
         actionMessage = nil
+        // 控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
+        let owner = store.owner
         do {
             try await environment.moderation.block(userId: userId)
             blockWrites += 1
-            store.block(userId)
+            store.block(userId, for: owner)
             await environment.gallery.setHidden(
                 userIds: store.blockedUserIds,
                 photoIds: store.reportedPhotoIds

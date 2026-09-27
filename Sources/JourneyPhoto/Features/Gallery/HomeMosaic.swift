@@ -255,6 +255,8 @@ struct HomeFeedTile: View {
         let photoId = photo.id
         guard pendingDelta == 0, likeCounts.beginSending(photoId) else { return }
         let wasLiked = liked
+        // 答えは押した人の控えにだけ書く（待っている間に人が替わったら書かない）
+        let owner = favorites.owner
         // 先に画面を変える（押した手応えを待たせない）
         favorites.set(photo.id, favorite: !wasLiked)
         pendingDelta = wasLiked ? -1 : 1
@@ -269,10 +271,10 @@ struct HomeFeedTile: View {
             // **返ってきた数と状態を使う。** 自分で数えない。
             // 数を返さない答えなら、押したあとに見えていた数で止める
             likeCounts.set(photo.id, count: result.likes ?? likeCount)
-            favorites.set(photo.id, favorite: result.liked)
+            favorites.set(photo.id, favorite: result.liked, for: owner)
         } catch {
             // **届かなかったら戻す。** 画面だけ「いいね済み」にしない
-            favorites.set(photo.id, favorite: wasLiked)
+            favorites.set(photo.id, favorite: wasLiked, for: owner)
         }
     }
 

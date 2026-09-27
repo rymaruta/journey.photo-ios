@@ -87,6 +87,53 @@ final class SyncRaceTests: XCTestCase {
         XCTAssertTrue(hidden.blockedUserIds.isEmpty, "前の人のブロック一覧を書いている")
     }
 
+    /// 🔴 **前の人の送信の答えが、人が替わった後に届いても次の人の控えに書かない。**
+    /// 書くと「同期の間に押した分」（`LocalEdits`）として次の人の同期の入れ替えでも
+    /// 消えずに残っていた（G2 と C の併合で生まれた穴）
+    func testLateAnswerForThePreviousPersonIsNotKeptBySync() async {
+        let likes = FavoritesStore(defaults: defaults())
+        let saves = SavedPhotosStore(defaults: defaults())
+        let hidden = ModerationStore(defaults: defaults())
+        likes.use(userId: "a")
+        saves.use(userId: "a")
+        hidden.use(userId: "a")
+        // a が押して、答えを待っている
+        let likeOwner = likes.owner
+        let saveOwner = saves.owner
+        let blockOwner = hidden.owner
+        // その間にログアウトして b がログインし、b の同期が始まる
+        for id in [nil, "b"] as [String?] {
+            likes.use(userId: id)
+            saves.use(userId: id)
+            hidden.use(userId: id)
+        }
+        let likesMark = likes.syncMark
+        let savesMark = saves.syncMark
+        let blocksMark = hidden.blockSyncMark
+        // a の答えが届く
+        likes.set("a の写真", favorite: true, for: likeOwner)
+        saves.set("a の保存", saved: true, for: saveOwner)
+        hidden.block("a がブロックした人", for: blockOwner)
+        // b の同期が返る
+        likes.replace(with: ["b の写真"], for: "b", since: likesMark)
+        saves.replace(with: ["b の保存"], for: "b", since: savesMark)
+        hidden.replaceBlocked(with: [], for: "b", since: blocksMark)
+        XCTAssertEqual(likes.ids, ["b の写真"], "前の人のいいねが次の人の控えに残っている")
+        XCTAssertEqual(saves.ids, ["b の保存"], "前の人の保存が次の人の控えに残っている")
+        XCTAssertTrue(hidden.blockedUserIds.isEmpty, "前の人のブロックで次の人の画面から人が消える")
+    }
+
+    /// 同じ人の答えは今までどおり書く（押している間の同期でも残る）
+    func testAnswerForTheSamePersonIsKept() async {
+        let likes = FavoritesStore(defaults: defaults())
+        likes.use(userId: "b")
+        let owner = likes.owner
+        let mark = likes.syncMark
+        likes.set("押した", favorite: true, for: owner)
+        likes.replace(with: ["前から"], for: "b", since: mark)
+        XCTAssertEqual(likes.ids, ["前から", "押した"])
+    }
+
     // MARK: - 写真の詳細: 開いた直後のいいね（L-1）
 
     private func stubbedSocial() -> SocialService {

@@ -100,6 +100,23 @@ final class ModerationStore: ObservableObject {
     /// ブロック一覧を取りに行く**前に**取る。`replaceBlocked(with:for:since:)` に渡す
     var blockSyncMark: LocalEdits.Mark { blockEdits.mark }
 
+    /// いまの控えの持ち主。**サーバーの答えを待つ前に取り、`block(_:for:)` に渡す**
+    var owner: String? { userId }
+
+    /// サーバーの答えを待った後にブロックを控える。**待っている間に人が替わって
+    /// いたら書かない**——書くと前の人のブロックで次の人の画面から人が消え、
+    /// 「同期の間に押した分」（`LocalEdits`）として次の人の同期でも消えない
+    func block(_ id: String, for owner: String?) {
+        guard owner == userId else { return }
+        block(id)
+    }
+
+    /// `block(_:for:)` の解除
+    func unblock(_ id: String, for owner: String?) {
+        guard owner == userId else { return }
+        unblock(id)
+    }
+
     func block(_ id: String) {
         let before = (blockedUserIds, reportedPhotoIds)
         blockedUserIds.insert(id)

@@ -52,6 +52,16 @@ final class SavedPhotosStore: ObservableObject {
         return saved
     }
 
+    /// いまの控えの持ち主。**答えを待つ前に取り、`set(_:saved:for:)` に渡す**
+    var owner: String? { userId }
+
+    /// 答えを待った後に書く。**待っている間に人が替わっていたら書かない**
+    /// （`FavoritesStore.set(_:favorite:for:)` と同じ理由）
+    func set(_ photoId: String, saved: Bool, for owner: String?) {
+        guard owner == userId else { return }
+        set(photoId, saved: saved)
+    }
+
     func set(_ photoId: String, saved: Bool) {
         guard !photoId.isEmpty else { return }
         if saved { ids.insert(photoId) } else { ids.remove(photoId) }

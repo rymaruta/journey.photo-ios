@@ -99,6 +99,18 @@ final class FavoritesStore: ObservableObject {
         defaults.removeObject(forKey: key(for: userId))
     }
 
+    /// いまの控えの持ち主。**答えを待つ前に取り、`set(_:favorite:for:)` に渡す**
+    var owner: String? { userId }
+
+    /// 答えを待った後に書く。**待っている間に人が替わっていたら書かない**。
+    ///
+    /// 🔴 書くと前の人のいいねが次の人の控えに入り、しかも「同期の間に押した分」
+    /// （`LocalEdits`）として次の人の同期の入れ替えでも消えずに残る
+    func set(_ id: String, favorite: Bool, for owner: String?) {
+        guard owner == userId else { return }
+        set(id, favorite: favorite)
+    }
+
     func set(_ id: String, favorite: Bool) {
         if favorite {
             ids.insert(id)

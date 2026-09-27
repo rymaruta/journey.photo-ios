@@ -7,8 +7,9 @@ extension ModerationStore {
     /// 写真詳細とホームのカードから呼ぶ。**プロフィール・ストーリー・通報シートは
     /// まだ同じ手順を個別に書いている**（寄せていない）——直すときは全部見ること。
     func blockAndHide(_ userId: String, environment: AppEnvironment) async throws {
+        let owner = self.owner
         try await environment.moderation.block(userId: userId)
-        block(userId)
+        block(userId, for: owner)
         await environment.gallery.setHidden(userIds: blockedUserIds, photoIds: reportedPhotoIds)
     }
 }
