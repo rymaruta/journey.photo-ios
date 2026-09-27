@@ -107,7 +107,9 @@ struct JourneyPhotoApp: App {
     private func syncLikes() async {
         guard let owner = auth.userId else { return }
         let ids = try? await environment.social.myLikedPhotoIds()
-        guard !Task.isCancelled, let ids else { return }
+        // **いまのログインとも照らす。** ストアはまだ前の人を指していることがある
+        // （退会で控えを消した直後、`.task` が取り消される前に続きが戻る回）
+        guard !Task.isCancelled, auth.userId == owner, let ids else { return }
         favorites.replace(with: ids, for: owner)
     }
 
@@ -120,7 +122,7 @@ struct JourneyPhotoApp: App {
     private func syncSaves() async {
         guard let owner = auth.userId else { return }
         let ids = try? await environment.saves.mySaves()
-        guard !Task.isCancelled, let ids else { return }
+        guard !Task.isCancelled, auth.userId == owner, let ids else { return }
         savedPhotos.replace(with: ids, for: owner)
     }
 
@@ -168,7 +170,9 @@ struct JourneyPhotoApp: App {
                     AppDelegate.push = push
                     // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
                     // 「前の人の宛先が残っている」と見なして端末ごと外していた
-                    if !auth.isResolving {
+                    // 起動時に本人の ID が取れなかっただけのログアウトも同じ
+                    // （`AuthStore.isSignedOutUncertain`）
+                    if !auth.isResolving && !auth.isSignedOutUncertain {
                         await push.use(userId: auth.userId)
                     }
                     await applyModeration()
@@ -178,7 +182,7 @@ struct JourneyPhotoApp: App {
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     if let owner = auth.userId {
                         let blocks = try? await environment.moderation.blocks()
-                        if !Task.isCancelled, let blocks {
+                        if !Task.isCancelled, auth.userId == owner, let blocks {
                             hidden.replaceBlocked(with: blocks.blockedIds, for: owner)
                             await applyModeration()
                         }

@@ -167,6 +167,17 @@ final class PushReleaseTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "photo-gallery-push-registered-owner"), "a")
     }
 
+    /// 🔴 **ふつうのログアウト（先にサーバーから外せた＝印が無い）では、端末ごと
+    /// 外さない。** 外すと、ログアウトのたびに APNs から外して付け直すことになる
+    func testOrdinarySignOutDoesNotReleaseTheDevice() async {
+        let defaults = suite()
+        var released = 0
+        let push = center(defaults) { released += 1 }
+        await push.use(userId: "a")
+        await push.use(userId: nil)
+        XCTAssertEqual(released, 0, "外し損ねていないのに端末ごと外している")
+    }
+
     /// ログアウトの前に外せなかったら（ここでは未ログインで 401 相当）、印は残る
     /// ——ログアウトのあとの `use` が端末ごと外す
     func testFailedSignOutUnregisterLeavesTheMark() async {

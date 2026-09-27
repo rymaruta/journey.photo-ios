@@ -34,6 +34,12 @@ final class AuthStore: ObservableObject {
     /// 見える（Web 側の「確かめられなかった回に案内を出さない」と同じ話）。
     var isResolving: Bool { state == .unknown }
 
+    /// ログアウトの扱いだが、**本当にログアウトしたかは分からない**
+    /// （起動時に Amplify はログイン中と答えたのに、本人の ID が取れなかった）。
+    /// 通知の宛先はこの回に触らない——触ると、圏外で起動しただけの人の端末を
+    /// APNs から外してしまう
+    private(set) var isSignedOutUncertain = false
+
     private var expiryObserver: NSObjectProtocol?
 
     init() {
@@ -98,6 +104,7 @@ final class AuthStore: ObservableObject {
             state = .signedIn(userId: id)
             await refreshAdmin()
         } else {
+            isSignedOutUncertain = true
             state = .signedOut
             isAdmin = false
         }
@@ -124,12 +131,14 @@ final class AuthStore: ObservableObject {
         await run {
             _ = try await AuthGateway.signIn(email: email, password: password)
             let id = try await AuthGateway.currentUserId()
+            self.isSignedOutUncertain = false
             self.state = .signedIn(userId: id)
             await refreshAdmin()
         }
     }
 
     func signOut() async {
+        isSignedOutUncertain = false
         await AuthGateway.signOut()
         state = .signedOut
         isAdmin = false

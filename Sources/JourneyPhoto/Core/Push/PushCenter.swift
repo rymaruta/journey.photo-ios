@@ -80,11 +80,11 @@ final class PushCenter: ObservableObject {
     private var userId: String?
     private let service: () -> PushService
     /// 端末ごと APNs から外す（`unregisterForRemoteNotifications`）。試験で差し替える
-    private let releaseDevice: () -> Void
+    private let releaseDevice: @MainActor () -> Void
 
     init(service: @escaping () -> PushService = { PushService(api: APIClient(tokenProvider: CognitoTokenProvider())) },
          defaults: UserDefaults = .standard,
-         releaseDevice: @escaping () -> Void = { UIApplication.shared.unregisterForRemoteNotifications() }) {
+         releaseDevice: @escaping @MainActor () -> Void = { UIApplication.shared.unregisterForRemoteNotifications() }) {
         self.service = service
         self.defaults = defaults
         self.releaseDevice = releaseDevice
@@ -114,10 +114,19 @@ final class PushCenter: ObservableObject {
         // 次に送ったときに 410 を受けて宛先を捨てる（`notify.ts` の
         // `forgetTokens`）。次の人がすぐ預け直すなら要らない（サーバーの登録が
         // 前の持ち主から外す・`devices.ts` の `releasePreviousOwner`）
-        if let owner = registeredOwner ?? previous, owner != userId {
+        //
+        // **印だけで決める。** ふつうのログアウトは先に外せている（`signingOut`
+        // が印を消す）ので、ここで端末ごと外さない。更新前から預けていた人は、
+        // 次にその人で開いたときの登録で印が付く
+        if let owner = registeredOwner, owner != userId {
             let registersNow = userId != nil && isEnabled && isAuthorized
-            if !registersNow && token != nil { releaseDevice() }
-            registeredOwner = nil
+            if registersNow {
+                // 印は残す。預け直せたら次の人の印に替わる（`registerIfPossible`）。
+                // 落ちたら印が残り、次の `use` でもう一度見る
+            } else {
+                if token != nil { releaseDevice() }
+                registeredOwner = nil
+            }
             isRegistered = false
         }
         // **外し損ねた宛先を外し直す**（「受け取らない」にした回に圏外だった）
