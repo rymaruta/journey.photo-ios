@@ -583,11 +583,22 @@ final class ViewModelTests: XCTestCase {
                              body: #"{"userId":"a"}"#)
         StubProtocol.respond(path: "/user/photos", status: 200,
                              body: #"[{"id":"p1","src":"/uploads/p1.jpg","published":false}]"#)
-        // 前の人のプロフィールと写真の返事を止めておく（遅い口）
+        // 前の人のプロフィールの返事を止めておく（遅い口）。
+        // ⚠️ **写真は止めない。** 両方止めて同時に放すと、プロフィールの答えで
+        // 読み込みが帰るときに、まだ飛んでいる写真の要求が取り消される。Linux の
+        // URLSession は飛んでいる最中の取り消しで、まれに落ちる・返事が来ずに固まる
+        // （150回くり返しの1回で2時間固まった）。写真の答えは先に届き終えさせ、
+        // 捨てられるのはプロフィールの後の人替わりの確かめ（写真も入らない）で見る
         let gate = Gate()
-        let model = MyPageViewModel(api: api(gates: PathGates(["/user/profile": gate, "/user/photos": gate])))
+        let model = MyPageViewModel(api: api(gates: PathGates(["/user/profile": gate])))
         let previous = Task { await model.load() }
-        await gate.untilWaiting(2)   // プロフィールも写真も飛んでいる最中
+        await gate.untilWaiting()
+        // 写真の要求が出て、返事を受け取り終えるまで待つ
+        let deadline = Date().addingTimeInterval(2)
+        while StubProtocol.requestCount < 2 && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
         model.forgetPhotos()
         XCTAssertFalse(model.isLoading, "人が替わったのに前の人の読み込み中のまま")
         await gate.open()

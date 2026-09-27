@@ -29,6 +29,18 @@ enum AuthGateway {
         }
     }
 
+    /// 試験用: 設定の有無を**その間だけ**差し替えて `body` を走らせ、終わったら戻す。
+    ///
+    /// Mac の試験はアプリの中で走るので、起動時の `configure()` で**設定済み**になっている。
+    /// そのままでは「未設定の起動」の試験が本物の Cognito を叩く（CrashGuardTests・
+    /// TestFlight の実行 166 で発見）。本番のコードは呼ばない
+    static func withConfigured<T>(_ value: Bool, _ body: () async throws -> T) async rethrows -> T {
+        let saved = isConfigured
+        isConfigured = value
+        defer { isConfigured = saved }
+        return try await body()
+    }
+
     private static func requireConfigured() throws {
         guard isConfigured else { throw NotConfigured() }
     }
