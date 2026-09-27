@@ -255,12 +255,14 @@ final class ViewModelTests: XCTestCase {
         StubProtocol.reset()
         StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a","pinnedPhotoIds":[]}"#)
         StubProtocol.respond(path: "/user/photos", status: 200,
-                             body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#, delay: 0.3)
+                             body: #"[{"id":"p0","src":"/uploads/p0.jpg"},{"id":"p1","src":"/uploads/p1.jpg"}]"#, delay: 0.3)
         let reload = Task { await model.load() }
         for _ in 0..<2000 {
             if StubProtocol.requestCount >= 2 { break }
             try? await Task.sleep(for: .milliseconds(1))
         }
+        // 両方の要求が出てから道を替える（遅れると写真が 404 で落ち、確かめたい枝を通らない）
+        XCTAssertEqual(StubProtocol.requestCount, 2, "前提: 読み直しの要求が2本とも出ていない")
         // 写真を待っている間に留める（PUT も同じ道。ここからの答えはピン有り）
         StubProtocol.reset()
         StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a","pinnedPhotoIds":["p1"]}"#)
@@ -269,6 +271,8 @@ final class ViewModelTests: XCTestCase {
         await reload.value
 
         XCTAssertEqual(model.pinnedIds, ["p1"], "写真を待つ間に留めたピンを巻き戻している")
+        XCTAssertNil(model.actionMessage, "前提: 読み直しが成功の枝を通っていない")
+        XCTAssertEqual(model.photos.first?.id, "p1", "並びを今のピンで作っていない")
     }
 
     /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは

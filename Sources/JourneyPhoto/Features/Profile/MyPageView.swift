@@ -1008,7 +1008,10 @@ final class MyPageViewModel: ObservableObject {
     /// （`userProfile.ts`）、断られたときにそのときの一覧も返ってくる。
     /// 先に動かすと「留まったように見えて、次の読み込みで戻る」になる。
     func setPinned(_ photoId: String, pinned: Bool) async {
+        // 押したときと答えが入ったときの両方で数える。押したあとに始まった読み込みも、
+        // 答えが入れば「途中で変わった」と分かる（サーバーが PUT より先に GET を処理した回）
         pinEdits += 1
+        defer { pinEdits += 1 }
         do {
             pinnedIds = try await profiles.setPinned(photoId: photoId, pinned: pinned)
             photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)
