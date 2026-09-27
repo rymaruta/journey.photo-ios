@@ -302,8 +302,11 @@ final class ViewModelTests: XCTestCase {
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
         let model = SearchViewModel()
         await model.loadPhotos(environment: env, epoch: 0)
-        XCTAssertEqual(model.gear.map(\.count), [15], "機材の段を12枚で切っている")
-        XCTAssertEqual(model.colors.map(\.count), [15], "色の段を12枚で切っている")
+        let all = Set((1...15).map { "g\($0)" })
+        XCTAssertEqual(model.gear.count, 1)
+        XCTAssertEqual(Set(model.gear.first?.photos.map(\.id) ?? []), all, "機材の段を切っている（押した先に出ない写真がある）")
+        XCTAssertEqual(model.colors.count, 1)
+        XCTAssertEqual(Set(model.colors.first?.photos.map(\.id) ?? []), all, "色の段を切っている（押した先に出ない写真がある）")
     }
 
     /// **人が替わったら、読み直しが返る前から前の人の段を出さない。**

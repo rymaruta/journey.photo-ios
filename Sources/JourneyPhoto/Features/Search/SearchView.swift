@@ -856,7 +856,9 @@ final class SearchViewModel: ObservableObject {
         featured = SearchDiscovery.featured(in: allPhotos)
         // **機材・色は枚数で切らない**（既定は12）。行の「N枚」と押した先の一覧は
         // 段の写真そのものなので、12で切ると13枚目から先が数えられず出てこなかった。
-        // 行に描くのは先頭の1枚だけ・押した先は格子なので、全部渡してよい
+        // 行に描くのは先頭の1枚だけ。押した先の格子（`PhotoGrid`）は Lazy ではなく
+        // 全部を一度に作るが、カテゴリ・タグの一覧や季節の「すべて」も同じ作り
+        // （写真が増えて重くなったら、`PhotoGrid` の側でまとめて手当てする）
         gear = GearGroups.sections(in: allPhotos, limit: .max)
         categoryCovers = CategoryCovers.items(in: allPhotos)
         colors = ColorFamilies.sections(in: allPhotos, limit: .max)
