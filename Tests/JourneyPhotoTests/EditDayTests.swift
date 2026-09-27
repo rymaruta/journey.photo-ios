@@ -7,22 +7,23 @@ import XCTest
 /// EXIF の日付に戻り、時刻付きの撮影日は保存のたびに時刻が落ちていた。
 final class EditDayTests: XCTestCase {
 
-    /// 欄は保存されている撮影日から出す（EXIF と違っていても）
+    /// 欄は保存されている撮影日から出す
     func testFieldPrefersStoredDate() {
-        XCTAssertEqual(EditDay.field(date: "2024-11-01T07:30:00", exifDateTime: "2024:10:31 07:30:00"),
+        XCTAssertEqual(EditDay.field(date: "2024-11-01T07:30:00"),
                        "2024-11-01")
-        XCTAssertEqual(EditDay.field(date: "2024-11-01", exifDateTime: nil), "2024-11-01")
+        XCTAssertEqual(EditDay.field(date: "2024-11-01"), "2024-11-01")
     }
 
-    func testFieldFallsBackToExifOnlyWithoutStoredDate() {
-        XCTAssertEqual(EditDay.field(date: nil, exifDateTime: "2026:09:13 08:21:05"), "2026-09-13")
-        XCTAssertEqual(EditDay.field(date: "読めない", exifDateTime: "2026:09:13 08:21:05"), "2026-09-13")
-        XCTAssertEqual(EditDay.field(date: nil, exifDateTime: nil), "")
+    /// 保存された撮影日が無い写真は空（EXIF に落とさない——落とすと、
+    /// 欄に見えている日付が保存されない。1980年などは保存ごと 400 になる）
+    func testFieldIsEmptyWithoutStoredDate() {
+        XCTAssertEqual(EditDay.field(date: nil), "")
+        XCTAssertEqual(EditDay.field(date: "読めない"), "")
     }
 
     /// 触っていなければ送らない（時刻が保たれる）
     func testUntouchedDayIsNotSent() {
-        let opened = EditDay.field(date: "2024-11-01T07:30:00", exifDateTime: nil)
+        let opened = EditDay.field(date: "2024-11-01T07:30:00")
         XCTAssertNil(EditDay.toSend(opened: opened, field: opened))
         XCTAssertNil(EditDay.toSend(opened: opened, field: " 2024-11-01 "))
     }

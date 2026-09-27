@@ -23,6 +23,11 @@ final class PhotoDetailViewModel: ObservableObject {
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
+    /// 消している途中のコメント（二度押しで2回送ると、2回目が「見つかりません」を出す）
+    @Published private(set) var deletingCommentIds: Set<String> = []
+    /// コメントを足した・消した回数。**それより前に読み始めた一覧は採らない**
+    /// ——投稿の前に読んだ一覧が後から届いて、書いたばかりのコメントが消えていた
+    private var commentEdits = 0
     /// いいねを送っている最中。**二度押しで2回投げない。**
     ///
     /// コメントには `isPosting` があったのに、いいねには何も無かった。
@@ -63,6 +68,7 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func load() async {
+        let editsAtStart = commentEdits
         async let count = try? social.likeCount(photoId: photoId)
         async let page = try? social.comments(photoId: photoId)
         let mine: Bool?
@@ -73,7 +79,7 @@ final class PhotoDetailViewModel: ObservableObject {
         }
         likes = await count ?? likes
         let loaded = await page
-        if let loaded {
+        if let loaded, editsAtStart == commentEdits {
             comments = loaded.items
             commentCount = loaded.count
         }
@@ -132,15 +138,24 @@ final class PhotoDetailViewModel: ObservableObject {
             // **総数が分からない回は分からないまま。** 取れていない数に
             // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
             commentCount = commentCount.map { $0 + 1 }
-            draftComment = ""
+            commentEdits += 1
+            // **送った文のときだけ空にする。** 送っている間も欄は打てるので、
+            // 続きを書いていたら丸ごと消えていた
+            if draftComment.trimmingCharacters(in: .whitespacesAndNewlines) == text {
+                draftComment = ""
+            }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
         }
     }
 
     func deleteComment(_ comment: PhotoComment) async {
+        guard !deletingCommentIds.contains(comment.id) else { return }
+        deletingCommentIds.insert(comment.id)
+        defer { deletingCommentIds.remove(comment.id) }
         do {
             try await social.deleteComment(photoId: photoId, commentId: comment.id)
+            commentEdits += 1
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
         } catch {

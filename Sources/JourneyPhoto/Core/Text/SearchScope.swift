@@ -47,15 +47,24 @@ enum SearchScope: String, CaseIterable, Identifiable {
         guard showsPhotos else { return [] }
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let needle = Self.fold(trimmed)
+        // **タグは日英の別名も拾う**（`TagChoices.key`）。チップの枚数は別名を
+        // まとめて数える（「冬 13」＝冬1枚＋winter 12枚）のに、押した後は
+        // 綴りでしか当てていなかったので、結果が1枚しか出なかった
+        let alias = TagChoices.key(trimmed)
+        let hasAlias: (Photo) -> Bool = { photo in
+            !alias.isEmpty && (photo.tags ?? []).contains { TagChoices.key($0) == alias }
+        }
         switch self {
         case .people:
             return []
         case .all, .photos:
-            return trimmed.isEmpty ? photos : PhotoQuery.match(photos, query: trimmed)
+            guard !trimmed.isEmpty else { return photos }
+            let matched = Set(PhotoQuery.match(photos, query: trimmed).map(\.id))
+            return photos.filter { matched.contains($0.id) || hasAlias($0) }
         case .tags:
             return photos.filter { photo in
                 let tags = (photo.tags ?? []).map(Self.fold).filter { !$0.isEmpty }
-                return needle.isEmpty ? !tags.isEmpty : tags.contains { $0.contains(needle) }
+                return needle.isEmpty ? !tags.isEmpty : (tags.contains { $0.contains(needle) } || hasAlias(photo))
             }
         case .places:
             return photos.filter { photo in

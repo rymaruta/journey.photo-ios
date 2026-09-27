@@ -707,7 +707,7 @@ struct MyPageView: View {
     }
 
     /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。
-    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` がタブごと知らせる
+    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` が知らせる（手元に無ければタブごと）
     private func loadFeed(force: Bool = false) async {
         let fetched = try? await environment.gallery.fetchPhotos(force: force)
         guard !Task.isCancelled else { return }

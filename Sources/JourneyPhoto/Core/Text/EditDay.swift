@@ -10,10 +10,14 @@ import Foundation
 /// （`toDateInputValue` / `mergeDate`）と同じ考え。
 enum EditDay {
 
-    /// 欄に出す `YYYY-MM-DD`。保存された撮影日が無い写真だけ EXIF に落とす
-    static func field(date: String?, exifDateTime: String?) -> String {
-        if let date, let day = leadingDay(date) { return day }
-        return exifDateTime.flatMap(isoDay) ?? ""
+    /// 欄に出す `YYYY-MM-DD`。**保存された撮影日が無ければ空**（Web と同じ）。
+    ///
+    /// EXIF に落とすと、欄に日付が見えているのに触らなければ送らないので
+    /// 保存されない。送るようにすると、カメラの日付が未設定の写真
+    /// （`1980:01:01`）で保存そのものが 400 に落ちる
+    static func field(date: String?) -> String {
+        guard let date else { return "" }
+        return leadingDay(date) ?? ""
     }
 
     /// 送る値。**欄を触っていなければ nil**（送らない＝時刻も保つ）。
@@ -29,17 +33,5 @@ enum EditDay {
         let head = String(raw.prefix(10))
         guard head.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
         return head
-    }
-
-    /// EXIF の "2026:09:13 08:21:05" を "2026-09-13" にする。
-    static func isoDay(_ raw: String) -> String? {
-        let parser = DateFormatter()
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
-        guard let date = parser.date(from: raw) else { return nil }
-        let out = DateFormatter()
-        out.locale = Locale(identifier: "en_US_POSIX")
-        out.dateFormat = "yyyy-MM-dd"
-        return out.string(from: date)
     }
 }

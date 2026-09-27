@@ -39,8 +39,7 @@ struct EditPhotoView: View {
         _location = State(initialValue: photo.location ?? "")
         _tagsText = State(initialValue: (photo.tags ?? []).joined(separator: ", "))
         _category = State(initialValue: photo.category ?? "")
-        _date = State(initialValue: EditDay.field(date: photo.date,
-                                                  exifDateTime: photo.exif?.dateTimeOriginal))
+        _date = State(initialValue: EditDay.field(date: photo.date))
         _published = State(initialValue: photo.published != false)
         let raw = photo.audience ?? ""
         let known = raw.isEmpty ? Audience.everyone : Audience(rawValue: raw)
@@ -225,8 +224,7 @@ struct EditPhotoView: View {
         if audienceKnown { patch.audience = (published ? audience : .everyone).patchValue }
         // **触っていなければ送らない**（時刻付きの撮影日を日付だけに落とさない）。
         // 空も送らない——空文字は api-user の日付検査に落ちる
-        patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date,
-                                                          exifDateTime: photo.exif?.dateTimeOriginal),
+        patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date),
                                     field: date)
 
         do {

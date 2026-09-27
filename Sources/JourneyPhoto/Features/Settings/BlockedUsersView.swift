@@ -13,6 +13,10 @@ struct BlockedUsersView: View {
     @State private var errorMessage: String?
     /// いま解除を送っている相手（二度押しで2回投げない）
     @State private var working: Set<String> = []
+    /// 何回目の読み込みか。**解除より前に始めた読み込みの返事は捨てる**
+    /// ——引き下げ更新の返事が解除の後に届くと、解除した人が一覧と
+    /// 端末の控え（`replaceBlocked`）の両方に戻っていた
+    @State private var loadGeneration = 0
 
     var body: some View {
         List {
@@ -83,17 +87,21 @@ struct BlockedUsersView: View {
     }
 
     private func load() async {
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer { if generation == loadGeneration { isLoading = false } }
         do {
             let list = try await environment.moderation.blocks()
+            guard generation == loadGeneration else { return }
             users = list.users
             // **サーバーの一覧で上書きする。** 端末のぶんを足し合わせると、
             // 別の端末で解除したのに「見えないまま」になる
             hidden.replaceBlocked(with: list.blockedIds)
             await apply()
         } catch {
+            guard generation == loadGeneration else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
     }
@@ -110,8 +118,11 @@ struct BlockedUsersView: View {
         guard !working.contains(userId) else { return }
         working.insert(userId)
         defer { working.remove(userId) }
+        errorMessage = nil
         do {
             try await environment.moderation.unblock(userId: userId)
+            loadGeneration += 1
+            isLoading = false
             hidden.unblock(userId)
             await apply()
             users.removeAll { $0.id == userId }
