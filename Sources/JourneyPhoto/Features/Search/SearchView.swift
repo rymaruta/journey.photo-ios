@@ -854,9 +854,12 @@ final class SearchViewModel: ObservableObject {
         seasonalAll = DiscoverySections.seasonal(in: allPhotos, limit: .max)
         seasonal = Array(seasonalAll.prefix(SearchDiscovery.seasonalPreview))
         featured = SearchDiscovery.featured(in: allPhotos)
-        gear = GearGroups.sections(in: allPhotos)
+        // **機材・色は枚数で切らない**（既定は12）。行の「N枚」と押した先の一覧は
+        // 段の写真そのものなので、12で切ると13枚目から先が数えられず出てこなかった。
+        // 行に描くのは先頭の1枚だけ・押した先は格子なので、全部渡してよい
+        gear = GearGroups.sections(in: allPhotos, limit: .max)
         categoryCovers = CategoryCovers.items(in: allPhotos)
-        colors = ColorFamilies.sections(in: allPhotos)
+        colors = ColorFamilies.sections(in: allPhotos, limit: .max)
         categories = CategoryChoices.present(in: allPhotos)
     }
 
