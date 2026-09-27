@@ -99,4 +99,34 @@ final class StoryPostTests: XCTestCase {
         } catch {}
         XCTAssertEqual(recorded.count, 0)
     }
+
+    private var staleMedia: StoryService.UploadedMedia {
+        StoryService.UploadedMedia(key: media.key, publicUrl: media.publicUrl,
+                                   uploadedAt: Date().addingTimeInterval(-23.5 * 3600))
+    }
+
+    /// 🔴 **古い目印でも、まだ出ている1本があれば作らない**（23〜24時間の間は期限内）
+    func testOldMediaStillChecksTheList() async throws {
+        StubProtocol.respond(status: 200, body:
+            #"[{"id":"story-1","src":"https://cdn.example/uploads/me/abc.jpg","userId":"me"}]"#)
+        try await service().post(job(uploaded: staleMedia), ownerId: "me", record: { _ in
+            XCTFail("目印を書き換えた")
+        })
+        XCTAssertEqual(StubProtocol.requestCount, 1)
+    }
+
+    /// 古い目印で出ていなければ、**前の画像を片づけてから上げ直す**（行は古い画像で作らない）
+    func testOldMediaIsDiscardedAndUploadedAgain() async {
+        // 一覧 → 片づけ → 置き場所（ここで断らせて、上げ直しに入ったことだけ見る）
+        StubProtocol.respondInOrder([(200, "[]"), (200, "{}"), (500, #"{"error":"x"}"#)])
+        var recorded: [StoryService.UploadedMedia?] = []
+        do {
+            try await service().post(job(uploaded: staleMedia), ownerId: "me", record: { recorded.append($0) })
+            XCTFail("投げていない")
+        } catch {}
+        XCTAssertEqual(StubProtocol.requestCount, 3)
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/upload/presigned-url", "古い画像で行を作った")
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertNil(recorded.first ?? media, "古い目印を忘れていない")
+    }
 }

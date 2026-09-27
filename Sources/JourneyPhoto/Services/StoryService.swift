@@ -56,11 +56,21 @@ struct StoryService {
     func post(_ job: StoryUploadCenter.Job, ownerId: String,
               record: @escaping @MainActor (UploadedMedia?) -> Void) async throws {
         let media: UploadedMedia
-        if let uploaded = job.uploaded, uploaded.isFresh() {
-            // 一覧を読めなければ投げる（出たかどうか分からないまま行を作らない）
+        if let uploaded = job.uploaded {
+            // **目印があれば、古くても先に一覧で探す**（期限内の1本がまだ出ていれば
+            // 二重になる）。一覧を読めなければ投げる（出たか分からないまま行を作らない）
             let listed = try await list()
             if listed.contains(where: { Self.isSameMedia($0, uploaded, ownerId: ownerId) }) { return }
-            media = uploaded
+            if uploaded.isFresh() {
+                media = uploaded
+            } else {
+                // 古い目印の画像は使わない（掃除で実体が消えている）。片づけてから上げ直す
+                // ——使われている鍵はサーバーが消さない（`discardUpload` が 409）
+                await uploads.discard(key: uploaded.key)
+                await record(nil)
+                media = try await upload(imageData: job.imageData)
+                await record(media)
+            }
         } else {
             media = try await upload(imageData: job.imageData)
             await record(media)
@@ -327,6 +337,13 @@ struct StoryReply: Decodable, Identifiable, Equatable {
 extension Array where Element == StoryReply {
     /// 文章の返信だけ（反応を除く）
     var textReplies: [StoryReply] { filter { !$0.isReaction } }
-    /// 反応（いいね）の数
-    var reactionCount: Int { filter(\.isReaction).count }
+    /// 反応（いいね）の数。**1人1つに数える**——サーバーは反応を1件ずつ足し
+    /// （1人10件まで・`storyReplies.ts`）、♡ を3回押した人が「いいね 3」になって
+    /// いた（反応の一覧は1人1行なので数と並びが合わなかった）。相手の分からない
+    /// 反応（`uid` が無い）は1件ずつ数える
+    var reactionCount: Int {
+        let reactions = filter(\.isReaction)
+        let people = Set(reactions.compactMap(\.uid))
+        return people.count + reactions.filter { $0.uid == nil }.count
+    }
 }
