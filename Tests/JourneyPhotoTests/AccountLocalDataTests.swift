@@ -234,7 +234,8 @@ final class PushReleaseTests: XCTestCase {
     }
 
     /// トークンを求められた瞬間（＝登録の通信中）に割り込み、そのあと必ず落とす
-    private struct InterruptingTokenProvider: TokenProviding {
+    // 試験の中だけ・MainActor の閉包を持つので検査を外す（Swift 6 で誤りになる警告を出さない）
+    private struct InterruptingTokenProvider: TokenProviding, @unchecked Sendable {
         let interrupt: @MainActor () async -> Void
         func idToken() async throws -> String? {
             await interrupt()
