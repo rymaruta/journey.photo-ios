@@ -184,6 +184,8 @@ struct UserProfileView: View {
                     Text(model.shownName ?? "—")
                         .font(JPFont.display(26, relativeTo: .title))
                         .foregroundStyle(Color.white)
+                        // 題は上のバーに出さないので、画面の見出しは名前が受け持つ
+                        .accessibilityAddTraits(.isHeader)
                     VerifiedBadge(isVerified: model.profile?.verified, nameSize: 26, relativeTo: .title, fit: .mincho)
                 }
                 // 公開プロフィールの口（`toPublicProfile`）が username と居住地を返す
@@ -295,6 +297,8 @@ struct UserProfileView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // 送っている間は薄くする（押したことが見て分かる。二度押しは `disabled` で防ぐ）
+        .opacity(model.isWorking ? 0.6 : 1)
         .disabled(model.isWorking)
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
             Task { await model.toggleFollow(userId: userId, environment: environment) }
