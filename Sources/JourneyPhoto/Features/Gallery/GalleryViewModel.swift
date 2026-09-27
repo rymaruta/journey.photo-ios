@@ -118,6 +118,8 @@ final class GalleryViewModel: ObservableObject {
     /// **フォロー中は未ログインだと中身が無い。** 絞れないので
     /// 「おすすめ」へ戻す（空の画面に置き去りにしない）。
     func use(viewerId: String?, following: Set<String>) {
+        // 並びは sort と feed の両方で決まる（`sorted`）。**どちらかが変わったら**並べ直す
+        let previousFeed = feed
         self.viewerId = viewerId
         self.followingIds = following
         if viewerId == nil && feed.needsSignIn { feed = .recommended }
@@ -126,7 +128,7 @@ final class GalleryViewModel: ObservableObject {
         sort = feed.sort
         // **並びが変わったときだけ**並べ直す（同じなら一覧を入れ替えない——
         // 開いている詳細の元のタイルが作り直されて閉じる）
-        if sort != previousSort { all = sorted(all) }
+        if sort != previousSort || feed != previousFeed { all = sorted(all) }
         if case .loaded = state { state = .loaded(filtered()) }
     }
 

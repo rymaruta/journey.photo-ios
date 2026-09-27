@@ -64,6 +64,25 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(photos.map(\.id), ["b", "a", "c"])
     }
 
+    /// 🔴 **おすすめは owner が選んだ写真（featured）を先頭に**——読み込み直後も、
+    /// 並びが同じまま「フォロー中」からおすすめへ戻ったとき（ログアウト）も
+    func testRecommendedPutsFeaturedFirst() async {
+        let body = """
+        [{"id":"pop","src":"https://x/p.jpg","createdAt":"2026-03-04T00:00:00Z","likes":50},
+         {"id":"picked","src":"https://x/k.jpg","createdAt":"2026-01-02T00:00:00Z","likes":1,"featured":true}]
+        """
+        let model = GalleryViewModel(gallery: gallery(body))
+        await model.load()
+        guard case .loaded(let first) = model.state else { return XCTFail("読み込めていない") }
+        XCTAssertEqual(first.map(\.id), ["picked", "pop"], "読み込み直後に featured が先頭に来ない")
+
+        model.select(feed: .following, viewerId: "me")
+        model.select(sort: .popular)
+        model.use(viewerId: nil, following: [])   // ログアウト → おすすめへ戻る
+        guard case .loaded(let back) = model.state else { return XCTFail("状態が違う") }
+        XCTAssertEqual(back.map(\.id), ["picked", "pop"], "おすすめに戻ったのに featured が先頭に来ない")
+    }
+
     /// カテゴリの絞り込みは**押し直すと外れる**（Web の FilterBar と同じ）。
     func testGalleryCategoryFilterToggles() async {
         let model = GalleryViewModel(gallery: gallery(feed))
