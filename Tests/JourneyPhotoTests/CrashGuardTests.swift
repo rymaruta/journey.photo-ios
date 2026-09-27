@@ -64,8 +64,12 @@ final class CrashGuardTests: XCTestCase {
     // MARK: - ログインの設定に失敗した起動（C-2）
 
     /// 🔴 **設定できていなければ Amplify を呼ばない**（未ログイン扱い・ログインは断る）。
-    /// 試験では `configure()` を呼ばないので、未設定の起動と同じ状態
+    /// Mac の単体テストは宿主のアプリが起動時に `configure()` を済ませるので、
+    /// ここで未設定に倒して「設定に失敗した起動」を作る（終わったら戻す）
     func testUnconfiguredGatewayDoesNotCallAmplify() async {
+        let wasConfigured = AuthGateway.isConfigured
+        AuthGateway.isConfigured = false
+        defer { AuthGateway.isConfigured = wasConfigured }
         let signedIn = await AuthGateway.isSignedIn()
         XCTAssertFalse(signedIn)
         let token = try? await AuthGateway.idToken()

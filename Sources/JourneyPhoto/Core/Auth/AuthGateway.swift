@@ -16,7 +16,9 @@ import AWSPluginsCore
 /// 向く。`AppConfig` の値からその場で組み立てる。
 enum AuthGateway {
 
-    private static var isConfigured = false
+    /// テストが「設定に失敗した起動」を作れるように internal にしてある。
+    /// Mac の単体テストはアプリを宿主に走るので、起動時の `configure()` で既に立っている
+    static var isConfigured = false
 
     /// 🔴 **設定に失敗した起動では Amplify を呼ばない。** `configure()` が投げても起動は
     /// 続ける（公開の画面は出せる）が、その後 `restore()` などが Amplify を呼ぶと、
