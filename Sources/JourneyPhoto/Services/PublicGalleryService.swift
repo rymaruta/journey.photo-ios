@@ -33,12 +33,16 @@ actor PublicGalleryService {
     /// ビルド時に焼いた全員ぶん。ブロックした相手の写真がそのまま出ると、
     /// 「ブロックしたのに見える」になる（審査 1.2 で見られるところでもある）。
     /// だから**出すところで落とす**。
-    private var hiddenUserIds: Set<String> = []
-    private var hiddenPhotoIds: Set<String> = []
+    ///
+    /// 自分で消した・非公開にした写真（`ModerationSnapshot.gone`）も同じ道で落とす
+    /// ——この JSON は建て直しまで古く、控え（`cached`・`snapshot`）も残るので、
+    /// 消した写真が一覧に出続け、押すと 404 の写真が開いていた。
+    private var hiding = ModerationSnapshot()
 
-    func setHidden(userIds: Set<String>, photoIds: Set<String>) {
-        hiddenUserIds = userIds
-        hiddenPhotoIds = photoIds
+    /// **写しを丸ごと受け取る。** 集合を1つずつ渡す形だと、足した集合（`gone`）を
+    /// 渡し忘れた呼び出しが、黙って空で上書きする
+    func setHidden(_ hiding: ModerationSnapshot) {
+        self.hiding = hiding
     }
 
     /// 公開範囲を絞った写真の取り方。**ログインしている間だけ入る**
@@ -337,9 +341,8 @@ actor PublicGalleryService {
 
     /// 公開 JSON には非公開の写真は載らないが、`published` が明示的に
     /// false の行が混ざっても出さない（二重の守り）。
-    /// あわせて、ブロックした相手と、自分が通報した写真を落とす。
+    /// あわせて、ブロックした相手と、自分が通報した・消した・非公開にした写真を落とす。
     private func visible(_ photos: [Photo]) -> [Photo] {
-        BlockFilter.photos(photos.filter { $0.published != false },
-                           blocked: hiddenUserIds, reported: hiddenPhotoIds)
+        hiding.visible(photos.filter { $0.published != false })
     }
 }

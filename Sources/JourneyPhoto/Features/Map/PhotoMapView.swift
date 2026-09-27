@@ -1469,8 +1469,7 @@ struct PhotoMapView: View {
         selected = nil
         Task {
             // 集合を自分で渡してから読む（`GalleryView.reloadHidden` と同じ理由）
-            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
-                                                photoIds: hidden.reportedPhotoIds)
+            await environment.gallery.setHidden(hidden.snapshot)
             await model.load(environment: environment)
             // 読んでいる間に押した札・開いた一覧も、前の人の写しなので差し替える。
             // 一覧のシートを出している間もここを通る（シートでは `onDisappear` が

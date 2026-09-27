@@ -1179,8 +1179,15 @@ struct PhotoDetailView: View {
 
     private func deletePhoto() async {
         clearNotices()
+        let photoId = current.id
+        // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
+        let owner = hidden.owner
         do {
-            try await environment.photos.delete(photoId: current.id)
+            try await environment.photos.delete(photoId: photoId)
+            // 🔴 **公開一覧からも落とす。** 一覧は建て直しまで古い静的 JSON で、
+            // 控えも残るので、消した写真がホーム・探す・地図に出続け、押すと
+            // いいね・保存・コメントが 404 になっていた（`ModerationStore.goneMarks`）
+            await hidden.hideGone(photoId, for: owner, environment: environment)
             // **消した写真の画面に留まらせない。** 残ると、もう無いものを
             // 編集したり、もう一度削除を押したりできてしまう
             dismiss()

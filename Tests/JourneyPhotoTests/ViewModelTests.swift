@@ -248,7 +248,7 @@ final class ViewModelTests: XCTestCase {
         await model.search("パリ", environment: env)
         XCTAssertEqual(model.shown.count, 2, "下ごしらえが効いていない")
 
-        await service.setHidden(userIds: ["u2"], photoIds: [])
+        await service.setHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
         await model.reloadPhotos(environment: env)
         await model.search("パリ", environment: env)
 
@@ -282,7 +282,7 @@ final class ViewModelTests: XCTestCase {
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
         let model = SearchViewModel()
         await model.loadPhotos(environment: env, epoch: 0)
-        await service.setHidden(userIds: ["u2"], photoIds: [])
+        await service.setHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
 
         await model.loadPhotos(environment: env, epoch: 0)
         await model.search("パリ", environment: env)
@@ -329,7 +329,7 @@ final class ViewModelTests: XCTestCase {
         let model = SearchViewModel()
         await model.reloadPhotos(environment: env)       // 引き下げが先に終わった
         await model.loadPhotos(environment: env, epoch: 0)
-        await service.setHidden(userIds: ["u2"], photoIds: [])
+        await service.setHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
 
         await service.setRestrictedLoader(nil)   // 人が替わった（回が 1 に進む）
         await model.loadPhotos(environment: env, epoch: 1)
@@ -347,7 +347,7 @@ final class ViewModelTests: XCTestCase {
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
         let model = SearchViewModel()
         await model.reloadPhotos(environment: env)       // 1本目が先に終わる
-        await service.setHidden(userIds: ["u2"], photoIds: [])
+        await service.setHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
         await service.setRestrictedLoader {
             try await Task.sleep(nanoseconds: 200_000_000)
             return []

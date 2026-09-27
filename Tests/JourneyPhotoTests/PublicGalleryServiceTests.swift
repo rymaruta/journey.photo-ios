@@ -61,11 +61,11 @@ final class PublicGalleryServiceTests: XCTestCase {
     func testHidesBlockedUsersAndReportedPhotos() async throws {
         StubProtocol.respond(status: 200, body: twoPhotos)
         let gallery = service()
-        await gallery.setHidden(userIds: ["u2"], photoIds: [])
+        await gallery.setHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
         var photos = try await gallery.fetchPhotos()
         XCTAssertEqual(photos.map(\.id), ["a"], "ブロックした相手の写真が出ている")
 
-        await gallery.setHidden(userIds: [], photoIds: ["a"])
+        await gallery.setHidden(ModerationSnapshot(blocked: [], reported: ["a"]))
         photos = try await gallery.fetchPhotos()
         XCTAssertEqual(photos.map(\.id), ["b"], "通報した写真が出ている")
     }
@@ -187,7 +187,7 @@ final class GalleryCacheTests: XCTestCase {
     func testCachedReadStillHides() async throws {
         let gallery = service()
         _ = try await gallery.fetchPhotos()
-        await gallery.setHidden(userIds: [], photoIds: ["a"])
+        await gallery.setHidden(ModerationSnapshot(blocked: [], reported: ["a"]))
         let photos = try await gallery.fetchPhotos()
         XCTAssertTrue(photos.isEmpty, "控えを返すときに絞り込みを飛ばしている")
     }
