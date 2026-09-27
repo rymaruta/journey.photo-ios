@@ -28,14 +28,33 @@ struct SaveService {
         try await api.authorized(.get, "/user/saves", as: SavedList.self).photoIds
     }
 
-    // ⚠️ **`GET /user/saves/{id}`（1枚ぶんの問い合わせ）は呼んでいない。**
-    // ログインのときに一覧をまとめて取って控えに入れるので、画面ごとに
-    // 聞き直す必要が無い。使わない口の薄い包みを置かない
-    // （置くと、次の人が「どちらを使うのか」を考えることになる）。
+    private struct MySave: Decodable { let saved: Bool }
 
-    /// 保存する（冪等）
+    /// この写真を保存しているか（`GET /user/saves/{id}`・公開状態を見ない）。
+    ///
+    /// 画面ごとの状態はログインのときにまとめて取った控えで足りるので、
+    /// **ここは `save` の 404 の確かめにだけ使う**
+    func isSaved(photoId: String) async throws -> Bool {
+        try await api.authorized(.get, "/user/saves/\(encoded(photoId))", as: MySave.self).saved
+    }
+
+    /// 保存する（冪等）。
+    ///
+    /// **404 は「保存できなかった」とは限らない**（`saves.ts`）。見えなくなった写真でも、
+    /// 前から保存していた回は `{error, saved: true}` の 404 が返る。失敗と読んで画面を
+    /// 未保存に戻すと、サーバーには残ったまま**解除の導線が出ない**。本文は `APIError` に
+    /// 載らないので、404 のときは印を聞き直し、保存済みなら成功として返る
     func save(photoId: String) async throws {
-        try await api.authorizedVoid(.post, "/photos/\(encoded(photoId))/save")
+        // ⚠️ catch の中で await しない（Xcode 26.3 のコンパイラが落ちる）
+        let failure: Error?
+        do {
+            try await api.authorizedVoid(.post, "/photos/\(encoded(photoId))/save")
+            failure = nil
+        } catch {
+            failure = error
+        }
+        guard let failure else { return }
+        guard SocialService.isNotFound(failure), (try? await isSaved(photoId: photoId)) == true else { throw failure }
     }
 
     /// 外す（冪等）

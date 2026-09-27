@@ -43,7 +43,29 @@ final class MusicPreviewPlayer: ObservableObject {
     /// 鳴り終わり・途中で途切れたときの見張り。**外さないと積み上がる**
     private var endObservers: [NSObjectProtocol] = []
 
-    private init() {}
+    /// 音の中断（電話・Siri）の見張り。アプリ全体で1つなので外さない
+    private var interruptionObserver: NSObjectProtocol?
+
+    private init() {
+        // 🔴 **中断されたら「一時停止」に揃える。** OS はプレイヤーを止めるが、
+        // こちらの状態は「再生中」のまま残り、無音なのにミニプレイヤーと ▶ が
+        // 再生中の表示のまま・▶ を2回押さないと鳴らなかった
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let type = note.userInfo?["AVAudioSessionInterruptionTypeKey"] as? UInt
+            // 1 = 始まり（`AVAudioSession.InterruptionType.began`）
+            guard type == 1 else { return }
+            self?.markInterrupted()
+        }
+    }
+
+    /// 中断された（`interruptionNotification` の始まり）。鳴っていれば一時停止の扱いにする
+    func markInterrupted() {
+        guard playingURL != nil, !isPaused else { return }
+        player?.pause()
+        isPaused = true
+    }
 
     deinit { removeEndObserver() }
 

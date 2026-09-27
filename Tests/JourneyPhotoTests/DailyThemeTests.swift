@@ -82,4 +82,57 @@ final class DailyThemeTests: XCTestCase {
         XCTAssertEqual(TagChoices.key("sea"), TagChoices.key("海"))
         XCTAssertTrue(DailyTheme.hasJoined(theme, myPhotos: mine, now: now, calendar: calendar))
     }
+
+    // MARK: - 端末の暦（バグ探し 2026-09-27 #23）
+
+    private func calendar(_ id: Calendar.Identifier, zone: String = "Asia/Tokyo") -> Calendar {
+        var calendar = Calendar(identifier: id)
+        calendar.timeZone = TimeZone(identifier: zone)!
+        return calendar
+    }
+
+    /// **和暦・タイ仏暦の端末でも、西暦の端末と同じテーマ。** 紀元から数えていたので、
+    /// 和暦では令和の初日から数えて別のテーマになっていた
+    func testThemeDoesNotDependOnTheDeviceCalendar() {
+        let now = date("2026-09-27T03:00:00.000Z")
+        let expected = DailyTheme.today(now, calendar: calendar(.gregorian))
+        for id in [Calendar.Identifier.japanese, .buddhist, .islamicUmmAlQura, .hebrew] {
+            XCTAssertEqual(DailyTheme.today(now, calendar: calendar(id)), expected, "\(id) の端末でテーマが変わる")
+        }
+    }
+
+    /// 西暦に替えても**タイムゾーンはその暦のまま**（土地の1日で数える）。
+    ///
+    /// ⚠️ テーマ（`ordinality(of: .day, in: .era)`）ではなく日付のステッカーで確かめる。
+    /// Linux の Foundation の `ordinality` はタイムゾーンを見ない（東京で 28 日になっても
+    /// 通し番号は 27 日のまま・2026-09-27 に手元で確認）。Apple の Foundation は確かめていない
+    func testGregorianKeepsTheTimeZone() {
+        // 東京では 9/28 1時、協定世界時ではまだ 9/27
+        let now = date("2026-09-27T16:00:00.000Z")
+        XCTAssertEqual(calendar(.japanese).gregorianKeepingZone.timeZone, TimeZone(identifier: "Asia/Tokyo"))
+        XCTAssertEqual(TextOverlay.Kind.date.initialText(now: now, calendar: calendar(.japanese)),
+                       L("9月28日", "9/28"), "タイムゾーンを落としている")
+    }
+
+    /// 季節と日付のステッカーも西暦の月日（イスラム暦の月は季節と合わない）
+    func testSeasonAndDateStickerUseGregorianMonths() {
+        let now = date("2026-09-27T03:00:00.000Z")
+        let islamic = calendar(.islamicUmmAlQura)
+        XCTAssertEqual(DiscoverySections.seasonalTags(now: now, calendar: islamic),
+                       DiscoverySections.seasonalTags(now: now, calendar: calendar(.gregorian)))
+        XCTAssertEqual(TextOverlay.Kind.date.initialText(now: now, calendar: islamic),
+                       TextOverlay.Kind.date.initialText(now: now, calendar: calendar(.gregorian)))
+    }
+
+    /// **テーマは土地の0時で切り替わる**（協定世界時の0時ではない）。
+    /// 東京の 9/28 1時は、協定世界時の 9/28 と同じテーマ
+    func testThemeTurnsOverAtLocalMidnight() {
+        let tokyoJustAfterMidnight = date("2026-09-27T16:00:00.000Z")
+        let utcNextDay = date("2026-09-28T03:00:00.000Z")
+        let utc = calendar(.gregorian, zone: "UTC")
+        XCTAssertEqual(DailyTheme.today(tokyoJustAfterMidnight, calendar: calendar(.gregorian)),
+                       DailyTheme.today(utcNextDay, calendar: utc), "土地の0時で切り替わっていない")
+        XCTAssertNotEqual(DailyTheme.today(tokyoJustAfterMidnight, calendar: calendar(.gregorian)),
+                          DailyTheme.today(tokyoJustAfterMidnight, calendar: utc))
+    }
 }

@@ -181,6 +181,14 @@ struct NotificationsView: View {
                 await push.clearBadge()
             }
         }
+        // フォローバックの失敗（形は親しい友達の保存の失敗と同じ）
+        .alert(L("フォローできませんでした", "Couldn't follow"),
+               isPresented: Binding(get: { model.followBackError != nil },
+                                    set: { if !$0 { model.followBackError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.followBackError ?? "")
+        }
     }
 }
 
@@ -374,6 +382,9 @@ final class NotificationsViewModel: ObservableObject {
     @Published private(set) var following: Set<String> = []
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
+    /// フォローバックの失敗。**読み込みの失敗（`errorMessage`）と分ける**——同じ所に出すと
+    /// 一覧の上端（下の行で押すと画面の外）に出て、「読み込めていない」とも読める。アラートで出す
+    @Published var followBackError: String?
     /// 読み込みの世代。**あとから始まった読み込みがあれば、古い方の結果は捨てる。**
     ///
     /// `.task` と引っぱって読み直しは同時に走りうる。遅れて返った `.task`
@@ -408,6 +419,7 @@ final class NotificationsViewModel: ObservableObject {
         following = []
         isLoading = false
         errorMessage = nil
+        followBackError = nil
     }
 
     /// テストから手元の一覧を差し替える口。
@@ -455,20 +467,36 @@ final class NotificationsViewModel: ObservableObject {
     ///   取得に失敗した回にアイコンだけ 0 にすると、タブのバッジは 3 のまま
     ///   アイコンは 0、という食い違いが残る。
     @discardableResult
-    /// いまフォローしている人を読む。**自分の userId が要る**
+    /// いまフォローしている人を読む。
+    ///
+    /// **ID の一覧（`GET /user/following`・最大2000人）で決める。** 以前は名前つきの
+    /// 一覧（`/users/{id}/following`）を使っていたが、あちらは**新しい順に50人で切る**
+    /// （`follow.ts` の `FOLLOWING_PAGE`）ので、古くからフォローしている相手からの
+    /// フォロー通知に「フォローバック」が出ていた
     private func loadFollowing(environment: AppEnvironment, viewerId: String?, era: Int) async {
         guard let me = viewerId, !me.isEmpty else { return }
-        guard let list = try? await environment.social.following(userId: me) else { return }
+        guard let ids = try? await environment.social.myFollowingIds() else { return }
         // 人が替わった（`forget`）後に返った前の人の答えは書かない
         guard era == userEra else { return }
-        following = Set(list.users.map(\.id))
+        following = Set(ids)
     }
 
     /// フォローバック。**成功したときだけ**印を更新する
-    /// （失敗したのにボタンが消えると、フォローできたように見える）
+    /// （失敗したのにボタンが消えると、フォローできたように見える）。
+    /// **失敗は黙らない**——圏外で押して何も起きないと、押せていないのか分からない
     func followBack(_ userId: String, environment: AppEnvironment) async {
-        guard (try? await environment.social.follow(userId: userId)) != nil else { return }
-        following.insert(userId)
+        // 送っている間に人が替わった（`forget`）ら、答えも失敗も次の人の画面に書かない
+        let era = userEra
+        do {
+            let result = try await environment.social.follow(userId: userId)
+            guard era == userEra else { return }
+            // 返ってきた状態を使う（自分で決めない）
+            if result.following { following.insert(userId) }
+        } catch {
+            guard era == userEra else { return }
+            followBackError = (error as? LocalizedError)?.errorDescription
+                ?? L("フォローできませんでした", "Couldn't follow")
+        }
     }
 
     /// 読めた1ページを画面の状態に移す。

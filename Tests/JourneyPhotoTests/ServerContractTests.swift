@@ -6,6 +6,10 @@ import AWSCognitoAuthPlugin
 import FoundationNetworking
 #endif
 
+/// `import Amplify` にも `APIError` があるので、ここではアプリの方を指す
+/// （無いと Xcode で「曖昧」になり試験のビルドが落ちる・TestFlight run 160）。
+private typealias APIError = JourneyPhoto.APIError
+
 /// サーバーとの約束・通信の失敗の言い分け（バグ探し 2026-09-27 #2・#21・#22・#25）。
 final class ServerContractTests: XCTestCase {
 
