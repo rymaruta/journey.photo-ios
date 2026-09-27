@@ -131,7 +131,15 @@ struct RootView: View {
             // **待っている間に人が替わっていたら開かない**（前の人の通知で
             // 次の人のお知らせを開かない）。ログインしていない人には開かない
             // （起動の確認で期限切れと分かった回など）
-            guard !Task.isCancelled, let owner, auth.userId == owner else { return }
+            guard !Task.isCancelled else { return }
+            // **ログインしていない回は黙らない。** 圏外で起動して「分からない」扱いの
+            // 人にも通知は届き続けるので、押しても何も起きないと壊れて見える
+            guard let owner else {
+                toasts.show(L("お知らせを見るにはログインしてください",
+                              "Sign in to see your notifications"))
+                return
+            }
+            guard auth.userId == owner else { return }
             // 待っている間に（ベルなどから）開いた: それで済んでいる。
             // **ここで「出せずに残った」と見なして戻さない**——開いた直後の
             // 描画が済む前だと、押したばかりのベルを取り消してしまう

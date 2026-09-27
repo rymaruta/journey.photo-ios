@@ -178,6 +178,9 @@ struct JourneyPhotoApp: App {
                     // でも捨てない——通知の宛先と同じ扱い。捨てると、圏外で起動した
                     // だけで強制終了から戻した送信待ちが消え、「もう一度送る」も出ない
                     guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
+                    // **期限切れのログアウトでも捨てない**（同じ人が入り直せば送り直せる）。
+                    // 別の人が入ったときは、その人の ID で `userChanged` が捨てる
+                    if auth.userId == nil, auth.signedOutByExpiry { return }
                     StoryUploadCenter.shared.userChanged(to: auth.userId)
                 }
                 // **`userId` ではなく状態で見る。** 起動直後の確認中（unknown）も

@@ -13,6 +13,9 @@ struct GalleryView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 通報している写真。**シートはカードではなくここに付ける**
     /// （`HomeMosaic.onReport` の注記）
+    /// ストーリーの輪を読み直す合図（引き下げ・前面に戻った）
+    @State private var storiesRefresh = 0
+    @Environment(\.scenePhase) private var scenePhase
     @State private var reportTarget: Photo?
     /// いまこの画面が出ているか。**詳細を上に積んでいる間は読み直さない**
     @State private var isOnScreen = false
@@ -84,7 +87,16 @@ struct GalleryView: View {
             // 今日のテーマに参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
         }
-        .refreshable { await model.load(force: true) }
+        .refreshable {
+            // ストーリーの輪も読み直す（写真だけ読み直すと、輪は古いまま残った）
+            storiesRefresh &+= 1
+            await model.load(force: true)
+        }
+        // **前面に戻ったら輪を読み直す。** 日をまたいで戻っても昨日の輪のまま、
+        // フォローしている人の新しいストーリーも出なかった
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { storiesRefresh &+= 1 }
+        }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.id, ownerId: target.userId)
         }
@@ -227,7 +239,9 @@ struct GalleryView: View {
                 // 2026-09-20 に Web がトップから外してマイページへ移したが、
                 // アプリの提案図では**ホームに戻っている**ので合わせる
                 // ——「いま誰が旅に出ているか」は開いた瞬間に見たいもの
-                StoriesRow(reloadToken: tabRouter.postSheetsClosed)
+                // 投稿シートを閉じたとき・引き下げ更新・前面に戻ったときに読み直す
+                // （どちらの数も増える一方なので、和は必ず変わる）
+                StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh)
                 // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
                 // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
                 // 「前の方が好きだった」で先頭の大きな札に戻した（2026-09-26）

@@ -45,6 +45,10 @@ final class AuthStore: ObservableObject {
     /// 通知の宛先はこの回に触らない——触ると、圏外で起動しただけの人の端末を
     /// APNs から外してしまう
     private(set) var isSignedOutUncertain = false
+    /// 直近のログアウトが**期限切れ**によるものか（本人が押したのではない）。
+    /// 期限切れは同じ人がすぐ入り直すことが多いので、裏で送っていたストーリーの
+    /// 残りを捨てない（`StoryUploadCenter`）——別の人が入れば `userChanged` が捨てる
+    private(set) var signedOutByExpiry = false
 
     private var expiryObserver: NSObjectProtocol?
 
@@ -60,7 +64,7 @@ final class AuthStore: ObservableObject {
     /// ログインの期限が切れた。**ログイン中の見た目のまま何もできない**状態を作らない
     func expireSession() async {
         guard userId != nil else { return }
-        await signOut()
+        await signOut(byExpiry: true)
         errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                          "Your session has expired. Please sign in again.")
     }
@@ -103,7 +107,7 @@ final class AuthStore: ObservableObject {
         // **ID が取れなかった回も見る**——見ないと、期限切れなのに「本当に
         // ログアウトしたか分からない」扱いになり、通知の宛先を外さない
         if await AuthGateway.isSessionExpired() {
-            await signOut()
+            await signOut(byExpiry: true)
             errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                              "Your session has expired. Please sign in again.")
             return
@@ -149,13 +153,15 @@ final class AuthStore: ObservableObject {
             _ = try await AuthGateway.signIn(email: email, password: password)
             let id = try await AuthGateway.currentUserId()
             self.isSignedOutUncertain = false
+            self.signedOutByExpiry = false
             self.state = .signedIn(userId: id)
             await refreshAdmin()
         }
     }
 
-    func signOut() async {
+    func signOut(byExpiry: Bool = false) async {
         isSignedOutUncertain = false
+        signedOutByExpiry = byExpiry
         await AuthGateway.signOut()
         state = .signedOut
         isAdmin = false

@@ -1,5 +1,6 @@
 import XCTest
 @testable import JourneyPhoto
+import AVFoundation
 
 /// 試聴の再生器（`MusicPreviewPlayer`）の状態。音は模型なので鳴らない——
 /// 見るのは「再生中の表示」と「自分が鳴らした回か」の決まりだけ
@@ -59,6 +60,25 @@ final class MusicPreviewPlayerTests: XCTestCase {
         wait(for: [stopped], timeout: 2)
         XCTAssertFalse(player.isPlaying(url))
         XCTAssertTrue(player.hasPendingRelease, "奪った場を返す予約を入れる")
+    }
+
+    /// **電話などで音が中断されたら「一時停止」に揃える**（無音なのに「再生中」の表示が残り、
+    /// ▶ を2回押さないと鳴らなかった）
+    func testInterruptionMarksPaused() {
+        let player = MusicPreviewPlayer.shared
+        player.play(url)
+        XCTAssertTrue(player.isPlaying(url))
+        NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: nil,
+                                        userInfo: ["AVAudioSessionInterruptionTypeKey": UInt(1)])
+        let paused = expectation(description: "paused")
+        func poll() {
+            if player.isPaused { paused.fulfill() } else { DispatchQueue.main.async { poll() } }
+        }
+        poll()
+        wait(for: [paused], timeout: 2)
+        XCTAssertFalse(player.isPlaying(url))
+        player.toggle(url)
+        XCTAssertTrue(player.isPlaying(url), "▶ 1回で鳴らない")
     }
 
     /// 一時停止中は「再生中」と言わない（ほかの画面の ▶ が ⏸ のままになる）

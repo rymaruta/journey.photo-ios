@@ -210,6 +210,20 @@ final class StoryPlaybackTests: XCTestCase {
                      "https だけ")
     }
 
+    /// **期限（24時間）を過ぎた1本は、取れなかった回に前の一覧を残すときも落とす**
+    /// （日をまたいで戻ると昨日の輪が並んだままだった）
+    func testAfterLoadDropsExpiredStories() {
+        func withExpiry(_ id: String, _ iso: String) -> Story {
+            let json = #"{"id":"\#(id)","src":"https://x.test/\#(id).jpg","userId":"u1","expiresAt":"\#(iso)"}"#
+            return try! JSONDecoder.api.decode(Story.self, from: Data(json.utf8))
+        }
+        let previous = [withExpiry("old", "2000-01-01T00:00:00.000Z"),
+                        withExpiry("live", "2999-01-01T00:00:00.000Z")]
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: nil, previous: previous, sameViewer: true,
+                                               blockedUserIds: [], reportedPhotoIds: []).map(\.id), ["live"],
+                       "期限の切れた輪が残っている")
+    }
+
     /// 読み直しに失敗したら前の輪を残す。ただし絞り込みはかけ直し、
     /// 見ている人が変わっていたら空にする
     func testAfterLoadKeepsPreviousOnFailure() {

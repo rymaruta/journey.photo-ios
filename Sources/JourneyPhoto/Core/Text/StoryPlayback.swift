@@ -290,10 +290,17 @@ enum StoryPlayback {
     ///   見て閉じると輪が全部消えていた）。ただし**絞り込みはかけ直す**——
     ///   圏外で通報・ブロックした1本が残らないように
     /// - 取れなかったうえに見ている人が変わった → 空（前の人の輪を見せない）
+    /// - Parameter now: **期限（24時間）を過ぎた1本は落とす**——取れなかった回に前の一覧を
+    ///   残すと、日をまたいで戻ったとき昨日の輪が並んだままになっていた
     static func afterLoad(fetched: [Story]?, previous: [Story], sameViewer: Bool,
-                          blockedUserIds: Set<String>, reportedPhotoIds: Set<String>) -> [Story] {
+                          blockedUserIds: Set<String>, reportedPhotoIds: Set<String>,
+                          now: Date = Date()) -> [Story] {
         guard let base = fetched ?? (sameViewer ? previous : nil) else { return [] }
-        return visible(base, blockedUserIds: blockedUserIds, reportedPhotoIds: reportedPhotoIds)
+        let live = base.filter { story in
+            guard let iso = story.expiresAt, let expires = parse(iso) else { return true }
+            return expires > now
+        }
+        return visible(live, blockedUserIds: blockedUserIds, reportedPhotoIds: reportedPhotoIds)
     }
 
     // MARK: - 曲
