@@ -63,6 +63,11 @@ struct StoryComposerView: View {
     /// 写真を選ぶ画面（「＋」のメニューと、写真が無いときの入口から開く）
     @State private var showLibrary = false
     @State private var placeDraft = ""
+    /// ✕ で閉じる前の「下書きに保存／捨てる／キャンセル」
+    @State private var showLeaveConfirm = false
+    /// 「続きから」で戻した直後の中身。**ここから何も変えていなければ**、
+    /// 閉じても失うものは無い（同じものが下書きに残っている）
+    @State private var restoredContent: StoryComposerContent?
 
     /// いま編集している写真。**無ければ nil**（まだ1枚も選んでいない）
     private var prepared: ImagePreparer.Prepared? {
@@ -85,6 +90,18 @@ struct StoryComposerView: View {
             get: { shots.indices.contains(current) ? shots[current].overlays : [] },
             set: { if shots.indices.contains(current) { shots[current].overlays = $0 } }
         )
+    }
+
+    /// 下書きに残る中身（写真の並び・写真ごとの文字・ひとこと・撮影地・曲・秒数・残すか）
+    private var content: StoryComposerContent {
+        StoryComposerContent(shotIds: shots.map(\.id), overlays: shots.map(\.overlays),
+                        caption: caption, location: location, song: song,
+                        durationSec: durationSec, archive: keepInArchive)
+    }
+
+    /// ✕ と下へ払うのを通すか（`UnsavedLeave`）
+    private var leave: UnsavedLeave {
+        Self.leave(content, restored: restoredContent)
     }
 
     var body: some View {
@@ -177,6 +194,17 @@ struct StoryComposerView: View {
         .onChange(of: pickerItems) { _, items in
             Task { await load(items) }
         }
+        // 🔴 **選んだ写真・置いた文字を黙って消さない。** 以前は ✕ も下へ払うのも
+        // 確かめずに閉じ、下書きにも残らなかった。「下書きに保存」は上の
+        // 「下書き保存」と同じ道（`saveDraft`）で、**書けたときだけ閉じる**
+        .unsavedCloseGuard(leave, isPresented: $showLeaveConfirm,
+                           title: L("下書きに保存しますか？", "Save as a draft?"),
+                           saveTitle: L("下書きに保存", "Save draft"),
+                           discardTitle: L("捨てる", "Discard"),
+                           message: L("閉じると、選んだ写真と置いた文字は消えます。下書きはこの端末にだけ残ります。",
+                                      "If you close now, the photos and text you added will be lost. Drafts stay on this device only."),
+                           onSave: { saveDraft() },
+                           onDiscard: { dismiss() })
     }
 
     // MARK: - 写真
@@ -456,7 +484,13 @@ struct StoryComposerView: View {
             .buttonStyle(.plain)
         } else {
             HStack {
-                Button { dismiss() } label: {
+                Button {
+                    switch leave {
+                    case .now: dismiss()
+                    case .confirm: showLeaveConfirm = true
+                    case .wait: break
+                    }
+                } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 18))
                         .foregroundStyle(.white)
@@ -464,6 +498,7 @@ struct StoryComposerView: View {
                         .jpGlass(in: Circle())
                 }
                 .buttonStyle(.plain)
+                .disabled(leave == .wait)
                 .accessibilityLabel(Labels.Common.close)
                 Spacer()
                 if captionFocused {
@@ -794,6 +829,19 @@ struct StoryComposerView: View {
         return false
     }
 
+    /// ✕・下へ払ったときの扱い。**写真が1枚でもあれば確かめる**
+    /// ——文字・ひとこと・撮影地・曲は写真の上にしか置けない（写真が無い間は
+    /// 出ていない）うえ、下書きも写真が無ければ作れないので、写真の有無が境目。
+    /// ただし「続きから」で戻したまま何も変えていなければそのまま閉じる
+    /// （同じものが下書きに残っている）。
+    ///
+    /// 送るのは裏の係で、この画面に「送っている最中」は無い（投稿で即座に閉じる）
+    /// ——`.wait` はここからは出ない。
+    nonisolated static func leave(_ content: StoryComposerContent, restored: StoryComposerContent?) -> UnsavedLeave {
+        UnsavedLeave.decide(hasChanges: !content.shotIds.isEmpty && content != restored,
+                            isSaving: false)
+    }
+
     /// 「続きから」。**画像が読めなければ何も戻さない**
     private func restoreDraft() {
         let saved = drafts.shotImages()
@@ -818,6 +866,7 @@ struct StoryComposerView: View {
         durationSec = draft.durationSec
         keepInArchive = draft.archive == true
         message = nil
+        restoredContent = content
     }
 
 
@@ -901,4 +950,19 @@ struct StoryShot: Identifiable {
         self.imageSize = image?.size
         self.overlays = overlays
     }
+}
+
+/// 投稿画面を閉じると失うものの比べ物（`StoryComposerView.leave`）。
+/// 写真は並びの id で見る（画像そのものは比べない——戻した写真は id ごと
+/// 作り直すので、外して足し直せば別物になる）。
+///
+/// **`@MainActor` の型の中に置かない**（テストから呼べなくなる）。
+struct StoryComposerContent: Equatable {
+    var shotIds: [UUID]
+    var overlays: [[TextOverlay]]
+    var caption: String
+    var location: String
+    var song: Photo.Song?
+    var durationSec: Int
+    var archive: Bool
 }
