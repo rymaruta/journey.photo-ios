@@ -238,6 +238,18 @@ extension PhotoMapViewModel {
         L("\(count)枚", count == 1 ? "1 photo" : "\(count) photos")
     }
 
+    /// 「2地点」／「1 place」「2 places」。英語は1地点のとき単数形
+    nonisolated static func placeCountLabel(_ count: Int) -> String {
+        L("\(count)地点", count == 1 ? "1 place" : "\(count) places")
+    }
+
+    /// 範囲で絞っているときの帯「この範囲の写真 3枚・2地点」／「3 photos · 1 place here」。
+    /// 枚数と地点数は上の2つの関数で数える（単数形をここで書き直さない）
+    nonisolated static func areaCountLabel(photos: Int, places: Int) -> String {
+        L("この範囲の写真 \(photoCountLabel(photos))・\(placeCountLabel(places))",
+          "\(photoCountLabel(photos)) · \(placeCountLabel(places)) here")
+    }
+
     /// ピンの札の「この周辺の写真 3枚」
     nonisolated static func nearbyCountLabel(_ count: Int) -> String {
         L("この周辺の写真 \(count)枚", count == 1 ? "1 photo nearby" : "\(count) photos nearby")

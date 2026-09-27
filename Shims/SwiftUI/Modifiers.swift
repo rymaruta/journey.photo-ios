@@ -232,6 +232,7 @@ extension View {
     public func scaledToFit() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func scaledToFill() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineLimit(_ n: Int) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func truncationMode(_ mode: Text.TruncationMode) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// **nil は「制限しない」**（本物と同じ）。折りたたみの展開で使う
     public func lineLimit(_ n: Int?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineLimit(_ range: ClosedRange<Int>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
@@ -461,4 +462,8 @@ public struct EdgeInsets {
 public struct SubmitLabel {
     public static let done = SubmitLabel(), go = SubmitLabel(), send = SubmitLabel(),
                       search = SubmitLabel(), next = SubmitLabel(), `return` = SubmitLabel()
+}
+
+extension Text {
+    public enum TruncationMode: Sendable { case head, tail, middle }
 }
