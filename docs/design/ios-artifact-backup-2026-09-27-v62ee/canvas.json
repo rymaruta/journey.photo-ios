@@ -1,0 +1,581 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "01 ホーム",
+      "is_interactive": true
+    },
+    "PhotoDetail.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "02 写真の詳細",
+      "is_interactive": true
+    },
+    "TripBook.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "03 旅の一冊",
+      "is_interactive": true
+    },
+    "Map.dc.html": {
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "04 マップ",
+      "is_interactive": true
+    },
+    "MyPage.dc.html": {
+      "x": 1880,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "05 マイページ",
+      "is_interactive": true
+    },
+    "Search.dc.html": {
+      "x": 0,
+      "y": 1300,
+      "w": 390,
+      "h": 1080,
+      "title": "11 探す",
+      "is_interactive": true
+    },
+    "TagPhotos.dc.html": {
+      "x": 470,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "12 タグ・色・機材の写真",
+      "is_interactive": true
+    },
+    "SpotDetail.dc.html": {
+      "x": 940,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "13 スポット",
+      "is_interactive": true
+    },
+    "PhotoViewer.dc.html": {
+      "x": 1410,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "14 写真ビューア",
+      "is_interactive": true
+    },
+    "Notifications.dc.html": {
+      "x": 1880,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "15 お知らせ",
+      "is_interactive": true
+    },
+    "Trips.dc.html": {
+      "x": 2350,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "16 旅の記録",
+      "is_interactive": true
+    },
+    "PostSheet.dc.html": {
+      "x": 0,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "21 投稿の選択",
+      "is_interactive": true
+    },
+    "Upload.dc.html": {
+      "x": 470,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "22 新規投稿",
+      "is_interactive": true
+    },
+    "SongPicker.dc.html": {
+      "x": 940,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "23 曲を選ぶ",
+      "is_interactive": true
+    },
+    "StoryComposer.dc.html": {
+      "x": 1410,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "24 ストーリーを作る",
+      "is_interactive": true
+    },
+    "StoryViewer.dc.html": {
+      "x": 1880,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "25 ストーリー",
+      "is_interactive": true
+    },
+    "StoryInsights.dc.html": {
+      "x": 2350,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "26 ストーリーの反応",
+      "is_interactive": true
+    },
+    "UserProfile.dc.html": {
+      "x": 0,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "31 ユーザーのプロフィール",
+      "is_interactive": true
+    },
+    "ProfileEdit.dc.html": {
+      "x": 470,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "32 プロフィールの編集",
+      "is_interactive": true
+    },
+    "EditPhoto.dc.html": {
+      "x": 940,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "33 写真を編集",
+      "is_interactive": true
+    },
+    "FollowList.dc.html": {
+      "x": 1410,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "34 フォロー一覧",
+      "is_interactive": true
+    },
+    "Favorites.dc.html": {
+      "x": 1880,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "35 お気に入り",
+      "is_interactive": true
+    },
+    "Albums.dc.html": {
+      "x": 2350,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "36 アルバム",
+      "is_interactive": true
+    },
+    "Invite.dc.html": {
+      "x": 2820,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "37 アルバムの招待",
+      "is_interactive": true
+    },
+    "HighlightPlayer.dc.html": {
+      "x": 3290,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "38 ハイライト",
+      "is_interactive": true
+    },
+    "CloseFriends.dc.html": {
+      "x": 3760,
+      "y": 4140,
+      "w": 390,
+      "h": 844,
+      "title": "39 親しい友達",
+      "is_interactive": true
+    },
+    "SignIn.dc.html": {
+      "x": 0,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "41 ログイン",
+      "is_interactive": true
+    },
+    "LegalGate.dc.html": {
+      "x": 470,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "42 はじめる前に",
+      "is_interactive": true
+    },
+    "Settings.dc.html": {
+      "x": 940,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "43 設定",
+      "is_interactive": true
+    },
+    "ChangePassword.dc.html": {
+      "x": 1410,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "44 パスワードを変える",
+      "is_interactive": true
+    },
+    "BlockedUsers.dc.html": {
+      "x": 1880,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "45 ブロックした人",
+      "is_interactive": true
+    },
+    "DeleteAccount.dc.html": {
+      "x": 2350,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "46 アカウントの削除",
+      "is_interactive": true
+    },
+    "Report.dc.html": {
+      "x": 2820,
+      "y": 5440,
+      "w": 390,
+      "h": 844,
+      "title": "47 通報",
+      "is_interactive": true
+    },
+    "MapPlace.dc.html": {
+      "x": 2820,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "04b マップ（場所を選んだとき）",
+      "is_interactive": true
+    },
+    "DesignSystem.dc.html": {
+      "x": 0,
+      "y": -2200,
+      "w": 1240,
+      "h": 1780,
+      "title": "00 デザインシステム — 黒塗りの真鍮"
+    },
+    "StoryRings.dc.html": {
+      "x": 2820,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "27 ストーリーの輪",
+      "is_interactive": true
+    },
+    "StoryViewerPaused.dc.html": {
+      "x": 3290,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "25b 長押しで一時停止",
+      "is_interactive": true
+    },
+    "StoryViewerMenu.dc.html": {
+      "x": 3760,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "25c 「…」のメニュー",
+      "is_interactive": true
+    },
+    "StoryViewerReply.dc.html": {
+      "x": 4230,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "25d 返信を書く",
+      "is_interactive": true
+    },
+    "StoryMine.dc.html": {
+      "x": 4700,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "25e 自分のストーリー",
+      "is_interactive": true
+    },
+    "StoryDeleteConfirm.dc.html": {
+      "x": 5170,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "25f 削除の確認",
+      "is_interactive": true
+    },
+    "StoryReplies.dc.html": {
+      "x": 5640,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "26b 返信（自分）",
+      "is_interactive": true
+    },
+    "StoryComposerText.dc.html": {
+      "x": 6110,
+      "y": 2840,
+      "w": 390,
+      "h": 844,
+      "title": "24b 文字と札",
+      "is_interactive": true
+    },
+    "SpotPinOptions.dc.html": {
+      "x": 0,
+      "y": 6740,
+      "w": 1000,
+      "h": 900,
+      "title": "07 撮影スポットのピン"
+    },
+    "SiteMenu.dc.html": {
+      "x": 3290,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "01d メニュー（ハンバーガー）",
+      "is_interactive": true
+    },
+    "MyPageNoCover.dc.html": {
+      "x": 2350,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "05d マイページ（カバーなし）",
+      "is_interactive": true
+    },
+    "TripPlans.dc.html": {
+      "x": 2820,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "17 旅行プラン",
+      "is_interactive": true
+    },
+    "TripPlanDays.dc.html": {
+      "x": 3290,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "17b 旅行プランの日程",
+      "is_interactive": true
+    },
+    "TripPlanPick.dc.html": {
+      "x": 3760,
+      "y": 1300,
+      "w": 390,
+      "h": 844,
+      "title": "17c 行きたい場所から選ぶ",
+      "is_interactive": true
+    },
+    "VerifiedBadgeOptions.dc.html": {
+      "x": 0,
+      "y": 8160,
+      "w": 800,
+      "h": 860,
+      "title": "08 認証バッジ（真鍮の封印）"
+    },
+    "MapOptionA.dc.html": {
+      "x": 0,
+      "y": 9400,
+      "w": 390,
+      "h": 844,
+      "title": "04c 案A 地図｜スポット｜リスト（採用）",
+      "is_interactive": true
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-09-24T21:10:54.182Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "row0": {
+      "w": 240,
+      "x": 0,
+      "y": -260,
+      "text": "01 主要画面 — 黒塗りの真鍮を全画面に適用（つまみで橙 #F2A66B にも戻せる）",
+      "kind": "title1",
+      "maxW": 3680
+    },
+    "row1": {
+      "x": 0,
+      "y": 1040,
+      "text": "02 探す・発見",
+      "kind": "title1",
+      "maxW": 4150
+    },
+    "row2": {
+      "x": 0,
+      "y": 2580,
+      "text": "03 投稿・ストーリー",
+      "kind": "title1",
+      "maxW": 6500
+    },
+    "row3": {
+      "x": 0,
+      "y": 3880,
+      "text": "04 プロフィール・つながり",
+      "kind": "title1",
+      "maxW": 4150
+    },
+    "row4": {
+      "x": 0,
+      "y": 5180,
+      "text": "05 はじめる・安全・設定",
+      "kind": "title1",
+      "maxW": 3210
+    },
+    "row00": {
+      "x": 0,
+      "y": -2460,
+      "text": "00 デザインシステム（2026-09-25）",
+      "kind": "title1",
+      "maxW": 1240
+    },
+    "row6": {
+      "x": 0,
+      "y": 6480,
+      "text": "07 撮影スポットのピン（2026-09-26 決定）",
+      "kind": "title1",
+      "maxW": 1000
+    },
+    "menuNote": {
+      "x": 3290,
+      "y": 900,
+      "w": 390,
+      "text": "2026-09-26 owner: ヘッダーのハンバーガーは残す（サイトから外さない）。01・04・11 のヘッダーに足し、押した先をこの板にした。中身はサイトのメニューと同じ並び。",
+      "size": "s",
+      "maxH": 140
+    },
+    "coverNote": {
+      "x": 2350,
+      "y": 900,
+      "w": 390,
+      "size": "s",
+      "maxH": 220,
+      "text": "2026-09-26 owner: アプリにカバーを出す。カバーがある人は 05（帯 180pt・下は黒へ溶かす・アイコンが下端に重なる）。設定していない人は 05d——帯を出さず、灰色の空き地も置かない。31（他の人）も同じ決まり。"
+    },
+    "planNote": {
+      "x": 2820,
+      "y": 2170,
+      "w": 390,
+      "size": "s",
+      "maxH": 140,
+      "text": "2026-09-26: 旅行プラン（Web の /trips）を iOS に。17 一覧 → 17b 日程 → 17c 行きたい場所から選ぶ。項目は保存済みの行きたい場所からだけ（自由入力なし）。移動時間・費用・経路・AI・予約は作らない（計画書 §12）。出発・帰着は端末の日付ピッカーで、表示は 2026年12月24日 の形。"
+    },
+    "row7": {
+      "x": 0,
+      "y": 7900,
+      "text": "08 認証バッジ（2026-09-26 決定）",
+      "kind": "title1",
+      "maxW": 800
+    },
+    "badgeNote": {
+      "x": 880,
+      "y": 8160,
+      "w": 390,
+      "size": "s",
+      "maxH": 240,
+      "text": "2026-09-26 owner: A「真鍮の封印」に決定。丸田 竜平（@ryuhei）に付けた（本番の行・公開 API で verified: true を確認）。アプリは checkmark.seal.fill を墨と真鍮の2色、Web は同じ12山の封印を SVG で。付けられるのは運営だけ（保守の set-verified）。印の大きさは横の名前の字の8割（マイページ・人のページの名前 26 → 約21、写真の詳細 15 → 12）。"
+    },
+    "row8": {
+      "x": 0,
+      "y": 9140,
+      "text": "09 マップの切り替え（2026-09-27 決定: 案A）",
+      "kind": "title1",
+      "maxW": 1000
+    },
+    "mapOptNote": {
+      "x": 470,
+      "y": 9400,
+      "w": 390,
+      "size": "s",
+      "maxH": 620,
+      "fill": "orange",
+      "text": "2026-09-27 owner: 案A（地図｜スポット｜リスト）に決定。案B・案C の板は消した（控え: iOS リポジトリ docs/design/ios-artifact-backup-2026-09-27/）。\n\n足すもの（板 04 に反映するときに描く）:\n・スポットの行に「行きたい」ボタン（行きたい・旅行プランにつながる）\n・近い順／地域別の切り替え（現在地が無いときは地域別）\n・件数が少ないうちは「運営が確かめたスポットだけ載せています」の一言\n\n注意: 公開済みの撮影スポットはいま4件。スポットの確認・公開を進めるほど、この案が生きる。"
+    }
+  },
+  "order": [
+    "DesignSystem.dc.html",
+    "Main.dc.html",
+    "PhotoDetail.dc.html",
+    "TripBook.dc.html",
+    "Map.dc.html",
+    "MapPlace.dc.html",
+    "SiteMenu.dc.html",
+    "MyPage.dc.html",
+    "Search.dc.html",
+    "TagPhotos.dc.html",
+    "SpotDetail.dc.html",
+    "PhotoViewer.dc.html",
+    "Notifications.dc.html",
+    "Trips.dc.html",
+    "TripPlans.dc.html",
+    "TripPlanDays.dc.html",
+    "TripPlanPick.dc.html",
+    "PostSheet.dc.html",
+    "Upload.dc.html",
+    "SongPicker.dc.html",
+    "StoryComposer.dc.html",
+    "StoryViewer.dc.html",
+    "StoryInsights.dc.html",
+    "StoryRings.dc.html",
+    "StoryViewerPaused.dc.html",
+    "StoryViewerMenu.dc.html",
+    "StoryViewerReply.dc.html",
+    "StoryMine.dc.html",
+    "StoryDeleteConfirm.dc.html",
+    "StoryReplies.dc.html",
+    "StoryComposerText.dc.html",
+    "UserProfile.dc.html",
+    "ProfileEdit.dc.html",
+    "EditPhoto.dc.html",
+    "FollowList.dc.html",
+    "Favorites.dc.html",
+    "Albums.dc.html",
+    "Invite.dc.html",
+    "HighlightPlayer.dc.html",
+    "CloseFriends.dc.html",
+    "SignIn.dc.html",
+    "LegalGate.dc.html",
+    "Settings.dc.html",
+    "ChangePassword.dc.html",
+    "BlockedUsers.dc.html",
+    "DeleteAccount.dc.html",
+    "Report.dc.html",
+    "SpotPinOptions.dc.html",
+    "MyPageNoCover.dc.html",
+    "VerifiedBadgeOptions.dc.html",
+    "MapOptionA.dc.html"
+  ],
+  "pages": [],
+  "title": "journey.photo iOS"
+}
