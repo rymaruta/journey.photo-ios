@@ -129,4 +129,38 @@ final class StoryPostTests: XCTestCase {
         XCTAssertEqual(recorded.count, 1)
         XCTAssertNil(recorded.first ?? media, "古い目印を忘れていない")
     }
+
+    /// 片づけるのは**古い目印の鍵**（別の鍵を消さない）
+    func testDiscardsTheOldKey() async {
+        StubProtocol.respondInOrder([(200, "[]"), (500, #"{"error":"x"}"#)])
+        do {
+            try await service().post(job(uploaded: staleMedia), ownerId: "me", record: { _ in })
+        } catch {}
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/upload/discard")
+        let body = StubProtocol.lastBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        XCTAssertEqual(body?["key"] as? String, media.key)
+    }
+
+    /// 🔴 **片づけを 409 で断られたら、期限切れで一覧に出ないだけの1本が在る。**
+    /// 上げ直さずに送ったことにする（上げ直すと同じ投稿がもう1本出る）
+    func testOldMediaInUseCountsAsPosted() async throws {
+        StubProtocol.respondInOrder([(200, "[]"), (409, #"{"error":"使われています"}"#)])
+        try await service().post(job(uploaded: staleMedia), ownerId: "me", record: { _ in
+            XCTFail("目印を書き換えた")
+        })
+        XCTAssertEqual(StubProtocol.requestCount, 2, "上げ直した")
+    }
+
+    /// 片づけられたか分からない（503）ときは投げる（出ていたか分からないまま上げ直さない）
+    func testOldMediaUnclearDiscardThrows() async {
+        StubProtocol.respondInOrder([(200, "[]"), (503, #"{"error":"x"}"#)])
+        do {
+            try await service().post(job(uploaded: staleMedia), ownerId: "me", record: { _ in
+                XCTFail("目印を書き換えた")
+            })
+            XCTFail("投げていない")
+        } catch {}
+        XCTAssertEqual(StubProtocol.requestCount, 2)
+    }
 }

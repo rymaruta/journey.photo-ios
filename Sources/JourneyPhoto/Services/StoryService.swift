@@ -53,6 +53,8 @@ struct StoryService {
     /// 3. **届いたか分からない**失敗（通信・5xx・応答の読み違い）では画像を残す
     /// 4. 送り直しで目印があれば、**先に一覧を読んで同じ画像の自分の1本を探す**。
     ///    在れば出せていたので何もしない。無ければ上げ直さずに行だけ作る
+    /// 5. ただし目印が古ければ（`isFresh`）画像を片づけて上げ直す。片づけを 409 で
+    ///    断られたら、期限切れで一覧に出ないだけの1本が在るので、送ったことにする
     func post(_ job: StoryUploadCenter.Job, ownerId: String,
               record: @escaping @MainActor (UploadedMedia?) -> Void) async throws {
         let media: UploadedMedia
@@ -64,9 +66,11 @@ struct StoryService {
             if uploaded.isFresh() {
                 media = uploaded
             } else {
-                // 古い目印の画像は使わない（掃除で実体が消えている）。片づけてから上げ直す
-                // ——使われている鍵はサーバーが消さない（`discardUpload` が 409）
-                await uploads.discard(key: uploaded.key)
+                // 古い目印の画像は使わない（掃除で実体が消えている）。片づけてから上げ直す。
+                // **片づけを断られたら（409）、その画像はもう行に使われている**——期限が
+                // 切れて一覧に出ないだけで、前の回に出せていた。送ったことにする
+                // （上げ直すと、24時間出ていた1本と同じ投稿がもう1本出る）
+                if try await discardStale(key: uploaded.key) == .inUse { return }
                 await record(nil)
                 media = try await upload(imageData: job.imageData)
                 await record(media)
@@ -84,6 +88,26 @@ struct StoryService {
                 // 断られた＝行は出来ていない。画像を片づけ、次は上げ直す
                 await uploads.discard(key: media.key)
                 await record(nil)
+            }
+            throw error
+        }
+    }
+
+    private enum DiscardResult { case removed, inUse }
+
+    /// 古い目印の画像を片づける。**使われている鍵はサーバーが 409 で断る**
+    /// （`upload.ts` の `discardUpload`——写真とストーリーの行が指している鍵）。
+    /// 確かめられなかった（503・通信）ときは投げる——出ていたか分からないまま上げ直さない
+    private func discardStale(key: String) async throws -> DiscardResult {
+        struct Body: Encodable { let key: String }
+        do {
+            try await api.authorizedVoid(.delete, "/upload/discard", body: Body(key: key))
+            return .removed
+        } catch {
+            if case .server(let status, _)? = error as? APIError {
+                if status == 409 { return .inUse }
+                // 鍵の形を断られた等（400/403/404）は、行に使われていない
+                if (400..<500).contains(status) { return .removed }
             }
             throw error
         }
