@@ -1343,29 +1343,25 @@ struct PhotoMapView: View {
 
     // MARK: - カメラ
 
-    /// 人が替わったので読み直す
+    /// 人が替わったので読み直す。**札はすぐ下げる**——ここに来るのは画面に
+    /// 出ている（札の先の詳細を開いていない）ときだけで、読み込みを待つ間に
+    /// 前の人あての写真を次の人に見せない
     private func reloadForNewUser() {
         loadedUserRevision = hidden.userRevision
+        selected = nil
         Task {
             // 集合を自分で渡してから読む（`GalleryView.reloadHidden` と同じ理由）
             await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
                                                 photoIds: hidden.reportedPhotoIds)
             await model.load(environment: environment)
-            refreshSelected()
             dropHidden()
         }
     }
 
     /// 選んでいた札を、読み直したピンに差し替える（札は押した時点の写しなので、
-    /// そのままだと前の人あての写真を持ち続ける）。ピンが消えていれば札も出ない
-    /// （`stillShown`）
+    /// そのままだと前の人あての写真を持ち続ける）。ピンが消えていれば下げる
     private func refreshSelected() {
-        guard let pin = selected else { return }
-        if let fresh = model.pins.first(where: { $0.id == pin.id }) {
-            if fresh != pin { selected = fresh }
-        } else {
-            selected = nil
-        }
+        selected = PhotoMapViewModel.refreshed(selected, in: model.pins)
     }
 
     /// 手元のピンからブロック／通報したぶんを落とす。選んでいた札が

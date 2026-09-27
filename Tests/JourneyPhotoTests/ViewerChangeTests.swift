@@ -118,3 +118,28 @@ final class RestrictedLoaderSwapTests: XCTestCase {
         XCTAssertTrue(next.map(\.id).contains("p"))
     }
 }
+
+/// 地図の札を、人が替わったあとに読み直したピンへ差し替える（0ce69ea のレビュー）。
+/// `MapPin ==` は座標しか比べないので、中身が違っても「同じ」に見える
+final class MapPinRefreshTests: XCTestCase {
+
+    private func photo(_ id: String) throws -> Photo {
+        try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"\#(id)","src":"https://x/\#(id).jpg","coords":{"lat":35.0,"lng":139.0}}"#.utf8))
+    }
+
+    @MainActor
+    func testSamePlaceWithDifferentPhotosIsReplaced() async throws {
+        let before = MapPin.group([try photo("public"), try photo("for-a")])
+        let after = MapPin.group([try photo("public")])
+        XCTAssertEqual(before.count, 1)
+        let refreshed = PhotoMapViewModel.refreshed(before.first, in: after)
+        XCTAssertEqual(refreshed?.photos.map(\.id), ["public"], "前の人あての写真が札に残っている")
+    }
+
+    @MainActor
+    func testVanishedPinIsDropped() async throws {
+        let before = MapPin.group([try photo("for-a")])
+        XCTAssertNil(PhotoMapViewModel.refreshed(before.first, in: []))
+    }
+}

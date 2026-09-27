@@ -277,6 +277,8 @@ final class PushCenter: ObservableObject {
             guard self.userId == userId else { return }
             isRegistered = true
         } catch {
+            // 待っている間に人が替わった: 前の人の失敗を次の人の画面に出さない
+            guard self.userId == userId else { return }
             isRegistered = false
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("通知を受け取る設定にできませんでした", "Couldn't turn notifications on")
