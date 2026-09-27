@@ -550,8 +550,9 @@ struct MyPageView: View {
     private var wishlistArea: some View {
         // **撮影地から導いた地点**のうち、「行きたい」に入れたもの。
         // **公開一覧（`feed`）と自分の写真の両方から作る**——自分の写真だけだと、
-        // 他人の写真のスポット画面から入れた場所がここに出ない
-        let pool = Self.wishlistPool(own: model.photos, feed: feed)
+        // 他人の写真のスポット画面から入れた場所がここに出ない。
+        // **公開一覧はブロック・非表示を落としてから**（保存した写真と同じ `dropped`）
+        let pool = Self.wishlistPool(own: model.photos, feed: feed, hidden: dropped)
         let places = DerivedSpot.all(in: pool)
         let wanted = places.filter { wishIds.contains($0.slug) }
         // 台帳の撮影スポット（`SPOT-<slug>`）。索引と突き合わせて名前を引く。
@@ -731,9 +732,12 @@ struct MyPageView: View {
 
     /// 「行きたい」の地点を導く写真の集まり。自分の写真を先に、公開一覧を後に
     /// 並べ、**同じ写真は1枚に数える**（両方に載る自分の公開写真で枚数が倍にならない）。
-    nonisolated static func wishlistPool(own: [Photo], feed: [Photo]) -> [Photo] {
+    /// **公開一覧はブロックした人・非表示にした写真を落とす**——落とさないと、
+    /// その写真が地点の代表（表紙）になって画面に出る。自分の写真は落とさない
+    nonisolated static func wishlistPool(own: [Photo], feed: [Photo],
+                                         hidden: ModerationSnapshot) -> [Photo] {
         var seen = Set<String>()
-        return (own + feed).filter { seen.insert($0.id).inserted }
+        return (own + hidden.visible(feed)).filter { seen.insert($0.id).inserted }
     }
 
     /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。

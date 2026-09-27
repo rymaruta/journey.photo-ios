@@ -22,4 +22,23 @@ final class CloseFriendsBeyondPageTests: XCTestCase {
         XCTAssertEqual(rows.beyondPage, [])
         XCTAssertEqual(rows.others, ["b"])
     }
+
+    /// 51人目以降の名前引きは上限で止める。選んでいる人は上限を超えても必ず引く
+    func testLookupIsCappedButChosenAreAlwaysKept() {
+        let beyond = (51...500).map { "u\($0)" }
+        let picked = CloseFriendsView.beyondToLookUp(beyond, others: 3,
+                                                     chosen: ["u499", "u60"], cap: 10)
+        XCTAssertEqual(picked.count, 10 - 3)
+        XCTAssertTrue(picked.contains("u499"))
+        XCTAssertTrue(picked.contains("u60"))
+        // フォローした順のまま
+        XCTAssertEqual(picked, ["u51", "u52", "u53", "u54", "u55", "u60", "u499"])
+    }
+
+    /// 選んでいる人だけで上限を超えても、選んでいる人は落とさない
+    func testChosenExceedingTheCapAreAllKept() {
+        let picked = CloseFriendsView.beyondToLookUp(["a", "b", "c"], others: 5,
+                                                     chosen: ["a", "c"], cap: 4)
+        XCTAssertEqual(picked, ["a", "c"])
+    }
 }
