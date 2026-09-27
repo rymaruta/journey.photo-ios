@@ -101,10 +101,16 @@ struct JourneyPhotoApp: App {
     /// **取れた回だけ入れ替える。** 足すのではなく入れ替えるのは、
     /// 保存といいねが同じ入れ物を使っていた頃の端末に、**保存しただけの
     /// 写真の id が残っている**ため（足すだけだと出続ける）。
+    ///
+    /// **返ってくる間に人が替わっていたら書かない**（`replace(with:for:)`）。
+    /// 書くと、前の人のいいねが次の人の控えに入る
     private func syncLikes() async {
-        guard auth.userId != nil else { return }
+        guard let owner = auth.userId else { return }
         let ids = try? await environment.social.myLikedPhotoIds()
-        if let ids { favorites.replace(with: ids) }
+        // **いまのログインとも照らす。** ストアはまだ前の人を指していることがある
+        // （退会で控えを消した直後、`.task` が取り消される前に続きが戻る回）
+        guard !Task.isCancelled, auth.userId == owner, let ids else { return }
+        favorites.replace(with: ids, for: owner)
     }
 
     /// 保存した写真をサーバーに合わせる。
@@ -114,9 +120,10 @@ struct JourneyPhotoApp: App {
     /// ログアウトしたら控えは鍵ごと切り替わる（`use(userId:)`）ので、
     /// ここでは何もしない。
     private func syncSaves() async {
-        guard auth.userId != nil else { return }
+        guard let owner = auth.userId else { return }
         let ids = try? await environment.saves.mySaves()
-        if let ids { savedPhotos.replace(with: ids) }
+        guard !Task.isCancelled, auth.userId == owner, let ids else { return }
+        savedPhotos.replace(with: ids, for: owner)
     }
 
     var body: some Scene {
@@ -141,7 +148,38 @@ struct JourneyPhotoApp: App {
                 // **未ログインのときの鍵で読んだ控え**が見えたままになる
                 // （同じ端末を別の人が使うと、その人のハートとブロックが
                 //  こちらに出る——`FavoritesStore` が warn している事故そのもの）
-                .task(id: auth.userId) {
+                // 🔴 **投稿した本人でなくなったら、裏で送っている残りを捨てる**
+                // （別の人のアカウントで前の人のストーリーを出さない）。
+                // **ログインの確認が終わるまでは照らさない**——送り終えていない並びは
+                // 端末から戻るので、起動直後の「まだ分からない（nil）」で捨てると、
+                // 強制終了から戻した投稿が毎回消える。ログアウト（確認中→未ログイン）
+                // は `userId` が nil のまま変わらないので、`state` で見る
+                .task(id: auth.state) {
+                    let stories = environment.stories
+                    let auth = auth
+                    let drafts = storyDrafts
+                    StoryUploadCenter.shared.configure(
+                        currentUserId: { auth.userId },
+                        send: { job, record in
+                            guard let ownerId = auth.userId else { throw APIError.notAuthenticated }
+                            try await stories.post(job, ownerId: ownerId, record: record)
+                        },
+                        discardUpload: { key in await stories.discardUpload(key: key) },
+                        // 起動し直して送り終えたら、その投稿の元の下書きを片づける
+                        // （送っている間に保存し直した別の下書きは消さない）
+                        clearDraft: { stamp in
+                            if drafts.draft?.savedAt == stamp { drafts.clear() }
+                        })
+                    // 起動時に本人の ID が取れなかっただけのログアウト（`isSignedOutUncertain`）
+                    // でも捨てない——通知の宛先と同じ扱い。捨てると、圏外で起動した
+                    // だけで強制終了から戻した送信待ちが消え、「もう一度送る」も出ない
+                    guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
+                    StoryUploadCenter.shared.userChanged(to: auth.userId)
+                }
+                // **`userId` ではなく状態で見る。** 起動直後の確認中（unknown）も
+                // ログアウト（signedOut）も `userId` は nil で、確認が
+                // 「ログインしていない」に決まったときに走り直さない
+                .task(id: auth.state) {
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)
@@ -150,24 +188,33 @@ struct JourneyPhotoApp: App {
                     joinedAlbums.use(userId: auth.userId)
                     wishlist.use(userId: auth.userId)
                     storyDrafts.use(userId: auth.userId)
-                    // 🔴 投稿した本人でなくなったら、裏で送っている残りを捨てる
-                    // （別の人のアカウントで前の人のストーリーを出さない）
-                    StoryUploadCenter.shared.userChanged(to: auth.userId)
                     seenStories.use(userId: auth.userId)
                     // **通知の宛先も、人が変わったら預け直す**
                     // （外さないと、次にこの端末を使う人へ前の人あての
                     //  通知が届く）
                     AppDelegate.push = push
-                    await push.use(userId: auth.userId)
+                    // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
+                    // 「前の人の宛先が残っている」と見なして端末ごと外していた
+                    // 起動時に本人の ID が取れなかっただけのログアウトも同じ
+                    // （`AuthStore.isSignedOutUncertain`）
+                    if !auth.isResolving && !auth.isSignedOutUncertain {
+                        await push.use(userId: auth.userId)
+                    }
                     await applyModeration()
                     await applyRestrictedFeed()
                     await syncSaves()
                     await syncLikes()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
-                    if auth.userId != nil {
+                    if let owner = auth.userId {
+                        // **待っている間に手元で変えたら上書きしない**（設定で解除した
+                        // 直後に、解除前に始めた読み込みが戻して、また見えなくなっていた）
+                        // 見るのはブロックの変更の回数だけ（通報では止めない・
+                        // ブロックして解除した＝集合が元に戻った回もすり抜けない）
+                        let before = hidden.blockRevision
                         let blocks = try? await environment.moderation.blocks()
-                        if let blocks {
-                            hidden.replaceBlocked(with: blocks.blockedIds)
+                        if !Task.isCancelled, auth.userId == owner, hidden.blockRevision == before,
+                           let blocks {
+                            hidden.replaceBlocked(with: blocks.blockedIds, for: owner)
                             await applyModeration()
                         }
                     }

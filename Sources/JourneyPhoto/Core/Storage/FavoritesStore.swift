@@ -71,9 +71,18 @@ final class FavoritesStore: ObservableObject {
     /// 🔴 **入れ替える（足すのではない）理由。** 保存といいねが同じ入れ物を
     /// 使っていた頃の端末には、**保存しただけの写真の id がここに残っている**。
     /// 足すだけだと、その古い混ざりものが「いいねした写真」に出続ける。
-    func replace(with photoIds: [String]) {
+    ///
+    /// - Parameter owner: 取りに行ったときの人。**返ってくる間に人が替わって
+    ///   いたら書かない**（前の人のいいねを次の人の控えに書かない）
+    func replace(with photoIds: [String], for owner: String?) {
+        guard owner == userId else { return }
         ids = Set(photoIds)
         defaults.set(Array(ids), forKey: key(for: userId))
+    }
+
+    /// 退会した人の控えを消す（`AccountLocalData`）
+    func removeData(for userId: String) {
+        defaults.removeObject(forKey: key(for: userId))
     }
 
     func set(_ id: String, favorite: Bool) {

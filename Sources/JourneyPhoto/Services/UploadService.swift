@@ -13,9 +13,12 @@ import FoundationNetworking
 ///     2. PUT  <署名付き URL>          … S3 へ本体を置く
 ///     3. POST /upload/save            … DynamoDB に1行作る
 ///
-/// **2 と 3 の間で落ちたら S3 に迷子のファイルが残る。** そのときは
-/// `DELETE /upload/discard` で片付ける（`api-user/src/upload.ts` の
-/// `discardUpload`。保存済みの写真が使っているキーは消せないようになっている）。
+/// **2 と 3 の間で落ちたら S3 に迷子のファイルが残る。** ただし 3 の失敗は
+/// **その場では片付けない**——保存は通っていて応答だけ失われたのかもしれず、
+/// やり直しは同じ鍵で送る（`stage` の注記）。片付けるのは、本人がその写真を
+/// 諦めたとき（`DELETE /upload/discard`。`api-user/src/upload.ts` の
+/// `discardUpload`。保存済みの写真が使っているキーはふつう消せない。行の書き込みが
+/// 遅れている間は消えうる——`UploadViewModel` の deinit の注記）。
 struct UploadService {
 
     private let api: APIClient
@@ -113,7 +116,7 @@ struct UploadService {
 
     // MARK: - 後始末
 
-    /// 2 のあと 3 が失敗したときに呼ぶ。失敗しても投げない
+    /// 置いたが保存しない本体を片付ける（PUT の失敗・本人が諦めた写真）。失敗しても投げない
     /// ——後始末が転んだことで、利用者に出す本来のエラーを覆い隠さない。
     func discard(key: String) async {
         struct Body: Encodable { let key: String }
@@ -133,18 +136,27 @@ struct UploadService {
         }
     }
 
-    /// 1〜3 を通す。途中で落ちたら S3 の迷子を片付けてから投げ直す。
-    func upload(data: Data, fileName: String, fileType: String, draft: PhotoDraft) async throws -> Photo? {
+    /// 1 と 2（置き場所をもらって本体を置く）。**保存（3）はまだ。**
+    ///
+    /// 保存を分けてあるのは、🔴 **保存のやり直しを同じ鍵で送るため。**
+    /// 保存の応答が失われた（圏外・API Gateway の 29 秒）ときも、サーバーには
+    /// 行ができていることがある。以前は1〜3を毎回通していたので、やり直すと
+    /// 新しい鍵で2枚目の行ができていた。サーバーは写真の ID を鍵から導き
+    /// （`upload.ts` の `idFromUploadKey`）、同じ鍵の再保存を今回の内容で
+    /// 書き直して成功を返すので、**同じ鍵で送り直せば二重にならない**。
+    ///
+    /// PUT で落ちたら S3 の迷子を片付けてから投げ直す（行はまだ無い）。
+    func stage(data: Data, fileName: String, fileType: String) async throws -> PresignResponse {
         try Self.checkAcceptable(size: data.count, type: fileType)
 
         let presigned = try await presign(fileName: fileName, fileType: fileType, fileSize: data.count)
         do {
             try await put(data: data, to: presigned)
-            return try await save(draft, presigned: presigned)
         } catch {
             await discard(key: presigned.key)
             throw error
         }
+        return presigned
     }
 }
 

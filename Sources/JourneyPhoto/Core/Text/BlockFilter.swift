@@ -30,4 +30,11 @@ enum BlockFilter {
         guard !blocked.isEmpty else { return users }
         return users.filter { !blocked.contains($0.userId) }
     }
+
+    /// ストーリーを見た人（`GET /stories/{id}/viewers`）。行からその人のページへ行き、
+    /// そこでブロックできる
+    static func viewers(_ viewers: [StoryViewer], blocked: Set<String>) -> [StoryViewer] {
+        guard !blocked.isEmpty else { return viewers }
+        return viewers.filter { !blocked.contains($0.userId) }
+    }
 }

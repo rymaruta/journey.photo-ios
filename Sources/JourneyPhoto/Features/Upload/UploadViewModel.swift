@@ -54,6 +54,8 @@ final class UploadViewModel: ObservableObject {
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
         didSet {
+            // 送信の後始末で選択を直しただけ（`setSelectionQuietly`）なら読み直さない
+            guard !isSettingSelectionQuietly else { return }
             // **前の読み込みを捨ててから始める。** 重ねると、外したはずの
             // 写真まで待ち行列に残って一緒に投稿される
             loadTask?.cancel()
@@ -88,7 +90,7 @@ final class UploadViewModel: ObservableObject {
     @Published var groupsAsOnePost = false
 
     /// この回の束の印。**送り始めるときに1つだけ作る**
-    private var groupId: String?
+    private(set) var groupId: String?
     /// 何回目の選択か。選び直した後に、前の読み込みの結果を混ぜないための目印
     private var pickGeneration = 0
 
@@ -98,6 +100,9 @@ final class UploadViewModel: ObservableObject {
     /// 間に「送信中… 0 / 2 枚目」と「残りをやめる」が出る
     @Published private(set) var isWorking = false
     @Published private(set) var isLoadingPicked = false
+    /// カメラで撮った写真を整えている枚数。**整え終わるまで投稿させない**
+    /// （押すと、撮った1枚だけが待ち行列に入る前に送信が始まり、画面に残る）
+    @Published private(set) var preparingCaptures = 0
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
     /// だけでは閉じない——選び直しの読み込み中も空になる）
     @Published private(set) var didPostAll = false
@@ -115,12 +120,38 @@ final class UploadViewModel: ObservableObject {
     private var cancelled = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
     private var loadTask: Task<Void, Never>?
+    /// 読めなかったライブラリの写真の印。**それだけでは読み直さない**——
+    /// 新しく選び足したときに一緒に読み直す（`loadPicked` の注記）
+    private var unreadable: Set<PhotosPickerItem> = []
+    /// 前の送信で曲を付けられなかった枚数で、**まだ知らせに出ているもの**。
+    /// 撮った写真が整って知らせを言い直すときに引き継ぐ（`UploadSummary.afterCapture`）
+    /// ——その写真はもう並びに居ないので、消すと二度と伝わらない
+    private var songFailuresShown = 0
+    /// `pickerItems` を中から直している最中（`setSelectionQuietly`）
+    private var isSettingSelectionQuietly = false
+    /// 本体まで置けて、保存がまだ通っていない写真（`UploadService.stage` の注記）
+    private let staged = StagedUploads()
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
         self.uploads = uploads
         self.albumService = albums
         self.photoService = photos
         self.discovery = discovery
+    }
+
+    /// **閉じたら、保存しなかった本体を片付ける。** 保存の失敗では片付けない
+    /// （やり直しで同じ鍵を使う）ので、諦めて閉じた分はここで消す。
+    /// 保存が実は通っていた鍵は、ふつうはサーバーが消さない（`discardUpload`）。
+    /// ただし行の書き込みが遅れている間（API Gateway の 29 秒で切れたあとも
+    /// Lambda は続く・利用者の索引は結果整合）は消えうる——窓は、保存の失敗の
+    /// たびに消していた以前より狭い。塞ぐならサーバー側（確かめていない）
+    deinit {
+        let keys = staged.removeAll()
+        guard !keys.isEmpty else { return }
+        let uploads = self.uploads
+        Task {
+            for key in keys { await uploads.discard(key: key) }
+        }
     }
 
     /// アルバムは無いことの方が多い。**取れなくても投稿は止めない。**
@@ -141,7 +172,7 @@ final class UploadViewModel: ObservableObject {
     }
 
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
-    var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked }
+    var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 }
 
     /// 写真の座標から撮影地を引いて、**空のときだけ**入れる。
     ///
@@ -179,25 +210,57 @@ final class UploadViewModel: ObservableObject {
     /// 機材名も付かない）。それでも `ImagePreparer` を通すのは、
     /// 1920px への縮小と「残っていないことの確認」を1か所に寄せるため。
     func accept(capturedJPEG data: Data) {
-        do {
-            let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
-            append(prepared)
-            errorMessage = nil
-        } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")
+        preparingCaptures += 1
+        Task { [weak self] in
+            let result = await Self.prepareOffMain(data)
+            guard let self else { return }
+            self.preparingCaptures -= 1
+            switch result {
+            case .success(let prepared):
+                self.append(prepared)
+                // **読めなかったライブラリの写真が選ばれたままなら、それを言い直す。**
+                // ただ消すと、その写真が抜けていることが二度と出ない（写真を外しても
+                // 読み直さない）。前の知らせを残すと、撮り直しで直ったカメラの失敗や
+                // 「全部読めなかった」の文言が、今の状態と合わないまま残る
+                self.errorMessage = UploadSummary.afterCapture(unreadable: self.unreadable.count,
+                                                               songFailures: self.songFailuresShown)
+            case .failure(let error):
+                self.songFailuresShown = 0
+                self.errorMessage = (error as? LocalizedError)?.errorDescription
+                    ?? L("写真を読み込めませんでした", "Couldn't load the photo")
+            }
         }
     }
 
+    /// 🔴 **画像を整えるのは画面の処理（MainActor）の外で。** 縮小・JPEG への
+    /// 焼き直し・読み直しての確認・代表色で、1枚に数百ミリ秒かかる。10枚選ぶと
+    /// その間ずっと画面が止まっていた
+    private static func prepareOffMain(_ data: Data) async -> Result<ImagePreparer.Prepared, Error> {
+        await Task.detached(priority: .userInitiated) {
+            Result { try ImagePreparer.prepare(data: data, fileName: "photo") }
+        }.value
+    }
+
     func remove(_ photoId: UUID) {
+        // 送っている間は外さない（ボタンの `.disabled` は次の描画まで効かない）。
+        // 保存の最中に本体を片付けると、通った行の画像が割れる
+        guard !isWorking else { return }
         placeTasks[photoId]?.cancel()
         placeTasks[photoId] = nil
+        discardStaged(photoId)
         let removed = items.first { $0.id == photoId }
         items.removeAll { $0.id == photoId }
         // **ライブラリの選択からも外す。** 残すと、次に「追加」を開いたときに
         // 選ばれたままで、閉じると外したはずの写真が戻ってくる
         if let key = removed?.pickerItem {
+            // **ここは読み直しを通す**（`setSelectionQuietly` にしない）。
+            // 走り出す前の読み込みの取り消しを didSet に任せている。読めなかった
+            // 写真は読み直さない（`unreadable`）ので、知らせは消えない
             pickerItems.removeAll { $0 == key }
         }
+        // **最後の1枚を外したら束の印も捨てる。** カメラの分（印なし）は上の
+        // 読み直しを通らないので、ここで捨てないと次に撮った写真が前の投稿の束に入る
+        if items.isEmpty { groupId = nil }
     }
 
     /// 選ばれた写真を読み、**その場で EXIF を落とす**。
@@ -212,17 +275,22 @@ final class UploadViewModel: ObservableObject {
         // 以前は丸ごと入れ替えていて、「追加」を押すと打った題やカメラで撮った
         // 分まで消えていた（2026-09-26 のレビュー）
         let diff = PickerReconcile.reconcile(existing: items.map(\.pickerItem), picked: picked)
+        // 🔴 **本当に選び足したときだけ読む。** 読めなかった写真の扱いは `toLoad` の注記
+        let plan = PickerReconcile.toLoad(added: diff.added, picked: picked, unreadable: unreadable)
+        unreadable = plan.unreadable
+        let added = plan.load
         let dropped = zip(items, diff.keep).filter { !$0.1 }.map { $0.0.id }
         for id in dropped {
             placeTasks[id]?.cancel()
             placeTasks[id] = nil
+            discardStaged(id)
         }
         items.removeAll { dropped.contains($0.id) }
         // **束の印を捨てるのは、前の写真が1枚も残らないときだけ。** 「追加」は
         // 前の写真を残すので、押し直しで公開済みの分と同じ投稿に入るべき
         // （印を捨てると、途中まで上がった投稿が2つに割れる）
         if items.isEmpty { groupId = nil }
-        guard !diff.added.isEmpty else { return }
+        guard !added.isEmpty else { return }
 
         // 🔴 **選び直しの競合。** 前の読み込みは取り消されても `await` から戻ってくる。
         // 戻った先で確かめずに足すと、選び直した一覧に外したはずの写真が混ざり、
@@ -231,30 +299,42 @@ final class UploadViewModel: ObservableObject {
         let generation = pickGeneration
         isLoadingPicked = true
         errorMessage = nil
+        songFailuresShown = 0
         didPostAll = false
         defer { if generation == pickGeneration { isLoadingPicked = false } }
 
-        var failed = 0
-        for item in diff.added {
+        var failedItems: [PhotosPickerItem] = []
+        for item in added {
             if Task.isCancelled { return }
             do {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
-                    failed += 1
+                    failedItems.append(item)
                     continue
                 }
                 // 読んでいる間に選び直されたら、この結果は捨てる
                 guard !Task.isCancelled, generation == pickGeneration else { return }
                 // **`itemIdentifier` をファイル名にしない。** スラッシュを含む
                 // 端末内部の ID で、キーの組み立てを壊す。拡張子は
-                // `ImagePreparer` が .jpg に付け替える
-                append(try ImagePreparer.prepare(data: data, fileName: "photo"), pickerItem: item)
+                // `ImagePreparer` が .jpg に付け替える。整えるのは画面の処理の外で
+                let result = await Self.prepareOffMain(data)
+                // 整えている間に選び直されたら、この結果は捨てる
+                guard !Task.isCancelled, generation == pickGeneration else { return }
+                switch result {
+                case .success(let prepared):
+                    append(prepared, pickerItem: item)
+                case .failure:
+                    failedItems.append(item)
+                }
             } catch {
-                failed += 1
+                failedItems.append(item)
             }
         }
 
         // 取り消された回の「読めなかった」は嘘になる（新しい回が読み直している）
         guard !Task.isCancelled, generation == pickGeneration else { return }
+        // 覚えるのは最後まで走った回の失敗だけ（取り消しで落ちた分は読めないのではない）
+        unreadable.formUnion(failedItems)
+        let failed = failedItems.count
         if failed > 0 {
             // **黙って減らさない。** 「なぜか1枚少ない」まま公開させない
             errorMessage = items.isEmpty
@@ -288,13 +368,20 @@ final class UploadViewModel: ObservableObject {
         // 🔴 **二度押しで二重に出さない**（`StoryComposerView.post` と同じ穴）。
         // ボタンの `.disabled` は次の描画まで効かず、素早い2回押しで
         // `submit()` が2本走る
-        guard !isWorking, !items.isEmpty else { return }
+        // 読み込み中・整え中も止める（`canSubmit`）——ボタンの `.disabled` だけに頼らない
+        guard canSubmit else { return }
         isWorking = true
         errorMessage = nil
         cancelled = false
+        songFailuresShown = 0
+        // 🔴 **送っている途中でアプリを離れても、少しのあいだ続けさせてもらう。**
+        // 無いと裏に回った数秒後に止められ、戻ったときには通信が切れて失敗になる。
+        // 時間切れ（30秒ほど）でも落ちた写真は画面に残り、やり直しは同じ鍵で送る
+        let background = BackgroundWindow(name: "photo-upload")
         defer {
             isWorking = false
             uploadingIndex = 0
+            background.end()
         }
 
         groupId = UploadGrouping.groupIdForSubmit(current: groupId, grouping: groupsAsOnePost,
@@ -324,7 +411,13 @@ final class UploadViewModel: ObservableObject {
 
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
+        let postedKeys = items.filter { done.contains($0.id) }.map(\.pickerItem)
         items.removeAll { done.contains($0.id) }
+        // 🔴 **ライブラリの選択からも外す。** 残すと、残った1枚を外す・「追加」で
+        // 選び足す、のどちらでも選び直しの差分が投稿済みの写真を「新しく選ばれた」
+        // と読み、**同じ写真をもう一度読み込んで上げる**（`remove` と同じ理由）
+        let remaining = PickerReconcile.dropPosted(picked: pickerItems, posted: postedKeys)
+        if remaining.count != pickerItems.count { setSelectionQuietly(remaining) }
         // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
         // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
         if items.isEmpty && failures.isEmpty {
@@ -335,6 +428,7 @@ final class UploadViewModel: ObservableObject {
             } else {
                 errorMessage = UploadSummary.message(done: done.count, failures: failures,
                                                      cancelled: cancelled, songFailures: songFailures)
+                songFailuresShown = songFailures
             }
             // **どちらにしても選択は捨てる。** 残すと `pickerItems` に
             // 投稿済みの写真が選ばれたまま残り、次に写真を選び直した瞬間に
@@ -344,6 +438,7 @@ final class UploadViewModel: ObservableObject {
         } else {
             errorMessage = UploadSummary.message(done: done.count, failures: failures,
                                                  cancelled: cancelled, songFailures: songFailures)
+            songFailuresShown = songFailures
         }
     }
 
@@ -373,12 +468,22 @@ final class UploadViewModel: ObservableObject {
         draft.albumId = selectedAlbumId
         draft.groupId = groupId
 
-        let photo = try await uploads.upload(
-            data: item.prepared.data,
-            fileName: item.prepared.fileName,
-            fileType: item.prepared.contentType,
-            draft: draft
-        )
+        // 🔴 **やり直しは前回の鍵で保存する**（`UploadService.stage` の注記）。
+        // 保存が落ちた写真は本体を置き直さない——新しい鍵で送ると、前回の保存が
+        // 実は通っていたときに同じ写真が2枚になる
+        let presigned: UploadService.PresignResponse
+        if let already = staged[item.id] {
+            presigned = already
+        } else {
+            presigned = try await uploads.stage(
+                data: item.prepared.data,
+                fileName: item.prepared.fileName,
+                fileType: item.prepared.contentType
+            )
+            staged[item.id] = presigned
+        }
+        let photo = try await uploads.save(draft, presigned: presigned)
+        staged[item.id] = nil
         // **曲は保存のあと。** `POST /upload/save` は song を受け取らない
         // ので、`PUT /photos/{id}` で付ける。ここが落ちても写真は
         // 上がっているので、投稿そのものは失敗にしない
@@ -392,6 +497,26 @@ final class UploadViewModel: ObservableObject {
             }
         }
         return true
+    }
+
+    /// 選択から印を外すだけで、**読み直しを起こさない。**
+    ///
+    /// didSet を通しても、今は読めなかった写真を読み直さない（`unreadable`）が、
+    /// 送信の後始末で走らせる理由も無い（一部だけ上がった回の「残りは投稿できて
+    /// いません」を、読み込みの知らせで消しかけた経緯がある）。
+    /// **送信の後始末専用。** 送信中は選び直せないので、走っている読み込みは無い
+    private func setSelectionQuietly(_ selection: [PhotosPickerItem]) {
+        isSettingSelectionQuietly = true
+        defer { isSettingSelectionQuietly = false }
+        pickerItems = selection
+    }
+
+    /// 置いたまま保存していない本体を片付ける（本人がその写真を外した）
+    private func discardStaged(_ photoId: UUID) {
+        guard let presigned = staged[photoId] else { return }
+        staged[photoId] = nil
+        let uploads = self.uploads
+        Task { await uploads.discard(key: presigned.key) }
     }
 
     private func reset() {
@@ -414,8 +539,76 @@ final class UploadViewModel: ObservableObject {
     }
 }
 
+/// 裏に回っても続けさせてもらう窓（`beginBackgroundTask`）。
+/// **必ず閉じる**——閉じ忘れると、時間切れで OS にアプリごと止められる
+@MainActor
+final class BackgroundWindow {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    init(name: String) {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            // 時間切れ。送信は止まるが、ここで閉じないと OS に止められる。
+            // 呼ばれるのは主スレッド（SDK の版によって型に書いていないので明示する）
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
+    }
+}
+
+/// 置いたが保存していない本体の控え（写真ごと）。
+///
+/// **MainActor に縛らない箱に入れる**のは、画面のモデルが消えるとき（`deinit`）
+/// にも読むため。触るのは MainActor の上だけ
+final class StagedUploads: @unchecked Sendable {
+    private var byPhoto: [UUID: UploadService.PresignResponse] = [:]
+
+    subscript(photoId: UUID) -> UploadService.PresignResponse? {
+        get { byPhoto[photoId] }
+        set { byPhoto[photoId] = newValue }
+    }
+
+    /// 全部を取り出して空にする。返すのは片付ける鍵
+    func removeAll() -> [String] {
+        let keys = byPhoto.values.map(\.key)
+        byPhoto = [:]
+        return keys
+    }
+}
+
 /// 新規投稿の「追加」（ライブラリの選び直し）の差分。画面の状態を持たない計算だけ
 enum PickerReconcile {
+
+    /// 選び直しで**読む写真**と、読んでいる間の「読めなかった」控え。
+    ///
+    /// **本当に選び足したときだけ読む**（読めなかった分だけなら読まない）。
+    /// 読めなかった写真は選択に残り待ち行列には居ないので、差分では毎回
+    /// 「新しく選ばれた分」に見える。それだけで読むと、写真を外すたびに読み直して
+    /// `errorMessage` を消し、「送れなかった」の知らせを読み込みの失敗で上書きしていた。
+    ///
+    /// **選び足したときは、読めなかった分も一緒に読み直す**——外すと、一時的な
+    /// 失敗（iCloud・圏外）が直らないまま知らせも消え、1枚少ないまま投稿できる。
+    ///
+    /// **読む分は控えから外して返す。** 失敗は最後まで走った回だけが戻す——途中で
+    /// 取り消された回の分は、次の回で新しい写真として読み直される（控えに残すと、
+    /// 次の回が「新しい写真なし」で帰り、知らせも無いまま落ちる）。読めた写真も残らない
+    static func toLoad<Key: Hashable>(added: [Key], picked: [Key], unreadable: Set<Key>)
+        -> (load: [Key], unreadable: Set<Key>) {
+        let stillPicked = unreadable.intersection(picked)
+        let fresh = added.filter { !stillPicked.contains($0) }
+        guard !fresh.isEmpty else { return ([], stillPicked) }
+        return (added, stillPicked.subtracting(added))
+    }
+
+    /// 投稿済みの写真の印を選択から外す。カメラの分（nil）は選択に居ないので関係ない
+    static func dropPosted<Key: Hashable>(picked: [Key], posted: [Key?]) -> [Key] {
+        let gone = Set(posted.compactMap { $0 })
+        return picked.filter { !gone.contains($0) }
+    }
 
     /// 選び直しの差分。**残す印と、新しく読む印**を返す。
     ///

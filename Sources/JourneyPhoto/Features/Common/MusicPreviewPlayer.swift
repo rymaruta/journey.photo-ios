@@ -40,18 +40,18 @@ final class MusicPreviewPlayer: ObservableObject {
     /// 場（`.playback`）を持ったまま返していないか。閲覧画面が開いている間に
     /// 止めた曲の場を、閉じたとき（`endStoryViewing`）に返すために覚えておく
     private var sessionHeld = false
-    /// 鳴り終わりの見張り。**外さないと積み上がる**
-    private var endObserver: NSObjectProtocol?
+    /// 鳴り終わり・途中で途切れたときの見張り。**外さないと積み上がる**
+    private var endObservers: [NSObjectProtocol] = []
 
     private init() {}
 
     deinit { removeEndObserver() }
 
     private func removeEndObserver() {
-        if let endObserver {
-            NotificationCenter.default.removeObserver(endObserver)
-            self.endObserver = nil
+        for observer in endObservers {
+            NotificationCenter.default.removeObserver(observer)
         }
+        endObservers = []
     }
 
     func isPlaying(_ url: URL?) -> Bool {
@@ -125,7 +125,7 @@ final class MusicPreviewPlayer: ObservableObject {
         // (2) `.playback` で奪った場を返さないので、**他のアプリの音楽が
         // 二度と戻らない**——止めるつもりで押した人しか回復できない
         removeEndObserver()
-        endObserver = NotificationCenter.default.addObserver(
+        endObservers.append(NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player.currentItem,
             queue: .main
@@ -136,7 +136,20 @@ final class MusicPreviewPlayer: ObservableObject {
             } else {
                 self?.stop()
             }
-        }
+        })
+        // **途中で再生に失敗したときも止める。** そのときは
+        // 鳴り終わりの知らせは来ないので、ボタンが「一時停止」のまま固まり、
+        // 奪った場（`.playback`）も返さない＝他のアプリの音楽が戻らない。
+        // ループ中でも鳴らし直さない（同じ理由でまた落ちるだけ）。
+        // ⚠️ 回線が細って止まる（stalled）・読み込みの時点で失敗する（status .failed）
+        // はこの知らせを出さないので、ここでは拾えない（実機で未確認）
+        endObservers.append(NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stop()
+        })
         player.play()
     }
 
@@ -163,6 +176,9 @@ final class MusicPreviewPlayer: ObservableObject {
     /// （他のアプリの音楽が戻らない）。作り直しで新旧が前後しても札が別なので崩れない
     private var storyViewers: Set<UUID> = []
     var activeStoryViewers: Int { storyViewers.count }
+
+    /// 鳴らしている項目（テスト用に読める。途切れた知らせを送る相手）
+    var currentItem: AVPlayerItem? { player?.currentItem }
 
     /// 返す予約が残っているか（テスト用に読める）
     var hasPendingRelease: Bool { deactivateTask != nil }

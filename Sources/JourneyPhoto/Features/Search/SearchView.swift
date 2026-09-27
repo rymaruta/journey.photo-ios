@@ -13,6 +13,13 @@ struct SearchView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = SearchViewModel()
     @State private var query = ""
+    /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
+    /// （`GalleryView` と同じ形）
+    @State private var isOnScreen = false
+    /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
+    @State private var needsReload = false
+    /// 人の結果から落とす「見せない」の写し。**画面に出ている間だけ取り直す**
+    @State private var dropped = ModerationSnapshot()
 
     var body: some View {
         ScrollView {
@@ -54,20 +61,46 @@ struct SearchView: View {
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
-        .task { await model.loadPhotos(environment: environment) }
+        // 最初の読み込みと、**限定公開の読み出し口が替わったとき**（ログアウト・
+        // 別の人のログイン）の読み直し。替わった後に届くので前の人の口を通らない
+        .task {
+            for await epoch in await environment.gallery.restrictedChanges() {
+                await model.loadPhotos(environment: environment, epoch: epoch)
+            }
+        }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }
         // **ブロック／通報の直後に消す。** `loadPhotos` は
         // `guard allPhotos.isEmpty` で二度と読まない作りなので、
         // 控えを捨ててから読み直す
+        //
+        // 🔴 **詳細・人のページを開いている間は読み直さない。** 読み直すと押した元の
+        // 写真・人が結果から消え、開いている画面がその場で閉じる（通報シートの
+        // ブロック失敗の文言も一緒に消える）。戻ってきたとき（`onAppear`）に読み直す
         .onChange(of: hidden.revision) { _, _ in
-            Task {
-                await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
-                                                    photoIds: hidden.reportedPhotoIds)
-                await model.reloadPhotos(environment: environment, hidden: hidden.snapshot)
-                await model.search(query, environment: environment)
+            if isOnScreen {
+                dropped = hidden.snapshot
+                reloadHidden()
+            } else {
+                needsReload = true
             }
+        }
+        .onAppear {
+            isOnScreen = true
+            dropped = hidden.snapshot
+            if needsReload { reloadHidden() }
+        }
+        .onDisappear { isOnScreen = false }
+    }
+
+    private func reloadHidden() {
+        needsReload = false
+        Task {
+            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
+                                                photoIds: hidden.reportedPhotoIds)
+            await model.reloadPhotos(environment: environment, hidden: hidden.snapshot)
+            await model.search(query, environment: environment)
         }
     }
 
@@ -184,7 +217,10 @@ struct SearchView: View {
     private var tagChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(model.tagCounts, id: \.tag) { item in
+                // 0枚のチップは出さない。**ただし選んでいるものは残す**——カテゴリで
+                // 0 になったとき、押して外す手立てが消える
+                ForEach(model.tagChips.filter { $0.count > 0 || TagChoices.key(query) == TagChoices.key($0.tag) },
+                        id: \.tag) { item in
                     chip("\(item.tag)  \(item.count)",
                          selected: TagChoices.key(query) == TagChoices.key(item.tag)) {
                         query = TagChoices.key(query) == TagChoices.key(item.tag) ? "" : item.tag
@@ -519,9 +555,10 @@ struct SearchView: View {
     @ViewBuilder
     private var results: some View {
         // 人は写真より先に出す（名前で探しているなら、それが目当て）。
-        // ブロックした人は出さない（`/users/search` はブロックを知らない）
-        let users = model.scope.showsPeople
-            ? BlockFilter.users(model.users, blocked: hidden.blockedUserIds) : []
+        // ブロックした人は出さない（`/users/search` はブロックを知らない）。
+        // **写しで落とす**——描くたびに今の集合で絞ると、人のページでブロックした瞬間に
+        // 元の行が消え、そのページが閉じる
+        let users = model.scope.showsPeople ? dropped.users(model.users) : []
         if !users.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text(L("人", "People"))
@@ -648,15 +685,29 @@ final class SearchViewModel: ObservableObject {
     var shown: [Photo] {
         // 打っていないときは全部（タグ／撮影地はその欄を持つ写真）、
         // 打っているときは種類ごとの欄に当てる（`SearchScope`）
+        return sort.apply(filtered(query: query))
+    }
+
+    /// タグのチップと、**押したときに出る枚数**（0 もそのまま持つ。出すかどうかは画面）。
+    ///
+    /// 並びと候補は `tagCounts`（タグを持つ写真の数）で決め、数は押した後の
+    /// 結果（`shown` と同じ絞り方）で出す。「すべて」「写真」はタグの語を題・
+    /// 撮影地にも当てる（`SearchScope`）ので、タグの数を出すと「山 1」を押して
+    /// 富士山・山中湖の写真まで出て数が合わなかった。
+    /// **打鍵ごとには数え直さない**——一覧・種類・カテゴリが変わったときだけ
+    /// （`refreshTagChips`）。描くたびに数えると、12語×全写真の文字の畳み込みが走る
+    @Published private(set) var tagChips: [(tag: String, count: Int)] = []
+
+    private func refreshTagChips() {
+        tagChips = tagCounts.map { (tag: $0.tag, count: filtered(query: $0.tag).count) }
+    }
+
+    /// `shown` の絞り方（並べ替えの前まで）
+    private func filtered(query: String) -> [Photo] {
         let base = scope.photos(allPhotos, query: query)
-        let byCategory: [Photo]
-        if let category {
-            let key = CategoryChoices.key(category)
-            byCategory = base.filter { CategoryChoices.key($0.category ?? "") == key }
-        } else {
-            byCategory = base
-        }
-        return sort.apply(byCategory)
+        guard let category else { return base }
+        let key = CategoryChoices.key(category)
+        return base.filter { CategoryChoices.key($0.category ?? "") == key }
     }
 
     /// いま打っている文字（`shown` の出し分けに使う）。
@@ -679,7 +730,10 @@ final class SearchViewModel: ObservableObject {
         DiscoverySections.seasonalTags().map { "#\($0)" }.joined(separator: " ")
     }
 
-    func select(scope: SearchScope) { self.scope = scope }
+    func select(scope: SearchScope) {
+        self.scope = scope
+        refreshTagChips()
+    }
 
     func select(category: String?) {
         // 押し直したら外す
@@ -689,6 +743,7 @@ final class SearchViewModel: ObservableObject {
         } else {
             self.category = category
         }
+        refreshTagChips()
     }
 
     func select(sort: GallerySort) { self.sort = sort }
@@ -705,8 +760,45 @@ final class SearchViewModel: ObservableObject {
     /// ——取り消した回の返事が後から届いても捨てる
     private var searchGeneration = 0
 
-    func loadPhotos(environment: AppEnvironment) async {
-        guard allPhotos.isEmpty else { return }
+    /// どの読み出し口の回で読んだか（`PublicGalleryService.restrictedEpoch`）
+    /// 最後に知らされた読み出し口の回（`restrictedChanges`）
+    private var loadedEpoch: Int?
+    /// **手元の一覧を作った回**（サービスが返す）。画面が知らされた回ではなく、
+    /// 一覧の中身が誰の読み出し口で読まれたかで「前の人の一覧か」を見分ける。
+    /// 知らせより先に読み直しが終わると、画面の回は nil のままでも、中身は
+    /// 前の人（切り替え前）の限定公開を含みうる
+    private var listEpoch: Int?
+
+    func loadPhotos(environment: AppEnvironment, epoch: Int) async {
+        // **2つを分けて見る。**
+        // - 人が替わった（知らされた回が進んだ）→ 画面の選択を片づける
+        // - 一覧が古い（一覧を作った回が今の回より前）→ 一覧を捨てて読み直す
+        // 新しい人の一覧が知らせより先に届くことがある（ブロックの差し替えで
+        // 読み直しが先に走る）。一覧の古さだけで決めると、そのとき選択が残った
+        // まだ知らされていない（最初の知らせ）ときは、手元の一覧の回と比べる
+        // ——知らせより先に読み直しが一覧を埋め、その一覧でカテゴリを選んだ後に
+        // 人が替わると、最初の知らせで選択が外れなかった
+        let switched = (loadedEpoch ?? listEpoch).map { $0 < epoch } ?? false
+        let stale = listEpoch.map { $0 < epoch } ?? false
+        // 回は戻さない（2回続けて替わった後に古い知らせが届いても、古い一覧を通さない）
+        loadedEpoch = max(loadedEpoch ?? epoch, epoch)
+        if switched {
+            // 選んでいたカテゴリを外す（次の人の一覧に無いと、0件で選択中の札も見えない）
+            category = nil
+        }
+        guard allPhotos.isEmpty || stale else {
+            if switched { rebuildDerived() }
+            return
+        }
+        // 🔴 **一覧が古ければ、読み直しに失敗しても前の一覧を残さない**
+        // （前の人の限定公開の写真が入っている）
+        if stale {
+            allPhotos = []
+            listEpoch = nil
+            // 読み直しが返るまでは「読み込み中」（前の結果で「見つかりません」を出さない）
+            hasLoaded = false
+            rebuildDerived()
+        }
         await reloadPhotos(environment: environment)
     }
 
@@ -718,17 +810,37 @@ final class SearchViewModel: ObservableObject {
     ///   読み直しが落ちると、ブロックした人の写真が手元に残っていた）
     func reloadPhotos(environment: AppEnvironment, force: Bool = false,
                       hidden: ModerationSnapshot? = nil) async {
+        let startedAt = loadedEpoch
         do {
-            allPhotos = try await environment.gallery.fetchPhotos(force: force)
+            let fetched = try await environment.gallery.fetchPhotosTagged(force: force)
+            // **知らされた回より古い一覧は書かない**（人の切り替えの前に読んだもの）。
+            // 新しい回の一覧は、知らせより先に届いても書く（中身は今の人のもの）
+            // 一覧の回とも比べる（知らせより先に新しい一覧が入った後、古い取得が
+            // 遅れて返っても上書きしない）
+            let newest = max(loadedEpoch ?? .min, listEpoch ?? .min)
+            if fetched.epoch < newest { return }
+            allPhotos = fetched.photos
+            listEpoch = fetched.epoch
             loadFailed = false
         } catch {
+            // 失敗の知らせは、始めてから回が替わっていなければ出す
+            // （替わっていれば、今の回の読み込みが状態を決める）
+            guard startedAt == loadedEpoch else { return }
             // 取れなかった回は手元のぶんを残す（引き下げの失敗で一覧を消さない）
             if let hidden { allPhotos = hidden.visible(allPhotos) }
             loadFailed = true
         }
         hasLoaded = true
+        rebuildDerived()
+    }
+
+    /// 一覧から作る段（チップ・発見の段・カテゴリ）を作り直す。
+    /// **人が替わって一覧を空にしたときも呼ぶ**——呼ばないと、読み直しが返るまで
+    /// 前の人の一覧（限定公開を含む）から作ったチップ・季節の写真・機材が残っていた
+    private func rebuildDerived() {
         popularTags = PhotoQuery.topTags(in: allPhotos)
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
+        refreshTagChips()
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
         seasonalAll = DiscoverySections.seasonal(in: allPhotos, limit: .max)
         seasonal = Array(seasonalAll.prefix(SearchDiscovery.seasonalPreview))

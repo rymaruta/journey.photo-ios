@@ -70,6 +70,11 @@ final class JoinedAlbumsStore: ObservableObject {
         save()
     }
 
+    /// 退会した人の控えを消す（`AccountLocalData`）
+    func removeData(for userId: String) {
+        defaults.removeObject(forKey: key(for: userId))
+    }
+
     private func save() {
         guard let data = try? JSONEncoder().encode(entries) else { return }
         defaults.set(data, forKey: key(for: userId))

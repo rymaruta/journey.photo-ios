@@ -37,6 +37,18 @@ final class CollectionFilterTests: XCTestCase {
         XCTAssertEqual(PhotoQuery.photos(photos, in: .tag("sauna")).map(\.id), ["a"])
     }
 
+    /// **タグは鍵で畳んで絞る。** 数える側（`topTags`）は `風景` と
+    /// `landscape` を1つに数えるので、開いた先が綴りで絞ると件数が合わない。
+    func testTagFoldsAliasesAndHash() throws {
+        let photos = [
+            try photo(id: "a", tags: ["風景"]),
+            try photo(id: "b", tags: ["landscape"]),
+            try photo(id: "c", tags: ["#Landscape"]),
+            try photo(id: "d", tags: ["nature"]),
+        ]
+        XCTAssertEqual(PhotoQuery.photos(photos, in: .tag("風景")).map(\.id), ["a", "b", "c"])
+    }
+
     /// **カテゴリで絞る。**
     ///
     /// 変異試験で `==` を `!=` にしても誰も気づかなかった
@@ -466,6 +478,12 @@ final class TagCountsTests: XCTestCase {
         let counts = PhotoQuery.tagCounts(in: photos)
         XCTAssertEqual(counts.first?.tag, "冬")
         XCTAssertEqual(counts.first?.count, 2, "`冬` と `winter` が別々に数えられている")
+    }
+
+    /// **写真の枚数を数える。** 1枚に `冬` と `winter` が両方付いていても1
+    func testCountsPhotosNotTagOccurrences() throws {
+        let counts = PhotoQuery.tagCounts(in: [try photo("a", tags: ["冬", "winter"])])
+        XCTAssertEqual(counts.first?.count, 1, "1枚を2と数えている")
     }
 
     /// **0枚の語は出さない**（押しても空になるチップを置かない）

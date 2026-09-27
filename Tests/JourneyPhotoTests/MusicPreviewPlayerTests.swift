@@ -41,6 +41,26 @@ final class MusicPreviewPlayerTests: XCTestCase {
         XCTAssertEqual(player.origin, .songPicker, "別の曲を鳴らしたら持ち主が替わる")
     }
 
+    /// **途中で途切れたら止まる。** 鳴り終わりの知らせしか見ていなかったので、
+    /// 回線が切れて落ちるとボタンが ⏸ のまま固まり、場も返さなかった
+    func testFailureMidwayStopsPlayback() {
+        let player = MusicPreviewPlayer.shared
+        player.play(url)
+        let item = player.currentItem
+        XCTAssertNotNil(item)
+        NotificationCenter.default.post(name: .AVPlayerItemFailedToPlayToEndTime, object: item)
+        let stopped = expectation(description: "stopped")
+        func poll() {
+            if player.playingURL == nil { stopped.fulfill() } else {
+                DispatchQueue.main.async { poll() }
+            }
+        }
+        poll()
+        wait(for: [stopped], timeout: 2)
+        XCTAssertFalse(player.isPlaying(url))
+        XCTAssertTrue(player.hasPendingRelease, "奪った場を返す予約を入れる")
+    }
+
     /// 一時停止中は「再生中」と言わない（ほかの画面の ▶ が ⏸ のままになる）
     func testPausedIsNotPlaying() {
         let player = MusicPreviewPlayer.shared

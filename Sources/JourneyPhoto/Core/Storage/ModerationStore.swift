@@ -21,6 +21,10 @@ final class ModerationStore: ObservableObject {
     /// 2つの集合を別々に見ると、通報とブロックを続けて行う回
     /// （`ReportSheet` の「通報してブロックもする」）に全件取得が2回走る。
     @Published private(set) var revision = 0
+    /// **ブロックの集合が変わった回数だけ**（通報では進まない）。起動時の同期が
+    /// 「待っている間に手元でブロック／解除したか」を見るのに使う。集合を比べると、
+    /// ブロックして解除した（元に戻った）ときにすり抜け、古い一覧で解除を戻していた
+    private(set) var blockRevision = 0
 
     private let defaults: UserDefaults
     private var userId: String?
@@ -36,6 +40,7 @@ final class ModerationStore: ObservableObject {
     /// （`replaceBlocked`）ので、そこを無条件に数えると**開くたびに
     /// 公開一覧を丸ごと取り直す**ことになる。
     private func bumpIfChanged(blocked: Set<String>, reported: Set<String>) {
+        if blocked != blockedUserIds { blockRevision += 1 }
         guard blocked != blockedUserIds || reported != reportedPhotoIds else { return }
         revision += 1
     }
@@ -61,7 +66,11 @@ final class ModerationStore: ObservableObject {
     ///
     /// **端末のぶんを足し合わせない。** 解除したのに端末に残っていると、
     /// 「解除したのに見えない」になり、直す手立てが画面に無い。
-    func replaceBlocked(with ids: [String]) {
+    ///
+    /// - Parameter owner: 取りに行ったときの人。**返ってくる間に人が替わって
+    ///   いたら書かない**（前の人のブロックを次の人の控えに書かない）
+    func replaceBlocked(with ids: [String], for owner: String?) {
+        guard owner == userId else { return }
         let before = (blockedUserIds, reportedPhotoIds)
         blockedUserIds = Set(ids)
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
@@ -95,6 +104,12 @@ final class ModerationStore: ObservableObject {
         bumpIfChanged(blocked: before.0, reported: before.1)
     }
 
+    /// 退会した人の控えを消す（`AccountLocalData`）
+    func removeData(for userId: String) {
+        defaults.removeObject(forKey: "moderation.blocked.\(userId)")
+        defaults.removeObject(forKey: "moderation.reported.\(userId)")
+    }
+
     /// 通報した写真は、その人の画面からは即座に消す。
     /// **サーバーは消さない**（読むのは人で、すぐには終わらない）。
     func markReported(_ photoId: String) {
@@ -112,5 +127,19 @@ struct ModerationSnapshot: Equatable {
 
     func visible(_ photos: [Photo]) -> [Photo] {
         BlockFilter.photos(photos, blocked: blocked, reported: reported)
+    }
+
+    /// 人・コメント・見た人も同じ写しで落とす。**描くたびに `hidden.blockedUserIds` で
+    /// 絞らない**——行から開いた先でブロックすると、元の行が消えて開いている画面が閉じる
+    func users(_ users: [UserProfile]) -> [UserProfile] {
+        BlockFilter.users(users, blocked: blocked)
+    }
+
+    func comments(_ comments: [PhotoComment]) -> [PhotoComment] {
+        BlockFilter.comments(comments, blocked: blocked)
+    }
+
+    func viewers(_ viewers: [StoryViewer]) -> [StoryViewer] {
+        BlockFilter.viewers(viewers, blocked: blocked)
     }
 }

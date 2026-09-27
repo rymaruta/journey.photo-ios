@@ -31,4 +31,45 @@ final class UploadReconcileTests: XCTestCase {
         let r = PickerReconcile.reconcile(existing: [String?](), picked: ["a", "a"])
         XCTAssertEqual(r.added, ["a"])
     }
+
+    /// 🔴 **投稿済みの写真は選択から外す。** 残すと、残った1枚を外したときや
+    /// 「追加」で選び足したときの差分が、投稿済みの写真を新しく選ばれた分と読み、
+    /// 同じ写真をもう一度上げていた
+    func testPostedItemsLeaveTheSelection() {
+        let picked = PickerReconcile.dropPosted(picked: ["a", "b"], posted: ["a", nil])
+        XCTAssertEqual(picked, ["b"])
+        // 「追加」で c を選び足しても、a は新しく選ばれた分に入らない
+        let r = PickerReconcile.reconcile(existing: ["b"], picked: picked + ["c"])
+        XCTAssertEqual(r.added, ["c"])
+    }
+
+    /// 読めなかった写真だけなら読まない（写真を外したとき・投稿の後始末）
+    func testUnreadableAloneIsNotReloaded() {
+        let plan = PickerReconcile.toLoad(added: ["c"], picked: ["b", "c"], unreadable: ["c"])
+        XCTAssertEqual(plan.load, [])
+        XCTAssertEqual(plan.unreadable, ["c"])
+    }
+
+    /// 選び足したときは、読めなかった分も一緒に読み直す
+    func testAddingRetriesUnreadable() {
+        let plan = PickerReconcile.toLoad(added: ["c", "d"], picked: ["c", "d"], unreadable: ["c"])
+        XCTAssertEqual(plan.load, ["c", "d"])
+        XCTAssertEqual(plan.unreadable, [], "読んでいる分は控えから外す")
+    }
+
+    /// 🔴 **途中で取り消された回の写真は、次の回で読む。** d が読めた後、c を待つ間に
+    /// 取り消されると、次の回の差分は c だけ。控えに c が残っていると「新しい写真なし」で
+    /// 帰り、知らせも無いまま c が落ちていた
+    func testRoundCancelledMidwayRereadsNextTime() {
+        let first = PickerReconcile.toLoad(added: ["c", "d"], picked: ["c", "d"], unreadable: ["c"])
+        // 取り消された回は失敗を戻さない
+        let next = PickerReconcile.toLoad(added: ["c"], picked: ["c", "d"], unreadable: first.unreadable)
+        XCTAssertEqual(next.load, ["c"])
+    }
+
+    /// ライブラリで外した写真は控えから忘れる
+    func testDeselectedLeavesUnreadable() {
+        let plan = PickerReconcile.toLoad(added: [String](), picked: ["b"], unreadable: ["c"])
+        XCTAssertEqual(plan.unreadable, [])
+    }
 }

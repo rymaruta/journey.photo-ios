@@ -83,4 +83,18 @@ struct PendingVerificationStore {
     func forget(email: String) {
         defaults.removeObject(forKey: PendingVerification.key(for: email))
     }
+
+    /// その登録（Cognito のユーザー名＝UUID）の控えを消す。
+    ///
+    /// **退会のときに使う。** 退会の画面はメールアドレスを知らないので、
+    /// 控えの中身（ユーザー名）で探す。確認のあと名前を入れられなかった回
+    /// （`SignInView.applyDisplayName`）は控えが残っている
+    func forget(username: String) {
+        for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix("jp_verify_") {
+            guard let data = value as? Data,
+                  let entry = try? JSONDecoder().decode(Entry.self, from: data),
+                  entry.username == username else { continue }
+            defaults.removeObject(forKey: key)
+        }
+    }
 }

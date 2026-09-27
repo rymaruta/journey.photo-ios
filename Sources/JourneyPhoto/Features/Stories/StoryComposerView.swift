@@ -750,19 +750,24 @@ struct StoryComposerView: View {
     }
 
     /// 下書きにする。**焼き込む前の文字のまま残す**
-    /// ——焼いてしまうと位置も色も直せなくなる（投稿と同じ片道になる）
+    /// ——焼いてしまうと位置も色も直せなくなる（投稿と同じ片道になる）。
+    /// **並べた写真を全部残す。** 以前は表示中の1枚だけを渡していて、
+    /// 3枚並べて保存しても開き直すと1枚になっていた
     private func saveDraft() {
-        guard let prepared else { return }
+        guard !shots.isEmpty else { return }
         let ok = drafts.save(
-            imageData: prepared.data,
-            fileName: prepared.fileName,
-            contentType: prepared.contentType,
-            coords: prepared.coords,
+            shots: shots.map { shot in
+                StoryDraftStore.ShotInput(imageData: shot.prepared.data,
+                                          fileName: shot.prepared.fileName,
+                                          contentType: shot.prepared.contentType,
+                                          coords: shot.prepared.coords,
+                                          overlays: shot.overlays)
+            },
             caption: caption,
             location: location,
-            overlays: shots.indices.contains(current) ? shots[current].overlays : [],
             song: song,
             durationSec: durationSec,
+            archive: keepInArchive,
             savedAt: ISO8601DateFormatter().string(from: Date())
         )
         // **書けなかったことを黙らない。** 「保存しました」とだけ出して
@@ -776,23 +781,27 @@ struct StoryComposerView: View {
 
     /// 「続きから」。**画像が読めなければ何も戻さない**
     private func restoreDraft() {
-        guard let draft = drafts.draft, let data = drafts.imageData() else {
+        let saved = drafts.shotImages()
+        guard let draft = drafts.draft, !saved.isEmpty else {
             drafts.clear()
             message = L("下書きの写真を読み込めませんでした", "Couldn't load the draft photo")
             return
         }
-        let restored = ImagePreparer.Prepared(data: data, fileName: draft.fileName,
-                                              contentType: draft.contentType,
-                                              // EXIF は下書きに残していない（ストーリーは送らない）
-                                              exif: nil, coords: draft.coords, takenOn: nil)
-        // **下書きは1枚だけ**（端末に1件）。戻すときは並びを作り直す
-        shots = [StoryShot(prepared: restored, image: UIImage(data: data),
-                           overlays: draft.overlays)]
+        // **並びごと戻す**（下書きは端末に1件。その中に並べた写真が全部入っている）
+        shots = saved.map { item in
+            let restored = ImagePreparer.Prepared(data: item.data, fileName: item.shot.fileName,
+                                                  contentType: item.shot.contentType,
+                                                  // EXIF は下書きに残していない（ストーリーは送らない）
+                                                  exif: nil, coords: item.shot.coords, takenOn: nil)
+            return StoryShot(prepared: restored, image: UIImage(data: item.data),
+                             overlays: item.shot.overlays)
+        }
         current = 0
         caption = draft.caption
         location = draft.location
         song = draft.song
         durationSec = draft.durationSec
+        keepInArchive = draft.archive == true
         message = nil
     }
 
@@ -829,11 +838,11 @@ struct StoryComposerView: View {
         let toasts = toasts
         let started = uploads.start(jobs, ownerId: ownerId,
                                     currentUserId: { auth.userId },
-                                    send: { job in
-            _ = try await stories.create(imageData: job.imageData, caption: job.caption,
-                                         location: job.location, coords: job.coords,
-                                         song: job.song, durationSec: job.durationSec,
-                                         archive: job.archive)
+                                    // 起動し直して送り終えたときの片づけ（下の onAllSent と同じ条件）
+                                    draftToClear: keepExistingDraft ? nil : draftStamp,
+                                    send: { job, record in
+            // 送り直しで二重に出さない手順は `StoryService.post` にある
+            try await stories.post(job, ownerId: ownerId, record: record)
         }, onAllSent: {
             // 出し終えたら下書きは要らない（残すと次に開いたときにまた尋ねる）。
             // 🔴 **ただし復元を保留した古い下書きは消さない**——この回の投稿とは別物

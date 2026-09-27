@@ -30,6 +30,15 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertEqual(SearchScope.photos.photos(photos, query: "冬").map(\.id), ["place", "tag", "title"])
     }
 
+    /// 🔴 **チップの枚数と結果を合わせる。** 枚数は日英の別名をまとめて数える
+    /// （冬＝winter）ので、「冬」で探したら winter の写真も出す
+    func testTagAliasesMatchLikeTheChipCount() throws {
+        let photos = try sample() + [try photo(["id": "en", "tags": ["Winter"]])]
+        XCTAssertEqual(SearchScope.all.photos(photos, query: "冬").map(\.id), ["place", "tag", "title", "en"])
+        XCTAssertEqual(SearchScope.tags.photos(photos, query: "冬").map(\.id), ["tag", "en"])
+        XCTAssertEqual(SearchScope.tags.photos(photos, query: "winter").map(\.id), ["tag", "en"])
+    }
+
     /// **タグはタグだけ、撮影地は撮影地だけに当てる**
     func testTagsAndPlacesLookOnlyAtTheirField() throws {
         let photos = try sample()

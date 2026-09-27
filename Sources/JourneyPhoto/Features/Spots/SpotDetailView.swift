@@ -34,6 +34,22 @@ struct SpotDetailView: View {
 
     private var linked: [Photo] { dropped.visible(spot.photos) }
 
+    /// 画面に出す地点。**分類・より広い撮影地・座標も、見えている写真から作り直す。**
+    ///
+    /// 🔴 `spot` は開いた時点の一覧から作ったもので、ブロック・通報した人の
+    /// 写真の分類チップ・撮影地・**撮影座標（地図のピンと「マップで開く」）**が
+    /// 残っていた——その人の写真しか無い地点では、写真の節は空なのにピンだけ出た
+    private var place: DerivedSpot.Place {
+        DerivedSpot.Place(
+            label: spot.label,
+            slug: spot.slug,
+            photos: linked,
+            broader: DerivedSpot.broader(of: spot.label, in: dropped.visible(photos)),
+            categories: DerivedSpot.categories(of: linked),
+            coords: linked.compactMap(\.coords).first
+        )
+    }
+
     /// 見出しの写真。いちばん多く押された1枚を先頭に、残りを新しい順
     private var hero: [Photo] {
         // 表紙が落ちた回は、残りから同じ基準（いちばん押された1枚）で選び直す
@@ -44,7 +60,7 @@ struct SpotDetailView: View {
     }
 
     private var nearby: [(place: DerivedSpot.Place, km: Double)] {
-        DerivedSpot.nearby(spot, in: dropped.visible(photos))
+        DerivedSpot.nearby(place, in: dropped.visible(photos))
     }
 
     var body: some View {
@@ -140,9 +156,9 @@ struct SpotDetailView: View {
                 }
             }
             // 分類のチップ。**写真が実際に持っているものだけ**（多い順）
-            if !spot.categories.isEmpty {
+            if !place.categories.isEmpty {
                 HStack(spacing: 6) {
-                    ForEach(spot.categories.prefix(4), id: \.self) { category in
+                    ForEach(place.categories.prefix(4), id: \.self) { category in
                         Text(Labels.Category.name(category))
                             .font(.footnote.weight(.semibold))
                             .webChip()
@@ -158,7 +174,7 @@ struct SpotDetailView: View {
     /// **推測しない。** 同じ一覧に実際に在って、含む関係にあるものだけ
     /// （`DerivedSpot.broader`）。無ければ行ごと出さない。
     private var placeLine: String? {
-        spot.broader.isEmpty ? nil : spot.broader.joined(separator: " ・ ")
+        place.broader.isEmpty ? nil : place.broader.joined(separator: " ・ ")
     }
 
     /// 概要。
@@ -216,7 +232,7 @@ struct SpotDetailView: View {
     }
 
     /// 端末の地図アプリへ。**座標があるときだけ**（`SpotScreen`）
-    private var mapURL: URL? { SpotScreen.mapURL(name: spot.label, coords: spot.coords) }
+    private var mapURL: URL? { SpotScreen.mapURL(name: spot.label, coords: place.coords) }
 
     /// 数えられるものだけ。**評価・口コミ・行きたい人数は出さない**
     private var stats: some View {
@@ -287,7 +303,7 @@ struct SpotDetailView: View {
 
     @ViewBuilder
     private var map: some View {
-        if let coords = spot.coords {
+        if let coords = place.coords {
             let center = CLLocationCoordinate2D(latitude: coords.lat, longitude: coords.lng)
             VStack(alignment: .leading, spacing: 10) {
                 SpotDetailParts.sectionHeader(L("地図", "Map"))
