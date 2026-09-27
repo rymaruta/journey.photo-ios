@@ -901,16 +901,21 @@ final class MyPageViewModel: ObservableObject {
             await loadPublicly(userId: previewId)
             return
         }
-        // 読めたプロフィール。**写真と揃うまで画面に入れない**（下の catch）
-        var fetchedProfile: UserProfile?
         do {
             async let profile = self.profiles.myProfile()
             async let photos = self.photoService.myPhotos()
-            fetchedProfile = try await profile
+            let fetchedProfile = try await profile
+            // 初回は届いた時点で見出しに入れる（写真が遅くても名前・カバーを先に出す）。
+            // 読み直しでは**写真と揃ってから入れる**——写真が落ちた回に新しいピンの印と
+            // 古い並びが食い違う
+            if !hasLoadedPhotos {
+                self.profile = fetchedProfile
+                self.pinnedIds = fetchedProfile.pinnedPhotoIds ?? []
+            }
             let fetchedPhotos = try await photos
             self.profile = fetchedProfile
             // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
-            self.pinnedIds = fetchedProfile?.pinnedPhotoIds ?? []
+            self.pinnedIds = fetchedProfile.pinnedPhotoIds ?? []
             self.photos = PhotoPinning.pinnedFirst(fetchedPhotos, pinned: self.pinnedIds)
             hasLoadedPhotos = true
             // **数が取れなくても画面は出す**（0 のままになるだけ）。
@@ -926,12 +931,6 @@ final class MyPageViewModel: ObservableObject {
                 }
             }
         } catch {
-            // 初回はプロフィールだけでも出す（見出しの名前）。読み直しでは**写真と揃わない
-            // プロフィールで上書きしない**（新しいピンの印と古い並びが食い違う）
-            if !hasLoadedPhotos, let fetchedProfile {
-                self.profile = fetchedProfile
-                self.pinnedIds = fetchedProfile.pinnedPhotoIds ?? []
-            }
             let message = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
             // **一度読めていれば、読み直しの失敗は一覧に添える。** 戻ってくるたびに
             // 読み直すので、圏外で写真を開いて戻っただけで格子ごと知らせに置き換わっていた

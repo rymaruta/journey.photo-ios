@@ -237,6 +237,9 @@ final class ViewModelTests: XCTestCase {
         await model.load()
         XCTAssertEqual(model.pinnedIds, ["p1"], "写真と揃わないプロフィールでピンを上書きしている")
         XCTAssertEqual(model.profile?.pinnedPhotoIds, ["p1"])
+        // 読み直しの失敗でも戻る・一覧に添える（写真の口が落ちる向きなのでスタブで止まらない）
+        XCTAssertFalse(model.isLoading)
+        XCTAssertEqual(model.actionMessage, "取得に失敗しました")
     }
 
     /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは
@@ -249,6 +252,7 @@ final class ViewModelTests: XCTestCase {
         await model.load()
         XCTAssertNotNil(model.errorMessage, "写真を読めていないのに一覧に添える側に入れている")
         XCTAssertNil(model.actionMessage)
+        XCTAssertEqual(model.profile?.userId, "a", "初回はプロフィールだけでも見出しに出す")
     }
 
     /// **人が替わったら前の人の写真を手放す。** 残すと、次の人の読み込みが
