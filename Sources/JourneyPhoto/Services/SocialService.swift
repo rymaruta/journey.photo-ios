@@ -141,17 +141,15 @@ struct SocialService {
         ).comment
     }
 
-    /// コメントを消す。**404（もう無い）は消せたのと同じ**（別の端末や写真の持ち主が
-    /// 先に消した回。`comments.ts` は見つからなければ 404）。失敗と読むと、
-    /// もう無いコメントが画面に残り、押すたびにエラーになる
+    /// コメントを消す。
+    ///
+    /// **404 はここでは成功にしない。** `comments.ts` の削除は最初の読みが結果整合なので、
+    /// 投稿した直後に消すと「まだ見えない」だけで 404 が返る（サーバーには残る）。
+    /// どちらの 404 かは呼ぶ側（`PhotoDetailViewModel.deleteComment`）が決める
     func deleteComment(photoId: String, commentId: String) async throws {
-        do {
-            try await api.authorizedVoid(
-                .delete, "/photos/\(encoded(photoId))/comments/\(encoded(commentId))"
-            )
-        } catch where Self.isNotFound(error) {
-            return
-        }
+        try await api.authorizedVoid(
+            .delete, "/photos/\(encoded(photoId))/comments/\(encoded(commentId))"
+        )
     }
 
     // MARK: - フォロー

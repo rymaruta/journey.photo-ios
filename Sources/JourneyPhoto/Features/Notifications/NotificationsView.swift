@@ -174,6 +174,14 @@ struct NotificationsView: View {
                 await push.clearBadge()
             }
         }
+        // フォローバックの失敗（形は親しい友達の保存の失敗と同じ）
+        .alert(L("フォローできませんでした", "Couldn't follow"),
+               isPresented: Binding(get: { model.followBackError != nil },
+                                    set: { if !$0 { model.followBackError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.followBackError ?? "")
+        }
     }
 }
 
@@ -367,6 +375,9 @@ final class NotificationsViewModel: ObservableObject {
     @Published private(set) var following: Set<String> = []
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
+    /// フォローバックの失敗。**読み込みの失敗（`errorMessage`）と分ける**——同じ所に出すと
+    /// 一覧の上端（下の行で押すと画面の外）に出て、「読み込めていない」とも読める。アラートで出す
+    @Published var followBackError: String?
     /// 読み込みの世代。**あとから始まった読み込みがあれば、古い方の結果は捨てる。**
     ///
     /// `.task` と引っぱって読み直しは同時に走りうる。遅れて返った `.task`
@@ -446,7 +457,7 @@ final class NotificationsViewModel: ObservableObject {
             // 返ってきた状態を使う（自分で決めない）
             if result.following { following.insert(userId) }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription
+            followBackError = (error as? LocalizedError)?.errorDescription
                 ?? L("フォローできませんでした", "Couldn't follow")
         }
     }

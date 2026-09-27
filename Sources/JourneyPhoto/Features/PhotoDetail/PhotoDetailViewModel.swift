@@ -152,6 +152,7 @@ final class PhotoDetailViewModel: ObservableObject {
         do {
             let comment = try await social.postComment(photoId: photoId, text: text)
             comments.insert(comment, at: 0)
+            postedIds.insert(comment.id)
             // **総数が分からない回は分からないまま。** 取れていない数に
             // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
             commentCount = commentCount.map { $0 + 1 }
@@ -161,6 +162,16 @@ final class PhotoDetailViewModel: ObservableObject {
         }
     }
 
+    /// この画面で投稿したコメント。**消したときの 404 の読み方を分ける**（`deleteComment`）
+    private var postedIds: Set<String> = []
+
+    /// コメントを消す。
+    ///
+    /// **404（もう無い）は消せたのと同じ**——別の端末や写真の持ち主が先に消した回。
+    /// 失敗と読むと、もう無いコメントが残り、押すたびにエラーになる。
+    /// ただし**この画面で投稿したばかりのコメントは除く**: サーバーの最初の読みは
+    /// 結果整合なので、投稿の直後は「まだ見えない」だけで 404 が返る（サーバーには残る）。
+    /// そこで外すと、他の人には見えたまま自分の画面からだけ消える
     func deleteComment(_ comment: PhotoComment) async {
         // 読み直している間は消さない（あとから着いた古いページで、消したコメントが戻る）。
         // 画面も削除を押せなくしている
@@ -169,6 +180,13 @@ final class PhotoDetailViewModel: ObservableObject {
             try await social.deleteComment(photoId: photoId, commentId: comment.id)
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
+        } catch where SocialService.isNotFound(error) && !postedIds.contains(comment.id) {
+            comments.removeAll { $0.id == comment.id }
+            commentCount = commentCount.map { max(0, $0 - 1) }
+        } catch where SocialService.isNotFound(error) {
+            // 投稿の直後でサーバーにまだ見えていない（「見つかりません」と言わない）
+            errorMessage = L("まだ反映されていないため削除できませんでした。少し待ってからもう一度お試しください",
+                             "Couldn't delete it yet. Please wait a moment and try again.")
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }

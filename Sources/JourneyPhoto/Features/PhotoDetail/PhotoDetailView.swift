@@ -487,6 +487,8 @@ struct PhotoDetailView: View {
         guard !isFollowWorking else { return }
         isFollowWorking = true
         defer { isFollowWorking = false }
+        // 前の回の失敗を残さない（押し直して通ったのに赤字が残る）
+        actionError = nil
         // **失敗は黙らない**（圏外で押して何も起きないと、押せていないのか分からない）。
         // 知らせは、ブロックの失敗と同じ `actionError` に出す
         do {
@@ -696,7 +698,9 @@ struct PhotoDetailView: View {
 
                 Spacer()
             }
-            if let message = model.errorMessage ?? actionError {
+            // **いま押した操作の知らせを先に出す。** 前に出た `model.errorMessage`
+            // （いいね・コメントの失敗）は消えないので、先に見るとフォローの失敗が隠れる
+            if let message = actionError ?? model.errorMessage {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.danger)
             }
         }

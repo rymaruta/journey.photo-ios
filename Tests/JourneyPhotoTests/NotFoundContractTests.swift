@@ -100,12 +100,23 @@ final class NotFoundContractTests: XCTestCase {
 
     // MARK: - 削除
 
-    /// もう無い写真・コメントを消すのは、消せたのと同じ
-    func testDeletingWhatIsAlreadyGoneSucceeds() async throws {
+    /// もう無い写真を消すのは、消せたのと同じ
+    func testDeletingAPhotoThatIsAlreadyGoneSucceeds() async throws {
         StubProtocol.respond(status: 404, body: gone)
         try await PhotoService(api: api()).delete(photoId: "p1")
-        StubProtocol.respond(status: 404, body: #"{"error":"コメントが見つかりません"}"#)
-        try await SocialService(api: api()).deleteComment(photoId: "p1", commentId: "c1")
+    }
+
+    /// 印の聞き直しそのものが失敗したら、元の 404 を投げる（付いたとは言わない）
+    func testLikeNotFoundWithFailedRecheckStillFails() async {
+        StubProtocol.respond(path: "/photos/p1/like", status: 404, body: gone)
+        StubProtocol.respond(path: "/user/likes/p1", status: 500, body: #"{"error":"取得に失敗しました"}"#)
+        do {
+            _ = try await SocialService(api: api()).like(photoId: "p1")
+            XCTFail("聞き直せなかったのに成功にしている")
+        } catch {
+            XCTAssertEqual(error as? APIError, .server(status: 404, message: "写真が見つかりません"))
+            XCTAssertEqual(StubProtocol.requestCount, 2, "印を聞き直していない")
+        }
     }
 
     /// 404 以外の失敗は失敗のまま（権限が無い・サーバーの失敗）

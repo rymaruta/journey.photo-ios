@@ -305,6 +305,33 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 1, "投稿の最中に読み直しを投げている")
     }
 
+    /// コメントの削除の 404: **読み込んだコメントは「もう無い」として外す**が、
+    /// **この画面で投稿したばかりのものは外さない**（サーバーの最初の読みが結果整合で、
+    /// 「まだ見えない」だけの 404 がある。外すと他の人には見えたまま自分からだけ消える）
+    func testCommentDeleteNotFoundDependsOnWhetherItWasJustPosted() async throws {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/comments/c1", status: 404, body: #"{"error":"コメントが見つかりません"}"#)
+        StubProtocol.respond(path: "/photos/p1/comments/c2", status: 404, body: #"{"error":"コメントが見つかりません"}"#)
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u1","name":"a","text":"hi"}],"count":1,"comment":{"id":"c2","uid":"me","name":"me","text":"new"}}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        await model.reloadComments()
+        model.draftComment = "new"
+        await model.postComment()
+        XCTAssertEqual(model.comments.map(\.id), ["c2", "c1"])
+        let loaded = try XCTUnwrap(model.comments.first { $0.id == "c1" })
+        let posted = try XCTUnwrap(model.comments.first { $0.id == "c2" })
+
+        await model.deleteComment(loaded)
+        XCTAssertFalse(model.comments.contains { $0.id == "c1" }, "もう無いコメントが残っている")
+        XCTAssertNil(model.errorMessage)
+
+        await model.deleteComment(posted)
+        XCTAssertTrue(model.comments.contains { $0.id == "c2" }, "投稿直後の 404 で外している（サーバーには残る）")
+        XCTAssertNotNil(model.errorMessage)
+    }
+
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。
     func testLikeUsesServerCount() async {
         prepare()
