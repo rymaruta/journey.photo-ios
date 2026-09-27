@@ -96,13 +96,22 @@ enum TagInput {
 
     /// 写真の詳細のタグの札に出す字（板 02 の「#夕焼け」）。
     ///
-    /// 先頭の `#`・`＃`（とその間の空白）を**全部**落としてから `#` を1つ付ける。
-    /// 打った人が付けていた `#` を二重にしない（`##旅` → `#旅`）・全角の `＃` も
-    /// 半角1つに揃える。`#` しか無いタグは元の字のまま（`#` だけの札を作らない）。
+    /// 先頭の半角 `#`（とその間の空白）を**全部**落としてから `#` を1つ付ける。
+    /// 打った人が付けていた `#` を二重にしない（`##旅` → `#旅`）。
+    ///
+    /// **全角の `＃` は畳まない。** 絞り込みの鍵（`TagChoices.key`）と Web の `tagKey` は
+    /// 半角の `#` しか落とさないので、`＃旅` と `旅` は**別のページ**。札を両方「#旅」に
+    /// すると、同じ字の札から中身の違うページが開く。`＃` で始まるなら `#` を足さずに
+    /// そのまま出す（「#＃旅」と二重にしない）。`#` しか無いタグは元の字のまま。
     /// **描くときだけ**——保存する値・絞り込みに渡す値には付けない
     static func chipText(_ tag: String) -> String {
-        let bare = tag.drop(while: { $0 == "#" || $0 == "＃" || $0.isWhitespace })
-        return bare.isEmpty ? tag : "#" + bare
+        let bare = tag.drop(while: { $0 == "#" || $0.isWhitespace })
+        guard !bare.isEmpty else { return tag }
+        if bare.first == "＃" {
+            let rest = bare.dropFirst().drop(while: { $0.isWhitespace })
+            return rest.isEmpty ? tag : "＃" + rest
+        }
+        return "#" + bare
     }
 
     /// 候補を、**打ちかけの文字で絞る**。

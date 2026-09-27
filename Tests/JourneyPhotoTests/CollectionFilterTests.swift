@@ -509,7 +509,7 @@ final class TagCollectionTitleTests: XCTestCase {
     /// 押した先の見出しが「###旅」「#＃旅」にならない
     func testTagTitleMatchesChip() {
         XCTAssertEqual(PhotoQuery.Collection.tag("##旅").title, "#旅")
-        XCTAssertEqual(PhotoQuery.Collection.tag("＃旅").title, "#旅")
+        XCTAssertEqual(PhotoQuery.Collection.tag("＃旅").title, "＃旅", "別のページ（鍵が違う）を同じ題にしない")
         XCTAssertEqual(PhotoQuery.Collection.tag("冬").title, "#冬")
     }
 }

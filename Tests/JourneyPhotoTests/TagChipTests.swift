@@ -129,10 +129,14 @@ final class TagChipTextTests: XCTestCase {
         XCTAssertEqual(TagInput.chipText("##旅"), "#旅")
     }
 
-    /// **全角の `＃` も畳む。** 日本語の入力では全角で打たれやすい
-    func testFullWidthHashIsFolded() {
-        XCTAssertEqual(TagInput.chipText("＃旅"), "#旅")
-        XCTAssertEqual(TagInput.chipText("#＃ 海"), "#海")
+    /// **全角の `＃` は二重にしないが、半角には畳まない。** `＃旅` と `旅` は絞り込み
+    /// （`TagChoices.key`・Web の `tagKey`）では別のページなので、札も見分けがつくように
+    func testFullWidthHashIsNotDoubledButKeptDistinct() {
+        XCTAssertEqual(TagInput.chipText("＃旅"), "＃旅")
+        XCTAssertEqual(TagInput.chipText("#＃ 海"), "＃海")
+        XCTAssertNotEqual(TagInput.chipText("＃旅"), TagInput.chipText("旅"),
+                          "絞り込みでは別のページなのに、札が同じ字になっている")
+        XCTAssertNotEqual(TagChoices.key("＃旅"), TagChoices.key("旅"), "前提: 鍵は別")
     }
 
     /// `#` しか無いタグは元の字のまま（`#` だけの札・空の札を作らない）
