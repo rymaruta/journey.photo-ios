@@ -95,6 +95,7 @@ final class GalleryViewModel: ObservableObject {
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         let generation = viewerGeneration
+        loadedEpoch = await gallery.restrictedEpoch
         do {
             let photos = try await gallery.fetchPhotos(force: force)
             // 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
@@ -109,6 +110,9 @@ final class GalleryViewModel: ObservableObject {
 
     /// 人が替わった回数。**替わる前に読み始めた回の答えを書かない**ために使う
     private var viewerGeneration = 0
+
+    /// 最後に読み始めたときの、限定公開の読み出し口の回（`restrictedEpoch`）
+    private var loadedEpoch: Int?
 
     /// 人が替わったら呼ぶ。**前の人の一覧を捨てて読み込み中に戻し、読み直す**。
     ///
@@ -130,6 +134,10 @@ final class GalleryViewModel: ObservableObject {
             // nil（まだ取れていない）で渡す——空の集合を「次の人のもの」として
             // 記録すると、次の取得が失敗したとき「まだありません」と言ってしまう（`use`）
             use(viewerId: next, following: nil)
+            // **読み出し口がまだ前の人のままなら、ここでは読まない。** 読むと前の人の
+            // 限定公開（と控え）を次の人の画面に書く。入れ替わったら画面の
+            // `restrictedChanges` が読み直す（入れ替えと人の変化の順は決まっていない）
+            guard await gallery.restrictedEpoch != loadedEpoch else { return }
         }
         await load()
     }

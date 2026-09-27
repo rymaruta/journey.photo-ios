@@ -81,6 +81,26 @@ final class HomeViewerSwitchTests: XCTestCase {
         XCTAssertEqual(ids(model.state), ["pub"], "B に替わっても A の限定公開が残っている")
     }
 
+    /// 🔴 **読み出し口がまだ前の人のままなら読まない。** 先に読むと、前の人の
+    /// 限定公開が次の人の画面に出る。入れ替わったら（画面の `restrictedChanges`）読む
+    func testSwitchWaitsForTheLoaderSwap() async throws {
+        let service = gallery()
+        let forA = try restricted("forA")
+        await service.setRestrictedLoader { forA }
+        let model = GalleryViewModel(gallery: service)
+        await model.load()
+        XCTAssertEqual(ids(model.state), ["forA", "pub"])
+
+        // 人は替わったが、読み出し口はまだ A のまま
+        await model.switchViewer(from: "A", to: "B")
+        XCTAssertEqual(model.state, .loading, "前の人の読み出し口で読み直した（A の限定公開が B に出る）")
+
+        // 入れ替わった後の読み直し（画面では `restrictedChanges` が呼ぶ）
+        await service.setRestrictedLoader { [] }
+        await model.load()
+        XCTAssertEqual(ids(model.state), ["pub"])
+    }
+
     /// **未ログイン → ログインでは一覧を消さない**（出ていたのは公開ぶんだけ）。
     func testSigningInKeepsThePublicListWhileReloading() async throws {
         let service = gallery()
