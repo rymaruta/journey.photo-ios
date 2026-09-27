@@ -20,4 +20,11 @@ final class MissionRouter: ObservableObject {
         self.tag = tag
         requests += 1
     }
+
+    /// タグを付けずに投稿画面を開く（ホームの上段「旅の最中」の札から）。
+    /// 道は「参加する」と同じ——`RootView` が回数の変化で開く
+    func post() {
+        tag = nil
+        requests += 1
+    }
 }

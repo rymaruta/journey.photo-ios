@@ -291,7 +291,9 @@ struct GalleryView: View {
                 // 「前の方が好きだった」で先頭の大きな札に戻した（2026-09-26）
                 // 背景の写真もブロック／通報を落とした並びから（読み直しが終わるまで
                 // ブロックした人の写真が札の背景に出ていた）
-                DailyThemeCard(photos: dropped.visible(model.allPhotosForTheme), myPhotos: model.myPhotos)
+                // 2026-09-27: 上段は「開く場面ごとに1枚」（出発・旅の最中・一冊・1年前、無ければ今日のテーマ）
+                HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme), myPhotos: model.myPhotos,
+                                reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed)
                 feedPicker
                 featuredSections
                 // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。

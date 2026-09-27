@@ -127,6 +127,20 @@ enum TripBook {
         return nil
     }
 
+    /// **自分の旅の棚**（マイページの「旅の記録」・ホームの「一冊ができた」）。
+    /// 下書きは入れない——見せていない写真が一冊に紛れ込み、入口によって
+    /// 同じ旅の枚数・表紙・区切りが変わる。**絞り方はここ1か所**
+    static func shelfTrips(from photos: [Photo], timeZone: TimeZone = .current) -> [Trip] {
+        trips(from: photos.filter { $0.published != false }, timeZone: timeZone)
+    }
+
+    /// `day(of:in:)` が**撮影日**で日を決めたか（false なら投稿日で代用した・日が無い）。
+    /// 読み方は `day(of:in:)` と同じ——別の読み方で判定すると、端の値で食い違う
+    static func hasTakenDay(_ photo: Photo) -> Bool {
+        guard let date = photo.date else { return false }
+        return dayFormatter.date(from: String(date.prefix(10))) != nil
+    }
+
     /// 旅の進む向きに並べる。**日で並べ、同じ日の中は投稿の時刻順**
     /// （日に丸めたあとで並べるだけだと、同じ日の写真の順が決まらない）。
     /// 日の決まらない写真は後ろ（旅には入らない）。

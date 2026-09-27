@@ -57,6 +57,13 @@ final class TabRouter: ObservableObject {
 
     func postSheetClosed() { postSheetsClosed += 1 }
 
+    /// **メニュー（≡）のシートを閉じた回数。** メニューから旅行プランを開いて
+    /// 変えても、シートの下のホームは画面から消えた扱いにならないので、
+    /// ホームの上段の札が古いプランのまま残った。回数で伝えるのは上と同じ理由
+    @Published private(set) var menuSheetsClosed = 0
+
+    func menuSheetClosed() { menuSheetsClosed += 1 }
+
     /// もう一度押したときに合図を出す札
     enum Reselectable {
         case home, map
