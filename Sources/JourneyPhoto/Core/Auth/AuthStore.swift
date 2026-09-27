@@ -256,6 +256,20 @@ final class AuthStore: ObservableObject {
             try await AuthGateway.confirmSignUp(username: username, code: code)
             ok = true
         }
+        // 🔴 **「もう確認済み」は成功として扱う**（Web の `confirmSignUp` と同じ）。確認は
+        // 済んだのに返事が届かなかった回（圏外・PostConfirmation の失敗）に押し直すと
+        // Cognito は NotAuthorized を返し、「メールアドレスかパスワードが違います」で
+        // 確認画面から出られなくなっていた
+        if !ok, lastFailure.meansAlreadyConfirmed {
+            ok = true
+            lastFailure = .none
+            errorMessage = nil
+        }
+        // 別のアカウントがこのメールで確認済み（同じ人が登録し直した）。次の手を言う
+        if lastFailure == .aliasExists {
+            errorMessage = L("このメールアドレスはすでに登録されています。そのアカウントでログインするか、パスワードを再設定してください",
+                             "This email is already registered. Sign in to that account or reset its password.")
+        }
         return ok
     }
 
@@ -330,6 +344,10 @@ enum AuthFailure: Equatable {
         }
     }
 
+    /// 確認コードを送ったときの「もう確認済み」（Cognito は NotAuthorized で返す）。
+    /// 確認の押し直しでは**成功**として扱う
+    var meansAlreadyConfirmed: Bool { self == .notAuthorized }
+
     /// 相手の利用者がもう存在しない（退会の押し直しで「消せた」とみなす）。
     var meansUserAlreadyGone: Bool { self == .userNotFound }
 
@@ -361,7 +379,9 @@ enum AuthMessage {
         case .notAuthorized:
             return L("メールアドレスかパスワードが違います", "Wrong email or password")
         case .userNotFound:
-            return L("そのメールアドレスのアカウントが見つかりません", "No account for that email")
+            // **「違います」と同じ文にする**（Web の signIn と同じ）。分けると、アカウントが
+            // あるかどうかをログイン画面で確かめられてしまう
+            return L("メールアドレスかパスワードが違います", "Wrong email or password")
         case .userNotConfirmed:
             return L("メールに届いた確認コードで登録を完了してください", "Finish sign up with the code we emailed you")
         case .codeMismatch:
