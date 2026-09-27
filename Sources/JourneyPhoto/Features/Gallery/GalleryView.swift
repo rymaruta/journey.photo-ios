@@ -21,6 +21,9 @@ struct GalleryView: View {
     /// 描くときに落とす「見せない」の写し。**画面に出ている間だけ取り直す**。
     /// 戻った瞬間、読み直しが終わるまでブロックした人のカードが見えないように
     @State private var dropped = ModerationSnapshot()
+    /// いま一覧を読んでいる人。**外側の nil は「まだ一度も決まっていない」**
+    /// （内側の nil は未ログイン）。人が替わったのを見分けるのに使う
+    @State private var shownViewer: String??
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}
@@ -67,6 +70,15 @@ struct GalleryView: View {
         // **ログイン状態が決まってから範囲を決める**（範囲は選んでいるフィードが決める）。
         // フォロー中の一覧は、その範囲を選ぶ人にだけ要る
         .task(id: auth.userId) {
+            // **人が替わったら一覧を読み直す**（前の人の限定公開を捨てる）。
+            // 初回（`shownViewer` がまだ無い）は上の `.task` が読むので何もしない
+            let current = auth.userId
+            if let previous = shownViewer, previous != current {
+                shownViewer = .some(current)
+                await model.switchViewer(from: previous, to: current)
+            } else {
+                shownViewer = .some(current)
+            }
             guard auth.userId != nil else {
                 model.use(viewerId: nil, following: [])
                 await model.loadMyPhotos(environment.photos, viewerId: nil)
@@ -84,9 +96,19 @@ struct GalleryView: View {
             // 今日のテーマに参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
         }
+        // **限定公開の取り口が入れ替わった後にも読み直す。** `auth.userId` の変化と
+        // 取り口の入れ替え（`JourneyPhotoApp.applyRestrictedFeed`）の順は決まっておらず、
+        // 先に読むと前の人の口の控えを拾いうる。最初の1回（今の回数）は読まない
+        .task {
+            var isFirst = true
+            for await _ in await environment.gallery.restrictedChanges() {
+                if isFirst { isFirst = false; continue }
+                await model.load()
+            }
+        }
         .refreshable { await model.load(force: true) }
         .sheet(item: $reportTarget) { target in
-            ReportSheet(photoId: target.id, ownerId: target.userId)
+            ReportSheet(photoId: target.id, ownerId: target.userId ?? target.uploadedBy)
         }
         // **ブロック／通報の直後に消す。** 手元に読み終えた配列が残るので、
         // 読み直さないと画面は変わらない。

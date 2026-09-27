@@ -591,6 +591,11 @@ struct SearchView: View {
 
         if model.scope.showsPhotos {
             photoResults
+        } else if users.isEmpty, model.peopleFailed, !query.isEmpty {
+            // **取れなかったを「見つかりませんでした」と言わない**（圏外・API の失敗）
+            ErrorBanner(message: Labels.Common.loadFailed) {
+                Task { await model.search(query, environment: environment) }
+            }
         } else if users.isEmpty {
             // 人だけを探しているとき。**打つ前と見つからなかったを分ける**
             Text(query.isEmpty
@@ -653,6 +658,8 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var users: [UserProfile] = []
     @Published private(set) var popularTags: [String] = []
     @Published private(set) var isSearching = false
+    /// 人の検索が**取れなかった**（0人と分ける）。いちばん新しい回の結果だけを持つ
+    @Published private(set) var peopleFailed = false
     /// 写真の一覧を取れなかった（読み込み中・0枚と分ける）
     @Published private(set) var loadFailed = false
     /// 最初の読み込みが（成功でも失敗でも）返ったか
@@ -875,17 +882,22 @@ final class SearchViewModel: ObservableObject {
         guard !trimmed.isEmpty else {
             users = []
             isSearching = false
+            peopleFailed = false
             return
         }
         // 写真は手元の一覧から即座に絞る（往復しない・`shown` が `query` から導く）
 
         isSearching = true
+        peopleFailed = false
         searchTask = Task {
             try? await Task.sleep(for: debounce)
             guard !Task.isCancelled, generation == self.searchGeneration else { return }
-            let found = (try? await fetchUsers(trimmed)) ?? []
+            // **失敗を 0人に畳まない。** 畳むと圏外でも「見つかりませんでした」と出ていた
+            let found: [UserProfile]?
+            do { found = try await fetchUsers(trimmed) } catch { found = nil }
             guard !Task.isCancelled, generation == self.searchGeneration else { return }
-            users = found
+            users = found ?? []
+            peopleFailed = found == nil
             isSearching = false
         }
     }

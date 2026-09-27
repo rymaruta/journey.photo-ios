@@ -91,4 +91,24 @@ final class SearchPeopleTests: XCTestCase {
         await waitUntil { !model.isSearching }
         XCTAssertEqual(model.users.map(\.userId), ["new"])
     }
+
+    /// 🔴 **取れなかったを「見つかりませんでした」にしない。** 失敗は `peopleFailed` に持ち、
+    /// 次の回（再試行）を始めたら下ろす
+    func testFailedPeopleSearchIsNotNoResults() async throws {
+        struct Boom: Error {}
+        let model = SearchViewModel()
+        await model.search("ab", debounce: .zero) { _ in throw Boom() }
+        await waitUntil { !model.isSearching }
+        XCTAssertTrue(model.peopleFailed, "失敗が 0人に畳まれている")
+        XCTAssertTrue(model.users.isEmpty)
+
+        let pending = PendingFetch()
+        await model.search("ab", debounce: .zero) { await pending.fetch($0) }
+        XCTAssertFalse(model.peopleFailed, "再試行の間も失敗の帯が出たまま")
+        await waitUntil { pending.isWaiting("ab") }
+        pending.release("ab", with: [try user("found")])
+        await waitUntil { !model.isSearching }
+        XCTAssertFalse(model.peopleFailed)
+        XCTAssertEqual(model.users.map(\.userId), ["found"])
+    }
 }

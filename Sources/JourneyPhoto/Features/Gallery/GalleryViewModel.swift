@@ -60,15 +60,38 @@ final class GalleryViewModel: ObservableObject {
     func load(force: Bool = false) async {
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
+        let generation = viewerGeneration
         do {
             let photos = try await gallery.fetchPhotos(force: force)
-            guard !keepsShownFeed else { return }
+            // 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
+            guard !keepsShownFeed, generation == viewerGeneration else { return }
             all = sorted(photos)
             state = .loaded(filtered())
         } catch {
-            guard !keepsShownFeed else { return }
+            guard !keepsShownFeed, generation == viewerGeneration else { return }
             state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
         }
+    }
+
+    /// 人が替わった回数。**替わる前に読み始めた回の答えを書かない**ために使う
+    private var viewerGeneration = 0
+
+    /// 人が替わったら呼ぶ。**前の人の一覧を捨てて読み込み中に戻し、読み直す**。
+    ///
+    /// ホームは一度読んだ一覧を持ち続けるので、捨てないとログアウトや別の人の
+    /// ログインのあとも、前の人あての「フォロワーのみ／親しい友達」が並んでいた。
+    ///
+    /// **未ログイン→ログインでは捨てない**（起動時の確認中→A もここ）。出ていたのは
+    /// 公開ぶんだけなので、消して丸に戻すと起動のたびに一覧がちらつく。読み直しだけする
+    func switchViewer(from previous: String?, to next: String?) async {
+        guard previous != next else { return }
+        if previous != nil {
+            viewerGeneration += 1
+            all = []
+            myPhotos = []
+            state = .loading
+        }
+        await load()
     }
 
     /// **一覧を出している最中に取り消された回は何も書かない。** 戻ると `.task` が走り直し、
