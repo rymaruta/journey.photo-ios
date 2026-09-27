@@ -35,7 +35,7 @@ final class ViewModelTests: XCTestCase {
         APIClient(baseURL: URL(string: "https://api.example.test")!,
                   tokenProvider: StubTokenProvider(token: token),
                   session: session,
-                  beforeRequest: gates.map { gates in { await gates.wait(for: $0) } })
+                  beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } })
     }
 
     private func gallery(_ body: String) -> PublicGalleryService {
@@ -587,7 +587,7 @@ final class ViewModelTests: XCTestCase {
         let gate = Gate()
         let model = MyPageViewModel(api: api(gates: PathGates(["/user/profile": gate, "/user/photos": gate])))
         let previous = Task { await model.load() }
-        await gate.untilWaiting()
+        await gate.untilWaiting(2)   // プロフィールも写真も飛んでいる最中
         model.forgetPhotos()
         XCTAssertFalse(model.isLoading, "人が替わったのに前の人の読み込み中のまま")
         await gate.open()
@@ -899,9 +899,9 @@ final class ViewModelTests: XCTestCase {
     func testCommentPostedWhileAwayShowsOnReturn() async {
         prepare()
         // コメントの返事を止めておき、その間に隣へ送る
-        let gate = Gate(holds: 1)
+        let gate = Gate()
         let model = PhotoDetailViewModel(photoId: "p1",
-                                         social: SocialService(api: api(gates: PathGates(["/comments": gate]))))
+                                         social: SocialService(api: api(gates: PathGates(["POST /photos/p1/comments": gate]))))
         model.setSignedIn(true)
         model.draftComment = "きれい"
         StubProtocol.respond(path: "/comments", status: 200,

@@ -67,17 +67,28 @@ struct GatedTokenProvider: TokenProviding {
 }
 
 /// 道（URL のパス）ごとの `Gate`。**「この口だけ遅い」を作る**（`APIClient` の
-/// `beforeRequest` に渡す）。登録の無い道は止めずに通す
+/// `beforeRequest` に渡す）。登録の無い道は止めずに通す。
+///
+/// 鍵は道の一部（`"/user/profile"`）か、メソッドつき（`"POST /photos/p1/comments"`
+/// ——一覧の読み込みと送信が同じ道の口を分ける）。**いちばん長く当たる鍵を使う**
+/// （辞書の並びは実行ごとに変わるので、先に当たった方を使うと回ごとに揺れる）
 struct PathGates: Sendable {
-    private let gates: [(path: String, gate: Gate)]
+    private let gates: [(method: String?, path: String, gate: Gate)]
 
     init(_ gates: [String: Gate]) {
-        self.gates = gates.map { ($0.key, $0.value) }
+        self.gates = gates.map { key, gate in
+            let parts = key.split(separator: " ", maxSplits: 1).map(String.init)
+            return parts.count == 2 ? (parts[0], parts[1], gate) : (nil, key, gate)
+        }
     }
 
     func wait(for request: URLRequest) async {
         let path = request.url?.path ?? ""
-        guard let hit = gates.first(where: { path.contains($0.path) }) else { return }
+        let method = request.httpMethod ?? "GET"
+        let hit = gates
+            .filter { path.contains($0.path) && ($0.method == nil || $0.method == method) }
+            .max { $0.path.count < $1.path.count }
+        guard let hit else { return }
         await hit.gate.wait()
     }
 }

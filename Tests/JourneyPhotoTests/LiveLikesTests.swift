@@ -135,7 +135,7 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
     private func service(live: URL?, gate: Gate? = nil) -> PublicGalleryService {
         PublicGalleryService(url: staticURL, liveURL: live, session: session,
                              snapshot: PhotoSnapshotStore(fileName: UUID().uuidString),
-                             beforeLiveRequest: gate.map { gate in { await gate.wait() } })
+                             beforeLiveRequest: gate.map { gate in { @Sendable () async in await gate.wait() } })
     }
 
     private let staticBody = """

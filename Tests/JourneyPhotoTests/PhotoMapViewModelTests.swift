@@ -54,7 +54,7 @@ final class PhotoMapViewModelTests: XCTestCase {
             url: URL(string: "https://site.example.test/app/data/spots.json")!,
             session: session,
             snapshot: SpotSnapshotStore(fileName: UUID().uuidString),
-            beforeRequest: indexGate.map { gate in { await gate.wait() } }
+            beforeRequest: indexGate.map { gate in { @Sendable () async in await gate.wait() } }
         )
         return AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: gallery, spots: index)
     }
