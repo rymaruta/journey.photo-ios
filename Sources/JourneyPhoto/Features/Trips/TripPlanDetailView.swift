@@ -86,11 +86,14 @@ struct TripPlanDetailView: View {
                            onSave: {
                                Task {
                                    // 断られたら残り、アラートで知らせる
+                                   model.clearError()   // 前の失敗の文を出さない
                                    if await save() {
                                        dismiss()
                                    } else {
-                                       leaveSaveError = model.errorMessage
-                                           ?? L("保存できませんでした", "Couldn't save")
+                                       // 確認の板が閉じ切ってから出す（閉じている途中に出すと
+                                       // SwiftUI が黙って捨てることがある）
+                                       try? await Task.sleep(nanoseconds: 350_000_000)
+                                       leaveSaveError = model.errorMessage ?? ""
                                    }
                                }
                            },
@@ -174,7 +177,9 @@ struct TripPlanDetailView: View {
     }
 
     private var leave: UnsavedLeave {
-        TripPlanText.leave(plan: plan, days: days, start: start, end: end, busy: model.busy != nil)
+        // 日程を送っている間（`sent` は保存の間だけ立つ。削除では立たない）
+        TripPlanText.leave(plan: plan, days: days, start: start, end: end,
+                           saving: model.busy != nil && sent != nil)
     }
 
     /// 送る。**通ったか**を返す（「保存して戻る」は通ったときだけ閉じる）
