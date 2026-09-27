@@ -190,7 +190,10 @@ struct SearchView: View {
     private var tagChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(model.tagChips, id: \.tag) { item in
+                // 0枚のチップは出さない。**ただし選んでいるものは残す**——カテゴリで
+                // 0 になったとき、押して外す手立てが消える
+                ForEach(model.tagChips.filter { $0.count > 0 || TagChoices.key(query) == TagChoices.key($0.tag) },
+                        id: \.tag) { item in
                     chip("\(item.tag)  \(item.count)",
                          selected: TagChoices.key(query) == TagChoices.key(item.tag)) {
                         query = TagChoices.key(query) == TagChoices.key(item.tag) ? "" : item.tag
@@ -657,17 +660,18 @@ final class SearchViewModel: ObservableObject {
         return sort.apply(filtered(query: query))
     }
 
-    /// タグのチップと、**押したときに出る枚数**。
+    /// タグのチップと、**押したときに出る枚数**（0 もそのまま持つ。出すかどうかは画面）。
     ///
     /// 並びと候補は `tagCounts`（タグを持つ写真の数）で決め、数は押した後の
     /// 結果（`shown` と同じ絞り方）で出す。「すべて」「写真」はタグの語を題・
-    /// 撮影地にも当てる（`SearchScope`）ので、タグの数を出すと「山 3」を押して
-    /// 富士山・山中湖の写真まで出て数が合わなかった。0枚になるチップは出さない
-    var tagChips: [(tag: String, count: Int)] {
-        tagCounts.compactMap { item -> (tag: String, count: Int)? in
-            let count = filtered(query: item.tag).count
-            return count > 0 ? (tag: item.tag, count: count) : nil
-        }
+    /// 撮影地にも当てる（`SearchScope`）ので、タグの数を出すと「山 1」を押して
+    /// 富士山・山中湖の写真まで出て数が合わなかった。
+    /// **打鍵ごとには数え直さない**——一覧・種類・カテゴリが変わったときだけ
+    /// （`refreshTagChips`）。描くたびに数えると、12語×全写真の文字の畳み込みが走る
+    @Published private(set) var tagChips: [(tag: String, count: Int)] = []
+
+    private func refreshTagChips() {
+        tagChips = tagCounts.map { (tag: $0.tag, count: filtered(query: $0.tag).count) }
     }
 
     /// `shown` の絞り方（並べ替えの前まで）
@@ -698,7 +702,10 @@ final class SearchViewModel: ObservableObject {
         DiscoverySections.seasonalTags().map { "#\($0)" }.joined(separator: " ")
     }
 
-    func select(scope: SearchScope) { self.scope = scope }
+    func select(scope: SearchScope) {
+        self.scope = scope
+        refreshTagChips()
+    }
 
     func select(category: String?) {
         // 押し直したら外す
@@ -708,6 +715,7 @@ final class SearchViewModel: ObservableObject {
         } else {
             self.category = category
         }
+        refreshTagChips()
     }
 
     func select(sort: GallerySort) { self.sort = sort }
@@ -756,6 +764,7 @@ final class SearchViewModel: ObservableObject {
         hasLoaded = true
         popularTags = PhotoQuery.topTags(in: allPhotos)
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
+        refreshTagChips()
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
         seasonalAll = DiscoverySections.seasonal(in: allPhotos, limit: .max)
         seasonal = Array(seasonalAll.prefix(SearchDiscovery.seasonalPreview))

@@ -331,8 +331,13 @@ struct SignInView: View {
         }
         // **送り直せなくても、コードを入れる欄は出す。** 前に届いたコードは
         // まだ使えることがある。欄を出さないと、ログインを押すたびに送り直し
-        // → 回数制限、を繰り返すだけで先へ進めなかった
+        // → 回数制限、を繰り返すだけで先へ進めなかった。
+        // **Cognito が「未確認」と答えた回だけ。**「すでに登録されています」の回は
+        // 確認済みの人がほとんどで、コードを入れても通らない画面になる
+        guard knownUnconfirmed else { return }
         pendingUsername = saved
+        notice = L("確認コードを送り直せませんでした。前に届いたコードがあれば、そのまま入力できます。",
+                   "We couldn't send a new code. If you have an earlier code, you can enter it.")
     }
 
     // MARK: - 登録の確認
