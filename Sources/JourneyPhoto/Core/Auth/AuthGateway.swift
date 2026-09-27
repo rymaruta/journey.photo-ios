@@ -16,7 +16,10 @@ import AWSPluginsCore
 /// 向く。`AppConfig` の値からその場で組み立てる。
 enum AuthGateway {
 
-    private static var isConfigured = false
+    /// `private` にしない: 試験が「未設定の起動」を作るため。Xcode の試験はアプリの中で
+    /// 走り、アプリが起動時に `configure()` を済ませているので、放っておくと
+    /// 未設定の状態を試せない（本物の Cognito にログインしに行っていた・TestFlight run 163）
+    static var isConfigured = false
 
     /// 🔴 **設定に失敗した起動では Amplify を呼ばない。** `configure()` が投げても起動は
     /// 続ける（公開の画面は出せる）が、その後 `restore()` などが Amplify を呼ぶと、
