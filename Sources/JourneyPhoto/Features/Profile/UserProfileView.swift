@@ -156,7 +156,8 @@ struct UserProfileView: View {
             ErrorBanner(message: L("公開された写真はまだありません", "No public photos yet"))
         } else if tab == .map {
             // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）
-            MyPhotosMap(photos: shownPhotos)
+            // シートの中でブロック／通報して閉じたら、格子も絞り直す（`onAppear` は来ない）
+            MyPhotosMap(photos: shownPhotos, onSheetDismiss: { dropped = hidden.snapshot })
         } else {
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(shownPhotos) { photo in

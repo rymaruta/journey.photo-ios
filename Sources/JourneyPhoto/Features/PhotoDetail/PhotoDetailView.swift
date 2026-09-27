@@ -596,6 +596,9 @@ struct PhotoDetailView: View {
     /// 隣の写真なら、その写真に直接送る——**解除はしない**ので `like` だけ
     private func likeFromViewer(_ shown: Photo) async {
         if shown.id == current.id {
+            // 🔴 **ダブルタップは付けるだけ。** いいね済みの1枚で下のハートと同じ
+            // 入れ替えを通すと、ダブルタップで外れていた（隣の写真は `like` だけ）
+            guard !model.liked else { return }
             // 下のハートと同じく、端末の控えとホームの数にも渡す
             await toggleLikeHere()
             return

@@ -376,7 +376,9 @@ struct GalleryView: View {
                 // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
                 // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
                 // 「前の方が好きだった」で先頭の大きな札に戻した（2026-09-26）
-                DailyThemeCard(photos: model.allPhotosForTheme, myPhotos: model.myPhotos)
+                // 背景の写真もブロック／通報を落とした並びから（読み直しが終わるまで
+                // ブロックした人の写真が札の背景に出ていた）
+                DailyThemeCard(photos: dropped.visible(model.allPhotosForTheme), myPhotos: model.myPhotos)
                 feedPicker
                 featuredSections
                 // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。

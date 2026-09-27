@@ -15,11 +15,18 @@ struct MyPhotosMap: View {
     /// 個別ページの無い自分の写真に共有を出さず、近くの公開写真には出す
     /// （`NearbyPhotos.fromPublicFeed`）
     var fromPublicFeed: (Photo) -> Bool = { _ in true }
+    /// ピンの一覧のシートを閉じた。**下の画面が絞り直す合図**——シートを
+    /// 閉じても下の画面に `onAppear` は来ない
+    var onSheetDismiss: () -> Void = {}
 
+    @EnvironmentObject private var hidden: ModerationStore
     @State private var camera: MapCameraPosition = .automatic
     @State private var selected: MapPin?
+    /// 🔴 シートの中の詳細でブロック／通報して閉じたら、ピンからも落とす
+    /// （閉じたとき・出たときだけ取り直す）
+    @State private var dropped: ModerationSnapshot?
 
-    private var pins: [MapPin] { MapPin.group(photos) }
+    private var pins: [MapPin] { MapPin.group(dropped?.visible(photos) ?? photos) }
 
     var body: some View {
         Group {
@@ -49,13 +56,18 @@ struct MyPhotosMap: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .padding(.horizontal, 16)
                 .onAppear { frame() }
-                .sheet(item: $selected) { pin in
+                .sheet(item: $selected, onDismiss: {
+                    dropped = hidden.snapshot
+                    onSheetDismiss()
+                }) { pin in
                     NavigationStack {
+                        VisiblePhotos(photos: pin.photos) { photos in
                         ScrollView {
-                            PhotoGrid(photos: pin.photos) { photo in
-                                PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed(photo), context: pin.photos)
+                            PhotoGrid(photos: photos) { photo in
+                                PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed(photo), context: photos)
                             }
                             .padding(.vertical, 16)
+                        }
                         }
                         .webScreen()
                         .navigationTitle(pin.title)
@@ -67,6 +79,7 @@ struct MyPhotosMap: View {
                 }
             }
         }
+        .onAppear { dropped = hidden.snapshot }
     }
 
     private func frame() {

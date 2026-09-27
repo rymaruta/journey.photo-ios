@@ -54,7 +54,15 @@ actor PublicGalleryService {
         // ログインし直した人に、前の人ぶんを見せない
         restrictedCache = nil
         restrictedCachedAt = nil
+        restrictedGeneration += 1
     }
+
+    /// 取り方を入れ替えた回数。**入れ替わる前に出した要求の答えを捨てるため**
+    ///
+    /// 🔴 actor は `await` の間に次の呼び出しを受ける。前の人の要求を待っている
+    /// 間に人が替わると、控えを消したあとで前の人の答えが控えに書き戻され、
+    /// 次の人の一覧・地図に前の人宛ての絞った写真が最大60秒出ていた
+    private var restrictedGeneration = 0
 
     private var restrictedCache: [Photo]?
     private var restrictedCachedAt: Date?
@@ -69,6 +77,7 @@ actor PublicGalleryService {
             return restrictedCache
         }
         let startedAt = Date()
+        let generation = restrictedGeneration
         do {
             // **いまの数の時刻を付ける。** この口は DynamoDB から直に来るので
             // 数は新しい。付けないと、押した答え（`LikeCountStore`）が
@@ -78,11 +87,13 @@ actor PublicGalleryService {
                 stamped.likesAsOf = startedAt
                 return stamped
             }
+            guard generation == restrictedGeneration else { return [] }
             restrictedCache = photos
             restrictedCachedAt = Date()
             return photos
         } catch {
             print("[gallery] 公開範囲を絞った写真を取れませんでした: \(error)")
+            guard generation == restrictedGeneration else { return [] }
             // 直前に取れていたぶんは出す（圏外で消える方が驚かれる）
             return restrictedCache ?? []
         }

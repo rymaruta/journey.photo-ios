@@ -189,6 +189,24 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(model.pinnedIds.isEmpty, "前の人の留めた写真が残っている")
     }
 
+    /// 🔴 **前の人の読み込みの途中で人が替わったら、その答えを書かない。**
+    /// 次の人の読み込みも押さえで弾かない（書き込まれた前の人の下書きが残っていた）
+    func testSlowLoadOfThePreviousUserIsDiscarded() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"a"}"#, delay: 0.3)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg","published":false}]"#, delay: 0.3)
+        let model = MyPageViewModel(api: api())
+        async let previous: Void = model.load()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        model.forgetPhotos()
+        XCTAssertFalse(model.isLoading, "人が替わったのに前の人の読み込み中のまま")
+        await previous
+        XCTAssertTrue(model.photos.isEmpty, "前の人の写真（下書き）が次の人に書き込まれた")
+        XCTAssertNil(model.profile, "前の人の見出しが次の人に書き込まれた")
+    }
+
     #if DEBUG
     /// 🔴 **鍵を持たずに入っている回、マイページが丸ごと「ログインが必要です」
     /// になっていた。**

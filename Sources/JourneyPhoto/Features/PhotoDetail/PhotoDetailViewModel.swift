@@ -185,7 +185,8 @@ final class PhotoDetailViewModel: ObservableObject {
             commentCount = commentCount.map { $0 + 1 }
             draftComment = ""
         } catch {
-            guard id == photoId else { return }
+            // **送った先の1枚でも失敗は出す。** 書きかけは送ったときに `show` が
+            // 消しているので、黙ると「入った」と思われたまま文も残らない
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
         }
     }
