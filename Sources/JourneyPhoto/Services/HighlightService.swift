@@ -120,6 +120,18 @@ struct Highlight: Decodable, Identifiable, Equatable {
     /// 表紙。消えた行を落とした結果、**1枚も残っていないことがある**
     let cover: Cover?
 
+    private enum CodingKeys: String, CodingKey { case id, title, count, cover }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        title = try c.decode(String.self, forKey: .title)
+        count = try c.decodeIfPresent(Int.self, forKey: .count)
+        // **表紙の形が崩れていても、一覧ごと落とさない**（表紙を伏せるだけ）——
+        // 形の食い違いで輪が1つも出なかったのがこの直しの発端
+        cover = (try? c.decodeIfPresent(Cover.self, forKey: .cover)) ?? nil
+    }
+
     /// 🔴 **サーバーは表紙を `{src, mediaType}` で返す**（`highlights.ts` の `resolveCover`・
     /// Web も `h.cover.src` で読む）。文字列として読んでいたので、表紙のある輪が1つでも
     /// あると**一覧ごと読めず、ハイライトが1つも出なかった**。古い形（文字列）も読む

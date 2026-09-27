@@ -52,7 +52,8 @@ enum CollectionScreen {
     static func shareText(title: String, count: Int, kind: PhotoQuery.Collection?, lead: Photo?) -> String {
         var lines = ["\(title) · \(L("\(count)枚", "\(count) photos"))"]
         if let url = pageURL(kind) ?? lead.flatMap({
-            PhotoLink.url(photoId: $0.id, isPublished: $0.published != false)
+            // 公開範囲を絞った写真は個別ページが建たない（`PhotoDetailView.shareURL`）
+            PhotoLink.url(photoId: $0.id, isPublished: $0.published != false && !RestrictedFeed.isRestricted($0))
         }) {
             lines.append(url.absoluteString)
         }

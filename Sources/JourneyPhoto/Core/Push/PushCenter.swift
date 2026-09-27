@@ -171,7 +171,13 @@ final class PushCenter: ObservableObject {
         // 待っている間に次の `use` が始まっていたら、そちらに任せる
         guard self.userId == userId else { return }
 
-        if let previous, previous != userId { isRegistered = false }
+        if let previous, previous != userId {
+            isRegistered = false
+            // **アイコンの未読の数を消す**（前の人の数が、次の人がお知らせを開くまで
+            // 残った）。ログアウト・期限切れ・人の切り替えを全部ここで拾う。起動時の
+            // nil → 人 では消さない（その人の未読の数のまま）
+            await clearBadge()
+        }
         // 🔴 **前の人の宛先が残っている**（ログアウトの前に外せなかった:
         // ログインの期限切れ・圏外・退会の途中）。前の人の認証はもう無いので
         // サーバーからは外せない。**端末ごと APNs から外す**——サーバーは
@@ -312,8 +318,6 @@ final class PushCenter: ObservableObject {
     /// 外せなかったら（圏外など）印が残り、ログアウトのあとの `use` が端末ごと
     /// 外し（`registeredOwner`）、次にログインした人がサーバーから引き取る（`owner`）
     func signingOut() async {
-        // **アイコンの未読の数も消す**（前の人の数が、次の人がお知らせを開くまで残った）
-        await clearBadge()
         guard let token, let userId else { return }
         // **外せた回だけ、自分の印だけ消す。** 前の人の印（預け直しが落ちて
         // 残ったもの）は、この人の認証では外れていないので残す

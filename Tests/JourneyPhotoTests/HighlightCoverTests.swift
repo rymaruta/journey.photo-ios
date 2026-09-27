@@ -26,8 +26,9 @@ final class HighlightCoverTests: XCTestCase {
 
     /// 動画の表紙は絵として読まない（地の円にする）
     func testVideoCoverIsNotDrawnAsAnImage() throws {
-        let list = try decode(#"{"highlights":[{"id":"h1","title":"パリ","cover":{"src":"https://x.test/a.mp4","mediaType":"video/mp4"}}]}"#)
+        let list = try decode(#"{"highlights":[{"id":"h1","title":"パリ","cover":{"src":"https://x.test/a.mp4","mediaType":"video"}}]}"#)
         XCTAssertNil(list[0].coverURL)
+        XCTAssertEqual(list[0].cover?.isVideo, true, "サーバーが保存する値は \"video\"（stories.ts）")
     }
 
     private func song(_ url: String) -> Photo.Song {
@@ -42,5 +43,12 @@ final class HighlightCoverTests: XCTestCase {
         // 後ろに同じ曲があれば外す
         XCTAssertEqual(ProfileSongs.replacingFirst(five, with: song("c")).map(\.previewUrl), ["c", "b", "d", "e"])
         XCTAssertEqual(ProfileSongs.replacingFirst([], with: song("z")).map(\.previewUrl), ["z"])
+    }
+
+    /// **表紙の形が崩れていても一覧ごと落とさない**（表紙を伏せるだけ）
+    func testBrokenCoverDoesNotDropTheList() throws {
+        let list = try decode(#"{"highlights":[{"id":"h1","title":"a","cover":{"src":5}},{"id":"h2","title":"b"}]}"#)
+        XCTAssertEqual(list.map(\.id), ["h1", "h2"])
+        XCTAssertNil(list[0].cover)
     }
 }
