@@ -52,7 +52,10 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound, .badge]
+        // **ベルの数も合わせる。** バナーだけ出してベルが古い数のままだと、
+        // 前面に戻るかお知らせを開くまで届いたことが数に出なかった
+        await MainActor.run { NotificationRouter.shared.noteArrival() }
+        return [.banner, .list, .sound, .badge]
     }
 
     /// 通知を押した。**行き先はお知らせ画面**。
@@ -77,5 +80,44 @@ final class NotificationRouter: ObservableObject {
     /// 押されるたびに増える。**真偽値にしない**——2回続けて押したときに
     /// 「変わっていない」と見なされて2回目が効かなくなる
     @Published private(set) var openActivityRequests = 0
-    func openActivity() { openActivityRequests += 1 }
+    /// 押されたが、まだ画面が受け取っていない。
+    ///
+    /// **数の変化だけに頼らない。** 起動の途中（冷えた状態から押した回）や
+    /// 規約の同意画面が出ている間は、数を見ている画面がまだ居ないので、
+    /// 変化を見逃して押したことが落ちていた。画面が出てきたときに取りに来る
+    private(set) var hasPendingActivity = false
+    /// アプリを開いている間に届いた通知の数（ベルの数え直しの合図）
+    @Published private(set) var arrivals = 0
+
+    func openActivity() {
+        hasPendingActivity = true
+        openActivityRequests += 1
+    }
+
+    /// 押された分を受け取る。**受け取るのは1回だけ**（2回目は false）
+    func takePendingActivity() -> Bool {
+        defer { hasPendingActivity = false }
+        return hasPendingActivity
+    }
+
+    func noteArrival() { arrivals += 1 }
+}
+
+/// いま何かが画面の上に出ているか（シート・確認の枠）。
+///
+/// **SwiftUI はシートを1つずつしか出せない。** 出ている間にお知らせを
+/// 出そうとしても黙って無視されるので、閉じられたかをここで確かめる。
+/// **読むだけで、閉じはしない**——書きかけを抱えたシート（投稿・ストーリー・
+/// 写真の編集）を勝手に閉じると、書いたものが消える
+@MainActor
+enum ModalProbe {
+    static func isPresenting() -> Bool {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows where window.isKeyWindow {
+                if window.rootViewController?.presentedViewController != nil { return true }
+            }
+        }
+        return false
+    }
 }

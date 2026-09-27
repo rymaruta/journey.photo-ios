@@ -163,7 +163,8 @@ struct NotificationsView: View {
         .navigationDestination(item: $route) { route in
             destinationView(route)
         }
-        .task(id: router.openActivityRequests) {
+        // 開いている間に届いた通知（`arrivals`）でも読み直す
+        .task(id: [router.openActivityRequests, router.arrivals]) {
             // **読めたときだけ消す。** サーバーは未読数を載せるが、既読に
             // したことは端末のアイコンに伝わらない——誰も消さないと増える
             // 一方。ただし圏外で開いた回に消すと、タブは 3・アイコンは 0 に割れる

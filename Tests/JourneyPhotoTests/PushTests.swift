@@ -196,4 +196,24 @@ final class NotificationRouterTests: XCTestCase {
         XCTAssertEqual(router.openActivityRequests, before + 2,
                        "2回押したのに1回ぶんしか数えていない")
     }
+
+    /// **画面が居ない間に押した分を落とさない**（冷えた起動・規約の同意画面）。
+    /// 画面が出てきたときに1回だけ受け取れる
+    func testTapBeforeTheScreenExistsIsKeptUntilTaken() async {
+        let router = NotificationRouter.shared
+        _ = router.takePendingActivity()
+        router.openActivity()
+        XCTAssertTrue(router.takePendingActivity(), "画面が出る前に押した分が残っていない")
+        XCTAssertFalse(router.takePendingActivity(), "同じ1回を2度開いている")
+    }
+
+    /// アプリを開いている間に届いた通知は、ベルの数え直しの合図になる
+    func testArrivalWhileOpenIsSignalled() async {
+        let router = NotificationRouter.shared
+        _ = router.takePendingActivity()
+        let before = router.arrivals
+        router.noteArrival()
+        XCTAssertEqual(router.arrivals, before + 1)
+        XCTAssertFalse(router.takePendingActivity(), "届いただけで（押していないのに）お知らせを開いている")
+    }
 }

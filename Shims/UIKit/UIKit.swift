@@ -1,7 +1,23 @@
 // UIKit の模型（Linux で型検査するためだけのもの）。
 @_exported import SwiftUI
 
-open class UIViewController {}
+open class UIViewController {
+    /// 本物は読み取りだけ（このコントローラが出しているもの）
+    open var presentedViewController: UIViewController? { nil }
+}
+
+/// 画面の場。本物は `UIResponder`（NSObject）の子なので Set に入る
+open class UIScene: Hashable {
+    public static func == (lhs: UIScene, rhs: UIScene) -> Bool { lhs === rhs }
+    public func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
+}
+open class UIWindowScene: UIScene {
+    public var windows: [UIWindow] { [] }
+}
+open class UIWindow {
+    public var isKeyWindow: Bool { false }
+    public var rootViewController: UIViewController?
+}
 
 /// `@UIApplicationDelegateAdaptor` で繋ぐ側の模型。
 public protocol UIApplicationDelegate: NSObjectProtocolShim {}
@@ -22,6 +38,7 @@ open class UIApplication {
     public static let shared = UIApplication()
     public func registerForRemoteNotifications() {}
     public func unregisterForRemoteNotifications() {}
+    public var connectedScenes: Set<UIScene> { [] }
     public var applicationIconBadgeNumber: Int = 0
 }
 open class UINavigationController: UIViewController {}

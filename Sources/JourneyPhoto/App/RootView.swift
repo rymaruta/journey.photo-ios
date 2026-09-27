@@ -24,6 +24,8 @@ struct RootView: View {
     @State private var showMenu = false
     /// 通知を押して開いたか（`AppDelegate` から届く）
     @StateObject private var router = NotificationRouter.shared
+    /// 通知を押したあと、ほかのシートが閉じるのを待っている間の仕事
+    @State private var activityWait: Task<Void, Never>?
 
     enum Tab: Hashable {
         // **提案の並び**（owner の絵・2026-09-21）:
@@ -69,6 +71,32 @@ struct RootView: View {
             return
         }
         unread = (try? await environment.notifications.fetch().unread) ?? 0
+    }
+
+    /// 通知を押した分を受け取って、お知らせを出す。
+    ///
+    /// 🔴 **ほかのシートが出ている間は、お知らせのシートは出ない**
+    /// （SwiftUI は1つずつ——黙って無視される）。投稿の2択・メニューは
+    /// 何も抱えていないので閉じる。それ以外（投稿・ストーリー・写真の中の
+    /// シート）は**勝手に閉じない**——書きかけが消えるので、閉じられるのを
+    /// 待ってから出す
+    private func takeActivityRequest() {
+        guard router.takePendingActivity() else { return }
+        // 既に開いている: お知らせの画面が数を見て読み直す
+        guard !showNotifications else { return }
+        showPostChoice = false
+        showMenu = false
+        activityWait?.cancel()
+        activityWait = Task { @MainActor in
+            // 閉じる動きが終わるのを待ってから確かめる
+            repeat {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            } while !Task.isCancelled && ModalProbe.isPresenting()
+            guard !Task.isCancelled else { return }
+            // 通知はタブではなくなったので、ホームのヘッダーから開く
+            selection = .home
+            showNotifications = true
+        }
     }
 
     private var tabs: some View {
@@ -125,9 +153,14 @@ struct RootView: View {
         // **押した通知の行き先。** 数で見るのは、2回続けて押したときに
         // 「変わっていない」と見なされて2回目が効かなくなるため
         .onChange(of: router.openActivityRequests) { _, _ in
-            // 通知はタブではなくなったので、ホームのヘッダーから開く
-            selection = .home
-            showNotifications = true
+            takeActivityRequest()
+        }
+        // **画面が出てきたときにも取りに行く。** 冷えた状態から押した回・
+        // 規約の同意画面が出ていた回は、数が変わった瞬間にここが居なかった
+        .onAppear { takeActivityRequest() }
+        // **開いている間に届いた通知もベルに出す**（`AppDelegate.willPresent`）
+        .onChange(of: router.arrivals) { _, _ in
+            Task { await refreshUnread() }
         }
         // **中央の「投稿」はタブではなく入口。** 選ばれたら2択を出して、
         // タブは元へ戻す（空の画面を見せない）
