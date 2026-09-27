@@ -775,9 +775,6 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 1, "投稿の最中に読み直しを投げている")
     }
 
-    /// コメントの削除の 404: **読み込んだコメントは「もう無い」として外す**が、
-    /// **この画面で投稿したばかりのものは外さない**（サーバーの最初の読みが結果整合で、
-    /// 「まだ見えない」だけの 404 がある。外すと他の人には見えたまま自分からだけ消える）
     /// **前の1枚の読み直しで、隣の1枚の送信を止めない。** 読み直しの印が画面で
     /// 1つだったので、p1 の読み直し（圏外で長く待つ）の間、p2 で送れなかった
     func testCommentReloadOfPreviousPhotoDoesNotBlockNextPhoto() async throws {
@@ -801,6 +798,31 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.comments.map(\.id), ["c9"], "前の1枚の読み直しの答えを今の1枚に出している")
     }
 
+    /// **読み直しの印は1枚ごと。** 1つの枠だと、p1→p2 で p2 の読み直しが印を
+    /// 上書きし、p1 に戻ると p1 の読み直しが走ったまま再試行を押せた
+    func testCommentReloadMarkSurvivesAnotherPhotosReload() async throws {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"items":[],"count":0}"#, delay: 0.3)
+        StubProtocol.respond(path: "/photos/p2/comments", status: 200,
+                             body: #"{"items":[],"count":0}"#, delay: 0.3)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        let first = Task { await model.reloadComments() }
+        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        let second = Task { await model.reloadComments() }
+        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        model.show(photoId: "p1", initialLikes: nil, liked: false)
+        XCTAssertTrue(model.isReloadingComments, "別の1枚の読み直しで、この1枚の読み直し中の印が消えた")
+        await first.value
+        await second.value
+        XCTAssertFalse(model.isReloadingComments)
+    }
+
+    /// コメントの削除の 404: **読み込んだコメントは「もう無い」として外す**が、
+    /// **この画面で投稿したばかりのものは外さない**（サーバーの最初の読みが結果整合で、
+    /// 「まだ見えない」だけの 404 がある。外すと他の人には見えたまま自分からだけ消える）
     func testCommentDeleteNotFoundDependsOnWhetherItWasJustPosted() async throws {
         prepare()
         StubProtocol.respond(path: "/photos/p1/comments/c1", status: 404, body: #"{"error":"コメントが見つかりません"}"#)

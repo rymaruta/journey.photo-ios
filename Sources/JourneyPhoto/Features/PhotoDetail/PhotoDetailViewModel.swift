@@ -24,8 +24,9 @@ final class PhotoDetailViewModel: ObservableObject {
     ///
     /// **どの1枚を読み直しているかで持つ。** 画面で1つの印にしていると、前の1枚の
     /// 読み直し（圏外で長く待つ）の間、隣へ送った1枚の送信・削除・再試行まで押せなかった
-    var isReloadingComments: Bool { reloadingCommentsFor == photoId }
-    @Published private(set) var reloadingCommentsFor: String?
+    /// 1つの枠にすると、別の1枚の読み直しで上書きされて守りが外れる（集合で持つ）
+    var isReloadingComments: Bool { reloadingComments.contains(photoId) }
+    @Published private(set) var reloadingComments: Set<String> = []
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
@@ -148,8 +149,8 @@ final class PhotoDetailViewModel: ObservableObject {
     func reloadComments() async {
         guard !isReloadingComments, !isPosting else { return }
         let id = photoId
-        reloadingCommentsFor = id
-        defer { if reloadingCommentsFor == id { reloadingCommentsFor = nil } }
+        reloadingComments.insert(id)
+        defer { reloadingComments.remove(id) }
         let page = try? await social.comments(photoId: id)
         // 読んでいる間に別の1枚へ送ったら捨てる（前の1枚のコメントを今の1枚に出さない）
         guard id == photoId else { return }

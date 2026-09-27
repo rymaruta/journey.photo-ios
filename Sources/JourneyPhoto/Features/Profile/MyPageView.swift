@@ -776,7 +776,9 @@ struct MyPageView: View {
         } else if tab == .trips {
             // **写真の有無とは無関係に、ここで空の理由まで言う**
             tripsArea
-        } else if model.photos.isEmpty && !model.isLoading {
+        } else if model.photos.isEmpty && !model.isLoading && model.reloadError == nil {
+            // 読み直しに失敗した回は上の知らせ1枚だけ（「読めなかった」と
+            // 「まだ無い」を2枚重ねて出さない）
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
