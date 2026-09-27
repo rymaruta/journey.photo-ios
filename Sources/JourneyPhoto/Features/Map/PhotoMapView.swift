@@ -457,7 +457,7 @@ struct PhotoMapView: View {
                 .padding(.vertical, 8)
                 .background(Color.black.opacity(0.7), in: Capsule())
                 .padding(.top, 12)
-        } else if let note = locationNote {
+        } else if let note = locationNote ?? loadFailedNote {
             Text(note)
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.foreground)
@@ -502,18 +502,30 @@ struct PhotoMapView: View {
     /// 帯は出さない**（名前で絞ってスポットだけ当たった回に、ピンの上に
     /// 「見つかりませんでした」が乗っていた）
     private var emptyMessage: String? {
-        // 地図は画面に戻るたびに読み直す（`.task`）ので、案内はそれを言う。
-        //
-        // 🔴 **撮影スポットのピンが出ていても言う。** 写真が1枚も取れずスポットの
-        // 索引だけ届いた回に、ピンがあるので帯が出ず、写真が無いことを誰も言わなかった
-        if model.loaded && model.loadFailed && model.photos.isEmpty {
-            return L("写真を読み込めませんでした。開き直すと読み直します", "Couldn't load photos. Reopen the map to retry")
-        }
         guard model.hasNothingToShow else { return nil }
+        // 地図は画面に戻るたびに読み直す（`.task`）ので、案内はそれを言う
+        if model.loadFailed && model.photos.isEmpty {
+            return Self.loadFailedText
+        }
         if model.isFiltering {
             return L("見つかりませんでした", "No results")
         }
         return L("撮影地の分かる写真がありません", "No photos with a place yet")
+    }
+
+    private static var loadFailedText: String {
+        L("写真を読み込めませんでした。開き直すと読み直します", "Couldn't load photos. Reopen the map to retry")
+    }
+
+    /// 🔴 **撮影スポットのピンだけ出ている回も、写真が取れなかったことを言う**
+    /// （ピンがあるので `emptyMessage` は黙り、写真が無いことを誰も言わなかった）。
+    ///
+    /// **地図の上の帯だけに出す。** 一覧（`listArea`）は `emptyMessage` で丸ごと
+    /// 差し替わるので、そちらに混ぜるとスポットの行が消え、押して開いている
+    /// スポットの画面まで閉じる。現在地の様子（`locationNote`）より後に置く
+    private var loadFailedNote: String? {
+        guard model.loaded, model.loadFailed, model.photos.isEmpty, !model.hasNothingToShow else { return nil }
+        return Self.loadFailedText
     }
 
     /// 現在地の様子。**取れる前・拒否・失敗を言葉にする**（黙って何も起きない状態にしない）。
