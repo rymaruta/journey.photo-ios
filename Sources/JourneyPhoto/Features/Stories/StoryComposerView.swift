@@ -33,6 +33,10 @@ struct StoryComposerView: View {
     @State private var showCamera = false
     /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
     @State private var keepExistingDraft = false
+    /// 開いたときに在った下書きで、**まだ問いに答えていない**ものの印。
+    /// 「送れなかったストーリー」の問いが先に出ると下書きの問いは出ないので、
+    /// 答えていない下書きをこの回の投稿のついでに消さない
+    @State private var unansweredDraftStamp: String?
     /// 前に送れなかったストーリーが残っているときの問い（開いた直後に1回）
     @State private var showPendingFailure = false
     /// ストーリーのBGM（30秒の試聴だけ）と、表示秒数
@@ -133,6 +137,8 @@ struct StoryComposerView: View {
             // ここでも出口を出す（ホームの輪が見えない人のため）
             if case .failed = uploads.phase {
                 showPendingFailure = true
+                // 下書きの問いは出ない＝答えていない。消さずに次へ持ち越す
+                if prepared == nil { unansweredDraftStamp = drafts.draft?.savedAt }
             } else if drafts.draft != nil, prepared == nil {
                 showRestore = true
             }
@@ -780,6 +786,15 @@ struct StoryComposerView: View {
     }
 
     /// 「続きから」。**画像が読めなければ何も戻さない**
+    /// 送り終えたときに下書きを**残す**か。「キャンセル（残す）」を選んだか、
+    /// **問いに答えていない**下書き（送れなかった問いが先に出た回）なら残す。
+    /// 同じ回に保存し直した下書き（印が変わった）は、この回の投稿のもの
+    nonisolated static func keepsDraft(stamp: String?, keepExisting: Bool, unansweredStamp: String?) -> Bool {
+        if keepExisting { return true }
+        if let unansweredStamp, stamp == unansweredStamp { return true }
+        return false
+    }
+
     private func restoreDraft() {
         let saved = drafts.shotImages()
         guard let draft = drafts.draft, !saved.isEmpty else {
@@ -830,7 +845,9 @@ struct StoryComposerView: View {
         }
         let stories = environment.stories
         let drafts = drafts
-        let keepExistingDraft = keepExistingDraft
+        let keepExistingDraft = Self.keepsDraft(stamp: drafts.draft?.savedAt,
+                                                keepExisting: keepExistingDraft,
+                                                unansweredStamp: unansweredDraftStamp)
         // 🔴 **押した時点の下書きの印。** 送り終えたときに下書きが入れ替わって
         // いたら（送信中にもう一度開いて保存した）、それは消さない
         let draftStamp = drafts.draft?.savedAt

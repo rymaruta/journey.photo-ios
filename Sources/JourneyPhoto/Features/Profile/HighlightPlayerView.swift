@@ -15,6 +15,8 @@ struct HighlightPlayerView: View {
     @State private var contents: HighlightContents?
     @State private var failed = false
     @State private var showEditor = false
+    /// 編集で輪を消した。シートが閉じたら再生画面も閉じる（開いたままだと 404 を読み直す）
+    @State private var deleted = false
 
     var body: some View {
         Group {
@@ -62,8 +64,10 @@ struct HighlightPlayerView: View {
                 }
             }
         }
-        .sheet(isPresented: $showEditor, onDismiss: { Task { await load() } }) {
-            HighlightEditorView(existing: highlight)
+        .sheet(isPresented: $showEditor, onDismiss: {
+            if deleted { dismiss() } else { Task { await load() } }
+        }) {
+            HighlightEditorView(existing: highlight, onDeleted: { deleted = true })
         }
         .task { await load() }
     }
@@ -121,7 +125,7 @@ struct HighlightsListView: View {
                                 .foregroundStyle(WebTheme.foreground)
                             // **数えた値だけ出す**（サーバーが並びの長さを返す）
                             if let count = highlight.count {
-                                Text(L("\(count)件", "\(count) stories"))
+                                Text(L("\(count)件", count == 1 ? "1 story" : "\(count) stories"))
                                     .font(.caption)
                                     .foregroundStyle(WebTheme.faint)
                             }
