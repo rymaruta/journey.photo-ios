@@ -208,6 +208,29 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(model.pinnedIds.isEmpty, "前の人の留めた写真が残っている")
     }
 
+    /// 🔴 **人が替わった後に返った前の人の読み込みは、何も入れない。**
+    /// `onAppear` の Task は人が替わっても止まらず、`forgetPhotos` で空にした
+    /// 後に前の人の写真（非公開を含む）が入っていた（c8a8781 のレビュー）。
+    /// 次の人の最初の読み込みも「走っている」と見て帰らないこと
+    func testLateLoadForThePreviousUserIsDropped() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"a","displayName":"前の人"}"#, delay: 0.3)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"secret","src":"/uploads/s.jpg","published":false}]"#)
+        let model = MyPageViewModel(api: api())
+        let late = Task { await model.load(for: "a") }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(model.isLoading, "前提: 前の人の読み込みが走っていない")
+
+        model.forgetPhotos(for: "b")
+        XCTAssertFalse(model.isLoading, "次の人の最初の読み込みが止められる")
+        await late.value
+
+        XCTAssertTrue(model.photos.isEmpty, "前の人の写真が次の人の画面に入った")
+        XCTAssertNil(model.profile, "前の人のプロフィールが次の人の画面に入った")
+    }
+
     #if DEBUG
     /// 🔴 **鍵を持たずに入っている回、マイページが丸ごと「ログインが必要です」
     /// になっていた。**
