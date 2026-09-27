@@ -141,6 +141,9 @@ struct NotificationsView: View {
             filterChips
                 .listRowBackground(Color.clear)
 
+            if let message = model.followBackError {
+                Text(message).foregroundStyle(WebTheme.danger).font(.callout)
+            }
             if let message = model.errorMessage {
                 Text(message).foregroundStyle(WebTheme.danger).font(.callout)
             } else if shownRows.isEmpty && !model.isLoading {
@@ -189,7 +192,8 @@ private struct NotificationRow: View {
     let entry: NotificationText.Entry
     /// いまフォローしている人。**フォロー通知の「フォローバック」を
     /// 出すかどうかの判断に使う**——既にフォローしている相手に出さない
-    var following: Set<String> = []
+    /// nil は「まだ分からない」＝フォローバックを出さない
+    var following: Set<String>?
     var onFollowBack: ((String) async -> Void)?
     /// 行の本体を押したとき。nil なら押せない（行き先が無い）
     var onOpen: (() -> Void)?
@@ -294,7 +298,8 @@ private struct NotificationRow: View {
         // 退会した人には出さない（押してもサーバーが 404 を返し、何も起きない）
         if notification.kind == .follow, notification.deleted != true,
            let userId = notification.byId ?? notification.targetUserId,
-           !following.contains(userId), let onFollowBack {
+           NotificationsViewModel.showsFollowBack(to: userId, following: following),
+           let onFollowBack {
             Button {
                 busy = true
                 Task {
@@ -371,7 +376,12 @@ final class NotificationsViewModel: ObservableObject {
     /// 既読化するので、`unread` はすぐ 0 になる。読み直すまでは点を残す
     @Published private(set) var unreadIds: Set<String> = []
     /// いまフォローしている人。**フォローバックを出すかの判断だけに使う**
-    @Published private(set) var following: Set<String> = []
+    ///
+    /// **nil は「まだ分からない」**（読めていない・読めなかった）。空集合と
+    /// 分けないと、取れなかった回に全員へフォローバックが出る
+    @Published private(set) var following: Set<String>?
+    /// フォローバックに失敗したときの知らせ
+    @Published var followBackError: String?
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
     /// 読み込みの世代。**あとから始まった読み込みがあれば、古い方の結果は捨てる。**
@@ -405,7 +415,8 @@ final class NotificationsViewModel: ObservableObject {
         mine = []
         unread = 0
         unreadIds = []
-        following = []
+        following = nil
+        followBackError = nil
         isLoading = false
         errorMessage = nil
     }
@@ -458,17 +469,35 @@ final class NotificationsViewModel: ObservableObject {
     /// いまフォローしている人を読む。**自分の userId が要る**
     private func loadFollowing(environment: AppEnvironment, viewerId: String?, era: Int) async {
         guard let me = viewerId, !me.isEmpty else { return }
-        guard let list = try? await environment.social.following(userId: me) else { return }
+        // **ID を全部返す口（`/user/following`）で読む。** `/users/{me}/following` は
+        // 50人で切れるので、51人目以降の相手にフォローバックが出ていた
+        guard let ids = try? await environment.social.myFollowingIds() else { return }
         // 人が替わった（`forget`）後に返った前の人の答えは書かない
         guard era == userEra else { return }
-        following = Set(list.users.map(\.id))
+        following = Set(ids)
+    }
+
+    /// フォローバックを出すか。**フォロー中が分からない間（nil）は出さない**
+    nonisolated static func showsFollowBack(to userId: String, following: Set<String>?) -> Bool {
+        guard let following else { return false }
+        return !following.contains(userId)
     }
 
     /// フォローバック。**成功したときだけ**印を更新する
     /// （失敗したのにボタンが消えると、フォローできたように見える）
+    /// **失敗は黙らない**（押しても何も起きないように見える）
     func followBack(_ userId: String, environment: AppEnvironment) async {
-        guard (try? await environment.social.follow(userId: userId)) != nil else { return }
-        following.insert(userId)
+        let era = userEra
+        do {
+            _ = try await environment.social.follow(userId: userId)
+            guard era == userEra else { return }
+            following?.insert(userId)
+            followBackError = nil
+        } catch {
+            guard era == userEra else { return }
+            followBackError = (error as? LocalizedError)?.errorDescription
+                ?? L("フォローできませんでした", "Couldn't follow")
+        }
     }
 
     /// 読めた1ページを画面の状態に移す。
