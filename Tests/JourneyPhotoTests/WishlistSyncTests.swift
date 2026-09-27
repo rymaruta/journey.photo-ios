@@ -321,7 +321,7 @@ final class WishlistSyncTests: XCTestCase {
         // **外すときは送る**（サーバーは外すときに長さを見ない——サーバーにある昔の長い
         // 鍵を外せるように。端末にしか無い鍵なら、サーバーでは何も起きない）
         let outcome = await WishlistSync.set(long, wanted: false, store: wishlist, service: service())
-        XCTAssertEqual(outcome, .synced(wanted: false))
+        XCTAssertEqual(outcome, .local(wanted: false), "未送信の鍵は端末で外して済ませる")
         XCTAssertFalse(wishlist.contains(long))
     }
 
@@ -374,15 +374,23 @@ final class WishlistSyncTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 1)
     }
 
-    /// **未送信の鍵を外すのに失敗したら、未送信に戻す**（戻さないと次の同期で送られずに消える）
-    func testFailedRemovalOfAnUnsentKeyKeepsItUnsent() async {
+    /// **未送信の鍵は、圏外でも外せる**（直前の同期でサーバーに無かった鍵）。答えを待って
+    /// 戻していたので「外せませんでした」になり、取り消しでは次の同期で送り直されていた
+    func testUnsentKeyIsRemovedEvenWhenTheServerFails() async {
         let wishlist = store(defaults(), user: "u1")
         wishlist.set("京都", wanted: true)
         _ = wishlist.replace(with: [], for: "u1")
         XCTAssertTrue(wishlist.isUnsent("京都", for: "u1"), "前提: 未送信")
         StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
-        _ = await WishlistSync.set("京都", wanted: false, store: wishlist, service: service())
-        XCTAssertTrue(wishlist.contains("京都"))
-        XCTAssertTrue(wishlist.isUnsent("京都", for: "u1"), "巻き戻したのに未送信から外れたまま（次の同期で消える）")
+        let outcome = await WishlistSync.set("京都", wanted: false, store: wishlist, service: service())
+        XCTAssertEqual(outcome, .local(wanted: false))
+        XCTAssertFalse(wishlist.contains("京都"), "圏外で外せない")
+        // 次の同期でも送らない・戻らない
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"{"slugs":[]}"#)
+        await WishlistSync.sync(owner: "u1", since: wishlist.syncMark, store: wishlist, service: service(),
+                                isCurrent: { true })
+        XCTAssertEqual(postedSlugs(), [])
+        XCTAssertFalse(wishlist.contains("京都"))
     }
 }

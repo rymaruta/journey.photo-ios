@@ -42,12 +42,21 @@ enum WishlistSync {
         guard !key.isEmpty, !store.isSending(key) else { return .ignored }
         // 戻すのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let owner = store.owner
-        // 未送信の鍵を外して失敗したら、未送信に戻す（戻さないと次の同期で送られずに消える）
+        // **未送信の鍵を外すのは端末の中だけで済む**（直前の同期でサーバーに無かった鍵）。
+        // 答えを待って戻すと、圏外では外せず（「外せませんでした」）、取り消しでは
+        // 外したものが未送信に戻って次の同期で送られていた
         let wasUnsent = store.isUnsent(key, for: owner)
         store.set(key, wanted: wanted)
         let sendable = wanted ? SavedSpotService.canSend(key) : SavedSpotService.canRemove(key)
         guard let owner, !owner.isEmpty, sendable else {
             return .local(wanted: wanted)
+        }
+        if !wanted && wasUnsent {
+            // 別の端末が同期の後に入れていた場合に備えて外す要求だけ送る（戻さない）
+            store.beginSending(key)
+            defer { store.endSending(key) }
+            _ = try? await service.unsave(key)
+            return .local(wanted: false)
         }
         store.beginSending(key)
         defer { store.endSending(key) }
@@ -63,7 +72,6 @@ enum WishlistSync {
             return .synced(wanted: wanted)
         } catch {
             store.set(key, wanted: !wanted, for: owner)
-            if wasUnsent { store.markUnsent(key, for: owner) }
             // 取り消し（画面を離れた）は失敗と言わない
             if error is CancellationError { return .ignored }
             let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
