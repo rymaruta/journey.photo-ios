@@ -324,14 +324,17 @@ final class UploadViewModel: ObservableObject {
 
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
-        let posted = items.filter { done.contains($0.id) }.compactMap(\.pickerItem)
         items.removeAll { done.contains($0.id) }
-        // 🔴 **ライブラリの選択からも外す**（一部失敗・「残りをやめる」の枝）。
-        // 待ち行列からだけ外すと、× で失敗の1枚を外した・「追加」を開いて
-        // 閉じた瞬間に `pickerItems` の `didSet` が選び直しを読み、
-        // **上がった写真が「新しく足した分」として戻って二重に投稿される**
-        let remaining = PickerReconcile.dropping(posted: posted, from: pickerItems)
-        if remaining.count != pickerItems.count { pickerItems = remaining }
+        // 🔴 **ライブラリの選択も、待ち行列に残った写真だけにする**（一部失敗・
+        // 「残りをやめる」の枝）。待ち行列からだけ外すと、× で失敗の1枚を外した・
+        // 「追加」を開いて閉じた瞬間に `pickerItems` の `didSet` が選び直しを読み、
+        // **上がった写真が「新しく足した分」として戻って二重に投稿される**。
+        // 上がった分だけ外すのでは足りない——前に読めなかった写真の印も選択に
+        // 残っていて、この代入の `didSet` がそれを読み直し、投稿の失敗の文を消していた
+        if !done.isEmpty {
+            let remaining = PickerReconcile.keepingQueued(pickerItems, queued: items.map(\.pickerItem))
+            if remaining != pickerItems { pickerItems = remaining }
+        }
         // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
         // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
         if items.isEmpty && failures.isEmpty {
@@ -438,14 +441,14 @@ enum PickerReconcile {
         return (keep, added)
     }
 
-    /// 投稿し終えた写真の印を、ライブラリの選択から外す。
+    /// ライブラリの選択を、待ち行列に残っている写真の分だけにする。
     ///
     /// 一部だけ上がった回（失敗・「残りをやめる」）は待ち行列に残りがあるので
-    /// 選択を丸ごと捨てられない。上がった分だけ外さないと、次の選び直しで
-    /// `reconcile` がそれを「足した分」と見て読み直し、**同じ写真がもう一度上がる**
-    static func dropping<Key: Hashable>(posted: [Key], from picked: [Key]) -> [Key] {
-        guard !posted.isEmpty else { return picked }
-        let gone = Set(posted)
-        return picked.filter { !gone.contains($0) }
+    /// 選択を丸ごと捨てられない。残す印を待ち行列にあるものに限れば、次の
+    /// 選び直しで `reconcile` が「足した分」を見つけることは無く、**同じ写真が
+    /// もう一度上がる**ことも、読めなかった写真を黙って読み直すことも無い
+    static func keepingQueued<Key: Hashable>(_ picked: [Key], queued: [Key?]) -> [Key] {
+        let kept = Set(queued.compactMap { $0 })
+        return picked.filter { kept.contains($0) }
     }
 }

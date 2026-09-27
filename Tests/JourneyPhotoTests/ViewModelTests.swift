@@ -649,12 +649,24 @@ final class ViewModelTests: XCTestCase {
             photo.pickerItem = key
             return photo
         }
-        model.pickerItems = keys
+        // d は選んだが読み込めなかった（選択には残り、待ち行列には無い）
+        let unreadable = PhotosPickerItem(itemIdentifier: "d")
+        model.pickerItems = keys + [unreadable]
+        let deadline = Date().addingTimeInterval(2)
+        while model.errorMessage == nil {
+            guard Date() < deadline else { return XCTFail("前提: d の読み込みが終わらない") }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
 
         await model.submit()
 
         XCTAssertEqual(model.items.map(\.pickerItem), [keys[1]], "失敗した b だけが残る")
         XCTAssertEqual(model.pickerItems, [keys[1]], "上がった a・c が選択に残っている（選び直しで二重に投稿される）")
+        let posted = try XCTUnwrap(model.errorMessage, "投稿の失敗を知らせていない")
+        // 選択を替えた `didSet` が読み直しを始めると、ここで失敗の文が消える
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(model.errorMessage, posted, "選択を替えた拍子に読み直しが走り、投稿の失敗の文が消えた")
+        XCTAssertFalse(model.isLoadingPicked)
     }
 
     /// **参加しているアルバムも投稿の行き先に出る。**

@@ -76,6 +76,9 @@ struct SignInView: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
+        // **入口は、確かめたメールアドレスの分だけ。** 打ち替えたあとも出したままだと、
+        // 控えの無い別のアドレスに「確認が済んでいません」と案内してしまう
+        .onChange(of: email) { _, _ in offerVerification = false }
         // 実機の絵の道しるべ（`ScreenshotTests`）。**この画面が出ている回は、
         // 絵の名前にそう書く**——「14-マイページ」という名前で**ログイン画面**を
         // 撮っていた（run 55 まで）。名前と中身が食い違うと、見た人が

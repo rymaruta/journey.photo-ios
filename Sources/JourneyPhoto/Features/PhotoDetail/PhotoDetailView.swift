@@ -666,6 +666,9 @@ struct PhotoDetailView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                // 読み上げは「いいね、N」（数が分からない回は名前だけ——印の名前を読ませない）
+                .accessibilityLabel(L("いいね", "Like"))
+                .accessibilityValue(model.likes.map { "\($0)" } ?? "")
                 .accessibilityAddTraits(model.liked ? .isSelected : [])
 
                 // 吹き出しを押すと下のコメントへ送る。**数は取れたときだけ**
