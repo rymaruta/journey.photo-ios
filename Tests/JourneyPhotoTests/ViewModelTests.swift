@@ -228,6 +228,18 @@ final class ViewModelTests: XCTestCase {
         await loading.value
     }
 
+    /// **人が替わったら、選んでいたカテゴリも外す**（次の人の一覧に無いと0件のまま）
+    func testSwitchingViewerClearsTheCategory() async {
+        let service = gallery(feed)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        model.select(category: "風景")
+        XCTAssertNotNil(model.category)
+        await model.loadPhotos(environment: env, epoch: 1)
+        XCTAssertNil(model.category, "前の人の画面で選んだカテゴリが残っている")
+    }
+
     /// **「フォロー中」を選んだあとにフォロー一覧を入れ替えても、範囲は戻らない。**
     ///
     /// `use(viewerId:following:)` を使い回すと、あちらは範囲を既定

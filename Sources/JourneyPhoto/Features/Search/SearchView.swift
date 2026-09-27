@@ -743,6 +743,8 @@ final class SearchViewModel: ObservableObject {
         // （前の人の限定公開の写真が入っている）
         if switched {
             allPhotos = []
+            // 選んでいたカテゴリも外す（次の人の一覧に無いと、0件で選択中の札も見えない）
+            category = nil
             // 読み直しが返るまでは「読み込み中」（前の結果で「見つかりません」を出さない）
             hasLoaded = false
             rebuildDerived()
@@ -758,10 +760,16 @@ final class SearchViewModel: ObservableObject {
     ///   読み直しが落ちると、ブロックした人の写真が手元に残っていた）
     func reloadPhotos(environment: AppEnvironment, force: Bool = false,
                       hidden: ModerationSnapshot? = nil) async {
+        // **人が替わる前に始めた回の答えは書かない。** 引き下げの読み直しが、
+        // 人が替わって空にした後に返ると、前の人の一覧（限定公開を含む）で上書きしていた
+        let epoch = loadedEpoch
         do {
-            allPhotos = try await environment.gallery.fetchPhotos(force: force)
+            let fetched = try await environment.gallery.fetchPhotos(force: force)
+            guard epoch == loadedEpoch else { return }
+            allPhotos = fetched
             loadFailed = false
         } catch {
+            guard epoch == loadedEpoch else { return }
             // 取れなかった回は手元のぶんを残す（引き下げの失敗で一覧を消さない）
             if let hidden { allPhotos = hidden.visible(allPhotos) }
             loadFailed = true
