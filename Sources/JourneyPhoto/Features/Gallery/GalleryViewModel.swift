@@ -16,7 +16,9 @@ final class GalleryViewModel: ObservableObject {
     /// 選ばれているカテゴリ。nil は「すべて」
     @Published var category: String?
     /// 並び替え。**Web の `FilterBar` と同じ3つ**（新しい順／古い順／人気順）
-    @Published var sort: GallerySort = .new
+    /// **初めのフィード（おすすめ）の並びで始める。** `.new` から始めると、最初の
+    /// 読み込みが新しい順で並び、あとから `use` で並べ直されて一覧が入れ替わっていた
+    @Published var sort: GallerySort = HomeFeed.recommended.sort
     /// ホームのフィード（おすすめ / フォロー中 / 新着）。
     /// **範囲と並びの組に名前を付けたもの**（`HomeFeed`）
     @Published private(set) var feed: HomeFeed = .recommended
@@ -119,10 +121,12 @@ final class GalleryViewModel: ObservableObject {
         self.viewerId = viewerId
         self.followingIds = following
         if viewerId == nil && feed.needsSignIn { feed = .recommended }
+        let previousSort = sort
         scope = feed.scope
         sort = feed.sort
-        // 範囲とともに並びも決め直す（読み終えたあとに届いた回も featured を先頭に）
-        all = sorted(all)
+        // **並びが変わったときだけ**並べ直す（同じなら一覧を入れ替えない——
+        // 開いている詳細の元のタイルが作り直されて閉じる）
+        if sort != previousSort { all = sorted(all) }
         if case .loaded = state { state = .loaded(filtered()) }
     }
 

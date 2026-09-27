@@ -61,14 +61,7 @@ struct TripPlanDetailView: View {
             resetIfNeeded()
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
-        .onChange(of: start) { _, _ in
-            let fixed = TripPlanText.ordered(start: start, end: end, movedStart: true)
-            if fixed.end != end { end = fixed.end }
-        }
-        .onChange(of: end) { _, _ in
-            let fixed = TripPlanText.ordered(start: start, end: end, movedStart: false)
-            if fixed.start != start { start = fixed.start }
-        }
+
         .sheet(item: $picking) { target in
             NavigationStack {
                 TripPlanPickSheet(dayIndex: target.day,
@@ -118,8 +111,8 @@ struct TripPlanDetailView: View {
                     .padding(.horizontal, 4)
 
                 HStack(spacing: 10) {
-                    dateField(L("出発", "From"), value: $start, fallback: end)
-                    dateField(L("帰着", "To"), value: $end, fallback: start)
+                    dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
+                    dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
                 }
 
                 if let error = model.errorMessage {
@@ -150,14 +143,15 @@ struct TripPlanDetailView: View {
 
     /// 日付の欄。**端末の日付ピッカー**で選ぶ（Web は `type="date"`。文字で打たせない）。
     /// 空にもできる（Web も空を許す）
-    private func dateField(_ title: String, value: Binding<String?>, fallback: String?) -> some View {
+    private func dateField(_ title: String, value: Binding<String?>, fallback: String?,
+                           isStart: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(WebTheme.muted2)
             HStack(spacing: 4) {
                 if value.wrappedValue != nil {
-                    DatePicker(title, selection: pickerBinding(value), displayedComponents: .date)
+                    DatePicker(title, selection: pickerBinding(value, isStart: isStart), displayedComponents: .date)
                         .labelsHidden()
                     Spacer(minLength: 0)
                     Button {
@@ -191,10 +185,17 @@ struct TripPlanDetailView: View {
     }
 
     /// `YYYY-MM-DD` ⇔ ピッカーの日。**端末のゾーンのその日**で読み書きする
-    private func pickerBinding(_ value: Binding<String?>) -> Binding<Date> {
+    /// 選んだときだけ前後を揃える（`TripPlanText.ordered`）。**開いたときの値には
+    /// 触らない**——Web で作った「帰着が出発より前」のプランを開いただけで書き換えない
+    private func pickerBinding(_ value: Binding<String?>, isStart: Bool) -> Binding<Date> {
         Binding(
             get: { TripPlanText.pickerDate(fromYMD: value.wrappedValue, in: .current) ?? Date() },
-            set: { value.wrappedValue = TripPlanText.ymd(pickedIn: .current, $0) }
+            set: {
+                value.wrappedValue = TripPlanText.ymd(pickedIn: .current, $0)
+                let fixed = TripPlanText.ordered(start: start, end: end, movedStart: isStart)
+                if fixed.start != start { start = fixed.start }
+                if fixed.end != end { end = fixed.end }
+            }
         )
     }
 

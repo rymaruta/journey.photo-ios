@@ -500,7 +500,7 @@ struct PhotoMapView: View {
     private var emptyMessage: String? {
         guard model.hasNothingToShow else { return nil }
         // 地図は画面に戻るたびに読み直す（`.task`）ので、案内はそれを言う
-        if model.loadFailed {
+        if model.loadFailed && model.photos.isEmpty {
             return L("写真を読み込めませんでした。開き直すと読み直します", "Couldn't load photos. Reopen the map to retry")
         }
         if model.isFiltering {
