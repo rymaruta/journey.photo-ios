@@ -48,7 +48,7 @@ struct SearchView: View {
         .webScreen()
         // 読み込めなかった回の出口（以前は一度読んだら二度と読まなかった）
         .refreshable {
-            await model.reloadPhotos(environment: environment, force: true)
+            await model.reloadPhotos(environment: environment, force: true, hidden: hidden.snapshot)
             await model.search(query, environment: environment)
         }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
@@ -65,7 +65,7 @@ struct SearchView: View {
             Task {
                 await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
                                                     photoIds: hidden.reportedPhotoIds)
-                await model.reloadPhotos(environment: environment)
+                await model.reloadPhotos(environment: environment, hidden: hidden.snapshot)
                 await model.search(query, environment: environment)
             }
         }
@@ -590,9 +590,13 @@ struct SearchView: View {
         }
         .padding(.horizontal, 16)
 
-        if model.shown.isEmpty {
-            // **「読み込めなかった」と「見つからなかった」を分ける**。
-            // 読み込み中（まだ返っていない）は失敗と言わない
+        if model.shown.isEmpty && !model.hasLoaded {
+            // 最初の読み込みが返るまでは何も言わない（失敗とも0件とも言わない）
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+        } else if model.shown.isEmpty {
+            // **「読み込めなかった」と「見つからなかった」を分ける**
             Text(model.loadFailed && model.everything.isEmpty
                  ? L("写真を読み込めませんでした。引き下げて読み直せます", "Couldn't load photos. Pull to retry")
                  : L("見つかりませんでした", "No results"))
@@ -614,6 +618,8 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var isSearching = false
     /// 写真の一覧を取れなかった（読み込み中・0枚と分ける）
     @Published private(set) var loadFailed = false
+    /// 最初の読み込みが（成功でも失敗でも）返ったか
+    @Published private(set) var hasLoaded = false
     /// 候補タグと枚数（提案の絵の「winter 13」）
     @Published private(set) var tagCounts: [(tag: String, count: Int)] = []
     @Published private(set) var categories: [String] = []
@@ -707,14 +713,20 @@ final class SearchViewModel: ObservableObject {
     /// 控えがあっても読み直す。**ブロック／通報のあとに使う**
     /// ——`loadPhotos` は一度読んだら二度と読まないので、そのままだと
     /// ブロックした相手の写真が検索結果に残り続ける。
-    func reloadPhotos(environment: AppEnvironment, force: Bool = false) async {
+    /// - Parameter hidden: いまの「見せない」。取れなかった回に手元の一覧を絞る
+    ///   （公開一覧の絞り込みは返す値にしか掛からない——ブロックの直後に
+    ///   読み直しが落ちると、ブロックした人の写真が手元に残っていた）
+    func reloadPhotos(environment: AppEnvironment, force: Bool = false,
+                      hidden: ModerationSnapshot? = nil) async {
         do {
             allPhotos = try await environment.gallery.fetchPhotos(force: force)
             loadFailed = false
         } catch {
             // 取れなかった回は手元のぶんを残す（引き下げの失敗で一覧を消さない）
+            if let hidden { allPhotos = hidden.visible(allPhotos) }
             loadFailed = true
         }
+        hasLoaded = true
         popularTags = PhotoQuery.topTags(in: allPhotos)
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
