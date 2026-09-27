@@ -109,6 +109,7 @@ struct RootView: View {
         showPostChoice = false
         activityWait?.cancel()
         activityWait = Task { @MainActor in
+            let started = Date()
             // **冷えた起動ではまずログインの確認を待つ。** 確認中は `userId` が
             // nil なので、ここで持ち主を決めると確認が終わった瞬間に
             // 「人が替わった」と見なして押した分を捨てていた
@@ -116,18 +117,30 @@ struct RootView: View {
                 try? await Task.sleep(nanoseconds: 300_000_000)
             }
             let owner = auth.userId
-            let started = Date()
             // 閉じる動きが終わるのを待ってから確かめる。
-            // 待っている間に（ベルなどから）お知らせが開いたら、それで済んでいる
+            // 待っている間に（ベルなどから）お知らせが開いたら、そこで終える
             repeat {
                 try? await Task.sleep(nanoseconds: 300_000_000)
             } while !Task.isCancelled && !showNotifications && ModalProbe.isPresenting()
             // **待っている間に人が替わっていたら開かない**（前の人の通知で
-            // 次の人のお知らせを開かない）
-            guard !Task.isCancelled, !showNotifications, auth.userId == owner else { return }
-            guard Date().timeIntervalSince(started) <= Self.activityWaitLimit else {
-                toasts.show(L("新しいお知らせは、右上のベルから見られます",
-                              "New activity is waiting behind the bell"))
+            // 次の人のお知らせを開かない）。ログインしていない人には開かない
+            // （起動の確認で期限切れと分かった回など）
+            guard !Task.isCancelled, let owner, auth.userId == owner else { return }
+            if showNotifications {
+                // 本当に出ている: それで済んでいる
+                if ModalProbe.isPresenting() { return }
+                // 出せずに true のまま残った: 戻して、次の描画を待ってから開き直す
+                showNotifications = false
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                guard !Task.isCancelled, auth.userId == owner else { return }
+            }
+            let waited = Date().timeIntervalSince(started)
+            guard waited <= Self.activityWaitLimit else {
+                // あまりに後（何分も経ってから）の知らせは、何のことか分からない
+                if waited <= Self.activityHintLimit {
+                    toasts.show(L("新しいお知らせは、右上のベルから見られます",
+                                  "New activity is waiting behind the bell"))
+                }
                 await refreshUnread()
                 return
             }
@@ -139,6 +152,8 @@ struct RootView: View {
 
     /// 通知を押したあと、ほかのシートが閉じられるのを待つ長さ
     private static let activityWaitLimit: TimeInterval = 5
+    /// それを過ぎて閉じられたときに「ベルから見られる」と知らせる長さ
+    private static let activityHintLimit: TimeInterval = 60
 
     /// 待ちをやめる（人が替わった・裏へ回った・画面が消えた）。
     /// **前の人の通知で、次の人のお知らせを開かない**
@@ -218,6 +233,11 @@ struct RootView: View {
         // **開いている間に届いた通知もベルに出す**（`AppDelegate.willPresent`）
         // `.task(id:)` にするのは、続けて届いたときに前の取得を取り消すため
         // （遅れて返った古い数で上書きしない）
+        // お知らせを既読にできた: 閉じたときの数え直しが落ちても 0 にする
+        .onChange(of: router.readMarks) { _, _ in
+            unreadGeneration += 1
+            unread = 0
+        }
         .task(id: router.arrivals) {
             guard router.arrivals > 0 else { return }
             await refreshUnread()

@@ -525,7 +525,9 @@ final class NotificationsViewModel: ObservableObject {
             // **開いたときに1回だけ既読にする。** 読めたあとに呼ぶので、
             // 取得に失敗した回でバッジだけ消える事故が起きない
             if page.unread > 0 {
-                try? await environment.notifications.markRead()
+                if (try? await environment.notifications.markRead()) != nil {
+                    NotificationRouter.shared.noteRead()
+                }
                 unread = 0
             }
             return true

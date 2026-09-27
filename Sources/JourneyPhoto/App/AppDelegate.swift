@@ -101,6 +101,11 @@ final class NotificationRouter: ObservableObject {
     }
 
     func noteArrival() { arrivals += 1 }
+
+    /// お知らせを既読にできた回の数（ベルを 0 にする合図）。
+    /// **閉じたときの数え直しが圏外で落ちても、ベルが読む前の数のまま残らない**
+    @Published private(set) var readMarks = 0
+    func noteRead() { readMarks += 1 }
 }
 
 /// いま何かが画面の上に出ているか（シート・確認の枠）。

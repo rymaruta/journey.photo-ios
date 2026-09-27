@@ -222,4 +222,13 @@ final class NotificationRouterTests: XCTestCase {
         XCTAssertEqual(router.arrivals, before + 1)
         XCTAssertFalse(router.takePendingActivity(), "届いただけで（押していないのに）お知らせを開いている")
     }
+
+    /// 既読にできたことは合図になる（ベルを 0 にする）。押した扱いにはしない
+    func testMarkingReadIsSignalledWithoutOpening() async {
+        let router = freshRouter()
+        let before = router.readMarks
+        router.noteRead()
+        XCTAssertEqual(router.readMarks, before + 1)
+        XCTAssertFalse(router.takePendingActivity())
+    }
 }
