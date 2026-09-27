@@ -81,13 +81,21 @@ final class PushCenter: ObservableObject {
     private let service: () -> PushService
     /// 端末ごと APNs から外す（`unregisterForRemoteNotifications`）。試験で差し替える
     private let releaseDevice: @MainActor () -> Void
+    /// システムの許可を読む。試験で差し替える（模型では許可が取れない）
+    private let readAuthorization: () async -> Bool
 
     init(service: @escaping () -> PushService = { PushService(api: APIClient(tokenProvider: CognitoTokenProvider())) },
          defaults: UserDefaults = .standard,
-         releaseDevice: @escaping @MainActor () -> Void = { UIApplication.shared.unregisterForRemoteNotifications() }) {
+         releaseDevice: @escaping @MainActor () -> Void = { UIApplication.shared.unregisterForRemoteNotifications() },
+         readAuthorization: @escaping () async -> Bool = {
+             let settings = await UNUserNotificationCenter.current().notificationSettings()
+             return settings.authorizationStatus == .authorized
+                 || settings.authorizationStatus == .provisional
+         }) {
         self.service = service
         self.defaults = defaults
         self.releaseDevice = releaseDevice
+        self.readAuthorization = readAuthorization
         self.isEnabled = defaults.bool(forKey: Self.legacyEnabledKey)
     }
 
@@ -147,9 +155,7 @@ final class PushCenter: ObservableObject {
 
     /// システムの許可状態を読み直す。
     func refreshAuthorization() async {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        isAuthorized = settings.authorizationStatus == .authorized
-            || settings.authorizationStatus == .provisional
+        isAuthorized = await readAuthorization()
         if !isAuthorized { isRegistered = false }
     }
 
@@ -275,10 +281,9 @@ final class PushCenter: ObservableObject {
         errorMessage = nil
     }
 
-    private func registerIfPossible() async {
+    /// 試験から失敗の経路を通すため internal（画面からは呼ばない）
+    func registerIfPossible() async {
         guard let token, let owner = userId, isEnabled, isAuthorized else { return }
-        // 呼ぶ前に残っていた前の人の印（失敗したときに外す相手）
-        let foreign = registeredOwner.flatMap { $0 == owner ? nil : $0 }
         do {
             try await service().register(token: token)
             isRegistered = true
@@ -289,9 +294,9 @@ final class PushCenter: ObservableObject {
             isRegistered = false
             // **預け直せなかったら前の人の宛先を残さない。** 前の人の印を残したまま
             // 落ち続けると、この人がログインしている間ずっと前の人あてに届く
-            // **呼んでいる間に人が替わった・印が変わった回は触らない**（遅れて
-            // 返った前の人の失敗で、次の人の宛先を外さない）
-            if let foreign, userId == owner, registeredOwner == foreign {
+            // **呼んでいる間に人が替わっていたら触らない**（遅れて返った前の人の
+            // 失敗で、次の人の宛先を外さない）
+            if userId == owner {
                 releaseForeignRegistration(except: owner)
             }
             errorMessage = (error as? LocalizedError)?.errorDescription

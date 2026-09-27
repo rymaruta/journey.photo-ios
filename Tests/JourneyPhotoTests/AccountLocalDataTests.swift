@@ -207,6 +207,32 @@ final class PushReleaseTests: XCTestCase {
         XCTAssertEqual(released, 1)
     }
 
+    /// 🔴 **次の人（受け取る・許可あり）の預け直しが落ちたら、前の人の宛先を
+    /// 端末ごと外す。** 印を残したまま落ち続けると、次の人がログインしている
+    /// 間ずっと前の人あてに届く。同じ人の印なら外さない
+    func testFailedReRegistrationReleasesSomeoneElsesLeftover() async {
+        let defaults = suite()
+        defaults.set(true, forKey: "photo-gallery-push-enabled.b")
+        defaults.set("a", forKey: "photo-gallery-push-registered-owner")
+        var released = 0
+        // 未ログインの口なので登録は必ず落ちる
+        let push = PushCenter(service: { PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                                                    tokenProvider: StubTokenProvider(token: nil))) },
+                              defaults: defaults, releaseDevice: { released += 1 },
+                              readAuthorization: { true })
+        await push.use(userId: "b")
+        XCTAssertEqual(released, 0, "b がすぐ預け直す回なのに先に外している")
+        XCTAssertEqual(defaults.string(forKey: "photo-gallery-push-registered-owner"), "a")
+        await push.registerIfPossible()
+        XCTAssertEqual(released, 1, "預け直しが落ちたのに a の宛先が残っている")
+        XCTAssertNil(defaults.string(forKey: "photo-gallery-push-registered-owner"))
+
+        // b 自身の印なら、落ちても外さない
+        defaults.set("b", forKey: "photo-gallery-push-registered-owner")
+        await push.registerIfPossible()
+        XCTAssertEqual(released, 1)
+    }
+
     /// 次の人が「受け取らない」にしたら、残っていた前の人の宛先を端末ごと外す
     func testTurningOffReleasesSomeoneElsesLeftover() async {
         let defaults = suite()
