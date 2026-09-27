@@ -73,6 +73,19 @@ final class StoryDurationTests: XCTestCase {
 /// 伝わらないと、利用者は「なぜか1枚少ない」まま公開する。
 final class UploadSummaryTests: XCTestCase {
 
+    /// 撮った写真が並んだあとは**今の状態から言い直す**。読めなかった写真と、
+    /// 前の送信で曲が付かなかったことは残し、「残りは投稿できていません」は引き継がない
+    func testAfterCaptureKeepsUnreadableAndSongNotes() throws {
+        XCTAssertNil(UploadSummary.afterCapture(unreadable: 0, songFailures: 0))
+        let unread = try XCTUnwrap(UploadSummary.afterCapture(unreadable: 2, songFailures: 0))
+        XCTAssertTrue(unread.contains("2"), unread)
+        let song = try XCTUnwrap(UploadSummary.afterCapture(unreadable: 0, songFailures: 1))
+        let both = try XCTUnwrap(UploadSummary.afterCapture(unreadable: 1, songFailures: 1))
+        XCTAssertTrue(both.contains(song), "曲の一文が落ちている: \(both)")
+        XCTAssertTrue(both.contains("1"), both)
+    }
+
+
     func testAllDoneSaysNothing() {
         XCTAssertNil(UploadSummary.message(done: 3, failures: [], cancelled: false))
     }

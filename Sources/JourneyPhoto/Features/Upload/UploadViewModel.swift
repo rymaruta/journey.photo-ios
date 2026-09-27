@@ -123,10 +123,10 @@ final class UploadViewModel: ObservableObject {
     /// 読めなかったライブラリの写真の印。**それだけでは読み直さない**——
     /// 新しく選び足したときに一緒に読み直す（`loadPicked` の注記）
     private var unreadable: Set<PhotosPickerItem> = []
-    /// いま出ている `errorMessage` が送信のまとめ（「残りは投稿できていません」
-    /// 「曲は付けられませんでした」）か。**撮った写真が整っても、これは書き換えない**
-    /// ——曲の失敗は並びから消えた写真の話で、消すと二度と伝わらない
-    private var showsSubmitSummary = false
+    /// 前の送信で曲を付けられなかった枚数で、**まだ知らせに出ているもの**。
+    /// 撮った写真が整って知らせを言い直すときに引き継ぐ（`UploadSummary.afterCapture`）
+    /// ——その写真はもう並びに居ないので、消すと二度と伝わらない
+    private var songFailuresShown = 0
     /// `pickerItems` を中から直している最中（`setSelectionQuietly`）
     private var isSettingSelectionQuietly = false
     /// 本体まで置けて、保存がまだ通っていない写真（`UploadService.stage` の注記）
@@ -222,13 +222,10 @@ final class UploadViewModel: ObservableObject {
                 // ただ消すと、その写真が抜けていることが二度と出ない（写真を外しても
                 // 読み直さない）。前の知らせを残すと、撮り直しで直ったカメラの失敗や
                 // 「全部読めなかった」の文言が、今の状態と合わないまま残る
-                if !self.showsSubmitSummary {
-                    let unread = self.unreadable.count
-                    self.errorMessage = unread == 0 ? nil
-                        : L("\(unread) 枚は読み込めませんでした", "\(unread) photo(s) couldn't be loaded")
-                }
+                self.errorMessage = UploadSummary.afterCapture(unreadable: self.unreadable.count,
+                                                               songFailures: self.songFailuresShown)
             case .failure(let error):
-                self.showsSubmitSummary = false
+                self.songFailuresShown = 0
                 self.errorMessage = (error as? LocalizedError)?.errorDescription
                     ?? L("写真を読み込めませんでした", "Couldn't load the photo")
             }
@@ -302,7 +299,7 @@ final class UploadViewModel: ObservableObject {
         let generation = pickGeneration
         isLoadingPicked = true
         errorMessage = nil
-        showsSubmitSummary = false
+        songFailuresShown = 0
         didPostAll = false
         defer { if generation == pickGeneration { isLoadingPicked = false } }
 
@@ -376,7 +373,7 @@ final class UploadViewModel: ObservableObject {
         isWorking = true
         errorMessage = nil
         cancelled = false
-        showsSubmitSummary = false
+        songFailuresShown = 0
         // 🔴 **送っている途中でアプリを離れても、少しのあいだ続けさせてもらう。**
         // 無いと裏に回った数秒後に止められ、戻ったときには通信が切れて失敗になる。
         // 時間切れ（30秒ほど）でも落ちた写真は画面に残り、やり直しは同じ鍵で送る
@@ -431,7 +428,7 @@ final class UploadViewModel: ObservableObject {
             } else {
                 errorMessage = UploadSummary.message(done: done.count, failures: failures,
                                                      cancelled: cancelled, songFailures: songFailures)
-                showsSubmitSummary = true
+                songFailuresShown = songFailures
             }
             // **どちらにしても選択は捨てる。** 残すと `pickerItems` に
             // 投稿済みの写真が選ばれたまま残り、次に写真を選び直した瞬間に
@@ -441,7 +438,7 @@ final class UploadViewModel: ObservableObject {
         } else {
             errorMessage = UploadSummary.message(done: done.count, failures: failures,
                                                  cancelled: cancelled, songFailures: songFailures)
-            showsSubmitSummary = true
+            songFailuresShown = songFailures
         }
     }
 
