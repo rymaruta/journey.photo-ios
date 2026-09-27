@@ -235,6 +235,8 @@ final class PhotoDetailViewModel: ObservableObject {
         }
         // 読み直しの答えで、入れた自分のコメントが上書きされない（`reloadComments`）
         guard !isReloadingComments else { return }
+        // 二度押しで同じ文を2件送らない（ボタンが押せなくなるのは描き直しの後）
+        guard !isPosting else { return }
         isPosting = true
         defer { isPosting = false }
         let id = photoId

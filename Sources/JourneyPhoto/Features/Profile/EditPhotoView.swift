@@ -24,6 +24,8 @@ struct EditPhotoView: View {
     /// 古いアプリが**意図しない範囲へ広げる**。
     @State private var audience: Audience
     private let audienceKnown: Bool
+    /// 開いたときの範囲（知らない値なら nil）。変えたときだけ送るために覚える
+    private let openedAudience: Audience?
     @State private var isSaving = false
     @State private var message: String?
     /// 直近の知らせが「できた」か。**成功を赤で出さない**
@@ -45,6 +47,7 @@ struct EditPhotoView: View {
         let known = raw.isEmpty ? Audience.everyone : Audience(rawValue: raw)
         _audience = State(initialValue: known ?? .everyone)
         audienceKnown = known != nil
+        openedAudience = known
     }
 
     var body: some View {
@@ -223,10 +226,13 @@ struct EditPhotoView: View {
         if trimmedCategory != (photo.category ?? "").trimmingCharacters(in: .whitespacesAndNewlines) {
             patch.category = trimmedCategory
         }
-        patch.published = published
-        // **知らない値の写真では送らない。** キーを外せばサーバーは
-        // 既にある印をそのまま残す（広げも狭めもしない）
-        if audienceKnown { patch.audience = (published ? audience : .everyone).patchValue }
+        // 公開と公開範囲も**変えたときだけ**（`EditVisibilityRules`）。知らない値の写真では
+        // 範囲を送らない——キーを外せばサーバーは既にある印を残す
+        let visibility = EditVisibilityRules.patch(openedPublished: photo.published != false,
+                                                   openedAudience: openedAudience,
+                                                   published: published, audience: audience)
+        patch.published = visibility.published
+        patch.audience = visibility.audience
         // **触っていなければ送らない**（時刻付きの撮影日を日付だけに落とさない）。
         // 空も送らない——空文字は api-user の日付検査に落ちる
         patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date),

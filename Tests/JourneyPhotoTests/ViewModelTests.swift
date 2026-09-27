@@ -794,6 +794,21 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 1, "投稿の最中に読み直しを投げている")
     }
 
+    /// **送っている最中の二度押しで、同じ文を2件送らない**
+    func testCommentDoublePostSendsOnce() async {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"comment":{"id":"c2","uid":"me","name":"me","text":"x"}}"#, delay: 0.3)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "x"
+        let first = Task { await model.postComment() }
+        for _ in 0..<2000 where !model.isPosting { try? await Task.sleep(for: .milliseconds(1)) }
+        await model.postComment()
+        await first.value
+        XCTAssertEqual(StubProtocol.requestCount, 1, "同じ文を2回送った")
+    }
+
     /// **前の1枚の読み直しで、隣の1枚の送信を止めない。** 読み直しの印が画面で
     /// 1つだったので、p1 の読み直し（圏外で長く待つ）の間、p2 で送れなかった
     func testCommentReloadOfPreviousPhotoDoesNotBlockNextPhoto() async throws {

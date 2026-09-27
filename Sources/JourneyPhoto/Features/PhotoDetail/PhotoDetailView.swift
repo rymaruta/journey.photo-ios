@@ -205,7 +205,8 @@ struct PhotoDetailView: View {
         }
         .fullScreenCover(isPresented: $showViewer) {
             PhotoViewerView(
-                photos: siblings,
+                // 編集して保存した写真は新しい姿で（題・撮影地が古いまま出ていた）
+                photos: siblings.map { edits[$0.id] ?? $0 },
                 index: siblings.firstIndex(where: { $0.id == current.id }) ?? 0,
                 // **写真ごとに答える。** この画面の1枚は画面が持つ値、
                 // 隣の写真は端末の控え（ホームのハートと同じ出どころ）
@@ -241,7 +242,7 @@ struct PhotoDetailView: View {
                 TabView(selection: $heroPage) {
                     ForEach(Array(group.enumerated()), id: \.element.id) { index, item in
                         // 編集して保存した1枚は新しい姿で（切り抜きの中心など）
-                        heroImage(item.id == shown.id ? shown : item).tag(index)
+                        heroImage(edits[item.id] ?? item).tag(index)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -1059,6 +1060,11 @@ struct PhotoDetailView: View {
             }
         } catch {
             savedPhotos.set(id, saved: wasSaved, for: owner)
+            // **黙らない**（いいね・フォローと同じ）。下書きはサーバーが 404 で断る
+            if !(error is CancellationError) {
+                actionError = (error as? LocalizedError)?.errorDescription
+                    ?? L("保存できませんでした", "Couldn't save")
+            }
         }
     }
 
