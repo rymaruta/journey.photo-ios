@@ -608,6 +608,8 @@ struct PhotoDetailView: View {
                 actionError = L("フォローの状態を確かめられませんでした", "Couldn't check follow status")
                 return
             }
+            // **待つ間に別の人の写真へ送ったら書かない**（前の人の状態が次の人のボタンに出る）
+            guard ownerId == userId else { return }
             followLookupFailed = false
             if ids.contains(userId) {
                 isFollowing = true
@@ -621,6 +623,7 @@ struct PhotoDetailView: View {
             let result = wasFollowing
                 ? try await environment.social.unfollow(userId: userId)
                 : try await environment.social.follow(userId: userId)
+            guard ownerId == userId else { return }
             isFollowing = result.following
         } catch is CancellationError {
             return
