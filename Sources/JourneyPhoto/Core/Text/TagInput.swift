@@ -173,25 +173,6 @@ enum PhotoQuery {
         }
     }
 
-    /// 多い順にタグを数える。**種類が少ないので全部数えてよい**（30枚・59種）。
-    /// よく使われているタグ。**鍵で畳んでから数える**
-    /// （`風景` と `landscape` を別々に数えない。Web の `tagKey` と同じ）。
-    /// 返すのは**最初に出てきた綴り**——画面には打たれたままを見せる。
-    static func topTags(in photos: [Photo], limit: Int = 12) -> [String] {
-        var counts: [String: Int] = [:]
-        var labels: [String: String] = [:]
-        for tag in photos.flatMap({ $0.tags ?? [] }) {
-            let key = TagChoices.key(tag)
-            guard !key.isEmpty else { continue }
-            counts[key, default: 0] += 1
-            if labels[key] == nil { labels[key] = tag }
-        }
-        return counts
-            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .prefix(limit)
-            .compactMap { labels[$0.key] }
-    }
-
     /// 打った文字で絞る。**題・説明・撮影地・タグ**を見る
     /// （Web の `useGallery` の `query` と同じ範囲）。
     ///

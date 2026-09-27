@@ -25,14 +25,6 @@ enum SearchScope: String, CaseIterable, Identifiable {
     var showsPeople: Bool { self == .all || self == .people }
     /// 写真の結果を出すか
     var showsPhotos: Bool { self != .people }
-    /// 検索欄の右の並び替え（とその確認の札）を出すか。
-    /// **並べ替えるのは写真だけ**——人の結果は並び替えが効かないので、
-    /// 押せても何も変わらない札を置かない
-    var showsSort: Bool { showsPhotos }
-    /// タグのチップ（「winter 13」）を出すか。
-    /// **撮影地では出さない**——押すとタグの語が撮影地の欄に当たり、
-    /// チップの枚数（タグを持つ写真の数）と結果が合わなくなる
-    var showsTagChips: Bool { self == .all || self == .photos || self == .tags }
     /// 検索欄の案内。人を探しているときは人向けに
     var prompt: String {
         switch self {
@@ -99,6 +91,9 @@ enum SearchDiscovery {
         FeaturedGroups.groups(from: photos).first
     }
 
-    /// 「いまの季節の写真」の格子に出す枚数。**3列で2段**（板 11 は3列）
-    static let seasonalPreview = 6
+    /// 「いまの季節の写真」の格子に出す枚数。**3列で1段**（板 11）
+    static let seasonalPreview = 3
+
+    /// 「おすすめ · [カテゴリ名]」に並べる枚数（板 11 の 120×160 が3枚）
+    static let featuredPreview = 3
 }

@@ -389,19 +389,6 @@ final class TagFilterTests: XCTestCase {
         let photos = [try photo("a", tags: ["x"]), try photo("b", tags: [])]
         XCTAssertEqual(PhotoQuery.photos(photos, withAllTags: []).count, 2)
     }
-
-    /// よく使われるタグも**畳んでから数える**
-    /// （`風景` と `landscape` を別々に数えない）
-    func testTopTagsCollapseSynonyms() throws {
-        let photos = [
-            try photo("a", tags: ["風景"]),
-            try photo("b", tags: ["landscape"]),
-            try photo("c", tags: ["sauna"]),
-        ]
-        let top = PhotoQuery.topTags(in: photos, limit: 5)
-        XCTAssertEqual(top.count, 2, "同じ主題が2つに割れている")
-        XCTAssertEqual(top.first, "風景", "多い方（畳んで2枚）が先頭")
-    }
 }
 
 /// 打った文字での絞り込みと、チップに出すタグの決め方。

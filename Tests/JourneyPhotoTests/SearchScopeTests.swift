@@ -62,24 +62,11 @@ final class SearchScopeTests: XCTestCase {
                         L("タグ", "Tags"), L("撮影地", "Places")])
     }
 
-    /// **人の種類では並び替えを出さない**（人の結果は並べ替えが効かない）。
-    /// 案内も人向けに
-    func testPeopleScopeHidesSortAndAsksForAName() {
-        XCTAssertFalse(SearchScope.people.showsSort)
-        XCTAssertEqual(SearchScope.allCases.filter(\.showsSort), [.all, .photos, .tags, .places])
+    /// 人を探しているときは案内も人向けに
+    func testPeopleScopeAsksForAName() {
         XCTAssertNotEqual(SearchScope.people.prompt, SearchScope.photos.prompt)
         XCTAssertEqual(SearchScope.people.prompt, L("人を検索（名前）", "Search people"))
         XCTAssertEqual(SearchScope.all.prompt, L("写真を検索（題・説明・タグなど）", "Search photos"))
-    }
-
-    /// **撮影地ではタグのチップを出さない。** 押すとタグの語が撮影地に当たり、
-    /// チップの枚数と結果の枚数が合わない
-    func testTagChipsAreHiddenForPlacesAndPeople() throws {
-        XCTAssertEqual(SearchScope.allCases.filter(\.showsTagChips), [.all, .photos, .tags])
-        // 食い違いの実例: タグ「冬」の写真は1枚だが、撮影地で「冬」を探すと別の1枚が出る
-        let photos = try sample()
-        XCTAssertNotEqual(SearchScope.places.photos(photos, query: "冬").map(\.id),
-                          SearchScope.tags.photos(photos, query: "冬").map(\.id))
     }
 
     // MARK: - 段
@@ -127,5 +114,20 @@ final class SearchLoadTests: XCTestCase {
         XCTAssertEqual(model.gear.first?.count, 15, "機材の枚数が頭打ちになっている")
         XCTAssertEqual(model.colors.first?.family, .blue)
         XCTAssertEqual(model.colors.first?.count, 15, "色の枚数が頭打ちになっている")
+    }
+
+    /// 板 11: いまの季節の写真は**3列×1段**。「すべて →」の先には全部
+    func testSeasonalPreviewIsOneRowOfThree() async throws {
+        let tag = try XCTUnwrap(DiscoverySections.seasonalTags().first)
+        let photos = try (0..<5).map { index -> Photo in
+            var row: [String: Any] = ["id": "s\(index)", "src": "https://x/s\(index).jpg"]
+            row["tags"] = [tag]
+            return try JSONDecoder.api.decode(Photo.self, from: JSONSerialization.data(withJSONObject: row))
+        }
+        let model = SearchViewModel()
+        model.apply(photos: photos)
+        XCTAssertEqual(model.seasonal.count, 3, "格子が1段（3枚）になっていない")
+        XCTAssertEqual(model.seasonalAll.count, 5)
+        XCTAssertEqual(SearchDiscovery.featuredPreview, 3)
     }
 }
