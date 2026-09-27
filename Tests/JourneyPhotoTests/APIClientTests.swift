@@ -189,8 +189,17 @@ final class StubProtocol: URLProtocol {
 
     /// 道（URL のパス）で選んで返す。**当てはまる道が1つも無い要求は
     /// 404 で返す**——「叩かないはずの口」を叩いたら緑にならないように。
-    /// `delay` は応答を遅らせる秒数（**遅い口を待たずに済んでいるか**を見るのに使う）
-    static func respond(path: String, status: Int, body: String, delay: TimeInterval = 0) {
+    static func respond(path: String, status: Int, body: String) {
+        routes.append((path, status, Data(body.utf8), 0))
+    }
+
+    /// 🔴 **使わない。** 応答を遅らせると別のスレッドから `client` を叩くことになり、
+    /// Linux の Foundation でまれに（約1%）落ちる。遅い口は要求の手前に `Gate` を
+    /// 掛けて作る（`TestGate.swift`）。**残しているのは、並行して進んでいる枝の
+    /// 試験がまだ使っているため**（消すと、それらが main を取り込んだ時点で
+    /// ビルドが止まる）。移し終えたら消す
+    @available(*, deprecated, message: "応答の遅延は Linux で落ちる。要求の手前に Gate を掛ける（TestGate.swift）")
+    static func respond(path: String, status: Int, body: String, delay: TimeInterval) {
         routes.append((path, status, Data(body.utf8), delay))
     }
 
@@ -243,6 +252,7 @@ final class StubProtocol: URLProtocol {
             client?.urlProtocol(self, didLoad: body)
             client?.urlProtocolDidFinishLoading(self)
         }
+        // 遅らせるのは、使わない方の `respond(path:status:body:delay:)` の回だけ
         if delay > 0 {
             DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: deliver)
         } else {
@@ -319,5 +329,52 @@ final class AuthStatusMessageTests: XCTestCase {
         XCTAssertFalse(error.isAuthExpired, "403 で再ログインを促してはいけない")
         XCTAssertTrue(error.isForbidden)
         XCTAssertTrue(error.errorDescription?.contains("権限がありません") == true)
+    }
+}
+
+/// 取り消された処理から通信を始めない（`RequestCancellation`）。
+///
+/// 🔴 Linux の URLSession は、取り消された処理から呼ぶとまれに落ちる（試験の約2%が
+/// これだった）。**呼ぶ前に気づいて、URLSession が返すのと同じ取り消しを投げる**
+@MainActor
+final class RequestCancellationTests: XCTestCase {
+
+    private func session() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        return URLSession(configuration: config)
+    }
+
+    private struct Payload: Decodable { let ok: Bool }
+
+    /// API: 要求を出さず、取り消しとして返す（`APIClient` は取り消しを失敗の文にしない）
+    func testCancelledCallDoesNotReachTheNetwork() async {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session())
+        // メインアクターの上で作るので、下の cancel() より先には走らない
+        // （Task.detached や別の actor で作ると、この順は保証されない）
+        let task = Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
+        task.cancel()
+        let result = await task.result
+        XCTAssertEqual(StubProtocol.requestCount, 0, "取り消された処理から要求を出している")
+        guard case .failure(let error) = result else { return XCTFail("取り消したのに答えが返った") }
+        XCTAssertTrue(error is CancellationError, "取り消しの扱いが URLSession の取り消しと違う: \(error)")
+    }
+
+    /// 公開一覧: 要求を出さず、圏外と同じ経路（控えが無ければ unreachable）で返す
+    func testCancelledGalleryFetchDoesNotReachTheNetwork() async {
+        let gallery = PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session(),
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString))
+        let task = Task { try await gallery.fetchPhotos() }
+        task.cancel()
+        let result = await task.result
+        XCTAssertEqual(StubProtocol.requestCount, 0, "取り消された処理から要求を出している")
+        // 控えは無いので、圏外と同じく「通信できません」
+        guard case .failure(let error) = result else { return XCTFail("取り消したのに答えが返った") }
+        XCTAssertEqual(error as? APIError, .unreachable)
     }
 }

@@ -173,7 +173,8 @@ final class SyncRaceTests: XCTestCase {
 
     // MARK: - 写真の詳細: 開いた直後のいいね（L-1）
 
-    private func stubbedSocial() -> SocialService {
+    /// `gates` を渡すと、その道の要求だけ手前で止める（「この口だけ遅い」）
+    private func stubbedSocial(gates: PathGates? = nil) -> SocialService {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)
@@ -186,43 +187,55 @@ final class SyncRaceTests: XCTestCase {
             "JPCognitoClientId": "client",
             "JPCognitoRegion": "ap-northeast-1",
         ]
-        return SocialService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
-                                            tokenProvider: StubTokenProvider(token: "t"), session: session))
+        return SocialService(api: APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"), session: session,
+            beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } }))
     }
 
     /// 🔴 **束の隣へ送った後に前の1枚の答えが届いても、今の1枚の読み込みは捨てない**
     /// （9abb5ea のレビュー: 押した写真を区別せずに数えていた）
     func testLikeAnswerForThePreviousPhotoDoesNotDiscardTheNextLoad() async {
-        let social = stubbedSocial()
-        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"liked":true,"likes":8}"#, delay: 0.2)
-        StubProtocol.respond(path: "/user/likes/p2", status: 200, body: #"{"liked":true}"#, delay: 0.4)
+        // 押したいいねの答え（先に届く）と、今の1枚の「自分が押しているか」（後に届く）を止めておく
+        let liking = Gate()
+        let mine = Gate()
+        let social = stubbedSocial(gates: PathGates(["POST /photos/p1/like": liking, "/user/likes/p2": mine]))
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"liked":true,"likes":8}"#)
+        StubProtocol.respond(path: "/user/likes/p2", status: 200, body: #"{"liked":true}"#)
         StubProtocol.respond(path: "/photos/p2/comments", status: 200, body: #"{"items":[],"count":0}"#)
         StubProtocol.respond(path: "/photos/p2/like", status: 200, body: #"{"likes":9}"#)
         let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 7)
         model.setSignedIn(true)
 
-        async let pressed = model.toggleLike()
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        let pressed = Task { await model.toggleLike() }
+        await liking.untilWaiting()
         model.show(photoId: "p2", initialLikes: 3, liked: false)
-        await model.load()
-        _ = await pressed
+        let loading = Task { await model.load() }
+        await mine.untilWaiting()
+        await liking.open()                 // 前の1枚の答えが先に届く
+        _ = await pressed.value
+        await mine.open()                   // そのあと今の1枚の答え
+        await loading.value
         XCTAssertTrue(model.liked, "前の1枚の答えのせいで、今の1枚のハートを読み捨てている")
         XCTAssertEqual(model.likes, 9, "前の1枚の答えのせいで、今の1枚の数を読み捨てている")
     }
 
     /// **断られたいいねは数えない**（サーバーは変わっていないので、読み込みの答えが正しい）
     func testRejectedLikeDoesNotDiscardTheLoad() async {
-        let social = stubbedSocial()
-        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#, delay: 0.3)
+        // 「自分が押しているか」の答えを止めておき、その間に押す
+        let mine = Gate()
+        let social = stubbedSocial(gates: PathGates(["/user/likes/p1": mine]))
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#)
         StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: #"{"items":[],"count":0}"#)
         StubProtocol.respond(path: "/photos/p1/like", status: 500, body: "{}")
         let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
         model.setSignedIn(true)
 
-        async let loading: Void = model.load()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        let loading = Task { await model.load() }
+        await mine.untilWaiting()
         _ = await model.toggleLike()
-        await loading
+        await mine.open()
+        await loading.value
         XCTAssertTrue(model.liked, "断られた回に、サーバーの答え（押してある）を捨てている")
     }
 
@@ -240,20 +253,24 @@ final class SyncRaceTests: XCTestCase {
             "JPCognitoClientId": "client",
             "JPCognitoRegion": "ap-northeast-1",
         ]
+        // 「自分が押しているか」は押す前の答え（押していない）が遅れて届く（止めておく）
+        let mine = Gate()
+        let gates = PathGates(["/user/likes/p1": mine])
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
-                            tokenProvider: StubTokenProvider(token: "t"), session: session)
-        // 「自分が押しているか」は押す前の答え（押していない）が遅れて届く
-        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":false}"#, delay: 0.3)
+                            tokenProvider: StubTokenProvider(token: "t"), session: session,
+                            beforeRequest: { (request: URLRequest) async in await gates.wait(for: request) })
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":false}"#)
         StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: #"{"items":[],"count":0}"#)
         StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"liked":true,"likes":6}"#)
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api), initialLikes: 5)
         model.setSignedIn(true)
 
-        async let loading: Void = model.load()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        let loading = Task { await model.load() }
+        await mine.untilWaiting()
         _ = await model.toggleLike()
         XCTAssertTrue(model.liked, "前提: 押した答えが入っていない")
-        await loading
+        await mine.open()
+        await loading.value
         XCTAssertTrue(model.liked, "押す前の読み込みの答えでハートを戻している")
         XCTAssertEqual(model.likes, 6)
     }
