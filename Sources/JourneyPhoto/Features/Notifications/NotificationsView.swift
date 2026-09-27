@@ -163,9 +163,9 @@ struct NotificationsView: View {
         .navigationDestination(item: $route) { route in
             destinationView(route)
         }
-        // ログインの確認が終わって人が決まったときにも読み直す（既読の合図に
-        // 誰の既読かを正しく載せるため・`NotificationRouter.noteRead`）
-        .task(id: "\(router.openActivityRequests)|\(auth.userId ?? "")") {
+        // この一覧はログイン済みのときだけ描かれる（上の `body` の分岐）ので、
+        // 読み込みの `viewerId` は必ずいまの人
+        .task(id: router.openActivityRequests) {
             // **読めたときだけ消す。** サーバーは未読数を載せるが、既読に
             // したことは端末のアイコンに伝わらない——誰も消さないと増える
             // 一方。ただし圏外で開いた回に消すと、タブは 3・アイコンは 0 に割れる

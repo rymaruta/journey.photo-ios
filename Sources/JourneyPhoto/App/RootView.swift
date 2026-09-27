@@ -27,6 +27,8 @@ struct RootView: View {
     @StateObject private var router = NotificationRouter.shared
     /// 通知を押したあと、ほかのシートが閉じるのを待っている間の仕事
     @State private var activityWait: Task<Void, Never>?
+    /// ベルから開き直すまでの間の仕事（`openNotificationsFromBell`）
+    @State private var bellReopen: Task<Void, Never>?
     /// ベルの数え直しの世代。**最後に始めた取得だけを画面に出す**
     /// （既読にする前の遅い応答が、あとから古い数で上書きしないように）
     @State private var unreadGeneration = 0
@@ -150,13 +152,19 @@ struct RootView: View {
     /// ベルを押した。**true のまま出ていない回**（SwiftUI が黙って無視した）は
     /// 一度戻してから開く——そのままだと true → true で何も起きない
     private func openNotificationsFromBell() {
+        bellReopen?.cancel()
         guard showNotifications, !ModalProbe.isPresenting() else {
             showNotifications = true
             return
         }
         showNotifications = false
-        Task { @MainActor in
+        let owner = auth.userId
+        bellReopen = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 300_000_000)
+            // 待つ間にほかのシートが出た・人が替わった・もう開いた: 開かない
+            // （ほかのシートの裏で true にすると、また出ないまま残る）
+            guard !Task.isCancelled, auth.userId == owner,
+                  !showNotifications, !ModalProbe.isPresenting() else { return }
             showNotifications = true
         }
     }
@@ -171,6 +179,8 @@ struct RootView: View {
     private func cancelActivityWait() {
         activityWait?.cancel()
         activityWait = nil
+        bellReopen?.cancel()
+        bellReopen = nil
     }
 
     private var tabs: some View {
