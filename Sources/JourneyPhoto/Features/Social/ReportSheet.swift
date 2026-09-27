@@ -154,9 +154,14 @@ struct ReportSheet: View {
     }
 
     private func submit() async {
+        // **送っている間・受け付けた後は送らない。** ボタンの `disabled` は描き直しの後にしか
+        // 効かないので、同じフレームで2回押すと通報が2回送られていた
+        guard !isWorking, !done else { return }
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
+        // ブロックを控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
+        let blocker = hidden.owner
         do {
             try await environment.moderation.report(photoId: photoId, reason: reason, note: note)
             // **押したあと実際に消す。** 通報が受け付けられただけで、
@@ -167,7 +172,7 @@ struct ReportSheet: View {
                 // 「通報できなかった」と誤解させるので、文言を分ける
                 do {
                     try await environment.moderation.block(userId: ownerId)
-                    hidden.block(ownerId)
+                    hidden.block(ownerId, for: blocker)
                 } catch {
                     errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。設定からもう一度お試しください。", "Your report was received, but blocking failed. Try again from Settings.")
                 }

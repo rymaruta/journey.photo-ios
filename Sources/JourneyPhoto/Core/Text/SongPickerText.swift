@@ -64,6 +64,13 @@ enum SongPickerText {
         return inSongPicker ? true : origin != .songPicker
     }
 
+    /// 曲選びを閉じたときに止めるか。**止めるのは曲選びで鳴らした曲だけ**——共有の
+    /// 再生器を無条件に止めていたので、前から鳴っていた曲（マイページの BGM など）まで
+    /// 曲選びを閉じただけで止まっていた
+    static func stopsOnClose(playingFrom origin: PlaybackOrigin?) -> Bool {
+        origin == .songPicker
+    }
+
     /// バーの1行目。**「· 試し聴き中」は曲選びで鳴らした曲をシートの中で出すときだけ**
     /// （前から鳴っていた曲は試し聴きではない）
     static func barTitle(_ title: String, playingFrom origin: PlaybackOrigin?, inSongPicker: Bool) -> String {

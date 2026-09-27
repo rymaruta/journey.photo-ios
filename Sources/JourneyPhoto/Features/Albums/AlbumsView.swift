@@ -258,6 +258,10 @@ final class AlbumsViewModel: ObservableObject {
             writes = AlbumMerge.settled(writes, loaded: list)
             albums = AlbumMerge.merge(loaded: list, writes: writes)
             isLoading = false
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
+            guard generation == loadGeneration else { return }
+            isLoading = false
         } catch {
             guard generation == loadGeneration else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
@@ -271,6 +275,10 @@ final class AlbumsViewModel: ObservableObject {
         do {
             let album = try await environment.albums.create(title: trimmed)
             writes.created.append(.init(value: album, at: Date()))
+            // 🔴 **既に並んでいれば足さない。** 作っている間に始めた読み込みが先に返ると、
+            // 作ったアルバムはもう一覧に居る。そこへ足すと同じ id が2つ並んでいた
+            // （ForEach の id が重なる）
+            albums.removeAll { $0.id == album.id }
             albums.insert(album, at: 0)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")

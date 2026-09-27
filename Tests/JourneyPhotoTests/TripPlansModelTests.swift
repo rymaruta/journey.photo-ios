@@ -166,6 +166,85 @@ final class TripPlansModelTests: XCTestCase {
         XCTAssertEqual(model.plans.map(\.planId), ["p1"])
     }
 
+    /// 🔴 **作る前に始めた読み込みが後から返っても、作ったプランを消さない**
+    /// （バグ探し 2026-09-27 L-6）。読み込みはトークン待ちで遅らせ、その間に作る
+    func testLoadStartedBeforeCreateDoesNotDropTheNewPlan() async {
+        let env = environment()
+        let model = TripPlansModel()
+        // 1本目に届くのは「作る」（作った後の一覧）、2本目が遅れた読み込み（作る前の姿）
+        StubProtocol.respondInOrder([
+            (200, #"{"plans":[{"planId":"new","title":"夏","days":[]},{"planId":"p1","title":"冬","days":[]}]}"#),
+            (200, #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#),
+        ])
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let slow = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                  gallery: env.gallery, spots: env.spots,
+                                  trips: TripPlanService(api: APIClient(
+                                      baseURL: URL(string: "https://api.example.test")!,
+                                      tokenProvider: DelayedTokenProvider(),
+                                      session: URLSession(configuration: config))))
+        let loading = Task { await model.load(environment: slow) }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        let created = await model.create(title: "夏", environment: env)
+        XCTAssertEqual(created?.planId, "new", "前提: 作れていない")
+        await loading.value
+        XCTAssertEqual(model.plans.map(\.planId), ["new", "p1"], "作る前の読み込みの答えで、作ったプランを消している")
+        XCTAssertEqual(model.status, .loaded)
+    }
+
+    /// **読み込み同士では捨て合わない**（6a9efb6 のレビュー）。先に始めた読み込みの成功を、
+    /// 後から始めて先に失敗した読み込みのせいで捨てていた
+    func testOverlappingLoadsDoNotDiscardEachOther() async {
+        let env = environment()
+        let model = TripPlansModel()
+        // 1本目に届くのは後から始めた読み込み（失敗）、2本目が遅らせた読み込み（成功）
+        StubProtocol.respondInOrder([
+            (500, ""),
+            (200, #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#),
+        ])
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let slow = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                  gallery: env.gallery, spots: env.spots,
+                                  trips: TripPlanService(api: APIClient(
+                                      baseURL: URL(string: "https://api.example.test")!,
+                                      tokenProvider: DelayedTokenProvider(),
+                                      session: URLSession(configuration: config))))
+        let first = Task { await model.load(environment: slow) }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        await model.load(environment: env)
+        await first.value
+        XCTAssertEqual(model.status, .loaded, "先に始めた読み込みの成功を捨てている")
+        XCTAssertEqual(model.plans.map(\.planId), ["p1"])
+    }
+
+    /// **後から始めた読み込みが成功した後に、古い読み込みの失敗を出さない**（72c2539 のレビュー）
+    func testStaleFailureAfterNewerSuccessIsIgnored() async {
+        let env = environment()
+        let model = TripPlansModel()
+        // 1本目に届くのは後から始めた読み込み（成功）、2本目が遅らせた読み込み（失敗）
+        StubProtocol.respondInOrder([
+            (200, #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#),
+            (500, ""),
+        ])
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let slow = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                  gallery: env.gallery, spots: env.spots,
+                                  trips: TripPlanService(api: APIClient(
+                                      baseURL: URL(string: "https://api.example.test")!,
+                                      tokenProvider: DelayedTokenProvider(),
+                                      session: URLSession(configuration: config))))
+        let first = Task { await model.load(environment: slow) }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        await model.load(environment: env)
+        await first.value
+        XCTAssertEqual(model.status, .loaded)
+        XCTAssertNil(model.errorMessage, "新しい一覧を出しているのに、古い読み込みの失敗を出している")
+        XCTAssertEqual(model.plans.map(\.planId), ["p1"])
+    }
+
     /// 失敗したあとも `busy` は戻る（戻らないと、以後どのボタンも押せない）
     func testBusyResetsAfterFailure() async {
         let env = environment()
@@ -178,6 +257,14 @@ final class TripPlansModelTests: XCTestCase {
 }
 
 /// トークンを返すまで待つ（その間に打ち切られると `CancellationError`）
+/// 通信に入る前に少しだけ待つ（読み込みの要求を「作る」より後に届かせる）
+private struct DelayedTokenProvider: TokenProviding {
+    func idToken() async throws -> String? {
+        try await Task.sleep(nanoseconds: 300_000_000)
+        return "t"
+    }
+}
+
 private struct SlowTokenProvider: TokenProviding {
     func idToken() async throws -> String? {
         try await Task.sleep(nanoseconds: 2_000_000_000)

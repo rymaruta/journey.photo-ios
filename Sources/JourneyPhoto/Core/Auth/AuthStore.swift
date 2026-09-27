@@ -245,6 +245,10 @@ final class AuthStore: ObservableObject {
     }
 
     private func run(_ work: () async throws -> Void) async {
+        // 🔴 **走っている間は2本目を始めない。** ボタンは `isWorking` で止めているが、
+        // 立てるのは押した後の Task の中なので、同じフレームで2回押すと2本走っていた
+        // （登録では未確認のアカウントが2つできうる）。2本目は何もせずに戻る
+        guard !isWorking else { return }
         isWorking = true
         errorMessage = nil
         lastFailure = .none

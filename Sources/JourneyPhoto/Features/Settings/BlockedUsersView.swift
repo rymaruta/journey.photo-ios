@@ -104,6 +104,8 @@ struct BlockedUsersView: View {
             // 返ってくる間に人が替わっていたら書かない
             hidden.replaceBlocked(with: list.blockedIds, for: owner)
             await apply()
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
         } catch {
             guard generation == loadGeneration else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
@@ -123,11 +125,12 @@ struct BlockedUsersView: View {
         working.insert(userId)
         defer { working.remove(userId) }
         errorMessage = nil
+        let owner = hidden.owner
         do {
             try await environment.moderation.unblock(userId: userId)
             loadGeneration += 1
             isLoading = false
-            hidden.unblock(userId)
+            hidden.unblock(userId, for: owner)
             await apply()
             users.removeAll { $0.id == userId }
         } catch {
