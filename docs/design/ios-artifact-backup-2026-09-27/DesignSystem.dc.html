@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>デザインシステム 黒塗りの真鍮</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#000000;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Noto Sans JP',system-ui,sans-serif;color:rgba(255,255,255,0.95);-webkit-font-smoothing:antialiased}
+a{color:#C9A66B;text-decoration:underline;text-underline-offset:3px}a:hover{color:#E3C98F}
+button{font-family:inherit;cursor:pointer}
+input::placeholder{color:rgba(255,255,255,0.5)}
+</style>
+</helmet>
+<div style="width: 1240px; height: 1780px; box-sizing: border-box; background: #000000; color: rgba(255,255,255,0.95); padding: 48px 56px; display: flex; flex-direction: column; gap: 36px; overflow: hidden">
+
+<header style="display: flex; flex-direction: column; gap: 10px">
+<span style="font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; letter-spacing: 0.16em; color: #C9A66B">DESIGN SYSTEM · 2026-09-25 · 0から</span>
+<h1 style="margin: 0; font-family: 'Shippori Mincho B1', 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif; font-size: 40px; font-weight: 700; line-height: 1.3">黒塗りの真鍮</h1>
+<p style="margin: 0; font-size: 15px; line-height: 1.7; color: #B8B8B8; max-width: 980px">写真が主役。UI は黒と白だけで組み、<span style="color: #C9A66B">真鍮 #C9A66B</span> は「合図と手がかり」にだけ使う。<strong style="color: #fff">白＝位置と選択、真鍮＝合図と手がかり。写真の上には白しか置かない。</strong> 比はすべて WCAG の式で計算した値（文字 4.5:1・部品 3:1 が線）。</p>
+</header>
+
+<section style="display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: #999999">01 パレット</h2>
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #000000; border: 1px solid #333333; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #fff">#000000</span></div><span style="font-size: 13px; font-weight: 600">bg</span><span style="font-size: 11px; color: #999999">下地。純黒（紺はやめる）</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #121212; border: 1px solid #333333; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #fff">#121212</span></div><span style="font-size: 13px; font-weight: 600">surface</span><span style="font-size: 11px; color: #999999">カード・チップ（白 7%）</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #1A1A1A; border: 1px solid #333333; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #fff">#1A1A1A</span></div><span style="font-size: 13px; font-weight: 600">surface-2</span><span style="font-size: 11px; color: #999999">入力欄・副ボタン（白 10%）</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #666666; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #fff">#666666</span></div><span style="font-size: 13px; font-weight: 600">outline</span><span style="font-size: 11px; color: #999999">境界（白 40%）黒 3.66</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #B8B8B8; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #07090A">#B8B8B8</span></div><span style="font-size: 13px; font-weight: 600">text-2</span><span style="font-size: 11px; color: #999999">副文（白 72%）黒 10.59</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #999999; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #07090A">#999999</span></div><span style="font-size: 13px; font-weight: 600">text-3</span><span style="font-size: 11px; color: #999999">注記・@名（白 60%）黒 7.37</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #C9A66B; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #07090A">#C9A66B</span></div><span style="font-size: 13px; font-weight: 600; color: #C9A66B">accent 真鍮</span><span style="font-size: 11px; color: #999999">文字・点・輪・リンク。黒 9.15</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #B8955A; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #07090A">#B8955A</span></div><span style="font-size: 13px; font-weight: 600">accent-fill</span><span style="font-size: 11px; color: #999999">塗り＋墨 7.11。写真の無い画面の主ボタンだけ</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #796440; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #fff">#796440</span></div><span style="font-size: 13px; font-weight: 600">accent-deep</span><span style="font-size: 11px; color: #999999">白を載せる真鍮 5.66。トグル・地図・tint</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #201B11; border: 1px solid #333333; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #C9A66B">#201B11</span></div><span style="font-size: 13px; font-weight: 600">accent-soft</span><span style="font-size: 11px; color: #999999">案内の帯（真鍮 16%）。選択は担わない</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #EBEBEB; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #07090A">#EBEBEB</span></div><span style="font-size: 13px; font-weight: 600">primary</span><span style="font-size: 11px; color: #999999">白 92%＋墨 16.74。主ボタン・選択中チップ</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #07090A; border: 1px solid #333333; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #fff">#07090A</span></div><span style="font-size: 13px; font-weight: 600">墨</span><span style="font-size: 11px; color: #999999">白・真鍮の塗りに載せる文字</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #F0565A; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #07090A">#F0565A</span></div><span style="font-size: 13px; font-weight: 600">danger</span><span style="font-size: 11px; color: #999999">削除・通報・エラー文。黒 6.18</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #C8323A; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #fff">#C8323A</span></div><span style="font-size: 13px; font-weight: 600">danger-fill</span><span style="font-size: 11px; color: #999999">白 5.29。アカウント削除の確定だけ</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #7FC489; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #07090A">#7FC489</span></div><span style="font-size: 13px; font-weight: 600">success</span><span style="font-size: 11px; color: #999999">トーストのアイコンだけ。丸にしない</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 64px; border-radius: 10px; background: #9CC3E6; display: flex; align-items: flex-end; padding: 8px; box-sizing: border-box"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #07090A">#9CC3E6</span></div><span style="font-size: 13px; font-weight: 600">location</span><span style="font-size: 11px; color: #999999">地図の現在地だけ（黒 2px の縁）</span></div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: #999999">02 書体 — 見出しは明朝、本文はシステム、数字は等幅</h2>
+<div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 24px">
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 24px; border-radius: 16px; background: #121212">
+<span style="font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; letter-spacing: 0.16em; color: #C9A66B">TODAY'S THEME · 眉ラベル Plex Mono 11</span>
+<span style="font-family: 'Shippori Mincho B1', 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif; font-size: 32px; font-weight: 700; line-height: 1.45">夕陽に染まる白い街</span>
+<span style="font-family: 'Shippori Mincho B1', 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif; font-size: 22px; font-weight: 700; line-height: 1.45">サントリーニ島 · 写真の題 22</span>
+<span style="font-family: 'Shippori Mincho B1', 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif; font-size: 18px; font-weight: 700; line-height: 1.45">格子・旅の一冊の題 18（明朝はここが下限）</span>
+<span style="font-size: 17px; line-height: 1.6">本文 17 — エーゲ海に沈む夕日が、白い街をやさしく染めていく。SF Pro とヒラギノ角ゴ。</span>
+<span style="font-size: 15px; font-weight: 600">ボタン・作者名 15 Semibold</span>
+<span style="font-size: 12px; color: #999999">注記・@名 12 · text-3</span>
+<span style="font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace; font-size: 18px; font-weight: 500">1,284 <span style="font-size: 12px; font-weight: 400; color: #B8B8B8">枚</span> · 12,940 <span style="font-size: 12px; font-weight: 400; color: #B8B8B8">km</span></span>
+<span style="font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; color: #B8B8B8">Canon EOS R6 · RF24-70mm · f/8 · 1/125s · ISO 100 · 2024.05.12 18:24</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px; padding: 24px; border-radius: 16px; background: #121212; font-size: 13px; line-height: 1.65">
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; letter-spacing: 0.08em; color: #999999">iOS</span><span><strong>見出し</strong> ShipporiMinchoB1-Bold を同梱（JIS 第1水準サブセット 2.91 MB）。外の字は HiraMinProN-W6 へ</span><span><strong>本文</strong> SF Pro（和文は Hiragino Sans）。同梱なし・Dynamic Type そのまま</span><span><strong>数字</strong> IBM Plex Mono 400/500 を同梱（0.26 MB）。行内の数は SF の等幅数字</span><span><strong>ワードマーク</strong> New York Bold 22・白1色（変えない）</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; letter-spacing: 0.08em; color: #999999">WEB</span><span><strong>h1 だけ</strong> Shippori 700 を自己ホスト。節の見出しは端末の明朝（0 KB）</span><span><strong>本文</strong> system-ui（Inter を外す）。<strong>数字</strong> Plex Mono</span></div>
+<span style="font-size: 11px; color: #999999">追加は合計 3.2 MB。OFL・改名なし。実機の描画は未確認。</span>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: #999999">03 部品 — 押せるものは 44pt</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 24px; border-radius: 16px; background: #121212">
+<button style="height: 52px; padding: 0 24px; border-radius: 999px; border: 0; background: rgba(255,255,255,0.92); color: #07090A; font-size: 16px; font-weight: 600">投稿する</button>
+<button style="height: 52px; padding: 0 24px; border-radius: 999px; border: 0; background: #B8955A; color: #07090A; font-size: 16px; font-weight: 600">ログイン</button>
+<button style="height: 44px; padding: 0 20px; border-radius: 999px; border: 1px solid #666666; background: transparent; color: #fff; font-size: 15px; font-weight: 600">プロフィールを編集</button>
+<button style="height: 44px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: #C9A66B; font-size: 15px; font-weight: 600">保存</button>
+<span style="height: 32px; padding: 0 14px; border-radius: 999px; background: #1A1A1A; border: 1px solid rgba(255,255,255,0.12); color: #D4D4D4; font-size: 13px; display: flex; align-items: center">#サントリーニ</span>
+<span style="height: 32px; padding: 0 14px; border-radius: 999px; background: #EBEBEB; color: #07090A; font-size: 13px; font-weight: 600; display: flex; align-items: center">風景 · 選択中</span>
+<span style="display: flex; gap: 20px; align-items: flex-end; height: 44px"><span style="font-size: 15px; font-weight: 600; color: #fff; border-bottom: 2px solid #fff; padding-bottom: 10px">おすすめ</span><span style="font-size: 15px; color: #B8B8B8; padding-bottom: 12px">フォロー中</span><span style="font-size: 15px; color: #B8B8B8; padding-bottom: 12px">新着</span></span>
+<span style="display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5 10v10h14V10"></path></svg><span style="font-size: 11px; color: #fff">ホーム</span><span style="width: 4px; height: 4px; border-radius: 2px; background: #C9A66B"></span></span>
+<span style="width: 51px; height: 31px; border-radius: 16px; background: #796440; display: flex; align-items: center; justify-content: flex-end; padding: 2px; box-sizing: border-box"><span style="width: 27px; height: 27px; border-radius: 14px; background: #fff"></span></span>
+<span style="width: 51px; height: 31px; border-radius: 16px; background: rgba(255,255,255,0.36); display: flex; align-items: center; padding: 2px; box-sizing: border-box"><span style="width: 27px; height: 27px; border-radius: 14px; background: #fff"></span></span>
+<span style="width: 62px; height: 62px; box-sizing: border-box; border-radius: 31px; border: 2px solid #C9A66B; padding: 3px; display: flex"><span style="flex-grow: 1; border-radius: 26px; overflow: hidden; background: #3a2f40"><img src="/_blob/68ada1e7ef3605975b4227b5e80b758e" alt="" style="width: 100%; height: 100%; object-fit: cover; display: block"></span></span>
+<span style="width: 62px; height: 62px; box-sizing: border-box; border-radius: 31px; border: 2px solid #666666; padding: 3px; display: flex"><span style="flex-grow: 1; border-radius: 26px; overflow: hidden; background: #0e1b1e"><img src="/_blob/e80d0fbd2fd71f5cf44ef164adf97b7b" alt="" style="width: 100%; height: 100%; object-fit: cover; display: block"></span></span>
+<span style="position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"></path></svg><span style="position: absolute; top: 4px; right: 4px; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: #C9A66B; color: #07090A; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; font-weight: 500; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #000">3</span></span>
+<label style="height: 44px; width: 220px; box-sizing: border-box; padding: 0 14px; border-radius: 12px; background: #1A1A1A; border: 1px solid #666666; display: flex; align-items: center; gap: 10px"><input type="search" placeholder="撮影地・タグで探す" aria-label="撮影地・タグで探す" style="flex-grow: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #fff; font-family: inherit; font-size: 15px"></label>
+<span style="height: 44px; padding: 0 16px; border-radius: 12px; background: #1A1A1A; color: #fff; font-size: 15px; display: flex; align-items: center; box-shadow: 0 0 0 2px #000, 0 0 0 4px #C9A66B">フォーカス</span>
+<span style="height: 32px; padding: 0 12px; border-radius: 16px; background: rgba(0,0,0,0.55); color: #fff; font-size: 12px; font-family: 'IBM Plex Mono', ui-monospace, monospace; display: flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.12)"><svg width="14" height="14" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg>342 · glass</span>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: #999999">04 アクセント — 真鍮。数字は下地に対する比</h2>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 16px; background: #121212; border: 1px solid #C9A66B">
+<div style="display: flex; justify-content: space-between; align-items: baseline"><span style="font-family: 'Shippori Mincho B1', 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif; font-size: 20px; font-weight: 700">真鍮 <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12px; font-weight: 400; color: #B8B8B8">#C9A66B</span></span><span style="font-size: 11px; font-weight: 600; color: #07090A; background: #EBEBEB; border-radius: 999px; padding: 3px 10px">採用</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; background: #000000"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.16em; color: #C9A66B">TODAY'S THEME</span><span style="display: flex; align-items: center; gap: 10px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #C9A66B; box-shadow: 0 0 0 2px #000"></span><span style="font-size: 14px">未読の点 · <a href="#a">リンク</a></span></span><span style="display: flex; gap: 8px"><span style="height: 36px; padding: 0 16px; border-radius: 999px; background: #EBEBEB; color: #07090A; font-size: 13px; font-weight: 600; display: flex; align-items: center">フォロー</span><span style="height: 36px; padding: 0 16px; border-radius: 999px; background: #B8955A; color: #07090A; font-size: 13px; font-weight: 600; display: flex; align-items: center">ログイン</span></span><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: #B8B8B8">黒地 9.15 · 塗り＋墨 7.11 · 塗り＋白 2.81✕</span></div>
+<div style="position: relative; height: 96px; border-radius: 12px; overflow: hidden; background: #4a1a12"><img src="/_blob/7c542fc6b3cb77fa5b6bb096778805ea" alt="" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block"><span style="position: absolute; left: 12px; top: 12px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.16em; color: #C9A66B">暖色の写真 1.03✕</span><span style="position: absolute; right: 10px; bottom: 10px; height: 30px; padding: 0 12px; border-radius: 999px; background: rgba(255,255,255,0.92); color: #07090A; font-size: 12px; font-weight: 600; display: flex; align-items: center">白 → 参加する</span></div>
+<div style="position: relative; height: 96px; border-radius: 12px; overflow: hidden; background: #0b0f1e"><img src="/_blob/1dc83e55aafd341f80da2e9aebdf0604" alt="" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block"><span style="position: absolute; left: 12px; top: 12px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.16em; color: #C9A66B">夜の写真 7.80</span><span style="position: absolute; right: 10px; bottom: 10px; width: 22px; height: 22px; border-radius: 11px; background: #C9A66B; color: #07090A; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #000">3</span></div>
+<span style="font-size: 12px; line-height: 1.6; color: #B8B8B8">青の写真の対極。夕日・桜と同じ暖色でも彩度が半分（47%）で、色ではなく「黒いカメラの塗装が剥げて出る金属」に読める。</span>
+</div>
+
+
+
+
+</div>
+</section>
+
+<section style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: #121212">
+<h2 style="margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: #C9A66B">真鍮を使う（黒か面の上だけ）</h2>
+<ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.8; color: #D4D4D4"><li>未読の点（8px）・未見のストーリーの輪（2px＋黒 3px の隙間）</li><li>下部ナビ選択中の 4px の点、リンク・@名・#タグ（下線つき）</li><li>眉ラベル（TODAY'S THEME・TRIP BOOKS）——黒地の上だけ</li><li>ヘッダーの文字アクション（保存・投稿する）、フォーカスの枠</li><li>Toggle のオン・件数バッジ（真鍮＋墨＋黒 2px 縁）・地図（accent-deep）</li><li>写真の無い画面の主ボタン 1 つ（ログイン・登録・送信）</li></ul>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: #121212">
+<h2 style="margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: #999999">真鍮を使わない</h2>
+<ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.8; color: #D4D4D4"><li>写真を持つ画面の主ボタン・選択中チップ・タブの下線・下部ナビのアイコン ＝ 白</li><li>写真の上の直置き（78% 未満のスクリム・ガラスの中を含む）</li><li>♡・成功・危険・警告（それぞれ白・緑・赤・白＋アイコン）</li><li>10px 以上の塗りの丸（「色から探す」のチップと紛れる）、見出し・本文・ワードマーク</li><li>広い面（背景・カード全面）、2 つ目の塗り</li><li>色だけで状態を言わない——選択は必ず形も変える（白塗り・太字＋下線・拡大）</li></ul>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview": {"width": 1240, "height": 1780}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
