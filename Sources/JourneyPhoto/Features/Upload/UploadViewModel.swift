@@ -214,7 +214,10 @@ final class UploadViewModel: ObservableObject {
             switch result {
             case .success(let prepared):
                 self.append(prepared)
-                self.errorMessage = nil
+                // **読めなかったライブラリの写真が選ばれたままなら、知らせは消さない。**
+                // 消すと、その写真が抜けたまま投稿できる（写真を外しても読み直さない
+                // ので、知らせは二度と出ない）
+                if self.unreadable.isEmpty { self.errorMessage = nil }
             case .failure(let error):
                 self.errorMessage = (error as? LocalizedError)?.errorDescription
                     ?? L("写真を読み込めませんでした", "Couldn't load the photo")
