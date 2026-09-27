@@ -23,19 +23,114 @@ struct StoryService {
 
     private struct Created: Decodable { let story: Story? }
 
-    /// 画像を上げてストーリーを作る。
+    /// 上げ終えた画像。**送り直しで二重に出さないための目印**（`StoryUploadCenter` が
+    /// 1本ごとに覚え、端末にも書く）
+    struct UploadedMedia: Codable, Equatable {
+        let key: String
+        let publicUrl: String
+        /// 上げた時刻。**古い目印は使わない**（`isFresh`）
+        var uploadedAt: Date?
+
+        /// 目印を使ってよいか。一覧（`GET /stories`）は期限内の行しか返さないので、
+        /// 24時間を過ぎると「出ていたか」を確かめられない。しかも期限切れの掃除や
+        /// 削除で画像の実体は消えている——古い目印で行を作ると、壊れた画像の
+        /// 1本がフォロワーに出る。**少し手前（23時間）で上げ直しに切り替える**
+        func isFresh(now: Date = Date()) -> Bool {
+            guard let uploadedAt else { return false }
+            return now.timeIntervalSince(uploadedAt) < 23 * 60 * 60
+        }
+    }
+
+    /// 1本を出す（裏の係 `StoryUploadCenter` から呼ぶ）。
     ///
-    /// **`key` は送らない。** サーバーは検証済みの `publicUrl` から導く。
-    /// 受け取っていた頃は、自分の正当な URL と一緒に他人のキーを送り、
-    /// 自分のストーリーを消すだけで相手のファイルを消せた
-    /// （`api-user/src/stories.ts` の注記）。
-    @discardableResult
-    /// 🔴 **公開範囲は受け取らない。** ストーリーはフォロワーだけが見る
-    /// （2026-09-22・owner の判断。`api-user/src/storyVisibility.ts`）。
-    /// サーバーは `visibility` を読まないので、送っても何も起きない。
-    func create(imageData: Data, caption: String?, location: String?, coords: Photo.Coords?,
-                song: Photo.Song? = nil, durationSec: Int? = nil,
-                archive: Bool = false) async throws -> Story? {
+    /// 🔴 **送り直しで2本にしない。** サーバーは行の id を毎回新しく作る
+    /// （`story-${randomUUID()}`・`stories.ts`）ので、行を作る要求が届いたのに
+    /// 返事だけ落ちた回（圏外・タイムアウト・504）に送り直すと必ず2本になっていた。
+    /// そこで:
+    ///
+    /// 1. 上げ終えた画像を `record` で覚えてもらう
+    /// 2. 行を作る要求が**サーバーに断られた**（4xx）ときだけ画像を片づけ、目印を消す
+    /// 3. **届いたか分からない**失敗（通信・5xx・応答の読み違い）では画像を残す
+    /// 4. 送り直しで目印があれば、**先に一覧を読んで同じ画像の自分の1本を探す**。
+    ///    在れば出せていたので何もしない。無ければ上げ直さずに行だけ作る
+    /// 5. ただし目印が古ければ（`isFresh`）画像を片づけて上げ直す。片づけを 409 で
+    ///    断られたら、その鍵を行が使っている（前の回に出せていた）ので送ったことにする。
+    ///    掃除が行ごと消したあとは見分けられず、上げ直す
+    func post(_ job: StoryUploadCenter.Job, ownerId: String,
+              record: @escaping @MainActor (UploadedMedia?) -> Void) async throws {
+        let media: UploadedMedia
+        if let uploaded = job.uploaded {
+            // **目印があれば、古くても先に一覧で探す**（期限内の1本がまだ出ていれば
+            // 二重になる）。一覧を読めなければ投げる（出たか分からないまま行を作らない）
+            let listed = try await list()
+            if listed.contains(where: { Self.isSameMedia($0, uploaded, ownerId: ownerId) }) { return }
+            if uploaded.isFresh() {
+                media = uploaded
+            } else {
+                // 古い目印の画像は使わない（掃除で実体が消えている）。片づけてから上げ直す。
+                // **片づけを断られたら（409）、その画像はもう行に使われている**——
+                // 前の回に出せていた（期限切れから次の掃除までの間・「自分用に残す」で
+                // 棚に移った行・写真として残した行）。送ったことにする。
+                // ⚠️ 掃除が行ごと消したあと（既定の投稿は期限から遅くとも1時間以内。毎時5分の掃除）は
+                // 409 が返らず見分けられない。そのときは上げ直して、もう1本出る
+                if try await discardStale(key: uploaded.key) == .inUse { return }
+                await record(nil)
+                media = try await upload(imageData: job.imageData)
+                await record(media)
+            }
+        } else {
+            media = try await upload(imageData: job.imageData)
+            await record(media)
+        }
+        do {
+            _ = try await createRecord(media, caption: job.caption, location: job.location,
+                                       coords: job.coords, song: job.song,
+                                       durationSec: job.durationSec, archive: job.archive)
+        } catch {
+            if case .server(let status, _)? = error as? APIError, (400..<500).contains(status) {
+                // 断られた＝行は出来ていない。画像を片づけ、次は上げ直す
+                await uploads.discard(key: media.key)
+                await record(nil)
+            }
+            throw error
+        }
+    }
+
+    private enum DiscardResult { case removed, inUse }
+
+    /// 古い目印の画像を片づける。**使われている鍵はサーバーが 409 で断る**
+    /// （`upload.ts` の `discardUpload`——写真とストーリーの行が指している鍵）。
+    /// 確かめられなかった（503・通信）ときは投げる——出ていたか分からないまま上げ直さない
+    private func discardStale(key: String) async throws -> DiscardResult {
+        struct Body: Encodable { let key: String }
+        do {
+            try await api.authorizedVoid(.delete, "/upload/discard", body: Body(key: key))
+            return .removed
+        } catch {
+            if case .server(let status, _)? = error as? APIError {
+                if status == 409 { return .inUse }
+                // 本文・鍵の形を断られた（400/403）は、使用中かを確かめたうえでの
+                // 返事ではないが、同じ人の presign から出た鍵なので実際には来ない。
+                // **401（ログイン切れ）・429（絞り込み）は確かめていないので投げる**
+                // ——片づけた扱いにすると目印を失い、次の送り直しで二重になり得る
+                if status == 400 || status == 403 { return .removed }
+            }
+            throw error
+        }
+    }
+
+    /// その1本が、覚えておいた画像で出た自分のストーリーか。
+    ///
+    /// サーバーは `src` を `publicUrl` から導いた鍵で作り直す（`canonicalUploadUrl`
+    /// ——配信元の URL に差し替える）ので、URL をそのまま比べずに**道（＝鍵）で比べる**
+    static func isSameMedia(_ story: Story, _ media: UploadedMedia, ownerId: String) -> Bool {
+        guard story.userId == ownerId, let url = URL(string: story.src) else { return false }
+        let path = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+        return !path.isEmpty && path == media.key
+    }
+
+    /// 画像を上げる（置き場所をもらって本体を置く）。置けなかったら片づけて投げる
+    func upload(imageData: Data) async throws -> UploadedMedia {
         let presigned = try await uploads.presign(
             fileName: "story.jpg", fileType: "image/jpeg", fileSize: imageData.count
         )
@@ -45,7 +140,25 @@ struct StoryService {
             await uploads.discard(key: presigned.key)
             throw error
         }
+        return UploadedMedia(key: presigned.key, publicUrl: presigned.publicUrl, uploadedAt: Date())
+    }
 
+    /// 上げた画像でストーリーの行を作る。**失敗しても画像は片づけない**
+    /// （届いたか分からない回に片づけると、出来ていた1本の画像が消える。
+    /// 片づけるかは呼び手 `post` が失敗の種類で決める）。
+    ///
+    /// **`key` は送らない。** サーバーは検証済みの `publicUrl` から導く。
+    /// 受け取っていた頃は、自分の正当な URL と一緒に他人のキーを送り、
+    /// 自分のストーリーを消すだけで相手のファイルを消せた
+    /// （`api-user/src/stories.ts` の注記）。
+    ///
+    /// 🔴 **公開範囲は受け取らない。** ストーリーはフォロワーだけが見る
+    /// （2026-09-22・owner の判断。`api-user/src/storyVisibility.ts`）。
+    /// サーバーは `visibility` を読まないので、送っても何も起きない。
+    @discardableResult
+    func createRecord(_ media: UploadedMedia, caption: String?, location: String?,
+                      coords: Photo.Coords?, song: Photo.Song? = nil, durationSec: Int? = nil,
+                      archive: Bool = false) async throws -> Story? {
         struct Body: Encodable {
             let publicUrl: String
             let caption: String?
@@ -65,7 +178,7 @@ struct StoryService {
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
         let body = Body(
-            publicUrl: presigned.publicUrl,
+            publicUrl: media.publicUrl,
             caption: caption?.isEmpty == true ? nil : caption,
             mediaType: "image",
             location: location?.isEmpty == true ? nil : location,
@@ -74,12 +187,14 @@ struct StoryService {
             durationSec: Self.storedDuration(durationSec),
             archive: archive ? true : nil
         )
-        do {
-            return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
-        } catch {
-            await uploads.discard(key: presigned.key)
-            throw error
-        }
+        return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
+    }
+
+    /// 捨てた送信の画像を片づける。**使われている鍵はサーバーが消さない**
+    /// （`upload.ts` の `discardUpload` は保存済みの写真とストーリーの鍵を残す）ので、
+    /// 実は出来ていた1本の画像を消してしまうことは無い
+    func discardUpload(key: String) async {
+        await uploads.discard(key: key)
     }
 
     /// 既定（5秒）なら送らない——サーバーも既定は保存しない
@@ -157,8 +272,15 @@ struct Story: Decodable, Identifiable, Equatable {
     /// 付けた曲（`stories.ts` が保存して返している）。**復号していなかったので、
     /// 曲つきのストーリーでも閲覧画面に曲名が出なかった**
     let song: Photo.Song?
+    /// 返信（♡ も含む）を受けるか。**`false` のときだけ入って返る**（既定の「受ける」は
+    /// 保存されない・`stories.ts`）。読んでいなかった頃は、Web で「返信を許可」を
+    /// 切った投稿にも返信欄と ♡ が出て、送ると 403 で断られていた
+    let allowReplies: Bool?
 
     var imageURL: URL? { URL(string: src) }
+
+    /// 返信欄と ♡ を出すか（Web の `item?.allowReplies !== false` と同じ）
+    var acceptsReplies: Bool { allowReplies != false }
 
     /// 曲の行に出す文字（「曲名 · アーティスト」）。曲が無ければ nil
     /// **作成画面の曲の札と同じ文字**（`SongSticker.text`。2か所で作ると片方だけ変わる）
@@ -173,7 +295,7 @@ struct Story: Decodable, Identifiable, Equatable {
     }
     private enum CodingKeys: String, CodingKey {
         case id, src, userId, displayName, caption, mediaType, location, coords
-        case createdAt, expiresAt, replyCount, durationSec, song
+        case createdAt, expiresAt, replyCount, durationSec, song, allowReplies
     }
 
     /// **曲だけは壊れていても捨てる。** 一覧は配列1本で復号するので、
@@ -194,6 +316,8 @@ struct Story: Decodable, Identifiable, Equatable {
         replyCount = try c.decodeIfPresent(Int.self, forKey: .replyCount)
         durationSec = try c.decodeIfPresent(Int.self, forKey: .durationSec)
         song = (try? c.decodeIfPresent(Photo.Song.self, forKey: .song)) ?? nil
+        // 形が崩れていても一覧ごと落とさない（読めなければ既定＝受ける）
+        allowReplies = (try? c.decodeIfPresent(Bool.self, forKey: .allowReplies)) ?? nil
     }
 }
 
@@ -243,6 +367,13 @@ struct StoryReply: Decodable, Identifiable, Equatable {
 extension Array where Element == StoryReply {
     /// 文章の返信だけ（反応を除く）
     var textReplies: [StoryReply] { filter { !$0.isReaction } }
-    /// 反応（いいね）の数
-    var reactionCount: Int { filter(\.isReaction).count }
+    /// 反応（いいね）の数。**1人1つに数える**——サーバーは反応を1件ずつ足し
+    /// （1人10件まで・`storyReplies.ts`）、♡ を3回押した人が「いいね 3」になって
+    /// いた（反応の一覧は1人1行なので数と並びが合わなかった）。相手の分からない
+    /// 反応（`uid` が無い）は1件ずつ数える
+    var reactionCount: Int {
+        let reactions = filter(\.isReaction)
+        let people = Set(reactions.compactMap(\.uid))
+        return people.count + reactions.filter { $0.uid == nil }.count
+    }
 }

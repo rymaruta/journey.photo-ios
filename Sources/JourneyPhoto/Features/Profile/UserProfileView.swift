@@ -142,6 +142,13 @@ struct UserProfileView: View {
 
     @ViewBuilder
     private var photoArea: some View {
+        if let action = model.actionMessage {
+            // **一覧の代わりではなく、一覧に添える**（マイページと同じ）
+            Text(action)
+                .font(.footnote)
+                .foregroundStyle(WebTheme.danger)
+                .padding(.horizontal, 16)
+        }
         if let message = model.errorMessage {
             ErrorBanner(message: message) {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
@@ -156,7 +163,8 @@ struct UserProfileView: View {
             ErrorBanner(message: L("公開された写真はまだありません", "No public photos yet"))
         } else if tab == .map {
             // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）
-            MyPhotosMap(photos: shownPhotos)
+            // シートの中でブロック／通報して閉じたら、格子も絞り直す（`onAppear` は来ない）
+            MyPhotosMap(photos: shownPhotos, onSheetDismiss: { dropped = hidden.snapshot })
         } else {
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(shownPhotos) { photo in
@@ -225,7 +233,7 @@ struct UserProfileView: View {
     private var counts: some View {
         HStack(spacing: 20) {
             ForEach(ProfileLine.counts(followers: model.followers, following: model.following,
-                                       photos: isBlocked ? .pending : model.photoCount)) { item in
+                                       photos: isBlocked ? .pending : model.photoCount.shown(shownPhotos.count))) { item in
                 switch item.kind {
                 case .followers:
                     countLink(item, kind: .followers, count: model.followers)
@@ -347,6 +355,9 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var isWorking = false
     @Published var errorMessage: String?
+    /// フォロー・ブロックの失敗。**読み込みの失敗（`errorMessage`）と分ける**
+    /// ——同じ欄だと、押し損ねただけで格子と地図が知らせ1枚に置き換わっていた
+    @Published private(set) var actionMessage: String?
 
     private(set) var cacheBust = ""
 
@@ -356,9 +367,18 @@ final class UserProfileViewModel: ObservableObject {
         cacheBust = String(Int(Date().timeIntervalSince1970))
         defer { isLoading = false }
 
+        // 🔴 **出している最中に取り消された回は失敗として書かない。** 戻ると `.task` が
+        // 走り直し、読み終わる前に次の写真・ハイライトを開くと取り消される。それを失敗の帯
+        // （`errorMessage`）にすると、格子ごと差し替わって開いたばかりの詳細が閉じた。
+        // 取り消しは `APIError.unreachable` に化けて届くことがあるので、型ではなく
+        // `Task.isCancelled` で見る。前の回に出していた中身はそのまま残す。
+        // **まだ何も出していない回（`profile == nil`）は今までどおり書く**——書かないと
+        // 見出しの無い画面に「まだありません」が出る（開いている詳細も無い）
+        let keepsShown = { Task.isCancelled && self.profile != nil }
         do {
             profile = try await environment.profiles.publicProfile(userId: userId)
         } catch let error as APIError {
+            guard !keepsShown() else { return }
             // **「取れなかった」と「退会した」を混ぜない**
             if case .server(let status, _) = error, status == 404 {
                 errorMessage = L("このユーザーは見つかりません（退会した可能性があります）", "This user was not found (they may have deleted their account)")
@@ -367,6 +387,7 @@ final class UserProfileViewModel: ObservableObject {
             errorMessage = error.errorDescription
             return
         } catch {
+            guard !keepsShown() else { return }
             errorMessage = Labels.Common.loadFailed
             return
         }
@@ -377,8 +398,12 @@ final class UserProfileViewModel: ObservableObject {
             following = stats.following
         }
         if viewerId != nil {
+            // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
+            // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
-            isFollowing = ids?.contains(userId) ?? false
+            if let ids {
+                isFollowing = ids.contains(userId)
+            }
         }
         // **その人の写真は公開 JSON から絞る。** 「ある人の公開写真」を返す
         // 口が api-user に無いため（Web も静的ページを書き出している）
@@ -409,8 +434,12 @@ final class UserProfileViewModel: ObservableObject {
     /// 名前に入れ替わると、読み込みの途中が壊れて見える
     var shownName: String? { AuthorName.forProfilePage(profile: profile, photos: photos) }
 
+    /// 🔴 **失敗は格子の上の一行（`actionMessage`）に出す**（`errorMessage` に入れない）。`errorMessage` は
+    /// 読み込みの失敗で、写真の格子ごと差し替えて出す——圏外でフォローを押すと
+    /// 格子が消えていた（マイページが `actionMessage` で分けたのと同じ形）
     func toggleFollow(userId: String, environment: AppEnvironment) async {
         isWorking = true
+        actionMessage = nil
         defer { isWorking = false }
         do {
             let result = isFollowing
@@ -419,12 +448,13 @@ final class UserProfileViewModel: ObservableObject {
             isFollowing = result.following
             followers = result.followers
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
+            actionMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
     }
 
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
+        actionMessage = nil
         do {
             try await environment.moderation.block(userId: userId)
             store.block(userId)
@@ -439,7 +469,7 @@ final class UserProfileViewModel: ObservableObject {
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
+            actionMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }
 }

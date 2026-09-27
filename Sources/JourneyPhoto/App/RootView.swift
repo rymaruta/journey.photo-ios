@@ -7,6 +7,7 @@ struct RootView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var consent: LegalConsent
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var toasts: ToastCenter
     @State private var selection: Tab = .home
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -24,6 +25,13 @@ struct RootView: View {
     @State private var showMenu = false
     /// 通知を押して開いたか（`AppDelegate` から届く）
     @StateObject private var router = NotificationRouter.shared
+    /// 通知を押したあと、ほかのシートが閉じるのを待っている間の仕事
+    @State private var activityWait: Task<Void, Never>?
+    /// ベルから開き直すまでの間の仕事（`openNotificationsFromBell`）
+    @State private var bellReopen: Task<Void, Never>?
+    /// ベルの数え直しの世代。**最後に始めた取得だけを画面に出す**
+    /// （既読にする前の遅い応答が、あとから古い数で上書きしないように）
+    @State private var unreadGeneration = 0
 
     enum Tab: Hashable {
         // **提案の並び**（owner の絵・2026-09-21）:
@@ -68,7 +76,111 @@ struct RootView: View {
             unread = 0
             return
         }
-        unread = (try? await environment.notifications.fetch().unread) ?? 0
+        let owner = auth.userId
+        unreadGeneration += 1
+        let generation = unreadGeneration
+        // **取れなかった回は前の数を残す。** 0 にすると、最後に始めた1本が
+        // 圏外で落ちただけでベルが消える（成功した古い方は世代で捨てるので）
+        guard let count = try? await environment.notifications.fetch().unread else { return }
+        // **返ってくる間に人が替わっていた・もっと新しい取得が始まっていたら捨てる**
+        guard !Task.isCancelled, auth.userId == owner, generation == unreadGeneration else { return }
+        unread = count
+    }
+
+    /// 通知を押した分を受け取って、お知らせを出す。
+    ///
+    /// 🔴 **ほかのシートが出ている間は、お知らせのシートは出ない**
+    /// （SwiftUI は1つずつ——黙って無視される）。閉じてよいのは投稿の2択
+    /// だけ（何も抱えていない）。メニューの奥には親しい友達・パスワード変更の
+    /// 書きかけがあり、投稿・ストーリー・写真の中のシートも同じなので、
+    /// **勝手に閉じずに**閉じられるのを待ってから出す。
+    ///
+    /// **開くのは `activityWaitLimit` までに閉じられた回だけ。** それより
+    /// 遅いと、何分も後に突然お知らせが出てタブが動き、壊れて見える。
+    /// その回は、閉じられたときに「ベルから見られる」と知らせる
+    /// （シートが出ている間に知らせても、シートの裏に出て見えない）
+    private func takeActivityRequest() {
+        guard router.takePendingActivity() else { return }
+        if showNotifications {
+            // 本当に出ている: お知らせの画面が数を見て読み直す
+            if ModalProbe.isPresenting() { return }
+            // **出ていないのに true のまま**（出せなかった回）。残すと、この先
+            // 押してもベルを押しても true → true で何も起きなくなる
+            showNotifications = false
+        }
+        showPostChoice = false
+        activityWait?.cancel()
+        activityWait = Task { @MainActor in
+            let started = Date()
+            // **冷えた起動ではまずログインの確認を待つ。** 確認中は `userId` が
+            // nil なので、ここで持ち主を決めると確認が終わった瞬間に
+            // 「人が替わった」と見なして押した分を捨てていた
+            while !Task.isCancelled && auth.isResolving {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+            let owner = auth.userId
+            // 閉じる動きが終わるのを待ってから確かめる。
+            // 待っている間に（ベルなどから）お知らせが開いたら、そこで終える
+            repeat {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            } while !Task.isCancelled && !showNotifications && ModalProbe.isPresenting()
+            // **待っている間に人が替わっていたら開かない**（前の人の通知で
+            // 次の人のお知らせを開かない）。ログインしていない人には開かない
+            // （起動の確認で期限切れと分かった回など）
+            guard !Task.isCancelled, let owner, auth.userId == owner else { return }
+            // 待っている間に（ベルなどから）開いた: それで済んでいる。
+            // **ここで「出せずに残った」と見なして戻さない**——開いた直後の
+            // 描画が済む前だと、押したばかりのベルを取り消してしまう
+            // （true のまま残った回は、次に押したときの入口で戻す）
+            guard !showNotifications else { return }
+            let waited = Date().timeIntervalSince(started)
+            guard waited <= Self.activityWaitLimit else {
+                // あまりに後（何分も経ってから）の知らせは、何のことか分からない
+                if waited <= Self.activityHintLimit {
+                    toasts.show(L("新しいお知らせは、右上のベルから見られます",
+                                  "New activity is waiting behind the bell"))
+                }
+                await refreshUnread()
+                return
+            }
+            // 通知はタブではなくなったので、ホームのヘッダーから開く
+            selection = .home
+            showNotifications = true
+        }
+    }
+
+    /// ベルを押した。**true のまま出ていない回**（SwiftUI が黙って無視した）は
+    /// 一度戻してから開く——そのままだと true → true で何も起きない
+    private func openNotificationsFromBell() {
+        bellReopen?.cancel()
+        guard showNotifications, !ModalProbe.isPresenting() else {
+            showNotifications = true
+            return
+        }
+        showNotifications = false
+        let owner = auth.userId
+        bellReopen = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            // 待つ間にほかのシートが出た・人が替わった・もう開いた: 開かない
+            // （ほかのシートの裏で true にすると、また出ないまま残る）
+            guard !Task.isCancelled, auth.userId == owner,
+                  !showNotifications, !ModalProbe.isPresenting() else { return }
+            showNotifications = true
+        }
+    }
+
+    /// 通知を押したあと、ほかのシートが閉じられるのを待つ長さ
+    private static let activityWaitLimit: TimeInterval = 5
+    /// それを過ぎて閉じられたときに「ベルから見られる」と知らせる長さ
+    private static let activityHintLimit: TimeInterval = 60
+
+    /// 待ちをやめる（人が替わった・裏へ回った・画面が消えた）。
+    /// **前の人の通知で、次の人のお知らせを開かない**
+    private func cancelActivityWait() {
+        activityWait?.cancel()
+        activityWait = nil
+        bellReopen?.cancel()
+        bellReopen = nil
     }
 
     private var tabs: some View {
@@ -83,13 +195,13 @@ struct RootView: View {
             }
         )) {
             NavigationStack {
-                GalleryView(unread: unread, onOpenNotifications: { showNotifications = true })
+                GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
             }
             .tabItem { Label(L("ホーム", "Home"), systemImage: "house") }
             .tag(Tab.home)
 
             NavigationStack {
-                SearchView(unread: unread, onOpenNotifications: { showNotifications = true })
+                SearchView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
             }
             .tabItem { Label(Labels.Navigation.searchTab, systemImage: "magnifyingglass") }
             .tag(Tab.search)
@@ -104,7 +216,7 @@ struct RootView: View {
             // マイページから開く——撮った本人の記録なので持ち場が合う
             NavigationStack {
                 PhotoMapView(unread: unread,
-                             onOpenNotifications: { showNotifications = true },
+                             onOpenNotifications: { openNotificationsFromBell() },
                              onPost: { showPostChoice = true })
             }
             .tabItem { Label(Labels.Navigation.mapTab, systemImage: "map") }
@@ -117,17 +229,53 @@ struct RootView: View {
             .tag(Tab.mypage)
         }
         .task(id: auth.userId) { await refreshUnread() }
+        // **人が替わったら待ちをやめる。** `.task(id:)` の中で取り消すと、
+        // 出てきた瞬間（`onAppear` で待ちを作った直後）にも走って、
+        // 冷えた起動で押した分を自分で消してしまう。`onChange` は初回に走らない
+        // （ログインの確認が終わった nil → ID は「替わった」ではない）
+        .onChange(of: auth.userId) { previous, _ in
+            if previous != nil { cancelActivityWait() }
+        }
         // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
         // お知らせを開くかログインし直すまでベルに出ていなかった
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await refreshUnread() } }
+            if phase == .background { cancelActivityWait() }
+        }
+        .onDisappear { cancelActivityWait() }
+        // **開いたはずなのに出ていない**（ほかのシートが閉じる途中にベルを
+        // 押した回など、SwiftUI が黙って無視した）ときは戻す。残すと、この先
+        // ベルを押しても true → true で何も起きない。描画が済むのを待ってから見る
+        .onChange(of: showNotifications) { _, shown in
+            guard shown else { return }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if showNotifications && !ModalProbe.isPresenting() { showNotifications = false }
+            }
         }
         // **押した通知の行き先。** 数で見るのは、2回続けて押したときに
         // 「変わっていない」と見なされて2回目が効かなくなるため
         .onChange(of: router.openActivityRequests) { _, _ in
-            // 通知はタブではなくなったので、ホームのヘッダーから開く
-            selection = .home
-            showNotifications = true
+            takeActivityRequest()
+        }
+        // **画面が出てきたときにも取りに行く。** 冷えた状態から押した回・
+        // 規約の同意画面が出ていた回は、数が変わった瞬間にここが居なかった
+        .onAppear { takeActivityRequest() }
+        // お知らせを既読にできた: 閉じたときの数え直しが落ちても 0 にする
+        .onChange(of: router.readMarks) { _, _ in
+            guard router.readOwner != nil, router.readOwner == auth.userId else { return }
+            unreadGeneration += 1
+            unread = 0
+            // 既読のあとに届いた分は数え直す（0 のままにしない）。
+            // 落ちても 0 は残る
+            Task { await refreshUnread() }
+        }
+        // **開いている間に届いた通知もベルに出す**（`AppDelegate.willPresent`）
+        // `.task(id:)` にするのは、続けて届いたときに前の取得を取り消すため
+        // （遅れて返った古い数で上書きしない）
+        .task(id: router.arrivals) {
+            guard router.arrivals > 0 else { return }
+            await refreshUnread()
         }
         // **中央の「投稿」はタブではなく入口。** 選ばれたら2択を出して、
         // タブは元へ戻す（空の画面を見せない）

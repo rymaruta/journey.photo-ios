@@ -21,8 +21,14 @@ struct CollectionPhotosScreen: View {
 
     /// 板 12 は「人気」を選んだ形で描いてある
     @State private var sort: GallerySort = .popular
+    @EnvironmentObject private var hidden: ModerationStore
+    /// 一覧から落とす「見せない」の写し。**戻ってきたとき（`onAppear`）に取る**。
+    /// 探すの色・機材・季節は、探す側が詳細を積んでいる間は読み直さない（開いている
+    /// 詳細を閉じないため）ので、ここで落とさないとブロックした人の写真が並び続ける
+    @State private var dropped = ModerationSnapshot()
 
-    private var sorted: [Photo] { sort.apply(photos) }
+    private var shown: [Photo] { dropped.visible(photos) }
+    private var sorted: [Photo] { sort.apply(shown) }
 
     var body: some View {
         ScrollView {
@@ -44,7 +50,7 @@ struct CollectionPhotosScreen: View {
                     .padding(.horizontal, 16)
                 }
 
-                if photos.isEmpty && !isLoading {
+                if shown.isEmpty && !isLoading {
                     ErrorBanner(message: Labels.Gallery.empty)
                 } else {
                     let list = sorted
@@ -57,6 +63,7 @@ struct CollectionPhotosScreen: View {
             .padding(.bottom, 24)
         }
         .webScreen()
+        .onAppear { dropped = hidden.snapshot }
         // 読み上げと次の画面の「戻る」に使う。見た目は下の2行の見出し
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
@@ -67,7 +74,7 @@ struct CollectionPhotosScreen: View {
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
-                    let subtitle = CollectionScreen.subtitle(count: photos.count, note: note,
+                    let subtitle = CollectionScreen.subtitle(count: shown.count, note: note,
                                                              isLoading: isLoading)
                     if !subtitle.isEmpty {
                         Text(subtitle)
@@ -79,7 +86,7 @@ struct CollectionPhotosScreen: View {
                 .accessibilityElement(children: .combine)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: CollectionScreen.shareText(title: title, count: photos.count,
+                ShareLink(item: CollectionScreen.shareText(title: title, count: shown.count,
                                                            kind: kind, lead: sorted.first)) {
                     Image(systemName: "square.and.arrow.up")
                 }

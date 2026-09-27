@@ -54,7 +54,10 @@ final class SavedPhotosStore: ObservableObject {
 
     /// サーバーの一覧に合わせる。**取れた回だけ呼ぶこと**
     /// ——取れなかった回に空で上書きすると、控えごと消える
-    func replace(with photoIds: [String]) {
+    /// - Parameter owner: 取りに行ったときの人。**返ってくる間に人が替わって
+    ///   いたら書かない**
+    func replace(with photoIds: [String], for owner: String?) {
+        guard owner == userId else { return }
         ids = Set(photoIds)
         defaults.set(Array(ids), forKey: key(for: userId))
     }

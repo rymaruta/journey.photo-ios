@@ -52,7 +52,7 @@ final class SavedPhotosStoreTests: XCTestCase {
         let saves = SavedPhotosStore(defaults: defaults())
         saves.use(userId: "u1")
         saves.toggle("old")
-        saves.replace(with: ["a", "b"])
+        saves.replace(with: ["a", "b"], for: "u1")
         XCTAssertEqual(saves.ids, ["a", "b"])
     }
 
@@ -80,7 +80,7 @@ final class FavoritesSyncTests: XCTestCase {
         let likes = FavoritesStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         likes.use(userId: "u1")
         likes.set("保存しただけの古い写真", favorite: true)
-        likes.replace(with: ["本当にいいねした写真"])
+        likes.replace(with: ["本当にいいねした写真"], for: "u1")
         XCTAssertEqual(likes.ids, ["本当にいいねした写真"])
     }
 

@@ -198,6 +198,12 @@ struct SignInView: View {
                 // 板: 欄の下に右寄せ・13px・白72%
                 Button {
                     mode = .resetRequested
+                    // **ログインで打ったパスワードを持ち越さない。** 再設定の
+                    // 「新しいパスワード」欄は同じ値に繋がっているので、伏せ字で
+                    // 古い文字が入ったまま始まり、続けて打つと「古い＋新しい」が
+                    // 新しいパスワードになっていた（本人が知らないパスワード）
+                    password = ""
+                    code = ""
                     clearMessages()
                 } label: {
                     // 押せる範囲は文字の周りの 44pt（外に付けた枠は広げない）
@@ -243,6 +249,22 @@ struct SignInView: View {
             // 文言だけ出して入口が無いと、登録し直しても
             // 「すでに登録されています」で詰む（パスワード再設定も効かない）
             if auth.lastFailureWasUnconfirmed { await resumeVerification(knownUnconfirmed: true) }
+            // **預かったままの表示名を、ふつうのログインでも入れる。**
+            // 確認直後のログインが落ちた人・名前を入れ損ねた人は、ここ以外に
+            // やり直す場所が無い（控えには「次のログインで試せる」と書いてある）
+            // **本人があとで付けた名前は上書きしない**——既に名前があれば控えを捨てるだけ
+            // 今の名前を読めなかったら何もしない（控えは次のログインまで残す）
+            if auth.userId != nil, let name = pending.displayName(for: email) {
+                let profile = try? await environment.profiles.myProfile()
+                if let profile {
+                    let current = (profile.displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !current.isEmpty {
+                        pending.forget(email: email)
+                    } else if await applyDisplayName(name) {
+                        pending.forget(email: email)
+                    }
+                }
+            }
             return
         }
 
@@ -273,6 +295,7 @@ struct SignInView: View {
             var patch = ProfilePatch()
             patch.displayName = name
             try await environment.profiles.update(patch)
+            auth.noteProfileChanged()
             return true
         } catch {
             // 入れられなくてもログインは成功のまま（あとから編集で直せる）。
@@ -304,7 +327,17 @@ struct SignInView: View {
         // 回数制限や圏外で捨てると、唯一の手がかりを失う
         if auth.lastFailure.isPermanent {
             pending.forget(email: email)
+            return
         }
+        // **送り直せなくても、コードを入れる欄は出す。** 前に届いたコードは
+        // まだ使えることがある。欄を出さないと、ログインを押すたびに送り直し
+        // → 回数制限、を繰り返すだけで先へ進めなかった。
+        // **Cognito が「未確認」と答えた回だけ。**「すでに登録されています」の回は
+        // 確認済みの人がほとんどで、コードを入れても通らない画面になる
+        guard knownUnconfirmed else { return }
+        pendingUsername = saved
+        notice = L("確認コードを送り直せませんでした。前に届いたコードがあれば、そのまま入力できます。",
+                   "We couldn't send a new code. If you have an earlier code, you can enter it.")
     }
 
     // MARK: - 登録の確認
@@ -326,6 +359,8 @@ struct SignInView: View {
                     if await auth.confirmSignUp(username: username, code: code) {
                         let name = pending.displayName(for: email)
                         pendingUsername = nil
+                        // 使い終えたコードを、あとの再設定の欄に残さない
+                        code = ""
                         offerVerification = false
                         // 確認が済んだらそのままログインする。
                         // **失敗しても行き止まりにしない**——「すでに登録
@@ -333,6 +368,10 @@ struct SignInView: View {
                         // パスワードが古いものと違うことがある
                         await auth.signIn(email: email, password: password)
                         if auth.userId == nil {
+                            // **ログインの欄に切り替える。** 登録から来た人は
+                            // 登録の欄のまま「ログインしてください」と言われ、
+                            // 押すと「すでに登録されています」に戻っていた
+                            mode = .signIn
                             notice = L("確認できました。パスワードを入れてログインしてください。",
                                        "Verified. Please sign in with your password.")
                             return
@@ -363,6 +402,24 @@ struct SignInView: View {
                 }
             } label: {
                 Text(L("コードを送り直す", "Send a new code"))
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.muted2)
+                    .webTappable()
+            }
+            .buttonStyle(.plain)
+            .disabled(auth.isWorking)
+
+            // **戻り道。** 無いと、打ち間違えたメールアドレスで登録した人は
+            // 届かないコードの画面から出られない（画面を閉じても `@State` が残る間は同じ）。
+            // 控え（`pending`）は捨てない——正しいアドレスだったなら、次の
+            // ログインで「未確認」から同じ確認画面に戻れる
+            Button {
+                pendingUsername = nil
+                code = ""
+                mode = .signIn
+                clearMessages()
+            } label: {
+                Text(L("ログインに戻る", "Back to sign in"))
                     .font(.footnote)
                     .foregroundStyle(WebTheme.muted2)
                     .webTappable()

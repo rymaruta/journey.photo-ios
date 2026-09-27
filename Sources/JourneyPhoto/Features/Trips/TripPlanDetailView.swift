@@ -19,6 +19,9 @@ struct TripPlanDetailView: View {
     @State private var start: String?
     @State private var end: String?
     @State private var loadedFrom: TripPlan?
+    /// 保存で送った下書き。応答が届いたとき、**それ以降に打った編集があれば残す**
+    @State private var sent: Draft?
+    @State private var appeared = false
     /// 「行きたい場所から追加」を押した日
     @State private var picking: PickTarget?
     @State private var confirmingDelete = false
@@ -30,6 +33,12 @@ struct TripPlanDetailView: View {
     @State private var sourcesFailed = false
 
     private struct PickTarget: Identifiable { let day: Int; var id: Int { day } }
+    private struct Draft: Equatable {
+        var days: [TripDay]
+        var start: String?
+        var end: String?
+    }
+    private var draft: Draft { Draft(days: days, start: start, end: end) }
 
     private var plan: TripPlan? { model.plan(planId) }
     private var places: [DerivedSpot.Place] { DerivedSpot.all(in: photos) }
@@ -57,10 +66,17 @@ struct TripPlanDetailView: View {
             sourcesFailed = fetchedPhotos == nil || fetchedIndex == nil
         }
         .onAppear {
-            model.clearError()
+            // **前の画面の失敗の文を消すのは、開いた最初の1回だけ。** 項目の
+            // スポットを開いて戻るたびに消していたので、保存に失敗した事情が
+            // 下書きが未保存のまま見えなくなっていた
+            if !appeared {
+                appeared = true
+                model.clearError()
+            }
             resetIfNeeded()
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
+
         .sheet(item: $picking) { target in
             NavigationStack {
                 TripPlanPickSheet(dayIndex: target.day,
@@ -73,10 +89,21 @@ struct TripPlanDetailView: View {
         }
     }
 
-    /// サーバーの姿が変わったら（保存・取り直し）、下書きをそれに合わせる
+    /// サーバーの姿が変わったら（保存・取り直し）、下書きをそれに合わせる。
+    ///
+    /// 🔴 **ただし、まだ送っていない編集があれば下書きを残す。** 保存の返事を
+    /// 待つ間も日の追加や項目の削除はできるので、返事で丸ごと上書きすると
+    /// その間に打った編集が黙って消えていた。残した分は「保存」が押せる
+    /// （比べる相手が新しいサーバーの姿になる）
     private func resetIfNeeded() {
         guard let plan, plan != loadedFrom else { return }
+        let untouched = loadedFrom.map {
+            !TripPlanText.isDirty(plan: $0, days: days, start: start, end: end)
+        } ?? true
+        let keep = !untouched && draft != sent
         loadedFrom = plan
+        sent = nil
+        guard !keep else { return }
         days = plan.days
         start = plan.startDate
         end = plan.endDate
@@ -91,7 +118,11 @@ struct TripPlanDetailView: View {
         Button(L("保存", "Save")) {
             guard let plan else { return }
             let patch = TripPlanText.patch(plan: plan, days: days, start: start, end: end)
-            Task { _ = await model.update(planId, patch, environment: environment) }
+            sent = draft
+            Task {
+                // 断られたら控えを捨てる（次に届く姿で下書きを上書きしない）
+                if !(await model.update(planId, patch, environment: environment)) { sent = nil }
+            }
         }
         .font(.body.weight(.semibold))
         // **ヘッダーの文字の合図は真鍮**（デザインシステムの決まり）
@@ -110,8 +141,8 @@ struct TripPlanDetailView: View {
                     .padding(.horizontal, 4)
 
                 HStack(spacing: 10) {
-                    dateField(L("出発", "From"), value: $start, fallback: end)
-                    dateField(L("帰着", "To"), value: $end, fallback: start)
+                    dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
+                    dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
                 }
 
                 if let error = model.errorMessage {
@@ -142,14 +173,15 @@ struct TripPlanDetailView: View {
 
     /// 日付の欄。**端末の日付ピッカー**で選ぶ（Web は `type="date"`。文字で打たせない）。
     /// 空にもできる（Web も空を許す）
-    private func dateField(_ title: String, value: Binding<String?>, fallback: String?) -> some View {
+    private func dateField(_ title: String, value: Binding<String?>, fallback: String?,
+                           isStart: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(WebTheme.muted2)
             HStack(spacing: 4) {
                 if value.wrappedValue != nil {
-                    DatePicker(title, selection: pickerBinding(value), displayedComponents: .date)
+                    DatePicker(title, selection: pickerBinding(value, isStart: isStart), displayedComponents: .date)
                         .labelsHidden()
                     Spacer(minLength: 0)
                     Button {
@@ -183,10 +215,17 @@ struct TripPlanDetailView: View {
     }
 
     /// `YYYY-MM-DD` ⇔ ピッカーの日。**端末のゾーンのその日**で読み書きする
-    private func pickerBinding(_ value: Binding<String?>) -> Binding<Date> {
+    /// 選んだときだけ前後を揃える（`TripPlanText.ordered`）。**開いたときの値には
+    /// 触らない**——Web で作った「帰着が出発より前」のプランを開いただけで書き換えない
+    private func pickerBinding(_ value: Binding<String?>, isStart: Bool) -> Binding<Date> {
         Binding(
             get: { TripPlanText.pickerDate(fromYMD: value.wrappedValue, in: .current) ?? Date() },
-            set: { value.wrappedValue = TripPlanText.ymd(pickedIn: .current, $0) }
+            set: {
+                value.wrappedValue = TripPlanText.ymd(pickedIn: .current, $0)
+                let fixed = TripPlanText.ordered(start: start, end: end, movedStart: isStart)
+                if fixed.start != start { start = fixed.start }
+                if fixed.end != end { end = fixed.end }
+            }
         )
     }
 

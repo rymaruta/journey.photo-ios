@@ -21,6 +21,12 @@ final class AuthStore: ObservableObject {
     /// 管理者か（ID トークンの `cognito:groups` に admin）。**メニューの「管理」の
     /// 出し分けだけ**に使う——権限の判断はサーバーがする（`IdTokenClaims`）
     @Published private(set) var isAdmin = false
+    /// 自分のプロフィールを**画面の外から**書き換えた回数（ログイン直後の表示名など）。
+    /// マイページは `.task(id: userId)` で1度しか読まないので、同時に走った読み込みが
+    /// 先に返ると名前の無い古い値のまま残る。これが増えたら読み直す
+    @Published private(set) var profileRevision = 0
+
+    func noteProfileChanged() { profileRevision += 1 }
 
     var userId: String? {
         if case .signedIn(let id) = state { return id }
@@ -33,6 +39,12 @@ final class AuthStore: ObservableObject {
     /// 「ログインしてください」を出すと、ログイン済みの人にも一瞬それが
     /// 見える（Web 側の「確かめられなかった回に案内を出さない」と同じ話）。
     var isResolving: Bool { state == .unknown }
+
+    /// ログアウトの扱いだが、**本当にログアウトしたかは分からない**
+    /// （起動時に Amplify はログイン中と答えたのに、本人の ID が取れなかった）。
+    /// 通知の宛先はこの回に触らない——触ると、圏外で起動しただけの人の端末を
+    /// APNs から外してしまう
+    private(set) var isSignedOutUncertain = false
 
     private var expiryObserver: NSObjectProtocol?
 
@@ -87,8 +99,10 @@ final class AuthStore: ObservableObject {
         }
         let id = try? await AuthGateway.currentUserId()
         // **期限切れは起動時に見つける。** ログイン中の見た目のまま始めない。
-        // 圏外などで判定できない回は `false`（ログイン中のまま進む）
-        if id != nil, await AuthGateway.isSessionExpired() {
+        // 圏外などで判定できない回は `false`（ログイン中のまま進む）。
+        // **ID が取れなかった回も見る**——見ないと、期限切れなのに「本当に
+        // ログアウトしたか分からない」扱いになり、通知の宛先を外さない
+        if await AuthGateway.isSessionExpired() {
             await signOut()
             errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                              "Your session has expired. Please sign in again.")
@@ -98,6 +112,7 @@ final class AuthStore: ObservableObject {
             state = .signedIn(userId: id)
             await refreshAdmin()
         } else {
+            isSignedOutUncertain = true
             state = .signedOut
             isAdmin = false
         }
@@ -124,12 +139,14 @@ final class AuthStore: ObservableObject {
         await run {
             _ = try await AuthGateway.signIn(email: email, password: password)
             let id = try await AuthGateway.currentUserId()
+            self.isSignedOutUncertain = false
             self.state = .signedIn(userId: id)
             await refreshAdmin()
         }
     }
 
     func signOut() async {
+        isSignedOutUncertain = false
         await AuthGateway.signOut()
         state = .signedOut
         isAdmin = false

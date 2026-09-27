@@ -99,6 +99,11 @@ enum AuthGateway {
         try await Amplify.Auth.getCurrentUser().userId
     }
 
+    /// Cognito のユーザー名（登録のときの UUID・`signUp`）。`userId`（sub）とは別
+    static func currentUsername() async throws -> String {
+        try await Amplify.Auth.getCurrentUser().username
+    }
+
     // MARK: - 登録・ログイン
 
     /// 新規登録。

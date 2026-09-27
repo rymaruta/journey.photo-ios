@@ -88,6 +88,18 @@ final class TripPlansModelTests: XCTestCase {
         XCTAssertNil(model.busy)
     }
 
+    /// 🔴 **最初の読み込みに失敗していても、既にある別のプランを開かない。**
+    /// 手元が空だと全部が「増えた」に入るので、題と作った時刻で選ぶ
+    func testCreateAfterFailedLoadPicksTheNewPlan() async {
+        let env = environment()
+        let model = TripPlansModel()
+        StubProtocol.respond(status: 500, body: "{}")
+        await model.load(environment: env)
+        StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"old","title":"前","days":[],"createdAt":"2026-09-01T00:00:00Z"},{"planId":"old2","title":"冬","days":[],"createdAt":"2026-09-02T00:00:00Z"},{"planId":"new","title":"冬","days":[],"createdAt":"2026-09-27T00:00:00Z"}]}"#)
+        let made = await model.create(title: "冬", environment: env)
+        XCTAssertEqual(made?.planId, "new")
+    }
+
     /// **連打で二重に作らない。** 書き込み中の2回目は通信しない
     func testSecondWriteWhileBusyDoesNothing() async {
         let env = environment()

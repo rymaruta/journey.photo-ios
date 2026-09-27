@@ -306,3 +306,20 @@ final class TripPlanTests: XCTestCase {
         }
     }
 }
+
+/// 出発と帰着の前後（帰着を出発より前にすると、日程の日付が全部消えていた）
+final class TripPlanDateOrderTests: XCTestCase {
+    func testMovingStartPastEndPullsEndAlong() {
+        let r = TripPlanText.ordered(start: "2026-12-26", end: "2026-12-24", movedStart: true)
+        XCTAssertEqual(r.start, "2026-12-26"); XCTAssertEqual(r.end, "2026-12-26")
+    }
+    func testMovingEndBeforeStartPullsStartAlong() {
+        let r = TripPlanText.ordered(start: "2026-12-24", end: "2026-12-20", movedStart: false)
+        XCTAssertEqual(r.start, "2026-12-20"); XCTAssertEqual(r.end, "2026-12-20")
+    }
+    func testOrderedOrMissingDatesAreKept() {
+        XCTAssertEqual(TripPlanText.ordered(start: "2026-12-24", end: "2026-12-26", movedStart: true).end, "2026-12-26")
+        XCTAssertNil(TripPlanText.ordered(start: nil, end: "2026-12-26", movedStart: false).start)
+    }
+}
+

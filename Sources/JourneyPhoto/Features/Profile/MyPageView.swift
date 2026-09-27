@@ -39,6 +39,10 @@ struct MyPageView: View {
     @State private var isOnScreen = false
     /// お気に入りのタブから落とす「見せない」の写し。**戻ってきたときに取る**
     @State private var dropped = ModerationSnapshot()
+    /// 「行きたい場所」の行を作る鍵の写し（`wishlist.spotIds`）。**画面に出ている間だけ
+    /// 取り直す**——描くたびに今の集合から作ると、開いたスポットで♥を外した瞬間に
+    /// 元の行が消え、そのスポットの画面が閉じる（`savedIds` と同じ形）
+    @State private var wishIds: Set<String> = []
     @EnvironmentObject private var hidden: ModerationStore
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
@@ -83,7 +87,13 @@ struct MyPageView: View {
         }
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
-            await model.load()
+            await model.load(for: auth.userId)
+        }
+        // **外で書き換えたプロフィールを取り直す。** `load()` は走っている間の
+        // 2本目を捨てるので、ここはプロフィールだけを読み直す
+        .onChange(of: auth.profileRevision) { _, _ in
+            let expected = auth.userId
+            Task { await model.reloadProfile(expecting: expected) }
         }
         // 保存した写真の引き当て先（公開一覧）
         .task(id: auth.userId) { await loadFeed() }
@@ -99,18 +109,24 @@ struct MyPageView: View {
         // 初回は `.task` が読むので、2度目以降だけ走らせる
         // **下の「投稿」から投稿して閉じたら読み直す。** シートは `RootView` に
         // あるので、閉じても `onAppear` は来ない
+        //
+        // 🔴 **画面に出ている間だけ。** 旅の一冊などを上に積んだまま投稿すると、
+        // 読み直しで元の行（`Trip.id` は写真の id をつないだもの）が変わるか、
+        // 失敗の帯がタブごと差し替えて、開いている画面が閉じる。出ていない回は
+        // 戻ってきたとき（`onAppear`）の読み直しが拾う
         .onChange(of: tabRouter.postSheetsClosed) { _, _ in
-            guard auth.userId != nil else { return }
-            Task { await model.load() }
+            guard auth.userId != nil, isOnScreen else { return }
+            Task { await model.load(for: auth.userId) }
         }
         .onAppear {
             isOnScreen = true
             // 詳細でしおりを外したぶん・ブロック／通報したぶんは、戻ってきたこの時点で落とす
             refreshSavedIds()
             dropped = hidden.snapshot
+            wishIds = wishlist.spotIds
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
-            Task { await model.load() }
+            Task { await model.load(for: auth.userId) }
         }
         .onChange(of: tab) { _, next in
             if next == .favorites { refreshSavedIds() }
@@ -122,6 +138,10 @@ struct MyPageView: View {
         // まだ前の人の控えのまま
         .onChange(of: hidden.revision) { _, _ in
             if isOnScreen { dropped = hidden.snapshot }
+        }
+        // 「行きたい」も同じ。人が替わった回（`wishlist.use`）もここで拾う
+        .onChange(of: wishlist.spotIds) { _, next in
+            if isOnScreen { wishIds = next }
         }
         // 起動時の同期（`syncSaves`）が後から届いたぶんは拾う。**増えたときだけ**
         // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる。
@@ -141,7 +161,7 @@ struct MyPageView: View {
             feed = []
             feedLoaded = false
             feedFailed = false
-            model.forgetPhotos()
+            model.forgetPhotos(for: auth.userId)
         }
     }
 
@@ -253,7 +273,7 @@ struct MyPageView: View {
             }
         }
         .refreshable {
-            await model.load()
+            await model.load(for: auth.userId)
             // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
             // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
             // 読み取りも強い整合でなく（`userList.ts` の `readUserRows`）、外した
@@ -338,13 +358,13 @@ struct MyPageView: View {
         HStack(alignment: .top, spacing: 8) {
             statCell(value: "\(model.photos.count)", label: L("投稿", "Posts"))
             NavigationLink {
-                FollowListView(userId: model.profile?.userId ?? "", kind: .followers)
+                FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .followers)
             } label: {
                 statCell(value: "\(model.followers)", label: L("フォロワー", "Followers"))
             }
             .buttonStyle(.plain)
             NavigationLink {
-                FollowListView(userId: model.profile?.userId ?? "", kind: .following)
+                FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .following)
             } label: {
                 statCell(value: "\(model.following)", label: L("フォロー中", "Following"))
             }
@@ -513,7 +533,7 @@ struct MyPageView: View {
                 ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
                     Task {
                         await loadFeed()
-                        await model.load()
+                        await model.load(for: auth.userId)
                     }
                 }
             }
@@ -530,11 +550,11 @@ struct MyPageView: View {
     private var wishlistArea: some View {
         // **撮影地から導いた地点**のうち、「行きたい」に入れたもの
         let places = DerivedSpot.all(in: model.photos)
-        let wanted = places.filter { wishlist.contains($0.slug) }
+        let wanted = places.filter { wishIds.contains($0.slug) }
         // 台帳の撮影スポット（`SPOT-<slug>`）。索引と突き合わせて名前を引く。
         // **索引が無くても行は出す**（`OfficialWishlist`）——スポットの画面で
         // 押した直後に「まだありません」と言わない
-        let officialRows = OfficialWishlist.rows(keys: wishlist.spotIds, index: officialSpots)
+        let officialRows = OfficialWishlist.rows(keys: wishIds, index: officialSpots)
         VStack(alignment: .leading, spacing: 10) {
             // **どこに残るかを書く。** 機種を変えると消えるものを、
             // 消えないものと同じ顔で出さない
@@ -548,7 +568,7 @@ struct MyPageView: View {
             // 数えるのは撮影地の行とスポットの行の両方
             switch ProfileSections.wishlist(ledgerCount: places.count,
                                             wantedCount: wanted.count + officialRows.count,
-                                            savedIdCount: wishlist.spotIds.count) {
+                                            savedIdCount: wishIds.count) {
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
                                        "Couldn't load the photos. Pull to refresh."))
@@ -707,7 +727,7 @@ struct MyPageView: View {
     }
 
     /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。
-    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` がタブごと知らせる
+    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` が知らせる（手元に無ければタブごと）
     private func loadFeed(force: Bool = false) async {
         let fetched = try? await environment.gallery.fetchPhotos(force: force)
         guard !Task.isCancelled else { return }
@@ -726,8 +746,15 @@ struct MyPageView: View {
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, 16)
         }
-        if let error = model.errorMessage {
-            ErrorBanner(message: error) { Task { await model.load() } }
+        // **一度読めた中身は、読み直しの失敗で消さない。** 詳細から戻るたびに
+        // 読み直すので、一瞬の圏外で格子・旅の記録・保存した写真まで
+        // 知らせ1枚に置き換わっていた（`load` は失敗の回に手元の写真を残す）。
+        // 手元に何も無いときだけ、タブごと知らせに替える
+        if let error = model.errorMessage, !model.photos.isEmpty {
+            ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
+        }
+        if let error = model.errorMessage, model.photos.isEmpty {
+            ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
         } else if tab == .trips {
             // **写真の有無とは無関係に、ここで空の理由まで言う**
             tripsArea
@@ -822,6 +849,16 @@ struct MyPageView: View {
 final class MyPageViewModel: ObservableObject {
 
     @Published private(set) var profile: UserProfile?
+    /// プロフィールを取りに行った順の番号と、いま出ている値の番号。
+    /// **後から出した要求の答えだけが勝つ**——ログイン直後の `load()` は表示名の
+    /// PUT より前に出るので、あとで返っても `reloadProfile` の答えを上書きしない。
+    /// 失敗した要求は番号を進めない（残った印で良い答えを捨てない）
+    private var profileRequestSeq = 0
+    /// いまの人（`load(for:)`・`forgetPhotos(for:)` が入れる）
+    private var activeUser: String?
+    /// 人が替わった回数（`forgetPhotos`）。走っている読み込みの答えを捨てる目印
+    private var generation = 0
+    private var shownProfileSeq = 0
     /// 留めている写真。**サーバーが返した一覧をそのまま持つ**
     /// （増減の結果は向こうが決める——3枚の上限も、消えた写真の掃除も）
     @Published private(set) var pinnedIds: [String] = []
@@ -864,15 +901,29 @@ final class MyPageViewModel: ObservableObject {
         self.gallery = gallery
     }
 
+    /// 画面から呼ぶ読み込み。**誰の画面かを渡す。** 人が替わっていたら、
+    /// ここで前の人のぶんを手放してから読む——`.onChange(of: userId)` と
+    /// `.task(id: userId)` のどちらが先に走っても同じ結果になるように。
+    /// ログインしていなければ何もしない
+    func load(for userId: String?) async {
+        guard let userId else { return }
+        if userId != activeUser { forgetPhotos(for: userId) }
+        await load()
+    }
+
     func load() async {
         // **2本同時に走らせない。** タブの出入りでは `.task(id:)` と
         // `.onAppear` の両方が走ることがあり、`defer` で片方が先に
         // `isLoading` を解くと、もう片方の途中で「まだ写真がありません」が
         // 一瞬出る。片方が失敗すれば知らせに差し替わる
         guard !isLoading else { return }
+        // この回の世代。**人が替わる（`forgetPhotos`）たびに進む**ので、
+        // 替わった後に返った答えは何も入れない（A → ログアウト → A でも別の世代）
+        let gen = generation
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        // 人が替わった後に返った回は、次の人の「読み込み中」を解かない
+        defer { if gen == generation { isLoading = false } }
         avatarCacheBust = String(Int(Date().timeIntervalSince1970))
         // 🔴 **鍵を持たずに入っている回は、鍵の要る口を叩かない。**
         //
@@ -887,48 +938,78 @@ final class MyPageViewModel: ObservableObject {
         // 公開プロフィールと、公開一覧から自分のぶんを選り分ける。
         // **嘘の中身は出ない**（下書き＝非公開は公開一覧に無いので出ない）。
         if let previewId = PreviewSession.userId {
-            await loadPublicly(userId: previewId)
+            await loadPublicly(userId: previewId, gen: gen)
             return
         }
         do {
+            profileRequestSeq += 1
+            let seq = profileRequestSeq
             async let profile = self.profiles.myProfile()
             async let photos = self.photoService.myPhotos()
-            self.profile = try await profile
-            // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
-            self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
-            self.photos = PhotoPinning.pinnedFirst(try await photos, pinned: self.pinnedIds)
-            // **数が取れなくても画面は出す**（0 のままになるだけ）。
-            //
-            // **`if let x = try? await …` と書かない。** 手元の構文検査
-            // （tree-sitter）が読めず、`verify.sh` が「構文が壊れている」と
-            // 言う（CLAUDE.md に記録のある制約）。文を分ける
-            if let userId = self.profile?.userId {
-                let stats = try? await self.social.followStats(userId: userId)
-                if let stats {
-                    self.followers = stats.followers
-                    self.following = stats.following
-                }
+            let loaded = try await profile
+            // 🔴 **返ってくる間に人が替わっていたら、何も入れない。**
+            // `onAppear` などの Task は人が替わっても止まらず、`forgetPhotos` で
+            // 空にした後に前の人の写真（非公開を含む）・名前が入っていた
+            guard gen == generation else { return }
+            // **途中で外から書き換わったら、古い方で上書きしない**
+            // （ログイン直後の表示名: この読み込みが PUT より前に出て後に返る）
+            if seq > shownProfileSeq || self.profile == nil {
+                self.profile = loaded
+                shownProfileSeq = seq
             }
+            // **フォロー数は写真と並べて取り、写真を待たせない。** 写真だけ落ちた回も
+            // 名前・アイコン・フォロー数は出す（写真の欄だけが知らせになる）。
+            // 数を写真の後ろに置くと写真の失敗で「0」と出る（a5259c0）、
+            // 数を待ってから写真を入れると格子が往復1回ぶん遅れる（3ecb6a5）
+            async let stats = self.followStatsIfAny(self.profile?.userId)
+            var photosOutcome: Result<[Photo], Error>
+            do {
+                photosOutcome = .success(try await photos)
+            } catch {
+                photosOutcome = .failure(error)
+            }
+            if case .success(let loadedPhotos) = photosOutcome, gen == generation {
+                // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
+                self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
+                self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
+            }
+            let loadedStats = await stats
+            guard gen == generation else { return }
+            if let loadedStats {
+                self.followers = loadedStats.followers
+                self.following = loadedStats.following
+            }
+            _ = try photosOutcome.get()
         } catch {
+            guard gen == generation else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
+    }
+
+
+    /// フォロー数。**取れなければ nil**（数は 0 のまま・画面は出す）
+    private func followStatsIfAny(_ userId: String?) async -> SocialService.FollowStats? {
+        guard let userId else { return nil }
+        let stats = try? await social.followStats(userId: userId)
+        return stats
     }
 
     /// 鍵を持たない回の読み込み（`PreviewSession` のときだけ通る）。
     ///
     /// **`myPhotos()` を使わない**——あれは下書きまで返す代わりに鍵が要る。
     /// ここは公開されているぶんだけで足りる。
-    private func loadPublicly(userId: String) async {
+    private func loadPublicly(userId: String, gen: Int) async {
         let publicProfile = try? await self.profiles.publicProfile(userId: userId)
+        guard gen == generation else { return }
         self.profile = publicProfile
         self.pinnedIds = publicProfile?.pinnedPhotoIds ?? []
         let all = try? await self.gallery.fetchPhotos()
-        if let all {
+        if let all, gen == generation {
             let mine = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
             self.photos = PhotoPinning.pinnedFirst(mine, pinned: self.pinnedIds)
         }
         let stats = try? await self.social.followStats(userId: userId)
-        if let stats {
+        if let stats, gen == generation {
             self.followers = stats.followers
             self.following = stats.following
         }
@@ -938,13 +1019,24 @@ final class MyPageViewModel: ObservableObject {
     /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように。
     /// **見出し（名前・アイコン・カバー）とフォロー数も手放す**——フォロー数は
     /// 取れなかった回に上書きしないので、残すと前の人の数が次の人の数として出る
-    func forgetPhotos() {
+    /// - Parameter newUser: 次の人。**走っている前の人の読み込みの答えを捨てる**目印になる。
+    ///   読み込み中の印も解く——解かないと、次の人の最初の読み込みが
+    ///   「走っている」と見て何もせずに帰る
+    ///   **同じ人のままなら何もしない**——`.task(id:)` の読み込みが先に走って
+    ///   いた場合に、その回を捨ててしまわないように
+    func forgetPhotos(for newUser: String? = nil) {
+        if let newUser, newUser == activeUser { return }
+        activeUser = newUser
+        generation += 1
+        isLoading = false
         photos = []
         pinnedIds = []
         profile = nil
         followers = 0
         following = 0
         errorMessage = nil
+        // 前の人がピン留めで断られた文言を次の人に見せない
+        actionMessage = nil
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }
@@ -980,5 +1072,18 @@ final class MyPageViewModel: ObservableObject {
                 photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)
             }
         }
+    }
+
+    /// プロフィールだけ読み直す（`AuthStore.profileRevision`）。**失敗したら今のまま。**
+    /// 返ってくる間に人が替わっていたら捨てる（前の人の名前・アイコンを出さない）
+    func reloadProfile(expecting userId: String?) async {
+        guard let userId, userId == activeUser else { return }
+        let gen = generation
+        profileRequestSeq += 1
+        let seq = profileRequestSeq
+        let fresh = try? await profiles.myProfile()
+        guard let fresh, fresh.userId == userId, gen == generation, seq > shownProfileSeq else { return }
+        profile = fresh
+        shownProfileSeq = seq
     }
 }

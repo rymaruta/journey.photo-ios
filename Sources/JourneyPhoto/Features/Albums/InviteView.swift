@@ -19,7 +19,12 @@ struct InviteView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var joined: JoinedAlbumsStore
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
+
+    /// 🔴 ブロック・通報した写真を落とすための控え。**画面に戻ったときに取り直す**
+    /// ——その場で絞ると、詳細でブロックした瞬間に押した元の行が消えて詳細が閉じる
+    @State private var dropped = ModerationSnapshot()
 
     @State private var preview: AlbumService.InvitePreview?
     @State private var isLoading = true
@@ -63,11 +68,16 @@ struct InviteView: View {
                 Button(Labels.Common.close) { dismiss() }
             }
         }
-        .task { await load() }
+        .onAppear { dropped = hidden.snapshot }
+        // **読めていれば読み直さない。** 写真の詳細から戻るたびに走り、
+        // 一覧がくるくるに置き換わって見ていた位置を失っていた
+        .task { if preview == nil { await load() } }
     }
 
     private func content(_ preview: AlbumService.InvitePreview) -> some View {
-        List {
+        // 🔴 ブロックした人・通報した写真を出さない（招待の中身はサーバーが絞らない）
+        let photos = dropped.visible(preview.photos)
+        return List {
             Section {
                 Text(preview.album.title.isEmpty
                      ? L("無題のアルバム", "Untitled album") : preview.album.title)
@@ -78,14 +88,14 @@ struct InviteView: View {
             }
             .listRowBackground(Color.clear)
 
-            if preview.photos.isEmpty {
+            if photos.isEmpty {
                 Section { Text(L("まだ写真がありません", "No photos yet")).foregroundStyle(.secondary) }
             } else {
                 Section(L("このアルバムの写真", "Photos in this album")) {
-                    ForEach(preview.photos) { photo in
+                    ForEach(photos) { photo in
                         NavigationLink {
                             // **公開の一覧から来たのではない**（個別ページは無いかもしれない）
-                            PhotoDetailView(photo: photo, fromPublicFeed: false, context: preview.photos)
+                            PhotoDetailView(photo: photo, fromPublicFeed: false, context: photos)
                         } label: {
                             HStack(spacing: 12) {
                                 RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
@@ -150,6 +160,9 @@ struct InviteView: View {
             let result = try await environment.albums.join(token: token)
             // **サーバーが返した ID を使う**（プレビューと食い違ったら、そちらが正）
             joined.remember(id: result.albumId, title: preview.album.title, token: token)
+            // 人数を取り直す（参加しても「N 人」のままだった）。取れなければ前のまま
+            let refreshed = try? await environment.albums.invite(token: token)
+            if let refreshed { self.preview = refreshed }
         } catch {
             message = (error as? LocalizedError)?.errorDescription
                 ?? L("参加できませんでした", "Couldn't join")

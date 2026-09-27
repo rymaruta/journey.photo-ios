@@ -311,6 +311,11 @@ struct ProfileEditView: View {
     private func upload(_ item: PhotosPickerItem?, kind: ProfileService.ImageKind) async {
         guard let item else { return }
         message = nil
+        // **選択を戻す。** 戻さないと、同じ写真をもう一度選んでも `onChange` が
+        // 起きず何も起きない（`EditPhotoView` の差し替えと同じ）
+        defer {
+            if kind == .avatar { avatarItem = nil } else { coverItem = nil }
+        }
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else { return }
             // アイコンにも同じ関所を通す。**EXIF の付いた自撮りを

@@ -32,7 +32,7 @@ struct StoryViewerView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var index: Int
-    /// 通報して落とした1本。**兄弟の並びから消す**（左タップで戻れないように）
+    /// 通報して落とした・自分で消した1本。**兄弟の並びから消す**（左タップで戻れないように）
     @State private var dropped: Set<String> = []
 
     // 進行
@@ -82,6 +82,9 @@ struct StoryViewerView: View {
     /// 見終えた1本を知らせる。**送るたびに呼ぶ**——次へ送ったぶんも
     /// 既読にしないと、閉じたときに輪が点いたまま残る
     let onSeen: ((String) -> Void)?
+    /// 消し終えた1本を知らせる。**消している間に払って閉じても**、一覧から外せるように
+    /// （閉じたときの読み直しが削除より先に走ると、消した1本が輪に戻っていた）
+    let onDeleted: ((String) -> Void)?
 
     /// ハイライトとして見ている（板 38）。**期限の切れたストーリーの並び**なので、
     /// 返信欄・見た人・削除を出さない（返信はサーバーが期限切れを断り、
@@ -94,17 +97,25 @@ struct StoryViewerView: View {
         let onEdit: (() -> Void)?
     }
     let highlight: HighlightContext?
-    /// 外の画面が止めている（ハイライトの編集シートなど）
+    /// 外の画面が止めている（ハイライトの編集シートなど）。**時計は直に読まない**（`isHeld`）
     let holds: Bool
+    /// `holds` の写し。**`isForeground` と同じ理由で `@State` に写してから読む**——
+    /// `holds` はただの `let` なので、時計（`runClock`）が持つ画面の写しの中では
+    /// 始めた瞬間の `false` のまま固まる。編集シートを開いても時計が進み、最後の1本
+    /// なら画面ごと戻されていた（`HighlightPlayerView` の「止める」が効いていなかった）
+    @State private var isHeld: Bool
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
          holds: Bool = false,
-         onSeen: ((String) -> Void)? = nil) {
+         onSeen: ((String) -> Void)? = nil,
+         onDeleted: ((String) -> Void)? = nil) {
         self.stories = stories
+        self.onDeleted = onDeleted
         self.viewerId = viewerId
         self.highlight = highlight
         self.holds = holds
+        _isHeld = State(initialValue: holds)
         self.onSeen = onSeen
         let start = stories.indices.contains(startIndex) ? startIndex : 0
         _index = State(initialValue: start)
@@ -128,7 +139,7 @@ struct StoryViewerView: View {
             paused: paused,
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
-                || showAuthor || showDeleteConfirm || holds,
+                || showAuthor || showDeleteConfirm || isHeld,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -157,6 +168,7 @@ struct StoryViewerView: View {
         }
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
         .onChange(of: frozen) { _, _ in syncSong(restart: false) }
+        .onChange(of: holds) { _, now in isHeld = now }
         .onChange(of: muted) { _, now in
             if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
         }
@@ -270,19 +282,27 @@ struct StoryViewerView: View {
             // **見たことを伝えるのは1回。** 失敗しても画面は止めない
             await environment.stories.markViewed(id: story.id)
             if isMine(story) {
+                // **次の1本へ移ったあとに返ってきた答えは書かない。** 書くと、`go` で
+                // 空にしたあとへ前の1本の見た人・返信が入り、いまの1本の数に見える
                 do {
-                    viewers = try await environment.stories.viewers(id: story.id)
+                    let loaded = try await environment.stories.viewers(id: story.id)
+                    guard !Task.isCancelled else { return }
+                    viewers = loaded
                     viewersLoaded = true
                 } catch {
+                    guard !Task.isCancelled else { return }
                     viewersLoaded = false
                 }
                 // **返信は本人だけが読める。** 読めないと、送られた返信が
                 // どこにも出ない（送る側の画面だけあった）
                 do {
-                    replies = try await environment.stories.replies(id: story.id)
+                    let loaded = try await environment.stories.replies(id: story.id)
+                    guard !Task.isCancelled else { return }
+                    replies = loaded
                     repliesFailed = false
                     repliesLoaded = true
                 } catch {
+                    guard !Task.isCancelled else { return }
                     repliesFailed = true
                 }
             }
@@ -650,7 +670,7 @@ struct StoryViewerView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if paused { paused = false } else { advance() }
+                    if paused { paused = false } else if !isSending { advance() }
                 }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
@@ -666,7 +686,7 @@ struct StoryViewerView: View {
                 .onEnded { value in
                     switch StoryPlayback.swipe(
                         dx: value.translation.width, dy: value.translation.height) {
-                    case .next: advance()
+                    case .next: if !isSending { advance() }
                     case .back: leftTap()
                     case .close: dismiss()
                     case .ignore: break
@@ -678,6 +698,11 @@ struct StoryViewerView: View {
     private func leftTap() {
         // **メニューで止めているなら、押すと続きから**（板「25b」）
         if paused { paused = false; return }
+        // 🔴 **送っている間（返信・♡・残す・削除）は前後へ送らない。** 止めていたのは
+        // 時計だけで、タップや払いでは移れたため、結果の「残しました」「送れません
+        // でした」が別の1本の画面に出ていた。**払って閉じるのは止めない**（圏外で
+        // 返事を待つ間に閉じられなくなる）
+        guard !isSending else { return }
         switch StoryPlayback.leftTap(index: index, elapsed: elapsed) {
         case .restart:
             elapsed = 0
@@ -995,9 +1020,16 @@ struct StoryViewerView: View {
                         viewerFaces
                         HStack(spacing: 0) {
                             Text("\(viewers.count)").font(JPFont.mono(13, medium: true))
-                            Text(L(" 人が見ました · いいね ", " viewers · likes "))
-                                .font(.system(size: 13))
-                            Text("\(replies.reactionCount)").font(JPFont.mono(13, medium: true))
+                            // **返信を読めていなければ「いいね」の数は言わない**
+                            // （読めなかった回に空の一覧から「いいね 0」と言い切っていた）
+                            if repliesLoaded {
+                                Text(L(" 人が見ました · いいね ", " viewers · likes "))
+                                    .font(.system(size: 13))
+                                Text("\(replies.reactionCount)").font(JPFont.mono(13, medium: true))
+                            } else {
+                                Text(L(" 人が見ました", " viewers"))
+                                    .font(.system(size: 13))
+                            }
                         }
                         .foregroundStyle(.white)
                         Spacer(minLength: 0)
@@ -1020,11 +1052,14 @@ struct StoryViewerView: View {
                             showReplies = true
                         }
                     }
-                    // 24時間で消える前に、自分の写真として残す
-                    ownAction(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
-                        Task { await keep(story) }
+                    // 24時間で消える前に、自分の写真として残す。
+                    // **動画には出さない**（サーバーが 400 で断る・`storyKeep.ts`）
+                    if !story.isVideo {
+                        ownAction(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
+                            Task { await keep(story) }
+                        }
+                        .disabled(isSending)
                     }
-                    .disabled(isSending)
                     // **確かめてから消す**（以前は押した瞬間に消えていた）
                     ownAction(symbol: "trash", title: Labels.Common.delete, color: Self.storyDanger) {
                         showDeleteConfirm = true
@@ -1038,7 +1073,7 @@ struct StoryViewerView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
-        } else {
+        } else if story.acceptsReplies {
             // 返信欄（ガラスの丸）と ♡。**書いている間は ♡ が送信の白い丸に替わり、
             // 上に一言の候補と「だれに届くか」が出る**（板「25d 返信を書く」）
             VStack(alignment: .leading, spacing: 10) {
@@ -1110,6 +1145,11 @@ struct StoryViewerView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
+        } else {
+            // 返信を受けない投稿。**足元の場所は残す**（空にすると写真の枠が
+            // 1本ごとに伸び縮みする）。**高さを決めて置く**——`Color.clear` は
+            // 与えられた高さを全部取るので、決めないと写真と半分ずつ分け合う
+            Color.clear.frame(height: Self.footerHeight)
         }
     }
 
@@ -1319,7 +1359,27 @@ struct StoryViewerView: View {
         defer { isSending = false }
         do {
             try await environment.stories.delete(id: story.id)
-            dismiss()
+            onDeleted?(story.id)
+            // 🔴 **残りがあれば閉じない。** 以前は1本消すと画面ごと閉じ、3本のうち
+            // 1本を消しただけで残りの2本が見られなくなった。通報で落としたときと
+            // 同じく並びから外し、次の1本へ詰める（一覧は閉じたときに読み直す）
+            //
+            // **いま見ている1本を id で覚えてから外す**（位置で詰めると、消している間に
+            // 前後へ送っていた回に1本飛ばしたり、同じ1本の見た人・返信を空にしたりする）
+            let viewingId = current?.id
+            dropped.insert(story.id)
+            let remaining = visible
+            if remaining.isEmpty {
+                dismiss()
+            } else if viewingId != story.id,
+                      let stay = remaining.firstIndex(where: { $0.id == viewingId }) {
+                // 別の1本を見ている: その1本のまま、位置だけ直す（状態は空にしない）
+                index = stay
+                message = L("削除しました", "Deleted")
+            } else {
+                go(to: min(index, remaining.count - 1))
+                message = L("削除しました", "Deleted")
+            }
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }

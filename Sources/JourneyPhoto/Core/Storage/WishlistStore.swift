@@ -63,4 +63,8 @@ final class WishlistStore: ObservableObject {
         defaults.set(Array(spotIds), forKey: key(for: userId))
     }
 
+    /// 退会した人の控えを消す（`AccountLocalData`）
+    func removeData(for userId: String) {
+        defaults.removeObject(forKey: key(for: userId))
+    }
 }

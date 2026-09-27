@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+// 背面に回っても送り終えるまで少し待ってもらう（`beginBackgroundTask`）
+import UIKit
 
 /// **ストーリーを裏で送る係**（板 27「投稿した直後——上がるまで自分の輪が進み具合を示す」）。
 ///
@@ -10,14 +12,19 @@ import Combine
 /// 🔴 **途中で失敗したら、そこで止める**（投稿画面にあった決まりをそのまま移した）。
 /// 残りを出し続けると「何本出たのか」が誰にも分からなくなる。出たぶんは残し、
 /// **送れなかった残りは捨てずに持つ**——輪から「もう一度送る」か「やめる」を選ぶ。
+///
+/// 🔴 **送り終えていない並びは端末にも書く**（`directory`）。以前はメモリだけで、
+/// 送っている途中にアプリを強制終了すると投稿が黙って消えた。起動し直したら
+/// 「送れませんでした」として戻し、輪から送り直すかやめるかを選ばせる
+/// （黙って送り直さない——閉じた人が「出したつもりか」は分からない）。
 @MainActor
 final class StoryUploadCenter: ObservableObject {
 
-    static let shared = StoryUploadCenter()
+    static let shared = StoryUploadCenter(directory: defaultDirectory, keepsAliveInBackground: true)
 
     /// 1本ぶん。**焼き込み済みの画像**を持つ（文字の配置は投稿画面の中の話）
     struct Job: Identifiable {
-        let id = UUID()
+        let id: UUID
         let imageData: Data
         let caption: String
         let location: String
@@ -25,7 +32,26 @@ final class StoryUploadCenter: ObservableObject {
         let song: Photo.Song?
         let durationSec: Int
         let archive: Bool
+        /// 上げ終えた画像（送り直しで二重に出さないための目印・`StoryService.post`）
+        var uploaded: StoryService.UploadedMedia?
+
+        init(id: UUID = UUID(), imageData: Data, caption: String, location: String,
+             coords: Photo.Coords?, song: Photo.Song?, durationSec: Int, archive: Bool,
+             uploaded: StoryService.UploadedMedia? = nil) {
+            self.id = id
+            self.imageData = imageData
+            self.caption = caption
+            self.location = location
+            self.coords = coords
+            self.song = song
+            self.durationSec = durationSec
+            self.archive = archive
+            self.uploaded = uploaded
+        }
     }
+
+    /// 1本を送る手順。2つ目の引数で「上げ終えた画像」を係に覚えさせる（nil で忘れる）
+    typealias Send = (Job, @escaping @MainActor (StoryService.UploadedMedia?) -> Void) async throws -> Void
 
     enum Phase: Equatable {
         case idle
@@ -42,7 +68,7 @@ final class StoryUploadCenter: ObservableObject {
 
     private var pending: [Job] = []
     private var total = 0
-    private var send: ((Job) async throws -> Void)?
+    private var send: Send?
     private var onAllSent: (() -> Void)?
     private var onFailed: ((String) -> Void)?
     /// 🔴 **誰の投稿か。** 係はアプリに1つなので、ログインし直した別の人の
@@ -53,8 +79,49 @@ final class StoryUploadCenter: ObservableObject {
     /// （ログアウト・やめる）と、戻ってきた `run` が空の並びから取り出して落ちる
     private var generation = 0
 
+    /// 起動し直して戻した並びを送るための手順（`configure`）。
+    /// 戻した並びには投稿画面が渡した手順が無いので、アプリが起動時に渡す
+    private var defaultSend: Send?
+    private var defaultCurrentUserId: (() -> String?)?
+    /// 捨てた並びの、上げ終えていた画像を片づける
+    private var discardUpload: ((String) async -> Void)?
+    /// 戻した並びを送り終えたときに下書きを片づける（`draftToClear` を渡す）。
+    /// 戻した並びには投稿画面の `onAllSent` が無いので、アプリが起動時に渡す
+    private var clearDraft: ((String) -> Void)?
+    /// 送り終えたら片づける下書きの印（`StoryDraftStore.Draft.savedAt`）。
+    /// 端末にも書く——書かないと、起動し直して送った回に下書きが残り、
+    /// 「続きから」で同じ投稿をもう1本出しやすい
+    private var draftToClear: String?
+
+    /// 送り終えていない並びを書く場所。nil ならメモリだけ（試験）
+    private let directory: URL?
+    private let keepsAliveInBackground: Bool
+
     /// 送っている最中か、失敗した残りを持っているか（新しい投稿を受けない）
     var isBusy: Bool { phase != .idle }
+
+    static var defaultDirectory: URL {
+        (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory)
+            .appendingPathComponent("story-uploads", isDirectory: true)
+    }
+
+    init(directory: URL? = nil, keepsAliveInBackground: Bool = false) {
+        self.directory = directory
+        self.keepsAliveInBackground = keepsAliveInBackground
+        restore()
+    }
+
+    /// 起動し直して戻した並びを送る手順を渡す（アプリの起動時に1回）
+    func configure(currentUserId: @escaping () -> String?,
+                   send: @escaping Send,
+                   discardUpload: @escaping (String) async -> Void,
+                   clearDraft: @escaping (String) -> Void = { _ in }) {
+        defaultCurrentUserId = currentUserId
+        defaultSend = send
+        self.discardUpload = discardUpload
+        self.clearDraft = clearDraft
+    }
 
     /// 送り始める。**前の投稿が片付いていなければ受けない**（false）——
     /// 2つの並びが混ざると、どれが出たのか分からなくなる
@@ -62,11 +129,13 @@ final class StoryUploadCenter: ObservableObject {
     func start(_ jobs: [Job],
                ownerId: String,
                currentUserId: @escaping () -> String?,
-               send: @escaping (Job) async throws -> Void,
+               draftToClear: String? = nil,
+               send: @escaping Send,
                onAllSent: @escaping () -> Void = {},
                onFailed: @escaping (String) -> Void = { _ in }) -> Bool {
         guard !isBusy, !jobs.isEmpty, !ownerId.isEmpty else { return false }
         pending = jobs
+        self.draftToClear = draftToClear
         total = jobs.count
         self.ownerId = ownerId
         self.currentUserId = currentUserId
@@ -77,6 +146,7 @@ final class StoryUploadCenter: ObservableObject {
         // その隙の二度押しをもう1本として受けてしまう（テストで捕まえた）。
         // 輪もこの瞬間から「送信中…」を出せる
         phase = .sending(done: 0, total: total)
+        persist(writingImages: true)
         Task { await run() }
         return true
     }
@@ -88,9 +158,16 @@ final class StoryUploadCenter: ObservableObject {
         Task { await run() }
     }
 
-    /// 失敗した残りを捨てる（出せたぶんはそのまま）
+    /// 失敗した残りを捨てる（出せたぶんはそのまま）。
+    /// **上げ終えていた画像も片づける**（使われている鍵はサーバーが消さない）
     func discard() {
         guard case .failed = phase else { return }
+        let keys = pending.compactMap { $0.uploaded?.key }
+        if let discardUpload, !keys.isEmpty {
+            Task {
+                for key in keys { await discardUpload(key) }
+            }
+        }
         reset()
     }
 
@@ -102,21 +179,46 @@ final class StoryUploadCenter: ObservableObject {
     }
 
     private func run() async {
-        guard let send else { return }
+        guard let send = send ?? defaultSend else { return }
+        let currentUserId = currentUserId ?? defaultCurrentUserId
         let myGeneration = generation
         phase = .sending(done: total - pending.count, total: total)
+        // **背面に回っても、送り終えるまで少し待ってもらう。** 待ってもらわないと、
+        // 送っている途中にホームへ戻っただけで通信が止まり、失敗になりやすかった
+        let background = beginBackground()
+        defer { endBackground(background) }
         while let job = pending.first {
             // **本人のままか、送る前に毎回照らす**（別の人のトークンで出さない）
-            guard currentUserId?() == ownerId else {
+            let current = currentUserId?()
+            // **誰か分からない（ログインしていない・圏外で起動して確かめられない）
+            // ときは捨てない。** 残したまま止める——捨てると、圏外で起動して
+            // 「もう一度送る」を押しただけで、送信待ちが知らせも無く消えていた。
+            // 本人に戻れば送り直せ、別の人が入れば `userChanged` が捨てる
+            guard let current else {
+                let message = L("ログインしてから、もう一度送ってください。",
+                                "Sign in, then try sending again.")
+                phase = .failed(message: message, remaining: pending.count)
+                return
+            }
+            guard current == ownerId else {
                 reset()
                 return
             }
             do {
-                try await send(job)
+                let jobId = job.id
+                try await send(job) { [weak self] media in
+                    // 捨てた並び・別の1本には書かない
+                    guard let self, myGeneration == self.generation,
+                          let i = self.pending.firstIndex(where: { $0.id == jobId }) else { return }
+                    self.pending[i].uploaded = media
+                    self.persist(writingImages: false)
+                }
                 // 待っている間に捨てられた並びなら、ここで手を引く
                 guard myGeneration == generation else { return }
                 pending.removeFirst()
                 phase = .sending(done: total - pending.count, total: total)
+                removeImage(of: job)
+                persist(writingImages: false)
             } catch {
                 guard myGeneration == generation else { return }
                 let reason = (error as? LocalizedError)?.errorDescription
@@ -129,7 +231,12 @@ final class StoryUploadCenter: ObservableObject {
                 return
             }
         }
-        onAllSent?()
+        if let onAllSent {
+            onAllSent()
+        } else if let draftToClear {
+            // 起動し直して戻した並び（投稿画面の片づけが無い）
+            clearDraft?(draftToClear)
+        }
         reset()
         finished += 1
     }
@@ -143,6 +250,132 @@ final class StoryUploadCenter: ObservableObject {
         onFailed = nil
         ownerId = nil
         currentUserId = nil
+        draftToClear = nil
         phase = .idle
+        clearStorage()
+    }
+
+    // MARK: - 背面
+
+    /// 背面での猶予（`beginBackgroundTask`）。送る回ごとに札を分ける
+    /// ——捨てた回の片づけが、次の回の猶予を返してしまわないように
+    private var backgroundTasks: [UUID: UIBackgroundTaskIdentifier] = [:]
+
+    /// 背面での猶予をもらう。返すのは札（要らなくなったら `endBackground` に渡す）
+    private func beginBackground() -> UUID? {
+        guard keepsAliveInBackground else { return nil }
+        let token = UUID()
+        // 猶予が切れたら返す（返さないとアプリごと止められる）。送っている1本は
+        // 失敗として戻り、並びは端末に残っているので次に送り直せる
+        let identifier = UIApplication.shared.beginBackgroundTask(withName: "story-upload") { [weak self] in
+            MainActor.assumeIsolated { self?.endBackground(token) }
+        }
+        guard identifier != .invalid else { return nil }
+        backgroundTasks[token] = identifier
+        return token
+    }
+
+    private func endBackground(_ token: UUID?) {
+        guard let token, let identifier = backgroundTasks.removeValue(forKey: token) else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+    }
+
+    // MARK: - 端末に書く
+
+    /// 並びの記録（画像は別のファイル）
+    private struct Manifest: Codable {
+        struct Entry: Codable {
+            let id: UUID
+            let caption: String
+            let location: String
+            let latitude: Double?
+            let longitude: Double?
+            let song: Photo.Song?
+            let durationSec: Int
+            let archive: Bool
+            let uploaded: StoryService.UploadedMedia?
+        }
+        let ownerId: String
+        let total: Int
+        let jobs: [Entry]
+        /// 前の版には無い（nil＝片づける下書きなし）
+        let draftToClear: String?
+    }
+
+    private var manifestURL: URL? { directory?.appendingPathComponent("queue.json") }
+
+    private func imageURL(_ id: UUID) -> URL? {
+        directory?.appendingPathComponent("\(id.uuidString).jpg")
+    }
+
+    /// いまの並びを書く。画像は並びを受けたときに1回だけ書く（`writingImages`）
+    private func persist(writingImages: Bool) {
+        guard let directory, let manifestURL, let ownerId, !pending.isEmpty else { return }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if writingImages {
+                for job in pending {
+                    guard let url = imageURL(job.id) else { continue }
+                    try job.imageData.write(to: url, options: .atomic)
+                }
+            }
+            let manifest = Manifest(ownerId: ownerId, total: total, jobs: pending.map { job in
+                Manifest.Entry(id: job.id, caption: job.caption, location: job.location,
+                               latitude: job.coords?.lat, longitude: job.coords?.lng,
+                               song: job.song, durationSec: job.durationSec,
+                               archive: job.archive, uploaded: job.uploaded)
+            }, draftToClear: draftToClear)
+            try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
+        } catch {
+            // 書けなくても送信は続ける（メモリの並びは生きている）。強制終了に
+            // 備えられないだけ
+        }
+    }
+
+    private func removeImage(of job: Job) {
+        guard let url = imageURL(job.id) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private func clearStorage() {
+        guard let directory else { return }
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// 前の起動で送り終えていなかった並びを戻す。**画像が1本でも読めなければ、
+    /// 読めたぶんだけを戻す**（読めないものは送りようがない）
+    private func restore() {
+        guard let manifestURL,
+              let data = try? Data(contentsOf: manifestURL),
+              let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else {
+            clearStorage()
+            return
+        }
+        let jobs: [Job] = manifest.jobs.compactMap { entry in
+            guard let url = imageURL(entry.id), let image = try? Data(contentsOf: url) else { return nil }
+            let coords: Photo.Coords? = {
+                guard let lat = entry.latitude, let lng = entry.longitude else { return nil }
+                return Photo.Coords(lat: lat, lng: lng)
+            }()
+            return Job(id: entry.id, imageData: image, caption: entry.caption, location: entry.location,
+                       coords: coords, song: entry.song, durationSec: entry.durationSec,
+                       archive: entry.archive, uploaded: entry.uploaded)
+        }
+        guard !jobs.isEmpty, !manifest.ownerId.isEmpty else {
+            clearStorage()
+            return
+        }
+        // 出せた数は「記録の全部 − 記録に残っていた本数」。**画像を読めずに落とした
+        // ぶんを「出せた」に数えない**（全部の数から一緒に引く）
+        let posted = max(0, manifest.total - manifest.jobs.count)
+        pending = jobs
+        total = posted + jobs.count
+        ownerId = manifest.ownerId
+        draftToClear = manifest.draftToClear
+        let reason = L("アプリが閉じられたため、送信が途中で止まりました",
+                       "Sending stopped because the app was closed")
+        phase = .failed(message: StoryQueue.partialFailure(posted: posted,
+                                                           total: total, reason: reason),
+                        remaining: jobs.count)
     }
 }

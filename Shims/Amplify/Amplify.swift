@@ -79,7 +79,10 @@ public struct AuthSignInResult {
 public struct AuthCodeDeliveryDetails {}
 public struct AuthResetPasswordResult {}
 public struct AuthSignOutResult {}
-public protocol AuthUser { var userId: String { get } }
+public protocol AuthUser {
+    var username: String { get }
+    var userId: String { get }
+}
 
 public protocol AuthSession { var isSignedIn: Bool { get } }
 

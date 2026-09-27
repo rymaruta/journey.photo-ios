@@ -49,6 +49,14 @@ enum ProfileLine {
         /// 取れなかった。「—」を出す（0 とは言わない）
         case failed
         case loaded(Int)
+
+        /// 画面に並べている枚数で言い直す。**数えるのは絞ったあと**
+        /// ——ブロック・通報した写真を格子から落としても、札が落とす前の
+        /// 枚数のままだった。読み込み中・失敗はそのまま
+        func shown(_ count: Int) -> PhotoCount {
+            if case .loaded = self { return .loaded(count) }
+            return self
+        }
     }
 
     static func counts(followers: Int, following: Int, photos: PhotoCount) -> [Count] {
