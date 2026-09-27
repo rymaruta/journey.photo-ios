@@ -63,12 +63,15 @@ struct PhotoMapView: View {
     var body: some View {
         VStack(spacing: 0) {
             searchField
-            categoryChips
+            // カテゴリは写真の分類。「スポット」の札では効かないので出さない
+            if model.mode != .spots {
+                categoryChips
+            }
             modePicker
-            if model.mode == .map {
-                mapArea
-            } else {
-                listArea
+            switch model.mode {
+            case .map: mapArea
+            case .spots: spotsArea
+            case .list: listArea
             }
         }
         .webScreen()
@@ -228,14 +231,30 @@ struct PhotoMapView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// 「地図 / リスト」。**どちらも同じ `shown` から描く**
+    /// 「地図 / スポット / リスト」（板 04c 案A: 高さ 44 のガラスの帯に3つ、選んでいる札は
+    /// 白地に墨の字）。地図とリストは同じ `shown` から、スポットは撮影スポットの台帳から描く。
+    /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
     private var modePicker: some View {
-        Picker("", selection: $model.mode) {
+        HStack(spacing: 4) {
             ForEach(PhotoMapViewModel.Mode.allCases) { mode in
-                Text(mode.label).tag(mode)
+                let selected = model.mode == mode
+                Button {
+                    model.mode = mode
+                } label: {
+                    Text(mode.label)
+                        .font(.footnote.weight(selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? WebTheme.accentText : Color.white.opacity(0.82))
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .background(selected ? Color.white.opacity(0.92) : Color.clear, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("map.mode.\(mode.rawValue)")
             }
         }
-        .pickerStyle(.segmented)
+        .padding(4)
+        .jpGlass(in: Capsule())
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }
@@ -1053,6 +1072,140 @@ struct PhotoMapView: View {
                 .frame(height: 90)
             }
         }
+    }
+
+
+    // MARK: - スポット（板 04c 案A）
+
+    /// 撮影スポットを近い順に（`OfficialSpotList`）。起点は現在地、無ければ地図の中心
+    @ViewBuilder
+    private var spotsArea: some View {
+        let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
+        // 上の欄（「撮影地・スポット名で絞る」）で打った語は、地図のピンと同じく名前で当てる
+        let spots = MapSearch.fold(model.query).isEmpty
+            ? model.officialSpots
+            : OfficialSpotIndex.matches(model.officialSpots, query: model.query)
+        let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                // 板: 12px・medium・白60%。起点が何かを言う（現在地か地図の中心か）
+                Text(spotsHeading(hasHere: here != nil, hasCenter: center != nil))
+                    .font(.caption.weight(.medium))
+                    .tracking(0.5)
+                    .foregroundStyle(WebTheme.faint)
+                    .padding(.horizontal, 4)
+                    .accessibilityAddTraits(.isHeader)
+                if model.officialIndexState == .loading {
+                    // **読み込み中に「無い」と言わない**
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                } else if model.officialIndexState == .failed {
+                    Text(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.faint)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                } else if rows.isEmpty {
+                    Text(MapSearch.fold(model.query).isEmpty
+                         ? L("公開中の撮影スポットはまだありません", "No photo spots yet")
+                         : L("見つかりませんでした", "No results"))
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.faint)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                            NavigationLink {
+                                OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos)
+                            } label: {
+                                spotRow(row, divider: index > 0)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("map.spotRow")
+                        }
+                    }
+                    .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                // 読み終えたときだけ件数を言う（読み込み中・失敗の「0件」は事実と違う）
+                if model.officialIndexState == .ready {
+                // **「運営が確かめた」とは書かない**——公開済みには AI 照合で出した行も
+                // 含まれ、人の確認（`verifiedBy`）とは別の印（photo-gallery の CLAUDE.md）
+                Text(L("公開中の撮影スポットだけ（いまは\(rows.count)件）。",
+                       "Published photo spots only (\(rows.count) now)."))
+                    .font(.caption)
+                    .lineSpacing(3)
+                    .foregroundStyle(WebTheme.faint)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 4)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private func spotsHeading(hasHere: Bool, hasCenter: Bool) -> String {
+        if hasHere { return L("撮影スポット · 近い順", "Photo spots · nearest first") }
+        if hasCenter { return L("撮影スポット · 地図の中心から近い順", "Photo spots · nearest to the map") }
+        return L("撮影スポット", "Photo spots")
+    }
+
+    /// 1行（板: 高さ 64・40pt の丸・15px の名前・12px の「0.8km · 写真 N枚」・右に矢印）
+    private func spotRow(_ row: OfficialSpotList.Row, divider: Bool) -> some View {
+        HStack(spacing: 12) {
+            if let photo = row.spot.photo {
+                // 写真があれば写真の丸・真鍮の縁（地図のピンと同じ見分け方）
+                RemoteImage(url: photo.url)
+                    .frame(width: 40, height: 40)
+                    .background(WebTheme.accent)
+                    .clipShape(Circle())
+                    .overlay(Circle().strokeBorder(WebTheme.accent, lineWidth: 2))
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(WebTheme.accentText)
+                    .frame(width: 40, height: 40)
+                    .background(WebTheme.accent, in: Circle())
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.92), lineWidth: 2))
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.spot.name)
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(1)
+                Text(spotSubline(row))
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.35))
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(minHeight: 64)
+        .overlay(alignment: .top) {
+            if divider { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// 「約0.8km · 写真 3枚」。距離は**丸めた座標から測るので「約」を付ける**
+    /// （`NearbyPhotos.label`）。起点が無ければ距離を出さない
+    private func spotSubline(_ row: OfficialSpotList.Row) -> String {
+        let photos = L("写真 \(row.photoCount)枚", "\(row.photoCount) photos")
+        guard let km = row.km else { return photos }
+        return "\(NearbyPhotos.label(km: km)) · \(photos)"
     }
 
     // MARK: - リスト

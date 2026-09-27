@@ -9,11 +9,13 @@ import Combine
 final class PhotoMapViewModel: ObservableObject {
 
     enum Mode: String, CaseIterable, Identifiable {
-        case map, list
+        /// 板 04c 案A の並び: 地図 / スポット / リスト
+        case map, spots, list
         var id: String { rawValue }
         var label: String {
             switch self {
             case .map: return L("地図", "Map")
+            case .spots: return L("スポット", "Spots")
             case .list: return L("リスト", "List")
             }
         }
@@ -55,6 +57,12 @@ final class PhotoMapViewModel: ObservableObject {
     /// 出ないだけ（写真の機能は止めない）。描画には `officialPins` を使うので
     /// ここは知らせない
     private(set) var officialSpots: [OfficialSpot] = []
+    /// 撮影スポットの台帳を読み終えたか（「スポット」の札の「読み込み中」と「無い」を分ける）。
+    /// **これは知らせる**——台帳は1回しか届かないので回り続けない。知らせないと、
+    /// 台帳が届く前に「スポット」を押した回に空の一覧のまま止まる
+    /// （ピンの集合は寄せていないと空のままで、`officialPins` の知らせが来ない）
+    @Published private(set) var officialIndexState: IndexState = .loading
+    enum IndexState { case loading, ready, failed }
 
     /// 地図に置く撮影スポットのピン。**寄せたときと、名前で絞ったときだけ**
     /// （`OfficialPins.visible`）。
@@ -121,8 +129,9 @@ final class PhotoMapViewModel: ObservableObject {
         // ピンと最初の寄せまで遅れる（通信の上限は20秒）。届いたらピンだけ
         // 入れ替える。取れなくても写真は出す——索引は無くても地図は成り立つ
         indexTask = Task { [weak self] in
-            let spots = (try? await environment.spots.fetchIndex()) ?? []
-            self?.officialSpots = spots
+            let fetched = try? await environment.spots.fetchIndex()
+            self?.officialSpots = fetched ?? []
+            self?.officialIndexState = fetched == nil ? .failed : .ready
             self?.refreshOfficialPins()
         }
         photos = (try? await environment.gallery.fetchPhotos()) ?? []
