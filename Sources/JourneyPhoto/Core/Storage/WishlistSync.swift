@@ -113,7 +113,7 @@ enum WishlistSync {
             // サーバーに在った鍵なら、次の同期でこの端末にも戻る（言い切らない）
             // **「通信できず」とは言わない。** ここに来るのはサーバーの 5xx・断りも
             // 含む（上の `catch` は理由を分けない）ので、電波のせいにすると嘘になる
-            return (L("外しました（サーバーに届かず、あとで戻ることがあります）",
+            return (L("外しました（サーバーで外せず、あとで戻ることがあります）",
                       "Removed. It may come back after syncing."), .failure)
         case .ignored:
             return nil

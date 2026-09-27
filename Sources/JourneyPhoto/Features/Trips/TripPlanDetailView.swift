@@ -33,6 +33,9 @@ struct TripPlanDetailView: View {
     @State private var confirmingDelete = false
     /// 「保存して戻る／変更を捨てる」の確認
     @State private var confirmLeave = false
+    /// 「保存して戻る」が断られた（アラートで出す——下までスクロールしていると
+    /// 画面の中の赤い行は見えず、押しても何も起きないように見えた）
+    @State private var leaveSaveError: String?
     /// 名前を引く材料（取れなくても画面は出る——名前が鍵のままになるだけ）
     @State private var photos: [Photo] = []
     @State private var index: [OfficialSpot] = []
@@ -82,13 +85,25 @@ struct TripPlanDetailView: View {
                                       "If you go back without saving, your changes to this trip will be lost."),
                            onSave: {
                                Task {
-                                   // 断られたら残る（失敗の文は画面の上に出る）
-                                   if await save() { dismiss() }
+                                   // 断られたら残り、アラートで知らせる
+                                   if await save() {
+                                       dismiss()
+                                   } else {
+                                       leaveSaveError = model.errorMessage
+                                           ?? L("保存できませんでした", "Couldn't save")
+                                   }
                                }
                            },
                            onDiscard: { dismiss() })
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { saveButton }
+        }
+        .alert(L("保存できませんでした", "Couldn't save"),
+               isPresented: Binding(get: { leaveSaveError != nil },
+                                    set: { if !$0 { leaveSaveError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(leaveSaveError ?? "")
         }
         .task {
             let fetchedPhotos = try? await environment.gallery.fetchPhotos()

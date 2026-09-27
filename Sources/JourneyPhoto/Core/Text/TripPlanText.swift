@@ -196,7 +196,9 @@ enum TripPlanText {
     static func leave(plan: TripPlan?, days: [TripDay], start: String?, end: String?,
                       busy: Bool) -> UnsavedLeave {
         let dirty = plan.map { isDirty(plan: $0, days: days, start: start, end: end) } ?? false
-        return UnsavedLeave.decide(hasChanges: dirty, isSaving: busy)
+        // 待たせるのは**変えた日程を送っている間だけ**。`busy` は削除の最中にも立つので、
+        // 何も変えていない画面まで戻れなくなっていた（通信が固まると時間切れまで）
+        return UnsavedLeave.decide(hasChanges: dirty, isSaving: busy && dirty)
     }
 
     /// 送る差分。**変えた項目だけ**（Web の `/user/edit` と同じ——他の端末の編集を消さない）。

@@ -25,6 +25,9 @@ final class UnsavedLeaveTests: XCTestCase {
         XCTAssertEqual(TripPlanText.leave(plan: plan, days: days, start: nil, end: nil, busy: true), .wait)
         // 日付だけ変えても同じ
         XCTAssertEqual(TripPlanText.leave(plan: plan, days: plan.days, start: "2026-10-01", end: nil, busy: false), .confirm)
+        // 何も変えていなければ、削除などの最中でも閉じ込めない
+        XCTAssertEqual(TripPlanText.leave(plan: plan, days: plan.days, start: nil, end: nil, busy: true), .now,
+                       "変えていないのに戻れない")
     }
 
     /// プランが消えた（別の端末で消された）画面は、そのまま戻れる
