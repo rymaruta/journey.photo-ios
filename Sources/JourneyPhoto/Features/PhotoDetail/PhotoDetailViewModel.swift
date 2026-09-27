@@ -116,13 +116,13 @@ final class PhotoDetailViewModel: ObservableObject {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
-        // 前の操作の失敗を残さない（いま押した操作の結果だけを出す）
-        errorMessage = nil
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
             return
         }
         guard !isLiking else { return }
+        // 前の操作の失敗を残さない（送っている間の二度押しでは消さない）
+        errorMessage = nil
         isLiking = true
         defer { isLiking = false }
         let wasLiked = liked

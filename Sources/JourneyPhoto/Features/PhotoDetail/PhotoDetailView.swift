@@ -569,6 +569,8 @@ struct PhotoDetailView: View {
     /// 隣の写真なら、その写真に直接送る——**解除はしない**ので `like` だけ
     private func likeFromViewer(_ shown: Photo) async {
         if shown.id == photo.id {
+            // 送っている間は押しても何もしないので、知らせも消さない
+            guard !model.isLiking else { return }
             clearNotices()
             await model.toggleLike()
             // 下のハートと同じく、端末の控えとホームの数にも渡す
@@ -598,6 +600,8 @@ struct PhotoDetailView: View {
     /// から送り、届かなければ元に戻す（ダブルタップと同じ控え方）
     private func toggleLikeFromViewer(_ shown: Photo) async {
         if shown.id == photo.id {
+            // 送っている間は押しても何もしないので、知らせも消さない
+            guard !model.isLiking else { return }
             clearNotices()
             await model.toggleLike()
             favorites.set(photo.id, favorite: model.liked)
@@ -643,6 +647,8 @@ struct PhotoDetailView: View {
             HStack(spacing: 16) {
                 Button {
                     Task {
+                        // 送っている間は押しても何もしないので、知らせも消さない
+                        guard !model.isLiking else { return }
                         clearNotices()
                         await model.toggleLike()
                         // 端末側のハートも合わせる（圏外でも一覧が出る）
@@ -966,6 +972,7 @@ struct PhotoDetailView: View {
         // **送っている間は受けない**（いいねの `isLiking` と同じ）。連打で save と
         // unsave が並んで飛ぶと、着く順や失敗の巻き戻しで画面とサーバーが食い違う
         guard !isSavingBookmark else { return }
+        clearNotices()
         isSavingBookmark = true
         defer { isSavingBookmark = false }
         let wasSaved = savedPhotos.contains(photo.id)
