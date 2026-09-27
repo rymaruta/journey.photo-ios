@@ -182,7 +182,11 @@ final class StoryUploadCenterTests: XCTestCase {
             while !release { await Task.yield() }
             throw Boom()
         })
-        for _ in 0..<200 { await Task.yield() }
+        // 1本目を送り終えて、2本目の返事を待っているところまで進める
+        for _ in 0..<2000 {
+            if case .sending(let done, _) = center.phase, done == 1 { break }
+            await Task.yield()
+        }
 
         let relaunched = StoryUploadCenter(directory: dir)
         guard case .failed(_, let remaining) = relaunched.phase else {
@@ -247,7 +251,8 @@ final class StoryUploadCenterTests: XCTestCase {
         })
         await settle(center)
         center.discard()
-        for _ in 0..<50 { await Task.yield() }
+        // 片づけは裏の Task で走る。**回数ではなく結果で待つ**（混んだ機械で落ちないように）
+        for _ in 0..<2000 where discarded.isEmpty { await Task.yield() }
         XCTAssertEqual(discarded, ["k1"])
     }
 
