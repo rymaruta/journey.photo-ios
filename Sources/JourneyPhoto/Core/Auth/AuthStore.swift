@@ -157,6 +157,12 @@ final class AuthStore: ObservableObject {
             self.state = .signedIn(userId: id)
             await refreshAdmin()
         }
+        // 🔴 **ログインでは「アカウントが無い」と「違います」を同じ文にする**（Web の signIn と
+        // 同じ）。分けると、アカウントの有無をログイン画面で確かめられる。種類（`lastFailure`）
+        // は残す——ほかの流れ（送り直し・退会）の文は変えない
+        if lastFailure == .userNotFound {
+            errorMessage = AuthMessage.text(for: .notAuthorized)
+        }
     }
 
     func signOut(byExpiry: Bool = false) async {
@@ -234,6 +240,13 @@ final class AuthStore: ObservableObject {
         await run {
             try await AuthGateway.resetPassword(email: email)
             ok = true
+        }
+        // 🔴 **無いアカウントでも「送りました」と同じに進める**（Web の forgotPassword と同じ）。
+        // 断ると、再設定の画面でアカウントの有無を確かめられる
+        if !ok, lastFailure == .userNotFound {
+            ok = true
+            lastFailure = .none
+            errorMessage = nil
         }
         return ok
     }
@@ -379,9 +392,7 @@ enum AuthMessage {
         case .notAuthorized:
             return L("メールアドレスかパスワードが違います", "Wrong email or password")
         case .userNotFound:
-            // **「違います」と同じ文にする**（Web の signIn と同じ）。分けると、アカウントが
-            // あるかどうかをログイン画面で確かめられてしまう
-            return L("メールアドレスかパスワードが違います", "Wrong email or password")
+            return L("そのメールアドレスのアカウントが見つかりません", "No account for that email")
         case .userNotConfirmed:
             return L("メールに届いた確認コードで登録を完了してください", "Finish sign up with the code we emailed you")
         case .codeMismatch:

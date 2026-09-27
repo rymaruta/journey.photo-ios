@@ -248,19 +248,7 @@ struct SignInView: View {
             // **未確認のまま戻ってきた人を、確認画面へ送る。**
             // 文言だけ出して入口が無いと、登録し直しても
             // 「すでに登録されています」で詰む（パスワード再設定も効かない）
-            if auth.lastFailureWasUnconfirmed {
-                await resumeVerification(knownUnconfirmed: true)
-            } else if auth.userId == nil, pending.username(for: email) != nil {
-                // メールは**確認が済んでから**ログインの名前として使えるので、未確認の人の
-                // ログインは「未確認」ではなく「違います」で返りうる。この端末で登録を
-                // 始めた控えがあれば、確認の続きへ送る（確認済みの人なら送り直しが断られ、
-                // 控えは捨てられる）
-                let signInMessage = auth.errorMessage
-                await resumeVerification(knownUnconfirmed: true)
-                // 確認済みの人のパスワード違いだった（送り直しが断られた）。送り直しの断りの
-                // 文ではなく、ログインの答えを出す
-                if pendingUsername == nil, notice == nil { auth.errorMessage = signInMessage }
-            }
+            if auth.lastFailureWasUnconfirmed { await resumeVerification(knownUnconfirmed: true) }
             // **預かったままの表示名を、ふつうのログインでも入れる。**
             // 確認直後のログインが落ちた人・名前を入れ損ねた人は、ここ以外に
             // やり直す場所が無い（控えには「次のログインで試せる」と書いてある）
@@ -394,6 +382,10 @@ struct SignInView: View {
                         if await applyDisplayName(name) {
                             pending.forget(email: email)
                         }
+                    } else if auth.lastFailure == .aliasExists {
+                        // 別のアカウントがこのメールで確認済み。**この控えはもう使えない**
+                        // ——残すと、ログインで打ち間違えるたびに送り直しへ回された
+                        pending.forget(email: email)
                     }
                 }
             } label: {

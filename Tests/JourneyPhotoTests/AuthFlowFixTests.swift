@@ -4,11 +4,10 @@ import XCTest
 /// ログイン・登録の言い分け（バグ探し 2026-09-27 夕）
 final class AuthFlowFixTests: XCTestCase {
 
-    /// 🔴 **ログインで「アカウントが無い」と「違います」を同じ文にする**（Web と同じ）。
-    /// 分けると、ログイン画面でアカウントの有無を確かめられる
-    func testUserNotFoundReadsLikeWrongPassword() {
-        XCTAssertEqual(AuthMessage.text(for: .userNotFound), AuthMessage.text(for: .notAuthorized),
-                       "アカウントの有無を漏らしている")
+    /// 送り直し・確認で「アカウントが無い」は、そのまま言う（ログインだけ「違います」に寄せる）
+    func testUserNotFoundKeepsItsOwnTextOutsideSignIn() {
+        XCTAssertNotEqual(AuthMessage.text(for: .userNotFound), AuthMessage.text(for: .notAuthorized),
+                          "パスワード欄の無い画面で「パスワードが違います」と言う")
     }
 
     /// 🔴 **確認の押し直しの NotAuthorized は「もう確認済み」**（成功として扱う）。

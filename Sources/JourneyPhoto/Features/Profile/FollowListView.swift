@@ -40,6 +40,8 @@ struct FollowListView: View {
     @State private var loadedFor: String?
     /// 一度出たか（戻ってきた回だけ読み直す）
     @State private var appeared = false
+    /// この画面でフォローを押した回数（読み直しの古い答えで上書きしない目印）
+    @State private var followEdits = 0
     /// いま送っている相手（二度押しで2回投げない）
     @State private var working: Set<String> = []
     /// 外す確認。**出すかどうかと相手は別々に持つ**——1つの Optional で兼ねると、
@@ -228,14 +230,17 @@ struct FollowListView: View {
     /// 自分のフォロー先を読み直す（ボタンの「フォロー中」）。取れなかったら書かない
     private func refreshMyFollowing() async {
         guard let viewer = auth.userId else { return }
+        let edits = followEdits
         let ids = try? await environment.social.myFollowingIds()
         // 待っている間に人が替わっていたら書かない（引き下げの読み直しは
-        // `.task(id:)` の取り消しに巻き込まれない）
-        if let ids, auth.userId == viewer { myFollowing = Set(ids) }
+        // `.task(id:)` の取り消しに巻き込まれない）。**待っている間にこの画面で
+        // フォローを押していたら書かない**（古い答えがボタンを元に戻す）
+        if let ids, auth.userId == viewer, followEdits == edits { myFollowing = Set(ids) }
     }
 
     private func setFollowing(_ id: String, to follow: Bool) async {
         guard !working.contains(id) else { return }
+        followEdits &+= 1
         working.insert(id)
         defer { working.remove(id) }
         do {
