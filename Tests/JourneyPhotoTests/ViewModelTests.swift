@@ -123,6 +123,93 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.categories, ["風景", "食"])
     }
 
+    /// 🔴 **取り消された読み直しを失敗の帯にしない（L-13）。** 戻ると `.task` が
+    /// 走り直し、読み終わる前に次の写真を開くと取り消される。帯はフィードごと
+    /// 差し替えるので、開いたばかりの詳細が閉じていた。控えの無い端末で起きる
+    func testGalleryReloadCancelledKeepsTheFeed() async {
+        prepare()
+        let name = UUID().uuidString
+        StubProtocol.respond(status: 200, body: feed)
+        let model = GalleryViewModel(gallery: PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: name)
+        ))
+        await model.load()
+        guard case .loaded(let first) = model.state else { return XCTFail("最初の読み込みが通っていない") }
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.removeItem(at: caches.appendingPathComponent(name))
+
+        StubProtocol.fail(with: URLError(.cancelled))
+        let task = Task { await model.load(force: true) }
+        task.cancel()
+        await task.value
+        guard case .loaded(let after) = model.state else { return XCTFail("取り消しを失敗の帯にしている") }
+        XCTAssertEqual(after.map(\.id), first.map(\.id))
+    }
+
+    /// 🔴 **人のページ: 取り消された読み直しを失敗の帯にしない（H-5）。** 戻って走り直した
+    /// `.task` が、次の写真・ハイライトを開いて取り消されると、`publicProfile` が
+    /// 「通信できません」を投げ、格子が帯に差し替わって開いたばかりの詳細が閉じていた
+    func testProfileReloadCancelledKeepsWhatWasShown() async {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200,
+                             body: #"[{"id":"p1","src":"https://x/p1.jpg","userId":"u1"}]"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: nil)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+
+        StubProtocol.reset()
+        StubProtocol.fail(with: URLError(.cancelled))
+        let task = Task { await model.load(userId: "u1", environment: env, viewerId: nil) }
+        task.cancel()
+        await task.value
+        XCTAssertNil(model.errorMessage, "取り消しを失敗の帯にしている")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+        XCTAssertEqual(model.photoCount, .loaded(1))
+    }
+
+    /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
+    /// 書かずに戻ると、読み込み中の丸のまま引き下げも再試行も効かない画面が残る
+    func testGalleryFirstLoadCancelledDoesNotStayLoading() async {
+        prepare()
+        StubProtocol.fail(with: URLError(.cancelled))
+        let model = GalleryViewModel(gallery: PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
+        ))
+        let task = Task { await model.load() }
+        task.cancel()
+        await task.value
+        guard case .failed = model.state else { return XCTFail("読み込み中のまま残している") }
+    }
+
+    /// 人のページも同じ。見出しの無い画面に「まだありません」を出さない（c408c05 のレビュー）
+    func testProfileFirstLoadCancelledShowsFailure() async {
+        prepare()
+        StubProtocol.fail(with: URLError(.cancelled))
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = UserProfileViewModel()
+        let task = Task { await model.load(userId: "u1", environment: env, viewerId: nil) }
+        task.cancel()
+        await task.value
+        XCTAssertNotNil(model.errorMessage, "取れていないのに失敗を出していない")
+    }
+
     /// 圏外は「読み込めませんでした」を出す（例外を投げっぱなしにしない）。
     func testGalleryShowsMessageWhenOffline() async {
         prepare()

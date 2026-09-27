@@ -27,6 +27,9 @@ struct PhotoMapView: View {
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
     /// 通報の「受け付けました」も見えない。戻ってきたとき（`onAppear`）に絞る
     @State private var needsDrop = false
+    /// いまこの画面が出ているか。**上に画面を積んでいる間は札を下げない**
+    /// （`PhotoMapViewModel.showsCard(official:onScreen:)`）
+    @State private var isOnScreen = false
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
     /// 取れた現在地。**この画面が開いている間だけ**持つ
@@ -92,7 +95,11 @@ struct PhotoMapView: View {
         // 絞りが変わったら、残ったピンに寄せ直す（範囲で絞ったときは
         // 見ている場所を動かさない——押した範囲がそのまま答え）
         .onChange(of: hidden.revision) { _, _ in needsDrop = true }
-        .onAppear { if needsDrop { dropHidden() } }
+        .onAppear {
+            isOnScreen = true
+            if needsDrop { dropHidden() }
+        }
+        .onDisappear { isOnScreen = false }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
             frame(model.frame)
@@ -291,11 +298,13 @@ struct PhotoMapView: View {
                 .padding(.horizontal, 16)
 
                 // **消えたピンの札は出さない。** 絞り込みを変えるとピンは
-                // 入れ替わるが、札は値の写しなので残ってしまう
+                // 入れ替わるが、札は値の写しなので残ってしまう。
+                // 撮影スポットの札は、そこから開いた画面を積んでいる間だけ残す（`showsCard`）
                 if let selected, model.stillShown(selected) {
                     pinCard(selected)
                         .padding(.horizontal, 16)
-                } else if let selectedOfficial, model.stillShown(official: selectedOfficial) {
+                } else if let selectedOfficial,
+                          model.showsCard(official: selectedOfficial, onScreen: isOnScreen) {
                     officialCard(selectedOfficial)
                         .padding(.horizontal, 16)
                 } else if let chosenPlace {

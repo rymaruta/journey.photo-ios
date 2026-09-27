@@ -13,6 +13,13 @@ struct SearchView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = SearchViewModel()
     @State private var query = ""
+    /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
+    /// （`GalleryView` と同じ形）
+    @State private var isOnScreen = false
+    /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
+    @State private var needsReload = false
+    /// 人の結果から落とす「見せない」の写し。**画面に出ている間だけ取り直す**
+    @State private var dropped = ModerationSnapshot()
 
     var body: some View {
         ScrollView {
@@ -67,13 +74,33 @@ struct SearchView: View {
         // **ブロック／通報の直後に消す。** `loadPhotos` は
         // `guard allPhotos.isEmpty` で二度と読まない作りなので、
         // 控えを捨ててから読み直す
+        //
+        // 🔴 **詳細・人のページを開いている間は読み直さない。** 読み直すと押した元の
+        // 写真・人が結果から消え、開いている画面がその場で閉じる（通報シートの
+        // ブロック失敗の文言も一緒に消える）。戻ってきたとき（`onAppear`）に読み直す
         .onChange(of: hidden.revision) { _, _ in
-            Task {
-                await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
-                                                    photoIds: hidden.reportedPhotoIds)
-                await model.reloadPhotos(environment: environment, hidden: hidden.snapshot)
-                await model.search(query, environment: environment)
+            if isOnScreen {
+                dropped = hidden.snapshot
+                reloadHidden()
+            } else {
+                needsReload = true
             }
+        }
+        .onAppear {
+            isOnScreen = true
+            dropped = hidden.snapshot
+            if needsReload { reloadHidden() }
+        }
+        .onDisappear { isOnScreen = false }
+    }
+
+    private func reloadHidden() {
+        needsReload = false
+        Task {
+            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
+                                                photoIds: hidden.reportedPhotoIds)
+            await model.reloadPhotos(environment: environment, hidden: hidden.snapshot)
+            await model.search(query, environment: environment)
         }
     }
 
@@ -528,9 +555,10 @@ struct SearchView: View {
     @ViewBuilder
     private var results: some View {
         // 人は写真より先に出す（名前で探しているなら、それが目当て）。
-        // ブロックした人は出さない（`/users/search` はブロックを知らない）
-        let users = model.scope.showsPeople
-            ? BlockFilter.users(model.users, blocked: hidden.blockedUserIds) : []
+        // ブロックした人は出さない（`/users/search` はブロックを知らない）。
+        // **写しで落とす**——描くたびに今の集合で絞ると、人のページでブロックした瞬間に
+        // 元の行が消え、そのページが閉じる
+        let users = model.scope.showsPeople ? dropped.users(model.users) : []
         if !users.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text(L("人", "People"))

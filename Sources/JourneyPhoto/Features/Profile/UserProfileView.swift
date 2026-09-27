@@ -367,9 +367,18 @@ final class UserProfileViewModel: ObservableObject {
         cacheBust = String(Int(Date().timeIntervalSince1970))
         defer { isLoading = false }
 
+        // 🔴 **出している最中に取り消された回は失敗として書かない。** 戻ると `.task` が
+        // 走り直し、読み終わる前に次の写真・ハイライトを開くと取り消される。それを失敗の帯
+        // （`errorMessage`）にすると、格子ごと差し替わって開いたばかりの詳細が閉じた。
+        // 取り消しは `APIError.unreachable` に化けて届くことがあるので、型ではなく
+        // `Task.isCancelled` で見る。前の回に出していた中身はそのまま残す。
+        // **まだ何も出していない回（`profile == nil`）は今までどおり書く**——書かないと
+        // 見出しの無い画面に「まだありません」が出る（開いている詳細も無い）
+        let keepsShown = { Task.isCancelled && self.profile != nil }
         do {
             profile = try await environment.profiles.publicProfile(userId: userId)
         } catch let error as APIError {
+            guard !keepsShown() else { return }
             // **「取れなかった」と「退会した」を混ぜない**
             if case .server(let status, _) = error, status == 404 {
                 errorMessage = L("このユーザーは見つかりません（退会した可能性があります）", "This user was not found (they may have deleted their account)")
@@ -378,6 +387,7 @@ final class UserProfileViewModel: ObservableObject {
             errorMessage = error.errorDescription
             return
         } catch {
+            guard !keepsShown() else { return }
             errorMessage = Labels.Common.loadFailed
             return
         }

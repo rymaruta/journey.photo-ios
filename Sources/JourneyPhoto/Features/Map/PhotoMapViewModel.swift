@@ -199,6 +199,17 @@ final class PhotoMapViewModel: ObservableObject {
         return officialPins.contains { $0.id == pin.id }
     }
 
+    /// 撮影スポットの札を出すか。
+    ///
+    /// 🔴 **札から開いた画面を上に積んでいる間（`onScreen == false`）は下げない。**
+    /// 札の「スポットを見る」は `NavigationLink` なので、裏で地図が動いて
+    /// （遅れて届いた現在地など）ピンが外れると、札ごと消えて開いている画面が閉じる。
+    /// 戻ってきたら、いま出ているピンのぶんだけに戻す
+    func showsCard(official pin: OfficialPins.Pin?, onScreen: Bool) -> Bool {
+        guard pin != nil else { return false }
+        return !onScreen || stillShown(official: pin)
+    }
+
     /// ピンの元の行（画面へ渡す。概要・近くのスポットはここから）
     func officialSpot(for pin: OfficialPins.Pin) -> OfficialSpot? {
         officialSpots.first { $0.spotId == pin.spotId }

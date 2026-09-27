@@ -62,11 +62,24 @@ final class GalleryViewModel: ObservableObject {
         if case .loaded = state {} else { state = .loading }
         do {
             let photos = try await gallery.fetchPhotos(force: force)
+            guard !keepsShownFeed else { return }
             all = sorted(photos)
             state = .loaded(filtered())
         } catch {
+            guard !keepsShownFeed else { return }
             state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
         }
+    }
+
+    /// **一覧を出している最中に取り消された回は何も書かない。** 戻ると `.task` が走り直し、
+    /// 読み終わる前に次の写真を開くと取り消される。失敗の帯はフィードごと差し替え、
+    /// 遅れて書いた一覧は並びが変わると段（`EditorialLayout.Row.id` は隣の写真まで含む）を
+    /// 作り直す——どちらでも開いたばかりの詳細が閉じる。
+    /// **まだ何も出していない回は今までどおり書く**（書かないと、読み込み中の丸のまま
+    /// 引き下げも再試行も効かない画面が残る。開いている詳細も無い）
+    private var keepsShownFeed: Bool {
+        guard Task.isCancelled, case .loaded = state else { return false }
+        return true
     }
 
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
