@@ -84,7 +84,9 @@ struct TripPlanDetailView: View {
         .navigationTitle(L("旅行プラン", "Trip plans"))
         .navigationBarTitleDisplayMode(.inline)
         // 削除などの最中は「保存して戻る」を出さない（送る口が断るので必ず失敗する）
+        // 戻るの見た目は標準と同じ「‹ 旅行プラン」に保つ（前の画面の題）
         .unsavedLeaveGuard(leave, isPresented: $confirmLeave, canSave: model.busy == nil,
+                           backTitle: L("旅行プラン", "Trip plans"),
                            message: L("保存しないで戻ると、変えた日程は残りません。",
                                       "If you go back without saving, your changes to this trip will be lost."),
                            onSave: {
