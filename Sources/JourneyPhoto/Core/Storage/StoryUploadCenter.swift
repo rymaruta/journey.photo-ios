@@ -195,14 +195,14 @@ final class StoryUploadCenter: ObservableObject {
             // 「もう一度送る」を押しただけで、送信待ちが知らせも無く消えていた。
             // 本人に戻れば送り直せ、別の人が入れば `userChanged` が捨てる
             guard let current else {
-                // 何本出たかは残し、失敗は知らせる（投稿画面はもう閉じているので、
-                // 黙ると押しても何も起きなかったように見える）
+                // 何本出たかは残す（輪の「もう一度送る」の文言に出る）。
+                // **知らせ（トースト）は出さない**——本当のログアウトでは直後に
+                // `userChanged(nil)` が残りを捨てるので、「送り直して」と言うと嘘になる
                 let message = StoryQueue.partialFailure(
                     posted: total - pending.count, total: total,
-                    reason: L("ログインしてから、もう一度送ってください。",
-                              "Sign in, then try sending again."))
+                    reason: L("ログインしてから、もう一度送ってください",
+                              "Sign in, then try sending again"))
                 phase = .failed(message: message, remaining: pending.count)
-                onFailed?(message)
                 return
             }
             guard current == ownerId else {
