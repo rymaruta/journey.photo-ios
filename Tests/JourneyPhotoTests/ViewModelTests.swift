@@ -647,6 +647,43 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.commentCount, 0)
     }
 
+    /// **送っている間に隣へ送っても、戻れば書いたコメントが出る**
+    /// （控えは送った先の1枚に付く。一覧への反映が遅れていても消えない）
+    func testCommentPostedWhileAwayShowsOnReturn() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.respond(path: "/comments", status: 200,
+                             body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#, delay: 0.2)
+        let posting = Task { await model.postComment() }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        await posting.value
+
+        model.show(photoId: "p1", initialLikes: nil, liked: false)
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"{"items":[],"count":0}"#)
+        await model.load()
+        XCTAssertEqual(model.comments.map(\.id), ["c1"], "書いたコメントが戻っても出ない")
+        XCTAssertEqual(model.commentCount, 1)
+    }
+
+    /// **送っている間の読み直しに既に載っていたら、二重に足さない**
+    func testPostedCommentIsNotDuplicatedWhenAlreadyListed() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}],"count":1}"#)
+        await model.load()
+        model.draftComment = "きれい"
+        StubProtocol.respond(status: 200, body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#)
+        await model.postComment()
+        XCTAssertEqual(model.comments.map(\.id), ["c1"], "同じコメントが2つ出ている")
+        XCTAssertEqual(model.commentCount, 1)
+    }
+
     /// 空のコメントは送らない。
     func testEmptyCommentIsNotSent() async {
         prepare()

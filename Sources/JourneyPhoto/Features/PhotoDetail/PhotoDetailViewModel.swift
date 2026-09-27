@@ -196,10 +196,14 @@ final class PhotoDetailViewModel: ObservableObject {
             // 送った先の1枚に控える（隣へ送った後に届いても、戻ったときに出す）
             postedComments[id, default: []].append(comment)
             guard id == photoId else { return }
-            comments.insert(comment, at: 0)
-            // **総数が分からない回は分からないまま。** 取れていない数に
-            // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
-            commentCount = commentCount.map { $0 + 1 }
+            // **送っている間に読み直した一覧に、もう載っていることがある。**
+            // そのときは足さない（同じコメントが2つ・数が1つ多く出ていた）
+            if !comments.contains(where: { $0.id == comment.id }) {
+                comments.insert(comment, at: 0)
+                // **総数が分からない回は分からないまま。** 取れていない数に
+                // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
+                commentCount = commentCount.map { $0 + 1 }
+            }
             // **送った文のときだけ空にする。** 送っている間も欄は打てるので、
             // 続きを書いていたら丸ごと消えていた
             if draftComment.trimmingCharacters(in: .whitespacesAndNewlines) == text {
