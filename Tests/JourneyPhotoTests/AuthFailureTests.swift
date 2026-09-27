@@ -17,6 +17,35 @@ final class AuthFailureTests: XCTestCase {
         .service("", "", cognito)
     }
 
+    /// 🔴 **ログインの「続き」を捨てない。** Amplify 2.x は未確認・再設定待ちを
+    /// 例外でなく `nextStep` で返す。再設定待ちを捨てると「うまくいきませんでした」
+    /// だけが出て、「パスワードを忘れた」へ進むことに気づけない
+    func testUnfinishedSignInBecomesAKnownFailure() throws {
+        XCTAssertNil(AuthGateway.unfinishedSignIn(.done))
+        let unconfirmed = try XCTUnwrap(AuthGateway.unfinishedSignIn(.confirmSignUp(nil)))
+        XCTAssertEqual(AuthFailure(unconfirmed), .userNotConfirmed)
+        let reset = try XCTUnwrap(AuthGateway.unfinishedSignIn(.resetPassword(nil)))
+        XCTAssertEqual(AuthFailure(reset), .passwordResetRequired)
+        XCTAssertTrue(AuthMessage.text(for: .passwordResetRequired).contains("パスワードを忘れた")
+                      || AuthMessage.text(for: .passwordResetRequired).contains("Forgot password"))
+    }
+
+    /// 確認の画面で `aliasExists`＝別のアカウントで確認済み。「すでに登録されています」
+    /// では先へ進めないので、ログインへ戻るよう案内する。それ以外はふつうの文言
+    func testConfirmScreenExplainsAnAliasTakenByAVerifiedAccount() {
+        let text = AuthMessage.confirmSignUpText(for: .aliasExists)
+        XCTAssertNotNil(text)
+        XCTAssertNotEqual(text, AuthMessage.text(for: .aliasExists))
+        XCTAssertNil(AuthMessage.confirmSignUpText(for: .codeMismatch))
+    }
+
+    /// パスワード変更の画面にメールの欄は無い。短すぎる（`invalidParameter`）には
+    /// パスワードの決まりだけを出す
+    func testChangePasswordDoesNotMentionTheEmail() {
+        XCTAssertEqual(AuthMessage.changePasswordText(for: .invalidParameter), AuthMessage.passwordRule)
+        XCTAssertNil(AuthMessage.changePasswordText(for: .limitExceeded))
+    }
+
     func testUnconfirmedAccountIsRecognised() {
         XCTAssertEqual(AuthFailure(service(.userNotConfirmed)), .userNotConfirmed)
     }

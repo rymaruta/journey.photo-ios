@@ -169,7 +169,10 @@ struct ReportSheet: View {
                     try await environment.moderation.block(userId: ownerId)
                     hidden.block(ownerId)
                 } catch {
-                    errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。設定からもう一度お試しください。", "Your report was received, but blocking failed. Try again from Settings.")
+                    // **辿れる場所を案内する。** 設定の「ブロックした人」は解除しか
+                    // できないので、「設定から」は行き止まりだった。ブロックの口は
+                    // 相手のプロフィール（`UserProfileView`）にある
+                    errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。相手のプロフィールからもう一度お試しください。", "Your report was received, but blocking failed. Try again from their profile.")
                 }
             }
             await applyHidden()

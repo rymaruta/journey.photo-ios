@@ -145,10 +145,26 @@ enum AuthGateway {
     static func signIn(email: String, password: String) async throws -> Bool {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let result = try await Amplify.Auth.signIn(username: trimmed, password: password)
-        if case .confirmSignUp = result.nextStep {
-            throw AuthError.service("", "", AWSCognitoAuthError.userNotConfirmed)
-        }
+        if let unfinished = unfinishedSignIn(result.nextStep) { throw unfinished }
         return result.isSignedIn
+    }
+
+    /// ログインの返事の「続き」を、投げる失敗に畳む。**完了なら nil。**
+    ///
+    /// Amplify 2.x は未確認のアカウント・再設定の要るアカウントで例外を投げず、
+    /// 次の一手として返す（amplify-swift 2.27 の `UserPoolSignInHelper.validateError`:
+    /// `isUserNotConfirmed` → `.confirmSignUp`、`isResetPassword` → `.resetPassword`）。
+    /// 再設定待ちを捨てると `currentUserId` が落ちて「うまくいきませんでした」だけが出て、
+    /// 「パスワードを忘れた」へ進むことに気づけない
+    static func unfinishedSignIn(_ step: AuthSignInStep) -> AuthError? {
+        switch step {
+        case .confirmSignUp:
+            return AuthError.service("", "", AWSCognitoAuthError.userNotConfirmed)
+        case .resetPassword:
+            return AuthError.service("", "", AWSCognitoAuthError.passwordResetRequired)
+        default:
+            return nil
+        }
     }
 
     static func signOut() async {

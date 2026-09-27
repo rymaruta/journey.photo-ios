@@ -1,5 +1,6 @@
 import XCTest
 @testable import JourneyPhoto
+import PhotosUI
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -240,7 +241,7 @@ final class ViewModelTests: XCTestCase {
     func testLikeUsesServerCount() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("u1")
 
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":42}"#)
         await model.toggleLike()
@@ -267,11 +268,11 @@ final class ViewModelTests: XCTestCase {
     func testSignedOutPressClearsAnswer() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("u1")
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
         await model.toggleLike()
         XCTAssertEqual(model.lastLikeAnswer, 5)
-        model.setSignedIn(false)
+        model.setViewer(nil)
         await model.toggleLike()
         XCTAssertNil(model.lastLikeAnswer)
     }
@@ -280,7 +281,7 @@ final class ViewModelTests: XCTestCase {
     func testFailedLikeClearsAnswer() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("u1")
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
         await model.toggleLike()
         XCTAssertEqual(model.lastLikeAnswer, 5)
@@ -297,11 +298,11 @@ final class ViewModelTests: XCTestCase {
     func testDoubleTapLikesOnlyOnce() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("u1")
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":1}"#)
 
-        async let first: Void = model.toggleLike()
-        async let second: Void = model.toggleLike()
+        async let first = model.toggleLike()
+        async let second = model.toggleLike()
         _ = await (first, second)
 
         XCTAssertEqual(StubProtocol.requestCount, 1, "二度押しで2回投げている")
@@ -312,7 +313,7 @@ final class ViewModelTests: XCTestCase {
     func testLikeWithoutSignInAsksToSignIn() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api(token: nil)))
-        model.setSignedIn(false)
+        model.setViewer(nil)
         await model.toggleLike()
         XCTAssertNotNil(model.errorMessage)
         XCTAssertNil(StubProtocol.lastRequest, "未ログインなのに要求を投げている")
@@ -325,7 +326,7 @@ final class ViewModelTests: XCTestCase {
     func testPostedCommentAppearsImmediately() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("u1")
         model.draftComment = "きれい"
 
         StubProtocol.respond(status: 200, body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#)
@@ -350,7 +351,7 @@ final class ViewModelTests: XCTestCase {
     func testCommentCountIsUnknownWhenFetchFails() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(false)
+        model.setViewer(nil)
         StubProtocol.fail(with: URLError(.notConnectedToInternet))
         await model.load()
         XCTAssertNil(model.commentCount, "圏外なのに数を出している")
@@ -362,7 +363,7 @@ final class ViewModelTests: XCTestCase {
     func testCommentCountFollowsServerPage() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(false)
+        model.setViewer(nil)
         StubProtocol.respond(status: 200,
                              body: #"{"items":[{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}],"count":24}"#)
         await model.load()
@@ -381,11 +382,161 @@ final class ViewModelTests: XCTestCase {
     func testEmptyCommentIsNotSent() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("u1")
         model.draftComment = "   "
         await model.postComment()
         XCTAssertNil(StubProtocol.lastRequest)
     }
+    /// 🔴 **人が替わったら、前の人の「サーバーの答え」を持ち越さない。**
+    ///
+    /// 前の人で読めた答えが残っていると、次の人の控え（`seed`）が
+    /// 「サーバーの答えがある」扱いで無視される。圏外で開くと、
+    /// 次の人が自分で押しているハートが白く出た（画面の流れどおり:
+    /// ログアウト中の読み込みで一度 false になり、そのまま戻らない）
+    func testSwitchingPeopleLetsTheNextPersonsSeedThrough() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("me")
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: 前の人のいいねを読めていない")
+
+        // ログアウト（画面は `.task(id:)` で読み直す）
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        model.setViewer(nil)
+        model.seed(liked: false, likes: nil)
+        await model.load()
+        XCTAssertFalse(model.liked)
+
+        // 次の人でログイン。この人は押している（端末の控え）が、読み込みは圏外で落ちる
+        model.setViewer("me")
+        model.seed(liked: true, likes: nil)
+        await model.load()
+        XCTAssertTrue(model.liked, "次の人の控えが、前の人の答えの名残で無視された")
+    }
+
+    /// **ログアウト中の読み込みが走る前に次の人へ替わっても**、前の人のハートを残さない
+    func testSwitchingPeopleDropsThePreviousLike() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("me")
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: 前の人のいいねを読めていない")
+
+        model.setViewer(nil)
+        model.setViewer("me")
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        model.seed(liked: false, likes: nil)
+        await model.load()
+
+        XCTAssertFalse(model.liked, "前の人のハートが次の人に灯っている")
+    }
+
+    /// 🔴 **ログインしたまま A から B へ直接替わっても、A の答えを持ち越さない。**
+    /// ログインの有無（Bool）で比べていたので、この替わり方では
+    /// 「サーバーの答え」の印が残り、B の控えが無視されて A のハートが灯っていた
+    func testDirectSwitchBetweenPeopleDropsThePreviousAnswer() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("a")
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: A のいいねを読めていない")
+
+        model.setViewer("b")
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        model.seed(liked: false, likes: nil)
+        await model.load()
+
+        XCTAssertFalse(model.liked, "A のハートが B に灯っている")
+    }
+
+    /// 🔴 **大きく見る画面のダブルタップは、いいね済みなら取り消さない。**
+    /// 下のハートと同じ `toggleLike` を通していたので、押し済みの回は
+    /// 取り消しが飛んでいた（注記は「解除はしない」）
+    func testDoubleTapDoesNotUnlikeALikedPhoto() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("me")
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: いいね済みを読めていない")
+        let before = StubProtocol.requestCount
+
+        StubProtocol.respond(status: 200, body: #"{"liked":false,"likes":4}"#)
+        await model.likeFromDoubleTap()
+
+        XCTAssertTrue(model.liked, "ダブルタップでいいねが取り消された")
+        XCTAssertEqual(StubProtocol.requestCount, before, "いいね済みなのに送っている")
+    }
+
+    /// まだなら、ダブルタップで「いいね」を送る
+    func testDoubleTapLikesAnUnlikedPhoto() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("me")
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":6}"#)
+        await model.likeFromDoubleTap()
+        XCTAssertTrue(model.liked)
+        XCTAssertEqual(model.lastLikeAnswer, 6)
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST", "いいねではない口を叩いている")
+    }
+
+    /// 🔴 **圏外で開いても、いいね済みのハートを白くしない。** 読めるまでは
+    /// 端末の控えと既知の数で描く（以前は `false`・`0` 始まりで控えを見なかった）
+    func testOfflineDetailKeepsStoredLikeAndCount() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("me")
+        model.seed(liked: true, likes: 7)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.load()
+        XCTAssertTrue(model.liked, "圏外で、いいね済みのハートが白く出る")
+        XCTAssertEqual(model.likes, 7, "圏外で、数が既知の数でなくなっている")
+    }
+
+    /// **数が分からないうちは描かない**（0 は「まだ無い」と読まれる）
+    func testUnknownLikeCountIsNotZero() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer(nil)
+        model.seed(liked: false, likes: nil)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.load()
+        XCTAssertNil(model.likes, "分からない数を 0 と出している")
+    }
+
+    /// **控えでサーバーの答えを上書きしない**（押した直後に画面が作り直されても）
+    func testSeedDoesNotOverrideServerAnswer() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("me")
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":3}"#)
+        await model.toggleLike()
+        model.seed(liked: false, likes: 1)
+        XCTAssertTrue(model.liked)
+        XCTAssertEqual(model.likes, 3)
+    }
+
+    /// 🔴 **届かなかった回は「答えなし」を返す**——画面はそのとき端末の控えに
+    /// 写さない。写すと、押す前の見え方で本物のいいねを控えから消しうる
+    func testFailedLikeIsNotReportedAsAnswered() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("me")
+        model.seed(liked: true, likes: 7)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        let answered = await model.toggleLike()
+        XCTAssertFalse(answered, "届かなかったのに、控えに写してよい扱いになっている")
+        XCTAssertTrue(model.liked, "届かなかったのにハートが変わっている")
+
+        StubProtocol.respond(status: 200, body: #"{"liked":false,"likes":6}"#)
+        let second = await model.toggleLike()
+        XCTAssertTrue(second)
+        XCTAssertFalse(model.liked)
+    }
+
     /// 投稿を待っている1枚（テスト用。本物は `ImagePreparer` が作る）。
     private func pending(location: String = "") -> PendingPhoto {
         var photo = PendingPhoto(prepared: ImagePreparer.Prepared(
@@ -409,7 +560,7 @@ final class ViewModelTests: XCTestCase {
         // いいね数・コメント・自分のいいね、の3本のうち最後だけ落とす
         StubProtocol.respond(status: 200, body: #"{"likes":3}"#)
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("u1")
         await model.load()
         XCTAssertFalse(model.liked, "まだ押していない")
 
@@ -476,6 +627,34 @@ final class ViewModelTests: XCTestCase {
         await model.fillPlaceName(for: second, lat: 34.28, lng: 133.8)
 
         XCTAssertEqual(model.items[0].location, "先に打った", "打ってあるものは奪わない")
+    }
+
+    /// 🔴 **一部だけ上がった回は、上がった写真をライブラリの選択からも外す。**
+    /// 残すと、× で失敗の1枚を外した／「追加」を開いて閉じた瞬間の選び直しで
+    /// 上がった写真が「足した分」として読み直され、**二重に投稿される**
+    func testPartlyPostedPhotosLeaveThePickerSelection() async throws {
+        prepare()
+        let presign = #"{"presignedUrl":"https://s3.example.test/put","key":"uploads/u/1.jpg","publicUrl":"https://site.example.test/uploads/u/1.jpg","contentType":"image/jpeg"}"#
+        let saved = #"{"success":true}"#
+        // a は上がる・b は置き場所をもらえずに落ちる・c は上がる
+        StubProtocol.respondInOrder([
+            (200, presign), (200, ""), (200, saved),
+            (500, #"{"error":"だめでした"}"#),
+            (200, presign), (200, ""), (200, saved),
+        ])
+        let model = uploadModel()
+        let keys = ["a", "b", "c"].map { PhotosPickerItem(itemIdentifier: $0) }
+        model.items = keys.map { key in
+            var photo = pending()
+            photo.pickerItem = key
+            return photo
+        }
+        model.pickerItems = keys
+
+        await model.submit()
+
+        XCTAssertEqual(model.items.map(\.pickerItem), [keys[1]], "失敗した b だけが残る")
+        XCTAssertEqual(model.pickerItems, [keys[1]], "上がった a・c が選択に残っている（選び直しで二重に投稿される）")
     }
 
     /// **参加しているアルバムも投稿の行き先に出る。**

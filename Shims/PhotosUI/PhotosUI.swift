@@ -3,7 +3,10 @@ import Foundation
 import SwiftUI
 
 public struct PhotosPickerItem: Equatable, Hashable {
-    public var itemIdentifier: String? { nil }
+    /// 本物と同じく `itemIdentifier` で見分ける（試験が「どの1枚か」を作れるように）
+    public let itemIdentifier: String?
+    public init(itemIdentifier: String) { self.itemIdentifier = itemIdentifier }
+    public init() { self.itemIdentifier = nil }
     public func loadTransferable<T>(type: T.Type) async throws -> T? { nil }
 }
 

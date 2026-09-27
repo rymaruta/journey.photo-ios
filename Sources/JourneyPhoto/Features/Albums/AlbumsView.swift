@@ -20,6 +20,11 @@ struct AlbumsView: View {
     @State private var showRename = false
     @State private var renamingId = ""
     @State private var renameTitle = ""
+    /// 消すか確かめている最中のアルバム。**表示と対象を別々に持つ**（名前の
+    /// 変更と同じ理由——`isPresented` の setter が閉じる合図で対象を消すと、
+    /// 「削除」の中身が走るときに対象が無い）
+    @State private var showDeleteConfirm = false
+    @State private var deletingAlbum: Album?
 
     var body: some View {
         Group {
@@ -56,6 +61,22 @@ struct AlbumsView: View {
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         }
+        // **消す前に確かめる**（Web の `/user/albums` と同じく、参加者が開けなく
+        // なること・写真は残ることを添える）。共同のアルバムなので、指が滑った
+        // だけで他の人の入口まで消えるのを止める
+        .confirmationDialog(deleteConfirmTitle, isPresented: $showDeleteConfirm,
+                            titleVisibility: .visible) {
+            // 対象は閉じ終わるまで残す（先に消すと、閉じる間に題が「このアルバム」に変わる）。
+            // 次に押したときに上書きされる
+            Button(Labels.Common.delete, role: .destructive) {
+                guard let album = deletingAlbum else { return }
+                Task { await model.delete(album.id, environment: environment) }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(L("招待リンクは使えなくなり、参加者はこのアルバムを開けなくなります。写真そのものは消えません。",
+                   "The invite link stops working and members can no longer open this album. The photos themselves are not deleted."))
+        }
         .sheet(item: $openedToken) { opened in
             NavigationStack { InviteView(token: opened.token) }
         }
@@ -69,6 +90,13 @@ struct AlbumsView: View {
         }
         .task { await model.load(environment: environment) }
         .refreshable { await model.load(environment: environment) }
+    }
+
+    private var deleteConfirmTitle: String {
+        let title = deletingAlbum?.title ?? ""
+        return title.isEmpty
+            ? L("このアルバムを消しますか？", "Delete this album?")
+            : L("「\(title)」を消しますか？", "Delete “\(title)”?")
     }
 
     @ViewBuilder
@@ -129,10 +157,11 @@ struct AlbumsView: View {
             inviteControls(album)
         }
         // **払い切りで消さない**（既定の allowsFullSwipe は先頭の削除を確認なしで走らせる。
-        // 戻す口は無い）。削除のボタンを押したときだけ消す
+        // 戻す口は無い）。削除のボタンは確かめてから消す（`confirmationDialog`）
         .swipeActions(allowsFullSwipe: false) {
             Button(role: .destructive) {
-                Task { await model.delete(album.id, environment: environment) }
+                deletingAlbum = album
+                showDeleteConfirm = true
             } label: {
                 Label(Labels.Common.delete, systemImage: "trash")
             }

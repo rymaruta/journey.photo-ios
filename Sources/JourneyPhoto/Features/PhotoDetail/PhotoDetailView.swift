@@ -120,7 +120,11 @@ struct PhotoDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
         .task(id: auth.userId) {
-            model.setSignedIn(auth.userId != nil)
+            model.setViewer(auth.userId)
+            // **読めるまでは端末が知っている値で描く。** 圏外で開いても
+            // いいね済みのハートは灯ったまま、数は一覧／押した回の答え（無ければ出さない）
+            model.seed(liked: auth.userId != nil && favorites.contains(photo.id),
+                       likes: LiveLikes.base(for: photo, stored: likeCounts.entry(for: photo.id)))
             await model.load()
         }
         .task(id: shown.location) { await loadSpotLead() }
@@ -560,10 +564,11 @@ struct PhotoDetailView: View {
     /// 隣の写真なら、その写真に直接送る——**解除はしない**ので `like` だけ
     private func likeFromViewer(_ shown: Photo) async {
         if shown.id == photo.id {
-            await model.toggleLike()
             // 下のハートと同じく、端末の控えとホームの数にも渡す
-            favorites.set(photo.id, favorite: model.liked)
-            shareLikeCount()
+            // （**答えが来た回だけ**——`likeTapped`）。
+            // **いいね済みなら送らない**（`likeFromDoubleTap`）——下のハートの道
+            // （`toggleLike`）のままだと、押し済みの回は取り消しになる
+            await likeTapped(fromDoubleTap: true)
             return
         }
         guard viewerLikesInFlight.insert(shown.id).inserted else { return }
@@ -588,9 +593,7 @@ struct PhotoDetailView: View {
     /// から送り、届かなければ元に戻す（ダブルタップと同じ控え方）
     private func toggleLikeFromViewer(_ shown: Photo) async {
         if shown.id == photo.id {
-            await model.toggleLike()
-            favorites.set(photo.id, favorite: model.liked)
-            shareLikeCount()
+            await likeTapped()
             return
         }
         guard viewerLikesInFlight.insert(shown.id).inserted else { return }
@@ -616,6 +619,20 @@ struct PhotoDetailView: View {
                              isPublished: fromPublicFeed && current.published != false)
     }
 
+    /// この画面の1枚のいいね（下のハート・大きく見る画面のハートとダブルタップ）。
+    ///
+    /// 🔴 **端末の控えに写すのは、サーバーが答えた回だけ。** 以前は失敗しても
+    /// `model.liked` を写していたので、圏外で白く出たハートを押して失敗すると
+    /// `false` で上書きされ、**本物のいいねが控えから消えていた**
+    /// （`removedHere` にも入り、次の同期でも戻らない）
+    private func likeTapped(fromDoubleTap: Bool = false) async {
+        let answered = fromDoubleTap ? await model.likeFromDoubleTap() : await model.toggleLike()
+        guard answered else { return }
+        // 端末側のハートも合わせる（圏外でも一覧が出る）
+        favorites.set(photo.id, favorite: model.liked)
+        shareLikeCount()
+    }
+
     /// **押した回の**答えを、ホームのカードと検索の格子にも渡す。
     /// 渡さないと、詳細で押して戻ったときに数が押す前のままになる
     /// （ホームは戻っても一覧を読み直さない）。
@@ -631,19 +648,22 @@ struct PhotoDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 16) {
                 Button {
-                    Task {
-                        await model.toggleLike()
-                        // 端末側のハートも合わせる（圏外でも一覧が出る）
-                        favorites.set(photo.id, favorite: model.liked)
-                        shareLikeCount()
-                    }
+                    Task { await likeTapped() }
                 } label: {
                     // **いちばん押されるボタンがいちばん小さかった。**
-                    // 既定の字のままで 20pt ほどしか無く、指では狙いにくい
-                    Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
-                        .font(.title2)
-                        .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
-                        .webTappable()
+                    // 既定の字のままで 20pt ほどしか無く、指では狙いにくい。
+                    // **数は分かるときだけ**（吹き出しと同じ——分からない回に「0」を出さない）
+                    if let likes = model.likes {
+                        Label("\(likes)", systemImage: model.liked ? "heart.fill" : "heart")
+                            .font(.title2)
+                            .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
+                            .webTappable()
+                    } else {
+                        Image(systemName: model.liked ? "heart.fill" : "heart")
+                            .font(.title2)
+                            .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
+                            .webTappable()
+                    }
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(model.liked ? .isSelected : [])

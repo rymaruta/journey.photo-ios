@@ -294,6 +294,11 @@ struct SignInView: View {
                        "Your email isn't verified yet. Enter the code from the sign-up email on the device (or web) where you signed up.")
             return
         }
+        // 手がかり（控え）はある。**送り直しが一時的に落ちても**（圏外・回数制限）
+        // 押し直せる入口を残す。以前は立てる所が無く、入口は一度も出なかった。
+        // 入口の文は「確認がまだ」なので、**未確認と分かった回だけ**
+        // （「すでに登録されています」の経路はほとんどが確認済みの人・b42816a）
+        if knownUnconfirmed { offerVerification = true }
         if await auth.resendSignUpCode(username: saved) {
             pendingUsername = saved
             notice = L("確認コードを送り直しました。メールをご確認ください。",
@@ -304,6 +309,7 @@ struct SignInView: View {
         // 回数制限や圏外で捨てると、唯一の手がかりを失う
         if auth.lastFailure.isPermanent {
             pending.forget(email: email)
+            offerVerification = false
         }
     }
 
@@ -366,6 +372,20 @@ struct SignInView: View {
                     .font(.footnote)
                     .foregroundStyle(WebTheme.muted2)
                     .webTappable()
+            }
+            .buttonStyle(.plain)
+            .disabled(auth.isWorking)
+
+            // **戻る出口。** メールを打ち間違えて登録すると、コードは届かず
+            // この画面から出られなかった。控え（`pending`）は捨てない
+            // ——同じメールでログインすれば、また確認に戻ってこられる
+            Button {
+                pendingUsername = nil
+                mode = .signIn
+                code = ""
+                clearMessages()
+            } label: {
+                Text(L("ログインに戻る", "Back to sign in")).jpPillButton(.outline)
             }
             .buttonStyle(.plain)
             .disabled(auth.isWorking)
@@ -458,5 +478,6 @@ struct SignInView: View {
     private func clearMessages() {
         notice = nil
         auth.errorMessage = nil
+        offerVerification = false
     }
 }

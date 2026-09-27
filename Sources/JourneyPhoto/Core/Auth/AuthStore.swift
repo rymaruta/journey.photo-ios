@@ -192,6 +192,8 @@ final class AuthStore: ObservableObject {
             } else {
                 errorMessage = L("いまのパスワードが違います", "Your current password is incorrect")
             }
+        } else if let text = AuthMessage.changePasswordText(for: lastFailure) {
+            errorMessage = text
         }
         return ok
     }
@@ -224,6 +226,8 @@ final class AuthStore: ObservableObject {
             try await AuthGateway.confirmSignUp(username: username, code: code)
             ok = true
         }
+        // 確認の画面では「すでに使われている」の意味が違う（`confirmSignUpText`）
+        if !ok { errorMessage = AuthMessage.confirmSignUpText(for: lastFailure) ?? errorMessage }
         return ok
     }
 
@@ -264,6 +268,8 @@ enum AuthFailure: Equatable {
     case userNotFound
     case codeMismatch
     case codeExpired
+    /// パスワードの再設定が要る（管理側で再設定を求められた・移行したアカウント）
+    case passwordResetRequired
     case limitExceeded
     case network
     case other
@@ -279,6 +285,7 @@ enum AuthFailure: Equatable {
             case .userNotFound: self = .userNotFound
             case .codeMismatch: self = .codeMismatch
             case .codeExpired: self = .codeExpired
+            case .passwordResetRequired: self = .passwordResetRequired
             case .limitExceeded, .requestLimitExceeded, .failedAttemptsLimitExceeded:
                 self = .limitExceeded
             case .network: self = .network
@@ -314,6 +321,27 @@ enum AuthMessage {
         L("パスワードは8文字以上で、英大文字・小文字・数字・記号（!@#$%など）をそれぞれ1文字以上含める必要があります",
           "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a symbol (!@#$% etc.)")
 
+    /// パスワード変更の画面での文言。画面ふつうの文言と違うときだけ返す。
+    ///
+    /// **この画面にメールアドレスの欄は無い。** 新しいパスワードが短すぎると
+    /// Cognito は `InvalidParameterException` を返し、ふつうの文言
+    /// 「メールアドレスの形式か、…」が出ていた。パスワードの決まりだけを出す
+    /// （`notAuthorized` は呼び出し側が期限切れと見分けてから出す）
+    static func changePasswordText(for failure: AuthFailure) -> String? {
+        failure == .invalidParameter ? passwordRule : nil
+    }
+
+    /// 確認コードの画面での文言。画面ふつうの文言と違うときだけ返す（nil なら `text(for:)`）。
+    ///
+    /// **確認で `aliasExists` が返る＝このメールは別のアカウントで確認済み。**
+    /// 「すでに登録されています」だけでは、確認画面から先へ進めない
+    /// （コードを打ち直しても同じ）。そのアカウントでログインするよう案内する
+    static func confirmSignUpText(for failure: AuthFailure) -> String? {
+        guard failure == .aliasExists else { return nil }
+        return L("このメールアドレスは、すでに確認の済んだアカウントで使われています。「ログインに戻る」から、そのアカウントでログインしてください",
+                 "This email is already used by a verified account. Tap “Back to sign in” and sign in to that account.")
+    }
+
     static func text(for failure: AuthFailure) -> String {
         switch failure {
         case .usernameExists, .aliasExists:
@@ -332,6 +360,9 @@ enum AuthMessage {
             return L("確認コードが違います", "That code is wrong")
         case .codeExpired:
             return L("確認コードの有効期限が切れています。再送してください", "That code expired. Send a new one.")
+        case .passwordResetRequired:
+            return L("パスワードの再設定が必要です。「パスワードを忘れた」から設定し直してください",
+                     "You need to reset your password. Use “Forgot password?” to set a new one.")
         case .limitExceeded:
             return L("回数が多すぎます。しばらく待ってからお試しください", "Too many attempts. Please wait and try again.")
         case .network:
