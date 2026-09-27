@@ -967,9 +967,10 @@ struct StoryViewerView: View {
     /// なので、成功したら画面ごと閉じる
     private func block(_ story: Story) async {
         guard let userId = story.userId else { return }
+        let owner = hidden.owner
         do {
             try await environment.moderation.block(userId: userId)
-            hidden.block(userId)
+            hidden.block(userId, for: owner)
             await environment.gallery.setHidden(
                 userIds: hidden.blockedUserIds,
                 photoIds: hidden.reportedPhotoIds

@@ -980,6 +980,8 @@ final class MyPageViewModel: ObservableObject {
                 self.following = loadedStats.following
             }
             _ = try photosOutcome.get()
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
         } catch {
             guard gen == generation else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed

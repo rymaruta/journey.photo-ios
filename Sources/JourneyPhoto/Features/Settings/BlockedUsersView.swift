@@ -12,6 +12,9 @@ struct BlockedUsersView: View {
     @State private var users: [FollowUser] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    /// 一度でも読み終えたか。**「ブロックしている人はいません」は読み終えてから**
+    /// ——最初の読み込みが取り消されると、空の一覧のまま「いません」と出ていた
+    @State private var hasLoaded = false
     /// いま解除を送っている相手（二度押しで2回投げない）
     @State private var working: Set<String> = []
     /// 何回目の読み込みか。**解除より前に始めた読み込みの返事は捨てる**
@@ -34,7 +37,7 @@ struct BlockedUsersView: View {
                 Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout)
                     .padding(.horizontal, 4)
                     .plainRow()
-            } else if users.isEmpty && !isLoading {
+            } else if users.isEmpty && !isLoading && hasLoaded {
                 Text(L("ブロックしている人はいません", "No one is blocked")).foregroundStyle(WebTheme.faint)
                     .padding(.horizontal, 4)
                     .plainRow()
@@ -94,16 +97,21 @@ struct BlockedUsersView: View {
         errorMessage = nil
         defer { if generation == loadGeneration { isLoading = false } }
         let owner = auth.userId
+        // 取りに行く前に札を取る（起動時の同期と、どちらが後に始まったかを見分ける）
+        let fetch = hidden.beginBlockFetch()
         do {
             let list = try await environment.moderation.blocks()
             // 返ってくる間に人が替わっていたら、一覧にも書かない
             guard generation == loadGeneration, auth.userId == owner else { return }
             users = list.users
+            hasLoaded = true
             // **サーバーの一覧で上書きする。** 端末のぶんを足し合わせると、
             // 別の端末で解除したのに「見えないまま」になる
             // 返ってくる間に人が替わっていたら書かない
-            hidden.replaceBlocked(with: list.blockedIds, for: owner)
+            hidden.replaceBlocked(with: list.blockedIds, for: owner, fetch: fetch)
             await apply()
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
         } catch {
             guard generation == loadGeneration else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
@@ -123,11 +131,12 @@ struct BlockedUsersView: View {
         working.insert(userId)
         defer { working.remove(userId) }
         errorMessage = nil
+        let owner = hidden.owner
         do {
             try await environment.moderation.unblock(userId: userId)
             loadGeneration += 1
             isLoading = false
-            hidden.unblock(userId)
+            hidden.unblock(userId, for: owner)
             await apply()
             users.removeAll { $0.id == userId }
         } catch {

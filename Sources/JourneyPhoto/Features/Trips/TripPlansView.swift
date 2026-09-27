@@ -30,6 +30,7 @@ struct TripPlansView: View {
         .webScreen()
         .navigationTitle(L("旅行プラン", "Trip plans"))
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: auth.userId) { _, _ in model.forget() }
     }
 
     private var content: some View {
@@ -212,22 +213,56 @@ final class TripPlansModel: ObservableObject {
 
     func plan(_ planId: String) -> TripPlan? { plans.first { $0.planId == planId } }
 
+    /// 人が替わった回数。**走っている書き込みの答えを、次の人の画面に書かない**
+    private var era = 0
+
+    /// 人が替わった。**前の人のプランを残さない**（`AlbumsViewModel.forget` と同じ理由）。
+    /// 走っている読み込みの答えは数で、書き込みの答えは `era` で捨てる
+    func forget() {
+        era += 1
+        writes += 1
+        loadRuns += 1
+        settledRun = loadRuns
+        plans = []
+        status = .loading
+        busy = nil
+        errorMessage = nil
+    }
+
     /// 前の画面の失敗の文を消す（**一覧と詳細で1つを共有している**ので、
     /// プランAの失敗をプランBを開いたときに出さない）
     func clearError() { errorMessage = nil }
 
+    /// 書き込みが成功した回数。**書き込みより前に始めた読み込みの答えは捨てる**
+    /// ——作る・直す・消すの間に始めた引き下げ更新が後から返ると、書き込みの応答で
+    /// 映した一覧を古い姿で上書きし、作ったプランが消えていた（直した日程も戻った）。
+    /// 読み込み同士は、**自分より後に始めた読み込みが既に成功していたときだけ**捨てる
+    /// （後から始めて先に失敗した方のせいで、先に始めた方の成功を捨てない。
+    ///  後から始めて先に成功した方の後で、古い方の失敗の赤い行を出さない）
+    private var writes = 0
+    private var loadRuns = 0
+    /// 成功を書いた読み込みのうち、いちばん後に始めたもの
+    private var settledRun = 0
+
     func load(environment: AppEnvironment) async {
+        let started = writes
+        loadRuns += 1
+        let run = loadRuns
         // 取り直している間も、取れていた一覧は出したまま（引き下げ更新で消さない）
         if status != .loaded { status = .loading }
         do {
-            plans = try await environment.trips.list()
+            let list = try await environment.trips.list()
+            guard started == writes, run > settledRun else { return }
+            settledRun = run
+            plans = list
             status = .loaded
             // **取れたら前の失敗の文を消す。** 残すと、成功したあとも赤い行が出続ける
             errorMessage = nil
         } catch {
-            // **打ち切りは失敗ではない。** 画面を離れると `.task` が打ち切られ、
-            // `APIClient` はそれを「通信できませんでした」に変えて上げてくる
+            // **打ち切りは失敗ではない。** 画面を離れると `.task` が打ち切られる
+            // （`APIClient` は `CancellationError` で上げてくる）
             if Task.isCancelled { return }
+            guard started == writes, run > settledRun else { return }
             if status == .loaded {
                 // 取れていた一覧は残し、取り直せなかったことだけ言う
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
@@ -275,15 +310,23 @@ final class TripPlansModel: ObservableObject {
     private func write(_ key: String, _ fallback: String,
                        _ call: () async throws -> [TripPlan]) async -> [TripPlan]? {
         guard busy == nil else { return nil }
+        let myEra = era
         busy = key
         errorMessage = nil
-        defer { busy = nil }
+        // 人が替わった後に返った前の人の書き込みは、次の人の「送っている最中」を外さない
+        defer { if myEra == era { busy = nil } }
         do {
             let list = try await call()
+            // **人が替わっていたら何も書かない**（前の人のプランを次の人の画面に出さず、
+            // `writes` を進めて次の人の読み込みを捨てさせもしない）
+            guard myEra == era else { return nil }
+            // 成功した回だけ進める（断られた回に最初の読み込みを捨てると「読み込み中」のまま残る）
+            writes += 1
             plans = list
             status = .loaded
             return list
         } catch {
+            guard myEra == era else { return nil }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? fallback
             return nil
         }

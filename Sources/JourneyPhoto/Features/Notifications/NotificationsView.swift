@@ -34,6 +34,11 @@ struct NotificationsView: View {
             }
         }
         .webScreen()
+        // 人が替わったら前の人の中身を捨て、開いていた行き先も閉じる
+        .onChange(of: auth.userId) { _, _ in
+            model.forget()
+            route = nil
+        }
         .navigationTitle(L("お知らせ", "Activity"))
         // **通知の設定**（板 15 の右上の歯車）。行き先は設定の画面——
         // プッシュ通知の入／切はそこにある。閉じる口は `RootView` が
@@ -381,6 +386,29 @@ final class NotificationsViewModel: ObservableObject {
     private var appliedGeneration = 0
     /// 手元の一覧（`feed` / `mine`）を書いた中でいちばん新しい回（同じ理由）
     private var poolsGeneration = 0
+    /// 人が替わった回数（`forget`）。**読み込みの続き（フォロー中・既読化）は、
+    /// 読み込みの新旧ではなく人の替わりで止める**——新旧で止めると、新しい回が
+    /// 既読化の前に取り消されたとき、古い回も既読化を飛ばしてバッジが残った
+    private var userEra = 0
+
+    /// 人が替わった。**前の人のお知らせ・写真の手元の一覧・フォロー中を捨てる。**
+    /// シートは人が替わっても閉じないので、捨てないと次の人のログイン直後に
+    /// 前の人の行が描かれ、押すと前の人の写真（下書きを含む）が開いていた。
+    /// 走っている前の人の読み込みの答えも、世代を進めて書かせない
+    func forget() {
+        userEra += 1
+        generation += 1
+        appliedGeneration = generation
+        poolsGeneration = generation
+        rows = []
+        feed = []
+        mine = []
+        unread = 0
+        unreadIds = []
+        following = []
+        isLoading = false
+        errorMessage = nil
+    }
 
     /// テストから手元の一覧を差し替える口。
     func setFeedForTesting(_ photos: [Photo]) { feed = photos }
@@ -428,9 +456,11 @@ final class NotificationsViewModel: ObservableObject {
     ///   アイコンは 0、という食い違いが残る。
     @discardableResult
     /// いまフォローしている人を読む。**自分の userId が要る**
-    private func loadFollowing(environment: AppEnvironment, viewerId: String?) async {
+    private func loadFollowing(environment: AppEnvironment, viewerId: String?, era: Int) async {
         guard let me = viewerId, !me.isEmpty else { return }
         guard let list = try? await environment.social.following(userId: me) else { return }
+        // 人が替わった（`forget`）後に返った前の人の答えは書かない
+        guard era == userEra else { return }
         following = Set(list.users.map(\.id))
     }
 
@@ -497,6 +527,7 @@ final class NotificationsViewModel: ObservableObject {
     ///   サーバーの数で入れ替える（`apply` を参照）
     func load(environment: AppEnvironment, viewerId: String?, refreshing: Bool = false) async -> Bool {
         let generation = beginLoad()
+        let era = userEra
         isLoading = true
         errorMessage = nil
         defer { if generation == self.generation { isLoading = false } }
@@ -517,7 +548,7 @@ final class NotificationsViewModel: ObservableObject {
             guard apply(page, refreshing: refreshing, generation: generation) else { return false }
             // **フォローバックを出すかの判断に要る。** 取れなくても
             // お知らせ自体は出す（ボタンが出ないだけ）
-            await loadFollowing(environment: environment, viewerId: viewerId)
+            await loadFollowing(environment: environment, viewerId: viewerId, era: era)
             // ⚠️ **取得と既読化のすきまに届いた通知は、一度も未読に見えない。**
             // サーバーの既読化（`api-user/src/notifications.ts` の
             // `readNotifications`）は無条件の `SET unread = :z` なので、
@@ -526,11 +557,14 @@ final class NotificationsViewModel: ObservableObject {
             // 必要がある（端末側だけでは直せない）。
             // **開いたときに1回だけ既読にする。** 読めたあとに呼ぶので、
             // 取得に失敗した回でバッジだけ消える事故が起きない
-            if page.unread > 0 {
+            // 🔴 **人が替わっていたら既読にしない。** 既読化は今のトークンで送るので、
+            // 前の人の読み込みの続きが送ると、**次の人のお知らせ**が黙って既読になる
+            if page.unread > 0, era == userEra {
                 if (try? await environment.notifications.markRead()) != nil {
                     NotificationRouter.shared.noteRead(owner: viewerId)
                 }
-                unread = 0
+                // 既読化を待つ間に人が替わっていたら、次の人の未読の数を消さない
+                if era == userEra { unread = 0 }
             }
             return true
         } catch {

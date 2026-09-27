@@ -101,11 +101,20 @@ actor PublicGalleryService {
         }
         let startedAt = Date()
         let epoch = restrictedEpoch
+        // **catch の中で await しない**（Xcode 26.3 の SILGen が落ちた形に近い）。
+        // 結果を外へ持ち出してから分ける
+        let loaded: Result<[Photo], Error>
         do {
+            loaded = .success(try await restrictedLoader())
+        } catch {
+            loaded = .failure(error)
+        }
+        switch loaded {
+        case .success(let raw):
             // **いまの数の時刻を付ける。** この口は DynamoDB から直に来るので
             // 数は新しい。付けないと、押した答え（`LikeCountStore`）が
             // 永久に勝ち、他の人のいいねが引き下げ更新でも出ない
-            let photos = try await restrictedLoader().map { photo -> Photo in
+            let photos = raw.map { photo -> Photo in
                 var stamped = photo
                 stamped.likesAsOf = startedAt
                 return stamped
@@ -118,7 +127,7 @@ actor PublicGalleryService {
             restrictedCache = photos
             restrictedCachedAt = Date()
             return (photos, epoch)
-        } catch {
+        case .failure(let error):
             print("[gallery] 公開範囲を絞った写真を取れませんでした: \(error)")
             // 直前に取れていたぶんは出す（圏外で消える方が驚かれる）
             guard epoch == restrictedEpoch else { return await restrictedPhotos(force: true) }

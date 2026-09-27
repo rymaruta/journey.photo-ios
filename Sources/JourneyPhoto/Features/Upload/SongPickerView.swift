@@ -95,7 +95,10 @@ struct SongPickerView: View {
             }
         }
         .onAppear { recent = recentStore.songs(userId: auth.userId) }
-        .onDisappear { player.stop() }
+        // 止めるのは曲選びで鳴らした曲だけ（前から鳴っていた曲は止めない）
+        .onDisappear {
+            if SongPickerText.stopsOnClose(playingFrom: player.origin) { player.stop() }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
         }

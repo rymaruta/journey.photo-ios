@@ -251,6 +251,9 @@ struct ProfileEditView: View {
     }
 
     private func load() async {
+        // **読めた後は読み直さない。** タブを替えて戻るなどで `.task` が走り直すと、
+        // まだ保存していない入力がサーバーの値で上書きされていた
+        guard !loaded else { return }
         isLoading = true
         defer { isLoading = false }
         guard let profile = try? await environment.profiles.myProfile() else {

@@ -627,14 +627,17 @@ struct PhotoDetailView: View {
         // 先に灯す（押した手応えを待たせない）。届かなければ**押す前に**戻す
         // ——元からいいね済みの写真を「外した」扱いにしない
         let wasLiked = favorites.contains(shown.id)
+        // 答えは押した人の控えにだけ書く（待っている間に人が替わったら書かない）
+        let owner = favorites.owner
         favorites.set(shown.id, favorite: true)
         do {
             let result = try await environment.social.like(photoId: shown.id)
-            favorites.set(shown.id, favorite: result.liked)
+            favorites.set(shown.id, favorite: result.liked, for: owner)
             // 押した回の答えだけを渡す（`LikeCountStore` の注記）
             if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
         } catch {
-            favorites.set(shown.id, favorite: LiveLikes.likedAfterFailedDoubleTap(wasLiked: wasLiked))
+            favorites.set(shown.id, favorite: LiveLikes.likedAfterFailedDoubleTap(wasLiked: wasLiked),
+                          for: owner)
         }
     }
 
@@ -650,15 +653,16 @@ struct PhotoDetailView: View {
         guard viewerLikesInFlight.insert(shown.id).inserted else { return }
         defer { viewerLikesInFlight.remove(shown.id) }
         let wasLiked = favorites.contains(shown.id)
+        let owner = favorites.owner
         favorites.set(shown.id, favorite: !wasLiked)
         do {
             let result = wasLiked
                 ? try await environment.social.unlike(photoId: shown.id)
                 : try await environment.social.like(photoId: shown.id)
-            favorites.set(shown.id, favorite: result.liked)
+            favorites.set(shown.id, favorite: result.liked, for: owner)
             if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
         } catch {
-            favorites.set(shown.id, favorite: wasLiked)
+            favorites.set(shown.id, favorite: wasLiked, for: owner)
         }
     }
 
@@ -684,9 +688,10 @@ struct PhotoDetailView: View {
     private func toggleLikeHere() async {
         // **届かなかった回は控えに書かない**（押す前のハートのまま）。
         // 答えは**押した1枚に**書く——送っている間に束の隣へ送っても
+        let owner = favorites.owner
         let answer = await model.toggleLike()
         guard let answer else { return }
-        favorites.set(answer.photoId, favorite: answer.liked)
+        favorites.set(answer.photoId, favorite: answer.liked, for: owner)
         // 押した回の答えだけを渡す（`LikeCountStore` の注記）
         if let likes = answer.likes { likeCounts.set(answer.photoId, count: likes) }
     }
@@ -1005,6 +1010,8 @@ struct PhotoDetailView: View {
         defer { isSavingBookmark = false }
         let id = current.id
         let wasSaved = savedPhotos.contains(id)
+        // 戻すのは押した人の控えだけ（待っている間に人が替わったら書かない）
+        let owner = savedPhotos.owner
         savedPhotos.set(id, saved: !wasSaved)
         do {
             if wasSaved {
@@ -1013,7 +1020,7 @@ struct PhotoDetailView: View {
                 try await environment.saves.save(photoId: id)
             }
         } catch {
-            savedPhotos.set(id, saved: wasSaved)
+            savedPhotos.set(id, saved: wasSaved, for: owner)
         }
     }
 

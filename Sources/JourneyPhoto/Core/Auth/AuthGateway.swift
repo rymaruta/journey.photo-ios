@@ -18,6 +18,21 @@ enum AuthGateway {
 
     private static var isConfigured = false
 
+    /// 🔴 **設定に失敗した起動では Amplify を呼ばない。** `configure()` が投げても起動は
+    /// 続ける（公開の画面は出せる）が、その後 `restore()` などが Amplify を呼ぶと、
+    /// 未設定の Amplify は処理を止める（`preconditionFailure`——手元に Amplify の
+    /// ソースが無く、確かめてはいない）。ログインの口は「使えない」として返す
+    struct NotConfigured: LocalizedError {
+        var errorDescription: String? {
+            L("ログインの設定を読み込めませんでした。アプリを入れ直してください",
+              "Sign-in isn't configured. Please reinstall the app.")
+        }
+    }
+
+    private static func requireConfigured() throws {
+        guard isConfigured else { throw NotConfigured() }
+    }
+
     /// アプリ起動時に一度だけ呼ぶ。
     static func configure() throws {
         guard !isConfigured else { return }
@@ -48,7 +63,8 @@ enum AuthGateway {
 
     /// いまログインしているか。
     static func isSignedIn() async -> Bool {
-        (try? await Amplify.Auth.fetchAuthSession().isSignedIn) ?? false
+        guard isConfigured else { return false }
+        return (try? await Amplify.Auth.fetchAuthSession().isSignedIn) ?? false
     }
 
     /// API Gateway に送る **ID トークン**。未ログインなら nil。
@@ -60,7 +76,13 @@ enum AuthGateway {
     /// （`APIError.isAuthExpired` はどこからも呼ばれていなかった）。
     /// ここで `AuthStore` に知らせ、呼び手には「未ログイン」として nil を返す
     static func idToken() async throws -> String? {
-        let session = try await Amplify.Auth.fetchAuthSession()
+        guard isConfigured else { return nil }
+        let session: any AuthSession
+        do {
+            session = try await Amplify.Auth.fetchAuthSession()
+        } catch {
+            throw tokenFailure(error)
+        }
         guard session.isSignedIn else { return nil }
         guard let provider = session as? AuthCognitoTokensProvider else { return nil }
         // **`switch` で分ける。** `do/catch … where` の catch の中で await すると、
@@ -70,10 +92,31 @@ enum AuthGateway {
         case .success(let tokens):
             return tokens.idToken
         case .failure(let error):
-            guard AuthFailure(error) == .notAuthorized else { throw error }
+            guard AuthFailure(error) == .notAuthorized else { throw tokenFailure(error) }
             await announceSessionExpired()
             return nil
         }
+    }
+
+    /// ID トークンを取れなかった理由を、画面が読める形にする。
+    ///
+    /// 🔴 **通信による失敗は `APIError.unreachable` に包む。** 圏外で
+    /// トークンを更新できない回に Amplify のエラーのまま投げていたので、
+    /// `as? APIError` で読む画面は「通信できません」ではなく汎用の
+    /// 「読み込めませんでした」を出していた。それ以外はそのまま投げる
+    /// （ログインの期限切れは呼び出し元が `notAuthorized` で見分ける）
+    ///
+    /// 取り消し（`URLError.cancelled`）は、**呼んだ側が取り消されているときだけ**
+    /// `CancellationError` にする（画面は取り消しを失敗と言わない）。Amplify の中の
+    /// 通信は別の URLSession なので、呼び手が生きているのに `.cancelled` が来たら
+    /// 失敗として出す——黙ると「まだ写真がありません」のような空の画面になる
+    static func tokenFailure(_ error: Error) -> Error {
+        let auth = error as? AuthError
+        let url = (error as? URLError) ?? (auth?.underlyingError as? URLError)
+        if url?.code == .cancelled, Task.isCancelled { return CancellationError() }
+        if url != nil { return APIError.unreachable }
+        if let auth, AuthFailure(auth) == .network { return APIError.unreachable }
+        return error
     }
 
     @MainActor
@@ -84,7 +127,7 @@ enum AuthGateway {
     /// ログインの期限が切れているか（起動時の確認用・知らせは出さない）。
     /// **確かめられなかった回は false**——圏外の人をログアウトさせない
     static func isSessionExpired() async -> Bool {
-        guard let session = try? await Amplify.Auth.fetchAuthSession(),
+        guard isConfigured, let session = try? await Amplify.Auth.fetchAuthSession(),
               session.isSignedIn,
               let provider = session as? AuthCognitoTokensProvider else { return false }
         switch provider.getCognitoTokens() {
@@ -96,7 +139,8 @@ enum AuthGateway {
     }
 
     static func currentUserId() async throws -> String {
-        try await Amplify.Auth.getCurrentUser().userId
+        try requireConfigured()
+        return try await Amplify.Auth.getCurrentUser().userId
     }
 
     /// Cognito のユーザー名（登録のときの UUID・`signUp`）。`userId`（sub）とは別
@@ -121,6 +165,7 @@ enum AuthGateway {
         // ログインで打ち直したメールと一致しない（Web 側で踏んだ）。
         // 大文字小文字はここでは触らない——プールの `UsernameConfiguration`
         // が未確認で、揃え方を間違えると既存アカウントが入れなくなる。
+        try requireConfigured()
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let username = UUID().uuidString
         let options = AuthSignUpRequest.Options(
@@ -132,10 +177,12 @@ enum AuthGateway {
 
     /// メールに届いた確認コードで登録を確定する。username は signUp が返した UUID。
     static func confirmSignUp(username: String, code: String) async throws {
+        try requireConfigured()
         _ = try await Amplify.Auth.confirmSignUp(for: username, confirmationCode: code)
     }
 
     static func resendSignUpCode(username: String) async throws {
+        try requireConfigured()
         _ = try await Amplify.Auth.resendSignUpCode(for: username)
     }
 
@@ -148,6 +195,7 @@ enum AuthGateway {
     /// （`lastFailureWasUnconfirmed`）が一度も当たらなかった
     @discardableResult
     static func signIn(email: String, password: String) async throws -> Bool {
+        try requireConfigured()
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let result = try await Amplify.Auth.signIn(username: trimmed, password: password)
         if case .confirmSignUp = result.nextStep {
@@ -157,6 +205,7 @@ enum AuthGateway {
     }
 
     static func signOut() async {
+        guard isConfigured else { return }
         _ = await Amplify.Auth.signOut()
     }
 
@@ -165,12 +214,14 @@ enum AuthGateway {
     /// （`lib/auth/cognito.ts` の `deleteAccount`）。消さないと、退会したのに
     /// 同じメールとパスワードでログインでき、そのメールで登録し直すこともできない
     static func deleteUser() async throws {
+        try requireConfigured()
         try await Amplify.Auth.deleteUser()
     }
 
     // MARK: - パスワード
 
     static func resetPassword(email: String) async throws {
+        try requireConfigured()
         _ = try await Amplify.Auth.resetPassword(
             for: email.trimmingCharacters(in: .whitespacesAndNewlines)
         )
@@ -178,10 +229,12 @@ enum AuthGateway {
 
     /// ログインしたままパスワードを変える。
     static func changePassword(current: String, new: String) async throws {
+        try requireConfigured()
         try await Amplify.Auth.update(oldPassword: current, to: new)
     }
 
     static func confirmResetPassword(email: String, newPassword: String, code: String) async throws {
+        try requireConfigured()
         try await Amplify.Auth.confirmResetPassword(
             for: email.trimmingCharacters(in: .whitespacesAndNewlines),
             with: newPassword,
