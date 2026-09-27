@@ -376,6 +376,20 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.shown.map(\.id), ["a"], "前の人の限定公開が残っている")
     }
 
+    /// **新しい人の一覧が知らせより先に届いても、選んでいたカテゴリは外す**
+    /// （一覧の古さだけで人の切り替えを見ていたので、この順だとカテゴリが残った）
+    func testCategoryClearsEvenWhenTheNewListArrivesFirst() async {
+        let service = gallery(feed)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        model.select(category: "風景")
+        await service.setRestrictedLoader(nil)            // 人が替わった（回 1）
+        await model.reloadPhotos(environment: env)       // ブロックの差し替えで先に読み直した
+        await model.loadPhotos(environment: env, epoch: 1)
+        XCTAssertNil(model.category, "知らせより先に一覧が届くと、カテゴリが残る")
+    }
+
     /// **人が替わったら、選んでいたカテゴリも外す**（次の人の一覧に無いと0件のまま）
     func testSwitchingViewerClearsTheCategory() async {
         let service = gallery(feed)

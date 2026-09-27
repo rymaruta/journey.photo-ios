@@ -770,17 +770,28 @@ final class SearchViewModel: ObservableObject {
     private var listEpoch: Int?
 
     func loadPhotos(environment: AppEnvironment, epoch: Int) async {
-        loadedEpoch = epoch
-        // **一覧が今の回より古ければ、人が替わっている**（回は増える一方）
+        // **2つを分けて見る。**
+        // - 人が替わった（知らされた回が進んだ）→ 画面の選択を片づける
+        // - 一覧が古い（一覧を作った回が今の回より前）→ 一覧を捨てて読み直す
+        // 新しい人の一覧が知らせより先に届くことがある（ブロックの差し替えで
+        // 読み直しが先に走る）。一覧の古さだけで決めると、そのとき選択が残った
+        let switched = loadedEpoch.map { $0 < epoch } ?? false
         let stale = listEpoch.map { $0 < epoch } ?? false
-        guard allPhotos.isEmpty || stale else { return }
-        // 🔴 **人が替わったら、読み直しに失敗しても前の一覧を残さない**
+        // 回は戻さない（2回続けて替わった後に古い知らせが届いても、古い一覧を通さない）
+        loadedEpoch = max(loadedEpoch ?? epoch, epoch)
+        if switched {
+            // 選んでいたカテゴリを外す（次の人の一覧に無いと、0件で選択中の札も見えない）
+            category = nil
+        }
+        guard allPhotos.isEmpty || stale else {
+            if switched { rebuildDerived() }
+            return
+        }
+        // 🔴 **一覧が古ければ、読み直しに失敗しても前の一覧を残さない**
         // （前の人の限定公開の写真が入っている）
         if stale {
             allPhotos = []
             listEpoch = nil
-            // 選んでいたカテゴリも外す（次の人の一覧に無いと、0件で選択中の札も見えない）
-            category = nil
             // 読み直しが返るまでは「読み込み中」（前の結果で「見つかりません」を出さない）
             hasLoaded = false
             rebuildDerived()
@@ -801,7 +812,10 @@ final class SearchViewModel: ObservableObject {
             let fetched = try await environment.gallery.fetchPhotosTagged(force: force)
             // **知らされた回より古い一覧は書かない**（人の切り替えの前に読んだもの）。
             // 新しい回の一覧は、知らせより先に届いても書く（中身は今の人のもの）
-            if let known = loadedEpoch, fetched.epoch < known { return }
+            // 一覧の回とも比べる（知らせより先に新しい一覧が入った後、古い取得が
+            // 遅れて返っても上書きしない）
+            let newest = max(loadedEpoch ?? .min, listEpoch ?? .min)
+            if fetched.epoch < newest { return }
             allPhotos = fetched.photos
             listEpoch = fetched.epoch
             loadFailed = false
