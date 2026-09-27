@@ -729,8 +729,8 @@ struct MyPageView: View {
             // この2つは読み込みの失敗で覆わないが、**自分の写真から導くぶん**
             // （撮影地の地点・自分の非公開写真の保存）は欠けるので、一行添える。
             // **何の失敗か言う**（このタブそのものが読めなかったように読まれない）
-            Text(L("自分の写真を読み込めませんでした（\(error)）。引き下げて読み直せます",
-                   "Couldn't load your photos (\(error)). Pull to retry"))
+            Text(L("自分の写真を読み込めていません。\(error)",
+                   "Your photos aren't loaded. \(error)"))
                 .font(.footnote)
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, 16)
@@ -901,29 +901,36 @@ final class MyPageViewModel: ObservableObject {
             await loadPublicly(userId: previewId)
             return
         }
-        // **両方の答えを受け取ってから決める。** `try await` で片方が投げると、もう片方の
-        // `async let` は取り消されて待たれる。その取り消しが返らないと `load()` が戻らず、
-        // `isLoading` が立ったままで以後の読み直しが全部弾かれる（Linux のテストで止まった。
-        // 実機の URLSession で起きるかは確かめていない）。
-        // ⚠️ catch の中で await しない（Xcode 26.3 のコンパイラが落ちる）ので `Self.capture` で包む
-        let profiles = self.profiles
-        let photoService = self.photoService
-        async let profileResult = Self.capture { try await profiles.myProfile() }
-        async let photosResult = Self.capture { try await photoService.myPhotos() }
-        let (fetchedProfile, fetchedPhotos) = await (profileResult, photosResult)
-        switch (fetchedProfile, fetchedPhotos) {
-        case (.success(let profile), .success(let photos)):
-            self.profile = profile
+        // 読めたプロフィール。**写真と揃うまで画面に入れない**（下の catch）
+        var fetchedProfile: UserProfile?
+        do {
+            async let profile = self.profiles.myProfile()
+            async let photos = self.photoService.myPhotos()
+            fetchedProfile = try await profile
+            let fetchedPhotos = try await photos
+            self.profile = fetchedProfile
             // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
-            self.pinnedIds = profile.pinnedPhotoIds ?? []
-            self.photos = PhotoPinning.pinnedFirst(photos, pinned: self.pinnedIds)
+            self.pinnedIds = fetchedProfile?.pinnedPhotoIds ?? []
+            self.photos = PhotoPinning.pinnedFirst(fetchedPhotos, pinned: self.pinnedIds)
             hasLoadedPhotos = true
-        case (.failure(let error), _), (_, .failure(let error)):
+            // **数が取れなくても画面は出す**（0 のままになるだけ）。
+            //
+            // **`if let x = try? await …` と書かない。** 手元の構文検査
+            // （tree-sitter）が読めず、`verify.sh` が「構文が壊れている」と
+            // 言う（CLAUDE.md に記録のある制約）。文を分ける
+            if let userId = self.profile?.userId {
+                let stats = try? await self.social.followStats(userId: userId)
+                if let stats {
+                    self.followers = stats.followers
+                    self.following = stats.following
+                }
+            }
+        } catch {
             // 初回はプロフィールだけでも出す（見出しの名前）。読み直しでは**写真と揃わない
             // プロフィールで上書きしない**（新しいピンの印と古い並びが食い違う）
-            if !hasLoadedPhotos, case .success(let profile) = fetchedProfile {
-                self.profile = profile
-                self.pinnedIds = profile.pinnedPhotoIds ?? []
+            if !hasLoadedPhotos, let fetchedProfile {
+                self.profile = fetchedProfile
+                self.pinnedIds = fetchedProfile.pinnedPhotoIds ?? []
             }
             let message = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
             // **一度読めていれば、読み直しの失敗は一覧に添える。** 戻ってくるたびに
@@ -936,30 +943,9 @@ final class MyPageViewModel: ObservableObject {
             }
             return
         }
-        // **数が取れなくても画面は出す**（0 のままになるだけ）。
-        //
-        // **`if let x = try? await …` と書かない。** 手元の構文検査
-        // （tree-sitter）が読めず、`verify.sh` が「構文が壊れている」と
-        // 言う（CLAUDE.md に記録のある制約）。文を分ける
-        if let userId = self.profile?.userId {
-            let stats = try? await self.social.followStats(userId: userId)
-            if let stats {
-                self.followers = stats.followers
-                self.following = stats.following
-            }
-        }
         // 読み直しの失敗の知らせは、次に読めたら消す（ピン留めの断りは残す）
         if let reloadFailure, actionMessage == reloadFailure { actionMessage = nil }
         reloadFailure = nil
-    }
-
-    /// 失敗を投げずに受け取る（`async let` の片方が投げて、もう片方が取り消されないように）
-    nonisolated private static func capture<T: Sendable>(_ work: @Sendable () async throws -> T) async -> Result<T, Error> {
-        do {
-            return .success(try await work())
-        } catch {
-            return .failure(error)
-        }
     }
 
     /// 直近の読み直しの失敗で `actionMessage` に入れた文（読めたら消すため）

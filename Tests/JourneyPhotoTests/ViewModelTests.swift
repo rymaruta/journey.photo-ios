@@ -218,22 +218,25 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.actionMessage, "読めたのに失敗の知らせが残っている")
     }
 
-    /// **読み直しで両方の口が落ちても `load()` が戻る。** 以前は片方が投げるともう片方の
-    /// `async let` が取り消されて待たれ、その取り消しが返らずに止まることがあった
-    /// （このテストを Linux で繰り返すと、40回に4回ほど止まっていた）。止まると `isLoading` が
-    /// 立ったままで、以後の読み直しが全部弾かれる
-    func testReloadWhereEverythingFailsReturns() async {
+    /// **読み直しで写真が落ちた回は、写真と揃わないプロフィールで上書きしない**（891fb04 のレビュー）。
+    /// 新しいピンの印と古い並びが食い違う。
+    ///
+    /// ⚠️ 落とすのは**写真の口だけ**。プロフィールの口を落とすと、同時に走っている写真の
+    /// `async let` の取り消しがスタブ（`stopLoading` が空）の上で返らず、テストがときどき止まる
+    func testReloadWithOnlyTheProfileKeepsThePreviousPins() async {
         prepare()
-        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a","pinnedPhotoIds":["p1"]}"#)
         StubProtocol.respond(path: "/user/photos", status: 200, body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
         let model = MyPageViewModel(api: api())
         await model.load()
+        XCTAssertEqual(model.pinnedIds, ["p1"])
+
         StubProtocol.reset()
-        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a","pinnedPhotoIds":["p9"]}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"取得に失敗しました"}"#)
         await model.load()
-        XCTAssertFalse(model.isLoading)
-        XCTAssertEqual(model.actionMessage, APIError.unreachable.errorDescription)
-        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+        XCTAssertEqual(model.pinnedIds, ["p1"], "写真と揃わないプロフィールでピンを上書きしている")
+        XCTAssertEqual(model.profile?.pinnedPhotoIds, ["p1"])
     }
 
     /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは
