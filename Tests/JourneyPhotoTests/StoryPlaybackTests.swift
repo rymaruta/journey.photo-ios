@@ -222,6 +222,22 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(StoryPlayback.afterLoad(fetched: nil, previous: previous, sameViewer: true,
                                                blockedUserIds: [], reportedPhotoIds: []).map(\.id), ["live"],
                        "期限の切れた輪が残っている")
+        // 取れた一覧は端末の時計で絞らない（サーバーが絞っている。時計が進んだ端末で消えた）
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: previous, previous: [], sameViewer: true,
+                                               blockedUserIds: [], reportedPhotoIds: [],
+                                               now: Date(timeIntervalSince1970: 4_102_444_800 * 10)).map(\.id),
+                       ["old", "live"], "取れた一覧を端末の時計で消している")
+    }
+
+    /// **動画の終わりは、見ている1本の・止めていない間だけ進める**
+    /// （読めない動画の失敗はブロックの確認中にも届き、確認が次の投稿者に効いた）
+    func testMediaEndedOnlyAdvancesTheCurrentUnfrozenStory() {
+        XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: "a", frozen: false), .advance)
+        XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: "a", frozen: true), .hold,
+                       "止めている間に次へ進めている")
+        XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: "b", frozen: false), .ignore,
+                       "前の1本の知らせ（2回目）で1本飛ばしている")
+        XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: nil, frozen: false), .ignore)
     }
 
     /// 読み直しに失敗したら前の輪を残す。ただし絞り込みはかけ直し、

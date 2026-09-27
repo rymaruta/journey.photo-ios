@@ -938,6 +938,9 @@ final class MyPageViewModel: ObservableObject {
         // 替わった後に返った答えは何も入れない（A → ログアウト → A でも別の世代）
         let gen = generation
         isLoading = true
+        // 取り消された回に戻す（先に消したまま抜けると、写真0枚の欄に
+        // 「まだ写真がありません」と嘘が出ていた）
+        let previousError = errorMessage
         errorMessage = nil
         // 人が替わった後に返った回は、次の人の「読み込み中」を解かない
         defer { if gen == generation { isLoading = false } }
@@ -1001,6 +1004,7 @@ final class MyPageViewModel: ObservableObject {
         } catch is CancellationError {
             // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
             // （読めたとも言わない——読み直しの失敗の知らせは残す）
+            if gen == generation, errorMessage == nil { errorMessage = previousError }
             return
         } catch {
             // 人が替わった後に返った失敗は、次の人の画面に出さない

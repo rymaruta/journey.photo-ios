@@ -11,11 +11,14 @@ struct GalleryView: View {
     @StateObject private var model = GalleryViewModel()
     /// 「ホーム」をもう一度押した合図（一番上へ戻る）
     @ObservedObject private var tabRouter = TabRouter.shared
-    /// 通報している写真。**シートはカードではなくここに付ける**
-    /// （`HomeMosaic.onReport` の注記）
     /// ストーリーの輪を読み直す合図（引き下げ・前面に戻った）
     @State private var storiesRefresh = 0
     @Environment(\.scenePhase) private var scenePhase
+    /// 背面へ行ったか（戻るときは background → inactive → active と段を踏むので、
+    /// 直前の値だけでは「背面から戻った」と分からない）
+    @State private var wentToBackground = false
+    /// 通報している写真。**シートはカードではなくここに付ける**
+    /// （`HomeMosaic.onReport` の注記）
     @State private var reportTarget: Photo?
     /// いまこの画面が出ているか。**詳細を上に積んでいる間は読み直さない**
     @State private var isOnScreen = false
@@ -107,8 +110,14 @@ struct GalleryView: View {
         }
         // **前面に戻ったら輪を読み直す。** 日をまたいで戻っても昨日の輪のまま、
         // フォローしている人の新しいストーリーも出なかった
+        // **背面から戻ったときだけ。** コントロールセンター・Face ID・許可の確認から
+        // 戻るたび（inactive → active）に読み直すと、読み込み中の輪を取り消して取り直していた
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { storiesRefresh &+= 1 }
+            if phase == .background { wentToBackground = true }
+            if phase == .active, wentToBackground {
+                wentToBackground = false
+                storiesRefresh &+= 1
+            }
         }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.id, ownerId: target.userId)

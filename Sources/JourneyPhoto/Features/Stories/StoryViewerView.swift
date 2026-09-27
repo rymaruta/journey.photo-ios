@@ -41,6 +41,8 @@ struct StoryViewerView: View {
     /// 0.35秒押し続けた（`pressing` は触れた瞬間に立つので、見た目はこちらで決める）
     @State private var longHeld = false
     @State private var paused = false
+    /// 止めている間に終わった1本（解けたら進める）
+    @State private var pendingEnd: String?
     @State private var muted = false
     /// この画面が鳴らした曲の回（`MusicPreviewPlayer.session`）。鳴らしていなければ nil
     @State private var songSession: Int?
@@ -167,7 +169,14 @@ struct StoryViewerView: View {
             syncSong(restart: true)
         }
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
-        .onChange(of: frozen) { _, _ in syncSong(restart: false) }
+        .onChange(of: frozen) { _, now in
+            syncSong(restart: false)
+            // 止めている間に終わった1本は、解けたところで進める
+            if !now, let pending = pendingEnd {
+                pendingEnd = nil
+                mediaEnded(pending)
+            }
+        }
         .onChange(of: holds) { _, now in isHeld = now }
         .onChange(of: muted) { _, now in
             if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
@@ -370,7 +379,7 @@ struct StoryViewerView: View {
                 isMuted: StoryPlayback.videoMuted(muted: muted,
                                                   hasSong: StoryPlayback.songURL(for: story) != nil),
                 isPaused: frozen,
-                onEnded: { advance() },
+                onEnded: { [id = story.id] in mediaEnded(id) },
                 // 出せないと分かった回も進める——止めたままだと永久に固まる
                 // （Web の `!mediaReady && !mediaError` と同じ）
                 onSettled: { _ in mediaReady = true }
@@ -712,6 +721,15 @@ struct StoryViewerView: View {
         }
     }
 
+    /// 動画の終わり（読めずに諦めた回も）。`StoryPlayback.mediaEnded`
+    private func mediaEnded(_ id: String) {
+        switch StoryPlayback.mediaEnded(storyId: id, currentId: current?.id, frozen: frozen) {
+        case .ignore: break
+        case .hold: pendingEnd = id
+        case .advance: advance()
+        }
+    }
+
     /// 次へ。**最後なら閉じる**
     private func advance() {
         if let target = StoryPlayback.next(after: index, count: visible.count) {
@@ -727,6 +745,7 @@ struct StoryViewerView: View {
         guard visible.indices.contains(target) else { return }
         index = target
         elapsed = 0
+        pendingEnd = nil
         // 別の1本へ移ったら止めていたのを解く（払って移ると止まったまま進んでいた）
         paused = false
         mediaReady = visible[target].isVideo

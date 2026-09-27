@@ -486,6 +486,25 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.reloadError, "読めたのに失敗の知らせが残っている")
     }
 
+    /// **取り消された読み込みで、前の失敗の知らせを消さない。** 始めに消したまま
+    /// 抜けていたので、写真0枚の欄に「まだ写真がありません」と嘘が出た
+    func testMyPageCancelledLoadKeepsThePreviousFailure() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"取得に失敗しました"}"#)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertNotNil(model.errorMessage)
+
+        StubProtocol.reset()
+        StubProtocol.fail(with: URLError(.cancelled))
+        let task = Task { await model.load() }
+        task.cancel()
+        await task.value
+        XCTAssertEqual(model.errorMessage, "取得に失敗しました", "取り消しで失敗の知らせを消している")
+        XCTAssertTrue(model.photos.isEmpty)
+    }
+
     /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは
     /// 写真より先に入るので、`profile` で決めると格子に「まだ写真がありません」と嘘が出た（a1734cc のレビュー）
     func testFirstLoadWithOnlyTheProfileIsStillAFailure() async {

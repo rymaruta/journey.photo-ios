@@ -157,9 +157,14 @@ struct RootView: View {
             guard !Task.isCancelled else { return }
             // **ログインしていない回は黙らない。** 圏外で起動して「分からない」扱いの
             // 人にも通知は届き続けるので、押しても何も起きないと壊れて見える
+            let waited = Date().timeIntervalSince(started)
             guard let owner else {
-                toasts.show(L("お知らせを見るにはログインしてください",
-                              "Sign in to see your notifications"))
+                // **待った後の今で確かめる。** 押したときのログイン画面でログインして
+                // 閉じた回に「ログインしてください」と出ていた。何分も後にも言わない
+                if auth.userId == nil, waited <= Self.activityHintLimit {
+                    toasts.show(L("お知らせを見るにはログインしてください",
+                                  "Sign in to see your notifications"))
+                }
                 return
             }
             guard auth.userId == owner else { return }
@@ -168,7 +173,6 @@ struct RootView: View {
             // 描画が済む前だと、押したばかりのベルを取り消してしまう
             // （true のまま残った回は、次に押したときの入口で戻す）
             guard !showNotifications else { return }
-            let waited = Date().timeIntervalSince(started)
             guard waited <= Self.activityWaitLimit else {
                 // あまりに後（何分も経ってから）の知らせは、何のことか分からない
                 if waited <= Self.activityHintLimit {
