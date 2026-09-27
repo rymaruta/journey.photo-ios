@@ -156,7 +156,7 @@ final class StubProtocol: URLProtocol {
     /// 道ごとの応答。**1つの試験で2つの口を叩き分ける**のに要る
     /// （公開プロフィールと公開一覧は別の入れ物から来る）。
     /// 空のときは今までどおり `status`/`body`/`queue` だけで返す
-    nonisolated(unsafe) private static var routes: [(path: String, status: Int, body: Data)] = []
+    nonisolated(unsafe) private static var routes: [(path: String, status: Int, body: Data, delay: TimeInterval)] = []
     /// 応答に付ける種別（`Content-Type`）。**既定は付けない**——本物の
     /// 応答を写しているのは「キャプティブポータルが 200 で HTML を返す」
     /// 経路だけで、そこを試すときにだけ指定する
@@ -186,12 +186,18 @@ final class StubProtocol: URLProtocol {
 
     /// 道（URL のパス）で選んで返す。**当てはまる道が1つも無い要求は
     /// 404 で返す**——「叩かないはずの口」を叩いたら緑にならないように。
-    ///
-    /// 🔴 **応答は遅らせない**（遅らせる引数は持たない）。別のスレッドから
-    /// `client` を叩くと Linux の Foundation でまれに落ちる。遅い口は
-    /// 要求の手前に `Gate` を掛けて作る（`TestGate.swift`）
     static func respond(path: String, status: Int, body: String) {
-        routes.append((path, status, Data(body.utf8)))
+        routes.append((path, status, Data(body.utf8), 0))
+    }
+
+    /// 🔴 **使わない。** 応答を遅らせると別のスレッドから `client` を叩くことになり、
+    /// Linux の Foundation でまれに（約1%）落ちる。遅い口は要求の手前に `Gate` を
+    /// 掛けて作る（`TestGate.swift`）。**残しているのは、並行して進んでいる枝の
+    /// 試験がまだ使っているため**（消すと、それらが main を取り込んだ時点で
+    /// ビルドが止まる）。移し終えたら消す
+    @available(*, deprecated, message: "応答の遅延は Linux で落ちる。要求の手前に Gate を掛ける（TestGate.swift）")
+    static func respond(path: String, status: Int, body: String, delay: TimeInterval) {
+        routes.append((path, status, Data(body.utf8), delay))
     }
 
     /// 1回目・2回目…と順番に返す。
@@ -219,11 +225,13 @@ final class StubProtocol: URLProtocol {
         }
         var status = StubProtocol.status
         var body = StubProtocol.body
+        var delay: TimeInterval = 0
         if !StubProtocol.routes.isEmpty {
             let path = request.url?.path ?? ""
             let hit = StubProtocol.routes.first { path.contains($0.path) }
             status = hit?.status ?? 404
             body = hit?.body ?? Data("{\"error\":\"no route\"}".utf8)
+            delay = hit?.delay ?? 0
         } else if !StubProtocol.queue.isEmpty {
             let next = StubProtocol.queue.count > 1
                 ? StubProtocol.queue.removeFirst()
@@ -235,9 +243,17 @@ final class StubProtocol: URLProtocol {
         let response = HTTPURLResponse(
             url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers
         )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: body)
-        client?.urlProtocolDidFinishLoading(self)
+        let deliver = { [self] in
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        // 遅らせるのは、使わない方の `respond(path:status:body:delay:)` の回だけ
+        if delay > 0 {
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: deliver)
+        } else {
+            deliver()
+        }
     }
 
     override func stopLoading() {}
