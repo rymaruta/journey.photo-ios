@@ -54,7 +54,8 @@ struct StoryService {
     /// 4. 送り直しで目印があれば、**先に一覧を読んで同じ画像の自分の1本を探す**。
     ///    在れば出せていたので何もしない。無ければ上げ直さずに行だけ作る
     /// 5. ただし目印が古ければ（`isFresh`）画像を片づけて上げ直す。片づけを 409 で
-    ///    断られたら、期限切れで一覧に出ないだけの1本が在るので、送ったことにする
+    ///    断られたら、その鍵を行が使っている（前の回に出せていた）ので送ったことにする。
+    ///    掃除が行ごと消したあとは見分けられず、上げ直す
     func post(_ job: StoryUploadCenter.Job, ownerId: String,
               record: @escaping @MainActor (UploadedMedia?) -> Void) async throws {
         let media: UploadedMedia
@@ -67,9 +68,11 @@ struct StoryService {
                 media = uploaded
             } else {
                 // 古い目印の画像は使わない（掃除で実体が消えている）。片づけてから上げ直す。
-                // **片づけを断られたら（409）、その画像はもう行に使われている**——期限が
-                // 切れて一覧に出ないだけで、前の回に出せていた。送ったことにする
-                // （上げ直すと、24時間出ていた1本と同じ投稿がもう1本出る）
+                // **片づけを断られたら（409）、その画像はもう行に使われている**——
+                // 前の回に出せていた（期限切れから次の掃除までの間・「自分用に残す」で
+                // 棚に移った行・写真として残した行）。送ったことにする。
+                // ⚠️ 掃除が行ごと消したあと（既定の投稿で期限から約1時間後以降）は
+                // 409 が返らず見分けられない。そのときは上げ直して、もう1本出る
                 if try await discardStale(key: uploaded.key) == .inUse { return }
                 await record(nil)
                 media = try await upload(imageData: job.imageData)
@@ -106,8 +109,11 @@ struct StoryService {
         } catch {
             if case .server(let status, _)? = error as? APIError {
                 if status == 409 { return .inUse }
-                // 鍵の形を断られた等（400/403/404）は、行に使われていない
-                if (400..<500).contains(status) { return .removed }
+                // 本文・鍵の形を断られた（400/403）は、使用中かを確かめたうえでの
+                // 返事ではないが、同じ人の presign から出た鍵なので実際には来ない。
+                // **401（ログイン切れ）・429（絞り込み）は確かめていないので投げる**
+                // ——片づけた扱いにすると目印を失い、次の送り直しで二重になり得る
+                if status == 400 || status == 403 { return .removed }
             }
             throw error
         }

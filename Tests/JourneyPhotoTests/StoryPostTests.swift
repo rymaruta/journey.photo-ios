@@ -150,6 +150,22 @@ final class StoryPostTests: XCTestCase {
             XCTFail("目印を書き換えた")
         })
         XCTAssertEqual(StubProtocol.requestCount, 2, "上げ直した")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/upload/discard")
+    }
+
+    /// 片づけが 401・429 で返ったら、**使用中かを確かめていない**ので投げる（目印を残す）
+    func testOldMediaThrottledDiscardKeepsTheMark() async {
+        for status in [401, 429] {
+            StubProtocol.reset()
+            StubProtocol.respondInOrder([(200, "[]"), (status, #"{"error":"x"}"#)])
+            do {
+                try await service().post(job(uploaded: staleMedia), ownerId: "me", record: { _ in
+                    XCTFail("\(status) で目印を書き換えた")
+                })
+                XCTFail("\(status) で投げていない")
+            } catch {}
+            XCTAssertEqual(StubProtocol.requestCount, 2, "\(status) で上げ直した")
+        }
     }
 
     /// 片づけられたか分からない（503）ときは投げる（出ていたか分からないまま上げ直さない）
