@@ -30,6 +30,11 @@ struct RecentSongsStore {
         return SongPickerText.unique(songs)
     }
 
+    /// 退会した人の控えを消す（`AccountLocalData`）
+    func removeData(for userId: String) {
+        defaults.removeObject(forKey: key(for: userId))
+    }
+
     /// 選んだ曲を覚える。戻り値は覚えたあとの並び
     @discardableResult
     func remember(_ song: Photo.Song, userId: String?) -> [Photo.Song] {

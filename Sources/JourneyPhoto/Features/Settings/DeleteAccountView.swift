@@ -117,6 +117,10 @@ struct DeleteAccountView: View {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
+        // **消す前に控える。** 消したあとは誰だったか分からない
+        // （端末の控えを消すのに要る）
+        let userId = auth.userId
+        let username = try? await AuthGateway.currentUsername()
         if !dataDeleted {
             do {
                 try await environment.account.deleteAccount()
@@ -133,6 +137,11 @@ struct DeleteAccountView: View {
             // 🔴 **Cognito の利用者も消す。** サーバーは消さないので、これが無いと
             // 退会したのに同じメールとパスワードでログインできた（審査 5.1.1(v)）
             try await auth.deleteCognitoUser()
+            // 🔴 **端末に残った本人の控えも消す**（`AccountLocalData`）。
+            // Cognito まで消せた回だけ——途中で落ちたらアカウントは残っている
+            if let userId {
+                AccountLocalData.remove(userId: userId, username: username)
+            }
             dismiss()
         } catch {
             errorMessage = L("写真とプロフィールは削除されました。アカウント自体の削除だけが残っています。もう一度「アカウントを削除する」を押してください",

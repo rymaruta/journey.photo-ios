@@ -166,6 +166,19 @@ final class StoryDraftStore: ObservableObject {
         return true
     }
 
+    /// 退会した人の書きかけを消す（`AccountLocalData`）。**画像のファイルも**
+    func removeData(for userId: String) {
+        let draftKey = key(for: userId)
+        if let data = defaults.data(forKey: draftKey),
+           let saved = try? JSONDecoder().decode(ImageRef.self, from: data) {
+            try? FileManager.default.removeItem(at: fileURL(saved.imageFile))
+        }
+        // 名前は鍵から決まる（古い名前で残ったものは `sweepOrphans` が拾う）
+        try? FileManager.default.removeItem(at: fileURL(Self.imageFileName(forKey: draftKey)))
+        defaults.removeObject(forKey: draftKey)
+        if userId == self.userId { draft = nil }
+    }
+
     /// 捨てる（「捨てる」を押したとき・投稿し終えたとき）。
     /// **画像のファイルも消す**——残すと端末の容量を静かに食う
     func clear() {

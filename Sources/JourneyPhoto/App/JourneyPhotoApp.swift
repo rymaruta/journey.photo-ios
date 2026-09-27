@@ -101,10 +101,14 @@ struct JourneyPhotoApp: App {
     /// **取れた回だけ入れ替える。** 足すのではなく入れ替えるのは、
     /// 保存といいねが同じ入れ物を使っていた頃の端末に、**保存しただけの
     /// 写真の id が残っている**ため（足すだけだと出続ける）。
+    ///
+    /// **返ってくる間に人が替わっていたら書かない**（`replace(with:for:)`）。
+    /// 書くと、前の人のいいねが次の人の控えに入る
     private func syncLikes() async {
-        guard auth.userId != nil else { return }
+        guard let owner = auth.userId else { return }
         let ids = try? await environment.social.myLikedPhotoIds()
-        if let ids { favorites.replace(with: ids) }
+        guard !Task.isCancelled, let ids else { return }
+        favorites.replace(with: ids, for: owner)
     }
 
     /// 保存した写真をサーバーに合わせる。
@@ -114,9 +118,10 @@ struct JourneyPhotoApp: App {
     /// ログアウトしたら控えは鍵ごと切り替わる（`use(userId:)`）ので、
     /// ここでは何もしない。
     private func syncSaves() async {
-        guard auth.userId != nil else { return }
+        guard let owner = auth.userId else { return }
         let ids = try? await environment.saves.mySaves()
-        if let ids { savedPhotos.replace(with: ids) }
+        guard !Task.isCancelled, let ids else { return }
+        savedPhotos.replace(with: ids, for: owner)
     }
 
     var body: some Scene {
@@ -141,7 +146,10 @@ struct JourneyPhotoApp: App {
                 // **未ログインのときの鍵で読んだ控え**が見えたままになる
                 // （同じ端末を別の人が使うと、その人のハートとブロックが
                 //  こちらに出る——`FavoritesStore` が warn している事故そのもの）
-                .task(id: auth.userId) {
+                // **`userId` ではなく状態で見る。** 起動直後の確認中（unknown）も
+                // ログアウト（signedOut）も `userId` は nil で、確認が
+                // 「ログインしていない」に決まったときに走り直さない
+                .task(id: auth.state) {
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)
@@ -158,16 +166,20 @@ struct JourneyPhotoApp: App {
                     // （外さないと、次にこの端末を使う人へ前の人あての
                     //  通知が届く）
                     AppDelegate.push = push
-                    await push.use(userId: auth.userId)
+                    // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
+                    // 「前の人の宛先が残っている」と見なして端末ごと外していた
+                    if !auth.isResolving {
+                        await push.use(userId: auth.userId)
+                    }
                     await applyModeration()
                     await applyRestrictedFeed()
                     await syncSaves()
                     await syncLikes()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
-                    if auth.userId != nil {
+                    if let owner = auth.userId {
                         let blocks = try? await environment.moderation.blocks()
-                        if let blocks {
-                            hidden.replaceBlocked(with: blocks.blockedIds)
+                        if !Task.isCancelled, let blocks {
+                            hidden.replaceBlocked(with: blocks.blockedIds, for: owner)
                             await applyModeration()
                         }
                     }

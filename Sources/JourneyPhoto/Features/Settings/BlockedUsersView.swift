@@ -8,6 +8,7 @@ struct BlockedUsersView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var auth: AuthStore
     @State private var users: [FollowUser] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -86,12 +87,14 @@ struct BlockedUsersView: View {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
+        let owner = auth.userId
         do {
             let list = try await environment.moderation.blocks()
             users = list.users
             // **サーバーの一覧で上書きする。** 端末のぶんを足し合わせると、
             // 別の端末で解除したのに「見えないまま」になる
-            hidden.replaceBlocked(with: list.blockedIds)
+            // 返ってくる間に人が替わっていたら書かない
+            hidden.replaceBlocked(with: list.blockedIds, for: owner)
             await apply()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
