@@ -124,11 +124,6 @@ struct PhotoDetailView: View {
         // 戻るは標準のボタンのまま——iOS 26 ではそれ自体がガラスの丸で出る
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
-        // **知らせは最後に起きたものを出す。** いいね・コメントの失敗が入ったら、前に出ていた
-        // フォロー・ブロック・削除の知らせを消す（残すと、あとの失敗が隠れる）
-        .onChange(of: model.errorMessage) { _, message in
-            if message != nil { actionError = nil }
-        }
         .task(id: auth.userId) {
             model.setSignedIn(auth.userId != nil)
             await model.load()
@@ -486,14 +481,21 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// 知らせを消す。**操作を押した時点で両方消す**＝画面には最後に起きた操作の知らせだけが出る。
+    /// 片方だけ消すと、消えずに残るもう片方が新しい知らせを隠すか、成功の直後に古い失敗が出てくる
+    private func clearNotices() {
+        actionError = nil
+        model.errorMessage = nil
+    }
+
     /// **返ってきた状態を使う。** 自分で反転すると、失敗した回に
     /// 画面だけフォロー中になる
     private func toggleFollow(_ userId: String) async {
         guard !isFollowWorking else { return }
         isFollowWorking = true
         defer { isFollowWorking = false }
-        // 前の回の失敗を残さない（押し直して通ったのに赤字が残る）
-        actionError = nil
+        // 前の回の知らせを残さない（押し直して通ったのに赤字が残る）
+        clearNotices()
         // **失敗は黙らない**（圏外で押して何も起きないと、押せていないのか分からない）。
         // 知らせは、ブロックの失敗と同じ `actionError` に出す
         do {
@@ -567,6 +569,7 @@ struct PhotoDetailView: View {
     /// 隣の写真なら、その写真に直接送る——**解除はしない**ので `like` だけ
     private func likeFromViewer(_ shown: Photo) async {
         if shown.id == photo.id {
+            clearNotices()
             await model.toggleLike()
             // 下のハートと同じく、端末の控えとホームの数にも渡す
             favorites.set(photo.id, favorite: model.liked)
@@ -595,6 +598,7 @@ struct PhotoDetailView: View {
     /// から送り、届かなければ元に戻す（ダブルタップと同じ控え方）
     private func toggleLikeFromViewer(_ shown: Photo) async {
         if shown.id == photo.id {
+            clearNotices()
             await model.toggleLike()
             favorites.set(photo.id, favorite: model.liked)
             shareLikeCount()
@@ -639,6 +643,7 @@ struct PhotoDetailView: View {
             HStack(spacing: 16) {
                 Button {
                     Task {
+                        clearNotices()
                         await model.toggleLike()
                         // 端末側のハートも合わせる（圏外でも一覧が出る）
                         favorites.set(photo.id, favorite: model.liked)
@@ -777,7 +782,7 @@ struct PhotoDetailView: View {
                     .background(Color.white.opacity(0.08), in: Capsule())
                     .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
                 Button {
-                    Task { await model.postComment() }
+                    Task { clearNotices(); await model.postComment() }
                 } label: {
                     Image(systemName: "paperplane")
                         .font(.title3.weight(.semibold))
@@ -866,7 +871,7 @@ struct PhotoDetailView: View {
                         // ——UGC のアプリは「不快な書き込みを持ち主が取り除ける」
                         // ことを審査（1.2）で見られる
                         if comment.uid == auth.userId || isMine {
-                            Button(Labels.Common.delete) { Task { await model.deleteComment(comment) } }
+                            Button(Labels.Common.delete) { Task { clearNotices(); await model.deleteComment(comment) } }
                                 // 読み直している間は押せない（`deleteComment` は黙って断る）
                                 .disabled(model.isReloadingComments)
                                 .font(.caption2)
@@ -943,6 +948,7 @@ struct PhotoDetailView: View {
     }
 
     private func block(_ userId: String) async {
+        clearNotices()
         do {
             // 押したあと実際に消す（公開一覧は静的なので端末で落とす）
             try await hidden.blockAndHide(userId, environment: environment)
@@ -982,6 +988,7 @@ struct PhotoDetailView: View {
     }
 
     private func deletePhoto() async {
+        clearNotices()
         do {
             try await environment.photos.delete(photoId: photo.id)
             // **消した写真の画面に留まらせない。** 残ると、もう無いものを
