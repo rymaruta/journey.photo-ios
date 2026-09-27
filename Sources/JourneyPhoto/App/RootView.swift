@@ -147,6 +147,20 @@ struct RootView: View {
         }
     }
 
+    /// ベルを押した。**true のまま出ていない回**（SwiftUI が黙って無視した）は
+    /// 一度戻してから開く——そのままだと true → true で何も起きない
+    private func openNotificationsFromBell() {
+        guard showNotifications, !ModalProbe.isPresenting() else {
+            showNotifications = true
+            return
+        }
+        showNotifications = false
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            showNotifications = true
+        }
+    }
+
     /// 通知を押したあと、ほかのシートが閉じられるのを待つ長さ
     private static let activityWaitLimit: TimeInterval = 5
     /// それを過ぎて閉じられたときに「ベルから見られる」と知らせる長さ
@@ -171,13 +185,13 @@ struct RootView: View {
             }
         )) {
             NavigationStack {
-                GalleryView(unread: unread, onOpenNotifications: { showNotifications = true })
+                GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
             }
             .tabItem { Label(L("ホーム", "Home"), systemImage: "house") }
             .tag(Tab.home)
 
             NavigationStack {
-                SearchView(unread: unread, onOpenNotifications: { showNotifications = true })
+                SearchView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
             }
             .tabItem { Label(Labels.Navigation.searchTab, systemImage: "magnifyingglass") }
             .tag(Tab.search)
@@ -192,7 +206,7 @@ struct RootView: View {
             // マイページから開く——撮った本人の記録なので持ち場が合う
             NavigationStack {
                 PhotoMapView(unread: unread,
-                             onOpenNotifications: { showNotifications = true },
+                             onOpenNotifications: { openNotificationsFromBell() },
                              onPost: { showPostChoice = true })
             }
             .tabItem { Label(Labels.Navigation.mapTab, systemImage: "map") }
