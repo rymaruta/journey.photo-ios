@@ -37,6 +37,18 @@ final class CollectionFilterTests: XCTestCase {
         XCTAssertEqual(PhotoQuery.photos(photos, in: .tag("sauna")).map(\.id), ["a"])
     }
 
+    /// **タグは鍵で畳んで絞る。** 数える側（`topTags`）は `風景` と
+    /// `landscape` を1つに数えるので、開いた先が綴りで絞ると件数が合わない。
+    func testTagFoldsAliasesAndHash() throws {
+        let photos = [
+            try photo(id: "a", tags: ["風景"]),
+            try photo(id: "b", tags: ["landscape"]),
+            try photo(id: "c", tags: ["#Landscape"]),
+            try photo(id: "d", tags: ["nature"]),
+        ]
+        XCTAssertEqual(PhotoQuery.photos(photos, in: .tag("風景")).map(\.id), ["a", "b", "c"])
+    }
+
     /// **カテゴリで絞る。**
     ///
     /// 変異試験で `==` を `!=` にしても誰も気づかなかった

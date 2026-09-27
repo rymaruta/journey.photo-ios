@@ -2,7 +2,9 @@
 import Foundation
 
 /// 本物と同じ形にしておく。**足りないと Mac でしか気づけない**
-open class AVPlayerItem {}
+/// **NSObject を継ぐ**（本物も同じ）。継がないと Linux の NotificationCenter が
+/// `object:` で絞った見張りに一致させず、知らせのテストが書けない
+open class AVPlayerItem: NSObject {}
 
 open class AVPlayer {
     public private(set) var currentItem: AVPlayerItem? = AVPlayerItem()
@@ -23,6 +25,9 @@ extension NSNotification.Name {
     /// 鳴り終わりの知らせ（本物は AVFoundation が出す）
     public static let AVPlayerItemDidPlayToEndTime =
         NSNotification.Name("AVPlayerItemDidPlayToEndTime")
+    /// 途中で途切れた知らせ（本物は AVFoundation が出す）
+    public static let AVPlayerItemFailedToPlayToEndTime =
+        NSNotification.Name("AVPlayerItemFailedToPlayToEndTime")
 }
 
 public final class AVAudioSession {

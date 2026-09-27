@@ -61,6 +61,18 @@ final class TagChipTests: XCTestCase {
             TagInput.dropFragment(TagChoices.all, current: "森, sn"), tag: "雪")
         XCTAssertEqual(after, "森, 雪, ")
     }
+
+    /// **読点・空白で区切っても打ちかけと見る。** `parse` は `、` と空白でも
+    /// 切るのに、打ちかけの判定が `,` だけを見ていたので `森、sn` は
+    /// 欄全体が1つの欠片になり、候補が消え、チップを押すと `森` まで消えた。
+    func testFragmentHonoursTheSameSeparatorsAsParse() {
+        XCTAssertEqual(TagInput.typingFragment(TagChoices.all, current: "森、sn"), "sn")
+        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "森 sn"), ["雪"])
+        let after = TagInput.toggle(
+            TagInput.dropFragment(TagChoices.all, current: "森、sn"), tag: "雪")
+        XCTAssertEqual(TagInput.parse(after), ["森", "雪"])
+        XCTAssertTrue(TagInput.has("森、雪", tag: "雪"))
+    }
 }
 
 /// プロフィールの色。**保存の形は `#rrggbb` に限る**——Web の

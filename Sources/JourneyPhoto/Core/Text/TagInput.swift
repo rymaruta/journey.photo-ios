@@ -11,10 +11,14 @@ enum TagInput {
 
     /// 読点・カンマ・空白のどれで区切っても同じに扱う。
     /// **重複は落とす**（同じタグが2つ付くと絞り込みの件数がずれる）。
+    /// 区切りとして扱う文字。**`parse` と打ちかけの判定で同じものを使う。**
+    /// 別々だと、`京都、sau` の打ちかけを `京都、sau` 丸ごとと見て候補が消える。
+    static let separators = CharacterSet(charactersIn: ",、 　\n")
+
     static func parse(_ text: String) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
-        for piece in text.components(separatedBy: CharacterSet(charactersIn: ",、 　\n")) {
+        for piece in text.components(separatedBy: separators) {
             let tag = piece.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !tag.isEmpty, !seen.contains(tag.lowercased()) else { continue }
             seen.insert(tag.lowercased())
@@ -29,7 +33,7 @@ enum TagInput {
     static func has(_ current: String, tag: String) -> Bool {
         let key = TagChoices.key(tag)
         guard !key.isEmpty else { return false }
-        return current.split(separator: ",").contains { TagChoices.key(String($0)) == key }
+        return current.components(separatedBy: separators).contains { TagChoices.key($0) == key }
     }
 
     /// 欄の文字列を組み直す。**末尾に区切りを残す。**
@@ -46,7 +50,7 @@ enum TagInput {
     static func append(_ current: String, tag: String) -> String {
         let add = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !add.isEmpty else { return current }
-        let parts = current.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let parts = current.components(separatedBy: separators).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let key = TagChoices.key(add)
         if parts.contains(where: { TagChoices.key($0) == key }) { return current }
         return join(parts + [add])
@@ -60,8 +64,7 @@ enum TagInput {
         let t = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard has(current, tag: t) else { return append(current, tag: t) }
         let key = TagChoices.key(t)
-        return join(current.split(separator: ",")
-            .map { String($0) }
+        return join(current.components(separatedBy: separators)
             .filter { TagChoices.key($0) != key })
     }
 
@@ -72,7 +75,7 @@ enum TagInput {
     /// ときに欠片を捨てる側（`dropFragment`）が同じ答えを使う。別々に書いた
     /// Web の版は、**打って絞ってチップを押すと欠片がタグとして残った**。
     static func typingFragment(_ all: [String], current: String) -> String {
-        let frag = (current.split(separator: ",", omittingEmptySubsequences: false).last.map(String.init) ?? "")
+        let frag = (current.components(separatedBy: separators).last ?? "")
             .trimmingCharacters(in: .whitespaces)
         guard !frag.isEmpty else { return "" }
         let key = TagChoices.key(frag)
@@ -82,8 +85,8 @@ enum TagInput {
     /// 打ちかけの欠片を欄から落とす（チップを押すときに使う）。
     static func dropFragment(_ all: [String], current: String) -> String {
         guard !typingFragment(all, current: current).isEmpty else { return current }
-        guard let cut = current.lastIndex(of: ",") else { return "" }
-        return String(current[current.startIndex..<cut])
+        guard let cut = current.rangeOfCharacter(from: separators, options: .backwards) else { return "" }
+        return String(current[current.startIndex..<cut.upperBound])
     }
 
     /// 候補を、**打ちかけの文字で絞る**。
@@ -149,8 +152,12 @@ enum PhotoQuery {
     static func photos(_ photos: [Photo], in collection: Collection) -> [Photo] {
         switch collection {
         case .tag(let value):
-            let needle = value.lowercased()
-            return photos.filter { ($0.tags ?? []).contains { $0.lowercased() == needle } }
+            // **鍵で比べる**（`TagChoices.key`）。数える側（`topTags`）と
+            // 候補チップは `風景` と `landscape` を1つに畳むので、ここだけ
+            // 綴りで比べると「12枚」と出たタグを開いて半分しか出ない
+            let key = TagChoices.key(value)
+            guard !key.isEmpty else { return [] }
+            return photos.filter { ($0.tags ?? []).contains { TagChoices.key($0) == key } }
         case .category(let value):
             // **綴りではなく鍵で。** `建築` と `architecture` は同じ分類
             // （Web の `slugify(_, "category")`）。生の値で比べると
