@@ -49,8 +49,17 @@ enum DailyTheme: Equatable {
     /// 日付が変わった瞬間に切り替わるのが、見ている人の感覚に合う。
     static func today(_ now: Date = Date(), calendar: Calendar = .current) -> Theme {
         // **西暦で数える。** 端末の暦のまま紀元から数えると、和暦（令和の初日から）や
-        // タイ仏暦の端末が別のテーマになり「全員が同じ日に同じテーマ」が崩れる
-        let day = calendar.gregorianKeepingZone.ordinality(of: .day, in: .era, for: now) ?? 0
+        // タイ仏暦の端末が別のテーマになり「全員が同じ日に同じテーマ」が崩れる。
+        //
+        // **土地の年月日を取り出してから数える。** `ordinality(of: .day, in: .era)` を
+        // そのまま使うと、Linux の Foundation はタイムゾーンを見ず、協定世界時の0時で
+        // 切り替わった（東京では朝9時。参加の判定 `hasJoined` は土地の0時で割れる）。
+        // 数える側は協定世界時の暦の正午に固定するので、割り当ては今までと変わらない
+        let local = calendar.gregorianKeepingZone.dateComponents([.year, .month, .day], from: now)
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let noon = utc.date(from: DateComponents(year: local.year, month: local.month, day: local.day, hour: 12))
+        let day = noon.flatMap { utc.ordinality(of: .day, in: .era, for: $0) } ?? 0
         let index = ((day % themes.count) + themes.count) % themes.count
         return themes[index]
     }

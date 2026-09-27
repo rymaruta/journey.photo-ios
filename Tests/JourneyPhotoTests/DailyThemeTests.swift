@@ -123,4 +123,16 @@ final class DailyThemeTests: XCTestCase {
         XCTAssertEqual(TextOverlay.Kind.date.initialText(now: now, calendar: islamic),
                        TextOverlay.Kind.date.initialText(now: now, calendar: calendar(.gregorian)))
     }
+
+    /// **テーマは土地の0時で切り替わる**（協定世界時の0時ではない）。
+    /// 東京の 9/28 1時は、協定世界時の 9/28 と同じテーマ
+    func testThemeTurnsOverAtLocalMidnight() {
+        let tokyoJustAfterMidnight = date("2026-09-27T16:00:00.000Z")
+        let utcNextDay = date("2026-09-28T03:00:00.000Z")
+        let utc = calendar(.gregorian, zone: "UTC")
+        XCTAssertEqual(DailyTheme.today(tokyoJustAfterMidnight, calendar: calendar(.gregorian)),
+                       DailyTheme.today(utcNextDay, calendar: utc), "土地の0時で切り替わっていない")
+        XCTAssertNotEqual(DailyTheme.today(tokyoJustAfterMidnight, calendar: calendar(.gregorian)),
+                          DailyTheme.today(tokyoJustAfterMidnight, calendar: utc))
+    }
 }

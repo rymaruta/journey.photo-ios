@@ -192,38 +192,43 @@ final class ViewModelTests: XCTestCase {
 
     /// **一度読めていれば、読み直しの失敗で格子ごと知らせに置き換えない**（バグ探し 2026-09-27 #18）。
     /// 戻ってくるたびに読み直すので、圏外で写真を開いて戻っただけで格子が消えていた。
-    /// 次に読めたら知らせを消す
+    /// 次に読めたら知らせを消す。
+    ///
+    /// ⚠️ 失敗させるのは**写真の口だけ**。プロフィールを落とすと、同時に走っている写真の要求が
+    /// 取り消され、Linux の FoundationNetworking ではスタブの取り消しが返らずに止まることがある
     func testReloadFailureIsAddedToTheGridNotReplacingIt() async {
         prepare()
-        func serve() {
+        func serve(photos status: Int) {
+            StubProtocol.reset()
             StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
-            StubProtocol.respond(path: "/user/photos", status: 200, body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
+            StubProtocol.respond(path: "/user/photos", status: status,
+                                 body: status == 200 ? #"[{"id":"p1","src":"/uploads/p1.jpg"}]"# : #"{"error":"取得に失敗しました"}"#)
         }
-        serve()
+        serve(photos: 200)
         let model = MyPageViewModel(api: api())
         await model.load()
         XCTAssertEqual(model.photos.map(\.id), ["p1"])
 
-        StubProtocol.reset()
-        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        serve(photos: 500)
         await model.load()
         XCTAssertNil(model.errorMessage, "読み直しの失敗で格子ごと知らせに置き換えている")
-        XCTAssertEqual(model.actionMessage, APIError.unreachable.errorDescription)
+        XCTAssertEqual(model.actionMessage, "取得に失敗しました")
         XCTAssertEqual(model.photos.map(\.id), ["p1"], "読めていた写真を捨てている")
 
-        StubProtocol.reset()
-        serve()
+        serve(photos: 200)
         await model.load()
         XCTAssertNil(model.actionMessage, "読めたのに失敗の知らせが残っている")
     }
 
-    /// 一度も読めていない失敗は、今までどおり知らせに置き換える（出すものが無い）
-    func testFirstLoadFailureStillReplacesTheGrid() async {
+    /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは
+    /// 写真より先に入るので、`profile` で決めると格子に「まだ写真がありません」と嘘が出た（a1734cc のレビュー）
+    func testFirstLoadWithOnlyTheProfileIsStillAFailure() async {
         prepare()
-        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"取得に失敗しました"}"#)
         let model = MyPageViewModel(api: api())
         await model.load()
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNotNil(model.errorMessage, "写真を読めていないのに一覧に添える側に入れている")
         XCTAssertNil(model.actionMessage)
     }
 

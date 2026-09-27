@@ -725,6 +725,13 @@ struct MyPageView: View {
                 .font(.footnote)
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, 16)
+        } else if tab == .wishlist || tab == .favorites, let error = model.errorMessage {
+            // この2つは読み込みの失敗で覆わないが、**自分の写真から導くぶん**
+            // （撮影地の地点・自分の非公開写真の保存）は欠けるので、一行添える
+            Text(error)
+                .font(.footnote)
+                .foregroundStyle(WebTheme.danger)
+                .padding(.horizontal, 16)
         }
         // **行きたい場所・お気に入りは自分の写真の読み込みと無関係**なので、
         // その失敗の知らせで覆わない（以前は端末だけで出せるタブまで知らせに置き換わっていた）
@@ -899,6 +906,7 @@ final class MyPageViewModel: ObservableObject {
             // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
             self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
             self.photos = PhotoPinning.pinnedFirst(try await photos, pinned: self.pinnedIds)
+            hasLoadedPhotos = true
             // **数が取れなくても画面は出す**（0 のままになるだけ）。
             //
             // **`if let x = try? await …` と書かない。** 手元の構文検査
@@ -915,7 +923,7 @@ final class MyPageViewModel: ObservableObject {
             let message = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
             // **一度読めていれば、読み直しの失敗は一覧に添える。** 戻ってくるたびに
             // 読み直すので、圏外で写真を開いて戻っただけで格子ごと知らせに置き換わっていた
-            if profile != nil {
+            if hasLoadedPhotos {
                 actionMessage = message
                 reloadFailure = message
             } else {
@@ -930,6 +938,10 @@ final class MyPageViewModel: ObservableObject {
 
     /// 直近の読み直しの失敗で `actionMessage` に入れた文（読めたら消すため）
     private var reloadFailure: String?
+    /// 自分の写真を**一度でも読めたか**。`profile` では決めない——プロフィールは写真より
+    /// 先に入るので、初回に写真だけ落ちた回を「読めている」と取り違え、格子に
+    /// 「まだ写真がありません」と嘘を出していた
+    private var hasLoadedPhotos = false
 
     /// 鍵を持たない回の読み込み（`PreviewSession` のときだけ通る）。
     ///
@@ -965,6 +977,7 @@ final class MyPageViewModel: ObservableObject {
         // 前の人あての知らせ（読み直しの失敗・ピン留めの断り）も残さない
         actionMessage = nil
         reloadFailure = nil
+        hasLoadedPhotos = false
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }
