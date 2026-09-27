@@ -254,6 +254,8 @@ struct StoryInsightsView: View {
             // **返信が読めなくても、見た人は出す。** 片方の失敗で
             // 画面ごと空にしない
             replies = (try? await environment.stories.replies(id: story.id)) ?? []
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }

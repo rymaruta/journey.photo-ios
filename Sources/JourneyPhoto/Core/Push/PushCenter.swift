@@ -59,12 +59,24 @@ final class PushCenter: ObservableObject {
     private static func pendingUnregisterKey(for userId: String) -> String {
         "photo-gallery-push-unregister-pending.\(userId)"
     }
-    /// 🔴 **この端末の宛先をサーバーに預けてある人。** 端末に残す。
+    // 🔴 **ログアウトの前に宛先を外せなかった回**（ログインの期限切れ・圏外・
+    // 退会の途中）の後始末は、2つの印で持つ。外す口（`DELETE /user/devices`）は
+    // **その人の認証で、その人の集合からしか消せない**（`devices.ts`）ので、
+    // あとからは前の人の認証で外せない。放っておくと、前の人あての通知
+    // （行動した人の名前）が、ログアウトした端末や次の人に届き続ける。
+    //
+    // | 場面                               | `registeredOwner`（端末）  | `owner`（サーバー）              |
+    // |------------------------------------|----------------------------|----------------------------------|
+    // | 誰もログインしない                 | 端末ごと APNs から外す     | 残す（次の人が引き取る）         |
+    // | 次の人がログイン（受け取らない）   | 端末ごと APNs から外す     | 次の人で POST → DELETE           |
+    // | 次の人がログイン（受け取る）       | 預け直しが落ちたら外す     | 次の人で POST（引き取る）        |
+    // | 持ち主を書く前の版から上げた端末   | —                          | 次にログインした人で一度引き取る |
+
+    /// 🔴 **この端末の宛先を、いま届く形で預けてある人。** 端末に残す。
     ///
-    /// ログアウトの前に外せなかった回（ログインの期限切れ・圏外）は、外す口
-    /// （`DELETE /user/devices`）が前の人の認証を要るので、あとからは外せない。
-    /// 放っておくと、ログアウトした端末に前の人あての通知（行動した人の名前）が
-    /// 届き続ける。起動をまたいでも気づけるように、預けた人を覚えておく
+    /// 前の人の認証が無くても、**端末ごと APNs から外せば**すぐ届かなくなる
+    /// （サーバーは次に送ったときに 410 を受けて宛先を捨てる）。端末ごと外したら
+    /// 消す——起動のたびに外して付け直さない
     private static let registeredOwnerKey = "photo-gallery-push-registered-owner"
     private var registeredOwner: String? {
         get { defaults.string(forKey: Self.registeredOwnerKey) }
@@ -75,6 +87,47 @@ final class PushCenter: ObservableObject {
                 defaults.removeObject(forKey: Self.registeredOwnerKey)
             }
         }
+    }
+    /// 🔴 **この端末をサーバーに最後に登録した人**（サーバーから外せたら消す）。
+    ///
+    /// 端末ごと外しても、サーバーの前の人の集合にはトークンが 410 まで残る。
+    /// 前の持ち主から外せるのは `POST` だけ（`releasePreviousOwner`）なので、
+    /// 次にログインした人で引き取る。
+    ///
+    /// **出来事ではなく状態で見る。** 「外せなかった」の印を出来事ごとに立てると、
+    /// 起動時の期限切れのように**前の人を一度も見ないまま**抜ける経路を取りこぼす。
+    /// 人ではなく端末に付く
+    private static let ownerKey = "photo-gallery-push-owner"
+    /// 持ち主を一度でも書いたか。**書く前の版から上げた端末では持ち主が分からない**
+    /// ——旧版で通知を受け取っていた人が、更新後に一度も登録しないまま期限切れに
+    /// なると、前の人あての宛先が残る。分からない間は、次にログインした人で引き取る
+    private static let ownerKnownKey = "photo-gallery-push-owner-known"
+    private var owner: String? {
+        get { defaults.string(forKey: Self.ownerKey) }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Self.ownerKey)
+            } else {
+                defaults.removeObject(forKey: Self.ownerKey)
+            }
+            defaults.set(true, forKey: Self.ownerKnownKey)
+        }
+    }
+    /// サーバーに前の持ち主が残っているかもしれない（別の人・または分からない）
+    private func mayBelongToSomeoneElse(than userId: String) -> Bool {
+        guard defaults.bool(forKey: Self.ownerKnownKey) else { return true }
+        return owner.map { $0 != userId } ?? false
+    }
+    /// サーバーに預けられた（登録・引き取り）。**2つの印をこの人にする**
+    private func noteRegistered(by userId: String) {
+        owner = userId
+        registeredOwner = userId
+    }
+    /// この人の認証でサーバーから外せた。**この人の印だけ消す**——前の人の印
+    /// （預け直しが落ちて残ったもの）は、この人の認証では外れていない
+    private func noteUnregistered(by userId: String) {
+        if owner == userId { owner = nil }
+        if registeredOwner == userId { registeredOwner = nil }
     }
     private let defaults: UserDefaults
     private var userId: String?
@@ -116,6 +169,7 @@ final class PushCenter: ObservableObject {
         // 待っている間に次の `use` が始まっていたら、そちらに任せる
         guard self.userId == userId else { return }
 
+        if let previous, previous != userId { isRegistered = false }
         // 🔴 **前の人の宛先が残っている**（ログアウトの前に外せなかった:
         // ログインの期限切れ・圏外・退会の途中）。前の人の認証はもう無いので
         // サーバーからは外せない。**端末ごと APNs から外す**——サーバーは
@@ -126,7 +180,7 @@ final class PushCenter: ObservableObject {
         // **印だけで決める。** ふつうのログアウトは先に外せている（`signingOut`
         // が印を消す）ので、ここで端末ごと外さない。更新前から預けていた人は、
         // 次にその人で開いたときの登録で印が付く
-        if let owner = registeredOwner, owner != userId {
+        if let leftover = registeredOwner, leftover != userId {
             let registersNow = userId != nil && isEnabled && isAuthorized
             if registersNow {
                 // 印は残す。預け直せたら次の人の印に替わる（`registerIfPossible`）。
@@ -136,13 +190,27 @@ final class PushCenter: ObservableObject {
             }
             isRegistered = false
         }
-        // **外し損ねた宛先を外し直す**（「受け取らない」にした回に圏外だった）
+        // **サーバーに前の人の宛先が残っていたら、いまの人で引き取る。** 端末ごと
+        // 外しても、前の人の集合には 410 までトークンが残る（誰もログインしない
+        // 間は上の段が端末ごと外し、ここは次にログインした人を待つ）。
+        //
+        // ここで前の人のぶんを `DELETE` しても外れない。ログアウト後は前の人の
+        // ID トークンが無く、次の人が入ったあとは**次の人の集合**から消すだけ
+        if let userId, let token, mayBelongToSomeoneElse(than: userId) {
+            await releasePreviousOwner(token: token, as: userId)
+            guard self.userId == userId else { return }
+        }
+        // **外し損ねた宛先を外し直す**（「受け取らない」にした回に圏外だった・
+        // 前の人から引き取ったあと外せなかった）
         if let userId, !isEnabled, let token,
-           defaults.bool(forKey: Self.pendingUnregisterKey(for: userId)) {
+           defaults.bool(forKey: Self.pendingUnregisterKey(for: userId)) || owner == userId {
             if (try? await service().unregister(token: token)) != nil {
                 defaults.removeObject(forKey: Self.pendingUnregisterKey(for: userId))
-                if registeredOwner == userId { registeredOwner = nil }
+                noteUnregistered(by: userId)
+                // 外している間に「受け取る」を押された（`enable` の登録を消している）
+                if isEnabled, self.userId == userId { await registerIfPossible() }
             }
+            guard self.userId == userId else { return }
         }
         // **「受け取る」と言った人にだけ繋ぎ直す。** 端末の許可だけで
         // 判断すると、自分でオフにしたのに再起動で復活する
@@ -208,7 +276,7 @@ final class PushCenter: ObservableObject {
         do {
             try await service().unregister(token: token)
             defaults.removeObject(forKey: Self.pendingUnregisterKey(for: userId))
-            if registeredOwner == userId { registeredOwner = nil }
+            noteUnregistered(by: userId)
         } catch {
             // 外せなかったことを覚え、次に開いたときに外し直す（`use`）
             defaults.set(true, forKey: Self.pendingUnregisterKey(for: userId))
@@ -234,18 +302,29 @@ final class PushCenter: ObservableObject {
     }
 
     /// ログアウトの**前**に呼ぶ。認証が要るので、あとだと外せない。
+    ///
+    /// 外せなかったら（圏外など）印が残り、ログアウトのあとの `use` が端末ごと
+    /// 外し（`registeredOwner`）、次にログインした人がサーバーから引き取る（`owner`）
     func signingOut() async {
-        guard let token, userId != nil else { return }
-        // **外せた回だけ印を消す。** 外せなかったら、ログアウトのあとの
-        // `use` が印を見て端末ごと外す
-        // **自分の印だけ消す。** 前の人の印（預け直しが落ちて残ったもの）は、
-        // この人の認証では外れていないので残し、ログアウトのあとの `use` が
-        // 端末ごと外す
-        if (try? await service().unregister(token: token)) != nil,
-           registeredOwner == userId {
-            registeredOwner = nil
+        guard let token, let userId else { return }
+        // **外せた回だけ、自分の印だけ消す。** 前の人の印（預け直しが落ちて
+        // 残ったもの）は、この人の認証では外れていないので残す
+        if (try? await service().unregister(token: token)) != nil {
+            noteUnregistered(by: userId)
         }
         isRegistered = false
+    }
+
+    /// 前の持ち主からこの端末を外し、いまの人が引き取る（`owner`）。
+    ///
+    /// 登録（`POST`）がサーバーで前の持ち主の集合からトークンを落とす。
+    /// **受け取らない人なら、そのあと外す**のは `use` の「外し損ね」の段
+    /// （`owner == userId` かつ `!isEnabled`）——落ちても持ち主が残るので、
+    /// 次の `use` でやり直せる。受け取る人は外さない（外すと、このあと APNs
+    /// からトークンが返らなかった回に、その人の通知まで止まる）
+    private func releasePreviousOwner(token: String, as userId: String) async {
+        guard (try? await service().register(token: token)) != nil else { return }
+        noteRegistered(by: userId)
     }
 
     /// 前の人の宛先が残っていたら、端末ごと APNs から外して印を消す
@@ -286,19 +365,20 @@ final class PushCenter: ObservableObject {
         guard let token, let owner = userId, isEnabled, isAuthorized else { return }
         do {
             try await service().register(token: token)
-            isRegistered = true
             // **呼んだ時点の人を控える**（返ってくる間に替わっていても、
-            // サーバーに預けたのはこの人の宛先）
-            registeredOwner = owner
+            // サーバーに預けたのはこの人の宛先・次の `use` が引き取る手がかり）
+            noteRegistered(by: owner)
+            // 画面の「預けてある」は、いまの人のぶんだけ
+            guard userId == owner else { return }
+            isRegistered = true
         } catch {
+            // **呼んでいる間に人が替わっていたら触らない**（遅れて返った前の人の
+            // 失敗で、次の人の宛先を外さない・次の人の画面に出さない）
+            guard userId == owner else { return }
             isRegistered = false
             // **預け直せなかったら前の人の宛先を残さない。** 前の人の印を残したまま
             // 落ち続けると、この人がログインしている間ずっと前の人あてに届く
-            // **呼んでいる間に人が替わっていたら触らない**（遅れて返った前の人の
-            // 失敗で、次の人の宛先を外さない）
-            if userId == owner {
-                releaseForeignRegistration(except: owner)
-            }
+            releaseForeignRegistration(except: owner)
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("通知を受け取る設定にできませんでした", "Couldn't turn notifications on")
         }

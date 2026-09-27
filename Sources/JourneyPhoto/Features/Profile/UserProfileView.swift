@@ -396,6 +396,14 @@ final class UserProfileViewModel: ObservableObject {
             }
             errorMessage = error.errorDescription
             return
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。
+            // **出している最中なら失敗と言わない**が、まだ何も出していない初回は
+            // 上と同じく書く（`keepsShown`）——黙って戻ると、見出しの無い画面に
+            // 「まだありません」が出る
+            guard !keepsShown() else { return }
+            errorMessage = Labels.Common.loadFailed
+            return
         } catch {
             guard !keepsShown() else { return }
             errorMessage = Labels.Common.loadFailed

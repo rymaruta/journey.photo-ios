@@ -150,6 +150,8 @@ final class StubProtocol: URLProtocol {
     nonisolated(unsafe) static var lastBody: Data?
     /// 何回叩かれたか。**二度押しを止められているか**を見るのに使う
     nonisolated(unsafe) static var requestCount = 0
+    /// 叩かれた順の「メソッド パス」。**2手の流れの順番**を見るのに使う
+    nonisolated(unsafe) static var requests: [String] = []
     /// 順番に返す応答。**使い切ったら最後のものを返し続ける**
     /// （「断られてから引き直す」のような2手の流れを書くのに要る）
     nonisolated(unsafe) private static var queue: [(Int, Data)] = []
@@ -169,6 +171,7 @@ final class StubProtocol: URLProtocol {
         lastRequest = nil
         lastBody = nil
         requestCount = 0
+        requests = []
         queue = []
         routes = []
         contentType = nil
@@ -207,6 +210,7 @@ final class StubProtocol: URLProtocol {
 
     override func startLoading() {
         StubProtocol.requestCount += 1
+        StubProtocol.requests.append("\(request.httpMethod ?? "GET") \(request.url?.path ?? "")")
         StubProtocol.lastRequest = request
         StubProtocol.lastBody = request.httpBody ?? StubProtocol.readStream(request.httpBodyStream)
 

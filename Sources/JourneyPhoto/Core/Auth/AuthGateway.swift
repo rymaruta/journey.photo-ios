@@ -77,7 +77,12 @@ enum AuthGateway {
     /// ここで `AuthStore` に知らせ、呼び手には「未ログイン」として nil を返す
     static func idToken() async throws -> String? {
         guard isConfigured else { return nil }
-        let session = try await Amplify.Auth.fetchAuthSession()
+        let session: any AuthSession
+        do {
+            session = try await Amplify.Auth.fetchAuthSession()
+        } catch {
+            throw tokenFailure(error)
+        }
         guard session.isSignedIn else { return nil }
         guard let provider = session as? AuthCognitoTokensProvider else { return nil }
         // **`switch` で分ける。** `do/catch … where` の catch の中で await すると、
@@ -87,10 +92,31 @@ enum AuthGateway {
         case .success(let tokens):
             return tokens.idToken
         case .failure(let error):
-            guard AuthFailure(error) == .notAuthorized else { throw error }
+            guard AuthFailure(error) == .notAuthorized else { throw tokenFailure(error) }
             await announceSessionExpired()
             return nil
         }
+    }
+
+    /// ID トークンを取れなかった理由を、画面が読める形にする。
+    ///
+    /// 🔴 **通信による失敗は `APIError.unreachable` に包む。** 圏外で
+    /// トークンを更新できない回に Amplify のエラーのまま投げていたので、
+    /// `as? APIError` で読む画面は「通信できません」ではなく汎用の
+    /// 「読み込めませんでした」を出していた。それ以外はそのまま投げる
+    /// （ログインの期限切れは呼び出し元が `notAuthorized` で見分ける）
+    ///
+    /// 取り消し（`URLError.cancelled`）は、**呼んだ側が取り消されているときだけ**
+    /// `CancellationError` にする（画面は取り消しを失敗と言わない）。Amplify の中の
+    /// 通信は別の URLSession なので、呼び手が生きているのに `.cancelled` が来たら
+    /// 失敗として出す——黙ると「まだ写真がありません」のような空の画面になる
+    static func tokenFailure(_ error: Error) -> Error {
+        let auth = error as? AuthError
+        let url = (error as? URLError) ?? (auth?.underlyingError as? URLError)
+        if url?.code == .cancelled, Task.isCancelled { return CancellationError() }
+        if url != nil { return APIError.unreachable }
+        if let auth, AuthFailure(auth) == .network { return APIError.unreachable }
+        return error
     }
 
     @MainActor
