@@ -94,4 +94,17 @@ final class HomeFeedSelectionTests: XCTestCase {
         model.use(viewerId: nil, following: [])
         XCTAssertEqual(model.feed, .recommended)
     }
+
+    /// 🔴 **フォロー一覧が取れなかった回（圏外・画面を離れて取り消された回）に、
+    /// 同じ人の一覧を空で上書きしない。** 別の人になったら前の人の一覧は使わない
+    func testFailedFollowListKeepsTheSameViewersList() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "me", following: ["a"])
+        model.use(viewerId: "me", fetchedFollowing: nil)
+        XCTAssertEqual(model.followingIds, ["a"], "取れなかった回に空で上書きした")
+        model.use(viewerId: "other", fetchedFollowing: nil)
+        XCTAssertEqual(model.followingIds, [], "前の人のフォロー一覧を次の人に使った")
+        model.use(viewerId: "other", fetchedFollowing: ["b"])
+        XCTAssertEqual(model.followingIds, ["b"])
+    }
 }

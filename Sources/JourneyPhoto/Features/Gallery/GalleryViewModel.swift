@@ -117,6 +117,16 @@ final class GalleryViewModel: ObservableObject {
     ///
     /// **フォロー中は未ログインだと中身が無い。** 絞れないので
     /// 「おすすめ」へ戻す（空の画面に置き去りにしない）。
+    /// フォロー一覧が**取れなかった回**（圏外・取り消し）の入れ方。
+    ///
+    /// 同じ人なら手元の一覧を残す——空で上書きすると「フォロー中」が
+    /// 「まだありません」になる（画面を離れて取り消された回も同じ）。
+    /// 別の人なら前の人の一覧は使わない（分からないので空）
+    func use(viewerId: String?, fetchedFollowing: Set<String>?) {
+        let following = fetchedFollowing ?? (viewerId == self.viewerId ? followingIds : [])
+        use(viewerId: viewerId, following: following)
+    }
+
     func use(viewerId: String?, following: Set<String>) {
         self.viewerId = viewerId
         self.followingIds = following

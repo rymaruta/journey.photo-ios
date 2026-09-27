@@ -73,14 +73,14 @@ struct GalleryView: View {
                 return
             }
             let viewer = auth.userId
-            let ids = (try? await environment.social.myFollowingIds()) ?? []
-            // **待っている間に人が替わったら何も書かない。** 古い回の答え（取り消しで
-            // 空になったものを含む）を次の人の `auth.userId` で書くと、後から来る
-            // 正しい答えを上書きしうる。
-            // 取り消し（`Task.isCancelled`）では見ない——画面を離れただけの回に
-            // 飛ばすと、戻ったときに `.task` が走り直さなければ人が入らないまま残る
+            let ids = try? await environment.social.myFollowingIds()
+            // **待っている間に人が替わったら何も書かない。** 古い回の答えを次の人の
+            // `auth.userId` で書くと、後から来る正しい答えを上書きしうる。
+            // 取り消し（`Task.isCancelled`）では飛ばさない——画面を離れただけの回に
+            // 飛ばすと、`.task` が走り直さなければ人が入らないまま残る。
+            // **取れなかった回（取り消しを含む）は空で上書きしない**（`fetchedFollowing`）
             guard auth.userId == viewer else { return }
-            model.use(viewerId: viewer, following: Set(ids))
+            model.use(viewerId: viewer, fetchedFollowing: ids.map { Set($0) })
             // 今日のテーマに参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
         }
