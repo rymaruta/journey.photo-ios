@@ -226,6 +226,9 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func postComment() async {
+        // 二度押しで同じ文を2件送らない（ボタンが押せなくなるのは描き直しの後）。
+        // 先頭で断る——下で知らせを消す前に（二度目の押下で別の失敗の知らせを消さない）
+        guard !isPosting else { return }
         let text = draftComment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         errorMessage = nil
@@ -235,8 +238,6 @@ final class PhotoDetailViewModel: ObservableObject {
         }
         // 読み直しの答えで、入れた自分のコメントが上書きされない（`reloadComments`）
         guard !isReloadingComments else { return }
-        // 二度押しで同じ文を2件送らない（ボタンが押せなくなるのは描き直しの後）
-        guard !isPosting else { return }
         isPosting = true
         defer { isPosting = false }
         let id = photoId

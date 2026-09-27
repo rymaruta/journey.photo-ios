@@ -31,4 +31,29 @@ final class EditVisibilityTests: XCTestCase {
                                                 published: true, audience: .everyone)
         XCTAssertNil(unknown.audience)
     }
+
+    /// 広げ直し・公開し直しの経路（範囲を戻す唯一の道・同じ範囲のまま公開し直す）
+    func testWideningAndRepublishing() {
+        let widen = EditVisibilityRules.patch(openedPublished: true, openedAudience: .followers,
+                                              published: true, audience: .everyone)
+        XCTAssertEqual(widen.audience, "", "全体に戻すのに範囲を送っていない")
+        let republish = EditVisibilityRules.patch(openedPublished: false, openedAudience: .followers,
+                                                  published: true, audience: .followers)
+        XCTAssertEqual(republish.published, true)
+        XCTAssertNil(republish.audience, "範囲は残っているので送らない")
+        let both = EditVisibilityRules.patch(openedPublished: false, openedAudience: .everyone,
+                                             published: true, audience: .followers)
+        XCTAssertEqual(both.published, true)
+        XCTAssertEqual(both.audience, Audience.followers.patchValue)
+    }
+
+    /// 触っていない本文は空（空は送らない——サーバーが 400 で断る）
+    func testUntouchedPatchIsEmpty() {
+        var patch = PhotoPatch()
+        let v = EditVisibilityRules.patch(openedPublished: true, openedAudience: .everyone,
+                                          published: true, audience: .everyone)
+        patch.published = v.published
+        patch.audience = v.audience
+        XCTAssertTrue(patch.isEmpty)
+    }
 }

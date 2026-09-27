@@ -238,6 +238,12 @@ struct EditPhotoView: View {
         patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date),
                                     field: date)
 
+        // **何も変えていなければ送らない。** 空の本文はサーバーが 400「更新項目が
+        // ありません」で断る（公開を毎回送っていた頃はそれが覆っていた）
+        if patch.isEmpty {
+            dismiss()
+            return
+        }
         do {
             try await environment.photos.update(photoId: photo.id, patch: patch)
             dismiss()

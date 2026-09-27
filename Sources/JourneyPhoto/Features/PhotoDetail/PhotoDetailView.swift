@@ -1062,8 +1062,13 @@ struct PhotoDetailView: View {
             savedPhotos.set(id, saved: wasSaved, for: owner)
             // **黙らない**（いいね・フォローと同じ）。下書きはサーバーが 404 で断る
             if !(error is CancellationError) {
-                actionError = (error as? LocalizedError)?.errorDescription
-                    ?? L("保存できませんでした", "Couldn't save")
+                // 404 は下書き（公開していない写真）——サーバーの「見つかりません」では分からない
+                if case .server(status: 404, _)? = error as? APIError {
+                    actionError = L("公開中の写真だけ保存できます", "Only published photos can be saved")
+                } else {
+                    actionError = (error as? LocalizedError)?.errorDescription
+                        ?? L("保存できませんでした", "Couldn't save")
+                }
             }
         }
     }
