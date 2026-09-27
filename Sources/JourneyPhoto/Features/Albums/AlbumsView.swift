@@ -164,9 +164,6 @@ struct AlbumsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             inviteControls(album)
-            // **リンクの有る無しの外に置く。** 取り消すとリンクが消えて「招待リンクを作る」の
-            // 枝に描き直されるので、中に置くと「取り消しました」が一度も出なかった
-            inviteDoneLine(album)
         }
         // **払い切りで消さない**（既定の allowsFullSwipe は先頭の削除を確認なしで走らせる。
         // 戻す口は無い）。削除のボタンを押したときだけ消す
@@ -242,6 +239,8 @@ struct AlbumsView: View {
                     ProgressView().controlSize(.small)
                 }
             }
+            // 知らせは**押したボタンのすぐ下**（下の注意書きより上）
+            inviteDoneLine(album)
             switch expiry {
             case .valid(let until):
                 Text(L("\(InviteLink.untilLabel(until))まで", "Valid until \(InviteLink.untilLabel(until))"))
@@ -271,6 +270,9 @@ struct AlbumsView: View {
             // 2本目で1本目が失効し、その間に共有したリンクが開けなくなる
             .disabled(model.inviteWorking.contains(album.id))
             .buttonStyle(.borderless)
+            // **こちらの枝にも置く。** 取り消すとリンクが消えてこの枝に描き直されるので、
+            // 上の枝にだけ置くと「取り消しました」が一度も出なかった
+            inviteDoneLine(album)
         }
     }
 
