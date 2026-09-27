@@ -260,9 +260,12 @@ final class ViewModelTests: XCTestCase {
         StubProtocol.respond(path: "/user/profile", status: 200,
                              body: #"{"userId":"a","displayName":"わたし"}"#)
         StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/users/a/follow", status: 200,
+                             body: #"{"followers":7,"following":3}"#)
         let model = MyPageViewModel(api: api())
         await model.load(for: "a")
         XCTAssertEqual(model.profile?.displayName, "わたし", "写真の失敗で見出しまで消えた")
+        XCTAssertEqual(model.followers, 7, "写真の失敗でフォロー数を取りに行かず 0 と出る")
         XCTAssertNotNil(model.errorMessage)
     }
 

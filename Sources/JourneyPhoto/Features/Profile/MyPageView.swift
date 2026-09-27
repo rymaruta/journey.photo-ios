@@ -936,14 +936,9 @@ final class MyPageViewModel: ObservableObject {
                 self.profile = loaded
                 shownProfileSeq = seq
             }
-            // **見出しは写真より先に入れる。** 写真だけ落ちた回も名前・アイコン・
-            // 数は出す（写真の欄だけが知らせになる）
-            let loadedPhotos = try await photos
-            guard gen == generation else { return }
-            // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
-            self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
-            self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
-            // **数が取れなくても画面は出す**（0 のままになるだけ）。
+            // **見出しとフォロー数は写真より先に入れる。** 写真だけ落ちた回も
+            // 名前・アイコン・フォロー数は出す（写真の欄だけが知らせになる）。
+            // 数を写真の後ろに置くと、写真の失敗で数を取りに行かず「0」と出る
             //
             // **`if let x = try? await …` と書かない。** 手元の構文検査
             // （tree-sitter）が読めず、`verify.sh` が「構文が壊れている」と
@@ -955,6 +950,11 @@ final class MyPageViewModel: ObservableObject {
                     self.following = stats.following
                 }
             }
+            let loadedPhotos = try await photos
+            guard gen == generation else { return }
+            // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
+            self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
+            self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
         } catch {
             guard gen == generation else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
@@ -1003,6 +1003,8 @@ final class MyPageViewModel: ObservableObject {
         followers = 0
         following = 0
         errorMessage = nil
+        // 前の人がピン留めで断られた文言を次の人に見せない
+        actionMessage = nil
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }
