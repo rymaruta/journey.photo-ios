@@ -20,8 +20,9 @@ struct SearchView: View {
                 searchField
                 scopeChips
                 // **何も打っていないときは種類ごとの入口**（`SearchScope.entry`）。
-                // 打ち始めたら結果に切り替わる
-                if query.isEmpty {
+                // 打ち始めたら結果に切り替わる。**空白だけは打っていない扱い**
+                // （モデルの `search` も空白を落としてから判定している）
+                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     entry
                 } else {
                     results
@@ -104,12 +105,44 @@ struct SearchView: View {
 
     @ViewBuilder
     private var entry: some View {
+        if model.scope.showsPhotos {
+            // 写真に頼る入口は、**読み込み中・失敗を「0枚」と言わない**
+            photosLoaded { entryContent }
+        } else {
+            entryContent
+        }
+    }
+
+    /// 写真の読み込みの状態で出し分ける。読み終えたときだけ中身を描く
+    @ViewBuilder
+    private func photosLoaded<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        switch model.loadState {
+        case .loading:
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+        case .failed:
+            ErrorBanner(message: Labels.Common.loadFailed) {
+                Task { await model.reloadPhotos(environment: environment) }
+            }
+        case .loaded:
+            content()
+        }
+    }
+
+    @ViewBuilder
+    private var entryContent: some View {
         switch model.scope.entry {
         case .discovery:
-            // 「発見」の顔（モック2）。段の並びは板 11（`SearchDiscovery`）・段の間は 20pt
-            VStack(alignment: .leading, spacing: 20) {
-                ForEach(model.discovery) { section in
-                    discoverySection(section)
+            // 「発見」の顔（モック2）。段の並びは板 11（`SearchDiscovery`）・段の間は 20pt。
+            // 読み終えて段が1つも無いときは真っ白にしない
+            if model.discovery.isEmpty {
+                hint(L("写真はまだありません", "No photos yet"))
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(model.discovery) { section in
+                        discoverySection(section)
+                    }
                 }
             }
         case .photoGrid:
@@ -540,7 +573,7 @@ struct SearchView: View {
         }
 
         if model.scope.showsPhotos {
-            photoResults
+            photosLoaded { photoResults }
         } else if users.isEmpty {
             // 人だけを探しているとき（打つ前の案内は `entry` の側）
             hint(model.isSearching ? L("探しています…", "Searching…") : L("見つかりませんでした", "No results"))
@@ -569,6 +602,9 @@ final class SearchViewModel: ObservableObject {
 
     @Published private(set) var users: [UserProfile] = []
     @Published private(set) var isSearching = false
+    /// 写真の読み込みの状態。**読み込み前・失敗を「0枚」と取り違えない**
+    enum LoadState: Equatable { case loading, failed, loaded }
+    @Published private(set) var loadState: LoadState = .loading
     /// 「タグ」の入口: 決まったタグと枚数（`PhotoQuery.tagCounts`・多い順）
     @Published private(set) var tagCounts: [(tag: String, count: Int)] = []
     /// 「撮影地」の入口: 撮影地と枚数（写真の多い順）
@@ -641,12 +677,27 @@ final class SearchViewModel: ObservableObject {
     /// ——`loadPhotos` は一度読んだら二度と読まないので、そのままだと
     /// ブロックした相手の写真が検索結果に残り続ける。
     func reloadPhotos(environment: AppEnvironment) async {
-        apply(photos: (try? await environment.gallery.fetchPhotos()) ?? [])
+        let gallery = environment.gallery
+        await reloadPhotos { try await gallery.fetchPhotos() }
+    }
+
+    /// 読み直しの本体。**引き先を差し替えられる**（テストで失敗を起こすため）。
+    /// 失敗したら写真は空にしたうえで `.failed` にする——空のまま「まだありません」と
+    /// 言わない。空にするのは、ブロックのあとの読み直しで古い写真を残さないため
+    func reloadPhotos(fetch: @MainActor () async throws -> [Photo]) async {
+        if allPhotos.isEmpty { loadState = .loading }
+        do {
+            apply(photos: try await fetch())
+        } catch {
+            apply(photos: [])
+            loadState = .failed
+        }
     }
 
     /// 読み込んだ写真から段を作る。**通信と切り離してある**（テストで中身を直接渡す）
     func apply(photos: [Photo]) {
         allPhotos = photos
+        loadState = .loaded
         tagCounts = PhotoQuery.tagCounts(in: allPhotos, limit: .max)
         places = DiscoverySections.popularSpots(in: allPhotos, limit: SearchDiscovery.placeRows)
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)

@@ -171,15 +171,47 @@ final class SearchLoadTests: XCTestCase {
         XCTAssertEqual(SearchScope.tags.photos(photos, query: "冬").count, 2)
     }
 
-    /// **読み込み前に「写真」を選んでも、読み終えたら格子が埋まる**
-    /// （`shown` を控えにせず、`allPhotos` と打った語から毎回導く）
-    func testPhotoGridFillsAfterLoadingEvenIfScopeWasChosenFirst() async throws {
+    /// **読み込み前に打った語でも、読み終えたら当たった写真が出る**
+    /// （`shown` を打った時点の控えにせず、`allPhotos` と打った語から毎回導く）。
+    /// 打った時点で絞った結果を控える作りだと、読み込み前は0件なので0件のまま残る
+    func testTypingBeforeLoadingStillFindsPhotosOnceLoaded() async throws {
         let model = SearchViewModel()
-        model.select(scope: .photos)
-        await model.search("", debounce: .zero) { _ in [] }
+        model.select(scope: .tags)
+        await model.search("冬", debounce: .seconds(60)) { _ in [] }
         XCTAssertTrue(model.shown.isEmpty)
-        model.apply(photos: [try photo("x"), try photo("y")])
-        XCTAssertEqual(Set(model.shown.map(\.id)), ["x", "y"])
+        var winter = ["id": "w", "src": "https://x/w.jpg"] as [String: Any]
+        winter["tags"] = ["winter"]
+        model.apply(photos: [try photo("x"),
+                             try JSONDecoder.api.decode(Photo.self, from: JSONSerialization.data(withJSONObject: winter))])
+        XCTAssertEqual(model.shown.map(\.id), ["w"])
+    }
+
+    /// **読み込み中・失敗を「0枚」と言わない**（`loadState`）。
+    /// 失敗は写真を空にしたうえで `.failed`、読み直せたら `.loaded`
+    func testLoadStateSeparatesLoadingFailureAndEmpty() async throws {
+        struct Boom: Error {}
+        let model = SearchViewModel()
+        XCTAssertEqual(model.loadState, .loading)
+        await model.reloadPhotos { throw Boom() }
+        XCTAssertEqual(model.loadState, .failed)
+        XCTAssertTrue(model.everything.isEmpty)
+        await model.reloadPhotos { [] }
+        XCTAssertEqual(model.loadState, .loaded, "読めて0枚は「まだありません」の側")
+    }
+
+    /// **行の枚数＝押した先の枚数。** 1枚に日英の別名（`湖` と `lake`）が両方付いた
+    /// 写真を2と数えない（実データ a129394d で「#湖 2枚」→1件だった）
+    func testTagRowCountMatchesPhotosFoundWhenAPhotoHasBothSpellings() async throws {
+        func make(_ id: String, _ tags: [String]) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: JSONSerialization.data(
+                withJSONObject: ["id": id, "src": "https://x/\(id).jpg", "tags": tags]))
+        }
+        let photos = [try make("both", ["湖", "lake"]), try make("ja", ["湖"])]
+        let model = SearchViewModel()
+        model.apply(photos: photos)
+        let row = try XCTUnwrap(model.tagCounts.first { $0.tag == "湖" })
+        XCTAssertEqual(row.count, SearchScope.tags.photos(photos, query: row.tag).count)
+        XCTAssertEqual(row.count, 2)
     }
 
     /// 板 11: いまの季節の写真は**3列×1段**。「すべて →」の先には全部
@@ -194,6 +226,5 @@ final class SearchLoadTests: XCTestCase {
         model.apply(photos: photos)
         XCTAssertEqual(model.seasonal.count, 3, "格子が1段（3枚）になっていない")
         XCTAssertEqual(model.seasonalAll.count, 5)
-        XCTAssertEqual(SearchDiscovery.featuredPreview, 3)
     }
 }

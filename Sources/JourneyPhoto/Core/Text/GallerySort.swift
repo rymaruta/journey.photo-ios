@@ -6,13 +6,14 @@ import Foundation
 /// アプリには**並び替えそのものが無く**、常に新着順だった。
 ///
 /// `taken`（撮影日）は**集約の一覧（板 12）だけ**の並び。Web の `FilterBar` には
-/// 無いので、ホームと検索のメニューは `feedChoices` の3つを出す。
+/// 無いので、ホームのメニューは `feedChoices` の3つを出す
+/// （探すの並び替えは板 11 に無いので外した）。
 enum GallerySort: String, CaseIterable, Identifiable {
     case new, old, popular, taken
 
     var id: String { rawValue }
 
-    /// ホーム・検索の並び替えメニュー（Web の `FilterBar` と同じ3つ）
+    /// ホームの並び替えメニュー（Web の `FilterBar` と同じ3つ）
     static let feedChoices: [GallerySort] = [.new, .old, .popular]
     /// 集約の一覧のチップ（板 12 の「人気／新着／撮影日」）
     static let collectionChoices: [GallerySort] = [.popular, .new, .taken]

@@ -199,10 +199,16 @@ enum PhotoQuery {
     ///
     /// 提案の絵の「winter 13 / finland 12 …」にあたる。**数を出すのは、
     /// 押す前に手応えが分かるから**——1枚しか無い語を押すのは徒労になる。
+    ///
+    /// **数えるのは写真の枚数**（タグの個数ではない）。1枚に日英の別名が
+    /// 両方付いている写真（実データ: `湖` と `lake`）を2と数えると、行は
+    /// 「#湖 2枚」なのに押すと1枚しか出ない（`SearchScope.tagMatch` は写真を返す）
     static func tagCounts(in photos: [Photo], limit: Int = 12) -> [(tag: String, count: Int)] {
         var counts: [String: Int] = [:]
-        for tag in photos.flatMap({ $0.tags ?? [] }) {
-            counts[TagChoices.key(tag), default: 0] += 1
+        for photo in photos {
+            for key in Set((photo.tags ?? []).map { TagChoices.key($0) }) {
+                counts[key, default: 0] += 1
+            }
         }
         return TagChoices.all
             .compactMap { choice -> (tag: String, count: Int)? in

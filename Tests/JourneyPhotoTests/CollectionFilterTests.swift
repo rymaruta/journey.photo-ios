@@ -455,6 +455,15 @@ final class TagCountsTests: XCTestCase {
         XCTAssertEqual(counts.first?.count, 2, "`冬` と `winter` が別々に数えられている")
     }
 
+    /// **写真の枚数で数える。** 1枚に `湖` と `lake` が両方付いていても1枚
+    func testSynonymsOnOnePhotoCountOnce() throws {
+        let counts = PhotoQuery.tagCounts(in: [
+            try photo("both", tags: ["湖", "lake", "#Lake"]),
+            try photo("ja", tags: ["湖"]),
+        ])
+        XCTAssertEqual(counts.first { $0.tag == "湖" }?.count, 2, "同じ写真の別名を2回数えている")
+    }
+
     /// **0枚の語は出さない**（押しても空になるチップを置かない）
     func testEmptyChoicesAreLeftOut() throws {
         let counts = PhotoQuery.tagCounts(in: [try photo("a", tags: ["冬"])])
