@@ -208,10 +208,10 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertNil(model.groupId, "前の投稿の束の印が残っている")
     }
 
-    /// 条件が立つまで待つ（最長5秒）。切り離した仕事の終わりを時間で当てない
+    /// 条件が立つまで待つ（既定は最長5秒）。切り離した仕事の終わりを時間で当てない
     @MainActor
-    private func waitUntil(_ condition: () -> Bool) async throws {
-        for _ in 0..<500 where !condition() {
+    private func waitUntil(seconds: Double = 5, _ condition: () -> Bool) async throws {
+        for _ in 0..<Int(seconds * 100) where !condition() {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
     }
@@ -262,6 +262,13 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertEqual(model.items.count, 1)
         XCTAssertEqual(model.pickerItems, [b, c], "投稿済みの写真が選ばれたまま")
         XCTAssertEqual(model.errorMessage, summary, "送れなかった知らせが消えている")
+
+        // 残った1枚を外しても、読めなかった c を読み直して知らせを上書きしない
+        model.remove(model.items[0].id)
+        // 読み直しが起きないことを見るので、短く待てば足りる
+        try await waitUntil(seconds: 0.5) { model.isLoadingPicked || model.errorMessage != summary }
+        XCTAssertEqual(model.pickerItems, [c])
+        XCTAssertEqual(model.errorMessage, summary, "写真を外したら送れなかった知らせが消えた")
     }
 
     /// 上限と形は**手前で弾く**（50MB 上げてから 400 を食わない）。

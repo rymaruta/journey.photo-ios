@@ -120,6 +120,9 @@ final class UploadViewModel: ObservableObject {
     private var cancelled = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
     private var loadTask: Task<Void, Never>?
+    /// 読めなかったライブラリの写真の印。**選び直しのたびに読み直さない**
+    /// （`loadPicked` の注記）。ライブラリで外すと忘れる——選び直せば読み直す
+    private var unreadable: Set<PhotosPickerItem> = []
     /// `pickerItems` を中から直している最中（`setSelectionQuietly`）
     private var isSettingSelectionQuietly = false
     /// 本体まで置けて、保存がまだ通っていない写真（`UploadService.stage` の注記）
@@ -241,8 +244,8 @@ final class UploadViewModel: ObservableObject {
         // 選ばれたままで、閉じると外したはずの写真が戻ってくる
         if let key = removed?.pickerItem {
             // **ここは読み直しを通す**（`setSelectionQuietly` にしない）。
-            // 待ち行列が空になったときの束の印の片付け（`loadPicked`）と、
-            // 走り出す前の読み込みの取り消しを didSet に任せている
+            // 走り出す前の読み込みの取り消しを didSet に任せている。読めなかった
+            // 写真は読み直さない（`unreadable`）ので、知らせは消えない
             pickerItems.removeAll { $0 == key }
         }
         // **最後の1枚を外したら束の印も捨てる。** カメラの分（印なし）は上の
@@ -262,6 +265,11 @@ final class UploadViewModel: ObservableObject {
         // 以前は丸ごと入れ替えていて、「追加」を押すと打った題やカメラで撮った
         // 分まで消えていた（2026-09-26 のレビュー）
         let diff = PickerReconcile.reconcile(existing: items.map(\.pickerItem), picked: picked)
+        // 🔴 **前に読めなかった写真は、新しく選ばれた分に数えない。** 選択には残り
+        // 待ち行列には居ないので、数えると写真を外す・投稿の後始末のたびに読み直し、
+        // `errorMessage` を消して「送れなかった」の知らせを読み込みの失敗で上書きしていた
+        unreadable.formIntersection(picked)
+        let added = diff.added.filter { !unreadable.contains($0) }
         let dropped = zip(items, diff.keep).filter { !$0.1 }.map { $0.0.id }
         for id in dropped {
             placeTasks[id]?.cancel()
@@ -273,7 +281,7 @@ final class UploadViewModel: ObservableObject {
         // 前の写真を残すので、押し直しで公開済みの分と同じ投稿に入るべき
         // （印を捨てると、途中まで上がった投稿が2つに割れる）
         if items.isEmpty { groupId = nil }
-        guard !diff.added.isEmpty else { return }
+        guard !added.isEmpty else { return }
 
         // 🔴 **選び直しの競合。** 前の読み込みは取り消されても `await` から戻ってくる。
         // 戻った先で確かめずに足すと、選び直した一覧に外したはずの写真が混ざり、
@@ -285,12 +293,12 @@ final class UploadViewModel: ObservableObject {
         didPostAll = false
         defer { if generation == pickGeneration { isLoadingPicked = false } }
 
-        var failed = 0
-        for item in diff.added {
+        var failedItems: [PhotosPickerItem] = []
+        for item in added {
             if Task.isCancelled { return }
             do {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
-                    failed += 1
+                    failedItems.append(item)
                     continue
                 }
                 // 読んでいる間に選び直されたら、この結果は捨てる
@@ -305,15 +313,18 @@ final class UploadViewModel: ObservableObject {
                 case .success(let prepared):
                     append(prepared, pickerItem: item)
                 case .failure:
-                    failed += 1
+                    failedItems.append(item)
                 }
             } catch {
-                failed += 1
+                failedItems.append(item)
             }
         }
 
         // 取り消された回の「読めなかった」は嘘になる（新しい回が読み直している）
         guard !Task.isCancelled, generation == pickGeneration else { return }
+        // 覚えるのは最後まで走った回の失敗だけ（取り消しで落ちた分は読めないのではない）
+        unreadable.formUnion(failedItems)
+        let failed = failedItems.count
         if failed > 0 {
             // **黙って減らさない。** 「なぜか1枚少ない」まま公開させない
             errorMessage = items.isEmpty
