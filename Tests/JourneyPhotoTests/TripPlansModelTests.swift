@@ -193,6 +193,32 @@ final class TripPlansModelTests: XCTestCase {
         XCTAssertEqual(model.status, .loaded)
     }
 
+    /// **読み込み同士では捨て合わない**（6a9efb6 のレビュー）。先に始めた読み込みの成功を、
+    /// 後から始めて先に失敗した読み込みのせいで捨てていた
+    func testOverlappingLoadsDoNotDiscardEachOther() async {
+        let env = environment()
+        let model = TripPlansModel()
+        // 1本目に届くのは後から始めた読み込み（失敗）、2本目が遅らせた読み込み（成功）
+        StubProtocol.respondInOrder([
+            (500, ""),
+            (200, #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#),
+        ])
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let slow = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                  gallery: env.gallery, spots: env.spots,
+                                  trips: TripPlanService(api: APIClient(
+                                      baseURL: URL(string: "https://api.example.test")!,
+                                      tokenProvider: DelayedTokenProvider(),
+                                      session: URLSession(configuration: config))))
+        let first = Task { await model.load(environment: slow) }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        await model.load(environment: env)
+        await first.value
+        XCTAssertEqual(model.status, .loaded, "先に始めた読み込みの成功を捨てている")
+        XCTAssertEqual(model.plans.map(\.planId), ["p1"])
+    }
+
     /// 失敗したあとも `busy` は戻る（戻らないと、以後どのボタンも押せない）
     func testBusyResetsAfterFailure() async {
         let env = environment()

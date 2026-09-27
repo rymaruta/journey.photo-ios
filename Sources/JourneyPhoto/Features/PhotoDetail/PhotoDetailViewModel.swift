@@ -38,7 +38,7 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 返るかで最終的なハートの色が決まるので、押した結果と食い違う。
     @Published private(set) var isLiking = false
     /// 写真ごとの、押したいいねが**受け付けられた**回数。**読み込みの間にその写真で
-    /// 増えたら、その読み込みのハート（と、答えに数があれば数）は書かない**——開いた
+    /// 増えたら、その読み込みのハートと数は書かない**——開いた
     /// 直後に押すと、先に出ていた読み込みの（押す前の）答えが後から届き、押した
     /// ハートと数を戻していた。写真ごとに持つのは、束の隣へ送った後に前の1枚の
     /// 答えが届いても、今の1枚の読み込みを捨てないため。断られた回は数えない
@@ -115,8 +115,7 @@ final class PhotoDetailViewModel: ObservableObject {
         // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
         guard id == photoId else { return }
         let likeUntouched = accepted == acceptedLikes[id, default: 0]
-        // 押した答えが数を持たなかった回（`lastLikeAnswer` が nil）は、読んだ数を使う
-        if likeUntouched || lastLikeAnswer == nil { likes = loadedCount ?? likes }
+        if likeUntouched { likes = loadedCount ?? likes }
         if let loaded {
             // **一覧に載った投稿は、以後サーバーを信じる**（持ち主が消した・
             // 別の端末で消したコメントを、手元の控えから復活させない）

@@ -276,8 +276,10 @@ struct CloseFriendsView: View {
         following = rows.following
         saved = Set(ids)
         chosen = Set(ids)
-        loaded = true
         others = await names(of: rows.others)
+        // **名前を引き終えてから「読めた」にする。** 引いている途中で離れると打ち切られ、
+        // 名前の無い行のまま残るので、戻ったときに読み直す
+        if !Task.isCancelled { loaded = true }
     }
 
     /// 名前を引くときに同時に送る数の上限。

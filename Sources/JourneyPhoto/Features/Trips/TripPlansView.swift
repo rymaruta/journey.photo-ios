@@ -216,19 +216,19 @@ final class TripPlansModel: ObservableObject {
     /// プランAの失敗をプランBを開いたときに出さない）
     func clearError() { errorMessage = nil }
 
-    /// 読み込み・書き込みの回数。**書き込みより前に始めた読み込みの答えは捨てる**
+    /// 書き込みが成功した回数。**書き込みより前に始めた読み込みの答えは捨てる**
     /// ——作る・直す・消すの間に始めた引き下げ更新が後から返ると、書き込みの応答で
-    /// 映した一覧を古い姿で上書きし、作ったプランが消えていた（直した日程も戻った）
-    private var generation = 0
+    /// 映した一覧を古い姿で上書きし、作ったプランが消えていた（直した日程も戻った）。
+    /// 読み込み同士では捨て合わない（先に成功した方を、後から失敗した方で消さない）
+    private var writes = 0
 
     func load(environment: AppEnvironment) async {
-        generation += 1
-        let started = generation
+        let started = writes
         // 取り直している間も、取れていた一覧は出したまま（引き下げ更新で消さない）
         if status != .loaded { status = .loading }
         do {
             let list = try await environment.trips.list()
-            guard started == generation else { return }
+            guard started == writes else { return }
             plans = list
             status = .loaded
             // **取れたら前の失敗の文を消す。** 残すと、成功したあとも赤い行が出続ける
@@ -237,7 +237,7 @@ final class TripPlansModel: ObservableObject {
             // **打ち切りは失敗ではない。** 画面を離れると `.task` が打ち切られ、
             // `APIClient` はそれを「通信できませんでした」に変えて上げてくる
             if Task.isCancelled { return }
-            guard started == generation else { return }
+            guard started == writes else { return }
             if status == .loaded {
                 // 取れていた一覧は残し、取り直せなかったことだけ言う
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
@@ -291,7 +291,7 @@ final class TripPlansModel: ObservableObject {
         do {
             let list = try await call()
             // 成功した回だけ進める（断られた回に最初の読み込みを捨てると「読み込み中」のまま残る）
-            generation += 1
+            writes += 1
             plans = list
             status = .loaded
             return list
