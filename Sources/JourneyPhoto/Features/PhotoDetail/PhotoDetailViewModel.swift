@@ -37,10 +37,13 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 見て走り、**「いいね」と「取り消し」が同時に飛ぶ**。どちらが後に
     /// 返るかで最終的なハートの色が決まるので、押した結果と食い違う。
     @Published private(set) var isLiking = false
-    /// いいねを送り始めた・答えを受け取った回数。**読み込みの間に動いたら、
-    /// その読み込みの数とハートは書かない**——開いた直後に押すと、先に出ていた
-    /// 読み込みの（押す前の）答えが後から届き、押したハートと数を戻していた
-    private var likeWrites = 0
+    /// 写真ごとの、押したいいねが**受け付けられた**回数。**読み込みの間にその写真で
+    /// 増えたら、その読み込みのハート（と、答えに数があれば数）は書かない**——開いた
+    /// 直後に押すと、先に出ていた読み込みの（押す前の）答えが後から届き、押した
+    /// ハートと数を戻していた。写真ごとに持つのは、束の隣へ送った後に前の1枚の
+    /// 答えが届いても、今の1枚の読み込みを捨てないため。断られた回は数えない
+    /// （サーバーは変わっていないので、読み込みの答えが正しい）
+    private var acceptedLikes: [String: Int] = [:]
     /// 投稿者の公開プロフィール。**@ユーザー名を出すため**（写真の行は
     /// 表示名しか持っていない）。取れなければ nil——名前だけ出す
     @Published private(set) var owner: UserProfile?
@@ -98,7 +101,7 @@ final class PhotoDetailViewModel: ObservableObject {
 
     func load() async {
         let id = photoId
-        let writes = likeWrites
+        let accepted = acceptedLikes[id, default: 0]
         async let count = try? social.likeCount(photoId: id)
         async let page = try? social.comments(photoId: id)
         let mine: Bool?
@@ -111,8 +114,9 @@ final class PhotoDetailViewModel: ObservableObject {
         let loaded = await page
         // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
         guard id == photoId else { return }
-        let likeUntouched = writes == likeWrites
-        if likeUntouched { likes = loadedCount ?? likes }
+        let likeUntouched = accepted == acceptedLikes[id, default: 0]
+        // 押した答えが数を持たなかった回（`lastLikeAnswer` が nil）は、読んだ数を使う
+        if likeUntouched || lastLikeAnswer == nil { likes = loadedCount ?? likes }
         if let loaded {
             // **一覧に載った投稿は、以後サーバーを信じる**（持ち主が消した・
             // 別の端末で消したコメントを、手元の控えから復活させない）
@@ -160,11 +164,7 @@ final class PhotoDetailViewModel: ObservableObject {
         }
         guard !isLiking else { return nil }
         isLiking = true
-        likeWrites += 1
-        defer {
-            isLiking = false
-            likeWrites += 1
-        }
+        defer { isLiking = false }
         let wasLiked = liked
         let id = photoId
         do {
@@ -172,6 +172,7 @@ final class PhotoDetailViewModel: ObservableObject {
                 ? try await social.unlike(photoId: id)
                 : try await social.like(photoId: id)
             let answer = LikeAnswer(photoId: id, liked: result.liked, likes: result.likes)
+            acceptedLikes[id, default: 0] += 1
             // 送っている間に別の1枚へ送ったら、答えは前の1枚のもの——今の1枚の
             // 画面には書かない（控えへは呼び出し側が押した1枚に書く）
             guard id == photoId else { return answer }

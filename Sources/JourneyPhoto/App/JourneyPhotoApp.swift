@@ -102,11 +102,11 @@ struct JourneyPhotoApp: App {
     /// 保存といいねが同じ入れ物を使っていた頃の端末に、**保存しただけの
     /// 写真の id が残っている**ため（足すだけだと出続ける）。
     ///
-    /// **取りに行っている間に押した分は残す**（`syncMark`）。起動直後にホームで
-    /// 押したいいねが、押す前の一覧で消えていた
-    private func syncLikes() async {
+    /// - Parameter mark: 人が決まった直後（最初の await の前）に取った `syncMark`。
+    ///   **その後に押した分は残す**——起動直後にホームで押したいいねが、押す前の
+    ///   一覧で消えていた
+    private func syncLikes(since mark: LocalEdits.Mark) async {
         guard auth.userId != nil else { return }
-        let mark = favorites.syncMark
         let ids = try? await environment.social.myLikedPhotoIds()
         if let ids { favorites.replace(with: ids, since: mark) }
     }
@@ -117,9 +117,8 @@ struct JourneyPhotoApp: App {
     /// 消えて「保存した写真が全部消えた」になる。
     /// ログアウトしたら控えは鍵ごと切り替わる（`use(userId:)`）ので、
     /// ここでは何もしない。
-    private func syncSaves() async {
+    private func syncSaves(since mark: LocalEdits.Mark) async {
         guard auth.userId != nil else { return }
-        let mark = savedPhotos.syncMark
         let ids = try? await environment.saves.mySaves()
         if let ids { savedPhotos.replace(with: ids, since: mark) }
     }
@@ -163,18 +162,22 @@ struct JourneyPhotoApp: App {
                     // （外さないと、次にこの端末を使う人へ前の人あての
                     //  通知が届く）
                     AppDelegate.push = push
+                    // **同期の印は最初の await の前に取る**（`LocalEdits`）。この後の
+                    // 待ちの間に押したいいね・保存・ブロックを、同期の一覧で消さない
+                    let likesMark = favorites.syncMark
+                    let savesMark = savedPhotos.syncMark
+                    let blocksMark = hidden.blockSyncMark
                     await push.use(userId: auth.userId)
                     await applyModeration()
                     await applyRestrictedFeed()
-                    await syncSaves()
-                    await syncLikes()
+                    await syncSaves(since: savesMark)
+                    await syncLikes(since: likesMark)
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
-                    // （取りに行っている間にブロック・解除した分は残す——`blockSyncMark`）
+                    // （同期を始めた後にブロック・解除した分は残す——`blocksMark`）
                     if auth.userId != nil {
-                        let mark = hidden.blockSyncMark
                         let blocks = try? await environment.moderation.blocks()
                         if let blocks {
-                            hidden.replaceBlocked(with: blocks.blockedIds, since: mark)
+                            hidden.replaceBlocked(with: blocks.blockedIds, since: blocksMark)
                             await applyModeration()
                         }
                     }

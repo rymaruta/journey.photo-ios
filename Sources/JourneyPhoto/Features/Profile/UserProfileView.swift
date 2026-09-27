@@ -360,13 +360,18 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var actionMessage: String?
 
     private(set) var cacheBust = ""
-    /// フォロー・ブロックを送り始めた・答えを受け取った回数。**読み込みの間に動いたら、
-    /// その読み込みのフォロー数と「フォロー中か」は書かない**——読み込み中に
-    /// フォローを押すと、押す前の数と「フォローしていない」が後から届いて戻していた
+    /// フォロー・ブロックが**受け付けられた**回数。**読み込みの間に増えたら、その読み込みの
+    /// フォロワー数と「フォロー中か」は書かない**——読み込み中にフォローを押すと、押す前の
+    /// 数と「フォローしていない」が後から届いて戻していた。断られた回は数えない。
+    /// 「フォロー中」の数（この人が何人をフォローしているか）は押しても変わらないので止めない
     private var followWrites = 0
+    /// ブロックが受け付けられた回数。**ブロックで変わるのは「フォロー中か」だけ**なので、
+    /// こちらはフォロワー数を止めない
+    private var blockWrites = 0
 
     func load(userId: String, environment: AppEnvironment, viewerId: String?) async {
         let writes = followWrites
+        let blocks = blockWrites
         isLoading = true
         errorMessage = nil
         cacheBust = String(Int(Date().timeIntervalSince1970))
@@ -388,15 +393,15 @@ final class UserProfileViewModel: ObservableObject {
         }
 
         let stats = try? await environment.social.followStats(userId: userId)
-        if let stats, writes == followWrites {
-            followers = stats.followers
+        if let stats {
+            if writes == followWrites { followers = stats.followers }
             following = stats.following
         }
         if viewerId != nil {
             // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
             // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
-            if let ids, writes == followWrites {
+            if let ids, writes == followWrites, blocks == blockWrites {
                 isFollowing = ids.contains(userId)
             }
         }
@@ -435,15 +440,12 @@ final class UserProfileViewModel: ObservableObject {
     func toggleFollow(userId: String, environment: AppEnvironment, toasts: ToastCenter) async {
         isWorking = true
         actionMessage = nil
-        followWrites += 1
-        defer {
-            isWorking = false
-            followWrites += 1
-        }
+        defer { isWorking = false }
         do {
             let result = isFollowing
                 ? try await environment.social.unfollow(userId: userId)
                 : try await environment.social.follow(userId: userId)
+            followWrites += 1
             isFollowing = result.following
             followers = result.followers
         } catch {
@@ -454,10 +456,9 @@ final class UserProfileViewModel: ObservableObject {
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
         actionMessage = nil
-        followWrites += 1
-        defer { followWrites += 1 }
         do {
             try await environment.moderation.block(userId: userId)
+            blockWrites += 1
             store.block(userId)
             await environment.gallery.setHidden(
                 userIds: store.blockedUserIds,

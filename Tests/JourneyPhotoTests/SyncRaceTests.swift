@@ -87,6 +87,59 @@ final class SyncRaceTests: XCTestCase {
 
     // MARK: - 写真の詳細: 開いた直後のいいね（L-1）
 
+    private func stubbedSocial() -> SocialService {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        StubProtocol.reset()
+        AppConfig.testOverrides = [
+            "JPEnvironmentName": "staging",
+            "JPSiteBaseURL": "https://site.example.test",
+            "JPUserApiBaseURL": "https://api.example.test",
+            "JPCognitoUserPoolId": "pool",
+            "JPCognitoClientId": "client",
+            "JPCognitoRegion": "ap-northeast-1",
+        ]
+        return SocialService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                            tokenProvider: StubTokenProvider(token: "t"), session: session))
+    }
+
+    /// 🔴 **束の隣へ送った後に前の1枚の答えが届いても、今の1枚の読み込みは捨てない**
+    /// （9abb5ea のレビュー: 押した写真を区別せずに数えていた）
+    func testLikeAnswerForThePreviousPhotoDoesNotDiscardTheNextLoad() async {
+        let social = stubbedSocial()
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"liked":true,"likes":8}"#, delay: 0.2)
+        StubProtocol.respond(path: "/user/likes/p2", status: 200, body: #"{"liked":true}"#, delay: 0.4)
+        StubProtocol.respond(path: "/photos/p2/comments", status: 200, body: #"{"items":[],"count":0}"#)
+        StubProtocol.respond(path: "/photos/p2/like", status: 200, body: #"{"likes":9}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 7)
+        model.setSignedIn(true)
+
+        async let pressed = model.toggleLike()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        model.show(photoId: "p2", initialLikes: 3, liked: false)
+        await model.load()
+        _ = await pressed
+        XCTAssertTrue(model.liked, "前の1枚の答えのせいで、今の1枚のハートを読み捨てている")
+        XCTAssertEqual(model.likes, 9, "前の1枚の答えのせいで、今の1枚の数を読み捨てている")
+    }
+
+    /// **断られたいいねは数えない**（サーバーは変わっていないので、読み込みの答えが正しい）
+    func testRejectedLikeDoesNotDiscardTheLoad() async {
+        let social = stubbedSocial()
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#, delay: 0.3)
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: #"{"items":[],"count":0}"#)
+        StubProtocol.respond(path: "/photos/p1/like", status: 500, body: "{}")
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setSignedIn(true)
+
+        async let loading: Void = model.load()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        _ = await model.toggleLike()
+        await loading
+        XCTAssertTrue(model.liked, "断られた回に、サーバーの答え（押してある）を捨てている")
+    }
+
     /// 🔴 **開いた直後に押したいいねを、先に出ていた読み込みの答えで戻さない**
     func testDetailLoadDoesNotUndoALikePressedWhileLoading() async {
         let config = URLSessionConfiguration.ephemeral
