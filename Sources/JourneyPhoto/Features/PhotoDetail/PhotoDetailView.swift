@@ -406,7 +406,7 @@ struct PhotoDetailView: View {
     /// ので、投稿者の公開プロフィールを1回だけ引く。取れなければ名前だけ
     /// ——「@」だけの行を作らない。
     ///
-    /// **認証バッジは出さない**（モックにはあるが、サーバーに判定が無い）。
+    /// 認証の印は名前の横に出す（`VerifiedBadge`・名前 13 に合わせる。付けるのは運営だけ）。
     @ViewBuilder
     private var authorRow: some View {
         if let ownerId {
