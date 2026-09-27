@@ -526,7 +526,7 @@ final class NotificationsViewModel: ObservableObject {
             // 取得に失敗した回でバッジだけ消える事故が起きない
             if page.unread > 0 {
                 if (try? await environment.notifications.markRead()) != nil {
-                    NotificationRouter.shared.noteRead()
+                    NotificationRouter.shared.noteRead(owner: viewerId)
                 }
                 unread = 0
             }

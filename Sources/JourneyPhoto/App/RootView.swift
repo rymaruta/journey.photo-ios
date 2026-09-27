@@ -219,6 +219,16 @@ struct RootView: View {
             if phase == .background { cancelActivityWait() }
         }
         .onDisappear { cancelActivityWait() }
+        // **開いたはずなのに出ていない**（ほかのシートが閉じる途中にベルを
+        // 押した回など、SwiftUI が黙って無視した）ときは戻す。残すと、この先
+        // ベルを押しても true → true で何も起きない。描画が済むのを待ってから見る
+        .onChange(of: showNotifications) { _, shown in
+            guard shown else { return }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if showNotifications && !ModalProbe.isPresenting() { showNotifications = false }
+            }
+        }
         // **押した通知の行き先。** 数で見るのは、2回続けて押したときに
         // 「変わっていない」と見なされて2回目が効かなくなるため
         .onChange(of: router.openActivityRequests) { _, _ in
@@ -229,6 +239,7 @@ struct RootView: View {
         .onAppear { takeActivityRequest() }
         // お知らせを既読にできた: 閉じたときの数え直しが落ちても 0 にする
         .onChange(of: router.readMarks) { _, _ in
+            guard router.readOwner != nil, router.readOwner == auth.userId else { return }
             unreadGeneration += 1
             unread = 0
             // 既読のあとに届いた分は数え直す（0 のままにしない）。

@@ -227,7 +227,8 @@ final class NotificationRouterTests: XCTestCase {
     func testMarkingReadIsSignalledWithoutOpening() async {
         let router = freshRouter()
         let before = router.readMarks
-        router.noteRead()
+        router.noteRead(owner: "u1")
+        XCTAssertEqual(router.readOwner, "u1", "誰の既読かを持っていない（前の人の合図で次の人のベルを消す）")
         XCTAssertEqual(router.readMarks, before + 1)
         XCTAssertFalse(router.takePendingActivity())
     }
