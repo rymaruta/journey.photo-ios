@@ -166,7 +166,7 @@ struct ReportSheet: View {
             try await environment.moderation.report(photoId: photoId, reason: reason, note: note)
             // **押したあと実際に消す。** 通報が受け付けられただけで、
             // 通報した人の画面に出続けるなら意味がない
-            hidden.markReported(photoId)
+            hidden.markReported(photoId, for: blocker)
             if alsoBlock, let ownerId {
                 // **ブロックが落ちても通報は成立している。** ここで投げ直すと
                 // 「通報できなかった」と誤解させるので、文言を分ける

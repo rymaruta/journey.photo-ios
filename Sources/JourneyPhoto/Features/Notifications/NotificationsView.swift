@@ -34,6 +34,11 @@ struct NotificationsView: View {
             }
         }
         .webScreen()
+        // 人が替わったら前の人の中身を捨て、開いていた行き先も閉じる
+        .onChange(of: auth.userId) { _, _ in
+            model.forget()
+            route = nil
+        }
         .navigationTitle(L("お知らせ", "Activity"))
         // **通知の設定**（板 15 の右上の歯車）。行き先は設定の画面——
         // プッシュ通知の入／切はそこにある。閉じる口は `RootView` が
@@ -381,6 +386,24 @@ final class NotificationsViewModel: ObservableObject {
     private var appliedGeneration = 0
     /// 手元の一覧（`feed` / `mine`）を書いた中でいちばん新しい回（同じ理由）
     private var poolsGeneration = 0
+
+    /// 人が替わった。**前の人のお知らせ・写真の手元の一覧・フォロー中を捨てる。**
+    /// シートは人が替わっても閉じないので、捨てないと次の人のログイン直後に
+    /// 前の人の行が描かれ、押すと前の人の写真（下書きを含む）が開いていた。
+    /// 走っている前の人の読み込みの答えも、世代を進めて書かせない
+    func forget() {
+        generation += 1
+        appliedGeneration = generation
+        poolsGeneration = generation
+        rows = []
+        feed = []
+        mine = []
+        unread = 0
+        unreadIds = []
+        following = []
+        isLoading = false
+        errorMessage = nil
+    }
 
     /// テストから手元の一覧を差し替える口。
     func setFeedForTesting(_ photos: [Photo]) { feed = photos }

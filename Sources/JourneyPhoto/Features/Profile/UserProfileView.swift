@@ -74,7 +74,10 @@ struct UserProfileView: View {
             Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
         }
         .onAppear { dropped = hidden.snapshot }
-        .task(id: userId) {
+        // **見ている人が替わっても読み直す。** 相手だけを鍵にしていたので、開いたまま
+        // 別の人でログインし直すと「フォロー中」が前の人の値のまま出て、押すと
+        // 逆向きに送っていた（前の人が誰をフォローしているかも見えた）
+        .task(id: "\(userId)|\(auth.userId ?? "")") {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
         }
     }
@@ -369,7 +372,13 @@ final class UserProfileViewModel: ObservableObject {
     /// こちらはフォロワー数を止めない
     private var blockWrites = 0
 
+    /// 前回の読み込みで見ていた人
+    private var lastViewerId: String??
+
     func load(userId: String, environment: AppEnvironment, viewerId: String?) async {
+        // 見ている人が替わったら「フォロー中」を先に倒す（読み直しの間も前の人の値を出さない）
+        if let last = lastViewerId, last != viewerId { isFollowing = false }
+        lastViewerId = .some(viewerId)
         let writes = followWrites
         let blocks = blockWrites
         isLoading = true

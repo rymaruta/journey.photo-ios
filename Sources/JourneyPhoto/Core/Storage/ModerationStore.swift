@@ -183,6 +183,14 @@ final class ModerationStore: ObservableObject {
 
     /// 通報した写真は、その人の画面からは即座に消す。
     /// **サーバーは消さない**（読むのは人で、すぐには終わらない）。
+    /// 通報の答えを待った後に控える。**待っている間に人が替わっていたら書かない**
+    /// （`block(_:for:)` と同じ）——書くと、未ログインの控えに入り、以後だれの
+    /// 画面からもその写真が消えていた
+    func markReported(_ photoId: String, for owner: String?) {
+        guard owner == userId else { return }
+        markReported(photoId)
+    }
+
     func markReported(_ photoId: String) {
         let before = (blockedUserIds, reportedPhotoIds)
         reportedPhotoIds.insert(photoId)

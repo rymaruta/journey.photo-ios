@@ -101,6 +101,19 @@ final class SyncRaceTests: XCTestCase {
         XCTAssertTrue(hidden.blockedUserIds.isEmpty, "古い取得が新しい一覧を上書きした")
     }
 
+    /// **通報の答えを待つ間に人が替わったら、次の人（未ログイン）の控えに書かない**
+    func testReportAnsweredAfterAUserChangeIsNotKept() async {
+        let hidden = ModerationStore(defaults: defaults())
+        hidden.use(userId: "u1")
+        let owner = hidden.owner
+        hidden.use(userId: nil)                 // 待っている間に期限切れで未ログインに
+        hidden.markReported("p1", for: owner)
+        XCTAssertTrue(hidden.reportedPhotoIds.isEmpty, "未ログインの控えに通報が入った")
+        hidden.use(userId: "u1")
+        hidden.markReported("p1", for: hidden.owner)
+        XCTAssertEqual(hidden.reportedPhotoIds, ["p1"])
+    }
+
     func testBlockSyncForAnotherPersonIsDropped() async {
         let hidden = ModerationStore(defaults: defaults())
         hidden.use(userId: "a")

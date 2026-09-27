@@ -136,6 +136,13 @@ final class AuthStore: ObservableObject {
     }
 
     func signIn(email: String, password: String) async {
+        // 🔴 **「本当にログアウトしたか分からない」まま入り直すときは、先に Amplify の
+        // 中の古いログインを外す。** この状態では `AuthGateway.signOut()` を呼んで
+        // いないので Amplify はログイン中のままで、`signIn` は「既にログイン中」
+        // （invalidState）で断り、アプリを強制終了するまで誰もログインできなかった
+        if isSignedOutUncertain {
+            await AuthGateway.signOut()
+        }
         await run {
             _ = try await AuthGateway.signIn(email: email, password: password)
             let id = try await AuthGateway.currentUserId()

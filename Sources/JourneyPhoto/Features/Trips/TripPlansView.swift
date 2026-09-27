@@ -30,6 +30,7 @@ struct TripPlansView: View {
         .webScreen()
         .navigationTitle(L("旅行プラン", "Trip plans"))
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: auth.userId) { _, _ in model.forget() }
     }
 
     private var content: some View {
@@ -211,6 +212,18 @@ final class TripPlansModel: ObservableObject {
     @Published var errorMessage: String?
 
     func plan(_ planId: String) -> TripPlan? { plans.first { $0.planId == planId } }
+
+    /// 人が替わった。**前の人のプランを残さない**（`AlbumsViewModel.forget` と同じ理由）。
+    /// 走っている読み込み・書き込みの答えも捨てる（数を進める）
+    func forget() {
+        writes += 1
+        loadRuns += 1
+        settledRun = loadRuns
+        plans = []
+        status = .loading
+        busy = nil
+        errorMessage = nil
+    }
 
     /// 前の画面の失敗の文を消す（**一覧と詳細で1つを共有している**ので、
     /// プランAの失敗をプランBを開いたときに出さない）

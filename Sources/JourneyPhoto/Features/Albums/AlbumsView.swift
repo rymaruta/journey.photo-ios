@@ -32,6 +32,7 @@ struct AlbumsView: View {
             }
         }
         .navigationTitle(Labels.Navigation.albums)
+        .onChange(of: auth.userId) { _, _ in model.forget() }
     }
 
     // **段ごとに割ってある。** 一本の長い `List { … }` にすると、Swift の
@@ -240,6 +241,18 @@ final class AlbumsViewModel: ObservableObject {
     /// ——書き込みの前に始めた読み込みや、結果整合で古い姿を返す読み込みで、
     /// 消したアルバムが戻る・作ったアルバムが消える・名前が巻き戻るのを防ぐ
     private var writes = AlbumMerge.Writes()
+
+    /// 人が替わった。**前の人のアルバム（招待リンクつき）を残さない**。
+    /// 画面は残ったまま中身だけログイン画面に替わるので、次の人の読み込みが
+    /// 返るまで（落ちた回はずっと）前の人の一覧が出ていた
+    func forget() {
+        loadGeneration += 1
+        albums = []
+        writes = AlbumMerge.Writes()
+        inviteWorking = []
+        isLoading = false
+        errorMessage = nil
+    }
 
     func inviteURL(token: String) -> URL {
         AppConfig.siteBaseURL.appendingPathComponent("j").appending(queryItems: [

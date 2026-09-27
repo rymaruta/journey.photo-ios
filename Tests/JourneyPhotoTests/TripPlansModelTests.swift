@@ -62,6 +62,21 @@ final class TripPlansModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage, "「読み込めませんでした」の1行と赤い行が重なる")
     }
 
+    /// **人が替わったら前の人のプランを残さない**（画面は残り、中身だけログイン画面に替わる）
+    func testForgetDropsThePreviousUsersPlans() async {
+        let env = environment()
+        let model = TripPlansModel()
+        StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#)
+        await model.load(environment: env)
+        model.forget()
+        XCTAssertTrue(model.plans.isEmpty, "前の人のプランが残っている")
+        XCTAssertEqual(model.status, .loading)
+        // 次の人の読み込みは通る
+        StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"p2","title":"夏","days":[]}]}"#)
+        await model.load(environment: env)
+        XCTAssertEqual(model.plans.map(\.planId), ["p2"])
+    }
+
     /// 取れていた一覧は、取り直しに失敗しても消さない（引き下げ更新で消さない）
     func testRefreshFailureKeepsTheList() async {
         let env = environment()

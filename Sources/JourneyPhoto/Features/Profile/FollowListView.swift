@@ -93,7 +93,12 @@ struct FollowListView: View {
         } message: {
             Text(actionError ?? "")
         }
-        .task { await load() }
+        // 見ている人が替わったら「フォロー中」の控えを捨てて読み直す（前の人の値で
+        // ボタンを出さない）
+        .task(id: auth.userId) {
+            myFollowing = nil
+            await load()
+        }
         .refreshable { await load() }
     }
 
