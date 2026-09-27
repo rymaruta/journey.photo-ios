@@ -180,6 +180,27 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         XCTAssertNotNil(r.likesAsOf)
     }
 
+    /// 🔴 **前の人の要求を待っている間に人が替わったら、その答えを控えに残さない。**
+    /// 残すと次の人の一覧に前の人宛ての絞った写真が出ていた
+    func testRestrictedAnswerFromThePreviousUserIsDropped() async throws {
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
+        let gallery = service(live: nil)
+        let restricted = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"r","src":"https://x/r.jpg","likes":8,"audience":"followers"}"#.utf8))
+        await gallery.setRestrictedLoader {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            return [restricted]
+        }
+        async let first = gallery.fetchPhotos()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        // 次の人がログインした（その人に絞った写真は無い）
+        await gallery.setRestrictedLoader { [] }
+        let before = try await first
+        XCTAssertFalse(before.contains { $0.id == "r" }, "替わったあとに前の人の答えを返している")
+        let after = try await gallery.fetchPhotos()
+        XCTAssertFalse(after.contains { $0.id == "r" }, "前の人の答えが控えに残っている")
+    }
+
     /// 🔴 **取得の途中で引き下げ更新したら、自分でも取りに行く。**
     /// 途中の要求の結果で済ませていた版は、その要求が失敗していれば
     /// 利用者が引いたのに、いまの数なしで返っていた

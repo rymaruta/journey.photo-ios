@@ -54,6 +54,23 @@ final class ViewModelTests: XCTestCase {
 
     // MARK: - ギャラリー
 
+    /// 🔴 **おすすめの横並びは「おすすめ」の札のときだけ。** 全員の写真から作る段なので、
+    /// 「フォロー中」ではフォローしていない人の写真が並んでいた（owner の判断 2026-09-27）
+    func testFeaturedRowsShowOnlyOnTheRecommendedFeed() async {
+        let model = GalleryViewModel(gallery: gallery("""
+        [{"id":"f1","src":"https://x/f1.jpg","createdAt":"2026-01-02T00:00:00Z","category":"風景","featured":true,"userId":"u1"},
+         {"id":"f2","src":"https://x/f2.jpg","createdAt":"2026-01-03T00:00:00Z","category":"風景","featured":true,"userId":"u1"}]
+        """))
+        await model.load()
+        XCTAssertFalse(model.featured.isEmpty, "前提: おすすめの段が作れていない")
+        model.select(feed: .following, viewerId: "me")
+        XCTAssertTrue(model.featured.isEmpty, "フォロー中で全員のおすすめを出している")
+        model.select(feed: .latest, viewerId: "me")
+        XCTAssertTrue(model.featured.isEmpty, "新着でおすすめの段を出している")
+        model.select(feed: .recommended, viewerId: "me")
+        XCTAssertFalse(model.featured.isEmpty, "おすすめに戻しても段が出ない")
+    }
+
     /// 新しい順。**`createdAt` が無い写真は末尾**（落とさない）。
     func testGalleryOrdersNewestFirstAndKeepsUndated() async {
         let model = GalleryViewModel(gallery: gallery(feed))
@@ -183,7 +200,7 @@ final class ViewModelTests: XCTestCase {
         model.use(viewerId: "me", following: [])
         model.select(scope: .following)
 
-        model.refreshFollowing(["u2"])
+        model.refreshFollowing(["u2"], for: "me")
 
         XCTAssertEqual(model.scope, .following, "範囲が勝手に戻っている")
     }
@@ -318,6 +335,24 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 0, "ログインしていないのに鍵の要る口を叩いた")
     }
 
+    /// 🔴 **前の人の読み込みの途中で人が替わったら、その答えを書かない。**
+    /// 次の人の読み込みも押さえで弾かない（書き込まれた前の人の下書きが残っていた）
+    func testSlowLoadOfThePreviousUserIsDiscarded() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"a"}"#, delay: 0.3)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg","published":false}]"#, delay: 0.3)
+        let model = MyPageViewModel(api: api())
+        async let previous: Void = model.load()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        model.forgetPhotos()
+        XCTAssertFalse(model.isLoading, "人が替わったのに前の人の読み込み中のまま")
+        await previous
+        XCTAssertTrue(model.photos.isEmpty, "前の人の写真（下書き）が次の人に書き込まれた")
+        XCTAssertNil(model.profile, "前の人の見出しが次の人に書き込まれた")
+    }
+
     #if DEBUG
     /// 🔴 **鍵を持たずに入っている回、マイページが丸ごと「ログインが必要です」
     /// になっていた。**
@@ -373,6 +408,62 @@ final class ViewModelTests: XCTestCase {
         StubProtocol.respond(status: 500, body: "{}")
         await model.load()
         XCTAssertEqual(model.likes, 7, "取れなかった回に一覧の数を捨てている")
+    }
+
+    /// 🔴 **束の隣へ送ったら、数・ハート・コメントをその1枚のものに替える。**
+    /// 開いた1枚のままだと、2枚目を見ながら押したいいねが1枚目に付いていた
+    func testShowAnotherPhotoInTheBundleSwitchesTheTarget() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: 7)
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":8}"#)
+        await model.toggleLike()
+        model.draftComment = "1枚目へのコメント"
+
+        model.show(photoId: "p2", initialLikes: 3, liked: false)
+        XCTAssertEqual(model.likes, 3, "前の1枚の数が残っている")
+        XCTAssertFalse(model.liked, "前の1枚のハートが残っている")
+        XCTAssertNil(model.lastLikeAnswer)
+        XCTAssertNil(model.commentCount)
+        XCTAssertEqual(model.draftComment, "", "前の1枚への書きかけが残っている")
+
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":4}"#)
+        await model.toggleLike()
+        XCTAssertTrue(StubProtocol.lastRequest?.url?.path.contains("p2") == true,
+                      "送った先ではなく開いた1枚にいいねを送っている")
+    }
+
+    /// 🔴 **送っている間に束の隣へ送っても、答えは押した1枚のもの。**
+    /// 今の1枚の画面には書かず、押した1枚の id で返す（呼び出し側が控えに書く）
+    func testLikeAnswerKeepsThePressedPhotoAfterSwiping() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(path: "/photos/p1/like", status: 200,
+                             body: #"{"liked":true,"likes":9}"#, delay: 0.2)
+        async let pressed = model.toggleLike()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        model.show(photoId: "p2", initialLikes: 2, liked: false)
+        let answer = await pressed
+        XCTAssertEqual(answer, PhotoDetailViewModel.LikeAnswer(photoId: "p1", liked: true, likes: 9),
+                       "押した1枚の答えを返していない（控えに入らない）")
+        XCTAssertFalse(model.liked, "前の1枚の答えを今の1枚に書いている")
+        XCTAssertEqual(model.likes, 2)
+    }
+
+    /// 🔴 **圏外で開いたいいね済みの写真を白いハートにしない。** 端末の控えで始め、
+    /// 押して届かなかった回は「答えなし」を返す（呼び出し側が控えを消さない）
+    func testOfflineKeepsTheStoredHeart() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.show(photoId: "p1", initialLikes: 3, liked: true)
+        StubProtocol.respond(status: 500, body: "{}")
+        await model.load()
+        XCTAssertTrue(model.liked, "引けなかった回に控えのハートを消している")
+        let answered = await model.toggleLike()
+        XCTAssertNil(answered, "届かなかったのに答えがあった扱い")
+        XCTAssertTrue(model.liked)
     }
 
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。
@@ -439,8 +530,8 @@ final class ViewModelTests: XCTestCase {
         model.setSignedIn(true)
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":1}"#)
 
-        async let first: Void = model.toggleLike()
-        async let second: Void = model.toggleLike()
+        async let first: PhotoDetailViewModel.LikeAnswer? = model.toggleLike()
+        async let second: PhotoDetailViewModel.LikeAnswer? = model.toggleLike()
         _ = await (first, second)
 
         XCTAssertEqual(StubProtocol.requestCount, 1, "二度押しで2回投げている")

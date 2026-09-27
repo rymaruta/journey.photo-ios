@@ -163,7 +163,8 @@ struct UserProfileView: View {
             ErrorBanner(message: L("公開された写真はまだありません", "No public photos yet"))
         } else if tab == .map {
             // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）
-            MyPhotosMap(photos: shownPhotos)
+            // シートの中でブロック／通報して閉じたら、格子も絞り直す（`onAppear` は来ない）
+            MyPhotosMap(photos: shownPhotos, onSheetDismiss: { dropped = hidden.snapshot })
         } else {
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(shownPhotos) { photo in
@@ -293,7 +294,7 @@ struct UserProfileView: View {
             if model.isFollowing {
                 showUnfollowConfirm = true
             } else {
-                Task { await model.toggleFollow(userId: userId, environment: environment) }
+                Task { await model.toggleFollow(userId: userId, environment: environment, toasts: toasts) }
             }
         } label: {
             Text(model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"))
@@ -313,7 +314,7 @@ struct UserProfileView: View {
         .buttonStyle(.plain)
         .disabled(model.isWorking)
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
-            Task { await model.toggleFollow(userId: userId, environment: environment) }
+            Task { await model.toggleFollow(userId: userId, environment: environment, toasts: toasts) }
         }
     }
 
@@ -387,8 +388,12 @@ final class UserProfileViewModel: ObservableObject {
             following = stats.following
         }
         if viewerId != nil {
+            // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
+            // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
-            isFollowing = ids?.contains(userId) ?? false
+            if let ids {
+                isFollowing = ids.contains(userId)
+            }
         }
         // **その人の写真は公開 JSON から絞る。** 「ある人の公開写真」を返す
         // 口が api-user に無いため（Web も静的ページを書き出している）
@@ -419,7 +424,10 @@ final class UserProfileViewModel: ObservableObject {
     /// 名前に入れ替わると、読み込みの途中が壊れて見える
     var shownName: String? { AuthorName.forProfilePage(profile: profile, photos: photos) }
 
-    func toggleFollow(userId: String, environment: AppEnvironment) async {
+    /// 🔴 **失敗は知らせの帯に出す**（`errorMessage` に入れない）。`errorMessage` は
+    /// 読み込みの失敗で、写真の格子ごと差し替えて出す——圏外でフォローを押すと
+    /// 格子が消えていた（マイページが `actionMessage` で分けたのと同じ形）
+    func toggleFollow(userId: String, environment: AppEnvironment, toasts: ToastCenter) async {
         isWorking = true
         actionMessage = nil
         defer { isWorking = false }

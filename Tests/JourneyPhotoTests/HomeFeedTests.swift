@@ -94,4 +94,29 @@ final class HomeFeedSelectionTests: XCTestCase {
         model.use(viewerId: nil, following: [])
         XCTAssertEqual(model.feed, .recommended)
     }
+
+    /// 🔴 **フォロー一覧が取れなかった回（圏外・画面を離れて取り消された回）に、
+    /// 同じ人の一覧を空で上書きしない。** 別の人になったら前の人の一覧は使わない
+    func testFailedFollowListKeepsTheSameViewersList() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "me", following: ["a"])
+        model.use(viewerId: "me", fetchedFollowing: nil)
+        XCTAssertEqual(model.followingIds, ["a"], "取れなかった回に空で上書きした")
+        model.use(viewerId: "other", fetchedFollowing: nil)
+        XCTAssertEqual(model.followingIds, [], "前の人のフォロー一覧を次の人に使った")
+        model.use(viewerId: "other", fetchedFollowing: ["b"])
+        XCTAssertEqual(model.followingIds, ["b"])
+    }
+
+    /// 🔴 **札を押して人が替わった回、前の人のフォロー一覧を持ち越さない。**
+    /// 持ち越すと、次の人の一覧が取れなかったとき前の人の一覧が「フォロー中」に残る
+    func testSelectingAFeedAsAnotherViewerDropsThePreviousList() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "a", following: ["x"])
+        model.select(feed: .following, viewerId: "b")
+        model.use(viewerId: "b", fetchedFollowing: nil)
+        XCTAssertEqual(model.followingIds, [], "前の人のフォロー一覧が次の人に残った")
+        model.refreshFollowing(["x"], for: "a")
+        XCTAssertEqual(model.followingIds, [], "前の人に取りに行った一覧を次の人に書いた")
+    }
 }

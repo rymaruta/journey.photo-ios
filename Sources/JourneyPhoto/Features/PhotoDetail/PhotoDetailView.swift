@@ -28,7 +28,13 @@ struct PhotoDetailView: View {
     /// 編集して保存したあとの姿。**`photo` は `let` で書き換えられない**
     /// ——編集シートを閉じても題も説明も古いままだった（保存はできていた
     /// ので、戻って入り直すまで「保存されていない」ように見えた）
-    @State private var edited: Photo?
+    /// 写真ごとに持つ（束の別の1枚に、前の1枚の編集後の姿を出さない）
+    @State private var edits: [String: Photo] = [:]
+    /// **いま上に出ている1枚。** 束を左右に送ると替わる。
+    ///
+    /// 🔴 以前は開いた1枚（`photo`）のままで、2枚目へ送っても題・いいね・
+    /// 削除・通報は1枚目が対象だった（「2/3枚」と出ているのに）
+    @State private var current: Photo
     /// 「この近くで撮られた写真」（板 02）。座標の無い写真では空のまま
     @State private var nearby: [Photo] = []
     /// 「この場所のスポット」の行き先。**台帳にも写真にも辿り着けたときだけ入る**
@@ -43,6 +49,9 @@ struct PhotoDetailView: View {
     /// 2本目が1本目の答えの前に逆向きを送り、画面とサーバーが食い違う
     /// （この画面の1枚は `PhotoDetailViewModel.isLiking` が止めている）
     @State private var viewerLikesInFlight: Set<String> = []
+    /// この画面が出ているか・裏にいる間にブロック／通報があったか（`hidden.revision`）
+    @State private var isOnScreen = false
+    @State private var needsRefilter = false
 
     /// スポット詳細に渡すもの一式。**撮影地から導いた地点**と、
     /// 突き合わせる公開写真（近くの地点もここから出す）
@@ -52,12 +61,13 @@ struct PhotoDetailView: View {
     }
 
     /// 画面に描く1枚。編集していれば新しい方。
-    private var shown: Photo { edited ?? photo }
+    private var shown: Photo { edits[current.id] ?? current }
 
     init(photo: Photo, fromPublicFeed: Bool = true, context: [Photo] = []) {
         self.photo = photo
         self.fromPublicFeed = fromPublicFeed
         self.context = context
+        _current = State(initialValue: photo)
         // `AppEnvironment` は init で受け取れない（EnvironmentObject は body 以降）
         _model = StateObject(wrappedValue: PhotoDetailViewModel(
             photoId: photo.id,
@@ -74,7 +84,7 @@ struct PhotoDetailView: View {
     /// ——「送れるはずなのに送れない」より、送りが出ない方がまし。
     var siblings: [Photo] { context.isEmpty ? [photo] : context }
 
-    private var ownerId: String? { photo.userId ?? photo.uploadedBy }
+    private var ownerId: String? { current.userId ?? current.uploadedBy }
     private var isMine: Bool { ownerId != nil && ownerId == auth.userId }
 
     /// コメントの節の目印。吹き出しを押したらここまで送る
@@ -124,9 +134,17 @@ struct PhotoDetailView: View {
         // 戻るは標準のボタンのまま——iOS 26 ではそれ自体がガラスの丸で出る
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
-        .task(id: auth.userId) {
+        // **送った先の1枚でも読み直す**（鍵に今の1枚を入れる）
+        .task(id: "\(auth.userId ?? "")|\(current.id)") {
             model.setSignedIn(auth.userId != nil)
+            model.show(photoId: current.id, initialLikes: current.likes,
+                       liked: favorites.contains(current.id))
             await model.load()
+        }
+        .onChange(of: heroPage) { _, page in
+            let group = heroGroup
+            guard group.indices.contains(page) else { return }
+            current = group[page]
         }
         .task(id: shown.location) { await loadSpotLead() }
         .task(id: shown.id) { await loadNearby() }
@@ -137,17 +155,38 @@ struct PhotoDetailView: View {
         // **通信はしない。** 手元の並びから落とすだけ——ブロック・通報は
         // 減らす向きにしか効かない。以前は鍵に `revision` を入れていて、
         // 押すたびに公開一覧を2本（通報＋ブロックで4本）取り直していた
-        .onChange(of: hidden.revision) { _, _ in refilterHidden() }
-        .task(id: ownerId) {
+        //
+        // 🔴 **画面に出ている間だけ絞る。** 近くの写真から開いた先でブロックすると、
+        // 裏にいるこの画面の `nearby` からその1枚が消え、押した元の
+        // `NavigationLink` ごと開いている詳細が閉じていた（「ブロックしました」も
+        // 見えない）。裏にいる間は印だけ付けて、戻ってきたときに絞る
+        .onChange(of: hidden.revision) { _, _ in
+            if isOnScreen { refilterHidden() } else { needsRefilter = true }
+        }
+        .onAppear {
+            isOnScreen = true
+            if needsRefilter {
+                needsRefilter = false
+                refilterHidden()
+            }
+        }
+        .onDisappear { isOnScreen = false }
+        .task(id: "\(ownerId ?? "")|\(auth.userId ?? "")") {
             await model.loadOwner(ownerId, profiles: environment.profiles)
             // **フォローしているかは、その人を見に行かずに知りたい。**
             // 自分のフォロー一覧から引く（相手のページを開かずに済む）
-            guard let me = auth.userId, let ownerId, me != ownerId else { return }
-            let ids = (try? await environment.social.myFollowingIds()) ?? []
+            guard let me = auth.userId, let ownerId, me != ownerId else {
+                isFollowing = false
+                return
+            }
+            // **取れなかった回は書かない。** 圏外で「フォロー」に戻すと、
+            // フォロー中の人を押して二重に送る（`FollowListView` と同じ扱い）
+            let ids = try? await environment.social.myFollowingIds()
+            guard let ids, !Task.isCancelled else { return }
             isFollowing = ids.contains(ownerId)
         }
         .sheet(isPresented: $showReport) {
-            ReportSheet(photoId: photo.id, ownerId: ownerId)
+            ReportSheet(photoId: current.id, ownerId: ownerId)
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
         // 保存できていないように見える
@@ -157,10 +196,10 @@ struct PhotoDetailView: View {
         .fullScreenCover(isPresented: $showViewer) {
             PhotoViewerView(
                 photos: siblings,
-                index: siblings.firstIndex(where: { $0.id == photo.id }) ?? 0,
+                index: siblings.firstIndex(where: { $0.id == current.id }) ?? 0,
                 // **写真ごとに答える。** この画面の1枚は画面が持つ値、
                 // 隣の写真は端末の控え（ホームのハートと同じ出どころ）
-                isLiked: { shown in shown.id == photo.id ? model.liked : favorites.contains(shown.id) },
+                isLiked: { shown in shown.id == current.id ? model.liked : favorites.contains(shown.id) },
                 isSignedIn: auth.userId != nil,
                 onDoubleTapLike: { shown in Task { await likeFromViewer(shown) } },
                 onToggleLike: { shown in Task { await toggleLikeFromViewer(shown) } },
@@ -191,7 +230,8 @@ struct PhotoDetailView: View {
             if group.count > 1 {
                 TabView(selection: $heroPage) {
                     ForEach(Array(group.enumerated()), id: \.element.id) { index, item in
-                        heroImage(item).tag(index)
+                        // 編集して保存した1枚は新しい姿で（切り抜きの中心など）
+                        heroImage(item.id == shown.id ? shown : item).tag(index)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -506,7 +546,7 @@ struct PhotoDetailView: View {
             // ——各社の URL スキームを `LSApplicationQueriesSchemes` に
             // 登録し、入っていないアプリの分を隠す仕掛けが要る。標準の
             // 共有シートなら入っているアプリだけが並ぶ
-            if let url = shareURL(for: photo) {
+            if let url = shareURL(for: current) {
                 ShareLink(item: url) { Label(L("共有", "Share"), systemImage: "square.and.arrow.up") }
             }
             if isMine {
@@ -555,11 +595,12 @@ struct PhotoDetailView: View {
     /// この画面の1枚なら下のハートと同じ道（数と状態を画面にも出す）。
     /// 隣の写真なら、その写真に直接送る——**解除はしない**ので `like` だけ
     private func likeFromViewer(_ shown: Photo) async {
-        if shown.id == photo.id {
-            await model.toggleLike()
+        if shown.id == current.id {
+            // 🔴 **ダブルタップは付けるだけ。** いいね済みの1枚で下のハートと同じ
+            // 入れ替えを通すと、ダブルタップで外れていた（隣の写真は `like` だけ）
+            guard !model.liked else { return }
             // 下のハートと同じく、端末の控えとホームの数にも渡す
-            favorites.set(photo.id, favorite: model.liked)
-            shareLikeCount()
+            await toggleLikeHere()
             return
         }
         guard viewerLikesInFlight.insert(shown.id).inserted else { return }
@@ -583,10 +624,8 @@ struct PhotoDetailView: View {
     /// この画面の1枚なら下のハートと同じ道。隣の写真は、先に灯して／消して
     /// から送り、届かなければ元に戻す（ダブルタップと同じ控え方）
     private func toggleLikeFromViewer(_ shown: Photo) async {
-        if shown.id == photo.id {
-            await model.toggleLike()
-            favorites.set(photo.id, favorite: model.liked)
-            shareLikeCount()
+        if shown.id == current.id {
+            await toggleLikeHere()
             return
         }
         guard viewerLikesInFlight.insert(shown.id).inserted else { return }
@@ -607,9 +646,9 @@ struct PhotoDetailView: View {
     /// 共有するページ。**個別ページが在る写真だけ**（`PhotoLink`）。
     /// 隣の写真も同じ一覧から来ているので、同じ判断で足りる
     private func shareURL(for item: Photo) -> URL? {
-        let current = item.id == photo.id ? shown : item
+        let latest = item.id == current.id ? shown : item
         return PhotoLink.url(photoId: item.id,
-                             isPublished: fromPublicFeed && current.published != false)
+                             isPublished: fromPublicFeed && latest.published != false)
     }
 
     /// **押した回の**答えを、ホームのカードと検索の格子にも渡す。
@@ -618,21 +657,27 @@ struct PhotoDetailView: View {
     ///
     /// 開いたときに読んだ数は渡さない（`LikeCountStore` の注記）。
     /// 答えが無かった回（失敗・数を返さない答え）も渡さない
-    private func shareLikeCount() {
-        guard let answer = model.lastLikeAnswer else { return }
-        likeCounts.set(photo.id, count: answer)
+
+    /// 上に出ている1枚のいいね。端末の控えとホームの数にも渡す。
+    ///
+    /// **押した1枚を先に覚える。** 送っている間に束の隣へ送ると、答えは
+    /// 前の1枚のもの——今の1枚の控えに書かない
+    private func toggleLikeHere() async {
+        // **届かなかった回は控えに書かない**（押す前のハートのまま）。
+        // 答えは**押した1枚に**書く——送っている間に束の隣へ送っても
+        let answer = await model.toggleLike()
+        guard let answer else { return }
+        favorites.set(answer.photoId, favorite: answer.liked)
+        // 押した回の答えだけを渡す（`LikeCountStore` の注記）
+        if let likes = answer.likes { likeCounts.set(answer.photoId, count: likes) }
     }
 
     private func socialBar(_ proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 16) {
                 Button {
-                    Task {
-                        await model.toggleLike()
-                        // 端末側のハートも合わせる（圏外でも一覧が出る）
-                        favorites.set(photo.id, favorite: model.liked)
-                        shareLikeCount()
-                    }
+                    // 端末側のハートも合わせる（圏外でも一覧が出る）
+                    Task { await toggleLikeHere() }
                 } label: {
                     // **いちばん押されるボタンがいちばん小さかった。**
                     // 既定の字のままで 20pt ほどしか無く、指では狙いにくい
@@ -672,16 +717,16 @@ struct PhotoDetailView: View {
                 Button {
                     Task { await toggleSave() }
                 } label: {
-                    Image(systemName: savedPhotos.contains(photo.id) ? "bookmark.fill" : "bookmark")
+                    Image(systemName: savedPhotos.contains(current.id) ? "bookmark.fill" : "bookmark")
                         .font(.title2)
-                        .foregroundStyle(savedPhotos.contains(photo.id) ? WebTheme.foreground : WebTheme.faint)
+                        .foregroundStyle(savedPhotos.contains(current.id) ? WebTheme.foreground : WebTheme.faint)
                         .webTappable()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("保存", "Save"))
 
                 // **シェア**（配るのは画像ではなくページ）
-                if let url = shareURL(for: photo) {
+                if let url = shareURL(for: current) {
                     ShareLink(item: url) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.title2)
@@ -938,28 +983,30 @@ struct PhotoDetailView: View {
         guard !isSavingBookmark else { return }
         isSavingBookmark = true
         defer { isSavingBookmark = false }
-        let wasSaved = savedPhotos.contains(photo.id)
-        savedPhotos.set(photo.id, saved: !wasSaved)
+        let id = current.id
+        let wasSaved = savedPhotos.contains(id)
+        savedPhotos.set(id, saved: !wasSaved)
         do {
             if wasSaved {
-                try await environment.saves.unsave(photoId: photo.id)
+                try await environment.saves.unsave(photoId: id)
             } else {
-                try await environment.saves.save(photoId: photo.id)
+                try await environment.saves.save(photoId: id)
             }
         } catch {
-            savedPhotos.set(photo.id, saved: wasSaved)
+            savedPhotos.set(id, saved: wasSaved)
         }
     }
 
     private func reloadPhoto() async {
         guard isMine else { return }
-        guard let fresh = try? await environment.photos.myPhoto(id: photo.id) else { return }
-        edited = fresh
+        let id = current.id
+        guard let fresh = try? await environment.photos.myPhoto(id: id) else { return }
+        edits[id] = fresh
     }
 
     private func deletePhoto() async {
         do {
-            try await environment.photos.delete(photoId: photo.id)
+            try await environment.photos.delete(photoId: current.id)
             // **消した写真の画面に留まらせない。** 残ると、もう無いものを
             // 編集したり、もう一度削除を押したりできてしまう
             dismiss()

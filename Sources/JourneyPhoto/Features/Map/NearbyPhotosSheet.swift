@@ -11,12 +11,18 @@ struct NearbyPhotosSheet: View {
 
     let center: Photo.Coords
     let photos: [Photo]
+    /// 地図がまだ読めていない・読むのに失敗した。**「無い」と分けるため**
+    var couldNotLoad = true
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var hidden: ModerationStore
     @State private var radius = NearbyPhotos.defaultRadius
+    /// 🔴 シートの中の詳細でブロック／通報して戻ったら落とす。**戻ったとき
+    /// （`onAppear`）だけ**写しを取り直す（見ている最中に絞ると詳細が閉じる）
+    @State private var dropped: ModerationSnapshot?
 
     private var found: [(photo: Photo, km: Double)] {
-        NearbyPhotos.photos(photos, near: center, withinKm: radius)
+        NearbyPhotos.photos(dropped?.visible(photos) ?? photos, near: center, withinKm: radius)
     }
 
     var body: some View {
@@ -36,13 +42,14 @@ struct NearbyPhotosSheet: View {
                 .listRowBackground(Color.clear)
 
                 Section {
-                    if photos.isEmpty {
+                    if photos.isEmpty && couldNotLoad {
                         // 🔴 **「無い」と「取れていない」を分ける。**
                         // 地図が1枚も持っていないのは「この範囲に無い」では
                         // なく「まだ読めていない」——同じ文で出すと、
                         // 圏外の人に「近くには何も無い」と言うことになる
-                        Text(L("写真をまだ読み込めていません。地図を引き下げて読み直してください。",
-                               "Photos haven't loaded yet. Pull to refresh the map."))
+                        // 地図に引き下げの読み直しは無い——開き直すと読む（地図の帯と同じ文）
+                        Text(L("写真をまだ読み込めていません。地図を開き直すと読み直します。",
+                               "Photos haven't loaded yet. Reopen the map to retry."))
                             .font(.callout)
                             .foregroundStyle(WebTheme.muted2)
                     } else if found.isEmpty {
@@ -64,6 +71,7 @@ struct NearbyPhotosSheet: View {
                 }
                 .listRowBackground(Color.clear)
             }
+            .onAppear { dropped = hidden.snapshot }
             .webScreen()
             .navigationTitle(L("近くの写真", "Photos near me"))
             .navigationBarTitleDisplayMode(.inline)

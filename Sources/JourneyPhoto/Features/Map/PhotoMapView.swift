@@ -123,16 +123,19 @@ struct PhotoMapView: View {
         // 近くの写真のシートの中でブロックした回も同じ（地図は見え続けている）
         .sheet(isPresented: $showNearby, onDismiss: { if needsDrop { dropHidden() } }) {
             if let here {
-                NearbyPhotosSheet(center: here, photos: model.photos)
+                NearbyPhotosSheet(center: here, photos: model.photos,
+                                  couldNotLoad: !model.loaded || model.loadFailed)
             }
         }
         // 一覧のシートの中の詳細でブロックした回は、地図は見え続けていて
         // `onAppear` が来ない。閉じたときに落とす
         .sheet(item: $listing, onDismiss: { if needsDrop { dropHidden() } }) { pin in
             NavigationStack {
-                List(pin.photos) { photo in
+                // シートの中の詳細でブロックして戻ったら、ここでも落とす（`VisiblePhotos`）
+                VisiblePhotos(photos: pin.photos) { photos in
+                List(photos) { photo in
                     NavigationLink {
-                        PhotoDetailView(photo: photo, context: pin.photos)
+                        PhotoDetailView(photo: photo, context: photos)
                     } label: {
                         HStack(spacing: 10) {
                             RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
@@ -141,6 +144,7 @@ struct PhotoMapView: View {
                             Text(photo.displayTitle.isEmpty ? (photo.location ?? L("写真", "Photo")) : photo.displayTitle)
                         }
                     }
+                }
                 }
                 .navigationTitle(pin.hasPlaceName ? pin.title : L("場所の名前なし", "No place name"))
                 .navigationBarTitleDisplayMode(.inline)
@@ -453,7 +457,7 @@ struct PhotoMapView: View {
                 .padding(.vertical, 8)
                 .background(Color.black.opacity(0.7), in: Capsule())
                 .padding(.top, 12)
-        } else if let note = locationNote {
+        } else if let note = locationNote ?? loadFailedNote {
             Text(note)
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.foreground)
@@ -501,12 +505,27 @@ struct PhotoMapView: View {
         guard model.hasNothingToShow else { return nil }
         // 地図は画面に戻るたびに読み直す（`.task`）ので、案内はそれを言う
         if model.loadFailed && model.photos.isEmpty {
-            return L("写真を読み込めませんでした。開き直すと読み直します", "Couldn't load photos. Reopen the map to retry")
+            return Self.loadFailedText
         }
         if model.isFiltering {
             return L("見つかりませんでした", "No results")
         }
         return L("撮影地の分かる写真がありません", "No photos with a place yet")
+    }
+
+    private static var loadFailedText: String {
+        L("写真を読み込めませんでした。開き直すと読み直します", "Couldn't load photos. Reopen the map to retry")
+    }
+
+    /// 🔴 **撮影スポットのピンだけ出ている回も、写真が取れなかったことを言う**
+    /// （ピンがあるので `emptyMessage` は黙り、写真が無いことを誰も言わなかった）。
+    ///
+    /// **地図の上の帯だけに出す。** 一覧（`listArea`）は `emptyMessage` で丸ごと
+    /// 差し替わるので、そちらに混ぜるとスポットの行が消え、押して開いている
+    /// スポットの画面まで閉じる。現在地の様子（`locationNote`）より後に置く
+    private var loadFailedNote: String? {
+        guard model.loaded, model.loadFailed, model.photos.isEmpty, !model.hasNothingToShow else { return nil }
+        return Self.loadFailedText
     }
 
     /// 現在地の様子。**取れる前・拒否・失敗を言葉にする**（黙って何も起きない状態にしない）。
