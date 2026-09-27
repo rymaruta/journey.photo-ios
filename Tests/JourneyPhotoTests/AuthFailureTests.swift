@@ -2,6 +2,9 @@ import XCTest
 import Amplify
 import AWSCognitoAuthPlugin
 @testable import JourneyPhoto
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Cognito の失敗の種類。
 ///
@@ -55,6 +58,88 @@ final class AuthFailureTests: XCTestCase {
         XCTAssertEqual(AuthMessage.text(for: .codeMismatch),
                        AuthMessage.text(for: AuthFailure(service(.codeMismatch))))
         XCTAssertNotEqual(AuthMessage.text(for: .codeMismatch), AuthMessage.text(for: .network))
+    }
+
+    /// 🔴 **パスワード変更の画面で、ログイン画面の文言を出さない。**
+    /// いまのパスワードの誤り（`NotAuthorizedException` → `AuthError.notAuthorized`）が
+    /// 「メールアドレスかパスワードが違います」、短すぎる新しいパスワード
+    /// （`InvalidParameterException`）が「メールアドレスの形式か…」になっていた
+    /// ——この画面にメールアドレスの欄は無い
+    func testChangePasswordHasItsOwnMessages() {
+        let wrongCurrent = AuthMessage.changePasswordText(for: AuthFailure(.notAuthorized("", "", nil)))
+        XCTAssertEqual(wrongCurrent, L("いまのパスワードが違います", "Your current password is wrong"))
+        XCTAssertNotEqual(wrongCurrent, AuthMessage.text(for: .notAuthorized), "ログイン画面の文言のまま")
+
+        let badNew = AuthMessage.changePasswordText(for: AuthFailure(service(.invalidParameter)))
+        XCTAssertEqual(badNew, AuthMessage.passwordRule)
+        XCTAssertNotEqual(badNew, AuthMessage.text(for: .invalidParameter), "メールアドレスの形式に触れている")
+
+        // それ以外（回数制限・圏外）はどの画面でも同じ文言
+        XCTAssertEqual(AuthMessage.changePasswordText(for: .limitExceeded),
+                       AuthMessage.text(for: .limitExceeded))
+    }
+}
+
+/// 🔴 **トークンが取れない理由（Amplify の `AuthError`）を、画面が分岐できる形に畳む。**
+/// そのまま投げると「ログインし直して」にも「圏外」にも入らず、全画面で
+/// 原因の分からない失敗が続いていた。
+///
+/// **`JourneyPhoto.APIError` と書く。** Amplify も `APIError` を持っているので、
+/// 両方を読むこのファイルでは素の `APIError` が取り違えになる（Linux の模型には
+/// 無いので、ここでは通っても Mac で落ちる）
+final class APIClientTokenFailureTests: XCTestCase {
+
+    private var session: URLSession!
+
+    override func setUp() {
+        super.setUp()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        session = URLSession(configuration: config)
+        StubProtocol.reset()
+    }
+
+    override func tearDown() {
+        StubProtocol.reset()
+        super.tearDown()
+    }
+
+    private struct Payload: Decodable { let ok: Bool }
+
+    private func call(throwing error: Error) async -> Error? {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: ThrowingTokenProvider(error: error),
+                            session: session)
+        do {
+            _ = try await api.authorized(.get, "/user/profile", as: Payload.self)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    func testSessionExpiredOrSignedOutMeansSignInAgain() async {
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        for failure in [AuthError.sessionExpired("", "", nil), AuthError.signedOut("", "", nil)] {
+            let thrown = await call(throwing: failure)
+            XCTAssertEqual(thrown as? JourneyPhoto.APIError, .notAuthenticated,
+                           "\(failure) を畳んでいない: \(String(describing: thrown))")
+        }
+        XCTAssertNil(StubProtocol.lastRequest, "トークンが無いのに要求を投げている")
+    }
+
+    /// 圏外でトークンを更新できなかった回（Cognito プラグインは `AWSCognitoAuthError.network` を付ける）
+    func testTokenRefreshFailingOfflineIsUnreachable() async {
+        let thrown = await call(throwing: AuthError.service("", "", AWSCognitoAuthError.network))
+        XCTAssertEqual(thrown as? JourneyPhoto.APIError, .unreachable,
+                       "圏外を圏外として出していない: \(String(describing: thrown))")
+    }
+
+    /// 直し方の決まらない失敗は、別の名前で隠さない
+    func testOtherTokenFailuresArePassedThrough() async {
+        let thrown = await call(throwing: AuthError.configuration("", "", nil))
+        XCTAssertNil(thrown as? JourneyPhoto.APIError, "設定の誤りを別の失敗に言い換えた")
+        XCTAssertTrue(thrown is AuthError)
     }
 }
 

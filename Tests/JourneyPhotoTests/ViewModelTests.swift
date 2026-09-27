@@ -133,6 +133,54 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(photos.contains { $0.id == "older" }, "先に始めた読み込みの答えで上書きされた")
     }
 
+    /// 🔴 **人が替わったら、前の人のために始まった回の答えは入れない**
+    /// （探すの `loadPhotos(userId:)` と同じ）。「先に始めた回の答えを残す」は
+    /// 同じ人の間だけ——次の人の回より先に戻ると、前の人の「見せない」・
+    /// 限定公開の取り口で読んだ写真が画面に移っていた
+    func testGallerySwitchingPeopleDropsThePreviousPersonsLoad() async throws {
+        let service = gallery(feed)
+        let gate = Gate()
+        let older = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"older","src":"https://x/o.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        await service.setRestrictedLoader(owner: "A") {
+            await gate.wait()
+            return [older]
+        }
+        let model = GalleryViewModel(gallery: service)
+        model.switchViewer(to: "A")
+        let first = Task { await model.load() }
+        await gate.untilWaiting()
+
+        model.switchViewer(to: "B")
+        await gate.open()
+        await first.value
+
+        if case .loaded(let photos) = model.state {
+            XCTAssertFalse(photos.contains { $0.id == "older" }, "前の人の回の答えが画面に移った")
+        }
+        XCTAssertEqual(model.state, .loading, "前の人の回の答えで状態を書いた")
+    }
+
+    /// **同じ人のまま画面に戻っただけでは捨てない**（`.task` は出入りのたびに走る）
+    func testGallerySameViewerAgainKeepsTheRunningLoad() async throws {
+        let service = gallery(feed)
+        let gate = Gate()
+        await service.setRestrictedLoader(owner: "A") {
+            await gate.wait()
+            return []
+        }
+        let model = GalleryViewModel(gallery: service)
+        model.switchViewer(to: "A")
+        let first = Task { await model.load() }
+        await gate.untilWaiting()
+        model.switchViewer(to: "A")
+        await gate.open()
+        await first.value
+
+        guard case .loaded(let photos) = model.state else { return XCTFail("同じ人の回を捨てた: \(model.state)") }
+        XCTAssertEqual(photos.count, 3)
+    }
+
     /// 🔴 **後から始めた回が落ちても、先に成功した回の答えを捨てない。**
     /// 古い回を捨てるのは、より新しい回が画面に移し終えたときだけ
     func testGalleryNewerFailureKeepsTheOlderSuccess() async {

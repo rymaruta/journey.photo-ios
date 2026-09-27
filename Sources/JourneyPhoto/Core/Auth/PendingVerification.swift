@@ -92,4 +92,22 @@ struct PendingVerificationStore {
     func forget(email: String) {
         defaults.removeObject(forKey: PendingVerification.key(for: email))
     }
+
+    /// ログインが済んだあと、預かっている表示名を入れる（`apply`）。
+    /// **入れ終えたら（入れるものが無ければ）控えを捨てる**——落ちたら残して、
+    /// 次のログインでもう一度試す。
+    ///
+    /// 🔴 **確認コードの直後だけでなく、ふつうのログインでも通す。** 確認は
+    /// 通ったのに自動ログインが落ちた人・名前を入れる要求が落ちた人は、
+    /// 控えを「次のログインで試せる」と残していたのに、ふつうのログインは
+    /// 控えを読んでいなかった（名前は ID の頭8文字のまま）。
+    /// 控えが無ければ `apply` は呼ばない
+    @MainActor
+    func settleAfterSignIn(email: String, now: Date = Date(),
+                           apply: (String?) async -> Bool) async {
+        guard defaults.data(forKey: PendingVerification.key(for: email)) != nil else { return }
+        if await apply(displayName(for: email, now: now)) {
+            forget(email: email)
+        }
+    }
 }

@@ -57,6 +57,8 @@ struct GalleryView: View {
         // **ログイン状態が決まってから範囲を決める**（範囲は選んでいるフィードが決める）。
         // フォロー中の一覧は、その範囲を選ぶ人にだけ要る
         .task(id: auth.userId) {
+            // **前の人のために始まった回は、ここで古いとみなす**（`switchViewer`）
+            model.switchViewer(to: auth.userId)
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない
             model.use(gallery: environment.gallery)

@@ -131,7 +131,13 @@ struct JourneyPhotoApp: App {
                 .environmentObject(seenStories)
                 .environmentObject(push)
                 .environmentObject(toasts)
-                .task { await auth.restore() }
+                .task {
+                    await auth.restore()
+                    // **起動の時点でログアウトしていたら、端末全体だった頃の
+                    // 「受け取る」は誰にも引き継がない**（`PushCenter.legacyEnabledKey`）。
+                    // ログイン済みなら、その人の `use(userId:)` が引き継ぐ
+                    if auth.state == .signedOut { push.dropLegacyIntent() }
+                }
                 // **ログイン状態が変わるたびに読み直す。** `.task` のままだと
                 // 起動時に1回しか走らず、あとからログインした人には
                 // **未ログインのときの鍵で読んだ控え**が見えたままになる

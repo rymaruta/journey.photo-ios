@@ -133,6 +133,12 @@ final class APIClientTests: XCTestCase {
 
 // MARK: - 差し替え用
 
+/// トークンの取り出しそのものが失敗する（Amplify が `AuthError` を投げる回）
+struct ThrowingTokenProvider: TokenProviding {
+    let error: Error
+    func idToken() async throws -> String? { throw error }
+}
+
 struct StubTokenProvider: TokenProviding {
     let token: String?
     func idToken() async throws -> String? { token }

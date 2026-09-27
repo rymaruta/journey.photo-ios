@@ -245,6 +245,10 @@ struct SignInView: View {
             // 文言だけ出して入口が無いと、登録し直しても
             // 「すでに登録されています」で詰む（パスワード再設定も効かない）
             if auth.lastFailureWasUnconfirmed { await resumeVerification() }
+            // **預かっている表示名を入れる**（確認の直後に入れそびれた人）
+            if auth.userId != nil {
+                await pending.settleAfterSignIn(email: email) { await applyDisplayName($0) }
+            }
             return
         }
 
@@ -324,7 +328,6 @@ struct SignInView: View {
                 Task {
                     clearMessages()
                     if await auth.confirmSignUp(username: username, code: code) {
-                        let name = pending.displayName(for: email)
                         pendingUsername = nil
                         offerVerification = false
                         // 確認が済んだらそのままログインする。
@@ -333,6 +336,11 @@ struct SignInView: View {
                         // パスワードが古いものと違うことがある
                         await auth.signIn(email: email, password: password)
                         if auth.userId == nil {
+                            // **ログインの欄に戻す。** 登録の欄のままだと、押すと
+                            // 「登録する」が走り「すでに登録されています」になる。
+                            // 登録欄に打ったパスワードは古いものと違うことがあるので空に
+                            mode = .signIn
+                            password = ""
                             notice = L("確認できました。パスワードを入れてログインしてください。",
                                        "Verified. Please sign in with your password.")
                             return
@@ -340,9 +348,7 @@ struct SignInView: View {
                         // **控えを捨てるのは、名前を入れ終えてから。**
                         // 先に捨てると、電波が悪くて1回落ちただけで
                         // 入れた名前が永久に消える（次のログインでやり直せない）
-                        if await applyDisplayName(name) {
-                            pending.forget(email: email)
-                        }
+                        await pending.settleAfterSignIn(email: email) { await applyDisplayName($0) }
                     }
                 }
             } label: {

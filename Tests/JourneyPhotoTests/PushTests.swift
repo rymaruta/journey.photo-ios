@@ -136,13 +136,67 @@ final class PushIntentTests: XCTestCase {
 
         let reopened = PushCenter(service: { PushService(api: APIClient(tokenProvider: StubTokenProvider(token: nil))) },
                                   defaults: defaults)
+        await reopened.use(userId: "A")
         XCTAssertTrue(reopened.isEnabled, "オンのまま開き直せる")
 
         await reopened.disable()
         let again = PushCenter(service: { PushService(api: APIClient(tokenProvider: StubTokenProvider(token: nil))) },
                                defaults: defaults)
+        await again.use(userId: "A")
         XCTAssertFalse(again.isEnabled, "オフにしたら、次の起動でもオフ")
         _ = push
+    }
+
+    private func reopen(_ defaults: UserDefaults) -> PushCenter {
+        PushCenter(service: { PushService(api: APIClient(tokenProvider: StubTokenProvider(token: nil))) },
+                   defaults: defaults)
+    }
+
+    /// 🔴 **「受け取る」は人ごと。** A が「受け取る」にした端末で B がログインしても、
+    /// B は選んでいないので受け取る側に入らない（登録まで進まない）。
+    /// 端末全体だった頃の値は、**更新後に最初にログイン済みと分かった人**（A）にだけ引き継ぐ
+    func testIntentBelongsToThePersonWhoChoseIt() async {
+        let (push, defaults) = center("push-3")
+        defaults.set(true, forKey: "photo-gallery-push-enabled")   // 端末全体だった頃の値
+
+        await push.use(userId: nil)          // 起動直後（確認中）では引き継がない
+        XCTAssertFalse(push.isEnabled, "未ログインで受け取る側に入っている")
+        await push.use(userId: "A")
+        XCTAssertTrue(push.isEnabled, "ログインしていた本人（A）に引き継いでいない")
+
+        await push.use(userId: nil)
+        await push.use(userId: "B")
+        XCTAssertFalse(push.isEnabled, "A が選んだ「受け取る」で B が受け取る側に入った")
+
+        // 開き直しても人ごとに残る
+        let reopened = reopen(defaults)
+        await reopened.use(userId: "B")
+        XCTAssertFalse(reopened.isEnabled, "開き直したら B が受け取る側に入った")
+        await reopened.use(userId: "A")
+        XCTAssertTrue(reopened.isEnabled, "A の「受け取る」が消えた")
+    }
+
+    /// **起動の時点でログアウトしていたら、端末全体の値は誰にも引き継がない**
+    /// ——あとからログインする人は、それを選んだ本人とは限らない
+    func testLegacyIntentIsDroppedWhenNobodyWasSignedIn() async {
+        let (push, defaults) = center("push-4")
+        defaults.set(true, forKey: "photo-gallery-push-enabled")
+
+        push.dropLegacyIntent()
+        await push.use(userId: "B")
+        XCTAssertFalse(push.isEnabled, "誰のものか分からない「受け取る」を B に渡した")
+    }
+
+    /// **本人がオフにしてから開き直しても、端末全体の古い値で上書きしない**
+    func testLegacyIntentDoesNotOverrideThePersonsOwnChoice() async {
+        let (push, defaults) = center("push-5")
+        await push.use(userId: "A")
+        await push.disable()                                       // A は自分でオフ
+        defaults.set(true, forKey: "photo-gallery-push-enabled")   // 古い値が残っていた
+
+        let reopened = reopen(defaults)
+        await reopened.use(userId: "A")
+        XCTAssertFalse(reopened.isEnabled, "本人のオフを古い値で上書きした")
     }
 }
 
@@ -220,6 +274,52 @@ final class PushSignOutTests: XCTestCase {
         XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE", "外し直していない")
         XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/user/devices")
         XCTAssertNil(push.pendingReleaseOwner, "外し直せたのに印が残っている")
+    }
+
+    /// 🔴 **「受け取らない」で宛先を外せなかったら、次の起動で外し直す。**
+    /// 意思（オフ）は先に残るので、以前は次の `use` が「受け取らない人」として
+    /// 素通りし、トグルはオフなのに通知が届き続けた
+    func testFailedDisableIsRetriedOnTheNextLaunch() async {
+        let keys = Keys()
+        let push = center("push-release-4", keys: keys)
+        await push.use(userId: "A")
+
+        StubProtocol.respond(status: 500, body: "{}")
+        await push.disable()
+        XCTAssertFalse(push.isEnabled)
+        XCTAssertEqual(push.pendingReleaseOwner, "A", "外せなかったことを覚えていない")
+
+        // 開き直す（同じ端末・同じ人）
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        let reopened = PushCenter(service: {
+            PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                       tokenProvider: StubTokenProvider(token: keys.idToken),
+                                       session: session))
+        }, defaults: UserDefaults(suiteName: "push-release-4")!)
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: "{}")
+        await reopened.use(userId: "A")
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE", "外し直していない")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/user/devices")
+        XCTAssertNil(reopened.pendingReleaseOwner, "外し直せたのに印が残っている")
+    }
+
+    /// **別の人の外しそびれを上書きしない。** 印は1人ぶんで、前の人の宛先は
+    /// その人の鍵でしか外せない
+    func testFailedDisableDoesNotOverwriteAnotherPersonsPendingRelease() async {
+        let keys = Keys()
+        let push = center("push-release-5", keys: keys)
+        await push.use(userId: "A")
+        StubProtocol.respond(status: 500, body: "{}")
+        await push.signingOut()
+        await push.use(userId: nil)
+        XCTAssertEqual(push.pendingReleaseOwner, "A")
+
+        await push.use(userId: "B")
+        await push.disable()
+        XCTAssertEqual(push.pendingReleaseOwner, "A", "A の外しそびれを B で上書きした")
     }
 
     /// **前の人の失敗文を次の人に見せない**（設定画面の赤字）

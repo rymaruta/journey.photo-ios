@@ -118,7 +118,20 @@ actor APIClient {
         }
 
         if authorized {
-            guard let token = try await tokenProvider.idToken() else {
+            let fetched: String?
+            do {
+                fetched = try await tokenProvider.idToken()
+            } catch {
+                // 🔴 **Amplify の `AuthError` をそのまま投げない**（`TokenFailure`）。
+                // 切れた・サインアウト済みで投げると、画面の「ログインし直して」にも
+                // 「圏外」にも入らず、全画面で原因の分からない失敗が続いていた
+                switch TokenFailure(error) {
+                case .signInAgain?: throw APIError.notAuthenticated
+                case .unreachable?: throw APIError.unreachable
+                case nil: throw error
+                }
+            }
+            guard let token = fetched else {
                 throw APIError.notAuthenticated
             }
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

@@ -120,6 +120,24 @@ final class GalleryViewModel: ObservableObject {
     /// 画面に移し終えたいちばん新しい回
     private var appliedGeneration = 0
 
+    /// 読み込みを始めた人。**一度も呼ばれていなければ nil**
+    /// ——未ログインは `.some(nil)` で、「まだ分からない」と分ける
+    private var loadingFor: String??
+
+    /// 見ている人が替わった（画面の `.task(id: userId)` の頭で呼ぶ）。
+    ///
+    /// 🔴 **人が替わったら、それまでに始まった回は全部古い**（探すの
+    /// `loadPhotos(userId:)` と同じ）。「先に始めた回の答えを残す」は同じ人の
+    /// 間だけ——前の人の「見せない」・限定公開の取り口で読んだ回が、次の人の
+    /// 回より先に戻って画面に移ったり、次の人の回が落ちたときに残ったりしていた。
+    /// **替わったときだけ**捨てる（画面に戻るたびの `.task` では何もしない）
+    func switchViewer(to userId: String?) {
+        if let loaded = loadingFor, loaded != userId {
+            appliedGeneration = loadGeneration
+        }
+        loadingFor = .some(userId)
+    }
+
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
     private var all: [Photo] = []
 

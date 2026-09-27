@@ -25,6 +25,10 @@ final class PushCenter: ObservableObject {
     /// 届くので**押した直後は必ず false**——画面に入り直すたびにオフへ戻る。
     /// 逆に端末の許可だけで見ると、**自分でオフにしたのに再起動で復活**する
     /// （OS の許可は残るため）。意思は端末に残す。
+    ///
+    /// 🔴 **人ごとに持つ**（`enabledKey(for:)`）。端末に1つだと、A が
+    /// 「受け取る」にした端末で B がログインすると、B は選んでいないのに
+    /// B あての宛先がサーバーに預けられていた。未ログインのときは常に false
     @Published private(set) var isEnabled = false
     @Published var errorMessage: String?
 
@@ -47,7 +51,18 @@ final class PushCenter: ObservableObject {
         }
     }
     private static let tokenKey = "photo-gallery-apns-token"
-    private static let enabledKey = "photo-gallery-push-enabled"
+    /// 🔴 **端末全体で1つだった頃の「受け取る」**（移行のためだけに読む）。
+    ///
+    /// 引き継ぐ先は**アプリを更新したときにログインしていた人だけ**
+    /// （更新後の最初の起動でログイン済みと分かった人）——その人は古い作りで
+    /// 実際に宛先を預けていた本人なので、画面とサーバーの食い違いを作らない。
+    /// 起動の時点でログアウトしていたら**誰にも引き継がずに捨てる**
+    /// （`dropLegacyIntent`）。ログアウトのときに宛先は外してあり
+    /// （外しそびれは `pendingReleaseOwner`）、あとから来た人は自分で選び直す
+    private static let legacyEnabledKey = "photo-gallery-push-enabled"
+    private static func enabledKey(for userId: String) -> String {
+        "\(legacyEnabledKey):\(userId)"
+    }
     private static let pendingReleaseKey = "photo-gallery-push-pending-release"
 
     /// 🔴 **ログアウトのときに宛先を外しきれなかった人**（外し終えたら nil）。
@@ -77,7 +92,6 @@ final class PushCenter: ObservableObject {
          defaults: UserDefaults = .standard) {
         self.service = service
         self.defaults = defaults
-        self.isEnabled = defaults.bool(forKey: Self.enabledKey)
     }
 
     /// 起動時とログイン状態が変わるたびに呼ぶ。
@@ -86,6 +100,9 @@ final class PushCenter: ObservableObject {
         self.userId = userId
         // **前の人の失敗文を次の人に見せない**（設定画面の赤字）
         if previous != userId { errorMessage = nil }
+        // **その人の意思を読む。** 別の人が選んだ「受け取る」で登録まで進めない
+        if let userId { adoptLegacyIntent(for: userId) }
+        isEnabled = userId.map { defaults.bool(forKey: Self.enabledKey(for: $0)) } ?? false
         await refreshAuthorization()
         await retryPendingRelease(for: userId)
 
@@ -140,17 +157,28 @@ final class PushCenter: ObservableObject {
 
     /// 設定画面の「受け取らない」。**端末の許可は取り消せない**ので、
     /// サーバーから宛先を外す（届かなくなる）。
+    ///
+    /// 🔴 **外せなかったら、外し終えていない印を残す**（`pendingReleaseOwner`）。
+    /// 意思（オフ）は先に残すので、次の起動の `use` は「受け取らない人」として
+    /// 素通りしていた——圏外で1回落ちただけで、トグルはオフなのに通知が
+    /// 届き続けた。印があれば、次の `use`（起動・同じ人のログイン）と
+    /// ログアウト（`signingOut`）が外し直す
     func disable() async {
         // **意思を残す。** 残さないと、OS の許可が生きているので
         // 次の起動で勝手に復活する
         setEnabled(false)
         defer { isRegistered = false }
-        guard let token, userId != nil else { return }
+        guard let token, let userId else { return }
         do {
             try await service().unregister(token: token)
+            if pendingReleaseOwner == userId { pendingReleaseOwner = nil }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("通知を止められませんでした", "Couldn't turn notifications off")
+            // **別の人の外しそびれを上書きしない。** 印は1人ぶんしか持てず、
+            // 前の人の宛先はその人の鍵でしか外せない（こちらは本人が戻れば
+            // トグルでもやり直せる）
+            if pendingReleaseOwner == nil { pendingReleaseOwner = userId }
         }
     }
 
@@ -229,7 +257,28 @@ final class PushCenter: ObservableObject {
 
     private func setEnabled(_ value: Bool) {
         isEnabled = value
-        defaults.set(value, forKey: Self.enabledKey)
+        // 未ログインでは誰の意思でもないので残さない
+        guard let userId else { return }
+        defaults.set(value, forKey: Self.enabledKey(for: userId))
+    }
+
+    /// 端末全体の「受け取る」を、いまログインしている人に引き継ぐ（1回きり）。
+    /// **その人がもう自分の値を持っていれば上書きしない**
+    private func adoptLegacyIntent(for userId: String) {
+        guard defaults.object(forKey: Self.legacyEnabledKey) != nil else { return }
+        let key = Self.enabledKey(for: userId)
+        if defaults.object(forKey: key) == nil {
+            defaults.set(defaults.bool(forKey: Self.legacyEnabledKey), forKey: key)
+        }
+        defaults.removeObject(forKey: Self.legacyEnabledKey)
+    }
+
+    /// 起動時の確認で**ログインしていない**と分かったら呼ぶ（`JourneyPhotoApp`）。
+    ///
+    /// 端末全体の「受け取る」は、誰にも引き継がずに捨てる——あとからこの端末で
+    /// ログインする人は、その値を選んだ本人とは限らない
+    func dropLegacyIntent() {
+        defaults.removeObject(forKey: Self.legacyEnabledKey)
     }
 
     private func registerIfPossible() async {

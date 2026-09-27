@@ -165,6 +165,10 @@ final class AuthStore: ObservableObject {
             try await AuthGateway.changePassword(current: current, new: new)
             ok = true
         }
+        // ログイン画面の文言（「メールアドレスかパスワードが違います」）を出さない
+        if !ok, lastFailure != .none, lastFailure != .other {
+            errorMessage = AuthMessage.changePasswordText(for: lastFailure)
+        }
         return ok
     }
 
@@ -347,6 +351,23 @@ enum AuthMessage {
                      "This email is already used by a verified account. Tap “Back to sign in” and sign in to that account.")
         }
         return text(for: failure)
+    }
+
+    /// パスワード変更の画面での文言。
+    ///
+    /// **メールアドレスの欄が無い画面で「メールアドレスか…」と言わない。**
+    /// Cognito の `ChangePassword` は、いまのパスワードの誤りを
+    /// `NotAuthorizedException`（→ `.notAuthorized`）、短すぎる新しいパスワードを
+    /// `InvalidParameterException`（→ `.invalidParameter`）で返す
+    static func changePasswordText(for failure: AuthFailure) -> String {
+        switch failure {
+        case .notAuthorized:
+            return L("いまのパスワードが違います", "Your current password is wrong")
+        case .invalidParameter:
+            return passwordRule
+        default:
+            return text(for: failure)
+        }
     }
 
     static func text(for failure: AuthFailure) -> String {

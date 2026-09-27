@@ -105,4 +105,31 @@ extension PendingVerificationTests {
                        "消えたアカウントの控えで確認画面に入れている")
         XCTAssertFalse(PendingVerification.entersConfirmation(resent: false, failure: .notAuthorized))
     }
+
+    /// 🔴 **ふつうのログインでも、預かっている表示名を入れる。** 確認は通ったのに
+    /// 自動ログインが落ちた人・名前の送信が落ちた人は、控えを「次のログインで
+    /// 試せる」と残していたのに、ふつうのログインは控えを読んでいなかった
+    @MainActor
+    func testSignInAppliesTheHeldNameAndForgetsOnlyOnSuccess() async {
+        let defaults = UserDefaults(suiteName: "pending-name-4")!
+        defaults.removePersistentDomain(forName: "pending-name-4")
+        let pending = PendingVerificationStore(defaults: defaults)
+        pending.remember(email: "taro@example.com", username: "uuid-1", displayName: "旅人")
+
+        var sent: [String?] = []
+        // 1回目は送れない（圏外）→ 控えを残す
+        await pending.settleAfterSignIn(email: "Taro@example.com") { sent.append($0); return false }
+        XCTAssertEqual(sent, ["旅人"], "預かっている名前を入れにいっていない")
+        XCTAssertEqual(pending.displayName(for: "taro@example.com"), "旅人", "落ちたのに控えを捨てた")
+
+        // 2回目で入った → 捨てる
+        await pending.settleAfterSignIn(email: "taro@example.com") { sent.append($0); return true }
+        XCTAssertEqual(sent, ["旅人", "旅人"])
+        XCTAssertNil(pending.username(for: "taro@example.com"), "入れ終えたのに控えが残っている")
+
+        // 控えが無ければ何もしない（ログインのたびにプロフィールを書かない）
+        let before = sent.count
+        await pending.settleAfterSignIn(email: "taro@example.com") { sent.append($0); return true }
+        XCTAssertEqual(sent.count, before, "控えが無いのに名前を送った")
+    }
 }
