@@ -477,12 +477,13 @@ final class ViewModelTests: XCTestCase {
         serve(photos: 500)
         await model.load()
         XCTAssertNil(model.errorMessage, "読み直しの失敗で格子ごと知らせに置き換えている")
-        XCTAssertEqual(model.actionMessage, "取得に失敗しました")
+        XCTAssertEqual(model.reloadError, "取得に失敗しました")
+        XCTAssertNil(model.actionMessage, "読み直しの失敗をピン留めの断りの欄に混ぜている")
         XCTAssertEqual(model.photos.map(\.id), ["p1"], "読めていた写真を捨てている")
 
         serve(photos: 200)
         await model.load()
-        XCTAssertNil(model.actionMessage, "読めたのに失敗の知らせが残っている")
+        XCTAssertNil(model.reloadError, "読めたのに失敗の知らせが残っている")
     }
 
     /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは
@@ -494,7 +495,7 @@ final class ViewModelTests: XCTestCase {
         let model = MyPageViewModel(api: api())
         await model.load()
         XCTAssertNotNil(model.errorMessage, "写真を読めていないのに一覧に添える側に入れている")
-        XCTAssertNil(model.actionMessage)
+        XCTAssertNil(model.reloadError)
     }
 
     /// **人が替わったら前の人の写真を手放す。** 残すと、次の人の読み込みが
@@ -777,6 +778,29 @@ final class ViewModelTests: XCTestCase {
     /// コメントの削除の 404: **読み込んだコメントは「もう無い」として外す**が、
     /// **この画面で投稿したばかりのものは外さない**（サーバーの最初の読みが結果整合で、
     /// 「まだ見えない」だけの 404 がある。外すと他の人には見えたまま自分からだけ消える）
+    /// **前の1枚の読み直しで、隣の1枚の送信を止めない。** 読み直しの印が画面で
+    /// 1つだったので、p1 の読み直し（圏外で長く待つ）の間、p2 で送れなかった
+    func testCommentReloadOfPreviousPhotoDoesNotBlockNextPhoto() async throws {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"items":[],"count":0}"#, delay: 0.3)
+        StubProtocol.respond(path: "/photos/p2/comments", status: 200,
+                             body: #"{"items":[],"count":0,"comment":{"id":"c9","uid":"me","name":"me","text":"new"}}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+
+        let reload = Task { await model.reloadComments() }
+        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertTrue(model.isReloadingComments)
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        XCTAssertFalse(model.isReloadingComments, "前の1枚の読み直しで、今の1枚のボタンまで止めている")
+        model.draftComment = "new"
+        await model.postComment()
+        XCTAssertEqual(model.comments.map(\.id), ["c9"], "前の1枚の読み直しの間、今の1枚に送れない")
+        await reload.value
+        XCTAssertEqual(model.comments.map(\.id), ["c9"], "前の1枚の読み直しの答えを今の1枚に出している")
+    }
+
     func testCommentDeleteNotFoundDependsOnWhetherItWasJustPosted() async throws {
         prepare()
         StubProtocol.respond(path: "/photos/p1/comments/c1", status: 404, body: #"{"error":"コメントが見つかりません"}"#)

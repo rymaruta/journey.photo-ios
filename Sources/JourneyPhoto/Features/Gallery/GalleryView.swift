@@ -73,6 +73,7 @@ struct GalleryView: View {
             // **取りに行った人で反映する。** 待っている間に人が替わっても、
             // 再開した時点の `auth.userId` で前の人の集合を記録しない
             let userId = auth.userId
+            model.expect(viewerId: userId)
             guard userId != nil else {
                 model.use(viewerId: nil, following: [])
                 await model.loadMyPhotos(environment.photos, viewerId: nil)

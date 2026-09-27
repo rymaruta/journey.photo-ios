@@ -58,6 +58,16 @@ final class GalleryViewModel: ObservableObject {
         viewerId = newViewer
     }
 
+    /// **画面がこれから取りに行く人**を知らせる（`.task` の頭・await の前）。
+    ///
+    /// A→B→A と戻ったとき、戻った A は `use` が走るまで「離れた人」に入ったまま
+    /// なので、その間に引き下げで取れた A の正しい一覧を `refreshFollowing` が
+    /// 捨てていた。見ている人（`viewerId`）はここでは替えない
+    func expect(viewerId newViewer: String?) {
+        if let old = viewerId, old != newViewer { departedViewerIds.insert(old) }
+        if let newViewer { departedViewerIds.remove(newViewer) }
+    }
+
     /// 絞り込みに出すカテゴリ。**写真が1枚もない種類は出さない**
     /// （押しても空になるボタンを置かない）
     @Published private(set) var categories: [String] = []
@@ -305,6 +315,9 @@ final class GalleryViewModel: ObservableObject {
         if viewerId != self.viewerId, followingOwner != viewerId {
             followingIds = []
             followingOwner = nil
+            // 前の人の「読み込めませんでした／読めた」を持ち越さない。今の人の集合は
+            // まだ無い＝`use` と同じく「取れていない」（空の集合で「まだありません」と言わない）
+            followingFailed = viewerId != nil
         }
         setViewer(viewerId)
         all = feed.arrange(all)

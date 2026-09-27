@@ -739,6 +739,10 @@ struct MyPageView: View {
 
     @ViewBuilder
     private var photoArea: some View {
+        // **読み直しの失敗は、格子の上に再試行つきで出す**（格子は残す）
+        if let reloadError = model.reloadError {
+            ErrorBanner(message: reloadError) { Task { await model.load(for: auth.userId) } }
+        }
         if let action = model.actionMessage {
             // **一覧の代わりではなく、一覧に添える。**
             Text(action)
@@ -756,7 +760,7 @@ struct MyPageView: View {
         // **一度読めた中身は、読み直しの失敗で消さない。** 詳細から戻るたびに
         // 読み直すので、一瞬の圏外で格子・旅の記録・保存した写真まで
         // 知らせ1枚に置き換わっていた。読み直しの失敗はモデルが上の
-        // `actionMessage`（一覧に添える一行）に入れる。`errorMessage` は
+        // `reloadError`（格子の上の知らせ）に入れる。`errorMessage` は
         // **一度も写真を読めていない回だけ**で、そのときだけ欄ごと知らせに替える。
         // **行きたい場所・お気に入りは自分の写真の読み込みと無関係**なので、
         // その失敗の知らせで覆わない（以前は端末だけで出せるタブまで知らせに置き換わっていた）
@@ -879,6 +883,10 @@ final class MyPageViewModel: ObservableObject {
     /// 知らせに差し替わり、**解除する長押しメニューまで消える**——
     /// 断られた人が直す手立てを画面から奪ってしまう。
     @Published var actionMessage: String?
+    /// **一度読めた後の読み直しの失敗。** 格子の上に再試行つきの知らせを出す
+    /// （格子は消さない）。`actionMessage`（ピン留めの断り）とは分ける——
+    /// 同じ欄だと、ピン留めが通った瞬間に読み直しの失敗の知らせまで消えていた
+    @Published private(set) var reloadError: String?
 
     /// アイコンは固定キーで中身が差し替わる（サーバーは `no-store`）。
     /// 読み直すたびに別の URL にして、古い絵が残らないようにする。
@@ -999,16 +1007,14 @@ final class MyPageViewModel: ObservableObject {
             // **一度読めていれば、読み直しの失敗は一覧に添える。** 戻ってくるたびに
             // 読み直すので、圏外で写真を開いて戻っただけで格子ごと知らせに置き換わっていた
             if hasLoadedPhotos {
-                actionMessage = message
-                reloadFailure = message
+                reloadError = message
             } else {
                 errorMessage = message
             }
             return
         }
-        // 読み直しの失敗の知らせは、次に読めたら消す（ピン留めの断りは残す）
-        if let reloadFailure, actionMessage == reloadFailure { actionMessage = nil }
-        reloadFailure = nil
+        // 読み直しの失敗の知らせは、次に読めたら消す
+        reloadError = nil
     }
 
 
@@ -1019,8 +1025,6 @@ final class MyPageViewModel: ObservableObject {
         return stats
     }
 
-    /// 直近の読み直しの失敗で `actionMessage` に入れた文（読めたら消すため）
-    private var reloadFailure: String?
     /// 自分の写真を**一度でも読めたか**。`profile` では決めない——プロフィールは写真より
     /// 先に入るので、初回に写真だけ落ちた回を「読めている」と取り違え、格子に
     /// 「まだ写真がありません」と嘘を出していた
@@ -1070,7 +1074,7 @@ final class MyPageViewModel: ObservableObject {
         errorMessage = nil
         // 前の人あての知らせ（読み直しの失敗・ピン留めの断り）も残さない
         actionMessage = nil
-        reloadFailure = nil
+        reloadError = nil
         hasLoadedPhotos = false
     }
 

@@ -21,7 +21,11 @@ final class PhotoDetailViewModel: ObservableObject {
     /// **「まだ無い」と「取れなかった」を画面で分ける**ためのもの
     @Published private(set) var commentsUnavailable = false
     /// 「もう一度試す」でコメントを読み直している間（二度押しで2本投げない）
-    @Published private(set) var isReloadingComments = false
+    ///
+    /// **どの1枚を読み直しているかで持つ。** 画面で1つの印にしていると、前の1枚の
+    /// 読み直し（圏外で長く待つ）の間、隣へ送った1枚の送信・削除・再試行まで押せなかった
+    var isReloadingComments: Bool { reloadingCommentsFor == photoId }
+    @Published private(set) var reloadingCommentsFor: String?
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
@@ -143,9 +147,9 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 先頭に入れた自分のコメントを上書きして消す
     func reloadComments() async {
         guard !isReloadingComments, !isPosting else { return }
-        isReloadingComments = true
-        defer { isReloadingComments = false }
         let id = photoId
+        reloadingCommentsFor = id
+        defer { if reloadingCommentsFor == id { reloadingCommentsFor = nil } }
         let page = try? await social.comments(photoId: id)
         // 読んでいる間に別の1枚へ送ったら捨てる（前の1枚のコメントを今の1枚に出さない）
         guard id == photoId else { return }

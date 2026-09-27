@@ -208,4 +208,34 @@ final class HomeFeedSelectionTests: XCTestCase {
         XCTAssertEqual(model.followingIds, ["b1"], "今の人の集合を捨てている")
         XCTAssertFalse(model.followingFailed)
     }
+
+    /// **A→B→A と戻った A の一覧を捨てない。** 戻った A は `use` まで「離れた人」に
+    /// 入ったままで、その間に引き下げで取れた A の一覧を捨てていた（画面は
+    /// `.task` の頭で `expect` を呼ぶ）
+    func testFollowingForAViewerWhoCameBackIsKept() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "a", following: ["a1"])
+        model.expect(viewerId: "b")
+        model.use(viewerId: "b", following: ["b1"])
+        model.expect(viewerId: "a")
+        model.refreshFollowing(["a2"], viewerId: "a")
+        XCTAssertEqual(model.followingIds, ["a2"], "戻ってきた人の一覧を捨てている")
+        model.use(viewerId: "a", following: nil)
+        XCTAssertEqual(model.followingIds, ["a2"])
+        XCTAssertFalse(model.followingFailed, "取れていたのに「読み込めませんでした」を出す")
+        // 離れた b の遅れた一覧は、引き続き捨てる
+        model.refreshFollowing(["b1"], viewerId: "b")
+        XCTAssertEqual(model.followingIds, ["a2"], "離れた人の一覧を今の人に書いた")
+    }
+
+    /// **人が替わってフィードを押した回に、前の人の「読めた／読めなかった」を持ち越さない。**
+    /// 前の人が読めていたら、空の集合で「まだありません」と嘘を出していた
+    func testSelectingAFeedAsAnotherViewerDoesNotCarryTheFailureFlag() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "a", following: ["x"])
+        XCTAssertFalse(model.followingFailed)
+        model.select(feed: .following, viewerId: "b")
+        XCTAssertEqual(model.followingIds, [])
+        XCTAssertTrue(model.followingFailed, "今の人の一覧はまだ無いのに「まだありません」になる")
+    }
 }

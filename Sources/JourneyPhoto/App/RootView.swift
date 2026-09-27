@@ -32,6 +32,10 @@ struct RootView: View {
     /// ベルの数え直しの世代。**最後に始めた取得だけを画面に出す**
     /// （既読にする前の遅い応答が、あとから古い数で上書きしないように）
     @State private var unreadGeneration = 0
+    /// いまの `unread` が誰の数か。失敗の回に「いまの数を残す」のは、
+    /// それが**同じ人の数**のときだけ——人が替わった直後の取得が捨てられ、
+    /// 次の取得が失敗すると、前の人の数が残っていた
+    @State private var unreadOwner: String?
 
     enum Tab: Hashable {
         // **提案の並び**（owner の絵・2026-09-21）:
@@ -91,6 +95,7 @@ struct RootView: View {
     private func refreshUnread(keepOnFailure: Bool = false) async {
         guard auth.userId != nil else {
             unread = 0
+            unreadOwner = nil
             return
         }
         let owner = auth.userId
@@ -102,8 +107,10 @@ struct RootView: View {
         guard !Task.isCancelled, auth.userId == owner, generation == unreadGeneration else { return }
         if let fetched {
             unread = fetched
-        } else if !keepOnFailure {
+            unreadOwner = owner
+        } else if !keepOnFailure || unreadOwner != owner {
             unread = 0
+            unreadOwner = owner
         }
     }
 
@@ -294,6 +301,7 @@ struct RootView: View {
             guard router.readOwner != nil, router.readOwner == auth.userId else { return }
             unreadGeneration += 1
             unread = 0
+            unreadOwner = auth.userId
             // 既読のあとに届いた分は数え直す（0 のままにしない）。
             // 落ちても 0 は残る
             Task { await refreshUnread() }
