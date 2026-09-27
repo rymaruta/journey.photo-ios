@@ -354,6 +354,7 @@ final class RequestCancellationTests: XCTestCase {
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
                             tokenProvider: StubTokenProvider(token: "t"), session: session())
         // メインアクターの上で作るので、下の cancel() より先には走らない
+        // （Task.detached や別の actor で作ると、この順は保証されない）
         let task = Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
         task.cancel()
         let result = await task.result
@@ -370,7 +371,10 @@ final class RequestCancellationTests: XCTestCase {
             snapshot: PhotoSnapshotStore(fileName: UUID().uuidString))
         let task = Task { try await gallery.fetchPhotos() }
         task.cancel()
-        _ = await task.result
+        let result = await task.result
         XCTAssertEqual(StubProtocol.requestCount, 0, "取り消された処理から要求を出している")
+        // 控えは無いので、圏外と同じく「通信できません」
+        guard case .failure(let error) = result else { return XCTFail("取り消したのに答えが返った") }
+        XCTAssertEqual(error as? APIError, .unreachable)
     }
 }

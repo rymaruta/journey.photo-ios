@@ -95,6 +95,7 @@ struct ProfileService {
 
         let response: URLResponse
         do {
+            try RequestCancellation.throwIfCancelled()
             (_, response) = try await URLSession.shared.upload(for: request, from: jpeg)
         } catch {
             throw APIError.unreachable
