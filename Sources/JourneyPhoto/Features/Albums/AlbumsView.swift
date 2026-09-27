@@ -201,7 +201,8 @@ struct AlbumsView: View {
                     ShareLink(item: model.inviteURL(token: token)) {
                         Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
                             .font(.caption)
-                            .frame(minHeight: WebTheme.minTapTarget)
+                            // 押す場所はラベルの内側で広げる（外側の余白は押せない）
+                            .webTappable()
                     }
                     // 作り直し・取り消しの最中は配らない（失効する直前のリンクを配っていた）
                     .disabled(model.inviteWorking.contains(album.id))
@@ -210,23 +211,26 @@ struct AlbumsView: View {
                 Spacer()
                 // **期限内でも作り直せる**（Web の /user/albums と同じ——配ったリンクを
                 // 止めて出し直したいとき）。切れていたらこれが唯一の出口
-                Button(expiry == .expired ? L("招待リンクを作り直す", "Recreate invite link")
-                                          : L("作り直す", "Recreate")) {
+                Button {
                     Task { await model.createInvite(album.id, environment: environment) }
+                } label: {
+                    Text(expiry == .expired ? L("招待リンクを作り直す", "Recreate invite link")
+                                            : L("作り直す", "Recreate"))
+                        .font(.caption)
+                        // 押す場所は 44pt（隣の「取り消す」と押し間違えない）。**ラベルの
+                        // 内側で**広げる——ボタンの外側に付けた余白は押せない
+                        .webTappable()
                 }
-                .font(.caption)
-                // 押す場所は 44pt（隣の「取り消す」と押し間違えない）
-                .frame(minHeight: WebTheme.minTapTarget)
-                .contentShape(Rectangle())
                 // 二度押しで2本作らない（下の「招待リンクを作る」と同じ）
                 .disabled(model.inviteWorking.contains(album.id))
                 .buttonStyle(.borderless)
-                Button(L("取り消す", "Revoke")) {
+                Button {
                     Task { await model.revokeInvite(album.id, environment: environment) }
+                } label: {
+                    Text(L("取り消す", "Revoke"))
+                        .font(.caption)
+                        .webTappable()
                 }
-                .font(.caption)
-                .frame(minHeight: WebTheme.minTapTarget)
-                .contentShape(Rectangle())
                 .disabled(model.inviteWorking.contains(album.id))
                 // **行に複数のボタンを置くときは borderless。**
                 // 既定だと行のどこを押しても両方が反応する

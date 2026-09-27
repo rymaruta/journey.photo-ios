@@ -145,7 +145,7 @@ struct MyPageView: View {
         .onChange(of: model.serverRead) { _, read in
             guard let read else { return }
             let before = hidden.revision
-            hidden.confirmPublished(read.publishedIds, for: auth.userId, readStartedAt: read.startedAt)
+            hidden.confirmPublished(read.publishedIds, for: read.owner, readStartedAt: read.startedAt)
             // 実際に外したときだけ一覧へ渡す
             if hidden.revision != before {
                 Task { await environment.gallery.setHidden(hidden.snapshot) }
@@ -945,6 +945,8 @@ final class MyPageViewModel: ObservableObject {
     /// `photos` の変化で見ない——ピン留めの並べ替えでも変わり、読み直しに失敗した古い
     /// 一覧で印を外していた
     struct ServerRead: Equatable {
+        /// 答えの持ち主（受け取った時点の `auth.userId` ではなく、取りに行った人）
+        let owner: String?
         let publishedIds: [String]
         let startedAt: Date
     }
@@ -1067,7 +1069,7 @@ final class MyPageViewModel: ObservableObject {
                 self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
                 self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
                 hasLoadedPhotos = true
-                serverRead = ServerRead(publishedIds: loadedPhotos.filter { $0.published != false }.map(\.id),
+                serverRead = ServerRead(owner: activeUser, publishedIds: loadedPhotos.filter { $0.published != false }.map(\.id),
                                         startedAt: startedAt)
             }
             let loadedStats = await stats
@@ -1161,6 +1163,8 @@ final class MyPageViewModel: ObservableObject {
         actionMessage = nil
         reloadError = nil
         hasLoadedPhotos = false
+        // 前の人の「公開中」の答えも手放す
+        serverRead = nil
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

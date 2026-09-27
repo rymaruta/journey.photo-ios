@@ -256,7 +256,8 @@ final class ModerationStore: ObservableObject {
                           graceSeconds: TimeInterval = 120) {
         guard owner == userId else { return }
         let cutoff = min(readStartedAt, now().addingTimeInterval(-graceSeconds))
-        let stale = photoIds.filter { id in goneMarks[id].map { $0 < cutoff } ?? false }
+        // 先の時刻の印（起動中に時計を戻した）は今に抑えて比べる
+        let stale = photoIds.filter { id in goneMarks[id].map { min($0, now()) < cutoff } ?? false }
         guard !stale.isEmpty else { return }
         let before = snapshot
         for id in stale { goneMarks[id] = nil }
