@@ -29,3 +29,29 @@ final class StoryAllowRepliesTests: XCTestCase {
         XCTAssertTrue(list[0].acceptsReplies)
     }
 }
+
+/// 送り直しで二重に出さないための照らし合わせ（`StoryService.isSameMedia`）。
+/// サーバーは `src` を配信元の URL に作り直すので、**道（＝鍵）で比べる**
+final class StorySameMediaTests: XCTestCase {
+
+    private func story(src: String, userId: String = "me") throws -> Story {
+        try JSONDecoder.api.decode(Story.self, from: Data(
+            #"{"id":"s1","src":"\#(src)","userId":"\#(userId)"}"#.utf8))
+    }
+
+    private let media = StoryService.UploadedMedia(
+        key: "uploads/me/abc.jpg", publicUrl: "https://bucket.s3.amazonaws.com/uploads/me/abc.jpg")
+
+    func testMatchesTheSameKeyOnTheCDN() throws {
+        XCTAssertTrue(StoryService.isSameMedia(try story(src: "https://cdn.example/uploads/me/abc.jpg"),
+                                               media, ownerId: "me"))
+    }
+
+    func testDoesNotMatchAnotherImageOrAnotherPerson() throws {
+        XCTAssertFalse(StoryService.isSameMedia(try story(src: "https://cdn.example/uploads/me/zzz.jpg"),
+                                                media, ownerId: "me"))
+        XCTAssertFalse(StoryService.isSameMedia(try story(src: "https://cdn.example/uploads/me/abc.jpg",
+                                                          userId: "other"),
+                                                media, ownerId: "me"))
+    }
+}

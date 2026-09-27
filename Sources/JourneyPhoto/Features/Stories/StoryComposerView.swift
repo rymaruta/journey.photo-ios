@@ -838,11 +838,9 @@ struct StoryComposerView: View {
         let toasts = toasts
         let started = uploads.start(jobs, ownerId: ownerId,
                                     currentUserId: { auth.userId },
-                                    send: { job in
-            _ = try await stories.create(imageData: job.imageData, caption: job.caption,
-                                         location: job.location, coords: job.coords,
-                                         song: job.song, durationSec: job.durationSec,
-                                         archive: job.archive)
+                                    send: { job, record in
+            // 送り直しで二重に出さない手順は `StoryService.post` にある
+            try await stories.post(job, ownerId: ownerId, record: record)
         }, onAllSent: {
             // 出し終えたら下書きは要らない（残すと次に開いたときにまた尋ねる）。
             // 🔴 **ただし復元を保留した古い下書きは消さない**——この回の投稿とは別物

@@ -388,10 +388,6 @@ struct StoryViewerView: View {
             }
 
             tapZones
-                // 🔴 **送っている間（返信・♡・残す・削除）は前後へ送らない。**
-                // 止めていたのは時計だけで、タップや払いでは移れたため、結果の
-                // 「残しました」「送れませんでした」が別の1本の画面に出ていた
-                .allowsHitTesting(!isSending)
 
             // 暗幕。メニュー45%・返信を書いている間35%・削除の確認55%（板の値）
             Color.black
@@ -662,7 +658,7 @@ struct StoryViewerView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if paused { paused = false } else { advance() }
+                    if paused { paused = false } else if !isSending { advance() }
                 }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
@@ -678,7 +674,7 @@ struct StoryViewerView: View {
                 .onEnded { value in
                     switch StoryPlayback.swipe(
                         dx: value.translation.width, dy: value.translation.height) {
-                    case .next: advance()
+                    case .next: if !isSending { advance() }
                     case .back: leftTap()
                     case .close: dismiss()
                     case .ignore: break
@@ -690,6 +686,11 @@ struct StoryViewerView: View {
     private func leftTap() {
         // **メニューで止めているなら、押すと続きから**（板「25b」）
         if paused { paused = false; return }
+        // 🔴 **送っている間（返信・♡・残す・削除）は前後へ送らない。** 止めていたのは
+        // 時計だけで、タップや払いでは移れたため、結果の「残しました」「送れません
+        // でした」が別の1本の画面に出ていた。**払って閉じるのは止めない**（圏外で
+        // 返事を待つ間に閉じられなくなる）
+        guard !isSending else { return }
         switch StoryPlayback.leftTap(index: index, elapsed: elapsed) {
         case .restart:
             elapsed = 0
@@ -1132,6 +1133,10 @@ struct StoryViewerView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
+        } else {
+            // 返信を受けない投稿。**足元の場所は残す**（空にすると写真の枠が
+            // 1本ごとに伸び縮みする）
+            Color.clear
         }
     }
 

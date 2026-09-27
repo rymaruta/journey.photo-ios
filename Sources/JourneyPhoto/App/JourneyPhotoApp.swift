@@ -141,6 +141,25 @@ struct JourneyPhotoApp: App {
                 // **未ログインのときの鍵で読んだ控え**が見えたままになる
                 // （同じ端末を別の人が使うと、その人のハートとブロックが
                 //  こちらに出る——`FavoritesStore` が warn している事故そのもの）
+                // 🔴 **投稿した本人でなくなったら、裏で送っている残りを捨てる**
+                // （別の人のアカウントで前の人のストーリーを出さない）。
+                // **ログインの確認が終わるまでは照らさない**——送り終えていない並びは
+                // 端末から戻るので、起動直後の「まだ分からない（nil）」で捨てると、
+                // 強制終了から戻した投稿が毎回消える。ログアウト（確認中→未ログイン）
+                // は `userId` が nil のまま変わらないので、`state` で見る
+                .task(id: auth.state) {
+                    let stories = environment.stories
+                    let auth = auth
+                    StoryUploadCenter.shared.configure(
+                        currentUserId: { auth.userId },
+                        send: { job, record in
+                            guard let ownerId = auth.userId else { throw APIError.notAuthenticated }
+                            try await stories.post(job, ownerId: ownerId, record: record)
+                        },
+                        discardUpload: { key in await stories.discardUpload(key: key) })
+                    guard !auth.isResolving else { return }
+                    StoryUploadCenter.shared.userChanged(to: auth.userId)
+                }
                 .task(id: auth.userId) {
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
@@ -150,9 +169,6 @@ struct JourneyPhotoApp: App {
                     joinedAlbums.use(userId: auth.userId)
                     wishlist.use(userId: auth.userId)
                     storyDrafts.use(userId: auth.userId)
-                    // 🔴 投稿した本人でなくなったら、裏で送っている残りを捨てる
-                    // （別の人のアカウントで前の人のストーリーを出さない）
-                    StoryUploadCenter.shared.userChanged(to: auth.userId)
                     seenStories.use(userId: auth.userId)
                     // **通知の宛先も、人が変わったら預け直す**
                     // （外さないと、次にこの端末を使う人へ前の人あての

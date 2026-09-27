@@ -23,19 +23,63 @@ struct StoryService {
 
     private struct Created: Decodable { let story: Story? }
 
-    /// 画像を上げてストーリーを作る。
+    /// 上げ終えた画像。**送り直しで二重に出さないための目印**（`StoryUploadCenter` が
+    /// 1本ごとに覚え、端末にも書く）
+    struct UploadedMedia: Codable, Equatable {
+        let key: String
+        let publicUrl: String
+    }
+
+    /// 1本を出す（裏の係 `StoryUploadCenter` から呼ぶ）。
     ///
-    /// **`key` は送らない。** サーバーは検証済みの `publicUrl` から導く。
-    /// 受け取っていた頃は、自分の正当な URL と一緒に他人のキーを送り、
-    /// 自分のストーリーを消すだけで相手のファイルを消せた
-    /// （`api-user/src/stories.ts` の注記）。
-    @discardableResult
-    /// 🔴 **公開範囲は受け取らない。** ストーリーはフォロワーだけが見る
-    /// （2026-09-22・owner の判断。`api-user/src/storyVisibility.ts`）。
-    /// サーバーは `visibility` を読まないので、送っても何も起きない。
-    func create(imageData: Data, caption: String?, location: String?, coords: Photo.Coords?,
-                song: Photo.Song? = nil, durationSec: Int? = nil,
-                archive: Bool = false) async throws -> Story? {
+    /// 🔴 **送り直しで2本にしない。** サーバーは行の id を毎回新しく作る
+    /// （`story-${randomUUID()}`・`stories.ts`）ので、行を作る要求が届いたのに
+    /// 返事だけ落ちた回（圏外・タイムアウト・504）に送り直すと必ず2本になっていた。
+    /// そこで:
+    ///
+    /// 1. 上げ終えた画像を `record` で覚えてもらう
+    /// 2. 行を作る要求が**サーバーに断られた**（4xx）ときだけ画像を片づけ、目印を消す
+    /// 3. **届いたか分からない**失敗（通信・5xx・応答の読み違い）では画像を残す
+    /// 4. 送り直しで目印があれば、**先に一覧を読んで同じ画像の自分の1本を探す**。
+    ///    在れば出せていたので何もしない。無ければ上げ直さずに行だけ作る
+    func post(_ job: StoryUploadCenter.Job, ownerId: String,
+              record: @escaping @MainActor (UploadedMedia?) -> Void) async throws {
+        let media: UploadedMedia
+        if let uploaded = job.uploaded {
+            // 一覧を読めなければ投げる（出たかどうか分からないまま行を作らない）
+            let listed = try await list()
+            if listed.contains(where: { Self.isSameMedia($0, uploaded, ownerId: ownerId) }) { return }
+            media = uploaded
+        } else {
+            media = try await upload(imageData: job.imageData)
+            await record(media)
+        }
+        do {
+            _ = try await createRecord(media, caption: job.caption, location: job.location,
+                                       coords: job.coords, song: job.song,
+                                       durationSec: job.durationSec, archive: job.archive)
+        } catch {
+            if case .server(let status, _)? = error as? APIError, (400..<500).contains(status) {
+                // 断られた＝行は出来ていない。画像を片づけ、次は上げ直す
+                await uploads.discard(key: media.key)
+                await record(nil)
+            }
+            throw error
+        }
+    }
+
+    /// その1本が、覚えておいた画像で出た自分のストーリーか。
+    ///
+    /// サーバーは `src` を `publicUrl` から導いた鍵で作り直す（`canonicalUploadUrl`
+    /// ——配信元の URL に差し替える）ので、URL をそのまま比べずに**道（＝鍵）で比べる**
+    static func isSameMedia(_ story: Story, _ media: UploadedMedia, ownerId: String) -> Bool {
+        guard story.userId == ownerId, let url = URL(string: story.src) else { return false }
+        let path = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+        return !path.isEmpty && path == media.key
+    }
+
+    /// 画像を上げる（置き場所をもらって本体を置く）。置けなかったら片づけて投げる
+    func upload(imageData: Data) async throws -> UploadedMedia {
         let presigned = try await uploads.presign(
             fileName: "story.jpg", fileType: "image/jpeg", fileSize: imageData.count
         )
@@ -45,7 +89,25 @@ struct StoryService {
             await uploads.discard(key: presigned.key)
             throw error
         }
+        return UploadedMedia(key: presigned.key, publicUrl: presigned.publicUrl)
+    }
 
+    /// 上げた画像でストーリーの行を作る。**失敗しても画像は片づけない**
+    /// （届いたか分からない回に片づけると、出来ていた1本の画像が消える。
+    /// 片づけるかは呼び手 `post` が失敗の種類で決める）。
+    ///
+    /// **`key` は送らない。** サーバーは検証済みの `publicUrl` から導く。
+    /// 受け取っていた頃は、自分の正当な URL と一緒に他人のキーを送り、
+    /// 自分のストーリーを消すだけで相手のファイルを消せた
+    /// （`api-user/src/stories.ts` の注記）。
+    ///
+    /// 🔴 **公開範囲は受け取らない。** ストーリーはフォロワーだけが見る
+    /// （2026-09-22・owner の判断。`api-user/src/storyVisibility.ts`）。
+    /// サーバーは `visibility` を読まないので、送っても何も起きない。
+    @discardableResult
+    func createRecord(_ media: UploadedMedia, caption: String?, location: String?,
+                      coords: Photo.Coords?, song: Photo.Song? = nil, durationSec: Int? = nil,
+                      archive: Bool = false) async throws -> Story? {
         struct Body: Encodable {
             let publicUrl: String
             let caption: String?
@@ -65,7 +127,7 @@ struct StoryService {
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
         let body = Body(
-            publicUrl: presigned.publicUrl,
+            publicUrl: media.publicUrl,
             caption: caption?.isEmpty == true ? nil : caption,
             mediaType: "image",
             location: location?.isEmpty == true ? nil : location,
@@ -74,12 +136,14 @@ struct StoryService {
             durationSec: Self.storedDuration(durationSec),
             archive: archive ? true : nil
         )
-        do {
-            return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
-        } catch {
-            await uploads.discard(key: presigned.key)
-            throw error
-        }
+        return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
+    }
+
+    /// 捨てた送信の画像を片づける。**使われている鍵はサーバーが消さない**
+    /// （`upload.ts` の `discardUpload` は保存済みの写真とストーリーの鍵を残す）ので、
+    /// 実は出来ていた1本の画像を消してしまうことは無い
+    func discardUpload(key: String) async {
+        await uploads.discard(key: key)
     }
 
     /// 既定（5秒）なら送らない——サーバーも既定は保存しない

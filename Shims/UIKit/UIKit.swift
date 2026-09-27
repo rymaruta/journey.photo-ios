@@ -23,6 +23,18 @@ open class UIApplication {
     public func registerForRemoteNotifications() {}
     public func unregisterForRemoteNotifications() {}
     public var applicationIconBadgeNumber: Int = 0
+    /// 背面に回ってもしばらく動かす（本物と同じ名前・形）
+    public func beginBackgroundTask(withName taskName: String?,
+                                    expirationHandler handler: (@MainActor @Sendable () -> Void)? = nil) -> UIBackgroundTaskIdentifier {
+        .invalid
+    }
+    public func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier) {}
+}
+
+public struct UIBackgroundTaskIdentifier: Hashable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let invalid = UIBackgroundTaskIdentifier(rawValue: 0)
 }
 open class UINavigationController: UIViewController {}
 
