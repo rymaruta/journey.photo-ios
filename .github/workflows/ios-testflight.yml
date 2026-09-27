@@ -22,6 +22,10 @@ on:
         description: "外部テスターの審査にも出す（App Store Connect の「テスト情報」が埋まっていること）"
         type: boolean
         default: false
+      storeShots:
+        description: "App Store 用の原寸の絵（PNG）を `store-screenshots` の枝にも置く"
+        type: boolean
+        default: false
 
 # **渡していない権限は漏らせない**（photo-gallery の IAM-3 と同じ方針）。
 # checkout に要るのは読み取りだけ。
@@ -390,6 +394,7 @@ jobs:
         if: ${{ always() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STORE_SHOTS: ${{ inputs.storeShots }}
         run: bash Tools/export-screenshots.sh build/ios/test/Test.xcresult
 
       - name: 落ちたときに読むものを集める

@@ -62,11 +62,11 @@ final class SearchScopeTests: XCTestCase {
                         L("タグ", "Tags"), L("撮影地", "Places")])
     }
 
-    /// **人の種類では並び替えを出さない**（人の結果は並べ替えが効かない）。
+    /// **人の種類では写真の結果（と並び替えの札）を出さない**（人の結果は並べ替えが効かない）。
     /// 案内も人向けに
     func testPeopleScopeHidesSortAndAsksForAName() {
-        XCTAssertFalse(SearchScope.people.showsSort)
-        XCTAssertEqual(SearchScope.allCases.filter(\.showsSort), [.all, .photos, .tags, .places])
+        XCTAssertFalse(SearchScope.people.showsPhotos)
+        XCTAssertEqual(SearchScope.allCases.filter(\.showsPhotos), [.all, .photos, .tags, .places])
         XCTAssertNotEqual(SearchScope.people.prompt, SearchScope.photos.prompt)
         XCTAssertEqual(SearchScope.people.prompt, L("人を検索（名前）", "Search people"))
         XCTAssertEqual(SearchScope.all.prompt, L("写真を検索（題・説明・タグなど）", "Search photos"))

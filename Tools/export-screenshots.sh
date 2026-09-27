@@ -54,6 +54,51 @@ if [ "$count" = "0" ]; then
     exit 0
 fi
 
+# **App Store 用の原寸は、縮める前に別の枝へ置く**（頼まれた回だけ）。
+# 審査に出す絵は機種ごとの寸法ちょうど（6.9インチ = 1320×2868）が要り、
+# 縮めた JPEG は使えない。`screenshots` の枝は別の作業の回が毎回
+# 上書きするので、**置き場を分ける**。1枚3MB近いので、出す画面だけに絞る
+if [ "${STORE_SHOTS:-false}" = "true" ]; then
+    STORE=/tmp/store-out
+    rm -rf "$STORE" && mkdir -p "$STORE"
+    python3 - "$OUT" "$STORE" <<'STORE_PY'
+import pathlib, shutil, sys, unicodedata
+out, store = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+# 出す順（インストール画面に出るのは最初の3枚）
+pick = ["10-ホーム", "20-写真の詳細", "13-マップ", "11-探す", "14-マイページ", "40-投稿の2択"]
+nfc = lambda t: unicodedata.normalize("NFC", t)
+for i, want in enumerate(pick, 1):
+    hit = next((f for f in sorted(out.glob("*.png")) if nfc(f.name).startswith(want)), None)
+    if hit:
+        shutil.copy(hit, store / f"{i:02d}-{want}.png")
+    else:
+        print(f"::warning::App Store 用に撮れなかった画面: {want}")
+STORE_PY
+    if ls "$STORE"/*.png >/dev/null 2>&1; then
+        (
+            cd "$STORE"
+            {
+                echo "# App Store 用の絵（原寸・$(date -u +%Y-%m-%dT%H:%MZ)）"
+                echo
+                echo "- コミット: ${GITHUB_SHA:-?}"
+                echo "- 実行: ${GITHUB_RUN_NUMBER:-?}"
+                echo
+                for f in *.png; do
+                    echo "- $f: $(sips -g pixelWidth -g pixelHeight "$f" | awk '/pixel/{printf "%s ", $2}')"
+                done
+            } > README.md
+            git init -q
+            git checkout -qb store-screenshots
+            git add -A
+            git -c user.email=actions@github.com -c user.name="GitHub Actions" \
+                commit -qm "run ${GITHUB_RUN_NUMBER:-?} / ${GITHUB_SHA:-?} の App Store 用の絵"
+            git push -q -f \
+                "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+                store-screenshots
+        ) && echo "App Store 用の絵を store-screenshots の枝に置きました"
+    fi
+fi
+
 # **軽くする。** 素の絵は1枚3MB近い。見るだけなので幅700の JPEG にする
 for f in "$OUT"/*.png; do
     sips -Z 700 -s format jpeg -s formatOptions 60 "$f" --out "${f%.png}.jpg" >/dev/null 2>&1 \

@@ -65,7 +65,17 @@ public enum AuthSignUpRequest {
     }
 }
 public struct AuthSignUpResult { public let isSignUpComplete: Bool = false }
-public struct AuthSignInResult { public let isSignedIn: Bool = false }
+public typealias AdditionalInfo = [String: String]
+/// 本物はほかにも MFA などの段を持つ。使う側は `default` で受けること
+public enum AuthSignInStep {
+    case done
+    case confirmSignUp(AdditionalInfo? = nil)
+    case resetPassword(AdditionalInfo? = nil)
+}
+public struct AuthSignInResult {
+    public let isSignedIn: Bool = false
+    public let nextStep: AuthSignInStep = .done
+}
 public struct AuthCodeDeliveryDetails {}
 public struct AuthResetPasswordResult {}
 public struct AuthSignOutResult {}

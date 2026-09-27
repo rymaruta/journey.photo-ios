@@ -152,7 +152,7 @@ struct SignInView: View {
                    "This email hasn't been verified yet."))
                 .font(.callout)
             Button {
-                Task { await resumeVerification() }
+                Task { await resumeVerification(knownUnconfirmed: true) }
             } label: {
                 // 形は**中身の側**に付ける（`.plain` は外の枠を押せる範囲にしない）
                 Text(L("確認コードを入力・再送する", "Enter or resend the code"))
@@ -242,7 +242,7 @@ struct SignInView: View {
             // **未確認のまま戻ってきた人を、確認画面へ送る。**
             // 文言だけ出して入口が無いと、登録し直しても
             // 「すでに登録されています」で詰む（パスワード再設定も効かない）
-            if auth.lastFailureWasUnconfirmed { await resumeVerification() }
+            if auth.lastFailureWasUnconfirmed { await resumeVerification(knownUnconfirmed: true) }
             return
         }
 
@@ -256,7 +256,7 @@ struct SignInView: View {
             return
         }
         // 「すでに登録されています」＝**確認前の自分**かもしれない
-        if auth.lastFailureWasExistingAccount { await resumeVerification() }
+        if auth.lastFailureWasExistingAccount { await resumeVerification(knownUnconfirmed: false) }
     }
 
     /// 預かっていた表示名をプロフィールに入れる。
@@ -282,8 +282,18 @@ struct SignInView: View {
     }
 
     /// 控えてある UUID で確認画面に戻る。コードも送り直す。
-    private func resumeVerification() async {
-        guard let saved = pending.username(for: email) else { return }
+    /// - Parameter knownUnconfirmed: Cognito が「未確認」と答えた回だけ true。
+    ///   「すでに登録されています」の回は**ほとんどが確認済みの人**なので、
+    ///   控えが無くても「確認が済んでいません」とは言わない
+    private func resumeVerification(knownUnconfirmed: Bool) async {
+        guard let saved = pending.username(for: email) else {
+            // **この端末に登録の控えが無い**（Web・別の端末で登録した）。
+            // 確認コードを送り直すには登録時の ID が要り、メールアドレスでは引けない
+            guard knownUnconfirmed else { return }
+            notice = L("メールアドレスの確認が済んでいません。登録したときに届いたメールの確認コードを、登録した端末（または Web）で入力してください。",
+                       "Your email isn't verified yet. Enter the code from the sign-up email on the device (or web) where you signed up.")
+            return
+        }
         if await auth.resendSignUpCode(username: saved) {
             pendingUsername = saved
             notice = L("確認コードを送り直しました。メールをご確認ください。",

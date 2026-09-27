@@ -18,6 +18,8 @@ struct PhotoDetailView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model: PhotoDetailViewModel
+    /// 保存（しおり）を送っている最中
+    @State private var isSavingBookmark = false
     @State private var showReport = false
     @State private var showDeleteConfirm = false
     @State private var showEdit = false
@@ -925,6 +927,11 @@ struct PhotoDetailView: View {
     /// **引けなくても画面は壊さない**（圏外なら古いまま出す方がまし）。
     /// 保存を入れ替える。**サーバーが本体**で、控えは送れたときだけ合わせる
     private func toggleSave() async {
+        // **送っている間は受けない**（いいねの `isLiking` と同じ）。連打で save と
+        // unsave が並んで飛ぶと、着く順や失敗の巻き戻しで画面とサーバーが食い違う
+        guard !isSavingBookmark else { return }
+        isSavingBookmark = true
+        defer { isSavingBookmark = false }
         let wasSaved = savedPhotos.contains(photo.id)
         savedPhotos.set(photo.id, saved: !wasSaved)
         do {

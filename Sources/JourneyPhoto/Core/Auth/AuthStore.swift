@@ -34,6 +34,25 @@ final class AuthStore: ObservableObject {
     /// 見える（Web 側の「確かめられなかった回に案内を出さない」と同じ話）。
     var isResolving: Bool { state == .unknown }
 
+    private var expiryObserver: NSObjectProtocol?
+
+    init() {
+        // ログインの期限切れ（`AuthGateway.idToken`）を受けてログアウトに倒す
+        expiryObserver = NotificationCenter.default.addObserver(
+            forName: .authSessionExpired, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.expireSession() }
+        }
+    }
+
+    /// ログインの期限が切れた。**ログイン中の見た目のまま何もできない**状態を作らない
+    func expireSession() async {
+        guard userId != nil else { return }
+        await signOut()
+        errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
+                         "Your session has expired. Please sign in again.")
+    }
+
     /// 起動時に一度。**「確かめられなかった」と「ログインしていない」を
     /// 混ぜない**——圏外なだけの人をログイン画面に飛ばさないため、
     /// 判定できない回は `.unknown` のままにする。
@@ -67,6 +86,14 @@ final class AuthStore: ObservableObject {
             return
         }
         let id = try? await AuthGateway.currentUserId()
+        // **期限切れは起動時に見つける。** ログイン中の見た目のまま始めない。
+        // 圏外などで判定できない回は `false`（ログイン中のまま進む）
+        if id != nil, await AuthGateway.isSessionExpired() {
+            await signOut()
+            errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
+                             "Your session has expired. Please sign in again.")
+            return
+        }
         if let id {
             state = .signedIn(userId: id)
             await refreshAdmin()
@@ -106,6 +133,9 @@ final class AuthStore: ObservableObject {
         await AuthGateway.signOut()
         state = .signedOut
         isAdmin = false
+        // 前の画面の失敗（パスワード変更など）をログイン画面に持ち越さない
+        errorMessage = nil
+        lastFailure = .none
     }
 
     /// 退会の最後の一歩: Cognito の利用者を消す（`AuthGateway.deleteUser`）。
@@ -152,6 +182,16 @@ final class AuthStore: ObservableObject {
         await run {
             try await AuthGateway.changePassword(current: current, new: new)
             ok = true
+        }
+        // この画面にメールアドレスの欄は無い（共通の「メールアドレスかパスワードが違います」は合わない）。
+        // **期限切れも同じ種類（`.notAuthorized`）に畳まれる**ので、先に見分ける——
+        // 見分けないと、正しいパスワードを何度打っても「違います」と出る
+        if lastFailure == .notAuthorized {
+            if await AuthGateway.isSessionExpired() {
+                await expireSession()
+            } else {
+                errorMessage = L("いまのパスワードが違います", "Your current password is incorrect")
+            }
         }
         return ok
     }
