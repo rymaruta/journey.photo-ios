@@ -248,11 +248,7 @@ struct SignInView: View {
             // **未確認のまま戻ってきた人を、確認画面へ送る。**
             // 文言だけ出して入口が無いと、登録し直しても
             // 「すでに登録されています」で詰む（パスワード再設定も効かない）
-            if auth.lastFailureWasUnconfirmed {
-                await resumeVerification(knownUnconfirmed: true)
-            } else if auth.lastFailure == .notAuthorized || auth.lastFailure == .userNotFound {
-                await resumeIfRegisteredHere()
-            }
+            if auth.lastFailureWasUnconfirmed { await resumeVerification(knownUnconfirmed: true) }
             // **預かったままの表示名を、ふつうのログインでも入れる。**
             // 確認直後のログインが落ちた人・名前を入れ損ねた人は、ここ以外に
             // やり直す場所が無い（控えには「次のログインで試せる」と書いてある）
@@ -312,27 +308,6 @@ struct SignInView: View {
     /// - Parameter knownUnconfirmed: Cognito が「未確認」と答えた回だけ true。
     ///   「すでに登録されています」の回は**ほとんどが確認済みの人**なので、
     ///   控えが無くても「確認が済んでいません」とは言わない
-    /// 未確認の人のログインは「未確認」ではなく「違います」で返りうる（このプールでは、
-    /// メールは**確認が済んでから**ログインの名前として使える）。この端末で登録を始めた
-    /// 控えがあれば、**コードを送り直せたときだけ**確認の続きへ送る。
-    ///
-    /// **失敗の種類で絞る**（「違います」「無い」だけ）。圏外・回数制限でも動かしていたので、
-    /// 確認済みの人をコード入力へ落としていた（494b701 のレビュー）。確認済みの人なら
-    /// 送り直しが断られ、控えを捨ててログインの答えを出す。送り直せなかったら入口は出さない
-    private func resumeIfRegisteredHere() async {
-        guard let saved = pending.username(for: email) else { return }
-        let signInMessage = auth.errorMessage
-        let sent = await auth.resendSignUpCode(username: saved)
-        if sent {
-            pendingUsername = saved
-            notice = L("メールアドレスの確認が済んでいません。確認コードを送り直しました。",
-                       "Your email isn't verified yet. We sent a new code.")
-            return
-        }
-        if auth.lastFailure.isPermanent { pending.forget(email: email) }
-        auth.errorMessage = signInMessage
-    }
-
     private func resumeVerification(knownUnconfirmed: Bool) async {
         guard let saved = pending.username(for: email) else {
             // **この端末に登録の控えが無い**（Web・別の端末で登録した）。
@@ -414,6 +389,7 @@ struct SignInView: View {
                         pending.forget(email: email)
                         pendingUsername = nil
                         mode = .signIn
+                        code = ""
                     }
                 }
             } label: {

@@ -231,12 +231,14 @@ struct FollowListView: View {
     private func refreshMyFollowing() async {
         guard let viewer = auth.userId else { return }
         let edits = followEdits
+        // 始めた時点で送っている最中なら、答えはその送信を映していないことがある
+        let startedIdle = working.isEmpty
         let ids = try? await environment.social.myFollowingIds()
         // 待っている間に人が替わっていたら書かない（引き下げの読み直しは
         // `.task(id:)` の取り消しに巻き込まれない）。**待っている間にこの画面で
         // フォローを押していたら書かない**（古い答えがボタンを元に戻す）
         // 送っている最中も書かない（先に着いた古い一覧で、押したボタンを戻さない）
-        if let ids, auth.userId == viewer, followEdits == edits, working.isEmpty { myFollowing = Set(ids) }
+        if let ids, auth.userId == viewer, followEdits == edits, startedIdle, working.isEmpty { myFollowing = Set(ids) }
     }
 
     private func setFollowing(_ id: String, to follow: Bool) async {
