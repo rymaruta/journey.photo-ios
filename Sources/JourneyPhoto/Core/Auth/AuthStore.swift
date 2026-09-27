@@ -260,6 +260,11 @@ final class AuthStore: ObservableObject {
             )
             ok = true
         }
+        // 🔴 **無いアカウントは「コードが違います」と同じ文にする。** 1段目（`startPasswordReset`）で
+        // 隠しても、ここで「アカウントが見つかりません」と出ると有無が分かる
+        if lastFailure == .userNotFound {
+            errorMessage = AuthMessage.text(for: .codeMismatch)
+        }
         return ok
     }
 

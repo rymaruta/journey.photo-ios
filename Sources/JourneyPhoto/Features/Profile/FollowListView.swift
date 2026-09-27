@@ -235,7 +235,8 @@ struct FollowListView: View {
         // 待っている間に人が替わっていたら書かない（引き下げの読み直しは
         // `.task(id:)` の取り消しに巻き込まれない）。**待っている間にこの画面で
         // フォローを押していたら書かない**（古い答えがボタンを元に戻す）
-        if let ids, auth.userId == viewer, followEdits == edits { myFollowing = Set(ids) }
+        // 送っている最中も書かない（先に着いた古い一覧で、押したボタンを戻さない）
+        if let ids, auth.userId == viewer, followEdits == edits, working.isEmpty { myFollowing = Set(ids) }
     }
 
     private func setFollowing(_ id: String, to follow: Bool) async {
