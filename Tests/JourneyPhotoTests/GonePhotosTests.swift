@@ -129,6 +129,22 @@ final class GonePhotosTests: XCTestCase {
         XCTAssertNil(shared.object(forKey: "moderation.gone.me"), "期限を過ぎた印を端末に残している")
     }
 
+    /// **先の時刻で付いた印は今に抑えて書き戻す**（時計を戻すと、いつまでも残った）
+    @MainActor
+    func testFutureMarksAreClampedAndWrittenBack() async {
+        let shared = defaults()
+        var clock = Date(timeIntervalSince1970: 1_800_000_000)
+        let ahead = ModerationStore(defaults: shared, now: { clock.addingTimeInterval(30 * 86_400) })
+        ahead.use(userId: "me")
+        ahead.markGone("a", for: "me")          // 時計を30日進めて付けた
+        let back = ModerationStore(defaults: shared, now: { clock })
+        back.use(userId: "me")                  // 時計を戻して読む → 今に抑えて書き戻す
+        clock = clock.addingTimeInterval(ModerationStore.goneLifetime + 60)
+        let later = ModerationStore(defaults: shared, now: { clock })
+        later.use(userId: "me")
+        XCTAssertTrue(later.gonePhotoIds.isEmpty, "先の時刻の印が期限を過ぎても残る")
+    }
+
     /// **サーバーが「公開中」と答えたら印を外す**（Web で公開に戻した写真が、この端末で
     /// だけ最大7日出なかった）。付けたばかりの印は外さない（自分の一覧は索引の写しで、
     /// 非公開にした直後は古い「公開中」を返しうる）
@@ -138,18 +154,25 @@ final class GonePhotosTests: XCTestCase {
         let store = ModerationStore(defaults: defaults(), now: { clock })
         store.use(userId: "me")
         store.markGone("a", for: "me")
-        store.confirmPublished(["a"], for: "me")
+        store.confirmPublished(["a"], for: "me", readStartedAt: clock)
         XCTAssertEqual(store.gonePhotoIds, ["a"], "非公開にした直後の古い答えで印を外した")
         clock = clock.addingTimeInterval(600)
         let before = store.revision
-        store.confirmPublished(["a"], for: "me")
+        store.confirmPublished(["a"], for: "me", readStartedAt: clock)
         XCTAssertTrue(store.gonePhotoIds.isEmpty, "公開中と分かったのに印が残る")
         XCTAssertNotEqual(store.revision, before, "画面に知らせていない")
         // 別の人の答えでは外さない
         store.markGone("b", for: "me")
         clock = clock.addingTimeInterval(600)
-        store.confirmPublished(["b"], for: "someone")
+        store.confirmPublished(["b"], for: "someone", readStartedAt: clock)
         XCTAssertEqual(store.gonePhotoIds, ["b"])
+        // **取りに行った後に付いた印は外さない**（その答えは非公開にする前のもの）
+        let readAt = clock
+        clock = clock.addingTimeInterval(10)
+        store.markGone("c", for: "me")
+        clock = clock.addingTimeInterval(600)
+        store.confirmPublished(["c"], for: "me", readStartedAt: readAt)
+        XCTAssertTrue(store.gonePhotoIds.contains("c"), "取りに行った後に非公開にした写真の印を、古い答えで外した")
     }
 
     /// **人ごと。** 前の人が消した写真の印を、次の人に持ち越さない。

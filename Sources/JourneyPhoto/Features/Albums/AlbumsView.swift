@@ -194,14 +194,18 @@ struct AlbumsView: View {
     private func inviteControls(_ album: Album) -> some View {
         if let token = album.inviteToken {
             let expiry = InviteLink.expiry(album.inviteExpiresAt, now: Date())
-            HStack {
+            HStack(spacing: 12) {
                 if expiry != .expired {
                     // 招待リンクはサイトの URL で共有する
                     // （アプリを入れていない人にも開ける）
                     ShareLink(item: model.inviteURL(token: token)) {
                         Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
                             .font(.caption)
+                            .frame(minHeight: WebTheme.minTapTarget)
                     }
+                    // 作り直し・取り消しの最中は配らない（失効する直前のリンクを配っていた）
+                    .disabled(model.inviteWorking.contains(album.id))
+                    .buttonStyle(.borderless)
                 }
                 Spacer()
                 // **期限内でも作り直せる**（Web の /user/albums と同じ——配ったリンクを
@@ -211,6 +215,9 @@ struct AlbumsView: View {
                     Task { await model.createInvite(album.id, environment: environment) }
                 }
                 .font(.caption)
+                // 押す場所は 44pt（隣の「取り消す」と押し間違えない）
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
                 // 二度押しで2本作らない（下の「招待リンクを作る」と同じ）
                 .disabled(model.inviteWorking.contains(album.id))
                 .buttonStyle(.borderless)
@@ -218,6 +225,8 @@ struct AlbumsView: View {
                     Task { await model.revokeInvite(album.id, environment: environment) }
                 }
                 .font(.caption)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
                 .disabled(model.inviteWorking.contains(album.id))
                 // **行に複数のボタンを置くときは borderless。**
                 // 既定だと行のどこを押しても両方が反応する

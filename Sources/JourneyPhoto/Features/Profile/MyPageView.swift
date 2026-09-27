@@ -142,10 +142,14 @@ struct MyPageView: View {
         }
         // 自分の一覧が「公開中」と答えた写真は、消した・非公開にした印を外す
         // （Web や別の端末で公開に戻した写真が、この端末でだけ出なかった）
-        .onChange(of: model.photos) { _, photos in
-            let owner = auth.userId
-            hidden.confirmPublished(photos.filter { $0.published != false }.map(\.id), for: owner)
-            Task { await environment.gallery.setHidden(hidden.snapshot) }
+        .onChange(of: model.serverRead) { _, read in
+            guard let read else { return }
+            let before = hidden.revision
+            hidden.confirmPublished(read.publishedIds, for: auth.userId, readStartedAt: read.startedAt)
+            // 実際に外したときだけ一覧へ渡す
+            if hidden.revision != before {
+                Task { await environment.gallery.setHidden(hidden.snapshot) }
+            }
         }
         // 「行きたい」も同じ。人が替わった回（`wishlist.use`）もここで拾う
         .onChange(of: wishlist.spotIds) { _, next in
@@ -936,6 +940,15 @@ final class MyPageViewModel: ObservableObject {
     /// （増減の結果は向こうが決める——3枚の上限も、消えた写真の掃除も）
     @Published private(set) var pinnedIds: [String] = []
     @Published private(set) var photos: [Photo] = []
+    /// **サーバーから読めた**自分の写真（公開中の id と、取りに行った時刻）。
+    /// 画面はこれで「消した・非公開にした」印を外す（`ModerationStore.confirmPublished`）。
+    /// `photos` の変化で見ない——ピン留めの並べ替えでも変わり、読み直しに失敗した古い
+    /// 一覧で印を外していた
+    struct ServerRead: Equatable {
+        let publishedIds: [String]
+        let startedAt: Date
+    }
+    @Published private(set) var serverRead: ServerRead?
     @Published private(set) var isLoading = false
     /// **読み込みに失敗した**。画面はこの時だけ一覧の代わりに知らせを出す。
     @Published var errorMessage: String?
@@ -998,6 +1011,7 @@ final class MyPageViewModel: ObservableObject {
         // 替わった後に返った答えは何も入れない（A → ログアウト → A でも別の世代）
         let gen = generation
         isLoading = true
+        let startedAt = Date()
         // 取り消された回に戻す（先に消したまま抜けると、写真0枚の欄に
         // 「まだ写真がありません」と嘘が出ていた）
         let previousError = errorMessage
@@ -1053,6 +1067,8 @@ final class MyPageViewModel: ObservableObject {
                 self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
                 self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
                 hasLoadedPhotos = true
+                serverRead = ServerRead(publishedIds: loadedPhotos.filter { $0.published != false }.map(\.id),
+                                        startedAt: startedAt)
             }
             let loadedStats = await stats
             guard gen == generation else { return }

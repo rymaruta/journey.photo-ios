@@ -507,6 +507,25 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(model.photos.isEmpty)
     }
 
+    /// **「公開中」の答えは、サーバーから読めた回にだけ出す**（読み直しに失敗した古い一覧や
+    /// ピン留めの並べ替えで、非公開にした写真の印を外していた）
+    func testServerReadIsPublishedOnlyForASuccessfulLoad() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg"},{"id":"p2","src":"/uploads/p2.jpg","published":false}]"#)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertEqual(model.serverRead?.publishedIds, ["p1"], "非公開の写真を公開中と言っている")
+        let first = model.serverRead
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"x"}"#)
+        await model.load()
+        XCTAssertEqual(model.serverRead, first, "読めなかった回に古い一覧で答えを出し直した")
+    }
+
     /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは
     /// 写真より先に入るので、`profile` で決めると格子に「まだ写真がありません」と嘘が出た（a1734cc のレビュー）
     func testFirstLoadWithOnlyTheProfileIsStillAFailure() async {
