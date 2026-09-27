@@ -14,8 +14,8 @@ import FoundationNetworking
 /// だから `StubProtocol` は即座に答え、待たせるのは要求を出す**手前**
 /// （トークンの提供者・サービスの `beforeRequest`）に置く。
 ///
-/// `holds` は**先頭から何回ぶんを止めるか**。それより後に着いた呼び出しは
-/// 止めずに通す——「2回目は止まらずに進むこと」を見る試験で、壊れたときに
+/// `skip` は**先頭から何回ぶんを止めずに通すか**、`holds` は**その後の何回ぶんを止めるか**。
+/// それより後に着いた呼び出しは止めずに通す——「2回目は止まらずに進むこと」を見る試験で、壊れたときに
 /// 待ち続けて試験ごと固まらないように。
 actor Gate {
     private let holds: Int
@@ -36,7 +36,7 @@ actor Gate {
         await withCheckedContinuation { waiters.append($0) }
     }
 
-    /// `count` 回ぶん `wait()` に着くまで待つ。**上限（既定2秒）で試験を落とす**
+    /// `count` 回ぶん `wait()` に着くまで待つ（**`skip` で通した回も数える**）。**上限（既定2秒）で試験を落とす**
     /// ——壊れて誰も着かない回に、Linux の XCTest は1件ごとの時間切れが無いので
     /// 全体の実行ごと止まる
     func untilWaiting(_ count: Int = 1, timeout: TimeInterval = 2,

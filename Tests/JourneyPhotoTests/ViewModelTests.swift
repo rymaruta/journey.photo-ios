@@ -885,10 +885,12 @@ final class ViewModelTests: XCTestCase {
         await g2.untilWaiting()
         model.show(photoId: "p1", initialLikes: nil, liked: false)
         XCTAssertTrue(model.isReloadingComments, "別の1枚の読み直しで、この1枚の読み直し中の印が消えた")
-        await g1.open()
+        // 別の1枚（p2）の読み直しが**終わった**ときにも、この1枚の印を消さない
         await g2.open()
-        await first.value
         await second.value
+        XCTAssertTrue(model.isReloadingComments, "別の1枚の読み直しが終わったら、この1枚の読み直し中の印まで消えた")
+        await g1.open()
+        await first.value
         XCTAssertFalse(model.isReloadingComments)
     }
 
