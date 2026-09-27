@@ -242,6 +242,35 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.actionMessage, "取得に失敗しました")
     }
 
+    /// **読み直しで写真を待つ間に留め外ししても、古いプロフィールのピンに巻き戻さない**（157b9ff のレビュー）
+    func testPinChangedDuringReloadIsKept() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a","pinnedPhotoIds":[]}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200, body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertEqual(model.pinnedIds, [])
+
+        // 読み直し: プロフィールはすぐ（ピン無し）、写真は遅れて届く
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a","pinnedPhotoIds":[]}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#, delay: 0.3)
+        let reload = Task { await model.load() }
+        for _ in 0..<2000 {
+            if StubProtocol.requestCount >= 2 { break }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        // 写真を待っている間に留める（PUT も同じ道。ここからの答えはピン有り）
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a","pinnedPhotoIds":["p1"]}"#)
+        await model.setPinned("p1", pinned: true)
+        XCTAssertEqual(model.pinnedIds, ["p1"])
+        await reload.value
+
+        XCTAssertEqual(model.pinnedIds, ["p1"], "写真を待つ間に留めたピンを巻き戻している")
+    }
+
     /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは
     /// 写真より先に入るので、`profile` で決めると格子に「まだ写真がありません」と嘘が出た（a1734cc のレビュー）
     func testFirstLoadWithOnlyTheProfileIsStillAFailure() async {

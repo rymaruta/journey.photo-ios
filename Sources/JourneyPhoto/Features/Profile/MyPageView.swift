@@ -901,6 +901,8 @@ final class MyPageViewModel: ObservableObject {
             await loadPublicly(userId: previewId)
             return
         }
+        // 読み込みの途中でピンを変えたかを見る印（下の成功の枝）
+        let pinEditsAtStart = pinEdits
         do {
             async let profile = self.profiles.myProfile()
             async let photos = self.photoService.myPhotos()
@@ -914,8 +916,12 @@ final class MyPageViewModel: ObservableObject {
             }
             let fetchedPhotos = try await photos
             self.profile = fetchedProfile
-            // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
-            self.pinnedIds = fetchedProfile.pinnedPhotoIds ?? []
+            // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）。
+            // **読み込みの途中でピンを変えていたら、その答えを残す**——読み込みの頭で取った
+            // プロフィールのピンは古く、写真を待つ間に留め外しした結果を巻き戻す
+            if pinEdits == pinEditsAtStart {
+                self.pinnedIds = fetchedProfile.pinnedPhotoIds ?? []
+            }
             self.photos = PhotoPinning.pinnedFirst(fetchedPhotos, pinned: self.pinnedIds)
             hasLoadedPhotos = true
             // **数が取れなくても画面は出す**（0 のままになるだけ）。
@@ -946,6 +952,9 @@ final class MyPageViewModel: ObservableObject {
         if let reloadFailure, actionMessage == reloadFailure { actionMessage = nil }
         reloadFailure = nil
     }
+
+    /// ピン留めを押した回数。**読み込みの途中でピンを変えたか**を見るのに使う（`load`）
+    private var pinEdits = 0
 
     /// 直近の読み直しの失敗で `actionMessage` に入れた文（読めたら消すため）
     private var reloadFailure: String?
@@ -999,6 +1008,7 @@ final class MyPageViewModel: ObservableObject {
     /// （`userProfile.ts`）、断られたときにそのときの一覧も返ってくる。
     /// 先に動かすと「留まったように見えて、次の読み込みで戻る」になる。
     func setPinned(_ photoId: String, pinned: Bool) async {
+        pinEdits += 1
         do {
             pinnedIds = try await profiles.setPinned(photoId: photoId, pinned: pinned)
             photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)
