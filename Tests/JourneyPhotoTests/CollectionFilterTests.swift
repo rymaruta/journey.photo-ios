@@ -483,3 +483,15 @@ final class TagCountsTests: XCTestCase {
         XCTAssertTrue(counts.isEmpty, "固有名詞が候補に出ている")
     }
 }
+
+/// 集約ページの題
+final class CollectionTitleTests: XCTestCase {
+
+    /// **カテゴリは画面の名前で出す**——生の値（`landscape`）のままだと、押した札の
+    /// 「おすすめ · 風景」と行き先の題が食い違う
+    func testCategoryTitleUsesDisplayName() {
+        XCTAssertEqual(PhotoQuery.Collection.category("landscape").title, L("風景", "landscape"))
+        XCTAssertEqual(PhotoQuery.Collection.category("風景").title, "風景")
+        XCTAssertEqual(PhotoQuery.Collection.tag("冬").title, "#冬")
+    }
+}

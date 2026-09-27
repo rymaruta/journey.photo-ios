@@ -105,3 +105,27 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertNil(SearchDiscovery.featured(in: [try photo(["id": "x", "category": "街"])]))
     }
 }
+
+/// 探すの読み込み（`SearchViewModel.apply(photos:)`）
+@MainActor
+final class SearchLoadTests: XCTestCase {
+
+    private func photo(_ id: String, focal: String? = nil, color: String? = nil) throws -> Photo {
+        var row: [String: Any] = ["id": id, "src": "https://x/\(id).jpg"]
+        if let focal { row["exif"] = ["focalLength": focal] }
+        if let color { row["dominantColor"] = color }
+        return try JSONDecoder.api.decode(Photo.self, from: JSONSerialization.data(withJSONObject: row))
+    }
+
+    /// **機材・色の枚数を12で切らない。** 行の「N枚」と押した先の一覧は
+    /// section の写真そのものなので、切ると13枚目から先が数えられず出てこない
+    func testGearAndColourSectionsKeepEveryPhoto() async throws {
+        let photos = try (0..<15).map { try photo("p\($0)", focal: "24mm", color: "#2f6fd0") }
+        let model = SearchViewModel()
+        model.apply(photos: photos)
+        XCTAssertEqual(model.gear.first?.group, .wide)
+        XCTAssertEqual(model.gear.first?.count, 15, "機材の枚数が頭打ちになっている")
+        XCTAssertEqual(model.colors.first?.family, .blue)
+        XCTAssertEqual(model.colors.first?.count, 15, "色の枚数が頭打ちになっている")
+    }
+}

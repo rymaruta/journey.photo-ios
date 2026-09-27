@@ -722,16 +722,24 @@ final class SearchViewModel: ObservableObject {
     /// ——`loadPhotos` は一度読んだら二度と読まないので、そのままだと
     /// ブロックした相手の写真が検索結果に残り続ける。
     func reloadPhotos(environment: AppEnvironment) async {
-        allPhotos = (try? await environment.gallery.fetchPhotos()) ?? []
+        apply(photos: (try? await environment.gallery.fetchPhotos()) ?? [])
+    }
+
+    /// 読み込んだ写真から段を作る。**通信と切り離してある**（テストで中身を直接渡す）
+    func apply(photos: [Photo]) {
+        allPhotos = photos
         popularTags = PhotoQuery.topTags(in: allPhotos)
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
         seasonalAll = DiscoverySections.seasonal(in: allPhotos, limit: .max)
         seasonal = Array(seasonalAll.prefix(SearchDiscovery.seasonalPreview))
         featured = SearchDiscovery.featured(in: allPhotos)
-        gear = GearGroups.sections(in: allPhotos)
+        // **枚数で切らない**（`limit: .max`）。行の「N枚」と押した先の一覧は
+        // この section の写真そのものなので、既定の12で切ると13枚目から先が
+        // 数えられず、押しても出てこない
+        gear = GearGroups.sections(in: allPhotos, limit: .max)
         categoryCovers = CategoryCovers.items(in: allPhotos)
-        colors = ColorFamilies.sections(in: allPhotos)
+        colors = ColorFamilies.sections(in: allPhotos, limit: .max)
         categories = CategoryChoices.present(in: allPhotos)
     }
 
