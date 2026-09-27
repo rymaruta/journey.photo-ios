@@ -98,7 +98,7 @@ actor OfficialSpotService {
             let list = try JSONDecoder.api.decode(LenientOfficialSpotList.self, from: data)
             if list.dropped > 0 {
                 // 黙って捨てない。**どの行が出ていないのか**を追えるように
-                print("[spots] 読めなかった索引の行を \(list.dropped) 件落としました")
+                print("[spots] 読めなかった・重複した索引の行を \(list.dropped) 件落としました")
             }
             let spots = list.spots
             // **読めたものだけを控える。** 1件も読めなかった回も控えない

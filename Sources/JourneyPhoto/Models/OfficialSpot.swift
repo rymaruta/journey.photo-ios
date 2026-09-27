@@ -77,9 +77,23 @@ struct SpotImage: Equatable {
     /// 札の隅に出す出典の1行
     var credit: String { "\(creditAuthor) / \(license)" }
 
-    /// 出典の1行の前半（「写真: 作者」）。後半のライセンスだけを
-    /// 文面へのリンクにするときに分けて使う（Web の `SpotGuideClient` と同じ割り方）
+    /// 出典の1行の前半（「写真: 作者」）
     var creditAuthor: String { L("写真: \(author)", "Photo: \(author)") }
+
+    /// 出典の1行を、**文字は `credit` と同じまま**、部分にリンクを付けて返す:
+    /// 「写真: 作者」→ 出典のページ（`pageUrl`）・「ライセンス」→ 文面（`licenseUrl`）。
+    ///
+    /// Web（`SpotGuideClient`）は「写真: 作者 / ライセンス（文面へ）/ Wikimedia Commons
+    /// （出典のページへ）」で、出典へのリンクは末尾の「Wikimedia Commons」に付く。
+    /// アプリは**画面の文字を変えない**ため末尾の語は足さず、出典のページへの
+    /// リンクを作者の側に付ける（リンク先の2つは Web と同じ）
+    var linkedCredit: AttributedString {
+        var head = AttributedString(creditAuthor)
+        head.link = pageUrl
+        var tail = AttributedString(license)
+        tail.link = licenseUrl
+        return head + AttributedString(" / ") + tail
+    }
 }
 
 /// 写真の欄を**決して投げずに**読む入れ物。写真が壊れていても、スポットの行は
@@ -103,15 +117,15 @@ struct LenientSpotImage: Decodable, Equatable {
         let license = raw.license?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard let s = raw.url, let url = URL(string: s), url.scheme == "https",
               !author.isEmpty, !license.isEmpty else { value = nil; return }
-        let page = raw.pageUrl.flatMap(URL.init(string:)).flatMap { $0.scheme == "https" ? $0 : nil }
+        let page = Self.httpsURL(raw.pageUrl)
         value = SpotImage(url: url, author: author, license: license, pageUrl: page,
-                          licenseUrl: Self.licenseURL(raw.licenseUrl))
+                          licenseUrl: Self.httpsURL(raw.licenseUrl))
     }
 
-    /// ライセンスの文面の URL。**http は https に上げる**（Web の `spotCoverImage` と
-    /// 同じ扱い。台帳には `http://creativecommons.org/…` が141件ある）。
+    /// 出典のページ・ライセンスの文面の URL。**http は https に上げる**（Web の
+    /// `spotCoverImage` と同じ扱い。台帳には `http://creativecommons.org/…` が141件ある）。
     /// 空・https/http 以外は nil（押せないリンクを出さない）
-    static func licenseURL(_ raw: String?) -> URL? {
+    static func httpsURL(_ raw: String?) -> URL? {
         guard var s = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
         if s.hasPrefix("http://") { s = "https://" + s.dropFirst("http://".count) }
         guard let url = URL(string: s), url.scheme == "https", url.host != nil else { return nil }

@@ -105,7 +105,10 @@ struct OfficialSpotView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityAddTraits(.isImage)
                 .accessibilityLabel(L("\(spot.name) の写真", "Photo of \(spot.name)"))
-            SpotImageCredit(photo: photo, lineLimit: 2)
+            SpotImageCredit(photo: photo)
+                .font(.caption2)
+                .foregroundStyle(WebTheme.muted2)
+                .lineLimit(2)
                 .multilineTextAlignment(.trailing)
                 .padding(.horizontal, 16)
                 .accessibilityIdentifier("spot.official.photoCredit")
@@ -293,30 +296,15 @@ struct OfficialSpotView: View {
     }
 }
 
-/// スポットの写真の出典の1行「写真: 作者 / ライセンス」。**見た目は1行の文字のまま**、
-/// 作者の側は出典のページ（Commons）へ、ライセンスの側は文面（`licenseUrl`）へ飛ぶ
-/// ——Web の `SpotGuideClient` と同じ割り方（CC BY・CC BY-SA の表示条件は
-/// 作者・ライセンスの URI・出典）。リンクが無い側はただの文字
+/// スポットの写真の出典の1行「写真: 作者 / ライセンス」。**1本の文字のまま**
+/// （折り返し・行数・揃えは呼ぶ側の指定どおり）、部分にリンクを付ける
+/// （`SpotImage.linkedCredit`: 作者 → 出典のページ・ライセンス → 文面）。
+/// リンクの色は周りの文字と同じ（`tint`）——見た目は以前の1行の出典と同じ
 struct SpotImageCredit: View {
     let photo: SpotImage
-    var lineLimit: Int = 1
 
     var body: some View {
-        HStack(spacing: 0) {
-            if let page = photo.pageUrl {
-                Link(photo.creditAuthor, destination: page)
-            } else {
-                Text(photo.creditAuthor)
-            }
-            Text(" / ")
-            if let license = photo.licenseUrl {
-                Link(photo.license, destination: license)
-            } else {
-                Text(photo.license)
-            }
-        }
-        .font(.caption2)
-        .foregroundStyle(WebTheme.muted2)
-        .lineLimit(lineLimit)
+        Text(photo.linkedCredit)
+            .tint(WebTheme.muted2)
     }
 }
