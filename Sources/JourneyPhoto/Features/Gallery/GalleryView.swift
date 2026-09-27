@@ -70,7 +70,10 @@ struct GalleryView: View {
         // **ログイン状態が決まってから範囲を決める**（範囲は選んでいるフィードが決める）。
         // フォロー中の一覧は、その範囲を選ぶ人にだけ要る
         .task(id: auth.userId) {
-            guard auth.userId != nil else {
+            // **取りに行った人で反映する。** 待っている間に人が替わっても、
+            // 再開した時点の `auth.userId` で前の人の集合を記録しない
+            let userId = auth.userId
+            guard userId != nil else {
                 model.use(viewerId: nil, following: [])
                 await model.loadMyPhotos(environment.photos, viewerId: nil)
                 return
@@ -79,15 +82,17 @@ struct GalleryView: View {
             // 画面を離れて取り消された回は何もしない（取り消しは「取れなかった」ではない）
             let following = await fetchFollowing()
             guard !Task.isCancelled else { return }
-            model.use(viewerId: auth.userId, following: following)
+            model.use(viewerId: userId, following: following)
             // 今日のテーマに参加したかの判定に要る（API から読む）
-            await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
+            await model.loadMyPhotos(environment.photos, viewerId: userId)
         }
         .refreshable {
             await model.load(force: true)
             // **フォロー一覧も取り直す。** 取れなかった回の出口
             // （「読み込めませんでした。引き下げて読み直せます」）
-            if auth.userId != nil { model.refreshFollowing(await fetchFollowing()) }
+            if let userId = auth.userId {
+                model.refreshFollowing(await fetchFollowing(), viewerId: userId)
+            }
         }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.id, ownerId: target.userId)
@@ -338,11 +343,11 @@ struct GalleryView: View {
                         // `.task(id: auth.userId)` で一度しか引いていないので、
                         // 誰かをフォローしても「フォロー中」に出てこない
                         // （上の段にあった範囲の切り替えが持っていた処理を移した）
-                        guard feed == .following, auth.userId != nil else { return }
+                        guard feed == .following, let userId = auth.userId else { return }
                         Task {
                             // **取れなかった回に空で潰さない**（圏外で押しただけで
                             // 「フォロー中」が知らせも無く空になる）——nil は `refreshFollowing` が捨てる
-                            model.refreshFollowing(await fetchFollowing())
+                            model.refreshFollowing(await fetchFollowing(), viewerId: userId)
                         }
                     } label: {
                         Text(feed.label)

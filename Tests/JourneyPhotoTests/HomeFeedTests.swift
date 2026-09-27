@@ -112,15 +112,15 @@ final class HomeFeedSelectionTests: XCTestCase {
     func testRefreshingFollowingClearsTheFailureOnlyWhenFetched() async {
         let model = GalleryViewModel()
         model.use(viewerId: "me", following: nil)
-        model.refreshFollowing(nil)
+        model.refreshFollowing(nil, viewerId: "me")
         XCTAssertTrue(model.followingFailed, "取れなかった回に失敗を外している")
 
-        model.refreshFollowing(["u1"])
+        model.refreshFollowing(["u1"], viewerId: "me")
         XCTAssertFalse(model.followingFailed)
         XCTAssertEqual(model.followingIds, ["u1"])
 
         // 取れていた集合は、あとで取れなかった回にも残す
-        model.refreshFollowing(nil)
+        model.refreshFollowing(nil, viewerId: "me")
         XCTAssertEqual(model.followingIds, ["u1"], "取れなかった回に手元の集合を潰している")
         XCTAssertFalse(model.followingFailed)
     }
@@ -160,5 +160,15 @@ final class HomeFeedSelectionTests: XCTestCase {
         model.use(viewerId: "me", following: nil)
         model.use(viewerId: "me", following: nil)
         XCTAssertTrue(model.followingFailed)
+    }
+
+    /// **`use` の前に引き下げで取れた集合も、持ち主つきで残す。** 持ち主を
+    /// `self.viewerId`（まだ nil）から取っていたので、次の `.task` の失敗で空に潰れた（e83a88d のレビュー）
+    func testFollowingFetchedBeforeUseSurvivesALaterFailure() async {
+        let model = GalleryViewModel()
+        model.refreshFollowing(["u1"], viewerId: "me")
+        model.use(viewerId: "me", following: nil)
+        XCTAssertEqual(model.followingIds, ["u1"], "取れた集合を後の失敗で潰している")
+        XCTAssertFalse(model.followingFailed)
     }
 }

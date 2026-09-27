@@ -95,10 +95,23 @@ final class GalleryViewModel: ObservableObject {
     func loadMyPhotos(_ photos: PhotoService, viewerId: String?) async {
         guard viewerId != nil else {
             myPhotos = []
+            myPhotosOwner = nil
             return
         }
-        myPhotos = (try? await photos.myPhotos()) ?? []
+        let fetched = try? await photos.myPhotos()
+        if let fetched {
+            myPhotos = fetched
+            myPhotosOwner = viewerId
+        } else if myPhotosOwner != viewerId {
+            // 取れなかった回は、**同じ人のぶんなら残す**（詳細を開いて取り消された回に
+            // 「参加済み」が消えない）。人が替わった回は前の人のぶんを残さない
+            myPhotos = []
+            myPhotosOwner = nil
+        }
     }
+
+    /// `myPhotos` が誰のものか（`followingOwner` と同じ考え方）
+    private var myPhotosOwner: String?
 
     func select(category: String?) {
         self.category = category
@@ -115,10 +128,14 @@ final class GalleryViewModel: ObservableObject {
     /// **`use(viewerId:following:)` を使い回さない**——あちらは範囲を
     /// 既定へ倒すので、「フォロー中」を選んだ直後に「自分」へ戻ってしまう。
     ///
-    /// - Parameter following: nil は「取れなかった」。**手元の集合は潰さない**
-    ///   （前に取れていたぶんで出し続ける。一度も取れていなければ失敗のまま）
-    func refreshFollowing(_ following: Set<String>?) {
-        guard let following else { return }
+    /// - Parameters:
+    ///   - following: nil は「取れなかった」。**手元の集合は潰さない**
+    ///     （前に取れていたぶんで出し続ける。一度も取れていなければ失敗のまま）
+    ///   - viewerId: **誰の鍵で取ったか。** `self.viewerId` から取らない——
+    ///     `use` が走る前（`.task` が取り消された回）だと nil のままで、
+    ///     取れた集合の持ち主が分からなくなり、次の失敗で空に潰される
+    func refreshFollowing(_ following: Set<String>?, viewerId: String?) {
+        guard let following, let viewerId else { return }
         self.followingIds = following
         followingOwner = viewerId
         followingFailed = false

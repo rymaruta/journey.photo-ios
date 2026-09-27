@@ -147,9 +147,10 @@ struct InviteView: View {
             preview = try await environment.albums.invite(token: token)
         } catch {
             preview = nil
-            // 押し直して直りうるのは圏外とサーバーの一時的な失敗だけ
+            // 押し直して直りうるのは圏外・読めない応答（キャプティブポータルの HTML など）・
+            // サーバーの一時的な失敗だけ。失効した招待（404・410）には出さない
             switch error as? APIError {
-            case .unreachable?: canRetry = true
+            case .unreachable?, .decoding?: canRetry = true
             case .server(let status, _)?: canRetry = status >= 500 || status == 429
             default: canRetry = false
             }

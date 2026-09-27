@@ -95,8 +95,11 @@ final class PhotoDetailViewModel: ObservableObject {
     ///
     /// **`load()` を使い回さない。** あちらはいいねの数と自分のいいねも引き直すので、
     /// いいねを送っている最中に押すと、古い答えが後から着いてハートが戻りうる
+    ///
+    /// **投稿している間は読み直さない**（逆も）。あとから着いた古いページが、
+    /// 先頭に入れた自分のコメントを上書きして消す
     func reloadComments() async {
-        guard !isReloadingComments else { return }
+        guard !isReloadingComments, !isPosting else { return }
         isReloadingComments = true
         defer { isReloadingComments = false }
         let page = try? await social.comments(photoId: photoId)
@@ -142,6 +145,8 @@ final class PhotoDetailViewModel: ObservableObject {
             errorMessage = L("コメントするにはログインしてください", "Sign in to comment")
             return
         }
+        // 読み直しの答えで、入れた自分のコメントが上書きされない（`reloadComments`）
+        guard !isReloadingComments else { return }
         isPosting = true
         defer { isPosting = false }
         do {
