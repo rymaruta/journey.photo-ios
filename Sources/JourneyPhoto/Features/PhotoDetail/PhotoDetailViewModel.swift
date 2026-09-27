@@ -81,6 +81,10 @@ final class PhotoDetailViewModel: ObservableObject {
         likes = await count ?? likes
         let loaded = await page
         if let loaded {
+            // **一覧に載った投稿は、以後サーバーを信じる**（持ち主が消した・
+            // 別の端末で消したコメントを、手元の控えから復活させない）
+            let seen = Set(loaded.items.map(\.id))
+            postedComments.removeAll { seen.contains($0.id) }
             let merged = CommentMerge.merge(loaded: loaded.items, count: loaded.count,
                                             posted: postedComments, deleted: deletedCommentIds)
             comments = merged.items

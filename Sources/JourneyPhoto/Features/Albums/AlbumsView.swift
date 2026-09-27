@@ -234,20 +234,12 @@ final class AlbumsViewModel: ObservableObject {
     /// 招待リンクを作る・取り消すのを送っているアルバム
     @Published private(set) var inviteWorking: Set<String> = []
 
-    /// 何回目の読み込みか。**書き込みより前に始めた読み込みの返事は捨てる**
-    /// ——削除・名前の変更の後に古い一覧が届いて、消したアルバムが戻ったり
-    /// 名前が巻き戻ったりしていた
+    /// 何回目の読み込みか。**古い読み込みの返事が新しい返事を上書きしない**
     private var loadGeneration = 0
-
-    /// 走っている読み込みの返事を採らない（書き込みの直後に呼ぶ）。
-    /// **捨てたら読み直す**——最初の読み込みの途中で作ると、捨てたまま
-    /// 作った1件だけの一覧になり、他のアルバムが消えて見えていた
-    private func discardInFlightLoads(environment: AppEnvironment) async {
-        let wasLoading = isLoading
-        loadGeneration += 1
-        isLoading = false
-        if wasLoading { await load(environment: environment) }
-    }
+    /// この画面で書いた分。**読み込んだ一覧に重ねる**（`AlbumMerge`）
+    /// ——書き込みの前に始めた読み込みや、結果整合で古い姿を返す読み込みで、
+    /// 消したアルバムが戻る・作ったアルバムが消える・名前が巻き戻るのを防ぐ
+    private var writes = AlbumMerge.Writes()
 
     func inviteURL(token: String) -> URL {
         AppConfig.siteBaseURL.appendingPathComponent("j").appending(queryItems: [
@@ -263,7 +255,8 @@ final class AlbumsViewModel: ObservableObject {
         do {
             let list = try await environment.albums.list()
             guard generation == loadGeneration else { return }
-            albums = list
+            writes = AlbumMerge.settled(writes, loaded: list)
+            albums = AlbumMerge.merge(loaded: list, writes: writes)
             isLoading = false
         } catch {
             guard generation == loadGeneration else { return }
@@ -277,8 +270,8 @@ final class AlbumsViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return }
         do {
             let album = try await environment.albums.create(title: trimmed)
+            writes.created.append(album)
             albums.insert(album, at: 0)
-            await discardInFlightLoads(environment: environment)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
         }
@@ -292,13 +285,13 @@ final class AlbumsViewModel: ObservableObject {
         do {
             // **サーバーが直した名前を採る**（60字で切られる・制御文字が落ちる）
             let saved = try await environment.albums.rename(id: id, title: trimmed)
+            writes.renamed[id] = saved
             albums = albums.map { album in
                 guard album.id == id else { return album }
                 return Album(id: album.id, title: saved, createdAt: album.createdAt,
                              memberCount: album.memberCount, inviteToken: album.inviteToken,
                              inviteExpiresAt: album.inviteExpiresAt)
             }
-            await discardInFlightLoads(environment: environment)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("名前を変えられませんでした", "Couldn't rename")
@@ -309,8 +302,8 @@ final class AlbumsViewModel: ObservableObject {
     func delete(_ id: String, environment: AppEnvironment) async -> Bool {
         do {
             try await environment.albums.delete(id: id)
+            writes.deleted.insert(id)
             albums.removeAll { $0.id == id }
-            await discardInFlightLoads(environment: environment)
             return true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")

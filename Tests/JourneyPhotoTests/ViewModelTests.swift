@@ -410,6 +410,28 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(model.comments.isEmpty)
     }
 
+    /// 🔴 **一覧に一度載った自分のコメントは、以後サーバーを信じる。**
+    /// 持ち主が消したコメントを手元の控えから復活させ、数も1つずらしていた
+    func testPostedCommentRemovedOnServerDoesNotComeBack() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.respond(status: 200, body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#)
+        await model.postComment()
+
+        StubProtocol.respond(status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}],"count":3}"#)
+        await model.load()
+        XCTAssertEqual(model.commentCount, 3)
+
+        // 持ち主が消した
+        StubProtocol.respond(status: 200, body: #"{"items":[],"count":2}"#)
+        await model.load()
+        XCTAssertTrue(model.comments.isEmpty, "消されたコメントを戻している")
+        XCTAssertEqual(model.commentCount, 2)
+    }
+
     /// 空のコメントは送らない。
     func testEmptyCommentIsNotSent() async {
         prepare()
