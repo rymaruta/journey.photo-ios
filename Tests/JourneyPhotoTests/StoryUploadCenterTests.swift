@@ -157,6 +157,31 @@ final class StoryUploadCenterTests: XCTestCase {
         XCTAssertEqual(sent, [1, 2])
     }
 
+    /// **本当のログアウトの順**: 送っている間に今の人が消え（run が止まって知らせる）、
+    /// そのあとアプリが `userChanged(nil)` を呼ぶ → 残りは捨てられる
+    func testLogoutMidSendStopsThenDropsOnUserChange() async {
+        let center = StoryUploadCenter()
+        var failures: [String] = []
+        var sent: [UInt8] = []
+        center.start([job(1), job(2)], ownerId: "me",
+                     currentUserId: { [unowned self] in self.currentUser },
+                     send: { [unowned self] j, _ in
+                         sent.append(j.imageData[0])
+                         self.currentUser = nil      // 1本目を送っている間にログアウトした
+                     },
+                     onFailed: { failures.append($0) })
+        await settle(center)
+        guard case .failed(let message, let remaining) = center.phase else {
+            return XCTFail("止まっていない: \(center.phase)")
+        }
+        XCTAssertEqual(remaining, 1)
+        XCTAssertTrue(message.contains("1"), "何本出たかが消えている: \(message)")
+        XCTAssertEqual(failures.count, 1, "失敗を知らせていない")
+        center.userChanged(to: nil)
+        XCTAssertEqual(center.phase, .idle, "ログアウトしたのに残りを持っている")
+        XCTAssertEqual(sent, [1])
+    }
+
     /// 🔴 **送っている最中にログアウトしたら、残りを捨てて落ちない**
     /// （返事を待つ間に並びを空にすると、戻った `run` が空から取り出して落ちていた）
     func testUserChangeWhileSendingDropsTheRestWithoutCrashing() async {

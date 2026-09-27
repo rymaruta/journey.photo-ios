@@ -21,6 +21,10 @@ final class ModerationStore: ObservableObject {
     /// 2つの集合を別々に見ると、通報とブロックを続けて行う回
     /// （`ReportSheet` の「通報してブロックもする」）に全件取得が2回走る。
     @Published private(set) var revision = 0
+    /// **ブロックの集合が変わった回数だけ**（通報では進まない）。起動時の同期が
+    /// 「待っている間に手元でブロック／解除したか」を見るのに使う。集合を比べると、
+    /// ブロックして解除した（元に戻った）ときにすり抜け、古い一覧で解除を戻していた
+    private(set) var blockRevision = 0
 
     private let defaults: UserDefaults
     private var userId: String?
@@ -36,6 +40,7 @@ final class ModerationStore: ObservableObject {
     /// （`replaceBlocked`）ので、そこを無条件に数えると**開くたびに
     /// 公開一覧を丸ごと取り直す**ことになる。
     private func bumpIfChanged(blocked: Set<String>, reported: Set<String>) {
+        if blocked != blockedUserIds { blockRevision += 1 }
         guard blocked != blockedUserIds || reported != reportedPhotoIds else { return }
         revision += 1
     }
