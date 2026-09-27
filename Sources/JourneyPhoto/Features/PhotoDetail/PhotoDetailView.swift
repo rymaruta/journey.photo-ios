@@ -208,10 +208,19 @@ struct PhotoDetailView: View {
         Button {
             showViewer = true
         } label: {
-            RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
+            // 🔴 **写真は重ね（overlay）に置く。** 引き伸ばした写真（fill）を直に
+            // `.frame(maxWidth: .infinity)` で包むと、横長の写真では包みの幅が
+            // 写真の幅（画面より広い）になり、`.clipped()` は見た目を切るだけなので
+            // 下の本文まで画面より広く組まれていた（説明・撮影情報・操作の列が
+            // 右端で切れる。実機の絵で見つかった）。重ねは親の幅を変えない
+            Color.clear
                 .frame(maxWidth: .infinity)
                 .frame(height: Self.heroHeight)
+                .overlay {
+                    RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
+                }
                 .clipped()
+                .contentShape(Rectangle())
                 .accessibilityLabel(item.accessibilityText)
         }
         .buttonStyle(.plain)
