@@ -36,6 +36,9 @@ struct TripPlanDetailView: View {
     /// 「保存して戻る」が断られた（アラートで出す——下までスクロールしていると
     /// 画面の中の赤い行は見えず、押しても何も起きないように見えた）
     @State private var leaveSaveError: String?
+    /// 保存を送った回数（「保存して戻る」の失敗の知らせを、その後に別の保存が
+    /// 走っていたら出さないための目印）
+    @State private var saveAttempt = 0
     /// 名前を引く材料（取れなくても画面は出る——名前が鍵のままになるだけ）
     @State private var photos: [Photo] = []
     @State private var index: [OfficialSpot] = []
@@ -90,6 +93,7 @@ struct TripPlanDetailView: View {
                                    if await save() {
                                        dismiss()
                                    } else {
+                                       let mine = saveAttempt
                                        // **文は送った直後に取る**（待っている間に次の保存が
                                        // 走ると消える）。送る口は始めに文を消すので古い文は来ない
                                        let message = model.errorMessage
@@ -97,8 +101,9 @@ struct TripPlanDetailView: View {
                                        // 確認の板が閉じ切ってから出す（閉じている途中に出すと
                                        // SwiftUI が黙って捨てることがある）
                                        try? await Task.sleep(nanoseconds: 350_000_000)
-                                       // その間に次の操作が始まっていたら出さない（赤い行は残る）
-                                       guard model.busy == nil, !confirmLeave else { return }
+                                       // その間に次の保存を送った・確認を開き直したなら出さない
+                                       // （成功した後に前の失敗が出ていた。赤い行は残る）
+                                       guard saveAttempt == mine, !confirmLeave else { return }
                                        leaveSaveError = message
                                    }
                                }
@@ -192,6 +197,7 @@ struct TripPlanDetailView: View {
     private func save() async -> Bool {
         guard let plan else { return false }
         let patch = TripPlanText.patch(plan: plan, days: days, start: start, end: end)
+        saveAttempt &+= 1
         sent = draft
         let saved = await model.update(planId, patch, environment: environment)
         // 断られたら控えを捨てる（次に届く姿で下書きを上書きしない）
