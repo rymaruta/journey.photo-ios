@@ -57,6 +57,11 @@ final class SeenStoriesStore: ObservableObject {
         ids = Set(kept.keys)
     }
 
+    /// 退会した人の控えを消す（`AccountLocalData`）
+    func removeData(for userId: String) {
+        defaults.removeObject(forKey: key(for: userId))
+    }
+
     /// まだ生きている印だけ（読むときにも掃除の目で見る）
     private func fresh(now: Date) -> [String: Double] {
         let raw = defaults.dictionary(forKey: key(for: userId)) as? [String: Double] ?? [:]

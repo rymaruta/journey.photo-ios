@@ -23,6 +23,8 @@ final class PhotoMapViewModel: ObservableObject {
 
     @Published private(set) var photos: [Photo] = []
     @Published private(set) var loaded = false
+    /// 写真の一覧を取れなかった（圏外で控えも無い）。**0枚とは分ける**
+    @Published private(set) var loadFailed = false
     @Published var query = "" { didSet { refresh() } }
     @Published private(set) var category: String?
     @Published var mode: Mode = .map
@@ -134,7 +136,13 @@ final class PhotoMapViewModel: ObservableObject {
             self?.officialIndexState = fetched == nil ? .failed : .ready
             self?.refreshOfficialPins()
         }
-        photos = (try? await environment.gallery.fetchPhotos()) ?? []
+        do {
+            photos = try await environment.gallery.fetchPhotos()
+            loadFailed = false
+        } catch {
+            // **取れなかったのを「写真が無い」と言わない**。手元のぶんは残す
+            loadFailed = true
+        }
         loaded = true
         refresh()
     }
@@ -189,6 +197,17 @@ final class PhotoMapViewModel: ObservableObject {
     func stillShown(official pin: OfficialPins.Pin?) -> Bool {
         guard let pin else { return false }
         return officialPins.contains { $0.id == pin.id }
+    }
+
+    /// 撮影スポットの札を出すか。
+    ///
+    /// 🔴 **札から開いた画面を上に積んでいる間（`onScreen == false`）は下げない。**
+    /// 札の「スポットを見る」は `NavigationLink` なので、裏で地図が動いて
+    /// （遅れて届いた現在地など）ピンが外れると、札ごと消えて開いている画面が閉じる。
+    /// 戻ってきたら、いま出ているピンのぶんだけに戻す
+    func showsCard(official pin: OfficialPins.Pin?, onScreen: Bool) -> Bool {
+        guard pin != nil else { return false }
+        return !onScreen || stillShown(official: pin)
     }
 
     /// ピンの元の行（画面へ渡す。概要・近くのスポットはここから）

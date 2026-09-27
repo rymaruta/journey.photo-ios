@@ -3,7 +3,7 @@ import Combine
 
 /// ストーリーの下書き（モック4 の「下書き保存」）。
 ///
-/// **1件だけ。** ストーリーは24時間で消える一過性のもので、何本も下書きを
+/// **1件だけ**（1件の中に並べた写真は全部入る）。ストーリーは24時間で消える一過性のもので、何本も下書きを
 /// 貯める使い方をしない。2件目を保存したら1件目は上書きする——
 /// 一覧を作ると「どれが最新か」を選ばせることになる。
 ///
@@ -35,13 +35,56 @@ final class StoryDraftStore: ObservableObject {
         /// 保存した時刻（ISO8601）。「いつの下書きか」を出すため
         var savedAt: String
 
+        /// **2枚目以降。** 以前は表示中の1枚しか残さず、3枚並べて「下書き保存」→
+        /// 「保存しました」と出るのに、開き直すと1枚になっていた（2026-09-27 の監査）。
+        /// 1枚目は上の欄にそのまま置く——前の版のアプリが読んでも1枚目は戻る。
+        /// 前の版が保存した下書きには無い（nil＝1枚だけ）
+        var extraShots: [Shot]?
+        /// 「自分用に残す」。**戻したときに外れていると、そのまま投稿して24時間で消える**
+        /// （ハイライトにも入れられない）。前の版の下書きには無い（nil＝残さない）
+        var archive: Bool?
+
+        var coords: Photo.Coords? {
+            guard let latitude, let longitude else { return nil }
+            return Photo.Coords(lat: latitude, lng: longitude)
+        }
+
+        /// 並びの全部（1枚目＋2枚目以降）。**並びの順がそのまま出る順**
+        var shots: [Shot] {
+            [Shot(imageFile: imageFile, fileName: fileName, contentType: contentType,
+                  latitude: latitude, longitude: longitude, overlays: overlays)]
+                + (extraShots ?? [])
+        }
+    }
+
+    /// 1枚ぶん。文字は写真ごとに持つ（焼き込みが写真ごとに起きるため）
+    struct Shot: Codable, Equatable {
+        var imageFile: String
+        var fileName: String
+        var contentType: String
+        var latitude: Double?
+        var longitude: Double?
+        var overlays: [TextOverlay]
+
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
             return Photo.Coords(lat: latitude, lng: longitude)
         }
     }
 
+    /// 保存するときに渡す1枚ぶん（画像の中身つき）
+    struct ShotInput {
+        var imageData: Data
+        var fileName: String
+        var contentType: String
+        var coords: Photo.Coords?
+        var overlays: [TextOverlay]
+    }
+
     @Published private(set) var draft: Draft?
+
+    /// 保存のたびの印（試験で差し替えて、途中で書けない形を作る）
+    var makeToken: () -> String = { String(UUID().uuidString.prefix(8)).lowercased() }
 
     private let defaults: UserDefaults
     private let directory: URL
@@ -72,22 +115,32 @@ final class StoryDraftStore: ObservableObject {
         sweepOrphans()
     }
 
-    /// 画像の置き場の名前。**鍵から毎回同じ名前を作る。**
+    /// 並びを保存するときの名前。**保存のたびに新しい印（`token`）を付ける。**
     ///
-    /// 以前は `hashValue` から作っていたが、Swift の文字列の `hashValue` は
-    /// **起動のたびに変わる**。起動をまたいで保存し直すと別の名前で書かれ、
-    /// 前の画像はどこからも指されないまま端末に残り続けた（数MBずつ・
-    /// 2026-09-26 のバグ探し）。鍵の文字を16進にするので、人ごとに必ず別の名前になる
-    static func imageFileName(forKey key: String) -> String {
+    /// 名前を毎回同じにすると、3枚のうち2枚目で書けなかった（容量不足など）ときに
+    /// 1枚目だけ新しい写真に入れ替わり、前の下書きが「新しい写真＋古い文字」に
+    /// 化ける（`.atomic` が守るのは1ファイルずつ）。新しい名前に全部書けてから
+    /// 記録を差し替え、前の名前を消す。書けなかったら新しく書いたぶんを消して、
+    /// 前の下書きには触らない
+    ///
+    /// 鍵の文字を16進にするので、人ごとに必ず別の名前になる。以前は `hashValue`
+    /// （起動のたびに変わる）から作り、前の画像がどこからも指されないまま
+    /// 残り続けた（2026-09-26）——いまは記録を差し替えたあとに前の名前を消し、
+    /// 取りこぼしは `sweepOrphans` が片づける
+    static func imageFileName(forKey key: String, token: String, index: Int) -> String {
         let hex = key.utf8.map { String(format: "%02x", $0) }.joined()
-        return "\(filePrefix)\(hex).jpg"
+        return "\(filePrefix)\(hex)-\(token)-\(index).jpg"
     }
 
     private static let filePrefix = "story-draft-"
 
     /// 下書きの記録から画像の名前だけを読む形
     private struct ImageRef: Decodable {
+        struct Extra: Decodable { let imageFile: String }
         let imageFile: String
+        let extraShots: [Extra]?
+
+        var files: [String] { [imageFile] + (extraShots ?? []).map(\.imageFile) }
     }
 
     /// **どの下書きからも指されていない画像を消す**（古い名前で残ったもの）。
@@ -100,11 +153,11 @@ final class StoryDraftStore: ObservableObject {
     /// 扱いになり、画像だけ消える
     private func sweepOrphans() {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
-        let referenced = Set(defaults.dictionaryRepresentation().compactMap { entry -> String? in
+        let referenced = Set(defaults.dictionaryRepresentation().flatMap { entry -> [String] in
             guard entry.key == Self.key || entry.key.hasPrefix("\(Self.key):"),
                   let data = entry.value as? Data,
-                  let saved = try? JSONDecoder().decode(ImageRef.self, from: data) else { return nil }
-            return saved.imageFile
+                  let saved = try? JSONDecoder().decode(ImageRef.self, from: data) else { return [] }
+            return saved.files
         })
         for name in names where name.hasPrefix(Self.filePrefix) && name.hasSuffix(".jpg")
             && !referenced.contains(name) {
@@ -114,12 +167,20 @@ final class StoryDraftStore: ObservableObject {
 
     private func load() -> Draft? {
         guard let data = defaults.data(forKey: key(for: userId)),
-              let saved = try? JSONDecoder().decode(Draft.self, from: data) else { return nil }
+              var saved = try? JSONDecoder().decode(Draft.self, from: data) else { return nil }
         // **中身の無い下書きを出さない。** 画像が消えていたら（端末の掃除・
         // 移行）「続きから」を押しても白い画面になる。印ごと片づける
         guard FileManager.default.fileExists(atPath: fileURL(saved.imageFile).path) else {
+            // 2枚目以降の画像も残さない（どこからも指されなくなる）
+            for shot in saved.extraShots ?? [] {
+                try? FileManager.default.removeItem(at: fileURL(shot.imageFile))
+            }
             defaults.removeObject(forKey: key(for: userId))
             return nil
+        }
+        // 2枚目以降は、画像が消えたものだけ外す（1枚目が在れば「続きから」は出せる）
+        if let extras = saved.extraShots {
+            saved.extraShots = extras.filter { FileManager.default.fileExists(atPath: fileURL($0.imageFile).path) }
         }
         return saved
     }
@@ -128,49 +189,113 @@ final class StoryDraftStore: ObservableObject {
         directory.appendingPathComponent(name)
     }
 
-    /// 下書きの画像。読めなければ nil
+    /// 下書きの画像（1枚目）。読めなければ nil
     func imageData() -> Data? {
         guard let draft else { return nil }
         return try? Data(contentsOf: fileURL(draft.imageFile))
     }
 
-    /// 保存する。**画像を書けなかったら何も残さない**——道だけ覚えて
-    /// 中身が無い状態を作らない
+    /// 下書きの並び（画像の中身つき）。**1枚目が読めなければ空**
+    /// ——2枚目以降で読めないものは外す（並びの残りは戻す）
+    func shotImages() -> [(shot: Shot, data: Data)] {
+        guard let draft else { return [] }
+        var result: [(shot: Shot, data: Data)] = []
+        for (i, shot) in draft.shots.enumerated() {
+            guard let data = try? Data(contentsOf: fileURL(shot.imageFile)) else {
+                if i == 0 { return [] }
+                continue
+            }
+            result.append((shot: shot, data: data))
+        }
+        return result
+    }
+
+    /// 保存する（1枚だけ）。並びは `save(shots:…)`
     @discardableResult
     func save(imageData: Data, fileName: String, contentType: String,
               coords: Photo.Coords?, caption: String, location: String,
               overlays: [TextOverlay], song: Photo.Song?, durationSec: Int,
               savedAt: String) -> Bool {
-        let file = Self.imageFileName(forKey: key(for: userId))
-        // 前の下書きが別の名前（`hashValue` 時代）なら、書き終えたあとに消す
-        let previous = defaults.data(forKey: key(for: userId))
-            .flatMap { try? JSONDecoder().decode(ImageRef.self, from: $0) }?.imageFile
+        save(shots: [ShotInput(imageData: imageData, fileName: fileName, contentType: contentType,
+                               coords: coords, overlays: overlays)],
+             caption: caption, location: location, song: song, durationSec: durationSec,
+             savedAt: savedAt)
+    }
+
+    /// 並びごと保存する。**画像を書けなかったら何も残さない**——道だけ覚えて
+    /// 中身が無い状態を作らない
+    @discardableResult
+    func save(shots inputs: [ShotInput], caption: String, location: String,
+              song: Photo.Song?, durationSec: Int, archive: Bool = false, savedAt: String) -> Bool {
+        guard !inputs.isEmpty else { return false }
+        let storageKey = key(for: userId)
+        let token = makeToken()
+        let files = inputs.indices.map { Self.imageFileName(forKey: storageKey, token: token, index: $0) }
+        // 前の下書きの画像は、記録を差し替えたあとに消す
+        let previous = defaults.data(forKey: storageKey)
+            .flatMap { try? JSONDecoder().decode(ImageRef.self, from: $0) }?.files ?? []
+        var written: [String] = []
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            // **一時ファイルに書いてから差し替える。** 名前が毎回同じなので、
-            // 途中で失敗すると（容量不足など）唯一の画像を壊してしまう
-            try imageData.write(to: fileURL(file), options: .atomic)
+            for (input, file) in zip(inputs, files) {
+                try input.imageData.write(to: fileURL(file), options: .atomic)
+                written.append(file)
+            }
         } catch {
+            // 途中まで書いたぶんを消す。**前の下書きはそのまま**
+            for file in written {
+                try? FileManager.default.removeItem(at: fileURL(file))
+            }
             return false
         }
-        let saved = Draft(imageFile: file, fileName: fileName, contentType: contentType,
-                          latitude: coords?.lat, longitude: coords?.lng,
-                          caption: caption, location: location, overlays: overlays,
-                          song: song, durationSec: durationSec, savedAt: savedAt)
-        guard let data = try? JSONEncoder().encode(saved) else { return false }
-        defaults.set(data, forKey: key(for: userId))
+        let shots = zip(inputs, files).map { input, file in
+            Shot(imageFile: file, fileName: input.fileName, contentType: input.contentType,
+                 latitude: input.coords?.lat, longitude: input.coords?.lng, overlays: input.overlays)
+        }
+        let first = shots[0]
+        let saved = Draft(imageFile: first.imageFile, fileName: first.fileName,
+                          contentType: first.contentType,
+                          latitude: first.latitude, longitude: first.longitude,
+                          caption: caption, location: location, overlays: first.overlays,
+                          song: song, durationSec: durationSec, savedAt: savedAt,
+                          extraShots: shots.count > 1 ? Array(shots.dropFirst()) : nil,
+                          archive: archive ? true : nil)
+        guard let data = try? JSONEncoder().encode(saved) else {
+            for file in written {
+                try? FileManager.default.removeItem(at: fileURL(file))
+            }
+            return false
+        }
+        defaults.set(data, forKey: storageKey)
         draft = saved
-        if let previous, previous != file {
-            try? FileManager.default.removeItem(at: fileURL(previous))
+        for name in previous where !files.contains(name) {
+            try? FileManager.default.removeItem(at: fileURL(name))
         }
         return true
+    }
+
+    /// 退会した人の書きかけを消す（`AccountLocalData`）。**画像のファイルも**
+    func removeData(for userId: String) {
+        let draftKey = key(for: userId)
+        // **記録が指している画像を全部消す**（2枚目以降も）。名前は保存のたびに
+        // 変わる（`imageFileName` の印）ので、鍵から決め打ちできない
+        if let data = defaults.data(forKey: draftKey),
+           let saved = try? JSONDecoder().decode(ImageRef.self, from: data) {
+            for file in saved.files {
+                try? FileManager.default.removeItem(at: fileURL(file))
+            }
+        }
+        defaults.removeObject(forKey: draftKey)
+        if userId == self.userId { draft = nil }
+        // 記録から外れて残ったもの（書きかけの途中で落ちた回）はここで拾う
+        sweepOrphans()
     }
 
     /// 捨てる（「捨てる」を押したとき・投稿し終えたとき）。
     /// **画像のファイルも消す**——残すと端末の容量を静かに食う
     func clear() {
-        if let draft {
-            try? FileManager.default.removeItem(at: fileURL(draft.imageFile))
+        for shot in draft?.shots ?? [] {
+            try? FileManager.default.removeItem(at: fileURL(shot.imageFile))
         }
         defaults.removeObject(forKey: key(for: userId))
         draft = nil

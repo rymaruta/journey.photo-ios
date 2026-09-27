@@ -27,7 +27,11 @@ struct TagPhotosView: View {
     private func load() async {
         isLoading = true
         defer { isLoading = false }
-        let all = (try? await environment.gallery.fetchPhotos()) ?? []
+        let all = try? await environment.gallery.fetchPhotos()
+        // **取り消された回・取れなかった回は書かない。** 戻ると `.task` が走り直し、
+        // 読み終わる前に次の写真を開くと取り消される。空で上書きすると押した元が
+        // 消え、開いたばかりの詳細が閉じた（`GalleryViewModel.load` と同じ）
+        guard !Task.isCancelled, let all else { return }
         // 読んでいる間に通報された回、古い集合で絞った結果で上書きしない
         photos = hidden.visible(PhotoQuery.photos(all, in: kind))
     }

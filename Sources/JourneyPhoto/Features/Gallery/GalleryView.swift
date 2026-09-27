@@ -11,9 +11,6 @@ struct GalleryView: View {
     @StateObject private var model = GalleryViewModel()
     /// 「ホーム」をもう一度押した合図（一番上へ戻る）
     @ObservedObject private var tabRouter = TabRouter.shared
-    /// タグの行を出しているか。**既定は畳む**——チップが2行あると
-    /// ファーストビューが「ボタンだらけ」になり、写真が下へ押し下げられる
-    @State private var showsTags = false
     /// 通報している写真。**シートはカードではなくここに付ける**
     /// （`HomeMosaic.onReport` の注記）
     @State private var reportTarget: Photo?
@@ -75,8 +72,15 @@ struct GalleryView: View {
                 await model.loadMyPhotos(environment.photos, viewerId: nil)
                 return
             }
-            let ids = (try? await environment.social.myFollowingIds()) ?? []
-            model.use(viewerId: auth.userId, following: Set(ids))
+            let viewer = auth.userId
+            let ids = try? await environment.social.myFollowingIds()
+            // **待っている間に人が替わったら何も書かない。** 古い回の答えを次の人の
+            // `auth.userId` で書くと、後から来る正しい答えを上書きしうる。
+            // 取り消し（`Task.isCancelled`）では飛ばさない——画面を離れただけの回に
+            // 飛ばすと、`.task` が走り直さなければ人が入らないまま残る。
+            // **取れなかった回（取り消しを含む）は空で上書きしない**（`fetchedFollowing`）
+            guard auth.userId == viewer else { return }
+            model.use(viewerId: viewer, fetchedFollowing: ids.map { Set($0) })
             // 今日のテーマに参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
         }
@@ -118,158 +122,6 @@ struct GalleryView: View {
             await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
                                                 photoIds: hidden.reportedPhotoIds)
             await model.load()
-        }
-    }
-
-    /// カテゴリの絞り込み。Web の `FilterBar` にあたる。
-    /// **押し直すと外れる**（`role="switch"` と同じ振る舞い）。
-    private var filterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(model.categories, id: \.self) { category in
-                    let selected = model.category == category
-                    Button {
-                        model.select(category: selected ? nil : category)
-                    } label: {
-                        Text(Labels.Category.name(category))
-                            // **字も小さすぎた。** caption(13) → subheadline(15)
-                            .font(.subheadline)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 11)
-                            // Web の `FilterBar`: 選択中は白地に黒字、
-                            // それ以外は白7%の地に白70%の字
-                            // 選択中は白地に黒字（Web の約束）。未選択は
-                            // **すりガラス**——黒地に白7%のベタより、
-                            // 写真の上を流れるときに馴染む
-                            .background(
-                                selected ? AnyShapeStyle(WebTheme.foreground)
-                                         : AnyShapeStyle(.ultraThinMaterial),
-                                in: Capsule()
-                            )
-                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted)
-                            .overlay(
-                                Capsule().strokeBorder(
-                                    selected ? Color.clear : Color.white.opacity(0.12),
-                                    lineWidth: 1
-                                )
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                }
-
-                // タグの開け閉め。**選んでいる数を出す**——畳んだままでも
-                // 「何かで絞っている」ことが分かるように
-                if !model.tags.isEmpty {
-                    Button {
-                        showsTags.toggle()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "number")
-                            if model.selectedTags.isEmpty {
-                                Text(L("タグ", "Tags"))
-                            } else {
-                                Text("\(model.selectedTags.count)")
-                            }
-                            Image(systemName: showsTags ? "chevron.up" : "chevron.down")
-                                .font(.caption2)
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(model.selectedTags.isEmpty ? WebTheme.muted2 : WebTheme.accentText)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 11)
-                        .background(
-                            model.selectedTags.isEmpty ? AnyShapeStyle(.ultraThinMaterial)
-                                                       : AnyShapeStyle(WebTheme.foreground),
-                            in: Capsule()
-                        )
-                        .overlay(Capsule().strokeBorder(
-                            model.selectedTags.isEmpty ? Color.white.opacity(0.12) : Color.clear,
-                            lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("gallery.tagsToggle")
-                }
-
-                // 並び替え。**Web も同じ列に置いている**（`FilterBar` の
-                // 右端のメニュー）。新しい順／古い順／人気順の3つ
-                Menu {
-                    ForEach(GallerySort.feedChoices) { option in
-                        Button {
-                            model.select(sort: option)
-                        } label: {
-                            if model.sort == option {
-                                Label(option.label, systemImage: "checkmark")
-                            } else {
-                                Text(option.label)
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(model.sort.label)
-                        Image(systemName: "chevron.down")
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.muted2)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 11)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-                }
-                .accessibilityIdentifier("gallery.sort")
-            }
-            .padding(.horizontal, 12)
-        }
-        // 端の見切れをぼかす（タグの行と同じ）
-        .mask {
-            LinearGradient(
-                colors: [Color.black, Color.black, Color.black.opacity(0)],
-                startPoint: .leading, endPoint: .trailing
-            )
-        }
-    }
-
-    /// タグのチップ。**Web の `FilterBar` にある側**（あちらは数も出す）。
-    /// 複数選べて、**全部を持つ写真だけ**が残る。押し直すと外れる。
-    private var tagBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(model.tags, id: \.self) { tag in
-                    let selected = model.selectedTags.contains { TagChoices.key($0) == TagChoices.key(tag) }
-                    Button {
-                        model.toggle(tag: tag)
-                    } label: {
-                        Text("#\(tag)")
-                            .font(.subheadline)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 11)
-                            .background(
-                                selected ? AnyShapeStyle(WebTheme.foreground)
-                                         : AnyShapeStyle(.ultraThinMaterial),
-                                in: Capsule()
-                            )
-                            .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-                            .overlay(
-                                Capsule().strokeBorder(
-                                    selected ? Color.clear : Color.white.opacity(0.12),
-                                    lineWidth: 1
-                                )
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                }
-            }
-            .padding(.horizontal, 12)
-        }
-        // **端の見切れをぼかす。** 横に続いていることが伝わり、
-        // 切れ方が雑に見えない
-        .mask {
-            LinearGradient(
-                colors: [Color.black, Color.black, Color.black.opacity(0)],
-                startPoint: .leading, endPoint: .trailing
-            )
         }
     }
 
@@ -331,11 +183,14 @@ struct GalleryView: View {
                         // 誰かをフォローしても「フォロー中」に出てこない
                         // （上の段にあった範囲の切り替えが持っていた処理を移した）
                         guard feed == .following, auth.userId != nil else { return }
+                        let viewer = auth.userId
                         Task {
                             // **取れなかった回に空で潰さない**（圏外で押しただけで
                             // 「フォロー中」が知らせも無く空になる）
-                            guard let ids = try? await environment.social.myFollowingIds() else { return }
-                            model.refreshFollowing(Set(ids))
+                            let ids = try? await environment.social.myFollowingIds()
+                            guard let ids else { return }
+                            // 待っている間に人が替わったら書かない（`refreshFollowing`）
+                            model.refreshFollowing(Set(ids), for: viewer)
                         }
                     } label: {
                         Text(feed.label)
@@ -376,7 +231,9 @@ struct GalleryView: View {
                 // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
                 // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
                 // 「前の方が好きだった」で先頭の大きな札に戻した（2026-09-26）
-                DailyThemeCard(photos: model.allPhotosForTheme, myPhotos: model.myPhotos)
+                // 背景の写真もブロック／通報を落とした並びから（読み直しが終わるまで
+                // ブロックした人の写真が札の背景に出ていた）
+                DailyThemeCard(photos: dropped.visible(model.allPhotosForTheme), myPhotos: model.myPhotos)
                 feedPicker
                 featuredSections
                 // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
@@ -411,23 +268,4 @@ struct GalleryView: View {
     }
 
     private static let feedTopID = "home-feed-top"
-
-    private func grid(_ photos: [Photo]) -> some View {
-        ScrollView {
-            // **ストーリーはここに置かない。** 2026-09-20 に Web が
-            // トップから外してマイページへ移した（投稿も閲覧もマイページに集める）
-            if !model.categories.isEmpty {
-                filterBar
-            }
-            if showsTags && !model.tags.isEmpty {
-                tagBar
-            }
-            // チップの列と写真の間に息を入れる（実機の絵で詰まって見えた）
-            Color.clear.frame(height: 4)
-            featuredSections
-            PhotoGrid(photos: photos) { photo in
-                PhotoDetailView(photo: photo, context: photos)
-            }
-        }
-    }
 }

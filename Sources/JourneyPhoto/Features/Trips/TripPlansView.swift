@@ -244,7 +244,20 @@ final class TripPlansModel: ObservableObject {
         guard let list = await write("new", L("作成に失敗しました", "Couldn't create"), {
             try await environment.trips.create(title: title)
         }) else { return nil }
-        return list.first { !before.contains($0.planId) }
+        return Self.created(in: list, before: before, title: title)
+    }
+
+    /// 作ったプランを応答から選ぶ。
+    ///
+    /// 🔴 **増えた ID だけでは決めない。** 最初の読み込みに失敗していると
+    /// 手元の一覧は空で、既にある別のプランまで「増えた」に入り、それが
+    /// 開いていた（別の端末で作った分が手元に無いときも同じ）。
+    /// 増えた中から**題が同じもの**を、その中で**いちばん新しいもの**を採る
+    static func created(in list: [TripPlan], before: Set<String>, title: String) -> TripPlan? {
+        let fresh = list.filter { !before.contains($0.planId) }
+        let sameTitle = fresh.filter { $0.title == title }
+        let pool = sameTitle.isEmpty ? fresh : sameTitle
+        return pool.max { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
     }
 
     func update(_ planId: String, _ patch: TripPlanService.Patch, environment: AppEnvironment) async -> Bool {

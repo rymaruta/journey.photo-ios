@@ -37,11 +37,13 @@ final class AppEnvironment: ObservableObject {
     ///   画面の頭を動かすテストが書けなかった）。
     /// - Parameter spots: 撮影スポットの索引の出どころ。同じ理由で開けてある
     /// - Parameter trips: 旅行プランの口。同じ理由で開けてある（一覧の状態の試験）
+    /// - Parameter api: API の口。同じ理由で開けてある（人のページの読み込みの試験）
     init(tokenProvider: TokenProviding = CognitoTokenProvider(),
          gallery: PublicGalleryService = PublicGalleryService(liveURL: AppConfig.livePhotosURL),
          spots: OfficialSpotService = OfficialSpotService(),
-         trips: TripPlanService? = nil) {
-        let api = APIClient(tokenProvider: tokenProvider)
+         trips: TripPlanService? = nil,
+         api: APIClient? = nil) {
+        let api = api ?? APIClient(tokenProvider: tokenProvider)
         self.api = api
         self.gallery = gallery
         self.spots = spots

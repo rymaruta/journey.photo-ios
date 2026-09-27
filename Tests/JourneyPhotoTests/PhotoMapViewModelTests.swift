@@ -215,6 +215,25 @@ extension PhotoMapViewModelTests {
         XCTAssertEqual(model.officialPins.map(\.slug), ["abashiri-ryuhyo"])
     }
 
+    /// 🔴 **札から開いた画面を積んでいる間は、地図が動いても札を下げない（M-10）。**
+    /// 札の「スポットを見る」は `NavigationLink` なので、裏で遅れて届いた現在地などで
+    /// 地図が動いてピンが外れると、札ごと消えて開いている画面が閉じていた
+    func testOfficialCardStaysWhileSpotIsOpen() async {
+        let model = await loaded(spots: spotsJSON)
+        model.update(visible: narrow())
+        guard let takaya = model.officialPins.first(where: { $0.slug == "takaya-jinja" }) else {
+            return XCTFail("高屋神社のピンが出ていない")
+        }
+        XCTAssertTrue(model.showsCard(official: takaya, onScreen: true))
+        // 裏で地図が網走へ動いた（高屋神社のピンは外れる）
+        model.update(visible: narrow(lat: 44.02, lng: 144.28))
+        XCTAssertFalse(model.stillShown(official: takaya))
+        XCTAssertTrue(model.showsCard(official: takaya, onScreen: false), "積んでいる間に札を下げている")
+        // 戻ってきたら、いま出ているピンのぶんだけ
+        XCTAssertFalse(model.showsCard(official: takaya, onScreen: true))
+        XCTAssertFalse(model.showsCard(official: nil, onScreen: false))
+    }
+
     /// 名前で絞っているときは倍率に関係なく当たったものが出る（owner が名前で探す入口）
     func testQueryShowsMatchingSpotsRegardlessOfZoom() async {
         let model = await loaded(spots: spotsJSON)

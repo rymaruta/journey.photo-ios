@@ -34,12 +34,12 @@ struct EditPhotoView: View {
 
     init(photo: Photo) {
         self.photo = photo
-        _title = State(initialValue: photo.displayTitle)
-        _caption = State(initialValue: photo.paragraphs.joined(separator: "\n"))
+        _title = State(initialValue: LocalizedEdit.titleField(photo.title))
+        _caption = State(initialValue: LocalizedEdit.descriptionField(photo.description))
         _location = State(initialValue: photo.location ?? "")
         _tagsText = State(initialValue: (photo.tags ?? []).joined(separator: ", "))
         _category = State(initialValue: photo.category ?? "")
-        _date = State(initialValue: photo.exif?.dateTimeOriginal.flatMap(Self.isoDay) ?? "")
+        _date = State(initialValue: EditDay.field(date: photo.date))
         _published = State(initialValue: photo.published != false)
         let raw = photo.audience ?? ""
         let known = raw.isEmpty ? Audience.everyone : Audience(rawValue: raw)
@@ -187,9 +187,18 @@ struct EditPhotoView: View {
         defer { isSaving = false }
 
         var patch = PhotoPatch()
-        patch.title = title
-        patch.description = caption
-        patch.location = location
+        // **触った欄だけ、英語側を残して送る**（`LocalizedEdit`）。
+        // 表示用の1言語を平文で送っていたので、`{ja, en}` の写真を
+        // 保存するたびに英語の題と説明が消えていた
+        patch.title = LocalizedEdit.title(original: photo.title, field: title)
+        patch.description = LocalizedEdit.description(original: photo.description, field: caption)
+        // **変えた項目だけ送る**（Web の `/user/edit` の `changedFields` と同じ）。
+        // 開いた時点の値を毎回全部送っていたので、古い写し（公開 JSON は
+        // 建て直しまで古い）から開いてタグだけ直すと、Web で直した説明や
+        // 撮影地が黙って巻き戻っていた
+        if location != (photo.location ?? "") || pickedCoords != nil {
+            patch.location = location
+        }
         // **選んだ回だけ載せる。** nil は「触らない」なので、
         // 地名を手で直しただけの回に既存の座標を壊さない
         patch.coords = pickedCoords
@@ -199,15 +208,24 @@ struct EditPhotoView: View {
         patch.clearCoords = EditPlaceRules.clearsCoords(openedLocation: photo.location,
                                                         currentLocation: location,
                                                         pickedCoords: pickedCoords != nil)
-        patch.tags = TagInput.parse(tagsText)
-        patch.category = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        // タグは欄と同じ割り方で比べる（空白を含むタグは欄に出した時点で
+        // 割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
+        let tags = TagInput.parse(tagsText)
+        if tags != TagInput.parse((photo.tags ?? []).joined(separator: ", ")) {
+            patch.tags = tags
+        }
+        let trimmedCategory = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedCategory != (photo.category ?? "").trimmingCharacters(in: .whitespacesAndNewlines) {
+            patch.category = trimmedCategory
+        }
         patch.published = published
         // **知らない値の写真では送らない。** キーを外せばサーバーは
         // 既にある印をそのまま残す（広げも狭めもしない）
         if audienceKnown { patch.audience = (published ? audience : .everyone).patchValue }
-        // **空なら送らない。** 空文字を送ると api-user の日付検査に落ちる
-        let day = date.trimmingCharacters(in: .whitespaces)
-        patch.date = day.isEmpty ? nil : day
+        // **触っていなければ送らない**（時刻付きの撮影日を日付だけに落とさない）。
+        // 空も送らない——空文字は api-user の日付検査に落ちる
+        patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date),
+                                    field: date)
 
         do {
             try await environment.photos.update(photoId: photo.id, patch: patch)
@@ -216,17 +234,5 @@ struct EditPhotoView: View {
             messageIsError = true
             message = (error as? LocalizedError)?.errorDescription ?? L("保存できませんでした", "Couldn't save")
         }
-    }
-
-    /// EXIF の "2026:09:13 08:21:05" を "2026-09-13" にする。
-    static func isoDay(_ raw: String) -> String? {
-        let parser = DateFormatter()
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
-        guard let date = parser.date(from: raw) else { return nil }
-        let out = DateFormatter()
-        out.locale = Locale(identifier: "en_US_POSIX")
-        out.dateFormat = "yyyy-MM-dd"
-        return out.string(from: date)
     }
 }

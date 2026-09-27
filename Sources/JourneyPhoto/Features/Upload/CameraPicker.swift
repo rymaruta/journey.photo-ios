@@ -6,6 +6,7 @@ import UIKit
 /// **ガイドライン 4.2 の要。** 「Web サイトを包んだだけ」と見なされないため、
 /// ネイティブでしかできないことが要る。カメラからの投稿がその本命で、
 /// ここで撮った画像は `ImagePreparer` を通って EXIF を落としてから上がる。
+/// 撮った原本は端末の写真にも保存する（投稿しなくても残る）。
 ///
 /// `PhotosPicker` と違い、カメラは `UIImagePickerController` が要る
 /// （SwiftUI に相当品がない）。
@@ -51,6 +52,11 @@ struct CameraPicker: UIViewControllerRepresentable {
         ) {
             defer { dismiss() }
             guard let image = info[.originalImage] as? UIImage else { return }
+            // 🔴 **撮った写真は端末にも残す。** この画面のカメラは写真アプリに
+            // 保存しないので、投稿せずに閉じる・投稿に失敗して諦めると、撮った
+            // 写真がどこにも残らなかった（`NSPhotoLibraryAddUsageDescription` は
+            // このために宣言してある）。断られていたら黙って何もしない
+            UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
             // **ここでは品質を落とさない。** 縮小と再エンコードは
             // `ImagePreparer` の仕事で、二重に潰すと目に見えて汚くなる
             guard let data = image.jpegData(compressionQuality: 1.0) else { return }

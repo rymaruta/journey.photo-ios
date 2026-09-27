@@ -163,6 +163,8 @@ struct NotificationsView: View {
         .navigationDestination(item: $route) { route in
             destinationView(route)
         }
+        // この一覧はログイン済みのときだけ描かれる（上の `body` の分岐）ので、
+        // 読み込みの `viewerId` は必ずいまの人
         .task(id: router.openActivityRequests) {
             // **読めたときだけ消す。** サーバーは未読数を載せるが、既読に
             // したことは端末のアイコンに伝わらない——誰も消さないと増える
@@ -525,7 +527,9 @@ final class NotificationsViewModel: ObservableObject {
             // **開いたときに1回だけ既読にする。** 読めたあとに呼ぶので、
             // 取得に失敗した回でバッジだけ消える事故が起きない
             if page.unread > 0 {
-                try? await environment.notifications.markRead()
+                if (try? await environment.notifications.markRead()) != nil {
+                    NotificationRouter.shared.noteRead(owner: viewerId)
+                }
                 unread = 0
             }
             return true

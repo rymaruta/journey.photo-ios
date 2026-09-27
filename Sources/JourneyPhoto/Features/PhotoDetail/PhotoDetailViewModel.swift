@@ -23,6 +23,15 @@ final class PhotoDetailViewModel: ObservableObject {
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
+    /// 消している途中のコメント（二度押しで2回送ると、2回目が「見つかりません」を出す）
+    @Published private(set) var deletingCommentIds: Set<String> = []
+    /// この画面で書いた・消したコメント。**読み込んだ一覧に重ねて採る**
+    /// ——投稿の前に読んだ一覧が後から届いて、書いたばかりのコメントが消えたり、
+    /// 消したコメントが戻ったりしていた（`CommentMerge`）
+    /// **写真ごとに持つ。** 束の隣へ送る（`show`）ので、1本にすると p1 で書いた
+    /// コメントが p2 の一覧に「未反映の自分の投稿」として差し込まれていた
+    private var postedComments: [String: [PhotoComment]] = [:]
+    private var deletedCommentIds: Set<String> = []
     /// いいねを送っている最中。**二度押しで2回投げない。**
     ///
     /// コメントには `isPosting` があったのに、いいねには何も無かった。
@@ -34,7 +43,8 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 表示名しか持っていない）。取れなければ nil——名前だけ出す
     @Published private(set) var owner: UserProfile?
 
-    private let photoId: String
+    /// いま画面の上に出ている1枚。**束を左右に送ると替わる**（`show`）
+    private(set) var photoId: String
     private let social: SocialService
 
     /// **画面ができてから入る。** `@StateObject` の初期化時には
@@ -43,13 +53,38 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 「ログインしているのに、いいねが押せない」になる。
     private var isSignedIn = false
 
-    init(photoId: String, social: SocialService) {
+    /// - Parameter initialLikes: 一覧から来た写真の数。**読み込みが終わるまで 0 と出さない**
+    ///   （圏外で取れなかった回も、一覧の数を出し続ける）
+    init(photoId: String, social: SocialService, initialLikes: Int? = nil) {
         self.photoId = photoId
         self.social = social
+        self.likes = initialLikes ?? 0
     }
 
     func setSignedIn(_ value: Bool) {
         isSignedIn = value
+    }
+
+    /// 束の別の1枚へ送った。**数・ハート・コメントをその1枚のものに入れ替える。**
+    ///
+    /// 🔴 送っても開いた1枚のままだったので、2枚目を見ながら押したいいねや
+    /// コメントが1枚目に付いていた。書きかけのコメントも前の1枚のものなので消す
+    ///
+    /// - Parameter liked: 端末の控え（`FavoritesStore`）が言う「押してある」。
+    ///   **読めるまではこれを出す**——白で始めると、圏外で開いたいいね済みの写真が
+    ///   白いハートになり、押すと「いいね」を送って（届かず）控えまで消していた
+    func show(photoId: String, initialLikes: Int?, liked: Bool) {
+        if photoId != self.photoId {
+            self.photoId = photoId
+            likes = initialLikes ?? 0
+            lastLikeAnswer = nil
+            comments = []
+            commentCount = nil
+            commentsUnavailable = false
+            draftComment = ""
+            errorMessage = nil
+        }
+        self.liked = liked
     }
 
     /// いいね数とコメントは未認証でも読める。自分が押しているかだけ要ログイン。
@@ -60,19 +95,29 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func load() async {
-        async let count = try? social.likeCount(photoId: photoId)
-        async let page = try? social.comments(photoId: photoId)
+        let id = photoId
+        async let count = try? social.likeCount(photoId: id)
+        async let page = try? social.comments(photoId: id)
         let mine: Bool?
         if isSignedIn {
-            mine = try? await social.myLike(photoId: photoId)
+            mine = try? await social.myLike(photoId: id)
         } else {
             mine = nil
         }
-        likes = await count ?? likes
+        let loadedCount = await count
         let loaded = await page
+        // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
+        guard id == photoId else { return }
+        likes = loadedCount ?? likes
         if let loaded {
-            comments = loaded.items
-            commentCount = loaded.count
+            // **一覧に載った投稿は、以後サーバーを信じる**（持ち主が消した・
+            // 別の端末で消したコメントを、手元の控えから復活させない）
+            let seen = Set(loaded.items.map(\.id))
+            postedComments[id]?.removeAll { seen.contains($0.id) }
+            let merged = CommentMerge.merge(loaded: loaded.items, count: loaded.count,
+                                            posted: postedComments[id] ?? [], deleted: deletedCommentIds)
+            comments = merged.items
+            commentCount = merged.count
         }
         commentsUnavailable = loaded == nil
         // **引けなかった回に「押していない」と言わない。** 電波が悪いだけで
@@ -88,29 +133,51 @@ final class PhotoDetailViewModel: ObservableObject {
 
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、
     /// それを使う（二重に押した回や既に押していた回でずれる）。
-    func toggleLike() async {
+    ///
+    /// - Returns: サーバーの答え（**押した1枚の id 付き**）。届かなかった回は nil。
+    ///   答えた回だけ呼び出し側は端末の控えを合わせる——送っている間に束の隣へ
+    ///   送っても、押した1枚の控えには書く（書かないとサーバーには入ったのに
+    ///   ホームも「いいねした写真」も白いままになる）
+    struct LikeAnswer: Equatable {
+        let photoId: String
+        let liked: Bool
+        let likes: Int?
+    }
+
+    @discardableResult
+    func toggleLike() async -> LikeAnswer? {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
-            return
+            return nil
         }
-        guard !isLiking else { return }
+        guard !isLiking else { return nil }
         isLiking = true
         defer { isLiking = false }
         let wasLiked = liked
+        let id = photoId
         do {
             let result = wasLiked
-                ? try await social.unlike(photoId: photoId)
-                : try await social.like(photoId: photoId)
+                ? try await social.unlike(photoId: id)
+                : try await social.like(photoId: id)
+            let answer = LikeAnswer(photoId: id, liked: result.liked, likes: result.likes)
+            // 送っている間に別の1枚へ送ったら、答えは前の1枚のもの——今の1枚の
+            // 画面には書かない（控えへは呼び出し側が押した1枚に書く）
+            guard id == photoId else { return answer }
             liked = result.liked
             if let likes = result.likes {
                 self.likes = likes
                 lastLikeAnswer = likes
             }
+            return answer
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
+            // 前の1枚の失敗を、送った先の1枚の画面に出さない
+            if id == photoId {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
+            }
+            return nil
         }
     }
 
@@ -123,24 +190,48 @@ final class PhotoDetailViewModel: ObservableObject {
         }
         isPosting = true
         defer { isPosting = false }
+        let id = photoId
         do {
-            let comment = try await social.postComment(photoId: photoId, text: text)
-            comments.insert(comment, at: 0)
-            // **総数が分からない回は分からないまま。** 取れていない数に
-            // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
-            commentCount = commentCount.map { $0 + 1 }
-            draftComment = ""
+            let comment = try await social.postComment(photoId: id, text: text)
+            // 送った先の1枚に控える（隣へ送った後に届いても、戻ったときに出す）
+            postedComments[id, default: []].append(comment)
+            guard id == photoId else { return }
+            // **送っている間に読み直した一覧に、もう載っていることがある。**
+            // そのときは足さない（同じコメントが2つ・数が1つ多く出ていた）
+            if !comments.contains(where: { $0.id == comment.id }) {
+                comments.insert(comment, at: 0)
+                // **総数が分からない回は分からないまま。** 取れていない数に
+                // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
+                commentCount = commentCount.map { $0 + 1 }
+            }
+            // **送った文のときだけ空にする。** 送っている間も欄は打てるので、
+            // 続きを書いていたら丸ごと消えていた
+            if draftComment.trimmingCharacters(in: .whitespacesAndNewlines) == text {
+                draftComment = ""
+            }
         } catch {
+            // **送った先の1枚でも失敗は出す。** 書きかけは送ったときに `show` が
+            // 消しているので、黙ると「入った」と思われたまま文も残らない
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
         }
     }
 
     func deleteComment(_ comment: PhotoComment) async {
+        guard !deletingCommentIds.contains(comment.id) else { return }
+        deletingCommentIds.insert(comment.id)
+        defer { deletingCommentIds.remove(comment.id) }
+        // **送った先の1枚を控える。** 束を送っている間に消し終わると、
+        // 次の1枚のコメントから同じ ID を探して消していた
+        let id = photoId
         do {
-            try await social.deleteComment(photoId: photoId, commentId: comment.id)
+            try await social.deleteComment(photoId: id, commentId: comment.id)
+            // 消えたことは束を送った後でも覚えておく（戻ってきたときに出さない）
+            deletedCommentIds.insert(comment.id)
+            guard id == photoId else { return }
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
         } catch {
+            guard id == photoId else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
     }

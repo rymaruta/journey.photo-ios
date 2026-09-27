@@ -59,15 +59,52 @@ final class PushCenter: ObservableObject {
     private static func pendingUnregisterKey(for userId: String) -> String {
         "photo-gallery-push-unregister-pending.\(userId)"
     }
+    /// 🔴 **この端末の宛先をサーバーに預けてある人。** 端末に残す。
+    ///
+    /// ログアウトの前に外せなかった回（ログインの期限切れ・圏外）は、外す口
+    /// （`DELETE /user/devices`）が前の人の認証を要るので、あとからは外せない。
+    /// 放っておくと、ログアウトした端末に前の人あての通知（行動した人の名前）が
+    /// 届き続ける。起動をまたいでも気づけるように、預けた人を覚えておく
+    private static let registeredOwnerKey = "photo-gallery-push-registered-owner"
+    private var registeredOwner: String? {
+        get { defaults.string(forKey: Self.registeredOwnerKey) }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Self.registeredOwnerKey)
+            } else {
+                defaults.removeObject(forKey: Self.registeredOwnerKey)
+            }
+        }
+    }
     private let defaults: UserDefaults
     private var userId: String?
     private let service: () -> PushService
+    /// 端末ごと APNs から外す（`unregisterForRemoteNotifications`）。試験で差し替える
+    private let releaseDevice: @MainActor () -> Void
+    /// システムの許可を読む。試験で差し替える（模型では許可が取れない）
+    private let readAuthorization: () async -> Bool
 
     init(service: @escaping () -> PushService = { PushService(api: APIClient(tokenProvider: CognitoTokenProvider())) },
-         defaults: UserDefaults = .standard) {
+         defaults: UserDefaults = .standard,
+         releaseDevice: @escaping @MainActor () -> Void = { UIApplication.shared.unregisterForRemoteNotifications() },
+         readAuthorization: @escaping () async -> Bool = {
+             let settings = await UNUserNotificationCenter.current().notificationSettings()
+             return settings.authorizationStatus == .authorized
+                 || settings.authorizationStatus == .provisional
+         }) {
         self.service = service
         self.defaults = defaults
+        self.releaseDevice = releaseDevice
+        self.readAuthorization = readAuthorization
         self.isEnabled = defaults.bool(forKey: Self.legacyEnabledKey)
+    }
+
+    /// 退会した人の控えを消す（`AccountLocalData`）。「受け取る」の意思と、
+    /// 外し損ねの印。**預けた人の印はここでは消さない**——退会の直後の
+    /// `use(userId: nil)` がそれを見て、外し損ねていれば端末ごと外す
+    static func removeLocalData(for userId: String, defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: enabledKey(for: userId))
+        defaults.removeObject(forKey: pendingUnregisterKey(for: userId))
     }
 
     /// 起動時とログイン状態が変わるたびに呼ぶ。
@@ -76,11 +113,27 @@ final class PushCenter: ObservableObject {
         self.userId = userId
         if previous != userId { loadIntent(for: userId) }
         await refreshAuthorization()
+        // 待っている間に次の `use` が始まっていたら、そちらに任せる
+        guard self.userId == userId else { return }
 
-        // **人が入れ替わったら、前の人の宛先を外す。** 外さないと
-        // 同じ端末に前の人あての通知が届き続ける
-        if let previous, previous != userId, let token {
-            try? await service().unregister(token: token)
+        // 🔴 **前の人の宛先が残っている**（ログアウトの前に外せなかった:
+        // ログインの期限切れ・圏外・退会の途中）。前の人の認証はもう無いので
+        // サーバーからは外せない。**端末ごと APNs から外す**——サーバーは
+        // 次に送ったときに 410 を受けて宛先を捨てる（`notify.ts` の
+        // `forgetTokens`）。次の人がすぐ預け直すなら要らない（サーバーの登録が
+        // 前の持ち主から外す・`devices.ts` の `releasePreviousOwner`）
+        //
+        // **印だけで決める。** ふつうのログアウトは先に外せている（`signingOut`
+        // が印を消す）ので、ここで端末ごと外さない。更新前から預けていた人は、
+        // 次にその人で開いたときの登録で印が付く
+        if let owner = registeredOwner, owner != userId {
+            let registersNow = userId != nil && isEnabled && isAuthorized
+            if registersNow {
+                // 印は残す。預け直せたら次の人の印に替わる（`registerIfPossible`）。
+                // 落ちたら印が残り、次の `use` でもう一度見る
+            } else {
+                releaseForeignRegistration(except: userId)
+            }
             isRegistered = false
         }
         // **外し損ねた宛先を外し直す**（「受け取らない」にした回に圏外だった）
@@ -88,6 +141,7 @@ final class PushCenter: ObservableObject {
            defaults.bool(forKey: Self.pendingUnregisterKey(for: userId)) {
             if (try? await service().unregister(token: token)) != nil {
                 defaults.removeObject(forKey: Self.pendingUnregisterKey(for: userId))
+                if registeredOwner == userId { registeredOwner = nil }
             }
         }
         // **「受け取る」と言った人にだけ繋ぎ直す。** 端末の許可だけで
@@ -101,9 +155,7 @@ final class PushCenter: ObservableObject {
 
     /// システムの許可状態を読み直す。
     func refreshAuthorization() async {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        isAuthorized = settings.authorizationStatus == .authorized
-            || settings.authorizationStatus == .provisional
+        isAuthorized = await readAuthorization()
         if !isAuthorized { isRegistered = false }
     }
 
@@ -150,10 +202,13 @@ final class PushCenter: ObservableObject {
         // 次の起動で勝手に復活する
         setEnabled(false)
         defer { isRegistered = false }
+        // 前の人の宛先が残っていたら（預け直しで上書きできないまま）端末ごと外す
+        releaseForeignRegistration(except: userId)
         guard let token, let userId else { return }
         do {
             try await service().unregister(token: token)
             defaults.removeObject(forKey: Self.pendingUnregisterKey(for: userId))
+            if registeredOwner == userId { registeredOwner = nil }
         } catch {
             // 外せなかったことを覚え、次に開いたときに外し直す（`use`）
             defaults.set(true, forKey: Self.pendingUnregisterKey(for: userId))
@@ -181,8 +236,23 @@ final class PushCenter: ObservableObject {
     /// ログアウトの**前**に呼ぶ。認証が要るので、あとだと外せない。
     func signingOut() async {
         guard let token, userId != nil else { return }
-        try? await service().unregister(token: token)
+        // **外せた回だけ印を消す。** 外せなかったら、ログアウトのあとの
+        // `use` が印を見て端末ごと外す
+        // **自分の印だけ消す。** 前の人の印（預け直しが落ちて残ったもの）は、
+        // この人の認証では外れていないので残し、ログアウトのあとの `use` が
+        // 端末ごと外す
+        if (try? await service().unregister(token: token)) != nil,
+           registeredOwner == userId {
+            registeredOwner = nil
+        }
         isRegistered = false
+    }
+
+    /// 前の人の宛先が残っていたら、端末ごと APNs から外して印を消す
+    private func releaseForeignRegistration(except userId: String?) {
+        guard let owner = registeredOwner, owner != userId else { return }
+        if token != nil { releaseDevice() }
+        registeredOwner = nil
     }
 
     /// お知らせを読んだので、アイコンの数字を消す。
@@ -211,13 +281,24 @@ final class PushCenter: ObservableObject {
         errorMessage = nil
     }
 
-    private func registerIfPossible() async {
-        guard let token, userId != nil, isEnabled, isAuthorized else { return }
+    /// 試験から失敗の経路を通すため internal（画面からは呼ばない）
+    func registerIfPossible() async {
+        guard let token, let owner = userId, isEnabled, isAuthorized else { return }
         do {
             try await service().register(token: token)
             isRegistered = true
+            // **呼んだ時点の人を控える**（返ってくる間に替わっていても、
+            // サーバーに預けたのはこの人の宛先）
+            registeredOwner = owner
         } catch {
             isRegistered = false
+            // **預け直せなかったら前の人の宛先を残さない。** 前の人の印を残したまま
+            // 落ち続けると、この人がログインしている間ずっと前の人あてに届く
+            // **呼んでいる間に人が替わっていたら触らない**（遅れて返った前の人の
+            // 失敗で、次の人の宛先を外さない）
+            if userId == owner {
+                releaseForeignRegistration(except: owner)
+            }
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("通知を受け取る設定にできませんでした", "Couldn't turn notifications on")
         }

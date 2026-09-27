@@ -16,7 +16,9 @@ final class GalleryViewModel: ObservableObject {
     /// 選ばれているカテゴリ。nil は「すべて」
     @Published var category: String?
     /// 並び替え。**Web の `FilterBar` と同じ3つ**（新しい順／古い順／人気順）
-    @Published var sort: GallerySort = .new
+    /// **初めのフィード（おすすめ）の並びで始める。** `.new` から始めると、最初の
+    /// 読み込みが新しい順で並び、あとから `use` で並べ直されて一覧が入れ替わっていた
+    @Published var sort: GallerySort = HomeFeed.recommended.sort
     /// ホームのフィード（おすすめ / フォロー中 / 新着）。
     /// **範囲と並びの組に名前を付けたもの**（`HomeFeed`）
     @Published private(set) var feed: HomeFeed = .recommended
@@ -60,11 +62,24 @@ final class GalleryViewModel: ObservableObject {
         if case .loaded = state {} else { state = .loading }
         do {
             let photos = try await gallery.fetchPhotos(force: force)
+            guard !keepsShownFeed else { return }
             all = sorted(photos)
             state = .loaded(filtered())
         } catch {
+            guard !keepsShownFeed else { return }
             state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
         }
+    }
+
+    /// **一覧を出している最中に取り消された回は何も書かない。** 戻ると `.task` が走り直し、
+    /// 読み終わる前に次の写真を開くと取り消される。失敗の帯はフィードごと差し替え、
+    /// 遅れて書いた一覧は並びが変わると段（`EditorialLayout.Row.id` は隣の写真まで含む）を
+    /// 作り直す——どちらでも開いたばかりの詳細が閉じる。
+    /// **まだ何も出していない回は今までどおり書く**（書かないと、読み込み中の丸のまま
+    /// 引き下げも再試行も効かない画面が残る。開いている詳細も無い）
+    private var keepsShownFeed: Bool {
+        guard Task.isCancelled, case .loaded = state else { return false }
+        return true
     }
 
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
@@ -102,7 +117,11 @@ final class GalleryViewModel: ObservableObject {
     ///
     /// **`use(viewerId:following:)` を使い回さない**——あちらは範囲を
     /// 既定へ倒すので、「フォロー中」を選んだ直後に「自分」へ戻ってしまう。
-    func refreshFollowing(_ following: Set<String>) {
+    ///
+    /// - Parameter viewerId: 取りに行ったときの人。**いまの人と違えば書かない**
+    ///   （前の人の一覧が次の人の「フォロー中」に入る）
+    func refreshFollowing(_ following: Set<String>, for viewerId: String?) {
+        guard viewerId == self.viewerId else { return }
         self.followingIds = following
         if case .loaded = state { state = .loaded(filtered()) }
     }
@@ -116,11 +135,17 @@ final class GalleryViewModel: ObservableObject {
     /// **フォロー中は未ログインだと中身が無い。** 絞れないので
     /// 「おすすめ」へ戻す（空の画面に置き去りにしない）。
     func use(viewerId: String?, following: Set<String>) {
+        // 並びは sort と feed の両方で決まる（`sorted`）。**どちらかが変わったら**並べ直す
+        let previousFeed = feed
         self.viewerId = viewerId
         self.followingIds = following
         if viewerId == nil && feed.needsSignIn { feed = .recommended }
+        let previousSort = sort
         scope = feed.scope
         sort = feed.sort
+        // **並びが変わったときだけ**並べ直す（同じなら一覧を入れ替えない——
+        // 開いている詳細の元のタイルが作り直されて閉じる）
+        if sort != previousSort || feed != previousFeed { all = sorted(all) }
         if case .loaded = state { state = .loaded(filtered()) }
     }
 
@@ -170,8 +195,11 @@ final class GalleryViewModel: ObservableObject {
 
     /// 並びは `GallerySort` に置いてある（画面を持たない層なので
     /// Linux 上の `swift test` で検証できる）。
+    /// 🔴 **おすすめは owner が選んだ写真（featured）を先頭に。** 以前は
+    /// フィードの札を押したとき（`select(feed:)`）しか `arrange` を通らず、
+    /// 起動・引き下げ・ブロック後の読み直しでは新しい順のまま出ていた
     private func sorted(_ photos: [Photo]) -> [Photo] {
-        sort.apply(photos)
+        sort == feed.sort ? feed.arrange(photos) : sort.apply(photos)
     }
 
     /// タグのチップ。**押し直すと外れる**（カテゴリと同じ約束）
@@ -199,6 +227,17 @@ final class GalleryViewModel: ObservableObject {
         return TagChoices.all.filter { present.contains(TagChoices.key($0)) }
     }
 
+    /// フォロー一覧が**取れなかった回**（圏外・取り消し）の入れ方。
+    ///
+    /// 同じ人なら手元の一覧を残す——空で上書きすると「フォロー中」が
+    /// 「まだありません」になる（画面を離れて取り消された回も同じ）。
+    /// 別の人なら前の人の一覧は使わない（分からないので空）。
+    /// **`followingIds` はいつも `viewerId` の人のもの**（`select(feed:)` も守る）
+    func use(viewerId: String?, fetchedFollowing: Set<String>?) {
+        let following = fetchedFollowing ?? (viewerId == self.viewerId ? followingIds : [])
+        use(viewerId: viewerId, following: following)
+    }
+
     /// フィードを選ぶ。**範囲と並びを一緒に切り替える**。
     ///
     /// **`use(viewerId:following:)` は呼ばない。** あちらは範囲を
@@ -208,6 +247,8 @@ final class GalleryViewModel: ObservableObject {
         self.feed = feed
         self.scope = feed.scope
         self.sort = feed.sort
+        // 人が替わっていたら、手元のフォロー一覧は前の人のもの——持ち越さない
+        if viewerId != self.viewerId { followingIds = [] }
         self.viewerId = viewerId
         all = feed.arrange(all)
         state = .loaded(filtered())
@@ -220,9 +261,13 @@ final class GalleryViewModel: ObservableObject {
     }
 
     /// トップに出す「おすすめ」。**絞り込みが掛かっているときは出さない**
-    /// ——絞った結果の上に別の並びが出ると、何を見ているのか分からなくなる
+    /// ——絞った結果の上に別の並びが出ると、何を見ているのか分からなくなる。
+    ///
+    /// **「おすすめ」の札のときだけ出す**（owner の判断 2026-09-27）。全員の写真から
+    /// 作る段なので、「フォロー中」ではフォローしていない人の写真が
+    /// 「フォロー中の人の写真はまだありません」の上に並んでいた
     var featured: [FeaturedGroups.Group] {
-        guard category == nil else { return [] }
+        guard category == nil, feed == .recommended else { return [] }
         return FeaturedGroups.groups(from: all)
     }
 }

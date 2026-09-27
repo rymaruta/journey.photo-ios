@@ -1,7 +1,23 @@
 // UIKit の模型（Linux で型検査するためだけのもの）。
 @_exported import SwiftUI
 
-open class UIViewController {}
+open class UIViewController {
+    /// 本物は読み取りだけ（このコントローラが出しているもの）
+    open var presentedViewController: UIViewController? { nil }
+}
+
+/// 画面の場。本物は `UIResponder`（NSObject）の子なので Set に入る
+open class UIScene: Hashable {
+    public static func == (lhs: UIScene, rhs: UIScene) -> Bool { lhs === rhs }
+    public func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
+}
+open class UIWindowScene: UIScene {
+    public var windows: [UIWindow] { [] }
+}
+open class UIWindow {
+    public var isKeyWindow: Bool { false }
+    public var rootViewController: UIViewController?
+}
 
 /// `@UIApplicationDelegateAdaptor` で繋ぐ側の模型。
 public protocol UIApplicationDelegate: NSObjectProtocolShim {}
@@ -22,8 +38,26 @@ open class UIApplication {
     public static let shared = UIApplication()
     public func registerForRemoteNotifications() {}
     public func unregisterForRemoteNotifications() {}
+    public var connectedScenes: Set<UIScene> { [] }
     public var applicationIconBadgeNumber: Int = 0
+    /// 裏に回っても少しだけ続けさせてもらう（本物と同じ形）
+    public func beginBackgroundTask(withName taskName: String?,
+                                    expirationHandler handler: (@MainActor @Sendable () -> Void)? = nil) -> UIBackgroundTaskIdentifier {
+        .invalid
+    }
+    public func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier) {}
 }
+
+public struct UIBackgroundTaskIdentifier: Hashable, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let invalid = UIBackgroundTaskIdentifier(rawValue: 0)
+}
+
+/// 端末の写真に保存する（本物と同じ名前・引数の数）。模型は何もしない。
+/// 本物の3つ目は `Selector?`——Linux に無い型なので、`nil` だけ渡す前提で `Any?` にしてある
+public func UIImageWriteToSavedPhotosAlbum(_ image: UIImage, _ completionTarget: Any?,
+                                           _ completionSelector: Any?, _ contextInfo: UnsafeMutableRawPointer?) {}
 open class UINavigationController: UIViewController {}
 
 public protocol UINavigationControllerDelegate: AnyObject {}
