@@ -124,7 +124,7 @@ enum TripPlanText {
         /// 撮影スポットの「県 · 市」。撮影地には無い
         let regionLabel: String?
         /// 台帳の運営の下書き（`OfficialSpot.isDraft`）。撮影地には無い。
-        /// 画面では「公式」と呼ばず、下書きはそう書く（`SpotScreen.eyebrow`）
+        /// 画面では「公式」と呼ばず、下書きのときだけ「下書き」の札を付ける
         var isDraft = false
         var isOfficial: Bool { if case .spot = item { return true } else { return false } }
         var id: String {

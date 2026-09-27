@@ -12,6 +12,7 @@ struct TripPlanDetailView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var wishlist: WishlistStore
+    @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
 
     /// 手元の下書き。**開き直したらサーバーの姿に戻す**（Web と同じ）
@@ -41,7 +42,8 @@ struct TripPlanDetailView: View {
     private var draft: Draft { Draft(days: days, start: start, end: end) }
 
     private var plan: TripPlan? { model.plan(planId) }
-    private var places: [DerivedSpot.Place] { DerivedSpot.all(in: photos) }
+    /// **読んだ後のブロック・通報も外す**（マイページの行きたい場所と同じ行にする）
+    private var places: [DerivedSpot.Place] { DerivedSpot.all(in: hidden.snapshot.visible(photos)) }
 
     var body: some View {
         Group {

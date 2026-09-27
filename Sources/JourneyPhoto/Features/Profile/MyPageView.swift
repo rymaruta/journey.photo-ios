@@ -554,8 +554,12 @@ struct MyPageView: View {
         // **ブロック・通報した人の写真を外してから導く**（お気に入りと同じ `dropped`）。
         // `feed` が絞られるのは取った時点だけで、その後のブロックも、同期の前に
         // 返った一覧も素通りして、行のサムネに出ていた
-        let pool = dropped.visible(ProfileSections.wishlistPool(feed: feed, mine: model.photos))
+        let unfiltered = ProfileSections.wishlistPool(feed: feed, mine: model.photos)
+        let pool = dropped.visible(unfiltered)
         let wanted = ProfileSections.wantedPlaces(keys: wishIds, pool: pool)
+        // 「一部を読み込めませんでした」を数える側は**絞る前**で引く——ブロックした人の
+        // 写真にしか無い撮影地は、読み込めていないのではなく見せないだけ
+        let reachable = ProfileSections.wantedPlaces(keys: wishIds, pool: unfiltered).count
         // 自分の写真の初回が取れていない回も「取れていない」（非公開の写真・一覧に
         // まだ載っていない投稿の撮影地は、公開一覧からは引けない）
         let sourceFailed = feedFailed || model.errorMessage != nil
@@ -589,9 +593,10 @@ struct MyPageView: View {
                 ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
                                        "Nothing yet. Tap “Want to go” on a place."))
             case .list:
-                if ProfileSections.wishlistPartlyMissing(shownCount: wanted.count + officialRows.count,
+                // 公開一覧の失敗のときだけ（自分の写真の失敗は上の一行が既に言う）
+                if ProfileSections.wishlistPartlyMissing(shownCount: reachable + officialRows.count,
                                                          savedIdCount: wishIds.count,
-                                                         sourceFailed: sourceFailed) {
+                                                         sourceFailed: feedFailed) {
                     Text(L("一部の場所を読み込めませんでした。引き下げて読み直してください",
                            "Some places couldn't be loaded. Pull to refresh."))
                         .font(.footnote)
@@ -1074,6 +1079,9 @@ final class MyPageViewModel: ObservableObject {
             let mine = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
             self.photos = PhotoPinning.pinnedFirst(mine, pinned: self.pinnedIds)
             hasLoadedPhotos = true
+        } else if all == nil, gen == generation, !hasLoadedPhotos {
+            // 取れなかった回を言う（言わないと「読めた」にも「失敗」にもならず、輪のまま残る）
+            errorMessage = Labels.Common.loadFailed
         }
         let stats = try? await self.social.followStats(userId: userId)
         if let stats, gen == generation {

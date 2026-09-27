@@ -126,6 +126,22 @@ final class ProfileSectionsTests: XCTestCase {
         XCTAssertEqual(ProfileSections.wantedPlaces(keys: [key], pool: pool).count, 1, "同じ鍵の行が2つ並ぶ")
     }
 
+    /// **寄せた行は両方の写真を持つ**（「高屋-神社」と「高屋 神社」は `DerivedSpot` では別の
+    /// 地点、鍵は同じ）。片方だけ残すと枚数・表紙・開いた先の写真が半分になる
+    func testMergedPlaceKeepsPhotosOfBothLabels() throws {
+        func photo(_ id: String, _ location: String) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(
+                #"{"id":"\#(id)","src":"/uploads/\#(id).jpg","location":"\#(location)"}"#.utf8))
+        }
+        let pool = [try photo("a", "高屋-神社"), try photo("b", "高屋 神社")]
+        let key = LocationSlug.make("高屋 神社")
+        XCTAssertEqual(LocationSlug.make("高屋-神社"), key, "前提: 同じ鍵になる")
+        XCTAssertEqual(DerivedSpot.all(in: pool).count, 2, "前提: 撮影地としては別の2か所")
+        let wanted = ProfileSections.wantedPlaces(keys: [key], pool: pool)
+        XCTAssertEqual(wanted.count, 1)
+        XCTAssertEqual(Set(wanted.first?.photos.map(\.id) ?? []), ["a", "b"], "寄せた行が片方の写真しか持たない")
+    }
+
     /// **引き当て先が取れず、一部だけ見つかった回は一行添える**（黙って行を落とさない）
     func testPartlyMissingOnlyWhenTheSourceFailed() {
         XCTAssertTrue(ProfileSections.wishlistPartlyMissing(shownCount: 1, savedIdCount: 3, sourceFailed: true))
