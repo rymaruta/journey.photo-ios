@@ -119,17 +119,26 @@ final class PhotoDetailViewModel: ObservableObject {
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、
     /// それを使う（二重に押した回や既に押していた回でずれる）。
     ///
-    /// - Returns: サーバーが答えたか。**答えた回だけ**呼び出し側は端末の控えを合わせる
+    /// - Returns: サーバーの答え（**押した1枚の id 付き**）。届かなかった回は nil。
+    ///   答えた回だけ呼び出し側は端末の控えを合わせる——送っている間に束の隣へ
+    ///   送っても、押した1枚の控えには書く（書かないとサーバーには入ったのに
+    ///   ホームも「いいねした写真」も白いままになる）
+    struct LikeAnswer: Equatable {
+        let photoId: String
+        let liked: Bool
+        let likes: Int?
+    }
+
     @discardableResult
-    func toggleLike() async -> Bool {
+    func toggleLike() async -> LikeAnswer? {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
-            return false
+            return nil
         }
-        guard !isLiking else { return false }
+        guard !isLiking else { return nil }
         isLiking = true
         defer { isLiking = false }
         let wasLiked = liked
@@ -138,17 +147,22 @@ final class PhotoDetailViewModel: ObservableObject {
             let result = wasLiked
                 ? try await social.unlike(photoId: id)
                 : try await social.like(photoId: id)
-            // 送っている間に別の1枚へ送ったら、答えは前の1枚のもの——今の1枚に書かない
-            guard id == photoId else { return false }
+            let answer = LikeAnswer(photoId: id, liked: result.liked, likes: result.likes)
+            // 送っている間に別の1枚へ送ったら、答えは前の1枚のもの——今の1枚の
+            // 画面には書かない（控えへは呼び出し側が押した1枚に書く）
+            guard id == photoId else { return answer }
             liked = result.liked
             if let likes = result.likes {
                 self.likes = likes
                 lastLikeAnswer = likes
             }
-            return true
+            return answer
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
-            return false
+            // 前の1枚の失敗を、送った先の1枚の画面に出さない
+            if id == photoId {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
+            }
+            return nil
         }
     }
 
@@ -171,6 +185,7 @@ final class PhotoDetailViewModel: ObservableObject {
             commentCount = commentCount.map { $0 + 1 }
             draftComment = ""
         } catch {
+            guard id == photoId else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
         }
     }
@@ -183,6 +198,7 @@ final class PhotoDetailViewModel: ObservableObject {
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
         } catch {
+            guard id == photoId else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
     }

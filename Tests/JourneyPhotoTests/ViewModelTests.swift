@@ -269,6 +269,24 @@ final class ViewModelTests: XCTestCase {
                       "送った先ではなく開いた1枚にいいねを送っている")
     }
 
+    /// 🔴 **送っている間に束の隣へ送っても、答えは押した1枚のもの。**
+    /// 今の1枚の画面には書かず、押した1枚の id で返す（呼び出し側が控えに書く）
+    func testLikeAnswerKeepsThePressedPhotoAfterSwiping() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(path: "/photos/p1/like", status: 200,
+                             body: #"{"liked":true,"likes":9}"#, delay: 0.2)
+        async let pressed = model.toggleLike()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        model.show(photoId: "p2", initialLikes: 2, liked: false)
+        let answer = await pressed
+        XCTAssertEqual(answer, PhotoDetailViewModel.LikeAnswer(photoId: "p1", liked: true, likes: 9),
+                       "押した1枚の答えを返していない（控えに入らない）")
+        XCTAssertFalse(model.liked, "前の1枚の答えを今の1枚に書いている")
+        XCTAssertEqual(model.likes, 2)
+    }
+
     /// 🔴 **圏外で開いたいいね済みの写真を白いハートにしない。** 端末の控えで始め、
     /// 押して届かなかった回は「答えなし」を返す（呼び出し側が控えを消さない）
     func testOfflineKeepsTheStoredHeart() async {
@@ -280,7 +298,7 @@ final class ViewModelTests: XCTestCase {
         await model.load()
         XCTAssertTrue(model.liked, "引けなかった回に控えのハートを消している")
         let answered = await model.toggleLike()
-        XCTAssertFalse(answered, "届かなかったのに答えがあった扱い")
+        XCTAssertNil(answered, "届かなかったのに答えがあった扱い")
         XCTAssertTrue(model.liked)
     }
 
@@ -348,8 +366,8 @@ final class ViewModelTests: XCTestCase {
         model.setSignedIn(true)
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":1}"#)
 
-        async let first: Bool = model.toggleLike()
-        async let second: Bool = model.toggleLike()
+        async let first: PhotoDetailViewModel.LikeAnswer? = model.toggleLike()
+        async let second: PhotoDetailViewModel.LikeAnswer? = model.toggleLike()
         _ = await (first, second)
 
         XCTAssertEqual(StubProtocol.requestCount, 1, "二度押しで2回投げている")

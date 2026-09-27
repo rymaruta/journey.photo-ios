@@ -654,22 +654,19 @@ struct PhotoDetailView: View {
     ///
     /// 開いたときに読んだ数は渡さない（`LikeCountStore` の注記）。
     /// 答えが無かった回（失敗・数を返さない答え）も渡さない
-    private func shareLikeCount(_ photoId: String) {
-        guard let answer = model.lastLikeAnswer else { return }
-        likeCounts.set(photoId, count: answer)
-    }
 
     /// 上に出ている1枚のいいね。端末の控えとホームの数にも渡す。
     ///
     /// **押した1枚を先に覚える。** 送っている間に束の隣へ送ると、答えは
     /// 前の1枚のもの——今の1枚の控えに書かない
     private func toggleLikeHere() async {
-        let id = current.id
-        // **届かなかった回は控えに書かない**（押す前のハートのまま）
-        let answered = await model.toggleLike()
-        guard answered, model.photoId == id else { return }
-        favorites.set(id, favorite: model.liked)
-        shareLikeCount(id)
+        // **届かなかった回は控えに書かない**（押す前のハートのまま）。
+        // 答えは**押した1枚に**書く——送っている間に束の隣へ送っても
+        let answer = await model.toggleLike()
+        guard let answer else { return }
+        favorites.set(answer.photoId, favorite: answer.liked)
+        // 押した回の答えだけを渡す（`LikeCountStore` の注記）
+        if let likes = answer.likes { likeCounts.set(answer.photoId, count: likes) }
     }
 
     private func socialBar(_ proxy: ScrollViewProxy) -> some View {
