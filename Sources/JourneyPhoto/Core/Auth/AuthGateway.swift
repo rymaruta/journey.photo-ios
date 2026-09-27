@@ -29,6 +29,7 @@ enum AuthGateway {
         }
     }
 
+    #if DEBUG
     /// 試験用: 設定の有無を**その間だけ**差し替えて `body` を走らせ、終わったら戻す。
     ///
     /// Mac の試験はアプリの中で走るので、起動時の `configure()` で**設定済み**になっている。
@@ -40,6 +41,7 @@ enum AuthGateway {
         defer { isConfigured = saved }
         return try await body()
     }
+    #endif
 
     private static func requireConfigured() throws {
         guard isConfigured else { throw NotConfigured() }

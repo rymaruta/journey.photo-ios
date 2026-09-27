@@ -593,9 +593,11 @@ final class ViewModelTests: XCTestCase {
         let model = MyPageViewModel(api: api(gates: PathGates(["/user/profile": gate])))
         let previous = Task { await model.load() }
         await gate.untilWaiting()
-        // 写真の要求が出て、返事を受け取り終えるまで待つ
+        // 写真の要求が出て、返事を受け取り終えるまで待つ。プロフィールの要求は Gate の
+        // 手前で止まっていて StubProtocol に届かないので、数えるのは写真の1本だけ
         let deadline = Date().addingTimeInterval(2)
-        while StubProtocol.requestCount < 2 && Date() < deadline {
+        while StubProtocol.requestCount < 1 {
+            guard Date() < deadline else { return XCTFail("前提: 写真の要求が出ない") }
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
         try? await Task.sleep(nanoseconds: 50_000_000)
