@@ -482,7 +482,7 @@ struct PhotoDetailView: View {
         }
         .buttonStyle(.plain)
         .disabled(isFollowWorking)
-        .opacity(isFollowWorking ? 0.5 : 1)
+        .opacity(isFollowWorking ? 0.6 : 1)  // 人のページと同じ薄さ
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
             Task { await toggleFollow(userId) }
         }
