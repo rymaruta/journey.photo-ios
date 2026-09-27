@@ -43,8 +43,12 @@ struct StoryViewerView: View {
     @State private var paused = false
     /// 止めている間に終わった1本（解けたら進める）
     @State private var pendingEnd: String?
-    /// 最後の1本の終わりで閉じ始めた
-    @State private var closing = false
+    /// 終わりの知らせを受け取った1本（同じ1本の2回目を捨てる。移ったら空にする）
+    @State private var endedIds: Set<String> = []
+    /// 通報している1本。**押した時点で控える**——シートの `onDismiss` は閉じる動きの
+    /// 後に走り、その間に次の1本へ進んでいると、描き直された閉包の `story` は
+    /// 次の1本になっている（通報した1本が並びから落ちなかった）
+    @State private var reportingStory: Story?
     @State private var muted = false
     /// この画面が鳴らした曲の回（`MusicPreviewPlayer.session`）。鳴らしていなければ nil
     @State private var songSession: Int?
@@ -171,16 +175,12 @@ struct StoryViewerView: View {
             syncSong(restart: true)
         }
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
-        .onChange(of: frozen) { _, now in
+        .onChange(of: frozen) { _, _ in
             syncSong(restart: false)
-            // 止めている間に終わった1本は、解けたところで進める。
-            // **知らせ（「送りました」・失敗）や書きかけが出ている間は進めない**——
-            // 進むと `go` が消し、一瞬も読めなかった。次のタップで進む
-            if !now, let pending = pendingEnd, message == nil, reply.isEmpty {
-                pendingEnd = nil
-                mediaEnded(pending)
-            }
+            settlePendingEnd()
         }
+        // 知らせが消えたら（2.5秒で消える）、待たせていた1本を進める
+        .onChange(of: message) { _, _ in settlePendingEnd() }
         .onChange(of: holds) { _, now in isHeld = now }
         .onChange(of: muted) { _, now in
             if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
@@ -333,10 +333,15 @@ struct StoryViewerView: View {
         } message: {
             Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
         }
-        .sheet(isPresented: $showReport, onDismiss: { afterReport(story) }) {
+        .sheet(isPresented: $showReport, onDismiss: {
+            let reported = reportingStory ?? story
+            reportingStory = nil
+            afterReport(reported)
+        }) {
             // **写真の通報と同じ口。** サーバーの `report.ts` は id で行を引き、
             // ストーリー行（`story-<uuid>`）も `src` を持つので通る
-            ReportSheet(photoId: story.id, ownerId: story.userId)
+            let target = reportingStory ?? story
+            ReportSheet(photoId: target.id, ownerId: target.userId)
         }
         // 一覧から開いたページでブロックしたら、その人の返信を外す
         .sheet(isPresented: $showReplies, onDismiss: {
@@ -726,12 +731,27 @@ struct StoryViewerView: View {
     }
 
     /// 動画の終わり（読めずに諦めた回も）。`StoryPlayback.mediaEnded`
+    ///
+    /// **知らせ（「送りました」・失敗）が出ている間も待つ。** 進むと `go` が消し、
+    /// 一瞬も読めなかった。知らせは2.5秒で消え、そこで `settlePendingEnd` が進める
     private func mediaEnded(_ id: String) {
-        switch StoryPlayback.mediaEnded(storyId: id, currentId: current?.id, frozen: frozen) {
+        switch StoryPlayback.mediaEnded(storyId: id, currentId: current?.id,
+                                        frozen: frozen || message != nil) {
         case .ignore: break
         case .hold: pendingEnd = id
-        case .advance: advance()
+        case .advance:
+            // 同じ1本の2回目（失敗の通知と状態の見張りの両方）は捨てる——最後の1本だと
+            // 2回閉じていた
+            guard endedIds.insert(id).inserted else { return }
+            advance()
         }
+    }
+
+    /// 待たせていた終わりを、止めも知らせも無くなったところで進める
+    private func settlePendingEnd() {
+        guard !frozen, message == nil, let pending = pendingEnd else { return }
+        pendingEnd = nil
+        mediaEnded(pending)
     }
 
     /// 次へ。**最後なら閉じる**
@@ -739,9 +759,6 @@ struct StoryViewerView: View {
         if let target = StoryPlayback.next(after: index, count: visible.count) {
             go(to: target)
         } else {
-            // 最後の1本で終わりの知らせが2回来ても、閉じるのは1回
-            guard !closing else { return }
-            closing = true
             dismiss()
         }
     }
@@ -753,6 +770,7 @@ struct StoryViewerView: View {
         index = target
         elapsed = 0
         pendingEnd = nil
+        endedIds = []
         // 別の1本へ移ったら止めていたのを解く（払って移ると止まったまま進んでいた）
         paused = false
         mediaReady = visible[target].isVideo
@@ -783,7 +801,9 @@ struct StoryViewerView: View {
             var progress = StoryPlayback.Progress(elapsed: elapsed, duration: duration)
             let tick = progress.tick(dt, frozen: frozen)
             elapsed = progress.elapsed
-            if tick == .advance {
+            // 知らせ（「送りました」など）が出ている間は進めない（`go` が消して読めない）。
+            // 知らせは2.5秒で消える
+            if tick == .advance, message == nil {
                 advance()
                 return
             }
@@ -879,6 +899,7 @@ struct StoryViewerView: View {
                     }
                     if items.contains(.report) {
                         menuRow(symbol: "flag", title: L("通報する", "Report"), danger: true) {
+                            reportingStory = story
                             showReport = true
                         }
                     }

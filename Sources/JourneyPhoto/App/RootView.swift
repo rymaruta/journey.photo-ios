@@ -169,7 +169,8 @@ struct RootView: View {
                 } else {
                     // 待っている間にログインした: 押した通知が誰あてか分からないので
                     // 開かないが、黙りもしない（押しても何も起きないと壊れて見える）
-                    if waited <= Self.activityHintLimit {
+                    // 待っている間にベルから開いていれば、それで済んでいる
+                    if waited <= Self.activityHintLimit, !showNotifications {
                         toasts.show(L("新しいお知らせは、右上のベルから見られます",
                                       "New activity is waiting behind the bell"))
                     }
