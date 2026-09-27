@@ -76,6 +76,37 @@ final class NearbyPhotosTests: XCTestCase {
         XCTAssertFalse(NearbyPhotos.noneNearby([], here: here))
         XCTAssertFalse(NearbyPhotos.noneNearby([try photo("no", lat: nil, lng: nil)], here: here))
     }
+
+    // MARK: - 帯を下げる
+
+    /// **指で地図を動かしたら下げる**（以前は現在地だけを見て出し続けていた）
+    func testBannerDismissedWhenUserMovesMap() {
+        var banner = NearbyPhotos.NoneNearbyBanner()
+        banner.located()
+        XCTAssertFalse(banner.dismissed)
+        banner.cameraMoved(byUser: true)
+        XCTAssertTrue(banner.dismissed)
+    }
+
+    /// こちらが寄せた回（現在地を追う・全体へ寄せる・拡大縮小）では下げない
+    func testBannerStaysWhenAppMovesMap() {
+        var banner = NearbyPhotos.NoneNearbyBanner()
+        banner.located()
+        banner.cameraMoved(byUser: false)
+        XCTAssertFalse(banner.dismissed)
+    }
+
+    /// 「全体を見る」で下げ、現在地を取り直したらまた出す（今までの決まり）
+    func testBannerReturnsAfterRelocating() {
+        var banner = NearbyPhotos.NoneNearbyBanner()
+        banner.showedAll()
+        XCTAssertTrue(banner.dismissed)
+        banner.located()
+        XCTAssertFalse(banner.dismissed)
+        banner.cameraMoved(byUser: true)
+        banner.located()
+        XCTAssertFalse(banner.dismissed)
+    }
 }
 
 /// 写真の詳細の「この近くで撮られた写真」（板 02）

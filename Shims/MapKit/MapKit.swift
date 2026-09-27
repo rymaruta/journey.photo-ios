@@ -36,6 +36,8 @@ public struct MapCameraPosition {
     /// 本物は利用者が地図を動かすと false に戻る
     public var followsUserLocation: Bool { false }
     public var followsUserHeading: Bool { false }
+    /// 利用者が指で動かした位置か（iOS 17）。こちらが入れた位置なら false
+    public var positionedByUser: Bool { false }
     /// 自分の位置が取れないときに代わりに見る所
     public var fallbackPosition: MapCameraPosition? { nil }
 }
