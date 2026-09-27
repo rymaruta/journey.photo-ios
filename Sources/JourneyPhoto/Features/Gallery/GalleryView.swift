@@ -277,7 +277,8 @@ struct GalleryView: View {
     /// カテゴリごとの横並びで出している（`FeaturedSections`）。
     @ViewBuilder
     private var featuredSections: some View {
-        ForEach(model.featured) { group in
+        // おすすめの横並びも、モザイクと同じ写しで落とす（戻った直後に見えない）
+        ForEach(model.featured.filter { !dropped.visible($0.photos).isEmpty }) { group in
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(group.label)
@@ -296,9 +297,9 @@ struct GalleryView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: WebTheme.gridSpacing) {
-                        ForEach(group.photos) { photo in
+                        ForEach(dropped.visible(group.photos)) { photo in
                             NavigationLink {
-                                PhotoDetailView(photo: photo, context: group.photos)
+                                PhotoDetailView(photo: photo, context: dropped.visible(group.photos))
                             } label: {
                                 PhotoTile(photo: photo, aspect: 3.0 / 4.0)
                                     .frame(width: 240)

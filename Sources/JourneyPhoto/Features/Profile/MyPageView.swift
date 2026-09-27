@@ -116,6 +116,13 @@ struct MyPageView: View {
             if next == .favorites { refreshSavedIds() }
         }
         .onDisappear { isOnScreen = false }
+        // 「見せない」が変わったら、**画面に出ている間だけ**写しを取り直す
+        // （詳細を開いている間に取り直すと押した元が消えて閉じる）。人が替わった回も
+        // `hidden.use` が数を進めるのでここで拾う——`auth.userId` の変化の時点では
+        // まだ前の人の控えのまま
+        .onChange(of: hidden.revision) { _, _ in
+            if isOnScreen { dropped = hidden.snapshot }
+        }
         // 起動時の同期（`syncSaves`）が後から届いたぶんは拾う。**増えたときだけ**
         // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる。
         // **画面に出ている間だけ**（`isOnScreen`）。詳細の上で保存しても
@@ -135,8 +142,6 @@ struct MyPageView: View {
             feedLoaded = false
             feedFailed = false
             model.forgetPhotos()
-            // 前の人の「見せない」で次の人のお気に入りを絞らない
-            dropped = hidden.snapshot
         }
     }
 
