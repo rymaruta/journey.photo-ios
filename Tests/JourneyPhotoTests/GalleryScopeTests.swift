@@ -78,11 +78,14 @@ final class UploadSummaryTests: XCTestCase {
     func testAfterCaptureKeepsUnreadableAndSongNotes() throws {
         XCTAssertNil(UploadSummary.afterCapture(unreadable: 0, songFailures: 0))
         let unread = try XCTUnwrap(UploadSummary.afterCapture(unreadable: 2, songFailures: 0))
+        let song = try XCTUnwrap(UploadSummary.afterCapture(unreadable: 0, songFailures: 3))
         XCTAssertTrue(unread.contains("2"), unread)
-        let song = try XCTUnwrap(UploadSummary.afterCapture(unreadable: 0, songFailures: 1))
-        let both = try XCTUnwrap(UploadSummary.afterCapture(unreadable: 1, songFailures: 1))
+        XCTAssertTrue(song.contains("3"), "曲が付かなかった枚数を言っていない: \(song)")
+        XCTAssertFalse(unread.contains(song), "曲の失敗が無いのに曲の一文が混ざる")
+        let both = try XCTUnwrap(UploadSummary.afterCapture(unreadable: 2, songFailures: 3))
+        XCTAssertTrue(both.hasPrefix(unread), both)
         XCTAssertTrue(both.contains(song), "曲の一文が落ちている: \(both)")
-        XCTAssertTrue(both.contains("1"), both)
+        XCTAssertGreaterThan(both.count, unread.count + song.count, "二文の区切りが無い: \(both)")
     }
 
 

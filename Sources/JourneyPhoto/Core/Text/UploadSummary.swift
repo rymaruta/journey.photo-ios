@@ -38,17 +38,21 @@ enum UploadSummary {
     ///   その写真が抜けたまま投稿できる（写真を外しても読み直さない）
     /// - 前の送信で曲を付けられなかったなら、それも言う。その写真はもう並びに居ない
     ///   ので、消すと二度と伝わらない
-    /// - 「残りは投稿できていません」は引き継がない（残りは並びを見れば分かり、
-    ///   外して諦めたあとも出続ける）
+    /// - 「残りは投稿できていません」とその理由は引き継がない。写真を足すと送信の
+    ///   まとめが消えるのは以前から同じ（落ちた写真は並びに残るが、失敗の印は無い。
+    ///   理由まで残すなら別の作りが要る）
     static func afterCapture(unreadable: Int, songFailures: Int) -> String? {
         var parts: [String] = []
         if unreadable > 0 {
             parts.append(L("\(unreadable) 枚は読み込めませんでした", "\(unreadable) photo(s) couldn't be loaded"))
         }
         if songFailures > 0 {
-            parts.append(L("前に投稿した写真に曲を付けられませんでした", "The song couldn't be attached to the photos posted earlier"))
+            parts.append(L("前に投稿した \(songFailures) 枚に曲を付けられませんでした",
+                           "The song couldn't be attached to \(songFailures) photo(s) posted earlier"))
         }
-        return parts.isEmpty ? nil : parts.joined(separator: L("。", ". "))
+        // 一文ならこれまでの知らせと同じく句点なし。二文なら両方に付けて揃える
+        guard parts.count > 1 else { return parts.first }
+        return parts.map { $0 + L("。", ".") }.joined(separator: L("", " "))
     }
 
     /// **曲のことは、どの結末でも言う。** 先頭の分岐でしか見ていなかった頃は、
