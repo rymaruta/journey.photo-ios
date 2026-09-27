@@ -193,7 +193,7 @@ final class ModerationRevisionTests: XCTestCase {
         let store = self.store()
         store.block("a")
         let before = store.revision
-        store.replaceBlocked(with: ["a"])   // 同じ中身で上書き
+        store.replaceBlocked(with: ["a"], for: "u1")   // 同じ中身で上書き
         store.block("a")                    // すでに入っている
         XCTAssertEqual(store.revision, before, "変わっていないのに数が増えている")
     }
@@ -204,7 +204,7 @@ final class ModerationRevisionTests: XCTestCase {
         store.block("a")
         store.markReported("p")
         store.unblock("a")
-        store.replaceBlocked(with: ["b"])
+        store.replaceBlocked(with: ["b"], for: "u1")
         XCTAssertEqual(store.revision, start + 4, "変わったのに数が増えていない")
     }
 }
