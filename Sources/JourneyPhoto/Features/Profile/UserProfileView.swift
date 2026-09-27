@@ -374,6 +374,10 @@ final class UserProfileViewModel: ObservableObject {
 
     /// 前回の読み込みで見ていた人
     private var lastViewerId: String??
+    /// 読み込みの回。**後から始まった回があれば、前の回は何も書かない**——見ている人が
+    /// 替わって `.task` が走り直すと、取り消された前の回が「読み込めませんでした」を
+    /// 後から書き、成功した新しい回の格子を覆ったままになっていた
+    private var loadSeq = 0
 
     func load(userId: String, environment: AppEnvironment, viewerId: String?) async {
         // 見ている人が替わったら「フォロー中」を先に倒す（読み直しの間も前の人の値を出さない）
@@ -381,10 +385,13 @@ final class UserProfileViewModel: ObservableObject {
         lastViewerId = .some(viewerId)
         let writes = followWrites
         let blocks = blockWrites
+        loadSeq += 1
+        let seq = loadSeq
+        let current = { seq == self.loadSeq }
         isLoading = true
         errorMessage = nil
         cacheBust = String(Int(Date().timeIntervalSince1970))
-        defer { isLoading = false }
+        defer { if current() { isLoading = false } }
 
         // 🔴 **出している最中に取り消された回は失敗として書かない。** 戻ると `.task` が
         // 走り直し、読み終わる前に次の写真・ハイライトを開くと取り消される。それを失敗の帯
@@ -395,9 +402,11 @@ final class UserProfileViewModel: ObservableObject {
         // 見出しの無い画面に「まだありません」が出る（開いている詳細も無い）
         let keepsShown = { Task.isCancelled && self.profile != nil }
         do {
-            profile = try await environment.profiles.publicProfile(userId: userId)
+            let fetched = try await environment.profiles.publicProfile(userId: userId)
+            guard current() else { return }
+            profile = fetched
         } catch let error as APIError {
-            guard !keepsShown() else { return }
+            guard current(), !keepsShown() else { return }
             // **「取れなかった」と「退会した」を混ぜない**
             if case .server(let status, _) = error, status == 404 {
                 errorMessage = L("このユーザーは見つかりません（退会した可能性があります）", "This user was not found (they may have deleted their account)")
@@ -410,16 +419,17 @@ final class UserProfileViewModel: ObservableObject {
             // **出している最中なら失敗と言わない**が、まだ何も出していない初回は
             // 上と同じく書く（`keepsShown`）——黙って戻ると、見出しの無い画面に
             // 「まだありません」が出る
-            guard !keepsShown() else { return }
+            guard current(), !keepsShown() else { return }
             errorMessage = Labels.Common.loadFailed
             return
         } catch {
-            guard !keepsShown() else { return }
+            guard current(), !keepsShown() else { return }
             errorMessage = Labels.Common.loadFailed
             return
         }
 
         let stats = try? await environment.social.followStats(userId: userId)
+        guard current() else { return }
         if let stats {
             if writes == followWrites { followers = stats.followers }
             following = stats.following
@@ -428,6 +438,7 @@ final class UserProfileViewModel: ObservableObject {
             // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
             // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
+            guard current() else { return }
             if let ids, writes == followWrites, blocks == blockWrites {
                 isFollowing = ids.contains(userId)
             }
@@ -435,6 +446,7 @@ final class UserProfileViewModel: ObservableObject {
         // **その人の写真は公開 JSON から絞る。** 「ある人の公開写真」を返す
         // 口が api-user に無いため（Web も静的ページを書き出している）
         let all = try? await environment.gallery.fetchPhotos()
+        guard current() else { return }
         if let all {
             photos = PhotoPinning.pinnedFirst(all.filter { ($0.userId ?? $0.uploadedBy) == userId },
                                       pinned: profile?.pinnedPhotoIds ?? [])

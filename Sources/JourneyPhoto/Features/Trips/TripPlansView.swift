@@ -213,9 +213,13 @@ final class TripPlansModel: ObservableObject {
 
     func plan(_ planId: String) -> TripPlan? { plans.first { $0.planId == planId } }
 
+    /// 人が替わった回数。**走っている書き込みの答えを、次の人の画面に書かない**
+    private var era = 0
+
     /// 人が替わった。**前の人のプランを残さない**（`AlbumsViewModel.forget` と同じ理由）。
-    /// 走っている読み込み・書き込みの答えも捨てる（数を進める）
+    /// 走っている読み込みの答えは数で、書き込みの答えは `era` で捨てる
     func forget() {
+        era += 1
         writes += 1
         loadRuns += 1
         settledRun = loadRuns
@@ -306,17 +310,23 @@ final class TripPlansModel: ObservableObject {
     private func write(_ key: String, _ fallback: String,
                        _ call: () async throws -> [TripPlan]) async -> [TripPlan]? {
         guard busy == nil else { return nil }
+        let myEra = era
         busy = key
         errorMessage = nil
-        defer { busy = nil }
+        // 人が替わった後に返った前の人の書き込みは、次の人の「送っている最中」を外さない
+        defer { if myEra == era { busy = nil } }
         do {
             let list = try await call()
+            // **人が替わっていたら何も書かない**（前の人のプランを次の人の画面に出さず、
+            // `writes` を進めて次の人の読み込みを捨てさせもしない）
+            guard myEra == era else { return nil }
             // 成功した回だけ進める（断られた回に最初の読み込みを捨てると「読み込み中」のまま残る）
             writes += 1
             plans = list
             status = .loaded
             return list
         } catch {
+            guard myEra == era else { return nil }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? fallback
             return nil
         }

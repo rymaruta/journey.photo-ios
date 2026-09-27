@@ -77,6 +77,29 @@ final class TripPlansModelTests: XCTestCase {
         XCTAssertEqual(model.plans.map(\.planId), ["p2"])
     }
 
+    /// 🔴 **人が替わった後に返った前の人の書き込みは、次の人の画面に何も書かない**
+    /// （前の人のプランが「読み込み済み」で出続け、次の人の読み込みも捨てられていた）
+    func testWriteAnsweredAfterForgetIsDropped() async {
+        let env = environment()
+        let model = TripPlansModel()
+        StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#)
+        await model.load(environment: env)
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/trips/p1", status: 200,
+                             body: #"{"plans":[{"planId":"p1","title":"前の人","days":[]}]}"#, delay: 0.2)
+        StubProtocol.respond(path: "/user/trips", status: 200,
+                             body: #"{"plans":[{"planId":"p2","title":"次の人","days":[]}]}"#)
+        var patch = TripPlanService.Patch()
+        patch.title = "前の人"
+        let writing = Task { await model.update("p1", patch, environment: env) }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        model.forget()                                   // 待っている間に人が替わった
+        await model.load(environment: env)               // 次の人の読み込み
+        _ = await writing.value
+        XCTAssertEqual(model.plans.map(\.planId), ["p2"], "前の人の書き込みの答えが次の人の画面に入った")
+        XCTAssertNil(model.busy)
+    }
+
     /// 取れていた一覧は、取り直しに失敗しても消さない（引き下げ更新で消さない）
     func testRefreshFailureKeepsTheList() async {
         let env = environment()

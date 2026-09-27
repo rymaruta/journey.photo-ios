@@ -451,9 +451,11 @@ final class NotificationsViewModel: ObservableObject {
     ///   アイコンは 0、という食い違いが残る。
     @discardableResult
     /// いまフォローしている人を読む。**自分の userId が要る**
-    private func loadFollowing(environment: AppEnvironment, viewerId: String?) async {
+    private func loadFollowing(environment: AppEnvironment, viewerId: String?, generation: Int) async {
         guard let me = viewerId, !me.isEmpty else { return }
         guard let list = try? await environment.social.following(userId: me) else { return }
+        // 人が替わった（`forget`）後に返った前の人の答えは書かない
+        guard generation >= appliedGeneration else { return }
         following = Set(list.users.map(\.id))
     }
 
@@ -540,7 +542,7 @@ final class NotificationsViewModel: ObservableObject {
             guard apply(page, refreshing: refreshing, generation: generation) else { return false }
             // **フォローバックを出すかの判断に要る。** 取れなくても
             // お知らせ自体は出す（ボタンが出ないだけ）
-            await loadFollowing(environment: environment, viewerId: viewerId)
+            await loadFollowing(environment: environment, viewerId: viewerId, generation: generation)
             // ⚠️ **取得と既読化のすきまに届いた通知は、一度も未読に見えない。**
             // サーバーの既読化（`api-user/src/notifications.ts` の
             // `readNotifications`）は無条件の `SET unread = :z` なので、
@@ -549,7 +551,9 @@ final class NotificationsViewModel: ObservableObject {
             // 必要がある（端末側だけでは直せない）。
             // **開いたときに1回だけ既読にする。** 読めたあとに呼ぶので、
             // 取得に失敗した回でバッジだけ消える事故が起きない
-            if page.unread > 0 {
+            // 🔴 **人が替わっていたら既読にしない。** 既読化は今のトークンで送るので、
+            // 前の人の読み込みの続きが送ると、**次の人のお知らせ**が黙って既読になる
+            if page.unread > 0, generation >= appliedGeneration {
                 if (try? await environment.notifications.markRead()) != nil {
                     NotificationRouter.shared.noteRead(owner: viewerId)
                 }

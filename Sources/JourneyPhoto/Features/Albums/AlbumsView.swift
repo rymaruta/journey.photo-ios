@@ -241,11 +241,14 @@ final class AlbumsViewModel: ObservableObject {
     /// ——書き込みの前に始めた読み込みや、結果整合で古い姿を返す読み込みで、
     /// 消したアルバムが戻る・作ったアルバムが消える・名前が巻き戻るのを防ぐ
     private var writes = AlbumMerge.Writes()
+    /// 人が替わった回数（`forget`）。**走っている書き込みの答えを、次の人の一覧に書かない**
+    private var era = 0
 
     /// 人が替わった。**前の人のアルバム（招待リンクつき）を残さない**。
     /// 画面は残ったまま中身だけログイン画面に替わるので、次の人の読み込みが
     /// 返るまで（落ちた回はずっと）前の人の一覧が出ていた
     func forget() {
+        era += 1
         loadGeneration += 1
         albums = []
         writes = AlbumMerge.Writes()
@@ -286,7 +289,9 @@ final class AlbumsViewModel: ObservableObject {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
+            let myEra = era
             let album = try await environment.albums.create(title: trimmed)
+            guard myEra == era else { return }
             writes.created.append(.init(value: album, at: Date()))
             // 🔴 **既に並んでいれば足さない。** 作っている間に始めた読み込みが先に返ると、
             // 作ったアルバムはもう一覧に居る。そこへ足すと同じ id が2つ並んでいた
@@ -305,7 +310,9 @@ final class AlbumsViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return }
         do {
             // **サーバーが直した名前を採る**（60字で切られる・制御文字が落ちる）
+            let myEra = era
             let saved = try await environment.albums.rename(id: id, title: trimmed)
+            guard myEra == era else { return }
             writes.renamed[id] = .init(value: saved, at: Date())
             albums = albums.map { album in
                 guard album.id == id else { return album }
@@ -322,7 +329,9 @@ final class AlbumsViewModel: ObservableObject {
     /// 消せたか（呼んだ側が参加の控えからも外す）
     func delete(_ id: String, environment: AppEnvironment) async -> Bool {
         do {
+            let myEra = era
             try await environment.albums.delete(id: id)
+            guard myEra == era else { return false }
             writes.deleted.insert(id)
             albums.removeAll { $0.id == id }
             return true
@@ -339,7 +348,9 @@ final class AlbumsViewModel: ObservableObject {
         do {
             // **返ってきたリンクを手元にも書く。** 一覧は結果整合で読むので、
             // 読み直しが古いとリンクが出ず、もう一度押すと作り直し（前のリンクが失効）になる
+            let myEra = era
             let invite = try await environment.albums.createInvite(albumId: id)
+            guard myEra == era else { return }
             writes.invites[id] = .init(value: invite, at: Date())
             albums = AlbumMerge.merge(loaded: albums, writes: writes)
             await load(environment: environment)
@@ -353,7 +364,9 @@ final class AlbumsViewModel: ObservableObject {
         inviteWorking.insert(id)
         defer { inviteWorking.remove(id) }
         do {
+            let myEra = era
             try await environment.albums.revokeInvite(albumId: id)
+            guard myEra == era else { return }
             writes.invites[id] = .init(value: nil, at: Date())
             albums = AlbumMerge.merge(loaded: albums, writes: writes)
             await load(environment: environment)

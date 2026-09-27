@@ -140,10 +140,12 @@ final class AuthStore: ObservableObject {
         // 中の古いログインを外す。** この状態では `AuthGateway.signOut()` を呼んで
         // いないので Amplify はログイン中のままで、`signIn` は「既にログイン中」
         // （invalidState）で断り、アプリを強制終了するまで誰もログインできなかった
-        if isSignedOutUncertain {
-            await AuthGateway.signOut()
-        }
+        // **`run` の中で外す**（二度押し止め・くるくるの内側）——外に置くと、圏外で
+        // 外すのを待つ間にもう一度押され、2本目の外しが1本目のログインを消しうる
         await run {
+            if self.isSignedOutUncertain {
+                await AuthGateway.signOut()
+            }
             _ = try await AuthGateway.signIn(email: email, password: password)
             let id = try await AuthGateway.currentUserId()
             self.isSignedOutUncertain = false
