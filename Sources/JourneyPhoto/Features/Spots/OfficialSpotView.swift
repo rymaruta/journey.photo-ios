@@ -90,7 +90,8 @@ struct OfficialSpotView: View {
             .padding(.bottom, 32)
         }
         .onAppear { dropped = hidden.snapshot }
-        .task(id: spot.slug) {
+        // 下書き→公開に差し替わったら取り直す（slug だけだと走り直さない）
+        .task(id: "\(spot.slug)|\(spot.isDraft)") {
             // 下書きは取りに行かない（本文は公開済みの場所にしか無い）
             guard !spot.isDraft else {
                 spotBody = nil
@@ -349,10 +350,12 @@ struct OfficialSpotView: View {
         .padding(.horizontal, 16)
     }
 
-    /// 確かめた印の1行（Web と同じ出し分け）。**本文を出したときだけ**
+    /// 確かめた印の1行（Web と同じ出し分け）。**本文が取れたら必ず出す**
+    /// ——公式サイトのリンクや概要だけの場所でも、出典の無い事実を画面に置かない
+    /// （Web も公開済みなら印の行を必ず出す）
     @ViewBuilder
     private var checkLine: some View {
-        if let body = spotBody, body.hasContent {
+        if let body = spotBody {
             // 出典の題は押せる（Web と同じ）。押すと出典のページ
             Text(SpotBodyText.linkedCheckLine(body.check))
                 .tint(WebTheme.muted)

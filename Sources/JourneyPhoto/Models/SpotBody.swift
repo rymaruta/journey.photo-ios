@@ -38,7 +38,8 @@ struct SpotBody: Decodable, Equatable {
     let seasonalGuide: [Seasonal]
     let timeOfDayGuide: [TimeOfDay]
     let compositionTips: [String]
-    /// 公式サイト。**https のものだけ**
+    /// 公式サイト。**https のものだけ**（写真の出典と違い http を https に上げない——
+    /// 上げた先が開けないサイトがある。台帳の公開済み364件は全部 https）
     let officialWebsite: URL?
     let check: Check
 
@@ -54,7 +55,8 @@ struct SpotBody: Decodable, Equatable {
     }
 
     private enum CheckKeys: String, CodingKey { case kind, verifiedAt, checkedAt, sources }
-    private enum SourceKeys: String, CodingKey { case url, title }
+    /// 出典の生の形（壊れた1本は `Lenient` が落とす）
+    private struct RawSource: Decodable { let url: String; let title: String }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -64,10 +66,14 @@ struct SpotBody: Decodable, Equatable {
         description = (text?.isEmpty ?? true) ? nil : text
         highlights = Self.strings(c, .highlights)
         compositionTips = Self.strings(c, .compositionTips)
-        seasonalGuide = ((try? c.decode([LenientItem<Seasonal>].self, forKey: .seasonalGuide)) ?? [])
-            .compactMap(\.value).filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        timeOfDayGuide = ((try? c.decode([LenientItem<TimeOfDay>].self, forKey: .timeOfDayGuide)) ?? [])
-            .compactMap(\.value).filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        // **知らない季節・時間帯はここで落とす**（画面は呼び名の無い値を出せない。
+        // 残すと `hasContent` が真なのに何も描かれない）
+        seasonalGuide = ((try? c.decode([Lenient<Seasonal>].self, forKey: .seasonalGuide)) ?? [])
+            .compactMap(\.value)
+            .filter { SpotBodyText.seasonOrder.contains($0.season) && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        timeOfDayGuide = ((try? c.decode([Lenient<TimeOfDay>].self, forKey: .timeOfDayGuide)) ?? [])
+            .compactMap(\.value)
+            .filter { SpotBodyText.timeOrder.contains($0.time) && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         officialWebsite = (try? c.decode(String.self, forKey: .officialWebsiteUrl)).flatMap(Self.httpsURL)
 
         // **印は必ず要る。** 読めなければ投げる（本文ごと出さない）
@@ -81,19 +87,13 @@ struct SpotBody: Decodable, Equatable {
             check = .human(verifiedAt: day)
         case "ai":
             let day = String(try k.decode(String.self, forKey: .checkedAt).prefix(10))
-            var list = try k.nestedUnkeyedContainer(forKey: .sources)
-            var sources: [Source] = []
-            while !list.isAtEnd {
-                guard let s = try? list.nestedContainer(keyedBy: SourceKeys.self) else {
-                    _ = try? list.decode(Ignored.self)
-                    continue
+            let sources = ((try? k.decode([Lenient<RawSource>].self, forKey: .sources)) ?? [])
+                .compactMap(\.value)
+                .compactMap { raw -> Source? in
+                    let title = raw.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let url = Self.httpsURL(raw.url), !title.isEmpty else { return nil }
+                    return Source(url: url, title: title)
                 }
-                let title = ((try? s.decode(String.self, forKey: .title)) ?? "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if let raw = try? s.decode(String.self, forKey: .url), let url = Self.httpsURL(raw), !title.isEmpty {
-                    sources.append(Source(url: url, title: title))
-                }
-            }
             guard TripPlanText.date(fromYMD: day) != nil, !sources.isEmpty else {
                 throw DecodingError.dataCorruptedError(forKey: .sources, in: k, debugDescription: "出典か照合日が無い")
             }
@@ -104,7 +104,7 @@ struct SpotBody: Decodable, Equatable {
     }
 
     private static func strings(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> [String] {
-        ((try? c.decode([LenientItem<String>].self, forKey: key)) ?? [])
+        ((try? c.decode([Lenient<String>].self, forKey: key)) ?? [])
             .compactMap(\.value)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -115,15 +115,4 @@ struct SpotBody: Decodable, Equatable {
               url.scheme?.lowercased() == "https", url.host != nil else { return nil }
         return url
     }
-}
-
-/// 読めない要素を `nil` にして、配列の残りを生かす包み
-private struct LenientItem<T: Decodable>: Decodable {
-    let value: T?
-    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
-}
-
-/// 読み飛ばすための空の型（配列の中の壊れた要素を1つ進める）
-private struct Ignored: Decodable {
-    init(from decoder: Decoder) throws {}
 }

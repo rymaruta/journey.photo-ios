@@ -33,9 +33,10 @@ actor OfficialSpotService {
     /// `beforeLiveRequest` と同じ理由）
     private let beforeRequest: (@Sendable () async -> Void)?
     /// 取れた本文を使い回す長さ。**短く**（下書きに戻した・文を直した場所の古い本文を出し続けない）
-    private let bodyLifetime: TimeInterval
-    /// 「無い（404）」を覚える長さ。こちらは長くてよい（無いものを開くたびに叩かない）
-    private let missingBodyLifetime: TimeInterval
+    let bodyLifetime: TimeInterval
+    /// 「無い（404）」を覚える長さ。こちらは長くてよい（無いものを開くたびに叩かない）。
+    /// 読めない中身は 404 と違い一時的なことがあるので、`bodyLifetime` で覚える
+    let missingBodyLifetime: TimeInterval
 
     init(url: URL = AppConfig.publicSpotsURL,
          session: URLSession? = nil,
@@ -134,7 +135,8 @@ actor OfficialSpotService {
     // MARK: - 本文（`/app/data/spots/<slug>.json`・2026-09-27）
 
     /// 取れた本文と、取れなかった（404）ことの控え。**開くたびに叩き直さない**
-    private var bodies: [String: (body: SpotBody?, at: Date)] = [:]
+    /// 本文の控え。`until` を過ぎたら取り直す（本文・無い・読めない で長さが違う）
+    private var bodies: [String: (body: SpotBody?, until: Date)] = [:]
 
     /// 撮影スポットの本文。索引の隣の `spots/<slug>.json`。
     ///
@@ -145,8 +147,7 @@ actor OfficialSpotService {
         guard !slug.isEmpty, slug.allSatisfy({ $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-") }) else {
             return nil
         }
-        if let hit = bodies[slug],
-           Date().timeIntervalSince(hit.at) < (hit.body == nil ? missingBodyLifetime : bodyLifetime) {
+        if let hit = bodies[slug], Date() < hit.until {
             return hit.body
         }
         let bodyURL = url.deletingLastPathComponent()
@@ -165,18 +166,20 @@ actor OfficialSpotService {
         guard (200..<300).contains(http.statusCode), !Self.isHTML(http) else {
             if http.statusCode == 404 {
                 // 無い（下書きに戻した・まだ出ていない）。**古い本文を出さない**
-                bodies[slug] = (nil, Date())
+                bodies[slug] = (nil, Date().addingTimeInterval(missingBodyLifetime))
                 return nil
             }
             return bodies[slug]?.body
         }
         guard let body = try? JSONDecoder.api.decode(SpotBody.self, from: data), body.slug == slug else {
             print("[spots] 本文が読めませんでした: \(slug)")
-            // 読めない本文で前回のぶんを出し続けない
-            bodies[slug] = nil
+            // 読めない本文で前回のぶんを出し続けない。覚えるのは**本文と同じ短さ**——
+            // 開くたびに取り直さないが、`text/html` を名乗らないログイン画面（キャプティブ
+            // ポータル）を掴んだ回を10分引きずらない
+            bodies[slug] = (nil, Date().addingTimeInterval(bodyLifetime))
             return nil
         }
-        bodies[slug] = (body, Date())
+        bodies[slug] = (body, Date().addingTimeInterval(bodyLifetime))
         return body
     }
 

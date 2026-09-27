@@ -27,7 +27,7 @@ final class SpotBodyTests: XCTestCase {
         XCTAssertEqual(body.slug, "kinkakuji")
         XCTAssertEqual(body.description, "金閣。")
         XCTAssertEqual(body.highlights, ["鏡湖池"], "壊れた要素・空白だけの要素は落とす")
-        XCTAssertEqual(body.seasonalGuide.map(\.season), ["autumn", "x"], "壊れた要素だけ落とす（知らない季節は画面側で落とす）")
+        XCTAssertEqual(body.seasonalGuide.map(\.season), ["autumn"], "壊れた要素と知らない季節を落とす")
         XCTAssertEqual(body.officialWebsite?.host, "www.shokoku-ji.jp")
         guard case .ai(let day, let sources) = body.check else { return XCTFail("AI 照合の印") }
         XCTAssertEqual(day, "2026-09-27")
@@ -87,13 +87,30 @@ final class SpotBodyTests: XCTestCase {
                         "summer", "summer", "autumn", "autumn", "autumn", "winter"])
     }
 
-    /// 今の季節を先頭に、残りは春→冬。知らない季節は落とす
+    /// 今の季節を先頭に、そこから巡る順（次に来る季節が2番目）。知らない季節は落とす
     func testCurrentSeasonComesFirst() {
         let list = ["winter", "spring", "x", "autumn", "summer"].map { SpotBody.Seasonal(season: $0, text: $0) }
         XCTAssertEqual(SpotBodyText.orderedSeasons(list, current: "autumn").map(\.season),
-                       ["autumn", "spring", "summer", "winter"])
+                       ["autumn", "winter", "spring", "summer"])
+        XCTAssertEqual(SpotBodyText.orderedSeasons(list, current: "winter").map(\.season),
+                       ["winter", "spring", "summer", "autumn"])
         XCTAssertEqual(SpotBodyText.orderedSeasons(list, current: "spring").map(\.season),
                        ["spring", "summer", "autumn", "winter"])
+    }
+
+    /// 🔴 知らない季節・時間帯だけの本文は「本文あり」にしない（描けない値で節を開かない）
+    func testUnknownSeasonsAndTimesAreNotContent() throws {
+        let body = try decode(#"{"slug":"a","seasonalGuide":[{"season":"rainy","text":"梅雨"},{"season":"autumn","text":"紅葉"}],"timeOfDayGuide":[{"time":"noon","text":"昼"}],"check":{"kind":"human","verifiedAt":"2026-09-25"}}"#)
+        XCTAssertEqual(body.seasonalGuide.map(\.season), ["autumn"])
+        XCTAssertTrue(body.timeOfDayGuide.isEmpty)
+        let only = try decode(#"{"slug":"a","seasonalGuide":[{"season":"rainy","text":"梅雨"}],"check":{"kind":"human","verifiedAt":"2026-09-25"}}"#)
+        XCTAssertFalse(only.hasContent)
+    }
+
+    /// 出典の配列の中の壊れた1本（文字列・題なし・http）だけ落とし、残りは読む
+    func testBrokenSourcesAreDroppedOneByOne() throws {
+        let body = try decode(#"{"slug":"a","check":{"kind":"ai","checkedAt":"2026-09-27","sources":["x",{"url":"https://a.example/","title":""},{"url":"http://b.example/","title":"B"},{"url":"https://c.example/","title":" C "}]}}"#)
+        XCTAssertEqual(body.check, .ai(checkedAt: "2026-09-27", sources: [SpotBody.Source(url: URL(string: "https://c.example/")!, title: "C")]))
     }
 
     func testTimesInFixedOrder() {
@@ -184,9 +201,36 @@ final class SpotBodyServiceTests: XCTestCase {
         XCTAssertNil(after, "消えた本文を控えから出している")
     }
 
-    /// 既定の控えは短い（索引と同じ60秒）。長く覚えるのは「無い」だけ
-    func testBodyMemoIsShort() {
-        XCTAssertEqual(OfficialSpotService.cacheLifetime, 60)
+    /// 既定の控えは短い（索引と同じ60秒）。長く覚えるのは「無い」だけ（10分）
+    func testBodyMemoIsShort() async {
+        let s = OfficialSpotService(url: url, session: session, snapshot: SpotSnapshotStore(fileName: UUID().uuidString))
+        let (body, missing) = await (s.bodyLifetime, s.missingBodyLifetime)
+        XCTAssertEqual(body, 60)
+        XCTAssertEqual(missing, 600)
+    }
+
+    /// 読めない本文（知らない印の種類など）も「無い」と同じく覚え、開くたびに取り直さない
+    func testUnreadableBodyIsRemembered() async {
+        let s = service()
+        StubProtocol.respond(status: 200, body: #"{"slug":"kinkakuji","check":{"kind":"both"}}"#)
+        let first = await s.fetchBody(slug: "kinkakuji")
+        XCTAssertNil(first)
+        let again = await s.fetchBody(slug: "kinkakuji")
+        XCTAssertNil(again)
+        XCTAssertEqual(StubProtocol.requestCount, 1, "読めない本文を開くたびに取り直している")
+    }
+
+    /// 読めない中身（`text/html` を名乗らないログイン画面など）は「無い」ほど長く覚えない。
+    /// 本文の寿命が過ぎたら取り直し、正しい本文を出す
+    func testUnreadableBodyIsRetriedAfterTheShortMemo() async {
+        let s = OfficialSpotService(url: url, session: session, snapshot: SpotSnapshotStore(fileName: UUID().uuidString),
+                                    bodyLifetime: 0, missingBodyLifetime: 600)
+        StubProtocol.respond(status: 200, body: "<html>login</html>", contentType: "text/plain")
+        let portal = await s.fetchBody(slug: "kinkakuji")
+        XCTAssertNil(portal)
+        StubProtocol.respond(status: 200, body: SpotBodyTests.aiBody)
+        let body = await s.fetchBody(slug: "kinkakuji")
+        XCTAssertEqual(body?.slug, "kinkakuji", "読めなかった回を10分引きずっている")
     }
 
     /// 綴りが `[a-z0-9-]` でない slug は叩かない。中身の slug が違えば捨てる

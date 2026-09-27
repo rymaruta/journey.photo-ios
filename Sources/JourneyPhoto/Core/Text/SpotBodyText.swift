@@ -5,10 +5,10 @@ import Foundation
 /// **日本語の呼び名・見出し・印の文は Web の `SpotGuideClient` と同じ。** 英語は
 /// アプリで付けた訳（Web は英語でも日本語の呼び名を出す）。
 /// **並びは Web と違う**——Web は台帳の並びのまま、アプリは板 13 に従い
-/// 季節は今の季節を先頭に、時間帯は夜明け→夜の順に並べる。
+/// 季節は今の季節から巡る順、時間帯は夜明け→夜の順に並べる。
 enum SpotBodyText {
 
-    /// 季節の並び（`spring` → `winter`・今の季節の後）
+    /// 季節の巡り（`spring` → `winter`。並べるときは今の季節から巡らせる）
     static let seasonOrder = ["spring", "summer", "autumn", "winter"]
     /// 時間帯の並び（夜明け→夜）
     static let timeOrder = ["dawn", "morning", "day", "goldenHour", "dusk", "night"]
@@ -54,11 +54,14 @@ enum SpotBodyText {
         return season(ofMonth: calendar.component(.month, from: now))
     }
 
-    /// **今の季節を先頭に**、残りは春→冬の順（板 13「今の季節を先頭に開く」）。知らない季節は落とす
+    /// **今の季節を先頭に、そこから巡る順**（板 13「今の季節を先頭に開く」）。
+    /// 秋なら 秋→冬→春→夏——次に来る季節を2番目に置く。知らない季節は落とす
     static func orderedSeasons(_ list: [SpotBody.Seasonal], current: String) -> [SpotBody.Seasonal] {
         let known = list.filter { seasonLabel($0.season) != nil }
+        let start = seasonOrder.firstIndex(of: current) ?? 0
         func rank(_ s: SpotBody.Seasonal) -> Int {
-            s.season == current ? -1 : (seasonOrder.firstIndex(of: s.season) ?? seasonOrder.count)
+            let i = seasonOrder.firstIndex(of: s.season) ?? seasonOrder.count
+            return (i - start + seasonOrder.count) % seasonOrder.count
         }
         return known.enumerated().sorted { lhs, rhs in
             let (a, b) = (rank(lhs.element), rank(rhs.element))
