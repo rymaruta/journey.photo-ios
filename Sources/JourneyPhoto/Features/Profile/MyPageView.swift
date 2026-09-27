@@ -745,26 +745,33 @@ struct MyPageView: View {
                 .font(.footnote)
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, 16)
+        } else if tab == .wishlist || tab == .favorites, let error = model.errorMessage {
+            // この2つは読み込みの失敗で覆わないが、**自分の写真から導くぶん**
+            // （撮影地の地点・自分の非公開写真の保存）は欠けるので、一行添える
+            Text(error)
+                .font(.footnote)
+                .foregroundStyle(WebTheme.danger)
+                .padding(.horizontal, 16)
         }
         // **一度読めた中身は、読み直しの失敗で消さない。** 詳細から戻るたびに
         // 読み直すので、一瞬の圏外で格子・旅の記録・保存した写真まで
-        // 知らせ1枚に置き換わっていた（`load` は失敗の回に手元の写真を残す）。
-        // 手元に何も無いときだけ、タブごと知らせに替える
-        if let error = model.errorMessage, !model.photos.isEmpty {
-            ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
-        }
-        if let error = model.errorMessage, model.photos.isEmpty {
-            ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
-        } else if tab == .trips {
-            // **写真の有無とは無関係に、ここで空の理由まで言う**
-            tripsArea
-        } else if tab == .wishlist {
+        // 知らせ1枚に置き換わっていた。読み直しの失敗はモデルが上の
+        // `actionMessage`（一覧に添える一行）に入れる。`errorMessage` は
+        // **一度も写真を読めていない回だけ**で、そのときだけ欄ごと知らせに替える。
+        // **行きたい場所・お気に入りは自分の写真の読み込みと無関係**なので、
+        // その失敗の知らせで覆わない（以前は端末だけで出せるタブまで知らせに置き換わっていた）
+        if tab == .wishlist {
             // **写真の有無とは無関係。** 行きたい場所は台帳の話で、
             // 1枚も撮っていない人にも中身がある
             wishlistArea
         } else if tab == .favorites {
             // **写真の有無とは無関係。** 保存は他人の写真にもする
             favoritesArea
+        } else if let error = model.errorMessage {
+            ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
+        } else if tab == .trips {
+            // **写真の有無とは無関係に、ここで空の理由まで言う**
+            tripsArea
         } else if model.photos.isEmpty && !model.isLoading {
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
@@ -972,6 +979,7 @@ final class MyPageViewModel: ObservableObject {
                 // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
                 self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
                 self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
+                hasLoadedPhotos = true
             }
             let loadedStats = await stats
             guard gen == generation else { return }
@@ -982,10 +990,25 @@ final class MyPageViewModel: ObservableObject {
             _ = try photosOutcome.get()
         } catch is CancellationError {
             // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
+            // （読めたとも言わない——読み直しの失敗の知らせは残す）
+            return
         } catch {
+            // 人が替わった後に返った失敗は、次の人の画面に出さない
             guard gen == generation else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+            let message = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+            // **一度読めていれば、読み直しの失敗は一覧に添える。** 戻ってくるたびに
+            // 読み直すので、圏外で写真を開いて戻っただけで格子ごと知らせに置き換わっていた
+            if hasLoadedPhotos {
+                actionMessage = message
+                reloadFailure = message
+            } else {
+                errorMessage = message
+            }
+            return
         }
+        // 読み直しの失敗の知らせは、次に読めたら消す（ピン留めの断りは残す）
+        if let reloadFailure, actionMessage == reloadFailure { actionMessage = nil }
+        reloadFailure = nil
     }
 
 
@@ -995,6 +1018,13 @@ final class MyPageViewModel: ObservableObject {
         let stats = try? await social.followStats(userId: userId)
         return stats
     }
+
+    /// 直近の読み直しの失敗で `actionMessage` に入れた文（読めたら消すため）
+    private var reloadFailure: String?
+    /// 自分の写真を**一度でも読めたか**。`profile` では決めない——プロフィールは写真より
+    /// 先に入るので、初回に写真だけ落ちた回を「読めている」と取り違え、格子に
+    /// 「まだ写真がありません」と嘘を出していた
+    private var hasLoadedPhotos = false
 
     /// 鍵を持たない回の読み込み（`PreviewSession` のときだけ通る）。
     ///
@@ -1009,6 +1039,7 @@ final class MyPageViewModel: ObservableObject {
         if let all, gen == generation {
             let mine = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
             self.photos = PhotoPinning.pinnedFirst(mine, pinned: self.pinnedIds)
+            hasLoadedPhotos = true
         }
         let stats = try? await self.social.followStats(userId: userId)
         if let stats, gen == generation {
@@ -1037,8 +1068,10 @@ final class MyPageViewModel: ObservableObject {
         followers = 0
         following = 0
         errorMessage = nil
-        // 前の人がピン留めで断られた文言を次の人に見せない
+        // 前の人あての知らせ（読み直しの失敗・ピン留めの断り）も残さない
         actionMessage = nil
+        reloadFailure = nil
+        hasLoadedPhotos = false
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

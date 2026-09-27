@@ -540,18 +540,31 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// 知らせを消す。**操作を押した時点で両方消す**＝画面には最後に起きた操作の知らせだけが出る。
+    /// 片方だけ消すと、消えずに残るもう片方が新しい知らせを隠すか、成功の直後に古い失敗が出てくる
+    private func clearNotices() {
+        actionError = nil
+        model.errorMessage = nil
+    }
+
     /// **返ってきた状態を使う。** 自分で反転すると、失敗した回に
     /// 画面だけフォロー中になる
     private func toggleFollow(_ userId: String) async {
         guard !isFollowWorking else { return }
         isFollowWorking = true
         defer { isFollowWorking = false }
-        if isFollowing {
-            let result = try? await environment.social.unfollow(userId: userId)
-            if let result { isFollowing = result.following }
-        } else {
-            let result = try? await environment.social.follow(userId: userId)
-            if let result { isFollowing = result.following }
+        // 前の回の知らせを残さない（押し直して通ったのに赤字が残る）
+        clearNotices()
+        // **失敗は黙らない**（圏外で押して何も起きないと、押せていないのか分からない）。
+        // 知らせは、ブロックの失敗と同じ `actionError` に出す
+        do {
+            let result = isFollowing
+                ? try await environment.social.unfollow(userId: userId)
+                : try await environment.social.follow(userId: userId)
+            isFollowing = result.following
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription
+                ?? L("うまくいきませんでした", "That didn't work")
         }
     }
 
@@ -686,6 +699,9 @@ struct PhotoDetailView: View {
     /// **押した1枚を先に覚える。** 送っている間に束の隣へ送ると、答えは
     /// 前の1枚のもの——今の1枚の控えに書かない
     private func toggleLikeHere() async {
+        // 送っている間は押しても何もしないので、知らせも消さない
+        guard !model.isLiking else { return }
+        clearNotices()
         // **届かなかった回は控えに書かない**（押す前のハートのまま）。
         // 答えは**押した1枚に**書く——送っている間に束の隣へ送っても
         let owner = favorites.owner
@@ -761,7 +777,9 @@ struct PhotoDetailView: View {
 
                 Spacer()
             }
-            if let message = model.errorMessage ?? actionError {
+            // **いま押した操作の知らせを先に出す。** 前に出た `model.errorMessage`
+            // （いいね・コメントの失敗）は消えないので、先に見るとフォローの失敗が隠れる
+            if let message = actionError ?? model.errorMessage {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.danger)
             }
         }
@@ -833,7 +851,7 @@ struct PhotoDetailView: View {
                     .background(Color.white.opacity(0.08), in: Capsule())
                     .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
                 Button {
-                    Task { await model.postComment() }
+                    Task { clearNotices(); await model.postComment() }
                 } label: {
                     Image(systemName: "paperplane")
                         .font(.title3.weight(.semibold))
@@ -842,7 +860,10 @@ struct PhotoDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Labels.Common.send)
-                .disabled(model.isPosting || model.draftComment.trimmingCharacters(in: .whitespaces).isEmpty)
+                // コメントを読み直している間も押せない（`postComment` は黙って断るので、押せる形にしない）
+                .disabled(model.isPosting || model.isReloadingComments
+                          // 空の判定は `postComment` と同じ（改行だけでも押せない）
+                          || model.draftComment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
@@ -873,11 +894,18 @@ struct PhotoDetailView: View {
             // **空の理由を分ける。** 引けなかった回に「まだありません」と
             // 出すと、書いてあるコメントが消えたように見える
             if model.commentsUnavailable {
-                Text(L("コメントを読み込めませんでした", "Couldn't load comments"))
-                    .font(.callout)
-                    .foregroundStyle(WebTheme.faint)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("コメントを読み込めませんでした", "Couldn't load comments"))
+                        .font(.callout)
+                        .foregroundStyle(WebTheme.faint)
+                    // 詳細には引き下げが無いので、読み直す手段をここに置く
+                    Button(Labels.Common.retry) { Task { await model.reloadComments() } }
+                        .buttonStyle(.bordered)
+                        // 投稿している間も押せない（`reloadComments` は黙って断る）
+                        .disabled(model.isReloadingComments || model.isPosting)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
             } else if model.commentCount == 0 {
                 Text(L("まだコメントはありません", "No comments yet"))
                     .font(.callout)
@@ -913,9 +941,10 @@ struct PhotoDetailView: View {
                         // ——UGC のアプリは「不快な書き込みを持ち主が取り除ける」
                         // ことを審査（1.2）で見られる
                         if comment.uid == auth.userId || isMine {
-                            Button(Labels.Common.delete) { Task { await model.deleteComment(comment) } }
+                            Button(Labels.Common.delete) { Task { clearNotices(); await model.deleteComment(comment) } }
                                 .font(.caption2)
-                                .disabled(model.deletingCommentIds.contains(comment.id))
+                                // 読み直している間・消している途中は押せない（`deleteComment` は黙って断る）
+                                .disabled(model.isReloadingComments || model.deletingCommentIds.contains(comment.id))
                         }
                     }
                     Text(comment.text).font(.callout)
@@ -989,6 +1018,7 @@ struct PhotoDetailView: View {
     }
 
     private func block(_ userId: String) async {
+        clearNotices()
         do {
             // 押したあと実際に消す（公開一覧は静的なので端末で落とす）
             try await hidden.blockAndHide(userId, environment: environment)
@@ -1006,6 +1036,7 @@ struct PhotoDetailView: View {
         // **送っている間は受けない**（いいねの `isLiking` と同じ）。連打で save と
         // unsave が並んで飛ぶと、着く順や失敗の巻き戻しで画面とサーバーが食い違う
         guard !isSavingBookmark else { return }
+        clearNotices()
         isSavingBookmark = true
         defer { isSavingBookmark = false }
         let id = current.id
@@ -1032,6 +1063,7 @@ struct PhotoDetailView: View {
     }
 
     private func deletePhoto() async {
+        clearNotices()
         do {
             try await environment.photos.delete(photoId: current.id)
             // **消した写真の画面に留まらせない。** 残ると、もう無いものを

@@ -20,6 +20,8 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 直近の読み込みでコメントが引けなかった。
     /// **「まだ無い」と「取れなかった」を画面で分ける**ためのもの
     @Published private(set) var commentsUnavailable = false
+    /// 「もう一度試す」でコメントを読み直している間（二度押しで2本投げない）
+    @Published private(set) var isReloadingComments = false
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
@@ -118,16 +120,7 @@ final class PhotoDetailViewModel: ObservableObject {
         guard id == photoId else { return }
         let likeUntouched = accepted == acceptedLikes[id, default: 0]
         if likeUntouched { likes = loadedCount ?? likes }
-        if let loaded {
-            // **一覧に載った投稿は、以後サーバーを信じる**（持ち主が消した・
-            // 別の端末で消したコメントを、手元の控えから復活させない）
-            let seen = Set(loaded.items.map(\.id))
-            postedComments[id]?.removeAll { seen.contains($0.id) }
-            let merged = CommentMerge.merge(loaded: loaded.items, count: loaded.count,
-                                            posted: postedComments[id] ?? [], deleted: deletedCommentIds)
-            comments = merged.items
-            commentCount = merged.count
-        }
+        if let loaded { applyComments(loaded, for: id) }
         commentsUnavailable = loaded == nil
         // **引けなかった回に「押していない」と言わない。** 電波が悪いだけで
         // ハートが白に戻ると、押した人は「取り消された」と読む
@@ -139,6 +132,39 @@ final class PhotoDetailViewModel: ObservableObject {
         } else if !isSignedIn {
             liked = false
         }
+    }
+
+    /// コメントだけを読み直す（読み込めなかった回の「もう一度試す」）。
+    ///
+    /// **`load()` を使い回さない。** あちらはいいねの数と自分のいいねも引き直すので、
+    /// いいねを送っている最中に押すと、古い答えが後から着いてハートが戻りうる
+    ///
+    /// **投稿している間は読み直さない**（逆も）。あとから着いた古いページが、
+    /// 先頭に入れた自分のコメントを上書きして消す
+    func reloadComments() async {
+        guard !isReloadingComments, !isPosting else { return }
+        isReloadingComments = true
+        defer { isReloadingComments = false }
+        let id = photoId
+        let page = try? await social.comments(photoId: id)
+        // 読んでいる間に別の1枚へ送ったら捨てる（前の1枚のコメントを今の1枚に出さない）
+        guard id == photoId else { return }
+        if let page { applyComments(page, for: id) }
+        commentsUnavailable = page == nil
+    }
+
+    /// 読めたコメントのページを移す。**この画面で書いた・消したコメントを重ねる**
+    /// （`load()` と `reloadComments()` で同じ——片方だけだと、読み直しで
+    /// 書いたばかりのコメントが消えたり、消したコメントが戻ったりする）
+    private func applyComments(_ loaded: SocialService.CommentPage, for id: String) {
+        // **一覧に載った投稿は、以後サーバーを信じる**（持ち主が消した・
+        // 別の端末で消したコメントを、手元の控えから復活させない）
+        let seen = Set(loaded.items.map(\.id))
+        postedComments[id]?.removeAll { seen.contains($0.id) }
+        let merged = CommentMerge.merge(loaded: loaded.items, count: loaded.count,
+                                        posted: postedComments[id] ?? [], deleted: deletedCommentIds)
+        comments = merged.items
+        commentCount = merged.count
     }
 
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、
@@ -164,6 +190,8 @@ final class PhotoDetailViewModel: ObservableObject {
             return nil
         }
         guard !isLiking else { return nil }
+        // 前の操作の失敗を残さない（送っている間の二度押しでは消さない）
+        errorMessage = nil
         isLiking = true
         defer { isLiking = false }
         let wasLiked = liked
@@ -195,10 +223,13 @@ final class PhotoDetailViewModel: ObservableObject {
     func postComment() async {
         let text = draftComment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        errorMessage = nil
         guard isSignedIn else {
             errorMessage = L("コメントするにはログインしてください", "Sign in to comment")
             return
         }
+        // 読み直しの答えで、入れた自分のコメントが上書きされない（`reloadComments`）
+        guard !isReloadingComments else { return }
         isPosting = true
         defer { isPosting = false }
         let id = photoId
@@ -206,6 +237,8 @@ final class PhotoDetailViewModel: ObservableObject {
             let comment = try await social.postComment(photoId: id, text: text)
             // 送った先の1枚に控える（隣へ送った後に届いても、戻ったときに出す）
             postedComments[id, default: []].append(comment)
+            // 消したときの 404 の読み方を分けるため、投稿した時刻を控える（`deleteComment`）
+            postedAt[comment.id] = now()
             guard id == photoId else { return }
             // **送っている間に読み直した一覧に、もう載っていることがある。**
             // そのときは足さない（同じコメントが2つ・数が1つ多く出ていた）
@@ -227,10 +260,35 @@ final class PhotoDetailViewModel: ObservableObject {
         }
     }
 
+    /// この画面で投稿したコメントと、その時刻。**消したときの 404 の読み方を分ける**（`deleteComment`）
+    private var postedAt: [String: Date] = [:]
+    /// 投稿の直後とみなす長さ。サーバーの結果整合の読みが追いつくのは普通1秒以内なので、
+    /// これを過ぎた 404 は「まだ見えない」ではなく「もう無い」（持ち主が先に消した など）
+    static let justPostedWindow: TimeInterval = 10
+    /// 時刻の出どころ（テストで差し替える）
+    var now: () -> Date = Date.init
+
+    /// 投稿の直後で、404 が「まだ見えない」だけかもしれないか
+    private func isJustPosted(_ id: String) -> Bool {
+        guard let at = postedAt[id] else { return false }
+        return now().timeIntervalSince(at) < Self.justPostedWindow
+    }
+
+    /// コメントを消す。
+    ///
+    /// **404（もう無い）は消せたのと同じ**——別の端末や写真の持ち主が先に消した回。
+    /// 失敗と読むと、もう無いコメントが残り、押すたびにエラーになる。
+    /// ただし**この画面で投稿したばかり（`justPostedWindow` 以内）のコメントは除く**: サーバーの最初の読みは
+    /// 結果整合なので、投稿の直後は「まだ見えない」だけで 404 が返る（サーバーには残る）。
+    /// そこで外すと、他の人には見えたまま自分の画面からだけ消える
     func deleteComment(_ comment: PhotoComment) async {
+        // 読み直している間は消さない（あとから着いた古いページで、消したコメントが戻る）。
+        // 画面も削除を押せなくしている
+        guard !isReloadingComments else { return }
         guard !deletingCommentIds.contains(comment.id) else { return }
         deletingCommentIds.insert(comment.id)
         defer { deletingCommentIds.remove(comment.id) }
+        errorMessage = nil
         // **送った先の1枚を控える。** 束を送っている間に消し終わると、
         // 次の1枚のコメントから同じ ID を探して消していた
         let id = photoId
@@ -241,6 +299,17 @@ final class PhotoDetailViewModel: ObservableObject {
             guard id == photoId else { return }
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
+        } catch where SocialService.isNotFound(error) && !isJustPosted(comment.id) {
+            // もう無い: 消せたのと同じ（束を送った後でも、戻ったときに出さない）
+            deletedCommentIds.insert(comment.id)
+            guard id == photoId else { return }
+            comments.removeAll { $0.id == comment.id }
+            commentCount = commentCount.map { max(0, $0 - 1) }
+        } catch where SocialService.isNotFound(error) {
+            guard id == photoId else { return }
+            // 投稿の直後でサーバーにまだ見えていない（「見つかりません」と言わない）
+            errorMessage = L("まだ反映されていないため削除できませんでした。少し待ってからもう一度お試しください",
+                             "Couldn't delete it yet. Please wait a moment and try again.")
         } catch {
             guard id == photoId else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")

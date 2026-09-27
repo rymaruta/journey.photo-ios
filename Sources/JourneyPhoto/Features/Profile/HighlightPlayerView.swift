@@ -14,6 +14,8 @@ struct HighlightPlayerView: View {
 
     @State private var contents: HighlightContents?
     @State private var failed = false
+    /// **もう無い**（404）。消した・見えなくなった。再試行を出さない
+    @State private var gone = false
     @State private var showEditor = false
 
     var body: some View {
@@ -36,13 +38,20 @@ struct HighlightPlayerView: View {
                 // 並びの外を指したまま残り、真っ黒な画面から出られなくなった（バーも隠している）
                 .id(contents.items.map(\.id))
                 .toolbar(.hidden, for: .navigationBar)
+            } else if gone {
+                note(icon: "sparkles",
+                     title: L("このハイライトはもうありません", "This highlight no longer exists"),
+                     message: L("削除されたか、見られなくなりました。",
+                                "It was deleted or is no longer visible to you."))
             } else if failed {
                 // **「取れなかった」と「空」を分ける。** 同じ絵にすると、
                 // 圏外で開いた人が「消えた」と思う
                 note(icon: "wifi.slash",
                      title: L("開けませんでした", "Couldn't open it"),
                      message: L("通信を確かめて、もう一度お試しください。",
-                                "Check your connection and try again."))
+                                "Check your connection and try again."),
+                     // 「もう一度お試しください」と言うなら、試す手段を置く
+                     retry: { Task { await load() } })
             } else if contents != nil {
                 note(icon: "sparkles",
                      title: L("中身がありません", "Nothing inside"),
@@ -56,7 +65,8 @@ struct HighlightPlayerView: View {
         .navigationTitle(highlight.displayTitle)
         .toolbar {
             // 中身が出ている間は写真の上の「編集」を使う。空・失敗のときだけバーに
-            if isMine && (contents?.items.isEmpty ?? true) {
+            // もう無い輪には出さない（開いても直すものが無い）
+            if isMine && !gone && (contents?.items.isEmpty ?? true) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("編集", "Edit")) { showEditor = true }
                 }
@@ -70,12 +80,18 @@ struct HighlightPlayerView: View {
 
     /// 空と失敗を分けて出す小さな札。**共通の部品は作らない**
     /// （この画面でしか使わないものを外に出すと、次の人が探しに行く）
-    private func note(icon: String, title: String, message: String) -> some View {
+    private func note(icon: String, title: String, message: String,
+                      retry: (() -> Void)? = nil) -> some View {
         VStack(spacing: 10) {
             Image(systemName: icon).font(.largeTitle).foregroundStyle(WebTheme.faint)
             Text(title).font(.headline).foregroundStyle(WebTheme.foreground)
             Text(message).font(.callout).foregroundStyle(WebTheme.muted2)
                 .multilineTextAlignment(.center)
+            // ボタンの形は `ErrorBanner` と同じ
+            if let retry {
+                Button(Labels.Common.retry, action: retry)
+                    .buttonStyle(.bordered)
+            }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -83,10 +99,17 @@ struct HighlightPlayerView: View {
 
     private func load() async {
         failed = false
+        gone = false
         do {
             contents = try await environment.highlights.contents(userId: userId, id: highlight.id)
         } catch {
-            failed = true
+            // 編集で消して戻った回もここ（404）。「通信を確かめて」と言わない
+            if HighlightService.isGone(error) {
+                contents = nil
+                gone = true
+            } else {
+                failed = true
+            }
         }
     }
 }
@@ -101,6 +124,8 @@ struct HighlightsListView: View {
 
     @State private var highlights: [Highlight] = []
     @State private var loaded = false
+    /// 直近の読み込みが失敗した。**「まだハイライトがありません」と分ける**
+    @State private var failed = false
 
     var body: some View {
         List {
@@ -130,7 +155,10 @@ struct HighlightsListView: View {
                 }
                 .listRowBackground(Color.clear)
             }
-            if loaded && highlights.isEmpty {
+            if loaded && highlights.isEmpty && failed {
+                ErrorBanner(message: Labels.Common.loadFailed) { Task { await load() } }
+                    .listRowBackground(Color.clear)
+            } else if loaded && highlights.isEmpty {
                 Text(L("まだハイライトがありません。", "No highlights yet."))
                     .font(.callout)
                     .foregroundStyle(WebTheme.faint)
@@ -140,11 +168,13 @@ struct HighlightsListView: View {
         .webScreen()
         .navigationTitle(L("ストーリーハイライト", "Story highlights"))
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private func load() async {
         let list = try? await environment.highlights.list(userId: userId)
         if let list { highlights = list }
+        failed = list == nil
         loaded = true
     }
 }

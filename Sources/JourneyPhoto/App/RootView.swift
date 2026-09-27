@@ -84,7 +84,11 @@ struct RootView: View {
     /// 🔴 **最後に出た1本の答えだけを、出したときと同じ人のときだけ書く。** ログイン・
     /// 前面に戻る・お知らせを閉じる、の3か所から同時に走るので、古い数が後から着いて
     /// 上書きしていた。ログアウトした後に前の人の数が出ることもあった
-    private func refreshUnread() async {
+    ///
+    /// - Parameter keepOnFailure: 引けなかった回に**いまの数を残す**。
+    ///   前面に戻ったときの数え直しだけ——圏外で戻っただけでベルの印が消えていた。
+    ///   人が替わった回（前の人の数を残さない）とお知らせを閉じた回（読んだあと）は 0 に倒す
+    private func refreshUnread(keepOnFailure: Bool = false) async {
         guard auth.userId != nil else {
             unread = 0
             return
@@ -92,12 +96,15 @@ struct RootView: View {
         let owner = auth.userId
         unreadGeneration += 1
         let generation = unreadGeneration
-        // **取れなかった回は前の数を残す。** 0 にすると、最後に始めた1本が
-        // 圏外で落ちただけでベルが消える（成功した古い方は世代で捨てるので）
-        guard let count = try? await environment.notifications.fetch().unread else { return }
+        let fetched = try? await environment.notifications.fetch().unread
         // **返ってくる間に人が替わっていた・もっと新しい取得が始まっていたら捨てる**
+        // （失敗の回も。古い1本の失敗で、新しい1本の数を 0 に倒さない）
         guard !Task.isCancelled, auth.userId == owner, generation == unreadGeneration else { return }
-        unread = count
+        if let fetched {
+            unread = fetched
+        } else if !keepOnFailure {
+            unread = 0
+        }
     }
 
     /// 通知を押した分を受け取って、お知らせを出す。
@@ -161,7 +168,7 @@ struct RootView: View {
                     toasts.show(L("新しいお知らせは、右上のベルから見られます",
                                   "New activity is waiting behind the bell"))
                 }
-                await refreshUnread()
+                await refreshUnread(keepOnFailure: true)
                 return
             }
             // 通知はタブではなくなったので、ホームのヘッダーから開く
@@ -260,7 +267,7 @@ struct RootView: View {
         // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
         // お知らせを開くかログインし直すまでベルに出ていなかった
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await refreshUnread() } }
+            if phase == .active { Task { await refreshUnread(keepOnFailure: true) } }
             if phase == .background { cancelActivityWait() }
         }
         .onDisappear { cancelActivityWait() }
@@ -296,7 +303,7 @@ struct RootView: View {
         // （遅れて返った古い数で上書きしない）
         .task(id: router.arrivals) {
             guard router.arrivals > 0 else { return }
-            await refreshUnread()
+            await refreshUnread(keepOnFailure: true)
         }
         // **中央の「投稿」はタブではなく入口。** 選ばれたら2択を出して、
         // タブは元へ戻す（空の画面を見せない）

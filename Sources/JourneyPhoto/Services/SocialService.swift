@@ -77,12 +77,47 @@ struct SocialService {
         try await api.authorized(.get, "/user/likes/\(encoded(photoId))", as: MyLike.self).liked
     }
 
+    /// いいねする。
+    ///
+    /// **404 は「付かなかった」とは限らない**（`likes.ts`）。見えなくなった写真でも、
+    /// 前から付いていた回は `{error, liked: true}` の 404 が返る。付かなかったと読んで
+    /// 画面を戻すと、サーバーには付いたまま**画面から外せなくなる**。`APIError` は本文を
+    /// 持ち歩かないので、404 のときは自分の印（`GET /user/likes/{id}`・公開状態を見ない）を
+    /// 聞き直して、付いていれば「付いている・数は無し」として返す
     func like(photoId: String) async throws -> LikeResult {
-        try await api.authorized(.post, "/photos/\(encoded(photoId))/like", as: LikeResult.self)
+        // ⚠️ catch の中で await しない（Xcode 26.3 のコンパイラが落ちる）
+        let outcome: Result<LikeResult, Error>
+        do {
+            outcome = .success(try await api.authorized(.post, "/photos/\(encoded(photoId))/like", as: LikeResult.self))
+        } catch {
+            outcome = .failure(error)
+        }
+        switch outcome {
+        case .success(let result):
+            return result
+        case .failure(let error):
+            guard Self.isNotFound(error), (try? await myLike(photoId: photoId)) == true else { throw error }
+            return LikeResult(liked: true, likes: nil)
+        }
     }
 
+    /// いいねを外す。
+    ///
+    /// **404 は「外れた」。** `likes.ts` の DELETE が 404 を返すのは、写真が見えなく
+    /// なっていて数を出せない回だけで、どの経路も印は消えている（消せなかった回は 500）。
+    /// 失敗と読むと画面は「付いたまま」に戻り、押し直しても同じ 404 で**永久に外せない**
     func unlike(photoId: String) async throws -> LikeResult {
-        try await api.authorized(.delete, "/photos/\(encoded(photoId))/like", as: LikeResult.self)
+        do {
+            return try await api.authorized(.delete, "/photos/\(encoded(photoId))/like", as: LikeResult.self)
+        } catch where Self.isNotFound(error) {
+            return LikeResult(liked: false, likes: nil)
+        }
+    }
+
+    /// サーバーが 404 を返したか
+    static func isNotFound(_ error: Error) -> Bool {
+        if case .server(404, _)? = error as? APIError { return true }
+        return false
     }
 
     // MARK: - コメント
@@ -106,6 +141,11 @@ struct SocialService {
         ).comment
     }
 
+    /// コメントを消す。
+    ///
+    /// **404 はここでは成功にしない。** `comments.ts` の削除は最初の読みが結果整合なので、
+    /// 投稿した直後に消すと「まだ見えない」だけで 404 が返る（サーバーには残る）。
+    /// どちらの 404 かは呼ぶ側（`PhotoDetailViewModel.deleteComment`）が決める
     func deleteComment(photoId: String, commentId: String) async throws {
         try await api.authorizedVoid(
             .delete, "/photos/\(encoded(photoId))/comments/\(encoded(commentId))"

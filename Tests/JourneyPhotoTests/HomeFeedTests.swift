@@ -100,11 +100,11 @@ final class HomeFeedSelectionTests: XCTestCase {
     func testFailedFollowListKeepsTheSameViewersList() async {
         let model = GalleryViewModel()
         model.use(viewerId: "me", following: ["a"])
-        model.use(viewerId: "me", fetchedFollowing: nil)
+        model.use(viewerId: "me", following: nil)
         XCTAssertEqual(model.followingIds, ["a"], "取れなかった回に空で上書きした")
-        model.use(viewerId: "other", fetchedFollowing: nil)
+        model.use(viewerId: "other", following: nil)
         XCTAssertEqual(model.followingIds, [], "前の人のフォロー一覧を次の人に使った")
-        model.use(viewerId: "other", fetchedFollowing: ["b"])
+        model.use(viewerId: "other", following: ["b"])
         XCTAssertEqual(model.followingIds, ["b"])
     }
 
@@ -114,9 +114,98 @@ final class HomeFeedSelectionTests: XCTestCase {
         let model = GalleryViewModel()
         model.use(viewerId: "a", following: ["x"])
         model.select(feed: .following, viewerId: "b")
-        model.use(viewerId: "b", fetchedFollowing: nil)
+        model.use(viewerId: "b", following: nil)
         XCTAssertEqual(model.followingIds, [], "前の人のフォロー一覧が次の人に残った")
-        model.refreshFollowing(["x"], for: "a")
+        model.refreshFollowing(["x"], viewerId: "a")
         XCTAssertEqual(model.followingIds, [], "前の人に取りに行った一覧を次の人に書いた")
+    }
+
+    // MARK: - フォロー一覧を取れなかった回（バグ探し 2026-09-27 #7）
+
+    /// **取れなかった回を「まだありません」にしない。** 以前は空の集合を
+    /// 渡していたので、画面は「フォロー中の人の写真はまだありません」と出した
+    func testFailedFollowingIsNotAnEmptyFollowing() async {
+        let model = GalleryViewModel()
+        model.select(feed: .following, viewerId: "me")
+        model.use(viewerId: "me", following: nil)
+        XCTAssertTrue(model.followingFailed, "取れなかったのに「まだありません」と区別できない")
+        XCTAssertTrue(model.followingIds.isEmpty)
+        XCTAssertEqual(model.feed, .following, "取れなかっただけでフィードを戻している")
+    }
+
+    /// 引き下げ・札の押し直しで取れたら失敗を外す。**取れなかった回は何も潰さない**
+    func testRefreshingFollowingClearsTheFailureOnlyWhenFetched() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "me", following: nil)
+        model.refreshFollowing(nil, viewerId: "me")
+        XCTAssertTrue(model.followingFailed, "取れなかった回に失敗を外している")
+
+        model.refreshFollowing(["u1"], viewerId: "me")
+        XCTAssertFalse(model.followingFailed)
+        XCTAssertEqual(model.followingIds, ["u1"])
+
+        // 取れていた集合は、あとで取れなかった回にも残す
+        model.refreshFollowing(nil, viewerId: "me")
+        XCTAssertEqual(model.followingIds, ["u1"], "取れなかった回に手元の集合を潰している")
+        XCTAssertFalse(model.followingFailed)
+    }
+
+    /// **人が替わって取れなかった回は、前の人の集合を残さない**
+    func testFailedFollowingForANewUserDropsThePreviousSet() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "a", following: ["u1"])
+        model.use(viewerId: "b", following: nil)
+        XCTAssertTrue(model.followingIds.isEmpty, "前の人のフォロー先が残っている")
+        XCTAssertTrue(model.followingFailed)
+    }
+
+    /// 未ログインは「取れなかった」ではない（そもそも引かない）
+    func testSignedOutIsNotAFailure() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "me", following: nil)
+        model.use(viewerId: nil, following: nil)
+        XCTAssertFalse(model.followingFailed)
+    }
+
+    /// **同じ人で取れなかった回は、手元の集合を潰さない。** 詳細から戻って
+    /// `.task` が走り直した回に空にすると、「フォロー中」の一覧が空になり、
+    /// 開いた詳細の元のタイルが消えて閉じる（3d75af1 のレビュー）
+    func testFailedFollowingForTheSameUserKeepsTheSet() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "me", following: ["u1"])
+        model.use(viewerId: "me", following: nil)
+        XCTAssertEqual(model.followingIds, ["u1"], "同じ人の集合を空で潰している")
+        XCTAssertFalse(model.followingFailed)
+    }
+
+    /// フィードを先に選んでいても（`select` が viewerId を入れる）、一度も取れていなければ失敗
+    func testFailureBeforeAnyFetchIsAFailureEvenAfterSelecting() async {
+        let model = GalleryViewModel()
+        model.select(feed: .following, viewerId: "me")
+        model.use(viewerId: "me", following: nil)
+        model.use(viewerId: "me", following: nil)
+        XCTAssertTrue(model.followingFailed)
+    }
+
+    /// **`use` の前に引き下げで取れた集合も、持ち主つきで残す。** 持ち主を
+    /// `self.viewerId`（まだ nil）から取っていたので、次の `.task` の失敗で空に潰れた（e83a88d のレビュー）
+    func testFollowingFetchedBeforeUseSurvivesALaterFailure() async {
+        let model = GalleryViewModel()
+        model.refreshFollowing(["u1"], viewerId: "me")
+        model.use(viewerId: "me", following: nil)
+        XCTAssertEqual(model.followingIds, ["u1"], "取れた集合を後の失敗で潰している")
+        XCTAssertFalse(model.followingFailed)
+    }
+
+    /// **人が替わった直後（`use` の前）に取れた今の人の集合を捨てない。** 前の人の集合を
+    /// 捨てるのは画面の `auth.userId` の見比べ——モデルが `self.viewerId` と比べると
+    /// ここで今の人の正しい集合まで捨てていた（ccb3390 のレビュー）
+    func testFollowingForTheNewUserBeforeUseIsKept() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "a", following: ["a1"])
+        model.refreshFollowing(["b1"], viewerId: "b")
+        model.use(viewerId: "b", following: nil)
+        XCTAssertEqual(model.followingIds, ["b1"], "今の人の集合を捨てている")
+        XCTAssertFalse(model.followingFailed)
     }
 }
