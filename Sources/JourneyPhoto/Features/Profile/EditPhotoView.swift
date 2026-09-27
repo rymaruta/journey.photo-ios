@@ -165,11 +165,13 @@ struct EditPhotoView: View {
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else { return }
             let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
-            // 撮影地の無い写真に、差し替えた写真の位置を書かない
-            let hasPlace = !(photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // 位置を望んでいない写真に、差し替えた写真の位置を書かない:
+            // この画面で撮影地を空にした／もともと撮影地も座標も無い
+            let noPlace = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && photo.coords == nil
             try await environment.photos.replace(photoId: photo.id, prepared: prepared,
                                                  uploads: environment.uploads,
-                                                 keepCoords: hasPlace)
+                                                 keepCoords: !(locationClearedByUser || noPlace))
             messageIsError = false
             message = L("差し替えました（反映まで数分かかります）", "Replaced. It takes a few minutes to appear.")
         } catch {
@@ -177,6 +179,14 @@ struct EditPhotoView: View {
             message = (error as? LocalizedError)?.errorDescription
                 ?? L("差し替えられませんでした", "Couldn't replace it")
         }
+    }
+
+    /// 開いたときは撮影地が入っていて、いま空（＝本人が消した）。
+    /// **保存済みの値ではなく、この画面での操作で見る**
+    private var locationClearedByUser: Bool {
+        let before = (photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let now = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !before.isEmpty && now.isEmpty
     }
 
     private func save() async {
@@ -191,11 +201,10 @@ struct EditPhotoView: View {
         // **選んだ回だけ載せる。** nil は「触らない」なので、
         // 地名を手で直しただけの回に既存の座標を壊さない
         patch.coords = pickedCoords
-        // **撮影地を空にしたら座標も消す。** nil だけでは「触らない」になり、
-        // 地図とページにピンが残っていた（投稿画面の `locationClearedByUser` と同じ考え）
-        if pickedCoords == nil,
-           location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           photo.coords != nil {
+        // **本人が撮影地を空にしたら座標も消す。** nil だけでは「触らない」になり、
+        // 地図とページにピンが残っていた（投稿画面の `locationClearedByUser` と同じ考え）。
+        // 開いたときから空の写真（圏外で投稿して撮影地が入らなかった等）は座標を残す
+        if pickedCoords == nil, locationClearedByUser {
             patch.clearCoords = true
         }
         patch.tags = TagInput.parse(tagsText)
