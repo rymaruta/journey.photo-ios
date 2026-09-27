@@ -622,6 +622,9 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var isSearching = false
     /// 人の検索が**通信などで失敗した**（「見つかりませんでした」と分ける）
     @Published private(set) var usersFailed = false
+    /// いまの `users` を引いた語。**同じ語で失敗した回は一覧を残す**
+    /// （通報・引き下げで読み直して圏外だった回に、開いているプロフィールの元の行を消さない）
+    private var usersQuery: String?
     /// 写真の一覧を取れなかった（読み込み中・0枚と分ける）
     @Published private(set) var loadFailed = false
     /// 最初の読み込みが（成功でも失敗でも）返ったか
@@ -768,6 +771,7 @@ final class SearchViewModel: ObservableObject {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             users = []
+            usersQuery = nil
             isSearching = false
             usersFailed = false
             return
@@ -787,7 +791,14 @@ final class SearchViewModel: ObservableObject {
                 found = nil
             }
             guard !Task.isCancelled, generation == self.searchGeneration else { return }
-            users = found ?? []
+            if let found {
+                users = found
+                usersQuery = trimmed
+            } else if usersQuery != trimmed {
+                // 別の語の人を残さない
+                users = []
+                usersQuery = nil
+            }
             usersFailed = found == nil
             isSearching = false
         }

@@ -75,8 +75,11 @@ struct GalleryView: View {
                 await model.loadMyPhotos(environment.photos, viewerId: nil)
                 return
             }
-            // **取れなかった回を空の集合にしない**（`followingFailed`）
-            model.use(viewerId: auth.userId, following: await fetchFollowing())
+            // **取れなかった回を空の集合にしない**（`followingFailed`）。
+            // 画面を離れて取り消された回は何もしない（取り消しは「取れなかった」ではない）
+            let following = await fetchFollowing()
+            guard !Task.isCancelled else { return }
+            model.use(viewerId: auth.userId, following: following)
             // 今日のテーマに参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
         }

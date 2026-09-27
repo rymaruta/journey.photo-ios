@@ -72,8 +72,9 @@ struct CollectionPhotosScreen: View {
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
+                    // 読み込めずに0枚の回も枚数を出さない（数えていないものを「0枚」と言わない）
                     let subtitle = CollectionScreen.subtitle(count: photos.count, note: note,
-                                                             isLoading: isLoading)
+                                                             isLoading: isLoading || (retry != nil && photos.isEmpty))
                     if !subtitle.isEmpty {
                         Text(subtitle)
                             .font(.caption2)

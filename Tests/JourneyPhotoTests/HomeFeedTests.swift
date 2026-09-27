@@ -141,4 +141,24 @@ final class HomeFeedSelectionTests: XCTestCase {
         model.use(viewerId: nil, following: nil)
         XCTAssertFalse(model.followingFailed)
     }
+
+    /// **同じ人で取れなかった回は、手元の集合を潰さない。** 詳細から戻って
+    /// `.task` が走り直した回に空にすると、「フォロー中」の一覧が空になり、
+    /// 開いた詳細の元のタイルが消えて閉じる（3d75af1 のレビュー）
+    func testFailedFollowingForTheSameUserKeepsTheSet() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "me", following: ["u1"])
+        model.use(viewerId: "me", following: nil)
+        XCTAssertEqual(model.followingIds, ["u1"], "同じ人の集合を空で潰している")
+        XCTAssertFalse(model.followingFailed)
+    }
+
+    /// フィードを先に選んでいても（`select` が viewerId を入れる）、一度も取れていなければ失敗
+    func testFailureBeforeAnyFetchIsAFailureEvenAfterSelecting() async {
+        let model = GalleryViewModel()
+        model.select(feed: .following, viewerId: "me")
+        model.use(viewerId: "me", following: nil)
+        model.use(viewerId: "me", following: nil)
+        XCTAssertTrue(model.followingFailed)
+    }
 }

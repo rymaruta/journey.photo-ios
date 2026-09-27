@@ -140,15 +140,18 @@ struct InviteView: View {
     private func load() async {
         isLoading = true
         canRetry = false
+        // 前の回の失敗の文を残さない（再試行で開けたのに赤い文が並ぶ）
+        message = nil
         defer { isLoading = false }
         do {
             preview = try await environment.albums.invite(token: token)
         } catch {
             preview = nil
-            if case .server(let status, _)? = error as? APIError, (400..<500).contains(status) {
-                canRetry = false
-            } else {
-                canRetry = true
+            // 押し直して直りうるのは圏外とサーバーの一時的な失敗だけ
+            switch error as? APIError {
+            case .unreachable?: canRetry = true
+            case .server(let status, _)?: canRetry = status >= 500 || status == 429
+            default: canRetry = false
             }
             message = (error as? LocalizedError)?.errorDescription
                 ?? L("この招待リンクは使えません", "This invite link isn't valid")

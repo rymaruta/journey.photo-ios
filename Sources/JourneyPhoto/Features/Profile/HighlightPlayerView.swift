@@ -14,6 +14,8 @@ struct HighlightPlayerView: View {
 
     @State private var contents: HighlightContents?
     @State private var failed = false
+    /// **もう無い**（404）。消した・見えなくなった。再試行を出さない
+    @State private var gone = false
     @State private var showEditor = false
 
     var body: some View {
@@ -36,6 +38,11 @@ struct HighlightPlayerView: View {
                 // 並びの外を指したまま残り、真っ黒な画面から出られなくなった（バーも隠している）
                 .id(contents.items.map(\.id))
                 .toolbar(.hidden, for: .navigationBar)
+            } else if gone {
+                note(icon: "sparkles",
+                     title: L("このハイライトはもうありません", "This highlight no longer exists"),
+                     message: L("削除されたか、見られなくなりました。",
+                                "It was deleted or is no longer visible to you."))
             } else if failed {
                 // **「取れなかった」と「空」を分ける。** 同じ絵にすると、
                 // 圏外で開いた人が「消えた」と思う
@@ -58,7 +65,8 @@ struct HighlightPlayerView: View {
         .navigationTitle(highlight.displayTitle)
         .toolbar {
             // 中身が出ている間は写真の上の「編集」を使う。空・失敗のときだけバーに
-            if isMine && (contents?.items.isEmpty ?? true) {
+            // もう無い輪には出さない（開いても直すものが無い）
+            if isMine && !gone && (contents?.items.isEmpty ?? true) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("編集", "Edit")) { showEditor = true }
                 }
@@ -91,10 +99,17 @@ struct HighlightPlayerView: View {
 
     private func load() async {
         failed = false
+        gone = false
         do {
             contents = try await environment.highlights.contents(userId: userId, id: highlight.id)
         } catch {
-            failed = true
+            // 編集で消して戻った回もここ（404）。「通信を確かめて」と言わない
+            if HighlightService.isGone(error) {
+                contents = nil
+                gone = true
+            } else {
+                failed = true
+            }
         }
     }
 }

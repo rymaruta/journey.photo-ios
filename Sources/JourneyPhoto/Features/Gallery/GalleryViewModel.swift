@@ -39,6 +39,9 @@ final class GalleryViewModel: ObservableObject {
     /// 「まだ誰もいない」と言うことになる。画面はこれを見て
     /// 「読み込めませんでした」を出す
     @Published private(set) var followingFailed = false
+    /// `followingIds` が**誰の**フォロー先か。同じ人で取れなかった回に
+    /// 手元の集合を潰さないために見る（人が替わった回だけ空にする）
+    private var followingOwner: String?
     private var viewerId: String?
 
     /// 絞り込みに出すカテゴリ。**写真が1枚もない種類は出さない**
@@ -117,6 +120,7 @@ final class GalleryViewModel: ObservableObject {
     func refreshFollowing(_ following: Set<String>?) {
         guard let following else { return }
         self.followingIds = following
+        followingOwner = viewerId
         followingFailed = false
         if case .loaded = state { state = .loaded(filtered()) }
     }
@@ -130,14 +134,24 @@ final class GalleryViewModel: ObservableObject {
     /// **フォロー中は未ログインだと中身が無い。** 絞れないので
     /// 「おすすめ」へ戻す（空の画面に置き去りにしない）。
     ///
-    /// - Parameter following: nil は「取れなかった」。人が替わった回なので
-    ///   前の人の集合は残さず、空にしたうえで `followingFailed` を立てる
+    /// - Parameter following: nil は「取れなかった」。
+    ///   - **同じ人の集合が手元にあれば潰さない**（詳細から戻って `.task` が
+    ///     走り直した回・取り消された回。潰すと「フォロー中」の一覧が空になり、
+    ///     開いた詳細の元のタイルが消えて閉じる）
+    ///   - 人が替わった回・一度も取れていない回は、空にして `followingFailed` を立てる
     func use(viewerId: String?, following: Set<String>?) {
         // 並びは sort と feed の両方で決まる（`sorted`）。**どちらかが変わったら**並べ直す
         let previousFeed = feed
         self.viewerId = viewerId
-        self.followingIds = following ?? []
-        followingFailed = viewerId != nil && following == nil
+        if let following {
+            followingIds = following
+            followingOwner = viewerId
+            followingFailed = false
+        } else if viewerId == nil || followingOwner != viewerId {
+            followingIds = []
+            followingOwner = nil
+            followingFailed = viewerId != nil
+        }
         if viewerId == nil && feed.needsSignIn { feed = .recommended }
         let previousSort = sort
         scope = feed.scope

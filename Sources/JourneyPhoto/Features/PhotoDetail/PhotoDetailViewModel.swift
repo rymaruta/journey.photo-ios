@@ -20,6 +20,8 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 直近の読み込みでコメントが引けなかった。
     /// **「まだ無い」と「取れなかった」を画面で分ける**ためのもの
     @Published private(set) var commentsUnavailable = false
+    /// 「もう一度試す」でコメントを読み直している間（二度押しで2本投げない）
+    @Published private(set) var isReloadingComments = false
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
@@ -87,6 +89,22 @@ final class PhotoDetailViewModel: ObservableObject {
         } else if !isSignedIn {
             liked = false
         }
+    }
+
+    /// コメントだけを読み直す（読み込めなかった回の「もう一度試す」）。
+    ///
+    /// **`load()` を使い回さない。** あちらはいいねの数と自分のいいねも引き直すので、
+    /// いいねを送っている最中に押すと、古い答えが後から着いてハートが戻りうる
+    func reloadComments() async {
+        guard !isReloadingComments else { return }
+        isReloadingComments = true
+        defer { isReloadingComments = false }
+        let page = try? await social.comments(photoId: photoId)
+        if let page {
+            comments = page.items
+            commentCount = page.count
+        }
+        commentsUnavailable = page == nil
     }
 
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、

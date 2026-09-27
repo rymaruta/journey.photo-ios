@@ -69,6 +69,27 @@ struct HighlightService {
         try await api.authorizedVoid(.delete, "/highlights/\(encoded(id))")
     }
 
+    /// 編集画面の「保存」を押せるか。名前が要る・1件以上入っている（**サーバーと
+    /// 同じ線**——名前が空なら 400、0件なら 400）・保存中でない。
+    ///
+    /// 🔴 **読み込みに失敗している間は押せない。** 直すときは、いま入っている
+    /// 並び（contents）が取れないと選択が空のまま始まる。そこで1件選んで
+    /// 保存すると、サーバーは並びを**丸ごと置き換える**（`highlights.ts` の
+    /// `SET storyIds = :ids`）ので、元の並びが消える
+    static func canSave(title: String, picked: [String], saving: Bool,
+                        loading: Bool, loadFailed: Bool) -> Bool {
+        !saving && !loading && !loadFailed
+            && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !picked.isEmpty
+    }
+
+    /// **そのハイライトはもう無い**（404）。消された・持ち主が退会した・
+    /// フォローを外して見えなくなった、のどれも `highlights.ts` は 404 で返す。
+    /// 押し直しても直らないので、画面は「通信を確かめて」と言わず再試行も出さない
+    static func isGone(_ error: Error) -> Bool {
+        if case .server(404, _)? = error as? APIError { return true }
+        return false
+    }
+
     /// 保存・削除に失敗したときに出す一文。
     ///
     /// **サーバーの断り文をそのまま出す。** `highlights.ts` は、選択が空・

@@ -23,6 +23,8 @@ struct HighlightEditorView: View {
     @State private var coverId: String?
     @State private var loading = true
     @State private var loadFailed = false
+    /// 直そうとしたハイライトが**もう無い**（404）。再試行を出さない
+    @State private var gone = false
     @State private var saving = false
     @State private var message: String?
     @State private var showDeleteConfirm = false
@@ -55,16 +57,10 @@ struct HighlightEditorView: View {
         }
     }
 
-    /// 名前が要る・1件以上入っている・保存中でない。
-    /// **サーバーと同じ線**（名前が空なら 400、0件なら 400）
-    ///
-    /// 🔴 **読み込みに失敗している間は押せない。** 直すときは、いま入っている
-    /// 並び（contents）が取れないと `picked` が空のまま始まる。そこで1件選んで
-    /// 保存すると、サーバーは並びを**丸ごと置き換える**（`highlights.ts` の
-    /// `SET storyIds = :ids`）ので、元の並びが消える
+    /// 決まりは `HighlightService.canSave`（読み込みに失敗している間は押せない）
     private var canSave: Bool {
-        !saving && !loading && !loadFailed
-            && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !picked.isEmpty
+        HighlightService.canSave(title: title, picked: picked, saving: saving,
+                                 loading: loading, loadFailed: loadFailed)
     }
 
     private var nameSection: some View {
@@ -90,6 +86,10 @@ struct HighlightEditorView: View {
         Section {
             if loading {
                 HStack { ProgressView(); Text(L("読み込み中…", "Loading…")).font(.callout) }
+            } else if gone {
+                Text(L("このハイライトはもうありません。", "This highlight no longer exists."))
+                    .font(.callout)
+                    .foregroundStyle(WebTheme.muted2)
             } else if loadFailed {
                 // **空と失敗を分ける。** 一緒にすると、圏外の人に
                 // 「1本も残していない」と言うことになる。
@@ -191,6 +191,7 @@ struct HighlightEditorView: View {
     private func load() async {
         loading = true
         loadFailed = false
+        gone = false
         do {
             archive = try await environment.highlights.archive()
         } catch {
@@ -202,11 +203,14 @@ struct HighlightEditorView: View {
             // 直すときは、いま入っているものを選び直しておく。
             // **アーカイブから外れたものは選べない**ので落ちる
             // ⚠️ `try? await` を含む if-let は構文検査が読めないので分ける
-            let contents: HighlightContents?
+            // ⚠️ catch の中で await しない（Xcode 26.3 のコンパイラが落ちる）
+            var contents: HighlightContents?
             if let userId = auth.userId {
-                contents = try? await environment.highlights.contents(userId: userId, id: existing.id)
-            } else {
-                contents = nil
+                do {
+                    contents = try await environment.highlights.contents(userId: userId, id: existing.id)
+                } catch {
+                    gone = HighlightService.isGone(error)
+                }
             }
             // **いまの並びが取れなければ保存させない**（`canSave` の注記）
             if contents == nil { loadFailed = true }
@@ -251,6 +255,10 @@ struct HighlightEditorView: View {
         saving = true
         do {
             try await environment.highlights.delete(id: existing.id)
+            dismiss()
+        } catch where HighlightService.isGone(error) {
+            // **もう無い（404）は消せたのと同じ。** サーバーは本体が無くても
+            // 自分の一覧からは外してから 404 を返す（`highlights.ts` の `deleteHighlight`）
             dismiss()
         } catch {
             message = HighlightService.failureMessage(

@@ -119,4 +119,28 @@ final class SearchPeopleTests: XCTestCase {
         await model.search("", debounce: .zero) { _ in [] }
         XCTAssertFalse(model.usersFailed)
     }
+
+    /// **同じ語で失敗した回は、出ていた人を消さない。** 通報・引き下げで読み直して
+    /// 圏外だった回に消すと、開いているプロフィールの元の行が消えて閉じる（3d75af1 のレビュー）
+    func testFailedRetryOfTheSameQueryKeepsThePeople() async throws {
+        let model = SearchViewModel()
+        let found = try user("u1")
+        await model.search("ab", debounce: .zero) { _ in [found] }
+        await waitUntil { !model.isSearching }
+        await model.search("ab", debounce: .zero) { _ in throw Offline() }
+        await waitUntil { !model.isSearching }
+        XCTAssertEqual(model.users.map(\.userId), ["u1"], "同じ語の失敗で人を消している")
+        XCTAssertTrue(model.usersFailed)
+    }
+
+    /// 別の語で失敗した回は、前の語の人を残さない
+    func testFailedSearchForAnotherQueryDropsThePeople() async throws {
+        let model = SearchViewModel()
+        let found = try user("u1")
+        await model.search("ab", debounce: .zero) { _ in [found] }
+        await waitUntil { !model.isSearching }
+        await model.search("xyz", debounce: .zero) { _ in throw Offline() }
+        await waitUntil { !model.isSearching }
+        XCTAssertTrue(model.users.isEmpty, "前の語の人が残っている")
+    }
 }

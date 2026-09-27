@@ -28,6 +28,8 @@ struct StoryInsightsView: View {
     @State private var repliesLoaded = false
     /// 直近の読み込みで返信・反応が引けなかった
     @State private var repliesFailed = false
+    /// 見た人を**一度でも読めたか**。読めていない間は「閲覧」も「—」
+    @State private var viewersLoaded = false
     /// 一覧の絞り（モック7）。**同じ一覧を絞るだけ**——別の口から
     /// 引き直さない（リアクションは見た人の一部で、数え方も1つ）
     @State private var scope: Scope = .viewers
@@ -86,7 +88,7 @@ struct StoryInsightsView: View {
                 .frame(width: 72, height: 112)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             HStack(spacing: 1) {
-                countCell(L("閲覧", "Views"), value: viewers.count)
+                countCell(L("閲覧", "Views"), value: viewersLoaded ? viewers.count : nil)
                 countCell(L("いいね", "Likes"), value: repliesLoaded ? replies.reactionCount : nil)
                 countCell(L("返信", "Replies"), value: repliesLoaded ? replies.textReplies.count : nil)
             }
@@ -158,8 +160,9 @@ struct StoryInsightsView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if let errorMessage {
                 Text(errorMessage).font(.footnote).foregroundStyle(WebTheme.danger)
-            } else if scope == .reactions && repliesFailed {
-                // 反応だけ引けなかった回に「まだリアクションはありません」と言わない
+            } else if scope == .reactions && repliesFailed && !repliesLoaded {
+                // 反応だけ引けなかった回に「まだリアクションはありません」と言わない。
+                // 前に読めていれば、その一覧と数を出し続ける（上の升と食い違わせない）
                 Text(L("リアクションを読み込めませんでした。引き下げて読み直せます",
                        "Couldn't load reactions. Pull to retry"))
                     .font(.subheadline)
@@ -259,6 +262,7 @@ struct StoryInsightsView: View {
         defer { isLoading = false }
         do {
             viewers = try await environment.stories.viewers(id: story.id)
+            viewersLoaded = true
             // **返信が読めなくても、見た人は出す。** 片方の失敗で
             // 画面ごと空にしない。**読めなかった回に 0 件で上書きしない**
             // （引き下げで読み直して失敗すると、前に読めた数まで消えていた）

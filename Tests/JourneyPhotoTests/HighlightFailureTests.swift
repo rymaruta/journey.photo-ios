@@ -46,4 +46,26 @@ final class HighlightFailureTests: XCTestCase {
         struct Other: Error {}
         XCTAssertEqual(HighlightService.failureMessage(for: Other(), fallback: fallback), fallback)
     }
+
+    /// 404 は「もう無い」（再試行を出さない）。ほかは「もう無い」ではない
+    func testOnlyNotFoundIsGone() {
+        XCTAssertTrue(HighlightService.isGone(APIError.server(status: 404, message: "ハイライトが見つかりません")))
+        XCTAssertFalse(HighlightService.isGone(APIError.unreachable))
+        XCTAssertFalse(HighlightService.isGone(APIError.server(status: 500, message: "")))
+    }
+
+    /// **いまの並びが読めていない間は保存させない**（バグ探し 2026-09-27 #9）。
+    /// 空の選択から1件選んで保存すると、サーバーは並びを丸ごと置き換える
+    func testCannotSaveWhileTheCurrentContentsFailedToLoad() {
+        XCTAssertFalse(HighlightService.canSave(title: "旅", picked: ["s1"], saving: false,
+                                                loading: false, loadFailed: true))
+        XCTAssertFalse(HighlightService.canSave(title: "旅", picked: ["s1"], saving: false,
+                                                loading: true, loadFailed: false))
+        XCTAssertTrue(HighlightService.canSave(title: "旅", picked: ["s1"], saving: false,
+                                               loading: false, loadFailed: false))
+        XCTAssertFalse(HighlightService.canSave(title: " ", picked: ["s1"], saving: false,
+                                                loading: false, loadFailed: false))
+        XCTAssertFalse(HighlightService.canSave(title: "旅", picked: [], saving: false,
+                                                loading: false, loadFailed: false))
+    }
 }

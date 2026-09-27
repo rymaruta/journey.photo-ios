@@ -809,8 +809,9 @@ struct PhotoDetailView: View {
                         .font(.callout)
                         .foregroundStyle(WebTheme.faint)
                     // 詳細には引き下げが無いので、読み直す手段をここに置く
-                    Button(Labels.Common.retry) { Task { await model.load() } }
+                    Button(Labels.Common.retry) { Task { await model.reloadComments() } }
                         .buttonStyle(.bordered)
+                        .disabled(model.isReloadingComments)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 12)
