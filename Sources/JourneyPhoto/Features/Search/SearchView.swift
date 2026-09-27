@@ -775,7 +775,10 @@ final class SearchViewModel: ObservableObject {
         // - 一覧が古い（一覧を作った回が今の回より前）→ 一覧を捨てて読み直す
         // 新しい人の一覧が知らせより先に届くことがある（ブロックの差し替えで
         // 読み直しが先に走る）。一覧の古さだけで決めると、そのとき選択が残った
-        let switched = loadedEpoch.map { $0 < epoch } ?? false
+        // まだ知らされていない（最初の知らせ）ときは、手元の一覧の回と比べる
+        // ——知らせより先に読み直しが一覧を埋め、その一覧でカテゴリを選んだ後に
+        // 人が替わると、最初の知らせで選択が外れなかった
+        let switched = (loadedEpoch ?? listEpoch).map { $0 < epoch } ?? false
         let stale = listEpoch.map { $0 < epoch } ?? false
         // 回は戻さない（2回続けて替わった後に古い知らせが届いても、古い一覧を通さない）
         loadedEpoch = max(loadedEpoch ?? epoch, epoch)

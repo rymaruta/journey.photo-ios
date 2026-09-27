@@ -390,6 +390,18 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.category, "知らせより先に一覧が届くと、カテゴリが残る")
     }
 
+    /// **最初の知らせより先に一覧が入り、そこで選んだカテゴリも、人が替わったら外す**
+    func testCategoryClearsOnTheFirstNoticeAfterAnEarlyList() async {
+        let service = gallery(feed)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.reloadPhotos(environment: env)       // 知らせより先に一覧が入った（回 0）
+        model.select(category: "風景")
+        await service.setRestrictedLoader(nil)            // 人が替わった（回 1）
+        await model.loadPhotos(environment: env, epoch: 1) // 最初の知らせ
+        XCTAssertNil(model.category, "最初の知らせでカテゴリが外れない")
+    }
+
     /// **人が替わったら、選んでいたカテゴリも外す**（次の人の一覧に無いと0件のまま）
     func testSwitchingViewerClearsTheCategory() async {
         let service = gallery(feed)
