@@ -27,8 +27,8 @@ final class PhotoMapViewModelTests: XCTestCase {
 
     /// 通信は `URLProtocol` で差し替える。**写真と索引は別の口**なので道で
     /// 叩き分ける。`spots` が nil なら索引の口は 404（本番の今の姿）。
-    /// `indexDelay` は索引の応答を遅らせる秒数
-    private func environment(spots: String? = nil, indexDelay: TimeInterval = 0) -> AppEnvironment {
+    /// `indexGate` を渡すと、索引の要求をその手前で止める（索引が遅い回）
+    private func environment(spots: String? = nil, indexGate: Gate? = nil) -> AppEnvironment {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)
@@ -43,7 +43,7 @@ final class PhotoMapViewModelTests: XCTestCase {
         ]
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: photosJSON)
         if let spots {
-            StubProtocol.respond(path: "/app/data/spots.json", status: 200, body: spots, delay: indexDelay)
+            StubProtocol.respond(path: "/app/data/spots.json", status: 200, body: spots)
         }
         let gallery = PublicGalleryService(
             url: URL(string: "https://site.example.test/app/data/photos.json")!,
@@ -53,7 +53,8 @@ final class PhotoMapViewModelTests: XCTestCase {
         let index = OfficialSpotService(
             url: URL(string: "https://site.example.test/app/data/spots.json")!,
             session: session,
-            snapshot: SpotSnapshotStore(fileName: UUID().uuidString)
+            snapshot: SpotSnapshotStore(fileName: UUID().uuidString),
+            beforeRequest: indexGate.map { gate in { @Sendable () async in await gate.wait() } }
         )
         return AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: gallery, spots: index)
     }
@@ -272,12 +273,13 @@ extension PhotoMapViewModelTests {
         XCTAssertNil(model.frame)
     }
 
-    /// 🔴 **写真は索引を待たない。** 索引が遅い回（1秒）でも写真が届いた時点で
+    /// 🔴 **写真は索引を待たない。** 索引が届かない間も写真が届いた時点で
     /// `loaded` になり、索引はあとから届いてピンだけ入れ替わる。
     /// 直列に待つと、写真のピンと最初の寄せが最大20秒（通信の上限）遅れる
     func testPhotosDoNotWaitForTheIndex() async throws {
         let model = PhotoMapViewModel()
-        let env = environment(spots: spotsJSON, indexDelay: 1.0)
+        let gate = Gate()
+        let env = environment(spots: spotsJSON, indexGate: gate)
         let loading = Task { await model.load(environment: env) }
         var waited = 0.0
         while !model.loaded && waited < 0.5 {
@@ -288,6 +290,8 @@ extension PhotoMapViewModelTests {
         XCTAssertEqual(model.shown.count, 4)
         XCTAssertTrue(model.officialSpots.isEmpty, "索引はまだ届いていないはず")
 
+        // 索引を放す（写真が索引を待つ作りだと、ここまで load が返らない）
+        await gate.open()
         await loading.value
         await model.awaitIndex()
         model.update(visible: narrow())

@@ -132,9 +132,10 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         super.tearDown()
     }
 
-    private func service(live: URL?) -> PublicGalleryService {
+    private func service(live: URL?, gate: Gate? = nil) -> PublicGalleryService {
         PublicGalleryService(url: staticURL, liveURL: live, session: session,
-                             snapshot: PhotoSnapshotStore(fileName: UUID().uuidString))
+                             snapshot: PhotoSnapshotStore(fileName: UUID().uuidString),
+                             beforeLiveRequest: gate.map { gate in { @Sendable () async in await gate.wait() } })
     }
 
     private let staticBody = """
@@ -206,12 +207,26 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
     /// 利用者が引いたのに、いまの数なしで返っていた
     func testForceDuringInFlightFetchesAgain() async throws {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: staticBody)
-        StubProtocol.respond(path: "/photos", status: 500, body: "{}", delay: 0.3)
-        let gallery = service(live: liveURL)
-        async let first = gallery.fetchPhotos()
-        try await Task.sleep(nanoseconds: 100_000_000)
-        async let forced = gallery.fetchPhotos(force: true)
-        _ = try await (first, forced)
+        StubProtocol.respond(path: "/photos", status: 500, body: "{}")
+        // 1回目のいまの数だけ、要求の手前で止める（取りに行っている最中を作る）
+        let gate = Gate(holds: 1)
+        let gallery = service(live: liveURL, gate: gate)
+        let first = Task { try await gallery.fetchPhotos() }
+        await gate.untilWaiting()
+        let forced = Task { try await gallery.fetchPhotos(force: true) }
+        // 引き下げ更新が静的 JSON を取りに行き、途中の要求を待つ所まで進めてから放す。
+        // ⚠️ **待つ所まで進んだことは見えない**（見る口が無い）。静的 JSON の要求は
+        // 同じ呼び出しの `async let` の子より後に actor を離れるので、ふつうは
+        // 子が先に待ちに入っているが、保証は下の 50ms だけ。遅れた回は直す前の
+        // 形でも4回になり**偽の合格**になりうる（逆向き＝偽の失敗にはならない）
+        let deadline = Date().addingTimeInterval(2)
+        while StubProtocol.requestCount < 2 {
+            guard Date() < deadline else { return XCTFail("引き下げ更新が静的 JSON を取りに行かない") }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await gate.open()
+        _ = try await (first.value, forced.value)
         // 静的 JSON 2回 ＋ いまの数 2回（途中の1回に相乗りしない）
         XCTAssertEqual(StubProtocol.requestCount, 4)
     }

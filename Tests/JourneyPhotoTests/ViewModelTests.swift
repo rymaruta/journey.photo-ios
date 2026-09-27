@@ -30,10 +30,12 @@ final class ViewModelTests: XCTestCase {
         ]
     }
 
-    private func api(token: String? = "t") -> APIClient {
+    /// `gates` を渡すと、その道の要求だけ手前で止める（「この口だけ遅い」）
+    private func api(token: String? = "t", gates: PathGates? = nil) -> APIClient {
         APIClient(baseURL: URL(string: "https://api.example.test")!,
                   tokenProvider: StubTokenProvider(token: token),
-                  session: session)
+                  session: session,
+                  beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } })
     }
 
     private func gallery(_ body: String) -> PublicGalleryService {
@@ -542,16 +544,19 @@ final class ViewModelTests: XCTestCase {
     func testLateLoadForThePreviousUserIsDropped() async {
         prepare()
         StubProtocol.respond(path: "/user/profile", status: 200,
-                             body: #"{"userId":"a","displayName":"前の人"}"#, delay: 0.3)
+                             body: #"{"userId":"a","displayName":"前の人"}"#)
         StubProtocol.respond(path: "/user/photos", status: 200,
                              body: #"[{"id":"secret","src":"/uploads/s.jpg","published":false}]"#)
-        let model = MyPageViewModel(api: api())
+        // 前の人のプロフィールの返事を止めておく（遅い口）
+        let gate = Gate()
+        let model = MyPageViewModel(api: api(gates: PathGates(["/user/profile": gate])))
         let late = Task { await model.load(for: "a") }
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await gate.untilWaiting()
         XCTAssertTrue(model.isLoading, "前提: 前の人の読み込みが走っていない")
 
         model.forgetPhotos(for: "b")
         XCTAssertFalse(model.isLoading, "次の人の最初の読み込みが止められる")
+        await gate.open()
         await late.value
 
         XCTAssertTrue(model.photos.isEmpty, "前の人の写真が次の人の画面に入った")
@@ -564,15 +569,18 @@ final class ViewModelTests: XCTestCase {
     func testNextUsersLoadSurvivesEitherOrder() async {
         prepare()
         StubProtocol.respond(path: "/user/profile", status: 200,
-                             body: #"{"userId":"b","displayName":"次の人"}"#, delay: 0.2)
+                             body: #"{"userId":"b","displayName":"次の人"}"#)
         StubProtocol.respond(path: "/user/photos", status: 200,
                              body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
-        let model = MyPageViewModel(api: api())
+        // プロフィールの返事を止めておき、2人ぶんの読み込みを重ねる
+        let gate = Gate()
+        let model = MyPageViewModel(api: api(gates: PathGates(["/user/profile": gate])))
         let previous = Task { await model.load(for: "a") }
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await gate.untilWaiting(1)
         let next = Task { await model.load(for: "b") }   // task が先
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await gate.untilWaiting(2)
         model.forgetPhotos(for: "b")                     // onChange が後
+        await gate.open()
         await previous.value
         await next.value
 
@@ -604,11 +612,17 @@ final class ViewModelTests: XCTestCase {
         StubProtocol.respond(path: "/user/photos", status: 200,
                              body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
         StubProtocol.respond(path: "/users/a/follow", status: 200,
-                             body: #"{"followers":2,"following":1}"#, delay: 0.5)
-        let model = MyPageViewModel(api: api())
+                             body: #"{"followers":2,"following":1}"#)
+        // フォロー数の返事を止めておく（遅い口）。写真はそれを待たずに入るはず
+        let gate = Gate()
+        let model = MyPageViewModel(api: api(gates: PathGates(["/users/a/follow": gate])))
         let loading = Task { await model.load(for: "a") }
-        try? await Task.sleep(nanoseconds: 250_000_000)
+        let deadline = Date().addingTimeInterval(2)
+        while model.photos.isEmpty && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
         XCTAssertEqual(model.photos.map(\.id), ["p1"], "フォロー数を待って写真が遅れている")
+        await gate.open()
         await loading.value
         XCTAssertEqual(model.followers, 2)
     }
@@ -628,15 +642,31 @@ final class ViewModelTests: XCTestCase {
     func testSlowLoadOfThePreviousUserIsDiscarded() async {
         prepare()
         StubProtocol.respond(path: "/user/profile", status: 200,
-                             body: #"{"userId":"a"}"#, delay: 0.3)
+                             body: #"{"userId":"a"}"#)
         StubProtocol.respond(path: "/user/photos", status: 200,
-                             body: #"[{"id":"p1","src":"/uploads/p1.jpg","published":false}]"#, delay: 0.3)
-        let model = MyPageViewModel(api: api())
-        async let previous: Void = model.load()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg","published":false}]"#)
+        // 前の人のプロフィールの返事を止めておく（遅い口）。
+        // ⚠️ **写真は止めない。** 両方止めて同時に放すと、プロフィールの答えで
+        // 読み込みが帰るときに、まだ飛んでいる写真の要求が取り消される。Linux の
+        // URLSession は飛んでいる最中の取り消しで、まれに落ちる・返事が来ずに固まる
+        // （150回くり返しの1回で2時間固まった）。写真の答えは先に届き終えさせ、
+        // 捨てられるのはプロフィールの後の人替わりの確かめ（写真も入らない）で見る
+        let gate = Gate()
+        let model = MyPageViewModel(api: api(gates: PathGates(["/user/profile": gate])))
+        let previous = Task { await model.load() }
+        await gate.untilWaiting()
+        // 写真の要求が出て、返事を受け取り終えるまで待つ。プロフィールの要求は Gate の
+        // 手前で止まっていて StubProtocol に届かないので、数えるのは写真の1本だけ
+        let deadline = Date().addingTimeInterval(2)
+        while StubProtocol.requestCount < 1 {
+            guard Date() < deadline else { return XCTFail("前提: 写真の要求が出ない") }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
         model.forgetPhotos()
         XCTAssertFalse(model.isLoading, "人が替わったのに前の人の読み込み中のまま")
-        await previous
+        await gate.open()
+        await previous.value
         XCTAssertTrue(model.photos.isEmpty, "前の人の写真（下書き）が次の人に書き込まれた")
         XCTAssertNil(model.profile, "前の人の見出しが次の人に書き込まれた")
     }
@@ -737,14 +767,18 @@ final class ViewModelTests: XCTestCase {
     /// 今の1枚の画面には書かず、押した1枚の id で返す（呼び出し側が控えに書く）
     func testLikeAnswerKeepsThePressedPhotoAfterSwiping() async {
         prepare()
-        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        // いいねの返事を止めておき、その間に束の隣へ送る
+        let gate = Gate()
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates(["/photos/p1/like": gate]))))
         model.setSignedIn(true)
         StubProtocol.respond(path: "/photos/p1/like", status: 200,
-                             body: #"{"liked":true,"likes":9}"#, delay: 0.2)
-        async let pressed = model.toggleLike()
-        try? await Task.sleep(nanoseconds: 50_000_000)
+                             body: #"{"liked":true,"likes":9}"#)
+        let pressed = Task { await model.toggleLike() }
+        await gate.untilWaiting()
         model.show(photoId: "p2", initialLikes: 2, liked: false)
-        let answer = await pressed
+        await gate.open()
+        let answer = await pressed.value
         XCTAssertEqual(answer, PhotoDetailViewModel.LikeAnswer(photoId: "p1", liked: true, likes: 9),
                        "押した1枚の答えを返していない（控えに入らない）")
         XCTAssertFalse(model.liked, "前の1枚の答えを今の1枚に書いている")
@@ -771,19 +805,23 @@ final class ViewModelTests: XCTestCase {
     func testCommentReloadExcludesPostAndDelete() async throws {
         prepare()
         let page = #"{"items":[{"id":"c1","uid":"u1","name":"a","text":"hi"}],"count":1}"#
-        StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: page, delay: 0.3)
-        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: page)
+        // 1回目の読み直しは通し、2回目の読み直しの返事を止めておく（遅い口）
+        let gate = Gate(skip: 1)
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates(["GET /photos/p1/comments": gate]))))
         model.setSignedIn(true)
         await model.reloadComments()
         let comment = try XCTUnwrap(model.comments.first)
         let before = StubProtocol.requestCount
 
         let reload = Task { await model.reloadComments() }
-        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        await gate.untilWaiting(2)
         XCTAssertTrue(model.isReloadingComments)
         model.draftComment = "new"
         await model.postComment()
         await model.deleteComment(comment)
+        await gate.open()
         await reload.value
 
         XCTAssertEqual(StubProtocol.requestCount, before + 1, "読み直しの最中に投稿・削除を投げている")
@@ -794,14 +832,18 @@ final class ViewModelTests: XCTestCase {
     func testCommentPostExcludesReload() async {
         prepare()
         StubProtocol.respond(path: "/photos/p1/comments", status: 200,
-                             body: #"{"comment":{"id":"c2","uid":"me","name":"me","text":"x"}}"#, delay: 0.3)
-        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+                             body: #"{"comment":{"id":"c2","uid":"me","name":"me","text":"x"}}"#)
+        // 投稿の返事を止めておく（遅い口）
+        let gate = Gate()
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates(["POST /photos/p1/comments": gate]))))
         model.setSignedIn(true)
         model.draftComment = "x"
         let post = Task { await model.postComment() }
-        for _ in 0..<2000 where !model.isPosting { try? await Task.sleep(for: .milliseconds(1)) }
+        await gate.untilWaiting()
         XCTAssertTrue(model.isPosting)
         await model.reloadComments()
+        await gate.open()
         await post.value
         XCTAssertEqual(StubProtocol.requestCount, 1, "投稿の最中に読み直しを投げている")
     }
@@ -811,20 +853,24 @@ final class ViewModelTests: XCTestCase {
     func testCommentReloadOfPreviousPhotoDoesNotBlockNextPhoto() async throws {
         prepare()
         StubProtocol.respond(path: "/photos/p1/comments", status: 200,
-                             body: #"{"items":[],"count":0}"#, delay: 0.3)
+                             body: #"{"items":[],"count":0}"#)
         StubProtocol.respond(path: "/photos/p2/comments", status: 200,
                              body: #"{"items":[],"count":0,"comment":{"id":"c9","uid":"me","name":"me","text":"new"}}"#)
-        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        // 前の1枚（p1）の読み直しの返事を止めておく（圏外で長く待つ回）
+        let gate = Gate()
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates(["GET /photos/p1/comments": gate]))))
         model.setSignedIn(true)
 
         let reload = Task { await model.reloadComments() }
-        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        await gate.untilWaiting()
         XCTAssertTrue(model.isReloadingComments)
         model.show(photoId: "p2", initialLikes: nil, liked: false)
         XCTAssertFalse(model.isReloadingComments, "前の1枚の読み直しで、今の1枚のボタンまで止めている")
         model.draftComment = "new"
         await model.postComment()
         XCTAssertEqual(model.comments.map(\.id), ["c9"], "前の1枚の読み直しの間、今の1枚に送れない")
+        await gate.open()
         await reload.value
         XCTAssertEqual(model.comments.map(\.id), ["c9"], "前の1枚の読み直しの答えを今の1枚に出している")
     }
@@ -834,20 +880,29 @@ final class ViewModelTests: XCTestCase {
     func testCommentReloadMarkSurvivesAnotherPhotosReload() async throws {
         prepare()
         StubProtocol.respond(path: "/photos/p1/comments", status: 200,
-                             body: #"{"items":[],"count":0}"#, delay: 0.3)
+                             body: #"{"items":[],"count":0}"#)
         StubProtocol.respond(path: "/photos/p2/comments", status: 200,
-                             body: #"{"items":[],"count":0}"#, delay: 0.3)
-        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+                             body: #"{"items":[],"count":0}"#)
+        // 2枚の読み直しの返事を両方止めておく
+        let g1 = Gate()
+        let g2 = Gate()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api(gates: PathGates([
+            "GET /photos/p1/comments": g1, "GET /photos/p2/comments": g2,
+        ]))))
         model.setSignedIn(true)
         let first = Task { await model.reloadComments() }
-        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        await g1.untilWaiting()
         model.show(photoId: "p2", initialLikes: nil, liked: false)
         let second = Task { await model.reloadComments() }
-        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        await g2.untilWaiting()
         model.show(photoId: "p1", initialLikes: nil, liked: false)
         XCTAssertTrue(model.isReloadingComments, "別の1枚の読み直しで、この1枚の読み直し中の印が消えた")
-        await first.value
+        // 別の1枚（p2）の読み直しが**終わった**ときにも、この1枚の印を消さない
+        await g2.open()
         await second.value
+        XCTAssertTrue(model.isReloadingComments, "別の1枚の読み直しが終わったら、この1枚の読み直し中の印まで消えた")
+        await g1.open()
+        await first.value
         XCTAssertFalse(model.isReloadingComments)
     }
 
@@ -1077,14 +1132,18 @@ final class ViewModelTests: XCTestCase {
     /// （控えは送った先の1枚に付く。一覧への反映が遅れていても消えない）
     func testCommentPostedWhileAwayShowsOnReturn() async {
         prepare()
-        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        // コメントの返事を止めておき、その間に隣へ送る
+        let gate = Gate()
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates(["POST /photos/p1/comments": gate]))))
         model.setSignedIn(true)
         model.draftComment = "きれい"
         StubProtocol.respond(path: "/comments", status: 200,
-                             body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#, delay: 0.2)
+                             body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#)
         let posting = Task { await model.postComment() }
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await gate.untilWaiting()
         model.show(photoId: "p2", initialLikes: nil, liked: false)
+        await gate.open()
         await posting.value
 
         model.show(photoId: "p1", initialLikes: nil, liked: false)
