@@ -1267,7 +1267,11 @@ struct PhotoMapView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 24)
                 } else {
-                    VStack(spacing: 0) {
+                    // **Lazy にする。** 一覧は全件（公開済み364件・写真つき315件）で、
+                    // 素の VStack だと開いた瞬間に全行の写真（960px・計約31MB）を一斉に
+                    // 取りに行き、回線の細い端末では上の行まで時間切れで「読めない」の
+                    // 記号になっていた（owner の実機の絵・2026-09-28）
+                    LazyVStack(spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                             NavigationLink {
                                 OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos)
