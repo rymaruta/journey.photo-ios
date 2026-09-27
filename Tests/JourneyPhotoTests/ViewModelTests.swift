@@ -194,8 +194,6 @@ final class ViewModelTests: XCTestCase {
     /// 戻ってくるたびに読み直すので、圏外で写真を開いて戻っただけで格子が消えていた。
     /// 次に読めたら知らせを消す。
     ///
-    /// ⚠️ 失敗させるのは**写真の口だけ**。プロフィールを落とすと、同時に走っている写真の要求が
-    /// 取り消され、Linux の FoundationNetworking ではスタブの取り消しが返らずに止まることがある
     func testReloadFailureIsAddedToTheGridNotReplacingIt() async {
         prepare()
         func serve(photos status: Int) {
@@ -218,6 +216,24 @@ final class ViewModelTests: XCTestCase {
         serve(photos: 200)
         await model.load()
         XCTAssertNil(model.actionMessage, "読めたのに失敗の知らせが残っている")
+    }
+
+    /// **読み直しで両方の口が落ちても `load()` が戻る。** 以前は片方が投げるともう片方の
+    /// `async let` が取り消されて待たれ、その取り消しが返らずに止まることがあった
+    /// （このテストを Linux で繰り返すと、40回に4回ほど止まっていた）。止まると `isLoading` が
+    /// 立ったままで、以後の読み直しが全部弾かれる
+    func testReloadWhereEverythingFailsReturns() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200, body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        StubProtocol.reset()
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.load()
+        XCTAssertFalse(model.isLoading)
+        XCTAssertEqual(model.actionMessage, APIError.unreachable.errorDescription)
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
     }
 
     /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは

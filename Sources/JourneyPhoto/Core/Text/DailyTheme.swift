@@ -54,7 +54,8 @@ enum DailyTheme: Equatable {
         // **土地の年月日を取り出してから数える。** `ordinality(of: .day, in: .era)` を
         // そのまま使うと、Linux の Foundation はタイムゾーンを見ず、協定世界時の0時で
         // 切り替わった（東京では朝9時。参加の判定 `hasJoined` は土地の0時で割れる）。
-        // 数える側は協定世界時の暦の正午に固定するので、割り当ては今までと変わらない
+        // 数える側は協定世界時の暦の正午に固定するので、**番号の目盛りは今までと同じ**
+        // （切り替わる時刻だけが土地の0時になる）
         let local = calendar.gregorianKeepingZone.dateComponents([.year, .month, .day], from: now)
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
