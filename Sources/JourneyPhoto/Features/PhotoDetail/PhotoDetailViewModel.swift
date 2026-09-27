@@ -23,6 +23,13 @@ final class PhotoDetailViewModel: ObservableObject {
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
+    /// 消している途中のコメント（二度押しで2回送ると、2回目が「見つかりません」を出す）
+    @Published private(set) var deletingCommentIds: Set<String> = []
+    /// この画面で書いた・消したコメント。**読み込んだ一覧に重ねて採る**
+    /// ——投稿の前に読んだ一覧が後から届いて、書いたばかりのコメントが消えたり、
+    /// 消したコメントが戻ったりしていた（`CommentMerge`）
+    private var postedComments: [PhotoComment] = []
+    private var deletedCommentIds: Set<String> = []
     /// いいねを送っている最中。**二度押しで2回投げない。**
     ///
     /// コメントには `isPosting` があったのに、いいねには何も無かった。
@@ -74,8 +81,14 @@ final class PhotoDetailViewModel: ObservableObject {
         likes = await count ?? likes
         let loaded = await page
         if let loaded {
-            comments = loaded.items
-            commentCount = loaded.count
+            // **一覧に載った投稿は、以後サーバーを信じる**（持ち主が消した・
+            // 別の端末で消したコメントを、手元の控えから復活させない）
+            let seen = Set(loaded.items.map(\.id))
+            postedComments.removeAll { seen.contains($0.id) }
+            let merged = CommentMerge.merge(loaded: loaded.items, count: loaded.count,
+                                            posted: postedComments, deleted: deletedCommentIds)
+            comments = merged.items
+            commentCount = merged.count
         }
         commentsUnavailable = loaded == nil
         // **引けなかった回に「押していない」と言わない。** 電波が悪いだけで
@@ -132,15 +145,24 @@ final class PhotoDetailViewModel: ObservableObject {
             // **総数が分からない回は分からないまま。** 取れていない数に
             // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
             commentCount = commentCount.map { $0 + 1 }
-            draftComment = ""
+            postedComments.append(comment)
+            // **送った文のときだけ空にする。** 送っている間も欄は打てるので、
+            // 続きを書いていたら丸ごと消えていた
+            if draftComment.trimmingCharacters(in: .whitespacesAndNewlines) == text {
+                draftComment = ""
+            }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("コメントできませんでした", "Couldn't post the comment")
         }
     }
 
     func deleteComment(_ comment: PhotoComment) async {
+        guard !deletingCommentIds.contains(comment.id) else { return }
+        deletingCommentIds.insert(comment.id)
+        defer { deletingCommentIds.remove(comment.id) }
         do {
             try await social.deleteComment(photoId: photoId, commentId: comment.id)
+            deletedCommentIds.insert(comment.id)
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
         } catch {

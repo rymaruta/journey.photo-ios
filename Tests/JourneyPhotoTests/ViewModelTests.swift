@@ -138,7 +138,7 @@ final class ViewModelTests: XCTestCase {
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
         let model = SearchViewModel()
 
-        await model.loadPhotos(environment: env)
+        await model.loadPhotos(environment: env, epoch: 0)
         await model.search("パリ", environment: env)
         XCTAssertEqual(model.shown.count, 2, "下ごしらえが効いていない")
 
@@ -148,6 +148,28 @@ final class ViewModelTests: XCTestCase {
 
         XCTAssertEqual(model.shown.map(\.id), ["a"],
                        "ブロックした相手の写真が検索結果に残っている")
+    }
+
+    /// 🔴 **限定公開の読み出し口が替わったら（ログアウト・別の人のログイン）読み直す。**
+    /// 探すは一度読んだら読み直さない作りで、前の人の「フォロワーのみ」の
+    /// 写真が次の人の探すに残っていた。同じ回なら読み直さない
+    func testSearchReloadsWhenTheViewerChanges() async {
+        let service = gallery("""
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","location":"パリ"},
+         {"id":"b","src":"https://x/b.jpg","userId":"u2","location":"パリ"}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        await service.setHidden(userIds: ["u2"], photoIds: [])
+
+        await model.loadPhotos(environment: env, epoch: 0)
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.shown.count, 2, "同じ回なのに読み直している")
+
+        await model.loadPhotos(environment: env, epoch: 1)
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.shown.map(\.id), ["a"], "人が替わったのに前の一覧のまま")
     }
 
     /// **「フォロー中」を選んだあとにフォロー一覧を入れ替えても、範囲は戻らない。**
@@ -452,8 +474,9 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.commentCount, "総数を引いていないのに数を作っている")
         XCTAssertEqual(model.draftComment, "", "送ったのに入力欄が残っている")
 
-        // 総数が取れているなら、そこに足す
-        StubProtocol.respond(status: 200, body: #"{"items":[],"count":3}"#)
+        // 総数が取れているなら、そこに足す（読んだ一覧には書いた1件も載っている）
+        StubProtocol.respond(status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}],"count":3}"#)
         await model.load()
         XCTAssertEqual(model.commentCount, 3)
 
@@ -492,6 +515,28 @@ final class ViewModelTests: XCTestCase {
         await model.deleteComment(model.comments[0])
         XCTAssertEqual(model.commentCount, 23)
         XCTAssertTrue(model.comments.isEmpty)
+    }
+
+    /// 🔴 **一覧に一度載った自分のコメントは、以後サーバーを信じる。**
+    /// 持ち主が消したコメントを手元の控えから復活させ、数も1つずらしていた
+    func testPostedCommentRemovedOnServerDoesNotComeBack() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.respond(status: 200, body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#)
+        await model.postComment()
+
+        StubProtocol.respond(status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}],"count":3}"#)
+        await model.load()
+        XCTAssertEqual(model.commentCount, 3)
+
+        // 持ち主が消した
+        StubProtocol.respond(status: 200, body: #"{"items":[],"count":2}"#)
+        await model.load()
+        XCTAssertTrue(model.comments.isEmpty, "消されたコメントを戻している")
+        XCTAssertEqual(model.commentCount, 2)
     }
 
     /// 空のコメントは送らない。

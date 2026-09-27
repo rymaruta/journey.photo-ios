@@ -119,8 +119,9 @@ struct PhotoService {
 ///
 /// **撮影日は 1990年以降・未来でない日付**でないとサーバーが 400 を返す。
 struct PhotoPatch: Encodable {
-    var title: String?
-    var description: String?
+    /// 題・説明。**`{ja, en}` の写真で英語を消さない形**を `LocalizedEdit` が作る
+    var title: LocalizedPatchValue?
+    var description: LocalizedPatchValue?
     var location: String?
     var category: String?
     var tags: [String]?

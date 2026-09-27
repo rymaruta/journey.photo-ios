@@ -19,6 +19,9 @@ struct TripPlanDetailView: View {
     @State private var start: String?
     @State private var end: String?
     @State private var loadedFrom: TripPlan?
+    /// 保存で送った下書き。応答が届いたとき、**それ以降に打った編集があれば残す**
+    @State private var sent: Draft?
+    @State private var appeared = false
     /// 「行きたい場所から追加」を押した日
     @State private var picking: PickTarget?
     @State private var confirmingDelete = false
@@ -30,6 +33,12 @@ struct TripPlanDetailView: View {
     @State private var sourcesFailed = false
 
     private struct PickTarget: Identifiable { let day: Int; var id: Int { day } }
+    private struct Draft: Equatable {
+        var days: [TripDay]
+        var start: String?
+        var end: String?
+    }
+    private var draft: Draft { Draft(days: days, start: start, end: end) }
 
     private var plan: TripPlan? { model.plan(planId) }
     private var places: [DerivedSpot.Place] { DerivedSpot.all(in: photos) }
@@ -57,7 +66,13 @@ struct TripPlanDetailView: View {
             sourcesFailed = fetchedPhotos == nil || fetchedIndex == nil
         }
         .onAppear {
-            model.clearError()
+            // **前の画面の失敗の文を消すのは、開いた最初の1回だけ。** 項目の
+            // スポットを開いて戻るたびに消していたので、保存に失敗した事情が
+            // 下書きが未保存のまま見えなくなっていた
+            if !appeared {
+                appeared = true
+                model.clearError()
+            }
             resetIfNeeded()
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
@@ -74,10 +89,21 @@ struct TripPlanDetailView: View {
         }
     }
 
-    /// サーバーの姿が変わったら（保存・取り直し）、下書きをそれに合わせる
+    /// サーバーの姿が変わったら（保存・取り直し）、下書きをそれに合わせる。
+    ///
+    /// 🔴 **ただし、まだ送っていない編集があれば下書きを残す。** 保存の返事を
+    /// 待つ間も日の追加や項目の削除はできるので、返事で丸ごと上書きすると
+    /// その間に打った編集が黙って消えていた。残した分は「保存」が押せる
+    /// （比べる相手が新しいサーバーの姿になる）
     private func resetIfNeeded() {
         guard let plan, plan != loadedFrom else { return }
+        let untouched = loadedFrom.map {
+            !TripPlanText.isDirty(plan: $0, days: days, start: start, end: end)
+        } ?? true
+        let keep = !untouched && draft != sent
         loadedFrom = plan
+        sent = nil
+        guard !keep else { return }
         days = plan.days
         start = plan.startDate
         end = plan.endDate
@@ -92,7 +118,11 @@ struct TripPlanDetailView: View {
         Button(L("保存", "Save")) {
             guard let plan else { return }
             let patch = TripPlanText.patch(plan: plan, days: days, start: start, end: end)
-            Task { _ = await model.update(planId, patch, environment: environment) }
+            sent = draft
+            Task {
+                // 断られたら控えを捨てる（次に届く姿で下書きを上書きしない）
+                if !(await model.update(planId, patch, environment: environment)) { sent = nil }
+            }
         }
         .font(.body.weight(.semibold))
         // **ヘッダーの文字の合図は真鍮**（デザインシステムの決まり）

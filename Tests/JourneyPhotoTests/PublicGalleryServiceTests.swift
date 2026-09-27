@@ -108,6 +108,42 @@ final class PublicGalleryServiceTests: XCTestCase {
         let offline = try await service(snapshot: name).fetchPhotos()
         XCTAssertEqual(offline.map(\.id), ["a", "b"], "読めない応答で控えが潰れた")
     }
+
+    // MARK: - 限定公開の読み出し口の入れ替え（ログアウト・別の人のログイン）
+
+    /// 入れ替えるたびに回数を流す。**今の回数から始める**（開き直した画面が
+    /// 離れていた間の入れ替えを取りこぼさない）
+    func testRestrictedChangesStartFromCurrentAndFollowSwaps() async {
+        let gallery = service()
+        await gallery.setRestrictedLoader { [] }
+        var iterator = await gallery.restrictedChanges().makeAsyncIterator()
+        let first = await iterator.next()
+        XCTAssertEqual(first, 1)
+        await gallery.setRestrictedLoader(nil)
+        let second = await iterator.next()
+        XCTAssertEqual(second, 2)
+    }
+
+    /// 🔴 **読んでいる途中で口が替わったら、前の人の分を控えに書かない。**
+    /// 書くと、次にログインした人に前の人の限定公開の写真が60秒出ていた
+    func testSwapDuringRestrictedFetchDoesNotCacheThePreviousUser() async throws {
+        StubProtocol.respond(status: 200, body: twoPhotos)
+        let gallery = service()
+        let previous = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"mine","src":"https://x/m.jpg","audience":"followers"}"#.utf8))
+        let next = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"theirs","src":"https://x/t.jpg","audience":"followers"}"#.utf8))
+        await gallery.setRestrictedLoader {
+            // 読んでいる途中で次の人がログインする
+            await gallery.setRestrictedLoader { [next] }
+            return [previous]
+        }
+        let during = try await gallery.fetchPhotos()
+        XCTAssertFalse(during.contains { $0.id == "mine" }, "入れ替わった後に前の人の分を出している")
+        let after = try await gallery.fetchPhotos()
+        XCTAssertFalse(after.contains { $0.id == "mine" }, "前の人の分が控えに残っている")
+        XCTAssertTrue(after.contains { $0.id == "theirs" })
+    }
 }
 
 /// 公開一覧の控え。

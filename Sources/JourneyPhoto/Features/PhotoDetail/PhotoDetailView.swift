@@ -845,6 +845,7 @@ struct PhotoDetailView: View {
                         if comment.uid == auth.userId || isMine {
                             Button(Labels.Common.delete) { Task { await model.deleteComment(comment) } }
                                 .font(.caption2)
+                                .disabled(model.deletingCommentIds.contains(comment.id))
                         }
                     }
                     Text(comment.text).font(.callout)

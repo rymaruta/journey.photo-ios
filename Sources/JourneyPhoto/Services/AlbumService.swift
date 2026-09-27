@@ -45,7 +45,7 @@ struct AlbumService {
         try await api.authorizedVoid(.delete, "/albums/\(encoded(id))")
     }
 
-    struct Invite: Decodable {
+    struct Invite: Decodable, Equatable {
         let token: String
         let expiresAt: String?
     }

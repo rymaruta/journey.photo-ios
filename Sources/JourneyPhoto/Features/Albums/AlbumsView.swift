@@ -132,7 +132,14 @@ struct AlbumsView: View {
         // 戻す口は無い）。削除のボタンを押したときだけ消す
         .swipeActions(allowsFullSwipe: false) {
             Button(role: .destructive) {
-                Task { await model.delete(album.id, environment: environment) }
+                Task {
+                    // **参加の控えからも外す。** 自分のリンクを自分で開くと控えにも
+                    // 入るので、消した途端に「参加しているアルバム」へ落ちてきて、
+                    // 押すと「この招待リンクは使えません」になっていた
+                    if await model.delete(album.id, environment: environment) {
+                        joined.forget(id: album.id)
+                    }
+                }
             } label: {
                 Label(Labels.Common.delete, systemImage: "trash")
             }
@@ -161,6 +168,7 @@ struct AlbumsView: View {
                     Task { await model.revokeInvite(album.id, environment: environment) }
                 }
                 .font(.caption)
+                .disabled(model.inviteWorking.contains(album.id))
                 // **行に複数のボタンを置くときは borderless。**
                 // 既定だと行のどこを押しても両方が反応する
                 .buttonStyle(.borderless)
@@ -170,6 +178,9 @@ struct AlbumsView: View {
                 Task { await model.createInvite(album.id, environment: environment) }
             }
             .font(.caption)
+            // **二度押しで作り直さない。** サーバーは「あれば作り直す」ので、
+            // 2本目で1本目が失効し、その間に共有したリンクが開けなくなる
+            .disabled(model.inviteWorking.contains(album.id))
             .buttonStyle(.borderless)
         }
     }
@@ -220,6 +231,15 @@ final class AlbumsViewModel: ObservableObject {
     @Published private(set) var albums: [Album] = []
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
+    /// 招待リンクを作る・取り消すのを送っているアルバム
+    @Published private(set) var inviteWorking: Set<String> = []
+
+    /// 何回目の読み込みか。**古い読み込みの返事が新しい返事を上書きしない**
+    private var loadGeneration = 0
+    /// この画面で書いた分。**読み込んだ一覧に重ねる**（`AlbumMerge`）
+    /// ——書き込みの前に始めた読み込みや、結果整合で古い姿を返す読み込みで、
+    /// 消したアルバムが戻る・作ったアルバムが消える・名前が巻き戻るのを防ぐ
+    private var writes = AlbumMerge.Writes()
 
     func inviteURL(token: String) -> URL {
         AppConfig.siteBaseURL.appendingPathComponent("j").appending(queryItems: [
@@ -228,13 +248,20 @@ final class AlbumsViewModel: ObservableObject {
     }
 
     func load(environment: AppEnvironment) async {
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
         do {
-            albums = try await environment.albums.list()
+            let list = try await environment.albums.list()
+            guard generation == loadGeneration else { return }
+            writes = AlbumMerge.settled(writes, loaded: list)
+            albums = AlbumMerge.merge(loaded: list, writes: writes)
+            isLoading = false
         } catch {
+            guard generation == loadGeneration else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+            isLoading = false
         }
     }
 
@@ -243,6 +270,7 @@ final class AlbumsViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return }
         do {
             let album = try await environment.albums.create(title: trimmed)
+            writes.created.append(.init(value: album, at: Date()))
             albums.insert(album, at: 0)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
@@ -257,6 +285,7 @@ final class AlbumsViewModel: ObservableObject {
         do {
             // **サーバーが直した名前を採る**（60字で切られる・制御文字が落ちる）
             let saved = try await environment.albums.rename(id: id, title: trimmed)
+            writes.renamed[id] = .init(value: saved, at: Date())
             albums = albums.map { album in
                 guard album.id == id else { return album }
                 return Album(id: album.id, title: saved, createdAt: album.createdAt,
@@ -269,18 +298,29 @@ final class AlbumsViewModel: ObservableObject {
         }
     }
 
-    func delete(_ id: String, environment: AppEnvironment) async {
+    /// 消せたか（呼んだ側が参加の控えからも外す）
+    func delete(_ id: String, environment: AppEnvironment) async -> Bool {
         do {
             try await environment.albums.delete(id: id)
+            writes.deleted.insert(id)
             albums.removeAll { $0.id == id }
+            return true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
+            return false
         }
     }
 
     func createInvite(_ id: String, environment: AppEnvironment) async {
+        guard !inviteWorking.contains(id) else { return }
+        inviteWorking.insert(id)
+        defer { inviteWorking.remove(id) }
         do {
-            _ = try await environment.albums.createInvite(albumId: id)
+            // **返ってきたリンクを手元にも書く。** 一覧は結果整合で読むので、
+            // 読み直しが古いとリンクが出ず、もう一度押すと作り直し（前のリンクが失効）になる
+            let invite = try await environment.albums.createInvite(albumId: id)
+            writes.invites[id] = .init(value: invite, at: Date())
+            albums = AlbumMerge.merge(loaded: albums, writes: writes)
             await load(environment: environment)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("招待リンクを作れませんでした", "Couldn't create the invite link")
@@ -288,8 +328,13 @@ final class AlbumsViewModel: ObservableObject {
     }
 
     func revokeInvite(_ id: String, environment: AppEnvironment) async {
+        guard !inviteWorking.contains(id) else { return }
+        inviteWorking.insert(id)
+        defer { inviteWorking.remove(id) }
         do {
             try await environment.albums.revokeInvite(albumId: id)
+            writes.invites[id] = .init(value: nil, at: Date())
+            albums = AlbumMerge.merge(loaded: albums, writes: writes)
             await load(environment: environment)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("取り消せませんでした", "Couldn't revoke")

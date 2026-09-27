@@ -344,13 +344,13 @@ struct MyPageView: View {
         HStack(alignment: .top, spacing: 8) {
             statCell(value: "\(model.photos.count)", label: L("投稿", "Posts"))
             NavigationLink {
-                FollowListView(userId: model.profile?.userId ?? "", kind: .followers)
+                FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .followers)
             } label: {
                 statCell(value: "\(model.followers)", label: L("フォロワー", "Followers"))
             }
             .buttonStyle(.plain)
             NavigationLink {
-                FollowListView(userId: model.profile?.userId ?? "", kind: .following)
+                FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .following)
             } label: {
                 statCell(value: "\(model.following)", label: L("フォロー中", "Following"))
             }
@@ -713,7 +713,7 @@ struct MyPageView: View {
     }
 
     /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。
-    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` がタブごと知らせる
+    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` が知らせる（手元に無ければタブごと）
     private func loadFeed(force: Bool = false) async {
         let fetched = try? await environment.gallery.fetchPhotos(force: force)
         guard !Task.isCancelled else { return }
@@ -732,7 +732,14 @@ struct MyPageView: View {
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, 16)
         }
-        if let error = model.errorMessage {
+        // **一度読めた中身は、読み直しの失敗で消さない。** 詳細から戻るたびに
+        // 読み直すので、一瞬の圏外で格子・旅の記録・保存した写真まで
+        // 知らせ1枚に置き換わっていた（`load` は失敗の回に手元の写真を残す）。
+        // 手元に何も無いときだけ、タブごと知らせに替える
+        if let error = model.errorMessage, !model.photos.isEmpty {
+            ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
+        }
+        if let error = model.errorMessage, model.photos.isEmpty {
             ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
         } else if tab == .trips {
             // **写真の有無とは無関係に、ここで空の理由まで言う**

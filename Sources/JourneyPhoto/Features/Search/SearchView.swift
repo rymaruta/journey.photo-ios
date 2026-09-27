@@ -54,7 +54,13 @@ struct SearchView: View {
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
-        .task { await model.loadPhotos(environment: environment) }
+        // 最初の読み込みと、**限定公開の読み出し口が替わったとき**（ログアウト・
+        // 別の人のログイン）の読み直し。替わった後に届くので前の人の口を通らない
+        .task {
+            for await epoch in await environment.gallery.restrictedChanges() {
+                await model.loadPhotos(environment: environment, epoch: epoch)
+            }
+        }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }
@@ -705,8 +711,16 @@ final class SearchViewModel: ObservableObject {
     /// ——取り消した回の返事が後から届いても捨てる
     private var searchGeneration = 0
 
-    func loadPhotos(environment: AppEnvironment) async {
-        guard allPhotos.isEmpty else { return }
+    /// どの読み出し口の回で読んだか（`PublicGalleryService.restrictedEpoch`）
+    private var loadedEpoch: Int?
+
+    func loadPhotos(environment: AppEnvironment, epoch: Int) async {
+        let switched = loadedEpoch != nil && loadedEpoch != epoch
+        guard allPhotos.isEmpty || switched else { return }
+        loadedEpoch = epoch
+        // 🔴 **人が替わったら、読み直しに失敗しても前の一覧を残さない**
+        // （前の人の限定公開の写真が入っている）
+        if switched { allPhotos = [] }
         await reloadPhotos(environment: environment)
     }
 
