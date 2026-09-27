@@ -222,6 +222,8 @@ final class UploadServiceTests: XCTestCase {
         )
         let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
                                     photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        // 読めない写真を決まった形で作る（シミュレータの本物の写真ライブラリに問い合わせない）
+        model.loadPickedData = { _ in nil }
         let a = PhotosPickerItem(itemIdentifier: "a")
         let c = PhotosPickerItem(itemIdentifier: "c")
         let d = PhotosPickerItem(itemIdentifier: "d")
@@ -230,7 +232,6 @@ final class UploadServiceTests: XCTestCase {
             exif: nil, coords: nil, takenOn: nil))
         photo.pickerItem = a
         model.items = [photo]
-        // 模型の PhotosUI は読めない（nil を返す）
         model.pickerItems = [a, c]
         try await waitUntil { !model.isLoadingPicked && model.errorMessage != nil }
         let once = try XCTUnwrap(model.errorMessage)
@@ -270,6 +271,8 @@ final class UploadServiceTests: XCTestCase {
         )
         let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
                                     photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        // 読めない写真を決まった形で作る（シミュレータの本物の写真ライブラリに問い合わせない）
+        model.loadPickedData = { _ in nil }
         let a = PhotosPickerItem(itemIdentifier: "a")
         let b = PhotosPickerItem(itemIdentifier: "b")
         // c は読めなかった写真（選択には残り、待ち行列には居ない）
