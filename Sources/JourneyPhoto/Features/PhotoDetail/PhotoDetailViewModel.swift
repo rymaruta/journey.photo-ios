@@ -116,6 +116,8 @@ final class PhotoDetailViewModel: ObservableObject {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
+        // 前の操作の失敗を残さない（いま押した操作の結果だけを出す）
+        errorMessage = nil
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
             return
@@ -141,6 +143,7 @@ final class PhotoDetailViewModel: ObservableObject {
     func postComment() async {
         let text = draftComment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        errorMessage = nil
         guard isSignedIn else {
             errorMessage = L("コメントするにはログインしてください", "Sign in to comment")
             return
@@ -152,7 +155,7 @@ final class PhotoDetailViewModel: ObservableObject {
         do {
             let comment = try await social.postComment(photoId: photoId, text: text)
             comments.insert(comment, at: 0)
-            postedIds.insert(comment.id)
+            postedAt[comment.id] = now()
             // **総数が分からない回は分からないまま。** 取れていない数に
             // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
             commentCount = commentCount.map { $0 + 1 }
@@ -162,25 +165,37 @@ final class PhotoDetailViewModel: ObservableObject {
         }
     }
 
-    /// この画面で投稿したコメント。**消したときの 404 の読み方を分ける**（`deleteComment`）
-    private var postedIds: Set<String> = []
+    /// この画面で投稿したコメントと、その時刻。**消したときの 404 の読み方を分ける**（`deleteComment`）
+    private var postedAt: [String: Date] = [:]
+    /// 投稿の直後とみなす長さ。サーバーの結果整合の読みが追いつくのは普通1秒以内なので、
+    /// これを過ぎた 404 は「まだ見えない」ではなく「もう無い」（持ち主が先に消した など）
+    static let justPostedWindow: TimeInterval = 10
+    /// 時刻の出どころ（テストで差し替える）
+    var now: () -> Date = Date.init
+
+    /// 投稿の直後で、404 が「まだ見えない」だけかもしれないか
+    private func isJustPosted(_ id: String) -> Bool {
+        guard let at = postedAt[id] else { return false }
+        return now().timeIntervalSince(at) < Self.justPostedWindow
+    }
 
     /// コメントを消す。
     ///
     /// **404（もう無い）は消せたのと同じ**——別の端末や写真の持ち主が先に消した回。
     /// 失敗と読むと、もう無いコメントが残り、押すたびにエラーになる。
-    /// ただし**この画面で投稿したばかりのコメントは除く**: サーバーの最初の読みは
+    /// ただし**この画面で投稿したばかり（`justPostedWindow` 以内）のコメントは除く**: サーバーの最初の読みは
     /// 結果整合なので、投稿の直後は「まだ見えない」だけで 404 が返る（サーバーには残る）。
     /// そこで外すと、他の人には見えたまま自分の画面からだけ消える
     func deleteComment(_ comment: PhotoComment) async {
         // 読み直している間は消さない（あとから着いた古いページで、消したコメントが戻る）。
         // 画面も削除を押せなくしている
         guard !isReloadingComments else { return }
+        errorMessage = nil
         do {
             try await social.deleteComment(photoId: photoId, commentId: comment.id)
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
-        } catch where SocialService.isNotFound(error) && !postedIds.contains(comment.id) {
+        } catch where SocialService.isNotFound(error) && !isJustPosted(comment.id) {
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
         } catch where SocialService.isNotFound(error) {

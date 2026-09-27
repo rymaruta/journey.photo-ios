@@ -124,6 +124,11 @@ struct PhotoDetailView: View {
         // 戻るは標準のボタンのまま——iOS 26 ではそれ自体がガラスの丸で出る
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
+        // **知らせは最後に起きたものを出す。** いいね・コメントの失敗が入ったら、前に出ていた
+        // フォロー・ブロック・削除の知らせを消す（残すと、あとの失敗が隠れる）
+        .onChange(of: model.errorMessage) { _, message in
+            if message != nil { actionError = nil }
+        }
         .task(id: auth.userId) {
             model.setSignedIn(auth.userId != nil)
             await model.load()

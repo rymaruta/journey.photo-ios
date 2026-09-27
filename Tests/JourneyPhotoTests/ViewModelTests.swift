@@ -323,13 +323,27 @@ final class ViewModelTests: XCTestCase {
         let loaded = try XCTUnwrap(model.comments.first { $0.id == "c1" })
         let posted = try XCTUnwrap(model.comments.first { $0.id == "c2" })
 
+        XCTAssertEqual(model.commentCount, 2)
+
         await model.deleteComment(loaded)
         XCTAssertFalse(model.comments.contains { $0.id == "c1" }, "もう無いコメントが残っている")
+        XCTAssertEqual(model.commentCount, 1, "もう無いコメントを外したのに数を減らしていない")
         XCTAssertNil(model.errorMessage)
 
         await model.deleteComment(posted)
         XCTAssertTrue(model.comments.contains { $0.id == "c2" }, "投稿直後の 404 で外している（サーバーには残る）")
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertEqual(model.commentCount, 1)
+        XCTAssertEqual(model.errorMessage,
+                       L("まだ反映されていないため削除できませんでした。少し待ってからもう一度お試しください",
+                         "Couldn't delete it yet. Please wait a moment and try again."),
+                       "「見つかりません」と言っている")
+
+        // 時間が経ってからの 404 は「もう無い」（持ち主が先に消した など）。失敗の文も残さない
+        let later = Date().addingTimeInterval(PhotoDetailViewModel.justPostedWindow + 1)
+        model.now = { later }
+        await model.deleteComment(posted)
+        XCTAssertFalse(model.comments.contains { $0.id == "c2" }, "時間が経っても外せず詰まる")
+        XCTAssertNil(model.errorMessage, "前の失敗の文が残っている")
     }
 
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。

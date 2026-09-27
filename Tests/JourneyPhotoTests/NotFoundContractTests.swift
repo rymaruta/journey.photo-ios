@@ -119,6 +119,18 @@ final class NotFoundContractTests: XCTestCase {
         }
     }
 
+    /// コメントの削除は 404 を**投げる**（「まだ見えない」と「もう無い」は画面の頭が分ける。
+    /// サービスで飲み込むと、投稿直後に消したコメントがサーバーに残ったまま外れる）
+    func testCommentDeleteNotFoundIsLeftToTheCaller() async {
+        StubProtocol.respond(status: 404, body: #"{"error":"コメントが見つかりません"}"#)
+        do {
+            try await SocialService(api: api()).deleteComment(photoId: "p1", commentId: "c1")
+            XCTFail("404 を飲み込んでいる")
+        } catch {
+            XCTAssertTrue(SocialService.isNotFound(error))
+        }
+    }
+
     /// 404 以外の失敗は失敗のまま（権限が無い・サーバーの失敗）
     func testDeleteOtherFailuresStillThrow() async {
         StubProtocol.respond(status: 403, body: #"{"error":"権限がありません"}"#)
