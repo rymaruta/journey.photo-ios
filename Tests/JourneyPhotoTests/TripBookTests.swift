@@ -416,3 +416,17 @@ final class TripOwnershipTests: XCTestCase {
         XCTAssertTrue(trips.isEmpty)
     }
 }
+
+/// 旅の一冊の読み上げ（B13）。見た目の「DAY n」を読ませない
+final class TripBookSpokenTests: XCTestCase {
+    func testDayIsSpokenInJapanese() {
+        XCTAssertEqual(TripBookView.spokenDay(2), "2日目")
+    }
+
+    func testRouteIsSpokenWithoutDAY() {
+        let label = TripBookView.routeSpokenLabel([TripBook.RouteStop(day: 1, place: "金沢"),
+                                                   TripBook.RouteStop(day: 3, place: "福井")])
+        XCTAssertEqual(label, "1日目 金沢、3日目 福井")
+        XCTAssertFalse(label.contains("DAY"))
+    }
+}

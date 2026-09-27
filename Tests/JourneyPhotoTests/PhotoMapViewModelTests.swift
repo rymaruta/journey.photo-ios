@@ -362,3 +362,19 @@ extension PhotoMapViewModelTests {
         XCTAssertTrue(model.canSearchArea)
     }
 }
+
+/// 地図の文字（B8・B12）。アプリは日本語固定（`AppLanguageTests`）なので
+/// 英語の単数形はここでは動かせない——日本語の出方と読み上げ名だけ確かめる
+final class PhotoMapTextTests: XCTestCase {
+    func testCounts() {
+        XCTAssertEqual(PhotoMapViewModel.photoCountLabel(1), "1枚")
+        XCTAssertEqual(PhotoMapViewModel.nearbyCountLabel(3), "この周辺の写真 3枚")
+    }
+
+    /// 写真のピンは撮影地と枚数を読み上げる。撮影地が無ければ札と同じ語
+    func testPinSpokenLabel() {
+        XCTAssertEqual(PhotoMapViewModel.pinSpokenLabel(place: "パリ", count: 3), "パリ、写真 3枚")
+        XCTAssertEqual(PhotoMapViewModel.pinSpokenLabel(place: nil, count: 1), "場所の名前なし、写真 1枚")
+        XCTAssertEqual(PhotoMapViewModel.pinSpokenLabel(place: " ", count: 1), "場所の名前なし、写真 1枚")
+    }
+}

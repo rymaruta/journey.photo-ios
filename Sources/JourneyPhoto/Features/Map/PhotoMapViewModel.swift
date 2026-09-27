@@ -189,6 +189,7 @@ final class PhotoMapViewModel: ObservableObject {
     /// 見ると、同じ座標に前の人あての写真が混ざっていても差し替わらない。
     /// 人が替わったあとに使うので、見つかれば必ずいまのピンを返す
     static func refreshed(_ pin: MapPin?, in pins: [MapPin]) -> MapPin? {
+        // 札もこれで描く（押した時点の写しではなく、いまの絞り込みの中身）
         guard let pin else { return nil }
         return pins.first { $0.id == pin.id }
     }
@@ -236,5 +237,27 @@ final class PhotoMapViewModel: ObservableObject {
         }
         guard !MapSearch.fold(query).isEmpty else { return nil }
         return MapFraming.frame(for: officialPins.map { (latitude: $0.coords.lat, longitude: $0.coords.lng) })
+    }
+}
+
+// MARK: - 地図の文字（単数・複数と読み上げ）
+
+extension PhotoMapViewModel {
+    /// 「3枚」／「1 photo」「3 photos」。英語は1枚のとき単数形
+    nonisolated static func photoCountLabel(_ count: Int) -> String {
+        L("\(count)枚", count == 1 ? "1 photo" : "\(count) photos")
+    }
+
+    /// ピンの札の「この周辺の写真 3枚」
+    nonisolated static func nearbyCountLabel(_ count: Int) -> String {
+        L("この周辺の写真 \(count)枚", count == 1 ? "1 photo nearby" : "\(count) photos nearby")
+    }
+
+    /// 写真のピンの読み上げ名（「パリ、写真 3枚」）。撮影地が無ければ
+    /// 札と同じ「場所の名前なし」
+    nonisolated static func pinSpokenLabel(place: String?, count: Int) -> String {
+        let name = place?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shown = (name?.isEmpty == false) ? name! : L("場所の名前なし", "No place name")
+        return L("\(shown)、写真 \(count)枚", "\(shown), \(photoCountLabel(count))")
     }
 }
