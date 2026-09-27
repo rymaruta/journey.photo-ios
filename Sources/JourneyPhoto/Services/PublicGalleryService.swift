@@ -109,13 +109,21 @@ actor PublicGalleryService {
     /// （Lambda の起き抜けは数秒かかる。間に合わなければ静的 JSON の数で出す）
     static let liveTimeout: TimeInterval = 4
 
+    /// いまの数の要求を出す**直前**に待つ口。**本番は nil**（何もしない）。
+    /// 試験が「取りに行っている最中」を作るのに使う——遅さを `URLProtocol`
+    /// の応答で作ると、Linux の Foundation では別スレッドから `client` を
+    /// 叩いてまれに落ちる
+    private let beforeLiveRequest: (@Sendable () async -> Void)?
+
     init(url: URL = AppConfig.publicPhotosURL,
          liveURL: URL? = nil,
          session: URLSession? = nil,
-         snapshot: PhotoSnapshotStore = PhotoSnapshotStore()) {
+         snapshot: PhotoSnapshotStore = PhotoSnapshotStore(),
+         beforeLiveRequest: (@Sendable () async -> Void)? = nil) {
         self.url = url
         self.liveURL = liveURL
         self.snapshot = snapshot
+        self.beforeLiveRequest = beforeLiveRequest
         if let session {
             self.session = session
         } else {
@@ -258,6 +266,7 @@ actor PublicGalleryService {
         defer { liveInFlight = nil }
         var request = URLRequest(url: liveURL)
         request.timeoutInterval = Self.liveTimeout
+        await beforeLiveRequest?()
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse,

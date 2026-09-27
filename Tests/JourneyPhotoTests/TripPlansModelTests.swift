@@ -13,7 +13,7 @@ final class TripPlansModelTests: XCTestCase {
 
     /// 通信は `URLProtocol` で差し替える（`PhotoMapViewModelTests` と同じ組み立て）。
     /// 写真の一覧と索引も差し替えておく——既定のままだと本物のサイトを見にいく
-    private func environment() -> AppEnvironment {
+    private func environment(tokens: TokenProviding = StubTokenProvider(token: "t")) -> AppEnvironment {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)
@@ -36,8 +36,8 @@ final class TripPlansModelTests: XCTestCase {
             snapshot: SpotSnapshotStore(fileName: UUID().uuidString)
         )
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
-                            tokenProvider: StubTokenProvider(token: "t"), session: session)
-        return AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: gallery, spots: index,
+                            tokenProvider: tokens, session: session)
+        return AppEnvironment(tokenProvider: tokens, gallery: gallery, spots: index,
                               trips: TripPlanService(api: api))
     }
 
@@ -90,15 +90,18 @@ final class TripPlansModelTests: XCTestCase {
 
     /// **連打で二重に作らない。** 書き込み中の2回目は通信しない
     func testSecondWriteWhileBusyDoesNothing() async {
-        let env = environment()
+        // 1回目だけトークンの手前で止める（2回目が通信しに来たら止めずに通す）
+        let gate = Gate(holds: 1)
+        let env = environment(tokens: GatedTokenProvider(token: "t", gate: gate))
         let model = TripPlansModel()
         StubProtocol.respond(path: "/user/trips", status: 200,
-                             body: #"{"plans":[{"planId":"new","title":"冬","days":[]}]}"#, delay: 0.3)
-        async let first = model.create(title: "冬", environment: env)
+                             body: #"{"plans":[{"planId":"new","title":"冬","days":[]}]}"#)
+        let first = Task { await model.create(title: "冬", environment: env) }
         // 1回目が飛んでから押す
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await gate.untilWaiting()
         let second = await model.create(title: "冬", environment: env)
-        _ = await first
+        await gate.open()
+        _ = await first.value
         XCTAssertNil(second)
         XCTAssertEqual(StubProtocol.requestCount, 1, "二重に作っている")
     }
