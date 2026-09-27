@@ -6,11 +6,12 @@ import XCTest
 final class StoryPlaybackTests: XCTestCase {
 
     private func story(_ id: String, user: String? = "u1", createdAt: String? = nil,
-                       video: Bool = false) -> Story {
+                       video: Bool = false, song: String? = nil) -> Story {
         var fields = [#""id":"\#(id)""#, #""src":"https://x.test/\#(id).jpg""#]
         if let user { fields.append(#""userId":"\#(user)""#) }
         if let createdAt { fields.append(#""createdAt":"\#(createdAt)""#) }
         if video { fields.append(#""mediaType":"video""#) }
+        if let song { fields.append(song) }
         let json = "{" + fields.joined(separator: ",") + "}"
         return try! JSONDecoder.api.decode(Story.self, from: Data(json.utf8))
     }
@@ -181,6 +182,63 @@ final class StoryPlaybackTests: XCTestCase {
 
         let unknownOwner = StoryPlayback.menuItems(isMine: false, isVideo: false, hasCaption: false, hasOwner: false)
         XCTAssertEqual(unknownOwner, [.pause, .report], "相手が分からなければブロックは出せない")
+    }
+
+    // MARK: - 曲
+
+    private let songJSON = #""song":{"title":"海へ","artist":"誰か","previewUrl":"https://audio-ssl.itunes.apple.com/p.m4a"}"#
+
+    /// 曲が付いていれば鳴らす。題の無い曲は鳴らさない（曲名の行も出ない）
+    func testSongURL() {
+        XCTAssertEqual(StoryPlayback.songURL(for: story("a", song: songJSON))?.absoluteString,
+                       "https://audio-ssl.itunes.apple.com/p.m4a")
+        XCTAssertNil(StoryPlayback.songURL(for: story("b")))
+        let untitled = #""song":{"title":"  ","previewUrl":"https://audio-ssl.itunes.apple.com/p.m4a"}"#
+        XCTAssertNil(StoryPlayback.songURL(for: story("c", song: untitled)))
+    }
+
+    /// 音源は iTunes の配信元だけ。**開いた瞬間に取りに行く**ので、任意の URL を
+    /// 通すと開いた人の IP が外へ渡る（Web の `safeSongPreviewUrl` と同じ規則）
+    func testSongURLRejectsForeignHosts() {
+        func url(_ s: String) -> String { #""song":{"title":"海へ","previewUrl":"\#(s)"}"# }
+        XCTAssertNotNil(StoryPlayback.songURL(for: story("a", song: url("https://audio-ssl.itunes.apple.com/x.m4a"))))
+        XCTAssertNotNil(StoryPlayback.songURL(for: story("b", song: url("https://a1.mzstatic.com/x.m4a"))))
+        XCTAssertNil(StoryPlayback.songURL(for: story("c", song: url("https://evil-mzstatic.com/x.m4a"))),
+                     "末尾一致では通さない")
+        XCTAssertNil(StoryPlayback.songURL(for: story("d", song: url("https://tracker.example/x.m4a"))))
+        XCTAssertNil(StoryPlayback.songURL(for: story("e", song: url("http://audio-ssl.itunes.apple.com/x.m4a"))),
+                     "https だけ")
+    }
+
+    /// 読み直しに失敗したら前の輪を残す。ただし絞り込みはかけ直し、
+    /// 見ている人が変わっていたら空にする
+    func testAfterLoadKeepsPreviousOnFailure() {
+        let previous = [story("a", user: "u1"), story("b", user: "u2")]
+        let fresh = [story("c", user: "u3")]
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: fresh, previous: previous, sameViewer: true,
+                                               blockedUserIds: [], reportedPhotoIds: []).map(\.id), ["c"])
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: nil, previous: previous, sameViewer: true,
+                                               blockedUserIds: [], reportedPhotoIds: []).map(\.id), ["a", "b"],
+                       "圏外で閉じても輪を消さない")
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: nil, previous: previous, sameViewer: true,
+                                               blockedUserIds: ["u2"], reportedPhotoIds: []).map(\.id), ["a"],
+                       "圏外でブロックした人の輪は消す")
+        XCTAssertEqual(StoryPlayback.afterLoad(fetched: nil, previous: previous, sameViewer: false,
+                                               blockedUserIds: [], reportedPhotoIds: []), [],
+                       "別の人に切り替わったら前の人の輪を見せない")
+    }
+
+    /// 曲のある写真にも「音を消す」を出す（Web の `hasAudio = isVideo || !!item.song`）
+    func testMenuOffersMuteWhenSongAttached() {
+        XCTAssertTrue(StoryPlayback.menuItems(isMine: false, isVideo: false, hasSong: true,
+                                              hasCaption: false, hasOwner: true).contains(.mute))
+    }
+
+    /// 曲のある動画は動画の音を常に消す（2つ重ねて鳴らさない）
+    func testVideoMutedWhenSongAttached() {
+        XCTAssertTrue(StoryPlayback.videoMuted(muted: false, hasSong: true))
+        XCTAssertTrue(StoryPlayback.videoMuted(muted: true, hasSong: false))
+        XCTAssertFalse(StoryPlayback.videoMuted(muted: false, hasSong: false))
     }
 
     // MARK: - 時刻

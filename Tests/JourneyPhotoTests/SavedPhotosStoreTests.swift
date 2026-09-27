@@ -69,6 +69,10 @@ final class SavedPhotosStoreTests: XCTestCase {
 @MainActor
 final class FavoritesSyncTests: XCTestCase {
 
+    private func defaults() -> UserDefaults {
+        UserDefaults(suiteName: UUID().uuidString)!
+    }
+
     /// 🔴 **足すのではなく入れ替える。** 保存といいねが同じ入れ物だった頃の
     /// 端末には、**保存しただけの写真の id が残っている**——足すだけだと、
     /// その古い混ざりものが「いいねした写真」に出続ける
@@ -78,5 +82,43 @@ final class FavoritesSyncTests: XCTestCase {
         likes.set("保存しただけの古い写真", favorite: true)
         likes.replace(with: ["本当にいいねした写真"])
         XCTAssertEqual(likes.ids, ["本当にいいねした写真"])
+    }
+
+    // MARK: - 「いいねした写真」に並べる ID（`FavoritesStore.listedIds`）
+
+    /// 🔴 **外した直後に古い一覧が返っても出さない。** サーバーの一覧の読み取りは
+    /// 強い整合でないので、詳細でハートを外して戻ると、外した写真を含む一覧が
+    /// 返ることがある
+    func testRemovedHereStaysHiddenEvenIfTheServerListIsStale() async {
+        let likes = FavoritesStore(defaults: defaults())
+        likes.use(userId: "u1")
+        likes.set("a", favorite: true)
+        likes.set("a", favorite: false)
+        XCTAssertFalse(likes.listedIds(server: ["a", "b"]).contains("a"),
+                       "外したいいねが古い一覧で戻ってきた")
+    }
+
+    /// 別の端末で押したぶん（サーバーの一覧にだけある）は足す
+    func testServerOnlyIdsAreAdded() async {
+        let likes = FavoritesStore(defaults: defaults())
+        likes.use(userId: "u1")
+        likes.set("here", favorite: true)
+        XCTAssertEqual(likes.listedIds(server: ["other"]), ["here", "other"])
+        // 聞けなかった回は控えだけ
+        XCTAssertEqual(likes.listedIds(server: nil), Set(["here"]))
+    }
+
+    /// 押し直したら（外して、また付けた）出す。人が替わったら外した印は捨てる
+    func testRelikingOrSwitchingUserClearsTheRemovedMark() async {
+        let likes = FavoritesStore(defaults: defaults())
+        likes.use(userId: "u1")
+        likes.set("a", favorite: false)
+        likes.set("a", favorite: true)
+        XCTAssertTrue(likes.listedIds(server: ["a"]).contains("a"))
+
+        likes.set("b", favorite: false)
+        likes.use(userId: "u2")
+        XCTAssertTrue(likes.listedIds(server: ["b"]).contains("b"),
+                      "前の人が外した印が次の人に残っている")
     }
 }

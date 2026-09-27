@@ -4,33 +4,49 @@ import SwiftUI
 struct MyPageView: View {
 
     @EnvironmentObject private var auth: AuthStore
-    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
     /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
     @State private var officialSpots: [OfficialSpot] = []
-    /// いいねした写真を引き当てる先。**公開一覧**——自分の写真だけを
-    /// 探していたので、**他人の写真へのいいねが一度も出なかった**
+    /// 保存した写真を引き当てる先のうち**公開一覧**。もう一方の自分の写真は
+    /// `model.photos`（`myPhotos()`・`PhotoPools` と同じ口）。公開一覧が無いと
+    /// **他人の写真の保存が一度も出ない**
     @State private var feed: [Photo] = []
-    /// サーバーが返したいいねの ID。取れなければ nil（端末の控えだけ出す）
-    @State private var serverLikeIds: [String]?
-    @State private var likesStatus: LikedPhotos.Status = .loading
+    /// 公開一覧を読み終えたか（「まだ」と「0件」を混ぜない）
+    @State private var feedLoaded = false
+    /// 最後の公開一覧の読み込みが失敗したか（「読み込めませんでした」はこの回だけ）
+    @State private var feedFailed = false
+    /// 「お気に入り」タブに出す保存の ID。**描画のたびに `savedPhotos.ids` を
+    /// 読まない**——詳細でしおりを外した瞬間に `ForEach` から元の
+    /// `NavigationLink` が消え、**見ている詳細が閉じる**（`SavedPhotosView`・
+    /// `FavoritesView` と同じ理由）。取り直すのは戻ってきたとき・タブを開いたとき・
+    /// 引き当て先を読み終えたとき（`refreshSavedIds`）。
+    /// 写真の束ではなく ID を控えるのは、投稿を閉じた合図などで `model.photos`
+    /// が読み直されても、控えた ID のぶんは引き当て直せるように
+    @State private var savedIds: Set<String> = []
     @State private var tab: ProfileTab = .posts
     @State private var showDistanceNote = false
     @State private var showCountriesNote = false
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
+    /// いまこの画面が出ているか（`onAppear`〜`onDisappear`）。詳細を上に
+    /// 積んでいる間もこの画面は `savedPhotos.ids` を購読し続けるので、
+    /// **出ていない間は保存の ID を取り込まない**——取り込むと格子の段の ID
+    /// （`EditorialLayout.Row.id` は隣の写真まで含む）が変わり、開いている詳細が閉じる
+    @State private var isOnScreen = false
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
 
+    /// 板 05c: 3列・隙間 4pt・角なし
     private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 4),
+        GridItem(.flexible(), spacing: 4),
+        GridItem(.flexible(), spacing: 4),
     ]
 
     var body: some View {
@@ -47,23 +63,18 @@ struct MyPageView: View {
         .webScreen()
         .navigationTitle(Labels.Navigation.mypage)
         .navigationBarTitleDisplayMode(.inline)
+        // **ログイン中は上のバーを出さない**（板 05c・05d）。カバーが画面の上端から
+        // 敷かれ、設定は右上のガラスの丸（`settingsButton`）。未ログインでは
+        // ログイン画面なので、これまでどおりバーに設定だけ置く
+        .toolbar(auth.userId == nil ? .automatic : .hidden, for: .navigationBar)
         .toolbar {
-            // **ここだけ見出しが違っていた。** 他の札（ホーム・さがす・
-            // マップ）はロゴを出すのに、マイページは大きな字で
-            // 「マイページ」——実機の絵（run 47）で、札を移った瞬間に
-            // 別のアプリに見えた。`AppHeader` の注記が避けると書いていた形
-            ToolbarItem(placement: .principal) {
-                // **未ログインでは出さない。** ログイン画面が大きいロゴを持つので
-                // （板 41）、バーにも出すとロゴが2つ並ぶ
-                if auth.userId != nil {
-                    AppLogo()
-                }
-            }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { SettingsView() } label: {
-                    Image(systemName: "gearshape")
-                        .webToolbarIcon()
-                        .accessibilityLabel(L("設定", "Settings"))
+                if auth.userId == nil {
+                    NavigationLink { SettingsView() } label: {
+                        Image(systemName: "gearshape")
+                            .webToolbarIcon()
+                            .accessibilityLabel(L("設定", "Settings"))
+                    }
                 }
             }
         }
@@ -71,8 +82,8 @@ struct MyPageView: View {
             guard auth.userId != nil else { return }
             await model.load()
         }
-        // いいねした写真。**ログイン状態が決まってから**聞く
-        .task(id: auth.userId) { await loadLikes() }
+        // 保存した写真の引き当て先（公開一覧）
+        .task(id: auth.userId) { await loadFeed() }
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
@@ -90,10 +101,41 @@ struct MyPageView: View {
             Task { await model.load() }
         }
         .onAppear {
+            isOnScreen = true
+            // 詳細でしおりを外したぶんは、戻ってきたこの時点で落とす
+            refreshSavedIds()
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
             Task { await model.load() }
         }
+        .onChange(of: tab) { _, next in
+            if next == .favorites { refreshSavedIds() }
+        }
+        .onDisappear { isOnScreen = false }
+        // 起動時の同期（`syncSaves`）が後から届いたぶんは拾う。**増えたときだけ**
+        // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる。
+        // **画面に出ている間だけ**（`isOnScreen`）。詳細の上で保存しても
+        // 増えるので、そこで取り込むと詳細が閉じる。戻れば `onAppear` が拾う
+        .onChange(of: savedPhotos.ids) { _, next in
+            guard isOnScreen else { return }
+            if next.isSuperset(of: savedIds) { savedIds = next }
+        }
+        // **人が替わったら前の人のぶんを持ち越さない。** 控えた保存の ID が
+        // 前の人のままだと、次の人の ID は上位集合にならず取り込まれない
+        // （公開一覧を読み終えるまで前の人の保存が見える）。空にしておけば
+        // 次は必ず取り込まれる。自分の写真・公開一覧（フォロワー限定を含む）も
+        // 前の人のもので、次の人の読み込みが落ちると引き当て先に残る
+        .onChange(of: auth.userId) { _, _ in
+            savedIds = []
+            feed = []
+            feedLoaded = false
+            feedFailed = false
+            model.forgetPhotos()
+        }
+    }
+
+    private func refreshSavedIds() {
+        savedIds = savedPhotos.ids
     }
 
     /// **段ごとに割ってある**（`UploadView` と同じ理由——長い ViewBuilder は
@@ -132,142 +174,197 @@ struct MyPageView: View {
     /// 旅の一冊へ。**撮った本人の記録なので、持ち場はここ**
     /// （タブは指示書の並び——ホーム／探す／投稿／マップ／マイページ）。
 
+    /// **カバーは画面の上端から**（時計の裏まで）。無い人は安全域の下から。
+    /// 安全域の高さは GeometryReader で測り（こちらは安全域を無視させない）、
+    /// 上端まで伸ばすのは中のスクロールだけ。設定の丸はこの高さぶん下げて、
+    /// 時計の裏に入れない
     private var content: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                scroll(topInset: geo.safeAreaInsets.top)
+                    .ignoresSafeArea(edges: hasCover ? .top : [])
+                // **時計の裏に黒のぼかし**（`TopBarScrim`）。上のバーを出さないので、
+                // 流した写真が時計・電池の字の真下を通って字が読めなくなっていた
+                TopBarScrim(topInset: geo.safeAreaInsets.top)
+            }
+        }
+    }
+
+    private func scroll(topInset: CGFloat) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let profile = model.profile {
-                    // カバーと見出しは間を空けずに重ねる（板 05c）
-                    VStack(alignment: .leading, spacing: 0) {
-                        ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
-                                     reserve: hasCover) { hasCover = $0 }
-                        header(profile)
+            VStack(alignment: .leading, spacing: 14) {
+                // **設定の丸は中身と一緒に流す。** 画面に留めると、送ったときに
+                // 格子の右上の写真に被さり、そこを押すと設定が開いた
+                // 板: 見出し・数・旅の実績の間は 12pt、その下の段は 14pt
+                VStack(alignment: .leading, spacing: 12) {
+                    ZStack(alignment: .topTrailing) {
+                        // **丸を先に置く**（読み上げで見出しの途中に「設定」が挟まらない）。
+                        // 見た目は前に出す
+                        settingsButton
+                            .padding(.top, hasCover ? topInset : 0)
+                            .zIndex(1)
+                        if let profile = model.profile {
+                            // カバーと見出しは間を空けずに重ねる（板 05c）。カバーが無ければ
+                            // 右上の設定の丸の下から始める（板 05d）
+                            VStack(alignment: .leading, spacing: 0) {
+                                ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
+                                             reserve: hasCover) { hasCover = $0 }
+                                header(profile)
+                            }
+                        } else {
+                            // 読み込み中・失敗: 丸の高さだけ空けて、下の中身に被せない
+                            Color.clear.frame(height: 44)
+                        }
                     }
-                    stats
-                    travelRecord
+                    if model.profile != nil {
+                        stats
+                        travelRecord
+                    }
+                }
+                if let profile = model.profile {
                     bgmCard(profile)
                     profileSetupNotice(profile)
                 }
                 // **「投稿する」とストーリーの行は置かない**（整理案 05c）。
                 // 下の札の「投稿」とホームのストーリーの行と入口が重なっていた。
-                // 旅の記録は下のタブへ移した
-                shortcuts
+                // 旅の記録は下のタブへ移した。**編集・アルバム・お気に入りの
+                // ボタンの列も置かない**——編集は見出しの右、お気に入りは下のタブ、
+                // アルバムは設定から入る（`SettingsView`）
                 highlightsRow
-                tabPicker
-                photoArea
+                // **札と中身は横に払っても切り替わる**（札を押すのと同じ）。
+                // 払いを受けるのは札から下だけ——上のハイライトの列は横に流れる
+                VStack(alignment: .leading, spacing: 14) {
+                    tabPicker
+                    photoArea
+                }
+                .contentShape(Rectangle())
+                .simultaneousGesture(tabSwipe)
             }
         }
-        .refreshable { await model.load() }
-    }
-
-    @ViewBuilder
-    private func themeRing(_ hex: String?) -> some View {
-        if let hex, let color = Color(hex: hex) {
-            Circle().strokeBorder(color, lineWidth: 3)
+        .refreshable {
+            await model.load()
+            // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
+            // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
+            // 読み取りも強い整合でなく（`userList.ts` の `readUserRows`）、外した
+            // 直後に入れ替えると外した保存が控えに戻る（いいねで踏んだのと同じ形）。
+            // サーバーに合わせるのは起動時・ログイン時の `syncSaves` だけ
+            await loadFeed(force: true)
+            refreshSavedIds()
         }
     }
 
+    /// 右上の設定（板: 44pt のガラスの丸）。**上のバーを出さないので、ここが入口**
+    private var settingsButton: some View {
+        NavigationLink { SettingsView() } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(Color.white)
+                .frame(width: 44, height: 44)
+                .jpGlass(in: Circle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 8)
+        .accessibilityLabel(L("設定", "Settings"))
+    }
+
+    /// 見出し（板 05c・05d）: 84pt のアイコン（黒い 3pt の縁）と右に「プロフィールを
+    /// 編集」、その下に明朝 26 の名前・「@ユーザー名 · (線のピン)居住地」・ひとこと
     private func header(_ profile: UserProfile) -> some View {
-        HStack(spacing: 12) {
-            RemoteImage(url: profile.avatarURL(cacheBust: model.avatarCacheBust))
-                .frame(width: 64, height: 64)
-                .clipShape(Circle())
-                // **本人が選んだ色を輪にする**（Web の `themeRingGradient` と
-                // 同じ置き場所）。選んでいなければ輪を出さない
-                .overlay(themeRing(profile.themeColor))
-                .coverCutout(hasCover)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(profile.name).font(JPFont.display(20, relativeTo: .title3))
-                    VerifiedBadge(isVerified: profile.verified)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .bottom) {
+                RemoteImage(url: profile.avatarURL(cacheBust: model.avatarCacheBust))
+                    .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
+                    .clipShape(Circle())
+                    // **板どおり黒の 3pt の縁**（写真の上でも丸が割れない）。
+                    // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
+                    .coverCutout(true)
+                Spacer(minLength: 8)
+                NavigationLink { ProfileEditView() } label: {
+                    Text(L("プロフィールを編集", "Edit profile"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
+                        // 見た目は 36pt、押せる高さは 44pt
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
                 }
-                // ユーザー名（モック2-1 の `@yuki_travel`）。
-                // **名前と同じ行に置かない**——長い名前で片方が切れる
-                if let username = profile.username, !username.isEmpty {
-                    Text("@\(username)")
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.faint)
+                .buttonStyle(.plain)
+                // 実機の絵の道しるべ（見出しが描けた＝読み込みが済んだ目印）
+                .accessibilityIdentifier("mypage.edit")
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text(profile.name)
+                        .font(JPFont.display(26, relativeTo: .title))
+                        .foregroundStyle(Color.white)
+                    VerifiedBadge(isVerified: profile.verified, nameSize: 26, relativeTo: .title, fit: .mincho)
+                }
+                if let line = ProfileLine.handleAndHome(username: profile.username,
+                                                        home: profile.homeLocation) {
+                    ProfileHandleLine(line: line, showsPin: true)
                 }
                 // ひとこと。**持っているのに一度も出していなかった**
-                if let status = profile.statusText, !status.isEmpty {
-                    Text(status).font(.footnote).foregroundStyle(WebTheme.muted2)
-                }
-                if let bio = profile.bio, !bio.isEmpty {
-                    Text(bio).font(.footnote).foregroundStyle(.secondary)
-                }
-                // 居住地（モック2-1 の「📍Tokyo, Japan」）。
-                // **地図には出さない**——住んでいる場所はピンにしない
-                if let home = profile.homeLocation, !home.isEmpty {
-                    Label(home, systemImage: "mappin.and.ellipse")
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
+                ForEach(ProfileLine.about(status: profile.statusText, bio: profile.bio), id: \.self) { text in
+                    Text(text)
+                        .font(.footnote)
+                        .lineSpacing(4)
+                        .foregroundStyle(WebTheme.muted2)
                 }
             }
-            Spacer()
         }
-        .padding(.horizontal, 16)
-        // カバーがあればアイコンを下端に半分ほど重ねる（板 05c）
-        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 8)
+        .padding(.horizontal, 20)
+        // カバーがあればアイコンを下端に重ねる（板: 180pt の帯に 84pt の丸を 50pt）。
+        // 無ければ右上の設定の丸の下から（板 05d）
+        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 49)
     }
 
-
-    /// 数の並び（提案の絵）。**投稿・いいね・フォロワー・フォロー中**
-    ///
-    /// **両端を 16pt の余白に揃える。** 下の「旅の実績」が端から端までの
-    /// 帯なので、ここが左詰めのままだと右端だけ段違いになる。
-    /// 丸の幅は中身のまま（数字の大きさを変えない）で、**間を均等に開ける**。
-    /// 収まらない幅（英語表記・桁の多い数）では、これまでどおり横に流す
+    /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・等幅の数字 18 と名前）。
+    /// 列は幅を三等分し、押せる高さは 44pt
     private var stats: some View {
-        ViewThatFits(in: .horizontal) {
-            statsRow(spread: true)
-                .padding(.horizontal, 16)
-            ScrollView(.horizontal, showsIndicators: false) {
-                statsRow(spread: false)
-                    .padding(.horizontal, 16)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func statsRow(spread: Bool) -> some View {
-        // 間の Spacer は最小 0 なので、詰めたときの間隔は `spacing` の 8 のまま
-        HStack(spacing: 8) {
-            statPill(systemImage: "photo.on.rectangle",
-                     value: "\(model.photos.count)", label: L("投稿", "Posts"))
-            if spread { Spacer(minLength: 0) }
+        // 板: 3列の等幅。等幅の数字（18）の下に小さい名前（10）
+        HStack(alignment: .top, spacing: 8) {
+            statCell(value: "\(model.photos.count)", label: L("投稿", "Posts"))
             NavigationLink {
                 FollowListView(userId: model.profile?.userId ?? "", kind: .followers)
             } label: {
-                statPill(systemImage: "person.2", value: "\(model.followers)",
-                         label: L("フォロワー", "Followers"))
+                statCell(value: "\(model.followers)", label: L("フォロワー", "Followers"))
             }
             .buttonStyle(.plain)
-            if spread { Spacer(minLength: 0) }
             NavigationLink {
                 FollowListView(userId: model.profile?.userId ?? "", kind: .following)
             } label: {
-                statPill(systemImage: "person", value: "\(model.following)",
-                         label: L("フォロー中", "Following"))
+                statCell(value: "\(model.following)", label: L("フォロー中", "Following"))
             }
             .buttonStyle(.plain)
         }
+        .padding(.horizontal, 20)
     }
 
-    private func statPill(systemImage: String, value: String, label: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
+    private func statCell(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
-                .foregroundStyle(WebTheme.foreground)
+                .font(JPFont.mono(18, relativeTo: .title3))
+                .foregroundStyle(Color.white)
             Text(label)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(WebTheme.faint)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 44)
-        .background(WebTheme.surface, in: Capsule())
+        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
+        .contentShape(Rectangle())
+        // **押せる高さは 44pt のまま、並びの上では字の高さだけ取る**（板: 数の下は
+        // すぐ 12pt で旅の実績の行）。44pt で場所を取ると、数と旅の実績の間が
+        // 板の倍近く空いていた。押せる範囲は下の旅の実績の行と重ならない量だけ詰める
+        .padding(.vertical, -Self.statTapSlack)
+        .accessibilityElement(children: .combine)
     }
+
+    /// 数の札の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）
+    private static let statTapSlack: CGFloat = 5
+    /// 旅の実績の札の同じ量（上下同じ）。数の札の張り出しと足して間の 12pt に収まる量。
+    /// **上下で変えない**——変えると、間の「·」（素の字）だけが項目の字とずれる
+    private static let recordTapSlack: CGFloat = 6
 
     /// 旅の実績（モック2-3）。**訪れた国・地域**と**写真をつないだ距離**を
     /// **小さな1行**で出す（整理案 05c・2026-09-26）。以前は幅いっぱいの
@@ -282,7 +379,8 @@ struct MyPageView: View {
         let countries = VisitedCountries.count(in: model.photos)
         let km = TravelDistance.total(of: model.photos)
         if countries > 0 || km > 0 {
-            HStack(spacing: 14) {
+            // 板: 「訪れた国・地域 00 · 写真をつないだ距離 000 km」（12px・間 6px）
+            HStack(spacing: 6) {
                 if countries > 0 {
                     recordItem(label: L("訪れた国・地域", "Countries"), value: "\(countries)") {
                         showCountriesNote = true
@@ -296,6 +394,12 @@ struct MyPageView: View {
                         Text(L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
                                "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number."))
                     }
+                }
+                if countries > 0 && km > 0 {
+                    Text("·")
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .accessibilityHidden(true)
                 }
                 if km > 0 {
                     recordItem(label: L("写真をつないだ距離", "Distance between photos"),
@@ -311,27 +415,29 @@ struct MyPageView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
         }
     }
 
     /// 1行の中の1項目。**押せる高さは 44pt**（見た目は小さな字のまま）
     private func recordItem(label: String, value: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Text(label)
                     .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+                    .foregroundStyle(WebTheme.faint)
                     // 幅の狭い端末（SE など）で2項目が1行に収まるように、折り返さずに少しだけ縮める
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Text(value)
-                    .font(JPFont.mono(13, medium: true, relativeTo: .caption))
-                    .foregroundStyle(WebTheme.foreground)
+                    .font(JPFont.mono(12, relativeTo: .caption))
+                    .foregroundStyle(Color.white)
             }
             .frame(minHeight: WebTheme.minTapTarget)
             .contentShape(Rectangle())
         }
+        // 数の札と同じく、押せる高さは 44pt のまま並びの上では詰める
+        .padding(.vertical, -Self.recordTapSlack)
         .buttonStyle(.plain)
         .accessibilityHint(L("数え方を表示", "Shows how this is counted"))
     }
@@ -344,34 +450,19 @@ struct MyPageView: View {
     }
 
 
-    private var shortcuts: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                NavigationLink(L("プロフィールを編集", "Edit profile")) { ProfileEditView() }
-                    .buttonStyle(.bordered)
-                NavigationLink(Labels.Navigation.albums) { AlbumsView() }
-                    .buttonStyle(.bordered)
-                NavigationLink(Labels.Navigation.favorites) { FavoritesView() }
-                    .buttonStyle(.bordered)
-            }
-            .padding(.horizontal, 16)
-        }
-        .font(.footnote)
-    }
-
     /// プロフィールのBGM（モック2-4）。
     ///
     /// **入れている人にだけ出す。** サーバーは前から `songs` を返していて、
     /// アプリが復号していなかっただけだった（⛔ にしていたのは誤り）。
     /// 曲は `MusicPreviewPlayer` に通す——**専用の再生器を作らない**
     /// （画面をまたいだ操作は `MiniPlayerBar` が受け持っている）。
+    ///
+    /// 見た目は `ProfileBgmCard`（再生器の見張りを札の中に閉じる）
     @ViewBuilder
     private func bgmCard(_ profile: UserProfile) -> some View {
         if let song = profile.bgm {
-            SongRow(song: song)
-                .padding(12)
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-                .padding(.horizontal, 16)
+            ProfileBgmCard(song: song)
+                .padding(.horizontal, 20)
         }
     }
 
@@ -389,36 +480,34 @@ struct MyPageView: View {
         }
     }
 
-    /// いいねした写真。**サーバーの一覧と、この端末の控えの和**。
+    /// お気に入り＝**保存した写真**（板 05c のタブ「お気に入り」・しおりの印・板 35）。
     ///
-    /// 以前は**自分の写真の中から**端末の控えに一致するものを探していたので、
-    /// **他人の写真へのいいねが一度も出なかった**（自分の写真を自分で
-    /// いいねしたときだけ出る状態）。さらに別の端末で押したぶんも
-    /// 出なかった——同じ写真の詳細は「いいね済み」と出るのに。
+    /// 以前の中身はいいねした写真で、見出し（英語は "Saved"）と食い違い、
+    /// 保存した写真を見返す場所がどこにも無かった（2026-09-26 のキャンバスとの
+    /// 突き合わせ 6・8）。いいねした写真はメニューと設定から開く（`FavoritesView`）
     @ViewBuilder
     private var favoritesArea: some View {
-        let ids = LikedPhotos.ids(serverIds: serverLikeIds, deviceIds: favorites.ids)
-        let liked = LikedPhotos.resolve(ids, in: [feed, model.photos])
-        VStack(alignment: .leading, spacing: 10) {
-            if likesStatus == .partial {
-                // **端末のぶんは消さない。** 足りていないことだけ伝える
-                ErrorBanner(message: L("サーバーのいいねを取れませんでした。この端末に覚えているぶんだけ出しています",
-                                       "Couldn't reach the server — showing what's on this device")) {
-                    Task { await loadLikes() }
+        let saved = LikedPhotos.resolve(savedIds, in: [feed, model.photos])
+        if saved.isEmpty {
+            switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
+                                          failed: feedFailed) {
+            case .loading:
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+            case .none:
+                ErrorBanner(message: SavedPhotosView.emptyMessage)
+            case .nothingShown:
+                ErrorBanner(message: LikedPhotos.nothingShownMessage)
+            case .unresolved:
+                ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
+                    Task {
+                        await loadFeed()
+                        await model.load()
+                    }
                 }
             }
-            if liked.isEmpty {
-                // **「まだ」と「0件」を混ぜない。** 取得中に「ありません」と
-                // 言い切ると、別の端末で押したぶんが届く前に「無い」と読まれる
-                if likesStatus == .loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
-                } else {
-                    ErrorBanner(message: L("いいねした写真はまだありません", "No liked photos yet"))
-                }
-            } else {
-                PhotoGrid(photos: liked) { photo in
-                    PhotoDetailView(photo: photo, context: liked)
-                }
+        } else {
+            PhotoGrid(photos: saved) { photo in
+                PhotoDetailView(photo: photo, context: saved)
             }
         }
     }
@@ -568,38 +657,28 @@ struct MyPageView: View {
     }
 
     /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
-    /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
+    /// 見た目は人のページと同じ下線の札（`ProfileTabBar`）
     private var tabPicker: some View {
-        HStack(spacing: 6) {
-            ForEach(ProfileTab.tabs(isMe: true)) { option in
-                let selected = tab == option
-                Button {
-                    tab = option
-                } label: {
-                    Text(option.label)
-                        .font(.subheadline.weight(selected ? .semibold : .regular))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(selected ? AnyShapeStyle(WebTheme.foreground)
-                                             : AnyShapeStyle(Color.clear),
-                                    in: Capsule())
-                        .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-                // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
-                // ——以前は写真の上の「旅の記録」の札に付けていた
-                .accessibilityIdentifier("profile.tab.\(option.rawValue)")
+        ProfileTabBar(tabs: ProfileTab.tabs(isMe: true), selection: $tab)
+    }
+
+    /// 横の払いでタブを切り替える。**`simultaneousGesture` で付ける**——`gesture` に
+    /// すると縦のスクロールと写真を押す操作を奪う。判定は `ProfileTab.swiped`
+    /// （はっきり横に動いたときだけ・端で回り込まない）
+    private var tabSwipe: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onEnded { value in
+                guard let next = ProfileTab.swiped(from: tab, in: ProfileTab.tabs(isMe: true),
+                                                   dx: Double(value.translation.width),
+                                                   dy: Double(value.translation.height))
+                else { return }
+                tab = next
             }
-        }
-        .padding(4)
-        .background(WebTheme.surface, in: Capsule())
-        .padding(.horizontal, 16)
     }
 
     /// 旅の記録（旅の一冊の棚）。**自分の公開写真から**その場でまとめる
     /// ——下書きは旅に入れない（見せていない写真が一冊に紛れ込む）。
-    /// 背表紙は `TripShelf`。**旅の一覧の画面（`TripsView`）はここへ畳んだ**
+    /// 棚は `TripShelfList`。**旅の一覧の画面（`TripsView`）はここへ畳んだ**
     /// ——入口がマイページの札1つだけだった
     @ViewBuilder
     private var tripsArea: some View {
@@ -609,51 +688,21 @@ struct MyPageView: View {
             ProgressView()
                 .frame(maxWidth: .infinity)
                 .padding(24)
-        } else if trips.isEmpty {
-            // **なぜ空なのかを言う**
-            Text(L("同じころに撮った写真が2枚たまると、ひとつの旅にまとまります",
-                   "Two or more photos taken around the same time become a trip"))
-                .font(.footnote)
-                .foregroundStyle(WebTheme.faint)
-                .frame(maxWidth: .infinity)
-                .padding(24)
         } else {
-            LazyVStack(spacing: 16) {
-                ForEach(trips) { trip in
-                    NavigationLink {
-                        TripBookView(trip: trip)
-                    } label: {
-                        TripShelf(trip: trip)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("trips.book")
-                }
-            }
-            .padding(.horizontal, 16)
+            // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
+            TripShelfList(trips: trips)
         }
     }
 
-    /// いいねした写真を読む。**未ログインなら聞きに行かない**
-    /// （端末の控えが答え）。
-    private func loadLikes() async {
-        guard auth.userId != nil else {
-            serverLikeIds = nil
-            likesStatus = .deviceOnly
-            return
-        }
-        likesStatus = .loading
-        // 引き当て先。公開一覧が取れなくても、自分の写真の分は出せる
-        async let feedTask = environment.gallery.fetchPhotos()
-        async let idsTask = environment.social.myLikedPhotoIds()
-        feed = (try? await feedTask) ?? feed
-        let ids = try? await idsTask
-        if let ids {
-            serverLikeIds = ids
-            likesStatus = .ready
-        } else {
-            serverLikeIds = nil
-            likesStatus = .partial
-        }
+    /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。
+    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` がタブごと知らせる
+    private func loadFeed(force: Bool = false) async {
+        let fetched = try? await environment.gallery.fetchPhotos(force: force)
+        guard !Task.isCancelled else { return }
+        feedFailed = fetched == nil
+        feed = fetched ?? feed
+        feedLoaded = true
+        refreshSavedIds()
     }
 
     @ViewBuilder
@@ -674,22 +723,31 @@ struct MyPageView: View {
             // **写真の有無とは無関係。** 行きたい場所は台帳の話で、
             // 1枚も撮っていない人にも中身がある
             wishlistArea
+        } else if tab == .favorites {
+            // **写真の有無とは無関係。** 保存は他人の写真にもする
+            favoritesArea
         } else if model.photos.isEmpty && !model.isLoading {
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
             ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
-        } else if tab == .favorites {
-            favoritesArea
         } else {
-            LazyVGrid(columns: columns, spacing: 2) {
+            let multiple = PhotoGroups.multiPhotoIds(model.photos)
+            LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(model.photos) { photo in
                     NavigationLink {
                         PhotoDetailView(photo: photo, fromPublicFeed: false, context: model.photos)
                     } label: {
-                        gridCell(photo)
+                        gridCell(photo, multiple: multiple.contains(photo.id))
                     }
                     .buttonStyle(.plain)
+                    // 何の写真か（題）を名前に、印（ピン・下書き・複数枚）を値にして読む。
+                    // 名前だけ差し替えると中の印が読まれなくなる
+                    .accessibilityLabel(photo.accessibilityText)
+                    .accessibilityValue(ProfileLine.gridState(
+                        pinned: model.isPinned(photo.id),
+                        draft: photo.published == false,
+                        multiple: multiple.contains(photo.id)))
                     // **長押しでピン留め**（Web の「先頭にピン留め」と同じ操作）。
                     // 一覧の見た目は変えず、操作だけ足す
                     .contextMenu {
@@ -709,26 +767,42 @@ struct MyPageView: View {
 
     /// 一覧の1枚。**下書き（非公開）は一目で分かるようにする**
     /// ——公開したつもりの写真が出ていない、がいちばん困る。
-    private func gridCell(_ photo: Photo) -> some View {
-        ZStack(alignment: .topTrailing) {
-            PhotoFrame(photo: photo)
-            if model.isPinned(photo.id) {
-                Image(systemName: "pin.fill")
-                    .font(.caption)
-                    .padding(4)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .padding(4)
-                    .accessibilityLabel(L("ピン留め中", "Pinned"))
+    /// 印は左上（板 05c: ピンは 22pt の黒い丸、下書きは黒い小さな札）、
+    /// 複数枚の投稿は右上。**印は読み上げない**（格子の1枚の値として読む）
+    private func gridCell(_ photo: Photo, multiple: Bool) -> some View {
+        PhotoFrame(photo: photo, corner: 0)
+            .overlay(alignment: .topTrailing) {
+                if multiple {
+                    Image(systemName: "square.on.square")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.white)
+                        .shadow(radius: 3)
+                        .padding(6)
+                        .accessibilityHidden(true)
+                }
             }
-            if photo.published == false {
-                Text(L("下書き", "Draft"))
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(4)
+            .overlay(alignment: .topLeading) {
+                HStack(spacing: 4) {
+                    if model.isPinned(photo.id) {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 22, height: 22)
+                            .background(Color.black.opacity(0.55), in: Circle())
+                            .accessibilityHidden(true)
+                    }
+                    if photo.published == false {
+                        Text(L("下書き", "Draft"))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.black.opacity(0.6), in: Capsule())
+                            .accessibilityHidden(true)
+                    }
+                }
+                .padding(6)
             }
-        }
     }
 }
 
@@ -846,6 +920,13 @@ final class MyPageViewModel: ObservableObject {
             self.followers = stats.followers
             self.following = stats.following
         }
+    }
+
+    /// 人が替わったとき、前の人の写真を手放す。次の人の読み込みが落ちても、
+    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように
+    func forgetPhotos() {
+        photos = []
+        pinnedIds = []
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

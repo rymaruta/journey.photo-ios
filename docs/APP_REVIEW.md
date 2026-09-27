@@ -58,7 +58,7 @@ App Store Connect の Demo Account に入れる。
 | 4.2 Minimum Functionality | Web サイトを包んだだけは不可 | カメラからの直接投稿、端末側での EXIF 除去、オフライン表示 | `CameraPicker.swift` / `ImagePreparer.swift` / `PhotoSnapshotStore.swift` |
 | 1.2 UGC | 規約への同意 | 初回起動時の同意画面 | `LegalGateView.swift` |
 | 1.2 UGC | 不適切な内容の通報 | 写真ごとの「…」→ 通報（理由7種＋補足）。**通報した写真はその場で一覧から消える** | `ReportSheet.swift` / `ModerationStore.swift` |
-| 1.2 UGC | 不適切な内容を出さない仕組み | ブロックした相手の写真を、ギャラリー・検索・地図・関連写真から**端末側で落とす**。公開の写真一覧はビルド時に焼いた静的 JSON なのでサーバー側では絞れない | `PublicGalleryService.setHidden` |
+| 1.2 UGC | 不適切な内容を出さない仕組み | ブロックした相手の写真を、ギャラリー・検索・地図・近くの写真から**端末側で落とす**。公開の写真一覧はビルド時に焼いた静的 JSON なのでサーバー側では絞れない | `PublicGalleryService.setHidden` |
 | 1.2 UGC | 迷惑な利用者のブロック | 通報と同じ場所＋プロフィールから。解除は設定 | `ModerationService.swift` / `BlockedUsersView.swift` |
 | 1.2 UGC | 連絡先の公開 | 設定に「問い合わせ」。サイトの規約ページと同じ宛先 | `LegalConsent.contactEmail` |
 | 5.1.1(v) | アプリ内でのアカウント削除 | 設定 → アカウントの削除（確認語の入力つき） | `DeleteAccountView.swift` |

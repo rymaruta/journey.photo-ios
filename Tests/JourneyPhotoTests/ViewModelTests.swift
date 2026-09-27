@@ -121,13 +121,13 @@ final class ViewModelTests: XCTestCase {
 
         await model.loadPhotos(environment: env)
         await model.search("パリ", environment: env)
-        XCTAssertEqual(model.photos.count, 2, "下ごしらえが効いていない")
+        XCTAssertEqual(model.shown.count, 2, "下ごしらえが効いていない")
 
         await service.setHidden(userIds: ["u2"], photoIds: [])
         await model.reloadPhotos(environment: env)
         await model.search("パリ", environment: env)
 
-        XCTAssertEqual(model.photos.map(\.id), ["a"],
+        XCTAssertEqual(model.shown.map(\.id), ["a"],
                        "ブロックした相手の写真が検索結果に残っている")
     }
 
@@ -169,6 +169,24 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage, "一覧を消す側に入れている")
         XCTAssertEqual(model.pinnedIds, ["a", "b", "c"],
                        "断られたのにサーバーの一覧へ揃えていない")
+    }
+
+    /// **人が替わったら前の人の写真を手放す。** 残すと、次の人の読み込みが
+    /// 落ちたとき前の人の写真（非公開を含む）が保存の引き当て先に残る
+    func testForgetPhotosDropsThePreviousUsersPhotos() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"a","pinnedPhotoIds":["p1"]}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg","published":false}]"#)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "前提: 前の人の写真を読めていない")
+
+        model.forgetPhotos()
+
+        XCTAssertTrue(model.photos.isEmpty, "前の人の写真が残っている")
+        XCTAssertTrue(model.pinnedIds.isEmpty, "前の人の留めた写真が残っている")
     }
 
     #if DEBUG

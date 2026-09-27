@@ -15,11 +15,10 @@ struct GalleryView: View {
     /// ファーストビューが「ボタンだらけ」になり、写真が下へ押し下げられる
     @State private var showsTags = false
     /// 通報している写真。**シートはカードではなくここに付ける**
-    /// （`HomeFeedCard.onReport` の注記）
+    /// （`HomeMosaic.onReport` の注記）
     @State private var reportTarget: Photo?
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
-    var avatarURL: URL?
     var onOpenNotifications: () -> Void = {}
 
     var body: some View {
@@ -51,10 +50,10 @@ struct GalleryView: View {
         // 別のサイトに見えていた
         .navigationTitle("Journey Photo")
         .navigationBarTitleDisplayMode(.inline)
-        // 見出しの右（通知・自分のアイコン）はどの画面も同じ、左は画面ごと（`AppHeaderItems`）。
+        // 見出しはどの画面も同じ（ロゴ・お知らせ・メニュー。ホームだけ「探す」も・`AppHeaderItems`）。
         // **地図のアイコンは外した**——下の札に「マップ」があり、
         // 同じ場所への入口が2つあった
-        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, showsSearch: true, onOpenNotifications: onOpenNotifications) }
         .task {
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない
@@ -167,7 +166,7 @@ struct GalleryView: View {
                 // 並び替え。**Web も同じ列に置いている**（`FilterBar` の
                 // 右端のメニュー）。新しい順／古い順／人気順の3つ
                 Menu {
-                    ForEach(GallerySort.allCases) { option in
+                    ForEach(GallerySort.feedChoices) { option in
                         Button {
                             model.select(sort: option)
                         } label: {
@@ -332,8 +331,8 @@ struct GalleryView: View {
         .padding(.horizontal, 16)
     }
 
-    /// ホームは**縦1列のフィード**（提案の絵・2026-09-21）。
-    /// 格子は集約ページ（タグ・撮影地・機材）で使い続ける。
+    /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
+    /// 集約ページ（タグ・撮影地・機材）は角丸の `PhotoGrid` のまま。
     private func feed(_ photos: [Photo]) -> some View {
         ScrollViewReader { proxy in
         ScrollView {
@@ -365,12 +364,8 @@ struct GalleryView: View {
                         .padding(.vertical, 40)
                         .padding(.horizontal, 24)
                 }
-                ForEach(groups) { group in
-                    // **いま見ている1枚**を通報する（束の2枚目を見ていれば2枚目）
-                    HomeFeedCard(photo: group.cover, following: model.followingIds,
-                                 siblings: group.photos,
-                                 onReport: { reportTarget = $0 })
-                }
+                // 板 01c: 大きく1枚 → 2枚 → 2枚、端から端まで・隙間 4pt
+                HomeMosaic(groups: groups, onReport: { reportTarget = $0 })
             }
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする

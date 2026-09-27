@@ -9,15 +9,34 @@ final class LikedPhotosTests: XCTestCase {
             "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(created)}".utf8))
     }
 
-    /// **和を取る。** サーバーは別の端末のぶん、端末は未ログイン中のぶん
-    func testUnionOfServerAndDevice() {
-        XCTAssertEqual(LikedPhotos.ids(serverIds: ["a", "b"], deviceIds: ["b", "c"]),
-                       ["a", "b", "c"])
+    /// **「まだ」と「0件」を混ぜない。** 引き当て先を読み終える前は、ID が0でも
+    /// 「ありません」と言わない（以前の「いいねした写真」は取得中に空の格子だった）
+    func testLoadingWhileThePoolsAreNotLoaded() {
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: 0, loaded: false, failed: false), .loading)
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: 3, loaded: false, failed: true), .loading)
     }
 
-    /// サーバーに聞けなかった回でも**端末の控えは消さない**
-    func testKeepsDeviceIdsWhenServerIsUnreachable() {
-        XCTAssertEqual(LikedPhotos.ids(serverIds: nil, deviceIds: ["c"]), ["c"])
+    func testNoneOnlyWhenThereAreNoIds() {
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: 0, loaded: true, failed: false), .none)
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: 0, loaded: true, failed: true), .none)
+    }
+
+    /// **引き当て先の読み込みが失敗した回だけ「読み込めませんでした」。**
+    /// 「まだありません」と言うと、保存やいいねが消えたように読める
+    func testUnresolvedOnlyWhenThePoolsFailedToLoad() {
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: 2, loaded: true, failed: true), .unresolved)
+    }
+
+    /// 🔴 **公開一覧はブロック・通報を落として返る**（`PublicGalleryService` の
+    /// `visible`）。画面の持つ feed には非表示の写真が最初から無い——その形で、
+    /// 保存した写真が全部非表示の人に「読み込めませんでした」と再試行を出さない
+    /// （ddccc38 は絞る前の束がある前提で数え分けていて、実際の形では効かなかった）
+    func testIdsOnlyHiddenFromTheFilteredFeedAreNotAnError() throws {
+        let feed = [try photo("shown-to-others", createdAt: "2026-01-01")]  // 絞り済み
+        let ids: Set<String> = ["blocked-author", "reported"]
+        let photos = LikedPhotos.resolve(ids, in: [feed, []])
+        XCTAssertTrue(photos.isEmpty, "前提: 引き当て先に無い")
+        XCTAssertEqual(LikedPhotos.emptyState(idCount: ids.count, loaded: true, failed: false), .nothingShown)
     }
 
     /// **他人の写真が出る。** 自分の写真だけを探していたのが元のバグ

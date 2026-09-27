@@ -21,8 +21,10 @@ struct ProfileCover: View {
 
     /// 板どおりの高さ。下の 110pt を黒へ溶かす（アイコンと名前が乗る側）
     static let height: CGFloat = 180
-    /// 見出しを帯の下端へ引き上げる量。64pt のアイコンの半分弱（板は 84pt に 50pt）
-    static let avatarOverlap: CGFloat = 28
+    /// 見出しのアイコン（板 84pt）と、帯の下端へ引き上げる量（板 50pt）。
+    /// マイページ（板 05c）と人のページ（板 31）で同じ——以前は人のページだけ 64pt・28pt
+    static let avatarSize: CGFloat = 84
+    static let avatarOverlap: CGFloat = 50
 
     var body: some View {
         if let url {

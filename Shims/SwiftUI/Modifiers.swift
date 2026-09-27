@@ -51,6 +51,9 @@ public struct ToolbarContentBuilder {
     public static func buildBlock<C: ToolbarContent>(_ c: C) -> C { c }
     public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent>(_ c1: C1, _ c2: C2) -> EmptyToolbarContent { EmptyToolbarContent() }
     public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3) -> EmptyToolbarContent { EmptyToolbarContent() }
+    // 本物は10個まで受ける。見出し（ロゴ・探す・お知らせ・メニュー）で4つ要る
+    public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent, C4: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3, _ c4: C4) -> EmptyToolbarContent { EmptyToolbarContent() }
+    public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent, C4: ToolbarContent, C5: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3, _ c4: C4, _ c5: C5) -> EmptyToolbarContent { EmptyToolbarContent() }
     public static func buildIf<C: ToolbarContent>(_ c: C?) -> C? { c }
     public static func buildOptional<C: ToolbarContent>(_ c: C?) -> C? { c }
     public static func buildEither<T: ToolbarContent>(first: T) -> EmptyToolbarContent { EmptyToolbarContent() }
@@ -81,6 +84,7 @@ public struct AccessibilityTraits: OptionSet {
     public static let isModal = AccessibilityTraits(rawValue: 1 << 5)
     public static let isButton = AccessibilityTraits(rawValue: 2)
     public static let isHeader = AccessibilityTraits(rawValue: 1 << 3)
+    public static let isImage = AccessibilityTraits(rawValue: 1 << 2)
 }
 public struct TextInputAutocapitalization {
     public static let never = TextInputAutocapitalization()
@@ -100,7 +104,8 @@ public struct UITextContentTypeShim {
     public static let name = UITextContentTypeShim()
 }
 /// 自前の押し方の模型（本物と同じ形）。`makeBody` に押している間かが来る
-public protocol ButtonStyle {
+/// 本物は `@MainActor`（`makeBody` の中で修飾子を呼べるのはそのため）
+@MainActor public protocol ButtonStyle {
     associatedtype Body: View
     typealias Configuration = ButtonStyleConfiguration
     /// 本物の SwiftUI と同じく `@MainActor`（`JPRowButtonStyle` が
@@ -136,6 +141,12 @@ public struct ScrollDismissesKeyboardModeShim {
 public struct ListStyleShim {
     public static let plain = ListStyleShim()
     public static let insetGrouped = ListStyleShim()
+}
+/// シートの高さの段（本物と同じ形）
+public struct PresentationDetent: Hashable {
+    public static let medium = PresentationDetent()
+    public static let large = PresentationDetent()
+    public static func height(_ h: CGFloat) -> PresentationDetent { PresentationDetent() }
 }
 public struct VisibilityShim {
     public static let automatic = VisibilityShim()
@@ -198,6 +209,10 @@ extension View {
     public func offset(x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func position(x: Double, y: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipped() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 場所は取るが描かない（本物と同じ）
+    public func hidden() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 重なりの順（本物と同じ）
+    public func zIndex(_ value: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func clipShape<S: Shape>(_ shape: S) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 揃えの位置を自分で決める（本物と同じ）
@@ -224,6 +239,7 @@ extension View {
     public func multilineTextAlignment(_ a: TextAlignment) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineSpacing(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func minimumScaleFactor(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func layoutPriority(_ value: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func tracking(_ v: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func dynamicTypeSize(_ range: PartialRangeThrough<DynamicTypeSize>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func textCase(_ c: Text.Case?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -259,11 +275,15 @@ extension View {
     public func rotationEffect(_ a: Angle) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func presentationBackground<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func presentationDragIndicator(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// シートの高さ（本物と同じ）
+    public func presentationDetents(_ detents: Set<PresentationDetent>) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func contentShape<T: Shape>(_ shape: T) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     // 黒地に揃えるために使う（`WebTheme`）。模型なので何も描かない
     public func scrollContentBackground(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func preferredColorScheme(_ s: ColorSchemeShim?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarBackground<S: ShapeStyle>(_ s: S, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    // 本物は `toolbarBackground(_ visibility: Visibility, for: ToolbarPlacement...)`（iOS 16+）
+    public func toolbarBackground(_ v: VisibilityShim, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarColorScheme(_ s: ColorSchemeShim?, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbar(_ v: VisibilityShim, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -275,8 +295,6 @@ extension View {
     public func textFieldStyle(_ s: TextFieldStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func controlSize(_ s: ControlSizeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func labelsHidden() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
-    /// 下へ払って閉じるのを止める（本物と同じ）
-    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// スクロールでキーボードを下げる（本物と同じ）
     public func scrollDismissesKeyboard(_ mode: ScrollDismissesKeyboardModeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func focused(_ condition: Binding<Bool>) -> Self { self }
@@ -299,8 +317,16 @@ extension View {
     // 画面遷移と入れ物
     public func navigationTitle(_ title: String) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func navigationBarTitleDisplayMode(_ m: NavigationBarItem.TitleDisplayMode) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+    /// 標準の戻るを隠す（本物は iOS 13 以降）。左端から払って戻るのも止まる
+    public func navigationBarBackButtonHidden(_ hidesBackButton: Bool = true) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func navigationDestination<D: Hashable, V: View>(
         for data: D.Type, @ViewBuilder destination: @escaping (D) -> V) -> Self { self }
+    /// 値が立ったら開く（iOS 17+）
+    public func navigationDestination<D: Hashable, V: View>(
+        item: Binding<D?>, @ViewBuilder destination: @escaping (D) -> V) -> Self { self }
+    /// 旗が立ったら押し込む版（iOS 16+）。作った直後にその画面を開くのに使う
+    public func navigationDestination<V: View>(
+        isPresented: Binding<Bool>, @ViewBuilder destination: () -> V) -> Self { self }
     public func toolbar<C: ToolbarContent>(@ToolbarContentBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func tabItem<V: View>(@ViewBuilder _ label: () -> V) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func sheet<C: View>(isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil,
@@ -415,8 +441,13 @@ extension View {
 
 /// 行の余白（本物と同じ形）
 public struct EdgeInsets {
+    /// 本物と同じく4辺を読める（`GeometryProxy.safeAreaInsets.top` など）
+    public var top: CGFloat = 0, leading: CGFloat = 0, bottom: CGFloat = 0, trailing: CGFloat = 0
     public init() {}
-    public init(top: Double, leading: Double, bottom: Double, trailing: Double) {}
+    public init(top: Double, leading: Double, bottom: Double, trailing: Double) {
+        self.top = CGFloat(top); self.leading = CGFloat(leading)
+        self.bottom = CGFloat(bottom); self.trailing = CGFloat(trailing)
+    }
 }
 
 /// `submitLabel(_:)` が受ける確定キーの文言。本物は struct

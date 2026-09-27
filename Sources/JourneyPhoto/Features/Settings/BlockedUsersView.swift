@@ -69,16 +69,15 @@ struct BlockedUsersView: View {
         .overlay { if isLoading { ProgressView() } }
     }
 
-    /// アイコンと名前（板の @username は、この一覧の応答が持たないので出さない）
+    /// アイコンと名前・@ユーザー名（板 45）。@ユーザー名は一覧の応答が各行に持つ
+    /// （2026-09-26 から）。無い人・退会した人・101人目以降は名前だけ
     private func person(_ user: FollowUser) -> some View {
         HStack(spacing: 12) {
             RemoteImage(url: UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil))
                 .frame(width: 44, height: 44)
                 .background(WebTheme.surface)
                 .clipShape(Circle())
-            Text(user.displayName)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
+            PersonNameLines(user: user, lineLimit: 1)
             Spacer(minLength: 0)
         }
     }

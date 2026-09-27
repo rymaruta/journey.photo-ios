@@ -8,7 +8,10 @@ struct StoryComposerView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var drafts: StoryDraftStore
+    /// 送るのは裏の係（画面を閉じても続く・板 27）
+    @ObservedObject private var uploads = StoryUploadCenter.shared
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
 
     /// ライブラリから選んだもの。**まとめて選べる**（モック4-5）
@@ -28,9 +31,10 @@ struct StoryComposerView: View {
     /// 24時間のあとも残すか（ハイライトの材料になる）
     @State private var keepInArchive = false
     @State private var showCamera = false
-    @State private var isWorking = false
     /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
     @State private var keepExistingDraft = false
+    /// 前に送れなかったストーリーが残っているときの問い（開いた直後に1回）
+    @State private var showPendingFailure = false
     /// ストーリーのBGM（30秒の試聴だけ）と、表示秒数
     @State private var song: Photo.Song?
     @State private var durationSec = StoryService.defaultDurationSec
@@ -106,7 +110,7 @@ struct StoryComposerView: View {
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
-                SongPickerView { picked in song = picked }
+                SongPickerView { picked in applySong(picked) }
             }
         }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
@@ -121,13 +125,30 @@ struct StoryComposerView: View {
             Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。",
                    "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
         }
-        // 🔴 **送っている間は下へ払っても閉じない**（✕ と同じ。閉じても送信は裏で続く）
-        .interactiveDismissDisabled(isWorking)
         // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
             drafts.use(userId: auth.userId)
-            if drafts.draft != nil, prepared == nil { showRestore = true }
+            // **送れなかった残りが先。** 片付くまで新しい投稿は受けないので、
+            // ここでも出口を出す（ホームの輪が見えない人のため）
+            if case .failed = uploads.phase {
+                showPendingFailure = true
+            } else if drafts.draft != nil, prepared == nil {
+                showRestore = true
+            }
+        }
+        .confirmationDialog(L("送れなかったストーリーがあります", "A story didn't finish sending"),
+                            isPresented: $showPendingFailure, titleVisibility: .visible) {
+            Button(L("もう一度送る", "Try again")) {
+                uploads.retry()
+                dismiss()
+            }
+            Button(L("やめる", "Discard"), role: .destructive) { uploads.discard() }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            if case .failed(let message, _) = uploads.phase {
+                Text(message)
+            }
         }
         .alert(L("書きかけの下書きがあります", "You have a saved draft"), isPresented: $showRestore) {
             Button(L("続きから", "Continue")) { restoreDraft() }
@@ -155,7 +176,7 @@ struct StoryComposerView: View {
     // MARK: - 写真
 
     /// 写真を画面いっぱいに（下の角だけ半径24）。上下の暗がり、右の道具の列、
-    /// 写真の上のひとこと・撮影地・曲、左下の並び、右下の秒数（板 24）
+    /// 写真の上のひとこと・撮影地（曲は動かせる札）、左下の並び、右下の秒数（板 24）
     private var photoArea: some View {
         ZStack(alignment: .bottomLeading) {
             Color(red: 0x0A / 255.0, green: 0x10 / 255.0, blue: 0x30 / 255.0).opacity(preview == nil ? 0 : 1)
@@ -193,8 +214,6 @@ struct StoryComposerView: View {
         .overlay(alignment: .topTrailing) {
             if !textMode && preview != nil {
                 toolColumn
-                    // 送っている間は触らせない（失敗すると並びが詰め直される）
-                    .disabled(isWorking)
                     .padding(.trailing, 12)
                     .padding(.top, 120)
             }
@@ -211,9 +230,6 @@ struct StoryComposerView: View {
                 mediaStrip
                     .padding(.leading, 16)
                     .padding(.bottom, 20)
-                    // 🔴 **送っている間は並びを変えさせない。** 送信は始めたときの写しを
-                    // 回すので、外した写真も出てしまい、失敗時の片付けが範囲外で落ちていた
-                    .disabled(isWorking)
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -270,7 +286,7 @@ struct StoryComposerView: View {
                 // 付けた曲は変える・外すを選ぶ（外す口が無かった）
                 Menu {
                     Button(L("曲を変える", "Change song")) { showSongPicker = true }
-                    Button(L("曲を外す", "Remove song"), role: .destructive) { song = nil }
+                    Button(L("曲を外す", "Remove song"), role: .destructive) { applySong(nil) }
                 } label: {
                     toolIcon("music.note")
                 }
@@ -304,7 +320,8 @@ struct StoryComposerView: View {
             .jpGlass(in: Circle())
     }
 
-    /// 写真の上のひとこと（明朝32・影）と、撮影地・曲の札。**ひとことはその場で打つ**
+    /// 写真の上のひとこと（明朝32・影）と撮影地の札。**ひとことはその場で打つ**。
+    /// 曲は動かせる札として写真に置く（`SongSticker`）
     private var captionBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField(L("ひとことを書く", "Write a caption"), text: Binding(
@@ -320,10 +337,35 @@ struct StoryComposerView: View {
             if !location.isEmpty {
                 photoChip(symbol: "mappin", text: location)
             }
-            if let song {
-                photoChip(symbol: "music.note", text: song.title)
+            // **曲が付いていることは必ず見せる。** 札はいまの1枚にしか置かないので、
+            // 札を消した・別の写真に切り替えた・札が上限で置けなかったときに、
+            // 曲が付いているのに画面から何も分からなくなる
+            if let song, !currentHasSongSticker, let text = SongSticker.text(for: song) {
+                photoChip(symbol: "music.note", text: text)
             }
         }
+    }
+
+    /// 曲の札を置けない理由の一言。**状態から毎回決める**（覚えておくと、写真を
+    /// 切り替えた・札を消したあとも「置けませんでした」が残る）。写真や投稿の
+    /// 知らせ（`message`）とは別の欄——投稿の途中失敗の知らせを上書きしない
+    /// **どの写真にもいまの曲の札が無いときだけ出す**（札は1枚にしか置かないので、
+    /// 別の写真に置いてあれば足りている）
+    private var songNote: String? {
+        guard let song, let text = SongSticker.text(for: song), !currentHasSongSticker,
+              overlays.wrappedValue.count >= TextOverlay.maxCount else { return nil }
+        let placed = String(text.prefix(TextOverlay.maxLength))
+        guard !shots.contains(where: { $0.overlays.contains { $0.kind == .song && $0.text == placed } })
+        else { return nil }
+        return L("文字と札がいっぱいなので、曲の札は置けません",
+                 "No room for the song sticker on this photo")
+    }
+
+    /// いまの1枚に、付けた曲の札が置いてあるか
+    private var currentHasSongSticker: Bool {
+        guard let song, let text = SongSticker.text(for: song) else { return false }
+        let placed = String(text.prefix(TextOverlay.maxLength))
+        return overlays.wrappedValue.contains { $0.kind == .song && $0.text == placed }
     }
 
     private func photoChip(symbol: String, text: String) -> some View {
@@ -375,9 +417,9 @@ struct StoryComposerView: View {
     @ViewBuilder
     private var topBar: some View {
         if textMode {
-            // 板 24b: やめる／文字と札／できた
+            // 板 24b: キャンセル／文字と札／完了（owner: 「やめる・できた」は幼い）
             HStack {
-                Button(L("やめる", "Cancel")) {
+                Button(L("キャンセル", "Cancel")) {
                     // **入ったときの写真へ戻す**（表示中の写真が移っていても取り違えない）
                     if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
                         shots[i].overlays = overlaySnapshot
@@ -392,7 +434,7 @@ struct StoryComposerView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(WebTheme.muted2)
                 Spacer()
-                Button(L("できた", "Done")) {
+                Button(L("完了", "Done")) {
                     // 空のまま閉じたら置かない（見えない物を焼き込まない）
                     if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
                         shots[i].overlays.removeAll { $0.isEmpty }
@@ -416,8 +458,6 @@ struct StoryComposerView: View {
                         .jpGlass(in: Circle())
                 }
                 .buttonStyle(.plain)
-                // 送っている間は閉じさせない（閉じても送信は裏で続く）
-                .disabled(isWorking)
                 .accessibilityLabel(Labels.Common.close)
                 Spacer()
                 if captionFocused {
@@ -443,7 +483,7 @@ struct StoryComposerView: View {
                         .jpGlass(in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(prepared == nil || isWorking)
+                .disabled(prepared == nil)
                 .opacity(prepared == nil ? 0.4 : 1)
                 }
             }
@@ -474,6 +514,9 @@ struct StoryComposerView: View {
             if let message, prepared != nil {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.muted2)
             }
+            if let songNote, prepared != nil {
+                Text(songNote).font(.footnote).foregroundStyle(WebTheme.muted2)
+            }
             HStack(spacing: 8) {
                 // 🔴 **ストーリーはフォロワーだけが見る**（2026-09-22・owner の
                 // 判断。`api-user/src/storyVisibility.ts`）。選ぶ口は置かない
@@ -495,24 +538,18 @@ struct StoryComposerView: View {
             .foregroundStyle(WebTheme.muted2)
 
             Button {
-                Task { await post() }
+                post()
             } label: {
-                HStack(spacing: 8) {
-                    if isWorking {
-                        ProgressView().tint(WebTheme.accentText)
-                        Text(L("送信中…", "Sending…"))
-                    } else {
-                        Text(L("ストーリーに投稿", "Post story"))
-                    }
-                }
+                // 押したら画面を閉じる。**送信中は自分の輪に出る**（板 27）
+                Text(L("ストーリーに投稿", "Post story"))
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(WebTheme.accentText)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background(WebTheme.accentBackground, in: Capsule())
-                .opacity(isWorking || prepared == nil ? 0.5 : 1)
+                .opacity(prepared == nil ? 0.5 : 1)
             }
             .buttonStyle(.plain)
-            .disabled(isWorking || prepared == nil)
+            .disabled(prepared == nil)
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
@@ -549,6 +586,28 @@ struct StoryComposerView: View {
                 if let i = list.firstIndex(where: { $0.id == id }) { list[i] = value; overlays.wrappedValue = list }
             }
         )
+    }
+
+    /// 曲を付ける・変える・外す。**写真の上の曲の札も合わせる**——付けたら
+    /// いま見ている1枚に動かせる札を置き、変えたら札の文字を差し替え、外したら消す。
+    /// 曲は全部の写真に共通なので、差し替えと削除は全部の写真で行う
+    private func applySong(_ new: Photo.Song?) {
+        let old = song
+        song = new
+        var found = false
+        for i in shots.indices {
+            let result = SongSticker.retext(shots[i].overlays, from: old, to: new)
+            shots[i].overlays = result.overlays
+            found = found || result.found
+        }
+        // 前の札が無ければ（初めて付けた・自分で消していた）いまの1枚に置く。
+        // 札が上限なら置かない（曲は投稿の項目として送られ、閲覧画面の ♪ に出る）
+        guard !found, let new, let sticker = SongSticker.make(for: new),
+              shots.indices.contains(current) else { return }
+        guard shots[current].overlays.count < TextOverlay.maxCount else {
+            return
+        }
+        shots[current].overlays.append(sticker)
     }
 
     private func add(kind: TextOverlay.Kind) {
@@ -738,57 +797,61 @@ struct StoryComposerView: View {
     }
 
 
-    /// 出す。**並びの順に、1枚ずつ**。
+    /// 出す。**送るのは裏の係（`StoryUploadCenter`）**——画面はすぐ閉じ、
+    /// ホームの自分の輪が進み具合と「送信中…」を出す（板 27「投稿した直後」）。
     ///
-    /// 🔴 **途中で失敗したら、そこで止める。** 残りを出し続けると、
-    /// 「何本出たのか」が誰にも分からなくなる。出たぶんはそのまま残し
-    /// （消しに行かない——消す方が失敗したときに二重に分からなくなる）、
-    /// **何枚出て何枚残ったか**を画面に出す。
-    private func post() async {
-        // 🔴 **二度押しで二重に出さない。** ボタンの `.disabled(isWorking)` は
-        // 次の描画まで効かないので、素早く2回押すと `post()` が2本走り、
-        // 同じストーリーが2本出ていた（2026-09-25 owner「2重投稿」）。
-        // ここは主アクタの上で `await` より前なので、2本目は必ず止まる
-        guard !isWorking, !shots.isEmpty else { return }
-        isWorking = true
+    /// 以前はここで送り終えるまで待ち、その間は画面を閉じられなかった。
+    /// 途中で失敗したときの決まり（止める・出たぶんは残す・残りを持つ）は
+    /// 係の側へそのまま移した。
+    private func post() {
+        // 🔴 **二度押しで二重に出さない**（2026-09-25 owner「2重投稿」）。
+        // ここは同期で、1回目で画面を閉じ係に渡す。2回目は係が「片付いていない
+        // 並びがある」で受けない
+        guard !shots.isEmpty, let ownerId = auth.userId else { return }
         message = nil
-        defer { isWorking = false }
         let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
-        var posted = 0
-        var postedIds: Set<StoryShot.ID> = []
-        for shot in shots {
-            do {
-                _ = try await environment.stories.create(
-                    // **焼き込んでから送る。** 文字が無ければ元のデータを
-                    // そのまま渡す（読み書きの往復で画質を落とさない）
-                    imageData: TextOverlayRenderer.burn(shot.overlays, into: shot.prepared.data),
-                    caption: caption,
-                    location: place,
-                    coords: shot.prepared.coords,
-                    song: song,
-                    durationSec: durationSec,
-                    archive: keepInArchive
-                )
-                posted += 1
-                postedIds.insert(shot.id)
-            } catch {
-                let reason = (error as? LocalizedError)?.errorDescription
-                    ?? L("投稿できませんでした", "Couldn't post")
-                message = StoryQueue.partialFailure(posted: posted, total: shots.count, reason: reason)
-                // **出せたぶんは並びから外す。** 押し直したときに
-                // 同じ写真をもう一度出さないため
-                // **数ではなく id で外す**——並びが変わっていると
-                // `removeFirst(posted)` は範囲外で落ちる
-                shots = StoryQueue.dropPosted(shots, posted: postedIds)
-                current = 0
-                return
-            }
+        // **焼き込んでから渡す。** 文字が無ければ元のデータをそのまま渡す
+        // （読み書きの往復で画質を落とさない）
+        let jobs = shots.map { shot in
+            StoryUploadCenter.Job(
+                imageData: TextOverlayRenderer.burn(shot.overlays, into: shot.prepared.data),
+                caption: caption, location: place, coords: shot.prepared.coords,
+                song: song, durationSec: durationSec, archive: keepInArchive)
         }
-        // 出したら下書きは要らない（残すと次に開いたときにまた尋ねる）。
-        // 🔴 **ただし復元を保留した古い下書きは消さない**——この回の投稿とは別物で、
-        // 「残す」を選んだのに黙って消えていた
-        if !keepExistingDraft { drafts.clear() }
+        let stories = environment.stories
+        let drafts = drafts
+        let keepExistingDraft = keepExistingDraft
+        // 🔴 **押した時点の下書きの印。** 送り終えたときに下書きが入れ替わって
+        // いたら（送信中にもう一度開いて保存した）、それは消さない
+        let draftStamp = drafts.draft?.savedAt
+        let auth = auth
+        let toasts = toasts
+        let started = uploads.start(jobs, ownerId: ownerId,
+                                    currentUserId: { auth.userId },
+                                    send: { job in
+            _ = try await stories.create(imageData: job.imageData, caption: job.caption,
+                                         location: job.location, coords: job.coords,
+                                         song: job.song, durationSec: job.durationSec,
+                                         archive: job.archive)
+        }, onAllSent: {
+            // 出し終えたら下書きは要らない（残すと次に開いたときにまた尋ねる）。
+            // 🔴 **ただし復元を保留した古い下書きは消さない**——この回の投稿とは別物
+            if !keepExistingDraft, drafts.draft?.savedAt == draftStamp { drafts.clear() }
+        }, onFailed: { message in
+            toasts.show(message, kind: .failure)
+        })
+        guard started else {
+            // 係が片付いていない。**送っている最中か、失敗した残りを持っているか**で言い分けを変える
+            if case .failed = uploads.phase {
+                message = L("送れなかったストーリーが残っています。ホームの自分の輪から、送り直すかやめるかを選んでください",
+                            "A story that failed to send is waiting. Retry or discard it from your ring on Home.")
+            } else {
+                message = L("前のストーリーをまだ送っています。ホームの自分の輪で進み具合を確かめてください",
+                            "Your previous story is still sending. Check your ring on Home.")
+            }
+            return
+        }
         dismiss()
     }
 }

@@ -175,11 +175,25 @@ struct PhotoComment: Decodable, Identifiable, Equatable {
     var isFromDeletedUser: Bool { deleted == true }
 }
 
-/// フォロー一覧の1人。名前を出していない人は `name` が無い。
+/// フォロー一覧・ブロック一覧の1人。名前を出していない人は `name` が無い。
+///
+/// `username` は 2026-09-26 からサーバーが各行に付ける（`lookupListIdentity`）。
+/// 決めていない人と退会した人には付かない。画面に出すときは `handle` を通す
 struct FollowUser: Decodable, Identifiable, Equatable {
     let id: String
     let name: String?
     let deleted: Bool?
+    let username: String?
+
+    init(id: String, name: String?, deleted: Bool?, username: String? = nil) {
+        self.id = id
+        self.name = name
+        self.deleted = deleted
+        self.username = username
+    }
+
+    /// 行の2行目「@ユーザー名」。出さない行は nil（`ListIdentity.handle`）
+    var handle: String? { ListIdentity.handle(username: username, deleted: deleted) }
 
     var displayName: String {
         if deleted == true { return Labels.Common.deletedUser }

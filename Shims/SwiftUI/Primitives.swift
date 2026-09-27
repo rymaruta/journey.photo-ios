@@ -248,7 +248,7 @@ public struct Alignment {
     public static let top = Alignment(), topTrailing = Alignment(), topLeading = Alignment()
     public static let bottom = Alignment(), bottomLeading = Alignment(), bottomTrailing = Alignment()
 }
-public struct HorizontalAlignment { public static let leading = HorizontalAlignment(), center = HorizontalAlignment() }
+public struct HorizontalAlignment { public static let leading = HorizontalAlignment(), center = HorizontalAlignment(), trailing = HorizontalAlignment() }
 /// 揃えの計算に渡る寸法（本物と同じ形）
 public struct ViewDimensions {
     public var width: CGFloat { 0 }
@@ -259,9 +259,12 @@ public struct ViewDimensions {
 public struct VerticalAlignment { public static let center = VerticalAlignment(), top = VerticalAlignment(), bottom = VerticalAlignment(), firstTextBaseline = VerticalAlignment(), lastTextBaseline = VerticalAlignment() }
 public struct Edge {
     public static let top = Edge(), bottom = Edge(), leading = Edge(), trailing = Edge()
-    public struct Set {
+    /// 本物は `OptionSet`（`[]` で「どの端も無し」を書ける）
+    public struct Set: ExpressibleByArrayLiteral {
         public static let all = Set(), horizontal = Set(), vertical = Set()
         public static let top = Set(), bottom = Set(), leading = Set(), trailing = Set()
+        public init() {}
+        public init(arrayLiteral elements: Set...) {}
     }
 }
 /// `safeAreaInset(edge:)` が受ける上下。本物は `CaseIterable` の enum
@@ -346,8 +349,15 @@ public struct UnitPoint: Hashable, Sendable {
     public init() {}
 }
 
+/// 色の位置（本物は `Gradient.Stop`）
+public struct Gradient {
+    public struct Stop {
+        public init(color: Color, location: Double) {}
+    }
+}
 public struct LinearGradient: View, ShapeStyle {
     public init(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {}
+    public init(stops: [Gradient.Stop], startPoint: UnitPoint, endPoint: UnitPoint) {}
     public var body: Never { fatalError() }
 }
 

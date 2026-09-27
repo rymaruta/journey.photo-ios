@@ -232,10 +232,15 @@ struct ProfileEditView: View {
         }
         .listRowBackground(Color.clear)
         .sheet(isPresented: $showSongPicker) {
-            SongPickerView { picked in
-                // 先頭に据える。**同じ曲が下に残らないように**取り除いてから
-                songs.removeAll { $0.previewUrl == picked.previewUrl }
-                songs.insert(picked, at: 0)
+            // **包む。** シートは呼び手の `NavigationStack` を引き継がないので、
+            // 包まないと見出し・閉じる・検索欄（`searchable`）が出ない
+            // （写真の投稿・ストーリーの呼び手は前から包んでいる）
+            NavigationStack {
+                SongPickerView { picked in
+                    // 先頭に据える。**同じ曲が下に残らないように**取り除いてから
+                    songs.removeAll { $0.previewUrl == picked.previewUrl }
+                    songs.insert(picked, at: 0)
+                }
             }
         }
     }

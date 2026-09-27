@@ -137,7 +137,13 @@ final class ScreenshotTests: XCTestCase {
             if name == "マップ" { simulateLocation() }
             tabBar.buttons.element(boundBy: index).tap()
             if name == "マップ" { answerLocationPrompt() }
-            _ = app.navigationBars.firstMatch.waitForExistence(timeout: 15)
+            // **マイページは上のバーを出さない**（板 05c）。バーを待つと 15 秒空振りする。
+            // 見出しの「プロフィールを編集」を待つ（タブは読み込み中にも出ている）
+            if name == "マイページ" {
+                _ = app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15)
+            } else {
+                _ = app.navigationBars.firstMatch.waitForExistence(timeout: 15)
+            }
             // **少し待ってから撮る。** 写真は通信で来るので、描いた直後は
             // 枠だけの絵になる（それを「表示が壊れている」と読み違える）
             Thread.sleep(forTimeInterval: 3)
@@ -218,10 +224,23 @@ final class ScreenshotTests: XCTestCase {
                     firstTrip.tap()
                     Thread.sleep(forTimeInterval: 4)
                     shoot(app, "30-旅の一冊")
-                    // 下まで流して、足取りのところも撮る
-                    app.swipeUp()
-                    app.swipeUp()
-                    Thread.sleep(forTimeInterval: 2)
+                    // **足取り（ルート図）が画面に収まるところまで送って撮る。**
+                    // 板 03 に合わせてルート図は表紙のすぐ下へ移った（前は一番下）。
+                    // 決め打ちで2回送ると通り過ぎて、名前と中身が食い違う。
+                    // ルート図は2か所以上の旅にしか出ないので、無ければ数字の3枠で代える
+                    let routeShown = app.descendants(matching: .any)["trips.route"].firstMatch
+                    let target = routeShown.waitForExistence(timeout: 3)
+                        ? routeShown
+                        : app.descendants(matching: .any)["trips.stats"].firstMatch
+                    // 下の余白はタブバーのぶん
+                    let visibleBottom = app.windows.firstMatch.frame.maxY - 100
+                    var pushes = 0
+                    while target.exists, target.frame.maxY > visibleBottom, pushes < 3 {
+                        app.swipeUp()
+                        Thread.sleep(forTimeInterval: 1)
+                        pushes += 1
+                    }
+                    Thread.sleep(forTimeInterval: 1)
                     shoot(app, "31-旅の足取り")
                     // **押し込めた回だけ戻る。** 旅が無い回に押すと、戻るではなく
                     // マイページの歯車（設定）に当たる（旅の一覧をタブへ畳んだので、
@@ -251,7 +270,17 @@ final class ScreenshotTests: XCTestCase {
             shoot(app, "20-写真の詳細")
 
             // **人のページ**（モック2 と同じ部品で組んである）。
+            //
+            // **画面の下に隠れていたら送る（上限あり）。** 作者の行は説明の
+            // 後ろにあるので、長い説明の写真では画面の外（ログイン中は入力欄の下）
+            // に出て `isHittable == false` になり、`21` が**黙って欠ける**
             let toAuthor = app.buttons["photo.author"].firstMatch
+            var pushUps = 0
+            while toAuthor.waitForExistence(timeout: 5), !toAuthor.isHittable, pushUps < 3 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                pushUps += 1
+            }
             if toAuthor.waitForExistence(timeout: 5), toAuthor.isHittable {
                 toAuthor.tap()
                 Thread.sleep(forTimeInterval: 4)

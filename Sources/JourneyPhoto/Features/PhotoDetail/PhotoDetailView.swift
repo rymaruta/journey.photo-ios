@@ -27,8 +27,8 @@ struct PhotoDetailView: View {
     /// ——編集シートを閉じても題も説明も古いままだった（保存はできていた
     /// ので、戻って入り直すまで「保存されていない」ように見えた）
     @State private var edited: Photo?
-    /// 下段の切り替え（モック6）。コメントが既定
-    @State private var tab: PhotoDetailTab = .comments
+    /// 「この近くで撮られた写真」（板 02）。座標の無い写真では空のまま
+    @State private var nearby: [Photo] = []
     /// 「この場所のスポット」の行き先。**台帳にも写真にも辿り着けたときだけ入る**
     @State private var spotLead: SpotLead?
     @State private var isFollowing = false
@@ -36,6 +36,11 @@ struct PhotoDetailView: View {
     @State private var showUnfollowConfirm = false
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）
     @State private var heroPage = 0
+    /// 大きく見る画面で、**この画面の1枚以外**のいいねを送っている写真。
+    /// 写真ごとに持って再入を止める——ダブルタップの直後にハートを押すと、
+    /// 2本目が1本目の答えの前に逆向きを送り、画面とサーバーが食い違う
+    /// （この画面の1枚は `PhotoDetailViewModel.isLiking` が止めている）
+    @State private var viewerLikesInFlight: Set<String> = []
 
     /// スポット詳細に渡すもの一式。**撮影地から導いた地点**と、
     /// 突き合わせる公開写真（近くの地点もここから出す）
@@ -65,16 +70,39 @@ struct PhotoDetailView: View {
     private var ownerId: String? { photo.userId ?? photo.uploadedBy }
     private var isMine: Bool { ownerId != nil && ownerId == auth.userId }
 
+    /// コメントの節の目印。吹き出しを押したらここまで送る
+    private static let commentsAnchor = "photo.comments"
+    /// 写真の高さ（板 02 の 460pt）と、本文がその上に重なる深さ（板の 94pt）
+    private static let heroHeight: CGFloat = 460
+    private static let heroOverlap: CGFloat = 94
+
     // **段ごとに割ってある。** 一本の長い `ScrollView { … }` にすると、Swift の
     // 型検査が現実的な時間で終わらなくなることがある
     // （"unable to type-check this expression in reasonable time"）。
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                imageButton
-                details
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            imageButton
+                            details(proxy)
+                                // **題は写真の下の方に重ねる**（板 02: 写真 460pt の 366pt から）。
+                                // 写真の裾は黒へ溶かしてあるので、白い字が沈まない
+                                .padding(.top, -Self.heroOverlap)
+                        }
+                        .padding(.bottom, 32)
+                    }
+                    // **写真を画面の上端から敷く**（板 02）。戻る・「…」は上のバーに
+                    // 残したまま、バーの地を消して写真の上に浮かせる
+                    .ignoresSafeArea(edges: .top)
+                }
+                // **時計とバーの裏に黒のぼかし**（人のページ・マイページと同じ
+                // `TopBarScrim`。流れずに上端に留まる）。バーの地を消しているので、
+                // 敷かないと明るい写真の上で白い戻る「‹」・時計が沈み、下へ送ると
+                // 本文が戻る・「…」・時計の真下を流れて重なる
+                TopBarScrim(topInset: geo.safeAreaInsets.top)
             }
-            .padding(.bottom, 32)
         }
         // **入力欄は画面の下に貼る**（モック6）。コメント欄が本文の
         // 途中にあると、長い説明の写真では入力欄まで辿り着く前に
@@ -82,12 +110,27 @@ struct PhotoDetailView: View {
         // 足してくれるので、最後のコメントが入力欄の下に隠れない
         .safeAreaInset(edge: .bottom) { composer }
         .navigationBarTitleDisplayMode(.inline)
+        // **上のバーの地を消す**（板 02: 戻る・「…」は写真の上のガラスの丸）。
+        //
+        // 自前の丸ボタンに差し替えて上のバーごと隠す手もあるが、それをすると
+        // **左端から払って戻る操作が効かなくなる**（SwiftUI の既知の挙動）。
+        // 戻るは標準のボタンのまま——iOS 26 ではそれ自体がガラスの丸で出る
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
         .task(id: auth.userId) {
             model.setSignedIn(auth.userId != nil)
             await model.load()
         }
         .task(id: shown.location) { await loadSpotLead() }
+        .task(id: shown.id) { await loadNearby() }
+        // **ブロック・通報で絞り直す**（`hidden.revision`）。この画面で
+        // その場でブロック／通報しても、近くの写真とスポットの行き先が
+        // 古い一覧のまま残っていた。
+        //
+        // **通信はしない。** 手元の並びから落とすだけ——ブロック・通報は
+        // 減らす向きにしか効かない。以前は鍵に `revision` を入れていて、
+        // 押すたびに公開一覧を2本（通報＋ブロックで4本）取り直していた
+        .onChange(of: hidden.revision) { _, _ in refilterHidden() }
         .task(id: ownerId) {
             await model.loadOwner(ownerId, profiles: environment.profiles)
             // **フォローしているかは、その人を見に行かずに知りたい。**
@@ -112,7 +155,9 @@ struct PhotoDetailView: View {
                 // 隣の写真は端末の控え（ホームのハートと同じ出どころ）
                 isLiked: { shown in shown.id == photo.id ? model.liked : favorites.contains(shown.id) },
                 isSignedIn: auth.userId != nil,
-                onDoubleTapLike: { shown in Task { await likeFromViewer(shown) } }
+                onDoubleTapLike: { shown in Task { await likeFromViewer(shown) } },
+                onToggleLike: { shown in Task { await toggleLikeFromViewer(shown) } },
+                shareURL: { shown in shareURL(for: shown) }
             )
         }
         .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
@@ -125,77 +170,126 @@ struct PhotoDetailView: View {
 
     /// 押すと大きく見る（隣の写真へも送れる）。
     ///
-    /// **同じ投稿が2枚以上なら、ここで左右に送れる**（モック6-1 の「1/10」）。
+    /// **板 02: 幅いっぱい・高さ 460pt で切り抜き、裾を黒へ溶かす。**
+    /// 切り抜く中心は持ち主が選んだ位置（`gridAlignment`）。写真の全体は
+    /// 押して大きく見る画面（板 14）で見られる。
+    ///
+    /// **同じ投稿が2枚以上なら、ここで左右に送れる**（モック6-1）。
+    /// 何枚目かは題の下の1行（「1/3枚」）が言うので、写真の上には数も点も置かない。
     /// 束は `groupId` が作る——行は1枚ずつのままなので、個別ページは変わらない
     @ViewBuilder
     private var imageButton: some View {
-        let group = PhotoGroups.siblings(of: shown, in: siblings)
-        if group.count > 1 {
-            ZStack(alignment: .topTrailing) {
+        let group = heroGroup
+        ZStack(alignment: .bottom) {
+            if group.count > 1 {
                 TabView(selection: $heroPage) {
                     ForEach(Array(group.enumerated()), id: \.element.id) { index, item in
-                        Button {
-                            showViewer = true
-                        } label: {
-                            RemoteImage(url: item.detailImageURL, contentMode: .fit)
-                                .frame(maxWidth: .infinity)
-                                .accessibilityLabel(item.accessibilityText)
-                        }
-                        .buttonStyle(.plain)
-                        .tag(index)
+                        heroImage(item).tag(index)
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .always))
-                .aspectRatio(4.0 / 3.0, contentMode: .fit)
-
-                Text("\(min(heroPage + 1, group.count))/\(group.count)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.black.opacity(0.55), in: Capsule())
-                    .padding(12)
-                    .allowsHitTesting(false)
+                .tabViewStyle(.page(indexDisplayMode: .never))
+            } else {
+                heroImage(shown)
             }
-        } else {
-            Button {
-                showViewer = true
-            } label: {
-                RemoteImage(url: shown.detailImageURL, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityLabel(shown.accessibilityText)
-            }
-            .buttonStyle(.plain)
+            // 裾を黒へ（板: 下 140pt・`linear-gradient(to top, #000, transparent)`）
+            LinearGradient(colors: [Color.black.opacity(0), WebTheme.background],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 140)
+                .allowsHitTesting(false)
         }
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.heroHeight)
+        .clipped()
     }
 
-    /// **Web の写真ページ（`app/photo/[id]/PhotoPageClient.tsx`）と同じ順・同じ寸法。**
+    private func heroImage(_ item: Photo) -> some View {
+        Button {
+            showViewer = true
+        } label: {
+            RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.heroHeight)
+                .clipped()
+                .accessibilityLabel(item.accessibilityText)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(L("拡大して見る", "Opens the photo full screen"))
+    }
+
+    /// 同じ投稿の束（1枚だけならこの1枚）
+    private var heroGroup: [Photo] { PhotoGroups.siblings(of: shown, in: siblings) }
+
+    /// 題の下の1行（板 02: 「2026.09.12 · 17:42 · 1/3枚」）
+    private var headline: String? {
+        let group = heroGroup
+        return PhotoMetaLine.headline(date: shown.date,
+                                      exifDateTime: shown.exif?.dateTimeOriginal,
+                                      position: heroPage + 1, of: group.count)
+    }
+
+    /// **板 02 の順。** 実装にだけある要素（公開範囲の印・カテゴリ・説明・曲・
+    /// コメント一覧）は消さずに、読む流れの近いところへ差し込む。
     ///
-    ///     題        text-2xl font-bold
-    ///     カテゴリ   丸チップ（bg-white/10・ring-white/10・text-xs・white/70）
-    ///     説明      text-sm/base・white/80・段落の間は mt-3
-    ///     撮影地     丸チップ（ピンは sky-400）
-    ///     タグ      小さい丸チップ（white/50）
-    private var details: some View {
+    ///     撮影スポットの行（撮影地）          ← 題の上
+    ///     題（明朝）
+    ///     2026.09.12 · 17:42 · 1/3枚
+    ///     ［公開範囲の印・カテゴリ］ 説明     ← 題の近く
+    ///     作者 ＋ フォロー
+    ///     いいね・コメント・保存・共有
+    ///     撮影情報（開け閉め）
+    ///     #タグ
+    ///     曲
+    ///     この近くで撮られた写真 ／ 地図で見る
+    ///     コメント（N）                      ← 下
+    private func details(_ proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            // **`Group` で1つにまとめる。** `VStack` の中身は10個までで、
+            // **`Group` で束ねる。** `VStack` の中身は10個までで、
             // 印を足したところで溢れた（`extra argument in call`）
             Group {
-                audienceBadge
-                titleText
+                heading
+                chips
+                paragraphs
                 authorRow
             }
-            paragraphs
-            locationLink
-            spotLink
-            metaRows
-            Divider().padding(.vertical, 4)
-            socialBar
-            tabPicker
-            tabContent
+            socialBar(proxy)
+            Group {
+                if let exif = shown.exif {
+                    ExifRow(exif: exif)
+                }
+                if let tags = shown.tags, !tags.isEmpty {
+                    TagRow(tags: tags)
+                }
+                if let song = shown.song {
+                    SongRow(song: song)
+                }
+            }
+            nearbySection
+            commentsBlock
+                .id(Self.commentsAnchor)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
+        .padding(.horizontal, 20)
+    }
+
+    /// 題のかたまり（板 02）: 撮影スポットの行 → 題 → 日時と枚数。
+    /// 写真の裾に重なるので、字に影を付ける（板の `text-shadow`）
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            placeRow
+            if !shown.displayTitle.isEmpty {
+                // **題は写真の次に来る主役。** 明朝 30pt（文字サイズの設定で伸びる）。
+                // 行送りは書体の自然値（1.45em）で足りるので、足さない
+                Text(shown.displayTitle)
+                    .font(JPFont.photoTitle)
+                    .foregroundStyle(WebTheme.foreground)
+                    .jpPhotoTextShadow()
+            }
+            if let headline {
+                Text(headline)
+                    .font(JPFont.mono(11))
+                    .foregroundStyle(WebTheme.faint)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 「フォロワーのみ」「親しい友達」の印。
@@ -213,18 +307,14 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// 公開範囲の印とカテゴリ（板には無い・実装にだけある要素）。
+    /// 題の下に小さく1列で。どちらも無ければ何も描かない
     @ViewBuilder
-    private var titleText: some View {
+    private var chips: some View {
         let category = shown.category.map { Labels.Category.name($0) } ?? ""
-        if !shown.displayTitle.isEmpty || !category.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                if !shown.displayTitle.isEmpty {
-                    // **題は写真の次に来る主役。** 明朝 30pt（文字サイズの設定で伸びる）。
-                    // 行送りは書体の自然値（1.45em）で足りるので、足さない
-                    Text(shown.displayTitle)
-                        .font(JPFont.photoTitle)
-                        .foregroundStyle(WebTheme.foreground)
-                }
+        if RestrictedFeed.badge(shown) != nil || !category.isEmpty {
+            HStack(spacing: 8) {
+                audienceBadge
                 if !category.isEmpty {
                     NavigationLink {
                         TagPhotosView(kind: .category(shown.category ?? ""))
@@ -240,67 +330,60 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// 題の上の「📍 撮影地 · 撮影スポットの詳細」（板 02）。
+    ///
+    /// **行き先は2通り。** 撮影地が `DerivedSpot.openable`（2枚以上）なら
+    /// 撮影スポットの詳細（`SpotDetailView`）、そうでなければその撮影地の
+    /// 写真の一覧（`TagPhotosView`）。以前は別々の2行だった。
+    ///
+    /// 「撮影スポットの詳細」の添え書きは**スポットへ行けるときだけ**。
+    /// 行の文字は写真の撮影地——台帳の名前と綴りが違っても、題の上には
+    /// 持ち主が書いた地名を出す（行き先の見出しが台帳の名前を出す）
     @ViewBuilder
-    private var locationLink: some View {
-        if let location = shown.location, !location.isEmpty {
-            NavigationLink {
-                TagPhotosView(kind: .location(location))
-            } label: {
-                // **札（チップ）をやめた。** 題のすぐ下に置くと、
-                // 丸い背景が題の邪魔をする。素の行の方が写真に近い
-                HStack(spacing: 8) {
-                    Image(systemName: "mappin.circle")
-                    Text(location)
-                        .lineLimit(1)
+    private var placeRow: some View {
+        if let location = shown.location?.trimmingCharacters(in: .whitespaces), !location.isEmpty {
+            if let lead = spotLead {
+                NavigationLink {
+                    SpotDetailView(spot: lead.spot, photos: lead.photos)
+                } label: {
+                    placeLabel(location, spotSuffix: true)
                 }
-                .font(.title3)
-                .foregroundStyle(Color.white.opacity(0.65))
-                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                .buttonStyle(.plain)
+                // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
+                // ——今日それで「写真の詳細」としてログイン画面を撮っていた
+                .accessibilityIdentifier("photo.spotLink")
+            } else {
+                NavigationLink {
+                    TagPhotosView(kind: .location(location))
+                } label: {
+                    placeLabel(location, spotSuffix: false)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
-    /// 「この場所のスポット」（モック6 の撮影地の行に添える導線）。
-    ///
-    /// **台帳に無ければ出さない。** 写真の `spotId` は撮影者が付けたものだが、
-    /// 台帳から消えていることも、台帳自体が取れないこともある。
-    /// 行き先（`SpotDetailView`）は突き合わせる写真も要るので、
-    /// それが引けなかった回も出さない——「この場所の写真（0）」と
-    /// 見せるより、行を出さない方が正直。
-    ///
-    /// 行の文字は台帳の名前。写真の `location` と綴りが違うことがあるので、
-    /// 一般語（「この場所」）ではなく**行き先の名前**を出す
-    @ViewBuilder
-    private var spotLink: some View {
-        if let lead = spotLead {
-            NavigationLink {
-                SpotDetailView(spot: lead.spot, photos: lead.photos)
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "camera.viewfinder")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(lead.spot.label)
-                            .font(.title3)
-                            .foregroundStyle(Color.white.opacity(0.65))
-                            .lineLimit(1)
-                        Text(L("撮影スポットの詳細", "Photo spot details"))
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.muted2)
-                }
-                .foregroundStyle(Color.white.opacity(0.65))
-                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+    /// 板: 12pt・白・下線（白 60%）、添え書きは白 50%。写真の裾に乗るので影を付ける。
+    /// **添え書きは白 72% に上げてある**——50% だと明るい写真の裾で読めなかった
+    /// （影を付けても足りない）。本文の2次の字（`muted2`）と同じ濃さ
+    private func placeLabel(_ location: String, spotSuffix: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "mappin")
+                .font(.caption)
+            Text(location)
+                .underline(true, color: Color.white.opacity(0.6))
+                .lineLimit(1)
+            if spotSuffix {
+                Text(PhotoMetaLine.separator + L("撮影スポットの詳細", "Photo spot details"))
+                    .foregroundStyle(WebTheme.muted2)
+                    .lineLimit(1)
             }
-            .buttonStyle(.plain)
-            // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
-            // ——今日それで「写真の詳細」としてログイン画面を撮っていた
-            .accessibilityIdentifier("photo.spotLink")
         }
+        .font(.footnote)
+        .foregroundStyle(WebTheme.foreground)
+        .jpPhotoTextShadow()
+        .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     /// 説明。Web は `text-white/80` に `leading-relaxed`、段落の間は `mt-3`
@@ -366,23 +449,7 @@ struct PhotoDetailView: View {
                     followButton(ownerId)
                 }
             }
-            // 撮影日時と撮影地は作者の下に1行で（モック6-2）
-            if let line = takenLine {
-                Text(line)
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
-            }
         }
-    }
-
-    /// 「2024年5月12日 ・ サントリーニ島, ギリシャ」。**持っているものだけ**
-    private var takenLine: String? {
-        let place = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
-        // **生の値を出さない。** ここは `date` をそのまま描いていたので、
-        // 実機の絵に `2026-09-19T17:46:27` と出ていた（run 51）
-        let day = TakenDay.label(shown.date) ?? ""
-        let parts = [day, place].filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " ・ ")
     }
 
     private func followButton(_ userId: String) -> some View {
@@ -422,19 +489,6 @@ struct PhotoDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private var metaRows: some View {
-        if let tags = shown.tags, !tags.isEmpty {
-            TagRow(tags: tags)
-        }
-        if let exif = shown.exif {
-            ExifRow(exif: exif)
-        }
-        if let song = shown.song {
-            SongRow(song: song)
-        }
-    }
-
     // MARK: - 操作
 
     private var menu: some View {
@@ -445,8 +499,7 @@ struct PhotoDetailView: View {
             // ——各社の URL スキームを `LSApplicationQueriesSchemes` に
             // 登録し、入っていないアプリの分を隠す仕掛けが要る。標準の
             // 共有シートなら入っているアプリだけが並ぶ
-            if let url = PhotoLink.url(photoId: photo.id,
-                                       isPublished: fromPublicFeed && shown.published != false) {
+            if let url = shareURL(for: photo) {
                 ShareLink(item: url) { Label(L("共有", "Share"), systemImage: "square.and.arrow.up") }
             }
             if isMine {
@@ -470,9 +523,23 @@ struct PhotoDetailView: View {
                 }
             }
         } label: {
-            Image(systemName: "ellipsis.circle")
-                .webToolbarIcon()
+            // 板 02: 写真の上のガラスの丸（44pt）に点3つ。**iOS 26 はバーの
+            // ボタンを自分でガラスにする**ので、丸を重ねるのはそれより前だけ
+            menuIcon
                 .accessibilityLabel(L("この写真の操作", "More actions"))
+        }
+    }
+
+    @ViewBuilder
+    private var menuIcon: some View {
+        let dots = Image(systemName: "ellipsis")
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(Color.white)
+            .frame(width: 44, height: 44)
+        if #available(iOS 26, *) {
+            dots
+        } else {
+            dots.jpGlass(in: Circle())
         }
     }
 
@@ -488,7 +555,11 @@ struct PhotoDetailView: View {
             shareLikeCount()
             return
         }
-        // 先に灯す（押した手応えを待たせない）。届かなければ戻す
+        guard viewerLikesInFlight.insert(shown.id).inserted else { return }
+        defer { viewerLikesInFlight.remove(shown.id) }
+        // 先に灯す（押した手応えを待たせない）。届かなければ**押す前に**戻す
+        // ——元からいいね済みの写真を「外した」扱いにしない
+        let wasLiked = favorites.contains(shown.id)
         favorites.set(shown.id, favorite: true)
         do {
             let result = try await environment.social.like(photoId: shown.id)
@@ -496,8 +567,42 @@ struct PhotoDetailView: View {
             // 押した回の答えだけを渡す（`LikeCountStore` の注記）
             if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
         } catch {
-            favorites.set(shown.id, favorite: false)
+            favorites.set(shown.id, favorite: LiveLikes.likedAfterFailedDoubleTap(wasLiked: wasLiked))
         }
+    }
+
+    /// 大きく見る画面の下のハート（板 14）。**付け外しの両方**。
+    ///
+    /// この画面の1枚なら下のハートと同じ道。隣の写真は、先に灯して／消して
+    /// から送り、届かなければ元に戻す（ダブルタップと同じ控え方）
+    private func toggleLikeFromViewer(_ shown: Photo) async {
+        if shown.id == photo.id {
+            await model.toggleLike()
+            favorites.set(photo.id, favorite: model.liked)
+            shareLikeCount()
+            return
+        }
+        guard viewerLikesInFlight.insert(shown.id).inserted else { return }
+        defer { viewerLikesInFlight.remove(shown.id) }
+        let wasLiked = favorites.contains(shown.id)
+        favorites.set(shown.id, favorite: !wasLiked)
+        do {
+            let result = wasLiked
+                ? try await environment.social.unlike(photoId: shown.id)
+                : try await environment.social.like(photoId: shown.id)
+            favorites.set(shown.id, favorite: result.liked)
+            if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
+        } catch {
+            favorites.set(shown.id, favorite: wasLiked)
+        }
+    }
+
+    /// 共有するページ。**個別ページが在る写真だけ**（`PhotoLink`）。
+    /// 隣の写真も同じ一覧から来ているので、同じ判断で足りる
+    private func shareURL(for item: Photo) -> URL? {
+        let current = item.id == photo.id ? shown : item
+        return PhotoLink.url(photoId: item.id,
+                             isPublished: fromPublicFeed && current.published != false)
     }
 
     /// **押した回の**答えを、ホームのカードと検索の格子にも渡す。
@@ -511,7 +616,7 @@ struct PhotoDetailView: View {
         likeCounts.set(photo.id, count: answer)
     }
 
-    private var socialBar: some View {
+    private func socialBar(_ proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 16) {
                 Button {
@@ -532,10 +637,10 @@ struct PhotoDetailView: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(model.liked ? .isSelected : [])
 
-                // 吹き出しを押すとコメントの札へ。**数は取れたときだけ**
+                // 吹き出しを押すと下のコメントへ送る。**数は取れたときだけ**
                 // ——読み込み前・圏外に「0」を出すと「まだ無い」と読まれる
                 Button {
-                    tab = .comments
+                    withAnimation { proxy.scrollTo(Self.commentsAnchor, anchor: .top) }
                 } label: {
                     if let count = model.commentCount {
                         Label("\(count)", systemImage: "bubble.right")
@@ -550,7 +655,7 @@ struct PhotoDetailView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(PhotoDetailTab.comments.label(commentCount: model.commentCount))
+                .accessibilityLabel(CommentsHeading.label(commentCount: model.commentCount))
 
                 // **保存**。いいねとは別の入れ物（`saves#<uid>`）。
                 //
@@ -569,8 +674,7 @@ struct PhotoDetailView: View {
                 .accessibilityLabel(L("保存", "Save"))
 
                 // **シェア**（配るのは画像ではなくページ）
-                if let url = PhotoLink.url(photoId: photo.id,
-                                           isPublished: fromPublicFeed && shown.published != false) {
+                if let url = shareURL(for: photo) {
                     ShareLink(item: url) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.title2)
@@ -587,44 +691,77 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// 下段の札（モック6: コメント（N） / 関連写真）。
-    /// 一覧の絞り込みや `UserProfileView` と同じ `Picker(.segmented)`
-    private var tabPicker: some View {
-        Picker("", selection: $tab) {
-            ForEach(PhotoDetailTab.allCases) { item in
-                Text(item.label(commentCount: model.commentCount)).tag(item)
+    /// 「この近くで撮られた写真」（板 02）。**座標の無い写真、近くに1枚も
+    /// 無い写真では節ごと出さない**——「0枚」の見出しを置かない。
+    ///
+    /// 拾うのは読み込み済みの公開写真だけ（`NearbyPhotos.around`・通信しない）。
+    /// 「地図で見る」はこの写真と近くの写真だけの地図（`MyPhotosMap` を流用）
+    @ViewBuilder
+    private var nearbySection: some View {
+        if !nearby.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(L("この近くで撮られた写真", "Taken nearby"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                    Spacer()
+                    NavigationLink {
+                        NearbyMapScreen(opened: shown, nearby: nearby, openedFromPublicFeed: fromPublicFeed)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(L("地図で見る", "View on map"))
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.muted2)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(nearby) { item in
+                            NavigationLink {
+                                PhotoDetailView(photo: item, context: nearby)
+                            } label: {
+                                RemoteImage(url: item.gridImageURL, alignment: item.gridAlignment)
+                                    .frame(width: 108, height: 108)
+                                    .clipped()
+                                    .accessibilityLabel(item.accessibilityText)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
             }
         }
-        .pickerStyle(.segmented)
-        .padding(.top, 4)
     }
 
-    @ViewBuilder
-    private var tabContent: some View {
-        switch tab {
-        case .comments:
-            commentSection
-        case .related:
-            RelatedPhotosRow(photo: shown, showsHeading: false)
-        }
-    }
-
-    /// 画面の下に貼る入力欄。**ログイン中で、コメントの札を開いているときだけ**
-    /// ——関連写真を見ている下に「コメントを書く」が居座ると、何への
-    /// コメントか分からなくなる
+    /// 画面の下に貼る入力欄（板 02: 自分のアイコン・丸い欄・送信）。**ログイン中だけ**
     @ViewBuilder
     private var composer: some View {
-        if auth.userId != nil, tab == .comments {
-            HStack(spacing: 8) {
+        if let me = auth.userId {
+            HStack(spacing: 10) {
+                RemoteImage(url: UserProfile.profileAssetURL(userId: me, suffix: nil, cacheBust: nil),
+                            placeholderSymbol: "person.crop.circle.fill")
+                    .frame(width: 32, height: 32)
+                    .clipShape(Circle())
+                    .accessibilityHidden(true)
                 TextField(L("コメントを書く", "Write a comment"), text: $model.draftComment, axis: .vertical)
                     .lineLimit(1...4)
-                    .textFieldStyle(.roundedBorder)
+                    .font(.subheadline)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 11)
+                    .frame(minHeight: 42)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
                 Button {
                     Task { await model.postComment() }
                 } label: {
                     Image(systemName: "paperplane")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
+                        .foregroundStyle(WebTheme.accent)
                         .webTappable()
                 }
                 .buttonStyle(.plain)
@@ -632,9 +769,26 @@ struct PhotoDetailView: View {
                 .disabled(model.isPosting || model.draftComment.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(WebTheme.background)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            .background(Color.black.opacity(0.55))
+            .background(.ultraThinMaterial)
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+            }
         }
+    }
+
+    /// コメントの節（板には無いが、読んで書く場所なので下に残す）。
+    /// 見出しは以前の札と同じ言い方（数は取れたときだけ）
+    private var commentsBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(CommentsHeading.label(commentCount: model.commentCount))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(WebTheme.foreground)
+            commentSection
+        }
+        .padding(.top, 8)
     }
 
     @ViewBuilder
@@ -702,15 +856,58 @@ struct PhotoDetailView: View {
     /// `Photo.spotId` だけで、本番の公開写真はまだ1枚も持っていない
     /// （持つ写真が出てきたら `OfficialSpotView` への行を足す）。
     private func loadSpotLead() async {
-        spotLead = nil
+        // 途中で消さずに、答えが出てから入れ替える（絞り直しで行がちらつかない）
         let label = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
-        guard !label.isEmpty else { return }
-        let photos = try? await environment.gallery.fetchPhotos()
-        guard let photos else { return }
-        // **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
-        // この写真の個別ページと中身が同じになる
-        guard let place = DerivedSpot.openable(label, in: photos) else { return }
-        spotLead = SpotLead(spot: place, photos: photos)
+        guard !label.isEmpty else {
+            spotLead = nil
+            return
+        }
+        let fetched = try? await environment.gallery.fetchPhotos()
+        // **取り消された回は何も書かない。** `try?` が取り消しを nil に
+        // 変えるので、書くと後の回が入れた行き先を消しうる
+        guard !Task.isCancelled else { return }
+        guard let fetched else {
+            spotLead = nil
+            return
+        }
+        // 見せない写真を落としてから数える（`ModerationStore.visible`）。
+        // `blockAndHide` は一覧の側（`setHidden`）より先に `revision` を
+        // 進めるので、一覧から取った直後でもここで落とす
+        spotLead = Self.makeSpotLead(label, in: hidden.visible(fetched))
+    }
+
+    /// **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
+    /// この写真の個別ページと中身が同じになる
+    private static func makeSpotLead(_ label: String, in photos: [Photo]) -> SpotLead? {
+        DerivedSpot.openable(label, in: photos).map { SpotLead(spot: $0, photos: photos) }
+    }
+
+    /// ブロック・通報のあと、**手元の並びだけ**を絞り直す（通信しない）。
+    /// スポットの行き先は落としたあとで**数え直す**——2枚を割れば行を消す
+    private func refilterHidden() {
+        nearby = hidden.visible(nearby)
+        if let lead = spotLead {
+            let label = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
+            spotLead = Self.makeSpotLead(label, in: hidden.visible(lead.photos))
+        }
+    }
+
+    /// 近くの写真を、読み込み済みの公開写真から拾う（通信は一覧の控えだけ）。
+    ///
+    /// 見せない写真（ブロック・通報）は落とす。上の束（`heroGroup`）と同じ
+    /// 並び（`siblings`）を渡し、**上に出ている写真だけ**を除く
+    private func loadNearby() async {
+        guard shown.coords != nil else {
+            nearby = []
+            return
+        }
+        let fetched = try? await environment.gallery.fetchPhotos()
+        guard !Task.isCancelled else { return }
+        guard let fetched else {
+            nearby = []
+            return
+        }
+        nearby = NearbyPhotos.around(shown, in: hidden.visible(fetched), context: siblings)
     }
 
     private func block(_ userId: String) async {
@@ -759,6 +956,33 @@ struct PhotoDetailView: View {
     }
 }
 
+/// 「地図で見る」の行き先: この写真と近くの写真だけの地図。
+///
+/// 地図の部品はプロフィールの「マップ」（`MyPhotosMap`）をそのまま使う
+/// ——初期の枠取り（`MapFraming`）もピンを押したときの一覧も同じでよい
+private struct NearbyMapScreen: View {
+    let opened: Photo
+    let nearby: [Photo]
+    /// **開いた1枚にだけ**引き継ぐ（`NearbyPhotos.fromPublicFeed`）。
+    /// 既定の `true` に戻ると、個別ページの無い自分の写真（マイページから
+    /// 開いた下書きなど）に共有が出る。逆に全ピンへ渡すと、近くの他人の
+    /// 公開写真まで共有がトップ（`/?photo=`）に落ちる
+    let openedFromPublicFeed: Bool
+
+    var body: some View {
+        ScrollView {
+            MyPhotosMap(photos: [opened] + nearby, fromPublicFeed: { photo in
+                NearbyPhotos.fromPublicFeed(photo, openedId: opened.id,
+                                            openedFromPublicFeed: openedFromPublicFeed)
+            })
+                .padding(.vertical, 16)
+        }
+        .webScreen()
+        .navigationTitle(L("この近くで撮られた写真", "Taken nearby"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 private struct TagRow: View {
     let tags: [String]
     var body: some View {
@@ -769,9 +993,12 @@ private struct TagRow: View {
                     TagPhotosView(kind: .tag(tag))
                 } label: {
                     // Web: `bg-white/5 ring-1 ring-white/10 text-xs text-white/50`
-                    Text(tag)
+                    // 板 02: 「#夕焼け」。**頭の「#」は描くときだけ**——保存する値には
+                    // 付けない（`TagPhotosView` にも素の値を渡す）。打った人が既に
+                    // 「#」を付けていた行は二重にしない
+                    Text(tag.hasPrefix("#") ? tag : "#\(tag)")
                         .font(.caption)
-                        .foregroundStyle(Color.white.opacity(0.5))
+                        .foregroundStyle(WebTheme.muted)
                         .webChip()
                 }
                 .buttonStyle(.plain)
