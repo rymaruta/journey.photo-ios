@@ -236,6 +236,16 @@ final class ViewModelTests: XCTestCase {
 
     // MARK: - 写真の詳細
 
+    /// 🔴 **読み込み前・取れなかった回に 0 と出さない。** 一覧から来た数で始める
+    func testLikesStartFromTheListCount() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: 7)
+        XCTAssertEqual(model.likes, 7)
+        StubProtocol.respond(status: 500, body: "{}")
+        await model.load()
+        XCTAssertEqual(model.likes, 7, "取れなかった回に一覧の数を捨てている")
+    }
+
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。
     func testLikeUsesServerCount() async {
         prepare()

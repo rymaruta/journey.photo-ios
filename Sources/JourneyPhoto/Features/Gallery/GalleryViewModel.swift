@@ -121,6 +121,8 @@ final class GalleryViewModel: ObservableObject {
         if viewerId == nil && feed.needsSignIn { feed = .recommended }
         scope = feed.scope
         sort = feed.sort
+        // 範囲とともに並びも決め直す（読み終えたあとに届いた回も featured を先頭に）
+        all = sorted(all)
         if case .loaded = state { state = .loaded(filtered()) }
     }
 
@@ -170,8 +172,11 @@ final class GalleryViewModel: ObservableObject {
 
     /// 並びは `GallerySort` に置いてある（画面を持たない層なので
     /// Linux 上の `swift test` で検証できる）。
+    /// 🔴 **おすすめは owner が選んだ写真（featured）を先頭に。** 以前は
+    /// フィードの札を押したとき（`select(feed:)`）しか `arrange` を通らず、
+    /// 起動・引き下げ・ブロック後の読み直しでは新しい順のまま出ていた
     private func sorted(_ photos: [Photo]) -> [Photo] {
-        sort.apply(photos)
+        sort == feed.sort ? feed.arrange(photos) : sort.apply(photos)
     }
 
     /// タグのチップ。**押し直すと外れる**（カテゴリと同じ約束）

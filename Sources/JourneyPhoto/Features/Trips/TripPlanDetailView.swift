@@ -61,6 +61,14 @@ struct TripPlanDetailView: View {
             resetIfNeeded()
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
+        .onChange(of: start) { _, _ in
+            let fixed = TripPlanText.ordered(start: start, end: end, movedStart: true)
+            if fixed.end != end { end = fixed.end }
+        }
+        .onChange(of: end) { _, _ in
+            let fixed = TripPlanText.ordered(start: start, end: end, movedStart: false)
+            if fixed.start != start { start = fixed.start }
+        }
         .sheet(item: $picking) { target in
             NavigationStack {
                 TripPlanPickSheet(dayIndex: target.day,

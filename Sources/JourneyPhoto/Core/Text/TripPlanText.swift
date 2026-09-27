@@ -39,6 +39,13 @@ enum TripPlanText {
         return "\(number)・\(label)"
     }
 
+    /// 出発と帰着の前後を揃える。**動かした方に、もう片方を合わせる**
+    /// （帰着を出発より前にすると、日程の日付が全部黙って消えていた）
+    static func ordered(start: String?, end: String?, movedStart: Bool) -> (start: String?, end: String?) {
+        guard let s = start, let e = end, e < s else { return (start, end) }
+        return movedStart ? (s, s) : (e, e)
+    }
+
     /// その日の日付（`YYYY-MM-DD`）。上の規則で決められなければ nil
     static func dayDate(index: Int, day: TripDay, start: String?, end: String?) -> String? {
         // **実在する日だけ**（`date(fromYMD:)` と同じ基準。2月31日を出さない）

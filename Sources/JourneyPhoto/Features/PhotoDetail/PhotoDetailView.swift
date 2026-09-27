@@ -61,8 +61,13 @@ struct PhotoDetailView: View {
         // `AppEnvironment` は init で受け取れない（EnvironmentObject は body 以降）
         _model = StateObject(wrappedValue: PhotoDetailViewModel(
             photoId: photo.id,
-            social: SocialService(api: APIClient(tokenProvider: CognitoTokenProvider()))
+            social: SocialService(api: APIClient(tokenProvider: CognitoTokenProvider())),
+            initialLikes: photo.likes
         ))
+        // 🔴 **束の何枚目を開いたかで上の写真を合わせる。** 0 固定だったので、
+        // 2枚目を開くと上には1枚目が出て、題・いいね・削除は2枚目が対象だった
+        let group = PhotoGroups.siblings(of: photo, in: context.isEmpty ? [photo] : context)
+        _heroPage = State(initialValue: group.firstIndex(where: { $0.id == photo.id }) ?? 0)
     }
 
     /// 大きく見るときに送れる並び。**渡されていなければこの1枚だけ**

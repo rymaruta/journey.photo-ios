@@ -499,6 +499,10 @@ struct PhotoMapView: View {
     /// 「見つかりませんでした」が乗っていた）
     private var emptyMessage: String? {
         guard model.hasNothingToShow else { return nil }
+        // 地図は画面に戻るたびに読み直す（`.task`）ので、案内はそれを言う
+        if model.loadFailed {
+            return L("写真を読み込めませんでした。開き直すと読み直します", "Couldn't load photos. Reopen the map to retry")
+        }
         if model.isFiltering {
             return L("見つかりませんでした", "No results")
         }

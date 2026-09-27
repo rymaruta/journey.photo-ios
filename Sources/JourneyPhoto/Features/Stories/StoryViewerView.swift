@@ -1020,11 +1020,14 @@ struct StoryViewerView: View {
                             showReplies = true
                         }
                     }
-                    // 24時間で消える前に、自分の写真として残す
-                    ownAction(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
-                        Task { await keep(story) }
+                    // 24時間で消える前に、自分の写真として残す。
+                    // **動画には出さない**（サーバーが 400 で断る・`storyKeep.ts`）
+                    if !story.isVideo {
+                        ownAction(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
+                            Task { await keep(story) }
+                        }
+                        .disabled(isSending)
                     }
-                    .disabled(isSending)
                     // **確かめてから消す**（以前は押した瞬間に消えていた）
                     ownAction(symbol: "trash", title: Labels.Common.delete, color: Self.storyDanger) {
                         showDeleteConfirm = true

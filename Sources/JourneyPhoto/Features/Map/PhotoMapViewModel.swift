@@ -23,6 +23,8 @@ final class PhotoMapViewModel: ObservableObject {
 
     @Published private(set) var photos: [Photo] = []
     @Published private(set) var loaded = false
+    /// 写真の一覧を取れなかった（圏外で控えも無い）。**0枚とは分ける**
+    @Published private(set) var loadFailed = false
     @Published var query = "" { didSet { refresh() } }
     @Published private(set) var category: String?
     @Published var mode: Mode = .map
@@ -134,7 +136,13 @@ final class PhotoMapViewModel: ObservableObject {
             self?.officialIndexState = fetched == nil ? .failed : .ready
             self?.refreshOfficialPins()
         }
-        photos = (try? await environment.gallery.fetchPhotos()) ?? []
+        do {
+            photos = try await environment.gallery.fetchPhotos()
+            loadFailed = false
+        } catch {
+            // **取れなかったのを「写真が無い」と言わない**。手元のぶんは残す
+            loadFailed = true
+        }
         loaded = true
         refresh()
     }

@@ -43,9 +43,12 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 「ログインしているのに、いいねが押せない」になる。
     private var isSignedIn = false
 
-    init(photoId: String, social: SocialService) {
+    /// - Parameter initialLikes: 一覧から来た写真の数。**読み込みが終わるまで 0 と出さない**
+    ///   （圏外で取れなかった回も、一覧の数を出し続ける）
+    init(photoId: String, social: SocialService, initialLikes: Int? = nil) {
         self.photoId = photoId
         self.social = social
+        self.likes = initialLikes ?? 0
     }
 
     func setSignedIn(_ value: Bool) {
