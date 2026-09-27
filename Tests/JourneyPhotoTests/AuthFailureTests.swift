@@ -2,6 +2,9 @@ import XCTest
 import Amplify
 import AWSCognitoAuthPlugin
 @testable import JourneyPhoto
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Cognito の失敗の種類。
 ///
@@ -102,5 +105,77 @@ final class DeleteConfirmWordTests: XCTestCase {
     func testOtherWordsAreRefused() {
         XCTAssertFalse(ConfirmWord.matches("", word: ConfirmWord.delete))
         XCTAssertFalse(ConfirmWord.matches("やめる", word: ConfirmWord.delete))
+    }
+}
+
+/// 🔴 **トークンが取れない理由（Amplify の `AuthError`）を、画面が分岐できる形に畳む。**
+/// 圏外でトークンを更新できなかった回にそのまま投げると、画面は `APIError` として
+/// 読めず、「圏外」ではなく「読み込めませんでした」を出していた。
+///
+/// **`JourneyPhoto.APIError` と書く。** Amplify も `APIError` を持っているので、
+/// 両方を読むこのファイルでは素の `APIError` が取り違えになる（Linux の模型には
+/// 無いので、ここでは通っても Mac で落ちる）
+final class APIClientTokenFailureTests: XCTestCase {
+
+    private var session: URLSession!
+
+    override func setUp() {
+        super.setUp()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        session = URLSession(configuration: config)
+        StubProtocol.reset()
+    }
+
+    override func tearDown() {
+        StubProtocol.reset()
+        super.tearDown()
+    }
+
+    private struct Payload: Decodable { let ok: Bool }
+
+    private func call(throwing error: Error) async -> Error? {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: ThrowingTokenProvider(error: error),
+                            session: session)
+        do {
+            _ = try await api.authorized(.get, "/user/profile", as: Payload.self)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    /// 圏外でトークンを更新できなかった回（Cognito プラグインは `AWSCognitoAuthError.network` を付ける）
+    func testTokenRefreshFailingOfflineIsUnreachable() async {
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        let thrown = await call(throwing: AuthError.service("", "", AWSCognitoAuthError.network))
+        XCTAssertEqual(thrown as? JourneyPhoto.APIError, .unreachable,
+                       "圏外を圏外として出していない: \(String(describing: thrown))")
+        XCTAssertNil(StubProtocol.lastRequest, "トークンが無いのに要求を投げている")
+    }
+
+    /// サインアウト済み・（`idToken` の外で投げられた）期限切れは「ログインしていない」
+    func testSignedOutOrExpiredMeansNotAuthenticated() async {
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        for failure in [AuthError.signedOut("", "", nil), AuthError.sessionExpired("", "", nil)] {
+            let thrown = await call(throwing: failure)
+            XCTAssertEqual(thrown as? JourneyPhoto.APIError, .notAuthenticated,
+                           "\(failure) を畳んでいない: \(String(describing: thrown))")
+        }
+    }
+
+    /// 直し方の決まらない失敗は、別の名前で隠さない
+    func testOtherTokenFailuresArePassedThrough() async {
+        let thrown = await call(throwing: AuthError.configuration("", "", nil))
+        XCTAssertNil(thrown as? JourneyPhoto.APIError, "設定の誤りを別の失敗に言い換えた")
+        XCTAssertTrue(thrown is AuthError)
+    }
+
+    /// 🔴 **期限切れは、Cognito の種別を抱えていても期限切れ**（`idToken` がログアウトに
+    /// 倒す判定 `.notAuthorized`）。抱えた種別を先に見て `.other` にしていた
+    func testExpiredSessionWithACognitoCauseIsStillExpired() {
+        XCTAssertEqual(AuthFailure(AuthError.sessionExpired("", "", AWSCognitoAuthError.userNotFound)),
+                       .notAuthorized)
     }
 }

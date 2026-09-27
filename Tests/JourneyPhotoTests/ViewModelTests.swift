@@ -55,6 +55,259 @@ final class ViewModelTests: XCTestCase {
 
     // MARK: - ギャラリー
 
+    /// 🔴 **先に始めた読み込みが後から戻っても、後の答えを上書きしない。**
+    ///
+    /// 人が替わった直後は「見せない」の読み直し（`hidden.revision`）と
+    /// 人の替わりの読み直しが同時に走る。先の方は前の人向けの控えを
+    /// 読んでいることがあり、それが後に戻ると前の人の写真が残る
+    func testGalleryOlderLoadDoesNotOverwriteNewerOne() async throws {
+        let service = gallery(feed)
+        let gate = Gate()
+        let calls = CallCounter()
+        let older = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"older","src":"https://x/o.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        let newer = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"newer","src":"https://x/n.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        await service.setRestrictedLoader(owner: "A") {
+            if await calls.next() == 1 {
+                await gate.wait()
+                return [older]
+            }
+            return [newer]
+        }
+        let model = GalleryViewModel(gallery: service)
+        let first = Task { await model.load() }
+        await gate.untilWaiting()
+        await model.load()
+        await gate.open()
+        await first.value
+
+        guard case .loaded(let photos) = model.state else { return XCTFail("状態が違う") }
+        XCTAssertTrue(photos.contains { $0.id == "newer" }, "後の読み込みの答えが出ていない")
+        XCTAssertFalse(photos.contains { $0.id == "older" }, "先に始めた読み込みの答えで上書きされた")
+    }
+
+    /// 🔴 **人が替わったら、前の人のために始まった回の答えは入れない**
+    /// （探すの `loadPhotos(userId:)` と同じ）。「先に始めた回の答えを残す」は
+    /// 同じ人の間だけ——次の人の回より先に戻ると、前の人の「見せない」・
+    /// 限定公開の取り口で読んだ写真が画面に移っていた
+    func testGallerySwitchingPeopleDropsThePreviousPersonsLoad() async throws {
+        let service = gallery(feed)
+        let gate = Gate()
+        let older = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"older","src":"https://x/o.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        await service.setRestrictedLoader(owner: "A") {
+            await gate.wait()
+            return [older]
+        }
+        let model = GalleryViewModel(gallery: service)
+        model.switchViewer(to: "A")
+        let first = Task { await model.load() }
+        await gate.untilWaiting()
+
+        model.switchViewer(to: "B")
+        await gate.open()
+        await first.value
+
+        if case .loaded(let photos) = model.state {
+            XCTAssertFalse(photos.contains { $0.id == "older" }, "前の人の回の答えが画面に移った")
+        }
+        XCTAssertEqual(model.state, .loading, "前の人の回の答えで状態を書いた")
+    }
+
+    /// 🔴 **人が替わったら、手元の一覧（前の人の限定公開を含む）も捨てる。**
+    /// 回を古くするだけでは `all` が残り、次の人の読み込みが落ちたあとに
+    /// カテゴリ・範囲・フィード・並び・文字・タグを触ると、前の人の写真が画面に戻っていた
+    func testGallerySwitchingPeopleForgetsThePreviousPersonsList() async throws {
+        let service = gallery(feed)
+        let secret = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"secret","src":"https://x/s.jpg","userId":"u9","audience":"followers","category":"風景","tags":["sunset"]}"#.utf8))
+        await service.setRestrictedLoader(owner: "A") { [secret] }
+        let model = GalleryViewModel(gallery: service)
+        model.switchViewer(to: "A")
+        await model.load()
+        guard case .loaded(let before) = model.state, before.contains(where: { $0.id == "secret" }) else {
+            return XCTFail("前提: A の一覧に限定公開が入っていない: \(model.state)")
+        }
+
+        // B に替わり、B の読み込みは落ちる（控えも無い）
+        model.switchViewer(to: "B")
+        StubProtocol.respond(status: 500, body: "{}")
+        model.use(gallery: PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
+        ))
+        await model.load()
+        guard case .failed = model.state else { return XCTFail("前提: B の読み込みが落ちていない: \(model.state)") }
+
+        func shown() -> [String] {
+            if case .loaded(let photos) = model.state { return photos.map(\.id) }
+            return []
+        }
+        model.select(category: "風景")
+        XCTAssertFalse(shown().contains("secret"), "カテゴリを押したら前の人の写真が戻った")
+        model.select(category: nil)
+        XCTAssertFalse(shown().contains("secret"), "カテゴリを外したら前の人の写真が戻った")
+        model.select(feed: .latest, viewerId: "B")
+        XCTAssertFalse(shown().contains("secret"), "フィードを替えたら前の人の写真が戻った")
+        model.select(sort: .popular)
+        XCTAssertFalse(shown().contains("secret"), "並びを替えたら前の人の写真が戻った")
+        model.query = "s"
+        XCTAssertFalse(shown().contains("secret"), "文字を打ったら前の人の写真が戻った")
+        XCTAssertTrue(model.categories.isEmpty, "前の人の一覧から作ったチップが残っている")
+        XCTAssertTrue(model.tags.isEmpty, "タグの候補が前の人の一覧を読んでいる")
+        XCTAssertTrue(model.allPhotosForTheme.isEmpty, "今日のテーマの背景が前の人の一覧を読んでいる")
+    }
+
+    /// **未ログイン → ログイン済み（起動時の確認中 → A）では一覧を捨てない。**
+    /// 未ログインの一覧は公開分だけ。捨てると起動のたびに読み込み中へ戻っていた
+    func testGallerySignInFromNobodyKeepsTheShownList() async throws {
+        let model = GalleryViewModel(gallery: gallery(feed))
+        model.switchViewer(to: nil)
+        await model.load()
+        guard case .loaded(let before) = model.state, !before.isEmpty else {
+            return XCTFail("前提: 未ログインの一覧が出ていない: \(model.state)")
+        }
+        model.switchViewer(to: "A")
+        guard case .loaded(let after) = model.state else {
+            return XCTFail("未ログイン → A で一覧を捨てて読み込み中に戻った: \(model.state)")
+        }
+        XCTAssertEqual(after.map(\.id), before.map(\.id))
+    }
+
+    /// **同じ人のまま画面に戻っただけでは捨てない**（`.task` は出入りのたびに走る）
+    func testGallerySameViewerAgainKeepsTheRunningLoad() async throws {
+        let service = gallery(feed)
+        let gate = Gate()
+        await service.setRestrictedLoader(owner: "A") {
+            await gate.wait()
+            return []
+        }
+        let model = GalleryViewModel(gallery: service)
+        model.switchViewer(to: "A")
+        let first = Task { await model.load() }
+        await gate.untilWaiting()
+        model.switchViewer(to: "A")
+        await gate.open()
+        await first.value
+
+        guard case .loaded(let photos) = model.state else { return XCTFail("同じ人の回を捨てた: \(model.state)") }
+        XCTAssertEqual(photos.count, 3)
+    }
+
+    /// 🔴 **後から始めた回が落ちても、先に成功した回の答えを捨てない。**
+    /// 古い回を捨てるのは、より新しい回が画面に移し終えたときだけ
+    func testGalleryNewerFailureKeepsTheOlderSuccess() async throws {
+        // 先の回は絞った写真の返事を待たせる（公開一覧は読めている）
+        let service = gallery(feed)
+        let gate = Gate()
+        await service.setRestrictedLoader(owner: "A") {
+            await gate.wait()
+            return []
+        }
+        let model = GalleryViewModel(gallery: service)
+        let first = Task { await model.load() }
+        await gate.untilWaiting()
+
+        // 先の回の返事を待っている間に、後の回が圏外で落ちる（控えも無い口）
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        model.use(gallery: PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
+        ))
+        await model.load()
+        // この時点では先の回はまだ移していない（落ちた文が出ていてよい）
+        guard case .failed = model.state else {
+            return XCTFail("前提: 後の回が落ちていない: \(model.state)")
+        }
+        await gate.open()
+        await first.value
+
+        guard case .loaded(let photos) = model.state else {
+            return XCTFail("先に成功した回の答えを捨てて失敗のまま: \(model.state)")
+        }
+        XCTAssertEqual(photos.count, 3)
+    }
+
+    /// 🔴 **走っている間に先の回が移し終えていたら、後の回の失敗で消さない。**
+    /// 先の回（公開一覧は読めて絞った写真を待つ）が後の回より先に終わり、
+    /// そのあと後の回が圏外で落ちる順番
+    func testGalleryNewerFailureAfterTheOlderAppliedKeepsIt() async throws {
+        let older = gallery(feed)
+        let olderGate = Gate()
+        await older.setRestrictedLoader(owner: "A") {
+            await olderGate.wait()
+            return []
+        }
+        let model = GalleryViewModel(gallery: older)
+        let first = Task { await model.load() }
+        await olderGate.untilWaiting()
+
+        // 後の回: 公開一覧もいまの数も圏外。いまの数の手前で止め、落ちるのを遅らせる
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        let newerGate = Gate()
+        model.use(gallery: PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            liveURL: URL(string: "https://admin.example.test/photos")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString),
+            beforeLiveRequest: { await newerGate.wait() }
+        ))
+        let second = Task { await model.load() }
+        await newerGate.untilWaiting()
+
+        // 先の回が先に移し終える
+        await olderGate.open()
+        await first.value
+        guard case .loaded = model.state else { return XCTFail("前提: 先の回が移していない: \(model.state)") }
+
+        // そのあと後の回が落ちる
+        await newerGate.open()
+        await second.value
+        guard case .loaded(let photos) = model.state else {
+            return XCTFail("先に移し終えた答えを、後の回の失敗で消した: \(model.state)")
+        }
+        XCTAssertEqual(photos.count, 3)
+    }
+
+    /// 🔴 **引き下げ更新の最中に始まった読み込みが、60秒の控えで引き下げの答えを負かさない。**
+    /// 控えを使う読み込みはすぐ戻って「新しい回」として画面に移り、あとから戻った
+    /// 引き下げの答えは「古い回」として捨てられていた
+    func testGalleryPullToRefreshIsNotBeatenByACachedLoad() async throws {
+        let service = gallery(feed)
+        let gate = Gate()
+        let calls = CallCounter()
+        let stale = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"stale","src":"https://x/s.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        let fresh = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"fresh","src":"https://x/f.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        await service.setRestrictedLoader(owner: "A") {
+            if await calls.next() == 1 { return [stale] }
+            await gate.wait()
+            return [fresh]
+        }
+        let model = GalleryViewModel(gallery: service)
+        await model.load()
+        guard case .loaded(let before) = model.state, before.contains(where: { $0.id == "stale" }) else {
+            return XCTFail("前提: 控えに古い答えが入っていない")
+        }
+
+        let refresh = Task { await model.load(force: true) }
+        await gate.untilWaiting()
+        // 引き下げの最中に、控えを使う読み込み（「見せない」の読み直しなど）が始まる
+        let cached = Task { await model.load() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await gate.open()
+        await refresh.value
+        await cached.value
+
+        guard case .loaded(let photos) = model.state else { return XCTFail("状態が違う") }
+        XCTAssertTrue(photos.contains { $0.id == "fresh" }, "引き下げの答えが出ていない")
+        XCTAssertFalse(photos.contains { $0.id == "stale" }, "控えの古い答えで引き下げの答えが負けた")
+    }
+
     /// 新しい順。**`createdAt` が無い写真は末尾**（落とさない）。
     func testGalleryOrdersNewestFirstAndKeepsUndated() async {
         let model = GalleryViewModel(gallery: gallery(feed))

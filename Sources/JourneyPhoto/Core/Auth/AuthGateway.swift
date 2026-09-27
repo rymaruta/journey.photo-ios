@@ -201,6 +201,37 @@ enum AuthGateway {
     }
 }
 
+/// トークンが取れなかった理由（`APIClient` が画面の分岐できる形に畳む）。
+///
+/// **`APIError` とは別のファイル・別の名前に置く。** Amplify も `APIError` という
+/// 型を持っているので、Amplify を読むファイルで `APIError` と書くと取り違えうる
+/// ——ここは Amplify の型を読むだけ、`APIClient` は Amplify を読まない。
+///
+/// Amplify 2.27 の返し方（bugfix-1 の調べ。実機では確かめていない）:
+/// - サインアウト済み → `AuthError.signedOut`
+/// - 圏外で更新できなかった → `AuthError.service(…, AWSCognitoAuthError.network)`
+///   （`CommonRunTimeError+AuthErrorConvertible`）
+/// 期限切れは `idToken` が先に拾ってログアウトに倒し nil を返すので、ここへ
+/// 来るのはその外で投げられた回だけ（未ログインとして扱う）。
+/// それ以外は nil（直し方の決まらない失敗を別の名前で隠さない）
+enum TokenFailure {
+    /// ログインしていない（ログインし直すしかない）
+    case signedOut
+    /// 通信が届かなかった
+    case unreachable
+
+    init?(_ error: Error) {
+        guard let auth = error as? AuthError else { return nil }
+        switch auth {
+        case .sessionExpired, .signedOut:
+            self = .signedOut
+        default:
+            guard AuthFailure(auth) == .network || auth.underlyingError is URLError else { return nil }
+            self = .unreachable
+        }
+    }
+}
+
 /// `APIClient` に渡すトークンの出どころ。
 struct CognitoTokenProvider: TokenProviding {
     func idToken() async throws -> String? {

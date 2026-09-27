@@ -275,6 +275,13 @@ enum AuthFailure: Equatable {
     case other
 
     init(_ error: AuthError) {
+        // **期限切れは中身より先に見る。** `sessionExpired` が Cognito の種別を
+        // 抱えていると、下の switch で `.other` に落ち、`idToken` の「期限切れなら
+        // ログアウトに倒す」が当たらずに生の失敗が画面まで出ていた
+        if case .sessionExpired = error {
+            self = .notAuthorized
+            return
+        }
         if let cognito = error.underlyingError as? AWSCognitoAuthError {
             switch cognito {
             case .userNotConfirmed: self = .userNotConfirmed

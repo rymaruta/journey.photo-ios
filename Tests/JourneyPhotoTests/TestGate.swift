@@ -62,3 +62,12 @@ struct GatedTokenProvider: TokenProviding {
         return token
     }
 }
+
+/// 何回目の呼び出しかを数える（最初の1回だけ待たせる、のような試験用）
+actor CallCounter {
+    private var count = 0
+    func next() -> Int {
+        count += 1
+        return count
+    }
+}

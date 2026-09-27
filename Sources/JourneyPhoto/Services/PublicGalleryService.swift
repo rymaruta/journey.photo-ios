@@ -51,10 +51,32 @@ actor PublicGalleryService {
 
     func setRestrictedLoader(_ loader: (@Sendable () async throws -> [Photo])?) {
         restrictedLoader = loader
+        restrictedOwner = nil
+        // 🔴 **取りに行っている最中の回にも効かせる。** 控えを空にするだけだと、
+        // 差し替える前に出ていった要求が戻ってきて、前の人向けの答えを
+        // 控えに書き戻す（60秒間、次の人の一覧に前の人の「フォロワーのみ」が出る）
+        restrictedGeneration += 1
         // ログインし直した人に、前の人ぶんを見せない
         restrictedCache = nil
         restrictedCachedAt = nil
     }
+
+    /// 持ち主つきで差し替える。**同じ人なら何もしない。**
+    ///
+    /// 差し替えは `JourneyPhotoApp` と、読み直す画面（ホーム・探す）の両方が
+    /// 呼ぶ——画面は「差し替えてから読む」を自分で保証したいので。
+    /// 同じ人で2回差し替えると、2回目が1回目の取得中の答えを捨ててしまう
+    /// （世代が進む）ので、ここで畳む。
+    func setRestrictedLoader(owner: String?, _ loader: (@Sendable () async throws -> [Photo])?) {
+        if owner == restrictedOwner, (loader == nil) == (restrictedLoader == nil) { return }
+        setRestrictedLoader(loader)
+        restrictedOwner = owner
+    }
+
+    /// いまの取り口が誰のものか（`setRestrictedLoader(owner:_:)` で入る）
+    private var restrictedOwner: String?
+    /// 取り口を差し替えた回数。**待っている間に変わったら、その答えは捨てる**
+    private var restrictedGeneration = 0
 
     private var restrictedCache: [Photo]?
     private var restrictedCachedAt: Date?
@@ -69,6 +91,7 @@ actor PublicGalleryService {
             return restrictedCache
         }
         let startedAt = Date()
+        let generation = restrictedGeneration
         do {
             // **いまの数の時刻を付ける。** この口は DynamoDB から直に来るので
             // 数は新しい。付けないと、押した答え（`LikeCountStore`）が
@@ -78,11 +101,14 @@ actor PublicGalleryService {
                 stamped.likesAsOf = startedAt
                 return stamped
             }
+            // 待っている間に人が替わった。**前の人向けの答えを控えにも画面にも出さない**
+            guard generation == restrictedGeneration else { return [] }
             restrictedCache = photos
             restrictedCachedAt = Date()
             return photos
         } catch {
             print("[gallery] 公開範囲を絞った写真を取れませんでした: \(error)")
+            guard generation == restrictedGeneration else { return [] }
             // 直前に取れていたぶんは出す（圏外で消える方が驚かれる）
             return restrictedCache ?? []
         }
