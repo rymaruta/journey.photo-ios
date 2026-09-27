@@ -204,6 +204,30 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.shown.map(\.id), ["a"], "人が替わったのに前の一覧のまま")
     }
 
+    /// **人が替わったら、読み直しが返る前から前の人の段を出さない。**
+    /// 一覧だけ空にして、チップ・季節の写真などは読み直しが返るまで前の人のまま残っていた
+    func testSwitchingViewerClearsDerivedSectionsImmediately() async {
+        let service = gallery("""
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","tags":["山"]}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        XCTAssertFalse(model.tagChips.isEmpty, "前提: チップが出ていない")
+
+        // 人が替わった（限定公開の読み出し口を入れ替えた）。読み出しを遅くして、
+        // 読み直しが返る前の画面を見る
+        await service.setRestrictedLoader {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            return []
+        }
+        let loading = Task { await model.loadPhotos(environment: env, epoch: 1) }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(model.tagChips.isEmpty, "読み直しの間、前の人のチップが残っている")
+        XCTAssertFalse(model.hasLoaded, "読み直しの間に「読み込み済み」のまま")
+        await loading.value
+    }
+
     /// **「フォロー中」を選んだあとにフォロー一覧を入れ替えても、範囲は戻らない。**
     ///
     /// `use(viewerId:following:)` を使い回すと、あちらは範囲を既定

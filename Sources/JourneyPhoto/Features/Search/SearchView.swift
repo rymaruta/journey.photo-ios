@@ -741,7 +741,12 @@ final class SearchViewModel: ObservableObject {
         loadedEpoch = epoch
         // 🔴 **人が替わったら、読み直しに失敗しても前の一覧を残さない**
         // （前の人の限定公開の写真が入っている）
-        if switched { allPhotos = [] }
+        if switched {
+            allPhotos = []
+            // 読み直しが返るまでは「読み込み中」（前の結果で「見つかりません」を出さない）
+            hasLoaded = false
+            rebuildDerived()
+        }
         await reloadPhotos(environment: environment)
     }
 
@@ -762,6 +767,13 @@ final class SearchViewModel: ObservableObject {
             loadFailed = true
         }
         hasLoaded = true
+        rebuildDerived()
+    }
+
+    /// 一覧から作る段（チップ・発見の段・カテゴリ）を作り直す。
+    /// **人が替わって一覧を空にしたときも呼ぶ**——呼ばないと、読み直しが返るまで
+    /// 前の人の一覧（限定公開を含む）から作ったチップ・季節の写真・機材が残っていた
+    private func rebuildDerived() {
         popularTags = PhotoQuery.topTags(in: allPhotos)
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
         refreshTagChips()
