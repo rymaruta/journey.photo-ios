@@ -93,8 +93,10 @@ final class AuthStore: ObservableObject {
         }
         let id = try? await AuthGateway.currentUserId()
         // **期限切れは起動時に見つける。** ログイン中の見た目のまま始めない。
-        // 圏外などで判定できない回は `false`（ログイン中のまま進む）
-        if id != nil, await AuthGateway.isSessionExpired() {
+        // 圏外などで判定できない回は `false`（ログイン中のまま進む）。
+        // **ID が取れなかった回も見る**——見ないと、期限切れなのに「本当に
+        // ログアウトしたか分からない」扱いになり、通知の宛先を外さない
+        if await AuthGateway.isSessionExpired() {
             await signOut()
             errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                              "Your session has expired. Please sign in again.")

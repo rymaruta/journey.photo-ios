@@ -124,8 +124,7 @@ final class PushCenter: ObservableObject {
                 // 印は残す。預け直せたら次の人の印に替わる（`registerIfPossible`）。
                 // 落ちたら印が残り、次の `use` でもう一度見る
             } else {
-                if token != nil { releaseDevice() }
-                registeredOwner = nil
+                releaseForeignRegistration(except: userId)
             }
             isRegistered = false
         }
@@ -197,6 +196,8 @@ final class PushCenter: ObservableObject {
         // 次の起動で勝手に復活する
         setEnabled(false)
         defer { isRegistered = false }
+        // 前の人の宛先が残っていたら（預け直しで上書きできないまま）端末ごと外す
+        releaseForeignRegistration(except: userId)
         guard let token, let userId else { return }
         do {
             try await service().unregister(token: token)
@@ -231,10 +232,21 @@ final class PushCenter: ObservableObject {
         guard let token, userId != nil else { return }
         // **外せた回だけ印を消す。** 外せなかったら、ログアウトのあとの
         // `use` が印を見て端末ごと外す
-        if (try? await service().unregister(token: token)) != nil {
+        // **自分の印だけ消す。** 前の人の印（預け直しが落ちて残ったもの）は、
+        // この人の認証では外れていないので残し、ログアウトのあとの `use` が
+        // 端末ごと外す
+        if (try? await service().unregister(token: token)) != nil,
+           registeredOwner == userId {
             registeredOwner = nil
         }
         isRegistered = false
+    }
+
+    /// 前の人の宛先が残っていたら、端末ごと APNs から外して印を消す
+    private func releaseForeignRegistration(except userId: String?) {
+        guard let owner = registeredOwner, owner != userId else { return }
+        if token != nil { releaseDevice() }
+        registeredOwner = nil
     }
 
     /// お知らせを読んだので、アイコンの数字を消す。
@@ -273,6 +285,9 @@ final class PushCenter: ObservableObject {
             registeredOwner = owner
         } catch {
             isRegistered = false
+            // **預け直せなかったら前の人の宛先を残さない。** 前の人の印を残したまま
+            // 落ち続けると、この人がログインしている間ずっと前の人あてに届く
+            releaseForeignRegistration(except: owner)
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("通知を受け取る設定にできませんでした", "Couldn't turn notifications on")
         }

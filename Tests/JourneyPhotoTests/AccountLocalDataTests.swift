@@ -1,5 +1,8 @@
 import XCTest
 @testable import JourneyPhoto
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// 同じ端末で人が替わる瞬間と、退会したあとに端末に残るもの。
 @MainActor
@@ -176,6 +179,32 @@ final class PushReleaseTests: XCTestCase {
         await push.use(userId: "a")
         await push.use(userId: nil)
         XCTAssertEqual(released, 0, "外し損ねていないのに端末ごと外している")
+    }
+
+    /// 🔴 **ふつうのログアウトが、前の人の印を消さない。** 次の人（b）の認証で
+    /// 外せるのは b の宛先だけ——前の人（a）の宛先はサーバーに残っているので、
+    /// 印を残してログアウトのあとの `use` に端末ごと外させる
+    func testSignOutKeepsSomeoneElsesMark() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        let defaults = suite()
+        var released = 0
+        let push = PushCenter(service: { PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                                                    tokenProvider: StubTokenProvider(token: "t"),
+                                                                    session: session)) },
+                              defaults: defaults, releaseDevice: { released += 1 })
+        await push.use(userId: "b")
+        // b の預け直しが落ちて、a の印が残っている
+        defaults.set("a", forKey: "photo-gallery-push-registered-owner")
+        await push.signingOut()
+        XCTAssertNotNil(StubProtocol.lastRequest, "外す要求を出していない（試験の前提が崩れている）")
+        XCTAssertEqual(defaults.string(forKey: "photo-gallery-push-registered-owner"), "a",
+                       "b のログアウトで a の印を消した（a あての通知が届き続ける）")
+        await push.use(userId: nil)
+        XCTAssertEqual(released, 1)
     }
 
     /// ログアウトの前に外せなかったら（ここでは未ログインで 401 相当）、印は残る
