@@ -21,6 +21,10 @@ struct StoryInsightsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// ブロックした人は一覧から外す（行からその人のページへ行き、ブロックできる）
     @EnvironmentObject private var hidden: ModerationStore
+    /// 一覧から落とす「見せない」の写し。**戻ってきたとき（`onAppear`）に取る**
+    /// ——描くたびに絞ると、見た人のページでブロックした瞬間に元の行が消え、
+    /// そのページが閉じる（`UserProfileView` と同じ形）
+    @State private var dropped = ModerationSnapshot()
     @State private var viewers: [StoryViewer] = []
     @State private var replies: [StoryReply] = []
     /// 一覧の絞り（モック7）。**同じ一覧を絞るだけ**——別の口から
@@ -68,6 +72,7 @@ struct StoryInsightsView: View {
                 }
             }
         }
+        .onAppear { dropped = hidden.snapshot }
         .task { await load() }
         .refreshable { await load() }
     }
@@ -170,7 +175,7 @@ struct StoryInsightsView: View {
 
     /// 絞ったあとの一覧。**リアクションは見た人の一部**（別の口では引かない）
     private var shownViewers: [StoryViewer] {
-        let visible = viewers.filter { !hidden.blockedUserIds.contains($0.userId) }
+        let visible = dropped.viewers(viewers)
         return scope == .reactions ? visible.filter { hasReaction(from: $0.userId) } : visible
     }
 

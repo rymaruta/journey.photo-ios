@@ -113,4 +113,18 @@ struct ModerationSnapshot: Equatable {
     func visible(_ photos: [Photo]) -> [Photo] {
         BlockFilter.photos(photos, blocked: blocked, reported: reported)
     }
+
+    /// 人・コメント・見た人も同じ写しで落とす。**描くたびに `hidden.blockedUserIds` で
+    /// 絞らない**——行から開いた先でブロックすると、元の行が消えて開いている画面が閉じる
+    func users(_ users: [UserProfile]) -> [UserProfile] {
+        BlockFilter.users(users, blocked: blocked)
+    }
+
+    func comments(_ comments: [PhotoComment]) -> [PhotoComment] {
+        BlockFilter.comments(comments, blocked: blocked)
+    }
+
+    func viewers(_ viewers: [StoryViewer]) -> [StoryViewer] {
+        BlockFilter.viewers(viewers, blocked: blocked)
+    }
 }

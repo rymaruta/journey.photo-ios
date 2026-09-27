@@ -52,6 +52,10 @@ struct PhotoDetailView: View {
     /// この画面が出ているか・裏にいる間にブロック／通報があったか（`hidden.revision`）
     @State private var isOnScreen = false
     @State private var needsRefilter = false
+    /// コメントから落とす「見せない」の写し。**画面に出ている間だけ取り直す**
+    /// ——コメントした人のページでブロックすると、描くたびに絞っていた元の行
+    /// （`NavigationLink`）が消え、そのページが閉じていた
+    @State private var dropped = ModerationSnapshot()
 
     /// スポット詳細に渡すもの一式。**撮影地から導いた地点**と、
     /// 突き合わせる公開写真（近くの地点もここから出す）
@@ -161,10 +165,16 @@ struct PhotoDetailView: View {
         // `NavigationLink` ごと開いている詳細が閉じていた（「ブロックしました」も
         // 見えない）。裏にいる間は印だけ付けて、戻ってきたときに絞る
         .onChange(of: hidden.revision) { _, _ in
-            if isOnScreen { refilterHidden() } else { needsRefilter = true }
+            if isOnScreen {
+                dropped = hidden.snapshot
+                refilterHidden()
+            } else {
+                needsRefilter = true
+            }
         }
         .onAppear {
             isOnScreen = true
+            dropped = hidden.snapshot
             if needsRefilter {
                 needsRefilter = false
                 refilterHidden()
@@ -867,8 +877,9 @@ struct PhotoDetailView: View {
             }
         }
         VStack(alignment: .leading, spacing: 12) {
-            // ブロックした人のコメントは出さない（数の表示はサーバーの値のまま）
-            ForEach(BlockFilter.comments(model.comments, blocked: hidden.blockedUserIds)) { comment in
+            // ブロックした人のコメントは出さない（数の表示はサーバーの値のまま）。
+            // **写しで落とす**（`dropped`）
+            ForEach(dropped.comments(model.comments)) { comment in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         // **退会した人にはプロフィールへの導線を出さない**

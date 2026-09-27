@@ -39,6 +39,10 @@ struct MyPageView: View {
     @State private var isOnScreen = false
     /// お気に入りのタブから落とす「見せない」の写し。**戻ってきたときに取る**
     @State private var dropped = ModerationSnapshot()
+    /// 「行きたい場所」の行を作る鍵の写し（`wishlist.spotIds`）。**画面に出ている間だけ
+    /// 取り直す**——描くたびに今の集合から作ると、開いたスポットで♥を外した瞬間に
+    /// 元の行が消え、そのスポットの画面が閉じる（`savedIds` と同じ形）
+    @State private var wishIds: Set<String> = []
     @EnvironmentObject private var hidden: ModerationStore
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
@@ -105,8 +109,13 @@ struct MyPageView: View {
         // 初回は `.task` が読むので、2度目以降だけ走らせる
         // **下の「投稿」から投稿して閉じたら読み直す。** シートは `RootView` に
         // あるので、閉じても `onAppear` は来ない
+        //
+        // 🔴 **画面に出ている間だけ。** 旅の一冊などを上に積んだまま投稿すると、
+        // 読み直しで元の行（`Trip.id` は写真の id をつないだもの）が変わるか、
+        // 失敗の帯がタブごと差し替えて、開いている画面が閉じる。出ていない回は
+        // 戻ってきたとき（`onAppear`）の読み直しが拾う
         .onChange(of: tabRouter.postSheetsClosed) { _, _ in
-            guard auth.userId != nil else { return }
+            guard auth.userId != nil, isOnScreen else { return }
             Task { await model.load(for: auth.userId) }
         }
         .onAppear {
@@ -114,6 +123,7 @@ struct MyPageView: View {
             // 詳細でしおりを外したぶん・ブロック／通報したぶんは、戻ってきたこの時点で落とす
             refreshSavedIds()
             dropped = hidden.snapshot
+            wishIds = wishlist.spotIds
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
             Task { await model.load(for: auth.userId) }
@@ -128,6 +138,10 @@ struct MyPageView: View {
         // まだ前の人の控えのまま
         .onChange(of: hidden.revision) { _, _ in
             if isOnScreen { dropped = hidden.snapshot }
+        }
+        // 「行きたい」も同じ。人が替わった回（`wishlist.use`）もここで拾う
+        .onChange(of: wishlist.spotIds) { _, next in
+            if isOnScreen { wishIds = next }
         }
         // 起動時の同期（`syncSaves`）が後から届いたぶんは拾う。**増えたときだけ**
         // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる。
@@ -536,11 +550,11 @@ struct MyPageView: View {
     private var wishlistArea: some View {
         // **撮影地から導いた地点**のうち、「行きたい」に入れたもの
         let places = DerivedSpot.all(in: model.photos)
-        let wanted = places.filter { wishlist.contains($0.slug) }
+        let wanted = places.filter { wishIds.contains($0.slug) }
         // 台帳の撮影スポット（`SPOT-<slug>`）。索引と突き合わせて名前を引く。
         // **索引が無くても行は出す**（`OfficialWishlist`）——スポットの画面で
         // 押した直後に「まだありません」と言わない
-        let officialRows = OfficialWishlist.rows(keys: wishlist.spotIds, index: officialSpots)
+        let officialRows = OfficialWishlist.rows(keys: wishIds, index: officialSpots)
         VStack(alignment: .leading, spacing: 10) {
             // **どこに残るかを書く。** 機種を変えると消えるものを、
             // 消えないものと同じ顔で出さない
@@ -554,7 +568,7 @@ struct MyPageView: View {
             // 数えるのは撮影地の行とスポットの行の両方
             switch ProfileSections.wishlist(ledgerCount: places.count,
                                             wantedCount: wanted.count + officialRows.count,
-                                            savedIdCount: wishlist.spotIds.count) {
+                                            savedIdCount: wishIds.count) {
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
                                        "Couldn't load the photos. Pull to refresh."))
