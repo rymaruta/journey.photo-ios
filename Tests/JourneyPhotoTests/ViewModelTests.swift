@@ -248,7 +248,7 @@ final class ViewModelTests: XCTestCase {
         await model.search("パリ", environment: env)
         XCTAssertEqual(model.shown.count, 2, "下ごしらえが効いていない")
 
-        await service.setHidden(userIds: ["u2"], photoIds: [])
+        await service.setHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
         await model.reloadPhotos(environment: env)
         await model.search("パリ", environment: env)
 
@@ -282,7 +282,7 @@ final class ViewModelTests: XCTestCase {
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
         let model = SearchViewModel()
         await model.loadPhotos(environment: env, epoch: 0)
-        await service.setHidden(userIds: ["u2"], photoIds: [])
+        await service.setHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
 
         await model.loadPhotos(environment: env, epoch: 0)
         await model.search("パリ", environment: env)
@@ -329,7 +329,7 @@ final class ViewModelTests: XCTestCase {
         let model = SearchViewModel()
         await model.reloadPhotos(environment: env)       // 引き下げが先に終わった
         await model.loadPhotos(environment: env, epoch: 0)
-        await service.setHidden(userIds: ["u2"], photoIds: [])
+        await service.setHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
 
         await service.setRestrictedLoader(nil)   // 人が替わった（回が 1 に進む）
         await model.loadPhotos(environment: env, epoch: 1)
@@ -347,7 +347,7 @@ final class ViewModelTests: XCTestCase {
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
         let model = SearchViewModel()
         await model.reloadPhotos(environment: env)       // 1本目が先に終わる
-        await service.setHidden(userIds: ["u2"], photoIds: [])
+        await service.setHidden(ModerationSnapshot(blocked: ["u2"], reported: []))
         await service.setRestrictedLoader {
             try await Task.sleep(nanoseconds: 200_000_000)
             return []
@@ -505,6 +505,25 @@ final class ViewModelTests: XCTestCase {
         await task.value
         XCTAssertEqual(model.errorMessage, "取得に失敗しました", "取り消しで失敗の知らせを消している")
         XCTAssertTrue(model.photos.isEmpty)
+    }
+
+    /// **「公開中」の答えは、サーバーから読めた回にだけ出す**（読み直しに失敗した古い一覧や
+    /// ピン留めの並べ替えで、非公開にした写真の印を外していた）
+    func testServerReadIsPublishedOnlyForASuccessfulLoad() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg"},{"id":"p2","src":"/uploads/p2.jpg","published":false}]"#)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertEqual(model.serverRead?.publishedIds, ["p1"], "非公開の写真を公開中と言っている")
+        let first = model.serverRead
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"x"}"#)
+        await model.load()
+        XCTAssertEqual(model.serverRead, first, "読めなかった回に古い一覧で答えを出し直した")
     }
 
     /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは

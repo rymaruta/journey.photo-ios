@@ -58,3 +58,41 @@ extension View {
             }
     }
 }
+
+/// 送っていない変更があるシートの「✕」と下へ払う閉じ方（`UnsavedLeave`）。
+///
+/// 上の `unsavedLeaveGuard` は**積み重ねた画面の戻る**の形（標準の戻るを隠して
+/// 自前の戻るに差し替える）で、シートの ✕ には合わない。シートでは戻るを
+/// 差し替えるのではなく、**下へ払って閉じるのを止め**（`interactiveDismissDisabled`）、
+/// ✕ は呼び手が `.confirm` のときに `isPresented` を立てる。
+/// 判断（`UnsavedLeave`）と「保存／捨てる（破壊的）／キャンセル」の並びは同じもの
+/// ——**2つ目の仕組みは作らない**。
+///
+/// - `saveTitle`・`discardTitle`: 画面の言葉に合わせる（ストーリーは「下書きに保存」「捨てる」）
+/// - `onSave`: 保存し、**成功したときだけ閉じる**のは呼び手の仕事（失敗なら開いたまま断りを出す）
+/// - 送っている最中（`.wait`）も払って閉じさせない。✕ を押せなくするのは呼び手
+extension View {
+    func unsavedCloseGuard(_ leave: UnsavedLeave,
+                           isPresented: Binding<Bool>,
+                           title: String,
+                           canSave: Bool = true,
+                           saveTitle: String,
+                           discardTitle: String,
+                           message: String,
+                           onSave: @escaping () -> Void,
+                           onDiscard: @escaping () -> Void) -> some View {
+        self
+            // 下へ払っても**跳ね返るだけ**で確認は出ない（SwiftUI には払われたことを知る口が
+            // 無い）。失うものは無く、✕ から確かめられる
+            .interactiveDismissDisabled(leave != .now)
+            .confirmationDialog(title, isPresented: isPresented, titleVisibility: .visible) {
+                if canSave {
+                    Button(saveTitle, action: onSave)
+                }
+                Button(discardTitle, role: .destructive, action: onDiscard)
+                Button(L("キャンセル", "Cancel"), role: .cancel) {}
+            } message: {
+                Text(message)
+            }
+    }
+}

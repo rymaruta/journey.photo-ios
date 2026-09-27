@@ -120,10 +120,7 @@ struct BlockedUsersView: View {
 
     /// 「見せない」を公開一覧の側へ渡し直す。
     private func apply() async {
-        await environment.gallery.setHidden(
-            userIds: hidden.blockedUserIds,
-            photoIds: hidden.reportedPhotoIds
-        )
+        await environment.gallery.setHidden(hidden.snapshot)
     }
 
     private func unblock(_ userId: String) async {

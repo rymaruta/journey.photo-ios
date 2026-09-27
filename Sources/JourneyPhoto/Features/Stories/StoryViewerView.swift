@@ -1018,10 +1018,7 @@ struct StoryViewerView: View {
         do {
             try await environment.moderation.block(userId: userId)
             hidden.block(userId, for: owner)
-            await environment.gallery.setHidden(
-                userIds: hidden.blockedUserIds,
-                photoIds: hidden.reportedPhotoIds
-            )
+            await environment.gallery.setHidden(hidden.snapshot)
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
             dismiss()

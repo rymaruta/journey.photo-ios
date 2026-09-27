@@ -140,6 +140,17 @@ struct MyPageView: View {
         .onChange(of: hidden.revision) { _, _ in
             if isOnScreen { dropped = hidden.snapshot }
         }
+        // 自分の一覧が「公開中」と答えた写真は、消した・非公開にした印を外す
+        // （Web や別の端末で公開に戻した写真が、この端末でだけ出なかった）
+        .onChange(of: model.serverRead) { _, read in
+            guard let read else { return }
+            let before = hidden.revision
+            hidden.confirmPublished(read.publishedIds, for: read.owner, readStartedAt: read.startedAt)
+            // 実際に外したときだけ一覧へ渡す
+            if hidden.revision != before {
+                Task { await environment.gallery.setHidden(hidden.snapshot) }
+            }
+        }
         // 「行きたい」も同じ。人が替わった回（`wishlist.use`）もここで拾う
         .onChange(of: wishlist.spotIds) { _, next in
             if isOnScreen { wishIds = next }
@@ -522,7 +533,10 @@ struct MyPageView: View {
     @ViewBuilder
     private var favoritesArea: some View {
         // ブロック・通報した人の写真を落とす（`FavoritesView`・`SavedPhotosView` と同じ）
-        let saved = dropped.visible(LikedPhotos.resolve(savedIds, in: [feed, model.photos]))
+        // **先に公開一覧を絞ってから引き当てる**（`SavedPhotosView` と同じ順）。引き当ててから
+        // 絞ると、公開一覧の古い写しが先に当たって落ち、自分の非公開の写し（新しい方）が
+        // 使われずに、非公開にした自分の写真が保存から消えた
+        let saved = LikedPhotos.resolve(savedIds, in: [dropped.visible(feed), model.photos])
         if saved.isEmpty {
             switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
                                           failed: feedFailed) {
@@ -928,6 +942,17 @@ final class MyPageViewModel: ObservableObject {
     /// （増減の結果は向こうが決める——3枚の上限も、消えた写真の掃除も）
     @Published private(set) var pinnedIds: [String] = []
     @Published private(set) var photos: [Photo] = []
+    /// **サーバーから読めた**自分の写真（公開中の id と、取りに行った時刻）。
+    /// 画面はこれで「消した・非公開にした」印を外す（`ModerationStore.confirmPublished`）。
+    /// `photos` の変化で見ない——ピン留めの並べ替えでも変わり、読み直しに失敗した古い
+    /// 一覧で印を外していた
+    struct ServerRead: Equatable {
+        /// 答えの持ち主（受け取った時点の `auth.userId` ではなく、取りに行った人）
+        let owner: String?
+        let publishedIds: [String]
+        let startedAt: Date
+    }
+    @Published private(set) var serverRead: ServerRead?
     @Published private(set) var isLoading = false
     /// **読み込みに失敗した**。画面はこの時だけ一覧の代わりに知らせを出す。
     @Published var errorMessage: String?
@@ -990,6 +1015,7 @@ final class MyPageViewModel: ObservableObject {
         // 替わった後に返った答えは何も入れない（A → ログアウト → A でも別の世代）
         let gen = generation
         isLoading = true
+        let startedAt = Date()
         // 取り消された回に戻す（先に消したまま抜けると、写真0枚の欄に
         // 「まだ写真がありません」と嘘が出ていた）
         let previousError = errorMessage
@@ -1045,6 +1071,8 @@ final class MyPageViewModel: ObservableObject {
                 self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
                 self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
                 hasLoadedPhotos = true
+                serverRead = ServerRead(owner: activeUser, publishedIds: loadedPhotos.filter { $0.published != false }.map(\.id),
+                                        startedAt: startedAt)
             }
             let loadedStats = await stats
             guard gen == generation else { return }
@@ -1137,6 +1165,8 @@ final class MyPageViewModel: ObservableObject {
         actionMessage = nil
         reloadError = nil
         hasLoadedPhotos = false
+        // 前の人の「公開中」の答えも手放す
+        serverRead = nil
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

@@ -10,6 +10,26 @@ extension ModerationStore {
         let owner = self.owner
         try await environment.moderation.block(userId: userId)
         block(userId, for: owner)
-        await environment.gallery.setHidden(userIds: blockedUserIds, photoIds: reportedPhotoIds)
+        await environment.gallery.setHidden(snapshot)
+    }
+}
+
+extension ModerationStore {
+    /// 自分で消した・非公開にした写真を、**その場で**公開一覧から落とす（`markGone`）。
+    ///
+    /// サーバーの答えが返った**後に**呼ぶ（失敗した回に落とすと、消えていない写真が
+    /// 見えなくなる）。`owner` は送る**前に**取った `self.owner`——待っている間に
+    /// 人が替わっていたら書かない。`blockAndHide` と同じく、控えに入れてから
+    /// 公開一覧へ渡す。画面は `revision` を見て読み直す（ブロック・通報と同じ道）
+    func hideGone(_ photoId: String, for owner: String?, environment: AppEnvironment) async {
+        markGone(photoId, for: owner)
+        await environment.gallery.setHidden(snapshot)
+    }
+
+    /// 公開に戻した写真の印を外す（`unmarkGone`）。一覧に戻るのは、サイトの建て直しで
+    /// `photos.json` に載ってから
+    func unhideGone(_ photoId: String, for owner: String?, environment: AppEnvironment) async {
+        unmarkGone(photoId, for: owner)
+        await environment.gallery.setHidden(snapshot)
     }
 }

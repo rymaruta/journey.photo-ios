@@ -147,10 +147,7 @@ struct ReportSheet: View {
 
     /// 落とす相手を公開一覧の側へ渡し直す。
     private func applyHidden() async {
-        await environment.gallery.setHidden(
-            userIds: hidden.blockedUserIds,
-            photoIds: hidden.reportedPhotoIds
-        )
+        await environment.gallery.setHidden(hidden.snapshot)
     }
 
     private func submit() async {

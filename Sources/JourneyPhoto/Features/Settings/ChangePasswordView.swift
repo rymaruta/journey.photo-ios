@@ -56,6 +56,9 @@ struct ChangePasswordView: View {
         }
         .webScreen()
         .navigationTitle(L("パスワードを変える", "Change password"))
+        // **前に開いたときの失敗を持ち越さない。** 失敗の文は共有の `auth.errorMessage`
+        // なので、戻って開き直すと何も押していないのに赤い文が出ていた
+        .onAppear { auth.errorMessage = nil }
         .navigationBarTitleDisplayMode(.inline)
     }
 }

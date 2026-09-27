@@ -189,33 +189,48 @@ struct AlbumsView: View {
     /// 返し続けるので、以前はトークンがあるだけで「共有」を出していた——送った
     /// 相手が開くと「期限が切れています」で断られる。切れていたら同じ場所に
     /// 「招待リンクを作り直す」を出す（`InviteLink.expiry`）。使えるときは
-    /// Web と同じく「〜まで」を添える
+    /// Web と同じく「〜まで」を添え、期限内でも作り直せる（owner の判断 2026-09-27）
     @ViewBuilder
     private func inviteControls(_ album: Album) -> some View {
         if let token = album.inviteToken {
             let expiry = InviteLink.expiry(album.inviteExpiresAt, now: Date())
-            HStack {
-                if expiry == .expired {
-                    Button(L("招待リンクを作り直す", "Recreate invite link")) {
-                        Task { await model.createInvite(album.id, environment: environment) }
-                    }
-                    .font(.caption)
-                    // 二度押しで2本作らない（下の「招待リンクを作る」と同じ）
-                    .disabled(model.inviteWorking.contains(album.id))
-                    .buttonStyle(.borderless)
-                } else {
+            HStack(spacing: 12) {
+                if expiry != .expired {
                     // 招待リンクはサイトの URL で共有する
                     // （アプリを入れていない人にも開ける）
                     ShareLink(item: model.inviteURL(token: token)) {
                         Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
                             .font(.caption)
+                            // 押す場所はラベルの内側で広げる（外側の余白は押せない）
+                            .webTappable()
                     }
+                    // 作り直し・取り消しの最中は配らない（失効する直前のリンクを配っていた）
+                    .disabled(model.inviteWorking.contains(album.id))
+                    .buttonStyle(.borderless)
                 }
                 Spacer()
-                Button(L("取り消す", "Revoke")) {
-                    Task { await model.revokeInvite(album.id, environment: environment) }
+                // **期限内でも作り直せる**（Web の /user/albums と同じ——配ったリンクを
+                // 止めて出し直したいとき）。切れていたらこれが唯一の出口
+                Button {
+                    Task { await model.createInvite(album.id, environment: environment) }
+                } label: {
+                    Text(expiry == .expired ? L("招待リンクを作り直す", "Recreate invite link")
+                                            : L("作り直す", "Recreate"))
+                        .font(.caption)
+                        // 押す場所は 44pt（隣の「取り消す」と押し間違えない）。**ラベルの
+                        // 内側で**広げる——ボタンの外側に付けた余白は押せない
+                        .webTappable()
                 }
-                .font(.caption)
+                // 二度押しで2本作らない（下の「招待リンクを作る」と同じ）
+                .disabled(model.inviteWorking.contains(album.id))
+                .buttonStyle(.borderless)
+                Button {
+                    Task { await model.revokeInvite(album.id, environment: environment) }
+                } label: {
+                    Text(L("取り消す", "Revoke"))
+                        .font(.caption)
+                        .webTappable()
+                }
                 .disabled(model.inviteWorking.contains(album.id))
                 // **行に複数のボタンを置くときは borderless。**
                 // 既定だと行のどこを押しても両方が反応する
@@ -233,6 +248,10 @@ struct AlbumsView: View {
             case .unknown:
                 EmptyView()
             }
+            // **前のリンクが死ぬことを書く**（Web と同じ文）。書かないと、配ったリンクが黙って切れる
+            Text(L("作り直すと、前のリンクは使えなくなります。", "Recreating stops the previous link from working."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         } else {
             Button(L("招待リンクを作る", "Create invite link")) {
                 Task { await model.createInvite(album.id, environment: environment) }

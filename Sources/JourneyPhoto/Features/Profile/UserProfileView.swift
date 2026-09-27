@@ -505,10 +505,7 @@ final class UserProfileViewModel: ObservableObject {
             try await environment.moderation.block(userId: userId)
             blockWrites += 1
             store.block(userId, for: owner)
-            await environment.gallery.setHidden(
-                userIds: store.blockedUserIds,
-                photoIds: store.reportedPhotoIds
-            )
+            await environment.gallery.setHidden(store.snapshot)
             isFollowing = false
             photos = []
             // **成功を赤字で出さない。** それまで `errorMessage` に入れて

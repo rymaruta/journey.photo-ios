@@ -76,10 +76,7 @@ struct JourneyPhotoApp: App {
     /// 出すところ（`PublicGalleryService`）で落とすので、ギャラリー・検索・
     /// 地図・近くの写真・お気に入りの**全部に一度に効く**。
     private func applyModeration() async {
-        await environment.gallery.setHidden(
-            userIds: hidden.blockedUserIds,
-            photoIds: hidden.reportedPhotoIds
-        )
+        await environment.gallery.setHidden(hidden.snapshot)
     }
 
     /// 公開範囲を絞った写真の取り口を、公開一覧へ渡す。

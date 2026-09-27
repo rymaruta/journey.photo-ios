@@ -7,6 +7,8 @@ struct EditPhotoView: View {
     let photo: Photo
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// 非公開にした・公開に戻した写真を、公開一覧から落とす／戻す（`hideGone`）
+    @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
@@ -244,8 +246,21 @@ struct EditPhotoView: View {
             dismiss()
             return
         }
+        // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
+        let owner = hidden.owner
         do {
             try await environment.photos.update(photoId: photo.id, patch: patch)
+            // 🔴 **非公開にしたら公開一覧から落とす。** 一覧は建て直しまで古い
+            // 静的 JSON なので、非公開にした写真がホーム・探す・地図に出続けていた。
+            // **公開に戻したら印を外す**（外さないと、建て直した後もこの端末でだけ出ない）。
+            // 公開を触っていない回（`visibility.published` が nil）は何もしない
+            if let published = visibility.published {
+                if published {
+                    await hidden.unhideGone(photo.id, for: owner, environment: environment)
+                } else {
+                    await hidden.hideGone(photo.id, for: owner, environment: environment)
+                }
+            }
             dismiss()
         } catch {
             messageIsError = true
