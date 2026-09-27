@@ -391,7 +391,7 @@ struct RootView: View {
         .sheet(isPresented: $showStoryComposer, onDismiss: { tabRouter.postSheetClosed() }) {
             NavigationStack { StoryComposerView() }
         }
-        .sheet(isPresented: $showMenu) {
+        .sheet(isPresented: $showMenu, onDismiss: { tabRouter.menuSheetClosed() }) {
             NavigationStack { SiteMenuView() }
         }
         // お知らせを閉じたら数え直す（タブではなくシートになったので）

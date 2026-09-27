@@ -754,7 +754,7 @@ struct MyPageView: View {
     /// ——入口がマイページの札1つだけだった
     @ViewBuilder
     private var tripsArea: some View {
-        let trips = TripBook.trips(from: model.photos.filter { $0.published != false })
+        let trips = TripBook.shelfTrips(from: model.photos)
         if trips.isEmpty && model.isLoading {
             // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）
             ProgressView()
