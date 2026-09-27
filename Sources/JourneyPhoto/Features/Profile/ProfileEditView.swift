@@ -44,6 +44,10 @@ struct ProfileEditView: View {
     /// 保存の失敗。**アラートで出す**——保存は右上なので、フォームの中に出すと
     /// 下に流していれば上の画面外、上にいれば下の画面外になる
     @State private var saveError: String?
+    /// アイコン／カバーを送っている間（`upload`）。**その間は保存も戻るも止める**——
+    /// 戻れてしまうと送り終わる前の古い画像が前の画面に出たままになり、
+    /// 保存と重なると後から来た方がどちらかを上書きする
+    @State private var uploadingImage: ProfileService.ImageKind?
 
     var body: some View {
         Form {
@@ -108,7 +112,7 @@ struct ProfileEditView: View {
         .toolbar {
             // **保存は右上**（板）。以前はフォームの一番下にあり、長い画面では見えなかった
             ToolbarItem(placement: .topBarTrailing) {
-                if isSaving {
+                if isSaving || uploadingImage != nil {
                     ProgressView()
                 } else {
                     Button(L("保存", "Save")) {
@@ -124,6 +128,8 @@ struct ProfileEditView: View {
             }
         }
         .overlay { if isLoading { ProgressView() } }
+        .navigationBarBackButtonHidden(uploadingImage != nil)
+        .interactiveDismissDisabled(uploadingImage != nil)
         .alert(L("保存できませんでした", "Couldn't save"),
                isPresented: Binding(get: { saveError != nil },
                                     set: { if !$0 { saveError = nil } })) {
@@ -313,10 +319,19 @@ struct ProfileEditView: View {
 
     private func upload(_ item: PhotosPickerItem?, kind: ProfileService.ImageKind) async {
         guard let item else { return }
-        message = nil
+        // 送っている最中に次を選ばれたら、選択だけ戻して受け付けない
+        guard uploadingImage == nil else {
+            if kind == .avatar { avatarItem = nil } else { coverItem = nil }
+            return
+        }
+        uploadingImage = kind
+        // 送っている間の表示（知らせの欄・右上は ProgressView）
+        message = kind == .avatar ? L("アイコンを送っています…", "Uploading avatar…")
+                                  : L("カバーを送っています…", "Uploading cover…")
         // **選択を戻す。** 戻さないと、同じ写真をもう一度選んでも `onChange` が
         // 起きず何も起きない（`EditPhotoView` の差し替えと同じ）
         defer {
+            uploadingImage = nil
             if kind == .avatar { avatarItem = nil } else { coverItem = nil }
         }
         do {
