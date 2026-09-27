@@ -31,11 +31,19 @@ actor APIClient {
     /// Web 側（`lib/utils/api.ts`）と同じ考え方で、応答が無いまま待ち続けない。
     static let requestTimeout: TimeInterval = 20
 
+    /// 要求を出す**直前**に待つ口。**本番は nil**（何もしない）。
+    /// 試験が「この口だけ遅い」を作るのに使う——遅さを `URLProtocol` の応答で
+    /// 作ると、Linux の Foundation では別スレッドから `client` を叩いてまれに落ちる
+    /// （`PublicGalleryService.beforeLiveRequest` と同じ理由）
+    private let beforeRequest: (@Sendable (URLRequest) async -> Void)?
+
     init(baseURL: URL = AppConfig.userAPIBaseURL,
          tokenProvider: TokenProviding,
-         session: URLSession? = nil) {
+         session: URLSession? = nil,
+         beforeRequest: (@Sendable (URLRequest) async -> Void)? = nil) {
         self.baseURL = baseURL
         self.tokenProvider = tokenProvider
+        self.beforeRequest = beforeRequest
         if let session {
             self.session = session
         } else {
@@ -124,6 +132,7 @@ actor APIClient {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
+        await beforeRequest?(request)
         let data: Data
         let response: URLResponse
         do {

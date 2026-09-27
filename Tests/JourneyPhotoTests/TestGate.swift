@@ -1,5 +1,8 @@
 import Foundation
 import XCTest
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import JourneyPhoto
 
 /// 待たせておいて、合図で先へ進める。**「取得の途中」「遅い口」を作る**ための道具。
@@ -60,5 +63,21 @@ struct GatedTokenProvider: TokenProviding {
     func idToken() async throws -> String? {
         await gate.wait()
         return token
+    }
+}
+
+/// 道（URL のパス）ごとの `Gate`。**「この口だけ遅い」を作る**（`APIClient` の
+/// `beforeRequest` に渡す）。登録の無い道は止めずに通す
+struct PathGates: Sendable {
+    private let gates: [(path: String, gate: Gate)]
+
+    init(_ gates: [String: Gate]) {
+        self.gates = gates.map { ($0.key, $0.value) }
+    }
+
+    func wait(for request: URLRequest) async {
+        let path = request.url?.path ?? ""
+        guard let hit = gates.first(where: { path.contains($0.path) }) else { return }
+        await hit.gate.wait()
     }
 }
