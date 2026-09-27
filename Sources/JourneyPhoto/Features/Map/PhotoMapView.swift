@@ -31,6 +31,10 @@ struct PhotoMapView: View {
     /// 絞るだけでなく読み直す**——前の人あての「フォロワーのみ」は、
     /// 次の人のブロック・通報では落ちない
     @State private var loadedUserRevision = 0
+    /// `onChange(of: hidden.revision)` が最後に見た人の数。**数の進みが人の入れ替わりか
+    /// ブロックかを見分けるため**（`loadedUserRevision` は読み込みが落ちると遅れるので、
+    /// それで見るとブロック1回を入れ替わりと取り違える）
+    @State private var seenUserRevision = 0
     /// 画面に出ているか。**出ていない間は人が替わっても読み直さない**
     /// ——札の `NavigationLink` の先を開いている間に札を下げると、その場で閉じる。
     /// 戻ってきたとき `.task` が読み直す
@@ -92,6 +96,7 @@ struct PhotoMapView: View {
                 location.locate(requestedByUser: false)
             }
             let revision = hidden.userRevision
+            seenUserRevision = revision
             let userChanged = loadedUserRevision != revision
             await model.load(environment: environment)
             // 🔴 **取り消された回（戻るスワイプを途中でやめた）は何もしない。**
@@ -116,7 +121,9 @@ struct PhotoMapView: View {
             // 見出しのメニュー（シート）から来るので、閉じても `onAppear` も
             // `.task` も来ず、前の人あての限定写真のピンが残っていた。
             // 見ていない間は `.task`（戻ってきたとき）に任せる
-            if isOnScreen, hidden.userRevision != loadedUserRevision { reloadForNewUser() }
+            let userChanged = hidden.userRevision != seenUserRevision
+            seenUserRevision = hidden.userRevision
+            if isOnScreen, userChanged { reloadForNewUser() }
         }
         .onAppear {
             isOnScreen = true
@@ -1348,8 +1355,8 @@ struct PhotoMapView: View {
 
     // MARK: - カメラ
 
-    /// 人が替わったので読み直す。**札はすぐ下げる**——ここに来るのは画面に
-    /// 出ている（札の先の詳細を開いていない）ときだけで、読み込みを待つ間に
+    /// 人が替わったので読み直す。**札はすぐ下げる**——ここに来るのは地図が
+    /// 画面に出ている（札の先へ進んでいない）ときだけで、読み込みを待つ間に
     /// 前の人あての写真を次の人に見せない
     private func reloadForNewUser() {
         loadedUserRevision = hidden.userRevision
@@ -1359,8 +1366,10 @@ struct PhotoMapView: View {
             await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
                                                 photoIds: hidden.reportedPhotoIds)
             await model.load(environment: environment)
-            // 読んでいる間に押した札・開いた一覧も、前の人の写しなので差し替える
-            // （画面に出ている間の経路なので、詳細は開いていない）
+            // 読んでいる間に押した札・開いた一覧も、前の人の写しなので差し替える。
+            // 一覧のシートを出している間もここを通る（シートでは `onDisappear` が
+            // 来ない）ので、シートの中で開いている詳細は、その写真が次の人の一覧に
+            // 無ければ閉じる——前の人あての写真を見せ続けない向きに倒している
             refreshSelected()
             dropHidden()
         }
