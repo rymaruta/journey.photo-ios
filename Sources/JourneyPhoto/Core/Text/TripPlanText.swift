@@ -187,6 +187,18 @@ enum TripPlanText {
         plan.days != days || (plan.startDate ?? "") != (start ?? "") || (plan.endDate ?? "") != (end ?? "")
     }
 
+    /// 戻ろうとしたときの扱い（`UnsavedLeave`・親しい友達と同じ判断）。
+    ///
+    /// 🔴 **変えた日程を黙って捨てさせない。** 保存は右上のボタンだけなので、
+    /// 以前は日を足す・項目を外す・日付を変えたあと戻ると、下書きが確かめもなく
+    /// 消えていた。`busy` はプランの書き込み中（保存・削除）——返事の前に離れると
+    /// 失敗が見えない。**プランが無い（消された）ときはそのまま戻す**
+    static func leave(plan: TripPlan?, days: [TripDay], start: String?, end: String?,
+                      busy: Bool) -> UnsavedLeave {
+        let dirty = plan.map { isDirty(plan: $0, days: days, start: start, end: end) } ?? false
+        return UnsavedLeave.decide(hasChanges: dirty, isSaving: busy)
+    }
+
     /// 送る差分。**変えた項目だけ**（Web の `/user/edit` と同じ——他の端末の編集を消さない）。
     /// 日付を消したときは空文字を送る（サーバーが消す）
     static func patch(plan: TripPlan, days: [TripDay], start: String?, end: String?) -> TripPlanService.Patch {

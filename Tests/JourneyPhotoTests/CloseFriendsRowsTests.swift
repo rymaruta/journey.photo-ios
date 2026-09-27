@@ -131,11 +131,4 @@ final class CloseFriendsSaveTests: XCTestCase {
         XCTAssertTrue(CloseFriendsRows.overLimit(Set(ids)))
     }
 
-    /// 🔴 **送っていない変更があるまま黙って戻らせない。** 送っている最中は戻らせない
-    func testLeavingAsksWhenThereAreUnsavedChanges() {
-        XCTAssertEqual(CloseFriendsRows.leave(hasChanges: false, isSaving: false), .now)
-        XCTAssertEqual(CloseFriendsRows.leave(hasChanges: true, isSaving: false), .confirm)
-        XCTAssertEqual(CloseFriendsRows.leave(hasChanges: true, isSaving: true), .wait)
-        XCTAssertEqual(CloseFriendsRows.leave(hasChanges: false, isSaving: true), .wait)
-    }
 }

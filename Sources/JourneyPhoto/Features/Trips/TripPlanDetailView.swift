@@ -5,6 +5,11 @@ import SwiftUI
 /// **保存は明示的。** 打つたびにサーバーへ送らず、右上の「保存」で送る。
 /// 変えていなければ押させない（無駄な往復と、他の端末の編集の打ち消しを避ける）。
 /// 送るのは**変えた項目だけ**（`TripPlanText.patch`）。
+///
+/// 🔴 **変えた日程があるまま黙って戻らせない。** 保存は右上だけなので、以前は
+/// 戻るで下書きが確かめもなく消えていた。変えている間・送っている間は標準の戻る
+/// を隠し、「保存して戻る／変更を捨てる／キャンセル」を確かめる
+/// （`TripPlanText.leave`・`unsavedLeaveGuard`。親しい友達と同じもの）。
 struct TripPlanDetailView: View {
 
     let planId: String
@@ -26,6 +31,8 @@ struct TripPlanDetailView: View {
     /// 「行きたい場所から追加」を押した日
     @State private var picking: PickTarget?
     @State private var confirmingDelete = false
+    /// 「保存して戻る／変更を捨てる」の確認
+    @State private var confirmLeave = false
     /// 名前を引く材料（取れなくても画面は出る——名前が鍵のままになるだけ）
     @State private var photos: [Photo] = []
     @State private var index: [OfficialSpot] = []
@@ -70,6 +77,16 @@ struct TripPlanDetailView: View {
         .webScreen()
         .navigationTitle(L("旅行プラン", "Trip plans"))
         .navigationBarTitleDisplayMode(.inline)
+        .unsavedLeaveGuard(leave, isPresented: $confirmLeave, canSave: true,
+                           message: L("保存しないで戻ると、変えた日程は残りません。",
+                                      "If you go back without saving, your changes to this trip will be lost."),
+                           onSave: {
+                               Task {
+                                   // 断られたら残る（失敗の文は画面の上に出る）
+                                   if await save() { dismiss() }
+                               }
+                           },
+                           onDiscard: { dismiss() })
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { saveButton }
         }
@@ -141,15 +158,24 @@ struct TripPlanDetailView: View {
         return TripPlanText.isDirty(plan: plan, days: days, start: start, end: end)
     }
 
+    private var leave: UnsavedLeave {
+        TripPlanText.leave(plan: plan, days: days, start: start, end: end, busy: model.busy != nil)
+    }
+
+    /// 送る。**通ったか**を返す（「保存して戻る」は通ったときだけ閉じる）
+    private func save() async -> Bool {
+        guard let plan else { return false }
+        let patch = TripPlanText.patch(plan: plan, days: days, start: start, end: end)
+        sent = draft
+        let saved = await model.update(planId, patch, environment: environment)
+        // 断られたら控えを捨てる（次に届く姿で下書きを上書きしない）
+        if !saved { sent = nil }
+        return saved
+    }
+
     private var saveButton: some View {
         Button(L("保存", "Save")) {
-            guard let plan else { return }
-            let patch = TripPlanText.patch(plan: plan, days: days, start: start, end: end)
-            sent = draft
-            Task {
-                // 断られたら控えを捨てる（次に届く姿で下書きを上書きしない）
-                if !(await model.update(planId, patch, environment: environment)) { sent = nil }
-            }
+            Task { _ = await save() }
         }
         .font(.body.weight(.semibold))
         // **ヘッダーの文字の合図は真鍮**（デザインシステムの決まり）

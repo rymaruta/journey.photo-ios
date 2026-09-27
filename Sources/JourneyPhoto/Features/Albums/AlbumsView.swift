@@ -154,15 +154,31 @@ struct AlbumsView: View {
         }
     }
 
+    /// 🔴 **期限が切れたリンクは共有させない。** サーバーは切れた招待も一覧に
+    /// 返し続けるので、以前はトークンがあるだけで「共有」を出していた——送った
+    /// 相手が開くと「期限が切れています」で断られる。切れていたら同じ場所に
+    /// 「招待リンクを作り直す」を出す（`InviteLink.expiry`）。使えるときは
+    /// Web と同じく「〜まで」を添える
     @ViewBuilder
     private func inviteControls(_ album: Album) -> some View {
         if let token = album.inviteToken {
+            let expiry = InviteLink.expiry(album.inviteExpiresAt, now: Date())
             HStack {
-                // 招待リンクはサイトの URL で共有する
-                // （アプリを入れていない人にも開ける）
-                ShareLink(item: model.inviteURL(token: token)) {
-                    Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
-                        .font(.caption)
+                if expiry == .expired {
+                    Button(L("招待リンクを作り直す", "Recreate invite link")) {
+                        Task { await model.createInvite(album.id, environment: environment) }
+                    }
+                    .font(.caption)
+                    // 二度押しで2本作らない（下の「招待リンクを作る」と同じ）
+                    .disabled(model.inviteWorking.contains(album.id))
+                    .buttonStyle(.borderless)
+                } else {
+                    // 招待リンクはサイトの URL で共有する
+                    // （アプリを入れていない人にも開ける）
+                    ShareLink(item: model.inviteURL(token: token)) {
+                        Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
+                            .font(.caption)
+                    }
                 }
                 Spacer()
                 Button(L("取り消す", "Revoke")) {
@@ -173,6 +189,18 @@ struct AlbumsView: View {
                 // **行に複数のボタンを置くときは borderless。**
                 // 既定だと行のどこを押しても両方が反応する
                 .buttonStyle(.borderless)
+            }
+            switch expiry {
+            case .valid(let until):
+                Text(L("\(InviteLink.untilLabel(until))まで", "Valid until \(InviteLink.untilLabel(until))"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .expired:
+                Text(L("招待リンクの期限が切れています", "This invite link has expired"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .unknown:
+                EmptyView()
             }
         } else {
             Button(L("招待リンクを作る", "Create invite link")) {

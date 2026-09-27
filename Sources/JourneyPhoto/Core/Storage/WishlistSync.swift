@@ -111,7 +111,9 @@ enum WishlistSync {
         case .removedOnThisDevice:
             // 知らせは2行まで（`ToastOverlay`）。注意の印で出す（✓ だと「残るかも」と食い違う）
             // サーバーに在った鍵なら、次の同期でこの端末にも戻る（言い切らない）
-            return (L("外しました（通信できず、あとで戻ることがあります）",
+            // **「通信できず」とは言わない。** ここに来るのはサーバーの 5xx・断りも
+            // 含む（上の `catch` は理由を分けない）ので、電波のせいにすると嘘になる
+            return (L("外しました（サーバーに届かず、あとで戻ることがあります）",
                       "Removed. It may come back after syncing."), .failure)
         case .ignored:
             return nil
