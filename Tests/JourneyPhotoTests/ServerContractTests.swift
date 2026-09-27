@@ -129,10 +129,41 @@ final class ServerContractReviewTests: XCTestCase {
         XCTAssertTrue(mine.isEmpty)
     }
 
-    /// トークン取得中の取り消しは「通信できません」にしない（`APIClient` と揃える）
-    func testTokenCancellationIsCancellation() {
-        XCTAssertTrue(AuthGateway.tokenFailure(URLError(.cancelled)) is CancellationError)
-        XCTAssertTrue(AuthGateway.tokenFailure(AuthError.service("", "", URLError(.cancelled))) is CancellationError)
+    /// 呼んだ側が取り消されたときのトークン取得の取り消しは「通信できません」にしない
+    func testTokenCancellationIsCancellation() async {
+        let task = Task { () -> [Bool] in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return [AuthGateway.tokenFailure(URLError(.cancelled)) is CancellationError,
+                    AuthGateway.tokenFailure(AuthError.service("", "", URLError(.cancelled))) is CancellationError]
+        }
+        let results = await task.value
+        XCTAssertEqual(results, [true, true])
+    }
+
+    /// 呼び手が生きているのに Amplify の中で取り消された回は、失敗として出す
+    /// （黙ると空の画面になる）
+    func testTokenCancellationWithoutCallerCancelIsUnreachable() {
+        XCTAssertEqual(AuthGateway.tokenFailure(URLError(.cancelled)) as? APIError, .unreachable)
+    }
+
+    /// 限定写真も、1行も読めなければ失敗（前回の控えを空で上書きしない）
+    func testRestrictedFeedEveryRowBrokenIsAFailure() async {
+        let service = photos()
+        StubProtocol.respond(status: 200, body: #"[{"id":1}]"#)
+        do {
+            _ = try await service.restrictedFeed()
+            XCTFail("全部読めないのに成功している")
+        } catch {
+            guard case .decoding = error as? APIError else { return XCTFail("\(error)") }
+        }
+    }
+
+    /// 下書き（`published: false`）だけの一覧は成功（落とさない）
+    func testDraftsOnlyIsSuccess() async throws {
+        let service = photos()
+        StubProtocol.respond(status: 200, body: #"[{"id":"d","src":"https://x/d.jpg","published":false}]"#)
+        let mine = try await service.myPhotos()
+        XCTAssertEqual(mine.map(\.id), ["d"])
     }
 
     /// 期限切れの種類は包まない（呼び出し元の判定を変えない）

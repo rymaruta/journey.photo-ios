@@ -89,12 +89,14 @@ enum AuthGateway {
     /// 「読み込めませんでした」を出していた。それ以外はそのまま投げる
     /// （ログインの期限切れは呼び出し元が `notAuthorized` で見分ける）
     ///
-    /// 取り消し（`URLError.cancelled`）は `CancellationError` にする（`APIClient` と同じ。
-    /// 画面は取り消しを失敗と言わない）
+    /// 取り消し（`URLError.cancelled`）は、**呼んだ側が取り消されているときだけ**
+    /// `CancellationError` にする（画面は取り消しを失敗と言わない）。Amplify の中の
+    /// 通信は別の URLSession なので、呼び手が生きているのに `.cancelled` が来たら
+    /// 失敗として出す——黙ると「まだ写真がありません」のような空の画面になる
     static func tokenFailure(_ error: Error) -> Error {
         let auth = error as? AuthError
         let url = (error as? URLError) ?? (auth?.underlyingError as? URLError)
-        if url?.code == .cancelled { return CancellationError() }
+        if url?.code == .cancelled, Task.isCancelled { return CancellationError() }
         if url != nil { return APIError.unreachable }
         if let auth, AuthFailure(auth) == .network { return APIError.unreachable }
         return error
