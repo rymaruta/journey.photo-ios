@@ -227,9 +227,11 @@ struct PhotoDetailView: View {
             NavigationStack { EditPhotoView(photo: shown) }
         }
         .fullScreenCover(isPresented: $showViewer) {
+            // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）
+            let lineup = PhotoDetailRules.viewerLineup(siblings, current: current, hiding: dropped)
             PhotoViewerView(
-                photos: siblings,
-                index: siblings.firstIndex(where: { $0.id == current.id }) ?? 0,
+                photos: lineup.photos,
+                index: lineup.index,
                 // **写真ごとに答える。** この画面の1枚は画面が持つ値、
                 // 隣の写真は端末の控え（ホームのハートと同じ出どころ）
                 isLiked: { shown in shown.id == current.id ? model.liked : favorites.contains(shown.id) },
@@ -1405,5 +1407,26 @@ struct FlowLayout: Layout {
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
+    }
+}
+
+/// 詳細画面の判断のうち、画面を建てずに確かめられるもの
+enum PhotoDetailRules {
+
+    /// 大きく見る画面に渡す並びと、開く位置。
+    ///
+    /// 🔴 **ブロック・通報した写真を落とす**（`ModerationSnapshot.visible`）。
+    /// 以前は素の並び（`siblings`）を渡していて、この画面でブロックしたあとも
+    /// 大きく見る画面で左右に送るとその人の写真が出てきた。
+    ///
+    /// **押した1枚（`current`）は残す。** 詳細の上にはその1枚が出ていて、
+    /// 押して開いた先が別の写真になる・何も出ない方がおかしい。落とすと
+    /// 位置が引けず、並びが空になる回もある。位置は必ず並びの中に収める
+    static func viewerLineup(_ siblings: [Photo], current: Photo,
+                             hiding: ModerationSnapshot) -> (photos: [Photo], index: Int) {
+        let kept = Set(hiding.visible(siblings).map(\.id))
+        let photos = siblings.filter { $0.id == current.id || kept.contains($0.id) }
+        guard !photos.isEmpty else { return ([current], 0) }
+        return (photos, photos.firstIndex(where: { $0.id == current.id }) ?? 0)
     }
 }
