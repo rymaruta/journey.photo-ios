@@ -197,12 +197,25 @@ struct StoryComposerView: View {
         // 🔴 **選んだ写真・置いた文字を黙って消さない。** 以前は ✕ も下へ払うのも
         // 確かめずに閉じ、下書きにも残らなかった。「下書きに保存」は上の
         // 「下書き保存」と同じ道（`saveDraft`）で、**書けたときだけ閉じる**
+        //
+        // 🔴 **前の下書きを残すと決めた（「続きから」でキャンセル・まだ答えていない）間は
+        // 「下書きに保存」を出さない。** 下書きは1件だけなので、保存すると残すと決めた
+        // 下書きを黙って置き換える（投稿の `keepsDraft` と同じ判断）。
+        // 戻した下書きを直した回の「捨てる」は**変更だけ**を捨てる（前の下書きは残る）ので、
+        // そう言う（「続きから」の「捨てる」は下書きごと消すので、言葉を分ける）
         .unsavedCloseGuard(leave, isPresented: $showLeaveConfirm,
                            title: L("下書きに保存しますか？", "Save as a draft?"),
+                           canSave: !Self.keepsDraft(stamp: drafts.draft?.savedAt,
+                                                     keepExisting: keepExistingDraft,
+                                                     unansweredStamp: unansweredDraftStamp),
                            saveTitle: L("下書きに保存", "Save draft"),
-                           discardTitle: L("捨てる", "Discard"),
-                           message: L("閉じると、選んだ写真と置いた文字は消えます。下書きはこの端末にだけ残ります。",
-                                      "If you close now, the photos and text you added will be lost. Drafts stay on this device only."),
+                           discardTitle: restoredContent != nil ? L("変更を捨てる", "Discard changes")
+                                                                : L("捨てる", "Discard"),
+                           message: restoredContent != nil
+                               ? L("閉じると、下書きを開いてからの変更は消えます（前の下書きは残ります）。",
+                                   "If you close now, your changes since opening the draft will be lost. The draft itself stays.")
+                               : L("閉じると、選んだ写真と置いた文字は消えます。下書きはこの端末にだけ残ります。",
+                                   "If you close now, the photos and text you added will be lost. Drafts stay on this device only."),
                            onSave: { saveDraft() },
                            onDiscard: { dismiss() })
     }

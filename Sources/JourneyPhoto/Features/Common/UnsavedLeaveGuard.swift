@@ -75,15 +75,20 @@ extension View {
     func unsavedCloseGuard(_ leave: UnsavedLeave,
                            isPresented: Binding<Bool>,
                            title: String,
+                           canSave: Bool = true,
                            saveTitle: String,
                            discardTitle: String,
                            message: String,
                            onSave: @escaping () -> Void,
                            onDiscard: @escaping () -> Void) -> some View {
         self
+            // 下へ払っても**跳ね返るだけ**で確認は出ない（SwiftUI には払われたことを知る口が
+            // 無い）。失うものは無く、✕ から確かめられる
             .interactiveDismissDisabled(leave != .now)
             .confirmationDialog(title, isPresented: isPresented, titleVisibility: .visible) {
-                Button(saveTitle, action: onSave)
+                if canSave {
+                    Button(saveTitle, action: onSave)
+                }
                 Button(discardTitle, role: .destructive, action: onDiscard)
                 Button(L("キャンセル", "Cancel"), role: .cancel) {}
             } message: {
