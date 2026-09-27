@@ -189,7 +189,18 @@ final class StoryUploadCenter: ObservableObject {
         defer { endBackground(background) }
         while let job = pending.first {
             // **本人のままか、送る前に毎回照らす**（別の人のトークンで出さない）
-            guard currentUserId?() == ownerId else {
+            let current = currentUserId?()
+            // **誰か分からない（ログインしていない・圏外で起動して確かめられない）
+            // ときは捨てない。** 残したまま止める——捨てると、圏外で起動して
+            // 「もう一度送る」を押しただけで、送信待ちが知らせも無く消えていた。
+            // 本人に戻れば送り直せ、別の人が入れば `userChanged` が捨てる
+            guard let current else {
+                let message = L("ログインしてから、もう一度送ってください。",
+                                "Sign in, then try sending again.")
+                phase = .failed(message: message, remaining: pending.count)
+                return
+            }
+            guard current == ownerId else {
                 reset()
                 return
             }

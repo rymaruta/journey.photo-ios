@@ -131,6 +131,32 @@ final class StoryUploadCenterTests: XCTestCase {
         XCTAssertEqual(center.phase, .idle, "残りを捨てていない")
     }
 
+    /// 🔴 **誰か分からない間（圏外で起動して確かめられない）の「もう一度送る」は、
+    /// 残りを捨てない。** 捨てていたので、送信待ちが知らせも無く消えていた
+    func testRetryWhileTheUserIsUnknownKeepsTheQueue() async {
+        let center = StoryUploadCenter()
+        var sent: [UInt8] = []
+        var failFirst = true
+        startIn(center, [job(1), job(2)], send: { j in
+            if failFirst { failFirst = false; throw Boom() }
+            sent.append(j.imageData[0])
+        })
+        await settle(center)
+        currentUser = nil
+        center.retry()
+        await settle(center)
+        guard case .failed(_, let remaining) = center.phase else {
+            return XCTFail("残りを捨てた: \(center.phase)")
+        }
+        XCTAssertEqual(remaining, 2)
+        XCTAssertEqual(sent, [])
+        // 本人に戻れば送り直せる
+        currentUser = "me"
+        center.retry()
+        await settle(center)
+        XCTAssertEqual(sent, [1, 2])
+    }
+
     /// 🔴 **送っている最中にログアウトしたら、残りを捨てて落ちない**
     /// （返事を待つ間に並びを空にすると、戻った `run` が空から取り出して落ちていた）
     func testUserChangeWhileSendingDropsTheRestWithoutCrashing() async {

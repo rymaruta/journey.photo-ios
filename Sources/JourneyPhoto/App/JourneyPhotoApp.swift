@@ -208,9 +208,10 @@ struct JourneyPhotoApp: App {
                     if let owner = auth.userId {
                         // **待っている間に手元で変えたら上書きしない**（設定で解除した
                         // 直後に、解除前に始めた読み込みが戻して、また見えなくなっていた）
-                        let before = hidden.revision
+                        // 見るのはブロックの集合だけ（通報で数が進んでも同期は止めない）
+                        let before = hidden.blockedUserIds
                         let blocks = try? await environment.moderation.blocks()
-                        if !Task.isCancelled, auth.userId == owner, hidden.revision == before,
+                        if !Task.isCancelled, auth.userId == owner, hidden.blockedUserIds == before,
                            let blocks {
                             hidden.replaceBlocked(with: blocks.blockedIds, for: owner)
                             await applyModeration()
