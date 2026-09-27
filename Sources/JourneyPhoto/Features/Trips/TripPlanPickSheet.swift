@@ -95,8 +95,11 @@ struct TripPlanPickSheet: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(WebTheme.foreground)
                             .lineLimit(1)
+                        // 🔴 **「公式」と書かない**（`OfficialSpot` の注記）。台帳は運営の下書きを
+                        // 含み、人が確かめたものではない。地図のスポット一覧・スポットの画面と
+                        // 同じ語（`SpotScreen.eyebrow`）で、下書きは「下書き・未確認」と書く
                         if choice.isOfficial {
-                            Text(L("公式", "Official"))
+                            Text(SpotScreen.eyebrow(review: choice.isDraft))
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(WebTheme.muted)
                                 .webChip()
@@ -119,8 +122,8 @@ struct TripPlanPickSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // 名前だけにしない（「公式」と県・市も読む）
-        .accessibilityLabel(L("\(choice.name)\(choice.isOfficial ? "・公式" : "")\(choice.regionLabel.map { "・" + $0 } ?? "") を追加",
+        // 名前だけにしない（札の語と県・市も読む）
+        .accessibilityLabel(L("\(choice.name)\(choice.isOfficial ? "・" + SpotScreen.eyebrow(review: choice.isDraft) : "")\(choice.regionLabel.map { "・" + $0 } ?? "") を追加",
                               "Add \(choice.name)\(choice.regionLabel.map { ", " + $0 } ?? "")"))
     }
 }

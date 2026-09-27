@@ -164,6 +164,11 @@ struct UserProfileView: View {
         } else if shownPhotos.isEmpty && !model.isLoading {
             // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す
             ErrorBanner(message: L("公開された写真はまだありません", "No public photos yet"))
+        } else if tab == .map && shownPhotos.isEmpty {
+            // 🔴 **読み込み中の空の地図に「撮影地の分かる写真がありません」と言わない。**
+            // 「読み終えて0枚」は上の枝で済んでいるので、ここに来るのは読み込み中だけ
+            // （マイページの読み込み中と同じ輪）
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
         } else if tab == .map {
             // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）
             // シートの中でブロック／通報して閉じたら、格子も絞り直す（`onAppear` は来ない）

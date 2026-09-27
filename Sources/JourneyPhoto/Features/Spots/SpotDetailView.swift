@@ -190,17 +190,22 @@ struct SpotDetailView: View {
 
     private var actions: some View {
         HStack(spacing: 10) {
-            let wanted = wishlist.contains(spot.slug)
-            Button {
-                let now = wishlist.toggle(spot.slug)
-                toasts.show(now
-                    ? L("「行きたい」に追加しました（この端末に保存）", "Added to your wishlist on this device")
-                    : L("「行きたい」から外しました", "Removed from your wishlist"))
-            } label: {
-                SpotDetailParts.actionLabel(icon: wanted ? "heart.fill" : "heart",
-                                            title: L("行きたい", "Want to go"), filled: wanted)
+            // 🔴 **鍵（スラッグ）が空の地点には「行きたい」を出さない。** 記号だけの
+            // 撮影地（「---」など）はスラッグが空になり、押しても `WishlistStore` は
+            // 何も残さない——以前は押すと「追加しました」と知らせて、どこにも出なかった
+            if !spot.slug.isEmpty {
+                let wanted = wishlist.contains(spot.slug)
+                Button {
+                    let now = wishlist.toggle(spot.slug)
+                    toasts.show(now
+                        ? L("「行きたい」に追加しました（この端末に保存）", "Added to your wishlist on this device")
+                        : L("「行きたい」から外しました", "Removed from your wishlist"))
+                } label: {
+                    SpotDetailParts.actionLabel(icon: wanted ? "heart.fill" : "heart",
+                                                title: L("行きたい", "Want to go"), filled: wanted)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             // **シェアは文字で配る**（モック5-6）。
             //

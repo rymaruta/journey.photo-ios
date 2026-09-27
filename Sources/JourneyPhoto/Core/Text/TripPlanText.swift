@@ -123,6 +123,9 @@ enum TripPlanText {
         let name: String
         /// 撮影スポットの「県 · 市」。撮影地には無い
         let regionLabel: String?
+        /// 台帳の運営の下書き（`OfficialSpot.isDraft`）。撮影地には無い。
+        /// 画面では「公式」と呼ばず、下書きはそう書く（`SpotScreen.eyebrow`）
+        var isDraft = false
         var isOfficial: Bool { if case .spot = item { return true } else { return false } }
         var id: String {
             switch item {
@@ -149,7 +152,7 @@ enum TripPlanText {
             .compactMap { key -> Choice? in
                 guard let slug = SavedSpotKey.slug(fromOfficial: key), let spot = bySlug[slug] else { return nil }
                 return Choice(item: .spot(spotId: spot.spotId, note: nil), name: spot.name,
-                              regionLabel: spot.regionLabel)
+                              regionLabel: spot.regionLabel, isDraft: spot.isDraft)
             }
             .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
             .filter { seen.insert($0.id).inserted }

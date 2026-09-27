@@ -29,28 +29,42 @@ final class ProfileSectionsTests: XCTestCase {
 
     // MARK: - 行きたい場所（モック2-6）
 
+    private func photo(_ id: String, location: String?) throws -> Photo {
+        let l = location.map { ",\"location\":\"\($0)\"" } ?? ""
+        return try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"likes\":0,\"createdAt\":\"2026-01-01T00:00:00Z\"\(l)}".utf8))
+    }
+
     func testShowsTheListWhenThereIsSomething() {
-        XCTAssertEqual(ProfileSections.wishlist(ledgerCount: 10, wantedCount: 2, savedIdCount: 2),
+        XCTAssertEqual(ProfileSections.wishlist(wantedCount: 2, savedIdCount: 2, loaded: true, sourceFailed: false),
                        .list)
     }
 
-    /// 1つも入れていない人には「まだありません」
+    /// 1つも入れていない人には「まだありません」（読み込み中でも失敗でも）
     func testEmptyWhenNothingWasSaved() {
-        XCTAssertEqual(ProfileSections.wishlist(ledgerCount: 10, wantedCount: 0, savedIdCount: 0),
+        XCTAssertEqual(ProfileSections.wishlist(wantedCount: 0, savedIdCount: 0, loaded: true, sourceFailed: false),
+                       .empty)
+        XCTAssertEqual(ProfileSections.wishlist(wantedCount: 0, savedIdCount: 0, loaded: false, sourceFailed: true),
                        .empty)
     }
 
-    /// 🔴 **入れてあるのに台帳が取れていない回に「まだありません」と言わない。**
+    /// 🔴 **入れてあるのに公開一覧が取れていない回に「まだありません」と言わない。**
     /// 入れた覚えがあるのにそう出ると、消えたように見える
     func testCouldNotLoadIsNotTheSameAsEmpty() {
-        XCTAssertEqual(ProfileSections.wishlist(ledgerCount: 0, wantedCount: 0, savedIdCount: 3),
+        XCTAssertEqual(ProfileSections.wishlist(wantedCount: 0, savedIdCount: 3, loaded: true, sourceFailed: true),
                        .couldNotLoad)
     }
 
-    /// 台帳は取れていて、入れた地点が台帳から消えた回は「まだありません」
+    /// 読み終える前は「まだありません」とも「取れません」とも言わない
+    func testLoadingIsNeitherEmptyNorFailed() {
+        XCTAssertEqual(ProfileSections.wishlist(wantedCount: 0, savedIdCount: 3, loaded: false, sourceFailed: false),
+                       .loading)
+    }
+
+    /// 取れていて、入れた地点がどこにも無くなった回は「まだありません」
     /// （取れていないのとは違う）
-    func testLedgerLoadedButEntriesGoneIsEmpty() {
-        XCTAssertEqual(ProfileSections.wishlist(ledgerCount: 10, wantedCount: 0, savedIdCount: 3),
+    func testLoadedButEntriesGoneIsEmpty() {
+        XCTAssertEqual(ProfileSections.wishlist(wantedCount: 0, savedIdCount: 3, loaded: true, sourceFailed: false),
                        .empty)
     }
 
@@ -59,10 +73,43 @@ final class ProfileSectionsTests: XCTestCase {
     /// 足して渡す——撮影地の集まりが1つも当たらなくても、スポットの行があれば並べる
     func testOfficialOnlyWishlistIsAList() {
         let official = OfficialWishlist.rows(keys: ["SPOT-takaya-jinja"], index: [])
-        XCTAssertEqual(ProfileSections.wishlist(ledgerCount: 10, wantedCount: 0 + official.count, savedIdCount: 1),
+        XCTAssertEqual(ProfileSections.wishlist(wantedCount: official.count, savedIdCount: 1,
+                                                loaded: true, sourceFailed: false),
                        .list)
         // 写真の一覧が取れていない回でも、スポットの行は slug から起こせるので並べる
-        XCTAssertEqual(ProfileSections.wishlist(ledgerCount: 0, wantedCount: official.count, savedIdCount: 1),
+        XCTAssertEqual(ProfileSections.wishlist(wantedCount: official.count, savedIdCount: 1,
+                                                loaded: true, sourceFailed: true),
                        .list)
+    }
+
+    /// 🔴 **他人の写真の撮影地に押した「行きたい」も並ぶ。** スポットの画面は
+    /// 地図（公開一覧）から他人の写真で開くのがふつう。以前は自分の写真だけから
+    /// 地点を導いていて、ここが空になっていた
+    func testWantedPlacesComeFromThePublicFeedToo() throws {
+        let feed = [try photo("theirs", location: "高屋神社")]
+        let mine = [try photo("mine", location: "パリ")]
+        let wanted = ProfileSections.wantedPlaces(keys: [LocationSlug.make("高屋神社")], feed: feed, mine: mine)
+        XCTAssertEqual(wanted.map(\.label), ["高屋神社"], "他人の写真の撮影地が出ていない")
+        // 自分の写真しか無い（写真を上げていない）人でも、公開一覧から引ける
+        XCTAssertEqual(ProfileSections.wantedPlaces(keys: [LocationSlug.make("高屋神社")], feed: feed, mine: []).count, 1)
+    }
+
+    /// 🔴 **自分の公開写真は両方に在る。ID で1枚に寄せる**（寄せないと枚数が倍になる）
+    func testPoolDeduplicatesById() throws {
+        let shared = try photo("same", location: "パリ")
+        let pool = ProfileSections.wishlistPool(feed: [shared, try photo("other", location: "パリ")], mine: [shared])
+        XCTAssertEqual(pool.map(\.id), ["same", "other"])
+        let wanted = ProfileSections.wantedPlaces(keys: [LocationSlug.make("パリ")], feed: [shared], mine: [shared])
+        XCTAssertEqual(wanted.first?.count, 1, "同じ写真を2枚に数えている")
+    }
+
+    /// 🔴 **写真を1枚も上げていない人に「写真の一覧を取れませんでした」と言わない。**
+    /// 以前は導いた地点が0件なら「取れていない」にしていた——公開一覧は取れているのに
+    func testNoOwnPhotosIsNotAFailure() throws {
+        let feed = [try photo("theirs", location: "金沢")]
+        let wanted = ProfileSections.wantedPlaces(keys: ["消えた地点"], feed: feed, mine: [])
+        XCTAssertEqual(ProfileSections.wishlist(wantedCount: wanted.count, savedIdCount: 1,
+                                                loaded: true, sourceFailed: false),
+                       .empty)
     }
 }

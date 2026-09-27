@@ -38,16 +38,40 @@ final class WishlistStore: ObservableObject {
         return "\(Self.sharedKey):\(userId)"
     }
 
+    /// 使う人を切り替える。
+    ///
+    /// 🔴 **ログインしていない間に押したぶんは、ログインした人へ引き継ぐ。**
+    /// 未ログインの印は共有の鍵（`sharedKey`）に入るので、以前はログインした瞬間に
+    /// その人の鍵へ切り替わるだけで、**押したばかりの「行きたい」が消えて見えた**。
+    /// 未ログイン→ログインの回だけ、共有の鍵のぶんをその人の鍵へ足して共有の鍵を消す
+    /// （消さないと、次にログインした別の人にも同じぶんが入る）。
+    ///
+    /// 🔴 **ログイン中の人から別の人へ替わる回は混ぜない**（`FavoritesStore` と同じ
+    /// 理由——同じ端末で人が変わったときに前の人の印を吸い込まない）
     func use(userId: String?) {
+        let wasSignedOut = self.userId?.isEmpty ?? true
         self.userId = userId
-        spotIds = Set(defaults.stringArray(forKey: key(for: userId)) ?? [])
+        var ids = Set(defaults.stringArray(forKey: key(for: userId)) ?? [])
+        if wasSignedOut, let userId, !userId.isEmpty {
+            let anonymous = Set(defaults.stringArray(forKey: Self.sharedKey) ?? [])
+            if !anonymous.isEmpty {
+                ids.formUnion(anonymous)
+                defaults.set(Array(ids), forKey: key(for: userId))
+                defaults.removeObject(forKey: Self.sharedKey)
+            }
+        }
+        spotIds = ids
     }
 
     func contains(_ spotId: String) -> Bool { spotIds.contains(spotId) }
 
     /// 押すたびに入れ替える。**押した後の状態**を返す（画面の知らせに使う）
+    ///
+    /// 🔴 **空の鍵は何もせず false。** `set` は空の鍵を捨てるのに、ここが
+    /// 「入った」と返していたので、画面は「追加しました」と知らせて何も残らなかった
     @discardableResult
     func toggle(_ spotId: String) -> Bool {
+        guard !spotId.isEmpty else { return false }
         let wanted = !contains(spotId)
         set(spotId, wanted: wanted)
         return wanted

@@ -548,9 +548,11 @@ struct MyPageView: View {
     /// サーバーには無い（`WishlistStore`）。
     @ViewBuilder
     private var wishlistArea: some View {
-        // **撮影地から導いた地点**のうち、「行きたい」に入れたもの
-        let places = DerivedSpot.all(in: model.photos)
-        let wanted = places.filter { wishIds.contains($0.slug) }
+        // **撮影地から導いた地点**のうち、「行きたい」に入れたもの。
+        // 🔴 **公開一覧（`feed`）と自分の写真を合わせて導く**（`ProfileSections.wishlistPool`）。
+        // 「行きたい」は地図などで**他人の写真**から押すのがふつうで、自分の写真だけでは出ない
+        let pool = ProfileSections.wishlistPool(feed: feed, mine: model.photos)
+        let wanted = ProfileSections.wantedPlaces(keys: wishIds, feed: feed, mine: model.photos)
         // 台帳の撮影スポット（`SPOT-<slug>`）。索引と突き合わせて名前を引く。
         // **索引が無くても行は出す**（`OfficialWishlist`）——スポットの画面で
         // 押した直後に「まだありません」と言わない
@@ -564,11 +566,15 @@ struct MyPageView: View {
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 16)
 
-            // **「まだ無い」と「台帳が取れていない」を分ける**（`ProfileSections`）。
-            // 数えるのは撮影地の行とスポットの行の両方
-            switch ProfileSections.wishlist(ledgerCount: places.count,
-                                            wantedCount: wanted.count + officialRows.count,
-                                            savedIdCount: wishIds.count) {
+            // **「まだ無い」と「取れていない」を分ける**（`ProfileSections`）。
+            // 数えるのは撮影地の行とスポットの行の両方。「取れていない」は
+            // **公開一覧の読み込みの失敗**で決める（件数の食い違いでは決めない）
+            switch ProfileSections.wishlist(wantedCount: wanted.count + officialRows.count,
+                                            savedIdCount: wishIds.count,
+                                            loaded: feedLoaded && !model.isLoading,
+                                            sourceFailed: feedFailed) {
+            case .loading:
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
                                        "Couldn't load the photos. Pull to refresh."))
@@ -578,7 +584,7 @@ struct MyPageView: View {
             case .list:
                 ForEach(wanted) { place in
                     NavigationLink {
-                        SpotDetailView(spot: place, photos: model.photos)
+                        SpotDetailView(spot: place, photos: pool)
                     } label: {
                         wishlistRow(place)
                     }
