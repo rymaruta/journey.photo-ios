@@ -139,6 +139,11 @@ actor APIClient {
             (data, response) = try await session.data(for: request)
         } catch let error as URLError where error.code == .userAuthenticationRequired {
             throw APIError.notAuthenticated
+        } catch let error as URLError where error.code == .cancelled {
+            // **取り消しを「通信できません」と言わない。** 画面を離れた・
+            // 引き下げ更新の途中で描き直された回に、失敗の文が残っていた。
+            // 画面は `CancellationError` を失敗として扱わない
+            throw CancellationError()
         } catch {
             throw APIError.unreachable
         }

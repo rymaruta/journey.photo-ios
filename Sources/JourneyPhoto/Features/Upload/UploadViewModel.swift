@@ -131,6 +131,11 @@ final class UploadViewModel: ObservableObject {
     private var isSettingSelectionQuietly = false
     /// 本体まで置けて、保存がまだ通っていない写真（`UploadService.stage` の注記）
     private let staged = StagedUploads()
+    /// ライブラリの写真を読む口。**試験でだけ差し替える**——シミュレータでは
+    /// 本物の写真ライブラリに問い合わせるので、「読めなかった」回を決まった形で作れない
+    var loadPickedData: (PhotosPickerItem) async throws -> Data? = { item in
+        try await item.loadTransferable(type: Data.self)
+    }
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
         self.uploads = uploads
@@ -307,7 +312,7 @@ final class UploadViewModel: ObservableObject {
         for item in added {
             if Task.isCancelled { return }
             do {
-                guard let data = try await item.loadTransferable(type: Data.self) else {
+                guard let data = try await loadPickedData(item) else {
                     failedItems.append(item)
                     continue
                 }

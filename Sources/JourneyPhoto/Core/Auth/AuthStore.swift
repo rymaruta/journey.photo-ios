@@ -136,7 +136,16 @@ final class AuthStore: ObservableObject {
     }
 
     func signIn(email: String, password: String) async {
+        // 🔴 **「本当にログアウトしたか分からない」まま入り直すときは、先に Amplify の
+        // 中の古いログインを外す。** この状態では `AuthGateway.signOut()` を呼んで
+        // いないので Amplify はログイン中のままで、`signIn` は「既にログイン中」
+        // （invalidState）で断り、アプリを強制終了するまで誰もログインできなかった
+        // **`run` の中で外す**（二度押し止め・くるくるの内側）——外に置くと、圏外で
+        // 外すのを待つ間にもう一度押され、2本目の外しが1本目のログインを消しうる
         await run {
+            if self.isSignedOutUncertain {
+                await AuthGateway.signOut()
+            }
             _ = try await AuthGateway.signIn(email: email, password: password)
             let id = try await AuthGateway.currentUserId()
             self.isSignedOutUncertain = false
@@ -245,6 +254,10 @@ final class AuthStore: ObservableObject {
     }
 
     private func run(_ work: () async throws -> Void) async {
+        // 🔴 **走っている間は2本目を始めない。** ボタンは `isWorking` で止めているが、
+        // 立てるのは押した後の Task の中なので、同じフレームで2回押すと2本走っていた
+        // （登録では未確認のアカウントが2つできうる）。2本目は何もせずに戻る
+        guard !isWorking else { return }
         isWorking = true
         errorMessage = nil
         lastFailure = .none

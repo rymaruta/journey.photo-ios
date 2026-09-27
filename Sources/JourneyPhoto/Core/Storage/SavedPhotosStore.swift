@@ -17,6 +17,8 @@ final class SavedPhotosStore: ObservableObject {
 
     private let defaults: UserDefaults
     private var userId: String?
+    /// 手元で押した分（同期の入れ替えで消さないため・`LocalEdits`）
+    private var edits = LocalEdits()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -34,7 +36,11 @@ final class SavedPhotosStore: ObservableObject {
     func use(userId: String?) {
         self.userId = userId
         ids = Set(defaults.stringArray(forKey: key(for: userId)) ?? [])
+        edits.reset(owner: userId)
     }
+
+    /// 同期で一覧を取りに行く**前に**取る。`replace(with:for:since:)` に渡す
+    var syncMark: LocalEdits.Mark { edits.mark }
 
     func contains(_ photoId: String) -> Bool { ids.contains(photoId) }
 
@@ -46,19 +52,39 @@ final class SavedPhotosStore: ObservableObject {
         return saved
     }
 
+    /// いまの控えの持ち主。**答えを待つ前に取り、`set(_:saved:for:)` に渡す**
+    var owner: String? { userId }
+
+    /// 答えを待った後に書く。**待っている間に人が替わっていたら書かない**
+    /// （`FavoritesStore.set(_:favorite:for:)` と同じ理由）
+    func set(_ photoId: String, saved: Bool, for owner: String?) {
+        guard owner == userId else { return }
+        set(photoId, saved: saved)
+    }
+
     func set(_ photoId: String, saved: Bool) {
         guard !photoId.isEmpty else { return }
         if saved { ids.insert(photoId) } else { ids.remove(photoId) }
+        edits.note(photoId, on: saved)
         defaults.set(Array(ids), forKey: key(for: userId))
     }
 
     /// サーバーの一覧に合わせる。**取れた回だけ呼ぶこと**
     /// ——取れなかった回に空で上書きすると、控えごと消える
-    /// - Parameter owner: 取りに行ったときの人。**返ってくる間に人が替わって
-    ///   いたら書かない**
-    func replace(with photoIds: [String], for owner: String?) {
+    ///
+    /// - Parameters:
+    ///   - owner: 取りに行ったときの人。**返ってくる間に人が替わって
+    ///     いたら書かない**
+    ///   - mark: 取りに行く前の `syncMark`。**その後に押した分は残す**。
+    ///     別の人の印なら書かない
+    func replace(with photoIds: [String], for owner: String?, since mark: LocalEdits.Mark? = nil) {
         guard owner == userId else { return }
-        ids = Set(photoIds)
+        var next = Set(photoIds)
+        if let mark {
+            guard let merged = edits.merged(next, since: mark) else { return }
+            next = merged
+        }
+        ids = next
         defaults.set(Array(ids), forKey: key(for: userId))
     }
 

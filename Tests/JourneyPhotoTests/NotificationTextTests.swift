@@ -174,6 +174,20 @@ final class NotificationsUnreadKeepTests: XCTestCase {
         XCTAssertEqual(model.unreadIds, Set(first.items.prefix(2).map(\.id)))
     }
 
+    /// **人が替わったら前の人のお知らせを捨て、走っていた前の人の読み込みも書かせない**
+    /// （シートは人が替わっても閉じず、次の人のログイン直後に前の人の行が出ていた）
+    func testForgetDropsThePreviousUsersRowsAndLateLoads() async throws {
+        let model = NotificationsViewModel()
+        let previous = model.beginLoad()
+        XCTAssertTrue(model.apply(try page(["a"], unread: 1), refreshing: false, generation: previous))
+        let late = model.beginLoad()                    // 前の人の読み込みが走っている
+        model.forget()
+        XCTAssertTrue(model.rows.isEmpty, "前の人のお知らせが残っている")
+        XCTAssertTrue(model.unreadIds.isEmpty)
+        model.apply(try page(["a", "b"], unread: 2), refreshing: false, generation: late)
+        XCTAssertTrue(model.rows.isEmpty, "前の人の読み込みの答えが入った")
+    }
+
     /// 同じ画面にいる間に届いたぶんは足す
     func testNewArrivalsAreAdded() async throws {
         let model = NotificationsViewModel()

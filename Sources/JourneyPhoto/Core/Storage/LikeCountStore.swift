@@ -32,4 +32,18 @@ final class LikeCountStore: ObservableObject {
     func entry(for photoId: String) -> Entry? {
         entries[photoId]
     }
+
+    /// ホームのカードからいいねを送っている写真。**カードの外に持つ**——
+    /// カードの `@State` に持つと、LazyVStack がカードを作り直したときに消え、
+    /// 答えを待っている間にもう一度押せた（逆向きが同時に飛ぶ）
+    private(set) var sending: Set<String> = []
+
+    /// 送り始める。**既に送っていれば false**（押させない）
+    func beginSending(_ photoId: String) -> Bool {
+        sending.insert(photoId).inserted
+    }
+
+    func endSending(_ photoId: String) {
+        sending.remove(photoId)
+    }
 }

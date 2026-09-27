@@ -38,6 +38,15 @@ struct RootView: View {
         // ホーム / 探す / 投稿 / 旅 / マイページ。
         // 通知はタブを1つ使わずヘッダーへ移した（絵と同じ）
         case home, search, post, map, mypage
+
+        /// もう一度押したときに合図を出す札（`TabRouter.tabTapped`）
+        var reselectable: TabRouter.Reselectable? {
+            switch self {
+            case .home: return .home
+            case .map: return .map
+            case .search, .post, .mypage: return nil
+            }
+        }
     }
 
     var body: some View {
@@ -71,6 +80,10 @@ struct RootView: View {
     ///
     /// **開いたことにはしない。** 既読にするのは `NotificationsView` が
     /// 一覧を読めたときだけ——ここで既読にすると、バッジを見ただけで消える。
+    ///
+    /// 🔴 **最後に出た1本の答えだけを、出したときと同じ人のときだけ書く。** ログイン・
+    /// 前面に戻る・お知らせを閉じる、の3か所から同時に走るので、古い数が後から着いて
+    /// 上書きしていた。ログアウトした後に前の人の数が出ることもあった
     private func refreshUnread() async {
         guard auth.userId != nil else {
             unread = 0
@@ -190,7 +203,7 @@ struct RootView: View {
         TabView(selection: Binding(
             get: { selection },
             set: { tapped in
-                tabRouter.tabTapped(isHome: tapped == .home, alreadySelected: tapped == selection)
+                tabRouter.tabTapped(tapped.reselectable, alreadySelected: tapped == selection)
                 selection = tapped
             }
         )) {

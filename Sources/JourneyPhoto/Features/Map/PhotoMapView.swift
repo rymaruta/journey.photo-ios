@@ -20,6 +20,8 @@ struct PhotoMapView: View {
     var onPost: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// 下の「マップ」をもう一度押した合図（`MapTabReselect`）
+    @ObservedObject private var tabRouter = TabRouter.shared
     /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
     @EnvironmentObject private var hidden: ModerationStore
     /// ブロック／通報があったが、まだピンから落としていない。
@@ -27,8 +29,18 @@ struct PhotoMapView: View {
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
     /// 通報の「受け付けました」も見えない。戻ってきたとき（`onAppear`）に絞る
     @State private var needsDrop = false
+    /// ピンを読んだときの人（`ModerationStore.userRevision`）。**人が替わったら
+    /// 絞るだけでなく読み直す**——前の人あての「フォロワーのみ」は、
+    /// 次の人のブロック・通報では落ちない
+    @State private var loadedUserRevision = 0
+    /// `onChange(of: hidden.revision)` が最後に見た人の数。**数の進みが人の入れ替わりか
+    /// ブロックかを見分けるため**（`loadedUserRevision` は読み込みが落ちると遅れるので、
+    /// それで見るとブロック1回を入れ替わりと取り違える）
+    @State private var seenUserRevision = 0
     /// いまこの画面が出ているか。**上に画面を積んでいる間は札を下げない**
-    /// （`PhotoMapViewModel.showsCard(official:onScreen:)`）
+    /// （`PhotoMapViewModel.showsCard(official:onScreen:)`）。
+    /// **出ていない間は人が替わっても読み直さない**——札の `NavigationLink` の先を
+    /// 開いている間に札を下げると、その場で閉じる。戻ってきたとき `.task` が読み直す
     @State private var isOnScreen = false
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
@@ -57,6 +69,9 @@ struct PhotoMapView: View {
     /// 開いたときに現在地を取りにいったか。**最初の1回だけ**——タブを
     /// 行き来するたびに取り直して、指で動かした場所から引き戻さない
     @State private var autoLocateStarted = false
+    /// 写真の範囲へ一度寄せたか。**寄せるのは最初の1回だけ**——詳細から戻るたびに
+    /// `.task` が走り直し、見ていた場所から写真の範囲へ引き戻していた
+    @State private var framedToPhotos = false
     /// 拡大・縮小を続けて押したときの土台（`MapFraming.ZoomChain`）
     @State private var zoomChain = MapFraming.ZoomChain()
     /// 方位磁針を地図の外（右の操作列）に置くための名前。
@@ -86,20 +101,50 @@ struct PhotoMapView: View {
                 autoLocateStarted = true
                 location.locate(requestedByUser: false)
             }
+            let revision = hidden.userRevision
+            seenUserRevision = revision
+            let userChanged = loadedUserRevision != revision
             await model.load(environment: environment)
+            // 🔴 **取り消された回（戻るスワイプを途中でやめた）は何もしない。**
+            // 札を差し替えると開いている詳細が閉じ、印だけ進めると本当に戻った
+            // ときに読み直さない
+            // 読んでいる間にまた人が替わった回も触らない（そちらの `reloadForNewUser`
+            // が進めた印を、古い数で戻さない）
+            if userChanged, !Task.isCancelled, !model.loadFailed, hidden.userRevision == revision {
+                loadedUserRevision = revision
+                // 見ていない間に人が替わった: 札は前の人の一覧から作ったので、読み直した
+                // ピンに差し替える（下げると、戻るスワイプの途中で詳細が閉じる）
+                refreshSelected()
+            }
             // 読んでいる間に通報された回、古い集合で絞った結果を残さない
             dropHidden()
             // 現在地が先に取れていたら、写真の読み込みで引き戻さない
-            if here == nil { frame(model.frame) }
+            if here == nil, !framedToPhotos, let photosFrame = model.frame {
+                framedToPhotos = true
+                frame(photosFrame)
+            }
         }
         // 絞りが変わったら、残ったピンに寄せ直す（範囲で絞ったときは
         // 見ている場所を動かさない——押した範囲がそのまま答え）
-        .onChange(of: hidden.revision) { _, _ in needsDrop = true }
+        .onChange(of: hidden.revision) { _, _ in
+            needsDrop = true
+            // 🔴 **人が替わったら、見ている最中でも読み直す。** ログアウトは
+            // 見出しのメニュー（シート）から来るので、閉じても `onAppear` も
+            // `.task` も来ず、前の人あての限定写真のピンが残っていた。
+            // 見ていない間は `.task`（戻ってきたとき）に任せる
+            let userChanged = hidden.userRevision != seenUserRevision
+            seenUserRevision = hidden.userRevision
+            if isOnScreen, userChanged { reloadForNewUser() }
+        }
         .onAppear {
             isOnScreen = true
+            tabRouter.mapRootOnScreen = true
             if needsDrop { dropHidden() }
         }
-        .onDisappear { isOnScreen = false }
+        .onDisappear {
+            isOnScreen = false
+            tabRouter.mapRootOnScreen = false
+        }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
             frame(model.frame)
@@ -126,6 +171,24 @@ struct PhotoMapView: View {
             camera = .userLocation(fallback: .region(MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
                 span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))))
+        }
+        // **地図を開いたまま「マップ」をもう一度押したら現在地へ**
+        // （`TabRouter.mapLocateRequests`）。位置情報が切られていれば、
+        // ボタンを押した回と同じく `locationNote` が言葉にする
+        .onChange(of: tabRouter.mapLocateRequests) { _, _ in
+            switch MapTabReselect.action(onScreen: isOnScreen,
+                                         isMapMode: model.mode == .map,
+                                         followsLocation: camera.followsUserLocation,
+                                         followsHeading: camera.followsUserHeading) {
+            case .ignore:
+                break
+            case .stopHeading:
+                zoomChain.reset()
+                camera = .userLocation(fallback: camera.fallbackPosition ?? camera)
+            case .locate:
+                zoomChain.reset()
+                location.locate()
+            }
         }
         // 近くの写真のシートの中でブロックした回も同じ（地図は見え続けている）
         .sheet(isPresented: $showNearby, onDismiss: { if needsDrop { dropHidden() } }) {
@@ -1345,6 +1408,34 @@ struct PhotoMapView: View {
     }
 
     // MARK: - カメラ
+
+    /// 人が替わったので読み直す。**札はすぐ下げる**——ここに来るのは地図が
+    /// 画面に出ている（札の先へ進んでいない）ときだけで、読み込みを待つ間に
+    /// 前の人あての写真を次の人に見せない
+    private func reloadForNewUser() {
+        loadedUserRevision = hidden.userRevision
+        selected = nil
+        Task {
+            // 集合を自分で渡してから読む（`GalleryView.reloadHidden` と同じ理由）
+            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
+                                                photoIds: hidden.reportedPhotoIds)
+            await model.load(environment: environment)
+            // 読んでいる間に押した札・開いた一覧も、前の人の写しなので差し替える。
+            // 一覧のシートを出している間もここを通る（シートでは `onDisappear` が
+            // 来ない）ので、シートの中で開いている詳細は、その写真が次の人の一覧に
+            // 無ければ閉じ、ピン（座標）ごと無ければシートごと閉じる——前の人あての
+            // 写真を見せ続けない向きに倒している
+            refreshSelected()
+            dropHidden()
+        }
+    }
+
+    /// 選んでいた札を、読み直したピンに差し替える（札は押した時点の写しなので、
+    /// そのままだと前の人あての写真を持ち続ける）。ピンが消えていれば下げる
+    private func refreshSelected() {
+        selected = PhotoMapViewModel.refreshed(selected, in: model.pins)
+        if listing != nil { listing = PhotoMapViewModel.refreshed(listing, in: model.pins) }
+    }
 
     /// 手元のピンからブロック／通報したぶんを落とす。選んでいた札が
     /// 落ちた写真を持っていたら下げる（札は押した時点のピンの写しを持つ）

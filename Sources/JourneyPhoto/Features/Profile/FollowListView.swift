@@ -36,6 +36,8 @@ struct FollowListView: View {
     /// 自分がフォローしている人。**取れたときだけ札を出す**
     /// ——取れていないのに「フォローする」と出すと、既にフォロー中の人を押し直させる
     @State private var myFollowing: Set<String>?
+    /// `myFollowing` を読んだときの人
+    @State private var loadedFor: String?
     /// いま送っている相手（二度押しで2回投げない）
     @State private var working: Set<String> = []
     /// 外す確認。**出すかどうかと相手は別々に持つ**——1つの Optional で兼ねると、
@@ -93,7 +95,15 @@ struct FollowListView: View {
         } message: {
             Text(actionError ?? "")
         }
-        .task { await load() }
+        // 見ている人が替わったら「フォロー中」の控えを捨てて読み直す（前の人の値で
+        // ボタンを出さない）
+        .task(id: auth.userId) {
+            // **人が替わったときだけ**捨てる（戻るたびに捨てると札が消えてから出る・
+            // 圏外で戻ると出ないまま）
+            if loadedFor != auth.userId { myFollowing = nil }
+            loadedFor = auth.userId
+            await load()
+        }
         .refreshable { await load() }
     }
 
@@ -194,6 +204,8 @@ struct FollowListView: View {
         do {
             let (followers, following) = try await (followersList, followingList)
             lists = [.followers: followers, .following: following]
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
@@ -202,9 +214,11 @@ struct FollowListView: View {
         if let name = ownerProfile?.displayName, !name.isEmpty {
             ownerName = name
         }
-        if auth.userId != nil {
+        if let viewer = auth.userId {
             let ids = try? await environment.social.myFollowingIds()
-            if let ids { myFollowing = Set(ids) }
+            // 待っている間に人が替わっていたら書かない（引き下げの読み直しは
+            // `.task(id:)` の取り消しに巻き込まれない）
+            if let ids, auth.userId == viewer { myFollowing = Set(ids) }
         }
     }
 
