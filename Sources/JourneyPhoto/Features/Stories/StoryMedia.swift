@@ -48,6 +48,10 @@ private struct StoryVideo: View {
     @State private var player: AVPlayer?
     /// 鳴り終わりの見張り。外さないと画面を閉じたあとも `onEnded` が飛ぶ
     @State private var endObserver: NSObjectProtocol?
+    /// 途中で途切れた知らせの見張り（`endObserver` と同じく出るたびに付け直す）
+    @State private var failObserver: NSObjectProtocol?
+    /// 読み込みの失敗（`status == .failed`）を見る。**失敗は知らせが来ない**ので覗く
+    @State private var failWatch: Task<Void, Never>?
 
     var body: some View {
         VideoPlayer(player: player)
@@ -58,17 +62,46 @@ private struct StoryVideo: View {
                     let made = AVPlayer(url: url)
                     made.isMuted = isMuted
                     player = made
-                    // 鳴り終わりで次へ（`MusicPreviewPlayer` と同じ形）。
-                    // 見張らないと動画のストーリーだけ永久に止まったままになる。
-                    // 通知の閉包は main actor の外なので、先に手元へ写してから
-                    // メインへ戻して呼ぶ
+                }
+                // 鳴り終わりで次へ（`MusicPreviewPlayer` と同じ形）。
+                // 見張らないと動画のストーリーだけ永久に止まったままになる。
+                // 🔴 **見張りは出るたびに付け直す**（プレイヤーを作るときだけではない）。
+                // `onDisappear` で外すので、作るときだけだと、画面を離れて戻った後は
+                // 最後まで再生しても次へ進まなかった
+                // 通知の閉包は main actor の外なので、先に手元へ写してから
+                // メインへ戻して呼ぶ
+                if endObserver == nil, let item = player?.currentItem {
                     let ended = onEnded
                     endObserver = NotificationCenter.default.addObserver(
                         forName: .AVPlayerItemDidPlayToEndTime,
-                        object: made.currentItem,
+                        object: item,
                         queue: .main
                     ) { _ in
                         Task { @MainActor in ended?() }
+                    }
+                }
+                // 🔴 **読めない動画（圏外・消された）でも次へ進む。** 鳴り終わりしか
+                // 見ていなかったので、黒い画面のまま進行バーが止まり、自動で次へ進まなかった
+                if failObserver == nil, let item = player?.currentItem {
+                    let ended = onEnded
+                    failObserver = NotificationCenter.default.addObserver(
+                        forName: .AVPlayerItemFailedToPlayToEndTime,
+                        object: item,
+                        queue: .main
+                    ) { _ in
+                        Task { @MainActor in ended?() }
+                    }
+                }
+                if failWatch == nil, let item = player?.currentItem {
+                    let ended = onEnded
+                    failWatch = Task { @MainActor in
+                        // 読み込みの失敗は知らせが来ないので、しばらく覗く
+                        for _ in 0..<20 {
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            if Task.isCancelled { return }
+                            if item.status == .failed { ended?(); return }
+                            if item.status == .readyToPlay { return }
+                        }
                     }
                 }
                 if !isPaused { player?.play() }
@@ -79,6 +112,12 @@ private struct StoryVideo: View {
                     NotificationCenter.default.removeObserver(endObserver)
                     self.endObserver = nil
                 }
+                if let failObserver {
+                    NotificationCenter.default.removeObserver(failObserver)
+                    self.failObserver = nil
+                }
+                failWatch?.cancel()
+                failWatch = nil
             }
             // 止める・再開するのは外の都合（長押し・メニュー・シート）。
             // ここで `play()` を呼び直すので、`onAppear` 側と二重にならないよう

@@ -32,6 +32,7 @@ struct AlbumsView: View {
             }
         }
         .navigationTitle(Labels.Navigation.albums)
+        .onChange(of: auth.userId) { _, _ in model.forget() }
     }
 
     // **段ごとに割ってある。** 一本の長い `List { … }` にすると、Swift の
@@ -240,6 +241,21 @@ final class AlbumsViewModel: ObservableObject {
     /// ——書き込みの前に始めた読み込みや、結果整合で古い姿を返す読み込みで、
     /// 消したアルバムが戻る・作ったアルバムが消える・名前が巻き戻るのを防ぐ
     private var writes = AlbumMerge.Writes()
+    /// 人が替わった回数（`forget`）。**走っている書き込みの答えを、次の人の一覧に書かない**
+    private var era = 0
+
+    /// 人が替わった。**前の人のアルバム（招待リンクつき）を残さない**。
+    /// 画面は残ったまま中身だけログイン画面に替わるので、次の人の読み込みが
+    /// 返るまで（落ちた回はずっと）前の人の一覧が出ていた
+    func forget() {
+        era += 1
+        loadGeneration += 1
+        albums = []
+        writes = AlbumMerge.Writes()
+        inviteWorking = []
+        isLoading = false
+        errorMessage = nil
+    }
 
     func inviteURL(token: String) -> URL {
         AppConfig.siteBaseURL.appendingPathComponent("j").appending(queryItems: [
@@ -258,6 +274,10 @@ final class AlbumsViewModel: ObservableObject {
             writes = AlbumMerge.settled(writes, loaded: list)
             albums = AlbumMerge.merge(loaded: list, writes: writes)
             isLoading = false
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
+            guard generation == loadGeneration else { return }
+            isLoading = false
         } catch {
             guard generation == loadGeneration else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
@@ -268,11 +288,18 @@ final class AlbumsViewModel: ObservableObject {
     func create(title: String, environment: AppEnvironment) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let myEra = era
         do {
             let album = try await environment.albums.create(title: trimmed)
+            guard myEra == era else { return }
             writes.created.append(.init(value: album, at: Date()))
+            // 🔴 **既に並んでいれば足さない。** 作っている間に始めた読み込みが先に返ると、
+            // 作ったアルバムはもう一覧に居る。そこへ足すと同じ id が2つ並んでいた
+            // （ForEach の id が重なる）
+            albums.removeAll { $0.id == album.id }
             albums.insert(album, at: 0)
         } catch {
+            guard myEra == era else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
         }
     }
@@ -282,9 +309,11 @@ final class AlbumsViewModel: ObservableObject {
     func rename(_ id: String, title: String, environment: AppEnvironment) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let myEra = era
         do {
             // **サーバーが直した名前を採る**（60字で切られる・制御文字が落ちる）
             let saved = try await environment.albums.rename(id: id, title: trimmed)
+            guard myEra == era else { return }
             writes.renamed[id] = .init(value: saved, at: Date())
             albums = albums.map { album in
                 guard album.id == id else { return album }
@@ -293,6 +322,7 @@ final class AlbumsViewModel: ObservableObject {
                              inviteExpiresAt: album.inviteExpiresAt)
             }
         } catch {
+            guard myEra == era else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("名前を変えられませんでした", "Couldn't rename")
         }
@@ -300,12 +330,15 @@ final class AlbumsViewModel: ObservableObject {
 
     /// 消せたか（呼んだ側が参加の控えからも外す）
     func delete(_ id: String, environment: AppEnvironment) async -> Bool {
+        let myEra = era
         do {
             try await environment.albums.delete(id: id)
+            guard myEra == era else { return false }
             writes.deleted.insert(id)
             albums.removeAll { $0.id == id }
             return true
         } catch {
+            guard myEra == era else { return false }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
             return false
         }
@@ -315,14 +348,17 @@ final class AlbumsViewModel: ObservableObject {
         guard !inviteWorking.contains(id) else { return }
         inviteWorking.insert(id)
         defer { inviteWorking.remove(id) }
+        let myEra = era
         do {
             // **返ってきたリンクを手元にも書く。** 一覧は結果整合で読むので、
             // 読み直しが古いとリンクが出ず、もう一度押すと作り直し（前のリンクが失効）になる
             let invite = try await environment.albums.createInvite(albumId: id)
+            guard myEra == era else { return }
             writes.invites[id] = .init(value: invite, at: Date())
             albums = AlbumMerge.merge(loaded: albums, writes: writes)
             await load(environment: environment)
         } catch {
+            guard myEra == era else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("招待リンクを作れませんでした", "Couldn't create the invite link")
         }
     }
@@ -331,12 +367,15 @@ final class AlbumsViewModel: ObservableObject {
         guard !inviteWorking.contains(id) else { return }
         inviteWorking.insert(id)
         defer { inviteWorking.remove(id) }
+        let myEra = era
         do {
             try await environment.albums.revokeInvite(albumId: id)
+            guard myEra == era else { return }
             writes.invites[id] = .init(value: nil, at: Date())
             albums = AlbumMerge.merge(loaded: albums, writes: writes)
             await load(environment: environment)
         } catch {
+            guard myEra == era else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("取り消せませんでした", "Couldn't revoke")
         }
     }

@@ -23,6 +23,14 @@ public struct AmplifyConfiguration {
 
 public protocol Plugin {}
 
+/// 本物の Amplify にも `APIError`（API カテゴリの失敗）がある。中身は使わないが、
+/// **名前があること自体が肝**——`import Amplify` した試験で `APIError` と書くと
+/// アプリの `APIError` と曖昧になり、Xcode では試験のビルドが落ちる
+/// （TestFlight run 160）。この shim に無いと Linux の verify が見逃す。
+public enum APIError: Error {
+    case unknown(String, String, Error? = nil)
+}
+
 /// 本物の `Amplify.AuthError`（`Amplify/Categories/Auth/Error/AuthError.swift`）に
 /// 合わせる。**`underlyingError` があるのが肝**——種別はこの中の
 /// `AWSCognitoAuthError` に入っていて、説明文の綴りで見てはいけない。

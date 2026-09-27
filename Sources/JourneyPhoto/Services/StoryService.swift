@@ -82,18 +82,23 @@ struct StoryService {
             media = try await upload(imageData: job.imageData)
             await record(media)
         }
+        // **catch の中で await しない**（Xcode 26.3 の SILGen が落ちた形に近い）。
+        // 失敗を外へ持ち出してから片づける
+        var failure: Error?
         do {
             _ = try await createRecord(media, caption: job.caption, location: job.location,
                                        coords: job.coords, song: job.song,
                                        durationSec: job.durationSec, archive: job.archive)
         } catch {
-            if case .server(let status, _)? = error as? APIError, (400..<500).contains(status) {
-                // 断られた＝行は出来ていない。画像を片づけ、次は上げ直す
-                await uploads.discard(key: media.key)
-                await record(nil)
-            }
-            throw error
+            failure = error
         }
+        guard let failure else { return }
+        if case .server(let status, _)? = failure as? APIError, (400..<500).contains(status) {
+            // 断られた＝行は出来ていない。画像を片づけ、次は上げ直す
+            await uploads.discard(key: media.key)
+            await record(nil)
+        }
+        throw failure
     }
 
     private enum DiscardResult { case removed, inUse }

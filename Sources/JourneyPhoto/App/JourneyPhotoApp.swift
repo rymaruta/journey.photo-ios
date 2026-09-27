@@ -102,15 +102,19 @@ struct JourneyPhotoApp: App {
     /// 保存といいねが同じ入れ物を使っていた頃の端末に、**保存しただけの
     /// 写真の id が残っている**ため（足すだけだと出続ける）。
     ///
-    /// **返ってくる間に人が替わっていたら書かない**（`replace(with:for:)`）。
+    /// **返ってくる間に人が替わっていたら書かない**（`replace(with:for:since:)`）。
     /// 書くと、前の人のいいねが次の人の控えに入る
-    private func syncLikes() async {
+    ///
+    /// - Parameter mark: 控えを次の人に切り替えた直後（`use` の後、次の await の前）に取った `syncMark`。
+    ///   **その後に押した分は残す**——起動直後にホームで押したいいねが、押す前の
+    ///   一覧で消えていた
+    private func syncLikes(since mark: LocalEdits.Mark) async {
         guard let owner = auth.userId else { return }
         let ids = try? await environment.social.myLikedPhotoIds()
         // **いまのログインとも照らす。** ストアはまだ前の人を指していることがある
         // （退会で控えを消した直後、`.task` が取り消される前に続きが戻る回）
         guard !Task.isCancelled, auth.userId == owner, let ids else { return }
-        favorites.replace(with: ids, for: owner)
+        favorites.replace(with: ids, for: owner, since: mark)
     }
 
     /// 保存した写真をサーバーに合わせる。
@@ -119,11 +123,11 @@ struct JourneyPhotoApp: App {
     /// 消えて「保存した写真が全部消えた」になる。
     /// ログアウトしたら控えは鍵ごと切り替わる（`use(userId:)`）ので、
     /// ここでは何もしない。
-    private func syncSaves() async {
+    private func syncSaves(since mark: LocalEdits.Mark) async {
         guard let owner = auth.userId else { return }
         let ids = try? await environment.saves.mySaves()
         guard !Task.isCancelled, auth.userId == owner, let ids else { return }
-        savedPhotos.replace(with: ids, for: owner)
+        savedPhotos.replace(with: ids, for: owner, since: mark)
     }
 
     var body: some Scene {
@@ -174,12 +178,21 @@ struct JourneyPhotoApp: App {
                     // でも捨てない——通知の宛先と同じ扱い。捨てると、圏外で起動した
                     // だけで強制終了から戻した送信待ちが消え、「もう一度送る」も出ない
                     guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
+                    // **期限切れのログアウトでも捨てない**（同じ人が入り直せば送り直せる）。
+                    // 別の人が入ったときは、その人の ID で `userChanged` が捨てる
+                    if auth.userId == nil, auth.signedOutByExpiry { return }
                     StoryUploadCenter.shared.userChanged(to: auth.userId)
                 }
                 // **`userId` ではなく状態で見る。** 起動直後の確認中（unknown）も
                 // ログアウト（signedOut）も `userId` は nil で、確認が
                 // 「ログインしていない」に決まったときに走り直さない
                 .task(id: auth.state) {
+                    // 🔴 **限定写真の口は、`hidden.use` より先に差し替える。**
+                    // `hidden.use` が数を進めると検索・ホーム・地図が公開一覧を
+                    // 読み直す。差し替えが後だと、その読み直しが**前の人の口と控え**
+                    // で行われ（ログアウト後は取れずに前の人の控えを返す）、
+                    // 前の人あての「フォロワーのみ」が残ったままになる
+                    await applyRestrictedFeed()
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)
@@ -193,6 +206,11 @@ struct JourneyPhotoApp: App {
                     // （外さないと、次にこの端末を使う人へ前の人あての
                     //  通知が届く）
                     AppDelegate.push = push
+                    // **同期の印は最初の await の前に取る**（`LocalEdits`）。この後の
+                    // 待ちの間に押したいいね・保存・ブロックを、同期の一覧で消さない
+                    let likesMark = favorites.syncMark
+                    let savesMark = savedPhotos.syncMark
+                    let blocksFetch = hidden.beginBlockFetch()
                     // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
                     // 「前の人の宛先が残っている」と見なして端末ごと外していた
                     // 起動時に本人の ID が取れなかっただけのログアウトも同じ
@@ -201,20 +219,14 @@ struct JourneyPhotoApp: App {
                         await push.use(userId: auth.userId)
                     }
                     await applyModeration()
-                    await applyRestrictedFeed()
-                    await syncSaves()
-                    await syncLikes()
+                    await syncSaves(since: savesMark)
+                    await syncLikes(since: likesMark)
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
+                    // （同期を始めた後にブロック・解除した分は残す・後に始まった取得の答えは上書きしない——`blocksFetch`）
                     if let owner = auth.userId {
-                        // **待っている間に手元で変えたら上書きしない**（設定で解除した
-                        // 直後に、解除前に始めた読み込みが戻して、また見えなくなっていた）
-                        // 見るのはブロックの変更の回数だけ（通報では止めない・
-                        // ブロックして解除した＝集合が元に戻った回もすり抜けない）
-                        let before = hidden.blockRevision
                         let blocks = try? await environment.moderation.blocks()
-                        if !Task.isCancelled, auth.userId == owner, hidden.blockRevision == before,
-                           let blocks {
-                            hidden.replaceBlocked(with: blocks.blockedIds, for: owner)
+                        if !Task.isCancelled, auth.userId == owner, let blocks {
+                            hidden.replaceBlocked(with: blocks.blockedIds, for: owner, fetch: blocksFetch)
                             await applyModeration()
                         }
                     }

@@ -62,7 +62,8 @@ enum DiscoverySections {
     /// モックの「春の桜 / 夏の絶景 / 秋の紅葉」にあたる。決まった
     /// 選択肢（`TagChoices.all`）の中の季節の語だけを使う。
     static func seasonalTags(now: Date = Date(), calendar: Calendar = .current) -> [String] {
-        let month = calendar.component(.month, from: now)
+        // 季節は西暦の月で決める（イスラム暦などの月は季節と合わない）
+        let month = calendar.gregorianKeepingZone.component(.month, from: now)
         switch month {
         case 3...5: return ["春", "桜", "花"]
         case 6...8: return ["夏", "海", "空"]

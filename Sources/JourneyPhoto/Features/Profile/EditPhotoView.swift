@@ -134,7 +134,8 @@ struct EditPhotoView: View {
                         Text(Labels.Common.save)
                     }
                 }
-                .disabled(isSaving)
+                // 差し替えの間も押させない（下の `save` の注記）
+                .disabled(isSaving || isReplacing)
             }
             .listRowBackground(Color.clear)
         }
@@ -182,6 +183,10 @@ struct EditPhotoView: View {
     }
 
     private func save() async {
+        // 🔴 **差し替えの途中は保存しない。** 差し替えは始めた時点の撮影地で「座標を残すか」を
+        // 決めて送るので、途中で撮影地を消して保存すると、あとから届いた差し替えが
+        // 写真の位置を書き戻していた（消したはずのピンが地図に戻る）
+        guard !isSaving, !isReplacing else { return }
         isSaving = true
         message = nil
         defer { isSaving = false }

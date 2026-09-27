@@ -426,7 +426,7 @@ final class ViewModelTests: XCTestCase {
         model.use(viewerId: "me", following: [])
         model.select(scope: .following)
 
-        model.refreshFollowing(["u2"], for: "me")
+        model.refreshFollowing(["u2"], viewerId: "me")
 
         XCTAssertEqual(model.scope, .following, "範囲が勝手に戻っている")
     }
@@ -453,6 +453,68 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage, "一覧を消す側に入れている")
         XCTAssertEqual(model.pinnedIds, ["a", "b", "c"],
                        "断られたのにサーバーの一覧へ揃えていない")
+    }
+
+    /// **一度読めていれば、読み直しの失敗で格子ごと知らせに置き換えない**（バグ探し 2026-09-27 #18）。
+    /// 戻ってくるたびに読み直すので、圏外で写真を開いて戻っただけで格子が消えていた。
+    /// 次に読めたら知らせを消す。
+    ///
+    /// ⚠️ 失敗させるのは**写真の口だけ**。プロフィールを落とすと、同時に走っている写真の要求が
+    /// 取り消され、Linux の FoundationNetworking ではスタブの取り消しが返らずに止まることがある
+    func testReloadFailureIsAddedToTheGridNotReplacingIt() async {
+        prepare()
+        func serve(photos status: Int) {
+            StubProtocol.reset()
+            StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+            StubProtocol.respond(path: "/user/photos", status: status,
+                                 body: status == 200 ? #"[{"id":"p1","src":"/uploads/p1.jpg"}]"# : #"{"error":"取得に失敗しました"}"#)
+        }
+        serve(photos: 200)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+
+        serve(photos: 500)
+        await model.load()
+        XCTAssertNil(model.errorMessage, "読み直しの失敗で格子ごと知らせに置き換えている")
+        XCTAssertEqual(model.reloadError, "取得に失敗しました")
+        XCTAssertNil(model.actionMessage, "読み直しの失敗をピン留めの断りの欄に混ぜている")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "読めていた写真を捨てている")
+
+        serve(photos: 200)
+        await model.load()
+        XCTAssertNil(model.reloadError, "読めたのに失敗の知らせが残っている")
+    }
+
+    /// **取り消された読み込みで、前の失敗の知らせを消さない。** 始めに消したまま
+    /// 抜けていたので、写真0枚の欄に「まだ写真がありません」と嘘が出た
+    func testMyPageCancelledLoadKeepsThePreviousFailure() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"取得に失敗しました"}"#)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertNotNil(model.errorMessage)
+
+        StubProtocol.reset()
+        StubProtocol.fail(with: URLError(.cancelled))
+        let task = Task { await model.load() }
+        task.cancel()
+        await task.value
+        XCTAssertEqual(model.errorMessage, "取得に失敗しました", "取り消しで失敗の知らせを消している")
+        XCTAssertTrue(model.photos.isEmpty)
+    }
+
+    /// **初回にプロフィールだけ取れて写真で落ちた回も「読めていない」。** プロフィールは
+    /// 写真より先に入るので、`profile` で決めると格子に「まだ写真がありません」と嘘が出た（a1734cc のレビュー）
+    func testFirstLoadWithOnlyTheProfileIsStillAFailure() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"取得に失敗しました"}"#)
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertNotNil(model.errorMessage, "写真を読めていないのに一覧に添える側に入れている")
+        XCTAssertNil(model.reloadError)
     }
 
     /// **人が替わったら前の人の写真を手放す。** 残すと、次の人の読み込みが
@@ -690,6 +752,132 @@ final class ViewModelTests: XCTestCase {
         let answered = await model.toggleLike()
         XCTAssertNil(answered, "届かなかったのに答えがあった扱い")
         XCTAssertTrue(model.liked)
+    }
+
+    /// **コメントの読み直しと、投稿・削除を同時に走らせない。** 後から着いた古いページが
+    /// 入れた・消したコメントを上書きする（画面は互いのボタンを押せなくしている）
+    func testCommentReloadExcludesPostAndDelete() async throws {
+        prepare()
+        let page = #"{"items":[{"id":"c1","uid":"u1","name":"a","text":"hi"}],"count":1}"#
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: page, delay: 0.3)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        await model.reloadComments()
+        let comment = try XCTUnwrap(model.comments.first)
+        let before = StubProtocol.requestCount
+
+        let reload = Task { await model.reloadComments() }
+        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertTrue(model.isReloadingComments)
+        model.draftComment = "new"
+        await model.postComment()
+        await model.deleteComment(comment)
+        await reload.value
+
+        XCTAssertEqual(StubProtocol.requestCount, before + 1, "読み直しの最中に投稿・削除を投げている")
+        XCTAssertEqual(model.draftComment, "new", "投げていないのに下書きを消している")
+    }
+
+    /// 投稿している間は読み直さない
+    func testCommentPostExcludesReload() async {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"comment":{"id":"c2","uid":"me","name":"me","text":"x"}}"#, delay: 0.3)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "x"
+        let post = Task { await model.postComment() }
+        for _ in 0..<2000 where !model.isPosting { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertTrue(model.isPosting)
+        await model.reloadComments()
+        await post.value
+        XCTAssertEqual(StubProtocol.requestCount, 1, "投稿の最中に読み直しを投げている")
+    }
+
+    /// **前の1枚の読み直しで、隣の1枚の送信を止めない。** 読み直しの印が画面で
+    /// 1つだったので、p1 の読み直し（圏外で長く待つ）の間、p2 で送れなかった
+    func testCommentReloadOfPreviousPhotoDoesNotBlockNextPhoto() async throws {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"items":[],"count":0}"#, delay: 0.3)
+        StubProtocol.respond(path: "/photos/p2/comments", status: 200,
+                             body: #"{"items":[],"count":0,"comment":{"id":"c9","uid":"me","name":"me","text":"new"}}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+
+        let reload = Task { await model.reloadComments() }
+        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertTrue(model.isReloadingComments)
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        XCTAssertFalse(model.isReloadingComments, "前の1枚の読み直しで、今の1枚のボタンまで止めている")
+        model.draftComment = "new"
+        await model.postComment()
+        XCTAssertEqual(model.comments.map(\.id), ["c9"], "前の1枚の読み直しの間、今の1枚に送れない")
+        await reload.value
+        XCTAssertEqual(model.comments.map(\.id), ["c9"], "前の1枚の読み直しの答えを今の1枚に出している")
+    }
+
+    /// **読み直しの印は1枚ごと。** 1つの枠だと、p1→p2 で p2 の読み直しが印を
+    /// 上書きし、p1 に戻ると p1 の読み直しが走ったまま再試行を押せた
+    func testCommentReloadMarkSurvivesAnotherPhotosReload() async throws {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"items":[],"count":0}"#, delay: 0.3)
+        StubProtocol.respond(path: "/photos/p2/comments", status: 200,
+                             body: #"{"items":[],"count":0}"#, delay: 0.3)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        let first = Task { await model.reloadComments() }
+        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        let second = Task { await model.reloadComments() }
+        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        model.show(photoId: "p1", initialLikes: nil, liked: false)
+        XCTAssertTrue(model.isReloadingComments, "別の1枚の読み直しで、この1枚の読み直し中の印が消えた")
+        await first.value
+        await second.value
+        XCTAssertFalse(model.isReloadingComments)
+    }
+
+    /// コメントの削除の 404: **読み込んだコメントは「もう無い」として外す**が、
+    /// **この画面で投稿したばかりのものは外さない**（サーバーの最初の読みが結果整合で、
+    /// 「まだ見えない」だけの 404 がある。外すと他の人には見えたまま自分からだけ消える）
+    func testCommentDeleteNotFoundDependsOnWhetherItWasJustPosted() async throws {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/comments/c1", status: 404, body: #"{"error":"コメントが見つかりません"}"#)
+        StubProtocol.respond(path: "/photos/p1/comments/c2", status: 404, body: #"{"error":"コメントが見つかりません"}"#)
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u1","name":"a","text":"hi"}],"count":1,"comment":{"id":"c2","uid":"me","name":"me","text":"new"}}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        await model.reloadComments()
+        model.draftComment = "new"
+        await model.postComment()
+        XCTAssertEqual(model.comments.map(\.id), ["c2", "c1"])
+        let loaded = try XCTUnwrap(model.comments.first { $0.id == "c1" })
+        let posted = try XCTUnwrap(model.comments.first { $0.id == "c2" })
+
+        XCTAssertEqual(model.commentCount, 2)
+
+        await model.deleteComment(loaded)
+        XCTAssertFalse(model.comments.contains { $0.id == "c1" }, "もう無いコメントが残っている")
+        XCTAssertEqual(model.commentCount, 1, "もう無いコメントを外したのに数を減らしていない")
+        XCTAssertNil(model.errorMessage)
+
+        await model.deleteComment(posted)
+        XCTAssertTrue(model.comments.contains { $0.id == "c2" }, "投稿直後の 404 で外している（サーバーには残る）")
+        XCTAssertEqual(model.commentCount, 1)
+        XCTAssertEqual(model.errorMessage,
+                       L("まだ反映されていないため削除できませんでした。少し待ってからもう一度お試しください",
+                         "Couldn't delete it yet. Please wait a moment and try again."),
+                       "「見つかりません」と言っている")
+
+        // 時間が経ってからの 404 は「もう無い」（持ち主が先に消した など）。失敗の文も残さない
+        let later = Date().addingTimeInterval(PhotoDetailViewModel.justPostedWindow + 1)
+        model.now = { later }
+        await model.deleteComment(posted)
+        XCTAssertFalse(model.comments.contains { $0.id == "c2" }, "時間が経っても外せず詰まる")
+        XCTAssertNil(model.errorMessage, "前の失敗の文が残っている")
     }
 
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。

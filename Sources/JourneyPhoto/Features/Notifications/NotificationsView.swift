@@ -34,6 +34,11 @@ struct NotificationsView: View {
             }
         }
         .webScreen()
+        // 人が替わったら前の人の中身を捨て、開いていた行き先も閉じる
+        .onChange(of: auth.userId) { _, _ in
+            model.forget()
+            route = nil
+        }
         .navigationTitle(L("お知らせ", "Activity"))
         // **通知の設定**（板 15 の右上の歯車）。行き先は設定の画面——
         // プッシュ通知の入／切はそこにある。閉じる口は `RootView` が
@@ -175,6 +180,14 @@ struct NotificationsView: View {
             if await model.load(environment: environment, viewerId: auth.userId, refreshing: true) {
                 await push.clearBadge()
             }
+        }
+        // フォローバックの失敗（形は親しい友達の保存の失敗と同じ）
+        .alert(L("フォローできませんでした", "Couldn't follow"),
+               isPresented: Binding(get: { model.followBackError != nil },
+                                    set: { if !$0 { model.followBackError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.followBackError ?? "")
         }
     }
 }
@@ -369,6 +382,9 @@ final class NotificationsViewModel: ObservableObject {
     @Published private(set) var following: Set<String> = []
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
+    /// フォローバックの失敗。**読み込みの失敗（`errorMessage`）と分ける**——同じ所に出すと
+    /// 一覧の上端（下の行で押すと画面の外）に出て、「読み込めていない」とも読める。アラートで出す
+    @Published var followBackError: String?
     /// 読み込みの世代。**あとから始まった読み込みがあれば、古い方の結果は捨てる。**
     ///
     /// `.task` と引っぱって読み直しは同時に走りうる。遅れて返った `.task`
@@ -381,6 +397,30 @@ final class NotificationsViewModel: ObservableObject {
     private var appliedGeneration = 0
     /// 手元の一覧（`feed` / `mine`）を書いた中でいちばん新しい回（同じ理由）
     private var poolsGeneration = 0
+    /// 人が替わった回数（`forget`）。**読み込みの続き（フォロー中・既読化）は、
+    /// 読み込みの新旧ではなく人の替わりで止める**——新旧で止めると、新しい回が
+    /// 既読化の前に取り消されたとき、古い回も既読化を飛ばしてバッジが残った
+    private var userEra = 0
+
+    /// 人が替わった。**前の人のお知らせ・写真の手元の一覧・フォロー中を捨てる。**
+    /// シートは人が替わっても閉じないので、捨てないと次の人のログイン直後に
+    /// 前の人の行が描かれ、押すと前の人の写真（下書きを含む）が開いていた。
+    /// 走っている前の人の読み込みの答えも、世代を進めて書かせない
+    func forget() {
+        userEra += 1
+        generation += 1
+        appliedGeneration = generation
+        poolsGeneration = generation
+        rows = []
+        feed = []
+        mine = []
+        unread = 0
+        unreadIds = []
+        following = []
+        isLoading = false
+        errorMessage = nil
+        followBackError = nil
+    }
 
     /// テストから手元の一覧を差し替える口。
     func setFeedForTesting(_ photos: [Photo]) { feed = photos }
@@ -427,18 +467,36 @@ final class NotificationsViewModel: ObservableObject {
     ///   取得に失敗した回にアイコンだけ 0 にすると、タブのバッジは 3 のまま
     ///   アイコンは 0、という食い違いが残る。
     @discardableResult
-    /// いまフォローしている人を読む。**自分の userId が要る**
-    private func loadFollowing(environment: AppEnvironment, viewerId: String?) async {
+    /// いまフォローしている人を読む。
+    ///
+    /// **ID の一覧（`GET /user/following`・最大2000人）で決める。** 以前は名前つきの
+    /// 一覧（`/users/{id}/following`）を使っていたが、あちらは**新しい順に50人で切る**
+    /// （`follow.ts` の `FOLLOWING_PAGE`）ので、古くからフォローしている相手からの
+    /// フォロー通知に「フォローバック」が出ていた
+    private func loadFollowing(environment: AppEnvironment, viewerId: String?, era: Int) async {
         guard let me = viewerId, !me.isEmpty else { return }
-        guard let list = try? await environment.social.following(userId: me) else { return }
-        following = Set(list.users.map(\.id))
+        guard let ids = try? await environment.social.myFollowingIds() else { return }
+        // 人が替わった（`forget`）後に返った前の人の答えは書かない
+        guard era == userEra else { return }
+        following = Set(ids)
     }
 
     /// フォローバック。**成功したときだけ**印を更新する
-    /// （失敗したのにボタンが消えると、フォローできたように見える）
+    /// （失敗したのにボタンが消えると、フォローできたように見える）。
+    /// **失敗は黙らない**——圏外で押して何も起きないと、押せていないのか分からない
     func followBack(_ userId: String, environment: AppEnvironment) async {
-        guard (try? await environment.social.follow(userId: userId)) != nil else { return }
-        following.insert(userId)
+        // 送っている間に人が替わった（`forget`）ら、答えも失敗も次の人の画面に書かない
+        let era = userEra
+        do {
+            let result = try await environment.social.follow(userId: userId)
+            guard era == userEra else { return }
+            // 返ってきた状態を使う（自分で決めない）
+            if result.following { following.insert(userId) }
+        } catch {
+            guard era == userEra else { return }
+            followBackError = (error as? LocalizedError)?.errorDescription
+                ?? L("フォローできませんでした", "Couldn't follow")
+        }
     }
 
     /// 読めた1ページを画面の状態に移す。
@@ -497,6 +555,7 @@ final class NotificationsViewModel: ObservableObject {
     ///   サーバーの数で入れ替える（`apply` を参照）
     func load(environment: AppEnvironment, viewerId: String?, refreshing: Bool = false) async -> Bool {
         let generation = beginLoad()
+        let era = userEra
         isLoading = true
         errorMessage = nil
         defer { if generation == self.generation { isLoading = false } }
@@ -517,7 +576,7 @@ final class NotificationsViewModel: ObservableObject {
             guard apply(page, refreshing: refreshing, generation: generation) else { return false }
             // **フォローバックを出すかの判断に要る。** 取れなくても
             // お知らせ自体は出す（ボタンが出ないだけ）
-            await loadFollowing(environment: environment, viewerId: viewerId)
+            await loadFollowing(environment: environment, viewerId: viewerId, era: era)
             // ⚠️ **取得と既読化のすきまに届いた通知は、一度も未読に見えない。**
             // サーバーの既読化（`api-user/src/notifications.ts` の
             // `readNotifications`）は無条件の `SET unread = :z` なので、
@@ -526,11 +585,14 @@ final class NotificationsViewModel: ObservableObject {
             // 必要がある（端末側だけでは直せない）。
             // **開いたときに1回だけ既読にする。** 読めたあとに呼ぶので、
             // 取得に失敗した回でバッジだけ消える事故が起きない
-            if page.unread > 0 {
+            // 🔴 **人が替わっていたら既読にしない。** 既読化は今のトークンで送るので、
+            // 前の人の読み込みの続きが送ると、**次の人のお知らせ**が黙って既読になる
+            if page.unread > 0, era == userEra {
                 if (try? await environment.notifications.markRead()) != nil {
                     NotificationRouter.shared.noteRead(owner: viewerId)
                 }
-                unread = 0
+                // 既読化を待つ間に人が替わっていたら、次の人の未読の数を消さない
+                if era == userEra { unread = 0 }
             }
             return true
         } catch {

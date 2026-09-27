@@ -34,6 +34,15 @@ enum APIError: LocalizedError, Equatable {
             // 落ちたときに起きる。Cognito 側に無いので本人には直せない）。
             // Web は同じ取り違えで**ログイン画面と元の画面を無限に往復**
             // させていた（`lib/hooks/useMemberGate.ts` の経緯）。
+            //
+            // 🔴 **本文があれば本文を出す。** api-user の 403 は上限（写真の枚数・
+            // アルバム・ハイライト・ブロック）や「返信を受け付けていません」を
+            // `{ error }` で返す。固定の文に置き換えると、上限の人に
+            // 「お問い合わせください」と出て、何が起きたか伝わらなかった。
+            // 固定の文は本文の無い 403（API Gateway の門前払い）だけ
+            if status == 403, !message.isEmpty {
+                return message
+            }
             if status == 403 {
                 return L("この操作をする権限がありません。登録直後にこの状態になった場合は、お手数ですがお問い合わせください（ログインし直しても直りません）",
                          "You don't have permission for this. If this started right after signing up, please contact us — signing in again won't fix it.")

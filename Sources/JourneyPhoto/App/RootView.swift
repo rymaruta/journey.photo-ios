@@ -32,12 +32,25 @@ struct RootView: View {
     /// ベルの数え直しの世代。**最後に始めた取得だけを画面に出す**
     /// （既読にする前の遅い応答が、あとから古い数で上書きしないように）
     @State private var unreadGeneration = 0
+    /// いまの `unread` が誰の数か。失敗の回に「いまの数を残す」のは、
+    /// それが**同じ人の数**のときだけ——人が替わった直後の取得が捨てられ、
+    /// 次の取得が失敗すると、前の人の数が残っていた
+    @State private var unreadOwner: String?
 
     enum Tab: Hashable {
         // **提案の並び**（owner の絵・2026-09-21）:
         // ホーム / 探す / 投稿 / 旅 / マイページ。
         // 通知はタブを1つ使わずヘッダーへ移した（絵と同じ）
         case home, search, post, map, mypage
+
+        /// もう一度押したときに合図を出す札（`TabRouter.tabTapped`）
+        var reselectable: TabRouter.Reselectable? {
+            switch self {
+            case .home: return .home
+            case .map: return .map
+            case .search, .post, .mypage: return nil
+            }
+        }
     }
 
     var body: some View {
@@ -71,20 +84,34 @@ struct RootView: View {
     ///
     /// **開いたことにはしない。** 既読にするのは `NotificationsView` が
     /// 一覧を読めたときだけ——ここで既読にすると、バッジを見ただけで消える。
-    private func refreshUnread() async {
+    ///
+    /// 🔴 **最後に出た1本の答えだけを、出したときと同じ人のときだけ書く。** ログイン・
+    /// 前面に戻る・お知らせを閉じる、の3か所から同時に走るので、古い数が後から着いて
+    /// 上書きしていた。ログアウトした後に前の人の数が出ることもあった
+    ///
+    /// - Parameter keepOnFailure: 引けなかった回に**いまの数を残す**。
+    ///   前面に戻ったときの数え直しだけ——圏外で戻っただけでベルの印が消えていた。
+    ///   人が替わった回（前の人の数を残さない）とお知らせを閉じた回（読んだあと）は 0 に倒す
+    private func refreshUnread(keepOnFailure: Bool = false) async {
         guard auth.userId != nil else {
             unread = 0
+            unreadOwner = nil
             return
         }
         let owner = auth.userId
         unreadGeneration += 1
         let generation = unreadGeneration
-        // **取れなかった回は前の数を残す。** 0 にすると、最後に始めた1本が
-        // 圏外で落ちただけでベルが消える（成功した古い方は世代で捨てるので）
-        guard let count = try? await environment.notifications.fetch().unread else { return }
+        let fetched = try? await environment.notifications.fetch().unread
         // **返ってくる間に人が替わっていた・もっと新しい取得が始まっていたら捨てる**
+        // （失敗の回も。古い1本の失敗で、新しい1本の数を 0 に倒さない）
         guard !Task.isCancelled, auth.userId == owner, generation == unreadGeneration else { return }
-        unread = count
+        if let fetched {
+            unread = fetched
+            unreadOwner = owner
+        } else if !keepOnFailure || unreadOwner != owner {
+            unread = 0
+            unreadOwner = owner
+        }
     }
 
     /// 通知を押した分を受け取って、お知らせを出す。
@@ -127,20 +154,43 @@ struct RootView: View {
             // **待っている間に人が替わっていたら開かない**（前の人の通知で
             // 次の人のお知らせを開かない）。ログインしていない人には開かない
             // （起動の確認で期限切れと分かった回など）
-            guard !Task.isCancelled, let owner, auth.userId == owner else { return }
+            guard !Task.isCancelled else { return }
+            // **ログインしていない回は黙らない。** 圏外で起動して「分からない」扱いの
+            // 人にも通知は届き続けるので、押しても何も起きないと壊れて見える
+            let waited = Date().timeIntervalSince(started)
+            guard let owner else {
+                // **待った後の今で確かめる。** 押したときのログイン画面でログインして
+                // 閉じた回に「ログインしてください」と出ていた。何分も後にも言わない
+                if auth.userId == nil {
+                    if waited <= Self.activityHintLimit {
+                        toasts.show(L("お知らせを見るにはログインしてください",
+                                      "Sign in to see your notifications"))
+                    }
+                } else {
+                    // 待っている間にログインした: 押した通知が誰あてか分からないので
+                    // 開かないが、黙りもしない（押しても何も起きないと壊れて見える）
+                    // 待っている間にベルから開いていれば、それで済んでいる
+                    if waited <= Self.activityHintLimit, !showNotifications {
+                        toasts.show(L("新しいお知らせは、右上のベルから見られます",
+                                      "New activity is waiting behind the bell"))
+                    }
+                    await refreshUnread(keepOnFailure: true)
+                }
+                return
+            }
+            guard auth.userId == owner else { return }
             // 待っている間に（ベルなどから）開いた: それで済んでいる。
             // **ここで「出せずに残った」と見なして戻さない**——開いた直後の
             // 描画が済む前だと、押したばかりのベルを取り消してしまう
             // （true のまま残った回は、次に押したときの入口で戻す）
             guard !showNotifications else { return }
-            let waited = Date().timeIntervalSince(started)
             guard waited <= Self.activityWaitLimit else {
                 // あまりに後（何分も経ってから）の知らせは、何のことか分からない
                 if waited <= Self.activityHintLimit {
                     toasts.show(L("新しいお知らせは、右上のベルから見られます",
                                   "New activity is waiting behind the bell"))
                 }
-                await refreshUnread()
+                await refreshUnread(keepOnFailure: true)
                 return
             }
             // 通知はタブではなくなったので、ホームのヘッダーから開く
@@ -190,7 +240,7 @@ struct RootView: View {
         TabView(selection: Binding(
             get: { selection },
             set: { tapped in
-                tabRouter.tabTapped(isHome: tapped == .home, alreadySelected: tapped == selection)
+                tabRouter.tabTapped(tapped.reselectable, alreadySelected: tapped == selection)
                 selection = tapped
             }
         )) {
@@ -239,7 +289,7 @@ struct RootView: View {
         // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
         // お知らせを開くかログインし直すまでベルに出ていなかった
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await refreshUnread() } }
+            if phase == .active { Task { await refreshUnread(keepOnFailure: true) } }
             if phase == .background { cancelActivityWait() }
         }
         .onDisappear { cancelActivityWait() }
@@ -266,6 +316,7 @@ struct RootView: View {
             guard router.readOwner != nil, router.readOwner == auth.userId else { return }
             unreadGeneration += 1
             unread = 0
+            unreadOwner = auth.userId
             // 既読のあとに届いた分は数え直す（0 のままにしない）。
             // 落ちても 0 は残る
             Task { await refreshUnread() }
@@ -275,7 +326,7 @@ struct RootView: View {
         // （遅れて返った古い数で上書きしない）
         .task(id: router.arrivals) {
             guard router.arrivals > 0 else { return }
-            await refreshUnread()
+            await refreshUnread(keepOnFailure: true)
         }
         // **中央の「投稿」はタブではなく入口。** 選ばれたら2択を出して、
         // タブは元へ戻す（空の画面を見せない）

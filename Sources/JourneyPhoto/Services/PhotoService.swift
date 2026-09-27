@@ -10,8 +10,11 @@ struct PhotoService {
     }
 
     /// 自分の写真（下書き＝非公開を含む）。応答は Photo の配列そのもの。
+    ///
+    /// **1行ずつ緩く読む**（公開一覧と同じ `LenientPhotoList`）。`[Photo]` で
+    /// 読むと、1行でも形が違えば一覧ごと落ち、マイページが丸ごとエラーになる
     func myPhotos() async throws -> [Photo] {
-        try await api.authorized(.get, "/user/photos", as: [Photo].self)
+        try Self.kept(try await api.authorized(.get, "/user/photos", as: LenientPhotoList.self), from: "/user/photos")
     }
 
     /// 公開範囲を絞った写真のうち、**自分に見えるぶん**。`GET /feed/restricted`。
@@ -19,8 +22,26 @@ struct PhotoService {
     /// これらは静的サイトの一覧（`app/data/photos.json`）に載らないので、
     /// ここで取らないとアプリからも見えない。サーバーが
     /// 「フォロワーか」「親しい友達か」を判定して返す——**端末では決めない**。
+    ///
+    /// **1行ずつ緩く読む。** 公開一覧の側（`PublicGalleryService`）はここの失敗を
+    /// 黙って空にするので、1行の崩れで限定写真が全部消えていた
     func restrictedFeed() async throws -> [Photo] {
-        try await api.authorized(.get, "/feed/restricted", as: [Photo].self)
+        try Self.kept(try await api.authorized(.get, "/feed/restricted", as: LenientPhotoList.self), from: "/feed/restricted")
+    }
+
+    /// 読めた行を返す。**落とした行は黙って捨てない**（記録に残す）
+    ///
+    /// 🔴 **1行も読めなかったら失敗にする。** 空の一覧で成功にすると、
+    /// マイページが「まだ写真がありません」を出し、限定写真は前回の控えを
+    /// 空で上書きする（公開一覧の `fetchStaticList` と同じ守り）
+    private static func kept(_ list: LenientPhotoList, from path: String) throws -> [Photo] {
+        if list.dropped > 0 {
+            print("[photos] \(path): 読めなかった写真の行を \(list.dropped) 件落としました")
+        }
+        if list.photos.isEmpty && list.dropped > 0 {
+            throw APIError.decoding("\(path): 写真の行を1件も読めませんでした")
+        }
+        return list.photos
     }
 
     /// 自分の写真を1枚だけ引き直す。
@@ -107,11 +128,18 @@ struct PhotoService {
     /// 削除。**画像の実体と CloudFront の控えもサーバー側で消える**
     /// （`cloudfrontDistributionId` が渡されていれば。渡し忘れると
     /// 消した写真が最大1年 公開URLに残る——CLAUDE.md の LEFT-4）。
+    /// 写真を消す。**404（もう無い）は消せたのと同じ**（別の端末で先に消した回。
+    /// `photoUpdate.ts` の `deleteMyPhoto` は行が無ければ 404）。失敗と読むと、
+    /// もう無い写真の画面に留まり、削除を押すたびにエラーになる
     func delete(photoId: String) async throws {
-        try await api.authorizedVoid(
-            .delete,
-            "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)"
-        )
+        do {
+            try await api.authorizedVoid(
+                .delete,
+                "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)"
+            )
+        } catch where SocialService.isNotFound(error) {
+            return
+        }
     }
 }
 

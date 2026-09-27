@@ -31,9 +31,21 @@ final class TabRouter: ObservableObject {
     /// 真偽値だと2回目以降に「変わっていない」と見なされて効かない
     @Published private(set) var homeTopRequests = 0
 
-    /// 下の札が押された。**選ばれている札をもう一度押したときだけ**
-    /// 合図を出す（別の札から来たときは何もしない＝開き直しで勝手に
-    /// 上へ飛ばない）。いまはホームだけが受け取る
+    /// **地図を開いたまま、下の「マップ」をもう一度押した回数。**
+    /// 地図はこれを見て現在地へ戻る（ホームの一番上へ戻るのと同じ考え。
+    /// owner の依頼・2026-09-27）。回数で伝えるのは上と同じ理由
+    @Published private(set) var mapLocateRequests = 0
+
+    /// 地図の一番上の画面（`PhotoMapView`）が出ているか。地図が
+    /// `onAppear` / `onDisappear` で書く。
+    ///
+    /// 🔴 **押した瞬間にここで見る。** 詳細を積んだまま「マップ」を押すと、
+    /// iOS は一番上まで戻す——その戻りで地図の `onAppear` が先に走るか、
+    /// 合図を受ける `onChange` が先かは SwiftUI 次第で、地図の側で見ると
+    /// 1回押しただけで「戻る」と「現在地へ」が両方起きうる。
+    /// 押した時点ではまだ戻っていないので、ここで見れば順序に左右されない
+    var mapRootOnScreen = false
+
     /// **下の「投稿」から出した写真・ストーリーの画面を閉じた回数。**
     ///
     /// 投稿の入口は下の札の「投稿」1つ（整理案 05c でマイページの
@@ -45,8 +57,22 @@ final class TabRouter: ObservableObject {
 
     func postSheetClosed() { postSheetsClosed += 1 }
 
-    func tabTapped(isHome: Bool, alreadySelected: Bool) {
-        guard isHome, alreadySelected else { return }
-        homeTopRequests += 1
+    /// もう一度押したときに合図を出す札
+    enum Reselectable {
+        case home, map
+    }
+
+    /// 下の札が押された。**選ばれている札をもう一度押したときだけ**
+    /// 合図を出す（別の札から来たときは何もしない＝開き直しで勝手に
+    /// 上へ飛ばない・現在地へ引き戻さない）。受け取るのはホームと地図
+    func tabTapped(_ tab: Reselectable?, alreadySelected: Bool) {
+        guard alreadySelected, let tab else { return }
+        switch tab {
+        case .home: homeTopRequests += 1
+        case .map:
+            // 詳細を開いていた回は「地図へ戻る」だけ（iOS がやる）。現在地へは次の1回で
+            guard mapRootOnScreen else { return }
+            mapLocateRequests += 1
+        }
     }
 }

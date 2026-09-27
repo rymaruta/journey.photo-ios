@@ -251,23 +251,32 @@ struct HomeFeedTile: View {
         // **答えを待っている間は押させない。** 二度目が古い `liked` を見て
         // 逆向きに飛ぶと、ハートと数が押した結果と食い違う（詳細画面の
         // `isLiking` と同じ）
-        guard pendingDelta == 0 else { return }
+        // 待っている印はカードの外（`LikeCountStore`）に持つ——カードが作り直されても消えない
+        let photoId = photo.id
+        guard pendingDelta == 0, likeCounts.beginSending(photoId) else { return }
         let wasLiked = liked
+        // 答えは押した人の控えにだけ書く（待っている間に人が替わったら書かない）
+        let owner = favorites.owner
         // 先に画面を変える（押した手応えを待たせない）
         favorites.set(photo.id, favorite: !wasLiked)
         pendingDelta = wasLiked ? -1 : 1
-        defer { pendingDelta = 0 }
+        defer {
+            pendingDelta = 0
+            likeCounts.endSending(photoId)
+        }
         do {
             let result = wasLiked
                 ? try await environment.social.unlike(photoId: photo.id)
                 : try await environment.social.like(photoId: photo.id)
             // **返ってきた数と状態を使う。** 自分で数えない。
-            // 数を返さない答えなら、押したあとに見えていた数で止める
-            likeCounts.set(photo.id, count: result.likes ?? likeCount)
-            favorites.set(photo.id, favorite: result.liked)
+            // **数を返さない答え（見えなくなった写真の 404 を読み替えた回）は書かない。**
+            // 押している間の ±1 を含んだ数を「押した答え」として控えに残すと、
+            // 詳細・検索にも作った数が広がる（詳細の下のハートと同じ扱い）
+            if let likes = result.likes { likeCounts.set(photo.id, count: likes) }
+            favorites.set(photo.id, favorite: result.liked, for: owner)
         } catch {
             // **届かなかったら戻す。** 画面だけ「いいね済み」にしない
-            favorites.set(photo.id, favorite: wasLiked)
+            favorites.set(photo.id, favorite: wasLiked, for: owner)
         }
     }
 

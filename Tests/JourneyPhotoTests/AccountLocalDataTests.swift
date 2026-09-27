@@ -139,6 +139,9 @@ final class PushReleaseTests: XCTestCase {
         let name = UUID().uuidString
         let defaults = UserDefaults(suiteName: name)!
         defaults.set(String(repeating: "a", count: 64), forKey: "photo-gallery-apns-token")
+        // **持ち主の分かっている端末**（この版で書いた端末）。分からない端末は
+        // ログインした人で引き取りの `POST` が走る——その経路は `PushTakeoverTests`
+        defaults.set(true, forKey: "photo-gallery-push-owner-known")
         return defaults
     }
 

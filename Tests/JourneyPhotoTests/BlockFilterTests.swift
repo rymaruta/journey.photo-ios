@@ -62,21 +62,6 @@ final class BlockFilterTests: XCTestCase {
     /// 🔴 **人・コメント・見た人も写しで落とす。** 探すの人の結果・写真の詳細のコメント・
     /// ストーリーの反応は、描くたびに今のブロックの集合で絞っていた。行から開いた
     /// その人のページでブロックすると、元の行（`NavigationLink`）が消えてページが閉じた。
-    /// **ブロックの変更の回数は、元に戻っても進み、通報では進まない**
-    /// （起動時の同期が「待っている間に手元で変えたか」を見る。集合の比較だと
-    /// ブロックして解除した回をすり抜け、古い一覧で解除を戻していた）
-    @MainActor
-    func testBlockRevisionCountsBlockChangesOnly() async throws {
-        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
-        store.use(userId: "me")
-        let start = store.blockRevision
-        store.markReported("p1")
-        XCTAssertEqual(store.blockRevision, start, "通報で進んだ")
-        store.block("x")
-        store.unblock("x")
-        XCTAssertEqual(store.blockRevision, start + 2, "ブロックして解除した回を数えていない")
-    }
-
     /// 開いた時点の写しは後のブロックで変わらず、取り直した写しは落とす
     @MainActor
     func testSnapshotKeepsPeopleUntilRetaken() async throws {

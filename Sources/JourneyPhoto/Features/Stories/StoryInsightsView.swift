@@ -27,6 +27,13 @@ struct StoryInsightsView: View {
     @State private var dropped = ModerationSnapshot()
     @State private var viewers: [StoryViewer] = []
     @State private var replies: [StoryReply] = []
+    /// 返信・反応を**一度でも読めたか**。読めていない間は数を「—」にする
+    /// （「0」は「まだ無い」と読まれる）
+    @State private var repliesLoaded = false
+    /// 直近の読み込みで返信・反応が引けなかった
+    @State private var repliesFailed = false
+    /// 見た人を**一度でも読めたか**。読めていない間は「閲覧」も「—」
+    @State private var viewersLoaded = false
     /// 一覧の絞り（モック7）。**同じ一覧を絞るだけ**——別の口から
     /// 引き直さない（リアクションは見た人の一部で、数え方も1つ）
     @State private var scope: Scope = .viewers
@@ -86,9 +93,9 @@ struct StoryInsightsView: View {
                 .frame(width: 72, height: 112)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             HStack(spacing: 1) {
-                countCell(L("閲覧", "Views"), value: viewers.count)
-                countCell(L("いいね", "Likes"), value: replies.reactionCount)
-                countCell(L("返信", "Replies"), value: replies.textReplies.count)
+                countCell(L("閲覧", "Views"), value: viewersLoaded ? viewers.count : nil)
+                countCell(L("いいね", "Likes"), value: repliesLoaded ? replies.reactionCount : nil)
+                countCell(L("返信", "Replies"), value: repliesLoaded ? replies.textReplies.count : nil)
             }
             .background(Color.white.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -101,9 +108,10 @@ struct StoryInsightsView: View {
         StoryPoster(story: story)
     }
 
-    private func countCell(_ label: String, value: Int) -> some View {
+    /// - Parameter value: nil は「読めていない」。**0 と書かない**
+    private func countCell(_ label: String, value: Int?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("\(value)")
+            Text(value.map { "\($0)" } ?? "—")
                 .font(JPFont.mono(18, relativeTo: .title3))
                 .foregroundStyle(.white)
             Text(label)
@@ -157,6 +165,14 @@ struct StoryInsightsView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if let errorMessage {
                 Text(errorMessage).font(.footnote).foregroundStyle(WebTheme.danger)
+            } else if scope == .reactions && repliesFailed && !repliesLoaded {
+                // 反応だけ引けなかった回に「まだリアクションはありません」と言わない。
+                // 前に読めていれば、その一覧と数を出し続ける（上の升と食い違わせない）
+                Text(L("リアクションを読み込めませんでした。引き下げて読み直せます",
+                       "Couldn't load reactions. Pull to retry"))
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.faint)
+                    .padding(.vertical, 12)
             } else if shownViewers.isEmpty {
                 // **「まだ0人」と「読めなかった」を混ぜない**
                 Text(scope == .reactions
@@ -251,9 +267,21 @@ struct StoryInsightsView: View {
         defer { isLoading = false }
         do {
             viewers = try await environment.stories.viewers(id: story.id)
+            viewersLoaded = true
             // **返信が読めなくても、見た人は出す。** 片方の失敗で
-            // 画面ごと空にしない
-            replies = (try? await environment.stories.replies(id: story.id)) ?? []
+            // 画面ごと空にしない。**読めなかった回に 0 件で上書きしない**
+            // （引き下げで読み直して失敗すると、前に読めた数まで消えていた）
+            let fetched = try? await environment.stories.replies(id: story.id)
+            if let fetched {
+                replies = fetched
+                repliesLoaded = true
+            } else if Task.isCancelled {
+                // 取り消された回は「読めなかった」と言わない（前の知らせのまま）
+                return
+            }
+            repliesFailed = fetched == nil
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }

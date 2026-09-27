@@ -74,7 +74,10 @@ struct UserProfileView: View {
             Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
         }
         .onAppear { dropped = hidden.snapshot }
-        .task(id: userId) {
+        // **見ている人が替わっても読み直す。** 相手だけを鍵にしていたので、開いたまま
+        // 別の人でログインし直すと「フォロー中」が前の人の値のまま出て、押すと
+        // 逆向きに送っていた（前の人が誰をフォローしているかも見えた）
+        .task(id: "\(userId)|\(auth.userId ?? "")") {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
         }
     }
@@ -353,12 +356,37 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var actionMessage: String?
 
     private(set) var cacheBust = ""
+    /// フォロー・ブロックが**受け付けられた**回数。**読み込みの間に増えたら、その読み込みの
+    /// フォロワー数と「フォロー中か」は書かない**——読み込み中にフォローを押すと、押す前の
+    /// 数と「フォローしていない」が後から届いて戻していた。断られた回は数えない。
+    /// 「フォロー中」の数（この人が何人をフォローしているか）は押しても変わらないので止めない
+    private var followWrites = 0
+    /// ブロックが受け付けられた回数。**ブロックで変わるのは「フォロー中か」だけ**なので、
+    /// こちらはフォロワー数を止めない
+    private var blockWrites = 0
+
+    /// 前回の読み込みで見ていた人
+    private var lastViewerId: String??
+    /// 読み込みの回。**後から始まった回があれば、前の回は何も書かない**——見ている人が
+    /// 替わって `.task` が走り直すと、取り消された前の回が「読み込めませんでした」を
+    /// 後から書き、成功した新しい回の格子を覆ったままになっていた
+    private var loadSeq = 0
 
     func load(userId: String, environment: AppEnvironment, viewerId: String?) async {
+        // 見ている人が替わったら「フォロー中」を先に倒す（読み直しの間も前の人の値を出さない）
+        if let last = lastViewerId, last != viewerId { isFollowing = false }
+        lastViewerId = .some(viewerId)
+        let writes = followWrites
+        let blocks = blockWrites
+        loadSeq += 1
+        let seq = loadSeq
+        let current = { seq == self.loadSeq }
         isLoading = true
         errorMessage = nil
+        // 読み直したら前の操作の失敗も消す（再試行のあとに古い文が残る）
+        actionMessage = nil
         cacheBust = String(Int(Date().timeIntervalSince1970))
-        defer { isLoading = false }
+        defer { if current() { isLoading = false } }
 
         // 🔴 **出している最中に取り消された回は失敗として書かない。** 戻ると `.task` が
         // 走り直し、読み終わる前に次の写真・ハイライトを開くと取り消される。それを失敗の帯
@@ -369,9 +397,11 @@ final class UserProfileViewModel: ObservableObject {
         // 見出しの無い画面に「まだありません」が出る（開いている詳細も無い）
         let keepsShown = { Task.isCancelled && self.profile != nil }
         do {
-            profile = try await environment.profiles.publicProfile(userId: userId)
+            let fetched = try await environment.profiles.publicProfile(userId: userId)
+            guard current() else { return }
+            profile = fetched
         } catch let error as APIError {
-            guard !keepsShown() else { return }
+            guard current(), !keepsShown() else { return }
             // **「取れなかった」と「退会した」を混ぜない**
             if case .server(let status, _) = error, status == 404 {
                 errorMessage = L("このユーザーは見つかりません（退会した可能性があります）", "This user was not found (they may have deleted their account)")
@@ -379,28 +409,43 @@ final class UserProfileViewModel: ObservableObject {
             }
             errorMessage = error.errorDescription
             return
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。
+            // **出している最中なら失敗と言わない**が、まだ何も出していない初回は
+            // 上と同じく書く（`keepsShown`）——黙って戻ると、見出しの無い画面に
+            // 「まだありません」が出る
+            guard current(), !keepsShown() else { return }
+            errorMessage = Labels.Common.loadFailed
+            return
         } catch {
-            guard !keepsShown() else { return }
+            guard current(), !keepsShown() else { return }
             errorMessage = Labels.Common.loadFailed
             return
         }
 
         let stats = try? await environment.social.followStats(userId: userId)
+        guard current() else { return }
         if let stats {
-            followers = stats.followers
+            if writes == followWrites { followers = stats.followers }
             following = stats.following
         }
         if viewerId != nil {
             // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
             // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
-            if let ids {
+            guard current() else { return }
+            if let ids, writes == followWrites, blocks == blockWrites {
                 isFollowing = ids.contains(userId)
             }
         }
         // **その人の写真は公開 JSON から絞る。** 「ある人の公開写真」を返す
         // 口が api-user に無いため（Web も静的ページを書き出している）
         let all = try? await environment.gallery.fetchPhotos()
+        guard current() else { return }
+        // 読んでいる間にブロックした（`block` が格子を空にした）なら、写真を戻さない。
+        // **失敗とも言わない**——取れなかった枝（下の else）に落とすと、初回は
+        // 「読み込めませんでした」が出ていた（84aaf23 の回帰）
+        guard blocks == blockWrites else { return }
         if let all {
             photos = PhotoPinning.pinnedFirst(all.filter { ($0.userId ?? $0.uploadedBy) == userId },
                                       pinned: profile?.pinnedPhotoIds ?? [])
@@ -438,6 +483,7 @@ final class UserProfileViewModel: ObservableObject {
             let result = isFollowing
                 ? try await environment.social.unfollow(userId: userId)
                 : try await environment.social.follow(userId: userId)
+            followWrites += 1
             isFollowing = result.following
             followers = result.followers
         } catch {
@@ -448,9 +494,12 @@ final class UserProfileViewModel: ObservableObject {
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
         actionMessage = nil
+        // 控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
+        let owner = store.owner
         do {
             try await environment.moderation.block(userId: userId)
-            store.block(userId)
+            blockWrites += 1
+            store.block(userId, for: owner)
             await environment.gallery.setHidden(
                 userIds: store.blockedUserIds,
                 photoIds: store.reportedPhotoIds
