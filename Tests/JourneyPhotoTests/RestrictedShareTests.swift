@@ -39,4 +39,16 @@ final class RestrictedShareTests: XCTestCase {
         let shared = CollectionScreen.shareText(title: "パリ", count: 1, kind: nil, lead: everyone)
         XCTAssertTrue(shared.contains("p2"), "全体に公開の写真まで配らなくなった: \(shared)")
     }
+
+    /// **先頭が配れない写真でも、次の配れる写真の URL を添える**
+    func testShareLeadSkipsRestrictedAndDrafts() throws {
+        let restricted = try photo("r", audience: "followers")
+        let draft = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"d","src":"/uploads/d.jpg","published":false}"#.utf8))
+        let open = try photo("o", audience: nil)
+        XCTAssertEqual(CollectionScreen.shareLead([restricted, draft, open])?.id, "o")
+        XCTAssertNil(CollectionScreen.shareLead([restricted, draft]))
+        // 下書きも URL を付けない（?photo= に振り替えても Web で開けない）
+        XCTAssertFalse(CollectionScreen.shareText(title: "a", count: 1, kind: nil, lead: draft).contains("http"))
+    }
 }

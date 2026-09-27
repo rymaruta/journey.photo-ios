@@ -688,7 +688,8 @@ struct PhotoDetailView: View {
         // 載らず個別ページが建たない。Web は絞った写真を読まないので、ホームの
         // `?photo=` に振り替えても「見つかりませんでした」になる——受け取った人
         // （フォロワー本人も）が開けない。自分のページから開いた自分の写真も同じ
-        if RestrictedFeed.isRestricted(latest) { return nil }
+        // 下書き（非公開）も同じ（Web が読む一覧に載らない）
+        guard CollectionScreen.isShareable(latest) else { return nil }
         return PhotoLink.url(photoId: item.id,
                              isPublished: fromPublicFeed && latest.published != false)
     }
