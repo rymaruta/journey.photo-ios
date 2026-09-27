@@ -62,27 +62,26 @@ final class TagChipTests: XCTestCase {
         XCTAssertEqual(after, "森, 雪, ")
     }
 
-    /// **読点・空白で区切っても打ちかけと見る。** `parse` は `、` と空白でも
+    /// **読点・全角カンマで区切っても打ちかけと見る。** `parse` は `、` `，` でも
     /// 切るのに、打ちかけの判定が `,` だけを見ていたので `森、sn` は
     /// 欄全体が1つの欠片になり、候補が消え、チップを押すと `森` まで消えた。
     func testFragmentHonoursTheSameSeparatorsAsParse() {
         XCTAssertEqual(TagInput.typingFragment(TagChoices.all, current: "森、sn"), "sn")
-        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "森 sn"), ["雪"])
+        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "森，sn"), ["雪"])
         let after = TagInput.toggle(
             TagInput.dropFragment(TagChoices.all, current: "森、sn"), tag: "雪")
         XCTAssertEqual(TagInput.parse(after), ["森", "雪"])
         XCTAssertTrue(TagInput.has("森、雪", tag: "雪"))
     }
 
-    /// **空白は打ち終わりの合図**（`parse` が空白でも区切るのと揃える）。
-    /// 空白のあとは候補が全部戻り、チップを押しても打ち終えたタグは消えない
-    /// （0e6e9aa は末尾の空白を落として、`helsinki ` で候補が全部消え、
-    /// `sun ` のあと `夕焼け` を押すと `sun` が黙って消えていた）
-    func testTrailingSpaceFinishesTheTag() {
-        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "helsinki "), TagChoices.all)
-        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "京都　"), TagChoices.all)
+    /// **区切り（`,` `，` `、` `､`）は打ち終わりの合図。空白は違う**
+    /// （Web の `TAG_SEPARATOR`。空白で切ると `New York` が割れる）。
+    /// 区切りのあとは候補が全部戻り、チップを押しても打ち終えたタグは消えない
+    func testTrailingSeparatorFinishesTheTag() {
+        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "helsinki, "), TagChoices.all)
+        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "京都、"), TagChoices.all)
         XCTAssertEqual(TagInput.parse(TagInput.toggle(
-            TagInput.dropFragment(TagChoices.all, current: "sun "), tag: "夕焼け")), ["sun", "夕焼け"])
+            TagInput.dropFragment(TagChoices.all, current: "sun, "), tag: "夕焼け")), ["sun", "夕焼け"])
     }
 }
 

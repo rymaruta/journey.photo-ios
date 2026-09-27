@@ -61,10 +61,10 @@ final class UploadDraftTests: XCTestCase {
         XCTAssertNil(body.tags)
     }
 
-    /// 区切りは読点・カンマ・空白のどれでもよい。重複は落とす
-    /// （同じタグが2つ付くと絞り込みの件数がずれる）。
+    /// 区切りは読点・カンマ（Web の `TAG_SEPARATOR`）。**空白では切らない。**
+    /// 重複は落とす（同じタグが2つ付くと絞り込みの件数がずれる）。
     func testTagParsing() {
-        XCTAssertEqual(TagInput.parse("雲海, sunrise 雲海"), ["雲海", "sunrise"])
+        XCTAssertEqual(TagInput.parse("雲海, sunrise 雲海, 雲海"), ["雲海", "sunrise 雲海"])
         XCTAssertEqual(TagInput.parse("  "), [])
         XCTAssertEqual(TagInput.parse("a、b"), ["a", "b"])
     }

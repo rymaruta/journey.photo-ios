@@ -213,8 +213,8 @@ struct EditPhotoView: View {
         patch.clearCoords = EditPlaceRules.clearsCoords(openedLocation: photo.location,
                                                         currentLocation: location,
                                                         pickedCoords: pickedCoords != nil)
-        // タグは欄と同じ割り方で比べる（空白を含むタグは欄に出した時点で
-        // 割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
+        // タグは欄と同じ割り方で比べる（区切りの文字を含む古いタグは欄に出した
+        // 時点で割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
         let tags = TagInput.parse(tagsText)
         if tags != TagInput.parse((photo.tags ?? []).joined(separator: ", ")) {
             patch.tags = tags
@@ -223,10 +223,14 @@ struct EditPhotoView: View {
         if trimmedCategory != (photo.category ?? "").trimmingCharacters(in: .whitespacesAndNewlines) {
             patch.category = trimmedCategory
         }
-        patch.published = published
-        // **知らない値の写真では送らない。** キーを外せばサーバーは
-        // 既にある印をそのまま残す（広げも狭めもしない）
-        if audienceKnown { patch.audience = (published ? audience : .everyone).patchValue }
+        // **公開と公開範囲も、変えたときだけ送る**（`EditVisibility`）
+        let visibility = EditVisibility.toSend(openedPublished: photo.published != false,
+                                               openedAudience: photo.audience,
+                                               published: published,
+                                               audience: audience,
+                                               audienceKnown: audienceKnown)
+        patch.published = visibility.published
+        patch.audience = visibility.audience
         // **触っていなければ送らない**（時刻付きの撮影日を日付だけに落とさない）。
         // 空も送らない——空文字は api-user の日付検査に落ちる
         patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date),
@@ -239,5 +243,33 @@ struct EditPhotoView: View {
             messageIsError = true
             message = (error as? LocalizedError)?.errorDescription ?? L("保存できませんでした", "Couldn't save")
         }
+    }
+}
+
+/// 写真の編集で、公開（`published`）と公開範囲（`audience`）を**送るかどうか**。
+///
+/// **変えたときだけ送る**（題・説明・撮影地と同じ。Web の `/user/edit` の
+/// `changedFields`）。開いた時点の値を毎回送っていたので、古い写し
+/// （公開 JSON は建て直しまで古い）から開いてタグだけ直すと、Web で
+/// 非公開にした写真が**黙って公開に戻っていた**。
+enum EditVisibility {
+
+    /// - Returns: 送る値。`nil` は「触らない」（キーを本文に載せない）
+    static func toSend(openedPublished: Bool,
+                       openedAudience: String?,
+                       published: Bool,
+                       audience: Audience,
+                       audienceKnown: Bool) -> (published: Bool?, audience: String?) {
+        let sendPublished: Bool? = published != openedPublished ? published : nil
+        // **知らない値の写真では送らない。** キーを外せばサーバーは
+        // 既にある印をそのまま残す（広げも狭めもしない）
+        guard audienceKnown else { return (sendPublished, nil) }
+        let raw = openedAudience ?? ""
+        let opened = raw.isEmpty ? Audience.everyone : (Audience(rawValue: raw) ?? .everyone)
+        // 非公開にするときは範囲を「全員」に戻す（従来どおり）
+        let effective = published ? audience : .everyone
+        let touched = published != openedPublished || audience != opened
+        let sendAudience: String? = touched && effective != opened ? effective.patchValue : nil
+        return (sendPublished, sendAudience)
     }
 }
