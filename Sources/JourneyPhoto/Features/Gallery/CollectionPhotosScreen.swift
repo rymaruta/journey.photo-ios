@@ -14,6 +14,10 @@ struct CollectionPhotosScreen: View {
     /// 集約の種類。**シェアで Web のページを指せるか**に使う（色・季節は nil）
     var kind: PhotoQuery.Collection?
     var isLoading = false
+    /// 取れなかったときの一言。**あれば「写真はありません」の代わりに出す**
+    /// （取れなかったを 0枚と言わない）。`retry` があれば再試行を付ける
+    var loadError: String?
+    var retry: (() -> Void)?
     /// 一覧の上に置く一言（機材の「ダイナミックな風景」）。
     /// 板 12 に寄せる前から画面の上にあった字で、**なぜこの写真が
     /// 並んでいるのか**を言う。無ければ出さない
@@ -50,7 +54,9 @@ struct CollectionPhotosScreen: View {
                     .padding(.horizontal, 16)
                 }
 
-                if shown.isEmpty && !isLoading {
+                if shown.isEmpty && !isLoading, let loadError {
+                    ErrorBanner(message: loadError, retry: retry)
+                } else if shown.isEmpty && !isLoading {
                     ErrorBanner(message: Labels.Gallery.empty)
                 } else {
                     let list = sorted
