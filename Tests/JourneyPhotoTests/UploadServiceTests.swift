@@ -1,5 +1,8 @@
 import XCTest
 @testable import JourneyPhoto
+// `PhotosPickerItem` は PhotosUI と SwiftUI の重なりにある。**両方要る**
+// （片方だと Xcode でだけ落ちる・`Tools/check-cross-imports.py`）
+import SwiftUI
 import PhotosUI
 #if canImport(FoundationNetworking)
 import FoundationNetworking

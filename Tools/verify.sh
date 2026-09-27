@@ -28,6 +28,10 @@ echo "== 参照（配られていない EnvironmentObject・型の重複） =="
 node Tools/check-swift-refs.js Sources Tests
 
 echo
+echo "== 2つの import が揃って初めて見える型（PhotosPickerItem ほか） =="
+python3 Tools/check-cross-imports.py Sources Tests
+
+echo
 echo "== Web 版との突き合わせ =="
 python3 Tools/check-api-parity.py "${PHOTO_GALLERY:-../photo-gallery}"
 
