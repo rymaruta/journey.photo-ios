@@ -33,11 +33,11 @@ final class ServerContractTests: XCTestCase {
     /// 🔴 #2 **本文つきの 403 は本文を出す**（上限・返信不可など）。
     /// 「権限がありません…お問い合わせください」にすり替えない
     func testForbiddenWithServerMessageShowsTheMessage() {
-        let limit = APIError.server(status: 403, message: "アルバムは50個までです。使わないものを消してください")
+        let limit = JourneyPhoto.APIError.server(status: 403, message: "アルバムは50個までです。使わないものを消してください")
         XCTAssertEqual(limit.errorDescription, "アルバムは50個までです。使わないものを消してください")
         XCTAssertTrue(limit.isForbidden, "403 であることは変わらない")
         // 本文の無い 403（API Gateway の門前払い）は今まで通り
-        XCTAssertTrue(APIError.server(status: 403, message: "").errorDescription?.contains("お問い合わせ") == true)
+        XCTAssertTrue(JourneyPhoto.APIError.server(status: 403, message: "").errorDescription?.contains("お問い合わせ") == true)
     }
 
     /// 本文は API の応答から拾われる（`{ error }`）
@@ -47,7 +47,7 @@ final class ServerContractTests: XCTestCase {
             try await api().authorizedVoid(.post, "/user/upload")
             XCTFail("投げるはず")
         } catch {
-            XCTAssertEqual((error as? APIError)?.errorDescription, "アップロード上限（1000枚）に達しています")
+            XCTAssertEqual((error as? JourneyPhoto.APIError)?.errorDescription, "アップロード上限（1000枚）に達しています")
         }
     }
 
@@ -63,19 +63,19 @@ final class ServerContractTests: XCTestCase {
         }
     }
 
-    /// 🔴 #22 **トークンを取れなかった通信の失敗は `APIError.unreachable`**
+    /// 🔴 #22 **トークンを取れなかった通信の失敗は `JourneyPhoto.APIError.unreachable`**
     func testTokenNetworkFailureIsUnreachable() {
         let offline = AuthError.service("", "", AWSCognitoAuthError.network)
-        XCTAssertEqual(AuthGateway.tokenFailure(offline) as? APIError, .unreachable)
+        XCTAssertEqual(AuthGateway.tokenFailure(offline) as? JourneyPhoto.APIError, .unreachable)
         let wrapped = AuthError.service("", "", URLError(.notConnectedToInternet))
-        XCTAssertEqual(AuthGateway.tokenFailure(wrapped) as? APIError, .unreachable)
-        XCTAssertEqual(AuthGateway.tokenFailure(URLError(.timedOut)) as? APIError, .unreachable)
+        XCTAssertEqual(AuthGateway.tokenFailure(wrapped) as? JourneyPhoto.APIError, .unreachable)
+        XCTAssertEqual(AuthGateway.tokenFailure(URLError(.timedOut)) as? JourneyPhoto.APIError, .unreachable)
     }
 
     /// 通信以外は包まない（期限切れ・その他を「通信できません」と言わない）
     func testTokenOtherFailureIsNotCalledUnreachable() {
         let other = AuthError.service("", "", AWSCognitoAuthError.userNotFound)
-        XCTAssertNil(AuthGateway.tokenFailure(other) as? APIError)
+        XCTAssertNil(AuthGateway.tokenFailure(other) as? JourneyPhoto.APIError)
     }
 
     /// 🔴 #25 **1行壊れても、自分の写真・限定写真の一覧ごと落とさない**
@@ -117,7 +117,7 @@ final class ServerContractReviewTests: XCTestCase {
             _ = try await service.myPhotos()
             XCTFail("全部読めないのに成功している")
         } catch {
-            guard case .decoding = error as? APIError else { return XCTFail("\(error)") }
+            guard case .decoding = error as? JourneyPhoto.APIError else { return XCTFail("\(error)") }
         }
     }
 
@@ -143,7 +143,7 @@ final class ServerContractReviewTests: XCTestCase {
     /// 呼び手が生きているのに Amplify の中で取り消された回は、失敗として出す
     /// （黙ると空の画面になる）
     func testTokenCancellationWithoutCallerCancelIsUnreachable() {
-        XCTAssertEqual(AuthGateway.tokenFailure(URLError(.cancelled)) as? APIError, .unreachable)
+        XCTAssertEqual(AuthGateway.tokenFailure(URLError(.cancelled)) as? JourneyPhoto.APIError, .unreachable)
     }
 
     /// 限定写真も、1行も読めなければ失敗（前回の控えを空で上書きしない）
@@ -154,7 +154,7 @@ final class ServerContractReviewTests: XCTestCase {
             _ = try await service.restrictedFeed()
             XCTFail("全部読めないのに成功している")
         } catch {
-            guard case .decoding = error as? APIError else { return XCTFail("\(error)") }
+            guard case .decoding = error as? JourneyPhoto.APIError else { return XCTFail("\(error)") }
         }
     }
 
@@ -169,6 +169,6 @@ final class ServerContractReviewTests: XCTestCase {
     /// 期限切れの種類は包まない（呼び出し元の判定を変えない）
     func testSessionExpiredIsNotWrapped() {
         let expired = AuthError.sessionExpired("", "", nil)
-        XCTAssertNil(AuthGateway.tokenFailure(expired) as? APIError)
+        XCTAssertNil(AuthGateway.tokenFailure(expired) as? JourneyPhoto.APIError)
     }
 }
