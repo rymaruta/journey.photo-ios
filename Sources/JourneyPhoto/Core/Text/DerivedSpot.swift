@@ -85,6 +85,32 @@ enum DerivedSpot {
             .sorted { $0.count > $1.count }
     }
 
+    /// 撮影地すべてを**鍵（スラッグ）で1行に寄せて**返す。「行きたい」の鍵で引く画面
+    /// （マイページの行きたい場所・旅行プラン）はこれを使い、同じ行を見せる。
+    ///
+    /// `all` はラベルで寄せるが、「高屋-神社」と「高屋 神社」のように別のラベルが
+    /// 同じ鍵になる。同じ id の行が2つ並ぶと一覧が壊れ、`first(where: slug)` で
+    /// 引く側は片方しか見ない。**写真は両方を合わせる**（片方だけ残すと、枚数・
+    /// 表紙・開いた先の写真が半分になる）。名前などは枚数の多い方を採る
+    static func allMergedBySlug(in photos: [Photo]) -> [Place] {
+        var order: [String] = []
+        var merged: [String: Place] = [:]
+        for place in all(in: photos) {
+            guard let first = merged[place.slug] else {
+                merged[place.slug] = place
+                order.append(place.slug)
+                continue
+            }
+            let known = Set(first.photos.map(\.id))
+            let joined = (first.photos + place.photos.filter { !known.contains($0.id) })
+                .sorted { ($0.createdAt ?? "") > ($1.createdAt ?? "") }
+            merged[place.slug] = Place(label: first.label, slug: first.slug, photos: joined,
+                                       broader: first.broader, categories: first.categories,
+                                       coords: first.coords ?? place.coords)
+        }
+        return order.compactMap { merged[$0] }.sorted { $0.count > $1.count }
+    }
+
     /// **より広い撮影地。** 同じ一覧に在って、この名前を含んでいるもの。
     ///
     /// **広い順には並べない。** 「パリ, フランス」の広い方は「パリ」と

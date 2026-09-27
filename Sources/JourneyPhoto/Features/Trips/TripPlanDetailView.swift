@@ -42,8 +42,19 @@ struct TripPlanDetailView: View {
     private var draft: Draft { Draft(days: days, start: start, end: end) }
 
     private var plan: TripPlan? { model.plan(planId) }
-    /// **読んだ後のブロック・通報も外す**（マイページの行きたい場所と同じ行にする）
-    private var places: [DerivedSpot.Place] { DerivedSpot.all(in: hidden.snapshot.visible(photos)) }
+    /// 撮影地の行。**描くたびに導かない**（項目ごとに2回引くので重い）——読めたときと
+    /// 画面に戻ったときに作り直す。
+    ///
+    /// 🔴 **ブロック・通報は画面に戻ったときの写し（`dropped`）で外す。** 生の
+    /// `hidden.snapshot` を読むと、積んだスポットの画面の中でブロックした瞬間に行が
+    /// 消え、`NavigationLink` ごと上の画面が閉じていた（`SpotDetailView` の注記と同じ）。
+    /// 鍵で1行に寄せる（`allMergedBySlug`・マイページの行きたい場所と同じ行）
+    @State private var places: [DerivedSpot.Place] = []
+    @State private var dropped = ModerationSnapshot()
+
+    private func refreshPlaces() {
+        places = DerivedSpot.allMergedBySlug(in: dropped.visible(photos))
+    }
 
     var body: some View {
         Group {
@@ -66,8 +77,11 @@ struct TripPlanDetailView: View {
             photos = fetchedPhotos ?? []
             index = fetchedIndex ?? []
             sourcesFailed = fetchedPhotos == nil || fetchedIndex == nil
+            refreshPlaces()
         }
         .onAppear {
+            dropped = hidden.snapshot
+            refreshPlaces()
             // **前の画面の失敗の文を消すのは、開いた最初の1回だけ。** 項目の
             // スポットを開いて戻るたびに消していたので、保存に失敗した事情が
             // 下書きが未保存のまま見えなくなっていた

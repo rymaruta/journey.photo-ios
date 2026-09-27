@@ -560,7 +560,10 @@ struct MyPageView: View {
         let wanted = ProfileSections.wantedPlaces(keys: wishIds, pool: pool)
         // 「一部を読み込めませんでした」を数える側は**絞る前**で引く——ブロックした人の
         // 写真にしか無い撮影地は、読み込めていないのではなく見せないだけ
-        let reachable = ProfileSections.wantedPlaces(keys: wishIds, pool: unfiltered).count
+        // （公開一覧の失敗のときしか使わないので、そのときだけ導き直す）
+        let reachable = feedFailed
+            ? ProfileSections.wantedPlaces(keys: wishIds, pool: unfiltered).count
+            : wanted.count
         // 自分の写真の初回が取れていない回も「取れていない」（非公開の写真・一覧に
         // まだ載っていない投稿の撮影地は、公開一覧からは引けない）
         let sourceFailed = feedFailed || model.errorMessage != nil
@@ -1086,7 +1089,7 @@ final class MyPageViewModel: ObservableObject {
             let mine = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
             self.photos = PhotoPinning.pinnedFirst(mine, pinned: self.pinnedIds)
             hasLoadedPhotos = true
-        } else if all == nil, gen == generation, !hasLoadedPhotos {
+        } else if all == nil, !Task.isCancelled, gen == generation, !hasLoadedPhotos {
             // 取れなかった回を言う（言わないと「読めた」にも「失敗」にもならず、輪のまま残る）
             errorMessage = Labels.Common.loadFailed
         }

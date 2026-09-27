@@ -58,27 +58,9 @@ enum ProfileSections {
 
     /// 引き当て先を先に絞った（ブロック・通報を外した）束から導く。
     ///
-    /// **鍵（スラッグ）で1行に寄せる。** `DerivedSpot.all` はラベルで寄せるが、
-    /// 「高屋-神社」と「高屋 神社」のように別のラベルが同じ鍵になる。束が他人の
-    /// 写真まで広がったので当たりやすく、同じ id の行が2つ並ぶと一覧が壊れる。
-    /// **写真は両方を合わせる**（片方だけ残すと、枚数・表紙・開いた先の写真が半分になる）
+    /// 鍵（スラッグ）で1行に寄せた地点から引く（`DerivedSpot.allMergedBySlug`・旅行プランと同じ行）
     static func wantedPlaces(keys: Set<String>, pool: [Photo]) -> [DerivedSpot.Place] {
-        var order: [String] = []
-        var merged: [String: DerivedSpot.Place] = [:]
-        for place in DerivedSpot.all(in: pool) where keys.contains(place.slug) {
-            guard let first = merged[place.slug] else {
-                merged[place.slug] = place
-                order.append(place.slug)
-                continue
-            }
-            let known = Set(first.photos.map(\.id))
-            let photos = (first.photos + place.photos.filter { !known.contains($0.id) })
-                .sorted { ($0.createdAt ?? "") > ($1.createdAt ?? "") }
-            merged[place.slug] = DerivedSpot.Place(label: first.label, slug: first.slug, photos: photos,
-                                                   broader: first.broader, categories: first.categories,
-                                                   coords: first.coords ?? place.coords)
-        }
-        return order.compactMap { merged[$0] }.sorted { $0.count > $1.count }
+        DerivedSpot.allMergedBySlug(in: pool).filter { keys.contains($0.slug) }
     }
 
     /// 並べられた行が覚えている鍵より少なく、**引き当て先が取れていない**。
