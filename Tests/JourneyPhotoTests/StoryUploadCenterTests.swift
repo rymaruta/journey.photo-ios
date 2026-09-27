@@ -250,4 +250,38 @@ final class StoryUploadCenterTests: XCTestCase {
         for _ in 0..<50 { await Task.yield() }
         XCTAssertEqual(discarded, ["k1"])
     }
+
+    /// 🔴 **起動し直して送り終えたら、その投稿の元の下書きを片づける**
+    /// （残すと「続きから」で同じ投稿をもう1本出しやすい）
+    func testRestoredRunClearsTheDraftItCameFrom() async {
+        let dir = tempDir()
+        let center = StoryUploadCenter(directory: dir)
+        center.start([job(1)], ownerId: "me", currentUserId: { "me" }, draftToClear: "2026-09-27T00:00:00Z",
+                     send: { _, _ in throw Boom() })
+        await settle(center)
+        let relaunched = StoryUploadCenter(directory: dir)
+        var cleared: [String] = []
+        relaunched.configure(currentUserId: { "me" }, send: { _, _ in }, discardUpload: { _ in },
+                             clearDraft: { cleared.append($0) })
+        relaunched.retry()
+        await settle(relaunched)
+        XCTAssertEqual(cleared, ["2026-09-27T00:00:00Z"])
+    }
+
+    /// 画像を読めずに落としたぶんを「出せた」に数えない
+    func testMissingImagesAreNotCountedAsPosted() async throws {
+        let dir = tempDir()
+        let center = StoryUploadCenter(directory: dir)
+        center.start([job(1), job(2)], ownerId: "me", currentUserId: { "me" }, send: { _, _ in throw Boom() })
+        await settle(center)
+        // 2本のうち1本の画像が消えた
+        let images = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".jpg") }
+        try FileManager.default.removeItem(at: dir.appendingPathComponent(try XCTUnwrap(images.first)))
+        let relaunched = StoryUploadCenter(directory: dir)
+        guard case .failed(let message, let remaining) = relaunched.phase else {
+            return XCTFail("戻っていない")
+        }
+        XCTAssertEqual(remaining, 1)
+        XCTAssertFalse(message.contains("出せました"), message)
+    }
 }

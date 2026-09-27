@@ -82,6 +82,9 @@ struct StoryViewerView: View {
     /// 見終えた1本を知らせる。**送るたびに呼ぶ**——次へ送ったぶんも
     /// 既読にしないと、閉じたときに輪が点いたまま残る
     let onSeen: ((String) -> Void)?
+    /// 消し終えた1本を知らせる。**消している間に払って閉じても**、一覧から外せるように
+    /// （閉じたときの読み直しが削除より先に走ると、消した1本が輪に戻っていた）
+    let onDeleted: ((String) -> Void)?
 
     /// ハイライトとして見ている（板 38）。**期限の切れたストーリーの並び**なので、
     /// 返信欄・見た人・削除を出さない（返信はサーバーが期限切れを断り、
@@ -100,8 +103,10 @@ struct StoryViewerView: View {
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
          holds: Bool = false,
-         onSeen: ((String) -> Void)? = nil) {
+         onSeen: ((String) -> Void)? = nil,
+         onDeleted: ((String) -> Void)? = nil) {
         self.stories = stories
+        self.onDeleted = onDeleted
         self.viewerId = viewerId
         self.highlight = highlight
         self.holds = holds
@@ -1135,8 +1140,9 @@ struct StoryViewerView: View {
             .padding(.vertical, 7)
         } else {
             // 返信を受けない投稿。**足元の場所は残す**（空にすると写真の枠が
-            // 1本ごとに伸び縮みする）
-            Color.clear
+            // 1本ごとに伸び縮みする）。**高さを決めて置く**——`Color.clear` は
+            // 与えられた高さを全部取るので、決めないと写真と半分ずつ分け合う
+            Color.clear.frame(height: Self.footerHeight)
         }
     }
 
@@ -1346,6 +1352,7 @@ struct StoryViewerView: View {
         defer { isSending = false }
         do {
             try await environment.stories.delete(id: story.id)
+            onDeleted?(story.id)
             // 🔴 **残りがあれば閉じない。** 以前は1本消すと画面ごと閉じ、3本のうち
             // 1本を消しただけで残りの2本が見られなくなった。通報で落としたときと
             // 同じく並びから外し、次の1本へ詰める（一覧は閉じたときに読み直す）

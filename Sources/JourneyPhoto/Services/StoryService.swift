@@ -28,6 +28,17 @@ struct StoryService {
     struct UploadedMedia: Codable, Equatable {
         let key: String
         let publicUrl: String
+        /// 上げた時刻。**古い目印は使わない**（`isFresh`）
+        var uploadedAt: Date?
+
+        /// 目印を使ってよいか。一覧（`GET /stories`）は期限内の行しか返さないので、
+        /// 24時間を過ぎると「出ていたか」を確かめられない。しかも期限切れの掃除や
+        /// 削除で画像の実体は消えている——古い目印で行を作ると、壊れた画像の
+        /// 1本がフォロワーに出る。**少し手前（23時間）で上げ直しに切り替える**
+        func isFresh(now: Date = Date()) -> Bool {
+            guard let uploadedAt else { return false }
+            return now.timeIntervalSince(uploadedAt) < 23 * 60 * 60
+        }
     }
 
     /// 1本を出す（裏の係 `StoryUploadCenter` から呼ぶ）。
@@ -45,7 +56,7 @@ struct StoryService {
     func post(_ job: StoryUploadCenter.Job, ownerId: String,
               record: @escaping @MainActor (UploadedMedia?) -> Void) async throws {
         let media: UploadedMedia
-        if let uploaded = job.uploaded {
+        if let uploaded = job.uploaded, uploaded.isFresh() {
             // 一覧を読めなければ投げる（出たかどうか分からないまま行を作らない）
             let listed = try await list()
             if listed.contains(where: { Self.isSameMedia($0, uploaded, ownerId: ownerId) }) { return }
@@ -89,7 +100,7 @@ struct StoryService {
             await uploads.discard(key: presigned.key)
             throw error
         }
-        return UploadedMedia(key: presigned.key, publicUrl: presigned.publicUrl)
+        return UploadedMedia(key: presigned.key, publicUrl: presigned.publicUrl, uploadedAt: Date())
     }
 
     /// 上げた画像でストーリーの行を作る。**失敗しても画像は片づけない**

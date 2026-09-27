@@ -150,13 +150,19 @@ struct JourneyPhotoApp: App {
                 .task(id: auth.state) {
                     let stories = environment.stories
                     let auth = auth
+                    let drafts = storyDrafts
                     StoryUploadCenter.shared.configure(
                         currentUserId: { auth.userId },
                         send: { job, record in
                             guard let ownerId = auth.userId else { throw APIError.notAuthenticated }
                             try await stories.post(job, ownerId: ownerId, record: record)
                         },
-                        discardUpload: { key in await stories.discardUpload(key: key) })
+                        discardUpload: { key in await stories.discardUpload(key: key) },
+                        // 起動し直して送り終えたら、その投稿の元の下書きを片づける
+                        // （送っている間に保存し直した別の下書きは消さない）
+                        clearDraft: { stamp in
+                            if drafts.draft?.savedAt == stamp { drafts.clear() }
+                        })
                     guard !auth.isResolving else { return }
                     StoryUploadCenter.shared.userChanged(to: auth.userId)
                 }

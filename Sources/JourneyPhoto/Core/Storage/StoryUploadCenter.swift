@@ -85,6 +85,13 @@ final class StoryUploadCenter: ObservableObject {
     private var defaultCurrentUserId: (() -> String?)?
     /// 捨てた並びの、上げ終えていた画像を片づける
     private var discardUpload: ((String) async -> Void)?
+    /// 戻した並びを送り終えたときに下書きを片づける（`draftToClear` を渡す）。
+    /// 戻した並びには投稿画面の `onAllSent` が無いので、アプリが起動時に渡す
+    private var clearDraft: ((String) -> Void)?
+    /// 送り終えたら片づける下書きの印（`StoryDraftStore.Draft.savedAt`）。
+    /// 端末にも書く——書かないと、起動し直して送った回に下書きが残り、
+    /// 「続きから」で同じ投稿をもう1本出しやすい
+    private var draftToClear: String?
 
     /// 送り終えていない並びを書く場所。nil ならメモリだけ（試験）
     private let directory: URL?
@@ -108,10 +115,12 @@ final class StoryUploadCenter: ObservableObject {
     /// 起動し直して戻した並びを送る手順を渡す（アプリの起動時に1回）
     func configure(currentUserId: @escaping () -> String?,
                    send: @escaping Send,
-                   discardUpload: @escaping (String) async -> Void) {
+                   discardUpload: @escaping (String) async -> Void,
+                   clearDraft: @escaping (String) -> Void = { _ in }) {
         defaultCurrentUserId = currentUserId
         defaultSend = send
         self.discardUpload = discardUpload
+        self.clearDraft = clearDraft
     }
 
     /// 送り始める。**前の投稿が片付いていなければ受けない**（false）——
@@ -120,11 +129,13 @@ final class StoryUploadCenter: ObservableObject {
     func start(_ jobs: [Job],
                ownerId: String,
                currentUserId: @escaping () -> String?,
+               draftToClear: String? = nil,
                send: @escaping Send,
                onAllSent: @escaping () -> Void = {},
                onFailed: @escaping (String) -> Void = { _ in }) -> Bool {
         guard !isBusy, !jobs.isEmpty, !ownerId.isEmpty else { return false }
         pending = jobs
+        self.draftToClear = draftToClear
         total = jobs.count
         self.ownerId = ownerId
         self.currentUserId = currentUserId
@@ -209,7 +220,12 @@ final class StoryUploadCenter: ObservableObject {
                 return
             }
         }
-        onAllSent?()
+        if let onAllSent {
+            onAllSent()
+        } else if let draftToClear {
+            // 起動し直して戻した並び（投稿画面の片づけが無い）
+            clearDraft?(draftToClear)
+        }
         reset()
         finished += 1
     }
@@ -223,6 +239,7 @@ final class StoryUploadCenter: ObservableObject {
         onFailed = nil
         ownerId = nil
         currentUserId = nil
+        draftToClear = nil
         phase = .idle
         clearStorage()
     }
@@ -270,6 +287,8 @@ final class StoryUploadCenter: ObservableObject {
         let ownerId: String
         let total: Int
         let jobs: [Entry]
+        /// 前の版には無い（nil＝片づける下書きなし）
+        let draftToClear: String?
     }
 
     private var manifestURL: URL? { directory?.appendingPathComponent("queue.json") }
@@ -294,7 +313,7 @@ final class StoryUploadCenter: ObservableObject {
                                latitude: job.coords?.lat, longitude: job.coords?.lng,
                                song: job.song, durationSec: job.durationSec,
                                archive: job.archive, uploaded: job.uploaded)
-            })
+            }, draftToClear: draftToClear)
             try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
         } catch {
             // 書けなくても送信は続ける（メモリの並びは生きている）。強制終了に
@@ -335,12 +354,16 @@ final class StoryUploadCenter: ObservableObject {
             clearStorage()
             return
         }
+        // 出せた数は「記録の全部 − 記録に残っていた本数」。**画像を読めずに落とした
+        // ぶんを「出せた」に数えない**（全部の数から一緒に引く）
+        let posted = max(0, manifest.total - manifest.jobs.count)
         pending = jobs
-        total = max(manifest.total, jobs.count)
+        total = posted + jobs.count
         ownerId = manifest.ownerId
+        draftToClear = manifest.draftToClear
         let reason = L("アプリが閉じられたため、送信が途中で止まりました",
                        "Sending stopped because the app was closed")
-        phase = .failed(message: StoryQueue.partialFailure(posted: total - jobs.count,
+        phase = .failed(message: StoryQueue.partialFailure(posted: posted,
                                                            total: total, reason: reason),
                         remaining: jobs.count)
     }

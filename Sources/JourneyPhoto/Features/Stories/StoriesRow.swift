@@ -298,7 +298,8 @@ struct StoriesRow: View {
             index = group.index
         }
         return StoryViewerView(stories: stories, startIndex: index,
-                               viewerId: auth.userId, onSeen: { seen.markSeen($0) })
+                               viewerId: auth.userId, onSeen: { seen.markSeen($0) },
+                               onDeleted: { model.remove(id: $0) })
     }
 }
 
@@ -313,6 +314,18 @@ final class StoriesViewModel: ObservableObject {
         StoryPlayback.siblings(of: story, in: stories).stories
     }
 
+    /// 消した1本を外す。**閲覧画面には開いたときの写しを渡している**ので、
+    /// 開いている間に外しても閲覧画面の並びは動かない
+    ///
+    /// **消した id は覚えておき、読み直しの結果からも外す**——削除より先に始まった
+    /// 読み直し（閉じたときの `onDismiss`）があとから返ると、消した1本が戻るため
+    func remove(id: String) {
+        deletedIds.insert(id)
+        stories.removeAll { $0.id == id }
+    }
+
+    private var deletedIds: Set<String> = []
+
     /// いまの一覧を読んだ人（切り替えたら前の人の一覧を残さない）
     private var loadedFor: String?
 
@@ -325,6 +338,7 @@ final class StoriesViewModel: ObservableObject {
                                           sameViewer: loadedFor == viewerId,
                                           blockedUserIds: blockedUserIds,
                                           reportedPhotoIds: reportedPhotoIds)
+            .filter { !deletedIds.contains($0.id) }
         if fetched != nil { loadedFor = viewerId }
     }
 }

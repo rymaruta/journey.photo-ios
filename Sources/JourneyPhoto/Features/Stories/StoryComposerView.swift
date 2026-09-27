@@ -838,6 +838,8 @@ struct StoryComposerView: View {
         let toasts = toasts
         let started = uploads.start(jobs, ownerId: ownerId,
                                     currentUserId: { auth.userId },
+                                    // 起動し直して送り終えたときの片づけ（下の onAllSent と同じ条件）
+                                    draftToClear: keepExistingDraft ? nil : draftStamp,
                                     send: { job, record in
             // 送り直しで二重に出さない手順は `StoryService.post` にある
             try await stories.post(job, ownerId: ownerId, record: record)

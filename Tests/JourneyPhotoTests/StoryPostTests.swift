@@ -32,7 +32,8 @@ final class StoryPostTests: XCTestCase {
     }
 
     private let media = StoryService.UploadedMedia(
-        key: "uploads/me/abc.jpg", publicUrl: "https://bucket.example/uploads/me/abc.jpg")
+        key: "uploads/me/abc.jpg", publicUrl: "https://bucket.example/uploads/me/abc.jpg",
+        uploadedAt: Date())
 
     private func job(uploaded: StoryService.UploadedMedia?) -> StoryUploadCenter.Job {
         StoryUploadCenter.Job(imageData: Data([1]), caption: "", location: "", coords: nil,
@@ -71,6 +72,21 @@ final class StoryPostTests: XCTestCase {
         } catch {}
         XCTAssertEqual(recorded.count, 1)
         XCTAssertNil(recorded.first ?? media)
+        XCTAssertEqual(StubProtocol.requestCount, 3, "画像を片づけていない")
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/upload/discard")
+    }
+
+    /// 🔴 **古い目印は使わない。** 一覧は期限内の行しか返さず、画像の実体も
+    /// 掃除で消えている——使うと壊れた画像の1本が出る
+    func testOldMediaIsNotReused() {
+        let now = Date()
+        XCTAssertTrue(StoryService.UploadedMedia(key: "k", publicUrl: "u",
+                                                 uploadedAt: now.addingTimeInterval(-60)).isFresh(now: now))
+        XCTAssertFalse(StoryService.UploadedMedia(key: "k", publicUrl: "u",
+                                                  uploadedAt: now.addingTimeInterval(-23 * 3600 - 1)).isFresh(now: now))
+        XCTAssertFalse(StoryService.UploadedMedia(key: "k", publicUrl: "u", uploadedAt: nil).isFresh(now: now),
+                       "時刻の無い目印を信じた")
     }
 
     /// **届いたか分からない**失敗（5xx・通信）では目印を残す（送り直しで一覧を照らす）
