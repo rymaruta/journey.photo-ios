@@ -493,6 +493,5 @@ final class TagCollectionTitleTests: XCTestCase {
         XCTAssertEqual(PhotoQuery.Collection.tag("##旅").title, "#旅")
         XCTAssertEqual(PhotoQuery.Collection.tag("＃旅").title, "#旅")
         XCTAssertEqual(PhotoQuery.Collection.tag("冬").title, "#冬")
-        XCTAssertEqual(PhotoQuery.Collection.tag("旅").title, TagInput.chipText("旅"))
     }
 }

@@ -441,8 +441,9 @@ struct PhotoMapView: View {
         )
         model.update(visible: visible)
         zoomChain.observe(visible)
-        // 指で動かしたら「近くに写真はありません」を下げる（もう現在地を見ていない）。
-        // こちらが寄せた回（現在地を追う・全体へ寄せる・拡大縮小）は下げない
+        // 指で地図を触ったら「近くに写真はありません」を下げる（ずらす・つまむ・回す
+        // のどれでも。つまんだだけで現在地を見たままでも下げる——地図を自分で見始めた合図）。
+        // こちらが寄せた回（現在地を追う・全体へ寄せる・拡大縮小のボタン）は下げない
         noneNearbyBanner.cameraMoved(byUser: camera.positionedByUser)
     }
 
