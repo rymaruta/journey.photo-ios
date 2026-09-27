@@ -128,7 +128,9 @@ struct AlbumsView: View {
                 .foregroundStyle(.secondary)
             inviteControls(album)
         }
-        .swipeActions {
+        // **払い切りで消さない**（既定の allowsFullSwipe は先頭の削除を確認なしで走らせる。
+        // 戻す口は無い）。削除のボタンを押したときだけ消す
+        .swipeActions(allowsFullSwipe: false) {
             Button(role: .destructive) {
                 Task { await model.delete(album.id, environment: environment) }
             } label: {

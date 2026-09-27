@@ -37,6 +37,9 @@ struct MyPageView: View {
     /// **出ていない間は保存の ID を取り込まない**——取り込むと格子の段の ID
     /// （`EditorialLayout.Row.id` は隣の写真まで含む）が変わり、開いている詳細が閉じる
     @State private var isOnScreen = false
+    /// お気に入りのタブから落とす「見せない」の写し。**戻ってきたときに取る**
+    @State private var dropped = ModerationSnapshot()
+    @EnvironmentObject private var hidden: ModerationStore
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
@@ -102,8 +105,9 @@ struct MyPageView: View {
         }
         .onAppear {
             isOnScreen = true
-            // 詳細でしおりを外したぶんは、戻ってきたこの時点で落とす
+            // 詳細でしおりを外したぶん・ブロック／通報したぶんは、戻ってきたこの時点で落とす
             refreshSavedIds()
+            dropped = hidden.snapshot
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
             Task { await model.load() }
@@ -487,7 +491,8 @@ struct MyPageView: View {
     /// 突き合わせ 6・8）。いいねした写真はメニューと設定から開く（`FavoritesView`）
     @ViewBuilder
     private var favoritesArea: some View {
-        let saved = LikedPhotos.resolve(savedIds, in: [feed, model.photos])
+        // ブロック・通報した人の写真を落とす（`FavoritesView`・`SavedPhotosView` と同じ）
+        let saved = dropped.visible(LikedPhotos.resolve(savedIds, in: [feed, model.photos]))
         if saved.isEmpty {
             switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
                                           failed: feedFailed) {

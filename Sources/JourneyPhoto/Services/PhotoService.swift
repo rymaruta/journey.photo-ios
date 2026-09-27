@@ -49,8 +49,8 @@ struct PhotoService {
     /// **サーバーは派生（AVIF・256px・寸法）を消す**（`photoReplace.ts` の
     /// `REPLACE_CLEARS`）。残すと端末によって古い写真が出続ける。
     /// 上げ方は投稿と同じ3手（presign → S3 → 保存）で、EXIF は端末で落とす。
-    /// - Parameter keepCoords: 新しい写真の座標を書くか。**撮影地を空にした写真では
-    ///   false**——差し替えで消したはずの位置が戻らないように
+    /// - Parameter keepCoords: 新しい写真の座標を書くか（`EditPlaceRules.keepsCoordsOnReplace`）。
+    ///   ピンの無い写真・撮影地を消した写真では false——外した位置が戻らないように
     func replace(photoId: String, prepared: ImagePreparer.Prepared,
                  uploads: UploadService, keepCoords: Bool = true) async throws {
         // **投稿と同じ関所を通す。** 50MB と対応形式はサーバーも見るが、

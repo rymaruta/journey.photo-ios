@@ -17,6 +17,10 @@ struct GalleryView: View {
     /// 通報している写真。**シートはカードではなくここに付ける**
     /// （`HomeMosaic.onReport` の注記）
     @State private var reportTarget: Photo?
+    /// いまこの画面が出ているか。**詳細を上に積んでいる間は読み直さない**
+    @State private var isOnScreen = false
+    /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
+    @State private var needsReload = false
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}
@@ -84,12 +88,27 @@ struct GalleryView: View {
         // 通報とブロックを挟んでから `setHidden` を呼ぶので、その中断中に
         // 走るとこちらは**古い集合のまま**取ってしまう。
         // 1本にまとめてあるのは、2本だと全件取得が同時に2回走るため
+        //
+        // 🔴 **詳細を開いている間は読み直さない。** 読み直すと押した元のカードが
+        // 一覧から消え、開いている詳細がその場で閉じる（「ブロックしました」も、
+        // 通報シートのブロック失敗の文言も見えない）。戻ってきたとき（`onAppear`）に
+        // 読み直す。カードの「…」や一覧に付けた通報シートからの回は画面に出ている
         .onChange(of: hidden.revision) { _, _ in
-            Task {
-                await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
-                                                    photoIds: hidden.reportedPhotoIds)
-                await model.load()
-            }
+            if isOnScreen { reloadHidden() } else { needsReload = true }
+        }
+        .onAppear {
+            isOnScreen = true
+            if needsReload { reloadHidden() }
+        }
+        .onDisappear { isOnScreen = false }
+    }
+
+    private func reloadHidden() {
+        needsReload = false
+        Task {
+            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
+                                                photoIds: hidden.reportedPhotoIds)
+            await model.load()
         }
     }
 

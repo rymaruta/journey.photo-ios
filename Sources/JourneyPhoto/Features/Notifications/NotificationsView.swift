@@ -284,7 +284,9 @@ private struct NotificationRow: View {
     /// 既にフォローしている相手に出すと、押しても何も変わらないボタンになる。
     @ViewBuilder
     private var followBackButton: some View {
-        if notification.kind == .follow, let userId = notification.byId ?? notification.targetUserId,
+        // 退会した人には出さない（押してもサーバーが 404 を返し、何も起きない）
+        if notification.kind == .follow, notification.deleted != true,
+           let userId = notification.byId ?? notification.targetUserId,
            !following.contains(userId), let onFollowBack {
             Button {
                 busy = true
