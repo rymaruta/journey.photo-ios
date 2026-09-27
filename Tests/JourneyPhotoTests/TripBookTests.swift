@@ -415,6 +415,21 @@ final class TripOwnershipTests: XCTestCase {
         ])
         XCTAssertTrue(trips.isEmpty)
     }
+
+    /// **`uploadedBy` だけの写真も、その人の旅に束ねる**（E14）。
+    /// `userId` だけを鍵にしていたので、1枚ずつ別の旅に割れていた
+    func testUploadedByOnlyPhotosFormOneTrip() throws {
+        func legacy(_ id: String, date: String) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(
+                "{\"id\":\"\(id)\",\"src\":\"https://x/\(id).jpg\",\"date\":\"\(date)\",\"uploadedBy\":\"A\"}".utf8))
+        }
+        let trips = TripBook.trips(from: [
+            try legacy("a1", date: "2026-05-01"),
+            try legacy("a2", date: "2026-05-02"),
+        ])
+        XCTAssertEqual(trips.count, 1, "同じ人の続きの日が別の旅に割れている")
+        XCTAssertEqual(trips.first?.photos.count, 2)
+    }
 }
 
 /// 旅の一冊の読み上げ（B13）。見た目の「DAY n」を読ませない

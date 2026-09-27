@@ -101,8 +101,8 @@ struct HighlightEditorView: View {
                 Button(Labels.Common.retry) { Task { await load() } }
                     .buttonStyle(.bordered)
             } else if archive.isEmpty {
-                Text(L("残したストーリーがまだありません。ストーリーを作るときに「24時間のあとも自分用に残す」を選ぶと、ここに並びます。",
-                       "No kept stories yet. Turn on \"Keep it for myself after 24 hours\" when you post a story."))
+                Text(L("残したストーリーがまだありません。ストーリーを作るときに「自分用に残す」をオンにすると、ここに並びます。",
+                       "No kept stories yet. Turn on \"Keep for me\" when you post a story."))
                     .font(.callout)
                     .foregroundStyle(WebTheme.muted2)
             } else {
