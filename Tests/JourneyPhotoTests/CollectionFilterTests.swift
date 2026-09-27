@@ -389,19 +389,6 @@ final class TagFilterTests: XCTestCase {
         let photos = [try photo("a", tags: ["x"]), try photo("b", tags: [])]
         XCTAssertEqual(PhotoQuery.photos(photos, withAllTags: []).count, 2)
     }
-
-    /// よく使われるタグも**畳んでから数える**
-    /// （`風景` と `landscape` を別々に数えない）
-    func testTopTagsCollapseSynonyms() throws {
-        let photos = [
-            try photo("a", tags: ["風景"]),
-            try photo("b", tags: ["landscape"]),
-            try photo("c", tags: ["sauna"]),
-        ]
-        let top = PhotoQuery.topTags(in: photos, limit: 5)
-        XCTAssertEqual(top.count, 2, "同じ主題が2つに割れている")
-        XCTAssertEqual(top.first, "風景", "多い方（畳んで2枚）が先頭")
-    }
 }
 
 /// 打った文字での絞り込みと、チップに出すタグの決め方。
@@ -468,6 +455,15 @@ final class TagCountsTests: XCTestCase {
         XCTAssertEqual(counts.first?.count, 2, "`冬` と `winter` が別々に数えられている")
     }
 
+    /// **写真の枚数で数える。** 1枚に `湖` と `lake` が両方付いていても1枚
+    func testSynonymsOnOnePhotoCountOnce() throws {
+        let counts = PhotoQuery.tagCounts(in: [
+            try photo("both", tags: ["湖", "lake", "#Lake"]),
+            try photo("ja", tags: ["湖"]),
+        ])
+        XCTAssertEqual(counts.first { $0.tag == "湖" }?.count, 2, "同じ写真の別名を2回数えている")
+    }
+
     /// **0枚の語は出さない**（押しても空になるチップを置かない）
     func testEmptyChoicesAreLeftOut() throws {
         let counts = PhotoQuery.tagCounts(in: [try photo("a", tags: ["冬"])])
@@ -481,5 +477,17 @@ final class TagCountsTests: XCTestCase {
             try photo("b", tags: ["helsinki"]),
         ])
         XCTAssertTrue(counts.isEmpty, "固有名詞が候補に出ている")
+    }
+}
+
+/// 集約ページの題
+final class CollectionTitleTests: XCTestCase {
+
+    /// **カテゴリは画面の名前で出す**——生の値（`landscape`）のままだと、押した札の
+    /// 「おすすめ · 風景」と行き先の題が食い違う
+    func testCategoryTitleUsesDisplayName() {
+        XCTAssertEqual(PhotoQuery.Collection.category("landscape").title, L("風景", "landscape"))
+        XCTAssertEqual(PhotoQuery.Collection.category("風景").title, "風景")
+        XCTAssertEqual(PhotoQuery.Collection.tag("冬").title, "#冬")
     }
 }

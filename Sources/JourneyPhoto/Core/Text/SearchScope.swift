@@ -25,14 +25,6 @@ enum SearchScope: String, CaseIterable, Identifiable {
     var showsPeople: Bool { self == .all || self == .people }
     /// 写真の結果を出すか
     var showsPhotos: Bool { self != .people }
-    /// 検索欄の右の並び替え（とその確認の札）を出すか。
-    /// **並べ替えるのは写真だけ**——人の結果は並び替えが効かないので、
-    /// 押せても何も変わらない札を置かない
-    var showsSort: Bool { showsPhotos }
-    /// タグのチップ（「winter 13」）を出すか。
-    /// **撮影地では出さない**——押すとタグの語が撮影地の欄に当たり、
-    /// チップの枚数（タグを持つ写真の数）と結果が合わなくなる
-    var showsTagChips: Bool { self == .all || self == .photos || self == .tags }
     /// 検索欄の案内。人を探しているときは人向けに
     var prompt: String {
         switch self {
@@ -41,11 +33,36 @@ enum SearchScope: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 何も打っていないときに出す入口。**どの種類を押しても何かが出る**
+    /// （押して何も変わらない札を作らない）
+    enum Entry: Equatable {
+        /// 発見の段（注目スポット → おすすめ → 色 → 季節 → 機材）
+        case discovery
+        /// 写真の格子（新しい順の全部）
+        case photoGrid
+        /// 人の探し方の案内
+        case peopleHint
+        /// 使われているタグを枚数つきの行で。押すとそのタグで当てる
+        case tagRows
+        /// 撮影地を枚数つきの行で。押すとスポット（1枚の地点は集約）へ
+        case placeRows
+    }
+
+    var entry: Entry {
+        switch self {
+        case .all: return .discovery
+        case .photos: return .photoGrid
+        case .people: return .peopleHint
+        case .tags: return .tagRows
+        case .places: return .placeRows
+        }
+    }
+
     /// 写真を種類で絞る。
     ///
     /// - 打っていないとき: タグ／撮影地は**その欄を持つ写真**だけ、写真とすべては全部
     /// - 打っているとき: すべて・写真は `PhotoQuery.match`（題・撮影地・カテゴリ・タグ）、
-    ///   タグはタグだけ、撮影地は撮影地だけに当てる。
+    ///   タグはタグだけ（鍵で完全一致を先に・`tagMatch`）、撮影地は撮影地だけに当てる。
     ///   **大文字小文字と全角半角は区別しない**（`PhotoQuery.match` と同じ）
     func photos(_ photos: [Photo], query: String) -> [Photo] {
         guard showsPhotos else { return [] }
@@ -57,16 +74,34 @@ enum SearchScope: String, CaseIterable, Identifiable {
         case .all, .photos:
             return trimmed.isEmpty ? photos : PhotoQuery.match(photos, query: trimmed)
         case .tags:
-            return photos.filter { photo in
-                let tags = (photo.tags ?? []).map(Self.fold).filter { !$0.isEmpty }
-                return needle.isEmpty ? !tags.isEmpty : tags.contains { $0.contains(needle) }
+            guard !needle.isEmpty else {
+                return photos.filter { ($0.tags ?? []).contains { !Self.fold($0).isEmpty } }
             }
+            return Self.tagMatch(photos, query: trimmed)
         case .places:
             return photos.filter { photo in
                 let place = Self.fold(photo.location ?? "")
                 return needle.isEmpty ? !place.isEmpty : place.contains(needle)
             }
         }
+    }
+
+    /// タグで当てる。**まず鍵で完全一致**（`TagChoices.key`: `#`・大小・日英の別名を
+    /// 畳む）——「タグ」の一覧の枚数も鍵で数えているので、行の「冬 13」を押せば
+    /// `winter` の写真も含めて出す。「山」で `山中湖` は拾わない。
+    /// **鍵で1枚も当たらないときだけ**、打ちかけの語として部分一致で拾う
+    /// （「sau」で `sauna`）
+    static func tagMatch(_ photos: [Photo], query: String) -> [Photo] {
+        // 全角の「＃」も落とす（`TagChoices.key` が落とすのは半角の `#` だけ）
+        let keys = Set([TagChoices.key(query), TagChoices.key(fold(query))]).subtracting([""])
+        guard !keys.isEmpty else { return [] }
+        let exact = photos.filter { ($0.tags ?? []).contains { keys.contains(TagChoices.key($0)) } }
+        if !exact.isEmpty { return exact }
+        var needle = fold(query)
+        while needle.hasPrefix("#") { needle.removeFirst() }
+        needle = needle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return [] }
+        return photos.filter { ($0.tags ?? []).contains { fold($0).contains(needle) } }
     }
 
     private static func fold(_ text: String) -> String {
@@ -99,6 +134,12 @@ enum SearchDiscovery {
         FeaturedGroups.groups(from: photos).first
     }
 
-    /// 「いまの季節の写真」の格子に出す枚数。**3列で2段**（板 11 は3列）
-    static let seasonalPreview = 6
+    /// 「いまの季節の写真」の格子に出す枚数。**3列で1段**（板 11）
+    static let seasonalPreview = 3
+
+    /// 「撮影地」の入口に並べる行の数（写真の多い順）
+    static let placeRows = 40
+
+    /// 「おすすめ · [カテゴリ名]」に並べる枚数（板 11 の 120×160 が3枚）
+    static let featuredPreview = 3
 }

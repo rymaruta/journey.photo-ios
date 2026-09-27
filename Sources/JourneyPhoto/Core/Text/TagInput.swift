@@ -151,7 +151,9 @@ enum PhotoQuery {
             switch self {
             case .tag(let value): return "#\(value)"
             case .location(let value): return value
-            case .category(let value): return value
+            // 生の値（`landscape`）ではなく画面の名前（「風景」）。行き先の題が、押した
+            // 札の「おすすめ · 風景」と食い違わないように
+            case .category(let value): return Labels.Category.name(value)
             case .camera(let value): return value
             }
         }
@@ -182,25 +184,6 @@ enum PhotoQuery {
         }
     }
 
-    /// 多い順にタグを数える。**種類が少ないので全部数えてよい**（30枚・59種）。
-    /// よく使われているタグ。**鍵で畳んでから数える**
-    /// （`風景` と `landscape` を別々に数えない。Web の `tagKey` と同じ）。
-    /// 返すのは**最初に出てきた綴り**——画面には打たれたままを見せる。
-    static func topTags(in photos: [Photo], limit: Int = 12) -> [String] {
-        var counts: [String: Int] = [:]
-        var labels: [String: String] = [:]
-        for tag in photos.flatMap({ $0.tags ?? [] }) {
-            let key = TagChoices.key(tag)
-            guard !key.isEmpty else { continue }
-            counts[key, default: 0] += 1
-            if labels[key] == nil { labels[key] = tag }
-        }
-        return counts
-            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .prefix(limit)
-            .compactMap { labels[$0.key] }
-    }
-
     /// 打った文字で絞る。**題・説明・撮影地・タグ**を見る
     /// （Web の `useGallery` の `query` と同じ範囲）。
     ///
@@ -227,10 +210,16 @@ enum PhotoQuery {
     ///
     /// 提案の絵の「winter 13 / finland 12 …」にあたる。**数を出すのは、
     /// 押す前に手応えが分かるから**——1枚しか無い語を押すのは徒労になる。
+    ///
+    /// **数えるのは写真の枚数**（タグの個数ではない）。1枚に日英の別名が
+    /// 両方付いている写真（実データ: `湖` と `lake`）を2と数えると、行は
+    /// 「#湖 2枚」なのに押すと1枚しか出ない（`SearchScope.tagMatch` は写真を返す）
     static func tagCounts(in photos: [Photo], limit: Int = 12) -> [(tag: String, count: Int)] {
         var counts: [String: Int] = [:]
-        for tag in photos.flatMap({ $0.tags ?? [] }) {
-            counts[TagChoices.key(tag), default: 0] += 1
+        for photo in photos {
+            for key in Set((photo.tags ?? []).map { TagChoices.key($0) }) {
+                counts[key, default: 0] += 1
+            }
         }
         return TagChoices.all
             .compactMap { choice -> (tag: String, count: Int)? in
