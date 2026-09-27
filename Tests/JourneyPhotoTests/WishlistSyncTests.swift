@@ -384,7 +384,9 @@ final class WishlistSyncTests: XCTestCase {
         StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
         let outcome = await WishlistSync.set("京都", wanted: false, store: wishlist, service: service())
         XCTAssertEqual(outcome, .removedOnThisDevice, "届かなかったのに黙って「外しました」とだけ言う")
-        XCTAssertNotNil(WishlistSync.notice(for: outcome))
+        XCTAssertEqual(WishlistSync.removalNotice(for: outcome)?.kind, .failure,
+                       "マイページの外すボタンが黙る（知らせは失敗のときだけ出していた）")
+        XCTAssertNil(WishlistSync.removalNotice(for: .local(wanted: false)), "成功を一覧で言う")
         XCTAssertFalse(wishlist.contains("京都"), "圏外で外せない")
         XCTAssertEqual(StubProtocol.requests.last, "DELETE /user/spots/京都", "外す要求を送っていない")
         // 次の同期でも送らない・戻らない

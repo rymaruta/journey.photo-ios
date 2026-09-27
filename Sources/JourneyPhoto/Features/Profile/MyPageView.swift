@@ -661,7 +661,7 @@ struct MyPageView: View {
                 Task {
                     let outcome = await WishlistSync.set(row.key, wanted: false, store: wishlist,
                                                          service: environment.savedSpots)
-                    if case .failed = outcome, let notice = WishlistSync.notice(for: outcome) {
+                    if let notice = WishlistSync.removalNotice(for: outcome) {
                         toasts.show(notice.text, kind: notice.kind)
                     }
                 }
@@ -708,7 +708,7 @@ struct MyPageView: View {
                 Task {
                     let outcome = await WishlistSync.set(spot.slug, wanted: false, store: wishlist,
                                                          service: environment.savedSpots)
-                    if case .failed = outcome, let notice = WishlistSync.notice(for: outcome) {
+                    if let notice = WishlistSync.removalNotice(for: outcome) {
                         toasts.show(notice.text, kind: notice.kind)
                     }
                 }

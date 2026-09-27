@@ -68,6 +68,8 @@ enum WishlistSync {
                 try await service.unsave(key)
                 return .local(wanted: false)
             } catch {
+                // 取り消し（画面を離れた）は知らせない（普通の道と同じ）
+                if error is CancellationError { return .ignored }
                 return .removedOnThisDevice
             }
         }
@@ -108,10 +110,20 @@ enum WishlistSync {
                 : L("「行きたい」から外せませんでした", "Couldn't remove from your wishlist")
             return ("\(head)（\(message)）", .failure)
         case .removedOnThisDevice:
-            return (L("「行きたい」から外しました（通信できなかったため、他の端末では残っていることがあります）",
-                      "Removed here. Couldn't reach the server, so it may still show on other devices."), .success)
+            // 知らせは2行まで（`ToastOverlay`）。注意の印で出す（✓ だと「残るかも」と食い違う）
+            return (L("この端末からは外しました（他の端末には残るかも）",
+                      "Removed on this device only"), .failure)
         case .ignored:
             return nil
+        }
+    }
+
+    /// 外した直後に**黙って済ませない**知らせ（一覧の外すボタン用——成功は行が消えるので言わない）。
+    /// 失敗と「この端末だけ外した」は言う
+    static func removalNotice(for outcome: Outcome) -> (text: String, kind: ToastCenter.Message.Kind)? {
+        switch outcome {
+        case .failed, .removedOnThisDevice: return notice(for: outcome)
+        default: return nil
         }
     }
 
