@@ -425,18 +425,30 @@ final class NotificationsViewModel: ObservableObject {
     ///   取得に失敗した回にアイコンだけ 0 にすると、タブのバッジは 3 のまま
     ///   アイコンは 0、という食い違いが残る。
     @discardableResult
-    /// いまフォローしている人を読む。**自分の userId が要る**
+    /// いまフォローしている人を読む。
+    ///
+    /// **ID の一覧（`GET /user/following`・最大2000人）で決める。** 以前は名前つきの
+    /// 一覧（`/users/{id}/following`）を使っていたが、あちらは**新しい順に50人で切る**
+    /// （`follow.ts` の `FOLLOWING_PAGE`）ので、古くからフォローしている相手からの
+    /// フォロー通知に「フォローバック」が出ていた
     private func loadFollowing(environment: AppEnvironment, viewerId: String?) async {
         guard let me = viewerId, !me.isEmpty else { return }
-        guard let list = try? await environment.social.following(userId: me) else { return }
-        following = Set(list.users.map(\.id))
+        guard let ids = try? await environment.social.myFollowingIds() else { return }
+        following = Set(ids)
     }
 
     /// フォローバック。**成功したときだけ**印を更新する
-    /// （失敗したのにボタンが消えると、フォローできたように見える）
+    /// （失敗したのにボタンが消えると、フォローできたように見える）。
+    /// **失敗は黙らない**——圏外で押して何も起きないと、押せていないのか分からない
     func followBack(_ userId: String, environment: AppEnvironment) async {
-        guard (try? await environment.social.follow(userId: userId)) != nil else { return }
-        following.insert(userId)
+        do {
+            let result = try await environment.social.follow(userId: userId)
+            // 返ってきた状態を使う（自分で決めない）
+            if result.following { following.insert(userId) }
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription
+                ?? L("フォローできませんでした", "Couldn't follow")
+        }
     }
 
     /// 読めた1ページを画面の状態に移す。

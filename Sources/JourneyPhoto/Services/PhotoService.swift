@@ -107,11 +107,18 @@ struct PhotoService {
     /// 削除。**画像の実体と CloudFront の控えもサーバー側で消える**
     /// （`cloudfrontDistributionId` が渡されていれば。渡し忘れると
     /// 消した写真が最大1年 公開URLに残る——CLAUDE.md の LEFT-4）。
+    /// 写真を消す。**404（もう無い）は消せたのと同じ**（別の端末で先に消した回。
+    /// `photoUpdate.ts` の `deleteMyPhoto` は行が無ければ 404）。失敗と読むと、
+    /// もう無い写真の画面に留まり、削除を押すたびにエラーになる
     func delete(photoId: String) async throws {
-        try await api.authorizedVoid(
-            .delete,
-            "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)"
-        )
+        do {
+            try await api.authorizedVoid(
+                .delete,
+                "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)"
+            )
+        } catch where SocialService.isNotFound(error) {
+            return
+        }
     }
 }
 

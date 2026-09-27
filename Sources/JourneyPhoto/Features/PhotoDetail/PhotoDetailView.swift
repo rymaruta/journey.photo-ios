@@ -487,12 +487,16 @@ struct PhotoDetailView: View {
         guard !isFollowWorking else { return }
         isFollowWorking = true
         defer { isFollowWorking = false }
-        if isFollowing {
-            let result = try? await environment.social.unfollow(userId: userId)
-            if let result { isFollowing = result.following }
-        } else {
-            let result = try? await environment.social.follow(userId: userId)
-            if let result { isFollowing = result.following }
+        // **失敗は黙らない**（圏外で押して何も起きないと、押せていないのか分からない）。
+        // 知らせは、ブロックの失敗と同じ `actionError` に出す
+        do {
+            let result = isFollowing
+                ? try await environment.social.unfollow(userId: userId)
+                : try await environment.social.follow(userId: userId)
+            isFollowing = result.following
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription
+                ?? L("うまくいきませんでした", "That didn't work")
         }
     }
 
