@@ -20,6 +20,11 @@ struct AlbumsView: View {
     @State private var showRename = false
     @State private var renamingId = ""
     @State private var renameTitle = ""
+    /// 消す前の確認。**表示と対象を別々に持つ**（名前変更と同じ理由——
+    /// ダイアログが閉じる合図で対象を nil にすると、「消す」の中身が走るときに
+    /// 対象が消えていることがある）
+    @State private var showDelete = false
+    @State private var deleting: Album?
 
     var body: some View {
         Group {
@@ -60,6 +65,24 @@ struct AlbumsView: View {
         .sheet(item: $openedToken) { opened in
             NavigationStack { InviteView(token: opened.token) }
         }
+        // **消す前に一度聞く**（Web の `/user/albums` と同じ文言）。削除は戻せない
+        .confirmationDialog(deleteTitle, isPresented: $showDelete, titleVisibility: .visible) {
+            Button(Labels.Common.delete, role: .destructive) {
+                guard let album = deleting else { return }
+                Task {
+                    // **参加の控えからも外す。** 自分のリンクを自分で開くと控えにも
+                    // 入るので、消した途端に「参加しているアルバム」へ落ちてきて、
+                    // 押すと「この招待リンクは使えません」になっていた
+                    if await model.delete(album.id, environment: environment) {
+                        joined.forget(id: album.id)
+                    }
+                }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(L("招待リンクは使えなくなり、参加者はこのアルバムを開けなくなります。写真そのものは消えません。",
+                   "The invite link will stop working and members will no longer be able to open this album. The photos themselves are not deleted."))
+        }
         .alert(L("招待リンクから参加", "Join with a link"), isPresented: $showJoin) {
             joinAlertButtons
         } message: {
@@ -72,8 +95,21 @@ struct AlbumsView: View {
         .refreshable { await model.load(environment: environment) }
     }
 
+    private var deleteTitle: String {
+        let title = deleting?.title ?? ""
+        return title.isEmpty
+            ? L("このアルバムを消しますか？", "Delete this album?")
+            : L("「\(title)」を消しますか？", "Delete “\(title)”?")
+    }
+
+    /// **読み込みの失敗と、操作の失敗を分ける。** 操作の失敗（消せなかった・
+    /// 作れなかった）は一時的な知らせ（`notice`）で、しばらくすると消える。
+    /// 同じ欄に持つと、次の読み込みまで残り続け、空の案内まで隠していた
     @ViewBuilder
     private var statusRow: some View {
+        if let notice = model.notice {
+            Text(notice).foregroundStyle(WebTheme.danger).font(.callout)
+        }
         if let message = model.errorMessage {
             Text(message).foregroundStyle(WebTheme.danger).font(.callout)
         } else if model.albums.isEmpty && !model.isLoading {
@@ -132,15 +168,10 @@ struct AlbumsView: View {
         // **払い切りで消さない**（既定の allowsFullSwipe は先頭の削除を確認なしで走らせる。
         // 戻す口は無い）。削除のボタンを押したときだけ消す
         .swipeActions(allowsFullSwipe: false) {
+            // **押しただけでは消さない。** 確認を出す（消すのは確認の中）
             Button(role: .destructive) {
-                Task {
-                    // **参加の控えからも外す。** 自分のリンクを自分で開くと控えにも
-                    // 入るので、消した途端に「参加しているアルバム」へ落ちてきて、
-                    // 押すと「この招待リンクは使えません」になっていた
-                    if await model.delete(album.id, environment: environment) {
-                        joined.forget(id: album.id)
-                    }
-                }
+                deleting = album
+                showDelete = true
             } label: {
                 Label(Labels.Common.delete, systemImage: "trash")
             }
@@ -156,7 +187,23 @@ struct AlbumsView: View {
 
     @ViewBuilder
     private func inviteControls(_ album: Album) -> some View {
-        if let token = album.inviteToken {
+        if album.inviteToken != nil,
+           AlbumsViewModel.isInviteExpired(album.inviteExpiresAt, now: Date()) {
+            // **期限の切れたリンクは共有させない**（受け取った人が開けない）。
+            // 作り直す——サーバーは作り直すと前のリンクを自動で取り消す
+            HStack {
+                Text(L("招待リンクの期限が切れています", "The invite link has expired"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(L("作り直す", "Recreate")) {
+                    Task { await model.createInvite(album.id, environment: environment) }
+                }
+                .font(.caption)
+                .disabled(model.inviteWorking.contains(album.id))
+                .buttonStyle(.borderless)
+            }
+        } else if let token = album.inviteToken {
             HStack {
                 // 招待リンクはサイトの URL で共有する
                 // （アプリを入れていない人にも開ける）
@@ -173,6 +220,12 @@ struct AlbumsView: View {
                 // **行に複数のボタンを置くときは borderless。**
                 // 既定だと行のどこを押しても両方が反応する
                 .buttonStyle(.borderless)
+            }
+            if let expiry = AlbumsViewModel.inviteExpiry(album.inviteExpiresAt) {
+                Text(L("期限 \(expiry.formatted(date: .abbreviated, time: .shortened))",
+                       "Expires \(expiry.formatted(date: .abbreviated, time: .shortened))"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         } else {
             Button(L("招待リンクを作る", "Create invite link")) {
@@ -208,7 +261,7 @@ struct AlbumsView: View {
             inviteText = ""
             openedToken = token.isEmpty ? nil : InviteToken(id: token)
             if openedToken == nil {
-                model.errorMessage = L("招待リンクを読み取れませんでした", "Couldn't read that invite link")
+                model.flash(L("招待リンクを読み取れませんでした", "Couldn't read that invite link"))
             }
         }
         Button(Labels.Common.cancel, role: .cancel) { inviteText = "" }
@@ -231,7 +284,11 @@ final class AlbumsViewModel: ObservableObject {
 
     @Published private(set) var albums: [Album] = []
     @Published private(set) var isLoading = false
+    /// 一覧を読めなかったとき（次の読み込みで消える）
     @Published var errorMessage: String?
+    /// 操作の失敗の一時的な知らせ。**しばらくすると消える**（`flash`）
+    @Published private(set) var notice: String?
+    private var noticeTask: Task<Void, Never>?
     /// 招待リンクを作る・取り消すのを送っているアルバム
     @Published private(set) var inviteWorking: Set<String> = []
 
@@ -255,6 +312,35 @@ final class AlbumsViewModel: ObservableObject {
         inviteWorking = []
         isLoading = false
         errorMessage = nil
+        noticeTask?.cancel()
+        notice = nil
+    }
+
+    /// 操作の失敗を一時的に知らせる（数秒で消える）
+    func flash(_ message: String, seconds: Double = 4) {
+        notice = message
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.notice = nil
+        }
+    }
+
+    /// 招待リンクの期限（サーバーは `toISOString()`＝小数秒つきで返す）。読めなければ nil
+    nonisolated static func inviteExpiry(_ expiresAt: String?) -> Date? {
+        guard let expiresAt, !expiresAt.isEmpty else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: expiresAt) { return date }
+        return ISO8601DateFormatter().date(from: expiresAt)
+    }
+
+    /// 招待リンクの期限が切れているか。**期限が無い・読めないときは切れていない扱い**
+    /// （共有を消すと、有効なリンクまで出せなくなる。開けるかはサーバーが決める）
+    nonisolated static func isInviteExpired(_ expiresAt: String?, now: Date) -> Bool {
+        guard let expiry = inviteExpiry(expiresAt) else { return false }
+        return expiry <= now
     }
 
     func inviteURL(token: String) -> URL {
@@ -300,7 +386,7 @@ final class AlbumsViewModel: ObservableObject {
             albums.insert(album, at: 0)
         } catch {
             guard myEra == era else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
+            flash((error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create"))
         }
     }
 
@@ -323,8 +409,8 @@ final class AlbumsViewModel: ObservableObject {
             }
         } catch {
             guard myEra == era else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription
-                ?? L("名前を変えられませんでした", "Couldn't rename")
+            flash((error as? LocalizedError)?.errorDescription
+                ?? L("名前を変えられませんでした", "Couldn't rename"))
         }
     }
 
@@ -339,7 +425,7 @@ final class AlbumsViewModel: ObservableObject {
             return true
         } catch {
             guard myEra == era else { return false }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
+            flash((error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete"))
             return false
         }
     }
@@ -359,7 +445,7 @@ final class AlbumsViewModel: ObservableObject {
             await load(environment: environment)
         } catch {
             guard myEra == era else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("招待リンクを作れませんでした", "Couldn't create the invite link")
+            flash((error as? LocalizedError)?.errorDescription ?? L("招待リンクを作れませんでした", "Couldn't create the invite link"))
         }
     }
 
@@ -376,7 +462,7 @@ final class AlbumsViewModel: ObservableObject {
             await load(environment: environment)
         } catch {
             guard myEra == era else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("取り消せませんでした", "Couldn't revoke")
+            flash((error as? LocalizedError)?.errorDescription ?? L("取り消せませんでした", "Couldn't revoke"))
         }
     }
 }
