@@ -294,7 +294,7 @@ struct UserProfileView: View {
             if model.isFollowing {
                 showUnfollowConfirm = true
             } else {
-                Task { await model.toggleFollow(userId: userId, environment: environment, toasts: toasts) }
+                Task { await model.toggleFollow(userId: userId, environment: environment) }
             }
         } label: {
             Text(model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"))
@@ -314,7 +314,7 @@ struct UserProfileView: View {
         .buttonStyle(.plain)
         .disabled(model.isWorking)
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
-            Task { await model.toggleFollow(userId: userId, environment: environment, toasts: toasts) }
+            Task { await model.toggleFollow(userId: userId, environment: environment) }
         }
     }
 
@@ -424,10 +424,10 @@ final class UserProfileViewModel: ObservableObject {
     /// 名前に入れ替わると、読み込みの途中が壊れて見える
     var shownName: String? { AuthorName.forProfilePage(profile: profile, photos: photos) }
 
-    /// 🔴 **失敗は知らせの帯に出す**（`errorMessage` に入れない）。`errorMessage` は
+    /// 🔴 **失敗は格子の上の一行（`actionMessage`）に出す**（`errorMessage` に入れない）。`errorMessage` は
     /// 読み込みの失敗で、写真の格子ごと差し替えて出す——圏外でフォローを押すと
     /// 格子が消えていた（マイページが `actionMessage` で分けたのと同じ形）
-    func toggleFollow(userId: String, environment: AppEnvironment, toasts: ToastCenter) async {
+    func toggleFollow(userId: String, environment: AppEnvironment) async {
         isWorking = true
         actionMessage = nil
         defer { isWorking = false }

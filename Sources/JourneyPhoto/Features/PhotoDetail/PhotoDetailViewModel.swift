@@ -28,7 +28,9 @@ final class PhotoDetailViewModel: ObservableObject {
     /// この画面で書いた・消したコメント。**読み込んだ一覧に重ねて採る**
     /// ——投稿の前に読んだ一覧が後から届いて、書いたばかりのコメントが消えたり、
     /// 消したコメントが戻ったりしていた（`CommentMerge`）
-    private var postedComments: [PhotoComment] = []
+    /// **写真ごとに持つ。** 束の隣へ送る（`show`）ので、1本にすると p1 で書いた
+    /// コメントが p2 の一覧に「未反映の自分の投稿」として差し込まれていた
+    private var postedComments: [String: [PhotoComment]] = [:]
     private var deletedCommentIds: Set<String> = []
     /// いいねを送っている最中。**二度押しで2回投げない。**
     ///
@@ -111,9 +113,9 @@ final class PhotoDetailViewModel: ObservableObject {
             // **一覧に載った投稿は、以後サーバーを信じる**（持ち主が消した・
             // 別の端末で消したコメントを、手元の控えから復活させない）
             let seen = Set(loaded.items.map(\.id))
-            postedComments.removeAll { seen.contains($0.id) }
+            postedComments[id]?.removeAll { seen.contains($0.id) }
             let merged = CommentMerge.merge(loaded: loaded.items, count: loaded.count,
-                                            posted: postedComments, deleted: deletedCommentIds)
+                                            posted: postedComments[id] ?? [], deleted: deletedCommentIds)
             comments = merged.items
             commentCount = merged.count
         }
@@ -191,12 +193,13 @@ final class PhotoDetailViewModel: ObservableObject {
         let id = photoId
         do {
             let comment = try await social.postComment(photoId: id, text: text)
+            // 送った先の1枚に控える（隣へ送った後に届いても、戻ったときに出す）
+            postedComments[id, default: []].append(comment)
             guard id == photoId else { return }
             comments.insert(comment, at: 0)
             // **総数が分からない回は分からないまま。** 取れていない数に
             // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
             commentCount = commentCount.map { $0 + 1 }
-            postedComments.append(comment)
             // **送った文のときだけ空にする。** 送っている間も欄は打てるので、
             // 続きを書いていたら丸ごと消えていた
             if draftComment.trimmingCharacters(in: .whitespacesAndNewlines) == text {

@@ -630,6 +630,23 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.commentCount, 2)
     }
 
+    /// 🔴 **束の隣へ送っても、前の1枚で書いたコメントを持ち込まない。**
+    /// 控えが1本だったので、p1 で書いたコメントが p2 の先頭に差し込まれ、数も +1 された
+    func testPostedCommentStaysWithItsPhoto() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "きれい"
+        StubProtocol.respond(status: 200, body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#)
+        await model.postComment()
+
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        StubProtocol.respond(status: 200, body: #"{"items":[],"count":0}"#)
+        await model.load()
+        XCTAssertTrue(model.comments.isEmpty, "p1 のコメントが p2 に出ている")
+        XCTAssertEqual(model.commentCount, 0)
+    }
+
     /// 空のコメントは送らない。
     func testEmptyCommentIsNotSent() async {
         prepare()
