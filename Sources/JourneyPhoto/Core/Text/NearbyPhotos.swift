@@ -81,6 +81,28 @@ enum NearbyPhotos {
         return self.photos(located, near: here, withinKm: radiusChoices.max() ?? defaultRadius).isEmpty
     }
 
+    /// 「近くに写真はありません · 全体を見る」の帯を**下げたか**。
+    ///
+    /// 判定（`noneNearby`）は利用者の現在地しか見ないので、以前は**指で地図を
+    /// 動かしてピンを見ている間も**「近くに写真はありません」が出続けていた。
+    /// 下げるのは利用者が自分で動かしたときだけ——こちらが寄せた回（現在地を
+    /// 追う・写真全体へ寄せる・拡大縮小のボタン）でも地図の移動は届くので、
+    /// そこで下げると現在地に寄せた直後に帯が消える。
+    ///
+    ///     現在地が取れた           → 出す（取り直したら、また出す）
+    ///     「全体を見る」を押した    → 下げる
+    ///     利用者が地図を動かした    → 下げる
+    ///     こちらが地図を動かした    → そのまま
+    struct NoneNearbyBanner: Equatable {
+        private(set) var dismissed = false
+
+        mutating func located() { dismissed = false }
+        mutating func showedAll() { dismissed = true }
+        mutating func cameraMoved(byUser: Bool) {
+            if byUser { dismissed = true }
+        }
+    }
+
     /// 距離の言い方。**必ず「約」を付ける**（丸めた座標から出した値なので）。
     ///
     /// 1km 未満は「1km以内」——「0.3km」と書くと、持っていない精度を

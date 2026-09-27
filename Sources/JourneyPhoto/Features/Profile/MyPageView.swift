@@ -331,6 +331,8 @@ struct MyPageView: View {
                     Text(profile.name)
                         .font(JPFont.display(26, relativeTo: .title))
                         .foregroundStyle(Color.white)
+                        // 画面の見出しは名前（人のページと同じ）
+                        .accessibilityAddTraits(.isHeader)
                     VerifiedBadge(isVerified: profile.verified, nameSize: 26, relativeTo: .title, fit: .mincho)
                 }
                 if let line = ProfileLine.handleAndHome(username: profile.username,
