@@ -126,14 +126,11 @@ struct RootView: View {
             // 次の人のお知らせを開かない）。ログインしていない人には開かない
             // （起動の確認で期限切れと分かった回など）
             guard !Task.isCancelled, let owner, auth.userId == owner else { return }
-            if showNotifications {
-                // 本当に出ている: それで済んでいる
-                if ModalProbe.isPresenting() { return }
-                // 出せずに true のまま残った: 戻して、次の描画を待ってから開き直す
-                showNotifications = false
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                guard !Task.isCancelled, auth.userId == owner else { return }
-            }
+            // 待っている間に（ベルなどから）開いた: それで済んでいる。
+            // **ここで「出せずに残った」と見なして戻さない**——開いた直後の
+            // 描画が済む前だと、押したばかりのベルを取り消してしまう
+            // （true のまま残った回は、次に押したときの入口で戻す）
+            guard !showNotifications else { return }
             let waited = Date().timeIntervalSince(started)
             guard waited <= Self.activityWaitLimit else {
                 // あまりに後（何分も経ってから）の知らせは、何のことか分からない
@@ -230,14 +227,17 @@ struct RootView: View {
         // **画面が出てきたときにも取りに行く。** 冷えた状態から押した回・
         // 規約の同意画面が出ていた回は、数が変わった瞬間にここが居なかった
         .onAppear { takeActivityRequest() }
-        // **開いている間に届いた通知もベルに出す**（`AppDelegate.willPresent`）
-        // `.task(id:)` にするのは、続けて届いたときに前の取得を取り消すため
-        // （遅れて返った古い数で上書きしない）
         // お知らせを既読にできた: 閉じたときの数え直しが落ちても 0 にする
         .onChange(of: router.readMarks) { _, _ in
             unreadGeneration += 1
             unread = 0
+            // 既読のあとに届いた分は数え直す（0 のままにしない）。
+            // 落ちても 0 は残る
+            Task { await refreshUnread() }
         }
+        // **開いている間に届いた通知もベルに出す**（`AppDelegate.willPresent`）
+        // `.task(id:)` にするのは、続けて届いたときに前の取得を取り消すため
+        // （遅れて返った古い数で上書きしない）
         .task(id: router.arrivals) {
             guard router.arrivals > 0 else { return }
             await refreshUnread()
