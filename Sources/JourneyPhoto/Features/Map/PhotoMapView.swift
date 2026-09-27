@@ -102,7 +102,9 @@ struct PhotoMapView: View {
             // 🔴 **取り消された回（戻るスワイプを途中でやめた）は何もしない。**
             // 札を差し替えると開いている詳細が閉じ、印だけ進めると本当に戻った
             // ときに読み直さない
-            if userChanged, !Task.isCancelled, !model.loadFailed {
+            // 読んでいる間にまた人が替わった回も触らない（そちらの `reloadForNewUser`
+            // が進めた印を、古い数で戻さない）
+            if userChanged, !Task.isCancelled, !model.loadFailed, hidden.userRevision == revision {
                 loadedUserRevision = revision
                 // 見ていない間に人が替わった: 札は前の人の一覧から作ったので、読み直した
                 // ピンに差し替える（下げると、戻るスワイプの途中で詳細が閉じる）
@@ -1369,7 +1371,8 @@ struct PhotoMapView: View {
             // 読んでいる間に押した札・開いた一覧も、前の人の写しなので差し替える。
             // 一覧のシートを出している間もここを通る（シートでは `onDisappear` が
             // 来ない）ので、シートの中で開いている詳細は、その写真が次の人の一覧に
-            // 無ければ閉じる——前の人あての写真を見せ続けない向きに倒している
+            // 無ければ閉じ、ピン（座標）ごと無ければシートごと閉じる——前の人あての
+            // 写真を見せ続けない向きに倒している
             refreshSelected()
             dropHidden()
         }
