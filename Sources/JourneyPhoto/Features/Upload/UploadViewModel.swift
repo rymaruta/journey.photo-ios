@@ -54,6 +54,8 @@ final class UploadViewModel: ObservableObject {
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
         didSet {
+            // 選択を中から直しただけ（`setSelectionQuietly`）なら読み直さない
+            guard !isSettingSelectionQuietly else { return }
             // **前の読み込みを捨ててから始める。** 重ねると、外したはずの
             // 写真まで待ち行列に残って一緒に投稿される
             loadTask?.cancel()
@@ -115,6 +117,8 @@ final class UploadViewModel: ObservableObject {
     private var cancelled = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
     private var loadTask: Task<Void, Never>?
+    /// `pickerItems` を中から直している最中（`setSelectionQuietly`）
+    private var isSettingSelectionQuietly = false
     /// 本体まで置けて、保存がまだ通っていない写真（`UploadService.stage` の注記）
     private let staged = StagedUploads()
 
@@ -127,7 +131,10 @@ final class UploadViewModel: ObservableObject {
 
     /// **閉じたら、保存しなかった本体を片付ける。** 保存の失敗では片付けない
     /// （やり直しで同じ鍵を使う）ので、諦めて閉じた分はここで消す。
-    /// 保存が実は通っていた鍵は、サーバーが消さない（`discardUpload`）
+    /// 保存が実は通っていた鍵は、ふつうはサーバーが消さない（`discardUpload`）。
+    /// ただし行の書き込みが遅れている間（API Gateway の 29 秒で切れたあとも
+    /// Lambda は続く・利用者の索引は結果整合）は消えうる——窓は、保存の失敗の
+    /// たびに消していた以前より狭い。塞ぐならサーバー側（確かめていない）
     deinit {
         let keys = staged.removeAll()
         guard !keys.isEmpty else { return }
@@ -214,7 +221,7 @@ final class UploadViewModel: ObservableObject {
         // **ライブラリの選択からも外す。** 残すと、次に「追加」を開いたときに
         // 選ばれたままで、閉じると外したはずの写真が戻ってくる
         if let key = removed?.pickerItem {
-            pickerItems.removeAll { $0 == key }
+            setSelectionQuietly(pickerItems.filter { $0 != key })
         }
     }
 
@@ -349,7 +356,7 @@ final class UploadViewModel: ObservableObject {
         // 選び足す、のどちらでも選び直しの差分が投稿済みの写真を「新しく選ばれた」
         // と読み、**同じ写真をもう一度読み込んで上げる**（`remove` と同じ理由）
         let remaining = PickerReconcile.dropPosted(picked: pickerItems, posted: postedKeys)
-        if remaining.count != pickerItems.count { pickerItems = remaining }
+        if remaining.count != pickerItems.count { setSelectionQuietly(remaining) }
         // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
         // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
         if items.isEmpty && failures.isEmpty {
@@ -427,6 +434,17 @@ final class UploadViewModel: ObservableObject {
             }
         }
         return true
+    }
+
+    /// 選択から印を外すだけで、**読み直しを起こさない。**
+    ///
+    /// 🔴 didSet の読み直しを通すと、前に読めなかった写真（選択には残り、
+    /// 待ち行列には居ない）を「新しく選ばれた」と読み、`errorMessage` を消して
+    /// 読み直す——一部だけ上がった回の「残りは投稿できていません」が消えていた
+    private func setSelectionQuietly(_ items: [PhotosPickerItem]) {
+        isSettingSelectionQuietly = true
+        pickerItems = items
+        isSettingSelectionQuietly = false
     }
 
     /// 置いたまま保存していない本体を片付ける（本人がその写真を外した）

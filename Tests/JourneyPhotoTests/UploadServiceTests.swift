@@ -1,5 +1,6 @@
 import XCTest
 @testable import JourneyPhoto
+import PhotosUI
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -123,6 +124,81 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertEqual(paths.filter { $0 == "/put" }.count, 1, "本体を置き直している")
         XCTAssertEqual(paths.filter { $0 == "/upload/save" }.count, 2)
         XCTAssertFalse(paths.contains("/upload/discard"), "やり直す鍵の本体を消している")
+    }
+
+    /// 保存が落ちた写真を**本人が外したら**、置いたままの本体を片付ける
+    /// （保存の失敗では片付けないので、ここで消さないと S3 に残る）
+    @MainActor
+    func testRemovingAPhotoWhoseSaveFailedDiscardsItsUpload() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 500, body: #"{"error":"保存に失敗しました"}"#),
+            .init(match: "/upload/discard", status: 200, body: #"{"success":true}"#),
+        ]
+        let api = APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"),
+            session: session
+        )
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.items = [PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil))]
+        await model.submit()
+        XCTAssertFalse(ScriptedProtocol.calls.contains { $0.path == "/upload/discard" })
+
+        model.remove(model.items[0].id)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(ScriptedProtocol.calls.contains { $0.path == "/upload/discard" },
+                      "外した写真の本体が S3 に残ったまま")
+    }
+
+    /// 🔴 **一部だけ上がった回に、投稿済みの写真を選択から外す**——そして
+    /// **その直しで読み直しを起こさない。**
+    ///
+    /// 外さないと、残った1枚を外す・「追加」で選び足すたびに、投稿済みの写真が
+    /// 新しく選ばれた分として読み直され、もう一度上がる。外すときに読み直しを
+    /// 起こすと、前に読めなかった写真を読み直して「残りは投稿できていません」を消す
+    @MainActor
+    func testPartialPostDropsPostedItemsFromTheSelectionAndKeepsTheError() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+        ]
+        let api = APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"),
+            session: session
+        )
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        let a = PhotosPickerItem(itemIdentifier: "a")
+        let b = PhotosPickerItem(itemIdentifier: "b")
+        // c は読めなかった写真（選択には残り、待ち行列には居ない）
+        let c = PhotosPickerItem(itemIdentifier: "c")
+        func pending(_ key: PhotosPickerItem, type: String) -> PendingPhoto {
+            var photo = PendingPhoto(prepared: ImagePreparer.Prepared(
+                data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: type,
+                exif: nil, coords: nil, takenOn: nil))
+            photo.pickerItem = key
+            return photo
+        }
+        // b は手前で弾かれる形にして、a だけが上がる回を作る
+        model.items = [pending(a, type: "image/jpeg"), pending(b, type: "image/svg+xml")]
+        model.pickerItems = [a, b, c]
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        await model.submit()
+        let summary = model.errorMessage
+        XCTAssertNotNil(summary)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(model.items.count, 1)
+        XCTAssertEqual(model.pickerItems, [b, c], "投稿済みの写真が選ばれたまま")
+        XCTAssertEqual(model.errorMessage, summary, "送れなかった知らせが消えている")
     }
 
     /// 上限と形は**手前で弾く**（50MB 上げてから 400 を食わない）。

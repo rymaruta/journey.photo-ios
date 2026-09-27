@@ -17,7 +17,8 @@ import FoundationNetworking
 /// **その場では片付けない**——保存は通っていて応答だけ失われたのかもしれず、
 /// やり直しは同じ鍵で送る（`stage` の注記）。片付けるのは、本人がその写真を
 /// 諦めたとき（`DELETE /upload/discard`。`api-user/src/upload.ts` の
-/// `discardUpload`。保存済みの写真が使っているキーは消せないようになっている）。
+/// `discardUpload`。保存済みの写真が使っているキーはふつう消せない。行の書き込みが
+/// 遅れている間は消えうる——`UploadViewModel` の deinit の注記）。
 struct UploadService {
 
     private let api: APIClient

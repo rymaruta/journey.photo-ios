@@ -38,8 +38,8 @@ final class UploadReconcileTests: XCTestCase {
     func testPostedItemsLeaveTheSelection() {
         let picked = PickerReconcile.dropPosted(picked: ["a", "b"], posted: ["a", nil])
         XCTAssertEqual(picked, ["b"])
-        // 残った b を外しても、a が戻ってこない
-        let r = PickerReconcile.reconcile(existing: ["b"], picked: picked.filter { $0 != "b" })
-        XCTAssertEqual(r.added, [])
+        // 「追加」で c を選び足しても、a は新しく選ばれた分に入らない
+        let r = PickerReconcile.reconcile(existing: ["b"], picked: picked + ["c"])
+        XCTAssertEqual(r.added, ["c"])
     }
 }
