@@ -48,9 +48,12 @@ struct OfficialSpotView: View {
     /// 端末の地図アプリへ。**座標があるときだけ**（`SpotScreen`）
     private var mapURL: URL? { SpotScreen.mapURL(name: spot.name, coords: spot.coords) }
 
-    /// 配る文。**サイトのリンクは入れない**（本番 main に `/spots` は無い）
+    /// 配る文。**公開済みのスポットはサイトのページ（`/spots/<slug>`）も入れる**
+    /// （Web の本番に `app/spots/[slug]` がある）。下書きはページが無いので入れない
     private var shareText: String {
-        SpotScreen.shareText(name: spot.name, region: spot.regionLabel, mapURL: mapURL)
+        SpotScreen.shareText(name: spot.name, region: spot.regionLabel, mapURL: mapURL,
+                             pageURL: SpotScreen.pageURL(slug: spot.slug, isDraft: spot.isDraft,
+                                                         siteBase: AppConfig.siteBaseURL))
     }
 
     var body: some View {
