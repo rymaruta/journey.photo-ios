@@ -447,8 +447,11 @@ final class UserProfileViewModel: ObservableObject {
         // 口が api-user に無いため（Web も静的ページを書き出している）
         let all = try? await environment.gallery.fetchPhotos()
         guard current() else { return }
-        // 読んでいる間にブロックした（`block` が格子を空にした）なら、写真を戻さない
-        if let all, blocks == blockWrites {
+        // 読んでいる間にブロックした（`block` が格子を空にした）なら、写真を戻さない。
+        // **失敗とも言わない**——取れなかった枝（下の else）に落とすと、初回は
+        // 「読み込めませんでした」が出ていた（84aaf23 の回帰）
+        guard blocks == blockWrites else { return }
+        if let all {
             photos = PhotoPinning.pinnedFirst(all.filter { ($0.userId ?? $0.uploadedBy) == userId },
                                       pinned: profile?.pinnedPhotoIds ?? [])
             photoCount = .loaded(photos.count)
