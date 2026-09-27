@@ -146,7 +146,7 @@ struct HighlightsListView: View {
                                 .foregroundStyle(WebTheme.foreground)
                             // **数えた値だけ出す**（サーバーが並びの長さを返す）
                             if let count = highlight.count {
-                                Text(L("\(count)件", "\(count) stories"))
+                                Text(L("\(count)件", count == 1 ? "1 story" : "\(count) stories"))
                                     .font(.caption)
                                     .foregroundStyle(WebTheme.faint)
                             }

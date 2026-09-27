@@ -185,7 +185,7 @@ enum ImagePreparer {
            let millimeters = Int(exactly: focal.rounded()) {
             fields.focalLength = "\(millimeters)mm"
         }
-        fields.dateTimeOriginal = exif[kCGImagePropertyExifDateTimeOriginal] as? String
+        fields.dateTimeOriginal = storedDateTime(exif[kCGImagePropertyExifDateTimeOriginal] as? String)
 
         return fields
     }
@@ -193,7 +193,10 @@ enum ImagePreparer {
     /// GPS を約1km（小数第2位）に丸める。**丸める前の値は外に出さない。**
     /// サーバーも `sanitizeCoords` で同じ丸めをするが、丸める前の座標を
     /// 電波に乗せる理由が無い。
-    private static func readCoords(from properties: [CFString: Any]) -> Photo.Coords? {
+    ///
+    /// **`0,0` は「座標なし」。** GPS を掴めなかったカメラ・アプリが 0 を
+    /// 書くことがあり、そのまま送るとギニア湾（ヌル島）にピンが立つ。
+    static func readCoords(from properties: [CFString: Any]) -> Photo.Coords? {
         guard let gps = properties[kCGImagePropertyGPSDictionary] as? [CFString: Any],
               let latValue = gps[kCGImagePropertyGPSLatitude] as? Double,
               let lngValue = gps[kCGImagePropertyGPSLongitude] as? Double else {
@@ -203,8 +206,31 @@ enum ImagePreparer {
         let lngRef = gps[kCGImagePropertyGPSLongitudeRef] as? String ?? "E"
         let lat = latRef.uppercased() == "S" ? -latValue : latValue
         let lng = lngRef.uppercased() == "W" ? -lngValue : lngValue
-        guard abs(lat) <= 90, abs(lng) <= 180 else { return nil }
+        guard lat.isFinite, lng.isFinite, abs(lat) <= 90, abs(lng) <= 180 else { return nil }
+        guard !(lat == 0 && lng == 0) else { return nil }
         return Photo.Coords(lat: (lat * 100).rounded() / 100, lng: (lng * 100).rounded() / 100)
+    }
+
+    /// EXIF の撮影日時（`2026:09:13 08:21:05`）を、**保存する形**
+    /// `2026-09-13T08:21:05` にする。
+    ///
+    /// **EXIF の綴りのまま送っていた**ので、Web の写真ページ（`ExifSpecs` の
+    /// `formatStoredDateTime` は `YYYY-MM-DD[T ]HH:mm` しか読まない）に
+    /// アプリから上げた写真の撮影日時が出なかった。
+    /// 読めない値は送らない（nil）。既に `YYYY-MM-DD…` の形ならそのまま
+    static func storedDateTime(_ raw: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        if raw.range(of: #"^\d{4}-\d{2}-\d{2}"#, options: .regularExpression) != nil { return raw }
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(identifier: "UTC")
+        parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        guard let date = parser.date(from: raw) else { return nil }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "en_US_POSIX")
+        out.timeZone = TimeZone(identifier: "UTC")
+        out.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return out.string(from: date)
     }
 
     /// 撮影日を YYYY-MM-DD にする。EXIF の日付は "2026:09:13 08:21:05"。

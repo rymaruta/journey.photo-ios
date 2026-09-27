@@ -155,7 +155,7 @@ struct LegalGateView: View {
         hero = photos.first { photo in
             photo.gridImageURL != nil
                 && !hidden.reportedPhotoIds.contains(photo.id)
-                && !(photo.userId.map { hidden.blockedUserIds.contains($0) } ?? false)
+                && !((photo.userId ?? photo.uploadedBy).map { hidden.blockedUserIds.contains($0) } ?? false)
         }
     }
 }

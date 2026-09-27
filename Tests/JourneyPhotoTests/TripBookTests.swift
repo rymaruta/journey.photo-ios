@@ -415,4 +415,33 @@ final class TripOwnershipTests: XCTestCase {
         ])
         XCTAssertTrue(trips.isEmpty)
     }
+
+    /// **`uploadedBy` だけの写真も、その人の旅に束ねる**（E14）。
+    /// `userId` だけを鍵にしていたので、1枚ずつ別の旅に割れていた
+    func testUploadedByOnlyPhotosFormOneTrip() throws {
+        func legacy(_ id: String, date: String) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(
+                "{\"id\":\"\(id)\",\"src\":\"https://x/\(id).jpg\",\"date\":\"\(date)\",\"uploadedBy\":\"A\"}".utf8))
+        }
+        let trips = TripBook.trips(from: [
+            try legacy("a1", date: "2026-05-01"),
+            try legacy("a2", date: "2026-05-02"),
+        ])
+        XCTAssertEqual(trips.count, 1, "同じ人の続きの日が別の旅に割れている")
+        XCTAssertEqual(trips.first?.photos.count, 2)
+    }
+}
+
+/// 旅の一冊の読み上げ（B13）。見た目の「DAY n」を読ませない
+final class TripBookSpokenTests: XCTestCase {
+    func testDayIsSpokenInJapanese() {
+        XCTAssertEqual(TripBookView.spokenDay(2), "2日目")
+    }
+
+    func testRouteIsSpokenWithoutDAY() {
+        let label = TripBookView.routeSpokenLabel([TripBook.RouteStop(day: 1, place: "金沢"),
+                                                   TripBook.RouteStop(day: 3, place: "福井")])
+        XCTAssertEqual(label, "1日目 金沢、3日目 福井")
+        XCTAssertFalse(label.contains("DAY"))
+    }
 }

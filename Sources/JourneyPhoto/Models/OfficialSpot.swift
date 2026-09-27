@@ -70,9 +70,30 @@ struct SpotImage: Equatable {
     let license: String
     /// 出典のページ（Commons のファイルのページ）
     let pageUrl: URL?
+    /// ライセンスの文面（Web と同じ欄名 `licenseUrl`）。CC BY・CC BY-SA は
+    /// 作者・**ライセンスの URI**・出典の表示が条件。パブリックドメインなどは無い
+    var licenseUrl: URL? = nil
 
-    /// 札の隅に出す出典の1行
-    var credit: String { L("写真: \(author) / \(license)", "Photo: \(author) / \(license)") }
+    /// 出典の1行の文字（画面は `linkedCredit` でこの文字にリンクを付けて出す）
+    var credit: String { "\(creditAuthor) / \(license)" }
+
+    /// 出典の1行の前半（「写真: 作者」）
+    var creditAuthor: String { L("写真: \(author)", "Photo: \(author)") }
+
+    /// 出典の1行を、**文字は `credit` と同じまま**、部分にリンクを付けて返す:
+    /// 「写真: 作者」→ 出典のページ（`pageUrl`）・「ライセンス」→ 文面（`licenseUrl`）。
+    ///
+    /// Web（`SpotGuideClient`）は「写真: 作者 / ライセンス（文面へ）/ Wikimedia Commons
+    /// （出典のページへ）」で、出典へのリンクは末尾の「Wikimedia Commons」に付く。
+    /// アプリは**画面の文字を変えない**ため末尾の語は足さず、出典のページへの
+    /// リンクを作者の側に付ける（リンク先の2つは Web と同じ）
+    var linkedCredit: AttributedString {
+        var head = AttributedString(creditAuthor)
+        head.link = pageUrl
+        var tail = AttributedString(license)
+        tail.link = licenseUrl
+        return head + AttributedString(" / ") + tail
+    }
 }
 
 /// 写真の欄を**決して投げずに**読む入れ物。写真が壊れていても、スポットの行は
@@ -87,6 +108,7 @@ struct LenientSpotImage: Decodable, Equatable {
         let author: String?
         let license: String?
         let pageUrl: String?
+        let licenseUrl: String?
     }
 
     init(from decoder: Decoder) throws {
@@ -95,13 +117,28 @@ struct LenientSpotImage: Decodable, Equatable {
         let license = raw.license?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard let s = raw.url, let url = URL(string: s), url.scheme == "https",
               !author.isEmpty, !license.isEmpty else { value = nil; return }
-        let page = raw.pageUrl.flatMap(URL.init(string:)).flatMap { $0.scheme == "https" ? $0 : nil }
-        value = SpotImage(url: url, author: author, license: license, pageUrl: page)
+        let page = Self.httpsURL(raw.pageUrl)
+        value = SpotImage(url: url, author: author, license: license, pageUrl: page,
+                          licenseUrl: Self.httpsURL(raw.licenseUrl))
+    }
+
+    /// 出典のページ・ライセンスの文面の URL。**http は https に上げる**（Web の
+    /// `spotCoverImage` と同じ扱い。台帳には `http://creativecommons.org/…` が141件ある）。
+    /// 空・https/http 以外は nil（押せないリンクを出さない）
+    static func httpsURL(_ raw: String?) -> URL? {
+        guard var s = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+        if s.hasPrefix("http://") { s = "https://" + s.dropFirst("http://".count) }
+        guard let url = URL(string: s), url.scheme == "https", url.host != nil else { return nil }
+        return url
     }
 }
 
 /// 1件ずつ復号して、**読めなかった行だけを落とす**入れ物
 /// （`LenientPhotoList` と同じ理由・同じ形）。
+///
+/// **同じ `spotId` の2行目以降も落とす（先勝ち）。** 画面は `spotId` を
+/// `Identifiable` の鍵に並べる（近くの撮影スポットの `ForEach(id: \.spot.id)`）
+/// ので、重なると同じ札が2つ並ぶ。落とした数は `dropped` に入れる。
 ///
 /// 加えて、**鍵になる3つ（`spotId`・`slug`・`name`）が空の行も落とす**。
 /// 型は合っていても、空の `slug` は「行きたい」の鍵を `SPOT-` だけにし、
@@ -115,7 +152,8 @@ struct LenientOfficialSpotList: Decodable {
 
     init(from decoder: Decoder) throws {
         let rows = try [Row](from: decoder)
-        spots = rows.compactMap(\.spot)
+        var seen = Set<String>()
+        spots = rows.compactMap(\.spot).filter { seen.insert($0.spotId).inserted }
         dropped = rows.count - spots.count
     }
 

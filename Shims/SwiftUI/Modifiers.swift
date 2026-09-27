@@ -232,6 +232,7 @@ extension View {
     public func scaledToFit() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func scaledToFill() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineLimit(_ n: Int) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func truncationMode(_ mode: Text.TruncationMode) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// **nil は「制限しない」**（本物と同じ）。折りたたみの展開で使う
     public func lineLimit(_ n: Int?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineLimit(_ range: ClosedRange<Int>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
@@ -344,6 +345,11 @@ extension View {
                                         @ViewBuilder message: () -> M) -> Self { self }
     public func alert<A: View>(_ title: String, isPresented: Binding<Bool>,
                                @ViewBuilder actions: () -> A) -> Self { self }
+    /// 出した時点の値を受け取る形（本物は iOS 15 以降）
+    public func alert<A: View, M: View, T>(_ title: String, isPresented: Binding<Bool>,
+                                           presenting data: T?,
+                                           @ViewBuilder actions: (T) -> A,
+                                           @ViewBuilder message: (T) -> M) -> Self { self }
     /// 下から出る選択肢（本物は iOS 15 以降）。`Menu` と違い `isPresented` を
     /// 持つので、開いている間に自動送りを止められる
     public func confirmationDialog<A: View>(_ title: String, isPresented: Binding<Bool>,
@@ -456,4 +462,8 @@ public struct EdgeInsets {
 public struct SubmitLabel {
     public static let done = SubmitLabel(), go = SubmitLabel(), send = SubmitLabel(),
                       search = SubmitLabel(), next = SubmitLabel(), `return` = SubmitLabel()
+}
+
+extension Text {
+    public enum TruncationMode: Sendable { case head, tail, middle }
 }

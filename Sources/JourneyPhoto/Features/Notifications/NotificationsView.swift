@@ -197,7 +197,8 @@ private struct NotificationRow: View {
     let entry: NotificationText.Entry
     /// いまフォローしている人。**フォロー通知の「フォローバック」を
     /// 出すかどうかの判断に使う**——既にフォローしている相手に出さない
-    var following: Set<String> = []
+    /// nil は「まだ分からない」＝フォローバックを出さない
+    var following: Set<String>?
     var onFollowBack: ((String) async -> Void)?
     /// 行の本体を押したとき。nil なら押せない（行き先が無い）
     var onOpen: (() -> Void)?
@@ -302,7 +303,8 @@ private struct NotificationRow: View {
         // 退会した人には出さない（押してもサーバーが 404 を返し、何も起きない）
         if notification.kind == .follow, notification.deleted != true,
            let userId = notification.byId ?? notification.targetUserId,
-           !following.contains(userId), let onFollowBack {
+           NotificationsViewModel.showsFollowBack(to: userId, following: following),
+           let onFollowBack {
             Button {
                 busy = true
                 Task {
@@ -379,7 +381,10 @@ final class NotificationsViewModel: ObservableObject {
     /// 既読化するので、`unread` はすぐ 0 になる。読み直すまでは点を残す
     @Published private(set) var unreadIds: Set<String> = []
     /// いまフォローしている人。**フォローバックを出すかの判断だけに使う**
-    @Published private(set) var following: Set<String> = []
+    ///
+    /// **nil は「まだ分からない」**（読めていない・読めなかった）。空集合と
+    /// 分けないと、取れなかった回に全員へフォローバックが出る
+    @Published private(set) var following: Set<String>?
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
     /// フォローバックの失敗。**読み込みの失敗（`errorMessage`）と分ける**——同じ所に出すと
@@ -416,7 +421,7 @@ final class NotificationsViewModel: ObservableObject {
         mine = []
         unread = 0
         unreadIds = []
-        following = []
+        following = nil
         isLoading = false
         errorMessage = nil
         followBackError = nil
@@ -481,6 +486,12 @@ final class NotificationsViewModel: ObservableObject {
         following = Set(ids)
     }
 
+    /// フォローバックを出すか。**フォロー中が分からない間（nil）は出さない**
+    nonisolated static func showsFollowBack(to userId: String, following: Set<String>?) -> Bool {
+        guard let following else { return false }
+        return !following.contains(userId)
+    }
+
     /// フォローバック。**成功したときだけ**印を更新する
     /// （失敗したのにボタンが消えると、フォローできたように見える）。
     /// **失敗は黙らない**——圏外で押して何も起きないと、押せていないのか分からない
@@ -491,7 +502,7 @@ final class NotificationsViewModel: ObservableObject {
             let result = try await environment.social.follow(userId: userId)
             guard era == userEra else { return }
             // 返ってきた状態を使う（自分で決めない）
-            if result.following { following.insert(userId) }
+            if result.following { following?.insert(userId) }
         } catch {
             guard era == userEra else { return }
             followBackError = (error as? LocalizedError)?.errorDescription

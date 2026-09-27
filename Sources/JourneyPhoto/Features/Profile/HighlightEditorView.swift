@@ -101,8 +101,8 @@ struct HighlightEditorView: View {
                 Button(Labels.Common.retry) { Task { await load() } }
                     .buttonStyle(.bordered)
             } else if archive.isEmpty {
-                Text(L("残したストーリーがまだありません。ストーリーを作るときに「24時間のあとも自分用に残す」を選ぶと、ここに並びます。",
-                       "No kept stories yet. Turn on \"Keep it for myself after 24 hours\" when you post a story."))
+                Text(L("残したストーリーがまだありません。ストーリーを作るときに「自分用に残す」をオンにすると、ここに並びます。",
+                       "No kept stories yet. Turn on \"Keep for me\" when you post a story."))
                     .font(.callout)
                     .foregroundStyle(WebTheme.muted2)
             } else {
@@ -215,6 +215,9 @@ struct HighlightEditorView: View {
             // **いまの並びが取れなければ保存させない**（`canSave` の注記）
             if contents == nil { loadFailed = true }
             if let contents {
+                // 題は**取れた中身から**入れる（呼び元の highlight は編集前の古い題のことがある）。
+                // 打ちかけの名前（最初に入れた題から変えたもの）は戻さない
+                if title.isEmpty || title == existing.title { title = contents.title }
                 let inArchive = Set(archive.map(\.id))
                 picked = contents.items.map(\.id).filter { inArchive.contains($0) }
                 // **表紙は必ず並びの中のものにする。** サーバーは並びに

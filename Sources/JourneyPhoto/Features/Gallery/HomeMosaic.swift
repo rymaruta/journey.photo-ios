@@ -108,8 +108,12 @@ struct HomeFeedTile: View {
         .overlay(alignment: .topTrailing) { moreMenu }
     }
 
+    /// **`userId` が無く `uploadedBy` だけの写真もある**（詳細の `ownerId` と同じ読み方）。
+    /// `userId` だけを見ると、自分の写真に通報が出て、他人の写真でブロックが出なかった
+    private var ownerId: String? { photo.userId ?? photo.uploadedBy }
+
     /// 自分の写真には出さない（編集は詳細で）
-    private var showsMore: Bool { photo.userId == nil || photo.userId != auth.userId }
+    private var showsMore: Bool { ownerId == nil || ownerId != auth.userId }
 
     /// 「…」（通報・ブロック）。中身は写真詳細の「…」と同じ。見た目はいいねと
     /// 同じガラスの丸（32pt）で、押せる範囲は 44pt
@@ -120,7 +124,7 @@ struct HomeFeedTile: View {
                 Button { onReport(photo) } label: {
                     Label(L("通報する", "Report"), systemImage: "flag")
                 }
-                if photo.userId != nil {
+                if ownerId != nil {
                     Button(role: .destructive) { showBlockConfirm = true } label: {
                         Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
                     }
@@ -146,7 +150,7 @@ struct HomeFeedTile: View {
     }
 
     private func block() async {
-        guard let ownerId = photo.userId else { return }
+        guard let ownerId else { return }
         do {
             try await hidden.blockAndHide(ownerId, environment: environment)
             toasts.show(L("ブロックしました", "Blocked"))

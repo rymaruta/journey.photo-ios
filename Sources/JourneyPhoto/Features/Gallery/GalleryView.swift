@@ -27,6 +27,9 @@ struct GalleryView: View {
     /// 描くときに落とす「見せない」の写し。**画面に出ている間だけ取り直す**。
     /// 戻った瞬間、読み直しが終わるまでブロックした人のカードが見えないように
     @State private var dropped = ModerationSnapshot()
+    /// いま一覧を読んでいる人。**外側の nil は「まだ一度も決まっていない」**
+    /// （内側の nil は未ログイン）。人が替わったのを見分けるのに使う
+    @State private var shownViewer: String??
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}
@@ -77,6 +80,14 @@ struct GalleryView: View {
             // 再開した時点の `auth.userId` で前の人の集合を記録しない
             let userId = auth.userId
             model.expect(viewerId: userId)
+            // **人が替わったら一覧を読み直す**（前の人の限定公開を捨てる）。
+            // 初回（`shownViewer` がまだ無い）は上の `.task` が読むので何もしない
+            if let previous = shownViewer, previous != userId {
+                shownViewer = .some(userId)
+                await model.switchViewer(from: previous, to: userId)
+            } else {
+                shownViewer = .some(userId)
+            }
             guard userId != nil else {
                 model.use(viewerId: nil, following: [])
                 await model.loadMyPhotos(environment.photos, viewerId: nil)
@@ -122,8 +133,18 @@ struct GalleryView: View {
                 storiesRefresh &+= 1
             }
         }
+        // **限定公開の取り口が入れ替わった後にも読み直す。** `auth.userId` の変化と
+        // 取り口の入れ替え（`JourneyPhotoApp.applyRestrictedFeed`）の順は決まっておらず、
+        // 先に読むと前の人の口の控えを拾いうる。最初の1回（今の回数）は読まない
+        .task {
+            var isFirst = true
+            for await _ in await environment.gallery.restrictedChanges() {
+                if isFirst { isFirst = false; continue }
+                await model.load()
+            }
+        }
         .sheet(item: $reportTarget) { target in
-            ReportSheet(photoId: target.id, ownerId: target.userId)
+            ReportSheet(photoId: target.id, ownerId: target.userId ?? target.uploadedBy)
         }
         // **ブロック／通報の直後に消す。** 手元に読み終えた配列が残るので、
         // 読み直さないと画面は変わらない。
