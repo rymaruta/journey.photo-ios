@@ -180,6 +180,34 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertEqual(model.items.count, 1)
     }
 
+    /// **カメラの写真だけの回でも、最後の1枚を外したら束の印を捨てる。**
+    /// 残すと、次に撮った写真が前の（一部だけ上がった）投稿の束に入る
+    @MainActor
+    func testRemovingTheLastCameraPhotoDropsTheGroup() async throws {
+        let api = APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"),
+            session: session
+        )
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        // どちらも手前で弾かれる形（通信しない）。印は送り始めに作られる
+        func camera() -> PendingPhoto {
+            PendingPhoto(prepared: ImagePreparer.Prepared(
+                data: Data([0xFF]), fileName: "photo.jpg", contentType: "image/svg+xml",
+                exif: nil, coords: nil, takenOn: nil))
+        }
+        model.items = [camera(), camera()]
+        model.groupsAsOnePost = true
+        await model.submit()
+        XCTAssertNotNil(model.groupId)
+
+        model.remove(model.items[0].id)
+        XCTAssertNotNil(model.groupId, "まだ1枚残っている")
+        model.remove(model.items[0].id)
+        XCTAssertNil(model.groupId, "前の投稿の束の印が残っている")
+    }
+
     /// 条件が立つまで待つ（最長5秒）。切り離した仕事の終わりを時間で当てない
     @MainActor
     private func waitUntil(_ condition: () -> Bool) async throws {

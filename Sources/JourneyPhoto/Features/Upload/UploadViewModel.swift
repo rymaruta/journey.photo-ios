@@ -90,7 +90,7 @@ final class UploadViewModel: ObservableObject {
     @Published var groupsAsOnePost = false
 
     /// この回の束の印。**送り始めるときに1つだけ作る**
-    private var groupId: String?
+    private(set) var groupId: String?
     /// 何回目の選択か。選び直した後に、前の読み込みの結果を混ぜないための目印
     private var pickGeneration = 0
 
@@ -245,6 +245,9 @@ final class UploadViewModel: ObservableObject {
             // 走り出す前の読み込みの取り消しを didSet に任せている
             pickerItems.removeAll { $0 == key }
         }
+        // **最後の1枚を外したら束の印も捨てる。** カメラの分（印なし）は上の
+        // 読み直しを通らないので、ここで捨てないと次に撮った写真が前の投稿の束に入る
+        if items.isEmpty { groupId = nil }
     }
 
     /// 選ばれた写真を読み、**その場で EXIF を落とす**。
@@ -344,7 +347,8 @@ final class UploadViewModel: ObservableObject {
         // 🔴 **二度押しで二重に出さない**（`StoryComposerView.post` と同じ穴）。
         // ボタンの `.disabled` は次の描画まで効かず、素早い2回押しで
         // `submit()` が2本走る
-        guard !isWorking, !items.isEmpty else { return }
+        // 読み込み中・整え中も止める（`canSubmit`）——ボタンの `.disabled` だけに頼らない
+        guard canSubmit else { return }
         isWorking = true
         errorMessage = nil
         cancelled = false
