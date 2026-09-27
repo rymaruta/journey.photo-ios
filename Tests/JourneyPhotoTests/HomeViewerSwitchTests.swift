@@ -68,12 +68,14 @@ final class HomeViewerSwitchTests: XCTestCase {
         let model = GalleryViewModel(gallery: service)
         await model.load()
         XCTAssertEqual(ids(model.state), ["forA", "pub"], "前提: A の限定公開が入っていない")
+        model.use(viewerId: "A", following: ["u2"])
 
         let pending = Pending()
         await service.setRestrictedLoader { await pending.fetch() }
         let switching = Task { await model.switchViewer(from: "A", to: "B") }
         await waitUntil { pending.isWaiting }
         XCTAssertEqual(model.state, .loading, "読み直しの間も前の人の一覧（限定公開を含む）が出ている")
+        XCTAssertTrue(model.followingIds.isEmpty, "読み直しの間、前の人のフォロー中で絞っている")
         pending.release([])
         await switching.value
         XCTAssertEqual(ids(model.state), ["pub"], "B に替わっても A の限定公開が残っている")

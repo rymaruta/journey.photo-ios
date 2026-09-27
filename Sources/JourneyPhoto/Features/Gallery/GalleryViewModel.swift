@@ -90,6 +90,9 @@ final class GalleryViewModel: ObservableObject {
             all = []
             myPhotos = []
             state = .loading
+            // **前の人の「フォロー中」で絞らない。** 画面はこの読み直しを待ってから
+            // 新しい人のフォロー中を渡すので、それまでは空で絞る
+            use(viewerId: next, following: [])
         }
         await load()
     }
