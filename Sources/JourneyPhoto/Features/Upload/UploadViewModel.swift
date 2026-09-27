@@ -120,8 +120,8 @@ final class UploadViewModel: ObservableObject {
     private var cancelled = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
     private var loadTask: Task<Void, Never>?
-    /// 読めなかったライブラリの写真の印。**選び直しのたびに読み直さない**
-    /// （`loadPicked` の注記）。ライブラリで外すと忘れる——選び直せば読み直す
+    /// 読めなかったライブラリの写真の印。**それだけでは読み直さない**——
+    /// 新しく選び足したときに一緒に読み直す（`loadPicked` の注記）
     private var unreadable: Set<PhotosPickerItem> = []
     /// `pickerItems` を中から直している最中（`setSelectionQuietly`）
     private var isSettingSelectionQuietly = false
@@ -265,11 +265,15 @@ final class UploadViewModel: ObservableObject {
         // 以前は丸ごと入れ替えていて、「追加」を押すと打った題やカメラで撮った
         // 分まで消えていた（2026-09-26 のレビュー）
         let diff = PickerReconcile.reconcile(existing: items.map(\.pickerItem), picked: picked)
-        // 🔴 **前に読めなかった写真は、新しく選ばれた分に数えない。** 選択には残り
-        // 待ち行列には居ないので、数えると写真を外す・投稿の後始末のたびに読み直し、
-        // `errorMessage` を消して「送れなかった」の知らせを読み込みの失敗で上書きしていた
+        // 🔴 **本当に選び足したときだけ読む。** 前に読めなかった写真は選択に残り
+        // 待ち行列には居ないので、差分では毎回「新しく選ばれた分」に見える。それだけで
+        // 読むと、写真を外すたびに読み直して `errorMessage` を消し、「送れなかった」の
+        // 知らせを読み込みの失敗で上書きしていた。
+        // **選び足したときは、読めなかった分も一緒に読み直す**——外すと、一時的な
+        // 失敗（iCloud・圏外）が直らないまま知らせも消え、1枚少ないまま投稿できる
         unreadable.formIntersection(picked)
-        let added = diff.added.filter { !unreadable.contains($0) }
+        let fresh = diff.added.filter { !unreadable.contains($0) }
+        let added = fresh.isEmpty ? [] : diff.added
         let dropped = zip(items, diff.keep).filter { !$0.1 }.map { $0.0.id }
         for id in dropped {
             placeTasks[id]?.cancel()
@@ -488,9 +492,9 @@ final class UploadViewModel: ObservableObject {
 
     /// 選択から印を外すだけで、**読み直しを起こさない。**
     ///
-    /// 🔴 didSet の読み直しを通すと、前に読めなかった写真（選択には残り、
-    /// 待ち行列には居ない）を「新しく選ばれた」と読み、`errorMessage` を消して
-    /// 読み直す——一部だけ上がった回の「残りは投稿できていません」が消えていた。
+    /// didSet を通しても、今は読めなかった写真を読み直さない（`unreadable`）が、
+    /// 送信の後始末で走らせる理由も無い（一部だけ上がった回の「残りは投稿できて
+    /// いません」を、読み込みの知らせで消しかけた経緯がある）。
     /// **送信の後始末専用。** 送信中は選び直せないので、走っている読み込みは無い
     private func setSelectionQuietly(_ selection: [PhotosPickerItem]) {
         isSettingSelectionQuietly = true

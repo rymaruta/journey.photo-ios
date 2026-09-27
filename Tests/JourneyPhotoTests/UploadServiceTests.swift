@@ -208,6 +208,37 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertNil(model.groupId, "前の投稿の束の印が残っている")
     }
 
+    /// **選び足したときは、前に読めなかった写真も読み直す。** 読み直さないと、
+    /// 一時的な失敗が直らないまま知らせが消え、1枚少ないまま投稿できる
+    @MainActor
+    func testAddingPhotosRetriesThoseThatCouldNotBeLoaded() async throws {
+        let api = APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"),
+            session: session
+        )
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        let a = PhotosPickerItem(itemIdentifier: "a")
+        let c = PhotosPickerItem(itemIdentifier: "c")
+        let d = PhotosPickerItem(itemIdentifier: "d")
+        var photo = PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data([0xFF]), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil))
+        photo.pickerItem = a
+        model.items = [photo]
+        // 模型の PhotosUI は読めない（nil を返す）
+        model.pickerItems = [a, c]
+        try await waitUntil { !model.isLoadingPicked && model.errorMessage != nil }
+        let once = try XCTUnwrap(model.errorMessage)
+        XCTAssertTrue(once.contains("1"), once)
+
+        model.pickerItems = [a, c, d]
+        try await waitUntil { !model.isLoadingPicked && model.errorMessage != nil && model.errorMessage != once }
+        let twice = try XCTUnwrap(model.errorMessage)
+        XCTAssertTrue(twice.contains("2"), "読めなかった c を読み直していない: \(twice)")
+    }
+
     /// 条件が立つまで待つ（既定は最長5秒）。切り離した仕事の終わりを時間で当てない
     @MainActor
     private func waitUntil(seconds: Double = 5, _ condition: () -> Bool) async throws {
