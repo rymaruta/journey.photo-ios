@@ -281,6 +281,9 @@ struct Story: Decodable, Identifiable, Equatable {
     /// 保存されない・`stories.ts`）。読んでいなかった頃は、Web で「返信を許可」を
     /// 切った投稿にも返信欄と ♡ が出て、送ると 403 で断られていた
     let allowReplies: Bool?
+    /// 「アーカイブに自動保存」の印。**本人にだけ返る**（`stories.ts`）。
+    /// この投稿は写真として残せない（`storyKeep.ts` が 409）
+    let archive: Bool?
 
     var imageURL: URL? { URL(string: src) }
 
@@ -300,7 +303,7 @@ struct Story: Decodable, Identifiable, Equatable {
     }
     private enum CodingKeys: String, CodingKey {
         case id, src, userId, displayName, caption, mediaType, location, coords
-        case createdAt, expiresAt, replyCount, durationSec, song, allowReplies
+        case createdAt, expiresAt, replyCount, durationSec, song, allowReplies, archive
     }
 
     /// **曲だけは壊れていても捨てる。** 一覧は配列1本で復号するので、
@@ -323,6 +326,7 @@ struct Story: Decodable, Identifiable, Equatable {
         song = (try? c.decodeIfPresent(Photo.Song.self, forKey: .song)) ?? nil
         // 形が崩れていても一覧ごと落とさない（読めなければ既定＝受ける）
         allowReplies = (try? c.decodeIfPresent(Bool.self, forKey: .allowReplies)) ?? nil
+        archive = (try? c.decodeIfPresent(Bool.self, forKey: .archive)) ?? nil
     }
 }
 

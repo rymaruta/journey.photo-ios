@@ -29,6 +29,17 @@ final class PhotoGroupsTests: XCTestCase {
         XCTAssertEqual(groups[0].count, 2)
     }
 
+    /// **`uploadedBy` だけの写真も同じ投稿としてまとめる**（E14）
+    func testUploadedByOnlyPhotosGroup() throws {
+        func legacy(_ id: String) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(
+                "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"groupId\":\"g1\",\"uploadedBy\":\"A\"}".utf8))
+        }
+        let groups = PhotoGroups.group([try legacy("a"), try legacy("b")])
+        XCTAssertEqual(groups.count, 1, "uploadedBy だけの写真が束ねられていない")
+        XCTAssertEqual(groups.first?.photos.map(\.id), ["a", "b"])
+    }
+
     /// **並びを壊さない。** 束はその先頭が出てきた場所に置く
     func testKeepsTheOriginalOrder() throws {
         let groups = PhotoGroups.group([

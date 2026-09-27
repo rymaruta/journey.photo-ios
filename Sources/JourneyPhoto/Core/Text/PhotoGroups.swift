@@ -66,7 +66,7 @@ enum PhotoGroups {
     static func groupKey(of photo: Photo) -> String {
         guard let groupId = photo.groupId?.trimmingCharacters(in: .whitespaces),
               !groupId.isEmpty,
-              let owner = photo.userId, !owner.isEmpty else {
+              let owner = photo.userId ?? photo.uploadedBy, !owner.isEmpty else {
             return "single#\(photo.id)"
         }
         return "group#\(owner)#\(groupId)"

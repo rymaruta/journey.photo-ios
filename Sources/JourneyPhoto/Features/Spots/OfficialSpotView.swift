@@ -49,9 +49,12 @@ struct OfficialSpotView: View {
     /// 端末の地図アプリへ。**座標があるときだけ**（`SpotScreen`）
     private var mapURL: URL? { SpotScreen.mapURL(name: spot.name, coords: spot.coords) }
 
-    /// 配る文。**サイトのリンクは入れない**（本番 main に `/spots` は無い）
+    /// 配る文。**公開済みのスポットはサイトのページ（`/spots/<slug>`）も入れる**
+    /// （Web の本番に `app/spots/[slug]` がある）。下書きはページが無いので入れない
     private var shareText: String {
-        SpotScreen.shareText(name: spot.name, region: spot.regionLabel, mapURL: mapURL)
+        SpotScreen.shareText(name: spot.name, region: spot.regionLabel, mapURL: mapURL,
+                             pageURL: SpotScreen.pageURL(slug: spot.slug, isDraft: spot.isDraft,
+                                                         siteBase: AppConfig.siteBaseURL))
     }
 
     var body: some View {
@@ -103,19 +106,13 @@ struct OfficialSpotView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityAddTraits(.isImage)
                 .accessibilityLabel(L("\(spot.name) の写真", "Photo of \(spot.name)"))
-            Group {
-                if let page = photo.pageUrl {
-                    Link(photo.credit, destination: page)
-                } else {
-                    Text(photo.credit)
-                }
-            }
-            .font(.caption2)
-            .foregroundStyle(WebTheme.muted2)
-            .lineLimit(2)
-            .multilineTextAlignment(.trailing)
-            .padding(.horizontal, 16)
-            .accessibilityIdentifier("spot.official.photoCredit")
+            SpotImageCredit(photo: photo)
+                .font(.caption2)
+                .foregroundStyle(WebTheme.muted2)
+                .lineLimit(2)
+                .multilineTextAlignment(.trailing)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("spot.official.photoCredit")
         }
     }
 
@@ -298,5 +295,18 @@ struct OfficialSpotView: View {
         .padding(.horizontal, 14)
         .frame(minHeight: 54)
         .contentShape(Rectangle())
+    }
+}
+
+/// スポットの写真の出典の1行「写真: 作者 / ライセンス」。**1本の文字のまま**
+/// （折り返し・行数・揃えは呼ぶ側の指定どおり）、部分にリンクを付ける
+/// （`SpotImage.linkedCredit`: 作者 → 出典のページ・ライセンス → 文面）。
+/// リンクの色は周りの文字と同じ（`tint`）——見た目は以前の1行の出典と同じ
+struct SpotImageCredit: View {
+    let photo: SpotImage
+
+    var body: some View {
+        Text(photo.linkedCredit)
+            .tint(WebTheme.muted2)
     }
 }

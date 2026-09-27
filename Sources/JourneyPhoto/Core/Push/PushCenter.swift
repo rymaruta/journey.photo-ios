@@ -322,6 +322,12 @@ final class PushCenter: ObservableObject {
     /// 外せなかったら（圏外など）印が残り、ログアウトのあとの `use` が端末ごと
     /// 外し（`registeredOwner`）、次にログインした人がサーバーから引き取る（`owner`）
     func signingOut() async {
+        // **アイコンの数字と通知センターの通知は、登録の有無に関係なく消す。**
+        // 残すと、次にこの端末を触る人（や別の人でログインし直した自分）に
+        // 前の人の未読数と通知の本文が見えたままになる
+        let center = UNUserNotificationCenter.current()
+        try? await center.setBadgeCount(0)
+        center.removeAllDeliveredNotifications()
         guard let token, let userId else { return }
         // **外せた回だけ、自分の印だけ消す。** 前の人の印（預け直しが落ちて
         // 残ったもの）は、この人の認証では外れていないので残す

@@ -216,8 +216,8 @@ struct EditPhotoView: View {
         patch.clearCoords = EditPlaceRules.clearsCoords(openedLocation: photo.location,
                                                         currentLocation: location,
                                                         pickedCoords: pickedCoords != nil)
-        // タグは欄と同じ割り方で比べる（空白を含むタグは欄に出した時点で
-        // 割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
+        // タグは欄と同じ割り方で比べる（区切りの文字を含む古いタグは欄に出した
+        // 時点で割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
         let tags = TagInput.parse(tagsText)
         if tags != TagInput.parse((photo.tags ?? []).joined(separator: ", ")) {
             patch.tags = tags

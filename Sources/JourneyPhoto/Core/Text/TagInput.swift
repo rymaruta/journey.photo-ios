@@ -11,9 +11,14 @@ enum TagInput {
 
     /// 区切りとして扱う文字。**`parse` と打ちかけの判定で同じものを使う。**
     /// 別々だと、`京都、sau` の打ちかけを `京都、sau` 丸ごとと見て候補が消える。
-    static let separators = CharacterSet(charactersIn: ",、 　\n")
+    ///
+    /// **Web の `TAG_SEPARATOR = /[,，、､]/` と同じ4文字。空白では切らない。**
+    /// 空白で切っていたので `New York` が `New` と `York` の2つのタグに割れ、
+    /// 逆に全角「，」・半角「､」は区切りにならず `夕焼け，海` が1つのタグになっていた
+    /// （Web で付けたタグとアプリで付けたタグが食い違う）。
+    static let separators = CharacterSet(charactersIn: ",，、､")
 
-    /// 読点・カンマ・空白のどれで区切っても同じに扱う。
+    /// カンマ・読点（全角・半角）のどれで区切っても同じに扱う。
     /// **重複は落とす**（同じタグが2つ付くと絞り込みの件数がずれる）。
     static func parse(_ text: String) -> [String] {
         var seen = Set<String>()

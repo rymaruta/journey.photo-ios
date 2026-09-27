@@ -40,12 +40,15 @@ enum OfficialSpotIndex {
     }
 
     /// 近くの撮影スポット。**座標を持っているものだけ**、自分を除いて近い順。
-    /// 距離は写真と同じ式（`TravelDistance.kilometers`）。同じ距離は slug 順
+    /// 距離は写真と同じ式（`TravelDistance.kilometers`）。同じ距離は slug 順。
+    /// **同じ `spotId` は1つだけ（先勝ち）**——画面は `spotId` で並べるので、
+    /// 重なると同じ札が2つ出る（索引を読む側 `LenientOfficialSpotList` でも落とす）
     static func nearby(_ spot: OfficialSpot, in spots: [OfficialSpot],
                        limit: Int = 6) -> [(spot: OfficialSpot, km: Double)] {
         guard let here = spot.coords else { return [] }
+        var seen: Set<String> = [spot.spotId]
         return spots
-            .filter { $0.spotId != spot.spotId }
+            .filter { seen.insert($0.spotId).inserted }
             .compactMap { other -> (spot: OfficialSpot, km: Double)? in
                 guard let there = other.coords else { return nil }
                 return (other, TravelDistance.kilometers(from: here, to: there))
@@ -53,5 +56,96 @@ enum OfficialSpotIndex {
             .sorted { $0.km != $1.km ? $0.km < $1.km : $0.spot.slug < $1.spot.slug }
             .prefix(limit)
             .map { $0 }
+    }
+
+    // MARK: - 経路の行き先
+
+    /// 経路の行き先を名前の検索結果から拾い直すときの距離（km）。
+    ///
+    /// 🔴 **索引の座標は約1km に丸めてある**（小数2桁。台帳 `content/spots.json`
+    /// の時点で丸めてあり、丸める前の値はどこにも無い）。丸めのずれは最大で
+    /// 緯度 0.005°≒0.56km・経度 0.005°≒0.45km、斜めで約0.7km。そのまま
+    /// 経路に渡すと、山や滝では**入口と違う道の上**に案内する。
+    /// 地図で押した地点の拾い直し（`PlaceLookup.sameSpotKm` = 0.3km）より
+    /// 広く取るのはこのずれのぶん
+    static let directionsMatchKm: Double = 1.5
+
+    /// 名前で探した候補のうち、丸めた座標から `directionsMatchKm` 以内で
+    /// いちばん近いものの位置。無ければ nil（丸めた座標に名前を付けて渡す）
+    static func directionsTargetIndex(of candidates: [Photo.Coords], near rounded: Photo.Coords) -> Int? {
+        PlaceLookup.nearestIndex(of: candidates, to: rounded, withinKm: directionsMatchKm)
+    }
+
+    /// 経路の検索を待つ秒数。過ぎたら丸めた座標にスポット名を付けて開く
+    static let directionsTimeout: Double = 3
+
+    /// `operation` の答えを `seconds` 秒だけ待つ。過ぎたら nil を返し、`operation` は止める。
+    ///
+    /// **`operation` が止まるのを待たない。** 子タスクの組（`withTaskGroup`）で競わせると、
+    /// 抜けるときに全部の子の終わりを待つので、取り消しに応じない処理（地図の検索）
+    /// では時間切れが効かない。呼んだ側が取り消されたときも、すぐ nil を返す
+    static func firstWithin<T>(seconds: Double, _ operation: @escaping () async -> T?) async -> T? {
+        let gate = FirstResultGate<T>()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
+                gate.start(continuation)
+                let work = Task {
+                    gate.finish(await operation())
+                }
+                Task {
+                    try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+                    work.cancel()
+                    gate.finish(nil)
+                }
+                gate.onCancel = { work.cancel() }
+            }
+        } onCancel: {
+            gate.cancel()
+        }
+    }
+}
+
+/// `firstWithin` の「先に来た1回だけ返す」門
+private final class FirstResultGate<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T?, Never>?
+    private var done = false
+    private var cancelled = false
+    var onCancel: (() -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return _onCancel }
+        set {
+            lock.lock()
+            let fire = cancelled
+            _onCancel = newValue
+            lock.unlock()
+            if fire { newValue?() }
+        }
+    }
+    private var _onCancel: (() -> Void)?
+
+    func start(_ c: CheckedContinuation<T?, Never>) {
+        lock.lock()
+        if cancelled || done { done = true; lock.unlock(); c.resume(returning: nil); return }
+        continuation = c
+        lock.unlock()
+    }
+
+    func finish(_ value: T?) {
+        lock.lock()
+        guard !done else { lock.unlock(); return }
+        done = true
+        let c = continuation
+        continuation = nil
+        lock.unlock()
+        c?.resume(returning: value)
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let hook = _onCancel
+        lock.unlock()
+        hook?()
+        finish(nil)
     }
 }

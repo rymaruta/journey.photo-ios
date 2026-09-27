@@ -555,8 +555,9 @@ struct MyPageView: View {
         // **ブロック・通報した人の写真を外してから導く**（お気に入りと同じ `dropped`）。
         // `feed` が絞られるのは取った時点だけで、その後のブロックも、同期の前に
         // 返った一覧も素通りして、行のサムネに出ていた
+        // **自分の写真は落とさない**（`wishlistPool(own:feed:hidden:)`・main 側の決まり）
         let unfiltered = ProfileSections.wishlistPool(feed: feed, mine: model.photos)
-        let pool = dropped.visible(unfiltered)
+        let pool = Self.wishlistPool(own: model.photos, feed: feed, hidden: dropped)
         let wanted = ProfileSections.wantedPlaces(keys: wishIds, pool: pool)
         // 「一部を読み込めませんでした」を数える側は**絞る前**で引く——ブロックした人の
         // 写真にしか無い撮影地は、読み込めていないのではなく見せないだけ
@@ -761,6 +762,16 @@ struct MyPageView: View {
             // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
             TripShelfList(trips: trips)
         }
+    }
+
+    /// 「行きたい」の地点を導く写真の集まり。自分の写真を先に、公開一覧を後に
+    /// 並べ、**同じ写真は1枚に数える**（両方に載る自分の公開写真で枚数が倍にならない）。
+    /// **公開一覧はブロックした人・非表示にした写真を落とす**——落とさないと、
+    /// その写真が地点の代表（表紙）になって画面に出る。自分の写真は落とさない
+    /// 寄せ方（ID で1枚・自分の写真が先）は `ProfileSections.wishlistPool` の1本に任せる
+    nonisolated static func wishlistPool(own: [Photo], feed: [Photo],
+                                         hidden: ModerationSnapshot) -> [Photo] {
+        ProfileSections.wishlistPool(feed: hidden.visible(feed), mine: own)
     }
 
     /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。

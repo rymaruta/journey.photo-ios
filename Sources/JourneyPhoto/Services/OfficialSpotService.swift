@@ -28,12 +28,18 @@ actor OfficialSpotService {
     private let url: URL
     private let session: URLSession
     private let snapshot: SpotSnapshotStore
+    /// 索引の要求を出す**直前**に待つ口。**本番は nil**（何もしない）。
+    /// 試験が「索引が遅い回」を作るのに使う（`PublicGalleryService` の
+    /// `beforeLiveRequest` と同じ理由）
+    private let beforeRequest: (@Sendable () async -> Void)?
 
     init(url: URL = AppConfig.publicSpotsURL,
          session: URLSession? = nil,
-         snapshot: SpotSnapshotStore = SpotSnapshotStore()) {
+         snapshot: SpotSnapshotStore = SpotSnapshotStore(),
+         beforeRequest: (@Sendable () async -> Void)? = nil) {
         self.url = url
         self.snapshot = snapshot
+        self.beforeRequest = beforeRequest
         if let session {
             self.session = session
         } else {
@@ -61,9 +67,11 @@ actor OfficialSpotService {
     /// - Parameter force: 控えを無視して取り直す（引き下げ更新）。
     func fetchIndex(force: Bool = false) async throws -> [OfficialSpot] {
         if !force, let fresh = freshCache { return fresh }
+        await beforeRequest?()
         let data: Data
         let response: URLResponse
         do {
+            try RequestCancellation.throwIfCancelled()
             (data, response) = try await session.data(from: url)
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
@@ -98,7 +106,7 @@ actor OfficialSpotService {
             let list = try JSONDecoder.api.decode(LenientOfficialSpotList.self, from: data)
             if list.dropped > 0 {
                 // 黙って捨てない。**どの行が出ていないのか**を追えるように
-                print("[spots] 読めなかった索引の行を \(list.dropped) 件落としました")
+                print("[spots] 読めなかった・重複した索引の行を \(list.dropped) 件落としました")
             }
             let spots = list.spots
             // **読めたものだけを控える。** 1件も読めなかった回も控えない
