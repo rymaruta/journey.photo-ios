@@ -7,6 +7,7 @@ struct RootView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var consent: LegalConsent
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var toasts: ToastCenter
     @State private var selection: Tab = .home
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -26,6 +27,9 @@ struct RootView: View {
     @StateObject private var router = NotificationRouter.shared
     /// 通知を押したあと、ほかのシートが閉じるのを待っている間の仕事
     @State private var activityWait: Task<Void, Never>?
+    /// ベルの数え直しの世代。**最後に始めた取得だけを画面に出す**
+    /// （既読にする前の遅い応答が、あとから古い数で上書きしないように）
+    @State private var unreadGeneration = 0
 
     enum Tab: Hashable {
         // **提案の並び**（owner の絵・2026-09-21）:
@@ -71,9 +75,11 @@ struct RootView: View {
             return
         }
         let owner = auth.userId
+        unreadGeneration += 1
+        let generation = unreadGeneration
         let count = (try? await environment.notifications.fetch().unread) ?? 0
-        // **返ってくる間に人が替わっていたら捨てる**（前の人の数を出さない）
-        guard !Task.isCancelled, auth.userId == owner else { return }
+        // **返ってくる間に人が替わっていた・もっと新しい取得が始まっていたら捨てる**
+        guard !Task.isCancelled, auth.userId == owner, generation == unreadGeneration else { return }
         unread = count
     }
 
@@ -87,7 +93,7 @@ struct RootView: View {
     ///
     /// **待つのは `activityWaitLimit` まで。** それより長く開いたままなら諦める
     /// （何分も後に突然お知らせが出てタブが動くと、壊れて見える）。
-    /// ベルの数は数え直すので、届いたことは見える
+    /// 諦めたときは、ベルから見られることを短く知らせる（黙って消さない）
     private func takeActivityRequest() {
         guard router.takePendingActivity() else { return }
         if showNotifications {
@@ -99,14 +105,19 @@ struct RootView: View {
         }
         showPostChoice = false
         activityWait?.cancel()
+        let owner = auth.userId
         activityWait = Task { @MainActor in
             let deadline = Date().addingTimeInterval(Self.activityWaitLimit)
             // 閉じる動きが終わるのを待ってから確かめる
             repeat {
                 try? await Task.sleep(nanoseconds: 300_000_000)
             } while !Task.isCancelled && ModalProbe.isPresenting() && Date() < deadline
-            guard !Task.isCancelled else { return }
+            // **待っている間に人が替わっていたら開かない**（前の人の通知で
+            // 次の人のお知らせを開かない）
+            guard !Task.isCancelled, auth.userId == owner else { return }
             guard !ModalProbe.isPresenting() else {
+                toasts.show(L("新しいお知らせは、右上のベルから見られます",
+                              "New activity is waiting behind the bell"))
                 await refreshUnread()
                 return
             }
@@ -171,10 +182,11 @@ struct RootView: View {
             .tabItem { Label(Labels.Navigation.mypage, systemImage: "person") }
             .tag(Tab.mypage)
         }
-        .task(id: auth.userId) {
-            cancelActivityWait()
-            await refreshUnread()
-        }
+        .task(id: auth.userId) { await refreshUnread() }
+        // **人が替わったら待ちをやめる。** `.task(id:)` の中で取り消すと、
+        // 出てきた瞬間（`onAppear` で待ちを作った直後）にも走って、
+        // 冷えた起動で押した分を自分で消してしまう。`onChange` は初回に走らない
+        .onChange(of: auth.userId) { _, _ in cancelActivityWait() }
         // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
         // お知らせを開くかログインし直すまでベルに出ていなかった
         .onChange(of: scenePhase) { _, phase in
