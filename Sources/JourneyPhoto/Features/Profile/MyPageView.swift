@@ -7,6 +7,7 @@ struct MyPageView: View {
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var toasts: ToastCenter
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
     /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
@@ -544,8 +545,8 @@ struct MyPageView: View {
         }
     }
 
-    /// 行きたい場所（モック2）。**この端末に覚えたもの**で、
-    /// サーバーには無い（`WishlistStore`）。
+    /// 行きたい場所（モック2）。**サーバーの一覧の控え**（`WishlistStore`・`/user/spots`）。
+    /// Web の「行きたい場所」と同じ一覧なので、「この端末に覚えています」の注記は外した
     @ViewBuilder
     private var wishlistArea: some View {
         // **撮影地から導いた地点**のうち、「行きたい」に入れたもの。
@@ -568,14 +569,6 @@ struct MyPageView: View {
         // 押した直後に「まだありません」と言わない
         let officialRows = OfficialWishlist.rows(keys: wishIds, index: officialSpots)
         VStack(alignment: .leading, spacing: 10) {
-            // **どこに残るかを書く。** 機種を変えると消えるものを、
-            // 消えないものと同じ顔で出さない
-            Text(L("この端末に覚えています（他の端末や Web には出ません）",
-                   "Kept on this device only"))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
-                .padding(.horizontal, 16)
-
             // **「まだ無い」と「取れていない」を分ける**（`ProfileSections`）。
             // 数えるのは撮影地の行とスポットの行の両方。「取れていない」は
             // **公開一覧の読み込みの失敗**で決める（件数の食い違いでは決めない）
@@ -661,7 +654,14 @@ struct MyPageView: View {
 
             // **一覧からも外せる。** 索引に無い鍵はここでしか外せない
             Button {
-                wishlist.set(row.key, wanted: false)
+                // ログイン中はサーバーからも外す。失敗したら戻して知らせる（`WishlistSync`）
+                Task {
+                    let outcome = await WishlistSync.set(row.key, wanted: false, store: wishlist,
+                                                         service: environment.savedSpots)
+                    if case .failed = outcome, let notice = WishlistSync.notice(for: outcome) {
+                        toasts.show(notice.text, kind: notice.kind)
+                    }
+                }
             } label: {
                 Image(systemName: "heart.fill")
                     .font(.subheadline)
@@ -701,7 +701,14 @@ struct MyPageView: View {
 
             // **一覧からも外せる。** 外すのに詳細まで行かせない
             Button {
-                wishlist.set(spot.slug, wanted: false)
+                // ログイン中はサーバーからも外す。失敗したら戻して知らせる（`WishlistSync`）
+                Task {
+                    let outcome = await WishlistSync.set(spot.slug, wanted: false, store: wishlist,
+                                                         service: environment.savedSpots)
+                    if case .failed = outcome, let notice = WishlistSync.notice(for: outcome) {
+                        toasts.show(notice.text, kind: notice.kind)
+                    }
+                }
             } label: {
                 Image(systemName: "heart.fill")
                     .font(.subheadline)

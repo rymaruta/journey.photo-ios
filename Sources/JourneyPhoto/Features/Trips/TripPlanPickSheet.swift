@@ -28,10 +28,11 @@ struct TripPlanPickSheet: View {
                     Text(L("\(dayIndex + 1) 日目", "Day \(dayIndex + 1)"))
                         .font(.caption)
                         .foregroundStyle(WebTheme.muted2)
-                    // **どこから来た候補かを書く。** 「行きたい」はこの端末にだけ
-                    // 覚えている（`WishlistStore`）ので、Web で押したものは出ない
-                    Text(L("この端末で「行きたい」に入れた場所から選べます",
-                           "Places you marked “Want to go” on this device"))
+                    // **どこから来た候補かを書く。** 「行きたい」はログイン中は
+                    // サーバーの一覧（`WishlistStore`・`/user/spots`）なので、Web で
+                    // 押したものも並ぶ。「この端末で」とは書かない
+                    Text(L("「行きたい」に入れた場所から選べます",
+                           "Places you marked “Want to go”"))
                         .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                 }

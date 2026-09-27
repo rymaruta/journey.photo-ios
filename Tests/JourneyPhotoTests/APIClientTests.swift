@@ -148,6 +148,8 @@ final class StubProtocol: URLProtocol {
     /// `URLProtocol` は `httpBody` を落とすことがあるので、
     /// `httpBodyStream` から読み直して覚えておく
     nonisolated(unsafe) static var lastBody: Data?
+    /// 本文を届いた順に全部。**同じ口を何度も叩く流れ**（1件ずつ送る同期）で、どれを送ったかを見る
+    nonisolated(unsafe) static var bodies: [Data] = []
     /// 何回叩かれたか。**二度押しを止められているか**を見るのに使う
     nonisolated(unsafe) static var requestCount = 0
     /// 叩かれた順の「メソッド パス」。**2手の流れの順番**を見るのに使う
@@ -170,6 +172,7 @@ final class StubProtocol: URLProtocol {
         error = nil
         lastRequest = nil
         lastBody = nil
+        bodies = []
         requestCount = 0
         requests = []
         queue = []
@@ -213,6 +216,7 @@ final class StubProtocol: URLProtocol {
         StubProtocol.requests.append("\(request.httpMethod ?? "GET") \(request.url?.path ?? "")")
         StubProtocol.lastRequest = request
         StubProtocol.lastBody = request.httpBody ?? StubProtocol.readStream(request.httpBodyStream)
+        if let body = StubProtocol.lastBody { StubProtocol.bodies.append(body) }
 
         if let error = StubProtocol.error {
             client?.urlProtocol(self, didFailWithError: error)

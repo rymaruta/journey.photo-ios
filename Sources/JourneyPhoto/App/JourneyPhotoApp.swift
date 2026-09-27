@@ -24,7 +24,7 @@ struct JourneyPhotoApp: App {
     @StateObject private var savedPhotos = SavedPhotosStore()
     @StateObject private var hidden = ModerationStore()
     @StateObject private var joinedAlbums = JoinedAlbumsStore()
-    /// 「行きたい」スポット。**この端末にしか残らない**（サーバーに口が無い）
+    /// 「行きたい」スポットの控え。**ログイン中はサーバーが本体**（`/user/spots`・`WishlistSync`）
     @StateObject private var wishlist = WishlistStore()
     /// ストーリーの書きかけ。**この端末にだけ残る**（サーバーに口が無い）
     @StateObject private var storyDrafts = StoryDraftStore()
@@ -130,6 +130,19 @@ struct JourneyPhotoApp: App {
         savedPhotos.replace(with: ids, for: owner, since: mark)
     }
 
+    /// 「行きたい場所」をサーバーに合わせる（`syncSaves` と同じ照合）。
+    ///
+    /// **取れた回だけ入れ替え、端末にしか無い分を送る**（`WishlistSync.sync`）。
+    /// この仕組みより前に端末だけに入れた場所・未ログインで押した場所を、
+    /// 入れ替えで消さずにサーバーへ上げる
+    private func syncWishlist(since mark: LocalEdits.Mark) async {
+        guard let owner = auth.userId else { return }
+        let auth = auth
+        await WishlistSync.sync(owner: owner, since: mark, store: wishlist,
+                                service: environment.savedSpots,
+                                isCurrent: { auth.userId == owner })
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView(configurationError: configurationError)
@@ -210,6 +223,7 @@ struct JourneyPhotoApp: App {
                     // 待ちの間に押したいいね・保存・ブロックを、同期の一覧で消さない
                     let likesMark = favorites.syncMark
                     let savesMark = savedPhotos.syncMark
+                    let wishMark = wishlist.syncMark
                     let blocksFetch = hidden.beginBlockFetch()
                     // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
                     // 「前の人の宛先が残っている」と見なして端末ごと外していた
@@ -220,6 +234,7 @@ struct JourneyPhotoApp: App {
                     }
                     await applyModeration()
                     await syncSaves(since: savesMark)
+                    await syncWishlist(since: wishMark)
                     await syncLikes(since: likesMark)
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     // （同期を始めた後にブロック・解除した分は残す・後に始まった取得の答えは上書きしない——`blocksFetch`）

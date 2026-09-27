@@ -91,7 +91,7 @@ enum ProfileSections {
     ///   - wantedCount: 突き合わせて残った件数。**撮影地の行と台帳のスポットの行
     ///     （`OfficialWishlist.rows`）を足したもの**——スポットだけ入れた人を
     ///     「まだ無い」にしない
-    ///   - savedIdCount: この端末が覚えている鍵の数
+    ///   - savedIdCount: 控え（`WishlistStore`）が持っている鍵の数
     ///   - loaded: 引き当て先（公開一覧）を読み終えたか
     ///   - sourceFailed: 引き当て先（公開一覧）の最後の読み込みが失敗したか
     ///

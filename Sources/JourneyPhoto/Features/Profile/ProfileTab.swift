@@ -11,7 +11,7 @@ enum ProfileTab: String, CaseIterable, Identifiable {
     /// 旅の一冊の棚（`TripBook`）。**本人のページだけ**——以前は写真の上に
     /// 「旅の記録」の札を別に置いていた（整理案 05c でタブへ移した）
     case trips
-    /// 行きたいスポット（`WishlistStore`）。**この端末にしか無い**
+    /// 行きたいスポット（`WishlistStore`）。**本人の一覧だけ**（`/user/spots` は本人しか読めない）
     case wishlist
     case map
     case favorites
@@ -40,8 +40,9 @@ enum ProfileTab: String, CaseIterable, Identifiable {
 
     /// **行きたい場所とお気に入りは、その端末の持ち主にしか無い。**
     ///
-    /// どちらもサーバーに口が無く（`WishlistStore` / `FavoritesStore` は
-    /// `UserDefaults`）、他人のぶんは**取りようがない**。以前は他人の
+    /// どちらも本人の控えで（`WishlistStore` / `FavoritesStore`）、サーバーも
+    /// 本人の一覧しか返さない（`/user/spots` は JWT の本人の行だけ）ので、
+    /// 他人のぶんは**取りようがない**。以前は他人の
     /// ページにも「お気に入り」の札を出して、押すと「本人だけが見られます」と
     /// 返していた——押しても何も出ない札は、壊れているのと見分けが付かない。
     /// 出さない方が正直。
