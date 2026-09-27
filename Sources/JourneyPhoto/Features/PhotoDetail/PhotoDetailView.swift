@@ -42,6 +42,13 @@ struct PhotoDetailView: View {
     /// フォローしているか。**分からない間は nil**——ボタンを出さない
     /// （取れなかった回に「フォロー」と出すと、フォロー中の人に二重に送る）
     @State private var isFollowing: Bool?
+    /// フォロー一覧を**取りに行って失敗した**。このときはボタンを「フォロー」の姿で
+    /// 出し、押されたら先に取り直してから判断する（`toggleFollow`）。
+    /// 失敗を nil のまま放置すると、ボタンが二度と出なかった
+    @State private var followLookupFailed = false
+    /// 保存（しおり）が出した赤字。**成功したときに消すのはこれだけ**
+    /// （いいね・フォローなど別の失敗まで消さない）
+    @State private var saveErrorShown: String?
     /// 成功の知らせ（ブロックしました など）。**失敗の赤字（`actionError`）と分ける**
     @State private var actionNotice: String?
     /// 削除を確かめているコメント（押してすぐ消さない）
@@ -147,6 +154,8 @@ struct PhotoDetailView: View {
         // **送った先の1枚でも読み直す**（鍵に今の1枚を入れる）
         .task(id: "\(auth.userId ?? "")|\(current.id)") {
             model.setSignedIn(auth.userId != nil)
+            // 前の1枚の「ブロックしました」を持ち越さない
+            actionNotice = nil
             model.show(photoId: current.id, initialLikes: current.likes,
                        liked: favorites.contains(current.id))
             await model.load()
@@ -191,6 +200,7 @@ struct PhotoDetailView: View {
             await model.loadOwner(ownerId, profiles: environment.profiles)
             // **フォローしているかは、その人を見に行かずに知りたい。**
             // 自分のフォロー一覧から引く（相手のページを開かずに済む）
+            followLookupFailed = false
             guard let me = auth.userId, let ownerId, me != ownerId else {
                 isFollowing = false
                 return
@@ -200,7 +210,12 @@ struct PhotoDetailView: View {
             // **取れなかった回は書かない。** 圏外で「フォロー」に戻すと、
             // フォロー中の人を押して二重に送る（`FollowListView` と同じ扱い）
             let ids = try? await environment.social.myFollowingIds()
-            guard let ids, !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
+            guard let ids else {
+                // 押されたら取り直す（`toggleFollow`）。ボタンが出る経路を残す
+                followLookupFailed = true
+                return
+            }
             isFollowing = ids.contains(ownerId)
         }
         .sheet(isPresented: $showReport) {
@@ -231,16 +246,29 @@ struct PhotoDetailView: View {
             Text(L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
         }
         // コメントの削除は確かめてから（押し間違いで他人の書き込みを消さない）
+        //
+        // **`presenting:` で押した時点の1件を受け取る。** 閉じるときの
+        // `set(false)` が `commentPendingDelete` を先に nil にするので、
+        // ボタンの中でそれを読むと消えないことがあった
         .alert(L("このコメントを削除しますか？", "Delete this comment?"),
                isPresented: Binding(get: { commentPendingDelete != nil },
-                                    set: { if !$0 { commentPendingDelete = nil } })) {
+                                    set: { if !$0 { commentPendingDelete = nil } }),
+               presenting: commentPendingDelete) { comment in
             Button(Labels.Common.delete, role: .destructive) {
-                if let comment = commentPendingDelete { Task { await model.deleteComment(comment) } }
+                Task { await model.deleteComment(comment) }
             }
             Button(Labels.Common.cancel, role: .cancel) {}
-        } message: {
-            Text(L("\(commentPendingDelete?.name ?? "")さんのコメントを削除します。元に戻せません。",
-                   "Deletes the comment by \(commentPendingDelete?.name ?? ""). This cannot be undone."))
+        } message: { comment in
+            Text(L("\(comment.name)さんのコメントを削除します。元に戻せません。",
+                   "Deletes the comment by \(comment.name). This cannot be undone."))
+        }
+        // **赤字を出すときは知らせを消す。** 赤字が消えたあとに古い
+        // 「ブロックしました」が戻って出ないように
+        .onChange(of: actionError) { _, error in
+            if error != nil { actionNotice = nil }
+        }
+        .onChange(of: model.errorMessage) { _, error in
+            if error != nil { actionNotice = nil }
         }
     }
 
@@ -531,8 +559,9 @@ struct PhotoDetailView: View {
 
                 Spacer(minLength: 8)
 
-                if !isMine, auth.userId != nil, let following = isFollowing {
-                    followButton(ownerId, following: following)
+                // 取れなかった回も「フォロー」で出す（押されたら取り直してから送る）
+                if !isMine, auth.userId != nil, isFollowing != nil || followLookupFailed {
+                    followButton(ownerId, following: isFollowing ?? false)
                 }
             }
         }
@@ -566,6 +595,26 @@ struct PhotoDetailView: View {
         guard !isFollowWorking else { return }
         isFollowWorking = true
         defer { isFollowWorking = false }
+        // **分からないまま送らない。** 一覧が取れなかった回は、ここで取り直して
+        // から決める——既にフォロー中なら送らずに姿だけ直す（二重に送らない）
+        if isFollowing == nil {
+            guard followLookupFailed else { return }
+            let ids: Set<String>
+            do {
+                ids = Set(try await environment.social.myFollowingIds())
+            } catch is CancellationError {
+                return
+            } catch {
+                actionError = L("フォローの状態を確かめられませんでした", "Couldn't check follow status")
+                return
+            }
+            followLookupFailed = false
+            if ids.contains(userId) {
+                isFollowing = true
+                return
+            }
+            isFollowing = false
+        }
         guard let wasFollowing = isFollowing else { return }
         // **失敗を黙らない**（いいね・保存と同じ扱い）。状態は書き換えない
         do {
@@ -1035,7 +1084,11 @@ struct PhotoDetailView: View {
             // ブロックするとフォローも外れるので、ボタンも外した姿にする
             actionError = nil
             actionNotice = L("ブロックしました。おたがいの投稿が見えなくなります。", "Blocked. You won't see each other's posts.")
-            if userId == ownerId { isFollowing = false }
+            // **ブロックした相手にフォローボタンを出さない**（false だと「フォロー」が出る）
+            if userId == ownerId {
+                isFollowing = nil
+                followLookupFailed = false
+            }
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
@@ -1051,7 +1104,7 @@ struct PhotoDetailView: View {
         // **未ログインは送らずに知らせる**（いいねと同じ扱い）。以前は押せて、
         // 失敗を黙って巻き戻すだけだった
         guard auth.userId != nil else {
-            actionError = L("保存するにはログインしてください", "Sign in to save photos")
+            showSaveError(L("保存するにはログインしてください", "Sign in to save photos"))
             return
         }
         guard !isSavingBookmark else { return }
@@ -1068,19 +1121,26 @@ struct PhotoDetailView: View {
             } else {
                 try await environment.saves.save(photoId: id)
             }
-            if actionError != nil { actionError = nil }
+            // 消すのは保存が出した赤字だけ
+            if let shown = saveErrorShown, actionError == shown { actionError = nil }
+            saveErrorShown = nil
         } catch is SaveService.GoneButSaved {
             // 写真はもう見えないが、サーバーに保存は残っている——しおりは「保存済み」
             savedPhotos.set(id, saved: true, for: owner)
-            actionError = SaveService.GoneButSaved().errorDescription
+            showSaveError(SaveService.GoneButSaved().errorDescription)
         } catch is CancellationError {
             savedPhotos.set(id, saved: wasSaved, for: owner)
         } catch {
             savedPhotos.set(id, saved: wasSaved, for: owner)
             // **失敗を黙らない**（いいねと同じく、理由を出す）
-            actionError = (error as? LocalizedError)?.errorDescription
-                ?? L("保存できませんでした", "Couldn't save")
+            showSaveError((error as? LocalizedError)?.errorDescription
+                ?? L("保存できませんでした", "Couldn't save"))
         }
+    }
+
+    private func showSaveError(_ message: String?) {
+        actionError = message
+        saveErrorShown = message
     }
 
     private func reloadPhoto() async {
