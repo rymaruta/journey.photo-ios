@@ -14,9 +14,29 @@ struct VerifiedBadge: View {
     var nameSize: Double = 15
     var relativeTo: Font.TextStyle = .subheadline
 
-    /// 名前に対する印の大きさ。記号は字の高さいっぱいに描かれるので、同じ大きさだと
-    /// 名前より重く見える。8割で漢字の字面の高さにそろう
-    static let ratio = 0.8
+    /// 名前の書体に合わせた、印の大きさと上下の位置。**実機の絵を画素で測って決めた**。
+    var fit: Fit = .system
+
+    struct Fit: Equatable {
+        /// 名前の字の大きさに対する、印の記号の字の大きさ
+        let ratio: Double
+        /// 印の高さに対する、下へずらす量。行の中央（上下の余白込み）と漢字の字面の
+        /// 中央がずれる分を埋める
+        let nudge: Double
+
+        /// 本文の書体（写真の詳細の作者の行など）。測っていないので既定の8割・ずらさない
+        static let system = Fit(ratio: 0.8, nudge: 0)
+
+        /// 明朝（マイページ・人のページの名前）。1.0.14 前のマイページの実機の絵
+        /// （3倍・名前 26pt）で測った:
+        ///
+        ///     名前の字面   73px（24.3pt）・中央 y=38
+        ///     印（8割）    70px（23.3pt）・中央 y=34.5   → 1pt 小さく、1.2pt 上
+        ///
+        /// 記号の高さは字の大きさの約 1.12 倍なので、字面に揃えるには
+        /// 24.3 / 1.12 / 26 ≈ 0.835。上のずれ 3.5px は印の高さの約 4.8%
+        static let mincho = Fit(ratio: 0.835, nudge: 0.048)
+    }
 
     var body: some View {
         if isVerified == true {
@@ -26,7 +46,12 @@ struct VerifiedBadge: View {
             // 形（封印の山）で見分ける
             Image(systemName: "checkmark.seal.fill")
                 // 名前と同じ段で拡大縮小させる（文字を大きくしても釣り合う）
-                .font(JPFont.display(nameSize * Self.ratio, relativeTo: relativeTo))
+                .font(JPFont.display(nameSize * fit.ratio, relativeTo: relativeTo))
+                // 行の中央ではなく**字面の中央**に置く。ずらす量は印の高さに比例させる
+                // （文字サイズの設定で大きくなっても同じ割合でずれを埋める）
+                .alignmentGuide(VerticalAlignment.center) { d in
+                    d[VerticalAlignment.center] - d.height * fit.nudge
+                }
                 .foregroundStyle(WebTheme.accentText, WebTheme.accent)
                 .accessibilityLabel(L("認証済み", "Verified"))
         }
