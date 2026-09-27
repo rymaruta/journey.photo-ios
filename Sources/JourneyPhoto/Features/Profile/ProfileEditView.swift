@@ -339,9 +339,9 @@ struct ProfileEditView: View {
         }
         do {
             // 中身を取り出せなかった（iCloud から落とせない等）ときは
-            // **「送っています…」を残さない**
+            // **「送っています…」を残さず、黙りもしない**
             guard let data = try await item.loadTransferable(type: Data.self) else {
-                message = nil
+                message = L("画像を読み込めませんでした", "Couldn't load the image")
                 return
             }
             // アイコンにも同じ関所を通す。**EXIF の付いた自撮りを
