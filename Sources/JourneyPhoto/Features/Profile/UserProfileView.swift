@@ -151,7 +151,8 @@ struct UserProfileView: View {
             ErrorBanner(message: Labels.Common.loadFailed) {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
             }
-        } else if model.photos.isEmpty && !model.isLoading {
+        } else if shownPhotos.isEmpty && !model.isLoading {
+            // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す
             ErrorBanner(message: L("公開された写真はまだありません", "No public photos yet"))
         } else if tab == .map {
             // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）

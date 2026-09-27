@@ -21,6 +21,9 @@ struct GalleryView: View {
     @State private var isOnScreen = false
     /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
     @State private var needsReload = false
+    /// 描くときに落とす「見せない」の写し。**画面に出ている間だけ取り直す**。
+    /// 戻った瞬間、読み直しが終わるまでブロックした人のカードが見えないように
+    @State private var dropped = ModerationSnapshot()
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}
@@ -43,7 +46,7 @@ struct GalleryView: View {
                 // 空の知らせで画面ごと置き換えると、「フォロー中」を押して
                 // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の
                 // 切り替えが逃げ道だったが、整理案 01c で外した
-                feed(photos)
+                feed(dropped.visible(photos))
             }
         }
         .webScreen()
@@ -94,10 +97,16 @@ struct GalleryView: View {
         // 通報シートのブロック失敗の文言も見えない）。戻ってきたとき（`onAppear`）に
         // 読み直す。カードの「…」や一覧に付けた通報シートからの回は画面に出ている
         .onChange(of: hidden.revision) { _, _ in
-            if isOnScreen { reloadHidden() } else { needsReload = true }
+            if isOnScreen {
+                dropped = hidden.snapshot
+                reloadHidden()
+            } else {
+                needsReload = true
+            }
         }
         .onAppear {
             isOnScreen = true
+            dropped = hidden.snapshot
             if needsReload { reloadHidden() }
         }
         .onDisappear { isOnScreen = false }

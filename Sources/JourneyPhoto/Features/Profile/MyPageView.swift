@@ -135,6 +135,8 @@ struct MyPageView: View {
             feedLoaded = false
             feedFailed = false
             model.forgetPhotos()
+            // 前の人の「見せない」で次の人のお気に入りを絞らない
+            dropped = hidden.snapshot
         }
     }
 
