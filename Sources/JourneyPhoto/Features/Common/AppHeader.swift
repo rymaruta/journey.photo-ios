@@ -30,16 +30,17 @@ struct AppHeaderItems: ToolbarContent {
     var body: some ToolbarContent {
         // ロゴ。**`navigationTitle` の文字の代わりに置く**——モックは
         // どの画面も記号＋ワードマークで、字だけだと別のアプリに見える。
-        // **左寄せ**（板 01c・04・11）
-        ToolbarItem(placement: .topBarLeading) {
-            AppLogo()
-        }
-        // **中央は空けておく。** ロゴを左へ移したので、何も置かないと各画面の
-        // `navigationTitle`（「探す」「マップ」——戻る文字と読み上げのために持つ）が
-        // バーの中央に文字で出てしまう。設定の画面と同じく見えない部品で塞ぐ
+        // **左寄せ**（板 01c・04・11）。
+        //
+        // 🔴 **`.topBarLeading` に置かない。** iOS 26 は左右の枠の中身をボタンとして
+        // ガラスの丸に入れるので、ロゴが丸に押し込まれて「J」までしか見えなかった
+        // （1.0.16・CI の絵と owner の実機で確認）。**中央の枠に置き、枠いっぱいに
+        // 広げて左へ寄せる**——中央の枠はガラスを持たず、以前（〜1.0.12）もここで
+        // 正しく描けていた。中央を埋めるので、各画面の `navigationTitle`（戻る文字と
+        // 読み上げのために持つ）が文字で出ることもない
         ToolbarItem(placement: .principal) {
-            Color.clear.frame(width: 1, height: 1)
-                .accessibilityHidden(true)
+            AppLogo()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         if showsSearch {
             ToolbarItem(placement: .topBarTrailing) {
