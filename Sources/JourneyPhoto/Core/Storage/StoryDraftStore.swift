@@ -43,6 +43,9 @@ final class StoryDraftStore: ObservableObject {
         /// 「自分用に残す」。**戻したときに外れていると、そのまま投稿して24時間で消える**
         /// （ハイライトにも入れられない）。前の版の下書きには無い（nil＝残さない）
         var archive: Bool?
+        /// 「返信を許可」。**切ったときだけ `false` を持つ**——前の版の下書きには無い
+        /// （nil＝許可。既定と同じ）
+        var allowReplies: Bool?
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -226,7 +229,8 @@ final class StoryDraftStore: ObservableObject {
     /// 中身が無い状態を作らない
     @discardableResult
     func save(shots inputs: [ShotInput], caption: String, location: String,
-              song: Photo.Song?, durationSec: Int, archive: Bool = false, savedAt: String) -> Bool {
+              song: Photo.Song?, durationSec: Int, archive: Bool = false, allowReplies: Bool = true,
+              savedAt: String) -> Bool {
         guard !inputs.isEmpty else { return false }
         let storageKey = key(for: userId)
         let token = makeToken()
@@ -259,7 +263,8 @@ final class StoryDraftStore: ObservableObject {
                           caption: caption, location: location, overlays: first.overlays,
                           song: song, durationSec: durationSec, savedAt: savedAt,
                           extraShots: shots.count > 1 ? Array(shots.dropFirst()) : nil,
-                          archive: archive ? true : nil)
+                          archive: archive ? true : nil,
+                          allowReplies: allowReplies ? nil : false)
         guard let data = try? JSONEncoder().encode(saved) else {
             for file in written {
                 try? FileManager.default.removeItem(at: fileURL(file))

@@ -305,4 +305,17 @@ final class StoryDraftStoreTests: XCTestCase {
         reopened.use(userId: "u1")
         XCTAssertEqual(reopened.shotImages().map(\.data), [Data("jpeg".utf8)])
     }
+
+    /// 「返信を許可」を切ったことも戻る（入に戻ると、断ったはずの返信を受けてしまう）
+    func testKeepsTheRepliesChoice() async throws {
+        let (store, defaults, dir) = make()
+        store.use(userId: "u1")
+        store.save(shots: [shot(1, text: "一")], caption: "", location: "", song: nil,
+                   durationSec: 5, allowReplies: false, savedAt: now)
+        let reopened = StoryDraftStore(defaults: defaults, directory: dir)
+        reopened.use(userId: "u1")
+        XCTAssertEqual(reopened.draft?.allowReplies, false)
+        save(reopened)
+        XCTAssertNil(reopened.draft?.allowReplies, "入の回まで切った印が付いた")
+    }
 }

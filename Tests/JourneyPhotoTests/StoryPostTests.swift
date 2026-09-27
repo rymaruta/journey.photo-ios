@@ -179,4 +179,24 @@ final class StoryPostTests: XCTestCase {
         } catch {}
         XCTAssertEqual(StubProtocol.requestCount, 2)
     }
+
+    /// 「返信を許可」を切ったときだけ `allowReplies: false` を送る（Web と同じ）。
+    /// 入のままなら鍵ごと送らない
+    func testSendsRepliesOffOnlyWhenTurnedOff() async throws {
+        StubProtocol.respondInOrder([(200, "[]"), (201, #"{"success":true}"#)])
+        let off = StoryUploadCenter.Job(imageData: Data([1]), caption: "", location: "", coords: nil,
+                                        song: nil, durationSec: 5, archive: false, allowReplies: false,
+                                        uploaded: media)
+        try await service().post(off, ownerId: "me", record: { _ in })
+        let body = try XCTUnwrap(StubProtocol.lastBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["allowReplies"] as? Bool, false, "切ったのに返信を受ける形で送った")
+
+        StubProtocol.reset()
+        StubProtocol.respondInOrder([(200, "[]"), (201, #"{"success":true}"#)])
+        try await service().post(job(uploaded: media), ownerId: "me", record: { _ in })
+        let onBody = try XCTUnwrap(StubProtocol.lastBody)
+        let onJson = try XCTUnwrap(JSONSerialization.jsonObject(with: onBody) as? [String: Any])
+        XCTAssertNil(onJson["allowReplies"], "入のままなのに鍵を送った")
+    }
 }

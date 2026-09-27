@@ -340,4 +340,29 @@ final class StoryUploadCenterTests: XCTestCase {
         XCTAssertEqual(remaining, 1)
         XCTAssertFalse(message.contains("出せました"), message)
     }
+
+    /// 「返信を許可」を切った並びは、**起動し直しても切ったまま**送る
+    func testRepliesChoiceSurvivesARelaunch() async throws {
+        let dir = tempDir()
+        let center = StoryUploadCenter(directory: dir)
+        var release = false
+        let off = StoryUploadCenter.Job(imageData: Data([1]), caption: "", location: "", coords: nil,
+                                        song: nil, durationSec: 5, archive: false, allowReplies: false)
+        center.start([off, job(2)], ownerId: "me", currentUserId: { "me" }, send: { _, _ in
+            while !release { await Task.yield() }
+            throw Boom()
+        })
+        for _ in 0..<200 { await Task.yield() }
+
+        let relaunched = StoryUploadCenter(directory: dir)
+        var sent: [(UInt8, Bool)] = []
+        relaunched.configure(currentUserId: { "me" }, send: { j, _ in sent.append((j.imageData[0], j.allowReplies)) },
+                             discardUpload: { _ in })
+        relaunched.retry()
+        await settle(relaunched)
+        XCTAssertEqual(sent.map(\.0), [1, 2])
+        XCTAssertEqual(sent.map(\.1), [false, true], "切った印が戻っていない・入の1本まで切った")
+        release = true
+        center.userChanged(to: nil)
+    }
 }
