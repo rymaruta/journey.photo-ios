@@ -4,7 +4,6 @@ import SwiftUI
 
 public struct PhotosPickerItem: Equatable, Hashable {
     public let itemIdentifier: String?
-    public init() { itemIdentifier = nil }
     /// 本物にもある（iOS 16〜）。試験で別々の写真を作るのに使う
     public init(itemIdentifier: String) { self.itemIdentifier = itemIdentifier }
     public func loadTransferable<T>(type: T.Type) async throws -> T? { nil }

@@ -54,7 +54,7 @@ final class UploadViewModel: ObservableObject {
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
         didSet {
-            // 選択を中から直しただけ（`setSelectionQuietly`）なら読み直さない
+            // 送信の後始末で選択を直しただけ（`setSelectionQuietly`）なら読み直さない
             guard !isSettingSelectionQuietly else { return }
             // **前の読み込みを捨ててから始める。** 重ねると、外したはずの
             // 写真まで待ち行列に残って一緒に投稿される
@@ -100,6 +100,9 @@ final class UploadViewModel: ObservableObject {
     /// 間に「送信中… 0 / 2 枚目」と「残りをやめる」が出る
     @Published private(set) var isWorking = false
     @Published private(set) var isLoadingPicked = false
+    /// カメラで撮った写真を整えている枚数。**整え終わるまで投稿させない**
+    /// （押すと、撮った1枚だけが待ち行列に入る前に送信が始まり、画面に残る）
+    @Published private(set) var preparingCaptures = 0
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
     /// だけでは閉じない——選び直しの読み込み中も空になる）
     @Published private(set) var didPostAll = false
@@ -162,7 +165,7 @@ final class UploadViewModel: ObservableObject {
     }
 
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
-    var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked }
+    var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 }
 
     /// 写真の座標から撮影地を引いて、**空のときだけ**入れる。
     ///
@@ -200,13 +203,29 @@ final class UploadViewModel: ObservableObject {
     /// 機材名も付かない）。それでも `ImagePreparer` を通すのは、
     /// 1920px への縮小と「残っていないことの確認」を1か所に寄せるため。
     func accept(capturedJPEG data: Data) {
-        do {
-            let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
-            append(prepared)
-            errorMessage = nil
-        } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")
+        preparingCaptures += 1
+        Task { [weak self] in
+            let result = await Self.prepareOffMain(data)
+            guard let self else { return }
+            self.preparingCaptures -= 1
+            switch result {
+            case .success(let prepared):
+                self.append(prepared)
+                self.errorMessage = nil
+            case .failure(let error):
+                self.errorMessage = (error as? LocalizedError)?.errorDescription
+                    ?? L("写真を読み込めませんでした", "Couldn't load the photo")
+            }
         }
+    }
+
+    /// 🔴 **画像を整えるのは画面の処理（MainActor）の外で。** 縮小・JPEG への
+    /// 焼き直し・読み直しての確認・代表色で、1枚に数百ミリ秒かかる。10枚選ぶと
+    /// その間ずっと画面が止まっていた
+    private static func prepareOffMain(_ data: Data) async -> Result<ImagePreparer.Prepared, Error> {
+        await Task.detached(priority: .userInitiated) {
+            Result { try ImagePreparer.prepare(data: data, fileName: "photo") }
+        }.value
     }
 
     func remove(_ photoId: UUID) {
@@ -221,7 +240,10 @@ final class UploadViewModel: ObservableObject {
         // **ライブラリの選択からも外す。** 残すと、次に「追加」を開いたときに
         // 選ばれたままで、閉じると外したはずの写真が戻ってくる
         if let key = removed?.pickerItem {
-            setSelectionQuietly(pickerItems.filter { $0 != key })
+            // **ここは読み直しを通す**（`setSelectionQuietly` にしない）。
+            // 待ち行列が空になったときの束の印の片付け（`loadPicked`）と、
+            // 走り出す前の読み込みの取り消しを didSet に任せている
+            pickerItems.removeAll { $0 == key }
         }
     }
 
@@ -272,8 +294,16 @@ final class UploadViewModel: ObservableObject {
                 guard !Task.isCancelled, generation == pickGeneration else { return }
                 // **`itemIdentifier` をファイル名にしない。** スラッシュを含む
                 // 端末内部の ID で、キーの組み立てを壊す。拡張子は
-                // `ImagePreparer` が .jpg に付け替える
-                append(try ImagePreparer.prepare(data: data, fileName: "photo"), pickerItem: item)
+                // `ImagePreparer` が .jpg に付け替える。整えるのは画面の処理の外で
+                let result = await Self.prepareOffMain(data)
+                // 整えている間に選び直されたら、この結果は捨てる
+                guard !Task.isCancelled, generation == pickGeneration else { return }
+                switch result {
+                case .success(let prepared):
+                    append(prepared, pickerItem: item)
+                case .failure:
+                    failed += 1
+                }
             } catch {
                 failed += 1
             }
@@ -318,9 +348,14 @@ final class UploadViewModel: ObservableObject {
         isWorking = true
         errorMessage = nil
         cancelled = false
+        // 🔴 **送っている途中でアプリを離れても、少しのあいだ続けさせてもらう。**
+        // 無いと裏に回った数秒後に止められ、戻ったときには通信が切れて失敗になる。
+        // 時間切れ（30秒ほど）でも落ちた写真は画面に残り、やり直しは同じ鍵で送る
+        let background = BackgroundWindow(name: "photo-upload")
         defer {
             isWorking = false
             uploadingIndex = 0
+            background.end()
         }
 
         groupId = UploadGrouping.groupIdForSubmit(current: groupId, grouping: groupsAsOnePost,
@@ -440,11 +475,12 @@ final class UploadViewModel: ObservableObject {
     ///
     /// 🔴 didSet の読み直しを通すと、前に読めなかった写真（選択には残り、
     /// 待ち行列には居ない）を「新しく選ばれた」と読み、`errorMessage` を消して
-    /// 読み直す——一部だけ上がった回の「残りは投稿できていません」が消えていた
-    private func setSelectionQuietly(_ items: [PhotosPickerItem]) {
+    /// 読み直す——一部だけ上がった回の「残りは投稿できていません」が消えていた。
+    /// **送信の後始末専用。** 送信中は選び直せないので、走っている読み込みは無い
+    private func setSelectionQuietly(_ selection: [PhotosPickerItem]) {
         isSettingSelectionQuietly = true
-        pickerItems = items
-        isSettingSelectionQuietly = false
+        defer { isSettingSelectionQuietly = false }
+        pickerItems = selection
     }
 
     /// 置いたまま保存していない本体を片付ける（本人がその写真を外した）
@@ -472,6 +508,27 @@ final class UploadViewModel: ObservableObject {
     private static func image(from data: Data) -> Image? {
         guard let uiImage = UIImage(data: data) else { return nil }
         return Image(uiImage: uiImage)
+    }
+}
+
+/// 裏に回っても続けさせてもらう窓（`beginBackgroundTask`）。
+/// **必ず閉じる**——閉じ忘れると、時間切れで OS にアプリごと止められる
+@MainActor
+final class BackgroundWindow {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    init(name: String) {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            // 時間切れ。送信は止まるが、ここで閉じないと OS に止められる。
+            // 呼ばれるのは主スレッド（SDK の版によって型に書いていないので明示する）
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
     }
 }
 

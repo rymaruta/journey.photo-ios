@@ -150,9 +150,42 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertFalse(ScriptedProtocol.calls.contains { $0.path == "/upload/discard" })
 
         model.remove(model.items[0].id)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitUntil { ScriptedProtocol.calls.contains { $0.path == "/upload/discard" } }
         XCTAssertTrue(ScriptedProtocol.calls.contains { $0.path == "/upload/discard" },
                       "外した写真の本体が S3 に残ったまま")
+    }
+
+    /// カメラの1枚は**画面の処理の外で整える**。整えている間は投稿させない
+    /// （押すと、その1枚が待ち行列に入る前に送信が始まる）。整えられなければ知らせる
+    @MainActor
+    func testCapturedPhotoIsPreparedInTheBackgroundAndBlocksSubmitMeanwhile() async throws {
+        let api = APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"),
+            session: session
+        )
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.items = [PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil))]
+        XCTAssertTrue(model.canSubmit)
+
+        // 模型の ImageIO は読めないので、整えるのは失敗で終わる
+        model.accept(capturedJPEG: Data([0x00]))
+        XCTAssertFalse(model.canSubmit, "整えている間に投稿できる")
+        try await waitUntil { model.canSubmit }
+        XCTAssertTrue(model.canSubmit)
+        XCTAssertNotNil(model.errorMessage, "整えられなかったことを知らせていない")
+        XCTAssertEqual(model.items.count, 1)
+    }
+
+    /// 条件が立つまで待つ（最長5秒）。切り離した仕事の終わりを時間で当てない
+    @MainActor
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        for _ in 0..<500 where !condition() {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
     }
 
     /// 🔴 **一部だけ上がった回に、投稿済みの写真を選択から外す**——そして
@@ -189,7 +222,9 @@ final class UploadServiceTests: XCTestCase {
         // b は手前で弾かれる形にして、a だけが上がる回を作る
         model.items = [pending(a, type: "image/jpeg"), pending(b, type: "image/svg+xml")]
         model.pickerItems = [a, b, c]
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // c の読み込み（読めずに終わる）を待つ。**時間で待たない**——本物の
+        // PhotosUI では 100ms で返る保証が無い
+        try await waitUntil { !model.isLoadingPicked && model.errorMessage != nil }
 
         await model.submit()
         let summary = model.errorMessage

@@ -23,7 +23,24 @@ open class UIApplication {
     public func registerForRemoteNotifications() {}
     public func unregisterForRemoteNotifications() {}
     public var applicationIconBadgeNumber: Int = 0
+    /// 裏に回っても少しだけ続けさせてもらう（本物と同じ形）
+    public func beginBackgroundTask(withName taskName: String?,
+                                    expirationHandler handler: (@MainActor @Sendable () -> Void)? = nil) -> UIBackgroundTaskIdentifier {
+        .invalid
+    }
+    public func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier) {}
 }
+
+public struct UIBackgroundTaskIdentifier: Hashable, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let invalid = UIBackgroundTaskIdentifier(rawValue: 0)
+}
+
+/// 端末の写真に保存する（本物と同じ名前・引数の数）。模型は何もしない。
+/// 本物の3つ目は `Selector?`——Linux に無い型なので、`nil` だけ渡す前提で `Any?` にしてある
+public func UIImageWriteToSavedPhotosAlbum(_ image: UIImage, _ completionTarget: Any?,
+                                           _ completionSelector: Any?, _ contextInfo: UnsafeMutableRawPointer?) {}
 open class UINavigationController: UIViewController {}
 
 public protocol UINavigationControllerDelegate: AnyObject {}
