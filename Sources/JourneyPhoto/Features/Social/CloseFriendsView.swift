@@ -41,6 +41,9 @@ struct CloseFriendsView: View {
     @State private var query = ""
     @State private var isLoading = true
     @State private var errorMessage: String?
+    /// 一度読めたか。**読めた後は読み直さない**——タブを替えて戻るなどで `.task` が
+    /// 走り直すと、まだ保存していない選び直しがサーバーの値で上書きされていた
+    @State private var loaded = false
     /// 保存を送っている間（二度押しで2回投げない・選び直させない）
     @State private var isSaving = false
     /// 保存が途中で止まった／失敗した知らせ。**アラートで出す**
@@ -256,6 +259,7 @@ struct CloseFriendsView: View {
     }
 
     private func load() async {
+        guard !loaded else { return }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -272,6 +276,7 @@ struct CloseFriendsView: View {
         following = rows.following
         saved = Set(ids)
         chosen = Set(ids)
+        loaded = true
         others = await names(of: rows.others)
     }
 

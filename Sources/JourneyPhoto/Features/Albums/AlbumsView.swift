@@ -271,6 +271,10 @@ final class AlbumsViewModel: ObservableObject {
         do {
             let album = try await environment.albums.create(title: trimmed)
             writes.created.append(.init(value: album, at: Date()))
+            // 🔴 **既に並んでいれば足さない。** 作っている間に始めた読み込みが先に返ると、
+            // 作ったアルバムはもう一覧に居る。そこへ足すと同じ id が2つ並んでいた
+            // （ForEach の id が重なる）
+            albums.removeAll { $0.id == album.id }
             albums.insert(album, at: 0)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
