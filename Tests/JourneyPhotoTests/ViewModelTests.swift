@@ -177,6 +177,39 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
+    /// 書かずに戻ると、読み込み中の丸のまま引き下げも再試行も効かない画面が残る
+    func testGalleryFirstLoadCancelledDoesNotStayLoading() async {
+        prepare()
+        StubProtocol.fail(with: URLError(.cancelled))
+        let model = GalleryViewModel(gallery: PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
+        ))
+        let task = Task { await model.load() }
+        task.cancel()
+        await task.value
+        guard case .failed = model.state else { return XCTFail("読み込み中のまま残している") }
+    }
+
+    /// 人のページも同じ。見出しの無い画面に「まだありません」を出さない（c408c05 のレビュー）
+    func testProfileFirstLoadCancelledShowsFailure() async {
+        prepare()
+        StubProtocol.fail(with: URLError(.cancelled))
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = UserProfileViewModel()
+        let task = Task { await model.load(userId: "u1", environment: env, viewerId: nil) }
+        task.cancel()
+        await task.value
+        XCTAssertNotNil(model.errorMessage, "取れていないのに失敗を出していない")
+    }
+
     /// 圏外は「読み込めませんでした」を出す（例外を投げっぱなしにしない）。
     func testGalleryShowsMessageWhenOffline() async {
         prepare()
