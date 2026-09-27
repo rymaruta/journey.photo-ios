@@ -248,7 +248,7 @@ public struct Alignment {
     public static let top = Alignment(), topTrailing = Alignment(), topLeading = Alignment()
     public static let bottom = Alignment(), bottomLeading = Alignment(), bottomTrailing = Alignment()
 }
-public struct HorizontalAlignment { public static let leading = HorizontalAlignment(), center = HorizontalAlignment() }
+public struct HorizontalAlignment { public static let leading = HorizontalAlignment(), center = HorizontalAlignment(), trailing = HorizontalAlignment() }
 /// 揃えの計算に渡る寸法（本物と同じ形）
 public struct ViewDimensions {
     public var width: CGFloat { 0 }

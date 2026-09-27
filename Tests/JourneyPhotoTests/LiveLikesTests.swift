@@ -103,6 +103,13 @@ final class LiveLikesTests: XCTestCase {
         XCTAssertEqual(LiveLikes.displayCount(base: nil, pendingDelta: 1), 1)
         XCTAssertEqual(LiveLikes.displayCount(base: 0, pendingDelta: -1), 0)
     }
+
+    /// ダブルタップが届かなかったら**押す前の値**に戻す。
+    /// 元からいいね済みの写真を「外した」扱いにしない
+    func testFailedDoubleTapRestoresPreviousState() {
+        XCTAssertTrue(LiveLikes.likedAfterFailedDoubleTap(wasLiked: true))
+        XCTAssertFalse(LiveLikes.likedAfterFailedDoubleTap(wasLiked: false))
+    }
 }
 
 /// 公開一覧が、いいねの数だけいまの数に差し替わるか（本物の読み込みを通す）。

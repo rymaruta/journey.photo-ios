@@ -74,7 +74,7 @@ struct JourneyPhotoApp: App {
     /// 「見せない」を公開一覧の側へ渡す。
     ///
     /// 出すところ（`PublicGalleryService`）で落とすので、ギャラリー・検索・
-    /// 地図・関連写真・お気に入りの**全部に一度に効く**。
+    /// 地図・近くの写真・お気に入りの**全部に一度に効く**。
     private func applyModeration() async {
         await environment.gallery.setHidden(
             userIds: hidden.blockedUserIds,
@@ -150,6 +150,9 @@ struct JourneyPhotoApp: App {
                     joinedAlbums.use(userId: auth.userId)
                     wishlist.use(userId: auth.userId)
                     storyDrafts.use(userId: auth.userId)
+                    // 🔴 投稿した本人でなくなったら、裏で送っている残りを捨てる
+                    // （別の人のアカウントで前の人のストーリーを出さない）
+                    StoryUploadCenter.shared.userChanged(to: auth.userId)
                     seenStories.use(userId: auth.userId)
                     // **通知の宛先も、人が変わったら預け直す**
                     // （外さないと、次にこの端末を使う人へ前の人あての

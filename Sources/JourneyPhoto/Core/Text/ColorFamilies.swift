@@ -38,6 +38,14 @@ enum ColorFamilies {
         }
     }
 
+    /// 色の丸の読み上げ。**色の名前を先に言う**——丸の下の字は
+    /// 括弧の中（「空・海」）だけなので、目で見ている人には写真の色で
+    /// 分かっても、読み上げでは何色か分からない
+    static func accessibilityLabel(_ family: Family, count: Int) -> String {
+        L("\(family.label)（\(family.note)）・\(count)枚",
+          "\(family.label) (\(family.note)), \(count) photos")
+    }
+
     /// `#rrggbb` を 0...1 の3つに。読めなければ nil
     static func rgb(_ hex: String?) -> (r: Double, g: Double, b: Double)? {
         guard var text = hex?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }

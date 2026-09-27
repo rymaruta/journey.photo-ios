@@ -37,26 +37,6 @@ final class CollectionFilterTests: XCTestCase {
         XCTAssertEqual(PhotoQuery.photos(photos, in: .tag("sauna")).map(\.id), ["a"])
     }
 
-    /// 関連写真に自分自身を入れない。
-    func testRelatedExcludesSelf() throws {
-        let subject = try photo(id: "a", location: "パリ", tags: ["街"])
-        let others = [subject, try photo(id: "b", location: "パリ")]
-        let related = PhotoQuery.related(to: subject, from: others)
-        XCTAssertEqual(related.map(\.id), ["b"])
-    }
-
-    /// 撮影地が同じものを先に出す。
-    func testRelatedPrefersSameLocation() throws {
-        let subject = try photo(id: "a", location: "パリ", tags: ["街"])
-        let photos = [
-            subject,
-            try photo(id: "tagOnly", tags: ["街"]),
-            try photo(id: "sameLocation", location: "パリ"),
-        ]
-        let related = PhotoQuery.related(to: subject, from: photos)
-        XCTAssertEqual(related.first?.id, "sameLocation")
-    }
-
     /// **カテゴリで絞る。**
     ///
     /// 変異試験で `==` を `!=` にしても誰も気づかなかった
@@ -68,47 +48,6 @@ final class CollectionFilterTests: XCTestCase {
             try photo(id: "c"),                    // カテゴリなし
         ]
         XCTAssertEqual(PhotoQuery.photos(photos, in: .category("風景")).map(\.id), ["a"])
-    }
-
-    /// **タグが重なるものを拾う。**
-    ///
-    /// 変異試験で `!tags.isDisjoint(...)` の `!` を外しても気づかなかった
-    /// ——**タグが1つも重ならないものだけが「近い写真」として並ぶ**という
-    /// 正反対の壊れ方。
-    func testRelatedFillsWithOverlappingTags() throws {
-        let subject = try photo(id: "a", tags: ["桜", "春"])
-        let photos = [
-            subject,
-            try photo(id: "overlap", tags: ["桜"]),
-            try photo(id: "unrelated", tags: ["雪"]),
-        ]
-        XCTAssertEqual(PhotoQuery.related(to: subject, from: photos).map(\.id), ["overlap"])
-    }
-
-    /// **タグを持たない写真から、タグで拾いにいかない。**
-    /// `!tags.isEmpty` を外すと、空集合は何とも重ならないので結果は
-    /// 変わらない……ように見えて、撮影地だけで埋まった一覧に
-    /// 無関係なものが混ざる余地ができる。
-    func testRelatedWithoutTagsOnlyUsesLocation() throws {
-        let subject = try photo(id: "a", location: "パリ")
-        let photos = [
-            subject,
-            try photo(id: "sameLocation", location: "パリ"),
-            try photo(id: "tagged", tags: ["桜"]),
-        ]
-        XCTAssertEqual(PhotoQuery.related(to: subject, from: photos).map(\.id), ["sameLocation"])
-    }
-
-    /// **上限ちょうどで止める。**
-    ///
-    /// なお `>=` を `>` にしてもこのテストは落ちない（最後の
-    /// `prefix(limit)` が同じ形に削るため）。等価変異だと確かめたうえで、
-    /// **上限そのもの**は見張る。
-    func testRelatedStopsAtTheLimit() throws {
-        let subject = try photo(id: "a", tags: ["桜"])
-        var photos = [subject]
-        for i in 0..<5 { photos.append(try photo(id: "t\(i)", tags: ["桜"])) }
-        XCTAssertEqual(PhotoQuery.related(to: subject, from: photos, limit: 2).count, 2)
     }
 
     /// 検索は題・撮影地・タグ・カテゴリを横断し、大文字小文字と全角半角を

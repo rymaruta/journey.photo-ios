@@ -19,6 +19,8 @@ struct RootView: View {
     @State private var showStoryComposer = false
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
+    /// 見出しの「メニュー（≡）」（板 01d）
+    @State private var showMenu = false
     /// 通知を押して開いたか（`AppDelegate` から届く）
     @StateObject private var router = NotificationRouter.shared
 
@@ -68,12 +70,6 @@ struct RootView: View {
         unread = (try? await environment.notifications.fetch().unread) ?? 0
     }
 
-    /// 見出しに出す自分のアイコン。**ここで1回だけ作る**
-    /// （`ToolbarContent` に環境から注げないので、値で渡す）
-    private var avatarURL: URL? {
-        auth.userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil) }
-    }
-
     private var tabs: some View {
         // **同じ札をもう一度押したことを拾う。** `$selection` のままだと
         // 値が変わらないので何も届かない。本物の TabView は選ばれている札を
@@ -86,13 +82,13 @@ struct RootView: View {
             }
         )) {
             NavigationStack {
-                GalleryView(unread: unread, avatarURL: avatarURL, onOpenNotifications: { showNotifications = true })
+                GalleryView(unread: unread, onOpenNotifications: { showNotifications = true })
             }
             .tabItem { Label(L("ホーム", "Home"), systemImage: "house") }
             .tag(Tab.home)
 
             NavigationStack {
-                SearchView(unread: unread, avatarURL: avatarURL, onOpenNotifications: { showNotifications = true })
+                SearchView(unread: unread, onOpenNotifications: { showNotifications = true })
             }
             .tabItem { Label(Labels.Navigation.searchTab, systemImage: "magnifyingglass") }
             .tag(Tab.search)
@@ -106,7 +102,7 @@ struct RootView: View {
             // **4つ目は地図**（指示書 4-1 の並び）。旅の一冊は
             // マイページから開く——撮った本人の記録なので持ち場が合う
             NavigationStack {
-                PhotoMapView(unread: unread, avatarURL: avatarURL,
+                PhotoMapView(unread: unread,
                              onOpenNotifications: { showNotifications = true },
                              onPost: { showPostChoice = true })
             }
@@ -149,9 +145,20 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             ToastOverlay().padding(.bottom, 116)
         }
-        // 見出しの自分のアイコンが押されたら、マイページの札へ移る
+        // メニューの「マイページ」が押されたら、マイページの札へ移る
         .onChange(of: tabRouter.myPageRequests) { _, _ in
             selection = .mypage
+        }
+        // 見出しの「探す」（ホームだけ）→ 探すの札へ
+        .onChange(of: tabRouter.searchRequests) { _, _ in
+            selection = .search
+        }
+        // メニューの「撮影地マップ」→ マップの札へ
+        .onChange(of: tabRouter.mapRequests) { _, _ in
+            selection = .map
+        }
+        .onChange(of: tabRouter.menuRequests) { _, _ in
+            showMenu = true
         }
         // 「参加する」が押されたら、投稿画面をそのタグで開く
         .onChange(of: missions.requests) { _, _ in
@@ -178,6 +185,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $showStoryComposer, onDismiss: { tabRouter.postSheetClosed() }) {
             NavigationStack { StoryComposerView() }
+        }
+        .sheet(isPresented: $showMenu) {
+            NavigationStack { SiteMenuView() }
         }
         // お知らせを閉じたら数え直す（タブではなくシートになったので）
         .sheet(isPresented: $showNotifications, onDismiss: { Task { await refreshUnread() } }) {

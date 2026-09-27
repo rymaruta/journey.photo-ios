@@ -7,6 +7,9 @@ public struct Text: View {
     public init<S: StringProtocol>(_ s: S) {}
     public var body: Never { fatalError("模型") }
     public enum Case { case uppercase, lowercase }
+    /// 一部だけ太くする（`Text(a).bold() + Text(b)`）。本物は Text を返す
+    public func bold() -> Text { self }
+    public static func + (lhs: Text, rhs: Text) -> Text { lhs }
 }
 
 public struct Image: View {
@@ -182,6 +185,13 @@ public struct SecureField: View {
     public init(_ title: String, text: Binding<String>) {}
     public var body: Never { fatalError("模型") }
 }
+/// 日付を選ぶ部品。本物は押すと暦が開く（`.compact`）
+public struct DatePicker: View {
+    public struct Components { public static let date = Components(), hourAndMinute = Components() }
+    public init(_ title: String, selection: Binding<Date>, displayedComponents: Components) {}
+    public init(_ title: String, selection: Binding<Date>, in range: PartialRangeFrom<Date>, displayedComponents: Components) {}
+    public var body: Never { fatalError("模型") }
+}
 public struct Toggle: View {
     public init(_ title: String, isOn: Binding<Bool>) {}
     /// 札を自分で組む版（本物にもある。説明を2行にするのに使う）
@@ -259,6 +269,15 @@ extension Shape {
     /// （本物の `View` の修飾子も MainActor の上で呼ばれる）
     @MainActor public func stroke<S: ShapeStyle>(_ style: S, lineWidth: Double) -> Rectangle { Rectangle() }
     @MainActor public func stroke<S: ShapeStyle>(_ style: S, style strokeStyle: StrokeStyle) -> Rectangle { Rectangle() }
+}
+/// 自由な線（旅の一冊のルート図）。本物と同じく、閉包の中で点を足していく
+public struct Path: View, Shape {
+    public init() {}
+    public init(_ callback: (inout Path) -> Void) {}
+    public mutating func move(to point: CGPoint) {}
+    public mutating func addLine(to point: CGPoint) {}
+    public mutating func addCurve(to point: CGPoint, control1: CGPoint, control2: CGPoint) {}
+    public var body: Never { fatalError("模型") }
 }
 /// 角ごとに丸みを変える四角（iOS 16+）。ストーリーの写真は下の角だけ丸める
 public struct UnevenRoundedRectangle: View, Shape {

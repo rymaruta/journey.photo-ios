@@ -10,19 +10,58 @@ import SwiftUI
 ///
 /// ただし**既に選んでいる人は、フォロー中に居なくても並べる**
 /// （`CloseFriendsRows`）。並べないと外せない。
+///
+/// **選んでから右上の「保存」で送る**（板 39・2026-09-26）。以前は押すたびに
+/// その場で保存していた。サーバーにまとめて書く口は無いので、保存では
+/// **差分だけを1件ずつ**送り、途中で失敗したら止めて「何件保存できたか」を
+/// 出す（`CloseFriendsRows.save`）。全部送れたら閉じる。
+///
+/// 🔴 **送っていない変更があるまま黙って戻らせない。** 投稿・写真の編集の
+/// 「親しい友達を選ぶ」から来た人は、以前の「押したら保存」の癖で戻る。
+/// 黙って捨てると0人のまま「親しい友達」限定の写真が出て、誰にも見えない。
+/// 変更がある間・送っている間は標準の戻る（と左端の払い）を隠し、自前の戻るで
+/// 「保存して戻る／変更を捨てる／キャンセル」を確かめる（`CloseFriendsRows.leave`）。
+///
+/// 板との意図的な差: 説明文は「写真」向け（下の注記）・「フォロー中の一覧に
+/// 出ない人」の段がある（上の注記）・選択の印は星（板はチェック）。
 struct CloseFriendsView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @Environment(\.dismiss) private var dismiss
 
     @State private var following: [FollowUser] = []
     /// 選んでいるが、フォロー中の一覧に居ない人（外したい人が居る場所）
     @State private var others: [FollowUser] = []
+    /// **サーバーに保存済み**の親しい友達（読んだ値と、保存で返ってきた値）
+    @State private var saved: Set<String> = []
+    /// 画面で選んでいる人（「保存」を押すまで送らない）
     @State private var chosen: Set<String> = []
+    /// 「名前で探す」。端末の中で絞るだけ（`ListIdentity.filter`）
+    @State private var query = ""
     @State private var isLoading = true
     @State private var errorMessage: String?
-    /// いま送っている相手（二度押しで2回投げない）
-    @State private var working: Set<String> = []
+    /// 保存を送っている間（二度押しで2回投げない・選び直させない）
+    @State private var isSaving = false
+    /// 保存が途中で止まった／失敗した知らせ。**アラートで出す**
+    @State private var saveError: String?
+    /// 「保存して戻る／変更を捨てる」の確認
+    @State private var confirmLeave = false
+
+    /// 送るもの（外す方が先・画面の並び）
+    private var pending: [CloseFriendsRows.Change] {
+        CloseFriendsRows.changes(saved: saved, picked: chosen,
+                                 order: (others + following).map(\.id))
+    }
+    private var canSave: Bool {
+        !pending.isEmpty && !overLimit && !isLoading && errorMessage == nil
+    }
+    private var overLimit: Bool { CloseFriendsRows.overLimit(chosen) }
+    private var leave: CloseFriendsRows.Leave {
+        CloseFriendsRows.leave(hasChanges: !pending.isEmpty, isSaving: isSaving)
+    }
+    private var shownOthers: [FollowUser] { ListIdentity.filter(others, query: query) }
+    private var shownFollowing: [FollowUser] { ListIdentity.filter(following, query: query) }
 
     var body: some View {
         List {
@@ -55,23 +94,44 @@ struct CloseFriendsView: View {
                 }
                 .listRowBackground(Color.clear)
             } else {
-                if !others.isEmpty {
+                Section {
+                    searchField
+                    if overLimit {
+                        // **保存を押せない理由を出す**（黙って灰色にしない）
+                        Text(L("選べるのは \(CloseFriendsRows.limit) 人までです（いま \(chosen.count) 人）。減らすと保存できます。",
+                               "You can pick up to \(CloseFriendsRows.limit) people (now \(chosen.count)). Remove some to save."))
+                            .font(.footnote)
+                            .foregroundStyle(WebTheme.danger)
+                    }
+                }
+                .listRowBackground(Color.clear)
+                if shownOthers.isEmpty && shownFollowing.isEmpty {
                     Section {
-                        ForEach(others) { user in
+                        Text(L("見つかりませんでした", "No matches"))
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.muted2)
+                    }
+                    .listRowBackground(Color.clear)
+                }
+                if !shownOthers.isEmpty {
+                    Section {
+                        ForEach(shownOthers) { user in
                             row(user)
                         }
                     } header: {
                         Text(L("フォロー中の一覧に出ない人", "Not in your following list"))
                     } footer: {
-                        Text(L("フォローを外した人などです。星を外すと、「親しい友達」の写真が見えなくなります。",
-                               "People you unfollowed, for example. Remove the star to hide your Close friends photos from them."))
+                        Text(L("フォローを外した人などです。星を外して保存すると、「親しい友達」の写真が見えなくなります。",
+                               "People you unfollowed, for example. Remove the star and tap Save to hide your Close friends photos from them."))
                     }
                     .listRowBackground(Color.clear)
                 }
                 // フォローが0人のときは段ごと出さない（見出しだけの段を作らない）
-                if !following.isEmpty {
+                // 絞った結果が0人のときも出さない（「選んだ人 N」は全体の数なので、
+                // 絞っても見出しの数は変わらない）
+                if !shownFollowing.isEmpty {
                     Section {
-                        ForEach(following) { user in
+                        ForEach(shownFollowing) { user in
                             row(user)
                         }
                     } header: {
@@ -84,21 +144,103 @@ struct CloseFriendsView: View {
         .webScreen()
         .navigationTitle(L("親しい友達", "Close friends"))
         .navigationBarTitleDisplayMode(.inline)
+        // 変更がある間・送っている間は標準の戻るを隠す（左端から払って戻るのも止まる）
+        .navigationBarBackButtonHidden(leave != .now)
+        .toolbar {
+            if leave != .now {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        if leave == .confirm { confirmLeave = true }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    // 送っている最中は戻らせない（途中の失敗が消えた画面に出る）
+                    .disabled(leave == .wait)
+                    .accessibilityLabel(L("戻る", "Back"))
+                }
+            }
+            // **保存は右上**（板 39）。変えたものが無い間・上限を超えている間は押せない
+            ToolbarItem(placement: .topBarTrailing) {
+                if isSaving {
+                    ProgressView()
+                } else {
+                    Button(L("保存", "Save")) {
+                        Task { await save() }
+                    }
+                    .font(.body.weight(.semibold))
+                    // 押せない間は真鍮にしない（明示した色は disabled でも薄くならない）
+                    .foregroundStyle(canSave ? WebTheme.accent : WebTheme.muted2)
+                    .disabled(!canSave)
+                }
+            }
+        }
+        .confirmationDialog(L("変更を保存しますか？", "Save your changes?"),
+                            isPresented: $confirmLeave, titleVisibility: .visible) {
+            // 上限を超えている間は保存できないので、選択肢に出さない
+            if !overLimit {
+                Button(L("保存して戻る", "Save and go back")) {
+                    Task { await save() }
+                }
+            }
+            Button(L("変更を捨てる", "Discard changes"), role: .destructive) {
+                dismiss()
+            }
+            Button(L("キャンセル", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(L("保存しないで戻ると、選んだ人は「親しい友達」に入りません。",
+                   "If you go back without saving, your picks won't be applied."))
+        }
+        .alert(L("保存できませんでした", "Couldn't save"),
+               isPresented: Binding(get: { saveError != nil },
+                                    set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveError ?? "")
+        }
         .task { await load() }
+    }
+
+    /// 「名前で探す」（板 39: 高さ44・角12・白8%の地）。表示名と @ユーザー名で絞る
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(WebTheme.faint)
+            TextField(L("名前で探す", "Search by name"), text: $query)
+                .textFieldStyle(.plain)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .foregroundStyle(WebTheme.foreground)
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(WebTheme.faint)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("消す", "Clear"))
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
     }
 
     private func row(_ user: FollowUser) -> some View {
         let picked = chosen.contains(user.id)
         return Button {
-            Task { await toggle(user.id) }
+            if picked { chosen.remove(user.id) } else { chosen.insert(user.id) }
         } label: {
             HStack(spacing: 12) {
                 RemoteImage(url: UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil),
                             placeholderSymbol: "person.crop.circle.fill")
                     .frame(width: 44, height: 44)
                     .clipShape(Circle())
-                Text(user.displayName)
-                    .font(.subheadline)
+                PersonNameLines(user: user)
                     .foregroundStyle(WebTheme.foreground)
                 Spacer()
                 Image(systemName: picked ? "star.fill" : "star")
@@ -108,8 +250,8 @@ struct CloseFriendsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(working.contains(user.id))
-        .opacity(working.contains(user.id) ? 0.5 : 1)
+        // 送っている間は選び直させない（送っている差分と画面がずれる）
+        .disabled(isSaving)
         .accessibilityAddTraits(picked ? .isSelected : [])
     }
 
@@ -128,6 +270,7 @@ struct CloseFriendsView: View {
         }
         let rows = CloseFriendsRows.split(following: list.users, chosen: ids)
         following = rows.following
+        saved = Set(ids)
         chosen = Set(ids)
         others = await names(of: rows.others)
     }
@@ -142,7 +285,7 @@ struct CloseFriendsView: View {
     /// 引いた結果。**退会した人（404）は「取れなかった」と分ける**
     /// （`ProfileService.publicProfile` の注記）
     private enum Lookup: Sendable {
-        case name(String?)
+        case name(String?, username: String?)
         case deleted
     }
 
@@ -150,11 +293,11 @@ struct CloseFriendsView: View {
     nonisolated private static func lookup(_ id: String, profiles: ProfileService) async -> (String, Lookup) {
         do {
             let profile = try await profiles.publicProfile(userId: id)
-            return (id, .name(AuthorName.real(profile)))
+            return (id, .name(AuthorName.real(profile), username: profile.username))
         } catch APIError.server(let status, _) where status == 404 {
             return (id, .deleted)
         } catch {
-            return (id, .name(nil))
+            return (id, .name(nil, username: nil))
         }
     }
 
@@ -185,23 +328,31 @@ struct CloseFriendsView: View {
         return ids.map { id in
             switch found[id] {
             case .deleted: return FollowUser(id: id, name: nil, deleted: true)
-            case .name(let name): return FollowUser(id: id, name: name, deleted: nil)
+            case .name(let name, let username):
+                return FollowUser(id: id, name: name, deleted: nil, username: username)
             case nil: return FollowUser(id: id, name: nil, deleted: nil)
             }
         }
     }
 
-    /// **返ってきた状態を使う。** 自分で反転すると、失敗した回に
-    /// 画面だけ選ばれたことになる
-    private func toggle(_ userId: String) async {
-        guard !working.contains(userId) else { return }
-        working.insert(userId)
-        defer { working.remove(userId) }
-        let wanted = !chosen.contains(userId)
-        guard let now = try? await environment.social.setCloseFriend(userId: userId, wanted: wanted) else {
-            errorMessage = L("保存できませんでした", "Couldn't save")
-            return
+    /// 差分だけを1件ずつ送る（`CloseFriendsRows.save`）。**返ってきた状態を使う。**
+    /// 途中で止まったら、送れたぶんは保存済みに入り、残りは選択に残る
+    /// ——もう一度「保存」を押すと残りだけが送られる
+    private func save() async {
+        let changes = pending
+        guard !isSaving, !changes.isEmpty, !overLimit else { return }
+        isSaving = true
+        defer { isSaving = false }
+        let social = environment.social
+        let outcome = await CloseFriendsRows.save(saved: saved, changes: changes) { change in
+            try await social.setCloseFriend(userId: change.userId, wanted: change.wanted)
         }
-        if now { chosen.insert(userId) } else { chosen.remove(userId) }
+        saved = outcome.saved
+        // 全部送れたら閉じる（プロフィールの編集の「保存」と同じ）
+        if outcome.finished {
+            dismiss()
+        } else {
+            saveError = CloseFriendsRows.partialMessage(outcome)
+        }
     }
 }

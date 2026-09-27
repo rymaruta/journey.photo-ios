@@ -45,7 +45,7 @@ actor PublicGalleryService {
     /// （`JourneyPhotoApp` が入れ替える）。
     ///
     /// ここに置く理由は `setHidden` と同じ——**出すところで足せば、
-    /// 一覧・検索・地図・関連写真・お気に入りの全部に一度に効く**。
+    /// 一覧・検索・地図・近くの写真・お気に入りの全部に一度に効く**。
     /// 画面ごとに `restrictedFeed()` を呼んで回ると、必ずどこかが漏れる。
     private var restrictedLoader: (@Sendable () async throws -> [Photo])?
 
@@ -132,7 +132,7 @@ actor PublicGalleryService {
     ///
     /// この口は**画面を開くたびに全員が叩く**——一覧・検索・地図・
     /// お気に入り・タグ・お知らせ、そして写真を1枚開くたびに
-    /// 「近い写真」（`RelatedPhotosRow`）まで。サイト側は一覧 JSON を
+    /// 「この近くで撮られた写真」（`PhotoDetailView`）まで。サイト側は一覧 JSON を
     /// `no-store` で配っている（HTML と同じ扱い）ので、**毎回まるごと
     /// 落とし直していた**。写真をぽんぽん開くだけで往復が積み上がる。
     ///

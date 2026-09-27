@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// 旅の一冊。
+/// 旅の一冊（板 03）。
 ///
-/// **表紙 → ページ → 足取り**の順に、下へ流れる1本の読み物にする。
+/// **表紙 → 数字 → ルート図 → 日ごとのページ**の順に、下へ流れる1本の読み物にする。
 /// 写真を「並べる」のではなく「読ませる」——ここが一覧との違い。
 struct TripBookView: View {
 
@@ -14,17 +14,35 @@ struct TripBookView: View {
         ScrollView {
             VStack(spacing: 0) {
                 cover
+                VStack(alignment: .leading, spacing: 16) {
+                    stats
+                    route
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
                 pages
-                footer
             }
+            .padding(.bottom, 32)
         }
         .webScreen()
-        .navigationTitle(trip.place.isEmpty ? L("旅の記録", "A trip") : trip.place)
+        .navigationTitle(TripBook.title(of: trip))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // 板の右上の「共有」。**配るのは題と期間の文だけ**（URL を持たない理由は
+            // `TripBook.shareText`）
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: TripBook.shareText(of: trip)) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .webToolbarIcon()
+                .accessibilityLabel(L("共有", "Share"))
+            }
+        }
     }
 
     // MARK: - 表紙
 
+    /// 小見出し → 題 → 期間の範囲（板 03）
     private var cover: some View {
         ZStack(alignment: .bottomLeading) {
             if let cover = trip.cover {
@@ -35,141 +53,248 @@ struct TripBookView: View {
                     }
                     .clipped()
             }
-            // **下だけ暗くする。** 全面に膜を掛けると写真が濁る
+            // **下だけ暗くする。** 全面に膜を掛けると写真が濁る。下端は地の黒に
+            // つなげて、表紙から数字の枠へ切れ目なく流す（板 03）
             LinearGradient(
-                colors: [Color.black.opacity(0), Color.black.opacity(0.85)],
+                colors: [Color.black.opacity(0), Color.black],
                 startPoint: .center, endPoint: .bottom
             )
-            VStack(alignment: .leading, spacing: 6) {
-                // 眉ラベル（アーティファクトの `TRIP BOOK`）。**写真の上なので白**
-                // （真鍮は夕日の写真の上で読めなくなる・`BrandPalette` の規則）
-                Text("TRIP BOOK")
+            VStack(alignment: .leading, spacing: 8) {
+                // 眉ラベル。**写真の上なので白**（板は真鍮だが、真鍮は夕日の
+                // 写真の上で読めなくなる・`BrandPalette` の規則）
+                Text(L("TRIP BOOK · 自動でまとまった旅", "TRIP BOOK · Put together for you"))
                     .jpEyebrow()
                     .foregroundStyle(Color.white.opacity(0.85))
-                    .accessibilityLabel(L("旅の一冊", "Trip book"))
-                Text(period)
-                    .font(.caption)
-                    .tracking(1.5)
-                    .foregroundStyle(Color.white.opacity(0.7))
-                Text(trip.place.isEmpty ? L("旅の記録", "A trip") : trip.place)
-                    .font(JPFont.display(34, relativeTo: .largeTitle))
+                    // 読み上げは「旅の一冊」（「トリップブック」と英語で読ませない）
+                    .accessibilityLabel(L("旅の一冊 · 自動でまとまった旅", "Trip book · Put together for you"))
+                Text(TripBook.title(of: trip))
+                    .font(JPFont.display(44, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.foreground)
-                Text(L("\(trip.days)日間 · \(trip.photos.count)枚",
-                       "\(trip.days) days · \(trip.photos.count) photos"))
-                    .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.8))
+                    .shadow(color: Color.black.opacity(0.5), radius: 7, y: 2)
+                Text("\(TripBook.dateRange(from: trip.start, to: trip.end)) · \(TripBook.daysLabel(trip.days))")
+                    .font(JPFont.mono(12, relativeTo: .caption))
+                    .foregroundStyle(WebTheme.muted)
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+        }
+    }
+
+    // MARK: - 数字
+
+    /// 枚・撮影地・移動（直線）の3枠（板 03）。距離は**写真の座標を直線で
+    /// つないだ合計**で、道のりではない（`TravelDistance`）。だから札は「直線」
+    private var stats: some View {
+        HStack(spacing: 1) {
+            statCell("\(trip.photos.count)", unit: nil, label: L("枚", "Photos"))
+            statCell("\(TripBook.placeCount(of: trip.photos))", unit: nil, label: L("撮影地", "Places"))
+            statCell(TripBook.distanceText(distance), unit: distance == nil ? nil : "km",
+                     label: L("移動（直線）", "Distance (straight)"))
+        }
+        .background(Color.white.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        // 3枠を1つの要素に（読み上げは「12 枚、3 撮影地、…」と続けて読む）。
+        // スクリーンショットの `31-旅の足取り` がルート図の無い旅で代わりに探す
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("trips.stats")
+    }
+
+    /// 升1つ。形はストーリーの反応（`StoryInsightsView.countCell`）と同じ板の部品
+    private func statCell(_ value: String, unit: String?, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(JPFont.mono(18, relativeTo: .title3))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if let unit {
+                    Text(unit)
+                        .font(JPFont.mono(11, relativeTo: .caption2))
+                        .foregroundStyle(WebTheme.muted2)
+                }
+            }
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(WebTheme.faint)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .background(Self.cellColor)
+    }
+
+    // MARK: - ルート図
+
+    /// 点線でつないだ足取り（板 03 の「たどった場所」）。
+    /// **2か所以上のときだけ**出す（`TripBook.routeStops`）
+    @ViewBuilder
+    private var route: some View {
+        let stops = TripBook.sampledStops(TripBook.routeStops(of: trip))
+        if !stops.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(L("たどった場所", "Where you went"))
+                    .font(.system(size: 12, weight: .medium))
+                    .tracking(0.5)
+                    .foregroundStyle(WebTheme.faint)
+                    .padding(.horizontal, 4)
+                GeometryReader { proxy in
+                    routeDrawing(stops, width: proxy.size.width)
+                }
+                .frame(height: Self.routeHeight)
+                .background(Self.cellColor, in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(stops.map { "DAY \($0.day) \($0.place)" }.joined(separator: "、"))
+                // スクリーンショットの `31-旅の足取り` がここまで送って撮る
+                .accessibilityIdentifier("trips.route")
+            }
+        }
+    }
+
+    private static let routeHeight: CGFloat = 118
+
+    /// 点の位置。**左から右へ等間隔、高さは交互**（板の波打つ線）
+    private func routePoints(count: Int, width: CGFloat) -> [CGPoint] {
+        let inset: CGFloat = 44
+        let span = max(0, width - inset * 2)
+        return (0..<count).map { index in
+            let x = count > 1 ? inset + span * CGFloat(index) / CGFloat(count - 1) : width / 2
+            return CGPoint(x: x, y: index.isMultiple(of: 2) ? 74 : 46)
+        }
+    }
+
+    private func routeDrawing(_ stops: [TripBook.RouteStop], width: CGFloat) -> some View {
+        let points = routePoints(count: stops.count, width: width)
+        let labelWidth = min(140, max(80, (width - 40) / CGFloat(max(1, stops.count - 1))))
+        let line = Path { path in
+            guard let first = points.first else { return }
+            path.move(to: first)
+            for index in points.indices.dropFirst() {
+                let from = points[index - 1], to = points[index]
+                let half = (to.x - from.x) / 2
+                path.addCurve(to: to,
+                              control1: CGPoint(x: from.x + half, y: from.y),
+                              control2: CGPoint(x: to.x - half, y: to.y))
+            }
+        }
+        return ZStack(alignment: .topLeading) {
+            // 太い淡い帯の上に、真鍮の点線（板 03）
+            line.stroke(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+            line.stroke(WebTheme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [4, 5]))
+            ForEach(Array(stops.enumerated()), id: \.offset) { index, stop in
+                let point = points[index]
+                let isLast = index == stops.count - 1
+                // 終点だけ塗る（どこで旅が終わったか）
+                Circle()
+                    .fill(isLast ? WebTheme.accent : Self.cellColor)
+                    .overlay(Circle().strokeBorder(WebTheme.accent, lineWidth: 2))
+                    .frame(width: 14, height: 14)
+                    .position(x: point.x, y: point.y)
+                // 低い点は下に、高い点は上に札を出す（線と重ねない）
+                Text("DAY \(stop.day) · \(stop.place)")
+                    .font(JPFont.mono(9, relativeTo: .caption2))
+                    .foregroundStyle(WebTheme.muted2)
+                    .lineLimit(1)
+                    .frame(width: labelWidth)
+                    .position(x: point.x, y: index.isMultiple(of: 2) ? point.y + 22 : point.y - 18)
+            }
+            Text("ROUTE · \(TripBook.distanceText(distance))\(distance == nil ? "" : " km")")
+                .font(JPFont.mono(8, relativeTo: .caption2))
+                .tracking(1.5)
+                .foregroundStyle(WebTheme.placeholder)
+                .padding(.leading, 14)
+                .padding(.top, 8)
         }
     }
 
     // MARK: - ページ
 
-    /// **時間順に、1枚ずつ大きく。** 一覧の格子と同じ見せ方にすると、
-    /// 「一冊」にならない
+    /// **日ごとの段に、写真を1枚ずつ大きく。** 一覧の格子と同じ見せ方にすると、
+    /// 「一冊」にならない（板 03 は小さく3枚並べるが、ここは意図して変えない）。
+    /// 段の頭は板と同じ DAY n／MM.dd
     private var pages: some View {
-        VStack(spacing: 28) {
-            ForEach(Array(trip.photos.enumerated()), id: \.element.id) { index, photo in
-                VStack(alignment: .leading, spacing: 10) {
-                    NavigationLink {
-                        PhotoDetailView(photo: photo, context: trip.photos)
-                    } label: {
-                        RemoteImage(url: photo.detailImageURL, contentMode: .fit)
-                            .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                    }
-                    .buttonStyle(.plain)
-
-                    if !photo.displayTitle.isEmpty {
-                        Text(photo.displayTitle)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(WebTheme.foreground)
-                    }
-                    if let first = photo.paragraphs.first {
-                        Text(first)
-                            .font(.callout)
-                            .lineSpacing(4)
-                            .foregroundStyle(Color.white.opacity(0.8))
-                    }
-                    HStack(spacing: 8) {
-                        // 何日目かを出す。**旅の進み方が分かる**
-                        Text(L("\(dayNumber(of: photo))日目", "Day \(dayNumber(of: photo))"))
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.faint)
-                        if let place = photo.location, !place.isEmpty {
-                            Text("·").foregroundStyle(WebTheme.faint)
-                            Text(place)
-                                .font(.caption)
-                                .foregroundStyle(WebTheme.faint)
-                        }
-                    }
-                    // その日に聴いていた曲（付けてあれば）
-                    if let song = photo.song {
-                        SongRow(song: song)
+        VStack(alignment: .leading, spacing: 36) {
+            ForEach(TripBook.days(of: trip), id: \.number) { day in
+                VStack(alignment: .leading, spacing: 20) {
+                    dayHeader(day)
+                    ForEach(day.photos) { photo in
+                        page(photo, dayPlace: day.place)
                     }
                 }
-                .padding(.horizontal, 16)
-                // **表紙とページの間は広く取る。** 詰まっていると、
-                // 表紙が「1枚目の写真」に見えてページが始まらない
-                .padding(.top, index == 0 ? 44 : 0)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 28)
     }
 
-    // MARK: - 足取り
-
-    @ViewBuilder
-    private var footer: some View {
-        let places = orderedPlaces
-        if !places.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(L("たどった場所", "Where you went"))
-                    .font(.headline)
+    private func dayHeader(_ day: TripBook.Day) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("DAY \(day.number)")
+                .jpEyebrow()
+                .foregroundStyle(WebTheme.accent)
+            Text(TripBook.monthDay(day.date))
+                .font(JPFont.mono(12, relativeTo: .caption))
+                .foregroundStyle(WebTheme.muted2)
+            if !day.place.isEmpty {
+                Text(day.place)
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(WebTheme.foreground)
-                // **線でつなぐ。** 点を並べるだけだと「足取り」に見えない
-                ForEach(Array(places.enumerated()), id: \.offset) { index, place in
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(spacing: 0) {
-                            Circle()
-                                .fill(WebTheme.foreground)
-                                .frame(width: 8, height: 8)
-                            if index < places.count - 1 {
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.25))
-                                    .frame(width: 1, height: 26)
-                            }
-                        }
-                        Text(place)
-                            .font(.subheadline)
-                            .foregroundStyle(WebTheme.muted)
-                        Spacer()
-                    }
-                }
+                    .lineLimit(1)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-            .padding(16)
-            .padding(.top, 20)
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private func page(_ photo: Photo, dayPlace: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            NavigationLink {
+                PhotoDetailView(photo: photo, context: trip.photos)
+            } label: {
+                RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+
+            if !photo.displayTitle.isEmpty {
+                Text(photo.displayTitle)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+            }
+            if let first = photo.paragraphs.first {
+                Text(first)
+                    .font(.callout)
+                    .lineSpacing(4)
+                    .foregroundStyle(Color.white.opacity(0.8))
+            }
+            // 撮影地は**段の頭と違うときだけ**（同じ地名を毎枚くり返さない）
+            if let place = photo.location?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !place.isEmpty, place != dayPlace {
+                Text(place)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+            }
+            // その日に聴いていた曲（付けてあれば）
+            if let song = photo.song {
+                SongRow(song: song)
+            }
         }
     }
 
     // MARK: - 計算
 
-    private var period: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: Locale.preferredAppLanguage == "en" ? "en_US" : "ja_JP")
-        formatter.dateFormat = Locale.preferredAppLanguage == "en" ? "MMM d, yyyy" : "yyyy年M月d日"
-        return formatter.string(from: trip.start)
-    }
+    /// 移動（直線）。数えられなければ nil（枠には「—」）
+    private var distance: Double? { TravelDistance.countableTotal(of: trip.photos, timeZone: trip.timeZone) }
 
-    /// 旅の何日目か（1から数える）
-    private func dayNumber(of photo: Photo) -> Int {
-        guard let date = TripBook.day(of: photo) else { return 1 }
-        return max(1, Int(date.timeIntervalSince(trip.start) / 86_400) + 1)
-    }
-
-    /// 足取り。規則は `TripBook.route` にある（画面を持たない層に置いて、
-    /// Linux 上の `swift test` で検証できるようにしてある）。
-    private var orderedPlaces: [String] { TripBook.route(of: trip.photos) }
+    /// 数の升・ルート図の地（板の `#0b0b0c`）
+    private static let cellColor = Color(red: 0x0B / 255.0, green: 0x0B / 255.0, blue: 0x0C / 255.0)
 }

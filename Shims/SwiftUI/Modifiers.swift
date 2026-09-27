@@ -51,6 +51,9 @@ public struct ToolbarContentBuilder {
     public static func buildBlock<C: ToolbarContent>(_ c: C) -> C { c }
     public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent>(_ c1: C1, _ c2: C2) -> EmptyToolbarContent { EmptyToolbarContent() }
     public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3) -> EmptyToolbarContent { EmptyToolbarContent() }
+    // 本物は10個まで受ける。見出し（ロゴ・探す・お知らせ・メニュー）で4つ要る
+    public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent, C4: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3, _ c4: C4) -> EmptyToolbarContent { EmptyToolbarContent() }
+    public static func buildBlock<C1: ToolbarContent, C2: ToolbarContent, C3: ToolbarContent, C4: ToolbarContent, C5: ToolbarContent>(_ c1: C1, _ c2: C2, _ c3: C3, _ c4: C4, _ c5: C5) -> EmptyToolbarContent { EmptyToolbarContent() }
     public static func buildIf<C: ToolbarContent>(_ c: C?) -> C? { c }
     public static func buildOptional<C: ToolbarContent>(_ c: C?) -> C? { c }
     public static func buildEither<T: ToolbarContent>(first: T) -> EmptyToolbarContent { EmptyToolbarContent() }
@@ -81,6 +84,7 @@ public struct AccessibilityTraits: OptionSet {
     public static let isModal = AccessibilityTraits(rawValue: 1 << 5)
     public static let isButton = AccessibilityTraits(rawValue: 2)
     public static let isHeader = AccessibilityTraits(rawValue: 1 << 3)
+    public static let isImage = AccessibilityTraits(rawValue: 1 << 2)
 }
 public struct TextInputAutocapitalization {
     public static let never = TextInputAutocapitalization()
@@ -276,6 +280,8 @@ extension View {
     public func scrollContentBackground(_ v: VisibilityShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func preferredColorScheme(_ s: ColorSchemeShim?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarBackground<S: ShapeStyle>(_ s: S, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    // 本物は `toolbarBackground(_ visibility: Visibility, for: ToolbarPlacement...)`（iOS 16+）
+    public func toolbarBackground(_ v: VisibilityShim, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbarColorScheme(_ s: ColorSchemeShim?, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func toolbar(_ v: VisibilityShim, for bars: ToolbarPlacementShim...) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -311,8 +317,16 @@ extension View {
     // 画面遷移と入れ物
     public func navigationTitle(_ title: String) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func navigationBarTitleDisplayMode(_ m: NavigationBarItem.TitleDisplayMode) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+    /// 標準の戻るを隠す（本物は iOS 13 以降）。左端から払って戻るのも止まる
+    public func navigationBarBackButtonHidden(_ hidesBackButton: Bool = true) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func navigationDestination<D: Hashable, V: View>(
         for data: D.Type, @ViewBuilder destination: @escaping (D) -> V) -> Self { self }
+    /// 値が立ったら開く（iOS 17+）
+    public func navigationDestination<D: Hashable, V: View>(
+        item: Binding<D?>, @ViewBuilder destination: @escaping (D) -> V) -> Self { self }
+    /// 旗が立ったら押し込む版（iOS 16+）。作った直後にその画面を開くのに使う
+    public func navigationDestination<V: View>(
+        isPresented: Binding<Bool>, @ViewBuilder destination: () -> V) -> Self { self }
     public func toolbar<C: ToolbarContent>(@ToolbarContentBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func tabItem<V: View>(@ViewBuilder _ label: () -> V) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func sheet<C: View>(isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil,

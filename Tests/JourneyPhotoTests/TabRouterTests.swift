@@ -24,4 +24,18 @@ final class TabRouterTests: XCTestCase {
         router.tabTapped(isHome: true, alreadySelected: true)
         XCTAssertEqual(router.homeTopRequests, 2)
     }
+
+    /// 見出しの「探す」・メニューの「撮影地マップ」・見出しの「メニュー」は
+    /// **それぞれ別の数で**伝える（1つにまとめると、どこへ移るか取り違える）
+    func testHeaderAndMenuRoutesCountSeparately() async {
+        let router = TabRouter()
+        router.openSearch()
+        router.openSearch()
+        router.openMap()
+        router.openMenu()
+        XCTAssertEqual(router.searchRequests, 2)
+        XCTAssertEqual(router.mapRequests, 1)
+        XCTAssertEqual(router.menuRequests, 1)
+        XCTAssertEqual(router.myPageRequests, 0)
+    }
 }

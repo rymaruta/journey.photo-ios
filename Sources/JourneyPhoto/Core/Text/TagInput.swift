@@ -171,35 +171,6 @@ enum PhotoQuery {
         }
     }
 
-    /// 「この写真に近いもの」。同じ撮影地を先に、足りなければタグが重なるもので埋める。
-    /// **自分自身は入れない。**
-    static func related(to photo: Photo, from photos: [Photo], limit: Int = 12) -> [Photo] {
-        let others = photos.filter { $0.id != photo.id }
-        var picked: [Photo] = []
-        var seen = Set<String>()
-
-        if let location = photo.location?.lowercased(), !location.isEmpty {
-            for item in others where (item.location?.lowercased() ?? "") == location {
-                if seen.insert(item.id).inserted { picked.append(item) }
-            }
-        }
-
-        let tags = Set((photo.tags ?? []).map { $0.lowercased() })
-        if !tags.isEmpty {
-            for item in others where !tags.isDisjoint(with: Set((item.tags ?? []).map { $0.lowercased() })) {
-                // **この境目はテストで殺せない（等価変異）。**
-                // `>=` を `>` にしても、最後の `prefix(limit)` が
-                // 同じ形に削るので外からは区別できない——変異を当てて
-                // 確かめた。早く抜けるためだけの条件なので、見張りが
-                // 無いことを承知で残す（`photo-gallery` の
-                // `shouldScan` と同じ扱い）
-                if picked.count >= limit { break }
-                if seen.insert(item.id).inserted { picked.append(item) }
-            }
-        }
-        return Array(picked.prefix(limit))
-    }
-
     /// 多い順にタグを数える。**種類が少ないので全部数えてよい**（30枚・59種）。
     /// よく使われているタグ。**鍵で畳んでから数える**
     /// （`風景` と `landscape` を別々に数えない。Web の `tagKey` と同じ）。

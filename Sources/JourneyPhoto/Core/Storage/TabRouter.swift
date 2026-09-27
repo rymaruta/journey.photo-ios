@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-/// 下の札を外から切り替える道（見出しの自分のアイコン → マイページ）。
+/// 下の札を外から切り替える道（見出しの「探す」→ 探す、メニュー → 各札）。
 ///
 /// **押した回数で伝える。** 真偽値にすると、マイページから別の札へ移って
 /// もう一度押したときに「変わっていない」と見なされて効かない
@@ -14,6 +14,16 @@ final class TabRouter: ObservableObject {
     @Published private(set) var myPageRequests = 0
 
     func openMyPage() { myPageRequests += 1 }
+
+    /// 見出しの「探す」（ホームだけ・板 01c）とメニューの「撮影地マップ」から
+    @Published private(set) var searchRequests = 0
+    @Published private(set) var mapRequests = 0
+    /// 見出しの「メニュー（≡）」（板 01d）。**シートは `RootView` が出す**
+    @Published private(set) var menuRequests = 0
+
+    func openSearch() { searchRequests += 1 }
+    func openMap() { mapRequests += 1 }
+    func openMenu() { menuRequests += 1 }
 
     /// **ホームを開いたまま、下の「ホーム」をもう一度押した回数。**
     /// ホームのフィードはこれを見て一番上まで戻る（Instagram・X と同じ動き。

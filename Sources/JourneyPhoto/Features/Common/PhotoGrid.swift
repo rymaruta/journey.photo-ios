@@ -8,6 +8,9 @@ import SwiftUI
 struct PhotoGrid<Destination: View>: View {
 
     let photos: [Photo]
+    /// 先頭の大きい1枚に撮影地・投稿者・いいねを重ねるか（板 12）。
+    /// 集約の一覧だけが使う——ホームの一覧は1枚ごとに別の帯を持つ
+    var captionsLead = false
     @ViewBuilder let destination: (Photo) -> Destination
 
     /// 1つの投稿に2枚以上入っている写真。**この並びの中で数える**
@@ -22,7 +25,22 @@ struct PhotoGrid<Destination: View>: View {
             ForEach(EditorialLayout.rows(photos)) { row in
                 switch row {
                 case .hero(let photo):
-                    link(photo, aspect: 16.0 / 10.0)
+                    if captionsLead && photo.id == photos.first?.id {
+                        NavigationLink {
+                            destination(photo)
+                        } label: {
+                            // **札自身の字は消す。** 残すと題の帯の上に
+                            // `LeadCaption` が重なり、字が二重に見える
+                            PhotoTile(photo: photo, aspect: 16.0 / 10.0,
+                                      isMultiple: multiple.contains(photo.id),
+                                      showsCaption: false)
+                                .overlay(alignment: .bottom) { LeadCaption(photo: photo) }
+                                .clipShape(RoundedRectangle(cornerRadius: PhotoTile.corner))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        link(photo, aspect: 16.0 / 10.0)
+                    }
                 case .pair(let first, let second):
                     if let second {
                         HStack(spacing: gap) {
@@ -50,6 +68,60 @@ struct PhotoGrid<Destination: View>: View {
     }
 }
 
+/// 先頭の大きい1枚の字（板 12）。撮影地を大きく、その下に @投稿者、右にいいね。
+///
+/// **いいねが 0 のときは出さない**（`SearchGrid` と同じ——「まだ誰も押して
+/// いない」は探している人に要らず、写真の邪魔になる）。
+/// **何も書くものが無い写真には帯を出さない。**
+private struct LeadCaption: View {
+
+    let photo: Photo
+    @EnvironmentObject private var likeCounts: LikeCountStore
+
+    var body: some View {
+        let headline = CollectionScreen.leadHeadline(photo)
+        let author = CollectionScreen.leadAuthor(photo)
+        let likes = LiveLikes.base(for: photo, stored: likeCounts.entry(for: photo.id)) ?? 0
+        if headline != nil || author != nil || likes > 0 {
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let headline {
+                        Text(headline)
+                            .font(JPFont.cardTitle)
+                            .foregroundStyle(WebTheme.foreground)
+                            .lineLimit(2)
+                    }
+                    if let author {
+                        Text(author)
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.muted)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                if likes > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "heart")
+                        Text("\(likes)")
+                    }
+                    .font(JPFont.mono(11))
+                    .foregroundStyle(WebTheme.foreground)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(L("いいね \(likes)", "\(likes) likes"))
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 48)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.78)],
+                               startPoint: .top, endPoint: .bottom)
+            )
+        }
+    }
+}
+
 /// 1枚ぶん。
 struct PhotoTile: View {
 
@@ -58,6 +130,9 @@ struct PhotoTile: View {
     /// 1つの投稿に2枚以上入っているか（モック2-7 の格子の右上の印）。
     /// **呼ぶ側が並びの中で数えた結果**を受け取る——写真1枚では決められない
     var isMultiple = false
+    /// 題と分類の帯を出すか。**上に別の字を重ねる呼び手（先頭の大きい1枚）は
+    /// 切る**——両方出すと字が二重に重なる
+    var showsCaption = true
 
     /// 角の丸み。iOS の今の作法に寄せて大きめ
     static let corner: CGFloat = 18
@@ -103,7 +178,7 @@ struct PhotoTile: View {
     private var caption: some View {
         let title = photo.displayTitle
         let category = photo.category.map { Labels.Category.name($0) } ?? ""
-        if !title.isEmpty || !category.isEmpty {
+        if showsCaption && (!title.isEmpty || !category.isEmpty) {
             VStack(alignment: .leading, spacing: 3) {
                 if !category.isEmpty {
                     // 分類は小さく、字間を開けて上に置く（見出しの上の肩書き）

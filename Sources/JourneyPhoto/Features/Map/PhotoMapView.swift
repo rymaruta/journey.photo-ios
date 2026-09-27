@@ -15,7 +15,6 @@ struct PhotoMapView: View {
 
     /// 見出しはどの画面でも同じ（`AppHeaderItems`）
     var unread: Int = 0
-    var avatarURL: URL?
     var onOpenNotifications: () -> Void = {}
     /// 投稿の入口（`RootView` の2択）。地点に写真が無いときの「写真を投稿する」から開く
     var onPost: () -> Void = {}
@@ -73,7 +72,7 @@ struct PhotoMapView: View {
         .webScreen()
         .navigationTitle(Labels.Navigation.mapTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, avatarURL: avatarURL, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
         .task {
             if !autoLocateStarted {
                 autoLocateStarted = true
@@ -737,6 +736,15 @@ struct PhotoMapView: View {
     /// 索引の全件が運営未確認の下書きなので、その語を札に置く
     private func officialCard(_ pin: OfficialPins.Pin) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            // **写真があれば札の頭に大きく**（ピンの丸 40pt だけでは何の場所か
+            // 分からない・owner の指摘 2026-09-26）。出典は下の名前の行に出す
+            if let photo = pin.photo {
+                Color.clear
+                    .frame(height: 150)
+                    .overlay(RemoteImage(url: photo.url))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .accessibilityHidden(true)
+            }
             HStack(alignment: .top, spacing: 12) {
                 officialMarker(pin)
                 VStack(alignment: .leading, spacing: 4) {

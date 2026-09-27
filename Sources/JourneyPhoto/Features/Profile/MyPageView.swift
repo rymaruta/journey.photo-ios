@@ -4,24 +4,39 @@ import SwiftUI
 struct MyPageView: View {
 
     @EnvironmentObject private var auth: AuthStore
-    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
     /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
     @State private var officialSpots: [OfficialSpot] = []
-    /// いいねした写真を引き当てる先。**公開一覧**——自分の写真だけを
-    /// 探していたので、**他人の写真へのいいねが一度も出なかった**
+    /// 保存した写真を引き当てる先のうち**公開一覧**。もう一方の自分の写真は
+    /// `model.photos`（`myPhotos()`・`PhotoPools` と同じ口）。公開一覧が無いと
+    /// **他人の写真の保存が一度も出ない**
     @State private var feed: [Photo] = []
-    /// サーバーが返したいいねの ID。取れなければ nil（端末の控えだけ出す）
-    @State private var serverLikeIds: [String]?
-    @State private var likesStatus: LikedPhotos.Status = .loading
+    /// 公開一覧を読み終えたか（「まだ」と「0件」を混ぜない）
+    @State private var feedLoaded = false
+    /// 最後の公開一覧の読み込みが失敗したか（「読み込めませんでした」はこの回だけ）
+    @State private var feedFailed = false
+    /// 「お気に入り」タブに出す保存の ID。**描画のたびに `savedPhotos.ids` を
+    /// 読まない**——詳細でしおりを外した瞬間に `ForEach` から元の
+    /// `NavigationLink` が消え、**見ている詳細が閉じる**（`SavedPhotosView`・
+    /// `FavoritesView` と同じ理由）。取り直すのは戻ってきたとき・タブを開いたとき・
+    /// 引き当て先を読み終えたとき（`refreshSavedIds`）。
+    /// 写真の束ではなく ID を控えるのは、投稿を閉じた合図などで `model.photos`
+    /// が読み直されても、控えた ID のぶんは引き当て直せるように
+    @State private var savedIds: Set<String> = []
     @State private var tab: ProfileTab = .posts
     @State private var showDistanceNote = false
     @State private var showCountriesNote = false
     /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
     @State private var didAppear = false
+    /// いまこの画面が出ているか（`onAppear`〜`onDisappear`）。詳細を上に
+    /// 積んでいる間もこの画面は `savedPhotos.ids` を購読し続けるので、
+    /// **出ていない間は保存の ID を取り込まない**——取り込むと格子の段の ID
+    /// （`EditorialLayout.Row.id` は隣の写真まで含む）が変わり、開いている詳細が閉じる
+    @State private var isOnScreen = false
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
@@ -67,8 +82,8 @@ struct MyPageView: View {
             guard auth.userId != nil else { return }
             await model.load()
         }
-        // いいねした写真。**ログイン状態が決まってから**聞く
-        .task(id: auth.userId) { await loadLikes() }
+        // 保存した写真の引き当て先（公開一覧）
+        .task(id: auth.userId) { await loadFeed() }
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
         .task(id: auth.userId) {
             guard auth.userId != nil else { return }
@@ -86,10 +101,41 @@ struct MyPageView: View {
             Task { await model.load() }
         }
         .onAppear {
+            isOnScreen = true
+            // 詳細でしおりを外したぶんは、戻ってきたこの時点で落とす
+            refreshSavedIds()
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
             Task { await model.load() }
         }
+        .onChange(of: tab) { _, next in
+            if next == .favorites { refreshSavedIds() }
+        }
+        .onDisappear { isOnScreen = false }
+        // 起動時の同期（`syncSaves`）が後から届いたぶんは拾う。**増えたときだけ**
+        // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる。
+        // **画面に出ている間だけ**（`isOnScreen`）。詳細の上で保存しても
+        // 増えるので、そこで取り込むと詳細が閉じる。戻れば `onAppear` が拾う
+        .onChange(of: savedPhotos.ids) { _, next in
+            guard isOnScreen else { return }
+            if next.isSuperset(of: savedIds) { savedIds = next }
+        }
+        // **人が替わったら前の人のぶんを持ち越さない。** 控えた保存の ID が
+        // 前の人のままだと、次の人の ID は上位集合にならず取り込まれない
+        // （公開一覧を読み終えるまで前の人の保存が見える）。空にしておけば
+        // 次は必ず取り込まれる。自分の写真・公開一覧（フォロワー限定を含む）も
+        // 前の人のもので、次の人の読み込みが落ちると引き当て先に残る
+        .onChange(of: auth.userId) { _, _ in
+            savedIds = []
+            feed = []
+            feedLoaded = false
+            feedFailed = false
+            model.forgetPhotos()
+        }
+    }
+
+    private func refreshSavedIds() {
+        savedIds = savedPhotos.ids
     }
 
     /// **段ごとに割ってある**（`UploadView` と同じ理由——長い ViewBuilder は
@@ -137,16 +183,9 @@ struct MyPageView: View {
             ZStack(alignment: .top) {
                 scroll(topInset: geo.safeAreaInsets.top)
                     .ignoresSafeArea(edges: hasCover ? .top : [])
-                // **時計の裏に黒のぼかし**。上のバーを出さないので、流した写真が
-                // 時計・電池の字の真下を通って字が読めなくなっていた。
-                // GeometryReader の原点は安全域の下なので、その分だけ上へずらす。
-                // 押す操作は下へ通す
-                LinearGradient(colors: [Color.black.opacity(0.7), Color.black.opacity(0)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: geo.safeAreaInsets.top + 16)
-                    .offset(y: -geo.safeAreaInsets.top)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                // **時計の裏に黒のぼかし**（`TopBarScrim`）。上のバーを出さないので、
+                // 流した写真が時計・電池の字の真下を通って字が読めなくなっていた
+                TopBarScrim(topInset: geo.safeAreaInsets.top)
             }
         }
     }
@@ -202,7 +241,16 @@ struct MyPageView: View {
                 .simultaneousGesture(tabSwipe)
             }
         }
-        .refreshable { await model.load() }
+        .refreshable {
+            await model.load()
+            // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
+            // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
+            // 読み取りも強い整合でなく（`userList.ts` の `readUserRows`）、外した
+            // 直後に入れ替えると外した保存が控えに戻る（いいねで踏んだのと同じ形）。
+            // サーバーに合わせるのは起動時・ログイン時の `syncSaves` だけ
+            await loadFeed(force: true)
+            refreshSavedIds()
+        }
     }
 
     /// 右上の設定（板: 44pt のガラスの丸）。**上のバーを出さないので、ここが入口**
@@ -225,7 +273,7 @@ struct MyPageView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .bottom) {
                 RemoteImage(url: profile.avatarURL(cacheBust: model.avatarCacheBust))
-                    .frame(width: Self.avatarSize, height: Self.avatarSize)
+                    .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
                     .clipShape(Circle())
                     // **板どおり黒の 3pt の縁**（写真の上でも丸が割れない）。
                     // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
@@ -251,34 +299,11 @@ struct MyPageView: View {
                     Text(profile.name)
                         .font(JPFont.display(26, relativeTo: .title))
                         .foregroundStyle(Color.white)
-                    VerifiedBadge(isVerified: profile.verified)
+                    VerifiedBadge(isVerified: profile.verified, nameSize: 26, relativeTo: .title)
                 }
                 if let line = ProfileLine.handleAndHome(username: profile.username,
                                                         home: profile.homeLocation) {
-                    // 居住地は**地図には出さない**（住んでいる場所はピンにしない）。
-                    // 頭の印は板どおり**線のピン**（11pt）——絵文字の「📍」は赤く出ていた
-                    HStack(spacing: 4) {
-                        if let handle = line.handle {
-                            // 狭いときは居住地の方を先に詰める（名前と「·」を残す）
-                            Text(handle)
-                                .lineLimit(1)
-                                .layoutPriority(1)
-                        }
-                        if line.handle != nil && line.home != nil {
-                            Text("·")
-                                .layoutPriority(1)
-                        }
-                        if let home = line.home {
-                            Image(systemName: "mappin")
-                                .font(.system(size: 11))
-                            Text(home)
-                                .lineLimit(1)
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(line.spoken)
+                    ProfileHandleLine(line: line, showsPin: true)
                 }
                 // ひとこと。**持っているのに一度も出していなかった**
                 ForEach(ProfileLine.about(status: profile.statusText, bio: profile.bio), id: \.self) { text in
@@ -292,13 +317,8 @@ struct MyPageView: View {
         .padding(.horizontal, 20)
         // カバーがあればアイコンを下端に重ねる（板: 180pt の帯に 84pt の丸を 50pt）。
         // 無ければ右上の設定の丸の下から（板 05d）
-        .padding(.top, hasCover ? -Self.avatarOverlap : 49)
+        .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 49)
     }
-
-    /// 見出しのアイコン（板 84pt）と、カバーの下端へ引き上げる量（板 50pt）。
-    /// 人のページ（64pt・28pt）とは別——あちらは板 31
-    private static let avatarSize: CGFloat = 84
-    private static let avatarOverlap: CGFloat = 50
 
     /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・等幅の数字 18 と名前）。
     /// 列は幅を三等分し、押せる高さは 44pt
@@ -460,36 +480,34 @@ struct MyPageView: View {
         }
     }
 
-    /// いいねした写真。**サーバーの一覧と、この端末の控えの和**。
+    /// お気に入り＝**保存した写真**（板 05c のタブ「お気に入り」・しおりの印・板 35）。
     ///
-    /// 以前は**自分の写真の中から**端末の控えに一致するものを探していたので、
-    /// **他人の写真へのいいねが一度も出なかった**（自分の写真を自分で
-    /// いいねしたときだけ出る状態）。さらに別の端末で押したぶんも
-    /// 出なかった——同じ写真の詳細は「いいね済み」と出るのに。
+    /// 以前の中身はいいねした写真で、見出し（英語は "Saved"）と食い違い、
+    /// 保存した写真を見返す場所がどこにも無かった（2026-09-26 のキャンバスとの
+    /// 突き合わせ 6・8）。いいねした写真はメニューと設定から開く（`FavoritesView`）
     @ViewBuilder
     private var favoritesArea: some View {
-        let ids = LikedPhotos.ids(serverIds: serverLikeIds, deviceIds: favorites.ids)
-        let liked = LikedPhotos.resolve(ids, in: [feed, model.photos])
-        VStack(alignment: .leading, spacing: 10) {
-            if likesStatus == .partial {
-                // **端末のぶんは消さない。** 足りていないことだけ伝える
-                ErrorBanner(message: L("サーバーのいいねを取れませんでした。この端末に覚えているぶんだけ出しています",
-                                       "Couldn't reach the server — showing what's on this device")) {
-                    Task { await loadLikes() }
+        let saved = LikedPhotos.resolve(savedIds, in: [feed, model.photos])
+        if saved.isEmpty {
+            switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
+                                          failed: feedFailed) {
+            case .loading:
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+            case .none:
+                ErrorBanner(message: SavedPhotosView.emptyMessage)
+            case .nothingShown:
+                ErrorBanner(message: LikedPhotos.nothingShownMessage)
+            case .unresolved:
+                ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
+                    Task {
+                        await loadFeed()
+                        await model.load()
+                    }
                 }
             }
-            if liked.isEmpty {
-                // **「まだ」と「0件」を混ぜない。** 取得中に「ありません」と
-                // 言い切ると、別の端末で押したぶんが届く前に「無い」と読まれる
-                if likesStatus == .loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
-                } else {
-                    ErrorBanner(message: L("いいねした写真はまだありません", "No liked photos yet"))
-                }
-            } else {
-                PhotoGrid(photos: liked) { photo in
-                    PhotoDetailView(photo: photo, context: liked)
-                }
+        } else {
+            PhotoGrid(photos: saved) { photo in
+                PhotoDetailView(photo: photo, context: saved)
             }
         }
     }
@@ -639,56 +657,9 @@ struct MyPageView: View {
     }
 
     /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
-    /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
-    /// 板 05c: 下線の札（印＋名前・13px・高さ 44）。選んでいる札は白い字と
-    /// 下の 2pt の白い線、下に白12% の1本線。
-    ///
-    /// **入らなければ4つとも印を外して字だけ**（大きい文字・狭い端末で「行きたい
-    /// 場所」が「…」で切れていた）。札ごとに決めると、印のある札と無い札が混ざり、
-    /// 押すたびに太字の幅で印が出たり消えたりする。並べ方は `TabRowLayout`（中身の
-    /// 幅＋余りの等分）——判定（理想の幅の和）と実際の幅を一致させる
+    /// 見た目は人のページと同じ下線の札（`ProfileTabBar`）
     private var tabPicker: some View {
-        ViewThatFits(in: .horizontal) {
-            tabRow(icons: true)
-            tabRow(icons: false)
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private func tabRow(icons: Bool) -> some View {
-        TabRowLayout {
-            ForEach(ProfileTab.tabs(isMe: true)) { option in
-                let selected = tab == option
-                Button {
-                    tab = option
-                } label: {
-                    HStack(spacing: 6) {
-                        if icons {
-                            Image(systemName: option.systemImage)
-                                .font(.system(size: 16))
-                                .accessibilityHidden(true)
-                        }
-                        tabLabel(option, selected: selected)
-                    }
-                    .foregroundStyle(selected ? Color.white : WebTheme.faint)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(selected ? Color.white : Color.clear)
-                            .frame(height: 2)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-                // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
-                // ——以前は写真の上の「旅の記録」の札に付けていた
-                .accessibilityIdentifier("profile.tab.\(option.rawValue)")
-            }
-        }
+        ProfileTabBar(tabs: ProfileTab.tabs(isMe: true), selection: $tab)
     }
 
     /// 横の払いでタブを切り替える。**`simultaneousGesture` で付ける**——`gesture` に
@@ -705,26 +676,9 @@ struct MyPageView: View {
             }
     }
 
-    /// 名前。**幅は太字で測る**（選ぶたびに幅が変わって印が出入りしないように）。
-    /// 太さは選んでいる札だけ変える
-    private func tabLabel(_ option: ProfileTab, selected: Bool) -> some View {
-        // 太字の幅で場所を取り、見える字は選んでいるときだけ太字
-        Text(option.label)
-            .font(.footnote.weight(.semibold))
-            .lineLimit(1)
-            .hidden()
-            .accessibilityHidden(true)
-            .overlay {
-                Text(option.label)
-                    .font(.footnote.weight(selected ? .semibold : .regular))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-    }
-
     /// 旅の記録（旅の一冊の棚）。**自分の公開写真から**その場でまとめる
     /// ——下書きは旅に入れない（見せていない写真が一冊に紛れ込む）。
-    /// 背表紙は `TripShelf`。**旅の一覧の画面（`TripsView`）はここへ畳んだ**
+    /// 棚は `TripShelfList`。**旅の一覧の画面（`TripsView`）はここへ畳んだ**
     /// ——入口がマイページの札1つだけだった
     @ViewBuilder
     private var tripsArea: some View {
@@ -734,51 +688,21 @@ struct MyPageView: View {
             ProgressView()
                 .frame(maxWidth: .infinity)
                 .padding(24)
-        } else if trips.isEmpty {
-            // **なぜ空なのかを言う**
-            Text(L("同じころに撮った写真が2枚たまると、ひとつの旅にまとまります",
-                   "Two or more photos taken around the same time become a trip"))
-                .font(.footnote)
-                .foregroundStyle(WebTheme.faint)
-                .frame(maxWidth: .infinity)
-                .padding(24)
         } else {
-            LazyVStack(spacing: 16) {
-                ForEach(trips) { trip in
-                    NavigationLink {
-                        TripBookView(trip: trip)
-                    } label: {
-                        TripShelf(trip: trip)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("trips.book")
-                }
-            }
-            .padding(.horizontal, 16)
+            // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
+            TripShelfList(trips: trips)
         }
     }
 
-    /// いいねした写真を読む。**未ログインなら聞きに行かない**
-    /// （端末の控えが答え）。
-    private func loadLikes() async {
-        guard auth.userId != nil else {
-            serverLikeIds = nil
-            likesStatus = .deviceOnly
-            return
-        }
-        likesStatus = .loading
-        // 引き当て先。公開一覧が取れなくても、自分の写真の分は出せる
-        async let feedTask = environment.gallery.fetchPhotos()
-        async let idsTask = environment.social.myLikedPhotoIds()
-        feed = (try? await feedTask) ?? feed
-        let ids = try? await idsTask
-        if let ids {
-            serverLikeIds = ids
-            likesStatus = .ready
-        } else {
-            serverLikeIds = nil
-            likesStatus = .partial
-        }
+    /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。
+    /// 自分の写真（`model.photos`）の失敗は `model.errorMessage` がタブごと知らせる
+    private func loadFeed(force: Bool = false) async {
+        let fetched = try? await environment.gallery.fetchPhotos(force: force)
+        guard !Task.isCancelled else { return }
+        feedFailed = fetched == nil
+        feed = fetched ?? feed
+        feedLoaded = true
+        refreshSavedIds()
     }
 
     @ViewBuilder
@@ -799,13 +723,14 @@ struct MyPageView: View {
             // **写真の有無とは無関係。** 行きたい場所は台帳の話で、
             // 1枚も撮っていない人にも中身がある
             wishlistArea
+        } else if tab == .favorites {
+            // **写真の有無とは無関係。** 保存は他人の写真にもする
+            favoritesArea
         } else if model.photos.isEmpty && !model.isLoading {
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
             ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
-        } else if tab == .favorites {
-            favoritesArea
         } else {
             let multiple = PhotoGroups.multiPhotoIds(model.photos)
             LazyVGrid(columns: columns, spacing: 4) {
@@ -995,6 +920,13 @@ final class MyPageViewModel: ObservableObject {
             self.followers = stats.followers
             self.following = stats.following
         }
+    }
+
+    /// 人が替わったとき、前の人の写真を手放す。次の人の読み込みが落ちても、
+    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように
+    func forgetPhotos() {
+        photos = []
+        pinnedIds = []
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

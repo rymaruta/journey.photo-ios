@@ -28,6 +28,46 @@ enum NearbyPhotos {
         .map { (photo: $0.0, km: $0.1) }
     }
 
+    /// 写真の詳細の「この近くで撮られた写真」（板 02）。
+    ///
+    /// **その写真の座標から測る。** 座標の無い写真には節ごと出さない
+    /// （空の配列を返す）——撮影地の文字が同じでも、座標の無い写真は
+    /// 「近い」と言えない。
+    ///
+    /// **自分と、上の写真で送れる束は入れない**——ここに並べると同じ写真が
+    /// 二度出る。上の束は開いた一覧（`context`）の中の兄弟だけ
+    /// （`PhotoDetailView.heroGroup`）なので、**同じ式で数えて、実際に
+    /// 上に出ている写真だけ**を落とす。
+    ///
+    /// 以前は全公開写真から `groupId` の文字だけで兄弟を落としていたので、
+    /// (1) 一覧に居ない兄弟が上にも下にも出ず、(2) 持ち主の違う写真が
+    /// 同じ `groupId` だと巻き添えで消えていた。束の判定は
+    /// `PhotoGroups.groupKey`（空白を除いた `groupId` ＋持ち主）に任せる
+    static func around(_ photo: Photo, in all: [Photo], context: [Photo] = [],
+                       withinKm radius: Double = defaultRadius, limit: Int = 12) -> [Photo] {
+        guard let center = photo.coords else { return [] }
+        var seen = Set(PhotoGroups.siblings(of: photo, in: context).map(\.id))
+        seen.insert(photo.id)
+        var picked: [Photo] = []
+        for (item, _) in photos(all, near: center, withinKm: radius) {
+            guard seen.insert(item.id).inserted else { continue }
+            picked.append(item)
+            if picked.count >= limit { break }
+        }
+        return picked
+    }
+
+    /// 「地図で見る」（`NearbyMapScreen`）のピンから開いた写真に、個別ページが
+    /// 在るとみなすか（`PhotoDetailView.fromPublicFeed`）。
+    ///
+    /// **呼び元の値は開いた1枚にだけ効かせる。** 近くの写真は公開一覧
+    /// （`around` に渡す `fetchPhotos`）から来たので `true`。以前は開いた
+    /// 1枚の値を全ピンに渡していて、マイページの下書きから開くと、近くの
+    /// 他人の公開写真まで共有がトップ（`/?photo=`）に落ちていた
+    static func fromPublicFeed(_ photo: Photo, openedId: String, openedFromPublicFeed: Bool) -> Bool {
+        photo.id == openedId ? openedFromPublicFeed : true
+    }
+
     /// 距離の言い方。**必ず「約」を付ける**（丸めた座標から出した値なので）。
     ///
     /// 1km 未満は「1km以内」——「0.3km」と書くと、持っていない精度を

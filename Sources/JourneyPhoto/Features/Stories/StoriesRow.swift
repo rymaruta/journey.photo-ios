@@ -19,6 +19,9 @@ struct StoriesRow: View {
     @StateObject private var model = StoriesViewModel()
     @State private var opened: Story?
     @State private var showComposer = false
+    /// 裏で送っているストーリー（板 27「投稿した直後」）
+    @ObservedObject private var uploads = StoryUploadCenter.shared
+    @State private var showUploadFailure = false
 
     var body: some View {
         Group {
@@ -30,7 +33,12 @@ struct StoriesRow: View {
                             StoryPlayback.rings(model.stories, isSeen: { seen.contains($0) }),
                             me: auth.userId,
                             isUnseen: { seen.hasUnseen(model.siblings(of: $0)) })
-                        mineRing(ordered.mine)
+                        // **送っている間・失敗した残りがある間は、自分の輪がそれを示す**（板 27）
+                        if uploads.isBusy {
+                            uploadRing(ordered.mine)
+                        } else {
+                            mineRing(ordered.mine)
+                        }
                         ForEach(ordered.others) { story in
                             // **見たものは輪を落とす。** 全部同じ輪だと
                             // 「どれがまだか」が分からず、行が意味を失う
@@ -55,6 +63,25 @@ struct StoriesRow: View {
         .task(id: "\(auth.userId ?? "-")#\(reloadToken)") {
             guard auth.userId != nil else { return }
             await reload()
+        }
+        // 裏の送信が全部終わったら読み直す（自分の新しいストーリーを並べる）
+        .onChange(of: uploads.finished) { _, _ in
+            Task { await reload() }
+        }
+        // 途中で止まったとき。**出たぶんは残し、残りを送り直すかやめるかを選ばせる**
+        .confirmationDialog(L("ストーリーを送れませんでした", "Couldn't send your story"),
+                            isPresented: $showUploadFailure, titleVisibility: .visible) {
+            Button(L("もう一度送る", "Try again")) { uploads.retry() }
+            Button(L("やめる", "Discard"), role: .destructive) {
+                uploads.discard()
+                // 出せたぶんがあれば並べる
+                Task { await reload() }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            if case .failed(let message, _) = uploads.phase {
+                Text(message)
+            }
         }
         // 閲覧画面で通報・ブロックしたら読み直す（`GalleryView` と同じ形）。
         // 読み直さないと、消したはずの輪が並んだまま
@@ -137,6 +164,68 @@ struct StoriesRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("ストーリーを投稿", "Post a story"))
+        }
+    }
+
+    /// **送っている間の自分の輪**（板 27「投稿した直後——上がるまで自分の輪が進み具合を示す」）。
+    /// 進み具合は「出し終えた本数 ÷ 全部」。0本目でも少しだけ点ける（止まって見えない）。
+    /// 失敗したら輪を赤くし、名前を「送れませんでした」に。押すと送り直すかやめるかを選ぶ
+    @ViewBuilder
+    private func uploadRing(_ mine: Story?) -> some View {
+        let failed: Bool = { if case .failed = uploads.phase { return true }; return false }()
+        let progress: Double = {
+            if case .sending(let done, let total) = uploads.phase, total > 0 {
+                return max(0.08, Double(done) / Double(total))
+            }
+            return 1
+        }()
+        Button {
+            if failed { showUploadFailure = true }
+        } label: {
+            VStack(spacing: 6) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.18), lineWidth: 2)
+                        .padding(1)
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(failed ? WebTheme.danger : WebTheme.accent,
+                                style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .padding(1)
+                    if let mine {
+                        StoryThumb(story: mine, size: 52)
+                            .opacity(0.6)
+                    } else {
+                        Circle().fill(WebTheme.surface).frame(width: 52, height: 52)
+                    }
+                    if failed {
+                        Image(systemName: "exclamationmark")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 62, height: 62)
+                ringName(failed ? L("送れませんでした", "Failed") : L("送信中…", "Sending…"),
+                         emphasized: true)
+            }
+            .frame(width: 64)
+        }
+        .buttonStyle(.plain)
+        .disabled(!failed)
+        .accessibilityLabel(uploadAccessibilityLabel)
+        .accessibilityIdentifier("stories.uploading")
+    }
+
+    private var uploadAccessibilityLabel: String {
+        switch uploads.phase {
+        case .sending(let done, let total):
+            return L("ストーリーを送信中（\(total)本中\(done)本）", "Sending your story (\(done) of \(total))")
+        case .failed:
+            return L("ストーリーを送れませんでした。押すと送り直すかやめるかを選べます",
+                     "Couldn't send your story. Tap to retry or discard.")
+        case .idle:
+            return L("あなた", "You")
         }
     }
 

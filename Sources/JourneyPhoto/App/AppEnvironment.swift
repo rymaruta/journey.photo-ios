@@ -29,14 +29,18 @@ final class AppEnvironment: ObservableObject {
     /// 撮影スポットの索引（静的サイトの `app/data/spots.json`）。
     /// 写真の一覧と同じく API ではない
     let spots: OfficialSpotService
+    /// 旅行プラン（`/user/trips`・本人だけ）
+    let trips: TripPlanService
 
     /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
     ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
     ///   画面の頭を動かすテストが書けなかった）。
     /// - Parameter spots: 撮影スポットの索引の出どころ。同じ理由で開けてある
+    /// - Parameter trips: 旅行プランの口。同じ理由で開けてある（一覧の状態の試験）
     init(tokenProvider: TokenProviding = CognitoTokenProvider(),
          gallery: PublicGalleryService = PublicGalleryService(liveURL: AppConfig.livePhotosURL),
-         spots: OfficialSpotService = OfficialSpotService()) {
+         spots: OfficialSpotService = OfficialSpotService(),
+         trips: TripPlanService? = nil) {
         let api = APIClient(tokenProvider: tokenProvider)
         self.api = api
         self.gallery = gallery
@@ -54,5 +58,6 @@ final class AppEnvironment: ObservableObject {
         self.highlights = HighlightService(api: api)
         self.search = UserSearchService(api: api)
         self.discovery = DiscoveryService(api: api)
+        self.trips = trips ?? TripPlanService(api: api)
     }
 }

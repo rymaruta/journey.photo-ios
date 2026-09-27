@@ -35,16 +35,18 @@ enum TravelDistance {
 
     /// 写真をつないだ合計（km）。
     ///
-    /// **座標と日時の両方を持つ写真だけ**を古い順につなぐ。
+    /// **座標と日時の両方を持つ写真だけ**を古い順につなぐ。並びは
+    /// **Web の `compareOldest`（`lib/utils/photoOrder.ts`）と同じ**
+    /// （`webOldestFirst`）——端末の時刻帯は使わない。旅の一冊の並び
+    /// （`TripBook.inOrder`・端末の時刻帯の暦日）で並べると、同じ写真でも
+    /// 見ている端末の時刻帯で距離が変わり、Web のプロフィールとも食い違う
     static func total(of photos: [Photo]) -> Double {
-        let points = photos
-            .compactMap { photo -> (Date, Photo.Coords)? in
-                guard let coords = photo.coords, let day = TripBook.day(of: photo) else { return nil }
-                return (day, coords)
-            }
-            .sorted { $0.0 < $1.0 }
-            .map(\.1)
+        connect(webOldestFirst(photos.filter { TripBook.day(of: $0, in: utc) != nil }))
+    }
 
+    /// 並べた順に座標をつないだ合計（座標の無い写真は飛ばす）
+    static func connect(_ photos: [Photo]) -> Double {
+        let points = photos.compactMap(\.coords)
         guard points.count >= 2 else { return 0 }
         var total = 0.0
         for index in 1..<points.count {
@@ -52,6 +54,51 @@ enum TravelDistance {
         }
         return total
     }
+
+    /// Web の `compareOldest` と同じ古い順。
+    ///
+    /// - キーは `date`（撮影日）→ 空なら `createdAt`。末尾のゾーン指定子
+    ///   （`Z` / `+09:00`）を落とした**文字列のまま**比べる
+    ///   （`YYYY-MM-DD[THH:MM:SS]` は辞書順がそのまま時系列順）。だから
+    ///   日付だけの撮影日 `2026-05-02` は、同じ日の投稿日時
+    ///   `2026-05-02T03:00:00Z` より**先**に来る
+    /// - 同じキーは投稿日時の古い順 → id の昇順
+    static func webOldestFirst(_ photos: [Photo]) -> [Photo] {
+        photos.sorted { lhs, rhs in
+            let byKey = compare(timeKey(lhs), timeKey(rhs))
+            if byKey != 0 { return byKey < 0 }
+            let byCreated = compare(stripZone(lhs.createdAt ?? ""), stripZone(rhs.createdAt ?? ""))
+            if byCreated != 0 { return byCreated < 0 }
+            return compare(lhs.id, rhs.id) < 0
+        }
+    }
+
+    /// Web の `photoTimeKey`（`date || createdAt`。空文字は無いものとして扱う）
+    private static func timeKey(_ photo: Photo) -> String {
+        if let date = photo.date, !date.isEmpty { return stripZone(date) }
+        return stripZone(photo.createdAt ?? "")
+    }
+
+    /// Web の `stripZone`。**全体の形で見て**、日付・時刻のあとのゾーン指定子だけ落とす
+    private static func stripZone(_ value: String) -> String {
+        let range = NSRange(value.startIndex..., in: value)
+        guard let match = zonePattern.firstMatch(in: value, range: range),
+              let kept = Range(match.range(at: 1), in: value) else { return value }
+        return String(value[kept])
+    }
+
+    private static let zonePattern = try! NSRegularExpression(
+        pattern: #"^(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)?)(?:Z|[+-]\d{2}:?\d{2})?$"#,
+        options: [.caseInsensitive])
+
+    /// JS の文字列比較（UTF-16 の符号単位の順）。Swift の `<` は正規化を挟むので使わない
+    private static func compare(_ lhs: String, _ rhs: String) -> Int {
+        let l = Array(lhs.utf16), r = Array(rhs.utf16)
+        if l == r { return 0 }
+        return l.lexicographicallyPrecedes(r) ? -1 : 1
+    }
+
+    private static let utc = TimeZone(identifier: "UTC")!
 
     /// 画面に出す文字（3桁区切り）。
     static func formatted(_ kilometers: Double) -> String {
