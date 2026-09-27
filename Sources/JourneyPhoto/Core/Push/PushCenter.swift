@@ -114,15 +114,25 @@ final class PushCenter: ObservableObject {
     @discardableResult
     func enable() async -> Bool {
         errorMessage = nil
+        // **押した人を控える。** 許可のダイアログを出している間にログインが切れる
+        // （`expireSession`）と、答えが次の人（や端末共通の鍵）に書かれていた
+        let owner = userId
         do {
             let granted = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .badge, .sound])
             isAuthorized = granted
+            guard let owner, owner == userId else {
+                // 人が替わった／ログインしていない: 押した人の鍵にだけ残す
+                if let owner { defaults.set(granted, forKey: Self.enabledKey(for: owner)) }
+                return granted
+            }
             guard granted else {
                 setEnabled(false)
                 return false
             }
             setEnabled(true)
+            // オンにし直したので、外し損ねの印はもう要らない
+            defaults.removeObject(forKey: Self.pendingUnregisterKey(for: owner))
         } catch {
             errorMessage = L("通知の許可を確かめられませんでした", "Couldn't check notification permission")
             return false

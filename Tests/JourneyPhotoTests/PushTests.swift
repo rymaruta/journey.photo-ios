@@ -156,6 +156,19 @@ final class PushIntentTests: XCTestCase {
         XCTAssertTrue(push.isEnabled)
     }
 
+    /// 人ごとの鍵でも「オフにした」は次の起動まで残る
+    func testTurningOffSurvivesRelaunchPerUser() async {
+        let (push, defaults) = center("push-5")
+        defaults.set(true, forKey: "photo-gallery-push-enabled.a")
+        await push.use(userId: "a")
+        XCTAssertTrue(push.isEnabled)
+        await push.disable()
+        let reopened = PushCenter(service: { PushService(api: APIClient(tokenProvider: StubTokenProvider(token: nil))) },
+                                  defaults: defaults)
+        await reopened.use(userId: "a")
+        XCTAssertFalse(reopened.isEnabled, "オフにしたのに次の起動で戻っている")
+    }
+
     /// 更新前に端末共通の鍵でオンにしていた人は、最初のログインでそのまま引き継ぐ（一度だけ）
     func testLegacyIntentMovesToTheFirstUserOnce() async {
         let (push, defaults) = center("push-4")
