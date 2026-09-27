@@ -47,29 +47,36 @@ final class UploadMetaFixTests: XCTestCase {
     }
 
     // MARK: - D5 公開・公開範囲は変えたときだけ
+    //
+    // 判定は `EditVisibilityRules` の1本（main 側の `EditVisibility.toSend` と同じ役目
+    // だったので、併合で寄せた）。`openedAudience` は「知らない値なら nil」＝旧 `audienceKnown: false`
 
     func testUntouchedVisibilityIsNotSent() {
-        let r = EditVisibility.toSend(openedPublished: true, openedAudience: nil,
-                                      published: true, audience: .everyone, audienceKnown: true)
+        let r = EditVisibilityRules.patch(openedPublished: true, openedAudience: .everyone,
+                                          published: true, audience: .everyone)
         XCTAssertNil(r.published)
         XCTAssertNil(r.audience)
-        let r2 = EditVisibility.toSend(openedPublished: false, openedAudience: "followers",
-                                       published: false, audience: .followers, audienceKnown: true)
+        let r2 = EditVisibilityRules.patch(openedPublished: false, openedAudience: .followers,
+                                           published: false, audience: .followers)
         XCTAssertNil(r2.published)
         XCTAssertNil(r2.audience)
     }
 
     func testChangedVisibilityIsSent() {
-        let off = EditVisibility.toSend(openedPublished: true, openedAudience: "followers",
-                                        published: false, audience: .followers, audienceKnown: true)
+        // 🔴 **非公開にするときは範囲を送らない**（main 側はここで "" を期待していた）。
+        // "" を送るとサーバーは範囲を消す（`photoUpdate.ts` の `hasAudience`）ので、
+        // 「フォロワーのみ」を非公開→公開に戻すと**全体に公開**されていた。
+        // 送らなければサーバーは範囲を残す
+        let off = EditVisibilityRules.patch(openedPublished: true, openedAudience: .followers,
+                                            published: false, audience: .followers)
         XCTAssertEqual(off.published, false)
-        XCTAssertEqual(off.audience, "")
-        let narrowed = EditVisibility.toSend(openedPublished: true, openedAudience: nil,
-                                             published: true, audience: .closeFriends, audienceKnown: true)
+        XCTAssertNil(off.audience)
+        let narrowed = EditVisibilityRules.patch(openedPublished: true, openedAudience: .everyone,
+                                                 published: true, audience: .closeFriends)
         XCTAssertNil(narrowed.published)
         XCTAssertEqual(narrowed.audience, "closeFriends")
-        let unknown = EditVisibility.toSend(openedPublished: false, openedAudience: "someday",
-                                            published: true, audience: .everyone, audienceKnown: false)
+        let unknown = EditVisibilityRules.patch(openedPublished: false, openedAudience: nil,
+                                                published: true, audience: .everyone)
         XCTAssertEqual(unknown.published, true)
         XCTAssertNil(unknown.audience)
     }

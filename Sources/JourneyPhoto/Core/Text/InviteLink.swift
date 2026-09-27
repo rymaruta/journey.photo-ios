@@ -22,3 +22,37 @@ enum InviteLink {
         return components.scheme == nil ? trimmed : ""
     }
 }
+
+extension InviteLink {
+
+    /// 招待リンクの期限から見た、いまの扱い。
+    enum Expiry: Equatable {
+        /// まだ使える。`until` は期限（画面に「〜まで」と出す）
+        case valid(until: Date)
+        /// 🔴 **期限が切れている。** サーバーは切れた招待も一覧に返し続ける
+        /// （`api-user/src/albums.ts` の `listAlbums`）が、開くと 410 で断る
+        /// （`invite.ts` の `inviteState`）。共有させず、作り直させる
+        case expired
+        /// 期限を持たない・読めない。**切れたとは言い切らない**——Web も期限が
+        /// 無ければ「〜まで」を出さずにリンクだけ見せる
+        case unknown
+    }
+
+    /// 期限（ISO8601）といまを比べる。境目はサーバーと同じ——**期限ちょうどは切れている**
+    /// （`inviteState` は `exp > now` のときだけ `ok`）。
+    ///
+    /// 読み方は通知の見出しと同じ（`NotificationGroups.parse`・小数秒の有無どちらでも読む）
+    static func expiry(_ raw: String?, now: Date) -> Expiry {
+        guard let raw, let date = NotificationGroups.parse(raw) else { return .unknown }
+        return date > now ? .valid(until: date) : .expired
+    }
+
+    /// 「〜まで」の日付。Web の `toLocaleDateString("ja-JP")` と同じ形（`2026/10/4`）。
+    /// **端末のゾーンのその日**で出す
+    static func untilLabel(_ date: Date, timeZone: TimeZone = .current) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return "\(c.year ?? 0)/\(c.month ?? 0)/\(c.day ?? 0)"
+    }
+}

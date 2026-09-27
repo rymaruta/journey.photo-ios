@@ -5,6 +5,11 @@ import SwiftUI
 /// **保存は明示的。** 打つたびにサーバーへ送らず、右上の「保存」で送る。
 /// 変えていなければ押させない（無駄な往復と、他の端末の編集の打ち消しを避ける）。
 /// 送るのは**変えた項目だけ**（`TripPlanText.patch`）。
+///
+/// 🔴 **変えた日程があるまま黙って戻らせない。** 保存は右上だけなので、以前は
+/// 戻るで下書きが確かめもなく消えていた。変えている間・送っている間は標準の戻る
+/// を隠し、「保存して戻る／変更を捨てる／キャンセル」を確かめる
+/// （`TripPlanText.leave`・`unsavedLeaveGuard`。親しい友達と同じもの）。
 struct TripPlanDetailView: View {
 
     let planId: String
@@ -12,6 +17,7 @@ struct TripPlanDetailView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var wishlist: WishlistStore
+    @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
 
     /// 手元の下書き。**開き直したらサーバーの姿に戻す**（Web と同じ）
@@ -25,6 +31,14 @@ struct TripPlanDetailView: View {
     /// 「行きたい場所から追加」を押した日
     @State private var picking: PickTarget?
     @State private var confirmingDelete = false
+    /// 「保存して戻る／変更を捨てる」の確認
+    @State private var confirmLeave = false
+    /// 「保存して戻る」が断られた（アラートで出す——下までスクロールしていると
+    /// 画面の中の赤い行は見えず、押しても何も起きないように見えた）
+    @State private var leaveSaveError: String?
+    /// 保存を送った回数（「保存して戻る」の失敗の知らせを、その後に別の保存が
+    /// 走っていたら出さないための目印）
+    @State private var saveAttempt = 0
     /// 名前を引く材料（取れなくても画面は出る——名前が鍵のままになるだけ）
     @State private var photos: [Photo] = []
     @State private var index: [OfficialSpot] = []
@@ -41,7 +55,21 @@ struct TripPlanDetailView: View {
     private var draft: Draft { Draft(days: days, start: start, end: end) }
 
     private var plan: TripPlan? { model.plan(planId) }
-    private var places: [DerivedSpot.Place] { DerivedSpot.all(in: photos) }
+    /// 撮影地の行。**描くたびに導かない**（項目ごとに2回引くので重い）——読めたときと
+    /// 画面に戻ったときに作り直す。
+    ///
+    /// 🔴 **ブロック・通報は画面に戻ったときの写し（`dropped`）で外す。** 生の
+    /// `hidden.snapshot` を読むと、積んだスポットの画面の中でブロックした瞬間に行が
+    /// 消え、`NavigationLink` ごと上の画面が閉じていた（`SpotDetailView` の注記と同じ）。
+    /// 鍵で1行に寄せる（`allMergedBySlug`・マイページの行きたい場所と同じ行）
+    @State private var places: [DerivedSpot.Place] = []
+    @State private var dropped = ModerationSnapshot()
+    /// この画面がいちばん上に出ているか（スポットを積んでいる間は行を触らない）
+    @State private var onTop = false
+
+    private func refreshPlaces() {
+        places = DerivedSpot.allMergedBySlug(in: dropped.visible(photos))
+    }
 
     var body: some View {
         Group {
@@ -55,8 +83,43 @@ struct TripPlanDetailView: View {
         .webScreen()
         .navigationTitle(L("旅行プラン", "Trip plans"))
         .navigationBarTitleDisplayMode(.inline)
+        // 削除などの最中は「保存して戻る」を出さない（送る口が断るので必ず失敗する）
+        // 戻るの見た目は標準と同じ「‹ 旅行プラン」に保つ（前の画面の題）
+        .unsavedLeaveGuard(leave, isPresented: $confirmLeave, canSave: model.busy == nil,
+                           backTitle: L("旅行プラン", "Trip plans"),
+                           message: L("保存しないで戻ると、変えた日程は残りません。",
+                                      "If you go back without saving, your changes to this trip will be lost."),
+                           onSave: {
+                               Task {
+                                   // 断られたら残り、アラートで知らせる
+                                   if await save() {
+                                       dismiss()
+                                   } else {
+                                       let mine = saveAttempt
+                                       // **文は送った直後に取る**（待っている間に次の保存が
+                                       // 走ると消える）。送る口は始めに文を消すので古い文は来ない
+                                       let message = model.errorMessage
+                                           ?? L("もう一度お試しください", "Please try again.")
+                                       // 確認の板が閉じ切ってから出す（閉じている途中に出すと
+                                       // SwiftUI が黙って捨てることがある）
+                                       try? await Task.sleep(nanoseconds: 350_000_000)
+                                       // その間に次の保存を送った・確認を開き直したなら出さない
+                                       // （成功した後に前の失敗が出ていた。赤い行は残る）
+                                       guard saveAttempt == mine, !confirmLeave else { return }
+                                       leaveSaveError = message
+                                   }
+                               }
+                           },
+                           onDiscard: { dismiss() })
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { saveButton }
+        }
+        .alert(L("保存できませんでした", "Couldn't save"),
+               isPresented: Binding(get: { leaveSaveError != nil },
+                                    set: { if !$0 { leaveSaveError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(leaveSaveError ?? "")
         }
         .task {
             let fetchedPhotos = try? await environment.gallery.fetchPhotos()
@@ -64,8 +127,20 @@ struct TripPlanDetailView: View {
             photos = fetchedPhotos ?? []
             index = fetchedIndex ?? []
             sourcesFailed = fetchedPhotos == nil || fetchedIndex == nil
+            refreshPlaces()
         }
+        // 出ている間に届いたブロック（起動直後のサーバーとの同期など）も拾う。
+        // **上に積んでいる間は触らない**（行が消えると上の画面が閉じる）
+        .onChange(of: hidden.revision) { _, _ in
+            guard onTop else { return }
+            dropped = hidden.snapshot
+            refreshPlaces()
+        }
+        .onDisappear { onTop = false }
         .onAppear {
+            onTop = true
+            dropped = hidden.snapshot
+            refreshPlaces()
             // **前の画面の失敗の文を消すのは、開いた最初の1回だけ。** 項目の
             // スポットを開いて戻るたびに消していたので、保存に失敗した事情が
             // 下書きが未保存のまま見えなくなっていた
@@ -114,15 +189,27 @@ struct TripPlanDetailView: View {
         return TripPlanText.isDirty(plan: plan, days: days, start: start, end: end)
     }
 
+    private var leave: UnsavedLeave {
+        // 日程を送っている間（`sent` は保存の間だけ立つ。削除では立たない）
+        TripPlanText.leave(plan: plan, days: days, start: start, end: end,
+                           saving: model.busy != nil && sent != nil)
+    }
+
+    /// 送る。**通ったか**を返す（「保存して戻る」は通ったときだけ閉じる）
+    private func save() async -> Bool {
+        guard let plan else { return false }
+        let patch = TripPlanText.patch(plan: plan, days: days, start: start, end: end)
+        saveAttempt &+= 1
+        sent = draft
+        let saved = await model.update(planId, patch, environment: environment)
+        // 断られたら控えを捨てる（次に届く姿で下書きを上書きしない）
+        if !saved { sent = nil }
+        return saved
+    }
+
     private var saveButton: some View {
         Button(L("保存", "Save")) {
-            guard let plan else { return }
-            let patch = TripPlanText.patch(plan: plan, days: days, start: start, end: end)
-            sent = draft
-            Task {
-                // 断られたら控えを捨てる（次に届く姿で下書きを上書きしない）
-                if !(await model.update(planId, patch, environment: environment)) { sent = nil }
-            }
+            Task { _ = await save() }
         }
         .font(.body.weight(.semibold))
         // **ヘッダーの文字の合図は真鍮**（デザインシステムの決まり）

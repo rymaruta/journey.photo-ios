@@ -123,6 +123,9 @@ enum TripPlanText {
         let name: String
         /// 撮影スポットの「県 · 市」。撮影地には無い
         let regionLabel: String?
+        /// 台帳の運営の下書き（`OfficialSpot.isDraft`）。撮影地には無い。
+        /// 画面では「公式」と呼ばず、下書きのときだけ「下書き」の札を付ける
+        var isDraft = false
         var isOfficial: Bool { if case .spot = item { return true } else { return false } }
         var id: String {
             switch item {
@@ -149,7 +152,7 @@ enum TripPlanText {
             .compactMap { key -> Choice? in
                 guard let slug = SavedSpotKey.slug(fromOfficial: key), let spot = bySlug[slug] else { return nil }
                 return Choice(item: .spot(spotId: spot.spotId, note: nil), name: spot.name,
-                              regionLabel: spot.regionLabel)
+                              regionLabel: spot.regionLabel, isDraft: spot.isDraft)
             }
             .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
             .filter { seen.insert($0.id).inserted }
@@ -182,6 +185,21 @@ enum TripPlanText {
     /// **変えていなければ保存を押させない**（無駄な往復と、他の端末の編集の打ち消しを避ける）
     static func isDirty(plan: TripPlan, days: [TripDay], start: String?, end: String?) -> Bool {
         plan.days != days || (plan.startDate ?? "") != (start ?? "") || (plan.endDate ?? "") != (end ?? "")
+    }
+
+    /// 戻ろうとしたときの扱い（`UnsavedLeave`・親しい友達と同じ判断）。
+    ///
+    /// 🔴 **変えた日程を黙って捨てさせない。** 保存は右上のボタンだけなので、
+    /// 以前は日を足す・項目を外す・日付を変えたあと戻ると、下書きが確かめもなく
+    /// 消えていた。`busy` はプランの書き込み中（保存・削除）——返事の前に離れると
+    /// 失敗が見えない。**プランが無い（消された）ときはそのまま戻す**
+    static func leave(plan: TripPlan?, days: [TripDay], start: String?, end: String?,
+                      saving: Bool) -> UnsavedLeave {
+        let dirty = plan.map { isDirty(plan: $0, days: days, start: start, end: end) } ?? false
+        // 待たせるのは**このプランの日程を送っている間**（変えた後に元へ戻しても、送った
+        // 姿がサーバーに入るまで待つ——待たずに戻ると、戻したつもりの姿が黙って消えた）。
+        // 削除の最中などは待たせない（何も変えていない画面まで戻れなかった）
+        return UnsavedLeave.decide(hasChanges: dirty, isSaving: saving)
     }
 
     /// 送る差分。**変えた項目だけ**（Web の `/user/edit` と同じ——他の端末の編集を消さない）。

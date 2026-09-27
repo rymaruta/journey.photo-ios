@@ -40,6 +40,10 @@ struct ProfileEditView: View {
     /// いまの内容を読めたか。**読めるまで保存させない**
     /// ——読めていない空の欄で上書きすると、プロフィールが丸ごと消える
     @State private var loaded = false
+    /// 読み込んだ時点の欄。🔴 **保存ではこれと比べて、変えた欄だけを送る**
+    /// （`ProfileDraft.patch`）——全部送ると、開いている間に別の端末で直した
+    /// 表示名・BGM などを開いた時点の値へ巻き戻す
+    @State private var original: ProfileDraft?
     @State private var message: String?
     /// 保存の失敗。**アラートで出す**——保存は右上なので、フォームの中に出すと
     /// 下に流していれば上の画面外、上にいれば下の画面外になる
@@ -251,9 +255,7 @@ struct ProfileEditView: View {
             // （写真の投稿・ストーリーの呼び手は前から包んでいる）
             NavigationStack {
                 SongPickerView { picked in
-                    // 先頭に据える。**同じ曲が下に残らないように**取り除いてから
-                    songs.removeAll { $0.previewUrl == picked.previewUrl }
-                    songs.insert(picked, at: 0)
+                    songs = ProfileSongs.replacingFirst(songs, with: picked)
                 }
             }
         }
@@ -271,16 +273,25 @@ struct ProfileEditView: View {
             return
         }
         userId = profile.userId
-        displayName = profile.displayName ?? ""
-        username = profile.username ?? ""
-        bio = profile.bio ?? ""
-        website = profile.website ?? ""
-        instagram = profile.instagram ?? ""
-        statusText = profile.statusText ?? ""
-        homeLocation = profile.homeLocation ?? ""
-        themeColor = profile.themeColor ?? ""
-        songs = profile.songs ?? []
+        let draft = ProfileDraft(profile: profile)
+        original = draft
+        displayName = draft.displayName
+        username = draft.username
+        bio = draft.bio
+        website = draft.website
+        instagram = draft.instagram
+        statusText = draft.statusText
+        homeLocation = draft.homeLocation
+        themeColor = draft.themeColor
+        songs = draft.songs
         loaded = true
+    }
+
+    /// いま欄に入っている姿
+    private var edited: ProfileDraft {
+        ProfileDraft(username: username, displayName: displayName, bio: bio,
+                     website: website, instagram: instagram, statusText: statusText,
+                     homeLocation: homeLocation, themeColor: themeColor, songs: songs)
     }
 
     private func save() async {
@@ -291,27 +302,24 @@ struct ProfileEditView: View {
         // （`api-user/src/userProfile.ts` の `apply`）ので、そのまま
         // 保存すると**表示名・ユーザー名・自己紹介・リンク・ひとこと・
         // テーマ色が全部消える**。取り返しがつかない。
-        guard loaded else {
+        guard loaded, let original else {
             message = L("いまの内容を読み込めていないので保存できません。開き直してください",
                         "Can't save before your current profile is loaded. Please reopen this screen.")
+            return
+        }
+        // 🔴 **変えた欄だけを送る**（`ProfileDraft.patch`）。開いた時点の値を全部
+        // 送っていたので、開いている間に Web で直した表示名・BGM が巻き戻り、
+        // ユーザー名も毎回送るので、いまの規則に合わない古い名前の人は
+        // 何を直しても 400 で保存できなかった。
+        // **何も変えていなければ送らずに閉じる**（Web も投げずに「保存しました」。
+        // サーバーは空の変更でも rev を進めるので、別の端末の保存を無駄に競合させる）
+        guard let patch = ProfileDraft.patch(from: original, to: edited) else {
+            dismiss()
             return
         }
         isSaving = true
         message = nil
         defer { isSaving = false }
-        // 空文字も「消す」として送る（nil は「触らない」）
-        let patch = ProfilePatch(
-            username: username,
-            displayName: displayName,
-            bio: bio,
-            website: website,
-            instagram: instagram,
-            statusText: statusText,
-            homeLocation: homeLocation,
-            themeColor: themeColor,
-            songs: songs,
-            pinnedPhotoIds: nil
-        )
         do {
             try await environment.profiles.update(patch)
             dismiss()

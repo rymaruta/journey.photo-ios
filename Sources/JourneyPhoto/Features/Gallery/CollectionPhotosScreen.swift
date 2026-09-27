@@ -94,7 +94,7 @@ struct CollectionPhotosScreen: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: CollectionScreen.shareText(title: title, count: shown.count,
-                                                           kind: kind, lead: sorted.first)) {
+                                                           kind: kind, lead: CollectionScreen.shareLead(sorted))) {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .webToolbarIcon()

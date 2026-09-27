@@ -26,6 +26,7 @@ struct OfficialSpotView: View {
 
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var environment: AppEnvironment
     /// 渡された写真は開いた時点の写しなので、ブロック／通報をここで反映する。
     /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
@@ -185,10 +186,11 @@ struct OfficialSpotView: View {
         HStack(spacing: 10) {
             let wanted = wishlist.contains(wishKey)
             Button {
-                let now = wishlist.toggle(wishKey)
-                toasts.show(now
-                    ? L("「行きたい」に追加しました（この端末に保存）", "Added to your wishlist on this device")
-                    : L("「行きたい」から外しました", "Removed from your wishlist"))
+                // ログイン中はサーバーへ送る。失敗したら戻して知らせる（`WishlistSync`）
+                Task {
+                    let outcome = await WishlistSync.toggle(wishKey, store: wishlist, service: environment.savedSpots)
+                    if let notice = WishlistSync.notice(for: outcome) { toasts.show(notice.text, kind: notice.kind) }
+                }
             } label: {
                 SpotDetailParts.actionLabel(icon: wanted ? "heart.fill" : "heart",
                                             title: L("行きたい", "Want to go"), filled: wanted)

@@ -31,3 +31,25 @@ enum EditPlaceRules {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+/// 写真の編集で、公開（`published`）と公開範囲（`audience`）を**送るか**の決まり。
+///
+/// 🔴 **変えたときだけ送る**（ほかの項目と同じ）。開いた値を毎回送っていたので、
+/// 公開一覧の古い写し（建て直しまで古い）から開いて題だけ直すと、別の画面で
+/// 絞った公開範囲や非公開が**黙って全体公開に戻った**。
+///
+/// 🔴 **非公開にするときは公開範囲を送らない。** 空（全体）を送っていたので、
+/// 「フォロワーのみ」の写真を非公開にすると範囲が消え、公開に戻すと全体に
+/// 公開されていた。送らなければサーバーは範囲を残す（`photoUpdate.ts`）
+enum EditVisibilityRules {
+    /// - Parameters:
+    ///   - openedAudience: 開いたときの範囲。**知らない値なら nil**（送らない＝広げも狭めもしない）
+    static func patch(openedPublished: Bool, openedAudience: Audience?,
+                      published: Bool, audience: Audience) -> (published: Bool?, audience: String?) {
+        let sendPublished: Bool? = published != openedPublished ? published : nil
+        guard let openedAudience, published, audience != openedAudience else {
+            return (sendPublished, nil)
+        }
+        return (sendPublished, audience.patchValue)
+    }
+}

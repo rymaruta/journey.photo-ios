@@ -72,6 +72,39 @@ final class LocationSlugTests: XCTestCase {
         XCTAssertEqual(slug, String(repeating: "あ", count: LocationSlug.maxBytes / 3))
     }
 
+    /// 🔴 **Web とずれていた3つ**（2026-09-27・Web の `slugify` を node で実際に動かした値）。
+    /// 「行きたい場所」をサーバーに繋いだので、ずれるとアプリで入れた場所が
+    /// Web の一覧で**別の行**になる（開けない `/location/<スラッグ>` を指す）
+    ///
+    ///  - BOM（`U+FEFF`）… JS の `trim` と `\s` は空白に数えるが、ICU の `\s` と
+    ///    `.whitespacesAndNewlines` は数えない
+    ///  - 語末のシグマ … JS の `toLowerCase` は `ς` にするが、Swift の `lowercased` は `σ`
+    ///  - 200 バイトの切り詰め … Web はコードポイントで切るが、以前は書記素のまとまりで切っていた
+    ///    （結合文字・ZWJ の絵文字が境目にあると Web は途中まで入れる）
+    func testMatchesTheWebWhereItUsedToDrift() {
+        let a196 = String(repeating: "a", count: 196)
+        let a199 = String(repeating: "a", count: 199)
+        let cases: [(String, String)] = [
+            ("\u{FEFF}パリ\u{FEFF}", "パリ"),
+            ("a\u{FEFF}b", "a-b"),
+            ("ΟΔΟΣ", "οδος"),
+            ("ΣΑΣ ΣΟΣ", "σας-σος"),
+            (a196 + "👨\u{200D}👩\u{200D}👧", a196 + "👨"),
+            (a199 + "e\u{0301}x", a199 + "e"),
+            // Web と同じく残す側（ずれていないことの見張り）
+            ("a\u{200B}b", "a\u{200B}b"),
+            ("\u{3000}東京\u{3000}", "東京"),
+            ("a\u{00A0}b", "a-b"),
+            ("a\u{2028}b", "a-b"),
+            ("a\u{0085}b", "a-b"),
+            ("İstanbul", "i\u{0307}stanbul"),
+            (String(repeating: "あ", count: 66) + "-い", String(repeating: "あ", count: 66)),
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(LocationSlug.make(input), expected, "「\(input.debugDescription)」でずれた")
+        }
+    }
+
     func testEmptyAndNil() {
         XCTAssertEqual(LocationSlug.make(nil), "")
         XCTAssertEqual(LocationSlug.make(""), "")

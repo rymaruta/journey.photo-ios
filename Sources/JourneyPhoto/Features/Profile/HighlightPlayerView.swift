@@ -25,7 +25,8 @@ struct HighlightPlayerView: View {
                 // 出したままだと写真がバーの裏から始まり、題が2か所に出る
                 StoryViewerView(
                     stories: contents.items, startIndex: 0, viewerId: auth.userId,
-                    highlight: .init(title: highlight.displayTitle,
+                    // 題は**読み直した中身**から（名前を変えた後も最初の題のままだった）
+                    highlight: .init(title: contents.title.isEmpty ? highlight.displayTitle : contents.title,
                                      coverURL: highlight.coverURL,
                                      // **並んでいる本数を出す**（サーバーの数はアーカイブから
                                      // 外れたぶんも数えていて、進行バーの区切りと割れる）

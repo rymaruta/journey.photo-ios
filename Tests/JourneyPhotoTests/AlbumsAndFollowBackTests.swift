@@ -8,18 +8,22 @@ final class AlbumsAndFollowBackTests: XCTestCase {
     private let now = ISO8601DateFormatter().date(from: "2026-09-27T07:00:00Z")!
 
     /// サーバーは `toISOString()`（小数秒つき）で返す。**切れたリンクは共有させない**
+    ///
+    /// 期限の判定は `InviteLink.expiry` の1本だけ（main 側で `AlbumsViewModel` に
+    /// 足された同じ判定は、併合で `InviteLink` に寄せた）。
     func testExpiredInviteIsDetected() async {
-        XCTAssertTrue(AlbumsViewModel.isInviteExpired("2026-09-27T06:59:59.000Z", now: now))
-        XCTAssertTrue(AlbumsViewModel.isInviteExpired("2026-09-20T00:00:00Z", now: now))
-        XCTAssertFalse(AlbumsViewModel.isInviteExpired("2026-10-04T07:00:00.123Z", now: now))
+        XCTAssertEqual(InviteLink.expiry("2026-09-27T06:59:59.000Z", now: now), .expired)
+        XCTAssertEqual(InviteLink.expiry("2026-09-20T00:00:00Z", now: now), .expired)
+        XCTAssertNotEqual(InviteLink.expiry("2026-10-04T07:00:00.123Z", now: now), .expired)
     }
 
     /// 期限が無い・読めないときは切れていない扱い（有効なリンクまで出せなくしない）
     func testMissingOrBrokenExpiryIsNotExpired() async {
-        XCTAssertFalse(AlbumsViewModel.isInviteExpired(nil, now: now))
-        XCTAssertFalse(AlbumsViewModel.isInviteExpired("", now: now))
-        XCTAssertFalse(AlbumsViewModel.isInviteExpired("あした", now: now))
-        XCTAssertNotNil(AlbumsViewModel.inviteExpiry("2026-10-04T07:00:00.123Z"))
+        XCTAssertNotEqual(InviteLink.expiry(nil, now: now), .expired)
+        XCTAssertNotEqual(InviteLink.expiry("", now: now), .expired)
+        XCTAssertNotEqual(InviteLink.expiry("あした", now: now), .expired)
+        XCTAssertEqual(InviteLink.expiry("2026-10-04T07:00:00.123Z", now: now),
+                       .valid(until: NotificationGroups.parse("2026-10-04T07:00:00.123Z")!))
     }
 
     /// **フォロー中が取れない間は、誰にもフォローバックを出さない**

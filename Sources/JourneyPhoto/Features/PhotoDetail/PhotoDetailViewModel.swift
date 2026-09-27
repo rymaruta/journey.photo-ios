@@ -228,6 +228,9 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func postComment() async {
+        // 二度押しで同じ文を2件送らない（ボタンが押せなくなるのは描き直しの後）。
+        // 先頭で断る——下で知らせを消す前に（二度目の押下で別の失敗の知らせを消さない）
+        guard !isPosting else { return }
         let text = draftComment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         errorMessage = nil

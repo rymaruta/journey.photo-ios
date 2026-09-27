@@ -185,31 +185,31 @@ struct AlbumsView: View {
         }
     }
 
+    /// 🔴 **期限が切れたリンクは共有させない。** サーバーは切れた招待も一覧に
+    /// 返し続けるので、以前はトークンがあるだけで「共有」を出していた——送った
+    /// 相手が開くと「期限が切れています」で断られる。切れていたら同じ場所に
+    /// 「招待リンクを作り直す」を出す（`InviteLink.expiry`）。使えるときは
+    /// Web と同じく「〜まで」を添える
     @ViewBuilder
     private func inviteControls(_ album: Album) -> some View {
-        if album.inviteToken != nil,
-           AlbumsViewModel.isInviteExpired(album.inviteExpiresAt, now: Date()) {
-            // **期限の切れたリンクは共有させない**（受け取った人が開けない）。
-            // 作り直す——サーバーは作り直すと前のリンクを自動で取り消す
+        if let token = album.inviteToken {
+            let expiry = InviteLink.expiry(album.inviteExpiresAt, now: Date())
             HStack {
-                Text(L("招待リンクの期限が切れています", "The invite link has expired"))
+                if expiry == .expired {
+                    Button(L("招待リンクを作り直す", "Recreate invite link")) {
+                        Task { await model.createInvite(album.id, environment: environment) }
+                    }
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(L("作り直す", "Recreate")) {
-                    Task { await model.createInvite(album.id, environment: environment) }
-                }
-                .font(.caption)
-                .disabled(model.inviteWorking.contains(album.id))
-                .buttonStyle(.borderless)
-            }
-        } else if let token = album.inviteToken {
-            HStack {
-                // 招待リンクはサイトの URL で共有する
-                // （アプリを入れていない人にも開ける）
-                ShareLink(item: model.inviteURL(token: token)) {
-                    Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
-                        .font(.caption)
+                    // 二度押しで2本作らない（下の「招待リンクを作る」と同じ）
+                    .disabled(model.inviteWorking.contains(album.id))
+                    .buttonStyle(.borderless)
+                } else {
+                    // 招待リンクはサイトの URL で共有する
+                    // （アプリを入れていない人にも開ける）
+                    ShareLink(item: model.inviteURL(token: token)) {
+                        Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
+                            .font(.caption)
+                    }
                 }
                 Spacer()
                 Button(L("取り消す", "Revoke")) {
@@ -221,11 +221,17 @@ struct AlbumsView: View {
                 // 既定だと行のどこを押しても両方が反応する
                 .buttonStyle(.borderless)
             }
-            if let expiry = AlbumsViewModel.inviteExpiry(album.inviteExpiresAt) {
-                Text(L("期限 \(expiry.formatted(date: .abbreviated, time: .shortened))",
-                       "Expires \(expiry.formatted(date: .abbreviated, time: .shortened))"))
-                    .font(.caption2)
+            switch expiry {
+            case .valid(let until):
+                Text(L("\(InviteLink.untilLabel(until))まで", "Valid until \(InviteLink.untilLabel(until))"))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+            case .expired:
+                Text(L("招待リンクの期限が切れています", "This invite link has expired"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .unknown:
+                EmptyView()
             }
         } else {
             Button(L("招待リンクを作る", "Create invite link")) {
@@ -325,22 +331,6 @@ final class AlbumsViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.notice = nil
         }
-    }
-
-    /// 招待リンクの期限（サーバーは `toISOString()`＝小数秒つきで返す）。読めなければ nil
-    nonisolated static func inviteExpiry(_ expiresAt: String?) -> Date? {
-        guard let expiresAt, !expiresAt.isEmpty else { return nil }
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: expiresAt) { return date }
-        return ISO8601DateFormatter().date(from: expiresAt)
-    }
-
-    /// 招待リンクの期限が切れているか。**期限が無い・読めないときは切れていない扱い**
-    /// （共有を消すと、有効なリンクまで出せなくなる。開けるかはサーバーが決める）
-    nonisolated static func isInviteExpired(_ expiresAt: String?, now: Date) -> Bool {
-        guard let expiry = inviteExpiry(expiresAt) else { return false }
-        return expiry <= now
     }
 
     func inviteURL(token: String) -> URL {
