@@ -80,20 +80,26 @@ struct TripPlanDetailView: View {
         .webScreen()
         .navigationTitle(L("旅行プラン", "Trip plans"))
         .navigationBarTitleDisplayMode(.inline)
-        .unsavedLeaveGuard(leave, isPresented: $confirmLeave, canSave: true,
+        // 削除などの最中は「保存して戻る」を出さない（送る口が断るので必ず失敗する）
+        .unsavedLeaveGuard(leave, isPresented: $confirmLeave, canSave: model.busy == nil,
                            message: L("保存しないで戻ると、変えた日程は残りません。",
                                       "If you go back without saving, your changes to this trip will be lost."),
                            onSave: {
                                Task {
                                    // 断られたら残り、アラートで知らせる
-                                   model.clearError()   // 前の失敗の文を出さない
                                    if await save() {
                                        dismiss()
                                    } else {
+                                       // **文は送った直後に取る**（待っている間に次の保存が
+                                       // 走ると消える）。送る口は始めに文を消すので古い文は来ない
+                                       let message = model.errorMessage
+                                           ?? L("もう一度お試しください", "Please try again.")
                                        // 確認の板が閉じ切ってから出す（閉じている途中に出すと
                                        // SwiftUI が黙って捨てることがある）
                                        try? await Task.sleep(nanoseconds: 350_000_000)
-                                       leaveSaveError = model.errorMessage ?? ""
+                                       // その間に次の操作が始まっていたら出さない（赤い行は残る）
+                                       guard model.busy == nil, !confirmLeave else { return }
+                                       leaveSaveError = message
                                    }
                                }
                            },
