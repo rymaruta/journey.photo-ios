@@ -56,16 +56,27 @@ final class GalleryViewModel: ObservableObject {
 
     /// - Parameter force: 控えを無視して取り直す（引き下げ更新）。
     func load(force: Bool = false) async {
+        // 🔴 **後から始めた回の答えを、先に始めた回で上書きしない。**
+        // 人が替わった直後は「見せない」の読み直し（`hidden.revision`）と
+        // 人の替わりの読み直しが同時に走る。先に始めた方は前の人の控えを
+        // 読んでいることがあり、それが後に戻ると前の人向けの写真が残る
+        loadGeneration += 1
+        let generation = loadGeneration
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         do {
             let photos = try await gallery.fetchPhotos(force: force)
+            guard generation == loadGeneration else { return }
             all = sorted(photos)
             state = .loaded(filtered())
         } catch {
+            guard generation == loadGeneration else { return }
             state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
         }
     }
+
+    /// 何回目の読み込みか（`load` の注記）
+    private var loadGeneration = 0
 
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
     private var all: [Photo] = []

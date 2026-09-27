@@ -109,6 +109,14 @@ final class AuthStore: ObservableObject {
         await AuthGateway.signOut()
         state = .signedOut
         isAdmin = false
+        forgetFailure()
+    }
+
+    /// 前の人の失敗を次の人に持ち越さない。**ログアウトのあとのログイン画面に
+    /// 前の人の赤字（パスワード変更の失敗など）が出ていた**
+    private func forgetFailure() {
+        errorMessage = nil
+        lastFailure = .none
     }
 
     /// 退会の最後の一歩: Cognito の利用者を消す（`AuthGateway.deleteUser`）。
@@ -127,6 +135,7 @@ final class AuthStore: ObservableObject {
         await AuthGateway.signOut()
         state = .signedOut
         isAdmin = false
+        forgetFailure()
     }
 
     /// - Returns: 確認コード送信に使う UUID。失敗したら nil。

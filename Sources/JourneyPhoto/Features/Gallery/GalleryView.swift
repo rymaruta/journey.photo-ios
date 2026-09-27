@@ -54,15 +54,24 @@ struct GalleryView: View {
         // **地図のアイコンは外した**——下の札に「マップ」があり、
         // 同じ場所への入口が2つあった
         .toolbar { AppHeaderItems(unread: unread, showsSearch: true, onOpenNotifications: onOpenNotifications) }
-        .task {
-            // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
-            // `setHidden` が届かず、ブロックが一生効かない
-            model.use(gallery: environment.gallery)
-            await model.load()
-        }
         // **ログイン状態が決まってから範囲を決める**（範囲は選んでいるフィードが決める）。
         // フォロー中の一覧は、その範囲を選ぶ人にだけ要る
         .task(id: auth.userId) {
+            // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
+            // `setHidden` が届かず、ブロックが一生効かない
+            model.use(gallery: environment.gallery)
+            // 🔴 **人が替わったら読み直す。** 絞り直すだけだと、前の人向けの
+            // 「フォロワーのみ」「親しい友達」が一覧に残っていた（ログアウトしても）。
+            // 絞った写真の取り口を**先に**この人のものへ替えてから読む
+            // （`JourneyPhotoApp` も替えるが、どちらが先に走るかは決まっていない）。
+            //
+            // **`force` にしない。** 人が替われば取り口の差し替えが絞ったぶんの
+            // 控えを捨てるので、控えを使う読みでも絞ったぶんは取り直される。
+            // 公開一覧は人によらない——`force` にすると起動のたびに
+            // （未確認 → ログイン済みで id が変わる）全件を落とし直す。
+            // 同じ人のまま画面に戻った回は、今までどおり控えを使う
+            await environment.applyRestrictedFeed(userId: auth.userId)
+            await model.load()
             guard auth.userId != nil else {
                 model.use(viewerId: nil, following: [])
                 await model.loadMyPhotos(environment.photos, viewerId: nil)

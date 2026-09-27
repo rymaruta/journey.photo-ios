@@ -48,6 +48,27 @@ final class PushCenter: ObservableObject {
     }
     private static let tokenKey = "photo-gallery-apns-token"
     private static let enabledKey = "photo-gallery-push-enabled"
+    private static let pendingReleaseKey = "photo-gallery-push-pending-release"
+
+    /// 🔴 **ログアウトのときに宛先を外しきれなかった人**（外し終えたら nil）。
+    ///
+    /// 外す口（`DELETE /user/devices`）はその人の鍵が要るので、ログアウトの
+    /// 後では叩けない。残るのは2つの出口だけ:
+    /// - **同じ人がまたログインした** → その人の鍵で外し直す（`use(userId:)`）
+    /// - **この端末で誰かが通知を登録した** → サーバーが登録のたびに
+    ///   前の持ち主から外す（api-user `devices.ts` の `releasePreviousOwner`）
+    /// どちらも来ない間（誰もログインしない・次の人が通知を受け取らない）は
+    /// **前の人あての通知がこの端末に届きうる**——端末からは塞げない
+    private(set) var pendingReleaseOwner: String? {
+        get { defaults.string(forKey: Self.pendingReleaseKey) }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Self.pendingReleaseKey)
+            } else {
+                defaults.removeObject(forKey: Self.pendingReleaseKey)
+            }
+        }
+    }
     private let defaults: UserDefaults
     private var userId: String?
     private let service: () -> PushService
@@ -63,7 +84,10 @@ final class PushCenter: ObservableObject {
     func use(userId: String?) async {
         let previous = self.userId
         self.userId = userId
+        // **前の人の失敗文を次の人に見せない**（設定画面の赤字）
+        if previous != userId { errorMessage = nil }
         await refreshAuthorization()
+        await retryPendingRelease(for: userId)
 
         // **人が入れ替わったら、前の人の宛先を外す。** 外さないと
         // 同じ端末に前の人あての通知が届き続ける
@@ -147,10 +171,52 @@ final class PushCenter: ObservableObject {
     }
 
     /// ログアウトの**前**に呼ぶ。認証が要るので、あとだと外せない。
+    ///
+    /// **外せなくてもログアウトは止めない**（圏外で「ログアウトできない」に
+    /// しない）。外せなかったことは端末に残し、次の出口でやり直す
+    /// （`pendingReleaseOwner`）。
+    ///
+    /// **アイコンの数字と通知センターの通知も消す。** 前の人あての
+    /// 「○○さんがいいねしました」が次の人の画面に残らないように
     func signingOut() async {
-        guard let token, userId != nil else { return }
-        try? await service().unregister(token: token)
+        errorMessage = nil
+        await clearDelivered()
+        guard let token, let userId else { return }
+        do {
+            try await service().unregister(token: token)
+            if pendingReleaseOwner == userId { pendingReleaseOwner = nil }
+        } catch {
+            print("[push] ログアウトで宛先を外せませんでした（次の機会にやり直す）: \(error)")
+            pendingReleaseOwner = userId
+        }
         isRegistered = false
+    }
+
+    /// 外しそびれた宛先を、外せる人が戻ってきたときに外す。
+    ///
+    /// **同じ人がまた受け取る設定なら外さない**——このあと登録し直すので、
+    /// 外すと登録と行き違う。登録が通れば印は消える（`registerIfPossible`）
+    private func retryPendingRelease(for userId: String?) async {
+        guard let owner = pendingReleaseOwner, owner == userId else { return }
+        guard let token else {
+            // 宛先の番号が無い＝サーバーに預けたものも無い
+            pendingReleaseOwner = nil
+            return
+        }
+        if isEnabled && isAuthorized { return }
+        do {
+            try await service().unregister(token: token)
+            pendingReleaseOwner = nil
+        } catch {
+            print("[push] 外しそびれた宛先を外せませんでした: \(error)")
+        }
+    }
+
+    /// アイコンの数字と、通知センターに残っている通知を消す。
+    private func clearDelivered() async {
+        let center = UNUserNotificationCenter.current()
+        try? await center.setBadgeCount(0)
+        center.removeAllDeliveredNotifications()
     }
 
     /// お知らせを読んだので、アイコンの数字を消す。
@@ -171,6 +237,9 @@ final class PushCenter: ObservableObject {
         do {
             try await service().register(token: token)
             isRegistered = true
+            // **登録が通れば、前の持ち主からはサーバーが外している**
+            // （`devices.ts` の `releasePreviousOwner`）
+            pendingReleaseOwner = nil
         } catch {
             isRegistered = false
             errorMessage = (error as? LocalizedError)?.errorDescription

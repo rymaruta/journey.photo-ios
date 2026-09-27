@@ -108,6 +108,87 @@ final class PublicGalleryServiceTests: XCTestCase {
         let offline = try await service(snapshot: name).fetchPhotos()
         XCTAssertEqual(offline.map(\.id), ["a", "b"], "読めない応答で控えが潰れた")
     }
+
+    /// 🔴 **取り口を差し替えた最中に戻ってきた、前の人向けの答えを使わない。**
+    ///
+    /// 差し替えで控えは空になるが、差し替える前に出ていった要求が
+    /// 後から戻ると、控えに前の人の「フォロワーのみ」を書き戻していた
+    /// ——60秒間、次の人の一覧に混ざる。
+    func testSwappingRestrictedLoaderMidFlightDropsThePreviousAnswer() async throws {
+        StubProtocol.respond(status: 200, body: twoPhotos)
+        let gallery = service()
+        let gate = Gate()
+        let forA = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"for-a","src":"https://x/r.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        await gallery.setRestrictedLoader(owner: "A") {
+            await gate.wait()
+            return [forA]
+        }
+
+        // A の画面が読みに行き、絞った写真の返事を待っている
+        let first = Task { try await gallery.fetchPhotos() }
+        await gate.untilWaiting()
+
+        // その間に B へ替わる
+        await gallery.setRestrictedLoader(owner: "B") { [] }
+        await gate.open()
+        let stale = try await first.value
+        XCTAssertFalse(stale.contains { $0.id == "for-a" },
+                       "差し替えた後に戻った前の人の答えを出している")
+
+        let photos = try await gallery.fetchPhotos()
+        XCTAssertFalse(photos.contains { $0.id == "for-a" },
+                       "B の一覧に A 向けの写真が混ざっている（控えに書き戻された）")
+        XCTAssertEqual(photos.map(\.id), ["a", "b"])
+    }
+
+    /// **同じ人で差し替え直しても、取得中の答えを捨てない。**
+    /// ホーム・探す・`JourneyPhotoApp` の3か所が同じ人で呼ぶので、
+    /// 捨てるとログイン直後の一覧から絞った写真が消える
+    func testSameOwnerDoesNotDiscardInFlightAnswer() async throws {
+        StubProtocol.respond(status: 200, body: twoPhotos)
+        let gallery = service()
+        let gate = Gate()
+        let mine = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"mine","src":"https://x/r.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        await gallery.setRestrictedLoader(owner: "A") {
+            await gate.wait()
+            return [mine]
+        }
+        let first = Task { try await gallery.fetchPhotos() }
+        await gate.untilWaiting()
+        await gallery.setRestrictedLoader(owner: "A") { [] }
+        await gate.open()
+        let photos = try await first.value
+        XCTAssertTrue(photos.contains { $0.id == "mine" }, "同じ人なのに取得中の答えを捨てた")
+    }
+}
+
+/// 待たせておいて、合図で先へ進める。**「取得の途中」を作る**ための道具
+actor Gate {
+    private var opened = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var arrived = 0
+
+    func wait() async {
+        arrived += 1
+        if opened { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    /// 誰かが `wait()` に着くまで待つ
+    func untilWaiting() async {
+        while arrived == 0 {
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+    }
+
+    func open() {
+        opened = true
+        waiters.forEach { $0.resume() }
+        waiters = []
+    }
 }
 
 /// 公開一覧の控え。

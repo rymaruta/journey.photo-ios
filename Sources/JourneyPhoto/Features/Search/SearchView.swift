@@ -9,6 +9,8 @@ struct SearchView: View {
     var onOpenNotifications: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// **人が替わったら読み直すため**に見ている（`loadPhotos(userId:)`）
+    @EnvironmentObject private var auth: AuthStore
     /// **「見せない」が変わったら控えを捨てるため**に見ている
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = SearchViewModel()
@@ -35,7 +37,14 @@ struct SearchView: View {
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
-        .task { await model.loadPhotos(environment: environment) }
+        // 🔴 **人が替わったら読み直す。** 一度読んだら二度と読まない作りだったので、
+        // ログアウト・別の人でのログインのあとも前の人向けの写真
+        // （フォロワーのみ・親しい友達）が残っていた。絞った写真の取り口を
+        // **先に**この人のものへ替えてから読む（ホームと同じ）
+        .task(id: auth.userId) {
+            await environment.applyRestrictedFeed(userId: auth.userId)
+            await model.loadPhotos(environment: environment, userId: auth.userId)
+        }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }
@@ -668,9 +677,27 @@ final class SearchViewModel: ObservableObject {
     /// ——取り消した回の返事が後から届いても捨てる
     private var searchGeneration = 0
 
-    func loadPhotos(environment: AppEnvironment) async {
-        guard allPhotos.isEmpty else { return }
-        await reloadPhotos(environment: environment)
+    /// 最後に読んだときの人。**一度も読んでいなければ nil**
+    /// ——未ログインで読んだ回は `.some(nil)` になり、「まだ読んでいない」と分ける
+    private var photosFor: String??
+
+    func loadPhotos(environment: AppEnvironment, userId: String?) async {
+        let gallery = environment.gallery
+        await loadPhotos(userId: userId) { try await gallery.fetchPhotos() }
+    }
+
+    /// 一度読んだら、**同じ人の間は**読み直さない（タブの出入りで往復しない）。
+    ///
+    /// 🔴 **人が替わったら、前の人のぶんを捨ててから読み直す。** 捨てないと
+    /// 読み終えるまで（落ちたらずっと）前の人向けの写真が並ぶ
+    func loadPhotos(userId: String?, fetch: @MainActor () async throws -> [Photo]) async {
+        if let loaded = photosFor, loaded != userId {
+            apply(photos: [])
+            loadState = .loading
+        }
+        guard photosFor != .some(userId) || allPhotos.isEmpty else { return }
+        photosFor = .some(userId)
+        await reloadPhotos(fetch: fetch)
     }
 
     /// 控えがあっても読み直す。**ブロック／通報のあとに使う**
@@ -684,15 +711,26 @@ final class SearchViewModel: ObservableObject {
     /// 読み直しの本体。**引き先を差し替えられる**（テストで失敗を起こすため）。
     /// 失敗したら写真は空にしたうえで `.failed` にする——空のまま「まだありません」と
     /// 言わない。空にするのは、ブロックのあとの読み直しで古い写真を残さないため
+    ///
+    /// 🔴 **後から始めた回の答えを、先に始めた回で上書きしない**
+    /// （人が替わった直後は「見せない」の読み直しと同時に走る。`GalleryViewModel.load` と同じ）
     func reloadPhotos(fetch: @MainActor () async throws -> [Photo]) async {
+        photosGeneration += 1
+        let generation = photosGeneration
         if allPhotos.isEmpty { loadState = .loading }
         do {
-            apply(photos: try await fetch())
+            let photos = try await fetch()
+            guard generation == photosGeneration else { return }
+            apply(photos: photos)
         } catch {
+            guard generation == photosGeneration else { return }
             apply(photos: [])
             loadState = .failed
         }
     }
+
+    /// 何回目の読み直しか（`reloadPhotos` の注記）
+    private var photosGeneration = 0
 
     /// 読み込んだ写真から段を作る。**通信と切り離してある**（テストで中身を直接渡す）
     func apply(photos: [Photo]) {

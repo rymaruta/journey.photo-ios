@@ -78,10 +78,9 @@ struct MyPageView: View {
                 }
             }
         }
-        .task(id: auth.userId) {
-            guard auth.userId != nil else { return }
-            await model.load()
-        }
+        // **人が替わったら、読み込み中でも取り直す**（`load(for:)`）。
+        // ログアウトしたら前の人のぶんを手放す
+        .task(id: auth.userId) { await model.load(for: auth.userId) }
         // 保存した写真の引き当て先（公開一覧）
         .task(id: auth.userId) { await loadFeed() }
         // 「行きたい」のスポットの名前を引く索引。**取れなくても行は出る**
@@ -125,12 +124,15 @@ struct MyPageView: View {
         // （公開一覧を読み終えるまで前の人の保存が見える）。空にしておけば
         // 次は必ず取り込まれる。自分の写真・公開一覧（フォロワー限定を含む）も
         // 前の人のもので、次の人の読み込みが落ちると引き当て先に残る
+        //
+        // モデルのぶん（名前・アイコン・フォロー数・写真）は `load(for:)` が手放す。
+        // **ここでは呼ばない**——`.task(id:)` が先に走った回に、始まったばかりの
+        // 次の人の読み込みまで捨ててしまう（順番は決まっていない）
         .onChange(of: auth.userId) { _, _ in
             savedIds = []
             feed = []
             feedLoaded = false
             feedFailed = false
-            model.forgetPhotos()
         }
     }
 
@@ -854,15 +856,38 @@ final class MyPageViewModel: ObservableObject {
         self.gallery = gallery
     }
 
+    /// 最後に読んだ人（`load(for:)`）
+    private var viewerId: String?
+    /// 何人目のぶんの読み込みか。**人が替わったら進め、古い回の答えは捨てる**
+    private var generation = 0
+
+    /// ログイン状態が決まったら呼ぶ。
+    ///
+    /// 🔴 **人が替わったら、前の人のぶんを捨てて読み直す。** 以前は
+    /// (1) 名前・アイコン・フォロー数が次の人の画面に残り、
+    /// (2) 前の人の読み込みが終わっていないと `guard !isLoading` で
+    ///     次の人の読み込みが飛ばされ、前の人の答えがそのまま入っていた。
+    /// ログアウト（nil）では捨てるだけで読まない。
+    func load(for viewerId: String?) async {
+        if viewerId != self.viewerId {
+            self.viewerId = viewerId
+            forgetPhotos()
+        }
+        guard viewerId != nil else { return }
+        await load()
+    }
+
     func load() async {
         // **2本同時に走らせない。** タブの出入りでは `.task(id:)` と
         // `.onAppear` の両方が走ることがあり、`defer` で片方が先に
         // `isLoading` を解くと、もう片方の途中で「まだ写真がありません」が
         // 一瞬出る。片方が失敗すれば知らせに差し替わる
         guard !isLoading else { return }
+        let generation = self.generation
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        // 人が替わった後は、次の人の読み込みの印を解かない
+        defer { if generation == self.generation { isLoading = false } }
         avatarCacheBust = String(Int(Date().timeIntervalSince1970))
         // 🔴 **鍵を持たずに入っている回は、鍵の要る口を叩かない。**
         //
@@ -877,16 +902,21 @@ final class MyPageViewModel: ObservableObject {
         // 公開プロフィールと、公開一覧から自分のぶんを選り分ける。
         // **嘘の中身は出ない**（下書き＝非公開は公開一覧に無いので出ない）。
         if let previewId = PreviewSession.userId {
-            await loadPublicly(userId: previewId)
+            await loadPublicly(userId: previewId, generation: generation)
             return
         }
         do {
             async let profile = self.profiles.myProfile()
             async let photos = self.photoService.myPhotos()
-            self.profile = try await profile
+            let loadedProfile = try await profile
+            // **待っている間に人が替わったら、前の人の答えを入れない**
+            guard generation == self.generation else { return }
+            self.profile = loadedProfile
             // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
             self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
-            self.photos = PhotoPinning.pinnedFirst(try await photos, pinned: self.pinnedIds)
+            let loadedPhotos = try await photos
+            guard generation == self.generation else { return }
+            self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
             // **数が取れなくても画面は出す**（0 のままになるだけ）。
             //
             // **`if let x = try? await …` と書かない。** 手元の構文検査
@@ -894,12 +924,14 @@ final class MyPageViewModel: ObservableObject {
             // 言う（CLAUDE.md に記録のある制約）。文を分ける
             if let userId = self.profile?.userId {
                 let stats = try? await self.social.followStats(userId: userId)
+                guard generation == self.generation else { return }
                 if let stats {
                     self.followers = stats.followers
                     self.following = stats.following
                 }
             }
         } catch {
+            guard generation == self.generation else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
     }
@@ -908,27 +940,42 @@ final class MyPageViewModel: ObservableObject {
     ///
     /// **`myPhotos()` を使わない**——あれは下書きまで返す代わりに鍵が要る。
     /// ここは公開されているぶんだけで足りる。
-    private func loadPublicly(userId: String) async {
+    private func loadPublicly(userId: String, generation: Int) async {
         let publicProfile = try? await self.profiles.publicProfile(userId: userId)
+        guard generation == self.generation else { return }
         self.profile = publicProfile
         self.pinnedIds = publicProfile?.pinnedPhotoIds ?? []
         let all = try? await self.gallery.fetchPhotos()
+        guard generation == self.generation else { return }
         if let all {
             let mine = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
             self.photos = PhotoPinning.pinnedFirst(mine, pinned: self.pinnedIds)
         }
         let stats = try? await self.social.followStats(userId: userId)
+        guard generation == self.generation else { return }
         if let stats {
             self.followers = stats.followers
             self.following = stats.following
         }
     }
 
-    /// 人が替わったとき、前の人の写真を手放す。次の人の読み込みが落ちても、
-    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように
+    /// 人が替わったとき、前の人のぶんを手放す。次の人の読み込みが落ちても、
+    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように。
+    ///
+    /// **名前・アイコン・フォロー数・知らせも手放す**（以前は写真とピン留め
+    /// だけで、次の人の画面に前の人の名前とアイコンが出ていた）。
+    /// 読み込み中の回は捨てる（世代を進める）ので、印も解く——解かないと
+    /// 次の人の読み込みが `guard !isLoading` で飛ばされる
     func forgetPhotos() {
+        generation += 1
+        isLoading = false
         photos = []
         pinnedIds = []
+        profile = nil
+        followers = 0
+        following = 0
+        errorMessage = nil
+        actionMessage = nil
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

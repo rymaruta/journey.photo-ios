@@ -82,29 +82,24 @@ struct JourneyPhotoApp: App {
         )
     }
 
-    /// 公開範囲を絞った写真の取り口を、公開一覧へ渡す。
-    ///
-    /// **ログアウトしたら外す。** 外さないと、次にこの端末を使う人の画面に
-    /// 前の人あての「フォロワーのみ」が出る（控えも `setRestrictedLoader`
-    /// が捨てる）。未ログインでは口そのものが 401 なので、入れない。
-    private func applyRestrictedFeed() async {
-        guard auth.userId != nil else {
-            await environment.gallery.setRestrictedLoader(nil)
-            return
-        }
-        let photos = environment.photos
-        await environment.gallery.setRestrictedLoader { try await photos.restrictedFeed() }
-    }
-
     /// いいねした写真をサーバーに合わせる。
     ///
     /// **取れた回だけ入れ替える。** 足すのではなく入れ替えるのは、
     /// 保存といいねが同じ入れ物を使っていた頃の端末に、**保存しただけの
     /// 写真の id が残っている**ため（足すだけだと出続ける）。
     private func syncLikes() async {
-        guard auth.userId != nil else { return }
+        guard let userId = auth.userId else { return }
         let ids = try? await environment.social.myLikedPhotoIds()
+        // 🔴 **待っている間に人が替わったら書かない。** 控えはもう次の人の鍵に
+        // 切り替わっている（`use(userId:)`）ので、前の人の一覧が次の人のぶんになる
+        guard isStill(userId) else { return }
         if let ids { favorites.replace(with: ids) }
+    }
+
+    /// 待ったあと、まだ同じ人のための仕事か。**取り消されていても書かない**
+    /// （`.task(id:)` は人が替わると取り消すが、返事はそのまま戻ってくる）
+    private func isStill(_ userId: String) -> Bool {
+        !Task.isCancelled && auth.userId == userId
     }
 
     /// 保存した写真をサーバーに合わせる。
@@ -114,8 +109,9 @@ struct JourneyPhotoApp: App {
     /// ログアウトしたら控えは鍵ごと切り替わる（`use(userId:)`）ので、
     /// ここでは何もしない。
     private func syncSaves() async {
-        guard auth.userId != nil else { return }
+        guard let userId = auth.userId else { return }
         let ids = try? await environment.saves.mySaves()
+        guard isStill(userId) else { return }
         if let ids { savedPhotos.replace(with: ids) }
     }
 
@@ -160,12 +156,13 @@ struct JourneyPhotoApp: App {
                     AppDelegate.push = push
                     await push.use(userId: auth.userId)
                     await applyModeration()
-                    await applyRestrictedFeed()
+                    await environment.applyRestrictedFeed(userId: auth.userId)
                     await syncSaves()
                     await syncLikes()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
-                    if auth.userId != nil {
+                    if let userId = auth.userId {
                         let blocks = try? await environment.moderation.blocks()
+                        guard isStill(userId) else { return }
                         if let blocks {
                             hidden.replaceBlocked(with: blocks.blockedIds)
                             await applyModeration()

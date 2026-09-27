@@ -163,3 +163,97 @@ final class NotificationRouterTests: XCTestCase {
                        "2回押したのに1回ぶんしか数えていない")
     }
 }
+
+/// 🔴 **前の人の通知の後始末。**
+///
+/// ログアウトで宛先を外す口は、その人の鍵が要る。圏外などで外せないまま
+/// ログアウトすると、**前の人あての通知がこの端末に届き続ける**——
+/// 以前は `try?` で握りつぶしていたので、誰も気づけず、やり直しもしなかった。
+@MainActor
+final class PushSignOutTests: XCTestCase {
+
+    /// 呼ぶたびに今の鍵で口を作る（ログアウトで鍵が無くなるのを写す）
+    private final class Keys { var idToken: String? = "t" }
+
+    private func center(_ suite: String, keys: Keys) -> PushCenter {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        StubProtocol.reset()
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let push = PushCenter(service: {
+            PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                       tokenProvider: StubTokenProvider(token: keys.idToken),
+                                       session: session))
+        }, defaults: defaults)
+        push.accept(deviceToken: Data(repeating: 0xab, count: 32))
+        return push
+    }
+
+    func testFailedReleaseIsRetriedWhenTheSamePersonComesBack() async {
+        let keys = Keys()
+        let push = center("push-release-1", keys: keys)
+        await push.use(userId: "A")
+
+        // 圏外で外せないままログアウト
+        StubProtocol.respond(status: 500, body: "{}")
+        await push.signingOut()
+        XCTAssertEqual(push.pendingReleaseOwner, "A", "外せなかったことを覚えていない")
+        keys.idToken = nil
+        await push.use(userId: nil)
+
+        // 別の人（B）では A の宛先は外せない。印は残す
+        keys.idToken = "t"
+        StubProtocol.respond(status: 200, body: "{}")
+        await push.use(userId: "B")
+        await push.signingOut()
+        XCTAssertEqual(push.pendingReleaseOwner, "A", "外せていないのに印を消した")
+        keys.idToken = nil
+        await push.use(userId: nil)
+
+        // A が戻ってきたら、A の鍵で外し直す
+        keys.idToken = "t"
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: "{}")
+        await push.use(userId: "A")
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE", "外し直していない")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/user/devices")
+        XCTAssertNil(push.pendingReleaseOwner, "外し直せたのに印が残っている")
+    }
+
+    /// **前の人の失敗文を次の人に見せない**（設定画面の赤字）
+    func testErrorMessageDoesNotCarryOverToTheNextPerson() async {
+        let keys = Keys()
+        let push = center("push-release-3", keys: keys)
+        await push.use(userId: "A")
+        push.errorMessage = "通知を止められませんでした"
+        await push.use(userId: "B")
+        XCTAssertNil(push.errorMessage, "人が替わったのに前の人の失敗文が残っている")
+
+        push.errorMessage = "通知を止められませんでした"
+        StubProtocol.respond(status: 200, body: "{}")
+        await push.signingOut()
+        XCTAssertNil(push.errorMessage, "ログアウトしたのに失敗文が残っている")
+    }
+}
+
+/// **前の人の失敗文を、ログアウトのあとのログイン画面に出さない。**
+@MainActor
+final class AuthSignOutTests: XCTestCase {
+
+    func testSignOutForgetsTheError() async {
+        let auth = AuthStore()
+        auth.errorMessage = "現在のパスワードが違います"
+        await auth.signOut()
+        XCTAssertNil(auth.errorMessage, "前の人の失敗文がログイン画面に残る")
+        XCTAssertEqual(auth.lastFailure, .none)
+    }
+
+    func testDeletingTheAccountForgetsTheError() async throws {
+        let auth = AuthStore()
+        auth.errorMessage = "うまくいきませんでした"
+        try await auth.deleteCognitoUser()
+        XCTAssertNil(auth.errorMessage)
+    }
+}

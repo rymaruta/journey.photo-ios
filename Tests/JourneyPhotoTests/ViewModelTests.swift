@@ -101,6 +101,38 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(message.isEmpty)
     }
 
+    /// 🔴 **先に始めた読み込みが後から戻っても、後の答えを上書きしない。**
+    ///
+    /// 人が替わった直後は「見せない」の読み直し（`hidden.revision`）と
+    /// 人の替わりの読み直しが同時に走る。先の方は前の人向けの控えを
+    /// 読んでいることがあり、それが後に戻ると前の人の写真が残る
+    func testGalleryOlderLoadDoesNotOverwriteNewerOne() async throws {
+        let service = gallery(feed)
+        let gate = Gate()
+        let calls = CallCounter()
+        let older = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"older","src":"https://x/o.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        let newer = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"newer","src":"https://x/n.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        await service.setRestrictedLoader(owner: "A") {
+            if await calls.next() == 1 {
+                await gate.wait()
+                return [older]
+            }
+            return [newer]
+        }
+        let model = GalleryViewModel(gallery: service)
+        let first = Task { await model.load() }
+        await gate.untilWaiting()
+        await model.load()
+        await gate.open()
+        await first.value
+
+        guard case .loaded(let photos) = model.state else { return XCTFail("状態が違う") }
+        XCTAssertTrue(photos.contains { $0.id == "newer" }, "後の読み込みの答えが出ていない")
+        XCTAssertFalse(photos.contains { $0.id == "older" }, "先に始めた読み込みの答えで上書きされた")
+    }
+
     /// **ブロックしたら、探す画面からもすぐ消える。**
     ///
     /// `loadPhotos` は `guard allPhotos.isEmpty` で一度しか読まない作りなので、
@@ -119,7 +151,7 @@ final class ViewModelTests: XCTestCase {
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
         let model = SearchViewModel()
 
-        await model.loadPhotos(environment: env)
+        await model.loadPhotos(environment: env, userId: nil)
         await model.search("パリ", environment: env)
         XCTAssertEqual(model.shown.count, 2, "下ごしらえが効いていない")
 
@@ -187,6 +219,59 @@ final class ViewModelTests: XCTestCase {
 
         XCTAssertTrue(model.photos.isEmpty, "前の人の写真が残っている")
         XCTAssertTrue(model.pinnedIds.isEmpty, "前の人の留めた写真が残っている")
+    }
+
+    /// 🔴 **ログアウトしたら、前の人の名前・アイコン・フォロー数を手放す。**
+    /// 以前は写真とピン留めだけ捨てていて、次の人の画面に前の人の
+    /// 名前とフォロー数が出ていた
+    func testSignOutForgetsThePreviousUsersProfile() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"a","displayName":"前の人","pinnedPhotoIds":[]}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
+        StubProtocol.respond(path: "/users/a/follow", status: 200, body: #"{"followers":7,"following":3}"#)
+        let model = MyPageViewModel(api: api())
+        await model.load(for: "a")
+        XCTAssertEqual(model.profile?.displayName, "前の人", "前提: 読めていない")
+        XCTAssertEqual(model.followers, 7, "前提: 数を読めていない")
+
+        await model.load(for: nil)
+
+        XCTAssertNil(model.profile, "前の人の名前・アイコンが残っている")
+        XCTAssertEqual(model.followers, 0, "前の人のフォロワー数が残っている")
+        XCTAssertEqual(model.following, 0, "前の人のフォロー数が残っている")
+        XCTAssertTrue(model.photos.isEmpty)
+    }
+
+    /// 🔴 **前の人の読み込み中に人が替わっても、次の人のぶんを読む。**
+    /// 以前は `guard !isLoading` で次の人の読み込みが飛ばされ、
+    /// 遅れて戻った前の人の答えがそのまま入っていた
+    func testSwitchingPeopleMidLoadLoadsTheNewPerson() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"a","displayName":"前の人"}"#, delay: 0.4)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"a1","src":"/uploads/a1.jpg"}]"#, delay: 0.4)
+        StubProtocol.respond(path: "/users/a/follow", status: 200, body: #"{"followers":7,"following":3}"#)
+        let model = MyPageViewModel(api: api())
+        let first = Task { await model.load(for: "a") }
+        while StubProtocol.requestCount < 2 { try? await Task.sleep(nanoseconds: 5_000_000) }
+
+        // A の返事を待っている間に B へ替わる
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"b","displayName":"次の人"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"b1","src":"/uploads/b1.jpg"}]"#)
+        StubProtocol.respond(path: "/users/b/follow", status: 200, body: #"{"followers":1,"following":2}"#)
+        await model.load(for: "b")
+        await first.value
+
+        XCTAssertEqual(model.profile?.displayName, "次の人", "次の人の読み込みが飛ばされた／前の人の答えで上書きされた")
+        XCTAssertEqual(model.photos.map(\.id), ["b1"], "前の人の写真が入っている")
+        XCTAssertEqual(model.followers, 1)
+        XCTAssertFalse(model.isLoading, "読み終えたのに読み込み中のまま")
     }
 
     #if DEBUG
@@ -260,6 +345,52 @@ final class ViewModelTests: XCTestCase {
         await model.load()
         XCTAssertEqual(model.likes, 4)
         XCTAssertNil(model.lastLikeAnswer)
+    }
+
+    /// 🔴 **人が替わったら、前の人の「サーバーの答え」を持ち越さない。**
+    ///
+    /// 前の人で読めた答えが残っていると、次の人の控え（`seed`）が
+    /// 「サーバーの答えがある」扱いで無視される。圏外で開くと、
+    /// 次の人が自分で押しているハートが白く出た（画面の流れどおり:
+    /// ログアウト中の読み込みで一度 false になり、そのまま戻らない）
+    func testSwitchingPeopleLetsTheNextPersonsSeedThrough() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: 前の人のいいねを読めていない")
+
+        // ログアウト（画面は `.task(id:)` で読み直す）
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        model.setSignedIn(false)
+        model.seed(liked: false, likes: nil)
+        await model.load()
+        XCTAssertFalse(model.liked)
+
+        // 次の人でログイン。この人は押している（端末の控え）が、読み込みは圏外で落ちる
+        model.setSignedIn(true)
+        model.seed(liked: true, likes: nil)
+        await model.load()
+        XCTAssertTrue(model.liked, "次の人の控えが、前の人の答えの名残で無視された")
+    }
+
+    /// **ログアウト中の読み込みが走る前に次の人へ替わっても**、前の人のハートを残さない
+    func testSwitchingPeopleDropsThePreviousLike() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: 前の人のいいねを読めていない")
+
+        model.setSignedIn(false)
+        model.setSignedIn(true)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        model.seed(liked: false, likes: nil)
+        await model.load()
+
+        XCTAssertFalse(model.liked, "前の人のハートが次の人に灯っている")
     }
 
     /// 未ログインで押した回も、前の答えを残さない（呼び出し側が「いま」の
@@ -633,4 +764,13 @@ final class NotificationDestinationTests: XCTestCase {
         }
     }
 
+}
+
+/// 何回目の呼び出しかを数える（最初の1回だけ待たせる、のような試験用）
+actor CallCounter {
+    private var count = 0
+    func next() -> Int {
+        count += 1
+        return count
+    }
 }

@@ -61,6 +61,10 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func setSignedIn(_ value: Bool) {
+        // 🔴 **ログイン状態が変わったら、サーバーの答えはもう今の人のものではない。**
+        // 残すと次の人の控え（`seed`）が無視され、前の人のハートが灯ったまま
+        // 残る（読み込みが落ちた回はずっと）
+        if value != isSignedIn { likedFromServer = false }
         isSignedIn = value
     }
 

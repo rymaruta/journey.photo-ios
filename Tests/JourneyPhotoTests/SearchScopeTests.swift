@@ -199,6 +199,51 @@ final class SearchLoadTests: XCTestCase {
         XCTAssertEqual(model.loadState, .loaded, "読めて0枚は「まだありません」の側")
     }
 
+    /// 🔴 **人が替わったら読み直す。** 一度読んだら二度と読まない作りだったので、
+    /// ログアウト・別の人でのログインのあとも前の人向けの写真
+    /// （フォロワーのみ・親しい友達）が探す画面に残っていた
+    func testReloadsWhenTheViewerChanges() async throws {
+        let model = SearchViewModel()
+        await model.loadPhotos(userId: "A") { [try photo("for-a")] }
+        XCTAssertEqual(model.everything.map(\.id), ["for-a"], "前提: A のぶんを読めていない")
+
+        // 同じ人のまま（タブの出入り）は読み直さない
+        await model.loadPhotos(userId: "A") { XCTFail("同じ人なのに読み直している"); return [] }
+
+        await model.loadPhotos(userId: "B") { [try photo("for-b")] }
+        XCTAssertEqual(model.everything.map(\.id), ["for-b"], "人が替わったのに前の人の一覧のまま")
+
+        await model.loadPhotos(userId: nil) { [try photo("public")] }
+        XCTAssertEqual(model.everything.map(\.id), ["public"], "ログアウトしたのに前の人の一覧のまま")
+    }
+
+    /// **次の人の読み込みが落ちても、前の人のぶんを残さない**
+    func testForgetsPreviousViewerEvenWhenReloadFails() async throws {
+        struct Boom: Error {}
+        let model = SearchViewModel()
+        await model.loadPhotos(userId: "A") { [try photo("for-a")] }
+        await model.loadPhotos(userId: "B") { throw Boom() }
+        XCTAssertTrue(model.everything.isEmpty, "読み込みが落ちた回に前の人の写真が残っている")
+        XCTAssertEqual(model.loadState, .failed)
+    }
+
+    /// 🔴 **先に始めた読み直しが後から戻っても、後の答えを上書きしない。**
+    /// 人が替わった直後は「見せない」の読み直しと人の替わりの読み直しが
+    /// 同時に走り、先の方は前の人の控えを読んでいることがある
+    func testOlderReloadDoesNotOverwriteNewerOne() async throws {
+        let model = SearchViewModel()
+        let gate = Gate()
+        let older = try photo("older")
+        let first = Task { @MainActor in
+            await model.reloadPhotos { await gate.wait(); return [older] }
+        }
+        await gate.untilWaiting()
+        await model.reloadPhotos { [try photo("newer")] }
+        await gate.open()
+        await first.value
+        XCTAssertEqual(model.everything.map(\.id), ["newer"], "古い回の答えで上書きされた")
+    }
+
     /// **行の枚数＝押した先の枚数。** 1枚に日英の別名（`湖` と `lake`）が両方付いた
     /// 写真を2と数えない（実データ a129394d で「#湖 2枚」→1件だった）
     func testTagRowCountMatchesPhotosFoundWhenAPhotoHasBothSpellings() async throws {
