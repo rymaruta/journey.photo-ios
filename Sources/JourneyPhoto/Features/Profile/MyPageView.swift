@@ -923,10 +923,16 @@ final class MyPageViewModel: ObservableObject {
     }
 
     /// 人が替わったとき、前の人の写真を手放す。次の人の読み込みが落ちても、
-    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように
+    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように。
+    /// **見出し（名前・アイコン・カバー）とフォロー数も手放す**——フォロー数は
+    /// 取れなかった回に上書きしないので、残すと前の人の数が次の人の数として出る
     func forgetPhotos() {
         photos = []
         pinnedIds = []
+        profile = nil
+        followers = 0
+        following = 0
+        errorMessage = nil
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }
