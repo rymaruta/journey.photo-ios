@@ -75,3 +75,41 @@ final class DeleteConfirmWordTests: XCTestCase {
         XCTAssertFalse(ConfirmWord.matches("やめる", word: ConfirmWord.delete))
     }
 }
+
+/// ログインの返事（`SignInOutcome`）と、確認コードの画面の文言。
+final class SignInOutcomeTests: XCTestCase {
+
+    /// 🔴 **Amplify 2.x は未確認のアカウントで例外を投げず、`.confirmSignUp` を返す。**
+    /// 返事を捨てていた頃は「ログインできた」と見なし、確認画面へ送る分岐が
+    /// 一度も走らなかった
+    func testUnconfirmedSignInIsNotTreatedAsSignedIn() {
+        let outcome = SignInOutcome(AuthSignInResult(nextStep: .confirmSignUp(nil)).nextStep)
+        XCTAssertEqual(outcome, .needsConfirmation)
+        XCTAssertEqual(outcome.failure, .userNotConfirmed,
+                       "確認コード待ちを失敗として残していない（確認画面へ送れない）")
+    }
+
+    func testResetPasswordStepIsNotSignedIn() {
+        let outcome = SignInOutcome(.resetPassword(nil))
+        XCTAssertEqual(outcome, .needsPasswordReset)
+        XCTAssertEqual(outcome.failure, .passwordResetRequired)
+    }
+
+    /// **ログイン済みにしてよいのは完了のときだけ**
+    func testOnlyDoneSignsIn() {
+        XCTAssertEqual(SignInOutcome(.done), .done)
+        XCTAssertNil(SignInOutcome(.done).failure)
+        XCTAssertEqual(SignInOutcome(.confirmSignInWithNewPassword(nil)), .other)
+        XCTAssertNotNil(SignInOutcome(.confirmSignInWithTOTPCode).failure)
+    }
+
+    /// 確認の画面の「すでに使われている」は、ログインへ案内する
+    /// （「すでに登録されています」だけでは、確認画面から先へ進めない）
+    func testAliasExistsOnConfirmPointsToSignIn() {
+        let text = AuthMessage.confirmSignUpText(for: .aliasExists)
+        XCTAssertNotEqual(text, AuthMessage.text(for: .aliasExists))
+        XCTAssertTrue(text.contains("ログイン") || text.lowercased().contains("sign in"))
+        XCTAssertEqual(AuthMessage.confirmSignUpText(for: .codeMismatch),
+                       AuthMessage.text(for: .codeMismatch))
+    }
+}

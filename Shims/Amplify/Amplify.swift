@@ -65,7 +65,34 @@ public enum AuthSignUpRequest {
     }
 }
 public struct AuthSignUpResult { public let isSignUpComplete: Bool = false }
-public struct AuthSignInResult { public let isSignedIn: Bool = false }
+/// 本物（amplify-swift 2.27 の `AuthCodeDeliveryDetails.swift`）と同じ
+public typealias AdditionalInfo = [String: String]
+
+/// ログインの次の一手（本物は `Amplify/Categories/Auth/Models/AuthSignInStep.swift`）。
+///
+/// **本物は未確認のアカウントで例外を投げない。** Cognito の
+/// `UserNotConfirmedException` を `.confirmSignUp(nil)` に、
+/// `PasswordResetRequiredException` を `.resetPassword(nil)` に畳んで返す
+/// （`UserPoolSignInHelper.validateError`）。形は本物に合わせ、使わない
+/// 多要素認証の一部（SMS・TOTP の設定・選択）は省いてある
+public enum AuthSignInStep {
+    case confirmSignInWithCustomChallenge(AdditionalInfo?)
+    case confirmSignInWithNewPassword(AdditionalInfo?)
+    case confirmSignInWithTOTPCode
+    case resetPassword(AdditionalInfo?)
+    case confirmSignUp(AdditionalInfo?)
+    case done
+}
+
+/// 本物と同じく `isSignedIn` は `nextStep == .done` のときだけ真
+public struct AuthSignInResult {
+    public var nextStep: AuthSignInStep
+    public var isSignedIn: Bool {
+        if case .done = nextStep { return true }
+        return false
+    }
+    public init(nextStep: AuthSignInStep) { self.nextStep = nextStep }
+}
 public struct AuthCodeDeliveryDetails {}
 public struct AuthResetPasswordResult {}
 public struct AuthSignOutResult {}

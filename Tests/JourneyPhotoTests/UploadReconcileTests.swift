@@ -31,4 +31,30 @@ final class UploadReconcileTests: XCTestCase {
         let r = PickerReconcile.reconcile(existing: [String?](), picked: ["a", "a"])
         XCTAssertEqual(r.added, ["a"])
     }
+
+    /// 🔴 **一部だけ上がった回は、上がった分を選択から外す。** 外さないと、
+    /// 失敗の1枚を × で外した／「追加」を開いて閉じた瞬間の選び直しで、
+    /// 上がった写真が「足した分」として読み直され、二重に投稿される
+    func testPostedPhotosAreNotReloadedAfterPartialFailure() {
+        // a・b・c を選び、a と c は上がって b だけ失敗した
+        let picked = ["a", "b", "c"]
+        let remainingQueue: [String?] = ["b"]
+        let selection = PickerReconcile.dropping(posted: ["a", "c"], from: picked)
+        XCTAssertEqual(selection, ["b"])
+
+        // × で b を外す（`remove` は選択から b を落とす）→ 選び直しが走る
+        let afterRemove = selection.filter { $0 != "b" }
+        let r1 = PickerReconcile.reconcile(existing: [String?](), picked: afterRemove)
+        XCTAssertEqual(r1.added, [], "上がった写真をもう一度読んでいる（二重投稿）")
+
+        // 「追加」を開いて何も変えずに閉じる → 同じ選択で選び直しが走る
+        let r2 = PickerReconcile.reconcile(existing: remainingQueue, picked: selection)
+        XCTAssertEqual(r2.keep, [true])
+        XCTAssertEqual(r2.added, [], "上がった写真をもう一度読んでいる（二重投稿）")
+    }
+
+    /// 上がった分が無ければ選択はそのまま（カメラの分は印を持たない）
+    func testNothingPostedKeepsSelection() {
+        XCTAssertEqual(PickerReconcile.dropping(posted: [String](), from: ["a", "b"]), ["a", "b"])
+    }
 }

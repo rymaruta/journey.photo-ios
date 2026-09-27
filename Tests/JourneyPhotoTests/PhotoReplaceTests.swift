@@ -61,20 +61,25 @@ final class PhotoReplaceTests: XCTestCase {
         XCTAssertNil(json["key"], "包みの外に出さない（中身の更新として通ってしまう）")
     }
 
-    /// **座標は端末でも丸めてから送る**（投稿と同じ。約1km＝小数第2位）。
-    func testCoordinatesAreRoundedBeforeSending() async throws {
+    /// 🔴 **差し替えでは座標を送らない**（Web の `replacePhoto` と同じ）。
+    ///
+    /// 送ると、撮影地を本人が空にした写真でも新しい画像の位置が入り、
+    /// **地図に出てしまう**（位置の漏れ）。撮影日と EXIF は入れ替える
+    func testCoordinatesAreNotSent() async throws {
         prepare()
         StubProtocol.respond(status: 200, body: #"{"presignedUrl":"https://s3.example.test/put","key":"uploads/u/1.jpg","publicUrl":"https://site.example.test/uploads/u/1.jpg","contentType":"image/jpeg"}"#)
 
+        // 画像には座標が入っている（`prepared()` は 34.2812, 133.8034）
         try await PhotoService(api: api()).replace(
             photoId: "p1", prepared: prepared(),
             uploads: UploadService(api: api(), session: session))
 
         let body = try XCTUnwrap(StubProtocol.lastBody)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        let coords = try XCTUnwrap((json["replace"] as? [String: Any])?["coords"] as? [String: Any])
-        XCTAssertEqual(coords["lat"] as? Double, 34.28)
-        XCTAssertEqual(coords["lng"] as? Double, 133.8)
+        let replace = try XCTUnwrap(json["replace"] as? [String: Any])
+        XCTAssertNil(replace["coords"], "差し替えで座標を送っている（空にした撮影地が地図に出る）")
+        XCTAssertNil(json["coords"])
+        XCTAssertEqual(replace["date"] as? String, "2026-09-20", "撮影日は入れ替える")
     }
 
     /// **大きすぎる写真は、上げる前に断る**（投稿と同じ関所を通す）。

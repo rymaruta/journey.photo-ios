@@ -25,7 +25,9 @@ struct SignInView: View {
     private let pending = PendingVerificationStore()
     /// 案内（送りました、など）。エラーとは別に出す
     @State private var notice: String?
-    /// 「まだ確認していない」ことが分かったので、確認への入口を出す
+    /// 「まだ確認していない」ことが分かり、この端末に控え（UUID）もあるので、
+    /// 確認への入口を出す。**送り直しが一時的に落ちた回**（圏外・回数制限）でも
+    /// 押し直せるように残す（`resumeVerification`）
     @State private var offerVerification = false
     /// 上に敷く写真のタイル（板 41 の 3×3）。取れなければ地の色のまま
     @State private var tiles: [Photo] = []
@@ -284,6 +286,8 @@ struct SignInView: View {
     /// 控えてある UUID で確認画面に戻る。コードも送り直す。
     private func resumeVerification() async {
         guard let saved = pending.username(for: email) else { return }
+        // 手がかりはある。送り直しが落ちても、押し直す入口を残す
+        offerVerification = true
         if await auth.resendSignUpCode(username: saved) {
             pendingUsername = saved
             notice = L("確認コードを送り直しました。メールをご確認ください。",
@@ -294,6 +298,7 @@ struct SignInView: View {
         // 回数制限や圏外で捨てると、唯一の手がかりを失う
         if auth.lastFailure.isPermanent {
             pending.forget(email: email)
+            offerVerification = false
         }
     }
 
@@ -359,6 +364,19 @@ struct SignInView: View {
             }
             .buttonStyle(.plain)
             .disabled(auth.isWorking)
+
+            // **戻る出口。** メールを打ち間違えて登録すると、コードは届かず
+            // この画面から出られなかった。控え（`pending`）は捨てない
+            // ——同じメールでログインすれば、また確認に戻ってこられる
+            Button {
+                pendingUsername = nil
+                mode = .signIn
+                code = ""
+                clearMessages()
+            } label: {
+                Text(L("ログインに戻る", "Back to sign in")).jpPillButton(.outline)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -448,5 +466,6 @@ struct SignInView: View {
     private func clearMessages() {
         notice = nil
         auth.errorMessage = nil
+        offerVerification = false
     }
 }

@@ -95,7 +95,10 @@ final class AuthStore: ObservableObject {
 
     func signIn(email: String, password: String) async {
         await run {
-            _ = try await AuthGateway.signIn(email: email, password: password)
+            // **ログイン済みにするのは「完了」のときだけ。** 確認コード待ち・
+            // 再設定待ちは失敗として種類を残す（画面が確認へ送れるように）
+            let outcome = try await AuthGateway.signIn(email: email, password: password)
+            if let failure = outcome.failure { throw IncompleteSignIn(failure: failure) }
             let id = try await AuthGateway.currentUserId()
             self.state = .signedIn(userId: id)
             await refreshAdmin()
@@ -184,6 +187,10 @@ final class AuthStore: ObservableObject {
             try await AuthGateway.confirmSignUp(username: username, code: code)
             ok = true
         }
+        // 確認の画面では「すでに使われている」の意味が違う（下の注記）
+        if !ok, lastFailure != .none, lastFailure != .other {
+            errorMessage = AuthMessage.confirmSignUpText(for: lastFailure)
+        }
         return ok
     }
 
@@ -194,6 +201,9 @@ final class AuthStore: ObservableObject {
         defer { isWorking = false }
         do {
             try await work()
+        } catch let error as IncompleteSignIn {
+            lastFailure = error.failure
+            errorMessage = AuthMessage.text(for: lastFailure)
         } catch let error as AuthError {
             // **文言だけでなく、種類も残す。** 画面は「未確認だから確認へ送る」
             // のような分岐をしたい——文言で判定すると、言い回しを直すたびに
@@ -205,6 +215,46 @@ final class AuthStore: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+/// ログインの返事（Amplify の `nextStep`）を、この画面が扱う4つに畳む。
+///
+/// **Amplify 2.x は未確認のアカウント・再設定の要るアカウントで例外を投げず、
+/// 次の一手として返す**（amplify-swift 2.27 の `UserPoolSignInHelper.validateError`:
+/// `isUserNotConfirmed` → `.confirmSignUp(nil)`、`isResetPassword` → `.resetPassword(nil)`）。
+enum SignInOutcome: Equatable {
+    /// ログインできた
+    case done
+    /// メールの確認コード待ち（登録が済んでいない）
+    case needsConfirmation
+    /// パスワードの再設定待ち
+    case needsPasswordReset
+    /// それ以外の続き（多要素認証・新しいパスワード等）。このアプリは扱わない
+    case other
+
+    init(_ step: AuthSignInStep) {
+        switch step {
+        case .done: self = .done
+        case .confirmSignUp: self = .needsConfirmation
+        case .resetPassword: self = .needsPasswordReset
+        default: self = .other
+        }
+    }
+
+    /// 失敗として残す種類。**ログイン済みにしてよいのは nil（完了）のときだけ**
+    var failure: AuthFailure? {
+        switch self {
+        case .done: return nil
+        case .needsConfirmation: return .userNotConfirmed
+        case .needsPasswordReset: return .passwordResetRequired
+        case .other: return .other
+        }
+    }
+}
+
+/// ログインが「完了」まで行かなかったことを `run` に伝える印
+private struct IncompleteSignIn: Error {
+    let failure: AuthFailure
 }
 
 /// 失敗の種類。
@@ -224,6 +274,8 @@ enum AuthFailure: Equatable {
     case userNotFound
     case codeMismatch
     case codeExpired
+    /// パスワードの再設定が要る（管理側で再設定を求められた・移行したアカウント）
+    case passwordResetRequired
     case limitExceeded
     case network
     case other
@@ -239,6 +291,7 @@ enum AuthFailure: Equatable {
             case .userNotFound: self = .userNotFound
             case .codeMismatch: self = .codeMismatch
             case .codeExpired: self = .codeExpired
+            case .passwordResetRequired: self = .passwordResetRequired
             case .limitExceeded, .requestLimitExceeded, .failedAttemptsLimitExceeded:
                 self = .limitExceeded
             case .network: self = .network
@@ -274,6 +327,19 @@ enum AuthMessage {
         L("パスワードは8文字以上で、英大文字・小文字・数字・記号（!@#$%など）をそれぞれ1文字以上含める必要があります",
           "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a symbol (!@#$% etc.)")
 
+    /// 確認コードの画面での文言。
+    ///
+    /// **確認で `aliasExists` が返る＝このメールは別のアカウントで確認済み。**
+    /// 「すでに登録されています」だけでは、確認画面から先へ進めない
+    /// （コードを打ち直しても同じ）。そのアカウントでログインするよう案内する
+    static func confirmSignUpText(for failure: AuthFailure) -> String {
+        if failure == .aliasExists {
+            return L("このメールアドレスは、すでに確認の済んだアカウントで使われています。「ログインに戻る」から、そのアカウントでログインしてください",
+                     "This email is already used by a verified account. Tap “Back to sign in” and sign in to that account.")
+        }
+        return text(for: failure)
+    }
+
     static func text(for failure: AuthFailure) -> String {
         switch failure {
         case .usernameExists, .aliasExists:
@@ -292,6 +358,9 @@ enum AuthMessage {
             return L("確認コードが違います", "That code is wrong")
         case .codeExpired:
             return L("確認コードの有効期限が切れています。再送してください", "That code expired. Send a new one.")
+        case .passwordResetRequired:
+            return L("パスワードの再設定が必要です。「パスワードを忘れた」から設定し直してください",
+                     "You need to reset your password. Use “Forgot password?” to set a new one.")
         case .limitExceeded:
             return L("回数が多すぎます。しばらく待ってからお試しください", "Too many attempts. Please wait and try again.")
         case .network:

@@ -383,7 +383,10 @@ extension View {
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
-    public func swipeActions<C: View>(@ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+    /// 本物は `edge:allowsFullSwipe:content:`（既定は払い切りで先頭の操作が走る）。
+    /// 削除を先頭に置く行は `allowsFullSwipe: false` にする
+    public func swipeActions<C: View>(allowsFullSwipe: Bool = true,
+                                      @ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
 }
 
 // MARK: - 指の操作（模型）

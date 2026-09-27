@@ -99,12 +99,15 @@ enum AuthGateway {
     }
 
     /// ログイン。username にはメールアドレスを渡す（エイリアス）。
-    /// - Returns: 完了したら true。未確認アカウントなどで続きが要るなら false。
-    @discardableResult
-    static func signIn(email: String, password: String) async throws -> Bool {
+    ///
+    /// 🔴 **返事を捨てない。** Amplify 2.x は未確認のアカウントで例外を投げず、
+    /// `nextStep: .confirmSignUp` を返す（`UserPoolSignInHelper.validateError`）。
+    /// 捨てると「ログインできた」と見なして次の `currentUserId` が落ち、
+    /// 確認画面へ送る分岐が一度も走らなかった
+    static func signIn(email: String, password: String) async throws -> SignInOutcome {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let result = try await Amplify.Auth.signIn(username: trimmed, password: password)
-        return result.isSignedIn
+        return SignInOutcome(result.nextStep)
     }
 
     static func signOut() async {

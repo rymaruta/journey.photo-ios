@@ -300,8 +300,8 @@ final class ViewModelTests: XCTestCase {
         model.setSignedIn(true)
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":1}"#)
 
-        async let first: Void = model.toggleLike()
-        async let second: Void = model.toggleLike()
+        async let first: Bool = model.toggleLike()
+        async let second: Bool = model.toggleLike()
         _ = await (first, second)
 
         XCTAssertEqual(StubProtocol.requestCount, 1, "二度押しで2回投げている")
@@ -385,6 +385,60 @@ final class ViewModelTests: XCTestCase {
         model.draftComment = "   "
         await model.postComment()
         XCTAssertNil(StubProtocol.lastRequest)
+    }
+
+    /// 🔴 **圏外で開いても、いいね済みのハートを白くしない。** 読めるまでは
+    /// 端末の控えと既知の数で描く（以前は `false`・`0` 始まりで控えを見なかった）
+    func testOfflineDetailKeepsStoredLikeAndCount() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.seed(liked: true, likes: 7)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.load()
+        XCTAssertTrue(model.liked, "圏外で、いいね済みのハートが白く出る")
+        XCTAssertEqual(model.likes, 7, "圏外で、数が既知の数でなくなっている")
+    }
+
+    /// **数が分からないうちは描かない**（0 は「まだ無い」と読まれる）
+    func testUnknownLikeCountIsNotZero() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(false)
+        model.seed(liked: false, likes: nil)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.load()
+        XCTAssertNil(model.likes, "分からない数を 0 と出している")
+    }
+
+    /// **控えでサーバーの答えを上書きしない**（押した直後に画面が作り直されても）
+    func testSeedDoesNotOverrideServerAnswer() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":3}"#)
+        await model.toggleLike()
+        model.seed(liked: false, likes: 1)
+        XCTAssertTrue(model.liked)
+        XCTAssertEqual(model.likes, 3)
+    }
+
+    /// 🔴 **届かなかった回は「答えなし」を返す**——画面はそのとき端末の控えに
+    /// 写さない。写すと、押す前の見え方で本物のいいねを控えから消しうる
+    func testFailedLikeIsNotReportedAsAnswered() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.seed(liked: true, likes: 7)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        let answered = await model.toggleLike()
+        XCTAssertFalse(answered, "届かなかったのに、控えに写してよい扱いになっている")
+        XCTAssertTrue(model.liked, "届かなかったのにハートが変わっている")
+
+        StubProtocol.respond(status: 200, body: #"{"liked":false,"likes":6}"#)
+        let second = await model.toggleLike()
+        XCTAssertTrue(second)
+        XCTAssertFalse(model.liked)
     }
     /// 投稿を待っている1枚（テスト用。本物は `ImagePreparer` が作る）。
     private func pending(location: String = "") -> PendingPhoto {

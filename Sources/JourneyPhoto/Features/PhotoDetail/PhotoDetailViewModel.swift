@@ -6,11 +6,23 @@ import Combine
 @MainActor
 final class PhotoDetailViewModel: ObservableObject {
 
-    @Published private(set) var likes: Int = 0
+    /// いいねの数。**分からないうちは nil**（描かない）。
+    ///
+    /// 以前は `Int = 0` で、圏外で開くと本当は数のある写真に「0」と出ていた。
+    /// 最初は画面が知っている数（一覧の数／押した回の答え）を `seed` で入れ、
+    /// サーバーから読めたら置き換える
+    @Published private(set) var likes: Int?
     /// **直前に押した回に**サーバーが答えた数。答えが無かった回は nil。
     /// ホームへ渡すのはこれだけ（`LikeCountStore`——開いたときに読んだ数は渡さない）
     @Published private(set) var lastLikeAnswer: Int?
+    /// 自分が押しているか。**最初は端末の控え（`FavoritesStore`）**を `seed` で入れる。
+    ///
+    /// 🔴 以前は `false` 始まりで控えを見ず、圏外で開くといいね済みの
+    /// ハートが白く出た。そこで押すと「いいね」を送り、届かないと
+    /// 画面側が控えを `false` で上書きして**本物のいいねが端末から消えていた**
     @Published private(set) var liked = false
+    /// `liked` がサーバーの答え（読んだ・押した）か。答えを控えで上書きしない
+    private var likedFromServer = false
     @Published private(set) var comments: [PhotoComment] = []
     /// コメントの総数。**サーバーから取れたときだけ入る**（取れなければ nil）。
     ///
@@ -52,6 +64,14 @@ final class PhotoDetailViewModel: ObservableObject {
         isSignedIn = value
     }
 
+    /// 画面が知っている値で埋める（端末の控え・一覧の数）。
+    ///
+    /// **サーバーの答えがあればそちらを残す**——控えや一覧の数は古いことがある
+    func seed(liked: Bool, likes: Int?) {
+        if !likedFromServer { self.liked = liked }
+        if self.likes == nil { self.likes = likes }
+    }
+
     /// いいね数とコメントは未認証でも読める。自分が押しているかだけ要ログイン。
     /// 投稿者を読む。**写真の主が分かっているときだけ**
     func loadOwner(_ userId: String?, profiles: ProfileService) async {
@@ -81,6 +101,7 @@ final class PhotoDetailViewModel: ObservableObject {
         //  見え方だけ——だがその見え方がいちばん不安にさせる）
         if let mine {
             liked = mine
+            likedFromServer = true
         } else if !isSignedIn {
             liked = false
         }
@@ -88,15 +109,19 @@ final class PhotoDetailViewModel: ObservableObject {
 
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、
     /// それを使う（二重に押した回や既に押していた回でずれる）。
-    func toggleLike() async {
+    ///
+    /// - Returns: サーバーが答えたか。**端末の控えに写すのは答えた回だけ**
+    ///   （届かなかった回に写すと、押す前の見え方で本物のいいねを消しうる）
+    @discardableResult
+    func toggleLike() async -> Bool {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
-            return
+            return false
         }
-        guard !isLiking else { return }
+        guard !isLiking else { return false }
         isLiking = true
         defer { isLiking = false }
         let wasLiked = liked
@@ -105,12 +130,15 @@ final class PhotoDetailViewModel: ObservableObject {
                 ? try await social.unlike(photoId: photoId)
                 : try await social.like(photoId: photoId)
             liked = result.liked
+            likedFromServer = true
             if let likes = result.likes {
                 self.likes = likes
                 lastLikeAnswer = likes
             }
+            return true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
+            return false
         }
     }
 

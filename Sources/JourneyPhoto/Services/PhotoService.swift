@@ -70,24 +70,24 @@ struct PhotoService {
         // （`photoUpdate.ts` の `hasReplace`）。包まないと、包まれていない
         // 項目だけが「中身の更新」として通り、**画像は古いまま
         // 撮影日と座標だけ黙って上書き**される（Web は包んでいる）。
+        //
+        // 🔴 **座標は送らない**（Web の `app/user/edit/page.tsx` の
+        // `replacePhoto` と同じ）。撮影地を本人が空にした写真でも、差し替えで
+        // 新しい画像の位置が入って**地図に出てしまう**。ピンの位置は本人が
+        // 選ぶもので、差し替えで黙って動かさない（サーバーは coords 無しを
+        // 受け付ける——`photoReplace.ts` の `buildReplace` は読めた分だけ書く）
         struct Body: Encodable { let replace: Replace }
         struct Replace: Encodable {
             let key: String
             let publicUrl: String
             let exif: ExifFields?
             let date: String?
-            let coords: Coords?
-            struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         let body = Body(replace: Replace(
             key: presigned.key,
             publicUrl: presigned.publicUrl,
             exif: prepared.exif,
-            date: prepared.takenOn,
-            // 送る前に端末でも丸める（投稿と同じ）
-            coords: prepared.coords.map {
-                Replace.Coords(lat: ($0.lat * 100).rounded() / 100, lng: ($0.lng * 100).rounded() / 100)
-            }
+            date: prepared.takenOn
         ))
         do {
             try await api.authorizedVoid(
