@@ -212,11 +212,6 @@ final class GalleryViewModel: ObservableObject {
         return TagChoices.all.filter { present.contains(TagChoices.key($0)) }
     }
 
-    /// フィードを選ぶ。**範囲と並びを一緒に切り替える**。
-    ///
-    /// **`use(viewerId:following:)` は呼ばない。** あちらは範囲を
-    /// 「自分」に倒すので、押したフィードが即座に打ち消される
-    /// （組み込んだ直後に踏んだ）。
     /// フォロー一覧が**取れなかった回**（圏外・取り消し）の入れ方。
     ///
     /// 同じ人なら手元の一覧を残す——空で上書きすると「フォロー中」が
@@ -228,6 +223,11 @@ final class GalleryViewModel: ObservableObject {
         use(viewerId: viewerId, following: following)
     }
 
+    /// フィードを選ぶ。**範囲と並びを一緒に切り替える**。
+    ///
+    /// **`use(viewerId:following:)` は呼ばない。** あちらは範囲を
+    /// 「自分」に倒すので、押したフィードが即座に打ち消される
+    /// （組み込んだ直後に踏んだ）。
     func select(feed: HomeFeed, viewerId: String?) {
         self.feed = feed
         self.scope = feed.scope
