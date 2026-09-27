@@ -289,19 +289,8 @@ struct UserProfileView: View {
                 Task { await model.toggleFollow(userId: userId, environment: environment) }
             }
         } label: {
-            Text(model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"))
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(model.isFollowing ? Color.white : WebTheme.accentText)
-                .lineLimit(1)
-                .padding(.horizontal, 14)
-                .frame(minWidth: 44, minHeight: 36)
-                .background(model.isFollowing ? Color.white.opacity(0.12) : WebTheme.accentBackground,
-                            in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.white.opacity(model.isFollowing ? 0.18 : 0),
-                                                lineWidth: 1))
-                // 見た目は 36pt、押せる高さは 44pt
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+            FollowPill(title: model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"),
+                       isFollowing: model.isFollowing)
         }
         .buttonStyle(.plain)
         .disabled(model.isWorking)

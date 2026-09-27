@@ -287,7 +287,7 @@ struct PhotoDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             placeRow
             if !shown.displayTitle.isEmpty {
-                // **題は写真の次に来る主役。** 明朝 30pt（文字サイズの設定で伸びる）。
+                // **題は写真の次に来る主役。** 明朝 32pt（板 02・文字サイズの設定で伸びる）。
                 // 行送りは書体の自然値（1.45em）で足りるので、足さない
                 Text(shown.displayTitle)
                     .font(JPFont.photoTitle)
@@ -390,7 +390,8 @@ struct PhotoDetailView: View {
                     .lineLimit(1)
             }
         }
-        .font(.footnote)
+        // 板 02: 12px（`.caption`）
+        .font(.caption)
         .foregroundStyle(WebTheme.foreground)
         .jpPhotoTextShadow()
         .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
@@ -428,25 +429,32 @@ struct PhotoDetailView: View {
                         RemoteImage(url: UserProfile.profileAssetURL(
                             userId: ownerId, suffix: nil, cacheBust: nil),
                                     placeholderSymbol: "person.crop.circle.fill")
-                            .frame(width: 44, height: 44)
+                            // 板 02: 34pt（押せる高さは行の 44pt）
+                            .frame(width: 34, height: 34)
                             .clipShape(Circle())
                             .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 4) {
                                 Text(AuthorName.shown(profile: model.owner, photoDisplayName: shown.displayName))
-                                    .font(.subheadline.weight(.semibold))
+                                    // 板 02: 13px の太字
+                                    .font(.footnote.weight(.semibold))
                                     .foregroundStyle(WebTheme.foreground)
                                     .lineLimit(1)
-                                VerifiedBadge(isVerified: model.owner?.verified)
+                                VerifiedBadge(isVerified: model.owner?.verified,
+                                              nameSize: 13, relativeTo: .footnote)
                             }
                             if let username = model.owner?.username, !username.isEmpty {
                                 Text("@\(username)")
-                                    .font(.caption)
+                                    // 板 02: 11px
+                                    .font(.caption2)
                                     .foregroundStyle(WebTheme.faint)
                                     .lineLimit(1)
                             }
                         }
                     }
+                    // アイコンを 34pt にしても、押せる高さは 44pt を保つ
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 // 実機の絵の道しるべ（`ScreenshotTests`）。
@@ -468,14 +476,9 @@ struct PhotoDetailView: View {
             // 外すときだけ確認を挟む（`unfollowConfirmation`）
             if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(userId) } }
         } label: {
-            Text(isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"))
-                .font(.footnote.weight(.semibold))
-                .padding(.horizontal, 16)
-                .frame(height: 34)
-                .background(isFollowing ? AnyShapeStyle(WebTheme.surface)
-                                        : AnyShapeStyle(WebTheme.accentBackground),
-                            in: Capsule())
-                .foregroundStyle(isFollowing ? WebTheme.foreground : WebTheme.accentText)
+            // 板 02・31 と同じ札（人のページと共通の `FollowPill`）
+            FollowPill(title: isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"),
+                       isFollowing: isFollowing)
         }
         .buttonStyle(.plain)
         .disabled(isFollowWorking)
@@ -629,7 +632,9 @@ struct PhotoDetailView: View {
 
     private func socialBar(_ proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 16) {
+            // 板 02: 白い印を両端に揃えて並べ、数は等幅 12px の白。
+            // 外に -6 は、各ボタンの横の余白 6pt ぶん（印の端を本文の端に揃える）
+            HStack(spacing: 0) {
                 Button {
                     Task {
                         await model.toggleLike()
@@ -640,33 +645,26 @@ struct PhotoDetailView: View {
                 } label: {
                     // **いちばん押されるボタンがいちばん小さかった。**
                     // 既定の字のままで 20pt ほどしか無く、指では狙いにくい
-                    Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
-                        .font(.title2)
-                        .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
-                        .webTappable()
+                    actionLabel(systemImage: model.liked ? "heart.fill" : "heart",
+                                count: model.likes)
                 }
                 .buttonStyle(.plain)
+                // 読み上げは「いいね、N」（印の名前と数字を連ねない）
+                .accessibilityLabel(L("いいね", "Like"))
+                .accessibilityValue("\(model.likes)")
                 .accessibilityAddTraits(model.liked ? .isSelected : [])
+                Spacer(minLength: 0)
 
                 // 吹き出しを押すと下のコメントへ送る。**数は取れたときだけ**
                 // ——読み込み前・圏外に「0」を出すと「まだ無い」と読まれる
                 Button {
                     withAnimation { proxy.scrollTo(Self.commentsAnchor, anchor: .top) }
                 } label: {
-                    if let count = model.commentCount {
-                        Label("\(count)", systemImage: "bubble.right")
-                            .font(.title2)
-                            .foregroundStyle(WebTheme.faint)
-                            .webTappable()
-                    } else {
-                        Image(systemName: "bubble.right")
-                            .font(.title2)
-                            .foregroundStyle(WebTheme.faint)
-                            .webTappable()
-                    }
+                    actionLabel(systemImage: "bubble.right", count: model.commentCount)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(CommentsHeading.label(commentCount: model.commentCount))
+                Spacer(minLength: 0)
 
                 // **保存**。いいねとは別の入れ物（`saves#<uid>`）。
                 //
@@ -676,30 +674,45 @@ struct PhotoDetailView: View {
                 Button {
                     Task { await toggleSave() }
                 } label: {
-                    Image(systemName: savedPhotos.contains(photo.id) ? "bookmark.fill" : "bookmark")
-                        .font(.title2)
-                        .foregroundStyle(savedPhotos.contains(photo.id) ? WebTheme.foreground : WebTheme.faint)
-                        .webTappable()
+                    actionLabel(systemImage: savedPhotos.contains(photo.id) ? "bookmark.fill" : "bookmark")
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("保存", "Save"))
+                .accessibilityAddTraits(savedPhotos.contains(photo.id) ? .isSelected : [])
 
-                // **シェア**（配るのは画像ではなくページ）
+                // **シェア**（配るのは画像ではなくページ）。個別ページが無い写真では
+                // 出さない——そのときは3つが両端揃えで並ぶ
                 if let url = shareURL(for: photo) {
+                    Spacer(minLength: 0)
                     ShareLink(item: url) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.title2)
-                            .foregroundStyle(WebTheme.faint)
-                            .webTappable()
+                        actionLabel(systemImage: "square.and.arrow.up")
                     }
+                    .accessibilityLabel(L("共有", "Share"))
                 }
-
-                Spacer()
             }
+            .padding(.horizontal, -6)
             if let message = model.errorMessage ?? actionError {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.danger)
             }
         }
+    }
+
+    /// 4つの操作の中身（板 02: 24px の白い印＝SF の `.title2`（約 22pt）で同じ見た目の大きさ・
+    /// 数は等幅 12px の白・押せる大きさ 44×44 以上）。
+    /// 数は**取れたときだけ**（読み込み前・圏外に「0」を出すと「まだ無い」と読まれる）
+    private func actionLabel(systemImage: String, count: Int? = nil) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                // 文字サイズの設定で伸びる
+                .font(.title2)
+            if let count {
+                Text("\(count)")
+                    .font(JPFont.mono(12, relativeTo: .caption))
+            }
+        }
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 6)
+        .webTappable()
     }
 
     /// 「この近くで撮られた写真」（板 02）。**座標の無い写真、近くに1枚も
@@ -1011,11 +1024,21 @@ private struct TagRow: View {
                     // Web: `bg-white/5 ring-1 ring-white/10 text-xs text-white/50`
                     // 板 02: 「#夕焼け」。**頭の「#」は描くときだけ**——保存する値には
                     // 付けない（`TagPhotosView` にも素の値を渡す）。打った人が既に
-                    // 「#」を付けていた行は二重にしない
-                    Text(tag.hasPrefix("#") ? tag : "#\(tag)")
+                    // 「#」「＃」を付けていた行は畳んでから1つ付ける（`TagInput.chipText`）
+                    //
+                    // 札は板どおり横 12・高さ 32・地 5%・縁 10%（字の色は `muted` のまま）
+                    Text(TagInput.chipText(tag))
                         .font(.caption)
                         .foregroundStyle(WebTheme.muted)
-                        .webChip()
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 32)
+                        .background(Color.white.opacity(0.05), in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
+                        // 見た目は 32pt、押せる高さは 44pt（上下 6pt ずつ広げ、並びは詰めたまま）。
+                        // 行の間（6pt）より広げるので、上下の行の押せる範囲が少し重なる
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                        .padding(.vertical, -6)
                 }
                 .buttonStyle(.plain)
             }
