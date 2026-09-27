@@ -165,8 +165,11 @@ struct EditPhotoView: View {
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else { return }
             let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
+            // 撮影地の無い写真に、差し替えた写真の位置を書かない
+            let hasPlace = !(photo.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             try await environment.photos.replace(photoId: photo.id, prepared: prepared,
-                                                 uploads: environment.uploads)
+                                                 uploads: environment.uploads,
+                                                 keepCoords: hasPlace)
             messageIsError = false
             message = L("差し替えました（反映まで数分かかります）", "Replaced. It takes a few minutes to appear.")
         } catch {
@@ -188,6 +191,13 @@ struct EditPhotoView: View {
         // **選んだ回だけ載せる。** nil は「触らない」なので、
         // 地名を手で直しただけの回に既存の座標を壊さない
         patch.coords = pickedCoords
+        // **撮影地を空にしたら座標も消す。** nil だけでは「触らない」になり、
+        // 地図とページにピンが残っていた（投稿画面の `locationClearedByUser` と同じ考え）
+        if pickedCoords == nil,
+           location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           photo.coords != nil {
+            patch.clearCoords = true
+        }
         patch.tags = TagInput.parse(tagsText)
         patch.category = category.trimmingCharacters(in: .whitespacesAndNewlines)
         patch.published = published

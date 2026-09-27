@@ -49,8 +49,10 @@ struct PhotoService {
     /// **サーバーは派生（AVIF・256px・寸法）を消す**（`photoReplace.ts` の
     /// `REPLACE_CLEARS`）。残すと端末によって古い写真が出続ける。
     /// 上げ方は投稿と同じ3手（presign → S3 → 保存）で、EXIF は端末で落とす。
+    /// - Parameter keepCoords: 新しい写真の座標を書くか。**撮影地を空にした写真では
+    ///   false**——差し替えで消したはずの位置が戻らないように
     func replace(photoId: String, prepared: ImagePreparer.Prepared,
-                 uploads: UploadService) async throws {
+                 uploads: UploadService, keepCoords: Bool = true) async throws {
         // **投稿と同じ関所を通す。** 50MB と対応形式はサーバーも見るが、
         // 手前で弾かないと、上げ切ってから 400 を食う（投稿側と同じ理由）
         try UploadService.checkAcceptable(size: prepared.data.count, type: prepared.contentType)
@@ -85,7 +87,7 @@ struct PhotoService {
             exif: prepared.exif,
             date: prepared.takenOn,
             // 送る前に端末でも丸める（投稿と同じ）
-            coords: prepared.coords.map {
+            coords: (keepCoords ? prepared.coords : nil).map {
                 Replace.Coords(lat: ($0.lat * 100).rounded() / 100, lng: ($0.lng * 100).rounded() / 100)
             }
         ))
@@ -142,9 +144,41 @@ struct PhotoPatch: Encodable {
     /// （`photoUpdate.ts` の `hasAudience`）。`Audience.patchValue` が作る。
     var audience: String?
 
+    /// 座標を**消す**（本文に `"coords": null` を載せる）。
+    ///
+    /// `coords` の `nil` は「触らない」なので、それだけでは消せない——撮影地を
+    /// 空にして保存しても座標が残り、地図とページに約1kmのピンが立ち続けていた。
+    /// サーバーは `"coords" in body` で見て、使えない値（null）なら消す
+    /// （`photoUpdate.ts` の `applyMeta("coords", …)`）
+    var clearCoords = false
+
     var isEmpty: Bool {
         title == nil && description == nil && location == nil
             && category == nil && tags == nil && date == nil && published == nil
-            && song == nil && coords == nil && audience == nil
+            && song == nil && coords == nil && audience == nil && !clearCoords
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case title, description, location, category, tags, date, published, coords, song, audience
+    }
+
+    /// 自動生成と同じく **nil のキーは載せない**。`clearCoords` のときだけ
+    /// `coords: null` を明示する
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encodeIfPresent(description, forKey: .description)
+        try c.encodeIfPresent(location, forKey: .location)
+        try c.encodeIfPresent(category, forKey: .category)
+        try c.encodeIfPresent(tags, forKey: .tags)
+        try c.encodeIfPresent(date, forKey: .date)
+        try c.encodeIfPresent(published, forKey: .published)
+        if let coords {
+            try c.encode(coords, forKey: .coords)
+        } else if clearCoords {
+            try c.encodeNil(forKey: .coords)
+        }
+        try c.encodeIfPresent(song, forKey: .song)
+        try c.encodeIfPresent(audience, forKey: .audience)
     }
 }
