@@ -157,8 +157,15 @@ struct Story: Decodable, Identifiable, Equatable {
     /// 付けた曲（`stories.ts` が保存して返している）。**復号していなかったので、
     /// 曲つきのストーリーでも閲覧画面に曲名が出なかった**
     let song: Photo.Song?
+    /// 返信（♡ も含む）を受けるか。**`false` のときだけ入って返る**（既定の「受ける」は
+    /// 保存されない・`stories.ts`）。読んでいなかった頃は、Web で「返信を許可」を
+    /// 切った投稿にも返信欄と ♡ が出て、送ると 403 で断られていた
+    let allowReplies: Bool?
 
     var imageURL: URL? { URL(string: src) }
+
+    /// 返信欄と ♡ を出すか（Web の `item?.allowReplies !== false` と同じ）
+    var acceptsReplies: Bool { allowReplies != false }
 
     /// 曲の行に出す文字（「曲名 · アーティスト」）。曲が無ければ nil
     /// **作成画面の曲の札と同じ文字**（`SongSticker.text`。2か所で作ると片方だけ変わる）
@@ -173,7 +180,7 @@ struct Story: Decodable, Identifiable, Equatable {
     }
     private enum CodingKeys: String, CodingKey {
         case id, src, userId, displayName, caption, mediaType, location, coords
-        case createdAt, expiresAt, replyCount, durationSec, song
+        case createdAt, expiresAt, replyCount, durationSec, song, allowReplies
     }
 
     /// **曲だけは壊れていても捨てる。** 一覧は配列1本で復号するので、
@@ -194,6 +201,8 @@ struct Story: Decodable, Identifiable, Equatable {
         replyCount = try c.decodeIfPresent(Int.self, forKey: .replyCount)
         durationSec = try c.decodeIfPresent(Int.self, forKey: .durationSec)
         song = (try? c.decodeIfPresent(Photo.Song.self, forKey: .song)) ?? nil
+        // 形が崩れていても一覧ごと落とさない（読めなければ既定＝受ける）
+        allowReplies = (try? c.decodeIfPresent(Bool.self, forKey: .allowReplies)) ?? nil
     }
 }
 

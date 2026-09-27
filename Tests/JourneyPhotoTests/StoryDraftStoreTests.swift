@@ -87,18 +87,42 @@ final class StoryDraftStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
     }
 
-    /// 画像の名前は**起動をまたいでも同じ**で、人ごとに別。
+    /// 画像の名前は**同じ入力なら起動をまたいでも同じ**で、人ごとに別。
     /// 以前は `hashValue`（起動のたびに変わる）から作っていた
     func testImageFileNameIsStable() async {
-        let a = StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u1")
-        XCTAssertEqual(a, StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u1"))
-        XCTAssertNotEqual(a, StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u2"))
+        let a = StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u1", token: "t", index: 0)
+        XCTAssertEqual(a, StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u1", token: "t", index: 0))
+        XCTAssertNotEqual(a, StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u2", token: "t", index: 0))
         XCTAssertTrue(a.hasPrefix("story-draft-"))
         XCTAssertTrue(a.hasSuffix(".jpg"))
         XCTAssertFalse(a.contains("/"))
         // **期待する文字列そのもので見る。** 同じ起動の中で2回比べるだけだと
         // `hashValue` に戻しても通ってしまう（値が変わるのは起動をまたいだとき）
-        XCTAssertEqual(StoryDraftStore.imageFileName(forKey: "ab"), "story-draft-6162.jpg")
+        XCTAssertEqual(StoryDraftStore.imageFileName(forKey: "ab", token: "t", index: 2), "story-draft-6162-t-2.jpg")
+    }
+
+    /// 🔴 **並びの途中で書けなかったら、前の下書きに触らない。** 名前を毎回同じにしていた
+    /// 頃は1枚目だけ新しい写真に入れ替わり、「新しい写真＋古い文字」に化けた
+    func testFailedSaveLeavesThePreviousDraftIntact() async throws {
+        let (store, defaults, dir) = make()
+        store.use(userId: "u1")
+        save(store, caption: "前の下書き")
+        // **2枚目の書き先を塞ぐ**（同じ名前のフォルダを置く）。1枚目は書ける
+        store.makeToken = { "fixed" }
+        let second = dir.appendingPathComponent(
+            StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u1", token: "fixed", index: 1))
+        try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: second.appendingPathComponent("keep"))
+        XCTAssertFalse(saveShots(store, [shot(8, text: "新1"), shot(9, text: "新2")]))
+        // 片づけ（`use` の `sweepOrphans`）より前に見る——あちらが消してしまうと見分けられない
+        let first = dir.appendingPathComponent(
+            StoryDraftStore.imageFileName(forKey: "journey-photo-story-draft:u1", token: "fixed", index: 0))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path), "書きかけの1枚目が残った")
+
+        let reopened = StoryDraftStore(defaults: defaults, directory: dir)
+        reopened.use(userId: "u1")
+        XCTAssertEqual(reopened.draft?.caption, "前の下書き")
+        XCTAssertEqual(reopened.shotImages().map(\.data), [Data("jpeg".utf8)], "前の写真が入れ替わった")
     }
 
     /// 何度保存しても**画像は1つ**
@@ -205,6 +229,19 @@ final class StoryDraftStoreTests: XCTestCase {
         XCTAssertEqual(restored.map { $0.shot.overlays.first?.text }, ["一", "二", "三"])
         XCTAssertEqual(restored.map { $0.shot.coords?.lat }, [1, 2, 3])
         XCTAssertEqual(reopened.draft?.caption, "並び")
+    }
+
+    /// 「自分用に残す」も戻る（外れて戻ると、そのまま投稿して24時間で消える）
+    func testKeepsTheArchiveChoice() async throws {
+        let (store, defaults, dir) = make()
+        store.use(userId: "u1")
+        store.save(shots: [shot(1, text: "一")], caption: "", location: "", song: nil,
+                   durationSec: 5, archive: true, savedAt: now)
+        let reopened = StoryDraftStore(defaults: defaults, directory: dir)
+        reopened.use(userId: "u1")
+        XCTAssertEqual(reopened.draft?.archive, true)
+        save(reopened)
+        XCTAssertNil(reopened.draft?.archive, "残さない回まで残す印が付いた")
     }
 
     /// 枚数を減らして保存し直したら、**使わなくなった画像を残さない**

@@ -270,19 +270,27 @@ struct StoryViewerView: View {
             // **見たことを伝えるのは1回。** 失敗しても画面は止めない
             await environment.stories.markViewed(id: story.id)
             if isMine(story) {
+                // **次の1本へ移ったあとに返ってきた答えは書かない。** 書くと、`go` で
+                // 空にしたあとへ前の1本の見た人・返信が入り、いまの1本の数に見える
                 do {
-                    viewers = try await environment.stories.viewers(id: story.id)
+                    let loaded = try await environment.stories.viewers(id: story.id)
+                    guard !Task.isCancelled else { return }
+                    viewers = loaded
                     viewersLoaded = true
                 } catch {
+                    guard !Task.isCancelled else { return }
                     viewersLoaded = false
                 }
                 // **返信は本人だけが読める。** 読めないと、送られた返信が
                 // どこにも出ない（送る側の画面だけあった）
                 do {
-                    replies = try await environment.stories.replies(id: story.id)
+                    let loaded = try await environment.stories.replies(id: story.id)
+                    guard !Task.isCancelled else { return }
+                    replies = loaded
                     repliesFailed = false
                     repliesLoaded = true
                 } catch {
+                    guard !Task.isCancelled else { return }
                     repliesFailed = true
                 }
             }
@@ -380,6 +388,10 @@ struct StoryViewerView: View {
             }
 
             tapZones
+                // 🔴 **送っている間（返信・♡・残す・削除）は前後へ送らない。**
+                // 止めていたのは時計だけで、タップや払いでは移れたため、結果の
+                // 「残しました」「送れませんでした」が別の1本の画面に出ていた
+                .allowsHitTesting(!isSending)
 
             // 暗幕。メニュー45%・返信を書いている間35%・削除の確認55%（板の値）
             Color.black
@@ -995,9 +1007,16 @@ struct StoryViewerView: View {
                         viewerFaces
                         HStack(spacing: 0) {
                             Text("\(viewers.count)").font(JPFont.mono(13, medium: true))
-                            Text(L(" 人が見ました · いいね ", " viewers · likes "))
-                                .font(.system(size: 13))
-                            Text("\(replies.reactionCount)").font(JPFont.mono(13, medium: true))
+                            // **返信を読めていなければ「いいね」の数は言わない**
+                            // （読めなかった回に空の一覧から「いいね 0」と言い切っていた）
+                            if repliesLoaded {
+                                Text(L(" 人が見ました · いいね ", " viewers · likes "))
+                                    .font(.system(size: 13))
+                                Text("\(replies.reactionCount)").font(JPFont.mono(13, medium: true))
+                            } else {
+                                Text(L(" 人が見ました", " viewers"))
+                                    .font(.system(size: 13))
+                            }
                         }
                         .foregroundStyle(.white)
                         Spacer(minLength: 0)
@@ -1041,7 +1060,7 @@ struct StoryViewerView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
-        } else {
+        } else if story.acceptsReplies {
             // 返信欄（ガラスの丸）と ♡。**書いている間は ♡ が送信の白い丸に替わり、
             // 上に一言の候補と「だれに届くか」が出る**（板「25d 返信を書く」）
             VStack(alignment: .leading, spacing: 10) {
@@ -1325,10 +1344,19 @@ struct StoryViewerView: View {
             // 🔴 **残りがあれば閉じない。** 以前は1本消すと画面ごと閉じ、3本のうち
             // 1本を消しただけで残りの2本が見られなくなった。通報で落としたときと
             // 同じく並びから外し、次の1本へ詰める（一覧は閉じたときに読み直す）
+            //
+            // **いま見ている1本を id で覚えてから外す**（位置で詰めると、消している間に
+            // 前後へ送っていた回に1本飛ばしたり、同じ1本の見た人・返信を空にしたりする）
+            let viewingId = current?.id
             dropped.insert(story.id)
             let remaining = visible
             if remaining.isEmpty {
                 dismiss()
+            } else if viewingId != story.id,
+                      let stay = remaining.firstIndex(where: { $0.id == viewingId }) {
+                // 別の1本を見ている: その1本のまま、位置だけ直す（状態は空にしない）
+                index = stay
+                message = L("削除しました", "Deleted")
             } else {
                 go(to: min(index, remaining.count - 1))
                 message = L("削除しました", "Deleted")

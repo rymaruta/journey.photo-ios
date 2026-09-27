@@ -767,6 +767,7 @@ struct StoryComposerView: View {
             location: location,
             song: song,
             durationSec: durationSec,
+            archive: keepInArchive,
             savedAt: ISO8601DateFormatter().string(from: Date())
         )
         // **書けなかったことを黙らない。** 「保存しました」とだけ出して
@@ -800,6 +801,7 @@ struct StoryComposerView: View {
         location = draft.location
         song = draft.song
         durationSec = draft.durationSec
+        keepInArchive = draft.archive == true
         message = nil
     }
 
