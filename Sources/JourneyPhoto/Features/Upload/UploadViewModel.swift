@@ -265,15 +265,10 @@ final class UploadViewModel: ObservableObject {
         // 以前は丸ごと入れ替えていて、「追加」を押すと打った題やカメラで撮った
         // 分まで消えていた（2026-09-26 のレビュー）
         let diff = PickerReconcile.reconcile(existing: items.map(\.pickerItem), picked: picked)
-        // 🔴 **本当に選び足したときだけ読む。** 前に読めなかった写真は選択に残り
-        // 待ち行列には居ないので、差分では毎回「新しく選ばれた分」に見える。それだけで
-        // 読むと、写真を外すたびに読み直して `errorMessage` を消し、「送れなかった」の
-        // 知らせを読み込みの失敗で上書きしていた。
-        // **選び足したときは、読めなかった分も一緒に読み直す**——外すと、一時的な
-        // 失敗（iCloud・圏外）が直らないまま知らせも消え、1枚少ないまま投稿できる
-        unreadable.formIntersection(picked)
-        let fresh = diff.added.filter { !unreadable.contains($0) }
-        let added = fresh.isEmpty ? [] : diff.added
+        // 🔴 **本当に選び足したときだけ読む。** 読めなかった写真の扱いは `toLoad` の注記
+        let plan = PickerReconcile.toLoad(added: diff.added, picked: picked, unreadable: unreadable)
+        unreadable = plan.unreadable
+        let added = plan.load
         let dropped = zip(items, diff.keep).filter { !$0.1 }.map { $0.0.id }
         for id in dropped {
             placeTasks[id]?.cancel()
@@ -573,6 +568,27 @@ final class StagedUploads: @unchecked Sendable {
 
 /// 新規投稿の「追加」（ライブラリの選び直し）の差分。画面の状態を持たない計算だけ
 enum PickerReconcile {
+
+    /// 選び直しで**読む写真**と、読んでいる間の「読めなかった」控え。
+    ///
+    /// **本当に選び足したときだけ読む**（読めなかった分だけなら読まない）。
+    /// 読めなかった写真は選択に残り待ち行列には居ないので、差分では毎回
+    /// 「新しく選ばれた分」に見える。それだけで読むと、写真を外すたびに読み直して
+    /// `errorMessage` を消し、「送れなかった」の知らせを読み込みの失敗で上書きしていた。
+    ///
+    /// **選び足したときは、読めなかった分も一緒に読み直す**——外すと、一時的な
+    /// 失敗（iCloud・圏外）が直らないまま知らせも消え、1枚少ないまま投稿できる。
+    ///
+    /// **読む分は控えから外して返す。** 失敗は最後まで走った回だけが戻す——途中で
+    /// 取り消された回の分は、次の回で新しい写真として読み直される（控えに残すと、
+    /// 次の回が「新しい写真なし」で帰り、知らせも無いまま落ちる）。読めた写真も残らない
+    static func toLoad<Key: Hashable>(added: [Key], picked: [Key], unreadable: Set<Key>)
+        -> (load: [Key], unreadable: Set<Key>) {
+        let stillPicked = unreadable.intersection(picked)
+        let fresh = added.filter { !stillPicked.contains($0) }
+        guard !fresh.isEmpty else { return ([], stillPicked) }
+        return (added, stillPicked.subtracting(added))
+    }
 
     /// 投稿済みの写真の印を選択から外す。カメラの分（nil）は選択に居ないので関係ない
     static func dropPosted<Key: Hashable>(picked: [Key], posted: [Key?]) -> [Key] {
