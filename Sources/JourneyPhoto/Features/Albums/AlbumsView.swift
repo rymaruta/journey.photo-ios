@@ -239,10 +239,14 @@ final class AlbumsViewModel: ObservableObject {
     /// 名前が巻き戻ったりしていた
     private var loadGeneration = 0
 
-    /// 走っている読み込みの返事を採らない（書き込みの直後に呼ぶ）
-    private func discardInFlightLoads() {
+    /// 走っている読み込みの返事を採らない（書き込みの直後に呼ぶ）。
+    /// **捨てたら読み直す**——最初の読み込みの途中で作ると、捨てたまま
+    /// 作った1件だけの一覧になり、他のアルバムが消えて見えていた
+    private func discardInFlightLoads(environment: AppEnvironment) async {
+        let wasLoading = isLoading
         loadGeneration += 1
         isLoading = false
+        if wasLoading { await load(environment: environment) }
     }
 
     func inviteURL(token: String) -> URL {
@@ -273,8 +277,8 @@ final class AlbumsViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return }
         do {
             let album = try await environment.albums.create(title: trimmed)
-            discardInFlightLoads()
             albums.insert(album, at: 0)
+            await discardInFlightLoads(environment: environment)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
         }
@@ -288,13 +292,13 @@ final class AlbumsViewModel: ObservableObject {
         do {
             // **サーバーが直した名前を採る**（60字で切られる・制御文字が落ちる）
             let saved = try await environment.albums.rename(id: id, title: trimmed)
-            discardInFlightLoads()
             albums = albums.map { album in
                 guard album.id == id else { return album }
                 return Album(id: album.id, title: saved, createdAt: album.createdAt,
                              memberCount: album.memberCount, inviteToken: album.inviteToken,
                              inviteExpiresAt: album.inviteExpiresAt)
             }
+            await discardInFlightLoads(environment: environment)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("名前を変えられませんでした", "Couldn't rename")
@@ -305,8 +309,8 @@ final class AlbumsViewModel: ObservableObject {
     func delete(_ id: String, environment: AppEnvironment) async -> Bool {
         do {
             try await environment.albums.delete(id: id)
-            discardInFlightLoads()
             albums.removeAll { $0.id == id }
+            await discardInFlightLoads(environment: environment)
             return true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")

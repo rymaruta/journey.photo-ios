@@ -108,15 +108,17 @@ actor PublicGalleryService {
                 return stamped
             }
             // 🔴 **読んでいる間に読み出し口が替わったら、控えに書かない。**
-            // 書くと、ログアウトした後に前の人ぶんが60秒出続ける
-            guard epoch == restrictedEpoch else { return [] }
+            // 書くと、ログアウトした後に前の人ぶんが60秒出続ける。
+            // 空で返しもしない——返した一覧を持ち続ける画面（ホーム）で、
+            // 次の読み直しまで限定公開の写真が欠けたままになる。今の口で読み直す
+            guard epoch == restrictedEpoch else { return await restrictedPhotos(force: true) }
             restrictedCache = photos
             restrictedCachedAt = Date()
             return photos
         } catch {
             print("[gallery] 公開範囲を絞った写真を取れませんでした: \(error)")
             // 直前に取れていたぶんは出す（圏外で消える方が驚かれる）
-            guard epoch == restrictedEpoch else { return [] }
+            guard epoch == restrictedEpoch else { return await restrictedPhotos(force: true) }
             return restrictedCache ?? []
         }
     }

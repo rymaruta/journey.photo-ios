@@ -367,8 +367,9 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.commentCount, "総数を引いていないのに数を作っている")
         XCTAssertEqual(model.draftComment, "", "送ったのに入力欄が残っている")
 
-        // 総数が取れているなら、そこに足す
-        StubProtocol.respond(status: 200, body: #"{"items":[],"count":3}"#)
+        // 総数が取れているなら、そこに足す（読んだ一覧には書いた1件も載っている）
+        StubProtocol.respond(status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}],"count":3}"#)
         await model.load()
         XCTAssertEqual(model.commentCount, 3)
 
