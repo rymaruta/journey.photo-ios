@@ -101,10 +101,14 @@ struct JourneyPhotoApp: App {
     /// **取れた回だけ入れ替える。** 足すのではなく入れ替えるのは、
     /// 保存といいねが同じ入れ物を使っていた頃の端末に、**保存しただけの
     /// 写真の id が残っている**ため（足すだけだと出続ける）。
+    ///
+    /// **取りに行っている間に押した分は残す**（`syncMark`）。起動直後にホームで
+    /// 押したいいねが、押す前の一覧で消えていた
     private func syncLikes() async {
         guard auth.userId != nil else { return }
+        let mark = favorites.syncMark
         let ids = try? await environment.social.myLikedPhotoIds()
-        if let ids { favorites.replace(with: ids) }
+        if let ids { favorites.replace(with: ids, since: mark) }
     }
 
     /// 保存した写真をサーバーに合わせる。
@@ -115,8 +119,9 @@ struct JourneyPhotoApp: App {
     /// ここでは何もしない。
     private func syncSaves() async {
         guard auth.userId != nil else { return }
+        let mark = savedPhotos.syncMark
         let ids = try? await environment.saves.mySaves()
-        if let ids { savedPhotos.replace(with: ids) }
+        if let ids { savedPhotos.replace(with: ids, since: mark) }
     }
 
     var body: some Scene {
@@ -164,10 +169,12 @@ struct JourneyPhotoApp: App {
                     await syncSaves()
                     await syncLikes()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
+                    // （取りに行っている間にブロック・解除した分は残す——`blockSyncMark`）
                     if auth.userId != nil {
+                        let mark = hidden.blockSyncMark
                         let blocks = try? await environment.moderation.blocks()
                         if let blocks {
-                            hidden.replaceBlocked(with: blocks.blockedIds)
+                            hidden.replaceBlocked(with: blocks.blockedIds, since: mark)
                             await applyModeration()
                         }
                     }

@@ -9,6 +9,8 @@ struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @State private var selection: Tab = .home
     @State private var unread = 0
+    /// 未読の数を取りに行った回数。**最後に出た1本の答えだけを書く**
+    @State private var unreadRuns = 0
     @Environment(\.scenePhase) private var scenePhase
     /// 投稿の「＋」から開くもの
     @State private var showPostChoice = false
@@ -63,12 +65,20 @@ struct RootView: View {
     ///
     /// **開いたことにはしない。** 既読にするのは `NotificationsView` が
     /// 一覧を読めたときだけ——ここで既読にすると、バッジを見ただけで消える。
+    ///
+    /// 🔴 **最後に出た1本の答えだけを、出したときと同じ人のときだけ書く。** ログイン・
+    /// 前面に戻る・お知らせを閉じる、の3か所から同時に走るので、古い数が後から着いて
+    /// 上書きしていた。ログアウトした後に前の人の数が出ることもあった
     private func refreshUnread() async {
-        guard auth.userId != nil else {
+        unreadRuns += 1
+        let run = unreadRuns
+        guard let userId = auth.userId else {
             unread = 0
             return
         }
-        unread = (try? await environment.notifications.fetch().unread) ?? 0
+        let count = (try? await environment.notifications.fetch().unread) ?? 0
+        guard run == unreadRuns, auth.userId == userId else { return }
+        unread = count
     }
 
     private var tabs: some View {

@@ -360,8 +360,13 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var actionMessage: String?
 
     private(set) var cacheBust = ""
+    /// フォロー・ブロックを送り始めた・答えを受け取った回数。**読み込みの間に動いたら、
+    /// その読み込みのフォロー数と「フォロー中か」は書かない**——読み込み中に
+    /// フォローを押すと、押す前の数と「フォローしていない」が後から届いて戻していた
+    private var followWrites = 0
 
     func load(userId: String, environment: AppEnvironment, viewerId: String?) async {
+        let writes = followWrites
         isLoading = true
         errorMessage = nil
         cacheBust = String(Int(Date().timeIntervalSince1970))
@@ -383,7 +388,7 @@ final class UserProfileViewModel: ObservableObject {
         }
 
         let stats = try? await environment.social.followStats(userId: userId)
-        if let stats {
+        if let stats, writes == followWrites {
             followers = stats.followers
             following = stats.following
         }
@@ -391,7 +396,7 @@ final class UserProfileViewModel: ObservableObject {
             // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
             // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
-            if let ids {
+            if let ids, writes == followWrites {
                 isFollowing = ids.contains(userId)
             }
         }
@@ -430,7 +435,11 @@ final class UserProfileViewModel: ObservableObject {
     func toggleFollow(userId: String, environment: AppEnvironment, toasts: ToastCenter) async {
         isWorking = true
         actionMessage = nil
-        defer { isWorking = false }
+        followWrites += 1
+        defer {
+            isWorking = false
+            followWrites += 1
+        }
         do {
             let result = isFollowing
                 ? try await environment.social.unfollow(userId: userId)
@@ -445,6 +454,8 @@ final class UserProfileViewModel: ObservableObject {
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
         actionMessage = nil
+        followWrites += 1
+        defer { followWrites += 1 }
         do {
             try await environment.moderation.block(userId: userId)
             store.block(userId)

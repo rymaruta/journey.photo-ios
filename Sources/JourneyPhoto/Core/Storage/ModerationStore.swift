@@ -24,6 +24,8 @@ final class ModerationStore: ObservableObject {
 
     private let defaults: UserDefaults
     private var userId: String?
+    /// 手元でブロック・解除した分（同期の入れ替えで消さないため・`LocalEdits`）
+    private var blockEdits = LocalEdits()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -50,6 +52,7 @@ final class ModerationStore: ObservableObject {
         self.userId = userId
         blockedUserIds = Set(defaults.stringArray(forKey: key("blocked")) ?? [])
         reportedPhotoIds = Set(defaults.stringArray(forKey: key("reported")) ?? [])
+        blockEdits.reset(owner: userId)
         // **人が変わったときも数を進める。** 進めないと、画面は
         // `.onChange(of: revision)` を見ているので読み直さず、
         // **前の人の絞り込みで読んだ一覧**が新しい人に見えたままになる
@@ -61,9 +64,18 @@ final class ModerationStore: ObservableObject {
     ///
     /// **端末のぶんを足し合わせない。** 解除したのに端末に残っていると、
     /// 「解除したのに見えない」になり、直す手立てが画面に無い。
-    func replaceBlocked(with ids: [String]) {
+    ///
+    /// - Parameter mark: 取りに行く前の `blockSyncMark`。**その後にブロック・解除した分は
+    ///   残す**（起動直後にブロックした人の写真が、押す前の一覧でまた出ていた）。
+    ///   別の人の印なら書かない
+    func replaceBlocked(with ids: [String], since mark: LocalEdits.Mark? = nil) {
+        var next = Set(ids)
+        if let mark {
+            guard let merged = blockEdits.merged(next, since: mark) else { return }
+            next = merged
+        }
         let before = (blockedUserIds, reportedPhotoIds)
-        blockedUserIds = Set(ids)
+        blockedUserIds = next
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
         bumpIfChanged(blocked: before.0, reported: before.1)
     }
@@ -81,9 +93,13 @@ final class ModerationStore: ObservableObject {
         ModerationSnapshot(blocked: blockedUserIds, reported: reportedPhotoIds)
     }
 
+    /// ブロック一覧を取りに行く**前に**取る。`replaceBlocked(with:since:)` に渡す
+    var blockSyncMark: LocalEdits.Mark { blockEdits.mark }
+
     func block(_ id: String) {
         let before = (blockedUserIds, reportedPhotoIds)
         blockedUserIds.insert(id)
+        blockEdits.note(id, on: true)
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
         bumpIfChanged(blocked: before.0, reported: before.1)
     }
@@ -91,6 +107,7 @@ final class ModerationStore: ObservableObject {
     func unblock(_ id: String) {
         let before = (blockedUserIds, reportedPhotoIds)
         blockedUserIds.remove(id)
+        blockEdits.note(id, on: false)
         defaults.set(Array(blockedUserIds), forKey: key("blocked"))
         bumpIfChanged(blocked: before.0, reported: before.1)
     }

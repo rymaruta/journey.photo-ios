@@ -37,6 +37,10 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 見て走り、**「いいね」と「取り消し」が同時に飛ぶ**。どちらが後に
     /// 返るかで最終的なハートの色が決まるので、押した結果と食い違う。
     @Published private(set) var isLiking = false
+    /// いいねを送り始めた・答えを受け取った回数。**読み込みの間に動いたら、
+    /// その読み込みの数とハートは書かない**——開いた直後に押すと、先に出ていた
+    /// 読み込みの（押す前の）答えが後から届き、押したハートと数を戻していた
+    private var likeWrites = 0
     /// 投稿者の公開プロフィール。**@ユーザー名を出すため**（写真の行は
     /// 表示名しか持っていない）。取れなければ nil——名前だけ出す
     @Published private(set) var owner: UserProfile?
@@ -94,6 +98,7 @@ final class PhotoDetailViewModel: ObservableObject {
 
     func load() async {
         let id = photoId
+        let writes = likeWrites
         async let count = try? social.likeCount(photoId: id)
         async let page = try? social.comments(photoId: id)
         let mine: Bool?
@@ -106,7 +111,8 @@ final class PhotoDetailViewModel: ObservableObject {
         let loaded = await page
         // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
         guard id == photoId else { return }
-        likes = loadedCount ?? likes
+        let likeUntouched = writes == likeWrites
+        if likeUntouched { likes = loadedCount ?? likes }
         if let loaded {
             // **一覧に載った投稿は、以後サーバーを信じる**（持ち主が消した・
             // 別の端末で消したコメントを、手元の控えから復活させない）
@@ -122,6 +128,7 @@ final class PhotoDetailViewModel: ObservableObject {
         // ハートが白に戻ると、押した人は「取り消された」と読む
         // （押し直しても数は増えない＝サーバーは冪等なので、実害は
         //  見え方だけ——だがその見え方がいちばん不安にさせる）
+        guard likeUntouched else { return }
         if let mine {
             liked = mine
         } else if !isSignedIn {
@@ -153,7 +160,11 @@ final class PhotoDetailViewModel: ObservableObject {
         }
         guard !isLiking else { return nil }
         isLiking = true
-        defer { isLiking = false }
+        likeWrites += 1
+        defer {
+            isLiking = false
+            likeWrites += 1
+        }
         let wasLiked = liked
         let id = photoId
         do {
