@@ -63,14 +63,22 @@ enum AuthGateway {
         let session = try await Amplify.Auth.fetchAuthSession()
         guard session.isSignedIn else { return nil }
         guard let provider = session as? AuthCognitoTokensProvider else { return nil }
-        do {
-            return try provider.getCognitoTokens().get().idToken
-        } catch let error as AuthError where AuthFailure(error) == .notAuthorized {
-            await MainActor.run {
-                NotificationCenter.default.post(name: .authSessionExpired, object: nil)
-            }
+        // **`switch` で分ける。** `do/catch … where` の catch の中で await すると、
+        // Xcode 26.3 のコンパイラが SILGenCleanup で落ちた（run 148。Linux の
+        // Swift 6.0 では通るので手元の検証では見つからない）
+        switch provider.getCognitoTokens() {
+        case .success(let tokens):
+            return tokens.idToken
+        case .failure(let error):
+            guard AuthFailure(error) == .notAuthorized else { throw error }
+            await announceSessionExpired()
             return nil
         }
+    }
+
+    @MainActor
+    private static func announceSessionExpired() {
+        NotificationCenter.default.post(name: .authSessionExpired, object: nil)
     }
 
     /// ログインの期限が切れているか（起動時の確認用・知らせは出さない）。
@@ -79,13 +87,11 @@ enum AuthGateway {
         guard let session = try? await Amplify.Auth.fetchAuthSession(),
               session.isSignedIn,
               let provider = session as? AuthCognitoTokensProvider else { return false }
-        do {
-            _ = try provider.getCognitoTokens().get()
+        switch provider.getCognitoTokens() {
+        case .success:
             return false
-        } catch let error as AuthError {
+        case .failure(let error):
             return AuthFailure(error) == .notAuthorized
-        } catch {
-            return false
         }
     }
 
