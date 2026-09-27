@@ -22,6 +22,30 @@ final class StoryDraftStoreTests: XCTestCase {
                    durationSec: 7, savedAt: now)
     }
 
+    /// **退会した人の下書きは、何枚目の画像も消す**（`AccountLocalData`）。
+    /// 並びの保存（名前が保存ごとに変わる）と退会の片づけ（鍵から名前を決め打ち）を
+    /// 別々に入れたので、統合したら決め打ちの名前しか消さず、コンパイルも通らなかった
+    func testRemoveDataDeletesEveryShot() async throws {
+        let (store, defaults, dir) = make()
+        store.use(userId: "u1")
+        let shot = { (n: String) in
+            StoryDraftStore.ShotInput(imageData: Data(n.utf8), fileName: "\(n).jpg",
+                                      contentType: "image/jpeg", coords: nil, overlays: [])
+        }
+        XCTAssertTrue(store.save(shots: [shot("a"), shot("b"), shot("c")], caption: "", location: "",
+                                 song: nil, durationSec: 7, savedAt: now))
+        let before = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        XCTAssertEqual(before.count, 3, "前提: 3枚書けていない")
+
+        store.removeData(for: "u1")
+        XCTAssertNil(store.draft)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path), [],
+                       "退会した人の下書きの画像が残っている")
+        let reopened = StoryDraftStore(defaults: defaults, directory: dir)
+        reopened.use(userId: "u1")
+        XCTAssertNil(reopened.draft)
+    }
+
     func testSavesAndComesBack() async throws {
         let (store, defaults, dir) = make()
         store.use(userId: "u1")

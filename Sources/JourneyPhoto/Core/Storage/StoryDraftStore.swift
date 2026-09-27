@@ -277,14 +277,18 @@ final class StoryDraftStore: ObservableObject {
     /// 退会した人の書きかけを消す（`AccountLocalData`）。**画像のファイルも**
     func removeData(for userId: String) {
         let draftKey = key(for: userId)
+        // **記録が指している画像を全部消す**（2枚目以降も）。名前は保存のたびに
+        // 変わる（`imageFileName` の印）ので、鍵から決め打ちできない
         if let data = defaults.data(forKey: draftKey),
            let saved = try? JSONDecoder().decode(ImageRef.self, from: data) {
-            try? FileManager.default.removeItem(at: fileURL(saved.imageFile))
+            for file in saved.files {
+                try? FileManager.default.removeItem(at: fileURL(file))
+            }
         }
-        // 名前は鍵から決まる（古い名前で残ったものは `sweepOrphans` が拾う）
-        try? FileManager.default.removeItem(at: fileURL(Self.imageFileName(forKey: draftKey)))
         defaults.removeObject(forKey: draftKey)
         if userId == self.userId { draft = nil }
+        // 記録から外れて残ったもの（書きかけの途中で落ちた回）はここで拾う
+        sweepOrphans()
     }
 
     /// 捨てる（「捨てる」を押したとき・投稿し終えたとき）。
