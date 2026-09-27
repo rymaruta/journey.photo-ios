@@ -204,6 +204,8 @@ struct UserProfileView: View {
                     Text(model.shownName ?? "—")
                         .font(JPFont.display(26, relativeTo: .title))
                         .foregroundStyle(Color.white)
+                        // 題は上のバーに出さないので、画面の見出しは名前が受け持つ
+                        .accessibilityAddTraits(.isHeader)
                     VerifiedBadge(isVerified: model.profile?.verified, nameSize: 26, relativeTo: .title, fit: .mincho)
                 }
                 // 公開プロフィールの口（`toPublicProfile`）が username と居住地を返す
@@ -300,21 +302,12 @@ struct UserProfileView: View {
                 Task { await model.toggleFollow(userId: userId, environment: environment) }
             }
         } label: {
-            Text(model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"))
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(model.isFollowing ? Color.white : WebTheme.accentText)
-                .lineLimit(1)
-                .padding(.horizontal, 14)
-                .frame(minWidth: 44, minHeight: 36)
-                .background(model.isFollowing ? Color.white.opacity(0.12) : WebTheme.accentBackground,
-                            in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.white.opacity(model.isFollowing ? 0.18 : 0),
-                                                lineWidth: 1))
-                // 見た目は 36pt、押せる高さは 44pt
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+            FollowPill(title: model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"),
+                       isFollowing: model.isFollowing)
         }
         .buttonStyle(.plain)
+        // 送っている間は薄くする（押したことが見て分かる。二度押しは `disabled` で防ぐ）
+        .opacity(model.isWorking ? 0.6 : 1)
         .disabled(model.isWorking)
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
             Task { await model.toggleFollow(userId: userId, environment: environment) }

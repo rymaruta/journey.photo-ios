@@ -501,3 +501,15 @@ final class TagCountsTests: XCTestCase {
         XCTAssertTrue(counts.isEmpty, "固有名詞が候補に出ている")
     }
 }
+
+/// タグの一覧の見出し（写真の詳細のタグの札から開く `TagPhotosView` の題）
+final class TagCollectionTitleTests: XCTestCase {
+
+    /// **タグの題は札（`TagInput.chipText`）と同じ畳み方。** 札が「#旅」なのに
+    /// 押した先の見出しが「###旅」「#＃旅」にならない
+    func testTagTitleMatchesChip() {
+        XCTAssertEqual(PhotoQuery.Collection.tag("##旅").title, "#旅")
+        XCTAssertEqual(PhotoQuery.Collection.tag("＃旅").title, "#旅")
+        XCTAssertEqual(PhotoQuery.Collection.tag("冬").title, "#冬")
+    }
+}

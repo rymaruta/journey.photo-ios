@@ -94,6 +94,17 @@ enum TagInput {
         return String(current[current.startIndex..<cut.upperBound])
     }
 
+    /// 写真の詳細のタグの札に出す字（板 02 の「#夕焼け」）。
+    ///
+    /// 先頭の `#`・`＃`（とその間の空白）を**全部**落としてから `#` を1つ付ける。
+    /// 打った人が付けていた `#` を二重にしない（`##旅` → `#旅`）・全角の `＃` も
+    /// 半角1つに揃える。`#` しか無いタグは元の字のまま（`#` だけの札を作らない）。
+    /// **描くときだけ**——保存する値・絞り込みに渡す値には付けない
+    static func chipText(_ tag: String) -> String {
+        let bare = tag.drop(while: { $0 == "#" || $0 == "＃" || $0.isWhitespace })
+        return bare.isEmpty ? tag : "#" + bare
+    }
+
     /// 候補を、**打ちかけの文字で絞る**。
     ///
     /// 何も打っていなければ全部出す（20語は全部並ぶ——Web は
@@ -146,7 +157,8 @@ enum PhotoQuery {
 
         var title: String {
             switch self {
-            case .tag(let value): return "#\(value)"
+            // 札（`chipText`）と同じ畳み方——「##旅」「＃旅」の札が「#旅」なのに見出しが食い違わない
+            case .tag(let value): return TagInput.chipText(value)
             case .location(let value): return value
             case .category(let value): return value
             case .camera(let value): return value
