@@ -71,6 +71,7 @@ actor OfficialSpotService {
         let data: Data
         let response: URLResponse
         do {
+            try RequestCancellation.throwIfCancelled()
             (data, response) = try await session.data(from: url)
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める

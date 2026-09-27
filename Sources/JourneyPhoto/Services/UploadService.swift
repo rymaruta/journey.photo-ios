@@ -87,6 +87,7 @@ struct UploadService {
 
         let response: URLResponse
         do {
+            try RequestCancellation.throwIfCancelled()
             (_, response) = try await session.upload(for: request, from: data)
         } catch {
             throw APIError.unreachable

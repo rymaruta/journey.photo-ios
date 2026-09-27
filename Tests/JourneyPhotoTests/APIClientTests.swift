@@ -331,3 +331,46 @@ final class AuthStatusMessageTests: XCTestCase {
         XCTAssertTrue(error.errorDescription?.contains("権限がありません") == true)
     }
 }
+
+/// 取り消された処理から通信を始めない（`RequestCancellation`）。
+///
+/// 🔴 Linux の URLSession は、取り消された処理から呼ぶとまれに落ちる（試験の約2%が
+/// これだった）。**呼ぶ前に気づいて、URLSession が返すのと同じ取り消しを投げる**
+@MainActor
+final class RequestCancellationTests: XCTestCase {
+
+    private func session() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        return URLSession(configuration: config)
+    }
+
+    private struct Payload: Decodable { let ok: Bool }
+
+    /// API: 要求を出さず、取り消しとして返す（`APIClient` は取り消しを失敗の文にしない）
+    func testCancelledCallDoesNotReachTheNetwork() async {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session())
+        // メインアクターの上で作るので、下の cancel() より先には走らない
+        let task = Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
+        task.cancel()
+        let result = await task.result
+        XCTAssertEqual(StubProtocol.requestCount, 0, "取り消された処理から要求を出している")
+        guard case .failure(let error) = result else { return XCTFail("取り消したのに答えが返った") }
+        XCTAssertTrue(error is CancellationError, "取り消しの扱いが URLSession の取り消しと違う: \(error)")
+    }
+
+    /// 公開一覧: 要求を出さず、圏外と同じ経路（控えが無ければ unreachable）で返す
+    func testCancelledGalleryFetchDoesNotReachTheNetwork() async {
+        let gallery = PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session(),
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString))
+        let task = Task { try await gallery.fetchPhotos() }
+        task.cancel()
+        _ = await task.result
+        XCTAssertEqual(StubProtocol.requestCount, 0, "取り消された処理から要求を出している")
+    }
+}
