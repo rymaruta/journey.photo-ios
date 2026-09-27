@@ -86,4 +86,37 @@ final class OfficialSpotIndexTests: XCTestCase {
         let nowhere = try spot("nowhere", name: "座標なし")
         XCTAssertTrue(OfficialSpotIndex.nearby(nowhere, in: try index() + [nowhere]).isEmpty)
     }
+
+    /// 🔴 B9: **同じ spotId の札を2つ並べない**（画面は `id: \.spot.id` で並べる）。先勝ち
+    func testNearbyDropsDuplicateSpotIds() throws {
+        let spots = try index()
+        let twin = try spot("kotohira", name: "金刀比羅宮（重複）", lat: 34.18, lng: 133.81)
+        let near = OfficialSpotIndex.nearby(spots[0], in: spots + [twin])
+        XCTAssertEqual(near.map(\.spot.spotId), ["sp_kotohira", "sp_abashiri-ryuhyo"])
+        XCTAssertEqual(near[0].spot.name, "金刀比羅宮")
+    }
+
+    /// 🔴 B9: 索引を読むところでも同じ spotId の2行目を落とし、数に入れる
+    func testListDropsDuplicateSpotIds() throws {
+        let list = try JSONDecoder.api.decode(LenientOfficialSpotList.self, from: Data("""
+        [{"spotId":"sp_a","slug":"a","name":"A","stage":"published"},
+         {"spotId":"sp_b","slug":"b","name":"B","stage":"published"},
+         {"spotId":"sp_a","slug":"a2","name":"A2","stage":"published"}]
+        """.utf8))
+        XCTAssertEqual(list.spots.map(\.slug), ["a", "b"])
+        XCTAssertEqual(list.dropped, 1)
+    }
+
+    /// 🔴 B6: 経路は**丸めた座標のずれ（最大約0.7km）の内側**なら名前で探した地点へ。
+    /// 地図で押した地点の拾い直し（0.3km）では、丸めのずれで本物を取りこぼす
+    func testDirectionsPicksTheNamedPlaceWithinRoundingError() {
+        let rounded = Photo.Coords(lat: 34.14, lng: 133.68)
+        // 丸める前は 34.1447, 133.6848 のような位置（約0.65km 離れる）
+        let real = Photo.Coords(lat: 34.1447, lng: 133.6848)
+        let far = Photo.Coords(lat: 34.20, lng: 133.68)   // 約6.7km 先の同名の別地点
+        XCTAssertGreaterThan(TravelDistance.kilometers(from: rounded, to: real), PlaceLookup.sameSpotKm)
+        XCTAssertEqual(OfficialSpotIndex.directionsTargetIndex(of: [far, real], near: rounded), 1)
+        XCTAssertNil(OfficialSpotIndex.directionsTargetIndex(of: [far], near: rounded))
+        XCTAssertNil(OfficialSpotIndex.directionsTargetIndex(of: [], near: rounded))
+    }
 }

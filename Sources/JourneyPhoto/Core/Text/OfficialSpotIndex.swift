@@ -40,12 +40,15 @@ enum OfficialSpotIndex {
     }
 
     /// 近くの撮影スポット。**座標を持っているものだけ**、自分を除いて近い順。
-    /// 距離は写真と同じ式（`TravelDistance.kilometers`）。同じ距離は slug 順
+    /// 距離は写真と同じ式（`TravelDistance.kilometers`）。同じ距離は slug 順。
+    /// **同じ `spotId` は1つだけ（先勝ち）**——画面は `spotId` で並べるので、
+    /// 重なると同じ札が2つ出る（索引を読む側 `LenientOfficialSpotList` でも落とす）
     static func nearby(_ spot: OfficialSpot, in spots: [OfficialSpot],
                        limit: Int = 6) -> [(spot: OfficialSpot, km: Double)] {
         guard let here = spot.coords else { return [] }
+        var seen: Set<String> = [spot.spotId]
         return spots
-            .filter { $0.spotId != spot.spotId }
+            .filter { seen.insert($0.spotId).inserted }
             .compactMap { other -> (spot: OfficialSpot, km: Double)? in
                 guard let there = other.coords else { return nil }
                 return (other, TravelDistance.kilometers(from: here, to: there))
@@ -53,5 +56,23 @@ enum OfficialSpotIndex {
             .sorted { $0.km != $1.km ? $0.km < $1.km : $0.spot.slug < $1.spot.slug }
             .prefix(limit)
             .map { $0 }
+    }
+
+    // MARK: - 経路の行き先
+
+    /// 経路の行き先を名前の検索結果から拾い直すときの距離（km）。
+    ///
+    /// 🔴 **索引の座標は約1km に丸めてある**（小数2桁。台帳 `content/spots.json`
+    /// の時点で丸めてあり、丸める前の値はどこにも無い）。丸めのずれは最大で
+    /// 緯度 0.005°≒0.56km・経度 0.005°≒0.45km、斜めで約0.7km。そのまま
+    /// 経路に渡すと、山や滝では**入口と違う道の上**に案内する。
+    /// 地図で押した地点の拾い直し（`PlaceLookup.sameSpotKm` = 0.3km）より
+    /// 広く取るのはこのずれのぶん
+    static let directionsMatchKm: Double = 1.5
+
+    /// 名前で探した候補のうち、丸めた座標から `directionsMatchKm` 以内で
+    /// いちばん近いものの位置。無ければ nil（丸めた座標に名前を付けて渡す）
+    static func directionsTargetIndex(of candidates: [Photo.Coords], near rounded: Photo.Coords) -> Int? {
+        PlaceLookup.nearestIndex(of: candidates, to: rounded, withinKm: directionsMatchKm)
     }
 }

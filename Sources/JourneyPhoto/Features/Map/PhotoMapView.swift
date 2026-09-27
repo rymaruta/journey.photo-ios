@@ -631,8 +631,7 @@ struct PhotoMapView: View {
                 model.clearArea()
             } label: {
                 HStack(spacing: 6) {
-                    Text(L("この範囲の写真 \(model.shown.count)枚・\(model.pins.count)地点",
-                           "\(model.shown.count) photos · \(model.pins.count) places here"))
+                    Text(PhotoMapViewModel.areaCountLabel(photos: model.shown.count, places: model.pins.count))
                     Image(systemName: "xmark")
                         .font(.caption.weight(.bold))
                 }
@@ -919,11 +918,9 @@ struct PhotoMapView: View {
                         }
                     }
                     // **出典は写真と必ず一緒に**（CC BY・CC BY-SA の条件）
+                    // 押すと作者は出典のページへ・ライセンスは文面へ（`SpotImageCredit`）
                     if let photo = pin.photo {
-                        Text(photo.credit)
-                            .font(.caption2)
-                            .foregroundStyle(WebTheme.muted2)
-                            .lineLimit(1)
+                        SpotImageCredit(photo: photo, lineLimit: 1)
                     }
                 }
                 Spacer()
@@ -974,15 +971,40 @@ struct PhotoMapView: View {
         .accessibilityIdentifier("map.officialCard")
     }
 
-    /// 撮影スポットへの経路を Apple の地図で開く。座標から `MKMapItem` を
-    /// 起こし、`placeCard` と同じ `directions` の起動指定で渡す
+    /// 撮影スポットへの経路を Apple の地図で開く。`placeCard` と同じ
+    /// `directions` の起動指定で渡す。
+    ///
+    /// 🔴 **索引の座標は約1km に丸めてある**（丸める前の値は台帳にも無い）。
+    /// そのまま渡すと最大0.7km ずれた道の上へ案内するので、**スポット名で
+    /// Apple の地点を探し直し、丸めた座標の近く（`directionsMatchKm`）の
+    /// ものを行き先にする**（`PlaceSelectableMap.lookUp` と同じ拾い直し）。
+    /// 見つからなければ丸めた座標にスポット名を付けて渡す
     private func openDirections(to pin: OfficialPins.Pin) {
+        Task {
+            let item = await Self.directionsItem(for: pin)
+            item.openInMaps(launchOptions: [
+                MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
+            ])
+        }
+    }
+
+    private static func directionsItem(for pin: OfficialPins.Pin) async -> MKMapItem {
         let coordinate = CLLocationCoordinate2D(latitude: pin.coords.lat, longitude: pin.coords.lng)
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = pin.name
+        request.region = MKCoordinateRegion(center: coordinate,
+                                            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))
+        if let items = try? await MKLocalSearch(request: request).start().mapItems {
+            let candidates = items.map {
+                Photo.Coords(lat: $0.placemark.coordinate.latitude, lng: $0.placemark.coordinate.longitude)
+            }
+            if let index = OfficialSpotIndex.directionsTargetIndex(of: candidates, near: pin.coords) {
+                return items[index]
+            }
+        }
         let item = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
         item.name = pin.name
-        item.openInMaps(launchOptions: [
-            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
-        ])
+        return item
     }
 
     /// 押した地点の札（デザイン 04b）:
@@ -1284,6 +1306,14 @@ struct PhotoMapView: View {
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
                     .lineLimit(1)
+                // **写真の丸を出す行は出典も出す**（CC BY・CC BY-SA の条件）。
+                // 行そのものが押せる口なので、ここはリンクにしない
+                if let photo = row.spot.photo {
+                    Text(photo.credit)
+                        .font(.caption2)
+                        .foregroundStyle(WebTheme.muted2)
+                        .lineLimit(1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right")
@@ -1372,6 +1402,13 @@ struct PhotoMapView: View {
                             .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                     }
+                }
+                // 印に写真を出す行は出典も出す（行が押せる口なのでリンクにしない）
+                if let photo = pin.photo {
+                    Text(photo.credit)
+                        .font(.caption2)
+                        .foregroundStyle(WebTheme.muted2)
+                        .lineLimit(1)
                 }
             }
             Spacer()
