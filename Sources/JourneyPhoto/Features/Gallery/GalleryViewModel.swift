@@ -104,7 +104,11 @@ final class GalleryViewModel: ObservableObject {
     ///
     /// **`use(viewerId:following:)` を使い回さない**——あちらは範囲を
     /// 既定へ倒すので、「フォロー中」を選んだ直後に「自分」へ戻ってしまう。
-    func refreshFollowing(_ following: Set<String>) {
+    ///
+    /// - Parameter viewerId: 取りに行ったときの人。**いまの人と違えば書かない**
+    ///   （前の人の一覧が次の人の「フォロー中」に入る）
+    func refreshFollowing(_ following: Set<String>, for viewerId: String?) {
+        guard viewerId == self.viewerId else { return }
         self.followingIds = following
         if case .loaded = state { state = .loaded(filtered()) }
     }
@@ -117,16 +121,6 @@ final class GalleryViewModel: ObservableObject {
     ///
     /// **フォロー中は未ログインだと中身が無い。** 絞れないので
     /// 「おすすめ」へ戻す（空の画面に置き去りにしない）。
-    /// フォロー一覧が**取れなかった回**（圏外・取り消し）の入れ方。
-    ///
-    /// 同じ人なら手元の一覧を残す——空で上書きすると「フォロー中」が
-    /// 「まだありません」になる（画面を離れて取り消された回も同じ）。
-    /// 別の人なら前の人の一覧は使わない（分からないので空）
-    func use(viewerId: String?, fetchedFollowing: Set<String>?) {
-        let following = fetchedFollowing ?? (viewerId == self.viewerId ? followingIds : [])
-        use(viewerId: viewerId, following: following)
-    }
-
     func use(viewerId: String?, following: Set<String>) {
         self.viewerId = viewerId
         self.followingIds = following
@@ -223,10 +217,23 @@ final class GalleryViewModel: ObservableObject {
     /// **`use(viewerId:following:)` は呼ばない。** あちらは範囲を
     /// 「自分」に倒すので、押したフィードが即座に打ち消される
     /// （組み込んだ直後に踏んだ）。
+    /// フォロー一覧が**取れなかった回**（圏外・取り消し）の入れ方。
+    ///
+    /// 同じ人なら手元の一覧を残す——空で上書きすると「フォロー中」が
+    /// 「まだありません」になる（画面を離れて取り消された回も同じ）。
+    /// 別の人なら前の人の一覧は使わない（分からないので空）。
+    /// **`followingIds` はいつも `viewerId` の人のもの**（`select(feed:)` も守る）
+    func use(viewerId: String?, fetchedFollowing: Set<String>?) {
+        let following = fetchedFollowing ?? (viewerId == self.viewerId ? followingIds : [])
+        use(viewerId: viewerId, following: following)
+    }
+
     func select(feed: HomeFeed, viewerId: String?) {
         self.feed = feed
         self.scope = feed.scope
         self.sort = feed.sort
+        // 人が替わっていたら、手元のフォロー一覧は前の人のもの——持ち越さない
+        if viewerId != self.viewerId { followingIds = [] }
         self.viewerId = viewerId
         all = feed.arrange(all)
         state = .loaded(filtered())

@@ -183,11 +183,14 @@ struct GalleryView: View {
                         // 誰かをフォローしても「フォロー中」に出てこない
                         // （上の段にあった範囲の切り替えが持っていた処理を移した）
                         guard feed == .following, auth.userId != nil else { return }
+                        let viewer = auth.userId
                         Task {
                             // **取れなかった回に空で潰さない**（圏外で押しただけで
                             // 「フォロー中」が知らせも無く空になる）
-                            guard let ids = try? await environment.social.myFollowingIds() else { return }
-                            model.refreshFollowing(Set(ids))
+                            let ids = try? await environment.social.myFollowingIds()
+                            guard let ids else { return }
+                            // 待っている間に人が替わったら書かない（`refreshFollowing`）
+                            model.refreshFollowing(Set(ids), for: viewer)
                         }
                     } label: {
                         Text(feed.label)

@@ -142,7 +142,7 @@ final class ViewModelTests: XCTestCase {
         model.use(viewerId: "me", following: [])
         model.select(scope: .following)
 
-        model.refreshFollowing(["u2"])
+        model.refreshFollowing(["u2"], for: "me")
 
         XCTAssertEqual(model.scope, .following, "範囲が勝手に戻っている")
     }

@@ -107,4 +107,16 @@ final class HomeFeedSelectionTests: XCTestCase {
         model.use(viewerId: "other", fetchedFollowing: ["b"])
         XCTAssertEqual(model.followingIds, ["b"])
     }
+
+    /// 🔴 **札を押して人が替わった回、前の人のフォロー一覧を持ち越さない。**
+    /// 持ち越すと、次の人の一覧が取れなかったとき前の人の一覧が「フォロー中」に残る
+    func testSelectingAFeedAsAnotherViewerDropsThePreviousList() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "a", following: ["x"])
+        model.select(feed: .following, viewerId: "b")
+        model.use(viewerId: "b", fetchedFollowing: nil)
+        XCTAssertEqual(model.followingIds, [], "前の人のフォロー一覧が次の人に残った")
+        model.refreshFollowing(["x"], for: "a")
+        XCTAssertEqual(model.followingIds, [], "前の人に取りに行った一覧を次の人に書いた")
+    }
 }
