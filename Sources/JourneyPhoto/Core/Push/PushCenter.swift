@@ -70,6 +70,10 @@ final class PushCenter: ObservableObject {
     /// 起動時の期限切れのように**前の人を一度も見ないまま**抜ける経路を取りこぼす。
     /// 人ではなく端末に付く
     private static let ownerKey = "photo-gallery-push-owner"
+    /// 持ち主を一度でも書いたか。**書く前の版から上げた端末では持ち主が分からない**
+    /// ——旧版で通知を受け取っていた人が、更新後に一度も登録しないまま期限切れに
+    /// なると、前の人あての宛先が残る。分からない間は、次にログインした人で引き取る
+    private static let ownerKnownKey = "photo-gallery-push-owner-known"
     private var owner: String? {
         get { defaults.string(forKey: Self.ownerKey) }
         set {
@@ -78,7 +82,13 @@ final class PushCenter: ObservableObject {
             } else {
                 defaults.removeObject(forKey: Self.ownerKey)
             }
+            defaults.set(true, forKey: Self.ownerKnownKey)
         }
+    }
+    /// サーバーに前の持ち主が残っているかもしれない（別の人・または分からない）
+    private func mayBelongToSomeoneElse(than userId: String) -> Bool {
+        guard defaults.bool(forKey: Self.ownerKnownKey) else { return true }
+        return owner.map { $0 != userId } ?? false
     }
     private let defaults: UserDefaults
     private var userId: String?
@@ -104,7 +114,7 @@ final class PushCenter: ObservableObject {
         //
         // ここで前の人のぶんを `DELETE` しても外れない。ログアウト後は前の人の
         // ID トークンが無く、次の人が入ったあとは**次の人の集合**から消すだけ
-        if let userId, let token, let owner, owner != userId {
+        if let userId, let token, mayBelongToSomeoneElse(than: userId) {
             await releasePreviousOwner(token: token, as: userId)
         }
         // **外し損ねた宛先を外し直す**（「受け取らない」にした回に圏外だった・
@@ -260,8 +270,11 @@ final class PushCenter: ObservableObject {
         guard let token, let userId, isEnabled, isAuthorized else { return }
         do {
             try await service().register(token: token)
-            // **サーバーの持ち主はこの人になった**（`devices.ts` の逆引き）
+            // **サーバーの持ち主はこの人になった**（`devices.ts` の逆引き）。
+            // 待っている間に人が替わっていても書く（次の `use` が引き取る手がかり）
             owner = userId
+            // 画面の「預けてある」は、いまの人のぶんだけ
+            guard self.userId == userId else { return }
             isRegistered = true
         } catch {
             isRegistered = false

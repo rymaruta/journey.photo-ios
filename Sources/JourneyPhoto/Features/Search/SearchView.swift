@@ -19,6 +19,8 @@ struct SearchView: View {
     /// ——開いている詳細の下で一覧を作り直すと、押した元が消えて閉じる
     @State private var needsUserReload = false
     @State private var loadedUserRevision = 0
+    /// 一度でも読み込みを始めたか（2回目以降の出現で人の入れ替わりを拾う）
+    @State private var didStartLoading = false
 
     var body: some View {
         ScrollView {
@@ -61,8 +63,12 @@ struct SearchView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
         .task {
-            // 見ていない間に替わった回は `needsUserReload` が拾う（ここで合わせても消えない）
-            loadedUserRevision = hidden.userRevision
+            // **見ていない間の入れ替わりを、`onChange` だけに頼らない。** 2回目以降の
+            // 出現で数がずれていたら読み直す（初回はこれから読むので合わせるだけ）
+            if loadedUserRevision != hidden.userRevision {
+                if didStartLoading { reloadHidden() } else { loadedUserRevision = hidden.userRevision }
+            }
+            didStartLoading = true
             await model.loadPhotos(environment: environment)
         }
         .onChange(of: query) { _, newValue in

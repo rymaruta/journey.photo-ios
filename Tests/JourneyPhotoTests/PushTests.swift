@@ -209,6 +209,7 @@ final class PushReleaseTests: XCTestCase {
         defaults.set(String(repeating: "ab", count: 32), forKey: "photo-gallery-apns-token")
         defaults.set(true, forKey: "photo-gallery-push-enabled.a")
         defaults.set("a", forKey: ownerKey)
+        defaults.set(true, forKey: "photo-gallery-push-owner-known")
         return defaults
     }
 
@@ -316,6 +317,51 @@ final class PushReleaseTests: XCTestCase {
         await relaunched.use(userId: "b")
 
         XCTAssertEqual(StubProtocol.requests, ["POST /user/devices", "DELETE /user/devices"])
+    }
+
+    /// 🔴 **持ち主を書く前の版から上げた端末**（持ち主が分からない）。旧版で A が
+    /// 受け取っていたまま期限切れになっても、次の人で引き取る
+    func testUpgradedDeviceWithUnknownOwnerIsReleased() async {
+        let defaults = registeredByA("push-release-8")
+        defaults.removeObject(forKey: ownerKey)
+        defaults.removeObject(forKey: "photo-gallery-push-owner-known")
+        let push = center(defaults)
+        await push.use(userId: nil)
+        StubProtocol.requests = []
+
+        await push.use(userId: "b")
+
+        XCTAssertEqual(StubProtocol.requests, ["POST /user/devices", "DELETE /user/devices"])
+        XCTAssertNil(defaults.string(forKey: ownerKey))
+        // 一度引き取ったら、持ち主は分かっている（次の起動で流し直さない）
+        StubProtocol.requests = []
+        let relaunched = center(defaults)
+        await relaunched.use(userId: "b")
+        XCTAssertEqual(StubProtocol.requests, [])
+    }
+
+    /// 受け取る人が引き取るときは外さない（外すと、APNs からトークンが返らない回に
+    /// その人の通知まで止まる）
+    func testReceivingUserTakesOverWithoutDelete() async {
+        let defaults = registeredByA("push-release-9")
+        defaults.set(true, forKey: "photo-gallery-push-enabled.b")
+        let push = center(defaults)
+        await push.use(userId: nil)
+        StubProtocol.requests = []
+
+        await push.use(userId: "b")
+
+        XCTAssertEqual(StubProtocol.requests, ["POST /user/devices"])
+        XCTAssertEqual(defaults.string(forKey: ownerKey), "b")
+    }
+
+    /// 「受け取らない」で外せたら持ち主を消す（次の人で余計に流さない）
+    func testDisableClearsTheOwner() async {
+        let defaults = registeredByA("push-release-10")
+        let push = center(defaults)
+        await push.use(userId: "a")
+        await push.disable()
+        XCTAssertNil(defaults.string(forKey: ownerKey))
     }
 
     /// 本人が戻ってきただけなら、前の人の外しは流さない
