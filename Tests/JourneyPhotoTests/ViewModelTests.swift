@@ -265,6 +265,27 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.likes, 7, "取れなかった回に一覧の数を捨てている")
     }
 
+    /// **読み込みを投げたあとに手元で消したコメントを、遅れて着いた古いページで
+    /// 戻さない**（7f8c75b のレビュー）。投稿も同じ世代の番号で守っている
+    func testStaleCommentPageDoesNotUndoALocalDelete() async throws {
+        prepare()
+        let page = #"{"items":[{"id":"c1","uid":"u1","name":"a","text":"hi"}],"count":1}"#
+        // 削除は即答・一覧は遅い（道で分ける。先に当たった道が使われる）
+        StubProtocol.respond(path: "/comments/c1", status: 200, body: "{}")
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: page, delay: 0.3)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        await model.reloadComments()
+        let comment = try XCTUnwrap(model.comments.first)
+
+        let reload = Task { await model.reloadComments() }
+        for _ in 0..<200 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        await model.deleteComment(comment)
+        XCTAssertTrue(model.comments.isEmpty)
+        await reload.value
+
+        XCTAssertTrue(model.comments.isEmpty, "消したコメントが古いページで戻っている")
+    }
+
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。
     func testLikeUsesServerCount() async {
         prepare()

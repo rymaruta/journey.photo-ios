@@ -99,6 +99,8 @@ final class GalleryViewModel: ObservableObject {
             return
         }
         let fetched = try? await photos.myPhotos()
+        // 取り消された回（ログアウト・人の切り替え）は、遅れて着いた答えを誰にも付けない
+        guard !Task.isCancelled else { return }
         if let fetched {
             myPhotos = fetched
             myPhotosOwner = viewerId
@@ -134,8 +136,10 @@ final class GalleryViewModel: ObservableObject {
     ///   - viewerId: **誰の鍵で取ったか。** `self.viewerId` から取らない——
     ///     `use` が走る前（`.task` が取り消された回）だと nil のままで、
     ///     取れた集合の持ち主が分からなくなり、次の失敗で空に潰される
-    func refreshFollowing(_ following: Set<String>?, viewerId: String?) {
-        guard let following, let viewerId else { return }
+    ///     **いま見ている人と違えば捨てる**（遅れて着いた前の人の集合を今の人に入れない）
+    func refreshFollowing(_ following: Set<String>?, viewerId: String) {
+        guard let following else { return }
+        if let current = self.viewerId, current != viewerId { return }
         self.followingIds = following
         followingOwner = viewerId
         followingFailed = false

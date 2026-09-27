@@ -22,6 +22,10 @@ final class PhotoDetailViewModel: ObservableObject {
     @Published private(set) var commentsUnavailable = false
     /// 「もう一度試す」でコメントを読み直している間（二度押しで2本投げない）
     @Published private(set) var isReloadingComments = false
+    /// 手元でコメントの一覧を変えた回数（投稿・削除）。**読み込みを投げたあとに
+    /// 変わっていたら、着いたページでコメントを上書きしない**——入れた自分の
+    /// コメントが、投稿より前に読んだ古いページで消える
+    private var commentsRevision = 0
     @Published var draftComment = ""
     @Published var errorMessage: String?
     @Published private(set) var isPosting = false
@@ -65,6 +69,7 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func load() async {
+        let revision = commentsRevision
         async let count = try? social.likeCount(photoId: photoId)
         async let page = try? social.comments(photoId: photoId)
         let mine: Bool?
@@ -75,11 +80,7 @@ final class PhotoDetailViewModel: ObservableObject {
         }
         likes = await count ?? likes
         let loaded = await page
-        if let loaded {
-            comments = loaded.items
-            commentCount = loaded.count
-        }
-        commentsUnavailable = loaded == nil
+        applyComments(loaded, revision: revision)
         // **引けなかった回に「押していない」と言わない。** 電波が悪いだけで
         // ハートが白に戻ると、押した人は「取り消された」と読む
         // （押し直しても数は増えない＝サーバーは冪等なので、実害は
@@ -95,14 +96,19 @@ final class PhotoDetailViewModel: ObservableObject {
     ///
     /// **`load()` を使い回さない。** あちらはいいねの数と自分のいいねも引き直すので、
     /// いいねを送っている最中に押すと、古い答えが後から着いてハートが戻りうる
-    ///
-    /// **投稿している間は読み直さない**（逆も）。あとから着いた古いページが、
-    /// 先頭に入れた自分のコメントを上書きして消す
     func reloadComments() async {
-        guard !isReloadingComments, !isPosting else { return }
+        guard !isReloadingComments else { return }
         isReloadingComments = true
         defer { isReloadingComments = false }
+        let revision = commentsRevision
         let page = try? await social.comments(photoId: photoId)
+        applyComments(page, revision: revision)
+    }
+
+    /// 読んだページを移す。**投げたあとに手元で投稿・削除していたら移さない**
+    /// （`commentsRevision`）。次に開いたとき・もう一度読んだときに揃う
+    private func applyComments(_ page: SocialService.CommentPage?, revision: Int) {
+        guard revision == commentsRevision else { return }
         if let page {
             comments = page.items
             commentCount = page.count
@@ -145,13 +151,12 @@ final class PhotoDetailViewModel: ObservableObject {
             errorMessage = L("コメントするにはログインしてください", "Sign in to comment")
             return
         }
-        // 読み直しの答えで、入れた自分のコメントが上書きされない（`reloadComments`）
-        guard !isReloadingComments else { return }
         isPosting = true
         defer { isPosting = false }
         do {
             let comment = try await social.postComment(photoId: photoId, text: text)
             comments.insert(comment, at: 0)
+            commentsRevision += 1
             // **総数が分からない回は分からないまま。** 取れていない数に
             // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
             commentCount = commentCount.map { $0 + 1 }
@@ -165,6 +170,7 @@ final class PhotoDetailViewModel: ObservableObject {
         do {
             try await social.deleteComment(photoId: photoId, commentId: comment.id)
             comments.removeAll { $0.id == comment.id }
+            commentsRevision += 1
             commentCount = commentCount.map { max(0, $0 - 1) }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")

@@ -91,7 +91,10 @@ struct GalleryView: View {
             // **フォロー一覧も取り直す。** 取れなかった回の出口
             // （「読み込めませんでした。引き下げて読み直せます」）
             if let userId = auth.userId {
-                model.refreshFollowing(await fetchFollowing(), viewerId: userId)
+                let following = await fetchFollowing()
+                // 待っている間に人が替わっていたら捨てる
+                guard auth.userId == userId else { return }
+                model.refreshFollowing(following, viewerId: userId)
             }
         }
         .sheet(item: $reportTarget) { target in
@@ -347,7 +350,10 @@ struct GalleryView: View {
                         Task {
                             // **取れなかった回に空で潰さない**（圏外で押しただけで
                             // 「フォロー中」が知らせも無く空になる）——nil は `refreshFollowing` が捨てる
-                            model.refreshFollowing(await fetchFollowing(), viewerId: userId)
+                            let following = await fetchFollowing()
+                            // 待っている間に人が替わっていたら捨てる（前の人の集合を今の人に入れない）
+                            guard auth.userId == userId else { return }
+                            model.refreshFollowing(following, viewerId: userId)
                         }
                     } label: {
                         Text(feed.label)

@@ -171,4 +171,12 @@ final class HomeFeedSelectionTests: XCTestCase {
         XCTAssertEqual(model.followingIds, ["u1"], "取れた集合を後の失敗で潰している")
         XCTAssertFalse(model.followingFailed)
     }
+
+    /// **遅れて着いた前の人の集合を、今の人に入れない**（7f8c75b のレビュー）
+    func testFollowingFromAnotherUserIsIgnored() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "b", following: ["b1"])
+        model.refreshFollowing(["a1"], viewerId: "a")
+        XCTAssertEqual(model.followingIds, ["b1"], "前の人のフォロー先が入っている")
+    }
 }
