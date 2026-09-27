@@ -140,6 +140,13 @@ struct MyPageView: View {
         .onChange(of: hidden.revision) { _, _ in
             if isOnScreen { dropped = hidden.snapshot }
         }
+        // 自分の一覧が「公開中」と答えた写真は、消した・非公開にした印を外す
+        // （Web や別の端末で公開に戻した写真が、この端末でだけ出なかった）
+        .onChange(of: model.photos) { _, photos in
+            let owner = auth.userId
+            hidden.confirmPublished(photos.filter { $0.published != false }.map(\.id), for: owner)
+            Task { await environment.gallery.setHidden(hidden.snapshot) }
+        }
         // 「行きたい」も同じ。人が替わった回（`wishlist.use`）もここで拾う
         .onChange(of: wishlist.spotIds) { _, next in
             if isOnScreen { wishIds = next }
@@ -520,7 +527,10 @@ struct MyPageView: View {
     @ViewBuilder
     private var favoritesArea: some View {
         // ブロック・通報した人の写真を落とす（`FavoritesView`・`SavedPhotosView` と同じ）
-        let saved = dropped.visible(LikedPhotos.resolve(savedIds, in: [feed, model.photos]))
+        // **先に公開一覧を絞ってから引き当てる**（`SavedPhotosView` と同じ順）。引き当ててから
+        // 絞ると、公開一覧の古い写しが先に当たって落ち、自分の非公開の写し（新しい方）が
+        // 使われずに、非公開にした自分の写真が保存から消えた
+        let saved = LikedPhotos.resolve(savedIds, in: [dropped.visible(feed), model.photos])
         if saved.isEmpty {
             switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
                                           failed: feedFailed) {

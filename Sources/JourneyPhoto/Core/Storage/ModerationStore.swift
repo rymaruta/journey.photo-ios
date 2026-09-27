@@ -244,13 +244,31 @@ final class ModerationStore: ObservableObject {
     }
 
     /// 端末の印を読む。**期限を過ぎた印はここで捨てる**（書き戻して溜めない）
+    /// サーバーが「公開中」と答えた自分の写真の印を外す（Web や別の端末で公開に
+    /// 戻した写真が、この端末でだけ最大7日出なかった）。
+    ///
+    /// **付けたばかりの印は外さない**（`graceSeconds`）。自分の一覧（`/user/photos`）は
+    /// 索引の写しを読むので、非公開にした直後は古い「公開中」を返しうる——それで
+    /// 外すと、非公開にした写真がすぐ一覧に戻る
+    func confirmPublished(_ photoIds: [String], for owner: String?, graceSeconds: TimeInterval = 120) {
+        guard owner == userId else { return }
+        let cutoff = now().addingTimeInterval(-graceSeconds)
+        let stale = photoIds.filter { id in goneMarks[id].map { $0 < cutoff } ?? false }
+        guard !stale.isEmpty else { return }
+        let before = snapshot
+        for id in stale { goneMarks[id] = nil }
+        saveGoneMarks(goneMarks)
+        bumpIfChanged(since: before)
+    }
+
     private func loadGoneMarks() -> [String: Date] {
         let raw = defaults.dictionary(forKey: key("gone")) ?? [:]
         let cutoff = now().addingTimeInterval(-Self.goneLifetime)
         var marks: [String: Date] = [:]
         for (id, value) in raw {
             guard let seconds = (value as? Double) ?? (value as? NSNumber)?.doubleValue else { continue }
-            let at = Date(timeIntervalSince1970: seconds)
+            // 先の時刻は今に抑える（時計を進めて付けた印が長く残らない）
+            let at = min(Date(timeIntervalSince1970: seconds), now())
             if at > cutoff { marks[id] = at }
         }
         if marks.count != raw.count { saveGoneMarks(marks) }
