@@ -775,7 +775,8 @@ struct PhotoDetailView: View {
                 .accessibilityLabel(Labels.Common.send)
                 // コメントを読み直している間も押せない（`postComment` は黙って断るので、押せる形にしない）
                 .disabled(model.isPosting || model.isReloadingComments
-                          || model.draftComment.trimmingCharacters(in: .whitespaces).isEmpty)
+                          // 空の判定は `postComment` と同じ（改行だけでも押せない）
+                          || model.draftComment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
@@ -853,6 +854,8 @@ struct PhotoDetailView: View {
                         // ことを審査（1.2）で見られる
                         if comment.uid == auth.userId || isMine {
                             Button(Labels.Common.delete) { Task { await model.deleteComment(comment) } }
+                                // 読み直している間は押せない（`deleteComment` は黙って断る）
+                                .disabled(model.isReloadingComments)
                                 .font(.caption2)
                         }
                     }

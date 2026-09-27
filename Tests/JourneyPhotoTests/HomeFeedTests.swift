@@ -171,4 +171,16 @@ final class HomeFeedSelectionTests: XCTestCase {
         XCTAssertEqual(model.followingIds, ["u1"], "取れた集合を後の失敗で潰している")
         XCTAssertFalse(model.followingFailed)
     }
+
+    /// **人が替わった直後（`use` の前）に取れた今の人の集合を捨てない。** 前の人の集合を
+    /// 捨てるのは画面の `auth.userId` の見比べ——モデルが `self.viewerId` と比べると
+    /// ここで今の人の正しい集合まで捨てていた（ccb3390 のレビュー）
+    func testFollowingForTheNewUserBeforeUseIsKept() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "a", following: ["a1"])
+        model.refreshFollowing(["b1"], viewerId: "b")
+        model.use(viewerId: "b", following: nil)
+        XCTAssertEqual(model.followingIds, ["b1"], "今の人の集合を捨てている")
+        XCTAssertFalse(model.followingFailed)
+    }
 }

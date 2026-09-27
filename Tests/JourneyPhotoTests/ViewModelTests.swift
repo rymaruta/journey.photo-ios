@@ -265,6 +265,46 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.likes, 7, "取れなかった回に一覧の数を捨てている")
     }
 
+    /// **コメントの読み直しと、投稿・削除を同時に走らせない。** 後から着いた古いページが
+    /// 入れた・消したコメントを上書きする（画面は互いのボタンを押せなくしている）
+    func testCommentReloadExcludesPostAndDelete() async throws {
+        prepare()
+        let page = #"{"items":[{"id":"c1","uid":"u1","name":"a","text":"hi"}],"count":1}"#
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: page, delay: 0.3)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        await model.reloadComments()
+        let comment = try XCTUnwrap(model.comments.first)
+        let before = StubProtocol.requestCount
+
+        let reload = Task { await model.reloadComments() }
+        for _ in 0..<2000 where !model.isReloadingComments { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertTrue(model.isReloadingComments)
+        model.draftComment = "new"
+        await model.postComment()
+        await model.deleteComment(comment)
+        await reload.value
+
+        XCTAssertEqual(StubProtocol.requestCount, before + 1, "読み直しの最中に投稿・削除を投げている")
+        XCTAssertEqual(model.draftComment, "new", "投げていないのに下書きを消している")
+    }
+
+    /// 投稿している間は読み直さない
+    func testCommentPostExcludesReload() async {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+                             body: #"{"comment":{"id":"c2","uid":"me","name":"me","text":"x"}}"#, delay: 0.3)
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.draftComment = "x"
+        let post = Task { await model.postComment() }
+        for _ in 0..<2000 where !model.isPosting { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertTrue(model.isPosting)
+        await model.reloadComments()
+        await post.value
+        XCTAssertEqual(StubProtocol.requestCount, 1, "投稿の最中に読み直しを投げている")
+    }
+
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。
     func testLikeUsesServerCount() async {
         prepare()

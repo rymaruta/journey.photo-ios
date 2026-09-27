@@ -162,6 +162,9 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func deleteComment(_ comment: PhotoComment) async {
+        // 読み直している間は消さない（あとから着いた古いページで、消したコメントが戻る）。
+        // 画面も削除を押せなくしている
+        guard !isReloadingComments else { return }
         do {
             try await social.deleteComment(photoId: photoId, commentId: comment.id)
             comments.removeAll { $0.id == comment.id }
