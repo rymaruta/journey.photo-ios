@@ -144,9 +144,14 @@ struct ProfileEditView: View {
     private var imagesHeader: some View {
         Section {
             ZStack(alignment: .topLeading) {
-                RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: "cover", cacheBust: imageBust) })
+                // 写真は重ね（overlay）に置く——引き伸ばした写真を直に包むと、横長の
+                // カバーで行の幅が画面より広くなる（写真の詳細で踏んだのと同じ）
+                Color.clear
                     .frame(maxWidth: .infinity)
                     .frame(height: 132)
+                    .overlay {
+                        RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: "cover", cacheBust: imageBust) })
+                    }
                     .background(WebTheme.surface)
                     .clipped()
                     .overlay(alignment: .topTrailing) {
