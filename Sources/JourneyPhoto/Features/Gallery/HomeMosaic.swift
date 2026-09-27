@@ -251,12 +251,17 @@ struct HomeFeedTile: View {
         // **答えを待っている間は押させない。** 二度目が古い `liked` を見て
         // 逆向きに飛ぶと、ハートと数が押した結果と食い違う（詳細画面の
         // `isLiking` と同じ）
-        guard pendingDelta == 0 else { return }
+        // 待っている印はカードの外（`LikeCountStore`）に持つ——カードが作り直されても消えない
+        let photoId = photo.id
+        guard pendingDelta == 0, likeCounts.beginSending(photoId) else { return }
         let wasLiked = liked
         // 先に画面を変える（押した手応えを待たせない）
         favorites.set(photo.id, favorite: !wasLiked)
         pendingDelta = wasLiked ? -1 : 1
-        defer { pendingDelta = 0 }
+        defer {
+            pendingDelta = 0
+            likeCounts.endSending(photoId)
+        }
         do {
             let result = wasLiked
                 ? try await environment.social.unlike(photoId: photo.id)

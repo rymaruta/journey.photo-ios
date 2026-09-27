@@ -360,8 +360,18 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var actionMessage: String?
 
     private(set) var cacheBust = ""
+    /// フォロー・ブロックが**受け付けられた**回数。**読み込みの間に増えたら、その読み込みの
+    /// フォロワー数と「フォロー中か」は書かない**——読み込み中にフォローを押すと、押す前の
+    /// 数と「フォローしていない」が後から届いて戻していた。断られた回は数えない。
+    /// 「フォロー中」の数（この人が何人をフォローしているか）は押しても変わらないので止めない
+    private var followWrites = 0
+    /// ブロックが受け付けられた回数。**ブロックで変わるのは「フォロー中か」だけ**なので、
+    /// こちらはフォロワー数を止めない
+    private var blockWrites = 0
 
     func load(userId: String, environment: AppEnvironment, viewerId: String?) async {
+        let writes = followWrites
+        let blocks = blockWrites
         isLoading = true
         errorMessage = nil
         cacheBust = String(Int(Date().timeIntervalSince1970))
@@ -394,14 +404,14 @@ final class UserProfileViewModel: ObservableObject {
 
         let stats = try? await environment.social.followStats(userId: userId)
         if let stats {
-            followers = stats.followers
+            if writes == followWrites { followers = stats.followers }
             following = stats.following
         }
         if viewerId != nil {
             // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
             // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
-            if let ids {
+            if let ids, writes == followWrites, blocks == blockWrites {
                 isFollowing = ids.contains(userId)
             }
         }
@@ -445,6 +455,7 @@ final class UserProfileViewModel: ObservableObject {
             let result = isFollowing
                 ? try await environment.social.unfollow(userId: userId)
                 : try await environment.social.follow(userId: userId)
+            followWrites += 1
             isFollowing = result.following
             followers = result.followers
         } catch {
@@ -457,6 +468,7 @@ final class UserProfileViewModel: ObservableObject {
         actionMessage = nil
         do {
             try await environment.moderation.block(userId: userId)
+            blockWrites += 1
             store.block(userId)
             await environment.gallery.setHidden(
                 userIds: store.blockedUserIds,

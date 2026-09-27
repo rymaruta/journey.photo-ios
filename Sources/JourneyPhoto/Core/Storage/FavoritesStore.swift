@@ -28,6 +28,8 @@ final class FavoritesStore: ObservableObject {
 
     private let defaults: UserDefaults
     private var userId: String?
+    /// 手元で押した分（同期の入れ替えで消さないため・`LocalEdits`）
+    private var edits = LocalEdits()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -46,7 +48,11 @@ final class FavoritesStore: ObservableObject {
         self.userId = userId
         ids = Set(defaults.stringArray(forKey: key(for: userId)) ?? [])
         removedHere = []
+        edits.reset(owner: userId)
     }
+
+    /// 同期で一覧を取りに行く**前に**取る。`replace(with:for:since:)` に渡す
+    var syncMark: LocalEdits.Mark { edits.mark }
 
     /// 「いいねした写真」に並べる ID。**サーバーの一覧 ∪ 端末の控え − この起動中に
     /// この端末で外したもの**。
@@ -72,11 +78,19 @@ final class FavoritesStore: ObservableObject {
     /// 使っていた頃の端末には、**保存しただけの写真の id がここに残っている**。
     /// 足すだけだと、その古い混ざりものが「いいねした写真」に出続ける。
     ///
-    /// - Parameter owner: 取りに行ったときの人。**返ってくる間に人が替わって
-    ///   いたら書かない**（前の人のいいねを次の人の控えに書かない）
-    func replace(with photoIds: [String], for owner: String?) {
+    /// - Parameters:
+    ///   - owner: 取りに行ったときの人。**返ってくる間に人が替わって
+    ///     いたら書かない**（前の人のいいねを次の人の控えに書かない）
+    ///   - mark: 取りに行く前の `syncMark`。**その後に押した分は残す**
+    ///     （起動直後に押したいいねを、押す前の一覧で消さない）。別の人の印なら書かない
+    func replace(with photoIds: [String], for owner: String?, since mark: LocalEdits.Mark? = nil) {
         guard owner == userId else { return }
-        ids = Set(photoIds)
+        var next = Set(photoIds)
+        if let mark {
+            guard let merged = edits.merged(next, since: mark) else { return }
+            next = merged
+        }
+        ids = next
         defaults.set(Array(ids), forKey: key(for: userId))
     }
 
@@ -93,6 +107,7 @@ final class FavoritesStore: ObservableObject {
             ids.remove(id)
             removedHere.insert(id)
         }
+        edits.note(id, on: favorite)
         defaults.set(Array(ids), forKey: key(for: userId))
     }
 }

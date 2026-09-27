@@ -102,15 +102,19 @@ struct JourneyPhotoApp: App {
     /// 保存といいねが同じ入れ物を使っていた頃の端末に、**保存しただけの
     /// 写真の id が残っている**ため（足すだけだと出続ける）。
     ///
-    /// **返ってくる間に人が替わっていたら書かない**（`replace(with:for:)`）。
+    /// **返ってくる間に人が替わっていたら書かない**（`replace(with:for:since:)`）。
     /// 書くと、前の人のいいねが次の人の控えに入る
-    private func syncLikes() async {
+    ///
+    /// - Parameter mark: 人が決まった直後（最初の await の前）に取った `syncMark`。
+    ///   **その後に押した分は残す**——起動直後にホームで押したいいねが、押す前の
+    ///   一覧で消えていた
+    private func syncLikes(since mark: LocalEdits.Mark) async {
         guard let owner = auth.userId else { return }
         let ids = try? await environment.social.myLikedPhotoIds()
         // **いまのログインとも照らす。** ストアはまだ前の人を指していることがある
         // （退会で控えを消した直後、`.task` が取り消される前に続きが戻る回）
         guard !Task.isCancelled, auth.userId == owner, let ids else { return }
-        favorites.replace(with: ids, for: owner)
+        favorites.replace(with: ids, for: owner, since: mark)
     }
 
     /// 保存した写真をサーバーに合わせる。
@@ -119,11 +123,11 @@ struct JourneyPhotoApp: App {
     /// 消えて「保存した写真が全部消えた」になる。
     /// ログアウトしたら控えは鍵ごと切り替わる（`use(userId:)`）ので、
     /// ここでは何もしない。
-    private func syncSaves() async {
+    private func syncSaves(since mark: LocalEdits.Mark) async {
         guard let owner = auth.userId else { return }
         let ids = try? await environment.saves.mySaves()
         guard !Task.isCancelled, auth.userId == owner, let ids else { return }
-        savedPhotos.replace(with: ids, for: owner)
+        savedPhotos.replace(with: ids, for: owner, since: mark)
     }
 
     var body: some Scene {
@@ -190,6 +194,11 @@ struct JourneyPhotoApp: App {
                     // （外さないと、次にこの端末を使う人へ前の人あての
                     //  通知が届く）
                     AppDelegate.push = push
+                    // **同期の印は最初の await の前に取る**（`LocalEdits`）。この後の
+                    // 待ちの間に押したいいね・保存・ブロックを、同期の一覧で消さない
+                    let likesMark = favorites.syncMark
+                    let savesMark = savedPhotos.syncMark
+                    let blocksMark = hidden.blockSyncMark
                     // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
                     // 「前の人の宛先が残っている」と見なして端末ごと外していた
                     // 起動時に本人の ID が取れなかっただけのログアウトも同じ
@@ -199,13 +208,14 @@ struct JourneyPhotoApp: App {
                     }
                     await applyModeration()
                     await applyRestrictedFeed()
-                    await syncSaves()
-                    await syncLikes()
+                    await syncSaves(since: savesMark)
+                    await syncLikes(since: likesMark)
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
+                    // （同期を始めた後にブロック・解除した分は残す——`blocksMark`）
                     if let owner = auth.userId {
                         let blocks = try? await environment.moderation.blocks()
                         if !Task.isCancelled, auth.userId == owner, let blocks {
-                            hidden.replaceBlocked(with: blocks.blockedIds, for: owner)
+                            hidden.replaceBlocked(with: blocks.blockedIds, for: owner, since: blocksMark)
                             await applyModeration()
                         }
                     }

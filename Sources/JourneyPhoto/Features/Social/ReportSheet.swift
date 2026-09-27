@@ -154,6 +154,9 @@ struct ReportSheet: View {
     }
 
     private func submit() async {
+        // **送っている間・受け付けた後は送らない。** ボタンの `disabled` は描き直しの後にしか
+        // 効かないので、同じフレームで2回押すと通報が2回送られていた
+        guard !isWorking, !done else { return }
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }

@@ -57,6 +57,9 @@ struct PhotoMapView: View {
     /// 開いたときに現在地を取りにいったか。**最初の1回だけ**——タブを
     /// 行き来するたびに取り直して、指で動かした場所から引き戻さない
     @State private var autoLocateStarted = false
+    /// 写真の範囲へ一度寄せたか。**寄せるのは最初の1回だけ**——詳細から戻るたびに
+    /// `.task` が走り直し、見ていた場所から写真の範囲へ引き戻していた
+    @State private var framedToPhotos = false
     /// 拡大・縮小を続けて押したときの土台（`MapFraming.ZoomChain`）
     @State private var zoomChain = MapFraming.ZoomChain()
     /// 方位磁針を地図の外（右の操作列）に置くための名前。
@@ -90,7 +93,10 @@ struct PhotoMapView: View {
             // 読んでいる間に通報された回、古い集合で絞った結果を残さない
             dropHidden()
             // 現在地が先に取れていたら、写真の読み込みで引き戻さない
-            if here == nil { frame(model.frame) }
+            if here == nil, !framedToPhotos, let photosFrame = model.frame {
+                framedToPhotos = true
+                frame(photosFrame)
+            }
         }
         // 絞りが変わったら、残ったピンに寄せ直す（範囲で絞ったときは
         // 見ている場所を動かさない——押した範囲がそのまま答え）
