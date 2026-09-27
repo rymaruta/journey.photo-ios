@@ -140,6 +140,13 @@ struct UserProfileView: View {
     /// 詳細でブロックして戻っても、その人の写真の格子と地図が押せた（審査 1.2）
     private var shownPhotos: [Photo] { dropped.visible(model.photos) }
 
+    /// 札の枚数。**格子と同じ並び（`shownPhotos`）で数える。** 詳細で1枚通報して
+    /// 戻ると格子は1枚減るのに、札は読み直すまで元の枚数のままだった
+    private var shownCount: ProfileLine.PhotoCount {
+        if case .loaded = model.photoCount { return .loaded(shownPhotos.count) }
+        return model.photoCount
+    }
+
     @ViewBuilder
     private var photoArea: some View {
         if let message = model.errorMessage {
@@ -226,7 +233,7 @@ struct UserProfileView: View {
     private var counts: some View {
         HStack(spacing: 20) {
             ForEach(ProfileLine.counts(followers: model.followers, following: model.following,
-                                       photos: isBlocked ? .pending : model.photoCount)) { item in
+                                       photos: isBlocked ? .pending : shownCount)) { item in
                 switch item.kind {
                 case .followers:
                     countLink(item, kind: .followers, count: model.followers)

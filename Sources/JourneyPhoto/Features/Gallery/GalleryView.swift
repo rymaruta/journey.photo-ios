@@ -73,6 +73,10 @@ struct GalleryView: View {
                 return
             }
             let ids = (try? await environment.social.myFollowingIds()) ?? []
+            // **取り消された回は何も書かない。** 人が替わると古い回は取り消され、
+            // `try?` が取り消しを空に変える——そのまま次の人の `auth.userId` で
+            // 「フォローしている人0人」を書き、後から来る正しい答えを上書きしうる
+            guard !Task.isCancelled else { return }
             model.use(viewerId: auth.userId, following: Set(ids))
             // 今日のテーマに参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
