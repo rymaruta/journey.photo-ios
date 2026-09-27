@@ -366,6 +366,9 @@ final class UserProfileViewModel: ObservableObject {
             }
             errorMessage = error.errorDescription
             return
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
+            return
         } catch {
             errorMessage = Labels.Common.loadFailed
             return

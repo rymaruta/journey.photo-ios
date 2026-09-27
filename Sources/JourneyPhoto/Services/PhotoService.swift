@@ -10,8 +10,11 @@ struct PhotoService {
     }
 
     /// 自分の写真（下書き＝非公開を含む）。応答は Photo の配列そのもの。
+    ///
+    /// **1行ずつ緩く読む**（公開一覧と同じ `LenientPhotoList`）。`[Photo]` で
+    /// 読むと、1行でも形が違えば一覧ごと落ち、マイページが丸ごとエラーになる
     func myPhotos() async throws -> [Photo] {
-        try await api.authorized(.get, "/user/photos", as: [Photo].self)
+        Self.kept(try await api.authorized(.get, "/user/photos", as: LenientPhotoList.self), from: "/user/photos")
     }
 
     /// 公開範囲を絞った写真のうち、**自分に見えるぶん**。`GET /feed/restricted`。
@@ -19,8 +22,19 @@ struct PhotoService {
     /// これらは静的サイトの一覧（`app/data/photos.json`）に載らないので、
     /// ここで取らないとアプリからも見えない。サーバーが
     /// 「フォロワーか」「親しい友達か」を判定して返す——**端末では決めない**。
+    ///
+    /// **1行ずつ緩く読む。** 公開一覧の側（`PublicGalleryService`）はここの失敗を
+    /// 黙って空にするので、1行の崩れで限定写真が全部消えていた
     func restrictedFeed() async throws -> [Photo] {
-        try await api.authorized(.get, "/feed/restricted", as: [Photo].self)
+        Self.kept(try await api.authorized(.get, "/feed/restricted", as: LenientPhotoList.self), from: "/feed/restricted")
+    }
+
+    /// 読めた行を返す。**落とした行は黙って捨てない**（記録に残す）
+    private static func kept(_ list: LenientPhotoList, from path: String) -> [Photo] {
+        if list.dropped > 0 {
+            print("[photos] \(path): 読めなかった写真の行を \(list.dropped) 件落としました")
+        }
+        return list.photos
     }
 
     /// 自分の写真を1枚だけ引き直す。

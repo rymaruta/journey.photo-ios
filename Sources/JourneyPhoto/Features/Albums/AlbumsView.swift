@@ -233,6 +233,8 @@ final class AlbumsViewModel: ObservableObject {
         defer { isLoading = false }
         do {
             albums = try await environment.albums.list()
+        } catch is CancellationError {
+            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }

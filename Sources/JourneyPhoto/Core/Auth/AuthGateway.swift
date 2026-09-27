@@ -60,7 +60,12 @@ enum AuthGateway {
     /// （`APIError.isAuthExpired` はどこからも呼ばれていなかった）。
     /// ここで `AuthStore` に知らせ、呼び手には「未ログイン」として nil を返す
     static func idToken() async throws -> String? {
-        let session = try await Amplify.Auth.fetchAuthSession()
+        let session: any AuthSession
+        do {
+            session = try await Amplify.Auth.fetchAuthSession()
+        } catch {
+            throw tokenFailure(error)
+        }
         guard session.isSignedIn else { return nil }
         guard let provider = session as? AuthCognitoTokensProvider else { return nil }
         // **`switch` で分ける。** `do/catch … where` の catch の中で await すると、
@@ -70,10 +75,26 @@ enum AuthGateway {
         case .success(let tokens):
             return tokens.idToken
         case .failure(let error):
-            guard AuthFailure(error) == .notAuthorized else { throw error }
+            guard AuthFailure(error) == .notAuthorized else { throw tokenFailure(error) }
             await announceSessionExpired()
             return nil
         }
+    }
+
+    /// ID トークンを取れなかった理由を、画面が読める形にする。
+    ///
+    /// 🔴 **通信による失敗は `APIError.unreachable` に包む。** 圏外で
+    /// トークンを更新できない回に Amplify のエラーのまま投げていたので、
+    /// `as? APIError` で読む画面は「通信できません」ではなく汎用の
+    /// 「読み込めませんでした」を出していた。それ以外はそのまま投げる
+    /// （ログインの期限切れは呼び出し元が `notAuthorized` で見分ける）
+    static func tokenFailure(_ error: Error) -> Error {
+        if error is URLError { return APIError.unreachable }
+        guard let auth = error as? AuthError else { return error }
+        if AuthFailure(auth) == .network || auth.underlyingError is URLError {
+            return APIError.unreachable
+        }
+        return error
     }
 
     @MainActor
