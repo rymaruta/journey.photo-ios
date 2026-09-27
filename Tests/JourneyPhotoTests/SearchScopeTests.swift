@@ -53,6 +53,32 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertEqual(SearchScope.places.photos(photos, query: "").map(\.id), ["place", "tag"])
     }
 
+    /// **「タグ」は鍵で当てる**——一覧の枚数（日英の別名を畳んで数える）と、押したときに
+    /// 出る枚数を揃える。「冬」で `winter` も、`#冬`・`＃冬` でも同じ。「山」で `山中湖` は拾わない
+    func testTagsMatchByKeyLikeTheCounts() throws {
+        let photos = [
+            try photo(["id": "ja", "tags": ["冬"]]),
+            try photo(["id": "en", "tags": ["Winter"]]),
+            try photo(["id": "lake", "tags": ["山中湖"]]),
+            try photo(["id": "mountain", "tags": ["山"]]),
+        ]
+        XCTAssertEqual(SearchScope.tags.photos(photos, query: "冬").map(\.id), ["ja", "en"])
+        XCTAssertEqual(SearchScope.tags.photos(photos, query: "#冬").map(\.id), ["ja", "en"])
+        XCTAssertEqual(SearchScope.tags.photos(photos, query: "＃冬").map(\.id), ["ja", "en"])
+        XCTAssertEqual(SearchScope.tags.photos(photos, query: "山").map(\.id), ["mountain"])
+    }
+
+    /// 鍵で1枚も当たらなければ、打ちかけの語として部分一致で拾う
+    func testTagsFallBackToPartialMatch() throws {
+        let photos = [
+            try photo(["id": "lake", "tags": ["山中湖"]]),
+            try photo(["id": "sauna", "tags": ["Sauna"]]),
+        ]
+        XCTAssertEqual(SearchScope.tags.photos(photos, query: "中湖").map(\.id), ["lake"])
+        XCTAssertEqual(SearchScope.tags.photos(photos, query: "#sau").map(\.id), ["sauna"])
+        XCTAssertTrue(SearchScope.tags.photos(photos, query: "#").isEmpty)
+    }
+
     /// 人を選んだら写真は出さない。人を出すのは すべて と 人 だけ
     func testPeopleScopeShowsNoPhotos() throws {
         XCTAssertTrue(SearchScope.people.photos(try sample(), query: "冬").isEmpty)
@@ -67,6 +93,12 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertNotEqual(SearchScope.people.prompt, SearchScope.photos.prompt)
         XCTAssertEqual(SearchScope.people.prompt, L("人を検索（名前）", "Search people"))
         XCTAssertEqual(SearchScope.all.prompt, L("写真を検索（題・説明・タグなど）", "Search photos"))
+    }
+
+    /// 何も打っていないときの入口: すべて＝発見・写真＝格子・人＝案内・タグ／撮影地＝行
+    func testEntryPerScope() {
+        XCTAssertEqual(SearchScope.allCases.map(\.entry),
+                       [.discovery, .photoGrid, .peopleHint, .tagRows, .placeRows])
     }
 
     // MARK: - 段
@@ -114,6 +146,40 @@ final class SearchLoadTests: XCTestCase {
         XCTAssertEqual(model.gear.first?.count, 15, "機材の枚数が頭打ちになっている")
         XCTAssertEqual(model.colors.first?.family, .blue)
         XCTAssertEqual(model.colors.first?.count, 15, "色の枚数が頭打ちになっている")
+    }
+
+    /// 「タグ」「撮影地」の入口の行。**枚数は押した先と同じ数え方**
+    /// （タグは鍵で畳む・撮影地は集約と同じゆるい一致）。多い順
+    func testTagAndPlaceRowsAreCountedAndSorted() async throws {
+        func make(_ id: String, tags: [String], place: String?) throws -> Photo {
+            var row: [String: Any] = ["id": id, "src": "https://x/\(id).jpg", "tags": tags]
+            if let place { row["location"] = place }
+            return try JSONDecoder.api.decode(Photo.self, from: JSONSerialization.data(withJSONObject: row))
+        }
+        let photos = [
+            try make("a", tags: ["冬"], place: "札幌"),
+            try make("b", tags: ["winter"], place: "札幌"),
+            try make("c", tags: ["海"], place: "那覇"),
+        ]
+        let model = SearchViewModel()
+        model.apply(photos: photos)
+        XCTAssertEqual(model.tagCounts.map(\.tag), ["冬", "海"])
+        XCTAssertEqual(model.tagCounts.map(\.count), [2, 1])
+        XCTAssertEqual(model.places.map(\.id), ["札幌", "那覇"])
+        XCTAssertEqual(model.places.map(\.count), [2, 1])
+        // 行を押したときに出る枚数と揃っている
+        XCTAssertEqual(SearchScope.tags.photos(photos, query: "冬").count, 2)
+    }
+
+    /// **読み込み前に「写真」を選んでも、読み終えたら格子が埋まる**
+    /// （`shown` を控えにせず、`allPhotos` と打った語から毎回導く）
+    func testPhotoGridFillsAfterLoadingEvenIfScopeWasChosenFirst() async throws {
+        let model = SearchViewModel()
+        model.select(scope: .photos)
+        await model.search("", debounce: .zero) { _ in [] }
+        XCTAssertTrue(model.shown.isEmpty)
+        model.apply(photos: [try photo("x"), try photo("y")])
+        XCTAssertEqual(Set(model.shown.map(\.id)), ["x", "y"])
     }
 
     /// 板 11: いまの季節の写真は**3列×1段**。「すべて →」の先には全部

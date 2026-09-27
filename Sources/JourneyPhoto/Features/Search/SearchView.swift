@@ -19,17 +19,13 @@ struct SearchView: View {
             VStack(alignment: .leading, spacing: 16) {
                 searchField
                 scopeChips
-                // **何も打っていないときは「発見」の顔**（モック2）。
-                // 打ち始めたら結果に切り替わる。段の並びは板 11（`SearchDiscovery`）
-                if query.isEmpty && model.scope == .all {
-                    // 段の間は 20pt（板 11）
-                    VStack(alignment: .leading, spacing: 20) {
-                        ForEach(model.discovery) { section in
-                            discoverySection(section)
-                        }
-                    }
+                // **何も打っていないときは種類ごとの入口**（`SearchScope.entry`）。
+                // 打ち始めたら結果に切り替わる
+                if query.isEmpty {
+                    entry
+                } else {
+                    results
                 }
-                results
             }
             .padding(.top, 8)
             .padding(.bottom, 24)
@@ -102,6 +98,71 @@ struct SearchView: View {
             }
             .padding(.horizontal, 16)
         }
+    }
+
+    // MARK: - 何も打っていないとき
+
+    @ViewBuilder
+    private var entry: some View {
+        switch model.scope.entry {
+        case .discovery:
+            // 「発見」の顔（モック2）。段の並びは板 11（`SearchDiscovery`）・段の間は 20pt
+            VStack(alignment: .leading, spacing: 20) {
+                ForEach(model.discovery) { section in
+                    discoverySection(section)
+                }
+            }
+        case .photoGrid:
+            // `shown` は打っていないとき全部（新しい順）。**読み込み前に切り替えても
+            // 読み終えた時点で埋まる**——`allPhotos` と `query` から毎回導く
+            if model.shown.isEmpty {
+                hint(L("写真はまだありません", "No photos yet"))
+            } else {
+                SearchGrid(photos: model.shown)
+            }
+        case .peopleHint:
+            hint(L("名前を入れると人を探せます", "Type a name to find people"))
+        case .tagRows:
+            if model.tagCounts.isEmpty {
+                hint(L("タグの付いた写真はまだありません", "No tagged photos yet"))
+            } else {
+                cardBox {
+                    ForEach(Array(model.tagCounts.enumerated()), id: \.element.tag) { index, row in
+                        Button {
+                            query = row.tag
+                        } label: {
+                            listRow(title: "#\(row.tag)", count: row.count, divider: index > 0)
+                        }
+                        .buttonStyle(.plain)
+                        // 読み上げは「#」を除いて（「シャープ」と読ませない）
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(L("\(row.tag)、\(row.count)枚", "\(row.tag), \(row.count) photos"))
+                        .accessibilityAddTraits(.isButton)
+                    }
+                }
+            }
+        case .placeRows:
+            if model.places.isEmpty {
+                hint(L("撮影地の分かる写真はまだありません", "No photos with a place yet"))
+            } else {
+                // 行き先は注目スポットと同じ（2枚以上の地点はスポットの画面）
+                cardBox {
+                    ForEach(Array(model.places.enumerated()), id: \.element.id) { index, spot in
+                        spotLink(spot) {
+                            listRow(title: spot.id, count: spot.count, divider: index > 0)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func hint(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(WebTheme.faint)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 24)
     }
 
     // MARK: - 発見
@@ -481,14 +542,8 @@ struct SearchView: View {
         if model.scope.showsPhotos {
             photoResults
         } else if users.isEmpty {
-            // 人だけを探しているとき。**打つ前と見つからなかったを分ける**
-            Text(query.isEmpty
-                 ? L("名前を入れると人を探せます", "Type a name to find people")
-                 : (model.isSearching ? L("探しています…", "Searching…") : L("見つかりませんでした", "No results")))
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.faint)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 24)
+            // 人だけを探しているとき（打つ前の案内は `entry` の側）
+            hint(model.isSearching ? L("探しています…", "Searching…") : L("見つかりませんでした", "No results"))
         }
     }
 
@@ -501,14 +556,8 @@ struct SearchView: View {
             .padding(.horizontal, 16)
 
         if model.shown.isEmpty {
-            // **「まだ何も打っていない」と「見つからなかった」を分ける**
-            Text(query.isEmpty
-                 ? L("題・撮影地・タグで探せます", "Search by title, place or tag")
-                 : L("見つかりませんでした", "No results"))
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.faint)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 24)
+            // 打つ前の顔は `entry` の側。ここは打ったあとだけ
+            hint(L("見つかりませんでした", "No results"))
         } else {
             SearchGrid(photos: model.shown)
         }
@@ -520,6 +569,10 @@ final class SearchViewModel: ObservableObject {
 
     @Published private(set) var users: [UserProfile] = []
     @Published private(set) var isSearching = false
+    /// 「タグ」の入口: 決まったタグと枚数（`PhotoQuery.tagCounts`・多い順）
+    @Published private(set) var tagCounts: [(tag: String, count: Int)] = []
+    /// 「撮影地」の入口: 撮影地と枚数（写真の多い順）
+    @Published private(set) var places: [DiscoverySections.Spot] = []
     /// 発見の塊（モック2）
     @Published private(set) var popularSpots: [DiscoverySections.Spot] = []
     /// 格子に出す数だけ（`SearchDiscovery.seasonalPreview`）
@@ -594,6 +647,8 @@ final class SearchViewModel: ObservableObject {
     /// 読み込んだ写真から段を作る。**通信と切り離してある**（テストで中身を直接渡す）
     func apply(photos: [Photo]) {
         allPhotos = photos
+        tagCounts = PhotoQuery.tagCounts(in: allPhotos, limit: .max)
+        places = DiscoverySections.popularSpots(in: allPhotos, limit: SearchDiscovery.placeRows)
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
         seasonalAll = DiscoverySections.seasonal(in: allPhotos, limit: .max)
         seasonal = Array(seasonalAll.prefix(SearchDiscovery.seasonalPreview))
