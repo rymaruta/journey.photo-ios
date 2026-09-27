@@ -344,6 +344,11 @@ extension View {
                                         @ViewBuilder message: () -> M) -> Self { self }
     public func alert<A: View>(_ title: String, isPresented: Binding<Bool>,
                                @ViewBuilder actions: () -> A) -> Self { self }
+    /// 出した時点の値を受け取る形（本物は iOS 15 以降）
+    public func alert<A: View, M: View, T>(_ title: String, isPresented: Binding<Bool>,
+                                           presenting data: T?,
+                                           @ViewBuilder actions: (T) -> A,
+                                           @ViewBuilder message: (T) -> M) -> Self { self }
     /// 下から出る選択肢（本物は iOS 15 以降）。`Menu` と違い `isPresented` を
     /// 持つので、開いている間に自動送りを止められる
     public func confirmationDialog<A: View>(_ title: String, isPresented: Binding<Bool>,
