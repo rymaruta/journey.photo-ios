@@ -32,7 +32,41 @@ final class GalleryViewModel: ObservableObject {
     /// フォローしている人。`following` のときだけ要る
     /// フォロー先。**カードのフォローボタンにも渡す**（モック1）
     private(set) var followingIds: Set<String> = []
+    /// フォロー一覧を**取れなかった**（圏外など）。
+    ///
+    /// 取れなかった回を空の集合で表すと、「フォロー中」に
+    /// 「フォロー中の人の写真はまだありません」と出る——フォローしている人に
+    /// 「まだ誰もいない」と言うことになる。画面はこれを見て
+    /// 「読み込めませんでした」を出す
+    @Published private(set) var followingFailed = false
+    /// `followingIds` が**誰の**フォロー先か。同じ人で取れなかった回に
+    /// 手元の集合を潰さないために見る（人が替わった回だけ空にする）
+    private var followingOwner: String?
     private var viewerId: String?
+    /// **見ていた人から替わった先の人たち**（いまの人は入らない）。
+    ///
+    /// 遅れて着いた前の人のフォロー一覧（`refreshFollowing`）を捨てる目印。
+    /// `self.viewerId` と違うだけでは捨てない——人が替わった直後（`use` の前）に
+    /// 取れた**今の人**の集合まで捨てることになる
+    private var departedViewerIds: Set<String> = []
+
+    /// 見ている人を入れ替える。前の人を「離れた人」に入れ、戻ってきた人は外す
+    private func setViewer(_ newViewer: String?) {
+        guard newViewer != viewerId else { return }
+        if let old = viewerId { departedViewerIds.insert(old) }
+        if let newViewer { departedViewerIds.remove(newViewer) }
+        viewerId = newViewer
+    }
+
+    /// **画面がこれから取りに行く人**を知らせる（`.task` の頭・await の前）。
+    ///
+    /// A→B→A と戻ったとき、戻った A は `use` が走るまで「離れた人」に入ったまま
+    /// なので、その間に引き下げで取れた A の正しい一覧を `refreshFollowing` が
+    /// 捨てていた。見ている人（`viewerId`）はここでは替えない
+    func expect(viewerId newViewer: String?) {
+        if let old = viewerId, old != newViewer { departedViewerIds.insert(old) }
+        if let newViewer { departedViewerIds.remove(newViewer) }
+    }
 
     /// 絞り込みに出すカテゴリ。**写真が1枚もない種類は出さない**
     /// （押しても空になるボタンを置かない）
@@ -89,10 +123,13 @@ final class GalleryViewModel: ObservableObject {
             viewerGeneration += 1
             all = []
             myPhotos = []
+            myPhotosOwner = nil
             state = .loading
             // **前の人の「フォロー中」で絞らない。** 画面はこの読み直しを待ってから
-            // 新しい人のフォロー中を渡すので、それまでは空で絞る
-            use(viewerId: next, following: [])
+            // 新しい人のフォロー中を渡すので、それまでは空で絞る。
+            // nil（まだ取れていない）で渡す——空の集合を「次の人のもの」として
+            // 記録すると、次の取得が失敗したとき「まだありません」と言ってしまう（`use`）
+            use(viewerId: next, following: nil)
         }
         await load()
     }
@@ -124,10 +161,25 @@ final class GalleryViewModel: ObservableObject {
     func loadMyPhotos(_ photos: PhotoService, viewerId: String?) async {
         guard viewerId != nil else {
             myPhotos = []
+            myPhotosOwner = nil
             return
         }
-        myPhotos = (try? await photos.myPhotos()) ?? []
+        let fetched = try? await photos.myPhotos()
+        // 取り消された回（ログアウト・人の切り替え）は、遅れて着いた答えを誰にも付けない
+        guard !Task.isCancelled else { return }
+        if let fetched {
+            myPhotos = fetched
+            myPhotosOwner = viewerId
+        } else if myPhotosOwner != viewerId {
+            // 取れなかった回は、**同じ人のぶんなら残す**（詳細を開いて取り消された回に
+            // 「参加済み」が消えない）。人が替わった回は前の人のぶんを残さない
+            myPhotos = []
+            myPhotosOwner = nil
+        }
     }
+
+    /// `myPhotos` が誰のものか（`followingOwner` と同じ考え方）
+    private var myPhotosOwner: String?
 
     func select(category: String?) {
         self.category = category
@@ -144,11 +196,22 @@ final class GalleryViewModel: ObservableObject {
     /// **`use(viewerId:following:)` を使い回さない**——あちらは範囲を
     /// 既定へ倒すので、「フォロー中」を選んだ直後に「自分」へ戻ってしまう。
     ///
-    /// - Parameter viewerId: 取りに行ったときの人。**いまの人と違えば書かない**
-    ///   （前の人の一覧が次の人の「フォロー中」に入る）
-    func refreshFollowing(_ following: Set<String>, for viewerId: String?) {
-        guard viewerId == self.viewerId else { return }
+    /// - Parameters:
+    ///   - following: nil は「取れなかった」。**手元の集合は潰さない**
+    ///     （前に取れていたぶんで出し続ける。一度も取れていなければ失敗のまま）
+    ///   - viewerId: **誰の鍵で取ったか。** `self.viewerId` から取らない——
+    ///     `use` が走る前（`.task` が取り消された回）だと nil のままで、
+    ///     取れた集合の持ち主が分からなくなり、次の失敗で空に潰される
+    ///     **遅れて着いた前の人の集合は、呼ぶ側（画面）が `auth.userId` と見比べて捨てる。**
+    ///     ここで `self.viewerId` と比べると、人が替わった直後（`use` がまだの間）に
+    ///     今の人の正しい集合まで捨てる。モデルが捨てるのは**もう離れた人**
+    ///     （`departedViewerIds`）のぶんだけ——前の人の一覧が次の人の「フォロー中」に入らない
+    func refreshFollowing(_ following: Set<String>?, viewerId: String) {
+        guard let following else { return }
+        guard !departedViewerIds.contains(viewerId) else { return }
         self.followingIds = following
+        followingOwner = viewerId
+        followingFailed = false
         if case .loaded = state { state = .loaded(filtered()) }
     }
 
@@ -160,11 +223,25 @@ final class GalleryViewModel: ObservableObject {
     ///
     /// **フォロー中は未ログインだと中身が無い。** 絞れないので
     /// 「おすすめ」へ戻す（空の画面に置き去りにしない）。
-    func use(viewerId: String?, following: Set<String>) {
+    ///
+    /// - Parameter following: nil は「取れなかった」。
+    ///   - **同じ人の集合が手元にあれば潰さない**（詳細から戻って `.task` が
+    ///     走り直した回・取り消された回。潰すと「フォロー中」の一覧が空になり、
+    ///     開いた詳細の元のタイルが消えて閉じる）
+    ///   - 人が替わった回・一度も取れていない回は、空にして `followingFailed` を立てる
+    func use(viewerId: String?, following: Set<String>?) {
         // 並びは sort と feed の両方で決まる（`sorted`）。**どちらかが変わったら**並べ直す
         let previousFeed = feed
-        self.viewerId = viewerId
-        self.followingIds = following
+        setViewer(viewerId)
+        if let following {
+            followingIds = following
+            followingOwner = viewerId
+            followingFailed = false
+        } else if viewerId == nil || followingOwner != viewerId {
+            followingIds = []
+            followingOwner = nil
+            followingFailed = viewerId != nil
+        }
         if viewerId == nil && feed.needsSignIn { feed = .recommended }
         let previousSort = sort
         scope = feed.scope
@@ -253,17 +330,6 @@ final class GalleryViewModel: ObservableObject {
         return TagChoices.all.filter { present.contains(TagChoices.key($0)) }
     }
 
-    /// フォロー一覧が**取れなかった回**（圏外・取り消し）の入れ方。
-    ///
-    /// 同じ人なら手元の一覧を残す——空で上書きすると「フォロー中」が
-    /// 「まだありません」になる（画面を離れて取り消された回も同じ）。
-    /// 別の人なら前の人の一覧は使わない（分からないので空）。
-    /// **`followingIds` はいつも `viewerId` の人のもの**（`select(feed:)` も守る）
-    func use(viewerId: String?, fetchedFollowing: Set<String>?) {
-        let following = fetchedFollowing ?? (viewerId == self.viewerId ? followingIds : [])
-        use(viewerId: viewerId, following: following)
-    }
-
     /// フィードを選ぶ。**範囲と並びを一緒に切り替える**。
     ///
     /// **`use(viewerId:following:)` は呼ばない。** あちらは範囲を
@@ -274,8 +340,15 @@ final class GalleryViewModel: ObservableObject {
         self.scope = feed.scope
         self.sort = feed.sort
         // 人が替わっていたら、手元のフォロー一覧は前の人のもの——持ち越さない
-        if viewerId != self.viewerId { followingIds = [] }
-        self.viewerId = viewerId
+        // （`use` の前に取れていた今の人の集合は残す）
+        if viewerId != self.viewerId, followingOwner != viewerId {
+            followingIds = []
+            followingOwner = nil
+            // 前の人の「読み込めませんでした／読めた」を持ち越さない。今の人の集合は
+            // まだ無い＝`use` と同じく「取れていない」（空の集合で「まだありません」と言わない）
+            followingFailed = viewerId != nil
+        }
+        setViewer(viewerId)
         all = feed.arrange(all)
         state = .loaded(filtered())
     }

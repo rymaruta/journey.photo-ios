@@ -28,36 +28,33 @@ struct SaveService {
         try await api.authorized(.get, "/user/saves", as: SavedList.self).photoIds
     }
 
-    /// 写真がもう見えない（404）が、**自分の保存は残っている**。
+    private struct MySave: Decodable { let saved: Bool }
+
+    /// この写真を保存しているか（`GET /user/saves/{id}`・公開状態を見ない）。
     ///
-    /// サーバーはこの回、404 の本文に `saved: true` を添える（`saves.ts` の
-    /// `savePhoto`）。捨てて「保存できなかった」と巻き戻すと、サーバーには
-    /// 保存が在るのにしおりが空になり、**開いている間は外す導線が出ない**。
-    struct GoneButSaved: LocalizedError {
-        var errorDescription: String? {
-            L("この写真はもう公開されていません（保存は残っています）",
-              "This photo is no longer available (it's still in your saves)")
-        }
+    /// 画面ごとの状態はログインのときにまとめて取った控えで足りるので、
+    /// **ここは `save` の 404 の確かめにだけ使う**
+    func isSaved(photoId: String) async throws -> Bool {
+        try await api.authorized(.get, "/user/saves/\(encoded(photoId))", as: MySave.self).saved
     }
 
-    private struct SavedState: Decodable { let saved: Bool }
-
-    /// 保存する（冪等）
+    /// 保存する（冪等）。
     ///
-    /// - Throws: 写真が見えないが保存は残っている回は `GoneButSaved`。
-    ///   呼び出し側はしおりを「保存済み」に合わせる
+    /// **404 は「保存できなかった」とは限らない**（`saves.ts`）。見えなくなった写真でも、
+    /// 前から保存していた回は `{error, saved: true}` の 404 が返る。失敗と読んで画面を
+    /// 未保存に戻すと、サーバーには残ったまま**解除の導線が出ない**。本文は `APIError` に
+    /// 載らないので、404 のときは印を聞き直し、保存済みなら成功として返る
     func save(photoId: String) async throws {
+        // ⚠️ catch の中で await しない（Xcode 26.3 のコンパイラが落ちる）
+        let failure: Error?
         do {
             try await api.authorizedVoid(.post, "/photos/\(encoded(photoId))/save")
-        } catch APIError.server(let status, let message) where status == 404 {
-            // `APIClient` は失敗の本文を `error` の文しか残さないので、
-            // 保存が残っているかは**マーカーに聞き直す**（`GET /user/saves/{id}`
-            // ——サーバーが 404 に添える `saved` と同じ `hasMarker` が答える）。
-            // 聞けなかった回は元の失敗をそのまま返す（保存済みと言い張らない）
-            let state = try? await api.authorized(.get, "/user/saves/\(encoded(photoId))", as: SavedState.self)
-            if state?.saved == true { throw GoneButSaved() }
-            throw APIError.server(status: status, message: message)
+            failure = nil
+        } catch {
+            failure = error
         }
+        guard let failure else { return }
+        guard SocialService.isNotFound(failure), (try? await isSaved(photoId: photoId)) == true else { throw failure }
     }
 
     /// 外す（冪等）

@@ -11,6 +11,12 @@ struct GalleryView: View {
     @StateObject private var model = GalleryViewModel()
     /// 「ホーム」をもう一度押した合図（一番上へ戻る）
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// ストーリーの輪を読み直す合図（引き下げ・前面に戻った）
+    @State private var storiesRefresh = 0
+    @Environment(\.scenePhase) private var scenePhase
+    /// 背面へ行ったか（戻るときは background → inactive → active と段を踏むので、
+    /// 直前の値だけでは「背面から戻った」と分からない）
+    @State private var wentToBackground = false
     /// 通報している写真。**シートはカードではなくここに付ける**
     /// （`HomeMosaic.onReport` の注記）
     @State private var reportTarget: Photo?
@@ -70,31 +76,62 @@ struct GalleryView: View {
         // **ログイン状態が決まってから範囲を決める**（範囲は選んでいるフィードが決める）。
         // フォロー中の一覧は、その範囲を選ぶ人にだけ要る
         .task(id: auth.userId) {
+            // **取りに行った人で反映する。** 待っている間に人が替わっても、
+            // 再開した時点の `auth.userId` で前の人の集合を記録しない
+            let userId = auth.userId
+            model.expect(viewerId: userId)
             // **人が替わったら一覧を読み直す**（前の人の限定公開を捨てる）。
             // 初回（`shownViewer` がまだ無い）は上の `.task` が読むので何もしない
-            let current = auth.userId
-            if let previous = shownViewer, previous != current {
-                shownViewer = .some(current)
-                await model.switchViewer(from: previous, to: current)
+            if let previous = shownViewer, previous != userId {
+                shownViewer = .some(userId)
+                await model.switchViewer(from: previous, to: userId)
             } else {
-                shownViewer = .some(current)
+                shownViewer = .some(userId)
             }
-            guard auth.userId != nil else {
+            guard userId != nil else {
                 model.use(viewerId: nil, following: [])
                 await model.loadMyPhotos(environment.photos, viewerId: nil)
                 return
             }
-            let viewer = auth.userId
-            let ids = try? await environment.social.myFollowingIds()
+            // **取れなかった回を空の集合にしない**（`followingFailed`）。
+            let following = await fetchFollowing()
             // **待っている間に人が替わったら何も書かない。** 古い回の答えを次の人の
             // `auth.userId` で書くと、後から来る正しい答えを上書きしうる。
-            // 取り消し（`Task.isCancelled`）では飛ばさない——画面を離れただけの回に
-            // 飛ばすと、`.task` が走り直さなければ人が入らないまま残る。
-            // **取れなかった回（取り消しを含む）は空で上書きしない**（`fetchedFollowing`）
-            guard auth.userId == viewer else { return }
-            model.use(viewerId: viewer, fetchedFollowing: ids.map { Set($0) })
+            guard auth.userId == userId else { return }
+            // 画面を離れて取り消され、**取れなかった**回は何もしない（取り消しは
+            // 「取れなかった」ではない——失敗の印を立てない）。取れていれば入れる
+            // （取り消しで一律に飛ばすと、`.task` が走り直さなければ人が入らないまま残る）
+            if following == nil && Task.isCancelled { return }
+            model.use(viewerId: userId, following: following)
             // 今日のテーマに参加したかの判定に要る（API から読む）
-            await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
+            await model.loadMyPhotos(environment.photos, viewerId: userId)
+        }
+        .refreshable {
+            // ストーリーの輪も読み直す（写真だけ読み直すと、輪は古いまま残った）
+            storiesRefresh &+= 1
+            await model.load(force: true)
+            // **フォロー一覧も取り直す。** 取れなかった回の出口
+            // （「読み込めませんでした。引き下げて読み直せます」）
+            if let userId = auth.userId {
+                let following = await fetchFollowing()
+                // 待っている間に人が替わっていたら捨てる
+                guard auth.userId == userId else { return }
+                model.refreshFollowing(following, viewerId: userId)
+            }
+        }
+        // **前面に戻ったら輪を読み直す。** 日をまたいで戻っても昨日の輪のまま、
+        // フォローしている人の新しいストーリーも出なかった
+        // **背面から戻ったときだけ。** コントロールセンター・Face ID・許可の確認から
+        // 戻るたび（inactive → active）に読み直すと、読み込み中の輪を取り消して取り直していた
+        // 背面で起動された回（通知・位置など）は、最初の値に `onChange` が来ないので
+        // ここで印を立てる（前面に来たとき輪を読み直す）
+        .onAppear { if scenePhase == .background { wentToBackground = true } }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { wentToBackground = true }
+            if phase == .active, wentToBackground {
+                wentToBackground = false
+                storiesRefresh &+= 1
+            }
         }
         // **限定公開の取り口が入れ替わった後にも読み直す。** `auth.userId` の変化と
         // 取り口の入れ替え（`JourneyPhotoApp.applyRestrictedFeed`）の順は決まっておらず、
@@ -106,7 +143,6 @@ struct GalleryView: View {
                 await model.load()
             }
         }
-        .refreshable { await model.load(force: true) }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.id, ownerId: target.userId ?? target.uploadedBy)
         }
@@ -204,15 +240,14 @@ struct GalleryView: View {
                         // `.task(id: auth.userId)` で一度しか引いていないので、
                         // 誰かをフォローしても「フォロー中」に出てこない
                         // （上の段にあった範囲の切り替えが持っていた処理を移した）
-                        guard feed == .following, auth.userId != nil else { return }
-                        let viewer = auth.userId
+                        guard feed == .following, let userId = auth.userId else { return }
                         Task {
                             // **取れなかった回に空で潰さない**（圏外で押しただけで
-                            // 「フォロー中」が知らせも無く空になる）
-                            let ids = try? await environment.social.myFollowingIds()
-                            guard let ids else { return }
-                            // 待っている間に人が替わったら書かない（`refreshFollowing`）
-                            model.refreshFollowing(Set(ids), for: viewer)
+                            // 「フォロー中」が知らせも無く空になる）——nil は `refreshFollowing` が捨てる
+                            let following = await fetchFollowing()
+                            // 待っている間に人が替わっていたら捨てる（前の人の集合を今の人に入れない）
+                            guard auth.userId == userId else { return }
+                            model.refreshFollowing(following, viewerId: userId)
                         }
                     } label: {
                         Text(feed.label)
@@ -249,7 +284,9 @@ struct GalleryView: View {
                 // 2026-09-20 に Web がトップから外してマイページへ移したが、
                 // アプリの提案図では**ホームに戻っている**ので合わせる
                 // ——「いま誰が旅に出ているか」は開いた瞬間に見たいもの
-                StoriesRow(reloadToken: tabRouter.postSheetsClosed)
+                // 投稿シートを閉じたとき・引き下げ更新・前面に戻ったときに読み直す
+                // （どちらの数も増える一方なので、和は必ず変わる）
+                StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh)
                 // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
                 // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
                 // 「前の方が好きだった」で先頭の大きな札に戻した（2026-09-26）
@@ -262,9 +299,7 @@ struct GalleryView: View {
                 // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
                 let groups = PhotoGroups.group(photos)
                 if groups.isEmpty {
-                    Text(model.feed == .following
-                         ? L("フォロー中の人の写真はまだありません", "No photos from people you follow yet")
-                         : Labels.Gallery.empty)
+                    Text(emptyMessage)
                         .font(.subheadline)
                         .foregroundStyle(WebTheme.muted2)
                         .multilineTextAlignment(.center)
@@ -290,4 +325,20 @@ struct GalleryView: View {
     }
 
     private static let feedTopID = "home-feed-top"
+
+    /// 0枚のときの一文。**フォロー一覧を取れなかった回に「まだありません」と言わない**
+    /// （形は探すの写真の「読み込めませんでした。引き下げて読み直せます」と同じ）
+    private var emptyMessage: String {
+        guard model.feed == .following else { return Labels.Gallery.empty }
+        return model.followingFailed
+            ? L("フォロー中の人を読み込めませんでした。引き下げて読み直せます",
+                "Couldn't load the people you follow. Pull to retry")
+            : L("フォロー中の人の写真はまだありません", "No photos from people you follow yet")
+    }
+
+    /// フォロー一覧。**取れなかったら nil**（空の集合と分ける）
+    private func fetchFollowing() async -> Set<String>? {
+        let ids = try? await environment.social.myFollowingIds()
+        return ids.map { Set($0) }
+    }
 }

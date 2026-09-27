@@ -591,16 +591,15 @@ struct SearchView: View {
 
         if model.scope.showsPhotos {
             photoResults
-        } else if users.isEmpty, model.peopleFailed, !query.isEmpty {
-            // **取れなかったを「見つかりませんでした」と言わない**（圏外・API の失敗）
-            ErrorBanner(message: Labels.Common.loadFailed) {
-                Task { await model.search(query, environment: environment) }
-            }
         } else if users.isEmpty {
             // 人だけを探しているとき。**打つ前と見つからなかったを分ける**
             Text(query.isEmpty
                  ? L("名前を入れると人を探せます", "Type a name to find people")
-                 : (model.isSearching ? L("探しています…", "Searching…") : L("見つかりませんでした", "No results")))
+                 : (model.isSearching ? L("探しています…", "Searching…")
+                    // **「読み込めなかった」と「見つからなかった」を分ける**（写真と同じ言い方）
+                    : (model.usersFailed
+                       ? L("人を読み込めませんでした。引き下げて読み直せます", "Couldn't load people. Pull to retry")
+                       : L("見つかりませんでした", "No results"))))
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 16)
@@ -658,8 +657,11 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var users: [UserProfile] = []
     @Published private(set) var popularTags: [String] = []
     @Published private(set) var isSearching = false
-    /// 人の検索が**取れなかった**（0人と分ける）。いちばん新しい回の結果だけを持つ
-    @Published private(set) var peopleFailed = false
+    /// 人の検索が**通信などで失敗した**（「見つかりませんでした」と分ける）
+    @Published private(set) var usersFailed = false
+    /// いまの `users` を引いた語。**同じ語で失敗した回は一覧を残す**
+    /// （通報・引き下げで読み直して圏外だった回に、開いているプロフィールの元の行を消さない）
+    private var usersQuery: String?
     /// 写真の一覧を取れなかった（読み込み中・0枚と分ける）
     @Published private(set) var loadFailed = false
     /// 最初の読み込みが（成功でも失敗でも）返ったか
@@ -881,23 +883,35 @@ final class SearchViewModel: ObservableObject {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             users = []
+            usersQuery = nil
             isSearching = false
-            peopleFailed = false
+            usersFailed = false
             return
         }
         // 写真は手元の一覧から即座に絞る（往復しない・`shown` が `query` から導く）
 
         isSearching = true
-        peopleFailed = false
         searchTask = Task {
             try? await Task.sleep(for: debounce)
             guard !Task.isCancelled, generation == self.searchGeneration else { return }
-            // **失敗を 0人に畳まない。** 畳むと圏外でも「見つかりませんでした」と出ていた
+            // **失敗を0人にしない。** 圏外で「見つかりませんでした」と出すと、
+            // 居る人を「居ない」と言うことになる
             let found: [UserProfile]?
-            do { found = try await fetchUsers(trimmed) } catch { found = nil }
+            do {
+                found = try await fetchUsers(trimmed)
+            } catch {
+                found = nil
+            }
             guard !Task.isCancelled, generation == self.searchGeneration else { return }
-            users = found ?? []
-            peopleFailed = found == nil
+            if let found {
+                users = found
+                usersQuery = trimmed
+            } else if usersQuery != trimmed {
+                // 別の語の人を残さない
+                users = []
+                usersQuery = nil
+            }
+            usersFailed = found == nil
             isSearching = false
         }
     }

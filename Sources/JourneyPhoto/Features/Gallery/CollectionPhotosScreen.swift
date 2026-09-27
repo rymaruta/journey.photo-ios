@@ -14,14 +14,13 @@ struct CollectionPhotosScreen: View {
     /// 集約の種類。**シェアで Web のページを指せるか**に使う（色・季節は nil）
     var kind: PhotoQuery.Collection?
     var isLoading = false
-    /// 取れなかったときの一言。**あれば「写真はありません」の代わりに出す**
-    /// （取れなかったを 0枚と言わない）。`retry` があれば再試行を付ける
-    var loadError: String?
-    var retry: (() -> Void)?
     /// 一覧の上に置く一言（機材の「ダイナミックな風景」）。
     /// 板 12 に寄せる前から画面の上にあった字で、**なぜこの写真が
     /// 並んでいるのか**を言う。無ければ出さない
     var lede: String?
+    /// 読み込めなかった回の出口。**渡されたときだけ**、0枚を
+    /// 「読み込めませんでした」＋「もう一度試す」で出す（「該当する写真がありません」と分ける）
+    var retry: (() -> Void)?
 
     /// 板 12 は「人気」を選んだ形で描いてある
     @State private var sort: GallerySort = .popular
@@ -54,8 +53,9 @@ struct CollectionPhotosScreen: View {
                     .padding(.horizontal, 16)
                 }
 
-                if shown.isEmpty && !isLoading, let loadError {
-                    ErrorBanner(message: loadError, retry: retry)
+                // 読めなかった回は `photos` が空（ブロックで伏せた0枚とは分ける）
+                if photos.isEmpty && !isLoading, let retry {
+                    ErrorBanner(message: Labels.Common.loadFailed, retry: retry)
                 } else if shown.isEmpty && !isLoading {
                     ErrorBanner(message: Labels.Gallery.empty)
                 } else {
@@ -80,8 +80,9 @@ struct CollectionPhotosScreen: View {
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
+                    // 読み込めずに0枚の回も枚数を出さない（数えていないものを「0枚」と言わない）
                     let subtitle = CollectionScreen.subtitle(count: shown.count, note: note,
-                                                             isLoading: isLoading)
+                                                             isLoading: isLoading || (retry != nil && photos.isEmpty))
                     if !subtitle.isEmpty {
                         Text(subtitle)
                             .font(.caption2)

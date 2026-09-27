@@ -70,6 +70,24 @@ enum StoryPlayback {
     ///
     /// `inBackground` は**アプリが前面に居ない間**（ホームへ戻った・電話・
     /// 通知センター）。見ていない時間で秒数を減らさない
+    /// 動画が終わった（読めずに諦めた回も）と知らされたときにどうするか。
+    enum MediaEnd: Equatable {
+        /// 別の1本の知らせ（古い1本・同じ1本の2回目）。捨てる
+        case ignore
+        /// 止めている間（ブロックの確認・通報・返信を打っている…）。解けるまで待つ
+        case hold
+        case advance
+    }
+
+    /// 🔴 **止めている間は進めない・見ている1本の知らせだけ採る。** 読めない動画の
+    /// 失敗は止めていても届くので、ブロックの確認を出している間に次の1本へ移り、
+    /// 確認の「ブロック」が**次の投稿者**に効いていた（通報・返信の書きかけも同じ）。
+    /// 失敗の通知と状態の見張りの両方が来ると、1本飛ばしてもいた
+    static func mediaEnded(storyId: String, currentId: String?, frozen: Bool) -> MediaEnd {
+        guard storyId == currentId else { return .ignore }
+        return frozen ? .hold : .advance
+    }
+
     static func isFrozen(pressing: Bool, paused: Bool, menuOpen: Bool, sheetOpen: Bool,
                          replyFocused: Bool, isSending: Bool, mediaReady: Bool,
                          inBackground: Bool = false) -> Bool {
@@ -290,10 +308,19 @@ enum StoryPlayback {
     ///   見て閉じると輪が全部消えていた）。ただし**絞り込みはかけ直す**——
     ///   圏外で通報・ブロックした1本が残らないように
     /// - 取れなかったうえに見ている人が変わった → 空（前の人の輪を見せない）
+    /// - Parameter now: **期限（24時間）を過ぎた1本は落とす**——取れなかった回に前の一覧を
+    ///   残すと、日をまたいで戻ったとき昨日の輪が並んだままになっていた
     static func afterLoad(fetched: [Story]?, previous: [Story], sameViewer: Bool,
-                          blockedUserIds: Set<String>, reportedPhotoIds: Set<String>) -> [Story] {
+                          blockedUserIds: Set<String>, reportedPhotoIds: Set<String>,
+                          now: Date = Date()) -> [Story] {
         guard let base = fetched ?? (sameViewer ? previous : nil) else { return [] }
-        return visible(base, blockedUserIds: blockedUserIds, reportedPhotoIds: reportedPhotoIds)
+        // **期限で絞るのは前の一覧を使う回だけ。** 取れた一覧はサーバーが既に
+        // `expiresAt > now` で絞っている——端末の時計が進んでいると正しい輪まで消えた
+        let live = fetched != nil ? base : base.filter { story in
+            guard let iso = story.expiresAt, let expires = parse(iso) else { return true }
+            return expires > now
+        }
+        return visible(live, blockedUserIds: blockedUserIds, reportedPhotoIds: reportedPhotoIds)
     }
 
     // MARK: - 曲

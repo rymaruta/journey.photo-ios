@@ -5,20 +5,7 @@ import XCTest
 final class StoriesHighlightsJudgeTests: XCTestCase {
 
     // MARK: D9 ハイライトの編集で中身が取れなかったら保存させない
-
-    func testEditorBlocksSaveWhenContentsFailed() {
-        XCTAssertFalse(HighlightEditorView.canSave(saving: false, title: "Greece",
-                                                   picked: ["a"], contentsFailed: true))
-    }
-
-    func testEditorAllowsSaveWhenContentsLoaded() {
-        XCTAssertTrue(HighlightEditorView.canSave(saving: false, title: "Greece",
-                                                  picked: ["a"], contentsFailed: false))
-        XCTAssertFalse(HighlightEditorView.canSave(saving: false, title: "  ",
-                                                   picked: ["a"], contentsFailed: false))
-        XCTAssertFalse(HighlightEditorView.canSave(saving: false, title: "Greece",
-                                                   picked: [], contentsFailed: false))
-    }
+    // → `HighlightFailureTests.testCannotSaveWhileTheCurrentContentsFailedToLoad`（main 側）が見る
 
     // MARK: D10 問いに答えていない下書きは消さない
 

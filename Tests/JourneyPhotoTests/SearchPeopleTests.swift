@@ -92,23 +92,55 @@ final class SearchPeopleTests: XCTestCase {
         XCTAssertEqual(model.users.map(\.userId), ["new"])
     }
 
-    /// 🔴 **取れなかったを「見つかりませんでした」にしない。** 失敗は `peopleFailed` に持ち、
-    /// 次の回（再試行）を始めたら下ろす
-    func testFailedPeopleSearchIsNotNoResults() async throws {
-        struct Boom: Error {}
+    private struct Offline: Error {}
+
+    /// **通信の失敗を「見つかりませんでした」にしない**（バグ探し 2026-09-27 #8）。
+    /// 以前は `try?` で0人に潰していたので、圏外で探すと「居ない」と出た
+    func testFailedSearchIsNotNoResults() async throws {
         let model = SearchViewModel()
-        await model.search("ab", debounce: .zero) { _ in throw Boom() }
+        await model.search("ab", debounce: .zero) { _ in throw Offline() }
         await waitUntil { !model.isSearching }
-        XCTAssertTrue(model.peopleFailed, "失敗が 0人に畳まれている")
+        XCTAssertTrue(model.usersFailed, "失敗を0人として扱っている")
         XCTAssertTrue(model.users.isEmpty)
 
-        let pending = PendingFetch()
-        await model.search("ab", debounce: .zero) { await pending.fetch($0) }
-        XCTAssertFalse(model.peopleFailed, "再試行の間も失敗の帯が出たまま")
-        await waitUntil { pending.isWaiting("ab") }
-        pending.release("ab", with: [try user("found")])
+        // 次に通れば失敗を外す
+        let found = try user("u1")
+        await model.search("abc", debounce: .zero) { _ in [found] }
         await waitUntil { !model.isSearching }
-        XCTAssertFalse(model.peopleFailed)
-        XCTAssertEqual(model.users.map(\.userId), ["found"])
+        XCTAssertFalse(model.usersFailed)
+        XCTAssertEqual(model.users.map(\.userId), ["u1"])
+    }
+
+    /// 空にしたら失敗の印も外す（「名前を入れると人を探せます」に戻る）
+    func testClearingTheQueryClearsTheFailure() async {
+        let model = SearchViewModel()
+        await model.search("ab", debounce: .zero) { _ in throw Offline() }
+        await waitUntil { !model.isSearching }
+        await model.search("", debounce: .zero) { _ in [] }
+        XCTAssertFalse(model.usersFailed)
+    }
+
+    /// **同じ語で失敗した回は、出ていた人を消さない。** 通報・引き下げで読み直して
+    /// 圏外だった回に消すと、開いているプロフィールの元の行が消えて閉じる（3d75af1 のレビュー）
+    func testFailedRetryOfTheSameQueryKeepsThePeople() async throws {
+        let model = SearchViewModel()
+        let found = try user("u1")
+        await model.search("ab", debounce: .zero) { _ in [found] }
+        await waitUntil { !model.isSearching }
+        await model.search("ab", debounce: .zero) { _ in throw Offline() }
+        await waitUntil { !model.isSearching }
+        XCTAssertEqual(model.users.map(\.userId), ["u1"], "同じ語の失敗で人を消している")
+        XCTAssertTrue(model.usersFailed)
+    }
+
+    /// 別の語で失敗した回は、前の語の人を残さない
+    func testFailedSearchForAnotherQueryDropsThePeople() async throws {
+        let model = SearchViewModel()
+        let found = try user("u1")
+        await model.search("ab", debounce: .zero) { _ in [found] }
+        await waitUntil { !model.isSearching }
+        await model.search("xyz", debounce: .zero) { _ in throw Offline() }
+        await waitUntil { !model.isSearching }
+        XCTAssertTrue(model.users.isEmpty, "前の語の人が残っている")
     }
 }
