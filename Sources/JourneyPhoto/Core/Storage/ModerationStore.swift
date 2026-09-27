@@ -116,6 +116,32 @@ final class ModerationStore: ObservableObject {
     /// ブロック一覧を取りに行く**前に**取る。`replaceBlocked(with:for:since:)` に渡す
     var blockSyncMark: LocalEdits.Mark { blockEdits.mark }
 
+    /// ブロック一覧の取得1回ぶんの札。**取りに行く前に**取り、`replaceBlocked(with:for:fetch:)` に渡す。
+    ///
+    /// 印（`mark`）だけでは、2つの取得（起動時の同期と「ブロックした人」の画面）の
+    /// **どちらが後に始まったか**が分からない（その間に押していなければ印は同じ）。
+    /// 先に始まった取得が後から返ると、新しい一覧を古い一覧で上書きしていた
+    struct BlockFetch {
+        let mark: LocalEdits.Mark
+        fileprivate let seq: Int
+    }
+    private var blockFetchSeq = 0
+    private var appliedBlockFetchSeq = 0
+
+    func beginBlockFetch() -> BlockFetch {
+        blockFetchSeq += 1
+        return BlockFetch(mark: blockEdits.mark, seq: blockFetchSeq)
+    }
+
+    /// サーバーの一覧で入れ替える。**後に始まった取得の答えが既に入っていたら書かない**。
+    /// 印の後に手元で押した分は重ねる（`LocalEdits`）
+    func replaceBlocked(with ids: [String], for owner: String?, fetch: BlockFetch) {
+        guard owner == userId, fetch.seq > appliedBlockFetchSeq else { return }
+        guard blockEdits.merged(Set(ids), since: fetch.mark) != nil else { return }
+        appliedBlockFetchSeq = fetch.seq
+        replaceBlocked(with: ids, for: owner, since: fetch.mark)
+    }
+
     /// いまの控えの持ち主。**サーバーの答えを待つ前に取り、`block(_:for:)` に渡す**
     var owner: String? { userId }
 

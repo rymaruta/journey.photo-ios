@@ -77,6 +77,30 @@ final class SyncRaceTests: XCTestCase {
                        "取りに行っている間のブロック・解除を上書きしている")
     }
 
+    /// **同じ人を待っている間にブロックして解除した**（元に戻した）ら、古い一覧でも戻らない
+    func testBlockThenUnblockWhileFetchingStaysUnblocked() async {
+        let hidden = ModerationStore(defaults: defaults())
+        hidden.use(userId: "u1")
+        let fetch = hidden.beginBlockFetch()
+        hidden.block("x")
+        hidden.unblock("x")
+        hidden.replaceBlocked(with: ["x"], for: "u1", fetch: fetch)
+        XCTAssertFalse(hidden.blockedUserIds.contains("x"), "解除した人が古い一覧で戻った")
+    }
+
+    /// 🔴 **先に始まった取得の答えが後から返っても、後に始まった取得の答えを上書きしない**
+    /// （起動時の同期の待ち中に「ブロックした人」の画面が新しい一覧を書き、その後に
+    /// 起動時の同期が古い一覧で戻していた。手元で押していないので印では見分けられない）
+    func testOlderFetchDoesNotOverwriteANewerOne() async {
+        let hidden = ModerationStore(defaults: defaults())
+        hidden.use(userId: "u1")
+        let startup = hidden.beginBlockFetch()
+        let screen = hidden.beginBlockFetch()
+        hidden.replaceBlocked(with: [], for: "u1", fetch: screen)          // 別の端末で解除済み
+        hidden.replaceBlocked(with: ["y"], for: "u1", fetch: startup)     // 古い一覧が後から
+        XCTAssertTrue(hidden.blockedUserIds.isEmpty, "古い取得が新しい一覧を上書きした")
+    }
+
     func testBlockSyncForAnotherPersonIsDropped() async {
         let hidden = ModerationStore(defaults: defaults())
         hidden.use(userId: "a")

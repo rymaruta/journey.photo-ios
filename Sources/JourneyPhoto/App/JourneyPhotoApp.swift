@@ -207,7 +207,7 @@ struct JourneyPhotoApp: App {
                     // 待ちの間に押したいいね・保存・ブロックを、同期の一覧で消さない
                     let likesMark = favorites.syncMark
                     let savesMark = savedPhotos.syncMark
-                    let blocksMark = hidden.blockSyncMark
+                    let blocksFetch = hidden.beginBlockFetch()
                     // **確認中は通知の宛先に触らない。** まだ誰か分からないのに
                     // 「前の人の宛先が残っている」と見なして端末ごと外していた
                     // 起動時に本人の ID が取れなかっただけのログアウトも同じ
@@ -219,11 +219,11 @@ struct JourneyPhotoApp: App {
                     await syncSaves(since: savesMark)
                     await syncLikes(since: likesMark)
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
-                    // （同期を始めた後にブロック・解除した分は残す——`blocksMark`）
+                    // （同期を始めた後にブロック・解除した分は残す・後に始まった取得の答えは上書きしない——`blocksFetch`）
                     if let owner = auth.userId {
                         let blocks = try? await environment.moderation.blocks()
                         if !Task.isCancelled, auth.userId == owner, let blocks {
-                            hidden.replaceBlocked(with: blocks.blockedIds, for: owner, since: blocksMark)
+                            hidden.replaceBlocked(with: blocks.blockedIds, for: owner, fetch: blocksFetch)
                             await applyModeration()
                         }
                     }
