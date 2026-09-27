@@ -49,13 +49,6 @@ final class WishlistStore: ObservableObject {
     /// 送れない形の鍵（`SavedSpotService.canSend`）。ログイン中に押した分は
     /// その場で送る（`WishlistSync`）ので入れない
     private var unsent: Set<String>?
-    /// **外したのにサーバーへ届いていない鍵**（ログイン中の人の分・端末に残す）。
-    ///
-    /// 未送信の鍵は端末で外して済ませる（`WishlistSync`）が、実はサーバーに在ること
-    /// がある（送って時間切れになったが書けていた・別の端末が後から入れた）。
-    /// 外す要求が届かなかったら、ここに控えて**次の同期の入れ替えで生き返らせず、
-    /// 外し直す**——控えないと「外しました」と出た場所が次の同期で黙って戻った
-    private var unremoved: Set<String> = []
     /// いま送っている鍵（連打で足す・外すが並んで飛ばないように）
     private var sending: Set<String> = []
 
@@ -66,7 +59,6 @@ final class WishlistStore: ObservableObject {
     private static let sharedKey = "journey-photo-wishlist"
     /// **別の鍵に置く**（中身の一覧と混ぜると、旧版のアプリが読んだときに鍵が増えて見える）
     private static let unsentKey = "journey-photo-wishlist-unsent"
-    private static let unremovedKey = "journey-photo-wishlist-unremoved"
 
     private func key(for userId: String?) -> String {
         guard let userId, !userId.isEmpty else { return Self.sharedKey }
@@ -75,15 +67,6 @@ final class WishlistStore: ObservableObject {
 
     private func unsentKey(for userId: String) -> String {
         "\(Self.unsentKey):\(userId)"
-    }
-
-    private func unremovedKey(for userId: String) -> String {
-        "\(Self.unremovedKey):\(userId)"
-    }
-
-    private func saveUnremoved() {
-        guard let user = signedInUser else { return }
-        defaults.set(Array(unremoved), forKey: unremovedKey(for: user))
     }
 
     private var signedInUser: String? {
@@ -120,10 +103,8 @@ final class WishlistStore: ObservableObject {
         var ids = Set(defaults.stringArray(forKey: key(for: userId)) ?? [])
         if let user = signedInUser {
             unsent = defaults.stringArray(forKey: unsentKey(for: user)).map(Set.init)
-            unremoved = Set(defaults.stringArray(forKey: unremovedKey(for: user)) ?? [])
         } else {
             unsent = nil
-            unremoved = []
         }
         if wasSignedOut, signedInUser != nil {
             let anonymous = Set(defaults.stringArray(forKey: Self.sharedKey) ?? [])
@@ -167,8 +148,6 @@ final class WishlistStore: ObservableObject {
         guard !spotId.isEmpty else { return }
         if wanted {
             spotIds.insert(spotId)
-            // 入れ直したら外し直さない
-            if signedInUser != nil, unremoved.remove(spotId) != nil { saveUnremoved() }
         } else {
             spotIds.remove(spotId)
         }
@@ -200,25 +179,6 @@ final class WishlistStore: ObservableObject {
     /// まだ送っていない鍵か（送る直前に見る——**待っている間に外した分を送らない**）
     func isUnsent(_ spotId: String, for owner: String?) -> Bool {
         owner == userId && spotIds.contains(spotId) && (unsent?.contains(spotId) ?? false)
-    }
-
-    /// 外す要求が届かなかった（`unremoved`）。人が替わっていたら何もしない
-    func noteUnremoved(_ spotId: String, for owner: String?) {
-        guard owner == userId, signedInUser != nil, !spotIds.contains(spotId),
-              unremoved.insert(spotId).inserted else { return }
-        saveUnremoved()
-    }
-
-    /// 外す要求が届いた（または入れ直した）
-    func clearUnremoved(_ spotId: String, for owner: String?) {
-        guard owner == userId, unremoved.remove(spotId) != nil else { return }
-        saveUnremoved()
-    }
-
-    /// 外し直す鍵（同期の入れ替えの後に `WishlistSync` が送る）
-    func pendingRemovals(for owner: String?) -> [String] {
-        guard owner == userId else { return [] }
-        return unremoved.subtracting(spotIds).filter(SavedSpotService.canRemove).sorted()
     }
 
     /// 送れた。未送信から外す（人が替わっていたら何もしない）
@@ -254,8 +214,6 @@ final class WishlistStore: ObservableObject {
         let candidates = (unsent ?? spotIds).intersection(spotIds)
         let missing = candidates.subtracting(server)
         next.formUnion(missing)
-        // 外したのに届いていない鍵は、サーバーに在っても生き返らせない（外し直す）
-        next.subtract(unremoved)
         spotIds = next
         unsent = missing
         defaults.set(Array(spotIds), forKey: key(for: userId))
@@ -267,6 +225,5 @@ final class WishlistStore: ObservableObject {
     func removeData(for userId: String) {
         defaults.removeObject(forKey: key(for: userId))
         defaults.removeObject(forKey: unsentKey(for: userId))
-        defaults.removeObject(forKey: unremovedKey(for: userId))
     }
 }

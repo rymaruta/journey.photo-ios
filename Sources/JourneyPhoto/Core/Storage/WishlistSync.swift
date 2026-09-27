@@ -22,10 +22,13 @@ enum WishlistSync {
     enum Outcome: Equatable {
         /// サーバーまで届いた（`wanted` は押した後の状態）
         case synced(wanted: Bool)
-        /// 端末で済ませた（未ログイン・送れない形の鍵・未送信の鍵を外した）
+        /// 端末にだけ残した（未ログイン・送れない形の鍵）
         case local(wanted: Bool)
         /// 送れなかった。控えは戻してある
         case failed(wanted: Bool, message: String)
+        /// 端末では外したが、外す要求がサーバーに届かなかった（未送信のはずの鍵）。
+        /// サーバーに在ったなら次の同期で戻る
+        case removedOnThisDevice
         /// 何もしなかった（空の鍵・送っている最中の連打）
         case ignored
     }
@@ -53,16 +56,20 @@ enum WishlistSync {
         }
         if !wanted && wasUnsent {
             // 実はサーバーに在ることがある（送って時間切れになったが書けていた・別の端末が
-            // 後から入れた）ので外す要求は送る。**届かなくても戻さない**——控えて
-            // （`noteUnremoved`）次の同期で生き返らせず外し直す
+            // 後から入れた）ので外す要求は送る。**届かなくても戻さない**が、**黙らない**——
+            // サーバーに在ったなら次の同期で戻るので、そう言う。
+            //
+            // 「届かなかった鍵を控えて外し直す」はやめた（0bbfc86 のレビュー）。サーバーの
+            // 一覧に時刻が無く、控えた後に**別の端末で入れ直した場所まで黙って消す**。
+            // 見えて直せる失敗（戻る）の方が、見えない消失よりまし
             store.beginSending(key)
             defer { store.endSending(key) }
             do {
                 try await service.unsave(key)
+                return .local(wanted: false)
             } catch {
-                store.noteUnremoved(key, for: owner)
+                return .removedOnThisDevice
             }
-            return .local(wanted: false)
         }
         store.beginSending(key)
         defer { store.endSending(key) }
@@ -100,6 +107,9 @@ enum WishlistSync {
                 ? L("「行きたい」に追加できませんでした", "Couldn't add to your wishlist")
                 : L("「行きたい」から外せませんでした", "Couldn't remove from your wishlist")
             return ("\(head)（\(message)）", .failure)
+        case .removedOnThisDevice:
+            return (L("「行きたい」から外しました（通信できなかったため、他の端末では残っていることがあります）",
+                      "Removed here. Couldn't reach the server, so it may still show on other devices."), .success)
         case .ignored:
             return nil
         }
@@ -140,15 +150,6 @@ enum WishlistSync {
             if isCurrent(), store.owner == owner, !store.contains(key) {
                 _ = try? await service.unsave(key)
             }
-        }
-        // 外したのに届いていなかった鍵を外し直す（届くまで次の同期でも続ける）
-        for key in store.pendingRemovals(for: owner) {
-            guard !Task.isCancelled, isCurrent() else { return }
-            guard !store.isSending(key), !store.contains(key) else { continue }
-            store.beginSending(key)
-            let removed = (try? await service.unsave(key)) != nil
-            store.endSending(key)
-            if removed { store.clearUnremoved(key, for: owner) }
         }
     }
 }
