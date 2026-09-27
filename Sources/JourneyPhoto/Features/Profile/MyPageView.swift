@@ -338,13 +338,13 @@ struct MyPageView: View {
         HStack(alignment: .top, spacing: 8) {
             statCell(value: "\(model.photos.count)", label: L("投稿", "Posts"))
             NavigationLink {
-                FollowListView(userId: model.profile?.userId ?? "", kind: .followers)
+                FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .followers)
             } label: {
                 statCell(value: "\(model.followers)", label: L("フォロワー", "Followers"))
             }
             .buttonStyle(.plain)
             NavigationLink {
-                FollowListView(userId: model.profile?.userId ?? "", kind: .following)
+                FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .following)
             } label: {
                 statCell(value: "\(model.following)", label: L("フォロー中", "Following"))
             }

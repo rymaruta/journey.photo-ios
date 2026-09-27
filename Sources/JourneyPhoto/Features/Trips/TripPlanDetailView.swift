@@ -21,6 +21,7 @@ struct TripPlanDetailView: View {
     @State private var loadedFrom: TripPlan?
     /// 保存で送った下書き。応答が届いたとき、**それ以降に打った編集があれば残す**
     @State private var sent: Draft?
+    @State private var appeared = false
     /// 「行きたい場所から追加」を押した日
     @State private var picking: PickTarget?
     @State private var confirmingDelete = false
@@ -65,7 +66,13 @@ struct TripPlanDetailView: View {
             sourcesFailed = fetchedPhotos == nil || fetchedIndex == nil
         }
         .onAppear {
-            model.clearError()
+            // **前の画面の失敗の文を消すのは、開いた最初の1回だけ。** 項目の
+            // スポットを開いて戻るたびに消していたので、保存に失敗した事情が
+            // 下書きが未保存のまま見えなくなっていた
+            if !appeared {
+                appeared = true
+                model.clearError()
+            }
             resetIfNeeded()
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
