@@ -270,7 +270,7 @@ final class AlbumsViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return }
         do {
             let album = try await environment.albums.create(title: trimmed)
-            writes.created.append(album)
+            writes.created.append(.init(value: album, at: Date()))
             albums.insert(album, at: 0)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
@@ -285,7 +285,7 @@ final class AlbumsViewModel: ObservableObject {
         do {
             // **サーバーが直した名前を採る**（60字で切られる・制御文字が落ちる）
             let saved = try await environment.albums.rename(id: id, title: trimmed)
-            writes.renamed[id] = saved
+            writes.renamed[id] = .init(value: saved, at: Date())
             albums = albums.map { album in
                 guard album.id == id else { return album }
                 return Album(id: album.id, title: saved, createdAt: album.createdAt,
@@ -316,7 +316,11 @@ final class AlbumsViewModel: ObservableObject {
         inviteWorking.insert(id)
         defer { inviteWorking.remove(id) }
         do {
-            _ = try await environment.albums.createInvite(albumId: id)
+            // **返ってきたリンクを手元にも書く。** 一覧は結果整合で読むので、
+            // 読み直しが古いとリンクが出ず、もう一度押すと作り直し（前のリンクが失効）になる
+            let invite = try await environment.albums.createInvite(albumId: id)
+            writes.invites[id] = .init(value: invite, at: Date())
+            albums = AlbumMerge.merge(loaded: albums, writes: writes)
             await load(environment: environment)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("招待リンクを作れませんでした", "Couldn't create the invite link")
@@ -329,6 +333,8 @@ final class AlbumsViewModel: ObservableObject {
         defer { inviteWorking.remove(id) }
         do {
             try await environment.albums.revokeInvite(albumId: id)
+            writes.invites[id] = .init(value: nil, at: Date())
+            albums = AlbumMerge.merge(loaded: albums, writes: writes)
             await load(environment: environment)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("取り消せませんでした", "Couldn't revoke")
