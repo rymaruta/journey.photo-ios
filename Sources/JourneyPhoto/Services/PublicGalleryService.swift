@@ -54,10 +54,15 @@ actor PublicGalleryService {
         // ログインし直した人に、前の人ぶんを見せない
         restrictedCache = nil
         restrictedCachedAt = nil
+        restrictedGeneration += 1
     }
 
     private var restrictedCache: [Photo]?
     private var restrictedCachedAt: Date?
+    /// 口を差し替えるたびに増える。**差し替える前に出た要求の答えを捨てるため**
+    /// ——ログアウトの直前に出た要求が後から戻ると、次の人の控えに
+    /// 前の人あての写真を書き込んでいた
+    private var restrictedGeneration = 0
 
     /// 絞られたぶんを取る。**失敗しても公開一覧は出す。**
     /// ここで投げると、絞った写真が1枚も無い大多数の人まで
@@ -69,6 +74,7 @@ actor PublicGalleryService {
             return restrictedCache
         }
         let startedAt = Date()
+        let generation = restrictedGeneration
         do {
             // **いまの数の時刻を付ける。** この口は DynamoDB から直に来るので
             // 数は新しい。付けないと、押した答え（`LikeCountStore`）が
@@ -78,11 +84,13 @@ actor PublicGalleryService {
                 stamped.likesAsOf = startedAt
                 return stamped
             }
+            guard generation == restrictedGeneration else { return [] }
             restrictedCache = photos
             restrictedCachedAt = Date()
             return photos
         } catch {
             print("[gallery] 公開範囲を絞った写真を取れませんでした: \(error)")
+            guard generation == restrictedGeneration else { return [] }
             // 直前に取れていたぶんは出す（圏外で消える方が驚かれる）
             return restrictedCache ?? []
         }

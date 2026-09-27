@@ -27,6 +27,10 @@ struct PhotoMapView: View {
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
     /// 通報の「受け付けました」も見えない。戻ってきたとき（`onAppear`）に絞る
     @State private var needsDrop = false
+    /// ピンを読んだときの人（`ModerationStore.userRevision`）。**人が替わったら
+    /// 絞るだけでなく読み直す**——前の人あての「フォロワーのみ」は、
+    /// 次の人のブロック・通報では落ちない
+    @State private var loadedUserRevision = 0
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
     /// 取れた現在地。**この画面が開いている間だけ**持つ
@@ -83,6 +87,7 @@ struct PhotoMapView: View {
                 autoLocateStarted = true
                 location.locate(requestedByUser: false)
             }
+            loadedUserRevision = hidden.userRevision
             await model.load(environment: environment)
             // 読んでいる間に通報された回、古い集合で絞った結果を残さない
             dropHidden()
@@ -91,7 +96,13 @@ struct PhotoMapView: View {
         }
         // 絞りが変わったら、残ったピンに寄せ直す（範囲で絞ったときは
         // 見ている場所を動かさない——押した範囲がそのまま答え）
-        .onChange(of: hidden.revision) { _, _ in needsDrop = true }
+        .onChange(of: hidden.revision) { _, _ in
+            needsDrop = true
+            // 🔴 **人が替わったら、見ている最中でも読み直す。** ログアウトは
+            // 見出しのメニュー（シート）から来るので、閉じても `onAppear` も
+            // `.task` も来ず、前の人あての限定写真のピンが残っていた
+            if hidden.userRevision != loadedUserRevision { reloadForNewUser() }
+        }
         .onAppear { if needsDrop { dropHidden() } }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
@@ -1317,6 +1328,19 @@ struct PhotoMapView: View {
     }
 
     // MARK: - カメラ
+
+    /// 人が替わったので読み直す。選んでいた札は前の人の一覧から作ったので下げる
+    private func reloadForNewUser() {
+        loadedUserRevision = hidden.userRevision
+        selected = nil
+        Task {
+            // 集合を自分で渡してから読む（`GalleryView.reloadHidden` と同じ理由）
+            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
+                                                photoIds: hidden.reportedPhotoIds)
+            await model.load(environment: environment)
+            dropHidden()
+        }
+    }
 
     /// 手元のピンからブロック／通報したぶんを落とす。選んでいた札が
     /// 落ちた写真を持っていたら下げる（札は押した時点のピンの写しを持つ）

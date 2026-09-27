@@ -142,6 +142,12 @@ struct JourneyPhotoApp: App {
                 // （同じ端末を別の人が使うと、その人のハートとブロックが
                 //  こちらに出る——`FavoritesStore` が warn している事故そのもの）
                 .task(id: auth.userId) {
+                    // 🔴 **限定写真の口は、`hidden.use` より先に差し替える。**
+                    // `hidden.use` が数を進めると検索・ホーム・地図が公開一覧を
+                    // 読み直す。差し替えが後だと、その読み直しが**前の人の口と控え**
+                    // で行われ（ログアウト後は取れずに前の人の控えを返す）、
+                    // 前の人あての「フォロワーのみ」が残ったままになる
+                    await applyRestrictedFeed()
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)
@@ -160,7 +166,6 @@ struct JourneyPhotoApp: App {
                     AppDelegate.push = push
                     await push.use(userId: auth.userId)
                     await applyModeration()
-                    await applyRestrictedFeed()
                     await syncSaves()
                     await syncLikes()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる

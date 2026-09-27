@@ -21,6 +21,10 @@ final class ModerationStore: ObservableObject {
     /// 2つの集合を別々に見ると、通報とブロックを続けて行う回
     /// （`ReportSheet` の「通報してブロックもする」）に全件取得が2回走る。
     @Published private(set) var revision = 0
+    /// 人が替わるたびに増える（`revision` も同時に進む）。
+    /// **ブロックでは絞るだけの画面が、人の入れ替わりでは読み直すため**
+    /// （地図はブロックのたびに読み直さない——`PhotoMapView.needsDrop`）
+    private(set) var userRevision = 0
 
     private let defaults: UserDefaults
     private var userId: String?
@@ -47,15 +51,27 @@ final class ModerationStore: ObservableObject {
     /// ログイン状態が決まったら呼ぶ。端末に残っているぶんを読む。
     func use(userId: String?) {
         let before = (blockedUserIds, reportedPhotoIds)
+        let changedUser = userId != self.userId
         self.userId = userId
         blockedUserIds = Set(defaults.stringArray(forKey: key("blocked")) ?? [])
         reportedPhotoIds = Set(defaults.stringArray(forKey: key("reported")) ?? [])
         // **人が変わったときも数を進める。** 進めないと、画面は
         // `.onChange(of: revision)` を見ているので読み直さず、
         // **前の人の絞り込みで読んだ一覧**が新しい人に見えたままになる
-        // （前の人がブロックした相手の写真が、新しい人には出てこない）
-        bumpIfChanged(blocked: before.0, reported: before.1)
+        // （前の人がブロックした相手の写真が、新しい人には出てこない）。
+        //
+        // 🔴 **集合が同じでも進める。** 公開一覧には前の人あての
+        // 「フォロワーのみ／親しい友達」が混ざっている（`setRestrictedLoader`）。
+        // 前の人も次の人もブロック・通報が0件だと数が進まず、検索・ホームに
+        // 前の人あての写真が残っていた
+        if changedUser {
+            userRevision += 1
+            revision += 1
+        } else {
+            bumpIfChanged(blocked: before.0, reported: before.1)
+        }
     }
+
 
     /// サーバーの一覧で上書きする。
     ///

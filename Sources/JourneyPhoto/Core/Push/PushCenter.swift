@@ -59,8 +59,19 @@ final class PushCenter: ObservableObject {
     private static func pendingUnregisterKey(for userId: String) -> String {
         "photo-gallery-push-unregister-pending.\(userId)"
     }
+    /// 🔴 **前の人の宛先を外せたと確かめられないまま、人が替わった。**
+    ///
+    /// 期限切れ（`AuthStore.expireSession`）は `signingOut` を通らず、
+    /// 人が替わったあとの外し（`use`）は前の人の ID トークンが無いので必ず落ちる。
+    /// 圏外でのログアウトも外せない。**サーバーの `DELETE` はその人の集合からしか
+    /// 消せない**（`devices.ts`）ので、前の人あての通知が次の人に届き続けていた。
+    /// 前の持ち主から外せるのは `POST` だけ（`releasePreviousOwner`）——
+    /// 次にログインした人で「登録してから外す」を一度流す。人ではなく端末に付く印
+    private static let releasePendingKey = "photo-gallery-push-release-pending"
     private let defaults: UserDefaults
     private var userId: String?
+    /// `signingOut` で宛先を外せた人。**その人が抜けたときは外し直さない**
+    private var releasedUserId: String?
     private let service: () -> PushService
 
     init(service: @escaping () -> PushService = { PushService(api: APIClient(tokenProvider: CognitoTokenProvider())) },
@@ -79,9 +90,19 @@ final class PushCenter: ObservableObject {
 
         // **人が入れ替わったら、前の人の宛先を外す。** 外さないと
         // 同じ端末に前の人あての通知が届き続ける
-        if let previous, previous != userId, let token {
-            try? await service().unregister(token: token)
+        //
+        // ここで `DELETE` は呼ばない。ログアウト後は前の人の ID トークンが無く、
+        // 次の人が入ったあとは**次の人の集合**から消すだけで、前の人は外れない。
+        // `signingOut` で外せていなければ印を残し、次にログインした人で外す
+        if let previous, previous != userId, token != nil {
+            if releasedUserId != previous {
+                defaults.set(true, forKey: Self.releasePendingKey)
+            }
             isRegistered = false
+        }
+        releasedUserId = nil
+        if let userId, let token, defaults.bool(forKey: Self.releasePendingKey) {
+            await releasePreviousOwner(token: token, as: userId, keep: isEnabled && isAuthorized)
         }
         // **外し損ねた宛先を外し直す**（「受け取らない」にした回に圏外だった）
         if let userId, !isEnabled, let token,
@@ -180,9 +201,35 @@ final class PushCenter: ObservableObject {
 
     /// ログアウトの**前**に呼ぶ。認証が要るので、あとだと外せない。
     func signingOut() async {
-        guard let token, userId != nil else { return }
-        try? await service().unregister(token: token)
+        guard let token, let userId else { return }
+        if (try? await service().unregister(token: token)) != nil {
+            releasedUserId = userId
+        } else {
+            // 圏外などで外せなかった。次にログインした人で外す（`releasePendingKey`）
+            defaults.set(true, forKey: Self.releasePendingKey)
+        }
         isRegistered = false
+    }
+
+    /// 前の持ち主からこの端末を外す（`releasePendingKey`）。
+    ///
+    /// **登録してから外す。** 登録（`POST`）がサーバーで前の持ち主の集合から
+    /// トークンを落とし、外す（`DELETE`）がいまの人の集合から落とす。
+    /// どちらかが落ちたら印を残し、次の `use` でやり直す
+    /// - Parameter keep: いまの人が受け取る（`isEnabled` かつ許可あり）。
+    ///   **そのときは外さない**——外すと、このあと APNs からトークンが
+    ///   返らなかった回（圏外）にその人の通知まで止まる
+    private func releasePreviousOwner(token: String, as userId: String, keep: Bool) async {
+        let push = service()
+        do {
+            try await push.register(token: token)
+            if !keep { try await push.unregister(token: token) }
+        } catch {
+            return
+        }
+        // 待っている間に人が替わっていたら、印はその人の `use` に任せる
+        guard self.userId == userId else { return }
+        defaults.removeObject(forKey: Self.releasePendingKey)
     }
 
     /// お知らせを読んだので、アイコンの数字を消す。

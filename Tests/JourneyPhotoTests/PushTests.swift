@@ -180,6 +180,102 @@ final class PushIntentTests: XCTestCase {
     }
 }
 
+/// 🔴 **前の人の宛先を、次にログインした人で外す**（バグ探し 2026-09-27 #6）。
+///
+/// サーバーの `DELETE /user/devices` はその人の集合からしか消せず、前の持ち主から
+/// 外せるのは `POST` だけ（`devices.ts` の `releasePreviousOwner`）。期限切れや
+/// 圏外のログアウトで外せなかったら、次の人で「登録してから外す」を流す。
+@MainActor
+final class PushReleaseTests: XCTestCase {
+
+    private let token = Data(repeating: 0xab, count: 32)
+
+    private func center(_ suite: String) -> (PushCenter, UserDefaults) {
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        let push = PushCenter(service: {
+            PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                       tokenProvider: StubTokenProvider(token: "t"),
+                                       session: session))
+        }, defaults: defaults)
+        return (push, defaults)
+    }
+
+    override func tearDown() {
+        StubProtocol.reset()
+        super.tearDown()
+    }
+
+    /// 期限切れ（`signingOut` を通らない）→ 次の人がログイン → 登録してから外す
+    func testExpiredSessionIsReleasedByTheNextUser() async {
+        let (push, defaults) = center("push-release-1")
+        await push.use(userId: "a")
+        push.accept(deviceToken: token)
+        await push.use(userId: nil)
+        StubProtocol.requests = []
+
+        await push.use(userId: "b")
+
+        XCTAssertEqual(StubProtocol.requests, ["POST /user/devices", "DELETE /user/devices"],
+                       "前の人の宛先を外していない")
+        XCTAssertFalse(defaults.bool(forKey: "photo-gallery-push-release-pending"),
+                       "外せたのに印が残っている（次のログインでまた流す）")
+    }
+
+    /// 圏外のログアウト（`signingOut` が外せなかった）も同じ
+    func testFailedSignOutIsReleasedByTheNextUser() async {
+        let (push, _) = center("push-release-2")
+        await push.use(userId: "a")
+        push.accept(deviceToken: token)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await push.signingOut()
+        await push.use(userId: nil)
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        StubProtocol.requests = []
+
+        await push.use(userId: "b")
+
+        XCTAssertEqual(StubProtocol.requests, ["POST /user/devices", "DELETE /user/devices"])
+    }
+
+    /// ふつうのログアウトで外せていたら、次の人で余計に流さない
+    func testCleanSignOutNeedsNoRelease() async {
+        let (push, _) = center("push-release-3")
+        await push.use(userId: "a")
+        push.accept(deviceToken: token)
+        await push.signingOut()
+        await push.use(userId: nil)
+        StubProtocol.requests = []
+
+        await push.use(userId: "b")
+
+        XCTAssertEqual(StubProtocol.requests, [])
+    }
+
+    /// 外し直しが落ちたら印を残し、次の `use` でやり直す
+    func testReleaseRetriesAfterFailure() async {
+        let (push, _) = center("push-release-4")
+        await push.use(userId: "a")
+        push.accept(deviceToken: token)
+        await push.use(userId: nil)
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await push.use(userId: "b")
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        await push.use(userId: nil)
+        StubProtocol.requests = []
+
+        await push.use(userId: "b")
+
+        XCTAssertEqual(StubProtocol.requests, ["POST /user/devices", "DELETE /user/devices"],
+                       "落ちた回の印を残していない")
+    }
+}
+
 /// 通知を押したときの行き先。
 ///
 /// **真偽値にしない**——お知らせタブを開いたまま2回続けて押すと、
