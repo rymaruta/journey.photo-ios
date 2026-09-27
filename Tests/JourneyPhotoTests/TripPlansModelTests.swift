@@ -13,7 +13,8 @@ final class TripPlansModelTests: XCTestCase {
 
     /// 通信は `URLProtocol` で差し替える（`PhotoMapViewModelTests` と同じ組み立て）。
     /// 写真の一覧と索引も差し替えておく——既定のままだと本物のサイトを見にいく
-    private func environment(tokens: TokenProviding = StubTokenProvider(token: "t")) -> AppEnvironment {
+    private func environment(tokens: TokenProviding = StubTokenProvider(token: "t"),
+                             gates: PathGates? = nil) -> AppEnvironment {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)
@@ -36,7 +37,8 @@ final class TripPlansModelTests: XCTestCase {
             snapshot: SpotSnapshotStore(fileName: UUID().uuidString)
         )
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
-                            tokenProvider: tokens, session: session)
+                            tokenProvider: tokens, session: session,
+                            beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } })
         return AppEnvironment(tokenProvider: tokens, gallery: gallery, spots: index,
                               trips: TripPlanService(api: api))
     }
@@ -80,21 +82,24 @@ final class TripPlansModelTests: XCTestCase {
     /// 🔴 **人が替わった後に返った前の人の書き込みは、次の人の画面に何も書かない**
     /// （前の人のプランが「読み込み済み」で出続け、次の人の読み込みも捨てられていた）
     func testWriteAnsweredAfterForgetIsDropped() async {
-        let env = environment()
+        // 前の人の書き込み（/user/trips/p1）の返事を止めておく（遅い口）
+        let gate = Gate()
+        let env = environment(gates: PathGates(["/user/trips/p1": gate]))
         let model = TripPlansModel()
         StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#)
         await model.load(environment: env)
         StubProtocol.reset()
         StubProtocol.respond(path: "/user/trips/p1", status: 200,
-                             body: #"{"plans":[{"planId":"p1","title":"前の人","days":[]}]}"#, delay: 0.2)
+                             body: #"{"plans":[{"planId":"p1","title":"前の人","days":[]}]}"#)
         StubProtocol.respond(path: "/user/trips", status: 200,
                              body: #"{"plans":[{"planId":"p2","title":"次の人","days":[]}]}"#)
         var patch = TripPlanService.Patch()
         patch.title = "前の人"
         let writing = Task { await model.update("p1", patch, environment: env) }
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await gate.untilWaiting()
         model.forget()                                   // 待っている間に人が替わった
         await model.load(environment: env)               // 次の人の読み込み
+        await gate.open()
         _ = await writing.value
         XCTAssertEqual(model.plans.map(\.planId), ["p2"], "前の人の書き込みの答えが次の人の画面に入った")
         XCTAssertNil(model.busy)
