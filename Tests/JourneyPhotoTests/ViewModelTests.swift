@@ -231,6 +231,51 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.profile, "前の人のプロフィールが次の人の画面に入った")
     }
 
+    /// **`.task(id:)` が `.onChange` より先に走っても、次の人の読み込みは捨てない。**
+    /// 前の人の読み込みが走っている最中でも、次の人の分は走り、答えが入る
+    /// （6f29a3e は「走っている」と見て帰り、そのあと前の人の分が捨てられて空のままだった）
+    func testNextUsersLoadSurvivesEitherOrder() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"b","displayName":"次の人"}"#, delay: 0.2)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
+        let model = MyPageViewModel(api: api())
+        let previous = Task { await model.load(for: "a") }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        let next = Task { await model.load(for: "b") }   // task が先
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        model.forgetPhotos(for: "b")                     // onChange が後
+        await previous.value
+        await next.value
+
+        XCTAssertEqual(model.profile?.displayName, "次の人", "次の人の読み込みが捨てられた")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+        XCTAssertFalse(model.isLoading)
+    }
+
+    /// **写真だけ落ちても、見出し（名前）は出す。** 写真の欄だけが知らせになる
+    func testProfileShowsEvenWhenPhotosFail() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"a","displayName":"わたし"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"x"}"#)
+        let model = MyPageViewModel(api: api())
+        await model.load(for: "a")
+        XCTAssertEqual(model.profile?.displayName, "わたし", "写真の失敗で見出しまで消えた")
+        XCTAssertNotNil(model.errorMessage)
+    }
+
+    /// **ログインしていない呼び出しは何もしない**（読み込み中の印も立てない）
+    func testLoadWithoutAUserDoesNothing() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        let model = MyPageViewModel(api: api())
+        await model.load(for: nil)
+        XCTAssertNil(model.profile)
+        XCTAssertEqual(StubProtocol.requestCount, 0, "ログインしていないのに鍵の要る口を叩いた")
+    }
+
     #if DEBUG
     /// 🔴 **鍵を持たずに入っている回、マイページが丸ごと「ログインが必要です」
     /// になっていた。**

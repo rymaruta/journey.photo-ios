@@ -835,6 +835,8 @@ final class MyPageViewModel: ObservableObject {
     private var profileRequestSeq = 0
     /// いまの人（`load(for:)`・`forgetPhotos(for:)` が入れる）
     private var activeUser: String?
+    /// 人が替わった回数（`forgetPhotos`）。走っている読み込みの答えを捨てる目印
+    private var generation = 0
     private var shownProfileSeq = 0
     /// 留めている写真。**サーバーが返した一覧をそのまま持つ**
     /// （増減の結果は向こうが決める——3枚の上限も、消えた写真の掃除も）
@@ -878,18 +880,29 @@ final class MyPageViewModel: ObservableObject {
         self.gallery = gallery
     }
 
-    func load(for userId: String? = nil) async {
+    /// 画面から呼ぶ読み込み。**誰の画面かを渡す。** 人が替わっていたら、
+    /// ここで前の人のぶんを手放してから読む——`.onChange(of: userId)` と
+    /// `.task(id: userId)` のどちらが先に走っても同じ結果になるように。
+    /// ログインしていなければ何もしない
+    func load(for userId: String?) async {
+        guard let userId else { return }
+        if userId != activeUser { forgetPhotos(for: userId) }
+        await load()
+    }
+
+    func load() async {
         // **2本同時に走らせない。** タブの出入りでは `.task(id:)` と
         // `.onAppear` の両方が走ることがあり、`defer` で片方が先に
         // `isLoading` を解くと、もう片方の途中で「まだ写真がありません」が
         // 一瞬出る。片方が失敗すれば知らせに差し替わる
         guard !isLoading else { return }
-        let requested = userId
-        if let userId { activeUser = userId }
+        // この回の世代。**人が替わる（`forgetPhotos`）たびに進む**ので、
+        // 替わった後に返った答えは何も入れない（A → ログアウト → A でも別の世代）
+        let gen = generation
         isLoading = true
         errorMessage = nil
         // 人が替わった後に返った回は、次の人の「読み込み中」を解かない
-        defer { if isFor(userId) { isLoading = false } }
+        defer { if gen == generation { isLoading = false } }
         avatarCacheBust = String(Int(Date().timeIntervalSince1970))
         // 🔴 **鍵を持たずに入っている回は、鍵の要る口を叩かない。**
         //
@@ -904,7 +917,7 @@ final class MyPageViewModel: ObservableObject {
         // 公開プロフィールと、公開一覧から自分のぶんを選り分ける。
         // **嘘の中身は出ない**（下書き＝非公開は公開一覧に無いので出ない）。
         if let previewId = PreviewSession.userId {
-            await loadPublicly(userId: previewId)
+            await loadPublicly(userId: previewId, gen: gen)
             return
         }
         do {
@@ -913,17 +926,20 @@ final class MyPageViewModel: ObservableObject {
             async let profile = self.profiles.myProfile()
             async let photos = self.photoService.myPhotos()
             let loaded = try await profile
-            let loadedPhotos = try await photos
             // 🔴 **返ってくる間に人が替わっていたら、何も入れない。**
             // `onAppear` などの Task は人が替わっても止まらず、`forgetPhotos` で
             // 空にした後に前の人の写真（非公開を含む）・名前が入っていた
-            guard isFor(userId) else { return }
+            guard gen == generation else { return }
             // **途中で外から書き換わったら、古い方で上書きしない**
             // （ログイン直後の表示名: この読み込みが PUT より前に出て後に返る）
             if seq > shownProfileSeq || self.profile == nil {
                 self.profile = loaded
                 shownProfileSeq = seq
             }
+            // **見出しは写真より先に入れる。** 写真だけ落ちた回も名前・アイコン・
+            // 数は出す（写真の欄だけが知らせになる）
+            let loadedPhotos = try await photos
+            guard gen == generation else { return }
             // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
             self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
             self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
@@ -934,37 +950,34 @@ final class MyPageViewModel: ObservableObject {
             // 言う（CLAUDE.md に記録のある制約）。文を分ける
             if let userId = self.profile?.userId {
                 let stats = try? await self.social.followStats(userId: userId)
-                if let stats, isFor(requested) {
+                if let stats, gen == generation {
                     self.followers = stats.followers
                     self.following = stats.following
                 }
             }
         } catch {
-            guard isFor(userId) else { return }
+            guard gen == generation else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
     }
 
-    /// この読み込みが、いまの人のためのものか（人を指定しない呼び方は常に真）
-    private func isFor(_ userId: String?) -> Bool {
-        userId == nil || userId == activeUser
-    }
 
     /// 鍵を持たない回の読み込み（`PreviewSession` のときだけ通る）。
     ///
     /// **`myPhotos()` を使わない**——あれは下書きまで返す代わりに鍵が要る。
     /// ここは公開されているぶんだけで足りる。
-    private func loadPublicly(userId: String) async {
+    private func loadPublicly(userId: String, gen: Int) async {
         let publicProfile = try? await self.profiles.publicProfile(userId: userId)
+        guard gen == generation else { return }
         self.profile = publicProfile
         self.pinnedIds = publicProfile?.pinnedPhotoIds ?? []
         let all = try? await self.gallery.fetchPhotos()
-        if let all {
+        if let all, gen == generation {
             let mine = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
             self.photos = PhotoPinning.pinnedFirst(mine, pinned: self.pinnedIds)
         }
         let stats = try? await self.social.followStats(userId: userId)
-        if let stats {
+        if let stats, gen == generation {
             self.followers = stats.followers
             self.following = stats.following
         }
@@ -977,8 +990,12 @@ final class MyPageViewModel: ObservableObject {
     /// - Parameter newUser: 次の人。**走っている前の人の読み込みの答えを捨てる**目印になる。
     ///   読み込み中の印も解く——解かないと、次の人の最初の読み込みが
     ///   「走っている」と見て何もせずに帰る
+    ///   **同じ人のままなら何もしない**——`.task(id:)` の読み込みが先に走って
+    ///   いた場合に、その回を捨ててしまわないように
     func forgetPhotos(for newUser: String? = nil) {
+        if let newUser, newUser == activeUser { return }
         activeUser = newUser
+        generation += 1
         isLoading = false
         photos = []
         pinnedIds = []
@@ -1026,11 +1043,12 @@ final class MyPageViewModel: ObservableObject {
     /// プロフィールだけ読み直す（`AuthStore.profileRevision`）。**失敗したら今のまま。**
     /// 返ってくる間に人が替わっていたら捨てる（前の人の名前・アイコンを出さない）
     func reloadProfile(expecting userId: String?) async {
-        guard let userId else { return }
+        guard let userId, userId == activeUser else { return }
+        let gen = generation
         profileRequestSeq += 1
         let seq = profileRequestSeq
         let fresh = try? await profiles.myProfile()
-        guard let fresh, fresh.userId == userId, isFor(userId), seq > shownProfileSeq else { return }
+        guard let fresh, fresh.userId == userId, gen == generation, seq > shownProfileSeq else { return }
         profile = fresh
         shownProfileSeq = seq
     }
