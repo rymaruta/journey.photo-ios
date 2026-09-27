@@ -177,4 +177,71 @@ final class StoryDraftStoreTests: XCTestCase {
         XCTAssertNil(reopened.draft)
         XCTAssertNil(defaults.data(forKey: "journey-photo-story-draft:u1"))
     }
+
+    // MARK: - 並べた写真を全部残す
+
+    private func shot(_ n: UInt8, text: String) -> StoryDraftStore.ShotInput {
+        StoryDraftStore.ShotInput(imageData: Data([n]), fileName: "\(n).jpg", contentType: "image/jpeg",
+                                  coords: Photo.Coords(lat: Double(n), lng: 0),
+                                  overlays: [TextOverlay(text: text, x: 0.1, y: 0.2)])
+    }
+
+    @discardableResult
+    private func saveShots(_ store: StoryDraftStore, _ inputs: [StoryDraftStore.ShotInput]) -> Bool {
+        store.save(shots: inputs, caption: "並び", location: "", song: nil, durationSec: 5, savedAt: now)
+    }
+
+    /// 🔴 **3枚並べて保存したら3枚戻る。** 以前は表示中の1枚しか残さず、
+    /// 「保存しました」と出るのに開き直すと1枚だった
+    func testSavesEveryShotInOrder() async throws {
+        let (store, defaults, dir) = make()
+        store.use(userId: "u1")
+        XCTAssertTrue(saveShots(store, [shot(1, text: "一"), shot(2, text: "二"), shot(3, text: "三")]))
+
+        let reopened = StoryDraftStore(defaults: defaults, directory: dir)
+        reopened.use(userId: "u1")
+        let restored = reopened.shotImages()
+        XCTAssertEqual(restored.map(\.data), [Data([1]), Data([2]), Data([3])])
+        XCTAssertEqual(restored.map { $0.shot.overlays.first?.text }, ["一", "二", "三"])
+        XCTAssertEqual(restored.map { $0.shot.coords?.lat }, [1, 2, 3])
+        XCTAssertEqual(reopened.draft?.caption, "並び")
+    }
+
+    /// 枚数を減らして保存し直したら、**使わなくなった画像を残さない**
+    func testSavingFewerShotsRemovesTheLeftovers() async throws {
+        let (store, _, dir) = make()
+        store.use(userId: "u1")
+        saveShots(store, [shot(1, text: "一"), shot(2, text: "二"), shot(3, text: "三")])
+        saveShots(store, [shot(4, text: "四")])
+        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        XCTAssertEqual(files.filter { $0.hasPrefix("story-draft-") }.count, 1)
+        XCTAssertEqual(store.shotImages().map(\.data), [Data([4])])
+    }
+
+    /// 捨てたら**全部の画像**が消える。片づけも2枚目以降を消さない
+    func testClearAndSweepHandleEveryShot() async throws {
+        let (store, defaults, dir) = make()
+        store.use(userId: "u1")
+        saveShots(store, [shot(1, text: "一"), shot(2, text: "二")])
+        let reopened = StoryDraftStore(defaults: defaults, directory: dir)
+        reopened.use(userId: "u1")
+        XCTAssertEqual(reopened.shotImages().count, 2, "片づけが2枚目を消した")
+        reopened.clear()
+        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        XCTAssertEqual(files.filter { $0.hasPrefix("story-draft-") }, [])
+    }
+
+    /// 前の版が保存した1枚だけの下書き（`extraShots` が無い）もそのまま戻る
+    func testReadsAnOldSingleShotDraft() async throws {
+        let (store, defaults, dir) = make()
+        store.use(userId: "u1")
+        save(store)
+        let data = try XCTUnwrap(defaults.data(forKey: "journey-photo-story-draft:u1"))
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        json.removeValue(forKey: "extraShots")
+        defaults.set(try JSONSerialization.data(withJSONObject: json), forKey: "journey-photo-story-draft:u1")
+        let reopened = StoryDraftStore(defaults: defaults, directory: dir)
+        reopened.use(userId: "u1")
+        XCTAssertEqual(reopened.shotImages().map(\.data), [Data("jpeg".utf8)])
+    }
 }

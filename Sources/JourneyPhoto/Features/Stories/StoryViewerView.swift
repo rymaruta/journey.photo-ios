@@ -32,7 +32,7 @@ struct StoryViewerView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var index: Int
-    /// 通報して落とした1本。**兄弟の並びから消す**（左タップで戻れないように）
+    /// 通報して落とした・自分で消した1本。**兄弟の並びから消す**（左タップで戻れないように）
     @State private var dropped: Set<String> = []
 
     // 進行
@@ -1322,7 +1322,17 @@ struct StoryViewerView: View {
         defer { isSending = false }
         do {
             try await environment.stories.delete(id: story.id)
-            dismiss()
+            // 🔴 **残りがあれば閉じない。** 以前は1本消すと画面ごと閉じ、3本のうち
+            // 1本を消しただけで残りの2本が見られなくなった。通報で落としたときと
+            // 同じく並びから外し、次の1本へ詰める（一覧は閉じたときに読み直す）
+            dropped.insert(story.id)
+            let remaining = visible
+            if remaining.isEmpty {
+                dismiss()
+            } else {
+                go(to: min(index, remaining.count - 1))
+                message = L("削除しました", "Deleted")
+            }
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }

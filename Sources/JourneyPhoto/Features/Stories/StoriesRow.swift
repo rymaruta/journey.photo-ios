@@ -18,6 +18,9 @@ struct StoriesRow: View {
     @EnvironmentObject private var seen: SeenStoriesStore
     @StateObject private var model = StoriesViewModel()
     @State private var opened: Story?
+    /// 開いたときの兄弟の並び。**開いた瞬間に写して、閉じるまで変えない**
+    /// ——開く前に始まった読み直しが開いたあとに返ってきても、閲覧画面の並びは動かない
+    @State private var openedGroup: (stories: [Story], index: Int) = ([], 0)
     @State private var showComposer = false
     /// 裏で送っているストーリー（板 27「投稿した直後」）
     @ObservedObject private var uploads = StoryUploadCenter.shared
@@ -44,7 +47,7 @@ struct StoriesRow: View {
                             // 「どれがまだか」が分からず、行が意味を失う
                             let unseen = seen.hasUnseen(model.siblings(of: story))
                             Button {
-                                opened = story
+                                open(story)
                             } label: {
                                 ringItem(story: story,
                                          count: model.siblings(of: story).count,
@@ -60,12 +63,17 @@ struct StoriesRow: View {
                 }
             }
         }
+        // 🔴 **閲覧画面を開いている間は読み直さない**（下の `hidden.revision` と同じ理由）。
+        // 裏で送っていたストーリーが送り終わる・投稿シートが閉じる、で読み直すと、
+        // 閲覧画面に渡す並びが開いたまま作り直され、見ている1本の位置がずれる。
+        // 閉じたときに `onDismiss` が読み直すので、ここで止めても取りこぼさない
         .task(id: "\(auth.userId ?? "-")#\(reloadToken)") {
-            guard auth.userId != nil else { return }
+            guard auth.userId != nil, opened == nil else { return }
             await reload()
         }
         // 裏の送信が全部終わったら読み直す（自分の新しいストーリーを並べる）
         .onChange(of: uploads.finished) { _, _ in
+            guard opened == nil else { return }
             Task { await reload() }
         }
         // 途中で止まったとき。**出たぶんは残し、残りを送り直すかやめるかを選ばせる**
@@ -121,7 +129,7 @@ struct StoriesRow: View {
         if let mine {
             ZStack(alignment: .topTrailing) {
                 Button {
-                    opened = mine
+                    open(mine)
                 } label: {
                     ringItem(story: mine, count: model.siblings(of: mine).count,
                              color: WebTheme.accent, name: L("あなた", "You"), emphasized: false)
@@ -270,11 +278,26 @@ struct StoriesRow: View {
                          reportedPhotoIds: hidden.reportedPhotoIds)
     }
 
-    /// 押した輪と同じ投稿者の兄弟をまとめて渡す。輪は1人＝1つで、
+    /// 押した輪と同じ投稿者の兄弟をまとめて写してから開く。輪は1人＝1つで、
     /// 開くのは輪に出していた1本から
-    private func viewer(for story: Story) -> some View {
+    private func open(_ story: Story) {
         let group = StoryPlayback.siblings(of: story, in: model.stories)
-        return StoryViewerView(stories: group.stories, startIndex: group.index,
+        openedGroup = (group.stories, group.index)
+        opened = story
+    }
+
+    /// 閲覧画面。**開いたときに写した並びを渡す**（`model.stories` から毎回作り直すと、
+    /// 開いている間の読み直しで並びが変わり、見ている1本の位置がずれる）
+    private func viewer(for story: Story) -> some View {
+        var stories = openedGroup.stories
+        var index = openedGroup.index
+        // 写しが無い・別の1本の写し（念のため）なら、いまの一覧から作る
+        if !stories.contains(where: { $0.id == story.id }) {
+            let group = StoryPlayback.siblings(of: story, in: model.stories)
+            stories = group.stories
+            index = group.index
+        }
+        return StoryViewerView(stories: stories, startIndex: index,
                                viewerId: auth.userId, onSeen: { seen.markSeen($0) })
     }
 }
