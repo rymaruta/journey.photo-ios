@@ -48,7 +48,7 @@ struct SearchView: View {
         .webScreen()
         // 読み込めなかった回の出口（以前は一度読んだら二度と読まなかった）
         .refreshable {
-            await model.reloadPhotos(environment: environment)
+            await model.reloadPhotos(environment: environment, force: true)
             await model.search(query, environment: environment)
         }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
@@ -592,8 +592,8 @@ struct SearchView: View {
 
         if model.shown.isEmpty {
             // **「読み込めなかった」と「見つからなかった」を分ける**。
-            // 発見の顔で0枚なのは、写真そのものが取れていないとき
-            Text(isDiscovering && model.everything.isEmpty
+            // 読み込み中（まだ返っていない）は失敗と言わない
+            Text(model.loadFailed && model.everything.isEmpty
                  ? L("写真を読み込めませんでした。引き下げて読み直せます", "Couldn't load photos. Pull to retry")
                  : L("見つかりませんでした", "No results"))
                 .font(.subheadline)
@@ -612,6 +612,8 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var users: [UserProfile] = []
     @Published private(set) var popularTags: [String] = []
     @Published private(set) var isSearching = false
+    /// 写真の一覧を取れなかった（読み込み中・0枚と分ける）
+    @Published private(set) var loadFailed = false
     /// 候補タグと枚数（提案の絵の「winter 13」）
     @Published private(set) var tagCounts: [(tag: String, count: Int)] = []
     @Published private(set) var categories: [String] = []
@@ -705,8 +707,14 @@ final class SearchViewModel: ObservableObject {
     /// 控えがあっても読み直す。**ブロック／通報のあとに使う**
     /// ——`loadPhotos` は一度読んだら二度と読まないので、そのままだと
     /// ブロックした相手の写真が検索結果に残り続ける。
-    func reloadPhotos(environment: AppEnvironment) async {
-        allPhotos = (try? await environment.gallery.fetchPhotos()) ?? []
+    func reloadPhotos(environment: AppEnvironment, force: Bool = false) async {
+        do {
+            allPhotos = try await environment.gallery.fetchPhotos(force: force)
+            loadFailed = false
+        } catch {
+            // 取れなかった回は手元のぶんを残す（引き下げの失敗で一覧を消さない）
+            loadFailed = true
+        }
         popularTags = PhotoQuery.topTags(in: allPhotos)
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
         popularSpots = DiscoverySections.popularSpots(in: allPhotos)
