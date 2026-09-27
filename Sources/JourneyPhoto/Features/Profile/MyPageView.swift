@@ -88,7 +88,8 @@ struct MyPageView: View {
         // **外で書き換えたプロフィールを取り直す。** `load()` は走っている間の
         // 2本目を捨てるので、ここはプロフィールだけを読み直す
         .onChange(of: auth.profileRevision) { _, _ in
-            Task { await model.reloadProfile() }
+            let expected = auth.userId
+            Task { await model.reloadProfile(expecting: expected) }
         }
         // 保存した写真の引き当て先（公開一覧）
         .task(id: auth.userId) { await loadFeed() }
@@ -827,9 +828,12 @@ struct MyPageView: View {
 final class MyPageViewModel: ObservableObject {
 
     @Published private(set) var profile: UserProfile?
-    /// 外からの書き換え（`reloadProfile`）の回数。走っている `load()` が
-    /// 古い値で上書きしないための目印
-    private var profileRevision = 0
+    /// プロフィールを取りに行った順の番号と、いま出ている値の番号。
+    /// **後から出した要求の答えだけが勝つ**——ログイン直後の `load()` は表示名の
+    /// PUT より前に出るので、あとで返っても `reloadProfile` の答えを上書きしない。
+    /// 失敗した要求は番号を進めない（残った印で良い答えを捨てない）
+    private var profileRequestSeq = 0
+    private var shownProfileSeq = 0
     /// 留めている写真。**サーバーが返した一覧をそのまま持つ**
     /// （増減の結果は向こうが決める——3枚の上限も、消えた写真の掃除も）
     @Published private(set) var pinnedIds: [String] = []
@@ -899,13 +903,17 @@ final class MyPageViewModel: ObservableObject {
             return
         }
         do {
-            let revision = profileRevision
+            profileRequestSeq += 1
+            let seq = profileRequestSeq
             async let profile = self.profiles.myProfile()
             async let photos = self.photoService.myPhotos()
             let loaded = try await profile
             // **途中で外から書き換わったら、古い方で上書きしない**
             // （ログイン直後の表示名: この読み込みが PUT より前に出て後に返る）
-            if revision == profileRevision || self.profile == nil { self.profile = loaded }
+            if seq > shownProfileSeq || self.profile == nil {
+                self.profile = loaded
+                shownProfileSeq = seq
+            }
             // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
             self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
             self.photos = PhotoPinning.pinnedFirst(try await photos, pinned: self.pinnedIds)
@@ -994,10 +1002,15 @@ final class MyPageViewModel: ObservableObject {
         }
     }
 
-    /// プロフィールだけ読み直す（`AuthStore.profileRevision`）。**失敗したら今のまま**
-    func reloadProfile() async {
-        profileRevision += 1
+    /// プロフィールだけ読み直す（`AuthStore.profileRevision`）。**失敗したら今のまま。**
+    /// 返ってくる間に人が替わっていたら捨てる（前の人の名前・アイコンを出さない）
+    func reloadProfile(expecting userId: String?) async {
+        guard let userId else { return }
+        profileRequestSeq += 1
+        let seq = profileRequestSeq
         let fresh = try? await profiles.myProfile()
-        if let fresh { profile = fresh }
+        guard let fresh, fresh.userId == userId, seq > shownProfileSeq else { return }
+        profile = fresh
+        shownProfileSeq = seq
     }
 }

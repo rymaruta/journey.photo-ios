@@ -75,7 +75,7 @@ enum TagInput {
     /// ときに欠片を捨てる側（`dropFragment`）が同じ答えを使う。別々に書いた
     /// Web の版は、**打って絞ってチップを押すと欠片がタグとして残った**。
     static func typingFragment(_ all: [String], current: String) -> String {
-        let frag = (trimmedTail(current).components(separatedBy: separators).last ?? "")
+        let frag = (current.components(separatedBy: separators).last ?? "")
             .trimmingCharacters(in: .whitespaces)
         guard !frag.isEmpty else { return "" }
         let key = TagChoices.key(frag)
@@ -85,18 +85,8 @@ enum TagInput {
     /// 打ちかけの欠片を欄から落とす（チップを押すときに使う）。
     static func dropFragment(_ all: [String], current: String) -> String {
         guard !typingFragment(all, current: current).isEmpty else { return current }
-        let body = trimmedTail(current)
-        guard let cut = body.rangeOfCharacter(from: separators, options: .backwards) else { return "" }
-        return String(body[body.startIndex..<cut.upperBound])
-    }
-
-    /// 末尾の空白を落とす。**空白は打ち終わりの合図にしない**——英字の予測変換は
-    /// 語の後ろに空白を足すので、`sn ` を「選び終えた」と見ると候補が戻り、
-    /// チップを押しても `sn` がタグとして残る（`,` と `、` は合図のまま）
-    private static func trimmedTail(_ text: String) -> String {
-        var s = Substring(text)
-        while let last = s.last, last == " " || last == "　" || last == "\t" { s.removeLast() }
-        return String(s)
+        guard let cut = current.rangeOfCharacter(from: separators, options: .backwards) else { return "" }
+        return String(current[current.startIndex..<cut.upperBound])
     }
 
     /// 候補を、**打ちかけの文字で絞る**。

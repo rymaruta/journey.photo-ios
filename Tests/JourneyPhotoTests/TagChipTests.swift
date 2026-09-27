@@ -74,13 +74,15 @@ final class TagChipTests: XCTestCase {
         XCTAssertTrue(TagInput.has("森、雪", tag: "雪"))
     }
 
-    /// **末尾の空白は打ち終わりにしない。** 予測変換が足す空白で `sn ` になっても、
-    /// 候補は絞られたまま・チップを押せば `sn` は落ちる（2316e8f のレビュー）
-    func testTrailingSpaceKeepsTheFragment() {
-        XCTAssertEqual(TagInput.typingFragment(TagChoices.all, current: "sn "), "sn")
-        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "森, sn　"), ["雪"])
-        XCTAssertEqual(TagInput.toggle(TagInput.dropFragment(TagChoices.all, current: "sn "), tag: "雪"), "雪, ")
-        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "森, "), TagChoices.all)
+    /// **空白は打ち終わりの合図**（`parse` が空白でも区切るのと揃える）。
+    /// 空白のあとは候補が全部戻り、チップを押しても打ち終えたタグは消えない
+    /// （0e6e9aa は末尾の空白を落として、`helsinki ` で候補が全部消え、
+    /// `sun ` のあと `夕焼け` を押すと `sun` が黙って消えていた）
+    func testTrailingSpaceFinishesTheTag() {
+        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "helsinki "), TagChoices.all)
+        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "京都　"), TagChoices.all)
+        XCTAssertEqual(TagInput.parse(TagInput.toggle(
+            TagInput.dropFragment(TagChoices.all, current: "sun "), tag: "夕焼け")), ["sun", "夕焼け"])
     }
 }
 
