@@ -13,6 +13,12 @@ struct SearchView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @StateObject private var model = SearchViewModel()
     @State private var query = ""
+    /// 画面に出ているか（`onAppear`〜`onDisappear`）
+    @State private var isOnScreen = false
+    /// 見ていない間に人が替わった。**戻ってきたときに読み直す**
+    /// ——開いている詳細の下で一覧を作り直すと、押した元が消えて閉じる
+    @State private var needsUserReload = false
+    @State private var loadedUserRevision = 0
 
     var body: some View {
         ScrollView {
@@ -54,20 +60,42 @@ struct SearchView: View {
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
-        .task { await model.loadPhotos(environment: environment) }
+        .task {
+            // 見ていない間に替わった回は `needsUserReload` が拾う（ここで合わせても消えない）
+            loadedUserRevision = hidden.userRevision
+            await model.loadPhotos(environment: environment)
+        }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }
         // **ブロック／通報の直後に消す。** `loadPhotos` は
         // `guard allPhotos.isEmpty` で二度と読まない作りなので、
         // 控えを捨ててから読み直す
+        //
+        // 人が替わった回（ログアウト・別の人でログイン）も数が進む。前の人あての
+        // 限定写真を落とすため読み直すが、**見ていない間は戻ってきたときに回す**
         .onChange(of: hidden.revision) { _, _ in
-            Task {
-                await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
-                                                    photoIds: hidden.reportedPhotoIds)
-                await model.reloadPhotos(environment: environment, hidden: hidden.snapshot)
-                await model.search(query, environment: environment)
+            if hidden.userRevision != loadedUserRevision, !isOnScreen {
+                needsUserReload = true
+                return
             }
+            reloadHidden()
+        }
+        .onAppear {
+            isOnScreen = true
+            if needsUserReload { reloadHidden() }
+        }
+        .onDisappear { isOnScreen = false }
+    }
+
+    private func reloadHidden() {
+        needsUserReload = false
+        loadedUserRevision = hidden.userRevision
+        Task {
+            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
+                                                photoIds: hidden.reportedPhotoIds)
+            await model.reloadPhotos(environment: environment, hidden: hidden.snapshot)
+            await model.search(query, environment: environment)
         }
     }
 

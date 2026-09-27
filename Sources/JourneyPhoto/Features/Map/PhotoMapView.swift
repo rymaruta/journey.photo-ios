@@ -31,6 +31,10 @@ struct PhotoMapView: View {
     /// 絞るだけでなく読み直す**——前の人あての「フォロワーのみ」は、
     /// 次の人のブロック・通報では落ちない
     @State private var loadedUserRevision = 0
+    /// 画面に出ているか。**出ていない間は人が替わっても読み直さない**
+    /// ——札の `NavigationLink` の先を開いている間に札を下げると、その場で閉じる。
+    /// 戻ってきたとき `.task` が読み直す
+    @State private var isOnScreen = false
     @StateObject private var model = PhotoMapViewModel()
     @StateObject private var location = CurrentLocation()
     /// 取れた現在地。**この画面が開いている間だけ**持つ
@@ -87,6 +91,8 @@ struct PhotoMapView: View {
                 autoLocateStarted = true
                 location.locate(requestedByUser: false)
             }
+            // 見ていない間に人が替わった: 札は前の人の一覧から作ったので下げる
+            if loadedUserRevision != hidden.userRevision { selected = nil }
             loadedUserRevision = hidden.userRevision
             await model.load(environment: environment)
             // 読んでいる間に通報された回、古い集合で絞った結果を残さない
@@ -100,10 +106,15 @@ struct PhotoMapView: View {
             needsDrop = true
             // 🔴 **人が替わったら、見ている最中でも読み直す。** ログアウトは
             // 見出しのメニュー（シート）から来るので、閉じても `onAppear` も
-            // `.task` も来ず、前の人あての限定写真のピンが残っていた
-            if hidden.userRevision != loadedUserRevision { reloadForNewUser() }
+            // `.task` も来ず、前の人あての限定写真のピンが残っていた。
+            // 見ていない間は `.task`（戻ってきたとき）に任せる
+            if isOnScreen, hidden.userRevision != loadedUserRevision { reloadForNewUser() }
         }
-        .onAppear { if needsDrop { dropHidden() } }
+        .onAppear {
+            isOnScreen = true
+            if needsDrop { dropHidden() }
+        }
+        .onDisappear { isOnScreen = false }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
             frame(model.frame)
