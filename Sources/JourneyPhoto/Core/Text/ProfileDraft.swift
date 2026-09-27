@@ -104,3 +104,14 @@ struct ProfileDraft: Equatable {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+/// プロフィールの BGM（`songs`）の触り方。**画面が触るのは先頭の1曲だけ**
+/// （Web で並べた2曲目以降は残して送り返す）。
+enum ProfileSongs {
+    /// 「別の曲にする」: **先頭を差し替える。** 以前は先頭に足していたので、選び直す
+    /// たびに曲が積み上がり、5曲持っている人はサーバーの上限（5曲・`userProfile.ts`）で
+    /// **Web で並べた最後の1曲が黙って消えた**。同じ曲が後ろに残らないように外す
+    static func replacingFirst(_ songs: [Photo.Song], with picked: Photo.Song) -> [Photo.Song] {
+        [picked] + songs.dropFirst().filter { $0.previewUrl != picked.previewUrl }
+    }
+}

@@ -246,9 +246,7 @@ struct ProfileEditView: View {
             // （写真の投稿・ストーリーの呼び手は前から包んでいる）
             NavigationStack {
                 SongPickerView { picked in
-                    // 先頭に据える。**同じ曲が下に残らないように**取り除いてから
-                    songs.removeAll { $0.previewUrl == picked.previewUrl }
-                    songs.insert(picked, at: 0)
+                    songs = ProfileSongs.replacingFirst(songs, with: picked)
                 }
             }
         }

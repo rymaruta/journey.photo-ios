@@ -117,10 +117,41 @@ struct Highlight: Decodable, Identifiable, Equatable {
     let title: String
     /// 入っているストーリーの数。**数えた値**（サーバーが並びの長さを返す）
     let count: Int?
-    /// 表紙の絵。消えた行を落とした結果、**1枚も残っていないことがある**
-    let cover: String?
+    /// 表紙。消えた行を落とした結果、**1枚も残っていないことがある**
+    let cover: Cover?
 
-    var coverURL: URL? { cover.flatMap(URL.init(string:)) }
+    /// 🔴 **サーバーは表紙を `{src, mediaType}` で返す**（`highlights.ts` の `resolveCover`・
+    /// Web も `h.cover.src` で読む）。文字列として読んでいたので、表紙のある輪が1つでも
+    /// あると**一覧ごと読めず、ハイライトが1つも出なかった**。古い形（文字列）も読む
+    struct Cover: Decodable, Equatable {
+        let src: String
+        let mediaType: String?
+
+        var isVideo: Bool { mediaType?.hasPrefix("video") ?? false }
+
+        init(src: String, mediaType: String? = nil) {
+            self.src = src
+            self.mediaType = mediaType
+        }
+
+        private enum CodingKeys: String, CodingKey { case src, mediaType }
+
+        init(from decoder: Decoder) throws {
+            if let text = try? decoder.singleValueContainer().decode(String.self) {
+                self.init(src: text)
+                return
+            }
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(src: try c.decode(String.self, forKey: .src),
+                      mediaType: try c.decodeIfPresent(String.self, forKey: .mediaType))
+        }
+    }
+
+    /// 表紙の絵。**動画の表紙は絵として読めないので出さない**（地の円にする）
+    var coverURL: URL? {
+        guard let cover, !cover.isVideo else { return nil }
+        return URL(string: cover.src)
+    }
     /// 名前が空のまま保存されることはないが、古い行に備えて空は伏せる
     var displayTitle: String { title.isEmpty ? L("ハイライト", "Highlight") : title }
 }
