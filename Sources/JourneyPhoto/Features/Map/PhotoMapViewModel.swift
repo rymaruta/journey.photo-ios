@@ -183,11 +183,6 @@ final class PhotoMapViewModel: ObservableObject {
         refresh()
     }
 
-    /// **その札をまだ出してよいか。**
-    ///
-    /// 絞り込みを変えると、押していたピンが消えることがある。札は値の写しを
-    /// 持っているので、消えても**無関係な地図の上に浮いたまま**残っていた。
-    /// 「写真を見る」を押すと、いま絞り込んだ結果に居ない写真が出る。
     /// 札（押した時点のピンの写し）を、いまのピンに差し替えた値。消えていれば nil。
     ///
     /// 🔴 **`MapPin ==` は id（座標）しか比べない**ので、`==` で「変わったか」を
@@ -198,6 +193,11 @@ final class PhotoMapViewModel: ObservableObject {
         return pins.first { $0.id == pin.id }
     }
 
+    /// **その札をまだ出してよいか。**
+    ///
+    /// 絞り込みを変えると、押していたピンが消えることがある。札は値の写しを
+    /// 持っているので、消えても**無関係な地図の上に浮いたまま**残っていた。
+    /// 「写真を見る」を押すと、いま絞り込んだ結果に居ない写真が出る。
     func stillShown(_ pin: MapPin?) -> Bool {
         guard let pin else { return false }
         return pins.contains { $0.id == pin.id }

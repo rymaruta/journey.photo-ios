@@ -91,13 +91,18 @@ struct PhotoMapView: View {
                 autoLocateStarted = true
                 location.locate(requestedByUser: false)
             }
-            let userChanged = loadedUserRevision != hidden.userRevision
-            loadedUserRevision = hidden.userRevision
+            let revision = hidden.userRevision
+            let userChanged = loadedUserRevision != revision
             await model.load(environment: environment)
-            // 見ていない間に人が替わった: 札は前の人の一覧から作ったので、読み直した
-            // ピンに差し替える。**下げない**——戻るスワイプを途中でやめると、
-            // 札の `NavigationLink` の先がその場で閉じる
-            if userChanged { refreshSelected() }
+            // 🔴 **取り消された回（戻るスワイプを途中でやめた）は何もしない。**
+            // 札を差し替えると開いている詳細が閉じ、印だけ進めると本当に戻った
+            // ときに読み直さない
+            if userChanged, !Task.isCancelled, !model.loadFailed {
+                loadedUserRevision = revision
+                // 見ていない間に人が替わった: 札は前の人の一覧から作ったので、読み直した
+                // ピンに差し替える（下げると、戻るスワイプの途中で詳細が閉じる）
+                refreshSelected()
+            }
             // 読んでいる間に通報された回、古い集合で絞った結果を残さない
             dropHidden()
             // 現在地が先に取れていたら、写真の読み込みで引き戻さない
@@ -1354,6 +1359,9 @@ struct PhotoMapView: View {
             await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
                                                 photoIds: hidden.reportedPhotoIds)
             await model.load(environment: environment)
+            // 読んでいる間に押した札・開いた一覧も、前の人の写しなので差し替える
+            // （画面に出ている間の経路なので、詳細は開いていない）
+            refreshSelected()
             dropHidden()
         }
     }
@@ -1362,6 +1370,7 @@ struct PhotoMapView: View {
     /// そのままだと前の人あての写真を持ち続ける）。ピンが消えていれば下げる
     private func refreshSelected() {
         selected = PhotoMapViewModel.refreshed(selected, in: model.pins)
+        if listing != nil { listing = PhotoMapViewModel.refreshed(listing, in: model.pins) }
     }
 
     /// 手元のピンからブロック／通報したぶんを落とす。選んでいた札が
