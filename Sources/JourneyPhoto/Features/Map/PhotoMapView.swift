@@ -363,8 +363,11 @@ struct PhotoMapView: View {
                 // **消えたピンの札は出さない。** 絞り込みを変えるとピンは
                 // 入れ替わるが、札は値の写しなので残ってしまう。
                 // 撮影スポットの札は、そこから開いた画面を積んでいる間だけ残す（`showsCard`）
-                if let selected, model.stillShown(selected) {
-                    pinCard(selected)
+                // **札は model.pins から引き直した最新のピンで描く。** `selected` は
+                // 押した時点の写しで、`MapPin ==` は id（座標）しか比べないので、
+                // 絞り込みで同じ座標の写真が減っても写しは古い枚数・写真のままだった
+                if let current = PhotoMapViewModel.refreshed(selected, in: model.pins) {
+                    pinCard(current)
                         .padding(.horizontal, 16)
                 } else if let selectedOfficial,
                           model.showsCard(official: selectedOfficial, onScreen: isOnScreen) {
@@ -451,6 +454,9 @@ struct PhotoMapView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                // 読み上げは撮影地と枚数（見た目は写真だけで、名前は無かった）
+                .accessibilityLabel(PhotoMapViewModel.pinSpokenLabel(
+                    place: pin.hasPlaceName ? pin.title : nil, count: pin.photos.count))
             }
         }
         ForEach(model.officialPins) { pin in
@@ -792,8 +798,7 @@ struct PhotoMapView: View {
                     .font(.headline)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                Text(L("この周辺の写真 \(pin.photos.count)枚",
-                       "\(pin.photos.count) photos nearby"))
+                Text(PhotoMapViewModel.nearbyCountLabel(pin.photos.count))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
                 // 何が写っているかの見本（モック3-3）。**3枚まで＋残りの数**
@@ -1132,7 +1137,7 @@ struct PhotoMapView: View {
                     Text(L("この付近で撮られた写真", "Photos taken near here"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
-                    Text(L("\(photos.count)枚", "\(photos.count) photos"))
+                    Text(PhotoMapViewModel.photoCountLabel(photos.count))
                         .font(.caption)
                         .foregroundStyle(WebTheme.muted2)
                     Spacer(minLength: 8)
@@ -1298,7 +1303,7 @@ struct PhotoMapView: View {
     /// 「約0.8km · 写真 3枚」。距離は**丸めた座標から測るので「約」を付ける**
     /// （`NearbyPhotos.label`）。起点が無ければ距離を出さない
     private func spotSubline(_ row: OfficialSpotList.Row) -> String {
-        let photos = L("写真 \(row.photoCount)枚", "\(row.photoCount) photos")
+        let photos = L("写真 \(row.photoCount)枚", PhotoMapViewModel.photoCountLabel(row.photoCount))
         guard let km = row.km else { return photos }
         return "\(NearbyPhotos.label(km: km)) · \(photos)"
     }
@@ -1392,7 +1397,7 @@ struct PhotoMapView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(pin.hasPlaceName ? WebTheme.foreground : WebTheme.faint)
                     .lineLimit(1)
-                Text(L("\(pin.photos.count)枚", "\(pin.photos.count) photos"))
+                Text(PhotoMapViewModel.photoCountLabel(pin.photos.count))
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
             }

@@ -147,7 +147,7 @@ struct TripBookView: View {
                 .frame(height: Self.routeHeight)
                 .background(Self.cellColor, in: RoundedRectangle(cornerRadius: 14))
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(stops.map { "DAY \($0.day) \($0.place)" }.joined(separator: "、"))
+                .accessibilityLabel(Self.routeSpokenLabel(stops))
                 // スクリーンショットの `31-旅の足取り` がここまで送って撮る
                 .accessibilityIdentifier("trips.route")
             }
@@ -234,6 +234,7 @@ struct TripBookView: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("DAY \(day.number)")
                 .jpEyebrow()
+                .accessibilityLabel(Self.spokenDay(day.number))
                 .foregroundStyle(WebTheme.accent)
             Text(TripBook.monthDay(day.date))
                 .font(JPFont.mono(12, relativeTo: .caption))
@@ -297,4 +298,15 @@ struct TripBookView: View {
 
     /// 数の升・ルート図の地（板の `#0b0b0c`）
     private static let cellColor = Color(red: 0x0B / 255.0, green: 0x0B / 255.0, blue: 0x0C / 255.0)
+
+    /// 読み上げの「何日目」。**見た目の「DAY n」をそのまま読ませない**
+    /// ——日本語の読み上げでは「ディーエーワイ」「デイ」になり、何の数か伝わらない
+    nonisolated static func spokenDay(_ number: Int) -> String {
+        L("\(number)日目", "Day \(number)")
+    }
+
+    /// ルート図の読み上げ（「1日目 金沢、2日目 富山」）
+    nonisolated static func routeSpokenLabel(_ stops: [TripBook.RouteStop]) -> String {
+        stops.map { "\(spokenDay($0.day)) \($0.place)" }.joined(separator: L("、", ", "))
+    }
 }

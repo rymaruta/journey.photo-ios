@@ -266,21 +266,72 @@ struct CloseFriendsView: View {
         guard let me = auth.userId else { return }
         let list = try? await environment.social.following(userId: me)
         let ids = try? await environment.social.closeFriendIds()
+        // **フォロー中の全員の ID**（`/user/following`）。名前つきの一覧は
+        // サーバーが50人で切るので、51人目以降はここからしか分からない
+        let allFollowing = try? await environment.social.myFollowingIds()
         // **どちらかが引けなければ選べない。** 一覧だけ出すと、選んでいる人が
         // 「選んでいない」に見え、フォロー外の人は並ばない＝外せない
         guard let list, let ids else {
             errorMessage = Labels.Common.loadFailed
             return
         }
-        let rows = CloseFriendsRows.split(following: list.users, chosen: ids)
-        following = rows.following
+        let rows = Self.rows(page: list.users, allFollowing: allFollowing, chosen: ids)
         saved = Set(ids)
         chosen = Set(ids)
+        // 51人目以降は名前を引いてから、フォロー中の並びの後ろに足す。
+        // **全員は引かない**（500人なら450回）——選んでいる人を必ず、残りは
+        // 上限（`lookupCap`）まで。引かなかった人はフォロー中の欄に出ない
+        let beyond = Self.beyondToLookUp(rows.beyondPage, others: rows.others.count,
+                                         chosen: Set(ids), cap: Self.lookupCap)
+        following = list.users + (await names(of: beyond))
         others = await names(of: rows.others)
         // **名前を引き終えてから「読めた」にする。** 引いている途中で離れると打ち切られ、
         // 名前の無い行のまま残るので、戻ったときに読み直す
         if !Task.isCancelled { loaded = true }
     }
+
+    /// 並べる人の振り分け。
+    ///
+    /// - `beyondPage`: フォロー中だが、名前つきの一覧（50人で切れる）に載らなかった人
+    ///   （フォローした順）。**フォロー中の欄に足して選べるようにする**
+    /// - `others`: 選んでいるが**本当にフォロー中でない**人（外した人など）
+    ///
+    /// 全員の ID が取れなかった（`allFollowing == nil`）ときは、一覧に居ない
+    /// 選んだ人を全部 `others` に回す（外す手段だけは残す）。
+    nonisolated static func rows(page: [FollowUser], allFollowing: [String]?,
+                     chosen: [String]) -> (beyondPage: [String], others: [String]) {
+        let split = CloseFriendsRows.split(following: page, chosen: chosen)
+        guard let allFollowing else { return ([], split.others) }
+        let shown = Set(page.map(\.id))
+        var seen = Set<String>()
+        let beyond = allFollowing.filter { !shown.contains($0) && seen.insert($0).inserted }
+        let followingSet = Set(allFollowing)
+        return (beyond, split.others.filter { !followingSet.contains($0) })
+    }
+
+    /// 51人目以降のうち名前を引く人。
+    ///
+    /// - **選んでいる人は必ず残す**（上限を超えても）。落とすと、選んでいるのに
+    ///   どの欄にも出ない＝外せない（`others` には入らないので「外した人など」にも出ない）
+    /// - 残りはフォローした順に、`others` と合わせて `cap` 人に収まるまで
+    ///
+    /// 順番はフォローした順のまま返す
+    nonisolated static func beyondToLookUp(_ beyond: [String], others: Int,
+                                           chosen: Set<String>, cap: Int) -> [String] {
+        let chosenCount = beyond.filter { chosen.contains($0) }.count
+        var room = max(0, cap - others - chosenCount)
+        return beyond.filter { id in
+            if chosen.contains(id) { return true }
+            guard room > 0 else { return false }
+            room -= 1
+            return true
+        }
+    }
+
+    /// 1回の読み込みで名前を引く人数の上限（「外した人など」と51人目以降の合計）。
+    /// 親しい友達の上限（`CLOSE_FRIENDS_MAX` = 200）に合わせる——`lookupWidth` は
+    /// この程度の人数を前提にしている
+    static let lookupCap = 200
 
     /// 名前を引くときに同時に送る数の上限。
     ///

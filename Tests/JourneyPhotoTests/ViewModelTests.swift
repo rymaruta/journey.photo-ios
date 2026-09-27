@@ -698,6 +698,18 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.likes, 7, "取れなかった回に一覧の数を捨てている")
     }
 
+    /// 🔴 **一覧に数が無く、読み込みも取れなかった回は「分からない」（nil）。** 0 と出さない
+    func testUnknownLikesStayUnknown() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: nil)
+        XCTAssertNil(model.likes, "読み込み前に 0 と出している")
+        StubProtocol.respond(status: 500, body: "{}")
+        await model.load()
+        XCTAssertNil(model.likes, "取れなかった回に 0 と出している")
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        XCTAssertNil(model.likes, "送った先の1枚に 0 と出している")
+    }
+
     /// 🔴 **束の隣へ送ったら、数・ハート・コメントをその1枚のものに替える。**
     /// 開いた1枚のままだと、2枚目を見ながら押したいいねが1枚目に付いていた
     func testShowAnotherPhotoInTheBundleSwitchesTheTarget() async {

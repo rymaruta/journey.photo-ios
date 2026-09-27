@@ -215,6 +215,9 @@ struct HighlightEditorView: View {
             // **いまの並びが取れなければ保存させない**（`canSave` の注記）
             if contents == nil { loadFailed = true }
             if let contents {
+                // 題は**取れた中身から**入れる（呼び元の highlight は編集前の古い題のことがある）。
+                // 打ちかけの名前（最初に入れた題から変えたもの）は戻さない
+                if title.isEmpty || title == existing.title { title = contents.title }
                 let inArchive = Set(archive.map(\.id))
                 picked = contents.items.map(\.id).filter { inArchive.contains($0) }
                 // **表紙は必ず並びの中のものにする。** サーバーは並びに

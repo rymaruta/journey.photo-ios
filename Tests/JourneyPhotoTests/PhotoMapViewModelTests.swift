@@ -315,17 +315,17 @@ extension PhotoMapViewModelTests {
     func testDropsTheCardWhenItsPinIsFilteredOut() async throws {
         let model = await loaded()
         let tokyo = try XCTUnwrap(model.pins.first { $0.photos.contains { $0.id == "c" } })
-        XCTAssertTrue(model.stillShown(tokyo))
+        XCTAssertNotNil(PhotoMapViewModel.refreshed(tokyo, in: model.pins))
 
         model.query = "パリ"
-        XCTAssertFalse(model.stillShown(tokyo))
+        XCTAssertNil(PhotoMapViewModel.refreshed(tokyo, in: model.pins))
         // 残っている方の札は出したまま
-        XCTAssertTrue(model.stillShown(model.pins.first))
+        XCTAssertNotNil(PhotoMapViewModel.refreshed(model.pins.first, in: model.pins))
     }
 
     func testNilIsNeverShown() async {
         let model = await loaded()
-        XCTAssertFalse(model.stillShown(nil))
+        XCTAssertNil(PhotoMapViewModel.refreshed(nil, in: model.pins))
     }
 }
 
@@ -360,5 +360,21 @@ extension PhotoMapViewModelTests {
         model.update(visible: MapFraming.Frame(latitude: 36.0, longitude: 140.0,
                                                latitudeSpan: 0.2, longitudeSpan: 0.2))
         XCTAssertTrue(model.canSearchArea)
+    }
+}
+
+/// 地図の文字（B8・B12）。アプリは日本語固定（`AppLanguageTests`）なので
+/// 英語の単数形はここでは動かせない——日本語の出方と読み上げ名だけ確かめる
+final class PhotoMapTextTests: XCTestCase {
+    func testCounts() {
+        XCTAssertEqual(PhotoMapViewModel.photoCountLabel(1), "1枚")
+        XCTAssertEqual(PhotoMapViewModel.nearbyCountLabel(3), "この周辺の写真 3枚")
+    }
+
+    /// 写真のピンは撮影地と枚数を読み上げる。撮影地が無ければ札と同じ語
+    func testPinSpokenLabel() {
+        XCTAssertEqual(PhotoMapViewModel.pinSpokenLabel(place: "パリ", count: 3), "パリ、写真 3枚")
+        XCTAssertEqual(PhotoMapViewModel.pinSpokenLabel(place: nil, count: 1), "場所の名前なし、写真 1枚")
+        XCTAssertEqual(PhotoMapViewModel.pinSpokenLabel(place: " ", count: 1), "場所の名前なし、写真 1枚")
     }
 }

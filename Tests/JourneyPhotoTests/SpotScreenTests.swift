@@ -28,8 +28,8 @@ final class SpotScreenTests: XCTestCase {
 
     // MARK: - シェア（モック5-6）
 
-    /// 🔴 **開けないリンクを配らない。** スポットのページ（`/spots/<スラッグ>`）は
-    /// まだ無いので、journey-photo.com は入れない
+    /// ページを渡さない回（下書き・撮影地から作った地点）は journey-photo.com を
+    /// 入れない——開けないリンクを配らない
     func testShareTextHasNoSiteLink() {
         let url = SpotScreen.mapURL(name: "イアの夕景", coords: Photo.Coords(lat: 36.46, lng: 25.37))
         let text = SpotScreen.shareText(name: "イアの夕景", region: "ギリシャ サントリーニ島", mapURL: url)
@@ -106,5 +106,23 @@ final class SpotScreenTests: XCTestCase {
         XCTAssertFalse(text.contains("journey-photo.com"))
         XCTAssertFalse(text.contains("/spots/"))
         XCTAssertTrue(text.contains("maps.apple.com"))
+    }
+
+    // MARK: - 公開スポットのページ（B15）
+
+    /// 公開スポットは Web と同じ `/spots/<スラッグ>` を配る
+    func testPublishedSpotShareCarriesSitePage() throws {
+        let base = try XCTUnwrap(URL(string: "https://journey-photo.com"))
+        let page = SpotScreen.pageURL(slug: "takaya-shrine", isDraft: false, siteBase: base)
+        XCTAssertEqual(page?.absoluteString, "https://journey-photo.com/spots/takaya-shrine")
+        let text = SpotScreen.shareText(name: "高屋神社", region: "香川県", mapURL: nil, pageURL: page)
+        XCTAssertTrue(text.contains("https://journey-photo.com/spots/takaya-shrine"))
+    }
+
+    /// 下書き・スラッグ無しはページが建たないので配らない
+    func testDraftOrBlankSlugHasNoSitePage() throws {
+        let base = try XCTUnwrap(URL(string: "https://journey-photo.com"))
+        XCTAssertNil(SpotScreen.pageURL(slug: "takaya-shrine", isDraft: true, siteBase: base))
+        XCTAssertNil(SpotScreen.pageURL(slug: "  ", isDraft: false, siteBase: base))
     }
 }

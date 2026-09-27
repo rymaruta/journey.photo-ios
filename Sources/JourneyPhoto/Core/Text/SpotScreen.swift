@@ -23,17 +23,28 @@ enum SpotScreen {
 
     /// シェアで配る文（モック5-6）。
     ///
-    /// 🔴 **journey-photo.com のリンクは入れない。** スポットのページ
-    /// （`/spots/<スラッグ>`）はまだ作っていない（Phase 1.5）ので、
-    /// 入れると**開けないリンクを配る**ことになる。名前・地域・地図の
-    /// リンクだけにして、受け取った人がその場所へ行けるようにする。
-    static func shareText(name: String, region: String?, mapURL: URL?) -> String {
+    /// **公開スポットはサイトのページ（`/spots/<スラッグ>`）を入れる**（`pageURL`）。
+    /// 以前は「ページがまだ無い」ので入れていなかったが、Web の main に
+    /// `app/spots/[slug]` ができた（2026-09）。**下書きはページが建たない**
+    /// （Web の `BUILD_DRAFT_SPOTS = false`）ので、呼ぶ側は `pageURL` で
+    /// 公開のときだけ渡す。名前・地域・地図のリンクはそのまま。
+    static func shareText(name: String, region: String?, mapURL: URL?, pageURL: URL? = nil) -> String {
         var parts = [name.trimmingCharacters(in: .whitespaces)].filter { !$0.isEmpty }
         if let region = region?.trimmingCharacters(in: .whitespaces), !region.isEmpty {
             parts.append(region)
         }
+        if let pageURL { parts.append(pageURL.absoluteString) }
         if let mapURL { parts.append(mapURL.absoluteString) }
         return parts.joined(separator: "\n")
+    }
+
+    /// 撮影スポットのサイトのページ。**公開（`published`）のときだけ**。
+    /// 形は Web と同じ `<サイト>/spots/<スラッグ>`（`trailingSlash` なし）。
+    /// 下書き・スラッグ無しは nil——開けないリンクを配らない
+    static func pageURL(slug: String, isDraft: Bool, siteBase: URL) -> URL? {
+        let slug = slug.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isDraft, !slug.isEmpty else { return nil }
+        return siteBase.appendingPathComponent("spots").appendingPathComponent(slug)
     }
 
     /// 端末の地図アプリへの行き先。**座標があるときだけ**
