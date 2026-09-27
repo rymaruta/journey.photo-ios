@@ -246,6 +246,29 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.shown.map(\.id), ["a"], "人が替わったのに前の一覧のまま")
     }
 
+    /// **最初の読み込みの前に始めた読み直しは、最初の読み込みが届いても捨てない**
+    /// （ブロック直後の読み直しが捨てられ、ブロックした相手の写真が残っていた）
+    func testReloadStartedBeforeFirstLoadIsKept() async {
+        let service = gallery("""
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","location":"パリ"},
+         {"id":"b","src":"https://x/b.jpg","userId":"u2","location":"パリ"}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.reloadPhotos(environment: env)       // 1本目が先に終わる
+        await service.setHidden(userIds: ["u2"], photoIds: [])
+        await service.setRestrictedLoader {
+            try await Task.sleep(nanoseconds: 200_000_000)
+            return []
+        }
+        let blockReload = Task { await model.reloadPhotos(environment: env, force: true) }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        await model.loadPhotos(environment: env, epoch: 0)   // 最初の回が届く
+        await blockReload.value
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.shown.map(\.id), ["a"], "ブロック後の読み直しが捨てられた")
+    }
+
     /// **人が替わったら、選んでいたカテゴリも外す**（次の人の一覧に無いと0件のまま）
     func testSwitchingViewerClearsTheCategory() async {
         let service = gallery(feed)

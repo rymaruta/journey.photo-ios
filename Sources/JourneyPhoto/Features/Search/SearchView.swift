@@ -768,17 +768,26 @@ final class SearchViewModel: ObservableObject {
         let epoch = loadedEpoch
         do {
             let fetched = try await environment.gallery.fetchPhotos(force: force)
-            guard epoch == loadedEpoch else { return }
+            guard crossedNoSwitch(since: epoch) else { return }
             allPhotos = fetched
             loadFailed = false
         } catch {
-            guard epoch == loadedEpoch else { return }
+            guard crossedNoSwitch(since: epoch) else { return }
             // 取れなかった回は手元のぶんを残す（引き下げの失敗で一覧を消さない）
             if let hidden { allPhotos = hidden.visible(allPhotos) }
             loadFailed = true
         }
         hasLoaded = true
         rebuildDerived()
+    }
+
+    /// 始めた時から人が替わっていないか。**nil で始めた回は通す**——人の切り替えは
+    /// 「nil でない回 → 別の回」でしか起きない（`loadPhotos` の `switched`）ので、
+    /// nil の間に始めた回は切り替えをまたいでいない。nil も弾くと、最初の
+    /// `loadPhotos` が届いた時点で、その前に始めたブロック後の読み直しが捨てられ、
+    /// ブロックした相手の写真が次の読み直しまで残っていた（776f74e）
+    private func crossedNoSwitch(since epoch: Int?) -> Bool {
+        epoch == nil || epoch == loadedEpoch
     }
 
     /// 一覧から作る段（チップ・発見の段・カテゴリ）を作り直す。
