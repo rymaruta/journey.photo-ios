@@ -225,8 +225,8 @@ final class TripPlansModel: ObservableObject {
             // **取れたら前の失敗の文を消す。** 残すと、成功したあとも赤い行が出続ける
             errorMessage = nil
         } catch {
-            // **打ち切りは失敗ではない。** 画面を離れると `.task` が打ち切られ、
-            // `APIClient` はそれを「通信できませんでした」に変えて上げてくる
+            // **打ち切りは失敗ではない。** 画面を離れると `.task` が打ち切られる
+            // （`APIClient` は `CancellationError` で上げてくる）
             if Task.isCancelled { return }
             if status == .loaded {
                 // 取れていた一覧は残し、取り直せなかったことだけ言う

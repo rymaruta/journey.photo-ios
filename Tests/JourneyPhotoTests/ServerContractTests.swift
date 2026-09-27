@@ -90,3 +90,54 @@ final class ServerContractTests: XCTestCase {
         XCTAssertEqual(restricted.map(\.id), ["a", "draft"])
     }
 }
+
+/// 039c643 のレビュー: 緩く読んだ結果が「全部読めない」ときと、トークン取得の取り消し
+final class ServerContractReviewTests: XCTestCase {
+
+    override func tearDown() {
+        StubProtocol.reset()
+        super.tearDown()
+    }
+
+    private func photos() -> PhotoService {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        StubProtocol.reset()
+        return PhotoService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                           tokenProvider: StubTokenProvider(token: "t"),
+                                           session: URLSession(configuration: config)))
+    }
+
+    /// 🔴 **1行も読めなければ失敗**（空の一覧で成功にしない——マイページが
+    /// 「まだ写真がありません」になり、限定写真の控えを空で上書きする）
+    func testEveryRowBrokenIsAFailureNotAnEmptyList() async {
+        let service = photos()
+        StubProtocol.respond(status: 200, body: #"[{"id":1},{"id":2}]"#)
+        do {
+            _ = try await service.myPhotos()
+            XCTFail("全部読めないのに成功している")
+        } catch {
+            guard case .decoding = error as? APIError else { return XCTFail("\(error)") }
+        }
+    }
+
+    /// 本当に0枚（`[]`）は成功のまま
+    func testEmptyListIsStillEmpty() async throws {
+        let service = photos()
+        StubProtocol.respond(status: 200, body: "[]")
+        let mine = try await service.myPhotos()
+        XCTAssertTrue(mine.isEmpty)
+    }
+
+    /// トークン取得中の取り消しは「通信できません」にしない（`APIClient` と揃える）
+    func testTokenCancellationIsCancellation() {
+        XCTAssertTrue(AuthGateway.tokenFailure(URLError(.cancelled)) is CancellationError)
+        XCTAssertTrue(AuthGateway.tokenFailure(AuthError.service("", "", URLError(.cancelled))) is CancellationError)
+    }
+
+    /// 期限切れの種類は包まない（呼び出し元の判定を変えない）
+    func testSessionExpiredIsNotWrapped() {
+        let expired = AuthError.sessionExpired("", "", nil)
+        XCTAssertNil(AuthGateway.tokenFailure(expired) as? APIError)
+    }
+}

@@ -88,12 +88,15 @@ enum AuthGateway {
     /// `as? APIError` で読む画面は「通信できません」ではなく汎用の
     /// 「読み込めませんでした」を出していた。それ以外はそのまま投げる
     /// （ログインの期限切れは呼び出し元が `notAuthorized` で見分ける）
+    ///
+    /// 取り消し（`URLError.cancelled`）は `CancellationError` にする（`APIClient` と同じ。
+    /// 画面は取り消しを失敗と言わない）
     static func tokenFailure(_ error: Error) -> Error {
-        if error is URLError { return APIError.unreachable }
-        guard let auth = error as? AuthError else { return error }
-        if AuthFailure(auth) == .network || auth.underlyingError is URLError {
-            return APIError.unreachable
-        }
+        let auth = error as? AuthError
+        let url = (error as? URLError) ?? (auth?.underlyingError as? URLError)
+        if url?.code == .cancelled { return CancellationError() }
+        if url != nil { return APIError.unreachable }
+        if let auth, AuthFailure(auth) == .network { return APIError.unreachable }
         return error
     }
 

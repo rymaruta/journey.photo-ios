@@ -14,7 +14,7 @@ struct PhotoService {
     /// **1行ずつ緩く読む**（公開一覧と同じ `LenientPhotoList`）。`[Photo]` で
     /// 読むと、1行でも形が違えば一覧ごと落ち、マイページが丸ごとエラーになる
     func myPhotos() async throws -> [Photo] {
-        Self.kept(try await api.authorized(.get, "/user/photos", as: LenientPhotoList.self), from: "/user/photos")
+        try Self.kept(try await api.authorized(.get, "/user/photos", as: LenientPhotoList.self), from: "/user/photos")
     }
 
     /// 公開範囲を絞った写真のうち、**自分に見えるぶん**。`GET /feed/restricted`。
@@ -26,13 +26,20 @@ struct PhotoService {
     /// **1行ずつ緩く読む。** 公開一覧の側（`PublicGalleryService`）はここの失敗を
     /// 黙って空にするので、1行の崩れで限定写真が全部消えていた
     func restrictedFeed() async throws -> [Photo] {
-        Self.kept(try await api.authorized(.get, "/feed/restricted", as: LenientPhotoList.self), from: "/feed/restricted")
+        try Self.kept(try await api.authorized(.get, "/feed/restricted", as: LenientPhotoList.self), from: "/feed/restricted")
     }
 
     /// 読めた行を返す。**落とした行は黙って捨てない**（記録に残す）
-    private static func kept(_ list: LenientPhotoList, from path: String) -> [Photo] {
+    ///
+    /// 🔴 **1行も読めなかったら失敗にする。** 空の一覧で成功にすると、
+    /// マイページが「まだ写真がありません」を出し、限定写真は前回の控えを
+    /// 空で上書きする（公開一覧の `fetchStaticList` と同じ守り）
+    private static func kept(_ list: LenientPhotoList, from path: String) throws -> [Photo] {
         if list.dropped > 0 {
             print("[photos] \(path): 読めなかった写真の行を \(list.dropped) 件落としました")
+        }
+        if list.photos.isEmpty && list.dropped > 0 {
+            throw APIError.decoding("\(path): 写真の行を1件も読めませんでした")
         }
         return list.photos
     }
