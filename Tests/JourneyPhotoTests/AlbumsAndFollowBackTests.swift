@@ -2,6 +2,7 @@ import XCTest
 @testable import JourneyPhoto
 
 /// アルバムの招待リンクの期限と、お知らせのフォローバックを出すかの判定。
+@MainActor
 final class AlbumsAndFollowBackTests: XCTestCase {
 
     private let now = ISO8601DateFormatter().date(from: "2026-09-27T07:00:00Z")!
