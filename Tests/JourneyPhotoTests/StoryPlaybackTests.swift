@@ -371,6 +371,13 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(replies.reactionCount, 1)
     }
 
+    /// 🔴 **♡ を何度押しても1人1つ。** サーバーは1件ずつ足す（1人10件まで）
+    func testReactionsCountOncePerPerson() throws {
+        let json = #"[{"uid":"a","emoji":"❤️","t":"1"},{"uid":"a","emoji":"❤️","t":"2"},{"uid":"a","emoji":"😂","t":"3"},{"uid":"b","emoji":"❤️","t":"4"},{"emoji":"❤️","t":"5"}]"#
+        let replies = try JSONDecoder.api.decode([StoryReply].self, from: Data(json.utf8))
+        XCTAssertEqual(replies.reactionCount, 3, "a を3人に数えた")
+    }
+
     /// 反応の画面の副題と、ハイライトの日付（端末の時刻帯で読む）
     func testPostedAtAndDotDate() {
         let tokyo = TimeZone(identifier: "Asia/Tokyo")!
