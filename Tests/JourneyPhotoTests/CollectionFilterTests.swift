@@ -480,6 +480,12 @@ final class TagCountsTests: XCTestCase {
         XCTAssertEqual(counts.first?.count, 2, "`冬` と `winter` が別々に数えられている")
     }
 
+    /// **写真の枚数を数える。** 1枚に `冬` と `winter` が両方付いていても1
+    func testCountsPhotosNotTagOccurrences() throws {
+        let counts = PhotoQuery.tagCounts(in: [try photo("a", tags: ["冬", "winter"])])
+        XCTAssertEqual(counts.first?.count, 1, "1枚を2と数えている")
+    }
+
     /// **0枚の語は出さない**（押しても空になるチップを置かない）
     func testEmptyChoicesAreLeftOut() throws {
         let counts = PhotoQuery.tagCounts(in: [try photo("a", tags: ["冬"])])

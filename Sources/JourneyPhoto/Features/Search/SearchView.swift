@@ -190,7 +190,7 @@ struct SearchView: View {
     private var tagChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(model.tagCounts, id: \.tag) { item in
+                ForEach(model.tagChips, id: \.tag) { item in
                     chip("\(item.tag)  \(item.count)",
                          selected: TagChoices.key(query) == TagChoices.key(item.tag)) {
                         query = TagChoices.key(query) == TagChoices.key(item.tag) ? "" : item.tag
@@ -654,15 +654,28 @@ final class SearchViewModel: ObservableObject {
     var shown: [Photo] {
         // 打っていないときは全部（タグ／撮影地はその欄を持つ写真）、
         // 打っているときは種類ごとの欄に当てる（`SearchScope`）
-        let base = scope.photos(allPhotos, query: query)
-        let byCategory: [Photo]
-        if let category {
-            let key = CategoryChoices.key(category)
-            byCategory = base.filter { CategoryChoices.key($0.category ?? "") == key }
-        } else {
-            byCategory = base
+        return sort.apply(filtered(query: query))
+    }
+
+    /// タグのチップと、**押したときに出る枚数**。
+    ///
+    /// 並びと候補は `tagCounts`（タグを持つ写真の数）で決め、数は押した後の
+    /// 結果（`shown` と同じ絞り方）で出す。「すべて」「写真」はタグの語を題・
+    /// 撮影地にも当てる（`SearchScope`）ので、タグの数を出すと「山 3」を押して
+    /// 富士山・山中湖の写真まで出て数が合わなかった。0枚になるチップは出さない
+    var tagChips: [(tag: String, count: Int)] {
+        tagCounts.compactMap { item -> (tag: String, count: Int)? in
+            let count = filtered(query: item.tag).count
+            return count > 0 ? (tag: item.tag, count: count) : nil
         }
-        return sort.apply(byCategory)
+    }
+
+    /// `shown` の絞り方（並べ替えの前まで）
+    private func filtered(query: String) -> [Photo] {
+        let base = scope.photos(allPhotos, query: query)
+        guard let category else { return base }
+        let key = CategoryChoices.key(category)
+        return base.filter { CategoryChoices.key($0.category ?? "") == key }
     }
 
     /// いま打っている文字（`shown` の出し分けに使う）。

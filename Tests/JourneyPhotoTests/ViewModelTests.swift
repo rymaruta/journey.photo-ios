@@ -167,6 +167,21 @@ final class ViewModelTests: XCTestCase {
                        "ブロックした相手の写真が検索結果に残っている")
     }
 
+    /// **チップの数は、押したときに出る枚数。** 「すべて」はタグの語を撮影地にも
+    /// 当てるので、タグの数（1）を出すと押して2枚出ていた
+    func testTagChipCountMatchesWhatTappingShows() async {
+        let service = gallery("""
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","tags":["山"]},
+         {"id":"b","src":"https://x/b.jpg","userId":"u1","location":"富士山"}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        let chip = model.tagChips.first { $0.tag == "山" }
+        await model.search("山", environment: env)
+        XCTAssertEqual(chip?.count, model.shown.count, "チップの数と押した後の枚数が違う")
+    }
+
     /// 🔴 **限定公開の読み出し口が替わったら（ログアウト・別の人のログイン）読み直す。**
     /// 探すは一度読んだら読み直さない作りで、前の人の「フォロワーのみ」の
     /// 写真が次の人の探すに残っていた。同じ回なら読み直さない

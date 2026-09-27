@@ -198,6 +198,12 @@ struct SignInView: View {
                 // 板: 欄の下に右寄せ・13px・白72%
                 Button {
                     mode = .resetRequested
+                    // **ログインで打ったパスワードを持ち越さない。** 再設定の
+                    // 「新しいパスワード」欄は同じ値に繋がっているので、伏せ字で
+                    // 古い文字が入ったまま始まり、続けて打つと「古い＋新しい」が
+                    // 新しいパスワードになっていた（本人が知らないパスワード）
+                    password = ""
+                    code = ""
                     clearMessages()
                 } label: {
                     // 押せる範囲は文字の周りの 44pt（外に付けた枠は広げない）
@@ -321,7 +327,12 @@ struct SignInView: View {
         // 回数制限や圏外で捨てると、唯一の手がかりを失う
         if auth.lastFailure.isPermanent {
             pending.forget(email: email)
+            return
         }
+        // **送り直せなくても、コードを入れる欄は出す。** 前に届いたコードは
+        // まだ使えることがある。欄を出さないと、ログインを押すたびに送り直し
+        // → 回数制限、を繰り返すだけで先へ進めなかった
+        pendingUsername = saved
     }
 
     // MARK: - 登録の確認
@@ -343,6 +354,8 @@ struct SignInView: View {
                     if await auth.confirmSignUp(username: username, code: code) {
                         let name = pending.displayName(for: email)
                         pendingUsername = nil
+                        // 使い終えたコードを、あとの再設定の欄に残さない
+                        code = ""
                         offerVerification = false
                         // 確認が済んだらそのままログインする。
                         // **失敗しても行き止まりにしない**——「すでに登録
