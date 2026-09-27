@@ -110,8 +110,8 @@ enum AppConfig {
     /// Next のルートハンドラ（`app/app/data/spots.json`）が、ビルド時にそこから
     /// アプリ向けの薄い索引（`spotId`・`slug`・名前・読み・地域・座標・
     /// 分類・概要・`stage`・日付）を書き出し、`scripts/deploy-static-site.js` が
-    /// 他の静的ファイルと一緒にサイト直下へ配る。**1件ごとの詳細 JSON は
-    /// v1 では読まない**（索引だけ）。
+    /// 他の静的ファイルと一緒にサイト直下へ配る。**本文は場所ごとの別ファイル**
+    /// （隣の `spots/<slug>.json`・`OfficialSpotService.fetchBody`・2026-09-27）。
     ///
     /// **本番は Web のその変更が `main` に入るまで 404。** そのあいだ
     /// `OfficialSpotService.fetchIndex` は投げ、地図はスポットのピンを

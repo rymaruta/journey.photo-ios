@@ -31,7 +31,8 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     let category: String?
     /// 概要。**書かれたものだけ**（自動生成しない）
     let summary: String?
-    /// `review`（運営未確認の下書き）か `published`（人が確かめた）
+    /// `review`（運営未確認の下書き）か `published`（公開済み＝人が確かめたか、AI 照合）。
+    /// **`published` だけで「運営が確かめた」と言わない**——本文の印（`SpotBody.check`）で出し分ける
     let stage: String
     /// 下書きを書いた日（`YYYY-MM-DD`）。**確認日ではない**
     let draftedAt: String?
