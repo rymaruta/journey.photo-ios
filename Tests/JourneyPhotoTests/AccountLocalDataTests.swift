@@ -207,6 +207,18 @@ final class PushReleaseTests: XCTestCase {
         XCTAssertEqual(released, 1)
     }
 
+    /// 次の人が「受け取らない」にしたら、残っていた前の人の宛先を端末ごと外す
+    func testTurningOffReleasesSomeoneElsesLeftover() async {
+        let defaults = suite()
+        var released = 0
+        let push = center(defaults) { released += 1 }
+        await push.use(userId: "b")
+        defaults.set("a", forKey: "photo-gallery-push-registered-owner")
+        await push.disable()
+        XCTAssertEqual(released, 1, "b が止めても a の宛先が残っている")
+        XCTAssertNil(defaults.string(forKey: "photo-gallery-push-registered-owner"))
+    }
+
     /// ログアウトの前に外せなかったら（ここでは未ログインで 401 相当）、印は残る
     /// ——ログアウトのあとの `use` が端末ごと外す
     func testFailedSignOutUnregisterLeavesTheMark() async {
