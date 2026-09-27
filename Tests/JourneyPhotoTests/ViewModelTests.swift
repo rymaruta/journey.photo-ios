@@ -199,6 +199,7 @@ final class ViewModelTests: XCTestCase {
         await model.search("パリ", environment: env)
         XCTAssertEqual(model.shown.count, 2, "同じ回なのに読み直している")
 
+        await service.setRestrictedLoader(nil)   // 人が替わった（回が 1 に進む）
         await model.loadPhotos(environment: env, epoch: 1)
         await model.search("パリ", environment: env)
         XCTAssertEqual(model.shown.map(\.id), ["a"], "人が替わったのに前の一覧のまま")
@@ -241,6 +242,7 @@ final class ViewModelTests: XCTestCase {
         await model.loadPhotos(environment: env, epoch: 0)
         await service.setHidden(userIds: ["u2"], photoIds: [])
 
+        await service.setRestrictedLoader(nil)   // 人が替わった（回が 1 に進む）
         await model.loadPhotos(environment: env, epoch: 1)
         await model.search("パリ", environment: env)
         XCTAssertEqual(model.shown.map(\.id), ["a"], "人が替わったのに前の一覧のまま")
@@ -269,6 +271,24 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.shown.map(\.id), ["a"], "ブロック後の読み直しが捨てられた")
     }
 
+    /// 🔴 **知らせより先に終わった読み直しが前の人の一覧を持っていたら、読み直す。**
+    /// 画面の回が nil の間に人が替わると、前の人の限定公開を含む一覧が残っていた
+    func testListReadBeforeTheFirstNoticeIsReplacedAfterASwitch() async {
+        let service = gallery("""
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","location":"パリ"}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        await service.setRestrictedLoader {
+            [try JSONDecoder.api.decode(Photo.self, from: Data(#"{"id":"secret","src":"https://x/s.jpg","userId":"u9","location":"パリ","audience":"closeFriends"}"#.utf8))]
+        }
+        let model = SearchViewModel()
+        await model.reloadPhotos(environment: env)       // 前の人の口で読んだ（回 1）
+        await service.setRestrictedLoader(nil)           // 知らせが届く前に人が替わった（回 2）
+        await model.loadPhotos(environment: env, epoch: 2)
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.shown.map(\.id), ["a"], "前の人の限定公開が残っている")
+    }
+
     /// **人が替わったら、選んでいたカテゴリも外す**（次の人の一覧に無いと0件のまま）
     func testSwitchingViewerClearsTheCategory() async {
         let service = gallery(feed)
@@ -277,6 +297,7 @@ final class ViewModelTests: XCTestCase {
         await model.loadPhotos(environment: env, epoch: 0)
         model.select(category: "風景")
         XCTAssertNotNil(model.category)
+        await service.setRestrictedLoader(nil)   // 人が替わった（回が 1 に進む）
         await model.loadPhotos(environment: env, epoch: 1)
         XCTAssertNil(model.category, "前の人の画面で選んだカテゴリが残っている")
     }

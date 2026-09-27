@@ -90,11 +90,14 @@ actor PublicGalleryService {
     /// 絞られたぶんを取る。**失敗しても公開一覧は出す。**
     /// ここで投げると、絞った写真が1枚も無い大多数の人まで
     /// 「読み込めませんでした」になる。
-    private func restrictedPhotos(force: Bool) async -> [Photo] {
-        guard let restrictedLoader else { return [] }
+    /// - Returns: 写真と、**それを読んだ読み出し口の回**（`restrictedEpoch`）。
+    ///   回は返す直前に確かめた値——読んでいる間に替わったら今の口で読み直すので、
+    ///   返る回は中身と必ず揃う。呼ぶ側はこれで「誰の一覧か」を見分ける
+    private func restrictedPhotos(force: Bool) async -> (photos: [Photo], epoch: Int) {
+        guard let restrictedLoader else { return ([], restrictedEpoch) }
         if !force, let restrictedCache, let restrictedCachedAt,
            Date().timeIntervalSince(restrictedCachedAt) < Self.cacheLifetime {
-            return restrictedCache
+            return (restrictedCache, restrictedEpoch)
         }
         let startedAt = Date()
         let epoch = restrictedEpoch
@@ -114,12 +117,12 @@ actor PublicGalleryService {
             guard epoch == restrictedEpoch else { return await restrictedPhotos(force: true) }
             restrictedCache = photos
             restrictedCachedAt = Date()
-            return photos
+            return (photos, epoch)
         } catch {
             print("[gallery] 公開範囲を絞った写真を取れませんでした: \(error)")
             // 直前に取れていたぶんは出す（圏外で消える方が驚かれる）
             guard epoch == restrictedEpoch else { return await restrictedPhotos(force: true) }
-            return restrictedCache ?? []
+            return (restrictedCache ?? [], epoch)
         }
     }
 
@@ -186,6 +189,13 @@ actor PublicGalleryService {
     /// - Parameter force: 控えを無視して取り直す。**引き下げ更新はこちら**
     ///   ——利用者が自分で引いたのに古いものを出さない。
     func fetchPhotos(force: Bool = false) async throws -> [Photo] {
+        try await fetchPhotosTagged(force: force).photos
+    }
+
+    /// `fetchPhotos` と同じ。**どの読み出し口の回で作った一覧か**も返す。
+    /// 手元に一覧を持ち続ける画面が、人の切り替えの前に読んだ一覧を
+    /// 切り替えの後に書き込まないために使う（探す）
+    func fetchPhotosTagged(force: Bool = false) async throws -> (photos: [Photo], epoch: Int) {
         if !force, let fresh = freshCache {
             await refreshLiveCounts(force: false)
             return await merged(fresh, force: force)
@@ -247,11 +257,11 @@ actor PublicGalleryService {
     ///
     /// いいねの数は**ここで**いまの数に差し替える（`LiveLikes`）。
     /// 取れていなければ静的 JSON の数のまま。
-    private func merged(_ photos: [Photo], force: Bool) async -> [Photo] {
+    private func merged(_ photos: [Photo], force: Bool) async -> (photos: [Photo], epoch: Int) {
         let counted = LiveLikes.apply(liveCounts ?? [:], asOf: liveCountsAsOf ?? .distantPast, to: photos)
-        let extra = await restrictedPhotos(force: force)
-        if extra.isEmpty { return visible(counted) }
-        return visible(RestrictedFeed.merge(publicPhotos: counted, restricted: extra))
+        let (extra, epoch) = await restrictedPhotos(force: force)
+        if extra.isEmpty { return (visible(counted), epoch) }
+        return (visible(RestrictedFeed.merge(publicPhotos: counted, restricted: extra)), epoch)
     }
 
     /// いいねのいまの数を取り直す。**失敗しても何も投げない**

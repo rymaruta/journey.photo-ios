@@ -733,19 +733,24 @@ final class SearchViewModel: ObservableObject {
     private var searchGeneration = 0
 
     /// どの読み出し口の回で読んだか（`PublicGalleryService.restrictedEpoch`）
+    /// 最後に知らされた読み出し口の回（`restrictedChanges`）
     private var loadedEpoch: Int?
+    /// **手元の一覧を作った回**（サービスが返す）。画面が知らされた回ではなく、
+    /// 一覧の中身が誰の読み出し口で読まれたかで「前の人の一覧か」を見分ける。
+    /// 知らせより先に読み直しが終わると、画面の回は nil のままでも、中身は
+    /// 前の人（切り替え前）の限定公開を含みうる
+    private var listEpoch: Int?
 
     func loadPhotos(environment: AppEnvironment, epoch: Int) async {
-        let switched = loadedEpoch != nil && loadedEpoch != epoch
-        // **抜ける前に回を控える。** 引き下げ・ブロック後の読み直しが最初の
-        // `loadPhotos` より先に一覧を埋めると、ここで抜けて回が nil のまま残り、
-        // 以後の人の切り替えを一度も見分けなかった（前の人の限定公開が残る）
         loadedEpoch = epoch
-        guard allPhotos.isEmpty || switched else { return }
+        // **一覧が今の回より古ければ、人が替わっている**（回は増える一方）
+        let stale = listEpoch.map { $0 < epoch } ?? false
+        guard allPhotos.isEmpty || stale else { return }
         // 🔴 **人が替わったら、読み直しに失敗しても前の一覧を残さない**
         // （前の人の限定公開の写真が入っている）
-        if switched {
+        if stale {
             allPhotos = []
+            listEpoch = nil
             // 選んでいたカテゴリも外す（次の人の一覧に無いと、0件で選択中の札も見えない）
             category = nil
             // 読み直しが返るまでは「読み込み中」（前の結果で「見つかりません」を出さない）
@@ -763,31 +768,25 @@ final class SearchViewModel: ObservableObject {
     ///   読み直しが落ちると、ブロックした人の写真が手元に残っていた）
     func reloadPhotos(environment: AppEnvironment, force: Bool = false,
                       hidden: ModerationSnapshot? = nil) async {
-        // **人が替わる前に始めた回の答えは書かない。** 引き下げの読み直しが、
-        // 人が替わって空にした後に返ると、前の人の一覧（限定公開を含む）で上書きしていた
-        let epoch = loadedEpoch
+        let startedAt = loadedEpoch
         do {
-            let fetched = try await environment.gallery.fetchPhotos(force: force)
-            guard crossedNoSwitch(since: epoch) else { return }
-            allPhotos = fetched
+            let fetched = try await environment.gallery.fetchPhotosTagged(force: force)
+            // **知らされた回より古い一覧は書かない**（人の切り替えの前に読んだもの）。
+            // 新しい回の一覧は、知らせより先に届いても書く（中身は今の人のもの）
+            if let known = loadedEpoch, fetched.epoch < known { return }
+            allPhotos = fetched.photos
+            listEpoch = fetched.epoch
             loadFailed = false
         } catch {
-            guard crossedNoSwitch(since: epoch) else { return }
+            // 失敗の知らせは、始めてから回が替わっていなければ出す
+            // （替わっていれば、今の回の読み込みが状態を決める）
+            guard startedAt == loadedEpoch else { return }
             // 取れなかった回は手元のぶんを残す（引き下げの失敗で一覧を消さない）
             if let hidden { allPhotos = hidden.visible(allPhotos) }
             loadFailed = true
         }
         hasLoaded = true
         rebuildDerived()
-    }
-
-    /// 始めた時から人が替わっていないか。**nil で始めた回は通す**——人の切り替えは
-    /// 「nil でない回 → 別の回」でしか起きない（`loadPhotos` の `switched`）ので、
-    /// nil の間に始めた回は切り替えをまたいでいない。nil も弾くと、最初の
-    /// `loadPhotos` が届いた時点で、その前に始めたブロック後の読み直しが捨てられ、
-    /// ブロックした相手の写真が次の読み直しまで残っていた（776f74e）
-    private func crossedNoSwitch(since epoch: Int?) -> Bool {
-        epoch == nil || epoch == loadedEpoch
     }
 
     /// 一覧から作る段（チップ・発見の段・カテゴリ）を作り直す。
