@@ -43,6 +43,8 @@ struct StoryViewerView: View {
     @State private var paused = false
     /// 止めている間に終わった1本（解けたら進める）
     @State private var pendingEnd: String?
+    /// 最後の1本の終わりで閉じ始めた
+    @State private var closing = false
     @State private var muted = false
     /// この画面が鳴らした曲の回（`MusicPreviewPlayer.session`）。鳴らしていなければ nil
     @State private var songSession: Int?
@@ -171,8 +173,10 @@ struct StoryViewerView: View {
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
         .onChange(of: frozen) { _, now in
             syncSong(restart: false)
-            // 止めている間に終わった1本は、解けたところで進める
-            if !now, let pending = pendingEnd {
+            // 止めている間に終わった1本は、解けたところで進める。
+            // **知らせ（「送りました」・失敗）や書きかけが出ている間は進めない**——
+            // 進むと `go` が消し、一瞬も読めなかった。次のタップで進む
+            if !now, let pending = pendingEnd, message == nil, reply.isEmpty {
                 pendingEnd = nil
                 mediaEnded(pending)
             }
@@ -735,6 +739,9 @@ struct StoryViewerView: View {
         if let target = StoryPlayback.next(after: index, count: visible.count) {
             go(to: target)
         } else {
+            // 最後の1本で終わりの知らせが2回来ても、閉じるのは1回
+            guard !closing else { return }
+            closing = true
             dismiss()
         }
     }
@@ -1010,17 +1017,25 @@ struct StoryViewerView: View {
             return
         }
         guard hidden.reportedPhotoIds.contains(story.id) else { return }
+        // **いま見ている1本を id で覚えてから外す**（`deleteStory` と同じ）。シートの
+        // `onDismiss` は閉じる動きの後に走るので、その前に止めが解けて次の1本へ
+        // 進んでいた回に、位置で詰めると1本飛ばしていた
+        let viewingId = current?.id
         dropped.insert(story.id)
         let remaining = visible
         if remaining.isEmpty {
             dismiss()
+            return
+        } else if viewingId != story.id,
+                  let stay = remaining.firstIndex(where: { $0.id == viewingId }) {
+            index = stay
         } else {
             // 落とした位置に次の1本が詰まる。最後だったら1つ手前
             go(to: min(index, remaining.count - 1))
-            // **受け付けたことはここで伝える。** 通報シートのトーストは
-            // 画面の外の知らせで、全画面の閲覧画面の上には出ない
-            message = L("通報を受け付けました。ありがとうございます。", "Thanks — your report was received.")
         }
+        // **受け付けたことはここで伝える。** 通報シートのトーストは
+        // 画面の外の知らせで、全画面の閲覧画面の上には出ない
+        message = L("通報を受け付けました。ありがとうございます。", "Thanks — your report was received.")
     }
 
     // MARK: - 足元

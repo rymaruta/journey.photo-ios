@@ -112,6 +112,9 @@ struct GalleryView: View {
         // フォローしている人の新しいストーリーも出なかった
         // **背面から戻ったときだけ。** コントロールセンター・Face ID・許可の確認から
         // 戻るたび（inactive → active）に読み直すと、読み込み中の輪を取り消して取り直していた
+        // 背面で起動された回（通知・位置など）は、最初の値に `onChange` が来ないので
+        // ここで印を立てる（前面に来たとき輪を読み直す）
+        .onAppear { if scenePhase == .background { wentToBackground = true } }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { wentToBackground = true }
             if phase == .active, wentToBackground {

@@ -776,7 +776,9 @@ struct MyPageView: View {
         } else if tab == .trips {
             // **写真の有無とは無関係に、ここで空の理由まで言う**
             tripsArea
-        } else if model.photos.isEmpty && !model.isLoading && model.reloadError == nil {
+        } else if model.photos.isEmpty && !model.isLoading && model.reloadError == nil
+                    && model.hasLoadedPhotos {
+            // 一度も読めていない回（初回が知らせ無しで取り消された）には言わない
             // 読み直しに失敗した回は上の知らせ1枚だけ（「読めなかった」と
             // 「まだ無い」を2枚重ねて出さない）
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
@@ -1034,7 +1036,7 @@ final class MyPageViewModel: ObservableObject {
     /// 自分の写真を**一度でも読めたか**。`profile` では決めない——プロフィールは写真より
     /// 先に入るので、初回に写真だけ落ちた回を「読めている」と取り違え、格子に
     /// 「まだ写真がありません」と嘘を出していた
-    private var hasLoadedPhotos = false
+    private(set) var hasLoadedPhotos = false
 
     /// 鍵を持たない回の読み込み（`PreviewSession` のときだけ通る）。
     ///
