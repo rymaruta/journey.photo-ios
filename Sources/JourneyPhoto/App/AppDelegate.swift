@@ -114,7 +114,9 @@ enum ModalProbe {
     static func isPresenting() -> Bool {
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
-            for window in windowScene.windows where window.isKeyWindow {
+            // **キーの窓だけに絞らない。** 前面に戻る途中などでキーが外れている
+            // 間に「何も出ていない」と答えると、出せないシートを true にしてしまう
+            for window in windowScene.windows {
                 if window.rootViewController?.presentedViewController != nil { return true }
             }
         }

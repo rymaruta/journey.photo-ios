@@ -188,20 +188,27 @@ final class PushIntentTests: XCTestCase {
 @MainActor
 final class NotificationRouterTests: XCTestCase {
 
-    func testEachTapIsDistinguishable() async {
+    /// 共有の1つを使うので、**前の試験が残した「押された」印を消してから**使う
+    private func freshRouter() -> NotificationRouter {
         let router = NotificationRouter.shared
+        _ = router.takePendingActivity()
+        return router
+    }
+
+    func testEachTapIsDistinguishable() async {
+        let router = freshRouter()
         let before = router.openActivityRequests
         router.openActivity()
         router.openActivity()
         XCTAssertEqual(router.openActivityRequests, before + 2,
                        "2回押したのに1回ぶんしか数えていない")
+        _ = router.takePendingActivity()
     }
 
     /// **画面が居ない間に押した分を落とさない**（冷えた起動・規約の同意画面）。
     /// 画面が出てきたときに1回だけ受け取れる
     func testTapBeforeTheScreenExistsIsKeptUntilTaken() async {
-        let router = NotificationRouter.shared
-        _ = router.takePendingActivity()
+        let router = freshRouter()
         router.openActivity()
         XCTAssertTrue(router.takePendingActivity(), "画面が出る前に押した分が残っていない")
         XCTAssertFalse(router.takePendingActivity(), "同じ1回を2度開いている")
@@ -209,8 +216,7 @@ final class NotificationRouterTests: XCTestCase {
 
     /// アプリを開いている間に届いた通知は、ベルの数え直しの合図になる
     func testArrivalWhileOpenIsSignalled() async {
-        let router = NotificationRouter.shared
-        _ = router.takePendingActivity()
+        let router = freshRouter()
         let before = router.arrivals
         router.noteArrival()
         XCTAssertEqual(router.arrivals, before + 1)
