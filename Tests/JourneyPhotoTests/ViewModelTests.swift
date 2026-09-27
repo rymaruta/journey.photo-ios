@@ -54,6 +54,23 @@ final class ViewModelTests: XCTestCase {
 
     // MARK: - ギャラリー
 
+    /// 🔴 **おすすめの横並びは「おすすめ」の札のときだけ。** 全員の写真から作る段なので、
+    /// 「フォロー中」ではフォローしていない人の写真が並んでいた（owner の判断 2026-09-27）
+    func testFeaturedRowsShowOnlyOnTheRecommendedFeed() async {
+        let model = GalleryViewModel(gallery: gallery("""
+        [{"id":"f1","src":"https://x/f1.jpg","createdAt":"2026-01-02T00:00:00Z","category":"風景","featured":true,"userId":"u1"},
+         {"id":"f2","src":"https://x/f2.jpg","createdAt":"2026-01-03T00:00:00Z","category":"風景","featured":true,"userId":"u1"}]
+        """))
+        await model.load()
+        XCTAssertFalse(model.featured.isEmpty, "前提: おすすめの段が作れていない")
+        model.select(feed: .following, viewerId: "me")
+        XCTAssertTrue(model.featured.isEmpty, "フォロー中で全員のおすすめを出している")
+        model.select(feed: .latest, viewerId: "me")
+        XCTAssertTrue(model.featured.isEmpty, "新着でおすすめの段を出している")
+        model.select(feed: .recommended, viewerId: "me")
+        XCTAssertFalse(model.featured.isEmpty, "おすすめに戻しても段が出ない")
+    }
+
     /// 新しい順。**`createdAt` が無い写真は末尾**（落とさない）。
     func testGalleryOrdersNewestFirstAndKeepsUndated() async {
         let model = GalleryViewModel(gallery: gallery(feed))

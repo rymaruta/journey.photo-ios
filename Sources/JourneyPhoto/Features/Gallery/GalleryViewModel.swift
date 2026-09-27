@@ -246,9 +246,13 @@ final class GalleryViewModel: ObservableObject {
     }
 
     /// トップに出す「おすすめ」。**絞り込みが掛かっているときは出さない**
-    /// ——絞った結果の上に別の並びが出ると、何を見ているのか分からなくなる
+    /// ——絞った結果の上に別の並びが出ると、何を見ているのか分からなくなる。
+    ///
+    /// **「おすすめ」の札のときだけ出す**（owner の判断 2026-09-27）。全員の写真から
+    /// 作る段なので、「フォロー中」ではフォローしていない人の写真が
+    /// 「フォロー中の人の写真はまだありません」の上に並んでいた
     var featured: [FeaturedGroups.Group] {
-        guard category == nil else { return [] }
+        guard category == nil, feed == .recommended else { return [] }
         return FeaturedGroups.groups(from: all)
     }
 }
