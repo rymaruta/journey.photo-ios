@@ -385,6 +385,7 @@ final class WishlistSyncTests: XCTestCase {
         let outcome = await WishlistSync.set("京都", wanted: false, store: wishlist, service: service())
         XCTAssertEqual(outcome, .local(wanted: false))
         XCTAssertFalse(wishlist.contains("京都"), "圏外で外せない")
+        XCTAssertEqual(StubProtocol.requests.last, "DELETE /user/spots/京都", "外す要求を送っていない")
         // 次の同期でも送らない・戻らない
         StubProtocol.reset()
         StubProtocol.respond(status: 200, body: #"{"slugs":[]}"#)
@@ -392,5 +393,36 @@ final class WishlistSyncTests: XCTestCase {
                                 isCurrent: { true })
         XCTAssertEqual(postedSlugs(), [])
         XCTAssertFalse(wishlist.contains("京都"))
+    }
+
+    /// 🔴 **未送信のつもりで外した鍵が、実はサーバーに在った**（送って時間切れになったが
+    /// 書けていた・別の端末が入れた）。外す要求が届かなかったら、次の同期で生き返らせず
+    /// 外し直す——「外しました」と出た場所が黙って戻っていた
+    func testUnsentRemovalThatDidNotReachTheServerIsRetried() async {
+        let wishlist = store(defaults(), user: "u1")
+        wishlist.set("京都", wanted: true)
+        _ = wishlist.replace(with: [], for: "u1")
+        StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
+        _ = await WishlistSync.set("京都", wanted: false, store: wishlist, service: service())
+        // 次の同期: サーバーには「京都」が在る
+        StubProtocol.reset()
+        StubProtocol.respondInOrder([(200, #"{"slugs":["京都"]}"#), (200, #"{"saved":false,"slugs":[]}"#)])
+        await WishlistSync.sync(owner: "u1", since: wishlist.syncMark, store: wishlist, service: service(),
+                                isCurrent: { true })
+        XCTAssertFalse(wishlist.contains("京都"), "外した場所が次の同期で生き返った")
+        XCTAssertEqual(StubProtocol.requests, ["GET /user/spots", "DELETE /user/spots/京都"], "外し直していない")
+        XCTAssertTrue(wishlist.pendingRemovals(for: "u1").isEmpty, "届いたのに外し直しの控えが残る")
+    }
+
+    /// 外し直しの控えは、入れ直したら消える（入れ直した場所を外さない）
+    func testReAddingClearsThePendingRemoval() async {
+        let wishlist = store(defaults(), user: "u1")
+        wishlist.set("京都", wanted: true)
+        _ = wishlist.replace(with: [], for: "u1")
+        StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
+        _ = await WishlistSync.set("京都", wanted: false, store: wishlist, service: service())
+        XCTAssertEqual(wishlist.pendingRemovals(for: "u1"), ["京都"])
+        wishlist.set("京都", wanted: true)
+        XCTAssertTrue(wishlist.pendingRemovals(for: "u1").isEmpty, "入れ直した場所を外し直す")
     }
 }
