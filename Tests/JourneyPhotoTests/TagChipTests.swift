@@ -90,3 +90,37 @@ final class ThemeColorTests: XCTestCase {
         XCTAssertEqual(rgb.blue, 0, accuracy: 0.001)
     }
 }
+
+/// 写真の詳細のタグの札の字（板 02 の「#夕焼け」）。
+///
+/// 以前は `tag.hasPrefix("#") ? tag : "#" + tag` で、全角の `＃` を付けて
+/// 保存したタグが `#＃旅` と二重になり、`##旅` もそのまま出ていた。
+final class TagChipTextTests: XCTestCase {
+
+    func testPlainTagGetsOneHash() {
+        XCTAssertEqual(TagInput.chipText("夕焼け"), "#夕焼け")
+        XCTAssertEqual(TagInput.chipText("sunset"), "#sunset")
+    }
+
+    func testExistingHashIsNotDoubled() {
+        XCTAssertEqual(TagInput.chipText("#夕焼け"), "#夕焼け")
+        XCTAssertEqual(TagInput.chipText("##旅"), "#旅")
+    }
+
+    /// **全角の `＃` も畳む。** 日本語の入力では全角で打たれやすい
+    func testFullWidthHashIsFolded() {
+        XCTAssertEqual(TagInput.chipText("＃旅"), "#旅")
+        XCTAssertEqual(TagInput.chipText("#＃ 海"), "#海")
+    }
+
+    /// `#` しか無いタグは元の字のまま（`#` だけの札・空の札を作らない）
+    func testHashOnlyTagIsKept() {
+        XCTAssertEqual(TagInput.chipText("#"), "#")
+        XCTAssertEqual(TagInput.chipText("＃"), "＃")
+    }
+
+    /// 途中の `#` は落とさない（先頭だけ）
+    func testInnerHashIsKept() {
+        XCTAssertEqual(TagInput.chipText("c#"), "#c#")
+    }
+}
