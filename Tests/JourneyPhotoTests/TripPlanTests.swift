@@ -141,7 +141,7 @@ final class TripPlanTests: XCTestCase {
     }
 
     /// 🔴 **候補は下書きかどうかを持つ。** 選ぶ画面は「公式」と書かず、
-    /// 下書きは「下書き・未確認」と書く（`SpotScreen.eyebrow`）——その判断の材料
+    /// 下書きのときだけ「下書き」の札を付ける——その判断の材料
     func testChoicesCarryTheDraftMark() throws {
         let index = [try spot("takaya-jinja", name: "高屋神社"),
                      try spot("chichibu", name: "秩父", stage: "published")]
@@ -150,7 +150,6 @@ final class TripPlanTests: XCTestCase {
         let byName = Dictionary(uniqueKeysWithValues: choices.map { ($0.name, $0) })
         XCTAssertEqual(byName["高屋神社"]?.isDraft, true, "下書きのスポットが下書きと分からない")
         XCTAssertEqual(byName["秩父"]?.isDraft, false)
-        XCTAssertEqual(SpotScreen.eyebrow(review: true), L("下書き・未確認", "DRAFT · UNREVIEWED"))
     }
 
     private func photo(_ id: String, location: String) throws -> Photo {

@@ -551,8 +551,14 @@ struct MyPageView: View {
         // **撮影地から導いた地点**のうち、「行きたい」に入れたもの。
         // 🔴 **公開一覧（`feed`）と自分の写真を合わせて導く**（`ProfileSections.wishlistPool`）。
         // 「行きたい」は地図などで**他人の写真**から押すのがふつうで、自分の写真だけでは出ない
-        let pool = ProfileSections.wishlistPool(feed: feed, mine: model.photos)
-        let wanted = ProfileSections.wantedPlaces(keys: wishIds, feed: feed, mine: model.photos)
+        // **ブロック・通報した人の写真を外してから導く**（お気に入りと同じ `dropped`）。
+        // `feed` が絞られるのは取った時点だけで、その後のブロックも、同期の前に
+        // 返った一覧も素通りして、行のサムネに出ていた
+        let pool = dropped.visible(ProfileSections.wishlistPool(feed: feed, mine: model.photos))
+        let wanted = ProfileSections.wantedPlaces(keys: wishIds, pool: pool)
+        // 自分の写真の初回が取れていない回も「取れていない」（非公開の写真・一覧に
+        // まだ載っていない投稿の撮影地は、公開一覧からは引けない）
+        let sourceFailed = feedFailed || model.errorMessage != nil
         // 台帳の撮影スポット（`SPOT-<slug>`）。索引と突き合わせて名前を引く。
         // **索引が無くても行は出す**（`OfficialWishlist`）——スポットの画面で
         // 押した直後に「まだありません」と言わない
@@ -571,8 +577,9 @@ struct MyPageView: View {
             // **公開一覧の読み込みの失敗**で決める（件数の食い違いでは決めない）
             switch ProfileSections.wishlist(wantedCount: wanted.count + officialRows.count,
                                             savedIdCount: wishIds.count,
-                                            loaded: feedLoaded && !model.isLoading,
-                                            sourceFailed: feedFailed) {
+                                            // 読み直しのたびに輪へ戻さない（一度読めたら「読めた」）
+                                            loaded: feedLoaded && model.hasLoadedPhotos,
+                                            sourceFailed: sourceFailed) {
             case .loading:
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             case .couldNotLoad:
@@ -582,6 +589,15 @@ struct MyPageView: View {
                 ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
                                        "Nothing yet. Tap “Want to go” on a place."))
             case .list:
+                if ProfileSections.wishlistPartlyMissing(shownCount: wanted.count + officialRows.count,
+                                                         savedIdCount: wishIds.count,
+                                                         sourceFailed: sourceFailed) {
+                    Text(L("一部の場所を読み込めませんでした。引き下げて読み直してください",
+                           "Some places couldn't be loaded. Pull to refresh."))
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.danger)
+                        .padding(.horizontal, 16)
+                }
                 ForEach(wanted) { place in
                     NavigationLink {
                         SpotDetailView(spot: place, photos: pool)

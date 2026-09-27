@@ -53,7 +53,23 @@ enum ProfileSections {
 
     /// 「行きたい」に入れた撮影地の行（`wishlistPool` から導いた地点のうち、鍵が入っているもの）
     static func wantedPlaces(keys: Set<String>, feed: [Photo], mine: [Photo]) -> [DerivedSpot.Place] {
-        DerivedSpot.all(in: wishlistPool(feed: feed, mine: mine)).filter { keys.contains($0.slug) }
+        wantedPlaces(keys: keys, pool: wishlistPool(feed: feed, mine: mine))
+    }
+
+    /// 引き当て先を先に絞った（ブロック・通報を外した）束から導く。
+    ///
+    /// **鍵（スラッグ）で1行に寄せる。** `DerivedSpot.all` はラベルで寄せるが、
+    /// 「高屋 神社」と「高屋　神社」のように別のラベルが同じ鍵になる。束が他人の
+    /// 写真まで広がったので当たりやすく、同じ id の行が2つ並ぶと一覧が壊れる
+    static func wantedPlaces(keys: Set<String>, pool: [Photo]) -> [DerivedSpot.Place] {
+        var seen = Set<String>()
+        return DerivedSpot.all(in: pool).filter { keys.contains($0.slug) && seen.insert($0.slug).inserted }
+    }
+
+    /// 並べられた行が覚えている鍵より少なく、**引き当て先が取れていない**。
+    /// 一部だけ自分の写真で見つかった回に、欠けた行を黙って落とさない（一行添える）
+    static func wishlistPartlyMissing(shownCount: Int, savedIdCount: Int, sourceFailed: Bool) -> Bool {
+        sourceFailed && shownCount < savedIdCount
     }
 
     /// - Parameters:

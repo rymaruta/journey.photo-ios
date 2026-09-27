@@ -112,4 +112,25 @@ final class ProfileSectionsTests: XCTestCase {
                                                 loaded: true, sourceFailed: false),
                        .empty)
     }
+
+    /// **同じ鍵になる別のラベルを1行に寄せる**（「高屋 神社」と「高屋　神社」）。
+    /// 同じ id の行が2つ並ぶと一覧が壊れる
+    func testWantedPlacesAreUniqueBySlug() throws {
+        func photo(_ id: String, _ location: String) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(
+                #"{"id":"\#(id)","src":"/uploads/\#(id).jpg","location":"\#(location)"}"#.utf8))
+        }
+        let pool = [try photo("a", "高屋 神社"), try photo("b", "高屋　神社")]
+        let key = LocationSlug.make("高屋 神社")
+        XCTAssertEqual(LocationSlug.make("高屋　神社"), key, "前提: 同じ鍵になる")
+        XCTAssertEqual(ProfileSections.wantedPlaces(keys: [key], pool: pool).count, 1, "同じ鍵の行が2つ並ぶ")
+    }
+
+    /// **引き当て先が取れず、一部だけ見つかった回は一行添える**（黙って行を落とさない）
+    func testPartlyMissingOnlyWhenTheSourceFailed() {
+        XCTAssertTrue(ProfileSections.wishlistPartlyMissing(shownCount: 1, savedIdCount: 3, sourceFailed: true))
+        XCTAssertFalse(ProfileSections.wishlistPartlyMissing(shownCount: 1, savedIdCount: 3, sourceFailed: false),
+                       "取れているのに欠けた（消えた撮影地）ことを失敗と言っている")
+        XCTAssertFalse(ProfileSections.wishlistPartlyMissing(shownCount: 3, savedIdCount: 3, sourceFailed: true))
+    }
 }
