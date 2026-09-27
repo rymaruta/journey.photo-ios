@@ -233,6 +233,57 @@ final class PushReleaseTests: XCTestCase {
         XCTAssertEqual(released, 1)
     }
 
+    /// トークンを求められた瞬間（＝登録の通信中）に割り込み、そのあと必ず落とす
+    private struct InterruptingTokenProvider: TokenProviding {
+        let interrupt: @MainActor () async -> Void
+        func idToken() async throws -> String? {
+            await interrupt()
+            return nil
+        }
+    }
+
+    private func interruptedCenter(_ defaults: UserDefaults, released: @escaping () -> Void,
+                                   interrupt: @escaping @MainActor () async -> Void) -> PushCenter {
+        PushCenter(service: { PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                                         tokenProvider: InterruptingTokenProvider(interrupt: interrupt))) },
+                   defaults: defaults, releaseDevice: released, readAuthorization: { true })
+    }
+
+    /// 🔴 **呼んでいる間に前の人の登録が遅れて成功し（印が a になる）、そのあと
+    /// b の登録が落ちたら、a の宛先を外す。** 呼ぶ前の印（無し）と比べていた形では
+    /// 外さず、b がログインしている間ずっと a あてに届いた
+    func testLateForeignSuccessThenOwnFailureReleases() async {
+        let defaults = suite()
+        defaults.set(true, forKey: "photo-gallery-push-enabled.b")
+        var released = 0
+        let push = interruptedCenter(defaults, released: { released += 1 }) {
+            defaults.set("a", forKey: "photo-gallery-push-registered-owner")
+        }
+        await push.use(userId: "b")
+        await push.registerIfPossible()
+        XCTAssertEqual(released, 1, "b の登録が落ちたのに、途中で残った a の宛先を外していない")
+        XCTAssertNil(defaults.string(forKey: "photo-gallery-push-registered-owner"))
+    }
+
+    /// **遅れて返った前の人の失敗で、次の人の宛先を外さない**
+    func testLateFailureOfThePreviousPersonDoesNotRelease() async {
+        let defaults = suite()
+        defaults.set(true, forKey: "photo-gallery-push-enabled.a")
+        defaults.set(true, forKey: "photo-gallery-push-enabled.b")
+        var released = 0
+        var push: PushCenter!
+        push = interruptedCenter(defaults, released: { released += 1 }) {
+            // a の登録が通信中のうちに b に替わり、b の前に残った c の印がある
+            defaults.set("c", forKey: "photo-gallery-push-registered-owner")
+            await push.use(userId: "b")
+        }
+        await push.use(userId: "a")
+        defaults.removeObject(forKey: "photo-gallery-push-registered-owner")
+        await push.registerIfPossible()
+        XCTAssertEqual(released, 0, "a の遅れた失敗で端末ごと外した（b が預け直すところだった）")
+        XCTAssertEqual(defaults.string(forKey: "photo-gallery-push-registered-owner"), "c")
+    }
+
     /// 次の人が「受け取らない」にしたら、残っていた前の人の宛先を端末ごと外す
     func testTurningOffReleasesSomeoneElsesLeftover() async {
         let defaults = suite()
