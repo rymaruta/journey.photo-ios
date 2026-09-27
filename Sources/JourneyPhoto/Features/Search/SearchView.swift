@@ -46,6 +46,11 @@ struct SearchView: View {
             .padding(.bottom, 24)
         }
         .webScreen()
+        // 読み込めなかった回の出口（以前は一度読んだら二度と読まなかった）
+        .refreshable {
+            await model.reloadPhotos(environment: environment)
+            await model.search(query, environment: environment)
+        }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
@@ -96,7 +101,8 @@ struct SearchView: View {
             }
         }
         .padding(.horizontal, 14)
-        .frame(height: 44)
+        // 最小44（板）。大きな文字の設定では字に合わせて伸ばす（固定だと上下が欠ける）
+        .frame(minHeight: 44)
         .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
         .padding(.horizontal, 16)
@@ -280,7 +286,7 @@ struct SearchView: View {
     }
 
     /// 季節のおすすめ（モック2）。**いまの季節のタグ**から新しい順に。
-    /// 3列の格子に2段ぶん、「すべて →」で全部（形は板 12）
+    /// 3列の格子に1段ぶん、「すべて →」で全部（形は板 12）
     @ViewBuilder
     private var seasonal: some View {
         let photos = model.seasonal
@@ -585,9 +591,10 @@ struct SearchView: View {
         .padding(.horizontal, 16)
 
         if model.shown.isEmpty {
-            // **「まだ何も打っていない」と「見つからなかった」を分ける**
-            Text(query.isEmpty
-                 ? L("タグやカテゴリから探せます", "Start from a tag or a category")
+            // **「読み込めなかった」と「見つからなかった」を分ける**。
+            // 発見の顔で0枚なのは、写真そのものが取れていないとき
+            Text(isDiscovering && model.everything.isEmpty
+                 ? L("写真を読み込めませんでした。引き下げて読み直せます", "Couldn't load photos. Pull to retry")
                  : L("見つかりませんでした", "No results"))
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.faint)

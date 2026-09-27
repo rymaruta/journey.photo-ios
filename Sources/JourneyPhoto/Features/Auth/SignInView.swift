@@ -283,7 +283,13 @@ struct SignInView: View {
 
     /// 控えてある UUID で確認画面に戻る。コードも送り直す。
     private func resumeVerification() async {
-        guard let saved = pending.username(for: email) else { return }
+        guard let saved = pending.username(for: email) else {
+            // **この端末に登録の控えが無い**（Web・別の端末で登録した）。
+            // 確認コードを送り直すには登録時の ID が要り、メールアドレスでは引けない
+            notice = L("メールアドレスの確認が済んでいません。登録したときに届いたメールの確認コードを、登録した端末（または Web）で入力してください。",
+                       "Your email isn't verified yet. Enter the code from the sign-up email on the device (or web) where you signed up.")
+            return
+        }
         if await auth.resendSignUpCode(username: saved) {
             pendingUsername = saved
             notice = L("確認コードを送り直しました。メールをご確認ください。",

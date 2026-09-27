@@ -183,9 +183,15 @@ final class AuthStore: ObservableObject {
             try await AuthGateway.changePassword(current: current, new: new)
             ok = true
         }
-        // この画面にメールアドレスの欄は無い（共通の「メールアドレスかパスワードが違います」は合わない）
+        // この画面にメールアドレスの欄は無い（共通の「メールアドレスかパスワードが違います」は合わない）。
+        // **期限切れも同じ種類（`.notAuthorized`）に畳まれる**ので、先に見分ける——
+        // 見分けないと、正しいパスワードを何度打っても「違います」と出る
         if lastFailure == .notAuthorized {
-            errorMessage = L("いまのパスワードが違います", "Your current password is incorrect")
+            if await AuthGateway.isSessionExpired() {
+                await expireSession()
+            } else {
+                errorMessage = L("いまのパスワードが違います", "Your current password is incorrect")
+            }
         }
         return ok
     }

@@ -130,12 +130,12 @@ enum AuthGateway {
 
     /// ログイン。username にはメールアドレスを渡す（エイリアス）。
     /// - Returns: 完了したら true。未確認アカウントなどで続きが要るなら false。
-    @discardableResult
     ///
     /// 🔴 **未確認のアカウントは「投げる」に揃える。** Amplify Swift v2 は
     /// 未確認の人に `userNotConfirmed` を投げず、`nextStep == .confirmSignUp` を
     /// 返す。戻り値を捨てていたので、確認コードの画面へ進む分岐
     /// （`lastFailureWasUnconfirmed`）が一度も当たらなかった
+    @discardableResult
     static func signIn(email: String, password: String) async throws -> Bool {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let result = try await Amplify.Auth.signIn(username: trimmed, password: password)
