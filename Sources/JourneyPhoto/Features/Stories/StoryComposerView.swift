@@ -785,7 +785,6 @@ struct StoryComposerView: View {
         if ok { dismiss() }
     }
 
-    /// 「続きから」。**画像が読めなければ何も戻さない**
     /// 送り終えたときに下書きを**残す**か。「キャンセル（残す）」を選んだか、
     /// **問いに答えていない**下書き（送れなかった問いが先に出た回）なら残す。
     /// 同じ回に保存し直した下書き（印が変わった）は、この回の投稿のもの
@@ -795,6 +794,7 @@ struct StoryComposerView: View {
         return false
     }
 
+    /// 「続きから」。**画像が読めなければ何も戻さない**
     private func restoreDraft() {
         let saved = drafts.shotImages()
         guard let draft = drafts.draft, !saved.isEmpty else {
