@@ -206,6 +206,22 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(model.allPhotosForTheme.isEmpty, "今日のテーマの背景が前の人の一覧を読んでいる")
     }
 
+    /// **未ログイン → ログイン済み（起動時の確認中 → A）では一覧を捨てない。**
+    /// 未ログインの一覧は公開分だけ。捨てると起動のたびに読み込み中へ戻っていた
+    func testGallerySignInFromNobodyKeepsTheShownList() async throws {
+        let model = GalleryViewModel(gallery: gallery(feed))
+        model.switchViewer(to: nil)
+        await model.load()
+        guard case .loaded(let before) = model.state, !before.isEmpty else {
+            return XCTFail("前提: 未ログインの一覧が出ていない: \(model.state)")
+        }
+        model.switchViewer(to: "A")
+        guard case .loaded(let after) = model.state else {
+            return XCTFail("未ログイン → A で一覧を捨てて読み込み中に戻った: \(model.state)")
+        }
+        XCTAssertEqual(after.map(\.id), before.map(\.id))
+    }
+
     /// **同じ人のまま画面に戻っただけでは捨てない**（`.task` は出入りのたびに走る）
     func testGallerySameViewerAgainKeepsTheRunningLoad() async throws {
         let service = gallery(feed)

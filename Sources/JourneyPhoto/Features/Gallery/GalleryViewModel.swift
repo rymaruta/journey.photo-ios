@@ -136,12 +136,19 @@ final class GalleryViewModel: ObservableObject {
     /// 前の人の一覧（限定公開を含む）が `all` に残り、次の人の読み込みが
     /// 落ちたあとにカテゴリ・範囲・フィード・並び・文字を触ると
     /// `filtered()` がそれを画面へ戻していた（おすすめ・タグの候補も `all` を読む）
+    ///
+    /// **捨てるのは前の人がいたときだけ。** 未ログイン（nil）の一覧は公開分だけで
+    /// 捨てる理由が無い——起動時の「確認中 → ログイン済み」（nil → A）で捨てると、
+    /// 起動のたびに出ていた一覧が消えて読み込み中に戻っていた。回を古くするのは
+    /// nil → A でも行う（未ログインの回の答えで A の画面を上書きしない）
     func switchViewer(to userId: String?) {
         if let loaded = loadingFor, loaded != userId {
             appliedGeneration = loadGeneration
-            all = []
-            categories = []
-            state = .loading
+            if loaded != nil {
+                all = []
+                categories = []
+                state = .loading
+            }
         }
         loadingFor = .some(userId)
     }
