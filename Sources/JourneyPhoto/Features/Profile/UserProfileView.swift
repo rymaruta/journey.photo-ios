@@ -447,7 +447,8 @@ final class UserProfileViewModel: ObservableObject {
         // 口が api-user に無いため（Web も静的ページを書き出している）
         let all = try? await environment.gallery.fetchPhotos()
         guard current() else { return }
-        if let all {
+        // 読んでいる間にブロックした（`block` が格子を空にした）なら、写真を戻さない
+        if let all, blocks == blockWrites {
             photos = PhotoPinning.pinnedFirst(all.filter { ($0.userId ?? $0.uploadedBy) == userId },
                                       pinned: profile?.pinnedPhotoIds ?? [])
             photoCount = .loaded(photos.count)

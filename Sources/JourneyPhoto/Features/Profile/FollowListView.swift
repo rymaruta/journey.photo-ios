@@ -214,9 +214,11 @@ struct FollowListView: View {
         if let name = ownerProfile?.displayName, !name.isEmpty {
             ownerName = name
         }
-        if auth.userId != nil {
+        if let viewer = auth.userId {
             let ids = try? await environment.social.myFollowingIds()
-            if let ids { myFollowing = Set(ids) }
+            // 待っている間に人が替わっていたら書かない（引き下げの読み直しは
+            // `.task(id:)` の取り消しに巻き込まれない）
+            if let ids, auth.userId == viewer { myFollowing = Set(ids) }
         }
     }
 
