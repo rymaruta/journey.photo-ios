@@ -353,6 +353,10 @@ struct UploadView: View {
                         JPRowLabel(title: L("親しい友達を選ぶ", "Pick close friends"), systemImage: "star")
                     }
                     .buttonStyle(JPRowButtonStyle())
+                    // **送っている間は積ませない。** 積んだ画面は変更が無いとき「払って閉じてよい」
+                    // （`unsavedLeaveGuard`）を出すので、このシートの「送信中は払って閉じない」を
+                    // 打ち消すおそれがある（どちらが勝つかは SwiftUI 任せ）
+                    .disabled(model.isWorking)
                 }
                 JPCardDivider()
                 NavigationLink {

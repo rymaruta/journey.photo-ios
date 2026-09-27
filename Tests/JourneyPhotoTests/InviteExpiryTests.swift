@@ -45,7 +45,7 @@ final class InviteExpiryTests: XCTestCase {
     }
 
     /// 作り直した・取り消したことを知らせる文は **Web（`app/user/albums`）と同じ**。
-    /// 初めて作ったときは「前のリンク」が無いので言わない
+    /// 初めて作ったときは「前のリンク」が無いので言わない（ここだけ Web と違う）
     func testDoneMessagesMatchTheWeb() {
         XCTAssertEqual(InviteLink.doneMessage(.recreated),
                        L("招待リンクを作りました。前のリンクは使えなくなります",

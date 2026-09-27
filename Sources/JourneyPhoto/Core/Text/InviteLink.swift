@@ -56,8 +56,10 @@ extension InviteLink {
         return "\(c.year ?? 0)/\(c.month ?? 0)/\(c.day ?? 0)"
     }
 
-    /// 招待リンクの操作が通ったときの一言。**Web の知らせと同じ文**（`app/user/albums`）。
-    /// 作り直しは「前のリンクは使えなくなる」まで言う——配ったリンクが黙って切れないように
+    /// 招待リンクの操作が通ったときの一言。作り直し・取り消しは **Web の知らせと同じ文**
+    /// （`app/user/albums`）。作り直しは「前のリンクは使えなくなる」まで言う——配ったリンクが
+    /// 黙って切れないように。**初めて作ったときだけ Web と違う**（Web は常に「前のリンクは…」
+    /// と言うが、前のリンクが無いので言わない）
     enum Done { case created, recreated, revoked }
 
     static func doneMessage(_ done: Done) -> String {

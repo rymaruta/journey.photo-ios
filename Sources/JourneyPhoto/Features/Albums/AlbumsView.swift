@@ -164,6 +164,9 @@ struct AlbumsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             inviteControls(album)
+            // **リンクの有る無しの外に置く。** 取り消すとリンクが消えて「招待リンクを作る」の
+            // 枝に描き直されるので、中に置くと「取り消しました」が一度も出なかった
+            inviteDoneLine(album)
         }
         // **払い切りで消さない**（既定の allowsFullSwipe は先頭の削除を確認なしで走らせる。
         // 戻す口は無い）。削除のボタンを押したときだけ消す
@@ -239,7 +242,6 @@ struct AlbumsView: View {
                     ProgressView().controlSize(.small)
                 }
             }
-            inviteDoneLine(album)
             switch expiry {
             case .valid(let until):
                 Text(L("\(InviteLink.untilLabel(until))まで", "Valid until \(InviteLink.untilLabel(until))"))
@@ -272,7 +274,7 @@ struct AlbumsView: View {
         }
     }
 
-    /// 作り直した・取り消したことを**その行で**知らせる（Web の知らせと同じ文）。
+    /// 作り直した・取り消したことを**その行で**知らせる（`InviteLink.doneMessage`）。
     /// アプリはリンクの字を出さないので、作り直しても見た目がほとんど変わらず、
     /// 押しても何も起きないように見えていた。一覧の上の知らせは、下の行からは見えない
     @ViewBuilder
