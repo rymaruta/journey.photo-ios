@@ -60,7 +60,7 @@ enum TripBook {
             // 投稿者が分からない写真は**それだけで1つの束**にしない。
             // 空文字を鍵にすると、身元の分からない写真どうしが
             // 「同じ人の旅」になってしまう
-            byUser[photo.userId ?? "unknown-\(photo.id)", default: []].append(photo)
+            byUser[photo.userId ?? photo.uploadedBy ?? "unknown-\(photo.id)", default: []].append(photo)
         }
         return byUser.values.flatMap { tripsForOnePerson($0, timeZone: timeZone) }
             .sorted { $0.start > $1.start }

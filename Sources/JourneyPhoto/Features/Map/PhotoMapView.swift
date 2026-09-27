@@ -55,6 +55,8 @@ struct PhotoMapView: View {
     /// 押した撮影スポットのピン（台帳）。札は同時に1枚——写真のピン・
     /// Apple の地点と取り合わせず、どれかを押したら他は下げる
     @State private var selectedOfficial: OfficialPins.Pin?
+    /// 撮影スポットの「経路」の検索。押し直し・札の切り替え・画面を離れたら止める
+    @State private var directionsTask: Task<Void, Never>?
     /// 一覧を開くとき（札の「写真を見る →」・リストの行）
     @State private var listing: MapPin?
     /// 押した地点（Apple の地図が描く POI）。**iOS 18 以降だけ**入る
@@ -144,6 +146,11 @@ struct PhotoMapView: View {
         .onDisappear {
             isOnScreen = false
             tabRouter.mapRootOnScreen = false
+            directionsTask?.cancel()
+        }
+        // 札を切り替えた・閉じたら、前の札の「経路」の検索は捨てる
+        .onChange(of: selectedOfficial) { _, _ in
+            directionsTask?.cancel()
         }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
@@ -631,8 +638,7 @@ struct PhotoMapView: View {
                 model.clearArea()
             } label: {
                 HStack(spacing: 6) {
-                    Text(L("この範囲の写真 \(model.shown.count)枚・\(model.pins.count)地点",
-                           "\(model.shown.count) photos · \(model.pins.count) places here"))
+                    Text(PhotoMapViewModel.areaCountLabel(photos: model.shown.count, places: model.pins.count))
                     Image(systemName: "xmark")
                         .font(.caption.weight(.bold))
                 }
@@ -919,11 +925,15 @@ struct PhotoMapView: View {
                         }
                     }
                     // **出典は写真と必ず一緒に**（CC BY・CC BY-SA の条件）
+                    // 押すと作者は出典のページへ・ライセンスは文面へ（`SpotImageCredit`）
                     if let photo = pin.photo {
-                        Text(photo.credit)
+                        SpotImageCredit(photo: photo)
                             .font(.caption2)
                             .foregroundStyle(WebTheme.muted2)
                             .lineLimit(1)
+                            // 長い作者名で**ライセンスを消さない**（末尾から切ると
+                            // 「/ CC BY-SA」がまるごと落ちる）。作者の中ほどを削る
+                            .truncationMode(.middle)
                     }
                 }
                 Spacer()
@@ -974,15 +984,52 @@ struct PhotoMapView: View {
         .accessibilityIdentifier("map.officialCard")
     }
 
-    /// 撮影スポットへの経路を Apple の地図で開く。座標から `MKMapItem` を
-    /// 起こし、`placeCard` と同じ `directions` の起動指定で渡す
+    /// 撮影スポットへの経路を Apple の地図で開く。`placeCard` と同じ
+    /// `directions` の起動指定で渡す。
+    ///
+    /// 🔴 **索引の座標は約1km に丸めてある**（丸める前の値は台帳にも無い）。
+    /// そのまま渡すと最大0.7km ずれた道の上へ案内するので、**スポット名で
+    /// Apple の地点（施設だけ・町の中心は拾わない）を探し直し、丸めた座標の近く
+    /// （`directionsMatchKm`）のものを行き先にする**（`PlaceSelectableMap.lookUp` と
+    /// 同じ拾い直し）。見つからない・`directionsTimeout` 秒で返らなければ、
+    /// 丸めた座標にスポット名を付けて渡す。
+    ///
+    /// **開く直前に、押した札がまだ出ているかを確かめる**——検索の間に札を
+    /// 閉じた・別のスポットへ移った・画面を離れたのに地図アプリが開くと、
+    /// 押していないものが開いたように見える
     private func openDirections(to pin: OfficialPins.Pin) {
+        directionsTask?.cancel()
+        directionsTask = Task {
+            let found = await OfficialSpotIndex.firstWithin(seconds: OfficialSpotIndex.directionsTimeout) {
+                await Self.searchDirectionsItem(for: pin)
+            }
+            guard !Task.isCancelled, isOnScreen, selectedOfficial?.spotId == pin.spotId else { return }
+            let item = found ?? Self.roundedDirectionsItem(for: pin)
+            item.openInMaps(launchOptions: [
+                MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
+            ])
+        }
+    }
+
+    private static func searchDirectionsItem(for pin: OfficialPins.Pin) async -> MKMapItem? {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = pin.name
+        request.resultTypes = .pointOfInterest
+        request.region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: pin.coords.lat, longitude: pin.coords.lng),
+            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))
+        guard let items = try? await MKLocalSearch(request: request).start().mapItems else { return nil }
+        let candidates = items.map {
+            Photo.Coords(lat: $0.placemark.coordinate.latitude, lng: $0.placemark.coordinate.longitude)
+        }
+        return OfficialSpotIndex.directionsTargetIndex(of: candidates, near: pin.coords).map { items[$0] }
+    }
+
+    private static func roundedDirectionsItem(for pin: OfficialPins.Pin) -> MKMapItem {
         let coordinate = CLLocationCoordinate2D(latitude: pin.coords.lat, longitude: pin.coords.lng)
         let item = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
         item.name = pin.name
-        item.openInMaps(launchOptions: [
-            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
-        ])
+        return item
     }
 
     /// 押した地点の札（デザイン 04b）:

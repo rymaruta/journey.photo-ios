@@ -184,9 +184,17 @@ public final class MKMapItemRequest {
 public final class MKLocalSearch {
     public final class Request {
         public var naturalLanguageQuery: String?
+        /// 探す種類（本物は iOS 13〜）。住所・町を拾わず施設だけにするとき `.pointOfInterest`
+        public var resultTypes: ResultType = [.address, .pointOfInterest]
         public var region = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
                                                span: MKCoordinateSpan(latitudeDelta: 0, longitudeDelta: 0))
         public init() {}
+    }
+    public struct ResultType: OptionSet {
+        public let rawValue: UInt
+        public init(rawValue: UInt) { self.rawValue = rawValue }
+        public static let address = ResultType(rawValue: 1 << 0)
+        public static let pointOfInterest = ResultType(rawValue: 1 << 1)
     }
     public final class Response {
         public var mapItems: [MKMapItem] = []
