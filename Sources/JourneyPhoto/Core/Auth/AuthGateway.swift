@@ -52,11 +52,47 @@ enum AuthGateway {
     }
 
     /// API Gateway に送る **ID トークン**。未ログインなら nil。
+    ///
+    /// 🔴 **ログインの期限切れを「ログアウト」に倒す。** 更新トークン（既定30日）が
+    /// 切れても Amplify は `isSignedIn == true` を返し、トークンだけ
+    /// `sessionExpired` で落ちる。そのまま投げると画面は「読み込めませんでした」
+    /// を出し続け、ログイン中の見た目のまま何もできなくなっていた
+    /// （`APIError.isAuthExpired` はどこからも呼ばれていなかった）。
+    /// ここで `AuthStore` に知らせ、呼び手には「未ログイン」として nil を返す
     static func idToken() async throws -> String? {
         let session = try await Amplify.Auth.fetchAuthSession()
         guard session.isSignedIn else { return nil }
         guard let provider = session as? AuthCognitoTokensProvider else { return nil }
-        return try provider.getCognitoTokens().get().idToken
+        // **`switch` で分ける。** `do/catch … where` の catch の中で await すると、
+        // Xcode 26.3 のコンパイラが SILGenCleanup で落ちた（run 148。Linux の
+        // Swift 6.0 では通るので手元の検証では見つからない）
+        switch provider.getCognitoTokens() {
+        case .success(let tokens):
+            return tokens.idToken
+        case .failure(let error):
+            guard AuthFailure(error) == .notAuthorized else { throw error }
+            await announceSessionExpired()
+            return nil
+        }
+    }
+
+    @MainActor
+    private static func announceSessionExpired() {
+        NotificationCenter.default.post(name: .authSessionExpired, object: nil)
+    }
+
+    /// ログインの期限が切れているか（起動時の確認用・知らせは出さない）。
+    /// **確かめられなかった回は false**——圏外の人をログアウトさせない
+    static func isSessionExpired() async -> Bool {
+        guard let session = try? await Amplify.Auth.fetchAuthSession(),
+              session.isSignedIn,
+              let provider = session as? AuthCognitoTokensProvider else { return false }
+        switch provider.getCognitoTokens() {
+        case .success:
+            return false
+        case .failure(let error):
+            return AuthFailure(error) == .notAuthorized
+        }
     }
 
     static func currentUserId() async throws -> String {
@@ -100,10 +136,18 @@ enum AuthGateway {
 
     /// ログイン。username にはメールアドレスを渡す（エイリアス）。
     /// - Returns: 完了したら true。未確認アカウントなどで続きが要るなら false。
+    ///
+    /// 🔴 **未確認のアカウントは「投げる」に揃える。** Amplify Swift v2 は
+    /// 未確認の人に `userNotConfirmed` を投げず、`nextStep == .confirmSignUp` を
+    /// 返す。戻り値を捨てていたので、確認コードの画面へ進む分岐
+    /// （`lastFailureWasUnconfirmed`）が一度も当たらなかった
     @discardableResult
     static func signIn(email: String, password: String) async throws -> Bool {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let result = try await Amplify.Auth.signIn(username: trimmed, password: password)
+        if case .confirmSignUp = result.nextStep {
+            throw AuthError.service("", "", AWSCognitoAuthError.userNotConfirmed)
+        }
         return result.isSignedIn
     }
 
@@ -146,4 +190,9 @@ struct CognitoTokenProvider: TokenProviding {
     func idToken() async throws -> String? {
         try await AuthGateway.idToken()
     }
+}
+
+extension Notification.Name {
+    /// ログインの期限が切れた（`AuthGateway.idToken`）。`AuthStore` が受けてログアウトに倒す
+    static let authSessionExpired = Notification.Name("jp.authSessionExpired")
 }

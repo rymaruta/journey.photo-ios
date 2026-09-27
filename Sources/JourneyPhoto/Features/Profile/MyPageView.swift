@@ -37,6 +37,9 @@ struct MyPageView: View {
     /// **出ていない間は保存の ID を取り込まない**——取り込むと格子の段の ID
     /// （`EditorialLayout.Row.id` は隣の写真まで含む）が変わり、開いている詳細が閉じる
     @State private var isOnScreen = false
+    /// お気に入りのタブから落とす「見せない」の写し。**戻ってきたときに取る**
+    @State private var dropped = ModerationSnapshot()
+    @EnvironmentObject private var hidden: ModerationStore
     /// カバー写真が出せたか（板 05c／出せなければ 05d）。見出しを重ねるかを決める
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
@@ -102,8 +105,9 @@ struct MyPageView: View {
         }
         .onAppear {
             isOnScreen = true
-            // 詳細でしおりを外したぶんは、戻ってきたこの時点で落とす
+            // 詳細でしおりを外したぶん・ブロック／通報したぶんは、戻ってきたこの時点で落とす
             refreshSavedIds()
+            dropped = hidden.snapshot
             guard didAppear else { didAppear = true; return }
             guard auth.userId != nil else { return }
             Task { await model.load() }
@@ -112,6 +116,13 @@ struct MyPageView: View {
             if next == .favorites { refreshSavedIds() }
         }
         .onDisappear { isOnScreen = false }
+        // 「見せない」が変わったら、**画面に出ている間だけ**写しを取り直す
+        // （詳細を開いている間に取り直すと押した元が消えて閉じる）。人が替わった回も
+        // `hidden.use` が数を進めるのでここで拾う——`auth.userId` の変化の時点では
+        // まだ前の人の控えのまま
+        .onChange(of: hidden.revision) { _, _ in
+            if isOnScreen { dropped = hidden.snapshot }
+        }
         // 起動時の同期（`syncSaves`）が後から届いたぶんは拾う。**増えたときだけ**
         // ——減ったときに取り直すと、詳細でしおりを外した瞬間に詳細が閉じる。
         // **画面に出ている間だけ**（`isOnScreen`）。詳細の上で保存しても
@@ -487,7 +498,8 @@ struct MyPageView: View {
     /// 突き合わせ 6・8）。いいねした写真はメニューと設定から開く（`FavoritesView`）
     @ViewBuilder
     private var favoritesArea: some View {
-        let saved = LikedPhotos.resolve(savedIds, in: [feed, model.photos])
+        // ブロック・通報した人の写真を落とす（`FavoritesView`・`SavedPhotosView` と同じ）
+        let saved = dropped.visible(LikedPhotos.resolve(savedIds, in: [feed, model.photos]))
         if saved.isEmpty {
             switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
                                           failed: feedFailed) {
@@ -923,10 +935,16 @@ final class MyPageViewModel: ObservableObject {
     }
 
     /// 人が替わったとき、前の人の写真を手放す。次の人の読み込みが落ちても、
-    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように
+    /// 前の人の写真（非公開を含む）が保存の引き当て先に残らないように。
+    /// **見出し（名前・アイコン・カバー）とフォロー数も手放す**——フォロー数は
+    /// 取れなかった回に上書きしないので、残すと前の人の数が次の人の数として出る
     func forgetPhotos() {
         photos = []
         pinnedIds = []
+        profile = nil
+        followers = 0
+        following = 0
+        errorMessage = nil
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

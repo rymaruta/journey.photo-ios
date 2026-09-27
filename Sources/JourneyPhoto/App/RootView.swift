@@ -9,6 +9,7 @@ struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @State private var selection: Tab = .home
     @State private var unread = 0
+    @Environment(\.scenePhase) private var scenePhase
     /// 投稿の「＋」から開くもの
     @State private var showPostChoice = false
     @State private var showPhotoUpload = false
@@ -116,6 +117,11 @@ struct RootView: View {
             .tag(Tab.mypage)
         }
         .task(id: auth.userId) { await refreshUnread() }
+        // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
+        // お知らせを開くかログインし直すまでベルに出ていなかった
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await refreshUnread() } }
+        }
         // **押した通知の行き先。** 数で見るのは、2回続けて押したときに
         // 「変わっていない」と見なされて2回目が効かなくなるため
         .onChange(of: router.openActivityRequests) { _, _ in

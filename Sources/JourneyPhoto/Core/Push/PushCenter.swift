@@ -47,7 +47,18 @@ final class PushCenter: ObservableObject {
         }
     }
     private static let tokenKey = "photo-gallery-apns-token"
-    private static let enabledKey = "photo-gallery-push-enabled"
+    /// 「受け取る」の意思。**人ごとに分ける**——端末に1つだと、前の人がオンに
+    /// したまま次の人がログインしたとき、本人は何もしていないのに宛先が登録され、
+    /// 設定のトグルもオンに見えていた。ログイン前（人が決まる前）は昔からの鍵を読む
+    private static let legacyEnabledKey = "photo-gallery-push-enabled"
+    private static func enabledKey(for userId: String?) -> String {
+        userId.map { "\(legacyEnabledKey).\($0)" } ?? legacyEnabledKey
+    }
+    /// 「受け取らない」にしたのに、サーバーから宛先を外せなかった（圏外など）。
+    /// 次にその人で開いたときに外し直す
+    private static func pendingUnregisterKey(for userId: String) -> String {
+        "photo-gallery-push-unregister-pending.\(userId)"
+    }
     private let defaults: UserDefaults
     private var userId: String?
     private let service: () -> PushService
@@ -56,13 +67,14 @@ final class PushCenter: ObservableObject {
          defaults: UserDefaults = .standard) {
         self.service = service
         self.defaults = defaults
-        self.isEnabled = defaults.bool(forKey: Self.enabledKey)
+        self.isEnabled = defaults.bool(forKey: Self.legacyEnabledKey)
     }
 
     /// 起動時とログイン状態が変わるたびに呼ぶ。
     func use(userId: String?) async {
         let previous = self.userId
         self.userId = userId
+        if previous != userId { loadIntent(for: userId) }
         await refreshAuthorization()
 
         // **人が入れ替わったら、前の人の宛先を外す。** 外さないと
@@ -70,6 +82,13 @@ final class PushCenter: ObservableObject {
         if let previous, previous != userId, let token {
             try? await service().unregister(token: token)
             isRegistered = false
+        }
+        // **外し損ねた宛先を外し直す**（「受け取らない」にした回に圏外だった）
+        if let userId, !isEnabled, let token,
+           defaults.bool(forKey: Self.pendingUnregisterKey(for: userId)) {
+            if (try? await service().unregister(token: token)) != nil {
+                defaults.removeObject(forKey: Self.pendingUnregisterKey(for: userId))
+            }
         }
         // **「受け取る」と言った人にだけ繋ぎ直す。** 端末の許可だけで
         // 判断すると、自分でオフにしたのに再起動で復活する
@@ -95,15 +114,25 @@ final class PushCenter: ObservableObject {
     @discardableResult
     func enable() async -> Bool {
         errorMessage = nil
+        // **押した人を控える。** 許可のダイアログを出している間にログインが切れる
+        // （`expireSession`）と、答えが次の人（や端末共通の鍵）に書かれていた
+        let owner = userId
         do {
             let granted = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .badge, .sound])
             isAuthorized = granted
+            guard let owner, owner == userId else {
+                // 人が替わった／ログインしていない: 押した人の鍵にだけ残す
+                if let owner { defaults.set(granted, forKey: Self.enabledKey(for: owner)) }
+                return granted
+            }
             guard granted else {
                 setEnabled(false)
                 return false
             }
             setEnabled(true)
+            // オンにし直したので、外し損ねの印はもう要らない
+            defaults.removeObject(forKey: Self.pendingUnregisterKey(for: owner))
         } catch {
             errorMessage = L("通知の許可を確かめられませんでした", "Couldn't check notification permission")
             return false
@@ -121,10 +150,13 @@ final class PushCenter: ObservableObject {
         // 次の起動で勝手に復活する
         setEnabled(false)
         defer { isRegistered = false }
-        guard let token, userId != nil else { return }
+        guard let token, let userId else { return }
         do {
             try await service().unregister(token: token)
+            defaults.removeObject(forKey: Self.pendingUnregisterKey(for: userId))
         } catch {
+            // 外せなかったことを覚え、次に開いたときに外し直す（`use`）
+            defaults.set(true, forKey: Self.pendingUnregisterKey(for: userId))
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("通知を止められませんでした", "Couldn't turn notifications off")
         }
@@ -163,7 +195,20 @@ final class PushCenter: ObservableObject {
 
     private func setEnabled(_ value: Bool) {
         isEnabled = value
-        defaults.set(value, forKey: Self.enabledKey)
+        defaults.set(value, forKey: Self.enabledKey(for: userId))
+    }
+
+    /// その人の「受け取る」を読む。**人ごとの鍵がまだ無く、昔の端末共通の鍵が
+    /// オンなら、最初にログインした人のものとして一度だけ移す**（更新前にオンにした
+    /// 人が、更新でオフに戻らないように）
+    private func loadIntent(for userId: String?) {
+        if let userId, defaults.object(forKey: Self.enabledKey(for: userId)) == nil,
+           defaults.bool(forKey: Self.legacyEnabledKey) {
+            defaults.set(true, forKey: Self.enabledKey(for: userId))
+            defaults.removeObject(forKey: Self.legacyEnabledKey)
+        }
+        isEnabled = defaults.bool(forKey: Self.enabledKey(for: userId))
+        errorMessage = nil
     }
 
     private func registerIfPossible() async {

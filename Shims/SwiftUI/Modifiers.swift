@@ -108,7 +108,9 @@ public struct UITextContentTypeShim {
 @MainActor public protocol ButtonStyle {
     associatedtype Body: View
     typealias Configuration = ButtonStyleConfiguration
-    @ViewBuilder func makeBody(configuration: Configuration) -> Body
+    /// 本物の SwiftUI と同じく `@MainActor`（`JPRowButtonStyle` が
+    /// `.background` を呼べずに模型のビルドが止まっていた）
+    @ViewBuilder @MainActor func makeBody(configuration: Configuration) -> Body
 }
 public struct ButtonStyleConfiguration {
     public struct Label: View { public var body: Never { fatalError("模型") } }
@@ -293,6 +295,8 @@ extension View {
     public func textFieldStyle(_ s: TextFieldStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func controlSize(_ s: ControlSizeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func labelsHidden() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 下へ払って閉じるのを止める（本物と同じ）
+    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// スクロールでキーボードを下げる（本物と同じ）
     public func scrollDismissesKeyboard(_ mode: ScrollDismissesKeyboardModeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func focused(_ condition: Binding<Bool>) -> Self { self }
@@ -309,8 +313,6 @@ extension View {
     public func searchable(text: Binding<String>, placement: SearchFieldPlacementShim = .automatic,
                            prompt: String? = nil) -> Self { self }
     public func onSubmit(of t: SubmitTriggerShim = .search, _ action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
-    /// シートを下へ払って閉じるのを止める（iOS 15+）
-    public func interactiveDismissDisabled(_ isDisabled: Bool = true) -> Self { self }
     /// キーボードの確定キーの文言（iOS 15+）
     public func submitLabel(_ label: SubmitLabel) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
 
@@ -383,7 +385,7 @@ extension View {
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
-    public func swipeActions<C: View>(@ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+    public func swipeActions<C: View>(allowsFullSwipe: Bool = true, @ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
 }
 
 // MARK: - 指の操作（模型）

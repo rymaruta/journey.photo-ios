@@ -162,4 +162,27 @@ final class PhotoPatchBodyTests: XCTestCase {
         patch.coords = Photo.Coords(lat: 48.86, lng: 2.35)
         XCTAssertEqual(try keys(patch), ["location", "coords"])
     }
+
+    /// 🔴 **撮影地を空にしたら座標を `null` で送る。** 載せないと「触らない」に
+    /// なり、消したはずの位置のピンが地図に残っていた
+    func testClearingCoordsSendsExplicitNull() throws {
+        var patch = PhotoPatch()
+        patch.location = ""
+        patch.clearCoords = true
+        let data = try JSONEncoder().encode(patch)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["location", "coords"])
+        XCTAssertTrue(object["coords"] is NSNull, "座標を null で送っていない")
+        XCTAssertFalse(patch.isEmpty)
+    }
+
+    /// 選んだ座標があれば、消す印より選んだ座標が勝つ
+    func testPickedCoordsWinOverClear() throws {
+        var patch = PhotoPatch()
+        patch.coords = Photo.Coords(lat: 48.86, lng: 2.35)
+        patch.clearCoords = true
+        let data = try JSONEncoder().encode(patch)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertFalse(object["coords"] is NSNull)
+    }
 }

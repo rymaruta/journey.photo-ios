@@ -13,7 +13,6 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 > ・不適切な投稿は各写真の「…」メニューから通報でき、同じ場所で投稿者を
 >   ブロックできます。**通報・ブロックした内容は、その場で一覧から消えます。**
 >   ブロックの解除は「マイページ → 設定 → ブロックした人」。
-> ・審査用アカウントには写真を投稿済みです。「投稿」タブから新しい写真を投稿できます。
 > ・初回起動時に、不適切な内容を認めない旨を含む利用規約への同意を求めます。
 > ・プッシュ通知は「マイページ → 設定 → プッシュ通知を受け取る」でオンにできます。
 > ・アカウントは「マイページ → 設定 → アカウントの削除」でアプリ内から削除できます。
@@ -30,7 +29,6 @@ App Store Connect の「App Review Information → Notes」に貼る文面と、
 >   the poster can be blocked from the same menu. Reported and blocked content
 >   disappears from that user's feeds immediately. Blocks can be lifted under
 >   My Page → Settings → Blocked people.
-> - The demo account already has a photo posted. New photos can be posted from the "Post" tab.
 > - On first launch the user must accept terms that prohibit objectionable content.
 > - Push notifications can be turned on under My Page → Settings → Receive push notifications.
 > - Accounts can be deleted in-app under My Page → Settings → Delete account.

@@ -17,6 +17,13 @@ struct GalleryView: View {
     /// 通報している写真。**シートはカードではなくここに付ける**
     /// （`HomeMosaic.onReport` の注記）
     @State private var reportTarget: Photo?
+    /// いまこの画面が出ているか。**詳細を上に積んでいる間は読み直さない**
+    @State private var isOnScreen = false
+    /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
+    @State private var needsReload = false
+    /// 描くときに落とす「見せない」の写し。**画面に出ている間だけ取り直す**。
+    /// 戻った瞬間、読み直しが終わるまでブロックした人のカードが見えないように
+    @State private var dropped = ModerationSnapshot()
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}
@@ -39,7 +46,7 @@ struct GalleryView: View {
                 // 空の知らせで画面ごと置き換えると、「フォロー中」を押して
                 // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の
                 // 切り替えが逃げ道だったが、整理案 01c で外した
-                feed(photos)
+                feed(dropped.visible(photos))
             }
         }
         .webScreen()
@@ -84,12 +91,33 @@ struct GalleryView: View {
         // 通報とブロックを挟んでから `setHidden` を呼ぶので、その中断中に
         // 走るとこちらは**古い集合のまま**取ってしまう。
         // 1本にまとめてあるのは、2本だと全件取得が同時に2回走るため
+        //
+        // 🔴 **詳細を開いている間は読み直さない。** 読み直すと押した元のカードが
+        // 一覧から消え、開いている詳細がその場で閉じる（「ブロックしました」も、
+        // 通報シートのブロック失敗の文言も見えない）。戻ってきたとき（`onAppear`）に
+        // 読み直す。カードの「…」や一覧に付けた通報シートからの回は画面に出ている
         .onChange(of: hidden.revision) { _, _ in
-            Task {
-                await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
-                                                    photoIds: hidden.reportedPhotoIds)
-                await model.load()
+            if isOnScreen {
+                dropped = hidden.snapshot
+                reloadHidden()
+            } else {
+                needsReload = true
             }
+        }
+        .onAppear {
+            isOnScreen = true
+            dropped = hidden.snapshot
+            if needsReload { reloadHidden() }
+        }
+        .onDisappear { isOnScreen = false }
+    }
+
+    private func reloadHidden() {
+        needsReload = false
+        Task {
+            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
+                                                photoIds: hidden.reportedPhotoIds)
+            await model.load()
         }
     }
 
@@ -249,7 +277,8 @@ struct GalleryView: View {
     /// カテゴリごとの横並びで出している（`FeaturedSections`）。
     @ViewBuilder
     private var featuredSections: some View {
-        ForEach(model.featured) { group in
+        // おすすめの横並びも、モザイクと同じ写しで落とす（戻った直後に見えない）
+        ForEach(model.featured.filter { !dropped.visible($0.photos).isEmpty }) { group in
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(group.label)
@@ -268,9 +297,9 @@ struct GalleryView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: WebTheme.gridSpacing) {
-                        ForEach(group.photos) { photo in
+                        ForEach(dropped.visible(group.photos)) { photo in
                             NavigationLink {
-                                PhotoDetailView(photo: photo, context: group.photos)
+                                PhotoDetailView(photo: photo, context: dropped.visible(group.photos))
                             } label: {
                                 PhotoTile(photo: photo, aspect: 3.0 / 4.0)
                                     .frame(width: 240)

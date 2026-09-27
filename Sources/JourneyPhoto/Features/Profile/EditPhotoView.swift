@@ -165,8 +165,13 @@ struct EditPhotoView: View {
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else { return }
             let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
+            // ピンの無い写真・この画面で撮影地を消した写真に、差し替えた写真の位置を書かない
+            let keep = EditPlaceRules.keepsCoordsOnReplace(openedLocation: photo.location,
+                                                           openedHasCoords: photo.coords != nil,
+                                                           currentLocation: location)
             try await environment.photos.replace(photoId: photo.id, prepared: prepared,
-                                                 uploads: environment.uploads)
+                                                 uploads: environment.uploads,
+                                                 keepCoords: keep)
             messageIsError = false
             message = L("差し替えました（反映まで数分かかります）", "Replaced. It takes a few minutes to appear.")
         } catch {
@@ -188,6 +193,12 @@ struct EditPhotoView: View {
         // **選んだ回だけ載せる。** nil は「触らない」なので、
         // 地名を手で直しただけの回に既存の座標を壊さない
         patch.coords = pickedCoords
+        // **本人が撮影地を空にしたら座標も消す。** nil だけでは「触らない」になり、
+        // 地図とページにピンが残っていた（投稿画面の `locationClearedByUser` と同じ考え・`EditPlaceRules`）。
+        // 開いたときから空の写真（圏外で投稿して撮影地が入らなかった等）は座標を残す
+        patch.clearCoords = EditPlaceRules.clearsCoords(openedLocation: photo.location,
+                                                        currentLocation: location,
+                                                        pickedCoords: pickedCoords != nil)
         patch.tags = TagInput.parse(tagsText)
         patch.category = category.trimmingCharacters(in: .whitespacesAndNewlines)
         patch.published = published

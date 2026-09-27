@@ -25,6 +25,9 @@ struct UserProfileView: View {
     /// カバー写真が出せたか（板 31。出せなければ帯を出さない）
     @State private var hasCover = false
     @EnvironmentObject private var hidden: ModerationStore
+    /// 格子と地図から落とす「見せない」の写し。**戻ってきたとき（`onAppear`）に取る**
+    /// ——見ている最中に絞ると、押した元が消えて開いている詳細が閉じる
+    @State private var dropped = ModerationSnapshot()
     @EnvironmentObject private var toasts: ToastCenter
 
     /// 板 31: 3列・隙間 4pt・角なし（マイページと同じ）
@@ -70,6 +73,7 @@ struct UserProfileView: View {
         } message: {
             Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
         }
+        .onAppear { dropped = hidden.snapshot }
         .task(id: userId) {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
         }
@@ -132,6 +136,10 @@ struct UserProfileView: View {
         }
     }
 
+    /// 🔴 ブロック・通報した写真を落とした一覧。以前は読み込んだまま描いていて、
+    /// 詳細でブロックして戻っても、その人の写真の格子と地図が押せた（審査 1.2）
+    private var shownPhotos: [Photo] { dropped.visible(model.photos) }
+
     @ViewBuilder
     private var photoArea: some View {
         if let message = model.errorMessage {
@@ -143,15 +151,16 @@ struct UserProfileView: View {
             ErrorBanner(message: Labels.Common.loadFailed) {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
             }
-        } else if model.photos.isEmpty && !model.isLoading {
+        } else if shownPhotos.isEmpty && !model.isLoading {
+            // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す
             ErrorBanner(message: L("公開された写真はまだありません", "No public photos yet"))
         } else if tab == .map {
             // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）
-            MyPhotosMap(photos: model.photos)
+            MyPhotosMap(photos: shownPhotos)
         } else {
             LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(model.photos) { photo in
-                    NavigationLink { PhotoDetailView(photo: photo, context: model.photos) } label: {
+                ForEach(shownPhotos) { photo in
+                    NavigationLink { PhotoDetailView(photo: photo, context: shownPhotos) } label: {
                         PhotoFrame(photo: photo, corner: 0)
                     }
                     .buttonStyle(.plain)
