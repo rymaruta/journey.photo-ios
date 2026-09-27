@@ -48,7 +48,9 @@ enum DailyTheme: Equatable {
     /// 区切りは**その端末の暦の1日**（協定世界時ではない）——
     /// 日付が変わった瞬間に切り替わるのが、見ている人の感覚に合う。
     static func today(_ now: Date = Date(), calendar: Calendar = .current) -> Theme {
-        let day = calendar.ordinality(of: .day, in: .era, for: now) ?? 0
+        // **西暦で数える。** 端末の暦のまま紀元から数えると、和暦（令和の初日から）や
+        // タイ仏暦の端末が別のテーマになり「全員が同じ日に同じテーマ」が崩れる
+        let day = calendar.gregorianKeepingZone.ordinality(of: .day, in: .era, for: now) ?? 0
         let index = ((day % themes.count) + themes.count) % themes.count
         return themes[index]
     }

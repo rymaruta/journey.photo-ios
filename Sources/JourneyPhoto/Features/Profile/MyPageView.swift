@@ -726,18 +726,20 @@ struct MyPageView: View {
                 .foregroundStyle(WebTheme.danger)
                 .padding(.horizontal, 16)
         }
-        if let error = model.errorMessage {
-            ErrorBanner(message: error) { Task { await model.load() } }
-        } else if tab == .trips {
-            // **写真の有無とは無関係に、ここで空の理由まで言う**
-            tripsArea
-        } else if tab == .wishlist {
+        // **行きたい場所・お気に入りは自分の写真の読み込みと無関係**なので、
+        // その失敗の知らせで覆わない（以前は端末だけで出せるタブまで知らせに置き換わっていた）
+        if tab == .wishlist {
             // **写真の有無とは無関係。** 行きたい場所は台帳の話で、
             // 1枚も撮っていない人にも中身がある
             wishlistArea
         } else if tab == .favorites {
             // **写真の有無とは無関係。** 保存は他人の写真にもする
             favoritesArea
+        } else if let error = model.errorMessage {
+            ErrorBanner(message: error) { Task { await model.load() } }
+        } else if tab == .trips {
+            // **写真の有無とは無関係に、ここで空の理由まで言う**
+            tripsArea
         } else if model.photos.isEmpty && !model.isLoading {
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
@@ -910,9 +912,24 @@ final class MyPageViewModel: ObservableObject {
                 }
             }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+            let message = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+            // **一度読めていれば、読み直しの失敗は一覧に添える。** 戻ってくるたびに
+            // 読み直すので、圏外で写真を開いて戻っただけで格子ごと知らせに置き換わっていた
+            if profile != nil {
+                actionMessage = message
+                reloadFailure = message
+            } else {
+                errorMessage = message
+            }
+            return
         }
+        // 読み直しの失敗の知らせは、次に読めたら消す（ピン留めの断りは残す）
+        if let reloadFailure, actionMessage == reloadFailure { actionMessage = nil }
+        reloadFailure = nil
     }
+
+    /// 直近の読み直しの失敗で `actionMessage` に入れた文（読めたら消すため）
+    private var reloadFailure: String?
 
     /// 鍵を持たない回の読み込み（`PreviewSession` のときだけ通る）。
     ///
@@ -945,6 +962,9 @@ final class MyPageViewModel: ObservableObject {
         followers = 0
         following = 0
         errorMessage = nil
+        // 前の人あての知らせ（読み直しの失敗・ピン留めの断り）も残さない
+        actionMessage = nil
+        reloadFailure = nil
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

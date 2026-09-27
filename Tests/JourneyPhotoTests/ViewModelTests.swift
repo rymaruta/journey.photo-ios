@@ -190,6 +190,43 @@ final class ViewModelTests: XCTestCase {
                        "断られたのにサーバーの一覧へ揃えていない")
     }
 
+    /// **一度読めていれば、読み直しの失敗で格子ごと知らせに置き換えない**（バグ探し 2026-09-27 #18）。
+    /// 戻ってくるたびに読み直すので、圏外で写真を開いて戻っただけで格子が消えていた。
+    /// 次に読めたら知らせを消す
+    func testReloadFailureIsAddedToTheGridNotReplacingIt() async {
+        prepare()
+        func serve() {
+            StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+            StubProtocol.respond(path: "/user/photos", status: 200, body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
+        }
+        serve()
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+
+        StubProtocol.reset()
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.load()
+        XCTAssertNil(model.errorMessage, "読み直しの失敗で格子ごと知らせに置き換えている")
+        XCTAssertEqual(model.actionMessage, APIError.unreachable.errorDescription)
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "読めていた写真を捨てている")
+
+        StubProtocol.reset()
+        serve()
+        await model.load()
+        XCTAssertNil(model.actionMessage, "読めたのに失敗の知らせが残っている")
+    }
+
+    /// 一度も読めていない失敗は、今までどおり知らせに置き換える（出すものが無い）
+    func testFirstLoadFailureStillReplacesTheGrid() async {
+        prepare()
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        let model = MyPageViewModel(api: api())
+        await model.load()
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNil(model.actionMessage)
+    }
+
     /// **人が替わったら前の人の写真を手放す。** 残すと、次の人の読み込みが
     /// 落ちたとき前の人の写真（非公開を含む）が保存の引き当て先に残る
     func testForgetPhotosDropsThePreviousUsersPhotos() async {

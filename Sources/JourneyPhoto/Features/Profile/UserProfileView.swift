@@ -142,6 +142,13 @@ struct UserProfileView: View {
 
     @ViewBuilder
     private var photoArea: some View {
+        if let action = model.actionMessage {
+            // **操作の失敗は一覧の代わりではなく、一覧に添える**（マイページと同じ形）
+            Text(action)
+                .font(.footnote)
+                .foregroundStyle(WebTheme.danger)
+                .padding(.horizontal, 16)
+        }
         if let message = model.errorMessage {
             ErrorBanner(message: message) {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
@@ -347,6 +354,11 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var isWorking = false
     @Published var errorMessage: String?
+    /// **操作（フォロー・ブロック）が断られた。** 一覧は出したまま添える。
+    ///
+    /// 読み込みの失敗（`errorMessage`）と混ぜていたので、フォローを押して圏外だった
+    /// だけで写真の欄ごと知らせに置き換わっていた
+    @Published var actionMessage: String?
 
     private(set) var cacheBust = ""
 
@@ -412,6 +424,7 @@ final class UserProfileViewModel: ObservableObject {
     func toggleFollow(userId: String, environment: AppEnvironment) async {
         isWorking = true
         defer { isWorking = false }
+        actionMessage = nil
         do {
             let result = isFollowing
                 ? try await environment.social.unfollow(userId: userId)
@@ -419,12 +432,13 @@ final class UserProfileViewModel: ObservableObject {
             isFollowing = result.following
             followers = result.followers
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
+            actionMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
     }
 
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
+        actionMessage = nil
         do {
             try await environment.moderation.block(userId: userId)
             store.block(userId)
@@ -439,7 +453,7 @@ final class UserProfileViewModel: ObservableObject {
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
+            actionMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }
 }
