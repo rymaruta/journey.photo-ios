@@ -931,6 +931,9 @@ struct PhotoMapView: View {
                             .font(.caption2)
                             .foregroundStyle(WebTheme.muted2)
                             .lineLimit(1)
+                            // 長い作者名で**ライセンスを消さない**（末尾から切ると
+                            // 「/ CC BY-SA」がまるごと落ちる）。作者の中ほどを削る
+                            .truncationMode(.middle)
                     }
                 }
                 Spacer()

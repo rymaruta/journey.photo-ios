@@ -74,7 +74,7 @@ struct SpotImage: Equatable {
     /// 作者・**ライセンスの URI**・出典の表示が条件。パブリックドメインなどは無い
     var licenseUrl: URL? = nil
 
-    /// 札の隅に出す出典の1行
+    /// 出典の1行の文字（画面は `linkedCredit` でこの文字にリンクを付けて出す）
     var credit: String { "\(creditAuthor) / \(license)" }
 
     /// 出典の1行の前半（「写真: 作者」）
