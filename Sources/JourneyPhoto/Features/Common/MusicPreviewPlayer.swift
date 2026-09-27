@@ -137,10 +137,12 @@ final class MusicPreviewPlayer: ObservableObject {
                 self?.stop()
             }
         })
-        // **途中で途切れたときも止める。** 回線が切れて試聴が落ちると
+        // **途中で再生に失敗したときも止める。** そのときは
         // 鳴り終わりの知らせは来ないので、ボタンが「一時停止」のまま固まり、
         // 奪った場（`.playback`）も返さない＝他のアプリの音楽が戻らない。
-        // ループ中でも鳴らし直さない（同じ理由でまた落ちるだけ）
+        // ループ中でも鳴らし直さない（同じ理由でまた落ちるだけ）。
+        // ⚠️ 回線が細って止まる（stalled）・読み込みの時点で失敗する（status .failed）
+        // はこの知らせを出さないので、ここでは拾えない（実機で未確認）
         endObservers.append(NotificationCenter.default.addObserver(
             forName: .AVPlayerItemFailedToPlayToEndTime,
             object: player.currentItem,

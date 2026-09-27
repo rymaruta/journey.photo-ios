@@ -73,6 +73,15 @@ final class TagChipTests: XCTestCase {
         XCTAssertEqual(TagInput.parse(after), ["森", "雪"])
         XCTAssertTrue(TagInput.has("森、雪", tag: "雪"))
     }
+
+    /// **末尾の空白は打ち終わりにしない。** 予測変換が足す空白で `sn ` になっても、
+    /// 候補は絞られたまま・チップを押せば `sn` は落ちる（2316e8f のレビュー）
+    func testTrailingSpaceKeepsTheFragment() {
+        XCTAssertEqual(TagInput.typingFragment(TagChoices.all, current: "sn "), "sn")
+        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "森, sn　"), ["雪"])
+        XCTAssertEqual(TagInput.toggle(TagInput.dropFragment(TagChoices.all, current: "sn "), tag: "雪"), "雪, ")
+        XCTAssertEqual(TagInput.suggest(TagChoices.all, current: "森, "), TagChoices.all)
+    }
 }
 
 /// プロフィールの色。**保存の形は `#rrggbb` に限る**——Web の

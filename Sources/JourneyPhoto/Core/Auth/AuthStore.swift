@@ -21,6 +21,12 @@ final class AuthStore: ObservableObject {
     /// 管理者か（ID トークンの `cognito:groups` に admin）。**メニューの「管理」の
     /// 出し分けだけ**に使う——権限の判断はサーバーがする（`IdTokenClaims`）
     @Published private(set) var isAdmin = false
+    /// 自分のプロフィールを**画面の外から**書き換えた回数（ログイン直後の表示名など）。
+    /// マイページは `.task(id: userId)` で1度しか読まないので、同時に走った読み込みが
+    /// 先に返ると名前の無い古い値のまま残る。これが増えたら読み直す
+    @Published private(set) var profileRevision = 0
+
+    func noteProfileChanged() { profileRevision += 1 }
 
     var userId: String? {
         if case .signedIn(let id) = state { return id }

@@ -289,6 +289,7 @@ struct SignInView: View {
             var patch = ProfilePatch()
             patch.displayName = name
             try await environment.profiles.update(patch)
+            auth.noteProfileChanged()
             return true
         } catch {
             // 入れられなくてもログインは成功のまま（あとから編集で直せる）。
