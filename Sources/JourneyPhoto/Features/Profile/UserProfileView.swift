@@ -390,6 +390,8 @@ final class UserProfileViewModel: ObservableObject {
         let current = { seq == self.loadSeq }
         isLoading = true
         errorMessage = nil
+        // 読み直したら前の操作の失敗も消す（再試行のあとに古い文が残る）
+        actionMessage = nil
         cacheBust = String(Int(Date().timeIntervalSince1970))
         defer { if current() { isLoading = false } }
 

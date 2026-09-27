@@ -19,17 +19,20 @@ import FoundationNetworking
 /// 待ち続けて試験ごと固まらないように。
 actor Gate {
     private let holds: Int
+    private let skip: Int
     private var opened = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private(set) var arrived = 0
 
-    init(holds: Int = .max) {
+    /// - Parameter skip: 先頭から何回ぶんを**止めずに通すか**（「1回目は通し、2回目を止める」用）
+    init(holds: Int = .max, skip: Int = 0) {
         self.holds = holds
+        self.skip = skip
     }
 
     func wait() async {
         arrived += 1
-        if opened || arrived > holds { return }
+        if opened || arrived <= skip || arrived - skip > holds { return }
         await withCheckedContinuation { waiters.append($0) }
     }
 

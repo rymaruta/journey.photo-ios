@@ -177,8 +177,10 @@ struct TextOverlay: Identifiable, Equatable, Codable {
                 let minute = calendar.component(.minute, from: now)
                 return String(format: "%d:%02d", hour, minute)
             case .date:
-                let month = calendar.component(.month, from: now)
-                let day = calendar.component(.day, from: now)
+                // 「9月27日」「9/27」は西暦の月日（端末の暦がイスラム暦などでも）
+                let gregorian = calendar.gregorianKeepingZone
+                let month = gregorian.component(.month, from: now)
+                let day = gregorian.component(.day, from: now)
                 return L("\(month)月\(day)日", "\(month)/\(day)")
             default:
                 return ""

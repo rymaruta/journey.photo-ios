@@ -48,6 +48,10 @@ private struct StoryVideo: View {
     @State private var player: AVPlayer?
     /// 鳴り終わりの見張り。外さないと画面を閉じたあとも `onEnded` が飛ぶ
     @State private var endObserver: NSObjectProtocol?
+    /// 途中で途切れた知らせの見張り（`endObserver` と同じく出るたびに付け直す）
+    @State private var failObserver: NSObjectProtocol?
+    /// 読み込みの失敗（`status == .failed`）を見る。**失敗は知らせが来ない**ので覗く
+    @State private var failWatch: Task<Void, Never>?
 
     var body: some View {
         VideoPlayer(player: player)
@@ -76,6 +80,30 @@ private struct StoryVideo: View {
                         Task { @MainActor in ended?() }
                     }
                 }
+                // 🔴 **読めない動画（圏外・消された）でも次へ進む。** 鳴り終わりしか
+                // 見ていなかったので、黒い画面のまま進行バーが止まり、自動で次へ進まなかった
+                if failObserver == nil, let item = player?.currentItem {
+                    let ended = onEnded
+                    failObserver = NotificationCenter.default.addObserver(
+                        forName: .AVPlayerItemFailedToPlayToEndTime,
+                        object: item,
+                        queue: .main
+                    ) { _ in
+                        Task { @MainActor in ended?() }
+                    }
+                }
+                if failWatch == nil, let item = player?.currentItem {
+                    let ended = onEnded
+                    failWatch = Task { @MainActor in
+                        // 読み込みの失敗は知らせが来ないので、しばらく覗く
+                        for _ in 0..<20 {
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            if Task.isCancelled { return }
+                            if item.status == .failed { ended?(); return }
+                            if item.status == .readyToPlay { return }
+                        }
+                    }
+                }
                 if !isPaused { player?.play() }
             }
             .onDisappear {
@@ -84,6 +112,12 @@ private struct StoryVideo: View {
                     NotificationCenter.default.removeObserver(endObserver)
                     self.endObserver = nil
                 }
+                if let failObserver {
+                    NotificationCenter.default.removeObserver(failObserver)
+                    self.failObserver = nil
+                }
+                failWatch?.cancel()
+                failWatch = nil
             }
             // 止める・再開するのは外の都合（長押し・メニュー・シート）。
             // ここで `play()` を呼び直すので、`onAppear` 側と二重にならないよう

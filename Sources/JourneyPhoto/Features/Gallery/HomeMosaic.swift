@@ -269,8 +269,10 @@ struct HomeFeedTile: View {
                 ? try await environment.social.unlike(photoId: photo.id)
                 : try await environment.social.like(photoId: photo.id)
             // **返ってきた数と状態を使う。** 自分で数えない。
-            // 数を返さない答えなら、押したあとに見えていた数で止める
-            likeCounts.set(photo.id, count: result.likes ?? likeCount)
+            // **数を返さない答え（見えなくなった写真の 404 を読み替えた回）は書かない。**
+            // 押している間の ±1 を含んだ数を「押した答え」として控えに残すと、
+            // 詳細・検索にも作った数が広がる（詳細の下のハートと同じ扱い）
+            if let likes = result.likes { likeCounts.set(photo.id, count: likes) }
             favorites.set(photo.id, favorite: result.liked, for: owner)
         } catch {
             // **届かなかったら戻す。** 画面だけ「いいね済み」にしない

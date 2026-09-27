@@ -23,6 +23,8 @@ struct HighlightEditorView: View {
     @State private var coverId: String?
     @State private var loading = true
     @State private var loadFailed = false
+    /// 直そうとしたハイライトが**もう無い**（404）。再試行を出さない
+    @State private var gone = false
     @State private var saving = false
     @State private var message: String?
     @State private var showDeleteConfirm = false
@@ -55,10 +57,10 @@ struct HighlightEditorView: View {
         }
     }
 
-    /// 名前が要る・1件以上入っている・保存中でない。
-    /// **サーバーと同じ線**（名前が空なら 400、0件なら 400）
+    /// 決まりは `HighlightService.canSave`（読み込みに失敗している間は押せない）
     private var canSave: Bool {
-        !saving && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !picked.isEmpty
+        HighlightService.canSave(title: title, picked: picked, saving: saving,
+                                 loading: loading, loadFailed: loadFailed)
     }
 
     private var nameSection: some View {
@@ -84,13 +86,20 @@ struct HighlightEditorView: View {
         Section {
             if loading {
                 HStack { ProgressView(); Text(L("読み込み中…", "Loading…")).font(.callout) }
-            } else if loadFailed {
-                // **空と失敗を分ける。** 一緒にすると、圏外の人に
-                // 「1本も残していない」と言うことになる
-                Text(L("アーカイブを読み込めませんでした。通信を確かめてください。",
-                       "Couldn't load your archive. Check your connection."))
+            } else if gone {
+                Text(L("このハイライトはもうありません。", "This highlight no longer exists."))
                     .font(.callout)
                     .foregroundStyle(WebTheme.muted2)
+            } else if loadFailed {
+                // **空と失敗を分ける。** 一緒にすると、圏外の人に
+                // 「1本も残していない」と言うことになる。
+                // 直すときは、いま入っている並びが取れなかった回もここ（上の `canSave`）
+                Text(L("ストーリーを読み込めませんでした。通信を確かめてください。",
+                       "Couldn't load your stories. Check your connection."))
+                    .font(.callout)
+                    .foregroundStyle(WebTheme.muted2)
+                Button(Labels.Common.retry) { Task { await load() } }
+                    .buttonStyle(.bordered)
             } else if archive.isEmpty {
                 Text(L("残したストーリーがまだありません。ストーリーを作るときに「24時間のあとも自分用に残す」を選ぶと、ここに並びます。",
                        "No kept stories yet. Turn on \"Keep it for myself after 24 hours\" when you post a story."))
@@ -180,23 +189,31 @@ struct HighlightEditorView: View {
     }
 
     private func load() async {
+        loading = true
         loadFailed = false
+        gone = false
         do {
             archive = try await environment.highlights.archive()
         } catch {
             loadFailed = true
         }
         if let existing {
-            title = existing.title
+            // 「もう一度試す」で打ちかけの名前を戻さない（最初の1回だけ入れる）
+            if title.isEmpty { title = existing.title }
             // 直すときは、いま入っているものを選び直しておく。
             // **アーカイブから外れたものは選べない**ので落ちる
             // ⚠️ `try? await` を含む if-let は構文検査が読めないので分ける
-            let contents: HighlightContents?
+            // ⚠️ catch の中で await しない（Xcode 26.3 のコンパイラが落ちる）
+            var contents: HighlightContents?
             if let userId = auth.userId {
-                contents = try? await environment.highlights.contents(userId: userId, id: existing.id)
-            } else {
-                contents = nil
+                do {
+                    contents = try await environment.highlights.contents(userId: userId, id: existing.id)
+                } catch {
+                    gone = HighlightService.isGone(error)
+                }
             }
+            // **いまの並びが取れなければ保存させない**（`canSave` の注記）
+            if contents == nil { loadFailed = true }
             if let contents {
                 let inArchive = Set(archive.map(\.id))
                 picked = contents.items.map(\.id).filter { inArchive.contains($0) }
@@ -224,8 +241,11 @@ struct HighlightEditorView: View {
             }
             dismiss()
         } catch {
-            message = L("保存できませんでした。もう一度お試しください。",
-                        "Couldn't save it. Please try again.")
+            // サーバーの断り文を出す（上限・アーカイブに無い など）
+            message = HighlightService.failureMessage(
+                for: error,
+                fallback: L("保存できませんでした。もう一度お試しください。",
+                            "Couldn't save it. Please try again."))
         }
         saving = false
     }
@@ -236,9 +256,15 @@ struct HighlightEditorView: View {
         do {
             try await environment.highlights.delete(id: existing.id)
             dismiss()
+        } catch where HighlightService.isGone(error) {
+            // **もう無い（404）は消せたのと同じ。** サーバーは本体が無くても
+            // 自分の一覧からは外してから 404 を返す（`highlights.ts` の `deleteHighlight`）
+            dismiss()
         } catch {
-            message = L("削除できませんでした。もう一度お試しください。",
-                        "Couldn't delete it. Please try again.")
+            message = HighlightService.failureMessage(
+                for: error,
+                fallback: L("削除できませんでした。もう一度お試しください。",
+                            "Couldn't delete it. Please try again."))
         }
         saving = false
     }

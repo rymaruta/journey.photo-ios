@@ -4,7 +4,11 @@ import Foundation
 /// 本物と同じ形にしておく。**足りないと Mac でしか気づけない**
 /// **NSObject を継ぐ**（本物も同じ）。継がないと Linux の NotificationCenter が
 /// `object:` で絞った見張りに一致させず、知らせのテストが書けない
-open class AVPlayerItem: NSObject {}
+open class AVPlayerItem: NSObject {
+    /// 本物と同じ形（読み込みに失敗したら `.failed`）
+    public enum Status: Int { case unknown, readyToPlay, failed }
+    open var status: Status { .unknown }
+}
 
 open class AVPlayer {
     public private(set) var currentItem: AVPlayerItem? = AVPlayerItem()
@@ -34,6 +38,9 @@ public final class AVAudioSession {
     public struct Category { public static let ambient = Category(), playback = Category() }
     public struct Mode { public static let `default` = Mode() }
     public static func sharedInstance() -> AVAudioSession { AVAudioSession() }
+    /// 電話・Siri などで音が止められた・戻された知らせ（本物と同じ名前）。
+    /// 種類は `userInfo["AVAudioSessionInterruptionTypeKey"]`（1 が始まり）
+    public static let interruptionNotification = Notification.Name("AVAudioSessionInterruptionNotification")
     public func setCategory(_ c: Category, mode: Mode) throws {}
     /// **本物と同じ形にする。** 引数を省いた模型にしておくと、
     /// `options:` を渡すコードが Linux では通らず、Mac でしか気づけない

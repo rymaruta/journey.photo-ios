@@ -64,22 +64,21 @@ final class CrashGuardTests: XCTestCase {
     // MARK: - ログインの設定に失敗した起動（C-2）
 
     /// 🔴 **設定できていなければ Amplify を呼ばない**（未ログイン扱い・ログインは断る）。
-    ///
-    /// **未設定の状態は自分で作る**（`withConfigured(false)`）。Mac の試験はアプリの中で
-    /// 走り、起動時に設定済みになっているので、何もしないと本物の Cognito にログインしに
-    /// 行って落ちる（TestFlight の実行 166。Linux の模型では設定されないので通っていた）
+    /// **未設定は試験の中で作る。** Xcode の試験はアプリの中で走り、アプリが起動時に
+    /// `configure()` を済ませている（Linux にはアプリが無いので、ここだけ通っていた）
     func testUnconfiguredGatewayDoesNotCallAmplify() async {
-        await AuthGateway.withConfigured(false) {
-            let signedIn = await AuthGateway.isSignedIn()
-            XCTAssertFalse(signedIn)
-            let token = try? await AuthGateway.idToken()
-            XCTAssertNil(token ?? nil)
-            do {
-                _ = try await AuthGateway.signIn(email: "a@example.com", password: "x")
-                XCTFail("未設定のままログインを通している")
-            } catch {
-                XCTAssertTrue(error is AuthGateway.NotConfigured, "\(error)")
-            }
+        let wasConfigured = AuthGateway.isConfigured
+        AuthGateway.isConfigured = false
+        defer { AuthGateway.isConfigured = wasConfigured }
+        let signedIn = await AuthGateway.isSignedIn()
+        XCTAssertFalse(signedIn)
+        let token = try? await AuthGateway.idToken()
+        XCTAssertNil(token ?? nil)
+        do {
+            _ = try await AuthGateway.signIn(email: "a@example.com", password: "x")
+            XCTFail("未設定のままログインを通している")
+        } catch {
+            XCTAssertTrue(error is AuthGateway.NotConfigured, "\(error)")
         }
     }
 }
