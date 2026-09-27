@@ -58,14 +58,19 @@ private struct StoryVideo: View {
                     let made = AVPlayer(url: url)
                     made.isMuted = isMuted
                     player = made
-                    // 鳴り終わりで次へ（`MusicPreviewPlayer` と同じ形）。
-                    // 見張らないと動画のストーリーだけ永久に止まったままになる。
-                    // 通知の閉包は main actor の外なので、先に手元へ写してから
-                    // メインへ戻して呼ぶ
+                }
+                // 鳴り終わりで次へ（`MusicPreviewPlayer` と同じ形）。
+                // 見張らないと動画のストーリーだけ永久に止まったままになる。
+                // 🔴 **見張りは出るたびに付け直す**（プレイヤーを作るときだけではない）。
+                // `onDisappear` で外すので、作るときだけだと、画面を離れて戻った後は
+                // 最後まで再生しても次へ進まなかった
+                // 通知の閉包は main actor の外なので、先に手元へ写してから
+                // メインへ戻して呼ぶ
+                if endObserver == nil, let item = player?.currentItem {
                     let ended = onEnded
                     endObserver = NotificationCenter.default.addObserver(
                         forName: .AVPlayerItemDidPlayToEndTime,
-                        object: made.currentItem,
+                        object: item,
                         queue: .main
                     ) { _ in
                         Task { @MainActor in ended?() }

@@ -16,8 +16,11 @@ enum PhotoPinning {
     static func pinnedFirst(_ photos: [Photo], pinned: [String]) -> [Photo] {
         guard !pinned.isEmpty else { return photos }
         let byId = Dictionary(photos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        // **消された写真の ID が残っていても落ちない**（引けたものだけ前へ）
-        let head = pinned.compactMap { byId[$0] }
+        // **消された写真の ID が残っていても落ちない**（引けたものだけ前へ）。
+        // 🔴 **同じ ID が2つあっても1枚だけ前へ。** 2枚並べると格子の ForEach の id が
+        // 重なる（LazyVGrid では落ちる例がある）
+        var seen = Set<String>()
+        let head = pinned.filter { seen.insert($0).inserted }.compactMap { byId[$0] }
         let headIds = Set(head.map { $0.id })
         return head + photos.filter { !headIds.contains($0.id) }
     }

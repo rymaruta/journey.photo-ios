@@ -147,7 +147,8 @@ enum ImagePreparer {
 
     // MARK: - 読み取り
 
-    private static func readExif(from properties: [CFString: Any]) -> ExifFields {
+    /// 試験から呼ぶので `private` にしない
+    static func readExif(from properties: [CFString: Any]) -> ExifFields {
         let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
         let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
 
@@ -167,16 +168,22 @@ enum ImagePreparer {
         if let fNumber = exif[kCGImagePropertyExifFNumber] as? Double, fNumber > 0 {
             fields.aperture = String(format: "f/%.1f", fNumber)
         }
-        if let exposure = exif[kCGImagePropertyExifExposureTime] as? Double, exposure > 0 {
-            fields.exposure = exposure >= 1
-                ? String(format: "%.1fs", exposure)
-                : "1/\(Int((1 / exposure).rounded()))"
+        // 🔴 **`Int(...)` に通す値は `Int(exactly:)` で受ける。** 無限大・桁あふれの値
+        // （壊れた EXIF・極端に小さい露出）で `Int(...)` はアプリごと落ちる。見ていたのは
+        // `> 0` だけだった。表せない値は出さない
+        if let exposure = exif[kCGImagePropertyExifExposureTime] as? Double, exposure > 0, exposure.isFinite {
+            if exposure >= 1 {
+                fields.exposure = String(format: "%.1fs", exposure)
+            } else if let denominator = Int(exactly: (1 / exposure).rounded()) {
+                fields.exposure = "1/\(denominator)"
+            }
         }
         if let isoList = exif[kCGImagePropertyExifISOSpeedRatings] as? [Int], let iso = isoList.first, iso > 0 {
             fields.iso = iso
         }
-        if let focal = exif[kCGImagePropertyExifFocalLength] as? Double, focal > 0 {
-            fields.focalLength = "\(Int(focal.rounded()))mm"
+        if let focal = exif[kCGImagePropertyExifFocalLength] as? Double, focal > 0,
+           let millimeters = Int(exactly: focal.rounded()) {
+            fields.focalLength = "\(millimeters)mm"
         }
         fields.dateTimeOriginal = exif[kCGImagePropertyExifDateTimeOriginal] as? String
 
