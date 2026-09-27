@@ -136,10 +136,11 @@ final class GalleryViewModel: ObservableObject {
     ///   - viewerId: **誰の鍵で取ったか。** `self.viewerId` から取らない——
     ///     `use` が走る前（`.task` が取り消された回）だと nil のままで、
     ///     取れた集合の持ち主が分からなくなり、次の失敗で空に潰される
-    ///     **いま見ている人と違えば捨てる**（遅れて着いた前の人の集合を今の人に入れない）
+    ///     **遅れて着いた前の人の集合は、呼ぶ側（画面）が `auth.userId` と見比べて捨てる。**
+    ///     ここで `self.viewerId` と比べると、人が替わった直後（`use` がまだの間）に
+    ///     今の人の正しい集合まで捨てる
     func refreshFollowing(_ following: Set<String>?, viewerId: String) {
         guard let following else { return }
-        if let current = self.viewerId, current != viewerId { return }
         self.followingIds = following
         followingOwner = viewerId
         followingFailed = false

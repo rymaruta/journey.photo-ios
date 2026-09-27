@@ -773,7 +773,9 @@ struct PhotoDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Labels.Common.send)
-                .disabled(model.isPosting || model.draftComment.trimmingCharacters(in: .whitespaces).isEmpty)
+                // コメントを読み直している間も押せない（`postComment` は黙って断るので、押せる形にしない）
+                .disabled(model.isPosting || model.isReloadingComments
+                          || model.draftComment.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
@@ -811,7 +813,8 @@ struct PhotoDetailView: View {
                     // 詳細には引き下げが無いので、読み直す手段をここに置く
                     Button(Labels.Common.retry) { Task { await model.reloadComments() } }
                         .buttonStyle(.bordered)
-                        .disabled(model.isReloadingComments)
+                        // 投稿している間も押せない（`reloadComments` は黙って断る）
+                        .disabled(model.isReloadingComments || model.isPosting)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 12)
