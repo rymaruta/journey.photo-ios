@@ -234,7 +234,6 @@ struct JourneyPhotoApp: App {
                     }
                     await applyModeration()
                     await syncSaves(since: savesMark)
-                    await syncWishlist(since: wishMark)
                     await syncLikes(since: likesMark)
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     // （同期を始めた後にブロック・解除した分は残す・後に始まった取得の答えは上書きしない——`blocksFetch`）
@@ -245,6 +244,9 @@ struct JourneyPhotoApp: App {
                             await applyModeration()
                         }
                     }
+                    // **行きたい場所は最後。** 端末にしか無い分を1本ずつ送るので、回線が
+                    // 詰まっていると長く待つ——その間ブロック一覧の同期が止まっていた
+                    await syncWishlist(since: wishMark)
                 }
         }
     }

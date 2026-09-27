@@ -149,4 +149,17 @@ final class ProfileSectionsTests: XCTestCase {
                        "取れているのに欠けた（消えた撮影地）ことを失敗と言っている")
         XCTAssertFalse(ProfileSections.wishlistPartlyMissing(shownCount: 3, savedIdCount: 3, sourceFailed: true))
     }
+
+    /// **鍵の無い撮影地（記号だけ）は寄せない。** 空の鍵どうしで別の場所の写真が混ざっていた
+    func testPlacesWithoutASlugAreNotMerged() throws {
+        func photo(_ id: String, _ location: String) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(
+                #"{"id":"\#(id)","src":"/uploads/\#(id).jpg","location":"\#(location)"}"#.utf8))
+        }
+        let pool = [try photo("a", "..."), try photo("b", "///"), try photo("c", "パリ")]
+        XCTAssertEqual(LocationSlug.make("..."), "", "前提: 鍵が空になる")
+        let merged = DerivedSpot.allMergedBySlug(in: pool)
+        XCTAssertFalse(merged.contains { $0.slug.isEmpty }, "空の鍵の行を1つに寄せている")
+        XCTAssertEqual(merged.map(\.label), ["パリ"])
+    }
 }

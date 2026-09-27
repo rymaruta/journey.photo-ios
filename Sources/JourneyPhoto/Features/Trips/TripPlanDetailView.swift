@@ -51,6 +51,8 @@ struct TripPlanDetailView: View {
     /// 鍵で1行に寄せる（`allMergedBySlug`・マイページの行きたい場所と同じ行）
     @State private var places: [DerivedSpot.Place] = []
     @State private var dropped = ModerationSnapshot()
+    /// この画面がいちばん上に出ているか（スポットを積んでいる間は行を触らない）
+    @State private var onTop = false
 
     private func refreshPlaces() {
         places = DerivedSpot.allMergedBySlug(in: dropped.visible(photos))
@@ -79,7 +81,16 @@ struct TripPlanDetailView: View {
             sourcesFailed = fetchedPhotos == nil || fetchedIndex == nil
             refreshPlaces()
         }
+        // 出ている間に届いたブロック（起動直後のサーバーとの同期など）も拾う。
+        // **上に積んでいる間は触らない**（行が消えると上の画面が閉じる）
+        .onChange(of: hidden.revision) { _, _ in
+            guard onTop else { return }
+            dropped = hidden.snapshot
+            refreshPlaces()
+        }
+        .onDisappear { onTop = false }
         .onAppear {
+            onTop = true
             dropped = hidden.snapshot
             refreshPlaces()
             // **前の画面の失敗の文を消すのは、開いた最初の1回だけ。** 項目の

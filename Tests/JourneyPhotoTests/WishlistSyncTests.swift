@@ -318,10 +318,11 @@ final class WishlistSyncTests: XCTestCase {
         // 2回目の入れ替えでも消さない
         wishlist.replace(with: [], for: "u1", since: wishlist.syncMark)
         XCTAssertTrue(wishlist.contains(long))
-        // 押しても口は叩かない
+        // **外すときは送る**（サーバーは外すときに長さを見ない——サーバーにある昔の長い
+        // 鍵を外せるように。端末にしか無い鍵なら、サーバーでは何も起きない）
         let outcome = await WishlistSync.set(long, wanted: false, store: wishlist, service: service())
-        XCTAssertEqual(outcome, .local(wanted: false))
-        XCTAssertEqual(StubProtocol.requests, ["GET /user/spots"])
+        XCTAssertEqual(outcome, .synced(wanted: false))
+        XCTAssertFalse(wishlist.contains(long))
     }
 
     /// 退会の片づけは未送信の印も消す（`AccountLocalData`）
@@ -334,5 +335,54 @@ final class WishlistSyncTests: XCTestCase {
         AccountLocalData.remove(userId: "gone", username: nil, defaults: d)
         XCTAssertNil(d.object(forKey: "journey-photo-wishlist:gone"))
         XCTAssertNil(d.object(forKey: "journey-photo-wishlist-unsent:gone"))
+    }
+
+    // MARK: - 7d2b59e のレビュー
+
+    /// 🔴 **押して届いた鍵は未送信から外す。** 最初の同期の間に押すと未送信に入ったまま残り、
+    /// その後 Web で外すと、次の同期で「サーバーに無い未送信」として生き返った
+    func testPressedKeyThatReachedTheServerIsNotUploadedAgain() async {
+        let wishlist = store(defaults(), user: "u1")
+        wishlist.set("パリ", wanted: true)
+        // 最初の同期の入れ替えで、サーバーに無い「パリ」が未送信に入る
+        _ = wishlist.replace(with: [], for: "u1")
+        XCTAssertTrue(wishlist.isUnsent("パリ", for: "u1"), "前提: 未送信に入っている")
+        StubProtocol.respond(status: 200, body: #"{"saved":true,"slugs":["パリ"]}"#)
+        _ = await WishlistSync.set("パリ", wanted: true, store: wishlist, service: service())
+        XCTAssertFalse(wishlist.isUnsent("パリ", for: "u1"), "届いたのに未送信のまま")
+        // Web で外された後の同期で、送り直して生き返らせない
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: #"{"slugs":[]}"#)
+        await WishlistSync.sync(owner: "u1", since: wishlist.syncMark, store: wishlist, service: service(),
+                                isCurrent: { true })
+        XCTAssertEqual(postedSlugs(), [], "Web で外した場所を送り直して生き返らせた")
+        XCTAssertFalse(wishlist.contains("パリ"))
+    }
+
+    /// **サーバーにある長い鍵も外せる**（外すときはサーバーも長さを見ない）
+    func testLongKeyCanBeRemoved() async {
+        let long = String(repeating: "あ", count: 70)    // 210 バイト
+        XCTAssertFalse(SavedSpotService.canSend(long))
+        XCTAssertTrue(SavedSpotService.canRemove(long))
+        XCTAssertFalse(SavedSpotService.canRemove(".."), "パスで畳まれて別の口に届く")
+        XCTAssertFalse(SavedSpotService.canSend("."))
+        let wishlist = store(defaults(), user: "u1")
+        _ = wishlist.replace(with: [long], for: "u1")
+        StubProtocol.respond(status: 200, body: #"{"saved":false,"slugs":[]}"#)
+        let outcome = await WishlistSync.set(long, wanted: false, store: wishlist, service: service())
+        XCTAssertEqual(outcome, .synced(wanted: false), "サーバーに外す要求を送っていない")
+        XCTAssertEqual(StubProtocol.requestCount, 1)
+    }
+
+    /// **未送信の鍵を外すのに失敗したら、未送信に戻す**（戻さないと次の同期で送られずに消える）
+    func testFailedRemovalOfAnUnsentKeyKeepsItUnsent() async {
+        let wishlist = store(defaults(), user: "u1")
+        wishlist.set("京都", wanted: true)
+        _ = wishlist.replace(with: [], for: "u1")
+        XCTAssertTrue(wishlist.isUnsent("京都", for: "u1"), "前提: 未送信")
+        StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
+        _ = await WishlistSync.set("京都", wanted: false, store: wishlist, service: service())
+        XCTAssertTrue(wishlist.contains("京都"))
+        XCTAssertTrue(wishlist.isUnsent("京都", for: "u1"), "巻き戻したのに未送信から外れたまま（次の同期で消える）")
     }
 }

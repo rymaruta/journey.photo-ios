@@ -33,7 +33,15 @@ struct SavedSpotService {
     ///    `%2F` を API Gateway がどう扱うかを確かめられない（`savedSpotKey.ts` が
     ///    `spot/` をやめたのと同じ理由）。`slugify` は `/` を `-` にするので正しい鍵には無い
     static func canSend(_ key: String) -> Bool {
-        !key.isEmpty && !key.contains("#") && !key.contains("/") && key.utf8.count <= maxKeyBytes
+        canRemove(key) && key.utf8.count <= maxKeyBytes
+    }
+
+    /// 外す要求に載せてよい鍵。**長さは見ない**——サーバーは外すときに長さを見ない
+    /// （昔の長い鍵も外せるように・`savedSpots.ts` の `isStoredSpotSlug`）。ここで
+    /// 弾くと、サーバーにある長い鍵をアプリから外せず、次の同期で戻ってきた。
+    /// `.` と `..` はパスで畳まれて別の口（`DELETE /user`）に届くので弾く
+    static func canRemove(_ key: String) -> Bool {
+        !key.isEmpty && !key.contains("#") && !key.contains("/") && key != "." && key != ".."
     }
 
     private struct List: Decodable { let slugs: [String] }

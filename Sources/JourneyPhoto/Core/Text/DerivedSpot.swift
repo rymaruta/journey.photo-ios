@@ -96,6 +96,8 @@ enum DerivedSpot {
         var order: [String] = []
         var merged: [String: Place] = [:]
         for place in all(in: photos) {
+            // 鍵の無い撮影地（記号だけ）は寄せない——空の鍵どうしで別の場所が混ざる
+            guard !place.slug.isEmpty else { continue }
             guard let first = merged[place.slug] else {
                 merged[place.slug] = place
                 order.append(place.slug)

@@ -181,6 +181,14 @@ final class WishlistStore: ObservableObject {
         owner == userId && spotIds.contains(spotId) && (unsent?.contains(spotId) ?? false)
     }
 
+    /// 未送信に戻す（未送信の鍵を外そうとして失敗し、巻き戻した回——戻さないと
+    /// 次の同期で送られないまま消える）。一度も同期していない人は全部が候補なので何もしない
+    func markUnsent(_ spotId: String, for owner: String?) {
+        guard owner == userId, unsent != nil, spotIds.contains(spotId),
+              unsent?.insert(spotId).inserted == true else { return }
+        saveUnsent()
+    }
+
     /// 送れた。未送信から外す（人が替わっていたら何もしない）
     func markSent(_ spotId: String, for owner: String?) {
         guard owner == userId, unsent?.remove(spotId) != nil else { return }
