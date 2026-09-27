@@ -1236,7 +1236,7 @@ private struct TagRow: View {
     var body: some View {
         // 横に流さず折り返す。タグは59種あり、長い並びは画面外に出る
         FlowLayout(spacing: 6) {
-            ForEach(tags, id: \.self) { tag in
+            ForEach(TagInput.uniqueChips(tags), id: \.self) { tag in
                 NavigationLink {
                     TagPhotosView(kind: .tag(tag))
                 } label: {

@@ -114,6 +114,17 @@ enum TagInput {
         return "#" + bare
     }
 
+    /// 札に並べるタグ。**同じ字に見えて同じページが開く札は1枚にする**（`旅`・`#旅`・`# 旅` は
+    /// 全部「#旅」で、開く先も同じだった）。先に出た方を残す。
+    ///
+    /// **字だけで寄せない。** `chipText` は先頭の `#` と空白を全部落とすが、開く先の鍵
+    /// （`TagChoices.key`）は先頭の `#` しか落とさない——`# #旅` は札が「#旅」でも鍵は `#旅`
+    /// で、`旅` とは別のページ。字だけで寄せると、そのページにこの写真から行けなくなる
+    static func uniqueChips(_ tags: [String]) -> [String] {
+        var seen = Set<String>()
+        return tags.filter { seen.insert(chipText($0).lowercased() + "\u{0}" + TagChoices.key($0)).inserted }
+    }
+
     /// 候補を、**打ちかけの文字で絞る**。
     ///
     /// 何も打っていなければ全部出す（20語は全部並ぶ——Web は

@@ -208,7 +208,6 @@ struct AlbumsView: View {
                     .disabled(model.inviteWorking.contains(album.id))
                     .buttonStyle(.borderless)
                 }
-                Spacer()
                 // **期限内でも作り直せる**（Web の /user/albums と同じ——配ったリンクを
                 // 止めて出し直したいとき）。切れていたらこれが唯一の出口
                 Button {
@@ -235,7 +234,13 @@ struct AlbumsView: View {
                 // **行に複数のボタンを置くときは borderless。**
                 // 既定だと行のどこを押しても両方が反応する
                 .buttonStyle(.borderless)
+                // 送っている間を見せる（ボタンが薄くなるだけでは、押せたのか分からない）
+                if model.inviteWorking.contains(album.id) {
+                    ProgressView().controlSize(.small)
+                }
             }
+            // 知らせは**押したボタンのすぐ下**（下の注意書きより上）
+            inviteDoneLine(album)
             switch expiry {
             case .valid(let until):
                 Text(L("\(InviteLink.untilLabel(until))まで", "Valid until \(InviteLink.untilLabel(until))"))
@@ -253,14 +258,33 @@ struct AlbumsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
-            Button(L("招待リンクを作る", "Create invite link")) {
+            Button {
                 Task { await model.createInvite(album.id, environment: environment) }
+            } label: {
+                Text(L("招待リンクを作る", "Create invite link"))
+                    .font(.caption)
+                    // 押す場所は 44pt（上の3つと同じ。ここだけ文字の高さしか押せなかった）
+                    .webTappable()
             }
-            .font(.caption)
             // **二度押しで作り直さない。** サーバーは「あれば作り直す」ので、
             // 2本目で1本目が失効し、その間に共有したリンクが開けなくなる
             .disabled(model.inviteWorking.contains(album.id))
             .buttonStyle(.borderless)
+            // **こちらの枝にも置く。** 取り消すとリンクが消えてこの枝に描き直されるので、
+            // 上の枝にだけ置くと「取り消しました」が一度も出なかった
+            inviteDoneLine(album)
+        }
+    }
+
+    /// 作り直した・取り消したことを**その行で**知らせる（`InviteLink.doneMessage`）。
+    /// アプリはリンクの字を出さないので、作り直しても見た目がほとんど変わらず、
+    /// 押しても何も起きないように見えていた。一覧の上の知らせは、下の行からは見えない
+    @ViewBuilder
+    private func inviteDoneLine(_ album: Album) -> some View {
+        if let done = model.inviteDone, done.albumId == album.id {
+            Text(done.message)
+                .font(.caption)
+                .foregroundStyle(WebTheme.foreground)
         }
     }
 
@@ -316,6 +340,13 @@ final class AlbumsViewModel: ObservableObject {
     private var noticeTask: Task<Void, Never>?
     /// 招待リンクを作る・取り消すのを送っているアルバム
     @Published private(set) var inviteWorking: Set<String> = []
+    /// 招待リンクの操作が通った知らせ（その行に出し、しばらくすると消える）
+    @Published private(set) var inviteDone: InviteDone?
+    private var inviteDoneTask: Task<Void, Never>?
+    struct InviteDone: Equatable {
+        let albumId: String
+        let message: String
+    }
 
     /// 何回目の読み込みか。**古い読み込みの返事が新しい返事を上書きしない**
     private var loadGeneration = 0
@@ -335,6 +366,8 @@ final class AlbumsViewModel: ObservableObject {
         albums = []
         writes = AlbumMerge.Writes()
         inviteWorking = []
+        inviteDoneTask?.cancel()
+        inviteDone = nil
         isLoading = false
         errorMessage = nil
         noticeTask?.cancel()
@@ -439,6 +472,16 @@ final class AlbumsViewModel: ObservableObject {
         }
     }
 
+    private func showInviteDone(_ albumId: String, _ message: String, seconds: Double = 4) {
+        inviteDone = InviteDone(albumId: albumId, message: message)
+        inviteDoneTask?.cancel()
+        inviteDoneTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.inviteDone = nil
+        }
+    }
+
     func createInvite(_ id: String, environment: AppEnvironment) async {
         guard !inviteWorking.contains(id) else { return }
         inviteWorking.insert(id)
@@ -447,10 +490,12 @@ final class AlbumsViewModel: ObservableObject {
         do {
             // **返ってきたリンクを手元にも書く。** 一覧は結果整合で読むので、
             // 読み直しが古いとリンクが出ず、もう一度押すと作り直し（前のリンクが失効）になる
+            let replaced = albums.first { $0.id == id }?.inviteToken != nil
             let invite = try await environment.albums.createInvite(albumId: id)
             guard myEra == era else { return }
             writes.invites[id] = .init(value: invite, at: Date())
             albums = AlbumMerge.merge(loaded: albums, writes: writes)
+            showInviteDone(id, InviteLink.doneMessage(replaced ? .recreated : .created))
             await load(environment: environment)
         } catch {
             guard myEra == era else { return }
@@ -468,6 +513,7 @@ final class AlbumsViewModel: ObservableObject {
             guard myEra == era else { return }
             writes.invites[id] = .init(value: nil, at: Date())
             albums = AlbumMerge.merge(loaded: albums, writes: writes)
+            showInviteDone(id, InviteLink.doneMessage(.revoked))
             await load(environment: environment)
         } catch {
             guard myEra == era else { return }

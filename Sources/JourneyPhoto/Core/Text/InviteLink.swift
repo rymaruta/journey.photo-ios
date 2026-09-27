@@ -55,4 +55,22 @@ extension InviteLink {
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         return "\(c.year ?? 0)/\(c.month ?? 0)/\(c.day ?? 0)"
     }
+
+    /// 招待リンクの操作が通ったときの一言。作り直し・取り消しは **Web の知らせと同じ文**
+    /// （`app/user/albums`）。作り直しは「前のリンクは使えなくなる」まで言う——配ったリンクが
+    /// 黙って切れないように。**初めて作ったときだけ Web と違う**（Web は常に「前のリンクは…」
+    /// と言うが、前のリンクが無いので言わない）
+    enum Done { case created, recreated, revoked }
+
+    static func doneMessage(_ done: Done) -> String {
+        switch done {
+        case .created:
+            return L("招待リンクを作りました", "Invite link created")
+        case .recreated:
+            return L("招待リンクを作りました。前のリンクは使えなくなります",
+                     "Invite link recreated. The previous link no longer works")
+        case .revoked:
+            return L("招待リンクを取り消しました", "Invite link revoked")
+        }
+    }
 }

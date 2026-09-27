@@ -149,4 +149,17 @@ final class TagChipTextTests: XCTestCase {
     func testInnerHashIsKept() {
         XCTAssertEqual(TagInput.chipText("c#"), "#c#")
     }
+
+    /// **同じ字に見える札は1枚**（`旅`・`#旅`・`# 旅` が「#旅」で並んでいた）
+    func testChipsLookingTheSameAreShownOnce() {
+        XCTAssertEqual(TagInput.uniqueChips(["旅", "#旅", "# 旅", "海"]), ["旅", "海"])
+        XCTAssertEqual(TagInput.uniqueChips(["Paris", "paris"]), ["Paris"], "大文字小文字だけ違う札が並ぶ")
+    }
+
+    /// **字が同じでも、開くページが違う札は残す**（`# #旅` の鍵は `#旅`、`＃ 旅` の鍵は `＃ 旅`）
+    func testChipsOpeningDifferentPagesAreKept() {
+        XCTAssertEqual(TagChoices.key("# #旅"), "#旅", "前提: 鍵は先頭の # を1つだけ落とす")
+        XCTAssertEqual(TagInput.uniqueChips(["旅", "# #旅"]), ["旅", "# #旅"])
+        XCTAssertEqual(TagInput.uniqueChips(["＃旅", "＃ 旅"]), ["＃旅", "＃ 旅"])
+    }
 }
