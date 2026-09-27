@@ -115,6 +115,7 @@ extension PendingVerificationTests {
         defaults.removePersistentDomain(forName: "pending-name-4")
         let pending = PendingVerificationStore(defaults: defaults)
         pending.remember(email: "taro@example.com", username: "uuid-1", displayName: "旅人")
+        pending.markConfirmed(email: "taro@example.com")   // この端末で確認コードを通した
 
         var sent: [String?] = []
         // 1回目は送れない（圏外）→ 控えを残す
@@ -131,5 +132,39 @@ extension PendingVerificationTests {
         let before = sent.count
         await pending.settleAfterSignIn(email: "taro@example.com") { sent.append($0); return true }
         XCTAssertEqual(sent.count, before, "控えが無いのに名前を送った")
+    }
+
+    /// 🔴 **この端末で確認コードを通していない控えで、既存の表示名を上書きしない。**
+    /// 確認済みの既存アカウントのメールで「アカウントを作る」→名前を入れる
+    /// （UUID なので登録は通り、控えが残る）→案内どおり既存アカウントでログイン、
+    /// で既存の表示名が黙って書き換わっていた
+    @MainActor
+    func testSignInDoesNotApplyANameThatWasNeverConfirmedHere() async {
+        let defaults = UserDefaults(suiteName: "pending-name-5")!
+        defaults.removePersistentDomain(forName: "pending-name-5")
+        let pending = PendingVerificationStore(defaults: defaults)
+        pending.remember(email: "taro@example.com", username: "uuid-dup", displayName: "別の名前")
+
+        var sent: [String?] = []
+        await pending.settleAfterSignIn(email: "taro@example.com") { sent.append($0); return true }
+        XCTAssertEqual(sent, [], "確認していない控えの名前で、既存アカウントの名前を書き換えた")
+        XCTAssertNil(pending.username(for: "taro@example.com"),
+                     "ログインが通った（＝確認済みの別アカウント）のに、使えない控えを残している")
+    }
+
+    /// 印は確認を通したメールにだけ付く（別のメールの控えには付かない）
+    @MainActor
+    func testConfirmationMarkIsPerEmail() async {
+        let defaults = UserDefaults(suiteName: "pending-name-6")!
+        defaults.removePersistentDomain(forName: "pending-name-6")
+        let pending = PendingVerificationStore(defaults: defaults)
+        pending.remember(email: "a@example.com", username: "uuid-a", displayName: "A")
+        pending.remember(email: "b@example.com", username: "uuid-b", displayName: "B")
+        pending.markConfirmed(email: "A@example.com")
+
+        var sent: [String?] = []
+        await pending.settleAfterSignIn(email: "b@example.com") { sent.append($0); return true }
+        await pending.settleAfterSignIn(email: "a@example.com") { sent.append($0); return true }
+        XCTAssertEqual(sent, ["A"])
     }
 }

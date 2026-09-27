@@ -58,6 +58,14 @@ struct PendingVerificationStore {
         /// 登録のときに入れた表示名。**確認が済むまで預かる**
         /// （確認前にアプリを閉じても、名前を打ち直させない）
         var displayName: String?
+        /// **この端末で確認コードを通したか**（`markConfirmed`）。
+        /// 旧い控え（この鍵が無い）は通していない扱い
+        var confirmed: Bool?
+    }
+
+    private func entry(for email: String) -> Entry? {
+        guard let data = defaults.data(forKey: PendingVerification.key(for: email)) else { return nil }
+        return try? JSONDecoder().decode(Entry.self, from: data)
     }
 
     func remember(email: String, username: String, displayName: String? = nil, now: Date = Date()) {
@@ -93,19 +101,39 @@ struct PendingVerificationStore {
         defaults.removeObject(forKey: PendingVerification.key(for: email))
     }
 
+    /// 確認コードが通った（`confirmSignUp` が成功した）ときに呼ぶ。
+    /// **この印がある控えだけが、あとのログインで名前を入れられる**（`settleAfterSignIn`）
+    func markConfirmed(email: String) {
+        guard var entry = entry(for: email) else { return }
+        entry.confirmed = true
+        guard let data = try? JSONEncoder().encode(entry) else { return }
+        defaults.set(data, forKey: PendingVerification.key(for: email))
+    }
+
     /// ログインが済んだあと、預かっている表示名を入れる（`apply`）。
     /// **入れ終えたら（入れるものが無ければ）控えを捨てる**——落ちたら残して、
     /// 次のログインでもう一度試す。
     ///
-    /// 🔴 **確認コードの直後だけでなく、ふつうのログインでも通す。** 確認は
+    /// **確認コードの直後だけでなく、ふつうのログインでも通す。** 確認は
     /// 通ったのに自動ログインが落ちた人・名前を入れる要求が落ちた人は、
     /// 控えを「次のログインで試せる」と残していたのに、ふつうのログインは
     /// 控えを読んでいなかった（名前は ID の頭8文字のまま）。
     /// 控えが無ければ `apply` は呼ばない
+    ///
+    /// 🔴 **入れるのは、この端末で確認コードを通した控えだけ**（`markConfirmed`）。
+    /// 確認済みの既存アカウントのメールで「アカウントを作る」→名前を入れる、と
+    /// 登録は UUID なので通り、控えが残る。案内どおりその既存アカウントで
+    /// ログインすると、**既存の表示名が黙って上書きされていた**。
+    /// 印の無い控えは、ふつうのログインが通った時点で捨てる（そのメールは
+    /// もう確認済みのアカウントのもので、控えの UUID は確認できない）
     @MainActor
     func settleAfterSignIn(email: String, now: Date = Date(),
                            apply: (String?) async -> Bool) async {
-        guard defaults.data(forKey: PendingVerification.key(for: email)) != nil else { return }
+        guard let entry = entry(for: email) else { return }
+        guard entry.confirmed == true else {
+            forget(email: email)
+            return
+        }
         if await apply(displayName(for: email, now: now)) {
             forget(email: email)
         }

@@ -56,9 +56,11 @@ final class PushCenter: ObservableObject {
     /// 引き継ぐ先は**アプリを更新したときにログインしていた人だけ**
     /// （更新後の最初の起動でログイン済みと分かった人）——その人は古い作りで
     /// 実際に宛先を預けていた本人なので、画面とサーバーの食い違いを作らない。
-    /// 起動の時点でログアウトしていたら**誰にも引き継がずに捨てる**
-    /// （`dropLegacyIntent`）。ログアウトのときに宛先は外してあり
-    /// （外しそびれは `pendingReleaseOwner`）、あとから来た人は自分で選び直す
+    /// 起動の時点で**確かに**ログアウトしていたら誰にも引き継がずに捨てる
+    /// （`dropLegacyIntent`・`AuthStore.isKnownSignedOut`）。判定に失敗した回は
+    /// 捨てずに残し、次にログイン済みと分かった人が引き継ぐ。
+    /// ログアウトのときに宛先は外してあり（外しそびれは `pendingReleaseOwner`）、
+    /// あとから来た人は自分で選び直す
     private static let legacyEnabledKey = "photo-gallery-push-enabled"
     private static func enabledKey(for userId: String) -> String {
         "\(legacyEnabledKey):\(userId)"
@@ -175,10 +177,7 @@ final class PushCenter: ObservableObject {
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("通知を止められませんでした", "Couldn't turn notifications off")
-            // **別の人の外しそびれを上書きしない。** 印は1人ぶんしか持てず、
-            // 前の人の宛先はその人の鍵でしか外せない（こちらは本人が戻れば
-            // トグルでもやり直せる）
-            if pendingReleaseOwner == nil { pendingReleaseOwner = userId }
+            markUnreleased(userId)
         }
     }
 
@@ -215,9 +214,22 @@ final class PushCenter: ObservableObject {
             if pendingReleaseOwner == userId { pendingReleaseOwner = nil }
         } catch {
             print("[push] ログアウトで宛先を外せませんでした（次の機会にやり直す）: \(error)")
-            pendingReleaseOwner = userId
+            markUnreleased(userId)
         }
         isRegistered = false
+    }
+
+    /// 外せなかった印を残す（`disable` と `signingOut` の共通の決まり）。
+    ///
+    /// 🔴 **別の人の印は上書きしない。** 印は1人ぶんしか持てない。
+    /// 別の人（A）の印が残っている＝その後この端末で登録が1度も通っていない
+    /// （通ればサーバーが A から外し、印も消える——`registerIfPossible`）。
+    /// サーバーは宛先1つに持ち主1人なので、そのときこの番号は**まだ A のもの**で、
+    /// いまの人（B）の外しそびれは実体の無い空振りのことが多い。上書きすると
+    /// **本当に残っている A の宛先の手がかり**を、空振りの印で消していた
+    /// （以前は `signingOut` だけ無条件に上書きしていた）
+    private func markUnreleased(_ userId: String) {
+        if pendingReleaseOwner == nil { pendingReleaseOwner = userId }
     }
 
     /// 外しそびれた宛先を、外せる人が戻ってきたときに外す。
@@ -273,7 +285,8 @@ final class PushCenter: ObservableObject {
         defaults.removeObject(forKey: Self.legacyEnabledKey)
     }
 
-    /// 起動時の確認で**ログインしていない**と分かったら呼ぶ（`JourneyPhotoApp`）。
+    /// 起動時の確認で**確かにログインしていない**と分かったら呼ぶ
+    /// （`JourneyPhotoApp`・`AuthStore.isKnownSignedOut`）。判定に失敗した回には呼ばない。
     ///
     /// 端末全体の「受け取る」は、誰にも引き継がずに捨てる——あとからこの端末で
     /// ログインする人は、その値を選んだ本人とは限らない

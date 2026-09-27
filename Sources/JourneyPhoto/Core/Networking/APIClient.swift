@@ -126,7 +126,8 @@ actor APIClient {
                 // 切れた・サインアウト済みで投げると、画面の「ログインし直して」にも
                 // 「圏外」にも入らず、全画面で原因の分からない失敗が続いていた
                 switch TokenFailure(error) {
-                case .signInAgain?: throw APIError.notAuthenticated
+                case .sessionExpired?: throw APIError.sessionExpired
+                case .signedOut?: throw APIError.notAuthenticated
                 case .unreachable?: throw APIError.unreachable
                 case nil: throw error
                 }

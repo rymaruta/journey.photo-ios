@@ -131,9 +131,17 @@ final class GalleryViewModel: ObservableObject {
     /// 間だけ——前の人の「見せない」・限定公開の取り口で読んだ回が、次の人の
     /// 回より先に戻って画面に移ったり、次の人の回が落ちたときに残ったりしていた。
     /// **替わったときだけ**捨てる（画面に戻るたびの `.task` では何もしない）
+    ///
+    /// 🔴 **手元の一覧（`all`）とチップも捨てる。** 回を古くするだけでは、
+    /// 前の人の一覧（限定公開を含む）が `all` に残り、次の人の読み込みが
+    /// 落ちたあとにカテゴリ・範囲・フィード・並び・文字を触ると
+    /// `filtered()` がそれを画面へ戻していた（おすすめ・タグの候補も `all` を読む）
     func switchViewer(to userId: String?) {
         if let loaded = loadingFor, loaded != userId {
             appliedGeneration = loadGeneration
+            all = []
+            categories = []
+            state = .loading
         }
         loadingFor = .some(userId)
     }

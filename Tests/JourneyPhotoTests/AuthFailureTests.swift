@@ -78,6 +78,19 @@ final class AuthFailureTests: XCTestCase {
         XCTAssertEqual(AuthMessage.changePasswordText(for: .limitExceeded),
                        AuthMessage.text(for: .limitExceeded))
     }
+
+    /// 🔴 **パスワード変更の最中にログインが切れても「いまのパスワードが違います」と言わない。**
+    /// `AuthError.sessionExpired` を `notAuthorized` に畳んでいたので、正しいパスワードを
+    /// 入れた人にそう出ていた（直し方はログインし直すこと）
+    func testExpiredSessionDuringPasswordChangeSaysSignInAgain() {
+        let failure = AuthFailure(.sessionExpired("", "", nil))
+        let text = AuthMessage.changePasswordText(for: failure)
+        XCTAssertNotEqual(text, L("いまのパスワードが違います", "Your current password is wrong"),
+                          "ログインが切れたのに、パスワードの誤りと言っている")
+        XCTAssertEqual(text, Labels.Common.sessionExpired)
+        // 画面の上ではログイン中の人：401 と同じ文言
+        XCTAssertEqual(text, JourneyPhoto.APIError.server(status: 401, message: "").errorDescription)
+    }
 }
 
 /// 🔴 **トークンが取れない理由（Amplify の `AuthError`）を、画面が分岐できる形に畳む。**
@@ -120,12 +133,27 @@ final class APIClientTokenFailureTests: XCTestCase {
 
     func testSessionExpiredOrSignedOutMeansSignInAgain() async {
         StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
-        for failure in [AuthError.sessionExpired("", "", nil), AuthError.signedOut("", "", nil)] {
+        let cases: [(AuthError, JourneyPhoto.APIError)] = [
+            (.sessionExpired("", "", nil), .sessionExpired),
+            (.signedOut("", "", nil), .notAuthenticated),
+        ]
+        for (failure, expected) in cases {
             let thrown = await call(throwing: failure)
-            XCTAssertEqual(thrown as? JourneyPhoto.APIError, .notAuthenticated,
+            XCTAssertEqual(thrown as? JourneyPhoto.APIError, expected,
                            "\(failure) を畳んでいない: \(String(describing: thrown))")
         }
         XCTAssertNil(StubProtocol.lastRequest, "トークンが無いのに要求を投げている")
+    }
+
+    /// 🔴 **ログインが切れた人に「ログインが必要です」と言わない。** 画面の上では
+    /// ログイン中の人——401 と同じ「有効期限が切れました」に揃える
+    func testExpiredSessionReadsLikeA401() async {
+        let thrown = await call(throwing: AuthError.sessionExpired("", "", nil)) as? JourneyPhoto.APIError
+        XCTAssertNotEqual(thrown?.errorDescription, Labels.Common.signInRequired,
+                          "ログイン中の人に「ログインが必要です」と出る")
+        XCTAssertEqual(thrown?.errorDescription,
+                       JourneyPhoto.APIError.server(status: 401, message: "").errorDescription)
+        XCTAssertEqual(thrown?.isAuthExpired, true, "再ログインを促す側に入っていない")
     }
 
     /// 圏外でトークンを更新できなかった回（Cognito プラグインは `AWSCognitoAuthError.network` を付ける）
@@ -196,5 +224,42 @@ final class SignInOutcomeTests: XCTestCase {
         XCTAssertTrue(text.contains("ログイン") || text.lowercased().contains("sign in"))
         XCTAssertEqual(AuthMessage.confirmSignUpText(for: .codeMismatch),
                        AuthMessage.text(for: .codeMismatch))
+    }
+}
+
+/// 起動時のログインの確かめ（`AuthStore.restore`）。
+///
+/// 🔴 **判定の失敗を「確かにログアウト」と混ぜない。** 混ぜると、更新後の最初の起動で
+/// 一時的に判定に失敗しただけで端末全体の通知の「受け取る」を捨て
+/// （`PushCenter.dropLegacyIntent`）、サーバーの宛先は残るのにトグルはオフになる
+@MainActor
+final class AuthRestoreTests: XCTestCase {
+
+    private struct Broken: Error {}
+
+    func testUndeterminedSessionIsNotTreatedAsSignedOutForSure() async {
+        let auth = AuthStore(probe: .init(isSignedIn: { throw Broken() },
+                                          currentUserId: { throw Broken() }))
+        await auth.restore()
+        XCTAssertFalse(auth.isResolving, "確認中のまま止まる（やり直す口が無い）")
+        XCTAssertEqual(auth.state, .signedOut)
+        XCTAssertFalse(auth.isKnownSignedOut, "判定できなかった回を「確かにログアウト」とした")
+    }
+
+    /// ログイン済みと言われたのに利用者を読めない回も、判定できなかった側
+    func testMissingUserAfterSignedInIsUndetermined() async {
+        let auth = AuthStore(probe: .init(isSignedIn: { true },
+                                          currentUserId: { throw Broken() }))
+        await auth.restore()
+        XCTAssertEqual(auth.state, .signedOut)
+        XCTAssertFalse(auth.isKnownSignedOut)
+    }
+
+    func testSignedOutIsKnown() async {
+        let auth = AuthStore(probe: .init(isSignedIn: { false },
+                                          currentUserId: { throw Broken() }))
+        await auth.restore()
+        XCTAssertEqual(auth.state, .signedOut)
+        XCTAssertTrue(auth.isKnownSignedOut)
     }
 }

@@ -135,8 +135,14 @@ struct JourneyPhotoApp: App {
                     await auth.restore()
                     // **起動の時点でログアウトしていたら、端末全体だった頃の
                     // 「受け取る」は誰にも引き継がない**（`PushCenter.legacyEnabledKey`）。
-                    // ログイン済みなら、その人の `use(userId:)` が引き継ぐ
-                    if auth.state == .signedOut { push.dropLegacyIntent() }
+                    // ログイン済みなら、その人の `use(userId:)` が引き継ぐ。
+                    //
+                    // 🔴 **捨てるのは「確かにログアウト」と分かったときだけ**
+                    // （`isKnownSignedOut`）。判定に失敗しただけの回（画面は
+                    // `.signedOut` に倒れる）に捨てると、サーバーには宛先が残るのに
+                    // トグルはオフ・外しそびれの印（`pendingReleaseOwner`）も無い、
+                    // になる。捨てなければ次にログイン済みと分かった人が引き継ぐ
+                    if auth.isKnownSignedOut { push.dropLegacyIntent() }
                 }
                 // **ログイン状態が変わるたびに読み直す。** `.task` のままだと
                 // 起動時に1回しか走らず、あとからログインした人には

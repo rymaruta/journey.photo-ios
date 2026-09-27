@@ -161,6 +161,51 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.state, .loading, "前の人の回の答えで状態を書いた")
     }
 
+    /// 🔴 **人が替わったら、手元の一覧（前の人の限定公開を含む）も捨てる。**
+    /// 回を古くするだけでは `all` が残り、次の人の読み込みが落ちたあとに
+    /// カテゴリ・範囲・フィード・並び・文字・タグを触ると、前の人の写真が画面に戻っていた
+    func testGallerySwitchingPeopleForgetsThePreviousPersonsList() async throws {
+        let service = gallery(feed)
+        let secret = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"secret","src":"https://x/s.jpg","userId":"u9","audience":"followers","category":"風景","tags":["sunset"]}"#.utf8))
+        await service.setRestrictedLoader(owner: "A") { [secret] }
+        let model = GalleryViewModel(gallery: service)
+        model.switchViewer(to: "A")
+        await model.load()
+        guard case .loaded(let before) = model.state, before.contains(where: { $0.id == "secret" }) else {
+            return XCTFail("前提: A の一覧に限定公開が入っていない: \(model.state)")
+        }
+
+        // B に替わり、B の読み込みは落ちる（控えも無い）
+        model.switchViewer(to: "B")
+        StubProtocol.respond(status: 500, body: "{}")
+        model.use(gallery: PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
+        ))
+        await model.load()
+        guard case .failed = model.state else { return XCTFail("前提: B の読み込みが落ちていない: \(model.state)") }
+
+        func shown() -> [String] {
+            if case .loaded(let photos) = model.state { return photos.map(\.id) }
+            return []
+        }
+        model.select(category: "風景")
+        XCTAssertFalse(shown().contains("secret"), "カテゴリを押したら前の人の写真が戻った")
+        model.select(category: nil)
+        XCTAssertFalse(shown().contains("secret"), "カテゴリを外したら前の人の写真が戻った")
+        model.select(feed: .latest, viewerId: "B")
+        XCTAssertFalse(shown().contains("secret"), "フィードを替えたら前の人の写真が戻った")
+        model.select(sort: .popular)
+        XCTAssertFalse(shown().contains("secret"), "並びを替えたら前の人の写真が戻った")
+        model.query = "s"
+        XCTAssertFalse(shown().contains("secret"), "文字を打ったら前の人の写真が戻った")
+        XCTAssertTrue(model.categories.isEmpty, "前の人の一覧から作ったチップが残っている")
+        XCTAssertTrue(model.tags.isEmpty, "タグの候補が前の人の一覧を読んでいる")
+        XCTAssertTrue(model.allPhotosForTheme.isEmpty, "今日のテーマの背景が前の人の一覧を読んでいる")
+    }
+
     /// **同じ人のまま画面に戻っただけでは捨てない**（`.task` は出入りのたびに走る）
     func testGallerySameViewerAgainKeepsTheRunningLoad() async throws {
         let service = gallery(feed)

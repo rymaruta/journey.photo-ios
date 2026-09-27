@@ -322,6 +322,35 @@ final class PushSignOutTests: XCTestCase {
         XCTAssertEqual(push.pendingReleaseOwner, "A", "A の外しそびれを B で上書きした")
     }
 
+    /// 🔴 **ログアウトで外せなかったときも、別の人の外しそびれを上書きしない**
+    /// （`disable` と同じ決まり）。A の印が残っている＝その後この端末で登録は
+    /// 通っていないので、宛先はまだ A のもの。B の空振りで A の手がかりを消していた
+    func testFailedSignOutDoesNotOverwriteAnotherPersonsPendingRelease() async {
+        let keys = Keys()
+        let push = center("push-release-6", keys: keys)
+        await push.use(userId: "A")
+        StubProtocol.respond(status: 500, body: "{}")
+        await push.signingOut()
+        keys.idToken = nil
+        await push.use(userId: nil)
+        XCTAssertEqual(push.pendingReleaseOwner, "A")
+
+        keys.idToken = "t"
+        await push.use(userId: "B")
+        await push.signingOut()                       // B も外せない（まだ 500）
+        XCTAssertEqual(push.pendingReleaseOwner, "A", "A の外しそびれを B のログアウトで上書きした")
+    }
+
+    /// 印が無ければ、ログアウトで外せなかった人に印を付ける（従来どおり）
+    func testFailedSignOutMarksWhenNothingIsPending() async {
+        let keys = Keys()
+        let push = center("push-release-7", keys: keys)
+        await push.use(userId: "B")
+        StubProtocol.respond(status: 500, body: "{}")
+        await push.signingOut()
+        XCTAssertEqual(push.pendingReleaseOwner, "B")
+    }
+
     /// **前の人の失敗文を次の人に見せない**（設定画面の赤字）
     func testErrorMessageDoesNotCarryOverToTheNextPerson() async {
         let keys = Keys()

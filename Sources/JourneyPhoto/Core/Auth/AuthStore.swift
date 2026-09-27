@@ -27,6 +27,33 @@ final class AuthStore: ObservableObject {
         return nil
     }
 
+    /// ログイン状態を確かめる口（試験で差し替える）
+    struct SessionProbe {
+        var isSignedIn: () async throws -> Bool
+        var currentUserId: () async throws -> String
+
+        static let amplify = SessionProbe(
+            isSignedIn: { try await AuthGateway.isSignedIn() },
+            currentUserId: { try await AuthGateway.currentUserId() }
+        )
+    }
+
+    private let probe: SessionProbe
+
+    init(probe: SessionProbe = .amplify) {
+        self.probe = probe
+    }
+
+    /// 🔴 **ログインしていないと確かに分かっているか。**
+    ///
+    /// `state == .signedOut` とは別。起動の確認で判定できなかった回も
+    /// `.signedOut` に倒す（下の `restore`）ので、`state` だけでは
+    /// 「確かにログアウト」と「分からなかった」が混ざる。**取り返しの
+    /// つかない後始末**（端末全体だった頃の通知の「受け取る」を捨てる
+    /// ——`PushCenter.dropLegacyIntent`）はこちらを見る
+    var isKnownSignedOut: Bool { state == .signedOut && signedOutForSure }
+    private var signedOutForSure = false
+
     /// まだ分かっていない（起動直後の確認中）。
     ///
     /// **`userId == nil` だけで判断しない。** 確認が終わる前に
@@ -34,9 +61,18 @@ final class AuthStore: ObservableObject {
     /// 見える（Web 側の「確かめられなかった回に案内を出さない」と同じ話）。
     var isResolving: Bool { state == .unknown }
 
-    /// 起動時に一度。**「確かめられなかった」と「ログインしていない」を
-    /// 混ぜない**——圏外なだけの人をログイン画面に飛ばさないため、
-    /// 判定できない回は `.unknown` のままにする。
+    /// 起動時に一度。
+    ///
+    /// **圏外では判定に失敗しない**——Amplify 2.27 の `fetchAuthSession` は
+    /// 圏外でも手元の状態から `isSignedIn` を返し（鍵の更新の失敗は中の結果に
+    /// 入る）、`getCurrentUser` も手元の状態を読む。失敗するのは Amplify の
+    /// 状態機械が整っていない回（`invalidState`）など。
+    ///
+    /// 🔴 **判定できなかった回も `.signedOut` に倒す。** `.unknown` のまま
+    /// 残すと、やり直す口が無いので確認中の画面（`isResolving`）から
+    /// 永久に出られない。ただし**「確かにログアウト」とは分けて覚える**
+    /// （`isKnownSignedOut` が偽のまま）。以前は判定の失敗を false に畳んで、
+    /// 確かにログアウトした回と同じに扱っていた
     func restore() async {
         #if DEBUG
         // **絵を撮るためだけの、鍵を持たないログイン**（Debug のみ・owner 承認済み）。
@@ -61,19 +97,31 @@ final class AuthStore: ObservableObject {
             return
         }
         #endif
-        guard await AuthGateway.isSignedIn() else {
-            state = .signedOut
-            isAdmin = false
+        let signedIn: Bool
+        do {
+            signedIn = try await probe.isSignedIn()
+        } catch {
+            fallBackToSignedOut(sure: false)
             return
         }
-        let id = try? await AuthGateway.currentUserId()
+        guard signedIn else {
+            fallBackToSignedOut(sure: true)
+            return
+        }
+        // ログイン済みと言われたのに利用者を読めない＝判定できなかった回
+        let id = try? await probe.currentUserId()
         if let id {
             state = .signedIn(userId: id)
             await refreshAdmin()
         } else {
-            state = .signedOut
-            isAdmin = false
+            fallBackToSignedOut(sure: false)
         }
+    }
+
+    private func fallBackToSignedOut(sure: Bool) {
+        signedOutForSure = sure
+        state = .signedOut
+        isAdmin = false
     }
 
     /// ID トークンから管理者かを読み直す。**取れなければ管理を出さない**
@@ -107,8 +155,7 @@ final class AuthStore: ObservableObject {
 
     func signOut() async {
         await AuthGateway.signOut()
-        state = .signedOut
-        isAdmin = false
+        fallBackToSignedOut(sure: true)
         forgetFailure()
     }
 
@@ -133,8 +180,7 @@ final class AuthStore: ObservableObject {
             // 消えている。下のサインアウトへ進む
         }
         await AuthGateway.signOut()
-        state = .signedOut
-        isAdmin = false
+        fallBackToSignedOut(sure: true)
         forgetFailure()
     }
 
@@ -284,6 +330,10 @@ enum AuthFailure: Equatable {
     case invalidPassword
     case invalidParameter
     case notAuthorized
+    /// ログイン中の人の鍵が切れた（`AuthError.sessionExpired`）。
+    /// **`notAuthorized` に畳まない**——パスワード変更の画面では
+    /// `notAuthorized` が「いまのパスワードが違います」になる
+    case sessionExpired
     case userNotFound
     case codeMismatch
     case codeExpired
@@ -315,7 +365,7 @@ enum AuthFailure: Equatable {
         // 種別が入っていない回もある（`AuthError` そのものの種類で見る）
         switch error {
         case .notAuthorized: self = .notAuthorized
-        case .sessionExpired: self = .notAuthorized
+        case .sessionExpired: self = .sessionExpired
         default: self = .other
         }
     }
@@ -380,6 +430,8 @@ enum AuthMessage {
             return L("メールアドレスの形式か、\(passwordRule)", "Check the email address, or: \(passwordRule)")
         case .notAuthorized:
             return L("メールアドレスかパスワードが違います", "Wrong email or password")
+        case .sessionExpired:
+            return Labels.Common.sessionExpired
         case .userNotFound:
             return L("そのメールアドレスのアカウントが見つかりません", "No account for that email")
         case .userNotConfirmed:

@@ -72,6 +72,12 @@ enum Labels {
         }
         static var loadFailed: String { L("読み込めませんでした", "Couldn't load") }
         static var signInRequired: String { L("ログインが必要です", "Please sign in") }
+        /// ログインしていた人の鍵が切れた（401・リフレッシュトークン切れ）。
+        /// **「ログインが必要です」と言わない**——画面の上ではログイン中の人
+        static var sessionExpired: String {
+            L("ログインの有効期限が切れました。ログインし直してください",
+              "Your session expired. Please sign in again.")
+        }
         static var deletedUser: String { L("退会したユーザー", "Deleted user") }
 
         /// 名前を入れていない人の呼び方。

@@ -245,7 +245,8 @@ struct SignInView: View {
             // 文言だけ出して入口が無いと、登録し直しても
             // 「すでに登録されています」で詰む（パスワード再設定も効かない）
             if auth.lastFailureWasUnconfirmed { await resumeVerification() }
-            // **預かっている表示名を入れる**（確認の直後に入れそびれた人）
+            // **預かっている表示名を入れる**（確認の直後に入れそびれた人）。
+            // この端末で確認を通していない控えは、入れずに捨てる
             if auth.userId != nil {
                 await pending.settleAfterSignIn(email: email) { await applyDisplayName($0) }
             }
@@ -328,6 +329,9 @@ struct SignInView: View {
                 Task {
                     clearMessages()
                     if await auth.confirmSignUp(username: username, code: code) {
+                        // **この端末で確認を通した印。** 印のある控えだけが、あとの
+                        // ログインで名前を入れられる（`settleAfterSignIn`）
+                        pending.markConfirmed(email: email)
                         pendingUsername = nil
                         offerVerification = false
                         // 確認が済んだらそのままログインする。

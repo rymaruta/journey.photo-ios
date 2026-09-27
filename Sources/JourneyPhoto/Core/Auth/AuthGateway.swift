@@ -47,8 +47,13 @@ enum AuthGateway {
     // MARK: - セッション
 
     /// いまログインしているか。
-    static func isSignedIn() async -> Bool {
-        (try? await Amplify.Auth.fetchAuthSession().isSignedIn) ?? false
+    ///
+    /// **判定できなかった回は投げる**（false に畳まない）。Amplify 2.27 の
+    /// `fetchAuthSession` が投げるのは、状態機械がまだ整っていない回
+    /// （`FetchAuthSessionOperationHelper` の `AuthError.invalidState`）で、
+    /// 「ログインしていない」ではない。圏外は投げずに `isSignedIn` を返す
+    static func isSignedIn() async throws -> Bool {
+        try await Amplify.Auth.fetchAuthSession().isSignedIn
     }
 
     /// API Gateway に送る **ID トークン**。未ログインなら nil。
@@ -158,16 +163,22 @@ enum AuthGateway {
 ///   （`CommonRunTimeError+AuthErrorConvertible`）
 /// それ以外は nil（直し方の決まらない失敗を別の名前で隠さない）
 enum TokenFailure {
-    /// ログインし直すしかない
-    case signInAgain
+    /// ログインしていたが、鍵が切れた（ログインし直すしかない）。
+    /// **「ログインが必要です」とは言わない**——画面の上ではログイン中の人
+    /// （`APIError.sessionExpired`＝401 と同じ文言）
+    case sessionExpired
+    /// サインアウト済み（ログインしていない）
+    case signedOut
     /// 通信が届かなかった
     case unreachable
 
     init?(_ error: Error) {
         guard let auth = error as? AuthError else { return nil }
         switch auth {
-        case .sessionExpired, .signedOut:
-            self = .signInAgain
+        case .sessionExpired:
+            self = .sessionExpired
+        case .signedOut:
+            self = .signedOut
         default:
             guard AuthFailure(auth) == .network || auth.underlyingError is URLError else { return nil }
             self = .unreachable

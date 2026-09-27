@@ -8,6 +8,10 @@ import Foundation
 enum APIError: LocalizedError, Equatable {
     /// 認証が必要なのにトークンが無い（＝ログインしていない）
     case notAuthenticated
+    /// ログインしていたが、鍵を更新できなかった（リフレッシュトークンが
+    /// 切れた・取り消された）。**`notAuthenticated` と分ける**——画面の上では
+    /// ログイン中の人に「ログインが必要です」と言うことになる。直し方は 401 と同じ
+    case sessionExpired
     /// 通信そのものが届かなかった（圏外・タイムアウト）
     case unreachable
     /// サーバーが 4xx / 5xx を返した。message は api-user の `{ error }`
@@ -19,14 +23,15 @@ enum APIError: LocalizedError, Equatable {
         switch self {
         case .notAuthenticated:
             return Labels.Common.signInRequired
+        case .sessionExpired:
+            return Labels.Common.sessionExpired
         case .unreachable:
             return Labels.Common.unreachable
         case .server(let status, let message):
             // **認証切れは「サーバーエラー」と言わない。** 直し方が違う
             // ——押し直しても直らず、ログインし直すしかない
             if status == 401 {
-                return L("ログインの有効期限が切れました。ログインし直してください",
-                         "Your session expired. Please sign in again.")
+                return Labels.Common.sessionExpired
             }
             // **403 を「ログインし直して」と言わない。** 401 と混ぜていたが、
             // 403 は**ログインできているのに権限が無い**状態で、
@@ -50,7 +55,7 @@ enum APIError: LocalizedError, Equatable {
     /// ログインし直しても直らない（上の注記）。
     var isAuthExpired: Bool {
         if case .server(let status, _) = self { return status == 401 }
-        return false
+        return self == .sessionExpired
     }
 
     /// ログイン済みなのに権限が無い（Web の `MemberOnlyNotice` が出る状態）
