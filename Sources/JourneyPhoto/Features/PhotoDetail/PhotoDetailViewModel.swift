@@ -34,7 +34,8 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 表示名しか持っていない）。取れなければ nil——名前だけ出す
     @Published private(set) var owner: UserProfile?
 
-    private let photoId: String
+    /// いま画面の上に出ている1枚。**束を左右に送ると替わる**（`show`）
+    private(set) var photoId: String
     private let social: SocialService
 
     /// **画面ができてから入る。** `@StateObject` の初期化時には
@@ -55,6 +56,28 @@ final class PhotoDetailViewModel: ObservableObject {
         isSignedIn = value
     }
 
+    /// 束の別の1枚へ送った。**数・ハート・コメントをその1枚のものに入れ替える。**
+    ///
+    /// 🔴 送っても開いた1枚のままだったので、2枚目を見ながら押したいいねや
+    /// コメントが1枚目に付いていた。書きかけのコメントも前の1枚のものなので消す
+    ///
+    /// - Parameter liked: 端末の控え（`FavoritesStore`）が言う「押してある」。
+    ///   **読めるまではこれを出す**——白で始めると、圏外で開いたいいね済みの写真が
+    ///   白いハートになり、押すと「いいね」を送って（届かず）控えまで消していた
+    func show(photoId: String, initialLikes: Int?, liked: Bool) {
+        if photoId != self.photoId {
+            self.photoId = photoId
+            likes = initialLikes ?? 0
+            lastLikeAnswer = nil
+            comments = []
+            commentCount = nil
+            commentsUnavailable = false
+            draftComment = ""
+            errorMessage = nil
+        }
+        self.liked = liked
+    }
+
     /// いいね数とコメントは未認証でも読める。自分が押しているかだけ要ログイン。
     /// 投稿者を読む。**写真の主が分かっているときだけ**
     func loadOwner(_ userId: String?, profiles: ProfileService) async {
@@ -63,16 +86,20 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func load() async {
-        async let count = try? social.likeCount(photoId: photoId)
-        async let page = try? social.comments(photoId: photoId)
+        let id = photoId
+        async let count = try? social.likeCount(photoId: id)
+        async let page = try? social.comments(photoId: id)
         let mine: Bool?
         if isSignedIn {
-            mine = try? await social.myLike(photoId: photoId)
+            mine = try? await social.myLike(photoId: id)
         } else {
             mine = nil
         }
-        likes = await count ?? likes
+        let loadedCount = await count
         let loaded = await page
+        // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
+        guard id == photoId else { return }
+        likes = loadedCount ?? likes
         if let loaded {
             comments = loaded.items
             commentCount = loaded.count
@@ -91,29 +118,37 @@ final class PhotoDetailViewModel: ObservableObject {
 
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、
     /// それを使う（二重に押した回や既に押していた回でずれる）。
-    func toggleLike() async {
+    ///
+    /// - Returns: サーバーが答えたか。**答えた回だけ**呼び出し側は端末の控えを合わせる
+    @discardableResult
+    func toggleLike() async -> Bool {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
-            return
+            return false
         }
-        guard !isLiking else { return }
+        guard !isLiking else { return false }
         isLiking = true
         defer { isLiking = false }
         let wasLiked = liked
+        let id = photoId
         do {
             let result = wasLiked
-                ? try await social.unlike(photoId: photoId)
-                : try await social.like(photoId: photoId)
+                ? try await social.unlike(photoId: id)
+                : try await social.like(photoId: id)
+            // 送っている間に別の1枚へ送ったら、答えは前の1枚のもの——今の1枚に書かない
+            guard id == photoId else { return false }
             liked = result.liked
             if let likes = result.likes {
                 self.likes = likes
                 lastLikeAnswer = likes
             }
+            return true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
+            return false
         }
     }
 
@@ -126,8 +161,10 @@ final class PhotoDetailViewModel: ObservableObject {
         }
         isPosting = true
         defer { isPosting = false }
+        let id = photoId
         do {
-            let comment = try await social.postComment(photoId: photoId, text: text)
+            let comment = try await social.postComment(photoId: id, text: text)
+            guard id == photoId else { return }
             comments.insert(comment, at: 0)
             // **総数が分からない回は分からないまま。** 取れていない数に
             // +1 しても本当の数にならない（一覧には載るので、数だけ無い）
@@ -139,8 +176,10 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func deleteComment(_ comment: PhotoComment) async {
+        let id = photoId
         do {
-            try await social.deleteComment(photoId: photoId, commentId: comment.id)
+            try await social.deleteComment(photoId: id, commentId: comment.id)
+            guard id == photoId else { return }
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
         } catch {

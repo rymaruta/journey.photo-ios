@@ -286,7 +286,7 @@ struct UserProfileView: View {
             if model.isFollowing {
                 showUnfollowConfirm = true
             } else {
-                Task { await model.toggleFollow(userId: userId, environment: environment) }
+                Task { await model.toggleFollow(userId: userId, environment: environment, toasts: toasts) }
             }
         } label: {
             Text(model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"))
@@ -306,7 +306,7 @@ struct UserProfileView: View {
         .buttonStyle(.plain)
         .disabled(model.isWorking)
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
-            Task { await model.toggleFollow(userId: userId, environment: environment) }
+            Task { await model.toggleFollow(userId: userId, environment: environment, toasts: toasts) }
         }
     }
 
@@ -377,8 +377,12 @@ final class UserProfileViewModel: ObservableObject {
             following = stats.following
         }
         if viewerId != nil {
+            // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
+            // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
-            isFollowing = ids?.contains(userId) ?? false
+            if let ids {
+                isFollowing = ids.contains(userId)
+            }
         }
         // **その人の写真は公開 JSON から絞る。** 「ある人の公開写真」を返す
         // 口が api-user に無いため（Web も静的ページを書き出している）
@@ -409,7 +413,10 @@ final class UserProfileViewModel: ObservableObject {
     /// 名前に入れ替わると、読み込みの途中が壊れて見える
     var shownName: String? { AuthorName.forProfilePage(profile: profile, photos: photos) }
 
-    func toggleFollow(userId: String, environment: AppEnvironment) async {
+    /// 🔴 **失敗は知らせの帯に出す**（`errorMessage` に入れない）。`errorMessage` は
+    /// 読み込みの失敗で、写真の格子ごと差し替えて出す——圏外でフォローを押すと
+    /// 格子が消えていた（マイページが `actionMessage` で分けたのと同じ形）
+    func toggleFollow(userId: String, environment: AppEnvironment, toasts: ToastCenter) async {
         isWorking = true
         defer { isWorking = false }
         do {
@@ -419,7 +426,8 @@ final class UserProfileViewModel: ObservableObject {
             isFollowing = result.following
             followers = result.followers
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
+            toasts.show((error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work"),
+                        kind: .failure)
         }
     }
 
@@ -439,7 +447,8 @@ final class UserProfileViewModel: ObservableObject {
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
+            toasts.show((error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block"),
+                        kind: .failure)
         }
     }
 }

@@ -246,6 +246,44 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.likes, 7, "取れなかった回に一覧の数を捨てている")
     }
 
+    /// 🔴 **束の隣へ送ったら、数・ハート・コメントをその1枚のものに替える。**
+    /// 開いた1枚のままだと、2枚目を見ながら押したいいねが1枚目に付いていた
+    func testShowAnotherPhotoInTheBundleSwitchesTheTarget() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: 7)
+        model.setSignedIn(true)
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":8}"#)
+        await model.toggleLike()
+        model.draftComment = "1枚目へのコメント"
+
+        model.show(photoId: "p2", initialLikes: 3, liked: false)
+        XCTAssertEqual(model.likes, 3, "前の1枚の数が残っている")
+        XCTAssertFalse(model.liked, "前の1枚のハートが残っている")
+        XCTAssertNil(model.lastLikeAnswer)
+        XCTAssertNil(model.commentCount)
+        XCTAssertEqual(model.draftComment, "", "前の1枚への書きかけが残っている")
+
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":4}"#)
+        await model.toggleLike()
+        XCTAssertTrue(StubProtocol.lastRequest?.url?.path.contains("p2") == true,
+                      "送った先ではなく開いた1枚にいいねを送っている")
+    }
+
+    /// 🔴 **圏外で開いたいいね済みの写真を白いハートにしない。** 端末の控えで始め、
+    /// 押して届かなかった回は「答えなし」を返す（呼び出し側が控えを消さない）
+    func testOfflineKeepsTheStoredHeart() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setSignedIn(true)
+        model.show(photoId: "p1", initialLikes: 3, liked: true)
+        StubProtocol.respond(status: 500, body: "{}")
+        await model.load()
+        XCTAssertTrue(model.liked, "引けなかった回に控えのハートを消している")
+        let answered = await model.toggleLike()
+        XCTAssertFalse(answered, "届かなかったのに答えがあった扱い")
+        XCTAssertTrue(model.liked)
+    }
+
     /// **いいねの数は自分で足さない。** サーバーが返した数を使う。
     func testLikeUsesServerCount() async {
         prepare()
@@ -310,8 +348,8 @@ final class ViewModelTests: XCTestCase {
         model.setSignedIn(true)
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":1}"#)
 
-        async let first: Void = model.toggleLike()
-        async let second: Void = model.toggleLike()
+        async let first: Bool = model.toggleLike()
+        async let second: Bool = model.toggleLike()
         _ = await (first, second)
 
         XCTAssertEqual(StubProtocol.requestCount, 1, "二度押しで2回投げている")
