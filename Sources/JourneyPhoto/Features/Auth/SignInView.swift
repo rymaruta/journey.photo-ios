@@ -383,10 +383,9 @@ struct SignInView: View {
                             pending.forget(email: email)
                         }
                     } else if auth.lastFailure == .aliasExists {
-                        // 別のアカウントがこのメールで確認済み。**この控えはもう使えない**
-                        // ——残すと、ログインで打ち間違えるたびに送り直しへ回された。
-                        // 案内（ログインか再設定）に従えるよう、ログインの欄へ戻す
-                        pending.forget(email: email)
+                        // 別のアカウントがこのメールで確認済み。案内（ログインか再設定）に
+                        // 従えるよう、ログインの欄へ戻す。**控えは捨てない**——預かった表示名は、
+                        // そのアカウントに入ったとき名前が空なら入れる（ログイン成功後の処理）
                         pendingUsername = nil
                         mode = .signIn
                         code = ""

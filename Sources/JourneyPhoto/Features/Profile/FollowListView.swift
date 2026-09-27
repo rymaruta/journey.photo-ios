@@ -238,7 +238,13 @@ struct FollowListView: View {
         // `.task(id:)` の取り消しに巻き込まれない）。**待っている間にこの画面で
         // フォローを押していたら書かない**（古い答えがボタンを元に戻す）
         // 送っている最中も書かない（先に着いた古い一覧で、押したボタンを戻さない）
-        if let ids, auth.userId == viewer, followEdits == edits, startedIdle, working.isEmpty { myFollowing = Set(ids) }
+        // **まだ一覧が無い（人が替わった直後など）なら、送信中でも書く**——書かないと
+        // ボタンが全部消えたまま、戻るか引き下げるまで出なかった
+        let empty = myFollowing == nil
+        if let ids, auth.userId == viewer,
+           empty || (followEdits == edits && startedIdle && working.isEmpty) {
+            myFollowing = Set(ids)
+        }
     }
 
     private func setFollowing(_ id: String, to follow: Bool) async {
@@ -246,10 +252,13 @@ struct FollowListView: View {
         followEdits &+= 1
         working.insert(id)
         defer { working.remove(id) }
+        // 押した人。**待っている間に人が替わったら、答えを次の人の一覧に混ぜない**
+        let viewer = auth.userId
         do {
             let result = follow
                 ? try await environment.social.follow(userId: id)
                 : try await environment.social.unfollow(userId: id)
+            guard auth.userId == viewer else { return }
             // **返ってきた状態を使う。** 自分で決めない
             if result.following {
                 myFollowing?.insert(id)
