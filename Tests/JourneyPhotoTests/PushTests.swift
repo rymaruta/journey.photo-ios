@@ -144,6 +144,27 @@ final class PushIntentTests: XCTestCase {
         XCTAssertFalse(again.isEnabled, "オフにしたら、次の起動でもオフ")
         _ = push
     }
+
+    /// 🔴 **「受け取る」は人ごと。** 前の人がオンにしたまま次の人がログインしても、
+    /// 次の人はオンにならない（本人が何もしていないのに宛先を登録しない）
+    func testIntentIsPerUser() async {
+        let (push, defaults) = center("push-3")
+        defaults.set(true, forKey: "photo-gallery-push-enabled.a")
+        await push.use(userId: "b")
+        XCTAssertFalse(push.isEnabled, "前の人のオンが次の人に移っている")
+        await push.use(userId: "a")
+        XCTAssertTrue(push.isEnabled)
+    }
+
+    /// 更新前に端末共通の鍵でオンにしていた人は、最初のログインでそのまま引き継ぐ（一度だけ）
+    func testLegacyIntentMovesToTheFirstUserOnce() async {
+        let (push, defaults) = center("push-4")
+        defaults.set(true, forKey: "photo-gallery-push-enabled")
+        await push.use(userId: "a")
+        XCTAssertTrue(push.isEnabled)
+        await push.use(userId: "b")
+        XCTAssertFalse(push.isEnabled, "昔の鍵が次の人にも効いている")
+    }
 }
 
 /// 通知を押したときの行き先。
