@@ -20,6 +20,8 @@ struct PhotoMapView: View {
     var onPost: () -> Void = {}
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// 下の「マップ」をもう一度押した合図（`MapTabReselect`）
+    @ObservedObject private var tabRouter = TabRouter.shared
     /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
     @EnvironmentObject private var hidden: ModerationStore
     /// ブロック／通報があったが、まだピンから落としていない。
@@ -136,9 +138,13 @@ struct PhotoMapView: View {
         }
         .onAppear {
             isOnScreen = true
+            tabRouter.mapRootOnScreen = true
             if needsDrop { dropHidden() }
         }
-        .onDisappear { isOnScreen = false }
+        .onDisappear {
+            isOnScreen = false
+            tabRouter.mapRootOnScreen = false
+        }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
             frame(model.frame)
@@ -165,6 +171,24 @@ struct PhotoMapView: View {
             camera = .userLocation(fallback: .region(MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
                 span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))))
+        }
+        // **地図を開いたまま「マップ」をもう一度押したら現在地へ**
+        // （`TabRouter.mapLocateRequests`）。位置情報が切られていれば、
+        // ボタンを押した回と同じく `locationNote` が言葉にする
+        .onChange(of: tabRouter.mapLocateRequests) { _, _ in
+            switch MapTabReselect.action(onScreen: isOnScreen,
+                                         isMapMode: model.mode == .map,
+                                         followsLocation: camera.followsUserLocation,
+                                         followsHeading: camera.followsUserHeading) {
+            case .ignore:
+                break
+            case .stopHeading:
+                zoomChain.reset()
+                camera = .userLocation(fallback: camera.fallbackPosition ?? camera)
+            case .locate:
+                zoomChain.reset()
+                location.locate()
+            }
         }
         // 近くの写真のシートの中でブロックした回も同じ（地図は見え続けている）
         .sheet(isPresented: $showNearby, onDismiss: { if needsDrop { dropHidden() } }) {
