@@ -112,3 +112,41 @@ final class ThemeColorTests: XCTestCase {
         XCTAssertEqual(rgb.blue, 0, accuracy: 0.001)
     }
 }
+
+/// 写真の詳細のタグの札の字（板 02 の「#夕焼け」）。
+///
+/// 以前は `tag.hasPrefix("#") ? tag : "#" + tag` で、全角の `＃` を付けて
+/// 保存したタグが `#＃旅` と二重になり、`##旅` もそのまま出ていた。
+final class TagChipTextTests: XCTestCase {
+
+    func testPlainTagGetsOneHash() {
+        XCTAssertEqual(TagInput.chipText("夕焼け"), "#夕焼け")
+        XCTAssertEqual(TagInput.chipText("sunset"), "#sunset")
+    }
+
+    func testExistingHashIsNotDoubled() {
+        XCTAssertEqual(TagInput.chipText("#夕焼け"), "#夕焼け")
+        XCTAssertEqual(TagInput.chipText("##旅"), "#旅")
+    }
+
+    /// **全角の `＃` は二重にしないが、半角には畳まない。** `＃旅` と `旅` は絞り込み
+    /// （`TagChoices.key`・Web の `tagKey`）では別のページなので、札も見分けがつくように
+    func testFullWidthHashIsNotDoubledButKeptDistinct() {
+        XCTAssertEqual(TagInput.chipText("＃旅"), "＃旅")
+        XCTAssertEqual(TagInput.chipText("#＃ 海"), "＃海")
+        XCTAssertNotEqual(TagInput.chipText("＃旅"), TagInput.chipText("旅"),
+                          "絞り込みでは別のページなのに、札が同じ字になっている")
+        XCTAssertNotEqual(TagChoices.key("＃旅"), TagChoices.key("旅"), "前提: 鍵は別")
+    }
+
+    /// `#` しか無いタグは元の字のまま（`#` だけの札・空の札を作らない）
+    func testHashOnlyTagIsKept() {
+        XCTAssertEqual(TagInput.chipText("#"), "#")
+        XCTAssertEqual(TagInput.chipText("＃"), "＃")
+    }
+
+    /// 途中の `#` は落とさない（先頭だけ）
+    func testInnerHashIsKept() {
+        XCTAssertEqual(TagInput.chipText("c#"), "#c#")
+    }
+}
