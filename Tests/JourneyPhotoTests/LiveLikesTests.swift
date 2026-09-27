@@ -193,8 +193,16 @@ final class PublicGalleryLiveLikesTests: XCTestCase {
         let first = Task { try await gallery.fetchPhotos() }
         await gate.untilWaiting()
         let forced = Task { try await gallery.fetchPhotos(force: true) }
-        // 引き下げ更新が静的 JSON を取り終え、途中の要求を待つ所まで進めてから放す
-        while StubProtocol.requestCount < 2 { try await Task.sleep(nanoseconds: 5_000_000) }
+        // 引き下げ更新が静的 JSON を取りに行き、途中の要求を待つ所まで進めてから放す。
+        // ⚠️ **待つ所まで進んだことは見えない**（見る口が無い）。静的 JSON の要求は
+        // 同じ呼び出しの `async let` の子より後に actor を離れるので、ふつうは
+        // 子が先に待ちに入っているが、保証は下の 50ms だけ。遅れた回は直す前の
+        // 形でも4回になり**偽の合格**になりうる（逆向き＝偽の失敗にはならない）
+        let deadline = Date().addingTimeInterval(2)
+        while StubProtocol.requestCount < 2 {
+            guard Date() < deadline else { return XCTFail("引き下げ更新が静的 JSON を取りに行かない") }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
         try await Task.sleep(nanoseconds: 50_000_000)
         await gate.open()
         _ = try await (first.value, forced.value)

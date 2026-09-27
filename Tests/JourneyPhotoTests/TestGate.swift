@@ -1,11 +1,13 @@
 import Foundation
+import XCTest
 @testable import JourneyPhoto
 
 /// 待たせておいて、合図で先へ進める。**「取得の途中」「遅い口」を作る**ための道具。
 ///
 /// 🔴 **遅さを `URLProtocol` の応答で作らない。** 別のスレッドから
 /// `URLProtocol` の `client` を叩くと、Linux の swift-corelibs-foundation では
-/// まれに（約1%）落ちる（segfault）。応答を作業列に戻す形はデッドロックする。
+/// まれに（約1%）落ちる（segfault）。応答を作業列に戻す形はデッドロックした
+/// （前の作業の記録。ここでは再現を確かめていない）。
 /// だから `StubProtocol` は即座に答え、待たせるのは要求を出す**手前**
 /// （トークンの提供者・サービスの `beforeRequest`）に置く。
 ///
@@ -28,9 +30,17 @@ actor Gate {
         await withCheckedContinuation { waiters.append($0) }
     }
 
-    /// `count` 回ぶん `wait()` に着くまで待つ
-    func untilWaiting(_ count: Int = 1) async {
+    /// `count` 回ぶん `wait()` に着くまで待つ。**上限（既定2秒）で試験を落とす**
+    /// ——壊れて誰も着かない回に、Linux の XCTest は1件ごとの時間切れが無いので
+    /// 全体の実行ごと止まる
+    func untilWaiting(_ count: Int = 1, timeout: TimeInterval = 2,
+                      file: StaticString = #filePath, line: UInt = #line) async {
+        let deadline = Date().addingTimeInterval(timeout)
         while arrived < count {
+            if Date() > deadline {
+                XCTFail("Gate に \(count) 回着かなかった（\(arrived) 回）", file: file, line: line)
+                return
+            }
             await Task.yield()
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
