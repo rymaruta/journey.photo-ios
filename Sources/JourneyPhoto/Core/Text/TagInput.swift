@@ -104,6 +104,13 @@ enum TagInput {
     /// すると、同じ字の札から中身の違うページが開く。`＃` で始まるなら `#` を足さずに
     /// そのまま出す（「#＃旅」と二重にしない）。`#` しか無いタグは元の字のまま。
     /// **描くときだけ**——保存する値・絞り込みに渡す値には付けない
+    /// 札に並べるタグ。**同じ字に見える札は1枚にする**（`旅`・`#旅`・`# 旅` は全部「#旅」に
+    /// なり、同じ札が並んでいた）。見た目（`chipText`）で寄せ、先に出た方を残す
+    static func uniqueChips(_ tags: [String]) -> [String] {
+        var seen = Set<String>()
+        return tags.filter { seen.insert(chipText($0).lowercased()).inserted }
+    }
+
     static func chipText(_ tag: String) -> String {
         let bare = tag.drop(while: { $0 == "#" || $0.isWhitespace })
         guard !bare.isEmpty else { return tag }

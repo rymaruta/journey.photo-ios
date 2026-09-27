@@ -149,4 +149,10 @@ final class TagChipTextTests: XCTestCase {
     func testInnerHashIsKept() {
         XCTAssertEqual(TagInput.chipText("c#"), "#c#")
     }
+
+    /// **同じ字に見える札は1枚**（`旅`・`#旅`・`# 旅` が「#旅」で並んでいた）
+    func testChipsLookingTheSameAreShownOnce() {
+        XCTAssertEqual(TagInput.uniqueChips(["旅", "#旅", "# 旅", "海"]), ["旅", "海"])
+        XCTAssertEqual(TagInput.uniqueChips(["Paris", "paris"]), ["Paris"], "大文字小文字だけ違う札が並ぶ")
+    }
 }
