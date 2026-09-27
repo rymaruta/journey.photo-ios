@@ -31,4 +31,14 @@ final class UploadReconcileTests: XCTestCase {
         let r = PickerReconcile.reconcile(existing: [String?](), picked: ["a", "a"])
         XCTAssertEqual(r.added, ["a"])
     }
+
+    /// 選択は**待ち行列にある写真の分だけ**にする。上がった分（a）も、読めずに
+    /// 待ち行列に入らなかった分（d）も外す——d を残すと、次の選び直しで
+    /// 読み直され、投稿の失敗の文が「読み込めませんでした」で上書きされる
+    func testSelectionKeepsOnlyQueuedPhotos() {
+        let kept = PickerReconcile.keepingQueued(["a", "b", "d"], queued: ["b", nil])
+        XCTAssertEqual(kept, ["b"])
+        // 残った選択で選び直しても、読み直す分は無い
+        XCTAssertEqual(PickerReconcile.reconcile(existing: ["b", nil], picked: kept).added, [])
+    }
 }

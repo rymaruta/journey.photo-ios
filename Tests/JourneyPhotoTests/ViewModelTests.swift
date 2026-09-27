@@ -649,24 +649,30 @@ final class ViewModelTests: XCTestCase {
             photo.pickerItem = key
             return photo
         }
-        // d は選んだが読み込めなかった（選択には残り、待ち行列には無い）
-        let unreadable = PhotosPickerItem(itemIdentifier: "d")
-        model.pickerItems = keys + [unreadable]
-        let deadline = Date().addingTimeInterval(2)
-        while model.errorMessage == nil {
-            guard Date() < deadline else { return XCTFail("前提: d の読み込みが終わらない") }
-            try await Task.sleep(nanoseconds: 5_000_000)
-        }
+        // **読み込みの要らない形で選ぶ**（どれも待ち行列にある＝足した分が無い）。
+        // 読めなかった写真を選択に混ぜる形は、本物の PhotosUI で作り物の印の
+        // `loadTransferable` がどう返るか分からないので、`keepingQueued` の試験で見る
+        model.pickerItems = keys
 
         await model.submit()
 
         XCTAssertEqual(model.items.map(\.pickerItem), [keys[1]], "失敗した b だけが残る")
         XCTAssertEqual(model.pickerItems, [keys[1]], "上がった a・c が選択に残っている（選び直しで二重に投稿される）")
         let posted = try XCTUnwrap(model.errorMessage, "投稿の失敗を知らせていない")
-        // 選択を替えた `didSet` が読み直しを始めると、ここで失敗の文が消える
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertEqual(model.errorMessage, posted, "選択を替えた拍子に読み直しが走り、投稿の失敗の文が消えた")
-        XCTAssertFalse(model.isLoadingPicked)
+    }
+
+    /// 🔴 **読み込み中は投稿しない。** まだ待ち行列に無い写真が、投稿のあとの
+    /// 選択の絞り直しで黙って消える（ボタンの `.disabled` は次の描画まで効かない）
+    func testSubmitWaitsForPickedPhotosToLoad() async {
+        prepare()
+        let model = uploadModel()
+        model.items = [pending()]
+        model.setLoadingPickedForTesting(true)
+        await model.submit()
+        XCTAssertNil(StubProtocol.lastRequest, "読み込み中なのに投稿を始めた")
+        XCTAssertEqual(model.items.count, 1)
     }
 
     /// **参加しているアルバムも投稿の行き先に出る。**

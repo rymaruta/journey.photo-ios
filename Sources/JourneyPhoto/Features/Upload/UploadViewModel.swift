@@ -98,6 +98,8 @@ final class UploadViewModel: ObservableObject {
     /// 間に「送信中… 0 / 2 枚目」と「残りをやめる」が出る
     @Published private(set) var isWorking = false
     @Published private(set) var isLoadingPicked = false
+    /// 試験用（読み込み中の間は投稿しないことを見る。本物は `loadPicked` だけが立てる）
+    func setLoadingPickedForTesting(_ value: Bool) { isLoadingPicked = value }
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
     /// だけでは閉じない——選び直しの読み込み中も空になる）
     @Published private(set) var didPostAll = false
@@ -288,7 +290,10 @@ final class UploadViewModel: ObservableObject {
         // 🔴 **二度押しで二重に出さない**（`StoryComposerView.post` と同じ穴）。
         // ボタンの `.disabled` は次の描画まで効かず、素早い2回押しで
         // `submit()` が2本走る
-        guard !isWorking, !items.isEmpty else { return }
+        // **読み込み中も出さない**（ボタンは `canSubmit` で止めているが、同じく次の
+        // 描画まで効かない）。読み込み中の写真はまだ待ち行列に無く、終わったあとの
+        // 選択の絞り直し（`keepingQueued`）で黙って消える
+        guard !isWorking, !isLoadingPicked, !items.isEmpty else { return }
         isWorking = true
         errorMessage = nil
         cancelled = false
@@ -331,10 +336,10 @@ final class UploadViewModel: ObservableObject {
         // **上がった写真が「新しく足した分」として戻って二重に投稿される**。
         // 上がった分だけ外すのでは足りない——前に読めなかった写真の印も選択に
         // 残っていて、この代入の `didSet` がそれを読み直し、投稿の失敗の文を消していた
-        if !done.isEmpty {
-            let remaining = PickerReconcile.keepingQueued(pickerItems, queued: items.map(\.pickerItem))
-            if remaining != pickerItems { pickerItems = remaining }
-        }
+        // **1枚も上がらなかった回も絞る**——読めなかった印が残ると、× や「追加」の
+        // 選び直しで読み直され、投稿の失敗の文が消える
+        let remaining = PickerReconcile.keepingQueued(pickerItems, queued: items.map(\.pickerItem))
+        if remaining != pickerItems { pickerItems = remaining }
         // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
         // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
         if items.isEmpty && failures.isEmpty {
