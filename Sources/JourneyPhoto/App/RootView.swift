@@ -38,6 +38,15 @@ struct RootView: View {
         // ホーム / 探す / 投稿 / 旅 / マイページ。
         // 通知はタブを1つ使わずヘッダーへ移した（絵と同じ）
         case home, search, post, map, mypage
+
+        /// もう一度押したときに合図を出す札（`TabRouter.tabTapped`）
+        var reselectable: TabRouter.Reselectable? {
+            switch self {
+            case .home: return .home
+            case .map: return .map
+            case .search, .post, .mypage: return nil
+            }
+        }
     }
 
     var body: some View {
@@ -202,7 +211,7 @@ struct RootView: View {
         TabView(selection: Binding(
             get: { selection },
             set: { tapped in
-                tabRouter.tabTapped(isHome: tapped == .home, alreadySelected: tapped == selection)
+                tabRouter.tabTapped(tapped.reselectable, alreadySelected: tapped == selection)
                 selection = tapped
             }
         )) {
