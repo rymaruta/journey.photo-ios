@@ -32,6 +32,15 @@ enum PendingVerification {
     static func isFresh(savedAt: Date, now: Date = Date()) -> Bool {
         now.timeIntervalSince(savedAt) < ttl && now >= savedAt.addingTimeInterval(-ttl)
     }
+
+    /// 控えから確認画面に戻るとき、コードの送り直しのあとで**確認画面に入れるか**。
+    ///
+    /// 🔴 **送り直しが落ちても入れる**（控えが使えなくなった失敗のときだけ入れない）。
+    /// 以前は送れたときだけ入れていたので、回数制限（`LimitExceeded`）や圏外で
+    /// 落ちると、手元のメールに届いている**有効なコード**を入れる欄に辿り着けなかった
+    static func entersConfirmation(resent: Bool, failure: AuthFailure) -> Bool {
+        resent || !failure.isPermanent
+    }
 }
 
 /// 端末に残す控え。

@@ -133,6 +133,66 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(photos.contains { $0.id == "older" }, "先に始めた読み込みの答えで上書きされた")
     }
 
+    /// 🔴 **後から始めた回が落ちても、先に成功した回の答えを捨てない。**
+    /// 古い回を捨てるのは、より新しい回が画面に移し終えたときだけ
+    func testGalleryNewerFailureKeepsTheOlderSuccess() async {
+        prepare()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: feed, delay: 0.3)
+        let model = GalleryViewModel(gallery: PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)
+        ))
+        let first = Task { await model.load() }
+        while StubProtocol.requestCount < 1 { try? await Task.sleep(nanoseconds: 5_000_000) }
+
+        // 先の回の返事を待っている間に、後の回が圏外で落ちる
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await model.load()
+        await first.value
+
+        guard case .loaded(let photos) = model.state else {
+            return XCTFail("先に成功した回の答えを捨てて失敗のまま: \(model.state)")
+        }
+        XCTAssertEqual(photos.count, 3)
+    }
+
+    /// 🔴 **引き下げ更新の最中に始まった読み込みが、60秒の控えで引き下げの答えを負かさない。**
+    /// 控えを使う読み込みはすぐ戻って「新しい回」として画面に移り、あとから戻った
+    /// 引き下げの答えは「古い回」として捨てられていた
+    func testGalleryPullToRefreshIsNotBeatenByACachedLoad() async throws {
+        let service = gallery(feed)
+        let gate = Gate()
+        let calls = CallCounter()
+        let stale = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"stale","src":"https://x/s.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        let fresh = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"fresh","src":"https://x/f.jpg","userId":"u9","audience":"followers"}"#.utf8))
+        await service.setRestrictedLoader(owner: "A") {
+            if await calls.next() == 1 { return [stale] }
+            await gate.wait()
+            return [fresh]
+        }
+        let model = GalleryViewModel(gallery: service)
+        await model.load()
+        guard case .loaded(let before) = model.state, before.contains(where: { $0.id == "stale" }) else {
+            return XCTFail("前提: 控えに古い答えが入っていない")
+        }
+
+        let refresh = Task { await model.load(force: true) }
+        await gate.untilWaiting()
+        // 引き下げの最中に、控えを使う読み込み（「見せない」の読み直しなど）が始まる
+        let cached = Task { await model.load() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await gate.open()
+        await refresh.value
+        await cached.value
+
+        guard case .loaded(let photos) = model.state else { return XCTFail("状態が違う") }
+        XCTAssertTrue(photos.contains { $0.id == "fresh" }, "引き下げの答えが出ていない")
+        XCTAssertFalse(photos.contains { $0.id == "stale" }, "控えの古い答えで引き下げの答えが負けた")
+    }
+
     /// **ブロックしたら、探す画面からもすぐ消える。**
     ///
     /// `loadPhotos` は `guard allPhotos.isEmpty` で一度しか読まない作りなので、
@@ -274,6 +334,48 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(model.isLoading, "読み終えたのに読み込み中のまま")
     }
 
+    /// 🔴 **人が替わった合図（`onChange`）の時点で、前の人のぶんを消す。**
+    /// `.task(id:)` の読み込みを待つと、上に積んだ画面から戻った最初の描画で
+    /// 前の人の名前・写真（下書きを含む）が1描画ぶん映る
+    func testSwitchViewerForgetsThePreviousPersonAtOnce() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"a","displayName":"前の人"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"a1","src":"/uploads/a1.jpg","published":false}]"#)
+        StubProtocol.respond(path: "/users/a/follow", status: 200, body: #"{"followers":7,"following":3}"#)
+        let model = MyPageViewModel(api: api())
+        await model.load(for: "a")
+        XCTAssertEqual(model.profile?.displayName, "前の人", "前提: 読めていない")
+
+        model.switchViewer(to: "b")
+
+        XCTAssertNil(model.profile, "前の人の名前・アイコンが次の人の最初の描画に残る")
+        XCTAssertTrue(model.photos.isEmpty, "前の人の写真（下書き）が残る")
+        XCTAssertEqual(model.followers, 0)
+    }
+
+    /// **`.task(id:)` が先に走っても、あとから来た合図で次の人の読み込みを捨てない。**
+    /// 合図のたびに捨てると、始まったばかりの次の人の答えが世代違いで捨てられる
+    func testSwitchViewerAfterLoadStartedKeepsTheNewPersonsLoad() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200,
+                             body: #"{"userId":"b","displayName":"次の人"}"#, delay: 0.3)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"b1","src":"/uploads/b1.jpg"}]"#, delay: 0.3)
+        StubProtocol.respond(path: "/users/b/follow", status: 200, body: #"{"followers":1,"following":2}"#)
+        let model = MyPageViewModel(api: api())
+        let loading = Task { await model.load(for: "b") }
+        while StubProtocol.requestCount < 2 { try? await Task.sleep(nanoseconds: 5_000_000) }
+
+        model.switchViewer(to: "b")
+        await loading.value
+
+        XCTAssertEqual(model.profile?.displayName, "次の人", "同じ人の合図で読み込み中の答えを捨てた")
+        XCTAssertEqual(model.photos.map(\.id), ["b1"])
+        XCTAssertFalse(model.isLoading)
+    }
+
     #if DEBUG
     /// 🔴 **鍵を持たずに入っている回、マイページが丸ごと「ログインが必要です」
     /// になっていた。**
@@ -325,7 +427,7 @@ final class ViewModelTests: XCTestCase {
     func testLikeUsesServerCount() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
 
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":42}"#)
         await model.toggleLike()
@@ -356,20 +458,20 @@ final class ViewModelTests: XCTestCase {
     func testSwitchingPeopleLetsTheNextPersonsSeedThrough() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
         await model.load()
         XCTAssertTrue(model.liked, "前提: 前の人のいいねを読めていない")
 
         // ログアウト（画面は `.task(id:)` で読み直す）
         StubProtocol.fail(with: URLError(.notConnectedToInternet))
-        model.setSignedIn(false)
+        model.setViewer(nil)
         model.seed(liked: false, likes: nil)
         await model.load()
         XCTAssertFalse(model.liked)
 
         // 次の人でログイン。この人は押している（端末の控え）が、読み込みは圏外で落ちる
-        model.setSignedIn(true)
+        model.setViewer("me")
         model.seed(liked: true, likes: nil)
         await model.load()
         XCTAssertTrue(model.liked, "次の人の控えが、前の人の答えの名残で無視された")
@@ -379,13 +481,13 @@ final class ViewModelTests: XCTestCase {
     func testSwitchingPeopleDropsThePreviousLike() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
         await model.load()
         XCTAssertTrue(model.liked, "前提: 前の人のいいねを読めていない")
 
-        model.setSignedIn(false)
-        model.setSignedIn(true)
+        model.setViewer(nil)
+        model.setViewer("me")
         StubProtocol.fail(with: URLError(.notConnectedToInternet))
         model.seed(liked: false, likes: nil)
         await model.load()
@@ -393,16 +495,66 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(model.liked, "前の人のハートが次の人に灯っている")
     }
 
+    /// 🔴 **ログインしたまま A から B へ直接替わっても、A の答えを持ち越さない。**
+    /// ログインの有無（Bool）で比べていたので、この替わり方では
+    /// 「サーバーの答え」の印が残り、B の控えが無視されて A のハートが灯っていた
+    func testDirectSwitchBetweenPeopleDropsThePreviousAnswer() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("a")
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: A のいいねを読めていない")
+
+        model.setViewer("b")
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        model.seed(liked: false, likes: nil)
+        await model.load()
+
+        XCTAssertFalse(model.liked, "A のハートが B に灯っている")
+    }
+
+    /// 🔴 **大きく見る画面のダブルタップは、いいね済みなら取り消さない。**
+    /// 下のハートと同じ `toggleLike` を通していたので、押し済みの回は
+    /// 取り消しが飛んでいた（注記は「解除はしない」）
+    func testDoubleTapDoesNotUnlikeALikedPhoto() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("me")
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: いいね済みを読めていない")
+        let before = StubProtocol.requestCount
+
+        StubProtocol.respond(status: 200, body: #"{"liked":false,"likes":4}"#)
+        await model.likeFromDoubleTap()
+
+        XCTAssertTrue(model.liked, "ダブルタップでいいねが取り消された")
+        XCTAssertEqual(StubProtocol.requestCount, before, "いいね済みなのに送っている")
+    }
+
+    /// まだなら、ダブルタップで「いいね」を送る
+    func testDoubleTapLikesAnUnlikedPhoto() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        model.setViewer("me")
+        StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":6}"#)
+        await model.likeFromDoubleTap()
+        XCTAssertTrue(model.liked)
+        XCTAssertEqual(model.lastLikeAnswer, 6)
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST", "いいねではない口を叩いている")
+    }
+
     /// 未ログインで押した回も、前の答えを残さない（呼び出し側が「いま」の
     /// 答えとしてホームへ渡し直すため）
     func testSignedOutPressClearsAnswer() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
         await model.toggleLike()
         XCTAssertEqual(model.lastLikeAnswer, 5)
-        model.setSignedIn(false)
+        model.setViewer(nil)
         await model.toggleLike()
         XCTAssertNil(model.lastLikeAnswer)
     }
@@ -411,7 +563,7 @@ final class ViewModelTests: XCTestCase {
     func testFailedLikeClearsAnswer() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":5}"#)
         await model.toggleLike()
         XCTAssertEqual(model.lastLikeAnswer, 5)
@@ -428,7 +580,7 @@ final class ViewModelTests: XCTestCase {
     func testDoubleTapLikesOnlyOnce() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":1}"#)
 
         async let first: Bool = model.toggleLike()
@@ -443,7 +595,7 @@ final class ViewModelTests: XCTestCase {
     func testLikeWithoutSignInAsksToSignIn() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api(token: nil)))
-        model.setSignedIn(false)
+        model.setViewer(nil)
         await model.toggleLike()
         XCTAssertNotNil(model.errorMessage)
         XCTAssertNil(StubProtocol.lastRequest, "未ログインなのに要求を投げている")
@@ -456,7 +608,7 @@ final class ViewModelTests: XCTestCase {
     func testPostedCommentAppearsImmediately() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         model.draftComment = "きれい"
 
         StubProtocol.respond(status: 200, body: #"{"comment":{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}}"#)
@@ -481,7 +633,7 @@ final class ViewModelTests: XCTestCase {
     func testCommentCountIsUnknownWhenFetchFails() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(false)
+        model.setViewer(nil)
         StubProtocol.fail(with: URLError(.notConnectedToInternet))
         await model.load()
         XCTAssertNil(model.commentCount, "圏外なのに数を出している")
@@ -493,7 +645,7 @@ final class ViewModelTests: XCTestCase {
     func testCommentCountFollowsServerPage() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(false)
+        model.setViewer(nil)
         StubProtocol.respond(status: 200,
                              body: #"{"items":[{"id":"c1","uid":"u1","name":"たろう","text":"きれい"}],"count":24}"#)
         await model.load()
@@ -512,7 +664,7 @@ final class ViewModelTests: XCTestCase {
     func testEmptyCommentIsNotSent() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         model.draftComment = "   "
         await model.postComment()
         XCTAssertNil(StubProtocol.lastRequest)
@@ -523,7 +675,7 @@ final class ViewModelTests: XCTestCase {
     func testOfflineDetailKeepsStoredLikeAndCount() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         model.seed(liked: true, likes: 7)
         StubProtocol.fail(with: URLError(.notConnectedToInternet))
         await model.load()
@@ -535,7 +687,7 @@ final class ViewModelTests: XCTestCase {
     func testUnknownLikeCountIsNotZero() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(false)
+        model.setViewer(nil)
         model.seed(liked: false, likes: nil)
         StubProtocol.fail(with: URLError(.notConnectedToInternet))
         await model.load()
@@ -546,7 +698,7 @@ final class ViewModelTests: XCTestCase {
     func testSeedDoesNotOverrideServerAnswer() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":3}"#)
         await model.toggleLike()
         model.seed(liked: false, likes: 1)
@@ -559,7 +711,7 @@ final class ViewModelTests: XCTestCase {
     func testFailedLikeIsNotReportedAsAnswered() async {
         prepare()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         model.seed(liked: true, likes: 7)
         StubProtocol.fail(with: URLError(.notConnectedToInternet))
         let answered = await model.toggleLike()
@@ -594,7 +746,7 @@ final class ViewModelTests: XCTestCase {
         // いいね数・コメント・自分のいいね、の3本のうち最後だけ落とす
         StubProtocol.respond(status: 200, body: #"{"likes":3}"#)
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
-        model.setSignedIn(true)
+        model.setViewer("me")
         await model.load()
         XCTAssertFalse(model.liked, "まだ押していない")
 

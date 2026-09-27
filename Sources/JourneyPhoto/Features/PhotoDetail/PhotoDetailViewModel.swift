@@ -53,19 +53,23 @@ final class PhotoDetailViewModel: ObservableObject {
     /// `EnvironmentObject`（＝ログイン状態）をまだ読めないので、
     /// `.task` で渡してもらう。init で `false` に固定すると
     /// 「ログインしているのに、いいねが押せない」になる。
-    private var isSignedIn = false
+    private var viewerId: String?
+    private var isSignedIn: Bool { viewerId != nil }
 
     init(photoId: String, social: SocialService) {
         self.photoId = photoId
         self.social = social
     }
 
-    func setSignedIn(_ value: Bool) {
-        // 🔴 **ログイン状態が変わったら、サーバーの答えはもう今の人のものではない。**
+    /// 見ている人を渡す（未ログインは nil）。
+    func setViewer(_ userId: String?) {
+        // 🔴 **人が替わったら、サーバーの答えはもう今の人のものではない。**
         // 残すと次の人の控え（`seed`）が無視され、前の人のハートが灯ったまま
-        // 残る（読み込みが落ちた回はずっと）
-        if value != isSignedIn { likedFromServer = false }
-        isSignedIn = value
+        // 残る（読み込みが落ちた回はずっと）。
+        // **ログインの有無ではなく人で比べる**——A から B へ直接替わる回
+        // （ログイン中のまま別の人）を見落とさない
+        if userId != viewerId { likedFromServer = false }
+        viewerId = userId
     }
 
     /// 画面が知っている値で埋める（端末の控え・一覧の数）。
@@ -109,6 +113,21 @@ final class PhotoDetailViewModel: ObservableObject {
         } else if !isSignedIn {
             liked = false
         }
+    }
+
+    /// 大きく見る画面でのダブルタップ。**いいね済みなら何もしない**
+    /// （`DoubleTapLike`——解除はしない）。
+    ///
+    /// 画面は押した時点の見え方で「いいね」を選ぶが、送るまでの間に読み込みが
+    /// 戻って押し済みに替わることがある。`toggleLike` をそのまま呼ぶと、
+    /// その回はいいねを**取り消して**いた
+    /// - Returns: サーバーが答えたか（`toggleLike` と同じ）
+    @discardableResult
+    func likeFromDoubleTap() async -> Bool {
+        guard DoubleTapLike.action(isZoomed: false, alreadyLiked: liked, signedIn: isSignedIn) == .like else {
+            return false
+        }
+        return await toggleLike()
     }
 
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、

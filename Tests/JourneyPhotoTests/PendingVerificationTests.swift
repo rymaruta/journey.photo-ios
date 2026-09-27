@@ -91,4 +91,18 @@ extension PendingVerificationTests {
 
         XCTAssertNil(pending.displayName(for: "taro@example.com"))
     }
+
+    /// 🔴 **送り直しが回数制限・圏外で落ちても、確認画面には入れる。**
+    /// 送れたときだけ入れていたので、手元に届いている有効なコードを入れる欄に
+    /// 辿り着けなかった。入れないのは、控えがもう使えない失敗のときだけ
+    func testResendFailureStillEntersConfirmation() {
+        XCTAssertTrue(PendingVerification.entersConfirmation(resent: true, failure: .none))
+        XCTAssertTrue(PendingVerification.entersConfirmation(resent: false, failure: .limitExceeded),
+                      "回数制限で確認画面に入れない")
+        XCTAssertTrue(PendingVerification.entersConfirmation(resent: false, failure: .network),
+                      "圏外で確認画面に入れない")
+        XCTAssertFalse(PendingVerification.entersConfirmation(resent: false, failure: .userNotFound),
+                       "消えたアカウントの控えで確認画面に入れている")
+        XCTAssertFalse(PendingVerification.entersConfirmation(resent: false, failure: .notAuthorized))
+    }
 }

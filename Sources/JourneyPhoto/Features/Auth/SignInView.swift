@@ -288,18 +288,23 @@ struct SignInView: View {
         guard let saved = pending.username(for: email) else { return }
         // 手がかりはある。送り直しが落ちても、押し直す入口を残す
         offerVerification = true
-        if await auth.resendSignUpCode(username: saved) {
+        let resent = await auth.resendSignUpCode(username: saved)
+        // **送り直しが落ちても確認画面には入れる**（`entersConfirmation`）。
+        // 前に届いたコードが手元にあれば、それで完了できる。落ちた理由は
+        // `auth.errorMessage` が出す
+        if PendingVerification.entersConfirmation(resent: resent, failure: auth.lastFailure) {
             pendingUsername = saved
-            notice = L("確認コードを送り直しました。メールをご確認ください。",
-                       "We sent a new code. Please check your email.")
+            notice = resent
+                ? L("確認コードを送り直しました。メールをご確認ください。",
+                    "We sent a new code. Please check your email.")
+                : L("コードを送り直せませんでした。届いているコードがあれば入力してください。",
+                    "Couldn't send a new code. If you already have one, enter it below.")
             return
         }
         // **捨てるのは「この控えはもう使えない」ときだけ。**
         // 回数制限や圏外で捨てると、唯一の手がかりを失う
-        if auth.lastFailure.isPermanent {
-            pending.forget(email: email)
-            offerVerification = false
-        }
+        pending.forget(email: email)
+        offerVerification = false
     }
 
     // MARK: - 登録の確認

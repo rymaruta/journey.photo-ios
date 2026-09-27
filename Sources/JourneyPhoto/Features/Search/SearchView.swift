@@ -694,6 +694,9 @@ final class SearchViewModel: ObservableObject {
         if let loaded = photosFor, loaded != userId {
             apply(photos: [])
             loadState = .loading
+            // 前の人の読み込みが走っていたら、その答えはもう入れない
+            // （「先に始めた回の答えを残す」は同じ人の間だけ）
+            appliedPhotosGeneration = photosGeneration
         }
         guard photosFor != .some(userId) || allPhotos.isEmpty else { return }
         photosFor = .some(userId)
@@ -713,17 +716,25 @@ final class SearchViewModel: ObservableObject {
     /// 言わない。空にするのは、ブロックのあとの読み直しで古い写真を残さないため
     ///
     /// 🔴 **後から始めた回の答えを、先に始めた回で上書きしない**
-    /// （人が替わった直後は「見せない」の読み直しと同時に走る。`GalleryViewModel.load` と同じ）
+    /// （人が替わった直後は「見せない」の読み直しと同時に走る。`GalleryViewModel.load` と同じ）。
+    ///
+    /// **古い回を捨てるのは、より新しい回が画面に移し終えたときだけ**
+    /// （`appliedPhotosGeneration`）。後から始めた回が取り消しで終わったら何も書かず、
+    /// 失敗で終わっても、走っている間に先の回が移し終えていればそれを残す
     func reloadPhotos(fetch: @MainActor () async throws -> [Photo]) async {
         photosGeneration += 1
         let generation = photosGeneration
+        let appliedAtStart = appliedPhotosGeneration
         if allPhotos.isEmpty { loadState = .loading }
         do {
             let photos = try await fetch()
-            guard generation == photosGeneration else { return }
+            guard generation > appliedPhotosGeneration else { return }
+            appliedPhotosGeneration = generation
             apply(photos: photos)
         } catch {
-            guard generation == photosGeneration else { return }
+            if error is CancellationError || Task.isCancelled { return }
+            guard generation == photosGeneration,
+                  appliedPhotosGeneration == appliedAtStart else { return }
             apply(photos: [])
             loadState = .failed
         }
@@ -731,6 +742,8 @@ final class SearchViewModel: ObservableObject {
 
     /// 何回目の読み直しか（`reloadPhotos` の注記）
     private var photosGeneration = 0
+    /// 画面に移し終えたいちばん新しい回（人が替わったら、それまでの回を全部古いとみなす）
+    private var appliedPhotosGeneration = 0
 
     /// 読み込んだ写真から段を作る。**通信と切り離してある**（テストで中身を直接渡す）
     func apply(photos: [Photo]) {

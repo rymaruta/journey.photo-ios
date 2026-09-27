@@ -217,13 +217,83 @@ final class SearchLoadTests: XCTestCase {
         XCTAssertEqual(model.everything.map(\.id), ["public"], "ログアウトしたのに前の人の一覧のまま")
     }
 
-    /// **次の人の読み込みが落ちても、前の人のぶんを残さない**
+    /// **人が替わったら、次の人のぶんを読み始める前に前の人のぶんを捨てる。**
+    ///
+    /// 読み込みの途中（Gate で止める）で見る。落ちた回の後始末
+    /// （`reloadPhotos` の失敗側）でも空になるので、終わってから見ても
+    /// 事前の消去が効いているかは分からない
     func testForgetsPreviousViewerEvenWhenReloadFails() async throws {
         struct Boom: Error {}
         let model = SearchViewModel()
         await model.loadPhotos(userId: "A") { [try photo("for-a")] }
-        await model.loadPhotos(userId: "B") { throw Boom() }
+        XCTAssertEqual(model.everything.map(\.id), ["for-a"], "前提: A のぶんを読めていない")
+
+        let gate = Gate()
+        let loading = Task { @MainActor in
+            await model.loadPhotos(userId: "B") { await gate.wait(); throw Boom() }
+        }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.everything.isEmpty, "次の人の読み込み中に前の人の写真が並んでいる")
+        XCTAssertEqual(model.loadState, .loading, "読み込み中なのに読み終えた扱い")
+
+        await gate.open()
+        await loading.value
         XCTAssertTrue(model.everything.isEmpty, "読み込みが落ちた回に前の人の写真が残っている")
+        XCTAssertEqual(model.loadState, .failed)
+    }
+
+    /// 🔴 **後から始めた回が落ちても、先に成功した回の答えを捨てない。**
+    /// 古い回を捨てるのは、より新しい回が画面に移し終えたときだけ
+    func testNewerFailureKeepsTheOlderSuccess() async throws {
+        struct Boom: Error {}
+        let model = SearchViewModel()
+        let olderGate = Gate()
+        let newerGate = Gate()
+        let older = try photo("older")
+        let first = Task { @MainActor in
+            await model.reloadPhotos { await olderGate.wait(); return [older] }
+        }
+        await olderGate.untilWaiting()
+        let second = Task { @MainActor in
+            await model.reloadPhotos { await newerGate.wait(); throw Boom() }
+        }
+        await newerGate.untilWaiting()
+        // 先の回が成功してから、後の回が落ちる
+        await olderGate.open()
+        await first.value
+        await newerGate.open()
+        await second.value
+
+        XCTAssertEqual(model.everything.map(\.id), ["older"], "先に成功した回の答えを捨てた")
+        XCTAssertEqual(model.loadState, .loaded)
+    }
+
+    /// 🔴 **取り消しで終わった回は何も書かない。** 読めている一覧を空にして
+    /// 「読み込めませんでした」にしない
+    func testCancelledReloadKeepsWhatIsShown() async throws {
+        let model = SearchViewModel()
+        await model.reloadPhotos { [try photo("shown")] }
+        await model.reloadPhotos { throw CancellationError() }
+        XCTAssertEqual(model.everything.map(\.id), ["shown"], "取り消しで一覧を消した")
+        XCTAssertEqual(model.loadState, .loaded)
+    }
+
+    /// **人が替わる前に始めた回の答えは、替わったあとの回が落ちても入れない。**
+    /// 「先に成功した回を残す」は同じ人の間だけ
+    func testPreviousViewersLoadDoesNotLandAfterSwitch() async throws {
+        struct Boom: Error {}
+        let model = SearchViewModel()
+        let gate = Gate()
+        let forA = try photo("for-a")
+        let first = Task { @MainActor in
+            await model.loadPhotos(userId: "A") { await gate.wait(); return [forA] }
+        }
+        await gate.untilWaiting()
+        await model.loadPhotos(userId: "B") { throw Boom() }
+        await gate.open()
+        await first.value
+
+        XCTAssertTrue(model.everything.isEmpty, "前の人の答えが次の人の画面に入った")
         XCTAssertEqual(model.loadState, .failed)
     }
 

@@ -56,27 +56,69 @@ final class GalleryViewModel: ObservableObject {
 
     /// - Parameter force: 控えを無視して取り直す（引き下げ更新）。
     func load(force: Bool = false) async {
+        // 🔴 **引き下げ更新の最中に始まった控えを使う読み込みは、その答えを待つ。**
+        // 待たずに読むと、60秒の控え（引き下げ前の古い一覧）がすぐ返って
+        // 新しい回として画面に移り、あとから戻った引き下げの答えが
+        // 「古い回」として捨てられていた。待ってから読めば、控えは
+        // 引き下げが取り直したものになっている
+        if force {
+            forceLoads += 1
+            defer {
+                forceLoads -= 1
+                if forceLoads == 0 {
+                    let waiters = forceWaiters
+                    forceWaiters = []
+                    waiters.forEach { $0.resume() }
+                }
+            }
+            await fetchAndApply(force: true)
+        } else {
+            if forceLoads > 0 {
+                await withCheckedContinuation { forceWaiters.append($0) }
+            }
+            await fetchAndApply(force: false)
+        }
+    }
+
+    /// 走っている引き下げ更新の数と、それを待っている読み込み（`load` の注記）
+    private var forceLoads = 0
+    private var forceWaiters: [CheckedContinuation<Void, Never>] = []
+
+    private func fetchAndApply(force: Bool) async {
         // 🔴 **後から始めた回の答えを、先に始めた回で上書きしない。**
         // 人が替わった直後は「見せない」の読み直し（`hidden.revision`）と
         // 人の替わりの読み直しが同時に走る。先に始めた方は前の人の控えを
         // 読んでいることがあり、それが後に戻ると前の人向けの写真が残る
+        //
+        // **古い回を捨てるのは、より新しい回が画面に移し終えたときだけ**
+        // （`appliedGeneration`）。後から始めた回が取り消し・失敗で終わっても、
+        // 先に成功した回の答えは捨てない
         loadGeneration += 1
         let generation = loadGeneration
+        let appliedAtStart = appliedGeneration
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         do {
             let photos = try await gallery.fetchPhotos(force: force)
-            guard generation == loadGeneration else { return }
+            guard generation > appliedGeneration else { return }
+            appliedGeneration = generation
             all = sorted(photos)
             state = .loaded(filtered())
         } catch {
+            // **取り消しで終わった回は何も書かない**（画面を離れた・次の回に替わった）
+            if error is CancellationError || Task.isCancelled { return }
+            // より新しい回が走っている／移し終えたなら、そちらに任せる
             guard generation == loadGeneration else { return }
+            // 走っている間に先の回が移し終えていたら、その答えを残す
+            guard appliedGeneration == appliedAtStart else { return }
             state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
         }
     }
 
-    /// 何回目の読み込みか（`load` の注記）
+    /// 何回目の読み込みか（`fetchAndApply` の注記）
     private var loadGeneration = 0
+    /// 画面に移し終えたいちばん新しい回
+    private var appliedGeneration = 0
 
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
     private var all: [Photo] = []

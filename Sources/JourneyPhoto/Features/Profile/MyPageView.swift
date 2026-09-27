@@ -125,10 +125,15 @@ struct MyPageView: View {
         // 次は必ず取り込まれる。自分の写真・公開一覧（フォロワー限定を含む）も
         // 前の人のもので、次の人の読み込みが落ちると引き当て先に残る
         //
-        // モデルのぶん（名前・アイコン・フォロー数・写真）は `load(for:)` が手放す。
-        // **ここでは呼ばない**——`.task(id:)` が先に走った回に、始まったばかりの
-        // 次の人の読み込みまで捨ててしまう（順番は決まっていない）
-        .onChange(of: auth.userId) { _, _ in
+        // モデルのぶん（名前・アイコン・フォロー数・写真）も**ここで**手放す
+        // （`switchViewer`）。`.task(id:)` を待つと、この画面の上に積んだ画面から
+        // ログアウト→別の人でログインした最初の描画で、前の人の名前・写真
+        // （下書きを含む）が1描画ぶん映る。
+        // `switchViewer` は**人が替わったときだけ**捨てる——`.task(id:)` の
+        // `load(for:)` が先に走った回は同じ人と見て何もしないので、始まったばかりの
+        // 次の人の読み込みは捨てない（順番は決まっていない）
+        .onChange(of: auth.userId) { _, next in
+            model.switchViewer(to: next)
             savedIds = []
             feed = []
             feedLoaded = false
@@ -869,12 +874,20 @@ final class MyPageViewModel: ObservableObject {
     ///     次の人の読み込みが飛ばされ、前の人の答えがそのまま入っていた。
     /// ログアウト（nil）では捨てるだけで読まない。
     func load(for viewerId: String?) async {
-        if viewerId != self.viewerId {
-            self.viewerId = viewerId
-            forgetPhotos()
-        }
+        switchViewer(to: viewerId)
         guard viewerId != nil else { return }
         await load()
+    }
+
+    /// 見ている人を替える。**替わったときだけ**前の人のぶんを捨てる。
+    ///
+    /// 画面は `onChange(of: userId)` と `.task(id: userId)`（`load(for:)`）の
+    /// 両方からこれを通す。どちらが先でも、2度目は同じ人なので何もしない
+    /// ——先に始まった次の人の読み込みを捨てない
+    func switchViewer(to viewerId: String?) {
+        guard viewerId != self.viewerId else { return }
+        self.viewerId = viewerId
+        forgetPhotos()
     }
 
     func load() async {

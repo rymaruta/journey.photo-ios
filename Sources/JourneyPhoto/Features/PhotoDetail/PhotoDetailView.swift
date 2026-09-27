@@ -118,7 +118,7 @@ struct PhotoDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
         .task(id: auth.userId) {
-            model.setSignedIn(auth.userId != nil)
+            model.setViewer(auth.userId)
             // **読めるまでは端末が知っている値で描く。** 圏外で開いても
             // いいね済みのハートは灯ったまま、数は一覧／押した回の答え（無ければ出さない）
             model.seed(liked: auth.userId != nil && favorites.contains(photo.id),
@@ -557,8 +557,10 @@ struct PhotoDetailView: View {
     private func likeFromViewer(_ shown: Photo) async {
         if shown.id == photo.id {
             // 下のハートと同じく、端末の控えとホームの数にも渡す
-            // （**答えが来た回だけ**——`likeTapped`）
-            await likeTapped()
+            // （**答えが来た回だけ**——`likeTapped`）。
+            // **いいね済みなら送らない**（`likeFromDoubleTap`）——下のハートの道
+            // （`toggleLike`）のままだと、押し済みの回は取り消しになる
+            await likeTapped(fromDoubleTap: true)
             return
         }
         guard viewerLikesInFlight.insert(shown.id).inserted else { return }
@@ -615,8 +617,14 @@ struct PhotoDetailView: View {
     /// `model.liked` を写していたので、圏外で白く出たハートを押して失敗すると
     /// `false` で上書きされ、**本物のいいねが控えから消えていた**
     /// （`removedHere` にも入り、次の同期でも戻らない）
-    private func likeTapped() async {
-        guard await model.toggleLike() else { return }
+    private func likeTapped(fromDoubleTap: Bool = false) async {
+        let answered: Bool
+        if fromDoubleTap {
+            answered = await model.likeFromDoubleTap()
+        } else {
+            answered = await model.toggleLike()
+        }
+        guard answered else { return }
         // 端末側のハートも合わせる（圏外でも一覧が出る）
         favorites.set(photo.id, favorite: model.liked)
         shareLikeCount()
