@@ -43,4 +43,14 @@ final class InviteExpiryTests: XCTestCase {
         // 東京では翌日の朝5時
         XCTAssertEqual(InviteLink.untilLabel(expires, timeZone: TimeZone(identifier: "Asia/Tokyo")!), "2026/10/5")
     }
+
+    /// 作り直した・取り消したことを知らせる文は **Web（`app/user/albums`）と同じ**。
+    /// 初めて作ったときは「前のリンク」が無いので言わない
+    func testDoneMessagesMatchTheWeb() {
+        XCTAssertEqual(InviteLink.doneMessage(.recreated),
+                       L("招待リンクを作りました。前のリンクは使えなくなります",
+                         "Invite link recreated. The previous link no longer works"))
+        XCTAssertEqual(InviteLink.doneMessage(.revoked), L("招待リンクを取り消しました", "Invite link revoked"))
+        XCTAssertEqual(InviteLink.doneMessage(.created), L("招待リンクを作りました", "Invite link created"))
+    }
 }

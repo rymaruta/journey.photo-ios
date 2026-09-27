@@ -26,6 +26,11 @@ extension View {
                            onDiscard: @escaping () -> Void) -> some View {
         self
             .navigationBarBackButtonHidden(leave != .now)
+            // 🔴 **シートの中に積まれた画面では、下へ払うとシートごと閉じる。** 戻るを
+            // 隠しても止まるのは左端から払う戻るだけで、旅行プラン（メニューのシート）・
+            // 親しい友達（投稿のシート）は払うだけで下書きが確かめもなく消えていた。
+            // シートの外では何もしない
+            .interactiveDismissDisabled(leave != .now)
             .toolbar {
                 if leave != .now {
                     ToolbarItem(placement: .topBarLeading) {

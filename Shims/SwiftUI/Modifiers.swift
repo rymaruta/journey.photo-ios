@@ -174,6 +174,7 @@ public struct AnyTransitionShim {
 public struct ControlSizeShim {
     public static let large = ControlSizeShim()
     public static let regular = ControlSizeShim()
+    public static let small = ControlSizeShim()
 }
 public struct SearchFieldPlacementShim {
     public static let automatic = SearchFieldPlacementShim()

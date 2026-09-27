@@ -184,14 +184,19 @@ struct TripPlanDetailView: View {
         end = plan.endDate
     }
 
+    /// 下書きと比べる相手。**下書きにサーバーの姿を入れる前（開いた最初の1コマ）は無い**
+    /// ——`days` は空で始まり `onAppear` で初めて入るので、その間は日程のあるプランが
+    /// 「変えた」に見え、戻るが自前のものにちらつき「保存」が押せる濃さで出ていた
+    private var comparedPlan: TripPlan? { loadedFrom == nil ? nil : plan }
+
     private var isDirty: Bool {
-        guard let plan else { return false }
+        guard let plan = comparedPlan else { return false }
         return TripPlanText.isDirty(plan: plan, days: days, start: start, end: end)
     }
 
     private var leave: UnsavedLeave {
         // 日程を送っている間（`sent` は保存の間だけ立つ。削除では立たない）
-        TripPlanText.leave(plan: plan, days: days, start: start, end: end,
+        TripPlanText.leave(plan: comparedPlan, days: days, start: start, end: end,
                            saving: model.busy != nil && sent != nil)
     }
 
