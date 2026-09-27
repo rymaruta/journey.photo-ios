@@ -96,7 +96,8 @@ struct BlockedUsersView: View {
         let owner = auth.userId
         do {
             let list = try await environment.moderation.blocks()
-            guard generation == loadGeneration else { return }
+            // 返ってくる間に人が替わっていたら、一覧にも書かない
+            guard generation == loadGeneration, auth.userId == owner else { return }
             users = list.users
             // **サーバーの一覧で上書きする。** 端末のぶんを足し合わせると、
             // 別の端末で解除したのに「見えないまま」になる

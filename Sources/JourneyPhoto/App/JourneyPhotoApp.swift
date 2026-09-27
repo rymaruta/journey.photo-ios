@@ -170,7 +170,10 @@ struct JourneyPhotoApp: App {
                         clearDraft: { stamp in
                             if drafts.draft?.savedAt == stamp { drafts.clear() }
                         })
-                    guard !auth.isResolving else { return }
+                    // 起動時に本人の ID が取れなかっただけのログアウト（`isSignedOutUncertain`）
+                    // でも捨てない——通知の宛先と同じ扱い。捨てると、圏外で起動した
+                    // だけで強制終了から戻した送信待ちが消え、「もう一度送る」も出ない
+                    guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
                     StoryUploadCenter.shared.userChanged(to: auth.userId)
                 }
                 // **`userId` ではなく状態で見る。** 起動直後の確認中（unknown）も
@@ -203,8 +206,12 @@ struct JourneyPhotoApp: App {
                     await syncLikes()
                     // ログイン中なら、ブロック一覧をサーバーに合わせる
                     if let owner = auth.userId {
+                        // **待っている間に手元で変えたら上書きしない**（設定で解除した
+                        // 直後に、解除前に始めた読み込みが戻して、また見えなくなっていた）
+                        let before = hidden.revision
                         let blocks = try? await environment.moderation.blocks()
-                        if !Task.isCancelled, auth.userId == owner, let blocks {
+                        if !Task.isCancelled, auth.userId == owner, hidden.revision == before,
+                           let blocks {
                             hidden.replaceBlocked(with: blocks.blockedIds, for: owner)
                             await applyModeration()
                         }
