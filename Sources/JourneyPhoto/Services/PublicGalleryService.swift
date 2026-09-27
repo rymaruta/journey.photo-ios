@@ -54,6 +54,34 @@ actor PublicGalleryService {
         // ログインし直した人に、前の人ぶんを見せない
         restrictedCache = nil
         restrictedCachedAt = nil
+        restrictedEpoch += 1
+        for watcher in epochWatchers.values { watcher.yield(restrictedEpoch) }
+    }
+
+    /// 読み出し口を入れ替えた回数。**手元に一覧を持ち続ける画面が、
+    /// 前の人の読み出し口で読んだ一覧を持ったままか**を見分けるのに使う
+    private(set) var restrictedEpoch = 0
+    private var epochWatchers: [UUID: AsyncStream<Int>.Continuation] = [:]
+
+    /// 読み出し口が入れ替わるたびに、その回数を流す。**今の回数から始める**
+    /// ——画面を開き直したときに、離れていた間の入れ替えを取りこぼさない。
+    ///
+    /// 探すは一度読んだら読み直さない作りで、ログアウトや別の人のログインの
+    /// あとも、前の人の「フォロワーのみ」「親しい友達」の写真が残っていた。
+    /// 入れ替えた**後**に流すので、読み直しが前の人の読み出し口を通らない
+    func restrictedChanges() -> AsyncStream<Int> {
+        let (stream, continuation) = AsyncStream<Int>.makeStream()
+        let id = UUID()
+        epochWatchers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeWatcher(id) }
+        }
+        continuation.yield(restrictedEpoch)
+        return stream
+    }
+
+    private func removeWatcher(_ id: UUID) {
+        epochWatchers[id] = nil
     }
 
     private var restrictedCache: [Photo]?
@@ -69,6 +97,7 @@ actor PublicGalleryService {
             return restrictedCache
         }
         let startedAt = Date()
+        let epoch = restrictedEpoch
         do {
             // **いまの数の時刻を付ける。** この口は DynamoDB から直に来るので
             // 数は新しい。付けないと、押した答え（`LikeCountStore`）が
@@ -78,12 +107,16 @@ actor PublicGalleryService {
                 stamped.likesAsOf = startedAt
                 return stamped
             }
+            // 🔴 **読んでいる間に読み出し口が替わったら、控えに書かない。**
+            // 書くと、ログアウトした後に前の人ぶんが60秒出続ける
+            guard epoch == restrictedEpoch else { return [] }
             restrictedCache = photos
             restrictedCachedAt = Date()
             return photos
         } catch {
             print("[gallery] 公開範囲を絞った写真を取れませんでした: \(error)")
             // 直前に取れていたぶんは出す（圏外で消える方が驚かれる）
+            guard epoch == restrictedEpoch else { return [] }
             return restrictedCache ?? []
         }
     }

@@ -119,7 +119,7 @@ final class ViewModelTests: XCTestCase {
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
         let model = SearchViewModel()
 
-        await model.loadPhotos(environment: env)
+        await model.loadPhotos(environment: env, epoch: 0)
         await model.search("パリ", environment: env)
         XCTAssertEqual(model.shown.count, 2, "下ごしらえが効いていない")
 
@@ -129,6 +129,28 @@ final class ViewModelTests: XCTestCase {
 
         XCTAssertEqual(model.shown.map(\.id), ["a"],
                        "ブロックした相手の写真が検索結果に残っている")
+    }
+
+    /// 🔴 **限定公開の読み出し口が替わったら（ログアウト・別の人のログイン）読み直す。**
+    /// 探すは一度読んだら読み直さない作りで、前の人の「フォロワーのみ」の
+    /// 写真が次の人の探すに残っていた。同じ回なら読み直さない
+    func testSearchReloadsWhenTheViewerChanges() async {
+        let service = gallery("""
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","location":"パリ"},
+         {"id":"b","src":"https://x/b.jpg","userId":"u2","location":"パリ"}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        await service.setHidden(userIds: ["u2"], photoIds: [])
+
+        await model.loadPhotos(environment: env, epoch: 0)
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.shown.count, 2, "同じ回なのに読み直している")
+
+        await model.loadPhotos(environment: env, epoch: 1)
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.shown.map(\.id), ["a"], "人が替わったのに前の一覧のまま")
     }
 
     /// **「フォロー中」を選んだあとにフォロー一覧を入れ替えても、範囲は戻らない。**
