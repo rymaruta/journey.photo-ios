@@ -219,6 +219,32 @@ final class TripPlansModelTests: XCTestCase {
         XCTAssertEqual(model.plans.map(\.planId), ["p1"])
     }
 
+    /// **後から始めた読み込みが成功した後に、古い読み込みの失敗を出さない**（72c2539 のレビュー）
+    func testStaleFailureAfterNewerSuccessIsIgnored() async {
+        let env = environment()
+        let model = TripPlansModel()
+        // 1本目に届くのは後から始めた読み込み（成功）、2本目が遅らせた読み込み（失敗）
+        StubProtocol.respondInOrder([
+            (200, #"{"plans":[{"planId":"p1","title":"冬","days":[]}]}"#),
+            (500, ""),
+        ])
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let slow = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                  gallery: env.gallery, spots: env.spots,
+                                  trips: TripPlanService(api: APIClient(
+                                      baseURL: URL(string: "https://api.example.test")!,
+                                      tokenProvider: DelayedTokenProvider(),
+                                      session: URLSession(configuration: config))))
+        let first = Task { await model.load(environment: slow) }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        await model.load(environment: env)
+        await first.value
+        XCTAssertEqual(model.status, .loaded)
+        XCTAssertNil(model.errorMessage, "新しい一覧を出しているのに、古い読み込みの失敗を出している")
+        XCTAssertEqual(model.plans.map(\.planId), ["p1"])
+    }
+
     /// 失敗したあとも `busy` は戻る（戻らないと、以後どのボタンも押せない）
     func testBusyResetsAfterFailure() async {
         let env = environment()
