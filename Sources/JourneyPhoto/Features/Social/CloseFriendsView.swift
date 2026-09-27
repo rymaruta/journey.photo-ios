@@ -278,8 +278,12 @@ struct CloseFriendsView: View {
         let rows = Self.rows(page: list.users, allFollowing: allFollowing, chosen: ids)
         saved = Set(ids)
         chosen = Set(ids)
-        // 51人目以降は名前を引いてから、フォロー中の並びの後ろに足す
-        following = list.users + (await names(of: rows.beyondPage))
+        // 51人目以降は名前を引いてから、フォロー中の並びの後ろに足す。
+        // **全員は引かない**（500人なら450回）——選んでいる人を必ず、残りは
+        // 上限（`lookupCap`）まで。引かなかった人はフォロー中の欄に出ない
+        let beyond = Self.beyondToLookUp(rows.beyondPage, others: rows.others.count,
+                                         chosen: Set(ids), cap: Self.lookupCap)
+        following = list.users + (await names(of: beyond))
         others = await names(of: rows.others)
         // **名前を引き終えてから「読めた」にする。** 引いている途中で離れると打ち切られ、
         // 名前の無い行のまま残るので、戻ったときに読み直す
@@ -304,6 +308,30 @@ struct CloseFriendsView: View {
         let followingSet = Set(allFollowing)
         return (beyond, split.others.filter { !followingSet.contains($0) })
     }
+
+    /// 51人目以降のうち名前を引く人。
+    ///
+    /// - **選んでいる人は必ず残す**（上限を超えても）。落とすと、選んでいるのに
+    ///   どの欄にも出ない＝外せない（`others` には入らないので「外した人など」にも出ない）
+    /// - 残りはフォローした順に、`others` と合わせて `cap` 人に収まるまで
+    ///
+    /// 順番はフォローした順のまま返す
+    nonisolated static func beyondToLookUp(_ beyond: [String], others: Int,
+                                           chosen: Set<String>, cap: Int) -> [String] {
+        let chosenCount = beyond.filter { chosen.contains($0) }.count
+        var room = max(0, cap - others - chosenCount)
+        return beyond.filter { id in
+            if chosen.contains(id) { return true }
+            guard room > 0 else { return false }
+            room -= 1
+            return true
+        }
+    }
+
+    /// 1回の読み込みで名前を引く人数の上限（「外した人など」と51人目以降の合計）。
+    /// 親しい友達の上限（`CLOSE_FRIENDS_MAX` = 200）に合わせる——`lookupWidth` は
+    /// この程度の人数を前提にしている
+    static let lookupCap = 200
 
     /// 名前を引くときに同時に送る数の上限。
     ///

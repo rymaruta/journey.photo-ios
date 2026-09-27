@@ -171,6 +171,8 @@ struct ProfileEditView: View {
                         // **行の中に押せるものが2つある。** 既定の形だと行全体が
                         // 1つのボタンになり、押した方と違う選択が開く（`ThemeColorField` と同じ手当て）
                         .buttonStyle(.borderless)
+                        // **保存中・送信中は選ばせない**（保存と画像の送信を重ねない）
+                        .disabled(isSaving || uploadingImage != nil)
                         .padding(12)
                     }
                 PhotosPicker(selection: $avatarItem, matching: .images) {
@@ -187,6 +189,7 @@ struct ProfileEditView: View {
                         }
                 }
                 .buttonStyle(.borderless)
+                .disabled(isSaving || uploadingImage != nil)
                 .accessibilityLabel(L("アイコンを変える", "Change avatar"))
                 .padding(.leading, 20)
                 .padding(.top, 92)
@@ -335,7 +338,12 @@ struct ProfileEditView: View {
             if kind == .avatar { avatarItem = nil } else { coverItem = nil }
         }
         do {
-            guard let data = try await item.loadTransferable(type: Data.self) else { return }
+            // 中身を取り出せなかった（iCloud から落とせない等）ときは
+            // **「送っています…」を残さない**
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                message = nil
+                return
+            }
             // アイコンにも同じ関所を通す。**EXIF の付いた自撮りを
             // そのまま上げない**（撮影地が入っていることがある）
             let prepared = try ImagePreparer.prepare(data: data, fileName: "profile")
