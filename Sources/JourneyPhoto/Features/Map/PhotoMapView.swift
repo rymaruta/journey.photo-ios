@@ -33,8 +33,9 @@ struct PhotoMapView: View {
     /// （保存も送信もしない——`CurrentLocation` の約束をここでも守る）
     @State private var here: Photo.Coords?
     @State private var showNearby = false
-    /// 「全体を見る」を押したか。押したら帯を下げる（現在地を取り直したら、また出す）
-    @State private var showedAll = false
+    /// 「近くに写真はありません」の帯を下げたか。「全体を見る」を押したか、
+    /// 指で地図を動かしたら下げる（現在地を取り直したら、また出す）
+    @State private var noneNearbyBanner = NearbyPhotos.NoneNearbyBanner()
     /// 押したピン。**下の札に出す**（シートで画面を覆うと地図が見えない）
     @State private var selected: MapPin?
     /// 押した撮影スポットのピン（台帳）。札は同時に1枚——写真のピン・
@@ -114,7 +115,7 @@ struct PhotoMapView: View {
         .onChange(of: location.state) { _, state in
             guard case .located(let latitude, let longitude) = state else { return }
             here = Photo.Coords(lat: latitude, lng: longitude)
-            showedAll = false
+            noneNearbyBanner.located()
             zoomChain.reset()
             camera = .userLocation(fallback: .region(MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
@@ -440,6 +441,9 @@ struct PhotoMapView: View {
         )
         model.update(visible: visible)
         zoomChain.observe(visible)
+        // 指で動かしたら「近くに写真はありません」を下げる（もう現在地を見ていない）。
+        // こちらが寄せた回（現在地を追う・全体へ寄せる・拡大縮小）は下げない
+        noneNearbyBanner.cameraMoved(byUser: camera.positionedByUser)
     }
 
     /// 地図の上に1行。**空の状態を隠さない**——ピンが消えただけの画面にしない
@@ -461,7 +465,7 @@ struct PhotoMapView: View {
                 .padding(.vertical, 8)
                 .background(Color.black.opacity(0.7), in: Capsule())
                 .padding(.top, 12)
-        } else if !showedAll, model.areaFrame == nil, !model.isFiltering,
+        } else if !noneNearbyBanner.dismissed, model.areaFrame == nil, !model.isFiltering,
                   model.frame != nil, let here,
                   NearbyPhotos.noneNearby(model.photos, here: here) {
             // **現在地のまわりに写真が無い**ときの出口。押すと写真全体に寄せる
@@ -470,7 +474,7 @@ struct PhotoMapView: View {
             // - 絞り込み中は出さない（絞ると地図はもう残ったピンへ寄っている）
             // - 寄せる先が無ければ出さない（押しても動かないボタンにしない）
             Button {
-                showedAll = true
+                noneNearbyBanner.showedAll()
                 frame(model.frame)
             } label: {
                 HStack(spacing: 6) {
