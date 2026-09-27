@@ -18,6 +18,9 @@ struct CollectionPhotosScreen: View {
     /// 板 12 に寄せる前から画面の上にあった字で、**なぜこの写真が
     /// 並んでいるのか**を言う。無ければ出さない
     var lede: String?
+    /// 読み込めなかった回の出口。**渡されたときだけ**、0枚を
+    /// 「読み込めませんでした」＋「もう一度試す」で出す（「該当する写真がありません」と分ける）
+    var retry: (() -> Void)?
 
     /// 板 12 は「人気」を選んだ形で描いてある
     @State private var sort: GallerySort = .popular
@@ -44,7 +47,9 @@ struct CollectionPhotosScreen: View {
                     .padding(.horizontal, 16)
                 }
 
-                if photos.isEmpty && !isLoading {
+                if photos.isEmpty && !isLoading, let retry {
+                    ErrorBanner(message: Labels.Common.loadFailed, retry: retry)
+                } else if photos.isEmpty && !isLoading {
                     ErrorBanner(message: Labels.Gallery.empty)
                 } else {
                     let list = sorted

@@ -75,12 +75,17 @@ struct GalleryView: View {
                 await model.loadMyPhotos(environment.photos, viewerId: nil)
                 return
             }
-            let ids = (try? await environment.social.myFollowingIds()) ?? []
-            model.use(viewerId: auth.userId, following: Set(ids))
+            // **取れなかった回を空の集合にしない**（`followingFailed`）
+            model.use(viewerId: auth.userId, following: await fetchFollowing())
             // 今日のテーマに参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: auth.userId)
         }
-        .refreshable { await model.load(force: true) }
+        .refreshable {
+            await model.load(force: true)
+            // **フォロー一覧も取り直す。** 取れなかった回の出口
+            // （「読み込めませんでした。引き下げて読み直せます」）
+            if auth.userId != nil { model.refreshFollowing(await fetchFollowing()) }
+        }
         .sheet(item: $reportTarget) { target in
             ReportSheet(photoId: target.id, ownerId: target.userId)
         }
@@ -333,9 +338,8 @@ struct GalleryView: View {
                         guard feed == .following, auth.userId != nil else { return }
                         Task {
                             // **取れなかった回に空で潰さない**（圏外で押しただけで
-                            // 「フォロー中」が知らせも無く空になる）
-                            guard let ids = try? await environment.social.myFollowingIds() else { return }
-                            model.refreshFollowing(Set(ids))
+                            // 「フォロー中」が知らせも無く空になる）——nil は `refreshFollowing` が捨てる
+                            model.refreshFollowing(await fetchFollowing())
                         }
                     } label: {
                         Text(feed.label)
@@ -383,9 +387,7 @@ struct GalleryView: View {
                 // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
                 let groups = PhotoGroups.group(photos)
                 if groups.isEmpty {
-                    Text(model.feed == .following
-                         ? L("フォロー中の人の写真はまだありません", "No photos from people you follow yet")
-                         : Labels.Gallery.empty)
+                    Text(emptyMessage)
                         .font(.subheadline)
                         .foregroundStyle(WebTheme.muted2)
                         .multilineTextAlignment(.center)
@@ -411,6 +413,22 @@ struct GalleryView: View {
     }
 
     private static let feedTopID = "home-feed-top"
+
+    /// 0枚のときの一文。**フォロー一覧を取れなかった回に「まだありません」と言わない**
+    /// （形は探すの写真の「読み込めませんでした。引き下げて読み直せます」と同じ）
+    private var emptyMessage: String {
+        guard model.feed == .following else { return Labels.Gallery.empty }
+        return model.followingFailed
+            ? L("フォロー中の人を読み込めませんでした。引き下げて読み直せます",
+                "Couldn't load the people you follow. Pull to retry")
+            : L("フォロー中の人の写真はまだありません", "No photos from people you follow yet")
+    }
+
+    /// フォロー一覧。**取れなかったら nil**（空の集合と分ける）
+    private func fetchFollowing() async -> Set<String>? {
+        let ids = try? await environment.social.myFollowingIds()
+        return ids.map { Set($0) }
+    }
 
     private func grid(_ photos: [Photo]) -> some View {
         ScrollView {

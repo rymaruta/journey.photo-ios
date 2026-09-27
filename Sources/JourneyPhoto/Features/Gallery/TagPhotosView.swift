@@ -14,10 +14,13 @@ struct TagPhotosView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @State private var photos: [Photo] = []
     @State private var isLoading = true
+    /// 公開一覧を引けなかった（控えも無かった）。**0枚と分ける**
+    @State private var loadFailed = false
 
     var body: some View {
         // 形は色・機材・いまの季節と同じ（板 12）
-        CollectionPhotosScreen(title: kind.title, photos: photos, kind: kind, isLoading: isLoading)
+        CollectionPhotosScreen(title: kind.title, photos: photos, kind: kind, isLoading: isLoading,
+                               retry: loadFailed ? { Task { await load() } } : nil)
             .task { await load() }
             // 詳細でブロック／通報して**戻ってきたとき**に落とす。
             // 見ている最中に絞ると、押した元が消えて詳細が閉じる
@@ -27,7 +30,12 @@ struct TagPhotosView: View {
     private func load() async {
         isLoading = true
         defer { isLoading = false }
-        let all = (try? await environment.gallery.fetchPhotos()) ?? []
+        // 引けなかった回を「該当する写真がありません」にしない（控えがあれば
+        // `fetchPhotos` がそれを返すので、ここに来るのは控えも無いときだけ）
+        // **手元の一覧は空で潰さない**（読めていたぶんは出し続ける）
+        let all = try? await environment.gallery.fetchPhotos()
+        loadFailed = all == nil
+        guard let all else { return }
         // 読んでいる間に通報された回、古い集合で絞った結果で上書きしない
         photos = hidden.visible(PhotoQuery.photos(all, in: kind))
     }

@@ -804,11 +804,16 @@ struct PhotoDetailView: View {
             // **空の理由を分ける。** 引けなかった回に「まだありません」と
             // 出すと、書いてあるコメントが消えたように見える
             if model.commentsUnavailable {
-                Text(L("コメントを読み込めませんでした", "Couldn't load comments"))
-                    .font(.callout)
-                    .foregroundStyle(WebTheme.faint)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("コメントを読み込めませんでした", "Couldn't load comments"))
+                        .font(.callout)
+                        .foregroundStyle(WebTheme.faint)
+                    // 詳細には引き下げが無いので、読み直す手段をここに置く
+                    Button(Labels.Common.retry) { Task { await model.load() } }
+                        .buttonStyle(.bordered)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
             } else if model.commentCount == 0 {
                 Text(L("まだコメントはありません", "No comments yet"))
                     .font(.callout)

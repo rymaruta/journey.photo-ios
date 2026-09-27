@@ -68,6 +68,24 @@ struct HighlightService {
     func delete(id: String) async throws {
         try await api.authorizedVoid(.delete, "/highlights/\(encoded(id))")
     }
+
+    /// 保存・削除に失敗したときに出す一文。
+    ///
+    /// **サーバーの断り文をそのまま出す。** `highlights.ts` は、選択が空・
+    /// アーカイブに無い・表紙が並びに無い（400）、見つからない（404）、
+    /// 20個の上限（403）を、どれも直し方の分かる本文つきで返す。
+    /// 以前はどれも「もう一度お試しください」にしていたので、上限に
+    /// 当たった人が何度押しても同じ文だった。
+    ///
+    /// 403 も本文を出す——ここの 403 は上限で、`APIError` の汎用の
+    /// 「権限がありません」ではない。401・通信の失敗は `APIError` の文に任せる
+    static func failureMessage(for error: Error, fallback: String) -> String {
+        if case .server(let status, let message)? = error as? APIError,
+           status != 401, !message.isEmpty {
+            return message
+        }
+        return (error as? LocalizedError)?.errorDescription ?? fallback
+    }
 }
 
 private struct HighlightList: Decodable { let highlights: [Highlight] }

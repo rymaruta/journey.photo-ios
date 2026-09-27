@@ -91,4 +91,32 @@ final class SearchPeopleTests: XCTestCase {
         await waitUntil { !model.isSearching }
         XCTAssertEqual(model.users.map(\.userId), ["new"])
     }
+
+    private struct Offline: Error {}
+
+    /// **通信の失敗を「見つかりませんでした」にしない**（バグ探し 2026-09-27 #8）。
+    /// 以前は `try?` で0人に潰していたので、圏外で探すと「居ない」と出た
+    func testFailedSearchIsNotNoResults() async throws {
+        let model = SearchViewModel()
+        await model.search("ab", debounce: .zero) { _ in throw Offline() }
+        await waitUntil { !model.isSearching }
+        XCTAssertTrue(model.usersFailed, "失敗を0人として扱っている")
+        XCTAssertTrue(model.users.isEmpty)
+
+        // 次に通れば失敗を外す
+        let found = try user("u1")
+        await model.search("abc", debounce: .zero) { _ in [found] }
+        await waitUntil { !model.isSearching }
+        XCTAssertFalse(model.usersFailed)
+        XCTAssertEqual(model.users.map(\.userId), ["u1"])
+    }
+
+    /// 空にしたら失敗の印も外す（「名前を入れると人を探せます」に戻る）
+    func testClearingTheQueryClearsTheFailure() async {
+        let model = SearchViewModel()
+        await model.search("ab", debounce: .zero) { _ in throw Offline() }
+        await waitUntil { !model.isSearching }
+        await model.search("", debounce: .zero) { _ in [] }
+        XCTAssertFalse(model.usersFailed)
+    }
 }

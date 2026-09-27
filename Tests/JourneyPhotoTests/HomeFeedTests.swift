@@ -94,4 +94,51 @@ final class HomeFeedSelectionTests: XCTestCase {
         model.use(viewerId: nil, following: [])
         XCTAssertEqual(model.feed, .recommended)
     }
+
+    // MARK: - フォロー一覧を取れなかった回（バグ探し 2026-09-27 #7）
+
+    /// **取れなかった回を「まだありません」にしない。** 以前は空の集合を
+    /// 渡していたので、画面は「フォロー中の人の写真はまだありません」と出した
+    func testFailedFollowingIsNotAnEmptyFollowing() async {
+        let model = GalleryViewModel()
+        model.select(feed: .following, viewerId: "me")
+        model.use(viewerId: "me", following: nil)
+        XCTAssertTrue(model.followingFailed, "取れなかったのに「まだありません」と区別できない")
+        XCTAssertTrue(model.followingIds.isEmpty)
+        XCTAssertEqual(model.feed, .following, "取れなかっただけでフィードを戻している")
+    }
+
+    /// 引き下げ・札の押し直しで取れたら失敗を外す。**取れなかった回は何も潰さない**
+    func testRefreshingFollowingClearsTheFailureOnlyWhenFetched() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "me", following: nil)
+        model.refreshFollowing(nil)
+        XCTAssertTrue(model.followingFailed, "取れなかった回に失敗を外している")
+
+        model.refreshFollowing(["u1"])
+        XCTAssertFalse(model.followingFailed)
+        XCTAssertEqual(model.followingIds, ["u1"])
+
+        // 取れていた集合は、あとで取れなかった回にも残す
+        model.refreshFollowing(nil)
+        XCTAssertEqual(model.followingIds, ["u1"], "取れなかった回に手元の集合を潰している")
+        XCTAssertFalse(model.followingFailed)
+    }
+
+    /// **人が替わって取れなかった回は、前の人の集合を残さない**
+    func testFailedFollowingForANewUserDropsThePreviousSet() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "a", following: ["u1"])
+        model.use(viewerId: "b", following: nil)
+        XCTAssertTrue(model.followingIds.isEmpty, "前の人のフォロー先が残っている")
+        XCTAssertTrue(model.followingFailed)
+    }
+
+    /// 未ログインは「取れなかった」ではない（そもそも引かない）
+    func testSignedOutIsNotAFailure() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "me", following: nil)
+        model.use(viewerId: nil, following: nil)
+        XCTAssertFalse(model.followingFailed)
+    }
 }

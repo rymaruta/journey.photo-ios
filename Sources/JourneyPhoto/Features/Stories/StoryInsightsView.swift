@@ -23,6 +23,11 @@ struct StoryInsightsView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @State private var viewers: [StoryViewer] = []
     @State private var replies: [StoryReply] = []
+    /// 返信・反応を**一度でも読めたか**。読めていない間は数を「—」にする
+    /// （「0」は「まだ無い」と読まれる）
+    @State private var repliesLoaded = false
+    /// 直近の読み込みで返信・反応が引けなかった
+    @State private var repliesFailed = false
     /// 一覧の絞り（モック7）。**同じ一覧を絞るだけ**——別の口から
     /// 引き直さない（リアクションは見た人の一部で、数え方も1つ）
     @State private var scope: Scope = .viewers
@@ -82,8 +87,8 @@ struct StoryInsightsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             HStack(spacing: 1) {
                 countCell(L("閲覧", "Views"), value: viewers.count)
-                countCell(L("いいね", "Likes"), value: replies.reactionCount)
-                countCell(L("返信", "Replies"), value: replies.textReplies.count)
+                countCell(L("いいね", "Likes"), value: repliesLoaded ? replies.reactionCount : nil)
+                countCell(L("返信", "Replies"), value: repliesLoaded ? replies.textReplies.count : nil)
             }
             .background(Color.white.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -96,9 +101,10 @@ struct StoryInsightsView: View {
         StoryPoster(story: story)
     }
 
-    private func countCell(_ label: String, value: Int) -> some View {
+    /// - Parameter value: nil は「読めていない」。**0 と書かない**
+    private func countCell(_ label: String, value: Int?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("\(value)")
+            Text(value.map { "\($0)" } ?? "—")
                 .font(JPFont.mono(18, relativeTo: .title3))
                 .foregroundStyle(.white)
             Text(label)
@@ -152,6 +158,13 @@ struct StoryInsightsView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if let errorMessage {
                 Text(errorMessage).font(.footnote).foregroundStyle(WebTheme.danger)
+            } else if scope == .reactions && repliesFailed {
+                // 反応だけ引けなかった回に「まだリアクションはありません」と言わない
+                Text(L("リアクションを読み込めませんでした。引き下げて読み直せます",
+                       "Couldn't load reactions. Pull to retry"))
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.faint)
+                    .padding(.vertical, 12)
             } else if shownViewers.isEmpty {
                 // **「まだ0人」と「読めなかった」を混ぜない**
                 Text(scope == .reactions
@@ -247,8 +260,14 @@ struct StoryInsightsView: View {
         do {
             viewers = try await environment.stories.viewers(id: story.id)
             // **返信が読めなくても、見た人は出す。** 片方の失敗で
-            // 画面ごと空にしない
-            replies = (try? await environment.stories.replies(id: story.id)) ?? []
+            // 画面ごと空にしない。**読めなかった回に 0 件で上書きしない**
+            // （引き下げで読み直して失敗すると、前に読めた数まで消えていた）
+            let fetched = try? await environment.stories.replies(id: story.id)
+            if let fetched {
+                replies = fetched
+                repliesLoaded = true
+            }
+            repliesFailed = fetched == nil
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }

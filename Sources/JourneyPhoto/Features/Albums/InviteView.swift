@@ -25,6 +25,9 @@ struct InviteView: View {
     @State private var isLoading = true
     @State private var isJoining = false
     @State private var message: String?
+    /// 読み込みの失敗が**押し直せば直りうる**ものか（圏外・5xx）。
+    /// 失効した招待（4xx）に「もう一度試す」を出しても何も変わらない
+    @State private var canRetry = false
 
     /// 既に参加しているか（端末が覚えている分）。
     private var alreadyJoined: Bool {
@@ -48,6 +51,10 @@ struct InviteView: View {
                         Text(L("参加しているアルバムは、投稿画面で行き先に選べます。",
                                "You can still choose this album when you post."))
                             .font(.footnote)
+                    }
+                    if canRetry {
+                        Button(Labels.Common.retry) { Task { await load() } }
+                            .buttonStyle(.bordered)
                     }
                 }
                 .foregroundStyle(.secondary)
@@ -132,11 +139,17 @@ struct InviteView: View {
 
     private func load() async {
         isLoading = true
+        canRetry = false
         defer { isLoading = false }
         do {
             preview = try await environment.albums.invite(token: token)
         } catch {
             preview = nil
+            if case .server(let status, _)? = error as? APIError, (400..<500).contains(status) {
+                canRetry = false
+            } else {
+                canRetry = true
+            }
             message = (error as? LocalizedError)?.errorDescription
                 ?? L("この招待リンクは使えません", "This invite link isn't valid")
         }

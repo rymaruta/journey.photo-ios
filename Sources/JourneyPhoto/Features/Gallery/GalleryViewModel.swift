@@ -32,6 +32,13 @@ final class GalleryViewModel: ObservableObject {
     /// フォローしている人。`following` のときだけ要る
     /// フォロー先。**カードのフォローボタンにも渡す**（モック1）
     private(set) var followingIds: Set<String> = []
+    /// フォロー一覧を**取れなかった**（圏外など）。
+    ///
+    /// 取れなかった回を空の集合で表すと、「フォロー中」に
+    /// 「フォロー中の人の写真はまだありません」と出る——フォローしている人に
+    /// 「まだ誰もいない」と言うことになる。画面はこれを見て
+    /// 「読み込めませんでした」を出す
+    @Published private(set) var followingFailed = false
     private var viewerId: String?
 
     /// 絞り込みに出すカテゴリ。**写真が1枚もない種類は出さない**
@@ -104,8 +111,13 @@ final class GalleryViewModel: ObservableObject {
     ///
     /// **`use(viewerId:following:)` を使い回さない**——あちらは範囲を
     /// 既定へ倒すので、「フォロー中」を選んだ直後に「自分」へ戻ってしまう。
-    func refreshFollowing(_ following: Set<String>) {
+    ///
+    /// - Parameter following: nil は「取れなかった」。**手元の集合は潰さない**
+    ///   （前に取れていたぶんで出し続ける。一度も取れていなければ失敗のまま）
+    func refreshFollowing(_ following: Set<String>?) {
+        guard let following else { return }
         self.followingIds = following
+        followingFailed = false
         if case .loaded = state { state = .loaded(filtered()) }
     }
 
@@ -117,11 +129,15 @@ final class GalleryViewModel: ObservableObject {
     ///
     /// **フォロー中は未ログインだと中身が無い。** 絞れないので
     /// 「おすすめ」へ戻す（空の画面に置き去りにしない）。
-    func use(viewerId: String?, following: Set<String>) {
+    ///
+    /// - Parameter following: nil は「取れなかった」。人が替わった回なので
+    ///   前の人の集合は残さず、空にしたうえで `followingFailed` を立てる
+    func use(viewerId: String?, following: Set<String>?) {
         // 並びは sort と feed の両方で決まる（`sorted`）。**どちらかが変わったら**並べ直す
         let previousFeed = feed
         self.viewerId = viewerId
-        self.followingIds = following
+        self.followingIds = following ?? []
+        followingFailed = viewerId != nil && following == nil
         if viewerId == nil && feed.needsSignIn { feed = .recommended }
         let previousSort = sort
         scope = feed.scope

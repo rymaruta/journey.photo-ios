@@ -63,12 +63,21 @@ struct RootView: View {
     ///
     /// **開いたことにはしない。** 既読にするのは `NotificationsView` が
     /// 一覧を読めたときだけ——ここで既読にすると、バッジを見ただけで消える。
-    private func refreshUnread() async {
+    ///
+    /// - Parameter keepOnFailure: 引けなかった回に**いまの数を残す**。
+    ///   前面に戻ったときの数え直しだけ——圏外で戻っただけでベルの印が消えていた。
+    ///   人が替わった回（前の人の数を残さない）とお知らせを閉じた回（読んだあと）は 0 に倒す
+    private func refreshUnread(keepOnFailure: Bool = false) async {
         guard auth.userId != nil else {
             unread = 0
             return
         }
-        unread = (try? await environment.notifications.fetch().unread) ?? 0
+        let fetched = try? await environment.notifications.fetch().unread
+        if let fetched {
+            unread = fetched
+        } else if !keepOnFailure {
+            unread = 0
+        }
     }
 
     private var tabs: some View {
@@ -120,7 +129,7 @@ struct RootView: View {
         // **前面に戻ったら数え直す。** 裏にいる間に届いた通知の分が、
         // お知らせを開くかログインし直すまでベルに出ていなかった
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await refreshUnread() } }
+            if phase == .active { Task { await refreshUnread(keepOnFailure: true) } }
         }
         // **押した通知の行き先。** 数で見るのは、2回続けて押したときに
         // 「変わっていない」と見なされて2回目が効かなくなるため
