@@ -228,6 +228,24 @@ final class ViewModelTests: XCTestCase {
         await loading.value
     }
 
+    /// **最初の読み込みより先に読み直しが終わっても、その後の人の切り替えを見分ける。**
+    /// 回を控えないまま抜けていたので、以後ずっと前の人の一覧のままだった
+    func testViewerSwitchIsDetectedAfterAnEarlyReload() async {
+        let service = gallery("""
+        [{"id":"a","src":"https://x/a.jpg","userId":"u1","location":"パリ"},
+         {"id":"b","src":"https://x/b.jpg","userId":"u2","location":"パリ"}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.reloadPhotos(environment: env)       // 引き下げが先に終わった
+        await model.loadPhotos(environment: env, epoch: 0)
+        await service.setHidden(userIds: ["u2"], photoIds: [])
+
+        await model.loadPhotos(environment: env, epoch: 1)
+        await model.search("パリ", environment: env)
+        XCTAssertEqual(model.shown.map(\.id), ["a"], "人が替わったのに前の一覧のまま")
+    }
+
     /// **人が替わったら、選んでいたカテゴリも外す**（次の人の一覧に無いと0件のまま）
     func testSwitchingViewerClearsTheCategory() async {
         let service = gallery(feed)

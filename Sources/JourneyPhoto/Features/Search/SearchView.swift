@@ -737,8 +737,11 @@ final class SearchViewModel: ObservableObject {
 
     func loadPhotos(environment: AppEnvironment, epoch: Int) async {
         let switched = loadedEpoch != nil && loadedEpoch != epoch
-        guard allPhotos.isEmpty || switched else { return }
+        // **抜ける前に回を控える。** 引き下げ・ブロック後の読み直しが最初の
+        // `loadPhotos` より先に一覧を埋めると、ここで抜けて回が nil のまま残り、
+        // 以後の人の切り替えを一度も見分けなかった（前の人の限定公開が残る）
         loadedEpoch = epoch
+        guard allPhotos.isEmpty || switched else { return }
         // 🔴 **人が替わったら、読み直しに失敗しても前の一覧を残さない**
         // （前の人の限定公開の写真が入っている）
         if switched {
