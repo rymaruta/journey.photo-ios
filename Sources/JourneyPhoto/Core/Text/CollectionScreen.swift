@@ -46,9 +46,6 @@ enum CollectionScreen {
         return AppConfig.siteBaseURL.appendingPathComponent("location/\(slug)")
     }
 
-    /// シェアで配る文字。題と枚数に、**開ける URL を1つ**添える
-    /// ——集約のページがあればそれ、無ければ先頭の写真のページ。
-    /// 写真の URL は公開の一覧に載っている写真だけ（`PhotoLink`）
     /// 配ってよい写真か。**公開範囲を絞った写真と下書きは、どの URL でも Web で開けない**
     /// （Web が読む一覧は公開の写真だけ——`?photo=` に振り替えても「見つかりませんでした」）
     static func isShareable(_ photo: Photo) -> Bool {
@@ -61,6 +58,9 @@ enum CollectionScreen {
         photos.first(where: isShareable)
     }
 
+    /// シェアで配る文字。題と枚数に、**開ける URL を1つ**添える
+    /// ——集約のページがあればそれ、無ければ `lead`（`shareLead` が選んだ、最初に
+    /// 配ってよい写真）のページ。配れない写真には URL を付けない（`isShareable`）
     static func shareText(title: String, count: Int, kind: PhotoQuery.Collection?, lead: Photo?) -> String {
         var lines = ["\(title) · \(L("\(count)枚", "\(count) photos"))"]
         if let url = pageURL(kind) ?? lead.flatMap({
