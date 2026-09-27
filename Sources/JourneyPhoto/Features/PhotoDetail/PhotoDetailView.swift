@@ -39,7 +39,13 @@ struct PhotoDetailView: View {
     @State private var nearby: [Photo] = []
     /// 「この場所のスポット」の行き先。**台帳にも写真にも辿り着けたときだけ入る**
     @State private var spotLead: SpotLead?
-    @State private var isFollowing = false
+    /// フォローしているか。**分からない間は nil**——ボタンを出さない
+    /// （取れなかった回に「フォロー」と出すと、フォロー中の人に二重に送る）
+    @State private var isFollowing: Bool?
+    /// 成功の知らせ（ブロックしました など）。**失敗の赤字（`actionError`）と分ける**
+    @State private var actionNotice: String?
+    /// 削除を確かめているコメント（押してすぐ消さない）
+    @State private var commentPendingDelete: PhotoComment?
     @State private var isFollowWorking = false
     @State private var showUnfollowConfirm = false
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）
@@ -189,6 +195,8 @@ struct PhotoDetailView: View {
                 isFollowing = false
                 return
             }
+            // 人が替わった・入り直した回は、答えが来るまで「分からない」
+            isFollowing = nil
             // **取れなかった回は書かない。** 圏外で「フォロー」に戻すと、
             // フォロー中の人を押して二重に送る（`FollowListView` と同じ扱い）
             let ids = try? await environment.social.myFollowingIds()
@@ -221,6 +229,18 @@ struct PhotoDetailView: View {
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
             Text(L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
+        }
+        // コメントの削除は確かめてから（押し間違いで他人の書き込みを消さない）
+        .alert(L("このコメントを削除しますか？", "Delete this comment?"),
+               isPresented: Binding(get: { commentPendingDelete != nil },
+                                    set: { if !$0 { commentPendingDelete = nil } })) {
+            Button(Labels.Common.delete, role: .destructive) {
+                if let comment = commentPendingDelete { Task { await model.deleteComment(comment) } }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(L("\(commentPendingDelete?.name ?? "")さんのコメントを削除します。元に戻せません。",
+                   "Deletes the comment by \(commentPendingDelete?.name ?? ""). This cannot be undone."))
         }
     }
 
@@ -511,14 +531,14 @@ struct PhotoDetailView: View {
 
                 Spacer(minLength: 8)
 
-                if !isMine, auth.userId != nil {
-                    followButton(ownerId)
+                if !isMine, auth.userId != nil, let following = isFollowing {
+                    followButton(ownerId, following: following)
                 }
             }
         }
     }
 
-    private func followButton(_ userId: String) -> some View {
+    private func followButton(_ userId: String, following isFollowing: Bool) -> some View {
         Button {
             // 外すときだけ確認を挟む（`unfollowConfirmation`）
             if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(userId) } }
@@ -546,12 +566,18 @@ struct PhotoDetailView: View {
         guard !isFollowWorking else { return }
         isFollowWorking = true
         defer { isFollowWorking = false }
-        if isFollowing {
-            let result = try? await environment.social.unfollow(userId: userId)
-            if let result { isFollowing = result.following }
-        } else {
-            let result = try? await environment.social.follow(userId: userId)
-            if let result { isFollowing = result.following }
+        guard let wasFollowing = isFollowing else { return }
+        // **失敗を黙らない**（いいね・保存と同じ扱い）。状態は書き換えない
+        do {
+            let result = wasFollowing
+                ? try await environment.social.unfollow(userId: userId)
+                : try await environment.social.follow(userId: userId)
+            isFollowing = result.following
+        } catch is CancellationError {
+            return
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription
+                ?? L("フォローを変更できませんでした", "Couldn't update follow")
         }
     }
 
@@ -705,10 +731,18 @@ struct PhotoDetailView: View {
                 } label: {
                     // **いちばん押されるボタンがいちばん小さかった。**
                     // 既定の字のままで 20pt ほどしか無く、指では狙いにくい
-                    Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
-                        .font(.title2)
-                        .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
-                        .webTappable()
+                    // **分からない数は出さない**（読み込み前・圏外に「0」と描かない）
+                    if let likes = model.likes {
+                        Label("\(likes)", systemImage: model.liked ? "heart.fill" : "heart")
+                            .font(.title2)
+                            .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
+                            .webTappable()
+                    } else {
+                        Image(systemName: model.liked ? "heart.fill" : "heart")
+                            .font(.title2)
+                            .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
+                            .webTappable()
+                    }
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(model.liked ? .isSelected : [])
@@ -763,6 +797,8 @@ struct PhotoDetailView: View {
             }
             if let message = model.errorMessage ?? actionError {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.danger)
+            } else if let actionNotice {
+                Text(actionNotice).font(.footnote).foregroundStyle(WebTheme.muted)
             }
         }
     }
@@ -913,9 +949,12 @@ struct PhotoDetailView: View {
                         // ——UGC のアプリは「不快な書き込みを持ち主が取り除ける」
                         // ことを審査（1.2）で見られる
                         if comment.uid == auth.userId || isMine {
-                            Button(Labels.Common.delete) { Task { await model.deleteComment(comment) } }
+                            // **押してすぐ消さない**（確かめてから）。読み上げには誰のコメントかを入れる
+                            Button(Labels.Common.delete) { commentPendingDelete = comment }
                                 .font(.caption2)
                                 .disabled(model.deletingCommentIds.contains(comment.id))
+                                .accessibilityLabel(L("\(comment.name)さんのコメントを削除",
+                                                      "Delete comment by \(comment.name)"))
                         }
                     }
                     Text(comment.text).font(.callout)
@@ -992,7 +1031,11 @@ struct PhotoDetailView: View {
         do {
             // 押したあと実際に消す（公開一覧は静的なので端末で落とす）
             try await hidden.blockAndHide(userId, environment: environment)
-            actionError = L("ブロックしました。おたがいの投稿が見えなくなります。", "Blocked. You won't see each other's posts.")
+            // **成功は赤字で出さない**（失敗の欄 `actionError` は空ける）。
+            // ブロックするとフォローも外れるので、ボタンも外した姿にする
+            actionError = nil
+            actionNotice = L("ブロックしました。おたがいの投稿が見えなくなります。", "Blocked. You won't see each other's posts.")
+            if userId == ownerId { isFollowing = false }
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
@@ -1005,6 +1048,12 @@ struct PhotoDetailView: View {
     private func toggleSave() async {
         // **送っている間は受けない**（いいねの `isLiking` と同じ）。連打で save と
         // unsave が並んで飛ぶと、着く順や失敗の巻き戻しで画面とサーバーが食い違う
+        // **未ログインは送らずに知らせる**（いいねと同じ扱い）。以前は押せて、
+        // 失敗を黙って巻き戻すだけだった
+        guard auth.userId != nil else {
+            actionError = L("保存するにはログインしてください", "Sign in to save photos")
+            return
+        }
         guard !isSavingBookmark else { return }
         isSavingBookmark = true
         defer { isSavingBookmark = false }
@@ -1019,8 +1068,18 @@ struct PhotoDetailView: View {
             } else {
                 try await environment.saves.save(photoId: id)
             }
+            if actionError != nil { actionError = nil }
+        } catch is SaveService.GoneButSaved {
+            // 写真はもう見えないが、サーバーに保存は残っている——しおりは「保存済み」
+            savedPhotos.set(id, saved: true, for: owner)
+            actionError = SaveService.GoneButSaved().errorDescription
+        } catch is CancellationError {
+            savedPhotos.set(id, saved: wasSaved, for: owner)
         } catch {
             savedPhotos.set(id, saved: wasSaved, for: owner)
+            // **失敗を黙らない**（いいねと同じく、理由を出す）
+            actionError = (error as? LocalizedError)?.errorDescription
+                ?? L("保存できませんでした", "Couldn't save")
         }
     }
 

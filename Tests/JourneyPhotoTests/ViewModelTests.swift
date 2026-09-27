@@ -636,6 +636,49 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.likes, 7, "取れなかった回に一覧の数を捨てている")
     }
 
+    /// 🔴 **一覧に数が無く、読み込みも取れなかった回は「分からない」（nil）。** 0 と出さない
+    func testUnknownLikesStayUnknown() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: nil)
+        XCTAssertNil(model.likes, "読み込み前に 0 と出している")
+        StubProtocol.respond(status: 500, body: "{}")
+        await model.load()
+        XCTAssertNil(model.likes, "取れなかった回に 0 と出している")
+        model.show(photoId: "p2", initialLikes: nil, liked: false)
+        XCTAssertNil(model.likes, "送った先の1枚に 0 と出している")
+    }
+
+    /// 🔴 **保存の 404 でも、サーバーに保存が残っている回は「保存済み」と分かる。**
+    /// 捨てると巻き戻して未保存に描き、外す導線が消えていた（`saves.ts` の `savePhoto`）
+    func testSaveGoneButStillSavedIsReported() async {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/save", status: 404,
+                             body: #"{"error":"写真が見つかりません","saved":true}"#)
+        StubProtocol.respond(path: "/user/saves/p1", status: 200, body: #"{"saved":true}"#)
+        do {
+            try await SaveService(api: api()).save(photoId: "p1")
+            XCTFail("404 を成功として扱っている")
+        } catch is SaveService.GoneButSaved {
+        } catch {
+            XCTFail("保存が残っているのに素の失敗として返している: \(error)")
+        }
+    }
+
+    /// 保存が残っていない 404 は、ふつうの失敗のまま（保存済みと言い張らない）
+    func testSaveGoneAndNotSavedIsPlainFailure() async {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/save", status: 404, body: #"{"error":"写真が見つかりません"}"#)
+        StubProtocol.respond(path: "/user/saves/p1", status: 200, body: #"{"saved":false}"#)
+        do {
+            try await SaveService(api: api()).save(photoId: "p1")
+            XCTFail("404 を成功として扱っている")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .server(status: 404, message: "写真が見つかりません"))
+        } catch {
+            XCTFail("想定外の失敗: \(error)")
+        }
+    }
+
     /// 🔴 **束の隣へ送ったら、数・ハート・コメントをその1枚のものに替える。**
     /// 開いた1枚のままだと、2枚目を見ながら押したいいねが1枚目に付いていた
     func testShowAnotherPhotoInTheBundleSwitchesTheTarget() async {
