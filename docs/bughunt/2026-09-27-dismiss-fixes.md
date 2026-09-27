@@ -18,6 +18,12 @@
 ## 1件ずつ
 
 ### H-1 ハイライトの編集シートを開いていても時計が進む — 直した（コミット2）
+- 今のコードで確認: `StoryViewerView.holds` はただの `let` のまま、`frozen` が直に読んでいた。
+  時計（`runClock`）は `.task(id: story.id)` で始めた瞬間の画面の写しを持ち続けるので、
+  `holds` は `false` のまま固まる。監査のとおり（同じ理由で `scenePhase` は `isForeground` に写してあった）
+- 直し: `@State isHeld` に写し（初期値は `init` で `holds`）、`onChange(of: holds)` で更新。`frozen` は `isHeld` を読む
+- テスト: 無し。直しの中身が SwiftUI の `@State` と `let` の写し方の違いそのもので、`Shims/` の模型では
+  再現できない（`StoryPlayback.isFrozen` 自体は既存のテストがある）
 
 ### H-2 探す: 詳細の中で通報・ブロックすると閉じる — 直した（コミット1）
 - 今のコードで確認: `SearchView` の `onChange(of: hidden.revision)` は画面の状態を見ずに読み直し、
@@ -41,6 +47,15 @@
   取り直す（マイページの中で外す操作・人の切り替えは画面に出ている間なので、従来どおりすぐ消える）
 
 ### H-5 人のページ: 戻ってすぐ次を開くと閉じる — 一部は既に直っていた。残りを直した（コミット2）
+- 既に直っていた: フォロー中かどうか（`isFollowing = ids?.contains(userId) ?? false`）は、取れなかった回は
+  書かない形（`if let ids`）になっていた。ハイライトの輪の `.id` が変わって閉じる筋は消えている
+- 残っていた: `publicProfile` が取り消されると `APIError.unreachable`（M-9）で届き、`errorMessage` が入って
+  格子が失敗の帯に差し替わる（開いたばかりの詳細が閉じる）。公開一覧が取り消された回も、一度も取れていなければ
+  `photoCount = .failed` を書いていた
+- 直し: 失敗を書く前に `Task.isCancelled` を見て、取り消された回は何も書かずに戻る（前の中身を残す）。
+  M-9（APIClient で取り消しを `CancellationError` にする）は別の所の担当なので、ここでは受け手の側だけ直した。
+  M-9 が入っても、`catch` の汎用の枝が同じく守られる
+- テスト用に `AppEnvironment.init` に `api:`（既定値 nil）を足した。`gallery:`・`trips:` と同じ差し替え口
 
 ### H-6 ホーム「フォロー中」: 戻ってすぐ次を開くと閉じる — 既に直っていた（記録だけ）
 - 4c0779a・b247b88 で `use(viewerId:fetchedFollowing:)` になり、取れなかった回（取り消しを含む）は
@@ -56,8 +71,31 @@
 - 直し: `UserProfileView` と同じく `onAppear` で写しを取り、`dropped.viewers` で絞る
 
 ### M-10 地図: 台帳スポットの札から開いた画面が、地図が動くと閉じる — 直した（コミット2）
+- 今のコードで確認: 札は `model.stillShown(official:)` が true のときだけ描かれ、札の中の「スポットを見る」が
+  `NavigationLink`。ピン（`officialPins`）は地図の枠（`update(visible:)`）で入れ替わる
+- 起きるかは**確かめていない**: 上に画面を積んでいる間も `onMapCameraChange` が届くか（遅れて届いた
+  現在地でカメラが動いたときなど）は実機が要る。直しは「積んでいる間は札を下げない」だけで、
+  届かないなら何も変わらないので入れた
+- 直し: `isOnScreen` を持ち、札を出すかを `PhotoMapViewModel.showsCard(official:onScreen:)` で決める。
+  戻ってきたら今出ているピンのぶんだけに戻る
 
-### L-12・L-13 — 後で書く
+### L-13 行の id が隣の写真まで含み、遅れて書かれた一覧で詳細が閉じる — 直した（コミット2）
+- 今のコードで確認: `GalleryViewModel.load` は取り消された回も書いていた。控え（`PhotoSnapshotStore`）が
+  無い端末では、取り消しが失敗の帯（`.failed`）になってフィードごと差し替わる。`TagPhotosView.load` は
+  `(try? …) ?? []` で、取り消された回・取れなかった回に**一覧を空にしていた**（監査の書き方より強い形）
+- 直し: どちらも書く前に `Task.isCancelled` を見る。`TagPhotosView` は取れなかった回も前の一覧を残す
+  （初回に取れなかったときは今までどおり空の表示になる）
+- テスト: `GalleryViewModel` だけ（`TagPhotosView` は画面なので Linux では動かせない）
+
+### L-12 旅行プランを削除すると2段戻る恐れ — 触っていない
+- 削除すると親の一覧から行が消えて自動で戻り、そこへ `dismiss()` が重なる、という指摘。
+  どちらが先に効くか・`dismiss()` が既に外れた画面で何をするかは実機でしか決まらない。
+  片方を外すと、外した方が実際に効いていた場合に「削除したのに戻らない」になるので、
+  確かめられないまま手を入れなかった
+
+### 低のほかの項目
+- L-14（招待の画面を戻るたびに作り直す）・L-15（地図の寄せ直し）はスクロール位置や地図の位置の話で、
+  開いている画面は閉じないので担当外とした
 
 ## テスト
 
@@ -65,6 +103,11 @@
   修正前のソースに戻すと `ModerationSnapshot.users` が無くてコンパイルで落ちることを確かめた。
   **画面が閉じない（`isOnScreen` で遅らせる）こと自体は Linux では試せない**。H-4・M-3 は
   画面の状態だけの直しで、純関数に出せる部分が無いのでテストを足していない
+- コミット2: `ViewModelTests.testGalleryReloadCancelledKeepsTheFeed`（L-13）・
+  `ViewModelTests.testProfileReloadCancelledKeepsWhatWasShown`（H-5）・
+  `PhotoMapViewModelTests.testOfficialCardStaysWhileSpotIsOpen`（M-10）。
+  直し本体（`GalleryViewModel.swift`・`UserProfileView.swift`）だけを修正前に戻すと、前の2本は
+  「取り消しを失敗の帯にしている」で落ちる（挙動で落ちる）。地図は `showsCard` が無くてコンパイルで落ちる
 
 ## 検査の記録
 

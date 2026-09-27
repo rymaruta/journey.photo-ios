@@ -94,8 +94,13 @@ struct StoryViewerView: View {
         let onEdit: (() -> Void)?
     }
     let highlight: HighlightContext?
-    /// 外の画面が止めている（ハイライトの編集シートなど）
+    /// 外の画面が止めている（ハイライトの編集シートなど）。**時計は直に読まない**（`isHeld`）
     let holds: Bool
+    /// `holds` の写し。**`isForeground` と同じ理由で `@State` に写してから読む**——
+    /// `holds` はただの `let` なので、時計（`runClock`）が持つ画面の写しの中では
+    /// 始めた瞬間の `false` のまま固まる。編集シートを開いても時計が進み、最後の1本
+    /// なら画面ごと戻されていた（`HighlightPlayerView` の「止める」が効いていなかった）
+    @State private var isHeld: Bool
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
@@ -105,6 +110,7 @@ struct StoryViewerView: View {
         self.viewerId = viewerId
         self.highlight = highlight
         self.holds = holds
+        _isHeld = State(initialValue: holds)
         self.onSeen = onSeen
         let start = stories.indices.contains(startIndex) ? startIndex : 0
         _index = State(initialValue: start)
@@ -128,7 +134,7 @@ struct StoryViewerView: View {
             paused: paused,
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
-                || showAuthor || showDeleteConfirm || holds,
+                || showAuthor || showDeleteConfirm || isHeld,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -157,6 +163,7 @@ struct StoryViewerView: View {
         }
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
         .onChange(of: frozen) { _, _ in syncSong(restart: false) }
+        .onChange(of: holds) { _, now in isHeld = now }
         .onChange(of: muted) { _, now in
             if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
         }

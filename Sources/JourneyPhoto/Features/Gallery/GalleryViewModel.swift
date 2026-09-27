@@ -60,11 +60,17 @@ final class GalleryViewModel: ObservableObject {
     func load(force: Bool = false) async {
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
+        // **取り消された回は何も書かない。** 戻ると `.task` が走り直し、読み終わる前に
+        // 次の写真を開くと取り消される。失敗の帯はフィードごと差し替え、遅れて書いた
+        // 一覧は並びが変わると段（`EditorialLayout.Row.id` は隣の写真まで含む）を
+        // 作り直す——どちらでも開いたばかりの詳細が閉じる。戻れば `.task` がまた読む
         do {
             let photos = try await gallery.fetchPhotos(force: force)
+            guard !Task.isCancelled else { return }
             all = sorted(photos)
             state = .loaded(filtered())
         } catch {
+            guard !Task.isCancelled else { return }
             state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
         }
     }
