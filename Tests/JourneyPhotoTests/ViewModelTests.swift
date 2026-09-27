@@ -269,6 +269,23 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNotNil(model.errorMessage)
     }
 
+    /// **フォロー数が遅くても、写真は待たずに入る**（3ecb6a5 は数を待ってから
+    /// 写真を入れていたので、格子が往復1回ぶん遅れていた）
+    func testSlowFollowStatsDoNotHoldBackPhotos() async {
+        prepare()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200,
+                             body: #"[{"id":"p1","src":"/uploads/p1.jpg"}]"#)
+        StubProtocol.respond(path: "/users/a/follow", status: 200,
+                             body: #"{"followers":2,"following":1}"#, delay: 0.5)
+        let model = MyPageViewModel(api: api())
+        let loading = Task { await model.load(for: "a") }
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "フォロー数を待って写真が遅れている")
+        await loading.value
+        XCTAssertEqual(model.followers, 2)
+    }
+
     /// **ログインしていない呼び出しは何もしない**（読み込み中の印も立てない）
     func testLoadWithoutAUserDoesNothing() async {
         prepare()

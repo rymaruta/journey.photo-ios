@@ -936,31 +936,42 @@ final class MyPageViewModel: ObservableObject {
                 self.profile = loaded
                 shownProfileSeq = seq
             }
-            // **見出しとフォロー数は写真より先に入れる。** 写真だけ落ちた回も
+            // **フォロー数は写真と並べて取り、写真を待たせない。** 写真だけ落ちた回も
             // 名前・アイコン・フォロー数は出す（写真の欄だけが知らせになる）。
-            // 数を写真の後ろに置くと、写真の失敗で数を取りに行かず「0」と出る
-            //
-            // **`if let x = try? await …` と書かない。** 手元の構文検査
-            // （tree-sitter）が読めず、`verify.sh` が「構文が壊れている」と
-            // 言う（CLAUDE.md に記録のある制約）。文を分ける
-            if let userId = self.profile?.userId {
-                let stats = try? await self.social.followStats(userId: userId)
-                if let stats, gen == generation {
-                    self.followers = stats.followers
-                    self.following = stats.following
-                }
+            // 数を写真の後ろに置くと写真の失敗で「0」と出る（a5259c0）、
+            // 数を待ってから写真を入れると格子が往復1回ぶん遅れる（3ecb6a5）
+            async let stats = self.followStatsIfAny(self.profile?.userId)
+            var photosOutcome: Result<[Photo], Error>
+            do {
+                photosOutcome = .success(try await photos)
+            } catch {
+                photosOutcome = .failure(error)
             }
-            let loadedPhotos = try await photos
+            if case .success(let loadedPhotos) = photosOutcome, gen == generation {
+                // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
+                self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
+                self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
+            }
+            let loadedStats = await stats
             guard gen == generation else { return }
-            // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
-            self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
-            self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
+            if let loadedStats {
+                self.followers = loadedStats.followers
+                self.following = loadedStats.following
+            }
+            _ = try photosOutcome.get()
         } catch {
             guard gen == generation else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
         }
     }
 
+
+    /// フォロー数。**取れなければ nil**（数は 0 のまま・画面は出す）
+    private func followStatsIfAny(_ userId: String?) async -> SocialService.FollowStats? {
+        guard let userId else { return nil }
+        let stats = try? await social.followStats(userId: userId)
+        return stats
+    }
 
     /// 鍵を持たない回の読み込み（`PreviewSession` のときだけ通る）。
     ///
