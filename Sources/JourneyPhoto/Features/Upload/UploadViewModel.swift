@@ -115,12 +115,26 @@ final class UploadViewModel: ObservableObject {
     private var cancelled = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
     private var loadTask: Task<Void, Never>?
+    /// 本体まで置けて、保存がまだ通っていない写真（`UploadService.stage` の注記）
+    private let staged = StagedUploads()
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
         self.uploads = uploads
         self.albumService = albums
         self.photoService = photos
         self.discovery = discovery
+    }
+
+    /// **閉じたら、保存しなかった本体を片付ける。** 保存の失敗では片付けない
+    /// （やり直しで同じ鍵を使う）ので、諦めて閉じた分はここで消す。
+    /// 保存が実は通っていた鍵は、サーバーが消さない（`discardUpload`）
+    deinit {
+        let keys = staged.removeAll()
+        guard !keys.isEmpty else { return }
+        let uploads = self.uploads
+        Task {
+            for key in keys { await uploads.discard(key: key) }
+        }
     }
 
     /// アルバムは無いことの方が多い。**取れなくても投稿は止めない。**
@@ -189,8 +203,12 @@ final class UploadViewModel: ObservableObject {
     }
 
     func remove(_ photoId: UUID) {
+        // 送っている間は外さない（ボタンの `.disabled` は次の描画まで効かない）。
+        // 保存の最中に本体を片付けると、通った行の画像が割れる
+        guard !isWorking else { return }
         placeTasks[photoId]?.cancel()
         placeTasks[photoId] = nil
+        discardStaged(photoId)
         let removed = items.first { $0.id == photoId }
         items.removeAll { $0.id == photoId }
         // **ライブラリの選択からも外す。** 残すと、次に「追加」を開いたときに
@@ -216,6 +234,7 @@ final class UploadViewModel: ObservableObject {
         for id in dropped {
             placeTasks[id]?.cancel()
             placeTasks[id] = nil
+            discardStaged(id)
         }
         items.removeAll { dropped.contains($0.id) }
         // **束の印を捨てるのは、前の写真が1枚も残らないときだけ。** 「追加」は
@@ -324,7 +343,13 @@ final class UploadViewModel: ObservableObject {
 
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
+        let postedKeys = items.filter { done.contains($0.id) }.map(\.pickerItem)
         items.removeAll { done.contains($0.id) }
+        // 🔴 **ライブラリの選択からも外す。** 残すと、残った1枚を外す・「追加」で
+        // 選び足す、のどちらでも選び直しの差分が投稿済みの写真を「新しく選ばれた」
+        // と読み、**同じ写真をもう一度読み込んで上げる**（`remove` と同じ理由）
+        let remaining = PickerReconcile.dropPosted(picked: pickerItems, posted: postedKeys)
+        if remaining.count != pickerItems.count { pickerItems = remaining }
         // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
         // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
         if items.isEmpty && failures.isEmpty {
@@ -373,12 +398,22 @@ final class UploadViewModel: ObservableObject {
         draft.albumId = selectedAlbumId
         draft.groupId = groupId
 
-        let photo = try await uploads.upload(
-            data: item.prepared.data,
-            fileName: item.prepared.fileName,
-            fileType: item.prepared.contentType,
-            draft: draft
-        )
+        // 🔴 **やり直しは前回の鍵で保存する**（`UploadService.stage` の注記）。
+        // 保存が落ちた写真は本体を置き直さない——新しい鍵で送ると、前回の保存が
+        // 実は通っていたときに同じ写真が2枚になる
+        let presigned: UploadService.PresignResponse
+        if let already = staged[item.id] {
+            presigned = already
+        } else {
+            presigned = try await uploads.stage(
+                data: item.prepared.data,
+                fileName: item.prepared.fileName,
+                fileType: item.prepared.contentType
+            )
+            staged[item.id] = presigned
+        }
+        let photo = try await uploads.save(draft, presigned: presigned)
+        staged[item.id] = nil
         // **曲は保存のあと。** `POST /upload/save` は song を受け取らない
         // ので、`PUT /photos/{id}` で付ける。ここが落ちても写真は
         // 上がっているので、投稿そのものは失敗にしない
@@ -392,6 +427,14 @@ final class UploadViewModel: ObservableObject {
             }
         }
         return true
+    }
+
+    /// 置いたまま保存していない本体を片付ける（本人がその写真を外した）
+    private func discardStaged(_ photoId: UUID) {
+        guard let presigned = staged[photoId] else { return }
+        staged[photoId] = nil
+        let uploads = self.uploads
+        Task { await uploads.discard(key: presigned.key) }
     }
 
     private func reset() {
@@ -414,8 +457,34 @@ final class UploadViewModel: ObservableObject {
     }
 }
 
+/// 置いたが保存していない本体の控え（写真ごと）。
+///
+/// **MainActor に縛らない箱に入れる**のは、画面のモデルが消えるとき（`deinit`）
+/// にも読むため。触るのは MainActor の上だけ
+final class StagedUploads: @unchecked Sendable {
+    private var byPhoto: [UUID: UploadService.PresignResponse] = [:]
+
+    subscript(photoId: UUID) -> UploadService.PresignResponse? {
+        get { byPhoto[photoId] }
+        set { byPhoto[photoId] = newValue }
+    }
+
+    /// 全部を取り出して空にする。返すのは片付ける鍵
+    func removeAll() -> [String] {
+        let keys = byPhoto.values.map(\.key)
+        byPhoto = [:]
+        return keys
+    }
+}
+
 /// 新規投稿の「追加」（ライブラリの選び直し）の差分。画面の状態を持たない計算だけ
 enum PickerReconcile {
+
+    /// 投稿済みの写真の印を選択から外す。カメラの分（nil）は選択に居ないので関係ない
+    static func dropPosted<Key: Hashable>(picked: [Key], posted: [Key?]) -> [Key] {
+        let gone = Set(posted.compactMap { $0 })
+        return picked.filter { !gone.contains($0) }
+    }
 
     /// 選び直しの差分。**残す印と、新しく読む印**を返す。
     ///

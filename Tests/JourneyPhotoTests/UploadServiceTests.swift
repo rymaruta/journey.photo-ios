@@ -49,10 +49,11 @@ final class UploadServiceTests: XCTestCase {
             .init(match: "/put", status: 200, body: ""),
             .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
         ]
-        let photo = try await service().upload(
+        let presigned = try await service().stage(
             data: Data(repeating: 0xFF, count: 16),
-            fileName: "photo.jpg", fileType: "image/jpeg", draft: PhotoDraft()
+            fileName: "photo.jpg", fileType: "image/jpeg"
         )
+        let photo = try await service().save(PhotoDraft(), presigned: presigned)
         XCTAssertEqual(photo?.id, "p1")
         XCTAssertEqual(ScriptedProtocol.calls.map(\.path),
                        ["/upload/presigned-url", "/put", "/upload/save"])
@@ -61,33 +62,75 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertEqual(put.method, "PUT")
     }
 
-    /// **保存で落ちたら、S3 の迷子を片付ける。**
-    func testDiscardsUploadWhenSaveFails() async {
+    /// **PUT で落ちたら、S3 の迷子を片付ける。** 行はまだ無いので消してよい
+    func testDiscardsUploadWhenPutFails() async {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 500, body: ""),
+            .init(match: "/upload/discard", status: 200, body: #"{"success":true}"#),
+        ]
+        do {
+            _ = try await service().stage(
+                data: Data(repeating: 0xFF, count: 16),
+                fileName: "photo.jpg", fileType: "image/jpeg"
+            )
+            XCTFail("投げるはず")
+        } catch {
+            guard case .server(let status, _)? = error as? APIError else {
+                return XCTFail("形が違う: \(error)")
+            }
+            XCTAssertEqual(status, 500)
+        }
+        XCTAssertTrue(ScriptedProtocol.calls.contains { $0.path == "/upload/discard" },
+                      "S3 に迷子が残ったまま")
+    }
+
+    /// 🔴 **保存のやり直しは同じ鍵で送る。** 保存が「落ちた」ときも、サーバーには
+    /// 行ができていることがある（応答だけ失われた）。やり直しで presign から
+    /// 通すと新しい鍵になり、サーバーの「鍵から ID を導く」重複よけが効かず、
+    /// 同じ写真が2枚になっていた。片付け（discard）もしない——やり直す鍵の本体が消える
+    @MainActor
+    func testRetryAfterFailedSaveReusesTheSameKey() async throws {
         ScriptedProtocol.script = [
             .init(match: "/upload/presigned-url", status: 200, body: presignBody),
             .init(match: "/put", status: 200, body: ""),
             .init(match: "/upload/save", status: 500, body: #"{"error":"保存に失敗しました"}"#),
             .init(match: "/upload/discard", status: 200, body: #"{"success":true}"#),
         ]
-        do {
-            _ = try await service().upload(
-                data: Data(repeating: 0xFF, count: 16),
-                fileName: "photo.jpg", fileType: "image/jpeg", draft: PhotoDraft()
-            )
-            XCTFail("投げるはず")
-        } catch {
-            XCTAssertEqual((error as? APIError)?.errorDescription, "保存に失敗しました")
-        }
-        XCTAssertTrue(ScriptedProtocol.calls.contains { $0.path == "/upload/discard" },
-                      "S3 に迷子が残ったまま")
+        let api = APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"),
+            session: session
+        )
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.items = [PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil))]
+
+        await model.submit()
+        XCTAssertEqual(model.items.count, 1, "落ちた写真は残る")
+        XCTAssertNotNil(model.errorMessage)
+
+        ScriptedProtocol.script = [
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+        ]
+        await model.submit()
+        XCTAssertTrue(model.items.isEmpty)
+
+        let paths = ScriptedProtocol.calls.map(\.path)
+        XCTAssertEqual(paths.filter { $0 == "/upload/presigned-url" }.count, 1, "やり直しで新しい鍵をもらっている")
+        XCTAssertEqual(paths.filter { $0 == "/put" }.count, 1, "本体を置き直している")
+        XCTAssertEqual(paths.filter { $0 == "/upload/save" }.count, 2)
+        XCTAssertFalse(paths.contains("/upload/discard"), "やり直す鍵の本体を消している")
     }
 
     /// 上限と形は**手前で弾く**（50MB 上げてから 400 を食わない）。
     func testRejectsTooLargeFileWithoutCallingServer() async {
         do {
-            _ = try await service().upload(
+            _ = try await service().stage(
                 data: Data(count: UploadService.maxFileSize + 1),
-                fileName: "big.jpg", fileType: "image/jpeg", draft: PhotoDraft()
+                fileName: "big.jpg", fileType: "image/jpeg"
             )
             XCTFail("投げるはず")
         } catch {
@@ -103,9 +146,9 @@ final class UploadServiceTests: XCTestCase {
     /// **SVG は通さない。** スクリプトを書ける文書で、同じオリジンから返る。
     func testRejectsSVG() async {
         do {
-            _ = try await service().upload(
+            _ = try await service().stage(
                 data: Data("<svg/>".utf8),
-                fileName: "a.svg", fileType: "image/svg+xml", draft: PhotoDraft()
+                fileName: "a.svg", fileType: "image/svg+xml"
             )
             XCTFail("投げるはず")
         } catch {

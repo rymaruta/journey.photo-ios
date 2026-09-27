@@ -31,4 +31,15 @@ final class UploadReconcileTests: XCTestCase {
         let r = PickerReconcile.reconcile(existing: [String?](), picked: ["a", "a"])
         XCTAssertEqual(r.added, ["a"])
     }
+
+    /// 🔴 **投稿済みの写真は選択から外す。** 残すと、残った1枚を外したときや
+    /// 「追加」で選び足したときの差分が、投稿済みの写真を新しく選ばれた分と読み、
+    /// 同じ写真をもう一度上げていた
+    func testPostedItemsLeaveTheSelection() {
+        let picked = PickerReconcile.dropPosted(picked: ["a", "b"], posted: ["a", nil])
+        XCTAssertEqual(picked, ["b"])
+        // 残った b を外しても、a が戻ってこない
+        let r = PickerReconcile.reconcile(existing: ["b"], picked: picked.filter { $0 != "b" })
+        XCTAssertEqual(r.added, [])
+    }
 }
