@@ -490,4 +490,12 @@ final class CollectionTitleTests: XCTestCase {
         XCTAssertEqual(PhotoQuery.Collection.category("風景").title, "風景")
         XCTAssertEqual(PhotoQuery.Collection.tag("冬").title, "#冬")
     }
+
+    /// **タグの題は札（`TagInput.chipText`）と同じ畳み方。** 札が「#旅」なのに
+    /// 押した先の見出しが「###旅」「#＃旅」にならない
+    func testTagTitleMatchesChip() {
+        XCTAssertEqual(PhotoQuery.Collection.tag("##旅").title, "#旅")
+        XCTAssertEqual(PhotoQuery.Collection.tag("＃旅").title, "#旅")
+        XCTAssertEqual(PhotoQuery.Collection.tag("旅").title, TagInput.chipText("旅"))
+    }
 }

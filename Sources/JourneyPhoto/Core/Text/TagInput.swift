@@ -149,7 +149,8 @@ enum PhotoQuery {
 
         var title: String {
             switch self {
-            case .tag(let value): return "#\(value)"
+            // 札（`chipText`）と同じ畳み方——「##旅」「＃旅」の札が「#旅」なのに見出しが食い違わない
+            case .tag(let value): return TagInput.chipText(value)
             case .location(let value): return value
             // 生の値（`landscape`）ではなく画面の名前（「風景」）。行き先の題が、押した
             // 札の「おすすめ · 風景」と食い違わないように
