@@ -315,17 +315,17 @@ extension PhotoMapViewModelTests {
     func testDropsTheCardWhenItsPinIsFilteredOut() async throws {
         let model = await loaded()
         let tokyo = try XCTUnwrap(model.pins.first { $0.photos.contains { $0.id == "c" } })
-        XCTAssertTrue(model.stillShown(tokyo))
+        XCTAssertNotNil(PhotoMapViewModel.refreshed(tokyo, in: model.pins))
 
         model.query = "パリ"
-        XCTAssertFalse(model.stillShown(tokyo))
+        XCTAssertNil(PhotoMapViewModel.refreshed(tokyo, in: model.pins))
         // 残っている方の札は出したまま
-        XCTAssertTrue(model.stillShown(model.pins.first))
+        XCTAssertNotNil(PhotoMapViewModel.refreshed(model.pins.first, in: model.pins))
     }
 
     func testNilIsNeverShown() async {
         let model = await loaded()
-        XCTAssertFalse(model.stillShown(nil))
+        XCTAssertNil(PhotoMapViewModel.refreshed(nil, in: model.pins))
     }
 }
 
