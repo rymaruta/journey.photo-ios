@@ -54,6 +54,16 @@ final class ScreenshotTests: XCTestCase {
         // 絞りを解いて、あとの画面に持ち越さない
         let clear = app.buttons["消す"].firstMatch
         if clear.exists { clear.tap() }
+        // 「スポット」の札（板 04c 案A）。撮ったら地図へ戻す（あとの画面に持ち越さない）
+        let spots = app.buttons["map.mode.spots"].firstMatch
+        if spots.waitForExistence(timeout: 5) {
+            spots.tap()
+            if app.buttons["map.spotRow"].firstMatch.waitForExistence(timeout: 10) {
+                shoot(app, "13d-マップ（スポットの一覧）")
+            }
+            let map = app.buttons["map.mode.map"].firstMatch
+            if map.exists { map.tap() }
+        }
     }
 
     /// **位置の許可の札に答える。** 地図は開いた最初の1回に現在地を取りにいく
