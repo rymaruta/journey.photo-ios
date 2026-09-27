@@ -71,6 +71,8 @@ final class PushCenter: ObservableObject {
     // | 次の人がログイン（受け取らない）   | 端末ごと APNs から外す     | 次の人で POST → DELETE           |
     // | 次の人がログイン（受け取る）       | 預け直しが落ちたら外す     | 次の人で POST（引き取る）        |
     // | 持ち主を書く前の版から上げた端末   | —                          | 次にログインした人で一度引き取る |
+    // | 次の人が預けられない（登録・APNs の失敗・受け取らない） | 端末ごと外す（`owner` が別の人でも） | 残す |
+    // | 登録の通信中に人が替わった         | いまの人が預け直す・預けないなら端末ごと外す | 同左 |
 
     /// 🔴 **この端末の宛先を、いま届く形で預けてある人。** 端末に残す。
     ///
@@ -271,7 +273,8 @@ final class PushCenter: ObservableObject {
         setEnabled(false)
         defer { isRegistered = false }
         // 前の人の宛先が残っていたら（預け直しで上書きできないまま）端末ごと外す
-        releaseForeignRegistration(except: userId)
+        // （この人の DELETE はこの人の集合からしか消せない）
+        releaseLeftovers(except: userId)
         guard let token, let userId else { return }
         do {
             try await service().unregister(token: token)
@@ -299,6 +302,9 @@ final class PushCenter: ObservableObject {
     func acceptFailure(_ error: Error) {
         // 実機以外では必ずここに来る（シミュレータは APNs に繋がらない）
         print("[push] 端末トークンを取れませんでした: \(error.localizedDescription)")
+        // **預け直せなかったのと同じ。** 前の人の宛先を、次の `use` まで残さない
+        guard userId != nil, isEnabled else { return }
+        releaseLeftovers(except: userId)
     }
 
     /// ログアウトの**前**に呼ぶ。認証が要るので、あとだと外せない。
@@ -325,6 +331,37 @@ final class PushCenter: ObservableObject {
     private func releasePreviousOwner(token: String, as userId: String) async {
         guard (try? await service().register(token: token)) != nil else { return }
         noteRegistered(by: userId)
+        if self.userId != userId { await settleLateRegistration() }
+    }
+
+    /// 預け終えたときには、呼んだ人がもういまの人でなかった（通信中のログアウト・
+    /// 期限切れ・入れ替わり）。**その間に走った `use` はまだ印を見ていない**ので、
+    /// ここで片づける——残すと、誰もログインしていない端末や次の人に、呼んだ人あての
+    /// 通知が届く。いまの人が預けるなら預け直し（サーバーが呼んだ人から外す）、
+    /// 預けないなら端末ごと外す
+    private func settleLateRegistration() async {
+        if userId != nil, isEnabled, isAuthorized {
+            await registerIfPossible()
+        } else {
+            releaseForeignRegistration(except: userId)
+        }
+    }
+
+    /// **この人で預けられなかった**（登録の失敗・APNs に繋げない・受け取らない）ときの
+    /// 後始末。前の人の宛先が端末に届く形で残っていたら、端末ごと APNs から外す。
+    ///
+    /// 端末の印（`registeredOwner`）だけでなく、**サーバーの持ち主（`owner`）が分かっていて
+    /// 別の人**のときも外す。端末の印は、誰もログインしない間に一度外した時点で消えるが、
+    /// そのあと APNs に繋ぎ直すと、サーバーの前の人の集合に残ったトークンへまた届く。
+    /// `owner` は消さない（次の引き取りの手がかり）。持ち主が分からない端末では外さない
+    /// ——旧版で受け取っていた本人の通知まで止める。`use` の中では使わない（ログアウト中の
+    /// 起動のたびに外し直すことになる）
+    private func releaseLeftovers(except userId: String?) {
+        let onDevice = registeredOwner.map { $0 != userId } ?? false
+        let onServer = defaults.bool(forKey: Self.ownerKnownKey) && owner != nil && owner != userId
+        guard onDevice || onServer else { return }
+        if token != nil { releaseDevice() }
+        if onDevice { registeredOwner = nil }
     }
 
     /// 前の人の宛先が残っていたら、端末ごと APNs から外して印を消す
@@ -369,7 +406,10 @@ final class PushCenter: ObservableObject {
             // サーバーに預けたのはこの人の宛先・次の `use` が引き取る手がかり）
             noteRegistered(by: owner)
             // 画面の「預けてある」は、いまの人のぶんだけ
-            guard userId == owner else { return }
+            guard userId == owner else {
+                await settleLateRegistration()
+                return
+            }
             isRegistered = true
         } catch {
             // **呼んでいる間に人が替わっていたら触らない**（遅れて返った前の人の
@@ -378,7 +418,7 @@ final class PushCenter: ObservableObject {
             isRegistered = false
             // **預け直せなかったら前の人の宛先を残さない。** 前の人の印を残したまま
             // 落ち続けると、この人がログインしている間ずっと前の人あてに届く
-            releaseForeignRegistration(except: owner)
+            releaseLeftovers(except: owner)
             errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? L("通知を受け取る設定にできませんでした", "Couldn't turn notifications on")
         }

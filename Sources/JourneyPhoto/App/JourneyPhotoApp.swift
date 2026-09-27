@@ -105,7 +105,7 @@ struct JourneyPhotoApp: App {
     /// **返ってくる間に人が替わっていたら書かない**（`replace(with:for:since:)`）。
     /// 書くと、前の人のいいねが次の人の控えに入る
     ///
-    /// - Parameter mark: 人が決まった直後（最初の await の前）に取った `syncMark`。
+    /// - Parameter mark: 控えを次の人に切り替えた直後（`use` の後、次の await の前）に取った `syncMark`。
     ///   **その後に押した分は残す**——起動直後にホームで押したいいねが、押す前の
     ///   一覧で消えていた
     private func syncLikes(since mark: LocalEdits.Mark) async {

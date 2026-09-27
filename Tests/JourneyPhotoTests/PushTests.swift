@@ -396,6 +396,89 @@ final class PushTakeoverTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: "photo-gallery-push-registered-owner"))
     }
 
+    private func failingCenter(_ defaults: UserDefaults, released: @escaping () -> Void) -> PushCenter {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        return PushCenter(service: {
+            PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                       tokenProvider: StubTokenProvider(token: "t"),
+                                       session: session))
+        }, defaults: defaults, releaseDevice: released, readAuthorization: { true })
+    }
+
+    /// 🔴 **端末ごと外した後に、次の人（受け取る）の引き取りも預け直しも落ちたら、
+    /// もう一度端末ごと外す。** 端末の印（`registeredOwner`）は最初に外した時点で
+    /// 消えているので、それだけを見ると、APNs に繋ぎ直した端末に A あての通知が届く
+    func testFailedTakeoverAfterDeviceReleaseReleasesAgain() async {
+        let defaults = registeredByA("push-release-12")
+        defaults.set("a", forKey: "photo-gallery-push-registered-owner")
+        defaults.set(true, forKey: "photo-gallery-push-enabled.b")
+        var released = 0
+        let push = failingCenter(defaults) { released += 1 }
+        await push.use(userId: nil)
+        XCTAssertEqual(released, 1)
+
+        StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
+        await push.use(userId: "b")
+        await push.registerIfPossible()
+        XCTAssertEqual(released, 2, "B が預けられないまま、A の宛先が端末に届く形で残っている")
+        XCTAssertEqual(defaults.string(forKey: ownerKey), "a", "サーバーの持ち主は次の引き取りの手がかりに残す")
+    }
+
+    /// 同じく、B が「受け取らない」にしたときも（外す DELETE は B の集合からしか消せない）
+    func testTurningOffWhileServerHoldsSomeoneElseReleasesTheDevice() async {
+        let defaults = registeredByA("push-release-13")
+        var released = 0
+        let push = failingCenter(defaults) { released += 1 }
+        StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
+        await push.use(userId: "b")
+        XCTAssertEqual(defaults.string(forKey: ownerKey), "a")
+        await push.disable()
+        XCTAssertEqual(released, 1, "B が止めてもサーバーの A の宛先が端末に届く")
+    }
+
+    /// 🔴 **APNs からトークンが返らなかったら、前の人の宛先を残さない**（預け直しの失敗と同じ）
+    func testTokenFailureReleasesSomeoneElsesLeftover() async {
+        let defaults = registeredByA("push-release-14")
+        defaults.set("a", forKey: "photo-gallery-push-registered-owner")
+        defaults.set(true, forKey: "photo-gallery-push-enabled.b")
+        var released = 0
+        let push = failingCenter(defaults) { released += 1 }
+        StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
+        await push.use(userId: "b")
+        XCTAssertEqual(released, 0, "B がすぐ預け直す回なのに先に外している")
+        push.acceptFailure(URLError(.notConnectedToInternet))
+        XCTAssertEqual(released, 1, "APNs に繋げなかったのに A の宛先が残っている")
+    }
+
+    /// 🔴 **登録の通信中にログアウトした**（期限切れは `signingOut` を通らない）。
+    /// 遅れて成功した登録を残すと、誰もログインしていない端末に A あての通知が届く
+    func testLateSuccessAfterSignOutReleasesTheDevice() async {
+        let defaults = registeredByA("push-release-15")
+        var released = 0
+        var push: PushCenter!
+        var interrupted = false
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        push = PushCenter(service: {
+            PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                       tokenProvider: SignOutOnceTokenProvider {
+                                           guard !interrupted else { return }
+                                           interrupted = true
+                                           await push.use(userId: nil)
+                                       },
+                                       session: session))
+        }, defaults: defaults, releaseDevice: { released += 1 }, readAuthorization: { true })
+        await push.use(userId: "a")
+        interrupted = false
+        await push.registerIfPossible()
+        XCTAssertTrue(interrupted, "試験の前提（通信中のログアウト）が起きていない")
+        XCTAssertEqual(released, 1, "誰もログインしていない端末に A の宛先を残した")
+        XCTAssertNil(defaults.string(forKey: "photo-gallery-push-registered-owner"))
+    }
+
     /// 本人が戻ってきただけなら、前の人の外しは流さない
     func testSameOwnerNeedsNoRelease() async {
         let defaults = registeredByA("push-release-7")
@@ -460,5 +543,15 @@ final class NotificationRouterTests: XCTestCase {
         XCTAssertEqual(router.readOwner, "u1", "誰の既読かを持っていない（前の人の合図で次の人のベルを消す）")
         XCTAssertEqual(router.readMarks, before + 1)
         XCTAssertFalse(router.takePendingActivity())
+    }
+}
+
+/// トークンを求められた瞬間に割り込み、そのあとトークンを返す（登録は通る）
+// 試験の中だけ・MainActor の閉包を持つので検査を外す
+private struct SignOutOnceTokenProvider: TokenProviding, @unchecked Sendable {
+    let interrupt: @MainActor () async -> Void
+    func idToken() async throws -> String? {
+        await interrupt()
+        return "t"
     }
 }
