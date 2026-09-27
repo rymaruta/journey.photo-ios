@@ -683,12 +683,14 @@ struct PhotoDetailView: View {
     /// 隣の写真も同じ一覧から来ているので、同じ判断で足りる
     private func shareURL(for item: Photo) -> URL? {
         let latest = item.id == current.id ? shown : item
-        // 🔴 **公開範囲を絞った写真は配らない。** 一覧には `/feed/restricted` の写真も
-        // 混ざる（`published: true`）が、`photos.json` に載らず個別ページが建たない
-        // ——配ると受け取った人（フォロワー本人も）が開けない 404 になっていた
+        // 🔴 **公開範囲を絞った写真は配らない（共有を出さない）。** 一覧には
+        // `/feed/restricted` の写真も混ざる（`published: true`）が、`photos.json` に
+        // 載らず個別ページが建たない。Web は絞った写真を読まないので、ホームの
+        // `?photo=` に振り替えても「見つかりませんでした」になる——受け取った人
+        // （フォロワー本人も）が開けない。自分のページから開いた自分の写真も同じ
+        if RestrictedFeed.isRestricted(latest) { return nil }
         return PhotoLink.url(photoId: item.id,
-                             isPublished: fromPublicFeed && latest.published != false
-                                 && !RestrictedFeed.isRestricted(latest))
+                             isPublished: fromPublicFeed && latest.published != false)
     }
 
     /// **押した回の**答えを、ホームのカードと検索の格子にも渡す。
