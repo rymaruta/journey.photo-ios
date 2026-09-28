@@ -82,12 +82,16 @@ enum MapFraming {
         guard !points.isEmpty else { return [] }
         let size = clusterDegrees / 10
         let reach = 9
-        let rows = points.map { Int(($0.latitude / size).rounded(.down)) }
-        let cols = points.map { Int(($0.longitude / size).rounded(.down)) }
+        // **間の空いた升は詰める**（写真のある行・列の間を最大 reach+1 升に）。詰めても
+        // 「窓に入る（reach 升以内）」かどうかは変わらない。詰めないと升目の数が写真の
+        // 広がりで決まり、世界に4枚散っただけで約 90 万升を毎回数えた（Debug で1回 18ms。
+        // 地図の画面は描き直すたびにこれを呼ぶ）
+        let rows = squeezed(points.map { Int(($0.latitude / size).rounded(.down)) }, gap: reach + 1)
+        let cols = squeezed(points.map { Int(($0.longitude / size).rounded(.down)) }, gap: reach + 1)
         let minRow = rows.min()!, minCol = cols.min()!
         let height = rows.max()! - minRow + 1, width = cols.max()! - minCol + 1
-        // 累積和（sum[r][c] は左下からその升の手前までの重さ）。緯度・経度の範囲で決まるので、
-        // 世界中に散っても 700×1400 ほど
+        // 累積和（sum[r][c] は左下からその升の手前までの重さ）。詰めた升目なので、写真のある
+        // 行・列の数（多くても 700×1400 ほど）で決まる
         var sum = [Int](repeating: 0, count: (height + 1) * (width + 1))
         func at(_ r: Int, _ c: Int) -> Int { r * (width + 1) + c }
         for index in points.indices {
@@ -121,6 +125,19 @@ enum MapFraming {
             .filter { abs(rows[$0] - minRow - best.row) <= reach && abs(cols[$0] - minCol - best.col) <= reach }
             .sorted { points[$0].latitude > points[$1].latitude }
             .map { points[$0] }
+    }
+
+    /// 升の番号の並びを保ったまま、隣り合う値の間を `gap` までに詰める。
+    /// 差が `gap` 未満の2つは差がそのまま残り、`gap` 以上離れた2つは詰めても `gap` 以上離れる
+    static func squeezed(_ values: [Int], gap: Int) -> [Int] {
+        let distinct = Array(Set(values)).sorted()
+        var index: [Int: Int] = [:]
+        var next = 0
+        for (i, value) in distinct.enumerated() {
+            if i > 0 { next += min(gap, value - distinct[i - 1]) }
+            index[value] = next
+        }
+        return values.map { index[$0]! }
     }
 }
 

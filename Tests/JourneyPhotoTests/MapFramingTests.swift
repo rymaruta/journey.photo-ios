@@ -118,6 +118,34 @@ final class MapFramingTests: XCTestCase {
         XCTAssertLessThanOrEqual(lons.max()! - lons.min()!, 19 * MapFraming.clusterDegrees / 10 + 1e-9)
     }
 
+    /// **写真が世界に散っていても1回が軽い**（run 206 の調べ）。升目の数を広がりで決めていたので、
+    /// 4枚（東京・パリ・ニューヨーク・シドニー）でも約 90 万升を数え、Debug で1回 18ms かかった。
+    /// 地図の画面は描き直すたびにこれを呼ぶ
+    func testPhotosSpreadOverTheWorldAreCheap() {
+        let world: [(latitude: Double, longitude: Double)] = [
+            tokyo, (latitude: 48.85, longitude: 2.35), (latitude: 40.71, longitude: -74.0),
+            (latitude: -33.86, longitude: 151.2),
+        ]
+        let started = Date()
+        for _ in 0..<200 { XCTAssertNotNil(MapFraming.frame(for: world)) }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5, "散らばった数枚で毎回重い")
+        // 詰めても選ぶ塊は変わらない: 同じ重さなら北（パリ）
+        XCTAssertEqual(MapFraming.frame(for: world)?.latitude ?? 0, 48.85, accuracy: 0.001)
+    }
+
+    /// 間を詰めても、窓に入るかどうか（reach 升以内）は変わらない
+    func testSqueezeKeepsWhatIsWithinReach() {
+        let values = [-500, -491, -490, 0, 9, 10, 30, 31, 1000]
+        let squeezed = MapFraming.squeezed(values, gap: 10)
+        for i in values.indices {
+            for j in values.indices {
+                XCTAssertEqual(abs(values[i] - values[j]) <= 9, abs(squeezed[i] - squeezed[j]) <= 9,
+                               "\(values[i]) と \(values[j])")
+                XCTAssertEqual(values[i] < values[j], squeezed[i] < squeezed[j], "並びは保つ")
+            }
+        }
+    }
+
     /// **ありえない座標で落ちない**（565d8fc のレビュー）。升目の数を広がりで決めるので、範囲外の
     /// 1点で升目が巨大になり、確保できずに落ちていた。範囲外は数えない
     func testOutOfRangeCoordinatesAreIgnored() {
