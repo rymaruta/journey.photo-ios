@@ -304,7 +304,7 @@ struct UserProfileView: View {
             if model.isFollowing {
                 showUnfollowConfirm = true
             } else {
-                Task { await model.toggleFollow(userId: userId, environment: environment) }
+                Task { await model.toggleFollow(userId: userId, environment: environment, follow: true) }
             }
         } label: {
             FollowPill(title: model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"),
@@ -315,7 +315,9 @@ struct UserProfileView: View {
         .opacity(model.isWorking ? 0.6 : 1)
         .disabled(model.isWorking)
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
-            Task { await model.toggleFollow(userId: userId, environment: environment) }
+            // **向きは押した時点で決める。** 確認が出ている間に読み込みが「もう外れていた」を
+            // 書いても、「外す」を選んだのに follow を送らない
+            Task { await model.toggleFollow(userId: userId, environment: environment, follow: false) }
         }
     }
 
@@ -492,14 +494,15 @@ final class UserProfileViewModel: ObservableObject {
     /// 🔴 **失敗は格子の上の一行（`actionMessage`）に出す**（`errorMessage` に入れない）。`errorMessage` は
     /// 読み込みの失敗で、写真の格子ごと差し替えて出す——圏外でフォローを押すと
     /// 格子が消えていた（マイページが `actionMessage` で分けたのと同じ形）
-    func toggleFollow(userId: String, environment: AppEnvironment) async {
+    /// - Parameter follow: 押したボタンの向き（フォローしたいか）。nil はいまの姿の逆
+    func toggleFollow(userId: String, environment: AppEnvironment, follow: Bool? = nil) async {
         isWorking = true
         actionMessage = nil
         defer { isWorking = false }
         // **押したボタンの向きを覚えておく**（「フォローする」を押した＝フォローしたい）。
         // 取り直した結果で向きを決め直すと、「フォロー中」を外そうとして何も送られない・
         // 逆向きに follow を送る、が起きた
-        let wantsFollow = !isFollowing
+        let wantsFollow = follow ?? !isFollowing
         // **分からないままフォローを送らない。** 取り直して、既にフォロー中なら送らずに姿だけ直す。
         // 外す方は取り直さない（外すのは何度送っても同じ）
         if followUnknown && wantsFollow {
@@ -529,6 +532,8 @@ final class UserProfileViewModel: ObservableObject {
                 : try await environment.social.unfollow(userId: userId)
             followWrites += 1
             isFollowing = result.following
+            // サーバーの答えは確かな値——外したあとにフォローし直すとき、また取り直しに行かない
+            followUnknown = false
             followers = result.followers
         } catch {
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")

@@ -306,7 +306,27 @@ final class ViewModelTests: XCTestCase {
                           "外すのに DELETE を送っていない: \(StubProtocol.requests)")
             XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") }, "外すのに follow を送った")
             XCTAssertFalse(model.isFollowing)
+
+            // 外したあとは状態が分かっている。一覧がまだ取れなくても、フォローし直せる（d556af1 のレビュー）
+            StubProtocol.reset()
+            StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":3}"#)
+            StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+            await model.toggleFollow(userId: "u1", environment: env)
+            XCTAssertEqual(StubProtocol.requests, ["POST /users/u1/follow"])
+            XCTAssertTrue(model.isFollowing)
         }
+    }
+
+    /// **向きは押した時点で決める。** 外すの確認が出ている間に読み込みが「もう外れていた」を
+    /// 書いても、「外す」を選んだら follow を送らない（d556af1 のレビュー）
+    func testProfileFollowSendsThePressedDirection() async {
+        prepare()
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":false,"followers":2}"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), api: api())
+        let model = UserProfileViewModel()
+        XCTAssertFalse(model.isFollowing)   // 読み込みが「外れていた」と書いた後の姿
+        await model.toggleFollow(userId: "u1", environment: env, follow: false)
+        XCTAssertEqual(StubProtocol.requests, ["DELETE /users/u1/follow"])
     }
 
     /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
