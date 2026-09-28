@@ -21,6 +21,8 @@ struct PhotoDetailView: View {
     /// 保存（しおり）を送っている最中
     @State private var isSavingBookmark = false
     @State private var showReport = false
+    /// 通報シートを開いたときに、持ち主をもうブロックしていたか（閉じたときの後始末を分ける）
+    @State private var ownerBlockedWhenReporting = false
     @State private var showDeleteConfirm = false
     @State private var showEdit = false
     @State private var showViewer = false
@@ -193,7 +195,9 @@ struct PhotoDetailView: View {
             }
         }
         .onDisappear { isOnScreen = false }
-        .task(id: "\(ownerId ?? "")|\(auth.userId ?? "")") {
+        // **ブロック中かどうかも鍵に入れる。** 解除して戻ったとき、ブロックで「分からない」に
+        // 倒したフォローの状態を取り直す（入れないと、開き直すまでボタンが戻らない）
+        .task(id: "\(ownerId ?? "")|\(auth.userId ?? "")|\(ownerId.map(hidden.blockedUserIds.contains) ?? false)") {
             await model.loadOwner(ownerId, profiles: environment.profiles)
             // **フォローしているかは、その人を見に行かずに知りたい。**
             // 自分のフォロー一覧から引く（相手のページを開かずに済む）
@@ -217,8 +221,11 @@ struct PhotoDetailView: View {
         }
         // **通報シートで「ブロックもする」を選んだ回は、`block()` と同じ後始末をする。**
         // シートは閉じるだけで、前の失敗の赤字と、ブロックした相手のフォローの状態が残っていた
+        // **このシートでブロックした回だけ**（開く前からブロックしていた回に、閉じるたびに
+        // 「ブロックしました」やいいねの失敗を消さない）
         .sheet(isPresented: $showReport, onDismiss: {
-            guard let ownerId, hidden.blockedUserIds.contains(ownerId) else { return }
+            guard let ownerId, !ownerBlockedWhenReporting,
+                  hidden.blockedUserIds.contains(ownerId) else { return }
             clearNotices()
             isFollowing = nil
             followLookupFailed = false
@@ -675,7 +682,10 @@ struct PhotoDetailView: View {
                 }
             } else {
                 // **通報とブロックは1タップで届くところに置く**（審査で見られる）
-                Button { showReport = true } label: {
+                Button {
+                    ownerBlockedWhenReporting = ownerId.map(hidden.blockedUserIds.contains) ?? false
+                    showReport = true
+                } label: {
                     Label(L("通報する", "Report"), systemImage: "flag")
                 }
                 if let ownerId {
