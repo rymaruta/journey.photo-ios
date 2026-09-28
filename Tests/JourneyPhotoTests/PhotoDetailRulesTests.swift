@@ -65,3 +65,12 @@ final class PhotoDetailRulesTests: XCTestCase {
                                                     lookupFailed: false, ownerBlocked: false))
     }
 }
+
+/// 下書きにはコメント・いいねを出さない（サーバーが断る）
+final class PhotoDetailDraftTests: XCTestCase {
+    func testDraftsDoNotAcceptReactions() {
+        XCTAssertFalse(PhotoDetailRules.acceptsReactions(published: false))
+        XCTAssertTrue(PhotoDetailRules.acceptsReactions(published: true))
+        XCTAssertTrue(PhotoDetailRules.acceptsReactions(published: nil), "未指定は公開（サーバーの既定）")
+    }
+}
