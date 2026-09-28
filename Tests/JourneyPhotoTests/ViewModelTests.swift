@@ -1711,3 +1711,34 @@ final class NotificationDestinationTests: XCTestCase {
     }
 
 }
+
+/// 人の検索。**サーバーが探さない語で「見つかりませんでした」と言わない**
+/// （`userSearch.ts` は先頭の `@` を落とし、英数字だけなら2字から探す）
+@MainActor
+final class PeopleSearchQueryTests: XCTestCase {
+
+    func testServerRuleIsMirrored() async {
+        XCTAssertFalse(SearchViewModel.isSearchablePeopleQuery("a"))
+        XCTAssertFalse(SearchViewModel.isSearchablePeopleQuery("@"))
+        XCTAssertFalse(SearchViewModel.isSearchablePeopleQuery("@a"))
+        XCTAssertFalse(SearchViewModel.isSearchablePeopleQuery("  "))
+        XCTAssertTrue(SearchViewModel.isSearchablePeopleQuery("ab"))
+        XCTAssertTrue(SearchViewModel.isSearchablePeopleQuery("@ab"))
+        XCTAssertTrue(SearchViewModel.isSearchablePeopleQuery("あ"), "日本語は1字から")
+    }
+
+    func testShortQueryIsNotSentAndNotCalledNoResults() async throws {
+        let model = SearchViewModel()
+        var sent: [String] = []
+        await model.search("a", debounce: .zero) { query in sent.append(query); return [] }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(sent.isEmpty, "サーバーが探さない語を送った")
+        XCTAssertTrue(model.peopleQueryTooShort)
+        XCTAssertFalse(model.isSearching)
+
+        await model.search("ab", debounce: .zero) { query in sent.append(query); return [] }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(sent, ["ab"])
+        XCTAssertFalse(model.peopleQueryTooShort, "探せる語になったのに短いと言い続けた")
+    }
+}
