@@ -1,8 +1,9 @@
 import Foundation
 import Combine
 
-/// 撮影地マップの頭。絞りの条件を持ち、**地図とリストの両方が同じ `shown`
-/// から描く**（ピンの数＝行の数）。
+/// 撮影地マップの頭。絞りの条件を持ち、地図は `shown` から描く。
+/// リストは同じ条件（上の欄・カテゴリ）で `photos` と撮影スポットを
+/// 都道府県ごとにまとめる（`RegionList`）。
 ///
 /// 絞るのは手元の配列だけ。打っている間に通信はしない。
 @MainActor
@@ -47,11 +48,11 @@ final class PhotoMapViewModel: ObservableObject {
     /// 条件に合う写真。座標の無い写真は入らない（`MapSearch` の約束）。
     ///
     /// **計算のたびに絞り直さない。** 画面は1回描くあいだに `shown` と
-    /// `pins` を5回以上読む（空の判定・件数・ピン・札・リスト）ので、
+    /// `pins` を5回以上読む（空の判定・件数・ピン・札）ので、
     /// 計算属性のままだと写真の数だけ何度も走る。
     @Published private(set) var shown: [Photo] = []
 
-    /// ピン。**リストの行もこれ**（同じ束ね）
+    /// ピン（約1km で束ねた写真）
     @Published private(set) var pins: [MapPin] = []
 
     /// 撮影スポットの索引（`app/data/spots.json`）。**取れなければ空**
