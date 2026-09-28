@@ -54,6 +54,21 @@ final class MapFramingTests: XCTestCase {
         XCTAssertEqual(frame.latitude, tokyo.latitude, accuracy: 0.01)
     }
 
+    /// 🔴 **点が密でも塊の広さに上限がある・点が多くても速い。** つながりをたどって1つに
+    /// すると、世界に散った点が大陸ごと1つになり（世界に近い枠）、点の数の2乗の時間がかかった
+    func testDenseWorldStaysLocalAndFast() {
+        var generator = SystemRandomNumberGenerator()
+        let points = (0..<20_000).map { _ in
+            (latitude: Double.random(in: -60...70, using: &generator),
+             longitude: Double.random(in: -180...180, using: &generator))
+        }
+        let started = Date()
+        guard let frame = MapFraming.frame(for: points) else { return XCTFail("枠が決まらない") }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.0, "点が多いと遅すぎる")
+        XCTAssertLessThan(frame.latitudeSpan, 3 * MapFraming.clusterDegrees * MapFraming.padding + 0.01,
+                          "塊が広がりすぎる（世界に近い枠）")
+    }
+
     /// 近い点どうしは1つの塊
     func testNearbyPointsAreOneCluster() {
         XCTAssertEqual(MapFraming.largestCluster([tokyo, niigata]).count, 2)

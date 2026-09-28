@@ -54,42 +54,47 @@ enum MapFraming {
 
     /// いちばん重い（写真の多い）塊。**同じ重さなら北にある方**（毎回同じ結果にする）。
     ///
-    /// 🔴 **近い点でつながる点は、ぜんぶ1つの塊。** 以前は北から順に「最初に近いと分かった塊」へ
-    /// 足すだけで、2つの塊をつなぐ点が後から来ても塊どうしを合わせなかった。一続きの点が
-    /// 割れて、別の小さい塊が選ばれていた
+    /// 約 300km（`clusterDegrees`）の升目に分け、**隣り合う 3×3 の升の重さがいちばん大きい所**を
+    /// 塊とする。
+    /// - 🔴 以前は北から順に「最初に近いと分かった塊」へ足すだけで、2つの塊をつなぐ点が後から
+    ///   来ても合わせず、一続きの点が割れて別の小さい塊が選ばれていた
+    /// - つながりをたどって1つにすると、点が密な所では大陸ごと1つになり（世界全体に近い枠）、
+    ///   点の数の2乗の時間もかかった（5000点で約0.4秒・描き直しのたびに走る）。升目なら
+    ///   塊の広さに上限があり（約 900km 四方）、点の数に比例する時間で済む
     static func largestCluster(
         _ points: [(latitude: Double, longitude: Double)],
         weights: [Int]? = nil
     ) -> [(latitude: Double, longitude: Double)] {
-        // 北から並べる（同じ重さの塊の比べに使う）
-        let order = points.indices.sorted { points[$0].latitude > points[$1].latitude }
-        var seen = Set<Int>()
-        var best: (members: [Int], weight: Int)?
-        for start in order where !seen.contains(start) {
-            // つながった点をたどって1つの塊にする
-            var members = [start]
-            seen.insert(start)
-            var cursor = 0
-            while cursor < members.count {
-                let here = points[members[cursor]]
-                cursor += 1
-                for other in order where !seen.contains(other) && near(here, points[other]) {
-                    seen.insert(other)
-                    members.append(other)
-                }
-            }
-            let weight = members.reduce(0) { $0 + max(1, weights?[$1] ?? 1) }
-            // 北から始めた塊が先に来るので、同じ重さなら先の（北の）塊を残す
-            if best == nil || weight > best!.weight { best = (members, weight) }
+        struct Cell: Hashable { let lat: Int; let lon: Int }
+        func cell(_ p: (latitude: Double, longitude: Double)) -> Cell {
+            Cell(lat: Int((p.latitude / clusterDegrees).rounded(.down)),
+                 lon: Int((p.longitude / clusterDegrees).rounded(.down)))
         }
-        return (best?.members ?? []).sorted { points[$0].latitude > points[$1].latitude }.map { points[$0] }
+        var members: [Cell: [Int]] = [:]
+        var weightOf: [Cell: Int] = [:]
+        for index in points.indices {
+            let key = cell(points[index])
+            members[key, default: []].append(index)
+            let weight = (weights?.indices.contains(index) ?? false) ? max(1, weights![index]) : 1
+            weightOf[key, default: 0] += weight
+        }
+        func neighbours(_ c: Cell) -> [Cell] {
+            (-1...1).flatMap { dLat in (-1...1).map { dLon in Cell(lat: c.lat + dLat, lon: c.lon + dLon) } }
+        }
+        // 同じ重さなら北（升の緯度の大きい方）、それも同じなら西——毎回同じ結果にする
+        let best = members.keys.max { a, b in
+            let wa = neighbours(a).reduce(0) { $0 + (weightOf[$1] ?? 0) }
+            let wb = neighbours(b).reduce(0) { $0 + (weightOf[$1] ?? 0) }
+            if wa != wb { return wa < wb }
+            if a.lat != b.lat { return a.lat < b.lat }
+            return a.lon > b.lon
+        }
+        guard let best else { return [] }
+        return neighbours(best).flatMap { members[$0] ?? [] }
+            .sorted { points[$0].latitude > points[$1].latitude }
+            .map { points[$0] }
     }
 
-    private static func near(_ a: (latitude: Double, longitude: Double),
-                             _ b: (latitude: Double, longitude: Double)) -> Bool {
-        abs(a.latitude - b.latitude) <= clusterDegrees
-            && abs(a.longitude - b.longitude) <= clusterDegrees
-    }
 }
 
 extension MapFraming {
