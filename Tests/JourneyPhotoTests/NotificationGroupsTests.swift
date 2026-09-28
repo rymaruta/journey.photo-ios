@@ -36,6 +36,22 @@ final class NotificationGroupsTests: XCTestCase {
                                                  now: now, calendar: calendar), .earlier)
     }
 
+    /// 🔴 **見出しと行の「N日前」が食い違わない。** 経過時間で数えていたので、7暦日前の
+    /// 朝より後に届いたお知らせが「今週」の下に「7日前」で出ていた
+    func testThisWeekAgreesWithTheDaysAgoLabel() throws {
+        let monday = NotificationGroups.parse("2026-09-28T08:00:00.000Z")!
+        let t = "2026-09-21T09:00:00.000Z"   // 6日23時間前・暦では7日前
+        XCTAssertEqual(NotificationText.ago(t, now: monday, calendar: calendar), L("7日前", "7d ago"))
+        XCTAssertEqual(NotificationGroups.bucket(of: try row(t), now: monday, calendar: calendar), .earlier)
+        // 端末の時計より少し先（日をまたいだ）は「今日」
+        XCTAssertEqual(NotificationGroups.bucket(of: try row("2026-09-29T00:01:00.000Z"),
+                                                 now: NotificationGroups.parse("2026-09-28T23:59:00.000Z")!,
+                                                 calendar: calendar), .today)
+        // 6暦日前は今週
+        XCTAssertEqual(NotificationGroups.bucket(of: try row("2026-09-22T01:00:00.000Z"),
+                                                 now: monday, calendar: calendar), .thisWeek)
+    }
+
     /// **`now` から数えているか。** システムの時計を見ていると、
     /// このテストは書いた日だけ通って翌日に落ちる（実際に落ちた）
     func testCountsFromTheGivenNowNotTheSystemClock() throws {

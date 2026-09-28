@@ -21,6 +21,8 @@ struct PhotoDetailView: View {
     /// 保存（しおり）を送っている最中
     @State private var isSavingBookmark = false
     @State private var showReport = false
+    /// 通報シートを開いたときに、持ち主をもうブロックしていたか（閉じたときの後始末を分ける）
+    @State private var ownerBlockedWhenReporting = false
     @State private var showDeleteConfirm = false
     @State private var showEdit = false
     @State private var showViewer = false
@@ -193,7 +195,9 @@ struct PhotoDetailView: View {
             }
         }
         .onDisappear { isOnScreen = false }
-        .task(id: "\(ownerId ?? "")|\(auth.userId ?? "")") {
+        // **ブロック中かどうかも鍵に入れる。** 解除して戻ったとき、ブロックで「分からない」に
+        // 倒したフォローの状態を取り直す（入れないと、開き直すまでボタンが戻らない）
+        .task(id: "\(ownerId ?? "")|\(auth.userId ?? "")|\(ownerId.map(hidden.blockedUserIds.contains) ?? false)") {
             await model.loadOwner(ownerId, profiles: environment.profiles)
             // **フォローしているかは、その人を見に行かずに知りたい。**
             // 自分のフォロー一覧から引く（相手のページを開かずに済む）
@@ -215,7 +219,17 @@ struct PhotoDetailView: View {
             }
             isFollowing = ids.contains(ownerId)
         }
-        .sheet(isPresented: $showReport) {
+        // **通報シートで「ブロックもする」を選んだ回は、`block()` と同じ後始末をする。**
+        // シートは閉じるだけで、前の失敗の赤字と、ブロックした相手のフォローの状態が残っていた
+        // **このシートでブロックした回だけ**（開く前からブロックしていた回に、閉じるたびに
+        // 「ブロックしました」やいいねの失敗を消さない）
+        .sheet(isPresented: $showReport, onDismiss: {
+            guard let ownerId, !ownerBlockedWhenReporting,
+                  hidden.blockedUserIds.contains(ownerId) else { return }
+            clearNotices()
+            isFollowing = nil
+            followLookupFailed = false
+        }) {
             ReportSheet(photoId: current.id, ownerId: ownerId)
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
@@ -561,7 +575,9 @@ struct PhotoDetailView: View {
                 Spacer(minLength: 8)
 
                 // 取れなかった回も「フォロー」で出す（押されたら取り直してから送る）
-                if !isMine, auth.userId != nil, isFollowing != nil || followLookupFailed {
+                if PhotoDetailRules.showsFollow(isMine: isMine, signedIn: auth.userId != nil,
+                                                isFollowing: isFollowing, lookupFailed: followLookupFailed,
+                                                ownerBlocked: hidden.blockedUserIds.contains(ownerId)) {
                     followButton(ownerId, following: isFollowing ?? false)
                 }
             }
@@ -571,7 +587,7 @@ struct PhotoDetailView: View {
     private func followButton(_ userId: String, following isFollowing: Bool) -> some View {
         Button {
             // 外すときだけ確認を挟む（`unfollowConfirmation`）
-            if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(userId) } }
+            if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(userId, follow: true) } }
         } label: {
             // 板 02・31 と同じ札（人のページと共通の `FollowPill`）
             FollowPill(title: isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"),
@@ -581,7 +597,9 @@ struct PhotoDetailView: View {
         .disabled(isFollowWorking)
         .opacity(isFollowWorking ? 0.6 : 1)  // 人のページと同じ薄さ
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
-            Task { await toggleFollow(userId) }
+            // **向きは押した時点で決める**（人のページと同じ）。確認が出ている間に取り直しが
+            // 走って姿が変わっても、「外す」を選んだのに follow を送らない
+            Task { await toggleFollow(userId, follow: false) }
         }
     }
 
@@ -596,15 +614,17 @@ struct PhotoDetailView: View {
 
     /// **返ってきた状態を使う。** 自分で反転すると、失敗した回に
     /// 画面だけフォロー中になる
-    private func toggleFollow(_ userId: String) async {
+    /// - Parameter follow: 押したボタンの向き（フォローしたいか）
+    private func toggleFollow(_ userId: String, follow wantsFollow: Bool) async {
         guard !isFollowWorking else { return }
         isFollowWorking = true
         defer { isFollowWorking = false }
         // 前の回の知らせを残さない（押し直して通ったのに赤字が残る）
         clearNotices()
-        // **分からないまま送らない。** 一覧が取れなかった回は、ここで取り直して
-        // から決める——既にフォロー中なら送らずに姿だけ直す（二重に送らない）
-        if isFollowing == nil {
+        // **分からないままフォローを送らない。** 一覧が取れなかった回は、ここで取り直して
+        // から決める——既にフォロー中なら送らずに姿だけ直す（二重に送らない）。
+        // 外す方は取り直さない（外すのは何度送っても同じ）
+        if isFollowing == nil && wantsFollow {
             guard followLookupFailed else { return }
             let ids: Set<String>
             do {
@@ -624,13 +644,12 @@ struct PhotoDetailView: View {
             }
             isFollowing = false
         }
-        guard let wasFollowing = isFollowing else { return }
         // **失敗は黙らない**（圏外で押して何も起きないと、押せていないのか分からない）。
         // 知らせは、ブロックの失敗と同じ `actionError` に出す
         do {
-            let result = wasFollowing
-                ? try await environment.social.unfollow(userId: userId)
-                : try await environment.social.follow(userId: userId)
+            let result = wantsFollow
+                ? try await environment.social.follow(userId: userId)
+                : try await environment.social.unfollow(userId: userId)
             // 待つ間に別の人の写真へ送ったら書かない
             guard ownerId == userId else { return }
             isFollowing = result.following
@@ -666,7 +685,10 @@ struct PhotoDetailView: View {
                 }
             } else {
                 // **通報とブロックは1タップで届くところに置く**（審査で見られる）
-                Button { showReport = true } label: {
+                Button {
+                    ownerBlockedWhenReporting = ownerId.map(hidden.blockedUserIds.contains) ?? false
+                    showReport = true
+                } label: {
                     Label(L("通報する", "Report"), systemImage: "flag")
                 }
                 if let ownerId {
@@ -938,6 +960,12 @@ struct PhotoDetailView: View {
                     .clipShape(Circle())
                     .accessibilityHidden(true)
                 TextField(L("コメントを書く", "Write a comment"), text: $model.draftComment, axis: .vertical)
+                    // **サーバーの上限で止める。** 超えたぶんは黙って切られ、送った文と同じとして
+                    // 下書きも消えるので、後ろが二度と戻らなかった（Web は maxLength=500）
+                    .onChange(of: model.draftComment) { old, value in
+                        let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.comment)
+                        if kept != value { model.draftComment = kept }
+                    }
                     .lineLimit(1...4)
                     .font(.subheadline)
                     .padding(.horizontal, 16)
@@ -1459,6 +1487,18 @@ struct FlowLayout: Layout {
 
 /// 詳細画面の判断のうち、画面を建てずに確かめられるもの
 enum PhotoDetailRules {
+
+    /// 持ち主の横にフォローのボタンを出すか。
+    ///
+    /// 取れなかった回（`lookupFailed`）も出す（押されたら取り直してから送る）。
+    /// 🔴 **ブロックした相手には出さない。** 通報シートから「ブロックもする」を選んだ回は
+    /// `block()` を通らないので、前に取ったフォローの状態が残り、ブロックした相手に
+    /// フォロー・フォロー解除を送れていた
+    static func showsFollow(isMine: Bool, signedIn: Bool, isFollowing: Bool?,
+                            lookupFailed: Bool, ownerBlocked: Bool) -> Bool {
+        guard !isMine, signedIn, !ownerBlocked else { return false }
+        return isFollowing != nil || lookupFailed
+    }
 
     /// 大きく見る画面に渡す並びと、開く位置。
     ///

@@ -329,15 +329,40 @@ final class StoriesViewModel: ObservableObject {
     /// いまの一覧を読んだ人（切り替えたら前の人の一覧を残さない）
     private var loadedFor: String?
 
+    /// 読み込みの回。🔴 **取れた答えは、それより後に始めた回の取れた答えがもう入っていたら書かない。**
+    /// 人が替わった直後は `.task` と `hidden.revision` の読み直しが同時に走り、先に始めた回が
+    /// 後から着くと、前の人のブロックの集合で絞った一覧で戻していた。
+    /// **取れなかった回は番号を進めない**——後の回が圏外で落ちたときに、先の回で取れた一覧まで
+    /// 捨てると輪が空のまま残る（3dbf727 のレビュー）。先の回の答えは、最後に頼まれた
+    /// ブロック・通報の集合で絞る
+    private var loadSeq = 0
+    private var appliedSeq = 0
+    private var latestViewer: String??
+    private var latestBlocked: Set<String> = []
+    private var latestReported: Set<String> = []
+
     func load(environment: AppEnvironment, viewerId: String?, blockedUserIds: Set<String> = [],
               reportedPhotoIds: Set<String> = []) async {
+        loadSeq += 1
+        let seq = loadSeq
+        latestViewer = .some(viewerId)
+        latestBlocked = blockedUserIds
+        latestReported = reportedPhotoIds
         // 取れなくても画面は壊さない（ストーリーは添え物）
         // ⚠️ `if let x = try? await …` は構文検査（tree-sitter）が読めない。2文に割る
         let fetched = try? await environment.stories.list()
+        if fetched != nil {
+            // 別の人の鍵で取った一覧は使わない・もっと新しい一覧が入っていたら使わない
+            guard latestViewer == .some(viewerId), seq > appliedSeq else { return }
+            appliedSeq = seq
+        } else {
+            // 取れなかった回は、いちばん新しい回のときだけ扱う（古い失敗で消さない）
+            guard seq == loadSeq else { return }
+        }
         stories = StoryPlayback.afterLoad(fetched: fetched, previous: stories,
                                           sameViewer: loadedFor == viewerId,
-                                          blockedUserIds: blockedUserIds,
-                                          reportedPhotoIds: reportedPhotoIds)
+                                          blockedUserIds: latestBlocked,
+                                          reportedPhotoIds: latestReported)
             .filter { !deletedIds.contains($0.id) }
         if fetched != nil { loadedFor = viewerId }
     }

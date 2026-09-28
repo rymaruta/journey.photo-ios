@@ -209,7 +209,8 @@ struct StoryViewerView: View {
         }
         if restart || songSession == nil {
             // `song` は渡さない——ストーリーの曲は画面の下の再生バーに出す曲ではない
-            songSession = player.play(url, song: nil, loops: true)
+            // Web で選んだ「好きな部分」から鳴らす（繰り返しもそこから）
+            songSession = player.play(url, song: nil, loops: true, from: StoryPlayback.songStart(for: story))
         }
         // 自分の曲でなくなっていたら（ほかの画面が鳴らした）触らない
         guard ownsSong else { return }
@@ -1158,6 +1159,11 @@ struct StoryViewerView: View {
                 }
                 HStack(spacing: 6) {
                     TextField(L("返信する", "Reply"), text: $reply)
+                        // サーバーの上限（200）で止める——超えたぶんは黙って切られる
+                        .onChange(of: reply) { old, value in
+                            let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.storyReply)
+                            if kept != value { reply = kept }
+                        }
                         .accessibilityLabel(L("\(story.authorName) さんに返信", "Reply to \(story.authorName)"))
                         .font(.system(size: 15))
                         .foregroundStyle(.white)

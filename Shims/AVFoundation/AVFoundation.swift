@@ -19,10 +19,21 @@ open class AVPlayer {
     public func pause() {}
     /// 頭出し（本物は CoreMedia の CMTime。AVFoundation が再輸出する）
     public func seek(to time: CMTime) {}
+    /// 本物と同じ形（いまの位置・定期の見張り）
+    public func currentTime() -> CMTime { .zero }
+    public func addPeriodicTimeObserver(forInterval interval: CMTime, queue: DispatchQueue?,
+                                        using block: @escaping @Sendable (CMTime) -> Void) -> Any { NSObject() }
+    public func removeTimeObserver(_ observer: Any) {}
 }
+
+public typealias CMTimeScale = Int32
 
 public struct CMTime {
     public static let zero = CMTime()
+    public init() {}
+    /// 本物と同じ形（秒と刻み）
+    public init(seconds: Double, preferredTimescale: CMTimeScale) { self.seconds = seconds }
+    public var seconds: Double = 0
 }
 
 extension NSNotification.Name {

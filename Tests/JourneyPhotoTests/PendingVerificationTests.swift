@@ -91,4 +91,47 @@ extension PendingVerificationTests {
 
         XCTAssertNil(pending.displayName(for: "taro@example.com"))
     }
+
+    /// 🔴 **ログイン・確認・aliasExists で、登録の ID だけ捨てる（名前は残す）。** ID が残ると、
+    /// 確認済みの人がパスワードを打ち間違えたときに「確認」へ誘い、押すと確認済み・別アカウント
+    /// への送り直しに進んでいた
+    func testForgetSignUpMarksTheIdUsedButKeepsTheName() {
+        let (pending, _) = store("pending-forget-signup")
+        pending.remember(email: "taro@example.com", username: "uuid-1", displayName: "たろう")
+        pending.forgetSignUp(email: "Taro@Example.com")
+        XCTAssertNil(pending.username(for: "taro@example.com"), "登録の ID が残っている")
+        XCTAssertEqual(pending.displayName(for: "taro@example.com"), "たろう", "預かった名前まで捨てた")
+
+        // 🔴 **退会の後始末は、使い終えた控えも ID で探して消す**（9544a43 のレビュー）。
+        // ID を空にしていたので、確認のあと名前を入れられなかった控えが退会しても残った
+        pending.forget(username: "uuid-1")
+        XCTAssertNil(pending.displayName(for: "taro@example.com"), "退会しても控え（名前）が残った")
+
+        // 同じメールの別アカウント（aliasExists）に入った回は、控えの ID をいまのアカウントに
+        // 書き換える——退会の後始末がいまのアカウントの ID で探して当たる（33e09e0 のレビュー）
+        pending.remember(email: "jiro@example.com", username: "uuid-dup", displayName: "じろう")
+        pending.forgetSignUp(email: "jiro@example.com", signedInAs: "uuid-real")
+        pending.forget(username: "uuid-real")
+        XCTAssertNil(pending.displayName(for: "jiro@example.com"), "入ったアカウントの退会で控えが消えない")
+
+        // ID の空の控え（9544a43 が書いた形）は使える登録として扱わない
+        pending.remember(email: "old@example.com", username: "", displayName: "むかし")
+        XCTAssertNil(pending.username(for: "old@example.com"), "空の ID で確認へ誘う")
+
+        // 名前の無い控えは丸ごと捨てる
+        pending.remember(email: "hana@example.com", username: "uuid-2")
+        pending.forgetSignUp(email: "hana@example.com")
+        XCTAssertNil(pending.username(for: "hana@example.com"))
+        XCTAssertNil(pending.displayName(for: "hana@example.com"))
+    }
+
+    /// 確認への入口は、端末に登録の ID の控えがあり、ログインが「違います」「見つかりません」で
+    /// 落ちた回だけ（控えが無ければアカウントの有無を匂わせない）
+    func testVerificationOfferNeedsAPendingSignUp() {
+        XCTAssertTrue(SignInRecovery.offersVerification(after: .notAuthorized, hasPendingSignUp: true))
+        XCTAssertTrue(SignInRecovery.offersVerification(after: .userNotFound, hasPendingSignUp: true))
+        XCTAssertFalse(SignInRecovery.offersVerification(after: .notAuthorized, hasPendingSignUp: false))
+        XCTAssertFalse(SignInRecovery.offersVerification(after: .network, hasPendingSignUp: true))
+        XCTAssertFalse(SignInRecovery.offersVerification(after: .none, hasPendingSignUp: true))
+    }
 }

@@ -325,6 +325,11 @@ enum StoryPlayback {
 
     // MARK: - 曲
 
+    /// 曲を鳴らし始める位置（秒）。選ばれていなければ頭から
+    static func songStart(for story: Story) -> Double {
+        Double(story.song?.startSec ?? 0)
+    }
+
     /// 鳴らす曲。題の無い曲・URL の無い曲は鳴らさない（曲名の行を出さない条件と同じ）。
     ///
     /// 🔴 **音源のホストを確かめる。** ストーリーは開いた瞬間に曲を取りに行くので、

@@ -179,6 +179,233 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// 🔴 **ストーリーの輪: 先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない。**
+    /// 人が替わった直後は読み直しが2本同時に走り、前の人のブロックの集合で絞った先の回が
+    /// 後から着くと、次の人がブロックした人の輪が並んだままになっていた
+    func testStoriesOlderLoadDoesNotOverwriteANewerOne() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 api: api(gates: PathGates(["/stories": gate])))
+        let model = StoriesViewModel()
+        let story = #"{"id":"s1","src":"https://x/s1.jpg","userId":"blocked"}"#
+        StubProtocol.respond(path: "/stories", status: 200, body: "[\(story)]")
+
+        // 先の回（前の人の集合＝何もブロックしていない）は応答の前で止まる
+        let older = Task { await model.load(environment: env, viewerId: "b") }
+        await gate.untilWaiting()
+        // 後の回（次の人の集合）は通って、ブロックした人の輪を落とす
+        await model.load(environment: env, viewerId: "b", blockedUserIds: ["blocked"])
+        XCTAssertEqual(model.stories.map(\.id), [])
+
+        await gate.open()
+        await older.value
+        XCTAssertEqual(model.stories.map(\.id), [], "先に始めた回の結果で、ブロックした人の輪が戻った")
+    }
+
+    /// **後の回が取れなかったときは、先の回で取れた一覧を捨てない**（3dbf727 のレビュー）。
+    /// 番号だけで捨てていたので、後の回が圏外で落ちると輪が空のまま残った。
+    /// 先の回の答えは、最後に頼まれたブロックの集合で絞る
+    func testStoriesKeepAnEarlierLoadWhenTheLaterOneFails() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 api: api(gates: PathGates(["/stories": gate])))
+        let model = StoriesViewModel()
+        StubProtocol.respond(path: "/stories", status: 500, body: #"{"error":"x"}"#)
+
+        let older = Task { await model.load(environment: env, viewerId: "b") }
+        await gate.untilWaiting()
+        await model.load(environment: env, viewerId: "b", blockedUserIds: ["blocked"])
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/stories", status: 200, body: #"""
+            [{"id":"s1","src":"https://x/s1.jpg","userId":"u"},
+             {"id":"s2","src":"https://x/s2.jpg","userId":"blocked"}]
+            """#)
+        await gate.open()
+        await older.value
+        XCTAssertEqual(model.stories.map(\.id), ["s1"], "取れた一覧を捨てた・前の集合で絞った")
+    }
+
+    /// 🔴 **人のページ: 自分のフォロー一覧が取れなかった回に、押したら送る前に取り直す。**
+    /// 取れなかった回は「フォローする」のまま出ていて、フォロー中の人に follow を送り直していた
+    /// （写真の詳細は `followLookupFailed` で直してあった）
+    func testProfileFollowWhenLookupFailedChecksBeforeSending() async {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":3,"following":1}"#)
+        StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "me")
+        XCTAssertFalse(model.isFollowing)
+
+        // 取り直すとフォロー中だった
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":["u1"]}"#)
+        await model.toggleFollow(userId: "u1", environment: env)
+        XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") },
+                       "フォロー中の人に follow を送り直している: \(StubProtocol.requests)")
+        XCTAssertTrue(model.isFollowing)
+
+        // 取り直しも取れなければ、送らずに知らせる
+        let other = UserProfileViewModel()
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":3,"following":1}"#)
+        StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        await other.load(userId: "u1", environment: env, viewerId: "me")
+        await other.toggleFollow(userId: "u1", environment: env)
+        XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") }, "分からないまま送っている")
+        XCTAssertNotNil(other.actionMessage)
+    }
+
+    /// **「フォロー中」を外すときは、分からない回でも外す。** 読み直しで一覧だけ取れなかった回に、
+    /// 取り直した結果で向きを決め直していたので、外そうとして何も送られない（まだフォロー中）・
+    /// 逆向きに follow を送る（別の端末で外していた）が起きた（4e49005 のレビュー）
+    func testProfileUnfollowWhenLookupFailedStillUnfollows() async {
+        prepare()
+        func routes(following: (Int, String)) {
+            StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+            StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":3,"following":1}"#)
+            StubProtocol.respond(path: "/user/following", status: following.0, body: following.1)
+            StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        }
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        for serverSays in [#"{"userIds":["u1"]}"#, #"{"userIds":[]}"#] {
+            let model = UserProfileViewModel()
+            StubProtocol.reset()
+            routes(following: (200, #"{"userIds":["u1"]}"#))
+            await model.load(userId: "u1", environment: env, viewerId: "me")
+            XCTAssertTrue(model.isFollowing)
+            // 読み直しで一覧だけ取れない（「フォロー中」のまま分からなくなる）
+            StubProtocol.reset()
+            routes(following: (500, #"{"error":"x"}"#))
+            await model.load(userId: "u1", environment: env, viewerId: "me")
+            XCTAssertTrue(model.isFollowing)
+
+            // 「外す」を選ぶ。取り直しがどう答えても外す
+            StubProtocol.reset()
+            StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":false,"followers":2}"#)
+            StubProtocol.respond(path: "/user/following", status: 200, body: serverSays)
+            await model.toggleFollow(userId: "u1", environment: env)
+            XCTAssertTrue(StubProtocol.requests.contains("DELETE /users/u1/follow"),
+                          "外すのに DELETE を送っていない: \(StubProtocol.requests)")
+            XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") }, "外すのに follow を送った")
+            XCTAssertFalse(model.isFollowing)
+
+            // 外したあとは状態が分かっている。一覧がまだ取れなくても、フォローし直せる（d556af1 のレビュー）
+            StubProtocol.reset()
+            StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":3}"#)
+            StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+            await model.toggleFollow(userId: "u1", environment: env)
+            XCTAssertEqual(StubProtocol.requests, ["POST /users/u1/follow"])
+            XCTAssertTrue(model.isFollowing)
+        }
+    }
+
+    /// **向きは押した時点で決める。** 外すの確認が出ている間に読み込みが「もう外れていた」を
+    /// 書いても、「外す」を選んだら follow を送らない（d556af1 のレビュー）
+    func testProfileFollowSendsThePressedDirection() async {
+        prepare()
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":false,"followers":2}"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), api: api())
+        let model = UserProfileViewModel()
+        XCTAssertFalse(model.isFollowing)   // 読み込みが「外れていた」と書いた後の姿
+        await model.toggleFollow(userId: "u1", environment: env, follow: false)
+        XCTAssertEqual(StubProtocol.requests, ["DELETE /users/u1/follow"])
+    }
+
+    /// **送っている間に見ている人が替わったら、前の人の答えを書かない。**
+    /// 書くと前の人の「フォロー中」が次の人の画面に出て、次の人の読み込みも直さなかった
+    func testProfileFollowAnswerForThePreviousViewerIsDropped() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        // フォローの答えは FollowStats としては読めない（数は取れなかった扱い）——同じ道を分けないため
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":3}"#)
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api(gates: PathGates(["POST /users/u1/follow": gate])))
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "a")
+
+        let sending = Task { await model.toggleFollow(userId: "u1", environment: env, follow: true) }
+        await gate.untilWaiting()
+        // 次の人の読み込みでは一覧が取れない（「フォロー中か」を書かない回）
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":3}"#)
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        await model.load(userId: "u1", environment: env, viewerId: "b")
+        await gate.open()
+        await sending.value
+        XCTAssertFalse(model.isFollowing, "前の人のフォローの答えを次の人の画面に書いた")
+
+        // 前の人が押したフォローの**失敗**も、次の人の画面に出さない（41d4ad1 のレビュー）
+        let failGate = Gate(holds: 1)
+        let failEnv = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                     gallery: env.gallery,
+                                     api: api(gates: PathGates(["POST /users/u1/follow": failGate])))
+        // 押したときの取り直しは通る（まだフォローしていない）
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 500, body: #"{"error":"x"}"#)
+        let failing = Task { await model.toggleFollow(userId: "u1", environment: failEnv, follow: true) }
+        await failGate.untilWaiting()
+        await model.load(userId: "u1", environment: failEnv, viewerId: "c")
+        await failGate.open()
+        await failing.value
+        XCTAssertNil(model.actionMessage, "前の人の失敗を次の人の画面に出した")
+    }
+
+    /// **押したときの取り直しの失敗も、次の人の画面に出さない**（16ba877 のレビュー）
+    func testProfileRecheckFailureForThePreviousViewerIsDropped() async {
+        prepare()
+        // 1回目（最初の読み込み）は通し、2回目（押したときの取り直し）を止める
+        let gate = Gate(holds: 1, skip: 1)
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api(gates: PathGates(["GET /user/following": gate])))
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "a")   // 分からない
+
+        let pressing = Task { await model.toggleFollow(userId: "u1", environment: env, follow: true) }
+        await gate.untilWaiting(2)
+        await model.load(userId: "u1", environment: env, viewerId: "b")
+        await gate.open()
+        await pressing.value
+        XCTAssertNil(model.actionMessage, "前の人の取り直しの失敗を次の人の画面に出した")
+        XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") })
+    }
+
     /// **空の名前で作る・名前を変えるを押したら、黙らずに理由を出す。** アラートが閉じて
     /// 何も起きず、名前も変わらないままだった（送りはしない）
     func testAlbumBlankNameSaysWhy() async {
@@ -209,6 +436,9 @@ final class ViewModelTests: XCTestCase {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
         StubProtocol.respond(path: "/users/u1/follow", status: 200,
                              body: #"{"following":true,"followers":5}"#)
+        // 自分のフォロー一覧は取れる（取れないと「分からない」になり、押したときに取り直す——
+        // その筋は testProfileFollowWhenLookupFailedChecksBeforeSending が見る）
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
         // フォローの送信（POST）だけ止める。数え札（GET 同じ道）は止めない
         let gate = Gate()
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
@@ -1106,15 +1336,23 @@ final class ViewModelTests: XCTestCase {
     /// 押さえが無いと、1回目の応答が返る前に2回目が古い `liked` を見て走り、
     /// 「いいね」と「取り消し」が同時に飛ぶ。どちらが後に返るかでハートの
     /// 色が決まるので、押した結果と食い違う。
+    ///
+    /// 1回目は `Gate` で止めて「応答が返る前」を作る。止めずに2本を並べると、1回目が
+    /// 返りきってから2回目が走る回があり、それは正しい「取り消し」なので試験が揺れていた。
+    /// `holds: 1` なので、押さえが外れて2回目が投げられたら止まらずに数に出る
     func testDoubleTapLikesOnlyOnce() async {
         prepare()
-        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        let gate = Gate(holds: 1)
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates(["/photos/p1/like": gate]))))
         model.setSignedIn(true)
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":1}"#)
 
-        async let first: PhotoDetailViewModel.LikeAnswer? = model.toggleLike()
-        async let second: PhotoDetailViewModel.LikeAnswer? = model.toggleLike()
-        _ = await (first, second)
+        let first = Task { await model.toggleLike() }
+        await gate.untilWaiting()
+        _ = await model.toggleLike()
+        await gate.open()
+        _ = await first.value
 
         XCTAssertEqual(StubProtocol.requestCount, 1, "二度押しで2回投げている")
         XCTAssertTrue(model.liked)

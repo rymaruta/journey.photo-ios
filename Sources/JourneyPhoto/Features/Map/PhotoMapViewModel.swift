@@ -53,7 +53,7 @@ final class PhotoMapViewModel: ObservableObject {
     @Published private(set) var shown: [Photo] = []
 
     /// ピン（約1km で束ねた写真）
-    @Published private(set) var pins: [MapPin] = []
+    @Published private(set) var pins: [MapPin] = [] { didSet { cachedPhotoFrame = nil } }
 
     /// 撮影スポットの索引（`app/data/spots.json`）。**取れなければ空**
     /// ——本番は Web の変更が main に入るまで 404 で、そのあいだピンが
@@ -73,7 +73,7 @@ final class PhotoMapViewModel: ObservableObject {
     /// **id の集まりが変わったときだけ入れ替える。** `update(visible:)` は
     /// 地図が落ち着くたびに届くので、届くたびに入れ替えると
     /// 描き直し → カメラの知らせ → … と回る（run 37 の固まり方）
-    @Published private(set) var officialPins: [OfficialPins.Pin] = []
+    @Published private(set) var officialPins: [OfficialPins.Pin] = [] { didSet { cachedSpotFrame = nil } }
 
     /// `officialPins` を何回入れ替えたか。**回り続けていないことを試験で
     /// 数えるためだけ**にある（模型の Combine には `objectWillChange` が無い）
@@ -222,13 +222,42 @@ final class PhotoMapViewModel: ObservableObject {
     /// **写真が当たらず、名前でスポットだけ当たった回はスポットの座標群で作る**
     /// ——「たかや」と打って高屋神社のピンが出たのに、地図がパリに居たままに
     /// しない。名前で絞っていないとき（寄せただけで出ているピン）には使わない
+    ///
+    /// **覚えておく。** 画面は描き直すたびにこれを読み（`PhotoMapView.statusLine`）、塊の計算は
+    /// 写真の地点が世界に数百あると Debug で1回 60ms ほどかかる（run 206 で地図の画面が
+    /// 落ち着かなくなった回の調べ）。写真の枠は `pins` が、スポットの枠は `officialPins` が
+    /// 入れ替わったときだけ捨てる（`query` が変わると `refresh` が必ず `pins` を入れ直す）。
+    /// 分けて覚えるのは、地図を動かすたびに入れ替わる `officialPins` で写真の枠まで捨てないため
     var frame: MapFraming.Frame? {
-        if let photos = MapFraming.frame(for: pins.map { (latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }) {
-            return photos
-        }
+        if let photos = photoFrame { return photos }
         guard !MapSearch.fold(query).isEmpty else { return nil }
-        return MapFraming.frame(for: officialPins.map { (latitude: $0.coords.lat, longitude: $0.coords.lng) })
+        return spotFrame
     }
+
+    /// 写真の枠。塊の重さはピンの写真の枚数（ピンの数ではない）
+    private var photoFrame: MapFraming.Frame? {
+        if let cachedPhotoFrame { return cachedPhotoFrame }
+        let value = MapFraming.frame(for: pins.map { (latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) },
+                                     weights: pins.map(\.photos.count))
+        cachedPhotoFrame = .some(value)
+        frameComputations += 1
+        return value
+    }
+
+    /// 名前で当たったスポットの枠
+    private var spotFrame: MapFraming.Frame? {
+        if let cachedSpotFrame { return cachedSpotFrame }
+        let value = MapFraming.frame(for: officialPins.map { (latitude: $0.coords.lat, longitude: $0.coords.lng) })
+        cachedSpotFrame = .some(value)
+        frameComputations += 1
+        return value
+    }
+
+    /// 覚えている枠（外側の nil は「まだ計算していない」）
+    private var cachedPhotoFrame: MapFraming.Frame??
+    private var cachedSpotFrame: MapFraming.Frame??
+    /// 枠を何回計算したか。**描き直しのたびに計算していないことを試験で数えるためだけ**にある
+    private(set) var frameComputations = 0
 }
 
 // MARK: - 地図の文字（単数・複数と読み上げ）

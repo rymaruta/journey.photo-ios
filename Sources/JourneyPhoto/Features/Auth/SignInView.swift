@@ -65,7 +65,7 @@ struct SignInView: View {
                     if let error = auth.errorMessage {
                         Text(error).foregroundStyle(WebTheme.danger).font(.callout)
                     }
-                    if offerVerification && pendingUsername == nil {
+                    if offerVerification && pendingUsername == nil && mode == .signIn {
                         verificationOffer
                     }
                 }
@@ -86,6 +86,8 @@ struct SignInView: View {
         // （実機の絵で確認・run 38）
         .webScreen()
         .task { await loadTiles() }
+        // 確認への入口は、失敗したときのメールアドレスについての案内——打ち直したら下げる
+        .onChange(of: email) { _, _ in offerVerification = false }
     }
 
     // MARK: - 上の写真とロゴ
@@ -148,11 +150,13 @@ struct SignInView: View {
 
     private var verificationOffer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L("メールアドレスの確認がまだ終わっていません。",
-                   "This email hasn't been verified yet."))
+            // **「確認がまだ」と言い切らない。** ログインの失敗の理由（打ち間違いか未確認か）は
+            // 分からない。この端末で登録して確認が済んでいなければ、ここから続けられる
+            Text(L("この端末で登録して、まだメールの確認をしていない場合は、確認コードを入力できます。",
+                   "If you signed up on this device and haven't verified your email yet, you can enter the code."))
                 .font(.callout)
             Button {
-                Task { await resumeVerification(knownUnconfirmed: true) }
+                Task { await resumeVerification(knownUnconfirmed: false, fromOffer: true) }
             } label: {
                 // 形は**中身の側**に付ける（`.plain` は外の枠を押せる範囲にしない）
                 Text(L("確認コードを入力・再送する", "Enter or resend the code"))
@@ -249,22 +253,11 @@ struct SignInView: View {
             // 文言だけ出して入口が無いと、登録し直しても
             // 「すでに登録されています」で詰む（パスワード再設定も効かない）
             if auth.lastFailureWasUnconfirmed { await resumeVerification(knownUnconfirmed: true) }
-            // **預かったままの表示名を、ふつうのログインでも入れる。**
-            // 確認直後のログインが落ちた人・名前を入れ損ねた人は、ここ以外に
-            // やり直す場所が無い（控えには「次のログインで試せる」と書いてある）
-            // **本人があとで付けた名前は上書きしない**——既に名前があれば控えを捨てるだけ
-            // 今の名前を読めなかったら何もしない（控えは次のログインまで残す）
-            if auth.userId != nil, let name = pending.displayName(for: email) {
-                let profile = try? await environment.profiles.myProfile()
-                if let profile {
-                    let current = (profile.displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !current.isEmpty {
-                        pending.forget(email: email)
-                    } else if await applyDisplayName(name) {
-                        pending.forget(email: email)
-                    }
-                }
-            }
+            // 未確認の別名でのログインは「違います」「見つかりません」で答えることがある。
+            // この端末に登録の控えがあれば、確認への入口を出す（`SignInRecovery`）
+            offerVerification = SignInRecovery.offersVerification(
+                after: auth.lastFailure, hasPendingSignUp: pending.username(for: email) != nil)
+            await afterSignIn()
             return
         }
 
@@ -279,6 +272,30 @@ struct SignInView: View {
         }
         // 「すでに登録されています」＝**確認前の自分**かもしれない
         if auth.lastFailureWasExistingAccount { await resumeVerification(knownUnconfirmed: false) }
+    }
+
+    /// ログインが成立したあとの控えの後始末。**ふつうのログインでも、パスワード再設定のあとの
+    /// ログインでも通す**（再設定の経路で通していなかったので、aliasExists のあと再設定して入った
+    /// 人の控えの ID が重複した登録のまま残り、退会しても後始末が当たらなかった）
+    private func afterSignIn() async {
+        guard auth.userId != nil else { return }
+        // **ログインできたら登録の ID は要らない**（確認が済んでいる）。名前だけ残し、
+        // ID はいまのアカウントに書き換える（退会の後始末が ID で探す）
+        pending.forgetSignUp(email: email, signedInAs: try? await AuthGateway.currentUsername())
+        // **預かったままの表示名を、ふつうのログインでも入れる。**
+        // 確認直後のログインが落ちた人・名前を入れ損ねた人は、ここ以外に
+        // やり直す場所が無い（控えには「次のログインで試せる」と書いてある）
+        // **本人があとで付けた名前は上書きしない**——既に名前があれば控えを捨てるだけ
+        // 今の名前を読めなかったら何もしない（控えは次のログインまで残す）
+        guard let name = pending.displayName(for: email) else { return }
+        let profile = try? await environment.profiles.myProfile()
+        guard let profile else { return }
+        let current = (profile.displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !current.isEmpty {
+            pending.forget(email: email)
+        } else if await applyDisplayName(name) {
+            pending.forget(email: email)
+        }
     }
 
     /// 預かっていた表示名をプロフィールに入れる。
@@ -308,13 +325,16 @@ struct SignInView: View {
     /// - Parameter knownUnconfirmed: Cognito が「未確認」と答えた回だけ true。
     ///   「すでに登録されています」の回は**ほとんどが確認済みの人**なので、
     ///   控えが無くても「確認が済んでいません」とは言わない
-    private func resumeVerification(knownUnconfirmed: Bool) async {
+    /// - Parameter fromOffer: ログインの失敗のあとの入口から押した回
+    private func resumeVerification(knownUnconfirmed: Bool, fromOffer: Bool = false) async {
+        // 登録で「すでに登録されています」から来た回（入口でも、ログインで未確認と答えた回でもない）
+        let fromSignUp = !knownUnconfirmed && !fromOffer
         guard let saved = pending.username(for: email) else {
             // **この端末に登録の控えが無い**（Web・別の端末で登録した）。
             // 確認コードを送り直すには登録時の ID が要り、メールアドレスでは引けない
+            if fromSignUp { showExistingAccount() }
             guard knownUnconfirmed else { return }
-            notice = L("メールアドレスの確認が済んでいません。登録したときに届いたメールの確認コードを、登録した端末（または Web）で入力してください。",
-                       "Your email isn't verified yet. Enter the code from the sign-up email on the device (or web) where you signed up.")
+            notice = Self.unverifiedElsewhereNotice
             return
         }
         if await auth.resendSignUpCode(username: saved) {
@@ -326,19 +346,58 @@ struct SignInView: View {
         // **捨てるのは「この控えはもう使えない」ときだけ。**
         // 回数制限や圏外で捨てると、唯一の手がかりを失う
         if auth.lastFailure.isPermanent {
-            pending.forget(email: email)
+            // 登録の ID はもう使えない（確認済み・消えた）。名前は残す
+            pending.forgetSignUp(email: email)
+            offerVerification = false
+            // 送り直しの答えとして意味の通らない文（「メールアドレスの形式か…」「見つかりません」
+            // 「違います」）を出さない。Cognito は確認済みの利用者への送り直しを InvalidParameter で断る
+            auth.errorMessage = nil
+            if fromSignUp {
+                showExistingAccount()
+            } else if knownUnconfirmed {
+                // ログインでは「未確認」と答えたのに、控えの登録には送り直せない（控えが別の登録を
+                // 指している）。「確認が済んでいる」とは言わず、登録した所で確認するよう案内する
+                notice = Self.unverifiedElsewhereNotice
+            } else {
+                notice = auth.lastFailure == .invalidParameter
+                    ? SignInRecovery.alreadyConfirmedNotice
+                    : SignInRecovery.unusableSignUpNotice
+            }
             return
         }
         // **送り直せなくても、コードを入れる欄は出す。** 前に届いたコードは
         // まだ使えることがある。欄を出さないと、ログインを押すたびに送り直し
         // → 回数制限、を繰り返すだけで先へ進めなかった。
-        // **Cognito が「未確認」と答えた回だけ。**「すでに登録されています」の回は
-        // 確認済みの人がほとんどで、コードを入れても通らない画面になる
-        guard knownUnconfirmed else { return }
+        // **Cognito が「未確認」と答えた回と、入口から押した回だけ。**「すでに登録されています」の
+        // 回は確認済みの人がほとんどで、コードを入れても通らない画面になる。入口の文は
+        // 「確認コードを入力できます」と言っているので、回数制限・圏外で送り直せなくても欄を出す。
+        // **送り直しが実際に失敗した回だけ**（二度押しで走らなかった2本目は `.none` のまま——
+        // 1本目の答えを待たずに欄を出さない）
+        guard knownUnconfirmed || fromOffer, auth.lastFailure != .none else {
+            // 登録から来て送り直せなかった（回数制限・圏外）回も、在ることを言ってログインの画面へ
+            if fromSignUp && auth.lastFailure != .none { showExistingAccount() }
+            return
+        }
         pendingUsername = saved
         notice = L("確認コードを送り直せませんでした。前に届いたコードがあれば、そのまま入力できます。",
                    "We couldn't send a new code. If you have an earlier code, you can enter it.")
     }
+
+    /// 登録で「すでに登録されています」と言われた人への案内。もう一度登録しても同じ答えになるので、
+    /// Web（`app/signup/page.tsx`）と同じく在ることを言い、ログインの画面へ移す（「パスワードを
+    /// 忘れた」はログインの画面にしか無い）。**登録の画面にいるときだけ移す**——待つ間に再設定の
+    /// 画面などへ移っていたら、引き戻さない
+    private func showExistingAccount() {
+        // 待つ間に「ログインに戻る」を押していた回も文は出す（黙って終わらない）。
+        // 再設定の画面・確認コードの画面へ移っていたら何もしない
+        guard mode == .signUp || mode == .signIn, pendingUsername == nil else { return }
+        mode = .signIn
+        auth.errorMessage = SignInRecovery.existingAccountMessage
+    }
+
+    private static let unverifiedElsewhereNotice = L(
+        "メールアドレスの確認が済んでいません。登録したときに届いたメールの確認コードを、登録した端末（または Web）で入力してください。",
+        "Your email isn't verified yet. Enter the code from the sign-up email on the device (or web) where you signed up.")
 
     // MARK: - 登録の確認
 
@@ -358,6 +417,8 @@ struct SignInView: View {
                     clearMessages()
                     if await auth.confirmSignUp(username: username, code: code) {
                         let name = pending.displayName(for: email)
+                        // 確認が済んだので登録の ID は要らない（名前は入れ終えるまで残す）
+                        pending.forgetSignUp(email: email)
                         pendingUsername = nil
                         // 使い終えたコードを、あとの再設定の欄に残さない
                         code = ""
@@ -384,8 +445,11 @@ struct SignInView: View {
                         }
                     } else if auth.lastFailure == .aliasExists {
                         // 別のアカウントがこのメールで確認済み。案内（ログインか再設定）に
-                        // 従えるよう、ログインの欄へ戻す。**控えは捨てない**——預かった表示名は、
-                        // そのアカウントに入ったとき名前が空なら入れる（ログイン成功後の処理）
+                        // 従えるよう、ログインの欄へ戻す。**登録の ID は捨て、名前だけ残す**——
+                        // ID を残すと、確認済みのアカウントでの打ち間違いのたびに、確認できない
+                        // 重複アカウントの確認画面へ誘っていた。名前は、そのアカウントに入った
+                        // とき名前が空なら入れる（ログイン成功後の処理）
+                        pending.forgetSignUp(email: email)
                         pendingUsername = nil
                         mode = .signIn
                         code = ""
@@ -492,6 +556,7 @@ struct SignInView: View {
                         if done {
                             // そのままログインまで通す（もう一度打たせない）
                             await auth.signIn(email: email, password: password)
+                            await afterSignIn()
                             if auth.userId == nil {
                                 mode = .signIn
                                 notice = L("変えました。新しいパスワードでログインしてください。",
@@ -522,5 +587,7 @@ struct SignInView: View {
     private func clearMessages() {
         notice = nil
         auth.errorMessage = nil
+        // 確認への入口も前の失敗についての案内——画面を移ったら下げる
+        offerVerification = false
     }
 }

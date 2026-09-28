@@ -108,6 +108,54 @@ final class HomeFeedSelectionTests: XCTestCase {
         XCTAssertEqual(model.followingIds, ["b"])
     }
 
+    /// 🔴 **後から始めた取得の答えを、先に始めた取得の遅れた答えで戻さない。**
+    /// 「フォロー中」を押した取得（古い一覧）の答えが、引き下げの取得（フォローしたばかりの
+    /// 人を含む一覧）より後に着くと、その人が「フォロー中」から消えていた
+    func testOlderFollowingFetchDoesNotOverwriteANewerOne() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "me", following: ["a"])
+        let older = model.beginFollowingFetch()
+        let newer = model.beginFollowingFetch()
+        model.refreshFollowing(["a", "b"], viewerId: "me", ticket: newer)
+        model.refreshFollowing(["a"], viewerId: "me", ticket: older)
+        XCTAssertEqual(model.followingIds, ["a", "b"], "先に始めた取得の古い一覧で戻した")
+
+        // `.task` の取得（use）も同じ
+        let late = model.beginFollowingFetch()
+        let latest = model.beginFollowingFetch()
+        model.refreshFollowing(["a", "b", "c"], viewerId: "me", ticket: latest)
+        model.use(viewerId: "me", following: ["a"], ticket: late)
+        XCTAssertEqual(model.followingIds, ["a", "b", "c"])
+
+        // 後から始めた取得が取れなかった回は、先に始めた取得の答えを入れる（手元より新しい）
+        let first = model.beginFollowingFetch()
+        let second = model.beginFollowingFetch()
+        model.refreshFollowing(nil, viewerId: "me", ticket: second)
+        model.refreshFollowing(["a", "b", "c", "d"], viewerId: "me", ticket: first)
+        XCTAssertEqual(model.followingIds, ["a", "b", "c", "d"])
+    }
+
+    /// **A→B→A と戻った回、A の古い取得の答えで一覧を空にして失敗を出さない**（26c2d0c のレビュー）
+    func testStaleFollowingAnswerAfterSwitchingBackDoesNotClearTheList() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "A", following: ["x"])
+        let forA = model.beginFollowingFetch()
+        let forB = model.beginFollowingFetch()
+        model.use(viewerId: "B", following: ["y"], ticket: forB)
+        model.use(viewerId: "A", following: ["x"], ticket: forA)
+        XCTAssertFalse(model.followingFailed, "古い答えを「取れなかった」にした")
+        XCTAssertEqual(model.followingIds, ["x"], "B の一覧を A に残した")
+
+        // A の古い答えのあとに、A の新しい答えが着く（B の番号で捨てない）
+        let olderA = model.beginFollowingFetch()
+        let newerA = model.beginFollowingFetch()
+        let forB2 = model.beginFollowingFetch()
+        model.use(viewerId: "B", following: ["y"], ticket: forB2)
+        model.use(viewerId: "A", following: ["old"], ticket: olderA)
+        model.refreshFollowing(["old", "new"], viewerId: "A", ticket: newerA)
+        XCTAssertEqual(model.followingIds, ["old", "new"], "別の人の番号で、同じ人の新しい答えを捨てた")
+    }
+
     /// 🔴 **札を押して人が替わった回、前の人のフォロー一覧を持ち越さない。**
     /// 持ち越すと、次の人の一覧が取れなかったとき前の人の一覧が「フォロー中」に残る
     func testSelectingAFeedAsAnotherViewerDropsThePreviousList() async {

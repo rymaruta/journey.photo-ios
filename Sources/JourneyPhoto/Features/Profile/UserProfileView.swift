@@ -304,7 +304,7 @@ struct UserProfileView: View {
             if model.isFollowing {
                 showUnfollowConfirm = true
             } else {
-                Task { await model.toggleFollow(userId: userId, environment: environment) }
+                Task { await model.toggleFollow(userId: userId, environment: environment, follow: true) }
             }
         } label: {
             FollowPill(title: model.isFollowing ? L("フォロー中", "Following") : L("フォローする", "Follow"),
@@ -315,7 +315,9 @@ struct UserProfileView: View {
         .opacity(model.isWorking ? 0.6 : 1)
         .disabled(model.isWorking)
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
-            Task { await model.toggleFollow(userId: userId, environment: environment) }
+            // **向きは押した時点で決める。** 確認が出ている間に読み込みが「もう外れていた」を
+            // 書いても、「外す」を選んだのに follow を送らない
+            Task { await model.toggleFollow(userId: userId, environment: environment, follow: false) }
         }
     }
 
@@ -351,6 +353,10 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var followers = 0
     @Published private(set) var following = 0
     @Published private(set) var isFollowing = false
+    /// 自分のフォロー一覧が取れず、**フォロー中かどうか分からない**。ボタンは「フォローする」で
+    /// 出すが、押されたら送る前に取り直す（`toggleFollow`）——分からないまま送ると、
+    /// フォロー中の人に follow を送り直していた（写真の詳細の `followLookupFailed` と同じ形）
+    private var followUnknown = false
     /// 写真の数を言えるか。**配列の長さを直接出さない**（読み込み中・失敗で 0 になる）
     @Published private(set) var photoCount: ProfileLine.PhotoCount = .pending
     @Published private(set) var isLoading = false
@@ -379,7 +385,10 @@ final class UserProfileViewModel: ObservableObject {
 
     func load(userId: String, environment: AppEnvironment, viewerId: String?) async {
         // 見ている人が替わったら「フォロー中」を先に倒す（読み直しの間も前の人の値を出さない）
-        if let last = lastViewerId, last != viewerId { isFollowing = false }
+        if let last = lastViewerId, last != viewerId {
+            isFollowing = false
+            followUnknown = false
+        }
         lastViewerId = .some(viewerId)
         let writes = followWrites
         let blocks = blockWrites
@@ -439,8 +448,13 @@ final class UserProfileViewModel: ObservableObject {
             // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
             guard current() else { return }
-            if let ids, writes == followWrites, blocks == blockWrites {
-                isFollowing = ids.contains(userId)
+            if writes == followWrites, blocks == blockWrites {
+                if let ids {
+                    isFollowing = ids.contains(userId)
+                    followUnknown = false
+                } else {
+                    followUnknown = true
+                }
             }
         }
         // **その人の写真は公開 JSON から絞る。** 「ある人の公開写真」を返す
@@ -480,23 +494,57 @@ final class UserProfileViewModel: ObservableObject {
     /// 🔴 **失敗は格子の上の一行（`actionMessage`）に出す**（`errorMessage` に入れない）。`errorMessage` は
     /// 読み込みの失敗で、写真の格子ごと差し替えて出す——圏外でフォローを押すと
     /// 格子が消えていた（マイページが `actionMessage` で分けたのと同じ形）
-    func toggleFollow(userId: String, environment: AppEnvironment) async {
+    /// - Parameter follow: 押したボタンの向き（フォローしたいか）。nil はいまの姿の逆
+    func toggleFollow(userId: String, environment: AppEnvironment, follow: Bool? = nil) async {
         isWorking = true
         actionMessage = nil
         defer { isWorking = false }
-        // 🔴 **押した人の答えだけを書く。** 待っている間にログアウトして別の人で
-        // 入り直すと、前の人の「フォロー中」と数が次の人の画面に残っていた
+        // **押したボタンの向きを覚えておく**（「フォローする」を押した＝フォローしたい）。
+        // 取り直した結果で向きを決め直すと、「フォロー中」を外そうとして何も送られない・
+        // 逆向きに follow を送る、が起きた
+        let wantsFollow = follow ?? !isFollowing
+        // 押した時点で見ていた人。🔴 **押した人の答えだけを書く。** 待っている間にログアウトして
+        // 別の人で入り直すと、前の人の「フォロー中」と数が次の人の画面に残っていた
         // （`FollowListView.setFollowing` の `auth.userId == viewer` と同じ守り）
         let viewer = lastViewerId
+        // **分からないままフォローを送らない。** 取り直して、既にフォロー中なら送らずに姿だけ直す。
+        // 外す方は取り直さない（外すのは何度送っても同じ）
+        if followUnknown && wantsFollow {
+            let ids: [String]
+            do {
+                ids = try await environment.social.myFollowingIds()
+            } catch is CancellationError {
+                return
+            } catch {
+                // 前の人の失敗を次の人の画面に出さない
+                guard lastViewerId == viewer else { return }
+                actionMessage = L("フォローの状態を確かめられませんでした", "Couldn't check follow status")
+                return
+            }
+            // 待っている間に見ている人が替わったら、前の人の一覧を書かない
+            guard lastViewerId == viewer else { return }
+            followUnknown = false
+            // 取り直した値を、先に始まっていた読み込みの古い答えで戻させない
+            followWrites += 1
+            if ids.contains(userId) {
+                isFollowing = true
+                return
+            }
+        }
         do {
-            let result = isFollowing
-                ? try await environment.social.unfollow(userId: userId)
-                : try await environment.social.follow(userId: userId)
+            let result = wantsFollow
+                ? try await environment.social.follow(userId: userId)
+                : try await environment.social.unfollow(userId: userId)
+            // 前の人の「フォロー中か」を次の人の画面に書かない（書くと followWrites が進み、
+            // 次の人の読み込みも直さなくなる）
             guard lastViewerId == viewer else { return }
             followWrites += 1
             isFollowing = result.following
+            // サーバーの答えは確かな値——外したあとにフォローし直すとき、また取り直しに行かない
+            followUnknown = false
             followers = result.followers
         } catch {
+            // 前の人が押した失敗を、次の人の画面に出さない
             guard lastViewerId == viewer else { return }
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
@@ -513,6 +561,7 @@ final class UserProfileViewModel: ObservableObject {
             store.block(userId, for: owner)
             await environment.gallery.setHidden(store.snapshot)
             isFollowing = false
+            followUnknown = false
             photos = []
             // **成功を赤字で出さない。** それまで `errorMessage` に入れて
             // いたので、うまくいった操作が「失敗」の見た目で出ていた

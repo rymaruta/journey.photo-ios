@@ -273,6 +273,48 @@ extension PhotoMapViewModelTests {
         XCTAssertNil(model.frame)
     }
 
+    /// **枠は描き直しのたびに計算しない**（run 206 の調べ）。画面は描くたびに `frame` を読み、
+    /// 塊の計算は地点が世界に数百あると Debug で1回 60ms ほどかかる。材料が変わったときだけ計算し直す
+    func testFrameIsComputedOnlyWhenPinsChange() async throws {
+        let model = await loaded(spots: spotsJSON)
+        let first = model.frame
+        let computed = model.frameComputations
+        for _ in 0..<5 { XCTAssertEqual(model.frame, first) }
+        XCTAssertEqual(model.frameComputations, computed, "同じピンのまま読み直すたびに計算した")
+
+        model.query = "パリ"
+        let paris = try XCTUnwrap(model.frame)
+        XCTAssertEqual(paris.latitude, 48.85, accuracy: 0.01, "絞ったら新しいピンで計算し直す")
+        XCTAssertEqual(model.frameComputations, computed + 1)
+        model.query = "たかや"
+        XCTAssertEqual(model.frame?.latitude ?? 0, 34.14, accuracy: 0.01, "スポットだけ当たった回も古い枠を返さない")
+    }
+
+    /// **地図を動かしてスポットが入れ替わっても、写真の枠は計算し直さない**（67f4f26 のレビュー）。
+    /// 検索語が空の間、枠はスポットを使わない
+    func testMovingTheMapDoesNotRecomputeThePhotoFrame() async {
+        let model = await loaded(spots: spotsJSON)
+        let first = model.frame
+        let computed = model.frameComputations
+        model.update(visible: narrow())
+        XCTAssertFalse(model.officialPins.isEmpty, "下ごしらえ: 寄せるとスポットのピンが入れ替わる")
+        XCTAssertEqual(model.frame, first)
+        XCTAssertEqual(model.frameComputations, computed, "スポットが入れ替わるたびに写真の枠を計算し直した")
+    }
+
+    /// **索引が届く前に打った検索語でも、届いたらスポットの枠に寄る**（67f4f26 のレビュー）。
+    /// 覚えた「枠なし」を、スポットが届いたときに捨てる
+    func testSpotFrameFollowsAnIndexThatArrivesLate() async {
+        let model = PhotoMapViewModel()
+        let gate = Gate()
+        await model.load(environment: environment(spots: spotsJSON, indexGate: gate))
+        model.query = "たかや"
+        XCTAssertNil(model.frame, "下ごしらえ: 索引が届く前は当たるものが無い")
+        await gate.open()
+        await model.awaitIndex()
+        XCTAssertEqual(model.frame?.latitude ?? 0, 34.14, accuracy: 0.01, "届いたスポットに寄らない")
+    }
+
     /// 🔴 **写真は索引を待たない。** 索引が届かない間も写真が届いた時点で
     /// `loaded` になり、索引はあとから届いてピンだけ入れ替わる。
     /// 直列に待つと、写真のピンと最初の寄せが最大20秒（通信の上限）遅れる

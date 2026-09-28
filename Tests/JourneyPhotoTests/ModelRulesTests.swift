@@ -288,6 +288,58 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(PostLimits.description, 2_000)
         XCTAssertEqual(PostLimits.location, 200)
         XCTAssertEqual(PostLimits.storyCaption, 200)
+        XCTAssertEqual(PostLimits.comment, 500)      // comments.ts の TEXT_MAX
+        XCTAssertEqual(PostLimits.storyReply, 200)   // storyReplies.ts の TEXT_MAX
+    }
+
+    /// 🔴 **途中に足した回は、末尾を消さずに足したほうを受けない**（Web の `maxLength` と同じ）。
+    /// 末尾を切っていたので、上限いっぱいの文の途中に打つと画面の外の末尾が黙って消えた
+    func testInsertingInTheMiddleDoesNotDropTheEnd() {
+        let full = String(repeating: "あ", count: 9) + "末"
+        XCTAssertEqual(PostLimits.limited(old: full, new: "あい" + full.dropFirst(), limit: 10), full,
+                       "途中に足して末尾を消した")
+        // 末尾に足した回は入るぶんだけ入る（貼った長い文も）
+        XCTAssertEqual(PostLimits.limited(old: "あいう", new: "あいうえおかきくけこさ", limit: 10), "あいうえおかきくけこ")
+        // 収まっていればそのまま
+        XCTAssertEqual(PostLimits.limited(old: "あ", new: "いあ", limit: 10), "いあ")
+        // 置き換えて貼った長い文は、入るぶんだけ入る（何も入らない、にしない）
+        XCTAssertEqual(PostLimits.limited(old: "hello", new: String(repeating: "x", count: 15), limit: 10),
+                       String(repeating: "x", count: 10))
+        // 途中に貼った長い文は、残りの字数まで差し込む（末尾は残す）
+        XCTAssertEqual(PostLimits.limited(old: "abcZ", new: "ab" + "123456789" + "cZ", limit: 8), "ab1234cZ")
+        // 貼った文の区切り（空白・改行）は残す——段落が次の段落とつながらない（6db934e のレビュー）
+        XCTAssertEqual(PostLimits.limited(old: "A\nB", new: "A\nCCCCC\nB", limit: 6), "A\nCC\nB")
+        XCTAssertEqual(PostLimits.limited(old: "hello world", new: "hello bigger text world", limit: 15),
+                       "hello big world")
+        // 区切りが残りより長くても、区切りを1つ残す（段落がつながらない）
+        XCTAssertEqual(PostLimits.limited(old: "A\nB", new: "A\nCCCCC\n\n\nB", limit: 5), "A\nC\nB")
+        // 空白だけを貼った回は入るぶんだけ入る・残り1字なら本文を入れる（c3259e3 のレビュー）
+        XCTAssertEqual(PostLimits.limited(old: "ab", new: "ab     ", limit: 5), "ab   ")
+        XCTAssertEqual(PostLimits.limited(old: "ab", new: "abXYZ\n", limit: 3), "abX")
+        XCTAssertEqual(PostLimits.limited(old: "ab", new: "abXY\r\n", limit: 4), "abXY")
+        // 空白の長い並びを貼っても速い（正規表現の後戻りで2乗の時間がかかっていた）
+        let started = Date()
+        _ = PostLimits.limited(old: "", new: String(repeating: " ", count: 20_000) + "x", limit: 500)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
+        // 結合文字を足した回に、直前の字を消さない（受けずに前の文のまま）
+        XCTAssertEqual(PostLimits.limited(old: "abe", new: "abe\u{0301}", limit: 3), "abe")
+        // 前の文がもう超えていたら、減らす変更だけ受ける（黙って切らない）
+        let over = String(repeating: "あ", count: 12)
+        XCTAssertEqual(PostLimits.limited(old: over, new: String(over.dropLast()), limit: 10),
+                       String(over.dropLast()))
+        XCTAssertEqual(PostLimits.limited(old: over, new: over + "い", limit: 10), over)
+    }
+
+    /// 🔴 **サーバーと同じく UTF-16 の単位で数え、字の途中では切らない。**
+    /// 字で数えていたので、絵文字の多い文は画面では上限内に見えてもサーバーで切られていた
+    func testClampCountsLikeTheServer() {
+        let emoji = String(repeating: "😀", count: 150)          // 300 単位
+        let clamped = PostLimits.clamp(emoji, limit: PostLimits.title)
+        XCTAssertEqual(clamped.utf16.count, 200)
+        XCTAssertEqual(clamped, String(repeating: "😀", count: 100))
+        // 上限が字の途中に来たら、その字の手前で止める
+        XCTAssertEqual(PostLimits.clamp("あ😀", limit: 2), "あ")
+        XCTAssertTrue(PostLimits.shouldShowCount(String(repeating: "😀", count: 80), limit: 200))
     }
 
     /// **いつも数を出さない**（数字が気になって書けなくなる）。

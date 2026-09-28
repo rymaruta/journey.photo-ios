@@ -42,6 +42,8 @@ final class MusicPreviewPlayer: ObservableObject {
     private var sessionHeld = false
     /// 鳴り終わり・途中で途切れたときの見張り。**外さないと積み上がる**
     private var endObservers: [NSObjectProtocol] = []
+    /// 開始位置の頭出しの見張り（`startSeeker`）と、それを付けたプレイヤー
+    private var startSeeker: (player: AVPlayer, token: Any)?
 
     /// 音の中断（電話・Siri）の見張り。アプリ全体で1つなので外さない
     private var interruptionObserver: NSObjectProtocol?
@@ -74,6 +76,12 @@ final class MusicPreviewPlayer: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         endObservers = []
+        removeStartSeeker()
+    }
+
+    private func removeStartSeeker() {
+        if let seeker = startSeeker { seeker.player.removeTimeObserver(seeker.token) }
+        startSeeker = nil
     }
 
     func isPlaying(_ url: URL?) -> Bool {
@@ -96,10 +104,11 @@ final class MusicPreviewPlayer: ObservableObject {
     /// **同じ曲のストーリーが2本続いても、2本目は頭から**（Web の `itemChanged` と同じ）。
     /// `loops` なら鳴り終わっても止めずに頭から繰り返す（Web の `onEnded`）。
     /// 戻り値は `session`（後始末で「自分の曲か」を見分ける）
+    /// `from` は鳴らし始める位置（秒）。繰り返すときもそこへ戻る（Web と同じ）
     @discardableResult
-    func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false) -> Int {
+    func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false, from startSeconds: Double = 0) -> Int {
         guard let url else { return session }
-        start(url, song: song, loops: loops)
+        start(url, song: song, loops: loops, from: startSeconds)
         return session
     }
 
@@ -123,7 +132,8 @@ final class MusicPreviewPlayer: ObservableObject {
     }
 
     private func start(_ url: URL, song: Photo.Song?, loops: Bool = false,
-                       origin: PlaybackOrigin = .app) {
+                       origin: PlaybackOrigin = .app, from startSeconds: Double = 0) {
+        let startTime = CMTime(seconds: max(0, startSeconds), preferredTimescale: 600)
         deactivateTask?.cancel()
         deactivateTask = nil
         session += 1
@@ -153,7 +163,7 @@ final class MusicPreviewPlayer: ObservableObject {
             queue: .main
         ) { [weak self, weak player] _ in
             if loops, let player {
-                player.seek(to: .zero)
+                player.seek(to: startTime)
                 player.play()
             } else {
                 self?.stop()
@@ -172,6 +182,23 @@ final class MusicPreviewPlayer: ObservableObject {
         ) { [weak self] _ in
             self?.stop()
         })
+        if startSeconds > 0 {
+            // 🔴 **読み込む前の頭出しは捨てられることがある**（Web の `seekWhenReady` と同じ心配）。
+            // すぐ頭出ししたうえで、鳴り始めたときにまだ頭の近くなら頭出しし直す
+            player.seek(to: startTime)
+            let token = player.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 0.2, preferredTimescale: 600), queue: .main
+            ) { [weak self, weak player] time in
+                guard let player, time.seconds > 0 else { return }
+                if time.seconds < startSeconds - 1 { player.seek(to: startTime) }
+                // 外すのは**このプレイヤーの見張りだけ**（間に次の曲が始まっていたら、その見張りを外さない）
+                DispatchQueue.main.async {
+                    guard let self, self.startSeeker?.player === player else { return }
+                    self.removeStartSeeker()
+                }
+            }
+            startSeeker = (player, token)
+        }
         player.play()
     }
 

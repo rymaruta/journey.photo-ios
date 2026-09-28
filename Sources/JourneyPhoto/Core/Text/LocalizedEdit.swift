@@ -43,10 +43,52 @@ enum LocalizedEdit {
         let lines = paragraphs(field)
         guard lines != paragraphs(descriptionField(original)) else { return nil }
         if lines.isEmpty { return .plain("") }
-        if case .byLocale(let map) = original, let en = map["en"], !en.isEmpty {
-            return .paragraphs(["ja": lines, "en": en])
+        if case .byLocale(let map) = original {
+            if let en = map["en"], !en.isEmpty { return .paragraphs(["ja": lines, "en": en]) }
+            // **日本語だけの段落の写真は、文字列に収まれば文字列で送る**（Web の
+            // `mergeLocalizedDescription` と同じ・段落の数に上限が無い）。収まらないときだけ
+            // 段落の形のまま送る——もともと段落の形の写真なので、長い段落を持っていても保存できる
+            if PostLimits.length(field.trimmingCharacters(in: .whitespacesAndNewlines)) > PostLimits.description {
+                return .paragraphs(["ja": lines])
+            }
         }
+        // 文字列の写真は文字列のまま（長ければ保存の前に断る）。段落の形へ移すと、次に Web で
+        // 直したときに文字列で送られ、2000 で切られる
         return .plain(field)
+    }
+
+    /// 保存の前に告げる、説明の長さの断り。問題なければ nil。
+    ///
+    /// **欄では止めない**（送る形で上限が変わる——文字列なら全体 2000・段落の形なら 1段落 2000・
+    /// 50段落まで。`sanitizeDescription`）。超えていたら、**保存させずに**知らせる——送ると
+    /// サーバーが黙って切る（Web の `describeOverLimit` は知らせるだけで保存は止めない）
+    static func descriptionOverLimit(original: LocalizedParagraphs?, field: String) -> String? {
+        let limit = PostLimits.description
+        switch description(original: original, field: field) {
+        case .plain(let text):
+            let count = PostLimits.length(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            guard count > limit else { return nil }
+            return L("説明は\(limit)字までです（\(count)字）", "Up to \(limit) characters (\(count))")
+        case .paragraphs(let map):
+            let lines = map["ja"] ?? []
+            let tooMany = lines.count > PostLimits.descriptionParagraphs
+            let longest = lines.map(PostLimits.length).max() ?? 0
+            let tooLong = longest > limit
+            guard tooMany || tooLong else { return nil }
+            // 英語の無い写真は、全体を 2000 に縮めても保存できる——それも言う
+            let japaneseOnly = map["en"] == nil
+            if japaneseOnly {
+                return L("説明は、全体を\(limit)字以内にするか、1段落\(limit)字以内・\(PostLimits.descriptionParagraphs)段落以内にしてください",
+                         "Keep the description within \(limit) characters, or within \(PostLimits.descriptionParagraphs) paragraphs of up to \(limit) characters each")
+            }
+            return tooMany
+                ? L("説明は\(PostLimits.descriptionParagraphs)段落までです（\(lines.count)段落）",
+                    "Up to \(PostLimits.descriptionParagraphs) paragraphs (\(lines.count))")
+                : L("説明の1段落は\(limit)字までです（\(longest)字）",
+                    "Each paragraph can be up to \(limit) characters (\(longest))")
+        default:
+            return nil
+        }
     }
 
     private static func paragraphs(_ text: String) -> [String] {

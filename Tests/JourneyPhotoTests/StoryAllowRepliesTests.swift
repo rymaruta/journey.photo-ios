@@ -28,6 +28,20 @@ final class StoryAllowRepliesTests: XCTestCase {
         XCTAssertEqual(list.map(\.id), ["s1", "s2"])
         XCTAssertTrue(list[0].acceptsReplies)
     }
+    /// 🔴 **Web で選んだ曲の「好きな部分」から鳴らす。** `song.startSec` を読まずにいたので、
+    /// アプリで見る人にはいつも曲の頭が流れていた
+    func testSongStartsWhereThePosterChose() throws {
+        func story(_ start: String) throws -> Story {
+            try decode(#"{"id":"s1","src":"https://x/s1.jpg","song":{"title":"t","previewUrl":"https://audio-ssl.itunes.apple.com/a.m4a""# + start + "}}")
+        }
+        XCTAssertEqual(StoryPlayback.songStart(for: try story(#","startSec":20"#)), 20)
+        XCTAssertEqual(StoryPlayback.songStart(for: try story(#","startSec":45"#)), 29, "サーバーと同じく29秒まで")
+        XCTAssertEqual(StoryPlayback.songStart(for: try story("")), 0, "選んでいなければ頭から")
+        // 読めない値で曲ごと落とさない
+        let odd = try story(#","startSec":"abc""#)
+        XCTAssertNotNil(odd.song)
+        XCTAssertEqual(StoryPlayback.songStart(for: odd), 0)
+    }
 }
 
 /// 送り直しで二重に出さないための照らし合わせ（`StoryService.isSameMedia`）。
@@ -54,4 +68,5 @@ final class StorySameMediaTests: XCTestCase {
                                                           userId: "other"),
                                                 media, ownerId: "me"))
     }
+
 }

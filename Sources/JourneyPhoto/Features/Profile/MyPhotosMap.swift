@@ -85,7 +85,7 @@ struct MyPhotosMap: View {
     private func frame() {
         guard let frame = MapFraming.frame(for: pins.map {
             (latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
-        }) else { return }
+        }, weights: pins.map(\.photos.count)) else { return }
         camera = .region(MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: frame.latitude, longitude: frame.longitude),
             span: MKCoordinateSpan(latitudeDelta: frame.latitudeSpan,

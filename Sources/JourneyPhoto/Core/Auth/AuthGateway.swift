@@ -201,11 +201,29 @@ enum AuthGateway {
         try requireConfigured()
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let result = try await Amplify.Auth.signIn(username: trimmed, password: password)
-        if case .confirmSignUp = result.nextStep {
-            throw AuthError.service("", "", AWSCognitoAuthError.userNotConfirmed)
-        }
-        return result.isSignedIn
+        return try outcome(of: result.nextStep, isSignedIn: result.isSignedIn)
     }
+
+    /// ログインの答えの次の段から、結果を決める。
+    ///
+    /// 🔴 **続きの段を黙って捨てない。** `.confirmSignUp` しか見ていなかったので、管理者が
+    /// パスワードを再設定した人（`.resetPassword`）やコンソールで作られた人（新しいパスワードの
+    /// 設定待ち）は、false が捨てられて「しばらくしてからもう一度」が出るだけで、待っても
+    /// 押し直しても進めなかった（Web は再設定へ案内している）
+    static func outcome(of step: AuthSignInStep, isSignedIn: Bool) throws -> Bool {
+        switch step {
+        case .done:
+            return isSignedIn
+        case .confirmSignUp:
+            throw AuthError.service("", "", AWSCognitoAuthError.userNotConfirmed)
+        case .resetPassword:
+            throw SignInIncomplete.passwordResetRequired
+        default:
+            // アプリで続けられない段（新しいパスワードの設定・多要素認証など）
+            throw SignInIncomplete.unsupportedStep
+        }
+    }
+
 
     static func signOut() async {
         guard isConfigured else { return }

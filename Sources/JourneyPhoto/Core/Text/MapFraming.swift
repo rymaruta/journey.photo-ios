@@ -32,9 +32,14 @@ enum MapFraming {
     static let minimumSpan = 0.08
 
     /// 点が無ければ nil（呼ぶ側は地図の既定に任せる）。
-    static func frame(for points: [(latitude: Double, longitude: Double)]) -> Frame? {
+    ///
+    /// - Parameter weights: 点ごとの重み（ピンに載っている写真の枚数）。省けば1点1つ。
+    ///   **ピンは座標を丸めた1地点ごとなので、数えるのは写真の枚数**——東京の1地点に40枚、
+    ///   パリの2地点に1枚ずつなら東京に寄る（ピンの数で数えるとパリに寄っていた）
+    static func frame(for points: [(latitude: Double, longitude: Double)],
+                      weights: [Int]? = nil) -> Frame? {
         guard !points.isEmpty else { return nil }
-        let cluster = largestCluster(points)
+        let cluster = largestCluster(points, weights: weights)
         let latitudes = cluster.map(\.latitude)
         let longitudes = cluster.map(\.longitude)
         guard let minLat = latitudes.min(), let maxLat = latitudes.max(),
@@ -47,31 +52,92 @@ enum MapFraming {
         )
     }
 
-    /// いちばん点の多い塊。**同数なら北にある方**（毎回同じ結果にする）。
+    /// いちばん重い（写真の多い）塊。**同じ重さなら北にある方**（毎回同じ結果にする）。
+    ///
+    /// 写真を約 30km（`clusterDegrees / 10`）の升目に落とし、**ある升を中心に上下左右 9升
+    /// （中心の点から端まで 2.4〜2.7°・一辺 19升＝約 5.1°）の窓に入る写真の重さがいちばん大きい所**を選んで、その窓の
+    /// 写真を塊とする。窓の重さは升目の累積和で引くので、点の数と升目の数に比例する時間で済む。
+    /// 返す点は必ず窓の中にある。中心の候補は写真のある升だけ。
+    /// - 🔴 北から順に「最初に近い塊」へ足す形は、一続きの点が割れて小さい塊が選ばれた
+    /// - つながりをたどる形は、点が密だと大陸ごと1つになり、点の数の2乗の時間がかかった
+    /// - 升目の 3×3 をそのまま囲む形は、離れた1枚が枠を決めた。重みの中心で切る形は、中心が
+    ///   2つの群の間に落ちると、間にある1枚だけに寄った
+    /// - 写真の1地点ずつを候補にする形は、1つの升に写真が集まると2乗の時間になった
     static func largestCluster(
-        _ points: [(latitude: Double, longitude: Double)]
+        _ points: [(latitude: Double, longitude: Double)],
+        weights: [Int]? = nil
     ) -> [(latitude: Double, longitude: Double)] {
-        var clusters: [[(latitude: Double, longitude: Double)]] = []
-        for point in points.sorted(by: { $0.latitude > $1.latitude }) {
-            if let index = clusters.firstIndex(where: { cluster in
-                cluster.contains { near($0, point) }
-            }) {
-                clusters[index].append(point)
-            } else {
-                clusters.append([point])
+        // **ありえない座標は数えない。** 升目の数は緯度・経度の広がりで決まるので、範囲外の
+        // 値（古いデータ・壊れた行）が1つあるだけで升目が巨大になり、確保できずに落ちる
+        let usable = points.indices.filter {
+            let p = points[$0]
+            return p.latitude.isFinite && p.longitude.isFinite
+                && abs(p.latitude) <= 90 && abs(p.longitude) <= 180
+        }
+        guard usable.count == points.count else {
+            let kept = usable.map { points[$0] }
+            let keptWeights = weights.map { w in usable.map { w.indices.contains($0) ? w[$0] : 1 } }
+            return kept.isEmpty ? [] : largestCluster(kept, weights: keptWeights)
+        }
+        guard !points.isEmpty else { return [] }
+        let size = clusterDegrees / 10
+        let reach = 9
+        // **間の空いた升は詰める**（写真のある行・列の間を最大 reach+1 升に）。詰めても
+        // 「窓に入る（reach 升以内）」かどうかは変わらない。詰めないと升目の数が写真の
+        // 広がりで決まり、世界に4枚散っただけで約 90 万升を毎回数えた（Debug で1回 18ms。
+        // 地図の画面は描き直すたびにこれを呼ぶ）
+        let rows = squeezed(points.map { Int(($0.latitude / size).rounded(.down)) }, gap: reach + 1)
+        let cols = squeezed(points.map { Int(($0.longitude / size).rounded(.down)) }, gap: reach + 1)
+        let minRow = rows.min()!, minCol = cols.min()!
+        let height = rows.max()! - minRow + 1, width = cols.max()! - minCol + 1
+        // 累積和（sum[r][c] は左下からその升の手前までの重さ）。詰めた升目なので、写真のある
+        // 行・列の数（多くても 700×1400 ほど）で決まる
+        var sum = [Int](repeating: 0, count: (height + 1) * (width + 1))
+        func at(_ r: Int, _ c: Int) -> Int { r * (width + 1) + c }
+        for index in points.indices {
+            let w = (weights?.indices.contains(index) ?? false) ? max(1, weights![index]) : 1
+            sum[at(rows[index] - minRow + 1, cols[index] - minCol + 1)] += w
+        }
+        for r in 1...height {
+            for c in 1...width {
+                sum[at(r, c)] += sum[at(r - 1, c)] + sum[at(r, c - 1)] - sum[at(r - 1, c - 1)]
             }
         }
-        return clusters.max { left, right in
-            if left.count != right.count { return left.count < right.count }
-            // 同数：北にある方を先に（`sorted` で北から入れているので後勝ちを避ける）
-            return (left.first?.latitude ?? 0) < (right.first?.latitude ?? 0)
-        } ?? []
+        func windowWeight(row: Int, col: Int) -> Int {
+            let r0 = max(0, row - reach), r1 = min(height - 1, row + reach)
+            let c0 = max(0, col - reach), c1 = min(width - 1, col + reach)
+            return sum[at(r1 + 1, c1 + 1)] - sum[at(r0, c1 + 1)] - sum[at(r1 + 1, c0)] + sum[at(r0, c0)]
+        }
+        var best: (row: Int, col: Int, weight: Int)?
+        for index in points.indices {
+            let row = rows[index] - minRow, col = cols[index] - minCol
+            let total = windowWeight(row: row, col: col)
+            // 重い方。同じなら北（行の大きい方）、それも同じなら西（毎回同じ結果にする）
+            if let current = best,
+               !(total > current.weight
+                 || (total == current.weight && (row > current.row || (row == current.row && col < current.col)))) {
+                continue
+            }
+            best = (row, col, total)
+        }
+        guard let best else { return [] }
+        return points.indices
+            .filter { abs(rows[$0] - minRow - best.row) <= reach && abs(cols[$0] - minCol - best.col) <= reach }
+            .sorted { points[$0].latitude > points[$1].latitude }
+            .map { points[$0] }
     }
 
-    private static func near(_ a: (latitude: Double, longitude: Double),
-                             _ b: (latitude: Double, longitude: Double)) -> Bool {
-        abs(a.latitude - b.latitude) <= clusterDegrees
-            && abs(a.longitude - b.longitude) <= clusterDegrees
+    /// 升の番号の並びを保ったまま、隣り合う値の間を `gap` までに詰める。
+    /// 差が `gap` 未満の2つは差がそのまま残り、`gap` 以上離れた2つは詰めても `gap` 以上離れる
+    static func squeezed(_ values: [Int], gap: Int) -> [Int] {
+        let distinct = Array(Set(values)).sorted()
+        var index: [Int: Int] = [:]
+        var next = 0
+        for (i, value) in distinct.enumerated() {
+            if i > 0 { next += min(gap, value - distinct[i - 1]) }
+            index[value] = next
+        }
+        return values.map { index[$0]! }
     }
 }
 

@@ -72,7 +72,15 @@ struct EditPhotoView: View {
             .listRowBackground(Color.clear)
 
             Section(L("この写真について", "About this photo")) {
+                // 題は投稿の画面と同じ上限で止める（超えたぶんはサーバーが黙って切る）
                 TextField(L("題", "Title"), text: $title)
+                    .onChange(of: title) { old, value in
+                        let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.title)
+                        if kept != value { title = kept }
+                    }
+                // 🔴 **説明は欄で止めない**（Web の `/user/edit` と同じ）。送る形で上限が変わり、
+                // 全体を 2000 で切ると英語の説明がある写真で後ろの段落が消えた。超えていれば
+                // 保存の前に知らせる（`LocalizedEdit.descriptionOverLimit`）
                 TextField(L("説明", "Description"), text: $caption, axis: .vertical)
                     .lineLimit(3...8)
                 // **候補から選べるようにする**（投稿画面と同じ）。
@@ -192,6 +200,12 @@ struct EditPhotoView: View {
         // 決めて送るので、途中で撮影地を消して保存すると、あとから届いた差し替えが
         // 写真の位置を書き戻していた（消したはずのピンが地図に戻る）
         guard !isSaving, !isReplacing else { return }
+        // 送るとサーバーが黙って切る長さなら、保存させずに知らせる
+        if let over = LocalizedEdit.descriptionOverLimit(original: photo.description, field: caption) {
+            messageIsError = true
+            message = over
+            return
+        }
         isSaving = true
         message = nil
         defer { isSaving = false }
@@ -236,7 +250,7 @@ struct EditPhotoView: View {
         patch.published = visibility.published
         patch.audience = visibility.audience
         // **触っていなければ送らない**（時刻付きの撮影日を日付だけに落とさない）。
-        // 空も送らない——空文字は api-user の日付検査に落ちる
+        // 入っていた日付を消したら空文字を送る（サーバーが撮影日を消す）
         patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date),
                                     field: date)
 

@@ -214,9 +214,10 @@ final class GalleryViewModel: ObservableObject {
     ///     ここで `self.viewerId` と比べると、人が替わった直後（`use` がまだの間）に
     ///     今の人の正しい集合まで捨てる。モデルが捨てるのは**もう離れた人**
     ///     （`departedViewerIds`）のぶんだけ——前の人の一覧が次の人の「フォロー中」に入らない
-    func refreshFollowing(_ following: Set<String>?, viewerId: String) {
+    func refreshFollowing(_ following: Set<String>?, viewerId: String, ticket: Int? = nil) {
         guard let following else { return }
         guard !departedViewerIds.contains(viewerId) else { return }
+        guard takesFollowing(ticket, for: viewerId) else { return }
         self.followingIds = following
         followingOwner = viewerId
         followingFailed = false
@@ -237,11 +238,17 @@ final class GalleryViewModel: ObservableObject {
     ///     走り直した回・取り消された回。潰すと「フォロー中」の一覧が空になり、
     ///     開いた詳細の元のタイルが消えて閉じる）
     ///   - 人が替わった回・一度も取れていない回は、空にして `followingFailed` を立てる
-    func use(viewerId: String?, following: Set<String>?) {
+    func use(viewerId: String?, following: Set<String>?, ticket: Int? = nil) {
         // 並びは sort と feed の両方で決まる（`sorted`）。**どちらかが変わったら**並べ直す
         let previousFeed = feed
         setViewer(viewerId)
-        if let following {
+        // 後から始めた取得の答えがもう入っていたら、この古い答えでは一覧に触らない
+        // （「取れなかった」の枝に入れると、A→B→A と戻った回に一覧を空にして失敗を出していた）。
+        // 取れなかった答えは番号を進めない——`refreshFollowing` と同じ
+        let stale = following != nil && !takesFollowing(ticket, for: viewerId)
+        if stale {
+            // 一覧はそのまま（並びと範囲だけ下で更新する）
+        } else if let following {
             followingIds = following
             followingOwner = viewerId
             followingFailed = false
@@ -258,6 +265,33 @@ final class GalleryViewModel: ObservableObject {
         // 開いている詳細の元のタイルが作り直されて閉じる）
         if sort != previousSort || feed != previousFeed { all = sorted(all) }
         if case .loaded = state { state = .loaded(filtered()) }
+    }
+
+    /// フォロー一覧を取りに行く前に呼び、返った番号を `use`・`refreshFollowing` に渡す。
+    ///
+    /// 🔴 **後から始めた取得の答えを、先に始めた取得の遅れた答えで上書きしない。**
+    /// 「フォロー中」を押したとき・引き下げ・`.task` の3か所から取りに行き、順番の札が
+    /// 無かったので、先に始めた（古い）一覧が後から着くと新しい一覧を戻していた
+    /// （フォローしたばかりの人が「フォロー中」から消える）
+    func beginFollowingFetch() -> Int {
+        followingFetchSeq += 1
+        return followingFetchSeq
+    }
+
+    private var followingFetchSeq = 0
+    /// いま入っている一覧を取りに行った番号
+    private var appliedFollowingSeq = 0
+
+    /// 番号の無い呼び出し（試験・未ログイン）はいつも入れる。入れたら番号を進める。
+    /// **比べるのは、いま入っている一覧が同じ人のものなときだけ**——別の人の一覧が入っている
+    /// なら、古い番号でもこの人の答えの方が正しい（A→B→A と戻った回に B の一覧を A に残さない）
+    private func takesFollowing(_ ticket: Int?, for viewerId: String?) -> Bool {
+        guard let ticket else { return true }
+        if followingOwner == viewerId, ticket <= appliedFollowingSeq { return false }
+        // **max を取らずに置き換える。** 番号は入っている一覧の番号——別の人の新しい番号を
+        // 残すと、戻った人の古い答えのあとに着いた同じ人の新しい答えを捨てていた
+        appliedFollowingSeq = ticket
+        return true
     }
 
     private func filtered() -> [Photo] {
