@@ -49,6 +49,9 @@ struct PendingVerificationStore {
         /// 登録のときに入れた表示名。**確認が済むまで預かる**
         /// （確認前にアプリを閉じても、名前を打ち直させない）
         var displayName: String?
+        /// 登録の ID を使い終えた（確認が済んだ・ログインできた・別アカウントが確認済み）。
+        /// **ID そのものは消さない**——退会のとき `forget(username:)` が ID で探して消す
+        var signUpDone: Bool?
     }
 
     func remember(email: String, username: String, displayName: String? = nil, now: Date = Date()) {
@@ -68,10 +71,10 @@ struct PendingVerificationStore {
             defaults.removeObject(forKey: key)
             return nil
         }
-        return entry.username.isEmpty ? nil : entry.username
+        return entry.signUpDone == true ? nil : entry.username
     }
 
-    /// **登録の ID だけ捨てる**（預かった表示名は残す）。
+    /// **登録の ID を使い終えた印を付ける**（預かった表示名は残す・ID で退会の後始末が探せる）。
     ///
     /// 確認が済んだ・そのメールでログインできた・同じメールの別のアカウントが確認済み
     /// （aliasExists）と分かった回に使う。ID を残すと、確認済みの人がパスワードを打ち
@@ -85,7 +88,7 @@ struct PendingVerificationStore {
             defaults.removeObject(forKey: key)
             return
         }
-        let kept = Entry(username: "", savedAt: entry.savedAt, displayName: name)
+        let kept = Entry(username: entry.username, savedAt: entry.savedAt, displayName: name, signUpDone: true)
         guard let encoded = try? JSONEncoder().encode(kept) else { return }
         defaults.set(encoded, forKey: key)
     }
@@ -108,7 +111,7 @@ struct PendingVerificationStore {
     ///
     /// **退会のときに使う。** 退会の画面はメールアドレスを知らないので、
     /// 控えの中身（ユーザー名）で探す。確認のあと名前を入れられなかった回
-    /// （`SignInView.applyDisplayName`）は控えが残っている
+    /// （`SignInView.applyDisplayName`）は、使い終えた印（`signUpDone`）付きで控えが残っている
     func forget(username: String) {
         for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix("jp_verify_") {
             guard let data = value as? Data,

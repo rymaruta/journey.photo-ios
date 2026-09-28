@@ -340,8 +340,10 @@ struct SignInView: View {
             // 登録の ID はもう使えない（確認済み・消えた）。名前は残す
             pending.forgetSignUp(email: email)
             offerVerification = false
-            if fromOffer {
-                // 確認済みの人に invalidParameter の文（「メールアドレスの形式か…」）を出さない
+            if fromOffer && auth.lastFailure == .invalidParameter {
+                // 確認済みの人に invalidParameter の文（「メールアドレスの形式か…」）を出さない。
+                // （Cognito は確認済みの利用者への送り直しを InvalidParameter で断る。
+                // 見つからない・断られた回は、その失敗の文をそのまま出す）
                 auth.errorMessage = nil
                 notice = SignInRecovery.alreadyConfirmedNotice
             }
@@ -352,7 +354,9 @@ struct SignInView: View {
         // → 回数制限、を繰り返すだけで先へ進めなかった。
         // **Cognito が「未確認」と答えた回だけ。**「すでに登録されています」の回は
         // 確認済みの人がほとんどで、コードを入れても通らない画面になる
-        guard knownUnconfirmed else { return }
+        // 入口から押した回も出す——入口の文は「確認コードを入力できます」と言っているので、
+        // 回数制限・圏外で送り直せなくても、前に届いたコードを入れられるようにする
+        guard knownUnconfirmed || fromOffer else { return }
         pendingUsername = saved
         notice = L("確認コードを送り直せませんでした。前に届いたコードがあれば、そのまま入力できます。",
                    "We couldn't send a new code. If you have an earlier code, you can enter it.")

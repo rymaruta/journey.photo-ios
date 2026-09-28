@@ -102,6 +102,11 @@ extension PendingVerificationTests {
         XCTAssertNil(pending.username(for: "taro@example.com"), "登録の ID が残っている")
         XCTAssertEqual(pending.displayName(for: "taro@example.com"), "たろう", "預かった名前まで捨てた")
 
+        // 🔴 **退会の後始末は、使い終えた控えも ID で探して消す**（9544a43 のレビュー）。
+        // ID を空にしていたので、確認のあと名前を入れられなかった控えが退会しても残った
+        pending.forget(username: "uuid-1")
+        XCTAssertNil(pending.displayName(for: "taro@example.com"), "退会しても控え（名前）が残った")
+
         // 名前の無い控えは丸ごと捨てる
         pending.remember(email: "hana@example.com", username: "uuid-2")
         pending.forgetSignUp(email: "hana@example.com")
