@@ -170,6 +170,17 @@ struct PhotoMapView: View {
         // 消えているので、札だけ残ると何を指しているか分からない）
         .onChange(of: model.mode) { _, _ in
             chosenPlace = nil
+            // 札を下げたのと同じ。検索の途中で「スポット」「リスト」へ移ったのに、
+            // 後から地図アプリが開いていた
+            directionsTask?.cancel()
+        }
+        // 索引を読み直してピンの中身（写真・出典・下書き）が変わったら、開いている札も
+        // 新しい中身に差し替える（札だけ古い写真と出典のまま残らないように）
+        .onChange(of: model.officialPins) { _, _ in
+            guard let selected = selectedOfficial,
+                  let fresh = model.officialPins.first(where: { $0.id == selected.id }),
+                  fresh != selected else { return }
+            selectedOfficial = fresh
         }
         // 現在地が取れたら、そこへ寄せる。**絞りはしない**——代わりに
         // 「近くの写真」の入口を出す（押すまで何も変えない）
@@ -1018,7 +1029,11 @@ struct PhotoMapView: View {
             let found = await OfficialSpotIndex.firstWithin(seconds: OfficialSpotIndex.directionsTimeout) {
                 await Self.searchDirectionsItem(for: pin)
             }
-            guard !Task.isCancelled, isOnScreen, selectedOfficial?.spotId == pin.spotId else { return }
+            // 🔴 **札がいま見えているかまで見る。** 引いてピンが消えた（`selectedOfficial` は
+            // 残る）・「スポット」「リスト」へ移った回にも、地図アプリが開いていた
+            guard !Task.isCancelled, isOnScreen, model.mode == .map,
+                  selectedOfficial?.spotId == pin.spotId,
+                  model.showsCard(official: selectedOfficial, onScreen: isOnScreen) else { return }
             let item = found ?? Self.roundedDirectionsItem(for: pin)
             item.openInMaps(launchOptions: [
                 MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
@@ -1178,6 +1193,12 @@ struct PhotoMapView: View {
         if !model.loaded {
             ProgressView()
                 .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+        } else if photos.isEmpty, model.loadFailed {
+            // 🔴 **読めなかったのに「まだありません」と言わない**（投稿を勧めていた）
+            Text(Self.loadFailedText)
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.muted2)
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else if photos.isEmpty {
             HStack(spacing: 8) {
                 Text(L("この付近の写真はまだありません", "No photos near here yet"))
@@ -1257,6 +1278,11 @@ struct PhotoMapView: View {
                     .foregroundStyle(WebTheme.faint)
                     .padding(.horizontal, 4)
                     .accessibilityAddTraits(.isHeader)
+                // 写真が読めなかった回は、各行の「写真 0枚」が本当の0ではないと言う
+                // （「リスト」の札は `listNotes` で言っていた）
+                if model.loadFailed {
+                    listNote(Self.loadFailedText)
+                }
                 if model.officialIndexState == .loading {
                     // **読み込み中に「無い」と言わない**
                     ProgressView()

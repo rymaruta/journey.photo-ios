@@ -129,4 +129,15 @@ final class OfficialPinsTests: XCTestCase {
         XCTAssertTrue(OfficialPins.changed([], ab))
         XCTAssertFalse(OfficialPins.changed([], []))
     }
+
+    /// 🔴 **id が同じでも中身が変わったら入れ替える**（索引を読み直して写真・出典・
+    /// 下書きの札が変わったのに、地図の印と札が古いまま残っていた）
+    func testChangedNoticesSameIdWithNewContent() throws {
+        let frame = frame(lat: 35.0, lng: 135.0, span: 0.4)
+        let draft = OfficialPins.visible([try spot("a", lat: 35.0, lng: 135.0, stage: "review")], frame: frame)
+        let published = OfficialPins.visible([try spot("a", lat: 35.0, lng: 135.0, stage: "published")], frame: frame)
+        XCTAssertEqual(draft.map(\.id), published.map(\.id))
+        XCTAssertNotEqual(draft.first?.isDraft, published.first?.isDraft)
+        XCTAssertTrue(OfficialPins.changed(draft, published), "中身の変わったピンを入れ替えていない")
+    }
 }
