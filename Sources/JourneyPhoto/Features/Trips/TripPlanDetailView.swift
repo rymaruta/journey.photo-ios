@@ -556,7 +556,8 @@ struct TripPlanDetailView: View {
                             Task {
                                 if await model.remove(planId, environment: environment) {
                                     dismiss()
-                                } else {
+                                } else if picking == nil, onTop, !confirmLeave {
+                                    // 出せるときだけ（右上の「保存」と同じ条件。出せない回は赤い行が残る）
                                     deleteError = model.errorMessage
                                         ?? L("もう一度お試しください", "Please try again.")
                                 }
