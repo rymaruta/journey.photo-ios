@@ -236,7 +236,7 @@ struct EditPhotoView: View {
         patch.published = visibility.published
         patch.audience = visibility.audience
         // **触っていなければ送らない**（時刻付きの撮影日を日付だけに落とさない）。
-        // 空も送らない——空文字は api-user の日付検査に落ちる
+        // 入っていた日付を消したら空文字を送る（サーバーが撮影日を消す）
         patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date),
                                     field: date)
 

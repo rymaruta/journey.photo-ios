@@ -21,10 +21,16 @@ enum EditDay {
     }
 
     /// 送る値。**欄を触っていなければ nil**（送らない＝時刻も保つ）。
-    /// 空も送らない（空文字は api-user の日付検査に落ちる）
+    ///
+    /// 🔴 **入っていた日付を消したら空文字を送る**（撮影日を消す）。以前は「空文字は
+    /// api-user の日付検査に落ちる」として送らなかったが、サーバーは逆で、空文字は
+    /// 「消す意図」として受け（`sanitize.ts` の `dateWasRejected("")` は false）、
+    /// `photoUpdate.ts` が属性を消す。Web の `mergeDate` も空の欄に `""` を返す。
+    /// 送らないと、カメラの時計がずれた日付を消して保存しても黙って残っていた
     static func toSend(opened: String, field: String) -> String? {
         let day = field.trimmingCharacters(in: .whitespaces)
-        guard !day.isEmpty, day != opened else { return nil }
+        guard day != opened else { return nil }
+        if day.isEmpty { return opened.isEmpty ? nil : "" }
         return day
     }
 

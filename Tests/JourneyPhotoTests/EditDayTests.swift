@@ -32,8 +32,14 @@ final class EditDayTests: XCTestCase {
         XCTAssertEqual(EditDay.toSend(opened: "2024-11-01", field: "2024-11-02"), "2024-11-02")
     }
 
-    /// 空は送らない（空文字は api-user の日付検査に落ちる）
-    func testEmptyIsNotSent() {
-        XCTAssertNil(EditDay.toSend(opened: "2024-11-01", field: "  "))
+    /// 🔴 **入っていた日付を消したら空文字を送る**（サーバーは空文字で撮影日を消す）。
+    /// 送らずにいたので、消して保存しても黙って残っていた
+    func testClearedDayIsSentAsEmpty() {
+        XCTAssertEqual(EditDay.toSend(opened: "2024-11-01", field: "  "), "")
+    }
+
+    /// もともと無かった日付の欄を空のまま保存しても、何も送らない
+    func testEmptyStaysUnsentWhenThereWasNoDay() {
+        XCTAssertNil(EditDay.toSend(opened: "", field: " "))
     }
 }
