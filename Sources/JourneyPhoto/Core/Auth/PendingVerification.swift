@@ -98,17 +98,3 @@ struct PendingVerificationStore {
         }
     }
 }
-
-/// ログインに失敗したあと、確認への入口を出すか。
-///
-/// 🔴 **確認の済んでいない人が、確認画面へ戻れなかった。** 登録はメールアドレスを別名にして
-/// いるので、未確認のうちは別名でログインできず、Cognito は `UserNotConfirmed` ではなく
-/// 「違います」（NotAuthorized）や「見つかりません」（UserNotFound）で答えることがある
-/// （確かめていない）。その回は `lastFailureWasUnconfirmed` が当たらず、確認画面から
-/// 「ログインに戻る」を押した人の戻り道が無かった（入口の `verificationOffer` は一度も出ていなかった）
-enum SignInRecovery {
-    static func offersVerification(after failure: AuthFailure, hasPendingSignUp: Bool) -> Bool {
-        guard hasPendingSignUp else { return false }
-        return failure == .notAuthorized || failure == .userNotFound
-    }
-}

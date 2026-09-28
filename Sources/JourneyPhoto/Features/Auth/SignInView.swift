@@ -249,11 +249,6 @@ struct SignInView: View {
             // 文言だけ出して入口が無いと、登録し直しても
             // 「すでに登録されています」で詰む（パスワード再設定も効かない）
             if auth.lastFailureWasUnconfirmed { await resumeVerification(knownUnconfirmed: true) }
-            // 未確認の別名（メールアドレス）ではログインできず、Cognito は「未確認」ではなく
-            // 「違います」「見つかりません」で答えることがある。この端末に登録の控えがあれば
-            // 確認への入口を出す（端末の控えを見るだけなので、アカウントの有無は漏れない）
-            offerVerification = SignInRecovery.offersVerification(
-                after: auth.lastFailure, hasPendingSignUp: pending.username(for: email) != nil)
             // **預かったままの表示名を、ふつうのログインでも入れる。**
             // 確認直後のログインが落ちた人・名前を入れ損ねた人は、ここ以外に
             // やり直す場所が無い（控えには「次のログインで試せる」と書いてある）

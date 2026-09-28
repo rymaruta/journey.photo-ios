@@ -28,15 +28,4 @@ final class AuthSignInStepTests: XCTestCase {
     func testDoneReturnsSignedIn() throws {
         XCTAssertTrue(try AuthGateway.outcome(of: .done, isSignedIn: true))
     }
-
-    /// 🔴 **確認の済んでいない人を確認画面へ戻す。** 未確認の別名でのログインは「違います」
-    /// 「見つかりません」で答えることがあり、入口が一度も出ていなかった。端末に登録の控えが
-    /// あるときだけ出す（控えが無ければアカウントの有無を匂わせない）
-    func testUnconfirmedAliasSignInOffersVerification() {
-        XCTAssertTrue(SignInRecovery.offersVerification(after: .notAuthorized, hasPendingSignUp: true))
-        XCTAssertTrue(SignInRecovery.offersVerification(after: .userNotFound, hasPendingSignUp: true))
-        XCTAssertFalse(SignInRecovery.offersVerification(after: .notAuthorized, hasPendingSignUp: false))
-        XCTAssertFalse(SignInRecovery.offersVerification(after: .network, hasPendingSignUp: true))
-        XCTAssertFalse(SignInRecovery.offersVerification(after: .none, hasPendingSignUp: true))
-    }
 }
