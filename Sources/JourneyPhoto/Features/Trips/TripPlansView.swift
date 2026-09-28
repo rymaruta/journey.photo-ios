@@ -122,7 +122,8 @@ struct TripPlansView: View {
         let title = String(trimmedTitle.prefix(TripPlanService.titleMax))
         Task {
             if let made = await model.create(title: title, environment: environment) {
-                newTitle = ""
+                // **送った題のままなら消す。** 待っている間に打ち直した次の題まで消していた
+                if String(trimmedTitle.prefix(TripPlanService.titleMax)) == title { newTitle = "" }
                 openedPlanId = made.planId
                 showOpened = true
             }

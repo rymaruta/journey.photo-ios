@@ -375,6 +375,8 @@ final class AlbumsViewModel: ObservableObject {
     }
 
     /// 操作の失敗を一時的に知らせる（数秒で消える）
+    static let nameRequired = L("名前を入れてください", "Please enter a name")
+
     func flash(_ message: String, seconds: Double = 4) {
         notice = message
         noticeTask?.cancel()
@@ -415,7 +417,8 @@ final class AlbumsViewModel: ObservableObject {
 
     func create(title: String, environment: AppEnvironment) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        // **黙って戻らない。** 空のまま「作る」を押すと、アラートが閉じて何も起きなかった
+        guard !trimmed.isEmpty else { return flash(Self.nameRequired) }
         let myEra = era
         do {
             let album = try await environment.albums.create(title: trimmed)
@@ -436,7 +439,7 @@ final class AlbumsViewModel: ObservableObject {
     /// （先に直すと、断られたときに画面だけ新しい名前になる）。
     func rename(_ id: String, title: String, environment: AppEnvironment) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return flash(Self.nameRequired) }
         let myEra = era
         do {
             // **サーバーが直した名前を採る**（60字で切られる・制御文字が落ちる）

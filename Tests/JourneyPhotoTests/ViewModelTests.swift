@@ -179,6 +179,24 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// **空の名前で作る・名前を変えるを押したら、黙らずに理由を出す。** アラートが閉じて
+    /// 何も起きず、名前も変わらないままだった（送りはしない）
+    func testAlbumBlankNameSaysWhy() async {
+        prepare()
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = AlbumsViewModel()
+        await model.create(title: "   ", environment: env)
+        XCTAssertEqual(model.notice, AlbumsViewModel.nameRequired)
+        await model.rename("a1", title: "", environment: env)
+        XCTAssertEqual(model.notice, AlbumsViewModel.nameRequired)
+        XCTAssertEqual(StubProtocol.requestCount, 0, "空の名前を送っている")
+    }
+
     /// 🔴 **押した人が替わったら、フォローの答えを書かない。** 圏外寸前でフォローを押し、
     /// 答えが返る前にログアウトして別の人で入り直すと、前の人の「フォロー中」と
     /// 数が次の人の画面に残っていた（押すと、フォローしていない相手を外す確認が出た）

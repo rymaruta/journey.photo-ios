@@ -36,6 +36,12 @@ struct TripPlanDetailView: View {
     /// 「保存して戻る」が断られた（アラートで出す——下までスクロールしていると
     /// 画面の中の赤い行は見えず、押しても何も起きないように見えた）
     @State private var leaveSaveError: String?
+    /// 削除が断られた（アラートで出す——理由は `leaveSaveError` と同じ。
+    /// 削除の札は画面のいちばん下にあり、上の赤い行は見えない）
+    @State private var deleteError: String?
+    /// 名前を引く材料が**一度でも取れたか**。取れた後の読み直しの失敗で消さない
+    @State private var gotPhotos = false
+    @State private var gotIndex = false
     /// 保存を送った回数（「保存して戻る」の失敗の知らせを、その後に別の保存が
     /// 走っていたら出さないための目印）
     @State private var saveAttempt = 0
@@ -121,12 +127,22 @@ struct TripPlanDetailView: View {
         } message: {
             Text(leaveSaveError ?? "")
         }
+        .alert(L("削除できませんでした", "Couldn't delete"),
+               isPresented: Binding(get: { deleteError != nil },
+                                    set: { if !$0 { deleteError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteError ?? "")
+        }
+        // 🔴 **取り直せなかった回は、取れていた材料を消さない。** この `.task` は
+        // 項目のスポットを開いて戻るたびに走る。圏外で戻ると、読めていた場所の名前と
+        // リンクが消えて鍵（sp_…）だけになり、候補も「読み込めませんでした」になっていた
         .task {
             let fetchedPhotos = try? await environment.gallery.fetchPhotos()
             let fetchedIndex = try? await environment.spots.fetchIndex()
-            photos = fetchedPhotos ?? []
-            index = fetchedIndex ?? []
-            sourcesFailed = fetchedPhotos == nil || fetchedIndex == nil
+            if let fetchedPhotos { photos = fetchedPhotos; gotPhotos = true }
+            if let fetchedIndex { index = fetchedIndex; gotIndex = true }
+            sourcesFailed = !gotPhotos || !gotIndex
             refreshPlaces()
         }
         // 出ている間に届いたブロック（起動直後のサーバーとの同期など）も拾う。
@@ -214,7 +230,17 @@ struct TripPlanDetailView: View {
 
     private var saveButton: some View {
         Button(L("保存", "Save")) {
-            Task { _ = await save() }
+            Task {
+                let saved = await save()
+                guard !saved else { return }
+                // 🔴 **断られたらアラートで知らせる。** 知らせは画面の上の赤い行だけで、
+                // 下までスクロールしていると押しても何も起きないように見えた
+                // （「保存して戻る」と同じ扱い。その後に別の保存を送っていたら出さない）
+                let mine = saveAttempt
+                let message = model.errorMessage ?? L("もう一度お試しください", "Please try again.")
+                guard saveAttempt == mine else { return }
+                leaveSaveError = message
+            }
         }
         .font(.body.weight(.semibold))
         // **ヘッダーの文字の合図は真鍮**（デザインシステムの決まり）
@@ -526,7 +552,12 @@ struct TripPlanDetailView: View {
                         Button {
                             confirmingDelete = false
                             Task {
-                                if await model.remove(planId, environment: environment) { dismiss() }
+                                if await model.remove(planId, environment: environment) {
+                                    dismiss()
+                                } else {
+                                    deleteError = model.errorMessage
+                                        ?? L("もう一度お試しください", "Please try again.")
+                                }
                             }
                         } label: {
                             Text(L("削除する", "Delete"))
