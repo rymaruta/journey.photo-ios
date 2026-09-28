@@ -42,6 +42,10 @@ final class ScreenshotTests: XCTestCase {
         let field = app.textFields["map.search"].firstMatch
         guard field.waitForExistence(timeout: 5) else { return }
         field.tap()
+        // 🔴 **焦点が来てから打つ。** 来ないまま `typeText` を呼ぶと XCTest は
+        // 「keyboard focus が無い」を失敗として記録し、撮影ごと赤くなる（run 197・214。
+        // 同じ木で緑の回もある）。来なければこのスポットの絵は撮らずに先へ進む
+        guard waitForKeyboardFocus(field) else { return }
         field.typeText("鍋ヶ滝\n")
         Thread.sleep(forTimeInterval: 3)
         let pin = app.buttons["鍋ヶ滝"].firstMatch
@@ -64,6 +68,18 @@ final class ScreenshotTests: XCTestCase {
             let map = app.buttons["map.mode.map"].firstMatch
             if map.exists { map.tap() }
         }
+    }
+
+    /// 入力欄にキーボードの焦点が来るまで待つ。来なければ押し直す（最長 `timeout` 秒）
+    private func waitForKeyboardFocus(_ field: XCUIElement, timeout: TimeInterval = 6) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return true }
+            Thread.sleep(forTimeInterval: 1)
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return true }
+            if field.isHittable { field.tap() }
+        }
+        return false
     }
 
     /// **位置の許可の札に答える。** 地図は開いた最初の1回に現在地を取りにいく
