@@ -39,25 +39,9 @@ final class ScreenshotTests: XCTestCase {
     /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
     /// 見つからなければ撮らない（名前と中身が食い違う絵は、無い絵より悪い）
     private func shootSpotPin(_ app: XCUIApplication) {
-        let field = app.textFields["map.search"].firstMatch
-        guard field.waitForExistence(timeout: 5) else { return }
-        field.tap()
-        // 🔴 **焦点が来てから打つ。** 来ないまま `typeText` を呼ぶと XCTest は
-        // 「keyboard focus が無い」を失敗として記録し、撮影ごと赤くなる（run 197・214。
-        // 同じ木で緑の回もある）。来なければこのスポットの絵は撮らずに先へ進む
-        guard waitForKeyboardFocus(field) else { return }
-        field.typeText("鍋ヶ滝\n")
-        Thread.sleep(forTimeInterval: 3)
-        let pin = app.buttons["鍋ヶ滝"].firstMatch
-        guard pin.waitForExistence(timeout: 10) else { return }
-        shoot(app, "13b-マップ（撮影スポットのピン）")
-        pin.tap()
-        if app.descendants(matching: .any).matching(identifier: "map.officialCard").firstMatch.waitForExistence(timeout: 5) {
-            shoot(app, "13c-マップ（撮影スポットの札）")
-        }
-        // 絞りを解いて、あとの画面に持ち越さない
-        let clear = app.buttons["消す"].firstMatch
-        if clear.exists { clear.tap() }
+        // 検索が要る絵（13b・13c）と要らない絵（13d）を分ける。検索で撮れなかった回も
+        // 13d は撮る（先に抜けると、撮れる絵まで黙って消えていた）
+        shootSearchedSpot(app)
         // 「スポット」の札（板 04c 案A）。撮ったら地図へ戻す（あとの画面に持ち越さない）
         let spots = app.buttons["map.mode.spots"].firstMatch
         if spots.waitForExistence(timeout: 5) {
@@ -68,6 +52,34 @@ final class ScreenshotTests: XCTestCase {
             let map = app.buttons["map.mode.map"].firstMatch
             if map.exists { map.tap() }
         }
+    }
+
+    /// 名前で絞って、ピン（13b）と押したときの札（13c）を撮る
+    private func shootSearchedSpot(_ app: XCUIApplication) {
+        let field = app.textFields["map.search"].firstMatch
+        guard field.waitForExistence(timeout: 5) else { return }
+        field.tap()
+        // 🔴 **焦点が来てから打つ。** 来ないまま `typeText` を呼ぶと XCTest は
+        // 「keyboard focus が無い」を失敗として記録し、撮影ごと赤くなる（run 197・214。
+        // 同じ木で緑の回もある）。来なければこのスポットの絵は撮らずに先へ進む
+        guard waitForKeyboardFocus(field) else { return }
+        field.typeText("鍋ヶ滝\n")
+        Thread.sleep(forTimeInterval: 3)
+        let pin = app.buttons["鍋ヶ滝"].firstMatch
+        guard pin.waitForExistence(timeout: 10) else {
+            // ピンが出なくても、絞りは解いてから戻る（13d・あとの画面に持ち越さない）
+            let clear = app.buttons["消す"].firstMatch
+            if clear.exists { clear.tap() }
+            return
+        }
+        shoot(app, "13b-マップ（撮影スポットのピン）")
+        pin.tap()
+        if app.descendants(matching: .any).matching(identifier: "map.officialCard").firstMatch.waitForExistence(timeout: 5) {
+            shoot(app, "13c-マップ（撮影スポットの札）")
+        }
+        // 絞りを解いて、あとの画面に持ち越さない
+        let clear = app.buttons["消す"].firstMatch
+        if clear.exists { clear.tap() }
     }
 
     /// 入力欄にキーボードの焦点が来るまで待つ。来なければ押し直す（最長 `timeout` 秒）。
@@ -98,7 +110,10 @@ final class ScreenshotTests: XCTestCase {
         }
         // 最後の押し直しで来た分も数える
         Thread.sleep(forTimeInterval: 1)
-        return hasFocus()
+        if hasFocus() { return true }
+        // 撮らずに進む回は、焦点の見え方をログに残す（毎回ここに来るなら、見方が CI で効いていない）
+        print("ScreenshotTests: 焦点が見えない（hasKeyboardFocus の有無=\(field.responds(to: NSSelectorFromString("hasKeyboardFocus")))・キーボード=\(app.keyboards.firstMatch.exists)）")
+        return false
     }
 
     /// **位置の許可の札に答える。** 地図は開いた最初の1回に現在地を取りにいく
