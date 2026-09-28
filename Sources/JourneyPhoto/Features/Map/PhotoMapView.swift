@@ -338,6 +338,11 @@ struct PhotoMapView: View {
         .padding(4)
         .jpGlass(in: Capsule())
         .padding(.horizontal, 16)
+        // **上の枠との間を空ける**（owner の「枠同士が近すぎる」・2026-09-28）。
+        // カテゴリのチップが出ている間はチップの下の余白（10pt）がそのまま
+        // 間になるが、「スポット」ではチップを出さないので検索欄に隙間なしで
+        // 付いていた。どの札でも同じくらいの間になるように足す
+        .padding(.top, model.mode == .spots ? 12 : 2)
         .padding(.bottom, 8)
     }
 
