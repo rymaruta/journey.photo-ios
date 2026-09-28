@@ -72,11 +72,11 @@ struct HighlightEditorView: View {
     private var nameSection: some View {
         Section {
             TextField(L("例: ギリシャ", "e.g. Greece"), text: $title)
-                .onChange(of: title) { _, new in
-                    // **上限で切る。** 打ち終わってから断られない
-                    if new.count > HighlightService.titleMax {
-                        title = String(new.prefix(HighlightService.titleMax))
-                    }
+                .onChange(of: title) { old, new in
+                    // **上限で止める。** サーバーと同じく UTF-16 の単位で数える
+                    // （`HIGHLIGHT_TITLE_MAX`）。字の数では絵文字の名前が黙って切られた
+                    let kept = PostLimits.limited(old: old, new: new, limit: HighlightService.titleMax)
+                    if kept != new { title = kept }
                 }
         } header: {
             Text(L("名前", "Name"))
