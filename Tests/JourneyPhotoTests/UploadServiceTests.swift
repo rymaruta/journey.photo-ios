@@ -89,6 +89,46 @@ final class UploadServiceTests: XCTestCase {
                       "S3 に迷子が残ったまま")
     }
 
+    /// 🔴 **持ち主が消したアルバムは、行き先から外して止める。** 保存は「見つかりません」
+    /// （会員でない＝`isAlbumMember`）で断られる。止めずに続けると残りも全部同じ理由で落ち、
+    /// 行き先に残るので押し直しても直らなかった
+    @MainActor
+    func testGoneAlbumIsDroppedAndTheRestIsNotSent() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/albums", status: 200, body: #"{"albums":[]}"#),
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 404, body: #"{"error":"アルバムが見つかりません"}"#),
+        ]
+        let api = APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"),
+            session: session
+        )
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        await model.loadAlbums(joined: [JoinedAlbumsStore.Entry(id: "gone", title: "消されたアルバム", token: "t1")])
+        XCTAssertEqual(model.albums.map(\.id), ["gone"], "下ごしらえ: 参加したアルバムが行き先に出る")
+        var forgotten: [String] = []
+        model.onAlbumGone = { forgotten.append($0) }
+        model.selectedAlbumId = "gone"
+        let photo = { PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil)) }
+        model.items = [photo(), photo(), photo()]
+
+        await model.submit()
+
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.path == "/upload/save" }.count, 1,
+                       "アルバムが無いと分かったあとも残りを送った")
+        XCTAssertEqual(model.items.count, 3, "写真は残る（行き先を選び直して送れる）")
+        XCTAssertNil(model.selectedAlbumId)
+        XCTAssertFalse(model.albums.contains { $0.id == "gone" }, "行き先に残った")
+        XCTAssertEqual(forgotten, ["gone"], "端末の控えから外さない")
+        XCTAssertTrue(model.errorMessage?.contains(L("選んだアルバムが見つかりませんでした", "The album you chose wasn't found")) == true,
+                      "理由が伝わらない: \(model.errorMessage ?? "nil")")
+    }
+
     /// 🔴 **保存のやり直しは同じ鍵で送る。** 保存が「落ちた」ときも、サーバーには
     /// 行ができていることがある（応答だけ失われた）。やり直しで presign から
     /// 通すと新しい鍵になり、サーバーの「鍵から ID を導く」重複よけが効かず、

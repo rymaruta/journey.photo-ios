@@ -95,6 +95,8 @@ struct UploadView: View {
         .webScreen()
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
         .onAppear {
+            // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
+            model.onAlbumGone = { [joined] id in joined.forget(id: id) }
             // **今日のテーマから来たときだけ。** 既に何か打っていれば触らない
             if let initialTag, model.tagsText.isEmpty { model.tagsText = initialTag }
         }
