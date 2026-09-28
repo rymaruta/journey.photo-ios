@@ -92,6 +92,22 @@ final class MapFramingTests: XCTestCase {
         XCTAssertEqual(frame.longitude, tokyo.longitude, accuracy: 0.01)
     }
 
+    /// **1つの升に写真が集まっても速い**（070c760 のレビュー）。1地点ずつを候補にしていたので、
+    /// 同じ升に 20000 枚で約 100 秒かかった（地図の描き直しのたびに走る）
+    func testManyPhotosInOnePlaceAreFast() {
+        var generator = SystemRandomNumberGenerator()
+        let tokyoArea = (0..<20_000).map { _ in
+            (latitude: 35.6 + Double.random(in: 0...1, using: &generator),
+             longitude: 139.5 + Double.random(in: 0...1, using: &generator))
+        }
+        let same = Array(repeating: tokyo, count: 20_000)
+        for points in [tokyoArea, same] {
+            let started = Date()
+            XCTAssertNotNil(MapFraming.frame(for: points))
+            XCTAssertLessThan(Date().timeIntervalSince(started), 1.0, "1つの升に集まると遅すぎる")
+        }
+    }
+
     /// 近い点どうしは1つの塊
     func testNearbyPointsAreOneCluster() {
         XCTAssertEqual(MapFraming.largestCluster([tokyo, niigata]).count, 2)

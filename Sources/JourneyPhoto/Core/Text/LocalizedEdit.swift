@@ -72,7 +72,8 @@ enum LocalizedEdit {
         case .paragraphs(let map):
             let lines = map["ja"] ?? []
             let tooMany = lines.count > PostLimits.descriptionParagraphs
-            let tooLong = (lines.map(PostLimits.length).max() ?? 0) > limit
+            let longest = lines.map(PostLimits.length).max() ?? 0
+            let tooLong = longest > limit
             guard tooMany || tooLong else { return nil }
             // 英語の無い写真は、全体を 2000 に縮めても保存できる——それも言う
             let japaneseOnly = map["en"] == nil
@@ -83,7 +84,8 @@ enum LocalizedEdit {
             return tooMany
                 ? L("説明は\(PostLimits.descriptionParagraphs)段落までです（\(lines.count)段落）",
                     "Up to \(PostLimits.descriptionParagraphs) paragraphs (\(lines.count))")
-                : L("説明の1段落は\(limit)字までです", "Each paragraph can be up to \(limit) characters")
+                : L("説明の1段落は\(limit)字までです（\(longest)字）",
+                    "Each paragraph can be up to \(limit) characters (\(longest))")
         default:
             return nil
         }
