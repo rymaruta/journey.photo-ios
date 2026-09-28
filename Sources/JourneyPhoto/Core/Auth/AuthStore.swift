@@ -302,6 +302,9 @@ final class AuthStore: ObservableObject {
         defer { isWorking = false }
         do {
             try await work()
+        } catch let incomplete as SignInIncomplete {
+            lastFailure = incomplete.failure
+            errorMessage = AuthMessage.text(for: lastFailure)
         } catch let error as AuthError {
             // **文言だけでなく、種類も残す。** 画面は「未確認だから確認へ送る」
             // のような分岐をしたい——文言で判定すると、言い回しを直すたびに
@@ -311,6 +314,19 @@ final class AuthStore: ObservableObject {
         } catch {
             lastFailure = .other
             errorMessage = error.localizedDescription
+        }
+    }
+}
+
+/// ログインが「続きの段」で止まった（`AuthGateway.outcome`）
+enum SignInIncomplete: Error, Equatable {
+    case passwordResetRequired
+    case unsupportedStep
+
+    var failure: AuthFailure {
+        switch self {
+        case .passwordResetRequired: return .passwordResetRequired
+        case .unsupportedStep: return .signInIncomplete
         }
     }
 }
@@ -334,6 +350,10 @@ enum AuthFailure: Equatable {
     case codeExpired
     case limitExceeded
     case network
+    /// パスワードの再設定が要る（管理者が再設定した・漏えいの疑いで止められた）
+    case passwordResetRequired
+    /// アプリで続けられないログインの段（新しいパスワードの設定・多要素認証など）
+    case signInIncomplete
     case other
 
     init(_ error: AuthError) {
@@ -408,6 +428,13 @@ enum AuthMessage {
             return L("回数が多すぎます。しばらく待ってからお試しください", "Too many attempts. Please wait and try again.")
         case .network:
             return Labels.Common.unreachable
+        case .passwordResetRequired:
+            // Web と同じ案内（`lib/auth/cognito.ts`）
+            return L("パスワードの再設定が必要です。「パスワードを忘れた」から再設定してください",
+                     "You need to reset your password. Use \"Forgot password?\" to set a new one.")
+        case .signInIncomplete:
+            return L("このアカウントはアプリからログインを完了できません。Web からログインしてください",
+                     "This account can't finish signing in from the app. Please sign in on the web.")
         case .none, .other:
             return L("うまくいきませんでした。しばらくしてからもう一度お試しください", "That didn't work. Please try again in a moment.")
         }
