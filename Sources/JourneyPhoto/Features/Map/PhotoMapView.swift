@@ -1193,7 +1193,7 @@ struct PhotoMapView: View {
         if !model.loaded {
             ProgressView()
                 .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-        } else if photos.isEmpty, model.loadFailed {
+        } else if photos.isEmpty, model.loadFailed, model.photos.isEmpty {
             // 🔴 **読めなかったのに「まだありません」と言わない**（投稿を勧めていた）
             Text(Self.loadFailedText)
                 .font(.subheadline)
@@ -1280,7 +1280,9 @@ struct PhotoMapView: View {
                     .accessibilityAddTraits(.isHeader)
                 // 写真が読めなかった回は、各行の「写真 0枚」が本当の0ではないと言う
                 // （「リスト」の札は `listNotes` で言っていた）
-                if model.loadFailed {
+                // （前に読めた写真が手元に残っている回は数が本物なので言わない——
+                // 他の知らせと同じく `model.photos.isEmpty` まで見る）
+                if model.loadFailed, model.photos.isEmpty {
                     listNote(Self.loadFailedText)
                 }
                 if model.officialIndexState == .loading {
