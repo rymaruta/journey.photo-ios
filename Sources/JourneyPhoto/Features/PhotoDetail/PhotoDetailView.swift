@@ -153,7 +153,7 @@ struct PhotoDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
         // **送った先の1枚でも読み直す**（鍵に今の1枚を入れる）
-        .task(id: "\(auth.userId ?? "")|\(current.id)") {
+        .task(id: PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)) {
             model.setSignedIn(auth.userId != nil)
             // 前の1枚の「ブロックしました」を持ち越さない
             actionNotice = nil
@@ -251,6 +251,8 @@ struct PhotoDetailView: View {
                 // 隣の写真は端末の控え（ホームのハートと同じ出どころ）
                 isLiked: { shown in shown.id == current.id ? model.liked : favorites.contains(shown.id) },
                 isSignedIn: auth.userId != nil,
+                // 下書きにはハートを出さない（押すと灯ってから黙って消え、断りは画面の裏に出ていた）
+                acceptsLike: { PhotoDetailRules.acceptsReactions(published: $0.published) },
                 onDoubleTapLike: { shown in Task { await likeFromViewer(shown) } },
                 onToggleLike: { shown in Task { await toggleLikeFromViewer(shown) } },
                 shareURL: { shown in shareURL(for: shown) }
@@ -1509,6 +1511,13 @@ enum PhotoDetailRules {
     /// `published = :pub`）。出したままだと、下書きを開くたびに「コメントを読み込めません
     /// でした」が直らず、送ると「写真が見つかりません」になっていた
     static func acceptsReactions(published: Bool?) -> Bool { published != false }
+
+    /// コメント・いいねを読み直す鍵。**受け付けるかどうかも入れる**——編集で下書きを
+    /// 公開しても、人と写真が同じなので読み直さず、開いたときの「コメントを読み込めません
+    /// でした」と空のいいねの数が残っていた
+    static func reloadKey(userId: String?, photoId: String, published: Bool?) -> String {
+        "\(userId ?? "")|\(photoId)|\(acceptsReactions(published: published))"
+    }
 
     /// 持ち主の横にフォローのボタンを出すか。
     ///

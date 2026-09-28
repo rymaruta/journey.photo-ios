@@ -204,6 +204,16 @@ final class DoubleTapLikeTests: XCTestCase {
                        .burstOnly)
     }
 
+    /// 🔴 **下書きには送らない。** 送ると先に灯したハートが黙って消えた（サーバーが断る）
+    func testDraftSendsNothing() {
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: false, signedIn: true,
+                                            acceptsLike: false),
+                       .burstOnly)
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: true, alreadyLiked: false, signedIn: true,
+                                            acceptsLike: false),
+                       .resetZoom, "拡大中は下書きでも倍率を戻す")
+    }
+
     /// 🔴 **いいねの行き先は、いま見ている1枚。** 隣へ送ってから叩くと
     /// 開いたときの1枚に付いていた
     func testTargetsThePhotoOnScreen() throws {
