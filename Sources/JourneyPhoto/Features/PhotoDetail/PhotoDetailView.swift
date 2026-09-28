@@ -587,7 +587,7 @@ struct PhotoDetailView: View {
     private func followButton(_ userId: String, following isFollowing: Bool) -> some View {
         Button {
             // 外すときだけ確認を挟む（`unfollowConfirmation`）
-            if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(userId) } }
+            if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(userId, follow: true) } }
         } label: {
             // 板 02・31 と同じ札（人のページと共通の `FollowPill`）
             FollowPill(title: isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"),
@@ -597,7 +597,9 @@ struct PhotoDetailView: View {
         .disabled(isFollowWorking)
         .opacity(isFollowWorking ? 0.6 : 1)  // 人のページと同じ薄さ
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
-            Task { await toggleFollow(userId) }
+            // **向きは押した時点で決める**（人のページと同じ）。確認が出ている間に取り直しが
+            // 走って姿が変わっても、「外す」を選んだのに follow を送らない
+            Task { await toggleFollow(userId, follow: false) }
         }
     }
 
@@ -612,15 +614,17 @@ struct PhotoDetailView: View {
 
     /// **返ってきた状態を使う。** 自分で反転すると、失敗した回に
     /// 画面だけフォロー中になる
-    private func toggleFollow(_ userId: String) async {
+    /// - Parameter follow: 押したボタンの向き（フォローしたいか）
+    private func toggleFollow(_ userId: String, follow wantsFollow: Bool) async {
         guard !isFollowWorking else { return }
         isFollowWorking = true
         defer { isFollowWorking = false }
         // 前の回の知らせを残さない（押し直して通ったのに赤字が残る）
         clearNotices()
-        // **分からないまま送らない。** 一覧が取れなかった回は、ここで取り直して
-        // から決める——既にフォロー中なら送らずに姿だけ直す（二重に送らない）
-        if isFollowing == nil {
+        // **分からないままフォローを送らない。** 一覧が取れなかった回は、ここで取り直して
+        // から決める——既にフォロー中なら送らずに姿だけ直す（二重に送らない）。
+        // 外す方は取り直さない（外すのは何度送っても同じ）
+        if isFollowing == nil && wantsFollow {
             guard followLookupFailed else { return }
             let ids: Set<String>
             do {
@@ -640,13 +644,12 @@ struct PhotoDetailView: View {
             }
             isFollowing = false
         }
-        guard let wasFollowing = isFollowing else { return }
         // **失敗は黙らない**（圏外で押して何も起きないと、押せていないのか分からない）。
         // 知らせは、ブロックの失敗と同じ `actionError` に出す
         do {
-            let result = wasFollowing
-                ? try await environment.social.unfollow(userId: userId)
-                : try await environment.social.follow(userId: userId)
+            let result = wantsFollow
+                ? try await environment.social.follow(userId: userId)
+                : try await environment.social.unfollow(userId: userId)
             // 待つ間に別の人の写真へ送ったら書かない
             guard ownerId == userId else { return }
             isFollowing = result.following

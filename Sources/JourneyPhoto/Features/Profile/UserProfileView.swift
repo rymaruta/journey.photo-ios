@@ -503,10 +503,11 @@ final class UserProfileViewModel: ObservableObject {
         // 取り直した結果で向きを決め直すと、「フォロー中」を外そうとして何も送られない・
         // 逆向きに follow を送る、が起きた
         let wantsFollow = follow ?? !isFollowing
+        // 押した時点で見ていた人。**待つ間に人が替わったら、前の人の答えを書かない**
+        let viewer = lastViewerId
         // **分からないままフォローを送らない。** 取り直して、既にフォロー中なら送らずに姿だけ直す。
         // 外す方は取り直さない（外すのは何度送っても同じ）
         if followUnknown && wantsFollow {
-            let viewer = lastViewerId
             let ids: [String]
             do {
                 ids = try await environment.social.myFollowingIds()
@@ -530,6 +531,9 @@ final class UserProfileViewModel: ObservableObject {
             let result = wantsFollow
                 ? try await environment.social.follow(userId: userId)
                 : try await environment.social.unfollow(userId: userId)
+            // 前の人の「フォロー中か」を次の人の画面に書かない（書くと followWrites が進み、
+            // 次の人の読み込みも直さなくなる）
+            guard lastViewerId == viewer else { return }
             followWrites += 1
             isFollowing = result.following
             // サーバーの答えは確かな値——外したあとにフォローし直すとき、また取り直しに行かない

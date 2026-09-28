@@ -288,7 +288,9 @@ final class GalleryViewModel: ObservableObject {
     private func takesFollowing(_ ticket: Int?, for viewerId: String?) -> Bool {
         guard let ticket else { return true }
         if followingOwner == viewerId, ticket <= appliedFollowingSeq { return false }
-        appliedFollowingSeq = max(appliedFollowingSeq, ticket)
+        // **max を取らずに置き換える。** 番号は入っている一覧の番号——別の人の新しい番号を
+        // 残すと、戻った人の古い答えのあとに着いた同じ人の新しい答えを捨てていた
+        appliedFollowingSeq = ticket
         return true
     }
 

@@ -145,6 +145,15 @@ final class HomeFeedSelectionTests: XCTestCase {
         model.use(viewerId: "A", following: ["x"], ticket: forA)
         XCTAssertFalse(model.followingFailed, "古い答えを「取れなかった」にした")
         XCTAssertEqual(model.followingIds, ["x"], "B の一覧を A に残した")
+
+        // A の古い答えのあとに、A の新しい答えが着く（B の番号で捨てない）
+        let olderA = model.beginFollowingFetch()
+        let newerA = model.beginFollowingFetch()
+        let forB2 = model.beginFollowingFetch()
+        model.use(viewerId: "B", following: ["y"], ticket: forB2)
+        model.use(viewerId: "A", following: ["old"], ticket: olderA)
+        model.refreshFollowing(["old", "new"], viewerId: "A", ticket: newerA)
+        XCTAssertEqual(model.followingIds, ["old", "new"], "別の人の番号で、同じ人の新しい答えを捨てた")
     }
 
     /// 🔴 **札を押して人が替わった回、前の人のフォロー一覧を持ち越さない。**

@@ -329,6 +329,39 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requests, ["DELETE /users/u1/follow"])
     }
 
+    /// **送っている間に見ている人が替わったら、前の人の答えを書かない。**
+    /// 書くと前の人の「フォロー中」が次の人の画面に出て、次の人の読み込みも直さなかった
+    func testProfileFollowAnswerForThePreviousViewerIsDropped() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        // フォローの答えは FollowStats としては読めない（数は取れなかった扱い）——同じ道を分けないため
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":3}"#)
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api(gates: PathGates(["POST /users/u1/follow": gate])))
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "a")
+
+        let sending = Task { await model.toggleFollow(userId: "u1", environment: env, follow: true) }
+        await gate.untilWaiting()
+        // 次の人の読み込みでは一覧が取れない（「フォロー中か」を書かない回）
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":true,"followers":3}"#)
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        await model.load(userId: "u1", environment: env, viewerId: "b")
+        await gate.open()
+        await sending.value
+        XCTAssertFalse(model.isFollowing, "前の人のフォローの答えを次の人の画面に書いた")
+    }
+
     /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
     /// 書かずに戻ると、読み込み中の丸のまま引き下げも再試行も効かない画面が残る
     func testGalleryFirstLoadCancelledDoesNotStayLoading() async {
