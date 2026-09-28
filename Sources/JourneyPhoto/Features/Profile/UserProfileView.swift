@@ -80,15 +80,6 @@ struct UserProfileView: View {
         .task(id: "\(userId)|\(auth.userId ?? "")") {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
         }
-        // **ブロックを解いたら読み直す。** ブロックで格子を空にしたあと、設定から
-        // 解除して戻っても読み直さず、「まだ写真はありません」「0枚」のまま残っていた。
-        // 🔴 **ブロックした側（false → true）では読み直さない。** 地図のシートや詳細の中で
-        // ブロックすると、読み直しで格子が空になり、開いているシートごと閉じていた
-        // （`onSheetDismiss` の注記と同じ理由。c780d20 のレビュー）
-        .onChange(of: isBlocked) { wasBlocked, blocked in
-            guard wasBlocked, !blocked else { return }
-            Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
-        }
     }
 
     private var scroll: some View {
