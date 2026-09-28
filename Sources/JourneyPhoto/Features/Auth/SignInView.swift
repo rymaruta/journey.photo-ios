@@ -257,26 +257,7 @@ struct SignInView: View {
             // この端末に登録の控えがあれば、確認への入口を出す（`SignInRecovery`）
             offerVerification = SignInRecovery.offersVerification(
                 after: auth.lastFailure, hasPendingSignUp: pending.username(for: email) != nil)
-            // **ログインできたら登録の ID は要らない**（確認が済んでいる）。名前だけ残す
-            if auth.userId != nil {
-                pending.forgetSignUp(email: email, signedInAs: try? await AuthGateway.currentUsername())
-            }
-            // **預かったままの表示名を、ふつうのログインでも入れる。**
-            // 確認直後のログインが落ちた人・名前を入れ損ねた人は、ここ以外に
-            // やり直す場所が無い（控えには「次のログインで試せる」と書いてある）
-            // **本人があとで付けた名前は上書きしない**——既に名前があれば控えを捨てるだけ
-            // 今の名前を読めなかったら何もしない（控えは次のログインまで残す）
-            if auth.userId != nil, let name = pending.displayName(for: email) {
-                let profile = try? await environment.profiles.myProfile()
-                if let profile {
-                    let current = (profile.displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !current.isEmpty {
-                        pending.forget(email: email)
-                    } else if await applyDisplayName(name) {
-                        pending.forget(email: email)
-                    }
-                }
-            }
+            await afterSignIn()
             return
         }
 
@@ -291,6 +272,30 @@ struct SignInView: View {
         }
         // 「すでに登録されています」＝**確認前の自分**かもしれない
         if auth.lastFailureWasExistingAccount { await resumeVerification(knownUnconfirmed: false) }
+    }
+
+    /// ログインが成立したあとの控えの後始末。**ふつうのログインでも、パスワード再設定のあとの
+    /// ログインでも通す**（再設定の経路で通していなかったので、aliasExists のあと再設定して入った
+    /// 人の控えの ID が重複した登録のまま残り、退会しても後始末が当たらなかった）
+    private func afterSignIn() async {
+        guard auth.userId != nil else { return }
+        // **ログインできたら登録の ID は要らない**（確認が済んでいる）。名前だけ残し、
+        // ID はいまのアカウントに書き換える（退会の後始末が ID で探す）
+        pending.forgetSignUp(email: email, signedInAs: try? await AuthGateway.currentUsername())
+        // **預かったままの表示名を、ふつうのログインでも入れる。**
+        // 確認直後のログインが落ちた人・名前を入れ損ねた人は、ここ以外に
+        // やり直す場所が無い（控えには「次のログインで試せる」と書いてある）
+        // **本人があとで付けた名前は上書きしない**——既に名前があれば控えを捨てるだけ
+        // 今の名前を読めなかったら何もしない（控えは次のログインまで残す）
+        guard let name = pending.displayName(for: email) else { return }
+        let profile = try? await environment.profiles.myProfile()
+        guard let profile else { return }
+        let current = (profile.displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !current.isEmpty {
+            pending.forget(email: email)
+        } else if await applyDisplayName(name) {
+            pending.forget(email: email)
+        }
     }
 
     /// 預かっていた表示名をプロフィールに入れる。
@@ -342,9 +347,10 @@ struct SignInView: View {
             // 登録の ID はもう使えない（確認済み・消えた）。名前は残す
             pending.forgetSignUp(email: email)
             offerVerification = false
-            if fromOffer {
+            if fromOffer || !knownUnconfirmed {
                 // 送り直しの答えとして意味の通らない文（「メールアドレスの形式か…」「見つかりません」
-                // 「違います」）を出さない。Cognito は確認済みの利用者への送り直しを InvalidParameter で断る
+                // 「違います」）を出さない。Cognito は確認済みの利用者への送り直しを InvalidParameter で
+                // 断る。入口から押した回と、登録で「すでに登録されています」から来た回
                 auth.errorMessage = nil
                 notice = auth.lastFailure == .invalidParameter
                     ? SignInRecovery.alreadyConfirmedNotice
@@ -523,6 +529,7 @@ struct SignInView: View {
                         if done {
                             // そのままログインまで通す（もう一度打たせない）
                             await auth.signIn(email: email, password: password)
+                            await afterSignIn()
                             if auth.userId == nil {
                                 mode = .signIn
                                 notice = L("変えました。新しいパスワードでログインしてください。",

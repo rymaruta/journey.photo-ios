@@ -143,8 +143,6 @@ enum SignInRecovery {
         return failure == .notAuthorized || failure == .userNotFound
     }
 
-    /// 入口から送り直そうとして「もう使えない」と断られた回の案内。確認済みの人に
-    /// 「メールアドレスの形式か…」（invalidParameter の文）を出さない
     /// 送り直しで「この登録はもう使えない」と断られた（見つからない・無効）回の案内。
     /// 「見つかりません」「違います」をそのまま出すと、送り直しの答えとして意味が通らず、
     /// ログインの画面でアカウントの有無を見せない方針（`AuthStore.signIn`）とも食い違う
@@ -152,6 +150,8 @@ enum SignInRecovery {
         "この登録はもう使えません。もう一度登録するか、パスワードをお忘れの場合は「パスワードを忘れた」から再設定してください。",
         "This sign-up can no longer be used. Sign up again, or use \"Forgot password?\" if you forgot your password.")
 
+    /// 送り直しで InvalidParameter（Cognito が確認済みの利用者への送り直しを断る答え）が返った
+    /// 回の案内。確認済みの人に「メールアドレスの形式か…」（invalidParameter の文）を出さない
     static let alreadyConfirmedNotice = L(
         "この登録は確認が済んでいるようです。パスワードをお忘れの場合は「パスワードを忘れた」から再設定してください。",
         "This sign-up seems to be verified already. If you forgot your password, use \"Forgot password?\".")
