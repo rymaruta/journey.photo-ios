@@ -256,6 +256,12 @@ struct HomeFeedTile: View {
         // 逆向きに飛ぶと、ハートと数が押した結果と食い違う（詳細画面の
         // `isLiking` と同じ）
         // 待っている印はカードの外（`LikeCountStore`）に持つ——カードが作り直されても消えない
+        // **ログインしていなければ送らずに言う。** 送ると認証で断られて黙って戻り、
+        // 一瞬灯って消えるだけのボタンになっていた（詳細画面は同じ言葉で断る）
+        guard auth.userId != nil else {
+            toasts.show(L("いいねするにはログインしてください", "Sign in to like photos"), kind: .failure)
+            return
+        }
         let photoId = photo.id
         guard pendingDelta == 0, likeCounts.beginSending(photoId) else { return }
         let wasLiked = liked
