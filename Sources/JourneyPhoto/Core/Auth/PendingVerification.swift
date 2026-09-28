@@ -150,6 +150,12 @@ enum SignInRecovery {
         "この登録はもう使えません。もう一度登録するか、パスワードをお忘れの場合は「パスワードを忘れた」から再設定してください。",
         "This sign-up can no longer be used. Sign up again, or use \"Forgot password?\" if you forgot your password.")
 
+    /// 登録で「すでに登録されています」と断られ、控えの登録にも送り直せなかった回（Web の
+    /// `app/signup/page.tsx` と同じ文）
+    static let existingAccountMessage = L(
+        "このメールアドレスはすでに登録されています。ログインするか、「パスワードを忘れた」から再設定してください。",
+        "This email is already registered. Sign in, or use \"Forgot password?\" to reset your password.")
+
     /// 送り直しで InvalidParameter（Cognito が確認済みの利用者への送り直しを断る答え）が返った
     /// 回の案内。確認済みの人に「メールアドレスの形式か…」（invalidParameter の文）を出さない
     static let alreadyConfirmedNotice = L(

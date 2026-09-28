@@ -347,11 +347,16 @@ struct SignInView: View {
             // 登録の ID はもう使えない（確認済み・消えた）。名前は残す
             pending.forgetSignUp(email: email)
             offerVerification = false
-            if fromOffer || !knownUnconfirmed {
-                // 送り直しの答えとして意味の通らない文（「メールアドレスの形式か…」「見つかりません」
-                // 「違います」）を出さない。Cognito は確認済みの利用者への送り直しを InvalidParameter で
-                // 断る。入口から押した回と、登録で「すでに登録されています」から来た回
-                auth.errorMessage = nil
+            // 送り直しの答えとして意味の通らない文（「メールアドレスの形式か…」「見つかりません」
+            // 「違います」）を出さない。Cognito は確認済みの利用者への送り直しを InvalidParameter で断る
+            auth.errorMessage = nil
+            if !fromOffer && !knownUnconfirmed {
+                // 登録で「すでに登録されています」から来た回。もう一度登録しても同じ答えになるので、
+                // Web（`app/signup/page.tsx`）と同じく在ることを言い、ログインの画面へ移す
+                // （「パスワードを忘れた」はログインの画面にしか無い）
+                mode = .signIn
+                auth.errorMessage = SignInRecovery.existingAccountMessage
+            } else {
                 notice = auth.lastFailure == .invalidParameter
                     ? SignInRecovery.alreadyConfirmedNotice
                     : SignInRecovery.unusableSignUpNotice
