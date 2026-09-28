@@ -257,8 +257,11 @@ struct HomeFeedTile: View {
         // `isLiking` と同じ）
         // 待っている印はカードの外（`LikeCountStore`）に持つ——カードが作り直されても消えない
         // **ログインしていなければ送らずに言う。** 送ると認証で断られて黙って戻り、
-        // 一瞬灯って消えるだけのボタンになっていた（詳細画面は同じ言葉で断る）
-        guard auth.userId != nil else {
+        // 一瞬灯って消えるだけのボタンになっていた（詳細画面は同じ言葉で断る）。
+        // 🔴 **確かにログアウトしているときだけ言う。** `userId == nil` だけで見ると、起動直後の
+        // 確認中にログイン済みの人へ「ログインしてください」が出る。確認中は押しても何もしない
+        if auth.isResolving { return }
+        if auth.isDefinitelySignedOut {
             toasts.show(L("いいねするにはログインしてください", "Sign in to like photos"), kind: .failure)
             return
         }

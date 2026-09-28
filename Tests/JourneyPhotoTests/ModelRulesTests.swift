@@ -109,6 +109,17 @@ final class AuthResolvingTests: XCTestCase {
     /// **サインアウト・退会のあと、前の画面の失敗をログイン画面に持ち越さない。**
     /// 退会の道（`deleteCognitoUser`）は後片づけを通っていなかったので、パスワード変更で
     /// 間違えてから退会すると、ログイン画面に「いまのパスワードが違います」が残っていた
+    /// **「ログインしてください」と言ってよいのは確かにログアウトしているときだけ。**
+    /// 起動直後の確認中（`userId` はまだ nil）に言うと、ログイン済みの人にも出る
+    @MainActor
+    func testResolvingIsNotDefinitelySignedOut() async {
+        let auth = AuthStore()
+        XCTAssertNil(auth.userId, "下ごしらえ: 確認中は ID が無い")
+        XCTAssertFalse(auth.isDefinitelySignedOut, "確認中にログアウトと決めている")
+        auth.settleSignedOut()
+        XCTAssertTrue(auth.isDefinitelySignedOut)
+    }
+
     @MainActor
     func testSettlingSignedOutDropsThePreviousScreensError() async {
         let auth = AuthStore()

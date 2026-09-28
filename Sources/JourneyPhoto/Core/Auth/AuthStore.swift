@@ -40,6 +40,10 @@ final class AuthStore: ObservableObject {
     /// 見える（Web 側の「確かめられなかった回に案内を出さない」と同じ話）。
     var isResolving: Bool { state == .unknown }
 
+    /// **確かにログアウトしている**（確認中でも、ID が取れなかっただけの起動でもない）。
+    /// 「ログインしてください」と言ってよいのはこのときだけ
+    var isDefinitelySignedOut: Bool { state == .signedOut && !isSignedOutUncertain }
+
     /// ログアウトの扱いだが、**本当にログアウトしたかは分からない**
     /// （起動時に Amplify はログイン中と答えたのに、本人の ID が取れなかった）。
     /// 通知の宛先はこの回に触らない——触ると、圏外で起動しただけの人の端末を
