@@ -322,9 +322,11 @@ struct UploadView: View {
     @ViewBuilder
     private func count(_ text: String, limit: Int) -> some View {
         if PostLimits.shouldShowCount(text, limit: limit) {
-            Text("\(text.count)/\(limit)")
+            // 数え方はサーバーと同じ（`PostLimits.length`）——字で数えると、止まったのに
+            // 「150/200」のように余っている数が出る
+            Text("\(PostLimits.length(text))/\(limit)")
                 .font(JPFont.mono(11))
-                .foregroundStyle(text.count >= limit ? WebTheme.danger : WebTheme.faint)
+                .foregroundStyle(PostLimits.length(text) >= limit ? WebTheme.danger : WebTheme.faint)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.top, -8)
         }

@@ -288,6 +288,20 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(PostLimits.description, 2_000)
         XCTAssertEqual(PostLimits.location, 200)
         XCTAssertEqual(PostLimits.storyCaption, 200)
+        XCTAssertEqual(PostLimits.comment, 500)      // comments.ts の TEXT_MAX
+        XCTAssertEqual(PostLimits.storyReply, 200)   // storyReplies.ts の TEXT_MAX
+    }
+
+    /// 🔴 **サーバーと同じく UTF-16 の単位で数え、字の途中では切らない。**
+    /// 字で数えていたので、絵文字の多い文は画面では上限内に見えてもサーバーで切られていた
+    func testClampCountsLikeTheServer() {
+        let emoji = String(repeating: "😀", count: 150)          // 300 単位
+        let clamped = PostLimits.clamp(emoji, limit: PostLimits.title)
+        XCTAssertEqual(clamped.utf16.count, 200)
+        XCTAssertEqual(clamped, String(repeating: "😀", count: 100))
+        // 上限が字の途中に来たら、その字の手前で止める
+        XCTAssertEqual(PostLimits.clamp("あ😀", limit: 2), "あ")
+        XCTAssertTrue(PostLimits.shouldShowCount(String(repeating: "😀", count: 80), limit: 200))
     }
 
     /// **いつも数を出さない**（数字が気になって書けなくなる）。

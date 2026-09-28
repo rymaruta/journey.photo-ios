@@ -1158,6 +1158,11 @@ struct StoryViewerView: View {
                 }
                 HStack(spacing: 6) {
                     TextField(L("返信する", "Reply"), text: $reply)
+                        // サーバーの上限（200）で止める——超えたぶんは黙って切られる
+                        .onChange(of: reply) { _, value in
+                            let clamped = PostLimits.clamp(value, limit: PostLimits.storyReply)
+                            if clamped != value { reply = clamped }
+                        }
                         .accessibilityLabel(L("\(story.authorName) さんに返信", "Reply to \(story.authorName)"))
                         .font(.system(size: 15))
                         .foregroundStyle(.white)

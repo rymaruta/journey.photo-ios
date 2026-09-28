@@ -72,9 +72,18 @@ struct EditPhotoView: View {
             .listRowBackground(Color.clear)
 
             Section(L("この写真について", "About this photo")) {
+                // 投稿の画面と同じ上限で止める（超えたぶんはサーバーが黙って切る）
                 TextField(L("題", "Title"), text: $title)
+                    .onChange(of: title) { _, value in
+                        let clamped = PostLimits.clamp(value, limit: PostLimits.title)
+                        if clamped != value { title = clamped }
+                    }
                 TextField(L("説明", "Description"), text: $caption, axis: .vertical)
                     .lineLimit(3...8)
+                    .onChange(of: caption) { _, value in
+                        let clamped = PostLimits.clamp(value, limit: PostLimits.description)
+                        if clamped != value { caption = clamped }
+                    }
                 // **候補から選べるようにする**（投稿画面と同じ）。
                 // ただの入力欄だと座標が付かず、直した瞬間に
                 // サーバーが `geoApprox` の座標を消す＝地図から消える。

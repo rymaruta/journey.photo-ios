@@ -960,6 +960,12 @@ struct PhotoDetailView: View {
                     .clipShape(Circle())
                     .accessibilityHidden(true)
                 TextField(L("コメントを書く", "Write a comment"), text: $model.draftComment, axis: .vertical)
+                    // **サーバーの上限で止める。** 超えたぶんは黙って切られ、送った文と同じとして
+                    // 下書きも消えるので、後ろが二度と戻らなかった（Web は maxLength=500）
+                    .onChange(of: model.draftComment) { _, value in
+                        let clamped = PostLimits.clamp(value, limit: PostLimits.comment)
+                        if clamped != value { model.draftComment = clamped }
+                    }
                     .lineLimit(1...4)
                     .font(.subheadline)
                     .padding(.horizontal, 16)
