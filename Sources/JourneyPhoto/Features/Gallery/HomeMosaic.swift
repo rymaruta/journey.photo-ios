@@ -258,7 +258,7 @@ struct HomeFeedTile: View {
         // 待っている印はカードの外（`LikeCountStore`）に持つ——カードが作り直されても消えない
         // **ログインしていなければ送らずに言う。** 送ると認証で断られて黙って戻り、
         // 一瞬灯って消えるだけのボタンになっていた（詳細画面は同じ言葉で断る）。
-        switch HomeLikeGate.decide(userId: auth.userId, isResolving: auth.isResolving) {
+        switch HomeLikeGate.decide(auth) {
         case .send: break
         case .ignore: return
         case .askToSignIn:
@@ -352,6 +352,12 @@ enum HomeLikeGate {
     /// 効かなくなる（`RootView` の「ログインしていない回は黙らない」と同じ）。
     /// ID が無いまま送ると、ログアウトの表示のまま前の人のトークンでいいねが付くか、
     /// 一瞬灯って消える
+    /// 画面から呼ぶ形。**式を呼び出し側に置かない**（試験がそこを通らない）
+    @MainActor
+    static func decide(_ auth: AuthStore) -> Decision {
+        decide(userId: auth.userId, isResolving: auth.isResolving)
+    }
+
     static func decide(userId: String?, isResolving: Bool) -> Decision {
         if userId != nil { return .send }
         return isResolving ? .ignore : .askToSignIn

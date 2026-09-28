@@ -116,9 +116,9 @@ final class AuthResolvingTests: XCTestCase {
                        "ID の無いまま送る・黙る（ID が取れなかった起動も含む）")
         // 本物の状態からも同じ答えになる
         let auth = AuthStore()
-        XCTAssertEqual(HomeLikeGate.decide(userId: auth.userId, isResolving: auth.isResolving), .ignore)
+        XCTAssertEqual(HomeLikeGate.decide(auth), .ignore)
         auth.settleSignedOut()
-        XCTAssertEqual(HomeLikeGate.decide(userId: auth.userId, isResolving: auth.isResolving), .askToSignIn)
+        XCTAssertEqual(HomeLikeGate.decide(auth), .askToSignIn)
     }
 
     /// **サインアウト・退会のあと、前の画面の失敗をログイン画面に持ち越さない。**
