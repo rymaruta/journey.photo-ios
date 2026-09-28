@@ -106,24 +106,19 @@ final class AuthResolvingTests: XCTestCase {
                       "確かめる前から「ログインしていない」と決めている")
     }
 
-    /// **「ログインしてください」と言ってよいのは確かにログアウトしているときだけ。**
-    /// 起動直後の確認中（`userId` はまだ nil）に言うと、ログイン済みの人にも出る
-    @MainActor
-    func testResolvingIsNotDefinitelySignedOut() async {
-        let auth = AuthStore()
-        XCTAssertNil(auth.userId, "下ごしらえ: 確認中は ID が無い")
-        XCTAssertFalse(auth.isDefinitelySignedOut, "確認中にログアウトと決めている")
-        auth.settleSignedOut()
-        XCTAssertTrue(auth.isDefinitelySignedOut)
-    }
-
-    /// 🔴 **ID が無いときは送らない。** 促すのは確かにログアウトしているときだけで、
-    /// それ以外（確認中・ID が取れなかった起動）は黙って何もしない
+    /// 🔴 **ID が無いときは送らない。** 黙るのは確認中だけで、ID が取れなかった起動では
+    /// 促す（黙ると、その起動のあいだ♥が何も言わずに効かない）
     func testHomeLikeSendsOnlyWithAUser() async {
-        XCTAssertEqual(HomeLikeGate.decide(userId: "me", isDefinitelySignedOut: false), .send)
-        XCTAssertEqual(HomeLikeGate.decide(userId: nil, isDefinitelySignedOut: true), .askToSignIn)
-        XCTAssertEqual(HomeLikeGate.decide(userId: nil, isDefinitelySignedOut: false), .ignore,
-                       "ID の無いまま送っている（ログアウトの表示のまま前の人のトークンで付く）")
+        XCTAssertEqual(HomeLikeGate.decide(userId: "me", isResolving: false), .send)
+        XCTAssertEqual(HomeLikeGate.decide(userId: nil, isResolving: true), .ignore,
+                       "確認中にログイン済みの人へ「ログインしてください」を出している")
+        XCTAssertEqual(HomeLikeGate.decide(userId: nil, isResolving: false), .askToSignIn,
+                       "ID の無いまま送る・黙る（ID が取れなかった起動も含む）")
+        // 本物の状態からも同じ答えになる
+        let auth = AuthStore()
+        XCTAssertEqual(HomeLikeGate.decide(userId: auth.userId, isResolving: auth.isResolving), .ignore)
+        auth.settleSignedOut()
+        XCTAssertEqual(HomeLikeGate.decide(userId: auth.userId, isResolving: auth.isResolving), .askToSignIn)
     }
 
     /// **サインアウト・退会のあと、前の画面の失敗をログイン画面に持ち越さない。**
