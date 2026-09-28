@@ -32,9 +32,14 @@ enum MapFraming {
     static let minimumSpan = 0.08
 
     /// 点が無ければ nil（呼ぶ側は地図の既定に任せる）。
-    static func frame(for points: [(latitude: Double, longitude: Double)]) -> Frame? {
+    ///
+    /// - Parameter weights: 点ごとの重み（ピンに載っている写真の枚数）。省けば1点1つ。
+    ///   **ピンは座標を丸めた1地点ごとなので、数えるのは写真の枚数**——東京の1地点に40枚、
+    ///   パリの2地点に1枚ずつなら東京に寄る（ピンの数で数えるとパリに寄っていた）
+    static func frame(for points: [(latitude: Double, longitude: Double)],
+                      weights: [Int]? = nil) -> Frame? {
         guard !points.isEmpty else { return nil }
-        let cluster = largestCluster(points)
+        let cluster = largestCluster(points, weights: weights)
         let latitudes = cluster.map(\.latitude)
         let longitudes = cluster.map(\.longitude)
         guard let minLat = latitudes.min(), let maxLat = latitudes.max(),
@@ -47,25 +52,37 @@ enum MapFraming {
         )
     }
 
-    /// いちばん点の多い塊。**同数なら北にある方**（毎回同じ結果にする）。
+    /// いちばん重い（写真の多い）塊。**同じ重さなら北にある方**（毎回同じ結果にする）。
+    ///
+    /// 🔴 **近い点でつながる点は、ぜんぶ1つの塊。** 以前は北から順に「最初に近いと分かった塊」へ
+    /// 足すだけで、2つの塊をつなぐ点が後から来ても塊どうしを合わせなかった。一続きの点が
+    /// 割れて、別の小さい塊が選ばれていた
     static func largestCluster(
-        _ points: [(latitude: Double, longitude: Double)]
+        _ points: [(latitude: Double, longitude: Double)],
+        weights: [Int]? = nil
     ) -> [(latitude: Double, longitude: Double)] {
-        var clusters: [[(latitude: Double, longitude: Double)]] = []
-        for point in points.sorted(by: { $0.latitude > $1.latitude }) {
-            if let index = clusters.firstIndex(where: { cluster in
-                cluster.contains { near($0, point) }
-            }) {
-                clusters[index].append(point)
-            } else {
-                clusters.append([point])
+        // 北から並べる（同じ重さの塊の比べに使う）
+        let order = points.indices.sorted { points[$0].latitude > points[$1].latitude }
+        var seen = Set<Int>()
+        var best: (members: [Int], weight: Int)?
+        for start in order where !seen.contains(start) {
+            // つながった点をたどって1つの塊にする
+            var members = [start]
+            seen.insert(start)
+            var cursor = 0
+            while cursor < members.count {
+                let here = points[members[cursor]]
+                cursor += 1
+                for other in order where !seen.contains(other) && near(here, points[other]) {
+                    seen.insert(other)
+                    members.append(other)
+                }
             }
+            let weight = members.reduce(0) { $0 + max(1, weights?[$1] ?? 1) }
+            // 北から始めた塊が先に来るので、同じ重さなら先の（北の）塊を残す
+            if best == nil || weight > best!.weight { best = (members, weight) }
         }
-        return clusters.max { left, right in
-            if left.count != right.count { return left.count < right.count }
-            // 同数：北にある方を先に（`sorted` で北から入れているので後勝ちを避ける）
-            return (left.first?.latitude ?? 0) < (right.first?.latitude ?? 0)
-        } ?? []
+        return (best?.members ?? []).sorted { points[$0].latitude > points[$1].latitude }.map { points[$0] }
     }
 
     private static func near(_ a: (latitude: Double, longitude: Double),

@@ -34,6 +34,26 @@ final class MapFramingTests: XCTestCase {
         XCTAssertNil(MapFraming.frame(for: []))
     }
 
+    /// 🔴 **つながる点はぜんぶ1つの塊。** 2つの塊をつなぐ点が後から来ても合わせなかったので、
+    /// 一続きの3点が割れて、北の2点の塊が選ばれていた
+    func testPointsBridgedLaterAreOneCluster() {
+        let points = [(latitude: 50.0, longitude: 0.0), (latitude: 50.0, longitude: 0.1),
+                      (latitude: 40.0, longitude: 0.0), (latitude: 40.0, longitude: 4.0),
+                      (latitude: 38.0, longitude: 2.0)]
+        XCTAssertEqual(MapFraming.largestCluster(points).count, 3)
+        guard let frame = MapFraming.frame(for: points) else { return XCTFail("枠が決まらない") }
+        XCTAssertEqual(frame.latitude, 39, accuracy: 0.5, "一続きの3点の塊に寄っていない")
+    }
+
+    /// 🔴 **数えるのは写真の枚数。** 東京の1地点に40枚、パリの2地点に1枚ずつなら東京に寄る
+    func testClustersAreWeighedByPhotos() {
+        let paris2 = (latitude: 48.87, longitude: 2.36)
+        guard let frame = MapFraming.frame(for: [tokyo, paris, paris2], weights: [40, 1, 1]) else {
+            return XCTFail("枠が決まらない")
+        }
+        XCTAssertEqual(frame.latitude, tokyo.latitude, accuracy: 0.01)
+    }
+
     /// 近い点どうしは1つの塊
     func testNearbyPointsAreOneCluster() {
         XCTAssertEqual(MapFraming.largestCluster([tokyo, niigata]).count, 2)

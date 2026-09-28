@@ -223,7 +223,9 @@ final class PhotoMapViewModel: ObservableObject {
     /// ——「たかや」と打って高屋神社のピンが出たのに、地図がパリに居たままに
     /// しない。名前で絞っていないとき（寄せただけで出ているピン）には使わない
     var frame: MapFraming.Frame? {
-        if let photos = MapFraming.frame(for: pins.map { (latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }) {
+        // 塊の重さはピンの写真の枚数（ピンの数ではない）
+        if let photos = MapFraming.frame(for: pins.map { (latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) },
+                                         weights: pins.map(\.photos.count)) {
             return photos
         }
         guard !MapSearch.fold(query).isEmpty else { return nil }
