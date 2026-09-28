@@ -215,7 +215,14 @@ struct PhotoDetailView: View {
             }
             isFollowing = ids.contains(ownerId)
         }
-        .sheet(isPresented: $showReport) {
+        // **通報シートで「ブロックもする」を選んだ回は、`block()` と同じ後始末をする。**
+        // シートは閉じるだけで、前の失敗の赤字と、ブロックした相手のフォローの状態が残っていた
+        .sheet(isPresented: $showReport, onDismiss: {
+            guard let ownerId, hidden.blockedUserIds.contains(ownerId) else { return }
+            clearNotices()
+            isFollowing = nil
+            followLookupFailed = false
+        }) {
             ReportSheet(photoId: current.id, ownerId: ownerId)
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
@@ -561,7 +568,9 @@ struct PhotoDetailView: View {
                 Spacer(minLength: 8)
 
                 // 取れなかった回も「フォロー」で出す（押されたら取り直してから送る）
-                if !isMine, auth.userId != nil, isFollowing != nil || followLookupFailed {
+                if PhotoDetailRules.showsFollow(isMine: isMine, signedIn: auth.userId != nil,
+                                                isFollowing: isFollowing, lookupFailed: followLookupFailed,
+                                                ownerBlocked: hidden.blockedUserIds.contains(ownerId)) {
                     followButton(ownerId, following: isFollowing ?? false)
                 }
             }
@@ -1459,6 +1468,18 @@ struct FlowLayout: Layout {
 
 /// 詳細画面の判断のうち、画面を建てずに確かめられるもの
 enum PhotoDetailRules {
+
+    /// 持ち主の横にフォローのボタンを出すか。
+    ///
+    /// 取れなかった回（`lookupFailed`）も出す（押されたら取り直してから送る）。
+    /// 🔴 **ブロックした相手には出さない。** 通報シートから「ブロックもする」を選んだ回は
+    /// `block()` を通らないので、前に取ったフォローの状態が残り、ブロックした相手に
+    /// フォロー・フォロー解除を送れていた
+    static func showsFollow(isMine: Bool, signedIn: Bool, isFollowing: Bool?,
+                            lookupFailed: Bool, ownerBlocked: Bool) -> Bool {
+        guard !isMine, signedIn, !ownerBlocked else { return false }
+        return isFollowing != nil || lookupFailed
+    }
 
     /// 大きく見る画面に渡す並びと、開く位置。
     ///

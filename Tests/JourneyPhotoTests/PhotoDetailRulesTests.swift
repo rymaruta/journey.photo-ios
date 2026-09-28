@@ -44,4 +44,24 @@ final class PhotoDetailRulesTests: XCTestCase {
         XCTAssertEqual(alone.photos.map(\.id), ["x"])
         XCTAssertEqual(alone.index, 0)
     }
+
+    /// 🔴 **ブロックした相手にフォローのボタンを出さない。** 通報シートから「ブロックもする」を
+    /// 選んだ回は、前に取った「フォロー中」が残っていて、ブロックした相手に送れていた
+    func testFollowButtonIsHiddenForABlockedOwner() async {
+        XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: false, signedIn: true, isFollowing: true,
+                                                    lookupFailed: false, ownerBlocked: true))
+        XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: false, signedIn: true, isFollowing: nil,
+                                                    lookupFailed: true, ownerBlocked: true))
+        // ブロックしていなければ今までどおり（取れた回・取れなかった回は出す、まだ取っていない回は出さない）
+        XCTAssertTrue(PhotoDetailRules.showsFollow(isMine: false, signedIn: true, isFollowing: false,
+                                                   lookupFailed: false, ownerBlocked: false))
+        XCTAssertTrue(PhotoDetailRules.showsFollow(isMine: false, signedIn: true, isFollowing: nil,
+                                                   lookupFailed: true, ownerBlocked: false))
+        XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: false, signedIn: true, isFollowing: nil,
+                                                    lookupFailed: false, ownerBlocked: false))
+        XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: true, signedIn: true, isFollowing: false,
+                                                    lookupFailed: false, ownerBlocked: false))
+        XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: false, signedIn: false, isFollowing: false,
+                                                    lookupFailed: false, ownerBlocked: false))
+    }
 }
