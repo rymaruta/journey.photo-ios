@@ -192,8 +192,11 @@ final class ViewModelTests: XCTestCase {
         let model = AlbumsViewModel()
         await model.create(title: "   ", environment: env)
         XCTAssertEqual(model.notice, AlbumsViewModel.nameRequired)
-        await model.rename("a1", title: "", environment: env)
-        XCTAssertEqual(model.notice, AlbumsViewModel.nameRequired)
+        // 名前を変える側は別の画面で見る（作る側の知らせが4秒残るので、同じ画面だと
+        // 名前を変える側の直しを外しても通ってしまう——02dad7b のレビュー）
+        let renaming = AlbumsViewModel()
+        await renaming.rename("a1", title: "", environment: env)
+        XCTAssertEqual(renaming.notice, AlbumsViewModel.nameRequired)
         XCTAssertEqual(StubProtocol.requestCount, 0, "空の名前を送っている")
     }
 

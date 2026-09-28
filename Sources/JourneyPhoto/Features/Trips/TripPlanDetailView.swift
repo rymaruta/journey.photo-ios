@@ -235,11 +235,10 @@ struct TripPlanDetailView: View {
                 guard !saved else { return }
                 // 🔴 **断られたらアラートで知らせる。** 知らせは画面の上の赤い行だけで、
                 // 下までスクロールしていると押しても何も起きないように見えた
-                // （「保存して戻る」と同じ扱い。その後に別の保存を送っていたら出さない）
-                let mine = saveAttempt
-                let message = model.errorMessage ?? L("もう一度お試しください", "Please try again.")
-                guard saveAttempt == mine else { return }
-                leaveSaveError = message
+                // （「保存して戻る」と同じ扱い）。**候補のシートを開いている間は出さない**
+                // ——シートの上には出せず黙って捨てられる。赤い行は残る
+                guard picking == nil else { return }
+                leaveSaveError = model.errorMessage ?? L("もう一度お試しください", "Please try again.")
             }
         }
         .font(.body.weight(.semibold))

@@ -374,9 +374,10 @@ final class AlbumsViewModel: ObservableObject {
         notice = nil
     }
 
-    /// 操作の失敗を一時的に知らせる（数秒で消える）
+    /// 空の名前で作る・名前を変えるを押したときの知らせ
     static let nameRequired = L("名前を入れてください", "Please enter a name")
 
+    /// 操作の失敗を一時的に知らせる（数秒で消える）
     func flash(_ message: String, seconds: Double = 4) {
         notice = message
         noticeTask?.cancel()
