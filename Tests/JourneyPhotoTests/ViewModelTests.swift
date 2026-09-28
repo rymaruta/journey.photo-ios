@@ -203,6 +203,31 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.stories.map(\.id), [], "先に始めた回の結果で、ブロックした人の輪が戻った")
     }
 
+    /// **後の回が取れなかったときは、先の回で取れた一覧を捨てない**（3dbf727 のレビュー）。
+    /// 番号だけで捨てていたので、後の回が圏外で落ちると輪が空のまま残った。
+    /// 先の回の答えは、最後に頼まれたブロックの集合で絞る
+    func testStoriesKeepAnEarlierLoadWhenTheLaterOneFails() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 api: api(gates: PathGates(["/stories": gate])))
+        let model = StoriesViewModel()
+        StubProtocol.respond(path: "/stories", status: 500, body: #"{"error":"x"}"#)
+
+        let older = Task { await model.load(environment: env, viewerId: "b") }
+        await gate.untilWaiting()
+        await model.load(environment: env, viewerId: "b", blockedUserIds: ["blocked"])
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/stories", status: 200, body: #"""
+            [{"id":"s1","src":"https://x/s1.jpg","userId":"u"},
+             {"id":"s2","src":"https://x/s2.jpg","userId":"blocked"}]
+            """#)
+        await gate.open()
+        await older.value
+        XCTAssertEqual(model.stories.map(\.id), ["s1"], "取れた一覧を捨てた・前の集合で絞った")
+    }
+
     /// 🔴 **人のページ: 自分のフォロー一覧が取れなかった回に、押したら送る前に取り直す。**
     /// 取れなかった回は「フォローする」のまま出ていて、フォロー中の人に follow を送り直していた
     /// （写真の詳細は `followLookupFailed` で直してあった）

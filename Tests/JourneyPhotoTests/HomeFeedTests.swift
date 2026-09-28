@@ -135,6 +135,18 @@ final class HomeFeedSelectionTests: XCTestCase {
         XCTAssertEqual(model.followingIds, ["a", "b", "c", "d"])
     }
 
+    /// **A→B→A と戻った回、A の古い取得の答えで一覧を空にして失敗を出さない**（26c2d0c のレビュー）
+    func testStaleFollowingAnswerAfterSwitchingBackDoesNotClearTheList() async {
+        let model = GalleryViewModel()
+        model.use(viewerId: "A", following: ["x"])
+        let forA = model.beginFollowingFetch()
+        let forB = model.beginFollowingFetch()
+        model.use(viewerId: "B", following: ["y"], ticket: forB)
+        model.use(viewerId: "A", following: ["x"], ticket: forA)
+        XCTAssertFalse(model.followingFailed, "古い答えを「取れなかった」にした")
+        XCTAssertEqual(model.followingIds, ["x"], "B の一覧を A に残した")
+    }
+
     /// 🔴 **札を押して人が替わった回、前の人のフォロー一覧を持ち越さない。**
     /// 持ち越すと、次の人の一覧が取れなかったとき前の人の一覧が「フォロー中」に残る
     func testSelectingAFeedAsAnotherViewerDropsThePreviousList() async {

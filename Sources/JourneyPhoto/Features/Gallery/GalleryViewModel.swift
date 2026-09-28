@@ -217,7 +217,7 @@ final class GalleryViewModel: ObservableObject {
     func refreshFollowing(_ following: Set<String>?, viewerId: String, ticket: Int? = nil) {
         guard let following else { return }
         guard !departedViewerIds.contains(viewerId) else { return }
-        guard takesFollowing(ticket) else { return }
+        guard takesFollowing(ticket, for: viewerId) else { return }
         self.followingIds = following
         followingOwner = viewerId
         followingFailed = false
@@ -242,10 +242,13 @@ final class GalleryViewModel: ObservableObject {
         // 並びは sort と feed の両方で決まる（`sorted`）。**どちらかが変わったら**並べ直す
         let previousFeed = feed
         setViewer(viewerId)
-        // 後から始めた取得の答えがもう入っていたら、この古い答えは「取れなかった」と同じに扱う
-        // （取れなかった答えは番号を進めない——`refreshFollowing` と同じ）
-        let following = following.flatMap { takesFollowing(ticket) ? $0 : nil }
-        if let following {
+        // 後から始めた取得の答えがもう入っていたら、この古い答えでは一覧に触らない
+        // （「取れなかった」の枝に入れると、A→B→A と戻った回に一覧を空にして失敗を出していた）。
+        // 取れなかった答えは番号を進めない——`refreshFollowing` と同じ
+        let stale = following != nil && !takesFollowing(ticket, for: viewerId)
+        if stale {
+            // 一覧はそのまま（並びと範囲だけ下で更新する）
+        } else if let following {
             followingIds = following
             followingOwner = viewerId
             followingFailed = false
@@ -279,11 +282,13 @@ final class GalleryViewModel: ObservableObject {
     /// いま入っている一覧を取りに行った番号
     private var appliedFollowingSeq = 0
 
-    /// 番号の無い呼び出し（試験・未ログイン）はいつも入れる。入れたら番号を進める
-    private func takesFollowing(_ ticket: Int?) -> Bool {
+    /// 番号の無い呼び出し（試験・未ログイン）はいつも入れる。入れたら番号を進める。
+    /// **比べるのは、いま入っている一覧が同じ人のものなときだけ**——別の人の一覧が入っている
+    /// なら、古い番号でもこの人の答えの方が正しい（A→B→A と戻った回に B の一覧を A に残さない）
+    private func takesFollowing(_ ticket: Int?, for viewerId: String?) -> Bool {
         guard let ticket else { return true }
-        guard ticket > appliedFollowingSeq else { return false }
-        appliedFollowingSeq = ticket
+        if followingOwner == viewerId, ticket <= appliedFollowingSeq { return false }
+        appliedFollowingSeq = max(appliedFollowingSeq, ticket)
         return true
     }
 
