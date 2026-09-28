@@ -16,6 +16,23 @@ final class UploadMetaFixTests: XCTestCase {
         XCTAssertNil(ImagePreparer.storedDateTime(nil))
     }
 
+    /// **端末の土地の夏時間の境目でも撮影日が落ちない。** 端末の時間帯で読んでいたので、
+    /// ニューヨークの端末で `2026:03:08 02:30:00`（その土地には無い時刻）が nil になり、
+    /// 日本で撮った写真の撮影日が送られなかった
+    func testTakenOnSurvivesTheDevicesDaylightSavingGap() {
+        let saved = NSTimeZone.default
+        defer { NSTimeZone.default = saved }
+        NSTimeZone.default = TimeZone(identifier: "America/New_York")!
+        XCTAssertEqual(ImagePreparer.takenOn("2026:03:08 02:30:00"), "2026-03-08")
+        NSTimeZone.default = TimeZone(identifier: "America/Sao_Paulo")!
+        XCTAssertEqual(ImagePreparer.takenOn("2018:11:04 00:30:00"), "2018-11-04")
+        // 日付は壁時計のまま（時間帯でずらさない）
+        NSTimeZone.default = TimeZone(identifier: "Pacific/Kiritimati")!
+        XCTAssertEqual(ImagePreparer.takenOn("2026:09:13 23:59:59"), "2026-09-13")
+        XCTAssertNil(ImagePreparer.takenOn("0000:00:00 00:00:00"))
+        XCTAssertNil(ImagePreparer.takenOn(nil))
+    }
+
     func testReadExifConvertsDateTimeOriginal() {
         let props: [CFString: Any] = [
             kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2026:09:13 08:21:05"] as [CFString: Any],
