@@ -62,7 +62,7 @@ struct PendingVerificationStore {
     }
 
     /// 生きている控えだけ返す。切れていたらその場で捨てる。
-    /// 登録の ID を捨てた控え（名前だけ預かっている）は nil
+    /// 使い終えた控え（名前だけ預かっている・`signUpDone`）と、ID の空の控えは nil
     func username(for email: String, now: Date = Date()) -> String? {
         let key = PendingVerification.key(for: email)
         guard let data = defaults.data(forKey: key),
@@ -71,7 +71,7 @@ struct PendingVerificationStore {
             defaults.removeObject(forKey: key)
             return nil
         }
-        return entry.signUpDone == true ? nil : entry.username
+        return entry.signUpDone == true || entry.username.isEmpty ? nil : entry.username
     }
 
     /// **登録の ID を使い終えた印を付ける**（預かった表示名は残す・ID で退会の後始末が探せる）。
@@ -80,7 +80,11 @@ struct PendingVerificationStore {
     /// （aliasExists）と分かった回に使う。ID を残すと、確認済みの人がパスワードを打ち
     /// 間違えたときに「確認」へ誘い、押すと確認済み・別アカウントへの送り直しに進んでいた。
     /// 名前は、入ったアカウントの名前が空なら入れる（`SignInView` のログイン後）ので残す
-    func forgetSignUp(email: String) {
+    ///
+    /// - Parameter signedInAs: いまログインしているアカウントの ID（分かれば）。控えの ID を
+    ///   それに書き換える——同じメールの別アカウント（aliasExists）に入った回、退会の後始末
+    ///   （`forget(username:)`、ID で探す）が控えに当たらず、メールと名前が端末に残った
+    func forgetSignUp(email: String, signedInAs: String? = nil) {
         let key = PendingVerification.key(for: email)
         guard let data = defaults.data(forKey: key),
               let entry = try? JSONDecoder().decode(Entry.self, from: data) else { return }
@@ -88,7 +92,8 @@ struct PendingVerificationStore {
             defaults.removeObject(forKey: key)
             return
         }
-        let kept = Entry(username: entry.username, savedAt: entry.savedAt, displayName: name, signUpDone: true)
+        let kept = Entry(username: signedInAs ?? entry.username, savedAt: entry.savedAt,
+                         displayName: name, signUpDone: true)
         guard let encoded = try? JSONEncoder().encode(kept) else { return }
         defaults.set(encoded, forKey: key)
     }
@@ -130,8 +135,8 @@ struct PendingVerificationStore {
 /// （本物の Cognito では確かめていない）。その回は `lastFailureWasUnconfirmed` が当たらず、
 /// 入口（`verificationOffer`）も一度も出ていなかった。
 /// **この端末に登録の ID の控えがあるときだけ**出す（端末の控えを見るだけなので、アカウントの
-/// 有無は漏れない）。ID はログイン・確認・aliasExists で捨てるので、確認済みの人に古い控えで
-/// 出ることはない（`PendingVerificationStore.forgetSignUp`）
+/// 有無は漏れない）。ログイン・確認・aliasExists で控えに使い終えた印を付けるので、確認済みの
+/// 人に古い控えで出ることはない（`PendingVerificationStore.forgetSignUp`）
 enum SignInRecovery {
     static func offersVerification(after failure: AuthFailure, hasPendingSignUp: Bool) -> Bool {
         guard hasPendingSignUp else { return false }
@@ -140,6 +145,13 @@ enum SignInRecovery {
 
     /// 入口から送り直そうとして「もう使えない」と断られた回の案内。確認済みの人に
     /// 「メールアドレスの形式か…」（invalidParameter の文）を出さない
+    /// 送り直しで「この登録はもう使えない」と断られた（見つからない・無効）回の案内。
+    /// 「見つかりません」「違います」をそのまま出すと、送り直しの答えとして意味が通らず、
+    /// ログインの画面でアカウントの有無を見せない方針（`AuthStore.signIn`）とも食い違う
+    static let unusableSignUpNotice = L(
+        "この登録はもう使えません。もう一度登録するか、パスワードをお忘れの場合は「パスワードを忘れた」から再設定してください。",
+        "This sign-up can no longer be used. Sign up again, or use \"Forgot password?\" if you forgot your password.")
+
     static let alreadyConfirmedNotice = L(
         "この登録は確認が済んでいるようです。パスワードをお忘れの場合は「パスワードを忘れた」から再設定してください。",
         "This sign-up seems to be verified already. If you forgot your password, use \"Forgot password?\".")

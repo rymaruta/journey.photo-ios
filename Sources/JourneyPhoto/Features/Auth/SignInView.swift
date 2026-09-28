@@ -258,7 +258,9 @@ struct SignInView: View {
             offerVerification = SignInRecovery.offersVerification(
                 after: auth.lastFailure, hasPendingSignUp: pending.username(for: email) != nil)
             // **ログインできたら登録の ID は要らない**（確認が済んでいる）。名前だけ残す
-            if auth.userId != nil { pending.forgetSignUp(email: email) }
+            if auth.userId != nil {
+                pending.forgetSignUp(email: email, signedInAs: try? await AuthGateway.currentUsername())
+            }
             // **預かったままの表示名を、ふつうのログインでも入れる。**
             // 確認直後のログインが落ちた人・名前を入れ損ねた人は、ここ以外に
             // やり直す場所が無い（控えには「次のログインで試せる」と書いてある）
@@ -340,23 +342,25 @@ struct SignInView: View {
             // 登録の ID はもう使えない（確認済み・消えた）。名前は残す
             pending.forgetSignUp(email: email)
             offerVerification = false
-            if fromOffer && auth.lastFailure == .invalidParameter {
-                // 確認済みの人に invalidParameter の文（「メールアドレスの形式か…」）を出さない。
-                // （Cognito は確認済みの利用者への送り直しを InvalidParameter で断る。
-                // 見つからない・断られた回は、その失敗の文をそのまま出す）
+            if fromOffer {
+                // 送り直しの答えとして意味の通らない文（「メールアドレスの形式か…」「見つかりません」
+                // 「違います」）を出さない。Cognito は確認済みの利用者への送り直しを InvalidParameter で断る
                 auth.errorMessage = nil
-                notice = SignInRecovery.alreadyConfirmedNotice
+                notice = auth.lastFailure == .invalidParameter
+                    ? SignInRecovery.alreadyConfirmedNotice
+                    : SignInRecovery.unusableSignUpNotice
             }
             return
         }
         // **送り直せなくても、コードを入れる欄は出す。** 前に届いたコードは
         // まだ使えることがある。欄を出さないと、ログインを押すたびに送り直し
         // → 回数制限、を繰り返すだけで先へ進めなかった。
-        // **Cognito が「未確認」と答えた回だけ。**「すでに登録されています」の回は
-        // 確認済みの人がほとんどで、コードを入れても通らない画面になる
-        // 入口から押した回も出す——入口の文は「確認コードを入力できます」と言っているので、
-        // 回数制限・圏外で送り直せなくても、前に届いたコードを入れられるようにする
-        guard knownUnconfirmed || fromOffer else { return }
+        // **Cognito が「未確認」と答えた回と、入口から押した回だけ。**「すでに登録されています」の
+        // 回は確認済みの人がほとんどで、コードを入れても通らない画面になる。入口の文は
+        // 「確認コードを入力できます」と言っているので、回数制限・圏外で送り直せなくても欄を出す。
+        // **送り直しが実際に失敗した回だけ**（二度押しで走らなかった2本目は `.none` のまま——
+        // 1本目の答えを待たずに欄を出さない）
+        guard knownUnconfirmed || fromOffer, auth.lastFailure != .none else { return }
         pendingUsername = saved
         notice = L("確認コードを送り直せませんでした。前に届いたコードがあれば、そのまま入力できます。",
                    "We couldn't send a new code. If you have an earlier code, you can enter it.")
