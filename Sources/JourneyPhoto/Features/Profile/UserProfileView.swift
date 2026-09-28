@@ -496,8 +496,14 @@ final class UserProfileViewModel: ObservableObject {
         isWorking = true
         actionMessage = nil
         defer { isWorking = false }
-        // **分からないまま送らない。** 取り直して、既にフォロー中なら送らずに姿だけ直す
-        if followUnknown {
+        // **押したボタンの向きを覚えておく**（「フォローする」を押した＝フォローしたい）。
+        // 取り直した結果で向きを決め直すと、「フォロー中」を外そうとして何も送られない・
+        // 逆向きに follow を送る、が起きた
+        let wantsFollow = !isFollowing
+        // **分からないままフォローを送らない。** 取り直して、既にフォロー中なら送らずに姿だけ直す。
+        // 外す方は取り直さない（外すのは何度送っても同じ）
+        if followUnknown && wantsFollow {
+            let viewer = lastViewerId
             let ids: [String]
             do {
                 ids = try await environment.social.myFollowingIds()
@@ -507,14 +513,20 @@ final class UserProfileViewModel: ObservableObject {
                 actionMessage = L("フォローの状態を確かめられませんでした", "Couldn't check follow status")
                 return
             }
+            // 待っている間に見ている人が替わったら、前の人の一覧を書かない
+            guard lastViewerId == viewer else { return }
             followUnknown = false
-            isFollowing = ids.contains(userId)
-            if isFollowing { return }
+            // 取り直した値を、先に始まっていた読み込みの古い答えで戻させない
+            followWrites += 1
+            if ids.contains(userId) {
+                isFollowing = true
+                return
+            }
         }
         do {
-            let result = isFollowing
-                ? try await environment.social.unfollow(userId: userId)
-                : try await environment.social.follow(userId: userId)
+            let result = wantsFollow
+                ? try await environment.social.follow(userId: userId)
+                : try await environment.social.unfollow(userId: userId)
             followWrites += 1
             isFollowing = result.following
             followers = result.followers

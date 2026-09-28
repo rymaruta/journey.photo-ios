@@ -243,6 +243,47 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNotNil(other.actionMessage)
     }
 
+    /// **「フォロー中」を外すときは、分からない回でも外す。** 読み直しで一覧だけ取れなかった回に、
+    /// 取り直した結果で向きを決め直していたので、外そうとして何も送られない（まだフォロー中）・
+    /// 逆向きに follow を送る（別の端末で外していた）が起きた（4e49005 のレビュー）
+    func testProfileUnfollowWhenLookupFailedStillUnfollows() async {
+        prepare()
+        func routes(following: (Int, String)) {
+            StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+            StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":3,"following":1}"#)
+            StubProtocol.respond(path: "/user/following", status: following.0, body: following.1)
+            StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        }
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        for serverSays in [#"{"userIds":["u1"]}"#, #"{"userIds":[]}"#] {
+            let model = UserProfileViewModel()
+            StubProtocol.reset()
+            routes(following: (200, #"{"userIds":["u1"]}"#))
+            await model.load(userId: "u1", environment: env, viewerId: "me")
+            XCTAssertTrue(model.isFollowing)
+            // 読み直しで一覧だけ取れない（「フォロー中」のまま分からなくなる）
+            StubProtocol.reset()
+            routes(following: (500, #"{"error":"x"}"#))
+            await model.load(userId: "u1", environment: env, viewerId: "me")
+            XCTAssertTrue(model.isFollowing)
+
+            // 「外す」を選ぶ。取り直しがどう答えても外す
+            StubProtocol.reset()
+            StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"following":false,"followers":2}"#)
+            StubProtocol.respond(path: "/user/following", status: 200, body: serverSays)
+            await model.toggleFollow(userId: "u1", environment: env)
+            XCTAssertTrue(StubProtocol.requests.contains("DELETE /users/u1/follow"),
+                          "外すのに DELETE を送っていない: \(StubProtocol.requests)")
+            XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") }, "外すのに follow を送った")
+            XCTAssertFalse(model.isFollowing)
+        }
+    }
+
     /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
     /// 書かずに戻ると、読み込み中の丸のまま引き下げも再試行も効かない画面が残る
     func testGalleryFirstLoadCancelledDoesNotStayLoading() async {
