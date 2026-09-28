@@ -74,8 +74,9 @@ final class LocalizedEditTests: XCTestCase {
     /// 🔴 **説明が送る形の上限を超えていたら、保存の前に知らせる。** 送るとサーバーが黙って切る。
     /// 文字列なら全体 2000・段落の形なら 1段落 2000・50段落まで
     func testDescriptionOverLimitIsToldBeforeSaving() {
+        // 全体が 2000 を超え、1段落も 2000 を超える（どちらの形でも収まらない）
+        XCTAssertNotNil(LocalizedEdit.descriptionOverLimit(original: nil, field: String(repeating: "え", count: 2001)))
         let long = String(repeating: "あ", count: 1500) + "\n" + String(repeating: "い", count: 1500)
-        XCTAssertNotNil(LocalizedEdit.descriptionOverLimit(original: nil, field: long))
         XCTAssertNil(LocalizedEdit.descriptionOverLimit(
             original: LocalizedParagraphs.byLocale(["ja": ["朝"], "en": ["Morning"]]), field: long))
         XCTAssertNotNil(LocalizedEdit.descriptionOverLimit(
@@ -87,13 +88,18 @@ final class LocalizedEditTests: XCTestCase {
         XCTAssertNil(LocalizedEdit.descriptionOverLimit(original: nil, field: "短い"))
     }
 
-    /// 🔴 **日本語だけの段落の写真は、段落の形のまま送る。** 文字列で送るとサーバーが全体を
-    /// 2000 で切るので、長い段落を持つ写真は直すと保存できなかった（6db934e のレビュー）
-    func testJapaneseOnlyParagraphsStayParagraphs() {
-        let original = LocalizedParagraphs.byLocale(["ja": ["朝"]])
-        XCTAssertEqual(LocalizedEdit.description(original: original, field: "夕方\n海"),
-                       .paragraphs(["ja": ["夕方", "海"]]))
-        let long = String(repeating: "あ", count: 1500) + "\n" + String(repeating: "い", count: 1500)
-        XCTAssertNil(LocalizedEdit.descriptionOverLimit(original: original, field: long))
+    /// 🔴 **日本語だけの説明は、文字列に収まれば文字列で、収まらなければ段落の形で送る。**
+    /// 文字列だけだと長い段落の写真を保存できず（全体 2000）、段落の形だけだと短い行を
+    /// 51行書くと保存できなかった（50段落）。どちらの形でも超えるときだけ断る
+    func testJapaneseOnlyDescriptionUsesTheShapeThatFits() {
+        for original in [nil, LocalizedParagraphs.byLocale(["ja": ["朝"]])] {
+            XCTAssertEqual(LocalizedEdit.description(original: original, field: "夕方\n海"), .plain("夕方\n海"))
+            let long = String(repeating: "あ", count: 1500) + "\n" + String(repeating: "い", count: 1500)
+            XCTAssertEqual(LocalizedEdit.description(original: original, field: long),
+                           .paragraphs(["ja": [String(repeating: "あ", count: 1500), String(repeating: "い", count: 1500)]]))
+            XCTAssertNil(LocalizedEdit.descriptionOverLimit(original: original, field: long))
+            let manyLines = (1...60).map { "行\($0)" }.joined(separator: "\n")
+            XCTAssertNil(LocalizedEdit.descriptionOverLimit(original: original, field: manyLines), "短い行 60 行は保存できる")
+        }
     }
 }

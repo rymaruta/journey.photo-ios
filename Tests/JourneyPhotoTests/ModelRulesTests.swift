@@ -313,6 +313,9 @@ final class PostLimitsTests: XCTestCase {
                        "hello big world")
         // 区切りが残りより長くても、区切りを1つ残す（段落がつながらない）
         XCTAssertEqual(PostLimits.limited(old: "A\nB", new: "A\nCCCCC\n\n\nB", limit: 5), "A\nC\nB")
+        // 空白だけを貼った回は入るぶんだけ入る・残り1字なら本文を入れる（c3259e3 のレビュー）
+        XCTAssertEqual(PostLimits.limited(old: "ab", new: "ab     ", limit: 5), "ab   ")
+        XCTAssertEqual(PostLimits.limited(old: "ab", new: "abXYZ\n", limit: 3), "abX")
         // 空白の長い並びを貼っても速い（正規表現の後戻りで2乗の時間がかかっていた）
         let started = Date()
         _ = PostLimits.limited(old: "", new: String(repeating: " ", count: 20_000) + "x", limit: 500)

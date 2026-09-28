@@ -43,11 +43,13 @@ enum LocalizedEdit {
         let lines = paragraphs(field)
         guard lines != paragraphs(descriptionField(original)) else { return nil }
         if lines.isEmpty { return .plain("") }
-        if case .byLocale(let map) = original {
-            // **段落の形の写真は、英語が無くても段落の形で送る。** 文字列で送るとサーバーが全体を
-            // 2000 で切るので、日本語だけの長い段落の写真は直すと保存できなかった（段落の形なら
-            // 1段落ごとに 2000 まで・`sanitizeDescription` は ja だけの形も受ける）
-            if let en = map["en"], !en.isEmpty { return .paragraphs(["ja": lines, "en": en]) }
+        if case .byLocale(let map) = original, let en = map["en"], !en.isEmpty {
+            return .paragraphs(["ja": lines, "en": en])
+        }
+        // **日本語だけの説明は文字列で送る**（Web の `mergeLocalizedDescription` と同じ・段落の数に
+        // 上限が無い）。ただし全体が文字列の上限（2000）を超えるときは段落の形で送る——文字列だと
+        // サーバーが全体を 2000 で切るが、段落の形なら1段落ごとに 2000 まで（ja だけの形も受ける）
+        if PostLimits.length(field.trimmingCharacters(in: .whitespacesAndNewlines)) > PostLimits.description {
             return .paragraphs(["ja": lines])
         }
         return .plain(field)

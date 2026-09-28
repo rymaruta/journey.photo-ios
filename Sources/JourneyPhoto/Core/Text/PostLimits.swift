@@ -69,9 +69,15 @@ enum PostLimits {
         var cut = insertedScalars.count
         while cut > 0, CharacterSet.whitespacesAndNewlines.contains(insertedScalars[cut - 1]) { cut -= 1 }
         let body = text(insertedScalars[..<cut])
+        // 空白だけを貼った回は、入るぶんだけ入れる（区切りを1つに減らさない）
+        guard !body.isEmpty else { return prefix + clamp(inserted, limit: room) + suffix }
         var trail = text(insertedScalars[cut...])
-        if length(trail) >= room, let last = trail.last { trail = String(last) }
-        let kept = length(trail) < room ? clamp(body, limit: room - length(trail)) + trail : trail
+        if length(trail) >= room {
+            // 区切りが残りより長ければ最後の1つだけ残す。残りが1字なら本文を入れる
+            // （1行の欄で改行だけが入り、貼ったのに何も入らないように見えた）
+            trail = room >= 2 ? trail.last.map(String.init) ?? "" : ""
+        }
+        let kept = clamp(body, limit: room - length(trail)) + trail
         return prefix + (length(kept) <= room ? kept : clamp(inserted, limit: room)) + suffix
     }
 

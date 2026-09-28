@@ -90,7 +90,21 @@ enum MapFraming {
             return a.lon > b.lon
         }
         guard let best else { return [] }
-        return neighbours(best).flatMap { members[$0] ?? [] }
+        let block = neighbours(best).flatMap { members[$0] ?? [] }
+        // **写真の重みの中心から `clusterDegrees` 以内だけを塊にする。** 3×3 の升をそのまま囲むと、
+        // 2升ぶん離れた1枚（東京40枚に大阪1枚）が枠を決め、升目の区切りで左右も揃わなかった
+        func weight(_ index: Int) -> Double {
+            Double((weights?.indices.contains(index) ?? false) ? max(1, weights![index]) : 1)
+        }
+        let total = block.reduce(0.0) { $0 + weight($1) }
+        let centerLat = block.reduce(0.0) { $0 + points[$1].latitude * weight($1) } / total
+        let centerLon = block.reduce(0.0) { $0 + points[$1].longitude * weight($1) } / total
+        let near = block.filter {
+            abs(points[$0].latitude - centerLat) <= clusterDegrees
+                && abs(points[$0].longitude - centerLon) <= clusterDegrees
+        }
+        // 中心が点の間に落ちて誰も入らない回は、塊の全部で囲む
+        return (near.isEmpty ? block : near)
             .sorted { points[$0].latitude > points[$1].latitude }
             .map { points[$0] }
     }

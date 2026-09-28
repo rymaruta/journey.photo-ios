@@ -69,6 +69,17 @@ final class MapFramingTests: XCTestCase {
                           "塊が広がりすぎる（世界に近い枠）")
     }
 
+    /// **離れた1枚で枠を広げない**（717e28c のレビュー）。3×3 の升をそのまま囲んでいたので、
+    /// 東京40枚に大阪1枚で、枠が大阪まで広がった
+    func testAFarSinglePhotoDoesNotStretchTheFrame() {
+        let osaka = (latitude: 34.69, longitude: 135.50)
+        guard let frame = MapFraming.frame(for: [tokyo, osaka], weights: [40, 1]) else {
+            return XCTFail("枠が決まらない")
+        }
+        XCTAssertEqual(frame.longitude, tokyo.longitude, accuracy: 0.01)
+        XCTAssertEqual(frame.longitudeSpan, MapFraming.minimumSpan, accuracy: 0.001)
+    }
+
     /// 近い点どうしは1つの塊
     func testNearbyPointsAreOneCluster() {
         XCTAssertEqual(MapFraming.largestCluster([tokyo, niigata]).count, 2)
