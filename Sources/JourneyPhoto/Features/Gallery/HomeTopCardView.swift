@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// ホームの上段の札（板 01・55「開く場面ごとに1枚」）。
+/// ホームの上段の札（元は板 01・55「開く場面ごとに1枚」。いまは横にめくる並び）。
 ///
 /// どれを出すかは `HomeTopCard.cards` が決める。**当たる札と「今日のテーマ」を
 /// 横にめくる並び**にする（2026-09-28・owner「両方欲しい」）。縦に積まないのは、
@@ -62,7 +62,9 @@ struct HomeTopCardView: View {
 
     /// 札のあいだ
     private static let spacing: CGFloat = 10
-    /// 次の札を見せる幅（めくれることの合図）
+    /// 左右の余白（1枚の日の札と同じ）
+    private static let margin: CGFloat = 16
+    /// 画面の右端に見せる次の札の幅（めくれることの合図）
     private static let peek: CGFloat = 24
 
     @ViewBuilder
@@ -77,20 +79,26 @@ struct HomeTopCardView: View {
                 HStack(alignment: .top, spacing: Self.spacing) {
                     ForEach(choices, id: \.slot) { choice in
                         card(for: choice, inCarousel: true)
-                            // 入れ物の幅（左右の余白を除いたもの）から、次の札の見せ幅を引く
+                            // 渡る幅は左右の余白を除いたもの。**右の余白は中身を切らない**ので
+                            // 次の札はその 16 の上にも見える——見せ幅から余白ぶんを戻して引く
+                            // （引き忘れると 24 ではなく 40 見えていた）
                             .containerRelativeFrame(.horizontal) { width, _ in
-                                max(width - Self.peek - Self.spacing, 0)
+                                max(width - Self.spacing - (Self.peek - Self.margin), 0)
                             }
                     }
                 }
+                // 1枚ずつ止まる目印は**並びに直接**付ける（Apple の例と同じ。間に別の
+                // 修飾を挟むと子に届くかが仕様から読めない）
+                .scrollTargetLayout()
                 // **背を揃える。** いちばん高い札（今日のテーマは「参加する」のぶん高い）に
                 // 合わせ、めくるたびに下の一覧が上下しないようにする
                 .fixedSize(horizontal: false, vertical: true)
-                .scrollTargetLayout()
             }
-            // 1枚ずつ止まる。止まる位置も左右 16 の余白の内側（1枚のときの札と同じ位置）
+            // 1枚ずつ止まり、札の左端は余白 16 の位置（1枚の日の札と同じ）。
+            // **最後の札（今日のテーマ）だけは右端に寄せて止まる**——流せるのは中身の
+            // 右端までなので、左に1枚前の札の端が見える（横の並びの普通の止まり方）
             .scrollTargetBehavior(.viewAligned)
-            .contentMargins(.horizontal, 16, for: .scrollContent)
+            .contentMargins(.horizontal, Self.margin, for: .scrollContent)
         }
     }
 
