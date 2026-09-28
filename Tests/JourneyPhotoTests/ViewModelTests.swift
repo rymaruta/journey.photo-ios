@@ -294,6 +294,23 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.shown.map(\.id), ["a"], "人が替わったのに前の一覧のまま")
     }
 
+    /// 🔴 **探すの機材・色の段は12枚で切らない。** 行の「N枚」と押した先の一覧は段の写真
+    /// そのものなので、12で切ると13枚目から先が数えられず、押しても出てこなかった
+    func testSearchGearAndColorSectionsAreNotCappedAtTwelve() async {
+        let photos = (1...15).map { i in
+            ##"{"id":"g\##(i)","src":"https://x/g\##(i).jpg","exif":{"focalLength":"24mm"},"dominantColor":"#d32f2f"}"##
+        }
+        let service = gallery("[" + photos.joined(separator: ",") + "]")
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        let all = Set((1...15).map { "g\($0)" })
+        XCTAssertEqual(model.gear.count, 1)
+        XCTAssertEqual(Set(model.gear.first?.photos.map(\.id) ?? []), all, "機材の段を切っている（押した先に出ない写真がある）")
+        XCTAssertEqual(model.colors.count, 1)
+        XCTAssertEqual(Set(model.colors.first?.photos.map(\.id) ?? []), all, "色の段を切っている（押した先に出ない写真がある）")
+    }
+
     /// **人が替わったら、読み直しが返る前から前の人の段を出さない。**
     /// 一覧だけ空にして、チップ・季節の写真などは読み直しが返るまで前の人のまま残っていた
     func testSwitchingViewerClearsDerivedSectionsImmediately() async {
