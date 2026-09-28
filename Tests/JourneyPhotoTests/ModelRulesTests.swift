@@ -119,6 +119,13 @@ final class AuthResolvingTests: XCTestCase {
         XCTAssertEqual(HomeLikeGate.decide(auth), .ignore)
         auth.settleSignedOut()
         XCTAssertEqual(HomeLikeGate.decide(auth), .askToSignIn)
+        // ログイン済み（見本の利用者で `.signedIn` にする）
+        UserDefaults.standard.set("me", forKey: PreviewSession.defaultsKey)
+        defer { UserDefaults.standard.removeObject(forKey: PreviewSession.defaultsKey) }
+        let signedIn = AuthStore()
+        await signedIn.restore()
+        XCTAssertEqual(signedIn.userId, "me", "下ごしらえ: ログイン済みになる")
+        XCTAssertEqual(HomeLikeGate.decide(signedIn), .send)
     }
 
     /// **サインアウト・退会のあと、前の画面の失敗をログイン画面に持ち越さない。**

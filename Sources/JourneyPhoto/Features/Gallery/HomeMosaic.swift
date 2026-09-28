@@ -352,14 +352,14 @@ enum HomeLikeGate {
     /// 効かなくなる（`RootView` の「ログインしていない回は黙らない」と同じ）。
     /// ID が無いまま送ると、ログアウトの表示のまま前の人のトークンでいいねが付くか、
     /// 一瞬灯って消える
+    static func decide(userId: String?, isResolving: Bool) -> Decision {
+        if userId != nil { return .send }
+        return isResolving ? .ignore : .askToSignIn
+    }
+
     /// 画面から呼ぶ形。**式を呼び出し側に置かない**（試験がそこを通らない）
     @MainActor
     static func decide(_ auth: AuthStore) -> Decision {
         decide(userId: auth.userId, isResolving: auth.isResolving)
-    }
-
-    static func decide(userId: String?, isResolving: Bool) -> Decision {
-        if userId != nil { return .send }
-        return isResolving ? .ignore : .askToSignIn
     }
 }
