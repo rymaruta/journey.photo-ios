@@ -30,6 +30,8 @@ struct StoryComposerView: View {
     @State private var location = ""
     /// 24時間のあとも残すか（ハイライトの材料になる）
     @State private var keepInArchive = false
+    /// 返信を受けるか（Web の「返信を許可」。既定は入）
+    @State private var allowReplies = true
     @State private var showCamera = false
     /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
     /// 「続きから」で**残すと決めた下書きの印**（`savedAt`）。真偽では持たない——
@@ -98,7 +100,8 @@ struct StoryComposerView: View {
     private var content: StoryComposerContent {
         StoryComposerContent(shotIds: shots.map(\.id), overlays: shots.map(\.overlays),
                         caption: caption, location: location, song: song,
-                        durationSec: durationSec, archive: keepInArchive)
+                        durationSec: durationSec, archive: keepInArchive,
+                        allowReplies: allowReplies)
     }
 
     /// ✕ と下へ払うのを通すか（`UnsavedLeave`）
@@ -594,6 +597,18 @@ struct StoryComposerView: View {
                 .tint(WebTheme.accentDeep)
             }
             .foregroundStyle(WebTheme.muted2)
+            // 返信を受けるか（Web の「返信を許可」）。切ると見る人に返信欄と ♡ が出ない
+            // （サーバーも断る）。既定は入
+            HStack(spacing: 8) {
+                Spacer(minLength: 8)
+                Toggle(isOn: $allowReplies) {
+                    Text(L("返信を許可", "Allow replies"))
+                        .font(.system(size: 13))
+                }
+                .fixedSize()
+                .tint(WebTheme.accentDeep)
+            }
+            .foregroundStyle(WebTheme.muted2)
 
             Button {
                 post()
@@ -826,6 +841,7 @@ struct StoryComposerView: View {
             song: song,
             durationSec: durationSec,
             archive: keepInArchive,
+            allowReplies: allowReplies,
             savedAt: ISO8601DateFormatter().string(from: Date())
         )
         // **書けなかったことを黙らない。** 「保存しました」とだけ出して
@@ -889,6 +905,7 @@ struct StoryComposerView: View {
         song = draft.song
         durationSec = draft.durationSec
         keepInArchive = draft.archive == true
+        allowReplies = draft.allowReplies != false
         message = nil
         restoredContent = content
     }
@@ -914,7 +931,8 @@ struct StoryComposerView: View {
             StoryUploadCenter.Job(
                 imageData: TextOverlayRenderer.burn(shot.overlays, into: shot.prepared.data),
                 caption: caption, location: place, coords: shot.prepared.coords,
-                song: song, durationSec: durationSec, archive: keepInArchive)
+                song: song, durationSec: durationSec, archive: keepInArchive,
+                allowReplies: allowReplies)
         }
         let stories = environment.stories
         let drafts = drafts
@@ -989,4 +1007,6 @@ struct StoryComposerContent: Equatable {
     var song: Photo.Song?
     var durationSec: Int
     var archive: Bool
+    /// 前の版の呼び手・テストは持たない（既定の「許可」）
+    var allowReplies: Bool = true
 }

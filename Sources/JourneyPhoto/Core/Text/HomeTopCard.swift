@@ -1,20 +1,24 @@
 import Foundation
 
-/// ホームの上段に出す札を**1枚だけ**決める（板 01・55「開く場面ごとに1枚」）。
+/// ホームの上段に出す札を決める（元は板 01・55「開く場面ごとに1枚」。いまは並び）。
+///
+/// **当たる札を全部、優先順に並べ、最後に必ず「今日のテーマ」を置く**（2026-09-28・
+/// owner「1年前の今ごろ、今日のテーマなど両方欲しい」）。ホームでは横にめくる札の
+/// 並びにする——縦に積むと写真の一覧が札の数だけ下がる（写真が主役）。
 ///
 /// レビュー（2026-09-27）で一番欠けていたのが「毎回開きたくなるか」だった。
 /// ホームが毎日同じ形で、旅の前・最中・後で出す物が変わらない。材料は
 /// もうアプリの中にある（旅行プラン・旅の一冊・自分の写真の日付）ので、
-/// **その日に当たる1枚を選んで上に出す**。
+/// **その日に当たる札を上に出す**。
 ///
-/// 優先順（上ほど強い・同じ日に当たる物が複数あっても1枚だけ）:
+/// 優先順（上ほど前。**種類ごとに1枚まで**）:
 ///
 ///  1. **出発が近い** — 出発日まで 0〜`departureWindowDays` 日の旅行プラン
 ///  2. **旅の最中** — 出発日を過ぎ、帰着日までの旅行プラン
 ///  3. **一冊ができた** — 旅が閉じて（最後の写真から `TripBook.maxGapDays` 日空いて）
 ///     から `bookFreshDays` 日以内で、**まだ開いていない**一冊
 ///  4. **1年前の今ごろ** — 1年前の今日の前後 `yearAgoWindowDays` 日に撮った自分の写真
-///  5. **今日のテーマ** — どれにも当たらない日（いまの札のまま）
+///  5. **今日のテーマ** — 毎日。いつも最後（当たる物が無い日はこれ1枚）
 ///
 /// 「今月の見ごろ」（板 55 の④）は入れていない——撮影スポットの季節の案内が
 /// アプリ向けの一覧（`app/data/spots.json`）に載っていないため。
@@ -32,6 +36,18 @@ enum HomeTopCard {
         /// `byUploadDate` は撮影日が無く、投稿日で当てたとき（「1年前に投稿」と言う）
         case oneYearAgo(photo: Photo, byUploadDate: Bool)
         case theme
+
+        /// 並びの中の目印。**種類ごとに1枚まで**なので種類で足りる（並び順で持つと、
+        /// 一冊の札が下がったときに隣の札と取り違える）
+        var slot: String {
+            switch self {
+            case .departure: return "departure"
+            case .onTrip: return "onTrip"
+            case .bookReady: return "bookReady"
+            case .oneYearAgo: return "oneYearAgo"
+            case .theme: return "theme"
+            }
+        }
     }
 
     /// 出発の何日前から出すか
@@ -41,22 +57,23 @@ enum HomeTopCard {
     /// 1年前の今日から前後何日までを「今ごろ」と呼ぶか
     static let yearAgoWindowDays = 7
 
-    /// 今日の札を選ぶ。
+    /// 今日の札の並び。**空にならない**（最後は必ず `.theme`）。
     ///
     /// - Parameters:
     ///   - now: いまの時刻。**端末の時刻帯（`timeZone`）の暦日**に直して数える
     ///   - plans: 自分の旅行プラン（未ログインなら空）
     ///   - myPhotos: 自分の写真（未ログインなら空）
     ///   - openedBookDays: 札から一度開いた一冊の日（`bookKey`・`OpenedTripBooks`）
-    static func pick(now: Date, plans: [TripPlan], myPhotos: [Photo],
-                     openedBookDays: Set<String>, timeZone: TimeZone = .current) -> Choice {
-        guard let today = today(now, in: timeZone) else { return .theme }
-        if let found = departure(today: today, plans: plans) { return found }
-        if let found = onTrip(today: today, plans: plans) { return found }
-        if let found = bookReady(today: today, myPhotos: myPhotos,
-                                 openedBookDays: openedBookDays, timeZone: timeZone) { return found }
-        if let found = oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone) { return found }
-        return .theme
+    static func cards(now: Date, plans: [TripPlan], myPhotos: [Photo],
+                      openedBookDays: Set<String>, timeZone: TimeZone = .current) -> [Choice] {
+        guard let today = today(now, in: timeZone) else { return [.theme] }
+        let found: [Choice?] = [
+            departure(today: today, plans: plans),
+            onTrip(today: today, plans: plans),
+            bookReady(today: today, myPhotos: myPhotos, openedBookDays: openedBookDays, timeZone: timeZone),
+            oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone),
+        ]
+        return found.compactMap { $0 } + [.theme]
     }
 
     /// 端末の時刻帯の今日を、**その日の UTC 0 時**にする（`TripPlanText` と `TripBook.day` の基準）

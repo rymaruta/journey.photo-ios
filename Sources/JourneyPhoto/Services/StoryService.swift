@@ -88,7 +88,8 @@ struct StoryService {
         do {
             _ = try await createRecord(media, caption: job.caption, location: job.location,
                                        coords: job.coords, song: job.song,
-                                       durationSec: job.durationSec, archive: job.archive)
+                                       durationSec: job.durationSec, archive: job.archive,
+                                       allowReplies: job.allowReplies)
         } catch {
             failure = error
         }
@@ -163,7 +164,7 @@ struct StoryService {
     @discardableResult
     func createRecord(_ media: UploadedMedia, caption: String?, location: String?,
                       coords: Photo.Coords?, song: Photo.Song? = nil, durationSec: Int? = nil,
-                      archive: Bool = false) async throws -> Story? {
+                      archive: Bool = false, allowReplies: Bool = true) async throws -> Story? {
         struct Body: Encodable {
             let publicUrl: String
             let caption: String?
@@ -179,6 +180,9 @@ struct StoryService {
             /// ——サーバーは `archive === true` だけを見る（`stories.ts`）。
             /// 残したものだけがハイライトに入れられる
             let archive: Bool?
+            /// 返信を受けるか。**切ったときだけ `false` を送る**（Web の `StoriesBar` と同じ）
+            /// ——サーバーは `false` のときだけ返信と ♡ を断る（`storyAllowsReplies`）
+            let allowReplies: Bool?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
@@ -190,7 +194,8 @@ struct StoryService {
             coords: (location?.isEmpty == false) ? coords.map { Body.Coords(lat: $0.lat, lng: $0.lng) } : nil,
             song: song,
             durationSec: Self.storedDuration(durationSec),
-            archive: archive ? true : nil
+            archive: archive ? true : nil,
+            allowReplies: allowReplies ? nil : false
         )
         return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
     }
