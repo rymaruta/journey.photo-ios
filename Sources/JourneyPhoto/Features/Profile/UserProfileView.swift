@@ -351,6 +351,10 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var followers = 0
     @Published private(set) var following = 0
     @Published private(set) var isFollowing = false
+    /// 自分のフォロー一覧が取れず、**フォロー中かどうか分からない**。ボタンは「フォローする」で
+    /// 出すが、押されたら送る前に取り直す（`toggleFollow`）——分からないまま送ると、
+    /// フォロー中の人に follow を送り直していた（写真の詳細の `followLookupFailed` と同じ形）
+    private var followUnknown = false
     /// 写真の数を言えるか。**配列の長さを直接出さない**（読み込み中・失敗で 0 になる）
     @Published private(set) var photoCount: ProfileLine.PhotoCount = .pending
     @Published private(set) var isLoading = false
@@ -379,7 +383,10 @@ final class UserProfileViewModel: ObservableObject {
 
     func load(userId: String, environment: AppEnvironment, viewerId: String?) async {
         // 見ている人が替わったら「フォロー中」を先に倒す（読み直しの間も前の人の値を出さない）
-        if let last = lastViewerId, last != viewerId { isFollowing = false }
+        if let last = lastViewerId, last != viewerId {
+            isFollowing = false
+            followUnknown = false
+        }
         lastViewerId = .some(viewerId)
         let writes = followWrites
         let blocks = blockWrites
@@ -439,8 +446,13 @@ final class UserProfileViewModel: ObservableObject {
             // 「フォローする」に戻すと、フォロー中の人に follow を送り直す
             let ids = try? await environment.social.myFollowingIds()
             guard current() else { return }
-            if let ids, writes == followWrites, blocks == blockWrites {
-                isFollowing = ids.contains(userId)
+            if writes == followWrites, blocks == blockWrites {
+                if let ids {
+                    isFollowing = ids.contains(userId)
+                    followUnknown = false
+                } else {
+                    followUnknown = true
+                }
             }
         }
         // **その人の写真は公開 JSON から絞る。** 「ある人の公開写真」を返す
@@ -484,6 +496,21 @@ final class UserProfileViewModel: ObservableObject {
         isWorking = true
         actionMessage = nil
         defer { isWorking = false }
+        // **分からないまま送らない。** 取り直して、既にフォロー中なら送らずに姿だけ直す
+        if followUnknown {
+            let ids: [String]
+            do {
+                ids = try await environment.social.myFollowingIds()
+            } catch is CancellationError {
+                return
+            } catch {
+                actionMessage = L("フォローの状態を確かめられませんでした", "Couldn't check follow status")
+                return
+            }
+            followUnknown = false
+            isFollowing = ids.contains(userId)
+            if isFollowing { return }
+        }
         do {
             let result = isFollowing
                 ? try await environment.social.unfollow(userId: userId)
@@ -507,6 +534,7 @@ final class UserProfileViewModel: ObservableObject {
             store.block(userId, for: owner)
             await environment.gallery.setHidden(store.snapshot)
             isFollowing = false
+            followUnknown = false
             photos = []
             // **成功を赤字で出さない。** それまで `errorMessage` に入れて
             // いたので、うまくいった操作が「失敗」の見た目で出ていた

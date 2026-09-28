@@ -179,6 +179,46 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// 🔴 **人のページ: 自分のフォロー一覧が取れなかった回に、押したら送る前に取り直す。**
+    /// 取れなかった回は「フォローする」のまま出ていて、フォロー中の人に follow を送り直していた
+    /// （写真の詳細は `followLookupFailed` で直してあった）
+    func testProfileFollowWhenLookupFailedChecksBeforeSending() async {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":3,"following":1}"#)
+        StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "me")
+        XCTAssertFalse(model.isFollowing)
+
+        // 取り直すとフォロー中だった
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":["u1"]}"#)
+        await model.toggleFollow(userId: "u1", environment: env)
+        XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") },
+                       "フォロー中の人に follow を送り直している: \(StubProtocol.requests)")
+        XCTAssertTrue(model.isFollowing)
+
+        // 取り直しも取れなければ、送らずに知らせる
+        let other = UserProfileViewModel()
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":3,"following":1}"#)
+        StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        await other.load(userId: "u1", environment: env, viewerId: "me")
+        await other.toggleFollow(userId: "u1", environment: env)
+        XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") }, "分からないまま送っている")
+        XCTAssertNotNil(other.actionMessage)
+    }
+
     /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
     /// 書かずに戻ると、読み込み中の丸のまま引き下げも再試行も効かない画面が残る
     func testGalleryFirstLoadCancelledDoesNotStayLoading() async {
