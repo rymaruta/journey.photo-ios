@@ -302,6 +302,11 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(PostLimits.limited(old: "あいう", new: "あいうえおかきくけこさ", limit: 10), "あいうえおかきくけこ")
         // 収まっていればそのまま
         XCTAssertEqual(PostLimits.limited(old: "あ", new: "いあ", limit: 10), "いあ")
+        // 置き換えて貼った長い文は、入るぶんだけ入る（何も入らない、にしない）
+        XCTAssertEqual(PostLimits.limited(old: "hello", new: String(repeating: "x", count: 15), limit: 10),
+                       String(repeating: "x", count: 10))
+        // 途中に貼った長い文は、残りの字数まで差し込む（末尾は残す）
+        XCTAssertEqual(PostLimits.limited(old: "abcZ", new: "ab" + "123456789" + "cZ", limit: 8), "ab1234cZ")
     }
 
     /// 🔴 **サーバーと同じく UTF-16 の単位で数え、字の途中では切らない。**

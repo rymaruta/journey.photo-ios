@@ -70,4 +70,15 @@ final class LocalizedEditTests: XCTestCase {
         let desc = LocalizedParagraphs.byLocale(["ja": ["朝"], "en": ["Morning"]])
         XCTAssertEqual(LocalizedEdit.description(original: desc, field: "\n"), .plain(""))
     }
+
+    /// 🔴 **説明の上限は送る形で決める。** 英語の説明がある写真は段落ごとに送り、サーバーの上限も
+    /// 段落ごとなので、全体では止めない（止めると直しただけで後ろの段落が消えた）。
+    /// 文字列で送る写真は全体を 2000 で止める（止めないとサーバーが黙って切る）
+    func testDescriptionLimitDependsOnTheShapeSent() {
+        XCTAssertNil(LocalizedEdit.descriptionLimit(
+            original: LocalizedParagraphs.byLocale(["ja": ["朝"], "en": ["Morning"]])))
+        XCTAssertEqual(LocalizedEdit.descriptionLimit(
+            original: LocalizedParagraphs.byLocale(["ja": ["朝"]])), PostLimits.description)
+        XCTAssertEqual(LocalizedEdit.descriptionLimit(original: nil), PostLimits.description)
+    }
 }

@@ -32,17 +32,26 @@ enum PostLimits {
         length(text) >= Int(Double(limit) * 0.8)
     }
 
-    /// 欄が変わったときに残す文。**Web の `maxLength` と同じく、入れようとした字のほうを受けない。**
+    /// 欄が変わったときに残す文。**Web の `maxLength` と同じく、入れようとした字のほうを削る。**
     ///
     /// 先頭から残して末尾を切ると、上限いっぱいの文の途中に打ち込んだ・貼った回に、画面の外の
-    /// 末尾が黙って消えた（止めたかった「後ろが消える」が端末の上で起きる）。
-    /// - 収まっていればそのまま
-    /// - 末尾に足した回は、足したぶんを上限まで（貼った長い文も入るぶんだけ入る）
-    /// - 途中に足した回は、前の文に戻す（前の文も超えていれば切る）
+    /// 末尾が黙って消えた。前の文と共通の頭と尻を残し、差し込んだ部分だけを残りの字数まで入れる
+    /// （置き換えて貼った長い文も、入るぶんだけ入る）。前の文がもう上限を超えていれば先頭から切る
     static func limited(old: String, new: String, limit: Int) -> String {
         guard length(new) > limit else { return new }
-        if new.hasPrefix(old) { return clamp(new, limit: limit) }
-        return length(old) <= limit ? old : clamp(new, limit: limit)
+        guard length(old) <= limit else { return clamp(new, limit: limit) }
+        let oldChars = Array(old), newChars = Array(new)
+        var head = 0
+        while head < oldChars.count, head < newChars.count, oldChars[head] == newChars[head] { head += 1 }
+        var tail = 0
+        while tail < oldChars.count - head, tail < newChars.count - head,
+              oldChars[oldChars.count - 1 - tail] == newChars[newChars.count - 1 - tail] { tail += 1 }
+        let prefix = String(newChars[..<head])
+        let suffix = String(newChars[(newChars.count - tail)...])
+        let inserted = String(newChars[head..<(newChars.count - tail)])
+        let room = limit - length(prefix) - length(suffix)
+        guard room > 0 else { return old }
+        return prefix + clamp(inserted, limit: room) + suffix
     }
 
     /// 上限で切る（画面側で止める）。**字の途中では切らない**（サーバーの `truncate` と同じく、

@@ -49,6 +49,14 @@ enum LocalizedEdit {
         return .plain(field)
     }
 
+    /// 説明の欄の上限。**文字列で送る写真だけ**全体を 2000 で止める（`sanitizeDescription` は
+    /// 文字列なら全体を 2000 で黙って切る）。英語の説明がある写真は段落ごとに送り、上限も
+    /// 段落ごとなので、全体では止めない（止めると直しただけで後ろの段落が消えた）
+    static func descriptionLimit(original: LocalizedParagraphs?) -> Int? {
+        if case .byLocale(let map) = original, let en = map["en"], !en.isEmpty { return nil }
+        return PostLimits.description
+    }
+
     private static func paragraphs(_ text: String) -> [String] {
         text.components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
