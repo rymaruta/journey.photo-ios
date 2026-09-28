@@ -49,7 +49,13 @@ struct HighlightEditorView: View {
                     Button(Labels.Common.cancel) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(Labels.Common.save) { Task { await save() } }
+                    Button(Labels.Common.save) {
+                        // 🔴 **門は押したその場で閉じる。** `saving` を Task の中で立てて
+                        // いたので、描き直しの前に2回押すと同じハイライトが2つできた
+                        guard canSave else { return }
+                        saving = true
+                        Task { await save() }
+                    }
                         .disabled(!canSave)
                 }
             }
@@ -231,8 +237,8 @@ struct HighlightEditorView: View {
         loading = false
     }
 
+    /// 呼ぶ前に `saving` を立てておくこと（ボタンが同期で立てる）
     private func save() async {
-        saving = true
         message = nil
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         do {

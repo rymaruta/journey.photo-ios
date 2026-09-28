@@ -86,6 +86,11 @@ struct DeleteAccountView: View {
 
     private var deleteButton: some View {
         Button(role: .destructive) {
+            // 🔴 **門は押したその場で閉じる。** `isWorking` を Task の中で立てていたので、
+            // 描き直しの前に2回押すと2本走り、退会の要求が2回飛んでいた
+            // （`SettingsView.pushBinding` の「門は同期で閉じる」と同じ）
+            guard canDelete else { return }
+            isWorking = true
             Task { await deleteAccount() }
         } label: {
             Group {
@@ -113,8 +118,8 @@ struct DeleteAccountView: View {
         }
     }
 
+    /// 呼ぶ前に `isWorking` を立てておくこと（ボタンが同期で立てる）
     private func deleteAccount() async {
-        isWorking = true
         errorMessage = nil
         defer { isWorking = false }
         // **消す前に控える。** 消したあとは誰だったか分からない

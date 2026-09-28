@@ -484,14 +484,20 @@ final class UserProfileViewModel: ObservableObject {
         isWorking = true
         actionMessage = nil
         defer { isWorking = false }
+        // 🔴 **押した人の答えだけを書く。** 待っている間にログアウトして別の人で
+        // 入り直すと、前の人の「フォロー中」と数が次の人の画面に残っていた
+        // （`FollowListView.setFollowing` の `auth.userId == viewer` と同じ守り）
+        let viewer = lastViewerId
         do {
             let result = isFollowing
                 ? try await environment.social.unfollow(userId: userId)
                 : try await environment.social.follow(userId: userId)
+            guard lastViewerId == viewer else { return }
             followWrites += 1
             isFollowing = result.following
             followers = result.followers
         } catch {
+            guard lastViewerId == viewer else { return }
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
     }

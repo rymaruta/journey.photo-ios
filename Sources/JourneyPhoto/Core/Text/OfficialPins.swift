@@ -74,10 +74,16 @@ enum OfficialPins {
             .map(\.0)
     }
 
-    /// **id の集まりで比べる。** 並びが違うだけなら「変わっていない」
-    /// ——入れ替えるたびに描き直し → カメラの知らせ → … と回る種になる
+    /// **id ごとの中身で比べる。** 並びが違うだけなら「変わっていない」
+    /// ——入れ替えるたびに描き直し → カメラの知らせ → … と回る種になる。
+    /// 🔴 **id が同じでも中身（写真・出典・下書きの札）が変わったら入れ替える。**
+    /// id の集まりだけで見ていたので、索引を読み直して写真が外れた・差し替わった
+    /// スポットの印と札に、古い写真と出典が残り続けた
     static func changed(_ before: [Pin], _ after: [Pin]) -> Bool {
-        Set(before.map(\.id)) != Set(after.map(\.id))
+        func byId(_ pins: [Pin]) -> [String: Pin] {
+            Dictionary(pins.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+        return byId(before) != byId(after)
     }
 
     private static func pin(_ spot: OfficialSpot) -> Pin? {
