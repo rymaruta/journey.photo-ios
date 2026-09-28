@@ -338,6 +338,10 @@ struct PhotoMapView: View {
         .padding(4)
         .jpGlass(in: Capsule())
         .padding(.horizontal, 16)
+        // **「スポット」のときだけ上を空ける**（owner の「枠同士が近すぎる」・2026-09-28）。
+        // 地図・リストはカテゴリのチップの下の余白（10pt）がそのまま間になるが、
+        // スポットはチップを出さないので検索欄に隙間なしで付いていた
+        .padding(.top, model.mode == .spots ? 12 : 0)
         .padding(.bottom, 8)
     }
 
