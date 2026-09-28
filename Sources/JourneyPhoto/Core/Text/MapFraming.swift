@@ -54,70 +54,59 @@ enum MapFraming {
 
     /// いちばん重い（写真の多い）塊。**同じ重さなら北にある方**（毎回同じ結果にする）。
     ///
-    /// 写真を約 30km の小さな升にまとめ、その升（の重みの中心）を中心の候補にして、**そこから
-    /// `clusterDegrees`（約 300km）以内の写真の重さがいちばん大きい所**を選び、その範囲の点を
-    /// 塊とする。塊の広さは中心から ±300km に収まる。
+    /// 写真を約 30km（`clusterDegrees / 10`）の升目に落とし、**ある升を中心に上下左右 9升
+    /// （約 ±2.4°・一辺およそ 500km）の窓に入る写真の重さがいちばん大きい所**を選んで、その窓の
+    /// 写真を塊とする。窓の重さは升目の累積和で引くので、点の数と升目の数に比例する時間で済む。
+    /// 返す点は必ず窓の中にある。中心の候補は写真のある升だけ。
     /// - 🔴 北から順に「最初に近い塊」へ足す形は、一続きの点が割れて小さい塊が選ばれた
     /// - つながりをたどる形は、点が密だと大陸ごと1つになり、点の数の2乗の時間がかかった
     /// - 升目の 3×3 をそのまま囲む形は、離れた1枚が枠を決めた。重みの中心で切る形は、中心が
     ///   2つの群の間に落ちると、間にある1枚だけに寄った
     /// - 写真の1地点ずつを候補にする形は、1つの升に写真が集まると2乗の時間になった
-    ///   （同じ升に 20000 枚で約 100 秒）。小さな升にまとめれば、候補も見る先も升の数で抑えられる
-    ///   （1つの 300km の升の中の小さな升は多くて 100）
     static func largestCluster(
         _ points: [(latitude: Double, longitude: Double)],
         weights: [Int]? = nil
     ) -> [(latitude: Double, longitude: Double)] {
-        struct Cell: Hashable { let lat: Int; let lon: Int }
-        struct Bin { var weight = 0; var latSum = 0.0; var lonSum = 0.0; var members: [Int] = []
-            var latitude: Double { latSum / Double(weight) }
-            var longitude: Double { lonSum / Double(weight) }
-        }
-        let fine = clusterDegrees / 10
-        func fineCell(_ p: (latitude: Double, longitude: Double)) -> Cell {
-            Cell(lat: Int((p.latitude / fine).rounded(.down)), lon: Int((p.longitude / fine).rounded(.down)))
-        }
-        func coarse(_ c: Cell) -> Cell {
-            Cell(lat: Int((Double(c.lat) / 10).rounded(.down)), lon: Int((Double(c.lon) / 10).rounded(.down)))
-        }
-        func weight(_ index: Int) -> Int {
-            (weights?.indices.contains(index) ?? false) ? max(1, weights![index]) : 1
-        }
-        var bins: [Cell: Bin] = [:]
+        guard !points.isEmpty else { return [] }
+        let size = clusterDegrees / 10
+        let reach = 9
+        let rows = points.map { Int(($0.latitude / size).rounded(.down)) }
+        let cols = points.map { Int(($0.longitude / size).rounded(.down)) }
+        let minRow = rows.min()!, minCol = cols.min()!
+        let height = rows.max()! - minRow + 1, width = cols.max()! - minCol + 1
+        // 累積和（sum[r][c] は左下からその升の手前までの重さ）。緯度・経度の範囲で決まるので、
+        // 世界中に散っても 700×1400 ほど
+        var sum = [Int](repeating: 0, count: (height + 1) * (width + 1))
+        func at(_ r: Int, _ c: Int) -> Int { r * (width + 1) + c }
         for index in points.indices {
-            let w = weight(index)
-            let key = fineCell(points[index])
-            bins[key, default: Bin()].weight += w
-            bins[key]!.latSum += points[index].latitude * Double(w)
-            bins[key]!.lonSum += points[index].longitude * Double(w)
-            bins[key]!.members.append(index)
+            let w = (weights?.indices.contains(index) ?? false) ? max(1, weights![index]) : 1
+            sum[at(rows[index] - minRow + 1, cols[index] - minCol + 1)] += w
         }
-        var byCoarse: [Cell: [Cell]] = [:]
-        for key in bins.keys { byCoarse[coarse(key), default: []].append(key) }
-        func nearby(_ center: (latitude: Double, longitude: Double), home: Cell) -> [Cell] {
-            let c = coarse(home)
-            return (-1...1).flatMap { dLat in (-1...1).flatMap { dLon in
-                byCoarse[Cell(lat: c.lat + dLat, lon: c.lon + dLon)] ?? []
-            } }.filter {
-                abs(bins[$0]!.latitude - center.latitude) <= clusterDegrees
-                    && abs(bins[$0]!.longitude - center.longitude) <= clusterDegrees
+        for r in 1...height {
+            for c in 1...width {
+                sum[at(r, c)] += sum[at(r - 1, c)] + sum[at(r, c - 1)] - sum[at(r - 1, c - 1)]
             }
         }
-        var best: (key: Cell, center: (latitude: Double, longitude: Double), weight: Int)?
-        for (key, bin) in bins {
-            let center = (latitude: bin.latitude, longitude: bin.longitude)
-            let total = nearby(center, home: key).reduce(0) { $0 + bins[$1]!.weight }
-            guard let current = best else { best = (key, center, total); continue }
-            // 重い方。同じなら北、それも同じなら西（辞書の並びに依らず毎回同じ結果にする）
-            if total > current.weight
-                || (total == current.weight && (center.latitude > current.center.latitude
-                    || (center.latitude == current.center.latitude && center.longitude < current.center.longitude))) {
-                best = (key, center, total)
+        func windowWeight(row: Int, col: Int) -> Int {
+            let r0 = max(0, row - reach), r1 = min(height - 1, row + reach)
+            let c0 = max(0, col - reach), c1 = min(width - 1, col + reach)
+            return sum[at(r1 + 1, c1 + 1)] - sum[at(r0, c1 + 1)] - sum[at(r1 + 1, c0)] + sum[at(r0, c0)]
+        }
+        var best: (row: Int, col: Int, weight: Int)?
+        for index in points.indices {
+            let row = rows[index] - minRow, col = cols[index] - minCol
+            let total = windowWeight(row: row, col: col)
+            // 重い方。同じなら北（行の大きい方）、それも同じなら西（毎回同じ結果にする）
+            if let current = best,
+               !(total > current.weight
+                 || (total == current.weight && (row > current.row || (row == current.row && col < current.col)))) {
+                continue
             }
+            best = (row, col, total)
         }
         guard let best else { return [] }
-        return nearby(best.center, home: best.key)
-            .flatMap { bins[$0]!.members }
+        return points.indices
+            .filter { abs(rows[$0] - minRow - best.row) <= reach && abs(cols[$0] - minCol - best.col) <= reach }
             .sorted { points[$0].latitude > points[$1].latitude }
             .map { points[$0] }
     }

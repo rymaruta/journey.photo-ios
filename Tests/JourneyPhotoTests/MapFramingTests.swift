@@ -101,11 +101,21 @@ final class MapFramingTests: XCTestCase {
              longitude: 139.5 + Double.random(in: 0...1, using: &generator))
         }
         let same = Array(repeating: tokyo, count: 20_000)
-        for points in [tokyoArea, same] {
+        // 細かく散らばる（東アジアくらい）——升ごとに近くの升を読む形では遅かった（da88b2a のレビュー）
+        let eastAsia = (0..<20_000).map { _ in
+            (latitude: 20 + Double.random(in: 0...30, using: &generator),
+             longitude: 100 + Double.random(in: 0...50, using: &generator))
+        }
+        for points in [tokyoArea, same, eastAsia] {
             let started = Date()
             XCTAssertNotNil(MapFraming.frame(for: points))
-            XCTAssertLessThan(Date().timeIntervalSince(started), 1.0, "1つの升に集まると遅すぎる")
+            XCTAssertLessThan(Date().timeIntervalSince(started), 1.0, "点が多いと遅すぎる")
         }
+        // 返す点は窓（中心の升から上下左右 9升）の中だけ——幅が窓を超えない
+        let cluster = MapFraming.largestCluster(eastAsia)
+        let lats = cluster.map(\.latitude), lons = cluster.map(\.longitude)
+        XCTAssertLessThanOrEqual(lats.max()! - lats.min()!, 19 * MapFraming.clusterDegrees / 10 + 1e-9)
+        XCTAssertLessThanOrEqual(lons.max()! - lons.min()!, 19 * MapFraming.clusterDegrees / 10 + 1e-9)
     }
 
     /// 近い点どうしは1つの塊
