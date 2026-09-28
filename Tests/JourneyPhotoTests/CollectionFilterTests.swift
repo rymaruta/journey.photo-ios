@@ -502,6 +502,25 @@ final class TagCountsTests: XCTestCase {
     }
 }
 
+/// 写真をまとめた一覧の題（`TagPhotosView` の見出し）
+final class CollectionKindTitleTests: XCTestCase {
+
+    /// **カテゴリの題は画面の名前。** 生の値（`landscape`）のまま出ていて、押した札の
+    /// 「風景」と行き先の題が食い違っていた
+    func testCategoryTitleUsesTheDisplayName() {
+        XCTAssertEqual(PhotoQuery.Collection.category("landscape").title, "風景")
+    }
+
+    /// ホーム・探すの札（`FeaturedGroups` の `label`）と、押した先の題が同じ字になる
+    /// （入口は `group.id`＝保存されている生の値を渡す）
+    func testCategoryTitleMatchesTheFeaturedLabel() throws {
+        let photo = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"a","src":"https://x/a.jpg","category":"landscape","featured":true}"#.utf8))
+        let group = try XCTUnwrap(FeaturedGroups.groups(from: [photo]).first)
+        XCTAssertEqual(PhotoQuery.Collection.category(group.id).title, group.label)
+    }
+}
+
 /// タグの一覧の見出し（写真の詳細のタグの札から開く `TagPhotosView` の題）
 final class TagCollectionTitleTests: XCTestCase {
 
