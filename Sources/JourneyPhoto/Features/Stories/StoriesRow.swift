@@ -329,11 +329,19 @@ final class StoriesViewModel: ObservableObject {
     /// いまの一覧を読んだ人（切り替えたら前の人の一覧を残さない）
     private var loadedFor: String?
 
+    /// 読み込みの回。🔴 **後から始めた回があれば、前の回は何も書かない。**
+    /// 人が替わった直後は `.task` と `hidden.revision` の読み直しが同時に走り、先に始めた回
+    /// （前の人のブロックの集合で絞る）が後から着くと、次の人がブロックした人の輪が並んでいた
+    private var loadSeq = 0
+
     func load(environment: AppEnvironment, viewerId: String?, blockedUserIds: Set<String> = [],
               reportedPhotoIds: Set<String> = []) async {
+        loadSeq += 1
+        let seq = loadSeq
         // 取れなくても画面は壊さない（ストーリーは添え物）
         // ⚠️ `if let x = try? await …` は構文検査（tree-sitter）が読めない。2文に割る
         let fetched = try? await environment.stories.list()
+        guard seq == loadSeq else { return }
         stories = StoryPlayback.afterLoad(fetched: fetched, previous: stories,
                                           sameViewer: loadedFor == viewerId,
                                           blockedUserIds: blockedUserIds,

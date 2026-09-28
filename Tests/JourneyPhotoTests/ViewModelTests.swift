@@ -179,6 +179,30 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// 🔴 **ストーリーの輪: 先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない。**
+    /// 人が替わった直後は読み直しが2本同時に走り、前の人のブロックの集合で絞った先の回が
+    /// 後から着くと、次の人がブロックした人の輪が並んだままになっていた
+    func testStoriesOlderLoadDoesNotOverwriteANewerOne() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 api: api(gates: PathGates(["/stories": gate])))
+        let model = StoriesViewModel()
+        let story = #"{"id":"s1","src":"https://x/s1.jpg","userId":"blocked"}"#
+        StubProtocol.respond(path: "/stories", status: 200, body: "[\(story)]")
+
+        // 先の回（前の人の集合＝何もブロックしていない）は応答の前で止まる
+        let older = Task { await model.load(environment: env, viewerId: "b") }
+        await gate.untilWaiting()
+        // 後の回（次の人の集合）は通って、ブロックした人の輪を落とす
+        await model.load(environment: env, viewerId: "b", blockedUserIds: ["blocked"])
+        XCTAssertEqual(model.stories.map(\.id), [])
+
+        await gate.open()
+        await older.value
+        XCTAssertEqual(model.stories.map(\.id), [], "先に始めた回の結果で、ブロックした人の輪が戻った")
+    }
+
     /// 🔴 **人のページ: 自分のフォロー一覧が取れなかった回に、押したら送る前に取り直す。**
     /// 取れなかった回は「フォローする」のまま出ていて、フォロー中の人に follow を送り直していた
     /// （写真の詳細は `followLookupFailed` で直してあった）
