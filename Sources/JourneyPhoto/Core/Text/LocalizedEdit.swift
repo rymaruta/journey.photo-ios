@@ -49,12 +49,16 @@ enum LocalizedEdit {
         return .plain(field)
     }
 
-    /// 説明の欄の上限。**文字列で送る写真だけ**全体を 2000 で止める（`sanitizeDescription` は
-    /// 文字列なら全体を 2000 で黙って切る）。英語の説明がある写真は段落ごとに送り、上限も
-    /// 段落ごとなので、全体では止めない（止めると直しただけで後ろの段落が消えた）
-    static func descriptionLimit(original: LocalizedParagraphs?) -> Int? {
-        if case .byLocale(let map) = original, let en = map["en"], !en.isEmpty { return nil }
-        return PostLimits.description
+    /// 保存の前に告げる、説明の長さの断り（Web の `describeOverLimit` と同じ）。問題なければ nil。
+    ///
+    /// **欄では止めない**（送る形で上限が変わる——文字列なら全体 2000・段落ごとなら 1段落 2000）。
+    /// 文字列で送るのに 2000 を超えていたら、保存させずに知らせる（送るとサーバーが黙って切る）
+    static func descriptionOverLimit(original: LocalizedParagraphs?, field: String) -> String? {
+        guard case .plain(let text) = description(original: original, field: field) else { return nil }
+        let count = PostLimits.length(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard count > PostLimits.description else { return nil }
+        return L("説明は\(PostLimits.description)字までです（\(count)字）",
+                 "Up to \(PostLimits.description) characters (\(count))")
     }
 
     private static func paragraphs(_ text: String) -> [String] {

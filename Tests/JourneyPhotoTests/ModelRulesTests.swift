@@ -307,6 +307,17 @@ final class PostLimitsTests: XCTestCase {
                        String(repeating: "x", count: 10))
         // 途中に貼った長い文は、残りの字数まで差し込む（末尾は残す）
         XCTAssertEqual(PostLimits.limited(old: "abcZ", new: "ab" + "123456789" + "cZ", limit: 8), "ab1234cZ")
+        // 貼った文の区切り（空白・改行）は残す——段落が次の段落とつながらない（6db934e のレビュー）
+        XCTAssertEqual(PostLimits.limited(old: "A\nB", new: "A\nCCCCC\nB", limit: 6), "A\nCC\nB")
+        XCTAssertEqual(PostLimits.limited(old: "hello world", new: "hello bigger text world", limit: 15),
+                       "hello big world")
+        // 結合文字を足した回に、直前の字を消さない（受けずに前の文のまま）
+        XCTAssertEqual(PostLimits.limited(old: "abe", new: "abe\u{0301}", limit: 3), "abe")
+        // 前の文がもう超えていたら、減らす変更だけ受ける（黙って切らない）
+        let over = String(repeating: "あ", count: 12)
+        XCTAssertEqual(PostLimits.limited(old: over, new: String(over.dropLast()), limit: 10),
+                       String(over.dropLast()))
+        XCTAssertEqual(PostLimits.limited(old: over, new: over + "い", limit: 10), over)
     }
 
     /// 🔴 **サーバーと同じく UTF-16 の単位で数え、字の途中では切らない。**

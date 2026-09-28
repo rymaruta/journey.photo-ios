@@ -32,26 +32,42 @@ enum PostLimits {
         length(text) >= Int(Double(limit) * 0.8)
     }
 
-    /// 欄が変わったときに残す文。**Web の `maxLength` と同じく、入れようとした字のほうを削る。**
+    /// 欄が変わったときに残す文。**ブラウザの `maxLength` に寄せて、入れようとした字のほうを削る。**
     ///
     /// 先頭から残して末尾を切ると、上限いっぱいの文の途中に打ち込んだ・貼った回に、画面の外の
     /// 末尾が黙って消えた。前の文と共通の頭と尻を残し、差し込んだ部分だけを残りの字数まで入れる
-    /// （置き換えて貼った長い文も、入るぶんだけ入る）。前の文がもう上限を超えていれば先頭から切る
+    /// （置き換えて貼った長い文も、入るぶんだけ入る）。
+    /// - 頭と尻は**Unicode のスカラーで**比べる（結合文字を足した回に、直前の字を差し込みに
+    ///   数えて消さない）
+    /// - 差し込みの末尾の空白・改行は残す（カーソルの位置は分からないので、区切りを貼った文の
+    ///   側に数える。段落の区切りが消えて、次の段落とつながらない）
+    /// - 前の文がもう上限を超えていれば、減らす変更だけ受ける（入れた回に黙って切らない）
     static func limited(old: String, new: String, limit: Int) -> String {
         guard length(new) > limit else { return new }
-        guard length(old) <= limit else { return clamp(new, limit: limit) }
-        let oldChars = Array(old), newChars = Array(new)
+        guard length(old) <= limit else { return length(new) <= length(old) ? new : old }
+        let oldScalars = Array(old.unicodeScalars), newScalars = Array(new.unicodeScalars)
         var head = 0
-        while head < oldChars.count, head < newChars.count, oldChars[head] == newChars[head] { head += 1 }
+        while head < oldScalars.count, head < newScalars.count, oldScalars[head] == newScalars[head] { head += 1 }
         var tail = 0
-        while tail < oldChars.count - head, tail < newChars.count - head,
-              oldChars[oldChars.count - 1 - tail] == newChars[newChars.count - 1 - tail] { tail += 1 }
-        let prefix = String(newChars[..<head])
-        let suffix = String(newChars[(newChars.count - tail)...])
-        let inserted = String(newChars[head..<(newChars.count - tail)])
+        while tail < oldScalars.count - head, tail < newScalars.count - head,
+              oldScalars[oldScalars.count - 1 - tail] == newScalars[newScalars.count - 1 - tail] { tail += 1 }
+        func text(_ scalars: ArraySlice<Unicode.Scalar>) -> String {
+            var view = String.UnicodeScalarView()
+            view.append(contentsOf: scalars)
+            return String(view)
+        }
+        let prefix = text(newScalars[..<head])
+        let suffix = text(newScalars[(newScalars.count - tail)...])
+        let inserted = text(newScalars[head..<(newScalars.count - tail)])
         let room = limit - length(prefix) - length(suffix)
         guard room > 0 else { return old }
-        return prefix + clamp(inserted, limit: room) + suffix
+        // 末尾の空白・改行（区切り）は残し、その前を削る
+        let body = inserted.replacingOccurrences(of: #"\s+$"#, with: "", options: .regularExpression)
+        let trail = String(inserted.dropFirst(body.count))
+        let kept = length(trail) < room
+            ? clamp(body, limit: room - length(trail)) + trail
+            : clamp(inserted, limit: room)
+        return prefix + kept + suffix
     }
 
     /// 上限で切る（画面側で止める）。**字の途中では切らない**（サーバーの `truncate` と同じく、

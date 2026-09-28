@@ -71,14 +71,15 @@ final class LocalizedEditTests: XCTestCase {
         XCTAssertEqual(LocalizedEdit.description(original: desc, field: "\n"), .plain(""))
     }
 
-    /// 🔴 **説明の上限は送る形で決める。** 英語の説明がある写真は段落ごとに送り、サーバーの上限も
-    /// 段落ごとなので、全体では止めない（止めると直しただけで後ろの段落が消えた）。
-    /// 文字列で送る写真は全体を 2000 で止める（止めないとサーバーが黙って切る）
-    func testDescriptionLimitDependsOnTheShapeSent() {
-        XCTAssertNil(LocalizedEdit.descriptionLimit(
-            original: LocalizedParagraphs.byLocale(["ja": ["朝"], "en": ["Morning"]])))
-        XCTAssertEqual(LocalizedEdit.descriptionLimit(
-            original: LocalizedParagraphs.byLocale(["ja": ["朝"]])), PostLimits.description)
-        XCTAssertEqual(LocalizedEdit.descriptionLimit(original: nil), PostLimits.description)
+    /// 🔴 **文字列で送る説明が 2000 を超えていたら、保存の前に知らせる**（Web の `describeOverLimit`）。
+    /// 送るとサーバーが黙って切る。段落ごとに送る写真（英語の説明がある）は全体では断らない
+    func testDescriptionOverLimitIsToldBeforeSaving() {
+        let long = String(repeating: "あ", count: 1500) + "\n" + String(repeating: "い", count: 1500)
+        XCTAssertNotNil(LocalizedEdit.descriptionOverLimit(original: nil, field: long))
+        XCTAssertNotNil(LocalizedEdit.descriptionOverLimit(
+            original: LocalizedParagraphs.byLocale(["ja": ["朝"]]), field: long))
+        XCTAssertNil(LocalizedEdit.descriptionOverLimit(
+            original: LocalizedParagraphs.byLocale(["ja": ["朝"], "en": ["Morning"]]), field: long))
+        XCTAssertNil(LocalizedEdit.descriptionOverLimit(original: nil, field: "短い"))
     }
 }
