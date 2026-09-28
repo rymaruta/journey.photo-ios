@@ -127,6 +127,89 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertEqual(forgotten, ["gone"], "端末の控えから外さない")
         XCTAssertTrue(model.errorMessage?.contains(L("選んだアルバムが見つかりませんでした", "The album you chose wasn't found")) == true,
                       "理由が伝わらない: \(model.errorMessage ?? "nil")")
+        try await discardLeftovers(model, staged: 1)
+    }
+
+    /// 🔴 **外すのは送った宛先。** 送信中も行き先は選び直せる。消されたアルバム宛ての保存が
+    /// 返る前に生きているアルバムへ選び直すと、生きている方を行き先と端末の控えから外していた
+    @MainActor
+    func testGoneAlbumIsTheOneSentNotTheOneChosenSince() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/albums", status: 200, body: #"{"albums":[]}"#),
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 404, body: #"{"error":"アルバムが見つかりません"}"#),
+        ]
+        let gate = Gate()
+        let api = APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"),
+            session: session,
+            beforeRequest: { request in
+                if request.url?.path == "/upload/save" { await gate.wait() }
+            }
+        )
+        let model = UploadViewModel(uploads: UploadService(api: api, session: session), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        await model.loadAlbums(joined: [JoinedAlbumsStore.Entry(id: "gone", title: "消されたアルバム", token: "t1"),
+                                        JoinedAlbumsStore.Entry(id: "live", title: "生きているアルバム", token: "t2")])
+        var forgotten: [String] = []
+        model.onAlbumGone = { forgotten.append($0) }
+        model.selectedAlbumId = "gone"
+        model.items = [PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil))]
+
+        let sending = Task { await model.submit() }
+        await gate.untilWaiting()
+        model.selectedAlbumId = "live"
+        await gate.open()
+        await sending.value
+
+        XCTAssertEqual(forgotten, ["gone"], "選び直した方を端末の控えから外した")
+        XCTAssertEqual(model.albums.map(\.id), ["live"], "選び直した方を行き先から外した")
+        XCTAssertEqual(model.selectedAlbumId, "live", "選び直した行き先が消えた")
+        try await discardLeftovers(model, staged: 1)
+    }
+
+    /// S3 への PUT の 404 は「アルバムが無い」ではない（保存の 404 だけがそれ）
+    @MainActor
+    func testStorageNotFoundIsNotAGoneAlbum() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/albums", status: 200, body: #"{"albums":[]}"#),
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 404, body: ""),
+        ]
+        let api = APIClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            tokenProvider: StubTokenProvider(token: "t"),
+            session: session
+        )
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        await model.loadAlbums(joined: [JoinedAlbumsStore.Entry(id: "alb", title: "旅", token: "t1")])
+        var forgotten: [String] = []
+        model.onAlbumGone = { forgotten.append($0) }
+        model.selectedAlbumId = "alb"
+        model.items = [PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil))]
+
+        await model.submit()
+
+        XCTAssertEqual(forgotten, [], "置き場所の失敗でアルバムを忘れた")
+        XCTAssertEqual(model.selectedAlbumId, "alb")
+        XCTAssertEqual(model.albums.map(\.id), ["alb"])
+    }
+
+    /// 置いたまま保存の通らなかった写真（`staged` 枚）の鍵を、**この試験の中で**片付ける。
+    /// 残すと、モデルが消えるとき（`deinit`）の片付けが後から走り、次の試験の呼び出し記録に
+    /// 紛れ込む（`testHappyPathSendsSignedContentType` が約4回に1回落ちた）
+    @MainActor
+    private func discardLeftovers(_ model: UploadViewModel, staged: Int) async throws {
+        let before = ScriptedProtocol.calls.filter { $0.path == "/upload/discard" }.count
+        model.items.map(\.id).forEach { model.remove($0) }
+        try await waitUntil { ScriptedProtocol.calls.filter { $0.path == "/upload/discard" }.count >= before + staged }
     }
 
     /// 🔴 **保存のやり直しは同じ鍵で送る。** 保存が「落ちた」ときも、サーバーには

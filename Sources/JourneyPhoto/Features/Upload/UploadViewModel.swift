@@ -415,10 +415,12 @@ final class UploadViewModel: ObservableObject {
                 // 🔴 **アルバムが無くなっていたら、そこで止めて行き先から外す。** 保存の 404 は
                 // 会員でないとき（`upload.ts` の `isAlbumMember`）だけで、持ち主がアルバムを
                 // 消すと会員の印も消える。残すと残りも同じ理由で全部落ち、押し直しても直らない
-                if let albumId = selectedAlbumId, case .server(404, _)? = error as? APIError {
-                    albumGone(albumId)
-                    failures.append(L("選んだアルバムが見つかりませんでした。消されたか、外された可能性があります。行き先を選び直してください",
-                                      "The album you chose wasn't found. It may have been deleted, or you were removed. Choose another destination."))
+                // **外すのは送った宛先**（`AlbumGone` が持つ）。送信中も行き先は選び直せるので、
+                // 今の `selectedAlbumId` を読むと、選び直した生きているアルバムを外していた
+                if let gone = error as? AlbumGone {
+                    albumGone(gone.albumId)
+                    failures.append(L("選んだアルバムが見つかりませんでした。消された可能性があります。行き先を選び直してください",
+                                      "The album you chose wasn't found. It may have been deleted. Choose another destination."))
                     break
                 }
                 failures.append((error as? LocalizedError)?.errorDescription
@@ -499,7 +501,14 @@ final class UploadViewModel: ObservableObject {
             )
             staged[item.id] = presigned
         }
-        let photo = try await uploads.save(draft, presigned: presigned)
+        let photo: Photo?
+        do {
+            photo = try await uploads.save(draft, presigned: presigned)
+        } catch let error as APIError {
+            // **保存の 404 だけ**が「アルバムが無い」。S3 への PUT の 404 は別の失敗
+            if let albumId = draft.albumId, case .server(404, _) = error { throw AlbumGone(albumId: albumId) }
+            throw error
+        }
         staged[item.id] = nil
         // **曲は保存のあと。** `POST /upload/save` は song を受け取らない
         // ので、`PUT /photos/{id}` で付ける。ここが落ちても写真は
@@ -515,6 +524,9 @@ final class UploadViewModel: ObservableObject {
         }
         return true
     }
+
+    /// 保存がアルバムの 404 で断られた。`albumId` は**その保存で送った宛先**
+    private struct AlbumGone: Error { let albumId: String }
 
     private func albumGone(_ albumId: String) {
         albums.removeAll { $0.id == albumId }
