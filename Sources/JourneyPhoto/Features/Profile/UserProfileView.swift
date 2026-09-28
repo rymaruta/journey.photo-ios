@@ -540,6 +540,8 @@ final class UserProfileViewModel: ObservableObject {
             followUnknown = false
             followers = result.followers
         } catch {
+            // 前の人が押した失敗を、次の人の画面に出さない
+            guard lastViewerId == viewer else { return }
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
     }

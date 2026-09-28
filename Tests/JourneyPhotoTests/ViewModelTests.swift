@@ -360,6 +360,24 @@ final class ViewModelTests: XCTestCase {
         await gate.open()
         await sending.value
         XCTAssertFalse(model.isFollowing, "前の人のフォローの答えを次の人の画面に書いた")
+
+        // 前の人が押したフォローの**失敗**も、次の人の画面に出さない（41d4ad1 のレビュー）
+        let failGate = Gate(holds: 1)
+        let failEnv = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                     gallery: env.gallery,
+                                     api: api(gates: PathGates(["POST /users/u1/follow": failGate])))
+        // 押したときの取り直しは通る（まだフォローしていない）
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 500, body: #"{"error":"x"}"#)
+        let failing = Task { await model.toggleFollow(userId: "u1", environment: failEnv, follow: true) }
+        await failGate.untilWaiting()
+        await model.load(userId: "u1", environment: failEnv, viewerId: "c")
+        await failGate.open()
+        await failing.value
+        XCTAssertNil(model.actionMessage, "前の人の失敗を次の人の画面に出した")
     }
 
     /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
