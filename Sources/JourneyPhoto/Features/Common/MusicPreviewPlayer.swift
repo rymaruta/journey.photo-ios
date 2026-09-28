@@ -42,6 +42,8 @@ final class MusicPreviewPlayer: ObservableObject {
     private var sessionHeld = false
     /// 鳴り終わり・途中で途切れたときの見張り。**外さないと積み上がる**
     private var endObservers: [NSObjectProtocol] = []
+    /// 開始位置の頭出しの見張り（`startSeeker`）と、それを付けたプレイヤー
+    private var startSeeker: (player: AVPlayer, token: Any)?
 
     /// 音の中断（電話・Siri）の見張り。アプリ全体で1つなので外さない
     private var interruptionObserver: NSObjectProtocol?
@@ -74,6 +76,12 @@ final class MusicPreviewPlayer: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         endObservers = []
+        removeStartSeeker()
+    }
+
+    private func removeStartSeeker() {
+        if let seeker = startSeeker { seeker.player.removeTimeObserver(seeker.token) }
+        startSeeker = nil
     }
 
     func isPlaying(_ url: URL?) -> Bool {
@@ -174,7 +182,19 @@ final class MusicPreviewPlayer: ObservableObject {
         ) { [weak self] _ in
             self?.stop()
         })
-        if startSeconds > 0 { player.seek(to: startTime) }
+        if startSeconds > 0 {
+            // 🔴 **読み込む前の頭出しは捨てられることがある**（Web の `seekWhenReady` と同じ心配）。
+            // すぐ頭出ししたうえで、鳴り始めたときにまだ頭の近くなら頭出しし直す
+            player.seek(to: startTime)
+            let token = player.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 0.2, preferredTimescale: 600), queue: .main
+            ) { [weak self, weak player] time in
+                guard let player, time.seconds > 0 else { return }
+                if time.seconds < startSeconds - 1 { player.seek(to: startTime) }
+                DispatchQueue.main.async { self?.removeStartSeeker() }
+            }
+            startSeeker = (player, token)
+        }
         player.play()
     }
 
