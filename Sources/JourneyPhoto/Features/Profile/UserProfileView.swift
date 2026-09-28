@@ -514,6 +514,8 @@ final class UserProfileViewModel: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
+                // 前の人の失敗を次の人の画面に出さない
+                guard lastViewerId == viewer else { return }
                 actionMessage = L("フォローの状態を確かめられませんでした", "Couldn't check follow status")
                 return
             }

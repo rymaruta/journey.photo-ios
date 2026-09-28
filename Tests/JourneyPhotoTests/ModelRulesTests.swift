@@ -292,6 +292,18 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(PostLimits.storyReply, 200)   // storyReplies.ts の TEXT_MAX
     }
 
+    /// 🔴 **途中に足した回は、末尾を消さずに足したほうを受けない**（Web の `maxLength` と同じ）。
+    /// 末尾を切っていたので、上限いっぱいの文の途中に打つと画面の外の末尾が黙って消えた
+    func testInsertingInTheMiddleDoesNotDropTheEnd() {
+        let full = String(repeating: "あ", count: 9) + "末"
+        XCTAssertEqual(PostLimits.limited(old: full, new: "あい" + full.dropFirst(), limit: 10), full,
+                       "途中に足して末尾を消した")
+        // 末尾に足した回は入るぶんだけ入る（貼った長い文も）
+        XCTAssertEqual(PostLimits.limited(old: "あいう", new: "あいうえおかきくけこさ", limit: 10), "あいうえおかきくけこ")
+        // 収まっていればそのまま
+        XCTAssertEqual(PostLimits.limited(old: "あ", new: "いあ", limit: 10), "いあ")
+    }
+
     /// 🔴 **サーバーと同じく UTF-16 の単位で数え、字の途中では切らない。**
     /// 字で数えていたので、絵文字の多い文は画面では上限内に見えてもサーバーで切られていた
     func testClampCountsLikeTheServer() {

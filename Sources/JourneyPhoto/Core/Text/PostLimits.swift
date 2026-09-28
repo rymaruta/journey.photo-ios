@@ -32,6 +32,19 @@ enum PostLimits {
         length(text) >= Int(Double(limit) * 0.8)
     }
 
+    /// 欄が変わったときに残す文。**Web の `maxLength` と同じく、入れようとした字のほうを受けない。**
+    ///
+    /// 先頭から残して末尾を切ると、上限いっぱいの文の途中に打ち込んだ・貼った回に、画面の外の
+    /// 末尾が黙って消えた（止めたかった「後ろが消える」が端末の上で起きる）。
+    /// - 収まっていればそのまま
+    /// - 末尾に足した回は、足したぶんを上限まで（貼った長い文も入るぶんだけ入る）
+    /// - 途中に足した回は、前の文に戻す（前の文も超えていれば切る）
+    static func limited(old: String, new: String, limit: Int) -> String {
+        guard length(new) > limit else { return new }
+        if new.hasPrefix(old) { return clamp(new, limit: limit) }
+        return length(old) <= limit ? old : clamp(new, limit: limit)
+    }
+
     /// 上限で切る（画面側で止める）。**字の途中では切らない**（サーバーの `truncate` と同じく、
     /// 上限に収まる最後の字まで）
     static func clamp(_ text: String, limit: Int) -> String {

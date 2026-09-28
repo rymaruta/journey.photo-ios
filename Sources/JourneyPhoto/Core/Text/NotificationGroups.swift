@@ -40,7 +40,9 @@ enum NotificationGroups {
         // **`now` から数える。** `isDateInToday` / `isDateInYesterday` は
         // 渡した `now` を見ずに**システムの時計**を見るので、混ぜると
         // 引数が嘘になる（テストは日付が変わるまで通り、翌日に落ちた）。
-        if calendar.isDate(date, inSameDayAs: now) { return .today }
+        // 端末の時計より少し先の時刻（サーバーの時計が進んでいる）も「今日」。暦の日数で
+        // 数えると、日をまたいだ回に −1 日で「以前」の一番下へ行った
+        if calendar.isDate(date, inSameDayAs: now) || date > now { return .today }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(date, inSameDayAs: yesterday) { return .yesterday }
         // **7日で切る**（週の始まりに依らない。月曜に開いた人だけ

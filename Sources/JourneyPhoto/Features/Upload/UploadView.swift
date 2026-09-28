@@ -293,8 +293,9 @@ struct UploadView: View {
                 JPField(L("タイトル", "Title")) {
                     TextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
                               text: $item.title)
-                        .onChange(of: item.title) { _, value in
-                            item.title = PostLimits.clamp(value, limit: PostLimits.title)
+                        .onChange(of: item.title) { old, value in
+                            let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.title)
+                            if kept != value { item.title = kept }
                         }
                 }
                 count(item.title, limit: PostLimits.title)
@@ -302,8 +303,9 @@ struct UploadView: View {
                     TextField(L("どんな写真ですか", "What is this photo about?"),
                               text: $item.caption, axis: .vertical)
                         .lineLimit(3...8)
-                        .onChange(of: item.caption) { _, value in
-                            item.caption = PostLimits.clamp(value, limit: PostLimits.description)
+                        .onChange(of: item.caption) { old, value in
+                            let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.description)
+                            if kept != value { item.caption = kept }
                         }
                 }
                 count(item.caption, limit: PostLimits.description)

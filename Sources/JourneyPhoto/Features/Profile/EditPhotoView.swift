@@ -72,18 +72,17 @@ struct EditPhotoView: View {
             .listRowBackground(Color.clear)
 
             Section(L("この写真について", "About this photo")) {
-                // 投稿の画面と同じ上限で止める（超えたぶんはサーバーが黙って切る）
+                // 題は投稿の画面と同じ上限で止める（超えたぶんはサーバーが黙って切る）
                 TextField(L("題", "Title"), text: $title)
-                    .onChange(of: title) { _, value in
-                        let clamped = PostLimits.clamp(value, limit: PostLimits.title)
-                        if clamped != value { title = clamped }
+                    .onChange(of: title) { old, value in
+                        let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.title)
+                        if kept != value { title = kept }
                     }
+                // 🔴 **説明には上限を付けない**（Web の `/user/edit` と同じ）。英語の説明がある写真は
+                // 段落ごとに送り、サーバーの上限も段落ごと（2000・50段落）——全体を 2000 で切ると、
+                // 直しただけで後ろの段落が消えて保存された
                 TextField(L("説明", "Description"), text: $caption, axis: .vertical)
                     .lineLimit(3...8)
-                    .onChange(of: caption) { _, value in
-                        let clamped = PostLimits.clamp(value, limit: PostLimits.description)
-                        if clamped != value { caption = clamped }
-                    }
                 // **候補から選べるようにする**（投稿画面と同じ）。
                 // ただの入力欄だと座標が付かず、直した瞬間に
                 // サーバーが `geoApprox` の座標を消す＝地図から消える。

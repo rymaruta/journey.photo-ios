@@ -380,6 +380,32 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.actionMessage, "前の人の失敗を次の人の画面に出した")
     }
 
+    /// **押したときの取り直しの失敗も、次の人の画面に出さない**（16ba877 のレビュー）
+    func testProfileRecheckFailureForThePreviousViewerIsDropped() async {
+        prepare()
+        // 1回目（最初の読み込み）は通し、2回目（押したときの取り直し）を止める
+        let gate = Gate(holds: 1, skip: 1)
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/user/following", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api(gates: PathGates(["GET /user/following": gate])))
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "a")   // 分からない
+
+        let pressing = Task { await model.toggleFollow(userId: "u1", environment: env, follow: true) }
+        await gate.untilWaiting(2)
+        await model.load(userId: "u1", environment: env, viewerId: "b")
+        await gate.open()
+        await pressing.value
+        XCTAssertNil(model.actionMessage, "前の人の取り直しの失敗を次の人の画面に出した")
+        XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") })
+    }
+
     /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
     /// 書かずに戻ると、読み込み中の丸のまま引き下げも再試行も効かない画面が残る
     func testGalleryFirstLoadCancelledDoesNotStayLoading() async {
