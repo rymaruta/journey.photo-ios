@@ -28,12 +28,27 @@ actor OfficialSpotService {
     private let url: URL
     private let session: URLSession
     private let snapshot: SpotSnapshotStore
+    /// 索引の要求を出す**直前**に待つ口。**本番は nil**（何もしない）。
+    /// 試験が「索引が遅い回」を作るのに使う（`PublicGalleryService` の
+    /// `beforeLiveRequest` と同じ理由）
+    private let beforeRequest: (@Sendable () async -> Void)?
+    /// 取れた本文を使い回す長さ。**短く**（下書きに戻した・文を直した場所の古い本文を出し続けない）
+    let bodyLifetime: TimeInterval
+    /// 「無い（404）」を覚える長さ。こちらは長くてよい（無いものを開くたびに叩かない）。
+    /// 読めない中身は 404 と違い一時的なことがあるので、`bodyLifetime` で覚える
+    let missingBodyLifetime: TimeInterval
 
     init(url: URL = AppConfig.publicSpotsURL,
          session: URLSession? = nil,
-         snapshot: SpotSnapshotStore = SpotSnapshotStore()) {
+         snapshot: SpotSnapshotStore = SpotSnapshotStore(),
+         beforeRequest: (@Sendable () async -> Void)? = nil,
+         bodyLifetime: TimeInterval = OfficialSpotService.cacheLifetime,
+         missingBodyLifetime: TimeInterval = OfficialSpotService.cacheLifetime * 10) {
         self.url = url
         self.snapshot = snapshot
+        self.beforeRequest = beforeRequest
+        self.bodyLifetime = bodyLifetime
+        self.missingBodyLifetime = missingBodyLifetime
         if let session {
             self.session = session
         } else {
@@ -61,9 +76,11 @@ actor OfficialSpotService {
     /// - Parameter force: 控えを無視して取り直す（引き下げ更新）。
     func fetchIndex(force: Bool = false) async throws -> [OfficialSpot] {
         if !force, let fresh = freshCache { return fresh }
+        await beforeRequest?()
         let data: Data
         let response: URLResponse
         do {
+            try RequestCancellation.throwIfCancelled()
             (data, response) = try await session.data(from: url)
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
@@ -98,7 +115,7 @@ actor OfficialSpotService {
             let list = try JSONDecoder.api.decode(LenientOfficialSpotList.self, from: data)
             if list.dropped > 0 {
                 // 黙って捨てない。**どの行が出ていないのか**を追えるように
-                print("[spots] 読めなかった索引の行を \(list.dropped) 件落としました")
+                print("[spots] 読めなかった・重複した索引の行を \(list.dropped) 件落としました")
             }
             let spots = list.spots
             // **読めたものだけを控える。** 1件も読めなかった回も控えない
@@ -113,6 +130,57 @@ actor OfficialSpotService {
             if let cached = snapshot.load() { return cached }
             throw APIError.decoding(String(describing: error))
         }
+    }
+
+    // MARK: - 本文（`/app/data/spots/<slug>.json`・2026-09-27）
+
+    /// 取れた本文と、取れなかった（404）ことの控え。**開くたびに叩き直さない**
+    /// 本文の控え。`until` を過ぎたら取り直す（本文・無い・読めない で長さが違う）
+    private var bodies: [String: (body: SpotBody?, until: Date)] = [:]
+
+    /// 撮影スポットの本文。索引の隣の `spots/<slug>.json`。
+    ///
+    /// **取れなければ nil**（まだ本番に無い 404・圏外・HTML・壊れた中身）。
+    /// 画面は本文の節を出さないだけで、索引の内容はそのまま出す——投げない。
+    /// 綴りが `[a-z0-9-]` でない slug は叩かない（パスに混ぜない）
+    func fetchBody(slug: String) async -> SpotBody? {
+        guard !slug.isEmpty, slug.allSatisfy({ $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-") }) else {
+            return nil
+        }
+        if let hit = bodies[slug], Date() < hit.until {
+            return hit.body
+        }
+        let bodyURL = url.deletingLastPathComponent()
+            .appendingPathComponent("spots")
+            .appendingPathComponent("\(slug).json")
+        let data: Data
+        let response: URLResponse
+        do {
+            try RequestCancellation.throwIfCancelled()
+            (data, response) = try await session.data(from: bodyURL)
+        } catch {
+            // 圏外は前回見た本文を出す（開き直すまでの間だけ・端末に書き残さない）
+            return bodies[slug]?.body
+        }
+        guard let http = response as? HTTPURLResponse else { return nil }
+        guard (200..<300).contains(http.statusCode), !Self.isHTML(http) else {
+            if http.statusCode == 404 {
+                // 無い（下書きに戻した・まだ出ていない）。**古い本文を出さない**
+                bodies[slug] = (nil, Date().addingTimeInterval(missingBodyLifetime))
+                return nil
+            }
+            return bodies[slug]?.body
+        }
+        guard let body = try? JSONDecoder.api.decode(SpotBody.self, from: data), body.slug == slug else {
+            print("[spots] 本文が読めませんでした: \(slug)")
+            // 読めない本文で前回のぶんを出し続けない。覚えるのは**本文と同じ短さ**——
+            // 開くたびに取り直さないが、`text/html` を名乗らないログイン画面（キャプティブ
+            // ポータル）を掴んだ回を10分引きずらない
+            bodies[slug] = (nil, Date().addingTimeInterval(bodyLifetime))
+            return nil
+        }
+        bodies[slug] = (body, Date().addingTimeInterval(bodyLifetime))
+        return body
     }
 
     /// `Content-Type` が `text/html` か。鍵の大小は見ない（サーバーによって違う）

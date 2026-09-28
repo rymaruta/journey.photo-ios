@@ -83,6 +83,7 @@ final class AccountLocalDataTests: XCTestCase {
             XCTAssertTrue(drafts.save(imageData: Data([1, 2, 3]), fileName: "a.jpg", contentType: "image/jpeg",
                                       coords: nil, caption: "", location: "", overlays: [], song: nil,
                                       durationSec: 5, savedAt: "2026-09-27T00:00:00Z"))
+            OpenedTripBooks(defaults: defaults).mark("trip", for: id)
             defaults.set(true, forKey: "photo-gallery-push-enabled.\(id)")
             defaults.set(true, forKey: "photo-gallery-push-unregister-pending.\(id)")
             PendingVerificationStore(defaults: defaults).remember(email: "\(id)@example.test", username: "uuid-\(id)")
@@ -109,6 +110,8 @@ final class AccountLocalDataTests: XCTestCase {
                            "最近の曲: \(says)", file: file, line: line)
             let drafts = StoryDraftStore(defaults: defaults, directory: dir); drafts.use(userId: id)
             XCTAssertEqual(drafts.draft != nil, present, "ストーリーの書きかけ: \(says)", file: file, line: line)
+            XCTAssertEqual(!OpenedTripBooks(defaults: defaults).ids(for: id).isEmpty, present,
+                           "札から開いた一冊: \(says)", file: file, line: line)
             XCTAssertEqual(defaults.object(forKey: "photo-gallery-push-enabled.\(id)") != nil, present,
                            "通知の設定: \(says)", file: file, line: line)
             XCTAssertEqual(defaults.object(forKey: "photo-gallery-push-unregister-pending.\(id)") != nil, present,

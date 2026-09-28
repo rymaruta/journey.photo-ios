@@ -20,7 +20,8 @@ import SwiftUI
 /// 「親しい友達を選ぶ」から来た人は、以前の「押したら保存」の癖で戻る。
 /// 黙って捨てると0人のまま「親しい友達」限定の写真が出て、誰にも見えない。
 /// 変更がある間・送っている間は標準の戻る（と左端の払い）を隠し、自前の戻るで
-/// 「保存して戻る／変更を捨てる／キャンセル」を確かめる（`CloseFriendsRows.leave`）。
+/// 「保存して戻る／変更を捨てる／キャンセル」を確かめる（`UnsavedLeave`・`unsavedLeaveGuard`。
+/// 旅行プランの日程と共用）。
 ///
 /// 板との意図的な差: 説明文は「写真」向け（下の注記）・「フォロー中の一覧に
 /// 出ない人」の段がある（上の注記）・選択の印は星（板はチェック）。
@@ -60,8 +61,8 @@ struct CloseFriendsView: View {
         !pending.isEmpty && !overLimit && !isLoading && errorMessage == nil
     }
     private var overLimit: Bool { CloseFriendsRows.overLimit(chosen) }
-    private var leave: CloseFriendsRows.Leave {
-        CloseFriendsRows.leave(hasChanges: !pending.isEmpty, isSaving: isSaving)
+    private var leave: UnsavedLeave {
+        UnsavedLeave.decide(hasChanges: !pending.isEmpty, isSaving: isSaving)
     }
     private var shownOthers: [FollowUser] { ListIdentity.filter(others, query: query) }
     private var shownFollowing: [FollowUser] { ListIdentity.filter(following, query: query) }
@@ -147,24 +148,15 @@ struct CloseFriendsView: View {
         .webScreen()
         .navigationTitle(L("親しい友達", "Close friends"))
         .navigationBarTitleDisplayMode(.inline)
-        // 変更がある間・送っている間は標準の戻るを隠す（左端から払って戻るのも止まる）
-        .navigationBarBackButtonHidden(leave != .now)
+        // 変更がある間・送っている間は標準の戻るを隠し、自前の戻るで確かめる
+        // （左端から払って戻るのも止まる）。上限を超えている間は保存できないので、
+        // 「保存して戻る」を選択肢に出さない
+        .unsavedLeaveGuard(leave, isPresented: $confirmLeave, canSave: !overLimit,
+                           message: L("保存しないで戻ると、選んだ人は「親しい友達」に入りません。",
+                                      "If you go back without saving, your picks won't be applied."),
+                           onSave: { Task { await save() } },
+                           onDiscard: { dismiss() })
         .toolbar {
-            if leave != .now {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        if leave == .confirm { confirmLeave = true }
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.body.weight(.semibold))
-                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                            .contentShape(Rectangle())
-                    }
-                    // 送っている最中は戻らせない（途中の失敗が消えた画面に出る）
-                    .disabled(leave == .wait)
-                    .accessibilityLabel(L("戻る", "Back"))
-                }
-            }
             // **保存は右上**（板 39）。変えたものが無い間・上限を超えている間は押せない
             ToolbarItem(placement: .topBarTrailing) {
                 if isSaving {
@@ -179,22 +171,6 @@ struct CloseFriendsView: View {
                     .disabled(!canSave)
                 }
             }
-        }
-        .confirmationDialog(L("変更を保存しますか？", "Save your changes?"),
-                            isPresented: $confirmLeave, titleVisibility: .visible) {
-            // 上限を超えている間は保存できないので、選択肢に出さない
-            if !overLimit {
-                Button(L("保存して戻る", "Save and go back")) {
-                    Task { await save() }
-                }
-            }
-            Button(L("変更を捨てる", "Discard changes"), role: .destructive) {
-                dismiss()
-            }
-            Button(L("キャンセル", "Cancel"), role: .cancel) {}
-        } message: {
-            Text(L("保存しないで戻ると、選んだ人は「親しい友達」に入りません。",
-                   "If you go back without saving, your picks won't be applied."))
         }
         .alert(L("保存できませんでした", "Couldn't save"),
                isPresented: Binding(get: { saveError != nil },
@@ -266,21 +242,72 @@ struct CloseFriendsView: View {
         guard let me = auth.userId else { return }
         let list = try? await environment.social.following(userId: me)
         let ids = try? await environment.social.closeFriendIds()
+        // **フォロー中の全員の ID**（`/user/following`）。名前つきの一覧は
+        // サーバーが50人で切るので、51人目以降はここからしか分からない
+        let allFollowing = try? await environment.social.myFollowingIds()
         // **どちらかが引けなければ選べない。** 一覧だけ出すと、選んでいる人が
         // 「選んでいない」に見え、フォロー外の人は並ばない＝外せない
         guard let list, let ids else {
             errorMessage = Labels.Common.loadFailed
             return
         }
-        let rows = CloseFriendsRows.split(following: list.users, chosen: ids)
-        following = rows.following
+        let rows = Self.rows(page: list.users, allFollowing: allFollowing, chosen: ids)
         saved = Set(ids)
         chosen = Set(ids)
+        // 51人目以降は名前を引いてから、フォロー中の並びの後ろに足す。
+        // **全員は引かない**（500人なら450回）——選んでいる人を必ず、残りは
+        // 上限（`lookupCap`）まで。引かなかった人はフォロー中の欄に出ない
+        let beyond = Self.beyondToLookUp(rows.beyondPage, others: rows.others.count,
+                                         chosen: Set(ids), cap: Self.lookupCap)
+        following = list.users + (await names(of: beyond))
         others = await names(of: rows.others)
         // **名前を引き終えてから「読めた」にする。** 引いている途中で離れると打ち切られ、
         // 名前の無い行のまま残るので、戻ったときに読み直す
         if !Task.isCancelled { loaded = true }
     }
+
+    /// 並べる人の振り分け。
+    ///
+    /// - `beyondPage`: フォロー中だが、名前つきの一覧（50人で切れる）に載らなかった人
+    ///   （フォローした順）。**フォロー中の欄に足して選べるようにする**
+    /// - `others`: 選んでいるが**本当にフォロー中でない**人（外した人など）
+    ///
+    /// 全員の ID が取れなかった（`allFollowing == nil`）ときは、一覧に居ない
+    /// 選んだ人を全部 `others` に回す（外す手段だけは残す）。
+    nonisolated static func rows(page: [FollowUser], allFollowing: [String]?,
+                     chosen: [String]) -> (beyondPage: [String], others: [String]) {
+        let split = CloseFriendsRows.split(following: page, chosen: chosen)
+        guard let allFollowing else { return ([], split.others) }
+        let shown = Set(page.map(\.id))
+        var seen = Set<String>()
+        let beyond = allFollowing.filter { !shown.contains($0) && seen.insert($0).inserted }
+        let followingSet = Set(allFollowing)
+        return (beyond, split.others.filter { !followingSet.contains($0) })
+    }
+
+    /// 51人目以降のうち名前を引く人。
+    ///
+    /// - **選んでいる人は必ず残す**（上限を超えても）。落とすと、選んでいるのに
+    ///   どの欄にも出ない＝外せない（`others` には入らないので「外した人など」にも出ない）
+    /// - 残りはフォローした順に、`others` と合わせて `cap` 人に収まるまで
+    ///
+    /// 順番はフォローした順のまま返す
+    nonisolated static func beyondToLookUp(_ beyond: [String], others: Int,
+                                           chosen: Set<String>, cap: Int) -> [String] {
+        let chosenCount = beyond.filter { chosen.contains($0) }.count
+        var room = max(0, cap - others - chosenCount)
+        return beyond.filter { id in
+            if chosen.contains(id) { return true }
+            guard room > 0 else { return false }
+            room -= 1
+            return true
+        }
+    }
+
+    /// 1回の読み込みで名前を引く人数の上限（「外した人など」と51人目以降の合計）。
+    /// 親しい友達の上限（`CLOSE_FRIENDS_MAX` = 200）に合わせる——`lookupWidth` は
+    /// この程度の人数を前提にしている
+    static let lookupCap = 200
 
     /// 名前を引くときに同時に送る数の上限。
     ///

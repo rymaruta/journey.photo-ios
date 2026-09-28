@@ -1,0 +1,56 @@
+import XCTest
+@testable import JourneyPhoto
+
+/// ストーリーの投稿画面を ✕・下へ払って閉じるときの扱い（`StoryComposerView.leave`）。
+///
+/// 以前は写真を選んで文字を置いたあとでも、確かめずに閉じて全部消えた。
+final class StoryComposerLeaveTests: XCTestCase {
+
+    private func content(shots: [UUID] = [], caption: String = "",
+                         overlays: [[TextOverlay]]? = nil, allowReplies: Bool = true) -> StoryComposerContent {
+        StoryComposerContent(shotIds: shots, overlays: overlays ?? shots.map { _ in [] },
+                             caption: caption, location: "", song: nil,
+                             durationSec: StoryService.defaultDurationSec, archive: false,
+                             allowReplies: allowReplies)
+    }
+
+    func testEmptyComposerClosesAtOnce() {
+        XCTAssertEqual(StoryComposerView.leave(content(), restored: nil), .now)
+    }
+
+    func testPickedPhotosAreConfirmedBeforeClosing() {
+        XCTAssertEqual(StoryComposerView.leave(content(shots: [UUID()]), restored: nil), .confirm)
+    }
+
+    func testRestoredDraftWithoutEditsClosesAtOnce() {
+        // 「続きから」で戻したまま＝同じものが下書きに残っている
+        let restored = content(shots: [UUID(), UUID()], caption: "雲海")
+        XCTAssertEqual(StoryComposerView.leave(restored, restored: restored), .now)
+    }
+
+    func testRestoredDraftEditedAfterwardsIsConfirmed() {
+        let id = UUID()
+        let restored = content(shots: [id], caption: "雲海")
+        // ひとことを変えた
+        XCTAssertEqual(StoryComposerView.leave(content(shots: [id], caption: "雲海と朝日"),
+                                               restored: restored), .confirm)
+        // 文字を置いた
+        XCTAssertEqual(StoryComposerView.leave(content(shots: [id], caption: "雲海",
+                                                       overlays: [[TextOverlay(text: "朝")]]),
+                                               restored: restored), .confirm)
+        // 写真を足した
+        XCTAssertEqual(StoryComposerView.leave(content(shots: [id, UUID()], caption: "雲海"),
+                                               restored: restored), .confirm)
+    }
+
+    /// 「返信を許可」を切り替えただけでも確かめる（下書きに残すなら、その選択も残る）。
+    /// 切った下書きを戻したまま何も変えなければ、そのまま閉じる
+    func testRepliesChoiceCountsAsAnEdit() {
+        let id = UUID()
+        let restored = content(shots: [id], caption: "雲海")
+        XCTAssertEqual(StoryComposerView.leave(content(shots: [id], caption: "雲海", allowReplies: false),
+                                               restored: restored), .confirm)
+        let restoredOff = content(shots: [id], caption: "雲海", allowReplies: false)
+        XCTAssertEqual(StoryComposerView.leave(restoredOff, restored: restoredOff), .now)
+    }
+}

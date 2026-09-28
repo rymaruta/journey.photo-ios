@@ -30,9 +30,17 @@ struct StoryComposerView: View {
     @State private var location = ""
     /// 24時間のあとも残すか（ハイライトの材料になる）
     @State private var keepInArchive = false
+    /// 返信を受けるか（Web の「返信を許可」。既定は入）
+    @State private var allowReplies = true
     @State private var showCamera = false
     /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
-    @State private var keepExistingDraft = false
+    /// 「続きから」で**残すと決めた下書きの印**（`savedAt`）。真偽では持たない——
+    /// 裏の送信や人の替わりでその下書きが消えた後まで「守る下書きがある」ことにしていた
+    @State private var keptDraftStamp: String?
+    /// 開いたときに在った下書きで、**まだ問いに答えていない**ものの印。
+    /// 「送れなかったストーリー」の問いが先に出ると下書きの問いは出ないので、
+    /// 答えていない下書きをこの回の投稿のついでに消さない
+    @State private var unansweredDraftStamp: String?
     /// 前に送れなかったストーリーが残っているときの問い（開いた直後に1回）
     @State private var showPendingFailure = false
     /// ストーリーのBGM（30秒の試聴だけ）と、表示秒数
@@ -59,6 +67,11 @@ struct StoryComposerView: View {
     /// 写真を選ぶ画面（「＋」のメニューと、写真が無いときの入口から開く）
     @State private var showLibrary = false
     @State private var placeDraft = ""
+    /// ✕ で閉じる前の「下書きに保存／捨てる／キャンセル」
+    @State private var showLeaveConfirm = false
+    /// 「続きから」で戻した直後の中身。**ここから何も変えていなければ**、
+    /// 閉じても失うものは無い（同じものが下書きに残っている）
+    @State private var restoredContent: StoryComposerContent?
 
     /// いま編集している写真。**無ければ nil**（まだ1枚も選んでいない）
     private var prepared: ImagePreparer.Prepared? {
@@ -81,6 +94,19 @@ struct StoryComposerView: View {
             get: { shots.indices.contains(current) ? shots[current].overlays : [] },
             set: { if shots.indices.contains(current) { shots[current].overlays = $0 } }
         )
+    }
+
+    /// 下書きに残る中身（写真の並び・写真ごとの文字・ひとこと・撮影地・曲・秒数・残すか）
+    private var content: StoryComposerContent {
+        StoryComposerContent(shotIds: shots.map(\.id), overlays: shots.map(\.overlays),
+                        caption: caption, location: location, song: song,
+                        durationSec: durationSec, archive: keepInArchive,
+                        allowReplies: allowReplies)
+    }
+
+    /// ✕ と下へ払うのを通すか（`UnsavedLeave`）
+    private var leave: UnsavedLeave {
+        Self.leave(content, restored: restoredContent)
     }
 
     var body: some View {
@@ -133,6 +159,8 @@ struct StoryComposerView: View {
             // ここでも出口を出す（ホームの輪が見えない人のため）
             if case .failed = uploads.phase {
                 showPendingFailure = true
+                // 下書きの問いは出ない＝答えていない。消さずに次へ持ち越す
+                if prepared == nil { unansweredDraftStamp = drafts.draft?.savedAt }
             } else if drafts.draft != nil, prepared == nil {
                 showRestore = true
             }
@@ -154,7 +182,7 @@ struct StoryComposerView: View {
             Button(L("続きから", "Continue")) { restoreDraft() }
             Button(L("捨てる", "Discard"), role: .destructive) { drafts.clear() }
             // 「キャンセル」は**残す**。この回の投稿が成功しても消さない
-            Button(Labels.Common.cancel, role: .cancel) { keepExistingDraft = true }
+            Button(Labels.Common.cancel, role: .cancel) { keptDraftStamp = drafts.draft?.savedAt }
         } message: {
             Text(L("この端末に残しておいたものです。続きから編集できます。",
                    "Kept on this device. You can pick up where you left off."))
@@ -171,6 +199,32 @@ struct StoryComposerView: View {
         .onChange(of: pickerItems) { _, items in
             Task { await load(items) }
         }
+        // 🔴 **選んだ写真・置いた文字を黙って消さない。** 以前は ✕ も下へ払うのも
+        // 確かめずに閉じ、下書きにも残らなかった。「下書きに保存」は上の
+        // 「下書き保存」と同じ道（`saveDraft`）で、**書けたときだけ閉じる**
+        //
+        // 🔴 **前の下書きを残すと決めた（「続きから」でキャンセル・まだ答えていない）間は
+        // 「下書きに保存」を出さない。** 下書きは1件だけなので、保存すると残すと決めた
+        // 下書きを黙って置き換える（投稿の `keepsDraft` と同じ判断）。
+        // 戻した下書きを直した回の「捨てる」は**変更だけ**を捨てる（前の下書きは残る）ので、
+        // そう言う（「続きから」の「捨てる」は下書きごと消すので、言葉を分ける）
+        .unsavedCloseGuard(leave, isPresented: $showLeaveConfirm,
+                           title: canSaveDraft ? L("下書きに保存しますか？", "Save as a draft?")
+                                               : L("閉じますか？", "Close?"),
+                           canSave: canSaveDraft,
+                           saveTitle: L("下書きに保存", "Save draft"),
+                           discardTitle: restoredContent != nil ? L("変更を捨てる", "Discard changes")
+                                                                : L("捨てる", "Discard"),
+                           message: !canSaveDraft
+                               ? L("選んだ写真と置いた文字は消えます。前の下書きはそのまま残ります（下書きは1件だけです）。",
+                                   "The photos and text you added will be lost. Your earlier draft stays (only one draft is kept).")
+                               : restoredContent != nil
+                               ? L("閉じると、下書きを開いてからの変更は消えます（前の下書きは残ります）。",
+                                   "If you close now, your changes since opening the draft will be lost. The draft itself stays.")
+                               : L("閉じると、選んだ写真と置いた文字は消えます。下書きはこの端末にだけ残ります。",
+                                   "If you close now, the photos and text you added will be lost. Drafts stay on this device only."),
+                           onSave: { saveDraft() },
+                           onDiscard: { dismiss() })
     }
 
     // MARK: - 写真
@@ -450,7 +504,13 @@ struct StoryComposerView: View {
             .buttonStyle(.plain)
         } else {
             HStack {
-                Button { dismiss() } label: {
+                Button {
+                    switch leave {
+                    case .now: dismiss()
+                    case .confirm: showLeaveConfirm = true
+                    case .wait: break
+                    }
+                } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 18))
                         .foregroundStyle(.white)
@@ -458,6 +518,7 @@ struct StoryComposerView: View {
                         .jpGlass(in: Circle())
                 }
                 .buttonStyle(.plain)
+                .disabled(leave == .wait)
                 .accessibilityLabel(Labels.Common.close)
                 Spacer()
                 if captionFocused {
@@ -483,7 +544,7 @@ struct StoryComposerView: View {
                         .jpGlass(in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(prepared == nil)
+                .disabled(prepared == nil || !canSaveDraft)
                 .opacity(prepared == nil ? 0.4 : 1)
                 }
             }
@@ -533,6 +594,18 @@ struct StoryComposerView: View {
                 }
                 .fixedSize()
                 // **軌道は暗い真鍮。** 既定（白）だと白い軌道に白いつまみが乗る
+                .tint(WebTheme.accentDeep)
+            }
+            .foregroundStyle(WebTheme.muted2)
+            // 返信を受けるか（Web の「返信を許可」）。切ると見る人に返信欄と ♡ が出ない
+            // （サーバーも断る）。既定は入
+            HStack(spacing: 8) {
+                Spacer(minLength: 8)
+                Toggle(isOn: $allowReplies) {
+                    Text(L("返信を許可", "Allow replies"))
+                        .font(.system(size: 13))
+                }
+                .fixedSize()
                 .tint(WebTheme.accentDeep)
             }
             .foregroundStyle(WebTheme.muted2)
@@ -768,6 +841,7 @@ struct StoryComposerView: View {
             song: song,
             durationSec: durationSec,
             archive: keepInArchive,
+            allowReplies: allowReplies,
             savedAt: ISO8601DateFormatter().string(from: Date())
         )
         // **書けなかったことを黙らない。** 「保存しました」とだけ出して
@@ -777,6 +851,35 @@ struct StoryComposerView: View {
             : L("下書きを保存できませんでした（端末の空き容量を確かめてください）",
                 "Couldn't save the draft — check your device's free space")
         if ok { dismiss() }
+    }
+
+    /// 送り終えたときに下書きを**残す**か。「キャンセル（残す）」を選んだか、
+    /// **問いに答えていない**下書き（送れなかった問いが先に出た回）なら残す。
+    /// 同じ回に保存し直した下書き（印が変わった）は、この回の投稿のもの
+    nonisolated static func keepsDraft(stamp: String?, keptStamp: String?, unansweredStamp: String?) -> Bool {
+        guard let stamp else { return false }   // 守る下書きがもう無い
+        return stamp == keptStamp || stamp == unansweredStamp
+    }
+
+    /// この画面から下書きに保存してよいか。**残すと決めた（まだ答えていない）下書きがある
+    /// 間は保存しない**——下書きは1件だけなので、保存すると黙って置き換える。
+    /// 閉じる確認と上の「下書き保存」の両方がこれを見る（片方だけ守ると別の口から素通りした）
+    private var canSaveDraft: Bool {
+        !Self.keepsDraft(stamp: drafts.draft?.savedAt, keptStamp: keptDraftStamp,
+                         unansweredStamp: unansweredDraftStamp)
+    }
+
+    /// ✕・下へ払ったときの扱い。**写真が1枚でもあれば確かめる**
+    /// ——文字・ひとこと・撮影地・曲は写真の上にしか置けない（写真が無い間は
+    /// 出ていない）うえ、下書きも写真が無ければ作れないので、写真の有無が境目。
+    /// ただし「続きから」で戻したまま何も変えていなければそのまま閉じる
+    /// （同じものが下書きに残っている）。
+    ///
+    /// 送るのは裏の係で、この画面に「送っている最中」は無い（投稿で即座に閉じる）
+    /// ——`.wait` はここからは出ない。
+    nonisolated static func leave(_ content: StoryComposerContent, restored: StoryComposerContent?) -> UnsavedLeave {
+        UnsavedLeave.decide(hasChanges: !content.shotIds.isEmpty && content != restored,
+                            isSaving: false)
     }
 
     /// 「続きから」。**画像が読めなければ何も戻さない**
@@ -802,7 +905,9 @@ struct StoryComposerView: View {
         song = draft.song
         durationSec = draft.durationSec
         keepInArchive = draft.archive == true
+        allowReplies = draft.allowReplies != false
         message = nil
+        restoredContent = content
     }
 
 
@@ -826,11 +931,14 @@ struct StoryComposerView: View {
             StoryUploadCenter.Job(
                 imageData: TextOverlayRenderer.burn(shot.overlays, into: shot.prepared.data),
                 caption: caption, location: place, coords: shot.prepared.coords,
-                song: song, durationSec: durationSec, archive: keepInArchive)
+                song: song, durationSec: durationSec, archive: keepInArchive,
+                allowReplies: allowReplies)
         }
         let stories = environment.stories
         let drafts = drafts
-        let keepExistingDraft = keepExistingDraft
+        let keepExistingDraft = Self.keepsDraft(stamp: drafts.draft?.savedAt,
+                                                keptStamp: keptDraftStamp,
+                                                unansweredStamp: unansweredDraftStamp)
         // 🔴 **押した時点の下書きの印。** 送り終えたときに下書きが入れ替わって
         // いたら（送信中にもう一度開いて保存した）、それは消さない
         let draftStamp = drafts.draft?.savedAt
@@ -884,4 +992,21 @@ struct StoryShot: Identifiable {
         self.imageSize = image?.size
         self.overlays = overlays
     }
+}
+
+/// 投稿画面を閉じると失うものの比べ物（`StoryComposerView.leave`）。
+/// 写真は並びの id で見る（画像そのものは比べない——戻した写真は id ごと
+/// 作り直すので、外して足し直せば別物になる）。
+///
+/// **`@MainActor` の型の中に置かない**（テストから呼べなくなる）。
+struct StoryComposerContent: Equatable {
+    var shotIds: [UUID]
+    var overlays: [[TextOverlay]]
+    var caption: String
+    var location: String
+    var song: Photo.Song?
+    var durationSec: Int
+    var archive: Bool
+    /// 前の版の呼び手・テストは持たない（既定の「許可」）
+    var allowReplies: Bool = true
 }

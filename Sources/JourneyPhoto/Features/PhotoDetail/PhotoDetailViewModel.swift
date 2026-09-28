@@ -6,7 +6,9 @@ import Combine
 @MainActor
 final class PhotoDetailViewModel: ObservableObject {
 
-    @Published private(set) var likes: Int = 0
+    /// いいね数。**分からない間は nil**（一覧に数が無く、読み込みも取れていない）。
+    /// 0 は「まだ誰も押していない」と読まれるので、分からない回に出すと嘘になる
+    @Published private(set) var likes: Int?
     /// **直前に押した回に**サーバーが答えた数。答えが無かった回は nil。
     /// ホームへ渡すのはこれだけ（`LikeCountStore`——開いたときに読んだ数は渡さない）
     @Published private(set) var lastLikeAnswer: Int?
@@ -72,7 +74,7 @@ final class PhotoDetailViewModel: ObservableObject {
     init(photoId: String, social: SocialService, initialLikes: Int? = nil) {
         self.photoId = photoId
         self.social = social
-        self.likes = initialLikes ?? 0
+        self.likes = initialLikes
     }
 
     func setSignedIn(_ value: Bool) {
@@ -90,7 +92,7 @@ final class PhotoDetailViewModel: ObservableObject {
     func show(photoId: String, initialLikes: Int?, liked: Bool) {
         if photoId != self.photoId {
             self.photoId = photoId
-            likes = initialLikes ?? 0
+            likes = initialLikes
             lastLikeAnswer = nil
             comments = []
             commentCount = nil
@@ -226,6 +228,9 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     func postComment() async {
+        // 二度押しで同じ文を2件送らない（ボタンが押せなくなるのは描き直しの後）。
+        // 先頭で断る——下で知らせを消す前に（二度目の押下で別の失敗の知らせを消さない）
+        guard !isPosting else { return }
         let text = draftComment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         errorMessage = nil

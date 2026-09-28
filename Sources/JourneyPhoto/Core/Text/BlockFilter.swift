@@ -17,10 +17,19 @@ enum BlockFilter {
     /// 写真: 通報した1枚と、ブロックした人の写真を落とす。
     /// **公開一覧（`PublicGalleryService.visible`）と画面の両方がこれを通る**
     /// ——基準を2か所に書くと、片方だけ直して黙ってずれる
-    static func photos(_ photos: [Photo], blocked: Set<String>, reported: Set<String>) -> [Photo] {
-        guard !blocked.isEmpty || !reported.isEmpty else { return photos }
+    ///
+    /// - Parameter gone: 自分で消した・非公開にした写真（`ModerationStore.gonePhotoIds`）。
+    ///   **公開の写し（`published` が false でない行）だけを落とす。** 公開一覧は
+    ///   サイトの建て直し（数分）まで古く、端末にも控え（`PhotoSnapshotStore`）が残るので、
+    ///   消した写真がホーム・探す・地図に出続け、開くと いいね・保存・コメントが 404 になった。
+    ///   自分の一覧（マイページ）が持つ非公開の写しは `published: false` なので残る——
+    ///   非公開にした自分の写真まで自分の画面から消さない
+    static func photos(_ photos: [Photo], blocked: Set<String>, reported: Set<String>,
+                       gone: Set<String> = []) -> [Photo] {
+        guard !blocked.isEmpty || !reported.isEmpty || !gone.isEmpty else { return photos }
         return photos.filter { photo in
             guard !reported.contains(photo.id) else { return false }
+            if gone.contains(photo.id), photo.published != false { return false }
             guard let owner = photo.userId ?? photo.uploadedBy else { return true }
             return !blocked.contains(owner)
         }

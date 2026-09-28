@@ -121,8 +121,8 @@ enum TripItem: Codable, Equatable {
     }
 }
 
-/// 読めない要素を `nil` にして、配列の残りを生かす包み。
-private struct Lenient<T: Decodable>: Decodable {
+/// 読めない要素を `nil` にして、配列の残りを生かす包み（`SpotBody` も使う）。
+struct Lenient<T: Decodable>: Decodable {
     let value: T?
     init(from decoder: Decoder) throws {
         value = try? T(from: decoder)

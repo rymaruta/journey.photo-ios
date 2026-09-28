@@ -5,6 +5,8 @@ public struct Text: View {
     public init(_ s: String) {}
     public init(_ s: Substring) {}
     public init<S: StringProtocol>(_ s: S) {}
+    /// 部分にリンク（`.link`）を付けた文字。本物は iOS 15〜
+    public init(_ attributed: AttributedString) {}
     public var body: Never { fatalError("模型") }
     public enum Case { case uppercase, lowercase }
     /// 一部だけ太くする（`Text(a).bold() + Text(b)`）。本物は Text を返す

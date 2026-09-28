@@ -7,6 +7,7 @@ struct MyPageView: View {
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var toasts: ToastCenter
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
     /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
@@ -138,6 +139,17 @@ struct MyPageView: View {
         // まだ前の人の控えのまま
         .onChange(of: hidden.revision) { _, _ in
             if isOnScreen { dropped = hidden.snapshot }
+        }
+        // 自分の一覧が「公開中」と答えた写真は、消した・非公開にした印を外す
+        // （Web や別の端末で公開に戻した写真が、この端末でだけ出なかった）
+        .onChange(of: model.serverRead) { _, read in
+            guard let read else { return }
+            let before = hidden.revision
+            hidden.confirmPublished(read.publishedIds, for: read.owner, readStartedAt: read.startedAt)
+            // 実際に外したときだけ一覧へ渡す
+            if hidden.revision != before {
+                Task { await environment.gallery.setHidden(hidden.snapshot) }
+            }
         }
         // 「行きたい」も同じ。人が替わった回（`wishlist.use`）もここで拾う
         .onChange(of: wishlist.spotIds) { _, next in
@@ -330,6 +342,8 @@ struct MyPageView: View {
                     Text(profile.name)
                         .font(JPFont.display(26, relativeTo: .title))
                         .foregroundStyle(Color.white)
+                        // 画面の見出しは名前（人のページと同じ）
+                        .accessibilityAddTraits(.isHeader)
                     VerifiedBadge(isVerified: profile.verified, nameSize: 26, relativeTo: .title, fit: .mincho)
                 }
                 if let line = ProfileLine.handleAndHome(username: profile.username,
@@ -519,7 +533,10 @@ struct MyPageView: View {
     @ViewBuilder
     private var favoritesArea: some View {
         // ブロック・通報した人の写真を落とす（`FavoritesView`・`SavedPhotosView` と同じ）
-        let saved = dropped.visible(LikedPhotos.resolve(savedIds, in: [feed, model.photos]))
+        // **先に公開一覧を絞ってから引き当てる**（`SavedPhotosView` と同じ順）。引き当ててから
+        // 絞ると、公開一覧の古い写しが先に当たって落ち、自分の非公開の写し（新しい方）が
+        // 使われずに、非公開にした自分の写真が保存から消えた
+        let saved = LikedPhotos.resolve(savedIds, in: [dropped.visible(feed), model.photos])
         if saved.isEmpty {
             switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
                                           failed: feedFailed) {
@@ -544,31 +561,44 @@ struct MyPageView: View {
         }
     }
 
-    /// 行きたい場所（モック2）。**この端末に覚えたもの**で、
-    /// サーバーには無い（`WishlistStore`）。
+    /// 行きたい場所（モック2）。**サーバーの一覧の控え**（`WishlistStore`・`/user/spots`）。
+    /// Web の「行きたい場所」と同じ一覧なので、「この端末に覚えています」の注記は外した
     @ViewBuilder
     private var wishlistArea: some View {
-        // **撮影地から導いた地点**のうち、「行きたい」に入れたもの
-        let places = DerivedSpot.all(in: model.photos)
-        let wanted = places.filter { wishIds.contains($0.slug) }
+        // **撮影地から導いた地点**のうち、「行きたい」に入れたもの。
+        // 🔴 **公開一覧（`feed`）と自分の写真を合わせて導く**（`ProfileSections.wishlistPool`）。
+        // 「行きたい」は地図などで**他人の写真**から押すのがふつうで、自分の写真だけでは出ない
+        // **ブロック・通報した人の写真を外してから導く**（お気に入りと同じ `dropped`）。
+        // `feed` が絞られるのは取った時点だけで、その後のブロックも、同期の前に
+        // 返った一覧も素通りして、行のサムネに出ていた
+        // **自分の写真は落とさない**（`wishlistPool(own:feed:hidden:)`・main 側の決まり）
+        let unfiltered = ProfileSections.wishlistPool(feed: feed, mine: model.photos)
+        let pool = Self.wishlistPool(own: model.photos, feed: feed, hidden: dropped)
+        let wanted = ProfileSections.wantedPlaces(keys: wishIds, pool: pool)
+        // 「一部を読み込めませんでした」を数える側は**絞る前**で引く——ブロックした人の
+        // 写真にしか無い撮影地は、読み込めていないのではなく見せないだけ
+        // （公開一覧の失敗のときしか使わないので、そのときだけ導き直す）
+        let reachable = feedFailed
+            ? ProfileSections.wantedPlaces(keys: wishIds, pool: unfiltered).count
+            : wanted.count
+        // 自分の写真の初回が取れていない回も「取れていない」（非公開の写真・一覧に
+        // まだ載っていない投稿の撮影地は、公開一覧からは引けない）
+        let sourceFailed = feedFailed || model.errorMessage != nil
         // 台帳の撮影スポット（`SPOT-<slug>`）。索引と突き合わせて名前を引く。
         // **索引が無くても行は出す**（`OfficialWishlist`）——スポットの画面で
         // 押した直後に「まだありません」と言わない
         let officialRows = OfficialWishlist.rows(keys: wishIds, index: officialSpots)
         VStack(alignment: .leading, spacing: 10) {
-            // **どこに残るかを書く。** 機種を変えると消えるものを、
-            // 消えないものと同じ顔で出さない
-            Text(L("この端末に覚えています（他の端末や Web には出ません）",
-                   "Kept on this device only"))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
-                .padding(.horizontal, 16)
-
-            // **「まだ無い」と「台帳が取れていない」を分ける**（`ProfileSections`）。
-            // 数えるのは撮影地の行とスポットの行の両方
-            switch ProfileSections.wishlist(ledgerCount: places.count,
-                                            wantedCount: wanted.count + officialRows.count,
-                                            savedIdCount: wishIds.count) {
+            // **「まだ無い」と「取れていない」を分ける**（`ProfileSections`）。
+            // 数えるのは撮影地の行とスポットの行の両方。「取れていない」は
+            // **公開一覧の読み込みの失敗**で決める（件数の食い違いでは決めない）
+            switch ProfileSections.wishlist(wantedCount: wanted.count + officialRows.count,
+                                            savedIdCount: wishIds.count,
+                                            // 読み直しのたびに輪へ戻さない（一度読めたら「読めた」）
+                                            loaded: feedLoaded && model.hasLoadedPhotos,
+                                            sourceFailed: sourceFailed) {
+            case .loading:
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
                                        "Couldn't load the photos. Pull to refresh."))
@@ -576,9 +606,19 @@ struct MyPageView: View {
                 ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
                                        "Nothing yet. Tap “Want to go” on a place."))
             case .list:
+                // 公開一覧の失敗のときだけ（自分の写真の失敗は上の一行が既に言う）
+                if ProfileSections.wishlistPartlyMissing(shownCount: reachable + officialRows.count,
+                                                         savedIdCount: wishIds.count,
+                                                         sourceFailed: feedFailed) {
+                    Text(L("一部の場所を読み込めませんでした。引き下げて読み直してください",
+                           "Some places couldn't be loaded. Pull to refresh."))
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.danger)
+                        .padding(.horizontal, 16)
+                }
                 ForEach(wanted) { place in
                     NavigationLink {
-                        SpotDetailView(spot: place, photos: model.photos)
+                        SpotDetailView(spot: place, photos: pool)
                     } label: {
                         wishlistRow(place)
                     }
@@ -634,7 +674,14 @@ struct MyPageView: View {
 
             // **一覧からも外せる。** 索引に無い鍵はここでしか外せない
             Button {
-                wishlist.set(row.key, wanted: false)
+                // ログイン中はサーバーからも外す。失敗したら戻して知らせる（`WishlistSync`）
+                Task {
+                    let outcome = await WishlistSync.set(row.key, wanted: false, store: wishlist,
+                                                         service: environment.savedSpots)
+                    if let notice = WishlistSync.removalNotice(for: outcome) {
+                        toasts.show(notice.text, kind: notice.kind)
+                    }
+                }
             } label: {
                 Image(systemName: "heart.fill")
                     .font(.subheadline)
@@ -674,7 +721,14 @@ struct MyPageView: View {
 
             // **一覧からも外せる。** 外すのに詳細まで行かせない
             Button {
-                wishlist.set(spot.slug, wanted: false)
+                // ログイン中はサーバーからも外す。失敗したら戻して知らせる（`WishlistSync`）
+                Task {
+                    let outcome = await WishlistSync.set(spot.slug, wanted: false, store: wishlist,
+                                                         service: environment.savedSpots)
+                    if let notice = WishlistSync.removalNotice(for: outcome) {
+                        toasts.show(notice.text, kind: notice.kind)
+                    }
+                }
             } label: {
                 Image(systemName: "heart.fill")
                     .font(.subheadline)
@@ -714,7 +768,7 @@ struct MyPageView: View {
     /// ——入口がマイページの札1つだけだった
     @ViewBuilder
     private var tripsArea: some View {
-        let trips = TripBook.trips(from: model.photos.filter { $0.published != false })
+        let trips = TripBook.shelfTrips(from: model.photos)
         if trips.isEmpty && model.isLoading {
             // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）
             ProgressView()
@@ -724,6 +778,16 @@ struct MyPageView: View {
             // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
             TripShelfList(trips: trips)
         }
+    }
+
+    /// 「行きたい」の地点を導く写真の集まり。自分の写真を先に、公開一覧を後に
+    /// 並べ、**同じ写真は1枚に数える**（両方に載る自分の公開写真で枚数が倍にならない）。
+    /// **公開一覧はブロックした人・非表示にした写真を落とす**——落とさないと、
+    /// その写真が地点の代表（表紙）になって画面に出る。自分の写真は落とさない
+    /// 寄せ方（ID で1枚・自分の写真が先）は `ProfileSections.wishlistPool` の1本に任せる
+    nonisolated static func wishlistPool(own: [Photo], feed: [Photo],
+                                         hidden: ModerationSnapshot) -> [Photo] {
+        ProfileSections.wishlistPool(feed: hidden.visible(feed), mine: own)
     }
 
     /// 保存した写真の引き当て先（公開一覧）を読む。取れなくても自分の写真の分は出せる。
@@ -878,6 +942,17 @@ final class MyPageViewModel: ObservableObject {
     /// （増減の結果は向こうが決める——3枚の上限も、消えた写真の掃除も）
     @Published private(set) var pinnedIds: [String] = []
     @Published private(set) var photos: [Photo] = []
+    /// **サーバーから読めた**自分の写真（公開中の id と、取りに行った時刻）。
+    /// 画面はこれで「消した・非公開にした」印を外す（`ModerationStore.confirmPublished`）。
+    /// `photos` の変化で見ない——ピン留めの並べ替えでも変わり、読み直しに失敗した古い
+    /// 一覧で印を外していた
+    struct ServerRead: Equatable {
+        /// 答えの持ち主（受け取った時点の `auth.userId` ではなく、取りに行った人）
+        let owner: String?
+        let publishedIds: [String]
+        let startedAt: Date
+    }
+    @Published private(set) var serverRead: ServerRead?
     @Published private(set) var isLoading = false
     /// **読み込みに失敗した**。画面はこの時だけ一覧の代わりに知らせを出す。
     @Published var errorMessage: String?
@@ -940,6 +1015,7 @@ final class MyPageViewModel: ObservableObject {
         // 替わった後に返った答えは何も入れない（A → ログアウト → A でも別の世代）
         let gen = generation
         isLoading = true
+        let startedAt = Date()
         // 取り消された回に戻す（先に消したまま抜けると、写真0枚の欄に
         // 「まだ写真がありません」と嘘が出ていた）
         let previousError = errorMessage
@@ -995,6 +1071,8 @@ final class MyPageViewModel: ObservableObject {
                 self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
                 self.photos = PhotoPinning.pinnedFirst(loadedPhotos, pinned: self.pinnedIds)
                 hasLoadedPhotos = true
+                serverRead = ServerRead(owner: activeUser, publishedIds: loadedPhotos.filter { $0.published != false }.map(\.id),
+                                        startedAt: startedAt)
             }
             let loadedStats = await stats
             guard gen == generation else { return }
@@ -1052,6 +1130,9 @@ final class MyPageViewModel: ObservableObject {
             let mine = all.filter { ($0.userId ?? $0.uploadedBy) == userId }
             self.photos = PhotoPinning.pinnedFirst(mine, pinned: self.pinnedIds)
             hasLoadedPhotos = true
+        } else if all == nil, !Task.isCancelled, gen == generation, !hasLoadedPhotos {
+            // 取れなかった回を言う（言わないと「読めた」にも「失敗」にもならず、輪のまま残る）
+            errorMessage = Labels.Common.loadFailed
         }
         let stats = try? await self.social.followStats(userId: userId)
         if let stats, gen == generation {
@@ -1084,6 +1165,8 @@ final class MyPageViewModel: ObservableObject {
         actionMessage = nil
         reloadError = nil
         hasLoadedPhotos = false
+        // 前の人の「公開中」の答えも手放す
+        serverRead = nil
     }
 
     func isPinned(_ photoId: String) -> Bool { pinnedIds.contains(photoId) }

@@ -20,6 +20,11 @@ struct AlbumsView: View {
     @State private var showRename = false
     @State private var renamingId = ""
     @State private var renameTitle = ""
+    /// 消す前の確認。**表示と対象を別々に持つ**（名前変更と同じ理由——
+    /// ダイアログが閉じる合図で対象を nil にすると、「消す」の中身が走るときに
+    /// 対象が消えていることがある）
+    @State private var showDelete = false
+    @State private var deleting: Album?
 
     var body: some View {
         Group {
@@ -60,6 +65,24 @@ struct AlbumsView: View {
         .sheet(item: $openedToken) { opened in
             NavigationStack { InviteView(token: opened.token) }
         }
+        // **消す前に一度聞く**（Web の `/user/albums` と同じ文言）。削除は戻せない
+        .confirmationDialog(deleteTitle, isPresented: $showDelete, titleVisibility: .visible) {
+            Button(Labels.Common.delete, role: .destructive) {
+                guard let album = deleting else { return }
+                Task {
+                    // **参加の控えからも外す。** 自分のリンクを自分で開くと控えにも
+                    // 入るので、消した途端に「参加しているアルバム」へ落ちてきて、
+                    // 押すと「この招待リンクは使えません」になっていた
+                    if await model.delete(album.id, environment: environment) {
+                        joined.forget(id: album.id)
+                    }
+                }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(L("招待リンクは使えなくなり、参加者はこのアルバムを開けなくなります。写真そのものは消えません。",
+                   "The invite link will stop working and members will no longer be able to open this album. The photos themselves are not deleted."))
+        }
         .alert(L("招待リンクから参加", "Join with a link"), isPresented: $showJoin) {
             joinAlertButtons
         } message: {
@@ -72,8 +95,21 @@ struct AlbumsView: View {
         .refreshable { await model.load(environment: environment) }
     }
 
+    private var deleteTitle: String {
+        let title = deleting?.title ?? ""
+        return title.isEmpty
+            ? L("このアルバムを消しますか？", "Delete this album?")
+            : L("「\(title)」を消しますか？", "Delete “\(title)”?")
+    }
+
+    /// **読み込みの失敗と、操作の失敗を分ける。** 操作の失敗（消せなかった・
+    /// 作れなかった）は一時的な知らせ（`notice`）で、しばらくすると消える。
+    /// 同じ欄に持つと、次の読み込みまで残り続け、空の案内まで隠していた
     @ViewBuilder
     private var statusRow: some View {
+        if let notice = model.notice {
+            Text(notice).foregroundStyle(WebTheme.danger).font(.callout)
+        }
         if let message = model.errorMessage {
             Text(message).foregroundStyle(WebTheme.danger).font(.callout)
         } else if model.albums.isEmpty && !model.isLoading {
@@ -132,15 +168,10 @@ struct AlbumsView: View {
         // **払い切りで消さない**（既定の allowsFullSwipe は先頭の削除を確認なしで走らせる。
         // 戻す口は無い）。削除のボタンを押したときだけ消す
         .swipeActions(allowsFullSwipe: false) {
+            // **押しただけでは消さない。** 確認を出す（消すのは確認の中）
             Button(role: .destructive) {
-                Task {
-                    // **参加の控えからも外す。** 自分のリンクを自分で開くと控えにも
-                    // 入るので、消した途端に「参加しているアルバム」へ落ちてきて、
-                    // 押すと「この招待リンクは使えません」になっていた
-                    if await model.delete(album.id, environment: environment) {
-                        joined.forget(id: album.id)
-                    }
-                }
+                deleting = album
+                showDelete = true
             } label: {
                 Label(Labels.Common.delete, systemImage: "trash")
             }
@@ -154,35 +185,106 @@ struct AlbumsView: View {
         }
     }
 
+    /// 🔴 **期限が切れたリンクは共有させない。** サーバーは切れた招待も一覧に
+    /// 返し続けるので、以前はトークンがあるだけで「共有」を出していた——送った
+    /// 相手が開くと「期限が切れています」で断られる。切れていたら同じ場所に
+    /// 「招待リンクを作り直す」を出す（`InviteLink.expiry`）。使えるときは
+    /// Web と同じく「〜まで」を添え、期限内でも作り直せる（owner の判断 2026-09-27）
     @ViewBuilder
     private func inviteControls(_ album: Album) -> some View {
         if let token = album.inviteToken {
-            HStack {
-                // 招待リンクはサイトの URL で共有する
-                // （アプリを入れていない人にも開ける）
-                ShareLink(item: model.inviteURL(token: token)) {
-                    Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
+            let expiry = InviteLink.expiry(album.inviteExpiresAt, now: Date())
+            HStack(spacing: 12) {
+                if expiry != .expired {
+                    // 招待リンクはサイトの URL で共有する
+                    // （アプリを入れていない人にも開ける）
+                    ShareLink(item: model.inviteURL(token: token)) {
+                        Label(L("招待リンクを共有", "Share invite link"), systemImage: "square.and.arrow.up")
+                            .font(.caption)
+                            // 押す場所はラベルの内側で広げる（外側の余白は押せない）
+                            .webTappable()
+                    }
+                    // 作り直し・取り消しの最中は配らない（失効する直前のリンクを配っていた）
+                    .disabled(model.inviteWorking.contains(album.id))
+                    .buttonStyle(.borderless)
+                }
+                // **期限内でも作り直せる**（Web の /user/albums と同じ——配ったリンクを
+                // 止めて出し直したいとき）。切れていたらこれが唯一の出口
+                Button {
+                    Task { await model.createInvite(album.id, environment: environment) }
+                } label: {
+                    Text(expiry == .expired ? L("招待リンクを作り直す", "Recreate invite link")
+                                            : L("作り直す", "Recreate"))
                         .font(.caption)
+                        // 押す場所は 44pt（隣の「取り消す」と押し間違えない）。**ラベルの
+                        // 内側で**広げる——ボタンの外側に付けた余白は押せない
+                        .webTappable()
                 }
-                Spacer()
-                Button(L("取り消す", "Revoke")) {
+                // 二度押しで2本作らない（下の「招待リンクを作る」と同じ）
+                .disabled(model.inviteWorking.contains(album.id))
+                .buttonStyle(.borderless)
+                Button {
                     Task { await model.revokeInvite(album.id, environment: environment) }
+                } label: {
+                    Text(L("取り消す", "Revoke"))
+                        .font(.caption)
+                        .webTappable()
                 }
-                .font(.caption)
                 .disabled(model.inviteWorking.contains(album.id))
                 // **行に複数のボタンを置くときは borderless。**
                 // 既定だと行のどこを押しても両方が反応する
                 .buttonStyle(.borderless)
+                // 送っている間を見せる（ボタンが薄くなるだけでは、押せたのか分からない）
+                if model.inviteWorking.contains(album.id) {
+                    ProgressView().controlSize(.small)
+                }
             }
+            // 知らせは**押したボタンのすぐ下**（下の注意書きより上）
+            inviteDoneLine(album)
+            switch expiry {
+            case .valid(let until):
+                Text(L("\(InviteLink.untilLabel(until))まで", "Valid until \(InviteLink.untilLabel(until))"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .expired:
+                Text(L("招待リンクの期限が切れています", "This invite link has expired"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .unknown:
+                EmptyView()
+            }
+            // **前のリンクが死ぬことを書く**（Web と同じ文）。書かないと、配ったリンクが黙って切れる
+            Text(L("作り直すと、前のリンクは使えなくなります。", "Recreating stops the previous link from working."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         } else {
-            Button(L("招待リンクを作る", "Create invite link")) {
+            Button {
                 Task { await model.createInvite(album.id, environment: environment) }
+            } label: {
+                Text(L("招待リンクを作る", "Create invite link"))
+                    .font(.caption)
+                    // 押す場所は 44pt（上の3つと同じ。ここだけ文字の高さしか押せなかった）
+                    .webTappable()
             }
-            .font(.caption)
             // **二度押しで作り直さない。** サーバーは「あれば作り直す」ので、
             // 2本目で1本目が失効し、その間に共有したリンクが開けなくなる
             .disabled(model.inviteWorking.contains(album.id))
             .buttonStyle(.borderless)
+            // **こちらの枝にも置く。** 取り消すとリンクが消えてこの枝に描き直されるので、
+            // 上の枝にだけ置くと「取り消しました」が一度も出なかった
+            inviteDoneLine(album)
+        }
+    }
+
+    /// 作り直した・取り消したことを**その行で**知らせる（`InviteLink.doneMessage`）。
+    /// アプリはリンクの字を出さないので、作り直しても見た目がほとんど変わらず、
+    /// 押しても何も起きないように見えていた。一覧の上の知らせは、下の行からは見えない
+    @ViewBuilder
+    private func inviteDoneLine(_ album: Album) -> some View {
+        if let done = model.inviteDone, done.albumId == album.id {
+            Text(done.message)
+                .font(.caption)
+                .foregroundStyle(WebTheme.foreground)
         }
     }
 
@@ -208,7 +310,7 @@ struct AlbumsView: View {
             inviteText = ""
             openedToken = token.isEmpty ? nil : InviteToken(id: token)
             if openedToken == nil {
-                model.errorMessage = L("招待リンクを読み取れませんでした", "Couldn't read that invite link")
+                model.flash(L("招待リンクを読み取れませんでした", "Couldn't read that invite link"))
             }
         }
         Button(Labels.Common.cancel, role: .cancel) { inviteText = "" }
@@ -231,9 +333,20 @@ final class AlbumsViewModel: ObservableObject {
 
     @Published private(set) var albums: [Album] = []
     @Published private(set) var isLoading = false
+    /// 一覧を読めなかったとき（次の読み込みで消える）
     @Published var errorMessage: String?
+    /// 操作の失敗の一時的な知らせ。**しばらくすると消える**（`flash`）
+    @Published private(set) var notice: String?
+    private var noticeTask: Task<Void, Never>?
     /// 招待リンクを作る・取り消すのを送っているアルバム
     @Published private(set) var inviteWorking: Set<String> = []
+    /// 招待リンクの操作が通った知らせ（その行に出し、しばらくすると消える）
+    @Published private(set) var inviteDone: InviteDone?
+    private var inviteDoneTask: Task<Void, Never>?
+    struct InviteDone: Equatable {
+        let albumId: String
+        let message: String
+    }
 
     /// 何回目の読み込みか。**古い読み込みの返事が新しい返事を上書きしない**
     private var loadGeneration = 0
@@ -253,8 +366,23 @@ final class AlbumsViewModel: ObservableObject {
         albums = []
         writes = AlbumMerge.Writes()
         inviteWorking = []
+        inviteDoneTask?.cancel()
+        inviteDone = nil
         isLoading = false
         errorMessage = nil
+        noticeTask?.cancel()
+        notice = nil
+    }
+
+    /// 操作の失敗を一時的に知らせる（数秒で消える）
+    func flash(_ message: String, seconds: Double = 4) {
+        notice = message
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.notice = nil
+        }
     }
 
     func inviteURL(token: String) -> URL {
@@ -300,7 +428,7 @@ final class AlbumsViewModel: ObservableObject {
             albums.insert(album, at: 0)
         } catch {
             guard myEra == era else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create")
+            flash((error as? LocalizedError)?.errorDescription ?? L("作れませんでした", "Couldn't create"))
         }
     }
 
@@ -323,8 +451,8 @@ final class AlbumsViewModel: ObservableObject {
             }
         } catch {
             guard myEra == era else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription
-                ?? L("名前を変えられませんでした", "Couldn't rename")
+            flash((error as? LocalizedError)?.errorDescription
+                ?? L("名前を変えられませんでした", "Couldn't rename"))
         }
     }
 
@@ -339,8 +467,18 @@ final class AlbumsViewModel: ObservableObject {
             return true
         } catch {
             guard myEra == era else { return false }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
+            flash((error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete"))
             return false
+        }
+    }
+
+    private func showInviteDone(_ albumId: String, _ message: String, seconds: Double = 4) {
+        inviteDone = InviteDone(albumId: albumId, message: message)
+        inviteDoneTask?.cancel()
+        inviteDoneTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.inviteDone = nil
         }
     }
 
@@ -352,14 +490,16 @@ final class AlbumsViewModel: ObservableObject {
         do {
             // **返ってきたリンクを手元にも書く。** 一覧は結果整合で読むので、
             // 読み直しが古いとリンクが出ず、もう一度押すと作り直し（前のリンクが失効）になる
+            let replaced = albums.first { $0.id == id }?.inviteToken != nil
             let invite = try await environment.albums.createInvite(albumId: id)
             guard myEra == era else { return }
             writes.invites[id] = .init(value: invite, at: Date())
             albums = AlbumMerge.merge(loaded: albums, writes: writes)
+            showInviteDone(id, InviteLink.doneMessage(replaced ? .recreated : .created))
             await load(environment: environment)
         } catch {
             guard myEra == era else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("招待リンクを作れませんでした", "Couldn't create the invite link")
+            flash((error as? LocalizedError)?.errorDescription ?? L("招待リンクを作れませんでした", "Couldn't create the invite link"))
         }
     }
 
@@ -373,10 +513,11 @@ final class AlbumsViewModel: ObservableObject {
             guard myEra == era else { return }
             writes.invites[id] = .init(value: nil, at: Date())
             albums = AlbumMerge.merge(loaded: albums, writes: writes)
+            showInviteDone(id, InviteLink.doneMessage(.revoked))
             await load(environment: environment)
         } catch {
             guard myEra == era else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("取り消せませんでした", "Couldn't revoke")
+            flash((error as? LocalizedError)?.errorDescription ?? L("取り消せませんでした", "Couldn't revoke"))
         }
     }
 }

@@ -33,12 +33,16 @@ actor PublicGalleryService {
     /// ビルド時に焼いた全員ぶん。ブロックした相手の写真がそのまま出ると、
     /// 「ブロックしたのに見える」になる（審査 1.2 で見られるところでもある）。
     /// だから**出すところで落とす**。
-    private var hiddenUserIds: Set<String> = []
-    private var hiddenPhotoIds: Set<String> = []
+    ///
+    /// 自分で消した・非公開にした写真（`ModerationSnapshot.gone`）も同じ道で落とす
+    /// ——この JSON は建て直しまで古く、控え（`cached`・`snapshot`）も残るので、
+    /// 消した写真が一覧に出続け、押すと 404 の写真が開いていた。
+    private var hiding = ModerationSnapshot()
 
-    func setHidden(userIds: Set<String>, photoIds: Set<String>) {
-        hiddenUserIds = userIds
-        hiddenPhotoIds = photoIds
+    /// **写しを丸ごと受け取る。** 集合を1つずつ渡す形だと、足した集合（`gone`）を
+    /// 渡し忘れた呼び出しが、黙って空で上書きする
+    func setHidden(_ hiding: ModerationSnapshot) {
+        self.hiding = hiding
     }
 
     /// 公開範囲を絞った写真の取り方。**ログインしている間だけ入る**
@@ -156,13 +160,21 @@ actor PublicGalleryService {
     /// （Lambda の起き抜けは数秒かかる。間に合わなければ静的 JSON の数で出す）
     static let liveTimeout: TimeInterval = 4
 
+    /// いまの数の要求を出す**直前**に待つ口。**本番は nil**（何もしない）。
+    /// 試験が「取りに行っている最中」を作るのに使う——遅さを `URLProtocol`
+    /// の応答で作ると、Linux の Foundation では別スレッドから `client` を
+    /// 叩いてまれに落ちる
+    private let beforeLiveRequest: (@Sendable () async -> Void)?
+
     init(url: URL = AppConfig.publicPhotosURL,
          liveURL: URL? = nil,
          session: URLSession? = nil,
-         snapshot: PhotoSnapshotStore = PhotoSnapshotStore()) {
+         snapshot: PhotoSnapshotStore = PhotoSnapshotStore(),
+         beforeLiveRequest: (@Sendable () async -> Void)? = nil) {
         self.url = url
         self.liveURL = liveURL
         self.snapshot = snapshot
+        self.beforeLiveRequest = beforeLiveRequest
         if let session {
             self.session = session
         } else {
@@ -222,6 +234,7 @@ actor PublicGalleryService {
         let data: Data
         let response: URLResponse
         do {
+            try RequestCancellation.throwIfCancelled()
             (data, response) = try await session.data(from: url)
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
@@ -312,7 +325,9 @@ actor PublicGalleryService {
         defer { liveInFlight = nil }
         var request = URLRequest(url: liveURL)
         request.timeoutInterval = Self.liveTimeout
+        await beforeLiveRequest?()
         do {
+            try RequestCancellation.throwIfCancelled()
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode),
@@ -326,9 +341,8 @@ actor PublicGalleryService {
 
     /// 公開 JSON には非公開の写真は載らないが、`published` が明示的に
     /// false の行が混ざっても出さない（二重の守り）。
-    /// あわせて、ブロックした相手と、自分が通報した写真を落とす。
+    /// あわせて、ブロックした相手と、自分が通報した・消した・非公開にした写真を落とす。
     private func visible(_ photos: [Photo]) -> [Photo] {
-        BlockFilter.photos(photos.filter { $0.published != false },
-                           blocked: hiddenUserIds, reported: hiddenPhotoIds)
+        hiding.visible(photos.filter { $0.published != false })
     }
 }

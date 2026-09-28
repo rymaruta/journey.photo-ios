@@ -38,6 +38,10 @@ struct FollowListView: View {
     @State private var myFollowing: Set<String>?
     /// `myFollowing` を読んだときの人
     @State private var loadedFor: String?
+    /// 一度出たか（戻ってきた回だけ読み直す）
+    @State private var appeared = false
+    /// この画面でフォローを押した回数（読み直しの古い答えで上書きしない目印）
+    @State private var followEdits = 0
     /// いま送っている相手（二度押しで2回投げない）
     @State private var working: Set<String> = []
     /// 外す確認。**出すかどうかと相手は別々に持つ**——1つの Optional で兼ねると、
@@ -105,6 +109,12 @@ struct FollowListView: View {
             await load()
         }
         .refreshable { await load() }
+        // **戻ってきたらボタンの状態だけ読み直す。** 人のプロフィールでフォローを
+        // 変えて戻ると、一覧のボタンが古いままだった（`.task(id:)` は走り直さない）
+        .onAppear {
+            if appeared { Task { await refreshMyFollowing() } }
+            appeared = true
+        }
     }
 
     /// 「フォロワー N ／ フォロー中 N」（板の下線の切り替え）
@@ -214,22 +224,41 @@ struct FollowListView: View {
         if let name = ownerProfile?.displayName, !name.isEmpty {
             ownerName = name
         }
-        if let viewer = auth.userId {
-            let ids = try? await environment.social.myFollowingIds()
-            // 待っている間に人が替わっていたら書かない（引き下げの読み直しは
-            // `.task(id:)` の取り消しに巻き込まれない）
-            if let ids, auth.userId == viewer { myFollowing = Set(ids) }
+        await refreshMyFollowing()
+    }
+
+    /// 自分のフォロー先を読み直す（ボタンの「フォロー中」）。取れなかったら書かない
+    private func refreshMyFollowing() async {
+        guard let viewer = auth.userId else { return }
+        let edits = followEdits
+        // 始めた時点で送っている最中なら、答えはその送信を映していないことがある
+        let startedIdle = working.isEmpty
+        let ids = try? await environment.social.myFollowingIds()
+        // 待っている間に人が替わっていたら書かない（引き下げの読み直しは
+        // `.task(id:)` の取り消しに巻き込まれない）。**待っている間にこの画面で
+        // フォローを押していたら書かない**（古い答えがボタンを元に戻す）
+        // 送っている最中も書かない（先に着いた古い一覧で、押したボタンを戻さない）
+        // **まだ一覧が無い（人が替わった直後など）なら、送信中でも書く**——書かないと
+        // ボタンが全部消えたまま、戻るか引き下げるまで出なかった
+        let empty = myFollowing == nil
+        if let ids, auth.userId == viewer,
+           empty || (followEdits == edits && startedIdle && working.isEmpty) {
+            myFollowing = Set(ids)
         }
     }
 
     private func setFollowing(_ id: String, to follow: Bool) async {
         guard !working.contains(id) else { return }
+        followEdits &+= 1
         working.insert(id)
         defer { working.remove(id) }
+        // 押した人。**待っている間に人が替わったら、答えを次の人の一覧に混ぜない**
+        let viewer = auth.userId
         do {
             let result = follow
                 ? try await environment.social.follow(userId: id)
                 : try await environment.social.unfollow(userId: id)
+            guard auth.userId == viewer else { return }
             // **返ってきた状態を使う。** 自分で決めない
             if result.following {
                 myFollowing?.insert(id)

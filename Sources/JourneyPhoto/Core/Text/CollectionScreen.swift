@@ -46,13 +46,26 @@ enum CollectionScreen {
         return AppConfig.siteBaseURL.appendingPathComponent("location/\(slug)")
     }
 
+    /// 配ってよい写真か。**公開範囲を絞った写真と下書きは、どの URL でも Web で開けない**
+    /// （Web が読む一覧は公開の写真だけ——`?photo=` に振り替えても「見つかりませんでした」）
+    static func isShareable(_ photo: Photo) -> Bool {
+        photo.published != false && !RestrictedFeed.isRestricted(photo)
+    }
+
+    /// 共有に添える写真。**先頭ではなく、最初に配ってよい写真**（先頭が絞った写真だと、
+    /// 残りは開けるのに URL が1本も付かなかった）
+    static func shareLead(_ photos: [Photo]) -> Photo? {
+        photos.first(where: isShareable)
+    }
+
     /// シェアで配る文字。題と枚数に、**開ける URL を1つ**添える
-    /// ——集約のページがあればそれ、無ければ先頭の写真のページ。
-    /// 写真の URL は公開の一覧に載っている写真だけ（`PhotoLink`）
+    /// ——集約のページがあればそれ、無ければ `lead`（`shareLead` が選んだ、最初に
+    /// 配ってよい写真）のページ。配れない写真には URL を付けない（`isShareable`）
     static func shareText(title: String, count: Int, kind: PhotoQuery.Collection?, lead: Photo?) -> String {
         var lines = ["\(title) · \(L("\(count)枚", "\(count) photos"))"]
         if let url = pageURL(kind) ?? lead.flatMap({
-            PhotoLink.url(photoId: $0.id, isPublished: $0.published != false)
+            // 配れない写真（絞った・下書き）は URL を付けない（`PhotoDetailView.shareURL`）
+            isShareable($0) ? PhotoLink.url(photoId: $0.id, isPublished: true) : nil
         }) {
             lines.append(url.absoluteString)
         }

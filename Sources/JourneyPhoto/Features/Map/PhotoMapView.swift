@@ -48,15 +48,23 @@ struct PhotoMapView: View {
     /// （保存も送信もしない——`CurrentLocation` の約束をここでも守る）
     @State private var here: Photo.Coords?
     @State private var showNearby = false
-    /// 「全体を見る」を押したか。押したら帯を下げる（現在地を取り直したら、また出す）
-    @State private var showedAll = false
+    /// 「近くに写真はありません」の帯を下げたか。「全体を見る」を押したか、
+    /// 指で地図を動かしたら下げる（現在地を取り直したら、また出す）
+    @State private var noneNearbyBanner = NearbyPhotos.NoneNearbyBanner()
     /// 押したピン。**下の札に出す**（シートで画面を覆うと地図が見えない）
     @State private var selected: MapPin?
     /// 押した撮影スポットのピン（台帳）。札は同時に1枚——写真のピン・
     /// Apple の地点と取り合わせず、どれかを押したら他は下げる
     @State private var selectedOfficial: OfficialPins.Pin?
-    /// 一覧を開くとき（札の「写真を見る →」・リストの行）
+    /// 撮影スポットの「経路」の検索。押し直し・札の切り替え・画面を離れたら止める
+    @State private var directionsTask: Task<Void, Never>?
+    /// 一覧を開くとき（札の「写真を見る →」）
     @State private var listing: MapPin?
+    /// リストの県の開閉。**押した県**だけを持つ（押した県は起点が動いても押したまま）
+    @State private var regionOpen: [String: Bool] = [:]
+    /// 起点の県として一度でも開いた県。**起点が替わっても閉じない**——閉じると、
+    /// その県から開いていた詳細が元の行ごと消えてその場で閉じる
+    @State private var autoOpenedRegions: Set<String> = []
     /// 押した地点（Apple の地図が描く POI）。**iOS 18 以降だけ**入る
     /// （`PlaceSelectableMap`）。ピンの札とは同時に出さない
     @State private var chosenPlace: ChosenPlace?
@@ -144,6 +152,11 @@ struct PhotoMapView: View {
         .onDisappear {
             isOnScreen = false
             tabRouter.mapRootOnScreen = false
+            directionsTask?.cancel()
+        }
+        // 札を切り替えた・閉じたら、前の札の「経路」の検索は捨てる
+        .onChange(of: selectedOfficial) { _, _ in
+            directionsTask?.cancel()
         }
         .onChange(of: model.query) { _, _ in
             guard model.areaFrame == nil else { return }
@@ -166,7 +179,7 @@ struct PhotoMapView: View {
         .onChange(of: location.state) { _, state in
             guard case .located(let latitude, let longitude) = state else { return }
             here = Photo.Coords(lat: latitude, lng: longitude)
-            showedAll = false
+            noneNearbyBanner.located()
             zoomChain.reset()
             camera = .userLocation(fallback: .region(MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
@@ -306,7 +319,8 @@ struct PhotoMapView: View {
     }
 
     /// 「地図 / スポット / リスト」（板 04c 案A: 高さ 44 のガラスの帯に3つ、選んでいる札は
-    /// 白地に墨の字）。地図とリストは同じ `shown` から、スポットは撮影スポットの台帳から描く。
+    /// 白地に墨の字）。地図は `shown` から、スポットは撮影スポットの台帳から、
+    /// リストは両方を都道府県ごとにまとめて描く（`RegionList`）。
     /// **既定の `segmented` を使わない**——黒地の上で帯だけ明るく浮く
     private var modePicker: some View {
         HStack(spacing: 4) {
@@ -330,6 +344,10 @@ struct PhotoMapView: View {
         .padding(4)
         .jpGlass(in: Capsule())
         .padding(.horizontal, 16)
+        // **「スポット」のときだけ上を空ける**（owner の「枠同士が近すぎる」・2026-09-28）。
+        // 地図・リストはカテゴリのチップの下の余白（10pt）がそのまま間になるが、
+        // スポットはチップを出さないので検索欄に隙間なしで付いていた
+        .padding(.top, model.mode == .spots ? 12 : 0)
         .padding(.bottom, 8)
     }
 
@@ -363,8 +381,11 @@ struct PhotoMapView: View {
                 // **消えたピンの札は出さない。** 絞り込みを変えるとピンは
                 // 入れ替わるが、札は値の写しなので残ってしまう。
                 // 撮影スポットの札は、そこから開いた画面を積んでいる間だけ残す（`showsCard`）
-                if let selected, model.stillShown(selected) {
-                    pinCard(selected)
+                // **札は model.pins から引き直した最新のピンで描く。** `selected` は
+                // 押した時点の写しで、`MapPin ==` は id（座標）しか比べないので、
+                // 絞り込みで同じ座標の写真が減っても写しは古い枚数・写真のままだった
+                if let current = PhotoMapViewModel.refreshed(selected, in: model.pins) {
+                    pinCard(current)
                         .padding(.horizontal, 16)
                 } else if let selectedOfficial,
                           model.showsCard(official: selectedOfficial, onScreen: isOnScreen) {
@@ -451,6 +472,9 @@ struct PhotoMapView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                // 読み上げは撮影地と枚数（見た目は写真だけで、名前は無かった）
+                .accessibilityLabel(PhotoMapViewModel.pinSpokenLabel(
+                    place: pin.hasPlaceName ? pin.title : nil, count: pin.photos.count))
             }
         }
         ForEach(model.officialPins) { pin in
@@ -516,6 +540,10 @@ struct PhotoMapView: View {
         )
         model.update(visible: visible)
         zoomChain.observe(visible)
+        // 指で地図を触ったら「近くに写真はありません」を下げる（ずらす・つまむ・回す
+        // のどれでも。つまんだだけで現在地を見たままでも下げる——地図を自分で見始めた合図）。
+        // こちらが寄せた回（現在地を追う・全体へ寄せる・拡大縮小のボタン）は下げない
+        noneNearbyBanner.cameraMoved(byUser: camera.positionedByUser)
     }
 
     /// 地図の上に1行。**空の状態を隠さない**——ピンが消えただけの画面にしない
@@ -537,7 +565,7 @@ struct PhotoMapView: View {
                 .padding(.vertical, 8)
                 .background(Color.black.opacity(0.7), in: Capsule())
                 .padding(.top, 12)
-        } else if !showedAll, model.areaFrame == nil, !model.isFiltering,
+        } else if !noneNearbyBanner.dismissed, model.areaFrame == nil, !model.isFiltering,
                   model.frame != nil, let here,
                   NearbyPhotos.noneNearby(model.photos, here: here) {
             // **現在地のまわりに写真が無い**ときの出口。押すと写真全体に寄せる
@@ -546,7 +574,7 @@ struct PhotoMapView: View {
             // - 絞り込み中は出さない（絞ると地図はもう残ったピンへ寄っている）
             // - 寄せる先が無ければ出さない（押しても動かないボタンにしない）
             Button {
-                showedAll = true
+                noneNearbyBanner.showedAll()
                 frame(model.frame)
             } label: {
                 HStack(spacing: 6) {
@@ -592,9 +620,9 @@ struct PhotoMapView: View {
     /// 🔴 **撮影スポットのピンだけ出ている回も、写真が取れなかったことを言う**
     /// （ピンがあるので `emptyMessage` は黙り、写真が無いことを誰も言わなかった）。
     ///
-    /// **地図の上の帯だけに出す。** 一覧（`listArea`）は `emptyMessage` で丸ごと
-    /// 差し替わるので、そちらに混ぜるとスポットの行が消え、押して開いている
-    /// スポットの画面まで閉じる。現在地の様子（`locationNote`）より後に置く
+    /// **地図の上の帯だけに出す。** リスト（`listArea`）は県ごとのまとまりで、
+    /// 写真が取れなくても撮影スポットの行は出る（そちらには混ぜない）。
+    /// 現在地の様子（`locationNote`）より後に置く
     private var loadFailedNote: String? {
         guard model.loaded, model.loadFailed, model.photos.isEmpty, !model.hasNothingToShow else { return nil }
         return Self.loadFailedText
@@ -625,8 +653,7 @@ struct PhotoMapView: View {
                 model.clearArea()
             } label: {
                 HStack(spacing: 6) {
-                    Text(L("この範囲の写真 \(model.shown.count)枚・\(model.pins.count)地点",
-                           "\(model.shown.count) photos · \(model.pins.count) places here"))
+                    Text(PhotoMapViewModel.areaCountLabel(photos: model.shown.count, places: model.pins.count))
                     Image(systemName: "xmark")
                         .font(.caption.weight(.bold))
                 }
@@ -792,8 +819,7 @@ struct PhotoMapView: View {
                     .font(.headline)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                Text(L("この周辺の写真 \(pin.photos.count)枚",
-                       "\(pin.photos.count) photos nearby"))
+                Text(PhotoMapViewModel.nearbyCountLabel(pin.photos.count))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
                 // 何が写っているかの見本（モック3-3）。**3枚まで＋残りの数**
@@ -914,11 +940,15 @@ struct PhotoMapView: View {
                         }
                     }
                     // **出典は写真と必ず一緒に**（CC BY・CC BY-SA の条件）
+                    // 押すと作者は出典のページへ・ライセンスは文面へ（`SpotImageCredit`）
                     if let photo = pin.photo {
-                        Text(photo.credit)
+                        SpotImageCredit(photo: photo)
                             .font(.caption2)
                             .foregroundStyle(WebTheme.muted2)
                             .lineLimit(1)
+                            // 長い作者名で**ライセンスを消さない**（末尾から切ると
+                            // 「/ CC BY-SA」がまるごと落ちる）。作者の中ほどを削る
+                            .truncationMode(.middle)
                     }
                 }
                 Spacer()
@@ -969,15 +999,52 @@ struct PhotoMapView: View {
         .accessibilityIdentifier("map.officialCard")
     }
 
-    /// 撮影スポットへの経路を Apple の地図で開く。座標から `MKMapItem` を
-    /// 起こし、`placeCard` と同じ `directions` の起動指定で渡す
+    /// 撮影スポットへの経路を Apple の地図で開く。`placeCard` と同じ
+    /// `directions` の起動指定で渡す。
+    ///
+    /// 🔴 **索引の座標は約1km に丸めてある**（丸める前の値は台帳にも無い）。
+    /// そのまま渡すと最大0.7km ずれた道の上へ案内するので、**スポット名で
+    /// Apple の地点（施設だけ・町の中心は拾わない）を探し直し、丸めた座標の近く
+    /// （`directionsMatchKm`）のものを行き先にする**（`PlaceSelectableMap.lookUp` と
+    /// 同じ拾い直し）。見つからない・`directionsTimeout` 秒で返らなければ、
+    /// 丸めた座標にスポット名を付けて渡す。
+    ///
+    /// **開く直前に、押した札がまだ出ているかを確かめる**——検索の間に札を
+    /// 閉じた・別のスポットへ移った・画面を離れたのに地図アプリが開くと、
+    /// 押していないものが開いたように見える
     private func openDirections(to pin: OfficialPins.Pin) {
+        directionsTask?.cancel()
+        directionsTask = Task {
+            let found = await OfficialSpotIndex.firstWithin(seconds: OfficialSpotIndex.directionsTimeout) {
+                await Self.searchDirectionsItem(for: pin)
+            }
+            guard !Task.isCancelled, isOnScreen, selectedOfficial?.spotId == pin.spotId else { return }
+            let item = found ?? Self.roundedDirectionsItem(for: pin)
+            item.openInMaps(launchOptions: [
+                MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
+            ])
+        }
+    }
+
+    private static func searchDirectionsItem(for pin: OfficialPins.Pin) async -> MKMapItem? {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = pin.name
+        request.resultTypes = .pointOfInterest
+        request.region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: pin.coords.lat, longitude: pin.coords.lng),
+            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))
+        guard let items = try? await MKLocalSearch(request: request).start().mapItems else { return nil }
+        let candidates = items.map {
+            Photo.Coords(lat: $0.placemark.coordinate.latitude, lng: $0.placemark.coordinate.longitude)
+        }
+        return OfficialSpotIndex.directionsTargetIndex(of: candidates, near: pin.coords).map { items[$0] }
+    }
+
+    private static func roundedDirectionsItem(for pin: OfficialPins.Pin) -> MKMapItem {
         let coordinate = CLLocationCoordinate2D(latitude: pin.coords.lat, longitude: pin.coords.lng)
         let item = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
         item.name = pin.name
-        item.openInMaps(launchOptions: [
-            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
-        ])
+        return item
     }
 
     /// 押した地点の札（デザイン 04b）:
@@ -1132,7 +1199,7 @@ struct PhotoMapView: View {
                     Text(L("この付近で撮られた写真", "Photos taken near here"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
-                    Text(L("\(photos.count)枚", "\(photos.count) photos"))
+                    Text(PhotoMapViewModel.photoCountLabel(photos.count))
                         .font(.caption)
                         .foregroundStyle(WebTheme.muted2)
                     Spacer(minLength: 8)
@@ -1210,7 +1277,11 @@ struct PhotoMapView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 24)
                 } else {
-                    VStack(spacing: 0) {
+                    // **Lazy にする。** 一覧は全件（公開済み364件・写真つき315件）で、
+                    // 素の VStack だと開いた瞬間に全行の写真（960px・計約31MB）を一斉に
+                    // 取りに行き、回線の細い端末では上の行まで時間切れで「読めない」の
+                    // 記号になっていた（owner の実機の絵・2026-09-28）
+                    LazyVStack(spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                             NavigationLink {
                                 OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos)
@@ -1298,113 +1369,172 @@ struct PhotoMapView: View {
     /// 「約0.8km · 写真 3枚」。距離は**丸めた座標から測るので「約」を付ける**
     /// （`NearbyPhotos.label`）。起点が無ければ距離を出さない
     private func spotSubline(_ row: OfficialSpotList.Row) -> String {
-        let photos = L("写真 \(row.photoCount)枚", "\(row.photoCount) photos")
+        let photos = L("写真 \(row.photoCount)枚", PhotoMapViewModel.photoCountLabel(row.photoCount))
         guard let km = row.km else { return photos }
         return "\(NearbyPhotos.label(km: km)) · \(photos)"
     }
 
-    // MARK: - リスト
+    // MARK: - リスト（都道府県ごと）
 
-    /// 同じ絞り込みの結果を、**ピンと同じ束ね**で行にする（行の数＝ピンの数）。
-    /// 枚数は数えた値。いいね数・保存は出さない（モックにはあるが求められていない）。
+    /// 撮影スポットと写真を**都道府県ごとのまとまり**にする（`RegionList`・owner の提案 2026-09-28）。
+    /// いまいる県（現在地、無ければ地図の中心）を先頭にして開き、ほかの県は閉じて件数だけ。
+    /// 県の先頭にその県で撮られた写真を横に並べ（**写真が主役**）、下に撮影スポットの行
+    /// （「スポット」の札と同じ行・近い順）。
     ///
-    /// **撮影スポットのピンも行にする**（写真の行のあと）。地図に出ている
-    /// ものがリストに無いと「ピンの数＝行の数」が崩れる
+    /// 絞り込みは上の欄とカテゴリだけ効かせる。**地図の見えている範囲では切らない**
+    /// （全国を県で並べる札なので）。座標の無い写真も「場所が分からない写真」に入る
     @ViewBuilder
     private var listArea: some View {
-        if let message = emptyMessage {
-            ErrorBanner(message: message)
+        let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
+        let sections = RegionList.sections(photos: model.photos, spots: model.officialSpots,
+                                           query: model.query, category: model.category, from: center)
+        let currentId = sections.first(where: \.isCurrent)?.id
+        let filtering = !MapSearch.fold(model.query).isEmpty || model.category != nil
+        // **撮影スポットの台帳が届くまでは並べない。** 届く前は県を当てる手がかりが無く、
+        // 座標だけの写真が「場所が分からない」に入る。そこから詳細を開いた後に台帳が届くと、
+        // 写真が県へ移って元の行が消え、詳細がその場で閉じる（台帳は控えがあればすぐ届く）
+        if model.officialIndexState == .loading || (sections.isEmpty && !model.loaded) {
+            // **読み込み中に「無い」と言わない**
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            Spacer()
+        } else if sections.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                // 写真の失敗は下の帯が言う（二度言わない）。ここでは台帳の失敗だけ
+                indexNote
+                ErrorBanner(message: model.loadFailed && model.photos.isEmpty
+                            ? Self.loadFailedText
+                            : (filtering ? L("見つかりませんでした", "No results")
+                                                 : L("撮影地の分かる写真がありません", "No photos with a place yet")))
+            }
+            .padding(.top, 8)
             Spacer()
         } else {
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(model.pins) { pin in
-                        Button {
-                            listing = pin
-                        } label: {
-                            listRow(pin)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    ForEach(model.officialPins) { pin in
-                        if let spot = model.officialSpot(for: pin) {
-                            NavigationLink {
-                                OfficialSpotView(spot: spot, spots: model.officialSpots, photos: model.photos)
-                            } label: {
-                                officialRow(pin)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("map.officialRow")
-                        }
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    listNotes
+                    ForEach(sections) { section in
+                        regionSection(section)
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
                 .padding(.bottom, 24)
             }
+            .onAppear { if let currentId { autoOpenedRegions.insert(currentId) } }
+            .onChange(of: currentId) { _, id in if let id { autoOpenedRegions.insert(id) } }
         }
     }
 
-    /// 撮影スポットの行。写真の行と同じ並び（印 → 名前と地域 → 矢印）。
-    /// 印は地図のピンと同じ丸（写真の代わり）
-    private func officialRow(_ pin: OfficialPins.Pin) -> some View {
-        HStack(spacing: 12) {
-            officialMarker(pin)
-                .frame(width: 56, height: 56)
-                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(pin.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.foreground)
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    if let region = pin.regionLabel {
-                        Text(region)
-                            .font(.caption)
-                            .foregroundStyle(WebTheme.muted2)
-                            .lineLimit(1)
-                    }
-                    if pin.isDraft {
-                        Text(L("下書き", "Draft"))
+    /// 片方だけ取れていない回の断り書き（リストは取れた方だけで描くので、黙ると
+    /// 「写真が無い」「スポットが無い」と読める）
+    @ViewBuilder
+    private var listNotes: some View {
+        if model.loadFailed {
+            listNote(Self.loadFailedText)
+        }
+        indexNote
+    }
+
+    @ViewBuilder
+    private var indexNote: some View {
+        if model.officialIndexState == .failed {
+            listNote(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
+        }
+    }
+
+    private func listNote(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(WebTheme.faint)
+            .padding(.horizontal, 4)
+    }
+
+    /// 開いているか。押した県は押したとおり。押していない県は、起点の県（と、これまでに
+    /// 起点だった県）だけ開く
+    private func isOpen(_ section: RegionList.Section) -> Bool {
+        regionOpen[section.id] ?? (section.isCurrent || autoOpenedRegions.contains(section.id))
+    }
+
+    private func regionSection(_ section: RegionList.Section) -> some View {
+        let open = isOpen(section)
+        // **中も Lazy に。** 開いた県の行を一斉に描くと、丸写真を全部同時に取りに行く
+        // （「スポット」の札で「読めない」記号になった穴・`spotsArea` の注記）
+        return LazyVStack(spacing: 0) {
+            Button {
+                regionOpen[section.id] = !open
+            } label: {
+                HStack(spacing: 8) {
+                    Text(section.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                    if section.isCurrent {
+                        // 現在地が無ければ地図の中心から決めている（「スポット」の札の見出しと同じ言い分け）
+                        Text(here != nil ? L("いまいる県", "You're here") : L("地図の中心", "Map center"))
                             .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                     }
+                    Spacer(minLength: 8)
+                    Text(RegionList.countLabel(section))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                    Image(systemName: open ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(WebTheme.faint)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 14)
+                .frame(minHeight: 52)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(open ? L("開いている", "Expanded") : L("閉じている", "Collapsed"))
+            .accessibilityIdentifier("map.region")
+            if open {
+                if !section.photos.isEmpty {
+                    regionPhotos(section.photos)
+                }
+                ForEach(section.spots) { row in
+                    NavigationLink {
+                        OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos)
+                    } label: {
+                        spotRow(row, divider: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("map.regionSpotRow")
                 }
             }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .frame(minHeight: WebTheme.minTapTarget)
-        .contentShape(Rectangle())
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func listRow(_ pin: MapPin) -> some View {
-        HStack(spacing: 12) {
-            RemoteImage(url: pin.photos.first?.gridImageURL,
-                        alignment: pin.photos.first?.gridAlignment ?? .center)
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 3) {
-                // 撮影地の文字列が無いピンを「撮影地」という場所に見せない
-                Text(pin.hasPlaceName ? pin.title : L("場所の名前なし", "No place name"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(pin.hasPlaceName ? WebTheme.foreground : WebTheme.faint)
-                    .lineLimit(1)
-                Text(L("\(pin.photos.count)枚", "\(pin.photos.count) photos"))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.muted2)
+    /// その県で撮られた写真を横に並べる（札の写真の列と同じ大きさ）。押すと写真の詳細
+    private func regionPhotos(_ photos: [Photo]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 6) {
+                ForEach(photos) { photo in
+                    NavigationLink {
+                        PhotoDetailView(photo: photo, context: photos)
+                    } label: {
+                        RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
+                            .frame(width: 72, height: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(photo.accessibilityText)
+                }
             }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+            .padding(.horizontal, 14)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .frame(minHeight: WebTheme.minTapTarget)
-        .contentShape(Rectangle())
+        .frame(height: 90)
+        .padding(.vertical, 12)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+        }
     }
 
     // MARK: - カメラ
@@ -1417,8 +1547,7 @@ struct PhotoMapView: View {
         selected = nil
         Task {
             // 集合を自分で渡してから読む（`GalleryView.reloadHidden` と同じ理由）
-            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
-                                                photoIds: hidden.reportedPhotoIds)
+            await environment.gallery.setHidden(hidden.snapshot)
             await model.load(environment: environment)
             // 読んでいる間に押した札・開いた一覧も、前の人の写しなので差し替える。
             // 一覧のシートを出している間もここを通る（シートでは `onDisappear` が
@@ -1473,7 +1602,7 @@ struct MapPin: Identifiable, Equatable {
     let photos: [Photo]
 
     /// 撮影地の文字列を持つか。無いピンの `title` は仮の語（「撮影地」）で、
-    /// リストや札ではそれを場所の名前として出さない
+    /// 札や一覧のシートではそれを場所の名前として出さない
     var hasPlaceName: Bool {
         photos.contains { !($0.location ?? "").isEmpty }
     }

@@ -28,10 +28,11 @@ struct TripPlanPickSheet: View {
                     Text(L("\(dayIndex + 1) 日目", "Day \(dayIndex + 1)"))
                         .font(.caption)
                         .foregroundStyle(WebTheme.muted2)
-                    // **どこから来た候補かを書く。** 「行きたい」はこの端末にだけ
-                    // 覚えている（`WishlistStore`）ので、Web で押したものは出ない
-                    Text(L("この端末で「行きたい」に入れた場所から選べます",
-                           "Places you marked “Want to go” on this device"))
+                    // **どこから来た候補かを書く。** 「行きたい」はログイン中は
+                    // サーバーの一覧（`WishlistStore`・`/user/spots`）なので、Web で
+                    // 押したものも並ぶ。「この端末で」とは書かない
+                    Text(L("「行きたい」に入れた場所から選べます",
+                           "Places you marked “Want to go”"))
                         .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                 }
@@ -95,8 +96,11 @@ struct TripPlanPickSheet: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(WebTheme.foreground)
                             .lineLimit(1)
-                        if choice.isOfficial {
-                            Text(L("公式", "Official"))
+                        // 🔴 **「公式」と書かない**（`OfficialSpot` の注記）。台帳は運営の下書きを
+                        // 含み、人が確かめたものではない。地図のスポット一覧・マイページの行と
+                        // 同じく、**下書きのときだけ**「下書き」の札を付ける
+                        if choice.isDraft {
+                            Text(L("下書き", "Draft"))
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(WebTheme.muted)
                                 .webChip()
@@ -119,8 +123,8 @@ struct TripPlanPickSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // 名前だけにしない（「公式」と県・市も読む）
-        .accessibilityLabel(L("\(choice.name)\(choice.isOfficial ? "・公式" : "")\(choice.regionLabel.map { "・" + $0 } ?? "") を追加",
-                              "Add \(choice.name)\(choice.regionLabel.map { ", " + $0 } ?? "")"))
+        // 名前だけにしない（札の語と県・市も読む）
+        .accessibilityLabel(L("\(choice.name)\(choice.isDraft ? "・下書き" : "")\(choice.regionLabel.map { "・" + $0 } ?? "") を追加",
+                              "Add \(choice.name)\(choice.isDraft ? ", draft" : "")\(choice.regionLabel.map { ", " + $0 } ?? "")"))
     }
 }

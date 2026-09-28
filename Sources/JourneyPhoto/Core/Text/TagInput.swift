@@ -11,9 +11,14 @@ enum TagInput {
 
     /// 区切りとして扱う文字。**`parse` と打ちかけの判定で同じものを使う。**
     /// 別々だと、`京都、sau` の打ちかけを `京都、sau` 丸ごとと見て候補が消える。
-    static let separators = CharacterSet(charactersIn: ",、 　\n")
+    ///
+    /// **Web の `TAG_SEPARATOR = /[,，、､]/` と同じ4文字。空白では切らない。**
+    /// 空白で切っていたので `New York` が `New` と `York` の2つのタグに割れ、
+    /// 逆に全角「，」・半角「､」は区切りにならず `夕焼け，海` が1つのタグになっていた
+    /// （Web で付けたタグとアプリで付けたタグが食い違う）。
+    static let separators = CharacterSet(charactersIn: ",，、､")
 
-    /// 読点・カンマ・空白のどれで区切っても同じに扱う。
+    /// カンマ・読点（全角・半角）のどれで区切っても同じに扱う。
     /// **重複は落とす**（同じタグが2つ付くと絞り込みの件数がずれる）。
     static func parse(_ text: String) -> [String] {
         var seen = Set<String>()
@@ -89,6 +94,37 @@ enum TagInput {
         return String(current[current.startIndex..<cut.upperBound])
     }
 
+    /// 写真の詳細のタグの札に出す字（板 02 の「#夕焼け」）。
+    ///
+    /// 先頭の半角 `#`（とその間の空白）を**全部**落としてから `#` を1つ付ける。
+    /// 打った人が付けていた `#` を二重にしない（`##旅` → `#旅`）。
+    ///
+    /// **全角の `＃` は畳まない。** 絞り込みの鍵（`TagChoices.key`）と Web の `tagKey` は
+    /// 半角の `#` しか落とさないので、`＃旅` と `旅` は**別のページ**。札を両方「#旅」に
+    /// すると、同じ字の札から中身の違うページが開く。`＃` で始まるなら `#` を足さずに
+    /// そのまま出す（「#＃旅」と二重にしない）。`#` しか無いタグは元の字のまま。
+    /// **描くときだけ**——保存する値・絞り込みに渡す値には付けない
+    static func chipText(_ tag: String) -> String {
+        let bare = tag.drop(while: { $0 == "#" || $0.isWhitespace })
+        guard !bare.isEmpty else { return tag }
+        if bare.first == "＃" {
+            let rest = bare.dropFirst().drop(while: { $0.isWhitespace })
+            return rest.isEmpty ? tag : "＃" + rest
+        }
+        return "#" + bare
+    }
+
+    /// 札に並べるタグ。**同じ字に見えて同じページが開く札は1枚にする**（`旅`・`#旅`・`# 旅` は
+    /// 全部「#旅」で、開く先も同じだった）。先に出た方を残す。
+    ///
+    /// **字だけで寄せない。** `chipText` は先頭の `#` と空白を全部落とすが、開く先の鍵
+    /// （`TagChoices.key`）は先頭の `#` しか落とさない——`# #旅` は札が「#旅」でも鍵は `#旅`
+    /// で、`旅` とは別のページ。字だけで寄せると、そのページにこの写真から行けなくなる
+    static func uniqueChips(_ tags: [String]) -> [String] {
+        var seen = Set<String>()
+        return tags.filter { seen.insert(chipText($0).lowercased() + "\u{0}" + TagChoices.key($0)).inserted }
+    }
+
     /// 候補を、**打ちかけの文字で絞る**。
     ///
     /// 何も打っていなければ全部出す（20語は全部並ぶ——Web は
@@ -141,7 +177,8 @@ enum PhotoQuery {
 
         var title: String {
             switch self {
-            case .tag(let value): return "#\(value)"
+            // 札（`chipText`）と同じ畳み方——「##旅」「＃旅」の札が「#旅」なのに見出しが食い違わない
+            case .tag(let value): return TagInput.chipText(value)
             case .location(let value): return value
             // 生の値（`landscape`）ではなく画面の名前（「風景」）。行き先の題が、押した
             // 札の「風景」と食い違わないように（ホーム・探す・写真の詳細から開く）

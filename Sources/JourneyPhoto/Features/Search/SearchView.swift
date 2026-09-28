@@ -97,8 +97,7 @@ struct SearchView: View {
     private func reloadHidden() {
         needsReload = false
         Task {
-            await environment.gallery.setHidden(userIds: hidden.blockedUserIds,
-                                                photoIds: hidden.reportedPhotoIds)
+            await environment.gallery.setHidden(hidden.snapshot)
             await model.reloadPhotos(environment: environment, hidden: hidden.snapshot)
             await model.search(query, environment: environment)
         }

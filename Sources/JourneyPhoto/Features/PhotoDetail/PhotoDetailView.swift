@@ -39,7 +39,17 @@ struct PhotoDetailView: View {
     @State private var nearby: [Photo] = []
     /// 「この場所のスポット」の行き先。**台帳にも写真にも辿り着けたときだけ入る**
     @State private var spotLead: SpotLead?
-    @State private var isFollowing = false
+    /// フォローしているか。**分からない間は nil**——ボタンを出さない
+    /// （取れなかった回に「フォロー」と出すと、フォロー中の人に二重に送る）
+    @State private var isFollowing: Bool?
+    /// フォロー一覧を**取りに行って失敗した**。このときはボタンを「フォロー」の姿で
+    /// 出し、押されたら先に取り直してから判断する（`toggleFollow`）。
+    /// 失敗を nil のまま放置すると、ボタンが二度と出なかった
+    @State private var followLookupFailed = false
+    /// 成功の知らせ（ブロックしました など）。**失敗の赤字（`actionError`）と分ける**
+    @State private var actionNotice: String?
+    /// 削除を確かめているコメント（押してすぐ消さない）
+    @State private var commentPendingDelete: PhotoComment?
     @State private var isFollowWorking = false
     @State private var showUnfollowConfirm = false
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）
@@ -141,6 +151,8 @@ struct PhotoDetailView: View {
         // **送った先の1枚でも読み直す**（鍵に今の1枚を入れる）
         .task(id: "\(auth.userId ?? "")|\(current.id)") {
             model.setSignedIn(auth.userId != nil)
+            // 前の1枚の「ブロックしました」を持ち越さない
+            actionNotice = nil
             model.show(photoId: current.id, initialLikes: current.likes,
                        liked: favorites.contains(current.id))
             await model.load()
@@ -185,14 +197,22 @@ struct PhotoDetailView: View {
             await model.loadOwner(ownerId, profiles: environment.profiles)
             // **フォローしているかは、その人を見に行かずに知りたい。**
             // 自分のフォロー一覧から引く（相手のページを開かずに済む）
+            followLookupFailed = false
             guard let me = auth.userId, let ownerId, me != ownerId else {
                 isFollowing = false
                 return
             }
+            // 人が替わった・入り直した回は、答えが来るまで「分からない」
+            isFollowing = nil
             // **取れなかった回は書かない。** 圏外で「フォロー」に戻すと、
             // フォロー中の人を押して二重に送る（`FollowListView` と同じ扱い）
             let ids = try? await environment.social.myFollowingIds()
-            guard let ids, !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
+            guard let ids else {
+                // 押されたら取り直す（`toggleFollow`）。ボタンが出る経路を残す
+                followLookupFailed = true
+                return
+            }
             isFollowing = ids.contains(ownerId)
         }
         .sheet(isPresented: $showReport) {
@@ -204,9 +224,13 @@ struct PhotoDetailView: View {
             NavigationStack { EditPhotoView(photo: shown) }
         }
         .fullScreenCover(isPresented: $showViewer) {
+            // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）。
+            // 編集して保存した写真は新しい姿で（題・撮影地が古いまま出ていた）
+            let lineup = PhotoDetailRules.viewerLineup(siblings.map { edits[$0.id] ?? $0 },
+                                                       current: shown, hiding: dropped)
             PhotoViewerView(
-                photos: siblings,
-                index: siblings.firstIndex(where: { $0.id == current.id }) ?? 0,
+                photos: lineup.photos,
+                index: lineup.index,
                 // **写真ごとに答える。** この画面の1枚は画面が持つ値、
                 // 隣の写真は端末の控え（ホームのハートと同じ出どころ）
                 isLiked: { shown in shown.id == current.id ? model.liked : favorites.contains(shown.id) },
@@ -221,6 +245,23 @@ struct PhotoDetailView: View {
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
             Text(L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
+        }
+        // コメントの削除は確かめてから（押し間違いで他人の書き込みを消さない）
+        //
+        // **`presenting:` で押した時点の1件を受け取る。** 閉じるときの
+        // `set(false)` が `commentPendingDelete` を先に nil にするので、
+        // ボタンの中でそれを読むと消えないことがあった
+        .alert(L("このコメントを削除しますか？", "Delete this comment?"),
+               isPresented: Binding(get: { commentPendingDelete != nil },
+                                    set: { if !$0 { commentPendingDelete = nil } }),
+               presenting: commentPendingDelete) { comment in
+            Button(Labels.Common.delete, role: .destructive) {
+                Task { clearNotices(); await model.deleteComment(comment) }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: { comment in
+            Text(L("\(comment.name)さんのコメントを削除します。元に戻せません。",
+                   "Deletes the comment by \(comment.name). This cannot be undone."))
         }
     }
 
@@ -241,7 +282,7 @@ struct PhotoDetailView: View {
                 TabView(selection: $heroPage) {
                     ForEach(Array(group.enumerated()), id: \.element.id) { index, item in
                         // 編集して保存した1枚は新しい姿で（切り抜きの中心など）
-                        heroImage(item.id == shown.id ? shown : item).tag(index)
+                        heroImage(edits[item.id] ?? item).tag(index)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -342,7 +383,7 @@ struct PhotoDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             placeRow
             if !shown.displayTitle.isEmpty {
-                // **題は写真の次に来る主役。** 明朝 30pt（文字サイズの設定で伸びる）。
+                // **題は写真の次に来る主役。** 明朝 32pt（板 02・文字サイズの設定で伸びる）。
                 // 行送りは書体の自然値（1.45em）で足りるので、足さない
                 Text(shown.displayTitle)
                     .font(JPFont.photoTitle)
@@ -445,7 +486,8 @@ struct PhotoDetailView: View {
                     .lineLimit(1)
             }
         }
-        .font(.footnote)
+        // 板 02: 12px（`.caption`）
+        .font(.caption)
         .foregroundStyle(WebTheme.foreground)
         .jpPhotoTextShadow()
         .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
@@ -471,7 +513,7 @@ struct PhotoDetailView: View {
     /// ので、投稿者の公開プロフィールを1回だけ引く。取れなければ名前だけ
     /// ——「@」だけの行を作らない。
     ///
-    /// **認証バッジは出さない**（モックにはあるが、サーバーに判定が無い）。
+    /// 認証の印は名前の横に出す（`VerifiedBadge`・名前 13 に合わせる。付けるのは運営だけ）。
     @ViewBuilder
     private var authorRow: some View {
         if let ownerId {
@@ -483,25 +525,32 @@ struct PhotoDetailView: View {
                         RemoteImage(url: UserProfile.profileAssetURL(
                             userId: ownerId, suffix: nil, cacheBust: nil),
                                     placeholderSymbol: "person.crop.circle.fill")
-                            .frame(width: 44, height: 44)
+                            // 板 02: 34pt（押せる高さは行の 44pt）
+                            .frame(width: 34, height: 34)
                             .clipShape(Circle())
                             .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 4) {
                                 Text(AuthorName.shown(profile: model.owner, photoDisplayName: shown.displayName))
-                                    .font(.subheadline.weight(.semibold))
+                                    // 板 02: 13px の太字
+                                    .font(.footnote.weight(.semibold))
                                     .foregroundStyle(WebTheme.foreground)
                                     .lineLimit(1)
-                                VerifiedBadge(isVerified: model.owner?.verified)
+                                VerifiedBadge(isVerified: model.owner?.verified,
+                                              nameSize: 13, relativeTo: .footnote)
                             }
                             if let username = model.owner?.username, !username.isEmpty {
                                 Text("@\(username)")
-                                    .font(.caption)
+                                    // 板 02: 11px
+                                    .font(.caption2)
                                     .foregroundStyle(WebTheme.faint)
                                     .lineLimit(1)
                             }
                         }
                     }
+                    // アイコンを 34pt にしても、押せる高さは 44pt を保つ
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 // 実機の絵の道しるべ（`ScreenshotTests`）。
@@ -511,30 +560,26 @@ struct PhotoDetailView: View {
 
                 Spacer(minLength: 8)
 
-                if !isMine, auth.userId != nil {
-                    followButton(ownerId)
+                // 取れなかった回も「フォロー」で出す（押されたら取り直してから送る）
+                if !isMine, auth.userId != nil, isFollowing != nil || followLookupFailed {
+                    followButton(ownerId, following: isFollowing ?? false)
                 }
             }
         }
     }
 
-    private func followButton(_ userId: String) -> some View {
+    private func followButton(_ userId: String, following isFollowing: Bool) -> some View {
         Button {
             // 外すときだけ確認を挟む（`unfollowConfirmation`）
             if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(userId) } }
         } label: {
-            Text(isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"))
-                .font(.footnote.weight(.semibold))
-                .padding(.horizontal, 16)
-                .frame(height: 34)
-                .background(isFollowing ? AnyShapeStyle(WebTheme.surface)
-                                        : AnyShapeStyle(WebTheme.accentBackground),
-                            in: Capsule())
-                .foregroundStyle(isFollowing ? WebTheme.foreground : WebTheme.accentText)
+            // 板 02・31 と同じ札（人のページと共通の `FollowPill`）
+            FollowPill(title: isFollowing ? L("フォロー中", "Following") : L("フォロー", "Follow"),
+                       isFollowing: isFollowing)
         }
         .buttonStyle(.plain)
         .disabled(isFollowWorking)
-        .opacity(isFollowWorking ? 0.5 : 1)
+        .opacity(isFollowWorking ? 0.6 : 1)  // 人のページと同じ薄さ
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
             Task { await toggleFollow(userId) }
         }
@@ -545,6 +590,8 @@ struct PhotoDetailView: View {
     private func clearNotices() {
         actionError = nil
         model.errorMessage = nil
+        // 成功の知らせ（ブロックしました）も同じ扱い——古いものを新しい失敗の後に残さない
+        actionNotice = nil
     }
 
     /// **返ってきた状態を使う。** 自分で反転すると、失敗した回に
@@ -555,13 +602,40 @@ struct PhotoDetailView: View {
         defer { isFollowWorking = false }
         // 前の回の知らせを残さない（押し直して通ったのに赤字が残る）
         clearNotices()
+        // **分からないまま送らない。** 一覧が取れなかった回は、ここで取り直して
+        // から決める——既にフォロー中なら送らずに姿だけ直す（二重に送らない）
+        if isFollowing == nil {
+            guard followLookupFailed else { return }
+            let ids: Set<String>
+            do {
+                ids = Set(try await environment.social.myFollowingIds())
+            } catch is CancellationError {
+                return
+            } catch {
+                actionError = L("フォローの状態を確かめられませんでした", "Couldn't check follow status")
+                return
+            }
+            // **待つ間に別の人の写真へ送ったら書かない**（前の人の状態が次の人のボタンに出る）
+            guard ownerId == userId else { return }
+            followLookupFailed = false
+            if ids.contains(userId) {
+                isFollowing = true
+                return
+            }
+            isFollowing = false
+        }
+        guard let wasFollowing = isFollowing else { return }
         // **失敗は黙らない**（圏外で押して何も起きないと、押せていないのか分からない）。
         // 知らせは、ブロックの失敗と同じ `actionError` に出す
         do {
-            let result = isFollowing
+            let result = wasFollowing
                 ? try await environment.social.unfollow(userId: userId)
                 : try await environment.social.follow(userId: userId)
+            // 待つ間に別の人の写真へ送ったら書かない
+            guard ownerId == userId else { return }
             isFollowing = result.following
+        } catch is CancellationError {
+            return
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription
                 ?? L("うまくいきませんでした", "That didn't work")
@@ -683,6 +757,13 @@ struct PhotoDetailView: View {
     /// 隣の写真も同じ一覧から来ているので、同じ判断で足りる
     private func shareURL(for item: Photo) -> URL? {
         let latest = item.id == current.id ? shown : item
+        // 🔴 **公開範囲を絞った写真は配らない（共有を出さない）。** 一覧には
+        // `/feed/restricted` の写真も混ざる（`published: true`）が、`photos.json` に
+        // 載らず個別ページが建たない。Web は絞った写真を読まないので、ホームの
+        // `?photo=` に振り替えても「見つかりませんでした」になる——受け取った人
+        // （フォロワー本人も）が開けない。自分のページから開いた自分の写真も同じ
+        // 下書き（非公開）も同じ（Web が読む一覧に載らない）
+        guard CollectionScreen.isShareable(latest) else { return nil }
         return PhotoLink.url(photoId: item.id,
                              isPublished: fromPublicFeed && latest.published != false)
     }
@@ -714,40 +795,37 @@ struct PhotoDetailView: View {
 
     private func socialBar(_ proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 16) {
+            // 板 02: 白い印を両端に揃えて並べ、数は等幅 12px の白。
+            // 外に -6 は、各ボタンの横の余白 6pt ぶん（印の端を本文の端に揃える）
+            HStack(spacing: 0) {
                 Button {
                     // 端末側のハートも合わせる（圏外でも一覧が出る）
                     Task { await toggleLikeHere() }
                 } label: {
                     // **いちばん押されるボタンがいちばん小さかった。**
                     // 既定の字のままで 20pt ほどしか無く、指では狙いにくい
-                    Label("\(model.likes)", systemImage: model.liked ? "heart.fill" : "heart")
-                        .font(.title2)
-                        .foregroundStyle(model.liked ? WebTheme.foreground : WebTheme.muted)
-                        .webTappable()
+                    // **分からない数は出さない**（読み込み前・圏外に「0」と描かない。
+                    // `actionLabel` は数が nil なら印だけ）
+                    actionLabel(systemImage: model.liked ? "heart.fill" : "heart",
+                                count: model.likes)
                 }
                 .buttonStyle(.plain)
+                // 読み上げは「いいね、N」（印の名前と数字を連ねない）
+                .accessibilityLabel(L("いいね", "Like"))
+                .accessibilityValue(model.likes.map { "\($0)" } ?? "")
                 .accessibilityAddTraits(model.liked ? .isSelected : [])
+                Spacer(minLength: 0)
 
                 // 吹き出しを押すと下のコメントへ送る。**数は取れたときだけ**
                 // ——読み込み前・圏外に「0」を出すと「まだ無い」と読まれる
                 Button {
                     withAnimation { proxy.scrollTo(Self.commentsAnchor, anchor: .top) }
                 } label: {
-                    if let count = model.commentCount {
-                        Label("\(count)", systemImage: "bubble.right")
-                            .font(.title2)
-                            .foregroundStyle(WebTheme.faint)
-                            .webTappable()
-                    } else {
-                        Image(systemName: "bubble.right")
-                            .font(.title2)
-                            .foregroundStyle(WebTheme.faint)
-                            .webTappable()
-                    }
+                    actionLabel(systemImage: "bubble.right", count: model.commentCount)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(CommentsHeading.label(commentCount: model.commentCount))
+                Spacer(minLength: 0)
 
                 // **保存**。いいねとは別の入れ物（`saves#<uid>`）。
                 //
@@ -757,32 +835,49 @@ struct PhotoDetailView: View {
                 Button {
                     Task { await toggleSave() }
                 } label: {
-                    Image(systemName: savedPhotos.contains(current.id) ? "bookmark.fill" : "bookmark")
-                        .font(.title2)
-                        .foregroundStyle(savedPhotos.contains(current.id) ? WebTheme.foreground : WebTheme.faint)
-                        .webTappable()
+                    actionLabel(systemImage: savedPhotos.contains(current.id) ? "bookmark.fill" : "bookmark")
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("保存", "Save"))
+                .accessibilityAddTraits(savedPhotos.contains(current.id) ? .isSelected : [])
 
-                // **シェア**（配るのは画像ではなくページ）
+                // **シェア**（配るのは画像ではなくページ）。個別ページが無い写真では
+                // 出さない——そのときは3つが両端揃えで並ぶ
                 if let url = shareURL(for: current) {
+                    Spacer(minLength: 0)
                     ShareLink(item: url) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.title2)
-                            .foregroundStyle(WebTheme.faint)
-                            .webTappable()
+                        actionLabel(systemImage: "square.and.arrow.up")
                     }
+                    .accessibilityLabel(L("共有", "Share"))
                 }
-
-                Spacer()
             }
+            .padding(.horizontal, -6)
             // **いま押した操作の知らせを先に出す。** 前に出た `model.errorMessage`
             // （いいね・コメントの失敗）は消えないので、先に見るとフォローの失敗が隠れる
             if let message = actionError ?? model.errorMessage {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.danger)
+            } else if let actionNotice {
+                Text(actionNotice).font(.footnote).foregroundStyle(WebTheme.muted)
             }
         }
+    }
+
+    /// 4つの操作の中身（板 02: 24px の白い印＝SF の `.title2`（約 22pt）で同じ見た目の大きさ・
+    /// 数は等幅 12px の白・押せる大きさ 44×44 以上）。
+    /// 数は**取れたときだけ**（読み込み前・圏外に「0」を出すと「まだ無い」と読まれる）
+    private func actionLabel(systemImage: String, count: Int? = nil) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                // 文字サイズの設定で伸びる
+                .font(.title2)
+            if let count {
+                Text("\(count)")
+                    .font(JPFont.mono(12, relativeTo: .caption))
+            }
+        }
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 6)
+        .webTappable()
     }
 
     /// 「この近くで撮られた写真」（板 02）。**座標の無い写真、近くに1枚も
@@ -941,10 +1036,13 @@ struct PhotoDetailView: View {
                         // ——UGC のアプリは「不快な書き込みを持ち主が取り除ける」
                         // ことを審査（1.2）で見られる
                         if comment.uid == auth.userId || isMine {
-                            Button(Labels.Common.delete) { Task { clearNotices(); await model.deleteComment(comment) } }
+                            // **押してすぐ消さない**（確かめてから）。読み上げには誰のコメントかを入れる
+                            Button(Labels.Common.delete) { commentPendingDelete = comment }
                                 .font(.caption2)
                                 // 読み直している間・消している途中は押せない（`deleteComment` は黙って断る）
                                 .disabled(model.isReloadingComments || model.deletingCommentIds.contains(comment.id))
+                                .accessibilityLabel(L("\(comment.name)さんのコメントを削除",
+                                                      "Delete comment by \(comment.name)"))
                         }
                     }
                     Text(comment.text).font(.callout)
@@ -1022,7 +1120,14 @@ struct PhotoDetailView: View {
         do {
             // 押したあと実際に消す（公開一覧は静的なので端末で落とす）
             try await hidden.blockAndHide(userId, environment: environment)
-            actionError = L("ブロックしました。おたがいの投稿が見えなくなります。", "Blocked. You won't see each other's posts.")
+            // **成功は赤字で出さない**（失敗の欄 `actionError` は空けたまま）。
+            // ブロックするとフォローも外れるので、ボタンも外した姿にする
+            actionNotice = L("ブロックしました。おたがいの投稿が見えなくなります。", "Blocked. You won't see each other's posts.")
+            // **ブロックした相手にフォローボタンを出さない**（false だと「フォロー」が出る）
+            if userId == ownerId {
+                isFollowing = nil
+                followLookupFailed = false
+            }
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
@@ -1037,6 +1142,12 @@ struct PhotoDetailView: View {
         // unsave が並んで飛ぶと、着く順や失敗の巻き戻しで画面とサーバーが食い違う
         guard !isSavingBookmark else { return }
         clearNotices()
+        // **未ログインは送らずに知らせる**（いいねと同じ扱い）。以前は押せて、
+        // 失敗を黙って巻き戻すだけだった
+        guard auth.userId != nil else {
+            actionError = L("保存するにはログインしてください", "Sign in to save photos")
+            return
+        }
         isSavingBookmark = true
         defer { isSavingBookmark = false }
         let id = current.id
@@ -1050,8 +1161,19 @@ struct PhotoDetailView: View {
             } else {
                 try await environment.saves.save(photoId: id)
             }
+        } catch is CancellationError {
+            savedPhotos.set(id, saved: wasSaved, for: owner)
         } catch {
             savedPhotos.set(id, saved: wasSaved, for: owner)
+            // **黙らない**（いいね・フォローと同じ）。404 で保存が残っている回は
+            // `SaveService.save` が成功として返すのでここには来ない。残る 404 は
+            // 下書き（公開していない写真）——サーバーの「見つかりません」では分からない
+            if !wasSaved, SocialService.isNotFound(error) {
+                actionError = L("公開中の写真だけ保存できます", "Only published photos can be saved")
+            } else {
+                actionError = (error as? LocalizedError)?.errorDescription
+                    ?? L("保存できませんでした", "Couldn't save")
+            }
         }
     }
 
@@ -1064,8 +1186,15 @@ struct PhotoDetailView: View {
 
     private func deletePhoto() async {
         clearNotices()
+        let photoId = current.id
+        // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
+        let owner = hidden.owner
         do {
-            try await environment.photos.delete(photoId: current.id)
+            try await environment.photos.delete(photoId: photoId)
+            // 🔴 **公開一覧からも落とす。** 一覧は建て直しまで古い静的 JSON で、
+            // 控えも残るので、消した写真がホーム・探す・地図に出続け、押すと
+            // いいね・保存・コメントが 404 になっていた（`ModerationStore.goneMarks`）
+            await hidden.hideGone(photoId, for: owner, environment: environment)
             // **消した写真の画面に留まらせない。** 残ると、もう無いものを
             // 編集したり、もう一度削除を押したりできてしまう
             dismiss()
@@ -1107,18 +1236,28 @@ private struct TagRow: View {
     var body: some View {
         // 横に流さず折り返す。タグは59種あり、長い並びは画面外に出る
         FlowLayout(spacing: 6) {
-            ForEach(tags, id: \.self) { tag in
+            ForEach(TagInput.uniqueChips(tags), id: \.self) { tag in
                 NavigationLink {
                     TagPhotosView(kind: .tag(tag))
                 } label: {
                     // Web: `bg-white/5 ring-1 ring-white/10 text-xs text-white/50`
                     // 板 02: 「#夕焼け」。**頭の「#」は描くときだけ**——保存する値には
                     // 付けない（`TagPhotosView` にも素の値を渡す）。打った人が既に
-                    // 「#」を付けていた行は二重にしない
-                    Text(tag.hasPrefix("#") ? tag : "#\(tag)")
+                    // 「#」「＃」を付けていた行は畳んでから1つ付ける（`TagInput.chipText`）
+                    //
+                    // 札は板どおり横 12・高さ 32・地 5%・縁 10%（字の色は `muted` のまま）
+                    Text(TagInput.chipText(tag))
                         .font(.caption)
                         .foregroundStyle(WebTheme.muted)
-                        .webChip()
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 32)
+                        .background(Color.white.opacity(0.05), in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
+                        // 見た目は 32pt、押せる高さは 44pt（上下 6pt ずつ広げ、並びは詰めたまま）。
+                        // 行の間（6pt）より広げるので、上下の行の押せる範囲が少し重なる
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                        .padding(.vertical, -6)
                 }
                 .buttonStyle(.plain)
             }
@@ -1315,5 +1454,26 @@ struct FlowLayout: Layout {
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
+    }
+}
+
+/// 詳細画面の判断のうち、画面を建てずに確かめられるもの
+enum PhotoDetailRules {
+
+    /// 大きく見る画面に渡す並びと、開く位置。
+    ///
+    /// 🔴 **ブロック・通報した写真を落とす**（`ModerationSnapshot.visible`）。
+    /// 以前は素の並び（`siblings`）を渡していて、この画面でブロックしたあとも
+    /// 大きく見る画面で左右に送るとその人の写真が出てきた。
+    ///
+    /// **押した1枚（`current`）は残す。** 詳細の上にはその1枚が出ていて、
+    /// 押して開いた先が別の写真になる・何も出ない方がおかしい。落とすと
+    /// 位置が引けず、並びが空になる回もある。位置は必ず並びの中に収める
+    static func viewerLineup(_ siblings: [Photo], current: Photo,
+                             hiding: ModerationSnapshot) -> (photos: [Photo], index: Int) {
+        let kept = Set(hiding.visible(siblings).map(\.id))
+        let photos = siblings.filter { $0.id == current.id || kept.contains($0.id) }
+        guard !photos.isEmpty else { return ([current], 0) }
+        return (photos, photos.firstIndex(where: { $0.id == current.id }) ?? 0)
     }
 }

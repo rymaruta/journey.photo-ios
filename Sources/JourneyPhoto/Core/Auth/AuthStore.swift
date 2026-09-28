@@ -157,6 +157,12 @@ final class AuthStore: ObservableObject {
             self.state = .signedIn(userId: id)
             await refreshAdmin()
         }
+        // 🔴 **ログインでは「アカウントが無い」と「違います」を同じ文にする**（Web の signIn と
+        // 同じ）。分けると、アカウントの有無をログイン画面で確かめられる。種類（`lastFailure`）
+        // は残す——ほかの流れ（送り直し・退会）の文は変えない
+        if lastFailure == .userNotFound {
+            errorMessage = AuthMessage.text(for: .notAuthorized)
+        }
     }
 
     func signOut(byExpiry: Bool = false) async {
@@ -235,6 +241,13 @@ final class AuthStore: ObservableObject {
             try await AuthGateway.resetPassword(email: email)
             ok = true
         }
+        // 🔴 **無いアカウントでも「送りました」と同じに進める**（Web の forgotPassword と同じ）。
+        // 断ると、再設定の画面でアカウントの有無を確かめられる
+        if !ok, lastFailure == .userNotFound {
+            ok = true
+            lastFailure = .none
+            errorMessage = nil
+        }
         return ok
     }
 
@@ -247,6 +260,11 @@ final class AuthStore: ObservableObject {
             )
             ok = true
         }
+        // 🔴 **無いアカウントは「コードが違います」と同じ文にする。** 1段目（`startPasswordReset`）で
+        // 隠しても、ここで「アカウントが見つかりません」と出ると有無が分かる
+        if lastFailure == .userNotFound {
+            errorMessage = AuthMessage.text(for: .codeMismatch)
+        }
         return ok
     }
 
@@ -255,6 +273,20 @@ final class AuthStore: ObservableObject {
         await run {
             try await AuthGateway.confirmSignUp(username: username, code: code)
             ok = true
+        }
+        // 🔴 **「もう確認済み」は成功として扱う**（Web の `confirmSignUp` と同じ）。確認は
+        // 済んだのに返事が届かなかった回（圏外・PostConfirmation の失敗）に押し直すと
+        // Cognito は NotAuthorized を返し、「メールアドレスかパスワードが違います」で
+        // 確認画面から出られなくなっていた
+        if !ok, lastFailure.meansAlreadyConfirmed {
+            ok = true
+            lastFailure = .none
+            errorMessage = nil
+        }
+        // 別のアカウントがこのメールで確認済み（同じ人が登録し直した）。次の手を言う
+        if lastFailure == .aliasExists {
+            errorMessage = L("このメールアドレスはすでに登録されています。そのアカウントでログインするか、パスワードを再設定してください",
+                             "This email is already registered. Sign in to that account or reset its password.")
         }
         return ok
     }
@@ -329,6 +361,10 @@ enum AuthFailure: Equatable {
         default: self = .other
         }
     }
+
+    /// 確認コードを送ったときの「もう確認済み」（Cognito は NotAuthorized で返す）。
+    /// 確認の押し直しでは**成功**として扱う
+    var meansAlreadyConfirmed: Bool { self == .notAuthorized }
 
     /// 相手の利用者がもう存在しない（退会の押し直しで「消せた」とみなす）。
     var meansUserAlreadyGone: Bool { self == .userNotFound }

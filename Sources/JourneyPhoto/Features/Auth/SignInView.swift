@@ -382,6 +382,13 @@ struct SignInView: View {
                         if await applyDisplayName(name) {
                             pending.forget(email: email)
                         }
+                    } else if auth.lastFailure == .aliasExists {
+                        // 別のアカウントがこのメールで確認済み。案内（ログインか再設定）に
+                        // 従えるよう、ログインの欄へ戻す。**控えは捨てない**——預かった表示名は、
+                        // そのアカウントに入ったとき名前が空なら入れる（ログイン成功後の処理）
+                        pendingUsername = nil
+                        mode = .signIn
+                        code = ""
                     }
                 }
             } label: {

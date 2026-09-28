@@ -9,13 +9,18 @@ import MapKit
 /// 今日その写真は0枚——**全節が写真に依存する `SpotDetailView` を広げずに**
 /// 別の画面にした。
 ///
-/// 🔴 **下書きを「公式」と名乗らない。** 索引の全件が運営未確認の下書き
-/// （2026-09-25）。小見出しと帯で最初にそう言う（`SpotScreen.eyebrow` /
-/// `reviewNotice`）。**本文（見どころ・季節・アクセス）は出さない**——
-/// v1 は索引しか読まず、出典の無い事実を画面に置かない（owner の判断）。
+/// 🔴 **下書きを「公式」と名乗らない。** 小見出しと帯で最初にそう言う
+/// （`SpotScreen.eyebrow` / `reviewNotice`）。
 ///
-/// 並びはモック13: 地図 → 小見出し → 名前 → 地域と枚数 → 帯 → 行動3つ →
-/// 概要 → この場所の写真 → 近くの撮影スポット。
+/// **本文（2026-09-27）**: 公開済みの場所だけ、Web が配る本文
+/// （`/app/data/spots/<slug>.json`・`SpotBody`）を取りに行き、「この場所の魅力」
+/// 「撮影ガイド」の節と、確かめた印の1行（人の確認か、AI 照合の出典）を出す。
+/// 印の無い本文は読まない。取れない間（まだ本番に無い・圏外）は節を出さないだけ。
+/// アクセス・駐車場・注意点は出さない（確認者つきの出典が要る項目）。
+///
+/// 並び（板 13・2026-09-27 owner「写真が主役」）: 地図 → 小見出し → 名前 →
+/// 地域と枚数 → 帯 → 行動3つ → 概要 → **写真がある場所はこの場所の写真** →
+/// 本文の節 → **写真が0枚の場所は「まだありません」** → 近くの撮影スポット → 印の1行。
 struct OfficialSpotView: View {
 
     let spot: OfficialSpot
@@ -26,6 +31,7 @@ struct OfficialSpotView: View {
 
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var environment: AppEnvironment
     /// 渡された写真は開いた時点の写しなので、ブロック／通報をここで反映する。
     /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
@@ -34,6 +40,8 @@ struct OfficialSpotView: View {
     @State private var dropped = ModerationSnapshot()
 
     @State private var camera: MapCameraPosition = .automatic
+    /// 本文（公開済みの場所だけ取りに行く）。取れなければ nil のまま
+    @State private var spotBody: SpotBody?
 
     /// **確定した紐づけだけ**（`Photo.spotId`）。撮影地の文字列では当てない
     private var linked: [Photo] { dropped.visible(photos.filter { $0.spotId == spot.spotId }) }
@@ -48,9 +56,12 @@ struct OfficialSpotView: View {
     /// 端末の地図アプリへ。**座標があるときだけ**（`SpotScreen`）
     private var mapURL: URL? { SpotScreen.mapURL(name: spot.name, coords: spot.coords) }
 
-    /// 配る文。**サイトのリンクは入れない**（本番 main に `/spots` は無い）
+    /// 配る文。**公開済みのスポットはサイトのページ（`/spots/<slug>`）も入れる**
+    /// （Web の本番に `app/spots/[slug]` がある）。下書きはページが無いので入れない
     private var shareText: String {
-        SpotScreen.shareText(name: spot.name, region: spot.regionLabel, mapURL: mapURL)
+        SpotScreen.shareText(name: spot.name, region: spot.regionLabel, mapURL: mapURL,
+                             pageURL: SpotScreen.pageURL(slug: spot.slug, isDraft: spot.isDraft,
+                                                         siteBase: AppConfig.siteBaseURL))
     }
 
     var body: some View {
@@ -68,12 +79,28 @@ struct OfficialSpotView: View {
                 }
                 actions
                 summary
-                spotPhotos
+                // **写真が主役。** 写真がある場所は本文より先に出す
+                if !linked.isEmpty { spotPhotos }
+                bodySections
+                // 写真が0枚の場所は、本文の後に「まだありません」（1画面目を空にしない）
+                if linked.isEmpty { spotPhotos }
                 nearbySpots
+                checkLine
             }
             .padding(.bottom, 32)
         }
         .onAppear { dropped = hidden.snapshot }
+        // 下書き→公開に差し替わったら取り直す（slug だけだと走り直さない）
+        .task(id: "\(spot.slug)|\(spot.isDraft)") {
+            // 下書きは取りに行かない（本文は公開済みの場所にしか無い）
+            guard !spot.isDraft else {
+                spotBody = nil
+                return
+            }
+            let fetched = await environment.spots.fetchBody(slug: spot.slug)
+            guard !Task.isCancelled else { return }
+            spotBody = fetched
+        }
         .webScreen()
         .navigationTitle(spot.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -102,19 +129,13 @@ struct OfficialSpotView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityAddTraits(.isImage)
                 .accessibilityLabel(L("\(spot.name) の写真", "Photo of \(spot.name)"))
-            Group {
-                if let page = photo.pageUrl {
-                    Link(photo.credit, destination: page)
-                } else {
-                    Text(photo.credit)
-                }
-            }
-            .font(.caption2)
-            .foregroundStyle(WebTheme.muted2)
-            .lineLimit(2)
-            .multilineTextAlignment(.trailing)
-            .padding(.horizontal, 16)
-            .accessibilityIdentifier("spot.official.photoCredit")
+            SpotImageCredit(photo: photo)
+                .font(.caption2)
+                .foregroundStyle(WebTheme.muted2)
+                .lineLimit(2)
+                .multilineTextAlignment(.trailing)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("spot.official.photoCredit")
         }
     }
 
@@ -188,10 +209,11 @@ struct OfficialSpotView: View {
         HStack(spacing: 10) {
             let wanted = wishlist.contains(wishKey)
             Button {
-                let now = wishlist.toggle(wishKey)
-                toasts.show(now
-                    ? L("「行きたい」に追加しました（この端末に保存）", "Added to your wishlist on this device")
-                    : L("「行きたい」から外しました", "Removed from your wishlist"))
+                // ログイン中はサーバーへ送る。失敗したら戻して知らせる（`WishlistSync`）
+                Task {
+                    let outcome = await WishlistSync.toggle(wishKey, store: wishlist, service: environment.savedSpots)
+                    if let notice = WishlistSync.notice(for: outcome) { toasts.show(notice.text, kind: notice.kind) }
+                }
             } label: {
                 SpotDetailParts.actionLabel(icon: wanted ? "heart.fill" : "heart",
                                             title: L("行きたい", "Want to go"), filled: wanted)
@@ -223,6 +245,125 @@ struct OfficialSpotView: View {
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.muted)
                 .padding(.horizontal, 16)
+        }
+    }
+
+    // MARK: - 本文（この場所の魅力・撮影ガイド）
+
+    @ViewBuilder
+    private var bodySections: some View {
+        if let body = spotBody, body.hasContent {
+            if body.description != nil || !body.highlights.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    SpotDetailParts.sectionHeader(L("この場所の魅力", "What makes it special"))
+                    if let text = body.description {
+                        Text(text)
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 16)
+                    }
+                    ForEach(Array(body.highlights.enumerated()), id: \.offset) { _, line in
+                        bullet(line)
+                    }
+                }
+            }
+            let seasons = SpotBodyText.orderedSeasons(body.seasonalGuide,
+                                                      current: SpotBodyText.currentSeason(now: Date()))
+            let times = SpotBodyText.orderedTimes(body.timeOfDayGuide)
+            if !seasons.isEmpty || !times.isEmpty || !body.compositionTips.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    SpotDetailParts.sectionHeader(L("撮影ガイド", "Shooting guide"))
+                    if !seasons.isEmpty {
+                        guideGroup(L("季節ごとの景色", "By season"),
+                                   rows: seasons.map { (SpotBodyText.seasonLabel($0.season) ?? "", $0.text) })
+                    }
+                    if !times.isEmpty {
+                        guideGroup(L("時間帯", "By time of day"),
+                                   rows: times.map { (SpotBodyText.timeLabel($0.time) ?? "", $0.text) })
+                    }
+                    if !body.compositionTips.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            guideLabel(L("構図のヒント", "Composition"))
+                            ForEach(Array(body.compositionTips.enumerated()), id: \.offset) { _, tip in
+                                // 行頭は Web と同じ「・」（見どころは「—」）
+                                bullet(tip, mark: "・")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // **公式サイトは本文の有無に関わらず出す**（Web と同じ）
+        if let site = spotBody?.officialWebsite {
+                Link(destination: site) {
+                    HStack(spacing: 6) {
+                        Text(L("公式サイト", "Official site"))
+                            .font(.subheadline.weight(.semibold))
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.footnote)
+                    }
+                    .frame(minHeight: 44)
+                    .foregroundStyle(WebTheme.foreground)
+                }
+                .padding(.horizontal, 16)
+        }
+    }
+
+    /// 札（季節・時間帯）と一文の行を並べる小さな段
+    private func guideGroup(_ title: String, rows: [(label: String, text: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            guideLabel(title)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(row.label)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(WebTheme.surface, in: Capsule())
+                        .foregroundStyle(WebTheme.foreground)
+                    Text(row.text)
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func guideLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .foregroundStyle(WebTheme.muted2)
+    }
+
+    private func bullet(_ text: String, mark: String = "—") -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(mark).foregroundStyle(WebTheme.muted2).accessibilityHidden(true)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    /// 確かめた印の1行（Web と同じ出し分け）。**本文が取れたら必ず出す**
+    /// ——公式サイトのリンクや概要だけの場所でも、出典の無い事実を画面に置かない
+    /// （Web も公開済みなら印の行を必ず出す）
+    @ViewBuilder
+    private var checkLine: some View {
+        if let body = spotBody {
+            // 出典の題は押せる（Web と同じ）。押すと出典のページ
+            Text(SpotBodyText.linkedCheckLine(body.check))
+                .tint(WebTheme.muted)
+                .font(.caption2)
+                .foregroundStyle(WebTheme.muted2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("spot.official.check")
         }
     }
 
@@ -296,5 +437,18 @@ struct OfficialSpotView: View {
         .padding(.horizontal, 14)
         .frame(minHeight: 54)
         .contentShape(Rectangle())
+    }
+}
+
+/// スポットの写真の出典の1行「写真: 作者 / ライセンス」。**1本の文字のまま**
+/// （折り返し・行数・揃えは呼ぶ側の指定どおり）、部分にリンクを付ける
+/// （`SpotImage.linkedCredit`: 作者 → 出典のページ・ライセンス → 文面）。
+/// リンクの色は周りの文字と同じ（`tint`）——見た目は以前の1行の出典と同じ
+struct SpotImageCredit: View {
+    let photo: SpotImage
+
+    var body: some View {
+        Text(photo.linkedCredit)
+            .tint(WebTheme.muted2)
     }
 }

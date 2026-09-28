@@ -174,6 +174,7 @@ public struct AnyTransitionShim {
 public struct ControlSizeShim {
     public static let large = ControlSizeShim()
     public static let regular = ControlSizeShim()
+    public static let small = ControlSizeShim()
 }
 public struct SearchFieldPlacementShim {
     public static let automatic = SearchFieldPlacementShim()
@@ -229,9 +230,19 @@ extension View {
     /// 折り返しを縦に伸ばす（本物と同じ）。長い説明文が1行に潰れないように
     public func fixedSize(horizontal: Bool, vertical: Bool) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func fixedSize() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 包んでいる入れ物（横に流す欄など）の大きさから幅を決める（iOS 17）
+    public func containerRelativeFrame(_ axes: Axis.Set, alignment: Alignment = .center,
+                                       _ length: @escaping (CGFloat, Axis) -> CGFloat) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 流す欄で「1枚ずつ止まる」並びの印（iOS 17）
+    public func scrollTargetLayout(isEnabled: Bool = true) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func scrollTargetBehavior(_ behavior: some ScrollTargetBehavior) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 流す欄の中身の余白（端で止まる位置もこの内側になる・iOS 17）
+    public func contentMargins(_ edges: Edge.Set = .all, _ length: CGFloat?,
+                               for placement: ContentMarginPlacement = .automatic) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func scaledToFit() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func scaledToFill() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineLimit(_ n: Int) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func truncationMode(_ mode: Text.TruncationMode) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// **nil は「制限しない」**（本物と同じ）。折りたたみの展開で使う
     public func lineLimit(_ n: Int?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineLimit(_ range: ClosedRange<Int>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
@@ -344,6 +355,11 @@ extension View {
                                         @ViewBuilder message: () -> M) -> Self { self }
     public func alert<A: View>(_ title: String, isPresented: Binding<Bool>,
                                @ViewBuilder actions: () -> A) -> Self { self }
+    /// 出した時点の値を受け取る形（本物は iOS 15 以降）
+    public func alert<A: View, M: View, T>(_ title: String, isPresented: Binding<Bool>,
+                                           presenting data: T?,
+                                           @ViewBuilder actions: (T) -> A,
+                                           @ViewBuilder message: (T) -> M) -> Self { self }
     /// 下から出る選択肢（本物は iOS 15 以降）。`Menu` と違い `isPresented` を
     /// 持つので、開いている間に自動送りを止められる
     public func confirmationDialog<A: View>(_ title: String, isPresented: Binding<Bool>,
@@ -456,4 +472,19 @@ public struct EdgeInsets {
 public struct SubmitLabel {
     public static let done = SubmitLabel(), go = SubmitLabel(), send = SubmitLabel(),
                       search = SubmitLabel(), next = SubmitLabel(), `return` = SubmitLabel()
+}
+
+extension Text {
+    public enum TruncationMode: Sendable { case head, tail, middle }
+}
+
+/// `scrollTargetBehavior` に渡すもの（本物と同じ名前）
+public protocol ScrollTargetBehavior {}
+public struct ViewAlignedScrollTargetBehavior: ScrollTargetBehavior { public init() {} }
+extension ScrollTargetBehavior where Self == ViewAlignedScrollTargetBehavior {
+    public static var viewAligned: ViewAlignedScrollTargetBehavior { ViewAlignedScrollTargetBehavior() }
+}
+public struct ContentMarginPlacement {
+    public static let automatic = ContentMarginPlacement()
+    public static let scrollContent = ContentMarginPlacement()
 }

@@ -67,4 +67,56 @@ final class SpotImageTests: XCTestCase {
         let bare = try decode(nil)
         XCTAssertNil(OfficialPins.visible([bare], frame: frame).first?.photo)
     }
+
+    /// 🔴 B7: **ライセンスの文面（`licenseUrl`・Web と同じ欄名）を読む**
+    func testReadsLicenseUrl() throws {
+        XCTAssertEqual(try decode(good).photo?.licenseUrl?.absoluteString,
+                       "https://creativecommons.org/licenses/by-sa/2.0")
+    }
+
+    /// B7: 台帳には http の文面が141件ある。Web と同じく https に上げる。空は無し
+    func testLicenseUrlUpgradesHttpAndDropsEmpty() throws {
+        let http = try decode("""
+        {"url":"https://upload.wikimedia.org/a.jpg","author":"A","license":"CC BY 3.0",
+         "licenseUrl":"http://creativecommons.org/licenses/by/3.0"}
+        """)
+        XCTAssertEqual(http.photo?.licenseUrl?.absoluteString, "https://creativecommons.org/licenses/by/3.0")
+        let empty = try decode("""
+        {"url":"https://upload.wikimedia.org/a.jpg","author":"A","license":"Public domain","licenseUrl":""}
+        """)
+        XCTAssertNotNil(empty.photo)
+        XCTAssertNil(empty.photo?.licenseUrl)
+        let odd = try decode("""
+        {"url":"https://upload.wikimedia.org/a.jpg","author":"A","license":"CC0","licenseUrl":"javascript:alert(1)"}
+        """)
+        XCTAssertNil(odd.photo?.licenseUrl)
+    }
+
+    /// 出典の1行は前半（作者）と後半（ライセンス）に分けても同じ文になる
+    func testCreditSplitsIntoAuthorAndLicense() throws {
+        let photo = try XCTUnwrap(try decode(good).photo)
+        XCTAssertEqual(photo.credit, "\(photo.creditAuthor) / \(photo.license)")
+        XCTAssertEqual(photo.credit, "写真: Big Ben in Japan / CC BY-SA 2.0")
+    }
+
+    /// 🔴 出典は**1本の文字**で、文字は `credit` と同じ。作者 → 出典のページ・
+    /// ライセンス → 文面のリンクが部分に付く
+    func testLinkedCreditKeepsTheTextAndLinksParts() throws {
+        let photo = try XCTUnwrap(try decode(good).photo)
+        let linked = photo.linkedCredit
+        XCTAssertEqual(String(linked.characters), photo.credit)
+        let runs = linked.runs.map { (String(linked[$0.range].characters), $0.link?.absoluteString) }
+        XCTAssertEqual(runs.first { $0.0 == photo.creditAuthor }?.1, "https://commons.wikimedia.org/wiki/File:A.jpg")
+        XCTAssertEqual(runs.first { $0.0 == "CC BY-SA 2.0" }?.1, "https://creativecommons.org/licenses/by-sa/2.0")
+        XCTAssertNil(runs.first { $0.0 == " / " }?.1)
+    }
+
+    /// 出典のページも http は https に上げる（ライセンスの文面と同じ扱い）
+    func testPageUrlUpgradesHttp() throws {
+        let spot = try decode("""
+        {"url":"https://upload.wikimedia.org/a.jpg","author":"A","license":"CC0",
+         "pageUrl":"http://commons.wikimedia.org/wiki/File:A.jpg"}
+        """)
+        XCTAssertEqual(spot.photo?.pageUrl?.absoluteString, "https://commons.wikimedia.org/wiki/File:A.jpg")
+    }
 }

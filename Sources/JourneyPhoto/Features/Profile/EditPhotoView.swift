@@ -7,6 +7,8 @@ struct EditPhotoView: View {
     let photo: Photo
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// 非公開にした・公開に戻した写真を、公開一覧から落とす／戻す（`hideGone`）
+    @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
@@ -24,6 +26,8 @@ struct EditPhotoView: View {
     /// 古いアプリが**意図しない範囲へ広げる**。
     @State private var audience: Audience
     private let audienceKnown: Bool
+    /// 開いたときの範囲（知らない値なら nil）。変えたときだけ送るために覚える
+    private let openedAudience: Audience?
     @State private var isSaving = false
     @State private var message: String?
     /// 直近の知らせが「できた」か。**成功を赤で出さない**
@@ -45,6 +49,7 @@ struct EditPhotoView: View {
         let known = raw.isEmpty ? Audience.everyone : Audience(rawValue: raw)
         _audience = State(initialValue: known ?? .everyone)
         audienceKnown = known != nil
+        openedAudience = known
     }
 
     var body: some View {
@@ -213,8 +218,8 @@ struct EditPhotoView: View {
         patch.clearCoords = EditPlaceRules.clearsCoords(openedLocation: photo.location,
                                                         currentLocation: location,
                                                         pickedCoords: pickedCoords != nil)
-        // タグは欄と同じ割り方で比べる（空白を含むタグは欄に出した時点で
-        // 割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
+        // タグは欄と同じ割り方で比べる（区切りの文字を含む古いタグは欄に出した
+        // 時点で割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
         let tags = TagInput.parse(tagsText)
         if tags != TagInput.parse((photo.tags ?? []).joined(separator: ", ")) {
             patch.tags = tags
@@ -223,17 +228,39 @@ struct EditPhotoView: View {
         if trimmedCategory != (photo.category ?? "").trimmingCharacters(in: .whitespacesAndNewlines) {
             patch.category = trimmedCategory
         }
-        patch.published = published
-        // **知らない値の写真では送らない。** キーを外せばサーバーは
-        // 既にある印をそのまま残す（広げも狭めもしない）
-        if audienceKnown { patch.audience = (published ? audience : .everyone).patchValue }
+        // 公開と公開範囲も**変えたときだけ**（`EditVisibilityRules`）。知らない値の写真では
+        // 範囲を送らない——キーを外せばサーバーは既にある印を残す
+        let visibility = EditVisibilityRules.patch(openedPublished: photo.published != false,
+                                                   openedAudience: openedAudience,
+                                                   published: published, audience: audience)
+        patch.published = visibility.published
+        patch.audience = visibility.audience
         // **触っていなければ送らない**（時刻付きの撮影日を日付だけに落とさない）。
         // 空も送らない——空文字は api-user の日付検査に落ちる
         patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date),
                                     field: date)
 
+        // **何も変えていなければ送らない。** 空の本文はサーバーが 400「更新項目が
+        // ありません」で断る（公開を毎回送っていた頃はそれが覆っていた）
+        if patch.isEmpty {
+            dismiss()
+            return
+        }
+        // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
+        let owner = hidden.owner
         do {
             try await environment.photos.update(photoId: photo.id, patch: patch)
+            // 🔴 **非公開にしたら公開一覧から落とす。** 一覧は建て直しまで古い
+            // 静的 JSON なので、非公開にした写真がホーム・探す・地図に出続けていた。
+            // **公開に戻したら印を外す**（外さないと、建て直した後もこの端末でだけ出ない）。
+            // 公開を触っていない回（`visibility.published` が nil）は何もしない
+            if let published = visibility.published {
+                if published {
+                    await hidden.unhideGone(photo.id, for: owner, environment: environment)
+                } else {
+                    await hidden.hideGone(photo.id, for: owner, environment: environment)
+                }
+            }
             dismiss()
         } catch {
             messageIsError = true

@@ -1018,10 +1018,7 @@ struct StoryViewerView: View {
         do {
             try await environment.moderation.block(userId: userId)
             hidden.block(userId, for: owner)
-            await environment.gallery.setHidden(
-                userIds: hidden.blockedUserIds,
-                photoIds: hidden.reportedPhotoIds
-            )
+            await environment.gallery.setHidden(hidden.snapshot)
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
             dismiss()
@@ -1110,7 +1107,8 @@ struct StoryViewerView: View {
                     }
                     // 24時間で消える前に、自分の写真として残す。
                     // **動画には出さない**（サーバーが 400 で断る・`storyKeep.ts`）
-                    if !story.isVideo {
+                    // **自分用（アーカイブ）の投稿にも出さない**（サーバーが 409 で断る・`storyKeep.ts`）
+                    if Self.canKeepAsPhoto(story) {
                         ownAction(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
                             Task { await keep(story) }
                         }
@@ -1222,10 +1220,15 @@ struct StoryViewerView: View {
         return repliesFailed ? story.replyCount : nil
     }
 
+    /// 「写真として残す」を出すか。動画とアーカイブの投稿は断られる
+    nonisolated static func canKeepAsPhoto(_ story: Story) -> Bool {
+        !story.isVideo && story.archive != true
+    }
+
     /// 「返信 3」。数が分からないうちは「返信」だけ
     private func replyTitle(for story: Story) -> String {
         guard let n = replyBadge(for: story) else { return L("返信", "Replies") }
-        return L("返信 \(n)", "\(n) replies")
+        return L("返信 \(n)", n == 1 ? "1 reply" : "\(n) replies")
     }
 
     /// 期限が切れた（ハイライト・アーカイブから開いた）。**見た人と返信の記録は
