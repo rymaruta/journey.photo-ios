@@ -191,7 +191,11 @@ final class MusicPreviewPlayer: ObservableObject {
             ) { [weak self, weak player] time in
                 guard let player, time.seconds > 0 else { return }
                 if time.seconds < startSeconds - 1 { player.seek(to: startTime) }
-                DispatchQueue.main.async { self?.removeStartSeeker() }
+                // 外すのは**このプレイヤーの見張りだけ**（間に次の曲が始まっていたら、その見張りを外さない）
+                DispatchQueue.main.async {
+                    guard let self, self.startSeeker?.player === player else { return }
+                    self.removeStartSeeker()
+                }
             }
             startSeeker = (player, token)
         }
