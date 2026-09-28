@@ -388,7 +388,9 @@ struct SignInView: View {
     /// 忘れた」はログインの画面にしか無い）。**登録の画面にいるときだけ移す**——待つ間に再設定の
     /// 画面などへ移っていたら、引き戻さない
     private func showExistingAccount() {
-        guard mode == .signUp, pendingUsername == nil else { return }
+        // 待つ間に「ログインに戻る」を押していた回も文は出す（黙って終わらない）。
+        // 再設定の画面・確認コードの画面へ移っていたら何もしない
+        guard mode == .signUp || mode == .signIn, pendingUsername == nil else { return }
         mode = .signIn
         auth.errorMessage = SignInRecovery.existingAccountMessage
     }
