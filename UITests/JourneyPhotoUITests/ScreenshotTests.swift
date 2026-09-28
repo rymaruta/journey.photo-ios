@@ -70,16 +70,35 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    /// 入力欄にキーボードの焦点が来るまで待つ。来なければ押し直す（最長 `timeout` 秒）
+    /// 入力欄にキーボードの焦点が来るまで待つ。来なければ押し直す（最長 `timeout` 秒）。
+    ///
+    /// 焦点は2通りで見る。`hasKeyboardFocus` は非公開の属性なので、**在るときだけ**読む
+    /// （無い名前を KVC で読むと ObjC の例外でプロセスごと落ち、あとの絵が全部消える）。
+    /// もう1つは公開の「キーボードが出ている」——出ていれば焦点はどこかの欄にある
+    /// （画面に入力欄はこの1つだけ）。
+    /// 焦点を奪う札（位置の許可）が遅れて出ていれば、ここで答える
     private func waitForKeyboardFocus(_ field: XCUIElement, timeout: TimeInterval = 6) -> Bool {
+        let app = XCUIApplication()
+        func hasFocus() -> Bool {
+            if field.responds(to: NSSelectorFromString("hasKeyboardFocus")),
+               (field.value(forKey: "hasKeyboardFocus") as? Bool) == true {
+                return true
+            }
+            return app.keyboards.firstMatch.exists
+        }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return true }
+            if hasFocus() { return true }
             Thread.sleep(forTimeInterval: 1)
-            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return true }
+            if hasFocus() { return true }
+            if XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch.exists {
+                answerLocationPrompt()
+            }
             if field.isHittable { field.tap() }
         }
-        return false
+        // 最後の押し直しで来た分も数える
+        Thread.sleep(forTimeInterval: 1)
+        return hasFocus()
     }
 
     /// **位置の許可の札に答える。** 地図は開いた最初の1回に現在地を取りにいく
