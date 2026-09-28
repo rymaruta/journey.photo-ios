@@ -44,8 +44,11 @@ enum NotificationGroups {
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(date, inSameDayAs: yesterday) { return .yesterday }
         // **7日で切る**（週の始まりに依らない。月曜に開いた人だけ
-        // 「今週」が空、という揺れを作らない）
-        if let days = calendar.dateComponents([.day], from: date, to: now).day, days < 7, days >= 0 {
+        // 「今週」が空、という揺れを作らない）。
+        // 🔴 **暦の日数で数える**（`NotificationText.ago` と同じ）。経過時間で数えると、
+        // 6日23時間前のお知らせが「今週」の下に「7日前」で出ていた
+        if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
+                                              to: calendar.startOfDay(for: now)).day, days < 7, days >= 0 {
             return .thisWeek
         }
         return .earlier
