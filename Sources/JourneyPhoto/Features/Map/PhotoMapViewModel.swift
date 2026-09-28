@@ -53,7 +53,7 @@ final class PhotoMapViewModel: ObservableObject {
     @Published private(set) var shown: [Photo] = []
 
     /// ピン（約1km で束ねた写真）
-    @Published private(set) var pins: [MapPin] = []
+    @Published private(set) var pins: [MapPin] = [] { didSet { cachedFrame = nil } }
 
     /// 撮影スポットの索引（`app/data/spots.json`）。**取れなければ空**
     /// ——本番は Web の変更が main に入るまで 404 で、そのあいだピンが
@@ -73,7 +73,7 @@ final class PhotoMapViewModel: ObservableObject {
     /// **id の集まりが変わったときだけ入れ替える。** `update(visible:)` は
     /// 地図が落ち着くたびに届くので、届くたびに入れ替えると
     /// 描き直し → カメラの知らせ → … と回る（run 37 の固まり方）
-    @Published private(set) var officialPins: [OfficialPins.Pin] = []
+    @Published private(set) var officialPins: [OfficialPins.Pin] = [] { didSet { cachedFrame = nil } }
 
     /// `officialPins` を何回入れ替えたか。**回り続けていないことを試験で
     /// 数えるためだけ**にある（模型の Combine には `objectWillChange` が無い）
@@ -222,7 +222,25 @@ final class PhotoMapViewModel: ObservableObject {
     /// **写真が当たらず、名前でスポットだけ当たった回はスポットの座標群で作る**
     /// ——「たかや」と打って高屋神社のピンが出たのに、地図がパリに居たままに
     /// しない。名前で絞っていないとき（寄せただけで出ているピン）には使わない
+    ///
+    /// **覚えておく。** 画面は描き直すたびにこれを読み（`PhotoMapView.statusLine`）、塊の計算は
+    /// 写真の地点が世界に数百あると Debug で1回 60ms ほどかかる（run 206 で地図の画面が
+    /// 落ち着かなくなった回の調べ）。材料の `pins`・`officialPins` が入れ替わったら捨てる
+    /// （`query` が変わると `refresh` が必ず `pins` を入れ直す）
     var frame: MapFraming.Frame? {
+        if let cachedFrame { return cachedFrame }
+        let value = computeFrame()
+        cachedFrame = .some(value)
+        frameComputations += 1
+        return value
+    }
+
+    /// 覚えている枠（外側の nil は「まだ計算していない」）
+    private var cachedFrame: MapFraming.Frame??
+    /// 枠を何回計算したか。**描き直しのたびに計算していないことを試験で数えるためだけ**にある
+    private(set) var frameComputations = 0
+
+    private func computeFrame() -> MapFraming.Frame? {
         // 塊の重さはピンの写真の枚数（ピンの数ではない）
         if let photos = MapFraming.frame(for: pins.map { (latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) },
                                          weights: pins.map(\.photos.count)) {
