@@ -209,7 +209,10 @@ final class UploadServiceTests: XCTestCase {
     private func discardLeftovers(_ model: UploadViewModel, staged: Int) async throws {
         let before = ScriptedProtocol.calls.filter { $0.path == "/upload/discard" }.count
         model.items.map(\.id).forEach { model.remove($0) }
-        try await waitUntil { ScriptedProtocol.calls.filter { $0.path == "/upload/discard" }.count >= before + staged }
+        let done = { ScriptedProtocol.calls.filter { $0.path == "/upload/discard" }.count >= before + staged }
+        try await waitUntil(done)
+        // 届かないまま進むと、片付けが次の試験の記録に紛れる（前に不定期に落ちた原因）
+        XCTAssertTrue(done(), "置き場所の鍵を片付けられなかった")
     }
 
     /// 🔴 **保存のやり直しは同じ鍵で送る。** 保存が「落ちた」ときも、サーバーには

@@ -258,10 +258,10 @@ struct HomeFeedTile: View {
         // 待っている印はカードの外（`LikeCountStore`）に持つ——カードが作り直されても消えない
         // **ログインしていなければ送らずに言う。** 送ると認証で断られて黙って戻り、
         // 一瞬灯って消えるだけのボタンになっていた（詳細画面は同じ言葉で断る）。
-        // 🔴 **確かにログアウトしているときだけ言う。** `userId == nil` だけで見ると、起動直後の
-        // 確認中にログイン済みの人へ「ログインしてください」が出る。確認中は押しても何もしない
-        if auth.isResolving { return }
-        if auth.isDefinitelySignedOut {
+        switch HomeLikeGate.decide(userId: auth.userId, isDefinitelySignedOut: auth.isDefinitelySignedOut) {
+        case .send: break
+        case .ignore: return
+        case .askToSignIn:
             toasts.show(L("いいねするにはログインしてください", "Sign in to like photos"), kind: .failure)
             return
         }
@@ -337,5 +337,19 @@ enum HomeTileText {
     static func byline(author: String, ago: String?) -> String {
         guard let ago, !ago.isEmpty else { return author }
         return "\(author) · \(ago)"
+    }
+}
+
+/// ホームのカードの♥を押したときに、送るか・黙るか・ログインを促すか。
+enum HomeLikeGate {
+    enum Decision: Equatable { case send, ignore, askToSignIn }
+
+    /// **送るのはログイン済み（ID がある）ときだけ。** 促すのは確かにログアウトしているときだけ。
+    /// それ以外（起動直後の確認中・Amplify はログイン中と言ったが ID が取れなかった起動）は
+    /// 何もしない——確認中に促すとログイン済みの人にも出る。ID が無いまま送ると、ログアウトの
+    /// 表示のまま前の人のトークンでいいねが付くか、一瞬灯って消える
+    static func decide(userId: String?, isDefinitelySignedOut: Bool) -> Decision {
+        if userId != nil { return .send }
+        return isDefinitelySignedOut ? .askToSignIn : .ignore
     }
 }
