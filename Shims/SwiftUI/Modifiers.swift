@@ -230,6 +230,15 @@ extension View {
     /// 折り返しを縦に伸ばす（本物と同じ）。長い説明文が1行に潰れないように
     public func fixedSize(horizontal: Bool, vertical: Bool) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func fixedSize() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 包んでいる入れ物（横に流す欄など）の大きさから幅を決める（iOS 17）
+    public func containerRelativeFrame(_ axes: Axis.Set, alignment: Alignment = .center,
+                                       _ length: @escaping (CGFloat, Axis) -> CGFloat) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 流す欄で「1枚ずつ止まる」並びの印（iOS 17）
+    public func scrollTargetLayout(isEnabled: Bool = true) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func scrollTargetBehavior(_ behavior: some ScrollTargetBehavior) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 流す欄の中身の余白（端で止まる位置もこの内側になる・iOS 17）
+    public func contentMargins(_ edges: Edge.Set = .all, _ length: CGFloat?,
+                               for placement: ContentMarginPlacement = .automatic) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func scaledToFit() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func scaledToFill() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func lineLimit(_ n: Int) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
@@ -467,4 +476,15 @@ public struct SubmitLabel {
 
 extension Text {
     public enum TruncationMode: Sendable { case head, tail, middle }
+}
+
+/// `scrollTargetBehavior` に渡すもの（本物と同じ名前）
+public protocol ScrollTargetBehavior {}
+public struct ViewAlignedScrollTargetBehavior: ScrollTargetBehavior { public init() {} }
+extension ScrollTargetBehavior where Self == ViewAlignedScrollTargetBehavior {
+    public static var viewAligned: ViewAlignedScrollTargetBehavior { ViewAlignedScrollTargetBehavior() }
+}
+public struct ContentMarginPlacement {
+    public static let automatic = ContentMarginPlacement()
+    public static let scrollContent = ContentMarginPlacement()
 }

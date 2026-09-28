@@ -2,8 +2,10 @@ import SwiftUI
 
 /// ホームの上段の札（板 01・55「開く場面ごとに1枚」）。
 ///
-/// どれを出すかは `HomeTopCard.pick` が決める。当たる物が無い日は
-/// **いまの「今日のテーマ」の札**（`DailyThemeCard`）をそのまま出す。
+/// どれを出すかは `HomeTopCard.cards` が決める。**当たる札と「今日のテーマ」を
+/// 横にめくる並び**にする（2026-09-28・owner「両方欲しい」）。縦に積まないのは、
+/// 写真の一覧が札の数だけ下がるため（写真が主役）。次の札の端を少し見せて、
+/// めくれることを分からせる。当たる物が無い日は今日のテーマ1枚で、いまと同じ見た目。
 ///
 /// 旅行プランはログイン中だけ読む。**取れなかった回は空のまま**
 /// （札が出ないだけで、ホームは壊さない）。
@@ -58,10 +60,44 @@ struct HomeTopCardView: View {
             }
     }
 
+    /// 札のあいだ
+    private static let spacing: CGFloat = 10
+    /// 次の札を見せる幅（めくれることの合図）
+    private static let peek: CGFloat = 24
+
     @ViewBuilder
     private var content: some View {
-        switch HomeTopCard.pick(now: Date(), plans: plansOwner == auth.userId ? plans : [],
-                                myPhotos: myPhotos, openedBookDays: openedBooks) {
+        let choices = HomeTopCard.cards(now: Date(), plans: plansOwner == auth.userId ? plans : [],
+                                        myPhotos: myPhotos, openedBookDays: openedBooks)
+        if choices.count == 1, let only = choices.first {
+            // 1枚の日はいまと同じ（左右 16 の余白で画面いっぱい）
+            card(for: only, inCarousel: false)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: Self.spacing) {
+                    ForEach(choices, id: \.slot) { choice in
+                        card(for: choice, inCarousel: true)
+                            // 入れ物の幅（左右の余白を除いたもの）から、次の札の見せ幅を引く
+                            .containerRelativeFrame(.horizontal) { width, _ in
+                                max(width - Self.peek - Self.spacing, 0)
+                            }
+                    }
+                }
+                // **背を揃える。** いちばん高い札（今日のテーマは「参加する」のぶん高い）に
+                // 合わせ、めくるたびに下の一覧が上下しないようにする
+                .fixedSize(horizontal: false, vertical: true)
+                .scrollTargetLayout()
+            }
+            // 1枚ずつ止まる。止まる位置も左右 16 の余白の内側（1枚のときの札と同じ位置）
+            .scrollTargetBehavior(.viewAligned)
+            .contentMargins(.horizontal, 16, for: .scrollContent)
+        }
+    }
+
+    /// 札1枚。`inCarousel` のときは外の余白を持たず、並びの高さいっぱいに伸びる
+    @ViewBuilder
+    private func card(for choice: HomeTopCard.Choice, inCarousel: Bool) -> some View {
+        switch choice {
         case .departure(let plan, let daysUntil):
             NavigationLink {
                 TripPlansView()
@@ -73,7 +109,7 @@ struct HomeTopCardView: View {
                         ? L("今日から · 1日目", "Starts today · Day 1")
                         : L("出発まで \(daysUntil) 日", daysUntil == 1 ? "1 day to go" : "\(daysUntil) days to go"),
                      detail: plan.itemCount > 0 ? TripPlanText.placeCount(plan.itemCount) : nil,
-                     backdrop: nil)
+                     backdrop: nil, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .onTrip(let plan, let dayNumber):
@@ -86,7 +122,7 @@ struct HomeTopCardView: View {
                      detail: nil,
                      backdrop: nil,
                      // 押すと投稿画面が開く（別の画面へ進む「›」ではない）
-                     trailingSymbol: "plus")
+                     trailingSymbol: "plus", inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .bookReady(let trip):
@@ -103,7 +139,7 @@ struct HomeTopCardView: View {
                      line: "\(TripBook.title(of: trip)) · \(TripBook.daysLabel(trip.days)) · "
                         + L("\(trip.photos.count)枚", "\(trip.photos.count) photos"),
                      detail: nil,
-                     backdrop: trip.cover)
+                     backdrop: trip.cover, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .oneYearAgo(let photo, let byUploadDate):
@@ -115,11 +151,11 @@ struct HomeTopCardView: View {
                                          : L("1年前の今ごろ", "A year ago"),
                      line: yearAgoLine(photo),
                      detail: nil,
-                     backdrop: photo)
+                     backdrop: photo, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .theme:
-            DailyThemeCard(photos: themePhotos, myPhotos: myPhotos)
+            DailyThemeCard(photos: themePhotos, myPhotos: myPhotos, inCarousel: inCarousel)
         }
     }
 
@@ -127,7 +163,7 @@ struct HomeTopCardView: View {
 
     private func card(eyebrow: String, eyebrowLabel: String, title: String, line: String,
                       detail: String?, backdrop: Photo?,
-                      trailingSymbol: String = "chevron.right") -> some View {
+                      trailingSymbol: String = "chevron.right", inCarousel: Bool) -> some View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(eyebrow)
@@ -155,7 +191,9 @@ struct HomeTopCardView: View {
                 .foregroundStyle(WebTheme.muted)
         }
         .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        // 並びの中では高さいっぱい（隣の札と背を揃える）・文字は上に寄せる
+        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: inCarousel ? .infinity : nil,
+               alignment: inCarousel ? .topLeading : .leading)
         .background(alignment: .trailing) {
             if let backdrop {
                 // **写真は右側に薄く**（今日のテーマの札と同じ——文字を読めなくしない）
@@ -172,7 +210,7 @@ struct HomeTopCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .accessibilityElement(children: .combine)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, inCarousel ? 0 : 16)
     }
 
     private func planTitle(_ plan: TripPlan) -> String {

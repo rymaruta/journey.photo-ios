@@ -1,7 +1,8 @@
 import XCTest
 @testable import JourneyPhoto
 
-/// ホームの上段の札（`HomeTopCard`・板 01・55）。**当たる1枚だけ**を、決めた優先順で選ぶ
+/// ホームの上段の札（`HomeTopCard`・板 01・55）。当たる札を決めた優先順で並べ、
+/// 最後に必ず「今日のテーマ」を置く。`pick` は**先頭の1枚**（優先順を見るため）
 final class HomeTopCardTests: XCTestCase {
 
     private let utc = TimeZone(identifier: "UTC")!
@@ -23,10 +24,15 @@ final class HomeTopCardTests: XCTestCase {
         TripPlan(planId: id, title: "[\(id)]", startDate: start, endDate: end, createdAt: created)
     }
 
+    private func cards(plans: [TripPlan] = [], photos: [Photo] = [], opened: Set<String> = [],
+                       now: Date? = nil, zone: TimeZone? = nil) -> [HomeTopCard.Choice] {
+        HomeTopCard.cards(now: now ?? self.now, plans: plans, myPhotos: photos,
+                          openedBookDays: opened, timeZone: zone ?? utc)
+    }
+
     private func pick(plans: [TripPlan] = [], photos: [Photo] = [], opened: Set<String> = [],
                       now: Date? = nil, zone: TimeZone? = nil) -> HomeTopCard.Choice {
-        HomeTopCard.pick(now: now ?? self.now, plans: plans, myPhotos: photos,
-                         openedBookDays: opened, timeZone: zone ?? utc)
+        cards(plans: plans, photos: photos, opened: opened, now: now, zone: zone).first ?? .theme
     }
 
     func testNowIsTheDayAssumed() {
@@ -211,6 +217,44 @@ final class HomeTopCardTests: XCTestCase {
                        .onTrip(plan: onTrip, dayNumber: 3))
         guard case .bookReady = pick(photos: book + [yearAgo]) else { return XCTFail("一冊が1年前より先") }
         XCTAssertEqual(pick(photos: [yearAgo]), .oneYearAgo(photo: yearAgo, byUploadDate: false))
+    }
+
+    // MARK: - 並び（2026-09-28・owner「1年前の今ごろ、今日のテーマなど両方欲しい」）
+
+    /// 当たる札は**全部**、優先順に並ぶ。今日のテーマは**必ず最後に1枚**
+    func testAllMatchingCardsAreListedThenTheTheme() throws {
+        let departure = plan("dep", start: "2026-09-30")
+        let onTrip = plan("on", start: "2026-09-25", end: "2026-09-29")
+        let book = try tripPhotos(["2026-09-18", "2026-09-20"])
+        let yearAgo = try photo("y", date: "2025-09-27")
+
+        let all = cards(plans: [departure, onTrip], photos: book + [yearAgo])
+        XCTAssertEqual(all.count, 5, "当たった札を落とした")
+        XCTAssertEqual(all[0], .departure(plan: departure, daysUntil: 3))
+        XCTAssertEqual(all[1], .onTrip(plan: onTrip, dayNumber: 3))
+        guard case .bookReady = all[2] else { return XCTFail("3枚目が一冊でない: \(all[2])") }
+        XCTAssertEqual(all[3], .oneYearAgo(photo: yearAgo, byUploadDate: false))
+        XCTAssertEqual(all[4], .theme)
+        XCTAssertEqual(Set(all.map(\.slot)).count, all.count, "並びの目印が重なった（ForEach の id）")
+    }
+
+    /// 1年前と今日のテーマが**両方**出る（以前は1年前に押し出されてテーマが消えた）
+    func testYearAgoAndThemeBothShow() throws {
+        let yearAgo = try photo("y", date: "2025-09-27")
+        XCTAssertEqual(cards(photos: [yearAgo]), [.oneYearAgo(photo: yearAgo, byUploadDate: false), .theme])
+    }
+
+    /// 何も当たらない日は今日のテーマ1枚だけ（空き地を作らない）
+    func testOnlyThemeWhenNothingMatches() {
+        XCTAssertEqual(cards(), [.theme])
+    }
+
+    /// 出発の札は**7日前から**（owner「旅のカードは1週間くらいから」）
+    func testDepartureShowsFromAWeekBefore() {
+        XCTAssertEqual(HomeTopCard.departureWindowDays, 7)
+        XCTAssertEqual(pick(plans: [plan("d7", start: "2026-10-04")]),
+                       .departure(plan: plan("d7", start: "2026-10-04"), daysUntil: 7))
+        XCTAssertEqual(cards(plans: [plan("d8", start: "2026-10-05")]), [.theme], "8日前から出した")
     }
 }
 

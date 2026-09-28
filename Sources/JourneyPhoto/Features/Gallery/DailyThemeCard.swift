@@ -12,6 +12,9 @@ struct DailyThemeCard: View {
     let photos: [Photo]
     /// 自分の写真（参加したかの判定に使う）
     let myPhotos: [Photo]
+    /// ホームの上段で横にめくる並びの中か（`HomeTopCardView`）。並びの中では
+    /// 外の余白を持たず、隣の札と背を揃えるため高さいっぱいに伸びる
+    var inCarousel = false
 
     private var theme: DailyTheme.Theme { DailyTheme.today() }
     private var joined: Bool { DailyTheme.hasJoined(theme, myPhotos: myPhotos) }
@@ -81,6 +84,7 @@ struct DailyThemeCard: View {
             }
         }
         .padding(16)
+        .frame(maxHeight: inCarousel ? .infinity : nil, alignment: .top)
         .background(alignment: .trailing) {
             if let backdrop {
                 // **写真は脇役。** 文字が読めなくならないよう、右側だけに薄く
@@ -95,6 +99,6 @@ struct DailyThemeCard: View {
         }
         .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 18))
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .padding(.horizontal, 16)
+        .padding(.horizontal, inCarousel ? 0 : 16)
     }
 }
