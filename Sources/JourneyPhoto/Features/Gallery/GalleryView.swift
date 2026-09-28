@@ -94,6 +94,7 @@ struct GalleryView: View {
                 return
             }
             // **取れなかった回を空の集合にしない**（`followingFailed`）。
+            let ticket = model.beginFollowingFetch()
             let following = await fetchFollowing()
             // **待っている間に人が替わったら何も書かない。** 古い回の答えを次の人の
             // `auth.userId` で書くと、後から来る正しい答えを上書きしうる。
@@ -102,7 +103,7 @@ struct GalleryView: View {
             // 「取れなかった」ではない——失敗の印を立てない）。取れていれば入れる
             // （取り消しで一律に飛ばすと、`.task` が走り直さなければ人が入らないまま残る）
             if following == nil && Task.isCancelled { return }
-            model.use(viewerId: userId, following: following)
+            model.use(viewerId: userId, following: following, ticket: ticket)
             // 今日のテーマに参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: userId)
         }
@@ -113,10 +114,11 @@ struct GalleryView: View {
             // **フォロー一覧も取り直す。** 取れなかった回の出口
             // （「読み込めませんでした。引き下げて読み直せます」）
             if let userId = auth.userId {
+                let ticket = model.beginFollowingFetch()
                 let following = await fetchFollowing()
                 // 待っている間に人が替わっていたら捨てる
                 guard auth.userId == userId else { return }
-                model.refreshFollowing(following, viewerId: userId)
+                model.refreshFollowing(following, viewerId: userId, ticket: ticket)
             }
         }
         // **前面に戻ったら輪を読み直す。** 日をまたいで戻っても昨日の輪のまま、
@@ -243,10 +245,11 @@ struct GalleryView: View {
                         Task {
                             // **取れなかった回に空で潰さない**（圏外で押しただけで
                             // 「フォロー中」が知らせも無く空になる）——nil は `refreshFollowing` が捨てる
+                            let ticket = model.beginFollowingFetch()
                             let following = await fetchFollowing()
                             // 待っている間に人が替わっていたら捨てる（前の人の集合を今の人に入れない）
                             guard auth.userId == userId else { return }
-                            model.refreshFollowing(following, viewerId: userId)
+                            model.refreshFollowing(following, viewerId: userId, ticket: ticket)
                         }
                     } label: {
                         Text(feed.label)
