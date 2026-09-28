@@ -13,6 +13,8 @@ import Foundation
 enum PostLimits {
     static let title = 200
     static let description = 2_000
+    /// 段落の形で送る説明の段落の数（`sanitizeDescription` の `slice(0, 50)`）
+    static let descriptionParagraphs = 50
     static let location = 200
     /// ストーリーのひとこと（`stories.ts` の `truncate(caption, 200)`）
     static let storyCaption = 200
@@ -61,13 +63,16 @@ enum PostLimits {
         let inserted = text(newScalars[head..<(newScalars.count - tail)])
         let room = limit - length(prefix) - length(suffix)
         guard room > 0 else { return old }
-        // 末尾の空白・改行（区切り）は残し、その前を削る
-        let body = inserted.replacingOccurrences(of: #"\s+$"#, with: "", options: .regularExpression)
-        let trail = String(inserted.dropFirst(body.count))
-        let kept = length(trail) < room
-            ? clamp(body, limit: room - length(trail)) + trail
-            : clamp(inserted, limit: room)
-        return prefix + kept + suffix
+        // 末尾の空白・改行（区切り）は残し、その前を削る。後ろから数える（正規表現の `\s+$` は
+        // 空白の長い並びで2乗の時間がかかった）。区切りが残りより長ければ、最後の1つだけ残す
+        let insertedScalars = Array(inserted.unicodeScalars)
+        var cut = insertedScalars.count
+        while cut > 0, CharacterSet.whitespacesAndNewlines.contains(insertedScalars[cut - 1]) { cut -= 1 }
+        let body = text(insertedScalars[..<cut])
+        var trail = text(insertedScalars[cut...])
+        if length(trail) >= room, let last = trail.last { trail = String(last) }
+        let kept = length(trail) < room ? clamp(body, limit: room - length(trail)) + trail : trail
+        return prefix + (length(kept) <= room ? kept : clamp(inserted, limit: room)) + suffix
     }
 
     /// 上限で切る（画面側で止める）。**字の途中では切らない**（サーバーの `truncate` と同じく、

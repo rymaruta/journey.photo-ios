@@ -43,22 +43,42 @@ enum LocalizedEdit {
         let lines = paragraphs(field)
         guard lines != paragraphs(descriptionField(original)) else { return nil }
         if lines.isEmpty { return .plain("") }
-        if case .byLocale(let map) = original, let en = map["en"], !en.isEmpty {
-            return .paragraphs(["ja": lines, "en": en])
+        if case .byLocale(let map) = original {
+            // **段落の形の写真は、英語が無くても段落の形で送る。** 文字列で送るとサーバーが全体を
+            // 2000 で切るので、日本語だけの長い段落の写真は直すと保存できなかった（段落の形なら
+            // 1段落ごとに 2000 まで・`sanitizeDescription` は ja だけの形も受ける）
+            if let en = map["en"], !en.isEmpty { return .paragraphs(["ja": lines, "en": en]) }
+            return .paragraphs(["ja": lines])
         }
         return .plain(field)
     }
 
-    /// 保存の前に告げる、説明の長さの断り（Web の `describeOverLimit` と同じ）。問題なければ nil。
+    /// 保存の前に告げる、説明の長さの断り。問題なければ nil。
     ///
-    /// **欄では止めない**（送る形で上限が変わる——文字列なら全体 2000・段落ごとなら 1段落 2000）。
-    /// 文字列で送るのに 2000 を超えていたら、保存させずに知らせる（送るとサーバーが黙って切る）
+    /// **欄では止めない**（送る形で上限が変わる——文字列なら全体 2000・段落の形なら 1段落 2000・
+    /// 50段落まで。`sanitizeDescription`）。超えていたら、**保存させずに**知らせる——送ると
+    /// サーバーが黙って切る（Web の `describeOverLimit` は知らせるだけで保存は止めない）
     static func descriptionOverLimit(original: LocalizedParagraphs?, field: String) -> String? {
-        guard case .plain(let text) = description(original: original, field: field) else { return nil }
-        let count = PostLimits.length(text.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard count > PostLimits.description else { return nil }
-        return L("説明は\(PostLimits.description)字までです（\(count)字）",
-                 "Up to \(PostLimits.description) characters (\(count))")
+        let limit = PostLimits.description
+        switch description(original: original, field: field) {
+        case .plain(let text):
+            let count = PostLimits.length(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            guard count > limit else { return nil }
+            return L("説明は\(limit)字までです（\(count)字）", "Up to \(limit) characters (\(count))")
+        case .paragraphs(let map):
+            let lines = map["ja"] ?? []
+            if lines.count > PostLimits.descriptionParagraphs {
+                return L("説明は\(PostLimits.descriptionParagraphs)段落までです（\(lines.count)段落）",
+                         "Up to \(PostLimits.descriptionParagraphs) paragraphs (\(lines.count))")
+            }
+            if let long = lines.map(PostLimits.length).max(), long > limit {
+                return L("説明の1段落は\(limit)字までです（\(long)字）",
+                         "Each paragraph can be up to \(limit) characters (\(long))")
+            }
+            return nil
+        default:
+            return nil
+        }
     }
 
     private static func paragraphs(_ text: String) -> [String] {

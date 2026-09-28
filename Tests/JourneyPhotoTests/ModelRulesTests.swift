@@ -311,6 +311,12 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(PostLimits.limited(old: "A\nB", new: "A\nCCCCC\nB", limit: 6), "A\nCC\nB")
         XCTAssertEqual(PostLimits.limited(old: "hello world", new: "hello bigger text world", limit: 15),
                        "hello big world")
+        // 区切りが残りより長くても、区切りを1つ残す（段落がつながらない）
+        XCTAssertEqual(PostLimits.limited(old: "A\nB", new: "A\nCCCCC\n\n\nB", limit: 5), "A\nC\nB")
+        // 空白の長い並びを貼っても速い（正規表現の後戻りで2乗の時間がかかっていた）
+        let started = Date()
+        _ = PostLimits.limited(old: "", new: String(repeating: " ", count: 20_000) + "x", limit: 500)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
         // 結合文字を足した回に、直前の字を消さない（受けずに前の文のまま）
         XCTAssertEqual(PostLimits.limited(old: "abe", new: "abe\u{0301}", limit: 3), "abe")
         // 前の文がもう超えていたら、減らす変更だけ受ける（黙って切らない）
