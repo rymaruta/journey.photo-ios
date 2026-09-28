@@ -21,8 +21,13 @@ open class AVPlayer {
     public func seek(to time: CMTime) {}
 }
 
+public typealias CMTimeScale = Int32
+
 public struct CMTime {
     public static let zero = CMTime()
+    public init() {}
+    /// 本物と同じ形（秒と刻み）
+    public init(seconds: Double, preferredTimescale: CMTimeScale) {}
 }
 
 extension NSNotification.Name {

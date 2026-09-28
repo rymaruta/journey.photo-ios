@@ -96,10 +96,11 @@ final class MusicPreviewPlayer: ObservableObject {
     /// **同じ曲のストーリーが2本続いても、2本目は頭から**（Web の `itemChanged` と同じ）。
     /// `loops` なら鳴り終わっても止めずに頭から繰り返す（Web の `onEnded`）。
     /// 戻り値は `session`（後始末で「自分の曲か」を見分ける）
+    /// `from` は鳴らし始める位置（秒）。繰り返すときもそこへ戻る（Web と同じ）
     @discardableResult
-    func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false) -> Int {
+    func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false, from startSeconds: Double = 0) -> Int {
         guard let url else { return session }
-        start(url, song: song, loops: loops)
+        start(url, song: song, loops: loops, from: startSeconds)
         return session
     }
 
@@ -123,7 +124,8 @@ final class MusicPreviewPlayer: ObservableObject {
     }
 
     private func start(_ url: URL, song: Photo.Song?, loops: Bool = false,
-                       origin: PlaybackOrigin = .app) {
+                       origin: PlaybackOrigin = .app, from startSeconds: Double = 0) {
+        let startTime = CMTime(seconds: max(0, startSeconds), preferredTimescale: 600)
         deactivateTask?.cancel()
         deactivateTask = nil
         session += 1
@@ -153,7 +155,7 @@ final class MusicPreviewPlayer: ObservableObject {
             queue: .main
         ) { [weak self, weak player] _ in
             if loops, let player {
-                player.seek(to: .zero)
+                player.seek(to: startTime)
                 player.play()
             } else {
                 self?.stop()
@@ -172,6 +174,7 @@ final class MusicPreviewPlayer: ObservableObject {
         ) { [weak self] _ in
             self?.stop()
         })
+        if startSeconds > 0 { player.seek(to: startTime) }
         player.play()
     }
 

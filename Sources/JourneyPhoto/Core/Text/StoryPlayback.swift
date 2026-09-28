@@ -330,6 +330,11 @@ enum StoryPlayback {
     /// 🔴 **音源のホストを確かめる。** ストーリーは開いた瞬間に曲を取りに行くので、
     /// 任意の URL が入った行があると、トレイから開いた全員の IP と時刻がその先へ
     /// 渡る（Web の `safeSongPreviewUrl`・`lib/utils/mediaHosts.ts` と同じ規則）
+    /// 曲を鳴らし始める位置（秒）。選ばれていなければ頭から
+    static func songStart(for story: Story) -> Double {
+        Double(story.song?.startSec ?? 0)
+    }
+
     static func songURL(for story: Story) -> URL? {
         guard story.songLine != nil, let url = story.song?.previewURL,
               isAllowedPreview(url) else { return nil }

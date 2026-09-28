@@ -94,12 +94,29 @@ struct Photo: Identifiable, Decodable, Equatable {
     }
 
     struct Song: Codable, Equatable {
-        init(title: String, artist: String?, artwork: String?, previewUrl: String, trackUrl: String?) {
+        init(title: String, artist: String?, artwork: String?, previewUrl: String, trackUrl: String?,
+             startSec: Int? = nil) {
             self.title = title
             self.artist = artist
             self.artwork = artwork
             self.previewUrl = previewUrl
             self.trackUrl = trackUrl
+            self.startSec = startSec
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case title, artist, artwork, previewUrl, trackUrl, startSec
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            title = try c.decode(String.self, forKey: .title)
+            artist = try c.decodeIfPresent(String.self, forKey: .artist)
+            artwork = try c.decodeIfPresent(String.self, forKey: .artwork)
+            previewUrl = try c.decode(String.self, forKey: .previewUrl)
+            trackUrl = try c.decodeIfPresent(String.self, forKey: .trackUrl)
+            // **読めない値で曲ごと落とさない**（無いのと同じに扱う）
+            startSec = Self.clampStart((try? c.decodeIfPresent(Double.self, forKey: .startSec)) ?? nil)
         }
 
         let title: String
@@ -108,6 +125,17 @@ struct Photo: Identifiable, Decodable, Equatable {
         /// 30秒の試聴。**https のみ**（サーバーが検証している）
         let previewUrl: String
         let trackUrl: String?
+        /// 「好きな部分」＝30秒の試聴の中で鳴らし始める位置（秒・1〜29）。Web のストーリーで
+        /// 選べる（`stories.ts` が 0〜29 に丸めて保存）。**読まずにいたので、アプリで見る人には
+        /// いつも曲の頭が流れていた**（Web はこの位置から流す）
+        let startSec: Int?
+
+        /// サーバーと同じ丸め（`stories.ts`: 0 以下は無し・29 まで・四捨五入）
+        static func clampStart(_ raw: Double?) -> Int? {
+            guard let raw, raw.isFinite, raw > 0 else { return nil }
+            let start = min(29, Int(raw.rounded()))
+            return start > 0 ? start : nil
+        }
 
         var previewURL: URL? { URL(string: previewUrl) }
         var artworkURL: URL? { artwork.flatMap(URL.init(string:)) }

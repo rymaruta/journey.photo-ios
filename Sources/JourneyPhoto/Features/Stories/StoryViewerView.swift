@@ -209,7 +209,8 @@ struct StoryViewerView: View {
         }
         if restart || songSession == nil {
             // `song` は渡さない——ストーリーの曲は画面の下の再生バーに出す曲ではない
-            songSession = player.play(url, song: nil, loops: true)
+            // Web で選んだ「好きな部分」から鳴らす（繰り返しもそこから）
+            songSession = player.play(url, song: nil, loops: true, from: StoryPlayback.songStart(for: story))
         }
         // 自分の曲でなくなっていたら（ほかの画面が鳴らした）触らない
         guard ownsSong else { return }
