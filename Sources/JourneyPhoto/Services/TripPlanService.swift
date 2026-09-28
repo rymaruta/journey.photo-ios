@@ -21,6 +21,13 @@ struct TripPlanService {
     /// 403 で**断る**（古い方を黙って落とさない）。画面はその言い分をそのまま出す
     static let plansMax = 50
     static let titleMax = 100
+
+    /// 作るときに送る題。**サーバーと同じく UTF-16 の単位で数えて、字の途中では切らない**
+    /// （`sanitizeText(title, TRIP_TITLE_MAX)`）。字の数で切っていたので、絵文字60個の題は
+    /// 60字として全部送られ、サーバーが黙って50個に切っていた
+    static func titleToSend(_ raw: String) -> String {
+        PostLimits.clamp(raw.trimmingCharacters(in: .whitespacesAndNewlines), limit: titleMax)
+    }
     static let daysMax = 60
     static let itemsPerDayMax = 20
     /// 項目に添えるひとこと（`TRIP_NOTE_MAX`）。**入れる画面はまだ無い**（Web にも無い）

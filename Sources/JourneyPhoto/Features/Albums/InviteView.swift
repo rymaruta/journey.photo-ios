@@ -53,8 +53,10 @@ struct InviteView: View {
                 VStack(spacing: 8) {
                     Text(message ?? L("この招待リンクは使えません", "This invite link isn't valid"))
                     if joined.entries.contains(where: { $0.token == token }) {
-                        Text(L("参加しているアルバムは、投稿画面で行き先に選べます。",
-                               "You can still choose this album when you post."))
+                        // **言い切らない。** 招待の取り消しと、アルバムそのものの削除は同じ 410 で
+                        // 返り、見分けられない。消されていたら投稿は「見つかりません」で断られる
+                        Text(L("アルバムが残っていれば、投稿画面で行き先に選べます。",
+                               "If the album still exists, you can choose it when you post."))
                             .font(.footnote)
                     }
                     if canRetry {

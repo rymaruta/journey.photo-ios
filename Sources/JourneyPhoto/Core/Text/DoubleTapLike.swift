@@ -28,11 +28,14 @@ enum DoubleTapLike {
         photos.indices.contains(index) ? photos[index] : nil
     }
 
-    static func action(isZoomed: Bool, alreadyLiked: Bool, signedIn: Bool) -> Action {
+    /// - Parameter acceptsLike: その写真にいいねを付けられるか。**下書きは付けられない**
+    ///   （サーバーが断る。送ると先に灯したハートが黙って消えた）
+    static func action(isZoomed: Bool, alreadyLiked: Bool, signedIn: Bool,
+                       acceptsLike: Bool = true) -> Action {
         if isZoomed { return .resetZoom }
-        // **ログインしていない人には何も起きない。** 断り書きを出しても、
+        // **ログインしていない人・下書きには何も起きない。** 断り書きを出しても、
         // 写真を見ている最中に割り込むだけ（いいねのボタンは別にある）
-        guard signedIn else { return .burstOnly }
+        guard signedIn, acceptsLike else { return .burstOnly }
         return alreadyLiked ? .burstOnly : .like
     }
 }

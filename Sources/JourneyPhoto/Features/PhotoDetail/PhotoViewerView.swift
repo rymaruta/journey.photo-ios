@@ -23,6 +23,8 @@ struct PhotoViewerView: View {
     /// （元の1枚がいいね済みなら、隣の写真には何も起きなかった）
     var isLiked: (Photo) -> Bool = { _ in false }
     var isSignedIn: Bool = false
+    /// その写真にいいねを付けられるか（下書きは付けられない・`PhotoDetailRules.acceptsReactions`）
+    var acceptsLike: (Photo) -> Bool = { _ in true }
     /// ダブルタップでいいねを送る。**いま見ている写真**を渡す。
     /// 解除はしない（`DoubleTapLike`）
     var onDoubleTapLike: (Photo) -> Void = { _ in }
@@ -180,7 +182,7 @@ struct PhotoViewerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .jpPhotoTextShadow()
 
-                if isSignedIn {
+                if isSignedIn && acceptsLike(photo) {
                     let liked = isLiked(photo)
                     Button {
                         onToggleLike(photo)
@@ -232,7 +234,8 @@ struct PhotoViewerView: View {
 
     private func handleDoubleTap() {
         guard let shown = DoubleTapLike.shown(photos, at: index) else { return }
-        switch DoubleTapLike.action(isZoomed: scale > 1, alreadyLiked: isLiked(shown), signedIn: isSignedIn) {
+        switch DoubleTapLike.action(isZoomed: scale > 1, alreadyLiked: isLiked(shown), signedIn: isSignedIn,
+                                    acceptsLike: acceptsLike(shown)) {
         case .resetZoom:
             scale = 1
         case .like:

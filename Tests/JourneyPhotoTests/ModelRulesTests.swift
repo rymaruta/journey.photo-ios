@@ -105,6 +105,40 @@ final class AuthResolvingTests: XCTestCase {
         XCTAssertTrue(AuthStore().isResolving,
                       "確かめる前から「ログインしていない」と決めている")
     }
+
+    /// 🔴 **ID が無いときは送らない。** 黙るのは確認中だけで、ID が取れなかった起動では
+    /// 促す（黙ると、その起動のあいだ♥が何も言わずに効かない）
+    func testHomeLikeSendsOnlyWithAUser() async {
+        XCTAssertEqual(HomeLikeGate.decide(userId: "me", isResolving: false), .send)
+        XCTAssertEqual(HomeLikeGate.decide(userId: nil, isResolving: true), .ignore,
+                       "確認中にログイン済みの人へ「ログインしてください」を出している")
+        XCTAssertEqual(HomeLikeGate.decide(userId: nil, isResolving: false), .askToSignIn,
+                       "ID の無いまま送る・黙る（ID が取れなかった起動も含む）")
+        // 本物の状態からも同じ答えになる
+        let auth = AuthStore()
+        XCTAssertEqual(HomeLikeGate.decide(auth), .ignore)
+        auth.settleSignedOut()
+        XCTAssertEqual(HomeLikeGate.decide(auth), .askToSignIn)
+        // ログイン済み（見本の利用者で `.signedIn` にする）
+        UserDefaults.standard.set("me", forKey: PreviewSession.defaultsKey)
+        defer { UserDefaults.standard.removeObject(forKey: PreviewSession.defaultsKey) }
+        let signedIn = AuthStore()
+        await signedIn.restore()
+        XCTAssertEqual(signedIn.userId, "me", "下ごしらえ: ログイン済みになる")
+        XCTAssertEqual(HomeLikeGate.decide(signedIn), .send)
+    }
+
+    /// **サインアウト・退会のあと、前の画面の失敗をログイン画面に持ち越さない。**
+    /// 退会の道（`deleteCognitoUser`）は後片づけを通っていなかったので、パスワード変更で
+    /// 間違えてから退会すると、ログイン画面に「いまのパスワードが違います」が残っていた
+    @MainActor
+    func testSettlingSignedOutDropsThePreviousScreensError() async {
+        let auth = AuthStore()
+        auth.errorMessage = "いまのパスワードが違います"
+        auth.settleSignedOut()
+        XCTAssertNil(auth.errorMessage)
+        XCTAssertFalse(auth.isResolving)
+    }
 }
 
 /// フォロワー／フォロー中の数字を押せるか。
@@ -179,6 +213,16 @@ final class DoubleTapLikeTests: XCTestCase {
     func testSignedOutSendsNothing() {
         XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: false, signedIn: false),
                        .burstOnly)
+    }
+
+    /// 🔴 **下書きには送らない。** 送ると先に灯したハートが黙って消えた（サーバーが断る）
+    func testDraftSendsNothing() {
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: false, alreadyLiked: false, signedIn: true,
+                                            acceptsLike: false),
+                       .burstOnly)
+        XCTAssertEqual(DoubleTapLike.action(isZoomed: true, alreadyLiked: false, signedIn: true,
+                                            acceptsLike: false),
+                       .resetZoom, "拡大中は下書きでも倍率を戻す")
     }
 
     /// 🔴 **いいねの行き先は、いま見ている1枚。** 隣へ送ってから叩くと

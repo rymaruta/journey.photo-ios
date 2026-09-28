@@ -76,18 +76,19 @@ final class SearchPeopleTests: XCTestCase {
     func testStaleReplyDoesNotOverwriteTheNewSearch() async throws {
         let model = SearchViewModel()
         let pending = PendingFetch()
-        await model.search("a", debounce: .zero) { await pending.fetch($0) }
-        await waitUntil { pending.isWaiting("a") }
+        // 英数字1字はサーバーが探さない（送らない）ので、探せる語で順を作る
         await model.search("ab", debounce: .zero) { await pending.fetch($0) }
         await waitUntil { pending.isWaiting("ab") }
+        await model.search("abc", debounce: .zero) { await pending.fetch($0) }
+        await waitUntil { pending.isWaiting("abc") }
 
         // 古い回の返事が、新しい回の途中で届く
-        pending.release("a", with: [try user("old")])
+        pending.release("ab", with: [try user("old")])
         await settle()
         XCTAssertTrue(model.users.isEmpty, "取り消した回の返事で上書きしている")
         XCTAssertTrue(model.isSearching, "新しい回の途中で「探しています…」を消している")
 
-        pending.release("ab", with: [try user("new")])
+        pending.release("abc", with: [try user("new")])
         await waitUntil { !model.isSearching }
         XCTAssertEqual(model.users.map(\.userId), ["new"])
     }

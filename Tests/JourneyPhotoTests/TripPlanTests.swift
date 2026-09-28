@@ -321,6 +321,20 @@ final class TripPlanTests: XCTestCase {
 }
 
 /// 出発と帰着の前後（帰着を出発より前にすると、日程の日付が全部消えていた）
+/// 旅行プランの題。**サーバーと同じ数え方で切る**（`sanitizeText(title, TRIP_TITLE_MAX)` は
+/// UTF-16 の単位・字の途中では切らない）
+final class TripPlanTitleTests: XCTestCase {
+
+    func testTitleIsCountedLikeTheServer() {
+        // 絵文字は1字で UTF-16 の2単位。60個は120単位なので、50個までしか入らない
+        let emoji = String(repeating: "🏔", count: 60)
+        XCTAssertEqual(TripPlanService.titleToSend(emoji), String(repeating: "🏔", count: 50))
+        XCTAssertEqual(TripPlanService.titleToSend("  冬のフィンランド  "), "冬のフィンランド")
+        let long = String(repeating: "あ", count: 150)
+        XCTAssertEqual(TripPlanService.titleToSend(long).count, TripPlanService.titleMax)
+    }
+}
+
 final class TripPlanDateOrderTests: XCTestCase {
     func testMovingStartPastEndPullsEndAlong() {
         let r = TripPlanText.ordered(start: "2026-12-26", end: "2026-12-24", movedStart: true)

@@ -169,9 +169,17 @@ final class AuthStore: ObservableObject {
         isSignedOutUncertain = false
         signedOutByExpiry = byExpiry
         await AuthGateway.signOut()
+        settleSignedOut()
+    }
+
+    /// サインアウトした扱いにする（サインアウトと退会の両方）。
+    ///
+    /// **前の画面の失敗（パスワード変更など）をログイン画面に持ち越さない。** 退会の道は
+    /// これを通っていなかったので、パスワード変更で間違えたあと退会すると、ログイン画面に
+    /// 「いまのパスワードが違います」が赤字で残っていた
+    func settleSignedOut() {
         state = .signedOut
         isAdmin = false
-        // 前の画面の失敗（パスワード変更など）をログイン画面に持ち越さない
         errorMessage = nil
         lastFailure = .none
     }
@@ -190,8 +198,7 @@ final class AuthStore: ObservableObject {
             // 消えている。下のサインアウトへ進む
         }
         await AuthGateway.signOut()
-        state = .signedOut
-        isAdmin = false
+        settleSignedOut()
     }
 
     /// - Returns: 確認コード送信に使う UUID。失敗したら nil。

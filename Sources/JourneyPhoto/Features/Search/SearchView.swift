@@ -598,7 +598,9 @@ struct SearchView: View {
                     // **「読み込めなかった」と「見つからなかった」を分ける**（写真と同じ言い方）
                     : (model.usersFailed
                        ? L("人を読み込めませんでした。引き下げて読み直せます", "Couldn't load people. Pull to retry")
-                       : L("見つかりませんでした", "No results"))))
+                       : (model.peopleQueryTooShort
+                          ? L("英数字は2文字から探せます", "Type at least 2 letters or numbers")
+                          : L("見つかりませんでした", "No results")))))
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 16)
@@ -658,6 +660,9 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var isSearching = false
     /// 人の検索が**通信などで失敗した**（「見つかりませんでした」と分ける）
     @Published private(set) var usersFailed = false
+    /// 人の検索に**短すぎる語**（英数字1字・`@` だけ）。サーバーは探さずに空で返すので、
+    /// 「見つかりませんでした」と言わずに何字から探せるかを出す
+    @Published private(set) var peopleQueryTooShort = false
     /// いまの `users` を引いた語。**同じ語で失敗した回は一覧を残す**
     /// （通報・引き下げで読み直して圏外だった回に、開いているプロフィールの元の行を消さない）
     private var usersQuery: String?
@@ -869,6 +874,16 @@ final class SearchViewModel: ObservableObject {
         await search(query) { try await service.search(query: $0) }
     }
 
+    /// サーバーが探す語か（`userSearch.ts` の `normalizeQuery` と `isSearchableQuery` と同じ）
+    nonisolated static func isSearchablePeopleQuery(_ raw: String) -> Bool {
+        var q = Substring(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        while q.first == "@" { q = q.dropFirst() }
+        let normalized = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        if normalized.unicodeScalars.contains(where: { !$0.isASCII }) { return true }
+        return normalized.utf16.count >= 2
+    }
+
     /// 人の検索の本体。**引き先を差し替えられる**（テストで返事の順を操るため）。
     ///
     /// - 待ちの間（打鍵のあとの 300ms）も**探している扱い**にする。
@@ -885,7 +900,12 @@ final class SearchViewModel: ObservableObject {
         let generation = searchGeneration
         self.query = query
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        // **サーバーが探さない語は送らない。** `userSearch.ts` は先頭の `@` を落とし、英数字だけ
+        // なら2字から探す（満たさないと探さずに空を返す）。空の答えを「見つかりませんでした」
+        // と出すと、居る人を居ないと言う（Web は `isSearchableQuery` を満たすまで言わない）
+        let searchable = Self.isSearchablePeopleQuery(trimmed)
+        peopleQueryTooShort = !trimmed.isEmpty && !searchable
+        guard searchable else {
             users = []
             usersQuery = nil
             isSearching = false

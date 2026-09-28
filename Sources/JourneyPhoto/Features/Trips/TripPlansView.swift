@@ -92,6 +92,11 @@ struct TripPlansView: View {
                 .foregroundStyle(WebTheme.foreground)
                 .submitLabel(.done)
                 .onSubmit { create() }
+                // **上限で止める**（Web の `maxLength={100}` と同じ）。黙って100字で作らない
+                .onChange(of: newTitle) { old, new in
+                    let kept = PostLimits.limited(old: old, new: new, limit: TripPlanService.titleMax)
+                    if kept != new { newTitle = kept }
+                }
                 .accessibilityLabel(L("旅行プランのタイトル", "Trip title"))
                 .padding(.horizontal, 14)
                 .frame(minHeight: WebTheme.minTapTarget)
@@ -119,11 +124,11 @@ struct TripPlansView: View {
 
     private func create() {
         guard canCreate else { return }
-        let title = String(trimmedTitle.prefix(TripPlanService.titleMax))
+        let title = TripPlanService.titleToSend(newTitle)
         Task {
             if let made = await model.create(title: title, environment: environment) {
                 // **送った題のままなら消す。** 待っている間に打ち直した次の題まで消していた
-                if String(trimmedTitle.prefix(TripPlanService.titleMax)) == title { newTitle = "" }
+                if TripPlanService.titleToSend(newTitle) == title { newTitle = "" }
                 openedPlanId = made.planId
                 showOpened = true
             }

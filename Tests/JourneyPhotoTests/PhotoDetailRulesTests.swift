@@ -65,3 +65,26 @@ final class PhotoDetailRulesTests: XCTestCase {
                                                     lookupFailed: false, ownerBlocked: false))
     }
 }
+
+/// 下書きにはコメント・いいねを出さない（サーバーが断る）
+final class PhotoDetailDraftTests: XCTestCase {
+    func testDraftsDoNotAcceptReactions() {
+        XCTAssertFalse(PhotoDetailRules.acceptsReactions(published: false))
+        XCTAssertTrue(PhotoDetailRules.acceptsReactions(published: true))
+        XCTAssertTrue(PhotoDetailRules.acceptsReactions(published: nil), "未指定は公開（サーバーの既定）")
+    }
+
+    /// 🔴 **下書きを公開したら読み直す。** 人と写真が同じでも、受け付けるかどうかが変われば鍵が変わる
+    func testPublishingADraftReloadsReactions() {
+        XCTAssertNotEqual(PhotoDetailRules.reloadKey(userId: "me", photoId: "p1", published: false),
+                          PhotoDetailRules.reloadKey(userId: "me", photoId: "p1", published: true),
+                          "公開しても読み直さず、コメントの失敗と空のいいねの数が残る")
+        // 公開のまま（未指定＝公開）なら読み直さない
+        XCTAssertEqual(PhotoDetailRules.reloadKey(userId: "me", photoId: "p1", published: nil),
+                       PhotoDetailRules.reloadKey(userId: "me", photoId: "p1", published: true))
+        XCTAssertNotEqual(PhotoDetailRules.reloadKey(userId: "me", photoId: "p1", published: true),
+                          PhotoDetailRules.reloadKey(userId: nil, photoId: "p1", published: true))
+        XCTAssertNotEqual(PhotoDetailRules.reloadKey(userId: "me", photoId: "p1", published: true),
+                          PhotoDetailRules.reloadKey(userId: "me", photoId: "p2", published: true))
+    }
+}

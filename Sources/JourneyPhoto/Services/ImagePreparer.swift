@@ -239,13 +239,24 @@ enum ImagePreparer {
     /// 素朴な `split(":")` は年月日を取り違える。DateFormatter に任せる。
     private static func readTakenOn(from properties: [CFString: Any]) -> String? {
         let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
-        guard let raw = exif[kCGImagePropertyExifDateTimeOriginal] as? String else { return nil }
+        return takenOn(exif[kCGImagePropertyExifDateTimeOriginal] as? String)
+    }
+
+    /// EXIF の日時（撮った土地の壁時計）から日付だけを取る。
+    ///
+    /// **UTC で読んで UTC で書く**（`storedDateTime` と同じ）。端末の時間帯で読むと、
+    /// 端末の土地で夏時間に切り替わる時刻（ニューヨークの `2026:03:08 02:30:00` など）は
+    /// 存在しない時刻として nil になり、日本で撮った写真の撮影日が落ちていた
+    static func takenOn(_ raw: String?) -> String? {
+        guard let raw else { return nil }
         let parser = DateFormatter()
         parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(identifier: "UTC")
         parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
         guard let date = parser.date(from: raw) else { return nil }
         let out = DateFormatter()
         out.locale = Locale(identifier: "en_US_POSIX")
+        out.timeZone = TimeZone(identifier: "UTC")
         out.dateFormat = "yyyy-MM-dd"
         return out.string(from: date)
     }
