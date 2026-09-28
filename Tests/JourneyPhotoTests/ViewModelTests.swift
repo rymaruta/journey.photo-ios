@@ -406,6 +406,59 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(StubProtocol.requests.contains { $0.hasPrefix("POST ") })
     }
 
+    /// **空の名前で作る・名前を変えるを押したら、黙らずに理由を出す。** アラートが閉じて
+    /// 何も起きず、名前も変わらないままだった（送りはしない）
+    func testAlbumBlankNameSaysWhy() async {
+        prepare()
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = AlbumsViewModel()
+        await model.create(title: "   ", environment: env)
+        XCTAssertEqual(model.notice, AlbumsViewModel.nameRequired)
+        // 名前を変える側は別の画面で見る（作る側の知らせが4秒残るので、同じ画面だと
+        // 名前を変える側の直しを外しても通ってしまう——02dad7b のレビュー）
+        let renaming = AlbumsViewModel()
+        await renaming.rename("a1", title: "", environment: env)
+        XCTAssertEqual(renaming.notice, AlbumsViewModel.nameRequired)
+        XCTAssertEqual(StubProtocol.requestCount, 0, "空の名前を送っている")
+    }
+
+    /// 🔴 **押した人が替わったら、フォローの答えを書かない。** 圏外寸前でフォローを押し、
+    /// 答えが返る前にログアウトして別の人で入り直すと、前の人の「フォロー中」と
+    /// 数が次の人の画面に残っていた（押すと、フォローしていない相手を外す確認が出た）
+    func testFollowAnswerForPreviousViewerIsDropped() async {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 200,
+                             body: #"{"following":true,"followers":5}"#)
+        // 自分のフォロー一覧は取れる（取れないと「分からない」になり、押したときに取り直す——
+        // その筋は testProfileFollowWhenLookupFailedChecksBeforeSending が見る）
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        // フォローの送信（POST）だけ止める。数え札（GET 同じ道）は止めない
+        let gate = Gate()
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api(gates: PathGates(["POST /users/u1/follow": gate])))
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "a")
+        let follow = Task { await model.toggleFollow(userId: "u1", environment: env) }
+        await gate.untilWaiting()
+        // 答えが返る前に、別の人で入り直した
+        await model.load(userId: "u1", environment: env, viewerId: "b")
+        await gate.open()
+        await follow.value
+        XCTAssertFalse(model.isFollowing, "前の人のフォローの答えを次の人の画面に書いている")
+        XCTAssertNotEqual(model.followers, 5)
+    }
+
     /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
     /// 書かずに戻ると、読み込み中の丸のまま引き下げも再試行も効かない画面が残る
     func testGalleryFirstLoadCancelledDoesNotStayLoading() async {

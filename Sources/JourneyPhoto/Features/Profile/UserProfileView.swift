@@ -503,7 +503,9 @@ final class UserProfileViewModel: ObservableObject {
         // 取り直した結果で向きを決め直すと、「フォロー中」を外そうとして何も送られない・
         // 逆向きに follow を送る、が起きた
         let wantsFollow = follow ?? !isFollowing
-        // 押した時点で見ていた人。**待つ間に人が替わったら、前の人の答えを書かない**
+        // 押した時点で見ていた人。🔴 **押した人の答えだけを書く。** 待っている間にログアウトして
+        // 別の人で入り直すと、前の人の「フォロー中」と数が次の人の画面に残っていた
+        // （`FollowListView.setFollowing` の `auth.userId == viewer` と同じ守り）
         let viewer = lastViewerId
         // **分からないままフォローを送らない。** 取り直して、既にフォロー中なら送らずに姿だけ直す。
         // 外す方は取り直さない（外すのは何度送っても同じ）
