@@ -75,7 +75,9 @@ enum PostLimits {
         if length(trail) >= room {
             // 区切りが残りより長ければ最後の1つだけ残す。残りが1字なら本文を入れる
             // （1行の欄で改行だけが入り、貼ったのに何も入らないように見えた）
-            trail = room >= 2 ? trail.last.map(String.init) ?? "" : ""
+            // （`\r\n` は2単位——本文が入らないなら区切りも入れない）
+            let last = trail.last.map(String.init) ?? ""
+            trail = length(last) < room ? last : ""
         }
         let kept = clamp(body, limit: room - length(trail)) + trail
         return prefix + (length(kept) <= room ? kept : clamp(inserted, limit: room)) + suffix

@@ -80,6 +80,18 @@ final class MapFramingTests: XCTestCase {
         XCTAssertEqual(frame.longitudeSpan, MapFraming.minimumSpan, accuracy: 0.001)
     }
 
+    /// **重みの中心が2つの群の間に落ちても、間の1枚に寄らない**（159f8ec のレビュー）。
+    /// 東京20枚・広島20枚・名古屋1枚で、名古屋の1枚に最小の幅で寄っていた
+    func testDoesNotZoomToTheLonePhotoBetweenTwoGroups() {
+        let hiroshima = (latitude: 34.39, longitude: 132.46)
+        let nagoya = (latitude: 35.18, longitude: 136.90)
+        guard let frame = MapFraming.frame(for: [tokyo, hiroshima, nagoya], weights: [20, 20, 1]) else {
+            return XCTFail("枠が決まらない")
+        }
+        XCTAssertEqual(frame.latitude, tokyo.latitude, accuracy: 0.01, "同じ重さなら北（東京）の群")
+        XCTAssertEqual(frame.longitude, tokyo.longitude, accuracy: 0.01)
+    }
+
     /// 近い点どうしは1つの塊
     func testNearbyPointsAreOneCluster() {
         XCTAssertEqual(MapFraming.largestCluster([tokyo, niigata]).count, 2)

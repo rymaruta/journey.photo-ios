@@ -54,13 +54,13 @@ enum MapFraming {
 
     /// いちばん重い（写真の多い）塊。**同じ重さなら北にある方**（毎回同じ結果にする）。
     ///
-    /// 約 300km（`clusterDegrees`）の升目に分け、**隣り合う 3×3 の升の重さがいちばん大きい所**を
-    /// 塊とする。
-    /// - 🔴 以前は北から順に「最初に近いと分かった塊」へ足すだけで、2つの塊をつなぐ点が後から
-    ///   来ても合わせず、一続きの点が割れて別の小さい塊が選ばれていた
-    /// - つながりをたどって1つにすると、点が密な所では大陸ごと1つになり（世界全体に近い枠）、
-    ///   点の数の2乗の時間もかかった（5000点で約0.4秒・描き直しのたびに走る）。升目なら
-    ///   塊の広さに上限があり（約 900km 四方）、点の数に比例する時間で済む
+    /// 写真の1地点ずつを中心の候補にし、**そこから `clusterDegrees`（約 300km）以内の写真の重さが
+    /// いちばん大きい地点**を選んで、その範囲の点を塊とする。塊の広さは中心から ±300km に収まる。
+    /// - 🔴 北から順に「最初に近い塊」へ足す形は、一続きの点が割れて小さい塊が選ばれた
+    /// - つながりをたどる形は、点が密だと大陸ごと1つになり、点の数の2乗の時間がかかった
+    /// - 升目の 3×3 をそのまま囲む形は、離れた1枚が枠を決めた。重みの中心で切る形は、中心が
+    ///   2つの群の間に落ちると、間にある1枚だけに寄った
+    /// 近くの点は約 300km の升目で引くので、点の数にほぼ比例する時間で済む
     static func largestCluster(
         _ points: [(latitude: Double, longitude: Double)],
         weights: [Int]? = nil
@@ -70,45 +70,37 @@ enum MapFraming {
             Cell(lat: Int((p.latitude / clusterDegrees).rounded(.down)),
                  lon: Int((p.longitude / clusterDegrees).rounded(.down)))
         }
+        func weight(_ index: Int) -> Int {
+            (weights?.indices.contains(index) ?? false) ? max(1, weights![index]) : 1
+        }
         var members: [Cell: [Int]] = [:]
-        var weightOf: [Cell: Int] = [:]
+        for index in points.indices { members[cell(points[index]), default: []].append(index) }
+        func around(_ center: Int) -> [Int] {
+            let home = cell(points[center])
+            return (-1...1).flatMap { dLat in (-1...1).flatMap { dLon in
+                members[Cell(lat: home.lat + dLat, lon: home.lon + dLon)] ?? []
+            } }.filter {
+                abs(points[$0].latitude - points[center].latitude) <= clusterDegrees
+                    && abs(points[$0].longitude - points[center].longitude) <= clusterDegrees
+            }
+        }
+        var best: (center: Int, weight: Int)?
         for index in points.indices {
-            let key = cell(points[index])
-            members[key, default: []].append(index)
-            let weight = (weights?.indices.contains(index) ?? false) ? max(1, weights![index]) : 1
-            weightOf[key, default: 0] += weight
-        }
-        func neighbours(_ c: Cell) -> [Cell] {
-            (-1...1).flatMap { dLat in (-1...1).map { dLon in Cell(lat: c.lat + dLat, lon: c.lon + dLon) } }
-        }
-        // 同じ重さなら北（升の緯度の大きい方）、それも同じなら西——毎回同じ結果にする
-        let best = members.keys.max { a, b in
-            let wa = neighbours(a).reduce(0) { $0 + (weightOf[$1] ?? 0) }
-            let wb = neighbours(b).reduce(0) { $0 + (weightOf[$1] ?? 0) }
-            if wa != wb { return wa < wb }
-            if a.lat != b.lat { return a.lat < b.lat }
-            return a.lon > b.lon
+            let total = around(index).reduce(0) { $0 + weight($1) }
+            guard let current = best else { best = (index, total); continue }
+            let here = points[index], there = points[current.center]
+            // 重い方。同じなら北、それも同じなら西（毎回同じ結果にする）
+            if total > current.weight
+                || (total == current.weight && (here.latitude > there.latitude
+                    || (here.latitude == there.latitude && here.longitude < there.longitude))) {
+                best = (index, total)
+            }
         }
         guard let best else { return [] }
-        let block = neighbours(best).flatMap { members[$0] ?? [] }
-        // **写真の重みの中心から `clusterDegrees` 以内だけを塊にする。** 3×3 の升をそのまま囲むと、
-        // 2升ぶん離れた1枚（東京40枚に大阪1枚）が枠を決め、升目の区切りで左右も揃わなかった
-        func weight(_ index: Int) -> Double {
-            Double((weights?.indices.contains(index) ?? false) ? max(1, weights![index]) : 1)
-        }
-        let total = block.reduce(0.0) { $0 + weight($1) }
-        let centerLat = block.reduce(0.0) { $0 + points[$1].latitude * weight($1) } / total
-        let centerLon = block.reduce(0.0) { $0 + points[$1].longitude * weight($1) } / total
-        let near = block.filter {
-            abs(points[$0].latitude - centerLat) <= clusterDegrees
-                && abs(points[$0].longitude - centerLon) <= clusterDegrees
-        }
-        // 中心が点の間に落ちて誰も入らない回は、塊の全部で囲む
-        return (near.isEmpty ? block : near)
+        return around(best.center)
             .sorted { points[$0].latitude > points[$1].latitude }
             .map { points[$0] }
     }
-
 }
 
 extension MapFraming {
