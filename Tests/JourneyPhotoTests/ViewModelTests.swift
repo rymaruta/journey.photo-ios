@@ -179,6 +179,32 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// 🔴 **押した人が替わったら、フォローの答えを書かない。** 圏外寸前でフォローを押し、
+    /// 答えが返る前にログアウトして別の人で入り直すと、前の人の「フォロー中」と
+    /// 数が次の人の画面に残っていた（押すと、フォローしていない相手を外す確認が出た）
+    func testFollowAnswerForPreviousViewerIsDropped() async throws {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 200,
+                             body: #"{"following":true,"followers":5}"#, delay: 0.4)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "a")
+        let follow = Task { await model.toggleFollow(userId: "u1", environment: env) }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        // 答えが返る前に、別の人で入り直した
+        await model.load(userId: "u1", environment: env, viewerId: "b")
+        await follow.value
+        XCTAssertFalse(model.isFollowing, "前の人のフォローの答えを次の人の画面に書いている")
+        XCTAssertNotEqual(model.followers, 5)
+    }
+
     /// **まだ何も出していない初回が取り消された回は、今までどおり失敗を書く**（c408c05 のレビュー）。
     /// 書かずに戻ると、読み込み中の丸のまま引き下げも再試行も効かない画面が残る
     func testGalleryFirstLoadCancelledDoesNotStayLoading() async {

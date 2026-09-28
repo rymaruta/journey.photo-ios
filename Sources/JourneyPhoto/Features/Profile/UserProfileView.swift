@@ -77,7 +77,9 @@ struct UserProfileView: View {
         // **見ている人が替わっても読み直す。** 相手だけを鍵にしていたので、開いたまま
         // 別の人でログインし直すと「フォロー中」が前の人の値のまま出て、押すと
         // 逆向きに送っていた（前の人が誰をフォローしているかも見えた）
-        .task(id: "\(userId)|\(auth.userId ?? "")") {
+        // **ブロックの有無も鍵に入れる。** ブロックで格子を空にしたあと、設定から
+        // 解除して戻っても読み直さず、「まだ写真はありません」「0枚」のまま残っていた
+        .task(id: "\(userId)|\(auth.userId ?? "")|\(isBlocked)") {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
         }
     }
@@ -484,14 +486,20 @@ final class UserProfileViewModel: ObservableObject {
         isWorking = true
         actionMessage = nil
         defer { isWorking = false }
+        // 🔴 **押した人の答えだけを書く。** 待っている間にログアウトして別の人で
+        // 入り直すと、前の人の「フォロー中」と数が次の人の画面に残っていた
+        // （`FollowListView.setFollowing` の `auth.userId == viewer` と同じ守り）
+        let viewer = lastViewerId
         do {
             let result = isFollowing
                 ? try await environment.social.unfollow(userId: userId)
                 : try await environment.social.follow(userId: userId)
+            guard lastViewerId == viewer else { return }
             followWrites += 1
             isFollowing = result.following
             followers = result.followers
         } catch {
+            guard lastViewerId == viewer else { return }
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("うまくいきませんでした", "That didn't work")
         }
     }
