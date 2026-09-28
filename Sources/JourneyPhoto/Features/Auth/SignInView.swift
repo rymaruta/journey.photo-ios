@@ -327,12 +327,14 @@ struct SignInView: View {
     ///   控えが無くても「確認が済んでいません」とは言わない
     /// - Parameter fromOffer: ログインの失敗のあとの入口から押した回
     private func resumeVerification(knownUnconfirmed: Bool, fromOffer: Bool = false) async {
+        // 登録で「すでに登録されています」から来た回（入口でも、ログインで未確認と答えた回でもない）
+        let fromSignUp = !knownUnconfirmed && !fromOffer
         guard let saved = pending.username(for: email) else {
             // **この端末に登録の控えが無い**（Web・別の端末で登録した）。
             // 確認コードを送り直すには登録時の ID が要り、メールアドレスでは引けない
+            if fromSignUp { showExistingAccount() }
             guard knownUnconfirmed else { return }
-            notice = L("メールアドレスの確認が済んでいません。登録したときに届いたメールの確認コードを、登録した端末（または Web）で入力してください。",
-                       "Your email isn't verified yet. Enter the code from the sign-up email on the device (or web) where you signed up.")
+            notice = Self.unverifiedElsewhereNotice
             return
         }
         if await auth.resendSignUpCode(username: saved) {
@@ -350,12 +352,12 @@ struct SignInView: View {
             // 送り直しの答えとして意味の通らない文（「メールアドレスの形式か…」「見つかりません」
             // 「違います」）を出さない。Cognito は確認済みの利用者への送り直しを InvalidParameter で断る
             auth.errorMessage = nil
-            if !fromOffer && !knownUnconfirmed {
-                // 登録で「すでに登録されています」から来た回。もう一度登録しても同じ答えになるので、
-                // Web（`app/signup/page.tsx`）と同じく在ることを言い、ログインの画面へ移す
-                // （「パスワードを忘れた」はログインの画面にしか無い）
-                mode = .signIn
-                auth.errorMessage = SignInRecovery.existingAccountMessage
+            if fromSignUp {
+                showExistingAccount()
+            } else if knownUnconfirmed {
+                // ログインでは「未確認」と答えたのに、控えの登録には送り直せない（控えが別の登録を
+                // 指している）。「確認が済んでいる」とは言わず、登録した所で確認するよう案内する
+                notice = Self.unverifiedElsewhereNotice
             } else {
                 notice = auth.lastFailure == .invalidParameter
                     ? SignInRecovery.alreadyConfirmedNotice
@@ -371,11 +373,29 @@ struct SignInView: View {
         // 「確認コードを入力できます」と言っているので、回数制限・圏外で送り直せなくても欄を出す。
         // **送り直しが実際に失敗した回だけ**（二度押しで走らなかった2本目は `.none` のまま——
         // 1本目の答えを待たずに欄を出さない）
-        guard knownUnconfirmed || fromOffer, auth.lastFailure != .none else { return }
+        guard knownUnconfirmed || fromOffer, auth.lastFailure != .none else {
+            // 登録から来て送り直せなかった（回数制限・圏外）回も、在ることを言ってログインの画面へ
+            if fromSignUp && auth.lastFailure != .none { showExistingAccount() }
+            return
+        }
         pendingUsername = saved
         notice = L("確認コードを送り直せませんでした。前に届いたコードがあれば、そのまま入力できます。",
                    "We couldn't send a new code. If you have an earlier code, you can enter it.")
     }
+
+    /// 登録で「すでに登録されています」と言われた人への案内。もう一度登録しても同じ答えになるので、
+    /// Web（`app/signup/page.tsx`）と同じく在ることを言い、ログインの画面へ移す（「パスワードを
+    /// 忘れた」はログインの画面にしか無い）。**登録の画面にいるときだけ移す**——待つ間に再設定の
+    /// 画面などへ移っていたら、引き戻さない
+    private func showExistingAccount() {
+        guard mode == .signUp, pendingUsername == nil else { return }
+        mode = .signIn
+        auth.errorMessage = SignInRecovery.existingAccountMessage
+    }
+
+    private static let unverifiedElsewhereNotice = L(
+        "メールアドレスの確認が済んでいません。登録したときに届いたメールの確認コードを、登録した端末（または Web）で入力してください。",
+        "Your email isn't verified yet. Enter the code from the sign-up email on the device (or web) where you signed up.")
 
     // MARK: - 登録の確認
 
