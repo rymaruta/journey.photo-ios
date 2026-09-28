@@ -231,10 +231,18 @@ struct TripPlanDetailView: View {
         }
     }
 
+    /// 持っていた失敗を出す。**移り変わりが終わってから、まだ前にいるときだけ**——
+    /// 戻るスワイプを始めた時点で `onAppear` が来るので、そこで出すと上の画面の上で
+    /// 捨てられ、持っていた文も消えていた（途中でやめると `onDisappear` で `onTop` が
+    /// 偽に戻るので、ここで見れば持ったまま残る。e6e096f のレビュー）
     private func showPendingSaveError() {
-        guard let message = pendingSaveError, picking == nil, onTop else { return }
-        pendingSaveError = nil
-        leaveSaveError = message
+        guard pendingSaveError != nil else { return }
+        Task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard let message = pendingSaveError, picking == nil, onTop else { return }
+            pendingSaveError = nil
+            leaveSaveError = message
+        }
     }
 
     /// 送る。**通ったか**を返す（「保存して戻る」は通ったときだけ閉じる）
