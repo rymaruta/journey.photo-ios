@@ -118,6 +118,16 @@ final class MapFramingTests: XCTestCase {
         XCTAssertLessThanOrEqual(lons.max()! - lons.min()!, 19 * MapFraming.clusterDegrees / 10 + 1e-9)
     }
 
+    /// **ありえない座標で落ちない**（565d8fc のレビュー）。升目の数を広がりで決めるので、範囲外の
+    /// 1点で升目が巨大になり、確保できずに落ちていた。範囲外は数えない
+    func testOutOfRangeCoordinatesAreIgnored() {
+        let started = Date()
+        let frame = MapFraming.frame(for: [tokyo, (latitude: 1e4, longitude: 1e4), (latitude: .nan, longitude: 0)])
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
+        XCTAssertEqual(frame?.latitude ?? 0, tokyo.latitude, accuracy: 0.001)
+        XCTAssertNil(MapFraming.frame(for: [(latitude: 1e4, longitude: 1e4)]), "使える点が無ければ枠も無い")
+    }
+
     /// 近い点どうしは1つの塊
     func testNearbyPointsAreOneCluster() {
         XCTAssertEqual(MapFraming.largestCluster([tokyo, niigata]).count, 2)

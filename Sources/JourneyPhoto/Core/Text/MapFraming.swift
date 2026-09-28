@@ -55,7 +55,7 @@ enum MapFraming {
     /// いちばん重い（写真の多い）塊。**同じ重さなら北にある方**（毎回同じ結果にする）。
     ///
     /// 写真を約 30km（`clusterDegrees / 10`）の升目に落とし、**ある升を中心に上下左右 9升
-    /// （約 ±2.4°・一辺およそ 500km）の窓に入る写真の重さがいちばん大きい所**を選んで、その窓の
+    /// （中心の点から端まで 2.4〜2.7°・一辺 19升＝約 5.1°）の窓に入る写真の重さがいちばん大きい所**を選んで、その窓の
     /// 写真を塊とする。窓の重さは升目の累積和で引くので、点の数と升目の数に比例する時間で済む。
     /// 返す点は必ず窓の中にある。中心の候補は写真のある升だけ。
     /// - 🔴 北から順に「最初に近い塊」へ足す形は、一続きの点が割れて小さい塊が選ばれた
@@ -67,6 +67,18 @@ enum MapFraming {
         _ points: [(latitude: Double, longitude: Double)],
         weights: [Int]? = nil
     ) -> [(latitude: Double, longitude: Double)] {
+        // **ありえない座標は数えない。** 升目の数は緯度・経度の広がりで決まるので、範囲外の
+        // 値（古いデータ・壊れた行）が1つあるだけで升目が巨大になり、確保できずに落ちる
+        let usable = points.indices.filter {
+            let p = points[$0]
+            return p.latitude.isFinite && p.longitude.isFinite
+                && abs(p.latitude) <= 90 && abs(p.longitude) <= 180
+        }
+        guard usable.count == points.count else {
+            let kept = usable.map { points[$0] }
+            let keptWeights = weights.map { w in usable.map { w.indices.contains($0) ? w[$0] : 1 } }
+            return kept.isEmpty ? [] : largestCluster(kept, weights: keptWeights)
+        }
         guard !points.isEmpty else { return [] }
         let size = clusterDegrees / 10
         let reach = 9
