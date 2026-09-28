@@ -105,6 +105,18 @@ final class AuthResolvingTests: XCTestCase {
         XCTAssertTrue(AuthStore().isResolving,
                       "確かめる前から「ログインしていない」と決めている")
     }
+
+    /// **サインアウト・退会のあと、前の画面の失敗をログイン画面に持ち越さない。**
+    /// 退会の道（`deleteCognitoUser`）は後片づけを通っていなかったので、パスワード変更で
+    /// 間違えてから退会すると、ログイン画面に「いまのパスワードが違います」が残っていた
+    @MainActor
+    func testSettlingSignedOutDropsThePreviousScreensError() async {
+        let auth = AuthStore()
+        auth.errorMessage = "いまのパスワードが違います"
+        auth.settleSignedOut()
+        XCTAssertNil(auth.errorMessage)
+        XCTAssertFalse(auth.isResolving)
+    }
 }
 
 /// フォロワー／フォロー中の数字を押せるか。
