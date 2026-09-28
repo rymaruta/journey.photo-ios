@@ -39,6 +39,9 @@ struct TripPlanDetailView: View {
     /// 削除が断られた（アラートで出す——理由は `leaveSaveError` と同じ。
     /// 削除の札は画面のいちばん下にあり、上の赤い行は見えない）
     @State private var deleteError: String?
+    /// 出せなかった保存の失敗（候補のシートの下・上に積んだ画面の下だった）。
+    /// **捨てずに持っておき、この画面が前に戻ったときに出す**
+    @State private var pendingSaveError: String?
     /// 名前を引く材料が**一度でも取れたか**。取れた後の読み直しの失敗で消さない
     @State private var gotPhotos = false
     @State private var gotIndex = false
@@ -112,7 +115,7 @@ struct TripPlanDetailView: View {
                                        // その間に次の保存を送った・確認を開き直したなら出さない
                                        // （成功した後に前の失敗が出ていた。赤い行は残る）
                                        guard saveAttempt == mine, !confirmLeave else { return }
-                                       leaveSaveError = message
+                                       showSaveError(message)
                                    }
                                }
                            },
@@ -155,6 +158,7 @@ struct TripPlanDetailView: View {
         .onDisappear { onTop = false }
         .onAppear {
             onTop = true
+            showPendingSaveError()
             dropped = hidden.snapshot
             refreshPlaces()
             // **前の画面の失敗の文を消すのは、開いた最初の1回だけ。** 項目の
@@ -168,7 +172,7 @@ struct TripPlanDetailView: View {
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
 
-        .sheet(item: $picking) { target in
+        .sheet(item: $picking, onDismiss: showPendingSaveError) { target in
             NavigationStack {
                 TripPlanPickSheet(dayIndex: target.day,
                                   sourcesFailed: sourcesFailed,
@@ -216,6 +220,23 @@ struct TripPlanDetailView: View {
                            saving: model.busy != nil && sent != nil)
     }
 
+    /// 保存の失敗を知らせる。**候補のシートを開いている・上に画面を積んでいる間は
+    /// アラートを出せない**（黙って捨てられる）ので持っておき、戻ったときに出す
+    /// （754f729 のレビュー: 捨てると「押しても何も起きない」に戻る）
+    private func showSaveError(_ message: String) {
+        if picking == nil, onTop {
+            leaveSaveError = message
+        } else {
+            pendingSaveError = message
+        }
+    }
+
+    private func showPendingSaveError() {
+        guard let message = pendingSaveError, picking == nil, onTop else { return }
+        pendingSaveError = nil
+        leaveSaveError = message
+    }
+
     /// 送る。**通ったか**を返す（「保存して戻る」は通ったときだけ閉じる）
     private func save() async -> Bool {
         guard let plan else { return false }
@@ -225,6 +246,8 @@ struct TripPlanDetailView: View {
         let saved = await model.update(planId, patch, environment: environment)
         // 断られたら控えを捨てる（次に届く姿で下書きを上書きしない）
         if !saved { sent = nil }
+        // 通ったら、出せずに持っていた前の失敗は出さない（成功の後に失敗が出る）
+        if saved { pendingSaveError = nil }
         return saved
     }
 
@@ -235,10 +258,8 @@ struct TripPlanDetailView: View {
                 guard !saved else { return }
                 // 🔴 **断られたらアラートで知らせる。** 知らせは画面の上の赤い行だけで、
                 // 下までスクロールしていると押しても何も起きないように見えた
-                // （「保存して戻る」と同じ扱い）。**候補のシートを開いている間は出さない**
-                // ——シートの上には出せず黙って捨てられる。赤い行は残る
-                guard picking == nil else { return }
-                leaveSaveError = model.errorMessage ?? L("もう一度お試しください", "Please try again.")
+                // （「保存して戻る」と同じ扱い）
+                showSaveError(model.errorMessage ?? L("もう一度お試しください", "Please try again."))
             }
         }
         .font(.body.weight(.semibold))
