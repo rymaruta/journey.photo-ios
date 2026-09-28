@@ -1039,15 +1039,23 @@ final class ViewModelTests: XCTestCase {
     /// 押さえが無いと、1回目の応答が返る前に2回目が古い `liked` を見て走り、
     /// 「いいね」と「取り消し」が同時に飛ぶ。どちらが後に返るかでハートの
     /// 色が決まるので、押した結果と食い違う。
+    ///
+    /// 1回目は `Gate` で止めて「応答が返る前」を作る。止めずに2本を並べると、1回目が
+    /// 返りきってから2回目が走る回があり、それは正しい「取り消し」なので試験が揺れていた。
+    /// `holds: 1` なので、押さえが外れて2回目が投げられたら止まらずに数に出る
     func testDoubleTapLikesOnlyOnce() async {
         prepare()
-        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
+        let gate = Gate(holds: 1)
+        let model = PhotoDetailViewModel(photoId: "p1",
+                                         social: SocialService(api: api(gates: PathGates(["/photos/p1/like": gate]))))
         model.setSignedIn(true)
         StubProtocol.respond(status: 200, body: #"{"liked":true,"likes":1}"#)
 
-        async let first: PhotoDetailViewModel.LikeAnswer? = model.toggleLike()
-        async let second: PhotoDetailViewModel.LikeAnswer? = model.toggleLike()
-        _ = await (first, second)
+        let first = Task { await model.toggleLike() }
+        await gate.untilWaiting()
+        _ = await model.toggleLike()
+        await gate.open()
+        _ = await first.value
 
         XCTAssertEqual(StubProtocol.requestCount, 1, "二度押しで2回投げている")
         XCTAssertTrue(model.liked)
