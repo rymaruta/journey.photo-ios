@@ -91,4 +91,31 @@ extension PendingVerificationTests {
 
         XCTAssertNil(pending.displayName(for: "taro@example.com"))
     }
+
+    /// 🔴 **ログイン・確認・aliasExists で、登録の ID だけ捨てる（名前は残す）。** ID が残ると、
+    /// 確認済みの人がパスワードを打ち間違えたときに「確認」へ誘い、押すと確認済み・別アカウント
+    /// への送り直しに進んでいた
+    func testForgetSignUpDropsTheIdButKeepsTheName() {
+        let (pending, _) = store("pending-forget-signup")
+        pending.remember(email: "taro@example.com", username: "uuid-1", displayName: "たろう")
+        pending.forgetSignUp(email: "Taro@Example.com")
+        XCTAssertNil(pending.username(for: "taro@example.com"), "登録の ID が残っている")
+        XCTAssertEqual(pending.displayName(for: "taro@example.com"), "たろう", "預かった名前まで捨てた")
+
+        // 名前の無い控えは丸ごと捨てる
+        pending.remember(email: "hana@example.com", username: "uuid-2")
+        pending.forgetSignUp(email: "hana@example.com")
+        XCTAssertNil(pending.username(for: "hana@example.com"))
+        XCTAssertNil(pending.displayName(for: "hana@example.com"))
+    }
+
+    /// 確認への入口は、端末に登録の ID の控えがあり、ログインが「違います」「見つかりません」で
+    /// 落ちた回だけ（控えが無ければアカウントの有無を匂わせない）
+    func testVerificationOfferNeedsAPendingSignUp() {
+        XCTAssertTrue(SignInRecovery.offersVerification(after: .notAuthorized, hasPendingSignUp: true))
+        XCTAssertTrue(SignInRecovery.offersVerification(after: .userNotFound, hasPendingSignUp: true))
+        XCTAssertFalse(SignInRecovery.offersVerification(after: .notAuthorized, hasPendingSignUp: false))
+        XCTAssertFalse(SignInRecovery.offersVerification(after: .network, hasPendingSignUp: true))
+        XCTAssertFalse(SignInRecovery.offersVerification(after: .none, hasPendingSignUp: true))
+    }
 }

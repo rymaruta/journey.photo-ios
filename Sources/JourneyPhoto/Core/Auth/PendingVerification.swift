@@ -59,6 +59,7 @@ struct PendingVerificationStore {
     }
 
     /// 生きている控えだけ返す。切れていたらその場で捨てる。
+    /// 登録の ID を捨てた控え（名前だけ預かっている）は nil
     func username(for email: String, now: Date = Date()) -> String? {
         let key = PendingVerification.key(for: email)
         guard let data = defaults.data(forKey: key),
@@ -67,7 +68,26 @@ struct PendingVerificationStore {
             defaults.removeObject(forKey: key)
             return nil
         }
-        return entry.username
+        return entry.username.isEmpty ? nil : entry.username
+    }
+
+    /// **登録の ID だけ捨てる**（預かった表示名は残す）。
+    ///
+    /// 確認が済んだ・そのメールでログインできた・同じメールの別のアカウントが確認済み
+    /// （aliasExists）と分かった回に使う。ID を残すと、確認済みの人がパスワードを打ち
+    /// 間違えたときに「確認」へ誘い、押すと確認済み・別アカウントへの送り直しに進んでいた。
+    /// 名前は、入ったアカウントの名前が空なら入れる（`SignInView` のログイン後）ので残す
+    func forgetSignUp(email: String) {
+        let key = PendingVerification.key(for: email)
+        guard let data = defaults.data(forKey: key),
+              let entry = try? JSONDecoder().decode(Entry.self, from: data) else { return }
+        guard let name = entry.displayName, !name.isEmpty else {
+            defaults.removeObject(forKey: key)
+            return
+        }
+        let kept = Entry(username: "", savedAt: entry.savedAt, displayName: name)
+        guard let encoded = try? JSONEncoder().encode(kept) else { return }
+        defaults.set(encoded, forKey: key)
     }
 
     /// 預かっている表示名（**メールアドレスごと**——共有の端末で、
@@ -97,4 +117,27 @@ struct PendingVerificationStore {
             defaults.removeObject(forKey: key)
         }
     }
+}
+
+/// ログインに失敗したあと、確認への入口を出すか。
+///
+/// 🔴 **確認の済んでいない人が、確認画面へ戻れなかった。** 登録はメールアドレスを別名に
+/// しているので、未確認のうちは別名でログインできず、Cognito は `UserNotConfirmed` ではなく
+/// 「違います」（NotAuthorized）や「見つかりません」（UserNotFound）で答えることがある
+/// （本物の Cognito では確かめていない）。その回は `lastFailureWasUnconfirmed` が当たらず、
+/// 入口（`verificationOffer`）も一度も出ていなかった。
+/// **この端末に登録の ID の控えがあるときだけ**出す（端末の控えを見るだけなので、アカウントの
+/// 有無は漏れない）。ID はログイン・確認・aliasExists で捨てるので、確認済みの人に古い控えで
+/// 出ることはない（`PendingVerificationStore.forgetSignUp`）
+enum SignInRecovery {
+    static func offersVerification(after failure: AuthFailure, hasPendingSignUp: Bool) -> Bool {
+        guard hasPendingSignUp else { return false }
+        return failure == .notAuthorized || failure == .userNotFound
+    }
+
+    /// 入口から送り直そうとして「もう使えない」と断られた回の案内。確認済みの人に
+    /// 「メールアドレスの形式か…」（invalidParameter の文）を出さない
+    static let alreadyConfirmedNotice = L(
+        "この登録は確認が済んでいるようです。パスワードをお忘れの場合は「パスワードを忘れた」から再設定してください。",
+        "This sign-up seems to be verified already. If you forgot your password, use \"Forgot password?\".")
 }
