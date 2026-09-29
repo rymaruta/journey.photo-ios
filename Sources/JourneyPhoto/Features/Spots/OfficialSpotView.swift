@@ -422,7 +422,11 @@ struct OfficialSpotView: View {
             .accessibilityIdentifier("spot.official.post")
         }
         .sheet(isPresented: $showUpload) {
-            NavigationStack { UploadView(spot: UploadSpotTarget(spot), onPosted: { postedHere = true }) }
+            NavigationStack { UploadView(spot: UploadSpotTarget(spot), onPosted: { count in
+                // **この一覧に並ぶ投稿があったときだけ**（外した・遠い写真・下書き・範囲を
+                // 絞った投稿では並ばないので言わない）
+                if count > 0 { postedHere = true }
+            }) }
         }
     }
 

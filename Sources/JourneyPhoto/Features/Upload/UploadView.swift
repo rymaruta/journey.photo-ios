@@ -17,10 +17,11 @@ struct UploadView: View {
     private let initialTag: String?
     /// スポットの画面から開いたときの行き先
     private let initialSpot: UploadSpotTarget?
-    /// 全部上がって閉じるときに呼ぶ（スポットの画面が「投稿しました」を出す）
-    private let onPosted: (() -> Void)?
+    /// 全部上がって閉じるときに呼ぶ。渡すのは**スポットのページに並ぶ形で上がった枚数**
+    /// （スポットの画面が「投稿しました」を出すか決める）
+    private let onPosted: ((Int) -> Void)?
 
-    init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: (() -> Void)? = nil) {
+    init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil) {
         self.initialTag = initialTag
         self.initialSpot = spot
         self.onPosted = onPosted
@@ -73,7 +74,7 @@ struct UploadView: View {
             // 選び直しの読み込み中（一度空にする）にも閉じてしまい、
             // 打った文字ごと消える
             if posted {
-                onPosted?()
+                onPosted?(model.postedToSpot)
                 dismiss()
             }
         }

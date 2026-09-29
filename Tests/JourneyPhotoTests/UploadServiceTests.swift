@@ -118,8 +118,10 @@ final class UploadServiceTests: XCTestCase {
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(save.body)) as? [String: Any])
             if removed {
                 XCTAssertNil(json["spotId"], "外したのに送った")
+                XCTAssertEqual(model.postedToSpot, 0, "並ばない投稿で「投稿しました」を出す")
             } else {
                 XCTAssertEqual(json["spotId"] as? String, "sp_0123456789ab")
+                XCTAssertEqual(model.postedToSpot, 1)
             }
         }
     }

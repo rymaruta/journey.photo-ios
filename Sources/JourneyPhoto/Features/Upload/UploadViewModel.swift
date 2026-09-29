@@ -36,10 +36,12 @@ struct UploadSpotTarget: Equatable {
 
     /// 送る `spotId`。次のどれかなら付けない:
     /// - 本人が撮影地を空にした（場所を伏せたのに、紐付けで分かってしまう）
-    /// - 撮影地をスポットの名前から別の場所に変えた（その写真はこのスポットで撮っていない）
+    /// - 撮影地からスポットの名前が消えた（別の場所に書き換えた＝このスポットで撮っていない）
+    ///
+    /// **名前を含んでいればよい**——「高屋神社, 香川」のように県を足しただけで外すと、
+    /// 帯は出たままなのに黙って紐付けが消える
     static func spotIdToSend(_ target: UploadSpotTarget?, for item: PendingPhoto) -> String? {
-        guard let target, !item.locationClearedByUser,
-              item.location.trimmingCharacters(in: .whitespacesAndNewlines) == target.name else { return nil }
+        guard let target, !item.locationClearedByUser, item.location.contains(target.name) else { return nil }
         return target.spotId
     }
 }
@@ -162,6 +164,9 @@ final class UploadViewModel: ObservableObject {
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
     /// だけでは閉じない——選び直しの読み込み中も空になる）
     @Published private(set) var didPostAll = false
+    /// スポットのページに並ぶ形で上がった枚数（`spotId` 付き・公開・全体に公開）。
+    /// スポットの画面が「投稿しました」を出すかを決める（並ばない投稿で言い切らない）
+    @Published private(set) var postedToSpot = 0
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
     @Published private(set) var uploadingIndex = 0
     @Published var errorMessage: String?
@@ -574,6 +579,9 @@ final class UploadViewModel: ObservableObject {
             throw error
         }
         staged[item.id] = nil
+        if photo != nil, draft.spotId != nil, draft.published, draft.audience == .everyone {
+            postedToSpot += 1
+        }
         // **曲は保存のあと。** `POST /upload/save` は song を受け取らない
         // ので、`PUT /photos/{id}` で付ける。ここが落ちても写真は
         // 上がっているので、投稿そのものは失敗にしない

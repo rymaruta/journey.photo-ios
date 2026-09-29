@@ -69,6 +69,8 @@ final class UploadDraftTests: XCTestCase {
         XCTAssertNil(UploadSpotTarget.spotIdToSend(target, for: item), "撮影地を空にした")
         item.location = "東京タワー"
         XCTAssertNil(UploadSpotTarget.spotIdToSend(target, for: item), "撮影地を別の場所に変えた")
+        item.location = "高屋神社, 香川"
+        XCTAssertEqual(UploadSpotTarget.spotIdToSend(target, for: item), "sp_0123456789ab", "県を足しただけで外した")
 
         // 写真の位置: 無い → 扱う。近い → 扱う。遠い（別の旅の写真）→ 扱わない
         func shot(_ c: Photo.Coords?) -> ImagePreparer.Prepared {
