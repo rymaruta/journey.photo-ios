@@ -325,6 +325,10 @@ enum StoryPlayback {
         case hideCaption
         case block
         case report
+        /// 自分の投稿を写真として残す（足元の「…」から・2026-09-29）
+        case keep
+        /// 自分の投稿を消す（確かめてから）
+        case delete
     }
 
     /// 出す項目。**押しても何も起きない項目は出さない。**
@@ -335,16 +339,32 @@ enum StoryPlayback {
     ///   写真に焼き込んだ文字は消せない
     /// - ブロック・通報は他人の投稿だけ（自分は通報できない。サーバーも 400）。
     ///   ブロックは相手が分かるときだけ
+    /// - 写真として残す・削除は自分の投稿だけ（足元を1行にしたので「…」にしまう）。
+    ///   残すのは `canKeep`（動画・自分用の投稿はサーバーが断る）のときだけ。
+    ///   **ハイライトの中では出さない**（以前もハイライトには無かった操作）
     static func menuItems(isMine: Bool, isVideo: Bool, hasSong: Bool = false,
-                          hasCaption: Bool, hasOwner: Bool) -> [MenuItem] {
+                          hasCaption: Bool, hasOwner: Bool, canKeep: Bool = false,
+                          inHighlight: Bool = false) -> [MenuItem] {
         var items: [MenuItem] = [.pause]
         if isVideo || hasSong { items.append(.mute) }
         if hasCaption { items.append(.hideCaption) }
-        if !isMine {
+        if isMine {
+            if !inHighlight {
+                if canKeep { items.append(.keep) }
+                items.append(.delete)
+            }
+        } else {
             if hasOwner { items.append(.block) }
             items.append(.report)
         }
         return items
+    }
+
+    /// 上（見出しの横）に「…」を出すか。人の投稿は必ず（通報とブロックの入口・審査 1.2）。
+    /// 自分の投稿は**ハイライトの中で音があるときだけ**（音を消す口がそこにしか無い）。
+    /// ハイライト以外の自分の投稿は足元に「…」があるので出さない（上下に2つ並ぶ）
+    static func showsTopMenu(isMine: Bool, inHighlight: Bool, hasAudio: Bool) -> Bool {
+        !isMine || (inHighlight && hasAudio)
     }
 
     /// 読み直したあとの一覧。

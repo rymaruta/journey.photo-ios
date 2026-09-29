@@ -614,11 +614,12 @@ struct StoryViewerView: View {
                 .buttonStyle(.plain)
             }
             Spacer(minLength: 0)
-            // **自分のストーリーには「…」を置かない**（板 25e は ✕ だけ）。
-            // ただし**動画は音を消す口がここにしか無い**ので出す
-            // 他人のハイライトにも出す（通報とブロックの入口はここだけ。審査 1.2）
-            // 自分の写真でも、曲が付いていれば「音を消す」のために出す
-            if !isMine(story) || story.isVideo || StoryPlayback.songURL(for: story) != nil {
+            // 上の「…」は人の投稿（通報とブロックの入口・審査 1.2。人のハイライトも）と、
+            // **自分のハイライトで音があるとき**（動画・曲。音を消す口がここにしか無い）だけ。
+            // 自分のストーリー（ハイライト以外）は足元の「…」が同じシートを開くので出さない
+            // （同じ印が上下に2つ並ぶ）
+            if StoryPlayback.showsTopMenu(isMine: isMine(story), inHighlight: highlight != nil,
+                                          hasAudio: story.isVideo || StoryPlayback.songURL(for: story) != nil) {
                 Button {
                     showMenu = true
                 } label: {
@@ -959,7 +960,9 @@ struct StoryViewerView: View {
             isVideo: story.isVideo,
             hasSong: StoryPlayback.songURL(for: story) != nil,
             hasCaption: story.caption?.isEmpty == false,
-            hasOwner: story.userId != nil
+            hasOwner: story.userId != nil,
+            canKeep: Self.canKeepAsPhoto(story),
+            inHighlight: highlight != nil
         )
         return ZStack(alignment: .bottom) {
             // 外を押したら閉じる
@@ -1006,6 +1009,22 @@ struct StoryViewerView: View {
                             reportingStory = story
                             showReport = true
                         }
+                    }
+                    // 24時間で消える前に、自分の写真として残す。
+                    // **動画には出さない**（サーバーが 400 で断る・`storyKeep.ts`）
+                    // **自分用（アーカイブ）の投稿にも出さない**（サーバーが 409 で断る・`storyKeep.ts`）
+                    if items.contains(.keep) {
+                        menuRow(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
+                            Task { await keep(story) }
+                        }
+                        .disabled(isSending)
+                    }
+                    // **確かめてから消す**（以前は押した瞬間に消えていた）
+                    if items.contains(.delete) {
+                        menuRow(symbol: "trash", title: Labels.Common.delete, danger: true) {
+                            showDeleteConfirm = true
+                        }
+                        .disabled(isSending)
                     }
                 }
                 .background(Self.sheetColor, in: RoundedRectangle(cornerRadius: 16))
@@ -1166,44 +1185,24 @@ struct StoryViewerView: View {
     @ViewBuilder
     private func footer(for story: Story) -> some View {
         if isMine(story) {
-            // 反応の札と、操作の丸（板 25e）。owner の「作り込みが安っぽい」（2026-09-29）で
-            // 組み直した——数を文の中に埋めず数として出し、同じ画面を開く「反応を見る」の
-            // 重複をやめ、操作を写真の上の他の丸（✕・…）と同じガラスの丸に揃える
-            VStack(spacing: 10) {
-                // **反応はまとめて1画面に**（提案の絵）。見た人・いいね・返信が
-                // 別々のシートに割れていると、全体がどうだったか分からない。
-                // **読み込み中も札の場所は取る**——読み終えてから出すと、下の丸が
-                // 押す直前にずれ（隣の「写真として残す」を押してしまう）、写真の枠も跳ねる
+            // **1行にまとめる**（owner が候補Bを選んだ・2026-09-29）。左に反応（顔と数・押すと
+            // 反応の画面）、右に返信と「…」の丸。写真として残す・削除は「…」の中へ。
+            // **高さは他の人のストーリーの返信欄と同じ**（上下 7 ＋ 46）——自分の投稿と
+            // 人の投稿を行き来しても写真の枠が変わらない。以前は反応の札と丸の列の2段で
+            // 足元が 134pt あり、写真が小さくなっていた
+            HStack(spacing: 10) {
+                // 期限が切れた投稿は見た人・返信の記録が無い（サーバーが期限で消す）
                 if !isExpired(story) {
-                    insightsCard
+                    insightsButton
+                    replyButton(for: story)
+                } else {
+                    Spacer(minLength: 0)
                 }
-
-                HStack(alignment: .top, spacing: 0) {
-                    if !isExpired(story) {
-                        ownAction(symbol: "bubble.left", title: L("返信", "Replies"),
-                                  badge: replyBadge(for: story),
-                                  accessibilityLabel: replyTitle(for: story)) {
-                            showReplies = true
-                        }
-                    }
-                    // 24時間で消える前に、自分の写真として残す。
-                    // **動画には出さない**（サーバーが 400 で断る・`storyKeep.ts`）
-                    // **自分用（アーカイブ）の投稿にも出さない**（サーバーが 409 で断る・`storyKeep.ts`）
-                    if Self.canKeepAsPhoto(story) {
-                        ownAction(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
-                            Task { await keep(story) }
-                        }
-                        .disabled(isSending)
-                    }
-                    // **確かめてから消す**（以前は押した瞬間に消えていた）
-                    ownAction(symbol: "trash", title: Labels.Common.delete, color: Self.storyDanger) {
-                        showDeleteConfirm = true
-                    }
-                    .disabled(isSending)
-                }
+                moreButton
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .frame(height: 46)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
         } else if story.acceptsReplies {
             // 返信欄（ガラスの丸）と ♡。**書いている間は ♡ が送信の白い丸に替わり、
             // 上に一言の候補と「だれに届くか」が出る**（板「25d 返信を書く」）
@@ -1340,15 +1339,14 @@ struct StoryViewerView: View {
         .accessibilityHidden(true)
     }
 
-    /// 自分のストーリーの足元の操作（絵の下に11ptのラベル・高さ56）
-    /// 反応の札。**数は文に埋めず、数と名前を上下に**（「0 人が見ました · いいね 0」と
-    /// 1行に流すと、等幅の数字と本文の字が混ざって読みにくかった）。
+    /// 反応（左）。顔と「見た人 N」、下に「いいね N」。押すと反応の画面。
+    /// **読み込み中も場所を取る**——読み終えてから出すと、右の丸が押す直前にずれる。
     /// まだ誰も見ていないときは顔の代わりに目の印を置き、0 を並べない
-    private var insightsCard: some View {
+    private var insightsButton: some View {
         Button {
             showInsights = true
         } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 if viewersLoaded != true || viewers.isEmpty {
                     Image(systemName: "eye")
                         .font(.system(size: 13, weight: .medium))
@@ -1358,33 +1356,39 @@ struct StoryViewerView: View {
                 } else {
                     viewerFaces
                 }
-                if viewersLoaded != true {
-                    // 読み込み中・読めなかった。**数は言わない**（0 と言い切らない）
-                    Text(L("反応を見る", "Insights"))
-                        .font(.system(size: 14))
-                        .foregroundStyle(WebTheme.muted)
-                } else if isQuiet {
-                    Text(L("まだ誰も見ていません", "No views yet"))
-                        .font(.system(size: 14))
-                        .foregroundStyle(WebTheme.muted)
-                } else {
-                    HStack(spacing: 18) {
-                        stat(viewers.count, label: L("見た人", "Viewers"))
+                VStack(alignment: .leading, spacing: 1) {
+                    if viewersLoaded != true {
+                        // 読み込み中・読めなかった。**数は言わない**（0 と言い切らない）
+                        Text(L("反応を見る", "Insights"))
+                            .font(.system(size: 14, weight: .medium))
+                    } else if isQuiet {
+                        Text(L("まだ誰も見ていません", "No views yet"))
+                            .font(.system(size: 14, weight: .medium))
+                    } else {
+                        HStack(spacing: 0) {
+                            Text(L("見た人 ", "Viewers "))
+                            Text("\(viewers.count)").font(JPFont.mono(14, medium: true))
+                        }
+                        .font(.system(size: 14, weight: .medium))
                         // **返信を読めていなければ「いいね」の数は言わない**
                         // （読めなかった回に空の一覧から「いいね 0」と言い切っていた）
                         if repliesLoaded {
-                            stat(replies.reactionCount, label: L("いいね", "Likes"))
+                            HStack(spacing: 0) {
+                                Text(L("いいね ", "Likes "))
+                                Text("\(replies.reactionCount)").font(JPFont.mono(12, medium: true))
+                            }
+                            // 本文系の最小は 12（デザインシステム「黒塗りの真鍮」02 書体）。
+                            // **数は白のまま**——いいねは白、真鍮は合図と手がかりだけ（同 04）
+                            .font(.system(size: 12))
+                            .foregroundStyle(WebTheme.muted2)
                         }
                     }
                 }
+                .foregroundStyle(.white)
+                .lineLimit(1)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(WebTheme.faint)
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 48)
-            .jpGlass(in: RoundedRectangle(cornerRadius: 16))
+            .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1398,17 +1402,6 @@ struct StoryViewerView: View {
         viewers.isEmpty && (!repliesLoaded || replies.reactionCount == 0)
     }
 
-    private func stat(_ value: Int, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text("\(value)")
-                .font(JPFont.mono(17, medium: true))
-                .foregroundStyle(.white)
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(WebTheme.muted2)
-        }
-    }
-
     private var insightsLabel: String {
         // 画面に出している文と同じことを読む
         if viewersLoaded != true { return L("反応を見る", "Insights") }
@@ -1418,40 +1411,55 @@ struct StoryViewerView: View {
         return seen + L("、いいね \(replies.reactionCount)", ", \(replies.reactionCount) likes")
     }
 
-    /// 操作の丸（写真の上の ✕ と同じガラス）と、下に小さな名前。
-    /// 返信の数は**名前に混ぜず丸の角に**（0 のときは出さない）
-    private func ownAction(symbol: String, title: String, color: Color = .white,
-                           badge: Int? = nil, accessibilityLabel: String? = nil,
-                           action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(color)
-                    .frame(width: 44, height: 44)
-                    .jpGlass(in: Circle(), border: 0.14)
-                    .overlay(alignment: .topTrailing) {
-                        if let badge, badge > 0 {
-                            Text(badge > 99 ? "99+" : "\(badge)")
-                                .font(JPFont.mono(10, medium: true))
-                                .foregroundStyle(WebTheme.accentText)
-                                .padding(.horizontal, 5)
-                                .frame(minWidth: 18, minHeight: 18)
-                                .background(WebTheme.accentBackground, in: Capsule())
-                                .offset(x: 4, y: -2)
-                        }
+    /// 返信（届いた返信の一覧）。**丸い吹き出し**（`message`・メッセージの App と同じ形）。
+    /// 以前の角の吹き出し（`bubble.left`）は安っぽく、封筒は四角いと言われた（owner・2026-09-29）
+    private func replyButton(for story: Story) -> some View {
+        Button {
+            showReplies = true
+        } label: {
+            ownCircle(symbol: "message")
+                .overlay(alignment: .topTrailing) {
+                    if let badge = replyBadge(for: story), badge > 0 {
+                        // **真鍮＝合図**（通知の未読の点と同じ）。黒の縁で丸から切り離す。
+                        // 上の字は墨（真鍮に白は読めない・`BrandPalette.accentFill`）
+                        Text(badge > 99 ? "99+" : "\(badge)")
+                            .font(JPFont.mono(10, medium: true))
+                            .foregroundStyle(WebTheme.accentText)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 18, minHeight: 18)
+                            .background(WebTheme.accent, in: Capsule())
+                            .overlay(Capsule().strokeBorder(WebTheme.background, lineWidth: 2).padding(-2))
+                            .offset(x: 4, y: -2)
                     }
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(color == .white ? WebTheme.muted : color)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .frame(maxWidth: .infinity, minHeight: 64)
-            .contentShape(Rectangle())
+                }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel ?? title)
+        .accessibilityLabel(replyTitle(for: story))
+    }
+
+    /// 「…」。写真として残す・削除をしまう（**削除の赤をふだん見せない**）。
+    /// **標準の `Menu` は使わない**——開いているかを画面が知れず、開いている間も
+    /// 再生が進んで次の1本へ移ってしまう。人の投稿の「…」と同じ下からのシート（止まる）
+    private var moreButton: some View {
+        Button {
+            showMenu = true
+        } label: {
+            ownCircle(symbol: "ellipsis")
+        }
+        .buttonStyle(.plain)
+        // 上の「…」と同じ名前（同じシートを開く）。残す・削除がこの奥にあることをヒントで言う
+        .accessibilityLabel(L("その他の操作", "More actions"))
+        .accessibilityHint(L("写真として残す・削除", "Keep as photo, delete"))
+    }
+
+    /// 操作の丸（写真の上の ✕ と同じガラス・他の人の送信の丸と同じ 46）
+    private func ownCircle(symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(.white)
+            .frame(width: 46, height: 46)
+            .jpGlass(in: Circle(), border: 0.14)
+            .contentShape(Circle())
     }
 
     // MARK: - 返信の一覧（自分）
