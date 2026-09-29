@@ -1,0 +1,46 @@
+import XCTest
+@testable import JourneyPhoto
+
+/// ストーリーの曲の流し始め（`startSec`）を**作る側で選ぶ**（`SongStartSheet`）。
+/// 丸めはサーバー（`stories.ts`）と同じ、送る形に入ること
+final class SongStartTests: XCTestCase {
+
+    private let song = Photo.Song(title: "港", artist: "歌い手", artwork: "https://a.example/a.jpg",
+                                  previewUrl: "https://p.example/p.m4a", trackUrl: "https://t.example/t")
+
+    /// 流し始めだけを入れ替える（題・歌い手・試聴は同じ）。丸めはサーバーと同じ
+    func testStartingKeepsTheSongAndClampsLikeTheServer() {
+        let started = song.starting(at: 12)
+        XCTAssertEqual(started.startSec, 12)
+        XCTAssertEqual(started.title, song.title)
+        XCTAssertEqual(started.artist, song.artist)
+        XCTAssertEqual(started.artwork, song.artwork)
+        XCTAssertEqual(started.previewUrl, song.previewUrl)
+        XCTAssertEqual(started.trackUrl, song.trackUrl)
+        XCTAssertNil(song.starting(at: 0).startSec, "頭からは「無し」")
+        XCTAssertEqual(song.starting(at: 40).startSec, 29)
+        XCTAssertEqual(song.starting(at: 12.6).startSec, 13)
+        XCTAssertNil(started.starting(at: nil).startSec, "頭へ戻せる")
+    }
+
+    /// 送る形に入る（`POST /stories` の `song.startSec`）。頭からなら書かない
+    func testStartIsSentWithTheSong() throws {
+        let body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(song.starting(at: 12))) as? [String: Any]
+        XCTAssertEqual(body?["startSec"] as? Int, 12)
+        let plain = try JSONSerialization.jsonObject(with: JSONEncoder().encode(song.starting(at: 0))) as? [String: Any]
+        XCTAssertNil(plain?["startSec"])
+    }
+
+    /// 下書きにも残る（曲ごと `Codable`）
+    func testStartSurvivesTheDraftRoundTrip() throws {
+        let back = try JSONDecoder().decode(Photo.Song.self, from: JSONEncoder().encode(song.starting(at: 7)))
+        XCTAssertEqual(back.startSec, 7)
+    }
+
+    func testStartLabel() {
+        XCTAssertEqual(Photo.Song.startLabel(nil), L("頭から", "From the start"))
+        XCTAssertEqual(Photo.Song.startLabel(0), L("頭から", "From the start"))
+        XCTAssertEqual(Photo.Song.startLabel(12), L("0:12 から", "From 0:12"))
+        XCTAssertEqual(Photo.Song.startLabel(5), L("0:05 から", "From 0:05"))
+    }
+}

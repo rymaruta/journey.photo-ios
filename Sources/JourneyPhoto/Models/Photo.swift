@@ -137,6 +137,21 @@ struct Photo: Identifiable, Decodable, Equatable {
             return start > 0 ? start : nil
         }
 
+        /// 流し始めを変えた曲（ストーリーの「流し始め」・owner の「自由度が低い」2026-09-29）。
+        /// **丸めはサーバーと同じ `clampStart`**（0 は「頭から」＝無し）
+        func starting(at seconds: Double?) -> Song {
+            Song(title: title, artist: artist, artwork: artwork, previewUrl: previewUrl,
+                 trackUrl: trackUrl, startSec: Self.clampStart(seconds))
+        }
+
+        /// 「0:12 から」の言い方（流し始めを選ぶ画面・曲のメニュー）
+        static func startLabel(_ seconds: Int?) -> String {
+            let sec = max(0, seconds ?? 0)
+            guard sec > 0 else { return L("頭から", "From the start") }
+            let time = String(format: "%d:%02d", sec / 60, sec % 60)
+            return L("\(time) から", "From \(time)")
+        }
+
         var previewURL: URL? { URL(string: previewUrl) }
         var artworkURL: URL? { artwork.flatMap(URL.init(string:)) }
     }

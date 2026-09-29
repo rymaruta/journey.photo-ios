@@ -47,6 +47,8 @@ struct StoryComposerView: View {
     @State private var song: Photo.Song?
     @State private var durationSec = StoryService.defaultDurationSec
     @State private var showSongPicker = false
+    /// 曲の流し始めを選ぶ（30秒の試聴のどこから鳴らすか）
+    @State private var showSongStart = false
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
@@ -139,6 +141,14 @@ struct StoryComposerView: View {
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { picked in applySong(picked) }
+            }
+        }
+        .sheet(isPresented: $showSongStart) {
+            if let song {
+                NavigationStack {
+                    // **曲の札は変えない**（題と歌い手は同じ）。流し始めだけを入れ替える
+                    SongStartSheet(song: song) { picked in self.song = picked }
+                }
             }
         }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
@@ -343,6 +353,9 @@ struct StoryComposerView: View {
                 // 付けた曲は変える・外すを選ぶ（外す口が無かった）
                 Menu {
                     Button(L("曲を変える", "Change song")) { showSongPicker = true }
+                    // 流し始め（Web の「好きな部分」と同じ `startSec`）。いまの位置をメニューに出す
+                    Button(L("流し始め（\(Photo.Song.startLabel(song?.startSec))）",
+                             "Start point (\(Photo.Song.startLabel(song?.startSec)))")) { showSongStart = true }
                     Button(L("曲を外す", "Remove song"), role: .destructive) { applySong(nil) }
                 } label: {
                     toolIcon("music.note")
