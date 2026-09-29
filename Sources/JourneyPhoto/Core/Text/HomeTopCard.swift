@@ -2,7 +2,7 @@ import Foundation
 
 /// ホームの上段に出す札を決める（元は板 01・55「開く場面ごとに1枚」。いまは並び）。
 ///
-/// **当たる札を全部、優先順に並べ、最後に必ず「今日のテーマ」を置く**（2026-09-28・
+/// **当たる札を全部、優先順に並べ、そのあとに必ず「今日のテーマ」を置く**（2026-09-28・
 /// owner「1年前の今ごろ、今日のテーマなど両方欲しい」）。ホームでは横にめくる札の
 /// 並びにする——縦に積むと写真の一覧が札の数だけ下がる（写真が主役）。
 ///
@@ -18,10 +18,20 @@ import Foundation
 ///  3. **一冊ができた** — 旅が閉じて（最後の写真から `TripBook.maxGapDays` 日空いて）
 ///     から `bookFreshDays` 日以内で、**まだ開いていない**一冊
 ///  4. **1年前の今ごろ** — 1年前の今日の前後 `yearAgoWindowDays` 日に撮った自分の写真
-///  5. **今日のテーマ** — 毎日。いつも最後（当たる物が無い日はこれ1枚）
+///  5. **今日のテーマ** — 毎日（自分に当たる札が無い日は、これが先頭）
+///  6. **この季節の撮影スポット** — 公開済みで写真があり、**いまの季節の案内を持つ**
+///     スポットを日替わりで1件（2026-09-29・owner「毎日開きたくなる仕組みがアプリ側にない」）
 ///
-/// 「今月の見ごろ」（板 55 の④）は入れていない——撮影スポットの季節の案内が
-/// アプリ向けの一覧（`app/data/spots.json`）に載っていないため。
+/// 6 は板 55 の④「今月の見ごろ」。以前は季節の案内がアプリ向けの一覧
+/// （`app/data/spots.json`）に載っていなかったので入れていなかった。
+///
+/// **今日のテーマより後ろに置く。** 季節の札はほぼ毎日当たる（公開済みで写真のある
+/// 行のうち、季節ごとに100〜150件が案内を持つ）ので、前に置くと**今日のテーマが
+/// 毎日2枚目に下がる**——札の無い人の見た目（テーマが先頭）を変えない。
+///
+/// **「見頃」とは言わない**——台帳の季節の案内は「その季節に何が撮れるか」で、
+/// 開花のような時期を確かめた文ではない。ただし文の中に**月が書いてあれば、その月に
+/// だけ出す**（「9月から10月にかけて…」を 11/30 に出さない。`fits(_:month:)`）
 ///
 /// 🔴 **当たる物が無い日に空き地を作らない。** 数は自分の枚数・日数だけで、
 /// 人数・順位・連続記録は出さない。催促の文言も書かない
@@ -35,6 +45,8 @@ enum HomeTopCard {
         case bookReady(trip: TripBook.Trip)
         /// `byUploadDate` は撮影日が無く、投稿日で当てたとき（「1年前に投稿」と言う）
         case oneYearAgo(photo: Photo, byUploadDate: Bool)
+        /// `guide` はいまの季節の案内の文（台帳の文のまま）
+        case inSeason(spot: OfficialSpot, guide: String)
         case theme
 
         /// 並びの中の目印。**種類ごとに1枚まで**なので種類で足りる（並び順で持つと、
@@ -45,6 +57,7 @@ enum HomeTopCard {
             case .onTrip: return "onTrip"
             case .bookReady: return "bookReady"
             case .oneYearAgo: return "oneYearAgo"
+            case .inSeason: return "inSeason"
             case .theme: return "theme"
             }
         }
@@ -64,8 +77,10 @@ enum HomeTopCard {
     ///   - plans: 自分の旅行プラン（未ログインなら空）
     ///   - myPhotos: 自分の写真（未ログインなら空）
     ///   - openedBookDays: 札から一度開いた一冊の日（`bookKey`・`OpenedTripBooks`）
+    ///   - spots: 撮影スポットの索引（取れなかった回は空＝季節の札が出ないだけ）
     static func cards(now: Date, plans: [TripPlan], myPhotos: [Photo],
-                      openedBookDays: Set<String>, timeZone: TimeZone = .current) -> [Choice] {
+                      openedBookDays: Set<String>, spots: [OfficialSpot] = [],
+                      timeZone: TimeZone = .current) -> [Choice] {
         guard let today = today(now, in: timeZone) else { return [.theme] }
         let found: [Choice?] = [
             departure(today: today, plans: plans),
@@ -73,7 +88,7 @@ enum HomeTopCard {
             bookReady(today: today, myPhotos: myPhotos, openedBookDays: openedBookDays, timeZone: timeZone),
             oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone),
         ]
-        return found.compactMap { $0 } + [.theme]
+        return found.compactMap { $0 } + [.theme] + [inSeason(today: today, spots: spots)].compactMap { $0 }
     }
 
     /// 端末の時刻帯の今日を、**その日の UTC 0 時**にする（`TripPlanText` と `TripBook.day` の基準）
@@ -171,4 +186,58 @@ enum HomeTopCard {
         }) else { return nil }
         return .oneYearAgo(photo: best.0, byUploadDate: best.2)
     }
+
+    // MARK: - 6. この季節の撮影スポット
+
+    /// いまの季節の案内を持つ、写真のある公開済みのスポットから**日替わりで1件**。
+    ///
+    /// - 季節は `today`（端末の暦の今日を UTC 0 時に置いたもの）の月から決める
+    ///   （春3〜5月・夏6〜8月・秋9〜11月・冬12〜2月。`SpotBodyText.season`）
+    /// - 文に月が書いてあれば、**その月に当たる文だけ**（`fits(_:month:)`）
+    /// - 候補は `spotId` の順に並べ、**紀元からの日数で1件ずつ進める**——同じ日なら
+    ///   何度開いても同じ札（今日のテーマと同じ考え方）。`spotId` は名前と無関係な
+    ///   16進なので、県や種別が続けて並ぶことはない
+    /// - **下書き・写真の無い行は出さない**（写真が主役の札。下書きを「おすすめ」と
+    ///   して出さない）
+    static func inSeason(today: Date, spots: [OfficialSpot]) -> Choice? {
+        let month = TripPlanText.calendar.component(.month, from: today)
+        let season = SpotBodyText.season(ofMonth: month)
+        let candidates = spots
+            .filter { !$0.isDraft && $0.photo != nil }
+            .compactMap { spot -> (OfficialSpot, String)? in
+                guard let guide = spot.seasons.first(where: { $0.season == season && fits($0.text, month: month) })
+                else { return nil }
+                return (spot, guide.text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            .sorted { $0.0.spotId < $1.0.spotId }
+        guard !candidates.isEmpty else { return nil }
+        let day = Int((today.timeIntervalSince1970 / 86_400).rounded(.down))
+        let index = ((day % candidates.count) + candidates.count) % candidates.count
+        return .inSeason(spot: candidates[index].0, guide: candidates[index].1)
+    }
+
+    /// 文に書かれた月（「11月」「９月」）が、いまの月に当たるか。
+    ///
+    /// - 月が書いていなければ当たる（季節で決める）
+    /// - 「A月からB月」「A〜B月」のような幅は、書かれた月の**いちばん早い月から
+    ///   いちばん遅い月まで**を当たりにする。離れすぎた月（差が7か月以上）は
+    ///   年をまたぐ幅として読む（「12月から2月」→ 12・1・2月）
+    static func fits(_ text: String, month: Int) -> Bool {
+        // 全角の数字を半角に（`applyingTransform` は Linux の Foundation に無いので自前で）
+        let normalized = String(text.unicodeScalars.map { scalar -> Character in
+            (0xFF10...0xFF19).contains(scalar.value)
+                ? Character(Unicode.Scalar(scalar.value - 0xFF10 + 0x30)!) : Character(scalar)
+        })
+        let months = monthPattern.matches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized))
+            .compactMap { Range($0.range(at: 1), in: normalized).flatMap { Int(normalized[$0]) } }
+            .filter { (1...12).contains($0) }
+        guard let low = months.min(), let high = months.max() else { return true }
+        if months.contains(month) { return true }
+        // 離れすぎた月（12月と2月）は**年をまたぐ幅**として読む: 12月・1月・2月
+        if high - low > 6 { return month >= high || month <= low }
+        return (low...high).contains(month)
+    }
+
+    private static let monthPattern = try! NSRegularExpression(pattern: "(?<![0-9])([0-9]{1,2})月")
 }
+
