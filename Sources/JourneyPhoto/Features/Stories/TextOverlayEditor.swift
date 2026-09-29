@@ -127,7 +127,7 @@ struct StoryCanvas: View {
                         // **回し始めた札（札を選んでいなければ写真）に固定する**
                         // （途中で選ぶ札が替わっても移さない）
                         if rotateId == nil && !twistsPhoto {
-                            if let id = selectedId { rotateId = id } else { twistsPhoto = true; photoPinched = pinchesPhoto && abs(liveScale - 1) > 0.05 }
+                            if let id = selectedId { rotateId = id } else { twistsPhoto = true }
                         }
                         liveRotation = angle.radians
                     }
