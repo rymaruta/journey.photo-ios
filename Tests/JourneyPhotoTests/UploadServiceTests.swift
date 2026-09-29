@@ -89,6 +89,41 @@ final class UploadServiceTests: XCTestCase {
                       "S3 に迷子が残ったまま")
     }
 
+    /// スポットの画面から開いた投稿は、**保存の本文に `spotId` が入る**（配線まで見る）。
+    /// スポットを外したら入らない
+    @MainActor
+    func testSpotUploadSendsSpotIdInTheSaveBody() async throws {
+        for removed in [false, true] {
+            ScriptedProtocol.reset()
+            ScriptedProtocol.script = [
+                .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+                .init(match: "/put", status: 200, body: ""),
+                .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+            ]
+            let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                tokenProvider: StubTokenProvider(token: "t"), session: session)
+            let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                        photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+            model.spot = UploadSpotTarget(spotId: "sp_0123456789ab", name: "高屋神社", coords: nil)
+            var item = PendingPhoto(prepared: ImagePreparer.Prepared(
+                data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+                exif: nil, coords: nil, takenOn: nil))
+            item.location = "高屋神社"
+            model.items = [item]
+            if removed { model.removeSpot() }
+
+            await model.submit()
+
+            let save = try XCTUnwrap(ScriptedProtocol.calls.first { $0.path == "/upload/save" })
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(save.body)) as? [String: Any])
+            if removed {
+                XCTAssertNil(json["spotId"], "外したのに送った")
+            } else {
+                XCTAssertEqual(json["spotId"] as? String, "sp_0123456789ab")
+            }
+        }
+    }
+
     /// 🔴 **持ち主が消したアルバムは、行き先から外して止める。** 保存は「見つかりません」
     /// （会員でない＝`isAlbumMember`）で断られる。止めずに続けると残りも全部同じ理由で落ち、
     /// 行き先に残るので押し直しても直らなかった
@@ -483,6 +518,8 @@ final class ScriptedProtocol: URLProtocol {
         let path: String
         let method: String
         let contentType: String?
+        /// 送った本文（読めたときだけ）。URLProtocol には `httpBody` ではなく流れで届く
+        var body: Data? = nil
     }
 
     nonisolated(unsafe) static var script: [Step] = []
@@ -501,7 +538,8 @@ final class ScriptedProtocol: URLProtocol {
         ScriptedProtocol.calls.append(.init(
             path: path,
             method: request.httpMethod ?? "",
-            contentType: request.value(forHTTPHeaderField: "Content-Type")
+            contentType: request.value(forHTTPHeaderField: "Content-Type"),
+            body: request.httpBody ?? Self.read(request.httpBodyStream)
         ))
         let step = ScriptedProtocol.script.first { path.contains($0.match) }
         let response = HTTPURLResponse(
@@ -516,4 +554,18 @@ final class ScriptedProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+
+    private static func read(_ stream: InputStream?) -> Data? {
+        guard let stream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let n = stream.read(&buffer, maxLength: buffer.count)
+            if n <= 0 { break }
+            data.append(buffer, count: n)
+        }
+        return data
+    }
 }

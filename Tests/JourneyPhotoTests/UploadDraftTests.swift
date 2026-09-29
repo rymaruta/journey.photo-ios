@@ -67,6 +67,23 @@ final class UploadDraftTests: XCTestCase {
         XCTAssertNil(UploadSpotTarget.spotIdToSend(nil, for: item), "普通の投稿")
         item.location = ""
         XCTAssertNil(UploadSpotTarget.spotIdToSend(target, for: item), "撮影地を空にした")
+        item.location = "東京タワー"
+        XCTAssertNil(UploadSpotTarget.spotIdToSend(target, for: item), "撮影地を別の場所に変えた")
+
+        // 写真の位置: 無い → 扱う。近い → 扱う。遠い（別の旅の写真）→ 扱わない
+        func shot(_ c: Photo.Coords?) -> ImagePreparer.Prepared {
+            ImagePreparer.Prepared(data: Data(), fileName: "p.jpg", contentType: "image/jpeg",
+                                   exif: nil, coords: c, takenOn: nil)
+        }
+        XCTAssertTrue(target.covers(shot(nil)))
+        XCTAssertTrue(target.covers(shot(Photo.Coords(lat: 34.12, lng: 133.62))))
+        XCTAssertFalse(target.covers(shot(Photo.Coords(lat: 35.66, lng: 139.75))), "東京の写真")
+
+        // ボタンの形: 写真が並ぶ・投稿した → 枠線、写真の無い画面 → 真鍮、代表写真がある → 白
+        XCTAssertEqual(OfficialSpotView.postButtonStyle(hasCover: true, hasLinked: true, postedHere: false), .outline)
+        XCTAssertEqual(OfficialSpotView.postButtonStyle(hasCover: false, hasLinked: false, postedHere: true), .outline)
+        XCTAssertEqual(OfficialSpotView.postButtonStyle(hasCover: false, hasLinked: false, postedHere: false), .accent)
+        XCTAssertEqual(OfficialSpotView.postButtonStyle(hasCover: true, hasLinked: false, postedHere: false), .primary)
 
         var draft = PhotoDraft()
         draft.spotId = "sp_0123456789ab"

@@ -17,10 +17,13 @@ struct UploadView: View {
     private let initialTag: String?
     /// スポットの画面から開いたときの行き先
     private let initialSpot: UploadSpotTarget?
+    /// 全部上がって閉じるときに呼ぶ（スポットの画面が「投稿しました」を出す）
+    private let onPosted: (() -> Void)?
 
-    init(initialTag: String? = nil, spot: UploadSpotTarget? = nil) {
+    init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: (() -> Void)? = nil) {
         self.initialTag = initialTag
         self.initialSpot = spot
+        self.onPosted = onPosted
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
         // ため、ここでは既定の組み立てを使う
         let api = APIClient(tokenProvider: CognitoTokenProvider())
@@ -69,7 +72,10 @@ struct UploadView: View {
             // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
             // 選び直しの読み込み中（一度空にする）にも閉じてしまい、
             // 打った文字ごと消える
-            if posted { dismiss() }
+            if posted {
+                onPosted?()
+                dismiss()
+            }
         }
     }
 
@@ -94,7 +100,7 @@ struct UploadView: View {
             }
             Spacer(minLength: 0)
             Button {
-                model.spot = nil
+                model.removeSpot()
             } label: {
                 Text(L("外す", "Remove"))
                     .font(.footnote)

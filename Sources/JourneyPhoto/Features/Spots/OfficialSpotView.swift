@@ -44,6 +44,8 @@ struct OfficialSpotView: View {
     @State private var spotBody: SpotBody?
     /// 「このスポットの写真を投稿」から開く投稿画面
     @State private var showUpload = false
+    /// この画面から投稿した（写真の一覧は開いた時点の写しなので、すぐには並ばない）
+    @State private var postedHere = false
 
     /// **確定した紐づけだけ**（`Photo.spotId`）。撮影地の文字列では当てない
     private var linked: [Photo] { dropped.visible(photos.filter { $0.spotId == spot.spotId }) }
@@ -372,38 +374,55 @@ struct OfficialSpotView: View {
 
     // MARK: - この場所の写真・近くの撮影スポット
 
+    /// 「このスポットの写真を投稿」の形（デザインシステム「黒塗りの真鍮」と CLAUDE.md）:
+    /// - 写真がもう並んでいる・この画面から投稿した → 枠線（主役は写真。二度押しを誘わない）
+    /// - 写真の無い画面（代表写真も無く、上は地図）→ 真鍮の塗り（写真の無い画面の主ボタン）
+    /// - 代表写真がある → 白（写真のある画面の主ボタン）
+    nonisolated static func postButtonStyle(hasCover: Bool, hasLinked: Bool, postedHere: Bool) -> JPPillStyle {
+        if hasLinked || postedHere { return .outline }
+        return hasCover ? .primary : .accent
+    }
+
     @ViewBuilder
     private var spotPhotos: some View {
         VStack(alignment: .leading, spacing: 10) {
             SpotDetailParts.sectionHeader(L("この場所の写真（\(linked.count)）", "Photos here (\(linked.count))"))
-            if linked.isEmpty {
+            if postedHere {
+                // 一覧は開いた時点の写しなので、上げた写真はすぐには並ばない。
+                // 「まだありません」のままだと、上がっていないと思ってもう一度上げてしまう
+                Text(L("投稿しました。この一覧に並ぶまで少し時間がかかります。",
+                       "Posted. It may take a little while to appear here."))
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.muted)
+                    .padding(.horizontal, 16)
+            }
+            if linked.isEmpty && !postedHere {
                 // **空を隠さない。** 紐づいた写真が無いことをそのまま言う
                 Text(L("まだありません。ここで撮った写真があれば、最初の1枚にしませんか。",
                        "None yet. If you've shot here, share the first one."))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.muted2)
                     .padding(.horizontal, 16)
-            } else {
+            } else if !linked.isEmpty {
                 PhotoGrid(photos: linked) { photo in
                     PhotoDetailView(photo: photo, context: linked)
                 }
             }
             // owner「スポットの詳細からこのスポットの写真を上げたい」（2026-09-29）。
-            // 撮影地と座標を入れた投稿画面を開き、保存で `spotId` を付ける。
-            // 写真のある画面の主ボタンは白（デザインシステム「黒塗りの真鍮」）。写真がもう
-            // 並んでいるときは主役を写真に譲って枠線にする
+            // 撮影地を入れた投稿画面を開き、保存で `spotId` を付ける
             Button {
                 showUpload = true
             } label: {
                 Label(L("このスポットの写真を投稿", "Post a photo of this spot"), systemImage: "camera")
-                    .jpPillButton(linked.isEmpty ? .primary : .outline)
+                    .jpPillButton(Self.postButtonStyle(hasCover: spot.photo != nil,
+                                                       hasLinked: !linked.isEmpty, postedHere: postedHere))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 16)
             .accessibilityIdentifier("spot.official.post")
         }
         .sheet(isPresented: $showUpload) {
-            NavigationStack { UploadView(spot: UploadSpotTarget(spot)) }
+            NavigationStack { UploadView(spot: UploadSpotTarget(spot), onPosted: { postedHere = true }) }
         }
     }
 

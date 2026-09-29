@@ -22,10 +22,24 @@ struct UploadSpotTarget: Equatable {
         self.init(spotId: spot.spotId, name: spot.name, coords: spot.coords)
     }
 
-    /// 送る `spotId`。**本人が撮影地を空にした写真には付けない**——場所を伏せたくて
-    /// 消したのに、スポットの紐付けで場所が分かってしまう
+    /// 写真の位置がスポットからこれより離れていたら、そのスポットの写真とみなさない
+    /// （別の旅の写真を混ぜて選んだとき）。スポットの座標は約1kmに丸めてあり、
+    /// 遠くから撮る景色（富士山・雲海）もあるので広めに取る
+    static let nearbyKm = 10.0
+
+    /// この写真をスポットの写真として扱うか。**位置の無い写真は扱う**（本人がスポットの
+    /// 画面から選んだ）。位置があってスポットから遠い写真は普通の投稿として扱う
+    func covers(_ prepared: ImagePreparer.Prepared) -> Bool {
+        guard let taken = prepared.coords, let coords else { return true }
+        return TravelDistance.kilometers(from: taken, to: coords) <= Self.nearbyKm
+    }
+
+    /// 送る `spotId`。次のどれかなら付けない:
+    /// - 本人が撮影地を空にした（場所を伏せたのに、紐付けで分かってしまう）
+    /// - 撮影地をスポットの名前から別の場所に変えた（その写真はこのスポットで撮っていない）
     static func spotIdToSend(_ target: UploadSpotTarget?, for item: PendingPhoto) -> String? {
-        guard let target, !item.locationClearedByUser else { return nil }
+        guard let target, !item.locationClearedByUser,
+              item.location.trimmingCharacters(in: .whitespacesAndNewlines) == target.name else { return nil }
         return target.spotId
     }
 }
@@ -80,6 +94,16 @@ final class UploadViewModel: ObservableObject {
 
     /// スポットの画面から開いたときの行き先（`UploadSpotTarget`）。外すと普通の投稿に戻る
     @Published var spot: UploadSpotTarget?
+
+    /// スポットを外す。**もう並んでいる写真に入れたスポットの座標も外す**（写真の位置に戻す）。
+    /// 撮影地の名前は残す（本人が直せる。空にすると座標まで送らなくなる）
+    func removeSpot() {
+        guard let spot else { return }
+        for i in items.indices where items[i].pickedCoords != nil && items[i].pickedCoords == spot.coords {
+            items[i].pickedCoords = nil
+        }
+        self.spot = nil
+    }
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
         didSet {
@@ -385,10 +409,13 @@ final class UploadViewModel: ObservableObject {
         var photo = PendingPhoto(prepared: prepared)
         photo.pickerItem = pickerItem
         photo.preview = Self.image(from: prepared.data)
-        // **スポットから開いたときは、撮影地をそのスポットにする**（座標から引き直さない）
-        if let spot {
+        // **スポットから開いたときは、撮影地をそのスポットにする**（座標から引き直さない）。
+        // ただし**写真の位置がスポットから遠い写真は普通の投稿**（別の旅の写真を混ぜて選んだ）。
+        // 位置のある写真は写真の座標をそのまま送る（撮った場所の方が正しい）。
+        // スポットの座標を使うのは位置の無い写真だけ
+        if let spot, spot.covers(prepared) {
             photo.location = spot.name
-            photo.pickedCoords = spot.coords
+            if prepared.coords == nil { photo.pickedCoords = spot.coords }
             items.append(photo)
             return
         }
