@@ -9,14 +9,18 @@ struct UploadView: View {
     @State private var showCamera = false
     @State private var showSongPicker = false
     @State private var showLibrary = false
+    @State private var appliedInitialSpot = false
     @Environment(\.dismiss) private var dismiss
 
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき）。
     /// **入れるだけで、消せる**——決めつけない
     private let initialTag: String?
+    /// スポットの画面から開いたときの行き先
+    private let initialSpot: UploadSpotTarget?
 
-    init(initialTag: String? = nil) {
+    init(initialTag: String? = nil, spot: UploadSpotTarget? = nil) {
         self.initialTag = initialTag
+        self.initialSpot = spot
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
         // ため、ここでは既定の組み立てを使う
         let api = APIClient(tokenProvider: CognitoTokenProvider())
@@ -73,11 +77,45 @@ struct UploadView: View {
     /// 現実的な時間で終わらなくなることがある
     /// （"unable to type-check this expression in reasonable time"）。
     /// 落ちたときに、どの段かがすぐ分かる利点もある。
+    /// どのスポットの写真として上げるか。**外せる**（普通の投稿に戻る）。
+    /// 撮影地は写真ごとに直せるが、スポットの紐付けは全部の写真に同じものが付く
+    private func spotBanner(_ spot: UploadSpotTarget) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mappin.and.ellipse")
+                .foregroundStyle(WebTheme.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("撮影スポットの写真として投稿", "Posting to a photo spot"))
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                Text(spot.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.text)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Button {
+                model.spot = nil
+            } label: {
+                Text(L("外す", "Remove"))
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.muted)
+                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("撮影スポットの紐付けを外す", "Don't link to this spot"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.border, lineWidth: 1))
+    }
+
     private var form: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 // **知らせは上に。** 投稿は右上で押すので、下に出すと画面の外になる
                 progressAndErrors
+                if let spot = model.spot { spotBanner(spot) }
                 strip
                 if model.items.count > 1 { groupChoice }
                 detailSection
@@ -99,6 +137,11 @@ struct UploadView: View {
             model.onAlbumGone = { [joined] id in joined.forget(id: id) }
             // **今日のテーマから来たときだけ。** 既に何か打っていれば触らない
             if let initialTag, model.tagsText.isEmpty { model.tagsText = initialTag }
+            // **一度だけ入れる**（外したあとに戻さない）
+            if let initialSpot, !appliedInitialSpot {
+                appliedInitialSpot = true
+                model.spot = initialSpot
+            }
         }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {

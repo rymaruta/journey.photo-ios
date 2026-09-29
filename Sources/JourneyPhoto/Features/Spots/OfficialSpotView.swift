@@ -42,6 +42,8 @@ struct OfficialSpotView: View {
     @State private var camera: MapCameraPosition = .automatic
     /// 本文（公開済みの場所だけ取りに行く）。取れなければ nil のまま
     @State private var spotBody: SpotBody?
+    /// 「このスポットの写真を投稿」から開く投稿画面
+    @State private var showUpload = false
 
     /// **確定した紐づけだけ**（`Photo.spotId`）。撮影地の文字列では当てない
     private var linked: [Photo] { dropped.visible(photos.filter { $0.spotId == spot.spotId }) }
@@ -376,7 +378,8 @@ struct OfficialSpotView: View {
             SpotDetailParts.sectionHeader(L("この場所の写真（\(linked.count)）", "Photos here (\(linked.count))"))
             if linked.isEmpty {
                 // **空を隠さない。** 紐づいた写真が無いことをそのまま言う
-                Text(L("まだありません", "None yet"))
+                Text(L("まだありません。ここで撮った写真があれば、最初の1枚にしませんか。",
+                       "None yet. If you've shot here, share the first one."))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.muted2)
                     .padding(.horizontal, 16)
@@ -385,6 +388,22 @@ struct OfficialSpotView: View {
                     PhotoDetailView(photo: photo, context: linked)
                 }
             }
+            // owner「スポットの詳細からこのスポットの写真を上げたい」（2026-09-29）。
+            // 撮影地と座標を入れた投稿画面を開き、保存で `spotId` を付ける。
+            // 写真のある画面の主ボタンは白（デザインシステム「黒塗りの真鍮」）。写真がもう
+            // 並んでいるときは主役を写真に譲って枠線にする
+            Button {
+                showUpload = true
+            } label: {
+                Label(L("このスポットの写真を投稿", "Post a photo of this spot"), systemImage: "camera")
+                    .jpPillButton(linked.isEmpty ? .primary : .outline)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .accessibilityIdentifier("spot.official.post")
+        }
+        .sheet(isPresented: $showUpload) {
+            NavigationStack { UploadView(spot: UploadSpotTarget(spot)) }
         }
     }
 

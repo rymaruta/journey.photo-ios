@@ -4,6 +4,32 @@ import PhotosUI
 // UIImage を使う（SwiftUI / PhotosUI から見えることに頼らない）
 import UIKit
 
+/// スポットの画面から開いた投稿の行き先。撮影地の名前と座標を先に入れ、
+/// 保存で `spotId` を付ける（スポットのページの「この場所の写真」に並ぶ）
+struct UploadSpotTarget: Equatable {
+    let spotId: String
+    let name: String
+    /// 公開してよい座標（約1km）。無いスポットは写真の位置のまま
+    let coords: Photo.Coords?
+
+    init(spotId: String, name: String, coords: Photo.Coords?) {
+        self.spotId = spotId
+        self.name = name
+        self.coords = coords
+    }
+
+    init(_ spot: OfficialSpot) {
+        self.init(spotId: spot.spotId, name: spot.name, coords: spot.coords)
+    }
+
+    /// 送る `spotId`。**本人が撮影地を空にした写真には付けない**——場所を伏せたくて
+    /// 消したのに、スポットの紐付けで場所が分かってしまう
+    static func spotIdToSend(_ target: UploadSpotTarget?, for item: PendingPhoto) -> String? {
+        guard let target, !item.locationClearedByUser else { return nil }
+        return target.spotId
+    }
+}
+
 /// 投稿を待っている1枚。
 ///
 /// **題・説明・撮影地は写真ごと**（Web の投稿画面と同じ）。タグ・カテゴリ・
@@ -51,6 +77,9 @@ final class UploadViewModel: ObservableObject {
     /// （`api-user/src/photoLimit.ts`）だが、1枚ずつ題と説明を書く画面なので、
     /// 一度に扱う数はここで抑える（多すぎると、どれを書いているか見失う）。
     static let maxSelection = 10
+
+    /// スポットの画面から開いたときの行き先（`UploadSpotTarget`）。外すと普通の投稿に戻る
+    @Published var spot: UploadSpotTarget?
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
         didSet {
@@ -356,6 +385,13 @@ final class UploadViewModel: ObservableObject {
         var photo = PendingPhoto(prepared: prepared)
         photo.pickerItem = pickerItem
         photo.preview = Self.image(from: prepared.data)
+        // **スポットから開いたときは、撮影地をそのスポットにする**（座標から引き直さない）
+        if let spot {
+            photo.location = spot.name
+            photo.pickedCoords = spot.coords
+            items.append(photo)
+            return
+        }
         items.append(photo)
         // **撮影地を、写真の座標から先に埋めておく**（Web と同じ）。
         // **待たない**——待つと、引き終わるまで投稿ボタンが押せない
@@ -486,6 +522,7 @@ final class UploadViewModel: ObservableObject {
         draft.dominantColor = item.prepared.dominantColor
         draft.albumId = selectedAlbumId
         draft.groupId = groupId
+        draft.spotId = UploadSpotTarget.spotIdToSend(spot, for: item)
 
         // 🔴 **やり直しは前回の鍵で保存する**（`UploadService.stage` の注記）。
         // 保存が落ちた写真は本体を置き直さない——新しい鍵で送ると、前回の保存が

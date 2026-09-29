@@ -53,6 +53,29 @@ final class UploadDraftTests: XCTestCase {
         XCTAssertNil(UploadGrouping.groupIdForSubmit(current: "g1", grouping: false, count: 5, make: make))
     }
 
+    /// スポットの画面から開いた投稿は `spotId` を送る。**本人が撮影地を空にした写真には
+    /// 付けない**（場所を伏せたのに、スポットの紐付けで場所が分かってしまう）。
+    /// 普通の投稿は送らない（キーごと落ちる）
+    func testSpotIdIsSentOnlyForSpotUploadsWithPlaceKept() throws {
+        let target = UploadSpotTarget(spotId: "sp_0123456789ab", name: "高屋神社",
+                                      coords: Photo.Coords(lat: 34.1, lng: 133.6))
+        let prepared = ImagePreparer.Prepared(data: Data(), fileName: "p.jpg", contentType: "image/jpeg",
+                                              exif: nil, coords: nil, takenOn: nil)
+        var item = PendingPhoto(prepared: prepared)
+        item.location = target.name
+        XCTAssertEqual(UploadSpotTarget.spotIdToSend(target, for: item), "sp_0123456789ab")
+        XCTAssertNil(UploadSpotTarget.spotIdToSend(nil, for: item), "普通の投稿")
+        item.location = ""
+        XCTAssertNil(UploadSpotTarget.spotIdToSend(target, for: item), "撮影地を空にした")
+
+        var draft = PhotoDraft()
+        draft.spotId = "sp_0123456789ab"
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(draft.saveBody(key: "k", publicUrl: "u"))) as? [String: Any]
+        XCTAssertEqual(json?["spotId"] as? String, "sp_0123456789ab")
+        let plain = try JSONSerialization.jsonObject(with: JSONEncoder().encode(PhotoDraft().saveBody(key: "k", publicUrl: "u"))) as? [String: Any]
+        XCTAssertNil(plain?["spotId"], "普通の投稿は spotId を送らない")
+    }
+
     /// 空の項目は送らない（api-user は「未指定＝触らない」と読む）。
     func testEmptyFieldsAreOmitted() throws {
         let body = PhotoDraft().saveBody(key: "k", publicUrl: "u")
