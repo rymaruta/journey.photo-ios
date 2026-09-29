@@ -1413,13 +1413,13 @@ struct StoryViewerView: View {
         return seen + L("、いいね \(replies.reactionCount)", ", \(replies.reactionCount) likes")
     }
 
-    /// 返信（届いた返信の一覧）。**封筒の印**——吹き出しの線画は安っぽく見えた（owner・2026-09-29）。
-    /// 届いたものを開く操作なので、数の印と合わせて「未読の手紙」に読める
+    /// 返信（届いた返信の一覧）。**丸い吹き出し**（`message`・メッセージの App と同じ形）。
+    /// 以前の角の吹き出し（`bubble.left`）は安っぽく、封筒は四角いと言われた（owner・2026-09-29）
     private func replyButton(for story: Story) -> some View {
         Button {
             showReplies = true
         } label: {
-            ownCircle(symbol: "envelope")
+            ownCircle(symbol: "message")
                 .overlay(alignment: .topTrailing) {
                     if let badge = replyBadge(for: story), badge > 0 {
                         Text(badge > 99 ? "99+" : "\(badge)")
