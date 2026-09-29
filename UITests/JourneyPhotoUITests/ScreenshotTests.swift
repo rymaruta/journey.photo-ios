@@ -342,6 +342,19 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "20-写真の詳細")
 
+            // 撮影地は1枚しかない場所でも必ず入口を持つ。スポット化できる地点は
+            // spotLink、1枚だけなら placeLink。どちらでも「写真→場所」の流れを実画面で残す。
+            let spotLink = app.buttons["photo.spotLink"].firstMatch
+            let placeLink = app.buttons["photo.placeLink"].firstMatch
+            let locationLink = spotLink.exists ? spotLink : placeLink
+            if locationLink.waitForExistence(timeout: 3), locationLink.isHittable {
+                locationLink.tap()
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "20b-写真から撮影地へ")
+                app.navigationBars.buttons.firstMatch.tap()
+                Thread.sleep(forTimeInterval: 2)
+            }
+
             // **人のページ**（モック2 と同じ部品で組んである）。
             //
             // **画面の下に隠れていたら送る（上限あり）。** 作者の行は説明の
