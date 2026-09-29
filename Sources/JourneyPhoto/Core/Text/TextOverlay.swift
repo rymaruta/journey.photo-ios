@@ -468,20 +468,19 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         return String(lines.prefix(maxLines).joined(separator: "\n").prefix(maxLength))
     }
 
-    /// 複数行を焼き込むときの、各行の左端（ブロックの左端から）とブロックの大きさ。
-    /// **編集画面の `multilineTextAlignment` と同じ置き方**——ブロックの幅はいちばん長い行、
-    /// 短い行は揃えに合わせて寄せる。行の高さは書体の1行ぶん
-    static func lineLayout(widths: [Double], lineHeight: Double, align: Align)
-        -> (size: CGSize, xs: [Double]) {
-        let width = widths.max() ?? 0
-        let xs = widths.map { w -> Double in
-            switch align {
-            case .leading: return 0
-            case .center: return (width - w) / 2
-            case .trailing: return width - w
-            }
+    /// 欄に打った文字を受けるか。**行の上限を越える入力は受けず、前の文字のまま**
+    /// ——頭から6行に切ると、6行ある文字の途中で改行したとき最後の行が黙って消えた
+    /// （f48800f のレビュー）。それ以外は `cleaned` で整える
+    static func accepting(_ new: String, old: String, kind: Kind) -> String {
+        if kind.allowsNewlines && lineCount(new) > maxLines && lineCount(new) > lineCount(old) {
+            return old
         }
-        return (CGSize(width: width, height: lineHeight * Double(max(widths.count, 1))), xs)
+        return cleaned(new, kind: kind)
+    }
+
+    private static func lineCount(_ text: String) -> Int {
+        text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false).count
     }
 
     init(id: UUID = UUID(), text: String, x: Double = 0.5, y: Double = 0.5,
@@ -512,12 +511,14 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let style = try c.decode(Style.self, forKey: .style)
         self.id = try c.decode(UUID.self, forKey: .id)
-        self.text = try c.decode(String.self, forKey: .text)
+        // 読むときも置ける形に整える（改行は自由な文字だけ・6行まで）
+        let kind = try c.decode(Kind.self, forKey: .kind)
+        self.text = Self.cleaned(try c.decode(String.self, forKey: .text), kind: kind)
         self.x = try c.decode(Double.self, forKey: .x)
         self.y = try c.decode(Double.self, forKey: .y)
         self.size = try c.decode(Double.self, forKey: .size)
         self.style = style
-        self.kind = try c.decode(Kind.self, forKey: .kind)
+        self.kind = kind
         self.face = (try? c.decodeIfPresent(Face.self, forKey: .face)) ?? .gothic
         self.ink = (try? c.decodeIfPresent(Ink.self, forKey: .ink)) ?? (style == .dark ? .ink : .white)
         self.rotation = (try? c.decodeIfPresent(Double.self, forKey: .rotation)) ?? 0
@@ -533,6 +534,17 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     }
 
     var displayText: String { Self.display(text: text, kind: kind) }
+
+    /// 写真の上に描く文字。**最後の改行（と空白だけの行）は落とす**——打ちかけで「港⏎」の
+    /// まま閉じると、焼き込みだけ下に空の行ができて字が半行ずれた（f48800f のレビュー）。
+    /// 編集画面と焼き込みの両方がこれを描く
+    var drawnText: String {
+        var lines = displayText.components(separatedBy: "\n")
+        while lines.count > 1, lines.last?.trimmingCharacters(in: .whitespaces).isEmpty == true {
+            lines.removeLast()
+        }
+        return lines.joined(separator: "\n")
+    }
 
     /// **画面の外に出さない。** 端まで動かせるが、出てしまうと
     /// 掴み直せなくなる（消す手段も無くなる）

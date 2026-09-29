@@ -63,15 +63,27 @@ enum TextOverlayRenderer {
         // **短い辺に対する割合で大きさを決める。** 長辺で決めると、
         // 横長と縦長で同じ指定が別の見え方になる。編集画面と同じ関数を通す
         let fontSize = TextOverlay.fontSize(overlay.size, in: size)
-        let (attributes, edge, lineHeight) = attributes(for: overlay, fontSize: fontSize)
-        // 場所と曲は印（📍 ♪）を頭に付けて焼く。**改行した文字は行ごとに描く**
-        // （行の幅と揃えは `TextOverlay.lineLayout`・編集画面の `multilineTextAlignment` と同じ置き方）
-        let lines = overlay.displayText.components(separatedBy: "\n").map { $0 as NSString }
-        let widths = lines.map { Double($0.size(withAttributes: attributes).width) }
-        // 1行の高さ。1行だけなら測った高さ（これまでと同じ）、複数行は書体の1行ぶんで送る
-        let rowHeight = lines.count == 1 ? Double(lines[0].size(withAttributes: attributes).height) : lineHeight
-        let layout = TextOverlay.lineLayout(widths: widths, lineHeight: rowHeight, align: overlay.align)
-        let bounds = layout.size
+        let (attributes, edge) = attributes(for: overlay, fontSize: fontSize)
+        // 場所と曲は印（📍 ♪）を頭に付けて焼く。最後の改行は落とす（`drawnText`）
+        let text = overlay.drawnText as NSString
+        // **改行した文字は段落として描く**（揃えは段落の揃え）。行の送りは字の組み方
+        // （代わりに使われる字・絵文字の高さ）に任せる——編集画面の `Text` と同じ仕組み。
+        // 1行は これまでどおり `draw(at:)`（見た目を変えない）
+        let multiline = overlay.drawnText.contains("\n")
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = Self.textAlignment(overlay.align)
+        func lines(_ attrs: [NSAttributedString.Key: Any]) -> NSAttributedString {
+            var merged = attrs
+            merged[.paragraphStyle] = paragraph
+            return NSAttributedString(string: overlay.drawnText, attributes: merged)
+        }
+        let bounds: CGSize = {
+            guard multiline else { return text.size(withAttributes: attributes) }
+            let rect = lines(attributes).boundingRect(
+                with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                options: .usesLineFragmentOrigin, context: nil)
+            return CGSize(width: rect.width.rounded(.up), height: rect.height.rounded(.up))
+        }()
         // 位置は中心で持っている（0...1 の相対値）。**回しは中心の周りで**
         // （編集画面の `rotationEffect` も中心の周り）
         let center = overlay.center(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
@@ -92,26 +104,38 @@ enum TextOverlayRenderer {
         // **縁を先に、塗りを上に。** 負の `strokeWidth`（塗り＋縁を1回で）は縁が字の
         // 輪郭の内側にも食い込み、編集画面（縁を外側にだけ敷く）より字が細く焼ける。
         // 正の幅（縁だけ）で描いてから塗りを重ね、内側の半分を隠す
-        for (i, line) in lines.enumerated() {
-            let at = CGPoint(x: origin.x + layout.xs[i], y: origin.y + rowHeight * Double(i))
+        if multiline {
+            let box = CGRect(origin: origin, size: bounds)
             if let edge {
-                line.draw(at: at, withAttributes: edge)
+                lines(edge).draw(with: box, options: .usesLineFragmentOrigin, context: nil)
             }
-            line.draw(at: at, withAttributes: attributes)
+            lines(attributes).draw(with: box, options: .usesLineFragmentOrigin, context: nil)
+        } else {
+            if let edge {
+                text.draw(at: origin, withAttributes: edge)
+            }
+            text.draw(at: origin, withAttributes: attributes)
+        }
+    }
+
+    static func textAlignment(_ align: TextOverlay.Align) -> NSTextAlignment {
+        switch align {
+        case .leading: return .left
+        case .center: return .center
+        case .trailing: return .right
         }
     }
 
     /// 塗りの属性と、縁だけの属性（縁が無ければ nil）
     private static func attributes(for overlay: TextOverlay, fontSize: Double)
-        -> (fill: [NSAttributedString.Key: Any], edge: [NSAttributedString.Key: Any]?, lineHeight: Double) {
+        -> (fill: [NSAttributedString.Key: Any], edge: [NSAttributedString.Key: Any]?) {
         // 書体（`TextOverlay.Face`・同梱か端末の字）。読めなければゴシック（端末の太字）
         let font = overlay.face.fontName.flatMap { UIFont(name: $0, size: fontSize) }
             ?? UIFont.systemFont(ofSize: fontSize, weight: .bold)
         let fill: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: uiColor(overlay.drawnHex)]
-        let lineHeight = Double(font.lineHeight)
-        guard let edge = edge(for: overlay.style) else { return (fill, nil, lineHeight) }
+        guard let edge = edge(for: overlay.style) else { return (fill, nil) }
         // `strokeWidth` は正で「縁だけ」（字の大きさに対する百分率・輪郭の両側に半分ずつ）
-        return (fill, [.font: font, .strokeColor: edge.color, .strokeWidth: edge.width], lineHeight)
+        return (fill, [.font: font, .strokeColor: edge.color, .strokeWidth: edge.width])
     }
 
     /// 縁の色と幅。**黒の見た目には白い縁**（暗い写真の上では縁が無いと消える）。

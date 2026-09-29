@@ -511,19 +511,34 @@ extension TextOverlayTests {
         XCTAssertEqual(TextOverlay(text: "港\n夕方", kind: .text).text, "港\n夕方")
     }
 
-    /// 複数行の置き方（焼き込み）。ブロックの幅はいちばん長い行、短い行は揃えに寄せる
-    func testLineLayoutFollowsAlignment() {
-        let widths = [100.0, 60, 80]
-        let left = TextOverlay.lineLayout(widths: widths, lineHeight: 20, align: .leading)
-        XCTAssertEqual(left.size.width, 100)
-        XCTAssertEqual(left.size.height, 60)
-        XCTAssertEqual(left.xs, [0, 0, 0])
-        XCTAssertEqual(TextOverlay.lineLayout(widths: widths, lineHeight: 20, align: .center).xs, [0, 20, 10])
-        XCTAssertEqual(TextOverlay.lineLayout(widths: widths, lineHeight: 20, align: .trailing).xs, [0, 40, 20])
-        // 1行ならこれまでと同じ大きさ
-        let one = TextOverlay.lineLayout(widths: [50], lineHeight: 18, align: .trailing)
-        XCTAssertEqual(one.size, CGSize(width: 50, height: 18))
-        XCTAssertEqual(one.xs, [0])
+    /// 🔴 **6行ある文字の途中で改行しても、最後の行を黙って消さない**（f48800f のレビュー）。
+    /// 行が増えて上限を越える入力は受けず、前の文字のまま
+    func testSeventhLineIsRefusedNotTruncated() {
+        let six = "1\n2\n3\n4\n5\n6"
+        XCTAssertEqual(TextOverlay.accepting("1\n2\n3\nx\n4\n5\n6", old: six, kind: .text), six)
+        XCTAssertEqual(TextOverlay.accepting(six + "\n", old: six, kind: .text), six)
+        // 上限の中なら受ける・整える
+        XCTAssertEqual(TextOverlay.accepting("1\r\n2", old: "1", kind: .text), "1\n2")
+        // 行を減らす入力はいつでも受ける（前の版の下書きの7行を直すとき）
+        XCTAssertEqual(TextOverlay.accepting("1\n2\n3\n4\n5\n6\n7", old: "1\n2\n3\n4\n5\n6\n7\n8", kind: .text),
+                       "1\n2\n3\n4\n5\n6")
+        // 札は改行を空白にする（行の上限とは関係ない）
+        XCTAssertEqual(TextOverlay.accepting("函館\n港", old: "函館", kind: .place), "函館 港")
+    }
+
+    /// 写真の上に描く文字は、**最後の改行と空白だけの行を落とす**（焼き込みだけ下に空の行が
+    /// できて字が半行ずれた）。途中の空の行は残す
+    func testDrawnTextDropsTrailingEmptyLines() {
+        XCTAssertEqual(TextOverlay(text: "港\n").drawnText, "港")
+        XCTAssertEqual(TextOverlay(text: "港\n  \n").drawnText, "港")
+        XCTAssertEqual(TextOverlay(text: "港\n\n夕方").drawnText, "港\n\n夕方")
+        XCTAssertEqual(TextOverlay(text: "函館", kind: .place).drawnText, "📍 函館")
+    }
+
+    /// 読むときも整える（前の版の下書きに7行・改行入りの札があっても置ける形で戻る）
+    func testDecodeCleansText() throws {
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"函館\n港","x":0.5,"y":0.5,"size":0.07,"style":"banner","kind":"place"}"#
+        XCTAssertEqual(try JSONDecoder().decode(TextOverlay.self, from: Data(json.utf8)).text, "函館 港")
     }
 
     /// 揃えは下書きに残る。前の版の下書き（揃えが無い）は中央＝これまでの見た目

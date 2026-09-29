@@ -164,6 +164,37 @@ extension NSAttributedString.Key {
     public static let foregroundColor = NSAttributedString.Key("foregroundColor")
     public static let strokeColor = NSAttributedString.Key("strokeColor")
     public static let strokeWidth = NSAttributedString.Key("strokeWidth")
+    public static let paragraphStyle = NSAttributedString.Key("paragraphStyle")
+}
+
+/// 行の揃え（複数行の焼き込み）。本物は UIKit が持つ
+public enum NSTextAlignment { case left, center, right, justified, natural }
+
+open class NSParagraphStyle: NSObject {
+    open var alignment: NSTextAlignment { .natural }
+}
+
+open class NSMutableParagraphStyle: NSParagraphStyle {
+    private var storedAlignment: NSTextAlignment = .natural
+    open override var alignment: NSTextAlignment {
+        get { storedAlignment }
+        set { storedAlignment = newValue }
+    }
+}
+
+public struct NSStringDrawingOptions: OptionSet {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let usesLineFragmentOrigin = NSStringDrawingOptions(rawValue: 1)
+}
+
+/// 描き込みの文脈（使わない・本物と同じ形のため）
+public final class NSStringDrawingContext {}
+
+extension NSAttributedString {
+    public func boundingRect(with size: CGSize, options: NSStringDrawingOptions,
+                             context: NSStringDrawingContext?) -> CGRect { .zero }
+    public func draw(with rect: CGRect, options: NSStringDrawingOptions, context: NSStringDrawingContext?) {}
 }
 
 extension NSString {

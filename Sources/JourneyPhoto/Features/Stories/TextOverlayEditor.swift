@@ -267,11 +267,13 @@ struct StoryCanvas: View {
         let fontSize = TextOverlay.fontSize(size, in: photo.size)
         let center = overlay.center(in: photo)
         let rotation = overlay.rotation + (rotateId == overlay.id ? liveRotation : 0)
-        return Self.edged(Text(overlay.displayText)
+        return Self.edged(Text(overlay.drawnText)
             // 書体と色は焼き込みと同じもの（`TextOverlayRenderer.attributes`）
             .font(Self.font(overlay.face, size: fontSize))
             // 改行した文字の揃え（焼き込みの `TextOverlay.lineLayout` と同じ置き方）
-            .multilineTextAlignment(Self.alignment(overlay.align)), overlay: overlay, fontSize: fontSize)
+            .multilineTextAlignment(Self.alignment(overlay.align))
+            // **折り返さない**（焼き込みも折り返さない。画面の幅で折り返すと行数と揃えがずれた）
+            .fixedSize(), overlay: overlay, fontSize: fontSize)
             // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
             .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
             .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
@@ -338,24 +340,40 @@ struct OverlayPanel: View {
 
     @Binding var overlay: TextOverlay
     var onDelete: () -> Void
+    /// 文字の欄を打っているか。**改行できる欄は Return で閉じない**ので、閉じる口を出す
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // **端末から採った札は直させない**（時刻・日付）。直せると「いつの話か」が嘘になる
             if overlay.kind.isEditable {
-                // **自由な文字は改行できる**（6行まで・`TextOverlay.cleaned`）。札は1行
-                TextField(L("文字", "Text"), text: Binding(
-                    get: { overlay.text },
-                    set: { overlay.text = TextOverlay.cleaned($0, kind: overlay.kind) }
-                ), axis: overlay.kind.allowsNewlines ? .vertical : .horizontal)
-                .lineLimit(1...3)
-                .font(.system(size: 15))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .frame(minHeight: 44)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                // **自由な文字は改行できる**（6行まで・`TextOverlay.accepting`）。札は1行
+                HStack(spacing: 8) {
+                    TextField(L("文字", "Text"), text: Binding(
+                        get: { overlay.text },
+                        set: { overlay.text = TextOverlay.accepting($0, old: overlay.text, kind: overlay.kind) }
+                    ), axis: overlay.kind.allowsNewlines ? .vertical : .horizontal)
+                    .focused($fieldFocused)
+                    .lineLimit(1...3)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .frame(minHeight: 44)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                    // 改行できる欄は Return が改行になる。**キーボードを閉じる口**（f48800f のレビュー）
+                    if fieldFocused {
+                        Button { fieldFocused = false } label: {
+                            Image(systemName: "keyboard.chevron.compact.down")
+                                .font(.system(size: 16))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L("キーボードを閉じる", "Hide keyboard"))
+                    }
+                }
             } else {
                 // 時刻・日付は端末から採った値（直せない）。何の札かだけ見せる
                 Text(overlay.displayText)
@@ -469,9 +487,12 @@ struct OverlayPanel: View {
                             Button {
                                 overlay.align = align
                             } label: {
+                                // 選んでいるものは真鍮に**薄い地**も敷く（色だけで見分けさせない）
                                 Image(systemName: align.symbol)
-                                    .font(.system(size: 15))
+                                    .font(.system(size: 15, weight: overlay.align == align ? .semibold : .regular))
                                     .foregroundStyle(overlay.align == align ? WebTheme.accent : Color.white.opacity(0.72))
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.white.opacity(overlay.align == align ? 0.12 : 0), in: Circle())
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
