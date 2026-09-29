@@ -11,6 +11,7 @@ struct SearchView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// **「見せない」が変わったら控えを捨てるため**に見ている
     @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var tabRouter: TabRouter
     @StateObject private var model = SearchViewModel()
     @State private var query = ""
     /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
@@ -638,14 +639,28 @@ struct SearchView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
         } else if model.shown.isEmpty {
-            // **「読み込めなかった」と「見つからなかった」を分ける**
-            Text(model.loadFailed && model.everything.isEmpty
-                 ? L("写真を読み込めませんでした。引き下げて読み直せます", "Couldn't load photos. Pull to retry")
-                 : L("見つかりませんでした", "No results"))
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.faint)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 24)
+            // **「読み込めなかった」と「見つからなかった」を分ける。**
+            // 0件なら検索語を捨てさせず、地図で同じ目的を続けられる出口を出す。
+            VStack(spacing: 12) {
+                Text(model.loadFailed && model.everything.isEmpty
+                     ? L("写真を読み込めませんでした。引き下げて読み直せます", "Couldn't load photos. Pull to retry")
+                     : L("見つかりませんでした", "No results"))
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.faint)
+                if !(model.loadFailed && model.everything.isEmpty) {
+                    Button { tabRouter.openMap() } label: {
+                        Label(L("地図で撮影地を探す", "Explore shooting places on the map"), systemImage: "map")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(WebTheme.accent)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("search.emptyMap")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 24)
         } else {
             SearchGrid(photos: model.shown)
         }
