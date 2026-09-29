@@ -356,6 +356,15 @@ extension TextOverlayTests {
     // MARK: - 縁取り・スタンプ（2026-09-29）
 
     /// 縁取りは縁が黒なので墨を出さない。墨のまま縁取りへ切り替えたら白に寄せる
+    /// 縁があるのは黒の見た目と縁取りだけ。縁取りは黒の見た目の倍の太さ
+    /// （編集画面と焼き込みが同じ値を読む）
+    func testEdgeWidths() {
+        XCTAssertNil(TextOverlay.Style.light.edgePercent)
+        XCTAssertNil(TextOverlay.Style.banner.edgePercent)
+        XCTAssertEqual(TextOverlay.Style.dark.edgePercent, 3)
+        XCTAssertEqual(TextOverlay.Style.outline.edgePercent, 6)
+    }
+
     func testOutlineHidesInkAndConvertsIt() {
         XCTAssertFalse(TextOverlay.inks(for: .outline).contains(.ink))
         XCTAssertEqual(TextOverlay.inks(for: .outline).count, 11)

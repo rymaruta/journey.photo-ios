@@ -84,19 +84,18 @@ struct StoryCanvas: View {
     /// **縁の色の文字を8方向にずらして下に敷く**。黒の見た目（白い縁・幅3%）と
     /// 縁取り（黒い縁・幅6%）。**以前は黒の見た目の縁が画面に出ず、焼き込みにだけ付いていた**
     static func edged<Label: View>(_ text: Label, overlay: TextOverlay, fontSize: Double) -> some View {
-        let edge: (color: Color, width: Double)? = {
-            switch overlay.style {
-            case .dark: return (.white, fontSize * 0.03 / 2)
-            case .outline: return (.black, fontSize * 0.06 / 2)
-            case .light, .banner: return nil
-            }
-        }()
+        // 焼き込みの縁は輪郭の両側に半分ずつ。塗りが内側を隠すので、見えるのは外側の半分
+        let edge: (color: Color, width: Double)? = overlay.style.edgePercent.map {
+            (overlay.style == .dark ? .white : .black, fontSize * $0 / 100 / 2)
+        }
         return ZStack {
             if let edge {
                 ForEach(0..<8, id: \.self) { i in
                     let angle = Double(i) * .pi / 4
                     text.foregroundStyle(edge.color)
                         .offset(x: CGFloat(cos(angle) * edge.width), y: CGFloat(sin(angle) * edge.width))
+                        // 縁のための写しは読み上げない（同じ文字を9回読まれる）
+                        .accessibilityHidden(true)
                 }
             }
             text.foregroundStyle(color(overlay.drawnInk))
@@ -276,12 +275,17 @@ struct OverlayPanel: View {
             }
 
             HStack(spacing: 8) {
-                // **場所と曲は帯で固定**（読めない札を作らせない）ので見た目の選択を出さない
+                // **場所と曲は帯で固定**（読めない札を作らせない）ので見た目の選択を出さない。
+                // 4つ並ぶと英語では「消す」と合わせて幅に収まらないので横に流す
                 if overlay.kind == .text {
-                    ForEach(TextOverlay.Style.allCases) { style in
-                        OverlayChip(title: style.label, selected: overlay.style == style) {
-                            // 色の寄せ方は `TextOverlay.withStyle`（読めない組だけ直す）
-                            overlay = overlay.withStyle(style)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(TextOverlay.Style.allCases) { style in
+                                OverlayChip(title: style.label, selected: overlay.style == style) {
+                                    // 色の寄せ方は `TextOverlay.withStyle`（読めない組だけ直す）
+                                    overlay = overlay.withStyle(style)
+                                }
+                            }
                         }
                     }
                 }

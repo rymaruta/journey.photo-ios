@@ -568,7 +568,8 @@ struct StoryComposerView: View {
                                 add(kind: kind)
                             }
                         }
-                        .disabled(overlays.wrappedValue.count >= TextOverlay.maxCount)
+                        // スタンプは列を開け閉めするだけなので上限でも押せる（閉じられなくなる）
+                        .disabled(kind != .stamp && overlays.wrappedValue.count >= TextOverlay.maxCount)
                         .accessibilityIdentifier("story.add.\(kind.rawValue)")
                     }
                 }
@@ -670,6 +671,7 @@ struct StoryComposerView: View {
 
     private func leaveTextMode() {
         textMode = false
+        showStamps = false
         selectedId = nil
         editingShotId = nil
     }
@@ -719,6 +721,8 @@ struct StoryComposerView: View {
         let overlay = TextOverlay(text: emoji, x: 0.5, y: 0.5, size: TextOverlay.stampSize, kind: .stamp)
         overlays.wrappedValue.append(overlay)
         selectedId = overlay.id
+        // 置いたら列を閉じる。開いたままだと写真の上の方を覆い、そこの札を掴めない
+        showStamps = false
     }
 
     private func add(kind: TextOverlay.Kind) {

@@ -320,6 +320,16 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .outline: return L("縁取り", "Outline")
             }
         }
+
+        /// 縁の幅（字の大きさに対する百分率・輪郭の両側に半分ずつ）。縁が無ければ nil。
+        /// **編集画面と焼き込みの両方がここを読む**——別々に持つと画面と仕上がりの太さがずれる
+        var edgePercent: Double? {
+            switch self {
+            case .light, .banner: return nil
+            case .dark: return 3
+            case .outline: return 6
+            }
+        }
     }
 
     /// 文字の大きさの幅。**下は読めなくならない所まで、上は画面を
