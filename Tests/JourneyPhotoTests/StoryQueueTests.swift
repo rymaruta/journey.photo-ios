@@ -61,4 +61,20 @@ final class StoryQueueTests: XCTestCase {
         XCTAssertEqual(StoryQueue.partialFailure(posted: 0, total: 3, reason: "通信に失敗"),
                        "通信に失敗")
     }
+
+    /// 並べ替え。**編集していた写真を追いかける**——並びを実際に動かして、
+    /// どの位置からどこへ移しても、移したあとの `current` が同じ写真を指すこと
+    func testMovingFollowsTheShotBeingEdited() {
+        let shots = ["a", "b", "c", "d"]
+        for from in shots.indices {
+            for to in shots.indices where to != from {
+                for current in shots.indices {
+                    var moved = shots
+                    moved.insert(moved.remove(at: from), at: to)
+                    let next = StoryQueue.currentAfterMoving(from: from, to: to, current: current)
+                    XCTAssertEqual(moved[next], shots[current], "from \(from) to \(to) current \(current)")
+                }
+            }
+        }
+    }
 }

@@ -797,7 +797,7 @@ struct StoryComposerView: View {
 
 
     /// 左下の並び（板 24。44×56・選んでいる1枚は白の輪・他は薄く、最後に「＋」）。
-    /// **順番がそのまま出る順**。長押しで外せる
+    /// **順番がそのまま出る順**。長押しで前後へ移す・外す
     private var mediaStrip: some View {
         HStack(spacing: 8) {
             ForEach(Array(shots.enumerated()), id: \.element.id) { index, shot in
@@ -808,11 +808,24 @@ struct StoryComposerView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
+                    // 並べ替え（出る順を変える）。端では出さない（押しても動かない項目を置かない）
+                    if index > 0 {
+                        Button { move(from: index, to: index - 1) } label: {
+                            Label(L("前へ移す", "Move earlier"), systemImage: "arrow.left")
+                        }
+                    }
+                    if index < shots.count - 1 {
+                        Button { move(from: index, to: index + 1) } label: {
+                            Label(L("後ろへ移す", "Move later"), systemImage: "arrow.right")
+                        }
+                    }
                     Button(role: .destructive) { remove(at: index) } label: {
                         Label(L("この写真を外す", "Remove this photo"), systemImage: "trash")
                     }
                 }
-                // 読み上げからも外せる（長押しのメニューは見つけにくい）
+                // 読み上げからも移す・外す（長押しのメニューは見つけにくい）
+                .accessibilityAction(named: L("前へ移す", "Move earlier")) { move(from: index, to: index - 1) }
+                .accessibilityAction(named: L("後ろへ移す", "Move later")) { move(from: index, to: index + 1) }
                 .accessibilityAction(named: L("この写真を外す", "Remove this photo")) { remove(at: index) }
             }
             if shots.count < StoryQueue.maxShots {
@@ -855,6 +868,15 @@ struct StoryComposerView: View {
         .opacity(isCurrent ? 1 : 0.7)
         .accessibilityLabel(L("\(index + 1)枚目", "Photo \(index + 1)"))
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+
+    /// 1枚を前後へ移す。**編集している写真を追いかける**（`StoryQueue.currentAfterMoving`）。
+    /// 範囲の外へは移さない（読み上げの操作は端でも呼べる）
+    private func move(from: Int, to: Int) {
+        guard shots.indices.contains(from), shots.indices.contains(to), from != to else { return }
+        let shot = shots.remove(at: from)
+        shots.insert(shot, at: to)
+        current = StoryQueue.currentAfterMoving(from: from, to: to, current: current)
     }
 
     /// 1枚外す。**編集中の位置がずれないように直す**
