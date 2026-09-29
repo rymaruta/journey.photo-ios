@@ -223,8 +223,8 @@ struct CloseFriendsView: View {
                     .foregroundStyle(WebTheme.foreground)
                 Spacer()
                 Image(systemName: picked ? "star.fill" : "star")
-                    // 選択は白（形も ★ の塗りで変わる）（デザインシステム「黒塗りの真鍮」）
-                    .foregroundStyle(picked ? WebTheme.foreground : WebTheme.faint)
+                    // 選んだ人は真鍮の ★（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。形も塗りで変わる
+                    .foregroundStyle(picked ? WebTheme.accent : WebTheme.faint)
             }
             .frame(minHeight: WebTheme.minTapTarget)
             .contentShape(Rectangle())

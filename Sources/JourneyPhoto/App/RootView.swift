@@ -247,12 +247,14 @@ struct RootView: View {
             NavigationStack {
                 GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
             }
+            .tint(WebTheme.foreground)
             .tabItem { Label(L("ホーム", "Home"), systemImage: "house") }
             .tag(Tab.home)
 
             NavigationStack {
                 SearchView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
             }
+            .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.searchTab, systemImage: "magnifyingglass") }
             .tag(Tab.search)
 
@@ -269,15 +271,21 @@ struct RootView: View {
                              onOpenNotifications: { openNotificationsFromBell() },
                              onPost: { showPostChoice = true })
             }
+            .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.mapTab, systemImage: "map") }
             .tag(Tab.map)
 
             NavigationStack {
                 MyPageView()
             }
+            .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.mypage, systemImage: "person") }
             .tag(Tab.mypage)
         }
+        // **選んでいるタブは真鍮**（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。タブの札の色は TabView の tint で決まる。
+        // 中身には各タブの `.tint(WebTheme.foreground)`（白）で配り直す——真鍮を中身の
+        // 既定の押せる色にまで広げない（`.borderedProminent` の白地の注記と同じ理由）
+        .tint(WebTheme.accent)
         .task(id: auth.userId) { await refreshUnread() }
         // **人が替わったら待ちをやめる。** `.task(id:)` の中で取り消すと、
         // 出てきた瞬間（`onAppear` で待ちを作った直後）にも走って、

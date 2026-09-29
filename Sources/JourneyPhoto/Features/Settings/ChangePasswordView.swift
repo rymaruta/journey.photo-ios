@@ -45,8 +45,9 @@ struct ChangePasswordView: View {
                         }
                     }
                 } label: {
+                    // 写真の無い画面の主ボタンは真鍮の塗り（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））
                     Text(L("変える", "Change"))
-                        .jpPillButton()
+                        .jpPillButton(.accent)
                 }
                 .buttonStyle(.plain)
                 .disabled(auth.isWorking || current.isEmpty || updated.isEmpty)

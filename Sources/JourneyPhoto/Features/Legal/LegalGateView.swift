@@ -115,7 +115,7 @@ struct LegalGateView: View {
         }
     }
 
-    /// 規約とプライバシー（板: 13px・下線・白72%）
+    /// 規約とプライバシー（下線・真鍮。owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））
     private var links: some View {
         HStack(spacing: 20) {
             Link(destination: LegalConsent.termsURL) {
@@ -126,7 +126,7 @@ struct LegalGateView: View {
             }
         }
         .font(.footnote)
-        .foregroundStyle(WebTheme.muted2)
+        .foregroundStyle(WebTheme.accent)
         .frame(minHeight: 32)
     }
 

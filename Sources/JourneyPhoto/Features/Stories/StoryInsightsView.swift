@@ -195,7 +195,7 @@ struct StoryInsightsView: View {
         return scope == .reactions ? visible.filter { hasReaction(from: $0.userId) } : visible
     }
 
-    /// 顔・名前・時刻。右に、反応なら白のハート（いいねは白）、文章の返信なら「…」。
+    /// 顔・名前・時刻。右に、反応なら真鍮のハート、文章の返信なら「…」。
     /// **押すとその人のページ**
     private func viewerRow(_ viewer: StoryViewer) -> some View {
         HStack(spacing: 12) {
@@ -232,9 +232,9 @@ struct StoryInsightsView: View {
             .buttonStyle(.plain)
             .disabled(viewer.deleted == true)
             if hasReaction(from: viewer.userId) {
-                // いいねは白（真鍮は合図と手がかりだけ）（デザインシステム「黒塗りの真鍮」）
+                // 真鍮（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29）。黒地の行の上）
                 Image(systemName: "heart.fill")
-                    .foregroundStyle(WebTheme.foreground)
+                    .foregroundStyle(WebTheme.accent)
                     .accessibilityLabel(L("いいね", "Liked"))
             } else if let reply = replyText(from: viewer.userId) {
                 Text("「\(reply)」")
