@@ -26,6 +26,15 @@ public struct State<Value>: DynamicProperty {
     }
 }
 
+/// 指で動かしている間だけの値。**指が離れる・打ち切られると初期値に戻る**（本物と同じ）
+@propertyWrapper
+public struct GestureState<Value>: DynamicProperty {
+    private let initial: Value
+    public init(wrappedValue: Value) { initial = wrappedValue }
+    public var wrappedValue: Value { initial }
+    public var projectedValue: GestureState<Value> { self }
+}
+
 /// **`ForEach($items) { $item in … }` のための適合**（本物も同じ）。
 /// 書き換えられる並びを包んだ `Binding` は、それ自身が並びとして歩ける。
 extension Binding: Sequence, Collection, BidirectionalCollection, RandomAccessCollection
@@ -273,6 +282,8 @@ public enum VerticalEdge { case top, bottom }
 public struct Animation {
     public static func easeOut(duration: Double) -> Animation { Animation() }
     public static func linear(duration: Double) -> Animation { Animation() }
+    public static func easeInOut(duration: Double) -> Animation { Animation() }
+    public static func spring(response: Double = 0.5, dampingFraction: Double = 0.825) -> Animation { Animation() }
     public static let `default` = Animation()
 }
 /// 本物は `Result` を返す。模型は中身を1回呼ぶだけ
@@ -281,8 +292,9 @@ public func withAnimation<Result>(_ animation: Animation? = .default, _ body: ()
     try body()
 }
 public struct Transaction {
+    public var animation: Animation?
     public init() {}
-    public init(animation: Animation?) {}
+    public init(animation: Animation?) { self.animation = animation }
 }
 
 // **Foundation の同じ型をそのまま使う。**

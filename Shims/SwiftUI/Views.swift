@@ -373,14 +373,44 @@ public struct DragGesture: Gesture {
     public struct Value {
         public var translation: CGSize { CGSize(width: 0, height: 0) }
         public var location: CGPoint { CGPoint(x: 0, y: 0) }
+        /// 指が触れた位置（本物と同じ）
+        public var startLocation: CGPoint { CGPoint(x: 0, y: 0) }
+        /// 勢いを足した行き着く先（本物と同じ）
+        public var predictedEndTranslation: CGSize { CGSize(width: 0, height: 0) }
     }
     public init(minimumDistance: Double = 10) {}
     public func onChanged(_ action: @escaping (Value) -> Void) -> DragGesture { self }
     public func onEnded(_ action: @escaping (Value) -> Void) -> DragGesture { self }
+    /// 指で動かしている間の値を `@GestureState` に書く（本物と同じ）
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Value, inout S, inout Transaction) -> Void) -> DragGesture { self }
 }
 
 /// つまみ（文字の大きさを決めるのに使う）。
 public struct Slider: View {
     public init(value: Binding<Double>, in range: ClosedRange<Double>) {}
+    public var body: Never { fatalError("模型") }
+}
+
+/// 描画ごとに中身を描き直す入れ物（ストーリーの進行バー）。模型は日付を返すだけ。
+public struct TimelineViewDefaultContext {
+    public var date: Date { Date() }
+}
+
+public protocol TimelineSchedule {}
+
+public struct AnimationTimelineSchedule: TimelineSchedule {
+    public init(minimumInterval: Double? = nil, paused: Bool = false) {}
+}
+
+extension TimelineSchedule where Self == AnimationTimelineSchedule {
+    public static var animation: AnimationTimelineSchedule { AnimationTimelineSchedule() }
+    public static func animation(minimumInterval: Double? = nil, paused: Bool = false) -> AnimationTimelineSchedule {
+        AnimationTimelineSchedule(minimumInterval: minimumInterval, paused: paused)
+    }
+}
+
+public struct TimelineView<Schedule: TimelineSchedule, Content: View>: View {
+    public init(_ schedule: Schedule, @ViewBuilder content: @escaping (TimelineViewDefaultContext) -> Content) {}
     public var body: Never { fatalError("模型") }
 }

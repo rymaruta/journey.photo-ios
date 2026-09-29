@@ -29,6 +29,10 @@ struct StoryMedia: View {
             // **画面いっぱいに敷く**（板は `object-fit: cover`）。はみ出しは
             // 閲覧画面が切る
             RemoteImage(url: story.imageURL, contentMode: .fill, onSettled: onSettled)
+                // **URL が読めない1本は「出せない」と知らせる。** `RemoteImage` は URL が
+                // 無いと目印を出すだけで `onSettled` を呼ばないので、閲覧画面は絵を待った
+                // まま時計を止め、その1本で永久に固まっていた
+                .onAppear { if story.imageURL == nil { onSettled?(false) } }
         }
     }
 }

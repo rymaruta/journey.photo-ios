@@ -20,7 +20,8 @@ struct StoriesRow: View {
     @State private var opened: Story?
     /// 開いたときの兄弟の並び。**開いた瞬間に写して、閉じるまで変えない**
     /// ——開く前に始まった読み直しが開いたあとに返ってきても、閲覧画面の並びは動かない
-    @State private var openedGroup: (stories: [Story], index: Int) = ([], 0)
+    /// 開いたときに写した**人ごとの束の並び**と、押した人の位置（`StoryReel`）
+    @State private var openedReel: (groups: [StoryReel.Group], start: Int) = ([], 0)
     @State private var showComposer = false
     /// 裏で送っているストーリー（板 27「投稿した直後」）
     @ObservedObject private var uploads = StoryUploadCenter.shared
@@ -278,28 +279,39 @@ struct StoriesRow: View {
                          reportedPhotoIds: hidden.reportedPhotoIds)
     }
 
-    /// 押した輪と同じ投稿者の兄弟をまとめて写してから開く。輪は1人＝1つで、
-    /// 開くのは輪に出していた1本から
+    /// 押した輪から開く。**輪の並び（自分 → 未読 → 既読）の順に人ごとの束を写し**、
+    /// 押した人から始めて、見終えたら次の人へ進む（`StoryReelView`）。
+    /// 輪は1人＝1つで、各束は輪に出していた1本から開く
     private func open(_ story: Story) {
-        let group = StoryPlayback.siblings(of: story, in: model.stories)
-        openedGroup = (group.stories, group.index)
+        let ordered = StoryPlayback.orderedRings(
+            StoryPlayback.rings(model.stories, isSeen: { seen.contains($0) }),
+            me: auth.userId,
+            isUnseen: { seen.hasUnseen(model.siblings(of: $0)) })
+        let rings = [ordered.mine].compactMap { $0 } + ordered.others
+        let groups = StoryReel.groups(rings: rings, in: model.stories)
+        let start = groups.firstIndex { $0.stories.contains { $0.id == story.id } }
+        if let start {
+            openedReel = (groups, start)
+        } else {
+            // 念のため（押した1本が並びに無い）: その人の束だけ
+            let group = StoryPlayback.siblings(of: story, in: model.stories)
+            openedReel = ([StoryReel.Group(stories: group.stories, start: group.index)], 0)
+        }
         opened = story
     }
 
     /// 閲覧画面。**開いたときに写した並びを渡す**（`model.stories` から毎回作り直すと、
     /// 開いている間の読み直しで並びが変わり、見ている1本の位置がずれる）
     private func viewer(for story: Story) -> some View {
-        var stories = openedGroup.stories
-        var index = openedGroup.index
+        var reel = openedReel
         // 写しが無い・別の1本の写し（念のため）なら、いまの一覧から作る
-        if !stories.contains(where: { $0.id == story.id }) {
+        if !reel.groups.contains(where: { $0.stories.contains { $0.id == story.id } }) {
             let group = StoryPlayback.siblings(of: story, in: model.stories)
-            stories = group.stories
-            index = group.index
+            reel = ([StoryReel.Group(stories: group.stories, start: group.index)], 0)
         }
-        return StoryViewerView(stories: stories, startIndex: index,
-                               viewerId: auth.userId, onSeen: { seen.markSeen($0) },
-                               onDeleted: { model.remove(id: $0) })
+        return StoryReelView(groups: reel.groups, startGroup: reel.start,
+                             viewerId: auth.userId, onSeen: { seen.markSeen($0) },
+                             onDeleted: { model.remove(id: $0) })
     }
 }
 
