@@ -84,9 +84,8 @@ struct StoryCanvas: View {
     /// **縁の色の文字を8方向にずらして下に敷く**。黒の見た目（白い縁・幅3%）と
     /// 縁取り（黒い縁・幅6%）。**以前は黒の見た目の縁が画面に出ず、焼き込みにだけ付いていた**
     static func edged<Label: View>(_ text: Label, overlay: TextOverlay, fontSize: Double) -> some View {
-        // 焼き込みの縁は輪郭の両側に半分ずつ。塗りが内側を隠すので、見えるのは外側の半分
-        let edge: (color: Color, width: Double)? = overlay.style.edgePercent.map {
-            (overlay.style == .dark ? .white : .black, fontSize * $0 / 100 / 2)
+        let edge: (color: Color, width: Double)? = overlay.style.edgeOffset(fontSize: fontSize).map {
+            (overlay.style == .dark ? .white : .black, $0)
         }
         return ZStack {
             if let edge {
@@ -288,8 +287,11 @@ struct OverlayPanel: View {
                             }
                         }
                     }
+                } else {
+                    // 見た目の列が無いときだけ「消す」を右へ寄せる。列と並べると
+                    // 残りの幅を等分し、列が半分に押し込まれる
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
                 Button(action: onDelete) {
                     Label(L("消す", "Delete"), systemImage: "trash")
                         .font(.system(size: 13))

@@ -330,6 +330,12 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .outline: return 6
             }
         }
+
+        /// 編集画面で縁の写しをずらす量（pt）。焼き込みの縁は輪郭の両側に半分ずつ乗り、
+        /// 内側は塗りが隠すので、**外に見えるのは幅の半分**
+        func edgeOffset(fontSize: Double) -> Double? {
+            edgePercent.map { fontSize * $0 / 100 / 2 }
+        }
     }
 
     /// 文字の大きさの幅。**下は読めなくならない所まで、上は画面を
