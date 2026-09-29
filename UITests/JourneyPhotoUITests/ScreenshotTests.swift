@@ -220,6 +220,15 @@ final class ScreenshotTests: XCTestCase {
             // ホームの「撮影地を探す / 写真から探す」が見える状態をPR確認用に残す
             if name == "ホーム", app.buttons["home.exploreMap"].firstMatch.exists {
                 shoot(app, "10b-ホーム（撮影地への入口）")
+                // フォロー中が0件の回は、行き止まりではなく発見へのCTAが出ることも残す
+                let following = app.buttons["フォロー中"].firstMatch
+                if following.exists, following.isHittable {
+                    following.tap()
+                    Thread.sleep(forTimeInterval: 2)
+                    if app.buttons["home.emptyAction"].firstMatch.exists {
+                        shoot(app, "10c-ホーム（空フィードの次の行動）")
+                    }
+                }
             }
             if name == "マップ" { shootSpotPin(app) }
         }
