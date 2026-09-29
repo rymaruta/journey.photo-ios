@@ -450,37 +450,16 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 文字数の上限。サーバーのキャプション（200字）に合わせる
     static let maxLength = 200
 
-    /// 行の上限。**写真を覆わない所まで**（大きさの上限と同じ考え）
-    static let maxLines = 6
-
-    /// 打った文字を置ける形に整える。**改行は自由な文字だけ・6行まで**、字数は 200 まで。
-    /// 改行できない札の改行は空白にする（貼り付けで入ってくる）
+    /// 打った文字を置ける形に整える。**改行は自由な文字だけ**、字数は 200 まで。
+    /// 改行できない札の改行は空白にする（貼り付けで入ってくる）。
+    ///
+    /// **行の数では切らない。** 6行で切っていた回は、6行ある文字の途中で改行すると最後の行が
+    /// 黙って消え、断る形にすると欄の表示と中身がずれた（f48800f・6e76bf5 のレビュー）。
+    /// 覆いすぎは大きさ（スライダー・つまむ）で本人が決める
     static func cleaned(_ text: String, kind: Kind) -> String {
-        guard kind.allowsNewlines else {
-            return String(text.replacingOccurrences(of: "\r\n", with: " ")
-                .replacingOccurrences(of: "\n", with: " ")
-                .replacingOccurrences(of: "\r", with: " ")
-                .prefix(maxLength))
-        }
-        let lines = text.replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: false)
-        return String(lines.prefix(maxLines).joined(separator: "\n").prefix(maxLength))
-    }
-
-    /// 欄に打った文字を受けるか。**行の上限を越える入力は受けず、前の文字のまま**
-    /// ——頭から6行に切ると、6行ある文字の途中で改行したとき最後の行が黙って消えた
-    /// （f48800f のレビュー）。それ以外は `cleaned` で整える
-    static func accepting(_ new: String, old: String, kind: Kind) -> String {
-        if kind.allowsNewlines && lineCount(new) > maxLines && lineCount(new) > lineCount(old) {
-            return old
-        }
-        return cleaned(new, kind: kind)
-    }
-
-    private static func lineCount(_ text: String) -> Int {
-        text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: false).count
+        let unified = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        return String((kind.allowsNewlines ? unified : unified.replacingOccurrences(of: "\n", with: " "))
+            .prefix(maxLength))
     }
 
     init(id: UUID = UUID(), text: String, x: Double = 0.5, y: Double = 0.5,
@@ -511,7 +490,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let style = try c.decode(Style.self, forKey: .style)
         self.id = try c.decode(UUID.self, forKey: .id)
-        // 読むときも置ける形に整える（改行は自由な文字だけ・6行まで）
+        // 読むときも置ける形に整える（改行は自由な文字だけ）
         let kind = try c.decode(Kind.self, forKey: .kind)
         self.text = Self.cleaned(try c.decode(String.self, forKey: .text), kind: kind)
         self.x = try c.decode(Double.self, forKey: .x)

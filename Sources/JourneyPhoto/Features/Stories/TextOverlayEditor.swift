@@ -284,7 +284,7 @@ struct StoryCanvas: View {
         return Self.edged(Text(overlay.drawnText)
             // 書体と色は焼き込みと同じもの（`TextOverlayRenderer.attributes`）
             .font(Self.font(overlay.face, size: fontSize))
-            // 改行した文字の揃え（焼き込みの `TextOverlay.lineLayout` と同じ置き方）
+            // 改行した文字の揃え（焼き込みは揃えつきの段落・`TextOverlayRenderer.draw`）
             .multilineTextAlignment(Self.alignment(overlay.align))
             // **折り返さない**（焼き込みも折り返さない。画面の幅で折り返すと行数と揃えがずれた）
             .fixedSize(), overlay: overlay, fontSize: fontSize)
@@ -361,11 +361,11 @@ struct OverlayPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             // **端末から採った札は直させない**（時刻・日付）。直せると「いつの話か」が嘘になる
             if overlay.kind.isEditable {
-                // **自由な文字は改行できる**（6行まで・`TextOverlay.accepting`）。札は1行
+                // **自由な文字は改行できる**（`TextOverlay.cleaned`）。札は1行
                 HStack(spacing: 8) {
                     TextField(L("文字", "Text"), text: Binding(
                         get: { overlay.text },
-                        set: { overlay.text = TextOverlay.accepting($0, old: overlay.text, kind: overlay.kind) }
+                        set: { overlay.text = TextOverlay.cleaned($0, kind: overlay.kind) }
                     ), axis: overlay.kind.allowsNewlines ? .vertical : .horizontal)
                     .focused($fieldFocused)
                     .lineLimit(1...3)

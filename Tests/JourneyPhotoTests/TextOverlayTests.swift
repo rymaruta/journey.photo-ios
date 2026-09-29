@@ -497,11 +497,10 @@ extension TextOverlayTests {
         XCTAssertEqual(moved, overlay)
     }
 
-    /// 改行は**自由な文字だけ・6行まで**。札（撮影地・タグなど）の改行は空白にする
+    /// 改行は**自由な文字だけ**。札（撮影地・タグなど）の改行は空白にする
     func testNewlinesOnlyInFreeTextAndCapped() {
         XCTAssertEqual(TextOverlay.cleaned("港\n夕方", kind: .text), "港\n夕方")
         XCTAssertEqual(TextOverlay.cleaned("港\r\n夕方\r朝", kind: .text), "港\n夕方\n朝")
-        XCTAssertEqual(TextOverlay.cleaned("1\n2\n3\n4\n5\n6\n7\n8", kind: .text), "1\n2\n3\n4\n5\n6")
         XCTAssertEqual(TextOverlay.cleaned("函館\n港", kind: .place), "函館 港")
         XCTAssertEqual(TextOverlay.cleaned("旅\r\n写真", kind: .hashtag), "旅 写真")
         XCTAssertEqual(TextOverlay.cleaned(String(repeating: "あ", count: 300), kind: .text).count,
@@ -511,19 +510,13 @@ extension TextOverlayTests {
         XCTAssertEqual(TextOverlay(text: "港\n夕方", kind: .text).text, "港\n夕方")
     }
 
-    /// 🔴 **6行ある文字の途中で改行しても、最後の行を黙って消さない**（f48800f のレビュー）。
-    /// 行が増えて上限を越える入力は受けず、前の文字のまま
-    func testSeventhLineIsRefusedNotTruncated() {
-        let six = "1\n2\n3\n4\n5\n6"
-        XCTAssertEqual(TextOverlay.accepting("1\n2\n3\nx\n4\n5\n6", old: six, kind: .text), six)
-        XCTAssertEqual(TextOverlay.accepting(six + "\n", old: six, kind: .text), six)
-        // 上限の中なら受ける・整える
-        XCTAssertEqual(TextOverlay.accepting("1\r\n2", old: "1", kind: .text), "1\n2")
-        // 行を減らす入力はいつでも受ける（前の版の下書きの7行を直すとき）
-        XCTAssertEqual(TextOverlay.accepting("1\n2\n3\n4\n5\n6\n7", old: "1\n2\n3\n4\n5\n6\n7\n8", kind: .text),
-                       "1\n2\n3\n4\n5\n6")
-        // 札は改行を空白にする（行の上限とは関係ない）
-        XCTAssertEqual(TextOverlay.accepting("函館\n港", old: "函館", kind: .place), "函館 港")
+    /// 🔴 **行の数では切らない**（6行で切ると、途中で改行したとき最後の行が黙って消えた）。
+    /// 札は改行を空白にする
+    func testManyLinesAreKeptWhole() {
+        let eight = "1\n2\n3\n4\n5\n6\n7\n8"
+        XCTAssertEqual(TextOverlay.cleaned(eight, kind: .text), eight)
+        XCTAssertEqual(TextOverlay.cleaned("1\n2\n3\nx\n4\n5\n6", kind: .text), "1\n2\n3\nx\n4\n5\n6")
+        XCTAssertEqual(TextOverlay.cleaned("函館\n港", kind: .place), "函館 港")
     }
 
     /// 写真の上に描く文字は、**最後の改行と空白だけの行を落とす**（焼き込みだけ下に空の行が

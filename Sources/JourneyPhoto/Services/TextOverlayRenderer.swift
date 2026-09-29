@@ -79,7 +79,10 @@ enum TextOverlayRenderer {
         }
         let bounds: CGSize = {
             guard multiline else { return text.size(withAttributes: attributes) }
-            let rect = lines(attributes).boundingRect(
+            // **測るのは揃えを付けずに**（行の幅は揃えに関係ない）。中央・右の段落を
+            // 果てしなく広い枠で測ると、寄せる計算で桁が落ちるおそれがある（6e76bf5 のレビュー）。
+            // 揃えは描くときだけ付ける
+            let rect = NSAttributedString(string: overlay.drawnText, attributes: attributes).boundingRect(
                 with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
                 options: .usesLineFragmentOrigin, context: nil)
             return CGSize(width: rect.width.rounded(.up), height: rect.height.rounded(.up))
