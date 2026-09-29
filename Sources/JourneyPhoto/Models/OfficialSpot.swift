@@ -55,6 +55,9 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     struct Region: Decodable, Equatable {
         let prefecture: String?
         let city: String?
+        /// 国名（日本語表記・例「フランス」）。**日本の外の行だけ**サイトが載せる
+        /// （`lib/data/spotFeed.ts`・2026-09-29）。古い索引には無い
+        var country: String? = nil
     }
 
     var id: String { spotId }

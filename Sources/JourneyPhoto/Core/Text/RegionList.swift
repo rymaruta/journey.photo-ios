@@ -6,7 +6,10 @@ import Foundation
 /// - **起点の県を先頭に**（現在地、無ければ地図の中心から 150km 以内で一番近い撮影スポットの県）。
 ///   ほかの県は、起点から一番近いもの（スポット・写真）までの距離で近い順。
 ///   起点が無ければ北から（`prefectures` の並び）
-/// - 日本以外は**国で段を作らず**「海外」に1つ。最後に「場所が分からない写真」
+/// - 日本の外は**国ごとの段**（owner の要求変更・2026-09-29。以前は「海外」に1つだった）。
+///   県の段のあとに、起点から近い順（起点が無ければ国名の順）。撮影スポットは台帳の国
+///   （`region.country`）、写真は**150km 以内で一番近い海外の撮影スポットの国**。
+///   国が分からない海外は最後の「海外（その他）」に。最後に「場所が分からない写真」
 /// - 県の中は、写真（受け取った順）と撮影スポット（`OfficialSpotList.rows` と同じ行・近い順）
 ///
 /// 県の決め方:
@@ -21,13 +24,23 @@ enum RegionList {
 
     enum Key: Hashable {
         case prefecture(String)
+        /// 日本の外の国（台帳の日本語表記）
+        case country(String)
+        /// 日本の外だが国が分からない
         case abroad
         case unknown
+
+        /// 国の段か（見出しの「いまいる国」の言い分け）
+        var isCountry: Bool {
+            if case .country = self { return true }
+            return false
+        }
 
         /// 開閉の状態を覚える鍵（`@State` の集合に入れる）
         var id: String {
             switch self {
             case .prefecture(let name): return "pref:\(name)"
+            case .country(let name): return "country:\(name)"
             case .abroad: return "abroad"
             case .unknown: return "unknown"
             }
@@ -36,7 +49,8 @@ enum RegionList {
         var title: String {
             switch self {
             case .prefecture(let name): return name
-            case .abroad: return L("海外", "Outside Japan")
+            case .country(let name): return name
+            case .abroad: return L("海外（その他）", "Elsewhere outside Japan")
             case .unknown: return L("場所が分からない写真", "Photos without a place")
             }
         }
@@ -152,6 +166,37 @@ enum RegionList {
             guard let best, best.km <= nearbyLimitKm else { return nil }
             return best.prefecture
         }
+        /// 海外の撮影スポットの国の手がかり（写真の国を当てる）
+        let countryAnchors: [(coords: Photo.Coords, country: String)] = allRows.compactMap { row in
+            guard let c = row.spot.coords, let country = row.spot.region?.country, !country.isEmpty,
+                  country != "日本" else { return nil }
+            return (c, country)
+        }
+        /// 近く（`nearbyLimitKm` 以内）に国の分かる海外の撮影スポットがあればその国
+        func nearestCountry(_ c: Photo.Coords) -> String? {
+            let best = countryAnchors
+                .map { (km: TravelDistance.kilometers(from: c, to: $0.coords), country: $0.country) }
+                .min { $0.km < $1.km }
+            guard let best, best.km <= nearbyLimitKm else { return nil }
+            return best.country
+        }
+        /// 座標から段（県か国）。**県と国の一番近い手がかりを距離で比べる**——日本の箱は粗く
+        /// 釜山も入るので、県を先に見ると対馬の県に吸われる。どちらも 150km より遠ければ nil
+        func nearestPlace(_ c: Photo.Coords) -> Key? {
+            let pref: (km: Double, key: Key)? = isInJapan(c) ? anchors
+                .map { (km: TravelDistance.kilometers(from: c, to: $0.coords), key: Key.prefecture($0.prefecture)) }
+                .min { $0.km < $1.km } : nil
+            let country = countryAnchors
+                .map { (km: TravelDistance.kilometers(from: c, to: $0.coords), key: Key.country($0.country)) }
+                .min { $0.km < $1.km }
+            let best = [pref, country].compactMap { $0 }.filter { $0.km <= nearbyLimitKm }.min { $0.km < $1.km }
+            return best?.key
+        }
+        /// 日本の外の行・写真の段
+        func abroadKey(country: String?, coords: Photo.Coords?) -> Key {
+            if let country, !country.isEmpty, country != "日本" { return .country(country) }
+            return coords.flatMap(nearestCountry).map(Key.country) ?? .abroad
+        }
         let shown = filter(photos: photos, spots: spots, query: query, category: category)
         let shownIds = Set(shown.spots.map(\.spotId))
         let rows = allRows.filter { shownIds.contains($0.spot.spotId) }
@@ -161,10 +206,14 @@ enum RegionList {
             let key: Key
             if let p = row.spot.region?.prefecture, prefectures.contains(p) {
                 key = .prefecture(p)
+            } else if let country = row.spot.region?.country, !country.isEmpty, country != "日本" {
+                // **国を箱より先に見る。** 日本の箱は粗く釜山・対馬海峡の向こうも入る——
+                // 国が載っている行を近くの県に入れない
+                key = .country(country)
             } else if let c = row.spot.coords, isInJapan(c) {
                 key = nearestPrefecture(c).map(Key.prefecture) ?? .unknown
             } else {
-                key = .abroad
+                key = abroadKey(country: row.spot.region?.country, coords: row.spot.coords)
             }
             spotsBy[key, default: []].append(row)
         }
@@ -174,13 +223,13 @@ enum RegionList {
             if let p = prefecture(inText: photo.location) {
                 key = .prefecture(p)
             } else if let c = photo.coords {
-                if let p = nearestPrefecture(c) {
-                    key = .prefecture(p)
+                if let near = nearestPlace(c) {
+                    key = near
                 } else if !isInJapan(c) || (!anchors.isEmpty && namesAPlaceOutsideJapan(photo.location)) {
                     // 箱は粗い（釜山・ウラジオストクも入る）。近くにスポットが無く、撮影地の文字が
                     // はっきり日本の外を指していれば海外とみる（"Vladivostok" を「場所が分からない」にしない）。
                     // 台帳が空（404・失敗）の回は近さが測れないので、箱の中は海外にしない
-                    key = .abroad
+                    key = abroadKey(country: nil, coords: c)
                 } else {
                     key = .unknown
                 }
@@ -190,7 +239,12 @@ enum RegionList {
             photosBy[key, default: []].append(photo)
         }
 
-        let current = center.flatMap(nearestPrefecture)
+        // 起点のある段。近くの県か国の近い方（どちらも 150km 以内）
+        let currentKey: Key? = center.flatMap(nearestPlace)
+        let current = currentKey.flatMap { key -> String? in
+            if case .prefecture(let p) = key { return p }
+            return nil
+        }
         func distance(_ key: Key) -> Double {
             guard let center else { return .infinity }
             let fromSpots = (spotsBy[key] ?? []).compactMap(\.km)
@@ -210,11 +264,23 @@ enum RegionList {
             }
             .map(\.element)
 
-        return (prefectureKeys + [.abroad, .unknown]).compactMap { key in
+        // 国の段: 起点から近い順、起点が無い・同じ近さなら国名の順
+        let countryKeys = Set(spotsBy.keys).union(photosBy.keys)
+            .compactMap { key -> (Key, String)? in
+                if case .country(let name) = key { return (key, name) }
+                return nil
+            }
+            .sorted { a, b in
+                let (dx, dy) = (distance(a.0), distance(b.0))
+                return dx != dy ? dx < dy : a.1 < b.1
+            }
+            .map(\.0)
+
+        return (prefectureKeys + countryKeys + [.abroad, .unknown]).compactMap { key in
             let s = spotsBy[key] ?? []
             let p = photosBy[key] ?? []
             guard !s.isEmpty || !p.isEmpty else { return nil }
-            return Section(key: key, isCurrent: current.map(Key.prefecture) == key, photos: p, spots: s)
+            return Section(key: key, isCurrent: currentKey == key, photos: p, spots: s)
         }
     }
 }

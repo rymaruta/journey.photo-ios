@@ -1499,7 +1499,8 @@ struct PhotoMapView: View {
                         .foregroundStyle(WebTheme.foreground)
                     if section.isCurrent {
                         // 現在地が無ければ地図の中心から決めている（「スポット」の札の見出しと同じ言い分け）
-                        Text(here != nil ? L("いまいる県", "You're here") : L("地図の中心", "Map center"))
+                        Text(here != nil ? (section.key.isCountry ? L("いまいる国", "You're here") : L("いまいる県", "You're here"))
+                             : L("地図の中心", "Map center"))
                             .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                     }

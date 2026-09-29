@@ -5,8 +5,11 @@ import XCTest
 final class RegionListTests: XCTestCase {
 
     private func spot(_ slug: String, prefecture: String?, lat: Double, lng: Double,
-                      stage: String = "published") throws -> OfficialSpot {
-        let region = prefecture.map { ",\"region\":{\"prefecture\":\"\($0)\"}" } ?? ""
+                      stage: String = "published", country: String? = nil) throws -> OfficialSpot {
+        var fields: [String] = []
+        if let prefecture { fields.append("\"prefecture\":\"\(prefecture)\"") }
+        if let country { fields.append("\"country\":\"\(country)\"") }
+        let region = fields.isEmpty ? "" : ",\"region\":{\(fields.joined(separator: ","))}"
         return try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
             "{\"spotId\":\"sp_\(slug)\",\"slug\":\"\(slug)\",\"name\":\"\(slug)\",\"stage\":\"\(stage)\"\(region),\"coords\":{\"lat\":\(lat),\"lng\":\(lng)}}".utf8))
     }
@@ -225,5 +228,98 @@ final class RegionListTests: XCTestCase {
         let s = RegionList.sections(photos: [try photo("p", location: "東京都")], spots: try spots(), from: tokyo)
         XCTAssertEqual(RegionList.countLabel(s[0]), L("2件 · 写真 1枚", "2 spots · 1 photo"))
         XCTAssertEqual(RegionList.countLabel(s[1]), L("1件", "1 spot"))
+    }
+
+    // MARK: - 海外は国ごと（owner の要求変更・2026-09-29）
+
+    private func abroadSpots() throws -> [OfficialSpot] {
+        [
+            try spot("versailles", prefecture: "イヴリーヌ県", lat: 48.80, lng: 2.12, country: "フランス"),
+            try spot("mont", prefecture: "ノルマンディー", lat: 48.636, lng: -1.511, country: "フランス"),
+            try spot("sagrada", prefecture: "カタルーニャ州", lat: 41.40, lng: 2.17, country: "スペイン"),
+            // 国の載っていない古い索引の行
+            try spot("helsinki", prefecture: nil, lat: 60.17, lng: 24.94),
+            try spot("zojoji", prefecture: "東京都", lat: 35.657, lng: 139.748),
+        ]
+    }
+
+    /// 撮影スポットは台帳の国で段を作る。国の無い海外の行は「海外（その他）」
+    func testAbroadSpotsAreGroupedByCountry() throws {
+        let sections = RegionList.sections(photos: [], spots: try abroadSpots(), from: nil)
+        let byKey = Dictionary(uniqueKeysWithValues: sections.map { ($0.key, $0.spots.map(\.spot.slug).sorted()) })
+        XCTAssertEqual(byKey[.country("フランス")], ["mont", "versailles"])
+        XCTAssertEqual(byKey[.country("スペイン")], ["sagrada"])
+        XCTAssertEqual(byKey[.abroad], ["helsinki"])
+        XCTAssertEqual(sections.first { $0.key == .country("フランス") }?.title, "フランス")
+    }
+
+    /// 並び: 県 → 国（起点から近い順）→ 海外（その他）→ 場所が分からない
+    func testCountriesComeAfterPrefecturesNearestFirst() throws {
+        let paris = Photo.Coords(lat: 48.85, lng: 2.35)
+        let barcelona = Photo.Coords(lat: 41.39, lng: 2.16)
+        let fromParis = RegionList.sections(photos: [], spots: try abroadSpots(), from: paris).map(\.key)
+        XCTAssertEqual(fromParis, [.prefecture("東京都"), .country("フランス"), .country("スペイン"), .abroad])
+        let fromBarcelona = RegionList.sections(photos: [], spots: try abroadSpots(), from: barcelona).map(\.key)
+        XCTAssertEqual(fromBarcelona, [.prefecture("東京都"), .country("スペイン"), .country("フランス"), .abroad])
+        // 起点が無ければ国名の順
+        let noCenter = RegionList.sections(photos: [], spots: try abroadSpots(), from: nil).map(\.key)
+        XCTAssertEqual(noCenter.filter { if case .country = $0 { return true }; return false },
+                       [.country("スペイン"), .country("フランス")].sorted { $0.id < $1.id })
+    }
+
+    /// 海外の写真は、近く（150km 以内）の国の分かる撮影スポットの国へ。遠ければ「海外（その他）」
+    func testAbroadPhotosTakeTheNearestSpotsCountry() throws {
+        let nearParis = try photo("paris", lat: 48.86, lng: 2.35)
+        let farAway = try photo("reykjavik", lat: 64.15, lng: -21.94)
+        let sections = RegionList.sections(photos: [nearParis, farAway], spots: try abroadSpots(), from: nil)
+        XCTAssertEqual(sections.first { $0.key == .country("フランス") }?.photos.map(\.id), ["paris"])
+        XCTAssertEqual(sections.first { $0.key == .abroad }?.photos.map(\.id), ["reykjavik"])
+    }
+
+    /// 国は索引の `region.country` から読む。無い古い索引も読める
+    func testRegionCountryDecodes() throws {
+        let fr = try spot("v", prefecture: "イヴリーヌ県", lat: 48.8, lng: 2.1, country: "フランス")
+        XCTAssertEqual(fr.region?.country, "フランス")
+        XCTAssertNil(try spot("t", prefecture: "東京都", lat: 35.6, lng: 139.7).region?.country)
+    }
+
+    /// 🔴 国の載った行は、座標が日本の箱に入っても（釜山）近くの県に入れない
+    func testCountryWinsOverTheJapanBox() throws {
+        let busan = try spot("busan", prefecture: "釜山広域市", lat: 35.10, lng: 129.04, country: "韓国")
+        let tsushima = try spot("tsushima", prefecture: "長崎県", lat: 34.20, lng: 129.29)
+        let sections = RegionList.sections(photos: [], spots: [busan, tsushima], from: nil)
+        XCTAssertEqual(sections.first { $0.key == .country("韓国") }?.spots.map(\.spot.slug), ["busan"])
+        XCTAssertEqual(sections.first { $0.key == .prefecture("長崎県") }?.spots.map(\.spot.slug), ["tsushima"])
+    }
+
+    /// 海外にいるときは、近くの国の段が「いまいる段」（開いて出る）
+    func testCurrentSectionAbroadIsTheNearbyCountry() throws {
+        let paris = Photo.Coords(lat: 48.85, lng: 2.35)
+        let sections = RegionList.sections(photos: [], spots: try abroadSpots(), from: paris)
+        XCTAssertEqual(sections.filter(\.isCurrent).map(\.key), [.country("フランス")])
+        XCTAssertEqual(RegionList.sections(photos: [], spots: try abroadSpots(), from: tokyo)
+            .filter(\.isCurrent).map(\.key), [.prefecture("東京都")])
+    }
+
+    /// 釜山の写真・釜山を起点にしたときも、対馬の県ではなく近い方（韓国）へ
+    func testBusanPhotoAndCenterGoToTheNearerCountry() throws {
+        let busan = try spot("busan", prefecture: "釜山広域市", lat: 35.10, lng: 129.04, country: "韓国")
+        let tsushima = try spot("tsushima", prefecture: "長崎県", lat: 34.20, lng: 129.29)
+        let photoInBusan = try photo("p_busan", lat: 35.11, lng: 129.03)
+        let center = Photo.Coords(lat: 35.10, lng: 129.04)
+        let sections = RegionList.sections(photos: [photoInBusan], spots: [busan, tsushima], from: center)
+        XCTAssertEqual(sections.first { $0.key == .country("韓国") }?.photos.map(\.id), ["p_busan"])
+        XCTAssertEqual(sections.filter(\.isCurrent).map(\.key), [.country("韓国")])
+        // 対馬の写真は長崎県のまま
+        let photoInTsushima = try photo("p_tsushima", lat: 34.21, lng: 129.29)
+        XCTAssertEqual(RegionList.sections(photos: [photoInTsushima], spots: [busan, tsushima], from: nil)
+            .first { $0.key == .prefecture("長崎県") }?.photos.map(\.id), ["p_tsushima"])
+    }
+
+    /// 海外の起点でも、150km 以内に国の分かるスポットが無ければ「いまいる段」は無い
+    func testNoCurrentSectionFarFromEverySpot() throws {
+        let reykjavik = Photo.Coords(lat: 64.15, lng: -21.94)
+        XCTAssertTrue(RegionList.sections(photos: [], spots: try abroadSpots(), from: reykjavik)
+            .filter(\.isCurrent).isEmpty)
     }
 }
