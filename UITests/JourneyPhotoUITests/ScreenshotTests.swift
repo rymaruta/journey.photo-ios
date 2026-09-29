@@ -404,6 +404,9 @@ final class ScreenshotTests: XCTestCase {
             toSpot.tap()
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "60-撮影スポット")
+            if app.otherElements["spot.official.journeyCue"].firstMatch.exists {
+                shoot(app, "60b-撮影スポット（撮影までの流れ）")
+            }
             app.swipeUp()
             Thread.sleep(forTimeInterval: 2)
             shoot(app, "61-撮影スポット（下）")

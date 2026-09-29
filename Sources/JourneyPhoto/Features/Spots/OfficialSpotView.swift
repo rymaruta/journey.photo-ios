@@ -82,6 +82,7 @@ struct OfficialSpotView: View {
                     draftNotice(notice)
                 }
                 actions
+                journeyCue
                 summary
                 // **写真が主役。** 写真がある場所は本文より先に出す
                 if !linked.isEmpty { spotPhotos }
@@ -238,6 +239,42 @@ struct OfficialSpotView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
+    }
+
+    /// スポット詳細を「読むだけ」で終わらせず、Journey Photoの循環を一目で伝える。
+    /// 実データの件数は捏造せず、行動だけを示す。
+    private var journeyCue: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L("この場所から、次の一枚へ", "From this place to your next photo"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(WebTheme.foreground)
+            HStack(spacing: 0) {
+                journeyStep("map", L("見つける", "Discover"))
+                journeyArrow
+                journeyStep("figure.walk", L("行く", "Go"))
+                journeyArrow
+                journeyStep("camera", L("撮る", "Shoot"))
+                journeyArrow
+                journeyStep("square.and.arrow.up", L("残す", "Share"))
+            }
+        }
+        .padding(14)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.border, lineWidth: 1))
+        .padding(.horizontal, 16)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("spot.official.journeyCue")
+    }
+
+    private func journeyStep(_ icon: String, _ title: String) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 15, weight: .medium)).foregroundStyle(WebTheme.accent)
+            Text(title).font(.caption2.weight(.medium)).foregroundStyle(WebTheme.muted2).lineLimit(1)
+        }.frame(maxWidth: .infinity)
+    }
+
+    private var journeyArrow: some View {
+        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(WebTheme.faint).accessibilityHidden(true)
     }
 
     // MARK: - 概要（書かれたものだけ）
