@@ -255,6 +255,22 @@ final class StoryDraftStoreTests: XCTestCase {
         XCTAssertEqual(reopened.draft?.caption, "並び")
     }
 
+    /// 写真の合わせ方（拡大・位置・回し）も**写真ごとに**戻る。合わせていない写真は nil のまま
+    func testFramingComesBackPerShot() async throws {
+        let (store, defaults, dir) = make()
+        store.use(userId: "u1")
+        let zoomed = PhotoFraming(scale: 2, offsetX: 0.1, offsetY: 0, rotation: 0.2)
+        let tilted = PhotoFraming(scale: 1, offsetX: 0, offsetY: -0.2, rotation: -0.4)
+        var first = shot(1, text: "一"), third = shot(3, text: "三")
+        first.framing = zoomed
+        third.framing = tilted
+        XCTAssertTrue(saveShots(store, [first, shot(2, text: "二"), third]))
+
+        let reopened = StoryDraftStore(defaults: defaults, directory: dir)
+        reopened.use(userId: "u1")
+        XCTAssertEqual(reopened.shotImages().map(\.shot.framing), [zoomed, nil, tilted])
+    }
+
     /// 「自分用に残す」も戻る（外れて戻ると、そのまま投稿して24時間で消える）
     func testKeepsTheArchiveChoice() async throws {
         let (store, defaults, dir) = make()

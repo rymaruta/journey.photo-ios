@@ -18,12 +18,15 @@ import UIKit
 /// 引き継がない）。
 enum TextOverlayRenderer {
 
-    /// 焼き込んだ JPEG。文字が無ければ**元のデータをそのまま返す**
+    /// 焼き込んだ JPEG。文字が無く写真も合わせていなければ**元のデータをそのまま返す**
     /// （読み書きの往復で画質を落とさない）。
-    static func burn(_ overlays: [TextOverlay], into data: Data,
+    ///
+    /// `framing` は写真の合わせ方（拡大・位置・回し・`PhotoFraming`）。**枠の大きさは元の
+    /// 写真のまま**で、その中へ合わせたとおりに描き、届かない所は黒で埋める
+    static func burn(_ overlays: [TextOverlay], framing: PhotoFraming = .identity, into data: Data,
                      quality: Double = ImagePreparer.jpegQuality) -> Data {
         let visible = overlays.filter { !$0.isEmpty }
-        guard !visible.isEmpty, let image = UIImage(data: data) else { return data }
+        guard !visible.isEmpty || !framing.isIdentity, let image = UIImage(data: data) else { return data }
         let size = image.size
         guard size.width > 0, size.height > 0 else { return data }
 
@@ -35,7 +38,21 @@ enum TextOverlayRenderer {
         format.scale = 1
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.jpegData(withCompressionQuality: quality) { context in
-            image.draw(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            if framing.isIdentity {
+                image.draw(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            } else {
+                // 写真の届かない所は黒（作る画面の地と同じ）
+                UIColor.black.setFill()
+                UIRectFill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
+                let place = framing.placement(in: size)
+                let cg = context.cgContext
+                cg.saveGState()
+                cg.translateBy(x: place.center.x, y: place.center.y)
+                cg.rotate(by: framing.rotation)
+                image.draw(in: CGRect(x: -place.drawSize.width / 2, y: -place.drawSize.height / 2,
+                                      width: place.drawSize.width, height: place.drawSize.height))
+                cg.restoreGState()
+            }
             for overlay in visible {
                 draw(overlay, on: size, context: context.cgContext)
             }

@@ -100,9 +100,18 @@ struct StoryComposerView: View {
         )
     }
 
-    /// 下書きに残る中身（写真の並び・写真ごとの文字・ひとこと・撮影地・曲・秒数・残すか）
+    /// いま編集している写真の合わせ方（拡大・位置・回し）。文字と同じく `shots` の中を直に書き換える
+    private var framing: Binding<PhotoFraming> {
+        Binding(
+            get: { shots.indices.contains(current) ? shots[current].framing : .identity },
+            set: { if shots.indices.contains(current) { shots[current].framing = $0 } }
+        )
+    }
+
+    /// 下書きに残る中身（写真の並び・写真ごとの文字と合わせ方・ひとこと・撮影地・曲・秒数・残すか）
     private var content: StoryComposerContent {
         StoryComposerContent(shotIds: shots.map(\.id), overlays: shots.map(\.overlays),
+                        framings: shots.map(\.framing),
                         caption: caption, location: location, song: song,
                         durationSec: durationSec, archive: keepInArchive,
                         allowReplies: allowReplies)
@@ -258,7 +267,7 @@ struct StoryComposerView: View {
             // 写真の後ろの地は黒（紺はパレットに無い）（デザインシステム「黒塗りの真鍮」）
             WebTheme.background.opacity(preview == nil ? 0 : 1)
             if let preview {
-                StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays,
+                StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays, framing: framing,
                             selectedId: textMode ? selectedId : nil,
                             onTap: { overlay in
                                 // 押したら文字と札の編集へ（その札を選んだ状態で）。
@@ -371,6 +380,12 @@ struct StoryComposerView: View {
                     toolIcon("music.note")
                 }
                 .accessibilityLabel(L("曲", "Song"))
+            }
+            // 写真を拡大・移動・回転したら、元へ戻す口（写真を2回押しても戻る）
+            if !framing.wrappedValue.isIdentity {
+                toolButton(symbol: "arrow.counterclockwise", label: L("写真の合わせ方を戻す", "Reset photo framing")) {
+                    framing.wrappedValue = .identity
+                }
             }
             toolButton(symbol: "mappin", label: L("撮影地", "Place")) {
                 placeDraft = location
@@ -922,7 +937,8 @@ struct StoryComposerView: View {
                                           fileName: shot.prepared.fileName,
                                           contentType: shot.prepared.contentType,
                                           coords: shot.prepared.coords,
-                                          overlays: shot.overlays)
+                                          overlays: shot.overlays,
+                                          framing: shot.framing.isIdentity ? nil : shot.framing)
             },
             caption: caption,
             location: location,
@@ -985,7 +1001,7 @@ struct StoryComposerView: View {
                                                   // EXIF は下書きに残していない（ストーリーは送らない）
                                                   exif: nil, coords: item.shot.coords, takenOn: nil)
             return StoryShot(prepared: restored, image: UIImage(data: item.data),
-                             overlays: item.shot.overlays)
+                             overlays: item.shot.overlays, framing: item.shot.framing ?? .identity)
         }
         current = 0
         caption = draft.caption
@@ -1017,7 +1033,7 @@ struct StoryComposerView: View {
         // （読み書きの往復で画質を落とさない）
         let jobs = shots.map { shot in
             StoryUploadCenter.Job(
-                imageData: TextOverlayRenderer.burn(shot.overlays, into: shot.prepared.data),
+                imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),
                 caption: caption, location: place, coords: shot.prepared.coords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies)
@@ -1073,12 +1089,16 @@ struct StoryShot: Identifiable {
     /// 編集画面の文字は投稿される画像と同じ基準で置かれる
     var imageSize: CGSize?
     var overlays: [TextOverlay] = []
+    /// 写真の合わせ方（拡大・位置・回し）。**写真ごと**（文字と同じ理由）
+    var framing: PhotoFraming = .identity
 
-    init(prepared: ImagePreparer.Prepared, image: UIImage?, overlays: [TextOverlay] = []) {
+    init(prepared: ImagePreparer.Prepared, image: UIImage?, overlays: [TextOverlay] = [],
+         framing: PhotoFraming = .identity) {
         self.prepared = prepared
         self.preview = image.map { Image(uiImage: $0) }
         self.imageSize = image?.size
         self.overlays = overlays
+        self.framing = framing
     }
 }
 
@@ -1090,6 +1110,8 @@ struct StoryShot: Identifiable {
 struct StoryComposerContent: Equatable {
     var shotIds: [UUID]
     var overlays: [[TextOverlay]]
+    /// 写真ごとの合わせ方。前の呼び手・テストは持たない（どれも合わせていない）
+    var framings: [PhotoFraming] = []
     var caption: String
     var location: String
     var song: Photo.Song?

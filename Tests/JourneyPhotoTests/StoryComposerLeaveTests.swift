@@ -28,6 +28,17 @@ final class StoryComposerLeaveTests: XCTestCase {
         XCTAssertEqual(StoryComposerView.leave(restored, restored: restored), .now)
     }
 
+    /// 写真を拡大・移動・回転しただけでも、閉じる前に確かめる（下書きに残る中身が変わった）
+    func testReframingThePhotoIsConfirmed() {
+        let id = UUID()
+        var restored = content(shots: [id], caption: "雲海")
+        restored.framings = [.identity]
+        var reframed = restored
+        reframed.framings = [PhotoFraming(scale: 2)]
+        XCTAssertEqual(StoryComposerView.leave(reframed, restored: restored), .confirm)
+        XCTAssertEqual(StoryComposerView.leave(restored, restored: restored), .now)
+    }
+
     func testRestoredDraftEditedAfterwardsIsConfirmed() {
         let id = UUID()
         let restored = content(shots: [id], caption: "雲海")

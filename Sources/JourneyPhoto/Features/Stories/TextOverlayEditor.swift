@@ -17,6 +17,9 @@ struct StoryCanvas: View {
     /// 写真の本当の大きさ（画素）。分からないとき（nil）は枠いっぱいを写真とみなす
     let imageSize: CGSize?
     @Binding var overlays: [TextOverlay]
+    /// 写真の合わせ方（拡大・位置・回し）。**札を選んでいないとき**、2本指の操作と
+    /// 写真の上で動かす操作は写真に効く（札を選んでいれば札に効く）
+    @Binding var framing: PhotoFraming
     /// 選んでいる札（破線で囲む）。nil なら選んでいない
     var selectedId: UUID?
     /// 札を押した
@@ -41,6 +44,13 @@ struct StoryCanvas: View {
     @GestureState private var twisting = false
     @GestureState private var pinching = false
     @GestureState private var dragging = false
+    /// 写真を動かしている最中の移動量（離したときに `framing` へ入れる）と、その印
+    @State private var photoDrag: CGSize = .zero
+    @GestureState private var photoDragging = false
+    /// 2本指の操作がいま写真に効いているか（札に効いているときは false）。
+    /// **始めたときに決めて、終わるまで変えない**（途中で札を選んでも移さない）
+    @State private var twistsPhoto = false
+    @State private var pinchesPhoto = false
     /// 1本指で動かしている間に2本指の操作が入ったか。**入った回の移動は入れない**
     /// ——札の上でつまむと、動かす操作も片方の指を追って動き、離すとずれた所で決まった
     @State private var dragSpoiled = false
@@ -49,11 +59,38 @@ struct StoryCanvas: View {
         GeometryReader { geometry in
             let photo = TextOverlay.filledRect(image: imageSize ?? geometry.size, in: geometry.size)
             ZStack(alignment: .topLeading) {
-                // `.fill` の絵は枠より大きい寸法を申告するので、透明な枠に重ねる
-                Color.clear
-                    .overlay { preview.resizable().aspectRatio(contentMode: .fill) }
+                // 写真は**写真の枠（`photo`）の大きさで描き、合わせ方を重ねる**
+                // （焼き込みの `PhotoFraming.placement` と同じ順: 倍率 → 回し → ずらし）。
+                // 届かない所は後ろの黒
+                Color.black
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                let shown = liveFraming(in: photo.size)
+                preview.resizable()
+                    .frame(width: photo.width, height: photo.height)
+                    .scaleEffect(CGFloat(shown.scale))
+                    .rotationEffect(.radians(shown.rotation))
+                    .offset(x: CGFloat(shown.offsetX * Double(photo.width)),
+                            y: CGFloat(shown.offsetY * Double(photo.height)))
+                    .position(x: photo.midX, y: photo.midY)
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .clipped()
+                    // 写真の上で動かす（札の上では札が先に取る）。2回押すと合わせ方を戻す
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture()
+                            .updating($photoDragging) { _, state, _ in state = true }
+                            .onChanged { value in
+                                // 2本指の操作が入ったら写真は動かさない（つまむ指で流れる）
+                                photoDrag = (rotateId != nil || scaleId != nil || twistsPhoto || pinchesPhoto)
+                                    ? .zero : value.translation
+                            }
+                            .onEnded { _ in commitPhotoDrag(photo: photo) }
+                    )
+                    .onTapGesture(count: 2) { framing = .identity }
+                    .accessibilityElement()
+                    .accessibilityLabel(L("写真", "Photo"))
+                    .accessibilityHint(L("2本指で拡大・回転、指で動かします。2回押すと元に戻します",
+                                         "Pinch or twist to zoom and rotate, drag to move. Double-tap to reset"))
                 ForEach(overlays) { overlay in
                     text(overlay, photo: photo, canvas: geometry.size)
                 }
@@ -66,16 +103,16 @@ struct StoryCanvas: View {
                 RotationGesture()
                     .updating($twisting) { _, state, _ in state = true }
                     .onChanged { angle in
-                        // **回し始めた札に固定する**（途中で選ぶ札が替わっても移さない）
-                        if rotateId == nil {
-                            guard let id = selectedId else { return }
-                            rotateId = id
+                        // **回し始めた札（札を選んでいなければ写真）に固定する**
+                        // （途中で選ぶ札が替わっても移さない）
+                        if rotateId == nil && !twistsPhoto {
+                            if let id = selectedId { rotateId = id } else { twistsPhoto = true }
                         }
                         liveRotation = angle.radians
                     }
                     .onEnded { angle in
                         // 打ち切りの片付けが先に済んでいたら何もしない
-                        guard rotateId != nil else { return }
+                        guard rotateId != nil || twistsPhoto else { return }
                         liveRotation = angle.radians
                         commitRotation()
                     }
@@ -86,14 +123,13 @@ struct StoryCanvas: View {
                 MagnificationGesture()
                     .updating($pinching) { _, state, _ in state = true }
                     .onChanged { value in
-                        if scaleId == nil {
-                            guard let id = selectedId else { return }
-                            scaleId = id
+                        if scaleId == nil && !pinchesPhoto {
+                            if let id = selectedId { scaleId = id } else { pinchesPhoto = true }
                         }
                         liveScale = Double(value)
                     }
                     .onEnded { value in
-                        guard scaleId != nil else { return }
+                        guard scaleId != nil || pinchesPhoto else { return }
                         liveScale = Double(value)
                         commitScale()
                     }
@@ -101,6 +137,10 @@ struct StoryCanvas: View {
             // 打ち切られた回の片付け（`onEnded` と、どちらが先に来ても1回だけ入る）
             .onChange(of: twisting) { _, active in if !active { commitRotation() } }
             .onChange(of: pinching) { _, active in if !active { commitScale() } }
+            .onChange(of: photoDragging) { _, active in
+                // 写真を動かす操作の打ち切り。**移動は入れない**
+                if !active { photoDrag = .zero }
+            }
             .onChange(of: dragging) { _, active in
                 // 動かす操作の打ち切り。**移動は入れない**（離した位置が分からない）。
                 // `dragSpoiled` はここで戻さない——`onEnded` より先に来ると、2本指が入った回の
@@ -116,8 +156,11 @@ struct StoryCanvas: View {
     private func commitRotation() {
         if let id = rotateId, let i = overlays.firstIndex(where: { $0.id == id }) {
             overlays[i].rotation += liveRotation
+        } else if twistsPhoto {
+            framing = framing.rotated(by: liveRotation)
         }
         rotateId = nil
+        twistsPhoto = false
         liveRotation = 0
     }
 
@@ -125,9 +168,27 @@ struct StoryCanvas: View {
     private func commitScale() {
         if let id = scaleId, let i = overlays.firstIndex(where: { $0.id == id }) {
             overlays[i] = overlays[i].scaled(by: liveScale)
+        } else if pinchesPhoto {
+            framing = framing.scaled(by: liveScale)
         }
         scaleId = nil
+        pinchesPhoto = false
         liveScale = 1
+    }
+
+    /// 写真を動かした量を入れる（枠＝写真の場所に対する割合）
+    private func commitPhotoDrag(photo: CGRect) {
+        framing = framing.moved(by: photoDrag, in: photo.size)
+        photoDrag = .zero
+    }
+
+    /// 指で操作している最中の合わせ方（**離したときと同じ幅で見せる**——幅の外で動いて見えて、
+    /// 離すと戻る、にしない）
+    private func liveFraming(in photo: CGSize) -> PhotoFraming {
+        var live = framing
+        if pinchesPhoto { live = live.scaled(by: liveScale) }
+        if twistsPhoto { live = live.rotated(by: liveRotation) }
+        return live.moved(by: photoDrag, in: photo)
     }
 
     /// 書体（`TextOverlay.Face`。同梱の字か端末の字。ゴシックは端末の太字）。**大きさは固定**——
