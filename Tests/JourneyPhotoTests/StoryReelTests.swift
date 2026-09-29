@@ -1,0 +1,97 @@
+import XCTest
+@testable import JourneyPhoto
+
+/// ストーリーを人から人へ続けて見る並び（`StoryReel`・2026-09-29）
+final class StoryReelTests: XCTestCase {
+
+    private func story(_ id: String, _ user: String?, _ createdAt: String) -> Story {
+        var fields = [#""id":"\#(id)""#, #""src":"https://x.test/\#(id).jpg""#, #""createdAt":"\#(createdAt)""#]
+        if let user { fields.append(#""userId":"\#(user)""#) }
+        return try! JSONDecoder.api.decode(Story.self, from: Data(("{" + fields.joined(separator: ",") + "}").utf8))
+    }
+
+    // MARK: - 束
+
+    /// 輪の順に人ごとの束を作り、各束は**輪に出していた1本から**開く
+    func testGroupsFollowRingOrderAndStartAtTheRing() {
+        let a1 = story("a1", "a", "2026-09-29T01:00:00Z")
+        let a2 = story("a2", "a", "2026-09-29T02:00:00Z")
+        let b1 = story("b1", "b", "2026-09-29T03:00:00Z")
+        let all = [a1, a2, b1]
+        let groups = StoryReel.groups(rings: [b1, a2], in: all)
+        XCTAssertEqual(groups.map { $0.stories.map(\.id) }, [["b1"], ["a1", "a2"]])
+        XCTAssertEqual(groups.map(\.start), [0, 1], "輪の1本（a2）から開いていない")
+        // 同じ人の輪が2つ来ても束は1つ
+        XCTAssertEqual(StoryReel.groups(rings: [a1, a2], in: all).count, 1)
+        XCTAssertEqual(StoryReel.groups(rings: [], in: all), [])
+    }
+
+    // MARK: - 立方体
+
+    /// 真ん中の面は 0 度・隣の面は ±90 度・その間は指の移動に比例
+    func testCubeAngle() {
+        XCTAssertEqual(StoryReel.cubeAngle(minX: 0, width: 400), 0)
+        XCTAssertEqual(StoryReel.cubeAngle(minX: 400, width: 400), 90)
+        XCTAssertEqual(StoryReel.cubeAngle(minX: -400, width: 400), -90)
+        XCTAssertEqual(StoryReel.cubeAngle(minX: -100, width: 400), -22.5, accuracy: 0.0001)
+        XCTAssertEqual(StoryReel.cubeAngle(minX: 900, width: 400), 90, "90度より回さない")
+        XCTAssertEqual(StoryReel.cubeAngle(minX: 50, width: 0), 0, "幅が0でも割らない")
+        // 右へずれた面は左端、左へずれた面は右端を軸に（2つの面が境目で接して回る）
+        XCTAssertEqual(StoryReel.hinge(minX: 120), .leading)
+        XCTAssertEqual(StoryReel.hinge(minX: -120), .trailing)
+    }
+
+    // MARK: - 離したとき
+
+    func testReleaseTurnsPastAQuarterOrWithMomentum() {
+        let w = 400.0
+        XCTAssertEqual(StoryReel.release(dx: -120, predictedDX: -120, width: w, hasNext: true, hasPrevious: true), .forward)
+        XCTAssertEqual(StoryReel.release(dx: 120, predictedDX: 120, width: w, hasNext: true, hasPrevious: true), .back)
+        XCTAssertEqual(StoryReel.release(dx: -60, predictedDX: -60, width: w, hasNext: true, hasPrevious: true), .stay)
+        // 短く速く払えば回る（勢い）
+        XCTAssertEqual(StoryReel.release(dx: -40, predictedDX: -300, width: w, hasNext: true, hasPrevious: true), .forward)
+        // 隣の人がいない向きは戻す
+        XCTAssertEqual(StoryReel.release(dx: -300, predictedDX: -300, width: w, hasNext: false, hasPrevious: true), .stay)
+        XCTAssertEqual(StoryReel.release(dx: 300, predictedDX: 300, width: w, hasNext: true, hasPrevious: false), .stay)
+    }
+
+    /// 隣がいない向きは重くしか動かない
+    func testResistedAtTheEnds() {
+        XCTAssertEqual(StoryReel.resisted(dx: -90, hasNext: false, hasPrevious: true), -30)
+        XCTAssertEqual(StoryReel.resisted(dx: 90, hasNext: true, hasPrevious: false), 30)
+        XCTAssertEqual(StoryReel.resisted(dx: -90, hasNext: true, hasPrevious: false), -90)
+    }
+
+    // MARK: - 縦横
+
+    /// 向きは払い始めに決める。揺れ（10未満）は決めない・上へは何もしない
+    func testAxis() {
+        XCTAssertNil(StoryReel.axis(dx: 4, dy: 5))
+        XCTAssertEqual(StoryReel.axis(dx: -30, dy: 10), .horizontal)
+        XCTAssertEqual(StoryReel.axis(dx: 5, dy: 40), .vertical)
+        XCTAssertNil(StoryReel.axis(dx: 5, dy: -40), "上へ払って閉じたり回ったりしない")
+    }
+
+    // MARK: - 下へ払って閉じる
+
+    func testCloseAndScale() {
+        XCTAssertTrue(StoryReel.closes(dy: 130, predictedDY: 130))
+        XCTAssertTrue(StoryReel.closes(dy: 40, predictedDY: 300), "勢いでも閉じる")
+        XCTAssertFalse(StoryReel.closes(dy: 60, predictedDY: 80))
+        XCTAssertEqual(StoryReel.dragScale(dy: 0), 1)
+        XCTAssertEqual(StoryReel.dragScale(dy: 200), 0.9, accuracy: 0.0001)
+        XCTAssertEqual(StoryReel.dragScale(dy: 5_000), 0.8, accuracy: 0.0001, "縮みすぎない")
+        XCTAssertEqual(StoryReel.dragScale(dy: -50), 1, "上へ引いても大きくならない")
+    }
+
+    // MARK: - 左タップ
+
+    /// 束の先頭で始まってすぐ左を押したら、前の人がいれば前の人へ
+    func testLeftTapAtGroupStartGoesToPreviousPerson() {
+        XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: 0.3, hasPreviousGroup: true), .previousGroup)
+        XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: 0.3, hasPreviousGroup: false), .restart)
+        XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: 1.2, hasPreviousGroup: true), .restart,
+                       "見始めて時間が経っていれば、今のを最初から")
+        XCTAssertEqual(StoryPlayback.leftTap(index: 2, elapsed: 0.3, hasPreviousGroup: true), .previous(1))
+    }
+}

@@ -157,14 +157,19 @@ enum StoryPlayback {
         case restart
         /// 1つ前へ
         case previous(Int)
+        /// 前の人へ（束の先頭で、前の人がいるとき。`StoryReel`）
+        case previousGroup
     }
 
     /// 始まってすぐの左タップだけ前へ戻る。**Web と同じ 0.8 秒の線。**
     /// それを過ぎていたら「今のを最初から」——見返したい方が多い。
     static let restartThreshold: TimeInterval = 0.8
 
-    static func leftTap(index: Int, elapsed: TimeInterval) -> LeftTap {
-        if elapsed > restartThreshold || index == 0 { return .restart }
+    /// - Parameter hasPreviousGroup: 前の人がいる（人から人への並びの中で、最初の人でない）。
+    ///   束の先頭で始まってすぐなら前の人へ戻る（Instagram と同じ）
+    static func leftTap(index: Int, elapsed: TimeInterval, hasPreviousGroup: Bool = false) -> LeftTap {
+        if elapsed > restartThreshold { return .restart }
+        if index == 0 { return hasPreviousGroup ? .previousGroup : .restart }
         return .previous(index - 1)
     }
 

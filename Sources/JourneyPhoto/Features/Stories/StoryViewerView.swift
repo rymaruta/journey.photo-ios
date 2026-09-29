@@ -119,11 +119,26 @@ struct StoryViewerView: View {
     /// なら画面ごと戻されていた（`HighlightPlayerView` の「止める」が効いていなかった）
     @State private var isHeld: Bool
 
+    /// 束の最後まで見た。**あれば閉じずにこれを呼ぶ**（人から人への並び・`StoryReelView`
+    /// が次の人へ回す）。無ければ今までどおり閉じる
+    let onGroupEnd: (() -> Void)?
+    /// 束の先頭で、始まってすぐ左を押した。**あれば前の人へ**（無ければ頭から）
+    let onGroupBack: (() -> Void)?
+    /// 払う動き（横・下）を外の画面が受け持つ（`StoryReelView` が指に付けて回す・縮める）。
+    /// true のときこの画面の払いは何もしない——両方が動くと1回の払いで2つ進む
+    let swipesHandledOutside: Bool
+
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
          holds: Bool = false,
+         onGroupEnd: (() -> Void)? = nil,
+         onGroupBack: (() -> Void)? = nil,
+         swipesHandledOutside: Bool = false,
          onSeen: ((String) -> Void)? = nil,
          onDeleted: ((String) -> Void)? = nil) {
+        self.onGroupEnd = onGroupEnd
+        self.onGroupBack = onGroupBack
+        self.swipesHandledOutside = swipesHandledOutside
         self.stories = stories
         self.onDeleted = onDeleted
         self.viewerId = viewerId
@@ -717,6 +732,7 @@ struct StoryViewerView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: StoryPlayback.swipeThreshold)
                 .onEnded { value in
+                    guard !swipesHandledOutside else { return }
                     switch StoryPlayback.swipe(
                         dx: value.translation.width, dy: value.translation.height) {
                     case .next: if !isSending { advance() }
@@ -736,7 +752,10 @@ struct StoryViewerView: View {
         // でした」が別の1本の画面に出ていた。**払って閉じるのは止めない**（圏外で
         // 返事を待つ間に閉じられなくなる）
         guard !isSending else { return }
-        switch StoryPlayback.leftTap(index: index, elapsed: clock.elapsed(at: Date())) {
+        switch StoryPlayback.leftTap(index: index, elapsed: clock.elapsed(at: Date()),
+                                     hasPreviousGroup: onGroupBack != nil) {
+        case .previousGroup:
+            onGroupBack?()
         case .restart:
             clock.restart(running: !frozen, at: Date())
             syncSong(restart: true)
@@ -769,10 +788,12 @@ struct StoryViewerView: View {
         mediaEnded(pending)
     }
 
-    /// 次へ。**最後なら閉じる**
+    /// 次へ。**最後なら閉じる**（人から人への並びの中なら、次の人へ）
     private func advance() {
         if let target = StoryPlayback.next(after: index, count: visible.count) {
             go(to: target)
+        } else if let onGroupEnd {
+            onGroupEnd()
         } else {
             dismiss()
         }
