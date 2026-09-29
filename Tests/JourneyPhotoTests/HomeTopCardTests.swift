@@ -279,6 +279,11 @@ final class HomeTopCardTests: XCTestCase {
         return try JSONDecoder.api.decode(OfficialSpot.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
     }
 
+    /// 季節の札（並びの中の `inSeason`）。並びの位置に頼らない
+    private func inSeasonCard(_ cards: [HomeTopCard.Choice]) -> HomeTopCard.Choice? {
+        cards.first { $0.slot == "inSeason" }
+    }
+
     private func seasonCards(_ spots: [OfficialSpot], now: Date? = nil,
                              photos: [Photo] = []) -> [HomeTopCard.Choice] {
         HomeTopCard.cards(now: now ?? self.now, plans: [], myPhotos: photos,
@@ -293,7 +298,7 @@ final class HomeTopCardTests: XCTestCase {
         let spring = try spot("sp_spring", seasons: [("spring", "春は桜")])
         let noGuide = try spot("sp_noguide", seasons: [])
         XCTAssertEqual(seasonCards([draft, noImage, spring, noGuide, ok]),
-                       [.theme, .inSeason(spot: ok, season: "autumn", guide: "秋は紅葉")])
+                       [.inSeason(spot: ok, season: "autumn", guide: "秋は紅葉"), .theme])
         // 当たる行が無ければ札を出さない（空き地を作らない）
         XCTAssertEqual(seasonCards([draft, noImage, spring, noGuide]), [.theme])
         XCTAssertEqual(seasonCards([]), [.theme])
@@ -304,12 +309,12 @@ final class HomeTopCardTests: XCTestCase {
         let a = try spot("sp_a", seasons: [("autumn", "Aの秋")])
         let b = try spot("sp_b", seasons: [("autumn", "Bの秋")])
         // 2026-09-27 は紀元から 20723 日目 → 20723 % 2 = 1 → 2件目
-        XCTAssertEqual(seasonCards([b, a]).last, .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
-        XCTAssertEqual(seasonCards([a, b]).last, .inSeason(spot: b, season: "autumn", guide: "Bの秋"), "並び順で変わっている")
+        XCTAssertEqual(inSeasonCard(seasonCards([b, a])), .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
+        XCTAssertEqual(inSeasonCard(seasonCards([a, b])), .inSeason(spot: b, season: "autumn", guide: "Bの秋"), "並び順で変わっている")
         let later = now.addingTimeInterval(11 * 3600) // 同じ日の 23:00
-        XCTAssertEqual(seasonCards([a, b], now: later).last, .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
+        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: later)), .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
         let next = now.addingTimeInterval(86_400)
-        XCTAssertEqual(seasonCards([a, b], now: next).last, .inSeason(spot: a, season: "autumn", guide: "Aの秋"))
+        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: next)), .inSeason(spot: a, season: "autumn", guide: "Aの秋"))
     }
 
     /// 季節は**端末の暦の月**で決める。12/1 は冬（UTC では 11/30 でも、東京の 12/1 なら冬）
@@ -318,20 +323,20 @@ final class HomeTopCardTests: XCTestCase {
         let s = try spot("sp_s", seasons: [("autumn", "秋の文"), ("winter", "冬の文")])
         // 2026-11-30 16:00 UTC = 2026-12-01 01:00 JST
         let dec1 = Date(timeIntervalSince1970: 1_796_054_400)
-        XCTAssertEqual(HomeTopCard.cards(now: dec1, plans: [], myPhotos: [], openedBookDays: [],
-                                         spots: [s], timeZone: tokyo).last,
+        XCTAssertEqual(inSeasonCard(HomeTopCard.cards(now: dec1, plans: [], myPhotos: [], openedBookDays: [],
+                                                      spots: [s], timeZone: tokyo)),
                        .inSeason(spot: s, season: "winter", guide: "冬の文"))
-        XCTAssertEqual(HomeTopCard.cards(now: dec1, plans: [], myPhotos: [], openedBookDays: [],
-                                         spots: [s], timeZone: utc).last,
+        XCTAssertEqual(inSeasonCard(HomeTopCard.cards(now: dec1, plans: [], myPhotos: [], openedBookDays: [],
+                                                      spots: [s], timeZone: utc)),
                        .inSeason(spot: s, season: "autumn", guide: "秋の文"))
     }
 
-    /// 並びは「今日のテーマ」のあと（テーマを2枚目に下げない）
-    func testInSeasonComesAfterTheme() throws {
+    /// 並びは 季節（今月の見ごろ）→ 今日のテーマ → 1年前（owner・2026-09-29）
+    func testInSeasonComesBeforeTheme() throws {
         let s = try spot("sp_s")
         let old = try photo("old", date: "2025-09-27")
-        XCTAssertEqual(seasonCards([s], photos: [old]).map(\.slot), ["theme", "inSeason", "oneYearAgo"])
-        XCTAssertEqual(seasonCards([s]).map(\.slot), ["theme", "inSeason"])
+        XCTAssertEqual(seasonCards([s], photos: [old]).map(\.slot), ["inSeason", "theme", "oneYearAgo"])
+        XCTAssertEqual(seasonCards([s]).map(\.slot), ["inSeason", "theme"])
     }
 
     // MARK: - 5. 行きたい場所のこの季節
@@ -357,16 +362,16 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertNil(wishCards([wished], wishlist: []).first { $0.slot == "wishlistSeason" })
     }
 
-    /// 並びは テーマ → 行きたい場所 → 季節 → 1年前。**季節の札は同じスポットを出さない**
+    /// 並びは 行きたい場所 → 季節 → テーマ → 1年前。**季節の札は同じスポットを出さない**
     func testWishlistSeasonOrderAndNoDuplicateWithSeason() throws {
         let only = try spot("sp_only")
         let old = try photo("old", date: "2025-09-27")
         XCTAssertEqual(wishCards([only], wishlist: ["SPOT-sp_only"], photos: [old]).map(\.slot),
-                       ["theme", "wishlistSeason", "oneYearAgo"], "同じスポットが季節の札にも出た")
+                       ["wishlistSeason", "theme", "oneYearAgo"], "同じスポットが季節の札にも出た")
         let other = try spot("sp_other")
         XCTAssertEqual(wishCards([only, other], wishlist: ["SPOT-sp_only"]).map(\.slot),
-                       ["theme", "wishlistSeason", "inSeason"])
-        XCTAssertEqual(wishCards([only, other], wishlist: ["SPOT-sp_only"]).last,
+                       ["wishlistSeason", "inSeason", "theme"])
+        XCTAssertEqual(inSeasonCard(wishCards([only, other], wishlist: ["SPOT-sp_only"])),
                        .inSeason(spot: other, season: "autumn", guide: "秋は紅葉"))
     }
 
