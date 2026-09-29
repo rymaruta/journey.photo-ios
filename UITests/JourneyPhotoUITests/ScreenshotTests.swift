@@ -217,6 +217,10 @@ final class ScreenshotTests: XCTestCase {
             let signedOut = app.descendants(matching: .any)
                 .matching(identifier: "signin.form").firstMatch.exists
             shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
+            // ホームの「撮影地を探す / 写真から探す」が見える状態をPR確認用に残す
+            if name == "ホーム", app.buttons["home.exploreMap"].firstMatch.exists {
+                shoot(app, "10b-ホーム（撮影地への入口）")
+            }
             if name == "マップ" { shootSpotPin(app) }
         }
 
