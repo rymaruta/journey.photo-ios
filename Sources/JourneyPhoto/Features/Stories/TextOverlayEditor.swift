@@ -47,6 +47,10 @@ struct StoryCanvas: View {
     /// 写真を動かしている最中の移動量（離したときに `framing` へ入れる）と、その印
     @State private var photoDrag: CGSize = .zero
     @GestureState private var photoDragging = false
+    /// 写真を動かしている間に2本指の操作が入ったか（入った回の移動は入れない・札と同じ）。
+    /// 動かし始めに戻す
+    @State private var photoDragSpoiled = false
+    @State private var photoDragStarted = false
     /// 2本指の操作がいま写真に効いているか（札に効いているときは false）。
     /// **始めたときに決めて、終わるまで変えない**（途中で札を選んでも移さない）
     @State private var twistsPhoto = false
@@ -80,11 +84,21 @@ struct StoryCanvas: View {
                         DragGesture()
                             .updating($photoDragging) { _, state, _ in state = true }
                             .onChanged { value in
-                                // 2本指の操作が入ったら写真は動かさない（つまむ指で流れる）
-                                photoDrag = (rotateId != nil || scaleId != nil || twistsPhoto || pinchesPhoto)
-                                    ? .zero : value.translation
+                                if !photoDragStarted { photoDragStarted = true; photoDragSpoiled = false }
+                                // **札を選んでいる間は写真を動かさない**（札の押せる範囲の外を掴んで
+                                // 写真が動いた）。2本指の操作が入った回も、この回はもう動かさない
+                                // ——片方の指を離したあとに、つまんだ間の移動がまとめて入って跳んだ
+                                if selectedId != nil || twoFingerActive { photoDragSpoiled = true }
+                                photoDrag = photoDragSpoiled ? .zero : value.translation
                             }
-                            .onEnded { _ in commitPhotoDrag(photo: photo) }
+                            .onEnded { value in
+                                // 入れるのは離したときの移動量から（片付けの順に頼らない）
+                                if !photoDragSpoiled && selectedId == nil && !twoFingerActive {
+                                    framing = framing.moved(by: value.translation, in: photo.size)
+                                }
+                                photoDrag = .zero
+                                photoDragStarted = false
+                            }
                     )
                     .onTapGesture(count: 2) { framing = .identity }
                     .accessibilityElement()
@@ -138,8 +152,8 @@ struct StoryCanvas: View {
             .onChange(of: twisting) { _, active in if !active { commitRotation() } }
             .onChange(of: pinching) { _, active in if !active { commitScale() } }
             .onChange(of: photoDragging) { _, active in
-                // 写真を動かす操作の打ち切り。**移動は入れない**
-                if !active { photoDrag = .zero }
+                // 写真を動かす操作の打ち切り。**移動は入れない**（印は次に動かし始めたときに戻す）
+                if !active { photoDrag = .zero; photoDragStarted = false }
             }
             .onChange(of: dragging) { _, active in
                 // 動かす操作の打ち切り。**移動は入れない**（離した位置が分からない）。
@@ -176,10 +190,10 @@ struct StoryCanvas: View {
         liveScale = 1
     }
 
-    /// 写真を動かした量を入れる（枠＝写真の場所に対する割合）
-    private func commitPhotoDrag(photo: CGRect) {
-        framing = framing.moved(by: photoDrag, in: photo.size)
-        photoDrag = .zero
+    /// 2本指の操作（回す・つまむ）が、札か写真に効いている最中か。**指が触れている印も見る**
+    /// ——札を選んでいない回は、印が立つまで `rotateId` / `scaleId` が立たない（6db29af のレビュー）
+    private var twoFingerActive: Bool {
+        rotateId != nil || scaleId != nil || twistsPhoto || pinchesPhoto || twisting || pinching
     }
 
     /// 指で操作している最中の合わせ方（**離したときと同じ幅で見せる**——幅の外で動いて見えて、
@@ -302,15 +316,15 @@ struct StoryCanvas: View {
                     .onChanged { value in
                         // 動かし始め（前の回の印を戻す）
                         if dragId == nil { dragSpoiled = false }
-                        // 2本指の操作（回す・つまむ）が入ったら、この回は動かさない
-                        if rotateId != nil || scaleId != nil { dragSpoiled = true }
+                        // 2本指の操作（回す・つまむ。**写真に効いているときも**）が入ったら、この回は動かさない
+                        if twoFingerActive { dragSpoiled = true }
                         dragId = overlay.id
                         dragOffset = dragSpoiled ? .zero : value.translation
                     }
                     .onEnded { value in
                         // **離したときに位置へ入れる。** 動かしている最中に
                         // 入れると、はみ出しの丸めが毎フレーム効いて指から離れる
-                        if !dragSpoiled && rotateId == nil && scaleId == nil {
+                        if !dragSpoiled && !twoFingerActive {
                             move(overlay, by: value.translation, photo: photo, canvas: canvas)
                         }
                         dragId = nil

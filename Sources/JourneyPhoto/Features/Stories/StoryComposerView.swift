@@ -63,6 +63,8 @@ struct StoryComposerView: View {
     /// 編集に入ったときの写し（「やめる」で戻す）と、**どの写真の編集か**。
     /// 編集中に並びが増えて表示中の写真が移っても、戻す先を取り違えない
     @State private var overlaySnapshot: [TextOverlay] = []
+    /// 編集に入ったときの写真の合わせ方（「キャンセル」で戻す。編集中も2本指で写真を合わせられる）
+    @State private var framingSnapshot: PhotoFraming = .identity
     @State private var editingShotId: UUID?
     /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
     @FocusState private var captionFocused: Bool
@@ -517,6 +519,7 @@ struct StoryComposerView: View {
                     // **入ったときの写真へ戻す**（表示中の写真が移っていても取り違えない）
                     if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
                         shots[i].overlays = overlaySnapshot
+                        shots[i].framing = framingSnapshot
                     }
                     leaveTextMode()
                 }
@@ -703,6 +706,7 @@ struct StoryComposerView: View {
         guard shots.indices.contains(current) else { return }
         captionFocused = false
         overlaySnapshot = shots[current].overlays
+        framingSnapshot = shots[current].framing
         editingShotId = shots[current].id
         textMode = true
     }

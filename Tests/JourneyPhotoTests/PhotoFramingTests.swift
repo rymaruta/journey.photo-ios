@@ -54,4 +54,17 @@ final class PhotoFramingTests: XCTestCase {
         XCTAssertTrue(PhotoFraming.identity.isIdentity)
         XCTAssertFalse(f.isIdentity)
     }
+
+    /// 🔴 **真っすぐ（90°ごと）の近く（±3°）は吸い付ける**。つまむだけでも指は少しひねるので、
+    /// 吸い付けないと数度傾いたまま焼け、角に黒い三角が出た
+    func testRotationSnapsNearStraight() {
+        let deg = Double.pi / 180
+        XCTAssertEqual(PhotoFraming.identity.rotated(by: 2 * deg).rotation, 0, accuracy: 1e-9)
+        XCTAssertEqual(PhotoFraming.identity.rotated(by: -2.9 * deg).rotation, 0, accuracy: 1e-9)
+        XCTAssertEqual(PhotoFraming.identity.rotated(by: 88 * deg).rotation, Double.pi / 2, accuracy: 1e-9)
+        XCTAssertEqual(PhotoFraming.identity.rotated(by: -181 * deg).rotation, -Double.pi, accuracy: 1e-9)
+        // 離れていれば傾けたまま
+        XCTAssertEqual(PhotoFraming.identity.rotated(by: 10 * deg).rotation, 10 * deg, accuracy: 1e-9)
+        XCTAssertEqual(PhotoFraming.identity.rotated(by: 4 * deg).rotation, 4 * deg, accuracy: 1e-9)
+    }
 }
