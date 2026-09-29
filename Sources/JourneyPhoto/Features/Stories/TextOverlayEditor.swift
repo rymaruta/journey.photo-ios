@@ -24,6 +24,9 @@ struct StoryCanvas: View {
     var selectedId: UUID?
     /// 札を押した
     var onTap: (TextOverlay) -> Void = { _ in }
+    /// 写真（札の無い所）を1回押した。**選んでいる札を外す**口（外さないと、札を選んだ
+    /// あとは写真を動かせないままだった・db4903c のレビュー）
+    var onTapPhoto: () -> Void = {}
 
     /// 指で動かしている最中の見た目の移動量（離したときに位置へ反映する）
     @State private var dragId: UUID?
@@ -55,6 +58,9 @@ struct StoryCanvas: View {
     /// **始めたときに決めて、終わるまで変えない**（途中で札を選んでも移さない）
     @State private var twistsPhoto = false
     @State private var pinchesPhoto = false
+    /// この回の2本指の操作で、写真の大きさが目に見えて変わったか（つまんでいた回）。
+    /// つまんでいた回の小さなひねりは捨てる（`PhotoFraming.intendedTwist`）
+    @State private var photoPinched = false
     /// 1本指で動かしている間に2本指の操作が入ったか。**入った回の移動は入れない**
     /// ——札の上でつまむと、動かす操作も片方の指を追って動き、離すとずれた所で決まった
     @State private var dragSpoiled = false
@@ -101,6 +107,7 @@ struct StoryCanvas: View {
                             }
                     )
                     .onTapGesture(count: 2) { framing = .identity }
+                    .onTapGesture { onTapPhoto() }
                     .accessibilityElement()
                     .accessibilityLabel(L("写真", "Photo"))
                     .accessibilityHint(L("2本指で拡大・回転、指で動かします。2回押すと元に戻します",
@@ -120,7 +127,7 @@ struct StoryCanvas: View {
                         // **回し始めた札（札を選んでいなければ写真）に固定する**
                         // （途中で選ぶ札が替わっても移さない）
                         if rotateId == nil && !twistsPhoto {
-                            if let id = selectedId { rotateId = id } else { twistsPhoto = true }
+                            if let id = selectedId { rotateId = id } else { twistsPhoto = true; photoPinched = pinchesPhoto && abs(liveScale - 1) > 0.05 }
                         }
                         liveRotation = angle.radians
                     }
@@ -141,6 +148,7 @@ struct StoryCanvas: View {
                             if let id = selectedId { scaleId = id } else { pinchesPhoto = true }
                         }
                         liveScale = Double(value)
+                        if pinchesPhoto && abs(liveScale - 1) > 0.05 { photoPinched = true }
                     }
                     .onEnded { value in
                         guard scaleId != nil || pinchesPhoto else { return }
@@ -171,11 +179,12 @@ struct StoryCanvas: View {
         if let id = rotateId, let i = overlays.firstIndex(where: { $0.id == id }) {
             overlays[i].rotation += liveRotation
         } else if twistsPhoto {
-            framing = framing.rotated(by: liveRotation)
+            framing = framing.rotated(by: PhotoFraming.intendedTwist(liveRotation, whilePinching: photoPinched))
         }
         rotateId = nil
         twistsPhoto = false
         liveRotation = 0
+        if !pinchesPhoto { photoPinched = false }
     }
 
     /// つまんだ倍率を札へ入れて片付ける（同じく2回目は何もしない）
@@ -188,6 +197,8 @@ struct StoryCanvas: View {
         scaleId = nil
         pinchesPhoto = false
         liveScale = 1
+        // 回す方がまだ続いていれば、つまんでいた印はそちらの片付けで戻す
+        if !twistsPhoto { photoPinched = false }
     }
 
     /// 2本指の操作（回す・つまむ）が、札か写真に効いている最中か。**指が触れている印も見る**
@@ -201,7 +212,7 @@ struct StoryCanvas: View {
     private func liveFraming(in photo: CGSize) -> PhotoFraming {
         var live = framing
         if pinchesPhoto { live = live.scaled(by: liveScale) }
-        if twistsPhoto { live = live.rotated(by: liveRotation) }
+        if twistsPhoto { live = live.rotated(by: PhotoFraming.intendedTwist(liveRotation, whilePinching: photoPinched)) }
         return live.moved(by: photoDrag, in: photo)
     }
 

@@ -41,22 +41,22 @@ struct PhotoFraming: Equatable, Codable {
         return next
     }
 
-    /// 回したあと。**真っすぐ（90°ごと）の近く（±3°）なら吸い付ける**——つまむだけでも指は
-    /// 少しひねるので、吸い付けないと数度傾いたまま焼け、角に黒い三角が出た（f1acac3 のレビュー）
     func rotated(by radians: Double) -> PhotoFraming {
         guard radians.isFinite else { return self }
         var next = self
-        next.rotation = Self.snapped(rotation + radians)
+        next.rotation = rotation + radians
         return next
     }
 
-    /// 吸い付ける幅（ラジアン・約3°）
-    static let snapAngle = 3 * Double.pi / 180
+    /// つまんでいる最中に紛れ込んだ小さなひねり（±3°）は捨てる幅
+    static let strayTwist = 3 * Double.pi / 180
 
-    static func snapped(_ radians: Double) -> Double {
-        let quarter = Double.pi / 2
-        let nearest = (radians / quarter).rounded() * quarter
-        return abs(radians - nearest) <= snapAngle ? nearest : radians
+    /// 1回の2本指の操作で、写真に入れる回し。**つまんでいた回の小さなひねりは捨てる**
+    /// ——つまむだけでも指は少しひねるので、数度傾いたまま焼けて角に黒い三角が出た
+    /// （f1acac3 のレビュー）。**つまんでいない回はそのまま入れる**——真っすぐへ
+    /// 吸い付けると、水平線の 2° の傾きを直すことができなかった（db4903c のレビュー）
+    static func intendedTwist(_ radians: Double, whilePinching: Bool) -> Double {
+        whilePinching && abs(radians) < strayTwist ? 0 : radians
     }
 
     /// 指で動かした量（画面の点）を、枠（`frame`・画面の点）に対する割合で足す

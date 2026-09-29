@@ -55,16 +55,17 @@ final class PhotoFramingTests: XCTestCase {
         XCTAssertFalse(f.isIdentity)
     }
 
-    /// 🔴 **真っすぐ（90°ごと）の近く（±3°）は吸い付ける**。つまむだけでも指は少しひねるので、
-    /// 吸い付けないと数度傾いたまま焼け、角に黒い三角が出た
-    func testRotationSnapsNearStraight() {
+    /// 🔴 **つまんでいた回の小さなひねり（±3°）だけ捨てる**（数度傾いたまま焼けて角に黒い三角が
+    /// 出た）。**つまんでいない回はそのまま**——真っすぐへ吸い付けると、水平線の 2° の傾きを
+    /// 直せなかった
+    func testOnlyStrayTwistWhilePinchingIsDropped() {
         let deg = Double.pi / 180
-        XCTAssertEqual(PhotoFraming.identity.rotated(by: 2 * deg).rotation, 0, accuracy: 1e-9)
-        XCTAssertEqual(PhotoFraming.identity.rotated(by: -2.9 * deg).rotation, 0, accuracy: 1e-9)
-        XCTAssertEqual(PhotoFraming.identity.rotated(by: 88 * deg).rotation, Double.pi / 2, accuracy: 1e-9)
-        XCTAssertEqual(PhotoFraming.identity.rotated(by: -181 * deg).rotation, -Double.pi, accuracy: 1e-9)
-        // 離れていれば傾けたまま
-        XCTAssertEqual(PhotoFraming.identity.rotated(by: 10 * deg).rotation, 10 * deg, accuracy: 1e-9)
-        XCTAssertEqual(PhotoFraming.identity.rotated(by: 4 * deg).rotation, 4 * deg, accuracy: 1e-9)
+        XCTAssertEqual(PhotoFraming.intendedTwist(2 * deg, whilePinching: true), 0)
+        XCTAssertEqual(PhotoFraming.intendedTwist(-2.9 * deg, whilePinching: true), 0)
+        XCTAssertEqual(PhotoFraming.intendedTwist(10 * deg, whilePinching: true), 10 * deg)
+        XCTAssertEqual(PhotoFraming.intendedTwist(2 * deg, whilePinching: false), 2 * deg)
+        // 2° だけ回して水平を直せる
+        XCTAssertEqual(PhotoFraming.identity.rotated(by: PhotoFraming.intendedTwist(2 * deg, whilePinching: false)).rotation,
+                       2 * deg, accuracy: 1e-9)
     }
 }

@@ -63,7 +63,8 @@ struct StoryComposerView: View {
     /// 編集に入ったときの写し（「やめる」で戻す）と、**どの写真の編集か**。
     /// 編集中に並びが増えて表示中の写真が移っても、戻す先を取り違えない
     @State private var overlaySnapshot: [TextOverlay] = []
-    /// 編集に入ったときの写真の合わせ方（「キャンセル」で戻す。編集中も2本指で写真を合わせられる）
+    /// 編集に入ったときの写真の合わせ方（「キャンセル」で戻す。編集中も札を選んでいなければ
+    /// 写真を合わせられる——写真を押すと選んでいる札が外れる）
     @State private var framingSnapshot: PhotoFraming = .identity
     @State private var editingShotId: UUID?
     /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
@@ -275,7 +276,9 @@ struct StoryComposerView: View {
                                 // **編集中に押したときは写しを取り直さない**（「やめる」の戻り先が変わる）
                                 if !textMode { enterTextMode() }
                                 selectedId = overlay.id
-                            })
+                            },
+                            // 写真を押したら選んでいる札を外す（写真を合わせられるように戻る）
+                            onTapPhoto: { if textMode { selectedId = nil } })
             } else {
                 emptyPhoto
             }
