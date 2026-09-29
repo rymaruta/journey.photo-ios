@@ -195,7 +195,7 @@ struct StoryInsightsView: View {
         return scope == .reactions ? visible.filter { hasReaction(from: $0.userId) } : visible
     }
 
-    /// 顔・名前・時刻。右に、反応なら真鍮のハート、文章の返信なら「…」。
+    /// 顔・名前・時刻。右に、反応なら白のハート（いいねは白）、文章の返信なら「…」。
     /// **押すとその人のページ**
     private func viewerRow(_ viewer: StoryViewer) -> some View {
         HStack(spacing: 12) {
