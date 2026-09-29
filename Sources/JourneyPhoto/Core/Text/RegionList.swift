@@ -122,7 +122,8 @@ enum RegionList {
             return (0x30A1...0x30FA).contains(s.value) || s.value == 0x30FC
         }
         var best: (name: String, end: String.Index)?
-        for name in known {
+        // 空の名前は当てない（空文字の検索で先へ進まず回り続けるのを避ける）
+        for name in known where !name.isEmpty {
             var searchFrom = text.startIndex
             while let r = text.range(of: name, range: searchFrom..<text.endIndex) {
                 let before = r.lowerBound > text.startIndex ? text[text.index(before: r.lowerBound)] : nil
