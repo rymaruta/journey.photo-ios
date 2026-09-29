@@ -41,8 +41,10 @@ struct DeleteAccountView: View {
                 }
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(WebTheme.danger.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(WebTheme.danger.opacity(0.3), lineWidth: 1))
+                // **赤は中の印と文字だけ。** 札の面まで赤で塗らない（広い面に危険の色を使わない・
+                // デザインシステム「黒塗りの真鍮」）。地は面の色、縁は境界の色
+                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(WebTheme.border, lineWidth: 1))
             }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)

@@ -170,7 +170,9 @@ struct HighlightEditorView: View {
             Button(role: .destructive) {
                 showDeleteConfirm = true
             } label: {
+                // 危険の色はテーマの赤（無指定だと系統の赤 #FF453A になる）
                 Text(L("このハイライトを削除", "Delete this highlight"))
+                    .foregroundStyle(WebTheme.danger)
             }
             .confirmationDialog(L("このハイライトを削除しますか？", "Delete this highlight?"),
                                 isPresented: $showDeleteConfirm, titleVisibility: .visible) {

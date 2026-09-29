@@ -230,7 +230,9 @@ struct ProfileEditView: View {
                     // **先頭だけ外す。** 丸ごと消すと Web のプレイリストを壊す
                     if !songs.isEmpty { songs.removeFirst() }
                 } label: {
+                    // 危険の色はテーマの赤（無指定だと系統の赤 #FF453A になる）
                     Text(L("BGM を外す", "Remove BGM"))
+                        .foregroundStyle(WebTheme.danger)
                 }
             } else {
                 Button {
