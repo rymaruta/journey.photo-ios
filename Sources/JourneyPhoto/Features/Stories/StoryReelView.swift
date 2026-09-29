@@ -36,8 +36,19 @@ struct StoryReelView: View {
     @State private var width: Double = 390
     /// 並びから落とした1本（通報・削除）。**人を行き来して閲覧画面が作り直されても戻さない**
     @State private var removed: Set<String> = []
-    /// 閲覧画面が「いまは払えない」（返信欄に入力中・メニュー・送信中）と言っている
+    /// 閲覧画面が「いまは払えない」（返信欄に入力中・メニュー・送信中）と言っている。
+    /// **止めるのは横（人を替える）だけ**——下へ払って閉じるのは止めない（圏外で返事を
+    /// 待つ間に閉じられなくなる。`StoryViewerView.leftTap` の注記と同じ）
     @State private var swipeLocked = false
+    /// 払い始めに決めた向き。**離したときもこれを使う**（離した瞬間の移動量で決め直すと、
+    /// 横に回していたのに指が下へ流れて閉じる、縮めていたのに横へ流れて回る、が起きた）。
+    /// `onChanged` で `finger.axis` を写す——打ち切られて残っても、次の払いの最初の
+    /// `onChanged` で書き直される
+    @State private var lockedAxis: StoryReel.Axis?
+    /// いま閲覧画面に渡している束。**人が替わるときだけ決め直す**——通報・ブロックの
+    /// たびに渡す束を変えると、閲覧画面の中の位置と食い違い、通報した1本や見ていない
+    /// 1本に「見た」が飛んだ（7a3894b のレビュー）
+    @State private var shown: StoryReel.Group?
 
     struct Finger: Equatable {
         var axis: StoryReel.Axis?
@@ -54,7 +65,9 @@ struct StoryReelView: View {
         self.viewerId = viewerId
         self.onSeen = onSeen
         self.onDeleted = onDeleted
-        _group = State(initialValue: groups.indices.contains(startGroup) ? startGroup : 0)
+        let start = groups.indices.contains(startGroup) ? startGroup : 0
+        _group = State(initialValue: start)
+        _shown = State(initialValue: groups.indices.contains(start) ? groups[start] : nil)
     }
 
     // MARK: - 並び
@@ -92,7 +105,7 @@ struct StoryReelView: View {
                 if let next = neighbor(1) {
                     face(StoryReelFace(story: representative(of: next)), minX: width + dragX)
                 }
-                if let current = liveGroup(group) ?? (groups.indices.contains(group) ? groups[group] : nil) {
+                if let current = shown {
                     face(viewer(current), minX: dragX)
                         // **人が替わったら閲覧画面を作り直す**（前の人の時計・返信欄を持ち越さない）
                         .id(group)
@@ -108,16 +121,23 @@ struct StoryReelView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: StoryReel.axisThreshold)
                 .updating($finger) { value, state, _ in
-                    guard !turning, !swipeLocked else { return }
+                    guard !turning else { return }
                     let dx = value.translation.width, dy = value.translation.height
-                    if state.axis == nil { state.axis = StoryReel.axis(dx: dx, dy: dy) }
+                    if state.axis == nil {
+                        let axis = StoryReel.axis(dx: dx, dy: dy)
+                        // 入力中・送信中は横（人を替える）を始めない。下へ閉じるのは止めない
+                        state.axis = (axis == .horizontal && swipeLocked) ? nil : axis
+                    }
                     state.dx = dx
                     state.dy = dy
                 }
+                .onChanged { _ in lockedAxis = finger.axis }
                 .onEnded { value in
-                    guard !turning, !swipeLocked else { return }
+                    let axis = lockedAxis
+                    lockedAxis = nil
+                    guard !turning else { return }
                     let dx = value.translation.width, dy = value.translation.height
-                    switch StoryReel.axis(dx: dx, dy: dy) {
+                    switch axis {
                     case .horizontal:
                         // 指の位置を引き継いでから回す（`finger` はここで 0 に戻る）
                         let hasNext = neighbor(1) != nil, hasPrevious = neighbor(-1) != nil
@@ -196,6 +216,7 @@ struct StoryReelView: View {
             try? await Task.sleep(for: .milliseconds(Int(Self.turnDuration * 1000)))
             // 回りきった面（写真1枚）を本物の閲覧画面に差し替える。**動きは付けない**
             group = target
+            shown = liveGroup(target)
             settleX = 0
             turning = false
         }
@@ -223,5 +244,7 @@ private struct StoryReelFace: View {
         }
         .clipped()
         .ignoresSafeArea()
+        // 画面の外に倒して置いてある面。**読み上げない**（前後の人の名前が読まれていた）
+        .accessibilityHidden(true)
     }
 }
