@@ -26,6 +26,15 @@ public struct State<Value>: DynamicProperty {
     }
 }
 
+/// 指で動かしている間だけの値。**指が離れる・打ち切られると初期値に戻る**（本物と同じ）
+@propertyWrapper
+public struct GestureState<Value>: DynamicProperty {
+    private let initial: Value
+    public init(wrappedValue: Value) { initial = wrappedValue }
+    public var wrappedValue: Value { initial }
+    public var projectedValue: GestureState<Value> { self }
+}
+
 /// **`ForEach($items) { $item in … }` のための適合**（本物も同じ）。
 /// 書き換えられる並びを包んだ `Binding` は、それ自身が並びとして歩ける。
 extension Binding: Sequence, Collection, BidirectionalCollection, RandomAccessCollection

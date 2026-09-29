@@ -6,29 +6,44 @@ import SwiftUI
 /// 閉じずに**次の人へ立方体のように回る**。横に払えば指に付いて回り、下へ払えば
 /// 指に付いて縮み、離すと閉じる。決まりは `StoryReel`。
 ///
-/// 🔴 **回っている途中に見える隣の面は写真1枚だけ**（`StoryReelFace`）。
-/// 隣の人の閲覧画面を並べて作ると、そちらの時計・「見た」の知らせ・動画・曲が
-/// 裏で動き出す（見ていない人に「見た」が届く）。閲覧画面は常に1つだけ
+/// 🔴 **隣の面は写真1枚だけ**（`StoryReelFace`）。隣の人の閲覧画面を並べて作ると、
+/// そちらの時計・「見た」の知らせ・動画・曲が裏で動き出す（見ていない人に「見た」が
+/// 届く）。閲覧画面は常に1つだけ。
+///
+/// 🔴 **隣の面は画面の外に常に置いておく**（±90度に倒れて見えない）。回すときに
+/// 初めて足すと、SwiftUI は行き着く先の位置で足すので回らずに現れた（自動で次の人へ
+/// 進むとき・左タップで前の人へ戻るとき。3615504 のレビュー）
 struct StoryReelView: View {
 
-    /// 人ごとの束（輪の並びの順）
+    /// 人ごとの束（輪の並びの順）。**開いたときの写し**
     let groups: [StoryReel.Group]
     let viewerId: String?
     let onSeen: ((String) -> Void)?
     let onDeleted: ((String) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var hidden: ModerationStore
 
     @State private var group: Int
-    /// 横の指の移動（回っている量）。左が負
-    @State private var dragX: Double = 0
-    /// 下への指の移動（縮む量）
-    @State private var dragY: Double = 0
-    /// 払い始めに決めた向き。**離すまで変えない**
-    @State private var axis: StoryReel.Axis?
-    /// 回りきる動きの最中（二度押しで2人進まない・閲覧画面を止める）
+    /// 指で動かしている間の値。**打ち切られても（通知センター・電話・背面）自動で
+    /// 元に戻る**——`@State` に持っていたときは戻らず、閲覧画面が止まったままだった
+    @GestureState private var finger = Finger()
+    /// 指を離した後の動き（回りきる・戻る・縮みから戻る）
+    @State private var settleX: Double = 0
+    @State private var settleY: Double = 0
+    /// 回りきる動きの最中（二度押しで2人進まない・閲覧画面を止める・触らせない）
     @State private var turning = false
     @State private var width: Double = 390
+    /// 並びから落とした1本（通報・削除）。**人を行き来して閲覧画面が作り直されても戻さない**
+    @State private var removed: Set<String> = []
+    /// 閲覧画面が「いまは払えない」（返信欄に入力中・メニュー・送信中）と言っている
+    @State private var swipeLocked = false
+
+    struct Finger: Equatable {
+        var axis: StoryReel.Axis?
+        var dx: Double = 0
+        var dy: Double = 0
+    }
 
     /// 回りきるのにかける時間
     private static let turnDuration: Double = 0.32
@@ -42,23 +57,47 @@ struct StoryReelView: View {
         _group = State(initialValue: groups.indices.contains(startGroup) ? startGroup : 0)
     }
 
-    private var hasNext: Bool { group + 1 < groups.count }
-    private var hasPrevious: Bool { group > 0 }
+    // MARK: - 並び
+
+    /// まだ見せるものがある束（落とした1本・ブロックした人を外す）
+    private func liveGroup(_ index: Int) -> StoryReel.Group? {
+        guard groups.indices.contains(index) else { return nil }
+        return StoryReel.live(groups[index], removed: removed, blocked: hidden.blockedUserIds)
+    }
+
+    private func neighbor(_ step: Int) -> Int? {
+        StoryReel.neighbor(from: group, step: step, count: groups.count) { liveGroup($0) != nil }
+    }
+
+    // MARK: - 動き
+
+    private var dragX: Double {
+        settleX + (finger.axis == .horizontal
+            ? StoryReel.resisted(dx: finger.dx, hasNext: neighbor(1) != nil, hasPrevious: neighbor(-1) != nil)
+            : 0)
+    }
+
+    private var dragY: Double {
+        settleY + (finger.axis == .vertical ? max(0, finger.dy) : 0)
+    }
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 Color.black.ignoresSafeArea()
-                // 隣の面（回っている間だけ）
-                if dragX < 0, hasNext {
-                    face(StoryReelFace(story: representative(of: group + 1)), minX: width + dragX)
-                } else if dragX > 0, hasPrevious {
-                    face(StoryReelFace(story: representative(of: group - 1)), minX: -width + dragX)
+                // 隣の面（画面の外に倒して置いておく）
+                if let previous = neighbor(-1) {
+                    face(StoryReelFace(story: representative(of: previous)), minX: -width + dragX)
                 }
-                if groups.indices.contains(group) {
-                    face(viewer(for: group), minX: dragX)
+                if let next = neighbor(1) {
+                    face(StoryReelFace(story: representative(of: next)), minX: width + dragX)
+                }
+                if let current = liveGroup(group) ?? (groups.indices.contains(group) ? groups[group] : nil) {
+                    face(viewer(current), minX: dragX)
                         // **人が替わったら閲覧画面を作り直す**（前の人の時計・返信欄を持ち越さない）
                         .id(group)
+                        // 回っている間は触らせない（古い束で次の1本へ進み、見ていない1本を既読にした）
+                        .allowsHitTesting(!turning)
                 }
             }
             .scaleEffect(StoryReel.dragScale(dy: dragY))
@@ -68,33 +107,29 @@ struct StoryReelView: View {
         }
         .simultaneousGesture(
             DragGesture(minimumDistance: StoryReel.axisThreshold)
-                .onChanged { value in
-                    guard !turning else { return }
+                .updating($finger) { value, state, _ in
+                    guard !turning, !swipeLocked else { return }
                     let dx = value.translation.width, dy = value.translation.height
-                    if axis == nil { axis = StoryReel.axis(dx: dx, dy: dy) }
-                    switch axis {
-                    case .horizontal:
-                        dragX = StoryReel.resisted(dx: dx, hasNext: hasNext, hasPrevious: hasPrevious)
-                    case .vertical:
-                        dragY = max(0, dy)
-                    case nil:
-                        break
-                    }
+                    if state.axis == nil { state.axis = StoryReel.axis(dx: dx, dy: dy) }
+                    state.dx = dx
+                    state.dy = dy
                 }
                 .onEnded { value in
-                    defer { axis = nil }
-                    guard !turning else { return }
-                    switch axis {
+                    guard !turning, !swipeLocked else { return }
+                    let dx = value.translation.width, dy = value.translation.height
+                    switch StoryReel.axis(dx: dx, dy: dy) {
                     case .horizontal:
-                        turn(StoryReel.release(dx: value.translation.width,
-                                               predictedDX: value.predictedEndTranslation.width,
+                        // 指の位置を引き継いでから回す（`finger` はここで 0 に戻る）
+                        let hasNext = neighbor(1) != nil, hasPrevious = neighbor(-1) != nil
+                        settleX = StoryReel.resisted(dx: dx, hasNext: hasNext, hasPrevious: hasPrevious)
+                        turn(StoryReel.release(dx: dx, predictedDX: value.predictedEndTranslation.width,
                                                width: width, hasNext: hasNext, hasPrevious: hasPrevious))
                     case .vertical:
-                        if StoryReel.closes(dy: value.translation.height,
-                                            predictedDY: value.predictedEndTranslation.height) {
+                        settleY = max(0, dy)
+                        if StoryReel.closes(dy: dy, predictedDY: value.predictedEndTranslation.height) {
                             dismiss()
                         } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragY = 0 }
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { settleY = 0 }
                         }
                     case nil:
                         break
@@ -114,54 +149,54 @@ struct StoryReelView: View {
             .offset(x: minX)
     }
 
-    private func viewer(for index: Int) -> some View {
-        let g = groups[index]
-        return StoryViewerView(
+    private func viewer(_ g: StoryReel.Group) -> some View {
+        StoryViewerView(
             stories: g.stories, startIndex: g.start, viewerId: viewerId,
-            // **指で回している間・回りきる間は止める**（長押しの判定は指が動くと外れ、
-            // 時計が進み続けていた）
-            holds: axis != nil || turning,
+            // **指で動かしている間・回りきる間・縮みから戻る間は止める**（長押しの判定は
+            // 指が動くと外れ、時計が進み続けていた）
+            holds: finger.axis != nil || turning,
             onGroupEnd: { turn(.forward) },
-            onGroupBack: index > 0 ? { turn(.back) } : nil,
+            onGroupBack: neighbor(-1) != nil ? { turn(.back) } : nil,
             swipesHandledOutside: true,
+            onDropped: { removed.insert($0) },
+            onSwipeLockChange: { swipeLocked = $0 },
             onSeen: onSeen,
             onDeleted: onDeleted)
     }
 
     /// 隣の面に出す1本（その人の束で最初に開く1本）
     private func representative(of index: Int) -> Story? {
-        guard groups.indices.contains(index) else { return nil }
-        let g = groups[index]
+        guard let g = liveGroup(index) else { return nil }
         return g.stories.indices.contains(g.start) ? g.stories[g.start] : g.stories.first
     }
 
-    /// 回りきる／戻す。**最後の人の先は閉じる**（今までと同じ）
+    /// 回りきる／戻す。**次の人がいなければ閉じる**（最後の人の先・今までと同じ）
     private func turn(_ release: StoryReel.Release) {
         guard !turning else { return }
-        let step: Int
+        let target: Int
         switch release {
         case .forward:
-            guard hasNext else { dismiss(); return }
-            step = 1
+            guard let next = neighbor(1) else { dismiss(); return }
+            target = next
         case .back:
-            guard hasPrevious else {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragX = 0 }
+            guard let previous = neighbor(-1) else {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { settleX = 0 }
                 return
             }
-            step = -1
+            target = previous
         case .stay:
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragX = 0 }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { settleX = 0 }
             return
         }
         turning = true
         withAnimation(.easeInOut(duration: Self.turnDuration)) {
-            dragX = step > 0 ? -width : width
+            settleX = target > group ? -width : width
         }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(Int(Self.turnDuration * 1000)))
             // 回りきった面（写真1枚）を本物の閲覧画面に差し替える。**動きは付けない**
-            group += step
-            dragX = 0
+            group = target
+            settleX = 0
             turning = false
         }
     }

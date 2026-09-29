@@ -127,6 +127,13 @@ struct StoryViewerView: View {
     /// 払う動き（横・下）を外の画面が受け持つ（`StoryReelView` が指に付けて回す・縮める）。
     /// true のときこの画面の払いは何もしない——両方が動くと1回の払いで2つ進む
     let swipesHandledOutside: Bool
+    /// 並びから落とした1本（通報・削除）を外へ知らせる。**人を行き来して閲覧画面が
+    /// 作り直されても、落とした1本を戻さない**ため（`StoryReelView` が覚える）
+    let onDropped: ((String) -> Void)?
+    /// いま払ってはいけない（返信欄に入力中・メニューや確認が開いている・送信中）を
+    /// 外へ知らせる。**外の払い（`StoryReelView`）が見る**——返信の一言の候補を横に
+    /// 流しただけで次の人へ回り、書きかけが消えていた
+    let onSwipeLockChange: ((Bool) -> Void)?
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
@@ -134,11 +141,15 @@ struct StoryViewerView: View {
          onGroupEnd: (() -> Void)? = nil,
          onGroupBack: (() -> Void)? = nil,
          swipesHandledOutside: Bool = false,
+         onDropped: ((String) -> Void)? = nil,
+         onSwipeLockChange: ((Bool) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
          onDeleted: ((String) -> Void)? = nil) {
         self.onGroupEnd = onGroupEnd
         self.onGroupBack = onGroupBack
         self.swipesHandledOutside = swipesHandledOutside
+        self.onDropped = onDropped
+        self.onSwipeLockChange = onSwipeLockChange
         self.stories = stories
         self.onDeleted = onDeleted
         self.viewerId = viewerId
@@ -175,6 +186,19 @@ struct StoryViewerView: View {
             // 前面に居ない間は止める（動画も止まり、戻ると続きから）
             inBackground: !isForeground
         )
+    }
+
+    /// 払ってはいけない間（`onSwipeLockChange`）。長押し・絵の読み込みは含めない
+    /// （止まっていても払って次へは行ける）
+    private var swipeLocked: Bool {
+        replyFocused || isSending || showMenu || showReplies || showInsights || showReport
+            || showBlockConfirm || showAuthor || showDeleteConfirm
+    }
+
+    /// この人の束をもう見せられない（最後の1本を消した・通報した・ブロックした）。
+    /// **並びの中なら次の人へ**、そうでなければ閉じる
+    private func leaveGroup() {
+        if let onGroupEnd { onGroupEnd() } else { dismiss() }
     }
 
     var body: some View {
@@ -350,7 +374,11 @@ struct StoryViewerView: View {
         .task(id: story.id) { await runClock(for: story) }
         // 次の写真を先に読んでおく（1本ごとにバーが 0 のまま待たないように）
         .task(id: story.id) { prefetchNext() }
-        .onAppear { isForeground = scenePhase == .active }
+        .onAppear {
+            isForeground = scenePhase == .active
+            onSwipeLockChange?(swipeLocked)
+        }
+        .onChange(of: swipeLocked) { _, locked in onSwipeLockChange?(locked) }
         .onChange(of: scenePhase) { _, phase in isForeground = phase == .active }
         .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
             Button(L("ブロック", "Block"), role: .destructive) {
@@ -379,7 +407,7 @@ struct StoryViewerView: View {
         // **ページの中でブロックしたら、閲覧画面ごと閉じる**（「…」からの
         // ブロックと同じ後始末）。閉じないとブロックした人のストーリーが流れ続ける
         .sheet(isPresented: $showAuthor, onDismiss: {
-            if let userId = story.userId, hidden.blockedUserIds.contains(userId) { dismiss() }
+            if let userId = story.userId, hidden.blockedUserIds.contains(userId) { leaveGroup() }
         }) {
             if let userId = story.userId {
                 NavigationStack {
@@ -1097,7 +1125,7 @@ struct StoryViewerView: View {
             await environment.gallery.setHidden(hidden.snapshot)
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
-            dismiss()
+            leaveGroup()
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
@@ -1107,7 +1135,7 @@ struct StoryViewerView: View {
     /// （閉じただけなら何もしない）。中でブロックもしていれば画面ごと閉じる
     private func afterReport(_ story: Story) {
         if let userId = story.userId, hidden.blockedUserIds.contains(userId) {
-            dismiss()
+            leaveGroup()
             return
         }
         guard hidden.reportedPhotoIds.contains(story.id) else { return }
@@ -1116,9 +1144,10 @@ struct StoryViewerView: View {
         // 進んでいた回に、位置で詰めると1本飛ばしていた
         let viewingId = current?.id
         dropped.insert(story.id)
+        onDropped?(story.id)
         let remaining = visible
         if remaining.isEmpty {
-            dismiss()
+            leaveGroup()
             return
         } else if viewingId != story.id,
                   let stay = remaining.firstIndex(where: { $0.id == viewingId }) {
@@ -1508,9 +1537,10 @@ struct StoryViewerView: View {
             // 前後へ送っていた回に1本飛ばしたり、同じ1本の見た人・返信を空にしたりする）
             let viewingId = current?.id
             dropped.insert(story.id)
+            onDropped?(story.id)
             let remaining = visible
             if remaining.isEmpty {
-                dismiss()
+                leaveGroup()
             } else if viewingId != story.id,
                       let stay = remaining.firstIndex(where: { $0.id == viewingId }) {
                 // 別の1本を見ている: その1本のまま、位置だけ直す（状態は空にしない）

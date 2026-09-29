@@ -28,6 +28,30 @@ enum StoryReel {
         }
     }
 
+    /// 束から、もう見せない1本（通報・削除）と**ブロックした人**を外す。
+    /// 残りが無ければ nil（その人は並びから飛ばす）。開く位置は元の1本が残っていれば
+    /// そこ、消えていれば先頭
+    static func live(_ group: Group, removed: Set<String>, blocked: Set<String>) -> Group? {
+        let kept = group.stories.filter { story in
+            !removed.contains(story.id) && !(story.userId.map { blocked.contains($0) } ?? false)
+        }
+        guard !kept.isEmpty else { return nil }
+        let startId = group.stories.indices.contains(group.start) ? group.stories[group.start].id : nil
+        let start = kept.firstIndex { $0.id == startId } ?? 0
+        return Group(stories: kept, start: start)
+    }
+
+    /// `from` から `step`（+1 / -1）の向きで、**まだ見せるものがある**いちばん近い人
+    static func neighbor(from index: Int, step: Int, count: Int, isLive: (Int) -> Bool) -> Int? {
+        guard step != 0 else { return nil }
+        var i = index + step
+        while i >= 0, i < count {
+            if isLive(i) { return i }
+            i += step
+        }
+        return nil
+    }
+
     // MARK: - 立方体
 
     /// 面の回り（度）。`minX` は面の左端の位置（画面の左端が 0、右隣の面は `width`）。
@@ -60,12 +84,15 @@ enum StoryReel {
     static let turnFraction: Double = 0.25
 
     /// 横に払って離したとき。**勢い（`predictedDX`）でも決める**——短く速く払えば回る。
-    /// 隣の人がいない向きは戻す（最初の人から右へ・最後の人から左へ）
+    /// 隣の人がいない向きは戻す（最初の人から右へ・最後の人から左へ）。
+    /// **勢いは引いている向きと同じときだけ使う**——左へ引いて（次の人が見えている）
+    /// 最後に右へ弾くと、見えていない前の人へ回っていた
     static func release(dx: Double, predictedDX: Double, width: Double,
                         hasNext: Bool, hasPrevious: Bool) -> Release {
         guard width > 0 else { return .stay }
         let limit = width * turnFraction
-        let travel = abs(predictedDX) > abs(dx) ? predictedDX : dx
+        let sameDirection = dx == 0 || (dx < 0) == (predictedDX < 0)
+        let travel = sameDirection && abs(predictedDX) > abs(dx) ? predictedDX : dx
         if travel <= -limit, hasNext { return .forward }
         if travel >= limit, hasPrevious { return .back }
         return .stay

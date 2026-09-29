@@ -26,6 +26,29 @@ final class StoryReelTests: XCTestCase {
         XCTAssertEqual(StoryReel.groups(rings: [], in: all), [])
     }
 
+    /// 落とした1本・ブロックした人を外す。開く位置は元の1本が残っていればそこ
+    func testLiveGroupDropsRemovedAndBlocked() {
+        let a1 = story("a1", "a", "2026-09-29T01:00:00Z")
+        let a2 = story("a2", "a", "2026-09-29T02:00:00Z")
+        let a3 = story("a3", "a", "2026-09-29T03:00:00Z")
+        let g = StoryReel.Group(stories: [a1, a2, a3], start: 2)
+        let kept = StoryReel.live(g, removed: ["a1"], blocked: [])
+        XCTAssertEqual(kept?.stories.map(\.id), ["a2", "a3"])
+        XCTAssertEqual(kept?.start, 1, "開く1本（a3）の位置を詰め直していない")
+        XCTAssertEqual(StoryReel.live(g, removed: ["a3"], blocked: [])?.start, 0, "開く1本が消えたら先頭から")
+        XCTAssertNil(StoryReel.live(g, removed: ["a1", "a2", "a3"], blocked: []), "全部落としたら飛ばす")
+        XCTAssertNil(StoryReel.live(g, removed: [], blocked: ["a"]), "ブロックした人は飛ばす")
+    }
+
+    /// 隣は**まだ見せるものがある**いちばん近い人（飛ばした人を越える）
+    func testNeighborSkipsEmptyGroups() {
+        let live: Set<Int> = [0, 3]
+        XCTAssertEqual(StoryReel.neighbor(from: 0, step: 1, count: 4) { live.contains($0) }, 3)
+        XCTAssertEqual(StoryReel.neighbor(from: 3, step: -1, count: 4) { live.contains($0) }, 0)
+        XCTAssertNil(StoryReel.neighbor(from: 3, step: 1, count: 4) { live.contains($0) })
+        XCTAssertNil(StoryReel.neighbor(from: 0, step: -1, count: 4) { _ in true })
+    }
+
     // MARK: - 立方体
 
     /// 真ん中の面は 0 度・隣の面は ±90 度・その間は指の移動に比例
@@ -50,6 +73,9 @@ final class StoryReelTests: XCTestCase {
         XCTAssertEqual(StoryReel.release(dx: -60, predictedDX: -60, width: w, hasNext: true, hasPrevious: true), .stay)
         // 短く速く払えば回る（勢い）
         XCTAssertEqual(StoryReel.release(dx: -40, predictedDX: -300, width: w, hasNext: true, hasPrevious: true), .forward)
+        // 引いた向きと逆へ弾いても、見えていない側へは回らない（勢いは同じ向きだけ）
+        XCTAssertEqual(StoryReel.release(dx: -60, predictedDX: 200, width: w, hasNext: true, hasPrevious: true), .stay)
+        XCTAssertNotEqual(StoryReel.release(dx: -150, predictedDX: 200, width: w, hasNext: true, hasPrevious: true), .back)
         // 隣の人がいない向きは戻す
         XCTAssertEqual(StoryReel.release(dx: -300, predictedDX: -300, width: w, hasNext: false, hasPrevious: true), .stay)
         XCTAssertEqual(StoryReel.release(dx: 300, predictedDX: 300, width: w, hasNext: true, hasPrevious: false), .stay)

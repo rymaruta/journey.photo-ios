@@ -379,6 +379,9 @@ public struct DragGesture: Gesture {
     public init(minimumDistance: Double = 10) {}
     public func onChanged(_ action: @escaping (Value) -> Void) -> DragGesture { self }
     public func onEnded(_ action: @escaping (Value) -> Void) -> DragGesture { self }
+    /// 指で動かしている間の値を `@GestureState` に書く（本物と同じ）
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Value, inout S, inout Transaction) -> Void) -> DragGesture { self }
 }
 
 /// つまみ（文字の大きさを決めるのに使う）。
