@@ -228,9 +228,10 @@ extension TextOverlayTests {
         XCTAssertTrue(TextOverlay.Kind.hashtag.isEditable)
     }
 
-    /// 自由な文字以外は**必ず帯**（写真の上で読めなくならないように）
+    /// 自由な文字以外は**必ず帯**（写真の上で読めなくならないように）。
+    /// **スタンプだけは帯にしない**（絵文字そのものが見た目・`testStampKind`）
     func testOnlyFreeTextKeepsItsStyle() {
-        for kind in TextOverlay.Kind.allCases where kind != .text {
+        for kind in TextOverlay.Kind.allCases where kind != .text && kind != .stamp {
             XCTAssertEqual(kind.forcedStyle, .banner, "\(kind)")
         }
         XCTAssertNil(TextOverlay.Kind.text.forcedStyle)
@@ -350,5 +351,46 @@ extension TextOverlayTests {
         let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(overlay))
         XCTAssertEqual(back.face, .marker)
         XCTAssertEqual(back.ink, .pink)
+    }
+
+    // MARK: - 縁取り・スタンプ（2026-09-29）
+
+    /// 縁取りは縁が黒なので墨を出さない。墨のまま縁取りへ切り替えたら白に寄せる
+    func testOutlineHidesInkAndConvertsIt() {
+        XCTAssertFalse(TextOverlay.inks(for: .outline).contains(.ink))
+        XCTAssertEqual(TextOverlay.inks(for: .outline).count, 11)
+        let dark = TextOverlay(text: "港", style: .dark)          // 既定の色は墨
+        XCTAssertEqual(dark.ink, .ink)
+        let outlined = dark.withStyle(.outline)
+        XCTAssertEqual(outlined.style, .outline)
+        XCTAssertEqual(outlined.drawnInk, .white)
+        // 墨以外の色は縁取りでもそのまま
+        XCTAssertEqual(TextOverlay(text: "港", ink: .pink).withStyle(.outline).drawnInk, .pink)
+    }
+
+    /// スタンプは帯にしない・打ち直さない・書体と色を出さない
+    func testStampKind() {
+        let stamp = TextOverlay(text: "🗻", size: TextOverlay.stampSize, style: .banner, kind: .stamp)
+        XCTAssertEqual(stamp.style, .light, "スタンプを帯にしている")
+        XCTAssertFalse(TextOverlay.Kind.stamp.isEditable)
+        XCTAssertFalse(TextOverlay.Kind.stamp.hasTypography)
+        XCTAssertNil(TextOverlay.Kind.stamp.symbol)
+        XCTAssertEqual(stamp.displayText, "🗻", "絵文字の前に印を付けている")
+        XCTAssertEqual(stamp.size, TextOverlay.stampSize)
+        // ほかの札は今までどおり帯・書体と色を選べる
+        for kind in TextOverlay.Kind.allCases where kind != .stamp {
+            XCTAssertTrue(kind.hasTypography)
+            XCTAssertEqual(kind.forcedStyle, kind == .text ? nil : .banner)
+        }
+    }
+
+    func testStampListIsUniqueAndPlaceable() throws {
+        XCTAssertEqual(Set(TextOverlay.stamps).count, TextOverlay.stamps.count, "同じ絵文字が2つある")
+        XCTAssertGreaterThanOrEqual(TextOverlay.stamps.count, 40)
+        XCTAssertTrue(TextOverlay.stamps.allSatisfy { !$0.isEmpty && $0.count == 1 }, "1つの絵文字になっていない")
+        XCTAssertLessThanOrEqual(TextOverlay.stampSize, TextOverlay.maxSize)
+        let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(
+            TextOverlay(text: "🍜", kind: .stamp)))
+        XCTAssertEqual(back.kind, .stamp)
     }
 }

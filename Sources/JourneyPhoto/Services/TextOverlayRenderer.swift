@@ -84,6 +84,11 @@ enum TextOverlayRenderer {
             // `strokeWidth` は負で「塗り＋縁」（正だと中抜きになる）
             return [.font: font, .foregroundColor: color,
                     .strokeColor: UIColor.white, .strokeWidth: -3.0]
+        case .outline:
+            // **色の文字に黒い太い縁。** 幅は白い縁（黒の見た目）の倍——どの写真の上でも
+            // 色が縁で切り離されて読める
+            return [.font: font, .foregroundColor: color,
+                    .strokeColor: UIColor.black, .strokeWidth: -6.0]
         }
     }
 

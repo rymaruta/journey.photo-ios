@@ -56,6 +56,8 @@ struct StoryComposerView: View {
     @State private var textMode = false
     /// 選んでいる札
     @State private var selectedId: UUID?
+    /// スタンプ（絵文字）の列を開いているか
+    @State private var showStamps = false
     /// 編集に入ったときの写し（「やめる」で戻す）と、**どの写真の編集か**。
     /// 編集中に並びが増えて表示中の写真が移っても、戻す先を取り違えない
     @State private var overlaySnapshot: [TextOverlay] = []
@@ -551,19 +553,47 @@ struct StoryComposerView: View {
         }
     }
 
-    /// 札の種類（文字・撮影地・曲・時刻・日付・タグ）。押すと足して選ぶ
+    /// 札の種類（文字・撮影地・曲・時刻・日付・タグ・スタンプ）。押すと足して選ぶ。
+    /// **スタンプだけは押すと絵文字の列を開く**（どれを置くか選ぶ）
     private var kindChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(TextOverlay.Kind.allCases, id: \.rawValue) { kind in
-                    OverlayChip(title: kind.toolLabel, systemImage: kind.toolSymbol) {
-                        add(kind: kind)
+        VStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(TextOverlay.Kind.allCases, id: \.rawValue) { kind in
+                        OverlayChip(title: kind.toolLabel, systemImage: kind.toolSymbol,
+                                    selected: kind == .stamp && showStamps) {
+                            if kind == .stamp {
+                                showStamps.toggle()
+                            } else {
+                                add(kind: kind)
+                            }
+                        }
+                        .disabled(overlays.wrappedValue.count >= TextOverlay.maxCount)
+                        .accessibilityIdentifier("story.add.\(kind.rawValue)")
                     }
-                    .disabled(overlays.wrappedValue.count >= TextOverlay.maxCount)
-                    .accessibilityIdentifier("story.add.\(kind.rawValue)")
+                }
+                .padding(.horizontal, 12)
+            }
+            if showStamps {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(TextOverlay.stamps, id: \.self) { emoji in
+                            Button {
+                                addStamp(emoji)
+                            } label: {
+                                Text(emoji)
+                                    .font(.system(size: 28))
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(overlays.wrappedValue.count >= TextOverlay.maxCount)
+                            .accessibilityLabel(L("スタンプ \(emoji)", "Sticker \(emoji)"))
+                        }
+                    }
+                    .padding(.horizontal, 12)
                 }
             }
-            .padding(.horizontal, 12)
         }
     }
 
@@ -681,6 +711,14 @@ struct StoryComposerView: View {
             return
         }
         shots[current].overlays.append(sticker)
+    }
+
+    /// スタンプを置く。**文字より大きく、真ん中に**（どこに置いたか分かるように）
+    private func addStamp(_ emoji: String) {
+        guard overlays.wrappedValue.count < TextOverlay.maxCount else { return }
+        let overlay = TextOverlay(text: emoji, x: 0.5, y: 0.5, size: TextOverlay.stampSize, kind: .stamp)
+        overlays.wrappedValue.append(overlay)
+        selectedId = overlay.id
     }
 
     private func add(kind: TextOverlay.Kind) {

@@ -157,6 +157,8 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         case .light: return Ink.allCases
         case .dark: return Ink.allCases.filter { $0 != .white }
         case .banner: return Ink.allCases.filter { $0 != .ink }
+        // 縁が黒なので墨は縁に溶ける
+        case .outline: return Ink.allCases.filter { $0 != .ink }
         }
     }
 
@@ -177,7 +179,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         next.style = newStyle
         switch (newStyle, ink) {
         case (.dark, .white): next.ink = .ink
-        case (.banner, .ink): next.ink = .white
+        case (.banner, .ink), (.outline, .ink): next.ink = .white
         case (.light, .ink) where style == .dark: next.ink = .white
         default: break
         }
@@ -202,6 +204,10 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         case date
         /// ハッシュタグ
         case hashtag
+        /// 絵文字のスタンプ（owner の「スタンプが少ない」・2026-09-29）。**飾りだけ**
+        /// ——持っているデータを出す札ではないが、押しても何も起きないと誤解される
+        /// 形（天気・質問）ではない。`TextOverlay.stamps` から選ぶ
+        case stamp
 
         /// 札の頭に付ける印。**文字だけの札には付けない**
         var symbol: String? {
@@ -212,12 +218,18 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .time: return "🕘"
             case .date: return "📅"
             case .hashtag: return "#"
+            case .stamp: return nil
             }
         }
 
-        /// 自由な文字以外は**必ず帯**にする（写真の上で読めなくならないように）
+        /// 自由な文字以外は**必ず帯**にする（写真の上で読めなくならないように）。
+        /// **スタンプは帯にしない**（絵文字そのものが見た目）
         var forcedStyle: Style? {
-            self == .text ? nil : .banner
+            switch self {
+            case .text: return nil
+            case .stamp: return .light
+            default: return .banner
+            }
         }
 
         /// 置いたときに入っている文字。**時刻と日付は端末から採る**
@@ -240,10 +252,14 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         }
 
         /// 置いたあとに文字を直せるか。**時刻と日付は直させない**
-        /// （端末から採った値なので、直せると「いつの話か」が嘘になる）
+        /// （端末から採った値なので、直せると「いつの話か」が嘘になる）。
+        /// スタンプは選び直す（打つものではない）
         var isEditable: Bool {
-            self != .time && self != .date
+            self != .time && self != .date && self != .stamp
         }
+
+        /// 書体・色を選べるか。**スタンプは絵文字なので効かない**（出すと押しても変わらない）
+        var hasTypography: Bool { self != .stamp }
 
         var toolLabel: String {
             switch self {
@@ -254,6 +270,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .time: return L("時刻", "Time")
             case .date: return L("日付", "Date")
             case .hashtag: return L("タグ", "Tag")
+            case .stamp: return L("スタンプ", "Stickers")
             }
         }
 
@@ -265,9 +282,22 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .time: return "clock"
             case .date: return "calendar"
             case .hashtag: return "number"
+            case .stamp: return "face.smiling"
             }
         }
     }
+
+    /// 選べるスタンプ（旅の写真向けの絵文字）。**端末の絵文字の字形で描く**ので同梱は要らない
+    static let stamps: [String] = [
+        "✈️", "🚄", "🚗", "🚲", "⛴️", "🧳", "🗺️", "📷", "📸", "🎒",
+        "🗻", "⛩️", "🏯", "🏖️", "🏔️", "🌊", "🌅", "🌄", "🌃", "🎡",
+        "🌸", "🍁", "🌻", "🌿", "❄️", "☀️", "🌙", "⭐️", "🌈", "☁️",
+        "🍜", "🍣", "🍡", "🍵", "☕️", "🍺", "🍦", "🍰", "🍙", "🍓",
+        "❤️", "💙", "✨", "🎉", "👍", "😊", "🥰", "😎", "🙌", "💯",
+    ]
+
+    /// スタンプの既定の大きさ（文字より大きく置く）
+    static let stampSize = 0.12
 
     enum Style: String, CaseIterable, Identifiable, Codable {
         /// 白い文字に影（写真の上でいちばん読める）
@@ -276,6 +306,9 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         case dark
         /// 黒い帯に白抜き
         case banner
+        /// 色の文字に黒い太い縁（owner の「自由度が低い」・2026-09-29）。
+        /// **どの写真の上でも色が読める**——明るい写真でも暗い写真でも縁が残す
+        case outline
 
         var id: String { rawValue }
 
@@ -284,6 +317,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .light: return L("白", "White")
             case .dark: return L("黒", "Black")
             case .banner: return L("帯", "Banner")
+            case .outline: return L("縁取り", "Outline")
             }
         }
     }

@@ -80,6 +80,29 @@ struct StoryCanvas: View {
         return .system(size: size, weight: .bold)
     }
 
+    /// 文字に縁を付ける（焼き込みの `strokeWidth` に合わせる）。SwiftUI の文字には縁が無いので、
+    /// **縁の色の文字を8方向にずらして下に敷く**。黒の見た目（白い縁・幅3%）と
+    /// 縁取り（黒い縁・幅6%）。**以前は黒の見た目の縁が画面に出ず、焼き込みにだけ付いていた**
+    static func edged<Label: View>(_ text: Label, overlay: TextOverlay, fontSize: Double) -> some View {
+        let edge: (color: Color, width: Double)? = {
+            switch overlay.style {
+            case .dark: return (.white, fontSize * 0.03 / 2)
+            case .outline: return (.black, fontSize * 0.06 / 2)
+            case .light, .banner: return nil
+            }
+        }()
+        return ZStack {
+            if let edge {
+                ForEach(0..<8, id: \.self) { i in
+                    let angle = Double(i) * .pi / 4
+                    text.foregroundStyle(edge.color)
+                        .offset(x: CGFloat(cos(angle) * edge.width), y: CGFloat(sin(angle) * edge.width))
+                }
+            }
+            text.foregroundStyle(color(overlay.drawnInk))
+        }
+    }
+
     static func color(_ ink: TextOverlay.Ink) -> Color {
         let hex = ink.hex
         return Color(red: Double((hex >> 16) & 0xFF) / 255,
@@ -103,10 +126,9 @@ struct StoryCanvas: View {
         let fontSize = TextOverlay.fontSize(overlay.size, in: photo.size)
         let center = overlay.center(in: photo)
         let rotation = overlay.rotation + (rotateId == overlay.id ? liveRotation : 0)
-        return Text(overlay.displayText)
+        return Self.edged(Text(overlay.displayText)
             // 書体と色は焼き込みと同じもの（`TextOverlayRenderer.attributes`）
-            .font(Self.font(overlay.face, size: fontSize))
-            .foregroundStyle(Self.color(overlay.drawnInk))
+            .font(Self.font(overlay.face, size: fontSize)), overlay: overlay, fontSize: fontSize)
             // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
             .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
             .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
@@ -188,7 +210,8 @@ struct OverlayPanel: View {
                     .frame(minHeight: 44)
             }
 
-            // 書体（8種）。**横に流す**——1行に収まらない
+            // 書体（8種）。**横に流す**——1行に収まらない。スタンプには出さない（絵文字に効かない）
+            if overlay.kind.hasTypography {
             HStack(spacing: 8) {
                 Text(L("書体", "Font"))
                     .font(.system(size: 11))
@@ -211,8 +234,10 @@ struct OverlayPanel: View {
                     .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.face, anchor: .center) }
                 }
             }
+            }
 
-            // 色（12色・`TextOverlay.Ink`）
+            // 色（12色・`TextOverlay.Ink`）。スタンプには出さない
+            if overlay.kind.hasTypography {
             HStack(spacing: 10) {
                 Text(L("色", "Color"))
                     .font(.system(size: 11))
@@ -247,6 +272,7 @@ struct OverlayPanel: View {
                 .onAppear { proxy.scrollTo(overlay.drawnInk, anchor: .center) }
                 .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.drawnInk, anchor: .center) }
                 }
+            }
             }
 
             HStack(spacing: 8) {
