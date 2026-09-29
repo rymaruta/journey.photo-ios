@@ -221,9 +221,10 @@ private struct NotificationRow: View {
             // **未読の印は行の頭の真鍮の点**（板 15）。真鍮＝合図
             .overlay(alignment: .leading) {
                 if entry.unread {
+                    // 未読の点は 8（ヘッダーの鈴の点と同じ）（デザインシステム「黒塗りの真鍮」）
                     Circle()
                         .fill(WebTheme.accent)
-                        .frame(width: 6, height: 6)
+                        .frame(width: 8, height: 8)
                         .offset(x: -12)
                         .accessibilityHidden(true)
                 }

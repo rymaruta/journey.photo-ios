@@ -232,6 +232,7 @@ struct StoryInsightsView: View {
             .buttonStyle(.plain)
             .disabled(viewer.deleted == true)
             if hasReaction(from: viewer.userId) {
+                // 真鍮（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29）。黒地の行の上）
                 Image(systemName: "heart.fill")
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityLabel(L("いいね", "Liked"))

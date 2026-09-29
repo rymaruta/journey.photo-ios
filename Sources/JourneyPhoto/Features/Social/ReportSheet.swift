@@ -132,7 +132,8 @@ struct ReportSheet: View {
                         Text(done ? Labels.Common.close : L("通報する", "Report"))
                     }
                 }
-                .jpPillButton()
+                // 写真の無い画面の主ボタンは真鍮の塗り（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））
+                .jpPillButton(.accent)
             }
             .buttonStyle(.plain)
             .disabled(isWorking)

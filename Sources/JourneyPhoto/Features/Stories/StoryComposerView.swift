@@ -235,7 +235,8 @@ struct StoryComposerView: View {
     /// 写真の上のひとこと・撮影地（曲は動かせる札）、左下の並び、右下の秒数（板 24）
     private var photoArea: some View {
         ZStack(alignment: .bottomLeading) {
-            Color(red: 0x0A / 255.0, green: 0x10 / 255.0, blue: 0x30 / 255.0).opacity(preview == nil ? 0 : 1)
+            // 写真の後ろの地は黒（紺はパレットに無い）（デザインシステム「黒塗りの真鍮」）
+            WebTheme.background.opacity(preview == nil ? 0 : 1)
             if let preview {
                 StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays,
                             selectedId: textMode ? selectedId : nil,

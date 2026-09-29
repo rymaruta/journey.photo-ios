@@ -357,8 +357,9 @@ struct OfficialSpotView: View {
     private var checkLine: some View {
         if let body = spotBody {
             // 出典の題は押せる（Web と同じ）。押すと出典のページ
+            // リンクは真鍮（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））
             Text(SpotBodyText.linkedCheckLine(body.check))
-                .tint(WebTheme.muted)
+                .tint(WebTheme.accent)
                 .font(.caption2)
                 .foregroundStyle(WebTheme.muted2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -443,12 +444,12 @@ struct OfficialSpotView: View {
 /// スポットの写真の出典の1行「写真: 作者 / ライセンス」。**1本の文字のまま**
 /// （折り返し・行数・揃えは呼ぶ側の指定どおり）、部分にリンクを付ける
 /// （`SpotImage.linkedCredit`: 作者 → 出典のページ・ライセンス → 文面）。
-/// リンクの色は周りの文字と同じ（`tint`）——見た目は以前の1行の出典と同じ
+/// リンクは真鍮（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。写真の下の黒地の行
 struct SpotImageCredit: View {
     let photo: SpotImage
 
     var body: some View {
         Text(photo.linkedCredit)
-            .tint(WebTheme.muted2)
+            .tint(WebTheme.accent)
     }
 }

@@ -54,12 +54,16 @@ enum JPPillStyle {
     case outline
     /// 赤の塗りに白の字（アカウントの削除だけ）
     case danger
+    /// 真鍮の塗りに墨の字（**写真の無い画面の主ボタン1つ**・デザインシステム「黒塗りの真鍮」
+    /// の accent-fill #B8955A・墨で 7.11:1）。写真のある画面は `.primary`（白）
+    case accent
 
     @MainActor var fill: Color {
         switch self {
         case .primary: return WebTheme.accentBackground
         case .outline: return Color.clear
         case .danger: return WebTheme.dangerFill
+        case .accent: return WebTheme.accentFill
         }
     }
 }
@@ -79,7 +83,7 @@ extension View {
     func jpPillButton(_ style: JPPillStyle = .primary) -> some View {
         self
             .font(.callout.weight(.semibold))
-            .foregroundStyle(style == .primary ? WebTheme.accentText : Color.white)
+            .foregroundStyle(style == .primary || style == .accent ? WebTheme.accentText : Color.white)
             .frame(maxWidth: .infinity, minHeight: 52)
             .background(style.fill, in: Capsule())
             .overlay(Capsule().strokeBorder(Color.white.opacity(style == .outline ? 0.28 : 0), lineWidth: 1))

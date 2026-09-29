@@ -41,6 +41,7 @@ struct DeleteAccountView: View {
                 }
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // 板 46 の赤い枠の札（赤 8% の地・30% の縁）。赤はテーマの危険の色
                 .background(WebTheme.danger.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
                 .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(WebTheme.danger.opacity(0.3), lineWidth: 1))
             }

@@ -931,9 +931,10 @@ struct StoryViewerView: View {
         return 0
     }
 
-    /// 危ない操作の文字（ブロック・通報・削除）。**板の色 `#ff8a80`**——写真の上の
-    /// 暗い面で読める明るさにしてある（`WebTheme.danger` は黒地用）
-    private static let storyDanger = Color(red: 1.0, green: 0x8A / 255.0, blue: 0x80 / 255.0)
+    /// 危ない操作の文字（ブロック・通報・削除）。**危険の色 `WebTheme.danger`（#F0565A）**。
+    /// 以前は `#ff8a80` で「黒地用の danger は暗い面で読めない」としていたが、実際は
+    /// シート #161618 の上で 5.32:1、確認の面 #1E1E20 の上で 4.9:1 と文字の線を越える（デザインシステム「黒塗りの真鍮」）
+    private static let storyDanger = WebTheme.danger
 
     /// 板「25b 長押しで一時停止」の札（ガラスの丸・13pt）
     private var pausedPill: some View {
