@@ -221,7 +221,13 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertTrue(StoryPlayback.menuItems(isMine: false, isVideo: false, hasCaption: true, hasOwner: true).contains(.hideCaption))
 
         let mine = StoryPlayback.menuItems(isMine: true, isVideo: false, hasCaption: true, hasOwner: true)
-        XCTAssertEqual(mine, [.pause, .hideCaption], "自分は通報もブロックもできない")
+        XCTAssertEqual(mine, [.pause, .hideCaption, .delete], "自分は通報もブロックもできない")
+        // 残せる投稿だけ「写真として残す」。人の投稿には残す・削除を出さない
+        XCTAssertEqual(StoryPlayback.menuItems(isMine: true, isVideo: false, hasCaption: false, hasOwner: true,
+                                               canKeep: true), [.pause, .keep, .delete])
+        let theirs = StoryPlayback.menuItems(isMine: false, isVideo: false, hasCaption: false, hasOwner: true,
+                                             canKeep: true)
+        XCTAssertFalse(theirs.contains(.keep) || theirs.contains(.delete))
 
         let unknownOwner = StoryPlayback.menuItems(isMine: false, isVideo: false, hasCaption: false, hasOwner: false)
         XCTAssertEqual(unknownOwner, [.pause, .report], "相手が分からなければブロックは出せない")
