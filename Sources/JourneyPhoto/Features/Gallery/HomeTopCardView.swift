@@ -25,6 +25,8 @@ struct HomeTopCardView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
+    /// 「行きたい」の鍵（「行きたい場所のこの季節」の札）
+    @EnvironmentObject private var wishlist: WishlistStore
 
     @State private var plans: [TripPlan] = []
     /// `plans` が誰のものか。**人が替わったら、取れるまで前の人のプランを出さない**
@@ -76,7 +78,8 @@ struct HomeTopCardView: View {
     @ViewBuilder
     private var content: some View {
         let choices = HomeTopCard.cards(now: Date(), plans: plansOwner == auth.userId ? plans : [],
-                                        myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots)
+                                        myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
+                                        wishlist: wishlist.spotIds)
         if choices.count == 1, let only = choices.first {
             // 1枚の日はいまと同じ（左右 16 の余白で画面いっぱい）
             card(for: only, inCarousel: false)
@@ -179,6 +182,19 @@ struct HomeTopCardView: View {
                      line: guide,
                      // **写真を出すなら作者とライセンスも出す**（CC BY・CC BY-SA の条件。
                      // 薄い背景でも写真は写真）
+                     detail: [spot.regionLabel, spot.photo?.credit].compactMap { $0 }.joined(separator: "\n"),
+                     backdrop: nil, backdropURL: spot.photo?.url, inCarousel: inCarousel)
+            }
+            .buttonStyle(.plain)
+        case .wishlistSeason(let spot, let season, let guide):
+            NavigationLink {
+                OfficialSpotView(spot: spot, spots: spots, photos: themePhotos)
+            } label: {
+                card(eyebrow: "WISHLIST",
+                     eyebrowLabel: HomeTopCard.wishlistEyebrow(season),
+                     title: spot.name,
+                     line: guide,
+                     // 写真を出すなら作者とライセンスも出す（季節の札と同じ）
                      detail: [spot.regionLabel, spot.photo?.credit].compactMap { $0 }.joined(separator: "\n"),
                      backdrop: nil, backdropURL: spot.photo?.url, inCarousel: inCarousel)
             }
