@@ -282,4 +282,22 @@ final class RegionListTests: XCTestCase {
         XCTAssertEqual(fr.region?.country, "フランス")
         XCTAssertNil(try spot("t", prefecture: "東京都", lat: 35.6, lng: 139.7).region?.country)
     }
+
+    /// 🔴 国の載った行は、座標が日本の箱に入っても（釜山）近くの県に入れない
+    func testCountryWinsOverTheJapanBox() throws {
+        let busan = try spot("busan", prefecture: "釜山広域市", lat: 35.10, lng: 129.04, country: "韓国")
+        let tsushima = try spot("tsushima", prefecture: "長崎県", lat: 34.20, lng: 129.29)
+        let sections = RegionList.sections(photos: [], spots: [busan, tsushima], from: nil)
+        XCTAssertEqual(sections.first { $0.key == .country("韓国") }?.spots.map(\.spot.slug), ["busan"])
+        XCTAssertEqual(sections.first { $0.key == .prefecture("長崎県") }?.spots.map(\.spot.slug), ["tsushima"])
+    }
+
+    /// 海外にいるときは、近くの国の段が「いまいる段」（開いて出る）
+    func testCurrentSectionAbroadIsTheNearbyCountry() throws {
+        let paris = Photo.Coords(lat: 48.85, lng: 2.35)
+        let sections = RegionList.sections(photos: [], spots: try abroadSpots(), from: paris)
+        XCTAssertEqual(sections.filter(\.isCurrent).map(\.key), [.country("フランス")])
+        XCTAssertEqual(RegionList.sections(photos: [], spots: try abroadSpots(), from: tokyo)
+            .filter(\.isCurrent).map(\.key), [.prefecture("東京都")])
+    }
 }

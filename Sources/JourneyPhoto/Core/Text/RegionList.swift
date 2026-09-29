@@ -188,6 +188,10 @@ enum RegionList {
             let key: Key
             if let p = row.spot.region?.prefecture, prefectures.contains(p) {
                 key = .prefecture(p)
+            } else if let country = row.spot.region?.country, !country.isEmpty, country != "日本" {
+                // **国を箱より先に見る。** 日本の箱は粗く釜山・対馬海峡の向こうも入る——
+                // 国が載っている行を近くの県に入れない
+                key = .country(country)
             } else if let c = row.spot.coords, isInJapan(c) {
                 key = nearestPrefecture(c).map(Key.prefecture) ?? .unknown
             } else {
@@ -217,7 +221,14 @@ enum RegionList {
             photosBy[key, default: []].append(photo)
         }
 
-        let current = center.flatMap(nearestPrefecture)
+        // 起点のある段。日本なら近くの県、海外なら近くの国（どちらも 150km 以内）
+        let currentKey: Key? = center.flatMap { c in
+            nearestPrefecture(c).map(Key.prefecture) ?? (isInJapan(c) ? nil : nearestCountry(c).map(Key.country))
+        }
+        let current = currentKey.flatMap { key -> String? in
+            if case .prefecture(let p) = key { return p }
+            return nil
+        }
         func distance(_ key: Key) -> Double {
             guard let center else { return .infinity }
             let fromSpots = (spotsBy[key] ?? []).compactMap(\.km)
@@ -253,7 +264,7 @@ enum RegionList {
             let s = spotsBy[key] ?? []
             let p = photosBy[key] ?? []
             guard !s.isEmpty || !p.isEmpty else { return nil }
-            return Section(key: key, isCurrent: current.map(Key.prefecture) == key, photos: p, spots: s)
+            return Section(key: key, isCurrent: currentKey == key, photos: p, spots: s)
         }
     }
 }
