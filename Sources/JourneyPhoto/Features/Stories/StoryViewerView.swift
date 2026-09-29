@@ -1062,47 +1062,25 @@ struct StoryViewerView: View {
     @ViewBuilder
     private func footer(for story: Story) -> some View {
         if isMine(story) {
-            // 見た人の行と、4つの操作（板 25e）
-            VStack(spacing: 10) {
+            // 反応の札と、操作の丸（板 25e）。owner の「作り込みが安っぽい」（2026-09-29）で
+            // 組み直した——数を文の中に埋めず数として出し、同じ画面を開く「反応を見る」の
+            // 重複をやめ、操作を写真の上の他の丸（✕・…）と同じガラスの丸に揃える
+            VStack(spacing: 14) {
                 // **反応はまとめて1画面に**（提案の絵）。見た人・いいね・返信が
                 // 別々のシートに割れていると、全体がどうだったか分からない
                 if !isExpired(story), viewersLoaded == true {
-                Button {
-                    showInsights = true
-                } label: {
-                    HStack(spacing: 10) {
-                        viewerFaces
-                        HStack(spacing: 0) {
-                            Text("\(viewers.count)").font(JPFont.mono(13, medium: true))
-                            // **返信を読めていなければ「いいね」の数は言わない**
-                            // （読めなかった回に空の一覧から「いいね 0」と言い切っていた）
-                            if repliesLoaded {
-                                Text(L(" 人が見ました · いいね ", " viewers · likes "))
-                                    .font(.system(size: 13))
-                                Text("\(replies.reactionCount)").font(JPFont.mono(13, medium: true))
-                            } else {
-                                Text(L(" 人が見ました", " viewers"))
-                                    .font(.system(size: 13))
-                            }
-                        }
-                        .foregroundStyle(.white)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13))
-                            .foregroundStyle(WebTheme.faint)
-                    }
-                    .frame(minHeight: 36)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                    insightsCard
                 }
 
-                HStack(spacing: 4) {
-                    if !isExpired(story) {
-                        ownAction(symbol: "eye", title: L("反応を見る", "Insights")) { showInsights = true }
+                HStack(alignment: .top, spacing: 0) {
+                    // 札を読めなかった（読み込み中・失敗）ときだけ、反応の画面への入口を丸で出す
+                    if !isExpired(story), viewersLoaded != true {
+                        ownAction(symbol: "chart.bar", title: L("反応", "Insights")) { showInsights = true }
                     }
                     if !isExpired(story) {
-                        ownAction(symbol: "bubble.left", title: replyTitle(for: story)) {
+                        ownAction(symbol: "bubble.left", title: L("返信", "Replies"),
+                                  badge: replyBadge(for: story),
+                                  accessibilityLabel: replyTitle(for: story)) {
                             showReplies = true
                         }
                     }
@@ -1121,13 +1099,9 @@ struct StoryViewerView: View {
                     }
                     .disabled(isSending)
                 }
-                .padding(.top, 4)
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
-                }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .padding(.top, 14)
         } else if story.acceptsReplies {
             // 返信欄（ガラスの丸）と ♡。**書いている間は ♡ が送信の白い丸に替わり、
             // 上に一言の候補と「だれに届くか」が出る**（板「25d 返信を書く」）
@@ -1265,22 +1239,106 @@ struct StoryViewerView: View {
     }
 
     /// 自分のストーリーの足元の操作（絵の下に11ptのラベル・高さ56）
-    private func ownAction(symbol: String, title: String, color: Color = .white,
-                           action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: symbol)
-                    .font(.system(size: 20))
-                Text(title)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+    /// 反応の札。**数は文に埋めず、数と名前を上下に**（「0 人が見ました · いいね 0」と
+    /// 1行に流すと、等幅の数字と本文の字が混ざって読みにくかった）。
+    /// まだ誰も見ていないときは顔の代わりに目の印を置き、0 を並べない
+    private var insightsCard: some View {
+        Button {
+            showInsights = true
+        } label: {
+            HStack(spacing: 14) {
+                if viewers.isEmpty {
+                    Image(systemName: "eye")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(WebTheme.muted2)
+                        .frame(width: 30, height: 30)
+                        .background(WebTheme.raised, in: Circle())
+                } else {
+                    viewerFaces
+                }
+                if viewers.isEmpty && (!repliesLoaded || replies.reactionCount == 0) {
+                    Text(L("まだ誰も見ていません", "No views yet"))
+                        .font(.system(size: 14))
+                        .foregroundStyle(WebTheme.muted)
+                } else {
+                    HStack(spacing: 18) {
+                        stat(viewers.count, label: L("見た人", "Viewers"))
+                        // **返信を読めていなければ「いいね」の数は言わない**
+                        // （読めなかった回に空の一覧から「いいね 0」と言い切っていた）
+                        if repliesLoaded {
+                            stat(replies.reactionCount, label: L("いいね", "Likes"))
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(WebTheme.faint)
             }
-            .foregroundStyle(color)
-            .frame(maxWidth: .infinity, minHeight: 56)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 56)
+            .jpGlass(in: RoundedRectangle(cornerRadius: 16))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(insightsLabel)
+        .accessibilityHint(L("反応を見る", "Show insights"))
+    }
+
+    private func stat(_ value: Int, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("\(value)")
+                .font(JPFont.mono(17, medium: true))
+                .foregroundStyle(.white)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(WebTheme.muted2)
+        }
+    }
+
+    private var insightsLabel: String {
+        let seen = L("見た人 \(viewers.count)人", "\(viewers.count) viewers")
+        guard repliesLoaded else { return seen }
+        return seen + L("、いいね \(replies.reactionCount)", ", \(replies.reactionCount) likes")
+    }
+
+    /// 操作の丸（写真の上の ✕ と同じガラス）と、下に小さな名前。
+    /// 返信の数は**名前に混ぜず丸の角に**（0 のときは出さない）
+    private func ownAction(symbol: String, title: String, color: Color = .white,
+                           badge: Int? = nil, accessibilityLabel: String? = nil,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(color)
+                    .frame(width: 48, height: 48)
+                    .jpGlass(in: Circle(), border: 0.14)
+                    .overlay(alignment: .topTrailing) {
+                        if let badge, badge > 0 {
+                            Text(badge > 99 ? "99+" : "\(badge)")
+                                .font(JPFont.mono(10, medium: true))
+                                .foregroundStyle(WebTheme.accentText)
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 18, minHeight: 18)
+                                .background(WebTheme.accentBackground, in: Capsule())
+                                .offset(x: 4, y: -2)
+                        }
+                    }
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(color == .white ? WebTheme.muted : color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity, minHeight: 72)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel ?? title)
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: - 返信の一覧（自分）
