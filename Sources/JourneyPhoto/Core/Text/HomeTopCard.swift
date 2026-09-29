@@ -17,10 +17,16 @@ import Foundation
 ///  2. **旅の最中** — 出発日を過ぎ、帰着日までの旅行プラン
 ///  3. **一冊ができた** — 旅が閉じて（最後の写真から `TripBook.maxGapDays` 日空いて）
 ///     から `bookFreshDays` 日以内で、**まだ開いていない**一冊
-///  4. **1年前の今ごろ** — 1年前の今日の前後 `yearAgoWindowDays` 日に撮った自分の写真
-///  5. **今日のテーマ** — 毎日（自分に当たる札が無い日は、これが先頭）
+///  4. **今日のテーマ** — 毎日（自分に当たる札が無い日は、これが先頭）
+///  5. **行きたい場所のこの季節** — 「行きたい」に入れた公開済みのスポットのうち、
+///     いまの季節の案内を持つものを日替わりで1件（2026-09-29・owner「こういう感じのを
+///     もっと増やしたい」）
 ///  6. **この季節の撮影スポット** — 公開済みで写真があり、**いまの季節の案内を持つ**
-///     スポットを日替わりで1件（2026-09-29・owner「毎日開きたくなる仕組みがアプリ側にない」）
+///     スポットを日替わりで1件（2026-09-29・owner「毎日開きたくなる仕組みがアプリ側にない」）。
+///     5 と同じスポットの日は出さない
+///  7. **1年前の今ごろ** — 1年前の今日の前後 `yearAgoWindowDays` 日に撮った自分の写真。
+///     **振り返りなので最後**（2026-09-29・owner「1年前の今頃とかは振り返りなので
+///     カードの最後の方でいい」）。これから撮りに行く札を前に出す
 ///
 /// 6 は板 55 の④「今月の見ごろ」。以前は季節の案内がアプリ向けの一覧
 /// （`app/data/spots.json`）に載っていなかったので入れていなかった。
@@ -49,6 +55,8 @@ enum HomeTopCard {
         case bookReady(trip: TripBook.Trip)
         /// `byUploadDate` は撮影日が無く、投稿日で当てたとき（「1年前に投稿」と言う）
         case oneYearAgo(photo: Photo, byUploadDate: Bool)
+        /// 「行きたい」に入れたスポットの、いまの季節の案内
+        case wishlistSeason(spot: OfficialSpot, season: String, guide: String)
         /// `season` は `spring`〜`winter`、`guide` はその季節の案内の文（台帳の文のまま）
         case inSeason(spot: OfficialSpot, season: String, guide: String)
         case theme
@@ -61,6 +69,7 @@ enum HomeTopCard {
             case .onTrip: return "onTrip"
             case .bookReady: return "bookReady"
             case .oneYearAgo: return "oneYearAgo"
+            case .wishlistSeason: return "wishlistSeason"
             case .inSeason: return "inSeason"
             case .theme: return "theme"
             }
@@ -82,17 +91,26 @@ enum HomeTopCard {
     ///   - myPhotos: 自分の写真（未ログインなら空）
     ///   - openedBookDays: 札から一度開いた一冊の日（`bookKey`・`OpenedTripBooks`）
     ///   - spots: 撮影スポットの索引（取れなかった回は空＝季節の札が出ないだけ）
+    ///   - wishlist: 「行きたい」の鍵（`WishlistStore.spotIds`・`SavedSpotKey`）
     static func cards(now: Date, plans: [TripPlan], myPhotos: [Photo],
                       openedBookDays: Set<String>, spots: [OfficialSpot] = [],
+                      wishlist: Set<String> = [],
                       timeZone: TimeZone = .current) -> [Choice] {
         guard let today = today(now, in: timeZone) else { return [.theme] }
         let found: [Choice?] = [
             departure(today: today, plans: plans),
             onTrip(today: today, plans: plans),
             bookReady(today: today, myPhotos: myPhotos, openedBookDays: openedBookDays, timeZone: timeZone),
+        ]
+        let wished = wishlistSeason(today: today, spots: spots, wishlist: wishlist)
+        var wishedId: String?
+        if case .wishlistSeason(let spot, _, _)? = wished { wishedId = spot.spotId }
+        let later: [Choice?] = [
+            wished,
+            inSeason(today: today, spots: spots, excluding: wishedId),
             oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone),
         ]
-        return found.compactMap { $0 } + [.theme] + [inSeason(today: today, spots: spots)].compactMap { $0 }
+        return found.compactMap { $0 } + [.theme] + later.compactMap { $0 }
     }
 
     /// 端末の時刻帯の今日を、**その日の UTC 0 時**にする（`TripPlanText` と `TripBook.day` の基準）
@@ -202,11 +220,11 @@ enum HomeTopCard {
     ///   16進なので、県や種別が続けて並ぶことはない
     /// - **下書き・写真の無い行は出さない**（写真が主役の札。下書きを「おすすめ」と
     ///   して出さない）
-    static func inSeason(today: Date, spots: [OfficialSpot]) -> Choice? {
+    static func inSeason(today: Date, spots: [OfficialSpot], excluding: String? = nil) -> Choice? {
         let month = TripPlanText.calendar.component(.month, from: today)
         let season = SpotBodyText.season(ofMonth: month)
         let candidates = spots
-            .filter { !$0.isDraft && $0.photo != nil }
+            .filter { !$0.isDraft && $0.photo != nil && $0.spotId != excluding }
             .compactMap { spot -> (OfficialSpot, String)? in
                 guard let guide = spot.seasons.first(where: { $0.season == season }) else { return nil }
                 return (spot, guide.text.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -218,11 +236,41 @@ enum HomeTopCard {
         return .inSeason(spot: candidates[index].0, season: season, guide: candidates[index].1)
     }
 
+    /// 行きたい場所の札の見出しの読み（「行きたい場所・秋」）
+    static func wishlistEyebrow(_ season: String) -> String {
+        guard let label = SpotBodyText.seasonLabel(season) else {
+            return L("行きたい場所", "Your wishlist")
+        }
+        return L("行きたい場所・\(label)", "Your wishlist · \(label)")
+    }
+
     /// 季節の札の見出しの読み（「秋の撮影スポット」）。知らない季節は「この季節の」
     static func seasonEyebrow(_ season: String) -> String {
         guard let label = SpotBodyText.seasonLabel(season) else {
             return L("この季節の撮影スポット", "Photo spot for this season")
         }
         return L("\(label)の撮影スポット", "\(label) photo spot")
+    }
+
+    // MARK: - 5. 行きたい場所のこの季節
+
+    /// 「行きたい」に入れた公開済みのスポットのうち、いまの季節の案内を持つものから
+    /// **日替わりで1件**（並べ方・回し方は `inSeason` と同じ）。
+    /// **写真は無くてもよい**——自分で選んだ場所なので、写真が無くても出す価値がある
+    static func wishlistSeason(today: Date, spots: [OfficialSpot], wishlist: Set<String>) -> Choice? {
+        guard !wishlist.isEmpty else { return nil }
+        let month = TripPlanText.calendar.component(.month, from: today)
+        let season = SpotBodyText.season(ofMonth: month)
+        let candidates = spots
+            .filter { !$0.isDraft && wishlist.contains(SavedSpotKey.official($0.slug)) }
+            .compactMap { spot -> (OfficialSpot, String)? in
+                guard let guide = spot.seasons.first(where: { $0.season == season }) else { return nil }
+                return (spot, guide.text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            .sorted { $0.0.spotId < $1.0.spotId }
+        guard !candidates.isEmpty else { return nil }
+        let day = Int((today.timeIntervalSince1970 / 86_400).rounded(.down))
+        let index = ((day % candidates.count) + candidates.count) % candidates.count
+        return .wishlistSeason(spot: candidates[index].0, season: season, guide: candidates[index].1)
     }
 }
