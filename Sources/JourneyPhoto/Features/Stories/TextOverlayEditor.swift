@@ -188,15 +188,19 @@ struct OverlayPanel: View {
                     .frame(minHeight: 44)
             }
 
-            // 書体（明朝・ゴシック・手書き風）
+            // 書体（8種）。**横に流す**——1行に収まらない
             HStack(spacing: 8) {
                 Text(L("書体", "Font"))
                     .font(.system(size: 11))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
-                ForEach(TextOverlay.Face.allCases) { face in
-                    OverlayChip(title: face.label, selected: overlay.face == face) {
-                        overlay.face = face
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(TextOverlay.Face.allCases) { face in
+                            OverlayChip(title: face.label, selected: overlay.face == face) {
+                                overlay.face = face
+                            }
+                        }
                     }
                 }
             }
@@ -207,7 +211,10 @@ struct OverlayPanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
-                // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）
+                // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
+                // 12色あるので横に流す
+                ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
                 ForEach(TextOverlay.inks(for: overlay.style)) { ink in
                     let selected = overlay.drawnInk == ink
                     Button {
@@ -225,6 +232,8 @@ struct OverlayPanel: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("文字の色 \(ink.label)", "Text color \(ink.label)"))
                     .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+                }
                 }
             }
 

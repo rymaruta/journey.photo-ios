@@ -33,15 +33,24 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 何の札か。**場所と曲は投稿の項目としても送る**ので、
     /// ここに置くのは「写真の上の見た目」だけ
     var kind: Kind
-    /// 書体（板 24b の「明朝・ゴシック・手書き風」）
+    /// 書体（板 24b の「明朝・ゴシック・手書き風」＋ 2026-09-29 に足した5つ）
     var face: Face
-    /// 文字の色（板 24b の5色）
+    /// 文字の色（板 24b の5色 ＋ 2026-09-29 に足した7色）
     var ink: Ink
     /// 回し（ラジアン。2本指で回す）
     var rotation: Double
 
-    /// 書体。**アプリに同梱した字だけ**（端末に無い書体を選ばせると、
-    /// 画面と焼き込みで見た目が割れる）
+    /// 書体。**アプリに同梱した字か、どの iPhone にも入っている字だけ**
+    /// （端末に無い書体を選ばせると、画面と焼き込みで見た目が割れる）。
+    ///
+    /// owner の「フォントの種類が少ない」（2026-09-29）で 3 → 8。**足すのは端末の字が中心**
+    /// ——日本語の書体は1つ 3〜4MB あり、同梱を増やすとアプリが太る。同梱は
+    /// マーカー・丸文字の2つだけ（JIS 第1水準まで削って計 3.1MB・`Tools/make-display-font.py`）。
+    /// 英字だけの書体（タイプ・筆記体）の日本語は、端末のゴシックで出る。
+    ///
+    /// ⚠️ **端末の書体の名前は Linux では確かめられない。** 名前が違っても、画面
+    /// （`StoryCanvas.font`）と焼き込み（`TextOverlayRenderer`）は両方とも端末の太字に
+    /// 落ちるので、割れはしない（見た目が変わらないだけ）。実機で確かめること
     enum Face: String, Codable, CaseIterable, Identifiable {
         /// Shippori Mincho B1 Bold（見出しの明朝）
         case mincho
@@ -49,6 +58,16 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         case gothic
         /// Klee One SemiBold（手書き風）
         case hand
+        /// ヒラギノ丸ゴ（端末の字）
+        case maru
+        /// Yusei Magic（マーカーで書いたような字・同梱）
+        case marker
+        /// Hachi Maru Pop（丸文字・同梱）
+        case pop
+        /// American Typewriter Bold（端末の字・英字だけ）
+        case typewriter
+        /// Snell Roundhand Bold（端末の字・英字の筆記体）
+        case script
 
         var id: String { rawValue }
 
@@ -57,22 +76,41 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .mincho: return L("明朝", "Serif")
             case .gothic: return L("ゴシック", "Sans")
             case .hand: return L("手書き風", "Handwritten")
+            case .maru: return L("丸ゴシック", "Rounded")
+            case .marker: return L("マーカー", "Marker")
+            case .pop: return L("丸文字", "Pop")
+            case .typewriter: return L("タイプ", "Typewriter")
+            case .script: return L("筆記体", "Script")
             }
         }
 
-        /// 同梱の書体の名前（PostScript 名）。ゴシックは端末の字なので nil
+        /// 書体の名前（PostScript 名）。ゴシックは端末の太字なので nil
         var fontName: String? {
             switch self {
             case .mincho: return "ShipporiMinchoB1-Bold"
             case .gothic: return nil
             case .hand: return "KleeOne-SemiBold"
+            case .maru: return "HiraMaruProN-W4"
+            case .marker: return "YuseiMagic-Regular"
+            case .pop: return "HachiMaruPop-Regular"
+            case .typewriter: return "AmericanTypewriter-Bold"
+            case .script: return "SnellRoundhand-Bold"
+            }
+        }
+
+        /// アプリに同梱した書体か（`project.yml` の `UIAppFonts` に載せるもの）
+        var isBundled: Bool {
+            switch self {
+            case .mincho, .hand, .marker, .pop: return true
+            case .gothic, .maru, .typewriter, .script: return false
             }
         }
     }
 
-    /// 文字の色（板 24b: 白・墨・真鍮・空色・珊瑚）
+    /// 文字の色（板 24b: 白・墨・真鍮・空色・珊瑚 ＋ 2026-09-29 に足した7色）
     enum Ink: String, Codable, CaseIterable, Identifiable {
         case white, ink, brass, sky, coral
+        case yellow, orange, pink, red, green, blue, purple
 
         var id: String { rawValue }
 
@@ -84,6 +122,13 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .brass: return 0xC9A66B
             case .sky: return 0x9CC3E6
             case .coral: return 0xFF8A80
+            case .yellow: return 0xFFD54F
+            case .orange: return 0xFFA24C
+            case .pink: return 0xFF7EB6
+            case .red: return 0xF2545B
+            case .green: return 0x7ED9A0
+            case .blue: return 0x4C8DFF
+            case .purple: return 0xB388FF
             }
         }
 
@@ -94,6 +139,13 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .brass: return L("真鍮", "Brass")
             case .sky: return L("空色", "Sky")
             case .coral: return L("珊瑚", "Coral")
+            case .yellow: return L("黄", "Yellow")
+            case .orange: return L("橙", "Orange")
+            case .pink: return L("桃", "Pink")
+            case .red: return L("赤", "Red")
+            case .green: return L("緑", "Green")
+            case .blue: return L("青", "Blue")
+            case .purple: return L("紫", "Purple")
             }
         }
     }
@@ -242,8 +294,9 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     static let maxSize = 0.20
     static let defaultSize = 0.07
 
-    /// 1枚に置ける数。**増やしすぎない**——写真が主役
-    static let maxCount = 5
+    /// 1枚に置ける数。**増やしすぎない**——写真が主役。
+    /// owner の「自由度が低い」（2026-09-29）で 5 → 10
+    static let maxCount = 10
 
     /// 文字数の上限。サーバーのキャプション（200字）に合わせる
     static let maxLength = 200

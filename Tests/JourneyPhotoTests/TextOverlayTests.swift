@@ -310,4 +310,45 @@ extension TextOverlayTests {
             }
         }
     }
+
+    // MARK: - 書体・色を増やした（owner の「自由度が低い」・2026-09-29）
+
+    /// 🔴 **同梱の書体は、ファイルがあり `project.yml` の `UIAppFonts` に載っていること。**
+    /// 片方でも欠けると、実機で黙ってゴシックに落ちる（Linux の試験では描けないので、
+    /// ここで配線だけは確かめる）。ファイル名は PostScript 名 ＋ `.ttf` の決まり
+    func testBundledFacesAreWired() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
+        let fonts = root.appendingPathComponent("Sources/JourneyPhoto/Resources/Fonts")
+        let bundled = TextOverlay.Face.allCases.filter(\.isBundled)
+        XCTAssertEqual(Set(bundled), [.mincho, .hand, .marker, .pop])
+        for face in bundled {
+            let file = "\(try XCTUnwrap(face.fontName)).ttf"
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fonts.appendingPathComponent(file).path),
+                          "\(file) が同梱されていない")
+            XCTAssertTrue(project.contains("- \(file)"), "\(file) が UIAppFonts に無い")
+        }
+        // ゴシックだけが端末の太字（名前なし）。ほかは全部名前を持つ
+        XCTAssertEqual(TextOverlay.Face.allCases.filter { $0.fontName == nil }, [.gothic])
+    }
+
+    /// 足した色も、読めない組の決まりに従う（黒の見た目に白・帯に墨は出さない）
+    func testNewInksFollowReadability() {
+        XCTAssertEqual(TextOverlay.Ink.allCases.count, 12)
+        XCTAssertEqual(Set(TextOverlay.Ink.allCases.map(\.hex)).count, 12, "同じ色が2つある")
+        XCTAssertEqual(TextOverlay.inks(for: .dark).count, 11)
+        XCTAssertFalse(TextOverlay.inks(for: .dark).contains(.white))
+        XCTAssertEqual(TextOverlay.inks(for: .banner).count, 11)
+        XCTAssertFalse(TextOverlay.inks(for: .banner).contains(.ink))
+        XCTAssertTrue(TextOverlay.inks(for: .banner).contains(.yellow))
+    }
+
+    /// 足した書体・色も下書きに残る（書き戻して読める）
+    func testNewFaceAndInkRoundTrip() throws {
+        let overlay = TextOverlay(text: "青春", face: .marker, ink: .pink)
+        let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(overlay))
+        XCTAssertEqual(back.face, .marker)
+        XCTAssertEqual(back.ink, .pink)
+    }
 }

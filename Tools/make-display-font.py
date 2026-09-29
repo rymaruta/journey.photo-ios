@@ -40,6 +40,11 @@ from fontTools.ttLib import TTFont
 SOURCES = {
     "ShipporiMinchoB1-Bold.ttf": "d20f3981afb8bceda5fdf8f0fb29ba51eb21518644612ccd8a183e5bd433e25a",
     "KleeOne-SemiBold.ttf": "b031ec426c23ca1143ef1f7d58bee7a79efe119ed654152f121c922202b303fd",
+    # ストーリーの文字の「マーカー」「丸文字」（2026-09-29）。google/fonts の ofl を
+    # npm の @expo-google-fonts/yusei-magic・hachi-maru-pop で取った原本（中身は同じ TTF）。
+    # どちらも OFL で Reserved Font Name を宣言していない（同梱の OFL-*.txt の1行目）
+    "YuseiMagic-Regular.ttf": "972e3a23b22a88f67f5ccd37ff6129fefa08cb689a65e8cb3e53425fa55bcac9",
+    "HachiMaruPop-Regular.ttf": "a1460e0fb8608bca3cc74f91605ccdb84f62c9b9808061037b4f5ccaad489a17",
 }
 FONTS = Path(__file__).resolve().parent.parent / "Sources/JourneyPhoto/Resources/Fonts"
 
