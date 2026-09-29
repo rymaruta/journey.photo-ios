@@ -34,10 +34,12 @@ struct LegalGateView: View {
                         .padding(.top, 6)
                         .padding(.bottom, 58)
                     heading
-                    promise(L("旅の写真を投稿して共有できます。", "Post and share your travel photos."),
-                            systemImage: "camera")
+                    promise(L("撮影スポットを見つけて、写真・撮影地・機材を一緒に残せます。", "Discover photo spots and keep each photo together with its place and gear."),
+                            systemImage: "map")
                     // **この一文が審査で効く。** 「不適切な内容を許さない」と
                     // 明示し、通報とブロックの導線があることを先に伝える
+                    promise(L("旅の前は撮影地を探し、旅のあとには写真を一冊として振り返れます。", "Explore places before a trip, then look back on your photos as a trip book."),
+                            systemImage: "book.closed")
                     promise(L("いやがらせ・わいせつ・権利を侵す投稿は認めません。見つけたら各写真から通報でき、相手をブロックできます。", "Harassment, obscene content and rights violations are not allowed. You can report any photo and block its poster."),
                             systemImage: "shield")
                     promise(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地は約1kmに丸めて保存します。", "Photo metadata is removed on your device; places are rounded to about 1 km."),
@@ -89,7 +91,7 @@ struct LegalGateView: View {
                 .tracking(1.6)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityHidden(true)
-            Text(L("はじめる前に", "Before you start"))
+            Text(L("撮りたい場所が、次の旅になる。", "Find the place for your next photo."))
                 .font(JPFont.display(32, relativeTo: .largeTitle))
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
