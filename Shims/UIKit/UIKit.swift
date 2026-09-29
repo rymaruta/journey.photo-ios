@@ -113,6 +113,10 @@ public final class UIColor {
     public init(red: Double, green: Double, blue: Double, alpha: Double) {}
     public func withAlphaComponent(_ alpha: Double) -> UIColor { self }
     public func setFill() {}
+    /// 本物は SwiftUI の `Color` から作る（`UIColor(_ color: Color)`）
+    public init<T>(_ color: T) {}
+    public func getRed(_ red: inout CGFloat, green: inout CGFloat, blue: inout CGFloat,
+                       alpha: inout CGFloat) -> Bool { false }
 }
 
 public final class UIFont {

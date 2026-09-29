@@ -359,10 +359,17 @@ face_block = overlay_src.split("var fontName: String? {", 1)[1].split("\n       
 face_names = re.findall(r'return "([^"]+)"', face_block)
 if not face_names:
     fail("TextOverlay.Face.fontName が読めません（ストーリーの書体を突き合わせられない）")
+# **どの iPhone にも入っている書体**（同梱しない・2026-09-29 に足した3つ）。ここに無い名前は
+# 同梱が要る。**名前は Linux では確かめられない**——違っていても端末の太字に落ちるだけで
+# 割れはしないが、実機で確かめること（`TextOverlay.Face` の注記）
+IOS_SYSTEM_FONTS = {"HiraMaruProN-W4", "AmericanTypewriter-Bold", "SnellRoundhand-Bold"}
 for ps in face_names:
+    if ps in IOS_SYSTEM_FONTS:
+        continue
     if f"{ps}.ttf" not in listed and f"{ps}.otf" not in listed:
         fail(f"ストーリーの文字が引く {ps} に当たる書体が UIAppFonts にありません")
-for lic in ("OFL-ShipporiMincho.txt", "OFL-IBMPlexMono.txt", "OFL-KleeOne.txt"):
+for lic in ("OFL-ShipporiMincho.txt", "OFL-IBMPlexMono.txt", "OFL-KleeOne.txt",
+            "OFL-YuseiMagic.txt", "OFL-HachiMaruPop.txt"):
     if not (FONTS_DIR / lic).exists():
         fail(f"書体のライセンス {lic} がありません（OFL は同梱が条件）")
 

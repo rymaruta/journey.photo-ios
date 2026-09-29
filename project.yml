@@ -64,6 +64,8 @@ targets:
         UIAppFonts:
           - ShipporiMinchoB1-Bold.ttf
           - KleeOne-SemiBold.ttf
+          - YuseiMagic-Regular.ttf
+          - HachiMaruPop-Regular.ttf
           - IBMPlexMono-Regular.ttf
           - IBMPlexMono-Medium.ttf
         # 既定の言語は日本語。英語も持つ（画面の文字も権限の文も二言語）

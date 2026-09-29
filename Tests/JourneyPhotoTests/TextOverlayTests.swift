@@ -228,9 +228,10 @@ extension TextOverlayTests {
         XCTAssertTrue(TextOverlay.Kind.hashtag.isEditable)
     }
 
-    /// 自由な文字以外は**必ず帯**（写真の上で読めなくならないように）
+    /// 自由な文字以外は**必ず帯**（写真の上で読めなくならないように）。
+    /// **スタンプだけは帯にしない**（絵文字そのものが見た目・`testStampKind`）
     func testOnlyFreeTextKeepsItsStyle() {
-        for kind in TextOverlay.Kind.allCases where kind != .text {
+        for kind in TextOverlay.Kind.allCases where kind != .text && kind != .stamp {
             XCTAssertEqual(kind.forcedStyle, .banner, "\(kind)")
         }
         XCTAssertNil(TextOverlay.Kind.text.forcedStyle)
@@ -309,5 +310,173 @@ extension TextOverlayTests {
                 }
             }
         }
+    }
+
+    // MARK: - 書体・色を増やした（owner の「自由度が低い」・2026-09-29）
+
+    /// 🔴 **同梱の書体は、ファイルがあり `project.yml` の `UIAppFonts` に載っていること。**
+    /// 片方でも欠けると、実機で黙ってゴシックに落ちる（Linux の試験では描けないので、
+    /// ここで配線だけは確かめる）。ファイル名は PostScript 名 ＋ `.ttf` の決まり
+    func testBundledFacesAreWired() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
+        let fonts = root.appendingPathComponent("Sources/JourneyPhoto/Resources/Fonts")
+        let bundled = TextOverlay.Face.allCases.filter(\.isBundled)
+        XCTAssertEqual(Set(bundled), [.mincho, .hand, .marker, .pop])
+        for face in bundled {
+            let file = "\(try XCTUnwrap(face.fontName)).ttf"
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fonts.appendingPathComponent(file).path),
+                          "\(file) が同梱されていない")
+            XCTAssertTrue(project.contains("- \(file)"), "\(file) が UIAppFonts に無い")
+        }
+        // ゴシックだけが端末の太字（名前なし）。ほかは全部名前を持つ
+        XCTAssertEqual(TextOverlay.Face.allCases.filter { $0.fontName == nil }, [.gothic])
+    }
+
+    /// 足した色も、読めない組の決まりに従う（黒の見た目に白・帯に墨は出さない）
+    func testNewInksFollowReadability() {
+        XCTAssertEqual(TextOverlay.Ink.allCases.count, 12)
+        XCTAssertEqual(Set(TextOverlay.Ink.allCases.map(\.hex)).count, 12, "同じ色が2つある")
+        XCTAssertEqual(TextOverlay.inks(for: .dark).count, 11)
+        XCTAssertFalse(TextOverlay.inks(for: .dark).contains(.white))
+        XCTAssertEqual(TextOverlay.inks(for: .banner).count, 11)
+        XCTAssertFalse(TextOverlay.inks(for: .banner).contains(.ink))
+        XCTAssertTrue(TextOverlay.inks(for: .banner).contains(.yellow))
+    }
+
+    /// 足した書体・色も下書きに残る（書き戻して読める）
+    func testNewFaceAndInkRoundTrip() throws {
+        let overlay = TextOverlay(text: "青春", face: .marker, ink: .pink)
+        let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(overlay))
+        XCTAssertEqual(back.face, .marker)
+        XCTAssertEqual(back.ink, .pink)
+    }
+
+    // MARK: - 縁取り・スタンプ（2026-09-29）
+
+    /// 縁があるのは黒の見た目と縁取りだけ。縁取りは黒の見た目の倍の太さ。
+    /// 編集画面のずらし量は**幅の半分**——焼き込みの縁は輪郭の両側に半分ずつ乗り、
+    /// 内側は塗りが隠すので、外に見えるのは半分だけ
+    func testEdgeWidths() {
+        XCTAssertNil(TextOverlay.Style.light.edgePercent)
+        XCTAssertNil(TextOverlay.Style.banner.edgePercent)
+        XCTAssertNil(TextOverlay.Style.light.edgeOffset(fontSize: 100))
+        XCTAssertEqual(TextOverlay.Style.dark.edgePercent, 3)
+        XCTAssertEqual(TextOverlay.Style.outline.edgePercent, 6)
+        XCTAssertEqual(TextOverlay.Style.dark.edgeOffset(fontSize: 100), 1.5)
+        XCTAssertEqual(TextOverlay.Style.outline.edgeOffset(fontSize: 100), 3)
+    }
+
+    /// 縁取りは縁が黒なので墨を出さない。墨のまま縁取りへ切り替えたら白に寄せる
+    func testOutlineHidesInkAndConvertsIt() {
+        XCTAssertFalse(TextOverlay.inks(for: .outline).contains(.ink))
+        XCTAssertEqual(TextOverlay.inks(for: .outline).count, 11)
+        let dark = TextOverlay(text: "港", style: .dark)          // 既定の色は墨
+        XCTAssertEqual(dark.ink, .ink)
+        let outlined = dark.withStyle(.outline)
+        XCTAssertEqual(outlined.style, .outline)
+        XCTAssertEqual(outlined.drawnInk, .white)
+        // 墨以外の色は縁取りでもそのまま
+        XCTAssertEqual(TextOverlay(text: "港", ink: .pink).withStyle(.outline).drawnInk, .pink)
+    }
+
+    /// スタンプは帯にしない・打ち直さない・書体と色を出さない
+    func testStampKind() {
+        let stamp = TextOverlay(text: "🗻", size: TextOverlay.stampSize, style: .banner, kind: .stamp)
+        XCTAssertEqual(stamp.style, .light, "スタンプを帯にしている")
+        XCTAssertFalse(TextOverlay.Kind.stamp.isEditable)
+        XCTAssertFalse(TextOverlay.Kind.stamp.hasTypography)
+        XCTAssertNil(TextOverlay.Kind.stamp.symbol)
+        XCTAssertEqual(stamp.displayText, "🗻", "絵文字の前に印を付けている")
+        XCTAssertEqual(stamp.size, TextOverlay.stampSize)
+        // ほかの札は今までどおり帯・書体と色を選べる
+        for kind in TextOverlay.Kind.allCases where kind != .stamp {
+            XCTAssertTrue(kind.hasTypography)
+            XCTAssertEqual(kind.forcedStyle, kind == .text ? nil : .banner)
+        }
+    }
+
+    func testStampListIsUniqueAndPlaceable() throws {
+        XCTAssertEqual(Set(TextOverlay.stamps).count, TextOverlay.stamps.count, "同じ絵文字が2つある")
+        XCTAssertGreaterThanOrEqual(TextOverlay.stamps.count, 40)
+        XCTAssertTrue(TextOverlay.stamps.allSatisfy { !$0.isEmpty && $0.count == 1 }, "1つの絵文字になっていない")
+        XCTAssertLessThanOrEqual(TextOverlay.stampSize, TextOverlay.maxSize)
+        let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(
+            TextOverlay(text: "🍜", kind: .stamp)))
+        XCTAssertEqual(back.kind, .stamp)
+    }
+
+    // MARK: - 好きな色（2026-09-29）
+
+    /// 読みやすさの線は**12色の決まりと食い違わない**——各見た目で出している色は
+    /// 全部読める、出していない色（黒の見た目の白・帯と縁取りの墨）は読めない
+    func testReadabilityLineMatchesTheTwelveInks() {
+        for style in TextOverlay.Style.allCases {
+            let shown = TextOverlay.inks(for: style)
+            for ink in TextOverlay.Ink.allCases {
+                XCTAssertEqual(TextOverlay.isReadable(ink.hex, on: style), shown.contains(ink),
+                               "\(style) \(ink)")
+            }
+        }
+    }
+
+    /// 読めない色は同じ色みのまま読めるところまで寄せる。読める色はそのまま
+    func testReadableHexNudgesOnlyUnreadableColors() {
+        XCTAssertEqual(TextOverlay.readableHex(0x4C8DFF, for: .banner), 0x4C8DFF)
+        XCTAssertEqual(TextOverlay.readableHex(0xFFFFFF, for: .light), 0xFFFFFF)
+        // 帯・縁取りに暗い紺 → 明るく寄せる（白まで飛ばさない）
+        for style in [TextOverlay.Style.banner, .outline] {
+            let nudged = TextOverlay.readableHex(0x101040, for: style)
+            XCTAssertTrue(TextOverlay.isReadable(nudged, on: style))
+            XCTAssertNotEqual(nudged, 0xFFFFFF)
+            XCTAssertGreaterThan(nudged & 0xFF, (nudged >> 16) & 0xFF, "青みが残る")
+        }
+        // 黒の見た目に淡い桃 → 暗く寄せる
+        let nudged = TextOverlay.readableHex(0xFFE0F0, for: .dark)
+        XCTAssertTrue(TextOverlay.isReadable(nudged, on: .dark))
+        XCTAssertNotEqual(nudged, 0x000000)
+        XCTAssertLessThan(TextOverlay.luminance(nudged), TextOverlay.luminance(0xFFE0F0))
+        // 上位の桁は捨てる
+        XCTAssertEqual(TextOverlay.readableHex(0xFF4C8DFF, for: .light), 0x4C8DFF)
+    }
+
+    /// 描く色は好きな色が先。見た目を変えたら、その見た目で読める色に寄せ直す
+    /// （選んだ色そのものは残す——白に戻せば元の色で出る）
+    func testDrawnHexPrefersCustomColor() {
+        var overlay = TextOverlay(text: "港", ink: .sky)
+        XCTAssertEqual(overlay.drawnHex, TextOverlay.Ink.sky.hex)
+        overlay.customHex = 0xF0F0F0
+        XCTAssertEqual(overlay.drawnHex, 0xF0F0F0)
+        let dark = overlay.withStyle(.dark)
+        XCTAssertEqual(dark.customHex, 0xF0F0F0)
+        XCTAssertNotEqual(dark.drawnHex, 0xF0F0F0)
+        XCTAssertTrue(TextOverlay.isReadable(dark.drawnHex, on: .dark))
+        XCTAssertEqual(dark.withStyle(.light).drawnHex, 0xF0F0F0)
+    }
+
+    /// 下書きに残る。以前の下書き（項目なし）は nil
+    func testCustomColorRoundTrip() throws {
+        var overlay = TextOverlay(text: "港")
+        overlay.customHex = 0x12AB34
+        let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(overlay))
+        XCTAssertEqual(back.customHex, 0x12AB34)
+        XCTAssertEqual(back, overlay)
+
+        // 以前の版の下書き（書体・色・回し・好きな色の項目が無い）
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"港","x":0.5,"y":0.5,"size":0.07,"style":"light","kind":"text"}"#
+        let old = try JSONDecoder().decode(TextOverlay.self, from: Data(json.utf8))
+        XCTAssertNil(old.customHex)
+        XCTAssertEqual(old.drawnHex, TextOverlay.Ink.white.hex)
+
+        // 上位の桁は読むときに捨てる（同じ色の札が別物として比べられないように）
+        let wide = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"港","x":0.5,"y":0.5,"size":0.07,"style":"light","kind":"text","customHex":4278190335}"#
+        XCTAssertEqual(try JSONDecoder().decode(TextOverlay.self, from: Data(wide.utf8)).customHex, 0x0000FF)
+    }
+
+    /// 端末の色選びは範囲外（広い色域）や NaN を返しうる。0...255 に丸める
+    func testHexFromComponentsClamps() {
+        XCTAssertEqual(TextOverlay.hex(red: 1, green: 0, blue: 0.5), 0xFF0080)
+        XCTAssertEqual(TextOverlay.hex(red: 1.2, green: -0.1, blue: .nan), 0xFF0000)
     }
 }
