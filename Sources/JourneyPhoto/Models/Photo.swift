@@ -156,6 +156,13 @@ struct Photo: Identifiable, Decodable, Equatable {
                         trackUrl: trackUrl, startSec: Self.clampStart(capped))
         }
 
+        /// 表示秒数が収まる流し始めにした曲。**収まっていればそのまま**（同じ値を返す＝
+        /// 閉じるときの「変更あり」を作らない）。下書きを戻したとき・表示秒数を延ばしたときに通す
+        func fitting(window: Int) -> Song {
+            guard let start = startSec, start > Self.maxStart(window: window) else { return self }
+            return starting(at: Double(start), window: window)
+        }
+
         /// 「0:12 から」の言い方（流し始めを選ぶ画面・曲のメニュー）
         static func startLabel(_ seconds: Int?) -> String {
             let sec = max(0, seconds ?? 0)

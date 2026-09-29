@@ -58,4 +58,16 @@ final class SongStartTests: XCTestCase {
             XCTAssertLessThanOrEqual(start + window, Photo.Song.previewSeconds, "\(window)秒")
         }
     }
+
+    /// 下書きを戻す・表示秒数を延ばすときに通す。**収まっていればそのまま**
+    /// （同じ値＝閉じるときに「変更あり」を作らない）。越えていれば上限まで引き戻す
+    func testFittingOnlyPullsBackWhatDoesNotFit() {
+        let late = Photo.Song(title: "港", artist: nil, artwork: nil, previewUrl: "https://p.example/p.m4a",
+                              trackUrl: nil, startSec: 29)
+        XCTAssertEqual(late.fitting(window: 5).startSec, 25)
+        XCTAssertEqual(late.fitting(window: 10).startSec, 20)
+        let fine = song.starting(at: 12, window: 5)
+        XCTAssertEqual(fine.fitting(window: 15), fine)
+        XCTAssertEqual(song.fitting(window: 15), song)
+    }
 }

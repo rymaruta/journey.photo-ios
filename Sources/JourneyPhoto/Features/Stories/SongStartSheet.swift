@@ -78,6 +78,8 @@ struct SongStartSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(WebTheme.background)
         .foregroundStyle(.white)
+        // バーも黒に（曲選び `SongPickerView` と同じく、画面の側で持つ）
+        .webScreen()
         .navigationTitle(L("流し始め", "Start point"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

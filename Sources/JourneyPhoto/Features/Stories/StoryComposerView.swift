@@ -157,17 +157,16 @@ struct StoryComposerView: View {
                 NavigationStack {
                     // **曲の札は変えない**（題と歌い手は同じ）。流し始めだけを入れ替える
                     SongStartSheet(song: song, durationSec: durationSec) { picked in self.song = picked }
-                        .webScreen()
                 }
-                // 中身は短い（画面いっぱいにしない）
-                .presentationDetents([.medium])
+                // 中身は短い（画面いっぱいにしない）。大きな文字の人は引き上げられる
+                .presentationDetents([.medium, .large])
             }
         }
         // **表示秒数を延ばしたら、流し始めを収まる所まで引き戻す**（Web と同じ）。
         // そのままだと、見る人には試聴の終わりの数秒がくり返し鳴る
         .onChange(of: durationSec) { _, window in
-            if let song, let start = song.startSec, start > Photo.Song.maxStart(window: window) {
-                self.song = song.starting(at: Double(start), window: window)
+            if let song, song.fitting(window: window) != song {
+                self.song = song.fitting(window: window)
             }
         }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
@@ -1006,7 +1005,10 @@ struct StoryComposerView: View {
         current = 0
         caption = draft.caption
         location = draft.location
-        song = draft.song
+        // 流し始めは表示秒数に収めてから戻す（`restoredContent` もその値で撮る）。
+        // 収まっていない下書きをそのまま戻すと、表示秒数が変わらない回は上限を越えたまま
+        // 送られ、変わる回は何も触らずに閉じても「変更あり」になった（c15a415 のレビュー）
+        song = draft.song?.fitting(window: draft.durationSec)
         durationSec = draft.durationSec
         keepInArchive = draft.archive == true
         allowReplies = draft.allowReplies != false
