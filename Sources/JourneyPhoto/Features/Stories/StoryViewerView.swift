@@ -1367,9 +1367,7 @@ struct StoryViewerView: View {
                     } else {
                         HStack(spacing: 0) {
                             Text(L("見た人 ", "Viewers "))
-                            // 数は真鍮（ブランドの色・owner「真鍮のテーマ色を意識して」2026-09-29）
                             Text("\(viewers.count)").font(JPFont.mono(14, medium: true))
-                                .foregroundStyle(WebTheme.accent)
                         }
                         .font(.system(size: 14, weight: .medium))
                         // **返信を読めていなければ「いいね」の数は言わない**
@@ -1377,10 +1375,11 @@ struct StoryViewerView: View {
                         if repliesLoaded {
                             HStack(spacing: 0) {
                                 Text(L("いいね ", "Likes "))
-                                Text("\(replies.reactionCount)").font(JPFont.mono(11, medium: true))
-                                    .foregroundStyle(WebTheme.accent)
+                                Text("\(replies.reactionCount)").font(JPFont.mono(12, medium: true))
                             }
-                            .font(.system(size: 11))
+                            // 本文系の最小は 12（デザインシステム「黒塗りの真鍮」02 書体）。
+                            // **数は白のまま**——いいねは白、真鍮は合図と手がかりだけ（同 04）
+                            .font(.system(size: 12))
                             .foregroundStyle(WebTheme.muted2)
                         }
                     }
