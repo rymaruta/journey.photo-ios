@@ -39,6 +39,9 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     var ink: Ink
     /// 回し（ラジアン。2本指で回す）
     var rotation: Double
+    /// 自由に選んだ色（0xRRGGBB・端末の色選び）。**あれば `ink` より先に使う**。
+    /// 12色から選び直したら nil に戻す（owner の「色が少ない」・2026-09-29）
+    var customHex: UInt32?
 
     /// 書体。**アプリに同梱した字か、どの iPhone にも入っている字だけ**
     /// （端末に無い書体を選ばせると、画面と焼き込みで見た目が割れる）。
@@ -163,9 +166,76 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     }
 
     /// **描くときの色。** 選べない組（見た目を後から変えた・札で帯に固定された）は
-    /// 読める色に寄せる。画面も焼き込みもこれを通す
+    /// 読める色に寄せる
     var drawnInk: Ink {
         Self.inks(for: style).contains(ink) ? ink : (style == .dark ? .ink : .white)
+    }
+
+    /// **描くときの色（0xRRGGBB）。画面も焼き込みもこれを通す。**
+    /// 自由に選んだ色があればそれを、見た目に対して読めるところまで寄せて使う
+    var drawnHex: UInt32 {
+        customHex.map { Self.readableHex($0, for: style) } ?? drawnInk.hex
+    }
+
+    // MARK: 自由に選んだ色を読める色に寄せる
+
+    /// 色の組の読みやすさの下限（WCAG のコントラスト比）。
+    /// **12色の決まりを数に直したもの**——黒の見た目（白い縁）は白に近い色がだめ、
+    /// 帯（黒 65% の地）と縁取り（黒い縁）は黒に近い色がだめ。12色のうち出している色は
+    /// 全部この線を越え、出していない白（黒の見た目）・墨（帯・縁取り）は越えない
+    static let minContrastOnWhiteEdge = 1.35
+    static let minContrastOnBlack = 3.0
+
+    /// 相対輝度（WCAG 2.x）
+    static func luminance(_ hex: UInt32) -> Double {
+        func channel(_ value: UInt32) -> Double {
+            let c = Double(value & 0xFF) / 255
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(hex >> 16) + 0.7152 * channel(hex >> 8) + 0.0722 * channel(hex)
+    }
+
+    static func contrast(_ a: UInt32, _ b: UInt32) -> Double {
+        let la = luminance(a), lb = luminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    /// その見た目で読める色か。白の見た目は影が付くのでどの色でも読める
+    static func isReadable(_ hex: UInt32, on style: Style) -> Bool {
+        switch style {
+        case .light: return true
+        case .dark: return contrast(hex, 0xFFFFFF) >= minContrastOnWhiteEdge
+        case .banner, .outline: return contrast(hex, 0x000000) >= minContrastOnBlack
+        }
+    }
+
+    /// 読めない色は**同じ色みのまま**読めるところまで寄せる（黒の見た目は暗く、
+    /// 帯・縁取りは明るく）。選んだ色を黙って捨てると、押しても変わらないように見える
+    static func readableHex(_ hex: UInt32, for style: Style) -> UInt32 {
+        let hex = hex & 0xFFFFFF
+        guard !isReadable(hex, on: style) else { return hex }
+        let target: UInt32 = style == .dark ? 0x000000 : 0xFFFFFF
+        for step in 1...20 {
+            let mixed = mix(hex, target, Double(step) / 20)
+            if isReadable(mixed, on: style) { return mixed }
+        }
+        return target
+    }
+
+    static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
+        func channel(_ shift: UInt32) -> UInt32 {
+            let x = Double((a >> shift) & 0xFF), y = Double((b >> shift) & 0xFF)
+            return UInt32((x + (y - x) * t).rounded()) << shift
+        }
+        return channel(16) | channel(8) | channel(0)
+    }
+
+    /// 0...1 の赤緑青から 0xRRGGBB（端末の色選びは範囲外の値を返すことがあるので丸める）
+    static func hex(red: Double, green: Double, blue: Double) -> UInt32 {
+        func channel(_ v: Double) -> UInt32 {
+            UInt32((min(max(v.isFinite ? v : 0, 0), 1) * 255).rounded())
+        }
+        return channel(red) << 16 | channel(green) << 8 | channel(blue)
     }
 
     /// **見た目を切り替える。** 読めない組になる色だけ寄せ、他の色は残す
@@ -370,7 +440,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, text, x, y, size, style, kind, face, ink, rotation
+        case id, text, x, y, size, style, kind, face, ink, rotation, customHex
     }
 
     /// **前の版の下書きも読む。** 書体・色・回しは後から足した項目なので、
@@ -388,6 +458,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         self.face = (try? c.decodeIfPresent(Face.self, forKey: .face)) ?? .gothic
         self.ink = (try? c.decodeIfPresent(Ink.self, forKey: .ink)) ?? (style == .dark ? .ink : .white)
         self.rotation = (try? c.decodeIfPresent(Double.self, forKey: .rotation)) ?? 0
+        self.customHex = (try? c.decodeIfPresent(UInt32.self, forKey: .customHex)).map { $0 & 0xFFFFFF }
     }
 
     /// 画面と画像に出す文字（印つき）。

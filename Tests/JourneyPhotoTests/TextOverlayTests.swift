@@ -406,4 +406,77 @@ extension TextOverlayTests {
             TextOverlay(text: "🍜", kind: .stamp)))
         XCTAssertEqual(back.kind, .stamp)
     }
+
+    // MARK: - 好きな色（2026-09-29）
+
+    /// 読みやすさの線は**12色の決まりと食い違わない**——各見た目で出している色は
+    /// 全部読める、出していない色（黒の見た目の白・帯と縁取りの墨）は読めない
+    func testReadabilityLineMatchesTheTwelveInks() {
+        for style in TextOverlay.Style.allCases {
+            let shown = TextOverlay.inks(for: style)
+            for ink in TextOverlay.Ink.allCases {
+                XCTAssertEqual(TextOverlay.isReadable(ink.hex, on: style), shown.contains(ink),
+                               "\(style) \(ink)")
+            }
+        }
+    }
+
+    /// 読めない色は同じ色みのまま読めるところまで寄せる。読める色はそのまま
+    func testReadableHexNudgesOnlyUnreadableColors() {
+        XCTAssertEqual(TextOverlay.readableHex(0x4C8DFF, for: .banner), 0x4C8DFF)
+        XCTAssertEqual(TextOverlay.readableHex(0xFFFFFF, for: .light), 0xFFFFFF)
+        // 帯・縁取りに暗い紺 → 明るく寄せる（白まで飛ばさない）
+        for style in [TextOverlay.Style.banner, .outline] {
+            let nudged = TextOverlay.readableHex(0x101040, for: style)
+            XCTAssertTrue(TextOverlay.isReadable(nudged, on: style))
+            XCTAssertNotEqual(nudged, 0xFFFFFF)
+            XCTAssertGreaterThan(nudged & 0xFF, (nudged >> 16) & 0xFF, "青みが残る")
+        }
+        // 黒の見た目に淡い桃 → 暗く寄せる
+        let nudged = TextOverlay.readableHex(0xFFE0F0, for: .dark)
+        XCTAssertTrue(TextOverlay.isReadable(nudged, on: .dark))
+        XCTAssertNotEqual(nudged, 0x000000)
+        XCTAssertLessThan(TextOverlay.luminance(nudged), TextOverlay.luminance(0xFFE0F0))
+        // 上位の桁は捨てる
+        XCTAssertEqual(TextOverlay.readableHex(0xFF4C8DFF, for: .light), 0x4C8DFF)
+    }
+
+    /// 描く色は好きな色が先。見た目を変えたら、その見た目で読める色に寄せ直す
+    /// （選んだ色そのものは残す——白に戻せば元の色で出る）
+    func testDrawnHexPrefersCustomColor() {
+        var overlay = TextOverlay(text: "港", ink: .sky)
+        XCTAssertEqual(overlay.drawnHex, TextOverlay.Ink.sky.hex)
+        overlay.customHex = 0xF0F0F0
+        XCTAssertEqual(overlay.drawnHex, 0xF0F0F0)
+        let dark = overlay.withStyle(.dark)
+        XCTAssertEqual(dark.customHex, 0xF0F0F0)
+        XCTAssertNotEqual(dark.drawnHex, 0xF0F0F0)
+        XCTAssertTrue(TextOverlay.isReadable(dark.drawnHex, on: .dark))
+        XCTAssertEqual(dark.withStyle(.light).drawnHex, 0xF0F0F0)
+    }
+
+    /// 下書きに残る。以前の下書き（項目なし）は nil
+    func testCustomColorRoundTrip() throws {
+        var overlay = TextOverlay(text: "港")
+        overlay.customHex = 0x12AB34
+        let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(overlay))
+        XCTAssertEqual(back.customHex, 0x12AB34)
+        XCTAssertEqual(back, overlay)
+
+        // 以前の版の下書き（書体・色・回し・好きな色の項目が無い）
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"港","x":0.5,"y":0.5,"size":0.07,"style":"light","kind":"text"}"#
+        let old = try JSONDecoder().decode(TextOverlay.self, from: Data(json.utf8))
+        XCTAssertNil(old.customHex)
+        XCTAssertEqual(old.drawnHex, TextOverlay.Ink.white.hex)
+
+        // 上位の桁は読むときに捨てる（同じ色の札が別物として比べられないように）
+        let wide = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"港","x":0.5,"y":0.5,"size":0.07,"style":"light","kind":"text","customHex":4278190335}"#
+        XCTAssertEqual(try JSONDecoder().decode(TextOverlay.self, from: Data(wide.utf8)).customHex, 0x0000FF)
+    }
+
+    /// 端末の色選びは範囲外（広い色域）や NaN を返しうる。0...255 に丸める
+    func testHexFromComponentsClamps() {
+        XCTAssertEqual(TextOverlay.hex(red: 1, green: 0, blue: 0.5), 0xFF0080)
+        XCTAssertEqual(TextOverlay.hex(red: 1.2, green: -0.1, blue: .nan), 0xFF0000)
+    }
 }

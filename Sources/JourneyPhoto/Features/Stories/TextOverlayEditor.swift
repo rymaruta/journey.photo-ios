@@ -97,15 +97,26 @@ struct StoryCanvas: View {
                         .accessibilityHidden(true)
                 }
             }
-            text.foregroundStyle(color(overlay.drawnInk))
+            text.foregroundStyle(color(hex: overlay.drawnHex))
         }
     }
 
     static func color(_ ink: TextOverlay.Ink) -> Color {
-        let hex = ink.hex
-        return Color(red: Double((hex >> 16) & 0xFF) / 255,
-                     green: Double((hex >> 8) & 0xFF) / 255,
-                     blue: Double(hex & 0xFF) / 255)
+        color(hex: ink.hex)
+    }
+
+    static func color(hex: UInt32) -> Color {
+        Color(red: Double((hex >> 16) & 0xFF) / 255,
+              green: Double((hex >> 8) & 0xFF) / 255,
+              blue: Double(hex & 0xFF) / 255)
+    }
+
+    /// 端末の色選びが返した色を 0xRRGGBB に。**`UIKit.` と書くのは Linux の模型のため**
+    /// （模型では SwiftUI と UIKit が別々に `UIColor` を持つ。本物では同じもの）
+    static func hex(of color: Color) -> UInt32 {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        _ = UIKit.UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return TextOverlay.hex(red: Double(red), green: Double(green), blue: Double(blue))
     }
 
     /// 幅が変わったら測り直し、同じ幅なら高い方を覚える
@@ -247,9 +258,10 @@ struct OverlayPanel: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                 ForEach(TextOverlay.inks(for: overlay.style)) { ink in
-                    let selected = overlay.drawnInk == ink
+                    let selected = overlay.customHex == nil && overlay.drawnInk == ink
                     Button {
                         overlay.ink = ink
+                        overlay.customHex = nil
                     } label: {
                         Circle()
                             .fill(StoryCanvas.color(ink))
@@ -265,10 +277,11 @@ struct OverlayPanel: View {
                     .accessibilityAddTraits(selected ? .isSelected : [])
                     .id(ink)
                 }
+                customColor
                 }
                 }
-                .onAppear { proxy.scrollTo(overlay.drawnInk, anchor: .center) }
-                .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.drawnInk, anchor: .center) }
+                .onAppear { proxy.scrollTo(colorAnchor, anchor: .center) }
+                .onChange(of: overlay.id) { _, _ in proxy.scrollTo(colorAnchor, anchor: .center) }
                 }
             }
             }
@@ -348,5 +361,35 @@ struct OverlayChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+extension OverlayPanel {
+    /// 色の列で流して見せる先（好きな色を選んでいればその丸）
+    var colorAnchor: AnyHashable {
+        overlay.customHex == nil ? AnyHashable(overlay.drawnInk) : AnyHashable("custom")
+    }
+
+    /// 12色の後ろに置く「好きな色」（端末の色選び・owner の「色が少ない」2026-09-29）。
+    /// 選んだ色は**見た目に対して読めるところまで寄せて描く**（`TextOverlay.readableHex`）。
+    /// 丸に出すのも寄せたあとの色——選んだままの色を出すと、写真の上と食い違う
+    var customColor: some View {
+        ColorPicker("", selection: Binding(
+            get: { StoryCanvas.color(hex: overlay.drawnHex) },
+            // 丸に出している色（寄せたあと）がそのまま返ってきたときは書かない。
+            // 書くと選んだ元の色が寄せた色で上書きされ、白の見た目に戻しても元の色に戻らない
+            set: { color in
+                let hex = StoryCanvas.hex(of: color)
+                if hex != overlay.drawnHex { overlay.customHex = hex }
+            }
+        ), supportsOpacity: false)
+        .labelsHidden()
+        .frame(width: 44, height: 44)
+        .overlay(Circle().strokeBorder(Color.white, lineWidth: overlay.customHex == nil ? 0 : 3)
+            .frame(width: 36, height: 36)
+            .allowsHitTesting(false))
+        .accessibilityLabel(L("好きな色を選ぶ", "Pick any color"))
+        .accessibilityAddTraits(overlay.customHex == nil ? [] : .isSelected)
+        .id("custom")
     }
 }

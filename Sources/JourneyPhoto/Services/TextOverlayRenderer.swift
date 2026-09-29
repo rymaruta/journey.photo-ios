@@ -82,7 +82,7 @@ enum TextOverlayRenderer {
         // 書体（`TextOverlay.Face`・同梱か端末の字）。読めなければゴシック（端末の太字）
         let font = overlay.face.fontName.flatMap { UIFont(name: $0, size: fontSize) }
             ?? UIFont.systemFont(ofSize: fontSize, weight: .bold)
-        let fill: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: uiColor(overlay.drawnInk)]
+        let fill: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: uiColor(overlay.drawnHex)]
         guard let edge = edge(for: overlay.style) else { return (fill, nil) }
         // `strokeWidth` は正で「縁だけ」（字の大きさに対する百分率・輪郭の両側に半分ずつ）
         return (fill, [.font: font, .strokeColor: edge.color, .strokeWidth: edge.width])
@@ -96,8 +96,7 @@ enum TextOverlayRenderer {
         return (style == .dark ? .white : .black, width)
     }
 
-    private static func uiColor(_ ink: TextOverlay.Ink) -> UIColor {
-        let hex = ink.hex
+    private static func uiColor(_ hex: UInt32) -> UIColor {
         return UIColor(red: Double((hex >> 16) & 0xFF) / 255,
                        green: Double((hex >> 8) & 0xFF) / 255,
                        blue: Double(hex & 0xFF) / 255, alpha: 1)

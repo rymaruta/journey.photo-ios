@@ -379,6 +379,12 @@ public struct DragGesture: Gesture {
     public func onEnded(_ action: @escaping (Value) -> Void) -> DragGesture { self }
 }
 
+/// 端末の色選び（ストーリーの文字の「好きな色」）
+public struct ColorPicker: View {
+    public init(_ title: String, selection: Binding<Color>, supportsOpacity: Bool = true) {}
+    public var body: Never { fatalError("模型") }
+}
+
 /// つまみ（文字の大きさを決めるのに使う）。
 public struct Slider: View {
     public init(value: Binding<Double>, in range: ClosedRange<Double>) {}
