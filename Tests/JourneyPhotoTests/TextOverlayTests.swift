@@ -498,7 +498,7 @@ extension TextOverlayTests {
     }
 
     /// 改行は**自由な文字だけ**。札（撮影地・タグなど）の改行は空白にする
-    func testNewlinesOnlyInFreeTextAndCapped() {
+    func testNewlinesOnlyInFreeTextAndLengthCapped() {
         XCTAssertEqual(TextOverlay.cleaned("港\n夕方", kind: .text), "港\n夕方")
         XCTAssertEqual(TextOverlay.cleaned("港\r\n夕方\r朝", kind: .text), "港\n夕方\n朝")
         XCTAssertEqual(TextOverlay.cleaned("函館\n港", kind: .place), "函館 港")

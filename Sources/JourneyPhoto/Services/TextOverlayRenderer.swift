@@ -82,8 +82,10 @@ enum TextOverlayRenderer {
             // **測るのは揃えを付けずに**（行の幅は揃えに関係ない）。中央・右の段落を
             // 果てしなく広い枠で測ると、寄せる計算で桁が落ちるおそれがある（6e76bf5 のレビュー）。
             // 揃えは描くときだけ付ける
+            // 枠は**有限の広さ**で測る（右から左の文字は揃えの既定が右寄せになり、果てしない枠だと
+            // 同じ桁落ちが起きうる・ec4645b のレビュー）。写真の画素より十分広い
             let rect = NSAttributedString(string: overlay.drawnText, attributes: attributes).boundingRect(
-                with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                with: CGSize(width: 100_000, height: 100_000),
                 options: .usesLineFragmentOrigin, context: nil)
             return CGSize(width: rect.width.rounded(.up), height: rect.height.rounded(.up))
         }()
