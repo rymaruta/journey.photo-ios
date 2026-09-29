@@ -72,7 +72,7 @@ enum TextOverlayRenderer {
 
     private static func attributes(for overlay: TextOverlay,
                                    fontSize: Double) -> [NSAttributedString.Key: Any] {
-        // 同梱の書体（明朝・手書き風）。読めなければゴシック（端末の字）
+        // 書体（`TextOverlay.Face`・同梱か端末の字）。読めなければゴシック（端末の太字）
         let font = overlay.face.fontName.flatMap { UIFont(name: $0, size: fontSize) }
             ?? UIFont.systemFont(ofSize: fontSize, weight: .bold)
         let color = uiColor(overlay.drawnInk)

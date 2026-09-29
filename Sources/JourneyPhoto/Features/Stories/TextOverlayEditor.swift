@@ -69,7 +69,7 @@ struct StoryCanvas: View {
         }
     }
 
-    /// 書体（同梱の明朝・手書き風。ゴシックは端末の太字）。**大きさは固定**——
+    /// 書体（`TextOverlay.Face`。同梱の字か端末の字。ゴシックは端末の太字）。**大きさは固定**——
     /// 焼き込みは画像の画素で描くので、文字の大きさの設定に追従させると割れる
     static func font(_ face: TextOverlay.Face, size: Double) -> Font {
         // **読めなかったときは焼き込みと同じ端末の太字に落とす。** `Font.custom` は
@@ -194,25 +194,33 @@ struct OverlayPanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(TextOverlay.Face.allCases) { face in
-                            OverlayChip(title: face.label, selected: overlay.face == face) {
-                                overlay.face = face
+                // **選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を開き直すと、
+                // 列の頭が出て何を選んでいるか見えなかった・bfe5e12 のレビュー）
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(TextOverlay.Face.allCases) { face in
+                                OverlayChip(title: face.label, selected: overlay.face == face) {
+                                    overlay.face = face
+                                }
+                                .id(face)
                             }
                         }
                     }
+                    .onAppear { proxy.scrollTo(overlay.face, anchor: .center) }
+                    .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.face, anchor: .center) }
                 }
             }
 
-            // 色（白・墨・真鍮・空色・珊瑚）
+            // 色（12色・`TextOverlay.Ink`）
             HStack(spacing: 10) {
                 Text(L("色", "Color"))
                     .font(.system(size: 11))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
                 // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
-                // 12色あるので横に流す
+                // 12色あるので横に流し、**選んでいる色まで流して見せる**（書体と同じ理由）
+                ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                 ForEach(TextOverlay.inks(for: overlay.style)) { ink in
@@ -232,8 +240,12 @@ struct OverlayPanel: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("文字の色 \(ink.label)", "Text color \(ink.label)"))
                     .accessibilityAddTraits(selected ? .isSelected : [])
+                    .id(ink)
                 }
                 }
+                }
+                .onAppear { proxy.scrollTo(overlay.drawnInk, anchor: .center) }
+                .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.drawnInk, anchor: .center) }
                 }
             }
 
