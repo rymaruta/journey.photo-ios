@@ -182,9 +182,14 @@ final class RegionListTests: XCTestCase {
         XCTAssertEqual(RegionList.country(inText: "タイムズスクエア, ニューヨーク, アメリカ"), "アメリカ")
         XCTAssertEqual(RegionList.country(inText: "バリ島, インドネシア"), "インドネシア")
         XCTAssertNil(RegionList.country(inText: "利尻 タイムラプス"))
-        XCTAssertNil(RegionList.country(inText: "韓国料理 新大久保"))
-        XCTAssertNil(RegionList.country(inText: "中国地方"))
+        XCTAssertNil(RegionList.country(inText: "インドア撮影"))
         XCTAssertEqual(RegionList.country(inText: "台湾の九份"), "台湾", "ひらがなは切れ目")
+        // 🔴 中黒は切れ目・漢字の国名は前後を見ない（d7e9476 のレビュー）
+        XCTAssertEqual(RegionList.country(inText: "フランス・パリ"), "フランス")
+        XCTAssertEqual(RegionList.country(inText: "韓国・ソウル"), "韓国")
+        XCTAssertEqual(RegionList.country(inText: "ニューヨーク, アメリカ合衆国"), "アメリカ")
+        XCTAssertEqual(RegionList.country(inText: "フランス南部"), "フランス")
+        XCTAssertEqual(RegionList.country(inText: "オペラ・ガルニエ（パリ）"), nil)
         XCTAssertEqual(RegionList.country(inText: "フランス ヴェルサイユ"), "フランス")
     }
 

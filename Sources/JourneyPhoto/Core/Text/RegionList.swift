@@ -107,16 +107,19 @@ enum RegionList {
 
     /// 撮影地の文字から国。
     ///
-    /// 🔴 **語の切れ目で当たったものだけ**——前後がカタカナ・漢字なら別の語の一部とみる
-    /// （「タイル」「タイムズ」のタイ、「インドネシア」のインド、「韓国料理」の韓国）。
+    /// 🔴 **カタカナの国名は、語の切れ目で当たったものだけ**——前後がカタカナなら別の語の一部とみる
+    /// （「タイル」「タイムズ」のタイ、「インドネシア」のインド）。**中黒「・」は切れ目**
+    /// （「フランス・パリ」）。漢字の国名（韓国・台湾…）は前後を見ない——「大韓民国」
+    /// 「アメリカ合衆国」「韓国ソウル」を落とさないため（d7e9476 のレビュー）。
+    /// 「韓国料理」のような日本の写真は、国の手がかりに使わないので害が無い。
     /// 複数あれば**文字の後ろにある方**（「タイムズスクエア, ニューヨーク, アメリカ」は
     /// アメリカ。住所は国を最後に書く）。d9c5aee のレビュー
     static func country(inText text: String?, known: [String] = countries) -> String? {
         guard let text, !text.isEmpty else { return nil }
-        func isWordChar(_ c: Character?) -> Bool {
+        func isKatakana(_ c: Character?) -> Bool {
             guard let s = c?.unicodeScalars.first else { return false }
-            return (0x30A0...0x30FF).contains(s.value)       // カタカナ・長音
-                || (0x4E00...0x9FFF).contains(s.value) || (0x3400...0x4DBF).contains(s.value)
+            // ァ〜ヺ と 長音「ー」。中黒「・」(U+30FB) と「゠」は切れ目として外す
+            return (0x30A1...0x30FA).contains(s.value) || s.value == 0x30FC
         }
         var best: (name: String, end: String.Index)?
         for name in known {
@@ -124,7 +127,9 @@ enum RegionList {
             while let r = text.range(of: name, range: searchFrom..<text.endIndex) {
                 let before = r.lowerBound > text.startIndex ? text[text.index(before: r.lowerBound)] : nil
                 let after = r.upperBound < text.endIndex ? text[r.upperBound] : nil
-                if !isWordChar(before), !isWordChar(after), best.map({ r.upperBound > $0.end }) ?? true {
+                let katakanaName = name.unicodeScalars.allSatisfy { (0x30A1...0x30FC).contains($0.value) }
+                let bounded = !katakanaName || (!isKatakana(before) && !isKatakana(after))
+                if bounded, best.map({ r.upperBound > $0.end }) ?? true {
                     best = (name, r.upperBound)
                 }
                 searchFrom = r.upperBound
