@@ -1367,7 +1367,9 @@ struct StoryViewerView: View {
                     } else {
                         HStack(spacing: 0) {
                             Text(L("見た人 ", "Viewers "))
+                            // 数は真鍮（ブランドの色・owner「真鍮のテーマ色を意識して」2026-09-29）
                             Text("\(viewers.count)").font(JPFont.mono(14, medium: true))
+                                .foregroundStyle(WebTheme.accent)
                         }
                         .font(.system(size: 14, weight: .medium))
                         // **返信を読めていなければ「いいね」の数は言わない**
@@ -1376,6 +1378,7 @@ struct StoryViewerView: View {
                             HStack(spacing: 0) {
                                 Text(L("いいね ", "Likes "))
                                 Text("\(replies.reactionCount)").font(JPFont.mono(11, medium: true))
+                                    .foregroundStyle(WebTheme.accent)
                             }
                             .font(.system(size: 11))
                             .foregroundStyle(WebTheme.muted2)
@@ -1418,12 +1421,15 @@ struct StoryViewerView: View {
             ownCircle(symbol: "message")
                 .overlay(alignment: .topTrailing) {
                     if let badge = replyBadge(for: story), badge > 0 {
+                        // **真鍮＝合図**（通知の未読の点と同じ）。黒の縁で丸から切り離す。
+                        // 上の字は墨（真鍮に白は読めない・`BrandPalette.accentFill`）
                         Text(badge > 99 ? "99+" : "\(badge)")
                             .font(JPFont.mono(10, medium: true))
                             .foregroundStyle(WebTheme.accentText)
                             .padding(.horizontal, 5)
                             .frame(minWidth: 18, minHeight: 18)
-                            .background(WebTheme.accentBackground, in: Capsule())
+                            .background(WebTheme.accent, in: Capsule())
+                            .overlay(Capsule().strokeBorder(WebTheme.background, lineWidth: 2).padding(-2))
                             .offset(x: 4, y: -2)
                     }
                 }
