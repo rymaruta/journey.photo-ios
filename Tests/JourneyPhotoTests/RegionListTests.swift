@@ -5,8 +5,9 @@ import XCTest
 final class RegionListTests: XCTestCase {
 
     private func spot(_ slug: String, prefecture: String?, lat: Double, lng: Double,
-                      stage: String = "published") throws -> OfficialSpot {
-        let region = prefecture.map { ",\"region\":{\"prefecture\":\"\($0)\"}" } ?? ""
+                      stage: String = "published", country: String? = nil) throws -> OfficialSpot {
+        let countryField = country.map { "\"country\":\"\($0)\"," } ?? ""
+        let region = prefecture.map { ",\"region\":{\(countryField)\"prefecture\":\"\($0)\"}" } ?? ""
         return try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
             "{\"spotId\":\"sp_\(slug)\",\"slug\":\"\(slug)\",\"name\":\"\(slug)\",\"stage\":\"\(stage)\"\(region),\"coords\":{\"lat\":\(lat),\"lng\":\(lng)}}".utf8))
     }
@@ -116,6 +117,67 @@ final class RegionListTests: XCTestCase {
         let farSpots = RegionList.sections(photos: photos, spots: [try spot("sapporo", prefecture: "北海道", lat: 43.06, lng: 141.35)], from: nil)
         XCTAssertEqual(farSpots.first { $0.key == .unknown }?.photos.map(\.id), ["yamanaka"])
         XCTAssertEqual(farSpots.first { $0.key == .abroad }?.photos.map(\.id), ["vladivostok"])
+    }
+
+    // MARK: - 海外を国ごとに（owner の依頼・2026-09-29）
+
+    /// 本番の台帳・写真と同じ形: スポットは台帳の国、写真は文字の国 → 近くの国の分かったもの。
+    /// 「バルセロナ」とだけ書いた写真は、近くのサグラダ・ファミリアでスペインに入る
+    func testAbroadIsSplitByCountry() throws {
+        let spots = [
+            try spot("versailles", prefecture: "イヴリーヌ県", lat: 48.80, lng: 2.12, country: "フランス"),
+            try spot("garnier", prefecture: "イル・ド・フランス", lat: 48.87, lng: 2.33, country: "フランス"),
+            try spot("sagrada", prefecture: "カタルーニャ州", lat: 41.40, lng: 2.17, country: "スペイン"),
+            try spot("zojoji", prefecture: "東京都", lat: 35.657, lng: 139.748),
+        ]
+        let photos = [
+            try photo("paris", location: "パリ", lat: 48.86, lng: 2.32),
+            try photo("versailles-text", location: "フランス ヴェルサイユ", lat: 48.8, lng: 2.13),
+            try photo("barcelona", location: "バルセロナ", lat: 41.38, lng: 2.18),
+            try photo("finland", location: "フィンランド", lat: 63.25, lng: 25.92),
+            try photo("helsinki", location: "Helsinki", lat: 60.17, lng: 24.94),
+            try photo("vladivostok", location: "Vladivostok", lat: 43.12, lng: 131.89),
+        ]
+        let sections = RegionList.sections(photos: photos, spots: spots, from: nil)
+        let byKey = Dictionary(uniqueKeysWithValues: sections.map { ($0.key, $0) })
+        XCTAssertEqual(byKey[.country("フランス")]?.spots.map(\.spot.slug).sorted(), ["garnier", "versailles"])
+        XCTAssertEqual(byKey[.country("フランス")]?.photos.map(\.id), ["paris", "versailles-text"])
+        XCTAssertEqual(byKey[.country("スペイン")]?.spots.map(\.spot.slug), ["sagrada"])
+        XCTAssertEqual(byKey[.country("スペイン")]?.photos.map(\.id), ["barcelona"], "近くのスポットの国に入れていない")
+        // ヘルシンキ（文字に国が無い）はフィンランドの写真から 150km を超えるので当てない
+        XCTAssertEqual(byKey[.country("フィンランド")]?.photos.map(\.id), ["finland"])
+        XCTAssertEqual(byKey[.abroad]?.photos.map(\.id), ["helsinki", "vladivostok"])
+        XCTAssertEqual(byKey[.abroad]?.title, L("その他の海外", "Elsewhere abroad"))
+        XCTAssertEqual(byKey[.country("フランス")]?.title, "フランス")
+        // 並び: 県 → 国（起点が無ければ名前の順）→ その他の海外
+        XCTAssertEqual(sections.map(\.key), [
+            .prefecture("東京都"), .country("スペイン"), .country("フィンランド"), .country("フランス"), .abroad,
+        ])
+    }
+
+    /// 国の段が1つも無いときは、今までどおり「海外」と言う（国の分からない古い索引でも崩れない）
+    func testAbroadTitleWithoutCountries() throws {
+        let sections = RegionList.sections(photos: [try photo("h", location: "Helsinki", lat: 60.17, lng: 24.94)],
+                                           spots: [], from: nil)
+        XCTAssertEqual(sections.map(\.key), [.abroad])
+        XCTAssertEqual(sections[0].title, L("海外", "Outside Japan"))
+    }
+
+    /// 国は起点から近い順
+    func testCountriesNearestFirst() throws {
+        let spots = [
+            try spot("sagrada", prefecture: "カタルーニャ州", lat: 41.40, lng: 2.17, country: "スペイン"),
+            try spot("garnier", prefecture: "イル・ド・フランス", lat: 48.87, lng: 2.33, country: "フランス"),
+        ]
+        let fromParis = RegionList.sections(photos: [], spots: spots, from: .init(lat: 48.85, lng: 2.35))
+        XCTAssertEqual(fromParis.map(\.key), [.country("フランス"), .country("スペイン")])
+    }
+
+    func testCountryFromText() {
+        XCTAssertEqual(RegionList.country(inText: "ヴェルサイユ, Versailles, Yvelines, イル＝ド＝フランス地域圏, フランス・メトロポリテーヌ, 78000, フランス"), "フランス")
+        XCTAssertEqual(RegionList.country(inText: "パリ, フランス"), "フランス")
+        XCTAssertNil(RegionList.country(inText: "バルセロナ"))
+        XCTAssertNil(RegionList.country(inText: nil))
     }
 
     func testNamesAPlaceOutsideJapan() {

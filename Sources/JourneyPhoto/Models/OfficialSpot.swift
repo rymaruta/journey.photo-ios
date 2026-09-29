@@ -46,6 +46,8 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     var photo: SpotImage? { image?.value }
 
     struct Region: Decodable, Equatable {
+        /// 国。**日本の外の行だけ**が持つ（無ければ日本・Web の `spotFeed.ts`）
+        var country: String? = nil
         let prefecture: String?
         let city: String?
     }
