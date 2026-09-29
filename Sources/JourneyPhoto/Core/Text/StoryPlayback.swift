@@ -43,22 +43,56 @@ enum StoryPlayback {
 
     // MARK: - 時間を進める
 
-    enum Tick: Equatable {
-        /// まだ表示中
-        case running
-        /// 表示時間を使い切った。次へ
-        case advance
-    }
+    /// 写真1枚の時計。**「いつから動いているか」だけを持ち、経過はその場で計算する。**
+    ///
+    /// 以前は 50ms ごとに `elapsed` を書き換え、刻みの間を同じ長さの線のアニメーションで
+    /// つないでいた。`Task.sleep` は遅れて起きることがあり、遅れるとアニメーションが先に
+    /// 終わって**バーが一瞬止まってから動く**（owner「もっと進捗バー滑らかにしたい」
+    /// 2026-09-29）。さらに書き換えのたびに閲覧画面の全体を1秒に20回描き直していた。
+    /// いまは状態が変わるのは**動く／止まるが切り替わったときだけ**で、バーは画面の
+    /// 描画（`TimelineView(.animation)`）ごとに `elapsed(at:)` を読んで伸びる
+    /// （Web の `StoryViewer` が CSS アニメーション・requestAnimationFrame で解いたのと同じ考え方）
+    struct Clock: Equatable {
+        /// 止まっていた間までに貯まった経過
+        private(set) var base: TimeInterval = 0
+        /// 動き出した時刻。止まっていれば nil
+        private(set) var runningSince: Date?
 
-    /// 写真1枚の経過。**凍っている間は1ミリも進まない。**
-    struct Progress: Equatable {
-        var elapsed: TimeInterval = 0
-        let duration: TimeInterval
+        var isRunning: Bool { runningSince != nil }
 
-        mutating func tick(_ dt: TimeInterval, frozen: Bool) -> Tick {
-            guard !frozen else { return .running }
-            elapsed = min(duration, elapsed + dt)
-            return elapsed >= duration ? .advance : .running
+        /// `now` の時点の経過。**時刻が戻っても減らない**
+        func elapsed(at now: Date) -> TimeInterval {
+            base + (runningSince.map { max(0, now.timeIntervalSince($0)) } ?? 0)
+        }
+
+        /// 動かす／止める。**同じ向きの2回目は何もしない**（止めた時刻・動き出した時刻を
+        /// 書き直さない）。変わったら true（呼ぶ側はそのときだけ `@State` を書く）
+        @discardableResult
+        mutating func set(running: Bool, at now: Date) -> Bool {
+            switch (running, runningSince) {
+            case (true, nil):
+                runningSince = now
+                return true
+            case (false, let since?):
+                base += max(0, now.timeIntervalSince(since))
+                runningSince = nil
+                return true
+            default:
+                return false
+            }
+        }
+
+        /// 動いている間の `seconds` を**無かったことにする**（`StoryPlayback.stalledSeconds`）。
+        /// 止まっていれば何もしない
+        mutating func discard(_ seconds: TimeInterval) {
+            guard seconds > 0, let since = runningSince else { return }
+            runningSince = since.addingTimeInterval(seconds)
+        }
+
+        /// 最初から（同じ1本を頭から・別の1本へ移った）
+        mutating func restart(running: Bool, at now: Date) {
+            base = 0
+            runningSince = running ? now : nil
         }
     }
 
@@ -104,9 +138,10 @@ enum StoryPlayback {
     /// 走ることもあるので、ここでも抑える
     static let maxTickSeconds: TimeInterval = 0.25
 
-    /// 刻みの差を上限と下限（負の差＝時計の巻き戻し）で抑える
-    static func tickDelta(_ seconds: TimeInterval) -> TimeInterval {
-        min(max(0, seconds), maxTickSeconds)
+    /// 見回りの間があいた分のうち、**数えない分**。`maxTickSeconds` を超えた分は
+    /// アプリが止まっていた（背面・メインの詰まり）とみなして捨てる
+    static func stalledSeconds(gap: TimeInterval) -> TimeInterval {
+        max(0, gap - maxTickSeconds)
     }
 
     // MARK: - 前後
@@ -442,8 +477,8 @@ enum StoryPlayback {
         return format(date, "yyyy.MM.dd", locale: "en_US_POSIX", timeZone)
     }
 
-    /// **書式器は使い回す。** ハイライトの足元は時計の刻み（1秒に20回）ごとに
-    /// 描き直されるので、呼ぶたびに作ると重い
+    /// **書式器は使い回す。** ハイライトの足元は閲覧画面が描き直されるたびに
+    /// 呼ばれるので、呼ぶたびに作ると重い
     private static var formatters: [String: DateFormatter] = [:]
     private static let formattersLock = NSLock()
 

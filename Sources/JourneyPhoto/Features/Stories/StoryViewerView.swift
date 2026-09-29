@@ -1,4 +1,8 @@
 import SwiftUI
+// Linux では URLSession が別モジュールに居る（次の写真の先読み・iOS では何も起きない）
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// ストーリーを全画面で見る。
 ///
@@ -36,7 +40,9 @@ struct StoryViewerView: View {
     @State private var dropped: Set<String> = []
 
     // 進行
-    @State private var elapsed: TimeInterval = 0
+    /// 写真の時計（`StoryPlayback.Clock`）。**書き換わるのは動く／止まるの切り替えと、
+    /// 1本を頭から始めたときだけ**——バーは `TimelineView` が描画ごとに読む
+    @State private var clock = StoryPlayback.Clock()
     @State private var pressing = false
     /// 0.35秒押し続けた（`pressing` は触れた瞬間に立つので、見た目はこちらで決める）
     @State private var longHeld = false
@@ -175,7 +181,10 @@ struct StoryViewerView: View {
             syncSong(restart: true)
         }
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
-        .onChange(of: frozen) { _, _ in
+        .onChange(of: frozen) { _, isFrozen in
+            // **止まった瞬間にバーも止める。** 時計の見回り（`runClock`）を待つと、長押しから
+            // 最大 `clockStep` だけバーが進み続けて見える
+            syncClock(frozen: isFrozen)
             syncSong(restart: false)
             settlePendingEnd()
         }
@@ -324,6 +333,8 @@ struct StoryViewerView: View {
         // 時計は読み込みと別に回す。同じ task に入れると、見た人の一覧を
         // 待っている間、写真が出ているのに秒数が始まらない
         .task(id: story.id) { await runClock(for: story) }
+        // 次の写真を先に読んでおく（1本ごとにバーが 0 のまま待たないように）
+        .task(id: story.id) { prefetchNext() }
         .onAppear { isForeground = scenePhase == .active }
         .onChange(of: scenePhase) { _, phase in isForeground = phase == .active }
         .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
@@ -498,17 +509,23 @@ struct StoryViewerView: View {
 
     /// 1本ごとの区切り。**写真だけ経過を塗る。** 動画の区切りは経過の
     /// 出どころが無いので塗らず、少し明るい地で「今ここ」だけ示す
+    ///
+    /// **画面の描画ごとに伸ばす**（`TimelineView(.animation)`）。止まっている間は
+    /// 描き直しも止める（`paused`）。時計の刻みで伸ばすと、刻みの遅れがそのまま
+    /// 「一瞬止まってから動く」段差に見えた（`StoryPlayback.Clock`）
     private func progressBar(for story: Story) -> some View {
-        let fills = StoryPlayback.segmentFills(
-            count: visible.count,
-            current: index,
-            elapsed: elapsed,
-            duration: StoryPlayback.duration(seconds: story.durationSec),
-            isVideo: story.isVideo
-        )
-        return HStack(spacing: 4) {
-            ForEach(fills.indices, id: \.self) { i in
-                segment(fill: fills[i], isCurrent: i == index)
+        TimelineView(.animation(minimumInterval: nil, paused: !clock.isRunning)) { context in
+            let fills = StoryPlayback.segmentFills(
+                count: visible.count,
+                current: index,
+                elapsed: clock.elapsed(at: context.date),
+                duration: StoryPlayback.duration(seconds: story.durationSec),
+                isVideo: story.isVideo
+            )
+            HStack(spacing: 4) {
+                ForEach(fills.indices, id: \.self) { i in
+                    segment(fill: fills[i], isCurrent: i == index)
+                }
             }
         }
         .frame(height: 3)
@@ -521,13 +538,10 @@ struct StoryViewerView: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(isCurrent && fill == nil ? 0.6 : 0.3))
                 if let fill {
+                    // アニメーションは付けない——描画ごとに正しい幅を描くので、
+                    // 付けると0へ戻るとき（次の1本・頭から）に縮む動きが見える
                     Capsule().fill(Color.white)
                         .frame(width: geo.size.width * fill)
-                        // **刻みの間を線でつなぐ。** 時計は `clockStep` ごとにしか
-                        // 進まないので、そのままでは1秒に20回の段差で伸びる
-                        // （owner「進行バーが滑らかになってない」2026-09-25）。
-                        // 0 へ戻るとき（次の1本・前へ戻る）はつながず、すぐ戻す
-                        .animation(fill > 0 ? Animation.linear(duration: Self.clockStep) : nil, value: fill)
                 }
             }
         }
@@ -722,9 +736,9 @@ struct StoryViewerView: View {
         // でした」が別の1本の画面に出ていた。**払って閉じるのは止めない**（圏外で
         // 返事を待つ間に閉じられなくなる）
         guard !isSending else { return }
-        switch StoryPlayback.leftTap(index: index, elapsed: elapsed) {
+        switch StoryPlayback.leftTap(index: index, elapsed: clock.elapsed(at: Date())) {
         case .restart:
-            elapsed = 0
+            clock.restart(running: !frozen, at: Date())
             syncSong(restart: true)
         case .previous(let target):
             go(to: target)
@@ -769,7 +783,8 @@ struct StoryViewerView: View {
     private func go(to target: Int) {
         guard visible.indices.contains(target) else { return }
         index = target
-        elapsed = 0
+        // 止めておく。絵が出て（`mediaReady`）止める理由が無くなったら `syncClock` が動かす
+        clock.restart(running: false, at: Date())
         pendingEnd = nil
         endedIds = []
         // 別の1本へ移ったら止めていたのを解く（払って移ると止まったまま進んでいた）
@@ -785,30 +800,60 @@ struct StoryViewerView: View {
         viewersLoaded = nil
     }
 
-    /// 時計の刻み。進行バーの動きもこの長さで次の刻みへつなぐ
+    /// 時計の見回りの間隔。**バーの動きはこの長さに縛られない**（描画ごとに伸びる）。
+    /// 決めるのは「使い切ったら次へ」の遅れの上限だけ
     private static let clockStep: TimeInterval = 0.05
 
-    /// 写真の時計。**動画は回さない**（鳴り終わりが送る）。
-    /// 経過は実際の時刻の差で進める——`sleep` は指定より遅れることがある。
-    /// **差は `StoryPlayback.tickDelta` で抑える**（アプリが止まっていた時間を足さない）
+    /// 時計を今の止まる条件に合わせる。**変わったときだけ `@State` を書く**
+    /// （同じ値を書き続けると、それだけで画面全体が描き直される）
+    private func syncClock(frozen isFrozen: Bool) {
+        guard current.map({ !$0.isVideo }) ?? false else { return }
+        var next = clock
+        if next.set(running: !isFrozen, at: Date()) { clock = next }
+    }
+
+    /// 写真の時計の見回り。**動画は回さない**（鳴り終わりが送る）。
+    /// 経過は `StoryPlayback.Clock` が時刻から計算するので、`sleep` の遅れで
+    /// バーが止まって見えることはない。ここは「使い切ったら次へ」だけを見る。
+    /// **アプリが背面にある間は止まっている**（`isForeground` が `frozen` に入る）ので、
+    /// その時間は数えない
     private func runClock(for story: Story) async {
         guard !story.isVideo else { return }
         let duration = StoryPlayback.duration(seconds: story.durationSec)
+        syncClock(frozen: frozen)
         while !Task.isCancelled {
             let before = Date()
             try? await Task.sleep(for: .milliseconds(Int(Self.clockStep * 1000)))
             if Task.isCancelled { return }
-            let dt = StoryPlayback.tickDelta(Date().timeIntervalSince(before))
-            var progress = StoryPlayback.Progress(elapsed: elapsed, duration: duration)
-            let tick = progress.tick(dt, frozen: frozen)
-            elapsed = progress.elapsed
+            // 🔴 **間があきすぎた分は数えない**（`StoryPlayback.stalledSeconds`）。前面に戻る
+            // 合図（`isForeground`）より先にここが走ると、背面にいた時間を丸ごと足して
+            // 次の1本へ飛んでいた（2026-09-26 のバグ探し。旧 `tickDelta` と同じ守り）
+            let stalled = StoryPlayback.stalledSeconds(gap: Date().timeIntervalSince(before))
+            if stalled > 0, clock.isRunning {
+                var next = clock
+                next.discard(stalled)
+                clock = next
+            }
+            // `onChange(of: frozen)` の取りこぼしに備えて、ここでも合わせる
+            syncClock(frozen: frozen)
             // 知らせ（「送りました」など）が出ている間は進めない（`go` が消して読めない）。
             // 知らせは2.5秒で消える
-            if tick == .advance, message == nil {
+            if !frozen, message == nil, clock.elapsed(at: Date()) >= duration {
                 advance()
                 return
             }
         }
+    }
+
+    /// 次の1本が写真なら、先に読んでおく。`AsyncImage` と同じ `URLSession.shared`
+    /// （＝`URLCache.shared`・`JourneyPhotoApp` で容量を広げてある）に入れるだけ。
+    /// **失敗は気にしない**（表示のときにもう一度読む）
+    private func prefetchNext() {
+        guard let target = StoryPlayback.next(after: index, count: visible.count),
+              visible.indices.contains(target),
+              !visible[target].isVideo,
+              let url = visible[target].imageURL else { return }
+        URLSession.shared.dataTask(with: url).resume()
     }
 
     // MARK: - 「…」のメニュー

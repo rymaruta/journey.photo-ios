@@ -72,26 +72,52 @@ final class StoryPlaybackTests: XCTestCase {
                                              mediaReady: true, inBackground: true))
     }
 
-    /// **アプリが止まっていた時間を1回の刻みに入れない。** 入れると、
-    /// 戻った瞬間に表示時間を使い切って次の1本へ飛ぶ
-    func testTickDeltaIsCapped() {
-        XCTAssertEqual(StoryPlayback.tickDelta(0.05), 0.05, accuracy: 0.0001)
-        XCTAssertEqual(StoryPlayback.tickDelta(30), StoryPlayback.maxTickSeconds)
-        XCTAssertEqual(StoryPlayback.tickDelta(-2), 0)
-        // 5秒の写真が、30秒止まって戻っても使い切らない
-        var progress = StoryPlayback.Progress(elapsed: 1, duration: 5)
-        XCTAssertEqual(progress.tick(StoryPlayback.tickDelta(30), frozen: false), .running)
+    /// **アプリが止まっていた時間を数えない。** 数えると、戻った瞬間に表示時間を
+    /// 使い切って次の1本へ飛ぶ（見回りの間が `maxTickSeconds` を超えた分は捨てる）
+    func testStalledSecondsAreDiscarded() {
+        XCTAssertEqual(StoryPlayback.stalledSeconds(gap: 0.05), 0)
+        XCTAssertEqual(StoryPlayback.stalledSeconds(gap: 30), 30 - StoryPlayback.maxTickSeconds, accuracy: 0.0001)
+        XCTAssertEqual(StoryPlayback.stalledSeconds(gap: -2), 0)
+        // 1秒見て、30秒止まって戻っても、5秒の写真を使い切らない
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        var clock = StoryPlayback.Clock()
+        clock.set(running: true, at: t0)
+        let back = t0.addingTimeInterval(31)
+        clock.discard(StoryPlayback.stalledSeconds(gap: 30))
+        XCTAssertEqual(clock.elapsed(at: back), 1 + StoryPlayback.maxTickSeconds, accuracy: 0.0001)
+        XCTAssertLessThan(clock.elapsed(at: back), 5)
+        // 止まっている時計には効かない
+        var stopped = StoryPlayback.Clock()
+        stopped.discard(10)
+        XCTAssertEqual(stopped.elapsed(at: back), 0)
     }
 
-    /// 凍っている間は進まず、解けたら進み、使い切ったら次へ。
-    func testPauseStopsElapsed() {
-        var progress = StoryPlayback.Progress(duration: 1)
-        XCTAssertEqual(progress.tick(0.4, frozen: true), .running)
-        XCTAssertEqual(progress.elapsed, 0, "凍っている間は1ミリも進まない")
-        XCTAssertEqual(progress.tick(0.4, frozen: false), .running)
-        XCTAssertEqual(progress.elapsed, 0.4, accuracy: 0.0001)
-        XCTAssertEqual(progress.tick(0.7, frozen: false), .advance)
-        XCTAssertEqual(progress.elapsed, 1, "秒数を超えて溜めない")
+    /// 時計は**時刻から経過を計算する**。止めている間は1ミリも進まず、動かすと続きから
+    func testClockPausesAndResumes() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        var clock = StoryPlayback.Clock()
+        XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(5)), 0, "動かす前は進まない")
+        XCTAssertTrue(clock.set(running: true, at: t0))
+        XCTAssertFalse(clock.set(running: true, at: t0.addingTimeInterval(0.2)), "同じ向きの2回目は何もしない")
+        XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(0.4)), 0.4, accuracy: 0.0001,
+                       "2回目で動き出しの時刻を書き直していない")
+        XCTAssertTrue(clock.set(running: false, at: t0.addingTimeInterval(0.4)))
+        XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(10)), 0.4, accuracy: 0.0001, "止めている間は進まない")
+        clock.set(running: true, at: t0.addingTimeInterval(10))
+        XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(10.6)), 1.0, accuracy: 0.0001, "続きから")
+        XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(9)), 0.4, accuracy: 0.0001, "時刻が戻っても減らない")
+    }
+
+    /// 頭から（左タップ・別の1本）は 0 から。動かすかは呼ぶ側が決める
+    func testClockRestart() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        var clock = StoryPlayback.Clock()
+        clock.set(running: true, at: t0)
+        clock.restart(running: false, at: t0.addingTimeInterval(3))
+        XCTAssertFalse(clock.isRunning)
+        XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(9)), 0)
+        clock.restart(running: true, at: t0.addingTimeInterval(9))
+        XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(9.5)), 0.5, accuracy: 0.0001)
     }
 
     // MARK: - 前後

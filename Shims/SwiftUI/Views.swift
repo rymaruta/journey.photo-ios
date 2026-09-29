@@ -384,3 +384,26 @@ public struct Slider: View {
     public init(value: Binding<Double>, in range: ClosedRange<Double>) {}
     public var body: Never { fatalError("模型") }
 }
+
+/// 描画ごとに中身を描き直す入れ物（ストーリーの進行バー）。模型は日付を返すだけ。
+public struct TimelineViewDefaultContext {
+    public var date: Date { Date() }
+}
+
+public protocol TimelineSchedule {}
+
+public struct AnimationTimelineSchedule: TimelineSchedule {
+    public init(minimumInterval: Double? = nil, paused: Bool = false) {}
+}
+
+extension TimelineSchedule where Self == AnimationTimelineSchedule {
+    public static var animation: AnimationTimelineSchedule { AnimationTimelineSchedule() }
+    public static func animation(minimumInterval: Double? = nil, paused: Bool = false) -> AnimationTimelineSchedule {
+        AnimationTimelineSchedule(minimumInterval: minimumInterval, paused: paused)
+    }
+}
+
+public struct TimelineView<Schedule: TimelineSchedule, Content: View>: View {
+    public init(_ schedule: Schedule, @ViewBuilder content: @escaping (TimelineViewDefaultContext) -> Content) {}
+    public var body: Never { fatalError("模型") }
+}
