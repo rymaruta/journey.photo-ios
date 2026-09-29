@@ -1285,7 +1285,8 @@ struct StoryViewerView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(insightsLabel)
-        .accessibilityHint(L("反応を見る", "Show insights"))
+        // 読み込み中・失敗は文そのものが「反応を見る」なので、同じ言葉を重ねない
+        .accessibilityHint(viewersLoaded == true ? L("反応を見る", "Show insights") : "")
     }
 
     /// 誰も見ておらず、いいねも（読めた範囲で）無い
