@@ -985,9 +985,10 @@ struct PhotoDetailView: View {
                 Button {
                     Task { clearNotices(); await model.postComment() }
                 } label: {
+                    // 白。下の帯は写真の上を流れるガラスなので真鍮を置かない（デザインシステム「黒塗りの真鍮」）
                     Image(systemName: "paperplane")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(WebTheme.accent)
+                        .foregroundStyle(WebTheme.foreground)
                         .webTappable()
                 }
                 .buttonStyle(.plain)

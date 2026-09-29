@@ -83,10 +83,11 @@ struct LegalGateView: View {
 
     private var heading: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // 写真の上に重なるので白（真鍮は黒地の上だけ）。眉ラベルは 11pt が下限（デザインシステム「黒塗りの真鍮」）
             Text("BEFORE YOU START")
-                .font(JPFont.mono(10))
+                .font(JPFont.mono(11))
                 .tracking(1.6)
-                .foregroundStyle(WebTheme.accent)
+                .foregroundStyle(WebTheme.text)
                 .accessibilityHidden(true)
             Text(L("はじめる前に", "Before you start"))
                 .font(JPFont.display(32, relativeTo: .largeTitle))

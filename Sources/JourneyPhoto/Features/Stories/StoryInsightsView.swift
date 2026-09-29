@@ -232,8 +232,9 @@ struct StoryInsightsView: View {
             .buttonStyle(.plain)
             .disabled(viewer.deleted == true)
             if hasReaction(from: viewer.userId) {
+                // いいねは白（真鍮は合図と手がかりだけ）（デザインシステム「黒塗りの真鍮」）
                 Image(systemName: "heart.fill")
-                    .foregroundStyle(WebTheme.accent)
+                    .foregroundStyle(WebTheme.foreground)
                     .accessibilityLabel(L("いいね", "Liked"))
             } else if let reply = replyText(from: viewer.userId) {
                 Text("「\(reply)」")

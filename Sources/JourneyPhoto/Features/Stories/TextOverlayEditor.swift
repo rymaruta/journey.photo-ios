@@ -308,7 +308,7 @@ struct OverlayPanel: View {
                 Button(action: onDelete) {
                     Label(L("消す", "Delete"), systemImage: "trash")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color(red: 1.0, green: 0x8A / 255.0, blue: 0x80 / 255.0))
+                        .foregroundStyle(WebTheme.danger)
                         .frame(minHeight: 36)
                         .padding(.horizontal, 12)
                 }
