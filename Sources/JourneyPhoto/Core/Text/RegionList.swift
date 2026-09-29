@@ -105,12 +105,32 @@ enum RegionList {
         "ネパール", "オーストラリア", "ニュージーランド", "エジプト", "モロッコ",
     ]
 
-    /// 撮影地の文字から国。複数あれば文字の先に出てくる方
+    /// 撮影地の文字から国。
+    ///
+    /// 🔴 **語の切れ目で当たったものだけ**——前後がカタカナ・漢字なら別の語の一部とみる
+    /// （「タイル」「タイムズ」のタイ、「インドネシア」のインド、「韓国料理」の韓国）。
+    /// 複数あれば**文字の後ろにある方**（「タイムズスクエア, ニューヨーク, アメリカ」は
+    /// アメリカ。住所は国を最後に書く）。d9c5aee のレビュー
     static func country(inText text: String?, known: [String] = countries) -> String? {
         guard let text, !text.isEmpty else { return nil }
-        return known
-            .compactMap { name in text.range(of: name).map { (name, $0.lowerBound) } }
-            .min { $0.1 < $1.1 }?.0
+        func isWordChar(_ c: Character?) -> Bool {
+            guard let s = c?.unicodeScalars.first else { return false }
+            return (0x30A0...0x30FF).contains(s.value)       // カタカナ・長音
+                || (0x4E00...0x9FFF).contains(s.value) || (0x3400...0x4DBF).contains(s.value)
+        }
+        var best: (name: String, end: String.Index)?
+        for name in known {
+            var searchFrom = text.startIndex
+            while let r = text.range(of: name, range: searchFrom..<text.endIndex) {
+                let before = r.lowerBound > text.startIndex ? text[text.index(before: r.lowerBound)] : nil
+                let after = r.upperBound < text.endIndex ? text[r.upperBound] : nil
+                if !isWordChar(before), !isWordChar(after), best.map({ r.upperBound > $0.end }) ?? true {
+                    best = (name, r.upperBound)
+                }
+                searchFrom = r.upperBound
+            }
+        }
+        return best?.name
     }
 
     /// 撮影地の文字から都道府県。**正式名だけ**を見る（「京都」だけでは東京都と区別できない）。
@@ -230,7 +250,9 @@ enum RegionList {
                 guard let c = row.spot.coords, let country = spotCountry(row) else { return nil }
                 return (c, country)
             } + photos.compactMap { photo in
-                guard let c = photo.coords, prefecture(inText: photo.location) == nil,
+                // 🔴 **日本の範囲の写真は手がかりにしない。** 「利尻 タイムラプス」「志摩スペイン村」の
+                // ような日本の写真が、近くの海外扱いの写真を「タイ」「スペイン」へ引き込んでいた
+                guard let c = photo.coords, !isInJapan(c), prefecture(inText: photo.location) == nil,
                       let country = country(inText: photo.location, known: known) else { return nil }
                 return (c, country)
             }

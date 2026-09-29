@@ -178,6 +178,28 @@ final class RegionListTests: XCTestCase {
         XCTAssertEqual(RegionList.country(inText: "パリ, フランス"), "フランス")
         XCTAssertNil(RegionList.country(inText: "バルセロナ"))
         XCTAssertNil(RegionList.country(inText: nil))
+        // 🔴 語の一部では当てない・複数あれば後ろ（住所は国を最後に書く）
+        XCTAssertEqual(RegionList.country(inText: "タイムズスクエア, ニューヨーク, アメリカ"), "アメリカ")
+        XCTAssertEqual(RegionList.country(inText: "バリ島, インドネシア"), "インドネシア")
+        XCTAssertNil(RegionList.country(inText: "利尻 タイムラプス"))
+        XCTAssertNil(RegionList.country(inText: "韓国料理 新大久保"))
+        XCTAssertNil(RegionList.country(inText: "中国地方"))
+        XCTAssertEqual(RegionList.country(inText: "台湾の九份"), "台湾", "ひらがなは切れ目")
+        XCTAssertEqual(RegionList.country(inText: "フランス ヴェルサイユ"), "フランス")
+    }
+
+    /// 🔴 **日本の写真は国の手がかりにしない**（「志摩スペイン村」の写真が、近くの海外扱いの写真を
+    /// スペインへ引き込まない）
+    func testJapanesePhotosAreNotCountryAnchors() throws {
+        let photos = [
+            try photo("rishiri", location: "Rishiri", lat: 45.18, lng: 141.24),
+            try photo("spain-mura", location: "志摩 スペイン 村", lat: 45.18, lng: 141.24),
+        ]
+        let sections = RegionList.sections(photos: photos,
+                                           spots: [try spot("sapporo", prefecture: "北海道", lat: 43.06, lng: 141.35)],
+                                           from: nil)
+        XCTAssertNil(sections.first { if case .country = $0.key { return true } else { return false } },
+                     "日本の写真を手がかりに国の段を作っている")
     }
 
     func testNamesAPlaceOutsideJapan() {
