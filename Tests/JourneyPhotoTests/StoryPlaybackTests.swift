@@ -221,13 +221,27 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertTrue(StoryPlayback.menuItems(isMine: false, isVideo: false, hasCaption: true, hasOwner: true).contains(.hideCaption))
 
         let mine = StoryPlayback.menuItems(isMine: true, isVideo: false, hasCaption: true, hasOwner: true)
-        XCTAssertEqual(mine, [.pause, .hideCaption, .delete], "自分は通報もブロックもできない")
+        XCTAssertEqual(mine, [.pause, .hideCaption, .delete], "自分は通報もブロックもできず、削除ができる")
         // 残せる投稿だけ「写真として残す」。人の投稿には残す・削除を出さない
         XCTAssertEqual(StoryPlayback.menuItems(isMine: true, isVideo: false, hasCaption: false, hasOwner: true,
                                                canKeep: true), [.pause, .keep, .delete])
         let theirs = StoryPlayback.menuItems(isMine: false, isVideo: false, hasCaption: false, hasOwner: true,
                                              canKeep: true)
         XCTAssertFalse(theirs.contains(.keep) || theirs.contains(.delete))
+        // ハイライトの中では残す・削除を出さない（以前も無かった操作）
+        XCTAssertEqual(StoryPlayback.menuItems(isMine: true, isVideo: true, hasCaption: false, hasOwner: true,
+                                               canKeep: true, inHighlight: true), [.pause, .mute])
+    }
+
+    /// 上の「…」。自分の投稿は足元に「…」があるので、ハイライトで音があるときだけ
+    func testTopMenuIsNotDoubledForOwnStories() {
+        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: false, inHighlight: false, hasAudio: false))
+        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: false, inHighlight: true, hasAudio: false))
+        XCTAssertFalse(StoryPlayback.showsTopMenu(isMine: true, inHighlight: false, hasAudio: true),
+                       "足元の「…」と上下に2つ並ぶ")
+        XCTAssertFalse(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true, hasAudio: false))
+        XCTAssertTrue(StoryPlayback.showsTopMenu(isMine: true, inHighlight: true, hasAudio: true),
+                      "ハイライトでは音を消す口がここにしか無い")
 
         let unknownOwner = StoryPlayback.menuItems(isMine: false, isVideo: false, hasCaption: false, hasOwner: false)
         XCTAssertEqual(unknownOwner, [.pause, .report], "相手が分からなければブロックは出せない")

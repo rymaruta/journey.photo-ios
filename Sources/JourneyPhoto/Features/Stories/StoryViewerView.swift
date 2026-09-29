@@ -614,14 +614,12 @@ struct StoryViewerView: View {
                 .buttonStyle(.plain)
             }
             Spacer(minLength: 0)
-            // **自分のストーリーには「…」を置かない**（板 25e は ✕ だけ）。
-            // ただし**動画は音を消す口がここにしか無い**ので出す
-            // 他人のハイライトにも出す（通報とブロックの入口はここだけ。審査 1.2）
-            // 自分の写真でも、曲が付いていれば「音を消す」のために出す。
-            // **ただし自分のストーリー（ハイライト以外）は足元の「…」が同じシートを開く**ので
-            // 上には出さない（同じ印が上下に2つ並ぶ）
-            if !isMine(story)
-                || (highlight != nil && (story.isVideo || StoryPlayback.songURL(for: story) != nil)) {
+            // 上の「…」は人の投稿（通報とブロックの入口・審査 1.2。人のハイライトも）と、
+            // **自分のハイライトで音があるとき**（動画・曲。音を消す口がここにしか無い）だけ。
+            // 自分のストーリー（ハイライト以外）は足元の「…」が同じシートを開くので出さない
+            // （同じ印が上下に2つ並ぶ）
+            if StoryPlayback.showsTopMenu(isMine: isMine(story), inHighlight: highlight != nil,
+                                          hasAudio: story.isVideo || StoryPlayback.songURL(for: story) != nil) {
                 Button {
                     showMenu = true
                 } label: {
@@ -963,7 +961,8 @@ struct StoryViewerView: View {
             hasSong: StoryPlayback.songURL(for: story) != nil,
             hasCaption: story.caption?.isEmpty == false,
             hasOwner: story.userId != nil,
-            canKeep: Self.canKeepAsPhoto(story)
+            canKeep: Self.canKeepAsPhoto(story),
+            inHighlight: highlight != nil
         )
         return ZStack(alignment: .bottom) {
             // 外を押したら閉じる
@@ -1014,16 +1013,14 @@ struct StoryViewerView: View {
                     // 24時間で消える前に、自分の写真として残す。
                     // **動画には出さない**（サーバーが 400 で断る・`storyKeep.ts`）
                     // **自分用（アーカイブ）の投稿にも出さない**（サーバーが 409 で断る・`storyKeep.ts`）
-                    // 残す・削除は**足元の「…」から開いたときの項目**。ハイライトの中では出さない
-                    // （以前もハイライトには無かった操作）
-                    if items.contains(.keep) && highlight == nil {
+                    if items.contains(.keep) {
                         menuRow(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
                             Task { await keep(story) }
                         }
                         .disabled(isSending)
                     }
                     // **確かめてから消す**（以前は押した瞬間に消えていた）
-                    if items.contains(.delete) && highlight == nil {
+                    if items.contains(.delete) {
                         menuRow(symbol: "trash", title: Labels.Common.delete, danger: true) {
                             showDeleteConfirm = true
                         }
@@ -1342,7 +1339,6 @@ struct StoryViewerView: View {
         .accessibilityHidden(true)
     }
 
-    /// 自分のストーリーの足元の操作（絵の下に11ptのラベル・高さ56）
     /// 反応（左）。顔と「見た人 N」、下に「いいね N」。押すと反応の画面。
     /// **読み込み中も場所を取る**——読み終えてから出すと、右の丸が押す直前にずれる。
     /// まだ誰も見ていないときは顔の代わりに目の印を置き、0 を並べない
@@ -1446,7 +1442,9 @@ struct StoryViewerView: View {
             ownCircle(symbol: "ellipsis")
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(L("その他", "More"))
+        // 上の「…」と同じ名前（同じシートを開く）。残す・削除がこの奥にあることをヒントで言う
+        .accessibilityLabel(L("その他の操作", "More actions"))
+        .accessibilityHint(L("写真として残す・削除", "Keep as photo, delete"))
     }
 
     /// 操作の丸（写真の上の ✕ と同じガラス・他の人の送信の丸と同じ 46）
