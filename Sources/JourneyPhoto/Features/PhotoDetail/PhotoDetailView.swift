@@ -484,6 +484,7 @@ struct PhotoDetailView: View {
                     placeLabel(location, spotSuffix: false)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("photo.placeLink")
             }
         }
     }
