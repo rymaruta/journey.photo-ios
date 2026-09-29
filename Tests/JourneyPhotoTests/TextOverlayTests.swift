@@ -479,4 +479,21 @@ extension TextOverlayTests {
         XCTAssertEqual(TextOverlay.hex(red: 1, green: 0, blue: 0.5), 0xFF0080)
         XCTAssertEqual(TextOverlay.hex(red: 1.2, green: -0.1, blue: .nan), 0xFF0000)
     }
+
+    /// 2本指でつまむ。**幅はスライダーと同じ**（つまめば上限を越えられる、にしない）。
+    /// 読めない倍率では変えない
+    func testPinchScalesWithinTheSliderRange() {
+        let overlay = TextOverlay(text: "港", size: 0.1)
+        XCTAssertEqual(overlay.scaled(by: 1.5).size, 0.15, accuracy: 0.0001)
+        XCTAssertEqual(overlay.scaled(by: 0.5).size, 0.05, accuracy: 0.0001)
+        XCTAssertEqual(overlay.scaled(by: 10).size, TextOverlay.maxSize, accuracy: 0.0001)
+        XCTAssertEqual(overlay.scaled(by: 0.01).size, TextOverlay.minSize, accuracy: 0.0001)
+        for bad in [0, -2, Double.infinity, Double.nan] {
+            XCTAssertEqual(overlay.scaled(by: bad), overlay, "\(bad)")
+        }
+        // 大きさ以外は変えない
+        var moved = overlay.scaled(by: 1.5)
+        moved.size = overlay.size
+        XCTAssertEqual(moved, overlay)
+    }
 }

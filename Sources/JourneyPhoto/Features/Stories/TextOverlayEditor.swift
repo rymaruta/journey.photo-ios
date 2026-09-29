@@ -31,6 +31,9 @@ struct StoryCanvas: View {
     /// 2本指で回している最中の札と、その角度（離したときに回しへ足す）
     @State private var rotateId: UUID?
     @State private var liveRotation: Double = 0
+    /// 2本指でつまんでいる最中の札と、その倍率（離したときに大きさへ掛ける）
+    @State private var scaleId: UUID?
+    @State private var liveScale: Double = 1
 
     var body: some View {
         GeometryReader { geometry in
@@ -62,6 +65,23 @@ struct StoryCanvas: View {
                         }
                         rotateId = nil
                         liveRotation = 0
+                    }
+            )
+            // つまんで**選んでいる札の**大きさを変える（回すのと同じ理由で枠全体に付ける）。
+            // 幅はスライダーと同じ（`TextOverlay.scaled`）
+            .simultaneousGesture(
+                MagnificationGesture()
+                    .onChanged { value in
+                        guard let id = selectedId else { return }
+                        scaleId = id
+                        liveScale = Double(value)
+                    }
+                    .onEnded { value in
+                        if let id = scaleId, let i = overlays.firstIndex(where: { $0.id == id }) {
+                            overlays[i] = overlays[i].scaled(by: Double(value))
+                        }
+                        scaleId = nil
+                        liveScale = 1
                     }
             )
             .onAppear { remember(geometry.size) }
@@ -132,7 +152,9 @@ struct StoryCanvas: View {
         // 写真に対する位置）。**下限で持ち上げない**——持ち上げると、
         // スライダーを下げても見た目が変わらないのに投稿される文字だけ
         // 小さくなる（2026-09-26 のレビュー）
-        let fontSize = TextOverlay.fontSize(overlay.size, in: photo.size)
+        // つまんでいる最中も、離したときと同じ幅で見せる（幅の外で大きく見えて、離すと縮む、にしない）
+        let size = scaleId == overlay.id ? overlay.scaled(by: liveScale).size : overlay.size
+        let fontSize = TextOverlay.fontSize(size, in: photo.size)
         let center = overlay.center(in: photo)
         let rotation = overlay.rotation + (rotateId == overlay.id ? liveRotation : 0)
         return Self.edged(Text(overlay.displayText)

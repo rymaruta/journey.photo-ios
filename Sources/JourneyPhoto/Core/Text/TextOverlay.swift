@@ -479,6 +479,16 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         min(max(value, minSize), maxSize)
     }
 
+    /// 2本指でつまんだあとの大きさ（owner の「自由度が低い」・2026-09-29）。
+    /// **幅はスライダーと同じ `clampSize`**——つまめば上限を越えられる、にしない。
+    /// 倍率が読めない値（0・負・無限）なら変えない
+    func scaled(by factor: Double) -> TextOverlay {
+        guard factor.isFinite, factor > 0 else { return self }
+        var next = self
+        next.size = Self.clampSize(size * factor)
+        return next
+    }
+
     // MARK: - 編集画面と焼き込みで同じ形にする
 
     /// 文字の大きさ。**画像の短い辺に対する割合**で決める。
