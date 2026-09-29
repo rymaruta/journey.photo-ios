@@ -42,6 +42,31 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 自由に選んだ色（0xRRGGBB・端末の色選び）。**あれば `ink` より先に使う**。
     /// 12色から選び直したら nil に戻す（owner の「色が少ない」・2026-09-29）
     var customHex: UInt32?
+    /// 複数行のときの揃え（owner の「ストーリーの自由度が低い」・2026-09-29）。
+    /// 1行なら見た目は変わらない（札の中心は `x` / `y` のまま）
+    var align: Align = .center
+
+    /// 行の揃え。**改行できる自由な文字だけ**が選べる（札は1行）
+    enum Align: String, CaseIterable, Identifiable, Codable {
+        case leading, center, trailing
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .leading: return L("左揃え", "Align left")
+            case .center: return L("中央揃え", "Align center")
+            case .trailing: return L("右揃え", "Align right")
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .leading: return "text.alignleft"
+            case .center: return "text.aligncenter"
+            case .trailing: return "text.alignright"
+            }
+        }
+    }
 
     /// 書体。**アプリに同梱した字か、どの iPhone にも入っている字だけ**
     /// （端末に無い書体を選ばせると、画面と焼き込みで見た目が割れる）。
@@ -331,6 +356,10 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         /// 書体・色を選べるか。**スタンプは絵文字なので効かない**（出すと押しても変わらない）
         var hasTypography: Bool { self != .stamp }
 
+        /// 改行できるか（と、揃えを選べるか）。**自由な文字だけ**——撮影地・タグなどは
+        /// 帯の1行の札で、改行すると印（📍 #）と中身が別の行に割れる
+        var allowsNewlines: Bool { self == .text }
+
         var toolLabel: String {
             switch self {
             // 板 24b「文字と札」のチップの言い方
@@ -421,11 +450,45 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 文字数の上限。サーバーのキャプション（200字）に合わせる
     static let maxLength = 200
 
+    /// 行の上限。**写真を覆わない所まで**（大きさの上限と同じ考え）
+    static let maxLines = 6
+
+    /// 打った文字を置ける形に整える。**改行は自由な文字だけ・6行まで**、字数は 200 まで。
+    /// 改行できない札の改行は空白にする（貼り付けで入ってくる）
+    static func cleaned(_ text: String, kind: Kind) -> String {
+        guard kind.allowsNewlines else {
+            return String(text.replacingOccurrences(of: "\r\n", with: " ")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .prefix(maxLength))
+        }
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+        return String(lines.prefix(maxLines).joined(separator: "\n").prefix(maxLength))
+    }
+
+    /// 複数行を焼き込むときの、各行の左端（ブロックの左端から）とブロックの大きさ。
+    /// **編集画面の `multilineTextAlignment` と同じ置き方**——ブロックの幅はいちばん長い行、
+    /// 短い行は揃えに合わせて寄せる。行の高さは書体の1行ぶん
+    static func lineLayout(widths: [Double], lineHeight: Double, align: Align)
+        -> (size: CGSize, xs: [Double]) {
+        let width = widths.max() ?? 0
+        let xs = widths.map { w -> Double in
+            switch align {
+            case .leading: return 0
+            case .center: return (width - w) / 2
+            case .trailing: return width - w
+            }
+        }
+        return (CGSize(width: width, height: lineHeight * Double(max(widths.count, 1))), xs)
+    }
+
     init(id: UUID = UUID(), text: String, x: Double = 0.5, y: Double = 0.5,
          size: Double = TextOverlay.defaultSize, style: Style = .light,
          kind: Kind = .text, face: Face = .gothic, ink: Ink? = nil, rotation: Double = 0) {
         self.id = id
-        self.text = String(text.prefix(Self.maxLength))
+        self.text = Self.cleaned(text, kind: kind)
         self.x = Self.clampPosition(x)
         self.y = Self.clampPosition(y)
         self.size = Self.clampSize(size)
@@ -440,7 +503,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, text, x, y, size, style, kind, face, ink, rotation, customHex
+        case id, text, x, y, size, style, kind, face, ink, rotation, customHex, align
     }
 
     /// **前の版の下書きも読む。** 書体・色・回しは後から足した項目なので、
@@ -459,6 +522,8 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         self.ink = (try? c.decodeIfPresent(Ink.self, forKey: .ink)) ?? (style == .dark ? .ink : .white)
         self.rotation = (try? c.decodeIfPresent(Double.self, forKey: .rotation)) ?? 0
         self.customHex = (try? c.decodeIfPresent(UInt32.self, forKey: .customHex)).map { $0 & 0xFFFFFF }
+        // 揃えは後から足した項目（前の版の下書きは中央＝これまでの見た目）
+        self.align = (try? c.decodeIfPresent(Align.self, forKey: .align)) ?? .center
     }
 
     /// 画面と画像に出す文字（印つき）。

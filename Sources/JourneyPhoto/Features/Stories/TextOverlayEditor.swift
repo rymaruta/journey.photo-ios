@@ -162,6 +162,14 @@ struct StoryCanvas: View {
         }
     }
 
+    static func alignment(_ align: TextOverlay.Align) -> TextAlignment {
+        switch align {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
+    }
+
     static func color(_ ink: TextOverlay.Ink) -> Color {
         color(hex: ink.hex)
     }
@@ -200,7 +208,9 @@ struct StoryCanvas: View {
         let rotation = overlay.rotation + (rotateId == overlay.id ? liveRotation : 0)
         return Self.edged(Text(overlay.displayText)
             // 書体と色は焼き込みと同じもの（`TextOverlayRenderer.attributes`）
-            .font(Self.font(overlay.face, size: fontSize)), overlay: overlay, fontSize: fontSize)
+            .font(Self.font(overlay.face, size: fontSize))
+            // 改行した文字の揃え（焼き込みの `TextOverlay.lineLayout` と同じ置き方）
+            .multilineTextAlignment(Self.alignment(overlay.align)), overlay: overlay, fontSize: fontSize)
             // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
             .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
             .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
@@ -272,14 +282,17 @@ struct OverlayPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             // **端末から採った札は直させない**（時刻・日付）。直せると「いつの話か」が嘘になる
             if overlay.kind.isEditable {
+                // **自由な文字は改行できる**（6行まで・`TextOverlay.cleaned`）。札は1行
                 TextField(L("文字", "Text"), text: Binding(
                     get: { overlay.text },
-                    set: { overlay.text = String($0.prefix(TextOverlay.maxLength)) }
-                ))
+                    set: { overlay.text = TextOverlay.cleaned($0, kind: overlay.kind) }
+                ), axis: overlay.kind.allowsNewlines ? .vertical : .horizontal)
+                .lineLimit(1...3)
                 .font(.system(size: 15))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 14)
-                .frame(height: 44)
+                .padding(.vertical, 12)
+                .frame(minHeight: 44)
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
             } else {
@@ -386,8 +399,27 @@ struct OverlayPanel: View {
                 .buttonStyle(.plain)
             }
 
-            // 大きさ。**幅は `TextOverlay` が決める**（読めない／覆う を防ぐ）
+            // 大きさ。**幅は `TextOverlay` が決める**（読めない／覆う を防ぐ）。
+            // 自由な文字は頭に揃え（左・中央・右）を置く（改行した行の寄せ方）
             HStack(spacing: 10) {
+                if overlay.kind.allowsNewlines {
+                    HStack(spacing: 0) {
+                        ForEach(TextOverlay.Align.allCases) { align in
+                            Button {
+                                overlay.align = align
+                            } label: {
+                                Image(systemName: align.symbol)
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(overlay.align == align ? WebTheme.accent : Color.white.opacity(0.72))
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(align.label)
+                            .accessibilityAddTraits(overlay.align == align ? .isSelected : [])
+                        }
+                    }
+                }
                 Text(L("小", "S"))
                 Slider(value: Binding(
                     get: { overlay.size },

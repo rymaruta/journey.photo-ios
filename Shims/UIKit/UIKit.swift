@@ -126,6 +126,8 @@ public final class UIFont {
     public static func systemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
     public init() {}
     public init?(name: String, size: Double) {}
+    /// 1行の高さ（複数行の焼き込みで行を送る）
+    public var lineHeight: Double { 0 }
 }
 
 /// 描き込み先（回して描くのに使うぶんだけ）
