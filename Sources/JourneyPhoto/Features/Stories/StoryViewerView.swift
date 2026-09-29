@@ -1065,18 +1065,16 @@ struct StoryViewerView: View {
             // 反応の札と、操作の丸（板 25e）。owner の「作り込みが安っぽい」（2026-09-29）で
             // 組み直した——数を文の中に埋めず数として出し、同じ画面を開く「反応を見る」の
             // 重複をやめ、操作を写真の上の他の丸（✕・…）と同じガラスの丸に揃える
-            VStack(spacing: 14) {
+            VStack(spacing: 10) {
                 // **反応はまとめて1画面に**（提案の絵）。見た人・いいね・返信が
-                // 別々のシートに割れていると、全体がどうだったか分からない
-                if !isExpired(story), viewersLoaded == true {
+                // 別々のシートに割れていると、全体がどうだったか分からない。
+                // **読み込み中も札の場所は取る**——読み終えてから出すと、下の丸が
+                // 押す直前にずれ（隣の「写真として残す」を押してしまう）、写真の枠も跳ねる
+                if !isExpired(story) {
                     insightsCard
                 }
 
                 HStack(alignment: .top, spacing: 0) {
-                    // 札を読めなかった（読み込み中・失敗）ときだけ、反応の画面への入口を丸で出す
-                    if !isExpired(story), viewersLoaded != true {
-                        ownAction(symbol: "chart.bar", title: L("反応", "Insights")) { showInsights = true }
-                    }
                     if !isExpired(story) {
                         ownAction(symbol: "bubble.left", title: L("返信", "Replies"),
                                   badge: replyBadge(for: story),
@@ -1101,7 +1099,7 @@ struct StoryViewerView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 14)
+            .padding(.top, 12)
         } else if story.acceptsReplies {
             // 返信欄（ガラスの丸）と ♡。**書いている間は ♡ が送信の白い丸に替わり、
             // 上に一言の候補と「だれに届くか」が出る**（板「25d 返信を書く」）
@@ -1247,7 +1245,7 @@ struct StoryViewerView: View {
             showInsights = true
         } label: {
             HStack(spacing: 14) {
-                if viewers.isEmpty {
+                if viewersLoaded != true || viewers.isEmpty {
                     Image(systemName: "eye")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(WebTheme.muted2)
@@ -1256,7 +1254,12 @@ struct StoryViewerView: View {
                 } else {
                     viewerFaces
                 }
-                if viewers.isEmpty && (!repliesLoaded || replies.reactionCount == 0) {
+                if viewersLoaded != true {
+                    // 読み込み中・読めなかった。**数は言わない**（0 と言い切らない）
+                    Text(L("反応を見る", "Insights"))
+                        .font(.system(size: 14))
+                        .foregroundStyle(WebTheme.muted)
+                } else if isQuiet {
                     Text(L("まだ誰も見ていません", "No views yet"))
                         .font(.system(size: 14))
                         .foregroundStyle(WebTheme.muted)
@@ -1276,14 +1279,18 @@ struct StoryViewerView: View {
                     .foregroundStyle(WebTheme.faint)
             }
             .padding(.horizontal, 14)
-            .frame(minHeight: 56)
+            .frame(minHeight: 48)
             .jpGlass(in: RoundedRectangle(cornerRadius: 16))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(insightsLabel)
         .accessibilityHint(L("反応を見る", "Show insights"))
+    }
+
+    /// 誰も見ておらず、いいねも（読めた範囲で）無い
+    private var isQuiet: Bool {
+        viewers.isEmpty && (!repliesLoaded || replies.reactionCount == 0)
     }
 
     private func stat(_ value: Int, label: String) -> some View {
@@ -1298,6 +1305,9 @@ struct StoryViewerView: View {
     }
 
     private var insightsLabel: String {
+        // 画面に出している文と同じことを読む
+        if viewersLoaded != true { return L("反応を見る", "Insights") }
+        if isQuiet { return L("まだ誰も見ていません", "No views yet") }
         let seen = L("見た人 \(viewers.count)人", "\(viewers.count) viewers")
         guard repliesLoaded else { return seen }
         return seen + L("、いいね \(replies.reactionCount)", ", \(replies.reactionCount) likes")
@@ -1313,7 +1323,7 @@ struct StoryViewerView: View {
                 Image(systemName: symbol)
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(color)
-                    .frame(width: 48, height: 48)
+                    .frame(width: 44, height: 44)
                     .jpGlass(in: Circle(), border: 0.14)
                     .overlay(alignment: .topTrailing) {
                         if let badge, badge > 0 {
@@ -1332,13 +1342,11 @@ struct StoryViewerView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            .frame(maxWidth: .infinity, minHeight: 72)
+            .frame(maxWidth: .infinity, minHeight: 64)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel ?? title)
-        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: - 返信の一覧（自分）
