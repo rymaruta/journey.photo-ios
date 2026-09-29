@@ -60,7 +60,7 @@ enum StoryPlayback {
 
         var isRunning: Bool { runningSince != nil }
 
-        /// `now` の時点の経過。**時刻が戻っても減らない**
+        /// `now` の時点の経過。`now` が動き出しより前なら動き出しの時点の値（負にしない）
         func elapsed(at now: Date) -> TimeInterval {
             base + (runningSince.map { max(0, now.timeIntervalSince($0)) } ?? 0)
         }
@@ -83,10 +83,15 @@ enum StoryPlayback {
         }
 
         /// 動いている間の `seconds` を**無かったことにする**（`StoryPlayback.stalledSeconds`）。
-        /// 止まっていれば何もしない
-        mutating func discard(_ seconds: TimeInterval) {
+        /// 止まっていれば何もしない。
+        ///
+        /// 🔴 **捨てるのは動いていた長さまで**（動き出しを `now` より先へずらさない）。
+        /// 背面から戻る合図で先に動き出し、そのあと背面の前から眠っていた見回りが
+        /// 1時間の間で起きると、1時間ぶんを捨てて**戻った後もバーが1時間止まった**
+        /// （a46fed7 のレビュー）
+        mutating func discard(_ seconds: TimeInterval, at now: Date) {
             guard seconds > 0, let since = runningSince else { return }
-            runningSince = since.addingTimeInterval(seconds)
+            runningSince = min(since.addingTimeInterval(seconds), now)
         }
 
         /// 最初から（同じ1本を頭から・別の1本へ移った）
@@ -129,13 +134,14 @@ enum StoryPlayback {
             || inBackground
     }
 
-    /// 1回の刻みで進める秒数の上限。
+    /// 時計の見回りの間で、**数えてよい長さの上限**。
     ///
-    /// 経過は「前の刻みからの実際の時刻の差」で足すので、**アプリが止まって
-    /// いた時間もまとめて1回に入る**——ホームへ戻って帰ってくると、その瞬間に
-    /// 表示時間を使い切って次の1本へ飛んでいた（2026-09-26 のバグ探し）。
-    /// 止まる条件（`inBackground`）で防ぐが、前面に戻る合図より先に刻みが
-    /// 走ることもあるので、ここでも抑える
+    /// 経過は時刻から計算するので、**アプリが止まっていた時間もそのまま入る**
+    /// ——ホームへ戻って帰ってくると、その瞬間に表示時間を使い切って次の1本へ
+    /// 飛んでいた（2026-09-26 のバグ探し）。止まる条件（`inBackground`）で防ぐが、
+    /// 前面に戻る合図より先に見回りが走ることもあるので、ここでも抑える
+    /// （超えた分は `stalledSeconds` → `Clock.discard` で捨てる）。
+    /// 捨てた直後は、バーが捨てた分だけ一瞬戻って見えることがある
     static let maxTickSeconds: TimeInterval = 0.25
 
     /// 見回りの間があいた分のうち、**数えない分**。`maxTickSeconds` を超えた分は

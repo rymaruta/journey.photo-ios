@@ -83,12 +83,12 @@ final class StoryPlaybackTests: XCTestCase {
         var clock = StoryPlayback.Clock()
         clock.set(running: true, at: t0)
         let back = t0.addingTimeInterval(31)
-        clock.discard(StoryPlayback.stalledSeconds(gap: 30))
+        clock.discard(StoryPlayback.stalledSeconds(gap: 30), at: back)
         XCTAssertEqual(clock.elapsed(at: back), 1 + StoryPlayback.maxTickSeconds, accuracy: 0.0001)
         XCTAssertLessThan(clock.elapsed(at: back), 5)
         // 止まっている時計には効かない
         var stopped = StoryPlayback.Clock()
-        stopped.discard(10)
+        stopped.discard(10, at: back)
         XCTAssertEqual(stopped.elapsed(at: back), 0)
     }
 
@@ -108,11 +108,28 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(9)), 0.4, accuracy: 0.0001, "時刻が戻っても減らない")
     }
 
+    /// 🔴 **捨てるのは動いていた長さまで。** 背面から戻る合図で先に動き出し、そのあと
+    /// 背面の前から眠っていた見回りが1時間の間で起きても、戻った後のバーは止まらない
+    func testDiscardNeverPushesStartIntoTheFuture() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        var clock = StoryPlayback.Clock()
+        clock.set(running: true, at: t0)
+        clock.set(running: false, at: t0.addingTimeInterval(1))       // 1秒見て背面へ
+        let resumed = t0.addingTimeInterval(3_601)
+        clock.set(running: true, at: resumed)                         // 戻る合図が先
+        clock.discard(StoryPlayback.stalledSeconds(gap: 3_600), at: resumed.addingTimeInterval(0.01))
+        XCTAssertEqual(clock.elapsed(at: resumed.addingTimeInterval(10)), 11, accuracy: 0.05,
+                       "戻った後も進んでいない（動き出しが先へずれた）")
+    }
+
     /// 頭から（左タップ・別の1本）は 0 から。動かすかは呼ぶ側が決める
     func testClockRestart() {
         let t0 = Date(timeIntervalSince1970: 1_000)
         var clock = StoryPlayback.Clock()
         clock.set(running: true, at: t0)
+        // 一度止めて経過を貯めてから頭へ（貯めた分も 0 に戻ること）
+        clock.set(running: false, at: t0.addingTimeInterval(2))
+        XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(3)), 2, accuracy: 0.0001)
         clock.restart(running: false, at: t0.addingTimeInterval(3))
         XCTAssertFalse(clock.isRunning)
         XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(9)), 0)

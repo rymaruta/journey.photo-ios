@@ -544,6 +544,9 @@ struct StoryViewerView: View {
             }
         }
         .frame(height: 3)
+        // **バーには外の動きを乗せない。** 一時停止を解いて次へ移ると、同じ更新で
+        // 見出しの出し入れ（`.animation(value: chrome)`）が走り、0へ戻る縮みが見えた
+        .transaction { $0.animation = nil }
         .padding(.horizontal, 10)
         .accessibilityLabel(L("\(visible.count)本中\(index + 1)本目", "\(index + 1) of \(visible.count)"))
     }
@@ -757,7 +760,8 @@ struct StoryViewerView: View {
         case .previousGroup:
             onGroupBack?()
         case .restart:
-            clock.restart(running: !frozen, at: Date())
+            // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
+            clock.restart(running: !frozen && !(current?.isVideo ?? false), at: Date())
             syncSong(restart: true)
         case .previous(let target):
             go(to: target)
@@ -849,11 +853,16 @@ struct StoryViewerView: View {
             // 🔴 **間があきすぎた分は数えない**（`StoryPlayback.stalledSeconds`）。前面に戻る
             // 合図（`isForeground`）より先にここが走ると、背面にいた時間を丸ごと足して
             // 次の1本へ飛んでいた（2026-09-26 のバグ探し。旧 `tickDelta` と同じ守り）
-            let stalled = StoryPlayback.stalledSeconds(gap: Date().timeIntervalSince(before))
-            if stalled > 0, clock.isRunning {
-                var next = clock
-                next.discard(stalled)
-                clock = next
+            // **間のうち、時計が動いていた部分だけを見る**（見回りが眠った後で動き出した
+            // 分まで捨てない）
+            let now = Date()
+            if let since = clock.runningSince {
+                let stalled = StoryPlayback.stalledSeconds(gap: now.timeIntervalSince(max(before, since)))
+                if stalled > 0 {
+                    var next = clock
+                    next.discard(stalled, at: now)
+                    clock = next
+                }
             }
             // `onChange(of: frozen)` の取りこぼしに備えて、ここでも合わせる
             syncClock(frozen: frozen)

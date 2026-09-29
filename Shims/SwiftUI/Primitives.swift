@@ -283,8 +283,9 @@ public func withAnimation<Result>(_ animation: Animation? = .default, _ body: ()
     try body()
 }
 public struct Transaction {
+    public var animation: Animation?
     public init() {}
-    public init(animation: Animation?) {}
+    public init(animation: Animation?) { self.animation = animation }
 }
 
 // **Foundation の同じ型をそのまま使う。**
