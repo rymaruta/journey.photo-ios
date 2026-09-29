@@ -2,7 +2,7 @@ import XCTest
 @testable import JourneyPhoto
 
 /// ホームの上段の札（`HomeTopCard`・板 01・55）。当たる札を決めた優先順で並べ、
-/// 最後に必ず「今日のテーマ」を置く。`pick` は**先頭の1枚**（優先順を見るため）
+/// そのあとに必ず「今日のテーマ」、日によってその後ろに「季節の撮影スポット」。`pick` は**先頭の1枚**（優先順を見るため）
 final class HomeTopCardTests: XCTestCase {
 
     private let utc = TimeZone(identifier: "UTC")!
@@ -221,7 +221,7 @@ final class HomeTopCardTests: XCTestCase {
 
     // MARK: - 並び（2026-09-28・owner「1年前の今ごろ、今日のテーマなど両方欲しい」）
 
-    /// 当たる札は**全部**、優先順に並ぶ。今日のテーマは**必ず最後に1枚**
+    /// 当たる札は**全部**、優先順に並ぶ。今日のテーマは**必ず1枚**（季節の札が無ければ最後）
     func testAllMatchingCardsAreListedThenTheTheme() throws {
         let departure = plan("dep", start: "2026-09-30")
         let onTrip = plan("on", start: "2026-09-25", end: "2026-09-29")
@@ -255,6 +255,102 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(pick(plans: [plan("d7", start: "2026-10-04")]),
                        .departure(plan: plan("d7", start: "2026-10-04"), daysUntil: 7))
         XCTAssertEqual(cards(plans: [plan("d8", start: "2026-10-05")]), [.theme], "8日前から出した")
+    }
+
+    // MARK: - 6. この季節の撮影スポット
+
+    /// 索引の1行。`seasons` は `[(季節, 文)]`
+    private func spot(_ id: String, stage: String = "published", image: Bool = true,
+                      seasons: [(String, String)] = [("autumn", "秋は紅葉")]) throws -> OfficialSpot {
+        var fields = ["\"spotId\":\"\(id)\"", "\"slug\":\"\(id)\"", "\"name\":\"[\(id)]\"", "\"stage\":\"\(stage)\""]
+        if image {
+            fields.append("\"image\":{\"url\":\"https://journey-photo.com/images/spots/\(id).jpg\",\"author\":\"A\",\"license\":\"CC BY 4.0\"}")
+        }
+        if !seasons.isEmpty {
+            let list = seasons.map { "{\"season\":\"\($0.0)\",\"text\":\"\($0.1)\"}" }.joined(separator: ",")
+            fields.append("\"seasonalGuide\":[\(list)]")
+        }
+        return try JSONDecoder.api.decode(OfficialSpot.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
+    }
+
+    private func seasonCards(_ spots: [OfficialSpot], now: Date? = nil,
+                             photos: [Photo] = []) -> [HomeTopCard.Choice] {
+        HomeTopCard.cards(now: now ?? self.now, plans: [], myPhotos: photos,
+                          openedBookDays: [], spots: spots, timeZone: utc)
+    }
+
+    /// 9/27 は秋。**秋の案内を持つ・写真のある・公開済み**の行だけが候補
+    func testInSeasonPicksOnlyPublishedSpotsWithPhotoAndThisSeason() throws {
+        let ok = try spot("sp_ok")
+        let draft = try spot("sp_draft", stage: "review")
+        let noImage = try spot("sp_noimage", image: false)
+        let spring = try spot("sp_spring", seasons: [("spring", "春は桜")])
+        let noGuide = try spot("sp_noguide", seasons: [])
+        XCTAssertEqual(seasonCards([draft, noImage, spring, noGuide, ok]),
+                       [.theme, .inSeason(spot: ok, season: "autumn", guide: "秋は紅葉")])
+        // 当たる行が無ければ札を出さない（空き地を作らない）
+        XCTAssertEqual(seasonCards([draft, noImage, spring, noGuide]), [.theme])
+        XCTAssertEqual(seasonCards([]), [.theme])
+    }
+
+    /// 同じ日は何度開いても同じ・翌日は次の1件（`spotId` の順・紀元からの日数で進む）
+    func testInSeasonRotatesDaily() throws {
+        let a = try spot("sp_a", seasons: [("autumn", "Aの秋")])
+        let b = try spot("sp_b", seasons: [("autumn", "Bの秋")])
+        // 2026-09-27 は紀元から 20723 日目 → 20723 % 2 = 1 → 2件目
+        XCTAssertEqual(seasonCards([b, a]).last, .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
+        XCTAssertEqual(seasonCards([a, b]).last, .inSeason(spot: b, season: "autumn", guide: "Bの秋"), "並び順で変わっている")
+        let later = now.addingTimeInterval(11 * 3600) // 同じ日の 23:00
+        XCTAssertEqual(seasonCards([a, b], now: later).last, .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
+        let next = now.addingTimeInterval(86_400)
+        XCTAssertEqual(seasonCards([a, b], now: next).last, .inSeason(spot: a, season: "autumn", guide: "Aの秋"))
+    }
+
+    /// 季節は**端末の暦の月**で決める。12/1 は冬（UTC では 11/30 でも、東京の 12/1 なら冬）
+    func testInSeasonUsesLocalMonth() throws {
+        let tokyo = TimeZone(identifier: "Asia/Tokyo")!
+        let s = try spot("sp_s", seasons: [("autumn", "秋の文"), ("winter", "冬の文")])
+        // 2026-11-30 16:00 UTC = 2026-12-01 01:00 JST
+        let dec1 = Date(timeIntervalSince1970: 1_796_054_400)
+        XCTAssertEqual(HomeTopCard.cards(now: dec1, plans: [], myPhotos: [], openedBookDays: [],
+                                         spots: [s], timeZone: tokyo).last,
+                       .inSeason(spot: s, season: "winter", guide: "冬の文"))
+        XCTAssertEqual(HomeTopCard.cards(now: dec1, plans: [], myPhotos: [], openedBookDays: [],
+                                         spots: [s], timeZone: utc).last,
+                       .inSeason(spot: s, season: "autumn", guide: "秋の文"))
+    }
+
+    /// 並びは「今日のテーマ」のあと（テーマを2枚目に下げない）
+    func testInSeasonComesAfterTheme() throws {
+        let s = try spot("sp_s")
+        let old = try photo("old", date: "2025-09-27")
+        XCTAssertEqual(seasonCards([s], photos: [old]).map(\.slot), ["oneYearAgo", "theme", "inSeason"])
+        XCTAssertEqual(seasonCards([s]).map(\.slot), ["theme", "inSeason"])
+    }
+
+    /// 見出しは季節の名前（「見頃」とは言わない）
+    func testSeasonEyebrowNamesTheSeason() {
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("autumn"), L("秋の撮影スポット", "Autumn photo spot"))
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("monsoon"), L("この季節の撮影スポット", "Photo spot for this season"))
+    }
+
+    /// 索引の季節の案内は**行ごとは落とさない**。壊れた項目・知らない季節・空の文だけ落とす
+    func testSeasonalGuideDecodesLeniently() throws {
+        let json = """
+        {"spotId":"sp_x","slug":"x","name":"X","stage":"published",
+         "seasonalGuide":[{"season":"autumn","text":"秋"},{"season":"monsoon","text":"雨季"},
+                          {"season":"winter","text":"  "},{"season":1},{"season":"spring","text":"春"}]}
+        """
+        let x = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(json.utf8))
+        XCTAssertEqual(x.seasons.map(\.season), ["autumn", "spring"])
+        // 欄が壊れていても行は読める・欄が無い古い索引も読める
+        let broken = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
+            #"{"spotId":"sp_y","slug":"y","name":"Y","stage":"published","seasonalGuide":"oops"}"#.utf8))
+        XCTAssertEqual(broken.seasons, [])
+        let old = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
+            #"{"spotId":"sp_z","slug":"z","name":"Z","stage":"published"}"#.utf8))
+        XCTAssertNil(old.seasonalGuide)
+        XCTAssertEqual(old.seasons, [])
     }
 }
 
