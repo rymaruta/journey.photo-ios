@@ -225,6 +225,57 @@ struct GalleryView: View {
         }
     }
 
+    /// ホームからJourney Photoの核（撮影地の発見）へ直接つなぐ。
+    /// 写真が少ない時期でも、空のSNSに見せず「次に何ができるか」を示す。
+    private var discoveryBridge: some View {
+        HStack(spacing: 10) {
+            Button { tabRouter.openMap() } label: {
+                discoveryAction(title: L("撮影地を探す", "Explore places"),
+                                note: L("地図から見つける", "Discover on the map"),
+                                systemImage: "map")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.exploreMap")
+
+            Button { tabRouter.openSearch() } label: {
+                discoveryAction(title: L("写真から探す", "Explore photos"),
+                                note: L("場所・機材・季節", "Place · gear · season"),
+                                systemImage: "sparkle.magnifyingglass")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.exploreSearch")
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func discoveryAction(title: String, note: String, systemImage: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(WebTheme.accent)
+                .frame(width: 34, height: 34)
+                .background(WebTheme.background, in: Circle())
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.text)
+                    .lineLimit(1)
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(WebTheme.faint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: 64)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(WebTheme.border, lineWidth: 1))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+    }
+
     /// フィードの切り替え（おすすめ / フォロー中 / 新着）。
     ///
     /// **推薦の口は無い**ので、おすすめの規則を下に1行で出す
@@ -299,6 +350,7 @@ struct GalleryView: View {
                 HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme), myPhotos: model.myPhotos,
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed)
                 feedPicker
+                discoveryBridge
                 featuredSections
                 // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
                 // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
