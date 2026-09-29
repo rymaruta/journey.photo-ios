@@ -218,6 +218,7 @@ extension View {
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 揃えの位置を自分で決める（本物と同じ）
     public func alignmentGuide(_ g: VerticalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func alignmentGuide(_ g: HorizontalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 端を選んで安全領域を無視する（本物は `regions:` も取る）
     public func ignoresSafeArea(edges: Edge.Set) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 画面の端に貼り付く帯（iOS 15+）。本物はスクロールの底の余白も足す。

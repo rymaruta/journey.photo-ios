@@ -124,6 +124,7 @@ public final class UIFont {
         public static let regular = Weight(), medium = Weight(), semibold = Weight(), bold = Weight(), heavy = Weight()
     }
     public static func systemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
+    public static func monospacedSystemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
     public init() {}
     public init?(name: String, size: Double) {}
     /// 1行の高さ（複数行の焼き込みで行を送る）

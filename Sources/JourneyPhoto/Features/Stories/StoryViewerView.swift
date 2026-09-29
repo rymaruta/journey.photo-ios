@@ -61,6 +61,12 @@ struct StoryViewerView: View {
     /// この画面の札（`MusicPreviewPlayer.beginStoryViewing`）。作り直すと新しくなる
     @State private var viewingToken = UUID()
     @State private var captionHidden = false
+    /// いまの1本の写真が敷かれた大きさ（データで置いた文字の置き場所を決める）。移ったら nil
+    @State private var mediaImageSize: CGSize?
+    /// 票を入れたあとの票の状態（1本ごと）。**一覧を読み直すまでの間、入れた票を見せる**
+    @State private var voteStates: [String: StoryVoteState] = [:]
+    /// 票を送っている最中（二度押しを止める）
+    @State private var voting = false
     /// 絵が出た（動画は出どころが無いので最初から true）
     @State private var mediaReady: Bool
 
@@ -446,7 +452,11 @@ struct StoryViewerView: View {
                 onEnded: { [id = story.id] in mediaEnded(id) },
                 // 出せないと分かった回も進める——止めたままだと永久に固まる
                 // （Web の `!mediaReady && !mediaError` と同じ）
-                onSettled: { _ in mediaReady = true }
+                onSettled: { _ in mediaReady = true },
+                onImageLayout: { [id = story.id] size in
+                    // 前の1本の絵の知らせが遅れて来ても、いまの1本に当てない
+                    if visible.indices.contains(index), visible[index].id == id { mediaImageSize = size }
+                }
             )
             // 🔴 **1本ごとに作り直す。** 同じ型・同じ場所のままだと SwiftUI は
             // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
@@ -473,6 +483,18 @@ struct StoryViewerView: View {
             }
 
             tapZones
+
+            // Web で置いた文字・スタンプ・投票（`texts`）。**送る的より上**——投票のボタンを
+            // 押せるように（ほかは指を素通りさせる）。「テキストを非表示」で隠す（Web と同じ）
+            if !story.texts.isEmpty && !captionHidden {
+                StoryTextLayer(texts: story.texts,
+                               imageSize: story.isVideo ? nil : mediaImageSize,
+                               voteState: voteStates[story.id] ?? story.vote,
+                               canVote: viewerId != nil && !isMine(story) && highlight == nil,
+                               voting: voting,
+                               onVote: { choice in Task { await sendVote(choice, to: story) } })
+                    .id(story.id)
+            }
 
             // 暗幕。メニュー45%・返信を書いている間35%・削除の確認55%（板の値）
             Color.black
@@ -510,7 +532,9 @@ struct StoryViewerView: View {
     /// 撮影地は以前は見出しの2行目にあった
     @ViewBuilder
     private func captionBlock(for story: Story) -> some View {
-        let caption = captionHidden ? nil : story.caption.flatMap { $0.isEmpty ? nil : $0 }
+        // **文字をデータで置いた1本はひとことを出さない**——`caption` はその文字から作られた
+        // もので、写真の上の文字と二重になる（Web も `texts` があれば出さない）
+        let caption = captionHidden || !story.texts.isEmpty ? nil : story.caption.flatMap { $0.isEmpty ? nil : $0 }
         let place = story.location.flatMap { $0.isEmpty ? nil : $0 }
         let song = story.songLine
         if caption != nil || place != nil || song != nil {
@@ -845,6 +869,7 @@ struct StoryViewerView: View {
         paused = false
         mediaReady = visible[target].isVideo
         captionHidden = false
+        mediaImageSize = nil
         reply = ""
         message = nil
         viewers = []
@@ -960,7 +985,7 @@ struct StoryViewerView: View {
             isMine: isMine(story),
             isVideo: story.isVideo,
             hasSong: StoryPlayback.songURL(for: story) != nil,
-            hasCaption: story.caption?.isEmpty == false,
+            hasCaption: story.caption?.isEmpty == false || !story.texts.isEmpty,
             hasOwner: story.userId != nil,
             canKeep: Self.canKeepAsPhoto(story),
             inHighlight: highlight != nil
@@ -1548,6 +1573,18 @@ struct StoryViewerView: View {
         .padding(.vertical, 12)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+        }
+    }
+
+    /// 投票スタンプに票を入れる。**入れたあとの数をすぐ見せる**（一覧の読み直しを待たない）
+    private func sendVote(_ choice: String, to story: Story) async {
+        guard !voting else { return }
+        voting = true
+        defer { voting = false }
+        do {
+            voteStates[story.id] = try await environment.stories.vote(id: story.id, choice: choice)
+        } catch {
+            message = (error as? LocalizedError)?.errorDescription ?? L("投票できませんでした", "Couldn't vote")
         }
     }
 
