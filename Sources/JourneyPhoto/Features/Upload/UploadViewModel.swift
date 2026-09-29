@@ -4,6 +4,48 @@ import PhotosUI
 // UIImage を使う（SwiftUI / PhotosUI から見えることに頼らない）
 import UIKit
 
+/// スポットの画面から開いた投稿の行き先。撮影地の名前と座標を先に入れ、
+/// 保存で `spotId` を付ける（スポットのページの「この場所の写真」に並ぶ）
+struct UploadSpotTarget: Equatable {
+    let spotId: String
+    let name: String
+    /// 公開してよい座標（約1km）。無いスポットは写真の位置のまま
+    let coords: Photo.Coords?
+
+    init(spotId: String, name: String, coords: Photo.Coords?) {
+        self.spotId = spotId
+        self.name = name
+        self.coords = coords
+    }
+
+    init(_ spot: OfficialSpot) {
+        self.init(spotId: spot.spotId, name: spot.name, coords: spot.coords)
+    }
+
+    /// 写真の位置がスポットからこれより離れていたら、そのスポットの写真とみなさない
+    /// （別の旅の写真を混ぜて選んだとき）。スポットの座標は約1kmに丸めてあり、
+    /// 遠くから撮る景色（富士山・雲海）もあるので広めに取る
+    static let nearbyKm = 10.0
+
+    /// この写真をスポットの写真として扱うか。**位置の無い写真は扱う**（本人がスポットの
+    /// 画面から選んだ）。位置があってスポットから遠い写真は普通の投稿として扱う
+    func covers(_ prepared: ImagePreparer.Prepared) -> Bool {
+        guard let taken = prepared.coords, let coords else { return true }
+        return TravelDistance.kilometers(from: taken, to: coords) <= Self.nearbyKm
+    }
+
+    /// 送る `spotId`。次のどれかなら付けない:
+    /// - 本人が撮影地を空にした（場所を伏せたのに、紐付けで分かってしまう）
+    /// - 撮影地からスポットの名前が消えた（別の場所に書き換えた＝このスポットで撮っていない）
+    ///
+    /// **名前を含んでいればよい**——「高屋神社, 香川」のように県を足しただけで外すと、
+    /// 帯は出たままなのに黙って紐付けが消える
+    static func spotIdToSend(_ target: UploadSpotTarget?, for item: PendingPhoto) -> String? {
+        guard let target, !item.locationClearedByUser, item.location.contains(target.name) else { return nil }
+        return target.spotId
+    }
+}
+
 /// 投稿を待っている1枚。
 ///
 /// **題・説明・撮影地は写真ごと**（Web の投稿画面と同じ）。タグ・カテゴリ・
@@ -51,6 +93,19 @@ final class UploadViewModel: ObservableObject {
     /// （`api-user/src/photoLimit.ts`）だが、1枚ずつ題と説明を書く画面なので、
     /// 一度に扱う数はここで抑える（多すぎると、どれを書いているか見失う）。
     static let maxSelection = 10
+
+    /// スポットの画面から開いたときの行き先（`UploadSpotTarget`）。外すと普通の投稿に戻る
+    @Published var spot: UploadSpotTarget?
+
+    /// スポットを外す。**もう並んでいる写真に入れたスポットの座標も外す**（写真の位置に戻す）。
+    /// 撮影地の名前は残す（本人が直せる。空にすると座標まで送らなくなる）
+    func removeSpot() {
+        guard let spot else { return }
+        for i in items.indices where items[i].pickedCoords != nil && items[i].pickedCoords == spot.coords {
+            items[i].pickedCoords = nil
+        }
+        self.spot = nil
+    }
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
         didSet {
@@ -109,6 +164,9 @@ final class UploadViewModel: ObservableObject {
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
     /// だけでは閉じない——選び直しの読み込み中も空になる）
     @Published private(set) var didPostAll = false
+    /// スポットのページに並ぶ形で上がった枚数（`spotId` 付き・公開・全体に公開）。
+    /// スポットの画面が「投稿しました」を出すかを決める（並ばない投稿で言い切らない）
+    @Published private(set) var postedToSpot = 0
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
     @Published private(set) var uploadingIndex = 0
     @Published var errorMessage: String?
@@ -356,6 +414,16 @@ final class UploadViewModel: ObservableObject {
         var photo = PendingPhoto(prepared: prepared)
         photo.pickerItem = pickerItem
         photo.preview = Self.image(from: prepared.data)
+        // **スポットから開いたときは、撮影地をそのスポットにする**（座標から引き直さない）。
+        // ただし**写真の位置がスポットから遠い写真は普通の投稿**（別の旅の写真を混ぜて選んだ）。
+        // 位置のある写真は写真の座標をそのまま送る（撮った場所の方が正しい）。
+        // スポットの座標を使うのは位置の無い写真だけ
+        if let spot, spot.covers(prepared) {
+            photo.location = spot.name
+            if prepared.coords == nil { photo.pickedCoords = spot.coords }
+            items.append(photo)
+            return
+        }
         items.append(photo)
         // **撮影地を、写真の座標から先に埋めておく**（Web と同じ）。
         // **待たない**——待つと、引き終わるまで投稿ボタンが押せない
@@ -486,6 +554,7 @@ final class UploadViewModel: ObservableObject {
         draft.dominantColor = item.prepared.dominantColor
         draft.albumId = selectedAlbumId
         draft.groupId = groupId
+        draft.spotId = UploadSpotTarget.spotIdToSend(spot, for: item)
 
         // 🔴 **やり直しは前回の鍵で保存する**（`UploadService.stage` の注記）。
         // 保存が落ちた写真は本体を置き直さない——新しい鍵で送ると、前回の保存が
@@ -510,6 +579,9 @@ final class UploadViewModel: ObservableObject {
             throw error
         }
         staged[item.id] = nil
+        if photo != nil, draft.spotId != nil, draft.published, draft.audience == .everyone {
+            postedToSpot += 1
+        }
         // **曲は保存のあと。** `POST /upload/save` は song を受け取らない
         // ので、`PUT /photos/{id}` で付ける。ここが落ちても写真は
         // 上がっているので、投稿そのものは失敗にしない

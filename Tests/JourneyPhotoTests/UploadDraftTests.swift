@@ -53,6 +53,48 @@ final class UploadDraftTests: XCTestCase {
         XCTAssertNil(UploadGrouping.groupIdForSubmit(current: "g1", grouping: false, count: 5, make: make))
     }
 
+    /// スポットの画面から開いた投稿は `spotId` を送る。**本人が撮影地を空にした写真には
+    /// 付けない**（場所を伏せたのに、スポットの紐付けで場所が分かってしまう）。
+    /// 普通の投稿は送らない（キーごと落ちる）
+    func testSpotIdIsSentOnlyForSpotUploadsWithPlaceKept() throws {
+        let target = UploadSpotTarget(spotId: "sp_0123456789ab", name: "高屋神社",
+                                      coords: Photo.Coords(lat: 34.1, lng: 133.6))
+        let prepared = ImagePreparer.Prepared(data: Data(), fileName: "p.jpg", contentType: "image/jpeg",
+                                              exif: nil, coords: nil, takenOn: nil)
+        var item = PendingPhoto(prepared: prepared)
+        item.location = target.name
+        XCTAssertEqual(UploadSpotTarget.spotIdToSend(target, for: item), "sp_0123456789ab")
+        XCTAssertNil(UploadSpotTarget.spotIdToSend(nil, for: item), "普通の投稿")
+        item.location = ""
+        XCTAssertNil(UploadSpotTarget.spotIdToSend(target, for: item), "撮影地を空にした")
+        item.location = "東京タワー"
+        XCTAssertNil(UploadSpotTarget.spotIdToSend(target, for: item), "撮影地を別の場所に変えた")
+        item.location = "高屋神社, 香川"
+        XCTAssertEqual(UploadSpotTarget.spotIdToSend(target, for: item), "sp_0123456789ab", "県を足しただけで外した")
+
+        // 写真の位置: 無い → 扱う。近い → 扱う。遠い（別の旅の写真）→ 扱わない
+        func shot(_ c: Photo.Coords?) -> ImagePreparer.Prepared {
+            ImagePreparer.Prepared(data: Data(), fileName: "p.jpg", contentType: "image/jpeg",
+                                   exif: nil, coords: c, takenOn: nil)
+        }
+        XCTAssertTrue(target.covers(shot(nil)))
+        XCTAssertTrue(target.covers(shot(Photo.Coords(lat: 34.12, lng: 133.62))))
+        XCTAssertFalse(target.covers(shot(Photo.Coords(lat: 35.66, lng: 139.75))), "東京の写真")
+
+        // ボタンの形: 写真が並ぶ・投稿した → 枠線、写真の無い画面 → 真鍮、代表写真がある → 白
+        XCTAssertEqual(OfficialSpotView.postButtonStyle(hasCover: true, hasLinked: true, postedHere: false), .outline)
+        XCTAssertEqual(OfficialSpotView.postButtonStyle(hasCover: false, hasLinked: false, postedHere: true), .outline)
+        XCTAssertEqual(OfficialSpotView.postButtonStyle(hasCover: false, hasLinked: false, postedHere: false), .accent)
+        XCTAssertEqual(OfficialSpotView.postButtonStyle(hasCover: true, hasLinked: false, postedHere: false), .primary)
+
+        var draft = PhotoDraft()
+        draft.spotId = "sp_0123456789ab"
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(draft.saveBody(key: "k", publicUrl: "u"))) as? [String: Any]
+        XCTAssertEqual(json?["spotId"] as? String, "sp_0123456789ab")
+        let plain = try JSONSerialization.jsonObject(with: JSONEncoder().encode(PhotoDraft().saveBody(key: "k", publicUrl: "u"))) as? [String: Any]
+        XCTAssertNil(plain?["spotId"], "普通の投稿は spotId を送らない")
+    }
+
     /// 空の項目は送らない（api-user は「未指定＝触らない」と読む）。
     func testEmptyFieldsAreOmitted() throws {
         let body = PhotoDraft().saveBody(key: "k", publicUrl: "u")

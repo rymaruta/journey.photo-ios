@@ -186,6 +186,11 @@ struct PhotoDraft {
     /// （`Audience.photoNote` に書いてある）。
     var audience: Audience = .everyone
 
+    /// 撮影スポット（`sp_` ＋ 16進12桁）。**撮った本人がスポットの画面から選んだときだけ**
+    /// （owner「スポットの詳細からこのスポットの写真を上げたい」2026-09-29）。
+    /// 名前の一致で付けることはしない（`link-photos-to-spots.ts` の決まり）
+    var spotId: String?
+
     /// `POST /upload/save` に送る形。
     ///
     /// **座標は端末側でも丸めてから送る。** サーバーも約1km（小数第2位）に
@@ -208,7 +213,8 @@ struct PhotoDraft {
             exif: exif,
             dominantColor: dominantColor,
             groupId: groupId,
-            audience: audience.wireValue
+            audience: audience.wireValue,
+            spotId: spotId
         )
     }
 
@@ -229,6 +235,8 @@ struct PhotoDraft {
         let groupId: String?
         /// 公開範囲。**全体に公開のときは送らない**（属性を書かない形に揃える）
         let audience: String?
+        /// 撮影スポット。無ければ送らない（`nil` はキーごと落ちる）
+        let spotId: String?
 
         struct Coords: Encodable {
             let lat: Double
