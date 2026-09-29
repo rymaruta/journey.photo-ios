@@ -129,7 +129,7 @@ struct StoryComposerView: View {
             if textMode {
                 VStack(spacing: 8) {
                     kindChips
-                    Text(L("指で動かす・2本指で回す・つまんで大きさ", "Drag to move · twist to rotate · pinch to resize"))
+                    Text(L("指で動かす・2本指で回す・つまんで大きさを変える", "Drag to move · twist to rotate · pinch to resize"))
                         .font(.system(size: 12))
                         .foregroundStyle(WebTheme.muted2)
                 }

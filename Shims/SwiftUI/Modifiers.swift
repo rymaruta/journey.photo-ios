@@ -413,12 +413,18 @@ public struct RotationGesture: Gesture {
     public init() {}
     public func onChanged(_ action: @escaping (Angle) -> Void) -> RotationGesture { self }
     public func onEnded(_ action: @escaping (Angle) -> Void) -> RotationGesture { self }
+    /// 指で動かしている間の値を `@GestureState` に書く（本物と同じ）
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Angle, inout S, inout Transaction) -> Void) -> RotationGesture { self }
 }
 
 public struct MagnificationGesture: Gesture {
     public init(minimumScaleDelta: Double = 0.01) {}
     public func onChanged(_ action: @escaping (Double) -> Void) -> MagnificationGesture { self }
     public func onEnded(_ action: @escaping (Double) -> Void) -> MagnificationGesture { self }
+    /// 指で動かしている間の値を `@GestureState` に書く（本物と同じ）
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Double, inout S, inout Transaction) -> Void) -> MagnificationGesture { self }
 }
 
 public struct TapGesture: Gesture {

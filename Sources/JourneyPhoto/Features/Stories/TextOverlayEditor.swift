@@ -9,7 +9,7 @@ import UIKit
 /// 大きさは**画像に対する割合**のままなので、焼き込み（`TextOverlayRenderer`）と
 /// 同じところに出る。閲覧画面も埋めて出すので、見えている範囲もほぼ同じになる。
 ///
-/// **置いた場所は指で決める。** 押すと選び（破線で囲む）、つまんで動かす。
+/// **置いた場所は指で決める。** 押すと選び（破線で囲む）、指で動かす。
 /// 動かした先は見えている範囲の中へ寄せる（はみ出した端では掴み直せない）
 struct StoryCanvas: View {
 
@@ -22,7 +22,7 @@ struct StoryCanvas: View {
     /// 札を押した
     var onTap: (TextOverlay) -> Void = { _ in }
 
-    /// つまんでいる最中の見た目の移動量（離したときに位置へ反映する）
+    /// 指で動かしている最中の見た目の移動量（離したときに位置へ反映する）
     @State private var dragId: UUID?
     @State private var dragOffset: CGSize = .zero
     /// **キーボードで縮む前の枠の大きさ。** 見えている範囲はこれで決める——
@@ -34,6 +34,16 @@ struct StoryCanvas: View {
     /// 2本指でつまんでいる最中の札と、その倍率（離したときに大きさへ掛ける）
     @State private var scaleId: UUID?
     @State private var liveScale: Double = 1
+    /// 指が触れている間だけ立つ印。**打ち切られても（着信・画面の切り替えで `onEnded` が
+    /// 呼ばれない回も）SwiftUI が倒す**——倒れたら、途中の値を札へ入れて片付ける。
+    /// 片付けないと、見た目だけ大きく（回って・ずれて）見えたまま、投稿される札は元のままだった
+    /// （f17f17d のレビュー）
+    @GestureState private var twisting = false
+    @GestureState private var pinching = false
+    @GestureState private var dragging = false
+    /// 1本指で動かしている間に2本指の操作が入ったか。**入った回の移動は入れない**
+    /// ——札の上でつまむと、動かす操作も片方の指を追って動き、離すとずれた所で決まった
+    @State private var dragSpoiled = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -54,39 +64,70 @@ struct StoryCanvas: View {
             // 札そのものに付けると、2本とも小さな札の中に置かないと効かない
             .simultaneousGesture(
                 RotationGesture()
+                    .updating($twisting) { _, state, _ in state = true }
                     .onChanged { angle in
-                        guard let id = selectedId else { return }
-                        rotateId = id
+                        // **回し始めた札に固定する**（途中で選ぶ札が替わっても移さない）
+                        if rotateId == nil {
+                            guard let id = selectedId else { return }
+                            rotateId = id
+                        }
                         liveRotation = angle.radians
                     }
                     .onEnded { angle in
-                        if let id = rotateId, let i = overlays.firstIndex(where: { $0.id == id }) {
-                            overlays[i].rotation += angle.radians
-                        }
-                        rotateId = nil
-                        liveRotation = 0
+                        // 打ち切りの片付けが先に済んでいたら何もしない
+                        guard rotateId != nil else { return }
+                        liveRotation = angle.radians
+                        commitRotation()
                     }
             )
             // つまんで**選んでいる札の**大きさを変える（回すのと同じ理由で枠全体に付ける）。
             // 幅はスライダーと同じ（`TextOverlay.scaled`）
             .simultaneousGesture(
                 MagnificationGesture()
+                    .updating($pinching) { _, state, _ in state = true }
                     .onChanged { value in
-                        guard let id = selectedId else { return }
-                        scaleId = id
+                        if scaleId == nil {
+                            guard let id = selectedId else { return }
+                            scaleId = id
+                        }
                         liveScale = Double(value)
                     }
                     .onEnded { value in
-                        if let id = scaleId, let i = overlays.firstIndex(where: { $0.id == id }) {
-                            overlays[i] = overlays[i].scaled(by: Double(value))
-                        }
-                        scaleId = nil
-                        liveScale = 1
+                        guard scaleId != nil else { return }
+                        liveScale = Double(value)
+                        commitScale()
                     }
             )
+            // 打ち切られた回の片付け（`onEnded` と、どちらが先に来ても1回だけ入る）
+            .onChange(of: twisting) { _, active in if !active { commitRotation() } }
+            .onChange(of: pinching) { _, active in if !active { commitScale() } }
+            .onChange(of: dragging) { _, active in
+                // 動かす操作の打ち切り。**移動は入れない**（離した位置が分からない）。
+                // `dragSpoiled` はここで戻さない——`onEnded` より先に来ると、2本指が入った回の
+                // 移動を入れてしまう。次に動かし始めたときに戻す
+                if !active { dragId = nil; dragOffset = .zero }
+            }
             .onAppear { remember(geometry.size) }
             .onChange(of: geometry.size) { _, size in remember(size) }
         }
+    }
+
+    /// 回した角度を札へ入れて片付ける。**2回目は何もしない**（`onEnded` と打ち切りの片付けの両方から来る）
+    private func commitRotation() {
+        if let id = rotateId, let i = overlays.firstIndex(where: { $0.id == id }) {
+            overlays[i].rotation += liveRotation
+        }
+        rotateId = nil
+        liveRotation = 0
+    }
+
+    /// つまんだ倍率を札へ入れて片付ける（同じく2回目は何もしない）
+    private func commitScale() {
+        if let id = scaleId, let i = overlays.firstIndex(where: { $0.id == id }) {
+            overlays[i] = overlays[i].scaled(by: liveScale)
+        }
+        scaleId = nil
+        liveScale = 1
     }
 
     /// 書体（`TextOverlay.Face`。同梱の字か端末の字。ゴシックは端末の太字）。**大きさは固定**——
@@ -184,16 +225,24 @@ struct StoryCanvas: View {
                       y: center.y + (moving ? dragOffset.height : 0))
             .gesture(
                 DragGesture()
+                    .updating($dragging) { _, state, _ in state = true }
                     .onChanged { value in
+                        // 動かし始め（前の回の印を戻す）
+                        if dragId == nil { dragSpoiled = false }
+                        // 2本指の操作（回す・つまむ）が入ったら、この回は動かさない
+                        if rotateId != nil || scaleId != nil { dragSpoiled = true }
                         dragId = overlay.id
-                        dragOffset = value.translation
+                        dragOffset = dragSpoiled ? .zero : value.translation
                     }
                     .onEnded { value in
                         // **離したときに位置へ入れる。** 動かしている最中に
                         // 入れると、はみ出しの丸めが毎フレーム効いて指から離れる
-                        move(overlay, by: value.translation, photo: photo, canvas: canvas)
+                        if !dragSpoiled && rotateId == nil && scaleId == nil {
+                            move(overlay, by: value.translation, photo: photo, canvas: canvas)
+                        }
                         dragId = nil
                         dragOffset = .zero
+                        dragSpoiled = false
                     }
             )
             // 押すと選ぶ（直す・消すのも同じ入口）。
