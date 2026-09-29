@@ -29,9 +29,13 @@ import Foundation
 /// 行のうち、季節ごとに100〜150件が案内を持つ）ので、前に置くと**今日のテーマが
 /// 毎日2枚目に下がる**——札の無い人の見た目（テーマが先頭）を変えない。
 ///
-/// **「見頃」とは言わない**——台帳の季節の案内は「その季節に何が撮れるか」で、
-/// 開花のような時期を確かめた文ではない。ただし文の中に**月が書いてあれば、その月に
-/// だけ出す**（「9月から10月にかけて…」を 11/30 に出さない。`fits(_:month:)`）
+/// **「見頃」とは言わない。見出しは季節の名前（「秋の撮影スポット」）。** 台帳の
+/// 季節の案内は「その季節に何が撮れるか」で、開花のような時期を確かめた文ではない。
+/// 文の中の月（「9月から10月にかけて…」）で出す日を絞ることは**しない**——
+/// 「4月まで」「9月半ばから3月」「5月2日から4日は…3月上旬には…」のような書き方を
+/// 規則で読むと、実データで落とす・出すの誤りが両方出た（2026-09-29 のレビュー）。
+/// 季節の名前を見出しにすれば、11月末に「9月から10月にかけて」が出ても
+/// 「秋の案内」として正しく読める
 ///
 /// 🔴 **当たる物が無い日に空き地を作らない。** 数は自分の枚数・日数だけで、
 /// 人数・順位・連続記録は出さない。催促の文言も書かない
@@ -45,8 +49,8 @@ enum HomeTopCard {
         case bookReady(trip: TripBook.Trip)
         /// `byUploadDate` は撮影日が無く、投稿日で当てたとき（「1年前に投稿」と言う）
         case oneYearAgo(photo: Photo, byUploadDate: Bool)
-        /// `guide` はいまの季節の案内の文（台帳の文のまま）
-        case inSeason(spot: OfficialSpot, guide: String)
+        /// `season` は `spring`〜`winter`、`guide` はその季節の案内の文（台帳の文のまま）
+        case inSeason(spot: OfficialSpot, season: String, guide: String)
         case theme
 
         /// 並びの中の目印。**種類ごとに1枚まで**なので種類で足りる（並び順で持つと、
@@ -70,7 +74,7 @@ enum HomeTopCard {
     /// 1年前の今日から前後何日までを「今ごろ」と呼ぶか
     static let yearAgoWindowDays = 7
 
-    /// 今日の札の並び。**空にならない**（最後は必ず `.theme`）。
+    /// 今日の札の並び。**空にならない**（`.theme` を必ず1枚含む。後ろに季節の札が付く日がある）。
     ///
     /// - Parameters:
     ///   - now: いまの時刻。**端末の時刻帯（`timeZone`）の暦日**に直して数える
@@ -193,7 +197,6 @@ enum HomeTopCard {
     ///
     /// - 季節は `today`（端末の暦の今日を UTC 0 時に置いたもの）の月から決める
     ///   （春3〜5月・夏6〜8月・秋9〜11月・冬12〜2月。`SpotBodyText.season`）
-    /// - 文に月が書いてあれば、**その月に当たる文だけ**（`fits(_:month:)`）
     /// - 候補は `spotId` の順に並べ、**紀元からの日数で1件ずつ進める**——同じ日なら
     ///   何度開いても同じ札（今日のテーマと同じ考え方）。`spotId` は名前と無関係な
     ///   16進なので、県や種別が続けて並ぶことはない
@@ -205,39 +208,21 @@ enum HomeTopCard {
         let candidates = spots
             .filter { !$0.isDraft && $0.photo != nil }
             .compactMap { spot -> (OfficialSpot, String)? in
-                guard let guide = spot.seasons.first(where: { $0.season == season && fits($0.text, month: month) })
-                else { return nil }
+                guard let guide = spot.seasons.first(where: { $0.season == season }) else { return nil }
                 return (spot, guide.text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
             .sorted { $0.0.spotId < $1.0.spotId }
         guard !candidates.isEmpty else { return nil }
         let day = Int((today.timeIntervalSince1970 / 86_400).rounded(.down))
         let index = ((day % candidates.count) + candidates.count) % candidates.count
-        return .inSeason(spot: candidates[index].0, guide: candidates[index].1)
+        return .inSeason(spot: candidates[index].0, season: season, guide: candidates[index].1)
     }
 
-    /// 文に書かれた月（「11月」「９月」）が、いまの月に当たるか。
-    ///
-    /// - 月が書いていなければ当たる（季節で決める）
-    /// - 「A月からB月」「A〜B月」のような幅は、書かれた月の**いちばん早い月から
-    ///   いちばん遅い月まで**を当たりにする。離れすぎた月（差が7か月以上）は
-    ///   年をまたぐ幅として読む（「12月から2月」→ 12・1・2月）
-    static func fits(_ text: String, month: Int) -> Bool {
-        // 全角の数字を半角に（`applyingTransform` は Linux の Foundation に無いので自前で）
-        let normalized = String(text.unicodeScalars.map { scalar -> Character in
-            (0xFF10...0xFF19).contains(scalar.value)
-                ? Character(Unicode.Scalar(scalar.value - 0xFF10 + 0x30)!) : Character(scalar)
-        })
-        let months = monthPattern.matches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized))
-            .compactMap { Range($0.range(at: 1), in: normalized).flatMap { Int(normalized[$0]) } }
-            .filter { (1...12).contains($0) }
-        guard let low = months.min(), let high = months.max() else { return true }
-        if months.contains(month) { return true }
-        // 離れすぎた月（12月と2月）は**年をまたぐ幅**として読む: 12月・1月・2月
-        if high - low > 6 { return month >= high || month <= low }
-        return (low...high).contains(month)
+    /// 季節の札の見出しの読み（「秋の撮影スポット」）。知らない季節は「この季節の」
+    static func seasonEyebrow(_ season: String) -> String {
+        guard let label = SpotBodyText.seasonLabel(season) else {
+            return L("この季節の撮影スポット", "Photo spot for this season")
+        }
+        return L("\(label)の撮影スポット", "\(label) photo spot")
     }
-
-    private static let monthPattern = try! NSRegularExpression(pattern: "(?<![0-9])([0-9]{1,2})月")
 }
-

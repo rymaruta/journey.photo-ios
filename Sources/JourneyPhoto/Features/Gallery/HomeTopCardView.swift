@@ -96,7 +96,7 @@ struct HomeTopCardView: View {
                 // 1枚ずつ止まる目印は**並びに直接**付ける（Apple の例と同じ。間に別の
                 // 修飾を挟むと子に届くかが仕様から読めない）
                 .scrollTargetLayout()
-                // **背を揃える。** いちばん高い札（今日のテーマは「参加する」のぶん高い）に
+                // **背を揃える。** いちばん高い札（今日のテーマの「参加する」・季節の札の案内の2行）に
                 // 合わせ、めくるたびに下の一覧が上下しないようにする
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -168,11 +168,13 @@ struct HomeTopCardView: View {
                      backdrop: photo, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
-        case .inSeason(let spot, let guide):
+        case .inSeason(let spot, let season, let guide):
             NavigationLink {
                 OfficialSpotView(spot: spot, spots: spots, photos: themePhotos)
             } label: {
-                card(eyebrow: "THIS SEASON", eyebrowLabel: L("この季節の撮影スポット", "Photo spot for this season"),
+                // 見出しは**季節の名前**（「秋の撮影スポット」）。「いま見頃」とは言わない
+                card(eyebrow: "\(season.uppercased()) SPOT",
+                     eyebrowLabel: HomeTopCard.seasonEyebrow(season),
                      title: spot.name,
                      line: guide,
                      // **写真を出すなら作者とライセンスも出す**（CC BY・CC BY-SA の条件。

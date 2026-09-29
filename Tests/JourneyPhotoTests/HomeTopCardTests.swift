@@ -2,7 +2,7 @@ import XCTest
 @testable import JourneyPhoto
 
 /// ホームの上段の札（`HomeTopCard`・板 01・55）。当たる札を決めた優先順で並べ、
-/// 最後に必ず「今日のテーマ」を置く。`pick` は**先頭の1枚**（優先順を見るため）
+/// そのあとに必ず「今日のテーマ」、日によってその後ろに「季節の撮影スポット」。`pick` は**先頭の1枚**（優先順を見るため）
 final class HomeTopCardTests: XCTestCase {
 
     private let utc = TimeZone(identifier: "UTC")!
@@ -221,7 +221,7 @@ final class HomeTopCardTests: XCTestCase {
 
     // MARK: - 並び（2026-09-28・owner「1年前の今ごろ、今日のテーマなど両方欲しい」）
 
-    /// 当たる札は**全部**、優先順に並ぶ。今日のテーマは**必ず最後に1枚**
+    /// 当たる札は**全部**、優先順に並ぶ。今日のテーマは**必ず1枚**（季節の札が無ければ最後）
     func testAllMatchingCardsAreListedThenTheTheme() throws {
         let departure = plan("dep", start: "2026-09-30")
         let onTrip = plan("on", start: "2026-09-25", end: "2026-09-29")
@@ -287,7 +287,7 @@ final class HomeTopCardTests: XCTestCase {
         let spring = try spot("sp_spring", seasons: [("spring", "春は桜")])
         let noGuide = try spot("sp_noguide", seasons: [])
         XCTAssertEqual(seasonCards([draft, noImage, spring, noGuide, ok]),
-                       [.theme, .inSeason(spot: ok, guide: "秋は紅葉")])
+                       [.theme, .inSeason(spot: ok, season: "autumn", guide: "秋は紅葉")])
         // 当たる行が無ければ札を出さない（空き地を作らない）
         XCTAssertEqual(seasonCards([draft, noImage, spring, noGuide]), [.theme])
         XCTAssertEqual(seasonCards([]), [.theme])
@@ -298,12 +298,12 @@ final class HomeTopCardTests: XCTestCase {
         let a = try spot("sp_a", seasons: [("autumn", "Aの秋")])
         let b = try spot("sp_b", seasons: [("autumn", "Bの秋")])
         // 2026-09-27 は紀元から 20723 日目 → 20723 % 2 = 1 → 2件目
-        XCTAssertEqual(seasonCards([b, a]).last, .inSeason(spot: b, guide: "Bの秋"))
-        XCTAssertEqual(seasonCards([a, b]).last, .inSeason(spot: b, guide: "Bの秋"), "並び順で変わっている")
+        XCTAssertEqual(seasonCards([b, a]).last, .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
+        XCTAssertEqual(seasonCards([a, b]).last, .inSeason(spot: b, season: "autumn", guide: "Bの秋"), "並び順で変わっている")
         let later = now.addingTimeInterval(11 * 3600) // 同じ日の 23:00
-        XCTAssertEqual(seasonCards([a, b], now: later).last, .inSeason(spot: b, guide: "Bの秋"))
+        XCTAssertEqual(seasonCards([a, b], now: later).last, .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
         let next = now.addingTimeInterval(86_400)
-        XCTAssertEqual(seasonCards([a, b], now: next).last, .inSeason(spot: a, guide: "Aの秋"))
+        XCTAssertEqual(seasonCards([a, b], now: next).last, .inSeason(spot: a, season: "autumn", guide: "Aの秋"))
     }
 
     /// 季節は**端末の暦の月**で決める。12/1 は冬（UTC では 11/30 でも、東京の 12/1 なら冬）
@@ -314,10 +314,10 @@ final class HomeTopCardTests: XCTestCase {
         let dec1 = Date(timeIntervalSince1970: 1_796_054_400)
         XCTAssertEqual(HomeTopCard.cards(now: dec1, plans: [], myPhotos: [], openedBookDays: [],
                                          spots: [s], timeZone: tokyo).last,
-                       .inSeason(spot: s, guide: "冬の文"))
+                       .inSeason(spot: s, season: "winter", guide: "冬の文"))
         XCTAssertEqual(HomeTopCard.cards(now: dec1, plans: [], myPhotos: [], openedBookDays: [],
                                          spots: [s], timeZone: utc).last,
-                       .inSeason(spot: s, guide: "秋の文"))
+                       .inSeason(spot: s, season: "autumn", guide: "秋の文"))
     }
 
     /// 並びは「今日のテーマ」のあと（テーマを2枚目に下げない）
@@ -328,20 +328,10 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(seasonCards([s]).map(\.slot), ["theme", "inSeason"])
     }
 
-    /// 文に月が書いてあれば、その月に当たる文だけ出す（9/27 は9月）
-    func testInSeasonSkipsGuideForOtherMonths() throws {
-        let later = try spot("sp_later", seasons: [("autumn", "紅葉の見頃は11月下旬から12月上旬です。")])
-        let now9 = try spot("sp_now", seasons: [("autumn", "9月から10月にかけて、ヒガンバナが咲きます。")])
-        XCTAssertEqual(seasonCards([later]), [.theme])
-        XCTAssertEqual(seasonCards([later, now9]).last,
-                       .inSeason(spot: now9, guide: "9月から10月にかけて、ヒガンバナが咲きます。"))
-        XCTAssertTrue(HomeTopCard.fits("秋は紅葉", month: 9), "月の無い文は季節で決める")
-        XCTAssertTrue(HomeTopCard.fits("9月下旬〜11月上旬", month: 10), "幅の間の月")
-        XCTAssertTrue(HomeTopCard.fits("１０月が盛り", month: 10), "全角の数字")
-        XCTAssertFalse(HomeTopCard.fits("10月", month: 9))
-        XCTAssertTrue(HomeTopCard.fits("12月から2月", month: 1), "年をまたぐ幅も、書かれた月には当たる")
-        XCTAssertFalse(HomeTopCard.fits("12月から2月", month: 11))
-        XCTAssertFalse(HomeTopCard.fits("2026年10月", month: 9))
+    /// 見出しは季節の名前（「見頃」とは言わない）
+    func testSeasonEyebrowNamesTheSeason() {
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("autumn"), L("秋の撮影スポット", "Autumn photo spot"))
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("monsoon"), L("この季節の撮影スポット", "Photo spot for this season"))
     }
 
     /// 索引の季節の案内は**行ごとは落とさない**。壊れた項目・知らない季節・空の文だけ落とす
