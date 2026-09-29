@@ -41,9 +41,16 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     /// スポットの写真（Wikimedia Commons・2026-09-26〜）。**owner が写真を確かめた
     /// 公開済みの行だけ**が持つ。壊れていても行ごと落とさない（`LenientSpotImage`）
     let image: LenientSpotImage?
+    /// 季節の案内（2026-09-29〜 索引に載る。Web の `spotFeed.ts`）。**公開済みの行だけ**が持つ。
+    /// 壊れた1件・知らない季節・空の文は落とし、**行ごとは落とさない**（`LenientSeasonalGuide`）。
+    /// `var` で既定 nil なのは、載っていない古い索引・控えも読めるようにするため
+    var seasonalGuide: LenientSeasonalGuide? = nil
 
     /// 出してよい写真。作者とライセンスが揃っていて、https の画像だけ
     var photo: SpotImage? { image?.value }
+
+    /// 出してよい季節の案内（`SpotBody` の本文と同じ決まりで落としたもの）
+    var seasons: [SpotBody.Seasonal] { seasonalGuide?.value ?? [] }
 
     struct Region: Decodable, Equatable {
         /// 国。**日本の外の行だけ**が持つ（無ければ日本・Web の `spotFeed.ts`）
@@ -133,6 +140,22 @@ struct LenientSpotImage: Decodable, Equatable {
         if s.hasPrefix("http://") { s = "https://" + s.dropFirst("http://".count) }
         guard let url = URL(string: s), url.scheme == "https", url.host != nil else { return nil }
         return url
+    }
+}
+
+/// 季節の案内の欄を**決して投げずに**読む入れ物（`LenientSpotImage` と同じ理由）。
+/// 本文（`SpotBody.seasonalGuide`）と同じく、知らない季節・空の文の項目は落とす
+struct LenientSeasonalGuide: Decodable, Equatable {
+    let value: [SpotBody.Seasonal]
+
+    init(_ value: [SpotBody.Seasonal]) { self.value = value }
+
+    init(from decoder: Decoder) throws {
+        let rows = (try? [Lenient<SpotBody.Seasonal>](from: decoder)) ?? []
+        value = rows.compactMap(\.value).filter {
+            SpotBodyText.seasonOrder.contains($0.season)
+                && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 }
 
