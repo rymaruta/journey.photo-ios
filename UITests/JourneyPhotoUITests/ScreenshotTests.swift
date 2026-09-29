@@ -230,6 +230,18 @@ final class ScreenshotTests: XCTestCase {
                     }
                 }
             }
+            if name == "探す" {
+                let field = app.textFields["search.field"].firstMatch
+                if field.exists, field.isHittable {
+                    field.tap()
+                    field.typeText("zzzz-no-photo-result")
+                    Thread.sleep(forTimeInterval: 2)
+                    if app.buttons["search.emptyMap"].firstMatch.exists {
+                        shoot(app, "11b-探す（0件から地図へ）")
+                    }
+                    field.buttons["Clear text"].firstMatch.tap()
+                }
+            }
             if name == "マップ" { shootSpotPin(app) }
         }
 
