@@ -176,31 +176,36 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(pick(photos: older + ongoing), .theme)
     }
 
-    // MARK: - 4. 1年前の今ごろ
+    // MARK: - 7. 1年前の今ごろ（振り返りなので並びの最後）
+
+    /// 並びの中の「1年前」の札（無ければ nil）
+    private func yearAgo(_ photos: [Photo]) -> HomeTopCard.Choice? {
+        cards(photos: photos).first { $0.slot == "oneYearAgo" }
+    }
 
     func testOneYearAgoWithinAWeek() throws {
         let hit = try photo("hit", date: "2025-09-30")
-        XCTAssertEqual(pick(photos: [hit]), .oneYearAgo(photo: hit, byUploadDate: false))
-        XCTAssertEqual(pick(photos: [try photo("edge", date: "2025-10-04")]),
+        XCTAssertEqual(yearAgo([hit]), .oneYearAgo(photo: hit, byUploadDate: false))
+        XCTAssertEqual(yearAgo([try photo("edge", date: "2025-10-04")]),
                        .oneYearAgo(photo: try photo("edge", date: "2025-10-04"), byUploadDate: false))
-        XCTAssertEqual(pick(photos: [try photo("miss", date: "2025-10-05")]), .theme)
+        XCTAssertNil(yearAgo([try photo("miss", date: "2025-10-05")]))
     }
 
     func testOneYearAgoPrefersTakenDateThenCloseness() throws {
         let uploaded = try photo("up", created: "2025-09-27T10:00:00.000Z")
         let taken = try photo("taken", date: "2025-10-02")
         let closer = try photo("closer", date: "2025-09-28")
-        XCTAssertEqual(pick(photos: [uploaded, taken]), .oneYearAgo(photo: taken, byUploadDate: false))
-        XCTAssertEqual(pick(photos: [taken, closer]), .oneYearAgo(photo: closer, byUploadDate: false))
+        XCTAssertEqual(yearAgo([uploaded, taken]), .oneYearAgo(photo: taken, byUploadDate: false))
+        XCTAssertEqual(yearAgo([taken, closer]), .oneYearAgo(photo: closer, byUploadDate: false))
     }
 
     func testOneYearAgoSkipsDrafts() throws {
-        XCTAssertEqual(pick(photos: [try photo("d", date: "2025-09-27", published: false)]), .theme)
+        XCTAssertNil(yearAgo([try photo("d", date: "2025-09-27", published: false)]))
     }
 
     func testOneYearAgoByUploadDateIsLabelled() throws {
         let uploaded = try photo("up", created: "2025-09-27T10:00:00.000Z")
-        XCTAssertEqual(pick(photos: [uploaded]), .oneYearAgo(photo: uploaded, byUploadDate: true))
+        XCTAssertEqual(yearAgo([uploaded]), .oneYearAgo(photo: uploaded, byUploadDate: true))
     }
 
     // MARK: - 優先順
@@ -216,7 +221,8 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(pick(plans: [onTrip], photos: book + [yearAgo]),
                        .onTrip(plan: onTrip, dayNumber: 3))
         guard case .bookReady = pick(photos: book + [yearAgo]) else { return XCTFail("一冊が1年前より先") }
-        XCTAssertEqual(pick(photos: [yearAgo]), .oneYearAgo(photo: yearAgo, byUploadDate: false))
+        // 1年前は振り返りなので、今日のテーマより後ろ（2026-09-29・owner）
+        XCTAssertEqual(cards(photos: [yearAgo]), [.theme, .oneYearAgo(photo: yearAgo, byUploadDate: false)])
     }
 
     // MARK: - 並び（2026-09-28・owner「1年前の今ごろ、今日のテーマなど両方欲しい」）
@@ -233,15 +239,15 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(all[0], .departure(plan: departure, daysUntil: 3))
         XCTAssertEqual(all[1], .onTrip(plan: onTrip, dayNumber: 3))
         guard case .bookReady = all[2] else { return XCTFail("3枚目が一冊でない: \(all[2])") }
-        XCTAssertEqual(all[3], .oneYearAgo(photo: yearAgo, byUploadDate: false))
-        XCTAssertEqual(all[4], .theme)
+        XCTAssertEqual(all[3], .theme)
+        XCTAssertEqual(all[4], .oneYearAgo(photo: yearAgo, byUploadDate: false), "1年前は最後")
         XCTAssertEqual(Set(all.map(\.slot)).count, all.count, "並びの目印が重なった（ForEach の id）")
     }
 
     /// 1年前と今日のテーマが**両方**出る（以前は1年前に押し出されてテーマが消えた）
     func testYearAgoAndThemeBothShow() throws {
         let yearAgo = try photo("y", date: "2025-09-27")
-        XCTAssertEqual(cards(photos: [yearAgo]), [.oneYearAgo(photo: yearAgo, byUploadDate: false), .theme])
+        XCTAssertEqual(cards(photos: [yearAgo]), [.theme, .oneYearAgo(photo: yearAgo, byUploadDate: false)])
     }
 
     /// 何も当たらない日は今日のテーマ1枚だけ（空き地を作らない）
@@ -324,8 +330,44 @@ final class HomeTopCardTests: XCTestCase {
     func testInSeasonComesAfterTheme() throws {
         let s = try spot("sp_s")
         let old = try photo("old", date: "2025-09-27")
-        XCTAssertEqual(seasonCards([s], photos: [old]).map(\.slot), ["oneYearAgo", "theme", "inSeason"])
+        XCTAssertEqual(seasonCards([s], photos: [old]).map(\.slot), ["theme", "inSeason", "oneYearAgo"])
         XCTAssertEqual(seasonCards([s]).map(\.slot), ["theme", "inSeason"])
+    }
+
+    // MARK: - 5. 行きたい場所のこの季節
+
+    private func wishCards(_ spots: [OfficialSpot], wishlist: Set<String>,
+                           photos: [Photo] = []) -> [HomeTopCard.Choice] {
+        HomeTopCard.cards(now: now, plans: [], myPhotos: photos, openedBookDays: [],
+                          spots: spots, wishlist: wishlist, timeZone: utc)
+    }
+
+    /// 「行きたい」に入れた公開済みのスポットで、いまの季節の案内があるものだけ。写真は無くてもよい
+    func testWishlistSeasonPicksOnlyWishedPublishedSpots() throws {
+        let wished = try spot("sp_w", image: false, seasons: [("autumn", "秋の文")])
+        let notWished = try spot("sp_n")
+        let draft = try spot("sp_d", stage: "review")
+        let spring = try spot("sp_s", seasons: [("spring", "春の文")])
+        let keys: Set<String> = ["SPOT-sp_w", "SPOT-sp_d", "SPOT-sp_s"]
+        let all = wishCards([wished, notWished, draft, spring], wishlist: keys)
+        XCTAssertEqual(all.first { $0.slot == "wishlistSeason" },
+                       .wishlistSeason(spot: wished, season: "autumn", guide: "秋の文"))
+        // 撮影地の鍵（SPOT- の無い slug）では当てない
+        XCTAssertNil(wishCards([wished], wishlist: ["sp_w"]).first { $0.slot == "wishlistSeason" })
+        XCTAssertNil(wishCards([wished], wishlist: []).first { $0.slot == "wishlistSeason" })
+    }
+
+    /// 並びは テーマ → 行きたい場所 → 季節 → 1年前。**季節の札は同じスポットを出さない**
+    func testWishlistSeasonOrderAndNoDuplicateWithSeason() throws {
+        let only = try spot("sp_only")
+        let old = try photo("old", date: "2025-09-27")
+        XCTAssertEqual(wishCards([only], wishlist: ["SPOT-sp_only"], photos: [old]).map(\.slot),
+                       ["theme", "wishlistSeason", "oneYearAgo"], "同じスポットが季節の札にも出た")
+        let other = try spot("sp_other")
+        XCTAssertEqual(wishCards([only, other], wishlist: ["SPOT-sp_only"]).map(\.slot),
+                       ["theme", "wishlistSeason", "inSeason"])
+        XCTAssertEqual(wishCards([only, other], wishlist: ["SPOT-sp_only"]).last,
+                       .inSeason(spot: other, season: "autumn", guide: "秋は紅葉"))
     }
 
     /// 見出しは季節の名前（「見頃」とは言わない）

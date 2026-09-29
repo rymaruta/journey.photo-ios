@@ -29,6 +29,16 @@ Name を宣言していない（`OFL-KleeOne.txt` の1行目）ので、同じ�
 
     curl -sSfLO https://raw.githubusercontent.com/google/fonts/main/ofl/kleeone/KleeOne-SemiBold.ttf
     python3 Tools/make-display-font.py KleeOne-SemiBold.ttf
+
+**ストーリーの「マーカー」（Yusei Magic）・「丸文字」（Hachi Maru Pop）**（2026-09-29）は
+npm の @expo-google-fonts の TTF から作った（google/fonts の ofl とはバイトが違うので、
+そちらから取ると sha256 が合わない）。取り方:
+
+    npm pack @expo-google-fonts/yusei-magic @expo-google-fonts/hachi-maru-pop
+    tar xzf expo-google-fonts-yusei-magic-*.tgz && cp package/400Regular/YuseiMagic_400Regular.ttf YuseiMagic-Regular.ttf
+    tar xzf expo-google-fonts-hachi-maru-pop-*.tgz && cp package/400Regular/HachiMaruPop_400Regular.ttf HachiMaruPop-Regular.ttf
+    python3 Tools/make-display-font.py YuseiMagic-Regular.ttf
+    python3 Tools/make-display-font.py HachiMaruPop-Regular.ttf
 """
 import sys
 from pathlib import Path
@@ -40,6 +50,12 @@ from fontTools.ttLib import TTFont
 SOURCES = {
     "ShipporiMinchoB1-Bold.ttf": "d20f3981afb8bceda5fdf8f0fb29ba51eb21518644612ccd8a183e5bd433e25a",
     "KleeOne-SemiBold.ttf": "b031ec426c23ca1143ef1f7d58bee7a79efe119ed654152f121c922202b303fd",
+    # ストーリーの文字の「マーカー」「丸文字」（2026-09-29）。**google/fonts の ofl とは
+    # 版は同じだがバイトが違う**（google/fonts の sha256 は 82098615… / 78408910…）。
+    # 作ったのは npm の原本なので、そちらから取って名前を変える（下の docstring の手順）。
+    # どちらも OFL で Reserved Font Name を宣言していない（同梱の OFL-*.txt の1行目）
+    "YuseiMagic-Regular.ttf": "972e3a23b22a88f67f5ccd37ff6129fefa08cb689a65e8cb3e53425fa55bcac9",
+    "HachiMaruPop-Regular.ttf": "a1460e0fb8608bca3cc74f91605ccdb84f62c9b9808061037b4f5ccaad489a17",
 }
 FONTS = Path(__file__).resolve().parent.parent / "Sources/JourneyPhoto/Resources/Fonts"
 
@@ -79,7 +95,7 @@ def main():
         sys.exit(f"知らない原本です: {src.name}（{', '.join(SOURCES)} のどれか）")
     digest = hashlib.sha256(src.read_bytes()).hexdigest()
     if digest != expected:
-        sys.exit(f"原本が違います（sha256 {digest}）。google/fonts の ofl から取り直してください")
+        sys.exit(f"原本が違います（sha256 {digest}）。この冒頭の取り方どおりに取り直してください")
     OUT = FONTS / src.name
 
     chars = set()

@@ -452,6 +452,12 @@ extension View {
                                    perform action: @escaping () -> Void,
                                    onPressingChanged: ((Bool) -> Void)? = nil) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func scaleEffect(_ scale: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// この部品の更新にかかる動きを書き換える（本物と同じ）
+    public func transaction(_ transform: @escaping (inout Transaction) -> Void) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 奥行きのある回り（ストーリーの人から人への立方体）
+    public func rotation3DEffect(_ angle: Angle, axis: (x: CGFloat, y: CGFloat, z: CGFloat),
+                                 anchor: UnitPoint = .center, anchorZ: CGFloat = 0,
+                                 perspective: CGFloat = 1) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func animation<V: Equatable>(_ animation: Animation?, value: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tabViewStyle(_ style: TabViewStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func statusBarHidden(_ hidden: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

@@ -33,15 +33,27 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     /// 何の札か。**場所と曲は投稿の項目としても送る**ので、
     /// ここに置くのは「写真の上の見た目」だけ
     var kind: Kind
-    /// 書体（板 24b の「明朝・ゴシック・手書き風」）
+    /// 書体（板 24b の「明朝・ゴシック・手書き風」＋ 2026-09-29 に足した5つ）
     var face: Face
-    /// 文字の色（板 24b の5色）
+    /// 文字の色（板 24b の5色 ＋ 2026-09-29 に足した7色）
     var ink: Ink
     /// 回し（ラジアン。2本指で回す）
     var rotation: Double
+    /// 自由に選んだ色（0xRRGGBB・端末の色選び）。**あれば `ink` より先に使う**。
+    /// 12色から選び直したら nil に戻す（owner の「色が少ない」・2026-09-29）
+    var customHex: UInt32?
 
-    /// 書体。**アプリに同梱した字だけ**（端末に無い書体を選ばせると、
-    /// 画面と焼き込みで見た目が割れる）
+    /// 書体。**アプリに同梱した字か、どの iPhone にも入っている字だけ**
+    /// （端末に無い書体を選ばせると、画面と焼き込みで見た目が割れる）。
+    ///
+    /// owner の「フォントの種類が少ない」（2026-09-29）で 3 → 8。**足すのは端末の字が中心**
+    /// ——日本語の書体は1つ 3〜4MB あり、同梱を増やすとアプリが太る。同梱は
+    /// マーカー・丸文字の2つだけ（JIS 第1水準まで削って計 3.1MB・`Tools/make-display-font.py`）。
+    /// 英字だけの書体（タイプ・筆記体）の日本語は、端末のゴシックで出る。
+    ///
+    /// ⚠️ **端末の書体の名前は Linux では確かめられない。** 名前が違っても、画面
+    /// （`StoryCanvas.font`）と焼き込み（`TextOverlayRenderer`）は両方とも端末の太字に
+    /// 落ちるので、割れはしない（見た目が変わらないだけ）。実機で確かめること
     enum Face: String, Codable, CaseIterable, Identifiable {
         /// Shippori Mincho B1 Bold（見出しの明朝）
         case mincho
@@ -49,6 +61,16 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         case gothic
         /// Klee One SemiBold（手書き風）
         case hand
+        /// ヒラギノ丸ゴ（端末の字）
+        case maru
+        /// Yusei Magic（マーカーで書いたような字・同梱）
+        case marker
+        /// Hachi Maru Pop（丸文字・同梱）
+        case pop
+        /// American Typewriter Bold（端末の字・英字だけ）
+        case typewriter
+        /// Snell Roundhand Bold（端末の字・英字の筆記体）
+        case script
 
         var id: String { rawValue }
 
@@ -57,22 +79,41 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .mincho: return L("明朝", "Serif")
             case .gothic: return L("ゴシック", "Sans")
             case .hand: return L("手書き風", "Handwritten")
+            case .maru: return L("丸ゴシック", "Rounded")
+            case .marker: return L("マーカー", "Marker")
+            case .pop: return L("丸文字", "Pop")
+            case .typewriter: return L("タイプ", "Typewriter")
+            case .script: return L("筆記体", "Script")
             }
         }
 
-        /// 同梱の書体の名前（PostScript 名）。ゴシックは端末の字なので nil
+        /// 書体の名前（PostScript 名）。ゴシックは端末の太字なので nil
         var fontName: String? {
             switch self {
             case .mincho: return "ShipporiMinchoB1-Bold"
             case .gothic: return nil
             case .hand: return "KleeOne-SemiBold"
+            case .maru: return "HiraMaruProN-W4"
+            case .marker: return "YuseiMagic-Regular"
+            case .pop: return "HachiMaruPop-Regular"
+            case .typewriter: return "AmericanTypewriter-Bold"
+            case .script: return "SnellRoundhand-Bold"
+            }
+        }
+
+        /// アプリに同梱した書体か（`project.yml` の `UIAppFonts` に載せるもの）
+        var isBundled: Bool {
+            switch self {
+            case .mincho, .hand, .marker, .pop: return true
+            case .gothic, .maru, .typewriter, .script: return false
             }
         }
     }
 
-    /// 文字の色（板 24b: 白・墨・真鍮・空色・珊瑚）
+    /// 文字の色（板 24b: 白・墨・真鍮・空色・珊瑚 ＋ 2026-09-29 に足した7色）
     enum Ink: String, Codable, CaseIterable, Identifiable {
         case white, ink, brass, sky, coral
+        case yellow, orange, pink, red, green, blue, purple
 
         var id: String { rawValue }
 
@@ -84,6 +125,13 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .brass: return 0xC9A66B
             case .sky: return 0x9CC3E6
             case .coral: return 0xFF8A80
+            case .yellow: return 0xFFD54F
+            case .orange: return 0xFFA24C
+            case .pink: return 0xFF7EB6
+            case .red: return 0xF2545B
+            case .green: return 0x7ED9A0
+            case .blue: return 0x4C8DFF
+            case .purple: return 0xB388FF
             }
         }
 
@@ -94,6 +142,13 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .brass: return L("真鍮", "Brass")
             case .sky: return L("空色", "Sky")
             case .coral: return L("珊瑚", "Coral")
+            case .yellow: return L("黄", "Yellow")
+            case .orange: return L("橙", "Orange")
+            case .pink: return L("桃", "Pink")
+            case .red: return L("赤", "Red")
+            case .green: return L("緑", "Green")
+            case .blue: return L("青", "Blue")
+            case .purple: return L("紫", "Purple")
             }
         }
     }
@@ -105,13 +160,82 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         case .light: return Ink.allCases
         case .dark: return Ink.allCases.filter { $0 != .white }
         case .banner: return Ink.allCases.filter { $0 != .ink }
+        // 縁が黒なので墨は縁に溶ける
+        case .outline: return Ink.allCases.filter { $0 != .ink }
         }
     }
 
     /// **描くときの色。** 選べない組（見た目を後から変えた・札で帯に固定された）は
-    /// 読める色に寄せる。画面も焼き込みもこれを通す
+    /// 読める色に寄せる
     var drawnInk: Ink {
         Self.inks(for: style).contains(ink) ? ink : (style == .dark ? .ink : .white)
+    }
+
+    /// **描くときの色（0xRRGGBB）。画面も焼き込みもこれを通す。**
+    /// 自由に選んだ色があればそれを、見た目に対して読めるところまで寄せて使う
+    var drawnHex: UInt32 {
+        customHex.map { Self.readableHex($0, for: style) } ?? drawnInk.hex
+    }
+
+    // MARK: 自由に選んだ色を読める色に寄せる
+
+    /// 色の組の読みやすさの下限（WCAG のコントラスト比）。
+    /// **12色の決まりを数に直したもの**——黒の見た目（白い縁）は白に近い色がだめ、
+    /// 帯（黒 65% の地）と縁取り（黒い縁）は黒に近い色がだめ。12色のうち出している色は
+    /// 全部この線を越え、出していない白（黒の見た目）・墨（帯・縁取り）は越えない
+    static let minContrastOnWhiteEdge = 1.35
+    static let minContrastOnBlack = 3.0
+
+    /// 相対輝度（WCAG 2.x）
+    static func luminance(_ hex: UInt32) -> Double {
+        func channel(_ value: UInt32) -> Double {
+            let c = Double(value & 0xFF) / 255
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(hex >> 16) + 0.7152 * channel(hex >> 8) + 0.0722 * channel(hex)
+    }
+
+    static func contrast(_ a: UInt32, _ b: UInt32) -> Double {
+        let la = luminance(a), lb = luminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    /// その見た目で読める色か。白の見た目は影が付くのでどの色でも読める
+    static func isReadable(_ hex: UInt32, on style: Style) -> Bool {
+        switch style {
+        case .light: return true
+        case .dark: return contrast(hex, 0xFFFFFF) >= minContrastOnWhiteEdge
+        case .banner, .outline: return contrast(hex, 0x000000) >= minContrastOnBlack
+        }
+    }
+
+    /// 読めない色は**同じ色みのまま**読めるところまで寄せる（黒の見た目は暗く、
+    /// 帯・縁取りは明るく）。選んだ色を黙って捨てると、押しても変わらないように見える
+    static func readableHex(_ hex: UInt32, for style: Style) -> UInt32 {
+        let hex = hex & 0xFFFFFF
+        guard !isReadable(hex, on: style) else { return hex }
+        let target: UInt32 = style == .dark ? 0x000000 : 0xFFFFFF
+        for step in 1...20 {
+            let mixed = mix(hex, target, Double(step) / 20)
+            if isReadable(mixed, on: style) { return mixed }
+        }
+        return target
+    }
+
+    static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
+        func channel(_ shift: UInt32) -> UInt32 {
+            let x = Double((a >> shift) & 0xFF), y = Double((b >> shift) & 0xFF)
+            return UInt32((x + (y - x) * t).rounded()) << shift
+        }
+        return channel(16) | channel(8) | channel(0)
+    }
+
+    /// 0...1 の赤緑青から 0xRRGGBB（端末の色選びは範囲外の値を返すことがあるので丸める）
+    static func hex(red: Double, green: Double, blue: Double) -> UInt32 {
+        func channel(_ v: Double) -> UInt32 {
+            UInt32((min(max(v.isFinite ? v : 0, 0), 1) * 255).rounded())
+        }
+        return channel(red) << 16 | channel(green) << 8 | channel(blue)
     }
 
     /// **見た目を切り替える。** 読めない組になる色だけ寄せ、他の色は残す
@@ -125,7 +249,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         next.style = newStyle
         switch (newStyle, ink) {
         case (.dark, .white): next.ink = .ink
-        case (.banner, .ink): next.ink = .white
+        case (.banner, .ink), (.outline, .ink): next.ink = .white
         case (.light, .ink) where style == .dark: next.ink = .white
         default: break
         }
@@ -150,6 +274,10 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         case date
         /// ハッシュタグ
         case hashtag
+        /// 絵文字のスタンプ（owner の「スタンプが少ない」・2026-09-29）。**飾りだけ**
+        /// ——持っているデータを出す札ではないが、押しても何も起きないと誤解される
+        /// 形（天気・質問）ではない。`TextOverlay.stamps` から選ぶ
+        case stamp
 
         /// 札の頭に付ける印。**文字だけの札には付けない**
         var symbol: String? {
@@ -160,12 +288,18 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .time: return "🕘"
             case .date: return "📅"
             case .hashtag: return "#"
+            case .stamp: return nil
             }
         }
 
-        /// 自由な文字以外は**必ず帯**にする（写真の上で読めなくならないように）
+        /// 自由な文字以外は**必ず帯**にする（写真の上で読めなくならないように）。
+        /// **スタンプは帯にしない**（絵文字そのものが見た目）
         var forcedStyle: Style? {
-            self == .text ? nil : .banner
+            switch self {
+            case .text: return nil
+            case .stamp: return .light
+            default: return .banner
+            }
         }
 
         /// 置いたときに入っている文字。**時刻と日付は端末から採る**
@@ -188,10 +322,14 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         }
 
         /// 置いたあとに文字を直せるか。**時刻と日付は直させない**
-        /// （端末から採った値なので、直せると「いつの話か」が嘘になる）
+        /// （端末から採った値なので、直せると「いつの話か」が嘘になる）。
+        /// スタンプは選び直す（打つものではない）
         var isEditable: Bool {
-            self != .time && self != .date
+            self != .time && self != .date && self != .stamp
         }
+
+        /// 書体・色を選べるか。**スタンプは絵文字なので効かない**（出すと押しても変わらない）
+        var hasTypography: Bool { self != .stamp }
 
         var toolLabel: String {
             switch self {
@@ -202,6 +340,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .time: return L("時刻", "Time")
             case .date: return L("日付", "Date")
             case .hashtag: return L("タグ", "Tag")
+            case .stamp: return L("スタンプ", "Stickers")
             }
         }
 
@@ -213,9 +352,22 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .time: return "clock"
             case .date: return "calendar"
             case .hashtag: return "number"
+            case .stamp: return "face.smiling"
             }
         }
     }
+
+    /// 選べるスタンプ（旅の写真向けの絵文字）。**端末の絵文字の字形で描く**ので同梱は要らない
+    static let stamps: [String] = [
+        "✈️", "🚄", "🚗", "🚲", "⛴️", "🧳", "🗺️", "📷", "📸", "🎒",
+        "🗻", "⛩️", "🏯", "🏖️", "🏔️", "🌊", "🌅", "🌄", "🌃", "🎡",
+        "🌸", "🍁", "🌻", "🌿", "❄️", "☀️", "🌙", "⭐️", "🌈", "☁️",
+        "🍜", "🍣", "🍡", "🍵", "☕️", "🍺", "🍦", "🍰", "🍙", "🍓",
+        "❤️", "💙", "✨", "🎉", "👍", "😊", "🥰", "😎", "🙌", "💯",
+    ]
+
+    /// スタンプの既定の大きさ（文字より大きく置く）
+    static let stampSize = 0.12
 
     enum Style: String, CaseIterable, Identifiable, Codable {
         /// 白い文字に影（写真の上でいちばん読める）
@@ -224,6 +376,9 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         case dark
         /// 黒い帯に白抜き
         case banner
+        /// 色の文字に黒い太い縁（owner の「自由度が低い」・2026-09-29）。
+        /// **どの写真の上でも色が読める**——明るい写真でも暗い写真でも縁が残す
+        case outline
 
         var id: String { rawValue }
 
@@ -232,7 +387,24 @@ struct TextOverlay: Identifiable, Equatable, Codable {
             case .light: return L("白", "White")
             case .dark: return L("黒", "Black")
             case .banner: return L("帯", "Banner")
+            case .outline: return L("縁取り", "Outline")
             }
+        }
+
+        /// 縁の幅（字の大きさに対する百分率・輪郭の両側に半分ずつ）。縁が無ければ nil。
+        /// **編集画面と焼き込みの両方がここを読む**——別々に持つと画面と仕上がりの太さがずれる
+        var edgePercent: Double? {
+            switch self {
+            case .light, .banner: return nil
+            case .dark: return 3
+            case .outline: return 6
+            }
+        }
+
+        /// 編集画面で縁の写しをずらす量（pt）。焼き込みの縁は輪郭の両側に半分ずつ乗り、
+        /// 内側は塗りが隠すので、**外に見えるのは幅の半分**
+        func edgeOffset(fontSize: Double) -> Double? {
+            edgePercent.map { fontSize * $0 / 100 / 2 }
         }
     }
 
@@ -242,8 +414,9 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     static let maxSize = 0.20
     static let defaultSize = 0.07
 
-    /// 1枚に置ける数。**増やしすぎない**——写真が主役
-    static let maxCount = 5
+    /// 1枚に置ける数。**増やしすぎない**——写真が主役。
+    /// owner の「自由度が低い」（2026-09-29）で 5 → 10
+    static let maxCount = 10
 
     /// 文字数の上限。サーバーのキャプション（200字）に合わせる
     static let maxLength = 200
@@ -267,7 +440,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, text, x, y, size, style, kind, face, ink, rotation
+        case id, text, x, y, size, style, kind, face, ink, rotation, customHex
     }
 
     /// **前の版の下書きも読む。** 書体・色・回しは後から足した項目なので、
@@ -285,6 +458,7 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         self.face = (try? c.decodeIfPresent(Face.self, forKey: .face)) ?? .gothic
         self.ink = (try? c.decodeIfPresent(Ink.self, forKey: .ink)) ?? (style == .dark ? .ink : .white)
         self.rotation = (try? c.decodeIfPresent(Double.self, forKey: .rotation)) ?? 0
+        self.customHex = (try? c.decodeIfPresent(UInt32.self, forKey: .customHex)).map { $0 & 0xFFFFFF }
     }
 
     /// 画面と画像に出す文字（印つき）。

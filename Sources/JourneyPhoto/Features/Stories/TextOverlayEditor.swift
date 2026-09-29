@@ -69,7 +69,7 @@ struct StoryCanvas: View {
         }
     }
 
-    /// 書体（同梱の明朝・手書き風。ゴシックは端末の太字）。**大きさは固定**——
+    /// 書体（`TextOverlay.Face`。同梱の字か端末の字。ゴシックは端末の太字）。**大きさは固定**——
     /// 焼き込みは画像の画素で描くので、文字の大きさの設定に追従させると割れる
     static func font(_ face: TextOverlay.Face, size: Double) -> Font {
         // **読めなかったときは焼き込みと同じ端末の太字に落とす。** `Font.custom` は
@@ -80,11 +80,43 @@ struct StoryCanvas: View {
         return .system(size: size, weight: .bold)
     }
 
+    /// 文字に縁を付ける（焼き込みの `strokeWidth` に合わせる）。SwiftUI の文字には縁が無いので、
+    /// **縁の色の文字を8方向にずらして下に敷く**。黒の見た目（白い縁・幅3%）と
+    /// 縁取り（黒い縁・幅6%）。**以前は黒の見た目の縁が画面に出ず、焼き込みにだけ付いていた**
+    static func edged<Label: View>(_ text: Label, overlay: TextOverlay, fontSize: Double) -> some View {
+        let edge: (color: Color, width: Double)? = overlay.style.edgeOffset(fontSize: fontSize).map {
+            (overlay.style == .dark ? .white : .black, $0)
+        }
+        return ZStack {
+            if let edge {
+                ForEach(0..<8, id: \.self) { i in
+                    let angle = Double(i) * .pi / 4
+                    text.foregroundStyle(edge.color)
+                        .offset(x: CGFloat(cos(angle) * edge.width), y: CGFloat(sin(angle) * edge.width))
+                        // 縁のための写しは読み上げない（同じ文字を9回読まれる）
+                        .accessibilityHidden(true)
+                }
+            }
+            text.foregroundStyle(color(hex: overlay.drawnHex))
+        }
+    }
+
     static func color(_ ink: TextOverlay.Ink) -> Color {
-        let hex = ink.hex
-        return Color(red: Double((hex >> 16) & 0xFF) / 255,
-                     green: Double((hex >> 8) & 0xFF) / 255,
-                     blue: Double(hex & 0xFF) / 255)
+        color(hex: ink.hex)
+    }
+
+    static func color(hex: UInt32) -> Color {
+        Color(red: Double((hex >> 16) & 0xFF) / 255,
+              green: Double((hex >> 8) & 0xFF) / 255,
+              blue: Double(hex & 0xFF) / 255)
+    }
+
+    /// 端末の色選びが返した色を 0xRRGGBB に。**`UIKit.` と書くのは Linux の模型のため**
+    /// （模型では SwiftUI と UIKit が別々に `UIColor` を持つ。本物では同じもの）
+    static func hex(of color: Color) -> UInt32 {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        _ = UIKit.UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return TextOverlay.hex(red: Double(red), green: Double(green), blue: Double(blue))
     }
 
     /// 幅が変わったら測り直し、同じ幅なら高い方を覚える
@@ -103,10 +135,9 @@ struct StoryCanvas: View {
         let fontSize = TextOverlay.fontSize(overlay.size, in: photo.size)
         let center = overlay.center(in: photo)
         let rotation = overlay.rotation + (rotateId == overlay.id ? liveRotation : 0)
-        return Text(overlay.displayText)
+        return Self.edged(Text(overlay.displayText)
             // 書体と色は焼き込みと同じもの（`TextOverlayRenderer.attributes`）
-            .font(Self.font(overlay.face, size: fontSize))
-            .foregroundStyle(Self.color(overlay.drawnInk))
+            .font(Self.font(overlay.face, size: fontSize)), overlay: overlay, fontSize: fontSize)
             // 帯の余白も焼き込み（`TextOverlayRenderer.draw`）と同じ割合
             .padding(.horizontal, overlay.style == .banner ? CGFloat(fontSize * 0.35) : 0)
             .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
@@ -188,30 +219,49 @@ struct OverlayPanel: View {
                     .frame(minHeight: 44)
             }
 
-            // 書体（明朝・ゴシック・手書き風）
+            // 書体（8種）。**横に流す**——1行に収まらない。スタンプには出さない（絵文字に効かない）
+            if overlay.kind.hasTypography {
             HStack(spacing: 8) {
                 Text(L("書体", "Font"))
                     .font(.system(size: 11))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
-                ForEach(TextOverlay.Face.allCases) { face in
-                    OverlayChip(title: face.label, selected: overlay.face == face) {
-                        overlay.face = face
+                // **選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を開き直すと、
+                // 列の頭が出て何を選んでいるか見えなかった・bfe5e12 のレビュー）
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(TextOverlay.Face.allCases) { face in
+                                OverlayChip(title: face.label, selected: overlay.face == face) {
+                                    overlay.face = face
+                                }
+                                .id(face)
+                            }
+                        }
                     }
+                    .onAppear { proxy.scrollTo(overlay.face, anchor: .center) }
+                    .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.face, anchor: .center) }
                 }
             }
+            }
 
-            // 色（白・墨・真鍮・空色・珊瑚）
+            // 色（12色・`TextOverlay.Ink`）。スタンプには出さない
+            if overlay.kind.hasTypography {
             HStack(spacing: 10) {
                 Text(L("色", "Color"))
                     .font(.system(size: 11))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
-                // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）
+                // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
+                // 12色あるので横に流し、**選んでいる色まで流して見せる**（書体と同じ理由）
+                ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
                 ForEach(TextOverlay.inks(for: overlay.style)) { ink in
-                    let selected = overlay.drawnInk == ink
+                    let selected = overlay.customHex == nil && overlay.drawnInk == ink
                     Button {
                         overlay.ink = ink
+                        overlay.customHex = nil
                     } label: {
                         Circle()
                             .fill(StoryCanvas.color(ink))
@@ -225,20 +275,36 @@ struct OverlayPanel: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("文字の色 \(ink.label)", "Text color \(ink.label)"))
                     .accessibilityAddTraits(selected ? .isSelected : [])
+                    .id(ink)
                 }
+                customColor
+                }
+                }
+                .onAppear { proxy.scrollTo(colorAnchor, anchor: .center) }
+                .onChange(of: overlay.id) { _, _ in proxy.scrollTo(colorAnchor, anchor: .center) }
+                }
+            }
             }
 
             HStack(spacing: 8) {
-                // **場所と曲は帯で固定**（読めない札を作らせない）ので見た目の選択を出さない
+                // **場所と曲は帯で固定**（読めない札を作らせない）ので見た目の選択を出さない。
+                // 4つ並ぶと英語では「消す」と合わせて幅に収まらないので横に流す
                 if overlay.kind == .text {
-                    ForEach(TextOverlay.Style.allCases) { style in
-                        OverlayChip(title: style.label, selected: overlay.style == style) {
-                            // 色の寄せ方は `TextOverlay.withStyle`（読めない組だけ直す）
-                            overlay = overlay.withStyle(style)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(TextOverlay.Style.allCases) { style in
+                                OverlayChip(title: style.label, selected: overlay.style == style) {
+                                    // 色の寄せ方は `TextOverlay.withStyle`（読めない組だけ直す）
+                                    overlay = overlay.withStyle(style)
+                                }
+                            }
                         }
                     }
+                } else {
+                    // 見た目の列が無いときだけ「消す」を右へ寄せる。列と並べると
+                    // 残りの幅を等分し、列が半分に押し込まれる
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
                 Button(action: onDelete) {
                     Label(L("消す", "Delete"), systemImage: "trash")
                         .font(.system(size: 13))
@@ -295,5 +361,35 @@ struct OverlayChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+extension OverlayPanel {
+    /// 色の列で流して見せる先（好きな色を選んでいればその丸）
+    var colorAnchor: AnyHashable {
+        overlay.customHex == nil ? AnyHashable(overlay.drawnInk) : AnyHashable("custom")
+    }
+
+    /// 12色の後ろに置く「好きな色」（端末の色選び・owner の「色が少ない」2026-09-29）。
+    /// 選んだ色は**見た目に対して読めるところまで寄せて描く**（`TextOverlay.readableHex`）。
+    /// 丸に出すのも寄せたあとの色——選んだままの色を出すと、写真の上と食い違う
+    var customColor: some View {
+        ColorPicker("", selection: Binding(
+            get: { StoryCanvas.color(hex: overlay.drawnHex) },
+            // 丸に出している色（寄せたあと）がそのまま返ってきたときは書かない。
+            // 書くと選んだ元の色が寄せた色で上書きされ、白の見た目に戻しても元の色に戻らない
+            set: { color in
+                let hex = StoryCanvas.hex(of: color)
+                if hex != overlay.drawnHex { overlay.customHex = hex }
+            }
+        ), supportsOpacity: false)
+        .labelsHidden()
+        .frame(width: 44, height: 44)
+        .overlay(Circle().strokeBorder(Color.white, lineWidth: overlay.customHex == nil ? 0 : 3)
+            .frame(width: 36, height: 36)
+            .allowsHitTesting(false))
+        .accessibilityLabel(L("好きな色を選ぶ", "Pick any color"))
+        .accessibilityAddTraits(overlay.customHex == nil ? [] : .isSelected)
+        .id("custom")
     }
 }

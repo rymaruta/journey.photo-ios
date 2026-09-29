@@ -46,7 +46,7 @@ enum TextOverlayRenderer {
         // **短い辺に対する割合で大きさを決める。** 長辺で決めると、
         // 横長と縦長で同じ指定が別の見え方になる。編集画面と同じ関数を通す
         let fontSize = TextOverlay.fontSize(overlay.size, in: size)
-        let attributes = attributes(for: overlay, fontSize: fontSize)
+        let (attributes, edge) = attributes(for: overlay, fontSize: fontSize)
         // 場所と曲は印（📍 ♪）を頭に付けて焼く
         let text = overlay.displayText as NSString
         let bounds = text.size(withAttributes: attributes)
@@ -67,28 +67,36 @@ enum TextOverlayRenderer {
                               width: bounds.width + padding * 2,
                               height: bounds.height + padding))
         }
+        // **縁を先に、塗りを上に。** 負の `strokeWidth`（塗り＋縁を1回で）は縁が字の
+        // 輪郭の内側にも食い込み、編集画面（縁を外側にだけ敷く）より字が細く焼ける。
+        // 正の幅（縁だけ）で描いてから塗りを重ね、内側の半分を隠す
+        if let edge {
+            text.draw(at: origin, withAttributes: edge)
+        }
         text.draw(at: origin, withAttributes: attributes)
     }
 
-    private static func attributes(for overlay: TextOverlay,
-                                   fontSize: Double) -> [NSAttributedString.Key: Any] {
-        // 同梱の書体（明朝・手書き風）。読めなければゴシック（端末の字）
+    /// 塗りの属性と、縁だけの属性（縁が無ければ nil）
+    private static func attributes(for overlay: TextOverlay, fontSize: Double)
+        -> (fill: [NSAttributedString.Key: Any], edge: [NSAttributedString.Key: Any]?) {
+        // 書体（`TextOverlay.Face`・同梱か端末の字）。読めなければゴシック（端末の太字）
         let font = overlay.face.fontName.flatMap { UIFont(name: $0, size: fontSize) }
             ?? UIFont.systemFont(ofSize: fontSize, weight: .bold)
-        let color = uiColor(overlay.drawnInk)
-        switch overlay.style {
-        case .light, .banner:
-            return [.font: font, .foregroundColor: color]
-        case .dark:
-            // **黒の見た目には白い縁を付ける。** 暗い写真の上では縁が無いと消える。
-            // `strokeWidth` は負で「塗り＋縁」（正だと中抜きになる）
-            return [.font: font, .foregroundColor: color,
-                    .strokeColor: UIColor.white, .strokeWidth: -3.0]
-        }
+        let fill: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: uiColor(overlay.drawnHex)]
+        guard let edge = edge(for: overlay.style) else { return (fill, nil) }
+        // `strokeWidth` は正で「縁だけ」（字の大きさに対する百分率・輪郭の両側に半分ずつ）
+        return (fill, [.font: font, .strokeColor: edge.color, .strokeWidth: edge.width])
     }
 
-    private static func uiColor(_ ink: TextOverlay.Ink) -> UIColor {
-        let hex = ink.hex
+    /// 縁の色と幅。**黒の見た目には白い縁**（暗い写真の上では縁が無いと消える）。
+    /// **縁取りは黒い縁**——幅は白い縁の倍で、どの写真の上でも色が縁で切り離されて読める。
+    /// 幅は `Style.edgePercent`（編集画面の `TextOverlayEditor.edged` と同じ値）
+    static func edge(for style: TextOverlay.Style) -> (color: UIColor, width: Double)? {
+        guard let width = style.edgePercent else { return nil }
+        return (style == .dark ? .white : .black, width)
+    }
+
+    private static func uiColor(_ hex: UInt32) -> UIColor {
         return UIColor(red: Double((hex >> 16) & 0xFF) / 255,
                        green: Double((hex >> 8) & 0xFF) / 255,
                        blue: Double(hex & 0xFF) / 255, alpha: 1)

@@ -1,4 +1,8 @@
 import SwiftUI
+// Linux では URLSession が別モジュールに居る（次の写真の先読み・iOS では何も起きない）
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// ストーリーを全画面で見る。
 ///
@@ -36,7 +40,9 @@ struct StoryViewerView: View {
     @State private var dropped: Set<String> = []
 
     // 進行
-    @State private var elapsed: TimeInterval = 0
+    /// 写真の時計（`StoryPlayback.Clock`）。**書き換わるのは動く／止まるの切り替えと、
+    /// 1本を頭から始めたときだけ**——バーは `TimelineView` が描画ごとに読む
+    @State private var clock = StoryPlayback.Clock()
     @State private var pressing = false
     /// 0.35秒押し続けた（`pressing` は触れた瞬間に立つので、見た目はこちらで決める）
     @State private var longHeld = false
@@ -113,11 +119,37 @@ struct StoryViewerView: View {
     /// なら画面ごと戻されていた（`HighlightPlayerView` の「止める」が効いていなかった）
     @State private var isHeld: Bool
 
+    /// 束の最後まで見た。**あれば閉じずにこれを呼ぶ**（人から人への並び・`StoryReelView`
+    /// が次の人へ回す）。無ければ今までどおり閉じる
+    let onGroupEnd: (() -> Void)?
+    /// 束の先頭で、始まってすぐ左を押した。**あれば前の人へ**（無ければ頭から）
+    let onGroupBack: (() -> Void)?
+    /// 払う動き（横・下）を外の画面が受け持つ（`StoryReelView` が指に付けて回す・縮める）。
+    /// true のときこの画面の払いは何もしない——両方が動くと1回の払いで2つ進む
+    let swipesHandledOutside: Bool
+    /// 並びから落とした1本（通報・削除）を外へ知らせる。**人を行き来して閲覧画面が
+    /// 作り直されても、落とした1本を戻さない**ため（`StoryReelView` が覚える）
+    let onDropped: ((String) -> Void)?
+    /// いま払ってはいけない（返信欄に入力中・メニューや確認が開いている・送信中）を
+    /// 外へ知らせる。**外の払い（`StoryReelView`）が見る**——返信の一言の候補を横に
+    /// 流しただけで次の人へ回り、書きかけが消えていた
+    let onSwipeLockChange: ((Bool) -> Void)?
+
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
          holds: Bool = false,
+         onGroupEnd: (() -> Void)? = nil,
+         onGroupBack: (() -> Void)? = nil,
+         swipesHandledOutside: Bool = false,
+         onDropped: ((String) -> Void)? = nil,
+         onSwipeLockChange: ((Bool) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
          onDeleted: ((String) -> Void)? = nil) {
+        self.onGroupEnd = onGroupEnd
+        self.onGroupBack = onGroupBack
+        self.swipesHandledOutside = swipesHandledOutside
+        self.onDropped = onDropped
+        self.onSwipeLockChange = onSwipeLockChange
         self.stories = stories
         self.onDeleted = onDeleted
         self.viewerId = viewerId
@@ -156,6 +188,19 @@ struct StoryViewerView: View {
         )
     }
 
+    /// 払ってはいけない間（`onSwipeLockChange`）。長押し・絵の読み込みは含めない
+    /// （止まっていても払って次へは行ける）
+    private var swipeLocked: Bool {
+        replyFocused || isSending || showMenu || showReplies || showInsights || showReport
+            || showBlockConfirm || showAuthor || showDeleteConfirm
+    }
+
+    /// この人の束をもう見せられない（最後の1本を消した・通報した・ブロックした）。
+    /// **並びの中なら次の人へ**、そうでなければ閉じる
+    private func leaveGroup() {
+        if let onGroupEnd { onGroupEnd() } else { dismiss() }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -175,7 +220,10 @@ struct StoryViewerView: View {
             syncSong(restart: true)
         }
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
-        .onChange(of: frozen) { _, _ in
+        .onChange(of: frozen) { _, isFrozen in
+            // **止まった瞬間にバーも止める。** 時計の見回り（`runClock`）を待つと、長押しから
+            // 最大 `clockStep` だけバーが進み続けて見える
+            syncClock(frozen: isFrozen)
             syncSong(restart: false)
             settlePendingEnd()
         }
@@ -324,7 +372,13 @@ struct StoryViewerView: View {
         // 時計は読み込みと別に回す。同じ task に入れると、見た人の一覧を
         // 待っている間、写真が出ているのに秒数が始まらない
         .task(id: story.id) { await runClock(for: story) }
-        .onAppear { isForeground = scenePhase == .active }
+        // 次の写真を先に読んでおく（1本ごとにバーが 0 のまま待たないように）
+        .task(id: story.id) { prefetchNext() }
+        .onAppear {
+            isForeground = scenePhase == .active
+            onSwipeLockChange?(swipeLocked)
+        }
+        .onChange(of: swipeLocked) { _, locked in onSwipeLockChange?(locked) }
         .onChange(of: scenePhase) { _, phase in isForeground = phase == .active }
         .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
             Button(L("ブロック", "Block"), role: .destructive) {
@@ -353,7 +407,7 @@ struct StoryViewerView: View {
         // **ページの中でブロックしたら、閲覧画面ごと閉じる**（「…」からの
         // ブロックと同じ後始末）。閉じないとブロックした人のストーリーが流れ続ける
         .sheet(isPresented: $showAuthor, onDismiss: {
-            if let userId = story.userId, hidden.blockedUserIds.contains(userId) { dismiss() }
+            if let userId = story.userId, hidden.blockedUserIds.contains(userId) { leaveGroup() }
         }) {
             if let userId = story.userId {
                 NavigationStack {
@@ -498,20 +552,29 @@ struct StoryViewerView: View {
 
     /// 1本ごとの区切り。**写真だけ経過を塗る。** 動画の区切りは経過の
     /// 出どころが無いので塗らず、少し明るい地で「今ここ」だけ示す
+    ///
+    /// **画面の描画ごとに伸ばす**（`TimelineView(.animation)`）。止まっている間は
+    /// 描き直しも止める（`paused`）。時計の刻みで伸ばすと、刻みの遅れがそのまま
+    /// 「一瞬止まってから動く」段差に見えた（`StoryPlayback.Clock`）
     private func progressBar(for story: Story) -> some View {
-        let fills = StoryPlayback.segmentFills(
-            count: visible.count,
-            current: index,
-            elapsed: elapsed,
-            duration: StoryPlayback.duration(seconds: story.durationSec),
-            isVideo: story.isVideo
-        )
-        return HStack(spacing: 4) {
-            ForEach(fills.indices, id: \.self) { i in
-                segment(fill: fills[i], isCurrent: i == index)
+        TimelineView(.animation(minimumInterval: nil, paused: !clock.isRunning)) { context in
+            let fills = StoryPlayback.segmentFills(
+                count: visible.count,
+                current: index,
+                elapsed: clock.elapsed(at: context.date),
+                duration: StoryPlayback.duration(seconds: story.durationSec),
+                isVideo: story.isVideo
+            )
+            HStack(spacing: 4) {
+                ForEach(fills.indices, id: \.self) { i in
+                    segment(fill: fills[i], isCurrent: i == index)
+                }
             }
         }
         .frame(height: 3)
+        // **バーには外の動きを乗せない。** 一時停止を解いて次へ移ると、同じ更新で
+        // 見出しの出し入れ（`.animation(value: chrome)`）が走り、0へ戻る縮みが見えた
+        .transaction { $0.animation = nil }
         .padding(.horizontal, 10)
         .accessibilityLabel(L("\(visible.count)本中\(index + 1)本目", "\(index + 1) of \(visible.count)"))
     }
@@ -521,13 +584,10 @@ struct StoryViewerView: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(isCurrent && fill == nil ? 0.6 : 0.3))
                 if let fill {
+                    // アニメーションは付けない——描画ごとに正しい幅を描くので、
+                    // 付けると0へ戻るとき（次の1本・頭から）に縮む動きが見える
                     Capsule().fill(Color.white)
                         .frame(width: geo.size.width * fill)
-                        // **刻みの間を線でつなぐ。** 時計は `clockStep` ごとにしか
-                        // 進まないので、そのままでは1秒に20回の段差で伸びる
-                        // （owner「進行バーが滑らかになってない」2026-09-25）。
-                        // 0 へ戻るとき（次の1本・前へ戻る）はつながず、すぐ戻す
-                        .animation(fill > 0 ? Animation.linear(duration: Self.clockStep) : nil, value: fill)
                 }
             }
         }
@@ -703,6 +763,7 @@ struct StoryViewerView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: StoryPlayback.swipeThreshold)
                 .onEnded { value in
+                    guard !swipesHandledOutside else { return }
                     switch StoryPlayback.swipe(
                         dx: value.translation.width, dy: value.translation.height) {
                     case .next: if !isSending { advance() }
@@ -722,9 +783,13 @@ struct StoryViewerView: View {
         // でした」が別の1本の画面に出ていた。**払って閉じるのは止めない**（圏外で
         // 返事を待つ間に閉じられなくなる）
         guard !isSending else { return }
-        switch StoryPlayback.leftTap(index: index, elapsed: elapsed) {
+        switch StoryPlayback.leftTap(index: index, elapsed: clock.elapsed(at: Date()),
+                                     hasPreviousGroup: onGroupBack != nil) {
+        case .previousGroup:
+            onGroupBack?()
         case .restart:
-            elapsed = 0
+            // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
+            clock.restart(running: !frozen && !(current?.isVideo ?? false), at: Date())
             syncSong(restart: true)
         case .previous(let target):
             go(to: target)
@@ -755,10 +820,12 @@ struct StoryViewerView: View {
         mediaEnded(pending)
     }
 
-    /// 次へ。**最後なら閉じる**
+    /// 次へ。**最後なら閉じる**（人から人への並びの中なら、次の人へ）
     private func advance() {
         if let target = StoryPlayback.next(after: index, count: visible.count) {
             go(to: target)
+        } else if let onGroupEnd {
+            onGroupEnd()
         } else {
             dismiss()
         }
@@ -769,7 +836,8 @@ struct StoryViewerView: View {
     private func go(to target: Int) {
         guard visible.indices.contains(target) else { return }
         index = target
-        elapsed = 0
+        // 止めておく。絵が出て（`mediaReady`）止める理由が無くなったら `syncClock` が動かす
+        clock.restart(running: false, at: Date())
         pendingEnd = nil
         endedIds = []
         // 別の1本へ移ったら止めていたのを解く（払って移ると止まったまま進んでいた）
@@ -785,30 +853,65 @@ struct StoryViewerView: View {
         viewersLoaded = nil
     }
 
-    /// 時計の刻み。進行バーの動きもこの長さで次の刻みへつなぐ
+    /// 時計の見回りの間隔。**バーの動きはこの長さに縛られない**（描画ごとに伸びる）。
+    /// 決めるのは「使い切ったら次へ」の遅れの上限だけ
     private static let clockStep: TimeInterval = 0.05
 
-    /// 写真の時計。**動画は回さない**（鳴り終わりが送る）。
-    /// 経過は実際の時刻の差で進める——`sleep` は指定より遅れることがある。
-    /// **差は `StoryPlayback.tickDelta` で抑える**（アプリが止まっていた時間を足さない）
+    /// 時計を今の止まる条件に合わせる。**変わったときだけ `@State` を書く**
+    /// （同じ値を書き続けると、それだけで画面全体が描き直される）
+    private func syncClock(frozen isFrozen: Bool) {
+        guard current.map({ !$0.isVideo }) ?? false else { return }
+        var next = clock
+        if next.set(running: !isFrozen, at: Date()) { clock = next }
+    }
+
+    /// 写真の時計の見回り。**動画は回さない**（鳴り終わりが送る）。
+    /// 経過は `StoryPlayback.Clock` が時刻から計算するので、`sleep` の遅れで
+    /// バーが止まって見えることはない。ここは「使い切ったら次へ」だけを見る。
+    /// **アプリが背面にある間は止まっている**（`isForeground` が `frozen` に入る）ので、
+    /// その時間は数えない
     private func runClock(for story: Story) async {
         guard !story.isVideo else { return }
         let duration = StoryPlayback.duration(seconds: story.durationSec)
+        syncClock(frozen: frozen)
         while !Task.isCancelled {
             let before = Date()
             try? await Task.sleep(for: .milliseconds(Int(Self.clockStep * 1000)))
             if Task.isCancelled { return }
-            let dt = StoryPlayback.tickDelta(Date().timeIntervalSince(before))
-            var progress = StoryPlayback.Progress(elapsed: elapsed, duration: duration)
-            let tick = progress.tick(dt, frozen: frozen)
-            elapsed = progress.elapsed
+            // 🔴 **間があきすぎた分は数えない**（`StoryPlayback.stalledSeconds`）。前面に戻る
+            // 合図（`isForeground`）より先にここが走ると、背面にいた時間を丸ごと足して
+            // 次の1本へ飛んでいた（2026-09-26 のバグ探し。旧 `tickDelta` と同じ守り）
+            // **間のうち、時計が動いていた部分だけを見る**（見回りが眠った後で動き出した
+            // 分まで捨てない）
+            let now = Date()
+            if let since = clock.runningSince {
+                let stalled = StoryPlayback.stalledSeconds(gap: now.timeIntervalSince(max(before, since)))
+                if stalled > 0 {
+                    var next = clock
+                    next.discard(stalled, at: now)
+                    clock = next
+                }
+            }
+            // `onChange(of: frozen)` の取りこぼしに備えて、ここでも合わせる
+            syncClock(frozen: frozen)
             // 知らせ（「送りました」など）が出ている間は進めない（`go` が消して読めない）。
             // 知らせは2.5秒で消える
-            if tick == .advance, message == nil {
+            if !frozen, message == nil, clock.elapsed(at: Date()) >= duration {
                 advance()
                 return
             }
         }
+    }
+
+    /// 次の1本が写真なら、先に読んでおく。`AsyncImage` と同じ `URLSession.shared`
+    /// （＝`URLCache.shared`・`JourneyPhotoApp` で容量を広げてある）に入れるだけ。
+    /// **失敗は気にしない**（表示のときにもう一度読む）
+    private func prefetchNext() {
+        guard let target = StoryPlayback.next(after: index, count: visible.count),
+              visible.indices.contains(target),
+              !visible[target].isVideo,
+              let url = visible[target].imageURL else { return }
+        URLSession.shared.dataTask(with: url).resume()
     }
 
     // MARK: - 「…」のメニュー
@@ -1022,7 +1125,7 @@ struct StoryViewerView: View {
             await environment.gallery.setHidden(hidden.snapshot)
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
-            dismiss()
+            leaveGroup()
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
@@ -1032,7 +1135,7 @@ struct StoryViewerView: View {
     /// （閉じただけなら何もしない）。中でブロックもしていれば画面ごと閉じる
     private func afterReport(_ story: Story) {
         if let userId = story.userId, hidden.blockedUserIds.contains(userId) {
-            dismiss()
+            leaveGroup()
             return
         }
         guard hidden.reportedPhotoIds.contains(story.id) else { return }
@@ -1041,9 +1144,10 @@ struct StoryViewerView: View {
         // 進んでいた回に、位置で詰めると1本飛ばしていた
         let viewingId = current?.id
         dropped.insert(story.id)
+        onDropped?(story.id)
         let remaining = visible
         if remaining.isEmpty {
-            dismiss()
+            leaveGroup()
             return
         } else if viewingId != story.id,
                   let stay = remaining.firstIndex(where: { $0.id == viewingId }) {
@@ -1062,47 +1166,23 @@ struct StoryViewerView: View {
     @ViewBuilder
     private func footer(for story: Story) -> some View {
         if isMine(story) {
-            // 見た人の行と、4つの操作（板 25e）
+            // 反応の札と、操作の丸（板 25e）。owner の「作り込みが安っぽい」（2026-09-29）で
+            // 組み直した——数を文の中に埋めず数として出し、同じ画面を開く「反応を見る」の
+            // 重複をやめ、操作を写真の上の他の丸（✕・…）と同じガラスの丸に揃える
             VStack(spacing: 10) {
                 // **反応はまとめて1画面に**（提案の絵）。見た人・いいね・返信が
-                // 別々のシートに割れていると、全体がどうだったか分からない
-                if !isExpired(story), viewersLoaded == true {
-                Button {
-                    showInsights = true
-                } label: {
-                    HStack(spacing: 10) {
-                        viewerFaces
-                        HStack(spacing: 0) {
-                            Text("\(viewers.count)").font(JPFont.mono(13, medium: true))
-                            // **返信を読めていなければ「いいね」の数は言わない**
-                            // （読めなかった回に空の一覧から「いいね 0」と言い切っていた）
-                            if repliesLoaded {
-                                Text(L(" 人が見ました · いいね ", " viewers · likes "))
-                                    .font(.system(size: 13))
-                                Text("\(replies.reactionCount)").font(JPFont.mono(13, medium: true))
-                            } else {
-                                Text(L(" 人が見ました", " viewers"))
-                                    .font(.system(size: 13))
-                            }
-                        }
-                        .foregroundStyle(.white)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13))
-                            .foregroundStyle(WebTheme.faint)
-                    }
-                    .frame(minHeight: 36)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                // 別々のシートに割れていると、全体がどうだったか分からない。
+                // **読み込み中も札の場所は取る**——読み終えてから出すと、下の丸が
+                // 押す直前にずれ（隣の「写真として残す」を押してしまう）、写真の枠も跳ねる
+                if !isExpired(story) {
+                    insightsCard
                 }
 
-                HStack(spacing: 4) {
+                HStack(alignment: .top, spacing: 0) {
                     if !isExpired(story) {
-                        ownAction(symbol: "eye", title: L("反応を見る", "Insights")) { showInsights = true }
-                    }
-                    if !isExpired(story) {
-                        ownAction(symbol: "bubble.left", title: replyTitle(for: story)) {
+                        ownAction(symbol: "bubble.left", title: L("返信", "Replies"),
+                                  badge: replyBadge(for: story),
+                                  accessibilityLabel: replyTitle(for: story)) {
                             showReplies = true
                         }
                     }
@@ -1120,10 +1200,6 @@ struct StoryViewerView: View {
                         showDeleteConfirm = true
                     }
                     .disabled(isSending)
-                }
-                .padding(.top, 4)
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
                 }
             }
             .padding(.horizontal, 16)
@@ -1265,22 +1341,117 @@ struct StoryViewerView: View {
     }
 
     /// 自分のストーリーの足元の操作（絵の下に11ptのラベル・高さ56）
-    private func ownAction(symbol: String, title: String, color: Color = .white,
-                           action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: symbol)
-                    .font(.system(size: 20))
-                Text(title)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+    /// 反応の札。**数は文に埋めず、数と名前を上下に**（「0 人が見ました · いいね 0」と
+    /// 1行に流すと、等幅の数字と本文の字が混ざって読みにくかった）。
+    /// まだ誰も見ていないときは顔の代わりに目の印を置き、0 を並べない
+    private var insightsCard: some View {
+        Button {
+            showInsights = true
+        } label: {
+            HStack(spacing: 14) {
+                if viewersLoaded != true || viewers.isEmpty {
+                    Image(systemName: "eye")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(WebTheme.muted2)
+                        .frame(width: 30, height: 30)
+                        .background(WebTheme.raised, in: Circle())
+                } else {
+                    viewerFaces
+                }
+                if viewersLoaded != true {
+                    // 読み込み中・読めなかった。**数は言わない**（0 と言い切らない）
+                    Text(L("反応を見る", "Insights"))
+                        .font(.system(size: 14))
+                        .foregroundStyle(WebTheme.muted)
+                } else if isQuiet {
+                    Text(L("まだ誰も見ていません", "No views yet"))
+                        .font(.system(size: 14))
+                        .foregroundStyle(WebTheme.muted)
+                } else {
+                    HStack(spacing: 18) {
+                        stat(viewers.count, label: L("見た人", "Viewers"))
+                        // **返信を読めていなければ「いいね」の数は言わない**
+                        // （読めなかった回に空の一覧から「いいね 0」と言い切っていた）
+                        if repliesLoaded {
+                            stat(replies.reactionCount, label: L("いいね", "Likes"))
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(WebTheme.faint)
             }
-            .foregroundStyle(color)
-            .frame(maxWidth: .infinity, minHeight: 56)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 48)
+            .jpGlass(in: RoundedRectangle(cornerRadius: 16))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(insightsLabel)
+        // 読み込み中・失敗は文そのものが「反応を見る」なので、同じ言葉を重ねない
+        .accessibilityHint(viewersLoaded == true ? L("反応を見る", "Show insights") : "")
+    }
+
+    /// 誰も見ておらず、いいねも（読めた範囲で）無い
+    private var isQuiet: Bool {
+        viewers.isEmpty && (!repliesLoaded || replies.reactionCount == 0)
+    }
+
+    private func stat(_ value: Int, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("\(value)")
+                .font(JPFont.mono(17, medium: true))
+                .foregroundStyle(.white)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(WebTheme.muted2)
+        }
+    }
+
+    private var insightsLabel: String {
+        // 画面に出している文と同じことを読む
+        if viewersLoaded != true { return L("反応を見る", "Insights") }
+        if isQuiet { return L("まだ誰も見ていません", "No views yet") }
+        let seen = L("見た人 \(viewers.count)人", "\(viewers.count) viewers")
+        guard repliesLoaded else { return seen }
+        return seen + L("、いいね \(replies.reactionCount)", ", \(replies.reactionCount) likes")
+    }
+
+    /// 操作の丸（写真の上の ✕ と同じガラス）と、下に小さな名前。
+    /// 返信の数は**名前に混ぜず丸の角に**（0 のときは出さない）
+    private func ownAction(symbol: String, title: String, color: Color = .white,
+                           badge: Int? = nil, accessibilityLabel: String? = nil,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(color)
+                    .frame(width: 44, height: 44)
+                    .jpGlass(in: Circle(), border: 0.14)
+                    .overlay(alignment: .topTrailing) {
+                        if let badge, badge > 0 {
+                            Text(badge > 99 ? "99+" : "\(badge)")
+                                .font(JPFont.mono(10, medium: true))
+                                .foregroundStyle(WebTheme.accentText)
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 18, minHeight: 18)
+                                .background(WebTheme.accentBackground, in: Capsule())
+                                .offset(x: 4, y: -2)
+                        }
+                    }
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(color == .white ? WebTheme.muted : color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel ?? title)
     }
 
     // MARK: - 返信の一覧（自分）
@@ -1433,9 +1604,10 @@ struct StoryViewerView: View {
             // 前後へ送っていた回に1本飛ばしたり、同じ1本の見た人・返信を空にしたりする）
             let viewingId = current?.id
             dropped.insert(story.id)
+            onDropped?(story.id)
             let remaining = visible
             if remaining.isEmpty {
-                dismiss()
+                leaveGroup()
             } else if viewingId != story.id,
                       let stay = remaining.firstIndex(where: { $0.id == viewingId }) {
                 // 別の1本を見ている: その1本のまま、位置だけ直す（状態は空にしない）
