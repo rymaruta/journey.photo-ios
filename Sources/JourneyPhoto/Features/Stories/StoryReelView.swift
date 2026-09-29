@@ -42,9 +42,10 @@ struct StoryReelView: View {
     @State private var swipeLocked = false
     /// 払い始めに決めた向き。**離したときもこれを使う**（離した瞬間の移動量で決め直すと、
     /// 横に回していたのに指が下へ流れて閉じる、縮めていたのに横へ流れて回る、が起きた）。
-    /// `onChanged` で `finger.axis` を写す——打ち切られて残っても、次の払いの最初の
-    /// `onChanged` で書き直される
+    /// `onChanged` で `value` から決める（`@GestureState` の反映の順に頼らない）。
+    /// **指が触れた位置が変わったら新しい払い**——打ち切られて残った古い向きを使わない
     @State private var lockedAxis: StoryReel.Axis?
+    @State private var lockedStart: CGPoint?
     /// いま閲覧画面に渡している束。**人が替わるときだけ決め直す**——通報・ブロックの
     /// たびに渡す束を変えると、閲覧画面の中の位置と食い違い、通報した1本や見ていない
     /// 1本に「見た」が飛んだ（7a3894b のレビュー）
@@ -131,10 +132,19 @@ struct StoryReelView: View {
                     state.dx = dx
                     state.dy = dy
                 }
-                .onChanged { _ in lockedAxis = finger.axis }
+                .onChanged { value in
+                    if lockedStart != value.startLocation {
+                        lockedStart = value.startLocation
+                        lockedAxis = nil
+                    }
+                    guard lockedAxis == nil, !turning else { return }
+                    let axis = StoryReel.axis(dx: value.translation.width, dy: value.translation.height)
+                    lockedAxis = (axis == .horizontal && swipeLocked) ? nil : axis
+                }
                 .onEnded { value in
-                    let axis = lockedAxis
+                    let axis = lockedStart == value.startLocation ? lockedAxis : nil
                     lockedAxis = nil
+                    lockedStart = nil
                     guard !turning else { return }
                     let dx = value.translation.width, dy = value.translation.height
                     switch axis {
@@ -219,6 +229,9 @@ struct StoryReelView: View {
             shown = liveGroup(target)
             settleX = 0
             turning = false
+            // 回っている間にその人の束が空になった（削除の完了・ブロックの同期）。
+            // 閲覧画面の無い黒い画面を残さず閉じる（下へ払えば閉じられたが、気づきにくい）
+            if shown == nil { dismiss() }
         }
     }
 }

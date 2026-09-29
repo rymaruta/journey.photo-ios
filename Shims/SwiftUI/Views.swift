@@ -373,6 +373,8 @@ public struct DragGesture: Gesture {
     public struct Value {
         public var translation: CGSize { CGSize(width: 0, height: 0) }
         public var location: CGPoint { CGPoint(x: 0, y: 0) }
+        /// 指が触れた位置（本物と同じ）
+        public var startLocation: CGPoint { CGPoint(x: 0, y: 0) }
         /// 勢いを足した行き着く先（本物と同じ）
         public var predictedEndTranslation: CGSize { CGSize(width: 0, height: 0) }
     }

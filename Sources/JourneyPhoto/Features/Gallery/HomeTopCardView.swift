@@ -39,6 +39,11 @@ struct HomeTopCardView: View {
     /// ——`onAppear` で別の `Task` を立てると、戻った瞬間の `.task` と2本同時に取りに行った
     @State private var returnReloads = 0
     @State private var openedBooks: Set<String> = []
+    /// 「行きたい」の鍵の写し。**ホームに戻ったとき・人が替わったときだけ読み直す**——
+    /// `wishlist.spotIds` をそのまま札に使うと、札から開いたスポットの画面で「行きたい」を
+    /// 押した瞬間に札が差し替わり、押した元のリンクが裏で消えて**開いた画面が閉じる・
+    /// 別のスポットに替わる**（一冊の札で踏んだのと同じ形・311fb3b のレビュー）
+    @State private var wishedKeys: Set<String> = []
     /// 撮影スポットの索引（「この季節の撮影スポット」の札）。**取れなかった回は空のまま**
     /// ——札が出ないだけ。索引は静的な JSON（Lambda を通らない）で、サービスが
     /// 60秒の控えと端末の控えを持つ。**一度取れたら画面が生きている間は取り直さない**
@@ -58,6 +63,7 @@ struct HomeTopCardView: View {
             // 押した元のリンクが消えて一冊の画面が閉じることがある
             .onAppear {
                 openedBooks = opened.ids(for: auth.userId)
+                wishedKeys = wishlist.spotIds
                 if reloadPlansOnReturn {
                     reloadPlansOnReturn = false
                     returnReloads &+= 1
@@ -65,6 +71,7 @@ struct HomeTopCardView: View {
             }
             .onChange(of: auth.userId) { _, userId in
                 openedBooks = opened.ids(for: userId)
+                wishedKeys = wishlist.spotIds
             }
     }
 
@@ -79,7 +86,7 @@ struct HomeTopCardView: View {
     private var content: some View {
         let choices = HomeTopCard.cards(now: Date(), plans: plansOwner == auth.userId ? plans : [],
                                         myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
-                                        wishlist: wishlist.spotIds)
+                                        wishlist: wishedKeys)
         if choices.count == 1, let only = choices.first {
             // 1枚の日はいまと同じ（左右 16 の余白で画面いっぱい）
             card(for: only, inCarousel: false)
@@ -182,7 +189,7 @@ struct HomeTopCardView: View {
                      line: guide,
                      // **写真を出すなら作者とライセンスも出す**（CC BY・CC BY-SA の条件。
                      // 薄い背景でも写真は写真）
-                     detail: [spot.regionLabel, spot.photo?.credit].compactMap { $0 }.joined(separator: "\n"),
+                     detail: Self.spotDetail(spot),
                      backdrop: nil, backdropURL: spot.photo?.url, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
@@ -195,7 +202,7 @@ struct HomeTopCardView: View {
                      title: spot.name,
                      line: guide,
                      // 写真を出すなら作者とライセンスも出す（季節の札と同じ）
-                     detail: [spot.regionLabel, spot.photo?.credit].compactMap { $0 }.joined(separator: "\n"),
+                     detail: Self.spotDetail(spot),
                      backdrop: nil, backdropURL: spot.photo?.url, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
@@ -271,6 +278,13 @@ struct HomeTopCardView: View {
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .accessibilityElement(children: .combine)
         .padding(.horizontal, inCarousel ? 0 : 16)
+    }
+
+    /// スポットの札の小さい行: 地域と、写真の作者・ライセンス。**どちらも無ければ出さない**
+    /// （空の行が並んでいた）
+    private static func spotDetail(_ spot: OfficialSpot) -> String? {
+        let lines = [spot.regionLabel, spot.photo?.credit].compactMap { $0 }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
     private func planTitle(_ plan: TripPlan) -> String {
