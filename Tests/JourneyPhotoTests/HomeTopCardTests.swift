@@ -227,7 +227,7 @@ final class HomeTopCardTests: XCTestCase {
 
     // MARK: - 並び（2026-09-28・owner「1年前の今ごろ、今日のテーマなど両方欲しい」）
 
-    /// 当たる札は**全部**、優先順に並ぶ。今日のテーマは**必ず1枚**（季節の札が無ければ最後）
+    /// 当たる札は**全部**、優先順に並ぶ。今日のテーマは**必ず1枚**（季節の札の後ろ・1年前の前）
     func testAllMatchingCardsAreListedThenTheTheme() throws {
         let departure = plan("dep", start: "2026-09-30")
         let onTrip = plan("on", start: "2026-09-25", end: "2026-09-29")
@@ -263,7 +263,7 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(cards(plans: [plan("d8", start: "2026-10-05")]), [.theme], "8日前から出した")
     }
 
-    // MARK: - 6. この季節の撮影スポット
+    // MARK: - 5. この季節の撮影スポット
 
     /// 索引の1行。`seasons` は `[(季節, 文)]`
     private func spot(_ id: String, stage: String = "published", image: Bool = true,
@@ -339,7 +339,7 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(seasonCards([s]).map(\.slot), ["inSeason", "theme"])
     }
 
-    // MARK: - 5. 行きたい場所のこの季節
+    // MARK: - 4. 行きたい場所のこの季節
 
     private func wishCards(_ spots: [OfficialSpot], wishlist: Set<String>,
                            photos: [Photo] = []) -> [HomeTopCard.Choice] {
