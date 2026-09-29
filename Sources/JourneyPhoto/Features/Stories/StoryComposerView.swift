@@ -147,8 +147,18 @@ struct StoryComposerView: View {
             if let song {
                 NavigationStack {
                     // **曲の札は変えない**（題と歌い手は同じ）。流し始めだけを入れ替える
-                    SongStartSheet(song: song) { picked in self.song = picked }
+                    SongStartSheet(song: song, durationSec: durationSec) { picked in self.song = picked }
+                        .webScreen()
                 }
+                // 中身は短い（画面いっぱいにしない）
+                .presentationDetents([.medium])
+            }
+        }
+        // **表示秒数を延ばしたら、流し始めを収まる所まで引き戻す**（Web と同じ）。
+        // そのままだと、見る人には試聴の終わりの数秒がくり返し鳴る
+        .onChange(of: durationSec) { _, window in
+            if let song, let start = song.startSec, start > Photo.Song.maxStart(window: window) {
+                self.song = song.starting(at: Double(start), window: window)
             }
         }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {

@@ -9,6 +9,8 @@ import SwiftUI
 struct SongStartSheet: View {
 
     let song: Photo.Song
+    /// 表示秒数。**流し始めの上限を決める**（`Photo.Song.maxStart`）
+    let durationSec: Int
     /// 決めたときに、流し始めを入れた曲を渡す
     let onDone: (Photo.Song) -> Void
 
@@ -18,10 +20,11 @@ struct SongStartSheet: View {
     /// この画面で鳴らした回（閉じたときに**自分が鳴らした曲だけ**止める）
     @State private var playedSession: Int?
 
-    init(song: Photo.Song, onDone: @escaping (Photo.Song) -> Void) {
+    init(song: Photo.Song, durationSec: Int, onDone: @escaping (Photo.Song) -> Void) {
         self.song = song
+        self.durationSec = durationSec
         self.onDone = onDone
-        _start = State(initialValue: Double(song.startSec ?? 0))
+        _start = State(initialValue: Double(min(song.startSec ?? 0, Photo.Song.maxStart(window: durationSec))))
     }
 
     private var isPlaying: Bool {
@@ -57,7 +60,7 @@ struct SongStartSheet: View {
             Text(Photo.Song.startLabel(Int(start)))
                 .font(JPFont.mono(15))
                 .foregroundStyle(.white)
-            Slider(value: $start, in: 0...29, step: 1) { editing in
+            Slider(value: $start, in: 0...Double(Photo.Song.maxStart(window: durationSec)), step: 1) { editing in
                 // 動かし終えたら、その位置から鳴らして確かめる
                 if !editing { playFromStart() }
             }
@@ -65,8 +68,8 @@ struct SongStartSheet: View {
             .accessibilityLabel(L("流し始め", "Start point"))
             .accessibilityValue(Photo.Song.startLabel(Int(start)))
 
-            Text(L("30秒の試聴のうち、ここから流します。見る人にもこの位置から流れます。",
-                   "Plays from here within the 30-second preview — viewers hear it from here too."))
+            Text(L("30秒の試聴のうち、ここから表示の\(durationSec)秒ぶん流れます。見る人にもこの位置から流れます。",
+                   "Plays \(durationSec)s from here within the 30-second preview — viewers hear it from here too."))
                 .font(.system(size: 12))
                 .foregroundStyle(WebTheme.muted2)
             Spacer(minLength: 0)
@@ -83,7 +86,7 @@ struct SongStartSheet: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button(L("決める", "Set")) {
-                    onDone(song.starting(at: start))
+                    onDone(song.starting(at: start, window: durationSec))
                     dismiss()
                 }
             }

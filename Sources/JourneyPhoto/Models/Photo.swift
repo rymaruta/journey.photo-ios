@@ -137,11 +137,23 @@ struct Photo: Identifiable, Decodable, Equatable {
             return start > 0 ? start : nil
         }
 
+        /// 試聴の長さ（秒）
+        static let previewSeconds = 30
+
+        /// 流し始めの上限。**表示秒数ぶんが試聴の中に収まる所まで**（Web の `maxSongStart`
+        /// ＝ 30 − 表示秒数・`songTrim.ts`）。越えると、見る人には試聴の終わりの数秒が
+        /// くり返し鳴る（841b917 のレビュー）
+        static func maxStart(window: Int) -> Int {
+            max(0, previewSeconds - max(0, window))
+        }
+
         /// 流し始めを変えた曲（ストーリーの「流し始め」・owner の「自由度が低い」2026-09-29）。
-        /// **丸めはサーバーと同じ `clampStart`**（0 は「頭から」＝無し）
-        func starting(at seconds: Double?) -> Song {
-            Song(title: title, artist: artist, artwork: artwork, previewUrl: previewUrl,
-                 trackUrl: trackUrl, startSec: Self.clampStart(seconds))
+        /// `window`（表示秒数）が収まる所までに寄せ、**丸めはサーバーと同じ `clampStart`**
+        /// （0 は「頭から」＝無し）
+        func starting(at seconds: Double?, window: Int) -> Song {
+            let capped = seconds.map { min($0, Double(Self.maxStart(window: window))) }
+            return Song(title: title, artist: artist, artwork: artwork, previewUrl: previewUrl,
+                        trackUrl: trackUrl, startSec: Self.clampStart(capped))
         }
 
         /// 「0:12 から」の言い方（流し始めを選ぶ画面・曲のメニュー）
