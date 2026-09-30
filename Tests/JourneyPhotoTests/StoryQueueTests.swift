@@ -84,6 +84,8 @@ final class StoryQueueTests: XCTestCase {
     /// 京都から約1.1km（丸めの境目をまたぐ隣のマス）
     private let kyotoNext = Photo.Coords(lat: 35.02, lng: 135.77)
     private let tokyo = Photo.Coords(lat: 35.68, lng: 139.77)
+    /// 京都から約40km
+    private let osaka = Photo.Coords(lat: 34.69, lng: 135.50)
 
     /// 🔴 GPS の無い写真には付けない（その写真の本当の位置ではない）
     func testShotsWithoutGPSGetNoCoords() {
@@ -99,6 +101,34 @@ final class StoryQueueTests: XCTestCase {
     func testFarShotsGetNoCoords() {
         XCTAssertEqual(StoryQueue.coordsToSend([kyoto, tokyo, kyotoNext]), [kyoto, nil, kyotoNext])
         XCTAssertEqual(StoryQueue.coordsToSend([nil, tokyo, kyoto]), [nil, tokyo, nil])
+    }
+
+    /// 🔴 基準は多数派（10km 以内の仲間がいちばん多い写真）。1枚目だけ別の街でも残りを消さない
+    func testBaseIsTheMajority() {
+        XCTAssertEqual(StoryQueue.coordsToSend([osaka, kyoto, kyoto, kyoto]), [nil, kyoto, kyoto, kyoto])
+    }
+
+    /// 並べ替えても、どの写真に座標が付くかは変わらない
+    func testMajorityDoesNotDependOnOrder() {
+        let shots: [Photo.Coords?] = [osaka, kyoto, kyotoNext, nil, kyoto]
+        let expected = shots.map { c -> Photo.Coords? in c == osaka ? nil : c }
+        var orders: [[Int]] = []
+        func permute(_ rest: [Int], _ done: [Int]) {
+            if rest.isEmpty { orders.append(done); return }
+            for (i, x) in rest.enumerated() {
+                var r = rest; r.remove(at: i); permute(r, done + [x])
+            }
+        }
+        permute(Array(shots.indices), [])
+        for order in orders {
+            XCTAssertEqual(StoryQueue.coordsToSend(order.map { shots[$0] }), order.map { expected[$0] }, "\(order)")
+        }
+    }
+
+    /// 仲間の数が同じなら前の写真が基準
+    func testTieGoesToTheEarlierShot() {
+        XCTAssertEqual(StoryQueue.coordsToSend([kyoto, osaka]), [kyoto, nil])
+        XCTAssertEqual(StoryQueue.coordsToSend([osaka, kyoto]), [osaka, nil])
     }
 
     func testNoBaseMeansNoCoords() {
