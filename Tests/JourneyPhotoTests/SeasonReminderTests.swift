@@ -28,6 +28,14 @@ final class SeasonReminderTests: XCTestCase {
         XCTAssertTrue(SeasonReminder.nextSeasonStart(after: date(2026, 3, 1), calendar: calendar) == (2026, 6))
     }
 
+    /// 季節の始まりの日の 9時前に開いたら、その日の朝の知らせのまま（次の季節へ入れ替えて消さない）
+    func testSeasonStartDayBeforeNineKeepsToday() {
+        let at = { (h: Int) in self.calendar.date(from: DateComponents(year: 2026, month: 12, day: 1, hour: h))! }
+        XCTAssertTrue(SeasonReminder.nextSeasonStart(after: at(8), calendar: calendar) == (2026, 12))
+        XCTAssertTrue(SeasonReminder.nextSeasonStart(after: at(9), calendar: calendar) == (2027, 3))
+        XCTAssertTrue(SeasonReminder.nextSeasonStart(after: at(10), calendar: calendar) == (2027, 3))
+    }
+
     func testPlansOnlyWishedPublishedSpotsWithNextSeasonsGuide() throws {
         let a = try spot("sp_a", name: "銀山温泉", seasons: ["winter", "summer"])
         let b = try spot("sp_b", name: "蔵王", seasons: ["winter"])
@@ -74,6 +82,20 @@ final class SeasonReminderTests: XCTestCase {
         XCTAssertEqual(removed.count, 2)
         XCTAssertNil(scheduler.scheduled)
         XCTAssertEqual(added.count, 1)
+    }
+
+    /// 🔴 起動し直したあと（覚えている中身が無い）でも、入れない回は予約を消す
+    /// （ログアウト・通知オフの前に入れた予約が、次の人の端末で前の人の行きたい場所の名前で鳴らない）
+    @MainActor
+    func testNotAllowedAlwaysRemovesEvenAfterRelaunch() async throws {
+        var removed: [[String]] = []
+        let fresh = SeasonReminderScheduler(add: { _ in }, removePending: { removed.append($0) })
+        await fresh.reschedule(nil, allowed: false)
+        XCTAssertEqual(removed, [[SeasonReminder.identifier]])
+        let a = try spot("sp_a", name: "銀山温泉", seasons: ["winter"])
+        let plan = SeasonReminder.plan(now: date(2026, 9, 30), spots: [a], wishlist: [SavedSpotKey.official("sp_a")], calendar: calendar)
+        await fresh.reschedule(plan, allowed: false)
+        XCTAssertEqual(removed.count, 2)
     }
 
     @MainActor

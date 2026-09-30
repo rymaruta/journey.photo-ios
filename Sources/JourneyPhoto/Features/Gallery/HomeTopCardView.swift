@@ -89,6 +89,9 @@ struct HomeTopCardView: View {
                 }
             }
             .onDisappear { isShown = false }
+            // 起動直後は許可の読み込みが索引より遅いことがある（初めは「許可なし」）。分かったときに入れ直す
+            .onChange(of: push.isAuthorized) { _, _ in scheduleSeasonReminder() }
+            .onChange(of: push.isEnabled) { _, _ in scheduleSeasonReminder() }
             .onChange(of: auth.userId) { _, userId in
                 openedBooks = opened.ids(for: userId)
                 wishedKeys = wishlist.spotIds
@@ -362,7 +365,7 @@ struct HomeTopCardView: View {
     /// 索引が取れていない間は触らない（空の索引で前の予約を消さない）
     private func scheduleSeasonReminder() {
         guard !spots.isEmpty else { return }
-        let plan = SeasonReminder.plan(now: Date(), spots: spots, wishlist: wishlist.spotIds, calendar: .current)
+        let plan = SeasonReminder.plan(now: Date(), spots: spots, wishlist: wishlist.spotIds, calendar: SeasonReminder.calendar)
         let allowed = auth.userId != nil && push.isEnabled && push.isAuthorized
         Task { await SeasonReminderScheduler.shared.reschedule(plan, allowed: allowed) }
     }

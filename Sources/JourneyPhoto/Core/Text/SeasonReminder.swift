@@ -32,11 +32,22 @@ enum SeasonReminder {
     /// 何時に鳴らすか（端末の時刻帯）
     static let hour = 9
 
-    /// `now` のあとの最初の季節の始まり（その季節の最初の月の1日）
+    /// 季節を数える暦（**グレゴリオ暦・端末の時刻帯**）。端末の暦のままだとイスラム暦などで月の番号が違い、
+    /// 季節を取り違える（`SpotBodyText.currentSeason` と同じ判断）
+    static var calendar: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = .current
+        return c
+    }
+
+    /// `now` のあとの最初の季節の始まり（その季節の最初の月の1日の `hour` 時）。
+    /// **季節の始まりの日の `hour` 時より前なら、その日**——朝のうちに開いて、その朝の知らせを
+    /// 次の季節へ入れ替えて消していた
     static func nextSeasonStart(after now: Date, calendar: Calendar) -> (year: Int, month: Int) {
-        let c = calendar.dateComponents([.year, .month], from: now)
+        let c = calendar.dateComponents([.year, .month, .day, .hour], from: now)
         let year = c.year ?? 2000
         let month = c.month ?? 1
+        if [3, 6, 9, 12].contains(month), c.day == 1, (c.hour ?? 0) < hour { return (year, month) }
         // 季節の最初の月: 3・6・9・12
         for start in [3, 6, 9, 12] where start > month {
             return (year, start)

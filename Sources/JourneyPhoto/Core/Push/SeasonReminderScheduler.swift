@@ -24,11 +24,16 @@ final class SeasonReminderScheduler {
 
     /// - Parameter allowed: 受け取る設定がオンで、端末の許可があるか
     func reschedule(_ plan: SeasonReminder.Plan?, allowed: Bool) async {
-        let wanted = allowed ? plan : nil
+        guard allowed, let wanted = plan else {
+            // **入れない回は毎回消す**（安い）。覚えている中身はメモリだけなので、起動し直したあと
+            // 「前に入れていない」と思い込んで、ログアウト・通知オフの前に入れた予約を残していた
+            removePending([SeasonReminder.identifier])
+            scheduled = nil
+            return
+        }
         guard wanted != scheduled else { return }
         removePending([SeasonReminder.identifier])
         scheduled = nil
-        guard let wanted else { return }
         let content = UNMutableNotificationContent()
         content.title = wanted.title
         content.body = wanted.body
