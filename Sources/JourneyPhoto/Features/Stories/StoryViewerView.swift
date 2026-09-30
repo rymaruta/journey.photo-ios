@@ -594,20 +594,20 @@ struct StoryViewerView: View {
                         Button {
                             guideSpot = spot
                         } label: {
+                            // **押せる所は文字の幅だけ**（枠で幅を決めると、短い撮影地でも 260pt 広がり、
+                            // 右の「進む」の的を塞いだ）。長い撮影地は文字を詰めて短くする
                             HStack(spacing: 4) {
-                                photoMeta(symbol: "mappin", text: place)
+                                photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(WebTheme.muted)
                                     .jpPhotoTextShadow()
                             }
-                            // **幅に上限**（長い住所の行が右の「進む」の的の下まで塞がないように）
-                            .frame(maxWidth: 260, alignment: .leading)
-                            // **押せる所だけ上下に広げ、並びは変えない**（`minHeight` にすると行が
-                            // 44pt になり、索引が届いた瞬間にひとことの塊が上へ跳ねた）
-                            .padding(.vertical, 12)
+                            // **押せる所だけ上下に広げて 44pt に、並びは変えない**（`minHeight` にすると
+                            // 行が 44pt になり、索引が届いた瞬間にひとことの塊が上へ跳ねた）
+                            .padding(.vertical, 15)
                             .contentShape(Rectangle())
-                            .padding(.vertical, -12)
+                            .padding(.vertical, -15)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(L("撮影地 \(place)。撮影スポットのガイドを開く",

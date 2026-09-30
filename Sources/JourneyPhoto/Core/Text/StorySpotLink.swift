@@ -12,8 +12,8 @@ import Foundation
 ///    「月山富田城」が山形の月山に当たった。部分一致の「索引の中で1件だけ」は、世の中で
 ///    一意という意味ではない）
 ///  - 撮影地の文字に**スポットの名前がそのまま入っている**、または撮影地の最初の区切り
-///    （「高屋神社, 観音寺市, …」の「高屋神社」）が**名前の頭と同じ**（4文字以上。実データの
-///    名前は「高屋神社 本宮（天空の鳥居）」のように後ろが長い）。空白は無視する
+///    （「高屋神社, 観音寺市, …」の「高屋神社」）が**日本語名の最初の語と同じ**（4文字以上。
+///    実データの名前は「高屋神社 本宮（天空の鳥居）」のように後ろが長い）。空白は無視する
 ///  - スポットが **`maxKm` 以内**。いちばん近いもの
 ///  - 下書き（運営未確認）でない
 ///
@@ -28,8 +28,21 @@ enum StorySpotLink {
     /// 名前として当てる最短の文字数（短い名前が地名の一部に当たらないように）
     static let minNameLength = 2
 
-    /// 撮影地の最初の区切りを「名前の頭」として当てる最短の文字数
+    /// 撮影地の最初の区切りを「名前の最初の語」として当てる最短の文字数
     static let minPrefixLength = 4
+
+    /// 日本語名の**空白の前の最初の語**（「高屋神社 本宮（天空の鳥居）」→「高屋神社」）。
+    /// 空白の無い名前は nil（名前そのものは `names` の含み当てで拾う）。
+    ///
+    /// 🔴 **英語名には使わない・頭の一致（前方一致）にしない。** 英語名の頭で当てると「Kyoto」が
+    /// 京都駅ビル、「Helsinki」がヘルシンキ中央駅に、前方一致だと「明治神宮」が明治神宮外苑に
+    /// 結ばれた（eb10587 のレビュー）
+    static func firstWord(of spot: OfficialSpot) -> String? {
+        let outer = splitParentheses(spot.name).outer
+        let words = outer.split(whereSeparator: { $0.isWhitespace })
+        guard words.count >= 2, let first = words.first else { return nil }
+        return squash(String(first))
+    }
 
     static func spot(for story: Story, in spots: [OfficialSpot]) -> OfficialSpot? {
         guard let raw = story.location, let here = story.coords else { return nil }
@@ -44,7 +57,7 @@ enum StorySpotLink {
                 guard !spot.isDraft, let there = spot.coords else { return nil }
                 let names = names(of: spot)
                 let hit = names.contains { place.contains($0) }
-                    || (head.count >= minPrefixLength && names.contains { $0.hasPrefix(head) })
+                    || (head.count >= minPrefixLength && firstWord(of: spot) == head)
                 guard hit else { return nil }
                 let km = TravelDistance.kilometers(from: here, to: there)
                 return km <= maxKm ? (spot, km) : nil
@@ -58,7 +71,9 @@ enum StorySpotLink {
         var out: [String] = []
         func add(_ s: String?) {
             guard let s else { return }
-            let folded = squash(s)
+            // **名前の中の読点・カンマも落とす**——撮影地は区切りで切ってつなぐので、英語名
+            // 「Lake Onuma, Mount Akagi」のようなカンマ入りの名前が本人に当たらなかった
+            let folded = squash(s).filter { $0 != "," && $0 != "、" && $0 != "，" }
             if folded.count >= minNameLength { out.append(folded) }
         }
         add(spot.name)
@@ -81,13 +96,23 @@ enum StorySpotLink {
             .filter { !$0.isEmpty }
     }
 
-    /// 索引が知っている地名（市区町村・都道府県・国）と「日本」。畳んだ形
+    /// 索引が知っている地名（市区町村・都道府県。索引に国があれば国も）と「日本」。畳んだ形。
+    /// **「市・町・村・区・郡・県・都・府」を外した形も入れる**（「近江八幡市」→「近江八幡」。
+    /// 撮影地に「近江八幡」とだけ書くと、名前の最初の語が同じ八幡堀に結ばれた）。
+    /// 2文字未満になるもの・**スポットの名前そのものになるもの**（「姫島村」→「姫島」＝島のスポット）は入れない
     static func areaNames(in spots: [OfficialSpot]) -> Set<String> {
         var out: Set<String> = ["日本", "japan"]
+        let suffixes: Set<Character> = ["市", "町", "村", "区", "郡", "県", "都", "府"]
+        let spotNames = Set(spots.flatMap { [squash($0.name), squash(splitParentheses($0.name).outer)] })
         for spot in spots {
             for name in [spot.region?.prefecture, spot.region?.city, spot.region?.country].compactMap({ $0 }) {
                 let folded = squash(name)
-                if !folded.isEmpty { out.insert(folded) }
+                guard !folded.isEmpty else { continue }
+                out.insert(folded)
+                if let last = folded.last, suffixes.contains(last), folded.count >= 3 {
+                    let bare = String(folded.dropLast())
+                    if !spotNames.contains(bare) { out.insert(bare) }
+                }
             }
         }
         return out
@@ -112,4 +137,13 @@ enum StorySpotLink {
         }
         return (outer.trimmingCharacters(in: .whitespaces), inner.filter { !$0.isEmpty })
     }
+
+    /// 押せる撮影地の行に出す文字の上限（これを超えたら詰めて「…」）
+    static let maxShownLength = 20
+
+    /// 押せる行は文字の幅だけ当たり判定を持つので、**長い撮影地は文字の側で詰める**
+    static func shortened(_ place: String) -> String {
+        place.count > maxShownLength ? String(place.prefix(maxShownLength - 1)) + "…" : place
+    }
 }
+

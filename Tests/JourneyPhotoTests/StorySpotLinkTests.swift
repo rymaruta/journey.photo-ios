@@ -51,6 +51,49 @@ final class StorySpotLinkTests: XCTestCase {
                        "pantheon-paris", "同じ括弧を持つ別の名所に取られない")
     }
 
+    /// 🔴 括弧の中の語は、**地名に無い語でも**別名にしない（前の試験は「パリ」が地名として
+    /// 先に落ち、括弧の規則まで届いていなかった）
+    func testParenthesizedWordOutsideAreasIsNotAnAlias() {
+        let temple = spot("todaiji", name: "東大寺（奈良公園）", lat: 34.69, lng: 135.84)
+        XCTAssertNil(StorySpotLink.spot(for: story(location: "奈良公園", lat: 34.69, lng: 135.84), in: [temple]))
+    }
+
+    /// 🔴 英語の都市名だけの撮影地は結ばない（英語名の頭で「Kyoto」→ 京都駅ビル だった）
+    func testEnglishCityNameDoesNotLink() {
+        let station = spot("kyoto-station", name: "京都駅ビル 大階段", nameEn: "Kyoto Station Building",
+                           lat: 34.99, lng: 135.76, prefecture: "京都府", city: "京都市")
+        let helsinki = spot("helsinki-central", name: "ヘルシンキ中央駅", nameEn: "Helsinki Central Station",
+                            lat: 60.17, lng: 24.94, prefecture: "ウーシマー県", city: "ヘルシンキ")
+        XCTAssertNil(StorySpotLink.spot(for: story(location: "Kyoto", lat: 34.99, lng: 135.76), in: [station]))
+        XCTAssertNil(StorySpotLink.spot(for: story(location: "Kyoto, Japan", lat: 34.99, lng: 135.76), in: [station]))
+        XCTAssertNil(StorySpotLink.spot(for: story(location: "Helsinki, Finland", lat: 60.17, lng: 24.94), in: [helsinki]))
+        XCTAssertEqual(StorySpotLink.spot(for: story(location: "Kyoto Station Building", lat: 34.99, lng: 135.76),
+                                          in: [station])?.slug, "kyoto-station", "英語名そのものなら結ぶ")
+        let onuma = spot("onuma", name: "赤城大沼", nameEn: "Lake Onuma, Mount Akagi", lat: 36.55, lng: 139.18)
+        XCTAssertEqual(StorySpotLink.spot(for: story(location: "Lake Onuma, Mount Akagi", lat: 36.55, lng: 139.18),
+                                          in: [onuma])?.slug, "onuma", "カンマ入りの英語名もそのものなら結ぶ")
+    }
+
+    /// 名前の最初の語と**完全に同じ**ときだけ（前方一致だと「明治神宮」→ 明治神宮外苑 だった）。
+    /// 市町村の接尾辞を外した地名（「近江八幡」）でも結ばない
+    func testFirstWordMustMatchExactlyAndNotBeAPlace() {
+        let gaien = spot("gaien", name: "明治神宮外苑 いちょう並木", lat: 35.67, lng: 139.72)
+        let jingu = spot("meiji-jingu", name: "明治神宮", lat: 35.68, lng: 139.70)
+        XCTAssertEqual(StorySpotLink.spot(for: story(location: "明治神宮", lat: 35.67, lng: 139.72), in: [gaien, jingu])?.slug,
+                       "meiji-jingu")
+        XCTAssertNil(StorySpotLink.spot(for: story(location: "明治神宮", lat: 35.67, lng: 139.72), in: [gaien]))
+        let hori = spot("hachiman-bori", name: "近江八幡 八幡堀", lat: 35.14, lng: 136.09,
+                        prefecture: "滋賀県", city: "近江八幡市")
+        XCTAssertNil(StorySpotLink.spot(for: story(location: "近江八幡", lat: 35.14, lng: 136.09), in: [hori]))
+    }
+
+    func testShortenedPlace() {
+        XCTAssertEqual(StorySpotLink.shortened("高屋神社"), "高屋神社")
+        let long = String(repeating: "あ", count: 30)
+        XCTAssertEqual(StorySpotLink.shortened(long).count, StorySpotLink.maxShownLength)
+        XCTAssertTrue(StorySpotLink.shortened(long).hasSuffix("…"))
+    }
+
     /// 🔴 市区町村・都道府県だけの撮影地は結ばない（名前が地名の一部でも）
     func testAreaOnlyLocationDoesNotLink() {
         let himeshima = spot("himeshima", name: "姫島", lat: 33.72, lng: 131.64, prefecture: "大分県", city: "姫島村")
