@@ -53,8 +53,11 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
         // **ベルの数も合わせる。** バナーだけ出してベルが古い数のままだと、
-        // 前面に戻るかお知らせを開くまで届いたことが数に出なかった
-        await MainActor.run { NotificationRouter.shared.noteArrival() }
+        // 前面に戻るかお知らせを開くまで届いたことが数に出なかった。
+        // 見頃のお知らせ（端末の中の予約）はお知らせの出来事ではないので数え直さない
+        if (notification.request.content.userInfo["kind"] as? String) != SeasonReminder.kind {
+            await MainActor.run { NotificationRouter.shared.noteArrival() }
+        }
         return [.banner, .list, .sound, .badge]
     }
 
@@ -67,6 +70,8 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        // 見頃のお知らせ（端末の中で予約したもの）はお知らせ画面の出来事ではない——開くだけにする
+        if (response.notification.request.content.userInfo["kind"] as? String) == SeasonReminder.kind { return }
         await MainActor.run { NotificationRouter.shared.openActivity() }
     }
 }
