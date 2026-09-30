@@ -14,6 +14,7 @@ struct TripBookView: View {
     var isPublic: (Photo) -> Bool = { _ in false }
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     /// 共有する1枚の画像（`TripBookCard`）。**作れるまでは文だけを配る**（表紙が読めない・圏外でも共有できる）
     @State private var cardURL: URL?
 
@@ -55,13 +56,19 @@ struct TripBookView: View {
         }
         // 開いたときに1回だけ作っておく（押してから待たせない）。同じ旅なら同じファイルを上書き。
         // **表紙・枚数が変わったら作り直す**（表紙はいいねの数で選ぶので、写真が同じでも替わる）
-        .task(id: "\(trip.id)|\(trip.cover?.id ?? "")|\(trip.photos.count)") { cardURL = await makeCard() }
+        // **人が替わったら作り直す**（サインアウトしても この画面は残る。前の人の画像を指したままにしない）
+        .task(id: "\(trip.id)|\(trip.cover?.id ?? "")|\(trip.photos.count)|\(auth.userId ?? "")") {
+            cardURL = nil
+            cardURL = await makeCard()
+        }
 
     }
 
     /// 共有する1枚を作って、端末の一時置き場に書く。**作れなければ nil**（文で共有する）。
     /// 描くのは**画面の処理の外で**（写真の展開と JPEG の書き出しで画面を引っかけない）
     private func makeCard() async -> URL? {
+        let owner = auth.userId
+        guard owner != nil else { return nil }
         var cover: Data?
         if let url = trip.cover?.detailImageURL {
             cover = await TripBookCardRenderer.coverData(url)
@@ -72,7 +79,9 @@ struct TripBookView: View {
         let data = await Task.detached(priority: .utility) {
             TripBookCardRenderer.render(lines, cover: cover, focal: focal)
         }.value
-        guard !Task.isCancelled, !data.isEmpty else { return nil }
+        // 🔴 **作っている間に人が替わっていたら書かない**。サインアウトの片付け（`TripBookCard.removeAll`）の
+        // 後に書くと、前の人の表紙の写真が次の人の端末に残った（6ff1954 のレビュー）
+        guard !Task.isCancelled, !data.isEmpty, auth.userId == owner, owner != nil else { return nil }
         return TripBookCard.write(data, for: trip)
     }
 
