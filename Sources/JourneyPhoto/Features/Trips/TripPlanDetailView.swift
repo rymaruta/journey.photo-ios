@@ -502,14 +502,14 @@ struct TripPlanDetailView: View {
         return Menu {
             Button {
                 guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
-                      let next = TripPlanEdit.moveUp(days, day: di, item: at) else { return }
-                apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at) 番目へ", "Moved \(name) to position \(at) on day \(di + 1)"))
+                      let next = TripPlanEdit.moveUp(days, day: di, item: at) else { return notMoved(name) }
+                apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at) 番目へ移しました", "Moved \(name) to position \(at) on day \(di + 1)"))
             } label: { Label(L("上へ", "Move up"), systemImage: "arrow.up") }
             .disabled(!canUp)
             Button {
                 guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
-                      let next = TripPlanEdit.moveDown(days, day: di, item: at) else { return }
-                apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at + 2) 番目へ", "Moved \(name) to position \(at + 2) on day \(di + 1)"))
+                      let next = TripPlanEdit.moveDown(days, day: di, item: at) else { return notMoved(name) }
+                apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at + 2) 番目へ移しました", "Moved \(name) to position \(at + 2) on day \(di + 1)"))
             } label: { Label(L("下へ", "Move down"), systemImage: "arrow.down") }
             .disabled(!canDown)
             if !targets.isEmpty {
@@ -517,7 +517,7 @@ struct TripPlanDetailView: View {
                     ForEach(targets, id: \.self) { to in
                         Button(L("\(to + 1) 日目", "Day \(to + 1)")) {
                             guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
-                                  let next = TripPlanEdit.moveToDay(days, day: di, item: at, toDay: to) else { return }
+                                  let next = TripPlanEdit.moveToDay(days, day: di, item: at, toDay: to) else { return notMoved(name) }
                             apply(next, said: L("「\(name)」を \(to + 1) 日目へ移しました", "Moved \(name) to day \(to + 1)"))
                         }
                     }
@@ -549,9 +549,19 @@ struct TripPlanDetailView: View {
     /// 同時に出した読み上げは割り込まれて消えることがある
     private func apply(_ next: [TripDay], said: String) {
         days = next
+        announce(said)
+    }
+
+    /// 押したときに項目が見つからなかった（メニューを開いている間に日程が差し替わった）。
+    /// **黙って何もしないと、押しても効かなかったように聞こえる**ので読み上げで伝える
+    private func notMoved(_ name: String) {
+        announce(L("「\(name)」は日程が変わったため動かせませんでした", "\(name) couldn't be moved because the plan changed"))
+    }
+
+    private func announce(_ text: String) {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 400_000_000)
-            UIAccessibility.post(notification: .announcement, argument: said)
+            UIAccessibility.post(notification: .announcement, argument: text)
         }
     }
 

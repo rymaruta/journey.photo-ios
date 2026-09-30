@@ -147,5 +147,8 @@ final class TripPlanEditTests: XCTestCase {
         // 2つ目の b を開いている間に a が外れた → [b, b] の後ろの方
         let bb = [TripDay(items: [s("b"), s("b")])]
         XCTAssertEqual(TripPlanEdit.locate(bb, day: 0, item: 2, original: s("b")), 1)
+        // 近い方と後ろの方が違う形（後ろの方を返す作りを見分ける）
+        let abcb = [TripDay(items: [s("a"), s("b"), s("c"), s("b")])]
+        XCTAssertEqual(TripPlanEdit.locate(abcb, day: 0, item: 0, original: s("b")), 1)
     }
 }
