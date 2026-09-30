@@ -88,4 +88,22 @@ final class BlockFilterTests: XCTestCase {
         XCTAssertEqual(before.viewers(viewers).map(\.userId), ["a", "b"])
         XCTAssertEqual(after.viewers(viewers).map(\.userId), ["b"])
     }
+
+    /// 🔴 **フォロー一覧で人をブロックして戻っても、その人の行が残っていた**
+    /// （押すと「フォローする」が 400）。開いた時点の写しは残し、取り直した写しは落とす
+    @MainActor
+    func testFollowListDropsBlockedUsersOnRetake() async {
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        store.use(userId: "me")
+        let before = store.snapshot
+        store.block("a")
+        let after = store.snapshot
+
+        let users = [
+            FollowUser(id: "a", name: "A", deleted: nil),
+            FollowUser(id: "b", name: "B", deleted: nil),
+        ]
+        XCTAssertEqual(before.follows(users).map(\.id), ["a", "b"])
+        XCTAssertEqual(after.follows(users).map(\.id), ["b"])
+    }
 }
