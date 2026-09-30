@@ -89,7 +89,7 @@ struct StoryService {
             _ = try await createRecord(media, caption: job.caption, location: job.location,
                                        coords: job.coords, song: job.song,
                                        durationSec: job.durationSec, archive: job.archive,
-                                       allowReplies: job.allowReplies)
+                                       allowReplies: job.allowReplies, texts: job.texts)
         } catch {
             failure = error
         }
@@ -164,7 +164,8 @@ struct StoryService {
     @discardableResult
     func createRecord(_ media: UploadedMedia, caption: String?, location: String?,
                       coords: Photo.Coords?, song: Photo.Song? = nil, durationSec: Int? = nil,
-                      archive: Bool = false, allowReplies: Bool = true) async throws -> Story? {
+                      archive: Bool = false, allowReplies: Bool = true,
+                      texts: [StoryPostText]? = nil) async throws -> Story? {
         struct Body: Encodable {
             let publicUrl: String
             let caption: String?
@@ -183,6 +184,9 @@ struct StoryService {
             /// 返信を受けるか。**切ったときだけ `false` を送る**（Web の `StoriesBar` と同じ）
             /// ——サーバーは `false` のときだけ返信と ♡ を断る（`storyAllowsReplies`）
             let allowReplies: Bool?
+            /// 写真の上にデータで置くもの（投票など）。**送ると、サーバーは `caption` を
+            /// この中の文字から作り直す**（`StoryPostText.caption` の注釈）
+            let texts: [StoryPostText]?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
@@ -195,7 +199,8 @@ struct StoryService {
             song: song,
             durationSec: Self.storedDuration(durationSec),
             archive: archive ? true : nil,
-            allowReplies: allowReplies ? nil : false
+            allowReplies: allowReplies ? nil : false,
+            texts: texts?.isEmpty == false ? texts : nil
         )
         return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
     }
@@ -257,6 +262,14 @@ struct StoryService {
         try await api.authorizedVoid(.post, "/stories/\(encoded(id))/replies", body: Body(emoji: emoji))
     }
 
+    /// 投票スタンプに票を入れる（`POST /stories/{id}/vote`・`choice` は "a" か "b"）。
+    /// **1人1票・入れ直せない**（サーバーが断る）。返りは入れたあとの票の状態
+    func vote(id: String, choice: String) async throws -> StoryVoteState {
+        struct Body: Encodable { let choice: String }
+        return try await api.authorized(.post, "/stories/\(encoded(id))/vote", body: Body(choice: choice),
+                                        as: StoryVoteState.self)
+    }
+
     /// 24時間で消える前に、自分の写真として残す。
     func keep(id: String) async throws {
         try await api.authorizedVoid(.post, "/stories/\(encoded(id))/keep")
@@ -289,8 +302,20 @@ struct Story: Decodable, Identifiable, Equatable {
     /// 「アーカイブに自動保存」の印。**本人にだけ返る**（`stories.ts`）。
     /// この投稿は写真として残せない（`storyKeep.ts` が 409）
     let archive: Bool?
+    /// 写真の上に**データで**置いたもの（文字・スタンプ・投票・`StoryTextItem`）。
+    /// 置いていなければ空。**読んでいなかったので、Web で置いた文字も投票もアプリでは
+    /// 見えなかった**
+    let texts: [StoryTextItem]
+    /// 票の状態（投票のあるストーリーにだけ付く）。**数は投稿者と入れた人にだけ返る**
+    let vote: StoryVoteState?
 
     var imageURL: URL? { URL(string: src) }
+
+    /// 投票（1つだけ）。無ければ nil
+    var voteItem: StoryTextItem.Vote? {
+        for item in texts { if case .vote(let v) = item { return v } }
+        return nil
+    }
 
     /// 返信欄と ♡ を出すか（Web の `item?.allowReplies !== false` と同じ）
     var acceptsReplies: Bool { allowReplies != false }
@@ -308,7 +333,7 @@ struct Story: Decodable, Identifiable, Equatable {
     }
     private enum CodingKeys: String, CodingKey {
         case id, src, userId, displayName, caption, mediaType, location, coords
-        case createdAt, expiresAt, replyCount, durationSec, song, allowReplies, archive
+        case createdAt, expiresAt, replyCount, durationSec, song, allowReplies, archive, texts, vote
     }
 
     /// **曲だけは壊れていても捨てる。** 一覧は配列1本で復号するので、
@@ -332,6 +357,10 @@ struct Story: Decodable, Identifiable, Equatable {
         // 形が崩れていても一覧ごと落とさない（読めなければ既定＝受ける）
         allowReplies = (try? c.decodeIfPresent(Bool.self, forKey: .allowReplies)) ?? nil
         archive = (try? c.decodeIfPresent(Bool.self, forKey: .archive)) ?? nil
+        // **壊れた1つで一覧ごと落とさない**（1つずつ読み、読めないものは捨てる）
+        let raws = ((try? c.decodeIfPresent([StoryTextItem.Lossy].self, forKey: .texts)) ?? nil) ?? []
+        texts = StoryTextItem.parseList(raws.compactMap(\.raw))
+        vote = (try? c.decodeIfPresent(StoryVoteState.self, forKey: .vote)) ?? nil
     }
 }
 

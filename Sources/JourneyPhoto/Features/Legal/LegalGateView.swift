@@ -43,7 +43,8 @@ struct LegalGateView: View {
 
     private var heading: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("JOURNEY PHOTO").font(JPFont.mono(11)).tracking(1.6).foregroundStyle(WebTheme.accent).accessibilityHidden(true)
+            // 眉ラベルは**白**（写真の上に重なる・CLAUDE.md「白のまま: 規約の眉ラベル」）
+            Text("JOURNEY PHOTO").font(JPFont.mono(11)).tracking(1.6).foregroundStyle(WebTheme.text).accessibilityHidden(true)
             Text(L("次に撮りたい場所が、見つかる。", "Find the place you want to photograph next."))
                 .font(JPFont.display(32, relativeTo: .largeTitle)).foregroundStyle(WebTheme.text).accessibilityAddTraits(.isHeader).fixedSize(horizontal: false, vertical: true)
             Text(L("写真から旅が始まり、旅がまた写真になる。", "Let a photo start the journey — and the journey become your next photo."))

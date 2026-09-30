@@ -46,6 +46,11 @@ final class StoryDraftStore: ObservableObject {
         /// 「返信を許可」。**切ったときだけ `false` を持つ**——前の版の下書きには無い
         /// （nil＝許可。既定と同じ）
         var allowReplies: Bool?
+        /// 1枚目の写真の合わせ方（拡大・位置・回し）。合わせていなければ nil
+        /// （前の版の下書きにも無い）
+        var framing: PhotoFraming?
+        /// 1枚目の投票。置いていなければ nil
+        var vote: StoryVoteDraft?
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -55,7 +60,7 @@ final class StoryDraftStore: ObservableObject {
         /// 並びの全部（1枚目＋2枚目以降）。**並びの順がそのまま出る順**
         var shots: [Shot] {
             [Shot(imageFile: imageFile, fileName: fileName, contentType: contentType,
-                  latitude: latitude, longitude: longitude, overlays: overlays)]
+                  latitude: latitude, longitude: longitude, overlays: overlays, framing: framing, vote: vote)]
                 + (extraShots ?? [])
         }
     }
@@ -68,6 +73,10 @@ final class StoryDraftStore: ObservableObject {
         var latitude: Double?
         var longitude: Double?
         var overlays: [TextOverlay]
+        /// 写真の合わせ方。合わせていなければ nil（前の版の下書きにも無い）
+        var framing: PhotoFraming?
+        /// 投票（写真1枚に1つ）。置いていなければ nil
+        var vote: StoryVoteDraft?
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -82,6 +91,8 @@ final class StoryDraftStore: ObservableObject {
         var contentType: String
         var coords: Photo.Coords?
         var overlays: [TextOverlay]
+        var framing: PhotoFraming? = nil
+        var vote: StoryVoteDraft? = nil
     }
 
     @Published private(set) var draft: Draft?
@@ -254,7 +265,8 @@ final class StoryDraftStore: ObservableObject {
         }
         let shots = zip(inputs, files).map { input, file in
             Shot(imageFile: file, fileName: input.fileName, contentType: input.contentType,
-                 latitude: input.coords?.lat, longitude: input.coords?.lng, overlays: input.overlays)
+                 latitude: input.coords?.lat, longitude: input.coords?.lng, overlays: input.overlays,
+                 framing: input.framing, vote: input.vote)
         }
         let first = shots[0]
         let saved = Draft(imageFile: first.imageFile, fileName: first.fileName,
@@ -264,7 +276,8 @@ final class StoryDraftStore: ObservableObject {
                           song: song, durationSec: durationSec, savedAt: savedAt,
                           extraShots: shots.count > 1 ? Array(shots.dropFirst()) : nil,
                           archive: archive ? true : nil,
-                          allowReplies: allowReplies ? nil : false)
+                          allowReplies: allowReplies ? nil : false,
+                          framing: first.framing, vote: first.vote)
         guard let data = try? JSONEncoder().encode(saved) else {
             for file in written {
                 try? FileManager.default.removeItem(at: fileURL(file))

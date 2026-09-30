@@ -21,6 +21,8 @@ struct StoryMedia: View {
     /// 写真の読み込みが片付いた（出た＝true・出せない＝false）。
     /// 動画には出どころが無いので呼ばない
     var onSettled: ((Bool) -> Void)? = nil
+    /// 写真が敷かれた大きさ（縦横比を知る口・`RemoteImage.onLayout`）。動画には来ない
+    var onImageLayout: ((CGSize) -> Void)? = nil
 
     var body: some View {
         if story.isVideo, let url = story.imageURL {
@@ -28,7 +30,7 @@ struct StoryMedia: View {
         } else {
             // **画面いっぱいに敷く**（板は `object-fit: cover`）。はみ出しは
             // 閲覧画面が切る
-            RemoteImage(url: story.imageURL, contentMode: .fill, onSettled: onSettled)
+            RemoteImage(url: story.imageURL, contentMode: .fill, onSettled: onSettled, onLayout: onImageLayout)
                 // **URL が読めない1本は「出せない」と知らせる。** `RemoteImage` は URL が
                 // 無いと目印を出すだけで `onSettled` を呼ばないので、閲覧画面は絵を待った
                 // まま時計を止め、その1本で永久に固まっていた

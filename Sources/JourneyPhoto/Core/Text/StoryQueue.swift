@@ -28,6 +28,16 @@ enum StoryQueue {
         return current
     }
 
+    /// 1枚を `from` から `to` へ移したあと、どれを編集するか（owner の「自由度が低い」・
+    /// 2026-09-29 で並べ替えを足した）。**編集していた写真を追いかける**——添字のままだと、
+    /// 移した瞬間に画面の絵と触っている文字がずれる（外すときと同じ理由）
+    static func currentAfterMoving(from: Int, to: Int, current: Int) -> Int {
+        if current == from { return to }
+        if from < current && to >= current { return current - 1 }
+        if from > current && to <= current { return current + 1 }
+        return current
+    }
+
     /// 途中で失敗したあと、出せたぶんを並びから外す。**id で外す**——
     /// 送っている間に並びが変わると、数で先頭から外す形は範囲外で落ちる
     static func dropPosted<Item: Identifiable>(_ items: [Item], posted: Set<Item.ID>) -> [Item] {

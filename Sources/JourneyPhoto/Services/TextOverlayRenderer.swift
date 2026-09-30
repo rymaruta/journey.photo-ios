@@ -18,12 +18,15 @@ import UIKit
 /// 引き継がない）。
 enum TextOverlayRenderer {
 
-    /// 焼き込んだ JPEG。文字が無ければ**元のデータをそのまま返す**
+    /// 焼き込んだ JPEG。文字が無く写真も合わせていなければ**元のデータをそのまま返す**
     /// （読み書きの往復で画質を落とさない）。
-    static func burn(_ overlays: [TextOverlay], into data: Data,
+    ///
+    /// `framing` は写真の合わせ方（拡大・位置・回し・`PhotoFraming`）。**枠の大きさは元の
+    /// 写真のまま**で、その中へ合わせたとおりに描き、届かない所は黒で埋める
+    static func burn(_ overlays: [TextOverlay], framing: PhotoFraming = .identity, into data: Data,
                      quality: Double = ImagePreparer.jpegQuality) -> Data {
         let visible = overlays.filter { !$0.isEmpty }
-        guard !visible.isEmpty, let image = UIImage(data: data) else { return data }
+        guard !visible.isEmpty || !framing.isIdentity, let image = UIImage(data: data) else { return data }
         let size = image.size
         guard size.width > 0, size.height > 0 else { return data }
 
@@ -35,7 +38,21 @@ enum TextOverlayRenderer {
         format.scale = 1
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.jpegData(withCompressionQuality: quality) { context in
-            image.draw(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            if framing.isIdentity {
+                image.draw(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            } else {
+                // 写真の届かない所は黒（作る画面の地と同じ）
+                UIColor.black.setFill()
+                UIRectFill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
+                let place = framing.placement(in: size)
+                let cg = context.cgContext
+                cg.saveGState()
+                cg.translateBy(x: place.center.x, y: place.center.y)
+                cg.rotate(by: framing.rotation)
+                image.draw(in: CGRect(x: -place.drawSize.width / 2, y: -place.drawSize.height / 2,
+                                      width: place.drawSize.width, height: place.drawSize.height))
+                cg.restoreGState()
+            }
             for overlay in visible {
                 draw(overlay, on: size, context: context.cgContext)
             }
@@ -47,9 +64,31 @@ enum TextOverlayRenderer {
         // 横長と縦長で同じ指定が別の見え方になる。編集画面と同じ関数を通す
         let fontSize = TextOverlay.fontSize(overlay.size, in: size)
         let (attributes, edge) = attributes(for: overlay, fontSize: fontSize)
-        // 場所と曲は印（📍 ♪）を頭に付けて焼く
-        let text = overlay.displayText as NSString
-        let bounds = text.size(withAttributes: attributes)
+        // 場所と曲は印（📍 ♪）を頭に付けて焼く。最後の改行は落とす（`drawnText`）
+        let text = overlay.drawnText as NSString
+        // **改行した文字は段落として描く**（揃えは段落の揃え）。行の送りは字の組み方
+        // （代わりに使われる字・絵文字の高さ）に任せる——編集画面の `Text` と同じ仕組み。
+        // 1行は これまでどおり `draw(at:)`（見た目を変えない）
+        let multiline = overlay.drawnText.contains("\n")
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = Self.textAlignment(overlay.align)
+        func lines(_ attrs: [NSAttributedString.Key: Any]) -> NSAttributedString {
+            var merged = attrs
+            merged[.paragraphStyle] = paragraph
+            return NSAttributedString(string: overlay.drawnText, attributes: merged)
+        }
+        let bounds: CGSize = {
+            guard multiline else { return text.size(withAttributes: attributes) }
+            // **測るのは揃えを付けずに**（行の幅は揃えに関係ない）。中央・右の段落を
+            // 果てしなく広い枠で測ると、寄せる計算で桁が落ちるおそれがある（6e76bf5 のレビュー）。
+            // 揃えは描くときだけ付ける
+            // 枠は**有限の広さ**で測る（右から左の文字は揃えの既定が右寄せになり、果てしない枠だと
+            // 同じ桁落ちが起きうる・ec4645b のレビュー）。写真の画素より十分広い
+            let rect = NSAttributedString(string: overlay.drawnText, attributes: attributes).boundingRect(
+                with: CGSize(width: 100_000, height: 100_000),
+                options: .usesLineFragmentOrigin, context: nil)
+            return CGSize(width: rect.width.rounded(.up), height: rect.height.rounded(.up))
+        }()
         // 位置は中心で持っている（0...1 の相対値）。**回しは中心の周りで**
         // （編集画面の `rotationEffect` も中心の周り）
         let center = overlay.center(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
@@ -70,10 +109,26 @@ enum TextOverlayRenderer {
         // **縁を先に、塗りを上に。** 負の `strokeWidth`（塗り＋縁を1回で）は縁が字の
         // 輪郭の内側にも食い込み、編集画面（縁を外側にだけ敷く）より字が細く焼ける。
         // 正の幅（縁だけ）で描いてから塗りを重ね、内側の半分を隠す
-        if let edge {
-            text.draw(at: origin, withAttributes: edge)
+        if multiline {
+            let box = CGRect(origin: origin, size: bounds)
+            if let edge {
+                lines(edge).draw(with: box, options: .usesLineFragmentOrigin, context: nil)
+            }
+            lines(attributes).draw(with: box, options: .usesLineFragmentOrigin, context: nil)
+        } else {
+            if let edge {
+                text.draw(at: origin, withAttributes: edge)
+            }
+            text.draw(at: origin, withAttributes: attributes)
         }
-        text.draw(at: origin, withAttributes: attributes)
+    }
+
+    static func textAlignment(_ align: TextOverlay.Align) -> NSTextAlignment {
+        switch align {
+        case .leading: return .left
+        case .center: return .center
+        case .trailing: return .right
+        }
     }
 
     /// 塗りの属性と、縁だけの属性（縁が無ければ nil）

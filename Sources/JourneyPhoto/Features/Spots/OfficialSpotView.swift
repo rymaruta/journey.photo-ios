@@ -272,7 +272,9 @@ struct OfficialSpotView: View {
     private func journeyStep(_ icon: String, _ title: String) -> some View {
         VStack(spacing: 5) {
             Image(systemName: icon).font(.system(size: 15, weight: .medium)).foregroundStyle(WebTheme.accent)
-            Text(title).font(.caption2.weight(.medium)).foregroundStyle(WebTheme.muted2).lineLimit(1)
+            // 本文の最小は 12pt（CLAUDE.md）
+            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(WebTheme.muted2)
+                .multilineTextAlignment(.center).lineLimit(2)
         }.frame(maxWidth: .infinity)
     }
 

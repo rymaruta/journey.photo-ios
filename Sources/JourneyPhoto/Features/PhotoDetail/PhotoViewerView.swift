@@ -59,7 +59,7 @@ struct PhotoViewerView: View {
                 ForEach(Array(photos.enumerated()), id: \.offset) { offset, photo in
                     let shown = offset == index
                     RemoteImage(url: photo.detailImageURL, contentMode: .fit,
-                                onFittedSize: { size in fitted[offset] = size })
+                                onLayout: { size in fitted[offset] = size })
                         // **拡大・移動は見ている1枚にだけ掛ける**（送りの途中で隣が拡大されて見えない）
                         .scaleEffect(shown ? zoom.liveScale(pinch: pinch) : 1)
                         .offset(x: shown ? Double(liveOffset.width) : 0, y: shown ? Double(liveOffset.height) : 0)
