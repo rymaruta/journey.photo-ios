@@ -206,7 +206,8 @@ struct StoryComposerView: View {
                 showPendingFailure = true
                 // 下書きの問いは出ない＝答えていない。消さずに次へ持ち越す
                 if prepared == nil { unansweredDraftStamp = drafts.draft?.savedAt }
-            } else if drafts.draft != nil, prepared == nil {
+            } else if Self.asksRestore(draftStamp: drafts.draft?.savedAt, hasShot: prepared != nil,
+                                       sendingDraftStamp: uploads.pendingDraftStamp) {
                 showRestore = true
             }
         }
@@ -1014,6 +1015,13 @@ struct StoryComposerView: View {
     nonisolated static func keepsDraft(stamp: String?, keptStamp: String?, unansweredStamp: String?) -> Bool {
         guard let stamp else { return false }   // 守る下書きがもう無い
         return stamp == keptStamp || stamp == unansweredStamp
+    }
+
+    /// 開いたときに「続きから」を尋ねるか。**裏で送っている最中の下書きには尋ねない**
+    /// ——送り終えるまで下書きは残るので、尋ねると同じ投稿をもう1本出しやすい
+    nonisolated static func asksRestore(draftStamp: String?, hasShot: Bool, sendingDraftStamp: String?) -> Bool {
+        guard let draftStamp, !hasShot else { return false }
+        return draftStamp != sendingDraftStamp
     }
 
     /// この画面から下書きに保存してよいか。**残すと決めた（まだ答えていない）下書きがある
