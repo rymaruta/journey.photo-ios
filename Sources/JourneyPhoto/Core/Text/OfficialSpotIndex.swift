@@ -6,7 +6,7 @@ import Foundation
 /// どちらも画面を持たない層に置いて、Linux の `swift test` で動かす。
 enum OfficialSpotIndex {
 
-    /// 名前・読み・英語名・別名・都道府県・市区町村のどれかに当たるもの。
+    /// 名前・読み・英語名・別名・国・都道府県・市区町村のどれかに当たるもの。
     /// **空の語は何も当てない**（「絞っていない」）。全角半角・大小は区別しない。
     ///
     /// **名前で当たったものが先**、別名で当たったものが次、地域だけで当たったものはその後ろ。
@@ -41,7 +41,8 @@ enum OfficialSpotIndex {
     }
 
     private static func regionMatches(_ spot: OfficialSpot, needle: String) -> Bool {
-        [spot.region?.prefecture, spot.region?.city]
+        // 国は日本の外の行だけに載る（Web の「さがす」も国で当てる・`lib/data/spotSearchFeed.ts`）
+        [spot.region?.country, spot.region?.prefecture, spot.region?.city]
             .compactMap { $0 }
             .contains { MapSearch.fold($0).contains(needle) }
     }
