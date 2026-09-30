@@ -95,8 +95,11 @@ final class TabRouter: ObservableObject {
     func tabTapped(_ tab: Reselectable?, alreadySelected: Bool) {
         // 人が下の札を押した＝探すの出口の続きではない。残っていた語が
         // あとで（詳細から根へ戻ったときなど）勝手に当たらないよう捨てる。
-        // `openMap` の移動は札を押さない（RootView が selection を直に書く）ので、ここを通らない
-        pendingMapQuery = nil
+        // `openMap` の移動は札を押さない（RootView が selection を直に書く）ので、ここを通らない。
+        // 🔴 **ただし詳細を積んだ地図で「マップ」を押し直した回は捨てない。** iOS が根まで戻し、
+        // 待っていた語はその `onAppear` で受け取る（捨てると何も届かない）
+        let returnsToMapRoot = alreadySelected && tab == .map && !mapRootOnScreen
+        if !returnsToMapRoot { pendingMapQuery = nil }
         guard alreadySelected, let tab else { return }
         switch tab {
         case .home: homeTopRequests += 1

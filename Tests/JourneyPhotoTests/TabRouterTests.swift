@@ -119,8 +119,21 @@ final class TabRouterTests: XCTestCase {
         router.tabTapped(nil, alreadySelected: false)
         XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
 
+        // 地図の根を見ているときの押し直し（現在地へ）も捨てる
+        router.mapRootOnScreen = true
         router.openMap(query: "神戸")
         router.tabTapped(.map, alreadySelected: true)
         XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+    }
+
+    /// 詳細を積んだ地図で「マップ」を押し直した回は捨てない。iOS が根まで戻し、
+    /// その `onAppear` で待っていた語を受け取る
+    func testTabTapBackToMapRootKeepsPendingMapQuery() async {
+        let router = TabRouter()
+        router.mapRootOnScreen = false
+        router.openMap(query: "京都")
+        router.tabTapped(.map, alreadySelected: true)
+        XCTAssertEqual(router.mapLocateRequests, 0)
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "京都")
     }
 }
