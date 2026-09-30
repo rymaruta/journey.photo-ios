@@ -156,8 +156,10 @@ struct HighlightEditorView: View {
                     Text("\(order + 1)")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(WebTheme.accentText)
-                        .frame(width: 20, height: 20)
-                        .background(WebTheme.accentBackground, in: Circle())
+                        // 1桁は 20pt の丸、2・3桁（最大 100 件）は中身に合わせて横に伸ばす
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 20, minHeight: 20)
+                        .background(WebTheme.accentBackground, in: Capsule())
                         .padding(4)
                 }
             }

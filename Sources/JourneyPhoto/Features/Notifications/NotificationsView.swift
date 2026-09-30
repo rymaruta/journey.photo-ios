@@ -297,7 +297,8 @@ private struct NotificationRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(NotificationText.openProfileLabel(notification))
         } else {
-            face.accessibilityHidden(true)
+            // 押せない顔も同じ 44pt の枠に入れる（押せる顔と左端・字の位置をそろえる）
+            face.frame(width: 44, height: 44).accessibilityHidden(true)
         }
     }
 
