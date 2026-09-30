@@ -118,8 +118,7 @@ struct HighlightEditorView: View {
             Text(L("入れるストーリー", "Stories to include"))
         } footer: {
             if !picked.isEmpty {
-                Text(L("\(picked.count)件を選んでいます。最初の1件が表紙です。",
-                       "\(picked.count) selected. The first one is the cover."))
+                Text(HighlightService.pickedNote(picked: picked, coverId: coverId))
             }
         }
         .listRowBackground(Color.clear)
@@ -193,8 +192,8 @@ struct HighlightEditorView: View {
         } else if picked.count < HighlightService.storiesMax {
             picked.append(id)
         }
-        // 表紙は**選んだ先頭**。サーバーも並びの中のものしか受け取らない
-        coverId = picked.first
+        // 表紙は**いまの表紙が残っていればそのまま**・外したら先頭。サーバーも並びの中のものしか受け取らない
+        coverId = HighlightService.cover(keeping: coverId, in: picked)
     }
 
     private func load() async {
@@ -233,7 +232,7 @@ struct HighlightEditorView: View {
                 // 無い表紙を断る（400）ので、アーカイブから外れた写真が
                 // 表紙だった輪は、直そうとした瞬間に保存できなくなる
                 let cover = contents.coverStoryId
-                coverId = (cover != nil && picked.contains(cover!)) ? cover : picked.first
+                coverId = HighlightService.cover(keeping: cover, in: picked)
             }
         }
         loading = false
