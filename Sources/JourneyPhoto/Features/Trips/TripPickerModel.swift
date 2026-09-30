@@ -43,6 +43,9 @@ final class TripPickerModel: ObservableObject {
     @Published var draftStart: String?
     @Published var draftEnd: String?
     @Published var draftError: String?
+    /// 下書きの保存の最中。**板を閉じさせない**——閉じた後に保存が届くと、失敗が誰にも見えず、
+    /// 開き直した次の板を勝手に閉じて前のプランを開いていた
+    @Published var saving = false
 
     /// この板の中で「行きたい」に足した場所（`spotId`）。**戻しても消さない**。
     /// 「前から入っていたか」を控えの `contains` だけで決めると、足す→戻す（外す要求が列で待つ）

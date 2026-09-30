@@ -20,7 +20,11 @@ struct TripPickerDraftView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
 
-    @State private var saving = false
+    /// 保存の最中か（`TripPickerModel.saving`。板の「閉じる」もこれで止める）
+    private var saving: Bool {
+        get { picker.saving }
+        nonmutating set { picker.saving = newValue }
+    }
 
     // 題・日付・失敗の文は `TripPickerModel` が持つ（開き直しで消さない）。ここは読み書きを流すだけ
     private var start: String? {
@@ -80,6 +84,8 @@ struct TripPickerDraftView: View {
             .padding(16)
         }
         .safeAreaInset(edge: .bottom) { saveBar }
+        // 保存の最中は戻らせない（戻ってもう一度保存すると、作る途中のプランと重なる）
+        .navigationBarBackButtonHidden(saving)
         .webScreen()
         .navigationTitle(L("旅行プランの下書き", "Trip draft"))
         .navigationBarTitleDisplayMode(.inline)

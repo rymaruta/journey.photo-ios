@@ -48,8 +48,13 @@ struct TripPickerView: View {
                 .navigationTitle(L("写真から選ぶ", "Pick by photo"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        // 保存の最中は閉じさせない（`TripPickerModel.saving`）
+                        SheetCloseButton()
+                            .disabled(model.saving)
+                    }
                 }
+                .interactiveDismissDisabled(model.saving)
                 .navigationDestination(isPresented: $showDraft) {
                     TripPickerDraftView(picker: model, plans: plans, onSaved: onSaved)
                 }
