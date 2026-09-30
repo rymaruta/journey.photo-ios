@@ -25,10 +25,13 @@ struct StoryMedia: View {
     var onImageLayout: ((CGSize) -> Void)? = nil
     /// 頭から見直す合図（左を押した）。変わったら動画を 0 へ戻す。写真には効かない
     var restartToken = 0
+    /// 動画の位置の知らせ（秒・長さ・再生中か）。**写真には来ない**。進行バーを伸ばすのに使う
+    var onVideoProgress: ((Double, Double, Bool) -> Void)? = nil
 
     var body: some View {
         if story.isVideo, let url = story.imageURL {
-            StoryVideo(url: url, isMuted: isMuted, isPaused: isPaused, restartToken: restartToken, onEnded: onEnded)
+            StoryVideo(url: url, isMuted: isMuted, isPaused: isPaused, restartToken: restartToken,
+                       onEnded: onEnded, onProgress: onVideoProgress)
         } else {
             // **画面いっぱいに敷く**（板は `object-fit: cover`）。はみ出しは
             // 閲覧画面が切る
@@ -53,8 +56,14 @@ private struct StoryVideo: View {
     var isPaused = false
     var restartToken = 0
     var onEnded: (() -> Void)? = nil
+    /// 位置の知らせ（秒・長さ・再生中か）。0.5 秒ごとと、止める・再開するとき
+    var onProgress: ((Double, Double, Bool) -> Void)? = nil
 
     @State private var player: AVPlayer?
+    /// 位置の見張り（`addPeriodicTimeObserver`）。外さないと画面を閉じたあとも知らせが飛ぶ
+    @State private var timeObserver: Any?
+    /// 再生の状態（止める・待つ・鳴る）が替わった瞬間の見張り
+    @State private var statusObserver: NSKeyValueObservation?
     /// 鳴り終わりの見張り。外さないと画面を閉じたあとも `onEnded` が飛ぶ
     @State private var endObserver: NSObjectProtocol?
     /// 途中で途切れた知らせの見張り（`endObserver` と同じく出るたびに付け直す）
@@ -113,10 +122,43 @@ private struct StoryVideo: View {
                         }
                     }
                 }
+                // 進行バーのための位置の知らせ。**出るたびに付け直す**（鳴り終わりの見張りと同じ理由）
+                if timeObserver == nil, let player {
+                    let report = onProgress
+                    timeObserver = player.addPeriodicTimeObserver(
+                        forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main
+                    ) { [weak player] time in
+                        let length = player?.currentItem?.duration.seconds ?? 0
+                        let seconds = time.seconds
+                        // 再生中かは**再生器の状態**（`timeControlStatus`）で見る。見張りを付けた時点の
+                        // `isPaused` を写すと、止めた・再開したあとも古いまま。速さ（`rate`）は
+                        // 読み込みで詰まって待っている間も 1 のままなので、バーが先へ伸びて戻っていた
+                        let playing = player?.timeControlStatus == .playing
+                        Task { @MainActor in report?(seconds, length, playing) }
+                    }
+                }
+                // **状態が替わった瞬間にも知らせる。** 周期の見張りだけだと、読み込みで詰まった
+                // 瞬間を取りこぼすことがあり（呼ばれた時点でまだ `.playing`・詰まると時刻が
+                // 進まず次の知らせが来ない）、再開してからも最大 0.5 秒バーが止まっていた
+                if statusObserver == nil, let player {
+                    let report = onProgress
+                    statusObserver = player.observe(\.timeControlStatus, options: [.new]) { player, _ in
+                        let seconds = player.currentTime().seconds
+                        let length = player.currentItem?.duration.seconds ?? 0
+                        let playing = player.timeControlStatus == .playing
+                        Task { @MainActor in report?(seconds, length, playing) }
+                    }
+                }
                 if !isPaused { player?.play() }
             }
             .onDisappear {
+                statusObserver?.invalidate()
+                statusObserver = nil
                 player?.pause()
+                if let timeObserver {
+                    player?.removeTimeObserver(timeObserver)
+                    self.timeObserver = nil
+                }
                 if let endObserver {
                     NotificationCenter.default.removeObserver(endObserver)
                     self.endObserver = nil
@@ -133,6 +175,12 @@ private struct StoryVideo: View {
             // 変化したときだけ
             .onChange(of: isPaused) { _, paused in
                 if paused { player?.pause() } else { player?.play() }
+                // 止めた・再開した瞬間にバーも止める・動かす（0.5 秒の知らせを待たない）
+                if let player {
+                    // 再開は**実際に鳴り出してから**伸ばす（まだ読み込み中なら次の知らせで動く）
+                    onProgress?(player.currentTime().seconds, player.currentItem?.duration.seconds ?? 0,
+                                !paused && player.timeControlStatus == .playing)
+                }
             }
             .onChange(of: isMuted) { _, muted in
                 player?.isMuted = muted
