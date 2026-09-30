@@ -171,12 +171,18 @@ struct PhotoMapView: View {
         .onChange(of: model.query) { _, query in
             // 欄を空にした（× や手で消した）ら、探すから来た語の寄せ待ちも下ろす
             if query.isEmpty { queryFraming.cleared() }
+            dropSelectionOutsideFilter()
             guard model.areaFrame == nil else { return }
             frame(model.frame)
         }
         .onChange(of: model.category) { _, _ in
+            dropSelectionOutsideFilter()
             guard model.areaFrame == nil else { return }
             frame(model.frame)
+        }
+        // 「このエリアを検索」を押した・外したときも同じ（範囲も絞りのうち）
+        .onChange(of: model.areaFrame) { _, _ in
+            dropSelectionOutsideFilter()
         }
         // リストへ切り替えたら地点の札は下げる（地図に戻ると選択の印が
         // 消えているので、札だけ残ると何を指しているか分からない）
@@ -270,6 +276,16 @@ struct PhotoMapView: View {
                 }
             }
         }
+    }
+
+    /// 絞りが変わって、選んでいたピン・スポットが見えている結果から外れたら選びを下ろす
+    /// （`PhotoMapViewModel.keptAfterFilterChange`）。残すと、絞りを外したとき消えた札が戻ってくる。
+    /// 上に画面を積んでいる間は下ろさない（`showsCard` と同じ決まり）
+    private func dropSelectionOutsideFilter() {
+        let pin = model.keptAfterFilterChange(selected, onScreen: isOnScreen)
+        if pin == nil, selected != nil { selected = nil }
+        let official = model.keptAfterFilterChange(official: selectedOfficial, onScreen: isOnScreen)
+        if official == nil, selectedOfficial != nil { selectedOfficial = nil }
     }
 
     // MARK: - 絞る口
@@ -1053,6 +1069,8 @@ struct PhotoMapView: View {
                             .foregroundStyle(WebTheme.foreground)
                             .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                             .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                            // `.plain` は字と縁の線の上だけが当たる——枠の中ぜんぶを押せるように
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("map.officialCard.open")
@@ -1175,6 +1193,8 @@ struct PhotoMapView: View {
                         .foregroundStyle(WebTheme.foreground)
                         .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                         .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                        // `.plain` は字と縁の線の上だけが当たる——枠の中ぜんぶを押せるように
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 // 座標だけの地点では出さない（中身の無い詳細カードになる）

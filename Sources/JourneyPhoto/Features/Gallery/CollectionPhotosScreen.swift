@@ -52,6 +52,8 @@ struct CollectionPhotosScreen: View {
                     }
                     .padding(.horizontal, 16)
                 }
+                // 札の押せる余白（上下 4）の分だけ詰め、並びの見た目の間隔は前のまま
+                .padding(.vertical, -PillChip.tapSlack)
 
                 // 読めなかった回は `photos` が空（ブロックで伏せた0枚とは分ける）
                 if photos.isEmpty && !isLoading, let retry {

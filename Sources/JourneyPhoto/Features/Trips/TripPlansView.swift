@@ -73,12 +73,15 @@ struct TripPlansView: View {
             Text(L("旅行プランを読み込めませんでした。", "Couldn't load your trips."))
                 .font(.footnote)
                 .foregroundStyle(WebTheme.danger)
-            Button(L("再試行", "Retry")) {
+            // 大きさと当たりの形は **label の中に**（外に付けると押せるのが文字の上だけになる）
+            Button {
                 Task { await model.load(environment: environment) }
+            } label: {
+                Text(L("再試行", "Retry"))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .webTappable()
             }
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(WebTheme.foreground)
-            .webTappable()
         }
         .padding(.horizontal, 4)
     }

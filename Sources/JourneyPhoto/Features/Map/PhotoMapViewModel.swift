@@ -212,6 +212,22 @@ final class PhotoMapViewModel: ObservableObject {
         return !onScreen || stillShown(official: pin)
     }
 
+    /// 絞り（語・カテゴリ・このエリアを検索）が変わったあとも残す写真のピンの選び。
+    ///
+    /// 🔴 **地図の根が出ている間に、いまの結果から外れたら下ろす（nil）。** 残すと、
+    /// 札は消えるのに選びだけ生き残り、絞りを外したとたんに前の札が戻ってきた。
+    /// 上に画面を積んでいる間（`onScreen == false`）は `showsCard` と同じく下ろさない
+    func keptAfterFilterChange(_ pin: MapPin?, onScreen: Bool) -> MapPin? {
+        guard let pin else { return nil }
+        guard onScreen else { return pin }
+        return Self.refreshed(pin, in: pins) == nil ? nil : pin
+    }
+
+    /// 撮影スポットの選びも同じ約束（`showsCard(official:onScreen:)` で見えない札は下ろす）
+    func keptAfterFilterChange(official pin: OfficialPins.Pin?, onScreen: Bool) -> OfficialPins.Pin? {
+        showsCard(official: pin, onScreen: onScreen) ? pin : nil
+    }
+
     /// ピンの元の行（画面へ渡す。概要・近くのスポットはここから）
     func officialSpot(for pin: OfficialPins.Pin) -> OfficialSpot? {
         officialSpots.first { $0.spotId == pin.spotId }
