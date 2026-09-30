@@ -16,6 +16,10 @@ struct TripPlansView: View {
     /// 作った直後に、そのプランを開く（Web の `onCreate` と同じ）
     @State private var openedPlanId: String?
     @State private var showOpened = false
+    /// 写真から行き先を選ぶ（全画面の板・`TripPickerView`）
+    @State private var showPicker = false
+    /// 写真から選んで保存したプラン。**板が閉じ切ってから開く**（閉じている途中に積むと捨てられる）
+    @State private var pickedPlanId: String?
 
     var body: some View {
         Group {
@@ -55,6 +59,9 @@ struct TripPlansView: View {
                 // 作る口は、一覧が取れていなくても出す——新しく作るのに一覧は要らない
                 createRow
 
+                // 写真を見て指で選ぶだけで、行きたい場所から下書きを作る（2026-09-30 owner の依頼）
+                pickerEntry
+
                 planList
             }
             .padding(16)
@@ -66,6 +73,66 @@ struct TripPlansView: View {
                 TripPlanDetailView(planId: planId, model: model)
             }
         }
+        .fullScreenCover(isPresented: $showPicker, onDismiss: {
+            // 板の中の保存は一覧の失敗の文を消す（`write` が始めに消す）。保存せずに閉じた回は
+            // 取り直して、一覧の本当の状態をもう一度出す。**保存してプランを開く回は取り直さない**
+            // ——一覧は保存の応答で新しく、取り直しの失敗が開いた詳細に赤い行で出る（文は共有）
+            guard let planId = pickedPlanId else {
+                Task { await model.load(environment: environment) }
+                return
+            }
+            pickedPlanId = nil
+            openedPlanId = planId
+            showOpened = true
+        }) {
+            TripPickerView(plans: model) { planId in
+                // 念のための守り: 板が閉じていたら開かない。保存の最中は「閉じる」を止めている
+                // （`TripPickerModel.saving`）ので、ふつうはここで止まる回は無い
+                guard showPicker else { return }
+                pickedPlanId = planId
+                showPicker = false
+            }
+        }
+    }
+
+    /// 写真から行き先を選ぶ入口。**一覧の札と同じ面**（押すと全画面の板）。
+    /// 印の絵だけ真鍮（黒地の上の手がかり）
+    private var pickerEntry: some View {
+        Button {
+            pickedPlanId = nil
+            showPicker = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "hand.draw")
+                    .font(.title3)
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("写真から行き先を選ぶ", "Pick places by photo"))
+                        .font(JPFont.rowTitle)
+                        .foregroundStyle(WebTheme.foreground)
+                    Text(L("右へ払うと「行きたい」に。選んだ場所がそのまま旅行プランの下書きになります",
+                           "Swipe right on places you want to go, then turn them into a trip."))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.muted2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.footnote)
+                    .foregroundStyle(Color.white.opacity(0.35))
+                    .accessibilityHidden(true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("trips.pickByPhoto")
     }
 
     private var failedNotice: some View {

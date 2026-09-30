@@ -447,6 +447,9 @@ final class PushCenter: ObservableObject {
         let center = UNUserNotificationCenter.current()
         try? await center.setBadgeCount(0)
         center.removeAllDeliveredNotifications()
+        // 端末の中で予約した見頃のお知らせも消す（前の人の行きたい場所の名前で鳴らさない）。
+        // **スケジューラーを通す**——直接消すと覚えている中身が残り、次の人の同じ中身を入れ直さなかった
+        await SeasonReminderScheduler.shared.reschedule(nil, allowed: false)
     }
 
     func clearBadge() async {
