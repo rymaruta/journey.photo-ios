@@ -351,6 +351,33 @@ final class StoryUploadCenterTests: XCTestCase {
         XCTAssertEqual(cleared, ["2026-09-27T00:00:00Z"])
     }
 
+    /// 🔴 **1本でも出てから「やめる」と、元の下書きを片づける。** 残すと印が消えて
+    /// 「続きから」が出て、出た1本をもう一度出しやすい（二重投稿）
+    func testDiscardAfterPartialPostClearsTheDraft() async {
+        let center = StoryUploadCenter()
+        var cleared: [String] = []
+        center.configure(currentUserId: { "me" }, send: { _, _ in }, discardUpload: { _ in },
+                         clearDraft: { cleared.append($0) })
+        center.start([job(1), job(2)], ownerId: "me", currentUserId: { "me" }, draftToClear: "d1",
+                     send: { j, _ in if j.imageData[0] == 2 { throw Boom() } })
+        await settle(center)
+        center.discard()
+        XCTAssertEqual(cleared, ["d1"])
+    }
+
+    /// 1本も出ていなければ下書きは残す（下書きから出し直せる）
+    func testDiscardBeforeAnyPostKeepsTheDraft() async {
+        let center = StoryUploadCenter()
+        var cleared: [String] = []
+        center.configure(currentUserId: { "me" }, send: { _, _ in }, discardUpload: { _ in },
+                         clearDraft: { cleared.append($0) })
+        center.start([job(1), job(2)], ownerId: "me", currentUserId: { "me" }, draftToClear: "d1",
+                     send: { _, _ in throw Boom() })
+        await settle(center)
+        center.discard()
+        XCTAssertEqual(cleared, [])
+    }
+
     /// 送っている間は元の下書きの印を見せる（投稿画面が「続きから」を出さないため）。送り終えたら消える
     func testPendingDraftStampIsVisibleWhileSending() async {
         let center = StoryUploadCenter()

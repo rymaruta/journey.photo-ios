@@ -171,9 +171,13 @@ final class StoryUploadCenter: ObservableObject {
     }
 
     /// 失敗した残りを捨てる（出せたぶんはそのまま）。
-    /// **上げ終えていた画像も片づける**（使われている鍵はサーバーが消さない）
+    /// **上げ終えていた画像も片づける**（使われている鍵はサーバーが消さない）。
+    /// 🔴 **1本でも出ていたら、元の下書きも片づける**（送り終えたときと同じ `clearDraft`）。
+    /// 残すと印が消えて「続きから」が出て、出た1本をもう一度出しやすい。
+    /// 1本も出ていなければ残す（下書きから出し直せる）
     func discard() {
         guard case .failed = phase else { return }
+        if total - pending.count > 0, let draftToClear { clearDraft?(draftToClear) }
         let keys = pending.compactMap { $0.uploaded?.key }
         if let discardUpload, !keys.isEmpty {
             Task {
