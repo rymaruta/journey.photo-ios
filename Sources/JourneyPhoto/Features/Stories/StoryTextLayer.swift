@@ -16,6 +16,8 @@ struct StoryTextLayer: View {
     let canVote: Bool
     let voting: Bool
     var onVote: (String) -> Void = { _ in }
+    /// 作る画面で選んでいる（投票の札を破線で囲む）
+    var highlighted = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -123,6 +125,14 @@ struct StoryTextLayer: View {
         .padding(.horizontal, CGFloat(fontSize * 0.5))
         .padding(.vertical, CGFloat(fontSize * 0.18 + 6))
         .background(Color.white, in: RoundedRectangle(cornerRadius: CGFloat(fontSize * 0.35)))
+        // 作る画面で選んでいる札は破線で囲む（文字の札と同じ・板 24b）
+        .overlay {
+            if highlighted {
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.white.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    .padding(-8)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("投票：\(vote.question)", "Poll: \(vote.question)"))
     }

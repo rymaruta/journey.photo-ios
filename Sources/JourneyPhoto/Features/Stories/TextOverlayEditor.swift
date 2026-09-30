@@ -27,6 +27,12 @@ struct StoryCanvas: View {
     /// 写真（札の無い所）を1回押した。**選んでいる札を外す**口（外さないと、札を選んだ
     /// あとは写真を動かせないままだった・db4903c のレビュー）
     var onTapPhoto: () -> Void = {}
+    /// 投票（写真1枚に1つ・焼き込まずにデータで送る）。**閲覧画面と同じ札で描く**（`StoryTextLayer`）
+    var vote: Binding<StoryVoteDraft?> = .constant(nil)
+    /// 投票の札を選んでいる（破線で囲む）
+    var voteSelected = false
+    /// 投票の札を押した
+    var onTapVote: () -> Void = {}
 
     /// 指で動かしている最中の見た目の移動量（離したときに位置へ反映する）
     @State private var dragId: UUID?
@@ -47,6 +53,9 @@ struct StoryCanvas: View {
     @GestureState private var twisting = false
     @GestureState private var pinching = false
     @GestureState private var dragging = false
+    /// 投票の札を指で動かしている最中の移動量（離したときに位置へ入れる）
+    @State private var voteDrag: CGSize = .zero
+    @GestureState private var voteDragging = false
     /// 写真を動かしている最中の移動量（離したときに `framing` へ入れる）と、その印
     @State private var photoDrag: CGSize = .zero
     @GestureState private var photoDragging = false
@@ -115,6 +124,27 @@ struct StoryCanvas: View {
                 ForEach(overlays) { overlay in
                     text(overlay, photo: photo, canvas: geometry.size)
                 }
+                if let current = vote.wrappedValue {
+                    // 投票の札。**置き方は閲覧画面と同じ**（絵の矩形に対する割合）。
+                    // 札の上だけが指を取る（層の残りは素通り）
+                    StoryTextLayer(texts: [current.asItem], imageSize: imageSize, voteState: nil,
+                                   canVote: false, voting: false, highlighted: voteSelected)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .offset(x: voteDrag.width, y: voteDrag.height)
+                        .gesture(
+                            DragGesture()
+                                .updating($voteDragging) { _, state, _ in state = true }
+                                .onChanged { value in voteDrag = twoFingerActive ? .zero : value.translation }
+                                .onEnded { value in
+                                    if !twoFingerActive {
+                                        vote.wrappedValue = current.moved(by: value.translation, in: photo.size)
+                                    }
+                                    voteDrag = .zero
+                                }
+                        )
+                        .onTapGesture { onTapVote() }
+                        .accessibilityAction(named: L("投票を編集", "Edit poll")) { onTapVote() }
+                }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
@@ -159,6 +189,10 @@ struct StoryCanvas: View {
             // 打ち切られた回の片付け（`onEnded` と、どちらが先に来ても1回だけ入る）
             .onChange(of: twisting) { _, active in if !active { commitRotation() } }
             .onChange(of: pinching) { _, active in if !active { commitScale() } }
+            .onChange(of: voteDragging) { _, active in
+                // 投票の札を動かす操作の打ち切り。**移動は入れない**
+                if !active { voteDrag = .zero }
+            }
             .onChange(of: photoDragging) { _, active in
                 // 写真を動かす操作の打ち切り。**移動は入れない**（印は次に動かし始めたときに戻す）
                 if !active { photoDrag = .zero; photoDragStarted = false }
@@ -601,5 +635,78 @@ extension OverlayPanel {
         .accessibilityLabel(L("好きな色を選ぶ", "Pick any color"))
         .accessibilityAddTraits(overlay.customHex == nil ? [] : .isSelected)
         .id("custom")
+    }
+}
+
+/// 投票の札の操作欄（問い・2つの選択肢・消す）。**字数はサーバーと同じ**（40・12）
+struct VotePanel: View {
+
+    @Binding var vote: StoryVoteDraft
+    var onDelete: () -> Void
+    /// どの欄を打っているか（問い・選択肢1・選択肢2）。**欄ごとに値を分ける**
+    /// （1つの真偽を3つの欄に付けると、どこへ移るかが決まらない）
+    @FocusState private var focused: Field?
+
+    enum Field: Hashable { case question, optionA, optionB }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                field(L("問い", "Question"), .question, text: Binding(
+                    get: { vote.question },
+                    set: { vote.question = StoryVoteDraft.limited($0, max: StoryVoteDraft.questionMax) }))
+                if focused != nil {
+                    Button { focused = nil } label: {
+                        Image(systemName: "keyboard.chevron.compact.down")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("キーボードを閉じる", "Hide keyboard"))
+                }
+            }
+            HStack(spacing: 8) {
+                field(L("選択肢1", "Option 1"), .optionA, text: Binding(
+                    get: { vote.optionA },
+                    set: { vote.optionA = StoryVoteDraft.limited($0, max: StoryVoteDraft.optionMax) }))
+                field(L("選択肢2", "Option 2"), .optionB, text: Binding(
+                    get: { vote.optionB },
+                    set: { vote.optionB = StoryVoteDraft.limited($0, max: StoryVoteDraft.optionMax) }))
+            }
+            HStack {
+                // 欠けた投票は送れない（サーバーが黙って落とす）。**どこが欠けているかを言う**
+                if !vote.isComplete {
+                    Text(L("問いと2つの選択肢を入れてください", "Fill in the question and both options"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(WebTheme.muted2)
+                }
+                Spacer(minLength: 0)
+                Button(action: onDelete) {
+                    Label(L("消す", "Delete"), systemImage: "trash")
+                        .font(.system(size: 13))
+                        .foregroundStyle(WebTheme.danger)
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 12)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .background(Color(red: 12 / 255.0, green: 12 / 255.0, blue: 13 / 255.0).opacity(0.92))
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
+        }
+    }
+
+    private func field(_ placeholder: String, _ which: Field, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .focused($focused, equals: which)
+            .font(.system(size: 15))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
     }
 }

@@ -34,12 +34,16 @@ final class StoryUploadCenter: ObservableObject {
         let archive: Bool
         /// 返信を受けるか（切ったときだけサーバーへ `false` を送る）
         let allowReplies: Bool
+        /// 写真の上にデータで置くもの（投票と、そのときのひとこと・`StoryPostText.list`）。
+        /// 無ければ送らない
+        let texts: [StoryPostText]?
         /// 上げ終えた画像（送り直しで二重に出さないための目印・`StoryService.post`）
         var uploaded: StoryService.UploadedMedia?
 
         init(id: UUID = UUID(), imageData: Data, caption: String, location: String,
              coords: Photo.Coords?, song: Photo.Song?, durationSec: Int, archive: Bool,
-             allowReplies: Bool = true, uploaded: StoryService.UploadedMedia? = nil) {
+             allowReplies: Bool = true, texts: [StoryPostText]? = nil,
+             uploaded: StoryService.UploadedMedia? = nil) {
             self.id = id
             self.imageData = imageData
             self.caption = caption
@@ -49,6 +53,7 @@ final class StoryUploadCenter: ObservableObject {
             self.durationSec = durationSec
             self.archive = archive
             self.allowReplies = allowReplies
+            self.texts = texts
             self.uploaded = uploaded
         }
     }

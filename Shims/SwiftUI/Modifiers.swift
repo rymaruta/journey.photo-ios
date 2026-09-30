@@ -312,6 +312,8 @@ extension View {
     /// スクロールでキーボードを下げる（本物と同じ）
     public func scrollDismissesKeyboard(_ mode: ScrollDismissesKeyboardModeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func focused(_ condition: Binding<Bool>) -> Self { self }
+    /// どの欄に居るかを値で持つ（本物と同じ・`FocusState<V?>`）
+    public func focused<V: Hashable>(_ binding: Binding<V?>, equals value: V) -> Self { self }
     public func disabled(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tag<V: Hashable>(_ v: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func badge(_ count: Int) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }

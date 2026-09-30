@@ -89,7 +89,7 @@ struct StoryService {
             _ = try await createRecord(media, caption: job.caption, location: job.location,
                                        coords: job.coords, song: job.song,
                                        durationSec: job.durationSec, archive: job.archive,
-                                       allowReplies: job.allowReplies)
+                                       allowReplies: job.allowReplies, texts: job.texts)
         } catch {
             failure = error
         }
@@ -164,7 +164,8 @@ struct StoryService {
     @discardableResult
     func createRecord(_ media: UploadedMedia, caption: String?, location: String?,
                       coords: Photo.Coords?, song: Photo.Song? = nil, durationSec: Int? = nil,
-                      archive: Bool = false, allowReplies: Bool = true) async throws -> Story? {
+                      archive: Bool = false, allowReplies: Bool = true,
+                      texts: [StoryPostText]? = nil) async throws -> Story? {
         struct Body: Encodable {
             let publicUrl: String
             let caption: String?
@@ -183,6 +184,9 @@ struct StoryService {
             /// 返信を受けるか。**切ったときだけ `false` を送る**（Web の `StoriesBar` と同じ）
             /// ——サーバーは `false` のときだけ返信と ♡ を断る（`storyAllowsReplies`）
             let allowReplies: Bool?
+            /// 写真の上にデータで置くもの（投票など）。**送ると、サーバーは `caption` を
+            /// この中の文字から作り直す**（`StoryPostText.caption` の注釈）
+            let texts: [StoryPostText]?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
@@ -195,7 +199,8 @@ struct StoryService {
             song: song,
             durationSec: Self.storedDuration(durationSec),
             archive: archive ? true : nil,
-            allowReplies: allowReplies ? nil : false
+            allowReplies: allowReplies ? nil : false,
+            texts: texts?.isEmpty == false ? texts : nil
         )
         return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
     }

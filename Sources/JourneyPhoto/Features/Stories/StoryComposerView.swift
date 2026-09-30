@@ -58,6 +58,10 @@ struct StoryComposerView: View {
     @State private var textMode = false
     /// 選んでいる札
     @State private var selectedId: UUID?
+    /// 投票の札を選んでいる（札の `selectedId` とはどちらか一方）
+    @State private var voteSelected = false
+    /// 編集に入ったときの投票（「キャンセル」で戻す）
+    @State private var voteSnapshot: StoryVoteDraft?
     /// スタンプ（絵文字）の列を開いているか
     @State private var showStamps = false
     /// 編集に入ったときの写し（「やめる」で戻す）と、**どの写真の編集か**。
@@ -103,6 +107,14 @@ struct StoryComposerView: View {
         )
     }
 
+    /// いま編集している写真の投票。文字と同じく `shots` の中を直に書き換える
+    private var vote: Binding<StoryVoteDraft?> {
+        Binding(
+            get: { shots.indices.contains(current) ? shots[current].vote : nil },
+            set: { if shots.indices.contains(current) { shots[current].vote = $0 } }
+        )
+    }
+
     /// いま編集している写真の合わせ方（拡大・位置・回し）。文字と同じく `shots` の中を直に書き換える
     private var framing: Binding<PhotoFraming> {
         Binding(
@@ -114,7 +126,7 @@ struct StoryComposerView: View {
     /// 下書きに残る中身（写真の並び・写真ごとの文字と合わせ方・ひとこと・撮影地・曲・秒数・残すか）
     private var content: StoryComposerContent {
         StoryComposerContent(shotIds: shots.map(\.id), overlays: shots.map(\.overlays),
-                        framings: shots.map(\.framing),
+                        framings: shots.map(\.framing), votes: shots.map(\.vote),
                         caption: caption, location: location, song: song,
                         durationSec: durationSec, archive: keepInArchive,
                         allowReplies: allowReplies)
@@ -276,9 +288,17 @@ struct StoryComposerView: View {
                                 // **編集中に押したときは写しを取り直さない**（「やめる」の戻り先が変わる）
                                 if !textMode { enterTextMode() }
                                 selectedId = overlay.id
+                                voteSelected = false
                             },
                             // 写真を押したら選んでいる札を外す（写真を合わせられるように戻る）
-                            onTapPhoto: { if textMode { selectedId = nil } })
+                            onTapPhoto: { if textMode { selectedId = nil; voteSelected = false } },
+                            vote: vote,
+                            voteSelected: textMode && voteSelected,
+                            onTapVote: {
+                                if !textMode { enterTextMode() }
+                                selectedId = nil
+                                voteSelected = true
+                            })
             } else {
                 emptyPhoto
             }
@@ -330,7 +350,15 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if textMode, let selectedId, selectedIndex != nil {
+            if textMode, voteSelected, vote.wrappedValue != nil {
+                VotePanel(vote: Binding(
+                    get: { vote.wrappedValue ?? .new() },
+                    set: { vote.wrappedValue = $0 }
+                )) {
+                    vote.wrappedValue = nil
+                    voteSelected = false
+                }
+            } else if textMode, let selectedId, selectedIndex != nil {
                 OverlayPanel(overlay: overlayBinding(id: selectedId)) {
                     overlays.wrappedValue.removeAll { $0.id == selectedId }
                     self.selectedId = nil
@@ -523,6 +551,7 @@ struct StoryComposerView: View {
                     if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
                         shots[i].overlays = overlaySnapshot
                         shots[i].framing = framingSnapshot
+                        shots[i].vote = voteSnapshot
                     }
                     leaveTextMode()
                 }
@@ -603,6 +632,15 @@ struct StoryComposerView: View {
         VStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    // 投票（写真1枚に1つ・焼き込まずに送る）。置いてあれば選び直すだけ
+                    OverlayChip(title: L("投票", "Poll"), systemImage: "chart.bar.xaxis",
+                                selected: voteSelected) {
+                        if vote.wrappedValue == nil { vote.wrappedValue = .new() }
+                        selectedId = nil
+                        voteSelected = true
+                        showStamps = false
+                    }
+                    .accessibilityIdentifier("story.add.vote")
                     ForEach(TextOverlay.Kind.allCases, id: \.rawValue) { kind in
                         OverlayChip(title: kind.toolLabel, systemImage: kind.toolSymbol,
                                     selected: kind == .stamp && showStamps) {
@@ -710,6 +748,7 @@ struct StoryComposerView: View {
         captionFocused = false
         overlaySnapshot = shots[current].overlays
         framingSnapshot = shots[current].framing
+        voteSnapshot = shots[current].vote
         editingShotId = shots[current].id
         textMode = true
     }
@@ -718,6 +757,7 @@ struct StoryComposerView: View {
         textMode = false
         showStamps = false
         selectedId = nil
+        voteSelected = false
         editingShotId = nil
     }
 
@@ -944,7 +984,8 @@ struct StoryComposerView: View {
                                           contentType: shot.prepared.contentType,
                                           coords: shot.prepared.coords,
                                           overlays: shot.overlays,
-                                          framing: shot.framing.isIdentity ? nil : shot.framing)
+                                          framing: shot.framing.isIdentity ? nil : shot.framing,
+                                          vote: shot.vote)
             },
             caption: caption,
             location: location,
@@ -1007,7 +1048,8 @@ struct StoryComposerView: View {
                                                   // EXIF は下書きに残していない（ストーリーは送らない）
                                                   exif: nil, coords: item.shot.coords, takenOn: nil)
             return StoryShot(prepared: restored, image: UIImage(data: item.data),
-                             overlays: item.shot.overlays, framing: item.shot.framing ?? .identity)
+                             overlays: item.shot.overlays, framing: item.shot.framing ?? .identity,
+                             vote: item.shot.vote)
         }
         current = 0
         caption = draft.caption
@@ -1035,6 +1077,13 @@ struct StoryComposerView: View {
         // ここは同期で、1回目で画面を閉じ係に渡す。2回目は係が「片付いていない
         // 並びがある」で受けない
         guard !shots.isEmpty, let ownerId = auth.userId else { return }
+        // **欠けた投票は送らない**（サーバーが黙って落とす＝置いたのに出ない）。どの写真かを言う
+        if let index = shots.firstIndex(where: { $0.vote.map { !$0.isComplete } ?? false }) {
+            current = index
+            message = L("\(index + 1)枚目の投票に、問いと2つの選択肢を入れてください",
+                        "Fill in the question and both options of the poll on photo \(index + 1)")
+            return
+        }
         message = nil
         let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1045,7 +1094,8 @@ struct StoryComposerView: View {
                 imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),
                 caption: caption, location: place, coords: shot.prepared.coords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
-                allowReplies: allowReplies)
+                allowReplies: allowReplies,
+                texts: StoryPostText.list(vote: shot.vote, caption: caption))
         }
         let stories = environment.stories
         let drafts = drafts
@@ -1100,14 +1150,17 @@ struct StoryShot: Identifiable {
     var overlays: [TextOverlay] = []
     /// 写真の合わせ方（拡大・位置・回し）。**写真ごと**（文字と同じ理由）
     var framing: PhotoFraming = .identity
+    /// 投票（写真1枚＝1本に1つ）。**焼き込まずにデータで送る**
+    var vote: StoryVoteDraft?
 
     init(prepared: ImagePreparer.Prepared, image: UIImage?, overlays: [TextOverlay] = [],
-         framing: PhotoFraming = .identity) {
+         framing: PhotoFraming = .identity, vote: StoryVoteDraft? = nil) {
         self.prepared = prepared
         self.preview = image.map { Image(uiImage: $0) }
         self.imageSize = image?.size
         self.overlays = overlays
         self.framing = framing
+        self.vote = vote
     }
 }
 
@@ -1121,6 +1174,8 @@ struct StoryComposerContent: Equatable {
     var overlays: [[TextOverlay]]
     /// 写真ごとの合わせ方。前の呼び手・テストは持たない（どれも合わせていない）
     var framings: [PhotoFraming] = []
+    /// 写真ごとの投票（置いていなければ nil）
+    var votes: [StoryVoteDraft?] = []
     var caption: String
     var location: String
     var song: Photo.Song?

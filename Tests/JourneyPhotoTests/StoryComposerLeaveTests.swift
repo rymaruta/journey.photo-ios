@@ -39,6 +39,16 @@ final class StoryComposerLeaveTests: XCTestCase {
         XCTAssertEqual(StoryComposerView.leave(restored, restored: restored), .now)
     }
 
+    /// 投票を置いた・直しただけでも、閉じる前に確かめる
+    func testPlacingAPollIsConfirmed() {
+        let id = UUID()
+        var restored = content(shots: [id], caption: "雲海")
+        restored.votes = [nil]
+        var polled = restored
+        polled.votes = [StoryVoteDraft.new()]
+        XCTAssertEqual(StoryComposerView.leave(polled, restored: restored), .confirm)
+    }
+
     func testRestoredDraftEditedAfterwardsIsConfirmed() {
         let id = UUID()
         let restored = content(shots: [id], caption: "雲海")

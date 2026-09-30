@@ -326,6 +326,7 @@ public struct FocusState<Value>: DynamicProperty {
     private let box: Box<Value>
     public init(wrappedValue: Value) { box = Box(wrappedValue) }
     public init() where Value == Bool { box = Box(false) }
+    public init<T>() where Value == T? { box = Box(nil) }
     public var wrappedValue: Value {
         get { box.value }
         nonmutating set { box.value = newValue }
