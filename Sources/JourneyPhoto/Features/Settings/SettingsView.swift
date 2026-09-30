@@ -39,10 +39,12 @@ struct SettingsView: View {
             }
             // **iOS の設定で許可を変えて戻ったら合わせ直す。** 開いたまま通知を切って戻ると、
             // 前面に戻ったときの読み直しで `isAuthorized` は倒れるのに、トグルが「入」のまま残った。
-            // 切り替えの最中（`isApplying`）は `apply` が決めるので触らない
+            // 切り替えの最中（`isApplying`）は `apply` が決めるので触らない。
+            // 案内どおり許可して戻ったら、「許可されていません」の案内も下ろす
             .onChange(of: push.isAuthorized) { _, authorized in
                 guard !isApplying else { return }
                 wantsPush = push.isEnabled && authorized
+                if authorized { showDeniedHint = false }
             }
     }
 

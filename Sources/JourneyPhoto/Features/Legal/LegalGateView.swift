@@ -17,18 +17,24 @@ struct LegalGateView: View {
     var body: some View {
         ZStack(alignment: .top) {
             WebTheme.background.ignoresSafeArea()
-            VStack(spacing: 0) { heroImage; Spacer(minLength: 0) }
+            // **写真は本文と一緒に流す。** 写真だけ上に留めると、背の低い端末で送ったとき
+            // 真鍮の印・字・リンクがグラデーションの無い写真の上を通る（真鍮は黒い地の上だけ）。
+            // 写真を上端から敷く形は写真詳細と同じ（ScrollView ごと上の安全域を無視し、
+            // 本文はその分だけ下げる）
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        AppLogo().padding(.top, geo.safeAreaInsets.top + 6).padding(.bottom, 58)
+                        heading
+                        experience(L("撮りたい場所を見つける", "Find your next place to shoot"), detail: L("写真と地図から、次に行きたい撮影地を探せます。", "Discover your next shooting location through photos and the map."), systemImage: "map")
+                        experience(L("写真と撮影情報を残す", "Keep the photo and how you shot it"), detail: L("作品だけでなく、カメラやレンズ、撮影地まで一緒に残せます。", "Keep the camera, lens and shooting location together with your work."), systemImage: "camera")
+                        experience(L("旅を、一冊にする", "Turn a journey into a book"), detail: L("旅の前から撮影後まで。写真を旅の記録としてまとめられます。", "From planning to the photos you bring home, keep the whole journey together."), systemImage: "book.closed")
+                        safetyNote
+                        links
+                    }.padding(.horizontal, 24).padding(.bottom, 24).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(alignment: .top) { heroImage }
+                }
                 .ignoresSafeArea(edges: .top)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    AppLogo().padding(.top, 6).padding(.bottom, 58)
-                    heading
-                    experience(L("撮りたい場所を見つける", "Find your next place to shoot"), detail: L("写真と地図から、次に行きたい撮影地を探せます。", "Discover your next shooting location through photos and the map."), systemImage: "map")
-                    experience(L("写真と撮影情報を残す", "Keep the photo and how you shot it"), detail: L("作品だけでなく、カメラやレンズ、撮影地まで一緒に残せます。", "Keep the camera, lens and shooting location together with your work."), systemImage: "camera")
-                    experience(L("旅を、一冊にする", "Turn a journey into a book"), detail: L("旅の前から撮影後まで。写真を旅の記録としてまとめられます。", "From planning to the photos you bring home, keep the whole journey together."), systemImage: "book.closed")
-                    safetyNote
-                    links
-                }.padding(.horizontal, 24).padding(.bottom, 24).frame(maxWidth: .infinity, alignment: .leading)
             }
         }.safeAreaInset(edge: .bottom) { agreeButton }.onAppear { pickHero() }
     }
