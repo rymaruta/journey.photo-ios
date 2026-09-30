@@ -54,6 +54,22 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertEqual(StoryTextEditing.nextStyle(TextOverlay(text: "a")).ink, .ink)
     }
 
+    /// **打つ画面で暗い文字に明るい下敷きを敷く**（owner 2026-09-30「文字入力してるけど出てこない」）。
+    /// 白 → 黒の見た目へ1回押すだけで墨の字になり、暗くした写真の上で消えていた
+    func testTypingLightPlateOnlyForDarkInk() {
+        let dark = StoryTextEditing.nextStyle(TextOverlay(text: "文字"))
+        XCTAssertEqual(dark.style, .dark)
+        XCTAssertTrue(StoryTextEditing.typingNeedsLightPlate(dark), "黒の見た目の墨の字が見えない")
+        // 白の字・帯・スタンプには敷かない
+        XCTAssertFalse(StoryTextEditing.typingNeedsLightPlate(TextOverlay(text: "文字")))
+        XCTAssertFalse(StoryTextEditing.typingNeedsLightPlate(dark.withStyle(.banner)))
+        XCTAssertFalse(StoryTextEditing.typingNeedsLightPlate(TextOverlay(text: "⭐️", kind: .stamp)))
+        // 縁取りの暗い色は、描く色（`drawnHex`）が読める明るさへ寄せられるので敷かない
+        var outline = TextOverlay(text: "文字").withStyle(.outline)
+        outline.customHex = 0x202020
+        XCTAssertFalse(StoryTextEditing.typingNeedsLightPlate(outline))
+    }
+
     /// 帯で固定の札（撮影地など）とスタンプは見た目を変えない
     func testNextStyleLeavesForcedKindsAlone() {
         for kind in [TextOverlay.Kind.place, .song, .time, .date, .hashtag, .stamp] {

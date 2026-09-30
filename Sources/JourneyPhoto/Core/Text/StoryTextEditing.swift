@@ -27,6 +27,17 @@ enum StoryTextEditing {
         overlay.kind.hasTypography
     }
 
+    /// 打つ画面で、打っている文字の後ろに**明るい下敷き**を敷くか。
+    /// 打つ画面は写真を黒で暗くするので、暗い文字（黒の見た目・暗い色の縁取り）は
+    /// 背景に溶けて**打っても何も出ていないように見えた**（2026-09-30・owner
+    /// 「文字入力してるけど出てこない」。黒の見た目の白い縁は字の大きさの 1.5% しか無い）。
+    /// 暗くした写真（ほぼ黒）に対する読みやすさの比が 3 に届かない色だけ敷く。
+    /// 帯は黒い地に明るい字なので要らない。**置いたあと・焼き込みは変えない**（打っている間だけ）
+    static func typingNeedsLightPlate(_ overlay: TextOverlay) -> Bool {
+        guard overlay.style != .banner, overlay.kind.hasTypography else { return false }
+        return TextOverlay.contrast(overlay.drawnHex, 0x000000) < 3
+    }
+
     /// 打ち終えた。**空になった札は取り除く**（新しく足した札も、打ち直して消した札も）
     static func finish(_ overlays: [TextOverlay], id: UUID) -> [TextOverlay] {
         overlays.filter { $0.id != id || !$0.isEmpty }

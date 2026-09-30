@@ -153,6 +153,11 @@ struct StoryComposerView: View {
                     .ignoresSafeArea(edges: .top)
                 if !votePanelOpen {
                     footer
+                        // 打っている間は**隠すだけ**（枠の大きさは変えない——変えると写真の枠が伸びて、
+                        // 打ち始めに測った枠とずれる）。暗幕越しに「ストーリーに投稿」が
+                        // 書体の列の下に透けて重なっていた（2026-09-30 の owner の画面）
+                        .opacity(typingId == nil ? 1 : 0)
+                        .allowsHitTesting(typingId == nil)
                 }
             }
             // 打っている間は後ろを読ませない（VoiceOver で投稿・他の札へ移れた）

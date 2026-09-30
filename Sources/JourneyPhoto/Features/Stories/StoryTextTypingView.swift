@@ -243,6 +243,16 @@ struct StoryTextTypingView: View {
         .padding(.vertical, overlay.style == .banner ? fontSize * 0.175 : 0)
         .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
         .shadow(radius: overlay.style == .light ? 6 : 0)
+        // 暗い文字は、暗くした写真の上で見えない。**打っている間だけ**明るい下敷きを敷く
+        // （`StoryTextEditing.typingNeedsLightPlate`。置いたあとの見た目は変えない）
+        .background {
+            if StoryTextEditing.typingNeedsLightPlate(overlay) {
+                RoundedRectangle(cornerRadius: CGFloat(max(8, fontSize * 0.3)))
+                    .fill(Color.white.opacity(0.8))
+                    .padding(-CGFloat(max(6, fontSize * 0.25)))
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     /// 打つ欄。**時刻・日付は直せない**（端末から採った値）ので、同じ見た目の文字を出し、
@@ -271,7 +281,8 @@ struct StoryTextTypingView: View {
         .font(StoryCanvas.font(overlay.face, size: fontSize))
         .foregroundStyle(StoryCanvas.color(hex: overlay.drawnHex))
         .multilineTextAlignment(StoryCanvas.alignment(overlay.align))
-        .tint(.white)
+        // キャレットの色。明るい下敷きの上では白が見えないので黒
+        .tint(StoryTextEditing.typingNeedsLightPlate(overlay) ? .black : .white)
         // 縁（黒の見た目＝白い縁・縁取り＝黒い縁）。打つ欄には縁の写しを敷けないので、
         // ぼかし無しの影を4方向に重ねて近い見た目にする（置いたあとは `StoryCanvas.edged` の本物）
         // 1行の欄（撮影地・タグ・曲）は Return で確定して閉じる（キーボードだけ閉じて画面が残った）。
