@@ -27,6 +27,7 @@ struct FollowListView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var hidden: ModerationStore
 
     /// 切り替えで選んだ方。**nil のあいだは開いたときの `kind`**
     @State private var picked: Kind?
@@ -52,9 +53,13 @@ struct FollowListView: View {
     @State private var actionError: String?
     @State private var isLoading = true
     @State private var errorMessage: String?
+    /// ブロックした人を落とす写し。**出たとき（`onAppear`）だけ取る**——描くたびに
+    /// `hidden.blockedUserIds` で絞ると、行から開いた人のページでブロックした瞬間に
+    /// 行（`NavigationLink`）が消えてページが閉じる（`ModerationSnapshot.users` の注記）
+    @State private var dropped = ModerationSnapshot()
 
     private var current: Kind { picked ?? kind }
-    private var users: [FollowUser] { lists[current]?.users ?? [] }
+    private var users: [FollowUser] { dropped.follows(lists[current]?.users ?? []) }
     private var total: Int { lists[current]?.total ?? 0 }
 
     var body: some View {
@@ -112,6 +117,7 @@ struct FollowListView: View {
         // **戻ってきたらボタンの状態だけ読み直す。** 人のプロフィールでフォローを
         // 変えて戻ると、一覧のボタンが古いままだった（`.task(id:)` は走り直さない）
         .onAppear {
+            dropped = hidden.snapshot
             if appeared { Task { await refreshMyFollowing() } }
             appeared = true
         }
