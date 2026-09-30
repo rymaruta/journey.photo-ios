@@ -6,19 +6,22 @@ import Foundation
 /// どちらも画面を持たない層に置いて、Linux の `swift test` で動かす。
 enum OfficialSpotIndex {
 
-    /// 名前・読み・英語名・都道府県・市区町村のどれかに当たるもの。
+    /// 名前・読み・英語名・別名・都道府県・市区町村のどれかに当たるもの。
     /// **空の語は何も当てない**（「絞っていない」）。全角半角・大小は区別しない。
     ///
-    /// **名前で当たったものが先**、地域だけで当たったものはその後ろ。
+    /// **名前で当たったものが先**、別名で当たったものが次、地域だけで当たったものはその後ろ。
     /// 同じ段の中は slug 順（毎回同じ並びにする）。`limit` が nil なら全部
-    /// （地図は枠で並べ直してから切るので、ここでは切らない）
-    static func matches(_ spots: [OfficialSpot], query: String, limit: Int? = nil) -> [OfficialSpot] {
+    /// （地図は枠で並べ直してから切るので、ここでは切らない）。
+    /// `aliases` は slug → 別名（`OfficialSpotService.fetchAliases`・無ければ空）
+    static func matches(_ spots: [OfficialSpot], query: String, limit: Int? = nil,
+                        aliases: [String: [String]] = [:]) -> [OfficialSpot] {
         let needle = MapSearch.fold(query)
         guard !needle.isEmpty else { return [] }
         let ranked = spots
             .compactMap { spot -> (OfficialSpot, Int)? in
                 if nameMatches(spot, needle: needle) { return (spot, 0) }
-                if regionMatches(spot, needle: needle) { return (spot, 1) }
+                if aliasMatches(aliases[spot.slug], needle: needle) { return (spot, 1) }
+                if regionMatches(spot, needle: needle) { return (spot, 2) }
                 return nil
             }
             .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.slug < $1.0.slug }
@@ -31,6 +34,10 @@ enum OfficialSpotIndex {
         [spot.name, spot.reading, spot.nameEn]
             .compactMap { $0 }
             .contains { MapSearch.fold($0).contains(needle) }
+    }
+
+    static func aliasMatches(_ aliases: [String]?, needle: String) -> Bool {
+        (aliases ?? []).contains { MapSearch.fold($0).contains(needle) }
     }
 
     private static func regionMatches(_ spot: OfficialSpot, needle: String) -> Bool {

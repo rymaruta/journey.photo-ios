@@ -19,7 +19,9 @@ enum PlaceSpotSuggestions {
     /// 出す数。**地名検索の候補を押し出さない**よう少なめに
     static let limit = 3
 
-    static func suggestions(query: String, near: Photo.Coords?, index: [OfficialSpot]) -> [OfficialSpot] {
+    /// `aliases` は slug → 別名（`OfficialSpotService.fetchAliases`・無ければ空）。別名にも当てる
+    static func suggestions(query: String, near: Photo.Coords?, index: [OfficialSpot],
+                            aliases: [String: [String]] = [:]) -> [OfficialSpot] {
         var seen = Set<String>()
         let usable = index.filter { !$0.isDraft && $0.coords != nil && seen.insert($0.spotId).inserted }
         let needle = MapSearch.fold(query)
@@ -34,6 +36,7 @@ enum PlaceSpotSuggestions {
             [spot.name, spot.reading, spot.nameEn]
                 .compactMap { $0 }
                 .contains { MapSearch.fold($0).contains(needle) }
+                || OfficialSpotIndex.aliasMatches(aliases[spot.slug], needle: needle)
         }
         guard let near else {
             return Array(matched.sorted { ($0.name, $0.slug) < ($1.name, $1.slug) }.prefix(limit))

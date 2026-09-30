@@ -56,3 +56,41 @@ final class PlaceSpotSuggestionsTests: XCTestCase {
         XCTAssertEqual(PlaceSpotSuggestions.coordsAfterPicking(s, photoHasPosition: false), s.coords)
     }
 }
+
+/// 撮影スポットの別名（`spot-search.json` の `a`）で当てる（2026-09-30）
+final class SpotAliasTests: XCTestCase {
+
+    private func spot(_ slug: String, name: String, prefecture: String? = nil) throws -> OfficialSpot {
+        var fields = ["\"spotId\":\"sp_\(slug)\"", "\"slug\":\"\(slug)\"", "\"name\":\"\(name)\"", "\"stage\":\"published\"",
+                      "\"coords\":{\"lat\":37.2,\"lng\":140.6}"]
+        if let prefecture { fields.append("\"region\":{\"prefecture\":\"\(prefecture)\"}") }
+        return try JSONDecoder.api.decode(OfficialSpot.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
+    }
+
+    /// Web が配る形（`lib/data/spotSearchFeed.ts` の `SpotSearchRow`）から slug → 別名。壊れた行・空の別名は落とす
+    func testParsesTheWebSearchFeed() {
+        let json = #"[{"s":"abukumado","n":"あぶくま洞","a":["月の世界"," ","鍾乳洞"],"g":"福島県 田村市"},{"s":"x","n":"名前だけ"},{"n":"slug無し"},{"s":"","a":["空"]}]"#
+        let map = OfficialSpotService.aliases(from: Data(json.utf8))
+        XCTAssertEqual(map, ["abukumado": ["月の世界", "鍾乳洞"]])
+        XCTAssertNil(OfficialSpotService.aliases(from: Data("<html>".utf8)))
+    }
+
+    /// 名前で当たったものが先、別名が次、地域だけが最後
+    func testAliasRanksBetweenNameAndRegion() throws {
+        let byName = try spot("b", name: "月の世界公園", prefecture: "福島県")
+        let byAlias = try spot("abukumado", name: "あぶくま洞", prefecture: "福島県")
+        let byRegion = try spot("r", name: "別の場所", prefecture: "月の世界県")
+        let hits = OfficialSpotIndex.matches([byRegion, byAlias, byName], query: "月の世界",
+                                             aliases: ["abukumado": ["月の世界"]])
+        XCTAssertEqual(hits.map(\.slug), ["b", "abukumado", "r"])
+        // 別名を渡さなければ今までどおり
+        XCTAssertEqual(OfficialSpotIndex.matches([byAlias], query: "月の世界").count, 0)
+    }
+
+    func testPlaceSuggestionsUseAliases() throws {
+        let s = try spot("abukumado", name: "あぶくま洞")
+        XCTAssertEqual(PlaceSpotSuggestions.suggestions(query: "鍾乳洞", near: nil, index: [s],
+                                                        aliases: ["abukumado": ["鍾乳洞"]]).map(\.slug), ["abukumado"])
+        XCTAssertTrue(PlaceSpotSuggestions.suggestions(query: "鍾乳洞", near: nil, index: [s]).isEmpty)
+    }
+}

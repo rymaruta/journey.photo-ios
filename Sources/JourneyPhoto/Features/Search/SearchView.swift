@@ -27,6 +27,8 @@ struct SearchView: View {
     /// 語で探したとき、写真とは別の節でガイドへ案内する（2026-09-30 のレビュー:
     /// 「銀山温泉」で写真0件・ガイドは在るのに案内されない。Web の「さがす」と同じ直し）
     @State private var officialSpots: [OfficialSpot] = []
+    /// 撮影スポットの別名（slug → 別名・`fetchAliases`）。取れなければ空で、名前と読みだけで当てる
+    @State private var spotAliases: [String: [String]] = [:]
     /// 撮影スポットの節を全部出しているか（語が変わったら畳む）
     @State private var spotsExpandedFor: String? = nil
 
@@ -91,8 +93,12 @@ struct SearchView: View {
         // **語が変わるたびに見直す**（取れていなければ取り直す・取れたら何もしない。
         // `fetchIndex` は控えを持ち、404 は60秒覚えるので叩きすぎない）
         .task(id: query) {
-            guard !query.isEmpty, officialSpots.isEmpty else { return }
-            officialSpots = (try? await environment.spots.fetchIndex()) ?? []
+            guard !query.isEmpty else { return }
+            if officialSpots.isEmpty {
+                officialSpots = (try? await environment.spots.fetchIndex()) ?? []
+            }
+            // 別名は控えがあれば通信しない（取れなかった回は1分叩き直さない）
+            if spotAliases.isEmpty { spotAliases = await environment.spots.fetchAliases() }
         }
         // **ブロック／通報の直後に消す。** `loadPhotos` は
         // `guard allPhotos.isEmpty` で二度と読まない作りなので、
@@ -640,12 +646,12 @@ struct SearchView: View {
         }
     }
 
-    /// 語に当たる撮影スポット（名前・読み・英語名・都道府県・市区町村）。地図の検索と同じ当て方
+    /// 語に当たる撮影スポット（名前・読み・英語名・別名・都道府県・市区町村）。地図の検索と同じ当て方に、別名を足したもの
     private var spotHits: [OfficialSpot] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, model.scope.showsSpots else { return [] }
         // **下書きは出さない**（地図の一覧・ホームと同じ。「撮影地ガイド」と名乗らせない）
-        return OfficialSpotIndex.matches(officialSpots.filter { !$0.isDraft }, query: q)
+        return OfficialSpotIndex.matches(officialSpots.filter { !$0.isDraft }, query: q, aliases: spotAliases)
     }
 
     /// **撮影スポットの節**（写真の件数とは混ぜない）。最初は5件、押すと全部

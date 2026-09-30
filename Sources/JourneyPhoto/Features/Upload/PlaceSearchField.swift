@@ -27,6 +27,8 @@ struct PlaceSearchField: View {
     @State private var spotSuggestions: [OfficialSpot] = []
     /// 撮影スポットの索引。欄に入ったときに1回読む（控えがあれば通信しない）。取れなければ出さないだけ
     @State private var spotIndex: [OfficialSpot]?
+    /// 撮影スポットの別名（slug → 別名）。取れなければ空（名前と読みだけで当てる）
+    @State private var spotAliases: [String: [String]] = [:]
     @State private var searchTask: Task<Void, Never>?
     @State private var isSearching = false
     /// **打っている人がいるときだけ候補を出す。**
@@ -146,7 +148,8 @@ struct PlaceSearchField: View {
     /// 撮影スポットの候補を出し直す（索引が読めていれば。端末の中だけで引く）
     private func suggestSpots(for value: String) {
         guard offersSpots, let spotIndex else { return }
-        spotSuggestions = PlaceSpotSuggestions.suggestions(query: value, near: near, index: spotIndex)
+        spotSuggestions = PlaceSpotSuggestions.suggestions(query: value, near: near, index: spotIndex,
+                                                           aliases: spotAliases)
             .filter { $0.name != location }
     }
 
@@ -155,6 +158,7 @@ struct PlaceSearchField: View {
         if spotIndex == nil {
             spotIndex = try? await environment.spots.fetchIndex()
         }
+        if spotAliases.isEmpty { spotAliases = await environment.spots.fetchAliases() }
         guard focused else { return }
         suggestSpots(for: location)
     }
