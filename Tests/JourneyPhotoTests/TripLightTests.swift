@@ -29,9 +29,8 @@ final class TripLightTests: XCTestCase {
         XCTAssertEqual(e.eveningGolden, "16:34–17:26")
         XCTAssertEqual(e.sunset, "17:09")
         XCTAssertEqual(e.season, "autumn")
-        XCTAssertEqual(TripLight.line(e).components(separatedBy: "\n").first,
-                       "明日 · 銀山温泉 · マジックアワー 16:34–17:26 · 日の入り 17:09")
-        XCTAssertTrue(TripLight.line(e).contains("\n秋: 温泉街の奥"))
+        // 札はほかの札と同じ2行まで（季節の案内は札に出さない＝並びの背を揃えても写真を押し下げない）
+        XCTAssertEqual(TripLight.line(e), "明日 · 銀山温泉 · マジックアワー 16:34–17:26 · 日の入り 17:09")
         XCTAssertTrue(e.seasonGuide!.hasSuffix("…"), "長い案内は切る")
     }
 
@@ -70,6 +69,33 @@ final class TripLightTests: XCTestCase {
         let e = try XCTUnwrap(TripLight.entry(plan: p, today: day("2024-06-21"), spots: [paris]))
         XCTAssertEqual(e.sunset, "21:58")
         XCTAssertNil(e.seasonGuide)
-        XCTAssertFalse(TripLight.line(e).contains("\n"), "案内が無ければ1行")
+    }
+
+    /// 最終日より後の日（日程が日付より長い）は拾わない
+    func testDaysBeyondTheEndAreNotPicked() throws {
+        let g = try spot("sp_g")
+        let p = plan(start: "2026-10-10", end: "2026-10-11", days: [[], [], ["sp_g"]])
+        XCTAssertNil(TripLight.entry(plan: p, today: day("2026-10-11"), spots: [g]), "3日目は帰着日を越える")
+        XCTAssertNil(TripLight.entry(plan: p, today: day("2026-10-12"), spots: [g]))
+    }
+
+    /// 🔴 北極圏（公開中のサンタクロース村・北緯66.5度）。Web の撮影の光の表と同じ言い分け
+    /// ——「日の入り 00:10」を朝のことに読ませない・一日中マジックアワーを「無い」と読ませない
+    func testArcticWordsMatchTheWeb() throws {
+        let santa = try spot("sp_s", name: "サンタクロース村", lat: 66.5436, lng: 25.8473, country: "フィンランド", seasons: "[]")
+        func entry(_ ymd: String) throws -> TripLight.Entry {
+            let p = plan(start: ymd, end: ymd, days: [["sp_s"]])
+            return try XCTUnwrap(TripLight.entry(plan: p, today: day(ymd), spots: [santa]))
+        }
+        let jan = try entry("2026-01-15")
+        XCTAssertEqual(jan.eveningGolden, "終日")
+        XCTAssertEqual(jan.sunset, "14:32")
+        let jun = try entry("2026-06-15")
+        XCTAssertEqual(jun.sunset, "白夜")
+        XCTAssertEqual(jun.eveningGolden, "22:18–（沈まない）")
+        XCTAssertEqual(try entry("2026-07-15").sunset, "翌00:10")
+        // 7月は沈むので「沈まない」とは言わない（明け方までつながる）
+        XCTAssertEqual(try entry("2026-07-15").eveningGolden, "21:59–（明け方まで）")
+        XCTAssertEqual(try entry("2026-05-15").eveningGolden, "21:16–翌00:18")
     }
 }

@@ -21,17 +21,54 @@ enum TripLight {
         let isTomorrow: Bool
         /// 1から（出発日が1日目）
         let dayNumber: Int
+        /// 日の入り。日付をまたげば「翌00:03」、白夜なら「白夜」（Web の撮影の光の表と同じ言い分け）
         let sunset: String?
-        /// 夕方のマジックアワー "HH:MM–HH:MM"
+        /// 夕方のマジックアワー "HH:MM–HH:MM"。一日中低ければ「終日」、終わらなければ「HH:MM–（沈まない）」
         let eveningGolden: String?
-        /// その季節の案内（短く切ったもの）。無ければ nil
+        /// その季節の案内（短く切ったもの）。札には出さず、呼ぶ側が使うときのため
         let seasonGuide: String?
         /// "spring"〜"winter"
         let season: String
     }
 
-    /// 季節の案内をここまでに切る（札の小さい行は2行まで）
+    /// 季節の案内をここまでに切る
     static let guideLimit = 38
+
+    private static let horizon = -0.833
+    private static let goldenTop = 6.0
+
+    /// "HH:MM" どうしで、後ろの方が早ければ翌日（日付をまたいだ）。Web の `nextDay` と同じ
+    private static func nextDay(_ earlier: String, _ later: String) -> String {
+        later < earlier ? L("翌\(later)", "\(later) (+1)") : later
+    }
+
+    /// 日の入りとマジックアワーの言い方（Web の `lightCalendar` と同じ言い分け・9d7ba04e のレビュー）
+    static func words(_ times: SunTimes, altitude: (max: Double, min: Double)?, in zone: TimeZone)
+        -> (sunset: String?, golden: String?) {
+        let rise = SunTimes.clock(times.sunrise, in: zone)
+        let set = SunTimes.clock(times.sunset, in: zone)
+        var sunset: String?
+        if let set {
+            sunset = rise.map { nextDay($0, set) } ?? set
+        } else if let altitude, altitude.min > horizon {
+            sunset = L("白夜", "Midnight sun")
+        }
+        let gStart = SunTimes.clock(times.eveningGolden.start, in: zone)
+        let gEnd = SunTimes.clock(times.eveningGolden.end, in: zone)
+        var golden: String?
+        if let gStart, let gEnd {
+            golden = "\(gStart)–\(nextDay(gStart, gEnd))"
+        } else if gStart == nil, let altitude, altitude.max < goldenTop, altitude.max > horizon {
+            // 昇るが一日中 6° まで上がらない＝昼のあいだずっとマジックアワー（昇らない日には言わない）
+            golden = L("終日", "All day")
+        } else if let gStart {
+            // −4° まで下がらない。沈まない（白夜）か、沈むが明け方までつながるか（Web と同じ言い分け）
+            golden = (altitude?.min ?? horizon) > horizon
+                ? L("\(gStart)–（沈まない）", "\(gStart)– (sun stays up)")
+                : L("\(gStart)–（明け方まで）", "\(gStart)– (until dawn)")
+        }
+        return (sunset, golden)
+    }
 
     static func entry(plan: TripPlan, today: Date, spots: [OfficialSpot]) -> Entry? {
         let todayYMD = TripPlanText.ymd(today)
@@ -52,9 +89,10 @@ enum TripLight {
                     let month = TakenDay.ymd(date)?.1 ?? 1
                     let season = SpotBodyText.season(ofMonth: month)
                     let guide = spot.seasons.first { $0.season == season }?.text
+                    let said = words(times, altitude: SunTimes.altitudeRange(date, lat: coords.lat, lng: coords.lng), in: zone)
                     return Entry(spot: spot, isTomorrow: isTomorrow, dayNumber: index + 1,
-                                 sunset: SunTimes.clock(times.sunset, in: zone),
-                                 eveningGolden: SunTimes.span(times.eveningGolden, in: zone),
+                                 sunset: said.sunset,
+                                 eveningGolden: said.golden,
                                  seasonGuide: guide.map { shorten($0) },
                                  season: season)
                 }
@@ -63,20 +101,16 @@ enum TripLight {
         return nil
     }
 
-    /// 札の小さい行（2行）:
+    /// 札の小さい行（**ほかの札と同じ2行まで**——3行にすると並びの背が揃うぶん全部の札が高くなり、
+    /// 下の写真の一覧が押し下がる）:
     ///   「明日 · 銀山温泉 · マジックアワー 16:26–17:18 · 日の入り 17:02」
-    ///   「秋: 紅葉の…」
-    /// 時刻が1つも無い（白夜など）ときは名前だけ
+    /// 季節の案内は札に出さない（スポットの画面にある）。時刻が1つも無ければ名前だけ
     static func line(_ entry: Entry) -> String {
         let when = entry.isTomorrow ? L("明日", "Tomorrow") : L("今日", "Today")
         var parts = [when, entry.spot.name]
         if let golden = entry.eveningGolden { parts.append(L("マジックアワー \(golden)", "Golden hour \(golden)")) }
         if let sunset = entry.sunset { parts.append(L("日の入り \(sunset)", "Sunset \(sunset)")) }
-        var text = parts.joined(separator: " · ")
-        if let guide = entry.seasonGuide {
-            text += "\n\(seasonLabel(entry.season)): \(guide)"
-        }
-        return text
+        return parts.joined(separator: " · ")
     }
 
     static func seasonLabel(_ season: String) -> String {

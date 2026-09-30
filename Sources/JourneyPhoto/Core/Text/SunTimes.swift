@@ -61,6 +61,14 @@ struct SunTimes: Equatable {
         return acos(cosW) / (2 * Double.pi)
     }
 
+    /// その暦日の太陽の高さの幅（度）: 南中の高さと、その反対側（Web の `sunAltitudeRange` と同じ）。
+    /// 時刻が出ない理由を言い分けるのに使う（白夜＝いちばん低くても沈まない・終日＝いちばん高くても 6° に届かない）
+    static func altitudeRange(_ ymd: String, lat: Double, lng: Double) -> (max: Double, min: Double)? {
+        guard lat.isFinite, abs(lat) <= 90, let day = solarDay(ymd, lng: lng) else { return nil }
+        let decl = day.decl / rad
+        return (90 - abs(lat - decl), abs(lat + decl) - 90)
+    }
+
     /// 日付が読めない・緯度が範囲外なら nil
     static func compute(_ ymd: String, lat: Double, lng: Double) -> SunTimes? {
         guard lat.isFinite, abs(lat) <= 90, let day = solarDay(ymd, lng: lng) else { return nil }

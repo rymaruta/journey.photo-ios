@@ -39,7 +39,8 @@ final class SunTimesTests: XCTestCase {
         let s = try XCTUnwrap(SunTimes.compute("2024-06-21", lat: 69.65, lng: 18.96))
         XCTAssertNil(s.sunrise)
         XCTAssertNil(s.sunset)
-        XCTAssertNil(SunTimes.span(Span(start: nil, end: s.sunset), in: tokyo))
+        XCTAssertGreaterThan(try XCTUnwrap(SunTimes.altitudeRange("2024-06-21", lat: 69.65, lng: 18.96)).min, -0.833,
+                             "いちばん低くても沈まない＝白夜")
     }
 
     func testRejectsBadInput() {
