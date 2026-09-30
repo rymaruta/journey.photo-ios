@@ -11,7 +11,9 @@ struct SearchView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// **「見せない」が変わったら控えを捨てるため**に見ている
     @EnvironmentObject private var hidden: ModerationStore
-    @EnvironmentObject private var tabRouter: TabRouter
+    /// タブの切り替え（「地図で見る」）。**`TabRouter.shared` を直に見る**（ほかの画面と同じ）
+    /// ——`@EnvironmentObject` はどこからも配られておらず、開いた瞬間に落ちた（verify.sh の NG）
+    @ObservedObject private var tabRouter = TabRouter.shared
     @StateObject private var model = SearchViewModel()
     @State private var query = ""
     /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**

@@ -47,6 +47,8 @@ struct StoryComposerView: View {
     @State private var song: Photo.Song?
     @State private var durationSec = StoryService.defaultDurationSec
     @State private var showSongPicker = false
+    /// 曲の流し始めを選ぶ（30秒の試聴のどこから鳴らすか）
+    @State private var showSongStart = false
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
@@ -56,11 +58,18 @@ struct StoryComposerView: View {
     @State private var textMode = false
     /// 選んでいる札
     @State private var selectedId: UUID?
+    /// 投票の札を選んでいる（札の `selectedId` とはどちらか一方）
+    @State private var voteSelected = false
+    /// 編集に入ったときの投票（「キャンセル」で戻す）
+    @State private var voteSnapshot: StoryVoteDraft?
     /// スタンプ（絵文字）の列を開いているか
     @State private var showStamps = false
     /// 編集に入ったときの写し（「やめる」で戻す）と、**どの写真の編集か**。
     /// 編集中に並びが増えて表示中の写真が移っても、戻す先を取り違えない
     @State private var overlaySnapshot: [TextOverlay] = []
+    /// 編集に入ったときの写真の合わせ方（「キャンセル」で戻す。編集中も札を選んでいなければ
+    /// 写真を合わせられる——写真を押すと選んでいる札が外れる）
+    @State private var framingSnapshot: PhotoFraming = .identity
     @State private var editingShotId: UUID?
     /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
     @FocusState private var captionFocused: Bool
@@ -98,9 +107,26 @@ struct StoryComposerView: View {
         )
     }
 
-    /// 下書きに残る中身（写真の並び・写真ごとの文字・ひとこと・撮影地・曲・秒数・残すか）
+    /// いま編集している写真の投票。文字と同じく `shots` の中を直に書き換える
+    private var vote: Binding<StoryVoteDraft?> {
+        Binding(
+            get: { shots.indices.contains(current) ? shots[current].vote : nil },
+            set: { if shots.indices.contains(current) { shots[current].vote = $0 } }
+        )
+    }
+
+    /// いま編集している写真の合わせ方（拡大・位置・回し）。文字と同じく `shots` の中を直に書き換える
+    private var framing: Binding<PhotoFraming> {
+        Binding(
+            get: { shots.indices.contains(current) ? shots[current].framing : .identity },
+            set: { if shots.indices.contains(current) { shots[current].framing = $0 } }
+        )
+    }
+
+    /// 下書きに残る中身（写真の並び・写真ごとの文字と合わせ方・ひとこと・撮影地・曲・秒数・残すか）
     private var content: StoryComposerContent {
         StoryComposerContent(shotIds: shots.map(\.id), overlays: shots.map(\.overlays),
+                        framings: shots.map(\.framing), votes: shots.map(\.vote),
                         caption: caption, location: location, song: song,
                         durationSec: durationSec, archive: keepInArchive,
                         allowReplies: allowReplies)
@@ -127,7 +153,7 @@ struct StoryComposerView: View {
             if textMode {
                 VStack(spacing: 8) {
                     kindChips
-                    Text(L("指で動かす・2本指で回す", "Drag to move · twist with two fingers to rotate"))
+                    Text(L("指で動かす・2本指で回す・つまんで大きさを変える", "Drag to move · twist to rotate · pinch to resize"))
                         .font(.system(size: 12))
                         .foregroundStyle(WebTheme.muted2)
                 }
@@ -139,6 +165,23 @@ struct StoryComposerView: View {
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { picked in applySong(picked) }
+            }
+        }
+        .sheet(isPresented: $showSongStart) {
+            if let song {
+                NavigationStack {
+                    // **曲の札は変えない**（題と歌い手は同じ）。流し始めだけを入れ替える
+                    SongStartSheet(song: song, durationSec: durationSec) { picked in self.song = picked }
+                }
+                // 中身は短い（画面いっぱいにしない）。大きな文字の人は引き上げられる
+                .presentationDetents([.medium, .large])
+            }
+        }
+        // **表示秒数を延ばしたら、流し始めを収まる所まで引き戻す**（Web と同じ）。
+        // そのままだと、見る人には試聴の終わりの数秒がくり返し鳴る
+        .onChange(of: durationSec) { _, window in
+            if let song, song.fitting(window: window) != song {
+                self.song = song.fitting(window: window)
             }
         }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
@@ -238,14 +281,25 @@ struct StoryComposerView: View {
             // 写真の後ろの地は黒（紺はパレットに無い）（デザインシステム「黒塗りの真鍮」）
             WebTheme.background.opacity(preview == nil ? 0 : 1)
             if let preview {
-                StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays,
+                StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays, framing: framing,
                             selectedId: textMode ? selectedId : nil,
                             onTap: { overlay in
                                 // 押したら文字と札の編集へ（その札を選んだ状態で）。
                                 // **編集中に押したときは写しを取り直さない**（「やめる」の戻り先が変わる）
                                 if !textMode { enterTextMode() }
                                 selectedId = overlay.id
-                            })
+                                voteSelected = false
+                            },
+                            // 写真を押したら選んでいる札を外す（写真を合わせられるように戻る）
+                            onTapPhoto: { if textMode { selectedId = nil; voteSelected = false } },
+                            vote: vote,
+                            voteSelected: textMode && voteSelected,
+                            onTapVote: {
+                                if !textMode { enterTextMode() }
+                                selectedId = nil
+                                voteSelected = true
+                            },
+                            photoId: shots.indices.contains(current) ? shots[current].id : nil)
             } else {
                 emptyPhoto
             }
@@ -297,7 +351,15 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if textMode, let selectedId, selectedIndex != nil {
+            if textMode, voteSelected, vote.wrappedValue != nil {
+                VotePanel(vote: Binding(
+                    get: { vote.wrappedValue ?? .new() },
+                    set: { vote.wrappedValue = $0 }
+                )) {
+                    vote.wrappedValue = nil
+                    voteSelected = false
+                }
+            } else if textMode, let selectedId, selectedIndex != nil {
                 OverlayPanel(overlay: overlayBinding(id: selectedId)) {
                     overlays.wrappedValue.removeAll { $0.id == selectedId }
                     self.selectedId = nil
@@ -343,11 +405,20 @@ struct StoryComposerView: View {
                 // 付けた曲は変える・外すを選ぶ（外す口が無かった）
                 Menu {
                     Button(L("曲を変える", "Change song")) { showSongPicker = true }
+                    // 流し始め（Web の「好きな部分」と同じ `startSec`）。いまの位置をメニューに出す
+                    Button(L("流し始め（\(Photo.Song.startLabel(song?.startSec))）",
+                             "Start point (\(Photo.Song.startLabel(song?.startSec)))")) { showSongStart = true }
                     Button(L("曲を外す", "Remove song"), role: .destructive) { applySong(nil) }
                 } label: {
                     toolIcon("music.note")
                 }
                 .accessibilityLabel(L("曲", "Song"))
+            }
+            // 写真を拡大・移動・回転したら、元へ戻す口（写真を2回押しても戻る）
+            if !framing.wrappedValue.isIdentity {
+                toolButton(symbol: "arrow.counterclockwise", label: L("写真の合わせ方を戻す", "Reset photo framing")) {
+                    framing.wrappedValue = .identity
+                }
             }
             toolButton(symbol: "mappin", label: L("撮影地", "Place")) {
                 placeDraft = location
@@ -480,6 +551,8 @@ struct StoryComposerView: View {
                     // **入ったときの写真へ戻す**（表示中の写真が移っていても取り違えない）
                     if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
                         shots[i].overlays = overlaySnapshot
+                        shots[i].framing = framingSnapshot
+                        shots[i].vote = voteSnapshot
                     }
                     leaveTextMode()
                 }
@@ -560,6 +633,15 @@ struct StoryComposerView: View {
         VStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    // 投票（写真1枚に1つ・焼き込まずに送る）。置いてあれば選び直すだけ
+                    OverlayChip(title: L("投票", "Poll"), systemImage: "chart.bar.xaxis",
+                                selected: voteSelected) {
+                        if vote.wrappedValue == nil { vote.wrappedValue = .new() }
+                        selectedId = nil
+                        voteSelected = true
+                        showStamps = false
+                    }
+                    .accessibilityIdentifier("story.add.vote")
                     ForEach(TextOverlay.Kind.allCases, id: \.rawValue) { kind in
                         OverlayChip(title: kind.toolLabel, systemImage: kind.toolSymbol,
                                     selected: kind == .stamp && showStamps) {
@@ -666,6 +748,8 @@ struct StoryComposerView: View {
         guard shots.indices.contains(current) else { return }
         captionFocused = false
         overlaySnapshot = shots[current].overlays
+        framingSnapshot = shots[current].framing
+        voteSnapshot = shots[current].vote
         editingShotId = shots[current].id
         textMode = true
     }
@@ -674,6 +758,7 @@ struct StoryComposerView: View {
         textMode = false
         showStamps = false
         selectedId = nil
+        voteSelected = false
         editingShotId = nil
     }
 
@@ -722,6 +807,7 @@ struct StoryComposerView: View {
         let overlay = TextOverlay(text: emoji, x: 0.5, y: 0.5, size: TextOverlay.stampSize, kind: .stamp)
         overlays.wrappedValue.append(overlay)
         selectedId = overlay.id
+        voteSelected = false
         // 置いたら列を閉じる。開いたままだと写真の上の方を覆い、そこの札を掴めない
         showStamps = false
     }
@@ -735,6 +821,8 @@ struct StoryComposerView: View {
                                   face: kind == .text ? .mincho : .gothic)
         overlays.wrappedValue.append(overlay)
         selectedId = overlay.id
+        // 投票を選んでいたら外す（下の欄が投票のまま残り、足した文字を直せなかった）
+        voteSelected = false
     }
 
     // MARK: - 共通
@@ -797,7 +885,7 @@ struct StoryComposerView: View {
 
 
     /// 左下の並び（板 24。44×56・選んでいる1枚は白の輪・他は薄く、最後に「＋」）。
-    /// **順番がそのまま出る順**。長押しで外せる
+    /// **順番がそのまま出る順**。長押しで前後へ移す・外す
     private var mediaStrip: some View {
         HStack(spacing: 8) {
             ForEach(Array(shots.enumerated()), id: \.element.id) { index, shot in
@@ -808,11 +896,24 @@ struct StoryComposerView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
+                    // 並べ替え（出る順を変える）。端では出さない（押しても動かない項目を置かない）
+                    if index > 0 {
+                        Button { move(from: index, to: index - 1) } label: {
+                            Label(L("前へ移す", "Move earlier"), systemImage: "arrow.left")
+                        }
+                    }
+                    if index < shots.count - 1 {
+                        Button { move(from: index, to: index + 1) } label: {
+                            Label(L("後ろへ移す", "Move later"), systemImage: "arrow.right")
+                        }
+                    }
                     Button(role: .destructive) { remove(at: index) } label: {
                         Label(L("この写真を外す", "Remove this photo"), systemImage: "trash")
                     }
                 }
-                // 読み上げからも外せる（長押しのメニューは見つけにくい）
+                // 読み上げからも移す・外す（長押しのメニューは見つけにくい）
+                .accessibilityAction(named: L("前へ移す", "Move earlier")) { move(from: index, to: index - 1) }
+                .accessibilityAction(named: L("後ろへ移す", "Move later")) { move(from: index, to: index + 1) }
                 .accessibilityAction(named: L("この写真を外す", "Remove this photo")) { remove(at: index) }
             }
             if shots.count < StoryQueue.maxShots {
@@ -857,6 +958,15 @@ struct StoryComposerView: View {
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 
+    /// 1枚を前後へ移す。**編集している写真を追いかける**（`StoryQueue.currentAfterMoving`）。
+    /// 範囲の外へは移さない（読み上げの操作は端でも呼べる）
+    private func move(from: Int, to: Int) {
+        guard shots.indices.contains(from), shots.indices.contains(to), from != to else { return }
+        let shot = shots.remove(at: from)
+        shots.insert(shot, at: to)
+        current = StoryQueue.currentAfterMoving(from: from, to: to, current: current)
+    }
+
     /// 1枚外す。**編集中の位置がずれないように直す**
     /// ——直さないと、外した瞬間に別の写真の文字を触ることになる
     private func remove(at index: Int) {
@@ -877,7 +987,9 @@ struct StoryComposerView: View {
                                           fileName: shot.prepared.fileName,
                                           contentType: shot.prepared.contentType,
                                           coords: shot.prepared.coords,
-                                          overlays: shot.overlays)
+                                          overlays: shot.overlays,
+                                          framing: shot.framing.isIdentity ? nil : shot.framing,
+                                          vote: shot.vote)
             },
             caption: caption,
             location: location,
@@ -940,12 +1052,16 @@ struct StoryComposerView: View {
                                                   // EXIF は下書きに残していない（ストーリーは送らない）
                                                   exif: nil, coords: item.shot.coords, takenOn: nil)
             return StoryShot(prepared: restored, image: UIImage(data: item.data),
-                             overlays: item.shot.overlays)
+                             overlays: item.shot.overlays, framing: item.shot.framing ?? .identity,
+                             vote: item.shot.vote)
         }
         current = 0
         caption = draft.caption
         location = draft.location
-        song = draft.song
+        // 流し始めは表示秒数に収めてから戻す（`restoredContent` もその値で撮る）。
+        // 収まっていない下書きをそのまま戻すと、表示秒数が変わらない回は上限を越えたまま
+        // 送られ、変わる回は何も触らずに閉じても「変更あり」になった（c15a415 のレビュー）
+        song = draft.song?.fitting(window: draft.durationSec)
         durationSec = draft.durationSec
         keepInArchive = draft.archive == true
         allowReplies = draft.allowReplies != false
@@ -965,6 +1081,13 @@ struct StoryComposerView: View {
         // ここは同期で、1回目で画面を閉じ係に渡す。2回目は係が「片付いていない
         // 並びがある」で受けない
         guard !shots.isEmpty, let ownerId = auth.userId else { return }
+        // **欠けた投票は送らない**（サーバーが黙って落とす＝置いたのに出ない）。どの写真かを言う
+        if let index = shots.firstIndex(where: { $0.vote.map { !$0.isComplete } ?? false }) {
+            current = index
+            message = L("\(index + 1)枚目の投票に、問いと2つの選択肢を入れてください",
+                        "Fill in the question and both options of the poll on photo \(index + 1)")
+            return
+        }
         message = nil
         let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -972,10 +1095,11 @@ struct StoryComposerView: View {
         // （読み書きの往復で画質を落とさない）
         let jobs = shots.map { shot in
             StoryUploadCenter.Job(
-                imageData: TextOverlayRenderer.burn(shot.overlays, into: shot.prepared.data),
+                imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),
                 caption: caption, location: place, coords: shot.prepared.coords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
-                allowReplies: allowReplies)
+                allowReplies: allowReplies,
+                texts: StoryPostText.list(vote: shot.vote, caption: caption))
         }
         let stories = environment.stories
         let drafts = drafts
@@ -1028,12 +1152,19 @@ struct StoryShot: Identifiable {
     /// 編集画面の文字は投稿される画像と同じ基準で置かれる
     var imageSize: CGSize?
     var overlays: [TextOverlay] = []
+    /// 写真の合わせ方（拡大・位置・回し）。**写真ごと**（文字と同じ理由）
+    var framing: PhotoFraming = .identity
+    /// 投票（写真1枚＝1本に1つ）。**焼き込まずにデータで送る**
+    var vote: StoryVoteDraft?
 
-    init(prepared: ImagePreparer.Prepared, image: UIImage?, overlays: [TextOverlay] = []) {
+    init(prepared: ImagePreparer.Prepared, image: UIImage?, overlays: [TextOverlay] = [],
+         framing: PhotoFraming = .identity, vote: StoryVoteDraft? = nil) {
         self.prepared = prepared
         self.preview = image.map { Image(uiImage: $0) }
         self.imageSize = image?.size
         self.overlays = overlays
+        self.framing = framing
+        self.vote = vote
     }
 }
 
@@ -1045,6 +1176,10 @@ struct StoryShot: Identifiable {
 struct StoryComposerContent: Equatable {
     var shotIds: [UUID]
     var overlays: [[TextOverlay]]
+    /// 写真ごとの合わせ方。前の呼び手・テストは持たない（どれも合わせていない）
+    var framings: [PhotoFraming] = []
+    /// 写真ごとの投票（置いていなければ nil）
+    var votes: [StoryVoteDraft?] = []
     var caption: String
     var location: String
     var song: Photo.Song?

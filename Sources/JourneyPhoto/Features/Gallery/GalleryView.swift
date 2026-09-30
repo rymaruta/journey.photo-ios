@@ -261,11 +261,11 @@ struct GalleryView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(1)
+                // 本文の最小は 12pt（CLAUDE.md）。縮めずに2行まで
                 Text(note)
-                    .font(.caption2)
+                    .font(.system(size: 12))
                     .foregroundStyle(WebTheme.faint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .lineLimit(2)
             }
             Spacer(minLength: 0)
         }

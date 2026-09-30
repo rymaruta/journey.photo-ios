@@ -395,6 +395,8 @@ public struct ColorPicker: View {
 /// つまみ（文字の大きさを決めるのに使う）。
 public struct Slider: View {
     public init(value: Binding<Double>, in range: ClosedRange<Double>) {}
+    public init(value: Binding<Double>, in range: ClosedRange<Double>, step: Double,
+                onEditingChanged: @escaping (Bool) -> Void = { _ in }) {}
     public var body: Never { fatalError("模型") }
 }
 

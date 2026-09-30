@@ -479,4 +479,75 @@ extension TextOverlayTests {
         XCTAssertEqual(TextOverlay.hex(red: 1, green: 0, blue: 0.5), 0xFF0080)
         XCTAssertEqual(TextOverlay.hex(red: 1.2, green: -0.1, blue: .nan), 0xFF0000)
     }
+
+    /// 2本指でつまむ。**幅はスライダーと同じ**（つまめば上限を越えられる、にしない）。
+    /// 読めない倍率では変えない
+    func testPinchScalesWithinTheSliderRange() {
+        let overlay = TextOverlay(text: "港", size: 0.1)
+        XCTAssertEqual(overlay.scaled(by: 1.5).size, 0.15, accuracy: 0.0001)
+        XCTAssertEqual(overlay.scaled(by: 0.5).size, 0.05, accuracy: 0.0001)
+        XCTAssertEqual(overlay.scaled(by: 10).size, TextOverlay.maxSize, accuracy: 0.0001)
+        XCTAssertEqual(overlay.scaled(by: 0.01).size, TextOverlay.minSize, accuracy: 0.0001)
+        for bad in [0, -2, Double.infinity, Double.nan] {
+            XCTAssertEqual(overlay.scaled(by: bad), overlay, "\(bad)")
+        }
+        // 大きさ以外は変えない
+        var moved = overlay.scaled(by: 1.5)
+        moved.size = overlay.size
+        XCTAssertEqual(moved, overlay)
+    }
+
+    /// 改行は**自由な文字だけ**。札（撮影地・タグなど）の改行は空白にする
+    func testNewlinesOnlyInFreeTextAndLengthCapped() {
+        XCTAssertEqual(TextOverlay.cleaned("港\n夕方", kind: .text), "港\n夕方")
+        XCTAssertEqual(TextOverlay.cleaned("港\r\n夕方\r朝", kind: .text), "港\n夕方\n朝")
+        XCTAssertEqual(TextOverlay.cleaned("函館\n港", kind: .place), "函館 港")
+        XCTAssertEqual(TextOverlay.cleaned("旅\r\n写真", kind: .hashtag), "旅 写真")
+        XCTAssertEqual(TextOverlay.cleaned(String(repeating: "あ", count: 300), kind: .text).count,
+                       TextOverlay.maxLength)
+        // 作るときも同じ整え方を通る
+        XCTAssertEqual(TextOverlay(text: "函館\n港", kind: .place).text, "函館 港")
+        XCTAssertEqual(TextOverlay(text: "港\n夕方", kind: .text).text, "港\n夕方")
+    }
+
+    /// 🔴 **行の数では切らない**（6行で切ると、途中で改行したとき最後の行が黙って消えた）。
+    /// 札は改行を空白にする
+    func testManyLinesAreKeptWhole() {
+        let eight = "1\n2\n3\n4\n5\n6\n7\n8"
+        XCTAssertEqual(TextOverlay.cleaned(eight, kind: .text), eight)
+        XCTAssertEqual(TextOverlay.cleaned("1\n2\n3\nx\n4\n5\n6", kind: .text), "1\n2\n3\nx\n4\n5\n6")
+        XCTAssertEqual(TextOverlay.cleaned("函館\n港", kind: .place), "函館 港")
+    }
+
+    /// 写真の上に描く文字は、**最後の改行と空白だけの行を落とす**（焼き込みだけ下に空の行が
+    /// できて字が半行ずれた）。途中の空の行は残す
+    func testDrawnTextDropsTrailingEmptyLines() {
+        XCTAssertEqual(TextOverlay(text: "港\n").drawnText, "港")
+        XCTAssertEqual(TextOverlay(text: "港\n  \n").drawnText, "港")
+        XCTAssertEqual(TextOverlay(text: "港\n\n夕方").drawnText, "港\n\n夕方")
+        XCTAssertEqual(TextOverlay(text: "函館", kind: .place).drawnText, "📍 函館")
+    }
+
+    /// 読むときも整える（前の版の下書きに7行・改行入りの札があっても置ける形で戻る）
+    func testDecodeCleansText() throws {
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"函館\n港","x":0.5,"y":0.5,"size":0.07,"style":"banner","kind":"place"}"#
+        XCTAssertEqual(try JSONDecoder().decode(TextOverlay.self, from: Data(json.utf8)).text, "函館 港")
+    }
+
+    /// 揃えは下書きに残る。前の版の下書き（揃えが無い）は中央＝これまでの見た目
+    func testAlignRoundTripAndOldDraftIsCentered() throws {
+        var overlay = TextOverlay(text: "港\n夕方")
+        XCTAssertEqual(overlay.align, .center)
+        overlay.align = .trailing
+        let back = try JSONDecoder().decode(TextOverlay.self, from: JSONEncoder().encode(overlay))
+        XCTAssertEqual(back.align, .trailing)
+        XCTAssertEqual(back.text, "港\n夕方")
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"港","x":0.5,"y":0.5,"size":0.07,"style":"light","kind":"text"}"#
+        XCTAssertEqual(try JSONDecoder().decode(TextOverlay.self, from: Data(json.utf8)).align, .center)
+    }
+
+    /// 改行と揃えは自由な文字だけ
+    func testOnlyFreeTextAllowsNewlines() {
+        XCTAssertEqual(TextOverlay.Kind.allCases.filter(\.allowsNewlines), [.text])
+    }
 }

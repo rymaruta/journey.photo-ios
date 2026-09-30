@@ -124,8 +124,11 @@ public final class UIFont {
         public static let regular = Weight(), medium = Weight(), semibold = Weight(), bold = Weight(), heavy = Weight()
     }
     public static func systemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
+    public static func monospacedSystemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
     public init() {}
     public init?(name: String, size: Double) {}
+    /// 1行の高さ（複数行の焼き込みで行を送る）
+    public var lineHeight: Double { 0 }
 }
 
 /// 描き込み先（回して描くのに使うぶんだけ）
@@ -162,6 +165,37 @@ extension NSAttributedString.Key {
     public static let foregroundColor = NSAttributedString.Key("foregroundColor")
     public static let strokeColor = NSAttributedString.Key("strokeColor")
     public static let strokeWidth = NSAttributedString.Key("strokeWidth")
+    public static let paragraphStyle = NSAttributedString.Key("paragraphStyle")
+}
+
+/// 行の揃え（複数行の焼き込み）。本物は UIKit が持つ
+public enum NSTextAlignment { case left, center, right, justified, natural }
+
+open class NSParagraphStyle: NSObject {
+    open var alignment: NSTextAlignment { .natural }
+}
+
+open class NSMutableParagraphStyle: NSParagraphStyle {
+    private var storedAlignment: NSTextAlignment = .natural
+    open override var alignment: NSTextAlignment {
+        get { storedAlignment }
+        set { storedAlignment = newValue }
+    }
+}
+
+public struct NSStringDrawingOptions: OptionSet {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let usesLineFragmentOrigin = NSStringDrawingOptions(rawValue: 1)
+}
+
+/// 描き込みの文脈（使わない・本物と同じ形のため）
+public final class NSStringDrawingContext {}
+
+extension NSAttributedString {
+    public func boundingRect(with size: CGSize, options: NSStringDrawingOptions,
+                             context: NSStringDrawingContext?) -> CGRect { .zero }
+    public func draw(with rect: CGRect, options: NSStringDrawingOptions, context: NSStringDrawingContext?) {}
 }
 
 extension NSString {

@@ -106,9 +106,10 @@ final class MusicPreviewPlayer: ObservableObject {
     /// 戻り値は `session`（後始末で「自分の曲か」を見分ける）
     /// `from` は鳴らし始める位置（秒）。繰り返すときもそこへ戻る（Web と同じ）
     @discardableResult
-    func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false, from startSeconds: Double = 0) -> Int {
+    func play(_ url: URL?, song: Photo.Song? = nil, loops: Bool = false, from startSeconds: Double = 0,
+              origin: PlaybackOrigin = .app) -> Int {
         guard let url else { return session }
-        start(url, song: song, loops: loops, from: startSeconds)
+        start(url, song: song, loops: loops, origin: origin, from: startSeconds)
         return session
     }
 

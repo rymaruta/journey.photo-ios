@@ -34,12 +34,16 @@ final class StoryUploadCenter: ObservableObject {
         let archive: Bool
         /// 返信を受けるか（切ったときだけサーバーへ `false` を送る）
         let allowReplies: Bool
+        /// 写真の上にデータで置くもの（投票と、そのときのひとこと・`StoryPostText.list`）。
+        /// 無ければ送らない
+        let texts: [StoryPostText]?
         /// 上げ終えた画像（送り直しで二重に出さないための目印・`StoryService.post`）
         var uploaded: StoryService.UploadedMedia?
 
         init(id: UUID = UUID(), imageData: Data, caption: String, location: String,
              coords: Photo.Coords?, song: Photo.Song?, durationSec: Int, archive: Bool,
-             allowReplies: Bool = true, uploaded: StoryService.UploadedMedia? = nil) {
+             allowReplies: Bool = true, texts: [StoryPostText]? = nil,
+             uploaded: StoryService.UploadedMedia? = nil) {
             self.id = id
             self.imageData = imageData
             self.caption = caption
@@ -49,6 +53,7 @@ final class StoryUploadCenter: ObservableObject {
             self.durationSec = durationSec
             self.archive = archive
             self.allowReplies = allowReplies
+            self.texts = texts
             self.uploaded = uploaded
         }
     }
@@ -304,6 +309,9 @@ final class StoryUploadCenter: ObservableObject {
             /// 前の版の並びには無い（nil＝返信を受ける。切ったときだけ `false` を書く）
             let allowReplies: Bool?
             let uploaded: StoryService.UploadedMedia?
+            /// 写真の上にデータで置くもの（投票など）。**書かないと、途中で落ちて戻したときに
+            /// 投票の無いストーリーとして出た**（274951f のレビュー）。前の版には無い
+            let texts: [StoryPostText]?
         }
         let ownerId: String
         let total: Int
@@ -334,7 +342,7 @@ final class StoryUploadCenter: ObservableObject {
                                latitude: job.coords?.lat, longitude: job.coords?.lng,
                                song: job.song, durationSec: job.durationSec,
                                archive: job.archive, allowReplies: job.allowReplies ? nil : false,
-                               uploaded: job.uploaded)
+                               uploaded: job.uploaded, texts: job.texts)
             }, draftToClear: draftToClear)
             try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
         } catch {
@@ -371,7 +379,7 @@ final class StoryUploadCenter: ObservableObject {
             return Job(id: entry.id, imageData: image, caption: entry.caption, location: entry.location,
                        coords: coords, song: entry.song, durationSec: entry.durationSec,
                        archive: entry.archive, allowReplies: entry.allowReplies != false,
-                       uploaded: entry.uploaded)
+                       texts: entry.texts, uploaded: entry.uploaded)
         }
         guard !jobs.isEmpty, !manifest.ownerId.isEmpty else {
             clearStorage()

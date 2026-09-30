@@ -218,6 +218,7 @@ extension View {
     public func ignoresSafeArea() -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 揃えの位置を自分で決める（本物と同じ）
     public func alignmentGuide(_ g: VerticalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func alignmentGuide(_ g: HorizontalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 端を選んで安全領域を無視する（本物は `regions:` も取る）
     public func ignoresSafeArea(edges: Edge.Set) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 画面の端に貼り付く帯（iOS 15+）。本物はスクロールの底の余白も足す。
@@ -311,6 +312,8 @@ extension View {
     /// スクロールでキーボードを下げる（本物と同じ）
     public func scrollDismissesKeyboard(_ mode: ScrollDismissesKeyboardModeShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func focused(_ condition: Binding<Bool>) -> Self { self }
+    /// どの欄に居るかを値で持つ（本物と同じ・`FocusState<V?>`）
+    public func focused<V: Hashable>(_ binding: Binding<V?>, equals value: V) -> Self { self }
     public func disabled(_ v: Bool) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tag<V: Hashable>(_ v: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func badge(_ count: Int) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -413,12 +416,18 @@ public struct RotationGesture: Gesture {
     public init() {}
     public func onChanged(_ action: @escaping (Angle) -> Void) -> RotationGesture { self }
     public func onEnded(_ action: @escaping (Angle) -> Void) -> RotationGesture { self }
+    /// 指で動かしている間の値を `@GestureState` に書く（本物と同じ）
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Angle, inout S, inout Transaction) -> Void) -> RotationGesture { self }
 }
 
 public struct MagnificationGesture: Gesture {
     public init(minimumScaleDelta: Double = 0.01) {}
     public func onChanged(_ action: @escaping (Double) -> Void) -> MagnificationGesture { self }
     public func onEnded(_ action: @escaping (Double) -> Void) -> MagnificationGesture { self }
+    /// 指で動かしている間の値を `@GestureState` に書く（本物と同じ）
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Double, inout S, inout Transaction) -> Void) -> MagnificationGesture { self }
 }
 
 public struct TapGesture: Gesture {

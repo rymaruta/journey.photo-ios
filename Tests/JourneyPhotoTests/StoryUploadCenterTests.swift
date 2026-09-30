@@ -257,6 +257,33 @@ final class StoryUploadCenterTests: XCTestCase {
         center.userChanged(to: nil)
     }
 
+    /// 🔴 **投票（`texts`）も端末に残す**。書かないと、途中で落ちて戻したときに投票の無い
+    /// ストーリーとして出た（274951f のレビュー）
+    func testTextsSurviveARelaunch() async throws {
+        let dir = tempDir()
+        let center = StoryUploadCenter(directory: dir)
+        let texts = StoryPostText.list(vote: .new(), caption: "港")
+        var release = false
+        center.start([StoryUploadCenter.Job(imageData: Data([7]), caption: "港", location: "", coords: nil,
+                                            song: nil, durationSec: 5, archive: false, texts: texts)],
+                     ownerId: "me", currentUserId: { "me" },
+                     send: { _, _ in
+            while !release { await Task.yield() }
+            throw Boom()
+        })
+        for _ in 0..<200 { await Task.yield() }
+
+        let relaunched = StoryUploadCenter(directory: dir)
+        var sent: [[StoryPostText]?] = []
+        relaunched.configure(currentUserId: { "me" }, send: { j, _ in sent.append(j.texts) },
+                             discardUpload: { _ in })
+        relaunched.retry()
+        await settle(relaunched)
+        XCTAssertEqual(sent, [texts], "戻した並びで投票が落ちた")
+        release = true
+        center.userChanged(to: nil)
+    }
+
     /// 起動直後に別の人でログインしていたら、前の人の残りは送らない
     func testRestoredJobsAreDroppedForAnotherUser() async {
         let dir = tempDir()

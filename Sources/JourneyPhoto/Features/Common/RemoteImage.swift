@@ -19,6 +19,10 @@ struct RemoteImage: View {
     /// ストーリーが「絵が出る前から秒数を減らす」のを防ぐためのもの。
     /// 既定は何もしない（他の呼び出しは変わらない）
     var onSettled: ((Bool) -> Void)? = nil
+    /// 絵が敷かれた大きさ（縦横比のまま `contentMode` で敷いたもの）。**絵の縦横比を知る口**
+    /// ——ストーリーの上にデータで置いた文字は絵の矩形に対する割合で置く（`StoryTextLayer`）。
+    /// 既定は何もしない
+    var onLayout: ((CGSize) -> Void)? = nil
     /// 出せないときに置く記号。
     ///
     /// **人のアイコンに「壊れた写真」の記号を出さない。** アバターを
@@ -38,6 +42,15 @@ struct RemoteImage: View {
                         // 読み込み中の輪と失敗の記号まで隅に寄って、
                         // 44〜56pt の枠では切れて見えなくなる
                         image.resizable().aspectRatio(contentMode: contentMode)
+                            .background {
+                                if let onLayout {
+                                    GeometryReader { g in
+                                        Color.clear
+                                            .onAppear { onLayout(g.size) }
+                                            .onChange(of: g.size) { _, size in onLayout(size) }
+                                    }
+                                }
+                            }
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
                             .onAppear { onSettled?(true) }
                     case .failure:
