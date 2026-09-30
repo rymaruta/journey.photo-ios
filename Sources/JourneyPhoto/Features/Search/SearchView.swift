@@ -75,6 +75,12 @@ struct SearchView: View {
             if !query.isEmpty, officialSpots.isEmpty {
                 officialSpots = (try? await environment.spots.fetchIndex()) ?? []
             }
+            // 別名も同じ（詳細を開いている間に届いた回は捨てているので、ここで取り直す）
+            // 引き下げの途中で詳細を開いたら入れ替えない（`.task(id: query)` の 🔴）
+            if !query.isEmpty, spotAliases.isEmpty {
+                let fetched = await environment.spots.fetchAliases()
+                if isOnScreen { spotAliases = fetched }
+            }
         }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
@@ -125,6 +131,14 @@ struct SearchView: View {
             isOnScreen = true
             dropped = hidden.snapshot
             if needsReload { reloadHidden() }
+            // 🔴 詳細を開いている間に届いた別名は捨てている（`.task(id: query)` の注記）。
+            // 同じ語のまま戻ると `.task(id:)` は走らないので、ここで取り直す
+            if !query.isEmpty, spotAliases.isEmpty {
+                Task {
+                    let fetched = await environment.spots.fetchAliases()
+                    if isOnScreen { spotAliases = fetched }
+                }
+            }
         }
         .onDisappear { isOnScreen = false }
     }
@@ -681,7 +695,8 @@ struct SearchView: View {
                     ForEach(Array((expanded ? hits : Array(hits.prefix(5))).enumerated()), id: \.element.id) { i, spot in
                         if i > 0 { Divider().overlay(WebTheme.border) }
                         NavigationLink {
-                            OfficialSpotView(spot: spot, spots: officialSpots, photos: model.everything)
+                            OfficialSpotView(spot: spot, spots: officialSpots, photos: model.everything,
+                                             photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed, photos: model.everything))
                         } label: {
                             spotRow(spot)
                         }

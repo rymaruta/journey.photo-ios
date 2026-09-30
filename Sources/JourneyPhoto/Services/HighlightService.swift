@@ -156,6 +156,8 @@ struct Highlight: Decodable, Identifiable, Equatable {
         let mediaType: String?
 
         var isVideo: Bool { mediaType?.hasPrefix("video") ?? false }
+        /// 表紙の絵。**動画は絵として読めないので nil**
+        var imageURL: URL? { isVideo ? nil : URL(string: src) }
 
         init(src: String, mediaType: String? = nil) {
             self.src = src
@@ -176,10 +178,7 @@ struct Highlight: Decodable, Identifiable, Equatable {
     }
 
     /// 表紙の絵。**動画の表紙は絵として読めないので出さない**（地の円にする）
-    var coverURL: URL? {
-        guard let cover, !cover.isVideo else { return nil }
-        return URL(string: cover.src)
-    }
+    var coverURL: URL? { cover?.imageURL }
     /// 名前が空のまま保存されることはないが、古い行に備えて空は伏せる
     var displayTitle: String { title.isEmpty ? L("ハイライト", "Highlight") : title }
 }
@@ -190,4 +189,11 @@ struct HighlightContents: Decodable, Equatable {
     let title: String
     let coverStoryId: String?
     let items: [Story]
+
+    /// 🔴 **読み直した中身の表紙。** 見出しは一覧の行の表紙を使っていたので、再生画面から
+    /// 編集して表紙を外しても、編集前の絵のまま残った。並びから引けなければ `fallback`
+    func coverURL(fallback: URL?) -> URL? {
+        guard let coverStoryId, let story = items.first(where: { $0.id == coverStoryId }) else { return fallback }
+        return Highlight.Cover(src: story.src, mediaType: story.mediaType).imageURL
+    }
 }

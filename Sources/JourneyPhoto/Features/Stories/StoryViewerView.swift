@@ -1380,9 +1380,13 @@ struct StoryViewerView: View {
             // 落とした位置に次の1本が詰まる。最後だったら1つ手前
             go(to: min(index, remaining.count - 1))
         }
-        // **受け付けたことはここで伝える。** 通報シートのトーストは
-        // 画面の外の知らせで、全画面の閲覧画面の上には出ない
-        message = L("通報を受け付けました。ありがとうございます。", "Thanks — your report was received.")
+        // **並びの外では、受け付けたことをここでも伝える。** 人から人への並び
+        // （`StoryReelView`）は通報シートの知らせ（`ToastCenter`）を上に重ねて出すので、
+        // ここで出すと同じ文が2つ重なる。並びの外（シートの中から開いたハイライトなど）は
+        // その知らせがシートの裏に隠れるので、閲覧画面の欄で伝える
+        if !swipesHandledOutside {
+            message = L("通報を受け付けました。ありがとうございます。", "Thanks — your report was received.")
+        }
     }
 
     // MARK: - 足元

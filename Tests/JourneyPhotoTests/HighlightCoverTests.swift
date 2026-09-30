@@ -69,4 +69,20 @@ final class HighlightCoverTests: XCTestCase {
         XCTAssertEqual(list.map(\.id), ["h1", "h2"])
         XCTAssertNil(list[0].cover)
     }
+
+    /// 🔴 **再生画面の見出しの表紙は、読み直した中身から引く。** 一覧の行の表紙を
+    /// 使っていたので、編集で表紙を外しても編集前の絵のまま残った
+    func testPlayerCoverFollowsTheReloadedContents() throws {
+        func contents(cover: String?) throws -> HighlightContents {
+            let coverField = cover.map { #","coverStoryId":"\#($0)""# } ?? ""
+            let json = #"{"id":"h1","title":"パリ"\#(coverField),"items":[{"id":"a","src":"https://x.test/a.jpg"},{"id":"b","src":"https://x.test/b.mp4","mediaType":"video"}]}"#
+            return try JSONDecoder.api.decode(HighlightContents.self, from: Data(json.utf8))
+        }
+        let old = URL(string: "https://x.test/old.jpg")
+        XCTAssertEqual(try contents(cover: "a").coverURL(fallback: old)?.absoluteString,
+                       "https://x.test/a.jpg", "編集前の表紙が残った")
+        XCTAssertNil(try contents(cover: "b").coverURL(fallback: old), "動画の表紙は絵にしない")
+        XCTAssertEqual(try contents(cover: nil).coverURL(fallback: old), old, "引けなければ今の表紙")
+        XCTAssertEqual(try contents(cover: "gone").coverURL(fallback: old), old, "引けなければ今の表紙")
+    }
 }

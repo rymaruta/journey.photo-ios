@@ -27,7 +27,8 @@ struct HighlightPlayerView: View {
                     stories: contents.items, startIndex: 0, viewerId: auth.userId,
                     // 題は**読み直した中身**から（名前を変えた後も最初の題のままだった）
                     highlight: .init(title: contents.title.isEmpty ? highlight.displayTitle : contents.title,
-                                     coverURL: highlight.coverURL,
+                                     // 表紙も読み直した中身から（編集で外した表紙が残った）
+                                     coverURL: contents.coverURL(fallback: highlight.coverURL),
                                      // **並んでいる本数を出す**（サーバーの数はアーカイブから
                                      // 外れたぶんも数えていて、進行バーの区切りと割れる）
                                      count: contents.items.count,
