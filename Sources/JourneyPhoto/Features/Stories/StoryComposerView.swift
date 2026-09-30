@@ -178,7 +178,10 @@ struct StoryComposerView: View {
             // 写真の上で直接打つ（開いたらすぐキーボード）
             if let typingId {
                 StoryTextTypingView(overlay: typingBinding(id: typingId),
-                                    photoShortSide: photoShortSide) { finishTyping() }
+                                    photoShortSide: photoShortSide,
+                                    visiblePhoto: StoryTextEditing.visiblePhotoSize(
+                                        canvas: typingCanvas,
+                                        image: shots.first { $0.id == typingShotId }?.imageSize)) { finishTyping() }
             }
         }
         // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）

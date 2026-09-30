@@ -18,6 +18,8 @@ struct StoryTextTypingView: View {
     @Binding var overlay: TextOverlay
     /// 画面上の写真の短い辺（pt）。**焼き込みと同じ大きさで見せる**ため。分からなければ 0
     let photoShortSide: Double
+    /// 画面に見えている写真の大きさ（pt）。**仕上がりがはみ出すかはこれと比べる**（打つ画面の空きではない）
+    let visiblePhoto: CGSize
     var onDone: () -> Void
 
     @FocusState private var focused: Bool
@@ -48,9 +50,13 @@ struct StoryTextTypingView: View {
                     // ——横に流すとキャレットが画面の外へ出て追えず、流す指でキーボードも閉じた
                     // （92a38d7 のレビュー）
                     GeometryReader { area in
+                        // はみ出しは**仕上がり（置いたあとの文字）と写真の見えている範囲**で見る
+                        let overflow = overlay.isEmpty ? StoryTextEditing.Overflow()
+                            : StoryTextEditing.overflow(content: finishedSize(fontSize: fontSize), photo: visiblePhoto)
+                        // 見せるための縮みは、打つ画面の空き（つまみを避けた幅・断り書きの分を除いた高さ）に収まるまで
                         let available = CGSize(width: max(0, area.size.width - Self.sideInset * 2),
-                                               height: max(0, area.size.height - 24))
-                        let scale = StoryTextEditing.fitScale(content: contentSize(fontSize: fontSize),
+                                               height: max(0, area.size.height - 24 - (overflow.any ? Self.noticeHeight : 0)))
+                        let scale = StoryTextEditing.fitScale(content: typingSize(fontSize: fontSize),
                                                               available: available)
                         ZStack {
                             // 欄の外の空いた所を押しても確定する（暗幕の上を覆うので、暗幕の
@@ -61,12 +67,15 @@ struct StoryTextTypingView: View {
                                 .accessibilityHidden(true)
                             field(fontSize: fontSize)
                                 .scaleEffect(scale)
+                                // 見本の位置: 断り書きの分だけ上に寄せる（字の下端に重ねない）
+                                .padding(.bottom, overflow.any ? Self.noticeHeight : 0)
                         }
                         .frame(width: area.size.width, height: area.size.height)
+                        // 縮め足りない（下限に当たった）ときも、上のバーと下の列の上に描かない
+                        .clipped()
                         .overlay(alignment: .bottom) {
-                            if scale < 0.999 {
-                                Text(L("写真の幅を超えています（小さく表示しています）",
-                                       "Wider than the photo (shown smaller)"))
+                            if overflow.any {
+                                Text(Self.notice(overflow))
                                     .font(.system(size: 12))
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 10)
@@ -100,12 +109,32 @@ struct StoryTextTypingView: View {
 
     /// 左の縦のつまみと重ねない左右の逃げ
     static let sideInset: Double = 56
+    /// 断り書きの帯の高さ（字の下端に重ねないよう、その分だけ上に寄せる）
+    static let noticeHeight: Double = 28
 
-    /// 打つ文字の仕上がりの大きさ（焼き込みと同じ測り方・帯の余白込み）。空なら入力の見本の分
-    private func contentSize(fontSize: Double) -> CGSize {
-        var measured = overlay
-        if measured.isEmpty { measured.text = L("文字を入力", "Type something") }
-        let text = TextOverlayRenderer.naturalSize(measured, fontSize: fontSize)
+    static func notice(_ overflow: StoryTextEditing.Overflow) -> String {
+        switch (overflow.width, overflow.height) {
+        case (true, true): return L("写真の幅と高さを超えています。はみ出た所は切れます",
+                                    "Larger than the photo. The overflow will be cut off")
+        case (false, true): return L("写真の高さを超えています。はみ出た所は切れます",
+                                     "Taller than the photo. The overflow will be cut off")
+        default: return L("写真の幅を超えています。はみ出た所は切れます",
+                          "Wider than the photo. The overflow will be cut off")
+        }
+    }
+
+    /// 欄に見えている大きさ（最後の空の行・見本の文字まで数える・帯の余白込み）
+    private func typingSize(fontSize: Double) -> CGSize {
+        let text = StoryTextEditing.typingMeasureText(overlay, placeholder: L("文字を入力", "Type something"))
+        return padded(TextOverlayRenderer.naturalSize(overlay, text: text, fontSize: fontSize), fontSize: fontSize)
+    }
+
+    /// 仕上がり（置いたあと・焼き込み）の大きさ。焼き込みと同じ測り方
+    private func finishedSize(fontSize: Double) -> CGSize {
+        padded(TextOverlayRenderer.naturalSize(overlay, fontSize: fontSize), fontSize: fontSize)
+    }
+
+    private func padded(_ text: CGSize, fontSize: Double) -> CGSize {
         let banner = overlay.style == .banner
         return CGSize(width: text.width + (banner ? fontSize * 0.7 : 0),
                       height: text.height + (banner ? fontSize * 0.35 : 0))

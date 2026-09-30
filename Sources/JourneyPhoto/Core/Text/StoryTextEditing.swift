@@ -67,16 +67,50 @@ enum StoryTextEditing {
         return max(1, side * overlay.size)
     }
 
-    /// 打つ画面で文字を縮めて見せる倍率（1 以下）。**文字そのものの大きさは変えない**——
-    /// 置いたあと・焼き込みは折り返さないので、写真の幅を超える行は仕上がりでもはみ出す。
-    /// 打つ画面では縮めて全体を見せ、はみ出していることを伝える（横に流すとキャレットが画面の外へ
-    /// 出て追えなかった・92a38d7 のレビュー）。測れない値（0・負・無限）なら 1
-    static func fitScale(content: CGSize, available: CGSize) -> Double {
+    /// 打つ画面で縮めて見せる下限（これより小さいと字もキャレットも掴めない）
+    static let minFitScale = 0.35
+
+    /// 打つ画面で文字を縮めて見せる倍率（`minFitScale`〜1）。**文字そのものの大きさは変えない**。
+    /// `available` は打つ画面の空き（左の縦のつまみを避けた幅・キーボードの上の高さ）で、
+    /// **写真の枠ではない**——写真からはみ出すかは `overflow` で別に見る（同じ物差しにすると、
+    /// 写真に収まる11〜14字の一言でも「写真の幅を超えています」と出た・ab63fb0 のレビュー）。
+    /// 横に流さないのは、キャレットが画面の外へ出て追えなかったから（92a38d7 のレビュー）
+    static func fitScale(content: CGSize, available: CGSize, minimum: Double = minFitScale) -> Double {
         guard content.width.isFinite, content.height.isFinite,
               available.width > 0, available.height > 0 else { return 1 }
         var scale = 1.0
         if content.width > available.width { scale = min(scale, Double(available.width / content.width)) }
         if content.height > available.height { scale = min(scale, Double(available.height / content.height)) }
-        return scale
+        return max(minimum, scale)
+    }
+
+    /// 仕上がりが写真の見えている範囲からはみ出す向き（置いたあと・焼き込みは折り返さないので、
+    /// はみ出した分は写真の外に切れる）。打つ画面はこれで断り書きを出す
+    struct Overflow: Equatable {
+        var width = false
+        var height = false
+        var any: Bool { width || height }
+    }
+
+    static func overflow(content: CGSize, photo: CGSize) -> Overflow {
+        guard photo.width > 0, photo.height > 0 else { return Overflow() }
+        return Overflow(width: content.width > photo.width + 0.5, height: content.height > photo.height + 0.5)
+    }
+
+    /// 画面に見えている写真の大きさ（枠いっぱいに埋めた写真を、枠で切ったもの）
+    static func visiblePhotoSize(canvas: CGSize, image: CGSize?) -> CGSize {
+        guard canvas.width > 0, canvas.height > 0 else { return .zero }
+        let rect = TextOverlay.filledRect(image: image ?? canvas, in: canvas)
+        return CGSize(width: min(rect.width, canvas.width), height: min(rect.height, canvas.height))
+    }
+
+    /// 打つ画面で大きさを測る文字。**欄に見えている行を全部数える**——置いたあとの `drawnText` は
+    /// 最後の改行を落とすので、「港⏎」の直後に欄は2行なのに1行で測り、縮め足りなかった。
+    /// 空なら入力の見本で測る（**空白や改行だけは空とみなさない**＝欄にはその行がある）
+    static func typingMeasureText(_ overlay: TextOverlay, placeholder: String) -> String {
+        guard !overlay.text.isEmpty else { return TextOverlay.display(text: placeholder, kind: overlay.kind) }
+        let shown = overlay.displayText
+        // 最後の空の行は、測る文字の側では字が無いと数えられないので、空白を1つ置く
+        return shown.hasSuffix("\n") ? shown + " " : shown
     }
 }

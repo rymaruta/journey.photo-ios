@@ -114,10 +114,40 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 100, height: 800), available: area),
                        0.5, accuracy: 0.0001)
         // 両方はみ出したら、きつい方
-        XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 600, height: 1600), available: area),
-                       0.25, accuracy: 0.0001)
+        XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 600, height: 1000), available: area),
+                       0.4, accuracy: 0.0001)
+        // 下限より小さくはしない（字もキャレットも掴めなくなる）
+        XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 30000, height: 50), available: area),
+                       StoryTextEditing.minFitScale, accuracy: 0.0001)
         // 測れない値では縮めない
         XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 600, height: 50), available: .zero), 1)
         XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: Double.infinity, height: 1), available: area), 1)
+    }
+
+    /// はみ出しは**写真の見えている範囲**と比べる（打つ画面の空きではない）。向きごとに言う
+    func testOverflowComparesWithVisiblePhoto() {
+        let photo = StoryTextEditing.visiblePhotoSize(canvas: CGSize(width: 393, height: 700),
+                                                      image: CGSize(width: 3000, height: 4000))
+        // 3:4 は高さで埋まり幅 525 → 枠で切って 393
+        XCTAssertEqual(photo, CGSize(width: 393, height: 700))
+        // 打つ画面の空き（281）は超えても、写真（393）に収まればはみ出していない
+        XCTAssertFalse(StoryTextEditing.overflow(content: CGSize(width: 330, height: 40), photo: photo).any)
+        XCTAssertEqual(StoryTextEditing.overflow(content: CGSize(width: 400, height: 40), photo: photo),
+                       StoryTextEditing.Overflow(width: true, height: false))
+        XCTAssertEqual(StoryTextEditing.overflow(content: CGSize(width: 100, height: 800), photo: photo),
+                       StoryTextEditing.Overflow(width: false, height: true))
+        XCTAssertFalse(StoryTextEditing.overflow(content: CGSize(width: 900, height: 900), photo: .zero).any)
+    }
+
+    /// 打つ画面で測る文字は、欄に見えている行を全部数える（最後の改行・空白だけの文字も）
+    func testTypingMeasureTextCountsVisibleLines() {
+        XCTAssertEqual(StoryTextEditing.typingMeasureText(TextOverlay(text: "港\n"), placeholder: "見本"), "港\n ")
+        XCTAssertEqual(StoryTextEditing.typingMeasureText(TextOverlay(text: "港"), placeholder: "見本"), "港")
+        // 空なら見本、改行だけなら見本ではなくその行
+        XCTAssertEqual(StoryTextEditing.typingMeasureText(TextOverlay(text: ""), placeholder: "見本"), "見本")
+        XCTAssertEqual(StoryTextEditing.typingMeasureText(TextOverlay(text: "\n\n"), placeholder: "見本"), "\n\n ")
+        // 札は印ごと測る
+        XCTAssertEqual(StoryTextEditing.typingMeasureText(TextOverlay(text: "京都", kind: .place), placeholder: "見本"),
+                       "📍 京都")
     }
 }

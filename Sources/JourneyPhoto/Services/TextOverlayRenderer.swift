@@ -114,8 +114,9 @@ enum TextOverlayRenderer {
 
     /// 文字の大きさ（折り返さない）。**焼き込みと、写真の上で打つ画面（`StoryTextTypingView`）が
     /// 同じ測り方を通す**——打つ画面は、これが写真の幅を超えたら縮めて見せて断る
-    static func naturalSize(_ overlay: TextOverlay, fontSize: Double) -> CGSize {
-        textBounds(overlay.drawnText, attributes: attributes(for: overlay, fontSize: fontSize).fill)
+    /// `text` を渡すと、その文字を札の書体で測る（打つ画面は最後の空の行まで数える）
+    static func naturalSize(_ overlay: TextOverlay, text: String? = nil, fontSize: Double) -> CGSize {
+        textBounds(text ?? overlay.drawnText, attributes: attributes(for: overlay, fontSize: fontSize).fill)
     }
 
     private static func textBounds(_ text: String, attributes: [NSAttributedString.Key: Any]) -> CGSize {
