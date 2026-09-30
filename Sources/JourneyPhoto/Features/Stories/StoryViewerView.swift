@@ -43,6 +43,9 @@ struct StoryViewerView: View {
     /// 写真の時計（`StoryPlayback.Clock`）。**書き換わるのは動く／止まるの切り替えと、
     /// 1本を頭から始めたときだけ**——バーは `TimelineView` が描画ごとに読む
     @State private var clock = StoryPlayback.Clock()
+    /// いまの1本を見せ始めた時刻（頭から見直したときも）。**左タップの判断に使う**
+    /// ——動画と読み込み中の写真は時計が回らない（`StoryPlayback.leftTapElapsed`）
+    @State private var shownAt = Date()
     @State private var pressing = false
     /// 0.35秒押し続けた（`pressing` は触れた瞬間に立つので、見た目はこちらで決める）
     @State private var longHeld = false
@@ -824,13 +827,19 @@ struct StoryViewerView: View {
         // でした」が別の1本の画面に出ていた。**払って閉じるのは止めない**（圏外で
         // 返事を待つ間に閉じられなくなる）
         guard !isSending else { return }
-        switch StoryPlayback.leftTap(index: index, elapsed: clock.elapsed(at: Date()),
+        let now = Date()
+        let elapsed = StoryPlayback.leftTapElapsed(clock: clock.elapsed(at: now),
+                                                   sinceShown: now.timeIntervalSince(shownAt),
+                                                   isVideo: current?.isVideo ?? false,
+                                                   mediaReady: mediaReady)
+        switch StoryPlayback.leftTap(index: index, elapsed: elapsed,
                                      hasPreviousGroup: onGroupBack != nil) {
         case .previousGroup:
             onGroupBack?()
         case .restart:
             // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
-            clock.restart(running: !frozen && !(current?.isVideo ?? false), at: Date())
+            clock.restart(running: !frozen && !(current?.isVideo ?? false), at: now)
+            shownAt = now
             // **控えていた終わりを捨てる**（`StoryPlayback.afterRestart`）。読めなかった動画は
             // 見直しの合図を受けて終わりを知らせ直す（`StoryPlayback.restartAction`）
             (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
@@ -884,6 +893,7 @@ struct StoryViewerView: View {
         index = target
         // 止めておく。絵が出て（`mediaReady`）止める理由が無くなったら `syncClock` が動かす
         clock.restart(running: false, at: Date())
+        shownAt = Date()
         pendingEnd = nil
         endedIds = []
         // 別の1本へ移ったら止めていたのを解く（払って移ると止まったまま進んでいた）
@@ -1182,8 +1192,13 @@ struct StoryViewerView: View {
     /// ブロックの手順は `UserProfileViewModel.block` と同じ
     /// （サーバー → 端末の控え → 公開一覧 → toast）。兄弟は全部同じ投稿者
     /// なので、成功したら画面ごと閉じる
+    ///
+    /// **返事を待つ間は送っている扱い**（`keep`・`deleteStory` と同じ）。確認を閉じた時点で
+    /// 時計と払いが動き出し、次の1本・次の人へ移った後に `leaveGroup` がもう1人飛ばしていた
     private func block(_ story: Story) async {
-        guard let userId = story.userId else { return }
+        guard !isSending, let userId = story.userId else { return }
+        isSending = true
+        defer { isSending = false }
         let owner = hidden.owner
         do {
             try await environment.moderation.block(userId: userId)

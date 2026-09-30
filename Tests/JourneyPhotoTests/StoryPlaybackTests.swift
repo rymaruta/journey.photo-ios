@@ -172,6 +172,20 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: 0.3), .restart, "先頭より前は無い")
     }
 
+    /// 🔴 動画と読み込み中の写真は時計が回らない。**見せ始めてからの実時間で決める**
+    /// ——時計（いつも0）を渡すと、動画を3秒見てから左を押しても前の1本へ飛んでいた
+    func testLeftTapElapsedUsesWallTimeForVideoAndLoadingPhoto() {
+        let video = StoryPlayback.leftTapElapsed(clock: 0, sinceShown: 3, isVideo: true, mediaReady: true)
+        XCTAssertEqual(video, 3)
+        XCTAssertEqual(StoryPlayback.leftTap(index: 1, elapsed: video), .restart, "動画を見てしばらく経ったら頭から")
+        XCTAssertEqual(StoryPlayback.leftTap(index: 0, elapsed: video, hasPreviousGroup: true), .restart,
+                       "動画を見てしばらく経ったら前の人へ飛ばない")
+        XCTAssertEqual(StoryPlayback.leftTapElapsed(clock: 0, sinceShown: 2, isVideo: false, mediaReady: false), 2,
+                       "読み込み中の写真も実時間")
+        XCTAssertEqual(StoryPlayback.leftTapElapsed(clock: 0.3, sinceShown: 5, isVideo: false, mediaReady: true), 0.3,
+                       "出ている写真は今までどおり時計（止めていた間は数えない）")
+    }
+
     // MARK: - 兄弟
 
     /// 他人の混じった一覧から同じ投稿者だけを古い順に。押した1本の位置も返す。
