@@ -280,6 +280,8 @@ struct PhotoMapView: View {
         model.select(category: nil)
         model.query = query
         model.mode = .map
+        // 空の語（タグから来た回）は前の語を消すだけ。寄せる先が無いので印は立てない
+        guard !query.isEmpty else { return }
         queryFraming.received()
         // 読み込み済みならその場で寄せる。まだなら `.task` と索引の知らせが寄せる
         frameToQueryIfReady()

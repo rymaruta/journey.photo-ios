@@ -26,10 +26,12 @@ final class TabRouter: ObservableObject {
     /// （`takePendingMapQuery`）。渡さないと地図が空の絞りで開き、打ち直すことになる
     private(set) var pendingMapQuery: String?
 
-    /// 語なしで呼ばれた回は前の語を消す（古い語で絞った地図を出さない）
+    /// - Parameter query: nil＝地図の絞りに触れない（メニュー・注目スポットから）。
+    ///   空の語＝**地図の前の語を消す**（タグで探した0件から。タグの語は地図で当たらないが、
+    ///   前に地図で打った語が残ると、探していたものと関係ない絞りで開く）。
+    ///   語なしで呼ばれた回は、待っていた語も捨てる（古い語で絞った地図を出さない）
     func openMap(query: String? = nil) {
-        let trimmed = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        pendingMapQuery = trimmed.isEmpty ? nil : trimmed
+        pendingMapQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines)
         mapRequests += 1
     }
 

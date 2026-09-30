@@ -80,7 +80,7 @@ final class TabRouterTests: XCTestCase {
     }
 
     /// 探すの0件の出口は語を地図へ渡す。地図は一度だけ受け取り、
-    /// 語なしで開き直した回に古い語が残らない
+    /// 語なしで開き直した回に古い語が残らない。空の語は地図の語を消す合図
     func testOpenMapCarriesQueryOnce() async {
         let router = TabRouter()
         router.openMap(query: "  京都 ")
@@ -93,8 +93,11 @@ final class TabRouterTests: XCTestCase {
         XCTAssertEqual(router.mapRequests, 3)
         XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
 
+        // 空の語は「地図の前の語を消す」として渡す（タグで探した0件から）。語なし（nil）とは分ける
         router.openMap(query: "   ")
-        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "")
+        router.openMap(query: "")
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "")
     }
 
     /// 地図に詳細を積んでいる間は渡さず残し、根に戻ったときに渡す
