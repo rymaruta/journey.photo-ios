@@ -128,4 +128,19 @@ final class SpotScreenTests: XCTestCase {
         XCTAssertNil(SpotScreen.pageURL(slug: "takaya-shrine", isDraft: true, siteBase: base))
         XCTAssertNil(SpotScreen.pageURL(slug: "  ", isDraft: false, siteBase: base))
     }
+
+    // MARK: - 写真の一覧が取れなかった回（「この場所の写真（0）」を言わない）
+
+    /// 取れなかったうえに手元も空なら、0件とは言えない
+    func testPhotosUnknownWhenLoadFailedAndEmpty() {
+        XCTAssertFalse(SpotScreen.photosKnown(loadFailed: true, photos: []))
+    }
+
+    /// 取れて空なら本当に0件。取り直しに失敗しても前の一覧があればそれで数える
+    func testPhotosKnownWhenLoadedOrStillHeld() throws {
+        XCTAssertTrue(SpotScreen.photosKnown(loadFailed: false, photos: []))
+        let held = try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"a\",\"src\":\"/uploads/a.jpg\"}".utf8))
+        XCTAssertTrue(SpotScreen.photosKnown(loadFailed: true, photos: [held]))
+    }
 }

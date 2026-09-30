@@ -97,4 +97,12 @@ enum SpotScreen {
         }
         return parts.joined(separator: " · ")
     }
+
+    /// `OfficialSpotView` の `photosKnown` に渡す値。**写真の一覧が取れなかった回だけ false**
+    /// ——取れなかったのに空を渡すと「この場所の写真（0）まだありません」と言っていた
+    /// （`StoryViewerView` が `photosKnown: false` を渡すのと同じ理由）。
+    /// 取れていて空なら本当に0件なので true のまま
+    static func photosKnown(loadFailed: Bool, photos: [Photo]) -> Bool {
+        !(loadFailed && photos.isEmpty)
+    }
 }

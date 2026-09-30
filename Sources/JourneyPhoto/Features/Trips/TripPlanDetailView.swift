@@ -717,7 +717,7 @@ struct TripPlanDetailView: View {
         case .spot(let spotId, _):
             if let spot = index.first(where: { $0.spotId == spotId }) {
                 NavigationLink {
-                    OfficialSpotView(spot: spot, spots: index, photos: photos)
+                    OfficialSpotView(spot: spot, spots: index, photos: photos, photosKnown: gotPhotos)
                 } label: {
                     itemLabel(name, icon: "mappin.and.ellipse", note: item.note)
                 }
