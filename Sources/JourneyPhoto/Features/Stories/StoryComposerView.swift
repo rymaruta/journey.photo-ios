@@ -520,7 +520,7 @@ struct StoryComposerView: View {
             durationOptions
         } label: {
             Text(L("表示 \(durationSec) 秒", "\(durationSec)s"))
-                .font(JPFont.mono(11))
+                .font(JPFont.mono(12))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)

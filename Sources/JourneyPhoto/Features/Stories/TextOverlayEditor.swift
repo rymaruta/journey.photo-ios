@@ -476,7 +476,7 @@ struct OverlayPanel: View {
             if overlay.kind.hasTypography {
             HStack(spacing: 8) {
                 Text(L("書体", "Font"))
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
                 // **選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を開き直すと、
@@ -502,7 +502,7 @@ struct OverlayPanel: View {
             if overlay.kind.hasTypography {
             HStack(spacing: 10) {
                 Text(L("色", "Color"))
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
                 // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
@@ -602,7 +602,7 @@ struct OverlayPanel: View {
                 .tint(.white)
                 Text(L("大", "L"))
             }
-            .font(.system(size: 11))
+            .font(.system(size: 12))
             .foregroundStyle(WebTheme.muted2)
         }
         .padding(12)

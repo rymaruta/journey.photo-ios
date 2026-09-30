@@ -701,7 +701,7 @@ struct StoryViewerView: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text(L("ストーリーハイライト · \(highlight.count)件", "Story highlight · \(highlight.count)"))
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(WebTheme.muted)
             }
         }
@@ -713,7 +713,7 @@ struct StoryViewerView: View {
         HStack {
             if let date = StoryPlayback.dotDate(story.createdAt) {
                 Text(L("\(date) · 残したストーリー", "\(date) · Kept story"))
-                    .font(JPFont.mono(11))
+                    .font(JPFont.mono(12))
                     .foregroundStyle(WebTheme.muted)
             }
             Spacer(minLength: 0)
@@ -752,7 +752,7 @@ struct StoryViewerView: View {
                         .foregroundStyle(.white)
                     if let line = ownTimeLine(for: story) {
                         Text(line)
-                            .font(JPFont.mono(11))
+                            .font(JPFont.mono(12))
                             .foregroundStyle(WebTheme.muted2)
                             .lineLimit(1)
                     }
@@ -1579,7 +1579,7 @@ struct StoryViewerView: View {
                         .font(.system(size: 14, weight: .semibold))
                     if let ago = StoryPlayback.ago(from: item.t) {
                         Text(ago)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(WebTheme.faint)
                     }
                 }
