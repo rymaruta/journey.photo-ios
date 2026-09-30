@@ -71,8 +71,14 @@ struct TripPlanDetailView: View {
     /// 間と、**ほかのアラートがもう立っている間**は出さない（2つ目は捨てられ、その値が立った
     /// ままになると次から出なくなる）。同じ条件を手で写すと片方だけ直す形になるので1か所に置く
     private var canPresentAlert: Bool {
-        picking == nil && onTop && !confirmLeave && noteTarget == nil
-            && leaveSaveError == nil && noteError == nil && deleteError == nil && moveError == nil
+        picking == nil && onTop && !confirmLeave && noAlertShowing
+    }
+
+    /// ほかのアラートがどれも立っていない。**アラートを立てる経路は全部これを見る**
+    /// （1本でも見ないと、立ったままの値が残ったとき全部の知らせが止まる）。
+    /// ひとことの欄（`noteTarget`）は経路ごとに扱いが違う（閉じてから出す／出さない）ので含めない
+    private var noAlertShowing: Bool {
+        leaveSaveError == nil && noteError == nil && deleteError == nil && moveError == nil
     }
     private struct Draft: Equatable {
         var days: [TripDay]
@@ -132,7 +138,7 @@ struct TripPlanDetailView: View {
                                        try? await Task.sleep(nanoseconds: 350_000_000)
                                        // その間に次の保存を送った・確認を開き直したなら出さない
                                        // （成功した後に前の失敗が出ていた。赤い行は残る）
-                                       guard saveAttempt == mine, !confirmLeave else { return }
+                                       guard saveAttempt == mine, !confirmLeave, noAlertShowing else { return }
                                        // ひとことを書いている間は、欄を閉じてから出す（重ねない）
                                        if noteTarget != nil { deferredSaveError = message; return }
                                        leaveSaveError = message
@@ -169,7 +175,7 @@ struct TripPlanDetailView: View {
                     // （ほかの確認・候補のシート・上に積んだ画面の間は出さない）
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 350_000_000)
-                        guard canPresentAlert else { return }
+                        guard canPresentAlert, noteTarget == nil else { return }
                         noteError = L("書いている間に項目が変わったため、ひとことを入れられませんでした。もう一度書いてください。",
                                       "The item changed while you were writing, so the note wasn't added. Please try again.")
                     }
@@ -199,7 +205,7 @@ struct TripPlanDetailView: View {
             deferredSaveError = nil
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 350_000_000)
-                guard canPresentAlert else { return }
+                guard canPresentAlert, noteTarget == nil else { return }
                 leaveSaveError = message
             }
         }
@@ -316,10 +322,8 @@ struct TripPlanDetailView: View {
                 // 確認を出している間は、アラートは黙って捨てられる。そのときは赤い行だけが
                 // 残る（この直しの前と同じ）。持っておいて後で出す作りは、戻るスワイプの
                 // 長さ・他の確認・走っている保存と噛み合わず回帰が続いたので採らない
-                // ほかのアラートが立っている間も出さない（`canPresentAlert` と同じ考え。ひとことの
-                // 欄だけは下で「閉じてから出す」ので、ここでは見ない）
-                guard picking == nil, onTop, !confirmLeave,
-                      leaveSaveError == nil, noteError == nil, deleteError == nil, moveError == nil else { return }
+                // ほかのアラートが立っている間も出さない。ひとことの欄だけは下で「閉じてから出す」
+                guard canPresentAlert else { return }
                 let message = model.errorMessage ?? L("もう一度お試しください", "Please try again.")
                 // ひとことを書いている間は、欄を閉じてから出す（重ねない・捨てない）
                 if noteTarget != nil { deferredSaveError = message; return }
@@ -580,7 +584,11 @@ struct TripPlanDetailView: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 350_000_000)
             // 出せないとき（戻る確認・上の画面・ほかのアラート）は、せめて読み上げで伝える
-            guard canPresentAlert else { return announce(message) }
+            guard canPresentAlert, noteTarget == nil else {
+                // 出せないときは読み上げで伝える（上に別の画面を積んだ回は鳴らさない）
+                if onTop { announce(message) }
+                return
+            }
             moveError = message
         }
     }
@@ -734,7 +742,7 @@ struct TripPlanDetailView: View {
                             Task {
                                 if await model.remove(planId, environment: environment) {
                                     dismiss()
-                                } else if picking == nil, onTop, !confirmLeave {
+                                } else if canPresentAlert {
                                     // 出せるときだけ（右上の「保存」と同じ条件。出せない回は赤い行が残る）
                                     deleteError = model.errorMessage
                                         ?? L("もう一度お試しください", "Please try again.")
