@@ -447,6 +447,8 @@ struct PhotoMapView: View {
                 // **札は model.pins から引き直した最新のピンで描く。** `selected` は
                 // 押した時点の写しで、`MapPin ==` は id（座標）しか比べないので、
                 // 絞り込みで同じ座標の写真が減っても写しは古い枚数・写真のままだった
+                // **選びは絞りの間も持ち続け、見える結果に入れば札を出す**（2026-09-30 判断:
+                // 絞りで下ろすと、日本語入力・×・倍率・範囲との組み合わせで回帰が続いたため）
                 if let current = PhotoMapViewModel.refreshed(selected, in: model.pins) {
                     pinCard(current)
                         .padding(.horizontal, 16)
@@ -1053,6 +1055,8 @@ struct PhotoMapView: View {
                             .foregroundStyle(WebTheme.foreground)
                             .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                             .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                            // `.plain` は字と縁の線の上だけが当たる——枠の中ぜんぶを押せるように
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("map.officialCard.open")
@@ -1175,6 +1179,8 @@ struct PhotoMapView: View {
                         .foregroundStyle(WebTheme.foreground)
                         .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                         .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                        // `.plain` は字と縁の線の上だけが当たる——枠の中ぜんぶを押せるように
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 // 座標だけの地点では出さない（中身の無い詳細カードになる）
