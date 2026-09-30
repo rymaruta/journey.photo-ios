@@ -383,7 +383,10 @@ struct GalleryView: View {
                 // ブロックした人の写真が札の背景に出ていた）
                 // 2026-09-27: 上段は「開く場面ごとに1枚」（出発・旅の最中・一冊・1年前）
                 // 2026-09-28: 当たる札と今日のテーマを**横にめくる並び**に（owner「両方欲しい」）
-                HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme), myPhotos: model.myPhotos,
+                // 自分の写真も同じ写しで絞る（消した・非公開にした写真の札が残り、押すと 404。
+                // `gone` は `published: false` の行を落とさないので、下書きは残る）
+                HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme),
+                                myPhotos: dropped.visible(model.myPhotos),
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed)
                 feedPicker
                 discoveryBridge

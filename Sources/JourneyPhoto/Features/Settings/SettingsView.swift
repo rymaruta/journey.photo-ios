@@ -126,6 +126,10 @@ struct SettingsView: View {
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 24)
+            // **ログアウトの途中は、ほかの行も押させない**（`DeleteAccountView` と同じ考え方）。
+            // 退会・パスワード変更に進めると、ログアウトが先に終わって Cognito の
+            // 呼び出しが落ち続けた。ログアウトの行の進み具合はそのまま出る
+            .disabled(isSigningOut)
         }
         .webScreen()
         // 戻るボタンの文言（子の画面の「< 設定」）のために題は持つが、
