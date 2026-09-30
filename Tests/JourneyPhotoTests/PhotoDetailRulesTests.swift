@@ -77,6 +77,28 @@ final class PhotoDetailRulesTests: XCTestCase {
         XCTAssertEqual(own.photos.map(\.id), lineup.photos.map(\.id))
     }
 
+    /// 🔴 **束の1枚を非公開に編集してから隣へ送っても、上の送りに残す**（大きく見る画面と同じ）。
+    /// 上の束だけ素の並び（`published` が古い）で絞っていて、消した印（`gone`）でその1枚が落ちた
+    func testHeroGroupKeepsASiblingEditedToPrivate() async throws {
+        func grouped(_ id: String, _ at: String, published: Bool) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(
+                "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"userId\":\"me\",\"createdAt\":\"\(at)\",\"groupId\":\"g\",\"published\":\(published)}".utf8))
+        }
+        let group = [try grouped("g1", "2026-09-01T10:00:00.000Z", published: true),
+                     try grouped("g2", "2026-09-01T10:00:01.000Z", published: true)]
+        let edits = ["g1": try grouped("g1", "2026-09-01T10:00:00.000Z", published: false)]
+        let hiding = ModerationSnapshot(gone: ["g1"])
+
+        // g1 を非公開にしてから g2 へ送った
+        let hero = PhotoDetailRules.heroGroup(group, current: group[1], hiding: hiding, edits: edits)
+        XCTAssertEqual(hero.photos.map(\.id), ["g1", "g2"])
+        XCTAssertEqual(hero.index, 1)
+        XCTAssertEqual(hero.photos.first?.published, false, "編集後の姿で出す")
+        // 大きく見る画面と同じ並び
+        let lineup = PhotoDetailRules.viewerLineup(group, current: group[1], hiding: hiding, edits: edits)
+        XCTAssertEqual(hero.photos.map(\.id), lineup.photos.map(\.id))
+    }
+
     /// **押した1枚が落ちる側でも範囲外にしない。** 詳細の上に出ている1枚は残す
     func testViewerLineupKeepsShownPhotoAndIndexInRange() async throws {
         let siblings = [try photo("p1", userId: "a"), try photo("p2", userId: "b"),
