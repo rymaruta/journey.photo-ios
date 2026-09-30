@@ -149,8 +149,9 @@ struct HomeTopCardView: View {
                      line: daysUntil == 0
                         ? L("今日から · 1日目", "Starts today · Day 1")
                         : L("出発まで \(daysUntil) 日", daysUntil == 1 ? "1 day to go" : "\(daysUntil) days to go"),
-                     detail: plan.itemCount > 0 ? TripPlanText.placeCount(plan.itemCount) : nil,
-                     backdrop: nil, inCarousel: inCarousel)
+                     // 前日と当日は、予定した撮影スポットの光の時刻（当日モード・`TripLight`）
+                     detail: tripLight(plan) ?? (plan.itemCount > 0 ? TripPlanText.placeCount(plan.itemCount) : nil),
+                     backdrop: nil, detailLines: tripLight(plan) == nil ? 2 : 3, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .onTrip(let plan, let dayNumber):
@@ -160,10 +161,10 @@ struct HomeTopCardView: View {
                 card(eyebrow: "ON TRIP", eyebrowLabel: L("旅の最中", "On a trip"),
                      title: planTitle(plan),
                      line: L("\(dayNumber)日目 · 写真を投稿する", "Day \(dayNumber) · Post a photo"),
-                     detail: nil,
+                     detail: tripLight(plan),
                      backdrop: nil,
                      // 押すと投稿画面が開く（別の画面へ進む「›」ではない）
-                     trailingSymbol: "plus", inCarousel: inCarousel)
+                     trailingSymbol: "plus", detailLines: 3, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .bookReady(let trip):
@@ -246,7 +247,8 @@ struct HomeTopCardView: View {
 
     private func card(eyebrow: String, eyebrowLabel: String, title: String, line: String,
                       detail: String?, backdrop: Photo?, backdropURL: URL? = nil,
-                      trailingSymbol: String = "chevron.right", inCarousel: Bool) -> some View {
+                      trailingSymbol: String = "chevron.right", detailLines: Int = 2,
+                      inCarousel: Bool) -> some View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(eyebrow)
@@ -270,8 +272,9 @@ struct HomeTopCardView: View {
                     Text(detail)
                         .font(.footnote)
                         .foregroundStyle(WebTheme.muted)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
+                        .lineLimit(detailLines)
+                        // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
+                        .truncationMode(detailLines > 2 ? .tail : .middle)
                 }
             }
             Spacer(minLength: 0)
@@ -316,6 +319,13 @@ struct HomeTopCardView: View {
     private static func spotDetail(_ spot: OfficialSpot) -> String? {
         let lines = [spot.regionLabel, spot.photo?.credit].compactMap { $0 }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// 当日モードの小さい行（今日か明日の撮影スポットの光の時刻）。当たらなければ nil
+    private func tripLight(_ plan: TripPlan) -> String? {
+        guard let today = HomeTopCard.today(Date(), in: .current),
+              let entry = TripLight.entry(plan: plan, today: today, spots: spots) else { return nil }
+        return TripLight.line(entry)
     }
 
     private func planTitle(_ plan: TripPlan) -> String {
