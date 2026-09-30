@@ -400,10 +400,10 @@ final class UserProfileViewModel: ObservableObject {
     /// 数と「フォローしていない」が後から届いて戻していた。断られた回は数えない。
     /// 「フォロー中」の数（この人が何人をフォローしているか）は押しても変わらないので止めない
     private var followWrites = 0
-    /// ブロックの印。**送る前と、通った・断られた後の2回進める。** 読み込みの間に進んだら、
-    /// その読み込みはフォロワー数・フォロー中の数・「フォロー中か」を書かない
-    /// ——ブロックの途中に着いた数は、ブロックの前の数か後の数か見分けられない
-    /// （ブロックはフォローを両方向とも外す・`block.ts`）。数はブロックの側が決める
+    /// ブロックが受け付けられた回数。**通ったときだけ進める**（断られた回は数えない）。
+    /// 読み込みの間に増えたら、その読み込みの「フォロー中か」・フォロー中の数・写真は書かない
+    /// （ブロックはフォローを両方向とも外す・`block.ts`。数はブロックの後の読み直しが書く）。
+    /// フォロワー数は `followWrites` を進めて止める
     private var blockWrites = 0
 
     /// 前回の読み込みで見ていた人
@@ -470,7 +470,7 @@ final class UserProfileViewModel: ObservableObject {
         let stats = try? await environment.social.followStats(userId: userId)
         guard current() else { return }
         if let stats {
-            if writes == followWrites, blocks == blockWrites { followers = stats.followers }
+            if writes == followWrites { followers = stats.followers }
             if blocks == blockWrites { following = stats.following }
         }
         if viewerId != nil {
@@ -585,11 +585,6 @@ final class UserProfileViewModel: ObservableObject {
         actionMessage = nil
         // 控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let owner = store.owner
-        // 押した時点の数と「フォロー中か」を控える（読み直せなかったときの元）
-        let wasFollowing = isFollowing
-        let followersBefore = followers
-        // **送る前に印を進める。** 途中に着いた読み込みには数を書かせない
-        blockWrites += 1
         do {
             try await environment.moderation.block(userId: userId)
             blockWrites += 1
@@ -606,23 +601,17 @@ final class UserProfileViewModel: ObservableObject {
             // いたので、うまくいった操作が「失敗」の見た目で出ていた
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
-            // 🔴 **フォロー数を読み直す。** サーバーはブロックでフォローを両方向とも外す
+            // **フォロー数を1回読み直す。** サーバーはブロックでフォローを両方向とも外す
             // （`block.ts`）ので、フォロワー数・フォロー中の数がブロック前のままだった。
-            // 読めなければ、押した時点の数から分かっているぶん（自分が外れた1人）だけ引く。
-            // ブロックの途中に着いた読み込みは数を書いていないので、控えた数が元になる。
-            // 読み直しの間に新しい読み込みが始まったら、その答えに任せる（人が替わっても進む）
+            // 読めなければ数は触らない（推し量って引くと、割り込んだ読み込みと重なって
+            // 引き足りない・二重に引く回が出た）。読み直しの間に新しい読み込みが
+            // 始まったら、その答えに任せる
             let seq = loadSeq
             let stats = try? await environment.social.followStats(userId: userId)
-            guard loadSeq == seq else { return }
-            if let stats {
-                followers = stats.followers
-                following = stats.following
-            } else {
-                followers = wasFollowing ? max(0, followersBefore - 1) : followersBefore
-            }
+            guard loadSeq == seq, let stats else { return }
+            followers = stats.followers
+            following = stats.following
         } catch {
-            // 断られたら印を下ろす（数は触らない）
-            blockWrites += 1
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }

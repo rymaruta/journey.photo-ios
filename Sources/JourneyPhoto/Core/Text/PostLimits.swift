@@ -109,14 +109,15 @@ enum PostLimits {
         return limited(old: old, new: new, limit: limit)
     }
 
-    /// 上限を超えている欄の知らせ（「72/60・60字までです。保存すると切れます」）。**超えていなければ nil**
-    /// ——`limitedEdit` は読み込んだ値を切らずに残すので、そのまま保存すると
-    /// サーバーで黙って切られる。切れることを欄の下で言う。数え方は `length`（サーバーと同じ）
+    /// 上限を超えている欄の知らせ（「72/60・60字まで。この欄を直して保存すると 60字に切れます」）。
+    /// **超えていなければ nil。** `limitedEdit` は読み込んだ値を切らずに残す。触らなければ
+    /// 送らない（`ProfileDraft.patch`）ので切れないが、直して保存するとサーバーで上限に切られる。
+    /// 数え方は `length`（サーバーと同じ UTF-16。投稿の字数の表示と同じ出し方）
     static func overLimitNote(_ text: String, limit: Int) -> String? {
         let count = length(text)
         guard count > limit else { return nil }
-        return L("\(count)/\(limit)・\(limit)字までです。保存すると切れます",
-                 "\(count)/\(limit) · Up to \(limit) characters. The rest will be cut when you save")
+        return L("\(count)/\(limit)・\(limit)字まで。この欄を直して保存すると \(limit)字に切れます",
+                 "\(count)/\(limit) · Up to \(limit) characters. If you edit this field and save, it will be cut to \(limit)")
     }
 
     /// 上限で切る（画面側で止める）。**字の途中では切らない**（サーバーの `truncate` と同じく、

@@ -375,8 +375,9 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertNil(PostLimits.overLimitNote(String(repeating: "あ", count: 60), limit: 60))
         XCTAssertNil(PostLimits.overLimitNote("", limit: 60))
         let note = PostLimits.overLimitNote(String(repeating: "あ", count: 72), limit: 60)
-        XCTAssertEqual(note, L("72/60・60字までです。保存すると切れます",
-                               "72/60 · Up to 60 characters. The rest will be cut when you save"))
+        // 触っていない欄は送らないので切れない。**直して保存すると**切れる、と言う
+        XCTAssertEqual(note, L("72/60・60字まで。この欄を直して保存すると 60字に切れます",
+                               "72/60 · Up to 60 characters. If you edit this field and save, it will be cut to 60"))
         // 数え方はサーバーと同じ（UTF-16）。絵文字 31 個は 62
         XCTAssertNotNil(PostLimits.overLimitNote(String(repeating: "😀", count: 31), limit: 60))
     }
