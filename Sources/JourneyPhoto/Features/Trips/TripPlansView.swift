@@ -350,10 +350,11 @@ final class TripPlansModel: ObservableObject {
     }
 
     /// 作る。**作れたプラン**を返す（増えた ID で見る——応答の先頭とは限らない、とは考えない）
-    func create(title: String, environment: AppEnvironment) async -> TripPlan? {
+    func create(title: String, days: [TripDay]? = nil, startDate: String? = nil, endDate: String? = nil,
+                environment: AppEnvironment) async -> TripPlan? {
         let before = Set(plans.map(\.planId))
         guard let list = await write("new", L("作成に失敗しました", "Couldn't create"), {
-            try await environment.trips.create(title: title)
+            try await environment.trips.create(title: title, days: days, startDate: startDate, endDate: endDate)
         }) else { return nil }
         return Self.created(in: list, before: before, title: title)
     }
