@@ -66,4 +66,17 @@ enum StoryTextEditing {
         let side = photoShortSide > 0 ? photoShortSide : fallbackWidth
         return max(1, side * overlay.size)
     }
+
+    /// 打つ画面で文字を縮めて見せる倍率（1 以下）。**文字そのものの大きさは変えない**——
+    /// 置いたあと・焼き込みは折り返さないので、写真の幅を超える行は仕上がりでもはみ出す。
+    /// 打つ画面では縮めて全体を見せ、はみ出していることを伝える（横に流すとキャレットが画面の外へ
+    /// 出て追えなかった・92a38d7 のレビュー）。測れない値（0・負・無限）なら 1
+    static func fitScale(content: CGSize, available: CGSize) -> Double {
+        guard content.width.isFinite, content.height.isFinite,
+              available.width > 0, available.height > 0 else { return 1 }
+        var scale = 1.0
+        if content.width > available.width { scale = min(scale, Double(available.width / content.width)) }
+        if content.height > available.height { scale = min(scale, Double(available.height / content.height)) }
+        return scale
+    }
 }

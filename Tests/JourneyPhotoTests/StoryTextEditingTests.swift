@@ -104,4 +104,20 @@ final class StoryTextEditingTests: XCTestCase {
         // 枠が測れていなければ 0（呼ぶ側が画面の幅で代える）
         XCTAssertEqual(StoryTextEditing.photoShortSide(canvas: .zero, image: CGSize(width: 3, height: 4)), 0)
     }
+
+    /// 打つ画面で縮めて見せる倍率。**収まるなら 1（大きくはしない）**、はみ出す向きの比で縮める
+    func testFitScaleShrinksOnlyWhenOverflowing() {
+        let area = CGSize(width: 300, height: 400)
+        XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 100, height: 50), available: area), 1)
+        XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 600, height: 50), available: area),
+                       0.5, accuracy: 0.0001)
+        XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 100, height: 800), available: area),
+                       0.5, accuracy: 0.0001)
+        // 両方はみ出したら、きつい方
+        XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 600, height: 1600), available: area),
+                       0.25, accuracy: 0.0001)
+        // 測れない値では縮めない
+        XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: 600, height: 50), available: .zero), 1)
+        XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: Double.infinity, height: 1), available: area), 1)
+    }
 }

@@ -44,22 +44,36 @@ struct StoryTextTypingView: View {
                         .padding(.top, 2)
                     // **打つ欄は折り返さない**（置いたあとの `StoryCanvas` も焼き込みも折り返さない。
                     // 欄の幅で折り返すと、完了した途端に1行の長い帯になって写真からはみ出した・
-                    // 4ffb74f のレビュー）。大きな字や長い行は、上の「完了」と下の列を押し出さずに
-                    // この中で縦横に流す
+                    // 4ffb74f のレビュー）。写真の幅（高さ）を超える文字は**縮めて見せて、そう伝える**
+                    // ——横に流すとキャレットが画面の外へ出て追えず、流す指でキーボードも閉じた
+                    // （92a38d7 のレビュー）
                     GeometryReader { area in
-                        ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                        let available = CGSize(width: max(0, area.size.width - Self.sideInset * 2),
+                                               height: max(0, area.size.height - 24))
+                        let scale = StoryTextEditing.fitScale(content: contentSize(fontSize: fontSize),
+                                                              available: available)
+                        ZStack {
+                            // 欄の外の空いた所を押しても確定する（暗幕の上を覆うので、暗幕の
+                            // 「押すと確定」が届かない）。**欄の後ろに敷く**——前だと欄にピントが入らない
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture { onDone() }
+                                .accessibilityHidden(true)
                             field(fontSize: fontSize)
-                                .frame(minWidth: area.size.width, minHeight: area.size.height)
-                                // 欄の外の空いた所を押しても確定する（流す欄が暗幕の上を覆うので、
-                                // 暗幕の「押すと確定」がここには届かない）。**欄の後ろに敷く**——
-                                // 前に置くと欄を押してもピントが入らない
-                                .background {
-                                    Color.clear
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { onDone() }
-                                }
+                                .scaleEffect(scale)
                         }
-                        .defaultScrollAnchor(.center)
+                        .frame(width: area.size.width, height: area.size.height)
+                        .overlay(alignment: .bottom) {
+                            if scale < 0.999 {
+                                Text(L("写真の幅を超えています（小さく表示しています）",
+                                       "Wider than the photo (shown smaller)"))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Color.black.opacity(0.6), in: Capsule())
+                            }
+                        }
                     }
                     if overlay.kind.hasTypography {
                         paletteRow
@@ -78,8 +92,23 @@ struct StoryTextTypingView: View {
         .task { focused = true }
         // **VoiceOver では打つ画面だけを読む**（後ろの「ストーリーに投稿」や他の札に移れた・
         // 4ffb74f のレビュー）。2本指の Z でも確定して閉じる
+        // 入れ物を1つの読み上げの単位にしてから付ける（子それぞれに配られると、1つの要素に閉じ込められる）
+        .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityAction(.escape) { onDone() }
+    }
+
+    /// 左の縦のつまみと重ねない左右の逃げ
+    static let sideInset: Double = 56
+
+    /// 打つ文字の仕上がりの大きさ（焼き込みと同じ測り方・帯の余白込み）。空なら入力の見本の分
+    private func contentSize(fontSize: Double) -> CGSize {
+        var measured = overlay
+        if measured.isEmpty { measured.text = L("文字を入力", "Type something") }
+        let text = TextOverlayRenderer.naturalSize(measured, fontSize: fontSize)
+        let banner = overlay.style == .banner
+        return CGSize(width: text.width + (banner ? fontSize * 0.7 : 0),
+                      height: text.height + (banner ? fontSize * 0.35 : 0))
     }
 
     // MARK: - 上のバー

@@ -131,7 +131,7 @@ public struct ScrollViewReader<Content: View>: View {
 }
 
 public struct ScrollView: View {
-    /// 本物と同じく `Axis.Set` を受ける（`[.horizontal, .vertical]` で縦横に流す）
+    /// 本物と同じく `Axis.Set` を受ける
     public init<C: View>(_ axes: Axis.Set = .vertical, showsIndicators: Bool = true,
                          @ViewBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
