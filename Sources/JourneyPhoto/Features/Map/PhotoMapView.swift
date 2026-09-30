@@ -1315,7 +1315,7 @@ struct PhotoMapView: View {
         // 上の欄（「撮影地・スポット名で絞る」）で打った語は、地図のピンと同じく名前で当てる
         let spots = MapSearch.fold(model.query).isEmpty
             ? model.officialSpots
-            : OfficialSpotIndex.matches(model.officialSpots, query: model.query)
+            : OfficialSpotIndex.matches(model.officialSpots, query: model.query, aliases: model.spotAliases)
         let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center)
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
@@ -1463,7 +1463,8 @@ struct PhotoMapView: View {
     private var listArea: some View {
         let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
         let sections = RegionList.sections(photos: model.photos, spots: model.officialSpots,
-                                           query: model.query, category: model.category, from: center)
+                                           query: model.query, category: model.category,
+                                           aliases: model.spotAliases, from: center)
         let currentId = sections.first(where: \.isCurrent)?.id
         let filtering = !MapSearch.fold(model.query).isEmpty || model.category != nil
         // **撮影スポットの台帳が届くまでは並べない。** 届く前は県を当てる手がかりが無く、

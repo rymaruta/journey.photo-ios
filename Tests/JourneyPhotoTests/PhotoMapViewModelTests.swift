@@ -28,7 +28,7 @@ final class PhotoMapViewModelTests: XCTestCase {
     /// 通信は `URLProtocol` で差し替える。**写真と索引は別の口**なので道で
     /// 叩き分ける。`spots` が nil なら索引の口は 404（本番の今の姿）。
     /// `indexGate` を渡すと、索引の要求をその手前で止める（索引が遅い回）
-    private func environment(spots: String? = nil, indexGate: Gate? = nil) -> AppEnvironment {
+    private func environment(spots: String? = nil, aliases: String? = nil, indexGate: Gate? = nil) -> AppEnvironment {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)
@@ -44,6 +44,9 @@ final class PhotoMapViewModelTests: XCTestCase {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: photosJSON)
         if let spots {
             StubProtocol.respond(path: "/app/data/spots.json", status: 200, body: spots)
+        }
+        if let aliases {
+            StubProtocol.respond(path: "/app/data/spot-search.json", status: 200, body: aliases)
         }
         let gallery = PublicGalleryService(
             url: URL(string: "https://site.example.test/app/data/photos.json")!,
@@ -242,6 +245,19 @@ extension PhotoMapViewModelTests {
         model.query = ""
         XCTAssertTrue(model.officialPins.isEmpty)
         XCTAssertTrue(model.stillShown(official: nil) == false)
+    }
+
+    /// 🔴 **別名でも当てる（「さがす」と同じ当て方）。** 「さがす」で別名に当たったスポットを
+    /// 地図へ持ってくると、地図は名前・読み・地域だけで当てていて「見つかりませんでした」になった
+    func testQueryMatchesSpotAliasesLikeSearch() async {
+        let model = PhotoMapViewModel()
+        // 語は先に入っている（「さがす」から持ってきた回）。別名が届いた時点で数え直す
+        model.query = "天空の鳥居"
+        await model.load(environment: environment(
+            spots: spotsJSON, aliases: #"[{"s":"takaya-jinja","n":"高屋神社","a":["天空の鳥居"]}]"#))
+        await model.awaitIndex()
+        XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja"])
+        XCTAssertFalse(model.hasNothingToShow, "別名で当たるのに「見つかりませんでした」")
     }
 
     /// 🔴 **名前で絞ってスポットだけ当たった回に「見つかりませんでした」と言わない。**

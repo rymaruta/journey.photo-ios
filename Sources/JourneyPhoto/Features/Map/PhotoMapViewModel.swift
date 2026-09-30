@@ -65,6 +65,10 @@ final class PhotoMapViewModel: ObservableObject {
     /// 台帳が届く前に「スポット」を押した回に空の一覧のまま止まる
     /// （ピンの集合は寄せていないと空のままで、`officialPins` の知らせが来ない）
     @Published private(set) var officialIndexState: IndexState = .loading
+    /// 撮影スポットの別名（slug → 別名・`OfficialSpotService.fetchAliases`）。取れなければ空で、
+    /// 名前・読み・地域だけで当てる。**「さがす」と同じ当て方にする**——別名で当たったスポットを
+    /// 地図へ持ってきた回に「見つかりませんでした」にしない。届くのは1回なので知らせる
+    @Published private(set) var spotAliases: [String: [String]] = [:]
     enum IndexState { case loading, ready, failed }
 
     /// 地図に置く撮影スポットのピン。**寄せたときと、名前で絞ったときだけ**
@@ -104,7 +108,8 @@ final class PhotoMapViewModel: ObservableObject {
 
     /// 「このエリアを検索」中はその枠、そうでなければ見えている枠で数える
     private func refreshOfficialPins() {
-        let next = OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame, query: query)
+        let next = OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame, query: query,
+                                        aliases: spotAliases)
         guard OfficialPins.changed(officialPins, next) else { return }
         officialPins = next
         officialPinsUpdates += 1
@@ -136,6 +141,11 @@ final class PhotoMapViewModel: ObservableObject {
             self?.officialSpots = fetched ?? []
             self?.officialIndexState = fetched == nil ? .failed : .ready
             self?.refreshOfficialPins()
+            // 別名は索引のあと（索引のピンを待たせない）。届いたらピンを数え直す
+            let aliases = await environment.spots.fetchAliases()
+            guard let self, !aliases.isEmpty else { return }
+            self.spotAliases = aliases
+            self.refreshOfficialPins()
         }
         do {
             photos = try await environment.gallery.fetchPhotos()

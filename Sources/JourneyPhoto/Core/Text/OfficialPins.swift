@@ -39,10 +39,12 @@ enum OfficialPins {
     /// - Parameters:
     ///   - frame: いま見えている枠（「このエリアを検索」中はその枠）。nil なら置かない
     ///   - query: 検索窓の文字。空でなければ倍率を見ずに当たったものを出す
-    static func visible(_ spots: [OfficialSpot], frame: MapFraming.Frame?, query: String = "") -> [Pin] {
+    ///   - aliases: slug → 別名（`OfficialSpotService.fetchAliases`）。「さがす」と同じ当て方にする
+    static func visible(_ spots: [OfficialSpot], frame: MapFraming.Frame?, query: String = "",
+                        aliases: [String: [String]] = [:]) -> [Pin] {
         if !MapSearch.fold(query).isEmpty {
-            // 索引の側で名前の一致順（名前 → 地域）に並んでいる。座標の無い行は置けない
-            let matched = OfficialSpotIndex.matches(spots, query: query).compactMap(pin)
+            // 索引の側で名前の一致順（名前 → 別名 → 地域）に並んでいる。座標の無い行は置けない
+            let matched = OfficialSpotIndex.matches(spots, query: query, aliases: aliases).compactMap(pin)
             // 枠が無ければその並びのまま。あれば**枠の中を先に・近い順**
             guard let frame else { return Array(matched.prefix(limit)) }
             let center = Photo.Coords(lat: frame.latitude, lng: frame.longitude)
