@@ -98,7 +98,13 @@ struct SearchView: View {
                 officialSpots = (try? await environment.spots.fetchIndex()) ?? []
             }
             // 別名は控えがあれば通信しない（取れなかった回は1分叩き直さない）
-            if spotAliases.isEmpty { spotAliases = await environment.spots.fetchAliases() }
+            // 🔴 **詳細を開いている間は入れ替えない。** 別名で当たる行が前に割り込み、開いた
+            // スポットの行が最初の5件から押し出されると、開いている画面がその場で閉じる
+            // （`fetchAliases` は取り消しを受けないので、画面を離れた後にも届く）
+            if spotAliases.isEmpty {
+                let fetched = await environment.spots.fetchAliases()
+                if isOnScreen { spotAliases = fetched }
+            }
         }
         // **ブロック／通報の直後に消す。** `loadPhotos` は
         // `guard allPhotos.isEmpty` で二度と読まない作りなので、

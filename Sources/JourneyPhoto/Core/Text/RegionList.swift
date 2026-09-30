@@ -135,7 +135,9 @@ enum RegionList {
     /// （写真は `MapSearch.matches`、スポットは `OfficialSpotIndex.matches`）。
     /// **地図と違って座標の無い写真も残す**（「場所が分からない写真」に入る）。
     /// カテゴリは写真の分類なので、撮影スポットには効かせない（地図のピンと同じ）
-    static func filter(photos: [Photo], spots: [OfficialSpot], query: String, category: String?)
+    /// `aliases` は slug → 別名（`OfficialSpotService.fetchAliases`）。「さがす」と同じく別名にも当てる
+    static func filter(photos: [Photo], spots: [OfficialSpot], query: String, category: String?,
+                       aliases: [String: [String]] = [:])
         -> (photos: [Photo], spots: [OfficialSpot]) {
         let needle = MapSearch.fold(query)
         let categoryKey = category.map { CategoryChoices.key($0) }
@@ -143,7 +145,7 @@ enum RegionList {
             if let categoryKey, CategoryChoices.key(photo.category ?? "") != categoryKey { return false }
             return needle.isEmpty || MapSearch.matches(photo, needle: needle)
         }
-        let shownSpots = needle.isEmpty ? spots : OfficialSpotIndex.matches(spots, query: query)
+        let shownSpots = needle.isEmpty ? spots : OfficialSpotIndex.matches(spots, query: query, aliases: aliases)
         return (shownPhotos, shownSpots)
     }
 
@@ -151,7 +153,7 @@ enum RegionList {
     ///   **県を当てる手がかりと「写真 N枚」は絞る前の全部から数える**——絞った後で作ると、
     ///   語がスポット名に当たらないだけで写真の県が分からなくなり、枚数も「スポット」の札と食い違う
     static func sections(photos: [Photo], spots: [OfficialSpot], query: String = "", category: String? = nil,
-                         from center: Photo.Coords?) -> [Section] {
+                         aliases: [String: [String]] = [:], from center: Photo.Coords?) -> [Section] {
         let allRows = OfficialSpotList.rows(spots, photos: photos, from: center)
         let anchors: [(coords: Photo.Coords, prefecture: String)] = allRows.compactMap { row in
             guard let c = row.spot.coords, let p = row.spot.region?.prefecture, prefectures.contains(p) else { return nil }
@@ -197,7 +199,7 @@ enum RegionList {
             if let country, !country.isEmpty, country != "日本" { return .country(country) }
             return coords.flatMap(nearestCountry).map(Key.country) ?? .abroad
         }
-        let shown = filter(photos: photos, spots: spots, query: query, category: category)
+        let shown = filter(photos: photos, spots: spots, query: query, category: category, aliases: aliases)
         let shownIds = Set(shown.spots.map(\.spotId))
         let rows = allRows.filter { shownIds.contains($0.spot.spotId) }
 

@@ -205,6 +205,13 @@ final class RegionListTests: XCTestCase {
         XCTAssertEqual(byCategory.spots.count, 6, "カテゴリは撮影スポットに効かせない")
     }
 
+    /// 🔴 「リスト」の札も別名で当てる（「さがす」・地図のピンと同じ当て方）
+    func testFilterMatchesAliases() throws {
+        let shown = RegionList.filter(photos: [], spots: try spots(), query: "金閣",
+                                      category: nil, aliases: ["kinkakuji": ["金閣"]])
+        XCTAssertEqual(shown.spots.map(\.slug), ["kinkakuji"])
+    }
+
     /// 🔴 **語で絞っても、写真の県は変わらない**（県を当てる手がかりは絞る前の全スポット）。
     /// 絞った後で作ると、語がスポット名に当たらないだけで写真が「場所が分からない」に落ちた
     func testSearchKeepsPrefecture() throws {
