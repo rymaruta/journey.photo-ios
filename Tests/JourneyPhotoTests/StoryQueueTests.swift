@@ -78,26 +78,31 @@ final class StoryQueueTests: XCTestCase {
         }
     }
 
-    // MARK: - 座標（撮影地は全部で1つ）
+    // MARK: - 座標（撮影地は全部で1つ・`StoryQueue.coordsToSend`）
 
-    func testSharedCoordsWhenAllAgree() {
-        let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
-        XCTAssertEqual(StoryQueue.sharedCoords([kyoto, kyoto]), kyoto)
+    private let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
+    /// 京都から約1.1km（丸めの境目をまたぐ隣のマス）
+    private let kyotoNext = Photo.Coords(lat: 35.02, lng: 135.77)
+    private let tokyo = Photo.Coords(lat: 35.68, lng: 139.77)
+
+    /// 🔴 GPS の無い写真には付けない（その写真の本当の位置ではない）
+    func testShotsWithoutGPSGetNoCoords() {
+        XCTAssertEqual(StoryQueue.coordsToSend([nil, kyoto, nil]), [nil, kyoto, nil])
     }
 
-    /// 座標の無い写真は数えない（ある写真どうしが同じなら、その座標）
-    func testSharedCoordsIgnoresShotsWithoutGPS() {
-        let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
-        XCTAssertEqual(StoryQueue.sharedCoords([nil, kyoto, nil]), kyoto)
-        XCTAssertNil(StoryQueue.sharedCoords([nil, nil]))
-        XCTAssertNil(StoryQueue.sharedCoords([]))
+    /// 🔴 近い写真は自分の座標のまま（丸めの境目をまたいでも消さない）
+    func testNearbyShotsKeepTheirOwnCoords() {
+        XCTAssertEqual(StoryQueue.coordsToSend([kyoto, kyotoNext, kyoto]), [kyoto, kyotoNext, kyoto])
     }
 
-    /// 🔴 食い違えば送らない（同じ地名の札が別々の場所に立った）
-    func testSharedCoordsIsNilWhenShotsDisagree() {
-        let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
-        let tokyo = Photo.Coords(lat: 35.68, lng: 139.77)
-        XCTAssertNil(StoryQueue.sharedCoords([kyoto, tokyo]))
-        XCTAssertNil(StoryQueue.sharedCoords([kyoto, nil, kyoto, tokyo]))
+    /// 🔴 基準（座標のある最初の写真）から遠い写真だけ送らない（同じ地名で別の街に札が立った）
+    func testFarShotsGetNoCoords() {
+        XCTAssertEqual(StoryQueue.coordsToSend([kyoto, tokyo, kyotoNext]), [kyoto, nil, kyotoNext])
+        XCTAssertEqual(StoryQueue.coordsToSend([nil, tokyo, kyoto]), [nil, tokyo, nil])
+    }
+
+    func testNoBaseMeansNoCoords() {
+        XCTAssertEqual(StoryQueue.coordsToSend([nil, nil]), [nil, nil])
+        XCTAssertEqual(StoryQueue.coordsToSend([]), [])
     }
 }

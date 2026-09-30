@@ -44,13 +44,22 @@ enum StoryQueue {
         items.filter { !posted.contains($0.id) }
     }
 
-    /// まとめて出すときに送る座標。**撮影地の名前は全部の写真で1つ**なので、座標も1つにそろえる。
-    /// 座標のある写真どうしが（約1kmに丸めて）同じ場所なら、その座標。食い違えば送らない
-    /// ——写真ごとの座標をそのまま送ると、同じ地名の札が別々の場所に立った
-    static func sharedCoords(_ coords: [Photo.Coords?]) -> Photo.Coords? {
-        let known = coords.compactMap { $0 }
-        guard let first = known.first, known.allSatisfy({ $0 == first }) else { return nil }
-        return first
+    /// 同じ撮影地として座標を送ってよい、基準の写真からの距離（km）
+    static let sameSpotKm = 10.0
+
+    /// まとめて出すときに**写真ごとに送る座標**（並びは `coords` と同じ）。
+    ///
+    /// 撮影地の名前は全部の写真で1つなので、座標のある最初の写真を基準にし、
+    /// **基準から遠い（`sameSpotKm` 超）写真だけ送らない**——同じ地名で別の街に札が立つのを防ぐ。
+    /// 近い写真は自分の座標のまま（1つにそろえると、約1kmの丸めの境目をまたいだだけで全部消えた）。
+    /// **GPS の無い写真には付けない**——その写真の本当の位置ではなく、残す操作（storyKeep）が
+    /// そのまま撮影地に写してしまう
+    static func coordsToSend(_ coords: [Photo.Coords?]) -> [Photo.Coords?] {
+        guard let base = coords.lazy.compactMap({ $0 }).first else { return coords.map { _ in nil } }
+        return coords.map { c in
+            guard let c, TravelDistance.kilometers(from: base, to: c) <= sameSpotKm else { return nil }
+            return c
+        }
     }
 
     /// あと何枚足せるか。**上限に達していたら 0**
