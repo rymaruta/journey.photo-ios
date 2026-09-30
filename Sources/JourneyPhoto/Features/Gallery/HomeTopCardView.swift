@@ -33,6 +33,9 @@ struct HomeTopCardView: View {
     @State private var plans: [TripPlan] = []
     /// `plans` が誰のものか。**人が替わったら、取れるまで前の人のプランを出さない**
     @State private var plansOwner: String?
+    /// 取り直した旅行プラン。**差し替えは見えている間だけ**（今日の一問の `pendingQuiz` と同じ形）
+    /// ——旅行プランを開いたまま前面に戻ると、裏で札の並びが変わって開いていた画面が閉じていた
+    @State private var pendingPlans: [TripPlan]?
     /// 最後に取れた条件（人と `reloadToken`）。同じなら取り直さない
     @State private var loadedKey: String?
     /// 札から旅行プランを開いた。戻ってきたら読み直す（そこで変えたかもしれない）
@@ -82,6 +85,7 @@ struct HomeTopCardView: View {
                 wishedKeys = wishlist.spotIds
                 isShown = true
                 applyPendingQuiz()
+                applyPendingPlans()
                 scheduleSeasonReminder()
                 if reloadPlansOnReturn {
                     reloadPlansOnReturn = false
@@ -407,6 +411,7 @@ struct HomeTopCardView: View {
         if plansOwner != userId {
             plans = []
             plansOwner = nil
+            pendingPlans = nil
             loadedKey = nil
         }
         guard userId != nil else { return }
@@ -417,8 +422,19 @@ struct HomeTopCardView: View {
         // **画面を離れて止められた・待っている間に人が替わった回は書かない**
         guard !Task.isCancelled, auth.userId == userId else { return }
         guard let fetched else { return }
-        plans = fetched
+        pendingPlans = fetched
         plansOwner = userId
         loadedKey = key
+        // 見えていればその場で差し替える。**札から開いた画面が前に出ている間は触らない**
+        // （`loadQuiz` と同じ）——戻ったとき（`onAppear`）に移す
+        if isShown { applyPendingPlans() }
+    }
+
+    /// 取り直した旅行プランを札に移す（ホームが見えているときだけ呼ぶ）
+    private func applyPendingPlans() {
+        if let pendingPlans {
+            plans = pendingPlans
+            self.pendingPlans = nil
+        }
     }
 }
