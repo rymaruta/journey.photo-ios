@@ -273,7 +273,10 @@ struct StoryCanvas: View {
                 // 動かす操作の打ち切り。**移動は入れない**（離した位置が分からない）。
                 // `dragSpoiled` はここで戻さない——`onEnded` より先に来ると、2本指が入った回の
                 // 移動を入れてしまう。次に動かし始めたときに戻す
-                if !active { dragId = nil; dragOffset = .zero; resetDragAids() }
+                if !active {
+                    dragId = nil; dragOffset = .zero; resetDragAids()
+                    if !twoFingerActive { carriedId = nil }
+                }
             }
             .onChange(of: dragId) { old, new in
                 if (old == nil) != (new == nil) { onDraggingChange(new != nil) }
@@ -304,7 +307,8 @@ struct StoryCanvas: View {
         rotateId = nil
         twistsPhoto = false
         liveRotation = 0
-        if scaleId == nil && !pinchesPhoto { carriedId = nil }
+        // 運ぶ指が置かれたままなら覚えておく（2本目の指を置き直して回し続けられるように）
+        if scaleId == nil && !pinchesPhoto && dragId == nil { carriedId = nil }
         if !pinchesPhoto { photoPinched = false }
     }
 
@@ -318,7 +322,7 @@ struct StoryCanvas: View {
         scaleId = nil
         pinchesPhoto = false
         liveScale = 1
-        if rotateId == nil && !twistsPhoto { carriedId = nil }
+        if rotateId == nil && !twistsPhoto && dragId == nil { carriedId = nil }
         // 回す方がまだ続いていれば、つまんでいた印はそちらの片付けで戻す
         if !twistsPhoto { photoPinched = false }
     }
@@ -496,6 +500,8 @@ struct StoryCanvas: View {
                         dragOffset = .zero
                         dragSpoiled = false
                         resetDragAids()
+                        // 運ぶ指を離した。2本指も終わっていれば、運んでいた札を忘れる
+                        if !twoFingerActive { carriedId = nil }
                     }
             )
             // 押すと選ぶ（直す・消すのも同じ入口）。

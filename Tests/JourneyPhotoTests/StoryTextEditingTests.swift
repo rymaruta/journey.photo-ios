@@ -303,18 +303,18 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertNil(StoryTextEditing.overlay(at: CGPoint(x: 260, y: 140), in: [tilted], slop: 0))
     }
 
-    /// 2本指の操作の相手: もう片方の相手 → 指の間の札 → はっきり運んでいた札 → 選んだ札 → 写真
+    /// 2本指の操作の相手: もう片方の相手 → はっきり運んでいた札 → 指の間の札 → 選んだ札 → 写真
     func testGestureTargetOrder() {
         let under = UUID(), carried = UUID(), selected = UUID(), other = UUID()
         XCTAssertEqual(StoryTextEditing.gestureTarget(other: .photo, under: { under }, carried: carried, selected: selected), .photo)
         XCTAssertEqual(StoryTextEditing.gestureTarget(other: .overlay(other), under: { under }, carried: carried,
                                                       selected: selected), .overlay(other))
-        // 指の間の札が、運んでいた札・選んだ札より先（写真の上で回す指が別の札に触れても取られない）
+        // はっきり運んでいた札が、指の間の札より先（小さな札を運んで回すと指の間が外れる）
         XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { under }, carried: carried, selected: selected),
-                       .overlay(under))
-        // 指の間に無ければ、運んでいた札が選んだ札より先
-        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { nil }, carried: carried, selected: selected),
                        .overlay(carried))
+        // 運んでいなければ指の間の札が、選んだ札より先
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { under }, carried: nil, selected: selected),
+                       .overlay(under))
         XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { nil }, carried: nil, selected: selected),
                        .overlay(selected))
         XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { nil }, carried: nil, selected: nil), .photo)

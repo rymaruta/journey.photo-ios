@@ -209,16 +209,16 @@ enum StoryTextEditing {
         case photo
     }
 
-    /// 2本指の操作の相手を決める。**原則は「2本の指の間にある札」**（Instagram と同じ）。
-    /// 順は: もう片方の操作の相手（回すとつまむは同じ相手に・認識の時刻のずれで札は大きく写真は回った）
-    /// → 指の間の札 → はっきり運んでいた札（`carried`・運んだ先でつまむと指の間から外れる小さな札）
-    /// → 選んだ札 → 写真。
-    /// 「運んでいる札」を指の間より先にすると、写真の上で回すときに片方の指が別の札に触れただけで
-    /// その札に取られ、届く順で相手が変わった（1c00a67 のレビュー）
+    /// 2本指の操作の相手を決める。順は: もう片方の操作の相手（回すとつまむは同じ相手に・認識の時刻の
+    /// ずれで札は大きく写真は回った）→ **はっきり運んでいた札**（`carried`・24pt 以上。指を置いただけ・
+    /// 少し触れただけの札は入らないので、写真を回す指が別の札に触れても取られない・1c00a67 のレビュー）
+    /// → 2本の指の間の札 → 選んだ札 → 写真。
+    /// 運んでいた札を指の間より後にすると、小さな札を運んで回すと指の間が外れ、近くの別の札が回った
+    /// （c2554fa のレビュー）
     static func gestureTarget(other: GestureTarget?, under: () -> UUID?, carried: UUID?,
                               selected: UUID?) -> GestureTarget {
         if let other { return other }
-        if let id = under() ?? carried ?? selected { return .overlay(id) }
+        if let id = carried ?? under() ?? selected { return .overlay(id) }
         return .photo
     }
 
