@@ -200,6 +200,42 @@ final class TripPickerTests: XCTestCase {
         XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(k + n))
     }
 
+    /// 均した数が目安を越えても、少しの偏りで混ぜずに済むなら混ぜない
+    func testSlightImbalanceIsAllowedToKeepRegionsApart() throws {
+        let k10 = try line("k", 10)
+        let n17 = try (0..<17).map { try nara("n\($0)", lat: 34.6 - Double($0) * 0.01) }
+        XCTAssertEqual(TripPicker.days([k10, n17], dayCount: 3).map(\.count), [10, 9, 8])
+        let k9 = try line("k", 9)
+        let n7 = Array(n17.prefix(7))
+        XCTAssertEqual(TripPicker.days([k9, n7], dayCount: 2).map(\.count), [9, 7])
+    }
+
+    /// どんな数でも、決めた日数ちょうど・1日20か所まで・場所を落とさない・並びを変えない
+    func testAnyCountFitsRequestedDaysWithinServerLimits() throws {
+        let pool = try (0..<TripPicker.pickMax).map { i in
+            try spot("r\(i)", prefecture: ["京都府", "奈良県", "大阪府"][i % 3], lat: 34.5 + Double(i) * 0.01, lng: 135.5)
+        }
+        for n in [1, 2, 5, 9, 17, 23, 40] {
+            let groups = TripPicker.grouped(Array(pool.prefix(n)))
+            let flat = groups.flatMap { $0 }
+            for dayCount in [1, 2, 3, 7, 60] {
+                let days = TripPicker.days(groups, dayCount: dayCount)
+                let expected = max(dayCount, (n + TripPlanService.itemsPerDayMax - 1) / TripPlanService.itemsPerDayMax)
+                XCTAssertEqual(days.count, expected, "n=\(n) days=\(dayCount)")
+                XCTAssertTrue(days.allSatisfy { $0.count <= TripPlanService.itemsPerDayMax })
+                XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(flat), "n=\(n) days=\(dayCount)")
+            }
+        }
+    }
+
+    /// 地域の無い場所が地域のある場所の間に挟まっても落とさない
+    func testUnplacedBetweenRegionsIsKept() throws {
+        let k = try kyoto("k"), u = try spot("u", lat: 34.85, lng: 135.78), n = try nara("n")
+        let groups = TripPicker.grouped([k, u, n])
+        XCTAssertEqual(slugs(groups), [["k"], ["u"], ["n"]])
+        XCTAssertEqual(slugs(TripPicker.days(groups, dayCount: 2).flatMap { $0 }), ["k", "u", "n"])
+    }
+
     /// 地域の無い場所は、日に割るときは続いた並びとして均す（1か所ずつ1日にしない・混ぜると数えない）
     func testUnplacedSpotsAreSpreadLikeOneRegion() throws {
         let spots = try (0..<10).map { try spot("u\($0)", lat: 35 + Double($0) * 0.01, lng: 135) }

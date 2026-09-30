@@ -259,7 +259,7 @@ enum TripPicker {
 
     /// 並びを保ったまま `target` 日に切り直す（1日は `itemsPerDayMax` まで・空の日は作らない）。
     ///
-    /// 1日の数の上限を `crowdedDay` か、均したときの数（n÷日数の切り上げ）の大きい方に置き、
+    /// 1日の数の上限を `crowdedDay` か、均したときの数（n÷日数の切り上げ）＋目安の半分の大きい方に置き、
     /// その中で **地域を混ぜる日の数**が少ない → **いちばん多い日**が少ない →
     /// 日ごとの数の2乗の和が小さい（均す）切り方を、全部の切り方から選ぶ。
     /// 貪欲にまとめると、40か所を2日で「16・16・8」の3日に行き詰まっていた（「20・20」なら収まる）。
@@ -271,7 +271,9 @@ enum TripPicker {
         let parts = min(n, max(target, (n + cap - 1) / cap))
         guard parts > 0 else { return [] }
         // 1日の数の上限。均した数は必ず入るので、これで切れない入力は無い
-        let limit = min(cap, max(crowdedDay, (n + parts - 1) / parts))
+        // 均した数を越えて、目安の半分（2か所）までは偏ってよい——ぴったりで打ち切ると、
+        // 均した数が8を越えたとたんに「10・9・8」の混ぜない切り方が作れず、混ぜた「9・9・9」になった
+        let limit = min(cap, max(crowdedDay, (n + parts - 1) / parts + placesPerDay / 2))
         let keys: [String?] = items.map { region(of: $0).label == nil ? nil : region(of: $0).key }
 
         struct Score {
