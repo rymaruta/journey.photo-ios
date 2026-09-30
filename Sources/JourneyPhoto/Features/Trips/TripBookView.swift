@@ -111,7 +111,7 @@ struct TripBookView: View {
                     .minimumScaleFactor(0.7)
                 if let unit {
                     Text(unit)
-                        .font(JPFont.mono(11, relativeTo: .caption2))
+                        .font(JPFont.mono(12, relativeTo: .caption2))
                         .foregroundStyle(WebTheme.muted2)
                 }
             }

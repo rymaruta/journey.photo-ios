@@ -113,4 +113,12 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertEqual(Set(group.photos.map(\.id)), ["b", "c"])
         XCTAssertNil(SearchDiscovery.featured(in: [try photo(["id": "x", "category": "街"])]))
     }
+
+    /// 0件の出口から地図へ持っていく語。**タグで探していた語は渡さない**（地図は撮影地とスポット名で当てる）
+    func testMapQueryDropsTagSearches() {
+        XCTAssertNil(SearchScope.tags.mapQuery(for: "winter"))
+        XCTAssertEqual(SearchScope.all.mapQuery(for: "京都"), "京都")
+        XCTAssertEqual(SearchScope.photos.mapQuery(for: "京都"), "京都")
+        XCTAssertEqual(SearchScope.places.mapQuery(for: "京都"), "京都")
+    }
 }

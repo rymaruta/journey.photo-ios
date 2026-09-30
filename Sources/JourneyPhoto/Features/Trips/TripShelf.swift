@@ -28,7 +28,7 @@ struct TripShelf: View {
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(2)
                     Text(TripBook.dateRange(from: trip.start, to: trip.end))
-                        .font(JPFont.mono(11, relativeTo: .caption2))
+                        .font(JPFont.mono(12, relativeTo: .caption2))
                         .foregroundStyle(WebTheme.muted)
                 }
                 Spacer(minLength: 0)
