@@ -123,6 +123,12 @@ struct StoryReelView: View {
                         .allowsHitTesting(!turning)
                 }
             }
+            // 全画面の上では、アプリの下の知らせ（`RootView`）が隠れるので、ここにも置く
+            // （`TripPickerView` と同じ）。ブロックして次の人へ回ると、閲覧画面は作り直されて
+            // 自分の知らせを持ち越せない。足元の返信欄（60pt 前後）に重ねない
+            .overlay(alignment: .bottom) {
+                ToastOverlay().padding(.bottom, 84)
+            }
             .scaleEffect(StoryReel.dragScale(dy: dragY))
             .offset(y: max(0, dragY))
             .onAppear { width = max(1, geo.size.width) }
