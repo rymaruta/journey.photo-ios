@@ -107,10 +107,10 @@ struct StoryReelView: View {
                 Color.black.ignoresSafeArea()
                 // 隣の面（画面の外に倒して置いておく）
                 if let previous = neighbor(-1) {
-                    face(StoryReelFace(story: representative(of: previous)), minX: -width + dragX)
+                    face(StoryReelFace(story: representative(of: previous, back: true)), minX: -width + dragX)
                 }
                 if let next = neighbor(1) {
-                    face(StoryReelFace(story: representative(of: next)), minX: width + dragX)
+                    face(StoryReelFace(story: representative(of: next, back: false)), minX: width + dragX)
                 }
                 if let current = shown {
                     face(viewer(current), minX: dragX)
@@ -210,9 +210,9 @@ struct StoryReelView: View {
             onDeleted: onDeleted)
     }
 
-    /// 隣の面に出す1本（その人の束で最初に開く1本）
-    private func representative(of index: Int) -> Story? {
-        guard let g = liveGroup(index) else { return nil }
+    /// 隣の面に出す1本（回って入ったときに開く1本・`StoryReel.entering`）
+    private func representative(of index: Int, back: Bool) -> Story? {
+        guard let g = liveGroup(index).map({ StoryReel.entering($0, back: back) }) else { return nil }
         return g.stories.indices.contains(g.start) ? g.stories[g.start] : g.stories.first
     }
 
@@ -241,8 +241,9 @@ struct StoryReelView: View {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(Int(Self.turnDuration * 1000)))
             // 回りきった面（写真1枚）を本物の閲覧画面に差し替える。**動きは付けない**
+            let back = target < group
             group = target
-            shown = liveGroup(target)
+            shown = liveGroup(target).map { StoryReel.entering($0, back: back) }
             settleX = 0
             turning = false
             // 回っている間にその人の束が空になった（削除の完了・ブロックの同期）。
