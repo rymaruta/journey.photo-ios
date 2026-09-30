@@ -30,7 +30,7 @@ enum SpotDetailParts {
             }
             .foregroundStyle(WebTheme.foreground)
             Text(label)
-                .font(.caption2)
+                .font(.caption)  // 標準で 12pt（本文の最小）・字の大きさの設定に追従
                 .foregroundStyle(WebTheme.faint)
         }
         .frame(maxWidth: .infinity)

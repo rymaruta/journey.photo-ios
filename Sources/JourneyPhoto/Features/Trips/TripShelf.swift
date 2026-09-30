@@ -28,13 +28,13 @@ struct TripShelf: View {
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(2)
                     Text(TripBook.dateRange(from: trip.start, to: trip.end))
-                        .font(JPFont.mono(11, relativeTo: .caption2))
+                        .font(JPFont.mono(12, relativeTo: .caption2))
                         .foregroundStyle(WebTheme.muted)
                 }
                 Spacer(minLength: 0)
                 Text(L("\(TripBook.daysLabel(trip.days)) · \(trip.photos.count)枚",
                        "\(TripBook.daysLabel(trip.days)) · \(trip.photos.count) photos"))
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(WebTheme.muted)
                     .lineLimit(1)
             }
@@ -73,7 +73,7 @@ struct TripShelfList: View {
             }
             Text(L("同じころに撮った写真が2枚たまると、ひとつの旅にまとまります",
                    "Two or more photos taken around the same time become a trip"))
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .lineSpacing(3)
                 .foregroundStyle(WebTheme.faint)
                 .frame(maxWidth: .infinity, alignment: trips.isEmpty ? .center : .leading)

@@ -249,7 +249,7 @@ struct TripPlansView: View {
                     .lineLimit(2)
                 if let period = TripPlanText.period(start: plan.startDate, end: plan.endDate) {
                     Text(period)
-                        .font(JPFont.mono(11))
+                        .font(JPFont.mono(12))
                         .foregroundStyle(WebTheme.muted)
                 }
             }

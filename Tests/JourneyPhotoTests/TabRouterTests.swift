@@ -78,4 +78,65 @@ final class TabRouterTests: XCTestCase {
         XCTAssertEqual(router.menuRequests, 1)
         XCTAssertEqual(router.myPageRequests, 0)
     }
+
+    /// 探すの0件の出口は語を地図へ渡す。地図は一度だけ受け取り、
+    /// 語なしで開き直した回に古い語が残らない。空の語は地図の語を消す合図
+    func testOpenMapCarriesQueryOnce() async {
+        let router = TabRouter()
+        router.openMap(query: "  京都 ")
+        XCTAssertEqual(router.mapRequests, 1)
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "京都")
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+
+        router.openMap(query: "奈良")
+        router.openMap()
+        XCTAssertEqual(router.mapRequests, 3)
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+
+        // 空の語は「地図の前の語を消す」として渡す（タグで探した0件から）。語なし（nil）とは分ける
+        router.openMap(query: "   ")
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "")
+        router.openMap(query: "")
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "")
+    }
+
+    /// 地図に詳細を積んでいる間は渡さず残し、根に戻ったときに渡す
+    /// （積んだまま絞ると、押した元の行が消えて詳細が黙って閉じる）
+    func testPendingMapQueryWaitsForMapRoot() async {
+        let router = TabRouter()
+        router.openMap(query: "京都")
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: false))
+        XCTAssertEqual(router.pendingMapQuery, "京都")
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "京都")
+    }
+
+    /// 人が下の札を押したら、残っていた語は捨てる（どの札でも・同じ札の押し直しでも）。
+    /// 普通に「マップ」を開いた回に、前の語があとから当たらない
+    func testTabTapDiscardsPendingMapQuery() async {
+        let router = TabRouter()
+        router.openMap(query: "京都")
+        router.tabTapped(.map, alreadySelected: false)
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+
+        router.openMap(query: "奈良")
+        router.tabTapped(nil, alreadySelected: false)
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+
+        // 地図の根を見ているときの押し直し（現在地へ）も捨てる
+        router.mapRootOnScreen = true
+        router.openMap(query: "神戸")
+        router.tabTapped(.map, alreadySelected: true)
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+    }
+
+    /// 詳細を積んだ地図で「マップ」を押し直した回は捨てない。iOS が根まで戻し、
+    /// その `onAppear` で待っていた語を受け取る
+    func testTabTapBackToMapRootKeepsPendingMapQuery() async {
+        let router = TabRouter()
+        router.mapRootOnScreen = false
+        router.openMap(query: "京都")
+        router.tabTapped(.map, alreadySelected: true)
+        XCTAssertEqual(router.mapLocateRequests, 0)
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "京都")
+    }
 }
