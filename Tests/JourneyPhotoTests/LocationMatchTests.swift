@@ -41,4 +41,39 @@ final class LocationMatchTests: XCTestCase {
         XCTAssertTrue(LocationMatch.same("フランス ヴェルサイユ", "フランス"))
         XCTAssertFalse(LocationMatch.same("パリ", "東京"))
     }
+
+    // MARK: - 名前として含むときだけ（2026-09-30・Web の `locationScope.test.ts` と同じ事例）
+
+    private let zao = "蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本"
+
+    /// 🔴 宮城県白石市の大字「福岡八宮」の中の「福岡」で、福岡の撮影地に載っていた
+    func testZaoFoxVillageIsNotInFukuoka() {
+        XCTAssertFalse(LocationMatch.photoIsIn(zao, "福岡"))
+        XCTAssertFalse(LocationMatch.same(zao, "福岡"))
+        XCTAssertTrue(LocationMatch.photoIsIn(zao, "宮城県"))
+        XCTAssertTrue(LocationMatch.photoIsIn(zao, "白石市"))
+        XCTAssertTrue(LocationMatch.photoIsIn(zao, "蔵王キツネ村"))
+    }
+
+    /// 行政区分の字（都道府県市区町村郡）の前後は名前の切れ目
+    func testAdministrativeSuffixesAreBoundaries() {
+        XCTAssertTrue(LocationMatch.photoIsIn("東京都 渋谷区", "東京"))
+        XCTAssertTrue(LocationMatch.photoIsIn("兵庫県神戸市", "神戸"))
+        XCTAssertTrue(LocationMatch.photoIsIn("兵庫県神戸市", "兵庫県"))
+        XCTAssertTrue(LocationMatch.photoIsIn("福岡県福岡市", "福岡"))
+        XCTAssertTrue(LocationMatch.photoIsIn("宮崎県西臼杵郡", "宮崎県"))
+    }
+
+    /// 名前の途中に当たるだけのものは含まない
+    func testSubstringInsideANameIsNotAMatch() {
+        XCTAssertFalse(LocationMatch.photoIsIn("東京都", "京都"))
+        XCTAssertFalse(LocationMatch.photoIsIn("大阪城公園", "大阪"))
+    }
+
+    /// 括弧と複数語の見出し。**語は同じ順で続けて**並んでいること
+    func testBracketsAndMultiWordLabels() {
+        XCTAssertTrue(LocationMatch.photoIsIn("オペラ・ガルニエ（パリ）", "パリ"))
+        XCTAssertTrue(LocationMatch.photoIsIn("オペラ座, パリ, フランス", "パリ, フランス"))
+        XCTAssertFalse(LocationMatch.photoIsIn("パリ, ドイツ, フランス", "パリ, フランス"))
+    }
 }

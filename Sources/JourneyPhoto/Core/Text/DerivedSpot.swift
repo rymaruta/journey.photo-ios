@@ -127,7 +127,8 @@ enum DerivedSpot {
             let key = other.lowercased()
             guard !other.isEmpty, key != needle, seen.insert(key).inserted else { continue }
             // 「この撮影地の写真は、そちらのページにも載るか」
-            if needle.contains(key) { out.append(other) }
+            // 名前として含むときだけ（`LocationMatch.photoIsIn`・「福岡八宮」は「福岡」ではない）
+            if LocationMatch.photoIsIn(label, other) { out.append(other) }
         }
         return out
     }
@@ -158,14 +159,12 @@ enum DerivedSpot {
     static func nearby(_ place: Place, in photos: [Photo], limit: Int = 6,
                        maxKm: Double = nearbyMaxKm) -> [(place: Place, km: Double)] {
         guard let here = place.coords else { return [] }
-        let needle = place.label.lowercased()
         let candidates = all(in: photos)
             .filter { $0.slug != place.slug }
             // **自分を含む／自分に含まれる撮影地は出さない。**
             // 広い方は `broader`、狭い方の写真はこの画面の一覧に入っている
             .filter { other in
-                let key = other.label.lowercased()
-                return !needle.contains(key) && !key.contains(needle)
+                !LocationMatch.same(place.label, other.label)
             }
             .compactMap { other -> (Place, Double)? in
                 guard let there = other.coords else { return nil }

@@ -73,6 +73,18 @@ final class DerivedSpotTests: XCTestCase {
         XCTAssertTrue(fromParis.isEmpty, "「パリ」より広い撮影地は一覧に無い")
     }
 
+    /// 🔴 **字の中に当たるだけでは広い方にしない**（2026-09-30）。
+    /// 蔵王キツネ村の撮影地は大字「福岡八宮」を含み、「福岡」が広い方に出ていた
+    func testBroaderNeedsANameNotASubstring() throws {
+        let zao = "蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本"
+        let photos = [
+            try photo("a", location: zao),
+            try photo("b", location: "福岡"),
+            try photo("c", location: "宮城県"),
+        ]
+        XCTAssertEqual(DerivedSpot.broader(of: zao, in: photos), ["宮城県"])
+    }
+
     /// **自分自身は広い方に入れない**
     func testBroaderExcludesItself() throws {
         XCTAssertTrue(DerivedSpot.broader(of: "パリ", in: [try photo("a", location: "パリ")]).isEmpty)
