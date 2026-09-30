@@ -62,6 +62,8 @@ private struct StoryVideo: View {
     @State private var player: AVPlayer?
     /// 位置の見張り（`addPeriodicTimeObserver`）。外さないと画面を閉じたあとも知らせが飛ぶ
     @State private var timeObserver: Any?
+    /// 再生の状態（止める・待つ・鳴る）が替わった瞬間の見張り
+    @State private var statusObserver: NSKeyValueObservation?
     /// 鳴り終わりの見張り。外さないと画面を閉じたあとも `onEnded` が飛ぶ
     @State private var endObserver: NSObjectProtocol?
     /// 途中で途切れた知らせの見張り（`endObserver` と同じく出るたびに付け直す）
@@ -135,9 +137,23 @@ private struct StoryVideo: View {
                         Task { @MainActor in report?(seconds, length, playing) }
                     }
                 }
+                // **状態が替わった瞬間にも知らせる。** 周期の見張りだけだと、読み込みで詰まった
+                // 瞬間を取りこぼすことがあり（呼ばれた時点でまだ `.playing`・詰まると時刻が
+                // 進まず次の知らせが来ない）、再開してからも最大 0.5 秒バーが止まっていた
+                if statusObserver == nil, let player {
+                    let report = onProgress
+                    statusObserver = player.observe(\.timeControlStatus, options: [.new]) { player, _ in
+                        let seconds = player.currentTime().seconds
+                        let length = player.currentItem?.duration.seconds ?? 0
+                        let playing = player.timeControlStatus == .playing
+                        Task { @MainActor in report?(seconds, length, playing) }
+                    }
+                }
                 if !isPaused { player?.play() }
             }
             .onDisappear {
+                statusObserver?.invalidate()
+                statusObserver = nil
                 player?.pause()
                 if let timeObserver {
                     player?.removeTimeObserver(timeObserver)
