@@ -349,11 +349,14 @@ struct PhotoMapView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            // 札の押せる余白（上下 4）の分だけ詰め、札の上下の見た目の間は前のまま 10。
+            // ScrollView の外で負の余白にすると、上の検索欄の下端に ScrollView が重なって当たりを取る
+            .padding(.vertical, 10 - PillChip.tapSlack)
         }
     }
 
-    /// 探す画面のチップと同じ形（白地＝選択中）。当たりは上下 11pt ＋ 字で 44pt に届く
+    /// 探す画面のチップと同じ形（白地＝選択中）。見た目の札は上下 11 ＋ 字（字の大きさが
+    /// 標準で約 42）、上下 4 の余白まで押せる＝**押せる範囲は 44 以上**（`PillChip` と同じ形）
     private func chip(_ title: String, symbol: String? = nil, selected: Bool,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -372,6 +375,9 @@ struct PhotoMapView: View {
                                      : AnyShapeStyle(WebTheme.surface),
                             in: Capsule())
                 .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                .padding(.vertical, PillChip.tapSlack)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

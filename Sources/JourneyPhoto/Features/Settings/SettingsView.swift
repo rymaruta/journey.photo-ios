@@ -37,6 +37,13 @@ struct SettingsView: View {
                 // 復活する（OS の許可は残る）
                 wantsPush = push.isEnabled && push.isAuthorized
             }
+            // **iOS の設定で許可を変えて戻ったら合わせ直す。** 開いたまま通知を切って戻ると、
+            // 前面に戻ったときの読み直しで `isAuthorized` は倒れるのに、トグルが「入」のまま残った。
+            // 切り替えの最中（`isApplying`）は `apply` が決めるので触らない
+            .onChange(of: push.isAuthorized) { _, authorized in
+                guard !isApplying else { return }
+                wantsPush = push.isEnabled && authorized
+            }
     }
 
     /// 受け取る／受け取らないを切り替える。
