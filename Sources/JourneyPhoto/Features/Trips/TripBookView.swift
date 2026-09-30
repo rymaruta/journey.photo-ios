@@ -141,10 +141,20 @@ struct TripBookView: View {
                     .tracking(0.5)
                     .foregroundStyle(WebTheme.faint)
                     .padding(.horizontal, 4)
-                GeometryReader { proxy in
-                    routeDrawing(stops, width: proxy.size.width)
+                // 「ROUTE」の行は図の上に別の行として置く（図の中に重ねると、
+                // 大きな字で上の札とぶつかる）
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("ROUTE · \(TripBook.distanceText(distance))\(distance == nil ? "" : " km")")
+                        .font(JPFont.mono(12, relativeTo: .caption))
+                        .tracking(1.5)
+                        .foregroundStyle(WebTheme.placeholder)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                    GeometryReader { proxy in
+                        routeDrawing(stops, width: proxy.size.width)
+                    }
+                    .frame(height: TripRouteLayout.height(labelHeight: routeLabelHeight))
                 }
-                .frame(height: Self.routeHeight)
                 .background(Self.cellColor, in: RoundedRectangle(cornerRadius: 14))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Self.routeSpokenLabel(stops))
@@ -154,23 +164,15 @@ struct TripBookView: View {
         }
     }
 
-    /// 札を 12pt（本文の最小）にしたぶん点を 6 下げ、枠も伸ばす。
-    /// そのままだと上の札が左上の「ROUTE」の行に重なる
-    private static let routeHeight: CGFloat = 126
+    /// 札1行の高さ。字の大きさの設定に合わせて伸びる（札の字と同じ `.caption` に追従）
+    @ScaledMetric(relativeTo: .caption) private var routeLabelLine: CGFloat = 16
+    /// 札は2行（DAY n／地名）
+    private var routeLabelHeight: CGFloat { routeLabelLine * 2 }
 
-    /// 点の位置。**左から右へ等間隔、高さは交互**（板の波打つ線）
-    private func routePoints(count: Int, width: CGFloat) -> [CGPoint] {
-        let inset: CGFloat = 44
-        let span = max(0, width - inset * 2)
-        return (0..<count).map { index in
-            let x = count > 1 ? inset + span * CGFloat(index) / CGFloat(count - 1) : width / 2
-            return CGPoint(x: x, y: index.isMultiple(of: 2) ? 80 : 52)
-        }
-    }
-
+    /// 置き方は `TripRouteLayout`（はみ出さない・同じ側で重ねない・高さは札から決める）
     private func routeDrawing(_ stops: [TripBook.RouteStop], width: CGFloat) -> some View {
-        let points = routePoints(count: stops.count, width: width)
-        let labelWidth = min(140, max(80, (width - 40) / CGFloat(max(1, stops.count - 1))))
+        let layout = TripRouteLayout.layout(count: stops.count, width: width, labelHeight: routeLabelHeight)
+        let points = layout.points
         let line = Path { path in
             guard let first = points.first else { return }
             path.move(to: first)
@@ -188,27 +190,27 @@ struct TripBookView: View {
             line.stroke(WebTheme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [4, 5]))
             ForEach(Array(stops.enumerated()), id: \.offset) { index, stop in
                 let point = points[index]
+                let label = layout.labels[index]
                 let isLast = index == stops.count - 1
                 // 終点だけ塗る（どこで旅が終わったか）
                 Circle()
                     .fill(isLast ? WebTheme.accent : Self.cellColor)
                     .overlay(Circle().strokeBorder(WebTheme.accent, lineWidth: 2))
-                    .frame(width: 14, height: 14)
+                    .frame(width: TripRouteLayout.dot, height: TripRouteLayout.dot)
                     .position(x: point.x, y: point.y)
-                // 低い点は下に、高い点は上に札を出す（線と重ねない）
-                Text("DAY \(stop.day) · \(stop.place)")
-                    .font(JPFont.mono(12, relativeTo: .caption2))
-                    .foregroundStyle(WebTheme.muted2)
-                    .lineLimit(1)
-                    .frame(width: labelWidth)
-                    .position(x: point.x, y: index.isMultiple(of: 2) ? point.y + 22 : point.y - 18)
+                // 低い点は下に、高い点は上に札を出す（線と重ねない）。
+                // 2行にして地名に札の幅を丸ごと使う（1行に「DAY n · 」と並べると地名がほぼ切れた）
+                VStack(spacing: 0) {
+                    Text("DAY \(stop.day)")
+                        .font(JPFont.mono(12, relativeTo: .caption))
+                    Text(stop.place)
+                        .font(.caption)
+                }
+                .foregroundStyle(WebTheme.muted2)
+                .lineLimit(1)
+                .frame(width: label.width, height: routeLabelHeight)
+                .position(x: label.centerX, y: label.centerY)
             }
-            Text("ROUTE · \(TripBook.distanceText(distance))\(distance == nil ? "" : " km")")
-                .font(JPFont.mono(12, relativeTo: .caption2))
-                .tracking(1.5)
-                .foregroundStyle(WebTheme.placeholder)
-                .padding(.leading, 14)
-                .padding(.top, 8)
         }
     }
 
