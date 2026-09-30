@@ -316,4 +316,8 @@ struct ModerationSnapshot: Equatable {
     func viewers(_ viewers: [StoryViewer]) -> [StoryViewer] {
         BlockFilter.viewers(viewers, blocked: blocked)
     }
+
+    func follows(_ users: [FollowUser]) -> [FollowUser] {
+        BlockFilter.follows(users, blocked: blocked)
+    }
 }
