@@ -93,6 +93,15 @@ final class OfficialSpotIndexTests: XCTestCase {
         XCTAssertEqual(OfficialSpotIndex.nearbyMaxKm, DerivedSpot.nearbyMaxKm, "写真の撮影地とスポットで「近く」の距離が食い違う")
     }
 
+    /// 境目: 上限の内側（約45km）は出て、外側（約56km）は出ない。値を大きく緩めたら落ちる
+    func testNearbyCapBoundary() throws {
+        let here = try spot("here", name: "起点", lat: 35.0, lng: 135.0)
+        let inside = try spot("inside", name: "内側", lat: 35.4, lng: 135.0)   // 約44km 北
+        let outside = try spot("outside", name: "外側", lat: 35.5, lng: 135.0) // 約56km 北
+        let near = OfficialSpotIndex.nearby(here, in: [here, inside, outside])
+        XCTAssertEqual(near.map(\.spot.slug), ["inside"])
+    }
+
     /// 自分に座標が無ければ測れない
     func testNearbyNeedsCoordinates() throws {
         let nowhere = try spot("nowhere", name: "座標なし")
