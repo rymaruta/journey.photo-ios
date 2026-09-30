@@ -88,4 +88,18 @@ final class PushDeepLinkTests: XCTestCase {
         XCTAssertNil(router.takePendingTarget())
         _ = router.takePendingActivity()
     }
+
+    /// 🔴 古い行き先・待つのをやめた回の行き先は使わない（後でベルから開いたときに勝手に積まない）
+    func testStaleOrDroppedTargetIsNotUsed() async {
+        let router = NotificationRouter.shared
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        router.openActivity(target: AppNotification.fromPush(["type": "follow", "byId": "a", "targetUserId": "a"]), now: t0)
+        XCTAssertNil(router.takePendingTarget(now: t0.addingTimeInterval(NotificationRouter.targetLifetime + 1)))
+        router.openActivity(target: AppNotification.fromPush(["type": "follow", "byId": "b", "targetUserId": "b"]), now: t0)
+        XCTAssertEqual(router.takePendingTarget(now: t0.addingTimeInterval(5))?.targetUserId, "b")
+        router.openActivity(target: AppNotification.fromPush(["type": "follow", "byId": "c", "targetUserId": "c"]))
+        router.dropPendingTarget()
+        XCTAssertNil(router.takePendingTarget())
+        _ = router.takePendingActivity()
+    }
 }

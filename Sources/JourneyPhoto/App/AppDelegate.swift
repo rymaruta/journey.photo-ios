@@ -97,20 +97,35 @@ final class NotificationRouter: ObservableObject {
     /// アプリを開いている間に届いた通知の数（ベルの数え直しの合図）
     @Published private(set) var arrivals = 0
 
-    /// 押された通知の行き先（お知らせ画面が読み終えてから取りに来る）。
+    /// 押された通知の行き先（お知らせ画面が取りに来る）。
     /// **最後に押したものだけ**を持つ——続けて2つ押したら後の方へ行く
     private(set) var pendingTarget: AppNotification?
+    /// 押した時刻。**古い行き先は使わない**（`targetLifetime`）
+    private var pendingTargetAt: Date?
+    /// 押してから、お知らせ画面が行き先を受け取るまでに待てる長さ。
+    /// 🔴 これを過ぎた行き先・待つのをやめた回の行き先を残すと、何時間も後にベルから
+    /// 開いたお知らせが、その写真・その人の画面を勝手に積んでいた（88a8e7e の回帰）
+    static let targetLifetime: TimeInterval = 120
 
-    func openActivity(target: AppNotification? = nil) {
+    func openActivity(target: AppNotification? = nil, now: Date = Date()) {
         pendingTarget = target
+        pendingTargetAt = target == nil ? nil : now
         hasPendingActivity = true
         openActivityRequests += 1
     }
 
-    /// 押された通知の行き先を受け取る。**受け取るのは1回だけ**
-    func takePendingTarget() -> AppNotification? {
-        defer { pendingTarget = nil }
-        return pendingTarget
+    /// 押された通知の行き先を受け取る。**受け取るのは1回だけ**。古いものは nil
+    func takePendingTarget(now: Date = Date()) -> AppNotification? {
+        defer { dropPendingTarget() }
+        guard let target = pendingTarget, let at = pendingTargetAt,
+              now.timeIntervalSince(at) <= Self.targetLifetime else { return nil }
+        return target
+    }
+
+    /// 行き先を捨てる（お知らせを開くのを待つのをやめた・人が替わった）
+    func dropPendingTarget() {
+        pendingTarget = nil
+        pendingTargetAt = nil
     }
 
     /// 押された分を受け取る。**受け取るのは1回だけ**（2回目は false）

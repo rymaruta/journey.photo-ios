@@ -159,6 +159,8 @@ struct RootView: View {
             // 人にも通知は届き続けるので、押しても何も起きないと壊れて見える
             let waited = Date().timeIntervalSince(started)
             guard let owner else {
+                // 開かない回は、押した通知の行き先も捨てる（後でベルから開いた回に積まない）
+                router.dropPendingTarget()
                 // **待った後の今で確かめる。** 押したときのログイン画面でログインして
                 // 閉じた回に「ログインしてください」と出ていた。何分も後にも言わない
                 if auth.userId == nil {
@@ -178,13 +180,17 @@ struct RootView: View {
                 }
                 return
             }
-            guard auth.userId == owner else { return }
+            guard auth.userId == owner else {
+                router.dropPendingTarget()
+                return
+            }
             // 待っている間に（ベルなどから）開いた: それで済んでいる。
             // **ここで「出せずに残った」と見なして戻さない**——開いた直後の
             // 描画が済む前だと、押したばかりのベルを取り消してしまう
             // （true のまま残った回は、次に押したときの入口で戻す）
             guard !showNotifications else { return }
             guard waited <= Self.activityWaitLimit else {
+                router.dropPendingTarget()
                 // あまりに後（何分も経ってから）の知らせは、何のことか分からない
                 if waited <= Self.activityHintLimit {
                     toasts.show(L("新しいお知らせは、右上のベルから見られます",
@@ -231,6 +237,8 @@ struct RootView: View {
         activityWait = nil
         bellReopen?.cancel()
         bellReopen = nil
+        // 押した通知の行き先も捨てる（後でベルから開いた回に勝手に積まない・次の人に出さない）
+        router.dropPendingTarget()
     }
 
     private var tabs: some View {
