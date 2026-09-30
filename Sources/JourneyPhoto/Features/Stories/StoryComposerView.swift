@@ -380,7 +380,6 @@ struct StoryComposerView: View {
                     .opacity(draggingOverlay ? 0 : 1)
                     .allowsHitTesting(!draggingOverlay)
                 .accessibilityHidden(draggingOverlay)
-                    .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .leading) {
@@ -393,7 +392,6 @@ struct StoryComposerView: View {
                     .opacity(draggingOverlay ? 0 : 1)
                     .allowsHitTesting(!draggingOverlay)
                 .accessibilityHidden(draggingOverlay)
-                    .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottomLeading) {
@@ -406,7 +404,6 @@ struct StoryComposerView: View {
                     .opacity(draggingOverlay ? 0 : 1)
                     .allowsHitTesting(!draggingOverlay)
                 .accessibilityHidden(draggingOverlay)
-                    .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -419,7 +416,6 @@ struct StoryComposerView: View {
                     .opacity(draggingOverlay ? 0 : 1)
                     .allowsHitTesting(!draggingOverlay)
                 .accessibilityHidden(draggingOverlay)
-                    .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottom) {

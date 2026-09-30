@@ -209,15 +209,26 @@ enum StoryTextEditing {
         case photo
     }
 
-    /// 2本指の操作の相手を決める。**回すとつまむは同じ相手に**——別々に決めると、認識される時刻の
-    /// ずれで札は大きくなり写真は回った。順は: もう片方の操作の相手 → 1本指で運んでいる札（指が乗って
-    /// いる。選んだ別の札より先——選んだ札が回った・4ed53ca のレビュー）→ 選んだ札 → 指の下の札 → 写真。
-    /// `dragging` は**まだ相殺されていない**運びだけを渡す
-    static func gestureTarget(other: GestureTarget?, selected: UUID?, dragging: UUID?,
-                              under: () -> UUID?) -> GestureTarget {
+    /// 2本指の操作の相手を決める。**原則は「2本の指の間にある札」**（Instagram と同じ）。
+    /// 順は: もう片方の操作の相手（回すとつまむは同じ相手に・認識の時刻のずれで札は大きく写真は回った）
+    /// → 指の間の札 → はっきり運んでいた札（`carried`・運んだ先でつまむと指の間から外れる小さな札）
+    /// → 選んだ札 → 写真。
+    /// 「運んでいる札」を指の間より先にすると、写真の上で回すときに片方の指が別の札に触れただけで
+    /// その札に取られ、届く順で相手が変わった（1c00a67 のレビュー）
+    static func gestureTarget(other: GestureTarget?, under: () -> UUID?, carried: UUID?,
+                              selected: UUID?) -> GestureTarget {
         if let other { return other }
-        if let id = dragging ?? selected ?? under() { return .overlay(id) }
+        if let id = under() ?? carried ?? selected { return .overlay(id) }
         return .photo
+    }
+
+    /// 1本指で運んでいた札を「はっきり運んでいた」とみなす移動量（pt）。指を置いただけ・少し
+    /// 触れただけの札に2本指を取られない
+    static let carryDistance = 24.0
+
+    static func isCarried(_ offset: CGSize) -> Bool {
+        let w = Double(offset.width), h = Double(offset.height)
+        return w * w + h * h >= carryDistance * carryDistance
     }
 
     /// 真ん中の目安に吸い付く距離（pt）

@@ -90,6 +90,8 @@ struct StoryCanvas: View {
     @State private var trashHot = false
     /// この回、指がいったんゴミ箱の外にいたか（外にいたことが無ければ離しても消さない）
     @State private var trashArmed = false
+    /// 2本指が入ったとき、はっきり運んでいた札（運んだ分を入れた札）。2本指の相手の候補
+    @State private var carriedId: UUID?
     /// 真ん中の縦・横の目安に吸い付いているか（線を出す）と、吸い付けたぶんのずれ
     @State private var snapVertical = false
     @State private var snapHorizontal = false
@@ -206,10 +208,11 @@ struct StoryCanvas: View {
                         if rotateId == nil && !twistsPhoto {
                             let other: StoryTextEditing.GestureTarget? = scaleId.map { .overlay($0) }
                                 ?? (pinchesPhoto ? .photo : nil)
-                            switch StoryTextEditing.gestureTarget(other: other, selected: selectedId, dragging: dragSpoiled ? nil : dragId,
-                                                                  under: { overlayUnder(value.startLocation, photo: photo) }) {
+                            absorbDrag(photo: photo, canvas: geometry.size)
+                            switch StoryTextEditing.gestureTarget(other: other,
+                                                                  under: { overlayUnder(value.startLocation, photo: photo) },
+                                                                  carried: carriedId, selected: selectedId) {
                             case .overlay(let id):
-                                absorbDrag(photo: photo, canvas: geometry.size)
                                 rotateId = id
                             case .photo:
                                 twistsPhoto = true
@@ -234,10 +237,11 @@ struct StoryCanvas: View {
                         if scaleId == nil && !pinchesPhoto {
                             let other: StoryTextEditing.GestureTarget? = rotateId.map { .overlay($0) }
                                 ?? (twistsPhoto ? .photo : nil)
-                            switch StoryTextEditing.gestureTarget(other: other, selected: selectedId, dragging: dragSpoiled ? nil : dragId,
-                                                                  under: { overlayUnder(value.startLocation, photo: photo) }) {
+                            absorbDrag(photo: photo, canvas: geometry.size)
+                            switch StoryTextEditing.gestureTarget(other: other,
+                                                                  under: { overlayUnder(value.startLocation, photo: photo) },
+                                                                  carried: carriedId, selected: selectedId) {
                             case .overlay(let id):
-                                absorbDrag(photo: photo, canvas: geometry.size)
                                 scaleId = id
                             case .photo:
                                 pinchesPhoto = true
@@ -300,6 +304,7 @@ struct StoryCanvas: View {
         rotateId = nil
         twistsPhoto = false
         liveRotation = 0
+        if scaleId == nil && !pinchesPhoto { carriedId = nil }
         if !pinchesPhoto { photoPinched = false }
     }
 
@@ -313,6 +318,7 @@ struct StoryCanvas: View {
         scaleId = nil
         pinchesPhoto = false
         liveScale = 1
+        if rotateId == nil && !twistsPhoto { carriedId = nil }
         // 回す方がまだ続いていれば、つまんでいた印はそちらの片付けで戻す
         if !twistsPhoto { photoPinched = false }
     }
@@ -443,7 +449,7 @@ struct StoryCanvas: View {
                     .updating($dragging) { _, state, _ in state = true }
                     .onChanged { value in
                         // 動かし始め（前の回の印を戻す）
-                        if dragId == nil { dragSpoiled = false }
+                        if dragId == nil { dragSpoiled = false; if !twoFingerActive { carriedId = nil } }
                         // 2本指の操作（回す・つまむ。**写真に効いているときも**）が入ったら、この回は動かさない。
                         // **相殺する前に、そこまで運んだ分を入れる**（2本指の判定より先にここへ来ると、
                         // 運んだ分が捨てられて札が元の位置へ戻った・4ed53ca のレビュー）。2回目は何もしない
@@ -514,6 +520,8 @@ struct StoryCanvas: View {
     private func absorbDrag(photo: CGRect, canvas: CGSize) {
         guard let id = dragId, !dragSpoiled, let overlay = overlays.first(where: { $0.id == id }) else { return }
         if dragOffset != .zero { move(overlay, by: dragOffset, photo: photo, canvas: canvas) }
+        // はっきり運んでいた札だけ、2本指の相手の候補にする（どちらの処理が先に届いても同じ）
+        carriedId = StoryTextEditing.isCarried(dragOffset) ? id : nil
         dragSpoiled = true
         dragOffset = .zero
         resetDragAids()
