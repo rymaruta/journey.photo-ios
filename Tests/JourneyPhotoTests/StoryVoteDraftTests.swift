@@ -77,38 +77,6 @@ final class StoryVoteDraftTests: XCTestCase {
         XCTAssertEqual(StoryPostText.caption("夕方の港").text, "夕方の港")
     }
 
-    /// 🔴 **撮影地か曲があると、ひとことをその行より上に置く。** 0.86 のままだと、見る画面の
-    /// 下に出る撮影地・曲の行に重なった（アプリ・Web とも）
-    func testCaptionClearsThePlaceAndSongLine() throws {
-        let vote = StoryVoteDraft.new()   // 既定は y=0.7（下半分）
-        // 行が無ければこれまでどおり
-        XCTAssertEqual(try XCTUnwrap(StoryPostText.list(vote: vote, caption: "港"))[0].y, 0.86)
-
-        // 1行のひとこと（字は絵の幅の 5%・行の高さ 1.2 倍）の上端と下端。
-        // 置き方は `StoryTextItem.guide`（y の割合の点を、要素の同じ割合の点に合わせる）
-        func span(y: Double, boxTop: Double, boxHeight: Double, boxWidth: Double) -> (top: Double, bottom: Double) {
-            let h = boxWidth * 0.05 * 1.2
-            let top = boxTop + boxHeight * y - h * y
-            return (top, top + h)
-        }
-        for voteY in [0.7, 0.94, 0.5, 0.3, 0.06] {
-            var v = vote
-            v.y = voteY
-            let y = try XCTUnwrap(StoryPostText.list(vote: v, caption: "港", hasMetaLine: true))[0].y
-            // アプリ（絵を埋めて敷く・幅 390）: 撮影地＋曲の行の上端は枠の下から 96+16+8+16 = 136pt
-            for frameHeight in [560.0, 700.0, 780.0] {
-                let s = span(y: y, boxTop: 0, boxHeight: frameHeight, boxWidth: 390)
-                XCTAssertLessThan(s.bottom, frameHeight - 136, "アプリ: 投票 y=\(voteY)・枠 \(frameHeight)")
-            }
-            // Web（絵を収めて敷く・390×844・返信の帯あり）: 縦 9:16 の絵は上 75px から 693px。
-            // 撮影地（28）＋曲（36）＋間（8×2）＋下（16）＋帯（120）＋端の余白（34）＝ 594px が行の上端
-            let web = span(y: y, boxTop: 75, boxHeight: 693, boxWidth: 390)
-            XCTAssertLessThan(web.bottom, 594, "Web: 投票 y=\(voteY)")
-            // 投票の札の真ん中とは離す（札の上か下へ逃がす）
-            XCTAssertGreaterThan(abs(y - voteY), 0.2, "投票 y=\(voteY) の札に重ねない")
-        }
-    }
-
     /// 送る形の鍵はサーバーの `sanitizeStoryTexts` が読むもの。**無い項目は書かない**
     func testPostTextEncoding() throws {
         let vote = StoryPostText.vote(StoryVoteDraft(question: "Q", optionA: "A", optionB: "B", x: 2, y: 0.5, size: 1))

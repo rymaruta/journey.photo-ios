@@ -831,12 +831,10 @@ struct StoryViewerView: View {
         case .restart:
             // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
             clock.restart(running: !frozen && !(current?.isVideo ?? false), at: Date())
-            // **控えていた終わりを捨てる。** 知らせが出ている間に動画が終わると `pendingEnd` に
-            // 控える。そこで頭から見直すと、知らせが消えたときに控えが効き、見直している
-            // 途中の動画が次へ飛ばされた。見直した回の終わりをもう一度受けられるよう、
-            // 受け取った印からも外す
-            pendingEnd = nil
-            if let id = current?.id { endedIds.remove(id) }
+            // **控えていた終わりを捨てる**（`StoryPlayback.afterRestart`）。読めなかった動画は
+            // 見直しの合図を受けて終わりを知らせ直す（`StoryPlayback.restartAction`）
+            (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
+                                                                currentId: current?.id)
             restartCount += 1
             syncSong(restart: true)
         case .previous(let target):

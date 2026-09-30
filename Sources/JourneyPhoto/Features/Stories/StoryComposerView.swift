@@ -1090,7 +1090,9 @@ struct StoryComposerView: View {
                              vote: item.shot.vote)
         }
         current = 0
-        caption = draft.caption
+        // 古い下書き（字で数えていた頃）は 200 単位を超えていることがある。欄は超えたぶんを
+        // 減らす変更しか受けないので、読み込むときに一度だけ収める
+        caption = PostLimits.clamp(draft.caption, limit: PostLimits.storyCaption)
         location = draft.location
         // 流し始めは表示秒数に収めてから戻す（`restoredContent` もその値で撮る）。
         // 収まっていない下書きをそのまま戻すと、表示秒数が変わらない回は上限を越えたまま
@@ -1135,9 +1137,14 @@ struct StoryComposerView: View {
                 caption: caption, location: place, coords: shotCoords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
-                // 撮影地か曲があると見る画面の下に行が出る。ひとことをその行に重ねない
+                // 撮影地か曲があると見る画面の下に行が出る。ひとことをその行・札に重ねない
+                // （ここで送るのは写真だけ——`imageData`）
                 texts: StoryPostText.list(vote: shot.vote, caption: caption,
-                                          hasMetaLine: !place.isEmpty || song != nil))
+                                          hasMetaLine: StoryPostText.hasMetaLine(isVideo: false, place: place,
+                                                                                 hasSong: song != nil),
+                                          photoAspect: shot.imageSize.flatMap {
+                                              $0.height > 0 ? Double($0.width / $0.height) : nil
+                                          }))
         }
         let stories = environment.stories
         let drafts = drafts

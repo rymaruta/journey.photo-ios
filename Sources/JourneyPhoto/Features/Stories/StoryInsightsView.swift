@@ -50,10 +50,23 @@ struct StoryInsightsView: View {
     }
     @State private var isLoading = true
     @State private var errorMessage: String?
+    /// 引き下げて読み直したのに読めなかった（短く知らせて消す。一覧は前のまま）
+    @State private var refreshNotice: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if let refreshNotice {
+                    Text(refreshNotice)
+                        .font(.system(size: 13))
+                        .foregroundStyle(WebTheme.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // **少しで消す**（閲覧画面の知らせと同じ 2.5 秒）
+                        .task(id: refreshNotice) {
+                            try? await Task.sleep(nanoseconds: 2_500_000_000)
+                            if !Task.isCancelled { self.refreshNotice = nil }
+                        }
+                }
                 summary
                 tabs
                 viewerList
@@ -81,7 +94,7 @@ struct StoryInsightsView: View {
         }
         .onAppear { dropped = hidden.snapshot }
         .task { await load() }
-        .refreshable { await load() }
+        .refreshable { await load(pulled: true) }
     }
 
     // MARK: - 写真と数
@@ -262,7 +275,9 @@ struct StoryInsightsView: View {
         StoryPlayback.ago(from: iso)
     }
 
-    private func load() async {
+    /// - Parameter pulled: 引き下げて読み直した。**そのときだけ**失敗を短く知らせる
+    ///   （人のページから戻ったときの裏での読み直しは黙る）
+    private func load(pulled: Bool = false) async {
         // **一度読めたら、裏で読み直す。** 人のページから戻るたびに `.task` がまた走る。
         // そのたびに読み込み中に切り替えると、一覧が消えてスクロールの位置が失われた。
         // 読み直しに失敗しても、前に読めた一覧を出し続ける（失敗の知らせで置き換えない）
@@ -292,6 +307,8 @@ struct StoryInsightsView: View {
         } catch {
             if firstLoad {
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+            } else if pulled {
+                refreshNotice = L("読み直せませんでした", "Couldn't refresh")
             }
         }
     }

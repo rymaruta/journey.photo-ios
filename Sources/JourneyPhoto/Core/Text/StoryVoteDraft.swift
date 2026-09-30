@@ -108,48 +108,41 @@ struct StoryPostText: Codable, Equatable {
     /// **`texts` を送ると、サーバーは `caption` を文字の並びから作り直す**（`stories.ts`）
     /// ——投票だけを送ると、打ったひとことが消える。見る画面（アプリ・Web）も `texts` が
     /// あればひとことを出さないので、**ひとことも写真の上の文字として送る**。
-    /// 置き場所は真ん中・明朝・白・下地なし（アプリのひとことの見た目に近い）。高さは `captionY`。
+    /// 置き場所は真ん中・明朝・白・下地なし（アプリのひとことの見た目に近い）。
+    /// 高さと大きさは `list` が決める（`StoryCaptionPlacement`）。
     ///
     /// 長さは**サーバーと同じ UTF-16 で** 200 に収める（`storyText.ts` の `STORY_TEXT_LEN_MAX`
     /// は `slice`＝UTF-16 で切る）。字（書記素）で数えると、絵文字の入った文がサーバーで
     /// 黙って切られ、しかも `slice` は絵文字の途中で割る。字の境目で切る（`PostLimits.clamp`）
-    static func caption(_ text: String, y: Double = captionYDefault) -> StoryPostText {
-        StoryPostText(kind: "text", x: 0.5, y: y, size: 0.05,
+    static func caption(_ text: String, y: Double = captionYDefault, size: Double = captionSizeDefault) -> StoryPostText {
+        StoryPostText(kind: "text", x: StoryCaptionPlacement.x, y: y, size: size,
                       text: PostLimits.clamp(text, limit: TextOverlay.maxLength), font: "mincho", color: "white", bg: "none")
     }
 
-    /// ひとことの高さ（絵の矩形に対する割合）。撮影地も曲も無ければ写真の下の方（投票の既定 0.7 の下）
+    /// 撮影地も曲も無いときのひとことの高さ（写真の下の方・投票の既定 0.7 の下）と大きさ
     static let captionYDefault = 0.86
-    /// 撮影地か曲があり、投票が下半分にあるとき。**上の方へ逃がす**（投票の札の上。
-    /// 名前と進み具合の段より下）
-    static let captionYTop = 0.22
-    /// 撮影地か曲があり、投票が上半分にあるとき。投票の札の下、撮影地・曲の行より上
-    static let captionYAboveMeta = 0.72
+    static let captionSizeDefault = 0.05
 
-    /// ひとことの高さを決める。
-    ///
-    /// **撮影地・曲の行は画面の下に出る**（アプリは写真の枠の下から 96pt・Web は返信の帯の
-    /// 上に `bottom-4`）。0.86 に置くと、その行にひとことが重なった（2巡目のバグ探し）。
-    /// その行があるときは上げる。投票の札（既定 0.7）とも重ねないよう、札が下半分なら札の上、
-    /// 上半分なら札の下（行より上）に置く。
-    ///
-    /// 値は次の寸法で重ならないことを見た（1行のひとこと・字は絵の幅の 5%）:
-    /// - アプリ（絵を埋めて敷く・枠の高さ H）: 撮影地＋曲の行の上端は H−136pt。
-    ///   0.72 は H が約 500pt 以上なら行より上
-    /// - Web（絵を収めて敷く・390×844・返信の帯あり）: 縦 9:16 の絵で行の上端は画面の 594px、
-    ///   0.72 の文字の下端は約 577px
-    static func captionY(vote: StoryVoteDraft, hasMetaLine: Bool) -> Double {
-        guard hasMetaLine else { return captionYDefault }
-        return vote.y >= 0.5 ? captionYTop : captionYAboveMeta
+    /// 見る画面の下に撮影地か曲の行が出るか。**動画の撮影地はサーバーが捨てる**
+    /// （`stories.ts` の `mediaType === "image" ? sanitizeText(location) : undefined`）ので、
+    /// 撮影地で立てるのは写真のときだけ。曲は写真でも動画でも出る
+    static func hasMetaLine(isVideo: Bool, place: String, hasSong: Bool) -> Bool {
+        hasSong || (!isVideo && !place.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     /// 1本ぶんの `texts`。投票が無ければ nil（送らない＝これまでと同じ）。
-    /// `hasMetaLine` は撮影地か曲を付けたか（`captionY`）
-    static func list(vote: StoryVoteDraft?, caption: String, hasMetaLine: Bool = false) -> [StoryPostText]? {
+    ///
+    /// `hasMetaLine`（撮影地か曲の行が出る）なら、ひとことはその行・投票の札・上の段に重ならない
+    /// 場所と大きさへ動かす（`StoryCaptionPlacement`）。`photoAspect` は写真の幅÷高さ
+    static func list(vote: StoryVoteDraft?, caption: String, hasMetaLine: Bool = false,
+                     photoAspect: Double? = nil) -> [StoryPostText]? {
         guard let vote, vote.isComplete else { return nil }
         let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        let y = captionY(vote: vote, hasMetaLine: hasMetaLine)
-        return (trimmed.isEmpty ? [] : [.caption(trimmed, y: y)]) + [.vote(vote)]
+        guard !trimmed.isEmpty else { return [.vote(vote)] }
+        guard hasMetaLine else { return [.caption(trimmed), .vote(vote)] }
+        let placed = StoryCaptionPlacement.place(caption: PostLimits.clamp(trimmed, limit: TextOverlay.maxLength),
+                                                 vote: vote, photoAspect: photoAspect)
+        return [.caption(placed.text, y: placed.y, size: placed.size), .vote(vote)]
     }
 
     // nil の鍵は書かない（サーバーは知らない鍵を読まないが、形を細く保つ）
