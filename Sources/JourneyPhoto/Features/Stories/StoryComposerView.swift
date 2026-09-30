@@ -55,24 +55,30 @@ struct StoryComposerView: View {
     /// 開いたときの問いを済ませた（`onAppear` はカメラを閉じたときにも走る）
     @State private var askedOnOpen = false
 
-    // 板 24b「文字と札」の編集
-    /// 文字と札を編集している（写真を暗くし、上に札の種類、下に操作欄）
-    @State private var textMode = false
-    /// 選んでいる札
-    @State private var selectedId: UUID?
-    /// 投票の札を選んでいる（札の `selectedId` とはどちらか一方）
+    // 写真の上の文字と札（owner・2026-09-30「使いづらい」で「文字と札」の編集モードを外した。
+    // 文字は写真の上で直接打ち、札はトレイから選び、置いたものは指で直接動かす）
+    /// **写真の上で直接打っている札**（`StoryTextTypingView`）。nil なら打っていない
+    @State private var typingId: UUID?
+    /// 打っている札が載っている写真。**写真の読み込みで表示中の写真が移っても、打つ先を取り違えない**
+    /// （移った先には札が無く、打った字が消え、元の写真に見えない空の札が残った・4ffb74f のレビュー）
+    @State private var typingShotId: UUID?
+    /// 写真の枠の大きさ（**キーボードで縮む前**）。打つ画面の文字を焼き込みと同じ大きさで見せる
+    @State private var canvasSize: CGSize = .zero
+    /// 打ち始めた瞬間の `canvasSize`（打っている間はキーボードで枠が縮むので、こちらで測る）
+    @State private var typingCanvas: CGSize = .zero
+    /// 札を指で動かしている最中（周りの道具を隠し、下のゴミ箱を見せる）
+    @State private var draggingOverlay = false
+    /// 投票の札を選んでいる（下に投票の欄を出す）
     @State private var voteSelected = false
-    /// 編集に入ったときの投票（「キャンセル」で戻す）
-    @State private var voteSnapshot: StoryVoteDraft?
-    /// スタンプ（絵文字）の列を開いているか
-    @State private var showStamps = false
-    /// 編集に入ったときの写し（「やめる」で戻す）と、**どの写真の編集か**。
-    /// 編集中に並びが増えて表示中の写真が移っても、戻す先を取り違えない
-    @State private var overlaySnapshot: [TextOverlay] = []
-    /// 編集に入ったときの写真の合わせ方（「キャンセル」で戻す。編集中も札を選んでいなければ
-    /// 写真を合わせられる——写真を押すと選んでいる札が外れる）
-    @State private var framingSnapshot: PhotoFraming = .identity
-    @State private var editingShotId: UUID?
+    /// 札とスタンプのトレイ（`StickerTray`）
+    @State private var showStickerTray = false
+    /// トレイで選んだもの。**トレイが閉じ切ってから置く**（閉じる動きの最中に打つ画面を開くと、
+    /// キーボードが出ないことがある・bf7bb00 のレビュー）
+    @State private var pendingPick: StickerTray.Pick?
+
+    /// 投票の欄を開いている（足元と右の列を隠す——残すとキーボードで写真の枠が縮み、小さい画面で
+    /// 欄が上のバーに潜った・bf7bb00 のレビュー）
+    private var votePanelOpen: Bool { voteSelected && typingId == nil && vote.wrappedValue != nil }
     /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
     @FocusState private var captionFocused: Bool
     /// 撮影地を打つ（右の列の「撮影地」）
@@ -145,25 +151,43 @@ struct StoryComposerView: View {
             VStack(spacing: 0) {
                 photoArea
                     .ignoresSafeArea(edges: .top)
-                if !textMode {
+                if !votePanelOpen {
                     footer
                 }
             }
-            topBar
-                .padding(.horizontal, 8)
-                .padding(.top, 2)
-            if textMode {
-                VStack(spacing: 8) {
-                    kindChips
-                    Text(L("指で動かす・2本指で回す・つまんで大きさを変える", "Drag to move · twist to rotate · pinch to resize"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(WebTheme.muted2)
-                }
-                .padding(.top, 56)
+            // 打っている間は後ろを読ませない（VoiceOver で投稿・他の札へ移れた）
+            .accessibilityHidden(typingId != nil)
+            if typingId == nil {
+                topBar
+                    .padding(.horizontal, 8)
+                    .padding(.top, 2)
+            }
+            // 写真の上で直接打つ（開いたらすぐキーボード）
+            if let typingId {
+                StoryTextTypingView(overlay: typingBinding(id: typingId),
+                                    photoShortSide: photoShortSide,
+                                    canvas: typingCanvas,
+                                    photo: TextOverlay.filledRect(
+                                        image: shots.first { $0.id == typingShotId }?.imageSize ?? typingCanvas,
+                                        in: typingCanvas)) { finishTyping() }
             }
         }
         // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showStickerTray, onDismiss: {
+            if let pick = pendingPick {
+                pendingPick = nil
+                place(pick)
+            }
+        }) {
+            StickerTray(count: overlays.wrappedValue.count, hasVote: vote.wrappedValue != nil) { pick in
+                pendingPick = pick
+                showStickerTray = false
+            }
+            .presentationDetents([.medium, .large])
+        }
+        // 写真を切り替えたら投票の欄を閉じる（別の写真の投票の欄が出たままになった）
+        .onChange(of: current) { _, _ in voteSelected = false }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { picked in applySong(picked) }
@@ -292,23 +316,20 @@ struct StoryComposerView: View {
             WebTheme.background.opacity(preview == nil ? 0 : 1)
             if let preview {
                 StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays, framing: framing,
-                            selectedId: textMode ? selectedId : nil,
+                            // 打っている札は打つ画面の真ん中に出す（写真の上に二重に出さない）
+                            hiddenId: typingShotId == shots[current].id ? typingId : nil,
                             onTap: { overlay in
-                                // 押したら文字と札の編集へ（その札を選んだ状態で）。
-                                // **編集中に押したときは写しを取り直さない**（「やめる」の戻り先が変わる）
-                                if !textMode { enterTextMode() }
-                                selectedId = overlay.id
-                                voteSelected = false
+                                // **押したらすぐ打つ画面へ**（時刻・日付は書体・色・大きさだけ）。スタンプは何もしない
+                                if StoryTextEditing.opensTyping(overlay) { startTyping(overlay.id) }
                             },
-                            // 写真を押したら選んでいる札を外す（写真を合わせられるように戻る）
-                            onTapPhoto: { if textMode { selectedId = nil; voteSelected = false } },
+                            // 写真を押したら投票の欄を閉じる
+                            onTapPhoto: { voteSelected = false },
+                            // ゴミ箱へ運んで離した（VoiceOver の「消す」も）。**表示中の写真の札**
+                            onDelete: { id in overlays.wrappedValue.removeAll { $0.id == id } },
+                            onDraggingChange: { draggingOverlay = $0 },
                             vote: vote,
-                            voteSelected: textMode && voteSelected,
-                            onTapVote: {
-                                if !textMode { enterTextMode() }
-                                selectedId = nil
-                                voteSelected = true
-                            },
+                            voteSelected: voteSelected,
+                            onTapVote: { voteSelected = true },
                             photoId: shots.indices.contains(current) ? shots[current].id : nil)
             } else {
                 emptyPhoto
@@ -326,42 +347,56 @@ struct StoryComposerView: View {
                 .frame(height: 170)
                 .allowsHitTesting(false)
         }
-        // 文字と札の編集中は写真を30%暗くする（板 24b）
-        .overlay {
-            if textMode {
-                Color.black.opacity(0.3).allowsHitTesting(false)
-            }
-        }
         .overlay(alignment: .topTrailing) {
-            if !textMode && preview != nil {
+            if typingId == nil && !votePanelOpen && preview != nil {
                 toolColumn
                     .padding(.trailing, 12)
                     .padding(.top, 120)
+                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                    .opacity(draggingOverlay ? 0 : 1)
+                    .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .leading) {
-            if !textMode && preview != nil {
+            if typingId == nil && !votePanelOpen && preview != nil {
                 captionBlock
                     .padding(.leading, 36)
                     .padding(.trailing, 70)
+                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                    .opacity(draggingOverlay ? 0 : 1)
+                    .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if !textMode && preview != nil {
+            if typingId == nil && !votePanelOpen && preview != nil {
                 mediaStrip
                     .padding(.leading, 16)
                     .padding(.bottom, 20)
+                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                    .opacity(draggingOverlay ? 0 : 1)
+                    .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !textMode && preview != nil {
+            if typingId == nil && !votePanelOpen && preview != nil {
                 durationMenu
                     .padding(.trailing, 16)
                     .padding(.bottom, 30)
+                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                    .opacity(draggingOverlay ? 0 : 1)
+                    .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottom) {
-            if textMode, voteSelected, vote.wrappedValue != nil {
+            if votePanelOpen {
                 VotePanel(vote: Binding(
                     get: { vote.wrappedValue ?? .new() },
                     set: { vote.wrappedValue = $0 }
@@ -369,15 +404,20 @@ struct StoryComposerView: View {
                     vote.wrappedValue = nil
                     voteSelected = false
                 }
-            } else if textMode, let selectedId, selectedIndex != nil {
-                OverlayPanel(overlay: overlayBinding(id: selectedId)) {
-                    overlays.wrappedValue.removeAll { $0.id == selectedId }
-                    self.selectedId = nil
-                }
+                // 札を運んでいる間は隠す（下のゴミ箱が欄の下に隠れた）
+                .opacity(draggingOverlay ? 0 : 1)
+                .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
             }
         }
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: textMode ? 0 : 24,
-                                          bottomTrailingRadius: textMode ? 0 : 24))
+        .background {
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear { rememberCanvas(geometry.size) }
+                    .onChange(of: geometry.size) { _, size in rememberCanvas(size) }
+            }
+        }
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }
 
     /// まだ1枚も選んでいないとき。**写真の道具だけを真ん中に**
@@ -408,7 +448,12 @@ struct StoryComposerView: View {
     /// 右の縦の列（文字と札・曲・撮影地・表示秒数。44のガラスの丸）
     private var toolColumn: some View {
         VStack(spacing: 10) {
-            toolButton(symbol: "textformat", label: L("文字と札", "Text and stickers")) { enterTextMode() }
+            // 「Aa」は**押したらすぐ打つ**（以前は「文字と札」→「文字」→下の欄、の3段だった）
+            toolButton(symbol: "textformat", label: L("文字を入れる", "Add text")) { startNewText() }
+            toolButton(symbol: "face.smiling", label: L("札とスタンプ", "Stickers")) {
+                captionFocused = false
+                showStickerTray = true
+            }
             if song == nil {
                 toolButton(symbol: "music.note", label: L("曲を付ける", "Add a song")) { showSongPicker = true }
             } else {
@@ -556,154 +601,69 @@ struct StoryComposerView: View {
 
     // MARK: - 上のバー
 
-    @ViewBuilder
     private var topBar: some View {
-        if textMode {
-            // 板 24b: キャンセル／文字と札／完了（owner: 「やめる・できた」は幼い）
-            HStack {
-                Button {
-                    // **入ったときの写真へ戻す**（表示中の写真が移っていても取り違えない）
-                    if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
-                        shots[i].overlays = overlaySnapshot
-                        shots[i].framing = framingSnapshot
-                        shots[i].vote = voteSnapshot
-                    }
-                    leaveTextMode()
-                } label: {
-                    // 44 と余白は label の中に置き、`contentShape` で枠ごと押せる所にする
-                    // （`.plain` は描いた字しか押せない）
-                    Text(L("キャンセル", "Cancel"))
-                        .font(.system(size: 16))
-                        .frame(minHeight: 44)
-                        .padding(.horizontal, 10)
-                        .contentShape(Rectangle())
+        HStack {
+            Button {
+                switch leave {
+                case .now: dismiss()
+                case .confirm: showLeaveConfirm = true
+                case .wait: break
                 }
-                Spacer()
-                Text(L("文字と札", "Text and stickers"))
-                    .font(.system(size: 13))
-                    .foregroundStyle(WebTheme.muted2)
-                Spacer()
-                Button {
-                    // 空のまま閉じたら置かない（見えない物を焼き込まない）
-                    if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
-                        shots[i].overlays.removeAll { $0.isEmpty }
-                    }
-                    leaveTextMode()
-                } label: {
-                    Text(L("完了", "Done"))
-                        .font(.system(size: 16, weight: .semibold))
-                        .frame(minHeight: 44)
-                        .padding(.horizontal, 10)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityIdentifier("story.overlay.done")
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 18))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .jpGlass(in: Circle())
             }
-            .foregroundStyle(.white)
             .buttonStyle(.plain)
-        } else {
-            HStack {
-                Button {
-                    switch leave {
-                    case .now: dismiss()
-                    case .confirm: showLeaveConfirm = true
-                    case .wait: break
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .jpGlass(in: Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(leave == .wait)
-                .accessibilityLabel(Labels.Common.close)
-                Spacer()
-                if captionFocused {
-                    // ひとことのキーボードを閉じる（複数行なので Return では閉じない）
-                    Button { captionFocused = false } label: {
-                        Text(L("完了", "Done"))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(WebTheme.accentText)
-                            .padding(.horizontal, 14)
-                            .frame(minHeight: 36)
-                            .background(WebTheme.accentBackground, in: Capsule())
-                            // 見た目は 36 の札のまま、押せる所は 44（CLAUDE.md の最小）
-                            .frame(minHeight: WebTheme.minTapTarget)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                // **写真が無ければ下書きにできない。** 文字だけ残しても
-                // 「続きから」で出すものが無い
-                Button { saveDraft() } label: {
-                    Text(L("下書き保存", "Save draft"))
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white)
+            .disabled(leave == .wait)
+            .accessibilityLabel(Labels.Common.close)
+            Spacer()
+            if votePanelOpen {
+                // 投票の欄を閉じる（欄の間は投稿ボタンが隠れるので、閉じる口を見える所に出す）
+                Button { voteSelected = false } label: {
+                    Text(L("完了", "Done"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(WebTheme.accentText)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 36)
-                        .jpGlass(in: Capsule())
+                        .background(WebTheme.accentBackground, in: Capsule())
                         .frame(minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(prepared == nil || !canSaveDraft)
-                .opacity(prepared == nil ? 0.4 : 1)
+                .accessibilityLabel(L("投票の編集を終える", "Finish editing poll"))
+            } else if captionFocused {
+                // ひとことのキーボードを閉じる（複数行なので Return では閉じない）
+                Button { captionFocused = false } label: {
+                    Text(L("完了", "Done"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(WebTheme.accentBackground, in: Capsule())
+                        // 見た目は 36 の札のまま、押せる所は 44（CLAUDE.md の最小）
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+            } else {
+            // **写真が無ければ下書きにできない。** 文字だけ残しても
+            // 「続きから」で出すものが無い
+            Button { saveDraft() } label: {
+                Text(L("下書き保存", "Save draft"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 36)
+                    .jpGlass(in: Capsule())
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
             }
-        }
-    }
-
-    /// 札の種類（文字・撮影地・曲・時刻・日付・タグ・スタンプ）。押すと足して選ぶ。
-    /// **スタンプだけは押すと絵文字の列を開く**（どれを置くか選ぶ）
-    private var kindChips: some View {
-        VStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    // 投票（写真1枚に1つ・焼き込まずに送る）。置いてあれば選び直すだけ
-                    OverlayChip(title: L("投票", "Poll"), systemImage: "chart.bar.xaxis",
-                                selected: voteSelected) {
-                        if vote.wrappedValue == nil { vote.wrappedValue = .new() }
-                        selectedId = nil
-                        voteSelected = true
-                        showStamps = false
-                    }
-                    .accessibilityIdentifier("story.add.vote")
-                    ForEach(TextOverlay.Kind.allCases, id: \.rawValue) { kind in
-                        OverlayChip(title: kind.toolLabel, systemImage: kind.toolSymbol,
-                                    selected: kind == .stamp && showStamps) {
-                            if kind == .stamp {
-                                showStamps.toggle()
-                            } else {
-                                add(kind: kind)
-                            }
-                        }
-                        // スタンプは列を開け閉めするだけなので上限でも押せる（閉じられなくなる）
-                        .disabled(kind != .stamp && overlays.wrappedValue.count >= TextOverlay.maxCount)
-                        .accessibilityIdentifier("story.add.\(kind.rawValue)")
-                    }
-                }
-                .padding(.horizontal, 12)
-            }
-            if showStamps {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(TextOverlay.stamps, id: \.self) { emoji in
-                            Button {
-                                addStamp(emoji)
-                            } label: {
-                                Text(emoji)
-                                    .font(.system(size: 28))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(overlays.wrappedValue.count >= TextOverlay.maxCount)
-                            .accessibilityLabel(L("スタンプ \(emoji)", "Sticker \(emoji)"))
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                }
+            .buttonStyle(.plain)
+            .disabled(prepared == nil || !canSaveDraft)
+            .opacity(prepared == nil ? 0.4 : 1)
             }
         }
     }
@@ -769,41 +729,75 @@ struct StoryComposerView: View {
         .padding(.top, 14)
     }
 
-    // MARK: - 文字と札の出入り
+    // MARK: - 文字と札
 
-    private func enterTextMode() {
+    /// 新しい文字を足して、**すぐ打つ画面を開く**。上限なら断りを出す
+    private func startNewText() {
         guard shots.indices.contains(current) else { return }
+        guard let overlay = StoryTextEditing.newText(in: overlays.wrappedValue) else {
+            message = L("文字と札は1枚に\(TextOverlay.maxCount)個までです",
+                        "Up to \(TextOverlay.maxCount) text items per photo")
+            return
+        }
+        overlays.wrappedValue.append(overlay)
+        startTyping(overlay.id)
+    }
+
+    /// いま表示中の写真の札を打ち始める。**打つ先の写真を覚える**
+    private func startTyping(_ id: UUID) {
+        guard shots.indices.contains(current) else { return }
+        // 別の札を打っている最中に呼ばれたら（VoiceOver など）、前の札を先に確定する
+        if typingId != nil { finishTyping() }
         captionFocused = false
-        overlaySnapshot = shots[current].overlays
-        framingSnapshot = shots[current].framing
-        voteSnapshot = shots[current].vote
-        editingShotId = shots[current].id
-        textMode = true
-    }
-
-    private func leaveTextMode() {
-        textMode = false
-        showStamps = false
-        selectedId = nil
         voteSelected = false
-        editingShotId = nil
+        // キーボードが出る前の枠で文字の大きさを決める（`photoShortSide`）
+        typingCanvas = canvasSize
+        typingShotId = shots[current].id
+        typingId = id
     }
 
-    private var selectedIndex: Int? {
-        guard let selectedId else { return nil }
-        return overlays.wrappedValue.firstIndex { $0.id == selectedId }
+    /// 打ち終えた。**空なら置かない**（新しく足した札も、打ち直して消した札も）。
+    /// 片付ける先は**打ち始めた写真**（表示中の写真ではない）
+    private func finishTyping() {
+        if let id = typingId, let shotId = typingShotId,
+           let i = shots.firstIndex(where: { $0.id == shotId }) {
+            shots[i].overlays = StoryTextEditing.finish(shots[i].overlays, id: id)
+        }
+        typingId = nil
+        typingShotId = nil
     }
 
-    /// 選んだ札への窓。**位置ではなく id で引く**（消した直後に変換中の文字が
-    /// 確定して書き込みが走っても、隣の札を書き換えない）
-    private func overlayBinding(id: UUID) -> Binding<TextOverlay> {
+    /// 打っている札への窓。**打ち始めた写真の中を id で引く**（表示中の写真が移っても同じ札）
+    private func typingBinding(id: UUID) -> Binding<TextOverlay> {
         Binding(
-            get: { overlays.wrappedValue.first { $0.id == id } ?? TextOverlay(text: "") },
+            get: {
+                shots.first { $0.id == typingShotId }?.overlays.first { $0.id == id } ?? TextOverlay(text: "")
+            },
             set: { value in
-                var list = overlays.wrappedValue
-                if let i = list.firstIndex(where: { $0.id == id }) { list[i] = value; overlays.wrappedValue = list }
+                guard let s = shots.firstIndex(where: { $0.id == typingShotId }),
+                      let o = shots[s].overlays.firstIndex(where: { $0.id == id }) else { return }
+                shots[s].overlays[o] = value
             }
         )
+    }
+
+    /// 画面上の写真の短い辺（打つ画面の文字の大きさ・焼き込みと同じ基準）。
+    /// 枠は**打ち始めた瞬間の枠**（キーボードが出る前・`typingCanvas`）
+    private var photoShortSide: Double {
+        let shot = shots.first { $0.id == typingShotId }
+        return StoryTextEditing.photoShortSide(canvas: typingCanvas, image: shot?.imageSize)
+    }
+
+    /// 写真の枠の大きさ（いまの配置のまま）。**高い方を覚える形にはしない**——
+    /// 高い方を覚えると、枠が一時的に高くなった値（以前の「文字と札」モードでフッターが消えたとき）に
+    /// 張り付いて、打つ画面の文字が置いたあとより2割ほど大きく見えた（4ffb74f のレビュー）。キーボードの分は、打ち始めた瞬間の
+    /// 枠を `typingCanvas` に写して避ける（キーボードは打ち始めた後に出る）
+    private func rememberCanvas(_ size: CGSize) {
+        // ひとことのキーボードで縮んだ枠は覚えない（そのまま「Aa」を押すと、縮んだ枠で大きさを決める）。
+        // 投票の欄の間（足元が消えて伸びた枠・欄のキーボードで縮んだ枠）も覚えない——札を押すと
+        // 欄が閉じて足元が戻るので、打つ画面の文字が置いたあとより2割大きく見えた（f38d404 のレビュー）
+        guard !captionFocused && !votePanelOpen else { return }
+        canvasSize = size
     }
 
     /// 曲を付ける・変える・外す。**写真の上の曲の札も合わせる**——付けたら
@@ -828,28 +822,38 @@ struct StoryComposerView: View {
         shots[current].overlays.append(sticker)
     }
 
-    /// スタンプを置く。**文字より大きく、真ん中に**（どこに置いたか分かるように）
-    private func addStamp(_ emoji: String) {
-        guard overlays.wrappedValue.count < TextOverlay.maxCount else { return }
-        let overlay = TextOverlay(text: emoji, x: 0.5, y: 0.5, size: TextOverlay.stampSize, kind: .stamp)
-        overlays.wrappedValue.append(overlay)
-        selectedId = overlay.id
-        voteSelected = false
-        // 置いたら列を閉じる。開いたままだと写真の上の方を覆い、そこの札を掴めない
-        showStamps = false
-    }
-
-    private func add(kind: TextOverlay.Kind) {
-        // **真ん中より少し上に置く。** 真ん中だと写真の主役に重なりやすい。
-        // 場所と曲は少し下（文字の札と重なりにくい）
-        let y = kind == .text ? 0.35 : 0.6
-        // 新しい文字は明朝から（板 24b の既定の選択）。札（撮影地・曲など）はゴシックの帯
-        let overlay = TextOverlay(text: kind.initialText(), x: 0.5, y: y, kind: kind,
-                                  face: kind == .text ? .mincho : .gothic)
-        overlays.wrappedValue.append(overlay)
-        selectedId = overlay.id
-        // 投票を選んでいたら外す（下の欄が投票のまま残り、足した文字を直せなかった）
-        voteSelected = false
+    /// トレイで選んだものを置く（`StickerTray`）。**撮影地・タグ・曲は置いたらすぐ打つ画面へ**
+    /// （空のまま打つ画面を閉じれば置かない）。時刻・日付・スタンプはそのまま置く
+    private func place(_ pick: StickerTray.Pick) {
+        guard shots.indices.contains(current) else { return }
+        switch pick {
+        case .vote:
+            // 写真1枚に1つ。置いてあれば選び直すだけ
+            if vote.wrappedValue == nil { vote.wrappedValue = .new() }
+            voteSelected = true
+        case .stamp(let emoji):
+            guard overlays.wrappedValue.count < TextOverlay.maxCount else { return }
+            // 文字より大きく、真ん中に（どこに置いたか分かるように）
+            overlays.wrappedValue.append(TextOverlay(text: emoji, x: 0.5, y: 0.5, size: TextOverlay.stampSize,
+                                                     kind: .stamp))
+            voteSelected = false
+        case .kind(let kind):
+            guard overlays.wrappedValue.count < TextOverlay.maxCount else { return }
+            // 曲を付けてあれば、その曲の札（右の列の「曲」と同じ札・打たなくてよい）
+            if kind == .song, let song, let sticker = SongSticker.make(for: song) {
+                // 同じ写真に付けた曲の札が既にあれば置かない（右の列の「曲」と同じく1枚）
+                if !SongSticker.retext(overlays.wrappedValue, from: song, to: song).found {
+                    overlays.wrappedValue.append(sticker)
+                }
+                voteSelected = false
+                return
+            }
+            // 札（撮影地・曲など）は真ん中より少し下・ゴシックの帯（文字の札と重なりにくい）
+            let overlay = TextOverlay(text: kind.initialText(), x: 0.5, y: 0.6, kind: kind, face: .gothic)
+            overlays.wrappedValue.append(overlay)
+            voteSelected = false
+            if kind.isEditable { startTyping(overlay.id) }
+        }
     }
 
     // MARK: - 共通
@@ -902,8 +906,10 @@ struct StoryComposerView: View {
             let shot = StoryShot(prepared: prepared, image: UIImage(data: prepared.data))
             shots.append(shot)
             // 足したらそれを編集する（選んだ直後に文字を置ける）。
-            // **文字と札の編集中は移らない**（編集している写真が入れ替わる）
-            if !textMode { current = shots.count - 1 }
+            // **打っている間も移らない**（打つ先は `typingShotId` で引くが、見えている写真と打っている
+            // 写真が違うと、完了した後に別の写真が出て驚く）
+            // 投票の欄を打っている間も移らない（移ると欄が閉じてキーボードも消えた）
+            if typingId == nil && !votePanelOpen { current = shots.count - 1 }
             self.message = nil
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")

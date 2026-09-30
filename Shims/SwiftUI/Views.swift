@@ -131,7 +131,8 @@ public struct ScrollViewReader<Content: View>: View {
 }
 
 public struct ScrollView: View {
-    public init<C: View>(_ axes: Axis = .vertical, showsIndicators: Bool = true,
+    /// 本物と同じく `Axis.Set` を受ける
+    public init<C: View>(_ axes: Axis.Set = .vertical, showsIndicators: Bool = true,
                          @ViewBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
 }
@@ -146,6 +147,9 @@ public struct GridItem {
 }
 public struct LazyVGrid: View {
     public init<C: View>(columns: [GridItem], spacing: Double? = nil, @ViewBuilder content: () -> C) {}
+    /// 本物と同じく揃えを受ける
+    public init<C: View>(columns: [GridItem], alignment: HorizontalAlignment, spacing: Double? = nil,
+                         @ViewBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
 }
 
@@ -385,6 +389,8 @@ public struct DragGesture: Gesture {
         public var predictedEndTranslation: CGSize { CGSize(width: 0, height: 0) }
     }
     public init(minimumDistance: Double = 10) {}
+    /// 指の位置を名前を付けた座標で読む（iOS 17）
+    public init(minimumDistance: Double = 10, coordinateSpace: NamedCoordinateSpace) {}
     public func onChanged(_ action: @escaping (Value) -> Void) -> DragGesture { self }
     public func onEnded(_ action: @escaping (Value) -> Void) -> DragGesture { self }
     /// 指で動かしている間の値を `@GestureState` に書く（本物と同じ）

@@ -9,7 +9,8 @@ import UIKit
 /// 大きさは**画像に対する割合**のままなので、焼き込み（`TextOverlayRenderer`）と
 /// 同じところに出る。閲覧画面も埋めて出すので、見えている範囲もほぼ同じになる。
 ///
-/// **置いた場所は指で決める。** 押すと選び（破線で囲む）、指で動かす。
+/// **置いた場所は指で決める。** 指で動かし、2本指で回す・つまむ（指の下の札に効く）。
+/// 押すと打ち直す（`onTap`）。下のゴミ箱へ運ぶと消える。
 /// 動かした先は見えている範囲の中へ寄せる（はみ出した端では掴み直せない）
 struct StoryCanvas: View {
 
@@ -17,16 +18,19 @@ struct StoryCanvas: View {
     /// 写真の本当の大きさ（画素）。分からないとき（nil）は枠いっぱいを写真とみなす
     let imageSize: CGSize?
     @Binding var overlays: [TextOverlay]
-    /// 写真の合わせ方（拡大・位置・回し）。**札を選んでいないとき**、2本指の操作と
-    /// 写真の上で動かす操作は写真に効く（札を選んでいれば札に効く）
+    /// 写真の合わせ方（拡大・位置・回し）。写真の上で動かす操作と、指の間に札の無い2本指の操作は
+    /// 写真に効く（`StoryTextEditing.gestureTarget`）
     @Binding var framing: PhotoFraming
-    /// 選んでいる札（破線で囲む）。nil なら選んでいない
-    var selectedId: UUID?
+    /// 描かない札（写真の上で直接打っている札。打つ画面の真ん中に出ている）
+    var hiddenId: UUID? = nil
     /// 札を押した
     var onTap: (TextOverlay) -> Void = { _ in }
-    /// 写真（札の無い所）を1回押した。**選んでいる札を外す**口（外さないと、札を選んだ
-    /// あとは写真を動かせないままだった・db4903c のレビュー）
+    /// 写真（札の無い所）を1回押した（呼ぶ側は投票の欄を閉じる）
     var onTapPhoto: () -> Void = {}
+    /// 札をゴミ箱へ運んで離した（VoiceOver の「消す」も同じ口）
+    var onDelete: (UUID) -> Void = { _ in }
+    /// 札を指で動かし始めた・終えた（呼ぶ側は動かしている間、周りの道具を隠してゴミ箱を見せる）
+    var onDraggingChange: (Bool) -> Void = { _ in }
     /// 投票（写真1枚に1つ・焼き込まずにデータで送る）。**閲覧画面と同じ札で描く**（`StoryTextLayer`）
     var vote: Binding<StoryVoteDraft?> = .constant(nil)
     /// 投票の札を選んでいる（破線で囲む）
@@ -80,6 +84,20 @@ struct StoryCanvas: View {
     /// 1本指で動かしている間に2本指の操作が入ったか。**入った回の移動は入れない**
     /// ——札の上でつまむと、動かす操作も片方の指を追って動き、離すとずれた所で決まった
     @State private var dragSpoiled = false
+    /// 動かしている指がゴミ箱の上にあるか（離すと消す）
+    @State private var trashHot = false
+    /// この回、指がいったんゴミ箱の外にいたか（外にいたことが無ければ離しても消さない）
+    @State private var trashArmed = false
+    /// 2本指が入ったとき、はっきり運んでいた札（運んだ分を入れた札）。2本指の相手の候補。
+    /// 運ぶ指を離すまで覚える（2本目の指を置き直しても同じ札に効く）
+    @State private var carriedId: UUID?
+    /// 真ん中の縦・横の目安に吸い付いているか（線を出す）と、吸い付けたぶんのずれ
+    @State private var snapVertical = false
+    @State private var snapHorizontal = false
+    @State private var snapDelta: CGSize = .zero
+
+    /// 指の位置を読む座標（写真の枠そのもの）
+    static let space = "storyCanvas"
 
     var body: some View {
         GeometryReader { geometry in
@@ -107,15 +125,14 @@ struct StoryCanvas: View {
                             .updating($photoDragging) { _, state, _ in state = true }
                             .onChanged { value in
                                 if !photoDragStarted { photoDragStarted = true; photoDragSpoiled = false }
-                                // **札を選んでいる間は写真を動かさない**（札の押せる範囲の外を掴んで
-                                // 写真が動いた）。2本指の操作が入った回も、この回はもう動かさない
+                                // 2本指の操作が入った回は、この回はもう動かさない
                                 // ——片方の指を離したあとに、つまんだ間の移動がまとめて入って跳んだ
-                                if selectedId != nil || twoFingerActive { photoDragSpoiled = true }
+                                if twoFingerActive { photoDragSpoiled = true }
                                 photoDrag = photoDragSpoiled ? .zero : value.translation
                             }
                             .onEnded { value in
                                 // 入れるのは離したときの移動量から（片付けの順に頼らない）
-                                if !photoDragSpoiled && selectedId == nil && !twoFingerActive {
+                                if !photoDragSpoiled && !twoFingerActive {
                                     framing = framing.moved(by: value.translation, in: photo.size)
                                 }
                                 photoDrag = .zero
@@ -128,7 +145,7 @@ struct StoryCanvas: View {
                     .accessibilityLabel(L("写真", "Photo"))
                     .accessibilityHint(L("2本指で拡大・回転、指で動かします。2回押すと元に戻します",
                                          "Pinch or twist to zoom and rotate, drag to move. Double-tap to reset"))
-                ForEach(overlays) { overlay in
+                ForEach(overlays.filter { $0.id != hiddenId }) { overlay in
                     text(overlay, photo: photo, canvas: geometry.size)
                 }
                 if let current = vote.wrappedValue {
@@ -165,44 +182,75 @@ struct StoryCanvas: View {
                         .onTapGesture { onTapVote() }
                         .accessibilityAction(named: L("投票を編集", "Edit poll")) { onTapVote() }
                 }
+                // 札を動かしている間だけ: 真ん中の目安の線と、下のゴミ箱（写真の上に置くのは白だけ）
+                // 2本指が入って相殺された回は出さない（つまんでいる間じゅうゴミ箱が出ていた）
+                if dragId != nil && !dragSpoiled {
+                    guides(canvas: geometry.size)
+                    trash(canvas: geometry.size)
+                }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
-            // 2本指で**選んでいる札を**回す（板 24b「指で動かす・2本指で回す」）。
-            // 札そのものに付けると、2本とも小さな札の中に置かないと効かない
+            .coordinateSpace(.named(Self.space))
+            // ゴミ箱に入った・出たときに震わせる（離せば消えると指で分かる）
+            .sensoryFeedback(.impact(weight: .medium), trigger: trashHot)
+            // 2本指で札か写真を回す（相手は `StoryTextEditing.gestureTarget`）。
+            // 札そのものに付けると、2本とも小さな札の中に置かないと効かないので枠全体に付ける
             .simultaneousGesture(
-                RotationGesture()
+                RotateGesture()
                     .updating($twisting) { _, state, _ in state = true }
-                    .onChanged { angle in
-                        // **回し始めた札（札を選んでいなければ写真）に固定する**
-                        // （途中で選ぶ札が替わっても移さない）
+                    .onChanged { value in
+                        // **回し始めに相手を決めて、終わるまで変えない**（順は `StoryTextEditing.gestureTarget`）。
+                        // 以前は選んだ札にしか効かず、文字を押すと打つ画面が開くようになってから、
+                        // 文字を回せなくなっていた（4ffb74f の制限）
                         if rotateId == nil && !twistsPhoto {
-                            if let id = selectedId { rotateId = id } else { twistsPhoto = true }
+                            let other: StoryTextEditing.GestureTarget? = scaleId.map { .overlay($0) }
+                                ?? (pinchesPhoto ? .photo : nil)
+                            absorbDrag(photo: photo, canvas: geometry.size)
+                            switch StoryTextEditing.gestureTarget(other: other,
+                                                                  under: { overlayUnder(value.startLocation, photo: photo) },
+                                                                  carried: carriedId) {
+                            case .overlay(let id):
+                                rotateId = id
+                            case .photo:
+                                twistsPhoto = true
+                            }
                         }
-                        liveRotation = angle.radians
+                        liveRotation = value.rotation.radians
                     }
-                    .onEnded { angle in
+                    .onEnded { value in
                         // 打ち切りの片付けが先に済んでいたら何もしない
                         guard rotateId != nil || twistsPhoto else { return }
-                        liveRotation = angle.radians
+                        liveRotation = value.rotation.radians
                         commitRotation()
                     }
             )
-            // つまんで**選んでいる札の**大きさを変える（回すのと同じ理由で枠全体に付ける）。
+            // つまんで札か写真の大きさを変える（回すのと同じ理由で枠全体に付ける）。
             // 幅はスライダーと同じ（`TextOverlay.scaled`）
             .simultaneousGesture(
-                MagnificationGesture()
+                MagnifyGesture()
                     .updating($pinching) { _, state, _ in state = true }
                     .onChanged { value in
+                        // 回すのと同じ決め方（`StoryTextEditing.gestureTarget`）
                         if scaleId == nil && !pinchesPhoto {
-                            if let id = selectedId { scaleId = id } else { pinchesPhoto = true }
+                            let other: StoryTextEditing.GestureTarget? = rotateId.map { .overlay($0) }
+                                ?? (twistsPhoto ? .photo : nil)
+                            absorbDrag(photo: photo, canvas: geometry.size)
+                            switch StoryTextEditing.gestureTarget(other: other,
+                                                                  under: { overlayUnder(value.startLocation, photo: photo) },
+                                                                  carried: carriedId) {
+                            case .overlay(let id):
+                                scaleId = id
+                            case .photo:
+                                pinchesPhoto = true
+                            }
                         }
-                        liveScale = Double(value)
+                        liveScale = Double(value.magnification)
                         if pinchesPhoto && abs(liveScale - 1) > 0.05 { photoPinched = true }
                     }
                     .onEnded { value in
                         guard scaleId != nil || pinchesPhoto else { return }
-                        liveScale = Double(value)
+                        liveScale = Double(value.magnification)
                         commitScale()
                     }
             )
@@ -223,8 +271,16 @@ struct StoryCanvas: View {
                 // 動かす操作の打ち切り。**移動は入れない**（離した位置が分からない）。
                 // `dragSpoiled` はここで戻さない——`onEnded` より先に来ると、2本指が入った回の
                 // 移動を入れてしまう。次に動かし始めたときに戻す
-                if !active { dragId = nil; dragOffset = .zero }
+                if !active {
+                    dragId = nil; dragOffset = .zero; resetDragAids()
+                    if !twoFingerActive { carriedId = nil }
+                }
             }
+            .onChange(of: dragId) { old, new in
+                if (old == nil) != (new == nil) { onDraggingChange(new != nil) }
+            }
+            // 動かしている最中に画面ごと消えても、周りの道具を隠したままにしない
+            .onDisappear { if dragId != nil { onDraggingChange(false) } }
             .onAppear { remember(geometry.size) }
             .onChange(of: geometry.size) { _, size in remember(size) }
         }
@@ -249,6 +305,8 @@ struct StoryCanvas: View {
         rotateId = nil
         twistsPhoto = false
         liveRotation = 0
+        // 運ぶ指が置かれたままなら覚えておく（2本目の指を置き直して回し続けられるように）
+        if scaleId == nil && !pinchesPhoto && dragId == nil { carriedId = nil }
         if !pinchesPhoto { photoPinched = false }
     }
 
@@ -262,6 +320,7 @@ struct StoryCanvas: View {
         scaleId = nil
         pinchesPhoto = false
         liveScale = 1
+        if rotateId == nil && !twistsPhoto && dragId == nil { carriedId = nil }
         // 回す方がまだ続いていれば、つまんでいた印はそちらの片付けで戻す
         if !twistsPhoto { photoPinched = false }
     }
@@ -369,49 +428,147 @@ struct StoryCanvas: View {
             .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
             .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
             .shadow(radius: overlay.style == .light ? 6 : 0)
-            // 選んでいる札は破線で囲む（板 24b）
-            .overlay {
-                if selectedId == overlay.id {
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.white.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                        .padding(-8)
-                }
-            }
             // 小さい文字でも指で掴めるように、**押せる範囲だけ**広げる
             // （帯の見た目は広げない＝`background` より後ろに置く）
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
-            // 回しは中心の周り（焼き込みも中心の周り）。**破線と押せる範囲より後ろ**に
+            // 回しは中心の周り（焼き込みも中心の周り）。**押せる範囲より後ろ**に
             // 置いて一緒に回す——前に置くと、縦に回した文字の端を押しても掴めない
             .rotationEffect(.radians(rotation))
             .position(x: center.x + (moving ? dragOffset.width : 0),
                       y: center.y + (moving ? dragOffset.height : 0))
             .gesture(
-                DragGesture()
+                // 指の位置は写真の枠の座標で読む（ゴミ箱の上か・`Self.space`）
+                DragGesture(coordinateSpace: .named(Self.space))
                     .updating($dragging) { _, state, _ in state = true }
                     .onChanged { value in
                         // 動かし始め（前の回の印を戻す）
-                        if dragId == nil { dragSpoiled = false }
-                        // 2本指の操作（回す・つまむ。**写真に効いているときも**）が入ったら、この回は動かさない
+                        if dragId == nil { dragSpoiled = false; if !twoFingerActive { carriedId = nil } }
+                        // 2本指の操作（回す・つまむ。**写真に効いているときも**）が入ったら、この回は動かさない。
+                        // **相殺する前に、そこまで運んだ分を入れる**（2本指の判定より先にここへ来ると、
+                        // 運んだ分が捨てられて札が元の位置へ戻った・4ed53ca のレビュー）。2回目は何もしない
+                        if twoFingerActive && !dragSpoiled && dragId == overlay.id {
+                            absorbDrag(photo: photo, canvas: canvas)
+                        }
                         if twoFingerActive { dragSpoiled = true }
                         dragId = overlay.id
-                        dragOffset = dragSpoiled ? .zero : value.translation
+                        guard !dragSpoiled else {
+                            dragOffset = .zero
+                            resetDragAids()
+                            return
+                        }
+                        // 真ん中の目安に吸い付ける（中心で見る）
+                        let live = CGPoint(x: center.x + value.translation.width,
+                                           y: center.y + value.translation.height)
+                        let snapped = StoryTextEditing.snap(live, canvas: canvas)
+                        snapVertical = snapped.vertical
+                        snapHorizontal = snapped.horizontal
+                        snapDelta = CGSize(width: snapped.point.x - live.x, height: snapped.point.y - live.y)
+                        dragOffset = CGSize(width: value.translation.width + snapDelta.width,
+                                            height: value.translation.height + snapDelta.height)
+                        // ゴミ箱は**指の位置**で見る。指がいったん外に出るまでは効かせない
+                        trashArmed = StoryTextEditing.trashArmed(wasArmed: trashArmed, finger: value.location, canvas: canvas)
+                        trashHot = trashArmed && StoryTextEditing.isOverTrash(value.location, canvas: canvas)
                     }
                     .onEnded { value in
                         // **離したときに位置へ入れる。** 動かしている最中に
                         // 入れると、はみ出しの丸めが毎フレーム効いて指から離れる
                         if !dragSpoiled && !twoFingerActive {
-                            move(overlay, by: value.translation, photo: photo, canvas: canvas)
+                            if trashArmed && StoryTextEditing.isOverTrash(value.location, canvas: canvas) {
+                                onDelete(overlay.id)
+                            } else {
+                                // 吸い付きは**離した位置で**計算し直す（最後の onChanged の値を使うと、
+                                // 離す瞬間に線から離れていても最大 8pt 寄った）
+                                let live = CGPoint(x: center.x + value.translation.width,
+                                                   y: center.y + value.translation.height)
+                                let snapped = StoryTextEditing.snap(live, canvas: canvas).point
+                                move(overlay, by: CGSize(width: snapped.x - center.x, height: snapped.y - center.y),
+                                     photo: photo, canvas: canvas)
+                            }
                         }
                         dragId = nil
                         dragOffset = .zero
                         dragSpoiled = false
+                        resetDragAids()
+                        // 運ぶ指を離した。2本指も終わっていれば、運んでいた札を忘れる
+                        if !twoFingerActive { carriedId = nil }
                     }
             )
-            // 押すと選ぶ（直す・消すのも同じ入口）。
-            // **時刻と日付も押せる**——直せないが、消す口はここにしか無い
+            // 押すと打ち直す（呼ぶ側が決める・スタンプ以外）。消すのはゴミ箱
             .onTapGesture { onTap(overlay) }
             .accessibilityLabel(overlay.text)
+            // VoiceOver では指で運べないので、消す操作を別に出す
+            .accessibilityAction(named: L("消す", "Delete")) { onDelete(overlay.id) }
+    }
+
+    /// 動かしている間の目安（吸い付き・ゴミ箱）を戻す
+    private func resetDragAids() {
+        trashHot = false
+        trashArmed = false
+        snapVertical = false
+        snapHorizontal = false
+        snapDelta = .zero
+    }
+
+    /// 1本指で運んでいる途中に2本指の操作が入ったら、**そこまで運んだ分を入れてから**2本指へ移る
+    /// （入れずに相殺すると札が元の位置へ戻り、つまむ相手も元の位置で当てていた）
+    private func absorbDrag(photo: CGRect, canvas: CGSize) {
+        guard let id = dragId, !dragSpoiled, let overlay = overlays.first(where: { $0.id == id }) else { return }
+        if dragOffset != .zero { move(overlay, by: dragOffset, photo: photo, canvas: canvas) }
+        // はっきり運んでいた札だけ、2本指の相手の候補にする（どちらの処理が先に届いても同じ）
+        carriedId = StoryTextEditing.isCarried(dragOffset) ? id : nil
+        dragSpoiled = true
+        dragOffset = .zero
+        resetDragAids()
+    }
+
+    /// 2本指の操作の始めの位置の下にある札（上に重なっている方を先に）。打っている札は数えない
+    private func overlayUnder(_ point: CGPoint, photo: CGRect) -> UUID? {
+        let placed = overlays.filter { $0.id != hiddenId }.map { overlay -> StoryTextEditing.Placed in
+            let fontSize = TextOverlay.fontSize(overlay.size, in: photo.size)
+            let text = TextOverlayRenderer.naturalSize(overlay, fontSize: fontSize)
+            let banner = overlay.style == .banner
+            return StoryTextEditing.Placed(
+                id: overlay.id, center: overlay.center(in: photo),
+                size: CGSize(width: text.width + (banner ? fontSize * 0.7 : 0),
+                             height: text.height + (banner ? fontSize * 0.35 : 0)),
+                rotation: overlay.rotation)
+        }
+        return StoryTextEditing.overlay(at: point, in: placed)
+    }
+
+    /// 真ん中の目安の線（吸い付いている向きだけ）
+    @ViewBuilder
+    private func guides(canvas: CGSize) -> some View {
+        if snapVertical {
+            Rectangle().fill(Color.white.opacity(0.8))
+                .frame(width: 1, height: canvas.height)
+                .position(x: canvas.width / 2, y: canvas.height / 2)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        if snapHorizontal {
+            Rectangle().fill(Color.white.opacity(0.8))
+                .frame(width: canvas.width, height: 1)
+                .position(x: canvas.width / 2, y: canvas.height / 2)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// ゴミ箱（下の真ん中）。**指が入ると白地に墨で大きく**（色だけで状態を言わない）
+    private func trash(canvas: CGSize) -> some View {
+        let c = StoryTextEditing.trashCenter(canvas: canvas)
+        return Image(systemName: "trash")
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundStyle(trashHot ? Color.black : Color.white)
+            .frame(width: 52, height: 52)
+            .background(trashHot ? Color.white : Color.black.opacity(0.45), in: Circle())
+            .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+            .scaleEffect(trashHot ? 1.25 : 1)
+            .position(x: c.x, y: c.y)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     private func move(_ overlay: TextOverlay, by translation: CGSize, photo: CGRect, canvas: CGSize) {
@@ -425,197 +582,7 @@ struct StoryCanvas: View {
     }
 }
 
-/// 文字と札の操作欄（板 24b の下の面）。選んでいる札の文字・見た目・大きさ・消す
-struct OverlayPanel: View {
-
-    @Binding var overlay: TextOverlay
-    var onDelete: () -> Void
-    /// 文字の欄を打っているか。**改行できる欄は Return で閉じない**ので、閉じる口を出す
-    @FocusState private var fieldFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // **端末から採った札は直させない**（時刻・日付）。直せると「いつの話か」が嘘になる
-            if overlay.kind.isEditable {
-                // **自由な文字は改行できる**（`TextOverlay.cleaned`）。札は1行
-                HStack(spacing: 8) {
-                    TextField(L("文字", "Text"), text: Binding(
-                        get: { overlay.text },
-                        set: { overlay.text = TextOverlay.cleaned($0, kind: overlay.kind) }
-                    ), axis: overlay.kind.allowsNewlines ? .vertical : .horizontal)
-                    .focused($fieldFocused)
-                    .lineLimit(1...3)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .frame(minHeight: 44)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-                    // 改行できる欄は Return が改行になる。**キーボードを閉じる口**（f48800f のレビュー）
-                    if fieldFocused {
-                        Button { fieldFocused = false } label: {
-                            Image(systemName: "keyboard.chevron.compact.down")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                // `.plain` は描いた所しか押せない。枠の 44 全体を押せる所にする
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(L("キーボードを閉じる", "Hide keyboard"))
-                    }
-                }
-            } else {
-                // 時刻・日付は端末から採った値（直せない）。何の札かだけ見せる
-                Text(overlay.displayText)
-                    .font(.system(size: 15))
-                    .foregroundStyle(WebTheme.muted)
-                    .frame(minHeight: 44)
-            }
-
-            // 書体（8種）。**横に流す**——1行に収まらない。スタンプには出さない（絵文字に効かない）
-            if overlay.kind.hasTypography {
-            HStack(spacing: 8) {
-                Text(L("書体", "Font"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(WebTheme.faint)
-                    .frame(width: 36, alignment: .leading)
-                // **選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を開き直すと、
-                // 列の頭が出て何を選んでいるか見えなかった・bfe5e12 のレビュー）
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(TextOverlay.Face.allCases) { face in
-                                OverlayChip(title: face.label, selected: overlay.face == face) {
-                                    overlay.face = face
-                                }
-                                .id(face)
-                            }
-                        }
-                    }
-                    .onAppear { proxy.scrollTo(overlay.face, anchor: .center) }
-                    .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.face, anchor: .center) }
-                }
-            }
-            }
-
-            // 色（12色・`TextOverlay.Ink`）。スタンプには出さない
-            if overlay.kind.hasTypography {
-            HStack(spacing: 10) {
-                Text(L("色", "Color"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(WebTheme.faint)
-                    .frame(width: 36, alignment: .leading)
-                // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
-                // 12色あるので横に流し、**選んでいる色まで流して見せる**（書体と同じ理由）
-                ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                ForEach(TextOverlay.inks(for: overlay.style)) { ink in
-                    let selected = overlay.customHex == nil && overlay.drawnInk == ink
-                    Button {
-                        overlay.ink = ink
-                        overlay.customHex = nil
-                    } label: {
-                        Circle()
-                            .fill(StoryCanvas.color(ink))
-                            .frame(width: 30, height: 30)
-                            .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0.5),
-                                                           lineWidth: selected ? 3 : 2))
-                            .overlay(Circle().strokeBorder(Color.black, lineWidth: selected ? 1 : 0).padding(-2))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L("文字の色 \(ink.label)", "Text color \(ink.label)"))
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                    .id(ink)
-                }
-                customColor
-                }
-                }
-                .onAppear { proxy.scrollTo(colorAnchor, anchor: .center) }
-                .onChange(of: overlay.id) { _, _ in proxy.scrollTo(colorAnchor, anchor: .center) }
-                }
-            }
-            }
-
-            HStack(spacing: 8) {
-                // **場所と曲は帯で固定**（読めない札を作らせない）ので見た目の選択を出さない。
-                // 4つ並ぶと英語では「消す」と合わせて幅に収まらないので横に流す
-                if overlay.kind == .text {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(TextOverlay.Style.allCases) { style in
-                                OverlayChip(title: style.label, selected: overlay.style == style) {
-                                    // 色の寄せ方は `TextOverlay.withStyle`（読めない組だけ直す）
-                                    overlay = overlay.withStyle(style)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // 見た目の列が無いときだけ「消す」を右へ寄せる。列と並べると
-                    // 残りの幅を等分し、列が半分に押し込まれる
-                    Spacer(minLength: 0)
-                }
-                Button(action: onDelete) {
-                    Label(L("消す", "Delete"), systemImage: "trash")
-                        .font(.system(size: 13))
-                        .foregroundStyle(WebTheme.danger)
-                        // 押せる所は 44（CLAUDE.md の最小）。地の無い文字なので見た目は変わらない
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .padding(.horizontal, 12)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            // 大きさ。**幅は `TextOverlay` が決める**（読めない／覆う を防ぐ）。
-            // 自由な文字は頭に揃え（左・中央・右）を置く（改行した行の寄せ方）
-            HStack(spacing: 10) {
-                if overlay.kind.allowsNewlines {
-                    HStack(spacing: 0) {
-                        ForEach(TextOverlay.Align.allCases) { align in
-                            Button {
-                                overlay.align = align
-                            } label: {
-                                // 選んでいるものは真鍮に**薄い地**も敷く（色だけで見分けさせない）
-                                Image(systemName: align.symbol)
-                                    .font(.system(size: 15, weight: overlay.align == align ? .semibold : .regular))
-                                    .foregroundStyle(overlay.align == align ? WebTheme.accent : Color.white.opacity(0.72))
-                                    .frame(width: 36, height: 36)
-                                    .background(Color.white.opacity(overlay.align == align ? 0.12 : 0), in: Circle())
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(align.label)
-                            .accessibilityAddTraits(overlay.align == align ? .isSelected : [])
-                        }
-                    }
-                }
-                Text(L("小", "S"))
-                Slider(value: Binding(
-                    get: { overlay.size },
-                    set: { overlay.size = TextOverlay.clampSize($0) }
-                ), in: TextOverlay.minSize...TextOverlay.maxSize)
-                .tint(.white)
-                Text(L("大", "L"))
-            }
-            .font(.system(size: 12))
-            .foregroundStyle(WebTheme.muted2)
-        }
-        .padding(12)
-        .background(Color(red: 12 / 255.0, green: 12 / 255.0, blue: 13 / 255.0).opacity(0.92))
-        .overlay(alignment: .top) {
-            Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
-        }
-    }
-}
-
-/// 写真の上の丸いチップ（選ぶと白地に墨・板 24b）
+/// 丸いチップ（選ぶと白地に墨）。書体の列と、札とスタンプのトレイ（`StickerTray`）が使う
 struct OverlayChip: View {
     let title: String
     var systemImage: String? = nil
@@ -646,7 +613,67 @@ struct OverlayChip: View {
     }
 }
 
-extension OverlayPanel {
+/// 書体の列（8種・横に流す）。**選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を
+/// 開き直すと、列の頭が出て何を選んでいるか見えなかった・bfe5e12 のレビュー）。
+/// 写真の上で打つ画面（`StoryTextTypingView`）が使う
+struct OverlayFaceRow: View {
+    @Binding var overlay: TextOverlay
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(TextOverlay.Face.allCases) { face in
+                        OverlayChip(title: face.label, selected: overlay.face == face) {
+                            overlay.face = face
+                        }
+                        .id(face)
+                    }
+                }
+            }
+            .onAppear { proxy.scrollTo(overlay.face, anchor: .center) }
+            .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.face, anchor: .center) }
+        }
+    }
+}
+
+/// 色の列（12色＋好きな色）。見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
+/// 12色あるので横に流し、**選んでいる色まで流して見せる**（書体と同じ理由）
+struct OverlayInkRow: View {
+    @Binding var overlay: TextOverlay
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(TextOverlay.inks(for: overlay.style)) { ink in
+                        let selected = overlay.customHex == nil && overlay.drawnInk == ink
+                        Button {
+                            overlay.ink = ink
+                            overlay.customHex = nil
+                        } label: {
+                            Circle()
+                                .fill(StoryCanvas.color(ink))
+                                .frame(width: 30, height: 30)
+                                .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0.5),
+                                                               lineWidth: selected ? 3 : 2))
+                                .overlay(Circle().strokeBorder(Color.black, lineWidth: selected ? 1 : 0).padding(-2))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L("文字の色 \(ink.label)", "Text color \(ink.label)"))
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                        .id(ink)
+                    }
+                    customColor
+                }
+            }
+            .onAppear { proxy.scrollTo(colorAnchor, anchor: .center) }
+            .onChange(of: overlay.id) { _, _ in proxy.scrollTo(colorAnchor, anchor: .center) }
+        }
+    }
+
     /// 色の列で流して見せる先（好きな色を選んでいればその丸）
     var colorAnchor: AnyHashable {
         overlay.customHex == nil ? AnyHashable(overlay.drawnInk) : AnyHashable("custom")
