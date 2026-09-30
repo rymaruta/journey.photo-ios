@@ -86,8 +86,8 @@ struct TripPlansView: View {
             showOpened = true
         }) {
             TripPickerView(plans: model) { planId in
-                // **板を閉じた後に届いた保存では開かない**（保存の途中で「閉じる」を押した回。
-                // 印を残すと、次に板を開いて何もせず閉じたときに前のプランが開いていた）
+                // 念のための守り: 板が閉じていたら開かない。保存の最中は「閉じる」を止めている
+                // （`TripPickerModel.saving`）ので、ふつうはここで止まる回は無い
                 guard showPicker else { return }
                 pickedPlanId = planId
                 showPicker = false
