@@ -26,6 +26,16 @@ public struct State<Value>: DynamicProperty {
     }
 }
 
+/// `@ScaledMetric` の模型。本物は字の大きさの設定（Dynamic Type）に合わせて値を伸ばす。
+/// 模型は初期値のまま返す
+@propertyWrapper
+public struct ScaledMetric<Value: BinaryFloatingPoint>: DynamicProperty {
+    private let base: Value
+    public init(wrappedValue: Value) { base = wrappedValue }
+    public init(wrappedValue: Value, relativeTo textStyle: Font.TextStyle) { base = wrappedValue }
+    public var wrappedValue: Value { base }
+}
+
 /// 指で動かしている間だけの値。**指が離れる・打ち切られると初期値に戻る**（本物と同じ）
 @propertyWrapper
 public struct GestureState<Value>: DynamicProperty {

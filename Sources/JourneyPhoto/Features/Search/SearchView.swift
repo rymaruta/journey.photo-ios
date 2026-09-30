@@ -66,6 +66,13 @@ struct SearchView: View {
         .refreshable {
             await model.reloadPhotos(environment: environment, force: true, hidden: hidden.snapshot)
             await model.search(query, environment: environment)
+            // 撮影スポットの索引も、取れていなければ取り直す（`.task(id: query)` は
+            // 語が変わらないと走らないので、引き下げても節が出ないままだった）。
+            // 語が無いときは節を出さないので取らない。force は付けない——取り損ねた回
+            // （圏外）は控えが無いので取り直し、404 の「無い」は60秒覚えたまま叩かない
+            if !query.isEmpty, officialSpots.isEmpty {
+                officialSpots = (try? await environment.spots.fetchIndex()) ?? []
+            }
         }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
@@ -141,8 +148,10 @@ struct SearchView: View {
                 Button {
                     query = ""
                 } label: {
+                    // 押せる幅は 44pt（地図の探す口の「×」と同じ）
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(WebTheme.faint)
+                        .webTappable()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("消す", "Clear"))
@@ -470,11 +479,13 @@ struct SearchView: View {
                 .background(WebTheme.surface, in: Circle())
                 .clipShape(Circle())
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 1))
+            // 本文の最小 12pt（`.caption` は標準で 12pt・字の大きさの設定に追従する）。
+            // 縮めずに2行まで折る（英語の「Forest & nature」が5列に入らない）
             Text(section.family.note)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.muted2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
@@ -752,7 +763,8 @@ struct SearchView: View {
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
                 if !(model.loadFailed && model.everything.isEmpty) {
-                    Button { tabRouter.openMap() } label: {
+                    // 打った語を地図へ持っていく（地図で打ち直させない。タグの語は除く）
+                    Button { tabRouter.openMap(query: model.scope.mapQuery(for: query)) } label: {
                         Label(L("地図で撮影地を探す", "Explore shooting places on the map"), systemImage: "map")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(WebTheme.accent)
