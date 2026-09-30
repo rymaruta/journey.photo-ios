@@ -39,6 +39,10 @@ struct StoryCanvas: View {
     var onTapVote: () -> Void = {}
     /// いま出している写真の印。**動かしている間に写真が替わったら、その回の移動を書かない**
     var photoId: UUID? = nil
+    /// 写真と札の**間**に敷くもの（呼ぶ側の「ひとこと」の欄）。
+    /// **札より下に置く**——札の上に重ねると、真ん中に置いたスタンプや札を欄が先に取り、
+    /// 動かす・回す・つまむのどれも効かなかった（2026-09-30・owner「スタンプとかも移動できねえ」）
+    var underOverlays: AnyView? = nil
 
     /// 指で動かしている最中の見た目の移動量（離したときに位置へ反映する）
     @State private var dragId: UUID?
@@ -156,6 +160,10 @@ struct StoryCanvas: View {
                     .accessibilityLabel(L("写真", "Photo"))
                     .accessibilityHint(L("2本指で拡大・回転、指で動かします。2回押すと元に戻します",
                                          "Pinch or twist to zoom and rotate, drag to move. Double-tap to reset"))
+                if let underOverlays {
+                    underOverlays
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
+                }
                 ForEach(overlays.filter { $0.id != hiddenId }) { overlay in
                     text(overlay, photo: photo, canvas: geometry.size)
                 }

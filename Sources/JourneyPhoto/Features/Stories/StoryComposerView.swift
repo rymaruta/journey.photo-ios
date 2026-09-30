@@ -330,7 +330,10 @@ struct StoryComposerView: View {
                             vote: vote,
                             voteSelected: voteSelected,
                             onTapVote: { voteSelected = true },
-                            photoId: shots.indices.contains(current) ? shots[current].id : nil)
+                            photoId: shots.indices.contains(current) ? shots[current].id : nil,
+                            // 「ひとこと」の欄は**写真と札の間**に敷く（札の上に重ねると、真ん中の札を
+                            // 欄が先に取って動かせなかった）
+                            underOverlays: AnyView(captionLayer))
             } else {
                 emptyPhoto
             }
@@ -352,18 +355,6 @@ struct StoryComposerView: View {
                 toolColumn
                     .padding(.trailing, 12)
                     .padding(.top, 120)
-                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
-                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
-                    .opacity(draggingOverlay ? 0 : 1)
-                    .allowsHitTesting(!draggingOverlay)
-                .accessibilityHidden(draggingOverlay)
-            }
-        }
-        .overlay(alignment: .leading) {
-            if typingId == nil && !votePanelOpen && preview != nil {
-                captionBlock
-                    .padding(.leading, 36)
-                    .padding(.trailing, 70)
                     // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
                     // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
                     .opacity(draggingOverlay ? 0 : 1)
@@ -501,6 +492,22 @@ struct StoryComposerView: View {
             .foregroundStyle(.white)
             .frame(width: 44, height: 44)
             .jpGlass(in: Circle())
+    }
+
+    /// 写真の上の「ひとこと」の層（左寄せ・縦は真ん中）。**`StoryCanvas` が写真と札の間に敷く**
+    /// ——札が欄より上で指を取る（描く順も同じなので、札は欄の文字の上に重なって見える）
+    @ViewBuilder
+    private var captionLayer: some View {
+        if typingId == nil && !votePanelOpen && preview != nil {
+            captionBlock
+                .padding(.leading, 36)
+                .padding(.trailing, 70)
+                // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                .opacity(draggingOverlay ? 0 : 1)
+                .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
+        }
     }
 
     /// 写真の上のひとこと（明朝32・影）と撮影地の札。**ひとことはその場で打つ**。
