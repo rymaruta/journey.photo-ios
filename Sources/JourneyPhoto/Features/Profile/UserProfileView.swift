@@ -29,6 +29,11 @@ struct UserProfileView: View {
     /// ——見ている最中に絞ると、押した元が消えて開いている詳細が閉じる
     @State private var dropped = ModerationSnapshot()
     @EnvironmentObject private var toasts: ToastCenter
+    /// 画面に出ているか（`MyPageView` と同じ）。ブロックを解いたときの読み直しを、
+    /// 出ている間だけその場で・出ていなければ戻ってきたときにする
+    @State private var isOnScreen = false
+    /// ブロックを解いたが、まだ読み直していない（画面に出ていなかった）
+    @State private var reloadOnAppear = false
 
     /// 板 31: 3列・隙間 4pt・角なし（マイページと同じ）
     private let columns = [
@@ -73,7 +78,27 @@ struct UserProfileView: View {
         } message: {
             Text(L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。", "You won't see each other's posts, stories or notifications. You can undo this in Settings."))
         }
-        .onAppear { dropped = hidden.snapshot }
+        .onAppear {
+            dropped = hidden.snapshot
+            isOnScreen = true
+            if reloadOnAppear {
+                reloadOnAppear = false
+                Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
+            }
+        }
+        .onDisappear { isOnScreen = false }
+        // 🔴 **ブロックを解いたら読み直す。** ブロックで格子を空にしたまま、下に残った
+        // この画面で設定（ブロック中の人）から解くと、「0 写真」「まだありません」と
+        // ブロック前のフォロワー数が出たままだった
+        .onChange(of: isBlocked) { was, now in
+            guard was, !now else { return }
+            if isOnScreen {
+                dropped = hidden.snapshot
+                Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
+            } else {
+                reloadOnAppear = true
+            }
+        }
         // **見ている人が替わっても読み直す。** 相手だけを鍵にしていたので、開いたまま
         // 別の人でログインし直すと「フォロー中」が前の人の値のまま出て、押すと
         // 逆向きに送っていた（前の人が誰をフォローしているかも見えた）
@@ -161,6 +186,9 @@ struct UserProfileView: View {
             ErrorBanner(message: Labels.Common.loadFailed) {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
             }
+        } else if shownPhotos.isEmpty && !isBlocked && model.photoCount == .pending {
+            // ブロックを解いて読み直すまでの間。「まだありません」と言わない
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
         } else if shownPhotos.isEmpty && !model.isLoading {
             // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す
             ErrorBanner(message: L("公開された写真はまだありません", "No public photos yet"))
@@ -563,6 +591,8 @@ final class UserProfileViewModel: ObservableObject {
             isFollowing = false
             followUnknown = false
             photos = []
+            // 数も「読み込み中」に戻す。ブロックを解いたとき、読み直すまで「0 写真」と出ていた
+            photoCount = .pending
             // **成功を赤字で出さない。** それまで `errorMessage` に入れて
             // いたので、うまくいった操作が「失敗」の見た目で出ていた
             toasts.show(L("ブロックしました。設定から解除できます。",
