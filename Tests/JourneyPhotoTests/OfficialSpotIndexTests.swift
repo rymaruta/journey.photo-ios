@@ -72,13 +72,25 @@ final class OfficialSpotIndexTests: XCTestCase {
     // MARK: - 近くの撮影スポット
 
     /// 自分を除いて近い順。座標の無い行は出ない。件数は limit まで
+    /// （上限の距離を外して測る——並びと件数の見張り）
     func testNearbyIsNearestFirstWithoutSelf() throws {
         var spots = try index()
         spots.append(try spot("nowhere", name: "座標なし"))
-        let near = OfficialSpotIndex.nearby(spots[0], in: spots)
+        let near = OfficialSpotIndex.nearby(spots[0], in: spots, maxKm: .infinity)
         XCTAssertEqual(near.map(\.spot.slug), ["kotohira", "abashiri-ryuhyo"])
         XCTAssertLessThan(near[0].km, near[1].km)
-        XCTAssertEqual(OfficialSpotIndex.nearby(spots[0], in: spots, limit: 1).count, 1)
+        XCTAssertEqual(OfficialSpotIndex.nearby(spots[0], in: spots, limit: 1, maxKm: .infinity).count, 1)
+    }
+
+    /// 🔴 **遠い場所を「近く」に出さない**（上限 `nearbyMaxKm`）。
+    /// 高屋神社から見て金刀比羅宮（約20km）は近く、網走（1,000km 超）は近くではない。
+    /// 足りなくても遠い場所で埋めない
+    func testNearbyStopsAtTheDistanceCap() throws {
+        let spots = try index()
+        let near = OfficialSpotIndex.nearby(spots[0], in: spots)
+        XCTAssertEqual(near.map(\.spot.slug), ["kotohira"])
+        XCTAssertTrue(near.allSatisfy { $0.km <= OfficialSpotIndex.nearbyMaxKm })
+        XCTAssertEqual(OfficialSpotIndex.nearbyMaxKm, DerivedSpot.nearbyMaxKm, "写真の撮影地とスポットで「近く」の距離が食い違う")
     }
 
     /// 自分に座標が無ければ測れない
@@ -91,7 +103,7 @@ final class OfficialSpotIndexTests: XCTestCase {
     func testNearbyDropsDuplicateSpotIds() throws {
         let spots = try index()
         let twin = try spot("kotohira", name: "金刀比羅宮（重複）", lat: 34.18, lng: 133.81)
-        let near = OfficialSpotIndex.nearby(spots[0], in: spots + [twin])
+        let near = OfficialSpotIndex.nearby(spots[0], in: spots + [twin], maxKm: .infinity)
         XCTAssertEqual(near.map(\.spot.spotId), ["sp_kotohira", "sp_abashiri-ryuhyo"])
         XCTAssertEqual(near[0].spot.name, "金刀比羅宮")
     }

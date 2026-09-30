@@ -39,19 +39,27 @@ enum OfficialSpotIndex {
             .contains { MapSearch.fold($0).contains(needle) }
     }
 
+    /// 「近く」と呼んでよい距離（km）。写真から作る撮影地（`DerivedSpot.nearbyMaxKm`）と同じ
+    static let nearbyMaxKm: Double = 50
+
     /// 近くの撮影スポット。**座標を持っているものだけ**、自分を除いて近い順。
     /// 距離は写真と同じ式（`TravelDistance.kilometers`）。同じ距離は slug 順。
     /// **同じ `spotId` は1つだけ（先勝ち）**——画面は `spotId` で並べるので、
     /// 重なると同じ札が2つ出る（索引を読む側 `LenientOfficialSpotList` でも落とす）
+    ///
+    /// 🔴 **`nearbyMaxKm` より遠い場所は出さない。** 以前は上限が無く、近くに
+    /// 索引の行が少ない場所では数百km先まで「近く」と名乗っていた。
+    /// 足りなくても遠い場所で埋めない（0件なら節ごと出ない）
     static func nearby(_ spot: OfficialSpot, in spots: [OfficialSpot],
-                       limit: Int = 6) -> [(spot: OfficialSpot, km: Double)] {
+                       limit: Int = 6, maxKm: Double = nearbyMaxKm) -> [(spot: OfficialSpot, km: Double)] {
         guard let here = spot.coords else { return [] }
         var seen: Set<String> = [spot.spotId]
         return spots
             .filter { seen.insert($0.spotId).inserted }
             .compactMap { other -> (spot: OfficialSpot, km: Double)? in
                 guard let there = other.coords else { return nil }
-                return (other, TravelDistance.kilometers(from: here, to: there))
+                let km = TravelDistance.kilometers(from: here, to: there)
+                return km <= maxKm ? (other, km) : nil
             }
             .sorted { $0.km != $1.km ? $0.km < $1.km : $0.spot.slug < $1.spot.slug }
             .prefix(limit)
