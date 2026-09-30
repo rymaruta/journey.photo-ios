@@ -124,6 +124,8 @@ struct EditPhotoView: View {
                             Label(L("親しい友達を選ぶ", "Pick close friends"), systemImage: "star")
                                 .font(.subheadline)
                         }
+                        // 保存・差し替えの最中は先へ進ませない（右上の「閉じる」と同じ）
+                        .disabled(isSaving || isReplacing)
                     }
                 } footer: {
                     Text(audience.photoNote)

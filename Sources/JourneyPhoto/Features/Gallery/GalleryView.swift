@@ -341,6 +341,10 @@ struct GalleryView: View {
                             .background(selected ? AnyShapeStyle(WebTheme.foreground)
                                                  : AnyShapeStyle(Color.clear),
                                         in: Capsule())
+                            // 押せる範囲だけ 44pt に（札の見た目は変えない）。選んでいない札は
+                            // 地が透明で、字の上しか押せなかった
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])
