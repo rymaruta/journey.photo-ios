@@ -391,7 +391,9 @@ struct PhotoMapView: View {
                         .foregroundStyle(selected ? WebTheme.accentText : Color.white.opacity(0.82))
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .background(selected ? Color.white.opacity(0.92) : Color.clear, in: Capsule())
-                        .contentShape(Capsule())
+                        // 見た目の札は 36（板 04c）、**押せる範囲は 44**（CLAUDE.md）
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
@@ -1004,7 +1006,7 @@ struct PhotoMapView: View {
                     // 押すと作者は出典のページへ・ライセンスは文面へ（`SpotImageCredit`）
                     if let photo = pin.photo {
                         SpotImageCredit(photo: photo)
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(WebTheme.muted2)
                             .lineLimit(1)
                             // 長い作者名で**ライセンスを消さない**（末尾から切ると

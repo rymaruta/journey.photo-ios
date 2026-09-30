@@ -267,7 +267,8 @@ struct StoriesRow: View {
     /// 名前。**未読は太く白く、既読は細く薄く**（板 27）
     private func ringName(_ name: String, emphasized: Bool) -> some View {
         Text(name)
-            .font(.system(size: 10, weight: emphasized ? .semibold : .regular))
+            // 本文の最小は 12pt（CLAUDE.md。板 27 は 10 だが、決まりを優先）
+            .font(.system(size: 12, weight: emphasized ? .semibold : .regular))
             .foregroundStyle(emphasized ? WebTheme.text : WebTheme.faint)
             .lineLimit(1)
             .frame(maxWidth: 64)

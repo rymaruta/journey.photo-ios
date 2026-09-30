@@ -138,7 +138,7 @@ struct OfficialSpotView: View {
                 .accessibilityAddTraits(.isImage)
                 .accessibilityLabel(L("\(spot.name) の写真", "Photo of \(spot.name)"))
             SpotImageCredit(photo: photo)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.muted2)
                 .lineLimit(2)
                 .multilineTextAlignment(.trailing)
@@ -406,7 +406,7 @@ struct OfficialSpotView: View {
             // リンクは真鍮（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））
             Text(SpotBodyText.linkedCheckLine(body.check))
                 .tint(WebTheme.accent)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.muted2)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 16)
