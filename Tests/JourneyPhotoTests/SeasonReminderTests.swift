@@ -50,6 +50,12 @@ final class SeasonReminderTests: XCTestCase {
         XCTAssertEqual(plan.fireAt.month, 12)
         XCTAssertEqual(plan.fireAt.day, 1)
         XCTAssertEqual(plan.fireAt.hour, 9)
+        // 暦を付ける（和暦・仏暦の端末で予約が読み違えられない）
+        XCTAssertEqual(plan.fireAt.calendar?.identifier, .gregorian)
+        XCTAssertNotNil(plan.fireAt.timeZone)
+        let fire = try XCTUnwrap(plan.fireAt.date)
+        XCTAssertEqual(calendar.dateComponents([.year, .month, .day, .hour], from: fire),
+                       DateComponents(year: 2026, month: 12, day: 1, hour: 9))
         XCTAssertEqual(plan.title, "冬の撮影スポット")
         XCTAssertEqual(plan.body, "行きたい場所の「銀山温泉」ほか1か所に冬の撮影ガイドがあります。")
         XCTAssertFalse(plan.body.contains("見頃"), "見頃とは言わない")
@@ -96,6 +102,27 @@ final class SeasonReminderTests: XCTestCase {
         let plan = SeasonReminder.plan(now: date(2026, 9, 30), spots: [a], wishlist: [SavedSpotKey.official("sp_a")], calendar: calendar)
         await fresh.reschedule(plan, allowed: false)
         XCTAssertEqual(removed.count, 2)
+    }
+
+    /// 予約を入れている間に取り消し（ログアウト）が来たら、入れ終えた予約を消す
+    @MainActor
+    func testCancelWhileAddingRemovesTheLateRequest() async throws {
+        var removed = 0
+        var resume: (() -> Void)?
+        var scheduler: SeasonReminderScheduler!
+        scheduler = SeasonReminderScheduler(add: { _ in
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in resume = { c.resume() } }
+        }, removePending: { _ in removed += 1 })
+        let a = try spot("sp_a", name: "銀山温泉", seasons: ["winter"])
+        let plan = SeasonReminder.plan(now: date(2026, 9, 30), spots: [a], wishlist: [SavedSpotKey.official("sp_a")], calendar: calendar)
+        let adding = Task { @MainActor in await scheduler.reschedule(plan, allowed: true) }
+        while resume == nil { await Task.yield() }
+        let before = removed
+        await scheduler.reschedule(nil, allowed: false)
+        resume?()
+        await adding.value
+        XCTAssertNil(scheduler.scheduled)
+        XCTAssertEqual(removed, before + 2, "取り消しで1回・入れ終えた古い予約で1回")
     }
 
     @MainActor

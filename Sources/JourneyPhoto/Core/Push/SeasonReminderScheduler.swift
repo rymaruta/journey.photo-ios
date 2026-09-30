@@ -15,6 +15,8 @@ final class SeasonReminderScheduler {
     private let removePending: ([String]) -> Void
     /// 最後に入れた中身（同じなら入れ直さない）。nil は「入れていない」
     private(set) var scheduled: SeasonReminder.Plan?
+    /// 入れ替えの回数。予約を入れている間（`await add`）に取り消しが来たら、入れ終えた予約を消す
+    private var generation = 0
 
     init(add: @escaping (UNNotificationRequest) async throws -> Void = { try await UNUserNotificationCenter.current().add($0) },
          removePending: @escaping ([String]) -> Void = { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: $0) }) {
@@ -24,6 +26,8 @@ final class SeasonReminderScheduler {
 
     /// - Parameter allowed: 受け取る設定がオンで、端末の許可があるか
     func reschedule(_ plan: SeasonReminder.Plan?, allowed: Bool) async {
+        generation &+= 1
+        let mine = generation
         guard allowed, let wanted = plan else {
             // **入れない回は毎回消す**（安い）。覚えている中身はメモリだけなので、起動し直したあと
             // 「前に入れていない」と思い込んで、ログアウト・通知オフの前に入れた予約を残していた
@@ -42,6 +46,11 @@ final class SeasonReminderScheduler {
         let trigger = UNCalendarNotificationTrigger(dateMatching: wanted.fireAt, repeats: false)
         do {
             try await add(UNNotificationRequest(identifier: SeasonReminder.identifier, content: content, trigger: trigger))
+            // 入れている間に取り消し・入れ替えが来ていたら、こちらの予約は古い（ログアウトと重なった回）
+            guard mine == generation else {
+                if scheduled == nil { removePending([SeasonReminder.identifier]) }
+                return
+            }
             scheduled = wanted
         } catch {
             // 入れられなかった回は「入れていない」のまま（次に呼ばれたときにやり直す）

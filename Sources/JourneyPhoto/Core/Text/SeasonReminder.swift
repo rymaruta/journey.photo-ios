@@ -72,6 +72,10 @@ enum SeasonReminder {
             : L("行きたい場所の「\(first)」ほか\(names.count - 1)か所に\(label)の撮影ガイドがあります。",
                 "\(first) and \(names.count - 1) more on your want-to-go list have \(label.lowercased()) guides.")
         var fireAt = DateComponents()
+        // **暦と時刻帯を付ける。** 付けないと予約（トリガー）は端末の暦で読む——和暦の端末で「令和2026年」、
+        // 仏暦で過去の年になり、一度も鳴らなかった（56686f6 のレビュー）
+        fireAt.calendar = calendar
+        fireAt.timeZone = calendar.timeZone
         fireAt.year = next.year
         fireAt.month = next.month
         fireAt.day = 1
