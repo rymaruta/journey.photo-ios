@@ -477,6 +477,8 @@ public struct SensoryFeedback {
 
 public struct TapGesture: Gesture {
     public init(count: Int = 1) {}
+    /// 本物に在る（押し終えたときの処理）
+    public func onEnded(_ action: @escaping () -> Void) -> TapGesture { self }
 }
 
 public struct TabViewStyleShim {
