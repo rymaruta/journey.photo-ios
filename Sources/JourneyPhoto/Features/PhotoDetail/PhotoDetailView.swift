@@ -110,6 +110,8 @@ struct PhotoDetailView: View {
     /// 写真の高さ（板 02 の 460pt）と、本文がその上に重なる深さ（板の 94pt）
     private static let heroHeight: CGFloat = 460
     private static let heroOverlap: CGFloat = 94
+    /// コメントの「削除」の当たりを字の上下にはみ出させる幅（44pt − 12pt の字の高さ ≒ 28 の半分）
+    private static let commentDeleteTapSlack: CGFloat = 14
 
     // **段ごとに割ってある。** 一本の長い `ScrollView { … }` にすると、Swift の
     // 型検査が現実的な時間で終わらなくなることがある
@@ -1086,11 +1088,14 @@ struct PhotoDetailView: View {
                         if comment.uid == auth.userId || isMine {
                             // **押してすぐ消さない**（確かめてから）。読み上げには誰のコメントかを入れる
                             // 押せる広さは 44pt（字は本文の最小 12pt）。広げるのはラベルの内側で
-                            // （ボタンの外に frame を付けても当たりは広がらない）
+                            // （ボタンの外に frame を付けても当たりは広がらない）。
+                            // **行の高さは字のまま**——当たりだけ上下にはみ出させる
+                            // （44pt の枠で並べると、コメントの行が間延びした）
                             Button { commentPendingDelete = comment } label: {
                                 Text(Labels.Common.delete)
                                     .frame(minWidth: 44, minHeight: 44)
                                     .contentShape(Rectangle())
+                                    .padding(.vertical, -Self.commentDeleteTapSlack)
                             }
                                 .font(.caption)
                                 // 読み直している間・消している途中は押せない（`deleteComment` は黙って断る）
