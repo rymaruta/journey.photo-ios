@@ -281,6 +281,48 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertNil(StoryTextEditing.overlay(at: CGPoint(x: 100, y: 100), in: []))
     }
 
+    /// **指の真下の札が、余白で当たった上の札より先**（あとから置いた札の余白が下の札の真上を覆っても）。
+    /// 真下に無ければ、余白の内側で中心がいちばん近い札
+    func testOverlayAtPrefersTheOneDirectlyUnderTheFinger() {
+        let small = StoryTextEditing.Placed(id: UUID(), center: CGPoint(x: 200, y: 300),
+                                            size: CGSize(width: 40, height: 20), rotation: 0)
+        let later = StoryTextEditing.Placed(id: UUID(), center: CGPoint(x: 200, y: 335),
+                                            size: CGSize(width: 200, height: 30), rotation: 0)
+        // (200, 300) は small の真上、later の余白（y 296〜374）の内側
+        XCTAssertEqual(StoryTextEditing.overlay(at: CGPoint(x: 200, y: 300), in: [small, later], slop: 24), small.id)
+        // どちらの真下でもない (200, 316): small の中心から 16、later の中心から 19 → small
+        XCTAssertEqual(StoryTextEditing.overlay(at: CGPoint(x: 200, y: 316), in: [small, later], slop: 24), small.id)
+    }
+
+    /// 回した札は、回した向きの矩形で当てる（45° は向きの符号を取り違えると外れる）
+    func testOverlayAtFollowsRotationDirection() {
+        // 横長の札を時計回りに 45°（右下がり）
+        let tilted = StoryTextEditing.Placed(id: UUID(), center: CGPoint(x: 200, y: 200),
+                                             size: CGSize(width: 200, height: 10), rotation: .pi / 4)
+        XCTAssertEqual(StoryTextEditing.overlay(at: CGPoint(x: 260, y: 260), in: [tilted], slop: 0), tilted.id)
+        XCTAssertNil(StoryTextEditing.overlay(at: CGPoint(x: 260, y: 140), in: [tilted], slop: 0))
+    }
+
+    /// 2本指の操作の相手: もう片方の相手 → 選んだ札 → 運んでいる札 → 指の下 → 写真
+    func testGestureTargetOrder() {
+        let a = UUID(), b = UUID(), c = UUID(), d = UUID()
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: .photo, selected: a, dragging: b, under: { c }), .photo)
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: .overlay(d), selected: a, dragging: b, under: { c }), .overlay(d))
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: a, dragging: b, under: { c }), .overlay(a))
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: nil, dragging: b, under: { c }), .overlay(b))
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: nil, dragging: nil, under: { c }), .overlay(c))
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: nil, dragging: nil, under: { nil }), .photo)
+    }
+
+    /// ゴミ箱は、指がいったん外に出た回だけ効く（ゴミ箱の上に置いた札を少しずらしても消えない）
+    func testTrashArmsOnlyAfterLeaving() {
+        let canvas = CGSize(width: 400, height: 800)
+        let c = StoryTextEditing.trashCenter(canvas: canvas)
+        XCTAssertFalse(StoryTextEditing.trashArmed(wasArmed: false, finger: c, canvas: canvas))
+        XCTAssertTrue(StoryTextEditing.trashArmed(wasArmed: false, finger: CGPoint(x: 200, y: 300), canvas: canvas))
+        XCTAssertTrue(StoryTextEditing.trashArmed(wasArmed: true, finger: c, canvas: canvas))
+    }
+
     /// 回した札は、回した向きの矩形で当てる（縦に回した横長の札の上下の端でも掴める）
     func testOverlayAtFollowsRotation() {
         let upright = StoryTextEditing.Placed(id: UUID(), center: CGPoint(x: 200, y: 200),

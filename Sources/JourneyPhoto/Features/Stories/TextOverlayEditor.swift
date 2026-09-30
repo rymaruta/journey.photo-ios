@@ -88,6 +88,8 @@ struct StoryCanvas: View {
     @State private var dragSpoiled = false
     /// 動かしている指がゴミ箱の上にあるか（離すと消す）
     @State private var trashHot = false
+    /// この回、指がいったんゴミ箱の外にいたか（外にいたことが無ければ離しても消さない）
+    @State private var trashArmed = false
     /// 真ん中の縦・横の目安に吸い付いているか（線を出す）と、吸い付けたぶんのずれ
     @State private var snapVertical = false
     @State private var snapHorizontal = false
@@ -181,7 +183,8 @@ struct StoryCanvas: View {
                         .accessibilityAction(named: L("投票を編集", "Edit poll")) { onTapVote() }
                 }
                 // 札を動かしている間だけ: 真ん中の目安の線と、下のゴミ箱（写真の上に置くのは白だけ）
-                if dragId != nil {
+                // 2本指が入って相殺された回は出さない（つまんでいる間じゅうゴミ箱が出ていた）
+                if dragId != nil && !dragSpoiled {
                     guides(canvas: geometry.size)
                     trash(canvas: geometry.size)
                 }
@@ -201,9 +204,14 @@ struct StoryCanvas: View {
                         // （途中で選ぶ札が替わっても移さない）。以前は選んだ札にしか効かず、文字を押すと
                         // 打つ画面が開くようになってから、文字を回せなくなっていた（4ffb74f の制限）
                         if rotateId == nil && !twistsPhoto {
-                            if let id = selectedId ?? overlayUnder(value.startLocation, photo: photo) {
+                            let other: StoryTextEditing.GestureTarget? = scaleId.map { .overlay($0) }
+                                ?? (pinchesPhoto ? .photo : nil)
+                            switch StoryTextEditing.gestureTarget(other: other, selected: selectedId, dragging: dragId,
+                                                                  under: { overlayUnder(value.startLocation, photo: photo) }) {
+                            case .overlay(let id):
+                                absorbDrag(photo: photo, canvas: geometry.size)
                                 rotateId = id
-                            } else {
+                            case .photo:
                                 twistsPhoto = true
                             }
                         }
@@ -224,9 +232,14 @@ struct StoryCanvas: View {
                     .onChanged { value in
                         // 回すのと同じ決め方（選んだ札 → 指の下の札 → 写真）
                         if scaleId == nil && !pinchesPhoto {
-                            if let id = selectedId ?? overlayUnder(value.startLocation, photo: photo) {
+                            let other: StoryTextEditing.GestureTarget? = rotateId.map { .overlay($0) }
+                                ?? (twistsPhoto ? .photo : nil)
+                            switch StoryTextEditing.gestureTarget(other: other, selected: selectedId, dragging: dragId,
+                                                                  under: { overlayUnder(value.startLocation, photo: photo) }) {
+                            case .overlay(let id):
+                                absorbDrag(photo: photo, canvas: geometry.size)
                                 scaleId = id
-                            } else {
+                            case .photo:
                                 pinchesPhoto = true
                             }
                         }
@@ -261,6 +274,8 @@ struct StoryCanvas: View {
             .onChange(of: dragId) { old, new in
                 if (old == nil) != (new == nil) { onDraggingChange(new != nil) }
             }
+            // 動かしている最中に画面ごと消えても、周りの道具を隠したままにしない
+            .onDisappear { if dragId != nil { onDraggingChange(false) } }
             .onAppear { remember(geometry.size) }
             .onChange(of: geometry.size) { _, size in remember(size) }
         }
@@ -446,18 +461,23 @@ struct StoryCanvas: View {
                         snapDelta = CGSize(width: snapped.point.x - live.x, height: snapped.point.y - live.y)
                         dragOffset = CGSize(width: value.translation.width + snapDelta.width,
                                             height: value.translation.height + snapDelta.height)
-                        // ゴミ箱は**指の位置**で見る
-                        trashHot = StoryTextEditing.isOverTrash(value.location, canvas: canvas)
+                        // ゴミ箱は**指の位置**で見る。指がいったん外に出るまでは効かせない
+                        trashArmed = StoryTextEditing.trashArmed(wasArmed: trashArmed, finger: value.location, canvas: canvas)
+                        trashHot = trashArmed && StoryTextEditing.isOverTrash(value.location, canvas: canvas)
                     }
                     .onEnded { value in
                         // **離したときに位置へ入れる。** 動かしている最中に
                         // 入れると、はみ出しの丸めが毎フレーム効いて指から離れる
                         if !dragSpoiled && !twoFingerActive {
-                            if StoryTextEditing.isOverTrash(value.location, canvas: canvas) {
+                            if trashArmed && StoryTextEditing.isOverTrash(value.location, canvas: canvas) {
                                 onDelete(overlay.id)
                             } else {
-                                move(overlay, by: CGSize(width: value.translation.width + snapDelta.width,
-                                                         height: value.translation.height + snapDelta.height),
+                                // 吸い付きは**離した位置で**計算し直す（最後の onChanged の値を使うと、
+                                // 離す瞬間に線から離れていても最大 8pt 寄った）
+                                let live = CGPoint(x: center.x + value.translation.width,
+                                                   y: center.y + value.translation.height)
+                                let snapped = StoryTextEditing.snap(live, canvas: canvas).point
+                                move(overlay, by: CGSize(width: snapped.x - center.x, height: snapped.y - center.y),
                                      photo: photo, canvas: canvas)
                             }
                         }
@@ -478,9 +498,20 @@ struct StoryCanvas: View {
     /// 動かしている間の目安（吸い付き・ゴミ箱）を戻す
     private func resetDragAids() {
         trashHot = false
+        trashArmed = false
         snapVertical = false
         snapHorizontal = false
         snapDelta = .zero
+    }
+
+    /// 1本指で運んでいる途中に2本指の操作が入ったら、**そこまで運んだ分を入れてから**2本指へ移る
+    /// （入れずに相殺すると札が元の位置へ戻り、つまむ相手も元の位置で当てていた）
+    private func absorbDrag(photo: CGRect, canvas: CGSize) {
+        guard let id = dragId, !dragSpoiled, let overlay = overlays.first(where: { $0.id == id }) else { return }
+        if dragOffset != .zero { move(overlay, by: dragOffset, photo: photo, canvas: canvas) }
+        dragSpoiled = true
+        dragOffset = .zero
+        resetDragAids()
     }
 
     /// 2本指の操作の始めの位置の下にある札（上に重なっている方を先に）。打っている札は数えない

@@ -371,31 +371,47 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if !textMode && typingId == nil && !draggingOverlay && preview != nil {
+            if !textMode && typingId == nil && preview != nil {
                 toolColumn
                     .padding(.trailing, 12)
                     .padding(.top, 120)
+                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                    .opacity(draggingOverlay ? 0 : 1)
+                    .allowsHitTesting(!draggingOverlay)
             }
         }
         .overlay(alignment: .leading) {
-            if !textMode && typingId == nil && !draggingOverlay && preview != nil {
+            if !textMode && typingId == nil && preview != nil {
                 captionBlock
                     .padding(.leading, 36)
                     .padding(.trailing, 70)
+                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                    .opacity(draggingOverlay ? 0 : 1)
+                    .allowsHitTesting(!draggingOverlay)
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if !textMode && typingId == nil && !draggingOverlay && preview != nil {
+            if !textMode && typingId == nil && preview != nil {
                 mediaStrip
                     .padding(.leading, 16)
                     .padding(.bottom, 20)
+                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                    .opacity(draggingOverlay ? 0 : 1)
+                    .allowsHitTesting(!draggingOverlay)
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !textMode && typingId == nil && !draggingOverlay && preview != nil {
+            if !textMode && typingId == nil && preview != nil {
                 durationMenu
                     .padding(.trailing, 16)
                     .padding(.bottom, 30)
+                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                    .opacity(draggingOverlay ? 0 : 1)
+                    .allowsHitTesting(!draggingOverlay)
             }
         }
         .overlay(alignment: .bottom) {
@@ -407,11 +423,13 @@ struct StoryComposerView: View {
                     vote.wrappedValue = nil
                     voteSelected = false
                 }
-            } else if textMode, !draggingOverlay, let selectedId, selectedIndex != nil {
+            } else if textMode, let selectedId, selectedIndex != nil {
                 OverlayPanel(overlay: overlayBinding(id: selectedId)) {
                     overlays.wrappedValue.removeAll { $0.id == selectedId }
                     self.selectedId = nil
                 }
+                .opacity(draggingOverlay ? 0 : 1)
+                .allowsHitTesting(!draggingOverlay)
             }
         }
         .background {

@@ -179,21 +179,44 @@ enum StoryTextEditing {
         let rotation: Double
     }
 
-    /// 2本指の操作で、指の下の札を探す余白（pt）。小さな札でも指の間に挟めるように広めに取る
-    static let pinchSlop = 44.0
+    /// 2本指の操作で、指の下の札を探す余白（pt）。小さな札でも指の間に挟めるように少し広げる
+    static let pinchSlop = 24.0
 
-    /// `point` の下にある札（**上に重なっているものを先に**＝並びの後ろから）。無ければ nil。
-    /// 札の回しを戻した向きで、札の矩形を `slop` だけ広げて当てる
+    /// `point` の下にある札。**まず指の真下（余白なし・上に重なっている方を先に）**、無ければ余白の
+    /// 内側で中心がいちばん近い札。余白だけで上から当てると、あとから置いた札の余白が下の札の真上を
+    /// 覆って違う札が動き、大きな帯の余白が写真の拡大を奪った（81cbd07 のレビュー）
     static func overlay(at point: CGPoint, in placed: [Placed], slop: Double = pinchSlop) -> UUID? {
-        for item in placed.reversed() {
+        func local(_ item: Placed) -> (x: Double, y: Double) {
             let dx = Double(point.x - item.center.x), dy = Double(point.y - item.center.y)
             let c = cos(-item.rotation), s = sin(-item.rotation)
-            let lx = dx * c - dy * s, ly = dx * s + dy * c
-            if abs(lx) <= Double(item.size.width) / 2 + slop && abs(ly) <= Double(item.size.height) / 2 + slop {
-                return item.id
-            }
+            return (dx * c - dy * s, dx * s + dy * c)
         }
-        return nil
+        func inside(_ item: Placed, margin: Double) -> Bool {
+            let p = local(item)
+            return abs(p.x) <= Double(item.size.width) / 2 + margin && abs(p.y) <= Double(item.size.height) / 2 + margin
+        }
+        if let hit = placed.reversed().first(where: { inside($0, margin: 0) }) { return hit.id }
+        return placed.filter { inside($0, margin: slop) }
+            .min { a, b in
+                let pa = local(a), pb = local(b)
+                return pa.x * pa.x + pa.y * pa.y < pb.x * pb.x + pb.y * pb.y
+            }?.id
+    }
+
+    /// 2本指の操作（回す・つまむ）が効く相手
+    enum GestureTarget: Equatable {
+        case overlay(UUID)
+        case photo
+    }
+
+    /// 2本指の操作の相手を決める。**回すとつまむは同じ相手に**——別々に決めると、認識される時刻の
+    /// ずれで札は大きくなり写真は回った。順は: もう片方の操作の相手 → 選んだ札 → 1本指で運んでいる札
+    /// （運んだ先でつまむと、元の位置で当てて別の札や写真に効いた）→ 指の下の札 → 写真
+    static func gestureTarget(other: GestureTarget?, selected: UUID?, dragging: UUID?,
+                              under: () -> UUID?) -> GestureTarget {
+        if let other { return other }
+        if let id = selected ?? dragging ?? under() { return .overlay(id) }
+        return .photo
     }
 
     /// 真ん中の目安に吸い付く距離（pt）
@@ -227,5 +250,11 @@ enum StoryTextEditing {
         let c = trashCenter(canvas: canvas)
         let dx = Double(finger.x - c.x), dy = Double(finger.y - c.y)
         return dx * dx + dy * dy <= trashRadius * trashRadius
+    }
+
+    /// ゴミ箱が効くか。**指がいったんゴミ箱の外にいたことがある回だけ**（`armed`）——下の真ん中に
+    /// 置いた札を少しずらしただけで消えた（81cbd07 のレビュー）
+    static func trashArmed(wasArmed: Bool, finger: CGPoint, canvas: CGSize) -> Bool {
+        wasArmed || !isOverTrash(finger, canvas: canvas)
     }
 }
