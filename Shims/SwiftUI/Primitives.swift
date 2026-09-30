@@ -140,6 +140,8 @@ public struct EnvironmentValues {
     public var scenePhase: ScenePhase { .active }
     public var openURL: OpenURLAction { OpenURLAction() }
     public var colorScheme: ColorScheme { .light }
+    /// 「視差効果を減らす」（本物と同じ）
+    public var accessibilityReduceMotion: Bool { false }
 }
 
 public struct DismissAction {
