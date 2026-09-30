@@ -237,6 +237,11 @@ final class UploadViewModel: ObservableObject {
         albums = mine + extra
     }
 
+    /// 閉じると消える書きかけがあるか。**写真を選び始めたら**（読み込み中・カメラの
+    /// 準備中を含む）。題・説明・撮影地は写真ごとに持つので、写真が無ければ書きかけも無い。
+    /// 最初から入っているタグ（今日のテーマ）・スポットの紐付けは本人が書いたものではないので数えない
+    var hasDraft: Bool { !items.isEmpty || isLoadingPicked || preparingCaptures > 0 }
+
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
     var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 }
 
