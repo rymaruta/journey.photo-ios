@@ -178,6 +178,8 @@ struct SearchView: View {
             }
             .padding(.horizontal, 16)
         }
+        // 札の押せる余白（上下 4）の分だけ詰め、並びの見た目の間隔は前のまま
+        .padding(.vertical, -PillChip.tapSlack)
     }
 
     /// カテゴリ（モック9-2 の丸い札）。**絵はその分類でいちばん人気の1枚**
@@ -413,7 +415,7 @@ struct SearchView: View {
         }
     }
 
-    /// 撮影地の札（板 11: 156×116・角丸14・名前 13 semibold・枚数は等幅 10）。
+    /// 撮影地の札（板 11: 156×116・角丸14・名前 13 semibold・枚数は等幅 12——板の 10 は本文の最小 12 に上げた）。
     /// **枚数は数えたもの**
     private func spotCard(_ spot: DiscoverySections.Spot) -> some View {
         Color.clear
@@ -428,7 +430,7 @@ struct SearchView: View {
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
                     Text(L("\(spot.count)枚の写真", "\(spot.count) photos"))
-                        .font(JPFont.mono(10, relativeTo: .caption2))
+                        .font(JPFont.mono(12, relativeTo: .caption))
                         .foregroundStyle(WebTheme.muted)
                 }
                 .padding(.horizontal, 12)
@@ -608,6 +610,8 @@ struct SearchView: View {
                                 .foregroundStyle(WebTheme.faint)
                         }
                         .frame(minHeight: WebTheme.minTapTarget)
+                        // `.plain` は字と絵の上だけが当たる——間の空き（Spacer）も押せるように
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -674,6 +678,8 @@ struct SearchView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(WebTheme.accent)
                             .frame(minHeight: WebTheme.minTapTarget)
+                            // `.plain` は字の上だけが当たる——44 の帯ぜんぶを押せるように
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -769,6 +775,8 @@ struct SearchView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(WebTheme.accent)
                             .frame(minHeight: WebTheme.minTapTarget)
+                            // `.plain` は字と絵の上だけが当たる——44 の帯ぜんぶを押せるように
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("search.emptyMap")

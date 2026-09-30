@@ -101,7 +101,7 @@ struct TripPlanPickSheet: View {
                         // 同じく、**下書きのときだけ**「下書き」の札を付ける
                         if choice.isDraft {
                             Text(L("下書き", "Draft"))
-                                .font(.caption2.weight(.semibold))
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(WebTheme.muted)
                                 .webChip()
                         }

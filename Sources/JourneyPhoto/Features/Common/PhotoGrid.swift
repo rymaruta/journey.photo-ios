@@ -104,7 +104,8 @@ private struct LeadCaption: View {
                         Image(systemName: "heart")
                         Text("\(likes)")
                     }
-                    .font(JPFont.mono(11))
+                    // 数は本文と同じ最小の 12pt（11 は眉ラベルだけ）
+                    .font(JPFont.mono(12))
                     .foregroundStyle(WebTheme.foreground)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(L("いいね \(likes)", "\(likes) likes"))
@@ -181,10 +182,12 @@ struct PhotoTile: View {
         if showsCaption && (!title.isEmpty || !category.isEmpty) {
             VStack(alignment: .leading, spacing: 3) {
                 if !category.isEmpty {
-                    // 分類は小さく、字間を開けて上に置く（見出しの上の肩書き）
-                    Text(category.uppercased())
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.2)
+                    // 分類は小さく、字間を開けて上に置く（見出しの上の肩書き＝眉ラベル・11pt）。
+                    // 写真の上なので色は白のまま（真鍮は黒い地の上だけ）
+                    Text(category)
+                        .jpEyebrow()
+                        // 小さなタイルで折り返さない（肩書きは1行）
+                        .lineLimit(1)
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
                 if !title.isEmpty {

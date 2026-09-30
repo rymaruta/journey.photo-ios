@@ -73,9 +73,13 @@ struct FavoritesView: View {
                     }
                 }
             } else {
+                // 公開一覧から引き当てた写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
+                let isPublic = LikedPhotos.fromPublicFeed(hidden.visible(feed))
                 LazyVGrid(columns: columns, spacing: 2) {
                     ForEach(photos) { photo in
-                        NavigationLink { PhotoDetailView(photo: photo, context: photos) } label: {
+                        NavigationLink {
+                            PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: photos)
+                        } label: {
                             PhotoFrame(photo: photo)
                         }
                         .buttonStyle(.plain)

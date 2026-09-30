@@ -139,9 +139,16 @@ private struct StoryVideo: View {
             }
             // **左を押して頭から見直すときは、動画も 0 へ戻す。** 時計だけ戻して
             // 動画は続きから鳴っていた
+            // **読めなかった動画は終わりを知らせ直す。** 見直しで閲覧画面は控えていた終わりを
+            // 捨てる。読めない動画は二度と終わりを知らせないので、そのままだと進まなかった
             .onChange(of: restartToken) { _, _ in
-                player?.seek(to: .zero)
-                if !isPaused { player?.play() }
+                switch StoryPlayback.restartAction(mediaFailed: player?.currentItem?.status == .failed) {
+                case .reportEnd:
+                    onEnded?()
+                case .seekToStart:
+                    player?.seek(to: .zero)
+                    if !isPaused { player?.play() }
+                }
             }
             .accessibilityLabel(L("動画のストーリー", "Video story"))
     }

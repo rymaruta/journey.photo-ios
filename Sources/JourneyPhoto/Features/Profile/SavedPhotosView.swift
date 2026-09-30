@@ -45,8 +45,10 @@ struct SavedPhotosView: View {
                     }
                 }
             } else {
+                // 公開一覧から引き当てた写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
+                let isPublic = LikedPhotos.fromPublicFeed(hidden.visible(feed))
                 PhotoGrid(photos: photos) { photo in
-                    PhotoDetailView(photo: photo, context: photos)
+                    PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: photos)
                 }
             }
         }

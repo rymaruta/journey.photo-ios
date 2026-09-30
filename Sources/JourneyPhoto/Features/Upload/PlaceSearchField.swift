@@ -89,8 +89,16 @@ struct PlaceSearchField: View {
                     suggestions = []
                     spotSuggestions = []
                 } label: {
+                    // **当たりを行の幅いっぱいに**（字の上だけだった）。縦は候補の間
+                    // （投稿画面の 6pt）の半分まで——外へ広げて同じだけ詰めるので
+                    // 並びは変わらない。44pt には届かない: 候補は縦に 22pt おきに並び、
+                    // それ以上広げると隣の候補の押し下げを奪う
                     Label(place.label, systemImage: "mappin.circle")
                         .font(.caption)
+                        .padding(.vertical, 3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .padding(.vertical, -3)
                 }
                 .buttonStyle(.borderless)
             }

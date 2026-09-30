@@ -55,6 +55,14 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 答えが届いても、今の1枚の読み込みを捨てないため。断られた回は数えない
     /// （サーバーは変わっていないので、読み込みの答えが正しい）
     private var acceptedLikes: [String: Int] = [:]
+    /// 今の1枚の数を**サーバーから**得たか（読み込み・押した答え）。
+    /// 得るまでは `show` が渡す数（ホームのカードと同じ出どころ・`LiveLikes.base`）で
+    /// 入れ直す——init の時点では `LikeCountStore` を読めず、一覧の古い数で始まるため
+    private var likesFromServer = false
+    /// 今の1枚に**押した回の答え**が届いた時刻（ホームで押した `LikeCountStore` の
+    /// 答え・この画面で押した答え）。そこから `LiveLikes.serverStaleness` の間に
+    /// 読んだ数と印は、押す前の古い答えでありうるので書かない（`LiveLikes.readSupersedes`）
+    private var likeAnsweredAt: Date?
     /// 投稿者の公開プロフィール。**@ユーザー名を出すため**（写真の行は
     /// 表示名しか持っていない）。取れなければ nil——名前だけ出す
     @Published private(set) var owner: UserProfile?
@@ -89,16 +97,28 @@ final class PhotoDetailViewModel: ObservableObject {
     /// - Parameter liked: 端末の控え（`FavoritesStore`）が言う「押してある」。
     ///   **読めるまではこれを出す**——白で始めると、圏外で開いたいいね済みの写真が
     ///   白いハートになり、押すと「いいね」を送って（届かず）控えまで消していた
-    func show(photoId: String, initialLikes: Int?, liked: Bool) {
+    ///   - answeredAt: 押した回の答えの時刻（`LikeCountStore.Entry.at`）。無ければ nil
+    func show(photoId: String, initialLikes: Int?, liked: Bool, answeredAt: Date? = nil) {
         if photoId != self.photoId {
             self.photoId = photoId
             likes = initialLikes
+            likesFromServer = false
+            likeAnsweredAt = answeredAt
             lastLikeAnswer = nil
             comments = []
             commentCount = nil
             commentsUnavailable = false
             draftComment = ""
             errorMessage = nil
+        } else if !likesFromServer, let initialLikes {
+            // 🔴 **開いた1枚でも、サーバーの数を得るまでは渡された数に合わせる。**
+            // ホームで♥を押して 5→6 になっても、init は一覧の 5 で始まるので、
+            // 開いた直後は 5 と出ていた
+            likes = initialLikes
+        }
+        if photoId == self.photoId, let answeredAt,
+           likeAnsweredAt.map({ answeredAt > $0 }) ?? true {
+            likeAnsweredAt = answeredAt
         }
         self.liked = liked
     }
@@ -113,6 +133,7 @@ final class PhotoDetailViewModel: ObservableObject {
     func load() async {
         let id = photoId
         let accepted = acceptedLikes[id, default: 0]
+        let readAt = Date()
         async let count = try? social.likeCount(photoId: id)
         async let page = try? social.comments(photoId: id)
         let mine: Bool?
@@ -125,8 +146,15 @@ final class PhotoDetailViewModel: ObservableObject {
         let loaded = await page
         // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
         guard id == photoId else { return }
+        // 🔴 **押した答えから間もない読みは、数も印も書かない。** ホームで押して 6 に
+        // なった直後に開くと、読み取りは押す前の 5（外したなら押す前の「いいね済み」）を
+        // 返すことがあり、出ていた 6 を 5 に戻していた（`LiveLikes.readSupersedes`）
         let likeUntouched = accepted == acceptedLikes[id, default: 0]
-        if likeUntouched { likes = loadedCount ?? likes }
+            && LiveLikes.readSupersedes(readAt: readAt, answeredAt: likeAnsweredAt)
+        if likeUntouched {
+            likes = loadedCount ?? likes
+            if loadedCount != nil { likesFromServer = true }
+        }
         if let loaded { applyComments(loaded, for: id) }
         commentsUnavailable = loaded == nil
         // **引けなかった回に「押していない」と言わない。** 電波が悪いだけで
@@ -216,7 +244,9 @@ final class PhotoDetailViewModel: ObservableObject {
             if let likes = result.likes {
                 self.likes = likes
                 lastLikeAnswer = likes
+                likesFromServer = true
             }
+            likeAnsweredAt = Date()
             return answer
         } catch {
             // 前の1枚の失敗を、送った先の1枚の画面に出さない

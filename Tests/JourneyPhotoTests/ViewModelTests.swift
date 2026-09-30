@@ -952,6 +952,35 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNotNil(model.errorMessage)
     }
 
+    /// 🔴 **マイページの数は、読み込み中・取れなかったときに「0」と言わない**
+    /// （人のページの `ProfileLine.PhotoCount` と同じ決まり）。配列の長さ・数の既定値 0 を
+    /// そのまま出していたので、圏外で開くと「投稿 0・フォロワー 0」と嘘が出た
+    func testMyPageCountsAreNotZeroUntilRead() async {
+        prepare()
+        let model = MyPageViewModel(api: api())
+        XCTAssertEqual(model.photoCount, .pending)
+        XCTAssertEqual(model.followerCount, .pending)
+        XCTAssertNil(ProfileLine.statValue(model.photoCount), "読み込み中に 0 と出している")
+
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/users/a/follow", status: 500, body: #"{"error":"x"}"#)
+        await model.load(for: "a")
+        XCTAssertEqual(model.photoCount, .failed, "写真を読めていないのに数を言っている")
+        XCTAssertEqual(model.followerCount, .failed, "フォロー数を読めていないのに数を言っている")
+        XCTAssertEqual(model.followingCount, .failed)
+        XCTAssertEqual(ProfileLine.statValue(model.followerCount), "—")
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/a/follow", status: 200, body: #"{"followers":0,"following":4}"#)
+        await model.load(for: "a")
+        XCTAssertEqual(model.photoCount, .loaded(0), "読めた 0 は 0 と言う")
+        XCTAssertEqual(model.followerCount, .loaded(0))
+        XCTAssertEqual(model.followingCount, .loaded(4))
+    }
+
     /// **フォロー数が遅くても、写真は待たずに入る**（3ecb6a5 は数を待ってから
     /// 写真を入れていたので、格子が往復1回ぶん遅れていた）
     func testSlowFollowStatsDoNotHoldBackPhotos() async {
@@ -1086,6 +1115,68 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.likes, "取れなかった回に 0 と出している")
         model.show(photoId: "p2", initialLikes: nil, liked: false)
         XCTAssertNil(model.likes, "送った先の1枚に 0 と出している")
+    }
+
+    /// 🔴 **開いた1枚でも、サーバーの数を得るまでは画面が渡す数に合わせる。**
+    /// init は一覧の数（5）で始まる。ホームで♥を押して 6 になった写真を開くと、
+    /// 画面は `.task` で `LiveLikes.base`（6）を渡す——それを捨てると 5 と出ていた。
+    /// サーバーの数を読んだあとは、渡された数で戻さない
+    func testShowSamePhotoTakesTheFresherCountUntilTheServerAnswers() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: 5)
+        model.show(photoId: "p1", initialLikes: 6, liked: true)
+        XCTAssertEqual(model.likes, 6, "ホームで押したあとの数ではなく、一覧の古い数が出ている")
+        model.show(photoId: "p1", initialLikes: nil, liked: true)
+        XCTAssertEqual(model.likes, 6, "分からない（nil）で数を消している")
+
+        StubProtocol.respond(status: 200, body: #"{"likes":9}"#)
+        await model.load()
+        XCTAssertEqual(model.likes, 9, "前提: サーバーの数を読めている")
+        model.show(photoId: "p1", initialLikes: 6, liked: true)
+        XCTAssertEqual(model.likes, 9, "サーバーの数を、手元の古い数で戻している")
+    }
+
+    /// 🔴 **ホームで押した直後に開くと、読み取りの古い答えで数と印を戻さない。**
+    /// 押した答え（6・いいね済み）は `LikeCountStore` に入り、画面は `show` で渡す。
+    /// 読み取りは結果整合で、押す前の 5・「押していない」を返すことがある——
+    /// それで 6→5 に戻っていた。答えから `serverStaleness` の間の読みは書かない
+    func testFreshReadAfterAPressDoesNotRollTheCountBack() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: 5)
+        model.setSignedIn(true)
+        model.show(photoId: "p1", initialLikes: 6, liked: true, answeredAt: Date())
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":5}"#)
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":false}"#)
+        await model.load()
+        XCTAssertEqual(model.likes, 6, "押した直後の読みの古い数で戻している")
+        XCTAssertTrue(model.liked, "押した直後の読みの古い印で戻している")
+    }
+
+    /// 外した場合も同じ（6→5 に外した直後、読みが押す前の 6・いいね済みを返す）
+    func testFreshReadAfterAnUnlikeDoesNotRollTheCountBack() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: 6)
+        model.setSignedIn(true)
+        model.show(photoId: "p1", initialLikes: 5, liked: false, answeredAt: Date())
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":6}"#)
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#)
+        await model.load()
+        XCTAssertEqual(model.likes, 5, "外した直後の読みの古い数で戻している")
+        XCTAssertFalse(model.liked, "外した直後の読みの古い印で戻している")
+    }
+
+    /// 答えから十分たってからの読みは書く（他の人が押したぶんも入る）
+    func testReadLongAfterThePressWins() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: 5)
+        model.setSignedIn(true)
+        model.show(photoId: "p1", initialLikes: 6, liked: true,
+                   answeredAt: Date().addingTimeInterval(-LiveLikes.serverStaleness - 1))
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":8}"#)
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":false}"#)
+        await model.load()
+        XCTAssertEqual(model.likes, 8)
+        XCTAssertFalse(model.liked)
     }
 
     /// 🔴 **束の隣へ送ったら、数・ハート・コメントをその1枚のものに替える。**

@@ -220,9 +220,18 @@ struct GalleryView: View {
                     NavigationLink {
                         TagPhotosView(kind: .category(group.id))
                     } label: {
+                        // 字の見た目・行の高さはそのまま、当たりだけ 44pt。
+                        // **上へ多めに広げる**——上は並び同士の間（24）が空いているが、
+                        // 下は 8 で写真の横並びがすぐ来る（写真の押し下げを奪わない）
                         Text(L("すべて見る", "See all"))
                             .font(.caption)
                             .foregroundStyle(WebTheme.faint)
+                            .padding(.top, 18)
+                            .padding(.bottom, 10)
+                            .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                            .contentShape(Rectangle())
+                            .padding(.top, -18)
+                            .padding(.bottom, -10)
                     }
                 }
                 .padding(.horizontal, 12)
