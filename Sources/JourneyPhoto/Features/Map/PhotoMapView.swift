@@ -80,6 +80,9 @@ struct PhotoMapView: View {
     /// 写真の範囲へ一度寄せたか。**寄せるのは最初の1回だけ**——詳細から戻るたびに
     /// `.task` が走り直し、見ていた場所から写真の範囲へ引き戻していた
     @State private var framedToPhotos = false
+    /// 探すから受け取った語で寄せる印（`MapQueryFraming`）。読み込みの前に受け取った回は
+    /// 枠が決まってから寄せ、開いたときの自動の現在地で上書きしない
+    @State private var queryFraming = MapQueryFraming()
     /// 拡大・縮小を続けて押したときの土台（`MapFraming.ZoomChain`）
     @State private var zoomChain = MapFraming.ZoomChain()
     /// 方位磁針を地図の外（右の操作列）に置くための名前。
@@ -126,6 +129,11 @@ struct PhotoMapView: View {
             }
             // 読んでいる間に通報された回、古い集合で絞った結果を残さない
             dropHidden()
+            // 探すから語を受け取っていれば、その当たりへ寄せる（現在地が先でも）
+            if let queryFrame = queryFraming.frameIfReady(model.frame) {
+                framedToPhotos = true
+                frame(queryFrame)
+            }
             // 現在地が先に取れていたら、写真の読み込みで引き戻さない
             if here == nil, !framedToPhotos, let photosFrame = model.frame {
                 framedToPhotos = true
@@ -182,6 +190,11 @@ struct PhotoMapView: View {
         // 索引を読み直してピンの中身（写真・出典・下書き）が変わったら、開いている札も
         // 新しい中身に差し替える（札だけ古い写真と出典のまま残らないように）
         .onChange(of: model.officialPins) { _, _ in
+            // 探すからの語がスポットの名前だけで当たる回は、索引が届いて初めて枠が決まる。
+            // 写真の読み込みの後に限る（先に索引で寄せると、写真で当たる回に寄せ直せない）
+            if model.loaded, let queryFrame = queryFraming.frameIfReady(model.frame) {
+                frame(queryFrame)
+            }
             guard let selected = selectedOfficial,
                   let fresh = model.officialPins.first(where: { $0.id == selected.id }),
                   fresh != selected else { return }
@@ -196,6 +209,9 @@ struct PhotoMapView: View {
             guard case .located(let latitude, let longitude) = state else { return }
             here = Photo.Coords(lat: latitude, lng: longitude)
             noneNearbyBanner.located()
+            // 探すからの語で寄せている間は、開いたときの自動の現在地で上書きしない
+            // （ボタンで取った回は寄せる）
+            guard queryFraming.followsLocation(requestedByUser: location.requestedByUser) else { return }
             zoomChain.reset()
             camera = .userLocation(fallback: .region(MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
@@ -264,6 +280,11 @@ struct PhotoMapView: View {
         model.select(category: nil)
         model.query = query
         model.mode = .map
+        queryFraming.received()
+        // 読み込み済みならその場で寄せる。まだなら `.task` と索引の知らせが寄せる
+        if model.loaded, let queryFrame = queryFraming.frameIfReady(model.frame) {
+            frame(queryFrame)
+        }
     }
 
     /// **撮影地の文字列とスポットの名前だけ**で絞る（通信しない）。
@@ -570,6 +591,8 @@ struct PhotoMapView: View {
         // のどれでも。つまんだだけで現在地を見たままでも下げる——地図を自分で見始めた合図）。
         // こちらが寄せた回（現在地を追う・全体へ寄せる・拡大縮小のボタン）は下げない
         noneNearbyBanner.cameraMoved(byUser: camera.positionedByUser)
+        // 指で動かしたら、あとから語の当たりへ引き戻さない
+        if camera.positionedByUser { queryFraming.userMovedCamera() }
     }
 
     /// 地図の上に1行。**空の状態を隠さない**——ピンが消えただけの画面にしない
