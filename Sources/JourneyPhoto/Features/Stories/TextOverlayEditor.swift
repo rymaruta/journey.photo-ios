@@ -140,12 +140,16 @@ struct StoryCanvas: View {
                                     if voteDragStart == nil { voteDragStart = current; voteDragSpoiled = false }
                                     guard let start = voteDragStart else { return }
                                     if twoFingerActive { voteDragSpoiled = true }
-                                    vote.wrappedValue = voteDragSpoiled ? start : start.moved(
+                                    // 見えている範囲は**キーボードで縮む前の枠**で決める（文字の札と同じ）
+                                    let full = stableSize == .zero ? geometry.size : stableSize
+                                    let fullPhoto = TextOverlay.filledRect(image: imageSize ?? full, in: full)
+                                    let next = voteDragSpoiled ? start : start.moved(
                                         by: value.translation, in: photo.size,
-                                        visible: StoryVoteDraft.visibleRange(photo: photo, canvas: geometry.size))
+                                        visible: StoryVoteDraft.visibleRange(photo: fullPhoto, canvas: full))
+                                    placeVote(x: next.x, y: next.y)
                                 }
                                 .onEnded { _ in
-                                    if voteDragSpoiled, let start = voteDragStart { vote.wrappedValue = start }
+                                    if voteDragSpoiled, let start = voteDragStart { placeVote(x: start.x, y: start.y) }
                                     voteDragStart = nil
                                 }
                         )
@@ -197,11 +201,10 @@ struct StoryCanvas: View {
             .onChange(of: twisting) { _, active in if !active { commitRotation() } }
             .onChange(of: pinching) { _, active in if !active { commitScale() } }
             .onChange(of: voteDragging) { _, active in
-                // 投票の札を動かす操作の打ち切り。**始めの位置に戻す**（離した位置が分からない）
-                if !active, let start = voteDragStart {
-                    vote.wrappedValue = start
-                    voteDragStart = nil
-                }
+                // 投票の札を動かす操作の片付け。**位置は戻さない**——動かしている間の位置は毎回
+                // 見えている範囲に挟んだ正しい値で、`onEnded` より先にここへ来ても離した所に残る
+                // （戻すと、この順で来た回に離すたび札が元へ戻った・38685e4 のレビュー）
+                if !active { voteDragStart = nil }
             }
             .onChange(of: photoDragging) { _, active in
                 // 写真を動かす操作の打ち切り。**移動は入れない**（印は次に動かし始めたときに戻す）
@@ -216,6 +219,15 @@ struct StoryCanvas: View {
             .onAppear { remember(geometry.size) }
             .onChange(of: geometry.size) { _, size in remember(size) }
         }
+    }
+
+    /// 投票の札の**位置だけ**を書き換える（問い・選択肢は触らない——動かしている間に表示中の
+    /// 写真が替わっても、別の写真の投票の中身を上書きしない・38685e4 のレビュー）
+    private func placeVote(x: Double, y: Double) {
+        guard var current = vote.wrappedValue else { return }
+        current.x = x
+        current.y = y
+        vote.wrappedValue = current
     }
 
     /// 回した角度を札へ入れて片付ける。**2回目は何もしない**（`onEnded` と打ち切りの片付けの両方から来る）

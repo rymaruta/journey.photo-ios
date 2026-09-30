@@ -115,6 +115,8 @@ struct StoryTextLayer: View {
                 .font(.system(size: fontSize, weight: .bold))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                // 見る画面では**票のボタンだけ**が指を取る（問いの上で送る・止めるが効くように）
+                .allowsHitTesting(editable)
             HStack(spacing: 8) {
                 ForEach(vote.options.indices, id: \.self) { index in
                     optionPill(vote, index: index, label: labels[index], size: optionSize,
@@ -132,7 +134,11 @@ struct StoryTextLayer: View {
         .frame(width: CGFloat(width))
         .padding(.horizontal, CGFloat(fontSize * 0.5))
         .padding(.vertical, CGFloat(fontSize * 0.18 + 6))
-        .background(Color.white, in: RoundedRectangle(cornerRadius: CGFloat(fontSize * 0.35)))
+        .background {
+            // 白い地も、見る画面では指を取らない（Web はボタンだけ `pointer-events-auto`）
+            RoundedRectangle(cornerRadius: CGFloat(fontSize * 0.35)).fill(Color.white)
+                .allowsHitTesting(editable)
+        }
         // 作る画面で選んでいる札は破線で囲む（文字の札と同じ・板 24b）
         .overlay {
             if highlighted {
