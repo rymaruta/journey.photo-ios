@@ -17,6 +17,9 @@ struct StoryComposerView: View {
     /// ライブラリから選んだもの。**まとめて選べる**（モック4-5）
     /// ——1枚ずつしか選べないと、10枚出すのに10回開くことになる
     @State private var pickerItems: [PhotosPickerItem] = []
+    /// 読み込んでいる最中の回数（`load` の始めで足し、終わりで引く）。
+    /// **0 より大きい間は投稿・下書き保存を止める**——届いていない写真が黙って落ちる
+    @State private var loadingPicks = 0
     /// 選んだ写真の並び（モック4-5 のメディアストリップ）。
     ///
     /// **1枚＝1本のストーリー。** サーバーは `POST /stories` に1枚ずつ渡す形で、
@@ -674,7 +677,7 @@ struct StoryComposerView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(prepared == nil || !canSaveDraft)
+            .disabled(prepared == nil || !canSaveDraft || loadingPicks > 0)
             .opacity(prepared == nil ? 0.4 : 1)
             }
         }
@@ -727,7 +730,13 @@ struct StoryComposerView: View {
                 post()
             } label: {
                 // 押したら画面を閉じる。**送信中は自分の輪に出る**（板 27）
-                Text(L("ストーリーに投稿", "Post story"))
+                Group {
+                    if loadingPicks > 0 {
+                        ProgressView().tint(WebTheme.accentText)
+                    } else {
+                        Text(L("ストーリーに投稿", "Post story"))
+                    }
+                }
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(WebTheme.accentText)
                 .frame(maxWidth: .infinity, minHeight: 52)
@@ -735,7 +744,7 @@ struct StoryComposerView: View {
                 .opacity(prepared == nil ? 0.5 : 1)
             }
             .buttonStyle(.plain)
-            .disabled(prepared == nil)
+            .disabled(prepared == nil || loadingPicks > 0)
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
@@ -884,6 +893,8 @@ struct StoryComposerView: View {
     /// 並んでいるものが見えているのに失敗したように読める。
     private func load(_ items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }
+        loadingPicks += 1
+        defer { loadingPicks -= 1 }
         var failed = 0
         for item in items {
             let data = try? await item.loadTransferable(type: Data.self)
