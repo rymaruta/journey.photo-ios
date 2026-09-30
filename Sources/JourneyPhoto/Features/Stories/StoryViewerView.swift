@@ -264,6 +264,14 @@ struct StoryViewerView: View {
         // 知らせが消えたら（2.5秒で消える）、待たせていた1本を進める
         .onChange(of: message) { _, _ in settlePendingEnd() }
         .onChange(of: holds) { _, now in isHeld = now }
+        // 返信欄・メニュー・シート・確認を開いたら反応の並びを閉じる（♡ が隠れたまま並びだけ
+        // 残り、止まったまま進まなかった）
+        .onChange(of: StoryPlayback.closesReactionPicker(
+            replyFocused: replyFocused, menuOpen: showMenu,
+            sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
+                || showAuthor || showDeleteConfirm || guideSpot != nil)) { _, close in
+            if close { showReactions = false }
+        }
         .onChange(of: muted) { _, now in
             if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
             // 次の1本・次に開いたときも同じにする
@@ -960,6 +968,8 @@ struct StoryViewerView: View {
     private func go(to target: Int) {
         guard visible.indices.contains(target) else { return }
         index = target
+        // 反応の並びは前の1本のもの（開いたまま次へ持ち越さない）
+        showReactions = false
         // 止めておく。絵が出て（`mediaReady`）止める理由が無くなったら `syncClock` が動かす
         clock.restart(running: false, at: Date())
         pendingEnd = nil
@@ -1393,23 +1403,37 @@ struct StoryViewerView: View {
                         .accessibilityLabel(Labels.Common.send)
                     } else {
                         // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）。
-                        // **長押しで6つから選ぶ**（サーバーは6つとも受ける。以前は ❤️ だけだった）
-                        Button {
-                            Task { await sendReaction(StoryService.reactions[0], to: story) }
-                        } label: {
-                            Image(systemName: "heart")
-                                .font(.system(size: 22))
-                                .foregroundStyle(.white)
-                                .webTappable()
-                        }
-                        .disabled(isSending)
-                        .onLongPressGesture(minimumDuration: 0.35, perform: {
-                            guard !isSending else { return }
-                            showReactions = true
-                        })
-                        .accessibilityLabel(L("いいね", "Like"))
-                        .accessibilityHint(L("長押しでほかの反応を選べます", "Press and hold for more reactions"))
-                        .accessibilityAction(named: L("反応を選ぶ", "Choose a reaction")) { showReactions = true }
+                        // **長押しで6つから選ぶ**（サーバーは6つとも受ける。以前は ❤️ だけだった）。
+                        // 🔴 **Button にしない。** Button に長押しを足すと、OS の版によっては長押しの
+                        // あとに Button の送信も走る（❤️ が送られてから並びが開く）。押すと長押しを
+                        // 別々の手振りにして、どちらか片方だけが効くようにする
+                        Image(systemName: "heart")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white)
+                            .webTappable()
+                            .opacity(isSending ? 0.4 : 1)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                guard !isSending else { return }
+                                showReactions = false
+                                Task { await sendReaction(StoryService.reactions[0], to: story) }
+                            }
+                            .onLongPressGesture(minimumDuration: 0.35, perform: {
+                                guard !isSending else { return }
+                                showReactions = true
+                            })
+                            .accessibilityElement()
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel(L("いいね", "Like"))
+                            .accessibilityHint(L("長押しでほかの反応を選べます", "Press and hold for more reactions"))
+                            .accessibilityAction {
+                                guard !isSending else { return }
+                                Task { await sendReaction(StoryService.reactions[0], to: story) }
+                            }
+                            .accessibilityAction(named: L("反応を選ぶ", "Choose a reaction")) {
+                                guard !isSending else { return }
+                                showReactions = true
+                            }
                         .overlay(alignment: .bottomTrailing) {
                             if showReactions { reactionPicker(for: story) }
                         }
@@ -1711,7 +1735,6 @@ struct StoryViewerView: View {
         }
     }
 
-    /// 定型の反応を送る。
     /// ♡ の長押しで出す6つの反応。**選んだら送って閉じる**。写真を押すと送らずに閉じる
     private func reactionPicker(for story: Story) -> some View {
         HStack(spacing: 4) {
@@ -1736,6 +1759,7 @@ struct StoryViewerView: View {
         .offset(y: -56)
     }
 
+    /// 定型の反応を送る。
     private func sendReaction(_ emoji: String, to story: Story) async {
         guard !isSending else { return }
         isSending = true

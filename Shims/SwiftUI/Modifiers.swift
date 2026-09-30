@@ -404,6 +404,9 @@ extension View {
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 読み上げでの既定の操作（ダブルタップ）。本物と同じ形
+    public func accessibilityAction(_ actionKind: AccessibilityActionKind = .default,
+                                    _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func swipeActions<C: View>(allowsFullSwipe: Bool = true, @ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
 }
 
@@ -517,4 +520,11 @@ public struct GestureMask: OptionSet, Sendable {
     public static let gesture = GestureMask(rawValue: 1)
     public static let subviews = GestureMask(rawValue: 2)
     public static let all: GestureMask = [.gesture, .subviews]
+}
+
+/// 読み上げの操作の種類（本物は `.default`・`.escape`・`.magicTap` など）
+public struct AccessibilityActionKind {
+    public static let `default` = AccessibilityActionKind()
+    public static let escape = AccessibilityActionKind()
+    public static let magicTap = AccessibilityActionKind()
 }

@@ -6,7 +6,9 @@ final class StoryReactionAudioTests: XCTestCase {
 
     /// 音を消したら覚える。覚えが無ければ音あり（今までと同じ）
     func testMutePreferenceIsRemembered() {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         let first = StoryAudioPreference(defaults: defaults)
         XCTAssertFalse(first.muted, "覚えが無ければ音あり")
         first.muted = true
@@ -29,5 +31,13 @@ final class StoryReactionAudioTests: XCTestCase {
             XCTAssertNotEqual(name, emoji, "\(emoji) に名前が無い")
         }
         XCTAssertEqual(Set(names).count, names.count)
+    }
+
+    /// 返信欄・メニュー・シートのどれかが開いたら並びを閉じる。何も開いていなければ残す
+    func testReactionPickerClosesWhenSomethingElseOpens() {
+        XCTAssertFalse(StoryPlayback.closesReactionPicker(replyFocused: false, menuOpen: false, sheetOpen: false))
+        XCTAssertTrue(StoryPlayback.closesReactionPicker(replyFocused: true, menuOpen: false, sheetOpen: false))
+        XCTAssertTrue(StoryPlayback.closesReactionPicker(replyFocused: false, menuOpen: true, sheetOpen: false))
+        XCTAssertTrue(StoryPlayback.closesReactionPicker(replyFocused: false, menuOpen: false, sheetOpen: true))
     }
 }

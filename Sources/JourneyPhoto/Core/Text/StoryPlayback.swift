@@ -596,5 +596,10 @@ enum StoryPlayback {
         default: return emoji
         }
     }
-}
 
+    /// 反応の並びを閉じるか。**返信欄・メニュー・シート・確認のどれかが開いたら閉じる**
+    /// （並びは ♡ の上に出るので、♡ が隠れる・別の画面が上に来たら残す理由が無い）
+    static func closesReactionPicker(replyFocused: Bool, menuOpen: Bool, sheetOpen: Bool) -> Bool {
+        replyFocused || menuOpen || sheetOpen
+    }
+}
