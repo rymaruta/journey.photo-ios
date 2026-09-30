@@ -445,6 +445,9 @@ extension View {
     /// 手元だけで落ちる**（ストーリーのスワイプで実際にそうなった）
     public func simultaneousGesture<G: Gesture>(_ gesture: G) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func highPriorityGesture<G: Gesture>(_ gesture: G) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// どこで受けるか（本物と同じ）。`.none` なら受けない＝下の送り（TabView）に渡る
+    public func highPriorityGesture<G: Gesture>(_ gesture: G, including mask: GestureMask) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    public func simultaneousGesture<G: Gesture>(_ gesture: G, including mask: GestureMask) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     /// 長押し。`onPressingChanged` は指の着地で true・離れで false を返す
     /// （本物の SwiftUI と同じ形。押している間だけ止める、に使う）
@@ -493,4 +496,14 @@ extension ScrollTargetBehavior where Self == ViewAlignedScrollTargetBehavior {
 public struct ContentMarginPlacement {
     public static let automatic = ContentMarginPlacement()
     public static let scrollContent = ContentMarginPlacement()
+}
+
+/// 身振りを受ける範囲（本物の SwiftUI と同じ形）
+public struct GestureMask: OptionSet, Sendable {
+    public let rawValue: UInt32
+    public init(rawValue: UInt32) { self.rawValue = rawValue }
+    public static let none = GestureMask([])
+    public static let gesture = GestureMask(rawValue: 1)
+    public static let subviews = GestureMask(rawValue: 2)
+    public static let all: GestureMask = [.gesture, .subviews]
 }

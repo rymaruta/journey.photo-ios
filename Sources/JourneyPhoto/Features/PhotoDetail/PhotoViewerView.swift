@@ -36,7 +36,16 @@ struct PhotoViewerView: View {
     var shareURL: (Photo) -> URL? = { _ in nil }
 
     @Environment(\.dismiss) private var dismiss
-    @State private var scale: Double = 1
+    /// 拡大と移動（離しても保つ・写真を送ったら戻す）。計算は `ZoomPan`
+    @State private var zoom = ZoomPan()
+    /// つまんでいる最中の量（離したら `zoom` に畳む）
+    @State private var pinch: Double = 1
+    /// 動かしている最中の量（同上）
+    @State private var drag: CGSize = .zero
+    /// 画面（写真を置く枠）の大きさ
+    @State private var container: CGSize = .zero
+    /// 写真ごとの、画面に収めたときの大きさ（移動できる範囲の計算に使う）
+    @State private var fitted: [Int: CGSize] = [:]
     /// ハートを弾けさせる回数。値が変わるたびに演出が走る
     @State private var burst = 0
 
@@ -46,23 +55,52 @@ struct PhotoViewerView: View {
 
             TabView(selection: $index) {
                 ForEach(Array(photos.enumerated()), id: \.offset) { offset, photo in
-                    RemoteImage(url: photo.detailImageURL, contentMode: .fit)
-                        .scaleEffect(scale)
-                        // **両指で広げて拡大、離したら戻す。**
-                        // 倍率を持ち越すと、次の写真が拡大されたまま出る
+                    let shown = offset == index
+                    RemoteImage(url: photo.detailImageURL, contentMode: .fit,
+                                onFittedSize: { size in fitted[offset] = size })
+                        // **拡大・移動は見ている1枚にだけ掛ける**（送りの途中で隣が拡大されて見えない）
+                        .scaleEffect(shown ? zoom.liveScale(pinch: pinch) : 1)
+                        .offset(x: shown ? Double(liveOffset.width) : 0, y: shown ? Double(liveOffset.height) : 0)
+                        // **両指で広げて拡大。離しても倍率を保つ**（2026-09-30 のレビュー:
+                        // 以前は離すと 1 倍に戻り、細部を見ていられなかった）
                         .gesture(
                             MagnificationGesture()
-                                .onChanged { value in scale = max(1, min(4, value)) }
-                                .onEnded { _ in scale = 1 }
+                                .onChanged { value in pinch = value }
+                                .onEnded { value in
+                                    zoom.endPinch(value, container: container, content: content(for: offset))
+                                    pinch = 1
+                                }
+                        )
+                        // **拡大中だけ、1本指で写真を動かす。** 等倍のときは受けない（`.subviews`）
+                        // ので、横スワイプは下の送り（TabView）に渡る。拡大中は `.all` で先に取り、
+                        // 動かしているつもりで隣の写真へ送られない
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 8)
+                                .onChanged { value in drag = value.translation }
+                                .onEnded { value in
+                                    zoom.endDrag(value.translation, container: container, content: content(for: offset))
+                                    drag = .zero
+                                },
+                            including: zoom.isZoomed ? .all : .subviews
                         )
                         // **2回叩いていいね**（Web のモーダルと同じ）。
-                        // 拡大中だけは倍率を戻す側に倒す
+                        // 拡大中だけは倍率を戻す側に倒す（`DoubleTapLike`）
                         .onTapGesture(count: 2) { handleDoubleTap() }
                         .accessibilityLabel(photo.accessibilityText)
                         .tag(offset)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            .background {
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { container = geo.size }
+                        .onChange(of: geo.size) { _, size in container = size }
+                }
+            }
+            // **どの経路で送っても倍率と位置を戻す**（横スワイプ・サムネイル）。
+            // 拡大したまま次の写真が出ない
+            .onChange(of: index) { _, _ in resetZoom() }
 
             // 下: サムネイルの帯と、題・撮影情報・いいね（板 14）。**下に重ねる**
             VStack(spacing: 14) {
@@ -212,7 +250,7 @@ struct PhotoViewerView: View {
                         Button {
                             index = offset
                             // 送ったら倍率は戻す（拡大したまま別の写真に移らない）
-                            scale = 1
+                            resetZoom()
                         } label: {
                             RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                                 .frame(width: 52, height: 52)
@@ -234,16 +272,32 @@ struct PhotoViewerView: View {
 
     private func handleDoubleTap() {
         guard let shown = DoubleTapLike.shown(photos, at: index) else { return }
-        switch DoubleTapLike.action(isZoomed: scale > 1, alreadyLiked: isLiked(shown), signedIn: isSignedIn,
+        switch DoubleTapLike.action(isZoomed: zoom.isZoomed, alreadyLiked: isLiked(shown), signedIn: isSignedIn,
                                     acceptsLike: acceptsLike(shown)) {
         case .resetZoom:
-            scale = 1
+            resetZoom()
         case .like:
             onDoubleTapLike(shown)
             showBurst()
         case .burstOnly:
             showBurst()
         }
+    }
+
+    /// 動かしている最中の位置（範囲に収める）
+    private var liveOffset: CGSize {
+        zoom.liveOffset(drag: drag, container: container, content: content(for: index))
+    }
+
+    /// その写真の、画面に収めたときの大きさ（まだ測れていなければ画面の大きさで代える）
+    private func content(for offset: Int) -> CGSize {
+        fitted[offset] ?? container
+    }
+
+    private func resetZoom() {
+        zoom.reset()
+        pinch = 1
+        drag = .zero
     }
 
     private func showBurst() {

@@ -26,6 +26,9 @@ struct RemoteImage: View {
     /// 「読み込みに失敗した」ように見えていた（実機の絵・run 40）。
     /// 人を指す場所では人型を置く。
     var placeholderSymbol: String = "photo"
+    /// 読み込めた写真が**画面に収まった大きさ**（`.fit` のとき・写真を大きく見る画面の移動の範囲に使う）。
+    /// 渡さなければ測らない
+    var onFittedSize: ((CGSize) -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -38,6 +41,8 @@ struct RemoteImage: View {
                         // 読み込み中の輪と失敗の記号まで隅に寄って、
                         // 44〜56pt の枠では切れて見えなくなる
                         image.resizable().aspectRatio(contentMode: contentMode)
+                            // 枠いっぱいに広げる**前**に測る＝写真そのものの大きさ
+                            .background { fittedSizeReader }
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
                             .onAppear { onSettled?(true) }
                     case .failure:
@@ -54,6 +59,17 @@ struct RemoteImage: View {
             }
         }
         .clipped()
+    }
+
+    @ViewBuilder
+    private var fittedSizeReader: some View {
+        if let onFittedSize {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { onFittedSize(geo.size) }
+                    .onChange(of: geo.size) { _, size in onFittedSize(size) }
+            }
+        }
     }
 
     private var placeholder: some View {
