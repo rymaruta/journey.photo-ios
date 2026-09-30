@@ -108,6 +108,9 @@ final class TripPickerModelTests: XCTestCase {
         XCTAssertTrue(model.wasWantedBefore("sp_b", inWishlist: true))
         model.markAdded("sp_a")
         XCTAssertFalse(model.wasWantedBefore("sp_a", inWishlist: true))
+        // 外し終えたあとに控えに入っていたら、それは他（Web など）で入れたもの
+        model.unmarkAdded("sp_a")
+        XCTAssertTrue(model.wasWantedBefore("sp_a", inWishlist: true))
     }
 
     // MARK: - 3. 上限

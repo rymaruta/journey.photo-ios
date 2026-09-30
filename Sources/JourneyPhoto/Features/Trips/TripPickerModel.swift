@@ -59,6 +59,11 @@ final class TripPickerModel: ObservableObject {
         addedHere.insert(spotId)
     }
 
+    /// 戻して「行きたい」から外せた。**次に控えに入っていたら、それは他で入れたもの**
+    func unmarkAdded(_ spotId: String) {
+        addedHere.remove(spotId)
+    }
+
     /// いまの札の位置（めくった数と同じ）
     var position: Int { decisions.count }
 

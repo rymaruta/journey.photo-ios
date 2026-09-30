@@ -338,6 +338,10 @@ struct TripPickerView: View {
         let service = environment.savedSpots
         model.enqueueWish {
             let outcome = await WishlistSync.set(key, wanted: false, store: store, service: service)
+            switch outcome {
+            case .synced(false), .local(false): model.unmarkAdded(last.spot.spotId)
+            default: break
+            }
             if let notice = WishlistSync.removalNotice(for: outcome) {
                 toasts.show(notice.text, kind: notice.kind)
             }

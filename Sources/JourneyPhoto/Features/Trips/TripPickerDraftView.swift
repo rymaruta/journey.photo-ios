@@ -312,6 +312,9 @@ struct TripPickerDraftView: View {
                 guard let made = await plans.create(title: sendTitle, environment: environment) else {
                     errorText = plans.errorMessage
                         ?? L("旅行プランを作れませんでした。もう一度お試しください。", "Couldn't create the trip. Please try again.")
+                    // 文はこの画面で出す。**一覧の model に残さない**（板を閉じたあと、取れている
+                    // 一覧の上に赤い行が残る。一覧は自分の読み込みの失敗だけを出す）
+                    plans.clearError()
                     return
                 }
                 picker.createdPlanId = made.planId
@@ -326,6 +329,7 @@ struct TripPickerDraftView: View {
             if let createdTitle = picker.createdTitle, createdTitle != sendTitle { patch.title = sendTitle }
             guard await plans.update(planId, patch, environment: environment) else {
                 let reason = plans.errorMessage ?? L("もう一度お試しください", "Please try again")
+                plans.clearError()
                 errorText = L("旅行プランは作りましたが、日程を保存できませんでした（\(reason)）。もう一度保存してください。",
                               "The trip was created, but the days couldn't be saved (\(reason)). Please save again.")
                 return
