@@ -404,6 +404,10 @@ extension View {
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 名前を付けた座標を置く（iOS 17。指の位置をこの枠の座標で読む）
+    public func coordinateSpace(_ space: NamedCoordinateSpace) -> Self { self }
+    /// 値が変わったら端末を震わせる（iOS 17）
+    public func sensoryFeedback<T: Equatable>(_ feedback: SensoryFeedback, trigger: T) -> Self { self }
     /// 読み上げでの既定の操作（ダブルタップ）。本物と同じ形
     public func accessibilityAction(_ actionKind: AccessibilityActionKind = .default,
                                     _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
@@ -431,6 +435,44 @@ public struct MagnificationGesture: Gesture {
     /// 指で動かしている間の値を `@GestureState` に書く（本物と同じ）
     public func updating<S>(_ state: GestureState<S>,
                             body: @escaping (Double, inout S, inout Transaction) -> Void) -> MagnificationGesture { self }
+}
+
+/// 2本指でつまむ（iOS 17）。**始めた位置（2本の指の真ん中）が読める**——指の下の札に効かせる
+public struct MagnifyGesture: Gesture {
+    public struct Value {
+        public var magnification: CGFloat { 1 }
+        public var startLocation: CGPoint { CGPoint(x: 0, y: 0) }
+    }
+    public init(minimumScaleDelta: CGFloat = 0.01) {}
+    public func onChanged(_ action: @escaping (Value) -> Void) -> MagnifyGesture { self }
+    public func onEnded(_ action: @escaping (Value) -> Void) -> MagnifyGesture { self }
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Value, inout S, inout Transaction) -> Void) -> MagnifyGesture { self }
+}
+
+/// 2本指で回す（iOS 17）。始めた位置が読める
+public struct RotateGesture: Gesture {
+    public struct Value {
+        public var rotation: Angle { Angle.radians(0) }
+        public var startLocation: CGPoint { CGPoint(x: 0, y: 0) }
+    }
+    public init(minimumAngleDelta: Angle = .degrees(1)) {}
+    public func onChanged(_ action: @escaping (Value) -> Void) -> RotateGesture { self }
+    public func onEnded(_ action: @escaping (Value) -> Void) -> RotateGesture { self }
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Value, inout S, inout Transaction) -> Void) -> RotateGesture { self }
+}
+
+/// 名前を付けた座標（iOS 17 の `.named(_:)`）
+public struct NamedCoordinateSpace {
+    public static func named(_ name: String) -> NamedCoordinateSpace { NamedCoordinateSpace() }
+}
+
+/// 端末の振動（iOS 17 の `sensoryFeedback`）
+public struct SensoryFeedback {
+    public enum Weight { case light, medium, heavy }
+    public static func impact(weight: Weight = .medium, intensity: Double = 1) -> SensoryFeedback { SensoryFeedback() }
+    public static let selection = SensoryFeedback()
 }
 
 public struct TapGesture: Gesture {
@@ -469,6 +511,7 @@ extension View {
                                    perform action: @escaping () -> Void,
                                    onPressingChanged: ((Bool) -> Void)? = nil) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func scaleEffect(_ scale: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func scaleEffect(_ scale: Double, anchor: UnitPoint) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// この部品の更新にかかる動きを書き換える（本物と同じ）
     public func transaction(_ transform: @escaping (inout Transaction) -> Void) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 奥行きのある回り（ストーリーの人から人への立方体）

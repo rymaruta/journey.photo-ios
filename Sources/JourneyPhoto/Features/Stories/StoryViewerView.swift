@@ -84,6 +84,8 @@ struct StoryViewerView: View {
     @State private var showBlockConfirm = false
     /// 見出しの名前を押して開く投稿者のページ
     @State private var showAuthor = false
+    /// 動画の位置（進行バー）。**いまの1本の id と一緒に持つ**（前の1本の知らせを当てない）
+    @State private var videoProgress: (storyId: String, progress: StoryPlayback.VideoProgress)?
     /// 撮影地から開いた撮影スポットのガイド（`StorySpotLink`）
     @State private var guideSpot: OfficialSpot?
     /// 自分で読んだ撮影スポットの索引（外から渡されないとき）。**取れなかった回は空**＝つながないだけ
@@ -523,7 +525,18 @@ struct StoryViewerView: View {
                     // 前の1本の絵の知らせが遅れて来ても、いまの1本に当てない
                     if visible.indices.contains(index), visible[index].id == id { mediaImageSize = size }
                 },
-                restartToken: restartCount
+                restartToken: restartCount,
+                onVideoProgress: { [id = story.id] seconds, length, playing in
+                    // 前の1本の知らせが遅れて来ても、いまの1本に当てない（`onImageLayout` と同じ）
+                    guard visible.indices.contains(index), visible[index].id == id else { return }
+                    let next = StoryPlayback.VideoProgress(seconds: seconds, duration: length,
+                                                           at: Date(), playing: playing)
+                    let old = videoProgress?.storyId == id ? videoProgress?.progress : nil
+                    // **ずれた・止まった・動き出したときだけ書く**（毎回書くと画面全体を描き直す）
+                    if StoryPlayback.VideoProgress.needsUpdate(from: old, to: next) {
+                        videoProgress = (id, next)
+                    }
+                }
             )
             // 🔴 **1本ごとに作り直す。** 同じ型・同じ場所のままだと SwiftUI は
             // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
@@ -695,20 +708,23 @@ struct StoryViewerView: View {
 
     // MARK: - 進行バー
 
-    /// 1本ごとの区切り。**写真だけ経過を塗る。** 動画の区切りは経過の
-    /// 出どころが無いので塗らず、少し明るい地で「今ここ」だけ示す
+    /// 1本ごとの区切り。写真は時計の経過、**動画は再生器が知らせた位置**で塗る
+    /// （2026-09-30）。動画の位置の知らせがまだ無い間だけ、少し明るい地で「今ここ」を示す
     ///
     /// **画面の描画ごとに伸ばす**（`TimelineView(.animation)`）。止まっている間は
     /// 描き直しも止める（`paused`）。時計の刻みで伸ばすと、刻みの遅れがそのまま
     /// 「一瞬止まってから動く」段差に見えた（`StoryPlayback.Clock`）
     private func progressBar(for story: Story) -> some View {
-        TimelineView(.animation(minimumInterval: nil, paused: !clock.isRunning)) { context in
+        let video = videoProgress?.storyId == story.id ? videoProgress?.progress : nil
+        return TimelineView(.animation(minimumInterval: nil,
+                                       paused: !clock.isRunning && !(video?.playing ?? false))) { context in
             let fills = StoryPlayback.segmentFills(
                 count: visible.count,
                 current: index,
                 elapsed: clock.elapsed(at: context.date),
                 duration: StoryPlayback.duration(seconds: story.durationSec),
-                isVideo: story.isVideo
+                isVideo: story.isVideo,
+                videoFraction: video?.fraction(at: context.date)
             )
             HStack(spacing: 4) {
                 ForEach(fills.indices, id: \.self) { i in
@@ -953,6 +969,8 @@ struct StoryViewerView: View {
             (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
                                                                 currentId: current?.id)
             restartCount += 1
+            // 動画の位置も捨てる（残すと 0 へ戻した動画のバーが、次の知らせまで元の位置で伸びる）
+            videoProgress = nil
             syncSong(restart: true)
         case .previous(let target):
             go(to: target)
@@ -1001,6 +1019,7 @@ struct StoryViewerView: View {
         index = target
         // 反応の並びは前の1本のもの（開いたまま次へ持ち越さない）
         showReactions = false
+        videoProgress = nil
         // 止めておく。絵が出て（`mediaReady`）止める理由が無くなったら `syncClock` が動かす
         clock.restart(running: false, at: Date())
         shownAt = Date()

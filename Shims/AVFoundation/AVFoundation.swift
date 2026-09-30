@@ -8,12 +8,19 @@ open class AVPlayerItem: NSObject {
     /// 本物と同じ形（読み込みに失敗したら `.failed`）
     public enum Status: Int { case unknown, readyToPlay, failed }
     open var status: Status { .unknown }
+    /// 本物と同じ形（長さ。読み込み前は無限・NaN のことがある）
+    open var duration: CMTime { .zero }
 }
 
 open class AVPlayer {
     public private(set) var currentItem: AVPlayerItem? = AVPlayerItem()
     /// 本物と同じ形。ミュートの実体
     public var isMuted: Bool = false
+    /// 本物と同じ形（再生の速さ）
+    public var rate: Float = 0
+    /// 本物と同じ形（止めている・読み込みを待っている・鳴っている）
+    public enum TimeControlStatus: Int { case paused, waitingToPlayAtSpecifiedRate, playing }
+    public var timeControlStatus: TimeControlStatus = .paused
     public init(url: URL) {}
     public func play() {}
     public func pause() {}
@@ -24,6 +31,29 @@ open class AVPlayer {
     public func addPeriodicTimeObserver(forInterval interval: CMTime, queue: DispatchQueue?,
                                         using block: @escaping @Sendable (CMTime) -> Void) -> Any { NSObject() }
     public func removeTimeObserver(_ observer: Any) {}
+    /// 本物と同じ形（状態の変化の見張り＝KVO。本物は NSObject の `observe`）
+    public func observe<Value>(_ keyPath: KeyPath<AVPlayer, Value>, options: NSKeyValueObservingOptions = [],
+                               changeHandler: @escaping (AVPlayer, NSKeyValueObservedChange<Value>) -> Void)
+        -> NSKeyValueObservation { NSKeyValueObservation() }
+}
+
+/// 本物は Foundation の KVO。Linux の Foundation には無いので形だけ置く
+public final class NSKeyValueObservation {
+    public init() {}
+    public func invalidate() {}
+}
+
+public struct NSKeyValueObservingOptions: OptionSet {
+    public let rawValue: UInt
+    public init(rawValue: UInt) { self.rawValue = rawValue }
+    public static let new = NSKeyValueObservingOptions(rawValue: 1)
+    public static let old = NSKeyValueObservingOptions(rawValue: 2)
+    public static let initial = NSKeyValueObservingOptions(rawValue: 4)
+}
+
+public struct NSKeyValueObservedChange<Value> {
+    public let newValue: Value?
+    public let oldValue: Value?
 }
 
 public typealias CMTimeScale = Int32
