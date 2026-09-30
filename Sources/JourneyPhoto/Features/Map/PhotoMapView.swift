@@ -168,7 +168,9 @@ struct PhotoMapView: View {
         .onChange(of: selectedOfficial) { _, _ in
             directionsTask?.cancel()
         }
-        .onChange(of: model.query) { _, _ in
+        .onChange(of: model.query) { _, query in
+            // 欄を空にした（× や手で消した）ら、探すから来た語の寄せ待ちも下ろす
+            if query.isEmpty { queryFraming.cleared() }
             guard model.areaFrame == nil else { return }
             frame(model.frame)
         }
@@ -280,12 +282,9 @@ struct PhotoMapView: View {
         model.select(category: nil)
         model.query = query
         model.mode = .map
-        // 空の語（タグ・語なしで探した回）は前の語を消すだけ。前の語の寄せ待ちも下ろす
-        guard !query.isEmpty else {
-            queryFraming.cleared()
-            return
-        }
-        queryFraming.received()
+        // 空の語（タグ・語なしで探した回）は前の語を消すだけ（前の語の寄せ待ちも下ろす）
+        queryFraming.received(query: query)
+        guard !query.isEmpty else { return }
         // 読み込み済みならその場で寄せる。まだなら `.task` と索引の知らせが寄せる
         frameToQueryIfReady()
     }
@@ -403,7 +402,8 @@ struct PhotoMapView: View {
                 .accessibilityIdentifier("map.mode.\(mode.rawValue)")
             }
         }
-        .padding(4)
+        // 上下の余白は付けない——札 36 を押せる範囲 44 の中央に置き、帯は 44 のまま（板 04c）
+        .padding(.horizontal, 4)
         .jpGlass(in: Capsule())
         .padding(.horizontal, 16)
         // **「スポット」のときだけ上を空ける**（owner の「枠同士が近すぎる」・2026-09-28）。

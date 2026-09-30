@@ -9,7 +9,7 @@ final class MapQueryFramingTests: XCTestCase {
     /// 受け取った時点で枠が無ければ待ち、決まった時点で一度だけ寄せる
     func testFramesOnceWhenFrameArrives() {
         var framing = MapQueryFraming()
-        framing.received()
+        framing.received(query: "京都")
         XCTAssertNil(framing.frameIfReady(nil, settled: false))
         XCTAssertEqual(framing.frameIfReady(kyoto, settled: true), kyoto)
         XCTAssertNil(framing.frameIfReady(kyoto, settled: true))
@@ -25,7 +25,7 @@ final class MapQueryFramingTests: XCTestCase {
     /// 初めて開いた回の自動の現在地は、語の寄せを上書きしない。ボタンで取った現在地は寄せる
     func testAutoLocateDoesNotOverrideQuery() {
         var framing = MapQueryFraming()
-        framing.received()
+        framing.received(query: "京都")
         XCTAssertFalse(framing.followsLocation(requestedByUser: false))
         XCTAssertEqual(framing.frameIfReady(kyoto, settled: true), kyoto)
         XCTAssertFalse(framing.followsLocation(requestedByUser: false))
@@ -37,12 +37,12 @@ final class MapQueryFramingTests: XCTestCase {
     /// ボタンで現在地へ寄せたあと・指で動かしたあとは、語の当たりへ引き戻さない
     func testUserActionCancelsPendingFrame() {
         var located = MapQueryFraming()
-        located.received()
+        located.received(query: "京都")
         _ = located.followsLocation(requestedByUser: true)
         XCTAssertNil(located.frameIfReady(kyoto, settled: true))
 
         var moved = MapQueryFraming()
-        moved.received()
+        moved.received(query: "京都")
         moved.userMovedCamera()
         XCTAssertNil(moved.frameIfReady(kyoto, settled: true))
     }
@@ -51,7 +51,7 @@ final class MapQueryFramingTests: XCTestCase {
     /// （あとで急に寄らない・自動の現在地も抑えない）。取り終える前は待ち続ける
     func testNothingMatchedLowersBothMarks() {
         var framing = MapQueryFraming()
-        framing.received()
+        framing.received(query: "京都")
         XCTAssertNil(framing.frameIfReady(nil, settled: false))
         XCTAssertTrue(framing.waitingToFrame)
         XCTAssertFalse(framing.followsLocation(requestedByUser: false))
@@ -66,8 +66,8 @@ final class MapQueryFramingTests: XCTestCase {
     /// 前の語の寄せ待ちの間に空の語が来たら、印を両方下ろす（写真全体の枠へ寄らない）
     func testEmptyQueryClearsPendingFrame() {
         var framing = MapQueryFraming()
-        framing.received()
-        framing.cleared()
+        framing.received(query: "京都")
+        framing.received(query: "")
         XCTAssertNil(framing.frameIfReady(kyoto, settled: true))
         XCTAssertTrue(framing.followsLocation(requestedByUser: false))
     }

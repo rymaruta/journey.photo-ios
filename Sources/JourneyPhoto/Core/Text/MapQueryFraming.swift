@@ -17,8 +17,12 @@ struct MapQueryFraming: Equatable {
     /// 自動の現在地で寄せない
     private(set) var holdsAgainstAutoLocate = false
 
-    /// 語を受け取った
-    mutating func received() {
+    /// 探すから語を受け取った。**空の語は前の語を消すだけ**なので寄せ待ちを下ろす（`cleared()`）
+    mutating func received(query: String) {
+        guard !query.isEmpty else {
+            cleared()
+            return
+        }
         waitingToFrame = true
         holdsAgainstAutoLocate = true
     }
@@ -51,7 +55,7 @@ struct MapQueryFraming: Equatable {
         return !holdsAgainstAutoLocate
     }
 
-    /// 空の語を受け取った（前の語を消すだけ）。前の語の寄せ待ちも下ろす——残すと、
+    /// 語が空になった（探すから空の語が来た・欄を消した）。前の語の寄せ待ちも下ろす——残すと、
     /// 読み終えた時点で写真全体の枠へ「語で寄せた」扱いで寄り、自動の現在地も抑えたままになる
     mutating func cleared() {
         waitingToFrame = false

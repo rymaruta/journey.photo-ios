@@ -243,7 +243,7 @@ struct StoriesRow: View {
         }
     }
 
-    /// 輪1つ（外径62・線2・写真52・下に名前10pt。板 27 の寸法）
+    /// 輪1つ（外径62・線2・写真52・下に名前12pt。板 27 は 10pt だが本文の最小 12 に合わせる）
     private func ringItem(story: Story, count: Int, color: Color,
                           name: String, emphasized: Bool) -> some View {
         VStack(spacing: 6) {
