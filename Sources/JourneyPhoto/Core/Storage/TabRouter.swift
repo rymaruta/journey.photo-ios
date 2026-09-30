@@ -33,8 +33,13 @@ final class TabRouter: ObservableObject {
         mapRequests += 1
     }
 
-    /// 地図が受け取る。受け取ったら消す（戻ってくるたびに絞り直さない）
-    func takePendingMapQuery() -> String? {
+    /// 地図が受け取る。受け取ったら消す（戻ってくるたびに絞り直さない）。
+    ///
+    /// 🔴 **地図の根（`mapRootOnScreen`）が出ていない間は渡さず残す。** 詳細を積んだまま
+    /// 絞り直すと、語が見えないうえ、押した元の `NavigationLink` が消えて詳細が黙って閉じる。
+    /// 根に戻った `onAppear` で受け取る
+    func takePendingMapQuery(rootOnScreen: Bool) -> String? {
+        guard rootOnScreen else { return nil }
         defer { pendingMapQuery = nil }
         return pendingMapQuery
     }
@@ -88,6 +93,10 @@ final class TabRouter: ObservableObject {
     /// 合図を出す（別の札から来たときは何もしない＝開き直しで勝手に
     /// 上へ飛ばない・現在地へ引き戻さない）。受け取るのはホームと地図
     func tabTapped(_ tab: Reselectable?, alreadySelected: Bool) {
+        // 人が下の札を押した＝探すの出口の続きではない。残っていた語が
+        // あとで（詳細から根へ戻ったときなど）勝手に当たらないよう捨てる。
+        // `openMap` の移動は札を押さない（RootView が selection を直に書く）ので、ここを通らない
+        pendingMapQuery = nil
         guard alreadySelected, let tab else { return }
         switch tab {
         case .home: homeTopRequests += 1

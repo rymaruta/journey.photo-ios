@@ -85,15 +85,42 @@ final class TabRouterTests: XCTestCase {
         let router = TabRouter()
         router.openMap(query: "  京都 ")
         XCTAssertEqual(router.mapRequests, 1)
-        XCTAssertEqual(router.takePendingMapQuery(), "京都")
-        XCTAssertNil(router.takePendingMapQuery())
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "京都")
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
 
         router.openMap(query: "奈良")
         router.openMap()
         XCTAssertEqual(router.mapRequests, 3)
-        XCTAssertNil(router.takePendingMapQuery())
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
 
         router.openMap(query: "   ")
-        XCTAssertNil(router.takePendingMapQuery())
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+    }
+
+    /// 地図に詳細を積んでいる間は渡さず残し、根に戻ったときに渡す
+    /// （積んだまま絞ると、押した元の行が消えて詳細が黙って閉じる）
+    func testPendingMapQueryWaitsForMapRoot() async {
+        let router = TabRouter()
+        router.openMap(query: "京都")
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: false))
+        XCTAssertEqual(router.pendingMapQuery, "京都")
+        XCTAssertEqual(router.takePendingMapQuery(rootOnScreen: true), "京都")
+    }
+
+    /// 人が下の札を押したら、残っていた語は捨てる（どの札でも・同じ札の押し直しでも）。
+    /// 普通に「マップ」を開いた回に、前の語があとから当たらない
+    func testTabTapDiscardsPendingMapQuery() async {
+        let router = TabRouter()
+        router.openMap(query: "京都")
+        router.tabTapped(.map, alreadySelected: false)
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+
+        router.openMap(query: "奈良")
+        router.tabTapped(nil, alreadySelected: false)
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
+
+        router.openMap(query: "神戸")
+        router.tabTapped(.map, alreadySelected: true)
+        XCTAssertNil(router.takePendingMapQuery(rootOnScreen: true))
     }
 }

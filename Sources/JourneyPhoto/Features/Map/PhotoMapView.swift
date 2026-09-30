@@ -256,16 +256,19 @@ struct PhotoMapView: View {
 
     // MARK: - 絞る口
 
-    /// **撮影地の文字列とスポットの名前だけ**で絞る（通信しない）。
-    /// 「都市」で当たるのは撮影地にその語が入っているときだけなので、
-    /// プレースホルダにもそう書く
-    /// 探すから渡された語で絞り、地図の表示にする（一度きり）
+    /// 探すから渡された語で絞り、地図の表示にする（一度きり・根が出ているときだけ）。
+    /// 範囲（このエリアを検索）とカテゴリは外す——残すと語で当たる所が範囲の外で0件になる
     private func applyPendingQuery() {
-        guard let query = tabRouter.takePendingMapQuery() else { return }
+        guard let query = tabRouter.takePendingMapQuery(rootOnScreen: tabRouter.mapRootOnScreen) else { return }
+        model.clearArea()
+        model.select(category: nil)
         model.query = query
         model.mode = .map
     }
 
+    /// **撮影地の文字列とスポットの名前だけ**で絞る（通信しない）。
+    /// 「都市」で当たるのは撮影地にその語が入っているときだけなので、
+    /// プレースホルダにもそう書く
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
