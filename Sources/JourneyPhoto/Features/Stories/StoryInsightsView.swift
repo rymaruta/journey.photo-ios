@@ -302,14 +302,35 @@ struct StoryInsightsView: View {
                 return
             }
             repliesFailed = fetched == nil
-        } catch is CancellationError {
-            // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
         } catch {
-            if firstLoad {
+            switch Self.failureOutcome(error, firstLoad: firstLoad, pulled: pulled) {
+            case .silent:
+                break
+            case .errorMessage:
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
-            } else if pulled {
+            case .refreshNotice:
                 refreshNotice = L("読み直せませんでした", "Couldn't refresh")
             }
         }
+    }
+
+    enum FailureOutcome: Equatable {
+        /// 何も言わない（取り消し・裏での読み直し）
+        case silent
+        /// 一覧の代わりに失敗の文（まだ一度も読めていない）
+        case errorMessage
+        /// 一覧はそのまま、短い知らせ（引き下げて読み直したとき）
+        case refreshNotice
+    }
+
+    /// 読めなかったときに何を出すか。
+    /// - **取り消しは失敗と言わない**（`CancellationError`・`URLError.cancelled`）。画面を離れた・
+    ///   引き下げの途中で描き直された回に「読み直せませんでした」が出ていた
+    /// - 一度読めたあとは、引き下げたときだけ知らせる（人のページから戻ったときの裏での読み直しは黙る）
+    nonisolated static func failureOutcome(_ error: Error, firstLoad: Bool, pulled: Bool) -> FailureOutcome {
+        if error is CancellationError { return .silent }
+        if let url = error as? URLError, url.code == .cancelled { return .silent }
+        if firstLoad { return .errorMessage }
+        return pulled ? .refreshNotice : .silent
     }
 }

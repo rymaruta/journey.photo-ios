@@ -1137,14 +1137,7 @@ struct StoryComposerView: View {
                 caption: caption, location: place, coords: shotCoords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
-                // 撮影地か曲があると見る画面の下に行が出る。ひとことをその行・札に重ねない
-                // （ここで送るのは写真だけ——`imageData`）
-                texts: StoryPostText.list(vote: shot.vote, caption: caption,
-                                          hasMetaLine: StoryPostText.hasMetaLine(isVideo: false, place: place,
-                                                                                 hasSong: song != nil),
-                                          photoAspect: shot.imageSize.flatMap {
-                                              $0.height > 0 ? Double($0.width / $0.height) : nil
-                                          }))
+                texts: StoryPostText.list(vote: shot.vote, caption: caption))
         }
         let stories = environment.stories
         let drafts = drafts

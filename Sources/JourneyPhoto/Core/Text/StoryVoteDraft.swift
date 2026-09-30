@@ -108,41 +108,21 @@ struct StoryPostText: Codable, Equatable {
     /// **`texts` を送ると、サーバーは `caption` を文字の並びから作り直す**（`stories.ts`）
     /// ——投票だけを送ると、打ったひとことが消える。見る画面（アプリ・Web）も `texts` が
     /// あればひとことを出さないので、**ひとことも写真の上の文字として送る**。
-    /// 置き場所は真ん中・明朝・白・下地なし（アプリのひとことの見た目に近い）。
-    /// 高さと大きさは `list` が決める（`StoryCaptionPlacement`）。
+    /// 置き場所は写真の下の方の真ん中、明朝・白・下地なし（アプリのひとことの見た目に近い）
     ///
     /// 長さは**サーバーと同じ UTF-16 で** 200 に収める（`storyText.ts` の `STORY_TEXT_LEN_MAX`
     /// は `slice`＝UTF-16 で切る）。字（書記素）で数えると、絵文字の入った文がサーバーで
     /// 黙って切られ、しかも `slice` は絵文字の途中で割る。字の境目で切る（`PostLimits.clamp`）
-    static func caption(_ text: String, y: Double = captionYDefault, size: Double = captionSizeDefault) -> StoryPostText {
-        StoryPostText(kind: "text", x: StoryCaptionPlacement.x, y: y, size: size,
+    static func caption(_ text: String) -> StoryPostText {
+        StoryPostText(kind: "text", x: 0.5, y: 0.86, size: 0.05,
                       text: PostLimits.clamp(text, limit: TextOverlay.maxLength), font: "mincho", color: "white", bg: "none")
     }
 
-    /// 撮影地も曲も無いときのひとことの高さ（写真の下の方・投票の既定 0.7 の下）と大きさ
-    static let captionYDefault = 0.86
-    static let captionSizeDefault = 0.05
-
-    /// 見る画面の下に撮影地か曲の行が出るか。**動画の撮影地はサーバーが捨てる**
-    /// （`stories.ts` の `mediaType === "image" ? sanitizeText(location) : undefined`）ので、
-    /// 撮影地で立てるのは写真のときだけ。曲は写真でも動画でも出る
-    static func hasMetaLine(isVideo: Bool, place: String, hasSong: Bool) -> Bool {
-        hasSong || (!isVideo && !place.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-
-    /// 1本ぶんの `texts`。投票が無ければ nil（送らない＝これまでと同じ）。
-    ///
-    /// `hasMetaLine`（撮影地か曲の行が出る）なら、ひとことはその行・投票の札・上の段に重ならない
-    /// 場所と大きさへ動かす（`StoryCaptionPlacement`）。`photoAspect` は写真の幅÷高さ
-    static func list(vote: StoryVoteDraft?, caption: String, hasMetaLine: Bool = false,
-                     photoAspect: Double? = nil) -> [StoryPostText]? {
+    /// 1本ぶんの `texts`。投票が無ければ nil（送らない＝これまでと同じ）
+    static func list(vote: StoryVoteDraft?, caption: String) -> [StoryPostText]? {
         guard let vote, vote.isComplete else { return nil }
         let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [.vote(vote)] }
-        guard hasMetaLine else { return [.caption(trimmed), .vote(vote)] }
-        let placed = StoryCaptionPlacement.place(caption: PostLimits.clamp(trimmed, limit: TextOverlay.maxLength),
-                                                 vote: vote, photoAspect: photoAspect)
-        return [.caption(placed.text, y: placed.y, size: placed.size), .vote(vote)]
+        return (trimmed.isEmpty ? [] : [.caption(trimmed)]) + [.vote(vote)]
     }
 
     // nil の鍵は書かない（サーバーは知らない鍵を読まないが、形を細く保つ）
