@@ -148,9 +148,14 @@ struct DailyQuizView: View {
         let answered = chosen != nil
         let correct = chosen == quiz.answer
         VStack(alignment: .leading, spacing: 0) {
-            RemoteImage(url: quiz.photo.url)
+            // 🔴 **4:3 の透明な枠に写真を重ねる**（`StoryPoster` と同じ形）。`RemoteImage` は
+            // `.fill` で、枠より大きい寸法を申告する。そのまま `.aspectRatio(.fit)` を掛けると
+            // 写真の寸法で並び全体が画面より広がり、問い・選択肢・出典が左右で見切れた
+            // （2026-09-30・owner の実機の絵）
+            Color.clear
                 .aspectRatio(4.0 / 3.0, contentMode: .fit)
                 .frame(maxWidth: .infinity)
+                .overlay { RemoteImage(url: quiz.photo.url) }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .accessibilityLabel(L("今日の一問の写真", "Photo for today's question"))
             // 作者・ライセンス（文面へ）・出典のページ（CC BY / BY-SA の表示条件）

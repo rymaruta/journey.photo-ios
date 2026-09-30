@@ -27,6 +27,8 @@ struct HomeTopCardView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// 「行きたい」の鍵（「行きたい場所のこの季節」の札）
     @EnvironmentObject private var wishlist: WishlistStore
+    /// 見頃のお知らせを予約してよいか（受け取る設定・端末の許可）
+    @EnvironmentObject private var push: PushCenter
 
     @State private var plans: [TripPlan] = []
     /// `plans` が誰のものか。**人が替わったら、取れるまで前の人のプランを出さない**
@@ -80,12 +82,16 @@ struct HomeTopCardView: View {
                 wishedKeys = wishlist.spotIds
                 isShown = true
                 applyPendingQuiz()
+                scheduleSeasonReminder()
                 if reloadPlansOnReturn {
                     reloadPlansOnReturn = false
                     returnReloads &+= 1
                 }
             }
             .onDisappear { isShown = false }
+            // 起動直後は許可の読み込みが索引より遅いことがある（初めは「許可なし」）。分かったときに入れ直す
+            .onChange(of: push.isAuthorized) { _, _ in scheduleSeasonReminder() }
+            .onChange(of: push.isEnabled) { _, _ in scheduleSeasonReminder() }
             .onChange(of: auth.userId) { _, userId in
                 openedBooks = opened.ids(for: userId)
                 wishedKeys = wishlist.spotIds
@@ -149,8 +155,9 @@ struct HomeTopCardView: View {
                      line: daysUntil == 0
                         ? L("今日から · 1日目", "Starts today · Day 1")
                         : L("出発まで \(daysUntil) 日", daysUntil == 1 ? "1 day to go" : "\(daysUntil) days to go"),
-                     detail: plan.itemCount > 0 ? TripPlanText.placeCount(plan.itemCount) : nil,
-                     backdrop: nil, inCarousel: inCarousel)
+                     // 前日と当日は、予定した撮影スポットの光の時刻（当日モード・`TripLight`）
+                     detail: tripLight(plan) ?? (plan.itemCount > 0 ? TripPlanText.placeCount(plan.itemCount) : nil),
+                     backdrop: nil, detailTruncation: .tail, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .onTrip(let plan, let dayNumber):
@@ -160,10 +167,10 @@ struct HomeTopCardView: View {
                 card(eyebrow: "ON TRIP", eyebrowLabel: L("旅の最中", "On a trip"),
                      title: planTitle(plan),
                      line: L("\(dayNumber)日目 · 写真を投稿する", "Day \(dayNumber) · Post a photo"),
-                     detail: nil,
+                     detail: tripLight(plan),
                      backdrop: nil,
                      // 押すと投稿画面が開く（別の画面へ進む「›」ではない）
-                     trailingSymbol: "plus", inCarousel: inCarousel)
+                     trailingSymbol: "plus", detailTruncation: .tail, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .bookReady(let trip):
@@ -249,7 +256,8 @@ struct HomeTopCardView: View {
 
     private func card(eyebrow: String, eyebrowLabel: String, title: String, line: String,
                       detail: String?, backdrop: Photo?, backdropURL: URL? = nil,
-                      trailingSymbol: String = "chevron.right", inCarousel: Bool) -> some View {
+                      trailingSymbol: String = "chevron.right", detailTruncation: Text.TruncationMode = .middle,
+                      inCarousel: Bool) -> some View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(eyebrow)
@@ -274,7 +282,9 @@ struct HomeTopCardView: View {
                         .font(.footnote)
                         .foregroundStyle(WebTheme.muted)
                         .lineLimit(2)
-                        .truncationMode(.middle)
+                        // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
+                        // （名前が長くても、先頭の「明日 · 名前 · マジックアワー」を残す）
+                        .truncationMode(detailTruncation)
                 }
             }
             Spacer(minLength: 0)
@@ -321,6 +331,13 @@ struct HomeTopCardView: View {
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
+    /// 当日モードの小さい行（今日か明日の撮影スポットの光の時刻）。当たらなければ nil
+    private func tripLight(_ plan: TripPlan) -> String? {
+        guard let today = HomeTopCard.today(Date(), in: .current),
+              let entry = TripLight.entry(plan: plan, today: today, spots: spots) else { return nil }
+        return TripLight.line(entry)
+    }
+
     private func planTitle(_ plan: TripPlan) -> String {
         let title = plan.title.trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? L("旅行プラン", "Trip plan") : title
@@ -343,6 +360,17 @@ struct HomeTopCardView: View {
         let fetched = try? await environment.spots.fetchIndex()
         guard !Task.isCancelled, let fetched else { return }
         spots = fetched
+        scheduleSeasonReminder()
+    }
+
+    /// 見頃のお知らせ（次の季節の始まりに1件だけ・端末の中だけ・`SeasonReminder`）を入れ替える。
+    /// 索引が取れたとき・ホームに戻ったとき（「行きたい」を変えたかもしれない）に呼ぶ。
+    /// 索引が取れていない間は触らない（空の索引で前の予約を消さない）
+    private func scheduleSeasonReminder() {
+        guard !spots.isEmpty else { return }
+        let plan = SeasonReminder.plan(now: Date(), spots: spots, wishlist: wishlist.spotIds, calendar: SeasonReminder.calendar)
+        let allowed = auth.userId != nil && push.isEnabled && push.isAuthorized
+        Task { await SeasonReminderScheduler.shared.reschedule(plan, allowed: allowed) }
     }
 
     /// 今日の一問。**取れなかった日は札を出さない**（404・圏外とも）。静的な JSON なので

@@ -30,7 +30,8 @@ struct TripPlanService {
     }
     static let daysMax = 60
     static let itemsPerDayMax = 20
-    /// 項目に添えるひとこと（`TRIP_NOTE_MAX`）。**入れる画面はまだ無い**（Web にも無い）
+    /// 項目に添えるひとこと（`TRIP_NOTE_MAX`）。入れる画面は `TripPlanDetailView` の項目の「…」
+    /// （2026-09-30・規則は `TripPlanEdit.setNote`）。Web にはまだ無い
     static let noteMax = 200
 
     private func encoded(_ value: String) -> String {
