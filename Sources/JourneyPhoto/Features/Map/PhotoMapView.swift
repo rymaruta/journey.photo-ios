@@ -1066,7 +1066,7 @@ struct PhotoMapView: View {
                 if let spot = model.officialSpot(for: pin) {
                     NavigationLink {
                         OfficialSpotView(spot: spot, spots: model.officialSpots, photos: model.photos,
-                                         photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed, photos: model.photos))
+                                         photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
                     } label: {
                         Label(L("スポットを見る", "See spot"), systemImage: "mappin.and.ellipse")
                             .font(.subheadline.weight(.semibold))
@@ -1369,7 +1369,7 @@ struct PhotoMapView: View {
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                             NavigationLink {
                                 OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos,
-                                                 photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed, photos: model.photos))
+                                                 photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
                             } label: {
                                 spotRow(row, divider: index > 0)
                             }
@@ -1586,7 +1586,7 @@ struct PhotoMapView: View {
                 ForEach(section.spots) { row in
                     NavigationLink {
                         OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos,
-                                         photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed, photos: model.photos))
+                                         photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
                     } label: {
                         spotRow(row, divider: true)
                     }
