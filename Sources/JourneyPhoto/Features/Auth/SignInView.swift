@@ -230,6 +230,8 @@ struct SignInView: View {
                         .webTappable()
                 }
                 .buttonStyle(.plain)
+                // 送信中は押させない（あとから返った答えで画面が引き戻される）
+                .disabled(auth.isWorking)
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
@@ -255,6 +257,7 @@ struct SignInView: View {
                     .jpPillButton(.outline)
             }
             .buttonStyle(.plain)
+            .disabled(auth.isWorking)
         }
     }
 
@@ -594,6 +597,7 @@ struct SignInView: View {
                 Text(L("ログインに戻る", "Back to sign in")).jpPillButton(.outline)
             }
             .buttonStyle(.plain)
+            .disabled(auth.isWorking)
         }
     }
 
