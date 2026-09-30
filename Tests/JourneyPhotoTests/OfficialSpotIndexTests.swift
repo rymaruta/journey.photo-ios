@@ -65,6 +65,14 @@ final class OfficialSpotIndexTests: XCTestCase {
                        ["mont-saint-michel"])
     }
 
+    /// 国が「日本」の行は国では当てない（「本」で国内のほぼ全部が当たる）
+    func testJapanIsNotMatchedAsCountry() throws {
+        let json = "{\"spotId\":\"sp_x\",\"slug\":\"x\",\"name\":\"X\","
+            + "\"stage\":\"review\",\"region\":{\"country\":\"日本\",\"prefecture\":\"香川県\"}}"
+        let x = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(json.utf8))
+        XCTAssertTrue(OfficialSpotIndex.matches([x], query: "本").isEmpty)
+    }
+
     /// **名前で当たったものが先。** 地域だけで当たったものはその後ろ
     func testNameMatchesComeFirst() throws {
         let spots = [

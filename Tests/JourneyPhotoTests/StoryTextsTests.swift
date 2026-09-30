@@ -56,6 +56,33 @@ final class StoryTextsTests: XCTestCase {
         XCTAssertEqual(StoryTextItem.normalizeRotate(nil), 0)
     }
 
+    /// 🔴 **下のひとことは、文字の項目が在るときだけ隠す**（Web の `hasStoryTextItem` と同じ）。
+    /// 投票・スタンプだけの1本は、サーバーが送られた `caption` を保存する（photo-gallery #257）。
+    /// `texts` が1つでもあれば隠していたので、新しい形の投稿のひとことが消えていた
+    func testBottomCaptionHidesOnlyForTextItems() throws {
+        let vote = #"{"kind":"vote","question":"好き？","options":["はい","いいえ"]}"#
+        let stamp = #"{"kind":"stamp","stamp":"heart"}"#
+        // 投票だけ → 出す
+        let voteOnly = try story(#","caption":"夕方の港","texts":["# + vote + "]")
+        XCTAssertFalse(StoryTextItem.hasTextItem(voteOnly.texts))
+        XCTAssertEqual(StoryTextItem.bottomCaption(voteOnly.caption, texts: voteOnly.texts), "夕方の港")
+        // スタンプだけ → 出す
+        let stampOnly = try story(#","caption":"夕方の港","texts":["# + stamp + "]")
+        XCTAssertFalse(StoryTextItem.hasTextItem(stampOnly.texts))
+        XCTAssertEqual(StoryTextItem.bottomCaption(stampOnly.caption, texts: stampOnly.texts), "夕方の港")
+        // 文字の項目＋投票（1.0.39 の形）→ 出さない（写真の上の文字と二重になる）
+        let old = try story(#","caption":"夕方の港","texts":[{"kind":"text","text":"夕方の港"},"# + vote + "]")
+        XCTAssertTrue(StoryTextItem.hasTextItem(old.texts))
+        XCTAssertNil(StoryTextItem.bottomCaption(old.caption, texts: old.texts))
+        // kind の無い文字も文字の項目
+        let bare = try story(#","caption":"港","texts":[{"text":"港"}]"#)
+        XCTAssertNil(StoryTextItem.bottomCaption(bare.caption, texts: bare.texts))
+        // texts が空 → 出す。空のひとことは出さない
+        XCTAssertEqual(StoryTextItem.bottomCaption("港", texts: []), "港")
+        XCTAssertNil(StoryTextItem.bottomCaption("", texts: []))
+        XCTAssertNil(StoryTextItem.bottomCaption(nil, texts: []))
+    }
+
     /// 投票は1投稿に1つだけ（2つ目以降は落とす・Web と同じ）
     func testOnlyOneVote() throws {
         let s = try story(#","texts":[{"kind":"vote","question":"1","options":["a","b"]},{"kind":"vote","question":"2","options":["c","d"]}]"#)

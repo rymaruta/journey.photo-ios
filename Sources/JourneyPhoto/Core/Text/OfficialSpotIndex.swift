@@ -42,7 +42,8 @@ enum OfficialSpotIndex {
 
     private static func regionMatches(_ spot: OfficialSpot, needle: String) -> Bool {
         // 国は日本の外の行だけに載る（Web の「さがす」も国で当てる・`lib/data/spotSearchFeed.ts`）
-        [spot.region?.country, spot.region?.prefecture, spot.region?.city]
+        // 「日本」は当てない——索引に載ると「本」で国内のほぼ全部が当たる（Web の `regionLabel` も外す）
+        [spot.region?.country == "日本" ? nil : spot.region?.country, spot.region?.prefecture, spot.region?.city]
             .compactMap { $0 }
             .contains { MapSearch.fold($0).contains(needle) }
     }

@@ -130,6 +130,8 @@ struct UploadView: View {
                     .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
             }
             .buttonStyle(.plain)
+            // 送っている間は外せない——送信は1枚ごとに `spot` を読むので、束の途中で紐付けが割れる
+            .disabled(model.isWorking)
             .accessibilityLabel(L("撮影スポットの紐付けを外す", "Don't link to this spot"))
         }
         .padding(.horizontal, 14)

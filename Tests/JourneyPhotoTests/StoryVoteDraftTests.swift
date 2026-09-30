@@ -45,7 +45,37 @@ final class StoryVoteDraftTests: XCTestCase {
         XCTAssertEqual(v.y, 0.6, accuracy: 1e-9)
         let far = StoryVoteDraft.new().moved(by: CGSize(width: 9999, height: 9999), in: CGSize(width: 400, height: 800))
         XCTAssertEqual(far.x, 0.94, accuracy: 1e-9)
-        XCTAssertEqual(far.y, 0.94, accuracy: 1e-9)
+        XCTAssertEqual(far.y, StoryVoteDraft.maxY, accuracy: 1e-9)
+        let top = StoryVoteDraft.new().moved(by: CGSize(width: 0, height: -9999), in: CGSize(width: 400, height: 800))
+        XCTAssertEqual(top.y, 0.06, accuracy: 1e-9)
+    }
+
+    /// 🔴 **投票は y 0.7 より下へ動かせない**——下のひとことの欄・撮影地・曲の行に重なる
+    /// （y > 約0.75 から）。見えている範囲がもっと下まであっても挟む。既定の y は 0.7 のまま
+    func testVoteStaysAboveTheCaptionBlock() throws {
+        XCTAssertEqual(StoryVoteDraft.maxY, 0.7)
+        XCTAssertEqual(StoryVoteDraft.new().y, 0.7)
+        let down = StoryVoteDraft.new().moved(by: CGSize(width: 0, height: 160), in: CGSize(width: 400, height: 800))
+        XCTAssertEqual(down.y, 0.7, accuracy: 1e-9)
+        let photo = CGRect(x: 0, y: 0, width: 400, height: 800)
+        let visible = try XCTUnwrap(StoryVoteDraft.visibleRange(photo: photo, canvas: CGSize(width: 400, height: 800)))
+        XCTAssertGreaterThan(visible.y.upperBound, 0.7)
+        let far = StoryVoteDraft.new().moved(by: CGSize(width: 0, height: 9999), in: photo.size, visible: visible)
+        XCTAssertEqual(far.y, 0.7, accuracy: 1e-9)
+        // 上へは動かせる
+        let up = StoryVoteDraft.new().moved(by: CGSize(width: 0, height: -80), in: photo.size, visible: visible)
+        XCTAssertEqual(up.y, 0.6, accuracy: 1e-9)
+    }
+
+    /// 前の版で `maxY` より下に置いた下書き: 描く位置も送る位置も `maxY`。少し動かしても跳ばない
+    func testOldDraftBelowTheLimitIsDrawnAndSentAtTheLimit() {
+        var old = StoryVoteDraft.new()
+        old.y = 0.9
+        guard case .vote(let drawn) = old.asItem else { return XCTFail("投票として描いていない") }
+        XCTAssertEqual(drawn.place.y, 0.7, accuracy: 1e-9)
+        XCTAssertEqual(StoryPostText.vote(old).y, 0.7, accuracy: 1e-9)
+        let nudged = old.moved(by: CGSize(width: 0, height: -8), in: CGSize(width: 400, height: 800))
+        XCTAssertEqual(nudged.y, 0.69, accuracy: 1e-9, "描いている位置から動いていない（跳んでいる）")
     }
 
     /// 🔴 **投票を送る1本は、ひとことも文字として送る**——`texts` を送るとサーバーは `caption` を
