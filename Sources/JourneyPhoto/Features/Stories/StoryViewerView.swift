@@ -831,6 +831,10 @@ struct StoryViewerView: View {
         case .restart:
             // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
             clock.restart(running: !frozen && !(current?.isVideo ?? false), at: Date())
+            // **控えていた終わりを捨てる**（`StoryPlayback.afterRestart`）。読めなかった動画は
+            // 見直しの合図を受けて終わりを知らせ直す（`StoryPlayback.restartAction`）
+            (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
+                                                                currentId: current?.id)
             restartCount += 1
             syncSong(restart: true)
         case .previous(let target):
@@ -1562,20 +1566,20 @@ struct StoryViewerView: View {
 
     private func replyRow(_ item: StoryReply) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            if let uid = item.uid {
+            if let uid = item.profileUserId {
                 NavigationLink {
                     UserProfileView(userId: uid)
                 } label: {
-                    RemoteImage(url: UserProfile.profileAssetURL(userId: uid, suffix: nil, cacheBust: nil),
-                                placeholderSymbol: "person.crop.circle.fill")
-                        .frame(width: 40, height: 40)
-                        .clipShape(Circle())
+                    replyAvatar(uid)
                 }
-                .accessibilityLabel(L("\(item.name ?? "") のプロフィール", "\(item.name ?? "")'s profile"))
+                .accessibilityLabel(L("\(item.displayName) のプロフィール", "\(item.displayName)'s profile"))
+            } else if let uid = item.uid {
+                // **退会した人はその人のページへ行かせない**（`StoryInsightsView` の行と同じ）。顔だけ出す
+                replyAvatar(uid)
             }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(item.name ?? L("だれか", "Someone"))
+                    Text(item.displayName)
                         .font(.system(size: 14, weight: .semibold))
                     if let ago = StoryPlayback.ago(from: item.t) {
                         Text(ago)
@@ -1594,6 +1598,13 @@ struct StoryViewerView: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
         }
+    }
+
+    private func replyAvatar(_ uid: String) -> some View {
+        RemoteImage(url: UserProfile.profileAssetURL(userId: uid, suffix: nil, cacheBust: nil),
+                    placeholderSymbol: "person.crop.circle.fill")
+            .frame(width: 40, height: 40)
+            .clipShape(Circle())
     }
 
     /// 投票スタンプに票を入れる。**入れたあとの数をすぐ見せる**（一覧の読み直しを待たない）

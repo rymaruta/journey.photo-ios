@@ -391,8 +391,21 @@ struct StoryReply: Decodable, Identifiable, Equatable {
     /// これを `text` ではなく `emoji` に入れて返す——見ていないと**空行**になる
     let emoji: String?
     let t: String?
+    /// 返信した人が退会している（`storyReplies.ts` が読むときに立てる）。
+    /// 見た人の一覧（`StoryViewer.deleted`）と同じ扱い——**その人のページへは行かせない**
+    let deleted: Bool?
 
     var id: String { rawId ?? [(uid ?? ""), (t ?? "")].joined(separator: "|") }
+
+    /// 行から行ける人のページ。**退会した人は nil**（ページはもう無い。`StoryInsightsView` の
+    /// 退会した人の行が押せないのと同じ）
+    var profileUserId: String? { deleted == true ? nil : uid }
+
+    /// 出す名前。退会した人は端末の言葉で「退会したユーザー」（`StoryViewer.name` と同じ）
+    var displayName: String {
+        if deleted == true { return Labels.Common.deletedUser }
+        return name ?? L("だれか", "Someone")
+    }
 
     /// 画面に出す中身。絵文字の反応は `emoji` に入っている。
     var body: String { (text?.isEmpty == false ? text : nil) ?? emoji ?? "" }
@@ -403,7 +416,7 @@ struct StoryReply: Decodable, Identifiable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case rawId = "id"
-        case uid, name, text, emoji, t
+        case uid, name, text, emoji, t, deleted
     }
 }
 

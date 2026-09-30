@@ -179,6 +179,33 @@ enum StoryPlayback {
         return .previous(index - 1)
     }
 
+    /// 頭から見直したときの終わりの控え（`pendingEnd`）と受け取った印（`endedIds`）。
+    ///
+    /// **控えは捨て、いまの1本の印も外す。** 知らせが出ている間に動画が終わると控えに入る。
+    /// そのまま見直すと、知らせが消えたときに控えが効き、見直している途中の動画が次へ
+    /// 飛ばされた。印を外すのは、見直した回の終わりをもう一度受けるため。
+    /// **読めなかった動画**はもう終わりを知らせてこないので、見直しの合図を受けた側が
+    /// 知らせ直す（`restartAction`）——控えを捨てても止まったままにならない
+    static func afterRestart(pendingEnd: String?, endedIds: Set<String>,
+                             currentId: String?) -> (pendingEnd: String?, endedIds: Set<String>) {
+        var ended = endedIds
+        if let currentId { ended.remove(currentId) }
+        return (nil, ended)
+    }
+
+    enum RestartAction: Equatable {
+        /// 0 へ戻して鳴らし直す
+        case seekToStart
+        /// 読めなかった動画。**終わりをもう一度知らせる**（見直しで控えが捨てられたので、
+        /// 知らせないと黒い画面のまま進まない）
+        case reportEnd
+    }
+
+    /// 動画が見直しの合図（`restartToken`）を受けたときにすること
+    static func restartAction(mediaFailed: Bool) -> RestartAction {
+        mediaFailed ? .reportEnd : .seekToStart
+    }
+
     // MARK: - スワイプ
 
     /// スワイプで何をするか。

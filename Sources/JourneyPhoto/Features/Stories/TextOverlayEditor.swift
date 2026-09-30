@@ -459,6 +459,8 @@ struct OverlayPanel: View {
                                 .font(.system(size: 16))
                                 .foregroundStyle(.white)
                                 .frame(width: 44, height: 44)
+                                // `.plain` は描いた所しか押せない。枠の 44 全体を押せる所にする
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(L("キーボードを閉じる", "Hide keyboard"))
@@ -697,6 +699,8 @@ struct VotePanel: View {
                             .font(.system(size: 16))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
+                            // `.plain` は描いた所しか押せない。枠の 44 全体を押せる所にする
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("キーボードを閉じる", "Hide keyboard"))
@@ -724,6 +728,7 @@ struct VotePanel: View {
                         .foregroundStyle(WebTheme.danger)
                         .frame(minHeight: 44)
                         .padding(.horizontal, 12)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
