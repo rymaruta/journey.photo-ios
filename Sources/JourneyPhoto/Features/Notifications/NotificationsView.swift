@@ -586,6 +586,8 @@ final class NotificationsViewModel: ObservableObject {
 
     /// - Parameter refreshing: 引っぱって読み直した回。**このときだけ**未読の点を
     ///   サーバーの数で入れ替える（`apply` を参照）
+    /// - Returns: 読めて、未読を既読にできた（または未読が無かった）か。
+    ///   呼び側はこれが true のときだけアイコンの数を消す
     func load(environment: AppEnvironment, viewerId: String?, refreshing: Bool = false) async -> Bool {
         let generation = beginLoad()
         let era = userEra
@@ -621,11 +623,15 @@ final class NotificationsViewModel: ObservableObject {
             // 🔴 **人が替わっていたら既読にしない。** 既読化は今のトークンで送るので、
             // 前の人の読み込みの続きが送ると、**次の人のお知らせ**が黙って既読になる
             if page.unread > 0, era == userEra {
-                if (try? await environment.notifications.markRead()) != nil {
+                let marked = (try? await environment.notifications.markRead()) != nil
+                if marked {
                     NotificationRouter.shared.noteRead(owner: viewerId)
                 }
                 // 既読化を待つ間に人が替わっていたら、次の人の未読の数を消さない
                 if era == userEra { unread = 0 }
+                // **既読にできなかった回はアイコンの数を消させない**（呼び側の `clearBadge`）。
+                // サーバーとベルは未読のままなので、アイコンだけ 0 に割れる
+                return marked
             }
             return true
         } catch {

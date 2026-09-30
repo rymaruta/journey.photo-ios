@@ -1751,6 +1751,29 @@ final class ViewModelTests: XCTestCase {
 
         XCTAssertEqual(model.albums.map { $0.id }, ["mine", "joined"])
     }
+
+    /// 🔴 **お知らせ: 既読にできなかった回は、アイコンの数を消させない。**
+    /// 既読化（`PUT /user/notifications`）が失敗しても `load` が true を返し、
+    /// 呼び側の `clearBadge` でアイコンだけ 0 になっていた（サーバーとベルは未読のまま）
+    func testNotificationsLoadReportsFailedMarkRead() async {
+        let page = #"{"items":[{"type":"like","byId":"a","photoId":"p","t":"2026-09-21T10:00:00.000Z"}],"unread":1}"#
+        for (putStatus, expected) in [(500, false), (200, true)] {
+            prepare()
+            // 公開一覧・自分の写真・お知らせは読める。最後（既読化）だけ `putStatus`
+            StubProtocol.respondInOrder([(200, page), (200, page), (200, page), (putStatus, "{}")])
+            let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                     gallery: PublicGalleryService(
+                                        url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                        session: session,
+                                        snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                     api: api())
+            let model = NotificationsViewModel()
+            let ok = await model.load(environment: env, viewerId: nil)
+            XCTAssertEqual(StubProtocol.requests.last, "PUT /user/notifications")
+            XCTAssertEqual(model.rows.count, 1)
+            XCTAssertEqual(ok, expected, "既読化 \(putStatus) の回の返り値が違う（false でないとアイコンだけ 0 になる）")
+        }
+    }
 }
 
 /// お知らせを押したときの行き先。**空振りを作らない。**
