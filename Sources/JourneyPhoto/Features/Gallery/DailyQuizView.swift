@@ -31,6 +31,9 @@ struct DailyQuizView: View {
     @State private var attempt = 0
     /// ガイドへ飛ぶための索引（答えのスポットを slug で引く）。取れなければ「ガイドを見る」を出さない
     @State private var spots: [OfficialSpot] = []
+    /// この画面が見えているか。**ガイドを開いている間は日付が変わっても読み直さない**——結果の欄ごと
+    /// 消すと、そこから開いたガイドが閉じる。戻ってきたとき（`onAppear`）に確かめる
+    @State private var isShown = false
 
     private let answers = QuizAnswers()
 
@@ -54,14 +57,22 @@ struct DailyQuizView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: attempt) { await fetch() }
         .task { await loadSpots() }
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            // 読み直す間は読み込み中に戻す（昨日の問題を押させない）
-            if shownDate != nil, DailyQuiz.today() != shownDate {
-                load = .loading
-                attempt &+= 1
-            }
+        .onAppear {
+            isShown = true
+            reloadIfDayChanged()
         }
+        .onDisappear { isShown = false }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, isShown else { return }
+            reloadIfDayChanged()
+        }
+    }
+
+    /// 日付が変わっていたら読み直す。読み直す間は読み込み中に戻す（昨日の問題を押させない）
+    private func reloadIfDayChanged() {
+        guard shownDate != nil, DailyQuiz.today() != shownDate else { return }
+        load = .loading
+        attempt &+= 1
     }
 
     private var shownDate: String? {

@@ -445,6 +445,20 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(plain, ["inSeason", "theme"])
     }
 
+    /// 「行きたい」の札も同じ（答えのスポットが行きたい場所に入っている日）
+    func testWishlistCardForTheAnswerSpotIsHiddenThatDay() throws {
+        let answerSpot = try spot("sp_000000000002")
+        let slots = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [answerSpot], wishlist: [SavedSpotKey.official(answerSpot.slug)],
+                                      quiz: try quiz(), timeZone: utc).map(\.slot)
+        XCTAssertFalse(slots.contains("wishlistSeason"))
+        XCTAssertFalse(slots.contains("inSeason"))
+        let plain = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [answerSpot], wishlist: [SavedSpotKey.official(answerSpot.slug)],
+                                      timeZone: utc).map(\.slot)
+        XCTAssertTrue(plain.contains("wishlistSeason"), "問題が無い日は出す（試験の前提）")
+    }
+
 }
 
 /// 札から開いた一冊の印（`OpenedTripBooks`）
