@@ -494,8 +494,7 @@ struct StoryCanvas: View {
                         if !twoFingerActive { carriedId = nil }
                     }
             )
-            // 押すと選ぶ（直す・消すのも同じ入口）。
-            // **時刻と日付も押せる**——直せないが、消す口はここにしか無い
+            // 押すと打ち直す（呼ぶ側が決める・スタンプ以外）。消すのはゴミ箱
             .onTapGesture { onTap(overlay) }
             .accessibilityLabel(overlay.text)
             // VoiceOver では指で運べないので、消す操作を別に出す
@@ -583,7 +582,7 @@ struct StoryCanvas: View {
     }
 }
 
-/// 写真の上の丸いチップ（選ぶと白地に墨・板 24b）
+/// 丸いチップ（選ぶと白地に墨）。書体の列と、札とスタンプのトレイ（`StickerTray`）が使う
 struct OverlayChip: View {
     let title: String
     var systemImage: String? = nil
@@ -616,7 +615,7 @@ struct OverlayChip: View {
 
 /// 書体の列（8種・横に流す）。**選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を
 /// 開き直すと、列の頭が出て何を選んでいるか見えなかった・bfe5e12 のレビュー）。
-/// 下の操作欄と、写真の上で打つ画面（`StoryTextTypingView`）の両方が使う
+/// 写真の上で打つ画面（`StoryTextTypingView`）が使う
 struct OverlayFaceRow: View {
     @Binding var overlay: TextOverlay
 

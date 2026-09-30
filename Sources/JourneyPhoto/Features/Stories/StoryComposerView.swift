@@ -72,6 +72,13 @@ struct StoryComposerView: View {
     @State private var voteSelected = false
     /// 札とスタンプのトレイ（`StickerTray`）
     @State private var showStickerTray = false
+    /// トレイで選んだもの。**トレイが閉じ切ってから置く**（閉じる動きの最中に打つ画面を開くと、
+    /// キーボードが出ないことがある・bf7bb00 のレビュー）
+    @State private var pendingPick: StickerTray.Pick?
+
+    /// 投票の欄を開いている（足元と右の列を隠す——残すとキーボードで写真の枠が縮み、小さい画面で
+    /// 欄が上のバーに潜った・bf7bb00 のレビュー）
+    private var votePanelOpen: Bool { voteSelected && typingId == nil && vote.wrappedValue != nil }
     /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
     @FocusState private var captionFocused: Bool
     /// 撮影地を打つ（右の列の「撮影地」）
@@ -144,7 +151,9 @@ struct StoryComposerView: View {
             VStack(spacing: 0) {
                 photoArea
                     .ignoresSafeArea(edges: .top)
-                footer
+                if !votePanelOpen {
+                    footer
+                }
             }
             // 打っている間は後ろを読ませない（VoiceOver で投稿・他の札へ移れた）
             .accessibilityHidden(typingId != nil)
@@ -165,13 +174,20 @@ struct StoryComposerView: View {
         }
         // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showStickerTray) {
-            StickerTray(count: overlays.wrappedValue.count, hasVote: vote.wrappedValue != nil) { pick in
-                showStickerTray = false
+        .sheet(isPresented: $showStickerTray, onDismiss: {
+            if let pick = pendingPick {
+                pendingPick = nil
                 place(pick)
+            }
+        }) {
+            StickerTray(count: overlays.wrappedValue.count, hasVote: vote.wrappedValue != nil) { pick in
+                pendingPick = pick
+                showStickerTray = false
             }
             .presentationDetents([.medium, .large])
         }
+        // 写真を切り替えたら投票の欄を閉じる（別の写真の投票の欄が出たままになった）
+        .onChange(of: current) { _, _ in voteSelected = false }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { picked in applySong(picked) }
@@ -332,7 +348,7 @@ struct StoryComposerView: View {
                 .allowsHitTesting(false)
         }
         .overlay(alignment: .topTrailing) {
-            if typingId == nil && preview != nil {
+            if typingId == nil && !votePanelOpen && preview != nil {
                 toolColumn
                     .padding(.trailing, 12)
                     .padding(.top, 120)
@@ -344,7 +360,7 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .leading) {
-            if typingId == nil && preview != nil {
+            if typingId == nil && !votePanelOpen && preview != nil {
                 captionBlock
                     .padding(.leading, 36)
                     .padding(.trailing, 70)
@@ -356,7 +372,7 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if typingId == nil && preview != nil {
+            if typingId == nil && !votePanelOpen && preview != nil {
                 mediaStrip
                     .padding(.leading, 16)
                     .padding(.bottom, 20)
@@ -368,7 +384,7 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if typingId == nil && preview != nil {
+            if typingId == nil && !votePanelOpen && preview != nil {
                 durationMenu
                     .padding(.trailing, 16)
                     .padding(.bottom, 30)
@@ -380,7 +396,7 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if voteSelected, typingId == nil, vote.wrappedValue != nil {
+            if votePanelOpen {
                 VotePanel(vote: Binding(
                     get: { vote.wrappedValue ?? .new() },
                     set: { vote.wrappedValue = $0 }
@@ -388,6 +404,10 @@ struct StoryComposerView: View {
                     vote.wrappedValue = nil
                     voteSelected = false
                 }
+                // 札を運んでいる間は隠す（下のゴミ箱が欄の下に隠れた）
+                .opacity(draggingOverlay ? 0 : 1)
+                .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
             }
         }
         .background {
@@ -803,6 +823,12 @@ struct StoryComposerView: View {
             voteSelected = false
         case .kind(let kind):
             guard overlays.wrappedValue.count < TextOverlay.maxCount else { return }
+            // 曲を付けてあれば、その曲の札（右の列の「曲」と同じ札・打たなくてよい）
+            if kind == .song, let song, let sticker = SongSticker.make(for: song) {
+                overlays.wrappedValue.append(sticker)
+                voteSelected = false
+                return
+            }
             // 札（撮影地・曲など）は真ん中より少し下・ゴシックの帯（文字の札と重なりにくい）
             let overlay = TextOverlay(text: kind.initialText(), x: 0.5, y: 0.6, kind: kind, face: .gothic)
             overlays.wrappedValue.append(overlay)
