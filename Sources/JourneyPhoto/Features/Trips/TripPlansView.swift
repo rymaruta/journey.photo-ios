@@ -20,6 +20,8 @@ struct TripPlansView: View {
     @State private var showPicker = false
     /// 写真から選んで保存したプラン。**板が閉じ切ってから開く**（閉じている途中に積むと捨てられる）
     @State private var pickedPlanId: String?
+    /// 板を開く前に一覧が出していた失敗の文（閉じたらこれに戻す）
+    @State private var errorBeforePicker: String?
 
     var body: some View {
         Group {
@@ -74,8 +76,10 @@ struct TripPlansView: View {
             }
         }
         .fullScreenCover(isPresented: $showPicker, onDismiss: {
-            // 板の中の保存の失敗の文を、一覧に持ち帰らない（一覧と板で1つの model を共有している）
-            model.clearError()
+            // 板の中の保存の失敗の文を一覧に持ち帰らず、開く前の文（取り直しの失敗など）に戻す
+            // （一覧と板で1つの model を共有している）
+            model.errorMessage = errorBeforePicker
+            errorBeforePicker = nil
             guard let planId = pickedPlanId else { return }
             pickedPlanId = nil
             openedPlanId = planId
@@ -92,6 +96,7 @@ struct TripPlansView: View {
     /// 印の絵だけ真鍮（黒地の上の手がかり）
     private var pickerEntry: some View {
         Button {
+            errorBeforePicker = model.errorMessage
             showPicker = true
         } label: {
             HStack(spacing: 12) {

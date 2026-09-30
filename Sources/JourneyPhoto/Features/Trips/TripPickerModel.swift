@@ -37,6 +37,27 @@ final class TripPickerModel: ObservableObject {
     /// あとの保存が1段目からやり直しになり、同じプランが2つできた
     @Published var createdPlanId: String?
     @Published var createdTitle: String?
+    /// 下書きの題・日付・失敗の文も同じ理由でここに持つ（開き直しで消さない・
+    /// 本人が付けた題を案の題で上書きしない）
+    @Published var draftTitle = ""
+    @Published var draftStart: String?
+    @Published var draftEnd: String?
+    @Published var draftError: String?
+
+    /// この板の中で「行きたい」に足した場所（`spotId`）。**戻しても消さない**。
+    /// 「前から入っていたか」を控えの `contains` だけで決めると、足す→戻す（外す要求が列で待つ）
+    /// →また行きたい、で控えにまだ残っているため「前から」と読み、足さずに外していた
+    private var addedHere: Set<String> = []
+
+    /// 決める前に呼ぶ。控えに入っていても、**この板で足したものは「前から」ではない**
+    func wasWantedBefore(_ spotId: String, inWishlist: Bool) -> Bool {
+        inWishlist && !addedHere.contains(spotId)
+    }
+
+    /// 足す要求を列に積んだ
+    func markAdded(_ spotId: String) {
+        addedHere.insert(spotId)
+    }
 
     /// いまの札の位置（めくった数と同じ）
     var position: Int { decisions.count }

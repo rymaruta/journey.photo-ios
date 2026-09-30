@@ -20,11 +20,21 @@ struct TripPickerDraftView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
 
-    @State private var title = ""
-    @State private var start: String?
-    @State private var end: String?
     @State private var saving = false
-    @State private var errorText: String?
+
+    // 題・日付・失敗の文は `TripPickerModel` が持つ（開き直しで消さない）。ここは読み書きを流すだけ
+    private var start: String? {
+        get { picker.draftStart }
+        nonmutating set { picker.draftStart = newValue }
+    }
+    private var end: String? {
+        get { picker.draftEnd }
+        nonmutating set { picker.draftEnd = newValue }
+    }
+    private var errorText: String? {
+        get { picker.draftError }
+        nonmutating set { picker.draftError = newValue }
+    }
 
     private var groups: [[OfficialSpot]] { TripPicker.grouped(picker.picked) }
     private var days: [[OfficialSpot]] {
@@ -38,8 +48,8 @@ struct TripPickerDraftView: View {
                 header
                 titleField
                 HStack(spacing: 10) {
-                    dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
-                    dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
+                    dateField(L("出発", "From"), value: $picker.draftStart, fallback: end, isStart: true)
+                    dateField(L("帰着", "To"), value: $picker.draftEnd, fallback: start, isStart: false)
                 }
                 Text(dateNote)
                     .font(.caption)
@@ -96,14 +106,14 @@ struct TripPickerDraftView: View {
     }
 
     private var titleField: some View {
-        TextField(suggestedTitle, text: $title)
+        TextField(suggestedTitle, text: $picker.draftTitle)
             .font(.body)
             .foregroundStyle(WebTheme.foreground)
             .submitLabel(.done)
             // **上限で止める**（一覧の「作る」と同じ）
-            .onChange(of: title) { old, new in
+            .onChange(of: picker.draftTitle) { old, new in
                 let kept = PostLimits.limited(old: old, new: new, limit: TripPlanService.titleMax)
-                if kept != new { title = kept }
+                if kept != new { picker.draftTitle = kept }
             }
             .accessibilityLabel(L("旅行プランのタイトル", "Trip title"))
             .padding(.horizontal, 14)
@@ -285,7 +295,7 @@ struct TripPickerDraftView: View {
 
     private func save() {
         guard canSave else { return }
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = picker.draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let sendTitle = TripPlanService.titleToSend(trimmed.isEmpty ? suggestedTitle : trimmed)
         // **押した時点の日程を送る**（待っている間に外した場所は次の保存で）
         let sendDays = TripPicker.tripDays(days)

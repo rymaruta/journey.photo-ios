@@ -81,7 +81,7 @@ struct TripPickerView: View {
                         intro
                         card(spot)
                             // 大きい文字の小さい端末でも写真を潰さない
-                            .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
+                            .frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
                         caption(spot)
                     }
                     .padding(.horizontal, 16)
@@ -314,10 +314,11 @@ struct TripPickerView: View {
 
     private func commit(_ choice: TripPickerModel.Choice) {
         dragX = 0
-        let key = model.current.map { SavedSpotKey.official($0.slug) } ?? ""
-        let wasWanted = !key.isEmpty && wishlist.contains(key)
-        guard let spot = model.decide(choice, alreadyWanted: wasWanted), choice == .want,
-              !wasWanted, key == SavedSpotKey.official(spot.slug) else { return }
+        guard let current = model.current else { return }
+        let key = SavedSpotKey.official(current.slug)
+        let wasWanted = model.wasWantedBefore(current.spotId, inWishlist: wishlist.contains(key))
+        guard model.decide(choice, alreadyWanted: wasWanted) != nil, choice == .want, !wasWanted else { return }
+        model.markAdded(current.spotId)
         let store = wishlist
         let service = environment.savedSpots
         model.enqueueWish {

@@ -101,6 +101,15 @@ final class TripPickerModelTests: XCTestCase {
         XCTAssertEqual(model.picked.count, 1)
     }
 
+    /// 足す→戻す（外す要求が待っている）→また行きたい: 控えにまだ残っていても「前から」と読まない
+    func testPlacesAddedHereAreNeverTreatedAsAlreadyWanted() async {
+        let model = TripPickerModel()
+        XCTAssertFalse(model.wasWantedBefore("sp_a", inWishlist: false))
+        XCTAssertTrue(model.wasWantedBefore("sp_b", inWishlist: true))
+        model.markAdded("sp_a")
+        XCTAssertFalse(model.wasWantedBefore("sp_a", inWishlist: true))
+    }
+
     // MARK: - 3. 上限
 
     func testWantStopsAtPickMaxButPassStillWorks() async throws {
