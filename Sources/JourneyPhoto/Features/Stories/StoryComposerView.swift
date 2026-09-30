@@ -187,7 +187,10 @@ struct StoryComposerView: View {
             }
         }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
-            TextField(L("撮影地（任意）", "Place (optional)"), text: $placeDraft)
+            // サーバーが 200 で切る（`sanitizeText(location, 200)`）。画面で止める
+            TextField(L("撮影地（任意）", "Place (optional)"), text: Binding(
+                get: { placeDraft },
+                set: { placeDraft = PostLimits.limited(old: placeDraft, new: $0, limit: PostLimits.location) }))
             Button(L("決める", "Set")) { location = placeDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
             if !location.isEmpty {
                 Button(L("外す", "Remove"), role: .destructive) { location = "" }
@@ -462,7 +465,11 @@ struct StoryComposerView: View {
             TextField(L("ひとことを書く", "Write a caption"), text: Binding(
                 get: { caption },
                 // サーバーが 200字で切る（`stories.ts`）。**改行は入れない**（見る画面は1段落）
-                set: { caption = String($0.replacingOccurrences(of: "\n", with: " ").prefix(200)) }
+                // 数え方はサーバーと同じ UTF-16（`PostLimits.limited`）。字で数えると絵文字の入った文が
+                // 黙って切られた。改行の置き換えは先に（置き換えたあとの長さで止める）
+                set: { caption = PostLimits.limited(old: caption,
+                                                    new: $0.replacingOccurrences(of: "\n", with: " "),
+                                                    limit: PostLimits.storyCaption) }
             ), axis: .vertical)
                 .focused($captionFocused)
                 .font(JPFont.display(32, relativeTo: .largeTitle))
@@ -554,7 +561,7 @@ struct StoryComposerView: View {
         if textMode {
             // 板 24b: キャンセル／文字と札／完了（owner: 「やめる・できた」は幼い）
             HStack {
-                Button(L("キャンセル", "Cancel")) {
+                Button {
                     // **入ったときの写真へ戻す**（表示中の写真が移っていても取り違えない）
                     if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
                         shots[i].overlays = overlaySnapshot
@@ -562,25 +569,33 @@ struct StoryComposerView: View {
                         shots[i].vote = voteSnapshot
                     }
                     leaveTextMode()
+                } label: {
+                    // 44 と余白は label の中に置き、`contentShape` で枠ごと押せる所にする
+                    // （`.plain` は描いた字しか押せない）
+                    Text(L("キャンセル", "Cancel"))
+                        .font(.system(size: 16))
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 10)
+                        .contentShape(Rectangle())
                 }
-                .font(.system(size: 16))
-                .frame(minHeight: 44)
-                .padding(.horizontal, 10)
                 Spacer()
                 Text(L("文字と札", "Text and stickers"))
                     .font(.system(size: 13))
                     .foregroundStyle(WebTheme.muted2)
                 Spacer()
-                Button(L("完了", "Done")) {
+                Button {
                     // 空のまま閉じたら置かない（見えない物を焼き込まない）
                     if let id = editingShotId, let i = shots.firstIndex(where: { $0.id == id }) {
                         shots[i].overlays.removeAll { $0.isEmpty }
                     }
                     leaveTextMode()
+                } label: {
+                    Text(L("完了", "Done"))
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 10)
+                        .contentShape(Rectangle())
                 }
-                .font(.system(size: 16, weight: .semibold))
-                .frame(minHeight: 44)
-                .padding(.horizontal, 10)
                 .accessibilityIdentifier("story.overlay.done")
             }
             .foregroundStyle(.white)
@@ -1075,7 +1090,9 @@ struct StoryComposerView: View {
                              vote: item.shot.vote)
         }
         current = 0
-        caption = draft.caption
+        // 古い下書き（字で数えていた頃）は 200 単位を超えていることがある。欄は超えたぶんを
+        // 減らす変更しか受けないので、読み込むときに一度だけ収める
+        caption = PostLimits.clamp(draft.caption, limit: PostLimits.storyCaption)
         location = draft.location
         // 流し始めは表示秒数に収めてから戻す（`restoredContent` もその値で撮る）。
         // 収まっていない下書きをそのまま戻すと、表示秒数が変わらない回は上限を越えたまま

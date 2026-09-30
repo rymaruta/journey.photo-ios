@@ -66,6 +66,17 @@ final class StoryVoteDraftTests: XCTestCase {
         XCTAssertNil(StoryPostText.list(vote: broken, caption: "港"))
     }
 
+    /// ひとことの文字は**サーバーと同じ UTF-16 で** 200 に収める（`STORY_TEXT_LEN_MAX` は `slice`）。
+    /// 字で数えると絵文字の文が 200 字入り、サーバーで黙って切られた。字の途中では切らない
+    func testCaptionTextIsClampedInUTF16() throws {
+        let flags = String(repeating: "🇯🇵", count: 60)   // 60 字・240 単位
+        let text = try XCTUnwrap(StoryPostText.caption(flags).text)
+        XCTAssertLessThanOrEqual(text.utf16.count, 200)
+        XCTAssertEqual(text, String(repeating: "🇯🇵", count: 50), "字の境目で切る（旗の途中で割らない）")
+        // 収まる文はそのまま
+        XCTAssertEqual(StoryPostText.caption("夕方の港").text, "夕方の港")
+    }
+
     /// 送る形の鍵はサーバーの `sanitizeStoryTexts` が読むもの。**無い項目は書かない**
     func testPostTextEncoding() throws {
         let vote = StoryPostText.vote(StoryVoteDraft(question: "Q", optionA: "A", optionB: "B", x: 2, y: 0.5, size: 1))

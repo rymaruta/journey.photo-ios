@@ -147,6 +147,25 @@ final class StoryPlaybackTests: XCTestCase {
     }
 
     /// 始まってすぐ（0.8秒以内）の左タップだけ前へ。それ以降は最初から。
+    /// 🔴 頭から見直したら、控えていた終わりを捨て、いまの1本の印も外す（見直している途中で
+    /// 次へ飛ばさない・見直した回の終わりをもう一度受ける）。ほかの1本の印は残す
+    func testRestartDropsThePendingEnd() {
+        let after = StoryPlayback.afterRestart(pendingEnd: "v1", endedIds: ["v1", "v0"], currentId: "v1")
+        XCTAssertNil(after.pendingEnd)
+        XCTAssertEqual(after.endedIds, ["v0"])
+    }
+
+    /// 🔴 読めなかった動画は終わりを二度と知らせない。見直しで控えを捨てたら、合図を受けた側が
+    /// **知らせ直す**——そうしないと黒い画面のまま進まない（fe1bcf4 のレビュー）
+    func testFailedVideoReportsItsEndAgainOnRestart() {
+        XCTAssertEqual(StoryPlayback.restartAction(mediaFailed: true), .reportEnd)
+        XCTAssertEqual(StoryPlayback.restartAction(mediaFailed: false), .seekToStart)
+        // 知らせ直した終わりは、見直しで印を外したので進める（止めていなければ）
+        let after = StoryPlayback.afterRestart(pendingEnd: "v1", endedIds: ["v1"], currentId: "v1")
+        XCTAssertFalse(after.endedIds.contains("v1"))
+        XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "v1", currentId: "v1", frozen: false), .advance)
+    }
+
     func testLeftTapRestartsUnlessJustStarted() {
         XCTAssertEqual(StoryPlayback.leftTap(index: 1, elapsed: 1.2), .restart)
         XCTAssertEqual(StoryPlayback.leftTap(index: 1, elapsed: 0.3), .previous(0))

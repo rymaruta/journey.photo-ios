@@ -109,9 +109,13 @@ struct StoryPostText: Codable, Equatable {
     /// ——投票だけを送ると、打ったひとことが消える。見る画面（アプリ・Web）も `texts` が
     /// あればひとことを出さないので、**ひとことも写真の上の文字として送る**。
     /// 置き場所は写真の下の方の真ん中、明朝・白・下地なし（アプリのひとことの見た目に近い）
+    ///
+    /// 長さは**サーバーと同じ UTF-16 で** 200 に収める（`storyText.ts` の `STORY_TEXT_LEN_MAX`
+    /// は `slice`＝UTF-16 で切る）。字（書記素）で数えると、絵文字の入った文がサーバーで
+    /// 黙って切られ、しかも `slice` は絵文字の途中で割る。字の境目で切る（`PostLimits.clamp`）
     static func caption(_ text: String) -> StoryPostText {
         StoryPostText(kind: "text", x: 0.5, y: 0.86, size: 0.05,
-                      text: String(text.prefix(TextOverlay.maxLength)), font: "mincho", color: "white", bg: "none")
+                      text: PostLimits.clamp(text, limit: TextOverlay.maxLength), font: "mincho", color: "white", bg: "none")
     }
 
     /// 1本ぶんの `texts`。投票が無ければ nil（送らない＝これまでと同じ）
