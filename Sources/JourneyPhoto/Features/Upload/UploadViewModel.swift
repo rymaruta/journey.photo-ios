@@ -237,6 +237,24 @@ final class UploadViewModel: ObservableObject {
         albums = mine + extra
     }
 
+    /// 最初から入れたタグ（今日のテーマの「参加する」）。**本人が書いたものではない**ので、
+    /// これと同じ間は書きかけに数えない（`hasDraft`）
+    var initialTagsText = ""
+
+    /// 閉じると消える書きかけがあるか。
+    ///
+    /// - **写真を選び始めたら**（読み込み中・カメラの準備中を含む。題・説明・撮影地は写真ごと）
+    /// - 写真の前でも入れられる欄（タグ・曲・アルバム・公開範囲・カテゴリ）を**変えたら**。
+    ///   写真ばかり見ていたので、写真を選ぶ前に入れたこれらが確認なしで消えていた（48b2481 のレビュー）
+    /// 最初から入っているタグ・スポットの紐付けは本人が書いたものではないので数えない
+    var hasDraft: Bool {
+        !items.isEmpty || isLoadingPicked || preparingCaptures > 0
+            || song != nil || selectedAlbumId != nil || !published || audience != .everyone
+            || !category.isEmpty
+            // タグは**中身で**比べる（候補を足して外すと末尾に「, 」が残り、同じ中身が書きかけに見えた）
+            || TagInput.parse(tagsText) != TagInput.parse(initialTagsText)
+    }
+
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
     var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 }
 
@@ -634,6 +652,8 @@ final class UploadViewModel: ObservableObject {
         groupId = nil
         song = nil
         tagsText = ""
+        // 最初のタグも忘れる（残すと、空に戻した画面が「書きかけ」になり、閉じられなかった）
+        initialTagsText = ""
         category = ""
         published = true
         audience = .everyone
