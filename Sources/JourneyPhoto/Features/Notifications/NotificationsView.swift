@@ -631,9 +631,11 @@ final class NotificationsViewModel: ObservableObject {
                 if era == userEra { unread = 0 }
                 // **既読にできなかった回はアイコンの数を消させない**（呼び側の `clearBadge`）。
                 // サーバーとベルは未読のままなので、アイコンだけ 0 に割れる
-                return marked
+                // 待つ間に人が替わっていたら、次の人のアイコンの数も消させない
+                return marked && era == userEra
             }
-            return true
+            // 人が替わって既読化を送らなかった回も、次の人のアイコンの数を消させない
+            return era == userEra
         } catch {
             // 取り消し・古い読み込みの失敗は出さない（戻ったときに読み直す／新しい方が出す）
             guard generation == self.generation, !Task.isCancelled else { return false }

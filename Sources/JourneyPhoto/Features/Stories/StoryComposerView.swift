@@ -678,7 +678,7 @@ struct StoryComposerView: View {
             }
             .buttonStyle(.plain)
             .disabled(prepared == nil || !canSaveDraft || loadingPicks > 0)
-            .opacity(prepared == nil ? 0.4 : 1)
+            .opacity(prepared == nil || loadingPicks > 0 ? 0.4 : 1)
             }
         }
     }
@@ -742,6 +742,9 @@ struct StoryComposerView: View {
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background(WebTheme.accentBackground, in: Capsule())
                 .opacity(prepared == nil ? 0.5 : 1)
+                // 輪を出している間も読み上げは空にしない（`ReportSheet` と同じ）
+                .accessibilityLabel(L("ストーリーに投稿", "Post story"))
+                .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos") : "")
             }
             .buttonStyle(.plain)
             .disabled(prepared == nil || loadingPicks > 0)
