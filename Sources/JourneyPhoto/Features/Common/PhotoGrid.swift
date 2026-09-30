@@ -186,6 +186,8 @@ struct PhotoTile: View {
                     // 写真の上なので色は白のまま（真鍮は黒い地の上だけ）
                     Text(category)
                         .jpEyebrow()
+                        // 小さなタイルで折り返さない（肩書きは1行）
+                        .lineLimit(1)
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
                 if !title.isEmpty {

@@ -55,6 +55,8 @@ struct TripShelf: View {
 struct TripShelfList: View {
 
     let trips: [TripBook.Trip]
+    /// 写真に個別ページが在るか（`TripBookView.isPublic`）
+    var isPublic: (Photo) -> Bool = { _ in false }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -62,7 +64,7 @@ struct TripShelfList: View {
                 LazyVStack(spacing: 10) {
                     ForEach(trips) { trip in
                         NavigationLink {
-                            TripBookView(trip: trip)
+                            TripBookView(trip: trip, isPublic: isPublic)
                         } label: {
                             TripShelf(trip: trip)
                         }

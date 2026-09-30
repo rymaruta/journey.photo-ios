@@ -780,7 +780,8 @@ struct MyPageView: View {
                 .padding(24)
         } else {
             // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
-            TripShelfList(trips: trips)
+            // 公開一覧に載っている写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
+            TripShelfList(trips: trips, isPublic: LikedPhotos.fromPublicFeed(dropped.visible(feed)))
         }
     }
 

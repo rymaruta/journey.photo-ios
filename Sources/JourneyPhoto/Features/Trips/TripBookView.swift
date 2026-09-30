@@ -7,6 +7,11 @@ import SwiftUI
 struct TripBookView: View {
 
     let trip: TripBook.Trip
+    /// 写真に個別ページが在るか（`PhotoDetailView.fromPublicFeed`）。
+    /// **公開一覧に載っている写真だけ真**（`LikedPhotos.fromPublicFeed`）——旅は自分の
+    /// 写真から作るので、投稿直後の写真はページがまだ無い。一覧を持たない入口は既定の偽
+    /// （必ず開ける `/?photo=` に落ちる）
+    var isPublic: (Photo) -> Bool = { _ in false }
 
     @EnvironmentObject private var environment: AppEnvironment
 
@@ -263,8 +268,9 @@ struct TripBookView: View {
         VStack(alignment: .leading, spacing: 10) {
             NavigationLink {
                 // 旅の一冊は自分の写真だけ（`TripBook.shelfTrips(from: myPhotos)`）。
-                // 投稿直後の写真は個別ページがまだ無い（`PhotoLink`）
-                PhotoDetailView(photo: photo, fromPublicFeed: false, context: trip.photos)
+                // 投稿直後の写真は個別ページがまだ無い（`PhotoLink`）ので、公開一覧に
+                // 載っているかで決める（`isPublic`）
+                PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: trip.photos)
             } label: {
                 RemoteImage(url: photo.detailImageURL, contentMode: .fit)
                     .frame(maxWidth: .infinity)

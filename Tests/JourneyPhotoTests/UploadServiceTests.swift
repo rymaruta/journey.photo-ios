@@ -126,6 +126,52 @@ final class UploadServiceTests: XCTestCase {
         }
     }
 
+    /// 🔴 **今日のテーマのタグは一度だけ入れる。** 画面の `onAppear` は選択画面などから
+    /// 戻るたびに呼ばれる——印が無いと、利用者が空にしたタグがまた入っていた
+    @MainActor
+    func testThemeTagIsAppliedOnlyOnce() async {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.initialTag = "夕焼け"
+        model.applyInitialTag()
+        XCTAssertEqual(model.tagsText, "夕焼け")
+        model.tagsText = ""
+        model.applyInitialTag()  // カテゴリの選択画面から戻った
+        XCTAssertEqual(model.tagsText, "", "空にしたタグを戻ってきたときに入れ直している")
+    }
+
+    /// 🔴 **曲だけ付かなかった回は画面が閉じずに入力を片付ける。** そのときテーマの
+    /// タグは入れ直す——印を下ろさないと、次の投稿でタグが空のまま残った
+    @MainActor
+    func testThemeTagComesBackAfterAPostWhoseSongFailed() async {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+            // 曲を付ける `PUT /photos/p1` は台本に無い＝404 で落ちる
+        ]
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.initialTag = "夕焼け"
+        model.applyInitialTag()
+        model.song = Photo.Song(title: "曲", artist: nil, artwork: nil,
+                                previewUrl: "https://example.test/p.m4a", trackUrl: nil)
+        model.items = [PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil))]
+
+        await model.submit()
+
+        XCTAssertFalse(model.didPostAll, "前提: 曲が付かなかった回は閉じない")
+        XCTAssertNotNil(model.errorMessage, "前提: 曲が付かなかったと知らせている")
+        XCTAssertTrue(model.items.isEmpty, "前提: 入力は片付いている")
+        XCTAssertEqual(model.tagsText, "夕焼け", "片付けたあとテーマのタグが空のまま")
+    }
+
     /// 🔴 **持ち主が消したアルバムは、行き先から外して止める。** 保存は「見つかりません」
     /// （会員でない＝`isAlbumMember`）で断られる。止めずに続けると残りも全部同じ理由で落ち、
     /// 行き先に残るので押し直しても直らなかった

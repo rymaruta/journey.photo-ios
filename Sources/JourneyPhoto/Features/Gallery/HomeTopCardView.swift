@@ -168,7 +168,7 @@ struct HomeTopCardView: View {
             .buttonStyle(.plain)
         case .bookReady(let trip):
             NavigationLink {
-                TripBookView(trip: trip)
+                TripBookView(trip: trip, isPublic: LikedPhotos.fromPublicFeed(themePhotos))
                     // **開いたら札を下げる**（何度も同じ知らせを出さない）。
                     // 🔴 **ここでは印を残すだけ**——いま札を差し替えると、押した元の
                     // リンクが裏で消え、開いたばかりの一冊が勝手に閉じることがある。
@@ -185,9 +185,10 @@ struct HomeTopCardView: View {
             .buttonStyle(.plain)
         case .oneYearAgo(let photo, let byUploadDate):
             NavigationLink {
-                // 1年前の札は自分の写真だけ（`HomeTopCard.oneYearAgo(myPhotos:)`）。
-                // 個別ページが在るとはみなさない（`PhotoLink`）
-                PhotoDetailView(photo: photo, fromPublicFeed: false, context: [photo])
+                // 1年前の札は自分の写真（`HomeTopCard.oneYearAgo(myPhotos:)`）。個別ページが
+                // 在るのは公開一覧（`themePhotos`＝ホームの一覧）に載っているときだけ（`PhotoLink`）
+                PhotoDetailView(photo: photo, fromPublicFeed: LikedPhotos.fromPublicFeed(themePhotos)(photo),
+                                context: [photo])
             } label: {
                 card(eyebrow: "ONE YEAR AGO", eyebrowLabel: L("1年前", "A year ago"),
                      title: byUploadDate ? L("1年前に投稿", "Posted a year ago")

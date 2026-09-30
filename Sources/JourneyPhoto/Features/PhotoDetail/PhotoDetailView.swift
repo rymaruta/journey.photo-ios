@@ -112,8 +112,12 @@ struct PhotoDetailView: View {
     private static let heroOverlap: CGFloat = 94
     /// コメントの「削除」の当たりを字の上下にはみ出させる幅（44pt − 12pt の字の高さ ≒ 28 の半分）
     private static let commentDeleteTapSlack: CGFloat = 14
-    /// コメントした人の名前（`.caption` の太字）の当たりも同じだけはみ出させる
-    private static let commentNameTapSlack: CGFloat = 14
+    /// コメントした人の名前（`.caption` の太字・約 16pt）の当たりを上へはみ出させる幅。
+    /// **下は本文との間（2pt）まで**——下へ広げると本文の1行目にかぶる。
+    /// 上はひとつ前のコメントとの間（12 ＋ 2 ＋ 2）と、その本文の下の方にかかるが、
+    /// 本文は押せないので奪うものは無い
+    private static let commentNameTapSlackTop: CGFloat = 26
+    private static let commentNameTapSlackBottom: CGFloat = 2
     /// カテゴリの札（`.caption` ＋ 上下 4 ≒ 24pt）の当たりを札の上下にはみ出させる幅
     /// （44 − 24 の半分）。上下の段との間は 16 あるので、隣の当たりに届かない
     private static let chipTapSlack: CGFloat = 10
@@ -1095,10 +1099,12 @@ struct PhotoDetailView: View {
                             } label: {
                                 // 当たりだけ 44pt（行の高さは字のまま・「削除」と同じ形）
                                 Text(comment.name).font(.caption.weight(.semibold))
-                                    .padding(.vertical, Self.commentNameTapSlack)
-                                    .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                                    .padding(.top, Self.commentNameTapSlackTop)
+                                    .padding(.bottom, Self.commentNameTapSlackBottom)
+                                    .frame(minWidth: 44, alignment: .leading)
                                     .contentShape(Rectangle())
-                                    .padding(.vertical, -Self.commentNameTapSlack)
+                                    .padding(.top, -Self.commentNameTapSlackTop)
+                                    .padding(.bottom, -Self.commentNameTapSlackBottom)
                             }
                         }
                         Spacer()

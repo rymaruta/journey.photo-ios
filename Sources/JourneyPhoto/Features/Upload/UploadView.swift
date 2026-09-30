@@ -10,7 +10,6 @@ struct UploadView: View {
     @State private var showSongPicker = false
     @State private var showLibrary = false
     @State private var appliedInitialSpot = false
-    @State private var appliedInitialTag = false
     @Environment(\.dismiss) private var dismiss
 
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき）。
@@ -145,11 +144,9 @@ struct UploadView: View {
             model.onAlbumGone = { [joined] id in joined.forget(id: id) }
             // **今日のテーマから来たときだけ、一度だけ。** 既に何か打っていれば触らない。
             // 選択画面などから戻ると onAppear はまた呼ばれるので、印が無いと
-            // 利用者が空にしたタグがまた入る
-            if let initialTag, !appliedInitialTag {
-                appliedInitialTag = true
-                if model.tagsText.isEmpty { model.tagsText = initialTag }
-            }
+            // 利用者が空にしたタグがまた入る（印は model が持つ・送ったあとの reset で下ろす）
+            model.initialTag = initialTag
+            model.applyInitialTag()
             // **一度だけ入れる**（外したあとに戻さない）
             if let initialSpot, !appliedInitialSpot {
                 appliedInitialSpot = true
