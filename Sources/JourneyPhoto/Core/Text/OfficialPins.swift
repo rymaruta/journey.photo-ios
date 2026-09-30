@@ -43,7 +43,7 @@ enum OfficialPins {
     static func visible(_ spots: [OfficialSpot], frame: MapFraming.Frame?, query: String = "",
                         aliases: [String: [String]] = [:]) -> [Pin] {
         if !MapSearch.fold(query).isEmpty {
-            // 索引の側で名前の一致順（名前 → 別名 → 地域）に並んでいる。座標の無い行は置けない
+            // 索引の側で名前の一致順（完全 → 前方 → 部分 → 地域）に並んでいる。座標の無い行は置けない
             let matched = OfficialSpotIndex.matches(spots, query: query, aliases: aliases).compactMap(pin)
             // 枠が無ければその並びのまま。あれば**枠の中を先に・近い順**
             guard let frame else { return Array(matched.prefix(limit)) }

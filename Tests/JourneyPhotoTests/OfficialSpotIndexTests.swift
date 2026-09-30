@@ -82,6 +82,35 @@ final class OfficialSpotIndexTests: XCTestCase {
         XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "香川").map(\.slug), ["kagawa-tower", "a-shrine"])
     }
 
+    /// 空白・括弧・読点は見ない（Web の `normalizeSpotName`）。スポットの側と打った語の両方
+    func testMatchesIgnoreSpacesAndBrackets() throws {
+        let spots = [
+            try spot("togetsukyo", name: "嵐山 渡月橋"),
+            try spot("ginzan", name: "銀山温泉"),
+            try spot("garnier", name: "オペラ・ガルニエ（パリ）"),
+        ]
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "嵐山渡月橋").map(\.slug), ["togetsukyo"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "銀山　温泉").map(\.slug), ["ginzan"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "オペラ・ガルニエ (パリ)").map(\.slug), ["garnier"])
+        XCTAssertEqual(OfficialSpotIndex.matches([try spot("x", name: "X", prefecture: "香川県", city: "観音寺市")],
+                                                 query: "香川県 観音寺").map(\.slug), ["x"])
+        XCTAssertTrue(OfficialSpotIndex.matches(spots, query: "（）").isEmpty)
+    }
+
+    /// 並びは Web の `searchSpotRows`: 完全一致 → 前方一致 → 部分一致 → 地域。段の中は索引の順（slug 順ではない）
+    func testRanksExactThenPrefixThenContainsThenRegion() throws {
+        let spots = [
+            try spot("z-region", name: "別の場所", prefecture: "滝県"),
+            try spot("y-contains", name: "那智の滝"),
+            try spot("x-prefix", name: "滝見台"),
+            try spot("w-exact", name: "滝"),
+            try spot("b-contains", name: "袋田の滝"),
+            try spot("a-reading", name: "ほか", reading: "滝の上"),
+        ]
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "滝").map(\.slug),
+                       ["w-exact", "x-prefix", "a-reading", "y-contains", "b-contains", "z-region"])
+    }
+
     func testMatchesStopAtTheLimit() throws {
         let spots = try (0..<15).map { i in try spot("s\(i)", name: "神社\(i)") }
         XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "神社", limit: 10).count, 10)
