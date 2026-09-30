@@ -298,7 +298,8 @@ struct StoryComposerView: View {
                                 if !textMode { enterTextMode() }
                                 selectedId = nil
                                 voteSelected = true
-                            })
+                            },
+                            photoId: shots.indices.contains(current) ? shots[current].id : nil)
             } else {
                 emptyPhoto
             }

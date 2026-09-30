@@ -33,6 +33,8 @@ struct StoryCanvas: View {
     var voteSelected = false
     /// 投票の札を押した
     var onTapVote: () -> Void = {}
+    /// いま出している写真の印。**動かしている間に写真が替わったら、その回の移動を書かない**
+    var photoId: UUID? = nil
 
     /// 指で動かしている最中の見た目の移動量（離したときに位置へ反映する）
     @State private var dragId: UUID?
@@ -56,6 +58,8 @@ struct StoryCanvas: View {
     /// 投票の札を動かし始めたときの札（動かしている間は**札の位置そのもの**を書き換える——
     /// 指の移動をそのまま見せると、札の置き方（割合の点で合わせる）と比が違い、離すと戻った）
     @State private var voteDragStart: StoryVoteDraft?
+    /// 動かし始めた写真の印（`photoId`）
+    @State private var voteDragPhotoId: UUID?
     /// 動かしている間に2本指の操作が入った（この回は動かさず、始めの位置に戻す）
     @State private var voteDragSpoiled = false
     @GestureState private var voteDragging = false
@@ -137,8 +141,11 @@ struct StoryCanvas: View {
                             DragGesture()
                                 .updating($voteDragging) { _, state, _ in state = true }
                                 .onChanged { value in
-                                    if voteDragStart == nil { voteDragStart = current; voteDragSpoiled = false }
-                                    guard let start = voteDragStart else { return }
+                                    if voteDragStart == nil {
+                                        voteDragStart = current; voteDragSpoiled = false; voteDragPhotoId = photoId
+                                    }
+                                    // 動かしている間に表示中の写真が替わったら、別の写真の投票を動かさない
+                                    guard let start = voteDragStart, voteDragPhotoId == photoId else { return }
                                     if twoFingerActive { voteDragSpoiled = true }
                                     // 見えている範囲は**キーボードで縮む前の枠**で決める（文字の札と同じ）
                                     let full = stableSize == .zero ? geometry.size : stableSize
@@ -149,7 +156,9 @@ struct StoryCanvas: View {
                                     placeVote(x: next.x, y: next.y)
                                 }
                                 .onEnded { _ in
-                                    if voteDragSpoiled, let start = voteDragStart { placeVote(x: start.x, y: start.y) }
+                                    if voteDragSpoiled, voteDragPhotoId == photoId, let start = voteDragStart {
+                                        placeVote(x: start.x, y: start.y)
+                                    }
                                     voteDragStart = nil
                                 }
                         )
