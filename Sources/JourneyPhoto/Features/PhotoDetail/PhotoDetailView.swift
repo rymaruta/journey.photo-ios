@@ -176,8 +176,7 @@ struct PhotoDetailView: View {
                        initialLikes: LiveLikes.base(for: current, stored: stored),
                        liked: favorites.contains(current.id),
                        answeredAt: stored?.at)
-            // ホームのカードがまだ答えを待っている間の読みは、押す前の数・印
-            await model.load(likeSending: likeCounts.sending.contains(current.id))
+            await model.load()
         }
         .onChange(of: heroPage) { _, page in
             let group = heroGroup
@@ -662,6 +661,8 @@ struct PhotoDetailView: View {
             } catch is CancellationError {
                 return
             } catch {
+                // 待つ間に別の人の写真へ送っていたら、今の人に前の人の失敗を出さない
+                guard ownerId == userId else { return }
                 actionError = L("フォローの状態を確かめられませんでした", "Couldn't check follow status")
                 return
             }
@@ -686,6 +687,8 @@ struct PhotoDetailView: View {
         } catch is CancellationError {
             return
         } catch {
+            // 待つ間に別の人の写真へ送っていたら、今の人に前の人の失敗を出さない
+            guard ownerId == userId else { return }
             actionError = (error as? LocalizedError)?.errorDescription
                 ?? L("うまくいきませんでした", "That didn't work")
         }
@@ -832,9 +835,8 @@ struct PhotoDetailView: View {
     /// **押した1枚を先に覚える。** 送っている間に束の隣へ送ると、答えは
     /// 前の1枚のもの——今の1枚の控えに書かない
     private func toggleLikeHere() async {
-        // 送っている間は押しても何もしないので、知らせも消さない。
-        // ホームのカードが同じ1枚を送っている間も受けない（逆向きが並ぶ）
-        guard !model.isLiking, !likeCounts.sending.contains(current.id) else { return }
+        // 送っている間は押しても何もしないので、知らせも消さない
+        guard !model.isLiking else { return }
         clearNotices()
         guard acceptsReactions else {
             model.errorMessage = L("下書きにはいいねできません。公開すると付けられます",
@@ -868,8 +870,6 @@ struct PhotoDetailView: View {
                                 count: model.likes)
                 }
                 .buttonStyle(.plain)
-                // ホームのカードが同じ1枚の答えを待っている間は押させない
-                .disabled(likeCounts.sending.contains(current.id))
                 // 読み上げは「いいね、N」（印の名前と数字を連ねない）
                 .accessibilityLabel(L("いいね", "Like"))
                 .accessibilityValue(model.likes.map { "\($0)" } ?? "")

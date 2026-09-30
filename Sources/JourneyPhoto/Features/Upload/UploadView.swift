@@ -17,8 +17,9 @@ struct UploadView: View {
     private let initialTag: String?
     /// スポットの画面から開いたときの行き先
     private let initialSpot: UploadSpotTarget?
-    /// 全部上がって閉じるときに呼ぶ。渡すのは**スポットのページに並ぶ形で上がった枚数**
-    /// （スポットの画面が「投稿しました」を出すか決める）
+    /// スポットのページに並ぶ形で1枚上がるたび・全部上がって閉じるときに呼ぶ。
+    /// 渡すのは**スポットのページに並ぶ形で上がった枚数**（スポットの画面が
+    /// 「投稿しました」を出すか決める）。**何度呼ばれても同じ結果になる受け手に渡す**
     private let onPosted: ((Int) -> Void)?
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil) {
@@ -53,12 +54,7 @@ struct UploadView: View {
         // 板 22: 左に ×、右に真鍮の「投稿する」（下の大きいボタンはやめる）
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button {
-                    // 一部だけ上がった・曲だけ付かなかったまま閉じても、スポットの画面に
-                    // 上がったぶんを知らせる（全部上がった回は `didPostAll` で呼ぶので、ここは通らない）
-                    if model.postedToSpot > 0 { onPosted?(model.postedToSpot) }
-                    dismiss()
-                } label: {
+                Button { dismiss() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(WebTheme.foreground)
@@ -74,6 +70,11 @@ struct UploadView: View {
             }
         }
         .interactiveDismissDisabled(model.isWorking)
+        // **上がった時点で知らせる。** × や下に払って閉じる時点で知らせると、
+        // 一部だけ上がった・曲だけ付かなかったまま下に払って閉じた回が漏れる
+        .onChange(of: model.postedToSpot) { _, n in
+            if n > 0 { onPosted?(n) }
+        }
         .onChange(of: model.didPostAll) { _, posted in
             // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
             // 選び直しの読み込み中（一度空にする）にも閉じてしまい、

@@ -1165,21 +1165,6 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(model.liked, "外した直後の読みの古い印で戻している")
     }
 
-    /// 🔴 **ホームのカードが♥の答えを待っている間に開いた読みは、数も印も書かない。**
-    /// 答えがまだ無い（`answeredAt` が nil）ので時刻では止まらず、押す前の 5・
-    /// 「押していない」で、ホームが先に灯した 6・いいね済みを戻していた
-    func testReadWhileHomeIsSendingTheLikeDoesNotOverwrite() async {
-        prepare()
-        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: 5)
-        model.setSignedIn(true)
-        model.show(photoId: "p1", initialLikes: 6, liked: true)
-        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":5}"#)
-        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":false}"#)
-        await model.load(likeSending: true)
-        XCTAssertEqual(model.likes, 6, "送っている最中の読みの押す前の数で戻している")
-        XCTAssertTrue(model.liked, "送っている最中の読みの押す前の印で戻している")
-    }
-
     /// 答えから十分たってからの読みは書く（他の人が押したぶんも入る）
     func testReadLongAfterThePressWins() async {
         prepare()
