@@ -378,7 +378,8 @@ struct UploadView: View {
                 count(item.caption, limit: PostLimits.description)
                 VStack(alignment: .leading, spacing: 6) {
                     JPSectionTitle(L("撮影地", "Place"))
-                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords)
+                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
+                                     near: item.prepared.coords)
                 }
             }
         }
