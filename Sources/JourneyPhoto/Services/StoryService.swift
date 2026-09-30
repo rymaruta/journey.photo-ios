@@ -89,7 +89,8 @@ struct StoryService {
             _ = try await createRecord(media, caption: job.caption, location: job.location,
                                        coords: job.coords, song: job.song,
                                        durationSec: job.durationSec, archive: job.archive,
-                                       allowReplies: job.allowReplies, texts: job.texts)
+                                       allowReplies: job.allowReplies, texts: job.texts,
+                                       songOnPhoto: job.songOnPhoto)
         } catch {
             failure = error
         }
@@ -165,7 +166,7 @@ struct StoryService {
     func createRecord(_ media: UploadedMedia, caption: String?, location: String?,
                       coords: Photo.Coords?, song: Photo.Song? = nil, durationSec: Int? = nil,
                       archive: Bool = false, allowReplies: Bool = true,
-                      texts: [StoryPostText]? = nil) async throws -> Story? {
+                      texts: [StoryPostText]? = nil, songOnPhoto: Bool = false) async throws -> Story? {
         struct Body: Encodable {
             let publicUrl: String
             let caption: String?
@@ -187,6 +188,9 @@ struct StoryService {
             /// 写真の上にデータで置くもの（投票など）。**送ると、サーバーは `caption` を
             /// この中の文字から作り直す**（`StoryPostText.caption` の注釈）
             let texts: [StoryPostText]?
+            /// 曲の札を写真に焼き込んだ（見る画面の ♪ の行を出さない）。**曲があって、
+            /// 札を置いたときだけ `true` を送る**
+            let songOnPhoto: Bool?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
         // 座標は地名とセットのときだけ持つ（名前の無い点は画面に出しようがない）
@@ -200,7 +204,8 @@ struct StoryService {
             durationSec: Self.storedDuration(durationSec),
             archive: archive ? true : nil,
             allowReplies: allowReplies ? nil : false,
-            texts: texts?.isEmpty == false ? texts : nil
+            texts: texts?.isEmpty == false ? texts : nil,
+            songOnPhoto: song != nil && songOnPhoto ? true : nil
         )
         return try await api.authorized(.post, "/stories", body: body, as: Created.self).story
     }
@@ -216,6 +221,9 @@ struct StoryService {
     /// （`stories.ts` の `STORY_DEFAULT_DURATION_SEC`）。
     static let defaultDurationSec = 5
     static let durationRange = 3...15
+    /// 作る画面で選べる秒数（2026-09-30・owner「細かい時間いらない」で 3〜15 の13択から3択に）。
+    /// **幅（`durationRange`）は変えない**——前に選べた秒数で出したストーリーも、そのまま読む
+    static let durationChoices = [5, 10, 15]
 
     static func storedDuration(_ value: Int?) -> Int? {
         guard let value else { return nil }
@@ -308,6 +316,10 @@ struct Story: Decodable, Identifiable, Equatable {
     let texts: [StoryTextItem]
     /// 票の状態（投票のあるストーリーにだけ付く）。**数は投稿者と入れた人にだけ返る**
     let vote: StoryVoteState?
+    /// 曲の札を写真に焼き込んだ印（2026-09-30・owner「曲名が2か所に出てやだ」）。
+    /// 立っていれば見る画面の ♪ の行を出さない（札が写真の上に出ているので2度目になる）。
+    /// **曲を鳴らすかどうかには使わない**（`songLine` は鳴らす判定にも使う）
+    let songOnPhoto: Bool?
 
     var imageURL: URL? { URL(string: src) }
 
@@ -325,6 +337,10 @@ struct Story: Decodable, Identifiable, Equatable {
     var songLine: String? {
         song.flatMap(SongSticker.text(for:))
     }
+    /// 見る画面の左下に出す曲の行。**札を焼き込んだ1本では出さない**（`songOnPhoto`）
+    var songLineShown: String? {
+        songOnPhoto == true ? nil : songLine
+    }
     var isVideo: Bool { mediaType == "video" }
 
     var authorName: String {
@@ -334,6 +350,7 @@ struct Story: Decodable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, src, userId, displayName, caption, mediaType, location, coords
         case createdAt, expiresAt, replyCount, durationSec, song, allowReplies, archive, texts, vote
+        case songOnPhoto
     }
 
     /// **曲だけは壊れていても捨てる。** 一覧は配列1本で復号するので、
@@ -361,6 +378,7 @@ struct Story: Decodable, Identifiable, Equatable {
         let raws = ((try? c.decodeIfPresent([StoryTextItem.Lossy].self, forKey: .texts)) ?? nil) ?? []
         texts = StoryTextItem.parseList(raws.compactMap(\.raw))
         vote = (try? c.decodeIfPresent(StoryVoteState.self, forKey: .vote)) ?? nil
+        songOnPhoto = (try? c.decodeIfPresent(Bool.self, forKey: .songOnPhoto)) ?? nil
     }
 }
 

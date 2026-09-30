@@ -48,6 +48,13 @@ struct StoryCanvas: View {
     /// 2本指でつまんでいる最中の札と、その倍率（離したときに大きさへ掛ける）
     @State private var scaleId: UUID?
     @State private var liveScale: Double = 1
+    /// 2本指でつまんでいる最中の投票の札（札の印の代わり。投票は `overlays` に入っていない）と、
+    /// つまみ始めた写真の印（**途中で写真が替わったら、その回の倍率を別の写真の投票に入れない**）
+    @State private var scalesVote = false
+    @State private var voteScalePhotoId: UUID?
+    /// 2本指で回している最中の投票の札と、回し始めた写真の印（つまむのと同じ）
+    @State private var rotatesVote = false
+    @State private var voteRotatePhotoId: UUID?
     /// 指が触れている間だけ立つ印。**打ち切られても（着信・画面の切り替えで `onEnded` が
     /// 呼ばれない回も）SwiftUI が倒す**——倒れたら、途中の値を札へ入れて片付ける。
     /// 片付けないと、見た目だけ大きく（回って・ずれて）見えたまま、投稿される札は元のままだった
@@ -134,7 +141,8 @@ struct StoryCanvas: View {
                 if let current = vote.wrappedValue {
                     // 投票の札。**置き方は閲覧画面と同じ**（絵の矩形に対する割合）。
                     // 札の上だけが指を取る（層の残りは素通り）
-                    StoryTextLayer(texts: [current.asItem], imageSize: imageSize, voteState: nil,
+                    StoryTextLayer(texts: [liveVote(current).asItem],
+                                   imageSize: imageSize, voteState: nil,
                                    canVote: false, voting: false, highlighted: voteSelected, editable: true)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .gesture(
@@ -176,14 +184,22 @@ struct StoryCanvas: View {
                     .onChanged { angle in
                         // **回し始めた札（札を選んでいなければ写真）に固定する**
                         // （途中で選ぶ札が替わっても移さない）
-                        if rotateId == nil && !twistsPhoto {
-                            if let id = selectedId { rotateId = id } else { twistsPhoto = true }
+                        if rotateId == nil && !twistsPhoto && !rotatesVote {
+                            // 投票を選んでいれば投票を回す（つまむのと同じ・以前は写真が回った）
+                            if let id = selectedId {
+                                rotateId = id
+                            } else if voteSelected, vote.wrappedValue != nil {
+                                rotatesVote = true
+                                voteRotatePhotoId = photoId
+                            } else {
+                                twistsPhoto = true
+                            }
                         }
                         liveRotation = angle.radians
                     }
                     .onEnded { angle in
                         // 打ち切りの片付けが先に済んでいたら何もしない
-                        guard rotateId != nil || twistsPhoto else { return }
+                        guard rotateId != nil || twistsPhoto || rotatesVote else { return }
                         liveRotation = angle.radians
                         commitRotation()
                     }
@@ -194,14 +210,24 @@ struct StoryCanvas: View {
                 MagnificationGesture()
                     .updating($pinching) { _, state, _ in state = true }
                     .onChanged { value in
-                        if scaleId == nil && !pinchesPhoto {
-                            if let id = selectedId { scaleId = id } else { pinchesPhoto = true }
+                        if scaleId == nil && !pinchesPhoto && !scalesVote {
+                            // 🔴 **投票を選んでいれば投票に効かせる。** 以前は札の印（`selectedId`）
+                            // だけを見ていたので、投票を選んでいても写真が拡大した（投票の大きさは
+                            // 変えられなかった・2026-09-30 owner の指摘）
+                            if let id = selectedId {
+                                scaleId = id
+                            } else if voteSelected, vote.wrappedValue != nil {
+                                scalesVote = true
+                                voteScalePhotoId = photoId
+                            } else {
+                                pinchesPhoto = true
+                            }
                         }
                         liveScale = Double(value)
                         if pinchesPhoto && abs(liveScale - 1) > 0.05 { photoPinched = true }
                     }
                     .onEnded { value in
-                        guard scaleId != nil || pinchesPhoto else { return }
+                        guard scaleId != nil || pinchesPhoto || scalesVote else { return }
                         liveScale = Double(value)
                         commitScale()
                     }
@@ -230,6 +256,14 @@ struct StoryCanvas: View {
         }
     }
 
+    /// 指で操作している最中の投票の札（**離したときと同じ幅・同じ丸めで見せる**）
+    private func liveVote(_ current: StoryVoteDraft) -> StoryVoteDraft {
+        var live = current
+        if scalesVote { live = live.scaled(by: liveScale) }
+        if rotatesVote { live = live.rotated(byRadians: liveRotation) }
+        return live
+    }
+
     /// 投票の札の**位置だけ**を書き換える（問い・選択肢は触らない——動かしている間に表示中の
     /// 写真が替わっても、別の写真の投票の中身を上書きしない・38685e4 のレビュー）
     private func placeVote(x: Double, y: Double) {
@@ -245,9 +279,13 @@ struct StoryCanvas: View {
             overlays[i].rotation += liveRotation
         } else if twistsPhoto {
             framing = framing.rotated(by: PhotoFraming.intendedTwist(liveRotation, whilePinching: photoPinched))
+        } else if rotatesVote, voteRotatePhotoId == photoId, let current = vote.wrappedValue {
+            vote.wrappedValue = current.rotated(byRadians: liveRotation)
         }
         rotateId = nil
         twistsPhoto = false
+        rotatesVote = false
+        voteRotatePhotoId = nil
         liveRotation = 0
         if !pinchesPhoto { photoPinched = false }
     }
@@ -258,9 +296,13 @@ struct StoryCanvas: View {
             overlays[i] = overlays[i].scaled(by: liveScale)
         } else if pinchesPhoto {
             framing = framing.scaled(by: liveScale)
+        } else if scalesVote, voteScalePhotoId == photoId, let current = vote.wrappedValue {
+            vote.wrappedValue = current.scaled(by: liveScale)
         }
         scaleId = nil
         pinchesPhoto = false
+        scalesVote = false
+        voteScalePhotoId = nil
         liveScale = 1
         // 回す方がまだ続いていれば、つまんでいた印はそちらの片付けで戻す
         if !twistsPhoto { photoPinched = false }
@@ -269,7 +311,7 @@ struct StoryCanvas: View {
     /// 2本指の操作（回す・つまむ）が、札か写真に効いている最中か。**指が触れている印も見る**
     /// ——札を選んでいない回は、印が立つまで `rotateId` / `scaleId` が立たない（6db29af のレビュー）
     private var twoFingerActive: Bool {
-        rotateId != nil || scaleId != nil || twistsPhoto || pinchesPhoto || twisting || pinching
+        rotateId != nil || scaleId != nil || twistsPhoto || pinchesPhoto || scalesVote || rotatesVote || twisting || pinching
     }
 
     /// 指で操作している最中の合わせ方（**離したときと同じ幅で見せる**——幅の外で動いて見えて、

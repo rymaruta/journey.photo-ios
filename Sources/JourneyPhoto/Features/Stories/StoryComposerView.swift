@@ -521,7 +521,7 @@ struct StoryComposerView: View {
         .jpGlass(in: Capsule(), border: 0)
     }
 
-    /// 右下の「表示 5 秒」（等幅・ガラスの札）。押すと 3〜15秒から選ぶ
+    /// 右下の「表示 5 秒」（等幅・ガラスの札）。押すと 5・10・15 秒から選ぶ
     private var durationMenu: some View {
         Menu {
             durationOptions
@@ -538,10 +538,10 @@ struct StoryComposerView: View {
         .accessibilityLabel(L("表示 \(durationSec) 秒", "\(durationSec) seconds"))
     }
 
-    /// 3〜15秒（3秒未満は読み切れず、15秒を超えると見る側が飽きる。Web と同じ範囲）
+    /// 5・10・15 秒（`StoryService.durationChoices`・owner「細かい時間いらない」）。受けて読む幅は 3〜15 のまま
     @ViewBuilder
     private var durationOptions: some View {
-        ForEach(Array(StoryService.durationRange), id: \.self) { sec in
+        ForEach(StoryService.durationChoices, id: \.self) { sec in
             Button {
                 durationSec = sec
             } label: {
@@ -1137,7 +1137,9 @@ struct StoryComposerView: View {
                 caption: caption, location: place, coords: shotCoords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
-                texts: StoryPostText.list(vote: shot.vote, caption: caption))
+                texts: StoryPostText.list(vote: shot.vote, caption: caption),
+                // 曲の札を焼き込んだ1枚は、見る画面の ♪ の行を出さない（曲名が2か所に出ない）
+                songOnPhoto: song != nil && shot.overlays.contains { $0.kind == .song })
         }
         let stories = environment.stories
         let drafts = drafts

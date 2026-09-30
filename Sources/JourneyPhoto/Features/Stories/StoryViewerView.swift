@@ -604,7 +604,8 @@ struct StoryViewerView: View {
         // もので、写真の上の文字と二重になる（Web も `texts` があれば出さない）
         let caption = captionHidden || !story.texts.isEmpty ? nil : story.caption.flatMap { $0.isEmpty ? nil : $0 }
         let place = story.location.flatMap { $0.isEmpty ? nil : $0 }
-        let song = story.songLine
+        // 曲の札を焼き込んだ1本は出さない（写真の上の札と2度出る・`songLineShown`）
+        let song = story.songLineShown
         if caption != nil || place != nil || song != nil {
             VStack(alignment: .leading, spacing: 8) {
                 if let caption {

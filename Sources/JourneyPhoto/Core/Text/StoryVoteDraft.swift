@@ -20,6 +20,9 @@ struct StoryVoteDraft: Codable, Equatable {
     var x: Double
     var y: Double
     var size: Double
+    /// 傾き（度・−180〜180）。**無い＝0度**で読む——この欄を足す前に残した下書きもそのまま読める。
+    /// サーバーは整数の度に丸めて持つ（`clampStoryTextRotate`）
+    var rotate: Double? = nil
 
     static let questionMax = 40
     static let optionMax = 12
@@ -48,9 +51,30 @@ struct StoryVoteDraft: Codable, Equatable {
     /// 閲覧画面と同じ描き方をするための形（`StoryTextLayer` がそのまま描く）
     var asItem: StoryTextItem {
         .vote(.init(place: .init(x: StoryTextItem.clampPosition(x), y: StoryTextItem.clampPosition(y),
-                                 size: StoryTextItem.clampSize(size), rotate: 0),
+                                 size: StoryTextItem.clampSize(size),
+                                 rotate: StoryTextItem.normalizeRotate((rotate ?? 0).rounded())),
                     question: question.trimmingCharacters(in: .whitespacesAndNewlines),
                     options: [optionA, optionB].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }))
+    }
+
+    /// 2本指でつまんだあとの大きさ（2026-09-30・owner「投票のサイズを縮小できない」）。
+    /// **幅は送るときと同じ `StoryTextItem.clampSize`**（サーバーの `clampStoryTextSize`）
+    /// ——画面でだけ大きく見えて、送ると縮む、にしない。倍率が読めない値なら変えない
+    /// 2本指で回したあとの傾き。`radians` は指で回した角度（文字の札と同じ単位）。
+    /// 送る形・画面とも**整数の度**に丸める（サーバーが丸めるので、画面だけ半端な角度で見せない）
+    func rotated(byRadians radians: Double) -> StoryVoteDraft {
+        guard radians.isFinite else { return self }
+        var next = self
+        let degrees = StoryTextItem.normalizeRotate(((rotate ?? 0) + radians * 180 / .pi).rounded())
+        next.rotate = degrees == 0 ? nil : degrees
+        return next
+    }
+
+    func scaled(by factor: Double) -> StoryVoteDraft {
+        guard factor.isFinite, factor > 0 else { return self }
+        var next = self
+        next.size = StoryTextItem.clampSize(size * factor)
+        return next
     }
 
     /// 指で動かした量（画面の点）を、絵の矩形（画面の点）に対する割合で足す。
@@ -94,13 +118,16 @@ struct StoryPostText: Codable, Equatable {
     var bg: String?
     var question: String?
     var options: [String]?
+    /// 傾き（度）。**0 度は送らない**（サーバーも 0 は書かない・`sanitizeStoryTexts`）
+    var rotate: Double? = nil
 
     /// 投票
     static func vote(_ v: StoryVoteDraft) -> StoryPostText {
         StoryPostText(kind: "vote", x: StoryTextItem.clampPosition(v.x), y: StoryTextItem.clampPosition(v.y),
                       size: StoryTextItem.clampSize(v.size),
                       question: v.question.trimmingCharacters(in: .whitespacesAndNewlines),
-                      options: [v.optionA, v.optionB].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+                      options: [v.optionA, v.optionB].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },
+                      rotate: v.asItem.place.rotate == 0 ? nil : v.asItem.place.rotate)
     }
 
     /// ひとことを文字として送る（投票を置いた1本だけ）。
@@ -138,9 +165,10 @@ struct StoryPostText: Codable, Equatable {
         try c.encodeIfPresent(bg, forKey: .bg)
         try c.encodeIfPresent(question, forKey: .question)
         try c.encodeIfPresent(options, forKey: .options)
+        try c.encodeIfPresent(rotate, forKey: .rotate)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case kind, x, y, size, text, font, color, bg, question, options
+        case kind, x, y, size, text, font, color, bg, question, options, rotate
     }
 }

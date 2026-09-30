@@ -143,4 +143,75 @@ final class StoryPostTextsRequestTests: XCTestCase {
         XCTAssertNil(body["texts"])
         XCTAssertEqual(body["caption"] as? String, "港")
     }
+
+    // MARK: - つまんで大きさを変える（2026-09-30・owner「投票のサイズを縮小できない」）
+
+    /// つまんだ倍率で大きさが変わり、**送る形にもその大きさが載る**
+    func testPinchChangesTheSizeThatIsSent() {
+        let vote = StoryVoteDraft.new()
+        let smaller = vote.scaled(by: 0.7)
+        XCTAssertEqual(smaller.size, StoryVoteDraft.defaultSize * 0.7, accuracy: 1e-9)
+        XCTAssertEqual(StoryPostText.vote(smaller).size, smaller.size, accuracy: 1e-9)
+        XCTAssertEqual(vote.scaled(by: 2).size, StoryVoteDraft.defaultSize * 2, accuracy: 1e-9)
+        // 問い・選択肢・位置は触らない
+        XCTAssertEqual(smaller.question, vote.question)
+        XCTAssertEqual(smaller.x, vote.x)
+        XCTAssertEqual(smaller.y, vote.y)
+    }
+
+    /// 幅は送るときと同じ（0.03〜0.16）。画面でだけ大きく見えて送ると縮む、にしない
+    func testPinchIsClampedToTheServerRange() {
+        let vote = StoryVoteDraft.new()
+        XCTAssertEqual(vote.scaled(by: 100).size, 0.16, accuracy: 1e-9)
+        XCTAssertEqual(vote.scaled(by: 0.01).size, 0.03, accuracy: 1e-9)
+        XCTAssertEqual(vote.scaled(by: 100).size, StoryPostText.vote(vote.scaled(by: 100)).size, accuracy: 1e-9)
+    }
+
+    /// 読めない倍率では変えない
+    func testUnreadableFactorKeepsTheSize() {
+        let vote = StoryVoteDraft.new()
+        for f in [0, -1, Double.nan, Double.infinity] {
+            XCTAssertEqual(vote.scaled(by: f), vote)
+        }
+    }
+
+    // MARK: - 2本指で回す（2026-09-30・owner「回転もいる」）
+
+    /// 回した角度が**整数の度**で札と送る形に載る（サーバーも整数に丸める）
+    func testTwistRotatesAndIsSent() throws {
+        let vote = StoryVoteDraft.new().rotated(byRadians: .pi / 6)   // 30度
+        XCTAssertEqual(vote.rotate, 30)
+        XCTAssertEqual(vote.asItem.place.rotate, 30)
+        let json = String(decoding: try JSONEncoder().encode(StoryPostText.vote(vote)), as: UTF8.self)
+        XCTAssertTrue(json.contains(#""rotate":30"#), json)
+        // 足し算で続けて回せる・−180〜180 に畳む
+        XCTAssertEqual(vote.rotated(byRadians: .pi).rotate, -150)
+    }
+
+    /// 0度は送らない（サーバーも 0 は書かない）。回して戻したら鍵ごと消える
+    func testZeroRotationIsNotSent() throws {
+        let back = StoryVoteDraft.new().rotated(byRadians: 0.3).rotated(byRadians: -0.3)
+        XCTAssertNil(back.rotate)
+        let json = String(decoding: try JSONEncoder().encode(StoryPostText.vote(back)), as: UTF8.self)
+        XCTAssertFalse(json.contains("rotate"), json)
+    }
+
+    /// 傾きの欄を足す前に残した下書き（`rotate` の鍵が無い）もそのまま読める
+    func testOldDraftWithoutRotateStillDecodes() throws {
+        let old = #"{"question":"Q","optionA":"A","optionB":"B","x":0.5,"y":0.7,"size":0.05}"#
+        let vote = try JSONDecoder().decode(StoryVoteDraft.self, from: Data(old.utf8))
+        XCTAssertNil(vote.rotate)
+        XCTAssertEqual(vote.asItem.place.rotate, 0)
+    }
+
+    /// 回しても大きさ・位置・文言は変わらない。読めない角度では変えない
+    func testTwistKeepsEverythingElse() {
+        let vote = StoryVoteDraft.new().scaled(by: 1.5)
+        let turned = vote.rotated(byRadians: 1)
+        XCTAssertEqual(turned.size, vote.size)
+        XCTAssertEqual(turned.x, vote.x)
+        XCTAssertEqual(turned.question, vote.question)
+        XCTAssertEqual(vote.rotated(byRadians: .nan), vote)
+    }
 }
+
