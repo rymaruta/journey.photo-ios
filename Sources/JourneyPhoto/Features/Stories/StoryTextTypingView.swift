@@ -65,8 +65,13 @@ struct StoryTextTypingView: View {
                                                height: max(0, area.size.height - 24 - (noticeShown ? Self.noticeHeight : 0)))
                         let space = CGSize(width: area.size.width,
                                            height: max(0, area.size.height - (noticeShown ? Self.noticeHeight : 0)))
+                        // 寄せる枠は**左の縦のつまみの内側**（左に寄せた行頭がつまみの下に潜らない）
+                        let pinArea = CGSize(width: max(0, space.width - Self.sideInset * 2), height: space.height)
+                        let lastLine = TextOverlayRenderer.naturalSize(overlay, text: StoryTextEditing.lastLine(overlay),
+                                                                       fontSize: fontSize).width
                         let layout = StoryTextEditing.typingLayout(overlay: overlay, typing: typingSize(fontSize: fontSize),
-                                                                   available: available, area: space)
+                                                                   lastLineWidth: Double(lastLine),
+                                                                   available: available, area: pinArea)
                         let pin = Self.pinAlignment(layout)
                         ZStack {
                             // 欄の外の空いた所を押しても確定する（暗幕の上を覆うので、暗幕の
@@ -82,7 +87,9 @@ struct StoryTextTypingView: View {
                                 // **大きさを決め打ちにした枠で寄せる**。上限だけの枠（maxWidth: .infinity）は
                                 // 中身が大きいと中身の大きさになり、寄せ方が効かずに真ん中へ置かれ、長い文字が
                                 // 画面から丸ごと消えた（ea8fa74 のレビュー）
-                                .frame(width: space.width, height: space.height, alignment: pin.alignment)
+                                .frame(width: pinArea.width, height: pinArea.height, alignment: pin.alignment)
+                                // 寄せる枠をつまみの内側に置く（外へはみ出した分は下の clipped が切る）
+                                .frame(width: space.width, height: space.height)
                                 // 見本の位置: 断り書きの分だけ上に寄せる（字の下端に重ねない）
                                 .padding(.bottom, noticeShown ? Self.noticeHeight : 0)
                         }

@@ -121,25 +121,33 @@ enum StoryTextEditing {
     }
 
     /// 打つ画面の並べ方を決める。`typing`（欄に見えている大きさ）を打つ画面の空き `available` に
-    /// 縮めて収め、それでも欄の置き場 `area` からはみ出す向きは、キャレットのいる側の端を見せる。
+    /// 縮めて収め、それでも寄せる枠 `area` からはみ出す向きは、キャレットのいる側の端を見せる。
+    /// `lastLineWidth` は最終行（キャレットのいる行）の幅——最終行が枠に収まるなら揃えの側、
+    /// 収まらないなら行の末尾（右）。揃えの側だけで決めると、改行して長い2行目を打つと末尾が
+    /// 切れた（253cf60 のレビュー）。
     /// **はみ出しの断り（`overflow`）は別の物差し**（仕上がり×写真の枠）なので、ここでは決めない
-    static func typingLayout(overlay: TextOverlay, typing: CGSize, available: CGSize, area: CGSize) -> TypingLayout {
+    static func typingLayout(overlay: TextOverlay, typing: CGSize, lastLineWidth: Double,
+                             available: CGSize, area: CGSize) -> TypingLayout {
         let scale = fitScale(content: typing, available: available)
         let tooWide = Double(typing.width) * scale > Double(area.width) + 0.5
         let horizontal: Pin
         if !tooWide {
             horizontal = .center
-        } else if !overlay.kind.allowsNewlines || !overlay.text.contains("\n") {
+        } else if !overlay.kind.allowsNewlines || !overlay.text.contains("\n") || overlay.align == .trailing {
+            horizontal = .trailing
+        } else if lastLineWidth * scale > Double(area.width) + 0.5 {
+            // 最終行そのものが枠に収まらない＝末尾は右の外。右を見せる
             horizontal = .trailing
         } else {
-            switch overlay.align {
-            case .leading: horizontal = .leading
-            case .center: horizontal = .center
-            case .trailing: horizontal = .trailing
-            }
+            horizontal = overlay.align == .leading ? .leading : .center
         }
         return TypingLayout(scale: scale, horizontal: horizontal,
                             pinBottom: Double(typing.height) * scale > Double(area.height) + 0.5)
+    }
+
+    /// 最終行（キャレットのいる行）の文字。札は印ごと（1行しか無いので同じ）
+    static func lastLine(_ overlay: TextOverlay) -> String {
+        overlay.displayText.components(separatedBy: "\n").last ?? ""
     }
 
     /// 打つ画面で大きさを測る文字。**欄に見えている行を全部数える**——置いたあとの `drawnText` は

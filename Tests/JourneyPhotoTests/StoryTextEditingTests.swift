@@ -151,7 +151,7 @@ final class StoryTextEditingTests: XCTestCase {
     /// 打つ画面の並べ方: 縮みは**欄の大きさ×打つ画面の空き**。収まれば真ん中
     func testTypingLayoutScalesToAvailableSpace() {
         let overlay = TextOverlay(text: "港の朝焼け")
-        let layout = StoryTextEditing.typingLayout(overlay: overlay, typing: CGSize(width: 330, height: 40),
+        let layout = StoryTextEditing.typingLayout(overlay: overlay, typing: CGSize(width: 330, height: 40), lastLineWidth: 330,
                                                    available: CGSize(width: 281, height: 300),
                                                    area: CGSize(width: 393, height: 324))
         XCTAssertEqual(layout.scale, 281.0 / 330.0, accuracy: 0.0001)
@@ -166,30 +166,40 @@ final class StoryTextEditingTests: XCTestCase {
         let area = CGSize(width: 393, height: 324)
         // 1200 × 0.35 = 420 > 393 → 寄せる。改行の無い文字は行の末尾（右）
         let oneLine = StoryTextEditing.typingLayout(overlay: TextOverlay(text: "長い一行"),
-                                                    typing: CGSize(width: 1200, height: 40),
+                                                    typing: CGSize(width: 1200, height: 40), lastLineWidth: 1200,
                                                     available: available, area: area)
         XCTAssertEqual(oneLine.scale, StoryTextEditing.minFitScale, accuracy: 0.0001)
         XCTAssertEqual(oneLine.horizontal, .trailing)
         // 1100 × 0.35 = 385: 空き（281）は超えるが置き場（393）には収まる → 寄せない
         XCTAssertEqual(StoryTextEditing.typingLayout(overlay: TextOverlay(text: "a"),
-                                                     typing: CGSize(width: 1100, height: 40),
+                                                     typing: CGSize(width: 1100, height: 40), lastLineWidth: 1100,
                                                      available: available, area: area).horizontal, .center)
         // 改行した文字は揃えの側
         var left = TextOverlay(text: "一行目\n二")
         left.align = .leading
-        XCTAssertEqual(StoryTextEditing.typingLayout(overlay: left, typing: CGSize(width: 1200, height: 80),
+        XCTAssertEqual(StoryTextEditing.typingLayout(overlay: left, typing: CGSize(width: 1200, height: 80), lastLineWidth: 40,
                                                      available: available, area: area).horizontal, .leading)
         var right = left
         right.align = .trailing
-        XCTAssertEqual(StoryTextEditing.typingLayout(overlay: right, typing: CGSize(width: 1200, height: 80),
+        XCTAssertEqual(StoryTextEditing.typingLayout(overlay: right, typing: CGSize(width: 1200, height: 80), lastLineWidth: 40,
+                                                     available: available, area: area).horizontal, .trailing)
+        // 改行して**長い最終行**を打っている（最終行 1200 × 0.35 = 420 > 393）→ 左揃えでも末尾の右
+        XCTAssertEqual(StoryTextEditing.typingLayout(overlay: left, typing: CGSize(width: 1200, height: 80), lastLineWidth: 1200,
+                                                     available: available, area: area).horizontal, .trailing)
+        // 中央揃えで短い最終行 → 真ん中、長い最終行 → 右
+        var middle = left
+        middle.align = .center
+        XCTAssertEqual(StoryTextEditing.typingLayout(overlay: middle, typing: CGSize(width: 1200, height: 80), lastLineWidth: 40,
+                                                     available: available, area: area).horizontal, .center)
+        XCTAssertEqual(StoryTextEditing.typingLayout(overlay: middle, typing: CGSize(width: 1200, height: 80), lastLineWidth: 1200,
                                                      available: available, area: area).horizontal, .trailing)
         // 1行の札（撮影地）は改行が無いので右
         XCTAssertEqual(StoryTextEditing.typingLayout(overlay: TextOverlay(text: "京都", kind: .place),
-                                                     typing: CGSize(width: 1200, height: 40),
+                                                     typing: CGSize(width: 1200, height: 40), lastLineWidth: 1200,
                                                      available: available, area: area).horizontal, .trailing)
         // 縦: 1200 × 0.35 = 420 > 324 → 下（打っている最終行）を見せる
         let tall = StoryTextEditing.typingLayout(overlay: TextOverlay(text: "a\nb"),
-                                                 typing: CGSize(width: 100, height: 1200),
+                                                 typing: CGSize(width: 100, height: 1200), lastLineWidth: 100,
                                                  available: available, area: area)
         XCTAssertTrue(tall.pinBottom)
         XCTAssertEqual(tall.horizontal, .center)
@@ -205,5 +215,12 @@ final class StoryTextEditingTests: XCTestCase {
         // 札は印ごと測る
         XCTAssertEqual(StoryTextEditing.typingMeasureText(TextOverlay(text: "京都", kind: .place), placeholder: "見本"),
                        "📍 京都")
+    }
+
+    /// 最終行（キャレットのいる行）。札は印ごと
+    func testLastLine() {
+        XCTAssertEqual(StoryTextEditing.lastLine(TextOverlay(text: "一行目\n二行目")), "二行目")
+        XCTAssertEqual(StoryTextEditing.lastLine(TextOverlay(text: "港\n")), "")
+        XCTAssertEqual(StoryTextEditing.lastLine(TextOverlay(text: "京都", kind: .place)), "📍 京都")
     }
 }
