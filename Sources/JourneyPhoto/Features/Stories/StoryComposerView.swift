@@ -494,9 +494,8 @@ struct StoryComposerView: View {
             .jpGlass(in: Circle())
     }
 
-    /// 写真の上のひとこと（明朝32・影）と撮影地の札。**ひとことはその場で打つ**。
-    /// 曲は動かせる札として写真に置く（`SongSticker`）
     /// 写真の上の「ひとこと」の層（左寄せ・縦は真ん中）。**`StoryCanvas` が写真と札の間に敷く**
+    /// ——札が欄より上で指を取る（描く順も同じなので、札は欄の文字の上に重なって見える）
     @ViewBuilder
     private var captionLayer: some View {
         if typingId == nil && !votePanelOpen && preview != nil {
@@ -511,6 +510,8 @@ struct StoryComposerView: View {
         }
     }
 
+    /// 写真の上のひとこと（明朝32・影）と撮影地の札。**ひとことはその場で打つ**。
+    /// 曲は動かせる札として写真に置く（`SongSticker`）
     private var captionBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField(L("ひとことを書く", "Write a caption"), text: Binding(
