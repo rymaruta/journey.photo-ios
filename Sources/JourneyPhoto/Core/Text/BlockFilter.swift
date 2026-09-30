@@ -46,4 +46,11 @@ enum BlockFilter {
         guard !blocked.isEmpty else { return viewers }
         return viewers.filter { !blocked.contains($0.userId) }
     }
+
+    /// フォロー中・フォロワーの一覧（`FollowListView`）。ブロックした人の行に
+    /// 「フォローする」が残り、押すとサーバーが 400 を返していた
+    static func follows(_ users: [FollowUser], blocked: Set<String>) -> [FollowUser] {
+        guard !blocked.isEmpty else { return users }
+        return users.filter { !blocked.contains($0.id) }
+    }
 }

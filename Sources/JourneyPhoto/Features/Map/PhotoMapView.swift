@@ -213,10 +213,12 @@ struct PhotoMapView: View {
         .onChange(of: location.state) { _, state in
             guard case .located(let latitude, let longitude) = state else { return }
             here = Photo.Coords(lat: latitude, lng: longitude)
-            noneNearbyBanner.located()
-            // 探すからの語で寄せている間は、開いたときの自動の現在地で上書きしない
-            // （ボタンで取った回は寄せる）
+            // 探すからの語で寄せている間・指で動かしたあとは、開いたときの自動の現在地で
+            // 上書きしない（ボタンで取った回は寄せる）
             guard queryFraming.followsLocation(requestedByUser: location.requestedByUser) else { return }
+            // 「近くに写真はありません」を出し直すのは、現在地へ寄せる回だけ。
+            // 寄せない回に出し直すと、指で動かして下げた帯が、動かない地図の上に戻っていた
+            noneNearbyBanner.located()
             zoomChain.reset()
             camera = .userLocation(fallback: .region(MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
