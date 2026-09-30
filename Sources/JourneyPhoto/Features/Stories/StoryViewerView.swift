@@ -58,7 +58,10 @@ struct StoryViewerView: View {
     /// 後に走り、その間に次の1本へ進んでいると、描き直された閉包の `story` は
     /// 次の1本になっている（通報した1本が並びから落ちなかった）
     @State private var reportingStory: Story?
-    @State private var muted = false
+    /// 音を消しているか。**覚えた設定から始める**（`StoryAudioPreference`）
+    @State private var muted = StoryAudioPreference().muted
+    /// ♡ の長押しで出す反応の並び（6つ）
+    @State private var showReactions = false
     /// この画面が鳴らした曲の回（`MusicPreviewPlayer.session`）。鳴らしていなければ nil
     @State private var songSession: Int?
     /// この画面の札（`MusicPreviewPlayer.beginStoryViewing`）。作り直すと新しくなる
@@ -210,7 +213,7 @@ struct StoryViewerView: View {
             paused: paused,
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
-                || showAuthor || showDeleteConfirm || guideSpot != nil || isHeld,
+                || showAuthor || showDeleteConfirm || guideSpot != nil || showReactions || isHeld,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -226,7 +229,7 @@ struct StoryViewerView: View {
     /// （止まっていても払って次へは行ける）
     private var swipeLocked: Bool {
         replyFocused || isSending || showMenu || showReplies || showInsights || showReport
-            || showBlockConfirm || showAuthor || showDeleteConfirm || guideSpot != nil
+            || showBlockConfirm || showAuthor || showDeleteConfirm || guideSpot != nil || showReactions
     }
 
     /// この人の束をもう見せられない（最後の1本を消した・通報した・ブロックした）。
@@ -264,8 +267,18 @@ struct StoryViewerView: View {
         // 知らせが消えたら（2.5秒で消える）、待たせていた1本を進める
         .onChange(of: message) { _, _ in settlePendingEnd() }
         .onChange(of: holds) { _, now in isHeld = now }
+        // 返信欄・メニュー・シート・確認を開いたら反応の並びを閉じる（♡ が隠れたまま並びだけ
+        // 残り、止まったまま進まなかった）
+        .onChange(of: StoryPlayback.closesReactionPicker(
+            replyFocused: replyFocused, menuOpen: showMenu,
+            sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
+                || showAuthor || showDeleteConfirm || guideSpot != nil)) { _, close in
+            if close { showReactions = false }
+        }
         .onChange(of: muted) { _, now in
             if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
+            // 次の1本・次に開いたときも同じにする
+            StoryAudioPreference().muted = now
         }
         // 閉じたら止める（閉じたあとも鳴り続けないように）。場は最後の閲覧画面が
         // 閉じたときに返す（返さないと他のアプリの音楽が戻らない）
@@ -854,7 +867,10 @@ struct StoryViewerView: View {
         HStack(spacing: 0) {
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture { leftTap() }
+                .onTapGesture {
+                    // 反応の並びが開いていたら、押しても送らずに閉じるだけ
+                    if showReactions { showReactions = false } else { leftTap() }
+                }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
                     if !pressedNow { longHeld = false }
@@ -862,7 +878,8 @@ struct StoryViewerView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if paused { paused = false } else if !isSending { advance() }
+                    if showReactions { showReactions = false }
+                    else if paused { paused = false } else if !isSending { advance() }
                 }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
@@ -960,6 +977,8 @@ struct StoryViewerView: View {
     private func go(to target: Int) {
         guard visible.indices.contains(target) else { return }
         index = target
+        // 反応の並びは前の1本のもの（開いたまま次へ持ち越さない）
+        showReactions = false
         // 止めておく。絵が出て（`mediaReady`）止める理由が無くなったら `syncClock` が動かす
         clock.restart(running: false, at: Date())
         shownAt = Date()
@@ -1398,17 +1417,41 @@ struct StoryViewerView: View {
                         .disabled(isSending || !canSend)
                         .accessibilityLabel(Labels.Common.send)
                     } else {
-                        // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）
-                        Button {
-                            Task { await sendReaction(StoryService.reactions[0], to: story) }
-                        } label: {
-                            Image(systemName: "heart")
-                                .font(.system(size: 22))
-                                .foregroundStyle(.white)
-                                .webTappable()
+                        // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）。
+                        // **長押しで6つから選ぶ**（サーバーは6つとも受ける。以前は ❤️ だけだった）。
+                        // 🔴 **Button にしない。** Button に長押しを足すと、OS の版によっては長押しの
+                        // あとに Button の送信も走る（❤️ が送られてから並びが開く）。押すと長押しを
+                        // 別々の手振りにして、どちらか片方だけが効くようにする
+                        Image(systemName: "heart")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white)
+                            .webTappable()
+                            .opacity(isSending ? 0.4 : 1)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                guard !isSending else { return }
+                                showReactions = false
+                                Task { await sendReaction(StoryService.reactions[0], to: story) }
+                            }
+                            .onLongPressGesture(minimumDuration: 0.35, perform: {
+                                guard !isSending else { return }
+                                showReactions = true
+                            })
+                            .accessibilityElement()
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel(L("いいね", "Like"))
+                            .accessibilityHint(L("長押しでほかの反応を選べます", "Press and hold for more reactions"))
+                            .accessibilityAction {
+                                guard !isSending else { return }
+                                Task { await sendReaction(StoryService.reactions[0], to: story) }
+                            }
+                            .accessibilityAction(named: L("反応を選ぶ", "Choose a reaction")) {
+                                guard !isSending else { return }
+                                showReactions = true
+                            }
+                        .overlay(alignment: .bottomTrailing) {
+                            if showReactions { reactionPicker(for: story) }
                         }
-                        .disabled(isSending)
-                        .accessibilityLabel(L("いいね", "Like"))
                     }
                 }
             }
@@ -1707,6 +1750,30 @@ struct StoryViewerView: View {
         }
     }
 
+    /// ♡ の長押しで出す6つの反応。**選んだら送って閉じる**。写真を押すと送らずに閉じる
+    private func reactionPicker(for story: Story) -> some View {
+        HStack(spacing: 4) {
+            ForEach(StoryService.reactions, id: \.self) { emoji in
+                Button {
+                    showReactions = false
+                    Task { await sendReaction(emoji, to: story) }
+                } label: {
+                    Text(emoji)
+                        .font(.system(size: 28))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(StoryPlayback.reactionName(emoji))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .jpGlass(in: Capsule(), border: 0.35)
+        .fixedSize()
+        // ♡ の真上に出す（足元の行を押し広げない）
+        .offset(y: -56)
+    }
+
     /// 定型の反応を送る。
     private func sendReaction(_ emoji: String, to story: Story) async {
         guard !isSending else { return }
@@ -1714,7 +1781,7 @@ struct StoryViewerView: View {
         defer { isSending = false }
         do {
             try await environment.stories.react(id: story.id, emoji: emoji)
-            message = L("いいねを送りました", "Like sent")
+            message = StoryPlayback.reactionSentMessage(emoji)
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
         }

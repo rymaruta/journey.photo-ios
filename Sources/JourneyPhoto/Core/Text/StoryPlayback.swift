@@ -583,4 +583,32 @@ enum StoryPlayback {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
+
+    // MARK: - 反応
+
+    /// 反応を送ったあとの知らせ。**❤️ は今までどおり「いいね」**、ほかは「反応」
+    static func reactionSentMessage(_ emoji: String) -> String {
+        emoji == StoryService.reactions.first
+            ? L("いいねを送りました", "Like sent")
+            : L("\(emoji) を送りました", "Sent \(emoji)")
+    }
+
+    /// 反応の読み上げの名前（絵文字の読みは端末で違うので、ここで決める）
+    static func reactionName(_ emoji: String) -> String {
+        switch emoji {
+        case "❤️": return L("いいね", "Like")
+        case "😍": return L("大好き", "Love it")
+        case "😂": return L("笑った", "Haha")
+        case "😮": return L("びっくり", "Wow")
+        case "😢": return L("悲しい", "Sad")
+        case "👏": return L("拍手", "Applause")
+        default: return emoji
+        }
+    }
+
+    /// 反応の並びを閉じるか。**返信欄・メニュー・シート・確認のどれかが開いたら閉じる**
+    /// （並びは ♡ の上に出るので、♡ が隠れる・別の画面が上に来たら残す理由が無い）
+    static func closesReactionPicker(replyFocused: Bool, menuOpen: Bool, sheetOpen: Bool) -> Bool {
+        replyFocused || menuOpen || sheetOpen
+    }
 }
