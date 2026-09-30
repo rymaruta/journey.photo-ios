@@ -151,4 +151,19 @@ final class TripPlanEditTests: XCTestCase {
         let abcb = [TripDay(items: [s("a"), s("b"), s("c"), s("b")])]
         XCTAssertEqual(TripPlanEdit.locate(abcb, day: 0, item: 0, original: s("b")), 1)
     }
+
+    // MARK: - 日を消す
+
+    func testOnlyDaysWithItemsAskBeforeRemoving() {
+        XCTAssertTrue(TripPlanEdit.confirmsRemoving(TripDay(items: [s("a")])))
+        XCTAssertFalse(TripPlanEdit.confirmsRemoving(TripDay()))
+    }
+
+    func testRemoveDayRefusesWhenTheDayChangedWhileAsking() throws {
+        let removed = try XCTUnwrap(TripPlanEdit.removeDay(sample, at: 0, expected: sample[0]))
+        XCTAssertEqual(removed.map(ids), [["d"]])
+        // 確かめている間に日程が変わった（添字の先が別の日）→ 何もしない
+        XCTAssertNil(TripPlanEdit.removeDay(sample, at: 0, expected: sample[1]))
+        XCTAssertNil(TripPlanEdit.removeDay(sample, at: 2, expected: sample[1]))
+    }
 }

@@ -33,6 +33,8 @@ struct TripPlanDetailView: View {
     @State private var picking: PickTarget?
     /// 「地図で見る」を押した日（`TripDayMapView`）
     @State private var mapDay: MapTarget?
+    /// 消すか確かめている日（予定の入った日だけ・`TripPlanEdit.confirmsRemoving`）
+    @State private var removingDay: RemoveDayTarget?
     @State private var confirmingDelete = false
     /// 「保存して戻る／変更を捨てる」の確認
     @State private var confirmLeave = false
@@ -56,6 +58,11 @@ struct TripPlanDetailView: View {
     @State private var sourcesFailed = false
 
     private struct PickTarget: Identifiable { let day: Int; var id: Int { day } }
+    /// 消すか確かめている日（何日目と、**押したときの日そのもの**）
+    private struct RemoveDayTarget {
+        let index: Int
+        let day: TripDay
+    }
     private struct MapTarget: Identifiable {
         let day: Int
         let stops: [TripDayMap.Stop]
@@ -259,6 +266,22 @@ struct TripPlanDetailView: View {
 
         // その日の場所を番号つきで地図に・前の場所からの経路（2026-09-30）。
         // **開いた時点の日程で出す**（保存していない並び替えも反映する）
+        // 予定の入った日を消す前に確かめる（系統の確認の部品・赤は系統のまま）
+        .confirmationDialog(L("\((removingDay?.index ?? 0) + 1) 日目を削除しますか？",
+                              "Remove day \((removingDay?.index ?? 0) + 1)?"),
+                            isPresented: Binding(get: { removingDay != nil },
+                                                 set: { if !$0 { removingDay = nil } }),
+                            titleVisibility: .visible) {
+            Button(L("削除", "Remove"), role: .destructive) {
+                guard let target = removingDay else { return }
+                removingDay = nil
+                if let next = TripPlanEdit.removeDay(days, at: target.index, expected: target.day) {
+                    days = next
+                }
+            }
+        } message: {
+            Text(L("この日の予定もなくなります。", "The plans for this day will be removed too."))
+        }
         .sheet(item: $mapDay) { target in
             NavigationStack {
                 TripDayMapView(title: L("\(target.day + 1) 日目の地図", "Day \(target.day + 1) map"),
@@ -480,12 +503,16 @@ struct TripPlanDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("\(di + 1) 日目を地図で見る", "Show day \(di + 1) on a map"))
-                    // 確認の無い日の削除（赤）のすぐ隣に置かない（押し間違い・eaf0c48 のレビュー）
+                    // 日の削除（赤）のすぐ隣に置かない（押し間違い・eaf0c48 のレビュー。空の日の削除は確認が無い）
                     .padding(.trailing, 8)
                 }
                 Button {
                     guard days.indices.contains(di) else { return }
-                    days.remove(at: di)
+                    if TripPlanEdit.confirmsRemoving(days[di]) {
+                        removingDay = RemoveDayTarget(index: di, day: days[di])
+                    } else {
+                        days.remove(at: di)
+                    }
                 } label: {
                     Image(systemName: "trash")
                         .foregroundStyle(WebTheme.danger)

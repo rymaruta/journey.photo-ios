@@ -10,6 +10,24 @@ import Foundation
 /// ときは何も変えない。サーバーは上限を超えた日程を 403 で断るので、画面の側で先に止める。
 enum TripPlanEdit {
 
+    // MARK: - 日を消す
+
+    /// 日を消す前に確かめるか。**予定の入った日だけ**（空の日はすぐ消す）。
+    /// 日の見出しの削除は確認が無く、隣の地図のボタンを狙った指のずれで1日分が消えた
+    /// （0755872 のレビュー・2026-09-30 owner の判断「推奨で」）
+    static func confirmsRemoving(_ day: TripDay) -> Bool {
+        !day.items.isEmpty
+    }
+
+    /// 日を消す。**確かめている間に日程が変わっていたら何もしない**（`nil`）——
+    /// 添字だけで消すと、ほかの日を消したあとの確認で別の日が消える
+    static func removeDay(_ days: [TripDay], at index: Int, expected: TripDay) -> [TripDay]? {
+        guard days.indices.contains(index), days[index] == expected else { return nil }
+        var out = days
+        out.remove(at: index)
+        return out
+    }
+
     /// 同じ日の中で1つ上へ（先頭なら `nil`）
     static func moveUp(_ days: [TripDay], day: Int, item: Int) -> [TripDay]? {
         guard item > 0 else { return nil }
