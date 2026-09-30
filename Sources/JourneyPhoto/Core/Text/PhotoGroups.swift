@@ -83,6 +83,23 @@ enum PhotoGroups {
         return found.isEmpty ? [photo] : found
     }
 
+    /// 一覧の並びはそのまま、**束の写真どうしだけ選んだ順に入れ替える**。
+    /// 束の写真が居た場所（何番目か）は変えない——束ねていない写真は動かない。
+    /// 詳細の上の束（`siblings`）と大きく見る画面で、送る向きをそろえるため
+    static func inPostOrderWithinGroups(_ photos: [Photo]) -> [Photo] {
+        var slots: [String: [Int]] = [:]
+        for (i, photo) in photos.enumerated() {
+            slots[groupKey(of: photo), default: []].append(i)
+        }
+        var result = photos
+        for indices in slots.values where indices.count > 1 {
+            for (slot, photo) in zip(indices, inPostOrder(indices.map { photos[$0] })) {
+                result[slot] = photo
+            }
+        }
+        return result
+    }
+
     /// 束の中の並び。**`createdAt` の古い順**（投稿は選んだ順に1枚ずつ保存される）。
     /// 同じ時刻・時刻の無い写真は元の並びのまま（時刻の無いものは後ろ）
     static func inPostOrder(_ photos: [Photo]) -> [Photo] {

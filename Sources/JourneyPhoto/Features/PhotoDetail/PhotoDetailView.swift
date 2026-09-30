@@ -1551,7 +1551,10 @@ enum PhotoDetailRules {
     static func viewerLineup(_ siblings: [Photo], current: Photo,
                              hiding: ModerationSnapshot) -> (photos: [Photo], index: Int) {
         let kept = Set(hiding.visible(siblings).map(\.id))
-        let photos = siblings.filter { $0.id == current.id || kept.contains($0.id) }
+        // 束の写真は詳細の上（`PhotoGroups.siblings`）と同じ選んだ順に。渡された順のままだと
+        // 上では右へ送る写真が、大きく見る画面では左にあった
+        let photos = PhotoGroups.inPostOrderWithinGroups(siblings)
+            .filter { $0.id == current.id || kept.contains($0.id) }
         guard !photos.isEmpty else { return ([current], 0) }
         return (photos, photos.firstIndex(where: { $0.id == current.id }) ?? 0)
     }
