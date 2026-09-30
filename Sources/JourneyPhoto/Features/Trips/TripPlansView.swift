@@ -74,10 +74,13 @@ struct TripPlansView: View {
             }
         }
         .fullScreenCover(isPresented: $showPicker, onDismiss: {
-            // 板の中の保存は一覧の失敗の文を消す（`write` が始めに消す）。取り直して、
-            // 一覧の本当の状態（取れた・取れなかった）をもう一度出す
-            Task { await model.load(environment: environment) }
-            guard let planId = pickedPlanId else { return }
+            // 板の中の保存は一覧の失敗の文を消す（`write` が始めに消す）。保存せずに閉じた回は
+            // 取り直して、一覧の本当の状態をもう一度出す。**保存してプランを開く回は取り直さない**
+            // ——一覧は保存の応答で新しく、取り直しの失敗が開いた詳細に赤い行で出る（文は共有）
+            guard let planId = pickedPlanId else {
+                Task { await model.load(environment: environment) }
+                return
+            }
             pickedPlanId = nil
             openedPlanId = planId
             showOpened = true
