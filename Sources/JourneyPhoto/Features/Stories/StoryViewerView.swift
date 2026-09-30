@@ -140,6 +140,9 @@ struct StoryViewerView: View {
     /// 外へ知らせる。**外の払い（`StoryReelView`）が見る**——返信の一言の候補を横に
     /// 流しただけで次の人へ回り、書きかけが消えていた
     let onSwipeLockChange: ((Bool) -> Void)?
+    /// 票を入れた1本を外へ知らせる。**人を行き来して閲覧画面が作り直されても
+    /// 入れた票を消さない**ため（`StoryReelView` が覚えて `voteStates` で戻す）
+    let onVoted: ((String, StoryVoteState) -> Void)?
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
@@ -149,6 +152,8 @@ struct StoryViewerView: View {
          swipesHandledOutside: Bool = false,
          onDropped: ((String) -> Void)? = nil,
          onSwipeLockChange: ((Bool) -> Void)? = nil,
+         voteStates: [String: StoryVoteState] = [:],
+         onVoted: ((String, StoryVoteState) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
          onDeleted: ((String) -> Void)? = nil) {
         self.onGroupEnd = onGroupEnd
@@ -156,6 +161,8 @@ struct StoryViewerView: View {
         self.swipesHandledOutside = swipesHandledOutside
         self.onDropped = onDropped
         self.onSwipeLockChange = onSwipeLockChange
+        self.onVoted = onVoted
+        _voteStates = State(initialValue: voteStates)
         self.stories = stories
         self.onDeleted = onDeleted
         self.viewerId = viewerId
@@ -1586,7 +1593,9 @@ struct StoryViewerView: View {
         voting = true
         defer { voting = false }
         do {
-            voteStates[story.id] = try await environment.stories.vote(id: story.id, choice: choice)
+            let state = try await environment.stories.vote(id: story.id, choice: choice)
+            voteStates[story.id] = state
+            onVoted?(story.id, state)
         } catch {
             // **いま出している1本のときだけ知らせる**（送っている間に移った先に出さない）
             guard visible.indices.contains(index), visible[index].id == story.id else { return }
