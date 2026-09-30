@@ -23,10 +23,10 @@ struct ThemeColorField: View {
                     }
                 }
             }
-            // 透明な枠のぶん（上と左の 4）を戻す——先頭の丸の左端を見出しにそろえ、
-            // 見出しとの見える間も 8 のまま
+            // 透明な枠のぶん（上・左・下の 4）を戻す——先頭の丸の左端を見出しにそろえ、
+            // 見出しとの見える間も 8 のまま。最後の行の下にも余りを残さない
             .padding(.leading, -ThemeColorLayout.inset)
-            .padding(.top, -ThemeColorLayout.inset)
+            .padding(.vertical, -ThemeColorLayout.inset)
         }
     }
 
@@ -59,7 +59,12 @@ struct ThemeColorField: View {
             Circle()
                 .fill(Color(hex: hex) ?? .gray)
                 .frame(width: ThemeColorLayout.swatch, height: ThemeColorLayout.swatch)
-                .overlay(Circle().strokeBorder(.primary, lineWidth: chosen ? 2 : 0))
+                // 選んだ印は **外側の輪**（Web の `ring-2 ring-offset-2`）。間 2・輪 2 で、
+                // 枠の余白 4 にちょうど収まる（輪の外径 44＝押せる枠）
+                .overlay(Circle()
+                    .strokeBorder(.primary, lineWidth: ThemeColorLayout.ringWidth)
+                    .padding(-(ThemeColorLayout.ringGap + ThemeColorLayout.ringWidth))
+                    .opacity(chosen ? 1 : 0))
                 .frame(width: ThemeColorLayout.target, height: ThemeColorLayout.target)
                 .contentShape(Rectangle())
         }
@@ -77,6 +82,9 @@ enum ThemeColorLayout {
     static let target: CGFloat = 44
     /// 丸の周りの透明な余白（片側）
     static var inset: CGFloat { (target - swatch) / 2 }
+    /// 選んだ印の輪と丸の間・輪の太さ（Web の `ring-offset-2`・`ring-2`）。足して `inset` に収める
+    static let ringGap: CGFloat = 2
+    static let ringWidth: CGFloat = 2
     /// 1行の色の数
     static let columns = 4
     /// 行ごとの色。最後の行の後ろに「なし」が付く

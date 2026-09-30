@@ -65,7 +65,7 @@ struct ProfileEditView: View {
             }
 
             Section {
-                labeled(L("表示名", "Display name")) {
+                labeled(L("表示名", "Display name"), over: PostLimits.overLimitNote(displayName, limit: PostLimits.Profile.displayName)) {
                     TextField("", text: $displayName)
                         .onChange(of: displayName, limitLength($displayName, to: PostLimits.Profile.displayName, loaded: \.displayName))
                 }
@@ -74,7 +74,7 @@ struct ProfileEditView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
-                labeled(L("自己紹介", "Bio")) {
+                labeled(L("自己紹介", "Bio"), over: PostLimits.overLimitNote(bio, limit: PostLimits.Profile.bio)) {
                     // 板の下書き「ひとこと」は付けない——下の「そのほか」に同じ名前の欄
                     // （statusText）があり、どちらに書くのか紛れる
                     TextField("", text: $bio, axis: .vertical)
@@ -83,11 +83,11 @@ struct ProfileEditView: View {
                 }
                 // 板は居住地と Instagram を横に2つ並べる
                 HStack(alignment: .top, spacing: 10) {
-                    labeled(L("居住地", "Where you're based")) {
+                    labeled(L("居住地", "Where you're based"), over: PostLimits.overLimitNote(homeLocation, limit: PostLimits.Profile.homeLocation)) {
                         TextField("", text: $homeLocation)
                             .onChange(of: homeLocation, limitLength($homeLocation, to: PostLimits.Profile.homeLocation, loaded: \.homeLocation))
                     }
-                    labeled(L("Instagram（@なし）", "Instagram (without @)")) {
+                    labeled(L("Instagram（@なし）", "Instagram (without @)"), over: PostLimits.overLimitNote(instagram, limit: PostLimits.Profile.instagram)) {
                         TextField("", text: $instagram)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
@@ -101,12 +101,12 @@ struct ProfileEditView: View {
 
             // **板に無い3つ。** 消すとアプリから直せなくなるので、最後にまとめて残す
             Section(L("そのほか", "More")) {
-                labeled(L("ひとこと", "Status")) {
+                labeled(L("ひとこと", "Status"), over: PostLimits.overLimitNote(statusText, limit: PostLimits.Profile.statusText)) {
                     TextField("", text: $statusText)
                         .onChange(of: statusText, limitLength($statusText, to: PostLimits.Profile.statusText, loaded: \.statusText))
                 }
                 ThemeColorField(themeColor: $themeColor)
-                labeled(L("ウェブサイト", "Website")) {
+                labeled(L("ウェブサイト", "Website"), over: PostLimits.overLimitNote(website, limit: PostLimits.Profile.website)) {
                     TextField("", text: $website)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
@@ -228,7 +228,10 @@ struct ProfileEditView: View {
     }
 
     /// 欄の上に小さい見出し（板の「表示名」などの置き方）
-    private func labeled<Field: View>(_ title: String, @ViewBuilder field: () -> Field) -> some View {
+    /// - Parameter over: 保存されていた値が上限を超えているときの知らせ（`PostLimits.overLimitNote`）。
+    ///   超えていなければ nil で、何も出さない
+    private func labeled<Field: View>(_ title: String, over: String? = nil,
+                                      @ViewBuilder field: () -> Field) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption.weight(.medium))
@@ -238,6 +241,12 @@ struct ProfileEditView: View {
             // 見出しは別の Text なので、欄そのものに名前を付ける（無いと読み上げが「テキストフィールド」だけになる）
             field()
                 .accessibilityLabel(title)
+            // **読み込んだ値が上限を超えている欄だけ**、保存で切れることを知らせる（危険の色・12pt）
+            if let over {
+                Text(over)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.danger)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

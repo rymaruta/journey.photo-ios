@@ -240,14 +240,22 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.following, 1, "ブロック前のフォロー中の数のまま")
     }
 
-    /// 🔴 **ブロックの後の数が読めなかったとき、間に読み込みが入っていたら「1だけ引く」をしない。**
-    /// 間の読み込みの数がもうブロック後の数なら、二重に引いていた
-    func testProfileBlockDoesNotSubtractAfterAnInterveningLoad() async {
+    /// ブロックの途中に読み込みを割り込ませ、ブロック後の読み直しの答えを選んで、最後の数を返す。
+    /// - Parameters:
+    ///   - intervening: 割り込む読み込みが読むフォロー数（nil なら割り込まない）
+    ///   - reread: ブロック後の読み直しの答え（nil なら失敗）
+    private func followersAfterBlock(intervening: (followers: Int, following: Int)?,
+                                     reread: (followers: Int, following: Int)?) async -> (Int, Int) {
         prepare()
-        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
-        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
-        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":3,"following":2}"#)
-        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":["u1"]}"#)
+        func serveProfile(followers: Int, following: Int, followingIds: String) {
+            StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+            StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+            StubProtocol.respond(path: "/users/u1/follow", status: 200,
+                                 body: #"{"followers":\#(followers),"following":\#(following)}"#)
+            StubProtocol.respond(path: "/user/following", status: 200, body: followingIds)
+        }
+        // 押す前: フォロー中で、フォロワー 3・フォロー中 2
+        serveProfile(followers: 3, following: 2, followingIds: #"{"userIds":["u1"]}"#)
         StubProtocol.respond(path: "/users/u1/block", status: 200, body: #"{"blocked":true}"#)
         let gate = Gate(holds: 1)
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
@@ -261,26 +269,55 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(model.isFollowing, "前提: フォロー中と読めていない")
         XCTAssertEqual(model.followers, 3)
 
-        // ブロックを送っている途中で読み込みが入り、ブロック後の数（2）を読む
+        // ブロックを送っている途中
         let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let blocking = Task { await model.block(userId: "u1", environment: env, store: store, toasts: ToastCenter()) }
         await gate.untilWaiting()
-        StubProtocol.reset()
-        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
-        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
-        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":2,"following":1}"#)
-        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
-        await model.load(userId: "u1", environment: env, viewerId: "me")
-        XCTAssertEqual(model.followers, 2)
-
-        // ブロックが通った後の読み直しは失敗する
+        if let intervening {
+            StubProtocol.reset()
+            serveProfile(followers: intervening.followers, following: intervening.following,
+                         followingIds: intervening.followers == 3 ? #"{"userIds":["u1"]}"# : #"{"userIds":[]}"#)
+            await model.load(userId: "u1", environment: env, viewerId: "me")
+        }
+        // ブロックが通った後の読み直し
         StubProtocol.reset()
         StubProtocol.respond(path: "/users/u1/block", status: 200, body: #"{"blocked":true}"#)
-        StubProtocol.respond(path: "/users/u1/follow", status: 500, body: #"{"error":"x"}"#)
+        if let reread {
+            StubProtocol.respond(path: "/users/u1/follow", status: 200,
+                                 body: #"{"followers":\#(reread.followers),"following":\#(reread.following)}"#)
+        } else {
+            StubProtocol.respond(path: "/users/u1/follow", status: 500, body: #"{"error":"x"}"#)
+        }
         await gate.open()
         await blocking.value
         XCTAssertNil(model.actionMessage)
-        XCTAssertEqual(model.followers, 2, "間の読み込みで読めたブロック後の数から、さらに1を引いた")
+        return (model.followers, model.following)
+    }
+
+    /// 🔴 **ブロックの途中に割り込んだ読み込みがブロックの前の数を読み、読み直しが落ちた → 1だけ引いた 2。**
+    /// `loadSeq` の見張りだけでは、割り込みの数が前か後か見分けられず、1引き足りなかった
+    func testBlockWithInterveningPreBlockLoadAndFailedReread() async {
+        let (followers, _) = await followersAfterBlock(intervening: (3, 2), reread: nil)
+        XCTAssertEqual(followers, 2, "ブロック前の数を読んだ割り込みのあとで引いていない")
+    }
+
+    /// 🔴 **割り込みがブロックの後の数を読み、読み直しが落ちた → 2**（二重に引かない）
+    func testBlockWithInterveningPostBlockLoadAndFailedReread() async {
+        let (followers, _) = await followersAfterBlock(intervening: (2, 1), reread: nil)
+        XCTAssertEqual(followers, 2, "ブロック後の数を読んだ割り込みのあとで、さらに引いた")
+    }
+
+    /// 割り込みが無く、読み直しが落ちた → 押した時点の 3 から1だけ引いた 2
+    func testBlockWithoutInterveningLoadAndFailedReread() async {
+        let (followers, _) = await followersAfterBlock(intervening: nil, reread: nil)
+        XCTAssertEqual(followers, 2)
+    }
+
+    /// 読み直しが通った → サーバーの数（割り込みの数でも控えの数でもない）
+    func testBlockRereadUsesTheServerCounts() async {
+        let (followers, following) = await followersAfterBlock(intervening: (3, 2), reread: (5, 0))
+        XCTAssertEqual(followers, 5)
+        XCTAssertEqual(following, 0)
     }
 
     /// 🔴 **ストーリーの輪: 先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない。**

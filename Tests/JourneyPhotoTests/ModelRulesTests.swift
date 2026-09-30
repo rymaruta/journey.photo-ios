@@ -362,6 +362,25 @@ final class PostLimitsTests: XCTestCase {
                                  "393pt 幅の端末でフォームの行に入らない")
     }
 
+    /// 選んだ印の外側の輪（間 2・輪 2）は、押せる枠の余白 4 に収まる（隣の枠へはみ出さない）
+    func testThemeColorRingFitsTheTapTarget() {
+        XCTAssertEqual(ThemeColorLayout.ringGap, 2)
+        XCTAssertEqual(ThemeColorLayout.ringWidth, 2)
+        XCTAssertLessThanOrEqual(ThemeColorLayout.swatch + 2 * (ThemeColorLayout.ringGap + ThemeColorLayout.ringWidth),
+                                 ThemeColorLayout.target)
+    }
+
+    /// 🔴 **上限を超えて保存されていた欄だけ、切れることを知らせる。** 超えていない欄には出さない
+    func testOverLimitNoteOnlyForOverLongValues() {
+        XCTAssertNil(PostLimits.overLimitNote(String(repeating: "あ", count: 60), limit: 60))
+        XCTAssertNil(PostLimits.overLimitNote("", limit: 60))
+        let note = PostLimits.overLimitNote(String(repeating: "あ", count: 72), limit: 60)
+        XCTAssertEqual(note, L("72/60・60字までです。保存すると切れます",
+                               "72/60 · Up to 60 characters. The rest will be cut when you save"))
+        // 数え方はサーバーと同じ（UTF-16）。絵文字 31 個は 62
+        XCTAssertNotNil(PostLimits.overLimitNote(String(repeating: "😀", count: 31), limit: 60))
+    }
+
     /// 🔴 **通報の補足はサーバーと同じ単位（UTF-16）で 500 に収める。** 字で `prefix(500)` を
     /// 取っていたので、絵文字の多い補足はアプリでは切られず、サーバーで黙って切られていた
     func testReportNoteIsClampedLikeTheServer() {

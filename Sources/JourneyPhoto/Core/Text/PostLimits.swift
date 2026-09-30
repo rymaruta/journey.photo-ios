@@ -109,6 +109,16 @@ enum PostLimits {
         return limited(old: old, new: new, limit: limit)
     }
 
+    /// 上限を超えている欄の知らせ（「72/60・60字までです。保存すると切れます」）。**超えていなければ nil**
+    /// ——`limitedEdit` は読み込んだ値を切らずに残すので、そのまま保存すると
+    /// サーバーで黙って切られる。切れることを欄の下で言う。数え方は `length`（サーバーと同じ）
+    static func overLimitNote(_ text: String, limit: Int) -> String? {
+        let count = length(text)
+        guard count > limit else { return nil }
+        return L("\(count)/\(limit)・\(limit)字までです。保存すると切れます",
+                 "\(count)/\(limit) · Up to \(limit) characters. The rest will be cut when you save")
+    }
+
     /// 上限で切る（画面側で止める）。**字の途中では切らない**（サーバーの `truncate` と同じく、
     /// 上限に収まる最後の字まで）
     static func clamp(_ text: String, limit: Int) -> String {
