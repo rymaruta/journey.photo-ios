@@ -69,7 +69,7 @@ struct FollowListView: View {
 
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(WebTheme.danger).font(.callout)
-            } else if users.isEmpty && !isLoading {
+            } else if users.isEmpty && !isLoading && total == 0 {
                 Text(L("まだいません", "No one yet")).foregroundStyle(.secondary)
             }
 
