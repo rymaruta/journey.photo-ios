@@ -180,6 +180,22 @@ enum StoryTextEditing {
         return shown.hasSuffix("\n") ? shown + " " : shown
     }
 
+    /// 打つ欄（`TextField`）そのものの幅を決める文字。**印（📍 # ♪）は数えない**（印は欄の外に並べる）。
+    /// 空なら入力の見本。最後の空の行は `typingMeasureText` と同じく空白を1つ置いて数える
+    static func typingFieldText(_ overlay: TextOverlay, placeholder: String) -> String {
+        guard !overlay.text.isEmpty else { return placeholder }
+        return overlay.text.hasSuffix("\n") ? overlay.text + " " : overlay.text
+    }
+
+    /// 打つ欄の幅。**欄の「自然な幅」には頼らず、測った幅を渡す**——縦に伸びる欄
+    /// （`axis: .vertical`）に `fixedSize()` を付けると、実機では幅が 0 になり、打った字も
+    /// 見本も描かれなかった（2026-09-30 の owner の画面「打ったのに出てこない」）。
+    /// 測りと欄の中の組み方の差・キャレットの分だけ足す（足りないと欄の中で折り返す）
+    static func typingFieldWidth(measured: Double, fontSize: Double) -> Double {
+        guard measured.isFinite, fontSize.isFinite else { return 0 }
+        return max(0, measured) + max(4, fontSize * 0.25)
+    }
+
     // MARK: - 指で直接動かす（「文字と札」に入らずに・2026-09-30）
 
     /// 画面に置かれた札の場所（画面の座標）。指の下の札を探すのに使う

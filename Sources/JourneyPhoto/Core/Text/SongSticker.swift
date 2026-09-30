@@ -28,6 +28,13 @@ enum SongSticker {
         return overlays.contains { $0.kind == .song && !$0.isEmpty && $0.text == placed }
     }
 
+    /// `overlay` が**付けた曲の札**か（`retext` と同じ判定: 種類が曲で、文字がいまの曲名）。
+    /// 自分で打った別の文字の「曲」の札は当たらない
+    static func isSticker(_ overlay: TextOverlay, of song: Photo.Song?) -> Bool {
+        guard let song, let text = text(for: song) else { return false }
+        return overlay.kind == .song && overlay.text == String(text.prefix(TextOverlay.maxLength))
+    }
+
     /// 新しく置く札。場所は撮影地の札と同じ少し下（文字の札と重なりにくい）。
     /// **長い曲名は小さくして置く**（焼き込みは1行で折り返さないので、既定の
     /// 大きさだと「Bohemian Rhapsody · Queen」で写真の幅を超えて両端が切れる）

@@ -155,7 +155,12 @@ struct StoryTextTypingView: View {
     /// 欄に見えている大きさ（最後の空の行・見本の文字まで数える・帯の余白込み）
     private func typingSize(fontSize: Double) -> CGSize {
         let text = StoryTextEditing.typingMeasureText(overlay, placeholder: L("文字を入力", "Type something"))
-        return padded(TextOverlayRenderer.naturalSize(overlay, text: text, fontSize: fontSize), fontSize: fontSize)
+        var size = TextOverlayRenderer.naturalSize(overlay, text: text, fontSize: fontSize)
+        // 打てる欄は測った幅に少し足して渡している（`typingFieldWidth`）。その分も数える
+        if overlay.kind.isEditable {
+            size.width = CGFloat(StoryTextEditing.typingFieldWidth(measured: Double(size.width), fontSize: fontSize))
+        }
+        return padded(size, fontSize: fontSize)
     }
 
     /// 仕上がり（置いたあと・焼き込み）の大きさ。焼き込みと同じ測り方
@@ -293,9 +298,15 @@ struct StoryTextTypingView: View {
         // 1行の欄（撮影地・タグ・曲）は Return で確定して閉じる（キーボードだけ閉じて画面が残った）。
         // 改行できる欄では Return は改行なので、ここは呼ばれない
         .onSubmit { onDone() }
+        // **幅は測って渡す＝改行した所だけで行が分かれる**（置いたあとと同じ）。高さは渡した幅での
+        // 欄の高さ。`fixedSize()` で欄に任せると、縦に伸びる欄は実機で幅 0 になり何も描かれなかった
+        // （`StoryTextEditing.typingFieldWidth`）
+        let measured = TextOverlayRenderer.naturalSize(
+            overlay, text: StoryTextEditing.typingFieldText(overlay, placeholder: L("文字を入力", "Type something")),
+            fontSize: fontSize).width
         return Self.edged(input, style: overlay.style, fontSize: fontSize)
-            // **中身の幅と高さに合わせる＝改行した所だけで行が分かれる**（置いたあとと同じ）
-            .fixedSize()
+            .frame(width: CGFloat(StoryTextEditing.typingFieldWidth(measured: Double(measured), fontSize: fontSize)))
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(L("文字", "Text"))
     }
 

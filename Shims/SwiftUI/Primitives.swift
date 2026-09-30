@@ -278,6 +278,15 @@ public struct ViewDimensions {
     public subscript(guide: HorizontalAlignment) -> CGFloat { 0 }
 }
 public struct VerticalAlignment { public static let center = VerticalAlignment(), top = VerticalAlignment(), bottom = VerticalAlignment(), firstTextBaseline = VerticalAlignment(), lastTextBaseline = VerticalAlignment() }
+/// 安全領域の種類（本物と同じ名前）
+public struct SafeAreaRegions: OptionSet {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let container = SafeAreaRegions(rawValue: 1)
+    public static let keyboard = SafeAreaRegions(rawValue: 2)
+    public static let all: SafeAreaRegions = [.container, .keyboard]
+}
+
 public struct Edge {
     public static let top = Edge(), bottom = Edge(), leading = Edge(), trailing = Edge()
     /// 本物は `OptionSet`（`[]` で「どの端も無し」を書ける）

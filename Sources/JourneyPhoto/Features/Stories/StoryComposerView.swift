@@ -163,6 +163,11 @@ struct StoryComposerView: View {
                         .allowsHitTesting(typingId == nil)
                 }
             }
+            // **打っている間はキーボードで写真の枠を縮めない。** 縮めると写真が縮んだ枠に合わせて
+            // 切り直され、下に（隠した足元の分の）黒い帯が残った（2026-09-30 の owner の画面
+            // 「画面の上の方おかしい」）。キーボードを避けるのは上に重ねた打つ画面だけ。
+            // ひとことを打つ間は今まで通り避ける（欄がキーボードの下に隠れないように）
+            .ignoresSafeArea(.keyboard, edges: typingId != nil ? .bottom : [])
             // 打っている間は後ろを読ませない（VoiceOver で投稿・他の札へ移れた）
             .accessibilityHidden(typingId != nil)
             if typingId == nil {
@@ -333,7 +338,7 @@ struct StoryComposerView: View {
                             // 写真を押したら投票の欄を閉じる
                             onTapPhoto: { voteSelected = false },
                             // ゴミ箱へ運んで離した（VoiceOver の「消す」も）。**表示中の写真の札**
-                            onDelete: { id in overlays.wrappedValue.removeAll { $0.id == id } },
+                            onDelete: { id in deleteOverlay(id) },
                             onDraggingChange: { draggingOverlay = $0 },
                             vote: vote,
                             voteSelected: voteSelected,
@@ -539,12 +544,9 @@ struct StoryComposerView: View {
             if !location.isEmpty {
                 photoChip(symbol: "mappin", text: location)
             }
-            // **曲が付いていることは必ず見せる。** 札はいまの1枚にしか置かないので、
-            // 札を消した・別の写真に切り替えた・札が上限で置けなかったときに、
-            // 曲が付いているのに画面から何も分からなくなる
-            if let song, !currentHasSongSticker, let text = SongSticker.text(for: song) {
-                photoChip(symbol: "music.note", text: text)
-            }
+            // 曲は**動かせる札だけで見せる**（札と同じ中身の動かせない帯を別に出していた。札を
+            // ゴミ箱に入れると帯が代わりに出て「消せない」・2026-09-30 の owner）。札を消すと曲も外れる
+            // （`deleteOverlay`）。札が上限で置けないときは下の一言（`songNote`）で伝える
         }
     }
 
@@ -823,6 +825,18 @@ struct StoryComposerView: View {
         // 欄が閉じて足元が戻るので、打つ画面の文字が置いたあとより2割大きく見えた（f38d404 のレビュー）
         guard !captionFocused && !votePanelOpen else { return }
         canvasSize = size
+    }
+
+    /// 表示中の写真の札を消す（ゴミ箱・VoiceOver の「消す」）。**付けた曲の最後の札なら曲も外す**
+    /// （Instagram と同じ。札だけ消えて曲が黙って残ると、画面から曲が付いていると分からない）。
+    /// 別の写真にも同じ曲の札があれば、曲はそちらで見えているので外さない
+    private func deleteOverlay(_ id: UUID) {
+        let removed = overlays.wrappedValue.first { $0.id == id }
+        overlays.wrappedValue.removeAll { $0.id == id }
+        guard let removed, SongSticker.isSticker(removed, of: song),
+              !shots.contains(where: { $0.overlays.contains { SongSticker.isSticker($0, of: song) } })
+        else { return }
+        applySong(nil)
     }
 
     /// 曲を付ける・変える・外す。**写真の上の曲の札も合わせる**——付けたら
