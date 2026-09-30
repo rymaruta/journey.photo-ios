@@ -64,11 +64,21 @@ struct TripPlanService {
         try await api.authorized(.get, "/user/trips", as: TripPlanList.self).plans
     }
 
-    private struct CreateBody: Encodable { let title: String }
+    /// 無い項目（nil）は送らない。サーバーは作るときも日程・日付を読む（`createTrip`）
+    private struct CreateBody: Encodable {
+        let title: String
+        var startDate: String?
+        var endDate: String?
+        var days: [TripDay]?
+    }
 
-    func create(title: String) async throws -> [TripPlan] {
-        try await refusing {
-            try await api.authorized(.post, "/user/trips", body: CreateBody(title: title), as: TripPlanList.self).plans
+    /// 作る。**日程・日付も同じ1回で送る**——作ってから別に送ると、2回目で落ちた回に
+    /// 空のプランが残る（行きたい場所から作る下書き・`TripPickerDraftView`）
+    func create(title: String, days: [TripDay]? = nil,
+                startDate: String? = nil, endDate: String? = nil) async throws -> [TripPlan] {
+        let body = CreateBody(title: title, startDate: startDate, endDate: endDate, days: days)
+        return try await refusing {
+            try await api.authorized(.post, "/user/trips", body: body, as: TripPlanList.self).plans
         }
     }
 

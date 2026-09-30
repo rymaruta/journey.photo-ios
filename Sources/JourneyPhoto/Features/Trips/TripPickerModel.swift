@@ -32,13 +32,8 @@ final class TripPickerModel: ObservableObject {
     /// 下書きで「このプランから外す」を押した場所（`spotId`）。**「行きたい」からは外さない**
     @Published private(set) var removed: Set<String> = []
 
-    /// 下書きの保存の1段目（作る）が通ったプラン。**下書きの画面ではなくここに持つ**
-    /// ——下書きの画面は戻って開き直すと作り直されるので、そこに置くと2段目が断られた
-    /// あとの保存が1段目からやり直しになり、同じプランが2つできた
-    @Published var createdPlanId: String?
-    @Published var createdTitle: String?
-    /// 下書きの題・日付・失敗の文も同じ理由でここに持つ（開き直しで消さない・
-    /// 本人が付けた題を案の題で上書きしない）
+    /// 下書きの題・日付・失敗の文は**下書きの画面ではなくここに持つ**——下書きの画面は
+    /// 戻って開き直すと作り直される（開き直しで消さない・本人が付けた題を案の題で上書きしない）
     @Published var draftTitle = ""
     @Published var draftStart: String?
     @Published var draftEnd: String?

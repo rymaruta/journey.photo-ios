@@ -55,6 +55,24 @@ final class OfficialSpotIndexTests: XCTestCase {
         XCTAssertEqual(OfficialSpotIndex.matches(try index(), query: "網走市").map(\.slug), ["abashiri-ryuhyo"])
     }
 
+    /// 海外の行は国名でも当たる（Web の「さがす」と同じ。以前は「フランス」で県・市に
+    /// 国名を含む行しか出なかった）
+    func testMatchesByCountry() throws {
+        let json = "{\"spotId\":\"sp_mont\",\"slug\":\"mont-saint-michel\",\"name\":\"モン・サン＝ミシェル\","
+            + "\"stage\":\"review\",\"region\":{\"country\":\"フランス\",\"prefecture\":\"ノルマンディー\"}}"
+        let mont = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(json.utf8))
+        XCTAssertEqual(OfficialSpotIndex.matches(try index() + [mont], query: "フランス").map(\.slug),
+                       ["mont-saint-michel"])
+    }
+
+    /// 国が「日本」の行は国では当てない（「本」で国内のほぼ全部が当たる）
+    func testJapanIsNotMatchedAsCountry() throws {
+        let json = "{\"spotId\":\"sp_x\",\"slug\":\"x\",\"name\":\"X\","
+            + "\"stage\":\"review\",\"region\":{\"country\":\"日本\",\"prefecture\":\"香川県\"}}"
+        let x = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(json.utf8))
+        XCTAssertTrue(OfficialSpotIndex.matches([x], query: "本").isEmpty)
+    }
+
     /// **名前で当たったものが先。** 地域だけで当たったものはその後ろ
     func testNameMatchesComeFirst() throws {
         let spots = [

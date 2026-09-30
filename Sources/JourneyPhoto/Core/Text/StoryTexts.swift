@@ -56,6 +56,28 @@ enum StoryTextItem: Equatable {
         }
     }
 
+    /// 文字の項目か（Web の `isStoryTextItem`＝kind が無いか "text"）。読む時点で
+    /// kind が nil・"text" のものだけが `.text` になる（`parse`）ので、ここは `.text` を見る
+    var isTextItem: Bool {
+        if case .text = self { return true }
+        return false
+    }
+
+    /// 文字の項目が1つでも在るか（投票・スタンプだけなら false）。Web の `hasStoryTextItem` と同じ判定。
+    ///
+    /// **下のひとことの欄を出すかを決める1本。** 文字の項目が在れば `caption` はそれを繋いだもの
+    /// （写真の上に描いてある）なので出さない（二重になる）。投票・スタンプだけなら、サーバーは
+    /// 送られた `caption` をそのまま保存する（photo-gallery #257）ので、下の欄に出す
+    static func hasTextItem(_ items: [StoryTextItem]) -> Bool {
+        items.contains(where: \.isTextItem)
+    }
+
+    /// 閲覧画面の下のひとことの欄に出す文。文字の項目が在れば出さない（`hasTextItem`）・空も出さない
+    static func bottomCaption(_ caption: String?, texts: [StoryTextItem]) -> String? {
+        guard !hasTextItem(texts), let caption, !caption.isEmpty else { return nil }
+        return caption
+    }
+
     /// Web の絵柄の一覧（`STORY_STAMPS`）。**知らない鍵は描かない**（別の絵に化けさせない）
     static let stampGlyphs: [String: String] = [
         "heart": "❤️", "star": "⭐", "sparkles": "✨", "fire": "🔥", "camera": "📷", "pin": "📍",

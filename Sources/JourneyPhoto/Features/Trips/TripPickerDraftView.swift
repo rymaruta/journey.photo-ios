@@ -6,9 +6,8 @@ import SwiftUI
 /// （`TripPicker.grouped` / `days`）。出発・帰着を入れると、その日数に合わせて
 /// 割り振り直す。題・日付・日程を見て「保存」で作る。
 ///
-/// **保存は2段。** 作る（`POST /user/trips`・題だけ）→ 日程と日付を入れる（`PUT`）。
-/// サーバーの口は変えない。2段目が断られたときは、作ったプランを覚えて
-/// **次の「保存」は2段目だけ**をやり直す（同じ題のプランを2つ作らない）。
+/// **保存は1回。** 題・日程・日付をまとめて作る（`POST /user/trips`・サーバーの `createTrip` が
+/// 全部読む）。以前は作ってから `PUT` で日程を入れる2段で、2段目で落ちると空のプランが残った。
 ///
 /// 移動時間・道のり・費用は**出さない**（計算していない。`TripPlanText` の約束）。
 /// 並びは直線の距離で近い順にしただけなので、そう書く。
@@ -282,7 +281,7 @@ struct TripPickerDraftView: View {
         Button { save() } label: {
             HStack(spacing: 8) {
                 if saving { ProgressView().tint(WebTheme.accentText) }
-                Text(picker.createdPlanId == nil ? L("旅行プランを保存", "Save trip") : L("日程をもう一度保存", "Save the days again"))
+                Text(L("旅行プランを保存", "Save trip"))
                     .font(.body.weight(.semibold))
             }
             .foregroundStyle(WebTheme.accentText)
@@ -311,36 +310,19 @@ struct TripPickerDraftView: View {
         errorText = nil
         Task {
             defer { saving = false }
-            let planId: String
-            if let made = picker.createdPlanId {
-                planId = made
-            } else {
-                guard let made = await plans.create(title: sendTitle, environment: environment) else {
-                    errorText = plans.errorMessage
-                        ?? L("旅行プランを作れませんでした。もう一度お試しください。", "Couldn't create the trip. Please try again.")
-                    // 文はこの画面で出す。**一覧の model に残さない**（板を閉じたあと、取れている
-                    // 一覧の上に赤い行が残る。一覧は自分の読み込みの失敗だけを出す）
-                    plans.clearError()
-                    return
-                }
-                picker.createdPlanId = made.planId
-                picker.createdTitle = sendTitle
-                planId = made.planId
-            }
-            var patch = TripPlanService.Patch()
-            patch.days = sendDays
-            if let sendStart { patch.startDate = sendStart }
-            if let sendEnd { patch.endDate = sendEnd }
-            // やり直しの間に題を変えていたら、それも送る
-            if let createdTitle = picker.createdTitle, createdTitle != sendTitle { patch.title = sendTitle }
-            guard await plans.update(planId, patch, environment: environment) else {
-                let reason = plans.errorMessage ?? L("もう一度お試しください", "Please try again")
+            // **題・日程・日付を1回で作る。** 作ってから日程を別に送ると、2回目で落ちた回に
+            // 空のプランが残った
+            guard let made = await plans.create(title: sendTitle, days: sendDays,
+                                                startDate: sendStart, endDate: sendEnd,
+                                                environment: environment) else {
+                errorText = plans.errorMessage
+                    ?? L("旅行プランを作れませんでした。もう一度お試しください。", "Couldn't create the trip. Please try again.")
+                // 文はこの画面で出す。**一覧の model に残さない**（板を閉じたあと、取れている
+                // 一覧の上に赤い行が残る。一覧は自分の読み込みの失敗だけを出す）
                 plans.clearError()
-                errorText = L("旅行プランは作りましたが、日程を保存できませんでした（\(reason)）。もう一度保存してください。",
-                              "The trip was created, but the days couldn't be saved (\(reason)). Please save again.")
                 return
             }
-            onSaved(planId)
+            onSaved(made.planId)
         }
     }
 }

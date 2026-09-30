@@ -143,6 +143,37 @@ final class TripPlansModelTests: XCTestCase {
         XCTAssertEqual(made?.planId, "new")
     }
 
+    /// 🔴 **日程・日付は作る1回（POST）で送る。** 以前は作ってから PUT で送っていたので、
+    /// 2回目で落ちると空のプランが残った（行きたい場所から作る下書き）
+    func testCreateSendsDaysAndDatesInOneRequest() async throws {
+        let env = environment()
+        let model = TripPlansModel()
+        StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"new","title":"冬","days":[]}]}"#)
+        let days = [TripDay(items: [.spot(spotId: "sp_a", note: nil)])]
+        let made = await model.create(title: "冬", days: days, startDate: "2026-12-01", endDate: "2026-12-02",
+                                      environment: env)
+        XCTAssertEqual(made?.planId, "new")
+        XCTAssertEqual(StubProtocol.requests, ["POST /user/trips"])
+        let body = try XCTUnwrap(StubProtocol.lastBody)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["title"] as? String, "冬")
+        XCTAssertEqual(json["startDate"] as? String, "2026-12-01")
+        XCTAssertEqual(json["endDate"] as? String, "2026-12-02")
+        let sentDays = try XCTUnwrap(json["days"] as? [[String: Any]])
+        XCTAssertEqual(sentDays.count, 1)
+        XCTAssertEqual((sentDays[0]["items"] as? [Any])?.count, 1)
+    }
+
+    /// 題だけで作るときは、日程・日付の鍵を送らない（一覧の「新しく作る」）
+    func testCreateWithTitleOnlySendsNoDays() async throws {
+        let env = environment()
+        let model = TripPlansModel()
+        StubProtocol.respond(status: 200, body: #"{"plans":[{"planId":"new","title":"冬","days":[]}]}"#)
+        _ = await model.create(title: "冬", environment: env)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody)) as? [String: Any])
+        XCTAssertEqual(Set(json.keys), ["title"])
+    }
+
     /// **連打で二重に作らない。** 書き込み中の2回目は通信しない
     func testSecondWriteWhileBusyDoesNothing() async {
         // 1回目だけトークンの手前で止める（2回目が通信しに来たら止めずに通す）

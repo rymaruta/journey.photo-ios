@@ -613,9 +613,10 @@ struct StoryViewerView: View {
     /// 撮影地は以前は見出しの2行目にあった
     @ViewBuilder
     private func captionBlock(for story: Story) -> some View {
-        // **文字をデータで置いた1本はひとことを出さない**——`caption` はその文字から作られた
-        // もので、写真の上の文字と二重になる（Web も `texts` があれば出さない）
-        let caption = captionHidden || !story.texts.isEmpty ? nil : story.caption.flatMap { $0.isEmpty ? nil : $0 }
+        // **文字の項目を置いた1本はひとことを出さない**——`caption` はその文字から作られた
+        // もので、写真の上の文字と二重になる。投票・スタンプだけなら出す（サーバーは送られた
+        // `caption` を保存する・Web の `hasStoryTextItem` と同じ判定）
+        let caption = captionHidden ? nil : StoryTextItem.bottomCaption(story.caption, texts: story.texts)
         let place = story.location.flatMap { $0.isEmpty ? nil : $0 }
         // 曲の札を焼き込んだ1本は出さない（写真の上の札と2度出る・`songLineShown`）
         let song = story.songLineShown
@@ -906,7 +907,9 @@ struct StoryViewerView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    // 反応の並びが開いていたら、押しても送らずに閉じるだけ
+                    // 反応の並び・返信の入力が開いていたら、押しても送らずに閉じるだけ
+                    // （送ると `go(to:)` が返信の書きかけを消す）
+                    if replyFocused { replyFocused = false; return }
                     if showReactions { showReactions = false } else { leftTap() }
                 }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
@@ -916,6 +919,7 @@ struct StoryViewerView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
+                    if replyFocused { replyFocused = false; return }
                     if showReactions { showReactions = false }
                     else if paused { paused = false } else if !isSending { advance() }
                 }
@@ -932,6 +936,8 @@ struct StoryViewerView: View {
             DragGesture(minimumDistance: StoryPlayback.swipeThreshold)
                 .onEnded { value in
                     guard !swipesHandledOutside else { return }
+                    // 返信を打っている間の払いはキーボードを閉じるだけ（押したときと同じ・書きかけを消さない）
+                    if replyFocused { replyFocused = false; return }
                     switch StoryPlayback.swipe(
                         dx: value.translation.width, dy: value.translation.height) {
                     case .next: if !isSending { advance() }

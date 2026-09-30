@@ -228,7 +228,7 @@ struct TripPickerView: View {
             // **出典は写真と必ず一緒に**（CC BY・CC BY-SA の条件）。押すと出典・ライセンスへ
             if let photo = spot.photo {
                 SpotImageCredit(photo: photo)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(2)
                     .accessibilityIdentifier("tripPicker.photoCredit")
@@ -432,15 +432,18 @@ struct TripPickerView: View {
             Text(L("撮影スポットを読み込めませんでした。", "Couldn't load photo spots."))
                 .font(.callout)
                 .foregroundStyle(WebTheme.muted2)
-            Button(L("再試行", "Retry")) {
+            // 大きさと当たりの形は **label の中に**（外に付けると押せるのが文字の上だけになる）
+            Button {
                 Task {
                     await model.load(fetch: { try await environment.spots.fetchIndex() },
                                      excluding: wishlist.spotIds, seed: seed)
                 }
+            } label: {
+                Text(L("再試行", "Retry"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .webTappable()
             }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(WebTheme.foreground)
-            .webTappable()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

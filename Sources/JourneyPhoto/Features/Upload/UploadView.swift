@@ -130,6 +130,8 @@ struct UploadView: View {
                     .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
             }
             .buttonStyle(.plain)
+            // 送っている間は外せない——送信は1枚ごとに `spot` を読むので、束の途中で紐付けが割れる
+            .disabled(model.isWorking)
             .accessibilityLabel(L("撮影スポットの紐付けを外す", "Don't link to this spot"))
         }
         .padding(.horizontal, 14)
@@ -421,13 +423,19 @@ struct UploadView: View {
     private var rowsCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             JPCard {
+                // **送っている間は変えさせない**（公開範囲・カテゴリ・タグも同じ）。
+                // 送信は1枚ごとにその時点の値を読むので、同じ束で割れる
+                // （Web の AudiencePicker disabled={uploading} と同じ）。
+                // アルバムは送信中に選び直せる作り（`onAlbumGone`）なので止めない
                 songRow
+                    .disabled(model.isWorking)
                 if !model.albums.isEmpty {
                     JPCardDivider()
                     albumRow
                 }
                 JPCardDivider()
                 audienceRow
+                    .disabled(model.isWorking)
                 // **選ぶ先が空なら誰にも見えない。** 選びに行く口をここに置く
                 if model.published && model.audience == .closeFriends {
                     JPCardDivider()
@@ -453,6 +461,7 @@ struct UploadView: View {
                                value: model.category.isEmpty ? L("選ぶ", "Choose") : model.category)
                 }
                 .buttonStyle(JPRowButtonStyle())
+                .disabled(model.isWorking)
             }
             // 付けた曲は試し聴きできる形で出す（アートワーク・アーティスト・再生）
             if let song = model.song {
@@ -544,6 +553,7 @@ struct UploadView: View {
     /// タグ（まとめて同じものが付く）
     private var tagsAndCategory: some View {
         TagField(tagsText: $model.tagsText)
+            .disabled(model.isWorking)
     }
 
     /// 送信の途中・失敗の知らせと、残りをやめる口

@@ -917,8 +917,12 @@ struct PhotoMapView: View {
                                     .background(WebTheme.raised, in: RoundedRectangle(cornerRadius: 6))
                             }
                         }
+                        .frame(minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                     }
+                    // 見本は 36pt のまま、押せる高さだけ 44pt。張り出し（上下 4pt）は並びの上で詰める
+                    // ——下の「写真を見る」との間（spacing 4）に収まり、重ならない
+                    .padding(.vertical, -(WebTheme.minTapTarget - 36) / 2)
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("この場所の写真を見る", "See photos here"))
                 }
