@@ -64,6 +64,8 @@ struct TripPlanDetailView: View {
     @State private var deferredSaveError: String?
     /// ひとことを入れられなかった知らせ（書いている間に項目が外れた）
     @State private var noteError: String?
+    /// 項目を動かせなかった知らせ（メニューを開いている間に日程が差し替わった）
+    @State private var moveError: String?
     private struct Draft: Equatable {
         var days: [TripDay]
         var start: String?
@@ -175,6 +177,13 @@ struct TripPlanDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(noteError ?? "")
+        }
+        .alert(L("動かせませんでした", "Couldn't move"),
+               isPresented: Binding(get: { moveError != nil },
+                                    set: { if !$0 { moveError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(moveError ?? "")
         }
         // ひとことの欄を閉じたら、その間に届いた保存の失敗を出す
         .onChange(of: noteTarget == nil) { _, closed in
@@ -544,20 +553,28 @@ struct TripPlanDetailView: View {
         .accessibilityValue(L("\(di + 1) 日目・\(ii + 1) 番目", "Day \(di + 1), item \(ii + 1)"))
     }
 
-    /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）。
-    /// **少し遅らせて出す**——メニューが閉じると焦点が「…」に戻ってその名前を読み始め、
-    /// 同時に出した読み上げは割り込まれて消えることがある
+    /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）
     private func apply(_ next: [TripDay], said: String) {
         days = next
         announce(said)
     }
 
     /// 押したときに項目が見つからなかった（メニューを開いている間に日程が差し替わった）。
-    /// **黙って何もしないと、押しても効かなかったように聞こえる**ので読み上げで伝える
+    /// **黙って何もしないと、押しても効かなかったように見える**——目で見ている人には
+    /// アラート（ひとことの経路と同じく、メニューが閉じてから・出してよい時だけ）、
+    /// VoiceOver の人にはアラートがそのまま読まれる
     private func notMoved(_ name: String) {
-        announce(L("「\(name)」は日程が変わったため動かせませんでした", "\(name) couldn't be moved because the plan changed"))
+        let message = L("「\(name)」は項目が変わったため動かせませんでした。もう一度お試しください。",
+                        "\(name) couldn't be moved because the item changed. Please try again.")
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard picking == nil, onTop, !confirmLeave, noteTarget == nil else { return }
+            moveError = message
+        }
     }
 
+    /// 読み上げを出す。**少し遅らせる**——メニューが閉じると焦点が「…」に戻ってその名前を
+    /// 読み始め、同時に出した読み上げは割り込まれて消えることがある
     private func announce(_ text: String) {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 400_000_000)
