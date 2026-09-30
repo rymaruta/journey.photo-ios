@@ -128,6 +128,7 @@ final class GalleryViewModel: ObservableObject {
             all = []
             myPhotos = []
             myPhotosOwner = nil
+            myPhotosWanted = next
             state = .loading
             // **前の人の「フォロー中」で絞らない。** 画面はこの読み直しを待ってから
             // 新しい人のフォロー中を渡すので、それまでは空で絞る。
@@ -167,14 +168,23 @@ final class GalleryViewModel: ObservableObject {
     @Published private(set) var myPhotos: [Photo] = []
 
     func loadMyPhotos(_ photos: PhotoService, viewerId: String?) async {
+        await loadMyPhotos(viewerId: viewerId) { try await photos.myPhotos() }
+    }
+
+    /// 取り方を差し替えられる形（試験で答えを待たせる）
+    func loadMyPhotos(viewerId: String?, fetch: () async throws -> [Photo]) async {
+        myPhotosWanted = viewerId
         guard viewerId != nil else {
             myPhotos = []
             myPhotosOwner = nil
             return
         }
-        let fetched = try? await photos.myPhotos()
+        let fetched = try? await fetch()
         // 取り消された回（ログアウト・人の切り替え）は、遅れて着いた答えを誰にも付けない
         guard !Task.isCancelled else { return }
+        // 🔴 **取り消されない回（投稿を閉じた・引き下げ）もある。** 待つ間に別の人
+        // （ログアウトを含む）の読みが始まっていたら、前の人の答えを書かない
+        guard myPhotosWanted == viewerId else { return }
         if let fetched {
             myPhotos = fetched
             myPhotosOwner = viewerId
@@ -188,6 +198,9 @@ final class GalleryViewModel: ObservableObject {
 
     /// `myPhotos` が誰のものか（`followingOwner` と同じ考え方）
     private var myPhotosOwner: String?
+    /// 最後に自分の写真を読みに行った人（人の切り替えでも替える）。
+    /// これと違う人の答えは遅れて着いたものなので捨てる
+    private var myPhotosWanted: String?
 
     func select(category: String?) {
         self.category = category

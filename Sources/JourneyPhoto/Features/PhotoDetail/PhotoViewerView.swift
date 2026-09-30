@@ -218,7 +218,7 @@ struct PhotoViewerView: View {
                     }
                     if let line = PhotoMetaLine.exifLine(photo.exif) {
                         Text(line)
-                            .font(JPFont.mono(11))
+                            .font(JPFont.mono(12))
                             .foregroundStyle(Color.white.opacity(0.6))
                             .lineLimit(1)
                     }

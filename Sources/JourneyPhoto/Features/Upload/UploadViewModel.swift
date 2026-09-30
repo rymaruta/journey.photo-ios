@@ -84,6 +84,18 @@ struct PendingPhoto: Identifiable {
     var coordsToSend: Photo.Coords? {
         locationClearedByUser ? nil : (pickedCoords ?? prepared.coords)
     }
+
+    /// スポットから開いた投稿で送る座標。**位置の無い写真は、スポットに紐付くあいだ
+    /// スポットの座標を送る。**
+    ///
+    /// 以前は `pickedCoords` に入れていたが、撮影地の欄は文字が変わると
+    /// `pickedCoords` を捨てる（`PlaceSearchField`）ので、「高屋神社, 香川」と足しただけで
+    /// `spotId` は付いたままピンだけ消えていた。紐付けと同じ条件（`spotIdToSend`）で決める
+    func coordsToSend(spot: UploadSpotTarget?) -> Photo.Coords? {
+        if let coords = coordsToSend { return coords }
+        guard prepared.coords == nil, UploadSpotTarget.spotIdToSend(spot, for: self) != nil else { return nil }
+        return spot?.coords
+    }
 }
 
 @MainActor
@@ -97,14 +109,10 @@ final class UploadViewModel: ObservableObject {
     /// スポットの画面から開いたときの行き先（`UploadSpotTarget`）。外すと普通の投稿に戻る
     @Published var spot: UploadSpotTarget?
 
-    /// スポットを外す。**もう並んでいる写真に入れたスポットの座標も外す**（写真の位置に戻す）。
+    /// スポットを外す。スポットの座標は外した時点で送らなくなる（`coordsToSend(spot:)`）。
     /// 撮影地の名前は残す（本人が直せる。空にすると座標まで送らなくなる）
     func removeSpot() {
-        guard let spot else { return }
-        for i in items.indices where items[i].pickedCoords != nil && items[i].pickedCoords == spot.coords {
-            items[i].pickedCoords = nil
-        }
-        self.spot = nil
+        spot = nil
     }
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
@@ -427,8 +435,8 @@ final class UploadViewModel: ObservableObject {
         }
     }
 
-    /// 1枚を待ち行列に足し、撮影地を引き始める。
-    private func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil) {
+    /// 1枚を待ち行列に足し、撮影地を引き始める。試験から呼ぶので private にしない
+    func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil) {
         var photo = PendingPhoto(prepared: prepared)
         photo.pickerItem = pickerItem
         photo.preview = Self.image(from: prepared.data)
@@ -437,8 +445,8 @@ final class UploadViewModel: ObservableObject {
         // 位置のある写真は写真の座標をそのまま送る（撮った場所の方が正しい）。
         // スポットの座標を使うのは位置の無い写真だけ
         if let spot, spot.covers(prepared) {
+            // 位置の無い写真の座標は送るときに決める（`coordsToSend(spot:)`）
             photo.location = spot.name
-            if prepared.coords == nil { photo.pickedCoords = spot.coords }
             items.append(photo)
             return
         }
@@ -564,7 +572,7 @@ final class UploadViewModel: ObservableObject {
         draft.audience = audienceToSend
         // **選んだ撮影地の座標を優先する。** 写真に残っていた位置より、
         // 本人が選んだ地名の方が正しい（丸めはどちらも約1km）
-        draft.coords = item.coordsToSend
+        draft.coords = item.coordsToSend(spot: spot)
         draft.date = item.prepared.takenOn
         draft.exif = item.prepared.exif
         // **読み込み中の地の色。** Web は前から送っていて、アプリだけ

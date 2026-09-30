@@ -85,7 +85,7 @@ struct CollectionPhotosScreen: View {
                                                              isLoading: isLoading || (retry != nil && photos.isEmpty))
                     if !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                             .lineLimit(1)
                     }
