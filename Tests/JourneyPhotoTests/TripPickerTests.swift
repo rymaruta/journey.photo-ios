@@ -166,23 +166,37 @@ final class TripPickerTests: XCTestCase {
         XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(k + n))
     }
 
-    /// 日数が少ないとき: 隣どうしで少ない方からまとめる。同じ数なら同じ地域を先に
-    func testFewerDaysMergeNeighboursPreferringSameRegion() throws {
-        // 京都 5（3+2）・奈良 1 → 2日: 合わせて少ない「京都の2＋奈良の1」がまとまる
+    /// 日数が少ないとき: 地域を混ぜる日を最も少なく（混ぜずに済むなら混ぜない）
+    func testFewerDaysAvoidMixingRegions() throws {
+        // 京都 5・奈良 1 → 2日: 京都 5 / 奈良 1（3・3 にすると奈良の日に京都が混ざる）
         let k = try line("k", 5)
         let n = [try nara("n0")]
-        XCTAssertEqual(TripPicker.days([k, n], dayCount: 2).map(\.count), [3, 3])
+        XCTAssertEqual(TripPicker.days([k, n], dayCount: 2).map(\.count), [5, 1])
 
-        // 京都 6（3+3）・奈良 3 → 2日: 合計はどちらも6なので、同じ地域（京都の2日）をまとめる
+        // 京都 6・奈良 3 → 2日: 京都 6 / 奈良 3。並びが逆でも同じ（違う地域どうしをまとめない）
         let k6 = try line("k", 6)
         let n3 = try (0..<3).map { try nara("n\($0)", lat: 34.6 + Double($0) * 0.01) }
-        let two = TripPicker.days([k6, n3], dayCount: 2)
-        XCTAssertEqual(two.map(\.count), [6, 3])
-        XCTAssertEqual(Set(two[0].map { TripPicker.region(of: $0).key }).count, 1)
-        // 並びが逆（奈良が先）でも、違う地域どうしを先にまとめない
+        XCTAssertEqual(TripPicker.days([k6, n3], dayCount: 2).map(\.count), [6, 3])
         let reversed = TripPicker.days([n3, k6], dayCount: 2)
         XCTAssertEqual(reversed.map(\.count), [3, 6])
         XCTAssertEqual(slugs(reversed[0]), slugs(n3))
+    }
+
+    /// 混ぜるしかないときは、いちばん多い日を最も少なく（1日20か所まで）
+    func testFewerDaysBalanceWhenMixingIsUnavoidable() throws {
+        let k = try line("k", 30)
+        let n = [try nara("n0")]
+        let days = TripPicker.days([k, n], dayCount: 2)
+        XCTAssertEqual(days.map(\.count), [16, 15])
+        XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(k + n))
+    }
+
+    /// 収まる日程は必ず収める（貪欲にまとめると 40か所/2日 が「16・16・8」の3日になっていた）
+    func testPacksIntoTheRequestedDaysWhenItFits() throws {
+        let k = try line("k", 40)
+        let days = TripPicker.days([k], dayCount: 2)
+        XCTAssertEqual(days.map(\.count), [20, 20])
+        XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(k))
     }
 
     /// 日数が多いとき: いちばん多い日を切る。それでも余れば空の日
@@ -209,6 +223,23 @@ final class TripPickerTests: XCTestCase {
         let days = TripPicker.days(TripPicker.grouped(spots), dayCount: nil)
         XCTAssertLessThanOrEqual(days.count, TripPlanService.daysMax)
         XCTAssertEqual(days.flatMap { $0 }.count, TripPicker.pickMax)
+    }
+
+    /// 🔴 日付が無くても60日を越えない（サーバーは越えた日を**黙って切り捨てる**）
+    func testNeverMoreThanDaysMaxWithoutDates() throws {
+        let spots = try (0..<70).map { try spot("p\($0)", prefecture: "県\($0)", lat: 35, lng: 135 + Double($0) * 0.1) }
+        let days = TripPicker.days(TripPicker.grouped(spots), dayCount: nil)
+        XCTAssertEqual(days.count, TripPlanService.daysMax)
+        XCTAssertTrue(days.allSatisfy { !$0.isEmpty && $0.count <= TripPlanService.itemsPerDayMax })
+        XCTAssertEqual(days.flatMap { $0 }.count, 70)
+    }
+
+    /// 地域の無い場所どうしを「同じ地域」にしない（遠い2か所を同じ日にまとめない）
+    func testSpotsWithoutRegionAreNotOneRegion() throws {
+        let a = try spot("a", lat: 35.0, lng: 135.7)
+        let b = try spot("b", lat: 48.86, lng: 2.35)
+        XCTAssertNotEqual(TripPicker.region(of: a), TripPicker.region(of: b))
+        XCTAssertEqual(slugs(TripPicker.grouped([a, b])), [["a"], ["b"]])
     }
 
     func testDayCountFromDates() {

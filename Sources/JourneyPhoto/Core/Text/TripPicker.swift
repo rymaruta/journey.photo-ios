@@ -11,13 +11,14 @@ import Foundation
 /// - 選んだ場所は**地域（国・都道府県）で束ね、近い順に**日へ割り振る。
 ///   距離は写真と同じ直線の式（`TravelDistance.kilometers`）で、**画面には出さない**
 ///   （移動時間・費用・道のりは計算していない。`TripPlanText` の約束）
-/// - 日の数と1日の数は**サーバーの上限の内側**（`TripPlanService.daysMax`・`itemsPerDayMax`）
+/// - 日の数と1日の数は**サーバーの上限の内側**（`TripPlanService.daysMax`・`itemsPerDayMax`）。
+///   サーバーは越えた分を断らずに黙って切り捨てるので、越えると選んだ場所が消える
 enum TripPicker {
 
     // MARK: - 札の山
 
-    /// 1回に選べる数。**これを越えて足させない**（上限の無い選び方は日程が60日を越え、
-    /// 保存でサーバーに断られる。40か所を1日1か所ずつでも60日に収まる）
+    /// 1回に選べる数。**これを越えて足させない**（上限の無い選び方は日程が長くなりすぎる。
+    /// 40か所を1日1か所ずつでも60日に収まる。収まらない分は `days` が切り直す）
     static let pickMax = 40
 
     /// 札に出してよいか。**公開済み・写真あり**だけ（下書きの場所を「行きたい」の札にしない）
@@ -38,7 +39,7 @@ enum TripPicker {
             .filter(isEligible)
             .filter { !keys.contains(SavedSpotKey.official($0.slug)) }
             // 並べ替えてから混ぜる（索引の並びが変わっても、同じ種なら同じ並びにする）
-            .sorted { $0.spotId < $1.spotId }
+            .sorted { ($0.spotId, $0.slug) < ($1.spotId, $1.slug) }
             .filter { seenIds.insert($0.spotId).inserted && seenSlugs.insert($0.slug).inserted }
         return shuffled(pool, seed: seed)
     }
@@ -85,7 +86,9 @@ enum TripPicker {
         if let prefecture = trimmed(spot.region?.prefecture) {
             return Region(key: "prefecture:\(prefecture)", label: prefecture)
         }
-        return Region(key: "none", label: nil)
+        // **地域の無い場所は1か所ずつ別の地域**（まとめて1つにすると、遠く離れた場所が
+        // 同じ地域として同じ日に入る）
+        return Region(key: "none:\(spot.spotId)", label: nil)
     }
 
     private static func trimmed(_ value: String?) -> String? {
@@ -197,61 +200,92 @@ enum TripPicker {
     /// 束ねた場所を日へ割り振る。**並び（回る順）は変えない**——切る位置だけを決める。
     ///
     /// - 日数が無い: 地域ごとに `placesPerDay` 前後で均して切る（地域を1日に混ぜない）
-    /// - 日数がある:
-    ///   - 足りないとき（場所が多い）: **隣り合う2日のうち合わせて少ない方から**1日にまとめる
-    ///     （同じ数なら同じ地域どうしを先に）。1日の上限（`itemsPerDayMax`）を越えるまとめはしない
-    ///     ——まとめ切れなければ日数を越えたまま返す（日付の無い日になる。場所を黙って落とさない）
-    ///   - 余るとき（日数が多い）: **いちばん多い日を半分に**切っていき、それでも余れば
-    ///     最後に空の日を足す（本人が後で埋める）
+    /// - 日数が足りない（場所が多い）: 切り直す（`packed`）。**地域を混ぜる日を最も少なく**、
+    ///   その中で**いちばん多い日を最も少なく**。1日の上限（`itemsPerDayMax`）は越えない
+    /// - 日数が余る: **いちばん多い日を半分に**切っていき、それでも余れば最後に空の日を足す
+    ///   （本人が後で埋める）
+    ///
+    /// 🔴 **サーバーの上限（60日・1日20か所）を越える日程を返さない。** サーバーは越えた分を
+    /// 断らずに**黙って切り捨てる**（`api-user/src/tripPlans.ts` の `sanitizeDays`）ので、
+    /// 越えると選んだ場所が保存で消える。日数が無いときも60日で切り直す
+    /// （収まらないのは 60×20＝1,200か所を越えたときだけ。選べるのは `pickMax` まで）
     static func days(_ groups: [[OfficialSpot]], dayCount: Int?) -> [[OfficialSpot]] {
-        // 1日ぶんと、その日の地域（まとめるときに同じ地域を先にするため）
-        var days: [(spots: [OfficialSpot], region: String?)] = []
+        var days: [[OfficialSpot]] = []
         for group in groups where !group.isEmpty {
-            let key = region(of: group[0]).key
             let parts = Int((Double(group.count) / Double(placesPerDay)).rounded(.up))
-            for chunk in balanced(group, parts: parts) {
-                days.append((chunk, key))
-            }
+            days.append(contentsOf: balanced(group, parts: parts))
         }
-        guard let target = dayCount.map({ min($0, TripPlanService.daysMax) }), target > 0 else {
-            return days.map(\.spots)
-        }
+        let target = min(dayCount ?? days.count, TripPlanService.daysMax)
+        guard !days.isEmpty else { return Array(repeating: [], count: max(0, target)) }
+        guard target > 0 else { return days }
 
-        // 多すぎる日数を、隣どうしでまとめて減らす
-        while days.count > target {
-            var best: (index: Int, total: Int, sameRegion: Bool)?
-            for i in 0..<(days.count - 1) {
-                let total = days[i].spots.count + days[i + 1].spots.count
-                guard total <= TripPlanService.itemsPerDayMax else { continue }
-                let same = days[i].region != nil && days[i].region == days[i + 1].region
-                if let b = best {
-                    if total < b.total || (total == b.total && same && !b.sameRegion) {
-                        best = (i, total, same)
-                    }
-                } else {
-                    best = (i, total, same)
-                }
-            }
-            guard let merge = best else { break }
-            let a = days[merge.index], b = days[merge.index + 1]
-            days[merge.index] = (a.spots + b.spots, a.region == b.region ? a.region : nil)
-            days.remove(at: merge.index + 1)
+        if days.count > target {
+            return packed(days.flatMap { $0 }, into: target)
         }
-
         // 余る日数は、いちばん多い日を切って埋める
         while days.count < target {
             // 同じ数なら前の日（`max(by:)` は等しいとき先のものを残す）
-            guard let widest = days.indices.max(by: { days[$0].spots.count < days[$1].spots.count }),
-                  days[widest].spots.count > 1 else { break }
-            let halves = balanced(days[widest].spots, parts: 2)
-            let region = days[widest].region
-            days[widest] = (halves[0], region)
-            days.insert((halves[1], region), at: widest + 1)
+            guard let widest = days.indices.max(by: { days[$0].count < days[$1].count }),
+                  days[widest].count > 1 else { break }
+            let halves = balanced(days[widest], parts: 2)
+            days[widest] = halves[0]
+            days.insert(halves[1], at: widest + 1)
         }
         while days.count < target {
-            days.append(([], nil))
+            days.append([])
         }
-        return days.map(\.spots)
+        return days
+    }
+
+    /// 並びを保ったまま `target` 日に切り直す（1日は `itemsPerDayMax` まで・空の日は作らない）。
+    ///
+    /// 決め方は順に: **地域を混ぜる日の数**が少ない → **いちばん多い日**が少ない →
+    /// 日ごとの数の2乗の和が小さい（均す）。貪欲にまとめると、40か所を2日で
+    /// 「16・16・8」の3日に行き詰まっていた（「20・20」なら収まる）ので、全部の切り方を比べる。
+    /// 20か所ずつでも `target` 日に収まらなければ、収まる日数まで増やす（場所は落とさない）
+    private static func packed(_ items: [OfficialSpot], into target: Int) -> [[OfficialSpot]] {
+        let n = items.count
+        let cap = TripPlanService.itemsPerDayMax
+        let parts = min(n, max(target, (n + cap - 1) / cap))
+        guard parts > 0 else { return [] }
+        let keys = items.map { region(of: $0).key }
+
+        struct Score {
+            var mixed: Int
+            var widest: Int
+            var squares: Int
+            var from: Int
+            func better(than other: Score) -> Bool {
+                if mixed != other.mixed { return mixed < other.mixed }
+                if widest != other.widest { return widest < other.widest }
+                return squares < other.squares
+            }
+        }
+        // best[d][i]: 先頭 i か所を d 日に切ったときのいちばん良い切り方
+        var best = Array(repeating: Array<Score?>(repeating: nil, count: n + 1), count: parts + 1)
+        best[0][0] = Score(mixed: 0, widest: 0, squares: 0, from: -1)
+        for d in 1...parts {
+            for i in d...n {
+                var chosen: Score?
+                for size in 1...min(cap, i) {
+                    let j = i - size
+                    guard let prev = best[d - 1][j] else { continue }
+                    let mixed = Set(keys[j..<i]).count > 1 ? 1 : 0
+                    let score = Score(mixed: prev.mixed + mixed, widest: max(prev.widest, size),
+                                      squares: prev.squares + size * size, from: j)
+                    if chosen == nil || score.better(than: chosen!) { chosen = score }
+                }
+                best[d][i] = chosen
+            }
+        }
+        var result: [[OfficialSpot]] = []
+        var i = n
+        for d in stride(from: parts, to: 0, by: -1) {
+            guard let score = best[d][i] else { return [items] }
+            result.insert(Array(items[score.from..<i]), at: 0)
+            i = score.from
+        }
+        return result
     }
 
     /// 並びを保ったまま `parts` 個に均して切る（前の方を1つ多く）。空の片は作らない
