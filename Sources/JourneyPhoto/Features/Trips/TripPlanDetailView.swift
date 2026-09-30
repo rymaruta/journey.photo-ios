@@ -53,6 +53,10 @@ struct TripPlanDetailView: View {
     @State private var sourcesFailed = false
 
     private struct PickTarget: Identifiable { let day: Int; var id: Int { day } }
+    /// ひとことを書いている項目（何日目の何番目）。書く欄の中身は `noteText`
+    private struct NoteTarget: Equatable { let day: Int; let item: Int }
+    @State private var noteTarget: NoteTarget?
+    @State private var noteText = ""
     private struct Draft: Equatable {
         var days: [TripDay]
         var start: String?
@@ -126,6 +130,22 @@ struct TripPlanDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(leaveSaveError ?? "")
+        }
+        // ひとこと（項目に添えるメモ・200字まで）。**変えたら日程と一緒に保存する**
+        // （保存ボタンと「保存せずに戻る？」の確認は、ほかの変更と同じ扱い）
+        .alert(L("ひとこと", "Note"),
+               isPresented: Binding(get: { noteTarget != nil },
+                                    set: { if !$0 { noteTarget = nil } })) {
+            TextField(L("例: 朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)
+            Button(Labels.Common.save) {
+                if let t = noteTarget, let next = TripPlanEdit.setNote(days, day: t.day, item: t.item, note: noteText) {
+                    days = next
+                }
+                noteTarget = nil
+            }
+            Button(Labels.Common.cancel, role: .cancel) { noteTarget = nil }
+        } message: {
+            Text(L("\(TripPlanService.noteMax)字まで。空にすると外します", "Up to \(TripPlanService.noteMax) characters. Leave empty to remove."))
         }
         .alert(L("削除できませんでした", "Couldn't delete"),
                isPresented: Binding(get: { deleteError != nil },
@@ -406,8 +426,9 @@ struct TripPlanDetailView: View {
 
     private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem) -> some View {
         let name = TripPlanText.label(for: item, index: index, places: places)
-        return HStack(spacing: 12) {
+        return HStack(spacing: 4) {
             itemLink(item, name: name)
+            itemMenu(di, ii, item, name: name)
             // **外す。** 日の削除（赤いゴミ箱）と見分けるため × にする
             Button {
                 // 添字を確かめる（`add` と同じ）。描き直す前の古い添字で消さない
@@ -425,6 +446,45 @@ struct TripPlanDetailView: View {
         .padding(.trailing, 8)
     }
 
+    /// 項目の操作（2026-09-30）: 上へ・下へ・別の日へ・ひとこと。**規則は `TripPlanEdit`**
+    /// （範囲外やいっぱいの日へは移さない）。押せないものは出さずに無効にする
+    private func itemMenu(_ di: Int, _ ii: Int, _ item: TripItem, name: String) -> some View {
+        let count = days.indices.contains(di) ? days[di].items.count : 0
+        let targets = TripPlanEdit.movableDays(days, from: di)
+        return Menu {
+            Button {
+                if let next = TripPlanEdit.moveUp(days, day: di, item: ii) { days = next }
+            } label: { Label(L("上へ", "Move up"), systemImage: "arrow.up") }
+            .disabled(ii == 0)
+            Button {
+                if let next = TripPlanEdit.moveDown(days, day: di, item: ii) { days = next }
+            } label: { Label(L("下へ", "Move down"), systemImage: "arrow.down") }
+            .disabled(ii + 1 >= count)
+            if !targets.isEmpty {
+                Menu {
+                    ForEach(targets, id: \.self) { to in
+                        Button(L("\(to + 1) 日目", "Day \(to + 1)")) {
+                            if let next = TripPlanEdit.moveToDay(days, day: di, item: ii, toDay: to) { days = next }
+                        }
+                    }
+                } label: { Label(L("別の日へ移す", "Move to another day"), systemImage: "calendar") }
+            }
+            Button {
+                noteText = item.note ?? ""
+                noteTarget = NoteTarget(day: di, item: ii)
+            } label: {
+                Label(item.note == nil ? L("ひとことを書く", "Add a note") : L("ひとことを直す", "Edit note"),
+                      systemImage: "text.bubble")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.muted2)
+                .webTappable()
+        }
+        .accessibilityLabel(L("「\(name)」の操作", "Actions for \(name)"))
+    }
+
     /// 名前を押すとその場所へ。**開ける先が無いものは行だけ**（押しても何も起きない札を作らない）
     @ViewBuilder
     private func itemLink(_ item: TripItem, name: String) -> some View {
@@ -434,36 +494,45 @@ struct TripPlanDetailView: View {
                 NavigationLink {
                     OfficialSpotView(spot: spot, spots: index, photos: photos)
                 } label: {
-                    itemLabel(name, icon: "mappin.and.ellipse")
+                    itemLabel(name, icon: "mappin.and.ellipse", note: item.note)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, icon: "mappin.and.ellipse")
+                itemLabel(name, icon: "mappin.and.ellipse", note: item.note)
             }
         case .location(let slug, _):
             if let place = places.first(where: { $0.slug == slug }) {
                 NavigationLink {
                     SpotDetailView(spot: place, photos: photos)
                 } label: {
-                    itemLabel(name, icon: "map")
+                    itemLabel(name, icon: "map", note: item.note)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, icon: "map")
+                itemLabel(name, icon: "map", note: item.note)
             }
         }
     }
 
-    private func itemLabel(_ name: String, icon: String) -> some View {
+    private func itemLabel(_ name: String, icon: String, note: String? = nil) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .foregroundStyle(WebTheme.muted2)
                 .frame(width: 20)
                 .accessibilityHidden(true)
-            Text(name)
-                .font(.body)
-                .foregroundStyle(WebTheme.text)
-                .lineLimit(2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.body)
+                    .foregroundStyle(WebTheme.text)
+                    .lineLimit(2)
+                // 添えたひとこと（あるときだけ・薄く小さく）
+                if let note, !note.isEmpty {
+                    Text(note)
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.muted)
+                        .lineLimit(3)
+                }
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
