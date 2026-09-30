@@ -90,8 +90,10 @@ struct RootView: View {
     /// 上書きしていた。ログアウトした後に前の人の数が出ることもあった
     ///
     /// - Parameter keepOnFailure: 引けなかった回に**いまの数を残す**。
-    ///   前面に戻ったときの数え直しだけ——圏外で戻っただけでベルの印が消えていた。
-    ///   人が替わった回（前の人の数を残さない）とお知らせを閉じた回（読んだあと）は 0 に倒す
+    ///   圏外で戻っただけでベルの印が消えていた。人が替わった回（前の人の数を残さない）は
+    ///   `unreadOwner` で 0 に倒す。お知らせを閉じた回も残す——既読にできた回は
+    ///   `readMarks` で先に 0 になっており、既読化に失敗した回はアイコンの数も残るので、
+    ///   ここで 0 に倒すとベルだけ 0 に割れる
     private func refreshUnread(keepOnFailure: Bool = false) async {
         guard auth.userId != nil else {
             unread = 0
@@ -342,7 +344,7 @@ struct RootView: View {
         // **画面が出てきたときにも取りに行く。** 冷えた状態から押した回・
         // 規約の同意画面が出ていた回は、数が変わった瞬間にここが居なかった
         .onAppear { takeActivityRequest() }
-        // お知らせを既読にできた: 閉じたときの数え直しが落ちても 0 にする
+        // お知らせを既読にできた（またはサーバーの未読がもう 0 だった）: 閉じたときの数え直しが落ちても 0 にする
         .onChange(of: router.readMarks) { _, _ in
             guard router.readOwner != nil, router.readOwner == auth.userId else { return }
             unreadGeneration += 1
@@ -426,7 +428,7 @@ struct RootView: View {
             NavigationStack { SiteMenuView() }
         }
         // お知らせを閉じたら数え直す（タブではなくシートになったので）
-        .sheet(isPresented: $showNotifications, onDismiss: { Task { await refreshUnread() } }) {
+        .sheet(isPresented: $showNotifications, onDismiss: { Task { await refreshUnread(keepOnFailure: true) } }) {
             NavigationStack {
                 NotificationsView()
                     // **閉じる口を画面に置く。** タブからシートへ移したとき

@@ -678,7 +678,8 @@ struct StoryComposerView: View {
             }
             .buttonStyle(.plain)
             .disabled(prepared == nil || !canSaveDraft || loadingPicks > 0)
-            .opacity(prepared == nil || loadingPicks > 0 ? 0.4 : 1)
+            // 薄くするのは止めるのと同じ条件（押せる見た目で押しても何も起きなかった）
+            .opacity(prepared == nil || !canSaveDraft || loadingPicks > 0 ? 0.4 : 1)
             }
         }
     }
@@ -935,7 +936,11 @@ struct StoryComposerView: View {
             // **打っている間も移らない**（打つ先は `typingShotId` で引くが、見えている写真と打っている
             // 写真が違うと、完了した後に別の写真が出て驚く）
             // 投票の欄を打っている間も移らない（移ると欄が閉じてキーボードも消えた）
-            if typingId == nil && !votePanelOpen { current = shots.count - 1 }
+            // 札とスタンプのトレイ（閉じてから置く `pendingPick` の間も）・曲を選ぶシートを開いている間も
+            // 移らない（選んだ札や曲の札が、開いたときの写真でなく届いた写真に置かれた）
+            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker {
+                current = shots.count - 1
+            }
             self.message = nil
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")

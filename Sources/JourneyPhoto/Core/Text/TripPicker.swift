@@ -252,6 +252,21 @@ enum TripPicker {
         return days
     }
 
+    /// 日付の下の1行。**割り振った後の日数で言う**——1日の上限（`itemsPerDayMax`）で
+    /// 出発〜帰着の日数より増えた回（21か所以上を1日にした回など）は、そう書く
+    static func dateNote(dayCount: Int?, planned: Int) -> String {
+        guard let dayCount else {
+            return L("出発と帰着を入れると、その日数に合わせて割り振ります。",
+                     "Set both dates to spread places over your trip.")
+        }
+        if planned > dayCount {
+            let cap = TripPlanService.itemsPerDayMax
+            return L("1日\(cap)か所までなので \(planned) 日に分けました。",
+                     "Up to \(cap) places a day, so split into \(planned) days.")
+        }
+        return L("\(dayCount) 日間に割り振りました。", "Spread over \(dayCount) days.")
+    }
+
     /// 1日に詰めてよい目安（か所）。**これを越えるほど詰まるなら、地域を混ぜてでも均す**
     /// （京都20・奈良20を3日にすると、混ぜない切り方は「20・10・10」——1日20か所は回れない。
     /// 「14・13・13」にする）。越えないうちは地域を混ぜない方を採る

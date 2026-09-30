@@ -423,7 +423,8 @@ struct StoryViewerView: View {
                     repliesLoaded = true
                 } catch {
                     guard !Task.isCancelled else { return }
-                    repliesFailed = true
+                    // 引き下げの読み直しが先に読めていたら、失敗で上書きしない
+                    if !repliesLoaded { repliesFailed = true }
                 }
             }
         }
@@ -1732,6 +1733,9 @@ struct StoryViewerView: View {
                 }
                 .padding(.horizontal, 16)
             }
+            // 引き下げで読み直す（一度読めないと、その1本の間ずっと「読み込めませんでした」だった。
+            // `StoryInsightsView` の引き下げと同じ）
+            .refreshable { await reloadReplies() }
             .background(Self.repliesBackground)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1751,6 +1755,19 @@ struct StoryViewerView: View {
         }
         .presentationBackground(Self.repliesBackground)
         .presentationDragIndicator(.visible)
+    }
+
+    /// 返信を読み直す（返信のシートの引き下げ）。**読み直しの間に別の1本へ移ったら書かない**。
+    /// 読めなければ今の表示のまま
+    private func reloadReplies() async {
+        guard let story = current else { return }
+        do {
+            let loaded = try await environment.stories.replies(id: story.id)
+            guard current?.id == story.id else { return }
+            replies = loaded
+            repliesFailed = false
+            repliesLoaded = true
+        } catch {}
     }
 
     /// 返信のシートの地（板の `#0c0c0d`）

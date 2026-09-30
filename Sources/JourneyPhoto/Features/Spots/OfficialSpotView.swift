@@ -474,7 +474,9 @@ struct OfficialSpotView: View {
             .padding(.horizontal, 16)
             .accessibilityIdentifier("spot.official.post")
         }
-        .sheet(isPresented: $showUpload) {
+        // 閉じたら「投稿を閉じた」を出す（`RootView` の投稿と同じ）。メニューのシートから
+        // 来た回はホームの `onAppear` が走らず、自分の写真（今日のテーマの参加済みなど）が古いまま残った
+        .sheet(isPresented: $showUpload, onDismiss: { TabRouter.shared.postSheetClosed() }) {
             NavigationStack { UploadView(spot: UploadSpotTarget(spot), onPosted: { count in
                 // **この一覧に並ぶ投稿があったときだけ**（外した・遠い写真・下書き・範囲を
                 // 絞った投稿では並ばないので言わない）

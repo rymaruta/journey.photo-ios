@@ -71,4 +71,13 @@ final class MapQueryFramingTests: XCTestCase {
         XCTAssertNil(framing.frameIfReady(kyoto, settled: true))
         XCTAssertTrue(framing.followsLocation(requestedByUser: false))
     }
+
+    /// 開いたときの自動の現在地が届く前に指で動かしたら、自動の現在地へは引き戻さない。
+    /// ボタンで取った現在地へは寄せる
+    func testMovedCameraIsNotPulledBackByAutoLocate() {
+        var framing = MapQueryFraming()
+        framing.userMovedCamera()
+        XCTAssertFalse(framing.followsLocation(requestedByUser: false))
+        XCTAssertTrue(framing.followsLocation(requestedByUser: true))
+    }
 }

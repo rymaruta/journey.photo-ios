@@ -128,11 +128,7 @@ struct TripPickerDraftView: View {
     }
 
     private var dateNote: String {
-        if let count = TripPicker.dayCount(start: start, end: end) {
-            return L("\(count) 日間に割り振りました。", "Spread over \(count) days.")
-        }
-        return L("出発と帰着を入れると、その日数に合わせて割り振ります。",
-                 "Set both dates to spread places over your trip.")
+        TripPicker.dateNote(dayCount: TripPicker.dayCount(start: start, end: end), planned: days.count)
     }
 
     // MARK: - 出発・帰着（`TripPlanDetailView` と同じ決まり）
