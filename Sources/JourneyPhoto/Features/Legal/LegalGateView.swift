@@ -47,7 +47,7 @@ struct LegalGateView: View {
             Text(L("次に撮りたい場所が、見つかる。", "Find the place you want to photograph next."))
                 .font(JPFont.display(32, relativeTo: .largeTitle)).foregroundStyle(WebTheme.text).accessibilityAddTraits(.isHeader).fixedSize(horizontal: false, vertical: true)
             Text(L("写真から旅が始まり、旅がまた写真になる。", "Let a photo start the journey — and the journey become your next photo."))
-                .font(.subheadline).foregroundStyle(WebTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                .font(.subheadline).foregroundStyle(WebTheme.muted).fixedSize(horizontal: false, vertical: true)
         }.padding(.bottom, 4)
     }
 
@@ -57,7 +57,7 @@ struct LegalGateView: View {
                 .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.border, lineWidth: 1)).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(WebTheme.text)
-                Text(detail).font(.footnote).lineSpacing(3).foregroundStyle(WebTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                Text(detail).font(.footnote).lineSpacing(3).foregroundStyle(WebTheme.muted).fixedSize(horizontal: false, vertical: true)
             }.padding(.top, 3)
         }
     }
@@ -67,7 +67,7 @@ struct LegalGateView: View {
             Label(L("安心して写真を楽しむために", "For a safe photo community"), systemImage: "shield")
                 .font(.footnote.weight(.semibold)).foregroundStyle(WebTheme.accent)
             Text(L("いやがらせ・わいせつ・権利を侵す投稿は認めません。写真から通報・ブロックできます。撮影情報（EXIF）は端末で取り除き、撮影地は約1kmに丸めて保存します。", "Harassment, obscene content and rights violations are not allowed. Photos can be reported and posters blocked. Metadata is removed on device and locations are rounded to about 1 km."))
-                .font(.footnote).lineSpacing(4).foregroundStyle(WebTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                .font(.footnote).lineSpacing(4).foregroundStyle(WebTheme.muted).fixedSize(horizontal: false, vertical: true)
         }.padding(14).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.border, lineWidth: 1))
     }
 

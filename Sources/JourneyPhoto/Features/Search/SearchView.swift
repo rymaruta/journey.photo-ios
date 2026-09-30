@@ -11,7 +11,6 @@ struct SearchView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// **「見せない」が変わったら控えを捨てるため**に見ている
     @EnvironmentObject private var hidden: ModerationStore
-    @EnvironmentObject private var tabRouter: TabRouter
     @StateObject private var model = SearchViewModel()
     @State private var query = ""
     /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
@@ -648,7 +647,11 @@ struct SearchView: View {
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
                 if !(model.loadFailed && model.everything.isEmpty) {
-                    Button { tabRouter.openMap() } label: {
+                    // **`TabRouter.shared` を直に呼ぶ。** `@EnvironmentObject` で受けていた
+                    // 時期があるが、どこからも `.environmentObject` で配られておらず、
+                    // 「さがす」を開いた瞬間に落ちた（`Tools/verify.sh` の参照の見張りが検出）。
+                    // 同じ画面の 275 行目・`GalleryView`・`RootView` も `shared` を使っている
+                    Button { TabRouter.shared.openMap() } label: {
                         Label(L("地図で撮影地を探す", "Explore shooting places on the map"), systemImage: "map")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(WebTheme.accent)

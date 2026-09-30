@@ -87,10 +87,14 @@ struct OfficialSpotView: View {
                 // **写真が主役。** 写真がある場所は本文より先に出す
                 if !linked.isEmpty { spotPhotos }
                 bodySections
-                // 写真が0枚の場所は、本文の後に「まだありません」（1画面目を空にしない）
-                if linked.isEmpty { spotPhotos }
-                nearbySpots
-                checkLine
+                // **末尾の3つは Group で1つに数える。** `journeyCue` が入って子が11個になり、
+                // ビューの組み立て（1段に10個まで）を超えてビルドが落ちた（#78 のあと）
+                Group {
+                    // 写真が0枚の場所は、本文の後に「まだありません」（1画面目を空にしない）
+                    if linked.isEmpty { spotPhotos }
+                    nearbySpots
+                    checkLine
+                }
             }
             .padding(.bottom, 32)
         }
