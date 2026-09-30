@@ -44,10 +44,11 @@ struct ZoomPan: Equatable {
         return CGSize(width: clamp(o.width, maxX), height: clamp(o.height, maxY))
     }
 
-    /// 指で動かしている間の位置（今の位置 ＋ 動かした量・範囲に収める）
-    func liveOffset(drag: CGSize, container: CGSize, content: CGSize) -> CGSize {
+    /// 指で動かしている間の位置（今の位置 ＋ 動かした量・範囲に収める）。
+    /// `scale` はつまんでいる最中の倍率（省けば今の倍率）
+    func liveOffset(drag: CGSize, scale live: Double? = nil, container: CGSize, content: CGSize) -> CGSize {
         Self.clampOffset(CGSize(width: offset.width + drag.width, height: offset.height + drag.height),
-                         scale: scale, container: container, content: content)
+                         scale: live ?? scale, container: container, content: content)
     }
 
     /// つまみ終えた。倍率を保ち（1〜4 倍）、位置をその倍率の範囲へ収め直す

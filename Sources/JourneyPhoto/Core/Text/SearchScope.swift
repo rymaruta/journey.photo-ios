@@ -25,6 +25,9 @@ enum SearchScope: String, CaseIterable, Identifiable {
     var showsPeople: Bool { self == .all || self == .people }
     /// 写真の結果を出すか
     var showsPhotos: Bool { self != .people }
+    /// 撮影スポット（公式ガイド）の節を出すか。**すべて・撮影地のときだけ**
+    /// （写真・タグで探しているときに「山」で山形県のスポットが並ぶ、を作らない）
+    var showsSpots: Bool { self == .all || self == .places }
     /// タグのチップ（「winter 13」）を出すか。
     /// **撮影地では出さない**——押すとタグの語が撮影地の欄に当たり、
     /// チップの枚数（タグを持つ写真の数）と結果が合わなくなる

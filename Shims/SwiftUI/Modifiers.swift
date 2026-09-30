@@ -419,6 +419,9 @@ public struct MagnificationGesture: Gesture {
     public init(minimumScaleDelta: Double = 0.01) {}
     public func onChanged(_ action: @escaping (Double) -> Void) -> MagnificationGesture { self }
     public func onEnded(_ action: @escaping (Double) -> Void) -> MagnificationGesture { self }
+    /// つまんでいる間の値を `@GestureState` に書く（本物と同じ・取り消されたら初期値に戻る）
+    public func updating<S>(_ state: GestureState<S>,
+                            body: @escaping (Double, inout S, inout Transaction) -> Void) -> MagnificationGesture { self }
 }
 
 public struct TapGesture: Gesture {
@@ -447,6 +450,8 @@ extension View {
     public func highPriorityGesture<G: Gesture>(_ gesture: G) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     /// どこで受けるか（本物と同じ）。`.none` なら受けない＝下の送り（TabView）に渡る
     public func highPriorityGesture<G: Gesture>(_ gesture: G, including mask: GestureMask) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// スクロール（ページ式の TabView の送りも）を止める（本物と同じ・iOS 16+）
+    public func scrollDisabled(_ disabled: Bool) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func simultaneousGesture<G: Gesture>(_ gesture: G, including mask: GestureMask) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     /// 長押し。`onPressingChanged` は指の着地で true・離れで false を返す

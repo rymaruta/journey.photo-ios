@@ -81,7 +81,9 @@ struct SearchView: View {
             Task { await model.search(newValue, environment: environment) }
         }
         // 索引は語が入ったときに取る（取れなければ節を出さないだけ・写真の検索はそのまま）
-        .task(id: query.isEmpty) {
+        // **語が変わるたびに見直す**（取れていなければ取り直す・取れたら何もしない。
+        // `fetchIndex` は控えを持ち、404 は60秒覚えるので叩きすぎない）
+        .task(id: query) {
             guard !query.isEmpty, officialSpots.isEmpty else { return }
             officialSpots = (try? await environment.spots.fetchIndex()) ?? []
         }
@@ -626,8 +628,9 @@ struct SearchView: View {
     /// 語に当たる撮影スポット（名前・読み・英語名・都道府県・市区町村）。地図の検索と同じ当て方
     private var spotHits: [OfficialSpot] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return [] }
-        return OfficialSpotIndex.matches(officialSpots, query: q)
+        guard !q.isEmpty, model.scope.showsSpots else { return [] }
+        // **下書きは出さない**（地図の一覧・ホームと同じ。「撮影地ガイド」と名乗らせない）
+        return OfficialSpotIndex.matches(officialSpots.filter { !$0.isDraft }, query: q)
     }
 
     /// **撮影スポットの節**（写真の件数とは混ぜない）。最初は5件、押すと全部
@@ -743,7 +746,9 @@ struct SearchView: View {
             VStack(spacing: 12) {
                 Text(model.loadFailed && model.everything.isEmpty
                      ? L("写真を読み込めませんでした。引き下げて読み直せます", "Couldn't load photos. Pull to retry")
-                     : L("見つかりませんでした", "No results"))
+                     // 上に撮影スポットが当たっているときは「写真は」と言う（全部0件に読ませない）
+                     : (spotHits.isEmpty ? L("見つかりませんでした", "No results")
+                        : L("写真は見つかりませんでした", "No photos found")))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
                 if !(model.loadFailed && model.everything.isEmpty) {

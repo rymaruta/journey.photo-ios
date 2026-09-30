@@ -76,6 +76,15 @@ final class ZoomPanTests: XCTestCase {
         XCTAssertEqual(o.height, 400, accuracy: 0.001)
     }
 
+    /// つまんでいる最中の位置は、つまんでいる倍率で範囲を取る（縮める途中で端が内側へ入らない）
+    func testLiveOffsetUsesTheLiveScale() {
+        var z = ZoomPan()
+        z.endPinch(4, container: screen, content: landscape)
+        z.endDrag(CGSize(width: 1_000, height: 0), container: screen, content: landscape)
+        let whilePinching = z.liveOffset(drag: .zero, scale: z.liveScale(pinch: 0.5), container: screen, content: landscape)
+        XCTAssertEqual(whilePinching.width, 195, accuracy: 0.001)   // 2 倍の範囲
+    }
+
     func testResetReturnsToOneTimesAndCenter() {
         var z = ZoomPan()
         z.endPinch(3, container: screen, content: landscape)

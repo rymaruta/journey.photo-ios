@@ -38,10 +38,12 @@ struct PhotoViewerView: View {
     @Environment(\.dismiss) private var dismiss
     /// 拡大と移動（離しても保つ・写真を送ったら戻す）。計算は `ZoomPan`
     @State private var zoom = ZoomPan()
-    /// つまんでいる最中の量（離したら `zoom` に畳む）
-    @State private var pinch: Double = 1
+    /// つまんでいる最中の量（離したら `zoom` に畳む）。**`@GestureState`**——着信やシステムの
+    /// 身振りで取り消されたときも自動で初期値へ戻る（`@State` だと `onEnded` が来ず量が残り、
+    /// 見た目は2倍なのに「拡大していない」扱いになる）
+    @GestureState private var pinch: Double = 1
     /// 動かしている最中の量（同上）
-    @State private var drag: CGSize = .zero
+    @GestureState private var drag: CGSize = .zero
     /// 画面（写真を置く枠）の大きさ
     @State private var container: CGSize = .zero
     /// 写真ごとの、画面に収めたときの大きさ（移動できる範囲の計算に使う）
@@ -65,21 +67,20 @@ struct PhotoViewerView: View {
                         // 以前は離すと 1 倍に戻り、細部を見ていられなかった）
                         .gesture(
                             MagnificationGesture()
-                                .onChanged { value in pinch = value }
+                                .updating($pinch) { value, state, _ in state = value }
                                 .onEnded { value in
                                     zoom.endPinch(value, container: container, content: content(for: offset))
-                                    pinch = 1
                                 }
                         )
                         // **拡大中だけ、1本指で写真を動かす。** 等倍のときは受けない（`.subviews`）
-                        // ので、横スワイプは下の送り（TabView）に渡る。拡大中は `.all` で先に取り、
-                        // 動かしているつもりで隣の写真へ送られない
-                        .highPriorityGesture(
+                        // ので、横スワイプは下の送り（TabView）に渡る。
+                        // **同時に受ける（simultaneous）**——優先（highPriority）にすると2本指で
+                        // つまんだときの重心の動きで移動が先に成立し、拡大中につまみ直せなかった
+                        .simultaneousGesture(
                             DragGesture(minimumDistance: 8)
-                                .onChanged { value in drag = value.translation }
+                                .updating($drag) { value, state, _ in state = value.translation }
                                 .onEnded { value in
                                     zoom.endDrag(value.translation, container: container, content: content(for: offset))
-                                    drag = .zero
                                 },
                             including: zoom.isZoomed ? .all : .subviews
                         )
@@ -91,6 +92,9 @@ struct PhotoViewerView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            // **拡大中は送りを止める。** 写真を動かしているつもりで隣へ送られない
+            // （SwiftUI の身振りの優先だけでは、ページ式 TabView の下のスクロールを止め切れない）
+            .scrollDisabled(zoom.isZoomed)
             .background {
                 GeometryReader { geo in
                     Color.clear
@@ -286,7 +290,9 @@ struct PhotoViewerView: View {
 
     /// 動かしている最中の位置（範囲に収める）
     private var liveOffset: CGSize {
-        zoom.liveOffset(drag: drag, container: container, content: content(for: index))
+        // **つまんでいる最中の倍率で範囲を取る**（縮めている間に写真の端が内側へ入らない）
+        zoom.liveOffset(drag: drag, scale: zoom.liveScale(pinch: pinch),
+                        container: container, content: content(for: index))
     }
 
     /// その写真の、画面に収めたときの大きさ（まだ測れていなければ画面の大きさで代える）
@@ -296,8 +302,6 @@ struct PhotoViewerView: View {
 
     private func resetZoom() {
         zoom.reset()
-        pinch = 1
-        drag = .zero
     }
 
     private func showBurst() {

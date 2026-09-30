@@ -18,4 +18,13 @@ final class SearchSpotRowTests: XCTestCase {
         let v = try spot(#"{"spotId":"sp_000000000001","slug":"versailles","name":"ヴェルサイユ宮殿","stage":"published","region":{"city":"ヴェルサイユ","country":"フランス"}}"#)
         XCTAssertTrue(SearchView.spotSubtitle(v).hasSuffix("フランス ヴェルサイユ"))
     }
+
+    /// 撮影スポットの節は「すべて」「撮影地」のときだけ（タグで「山」→山形県、を出さない）
+    func testSpotsShowOnlyForAllAndPlaces() {
+        XCTAssertTrue(SearchScope.all.showsSpots)
+        XCTAssertTrue(SearchScope.places.showsSpots)
+        XCTAssertFalse(SearchScope.tags.showsSpots)
+        XCTAssertFalse(SearchScope.photos.showsSpots)
+        XCTAssertFalse(SearchScope.people.showsSpots)
+    }
 }
