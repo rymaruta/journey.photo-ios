@@ -37,6 +37,47 @@ final class UploadDraftTests: XCTestCase {
         XCTAssertNil(item.coordsToSend)
     }
 
+    /// 🔴 **位置の無い写真をスポットから投稿したら、撮影地を書き足してもピンが残る。**
+    /// スポットの座標を `pickedCoords` に入れていたので、撮影地の欄の文字が変わると
+    /// 捨てられ、`spotId` は付いたまま座標だけ消えていた
+    @MainActor
+    func testSpotCoordsSurviveEditingThePlaceText() async {
+        let spotCoords = Photo.Coords(lat: 34.12, lng: 133.63)
+        let spot = UploadSpotTarget(spotId: "sp_0123456789ab", name: "高屋神社", coords: spotCoords)
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"))
+        let model = UploadViewModel(uploads: UploadService(api: api), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.spot = spot
+        let prepared = ImagePreparer.Prepared(data: Data(), fileName: "p.jpg", contentType: "image/jpeg",
+                                              exif: nil, coords: nil, takenOn: nil)
+        model.append(prepared)
+        var item = model.items[0]
+        XCTAssertEqual(item.coordsToSend(spot: spot), spotCoords)
+        // 撮影地の欄が座標を捨てる（`PlaceSearchField` が文字の変化で nil にする）
+        item.location = "高屋神社, 香川"
+        item.pickedCoords = nil
+        XCTAssertEqual(item.coordsToSend(spot: spot), spotCoords, "spotId は付くのにピンが消えた")
+        // スポットの名前が消えた・スポットを外した・撮影地を空にした → 送らない
+        item.location = "観音寺市"
+        XCTAssertNil(item.coordsToSend(spot: spot))
+        item.location = "高屋神社"
+        XCTAssertNil(item.coordsToSend(spot: UploadSpotTarget?.none))
+        item.location = ""
+        XCTAssertNil(item.coordsToSend(spot: spot))
+    }
+
+    /// 位置のある写真は、スポットから開いても写真の座標を送る
+    func testPhotoCoordsWinOverSpotCoords() {
+        let taken = Photo.Coords(lat: 34.10, lng: 133.60)
+        let spot = UploadSpotTarget(spotId: "sp_0123456789ab", name: "高屋神社",
+                                    coords: Photo.Coords(lat: 34.12, lng: 133.63))
+        var item = PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(), fileName: "p.jpg", contentType: "image/jpeg", exif: nil, coords: taken, takenOn: nil))
+        item.location = "高屋神社"
+        XCTAssertEqual(item.coordsToSend(spot: spot), taken)
+    }
+
     /// **押し直しでも束の印を変えない。** 送るたびに作り直すと、5枚のうち2枚が
     /// 失敗して押し直したとき 3枚と2枚の2つの束に割れ、1枚だけ残ると印が消えていた
     func testGroupIdIsKeptAcrossRetries() {
