@@ -78,6 +78,13 @@ struct StoryViewerView: View {
     @State private var showBlockConfirm = false
     /// 見出しの名前を押して開く投稿者のページ
     @State private var showAuthor = false
+    /// 撮影地から開いた撮影スポットのガイド（`StorySpotLink`）
+    @State private var guideSpot: OfficialSpot?
+    /// 自分で読んだ撮影スポットの索引（外から渡されないとき）。**取れなかった回は空**＝つながないだけ
+    @State private var loadedSpots: [OfficialSpot] = []
+    /// いま見ている1本の撮影地から結んだスポット（`StorySpotLink`）。**1本ごとに一度だけ解く**
+    /// ——描き直しのたびに全件を当て直すと、1回 数十ms かかっていた（Linux のデバッグ実測）
+    @State private var spotLink: (storyId: String, spot: OfficialSpot?)?
     /// 自分のストーリーを消す前の確認（板「25f 削除の確認」）。
     /// **以前は確認なしで即座に消えていた**
     @State private var showDeleteConfirm = false
@@ -142,6 +149,10 @@ struct StoryViewerView: View {
     /// 外へ知らせる。**外の払い（`StoryReelView`）が見る**——返信の一言の候補を横に
     /// 流しただけで次の人へ回り、書きかけが消えていた
     let onSwipeLockChange: ((Bool) -> Void)?
+    /// 撮影スポットの索引。**人から人への並び（`StoryReelView`）が一度だけ読んで渡す**——
+    /// 人ごとに閲覧画面を作り直すので、ここで読むと人が替わるたびに読み直していた。
+    /// nil なら自分で読む（ハイライトなど）
+    let providedSpots: [OfficialSpot]?
     /// 票を入れた1本を外へ知らせる。**人を行き来して閲覧画面が作り直されても
     /// 入れた票を消さない**ため（`StoryReelView` が覚えて `voteStates` で戻す）
     let onVoted: ((String, StoryVoteState) -> Void)?
@@ -154,6 +165,7 @@ struct StoryViewerView: View {
          swipesHandledOutside: Bool = false,
          onDropped: ((String) -> Void)? = nil,
          onSwipeLockChange: ((Bool) -> Void)? = nil,
+         spotIndex: [OfficialSpot]? = nil,
          voteStates: [String: StoryVoteState] = [:],
          onVoted: ((String, StoryVoteState) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
@@ -163,6 +175,7 @@ struct StoryViewerView: View {
         self.swipesHandledOutside = swipesHandledOutside
         self.onDropped = onDropped
         self.onSwipeLockChange = onSwipeLockChange
+        self.providedSpots = spotIndex
         self.onVoted = onVoted
         _voteStates = State(initialValue: voteStates)
         self.stories = stories
@@ -194,7 +207,7 @@ struct StoryViewerView: View {
             paused: paused,
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
-                || showAuthor || showDeleteConfirm || isHeld,
+                || showAuthor || showDeleteConfirm || guideSpot != nil || isHeld,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -203,11 +216,14 @@ struct StoryViewerView: View {
         )
     }
 
+    /// 撮影スポットの索引（渡されたもの、無ければ自分で読んだもの）
+    private var spots: [OfficialSpot] { providedSpots ?? loadedSpots }
+
     /// 払ってはいけない間（`onSwipeLockChange`）。長押し・絵の読み込みは含めない
     /// （止まっていても払って次へは行ける）
     private var swipeLocked: Bool {
         replyFocused || isSending || showMenu || showReplies || showInsights || showReport
-            || showBlockConfirm || showAuthor || showDeleteConfirm
+            || showBlockConfirm || showAuthor || showDeleteConfirm || guideSpot != nil
     }
 
     /// この人の束をもう見せられない（最後の1本を消した・通報した・ブロックした）。
@@ -437,6 +453,27 @@ struct StoryViewerView: View {
                 }
             }
         }
+        // 撮影地から開いた撮影スポットのガイド。**見ている間は止める**（`frozen` の sheetOpen）
+        .sheet(item: $guideSpot) { spot in
+            NavigationStack {
+                // 写真の一覧はこの画面に無い。**「この場所の写真（0）まだありません」を言わせない**
+                OfficialSpotView(spot: spot, spots: spots, photos: [], photosKnown: false)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                    }
+            }
+        }
+        // 撮影スポットの索引。**外から渡されないときだけ一度読む**（静的な JSON）
+        .task {
+            guard providedSpots == nil, loadedSpots.isEmpty else { return }
+            let fetched = try? await environment.spots.fetchIndex()
+            guard !Task.isCancelled, let fetched else { return }
+            loadedSpots = fetched
+        }
+        // 撮影地 → スポットは**1本ごと・索引が変わったときだけ**解く
+        .task(id: "\(story.id)#\(spots.count)") {
+            spotLink = (story.id, StorySpotLink.spot(for: story, in: spots))
+        }
         .sheet(isPresented: $showInsights) {
             NavigationStack {
                 StoryInsightsView(story: story)
@@ -515,10 +552,11 @@ struct StoryViewerView: View {
                 .opacity(dimOpacity)
                 .allowsHitTesting(false)
 
+            // **撮影地の行だけ押せる**（撮影スポットのガイドへ）。ひとことと曲は指を素通りさせ、
+            // 左右の送る的を塞がない（中で1つずつ `allowsHitTesting(false)` を付ける）
             captionBlock(for: story)
                 .padding(.horizontal, 32)
                 .padding(.bottom, highlight == nil ? 96 : 150)
-                .allowsHitTesting(false)
 
             if let message {
                 Text(message)
@@ -562,12 +600,43 @@ struct StoryViewerView: View {
                         .minimumScaleFactor(0.7)
                         .foregroundStyle(.white)
                         .jpPhotoTextShadow()
+                        .allowsHitTesting(false)
                 }
                 if let place {
-                    photoMeta(symbol: "mappin", text: place)
+                    if let spot = spotLink?.storyId == story.id ? spotLink?.spot : nil {
+                        // 撮影地 → 撮影スポットのガイド（「行きたい」もそこで押せる）
+                        Button {
+                            guideSpot = spot
+                        } label: {
+                            // **押せる所は文字の幅だけ**（枠で幅を決めると、短い撮影地でも 260pt 広がり、
+                            // 右の「進む」の的を塞いだ）。長い撮影地は文字を詰めて短くする
+                            HStack(spacing: 4) {
+                                photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(WebTheme.muted)
+                                    .jpPhotoTextShadow()
+                            }
+                            // **押せる所だけ上下に広げて 44pt に、並びは変えない**（`minHeight` にすると
+                            // 行が 44pt になり、索引が届いた瞬間にひとことの塊が上へ跳ねた）
+                            .padding(.vertical, 15)
+                            .contentShape(Rectangle())
+                            .padding(.vertical, -15)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L("撮影地 \(place)。撮影スポットのガイドを開く",
+                                              "Location \(place). Open the photo spot guide"))
+                    } else {
+                        // 結べた行と同じく詰める（索引が届いた瞬間に文字が変わらないように）
+                        photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))
+                            .allowsHitTesting(false)
+                            // 詰めた文字でなく全文を読み上げる
+                            .accessibilityLabel(L("撮影地 \(place)", "Location \(place)"))
+                    }
                 }
                 if let song {
                     photoMeta(symbol: "music.note", text: song)
+                        .allowsHitTesting(false)
                 }
             }
         }
