@@ -304,17 +304,30 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(seasonCards([]), [.theme])
     }
 
-    /// 同じ日は何度開いても同じ・翌日は次の1件（`spotId` の順・紀元からの日数で進む）
-    func testInSeasonRotatesDaily() throws {
+    /// 🔴 **週替わり**（owner・2026-09-30）。同じ週は何度開いても同じ・月曜で次の1件
+    /// （`spotId` の順・週の番号で進む）
+    func testInSeasonRotatesWeeklyOnMondays() throws {
         let a = try spot("sp_a", seasons: [("autumn", "Aの秋")])
         let b = try spot("sp_b", seasons: [("autumn", "Bの秋")])
-        // 2026-09-27 は紀元から 20723 日目 → 20723 % 2 = 1 → 2件目
-        XCTAssertEqual(inSeasonCard(seasonCards([b, a])), .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
-        XCTAssertEqual(inSeasonCard(seasonCards([a, b])), .inSeason(spot: b, season: "autumn", guide: "Bの秋"), "並び順で変わっている")
-        let later = now.addingTimeInterval(11 * 3600) // 同じ日の 23:00
-        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: later)), .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
-        let next = now.addingTimeInterval(86_400)
-        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: next)), .inSeason(spot: a, season: "autumn", guide: "Aの秋"))
+        // 2026-09-27（日曜）は紀元から 20723 日目 → 週 (20723+3)/7 = 2960 → 2960 % 2 = 0 → 1件目
+        XCTAssertEqual(inSeasonCard(seasonCards([b, a])), .inSeason(spot: a, season: "autumn", guide: "Aの秋"))
+        XCTAssertEqual(inSeasonCard(seasonCards([a, b])), .inSeason(spot: a, season: "autumn", guide: "Aの秋"), "並び順で変わっている")
+        // 同じ週の前の日（火曜 9/22〜日曜 9/27 の間）は同じ札
+        let tuesday = now.addingTimeInterval(-5 * 86_400)
+        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: tuesday)), .inSeason(spot: a, season: "autumn", guide: "Aの秋"))
+        // 月曜 9/28 で次の1件
+        let monday = now.addingTimeInterval(86_400)
+        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: monday)), .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
+        // その週のあいだは変わらない（日曜 10/4 まで）
+        let sunday = now.addingTimeInterval(7 * 86_400)
+        XCTAssertEqual(inSeasonCard(seasonCards([a, b], now: sunday)), .inSeason(spot: b, season: "autumn", guide: "Bの秋"))
+    }
+
+    func testWeekStartsOnMonday() throws {
+        let sunday = try XCTUnwrap(HomeTopCard.today(now, in: utc))              // 2026-09-27 日
+        let monday = sunday.addingTimeInterval(86_400)                          // 2026-09-28 月
+        XCTAssertEqual(HomeTopCard.weekNumber(monday), HomeTopCard.weekNumber(sunday) + 1)
+        XCTAssertEqual(HomeTopCard.weekNumber(monday.addingTimeInterval(6 * 86_400)), HomeTopCard.weekNumber(monday))
     }
 
     /// 季節は**端末の暦の月**で決める。12/1 は冬（UTC では 11/30 でも、東京の 12/1 なら冬）
@@ -377,8 +390,9 @@ final class HomeTopCardTests: XCTestCase {
 
     /// 見出しは季節の名前（「見頃」とは言わない）
     func testSeasonEyebrowNamesTheSeason() {
-        XCTAssertEqual(HomeTopCard.seasonEyebrow("autumn"), L("秋の撮影スポット", "Autumn photo spot"))
-        XCTAssertEqual(HomeTopCard.seasonEyebrow("monsoon"), L("この季節の撮影スポット", "Photo spot for this season"))
+        // 週替わりなので「今週の」と名乗る（owner・2026-09-30）
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("autumn"), L("今週の撮影スポット・秋", "This week's photo spot · Autumn"))
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("monsoon"), L("今週の撮影スポット", "This week's photo spot"))
     }
 
     /// 索引の季節の案内は**行ごとは落とさない**。壊れた項目・知らない季節・空の文だけ落とす

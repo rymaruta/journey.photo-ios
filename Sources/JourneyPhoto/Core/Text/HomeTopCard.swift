@@ -18,11 +18,12 @@ import Foundation
 ///  3. **一冊ができた** — 旅が閉じて（最後の写真から `TripBook.maxGapDays` 日空いて）
 ///     から `bookFreshDays` 日以内で、**まだ開いていない**一冊
 ///  4. **行きたい場所のこの季節** — 「行きたい」に入れた公開済みのスポットのうち、
-///     いまの季節の案内を持つものを日替わりで1件（2026-09-29・owner「こういう感じのを
+///     いまの季節の案内を持つものを**週替わり**で1件（2026-09-29・owner「こういう感じのを
 ///     もっと増やしたい」）
 ///  5. **この季節の撮影スポット** — 公開済みで写真があり、**いまの季節の案内を持つ**
-///     スポットを日替わりで1件（2026-09-29・owner「毎日開きたくなる仕組みがアプリ側にない」）。
-///     4 と同じスポットの日は出さない
+///     スポットを**週替わり**で1件（2026-09-29 に日替わりで入れた・owner「毎日開きたくなる
+///     仕組みがアプリ側にない」。2026-09-30 に owner「週替わりとかにして欲しい」で週替わりへ。
+///     毎日替わる札は「今日のテーマ」が受け持つ）。4 と同じスポットの週は出さない
 ///  6. **今日のテーマ** — 毎日（当たる札が無い日は、これ1枚）
 ///  7. **1年前の今ごろ** — 1年前の今日の前後 `yearAgoWindowDays` 日に撮った自分の写真。
 ///     **振り返りなので最後**（2026-09-29・owner「1年前の今頃とかは振り返りなので
@@ -212,12 +213,20 @@ enum HomeTopCard {
 
     // MARK: - 6. この季節の撮影スポット
 
-    /// いまの季節の案内を持つ、写真のある公開済みのスポットから**日替わりで1件**。
+    /// **週の番号**（月曜はじまり）。紀元（1970-01-01・木曜）からの日数に3を足して7で割る
+    /// ——月曜 0 時（端末の暦）で次の週に替わる。ホームのスポットの札は**週替わり**
+    /// （owner・2026-09-30「ホームのスポットは週替わりとかにして欲しい」。以前は日替わり）
+    static func weekNumber(_ today: Date) -> Int {
+        let day = Int((today.timeIntervalSince1970 / 86_400).rounded(.down))
+        return Int((Double(day + 3) / 7).rounded(.down))
+    }
+
+    /// いまの季節の案内を持つ、写真のある公開済みのスポットから**週替わりで1件**。
     ///
     /// - 季節は `today`（端末の暦の今日を UTC 0 時に置いたもの）の月から決める
     ///   （春3〜5月・夏6〜8月・秋9〜11月・冬12〜2月。`SpotBodyText.season`）
-    /// - 候補は `spotId` の順に並べ、**紀元からの日数で1件ずつ進める**——同じ日なら
-    ///   何度開いても同じ札（今日のテーマと同じ考え方）。`spotId` は名前と無関係な
+    /// - 候補は `spotId` の順に並べ、**週の番号で1件ずつ進める**（`weekNumber`）——同じ週なら
+    ///   何度開いても同じ札。`spotId` は名前と無関係な
     ///   16進なので、県や種別が続けて並ぶことはない
     /// - **下書き・写真の無い行は出さない**（写真が主役の札。下書きを「おすすめ」と
     ///   して出さない）
@@ -232,8 +241,8 @@ enum HomeTopCard {
             }
             .sorted { $0.0.spotId < $1.0.spotId }
         guard !candidates.isEmpty else { return nil }
-        let day = Int((today.timeIntervalSince1970 / 86_400).rounded(.down))
-        let index = ((day % candidates.count) + candidates.count) % candidates.count
+        let week = weekNumber(today)
+        let index = ((week % candidates.count) + candidates.count) % candidates.count
         return .inSeason(spot: candidates[index].0, season: season, guide: candidates[index].1)
     }
 
@@ -245,18 +254,19 @@ enum HomeTopCard {
         return L("行きたい場所・\(label)", "Your wishlist · \(label)")
     }
 
-    /// 季節の札の見出しの読み（「秋の撮影スポット」）。知らない季節は「この季節の」
+    /// 季節の札の見出しの読み（「今週の撮影スポット・秋」）。**週替わり**なのでそう名乗る。
+    /// 知らない季節は季節を付けない
     static func seasonEyebrow(_ season: String) -> String {
         guard let label = SpotBodyText.seasonLabel(season) else {
-            return L("この季節の撮影スポット", "Photo spot for this season")
+            return L("今週の撮影スポット", "This week's photo spot")
         }
-        return L("\(label)の撮影スポット", "\(label) photo spot")
+        return L("今週の撮影スポット・\(label)", "This week's photo spot · \(label)")
     }
 
     // MARK: - 5. 行きたい場所のこの季節
 
     /// 「行きたい」に入れた公開済みのスポットのうち、いまの季節の案内を持つものから
-    /// **日替わりで1件**（並べ方・回し方は `inSeason` と同じ）。
+    /// **週替わりで1件**（並べ方・回し方は `inSeason` と同じ）。
     /// **写真は無くてもよい**——自分で選んだ場所なので、写真が無くても出す価値がある
     static func wishlistSeason(today: Date, spots: [OfficialSpot], wishlist: Set<String>) -> Choice? {
         guard !wishlist.isEmpty else { return nil }
@@ -270,8 +280,8 @@ enum HomeTopCard {
             }
             .sorted { $0.0.spotId < $1.0.spotId }
         guard !candidates.isEmpty else { return nil }
-        let day = Int((today.timeIntervalSince1970 / 86_400).rounded(.down))
-        let index = ((day % candidates.count) + candidates.count) % candidates.count
+        let week = weekNumber(today)
+        let index = ((week % candidates.count) + candidates.count) % candidates.count
         return .wishlistSeason(spot: candidates[index].0, season: season, guide: candidates[index].1)
     }
 }

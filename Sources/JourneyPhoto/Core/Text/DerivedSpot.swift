@@ -132,6 +132,10 @@ enum DerivedSpot {
         return out
     }
 
+    /// 「近く」と呼んでよい距離（km）。日帰りで回れる範囲の目安。
+    /// 撮影スポットの索引（`OfficialSpotIndex.nearbyMaxKm`）と同じ値にしてある
+    static let nearbyMaxKm: Double = 50
+
     /// 近くの撮影地。**座標を持っているものだけ**（距離を測れないものは出さない）。
     /// 近い順に返す。
     ///
@@ -146,7 +150,13 @@ enum DerivedSpot {
     ///
     /// だから2つ落とす。**文字で決めるのは自分との関係だけ**で、
     /// 候補どうしは**実際の写真の集合**で見る（綴りの当てものにしない）。
-    static func nearby(_ place: Place, in photos: [Photo], limit: Int = 6) -> [(place: Place, km: Double)] {
+    ///
+    /// 🔴 **「近く」は `nearbyMaxKm` まで。** 以前は距離順に並べて6件で切るだけで、
+    /// 上限が無かった——写真の少ない地域では「近くの撮影スポット」に
+    /// **「バルセロナ・約825km」**が出ていた（2026-09-30 のレビュー・シミュレータの絵）。
+    /// 候補が少なくても**遠い場所で件数を埋めない**（0件なら節ごと出ない）。
+    static func nearby(_ place: Place, in photos: [Photo], limit: Int = 6,
+                       maxKm: Double = nearbyMaxKm) -> [(place: Place, km: Double)] {
         guard let here = place.coords else { return [] }
         let needle = place.label.lowercased()
         let candidates = all(in: photos)
@@ -159,7 +169,8 @@ enum DerivedSpot {
             }
             .compactMap { other -> (Place, Double)? in
                 guard let there = other.coords else { return nil }
-                return (other, TravelDistance.kilometers(from: here, to: there))
+                let km = TravelDistance.kilometers(from: here, to: there)
+                return km <= maxKm ? (other, km) : nil
             }
             .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.label.count < $1.0.label.count }
 

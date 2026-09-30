@@ -87,9 +87,29 @@ final class DerivedSpotTests: XCTestCase {
             try photo("nocoords", location: "福岡"),
         ]
         let here = try XCTUnwrap(DerivedSpot.place("東京", in: photos))
-        let near = DerivedSpot.nearby(here, in: photos)
+        let near = DerivedSpot.nearby(here, in: photos, maxKm: .infinity)
         XCTAssertEqual(near.map(\.place.label), ["横浜", "大阪"])
         XCTAssertLessThan(near[0].km, near[1].km)
+    }
+
+    /// 🔴 **遠い撮影地を「近く」に出さない**（2026-09-30 のレビュー: 「バルセロナ・約825km」）。
+    /// 東京から横浜（約30km）は近く、大阪（約400km）は近くではない。
+    /// 候補が遠い1件だけなら、**遠い場所で埋めずに空にする**（節ごと出ない）
+    func testNearbyStopsAtTheDistanceCap() throws {
+        let photos = [
+            try photo("here", location: "東京", lat: 35.68, lng: 139.77),
+            try photo("near", location: "横浜", lat: 35.44, lng: 139.64),
+            try photo("far", location: "大阪", lat: 34.69, lng: 135.50),
+        ]
+        let here = try XCTUnwrap(DerivedSpot.place("東京", in: photos))
+        XCTAssertEqual(DerivedSpot.nearby(here, in: photos).map(\.place.label), ["横浜"])
+
+        let abroad = [
+            try photo("m", location: "マドリード", lat: 40.42, lng: -3.70),
+            try photo("b", location: "バルセロナ", lat: 41.39, lng: 2.17),
+        ]
+        let madrid = try XCTUnwrap(DerivedSpot.place("マドリード", in: abroad))
+        XCTAssertTrue(DerivedSpot.nearby(madrid, in: abroad).isEmpty, "約500km 先を「近く」と出している")
     }
 
     /// 座標が無い地点では、近くを出さない（測りようが無い）
@@ -184,7 +204,7 @@ final class DerivedSpotTests: XCTestCase {
             try photo("c", location: "東京", lat: 35.68, lng: 139.77),
         ]
         let here = try XCTUnwrap(DerivedSpot.place("パリ", in: photos))
-        XCTAssertEqual(DerivedSpot.nearby(here, in: photos).map(\.place.label), ["東京"])
+        XCTAssertEqual(DerivedSpot.nearby(here, in: photos, maxKm: .infinity).map(\.place.label), ["東京"])
     }
 
     /// 🔴 **綴り違いの2枚札を並べない。** run 55 の絵では「パリ」と
@@ -209,7 +229,7 @@ final class DerivedSpotTests: XCTestCase {
             try photo("c", location: "大阪", lat: 34.69, lng: 135.50),
         ]
         let here = try XCTUnwrap(DerivedSpot.place("東京", in: photos))
-        XCTAssertEqual(DerivedSpot.nearby(here, in: photos).map(\.place.label), ["横浜", "大阪"])
+        XCTAssertEqual(DerivedSpot.nearby(here, in: photos, maxKm: .infinity).map(\.place.label), ["横浜", "大阪"])
     }
 
     /// 🔴 **広い撮影地の写真を、狭いスポットに数えない**（run 55 の絵で3枚）
