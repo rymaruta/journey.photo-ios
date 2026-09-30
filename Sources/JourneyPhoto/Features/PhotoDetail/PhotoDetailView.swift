@@ -112,6 +112,11 @@ struct PhotoDetailView: View {
     private static let heroOverlap: CGFloat = 94
     /// コメントの「削除」の当たりを字の上下にはみ出させる幅（44pt − 12pt の字の高さ ≒ 28 の半分）
     private static let commentDeleteTapSlack: CGFloat = 14
+    /// コメントした人の名前（`.caption` の太字）の当たりも同じだけはみ出させる
+    private static let commentNameTapSlack: CGFloat = 14
+    /// カテゴリの札（`.caption` ＋ 上下 4 ≒ 24pt）の当たりを札の上下にはみ出させる幅
+    /// （44 − 24 の半分）。上下の段との間は 16 あるので、隣の当たりに届かない
+    private static let chipTapSlack: CGFloat = 10
 
     // **段ごとに割ってある。** 一本の長い `ScrollView { … }` にすると、Swift の
     // 型検査が現実的な時間で終わらなくなることがある
@@ -446,10 +451,17 @@ struct PhotoDetailView: View {
                     NavigationLink {
                         TagPhotosView(kind: .category(shown.category ?? ""))
                     } label: {
+                        // 札の見た目はそのまま、当たりだけ 44pt（札の外に広げて負の余白で詰める）
                         Text(category)
                             .font(.caption)
                             .foregroundStyle(WebTheme.muted2)
                             .webChip(prominent: true)
+                            // 外へ広げてから同じだけ詰める——並びの高さは札のまま。
+                            // 文字を大きくして札が伸びても、詰めすぎて上下に重ならない
+                            .padding(.vertical, Self.chipTapSlack)
+                            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .padding(.vertical, -Self.chipTapSlack)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1076,7 +1088,12 @@ struct PhotoDetailView: View {
                             NavigationLink {
                                 UserProfileView(userId: comment.uid)
                             } label: {
+                                // 当たりだけ 44pt（行の高さは字のまま・「削除」と同じ形）
                                 Text(comment.name).font(.caption.weight(.semibold))
+                                    .padding(.vertical, Self.commentNameTapSlack)
+                                    .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .padding(.vertical, -Self.commentNameTapSlack)
                             }
                         }
                         Spacer()
@@ -1454,10 +1471,17 @@ private struct ExifRow: View {
                                 NavigationLink {
                                     TagPhotosView(kind: .camera(camera))
                                 } label: {
+                                    // 字の見た目・行の高さはそのまま、当たりだけ 44pt
+                                    // （`.title3` ≒ 24pt の上下に 10 ずつ。外へ広げて同じだけ詰める。
+                                    // 長い機種名が2行になっても並びは縮まない）
                                     Text(item.value)
                                         .font(.title3)
                                         .foregroundStyle(WebTheme.foreground)
                                         .underline(true, color: Color.white.opacity(0.25))
+                                        .padding(.vertical, 10)
+                                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                        .padding(.vertical, -10)
                                 }
                                 .buttonStyle(.plain)
                             } else {
