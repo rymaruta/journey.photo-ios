@@ -188,8 +188,7 @@ struct GalleryView: View {
             dropped = hidden.snapshot
             // **戻ってきたら毎回自分の写真を読み直す**（`MyPageView` と同じ形）。
             // 合図が来ない変わり方がある——すでに「消した」印の付いた写真を消した・
-            // 下書きを公開にした（`hidden.revision` が進まない）、スポットの画面の
-            // 投稿シート（`postSheetsClosed` が進まない）。`onAppear` はホームが前に
+            // 下書きを公開にした（`hidden.revision` が進まない）。`onAppear` はホームが前に
             // 出たときだけ走るので、上に積んだ画面を閉じることはない。
             // `reloadHidden` は自分の写真も読むので、その回は二重に取りに行かない
             if needsReload {

@@ -344,7 +344,7 @@ struct RootView: View {
         // **画面が出てきたときにも取りに行く。** 冷えた状態から押した回・
         // 規約の同意画面が出ていた回は、数が変わった瞬間にここが居なかった
         .onAppear { takeActivityRequest() }
-        // お知らせを既読にできた: 閉じたときの数え直しが落ちても 0 にする
+        // お知らせを既読にできた（またはサーバーの未読がもう 0 だった）: 閉じたときの数え直しが落ちても 0 にする
         .onChange(of: router.readMarks) { _, _ in
             guard router.readOwner != nil, router.readOwner == auth.userId else { return }
             unreadGeneration += 1
