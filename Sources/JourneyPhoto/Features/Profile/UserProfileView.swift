@@ -268,15 +268,16 @@ struct UserProfileView: View {
     /// 押して一覧を開けるのは、ログインしていて1人以上いるときだけ
     /// （`FollowCounts.isTappable`）。一覧の口は認証が要るので、未ログインで
     /// 押せると赤字だけの行き止まりになる。
+    /// 人のページのフォロー数は読み込み中・失敗のとき 0 と出る（2026-09-30 判断: 見張りとの組み合わせで回帰が続いたため、マイページだけ直してある）
     private var counts: some View {
         HStack(spacing: 20) {
-            ForEach(ProfileLine.counts(followers: model.followerCount, following: model.followingCount,
+            ForEach(ProfileLine.counts(followers: model.followers, following: model.following,
                                        photos: isBlocked ? .pending : model.photoCount.shown(shownPhotos.count))) { item in
                 switch item.kind {
                 case .followers:
-                    countLink(item, kind: .followers, count: model.followerCount)
+                    countLink(item, kind: .followers, count: model.followers)
                 case .following:
-                    countLink(item, kind: .following, count: model.followingCount)
+                    countLink(item, kind: .following, count: model.following)
                 case .photos:
                     countText(item)
                 }
@@ -287,11 +288,8 @@ struct UserProfileView: View {
     }
 
     @ViewBuilder
-    private func countLink(_ item: ProfileLine.Count, kind: FollowListView.Kind,
-                           count: ProfileLine.PhotoCount) -> some View {
-        // 取れなかった（「—」）ときも開ける——数を読めないだけで、一覧は一覧の画面が読む
-        // （マイページの数は読めなくても開ける）
-        if Self.opensList(count, signedIn: auth.userId != nil) {
+    private func countLink(_ item: ProfileLine.Count, kind: FollowListView.Kind, count: Int) -> some View {
+        if FollowCounts.isTappable(signedIn: auth.userId != nil, count: count) {
             NavigationLink {
                 FollowListView(userId: userId, kind: kind)
             } label: {
@@ -304,14 +302,6 @@ struct UserProfileView: View {
             .buttonStyle(.plain)
         } else {
             countText(item)
-        }
-    }
-
-    private static func opensList(_ count: ProfileLine.PhotoCount, signedIn: Bool) -> Bool {
-        switch count {
-        case .loaded(let n): return FollowCounts.isTappable(signedIn: signedIn, count: n)
-        case .failed: return signedIn
-        case .pending: return false
         }
     }
 
@@ -361,15 +351,14 @@ struct UserProfileView: View {
     }
 
     /// フォロー一覧を開く丸（板 31: 人と＋の印・44×36 の縁取り）。
-    /// **開けるときだけ出す**（数の札と同じ `opensList`）——
+    /// **開けるときだけ出す**（数の札と同じ `FollowCounts.isTappable`）——
     /// 開く先はフォロワーから、居なければフォロー中から（一覧の中で切り替えられる）
     @ViewBuilder
     private var followListButton: some View {
-        let signedIn = auth.userId != nil
-        let toFollowers = Self.opensList(model.followerCount, signedIn: signedIn)
-        if toFollowers || Self.opensList(model.followingCount, signedIn: signedIn) {
+        let total = model.followers + model.following
+        if FollowCounts.isTappable(signedIn: auth.userId != nil, count: total) {
             NavigationLink {
-                FollowListView(userId: userId, kind: toFollowers ? .followers : .following)
+                FollowListView(userId: userId, kind: model.followers > 0 ? .followers : .following)
             } label: {
                 Image(systemName: "person.badge.plus")
                     .font(.system(size: 16))
@@ -392,19 +381,6 @@ final class UserProfileViewModel: ObservableObject {
     @Published private(set) var photos: [Photo] = []
     @Published private(set) var followers = 0
     @Published private(set) var following = 0
-    /// フォロー数を読めたか（nil: まだ・false: 取れなかった）。**数の 0 と見分ける**
-    /// （マイページの `followStatsRead` と同じ決まり）
-    @Published private(set) var followStatsRead: Bool?
-    var followerCount: ProfileLine.PhotoCount { followCount(followers) }
-    var followingCount: ProfileLine.PhotoCount { followCount(following) }
-
-    private func followCount(_ value: Int) -> ProfileLine.PhotoCount {
-        switch followStatsRead {
-        case true?: return .loaded(value)
-        case false?: return .failed
-        case nil: return errorMessage != nil ? .failed : .pending
-        }
-    }
     @Published private(set) var isFollowing = false
     /// 自分のフォロー一覧が取れず、**フォロー中かどうか分からない**。ボタンは「フォローする」で
     /// 出すが、押されたら送る前に取り直す（`toggleFollow`）——分からないまま送ると、
@@ -493,15 +469,8 @@ final class UserProfileViewModel: ObservableObject {
         let stats = try? await environment.social.followStats(userId: userId)
         guard current() else { return }
         if let stats {
+            if writes == followWrites { followers = stats.followers }
             following = stats.following
-            // フォロワー数を書かなかった回は「読めた」にしない（書いていない 0 を数として出す）
-            if writes == followWrites {
-                followers = stats.followers
-                followStatsRead = true
-            }
-        } else if followStatsRead != true, !Task.isCancelled {
-            // 一度読めた数は、読み直しの失敗で「—」にしない
-            followStatsRead = false
         }
         if viewerId != nil {
             // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
@@ -603,7 +572,6 @@ final class UserProfileViewModel: ObservableObject {
             // サーバーの答えは確かな値——外したあとにフォローし直すとき、また取り直しに行かない
             followUnknown = false
             followers = result.followers
-            followStatsRead = true
         } catch {
             // 前の人が押した失敗を、次の人の画面に出さない
             guard lastViewerId == viewer else { return }
