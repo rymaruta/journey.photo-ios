@@ -166,9 +166,11 @@ struct PhotoDetailView: View {
             actionNotice = nil
             // **数はホームのカードと同じ出どころ**（`LiveLikes.base`）。一覧の数
             // （`current.likes`）のままだと、ホームで押した直後に開くと古い数が出た
+            let stored = likeCounts.entry(for: current.id)
             model.show(photoId: current.id,
-                       initialLikes: LiveLikes.base(for: current, stored: likeCounts.entry(for: current.id)),
-                       liked: favorites.contains(current.id))
+                       initialLikes: LiveLikes.base(for: current, stored: stored),
+                       liked: favorites.contains(current.id),
+                       answeredAt: stored?.at)
             await model.load()
         }
         .onChange(of: heroPage) { _, page in

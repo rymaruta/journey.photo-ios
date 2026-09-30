@@ -67,11 +67,26 @@ enum LiveLikes {
     /// 取りに行った数だけ。
     static func base(for photo: Photo, stored: LikeCountStore.Entry?) -> Int? {
         guard let stored else { return photo.likes }
-        if let asOf = photo.likesAsOf,
-           asOf >= stored.at.addingTimeInterval(serverStaleness) {
+        if readSupersedes(readAt: photo.likesAsOf, answeredAt: stored.at) {
             return photo.likes
         }
         return stored.count
+    }
+
+    /// 読んだ数（と自分のいいね）が、押した回の答えより新しいとみなせるか。
+    ///
+    /// **読んだのが答えから `serverStaleness` 以上あとのときだけ真。** 読み取りは
+    /// 結果整合で控えも挟む（上の説明）ので、押した直後に読むと押す前の数・印が返る。
+    /// 一覧の数（`base`）と詳細画面の読み込み（`PhotoDetailViewModel.load`）で
+    /// 同じ判断を使う
+    ///
+    /// - Parameters:
+    ///   - readAt: 読みに行った時刻。nil（静的 JSON など時刻が分からない）は負け
+    ///   - answeredAt: 押した回の答えの時刻。nil（押していない）なら読んだ方が勝つ
+    static func readSupersedes(readAt: Date?, answeredAt: Date?) -> Bool {
+        guard let answeredAt else { return true }
+        guard let readAt else { return false }
+        return readAt >= answeredAt.addingTimeInterval(serverStaleness)
     }
 
     /// サーバーの数が遅れうる幅。Lambda の控え（10秒）に、
