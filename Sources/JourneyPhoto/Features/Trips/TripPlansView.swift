@@ -74,6 +74,9 @@ struct TripPlansView: View {
             }
         }
         .fullScreenCover(isPresented: $showPicker, onDismiss: {
+            // 板の中の保存は一覧の失敗の文を消す（`write` が始めに消す）。取り直して、
+            // 一覧の本当の状態（取れた・取れなかった）をもう一度出す
+            Task { await model.load(environment: environment) }
             guard let planId = pickedPlanId else { return }
             pickedPlanId = nil
             openedPlanId = planId

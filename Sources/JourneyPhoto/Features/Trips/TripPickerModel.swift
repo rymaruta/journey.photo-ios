@@ -48,6 +48,8 @@ final class TripPickerModel: ObservableObject {
     /// 「前から入っていたか」を控えの `contains` だけで決めると、足す→戻す（外す要求が列で待つ）
     /// →また行きたい、で控えにまだ残っているため「前から」と読み、足さずに外していた
     private var addedHere: Set<String> = []
+    /// 場所ごとに、足す要求を積んだ回数（印の世代）。**外し終えたときに消してよいかを決める**
+    private var addGeneration: [String: Int] = [:]
 
     /// 決める前に呼ぶ。控えに入っていても、**この板で足したものは「前から」ではない**
     func wasWantedBefore(_ spotId: String, inWishlist: Bool) -> Bool {
@@ -57,10 +59,19 @@ final class TripPickerModel: ObservableObject {
     /// 足す要求を列に積んだ
     func markAdded(_ spotId: String) {
         addedHere.insert(spotId)
+        addGeneration[spotId, default: 0] += 1
     }
 
-    /// 戻して「行きたい」から外せた。**次に控えに入っていたら、それは他で入れたもの**
-    func unmarkAdded(_ spotId: String) {
+    /// いまの印の世代（戻すときに控えて、外し終えたら `unmarkAdded` に渡す）
+    func addedGeneration(_ spotId: String) -> Int { addGeneration[spotId] ?? 0 }
+
+    /// 戻して「行きたい」から外せた。**次に控えに入っていたら、それは他で入れたもの**。
+    ///
+    /// 🔴 **戻した後にまた足していたら消さない。** 印は押した時点で付け、外した結果は列の
+    /// 順で後から返る——行きたい→戻す→すぐ行きたい、で後の「行きたい」の印まで消し、次の
+    /// 戻す→行きたいで「前から」と読んで足さずに外していた（a5d8fb4 の回帰）
+    func unmarkAdded(_ spotId: String, generation: Int) {
+        guard addGeneration[spotId] ?? 0 == generation else { return }
         addedHere.remove(spotId)
     }
 

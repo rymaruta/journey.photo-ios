@@ -109,8 +109,18 @@ final class TripPickerModelTests: XCTestCase {
         model.markAdded("sp_a")
         XCTAssertFalse(model.wasWantedBefore("sp_a", inWishlist: true))
         // 外し終えたあとに控えに入っていたら、それは他（Web など）で入れたもの
-        model.unmarkAdded("sp_a")
+        model.unmarkAdded("sp_a", generation: model.addedGeneration("sp_a"))
         XCTAssertTrue(model.wasWantedBefore("sp_a", inWishlist: true))
+    }
+
+    /// 行きたい→戻す→すぐ行きたい: 前の「外す」の結果が後から返っても、後の「行きたい」の印は消さない
+    func testLateRemovalDoesNotClearANewerAdd() async {
+        let model = TripPickerModel()
+        model.markAdded("sp_a")
+        let atUndo = model.addedGeneration("sp_a")   // 戻したとき
+        model.markAdded("sp_a")                        // すぐまた行きたい
+        model.unmarkAdded("sp_a", generation: atUndo)  // 前の外すが返る
+        XCTAssertFalse(model.wasWantedBefore("sp_a", inWishlist: true))
     }
 
     // MARK: - 3. 上限
