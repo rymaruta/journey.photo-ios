@@ -89,6 +89,12 @@ struct StoryCanvas: View {
     /// 動かし始めに戻す
     @State private var photoDragSpoiled = false
     @State private var photoDragStarted = false
+    /// 写真を動かし・つまみ・回し始めたときの写真の印（`photoId`。投票の札の印と同じ作り）。
+    /// **途中で表示中の写真が替わったら、その回の合わせ方を別の写真の `framing` に入れない**
+    /// （何枚かまとめて読み込んでいる途中に、届いた写真へ表示が移る）
+    @State private var framingDragPhotoId: UUID?
+    @State private var framingScalePhotoId: UUID?
+    @State private var framingRotatePhotoId: UUID?
     /// 写真の上で始まった1本指の操作でも、**指の近く（`StoryTextEditing.pinchSlop` の内側）に札が
     /// あればその札を運ぶ**。スタンプは小さく、少し外れた所を押すと写真が動いていた
     /// （2026-09-30・owner「スタンプ動かしたいのに、ストーリーの画像動かしちゃったりする」）
@@ -145,7 +151,7 @@ struct StoryCanvas: View {
                             .updating($photoDragging) { _, state, _ in state = true }
                             .onChanged { value in
                                 if !photoDragStarted {
-                                    photoDragStarted = true; photoDragSpoiled = false
+                                    photoDragStarted = true; photoDragSpoiled = false; framingDragPhotoId = photoId
                                     // 指の近くに札があれば、この回は札を運ぶ（2本指の相手の決め方と同じ）
                                     photoDragOverlay = twoFingerActive ? nil : overlayUnder(value.startLocation, photo: photo)
                                 }
@@ -172,7 +178,7 @@ struct StoryCanvas: View {
                                     return
                                 }
                                 // 入れるのは離したときの移動量から（片付けの順に頼らない）
-                                if !photoDragSpoiled && !twoFingerActive {
+                                if !photoDragSpoiled && !twoFingerActive && framingDragPhotoId == photoId {
                                     framing = framing.moved(by: value.translation, in: photo.size)
                                 }
                                 photoDrag = .zero
@@ -254,7 +260,8 @@ struct StoryCanvas: View {
                             if targetsVote(pairedWithVote: scalesVote, other: other,
                                            at: value.startLocation, photo: photo) {
                                 rotatesVote = true
-                                voteRotatePhotoId = photoId
+                                // 2本指の片方が先に決まっていたら、その写真を引き継ぐ（途中で写真が替わっても前の写真に書く）
+                                voteRotatePhotoId = scalesVote ? voteScalePhotoId : photoId
                             } else {
                             switch StoryTextEditing.gestureTarget(other: other,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) },
@@ -263,6 +270,7 @@ struct StoryCanvas: View {
                                 rotateId = id
                             case .photo:
                                 twistsPhoto = true
+                                framingRotatePhotoId = pinchesPhoto ? framingScalePhotoId : photoId
                             }
                             }
                         }
@@ -289,7 +297,7 @@ struct StoryCanvas: View {
                             if targetsVote(pairedWithVote: rotatesVote, other: other,
                                            at: value.startLocation, photo: photo) {
                                 scalesVote = true
-                                voteScalePhotoId = photoId
+                                voteScalePhotoId = rotatesVote ? voteRotatePhotoId : photoId
                             } else {
                             switch StoryTextEditing.gestureTarget(other: other,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) },
@@ -298,6 +306,7 @@ struct StoryCanvas: View {
                                 scaleId = id
                             case .photo:
                                 pinchesPhoto = true
+                                framingScalePhotoId = twistsPhoto ? framingRotatePhotoId : photoId
                             }
                             }
                         }
@@ -366,7 +375,7 @@ struct StoryCanvas: View {
     private func commitRotation() {
         if let id = rotateId, let i = overlays.firstIndex(where: { $0.id == id }) {
             overlays[i].rotation += liveRotation
-        } else if twistsPhoto {
+        } else if twistsPhoto, framingRotatePhotoId == photoId {
             framing = framing.rotated(by: PhotoFraming.intendedTwist(liveRotation, whilePinching: photoPinched))
         } else if rotatesVote, voteRotatePhotoId == photoId, let current = vote.wrappedValue {
             vote.wrappedValue = current.rotated(
@@ -376,6 +385,7 @@ struct StoryCanvas: View {
         twistsPhoto = false
         rotatesVote = false
         voteRotatePhotoId = nil
+        framingRotatePhotoId = nil
         if !scalesVote { votePinched = false }
         liveRotation = 0
         // 運ぶ指が置かれたままなら覚えておく（2本目の指を置き直して回し続けられるように）
@@ -387,7 +397,7 @@ struct StoryCanvas: View {
     private func commitScale() {
         if let id = scaleId, let i = overlays.firstIndex(where: { $0.id == id }) {
             overlays[i] = overlays[i].scaled(by: liveScale)
-        } else if pinchesPhoto {
+        } else if pinchesPhoto, framingScalePhotoId == photoId {
             framing = framing.scaled(by: liveScale)
         } else if scalesVote, voteScalePhotoId == photoId, let current = vote.wrappedValue {
             vote.wrappedValue = current.scaled(by: liveScale)
@@ -396,6 +406,7 @@ struct StoryCanvas: View {
         pinchesPhoto = false
         scalesVote = false
         voteScalePhotoId = nil
+        framingScalePhotoId = nil
         if !rotatesVote { votePinched = false }
         liveScale = 1
         if rotateId == nil && !twistsPhoto && dragId == nil { carriedId = nil }
