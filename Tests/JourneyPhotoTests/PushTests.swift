@@ -387,6 +387,52 @@ final class PushTakeoverTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requests, [], "外し終えたのに前面に戻るたびに流している")
     }
 
+    /// 🔴 **ログアウト・退会の途中（`signingOut` のあと）に前面へ戻っても預け直さない。**
+    /// 外した直後の「預けていない」を見て登録し直し、退会済みの人の宛先がサーバーに残った。
+    /// 人が替わったら下ろす
+    func testNoReRegistrationWhileSigningOut() async {
+        let defaults = registeredByA("push-signing-out")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        let push = PushCenter(service: {
+            PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                       tokenProvider: StubTokenProvider(token: "t"),
+                                       session: session))
+        }, defaults: defaults, releaseDevice: {}, readAuthorization: { true })
+        await push.use(userId: "a")
+        await push.signingOut()
+        StubProtocol.requests = []
+
+        // 退会の途中に前面へ戻る → APNs からトークンが返る
+        await push.use(userId: "a")
+        await push.registerIfPossible()
+        XCTAssertEqual(StubProtocol.requests, [], "ログアウトの途中に宛先を預け直している")
+
+        // ログアウトを経て同じ人で入り直したら、また預ける
+        await push.use(userId: nil)
+        await push.use(userId: "a")
+        StubProtocol.requests = []
+        await push.registerIfPossible()
+        XCTAssertEqual(StubProtocol.requests, ["POST /user/devices"])
+    }
+
+    /// 🔴 **同じ人の `use` が重なっても、外す・預けるは1本ずつ。** 前面に戻ったのと
+    /// ログイン状態の変化が重なると、DELETE が2本出ていた
+    func testConcurrentUseForTheSameUserRunsOnce() async {
+        let defaults = registeredByA("push-concurrent")
+        // 「受け取らない」にしてある A（持ち主が A なので外し直す）
+        defaults.set(false, forKey: "photo-gallery-push-enabled.a")
+        let push = center(defaults)
+        StubProtocol.requests = []
+
+        async let one: Void = push.use(userId: "a")
+        async let two: Void = push.use(userId: "a")
+        _ = await (one, two)
+
+        XCTAssertEqual(StubProtocol.requests, ["DELETE /user/devices"], "重ねて外している")
+    }
+
     /// 🔴 **2つの後始末が続けて効く**（C と F1 の併合）。A の宛先が残ったまま
     /// 誰もログインしない間は端末ごと APNs から外し（`registeredOwner`）、
     /// そのあと B がログインしたらサーバーからも引き取って外す（`owner`）。

@@ -38,6 +38,8 @@ struct JourneyPhotoApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var configurationError: String? = nil
     @Environment(\.scenePhase) private var scenePhase
+    /// 裏に入ったか（前面に戻ったときの通知の宛先の合わせ直しを、裏から戻った回だけにする）
+    @State private var wentToBackground = false
 
     init() {
         JourneyPhotoApp.configureImageCache()
@@ -162,9 +164,17 @@ struct JourneyPhotoApp: App {
                 // 押して外せなかった回は、ログイン状態が変わるまでやり直されず、
                 // 止めたはずの通知が届き続けた（預け損ねも同じ）。確認中・ID が取れ
                 // なかっただけのログアウトでは触らない（下の `.task(id: auth.state)` と同じ）
+                // **裏から戻ったときだけ**（通知センター・許可のダイアログから戻る
+                // inactive → active では走らせない）。裏から戻るときも background →
+                // inactive → active と進み、active の直前は inactive なので、`old` ではなく
+                // 裏に入ったことを覚えておく。見張りを通ったときの人で呼ぶ
                 .onChange(of: scenePhase) { _, phase in
-                    guard phase == .active, !auth.isResolving, !auth.isSignedOutUncertain else { return }
-                    Task { await push.use(userId: auth.userId) }
+                    if phase == .background { wentToBackground = true }
+                    guard phase == .active, wentToBackground else { return }
+                    wentToBackground = false
+                    guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
+                    let userId = auth.userId
+                    Task { await push.use(userId: userId) }
                 }
                 // **ログイン状態が変わるたびに読み直す。** `.task` のままだと
                 // 起動時に1回しか走らず、あとからログインした人には
