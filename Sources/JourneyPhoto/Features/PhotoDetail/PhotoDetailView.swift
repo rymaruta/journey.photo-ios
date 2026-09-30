@@ -173,7 +173,9 @@ struct PhotoDetailView: View {
             await model.load()
         }
         .task(id: shown.location) { await loadSpotLead() }
-        .task(id: shown.id) { await loadNearby() }
+        // **撮影地も鍵に入れる**（`PhotoDetailRules.nearbyKey`）。写真だけだと、
+        // 撮影地を直して・消して保存しても近くの写真が前の場所のまま残った
+        .task(id: PhotoDetailRules.nearbyKey(photoId: shown.id, coords: shown.coords)) { await loadNearby() }
         // **ブロック・通報で絞り直す**（`hidden.revision`）。この画面で
         // その場でブロック／通報しても、近くの写真とスポットの行き先が
         // 古い一覧のまま残っていた。
@@ -1592,6 +1594,13 @@ enum PhotoDetailRules {
     /// でした」と空のいいねの数が残っていた
     static func reloadKey(userId: String?, photoId: String, published: Bool?) -> String {
         "\(userId ?? "")|\(photoId)|\(acceptsReactions(published: published))"
+    }
+
+    /// 近くの写真を拾い直す鍵。**撮影地も入れる**——写真だけだと、撮影地を直して・消して
+    /// 保存しても、近くの写真が前の場所のまま残っていた
+    static func nearbyKey(photoId: String, coords: Photo.Coords?) -> String {
+        guard let coords else { return "\(photoId)|" }
+        return "\(photoId)|\(coords.lat),\(coords.lng)"
     }
 
     /// 持ち主の横にフォローのボタンを出すか。

@@ -159,4 +159,20 @@ final class PhotoDetailDraftTests: XCTestCase {
         XCTAssertNotEqual(PhotoDetailRules.reloadKey(userId: "me", photoId: "p1", published: true),
                           PhotoDetailRules.reloadKey(userId: "me", photoId: "p2", published: true))
     }
+
+    /// 🔴 **撮影地を直す・消すと近くの写真を拾い直す。** 写真が同じでも座標が変われば鍵が変わる
+    func testChangingCoordsReloadsNearby() {
+        let paris = Photo.Coords(lat: 48.85, lng: 2.35)
+        let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
+        XCTAssertNotEqual(PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris),
+                          PhotoDetailRules.nearbyKey(photoId: "p1", coords: kyoto),
+                          "撮影地を直しても近くの写真が前の場所のまま残る")
+        XCTAssertNotEqual(PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris),
+                          PhotoDetailRules.nearbyKey(photoId: "p1", coords: nil),
+                          "撮影地を消しても近くの写真の節が残る")
+        XCTAssertEqual(PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris),
+                       PhotoDetailRules.nearbyKey(photoId: "p1", coords: Photo.Coords(lat: 48.85, lng: 2.35)))
+        XCTAssertNotEqual(PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris),
+                          PhotoDetailRules.nearbyKey(photoId: "p2", coords: paris))
+    }
 }
