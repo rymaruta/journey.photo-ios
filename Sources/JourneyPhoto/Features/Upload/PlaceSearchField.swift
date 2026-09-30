@@ -53,7 +53,10 @@ struct PlaceSearchField: View {
             ForEach(spotSuggestions) { spot in
                 Button {
                     pickedLabel = spot.name
-                    coords = spot.coords
+                    // 🔴 **位置のある写真は、写真の座標のまま。** スポットの座標（約1kmに丸めた値・
+                    // 3km 先のこともある）で撮った位置を置き換えて「正確」として送っていた。
+                    // スポットの座標を使うのは位置の無い写真だけ（`UploadViewModel.append` と同じ決まり）
+                    if near == nil { coords = spot.coords }
                     location = spot.name
                     spotSuggestions = []
                     suggestions = []
@@ -99,8 +102,9 @@ struct PlaceSearchField: View {
             pickedLabel = nil
             coords = nil
         }
-        // 自分で入れた値（自動補完・候補の選択）では探しに行かない
-        guard focused else {
+        // 自分で入れた値（自動補完・候補の選択）では探しに行かない。
+        // **選んだ直後も探さない**——選んだ名前で探し直して、候補がまた開いていた
+        guard focused, value != pickedLabel else {
             suggestions = []
             spotSuggestions = []
             return

@@ -133,7 +133,8 @@ struct RootView: View {
             // ただしログインしていない（中はログイン画面）なら、押した通知が誰宛てか
             // 分からないので行き先は捨てる（ログインした直後に別の人の画面を積まない）
             if ModalProbe.isPresenting() {
-                if auth.userId == nil { router.dropPendingTarget() }
+                // ログインの確認中（冷えた起動）は捨てない——正しい押し方の行き先まで落ちる
+                if !auth.isResolving && auth.userId == nil { router.dropPendingTarget() }
                 return
             }
             // **出ていないのに true のまま**（出せなかった回）。残すと、この先

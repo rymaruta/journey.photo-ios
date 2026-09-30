@@ -48,6 +48,17 @@ final class UploadDiscardTests: XCTestCase {
         XCTAssertTrue(model.hasDraft)
     }
 
+    /// タグは中身で比べる（候補を足して外したあとの「, 」の残りで書きかけにしない）
+    func testTagsAreComparedByContent() async {
+        let model = model()
+        model.initialTagsText = "夕焼け"
+        model.tagsText = "夕焼け, "
+        XCTAssertFalse(model.hasDraft)
+        model.tagsText = ""
+        model.initialTagsText = ""
+        XCTAssertFalse(model.hasDraft)
+    }
+
     /// 写真を1枚でも選んだら書きかけ。外し切ったら書きかけではない
     func testPickedPhotoIsADraft() async {
         let model = model()

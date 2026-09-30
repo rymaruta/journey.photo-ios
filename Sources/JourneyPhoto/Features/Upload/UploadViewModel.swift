@@ -251,8 +251,8 @@ final class UploadViewModel: ObservableObject {
         !items.isEmpty || isLoadingPicked || preparingCaptures > 0
             || song != nil || selectedAlbumId != nil || !published || audience != .everyone
             || !category.isEmpty
-            || tagsText.trimmingCharacters(in: .whitespacesAndNewlines)
-                != initialTagsText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // タグは**中身で**比べる（候補を足して外すと末尾に「, 」が残り、同じ中身が書きかけに見えた）
+            || TagInput.parse(tagsText) != TagInput.parse(initialTagsText)
     }
 
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
@@ -652,6 +652,8 @@ final class UploadViewModel: ObservableObject {
         groupId = nil
         song = nil
         tagsText = ""
+        // 最初のタグも忘れる（残すと、空に戻した画面が「書きかけ」になり、閉じられなかった）
+        initialTagsText = ""
         category = ""
         published = true
         audience = .everyone
