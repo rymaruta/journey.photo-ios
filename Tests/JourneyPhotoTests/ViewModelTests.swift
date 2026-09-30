@@ -1088,6 +1088,25 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNil(model.likes, "送った先の1枚に 0 と出している")
     }
 
+    /// 🔴 **開いた1枚でも、サーバーの数を得るまでは画面が渡す数に合わせる。**
+    /// init は一覧の数（5）で始まる。ホームで♥を押して 6 になった写真を開くと、
+    /// 画面は `.task` で `LiveLikes.base`（6）を渡す——それを捨てると 5 と出ていた。
+    /// サーバーの数を読んだあとは、渡された数で戻さない
+    func testShowSamePhotoTakesTheFresherCountUntilTheServerAnswers() async {
+        prepare()
+        let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()), initialLikes: 5)
+        model.show(photoId: "p1", initialLikes: 6, liked: true)
+        XCTAssertEqual(model.likes, 6, "ホームで押したあとの数ではなく、一覧の古い数が出ている")
+        model.show(photoId: "p1", initialLikes: nil, liked: true)
+        XCTAssertEqual(model.likes, 6, "分からない（nil）で数を消している")
+
+        StubProtocol.respond(status: 200, body: #"{"likes":9}"#)
+        await model.load()
+        XCTAssertEqual(model.likes, 9, "前提: サーバーの数を読めている")
+        model.show(photoId: "p1", initialLikes: 6, liked: true)
+        XCTAssertEqual(model.likes, 9, "サーバーの数を、手元の古い数で戻している")
+    }
+
     /// 🔴 **束の隣へ送ったら、数・ハート・コメントをその1枚のものに替える。**
     /// 開いた1枚のままだと、2枚目を見ながら押したいいねが1枚目に付いていた
     func testShowAnotherPhotoInTheBundleSwitchesTheTarget() async {

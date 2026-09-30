@@ -164,7 +164,10 @@ struct PhotoDetailView: View {
             model.setSignedIn(auth.userId != nil)
             // 前の1枚の「ブロックしました」を持ち越さない
             actionNotice = nil
-            model.show(photoId: current.id, initialLikes: current.likes,
+            // **数はホームのカードと同じ出どころ**（`LiveLikes.base`）。一覧の数
+            // （`current.likes`）のままだと、ホームで押した直後に開くと古い数が出た
+            model.show(photoId: current.id,
+                       initialLikes: LiveLikes.base(for: current, stored: likeCounts.entry(for: current.id)),
                        liked: favorites.contains(current.id))
             await model.load()
         }

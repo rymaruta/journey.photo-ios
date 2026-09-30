@@ -55,6 +55,10 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 答えが届いても、今の1枚の読み込みを捨てないため。断られた回は数えない
     /// （サーバーは変わっていないので、読み込みの答えが正しい）
     private var acceptedLikes: [String: Int] = [:]
+    /// 今の1枚の数を**サーバーから**得たか（読み込み・押した答え）。
+    /// 得るまでは `show` が渡す数（ホームのカードと同じ出どころ・`LiveLikes.base`）で
+    /// 入れ直す——init の時点では `LikeCountStore` を読めず、一覧の古い数で始まるため
+    private var likesFromServer = false
     /// 投稿者の公開プロフィール。**@ユーザー名を出すため**（写真の行は
     /// 表示名しか持っていない）。取れなければ nil——名前だけ出す
     @Published private(set) var owner: UserProfile?
@@ -93,12 +97,18 @@ final class PhotoDetailViewModel: ObservableObject {
         if photoId != self.photoId {
             self.photoId = photoId
             likes = initialLikes
+            likesFromServer = false
             lastLikeAnswer = nil
             comments = []
             commentCount = nil
             commentsUnavailable = false
             draftComment = ""
             errorMessage = nil
+        } else if !likesFromServer, let initialLikes {
+            // 🔴 **開いた1枚でも、サーバーの数を得るまでは渡された数に合わせる。**
+            // ホームで♥を押して 5→6 になっても、init は一覧の 5 で始まるので、
+            // 開いた直後は 5 と出ていた
+            likes = initialLikes
         }
         self.liked = liked
     }
@@ -126,7 +136,10 @@ final class PhotoDetailViewModel: ObservableObject {
         // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
         guard id == photoId else { return }
         let likeUntouched = accepted == acceptedLikes[id, default: 0]
-        if likeUntouched { likes = loadedCount ?? likes }
+        if likeUntouched {
+            likes = loadedCount ?? likes
+            if loadedCount != nil { likesFromServer = true }
+        }
         if let loaded { applyComments(loaded, for: id) }
         commentsUnavailable = loaded == nil
         // **引けなかった回に「押していない」と言わない。** 電波が悪いだけで
@@ -216,6 +229,7 @@ final class PhotoDetailViewModel: ObservableObject {
             if let likes = result.likes {
                 self.likes = likes
                 lastLikeAnswer = likes
+                likesFromServer = true
             }
             return answer
         } catch {
