@@ -24,6 +24,19 @@ final class SongStickerTests: XCTestCase {
         XCTAssertTrue(SongSticker.isSticker(SongSticker.make(for: long)!, of: long))
     }
 
+    /// 札を消したら曲も外すか: 付けた曲の最後の札なら外す。別の写真に残っていれば外さない。
+    /// 打ち直した札・自分で打った「曲」の札は「残っている」に数えない。札でない物を消しても外さない
+    func testShouldDetach() {
+        let now = song("海へ", "誰か")
+        let sticker = SongSticker.make(for: now)!
+        XCTAssertTrue(SongSticker.shouldDetach(removedSticker: true, remaining: [[], []], song: now))
+        XCTAssertFalse(SongSticker.shouldDetach(removedSticker: true, remaining: [[], [sticker]], song: now))
+        XCTAssertTrue(SongSticker.shouldDetach(removedSticker: true,
+                                               remaining: [[TextOverlay(text: "海へ", kind: .song)]], song: now))
+        XCTAssertFalse(SongSticker.shouldDetach(removedSticker: false, remaining: [[]], song: now))
+        XCTAssertFalse(SongSticker.shouldDetach(removedSticker: true, remaining: [[]], song: nil))
+    }
+
     /// 札は「曲名 · アーティスト」の曲の札（動かせる `.song`）。題が空なら置かない
     func testMakeSticker() {
         let sticker = SongSticker.make(for: song("海へ", "誰か"))

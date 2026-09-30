@@ -190,10 +190,12 @@ enum StoryTextEditing {
     /// 打つ欄の幅。**欄の「自然な幅」には頼らず、測った幅を渡す**——縦に伸びる欄
     /// （`axis: .vertical`）に `fixedSize()` を付けると、実機では幅が 0 になり、打った字も
     /// 見本も描かれなかった（2026-09-30 の owner の画面「打ったのに出てこない」）。
-    /// 測りと欄の中の組み方の差・キャレットの分だけ足す（足りないと欄の中で折り返す）
-    static func typingFieldWidth(measured: Double, fontSize: Double) -> Double {
-        guard measured.isFinite, fontSize.isFinite else { return 0 }
-        return max(0, measured) + max(4, fontSize * 0.25)
+    /// 測りと欄の中の組み方の差（内側の余白が左右 5pt ずつ付く組み方もある）・キャレットの分だけ足す
+    /// （足りないと全部の行が末尾の1字で折り返す）。**測れなければ nil**＝幅を渡さない
+    /// （0 を渡すと、直したかった「何も描かれない」に戻る）
+    static func typingFieldWidth(measured: Double, fontSize: Double) -> Double? {
+        guard measured.isFinite, fontSize.isFinite else { return nil }
+        return max(0, measured) + max(14, fontSize * 0.3)
     }
 
     // MARK: - 指で直接動かす（「文字と札」に入らずに・2026-09-30）

@@ -35,6 +35,14 @@ enum SongSticker {
         return overlay.kind == .song && overlay.text == String(text.prefix(TextOverlay.maxLength))
     }
 
+    /// 札を消したあとに**曲も外すか**。付けた曲の札を消して、どの写真にも（打ち直していない）
+    /// その曲の札が残っていなければ外す（Instagram と同じ）。別の写真に残っていれば、曲はそこで
+    /// 見えているので外さない
+    static func shouldDetach(removedSticker: Bool, remaining: [[TextOverlay]], song: Photo.Song?) -> Bool {
+        guard removedSticker, song != nil else { return false }
+        return !remaining.contains { $0.contains { isSticker($0, of: song) } }
+    }
+
     /// 新しく置く札。場所は撮影地の札と同じ少し下（文字の札と重なりにくい）。
     /// **長い曲名は小さくして置く**（焼き込みは1行で折り返さないので、既定の
     /// 大きさだと「Bohemian Rhapsody · Queen」で写真の幅を超えて両端が切れる）

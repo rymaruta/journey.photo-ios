@@ -286,15 +286,15 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertEqual(StoryTextEditing.typingFieldText(TextOverlay(text: "港"), placeholder: "見本"), "港")
     }
 
-    /// 打つ欄の幅は**測った幅より必ず広い**（0 や測りちょうどだと欄の中で折り返す・何も描かれない）。
-    /// 測れない値は 0（欄を壊さない）
+    /// 打つ欄の幅は**測った幅より必ず広い**（0 や測りちょうどだと欄の中で折り返す・何も描かれない）
     func testTypingFieldWidthAddsRoom() {
-        XCTAssertEqual(StoryTextEditing.typingFieldWidth(measured: 100, fontSize: 40), 110, accuracy: 1e-9)
-        // 小さな字でも最低 4pt（キャレットの分）
-        XCTAssertEqual(StoryTextEditing.typingFieldWidth(measured: 100, fontSize: 8), 104, accuracy: 1e-9)
-        XCTAssertGreaterThan(StoryTextEditing.typingFieldWidth(measured: 0, fontSize: 30), 0)
-        XCTAssertEqual(StoryTextEditing.typingFieldWidth(measured: .nan, fontSize: 30), 0)
-        XCTAssertEqual(StoryTextEditing.typingFieldWidth(measured: 50, fontSize: .infinity), 0)
+        XCTAssertEqual(StoryTextEditing.typingFieldWidth(measured: 100, fontSize: 60)!, 118, accuracy: 1e-9)
+        // 小さな字でも最低 14pt（内側の余白が左右 5pt ずつ付く組み方＋キャレット）
+        XCTAssertEqual(StoryTextEditing.typingFieldWidth(measured: 100, fontSize: 12)!, 114, accuracy: 1e-9)
+        XCTAssertGreaterThan(StoryTextEditing.typingFieldWidth(measured: 0, fontSize: 30)!, 0)
+        // 測れなければ幅を渡さない（0 を渡すと何も描かれない）
+        XCTAssertNil(StoryTextEditing.typingFieldWidth(measured: .nan, fontSize: 30))
+        XCTAssertNil(StoryTextEditing.typingFieldWidth(measured: 50, fontSize: .infinity))
     }
 
     /// 最終行（キャレットのいる行）。札は印ごと

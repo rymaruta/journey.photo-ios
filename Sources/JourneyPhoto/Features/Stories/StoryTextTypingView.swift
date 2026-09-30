@@ -157,8 +157,9 @@ struct StoryTextTypingView: View {
         let text = StoryTextEditing.typingMeasureText(overlay, placeholder: L("文字を入力", "Type something"))
         var size = TextOverlayRenderer.naturalSize(overlay, text: text, fontSize: fontSize)
         // 打てる欄は測った幅に少し足して渡している（`typingFieldWidth`）。その分も数える
-        if overlay.kind.isEditable {
-            size.width = CGFloat(StoryTextEditing.typingFieldWidth(measured: Double(size.width), fontSize: fontSize))
+        if overlay.kind.isEditable,
+           let width = StoryTextEditing.typingFieldWidth(measured: Double(size.width), fontSize: fontSize) {
+            size.width = CGFloat(width)
         }
         return padded(size, fontSize: fontSize)
     }
@@ -305,7 +306,8 @@ struct StoryTextTypingView: View {
             overlay, text: StoryTextEditing.typingFieldText(overlay, placeholder: L("文字を入力", "Type something")),
             fontSize: fontSize).width
         return Self.edged(input, style: overlay.style, fontSize: fontSize)
-            .frame(width: CGFloat(StoryTextEditing.typingFieldWidth(measured: Double(measured), fontSize: fontSize)))
+            .frame(width: StoryTextEditing.typingFieldWidth(measured: Double(measured), fontSize: fontSize)
+                .map { CGFloat($0) })
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(L("文字", "Text"))
     }
