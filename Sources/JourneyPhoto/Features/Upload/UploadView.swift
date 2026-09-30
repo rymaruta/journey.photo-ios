@@ -244,10 +244,13 @@ struct UploadView: View {
                 }
                 addTile
             }
-            // 外す丸が上と右にはみ出すぶん
-            .padding(.top, 6)
+            // 外す丸の当たり（44pt）が上に 14pt はみ出すぶん。6 だと上の 8pt が
+            // ScrollView の枠の外に出て押せなかった（縦 約36pt）
+            .padding(.top, 14)
             .padding(.trailing, 6)
         }
+        // 帯の見た目の位置は前のまま（上の余白を 6 → 14 にした 8pt を詰める）
+        .padding(.top, -8)
     }
 
     private func thumb(_ item: PendingPhoto, index: Int) -> some View {
