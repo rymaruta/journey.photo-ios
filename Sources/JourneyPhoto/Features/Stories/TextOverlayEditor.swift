@@ -22,6 +22,8 @@ struct StoryCanvas: View {
     @Binding var framing: PhotoFraming
     /// 選んでいる札（破線で囲む）。nil なら選んでいない
     var selectedId: UUID?
+    /// 描かない札（写真の上で直接打っている札。打つ画面の真ん中に出ている）
+    var hiddenId: UUID? = nil
     /// 札を押した
     var onTap: (TextOverlay) -> Void = { _ in }
     /// 写真（札の無い所）を1回押した。**選んでいる札を外す**口（外さないと、札を選んだ
@@ -128,7 +130,7 @@ struct StoryCanvas: View {
                     .accessibilityLabel(L("写真", "Photo"))
                     .accessibilityHint(L("2本指で拡大・回転、指で動かします。2回押すと元に戻します",
                                          "Pinch or twist to zoom and rotate, drag to move. Double-tap to reset"))
-                ForEach(overlays) { overlay in
+                ForEach(overlays.filter { $0.id != hiddenId }) { overlay in
                     text(overlay, photo: photo, canvas: geometry.size)
                 }
                 if let current = vote.wrappedValue {
@@ -476,69 +478,24 @@ struct OverlayPanel: View {
 
             // 書体（8種）。**横に流す**——1行に収まらない。スタンプには出さない（絵文字に効かない）
             if overlay.kind.hasTypography {
-            HStack(spacing: 8) {
-                Text(L("書体", "Font"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(WebTheme.faint)
-                    .frame(width: 36, alignment: .leading)
-                // **選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を開き直すと、
-                // 列の頭が出て何を選んでいるか見えなかった・bfe5e12 のレビュー）
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(TextOverlay.Face.allCases) { face in
-                                OverlayChip(title: face.label, selected: overlay.face == face) {
-                                    overlay.face = face
-                                }
-                                .id(face)
-                            }
-                        }
-                    }
-                    .onAppear { proxy.scrollTo(overlay.face, anchor: .center) }
-                    .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.face, anchor: .center) }
+                HStack(spacing: 8) {
+                    Text(L("書体", "Font"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(WebTheme.faint)
+                        .frame(width: 36, alignment: .leading)
+                    OverlayFaceRow(overlay: $overlay)
                 }
-            }
             }
 
             // 色（12色・`TextOverlay.Ink`）。スタンプには出さない
             if overlay.kind.hasTypography {
-            HStack(spacing: 10) {
-                Text(L("色", "Color"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(WebTheme.faint)
-                    .frame(width: 36, alignment: .leading)
-                // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
-                // 12色あるので横に流し、**選んでいる色まで流して見せる**（書体と同じ理由）
-                ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                ForEach(TextOverlay.inks(for: overlay.style)) { ink in
-                    let selected = overlay.customHex == nil && overlay.drawnInk == ink
-                    Button {
-                        overlay.ink = ink
-                        overlay.customHex = nil
-                    } label: {
-                        Circle()
-                            .fill(StoryCanvas.color(ink))
-                            .frame(width: 30, height: 30)
-                            .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0.5),
-                                                           lineWidth: selected ? 3 : 2))
-                            .overlay(Circle().strokeBorder(Color.black, lineWidth: selected ? 1 : 0).padding(-2))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L("文字の色 \(ink.label)", "Text color \(ink.label)"))
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                    .id(ink)
+                    Text(L("色", "Color"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(WebTheme.faint)
+                        .frame(width: 36, alignment: .leading)
+                    OverlayInkRow(overlay: $overlay)
                 }
-                customColor
-                }
-                }
-                .onAppear { proxy.scrollTo(colorAnchor, anchor: .center) }
-                .onChange(of: overlay.id) { _, _ in proxy.scrollTo(colorAnchor, anchor: .center) }
-                }
-            }
             }
 
             HStack(spacing: 8) {
@@ -646,7 +603,67 @@ struct OverlayChip: View {
     }
 }
 
-extension OverlayPanel {
+/// 書体の列（8種・横に流す）。**選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を
+/// 開き直すと、列の頭が出て何を選んでいるか見えなかった・bfe5e12 のレビュー）。
+/// 下の操作欄と、写真の上で打つ画面（`StoryTextTypingView`）の両方が使う
+struct OverlayFaceRow: View {
+    @Binding var overlay: TextOverlay
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(TextOverlay.Face.allCases) { face in
+                        OverlayChip(title: face.label, selected: overlay.face == face) {
+                            overlay.face = face
+                        }
+                        .id(face)
+                    }
+                }
+            }
+            .onAppear { proxy.scrollTo(overlay.face, anchor: .center) }
+            .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.face, anchor: .center) }
+        }
+    }
+}
+
+/// 色の列（12色＋好きな色）。見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
+/// 12色あるので横に流し、**選んでいる色まで流して見せる**（書体と同じ理由）
+struct OverlayInkRow: View {
+    @Binding var overlay: TextOverlay
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(TextOverlay.inks(for: overlay.style)) { ink in
+                        let selected = overlay.customHex == nil && overlay.drawnInk == ink
+                        Button {
+                            overlay.ink = ink
+                            overlay.customHex = nil
+                        } label: {
+                            Circle()
+                                .fill(StoryCanvas.color(ink))
+                                .frame(width: 30, height: 30)
+                                .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0.5),
+                                                               lineWidth: selected ? 3 : 2))
+                                .overlay(Circle().strokeBorder(Color.black, lineWidth: selected ? 1 : 0).padding(-2))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L("文字の色 \(ink.label)", "Text color \(ink.label)"))
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                        .id(ink)
+                    }
+                    customColor
+                }
+            }
+            .onAppear { proxy.scrollTo(colorAnchor, anchor: .center) }
+            .onChange(of: overlay.id) { _, _ in proxy.scrollTo(colorAnchor, anchor: .center) }
+        }
+    }
+
     /// 色の列で流して見せる先（好きな色を選んでいればその丸）
     var colorAnchor: AnyHashable {
         overlay.customHex == nil ? AnyHashable(overlay.drawnInk) : AnyHashable("custom")

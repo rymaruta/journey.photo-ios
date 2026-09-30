@@ -60,6 +60,11 @@ struct StoryComposerView: View {
     @State private var textMode = false
     /// 選んでいる札
     @State private var selectedId: UUID?
+    /// **写真の上で直接打っている札**（`StoryTextTypingView`）。nil なら打っていない。
+    /// 「文字と札」の中からも外からも開く（owner・2026-09-30「使いづらい」）
+    @State private var typingId: UUID?
+    /// 写真の枠の大きさ（**キーボードで縮む前**）。打つ画面の文字を焼き込みと同じ大きさで見せる
+    @State private var canvasSize: CGSize = .zero
     /// 投票の札を選んでいる（札の `selectedId` とはどちらか一方）
     @State private var voteSelected = false
     /// 編集に入ったときの投票（「キャンセル」で戻す）
@@ -149,10 +154,12 @@ struct StoryComposerView: View {
                     footer
                 }
             }
-            topBar
-                .padding(.horizontal, 8)
-                .padding(.top, 2)
-            if textMode {
+            if typingId == nil {
+                topBar
+                    .padding(.horizontal, 8)
+                    .padding(.top, 2)
+            }
+            if textMode && typingId == nil {
                 VStack(spacing: 8) {
                     kindChips
                     Text(L("指で動かす・2本指で回す・つまんで大きさを変える", "Drag to move · twist to rotate · pinch to resize"))
@@ -160,6 +167,11 @@ struct StoryComposerView: View {
                         .foregroundStyle(WebTheme.muted2)
                 }
                 .padding(.top, 56)
+            }
+            // 写真の上で直接打つ（開いたらすぐキーボード）
+            if let typingId {
+                StoryTextTypingView(overlay: overlayBinding(id: typingId),
+                                    photoShortSide: photoShortSide) { finishTyping() }
             }
         }
         // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）
@@ -293,7 +305,16 @@ struct StoryComposerView: View {
             if let preview {
                 StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays, framing: framing,
                             selectedId: textMode ? selectedId : nil,
+                            // 打っている札は打つ画面の真ん中に出す（写真の上に二重に出さない）
+                            hiddenId: typingId,
                             onTap: { overlay in
+                                // **打ち直せる札（文字・撮影地・タグ・曲）は、押したらすぐ打つ画面へ**
+                                if StoryTextEditing.opensTyping(overlay) {
+                                    selectedId = nil
+                                    voteSelected = false
+                                    typingId = overlay.id
+                                    return
+                                }
                                 // 押したら文字と札の編集へ（その札を選んだ状態で）。
                                 // **編集中に押したときは写しを取り直さない**（「やめる」の戻り先が変わる）
                                 if !textMode { enterTextMode() }
@@ -333,28 +354,28 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if !textMode && preview != nil {
+            if !textMode && typingId == nil && preview != nil {
                 toolColumn
                     .padding(.trailing, 12)
                     .padding(.top, 120)
             }
         }
         .overlay(alignment: .leading) {
-            if !textMode && preview != nil {
+            if !textMode && typingId == nil && preview != nil {
                 captionBlock
                     .padding(.leading, 36)
                     .padding(.trailing, 70)
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if !textMode && preview != nil {
+            if !textMode && typingId == nil && preview != nil {
                 mediaStrip
                     .padding(.leading, 16)
                     .padding(.bottom, 20)
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !textMode && preview != nil {
+            if !textMode && typingId == nil && preview != nil {
                 durationMenu
                     .padding(.trailing, 16)
                     .padding(.bottom, 30)
@@ -374,6 +395,13 @@ struct StoryComposerView: View {
                     overlays.wrappedValue.removeAll { $0.id == selectedId }
                     self.selectedId = nil
                 }
+            }
+        }
+        .background {
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear { rememberCanvas(geometry.size) }
+                    .onChange(of: geometry.size) { _, size in rememberCanvas(size) }
             }
         }
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: textMode ? 0 : 24,
@@ -408,7 +436,9 @@ struct StoryComposerView: View {
     /// 右の縦の列（文字と札・曲・撮影地・表示秒数。44のガラスの丸）
     private var toolColumn: some View {
         VStack(spacing: 10) {
-            toolButton(symbol: "textformat", label: L("文字と札", "Text and stickers")) { enterTextMode() }
+            // 「Aa」は**押したらすぐ打つ**（以前は「文字と札」→「文字」→下の欄、の3段だった）
+            toolButton(symbol: "textformat", label: L("文字を入れる", "Add text")) { startNewText() }
+            toolButton(symbol: "face.smiling", label: L("札とスタンプ", "Stickers")) { enterTextMode() }
             if song == nil {
                 toolButton(symbol: "music.note", label: L("曲を付ける", "Add a song")) { showSongPicker = true }
             } else {
@@ -674,6 +704,10 @@ struct StoryComposerView: View {
                                     selected: kind == .stamp && showStamps) {
                             if kind == .stamp {
                                 showStamps.toggle()
+                            } else if kind == .text {
+                                // 文字は足したらすぐ打つ画面へ
+                                showStamps = false
+                                startNewText()
                             } else {
                                 add(kind: kind)
                             }
@@ -779,6 +813,43 @@ struct StoryComposerView: View {
         voteSnapshot = shots[current].vote
         editingShotId = shots[current].id
         textMode = true
+    }
+
+    /// 新しい文字を足して、**すぐ打つ画面を開く**。上限なら断りを出す
+    private func startNewText() {
+        guard shots.indices.contains(current) else { return }
+        guard let overlay = StoryTextEditing.newText(in: overlays.wrappedValue) else {
+            message = L("文字と札は1枚に\(TextOverlay.maxCount)個までです",
+                        "Up to \(TextOverlay.maxCount) text items per photo")
+            return
+        }
+        captionFocused = false
+        overlays.wrappedValue.append(overlay)
+        selectedId = nil
+        voteSelected = false
+        typingId = overlay.id
+    }
+
+    /// 打ち終えた。**空なら置かない**（新しく足した札も、打ち直して消した札も）
+    private func finishTyping() {
+        guard let id = typingId else { return }
+        overlays.wrappedValue = StoryTextEditing.finish(overlays.wrappedValue, id: id)
+        typingId = nil
+    }
+
+    /// 画面上の写真の短い辺（打つ画面の文字の大きさ・焼き込みと同じ基準）
+    private var photoShortSide: Double {
+        guard canvasSize.width > 0, canvasSize.height > 0 else { return 0 }
+        let rect = TextOverlay.filledRect(image: previewSize ?? canvasSize, in: canvasSize)
+        return Double(min(rect.width, rect.height))
+    }
+
+    /// 写真の枠の大きさを覚える。**幅が変わったら測り直し、同じ幅なら高い方**
+    /// （キーボードで縮んだ枠で測ると、打つ画面の文字が置いたあとより小さく見える・`StoryCanvas` と同じ）
+    private func rememberCanvas(_ size: CGSize) {
+        if size.width != canvasSize.width || size.height > canvasSize.height {
+            canvasSize = size
+        }
     }
 
     private func leaveTextMode() {
