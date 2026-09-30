@@ -1711,6 +1711,9 @@ struct StoryViewerView: View {
                             .font(.subheadline)
                             .foregroundStyle(WebTheme.muted2)
                             .padding(.vertical, 16)
+                    } else if !repliesLoaded {
+                        // **読み込み中に「まだ返信はありません」と言わない**（丸のバッジと同じ）
+                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
                     } else if items.isEmpty {
                         Text(L("まだ返信はありません", "No replies yet"))
                             .font(.subheadline)
@@ -1736,7 +1739,10 @@ struct StoryViewerView: View {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 4) {
                         Text(L("返信", "Replies")).font(.system(size: 16, weight: .semibold))
-                        Text("\(items.count)").font(JPFont.mono(16, medium: true))
+                        // 読めていない間は数を出さない（`StoryInsightsView` と同じ）
+                        if repliesLoaded {
+                            Text("\(items.count)").font(JPFont.mono(16, medium: true))
+                        }
                     }
                     .foregroundStyle(.white)
                 }

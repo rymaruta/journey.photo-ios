@@ -203,6 +203,11 @@ struct GalleryView: View {
             await environment.gallery.setHidden(hidden.snapshot)
             await model.load()
         }
+        // 自分の写真も読み直す。消した・非公開にした写真の札（1年前・旅の一冊・今日のテーマ）が
+        // 残り、押すと 404 だった（写真を消す・非公開にすると `revision` が進む）。
+        // 書いた直後はサーバーの索引が古い答えを返しうるので、その回は次に読み直すまで
+        // 札に残りうる（印で絞る形は回帰が出たのでやめた。2026-09-30 判断）
+        reloadMyPhotos()
     }
 
     /// owner が選んだ「おすすめ」。Web はトップの一覧の上に、
@@ -383,7 +388,10 @@ struct GalleryView: View {
                 // ブロックした人の写真が札の背景に出ていた）
                 // 2026-09-27: 上段は「開く場面ごとに1枚」（出発・旅の最中・一冊・1年前）
                 // 2026-09-28: 当たる札と今日のテーマを**横にめくる並び**に（owner「両方欲しい」）
-                HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme), myPhotos: model.myPhotos,
+                // 自分の写真は**写しで絞らず、読み直す**（`reloadHidden`）。`gone` の印で絞ると、
+                // Web で公開に戻した写真がこの端末でだけ最大7日 札から消える（2026-09-30 判断）
+                HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme),
+                                myPhotos: model.myPhotos,
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed)
                 feedPicker
                 discoveryBridge

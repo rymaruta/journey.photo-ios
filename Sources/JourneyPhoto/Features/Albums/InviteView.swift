@@ -84,7 +84,8 @@ struct InviteView: View {
     }
 
     private func content(_ preview: AlbumService.InvitePreview) -> some View {
-        // 🔴 ブロックした人・通報した写真を出さない（招待の中身はサーバーが絞らない）
+        // 通報した写真は落とす（招待の中身はサーバーが絞らない）。ブロックした人の写真は、
+        // サーバー（`GET /invites/{token}`）が持ち主を返さないので落とせない
         let photos = dropped.visible(preview.photos)
         return List {
             Section {
