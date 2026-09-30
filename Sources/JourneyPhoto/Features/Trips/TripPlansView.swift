@@ -86,6 +86,9 @@ struct TripPlansView: View {
             showOpened = true
         }) {
             TripPickerView(plans: model) { planId in
+                // **板を閉じた後に届いた保存では開かない**（保存の途中で「閉じる」を押した回。
+                // 印を残すと、次に板を開いて何もせず閉じたときに前のプランが開いていた）
+                guard showPicker else { return }
                 pickedPlanId = planId
                 showPicker = false
             }
@@ -96,6 +99,7 @@ struct TripPlansView: View {
     /// 印の絵だけ真鍮（黒地の上の手がかり）
     private var pickerEntry: some View {
         Button {
+            pickedPlanId = nil
             showPicker = true
         } label: {
             HStack(spacing: 12) {
