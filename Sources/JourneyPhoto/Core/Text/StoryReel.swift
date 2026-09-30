@@ -127,6 +127,14 @@ enum StoryReel {
         return dy > 0 ? .vertical : nil
     }
 
+    /// 閲覧画面の様子を見たうえでの向き。**返信を打っている間はどちらにも動かさない**
+    /// （閲覧画面がキーボードを閉じるだけ・書きかけを消さない）。払えない間（メニュー・送信中）は
+    /// 横（人を替える）だけ止め、下へ閉じるのは止めない（圏外で返事を待つ間に閉じられなくなる）
+    static func axis(dx: Double, dy: Double, swipeLocked: Bool, typing: Bool) -> Axis? {
+        guard !typing, let axis = axis(dx: dx, dy: dy) else { return nil }
+        return axis == .horizontal && swipeLocked ? nil : axis
+    }
+
     // MARK: - 下へ払って閉じる
 
     /// これだけ下へ引いて離したら閉じる（勢いでも閉じる）

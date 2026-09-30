@@ -190,6 +190,9 @@ struct PhotoMapView: View {
         // 新しい中身に差し替える（札だけ古い写真と出典のまま残らないように）
         // 索引が届いてもピンが空のまま（語がスポットにも当たらない）だと上の知らせは来ない。
         // 取り終えたことで「何にも当たらなかった」と決める
+        .onChange(of: model.aliasesSettled) { _, _ in
+            frameToQueryIfReady()
+        }
         .onChange(of: model.officialIndexState) { _, _ in
             frameToQueryIfReady()
         }
@@ -293,7 +296,8 @@ struct PhotoMapView: View {
     /// 索引も取り終えて何にも当たらないと決まったら、印を下ろす（現在地の自動の寄せも戻す）
     private func frameToQueryIfReady() {
         guard model.loaded else { return }
-        let settled = model.officialIndexState != .loading
+        // 別名まで取り終えてから「当たらなかった」と決める（別名だけで当たる語がある）
+        let settled = model.officialIndexState != .loading && model.aliasesSettled
         guard let queryFrame = queryFraming.frameIfReady(model.frame, settled: settled) else { return }
         framedToPhotos = true
         frame(queryFrame)
@@ -556,7 +560,10 @@ struct PhotoMapView: View {
                     selected = nil
                     chosenPlace = nil
                 } label: {
+                    // 印は 32〜40pt のまま、押せる範囲だけ 44pt に広げる（中心は変わらない）
                     officialMarker(pin)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 // 読み上げでも下書きだと分かるように（画面の札と同じ語）
@@ -1315,7 +1322,7 @@ struct PhotoMapView: View {
         // 上の欄（「撮影地・スポット名で絞る」）で打った語は、地図のピンと同じく名前で当てる
         let spots = MapSearch.fold(model.query).isEmpty
             ? model.officialSpots
-            : OfficialSpotIndex.matches(model.officialSpots, query: model.query)
+            : OfficialSpotIndex.matches(model.officialSpots, query: model.query, aliases: model.spotAliases)
         let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center)
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
@@ -1463,7 +1470,8 @@ struct PhotoMapView: View {
     private var listArea: some View {
         let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
         let sections = RegionList.sections(photos: model.photos, spots: model.officialSpots,
-                                           query: model.query, category: model.category, from: center)
+                                           query: model.query, category: model.category,
+                                           aliases: model.spotAliases, from: center)
         let currentId = sections.first(where: \.isCurrent)?.id
         let filtering = !MapSearch.fold(model.query).isEmpty || model.category != nil
         // **撮影スポットの台帳が届くまでは並べない。** 届く前は県を当てる手がかりが無く、

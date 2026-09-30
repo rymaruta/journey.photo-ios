@@ -7,6 +7,9 @@ struct SongRow: View {
 
     @ObservedObject private var player = MusicPreviewPlayer.shared
 
+    /// 再生ボタンの当たりを外へ広げる幅（行の余白 10pt と同じ・丸と合わせて 44pt を越える）
+    private static let tapSlack: CGFloat = 10
+
     var body: some View {
         HStack(spacing: 10) {
             if let artwork = song.artworkURL {
@@ -28,6 +31,11 @@ struct SongRow: View {
                     .font(.title2)
                     .accessibilityLabel(SongPickerText.previewButtonLabel(
                         isPlaying: player.isPlaying(song.previewURL)))
+                    // **当たりだけ 44pt に広げる。** 丸（title2 で約 26pt）の外へ広げて
+                    // 同じだけ詰めるので、行の高さも見た目も変わらない
+                    .padding(Self.tapSlack)
+                    .contentShape(Rectangle())
+                    .padding(-Self.tapSlack)
             }
             .buttonStyle(.plain)
         }

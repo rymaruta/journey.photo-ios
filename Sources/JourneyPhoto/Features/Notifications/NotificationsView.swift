@@ -275,8 +275,8 @@ private struct NotificationRow: View {
                     }
                 }
                 Spacer(minLength: 0)
-                // 写真の小窓は右（板 15）。フォローは写真を伴わない
-                if let src = notification.photoSrc, let url = URL(string: src) {
+                // 写真の小窓は右（板 15）。フォローは写真を伴わない・ストーリー返信は出さない
+                if let url = NotificationText.thumbnailURL(notification) {
                     RemoteImage(url: url)
                         .frame(width: 44, height: 44)
                         .background(WebTheme.surface)

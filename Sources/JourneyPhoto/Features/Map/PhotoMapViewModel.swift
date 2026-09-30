@@ -65,6 +65,12 @@ final class PhotoMapViewModel: ObservableObject {
     /// 台帳が届く前に「スポット」を押した回に空の一覧のまま止まる
     /// （ピンの集合は寄せていないと空のままで、`officialPins` の知らせが来ない）
     @Published private(set) var officialIndexState: IndexState = .loading
+    /// 撮影スポットの別名（slug → 別名・`OfficialSpotService.fetchAliases`）。取れなければ空で、
+    /// 名前・読み・地域だけで当てる。**「さがす」と同じ当て方にする**——別名で当たったスポットを
+    /// 地図へ持ってきた回に「見つかりませんでした」にしない。届くのは1回なので知らせる
+    @Published private(set) var spotAliases: [String: [String]] = [:]
+    /// 別名を取り終えたか（取れなかった回も立つ）。語への寄せの当たり外れはこれを待って決める
+    @Published private(set) var aliasesSettled = false
     enum IndexState { case loading, ready, failed }
 
     /// 地図に置く撮影スポットのピン。**寄せたときと、名前で絞ったときだけ**
@@ -104,7 +110,8 @@ final class PhotoMapViewModel: ObservableObject {
 
     /// 「このエリアを検索」中はその枠、そうでなければ見えている枠で数える
     private func refreshOfficialPins() {
-        let next = OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame, query: query)
+        let next = OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame, query: query,
+                                        aliases: spotAliases)
         guard OfficialPins.changed(officialPins, next) else { return }
         officialPins = next
         officialPinsUpdates += 1
@@ -134,8 +141,18 @@ final class PhotoMapViewModel: ObservableObject {
         indexTask = Task { [weak self] in
             let fetched = try? await environment.spots.fetchIndex()
             self?.officialSpots = fetched ?? []
-            self?.officialIndexState = fetched == nil ? .failed : .ready
             self?.refreshOfficialPins()
+            self?.officialIndexState = fetched == nil ? .failed : .ready
+            // 別名は索引のあと（索引のピンを待たせない）。届いたらピンを数え直し、
+            // **取り終えた印を立てる**——語への寄せが「当たらなかった」と決めてよいのは
+            // 別名まで見てから（探すから別名だけで当たる語が来た回に、寄せが下りていた）
+            let aliases = fetched == nil ? [:] : await environment.spots.fetchAliases()
+            guard let self else { return }
+            if !aliases.isEmpty {
+                self.spotAliases = aliases
+                self.refreshOfficialPins()
+            }
+            self.aliasesSettled = true
         }
         do {
             photos = try await environment.gallery.fetchPhotos()

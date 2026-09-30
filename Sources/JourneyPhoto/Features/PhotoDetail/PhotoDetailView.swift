@@ -54,8 +54,6 @@ struct PhotoDetailView: View {
     @State private var commentPendingDelete: PhotoComment?
     @State private var isFollowWorking = false
     @State private var showUnfollowConfirm = false
-    /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）
-    @State private var heroPage = 0
     /// 大きく見る画面で、**この画面の1枚以外**のいいねを送っている写真。
     /// 写真ごとに持って再入を止める——ダブルタップの直後にハートを押すと、
     /// 2本目が1本目の答えの前に逆向きを送り、画面とサーバーが食い違う
@@ -92,10 +90,6 @@ struct PhotoDetailView: View {
             social: SocialService(api: APIClient(tokenProvider: CognitoTokenProvider())),
             initialLikes: photo.likes
         ))
-        // 🔴 **束の何枚目を開いたかで上の写真を合わせる。** 0 固定だったので、
-        // 2枚目を開くと上には1枚目が出て、題・いいね・削除は2枚目が対象だった
-        let group = PhotoGroups.siblings(of: photo, in: context.isEmpty ? [photo] : context)
-        _heroPage = State(initialValue: group.firstIndex(where: { $0.id == photo.id }) ?? 0)
     }
 
     /// 大きく見るときに送れる並び。**渡されていなければこの1枚だけ**
@@ -177,11 +171,6 @@ struct PhotoDetailView: View {
                        liked: favorites.contains(current.id),
                        answeredAt: stored?.at)
             await model.load()
-        }
-        .onChange(of: heroPage) { _, page in
-            let group = heroGroup
-            guard group.indices.contains(page) else { return }
-            current = group[page]
         }
         .task(id: shown.location) { await loadSpotLead() }
         .task(id: shown.id) { await loadNearby() }
@@ -314,7 +303,7 @@ struct PhotoDetailView: View {
         let group = heroGroup
         ZStack(alignment: .bottom) {
             if group.count > 1 {
-                TabView(selection: $heroPage) {
+                TabView(selection: heroPage) {
                     ForEach(Array(group.enumerated()), id: \.element.id) { index, item in
                         // 編集して保存した1枚は新しい姿で（切り抜きの中心など）
                         heroImage(edits[item.id] ?? item).tag(index)
@@ -358,15 +347,34 @@ struct PhotoDetailView: View {
         .accessibilityHint(L("拡大して見る", "Opens the photo full screen"))
     }
 
-    /// 同じ投稿の束（1枚だけならこの1枚）
-    private var heroGroup: [Photo] { PhotoGroups.siblings(of: shown, in: siblings) }
+    /// 同じ投稿の束（1枚だけならこの1枚）。**大きく見る画面と同じく、ブロック・通報した
+    /// 写真を落とす**（`PhotoDetailRules.heroGroup`・今の1枚は残す）
+    private var heroGroup: [Photo] {
+        PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped).photos
+    }
+
+    /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）。
+    ///
+    /// 🔴 **束の何枚目かは `current` から引く。** 別に番号を持つと、束から写真が
+    /// 落ちたとき（ブロック・通報）に番号だけ古い並びのまま残り、上に出る写真と
+    /// 題・いいね・削除の対象が食い違う。送ったら `current` をその1枚にする
+    private var heroPage: Binding<Int> {
+        Binding(
+            get: { PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped).index },
+            set: { page in
+                let group = heroGroup
+                guard group.indices.contains(page) else { return }
+                current = group[page]
+            }
+        )
+    }
 
     /// 題の下の1行（板 02: 「2026.09.12 · 17:42 · 1/3枚」）
     private var headline: String? {
         let group = heroGroup
         return PhotoMetaLine.headline(date: shown.date,
                                       exifDateTime: shown.exif?.dateTimeOriginal,
-                                      position: heroPage + 1, of: group.count)
+                                      position: heroPage.wrappedValue + 1, of: group.count)
     }
 
     /// **板 02 の順。** 実装にだけある要素（公開範囲の印・カテゴリ・説明・曲・
@@ -1038,11 +1046,18 @@ struct PhotoDetailView: View {
         }
     }
 
+    /// 見出しに出すコメントの数。サーバーの総数から、**読めた一覧のうち
+    /// ブロックした人の分**を引く（`CommentsHeading.visibleCount`）
+    private var visibleCommentCount: Int? {
+        CommentsHeading.visibleCount(total: model.commentCount, loaded: model.comments.count,
+                                     shown: dropped.comments(model.comments).count)
+    }
+
     /// コメントの節（板には無いが、読んで書く場所なので下に残す）。
     /// 見出しは以前の札と同じ言い方（数は取れたときだけ）
     private var commentsBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(CommentsHeading.label(commentCount: model.commentCount))
+            Text(CommentsHeading.label(commentCount: visibleCommentCount))
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(WebTheme.foreground)
             if acceptsReactions {
@@ -1061,7 +1076,10 @@ struct PhotoDetailView: View {
 
     @ViewBuilder
     private var commentSection: some View {
-        if model.comments.isEmpty {
+        // **空かどうかは絞った後の一覧で決める。** すべてブロックした人のコメントだと、
+        // 下が空白のまま「まだありません」も出なかった
+        let visible = dropped.comments(model.comments)
+        if visible.isEmpty {
             // **空の理由を分ける。** 引けなかった回に「まだありません」と
             // 出すと、書いてあるコメントが消えたように見える
             if model.commentsUnavailable {
@@ -1077,7 +1095,7 @@ struct PhotoDetailView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 12)
-            } else if model.commentCount == 0 {
+            } else if visibleCommentCount == 0 {
                 Text(L("まだコメントはありません", "No comments yet"))
                     .font(.callout)
                     .foregroundStyle(WebTheme.faint)
@@ -1090,9 +1108,9 @@ struct PhotoDetailView: View {
             }
         }
         VStack(alignment: .leading, spacing: 12) {
-            // ブロックした人のコメントは出さない（数の表示はサーバーの値のまま）。
-            // **写しで落とす**（`dropped`）
-            ForEach(dropped.comments(model.comments)) { comment in
+            // ブロックした人のコメントは出さない。見出しの数も落とした分を引く
+            // （`visibleCommentCount`）。**写しで落とす**（`dropped`）
+            ForEach(visible) { comment in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         // **退会した人にはプロフィールへの導線を出さない**
@@ -1585,6 +1603,16 @@ enum PhotoDetailRules {
                             lookupFailed: Bool, ownerBlocked: Bool) -> Bool {
         guard !isMine, signedIn, !ownerBlocked else { return false }
         return isFollowing != nil || lookupFailed
+    }
+
+    /// 詳細の上で左右に送る束と、いま見ている位置。**大きく見る画面（`viewerLineup`）と
+    /// 同じ絞り方**——ブロック・通報した写真を落とし、今の1枚は残す。
+    /// 落としていなかったので、通報した写真が上の送りにだけ残っていた
+    static func heroGroup(_ siblings: [Photo], current: Photo,
+                          hiding: ModerationSnapshot) -> (photos: [Photo], index: Int) {
+        let photos = PhotoGroups.siblings(of: current,
+                                          in: viewerLineup(siblings, current: current, hiding: hiding).photos)
+        return (photos, photos.firstIndex(where: { $0.id == current.id }) ?? 0)
     }
 
     /// 大きく見る画面に渡す並びと、開く位置。

@@ -175,6 +175,8 @@ struct HighlightEditorView: View {
                 Text(L("このハイライトを削除", "Delete this highlight"))
                     .foregroundStyle(WebTheme.danger)
             }
+            // 保存・削除の最中は押せない（保存と削除が同時に走らない）
+            .disabled(saving)
             .confirmationDialog(L("このハイライトを削除しますか？", "Delete this highlight?"),
                                 isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button(Labels.Common.delete, role: .destructive) { Task { await remove() } }
