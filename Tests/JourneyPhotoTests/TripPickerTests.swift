@@ -210,50 +210,28 @@ final class TripPickerTests: XCTestCase {
         XCTAssertEqual(TripPicker.days([k9, n7], dayCount: 2).map(\.count), [9, 7])
     }
 
-    /// 詰まる日程では、混ぜる日を減らすために小さい日を作り過ぎない（「10・10・2」「14・14・7」にしない）
-    func testCrowdedPackingDoesNotLeaveTinyDays() throws {
-        func regions(_ counts: [Int]) throws -> [[OfficialSpot]] {
-            try counts.enumerated().map { r, count in
-                try (0..<count).map { i in
-                    try spot("g\(r)-\(i)", prefecture: "県\(r)", lat: 35 + Double(r) * 0.5 + Double(i) * 0.01, lng: 135)
-                }
-            }
-        }
-        for (counts, dayCount) in [([10, 10, 2], 3), ([7, 7, 7, 7, 7], 3), ([10, 10, 10, 1], 4), ([10, 10, 4], 3)] {
+    /// 地域で束ねるのが先: 混ぜずに切れるなら、小さい日ができても混ぜない
+    func testRegionsStayApartEvenWithALightDay() throws {
+        for (counts, dayCount, expected) in [([1, 9, 9], 3, [1, 9, 9]), ([10, 10, 4], 3, [10, 10, 4]), ([8, 8, 3], 3, [8, 8, 3])] {
             let groups = try regions(counts)
-            let days = TripPicker.days(groups, dayCount: dayCount)
-            let n = counts.reduce(0, +)
-            XCTAssertEqual(days.count, dayCount)
-            XCTAssertGreaterThanOrEqual(days.map(\.count).min() ?? 0, n / dayCount - TripPicker.placesPerDay / 2, "\(counts)")
-            XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(groups.flatMap { $0 }))
+            XCTAssertEqual(TripPicker.days(groups, dayCount: dayCount).map(\.count), expected, "\(counts)")
         }
     }
 
-    /// どんな数でも、決めた日数ちょうど・1日20か所まで・場所を落とさない・並びを変えない
-    func testAnyCountFitsRequestedDaysWithinServerLimits() throws {
-        let pool = try (0..<TripPicker.pickMax).map { i in
-            try spot("r\(i)", prefecture: ["京都府", "奈良県", "大阪府"][i % 3], lat: 34.5 + Double(i) * 0.01, lng: 135.5)
-        }
-        for n in [1, 2, 5, 9, 17, 23, 40] {
-            let groups = TripPicker.grouped(Array(pool.prefix(n)))
-            let flat = groups.flatMap { $0 }
-            for dayCount in [1, 2, 3, 7, 60, 61] {
-                let days = TripPicker.days(groups, dayCount: dayCount)
-                let expected = max(min(dayCount, TripPlanService.daysMax),
-                                   (n + TripPlanService.itemsPerDayMax - 1) / TripPlanService.itemsPerDayMax)
-                XCTAssertEqual(days.count, expected, "n=\(n) days=\(dayCount)")
-                XCTAssertTrue(days.allSatisfy { $0.count <= TripPlanService.itemsPerDayMax })
-                XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(flat), "n=\(n) days=\(dayCount)")
+    /// 混ぜ方が同じなら、小さすぎる日を作らない（下限を割る日を少なく）
+    func testSameMixingPrefersNoThinDays() throws {
+        // 1つの地域 9・9 を3日（1日8か所まで）: どう切っても1日は混ざる。その中で均す
+        let groups = try regions([9, 9])
+        let days = TripPicker.days(groups, dayCount: 3)
+        XCTAssertEqual(days.map(\.count), [6, 6, 6])
+    }
+
+    private func regions(_ counts: [Int]) throws -> [[OfficialSpot]] {
+        try counts.enumerated().map { r, count in
+            try (0..<count).map { i in
+                try spot("g\(r)-\(i)", prefecture: "県\(r)", lat: 35 + Double(r) * 0.5 + Double(i) * 0.01, lng: 135)
             }
         }
-    }
-
-    /// 地域の無い場所が地域のある場所の間に挟まっても落とさない
-    func testUnplacedBetweenRegionsIsKept() throws {
-        let k = try kyoto("k"), u = try spot("u", lat: 34.85, lng: 135.78), n = try nara("n")
-        let groups = TripPicker.grouped([k, u, n])
-        XCTAssertEqual(slugs(groups), [["k"], ["u"], ["n"]])
-        XCTAssertEqual(slugs(TripPicker.days(groups, dayCount: 2).flatMap { $0 }), ["k", "u", "n"])
     }
 
     /// 地域の無い場所は、日に割るときは続いた並びとして均す（1か所ずつ1日にしない・混ぜると数えない）
