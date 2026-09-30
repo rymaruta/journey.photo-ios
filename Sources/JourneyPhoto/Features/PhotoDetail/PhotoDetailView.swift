@@ -248,8 +248,8 @@ struct PhotoDetailView: View {
         .fullScreenCover(isPresented: $showViewer) {
             // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）。
             // 編集して保存した写真は新しい姿で（題・撮影地が古いまま出ていた）
-            let lineup = PhotoDetailRules.viewerLineup(siblings.map { edits[$0.id] ?? $0 },
-                                                       current: shown, hiding: dropped)
+            let lineup = PhotoDetailRules.viewerLineup(siblings, current: shown,
+                                                       hiding: dropped, edits: edits)
             PhotoViewerView(
                 photos: lineup.photos,
                 index: lineup.index,
@@ -350,7 +350,7 @@ struct PhotoDetailView: View {
     /// 同じ投稿の束（1枚だけならこの1枚）。**大きく見る画面と同じく、ブロック・通報した
     /// 写真を落とす**（`PhotoDetailRules.heroGroup`・今の1枚は残す）
     private var heroGroup: [Photo] {
-        PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped).photos
+        PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: edits).photos
     }
 
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）。
@@ -360,7 +360,7 @@ struct PhotoDetailView: View {
     /// 題・いいね・削除の対象が食い違う。送ったら `current` をその1枚にする
     private var heroPage: Binding<Int> {
         Binding(
-            get: { PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped).index },
+            get: { PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: edits).index },
             set: { page in
                 let group = heroGroup
                 guard group.indices.contains(page) else { return }
@@ -1459,6 +1459,7 @@ private struct ExifRow: View {
                             .foregroundStyle(WebTheme.muted2)
                     }
                     .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(expanded ? L("撮影情報を閉じる", "Hide camera info")
@@ -1608,10 +1609,11 @@ enum PhotoDetailRules {
     /// 詳細の上で左右に送る束と、いま見ている位置。**大きく見る画面（`viewerLineup`）と
     /// 同じ絞り方**——ブロック・通報した写真を落とし、今の1枚は残す。
     /// 落としていなかったので、通報した写真が上の送りにだけ残っていた
-    static func heroGroup(_ siblings: [Photo], current: Photo,
-                          hiding: ModerationSnapshot) -> (photos: [Photo], index: Int) {
+    static func heroGroup(_ siblings: [Photo], current: Photo, hiding: ModerationSnapshot,
+                          edits: [String: Photo] = [:]) -> (photos: [Photo], index: Int) {
         let photos = PhotoGroups.siblings(of: current,
-                                          in: viewerLineup(siblings, current: current, hiding: hiding).photos)
+                                          in: viewerLineup(siblings, current: current,
+                                                           hiding: hiding, edits: edits).photos)
         return (photos, photos.firstIndex(where: { $0.id == current.id }) ?? 0)
     }
 
@@ -1624,8 +1626,13 @@ enum PhotoDetailRules {
     /// **押した1枚（`current`）は残す。** 詳細の上にはその1枚が出ていて、
     /// 押して開いた先が別の写真になる・何も出ない方がおかしい。落とすと
     /// 位置が引けず、並びが空になる回もある。位置は必ず並びの中に収める
-    static func viewerLineup(_ siblings: [Photo], current: Photo,
-                             hiding: ModerationSnapshot) -> (photos: [Photo], index: Int) {
+    ///
+    /// 🔴 **編集して保存した姿（`edits`）はここで差し替える**（詳細の上の束も通る1か所）。
+    /// 上の束だけ素の並びで絞っていたので、束の1枚を非公開にして隣へ送ると、
+    /// 消した印（`gone`）と古い `published` で上の送りからだけその1枚が消えていた
+    static func viewerLineup(_ siblings: [Photo], current: Photo, hiding: ModerationSnapshot,
+                             edits: [String: Photo] = [:]) -> (photos: [Photo], index: Int) {
+        let siblings = siblings.map { edits[$0.id] ?? $0 }
         let kept = Set(hiding.visible(siblings).map(\.id))
         // 束の写真は詳細の上（`PhotoGroups.siblings`）と同じ選んだ順に。渡された順のままだと
         // 上では右へ送る写真が、大きく見る画面では左にあった
