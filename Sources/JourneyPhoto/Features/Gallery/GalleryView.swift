@@ -341,10 +341,12 @@ struct GalleryView: View {
                             .background(selected ? AnyShapeStyle(WebTheme.foreground)
                                                  : AnyShapeStyle(Color.clear),
                                         in: Capsule())
-                            // 押せる範囲だけ 44pt に（札の見た目は変えない）。選んでいない札は
+                            // 押せる範囲だけ 44pt 以上に（札も帯も大きさは変えない。`CategoryField` と
+                            // 同じ形で、外側の帯の余白 4 の分まで押せる）。選んでいない札は
                             // 地が透明で、字の上しか押せなかった
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .contentShape(Capsule())
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                            .padding(.vertical, -4)
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])

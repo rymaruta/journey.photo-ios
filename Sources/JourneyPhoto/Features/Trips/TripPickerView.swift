@@ -403,7 +403,7 @@ struct TripPickerView: View {
                 .font(JPFont.rowTitle)
                 .foregroundStyle(WebTheme.foreground)
             Text(model.deck.isEmpty
-                 ? L("「行きたい」に入れた場所は、札に出しません。",
+                 ? L("「行きたい」に入れた場所は、ここには出しません。",
                      "Places already on your wishlist aren't shown.")
                  : L("選んだ場所で旅行プランを作れます。", "Make a trip with the places you picked."))
                 .font(.footnote)
