@@ -157,6 +157,9 @@ struct StoryViewerView: View {
     /// 外へ知らせる。**外の払い（`StoryReelView`）が見る**——返信の一言の候補を横に
     /// 流しただけで次の人へ回り、書きかけが消えていた
     let onSwipeLockChange: ((Bool) -> Void)?
+    /// 返信欄に入力中かを外へ知らせる。**外の払い（`StoryReelView`）は入力中の払いで
+    /// 閉じない・回らない**（この画面がキーボードを閉じるだけ）
+    let onTypingChange: ((Bool) -> Void)?
     /// 撮影スポットの索引。**人から人への並び（`StoryReelView`）が一度だけ読んで渡す**——
     /// 人ごとに閲覧画面を作り直すので、ここで読むと人が替わるたびに読み直していた。
     /// nil なら自分で読む（ハイライトなど）
@@ -173,6 +176,7 @@ struct StoryViewerView: View {
          swipesHandledOutside: Bool = false,
          onDropped: ((String) -> Void)? = nil,
          onSwipeLockChange: ((Bool) -> Void)? = nil,
+         onTypingChange: ((Bool) -> Void)? = nil,
          spotIndex: [OfficialSpot]? = nil,
          voteStates: [String: StoryVoteState] = [:],
          onVoted: ((String, StoryVoteState) -> Void)? = nil,
@@ -183,6 +187,7 @@ struct StoryViewerView: View {
         self.swipesHandledOutside = swipesHandledOutside
         self.onDropped = onDropped
         self.onSwipeLockChange = onSwipeLockChange
+        self.onTypingChange = onTypingChange
         self.providedSpots = spotIndex
         self.onVoted = onVoted
         _voteStates = State(initialValue: voteStates)
@@ -430,8 +435,10 @@ struct StoryViewerView: View {
         .onAppear {
             isForeground = scenePhase == .active
             onSwipeLockChange?(swipeLocked)
+            onTypingChange?(replyFocused)
         }
         .onChange(of: swipeLocked) { _, locked in onSwipeLockChange?(locked) }
+        .onChange(of: replyFocused) { _, focused in onTypingChange?(focused) }
         .onChange(of: scenePhase) { _, phase in isForeground = phase == .active }
         .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
             Button(L("ブロック", "Block"), role: .destructive) {
@@ -935,9 +942,10 @@ struct StoryViewerView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: StoryPlayback.swipeThreshold)
                 .onEnded { value in
-                    guard !swipesHandledOutside else { return }
-                    // 返信を打っている間の払いはキーボードを閉じるだけ（押したときと同じ・書きかけを消さない）
+                    // 返信を打っている間の払いはキーボードを閉じるだけ（押したときと同じ・書きかけを消さない）。
+                    // **払いを外が受け持つときも閉じる**——外は入力中の払いで動かない（`onTypingChange`）
                     if replyFocused { replyFocused = false; return }
+                    guard !swipesHandledOutside else { return }
                     switch StoryPlayback.swipe(
                         dx: value.translation.width, dy: value.translation.height) {
                     case .next: if !isSending { advance() }

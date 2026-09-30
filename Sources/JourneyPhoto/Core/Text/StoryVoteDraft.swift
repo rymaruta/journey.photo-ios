@@ -31,12 +31,18 @@ struct StoryVoteDraft: Codable, Equatable {
     /// 投票の y の上限。**これより下に置くと、下のひとことの欄・撮影地・曲の行に重なる**
     /// （レビューの計算で y > 約0.75 から重なる）。既定の y（0.7）と同じ値
     static let maxY = 0.7
+    /// 札の高さ（絵の高さに対する割合）÷ 大きさ。問いが1行・9:16 の絵での見積もり
+    /// （問い 1.2＋間 0.4＋ボタン 1.7＋上下の余白 0.4 ≒ 3.7 字ぶん × 幅/高さ 0.5625）
+    static let heightPerSize = 2.1
 
-    /// 投票の y を挟む（0.06〜`maxY`）。**描く・動かす・送るの3か所で同じもの**を使う
+    /// 投票の y を挟む（0.06〜`maxY`、大きい札はさらに上）。**描く・動かす・送るの3か所で同じもの**を使う
     /// ——前の版で `maxY` より下に置いた下書きを戻したとき、動かす所だけで挟むと
-    /// 触った瞬間に跳び、触らずに送ると下の欄に重なる位置のまま送られた
-    static func clampY(_ y: Double) -> Double {
-        min(StoryTextItem.clampPosition(y), maxY)
+    /// 触った瞬間に跳び、触らずに送ると下の欄に重なる位置のまま送られた。
+    /// 札は `(x, y)` の割合の点を札の同じ割合の点に合わせるので、下端は `y + (1 − y) × 高さ`。
+    /// これが 0.75 を超えないように（大きくして下端に置くと下の欄に重なった）
+    static func clampY(_ y: Double, size: Double) -> Double {
+        let height = StoryTextItem.clampSize(size) * heightPerSize
+        return min(StoryTextItem.clampPosition(y), maxY, (0.75 - height) / (1 - height))
     }
 
     /// 新しく置く投票。**問いと2択は Web と同じ既定**（`STORY_VOTE_DEFAULT`）
@@ -60,7 +66,7 @@ struct StoryVoteDraft: Codable, Equatable {
 
     /// 閲覧画面と同じ描き方をするための形（`StoryTextLayer` がそのまま描く）
     var asItem: StoryTextItem {
-        .vote(.init(place: .init(x: StoryTextItem.clampPosition(x), y: Self.clampY(y),
+        .vote(.init(place: .init(x: StoryTextItem.clampPosition(x), y: Self.clampY(y, size: size),
                                  size: StoryTextItem.clampSize(size),
                                  rotate: StoryTextItem.normalizeRotate((rotate ?? 0).rounded())),
                     question: question.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -96,13 +102,13 @@ struct StoryVoteDraft: Codable, Equatable {
         var next = self
         next.x = StoryTextItem.clampPosition(x + Double(translation.width / box.width))
         // 描いている位置（`clampY`）から動かす——前の版の下書きで跳ばないように
-        next.y = StoryTextItem.clampPosition(Self.clampY(y) + Double(translation.height / box.height))
+        next.y = StoryTextItem.clampPosition(Self.clampY(y, size: size) + Double(translation.height / box.height))
         if let visible {
             next.x = min(max(next.x, visible.x.lowerBound), visible.x.upperBound)
             next.y = min(max(next.y, visible.y.lowerBound), visible.y.upperBound)
         }
         // 下の欄に重ねない（見えている範囲より優先——重なると札もひとことも読めない）
-        next.y = min(next.y, Self.maxY)
+        next.y = Self.clampY(next.y, size: size)
         return next
     }
 
@@ -136,7 +142,7 @@ struct StoryPostText: Codable, Equatable {
 
     /// 投票
     static func vote(_ v: StoryVoteDraft) -> StoryPostText {
-        StoryPostText(kind: "vote", x: StoryTextItem.clampPosition(v.x), y: StoryVoteDraft.clampY(v.y),
+        StoryPostText(kind: "vote", x: StoryTextItem.clampPosition(v.x), y: StoryVoteDraft.clampY(v.y, size: v.size),
                       size: StoryTextItem.clampSize(v.size),
                       question: v.question.trimmingCharacters(in: .whitespacesAndNewlines),
                       options: [v.optionA, v.optionB].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },

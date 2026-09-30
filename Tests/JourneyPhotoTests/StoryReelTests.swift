@@ -110,6 +110,18 @@ final class StoryReelTests: XCTestCase {
         XCTAssertNil(StoryReel.axis(dx: 5, dy: -40), "上へ払って閉じたり回ったりしない")
     }
 
+    /// 🔴 **返信を打っている間の払いは、下も横も動かさない**（閲覧画面がキーボードを閉じるだけ）
+    /// ——下へ払うと閉じて書きかけが消えていた。払えない間（メニュー・送信中）は横だけ止め、
+    /// 下へ閉じるのは今どおり通す
+    func testAxisWhileTypingOrLocked() {
+        XCTAssertNil(StoryReel.axis(dx: 5, dy: 200, swipeLocked: true, typing: true), "入力中に下へ払って閉じた")
+        XCTAssertNil(StoryReel.axis(dx: -200, dy: 5, swipeLocked: true, typing: true), "入力中に横へ払って回った")
+        XCTAssertEqual(StoryReel.axis(dx: 5, dy: 200, swipeLocked: true, typing: false), .vertical,
+                       "送信中に下へ払って閉じられない")
+        XCTAssertNil(StoryReel.axis(dx: -200, dy: 5, swipeLocked: true, typing: false))
+        XCTAssertEqual(StoryReel.axis(dx: -200, dy: 5, swipeLocked: false, typing: false), .horizontal)
+    }
+
     // MARK: - 下へ払って閉じる
 
     func testCloseAndScale() {
