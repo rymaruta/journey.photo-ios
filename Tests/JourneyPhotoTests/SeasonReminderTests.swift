@@ -53,8 +53,11 @@ final class SeasonReminderTests: XCTestCase {
         // 暦を付ける（和暦・仏暦の端末で予約が読み違えられない）
         XCTAssertEqual(plan.fireAt.calendar?.identifier, .gregorian)
         XCTAssertNil(plan.fireAt.timeZone, "時刻帯は付けない（旅先ではその土地の 9時）")
+        // 予約自身の暦（端末の時刻帯に追従）で読むと、12/1 の 9時
+        let fireCalendar = try XCTUnwrap(plan.fireAt.calendar)
+        XCTAssertEqual(fireCalendar.timeZone, TimeZone.autoupdatingCurrent)
         let fire = try XCTUnwrap(plan.fireAt.date)
-        XCTAssertEqual(calendar.dateComponents([.year, .month, .day, .hour], from: fire),
+        XCTAssertEqual(fireCalendar.dateComponents([.year, .month, .day, .hour], from: fire),
                        DateComponents(year: 2026, month: 12, day: 1, hour: 9))
         XCTAssertEqual(plan.title, "冬の撮影スポット")
         XCTAssertEqual(plan.body, "行きたい場所の「銀山温泉」ほか1か所に冬の撮影ガイドがあります。")
@@ -131,7 +134,8 @@ final class SeasonReminderTests: XCTestCase {
         center.hold = true
         let first = Task { @MainActor in await scheduler.reschedule(plan, allowed: true) }
         let second = Task { @MainActor in await scheduler.reschedule(plan, allowed: true) }
-        while center.waiting.isEmpty { await Task.yield() }
+        for _ in 0..<1000 where center.waiting.isEmpty { await Task.yield() }
+        XCTAssertFalse(center.waiting.isEmpty, "入れる回が止まっていない（試験の前提が崩れた）")
         center.hold = false
         center.release()
         await first.value
@@ -141,10 +145,16 @@ final class SeasonReminderTests: XCTestCase {
 
         // 入れる回の途中に取り消し（ログアウト）が来る
         center.hold = true
-        let adding = Task { @MainActor in await scheduler.reschedule(SeasonReminder.plan(now: self.date(2026, 12, 2), spots: [a],
-            wishlist: [SavedSpotKey.official("sp_a")], calendar: self.calendar), allowed: true) }
+        // 別の中身（春の予約）を入れる回。**中身が無いと add が呼ばれず、下の待ちが終わらない**ので前提を確かめる
+        let spring = try spot("sp_b", name: "蔵王", seasons: ["spring"])
+        let springPlan = try XCTUnwrap(SeasonReminder.plan(now: date(2026, 12, 2), spots: [spring],
+                                                           wishlist: [SavedSpotKey.official("sp_b")], calendar: calendar))
+        let adding = Task { @MainActor in await scheduler.reschedule(springPlan, allowed: true) }
+        // 入れる回が **止まったのを待ってから** 取り消しを積む（「途中」の場面を本当に通す）
+        for _ in 0..<1000 where center.waiting.isEmpty { await Task.yield() }
+        XCTAssertFalse(center.waiting.isEmpty, "入れる回が止まっていない（試験の前提が崩れた）")
         let cancel = Task { @MainActor in await scheduler.reschedule(nil, allowed: false) }
-        await Task.yield()
+        for _ in 0..<5 { await Task.yield() }
         center.hold = false
         center.release()
         await adding.value
