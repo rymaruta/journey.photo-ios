@@ -7,35 +7,45 @@ import Foundation
 /// 写真の旅のアプリならではの作り込み。サーバーは変えない（撮影地の文字と約1kmの座標は
 /// ストーリーが既に持ち、索引は端末にある）。
 ///
-/// 🔴 **取り違えるくらいなら結ばない。** 結ぶのは次のときだけ:
-///  - 撮影地の文字に、**スポットの名前がそのまま入っている**（「高屋神社」「高屋神社（天空の鳥居）」）。
-///    市区町村だけの撮影地（「観音寺市, 香川県」）は結ばない——町の真ん中の別の場所を名乗る
-///  - 座標があれば **`maxKm` 以内**、いちばん近いもの（同じ名前の別の神社を避ける）
-///  - 座標が無ければ、**名前で当たるのが1件だけ**のとき
-///  - 下書き（運営未確認）は結ばない
+/// 🔴 **取り違えるくらいなら結ばない。** 結ぶのは次の全部を満たすときだけ:
+///  - ストーリーに**座標がある**（座標の無い回は結ばない——「飛島村」が山形の飛島、
+///    「月山富田城」が山形の月山に当たった。部分一致の「索引の中で1件だけ」は、世の中で
+///    一意という意味ではない）
+///  - 撮影地の文字に**スポットの名前がそのまま入っている**、または撮影地の最初の区切り
+///    （「高屋神社, 観音寺市, …」の「高屋神社」）が**名前の頭と同じ**（4文字以上。実データの
+///    名前は「高屋神社 本宮（天空の鳥居）」のように後ろが長い）。空白は無視する
+///  - スポットが **`maxKm` 以内**。いちばん近いもの
+///  - 下書き（運営未確認）でない
+///
+/// 🔴 **括弧の中は名前として当てない**（「旧・」で始まる旧称だけ当てる）。実データで括弧つきの
+/// 名前は48件あり、中身はほとんど**地名**（パリ・プラハ・尾道・屋久島・奈良公園…）だった。
+/// 当てると「パリ, フランス」だけの撮影地がノートルダム大聖堂に結ばれた（9952462 のレビュー）
 enum StorySpotLink {
 
-    /// 名前が当たっても、これより離れていれば別の場所とみなす（座標はどちらも約1km に丸めてある）
+    /// 名前が当たっても、これより離れていれば別の場所とみなす（座標はどちらも約1kmに丸めてある）
     static let maxKm: Double = 5
 
-    /// 名前として当てる最短の文字数（1文字の名前で何にでも当たらないように）
+    /// 名前として当てる最短の文字数（短い名前が地名の一部に当たらないように）
     static let minNameLength = 2
 
+    /// 撮影地の最初の区切りを「名前の頭」として当てる最短の文字数
+    static let minPrefixLength = 4
+
     static func spot(for story: Story, in spots: [OfficialSpot]) -> OfficialSpot? {
-        guard let raw = story.location else { return nil }
-        let place = MapSearch.fold(raw)
-        guard !place.isEmpty else { return nil }
-        let named = spots.filter { spot in
-            !spot.isDraft && names(of: spot).contains { place.contains($0) }
-        }
-        guard !named.isEmpty else { return nil }
-        guard let here = story.coords else {
-            // 座標が無い: 名前だけでは同じ名前の別の場所を区別できない。1件だけなら結ぶ
-            return named.count == 1 ? named[0] : nil
-        }
-        return named
+        guard let raw = story.location, let here = story.coords else { return nil }
+        // **市区町村・都道府県・国だけの区切りは落とす**（索引が知っている地名）。
+        // 「姫島村, 大分県」が姫島に、「十和田市」が十和田市現代美術館に結ばれていた
+        let areas = areaNames(in: spots)
+        let segments = segments(of: raw).filter { !areas.contains($0) }
+        guard let head = segments.first else { return nil }
+        let place = segments.joined()
+        return spots
             .compactMap { spot -> (OfficialSpot, Double)? in
-                guard let there = spot.coords else { return nil }
+                guard !spot.isDraft, let there = spot.coords else { return nil }
+                let names = names(of: spot)
+                let hit = names.contains { place.contains($0) }
+                    || (head.count >= minPrefixLength && names.contains { $0.hasPrefix(head) })
+                guard hit else { return nil }
                 let km = TravelDistance.kilometers(from: here, to: there)
                 return km <= maxKm ? (spot, km) : nil
             }
@@ -43,20 +53,43 @@ enum StorySpotLink {
             .0
     }
 
-    /// 当てる名前: 名前・括弧を除いた名前・括弧の中（旧称）・英語名。全角半角・大小は畳む
+    /// 当てる名前: 名前・括弧を除いた名前・「旧・」で始まる括弧の中（旧称）・英語名
     static func names(of spot: OfficialSpot) -> [String] {
         var out: [String] = []
         func add(_ s: String?) {
             guard let s else { return }
-            let folded = MapSearch.fold(s)
+            let folded = squash(s)
             if folded.count >= minNameLength { out.append(folded) }
         }
         add(spot.name)
         let (outer, inner) = splitParentheses(spot.name)
         add(outer)
-        // 「旧・大石林山」のような括弧の中は、頭の「旧・」を落として当てる
-        inner.forEach { add($0.replacingOccurrences(of: "旧・", with: "")) }
+        inner.filter { $0.hasPrefix("旧・") }.forEach { add(String($0.dropFirst("旧・".count))) }
         add(spot.nameEn)
+        return out
+    }
+
+    /// 全角半角・大小を畳み、**空白を落とす**（「高屋神社 本宮」と「高屋神社本宮」を同じに）
+    static func squash(_ s: String) -> String {
+        MapSearch.fold(s).filter { !$0.isWhitespace }
+    }
+
+    /// 撮影地を読点・カンマで切り、畳む（空は落とす）。「高屋神社, 観音寺市, 香川県」→ 3つ
+    static func segments(of s: String) -> [String] {
+        s.split(whereSeparator: { $0 == "," || $0 == "、" || $0 == "，" })
+            .map { squash(String($0)) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// 索引が知っている地名（市区町村・都道府県・国）と「日本」。畳んだ形
+    static func areaNames(in spots: [OfficialSpot]) -> Set<String> {
+        var out: Set<String> = ["日本", "japan"]
+        for spot in spots {
+            for name in [spot.region?.prefecture, spot.region?.city, spot.region?.country].compactMap({ $0 }) {
+                let folded = squash(name)
+                if !folded.isEmpty { out.insert(folded) }
+            }
+        }
         return out
     }
 

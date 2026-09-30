@@ -78,8 +78,11 @@ struct StoryViewerView: View {
     @State private var showAuthor = false
     /// 撮影地から開いた撮影スポットのガイド（`StorySpotLink`）
     @State private var guideSpot: OfficialSpot?
-    /// 撮影スポットの索引（撮影地をガイドへつなぐのに使う）。**取れなかった回は空**＝つながないだけ
-    @State private var spotIndex: [OfficialSpot] = []
+    /// 自分で読んだ撮影スポットの索引（外から渡されないとき）。**取れなかった回は空**＝つながないだけ
+    @State private var loadedSpots: [OfficialSpot] = []
+    /// いま見ている1本の撮影地から結んだスポット（`StorySpotLink`）。**1本ごとに一度だけ解く**
+    /// ——描き直しのたびに全件を当て直すと、1回 数十ms かかっていた（Linux のデバッグ実測）
+    @State private var spotLink: (storyId: String, spot: OfficialSpot?)?
     /// 自分のストーリーを消す前の確認（板「25f 削除の確認」）。
     /// **以前は確認なしで即座に消えていた**
     @State private var showDeleteConfirm = false
@@ -144,6 +147,10 @@ struct StoryViewerView: View {
     /// 外へ知らせる。**外の払い（`StoryReelView`）が見る**——返信の一言の候補を横に
     /// 流しただけで次の人へ回り、書きかけが消えていた
     let onSwipeLockChange: ((Bool) -> Void)?
+    /// 撮影スポットの索引。**人から人への並び（`StoryReelView`）が一度だけ読んで渡す**——
+    /// 人ごとに閲覧画面を作り直すので、ここで読むと人が替わるたびに読み直していた。
+    /// nil なら自分で読む（ハイライトなど）
+    let providedSpots: [OfficialSpot]?
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
@@ -153,6 +160,7 @@ struct StoryViewerView: View {
          swipesHandledOutside: Bool = false,
          onDropped: ((String) -> Void)? = nil,
          onSwipeLockChange: ((Bool) -> Void)? = nil,
+         spotIndex: [OfficialSpot]? = nil,
          onSeen: ((String) -> Void)? = nil,
          onDeleted: ((String) -> Void)? = nil) {
         self.onGroupEnd = onGroupEnd
@@ -160,6 +168,7 @@ struct StoryViewerView: View {
         self.swipesHandledOutside = swipesHandledOutside
         self.onDropped = onDropped
         self.onSwipeLockChange = onSwipeLockChange
+        self.providedSpots = spotIndex
         self.stories = stories
         self.onDeleted = onDeleted
         self.viewerId = viewerId
@@ -197,6 +206,9 @@ struct StoryViewerView: View {
             inBackground: !isForeground
         )
     }
+
+    /// 撮影スポットの索引（渡されたもの、無ければ自分で読んだもの）
+    private var spots: [OfficialSpot] { providedSpots ?? loadedSpots }
 
     /// 払ってはいけない間（`onSwipeLockChange`）。長押し・絵の読み込みは含めない
     /// （止まっていても払って次へは行ける）
@@ -431,18 +443,23 @@ struct StoryViewerView: View {
         // 撮影地から開いた撮影スポットのガイド。**見ている間は止める**（`frozen` の sheetOpen）
         .sheet(item: $guideSpot) { spot in
             NavigationStack {
-                OfficialSpotView(spot: spot, spots: spotIndex, photos: [])
+                // 写真の一覧はこの画面に無い。**「この場所の写真（0）まだありません」を言わせない**
+                OfficialSpotView(spot: spot, spots: spots, photos: [], photosKnown: false)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
                     }
             }
         }
-        // 撮影スポットの索引は**一度だけ**読む（静的な JSON・サービスに60秒の控えと端末の控え）
+        // 撮影スポットの索引。**外から渡されないときだけ一度読む**（静的な JSON）
         .task {
-            guard spotIndex.isEmpty else { return }
+            guard providedSpots == nil, loadedSpots.isEmpty else { return }
             let fetched = try? await environment.spots.fetchIndex()
             guard !Task.isCancelled, let fetched else { return }
-            spotIndex = fetched
+            loadedSpots = fetched
+        }
+        // 撮影地 → スポットは**1本ごと・索引が変わったときだけ**解く
+        .task(id: "\(story.id)#\(spots.count)") {
+            spotLink = (story.id, StorySpotLink.spot(for: story, in: spots))
         }
         .sheet(isPresented: $showInsights) {
             NavigationStack {
@@ -572,7 +589,7 @@ struct StoryViewerView: View {
                         .allowsHitTesting(false)
                 }
                 if let place {
-                    if let spot = StorySpotLink.spot(for: story, in: spotIndex) {
+                    if let spot = spotLink?.storyId == story.id ? spotLink?.spot : nil {
                         // 撮影地 → 撮影スポットのガイド（「行きたい」もそこで押せる）
                         Button {
                             guideSpot = spot
@@ -584,8 +601,13 @@ struct StoryViewerView: View {
                                     .foregroundStyle(WebTheme.muted)
                                     .jpPhotoTextShadow()
                             }
-                            .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                            // **幅に上限**（長い住所の行が右の「進む」の的の下まで塞がないように）
+                            .frame(maxWidth: 260, alignment: .leading)
+                            // **押せる所だけ上下に広げ、並びは変えない**（`minHeight` にすると行が
+                            // 44pt になり、索引が届いた瞬間にひとことの塊が上へ跳ねた）
+                            .padding(.vertical, 12)
                             .contentShape(Rectangle())
+                            .padding(.vertical, -12)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(L("撮影地 \(place)。撮影スポットのガイドを開く",

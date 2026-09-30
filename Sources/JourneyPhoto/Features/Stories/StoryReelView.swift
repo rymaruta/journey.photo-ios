@@ -23,6 +23,7 @@ struct StoryReelView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var environment: AppEnvironment
 
     @State private var group: Int
     /// 指で動かしている間の値。**打ち切られても（通知センター・電話・背面）自動で
@@ -50,6 +51,8 @@ struct StoryReelView: View {
     /// たびに渡す束を変えると、閲覧画面の中の位置と食い違い、通報した1本や見ていない
     /// 1本に「見た」が飛んだ（7a3894b のレビュー）
     @State private var shown: StoryReel.Group?
+    /// 撮影スポットの索引（撮影地 → ガイド）。**並び全体で一度だけ読み、閲覧画面へ渡す**
+    @State private var spotIndex: [OfficialSpot] = []
 
     struct Finger: Equatable {
         var axis: StoryReel.Axis?
@@ -118,6 +121,13 @@ struct StoryReelView: View {
             .offset(y: max(0, dragY))
             .onAppear { width = max(1, geo.size.width) }
             .onChange(of: geo.size.width) { _, w in width = max(1, w) }
+            // 撮影スポットの索引は並び全体で**一度だけ**（取れなければ撮影地を結ばないだけ）
+            .task {
+                guard spotIndex.isEmpty else { return }
+                let fetched = try? await environment.spots.fetchIndex()
+                guard !Task.isCancelled, let fetched else { return }
+                spotIndex = fetched
+            }
         }
         .simultaneousGesture(
             DragGesture(minimumDistance: StoryReel.axisThreshold)
@@ -190,6 +200,7 @@ struct StoryReelView: View {
             swipesHandledOutside: true,
             onDropped: { removed.insert($0) },
             onSwipeLockChange: { swipeLocked = $0 },
+            spotIndex: spotIndex,
             onSeen: onSeen,
             onDeleted: onDeleted)
     }
