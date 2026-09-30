@@ -24,8 +24,9 @@ struct GalleryView: View {
     @State private var isOnScreen = false
     /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
     @State private var needsReload = false
-    /// 出ていない間に投稿を閉じた。戻ってきたときに自分の写真を読み直す
-    @State private var needsMyPhotosReload = false
+    /// 一度でもこの画面が出たか。**戻ってきた回だけ自分の写真を読み直す**ための印
+    /// （初回は `.task(id:)` が読む・`MyPageView` と同じ形）
+    @State private var didAppear = false
     /// 描くときに落とす「見せない」の写し。**画面に出ている間だけ取り直す**。
     /// 戻った瞬間、読み直しが終わるまでブロックした人のカードが見えないように
     @State private var dropped = ModerationSnapshot()
@@ -129,11 +130,11 @@ struct GalleryView: View {
         // シートは `RootView` にあるので `.task(id:)` は走らず、札が「参加する」のまま残った
         //
         // 🔴 **画面に出ている間だけ**（`MyPageView` と同じ）。旅の一冊などを上に積んだまま
-        // 読み直すと、札が差し替わって開いている画面ごと閉じる。出ていない回は印を立て、
-        // 戻ってきたとき（`onAppear`）に読み直す
+        // 読み直すと、札が差し替わって開いている画面ごと閉じる。出ていない回は
+        // 戻ってきたとき（`onAppear`）の読み直しが拾う
         .onChange(of: tabRouter.postSheetsClosed) { _, _ in
-            guard auth.userId != nil else { return }
-            if isOnScreen { reloadMyPhotos() } else { needsMyPhotosReload = true }
+            guard auth.userId != nil, isOnScreen else { return }
+            reloadMyPhotos()
         }
         // **前面に戻ったら輪を読み直す。** 日をまたいで戻っても昨日の輪のまま、
         // フォローしている人の新しいストーリーも出なかった
@@ -185,14 +186,23 @@ struct GalleryView: View {
         .onAppear {
             isOnScreen = true
             dropped = hidden.snapshot
-            if needsReload { reloadHidden() }
-            if needsMyPhotosReload { reloadMyPhotos() }
+            // **戻ってきたら毎回自分の写真を読み直す**（`MyPageView` と同じ形）。
+            // 合図が来ない変わり方がある——すでに「消した」印の付いた写真を消した・
+            // 下書きを公開にした（`hidden.revision` が進まない）、スポットの画面の
+            // 投稿シート（`postSheetsClosed` が進まない）。`onAppear` はホームが前に
+            // 出たときだけ走るので、上に積んだ画面を閉じることはない。
+            // `reloadHidden` は自分の写真も読むので、その回は二重に取りに行かない
+            if needsReload {
+                reloadHidden()
+            } else if didAppear {
+                reloadMyPhotos()
+            }
+            didAppear = true
         }
         .onDisappear { isOnScreen = false }
     }
 
     private func reloadMyPhotos() {
-        needsMyPhotosReload = false
         guard let userId = auth.userId else { return }
         Task { await model.loadMyPhotos(environment.photos, viewerId: userId) }
     }
