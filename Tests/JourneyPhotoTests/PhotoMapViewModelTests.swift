@@ -236,26 +236,64 @@ extension PhotoMapViewModelTests {
 
     /// 🔴 **絞りで結果から外れた選びは下ろす。** 下ろさないと、札は消えるのに選びが残り、
     /// 絞りを外したとたんに前の札が戻ってきた。積んでいる間は下ろさない
-    func testFilterDropsSelectionOutsideResults() async {
+    func testCommittedFilterDropsSelectionOutsideResults() async {
         let model = await loaded(spots: spotsJSON)
         guard let tokyo = model.pins.first(where: { $0.photos.contains { $0.id == "c" } }) else {
             return XCTFail("東京のピンが出ていない")
         }
-        XCTAssertEqual(model.keptAfterFilterChange(tokyo, onScreen: true), tokyo, "結果に居るのに下ろしている")
+        let pinOnly = PhotoMapViewModel.Selection(pin: tokyo, official: nil)
+        XCTAssertEqual(model.keptAfterFilterChange(.queryCommitted, pinOnly, onScreen: true).pin, tokyo,
+                       "結果に居るのに下ろしている")
         model.query = "パリ"
-        XCTAssertNil(model.keptAfterFilterChange(tokyo, onScreen: true), "絞りで外れた選びが残っている")
-        XCTAssertEqual(model.keptAfterFilterChange(tokyo, onScreen: false), tokyo, "積んでいる間に下ろしている")
-        XCTAssertNil(model.keptAfterFilterChange(nil, onScreen: true))
+        XCTAssertNil(model.keptAfterFilterChange(.queryCommitted, pinOnly, onScreen: true).pin,
+                     "語で外れた選びが残っている")
+        XCTAssertEqual(model.keptAfterFilterChange(.queryCommitted, pinOnly, onScreen: false).pin, tokyo,
+                       "積んでいる間に下ろしている")
 
         model.query = ""
         model.update(visible: narrow())
         guard let takaya = model.officialPins.first(where: { $0.slug == "takaya-jinja" }) else {
             return XCTFail("高屋神社のピンが出ていない")
         }
-        XCTAssertEqual(model.keptAfterFilterChange(official: takaya, onScreen: true), takaya)
+        let spotOnly = PhotoMapViewModel.Selection(pin: nil, official: takaya)
+        XCTAssertEqual(model.keptAfterFilterChange(.queryCommitted, spotOnly, onScreen: true).official, takaya)
         model.query = "流氷"
-        XCTAssertNil(model.keptAfterFilterChange(official: takaya, onScreen: true), "絞りで外れたスポットが残っている")
-        XCTAssertEqual(model.keptAfterFilterChange(official: takaya, onScreen: false), takaya, "積んでいる間に下ろしている")
+        XCTAssertNil(model.keptAfterFilterChange(.queryCommitted, spotOnly, onScreen: true).official,
+                     "語で外れたスポットが残っている")
+        XCTAssertNil(model.keptAfterFilterChange(.area, spotOnly, onScreen: true).official,
+                     "範囲で外れたスポットが残っている")
+        XCTAssertEqual(model.keptAfterFilterChange(.queryCommitted, spotOnly, onScreen: false).official, takaya,
+                       "積んでいる間に下ろしている")
+    }
+
+    /// 🔴 **打っている途中の字では下ろさない。** 日本語入力では「t」「と」も語として流れ、
+    /// 最初の1打で選びが消えて、「東京」と確定しても札が戻らなかった
+    func testTypingDoesNotDropSelection() async {
+        let model = await loaded(spots: spotsJSON)
+        guard let tokyo = model.pins.first(where: { $0.photos.contains { $0.id == "c" } }) else {
+            return XCTFail("東京のピンが出ていない")
+        }
+        model.query = "t"
+        let current = PhotoMapViewModel.Selection(pin: tokyo, official: nil)
+        XCTAssertEqual(model.keptAfterFilterChange(.queryTyping, current, onScreen: true), current,
+                       "変換中の字で選びを下ろしている")
+    }
+
+    /// カテゴリは写真にだけ効く。**引いて札が隠れているだけのスポットを、カテゴリで下ろさない**。
+    /// 写真のピンはカテゴリで外れたら下ろす
+    func testCategoryDropsOnlyPhotoPins() async {
+        let model = await loaded(spots: spotsJSON)
+        model.update(visible: narrow())
+        guard let takaya = model.officialPins.first(where: { $0.slug == "takaya-jinja" }),
+              let tokyo = model.pins.first(where: { $0.photos.contains { $0.id == "c" } }) else {
+            return XCTFail("ピンが出ていない")
+        }
+        // 引いて高屋神社のピンが外れた（札は隠れる）
+        model.update(visible: narrow(lat: 44.02, lng: 144.28))
+        model.select(category: "風景")
+        let kept = model.keptAfterFilterChange(.category, .init(pin: tokyo, official: takaya), onScreen: true)
+        XCTAssertEqual(kept.official, takaya, "カテゴリでスポットの選びを下ろしている")
+        XCTAssertNil(kept.pin, "カテゴリで外れた写真のピンが残っている")
     }
 
     /// 名前で絞っているときは倍率に関係なく当たったものが出る（owner が名前で探す入口）

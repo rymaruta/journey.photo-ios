@@ -171,18 +171,19 @@ struct PhotoMapView: View {
         .onChange(of: model.query) { _, query in
             // 欄を空にした（× や手で消した）ら、探すから来た語の寄せ待ちも下ろす
             if query.isEmpty { queryFraming.cleared() }
-            dropSelectionOutsideFilter()
+            // 打っている途中では下ろさない（下ろすのは語が決まったとき: 探すから届いた・× ・確定キー）
+            dropSelectionOutsideFilter(.queryTyping)
             guard model.areaFrame == nil else { return }
             frame(model.frame)
         }
         .onChange(of: model.category) { _, _ in
-            dropSelectionOutsideFilter()
+            dropSelectionOutsideFilter(.category)
             guard model.areaFrame == nil else { return }
             frame(model.frame)
         }
         // 「このエリアを検索」を押した・外したときも同じ（範囲も絞りのうち）
         .onChange(of: model.areaFrame) { _, _ in
-            dropSelectionOutsideFilter()
+            dropSelectionOutsideFilter(.area)
         }
         // リストへ切り替えたら地点の札は下げる（地図に戻ると選択の印が
         // 消えているので、札だけ残ると何を指しているか分からない）
@@ -280,12 +281,13 @@ struct PhotoMapView: View {
 
     /// 絞りが変わって、選んでいたピン・スポットが見えている結果から外れたら選びを下ろす
     /// （`PhotoMapViewModel.keptAfterFilterChange`）。残すと、絞りを外したとき消えた札が戻ってくる。
-    /// 上に画面を積んでいる間は下ろさない（`showsCard` と同じ決まり）
-    private func dropSelectionOutsideFilter() {
-        let pin = model.keptAfterFilterChange(selected, onScreen: isOnScreen)
-        if pin == nil, selected != nil { selected = nil }
-        let official = model.keptAfterFilterChange(official: selectedOfficial, onScreen: isOnScreen)
-        if official == nil, selectedOfficial != nil { selectedOfficial = nil }
+    /// 上に画面を積んでいる間は下ろさない（`showsCard` と同じ決まり）。どの場面で何を見るかは
+    /// `PhotoMapViewModel.FilterChange`
+    private func dropSelectionOutsideFilter(_ change: PhotoMapViewModel.FilterChange) {
+        let kept = model.keptAfterFilterChange(change, .init(pin: selected, official: selectedOfficial),
+                                               onScreen: isOnScreen)
+        if kept.pin == nil, selected != nil { selected = nil }
+        if kept.official == nil, selectedOfficial != nil { selectedOfficial = nil }
     }
 
     // MARK: - 絞る口
@@ -298,6 +300,8 @@ struct PhotoMapView: View {
         model.select(category: nil)
         model.query = query
         model.mode = .map
+        // 届いた語は決まった語（打っている途中ではない）
+        dropSelectionOutsideFilter(.queryCommitted)
         // 空の語（タグ・語なしで探した回）は前の語を消すだけ（前の語の寄せ待ちも下ろす）
         queryFraming.received(query: query)
         guard !query.isEmpty else { return }
@@ -327,9 +331,12 @@ struct PhotoMapView: View {
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("map.search")
                 .foregroundStyle(WebTheme.foreground)
+                // 確定キーで語が決まったら、結果から外れた選びを下ろす
+                .onSubmit { dropSelectionOutsideFilter(.queryCommitted) }
             if !model.query.isEmpty {
                 Button {
                     model.query = ""
+                    dropSelectionOutsideFilter(.queryCommitted)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(WebTheme.faint)

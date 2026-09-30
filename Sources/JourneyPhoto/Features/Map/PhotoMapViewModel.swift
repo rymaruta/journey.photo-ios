@@ -212,20 +212,50 @@ final class PhotoMapViewModel: ObservableObject {
         return !onScreen || stillShown(official: pin)
     }
 
-    /// 絞り（語・カテゴリ・このエリアを検索）が変わったあとも残す写真のピンの選び。
+    /// 選びを下ろすか見る場面（`keptAfterFilterChange`）
+    enum FilterChange {
+        /// 欄に打っている途中。**下ろさない**——日本語入力では変換中の「t」「と」も
+        /// 語として流れ、最初の1打で選びが消えて、確定しても札が戻らなかった
+        case queryTyping
+        /// 語が決まった（探すから届いた・× で消した・確定キー）
+        case queryCommitted
+        /// カテゴリ。**写真にだけ効く**ので、スポットの選びは見ない（引いて札が
+        /// 隠れているだけのスポットを、カテゴリで下ろさない）
+        case category
+        /// 「このエリアを検索」を押した・外した
+        case area
+    }
+
+    /// 札の選び（写真のピン・撮影スポット）
+    struct Selection: Equatable {
+        var pin: MapPin?
+        var official: OfficialPins.Pin?
+    }
+
+    /// 絞りが変わったあとも残す選び。
     ///
     /// 🔴 **地図の根が出ている間に、いまの結果から外れたら下ろす（nil）。** 残すと、
     /// 札は消えるのに選びだけ生き残り、絞りを外したとたんに前の札が戻ってきた。
-    /// 上に画面を積んでいる間（`onScreen == false`）は `showsCard` と同じく下ろさない
-    func keptAfterFilterChange(_ pin: MapPin?, onScreen: Bool) -> MapPin? {
+    /// 上に画面を積んでいる間（`onScreen == false`）は `showsCard` と同じく下ろさない。
+    /// どの場面で何を見るかは `FilterChange` の注記
+    func keptAfterFilterChange(_ change: FilterChange, _ current: Selection, onScreen: Bool) -> Selection {
+        var kept = current
+        switch change {
+        case .queryTyping:
+            return current
+        case .queryCommitted, .area:
+            kept.pin = keptPin(current.pin, onScreen: onScreen)
+            kept.official = showsCard(official: current.official, onScreen: onScreen) ? current.official : nil
+        case .category:
+            kept.pin = keptPin(current.pin, onScreen: onScreen)
+        }
+        return kept
+    }
+
+    private func keptPin(_ pin: MapPin?, onScreen: Bool) -> MapPin? {
         guard let pin else { return nil }
         guard onScreen else { return pin }
         return Self.refreshed(pin, in: pins) == nil ? nil : pin
-    }
-
-    /// 撮影スポットの選びも同じ約束（`showsCard(official:onScreen:)` で見えない札は下ろす）
-    func keptAfterFilterChange(official pin: OfficialPins.Pin?, onScreen: Bool) -> OfficialPins.Pin? {
-        showsCard(official: pin, onScreen: onScreen) ? pin : nil
     }
 
     /// ピンの元の行（画面へ渡す。概要・近くのスポットはここから）
