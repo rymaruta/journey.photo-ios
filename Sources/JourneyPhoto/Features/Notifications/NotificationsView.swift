@@ -72,6 +72,9 @@ struct NotificationsView: View {
                                                  : AnyShapeStyle(WebTheme.surface),
                                         in: Capsule())
                             .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                            // 札は 40pt 前後。押せる高さを 44pt にする（見た目は変えない）
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])
@@ -267,7 +270,7 @@ private struct NotificationRow: View {
                         .foregroundStyle(WebTheme.text)
                     if let ago = NotificationText.ago(notification.t) {
                         Text(ago)
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                     }
                 }
@@ -298,11 +301,15 @@ private struct NotificationRow: View {
             .background(WebTheme.surface)
             .clipShape(Circle())
         if let userId, notification.deleted != true, let onOpenProfile {
-            Button { onOpenProfile(userId) } label: { face }
+            // 顔は 42pt、押せるのは 44pt 四方（見た目は変えない）
+            Button { onOpenProfile(userId) } label: {
+                face.frame(width: 44, height: 44).contentShape(Rectangle())
+            }
                 .buttonStyle(.plain)
                 .accessibilityLabel(NotificationText.openProfileLabel(notification))
         } else {
-            face.accessibilityHidden(true)
+            // 押せない顔も同じ 44pt の枠に入れる（押せる顔と左端・字の位置をそろえる）
+            face.frame(width: 44, height: 44).accessibilityHidden(true)
         }
     }
 
@@ -330,6 +337,9 @@ private struct NotificationRow: View {
                     .frame(height: 32)
                     .background(WebTheme.foreground, in: Capsule())
                     .foregroundStyle(WebTheme.accentText)
+                    // 見た目は 32pt、押せる高さは 44pt
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(busy)

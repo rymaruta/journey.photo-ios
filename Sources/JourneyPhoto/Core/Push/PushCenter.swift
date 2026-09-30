@@ -162,11 +162,43 @@ final class PushCenter: ObservableObject {
         defaults.removeObject(forKey: pendingUnregisterKey(for: userId))
     }
 
-    /// 起動時とログイン状態が変わるたびに呼ぶ。
+    /// 🔴 **ログアウト・退会の途中**（`signingOut` を呼んだあと、ログイン状態が
+    /// 変わるまで）。この間は預け直さない——退会の途中に前面へ戻ると、外した直後の
+    /// 「預けていない」を見て登録し直し、退会済みの人の宛先がサーバーに残った。
+    /// 人が替わった `use` で下ろす（ログアウトできなかった回も、次の変化まで預けない）
+    private var isSigningOut = false
+    /// 走っている `use`。**同じ人で重ねて呼ばれたら、それを待つ**（前面に戻ったのと
+    /// ログイン状態の変化が重なると、外す・預けるが2本ずつ出ていた）
+    private var inFlight: (userId: String?, seq: Int, task: Task<Void, Never>)?
+    private var inFlightSeq = 0
+
+    /// 起動時・ログイン状態が変わるたび・**裏から前面に戻るたび**に呼ぶ。
+    ///
+    /// 前面に戻るたびに呼ぶのは、外し損ね・預け損ね（圏外で「受け取らない」を
+    /// 押した回など）をやり直すため。ログイン状態が変わるまで待つと、その間
+    /// 止めたはずの通知が届き続ける。同じ人で何度呼んでもよい
     func use(userId: String?) async {
+        if let running = inFlight, running.userId == userId {
+            await running.task.value
+            return
+        }
+        inFlightSeq += 1
+        let seq = inFlightSeq
+        // **その場で変えるのは `isSigningOut` だけ**（人が替わるなら下ろす）。`userId` を
+        // 入れ替えるのは `apply` が走るとき
+        if self.userId != userId { isSigningOut = false }
+        let task = Task { await self.apply(userId: userId) }
+        inFlight = (userId, seq, task)
+        await task.value
+        if inFlight?.seq == seq { inFlight = nil }
+    }
+
+    private func apply(userId: String?) async {
         let previous = self.userId
         self.userId = userId
         if previous != userId { loadIntent(for: userId) }
+        // ログアウト・退会の途中は何もしない（`isSigningOut`）
+        guard !isSigningOut else { return }
         await refreshAuthorization()
         // 待っている間に次の `use` が始まっていたら、そちらに任せる
         guard self.userId == userId else { return }
@@ -208,7 +240,7 @@ final class PushCenter: ObservableObject {
         //
         // ここで前の人のぶんを `DELETE` しても外れない。ログアウト後は前の人の
         // ID トークンが無く、次の人が入ったあとは**次の人の集合**から消すだけ
-        if let userId, let token, mayBelongToSomeoneElse(than: userId) {
+        if let userId, let token, !isSigningOut, mayBelongToSomeoneElse(than: userId) {
             await releasePreviousOwner(token: token, as: userId)
             guard self.userId == userId else { return }
         }
@@ -219,6 +251,8 @@ final class PushCenter: ObservableObject {
             if (try? await service().unregister(token: token)) != nil {
                 defaults.removeObject(forKey: Self.pendingUnregisterKey(for: userId))
                 noteUnregistered(by: userId)
+                // やり直せたので、前の失敗の文言を下げる（設定に「止められませんでした」が残った）
+                if self.userId == userId { errorMessage = nil }
                 // 外している間に「受け取る」を押された（`enable` の登録を消している）
                 if isEnabled, self.userId == userId { await registerIfPossible() }
             }
@@ -226,7 +260,10 @@ final class PushCenter: ObservableObject {
         }
         // **「受け取る」と言った人にだけ繋ぎ直す。** 端末の許可だけで
         // 判断すると、自分でオフにしたのに再起動で復活する
-        guard userId != nil, isEnabled, isAuthorized else { return }
+        // 待っている間にログアウト・退会が始まっていたら預けない
+        guard userId != nil, isEnabled, isAuthorized, !isSigningOut else { return }
+        // 同じ人で預けてあるなら繋ぎ直さない（前面に戻るたびに登録を流さない）
+        if previous == userId, isRegistered { return }
         // トークンは復元や入れ直しで変わる。**預け直すのは APNs が
         // 返してきた新しいトークン**——手元の古い値を送ると、他人の端末の
         // 枠（`DEVICES_MAX`）を食ったまま 410 が出るまで残る
@@ -321,13 +358,24 @@ final class PushCenter: ObservableObject {
     ///
     /// 外せなかったら（圏外など）印が残り、ログアウトのあとの `use` が端末ごと
     /// 外し（`registeredOwner`）、次にログインした人がサーバーから引き取る（`owner`）
-    func signingOut() async {
+    ///
+    /// - Parameter accountDeleted: 退会でサーバーのデータを消せた。🔴 **その人の「受け取る」を
+    ///   端末で「受け取らない」にする**——Cognito の削除だけ落ちて起動し直すと、
+    ///   `isSigningOut` は消え意思は残るので、退会した人の宛先がまた預けられた
+    func signingOut(accountDeleted: Bool = false) async {
         // **アイコンの数字と通知センターの通知は、登録の有無に関係なく消す。**
         // 残すと、次にこの端末を触る人（や別の人でログインし直した自分）に
         // 前の人の未読数と通知の本文が見えたままになる
         // 宛先は待つ前に取る（待っている間に `use` が人を入れ替えても、外すのはこの人の宛先）
         let token = self.token
         let userId = self.userId
+        // ここから先は預け直さない（`isSigningOut`）
+        isSigningOut = true
+        if accountDeleted, let userId {
+            // 消すのではなく false を書く（消すと昔の端末共通の鍵が移ってきうる——`loadIntent`）
+            defaults.set(false, forKey: Self.enabledKey(for: userId))
+            if self.userId == userId { isEnabled = false }
+        }
         await clearPreviousUserTraces()
         guard let token, let userId else { return }
         // **外せた回だけ、自分の印だけ消す。** 前の人の印（預け直しが落ちて
@@ -428,7 +476,7 @@ final class PushCenter: ObservableObject {
 
     /// 試験から失敗の経路を通すため internal（画面からは呼ばない）
     func registerIfPossible() async {
-        guard let token, let owner = userId, isEnabled, isAuthorized else { return }
+        guard let token, let owner = userId, isEnabled, isAuthorized, !isSigningOut else { return }
         do {
             try await service().register(token: token)
             // **呼んだ時点の人を控える**（返ってくる間に替わっていても、
@@ -440,6 +488,8 @@ final class PushCenter: ObservableObject {
                 return
             }
             isRegistered = true
+            // 前面に戻ったときのやり直しで預けられた: 前の失敗の文言を下げる
+            errorMessage = nil
         } catch {
             // **呼んでいる間に人が替わっていたら触らない**（遅れて返った前の人の
             // 失敗で、次の人の宛先を外さない・次の人の画面に出さない）

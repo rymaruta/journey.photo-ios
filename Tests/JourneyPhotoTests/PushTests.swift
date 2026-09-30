@@ -364,6 +364,103 @@ final class PushTakeoverTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: ownerKey))
     }
 
+    /// 🔴 **圏外で「受け取らない」→ 前面に戻ったときの `use`（同じ人）で外し直す。**
+    /// やり直せたら「止められませんでした」を下げる（設定に残り続けた）
+    func testFailedDisableIsRetriedBySameUserAndClearsTheError() async {
+        let defaults = registeredByA("push-release-retry")
+        let push = center(defaults)
+        await push.use(userId: "a")
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await push.disable()
+        XCTAssertNotNil(push.errorMessage)
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        StubProtocol.requests = []
+
+        await push.use(userId: "a")
+
+        XCTAssertEqual(StubProtocol.requests, ["DELETE /user/devices"], "外し損ねをやり直していない")
+        XCTAssertNil(defaults.string(forKey: ownerKey))
+        XCTAssertNil(push.errorMessage, "外し直せたのに失敗の文言が残っている")
+
+        StubProtocol.requests = []
+        await push.use(userId: "a")
+        XCTAssertEqual(StubProtocol.requests, [], "外し終えたのに前面に戻るたびに流している")
+    }
+
+    /// 🔴 **ログアウト・退会の途中（`signingOut` のあと）に前面へ戻っても預け直さない。**
+    /// 外した直後の「預けていない」を見て登録し直し、退会済みの人の宛先がサーバーに残った。
+    /// 人が替わったら下ろす
+    func testNoReRegistrationWhileSigningOut() async {
+        let defaults = registeredByA("push-signing-out")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        let push = PushCenter(service: {
+            PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                       tokenProvider: StubTokenProvider(token: "t"),
+                                       session: session))
+        }, defaults: defaults, releaseDevice: {}, readAuthorization: { true })
+        await push.use(userId: "a")
+        await push.signingOut()
+        StubProtocol.requests = []
+
+        // 退会の途中に前面へ戻る → APNs からトークンが返る
+        await push.use(userId: "a")
+        await push.registerIfPossible()
+        XCTAssertEqual(StubProtocol.requests, [], "ログアウトの途中に宛先を預け直している")
+
+        // ログアウトを経て同じ人で入り直したら、また預ける
+        await push.use(userId: nil)
+        await push.use(userId: "a")
+        StubProtocol.requests = []
+        await push.registerIfPossible()
+        XCTAssertEqual(StubProtocol.requests, ["POST /user/devices"])
+    }
+
+    /// 🔴 **退会でデータを消せたあと Cognito の削除だけ落ちて起動し直しても、預け直さない。**
+    /// `isSigningOut` は起動し直すと消え、「受け取る」の意思が残っていた
+    func testDeletedAccountIsNotReRegisteredAfterRelaunch() async {
+        let defaults = registeredByA("push-deleted")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        func make() -> PushCenter {
+            PushCenter(service: {
+                PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                           tokenProvider: StubTokenProvider(token: "t"),
+                                           session: session))
+            }, defaults: defaults, releaseDevice: {}, readAuthorization: { true })
+        }
+        let push = make()
+        await push.use(userId: "a")
+        await push.signingOut(accountDeleted: true)
+
+        // 起動し直す（まだ A でログインしたまま）
+        let relaunched = make()
+        await relaunched.use(userId: "a")
+        StubProtocol.requests = []
+        await relaunched.registerIfPossible()
+
+        XCTAssertFalse(relaunched.isEnabled, "退会した人の「受け取る」が残っている")
+        XCTAssertEqual(StubProtocol.requests, [], "退会した人の宛先を預け直している")
+    }
+
+    /// 🔴 **同じ人の `use` が重なっても、外す・預けるは1本ずつ。** 前面に戻ったのと
+    /// ログイン状態の変化が重なると、DELETE が2本出ていた
+    func testConcurrentUseForTheSameUserRunsOnce() async {
+        let defaults = registeredByA("push-concurrent")
+        // 「受け取らない」にしてある A（持ち主が A なので外し直す）
+        defaults.set(false, forKey: "photo-gallery-push-enabled.a")
+        let push = center(defaults)
+        StubProtocol.requests = []
+
+        async let one: Void = push.use(userId: "a")
+        async let two: Void = push.use(userId: "a")
+        _ = await (one, two)
+
+        XCTAssertEqual(StubProtocol.requests, ["DELETE /user/devices"], "重ねて外している")
+    }
+
     /// 🔴 **2つの後始末が続けて効く**（C と F1 の併合）。A の宛先が残ったまま
     /// 誰もログインしない間は端末ごと APNs から外し（`registeredOwner`）、
     /// そのあと B がログインしたらサーバーからも引き取って外す（`owner`）。

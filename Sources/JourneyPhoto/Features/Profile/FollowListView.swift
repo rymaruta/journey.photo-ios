@@ -195,7 +195,9 @@ struct FollowListView: View {
                     .frame(minWidth: 44, minHeight: 36)
                     .background(isFollowing ? Color.clear : WebTheme.accentBackground, in: Capsule())
                     .overlay(Capsule().strokeBorder(Color.white.opacity(isFollowing ? 0.28 : 0), lineWidth: 1))
-                    .contentShape(Capsule())
+                    // 見た目は 36pt、押せる高さは 44pt（`FollowPill` と同じ）
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
             }
             // 行の中のボタンは borderless にしないと、行のどこを押しても反応する
             .buttonStyle(.borderless)

@@ -137,7 +137,8 @@ struct DeleteAccountView: View {
                 return
             }
             // 端末の宛先（サーバーは `devices#` を消し済み。ここは端末側の後片付け）
-            await push.signingOut()
+            // 退会した人の「受け取る」も下ろす（Cognito の削除だけ落ちて起動し直しても預け直さない）
+            await push.signingOut(accountDeleted: true)
         }
         do {
             // 🔴 **Cognito の利用者も消す。** サーバーは消さないので、これが無いと

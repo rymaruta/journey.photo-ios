@@ -171,13 +171,17 @@ struct ProfileEditView: View {
                                 .padding(.horizontal, 12)
                                 .frame(minHeight: 36)
                                 .background(Color.black.opacity(0.55), in: Capsule())
+                                // 見た目は 36pt、押せる高さは 44pt（下の余白を 4pt 減らして位置は変えない）
+                                .padding(.vertical, 4)
+                                .contentShape(Rectangle())
                         }
                         // **行の中に押せるものが2つある。** 既定の形だと行全体が
                         // 1つのボタンになり、押した方と違う選択が開く（`ThemeColorField` と同じ手当て）
                         .buttonStyle(.borderless)
                         // **保存中・送信中は選ばせない**（保存と画像の送信を重ねない）
                         .disabled(isSaving || uploadingImage != nil)
-                        .padding(12)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                     }
                 PhotosPicker(selection: $avatarItem, matching: .images) {
                     RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: imageBust) })
