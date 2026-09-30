@@ -62,10 +62,12 @@ struct ZoomPan: Equatable {
         offset = Self.clampOffset(offset, scale: scale, container: container, content: content)
     }
 
-    /// 動かし終えた（拡大しているときだけ）
-    mutating func endDrag(_ drag: CGSize, container: CGSize, content: CGSize) {
-        guard isZoomed else { return }
-        offset = liveOffset(drag: drag, container: container, content: content)
+    /// 動かし終えた（拡大しているときだけ）。`scale` は**まだつまんでいる最中ならその倍率**
+    /// ——2本指を離すと、移動とつまむの `onEnded` はどちらが先に来るか決まっていない。移動が先に
+    /// 来たとき、つまむ前の狭い範囲で詰めると、見えていた位置より内側へ跳ねる
+    mutating func endDrag(_ drag: CGSize, scale live: Double? = nil, container: CGSize, content: CGSize) {
+        guard isZoomed || (live ?? 1) > 1 else { return }
+        offset = liveOffset(drag: drag, scale: live, container: container, content: content)
     }
 
     /// 等倍・中央へ

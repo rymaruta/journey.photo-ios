@@ -80,7 +80,9 @@ struct PhotoViewerView: View {
                             DragGesture(minimumDistance: 8)
                                 .updating($drag) { value, state, _ in state = value.translation }
                                 .onEnded { value in
-                                    zoom.endDrag(value.translation, container: container, content: content(for: offset))
+                                    // つまんでいる最中なら、その倍率で範囲を取る（離す順で跳ねない）
+                                    zoom.endDrag(value.translation, scale: zoom.liveScale(pinch: pinch),
+                                                 container: container, content: content(for: offset))
                                 },
                             including: zoom.isZoomed ? .all : .subviews
                         )

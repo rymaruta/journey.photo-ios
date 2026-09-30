@@ -85,6 +85,18 @@ final class ZoomPanTests: XCTestCase {
         XCTAssertEqual(whilePinching.width, 195, accuracy: 0.001)   // 2 倍の範囲
     }
 
+    /// 2本指を離したとき、移動の終わりがつまむの終わりより先に来ても、見えていた位置で決まる
+    func testDragEndingBeforePinchKeepsTheVisiblePosition() {
+        var z = ZoomPan()
+        z.endPinch(2, container: screen, content: landscape)
+        // 2倍 → 3倍へつまみ広げながら右へ寄せ、移動の onEnded が先に来た
+        z.endDrag(CGSize(width: 1_000, height: 0), scale: z.liveScale(pinch: 1.5), container: screen, content: landscape)
+        XCTAssertEqual(z.offset.width, 390, accuracy: 0.001)   // 3倍の範囲 (1170-390)/2
+        z.endPinch(1.5, container: screen, content: landscape)
+        XCTAssertEqual(z.scale, 3)
+        XCTAssertEqual(z.offset.width, 390, accuracy: 0.001)   // 跳ねない
+    }
+
     func testResetReturnsToOneTimesAndCenter() {
         var z = ZoomPan()
         z.endPinch(3, container: screen, content: landscape)
