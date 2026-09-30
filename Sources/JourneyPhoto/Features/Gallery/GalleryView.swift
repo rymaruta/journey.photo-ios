@@ -119,7 +119,15 @@ struct GalleryView: View {
                 // 待っている間に人が替わっていたら捨てる
                 guard auth.userId == userId else { return }
                 model.refreshFollowing(following, viewerId: userId, ticket: ticket)
+                // 今日のテーマの「参加済み」も取り直す（`.task(id:)` は人が替わらないと走らない）
+                await model.loadMyPhotos(environment.photos, viewerId: userId)
             }
+        }
+        // **下の「投稿」を閉じたら自分の写真を読み直す。** 今日のテーマの札から投稿しても、
+        // シートは `RootView` にあるので `.task(id:)` は走らず、札が「参加する」のまま残った
+        .onChange(of: tabRouter.postSheetsClosed) { _, _ in
+            guard let userId = auth.userId else { return }
+            Task { await model.loadMyPhotos(environment.photos, viewerId: userId) }
         }
         // **前面に戻ったら輪を読み直す。** 日をまたいで戻っても昨日の輪のまま、
         // フォローしている人の新しいストーリーも出なかった
