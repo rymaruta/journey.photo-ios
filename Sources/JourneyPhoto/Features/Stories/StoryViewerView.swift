@@ -1752,7 +1752,12 @@ struct StoryViewerView: View {
                 NavigationLink {
                     UserProfileView(userId: uid)
                 } label: {
+                    // 顔は 40pt、押せるのは 44pt 四方。外へ広げて同じだけ詰めるので、
+                    // 並び（退会した人の顔・名前の位置）も見た目も変わらない
                     replyAvatar(uid)
+                        .padding(2)
+                        .contentShape(Rectangle())
+                        .padding(-2)
                 }
                 .accessibilityLabel(L("\(item.displayName) のプロフィール", "\(item.displayName)'s profile"))
             } else if let uid = item.uid {
