@@ -130,7 +130,9 @@ final class PhotoDetailViewModel: ObservableObject {
         owner = try? await profiles.publicProfile(userId: userId)
     }
 
-    func load() async {
+    /// - Parameter likeSending: ホームのカードがこの1枚のいいねを送っている最中か
+    ///   （`LikeCountStore.sending`）。送っている間の読みは押す前の数・印なので書かない
+    func load(likeSending: Bool = false) async {
         let id = photoId
         let accepted = acceptedLikes[id, default: 0]
         let readAt = Date()
@@ -149,7 +151,8 @@ final class PhotoDetailViewModel: ObservableObject {
         // 🔴 **押した答えから間もない読みは、数も印も書かない。** ホームで押して 6 に
         // なった直後に開くと、読み取りは押す前の 5（外したなら押す前の「いいね済み」）を
         // 返すことがあり、出ていた 6 を 5 に戻していた（`LiveLikes.readSupersedes`）
-        let likeUntouched = accepted == acceptedLikes[id, default: 0]
+        let likeUntouched = !likeSending
+            && accepted == acceptedLikes[id, default: 0]
             && LiveLikes.readSupersedes(readAt: readAt, answeredAt: likeAnsweredAt)
         if likeUntouched {
             likes = loadedCount ?? likes

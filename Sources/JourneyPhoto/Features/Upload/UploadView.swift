@@ -53,7 +53,12 @@ struct UploadView: View {
         // 板 22: 左に ×、右に真鍮の「投稿する」（下の大きいボタンはやめる）
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button { dismiss() } label: {
+                Button {
+                    // 一部だけ上がった・曲だけ付かなかったまま閉じても、スポットの画面に
+                    // 上がったぶんを知らせる（全部上がった回は `didPostAll` で呼ぶので、ここは通らない）
+                    if model.postedToSpot > 0 { onPosted?(model.postedToSpot) }
+                    dismiss()
+                } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(WebTheme.foreground)

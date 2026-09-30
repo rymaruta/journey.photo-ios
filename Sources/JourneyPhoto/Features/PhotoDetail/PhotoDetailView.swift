@@ -166,8 +166,9 @@ struct PhotoDetailView: View {
         // **送った先の1枚でも読み直す**（鍵に今の1枚を入れる）
         .task(id: PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)) {
             model.setSignedIn(auth.userId != nil)
-            // 前の1枚の「ブロックしました」を持ち越さない
+            // 前の1枚の「ブロックしました」・保存の失敗を持ち越さない
             actionNotice = nil
+            actionError = nil
             // **数はホームのカードと同じ出どころ**（`LiveLikes.base`）。一覧の数
             // （`current.likes`）のままだと、ホームで押した直後に開くと古い数が出た
             let stored = likeCounts.entry(for: current.id)
@@ -175,7 +176,8 @@ struct PhotoDetailView: View {
                        initialLikes: LiveLikes.base(for: current, stored: stored),
                        liked: favorites.contains(current.id),
                        answeredAt: stored?.at)
-            await model.load()
+            // ホームのカードがまだ答えを待っている間の読みは、押す前の数・印
+            await model.load(likeSending: likeCounts.sending.contains(current.id))
         }
         .onChange(of: heroPage) { _, page in
             let group = heroGroup
@@ -830,8 +832,9 @@ struct PhotoDetailView: View {
     /// **押した1枚を先に覚える。** 送っている間に束の隣へ送ると、答えは
     /// 前の1枚のもの——今の1枚の控えに書かない
     private func toggleLikeHere() async {
-        // 送っている間は押しても何もしないので、知らせも消さない
-        guard !model.isLiking else { return }
+        // 送っている間は押しても何もしないので、知らせも消さない。
+        // ホームのカードが同じ1枚を送っている間も受けない（逆向きが並ぶ）
+        guard !model.isLiking, !likeCounts.sending.contains(current.id) else { return }
         clearNotices()
         guard acceptsReactions else {
             model.errorMessage = L("下書きにはいいねできません。公開すると付けられます",
@@ -865,6 +868,8 @@ struct PhotoDetailView: View {
                                 count: model.likes)
                 }
                 .buttonStyle(.plain)
+                // ホームのカードが同じ1枚の答えを待っている間は押させない
+                .disabled(likeCounts.sending.contains(current.id))
                 // 読み上げは「いいね、N」（印の名前と数字を連ねない）
                 .accessibilityLabel(L("いいね", "Like"))
                 .accessibilityValue(model.likes.map { "\($0)" } ?? "")
@@ -1003,7 +1008,7 @@ struct PhotoDetailView: View {
                     .font(.subheadline)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 11)
-                    .frame(minHeight: 42)
+                    .frame(minHeight: 44)
                     .background(Color.white.opacity(0.08), in: Capsule())
                     .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
                 Button {
@@ -1252,6 +1257,8 @@ struct PhotoDetailView: View {
             savedPhotos.set(id, saved: wasSaved, for: owner)
         } catch {
             savedPhotos.set(id, saved: wasSaved, for: owner)
+            // 待っている間に束の隣へ送っていたら、今の1枚に前の1枚の失敗を出さない
+            guard id == current.id else { return }
             // **黙らない**（いいね・フォローと同じ）。404 で保存が残っている回は
             // `SaveService.save` が成功として返すのでここには来ない。残る 404 は
             // 下書き（公開していない写真）——サーバーの「見つかりません」では分からない
