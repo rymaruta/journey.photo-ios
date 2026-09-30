@@ -16,8 +16,11 @@ open class AVPlayer {
     public private(set) var currentItem: AVPlayerItem? = AVPlayerItem()
     /// 本物と同じ形。ミュートの実体
     public var isMuted: Bool = false
-    /// 本物と同じ形（再生の速さ。止めている・詰まっている間は 0）
+    /// 本物と同じ形（再生の速さ）
     public var rate: Float = 0
+    /// 本物と同じ形（止めている・読み込みを待っている・鳴っている）
+    public enum TimeControlStatus: Int { case paused, waitingToPlayAtSpecifiedRate, playing }
+    public var timeControlStatus: TimeControlStatus = .paused
     public init(url: URL) {}
     public func play() {}
     public func pause() {}

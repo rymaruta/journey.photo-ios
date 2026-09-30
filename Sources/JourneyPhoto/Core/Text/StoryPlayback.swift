@@ -85,7 +85,10 @@ enum StoryPlayback {
         static func needsUpdate(from old: VideoProgress?, to new: VideoProgress) -> Bool {
             guard let old else { return true }
             if old.playing != new.playing { return true }
-            if old.duration != new.duration { return true }
+            // 長さが分からない（NaN）同士は同じとみなす——`NaN != NaN` は真なので、読み込み前は
+            // 毎回書き直していた
+            if old.hasDuration != new.hasDuration { return true }
+            if new.hasDuration, old.duration != new.duration { return true }
             return abs(old.seconds(at: new.at) - new.seconds) >= maxDrift
         }
     }

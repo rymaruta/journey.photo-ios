@@ -527,6 +527,8 @@ struct StoryViewerView: View {
                 },
                 restartToken: restartCount,
                 onVideoProgress: { [id = story.id] seconds, length, playing in
+                    // 前の1本の知らせが遅れて来ても、いまの1本に当てない（`onImageLayout` と同じ）
+                    guard visible.indices.contains(index), visible[index].id == id else { return }
                     let next = StoryPlayback.VideoProgress(seconds: seconds, duration: length,
                                                            at: Date(), playing: playing)
                     let old = videoProgress?.storyId == id ? videoProgress?.progress : nil
@@ -945,6 +947,8 @@ struct StoryViewerView: View {
             (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
                                                                 currentId: current?.id)
             restartCount += 1
+            // 動画の位置も捨てる（残すと 0 へ戻した動画のバーが、次の知らせまで元の位置で伸びる）
+            videoProgress = nil
             syncSong(restart: true)
         case .previous(let target):
             go(to: target)

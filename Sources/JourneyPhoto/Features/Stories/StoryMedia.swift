@@ -128,9 +128,10 @@ private struct StoryVideo: View {
                     ) { [weak player] time in
                         let length = player?.currentItem?.duration.seconds ?? 0
                         let seconds = time.seconds
-                        // 再生中かは**再生器の速さ**で見る（止めた・読み込みで詰まった間は 0）。
-                        // 見張りを付けた時点の `isPaused` を写すと、止めた・再開したあとも古いまま
-                        let playing = (player?.rate ?? 0) > 0
+                        // 再生中かは**再生器の状態**（`timeControlStatus`）で見る。見張りを付けた時点の
+                        // `isPaused` を写すと、止めた・再開したあとも古いまま。速さ（`rate`）は
+                        // 読み込みで詰まって待っている間も 1 のままなので、バーが先へ伸びて戻っていた
+                        let playing = player?.timeControlStatus == .playing
                         Task { @MainActor in report?(seconds, length, playing) }
                     }
                 }
@@ -160,7 +161,9 @@ private struct StoryVideo: View {
                 if paused { player?.pause() } else { player?.play() }
                 // 止めた・再開した瞬間にバーも止める・動かす（0.5 秒の知らせを待たない）
                 if let player {
-                    onProgress?(player.currentTime().seconds, player.currentItem?.duration.seconds ?? 0, !paused)
+                    // 再開は**実際に鳴り出してから**伸ばす（まだ読み込み中なら次の知らせで動く）
+                    onProgress?(player.currentTime().seconds, player.currentItem?.duration.seconds ?? 0,
+                                !paused && player.timeControlStatus == .playing)
                 }
             }
             .onChange(of: isMuted) { _, muted in

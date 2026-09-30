@@ -178,6 +178,17 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertTrue(StoryPlayback.VideoProgress.needsUpdate(from: old, to: known), "長さが替わったら書く")
     }
 
+    /// 🔴 読み込み前の長さは NaN。`NaN != NaN` で**毎回書き直していた**（ae5d821 のレビュー）
+    func testVideoProgressUnknownDurationIsStable() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let loading = StoryPlayback.VideoProgress(seconds: 0, duration: .nan, at: t0, playing: false)
+        let stillLoading = StoryPlayback.VideoProgress(seconds: 0, duration: .nan, at: t0.addingTimeInterval(0.5), playing: false)
+        XCTAssertFalse(StoryPlayback.VideoProgress.needsUpdate(from: loading, to: stillLoading), "分からない同士は書かない")
+        let loaded = StoryPlayback.VideoProgress(seconds: 0, duration: 10, at: t0.addingTimeInterval(0.5), playing: false)
+        XCTAssertTrue(StoryPlayback.VideoProgress.needsUpdate(from: loading, to: loaded), "長さが分かったら書く")
+        XCTAssertTrue(StoryPlayback.VideoProgress.needsUpdate(from: loaded, to: stillLoading), "分からなくなったら書く")
+    }
+
     // MARK: - 前後
 
     /// 最後は閉じる（最初に戻して回し続けない）。
