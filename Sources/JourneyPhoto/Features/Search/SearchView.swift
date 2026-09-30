@@ -255,8 +255,12 @@ struct SearchView: View {
             }
             .padding(.horizontal, 16)
         }
+        // 札の押せる余白（上下 4）の分だけ詰め、並びの見た目の間隔は前のまま
+        .padding(.vertical, -PillChip.tapSlack)
     }
 
+    /// 見た目の札は上下 11 ＋ 字（標準で約 42）、上下 4 の余白まで押せる＝**押せる範囲は 44 以上**
+    /// （`PillChip` と同じ形）
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -267,6 +271,9 @@ struct SearchView: View {
                                      : AnyShapeStyle(WebTheme.surface),
                             in: Capsule())
                 .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                .padding(.vertical, PillChip.tapSlack)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
