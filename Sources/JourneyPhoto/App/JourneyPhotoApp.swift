@@ -37,6 +37,7 @@ struct JourneyPhotoApp: App {
     /// SwiftUI だけでは受け取れないので、この1本だけ UIKit を繋ぐ
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var configurationError: String? = nil
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         JourneyPhotoApp.configureImageCache()
@@ -157,6 +158,14 @@ struct JourneyPhotoApp: App {
                 .environmentObject(push)
                 .environmentObject(toasts)
                 .task { await auth.restore() }
+                // **前面に戻るたびに通知の宛先を合わせ直す。** 圏外で「受け取らない」を
+                // 押して外せなかった回は、ログイン状態が変わるまでやり直されず、
+                // 止めたはずの通知が届き続けた（預け損ねも同じ）。確認中・ID が取れ
+                // なかっただけのログアウトでは触らない（下の `.task(id: auth.state)` と同じ）
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active, !auth.isResolving, !auth.isSignedOutUncertain else { return }
+                    Task { await push.use(userId: auth.userId) }
+                }
                 // **ログイン状態が変わるたびに読み直す。** `.task` のままだと
                 // 起動時に1回しか走らず、あとからログインした人には
                 // **未ログインのときの鍵で読んだ控え**が見えたままになる

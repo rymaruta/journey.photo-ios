@@ -364,6 +364,29 @@ final class PushTakeoverTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: ownerKey))
     }
 
+    /// 🔴 **圏外で「受け取らない」→ 前面に戻ったときの `use`（同じ人）で外し直す。**
+    /// やり直せたら「止められませんでした」を下げる（設定に残り続けた）
+    func testFailedDisableIsRetriedBySameUserAndClearsTheError() async {
+        let defaults = registeredByA("push-release-retry")
+        let push = center(defaults)
+        await push.use(userId: "a")
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        await push.disable()
+        XCTAssertNotNil(push.errorMessage)
+        StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
+        StubProtocol.requests = []
+
+        await push.use(userId: "a")
+
+        XCTAssertEqual(StubProtocol.requests, ["DELETE /user/devices"], "外し損ねをやり直していない")
+        XCTAssertNil(defaults.string(forKey: ownerKey))
+        XCTAssertNil(push.errorMessage, "外し直せたのに失敗の文言が残っている")
+
+        StubProtocol.requests = []
+        await push.use(userId: "a")
+        XCTAssertEqual(StubProtocol.requests, [], "外し終えたのに前面に戻るたびに流している")
+    }
+
     /// 🔴 **2つの後始末が続けて効く**（C と F1 の併合）。A の宛先が残ったまま
     /// 誰もログインしない間は端末ごと APNs から外し（`registeredOwner`）、
     /// そのあと B がログインしたらサーバーからも引き取って外す（`owner`）。

@@ -162,7 +162,11 @@ final class PushCenter: ObservableObject {
         defaults.removeObject(forKey: pendingUnregisterKey(for: userId))
     }
 
-    /// 起動時とログイン状態が変わるたびに呼ぶ。
+    /// 起動時・ログイン状態が変わるたび・**前面に戻るたび**に呼ぶ。
+    ///
+    /// 前面に戻るたびに呼ぶのは、外し損ね・預け損ね（圏外で「受け取らない」を
+    /// 押した回など）をやり直すため。ログイン状態が変わるまで待つと、その間
+    /// 止めたはずの通知が届き続ける。同じ人で何度呼んでもよい
     func use(userId: String?) async {
         let previous = self.userId
         self.userId = userId
@@ -219,6 +223,8 @@ final class PushCenter: ObservableObject {
             if (try? await service().unregister(token: token)) != nil {
                 defaults.removeObject(forKey: Self.pendingUnregisterKey(for: userId))
                 noteUnregistered(by: userId)
+                // やり直せたので、前の失敗の文言を下げる（設定に「止められませんでした」が残った）
+                if self.userId == userId { errorMessage = nil }
                 // 外している間に「受け取る」を押された（`enable` の登録を消している）
                 if isEnabled, self.userId == userId { await registerIfPossible() }
             }
@@ -227,6 +233,8 @@ final class PushCenter: ObservableObject {
         // **「受け取る」と言った人にだけ繋ぎ直す。** 端末の許可だけで
         // 判断すると、自分でオフにしたのに再起動で復活する
         guard userId != nil, isEnabled, isAuthorized else { return }
+        // 同じ人で預けてあるなら繋ぎ直さない（前面に戻るたびに登録を流さない）
+        if previous == userId, isRegistered { return }
         // トークンは復元や入れ直しで変わる。**預け直すのは APNs が
         // 返してきた新しいトークン**——手元の古い値を送ると、他人の端末の
         // 枠（`DEVICES_MAX`）を食ったまま 410 が出るまで残る
@@ -437,6 +445,8 @@ final class PushCenter: ObservableObject {
                 return
             }
             isRegistered = true
+            // 前面に戻ったときのやり直しで預けられた: 前の失敗の文言を下げる
+            errorMessage = nil
         } catch {
             // **呼んでいる間に人が替わっていたら触らない**（遅れて返った前の人の
             // 失敗で、次の人の宛先を外さない・次の人の画面に出さない）
