@@ -1431,7 +1431,7 @@ struct PhotoMapView: View {
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                Text(spotSubline(row))
+                Text(Self.spotSubline(row, loaded: model.loaded))
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
                     .lineLimit(1)
@@ -1452,11 +1452,14 @@ struct PhotoMapView: View {
     }
 
     /// 「約0.8km · 写真 3枚」。距離は**丸めた座標から測るので「約」を付ける**
-    /// （`NearbyPhotos.label`）。起点が無ければ距離を出さない
-    private func spotSubline(_ row: OfficialSpotList.Row) -> String {
+    /// （`NearbyPhotos.label`）。起点が無ければ距離を出さない。
+    /// 写真を読み込む前は枚数を省く（「写真 0枚」と言わない）
+    nonisolated static func spotSubline(_ row: OfficialSpotList.Row, loaded: Bool) -> String {
+        let distance = row.km.map { NearbyPhotos.label(km: $0) }
+        guard loaded else { return distance ?? "" }
         let photos = L("写真 \(row.photoCount)枚", PhotoMapViewModel.photoCountLabel(row.photoCount))
-        guard let km = row.km else { return photos }
-        return "\(NearbyPhotos.label(km: km)) · \(photos)"
+        guard let distance else { return photos }
+        return "\(distance) · \(photos)"
     }
 
     // MARK: - リスト（都道府県ごと）
