@@ -29,6 +29,13 @@ struct StoryVoteDraft: Codable, Equatable {
     /// （レビューの計算で y > 約0.75 から重なる）。既定の y（0.7）と同じ値
     static let maxY = 0.7
 
+    /// 投票の y を挟む（0.06〜`maxY`）。**描く・動かす・送るの3か所で同じもの**を使う
+    /// ——前の版で `maxY` より下に置いた下書きを戻したとき、動かす所だけで挟むと
+    /// 触った瞬間に跳び、触らずに送ると下の欄に重なる位置のまま送られた
+    static func clampY(_ y: Double) -> Double {
+        min(StoryTextItem.clampPosition(y), maxY)
+    }
+
     /// 新しく置く投票。**問いと2択は Web と同じ既定**（`STORY_VOTE_DEFAULT`）
     static func new() -> StoryVoteDraft {
         StoryVoteDraft(question: L("この景色、好き？", "Love this view?"),
@@ -50,7 +57,7 @@ struct StoryVoteDraft: Codable, Equatable {
 
     /// 閲覧画面と同じ描き方をするための形（`StoryTextLayer` がそのまま描く）
     var asItem: StoryTextItem {
-        .vote(.init(place: .init(x: StoryTextItem.clampPosition(x), y: StoryTextItem.clampPosition(y),
+        .vote(.init(place: .init(x: StoryTextItem.clampPosition(x), y: Self.clampY(y),
                                  size: StoryTextItem.clampSize(size), rotate: 0),
                     question: question.trimmingCharacters(in: .whitespacesAndNewlines),
                     options: [optionA, optionB].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }))
@@ -64,7 +71,8 @@ struct StoryVoteDraft: Codable, Equatable {
         guard box.width > 0, box.height > 0 else { return self }
         var next = self
         next.x = StoryTextItem.clampPosition(x + Double(translation.width / box.width))
-        next.y = StoryTextItem.clampPosition(y + Double(translation.height / box.height))
+        // 描いている位置（`clampY`）から動かす——前の版の下書きで跳ばないように
+        next.y = StoryTextItem.clampPosition(Self.clampY(y) + Double(translation.height / box.height))
         if let visible {
             next.x = min(max(next.x, visible.x.lowerBound), visible.x.upperBound)
             next.y = min(max(next.y, visible.y.lowerBound), visible.y.upperBound)
@@ -102,7 +110,7 @@ struct StoryPostText: Codable, Equatable {
 
     /// 投票
     static func vote(_ v: StoryVoteDraft) -> StoryPostText {
-        StoryPostText(kind: "vote", x: StoryTextItem.clampPosition(v.x), y: StoryTextItem.clampPosition(v.y),
+        StoryPostText(kind: "vote", x: StoryTextItem.clampPosition(v.x), y: StoryVoteDraft.clampY(v.y),
                       size: StoryTextItem.clampSize(v.size),
                       question: v.question.trimmingCharacters(in: .whitespacesAndNewlines),
                       options: [v.optionA, v.optionB].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
@@ -110,9 +118,10 @@ struct StoryPostText: Codable, Equatable {
 
     /// ひとことを文字として送る（投票を置いた1本だけ）。
     ///
-    /// **`texts` を送ると、サーバーは `caption` を文字の並びから作り直す**（`stories.ts`）
-    /// ——投票だけを送ると、打ったひとことが消える。見る画面（アプリ・Web）も `texts` が
-    /// あればひとことを出さないので、**ひとことも写真の上の文字として送る**。
+    /// **本番のサーバーが photo-gallery #257 より前の間は、この形で送る。** 古いサーバーは
+    /// `texts` があると `caption` を文字の並びから作り直し、投票だけを送るとひとことが消える。
+    /// #257 のあとは「文字の項目が無ければ送った `caption` を使う」ので、投票だけの `texts`
+    /// ＋`caption` に切り替えられる（見る画面は、アプリ・Web とも文字の項目が無ければ下の欄に出す）。
     /// 置き場所は写真の下の方の真ん中、明朝・白・下地なし（アプリのひとことの見た目に近い）
     ///
     /// 長さは**サーバーと同じ UTF-16 で** 200 に収める（`storyText.ts` の `STORY_TEXT_LEN_MAX`

@@ -184,8 +184,9 @@ struct StoryService {
             /// 返信を受けるか。**切ったときだけ `false` を送る**（Web の `StoriesBar` と同じ）
             /// ——サーバーは `false` のときだけ返信と ♡ を断る（`storyAllowsReplies`）
             let allowReplies: Bool?
-            /// 写真の上にデータで置くもの（投票など）。**送ると、サーバーは `caption` を
-            /// この中の文字から作り直す**（`StoryPostText.caption` の注釈）
+            /// 写真の上にデータで置くもの（投票など）。**文字の項目があると、サーバーは `caption` を
+            /// この中の文字から作り直す**（photo-gallery #257 より前のサーバーは、文字が無くても
+            /// 作り直していた。`StoryPostText.caption` の注釈）
             let texts: [StoryPostText]?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }

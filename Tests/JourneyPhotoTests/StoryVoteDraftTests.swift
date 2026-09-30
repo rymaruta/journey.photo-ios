@@ -67,6 +67,17 @@ final class StoryVoteDraftTests: XCTestCase {
         XCTAssertEqual(up.y, 0.6, accuracy: 1e-9)
     }
 
+    /// 前の版で `maxY` より下に置いた下書き: 描く位置も送る位置も `maxY`。少し動かしても跳ばない
+    func testOldDraftBelowTheLimitIsDrawnAndSentAtTheLimit() {
+        var old = StoryVoteDraft.new()
+        old.y = 0.9
+        guard case .vote(let drawn) = old.asItem else { return XCTFail("投票として描いていない") }
+        XCTAssertEqual(drawn.place.y, 0.7, accuracy: 1e-9)
+        XCTAssertEqual(StoryPostText.vote(old).y, 0.7, accuracy: 1e-9)
+        let nudged = old.moved(by: CGSize(width: 0, height: -8), in: CGSize(width: 400, height: 800))
+        XCTAssertEqual(nudged.y, 0.69, accuracy: 1e-9, "描いている位置から動いていない（跳んでいる）")
+    }
+
     /// 🔴 **投票を送る1本は、ひとことも文字として送る**——`texts` を送るとサーバーは `caption` を
     /// 文字の並びから作り直すので、投票だけだと打ったひとことが消える
     func testPostTextsKeepTheCaption() throws {
