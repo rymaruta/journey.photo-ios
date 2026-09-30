@@ -32,12 +32,12 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertEqual(StoryTextEditing.finish(list, id: UUID()).map(\.id), list.map(\.id))
     }
 
-    /// 打ち直せるのは自由な文字・撮影地・タグ・曲。時刻・日付・スタンプは開かない
+    /// 押すと打つ画面を開くのはスタンプ以外（時刻・日付は書体・色・大きさを直す）
     func testWhichOverlaysOpenTyping() {
         let opens = TextOverlay.Kind.allCases.filter {
             StoryTextEditing.opensTyping(TextOverlay(text: "x", kind: $0))
         }
-        XCTAssertEqual(Set(opens), [.text, .place, .song, .hashtag])
+        XCTAssertEqual(Set(opens), [.text, .place, .song, .hashtag, .time, .date])
     }
 
     /// 見た目は白 → 黒 → 帯 → 縁取り → 白と回る。**色は `withStyle` の寄せ方に従う**
@@ -303,21 +303,16 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertNil(StoryTextEditing.overlay(at: CGPoint(x: 260, y: 140), in: [tilted], slop: 0))
     }
 
-    /// 2本指の操作の相手: もう片方の相手 → はっきり運んでいた札 → 指の間の札 → 選んだ札 → 写真
+    /// 2本指の操作の相手: もう片方の相手 → はっきり運んでいた札 → 指の間の札 → 写真
     func testGestureTargetOrder() {
-        let under = UUID(), carried = UUID(), selected = UUID(), other = UUID()
-        XCTAssertEqual(StoryTextEditing.gestureTarget(other: .photo, under: { under }, carried: carried, selected: selected), .photo)
-        XCTAssertEqual(StoryTextEditing.gestureTarget(other: .overlay(other), under: { under }, carried: carried,
-                                                      selected: selected), .overlay(other))
+        let under = UUID(), carried = UUID(), other = UUID()
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: .photo, under: { under }, carried: carried), .photo)
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: .overlay(other), under: { under }, carried: carried),
+                       .overlay(other))
         // はっきり運んでいた札が、指の間の札より先（小さな札を運んで回すと指の間が外れる）
-        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { under }, carried: carried, selected: selected),
-                       .overlay(carried))
-        // 運んでいなければ指の間の札が、選んだ札より先
-        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { under }, carried: nil, selected: selected),
-                       .overlay(under))
-        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { nil }, carried: nil, selected: selected),
-                       .overlay(selected))
-        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { nil }, carried: nil, selected: nil), .photo)
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { under }, carried: carried), .overlay(carried))
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { under }, carried: nil), .overlay(under))
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, under: { nil }, carried: nil), .photo)
     }
 
     /// 「はっきり運んでいた」は 24pt 以上（指を置いただけ・少し触れただけの札に2本指を取られない）

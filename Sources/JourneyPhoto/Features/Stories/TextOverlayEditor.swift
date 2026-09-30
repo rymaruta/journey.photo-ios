@@ -9,7 +9,8 @@ import UIKit
 /// 大きさは**画像に対する割合**のままなので、焼き込み（`TextOverlayRenderer`）と
 /// 同じところに出る。閲覧画面も埋めて出すので、見えている範囲もほぼ同じになる。
 ///
-/// **置いた場所は指で決める。** 押すと選び（破線で囲む）、指で動かす。
+/// **置いた場所は指で決める。** 指で動かし、2本指で回す・つまむ（指の下の札に効く）。
+/// 押すと打ち直す（`onTap`）。下のゴミ箱へ運ぶと消える。
 /// 動かした先は見えている範囲の中へ寄せる（はみ出した端では掴み直せない）
 struct StoryCanvas: View {
 
@@ -17,17 +18,14 @@ struct StoryCanvas: View {
     /// 写真の本当の大きさ（画素）。分からないとき（nil）は枠いっぱいを写真とみなす
     let imageSize: CGSize?
     @Binding var overlays: [TextOverlay]
-    /// 写真の合わせ方（拡大・位置・回し）。**札を選んでいないとき**、2本指の操作と
-    /// 写真の上で動かす操作は写真に効く（札を選んでいれば札に効く）
+    /// 写真の合わせ方（拡大・位置・回し）。写真の上で動かす操作と、指の間に札の無い2本指の操作は
+    /// 写真に効く（`StoryTextEditing.gestureTarget`）
     @Binding var framing: PhotoFraming
-    /// 選んでいる札（破線で囲む）。nil なら選んでいない
-    var selectedId: UUID?
     /// 描かない札（写真の上で直接打っている札。打つ画面の真ん中に出ている）
     var hiddenId: UUID? = nil
     /// 札を押した
     var onTap: (TextOverlay) -> Void = { _ in }
-    /// 写真（札の無い所）を1回押した。**選んでいる札を外す**口（外さないと、札を選んだ
-    /// あとは写真を動かせないままだった・db4903c のレビュー）
+    /// 写真（札の無い所）を1回押した（呼ぶ側は投票の欄を閉じる）
     var onTapPhoto: () -> Void = {}
     /// 札をゴミ箱へ運んで離した（VoiceOver の「消す」も同じ口）
     var onDelete: (UUID) -> Void = { _ in }
@@ -90,7 +88,8 @@ struct StoryCanvas: View {
     @State private var trashHot = false
     /// この回、指がいったんゴミ箱の外にいたか（外にいたことが無ければ離しても消さない）
     @State private var trashArmed = false
-    /// 2本指が入ったとき、はっきり運んでいた札（運んだ分を入れた札）。2本指の相手の候補
+    /// 2本指が入ったとき、はっきり運んでいた札（運んだ分を入れた札）。2本指の相手の候補。
+    /// 運ぶ指を離すまで覚える（2本目の指を置き直しても同じ札に効く）
     @State private var carriedId: UUID?
     /// 真ん中の縦・横の目安に吸い付いているか（線を出す）と、吸い付けたぶんのずれ
     @State private var snapVertical = false
@@ -126,15 +125,14 @@ struct StoryCanvas: View {
                             .updating($photoDragging) { _, state, _ in state = true }
                             .onChanged { value in
                                 if !photoDragStarted { photoDragStarted = true; photoDragSpoiled = false }
-                                // **札を選んでいる間は写真を動かさない**（札の押せる範囲の外を掴んで
-                                // 写真が動いた）。2本指の操作が入った回も、この回はもう動かさない
+                                // 2本指の操作が入った回は、この回はもう動かさない
                                 // ——片方の指を離したあとに、つまんだ間の移動がまとめて入って跳んだ
-                                if selectedId != nil || twoFingerActive { photoDragSpoiled = true }
+                                if twoFingerActive { photoDragSpoiled = true }
                                 photoDrag = photoDragSpoiled ? .zero : value.translation
                             }
                             .onEnded { value in
                                 // 入れるのは離したときの移動量から（片付けの順に頼らない）
-                                if !photoDragSpoiled && selectedId == nil && !twoFingerActive {
+                                if !photoDragSpoiled && !twoFingerActive {
                                     framing = framing.moved(by: value.translation, in: photo.size)
                                 }
                                 photoDrag = .zero
@@ -196,22 +194,22 @@ struct StoryCanvas: View {
             .coordinateSpace(.named(Self.space))
             // ゴミ箱に入った・出たときに震わせる（離せば消えると指で分かる）
             .sensoryFeedback(.impact(weight: .medium), trigger: trashHot)
-            // 2本指で**選んでいる札を**回す（板 24b「指で動かす・2本指で回す」）。
-            // 札そのものに付けると、2本とも小さな札の中に置かないと効かない
+            // 2本指で札か写真を回す（相手は `StoryTextEditing.gestureTarget`）。
+            // 札そのものに付けると、2本とも小さな札の中に置かないと効かないので枠全体に付ける
             .simultaneousGesture(
                 RotateGesture()
                     .updating($twisting) { _, state, _ in state = true }
                     .onChanged { value in
-                        // **回し始めた札（札を選んでいなければ指の下の札、それも無ければ写真）に固定する**
-                        // （途中で選ぶ札が替わっても移さない）。以前は選んだ札にしか効かず、文字を押すと
-                        // 打つ画面が開くようになってから、文字を回せなくなっていた（4ffb74f の制限）
+                        // **回し始めに相手を決めて、終わるまで変えない**（順は `StoryTextEditing.gestureTarget`）。
+                        // 以前は選んだ札にしか効かず、文字を押すと打つ画面が開くようになってから、
+                        // 文字を回せなくなっていた（4ffb74f の制限）
                         if rotateId == nil && !twistsPhoto {
                             let other: StoryTextEditing.GestureTarget? = scaleId.map { .overlay($0) }
                                 ?? (pinchesPhoto ? .photo : nil)
                             absorbDrag(photo: photo, canvas: geometry.size)
                             switch StoryTextEditing.gestureTarget(other: other,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) },
-                                                                  carried: carriedId, selected: selectedId) {
+                                                                  carried: carriedId) {
                             case .overlay(let id):
                                 rotateId = id
                             case .photo:
@@ -227,20 +225,20 @@ struct StoryCanvas: View {
                         commitRotation()
                     }
             )
-            // つまんで**選んでいる札の**大きさを変える（回すのと同じ理由で枠全体に付ける）。
+            // つまんで札か写真の大きさを変える（回すのと同じ理由で枠全体に付ける）。
             // 幅はスライダーと同じ（`TextOverlay.scaled`）
             .simultaneousGesture(
                 MagnifyGesture()
                     .updating($pinching) { _, state, _ in state = true }
                     .onChanged { value in
-                        // 回すのと同じ決め方（選んだ札 → 指の下の札 → 写真）
+                        // 回すのと同じ決め方（`StoryTextEditing.gestureTarget`）
                         if scaleId == nil && !pinchesPhoto {
                             let other: StoryTextEditing.GestureTarget? = rotateId.map { .overlay($0) }
                                 ?? (twistsPhoto ? .photo : nil)
                             absorbDrag(photo: photo, canvas: geometry.size)
                             switch StoryTextEditing.gestureTarget(other: other,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) },
-                                                                  carried: carriedId, selected: selectedId) {
+                                                                  carried: carriedId) {
                             case .overlay(let id):
                                 scaleId = id
                             case .photo:
@@ -430,19 +428,11 @@ struct StoryCanvas: View {
             .padding(.vertical, overlay.style == .banner ? CGFloat(fontSize * 0.175) : 0)
             .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
             .shadow(radius: overlay.style == .light ? 6 : 0)
-            // 選んでいる札は破線で囲む（板 24b）
-            .overlay {
-                if selectedId == overlay.id {
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.white.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                        .padding(-8)
-                }
-            }
             // 小さい文字でも指で掴めるように、**押せる範囲だけ**広げる
             // （帯の見た目は広げない＝`background` より後ろに置く）
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
-            // 回しは中心の周り（焼き込みも中心の周り）。**破線と押せる範囲より後ろ**に
+            // 回しは中心の周り（焼き込みも中心の周り）。**押せる範囲より後ろ**に
             // 置いて一緒に回す——前に置くと、縦に回した文字の端を押しても掴めない
             .rotationEffect(.radians(rotation))
             .position(x: center.x + (moving ? dragOffset.width : 0),
@@ -590,151 +580,6 @@ struct StoryCanvas: View {
         overlays[index] = overlays[index]
             .moved(by: translation, in: photo.size)
             .clamped(toVisible: fullPhoto, canvas: full)
-    }
-}
-
-/// 文字と札の操作欄（板 24b の下の面）。選んでいる札の文字・見た目・大きさ・消す
-struct OverlayPanel: View {
-
-    @Binding var overlay: TextOverlay
-    var onDelete: () -> Void
-    /// 文字の欄を打っているか。**改行できる欄は Return で閉じない**ので、閉じる口を出す
-    @FocusState private var fieldFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // **端末から採った札は直させない**（時刻・日付）。直せると「いつの話か」が嘘になる
-            if overlay.kind.isEditable {
-                // **自由な文字は改行できる**（`TextOverlay.cleaned`）。札は1行
-                HStack(spacing: 8) {
-                    TextField(L("文字", "Text"), text: Binding(
-                        get: { overlay.text },
-                        set: { overlay.text = TextOverlay.cleaned($0, kind: overlay.kind) }
-                    ), axis: overlay.kind.allowsNewlines ? .vertical : .horizontal)
-                    .focused($fieldFocused)
-                    .lineLimit(1...3)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .frame(minHeight: 44)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-                    // 改行できる欄は Return が改行になる。**キーボードを閉じる口**（f48800f のレビュー）
-                    if fieldFocused {
-                        Button { fieldFocused = false } label: {
-                            Image(systemName: "keyboard.chevron.compact.down")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                // `.plain` は描いた所しか押せない。枠の 44 全体を押せる所にする
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(L("キーボードを閉じる", "Hide keyboard"))
-                    }
-                }
-            } else {
-                // 時刻・日付は端末から採った値（直せない）。何の札かだけ見せる
-                Text(overlay.displayText)
-                    .font(.system(size: 15))
-                    .foregroundStyle(WebTheme.muted)
-                    .frame(minHeight: 44)
-            }
-
-            // 書体（8種）。**横に流す**——1行に収まらない。スタンプには出さない（絵文字に効かない）
-            if overlay.kind.hasTypography {
-                HStack(spacing: 8) {
-                    Text(L("書体", "Font"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(WebTheme.faint)
-                        .frame(width: 36, alignment: .leading)
-                    OverlayFaceRow(overlay: $overlay)
-                }
-            }
-
-            // 色（12色・`TextOverlay.Ink`）。スタンプには出さない
-            if overlay.kind.hasTypography {
-                HStack(spacing: 10) {
-                    Text(L("色", "Color"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(WebTheme.faint)
-                        .frame(width: 36, alignment: .leading)
-                    OverlayInkRow(overlay: $overlay)
-                }
-            }
-
-            HStack(spacing: 8) {
-                // **場所と曲は帯で固定**（読めない札を作らせない）ので見た目の選択を出さない。
-                // 4つ並ぶと英語では「消す」と合わせて幅に収まらないので横に流す
-                if overlay.kind == .text {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(TextOverlay.Style.allCases) { style in
-                                OverlayChip(title: style.label, selected: overlay.style == style) {
-                                    // 色の寄せ方は `TextOverlay.withStyle`（読めない組だけ直す）
-                                    overlay = overlay.withStyle(style)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // 見た目の列が無いときだけ「消す」を右へ寄せる。列と並べると
-                    // 残りの幅を等分し、列が半分に押し込まれる
-                    Spacer(minLength: 0)
-                }
-                Button(action: onDelete) {
-                    Label(L("消す", "Delete"), systemImage: "trash")
-                        .font(.system(size: 13))
-                        .foregroundStyle(WebTheme.danger)
-                        // 押せる所は 44（CLAUDE.md の最小）。地の無い文字なので見た目は変わらない
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .padding(.horizontal, 12)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            // 大きさ。**幅は `TextOverlay` が決める**（読めない／覆う を防ぐ）。
-            // 自由な文字は頭に揃え（左・中央・右）を置く（改行した行の寄せ方）
-            HStack(spacing: 10) {
-                if overlay.kind.allowsNewlines {
-                    HStack(spacing: 0) {
-                        ForEach(TextOverlay.Align.allCases) { align in
-                            Button {
-                                overlay.align = align
-                            } label: {
-                                // 選んでいるものは真鍮に**薄い地**も敷く（色だけで見分けさせない）
-                                Image(systemName: align.symbol)
-                                    .font(.system(size: 15, weight: overlay.align == align ? .semibold : .regular))
-                                    .foregroundStyle(overlay.align == align ? WebTheme.accent : Color.white.opacity(0.72))
-                                    .frame(width: 36, height: 36)
-                                    .background(Color.white.opacity(overlay.align == align ? 0.12 : 0), in: Circle())
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(align.label)
-                            .accessibilityAddTraits(overlay.align == align ? .isSelected : [])
-                        }
-                    }
-                }
-                Text(L("小", "S"))
-                Slider(value: Binding(
-                    get: { overlay.size },
-                    set: { overlay.size = TextOverlay.clampSize($0) }
-                ), in: TextOverlay.minSize...TextOverlay.maxSize)
-                .tint(.white)
-                Text(L("大", "L"))
-            }
-            .font(.system(size: 12))
-            .foregroundStyle(WebTheme.muted2)
-        }
-        .padding(12)
-        .background(Color(red: 12 / 255.0, green: 12 / 255.0, blue: 13 / 255.0).opacity(0.92))
-        .overlay(alignment: .top) {
-            Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
-        }
     }
 }
 

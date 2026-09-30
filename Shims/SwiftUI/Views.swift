@@ -147,6 +147,9 @@ public struct GridItem {
 }
 public struct LazyVGrid: View {
     public init<C: View>(columns: [GridItem], spacing: Double? = nil, @ViewBuilder content: () -> C) {}
+    /// 本物と同じく揃えを受ける
+    public init<C: View>(columns: [GridItem], alignment: HorizontalAlignment, spacing: Double? = nil,
+                         @ViewBuilder content: () -> C) {}
     public var body: Never { fatalError("模型") }
 }
 

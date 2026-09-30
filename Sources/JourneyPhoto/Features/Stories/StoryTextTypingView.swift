@@ -245,7 +245,23 @@ struct StoryTextTypingView: View {
         .shadow(radius: overlay.style == .light ? 6 : 0)
     }
 
+    /// 打つ欄。**時刻・日付は直せない**（端末から採った値）ので、同じ見た目の文字を出し、
+    /// 書体・色・大きさだけを直す（キーボードは出ない）
+    @ViewBuilder
     private func input(fontSize: Double) -> some View {
+        if overlay.kind.isEditable {
+            editableInput(fontSize: fontSize)
+        } else {
+            Self.edged(Text(overlay.text)
+                .font(StoryCanvas.font(overlay.face, size: fontSize))
+                .foregroundStyle(StoryCanvas.color(hex: overlay.drawnHex)),
+                       style: overlay.style, fontSize: fontSize)
+                .fixedSize()
+                .accessibilityLabel(overlay.displayText)
+        }
+    }
+
+    private func editableInput(fontSize: Double) -> some View {
         let input = TextField(L("文字を入力", "Type something"), text: Binding(
             get: { overlay.text },
             set: { overlay.text = TextOverlay.cleaned($0, kind: overlay.kind) }

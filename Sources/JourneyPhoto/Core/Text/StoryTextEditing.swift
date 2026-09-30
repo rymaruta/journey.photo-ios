@@ -20,9 +20,11 @@ enum StoryTextEditing {
         return TextOverlay(text: "", x: 0.5, y: newTextY, kind: .text, face: .mincho)
     }
 
-    /// 押したときに打つ画面を開く札か（自由な文字・撮影地・タグ・曲。時刻・日付・スタンプは開かない）
+    /// 押したときに打つ画面を開く札か。**スタンプ以外は開く**——時刻・日付は文字を直せないが、
+    /// 書体・色・大きさは打つ画面で直す（以前の下の操作欄の役目。「文字と札」モードと一緒に外した）。
+    /// スタンプは絵文字なので直すものが無い（つまむ・回す・ゴミ箱で扱う）
     static func opensTyping(_ overlay: TextOverlay) -> Bool {
-        overlay.kind.isEditable
+        overlay.kind.hasTypography
     }
 
     /// 打ち終えた。**空になった札は取り除く**（新しく足した札も、打ち直して消した札も）
@@ -212,13 +214,12 @@ enum StoryTextEditing {
     /// 2本指の操作の相手を決める。順は: もう片方の操作の相手（回すとつまむは同じ相手に・認識の時刻の
     /// ずれで札は大きく写真は回った）→ **はっきり運んでいた札**（`carried`・24pt 以上。指を置いただけ・
     /// 少し触れただけの札は入らないので、写真を回す指が別の札に触れても取られない・1c00a67 のレビュー）
-    /// → 2本の指の間の札 → 選んだ札 → 写真。
+    /// → 2本の指の間の札 → 写真。
     /// 運んでいた札を指の間より後にすると、小さな札を運んで回すと指の間が外れ、近くの別の札が回った
-    /// （c2554fa のレビュー）
-    static func gestureTarget(other: GestureTarget?, under: () -> UUID?, carried: UUID?,
-                              selected: UUID?) -> GestureTarget {
+    /// （c2554fa のレビュー）。「選んだ札」は、札を選ぶ「文字と札」モードを外したので無い
+    static func gestureTarget(other: GestureTarget?, under: () -> UUID?, carried: UUID?) -> GestureTarget {
         if let other { return other }
-        if let id = carried ?? under() ?? selected { return .overlay(id) }
+        if let id = carried ?? under() { return .overlay(id) }
         return .photo
     }
 
