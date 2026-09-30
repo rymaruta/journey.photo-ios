@@ -39,7 +39,7 @@ struct ModerationService {
         }
     }
 
-    /// 補足の上限。長い文章を溜めるところではない（サーバーも500で切る・`reports.ts` の
+    /// 補足の上限。長い文章を溜めるところではない（サーバーも500で切る・`report.ts` の
     /// `REPORT_NOTE_MAX`。数え方は UTF-16 の単位——`PostLimits.length`）。
     /// **欄で止める**（`ReportSheet`）。ここで切るのは欄を通らずに来たときの支えだけ
     static let reportNoteMax = 500

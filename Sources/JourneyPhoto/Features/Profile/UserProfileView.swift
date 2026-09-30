@@ -585,6 +585,9 @@ final class UserProfileViewModel: ObservableObject {
         // 控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let owner = store.owner
         let wasFollowing = isFollowing
+        // 押した時点の人と読み込みの回。「1だけ引く」はこの2つが変わっていないときだけ
+        let viewer = lastViewerId
+        let seq = loadSeq
         do {
             try await environment.moderation.block(userId: userId)
             blockWrites += 1
@@ -603,14 +606,16 @@ final class UserProfileViewModel: ObservableObject {
                           "Blocked. You can undo this in Settings."))
             // 🔴 **フォロー数を読み直す。** サーバーはブロックでフォローを両方向とも外す
             // （`block.ts`）ので、フォロワー数・フォロー中の数がブロック前のままだった。
-            // 読めなければ、分かっているぶん（自分が外れた1人）だけ引く
+            // 読めなければ、分かっているぶん（自分が外れた1人）だけ引く（間に読み込みが入っていなければ）
             let writes = followWrites
             let stats = try? await environment.social.followStats(userId: userId)
             guard writes == followWrites else { return }
             if let stats {
                 followers = stats.followers
                 following = stats.following
-            } else if wasFollowing {
+            } else if wasFollowing, lastViewerId == viewer, loadSeq == seq {
+                // 間に読み込みが入った回は引かない——その読み込みの数がもうブロック後の数なら、
+                // 二重に引く（見ている人が替わった回も、前の人のフォローで引かない）
                 followers = max(0, followers - 1)
             }
         } catch {

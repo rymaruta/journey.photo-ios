@@ -240,6 +240,49 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.following, 1, "ブロック前のフォロー中の数のまま")
     }
 
+    /// 🔴 **ブロックの後の数が読めなかったとき、間に読み込みが入っていたら「1だけ引く」をしない。**
+    /// 間の読み込みの数がもうブロック後の数なら、二重に引いていた
+    func testProfileBlockDoesNotSubtractAfterAnInterveningLoad() async {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":3,"following":2}"#)
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":["u1"]}"#)
+        StubProtocol.respond(path: "/users/u1/block", status: 200, body: #"{"blocked":true}"#)
+        let gate = Gate(holds: 1)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api(gates: PathGates(["POST /users/u1/block": gate])))
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "me")
+        XCTAssertTrue(model.isFollowing, "前提: フォロー中と読めていない")
+        XCTAssertEqual(model.followers, 3)
+
+        // ブロックを送っている途中で読み込みが入り、ブロック後の数（2）を読む
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let blocking = Task { await model.block(userId: "u1", environment: env, store: store, toasts: ToastCenter()) }
+        await gate.untilWaiting()
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":2,"following":1}"#)
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        await model.load(userId: "u1", environment: env, viewerId: "me")
+        XCTAssertEqual(model.followers, 2)
+
+        // ブロックが通った後の読み直しは失敗する
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/users/u1/block", status: 200, body: #"{"blocked":true}"#)
+        StubProtocol.respond(path: "/users/u1/follow", status: 500, body: #"{"error":"x"}"#)
+        await gate.open()
+        await blocking.value
+        XCTAssertNil(model.actionMessage)
+        XCTAssertEqual(model.followers, 2, "間の読み込みで読めたブロック後の数から、さらに1を引いた")
+    }
+
     /// 🔴 **ストーリーの輪: 先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない。**
     /// 人が替わった直後は読み直しが2本同時に走り、前の人のブロックの集合で絞った先の回が
     /// 後から着くと、次の人がブロックした人の輪が並んだままになっていた

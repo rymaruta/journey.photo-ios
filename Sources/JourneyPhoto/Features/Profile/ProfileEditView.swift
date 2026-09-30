@@ -67,7 +67,7 @@ struct ProfileEditView: View {
             Section {
                 labeled(L("表示名", "Display name")) {
                     TextField("", text: $displayName)
-                        .onChange(of: displayName, limitLength($displayName, to: PostLimits.Profile.displayName))
+                        .onChange(of: displayName, limitLength($displayName, to: PostLimits.Profile.displayName, loaded: \.displayName))
                 }
                 labeled(L("ユーザー名（半角英数）", "Username (letters and numbers)")) {
                     TextField("", text: $username)
@@ -79,19 +79,19 @@ struct ProfileEditView: View {
                     // （statusText）があり、どちらに書くのか紛れる
                     TextField("", text: $bio, axis: .vertical)
                         .lineLimit(2...6)
-                        .onChange(of: bio, limitLength($bio, to: PostLimits.Profile.bio))
+                        .onChange(of: bio, limitLength($bio, to: PostLimits.Profile.bio, loaded: \.bio))
                 }
                 // 板は居住地と Instagram を横に2つ並べる
                 HStack(alignment: .top, spacing: 10) {
                     labeled(L("居住地", "Where you're based")) {
                         TextField("", text: $homeLocation)
-                            .onChange(of: homeLocation, limitLength($homeLocation, to: PostLimits.Profile.homeLocation))
+                            .onChange(of: homeLocation, limitLength($homeLocation, to: PostLimits.Profile.homeLocation, loaded: \.homeLocation))
                     }
                     labeled(L("Instagram（@なし）", "Instagram (without @)")) {
                         TextField("", text: $instagram)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .onChange(of: instagram, limitLength($instagram, to: PostLimits.Profile.instagram))
+                            .onChange(of: instagram, limitLength($instagram, to: PostLimits.Profile.instagram, loaded: \.instagram))
                     }
                 }
             }
@@ -103,14 +103,14 @@ struct ProfileEditView: View {
             Section(L("そのほか", "More")) {
                 labeled(L("ひとこと", "Status")) {
                     TextField("", text: $statusText)
-                        .onChange(of: statusText, limitLength($statusText, to: PostLimits.Profile.statusText))
+                        .onChange(of: statusText, limitLength($statusText, to: PostLimits.Profile.statusText, loaded: \.statusText))
                 }
                 ThemeColorField(themeColor: $themeColor)
                 labeled(L("ウェブサイト", "Website")) {
                     TextField("", text: $website)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
-                        .onChange(of: website, limitLength($website, to: PostLimits.Profile.website))
+                        .onChange(of: website, limitLength($website, to: PostLimits.Profile.website, loaded: \.website))
                 }
             }
             .listRowBackground(Color.clear)
@@ -214,17 +214,20 @@ struct ProfileEditView: View {
         .listRowBackground(Color.clear)
     }
 
-    /// 欄の上に小さい見出し（板の「表示名」などの置き方）
     /// **上限で止める**（`PostLimits.Profile`）。サーバーは超えたぶんを黙って切るので、
     /// 保存してから縮んでいたことに気づけなかった。止め方は `HighlightEditorView` の名前の欄と同じ
-    /// （`PostLimits.limited`: 入れようとした字のほうを削る・UTF-16 の単位で数える）
-    private func limitLength(_ text: Binding<String>, to limit: Int) -> (String, String) -> Void {
+    /// （`PostLimits.limited`: 入れようとした字のほうを削る・UTF-16 の単位で数える）。
+    /// **読み込んだ値を入れた回は切らない**（`PostLimits.limitedEdit`）
+    private func limitLength(_ text: Binding<String>, to limit: Int,
+                             loaded field: KeyPath<ProfileDraft, String>) -> (String, String) -> Void {
         { old, new in
-            let kept = PostLimits.limited(old: old, new: new, limit: limit)
+            let kept = PostLimits.limitedEdit(old: old, new: new, limit: limit,
+                                              loaded: original?[keyPath: field])
             if kept != new { text.wrappedValue = kept }
         }
     }
 
+    /// 欄の上に小さい見出し（板の「表示名」などの置き方）
     private func labeled<Field: View>(_ title: String, @ViewBuilder field: () -> Field) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)

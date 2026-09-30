@@ -100,6 +100,15 @@ enum PostLimits {
         return prefix + (length(kept) <= room ? kept : clamp(inserted, limit: room)) + suffix
     }
 
+    /// 読み込んだ値のある欄の `limited`。**読み込んだ値をそのまま入れた回は切らない**——
+    /// 読み込みで欄に値を入れた瞬間にも欄の変化として届くので、上限を超えて保存されている値
+    /// （上限ができる前の値など）が、開いただけで切られ、触っていない欄まで保存で送られた。
+    /// 一度入れば、そのあとは `limited` の「前の文が超えていれば減らす変更だけ受ける」で扱う
+    static func limitedEdit(old: String, new: String, limit: Int, loaded: String?) -> String {
+        if let loaded, new == loaded { return new }
+        return limited(old: old, new: new, limit: limit)
+    }
+
     /// 上限で切る（画面側で止める）。**字の途中では切らない**（サーバーの `truncate` と同じく、
     /// 上限に収まる最後の字まで）
     static func clamp(_ text: String, limit: Int) -> String {

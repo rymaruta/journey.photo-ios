@@ -351,6 +351,17 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(status, String(repeating: "😀", count: 30))
     }
 
+    /// 🔴 **色の丸は Web と同じ 36・押せる枠 44 で、393pt 幅の端末のフォームの行に収まる。**
+    /// 8色＋「なし」を1行（44×9＝396）に並べると行に入らず「7個＋2行目」に割れていた。
+    /// フォームの行の中身は 393 − 左右の外の余白 16〜20 − 行の中の余白 16〜20 ≈ 313〜329
+    func testThemeColorRowsFitAFormRow() {
+        XCTAssertEqual(ThemeColorLayout.swatch, 36)
+        XCTAssertEqual(ThemeColorLayout.target, 44)
+        XCTAssertEqual(ThemeColorLayout.rows.flatMap { $0 }, ThemeColor.presets, "色が抜けた・並びが変わった")
+        XCTAssertLessThanOrEqual(ThemeColorLayout.widestRow, 393 - 2 * 20 - 2 * 20,
+                                 "393pt 幅の端末でフォームの行に入らない")
+    }
+
     /// 🔴 **通報の補足はサーバーと同じ単位（UTF-16）で 500 に収める。** 字で `prefix(500)` を
     /// 取っていたので、絵文字の多い補足はアプリでは切られず、サーバーで黙って切られていた
     func testReportNoteIsClampedLikeTheServer() {
@@ -365,6 +376,24 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(13 * WebTheme.minimumScale(forTextSize: 13), 12, accuracy: 0.0001)
         XCTAssertEqual(WebTheme.minimumScale(forTextSize: 12), 1, "12pt 以下を縮めている")
         XCTAssertEqual(WebTheme.minimumScale(forTextSize: 11), 1)
+        // 🔴 **大きい字を 0.8 より深く縮めない。** 12/字 だけだと、字の大きさの設定で大きくした
+        // 人ほど深く縮んだ（xxxLarge の 19pt が 12pt まで）
+        XCTAssertGreaterThanOrEqual(WebTheme.minimumScale(forTextSize: 20), 0.8)
+        XCTAssertGreaterThanOrEqual(WebTheme.minimumScale(forTextSize: 19), 0.8)
+    }
+
+    /// 🔴 **読み込んだ値を欄に入れた回は切らない。** 読み込みも欄の変化として届くので、
+    /// 上限を超えて保存されている値が開いただけで切られていた。入れたあとは増やせず、減らせる
+    func testLoadedValueIsNotCutWhenFilledIn() {
+        let long = String(repeating: "あ", count: 70)   // ひとことの上限 60 を超えている
+        XCTAssertEqual(PostLimits.limitedEdit(old: "", new: long, limit: 60, loaded: long), long,
+                       "読み込んだ値を入れた瞬間に切っている")
+        XCTAssertEqual(PostLimits.limitedEdit(old: long, new: long + "い", limit: 60, loaded: long), long,
+                       "上限を超えている欄に字を足せている")
+        XCTAssertEqual(PostLimits.limitedEdit(old: long, new: String(long.dropLast()), limit: 60, loaded: long),
+                       String(long.dropLast()))
+        // 読み込んだ値でない長い文（貼り付け）は今までどおり止める
+        XCTAssertEqual(PostLimits.limitedEdit(old: "", new: long, limit: 60, loaded: "旅").utf16.count, 60)
     }
 
     /// 🔴 **途中に足した回は、末尾を消さずに足したほうを受けない**（Web の `maxLength` と同じ）。

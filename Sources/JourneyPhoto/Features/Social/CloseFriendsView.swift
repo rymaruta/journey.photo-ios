@@ -202,6 +202,9 @@ struct CloseFriendsView: View {
                         .webTappable()
                 }
                 .buttonStyle(.plain)
+                // 見た目の位置は前のまま（右端から 14）。44 の枠で印が中央に寄ったぶん
+                // （(44 − 印の幅 約18) / 2 ≈ 13）を右の余白へ張り出して戻す。押せる範囲は欄の地の中
+                .padding(.trailing, -13)
                 .accessibilityLabel(L("消す", "Clear"))
             }
         }
