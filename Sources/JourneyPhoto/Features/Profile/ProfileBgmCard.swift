@@ -25,7 +25,7 @@ struct ProfileBgmCard: View {
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
                 Text(L("BGM · 30秒の試聴", "BGM · 30-second preview"))
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(WebTheme.faint)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

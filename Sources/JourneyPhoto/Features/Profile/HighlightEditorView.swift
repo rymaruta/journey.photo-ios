@@ -155,7 +155,7 @@ struct HighlightEditorView: View {
                 // 「入れた・入れていない」しか分からない
                 if let order {
                     Text("\(order + 1)")
-                        .font(.caption2.weight(.bold))
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(WebTheme.accentText)
                         .frame(width: 20, height: 20)
                         .background(WebTheme.accentBackground, in: Circle())

@@ -259,7 +259,7 @@ private struct NotificationRow: View {
                         .foregroundStyle(WebTheme.text)
                     if let ago = NotificationText.ago(notification.t) {
                         Text(ago)
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                     }
                 }

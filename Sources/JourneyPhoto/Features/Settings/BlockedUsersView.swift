@@ -25,10 +25,10 @@ struct BlockedUsersView: View {
     var body: some View {
         List {
             // 板 45 の説明。**同じ言い方をアプリの他の入口（通報・プロフィール）でも使っている**
-            // 板: 11px・白60%
+            // 板: 11px・白60%（本文の下限 12pt に上げた）
             Text(L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。",
                    "Blocking hides each other's posts, stories and notifications."))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 4)
                 // 板: 上 16・説明と一覧の間 12（＝ここの下 3 ＋ 行の上 9）

@@ -103,7 +103,7 @@ struct HighlightsRow: View {
                         .font(.system(size: 18))
                         .foregroundStyle(Color.white))
                 Text(L("新規", "New"))
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
             }
@@ -139,7 +139,7 @@ struct HighlightsRow: View {
             .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
 
             Text(highlight.displayTitle)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.muted2)
                 .lineLimit(1)
         }

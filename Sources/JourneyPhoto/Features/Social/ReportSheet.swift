@@ -139,7 +139,7 @@ struct ReportSheet: View {
             .disabled(isWorking)
             // 「対応しました」とは言わない——読むのは人で、すぐには終わらない
             Text(L("結果をお伝えできない場合があります。", "We may not be able to tell you the outcome."))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .multilineTextAlignment(.center)
         }
