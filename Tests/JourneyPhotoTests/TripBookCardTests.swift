@@ -57,4 +57,37 @@ final class TripBookCardTests: XCTestCase {
         XCTAssertEqual(name, TripBookCard.fileName(for: t))
         XCTAssertEqual(TripBookCard.fileName(for: trip(id: "金沢", photos: [])), "trip-book-card.jpg")
     }
+
+    /// 題が2行でも、暗くし始めるのは文字より上。少なくとも下の4割は暗い。帯は下ほど暗い
+    func testShadeStartsAboveTheText() {
+        let h = TripBookCard.size.height
+        let oneLine = TripBookCard.textTop(canvasHeight: h, heights: [30, 100, 40, 40])
+        let twoLines = TripBookCard.textTop(canvasHeight: h, heights: [30, 200, 40, 40])
+        XCTAssertLessThan(twoLines, oneLine)
+        XCTAssertLessThanOrEqual(TripBookCard.shadeTop(textTop: twoLines, canvasHeight: h), twoLines - TripBookCard.shadeLead)
+        XCTAssertLessThanOrEqual(TripBookCard.shadeTop(textTop: h, canvasHeight: h), h * 0.6)
+        // 文字が多すぎても上の余白より上には積まない
+        XCTAssertEqual(TripBookCard.textTop(canvasHeight: h, heights: [2000]), TripBookCard.margin)
+        XCTAssertLessThan(TripBookCard.shadeAlpha(step: 0), TripBookCard.shadeAlpha(step: TripBookCard.shadeSteps - 1))
+        XCTAssertEqual(TripBookCard.shadeAlpha(step: TripBookCard.shadeSteps - 1), 0.85, accuracy: 0.0001)
+    }
+
+    /// 縮めて展開する大きさ: 枠を埋めるぶんだけ。元より大きくはしない
+    func testFillSizeNeverUpscales() {
+        let canvas = TripBookCard.size
+        XCTAssertEqual(TripBookCard.fillSize(image: CGSize(width: 6000, height: 4000), canvas: canvas),
+                       CGSize(width: 2025, height: 1350))
+        XCTAssertEqual(TripBookCard.fillSize(image: CGSize(width: 800, height: 600), canvas: canvas),
+                       CGSize(width: 800, height: 600))
+    }
+
+    /// 書いた画像はフォルダごと消せる（サインアウト・退会）
+    func testWriteAndRemoveAll() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("trip-book-cards-test-\(UUID().uuidString)")
+        let t = trip(photos: [])
+        let url = try XCTUnwrap(TripBookCard.write(Data([1, 2, 3]), for: t, in: dir))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        TripBookCard.removeAll(in: dir)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.path))
+    }
 }

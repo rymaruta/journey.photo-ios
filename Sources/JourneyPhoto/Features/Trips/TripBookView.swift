@@ -41,7 +41,10 @@ struct TripBookView: View {
                 Group {
                     // 表紙と題・期間・数字を載せた1枚（2026-09-30）。作れるまでは文
                     if let cardURL {
-                        ShareLink(item: cardURL) { Image(systemName: "square.and.arrow.up") }
+                        // 共有シートに題を出す（ファイル名を出さない）
+                        ShareLink(item: cardURL, preview: SharePreview(TripBook.title(of: trip))) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
                     } else {
                         ShareLink(item: TripBook.shareText(of: trip)) { Image(systemName: "square.and.arrow.up") }
                     }
@@ -50,27 +53,27 @@ struct TripBookView: View {
                 .accessibilityLabel(L("共有", "Share"))
             }
         }
-        // 開いたときに1回だけ作っておく（押してから待たせない）。同じ旅なら同じファイルを上書き
-        .task(id: trip.id) { cardURL = await makeCard() }
+        // 開いたときに1回だけ作っておく（押してから待たせない）。同じ旅なら同じファイルを上書き。
+        // **表紙・枚数が変わったら作り直す**（表紙はいいねの数で選ぶので、写真が同じでも替わる）
+        .task(id: "\(trip.id)|\(trip.cover?.id ?? "")|\(trip.photos.count)") { cardURL = await makeCard() }
+
     }
 
-    /// 共有する1枚を作って、端末の一時置き場に書く。**作れなければ nil**（文で共有する）
+    /// 共有する1枚を作って、端末の一時置き場に書く。**作れなければ nil**（文で共有する）。
+    /// 描くのは**画面の処理の外で**（写真の展開と JPEG の書き出しで画面を引っかけない）
     private func makeCard() async -> URL? {
         var cover: Data?
         if let url = trip.cover?.detailImageURL {
             cover = await TripBookCardRenderer.coverData(url)
         }
         guard !Task.isCancelled else { return nil }
-        let data = TripBookCardRenderer.render(TripBookCard.lines(of: trip, distance: distance),
-                                               cover: cover, focal: trip.cover?.focalPoint)
-        guard !data.isEmpty else { return nil }
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent(TripBookCard.fileName(for: trip))
-        do {
-            try data.write(to: file, options: .atomic)
-            return file
-        } catch {
-            return nil
-        }
+        let lines = TripBookCard.lines(of: trip, distance: distance)
+        let focal = trip.cover?.focalPoint
+        let data = await Task.detached(priority: .utility) {
+            TripBookCardRenderer.render(lines, cover: cover, focal: focal)
+        }.value
+        guard !Task.isCancelled, !data.isEmpty else { return nil }
+        return TripBookCard.write(data, for: trip)
     }
 
     // MARK: - 表紙

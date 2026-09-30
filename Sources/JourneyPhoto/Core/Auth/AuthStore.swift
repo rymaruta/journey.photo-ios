@@ -178,6 +178,8 @@ final class AuthStore: ObservableObject {
     /// これを通っていなかったので、パスワード変更で間違えたあと退会すると、ログイン画面に
     /// 「いまのパスワードが違います」が赤字で残っていた
     func settleSignedOut() {
+        // 共有のために書いた旅の一冊の画像（表紙の写真を含む）を次の人に残さない
+        TripBookCard.removeAll()
         state = .signedOut
         isAdmin = false
         errorMessage = nil

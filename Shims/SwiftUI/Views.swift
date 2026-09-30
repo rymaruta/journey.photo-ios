@@ -213,8 +213,14 @@ public struct Link: View {
     public init<L: View>(destination: URL, @ViewBuilder label: () -> L) {}
     public var body: Never { fatalError("模型") }
 }
+/// 共有シートの見出し（本物と同じ・題だけの版）
+public struct SharePreview {
+    public init(_ title: String) {}
+}
+
 public struct ShareLink: View {
     public init(item: URL) {}
+    public init<L: View>(item: URL, preview: SharePreview, @ViewBuilder label: () -> L) {}
     public init<L: View>(item: URL, @ViewBuilder label: () -> L) {}
     /// 文字を配る版（本物にもある）。URL を持たないもの——地点の名前など——を配る
     public init(item: String) {}

@@ -59,6 +59,70 @@ enum TripBookCard {
         return CGRect(x: x, y: y, width: drawn.width, height: drawn.height)
     }
 
+    // MARK: - 置き方（`TripBookCardRenderer` が使う・ここで試験する）
+
+    /// 左右と下の余白（px）
+    static let margin: Double = 72
+    /// 題は2行まで。**長い撮影地名で上にはみ出さない**（67ae0a7 のレビュー）
+    static let titleMaxLines = 2
+    /// 眉ラベルと題・題と期間・期間と数字の間（px）
+    static let gaps: [Double] = [20, 22, 18]
+    /// 暗くする段の数（多いほど段が見えない）
+    static let shadeSteps = 48
+    /// 文字の上から、さらにこれだけ上から暗くし始める（px）
+    static let shadeLead: Double = 220
+
+    /// 文字のかたまりの上端。下の余白から上へ積む（眉ラベル・題・期間・数字の高さ）
+    static func textTop(canvasHeight: Double, heights: [Double]) -> Double {
+        let total = heights.reduce(0, +) + gaps.reduce(0, +)
+        return max(margin, canvasHeight - margin - total)
+    }
+
+    /// 暗くし始める高さ。**文字の上から決める**（題が2行でも眉ラベルが明るい写真の上に乗らない）。
+    /// 少なくとも下の4割は暗くする（一冊の画面の表紙と同じ見え方）
+    static func shadeTop(textTop: Double, canvasHeight: Double) -> Double {
+        max(0, min(canvasHeight * 0.6, textTop - shadeLead))
+    }
+
+    /// 段ごとの暗さ（上は薄く、下は 0.85）
+    static func shadeAlpha(step: Int) -> Double {
+        0.85 * Double(min(max(step, 0), shadeSteps - 1) + 1) / Double(shadeSteps)
+    }
+
+    /// 枠を埋めるのに要る大きさ（元より大きくはしない）。縮めて展開するときの目標
+    static func fillSize(image: CGSize, canvas: CGSize) -> CGSize {
+        guard image.width > 0, image.height > 0 else { return image }
+        let scale = min(1, max(canvas.width / image.width, canvas.height / image.height))
+        // 切り上げは誤差を吸ってから（2025.0000001 を 2026 にしない）
+        return CGSize(width: (image.width * scale - 1e-6).rounded(.up), height: (image.height * scale - 1e-6).rounded(.up))
+    }
+
+    // MARK: - ファイル
+
+    /// 書き出す場所。**一時置き場の中の専用のフォルダ**——サインアウト・退会でフォルダごと消す
+    /// （表紙の写真が、非公開のものも含めて次の人の端末の中に残らないように）。
+    /// 画面を閉じたときには消さない（一冊から写真を開いて戻っただけで画像が消え、共有が文に戻った）
+    static var directory: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("trip-book-cards", isDirectory: true)
+    }
+
+    /// 1枚を書き出す。**書けなければ nil**
+    static func write(_ data: Data, for trip: TripBook.Trip, in directory: URL = TripBookCard.directory) -> URL? {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let file = directory.appendingPathComponent(fileName(for: trip))
+            try data.write(to: file, options: .atomic)
+            return file
+        } catch {
+            return nil
+        }
+    }
+
+    /// 書き出した画像を全部消す（サインアウト・退会）
+    static func removeAll(in directory: URL = TripBookCard.directory) {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
     /// 書き出すファイルの名前。**旅ごとに1つ**（同じ旅を何度共有しても増えない）。
     /// 旅の鍵は日付などの記号を含みうるので、英数字以外は落とす
     static func fileName(for trip: TripBook.Trip) -> String {
