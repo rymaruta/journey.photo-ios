@@ -97,7 +97,7 @@ final class StoryQueueTests: XCTestCase {
         XCTAssertEqual(StoryQueue.coordsToSend([kyoto, kyotoNext, kyoto]), [kyoto, kyotoNext, kyoto])
     }
 
-    /// 🔴 基準（座標のある最初の写真）から遠い写真だけ送らない（同じ地名で別の街に札が立った）
+    /// 🔴 基準（多数派・同数なら前）から遠い写真だけ送らない（同じ地名で別の街に札が立った）
     func testFarShotsGetNoCoords() {
         XCTAssertEqual(StoryQueue.coordsToSend([kyoto, tokyo, kyotoNext]), [kyoto, nil, kyotoNext])
         XCTAssertEqual(StoryQueue.coordsToSend([nil, tokyo, kyoto]), [nil, tokyo, nil])
@@ -108,7 +108,7 @@ final class StoryQueueTests: XCTestCase {
         XCTAssertEqual(StoryQueue.coordsToSend([osaka, kyoto, kyoto, kyoto]), [nil, kyoto, kyoto, kyoto])
     }
 
-    /// 並べ替えても、どの写真に座標が付くかは変わらない
+    /// 並べ替えても、どの写真に座標が付くかは変わらない（多数派が同数で並ぶときを除く——同数なら前が基準）
     func testMajorityDoesNotDependOnOrder() {
         let shots: [Photo.Coords?] = [osaka, kyoto, kyotoNext, nil, kyoto]
         let expected = shots.map { c -> Photo.Coords? in c == osaka ? nil : c }

@@ -56,7 +56,7 @@ enum StoryQueue {
     /// またいだだけで全部消えた）。
     ///
     /// **GPS の無い写真には付けない**——その写真の本当の位置ではない。ストーリーはこの座標を
-    /// 保存し、残す操作（`storyKeep`）はそれを写真の `coords`（地図のピン）へ写す。
+    /// （撮影地の名前があるときだけ）保存し、残す操作（`storyKeep`）はそれを写真の `coords`（地図のピン）へ写す。
     /// 撮影時の GPS 由来として扱うので `geoApprox`（地名から引いたおおよその位置）も立たない
     static func coordsToSend(_ coords: [Photo.Coords?]) -> [Photo.Coords?] {
         let known = coords.compactMap { $0 }
