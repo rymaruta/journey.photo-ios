@@ -67,6 +67,17 @@ struct StoryCanvas: View {
     /// 動かしている間に2本指の操作が入った（この回は動かさず、始めの位置に戻す）
     @State private var voteDragSpoiled = false
     @GestureState private var voteDragging = false
+    /// 2本指でつまんでいる／回している最中の投票の札（投票は `overlays` に入っていない）と、
+    /// 始めた写真の印（**途中で写真が替わったら、その回の値を別の写真の投票に入れない**）。
+    /// 投票を選んでいて指の下に文字の札が無いときの相手（2026-09-30・owner「投票はサイズ
+    /// 縮小したりできない」「回転もいる」）
+    @State private var scalesVote = false
+    @State private var voteScalePhotoId: UUID?
+    @State private var rotatesVote = false
+    @State private var voteRotatePhotoId: UUID?
+    /// この回の2本指の操作で投票の大きさが目に見えて変わったか。つまんでいた回の
+    /// 小さなひねりは捨てる（写真と同じ `PhotoFraming.intendedTwist`）
+    @State private var votePinched = false
     /// 写真を動かしている最中の移動量（離したときに `framing` へ入れる）と、その印
     @State private var photoDrag: CGSize = .zero
     @GestureState private var photoDragging = false
@@ -151,7 +162,7 @@ struct StoryCanvas: View {
                 if let current = vote.wrappedValue {
                     // 投票の札。**置き方は閲覧画面と同じ**（絵の矩形に対する割合）。
                     // 札の上だけが指を取る（層の残りは素通り）
-                    StoryTextLayer(texts: [current.asItem], imageSize: imageSize, voteState: nil,
+                    StoryTextLayer(texts: [liveVote(current).asItem], imageSize: imageSize, voteState: nil,
                                    canVote: false, voting: false, highlighted: voteSelected, editable: true)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .gesture(
@@ -203,10 +214,15 @@ struct StoryCanvas: View {
                         // **回し始めに相手を決めて、終わるまで変えない**（順は `StoryTextEditing.gestureTarget`）。
                         // 以前は選んだ札にしか効かず、文字を押すと打つ画面が開くようになってから、
                         // 文字を回せなくなっていた（4ffb74f の制限）
-                        if rotateId == nil && !twistsPhoto {
+                        if rotateId == nil && !twistsPhoto && !rotatesVote {
                             let other: StoryTextEditing.GestureTarget? = scaleId.map { .overlay($0) }
                                 ?? (pinchesPhoto ? .photo : nil)
                             absorbDrag(photo: photo, canvas: geometry.size)
+                            if targetsVote(pairedWithVote: scalesVote, other: other,
+                                           at: value.startLocation, photo: photo) {
+                                rotatesVote = true
+                                voteRotatePhotoId = photoId
+                            } else {
                             switch StoryTextEditing.gestureTarget(other: other,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) },
                                                                   carried: carriedId) {
@@ -215,12 +231,13 @@ struct StoryCanvas: View {
                             case .photo:
                                 twistsPhoto = true
                             }
+                            }
                         }
                         liveRotation = value.rotation.radians
                     }
                     .onEnded { value in
                         // 打ち切りの片付けが先に済んでいたら何もしない
-                        guard rotateId != nil || twistsPhoto else { return }
+                        guard rotateId != nil || twistsPhoto || rotatesVote else { return }
                         liveRotation = value.rotation.radians
                         commitRotation()
                     }
@@ -232,10 +249,15 @@ struct StoryCanvas: View {
                     .updating($pinching) { _, state, _ in state = true }
                     .onChanged { value in
                         // 回すのと同じ決め方（`StoryTextEditing.gestureTarget`）
-                        if scaleId == nil && !pinchesPhoto {
+                        if scaleId == nil && !pinchesPhoto && !scalesVote {
                             let other: StoryTextEditing.GestureTarget? = rotateId.map { .overlay($0) }
                                 ?? (twistsPhoto ? .photo : nil)
                             absorbDrag(photo: photo, canvas: geometry.size)
+                            if targetsVote(pairedWithVote: rotatesVote, other: other,
+                                           at: value.startLocation, photo: photo) {
+                                scalesVote = true
+                                voteScalePhotoId = photoId
+                            } else {
                             switch StoryTextEditing.gestureTarget(other: other,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) },
                                                                   carried: carriedId) {
@@ -244,12 +266,14 @@ struct StoryCanvas: View {
                             case .photo:
                                 pinchesPhoto = true
                             }
+                            }
                         }
                         liveScale = Double(value.magnification)
                         if pinchesPhoto && abs(liveScale - 1) > 0.05 { photoPinched = true }
+                        if scalesVote && abs(liveScale - 1) > 0.05 { votePinched = true }
                     }
                     .onEnded { value in
-                        guard scaleId != nil || pinchesPhoto else { return }
+                        guard scaleId != nil || pinchesPhoto || scalesVote else { return }
                         liveScale = Double(value.magnification)
                         commitScale()
                     }
@@ -301,9 +325,15 @@ struct StoryCanvas: View {
             overlays[i].rotation += liveRotation
         } else if twistsPhoto {
             framing = framing.rotated(by: PhotoFraming.intendedTwist(liveRotation, whilePinching: photoPinched))
+        } else if rotatesVote, voteRotatePhotoId == photoId, let current = vote.wrappedValue {
+            vote.wrappedValue = current.rotated(
+                byRadians: PhotoFraming.intendedTwist(liveRotation, whilePinching: votePinched))
         }
         rotateId = nil
         twistsPhoto = false
+        rotatesVote = false
+        voteRotatePhotoId = nil
+        if !scalesVote { votePinched = false }
         liveRotation = 0
         // 運ぶ指が置かれたままなら覚えておく（2本目の指を置き直して回し続けられるように）
         if scaleId == nil && !pinchesPhoto && dragId == nil { carriedId = nil }
@@ -316,9 +346,14 @@ struct StoryCanvas: View {
             overlays[i] = overlays[i].scaled(by: liveScale)
         } else if pinchesPhoto {
             framing = framing.scaled(by: liveScale)
+        } else if scalesVote, voteScalePhotoId == photoId, let current = vote.wrappedValue {
+            vote.wrappedValue = current.scaled(by: liveScale)
         }
         scaleId = nil
         pinchesPhoto = false
+        scalesVote = false
+        voteScalePhotoId = nil
+        if !rotatesVote { votePinched = false }
         liveScale = 1
         if rotateId == nil && !twistsPhoto && dragId == nil { carriedId = nil }
         // 回す方がまだ続いていれば、つまんでいた印はそちらの片付けで戻す
@@ -328,7 +363,28 @@ struct StoryCanvas: View {
     /// 2本指の操作（回す・つまむ）が、札か写真に効いている最中か。**指が触れている印も見る**
     /// ——札を選んでいない回は、印が立つまで `rotateId` / `scaleId` が立たない（6db29af のレビュー）
     private var twoFingerActive: Bool {
-        rotateId != nil || scaleId != nil || twistsPhoto || pinchesPhoto || twisting || pinching
+        rotateId != nil || scaleId != nil || twistsPhoto || pinchesPhoto || scalesVote || rotatesVote
+            || twisting || pinching
+    }
+
+    /// 2本指の相手を投票にするか。**もう片方の操作が投票なら投票**（回すとつまむは同じ相手）。
+    /// そうでなければ、投票を選んでいて、もう片方の相手がまだ無く、指の下に文字の札が
+    /// 無いとき（指の間の札を先にする `StoryTextEditing.gestureTarget` の原則を崩さない）
+    private func targetsVote(pairedWithVote: Bool, other: StoryTextEditing.GestureTarget?,
+                             at point: CGPoint, photo: CGRect) -> Bool {
+        if pairedWithVote { return true }
+        guard voteSelected, vote.wrappedValue != nil, other == nil, carriedId == nil else { return false }
+        return overlayUnder(point, photo: photo) == nil
+    }
+
+    /// 指で操作している最中の投票の札（**離したときと同じ幅・同じ丸めで見せる**）
+    private func liveVote(_ current: StoryVoteDraft) -> StoryVoteDraft {
+        var live = current
+        if scalesVote { live = live.scaled(by: liveScale) }
+        if rotatesVote {
+            live = live.rotated(byRadians: PhotoFraming.intendedTwist(liveRotation, whilePinching: votePinched))
+        }
+        return live
     }
 
     /// 指で操作している最中の合わせ方（**離したときと同じ幅で見せる**——幅の外で動いて見えて、
