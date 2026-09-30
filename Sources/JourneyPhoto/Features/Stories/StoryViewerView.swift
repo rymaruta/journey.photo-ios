@@ -61,6 +61,8 @@ struct StoryViewerView: View {
     /// この画面の札（`MusicPreviewPlayer.beginStoryViewing`）。作り直すと新しくなる
     @State private var viewingToken = UUID()
     @State private var captionHidden = false
+    /// 左を押して頭から見直した回数（動画を 0 へ戻す合図・`StoryMedia.restartToken`）
+    @State private var restartCount = 0
     /// いまの1本の写真が敷かれた大きさ（データで置いた文字の置き場所を決める）。移ったら nil
     @State private var mediaImageSize: CGSize?
     /// 票を入れたあとの票の状態（1本ごと）。**一覧を読み直すまでの間、入れた票を見せる**
@@ -140,6 +142,9 @@ struct StoryViewerView: View {
     /// 外へ知らせる。**外の払い（`StoryReelView`）が見る**——返信の一言の候補を横に
     /// 流しただけで次の人へ回り、書きかけが消えていた
     let onSwipeLockChange: ((Bool) -> Void)?
+    /// 票を入れた1本を外へ知らせる。**人を行き来して閲覧画面が作り直されても
+    /// 入れた票を消さない**ため（`StoryReelView` が覚えて `voteStates` で戻す）
+    let onVoted: ((String, StoryVoteState) -> Void)?
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
@@ -149,6 +154,8 @@ struct StoryViewerView: View {
          swipesHandledOutside: Bool = false,
          onDropped: ((String) -> Void)? = nil,
          onSwipeLockChange: ((Bool) -> Void)? = nil,
+         voteStates: [String: StoryVoteState] = [:],
+         onVoted: ((String, StoryVoteState) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
          onDeleted: ((String) -> Void)? = nil) {
         self.onGroupEnd = onGroupEnd
@@ -156,6 +163,8 @@ struct StoryViewerView: View {
         self.swipesHandledOutside = swipesHandledOutside
         self.onDropped = onDropped
         self.onSwipeLockChange = onSwipeLockChange
+        self.onVoted = onVoted
+        _voteStates = State(initialValue: voteStates)
         self.stories = stories
         self.onDeleted = onDeleted
         self.viewerId = viewerId
@@ -347,8 +356,12 @@ struct StoryViewerView: View {
             // ハイライトは期限切れの並び。見た印も見た人・返信も、サーバーは
             // 期限で消しているので叩かない
             guard highlight == nil else { return }
-            // **見たことを伝えるのは1回。** 失敗しても画面は止めない
-            await environment.stories.markViewed(id: story.id)
+            // **見たことを伝えるのは1回。** 失敗しても画面は止めない。
+            // この task の外で送る——次へ早送りすると task が取り消され、
+            // 送る前に止まって既読が届かなかった（APIClient がトークンの後に取り消しを見る）
+            let stories = environment.stories
+            let storyId = story.id
+            Task { await stories.markViewed(id: storyId) }
             if isMine(story) {
                 // **次の1本へ移ったあとに返ってきた答えは書かない。** 書くと、`go` で
                 // 空にしたあとへ前の1本の見た人・返信が入り、いまの1本の数に見える
@@ -456,7 +469,8 @@ struct StoryViewerView: View {
                 onImageLayout: { [id = story.id] size in
                     // 前の1本の絵の知らせが遅れて来ても、いまの1本に当てない
                     if visible.indices.contains(index), visible[index].id == id { mediaImageSize = size }
-                }
+                },
+                restartToken: restartCount
             )
             // 🔴 **1本ごとに作り直す。** 同じ型・同じ場所のままだと SwiftUI は
             // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
@@ -687,7 +701,7 @@ struct StoryViewerView: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text(L("ストーリーハイライト · \(highlight.count)件", "Story highlight · \(highlight.count)"))
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(WebTheme.muted)
             }
         }
@@ -699,7 +713,7 @@ struct StoryViewerView: View {
         HStack {
             if let date = StoryPlayback.dotDate(story.createdAt) {
                 Text(L("\(date) · 残したストーリー", "\(date) · Kept story"))
-                    .font(JPFont.mono(11))
+                    .font(JPFont.mono(12))
                     .foregroundStyle(WebTheme.muted)
             }
             Spacer(minLength: 0)
@@ -711,6 +725,8 @@ struct StoryViewerView: View {
                         .padding(.horizontal, 16)
                         .frame(minHeight: 40)
                         .jpGlass(in: Capsule(), border: 0.4)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -736,7 +752,7 @@ struct StoryViewerView: View {
                         .foregroundStyle(.white)
                     if let line = ownTimeLine(for: story) {
                         Text(line)
-                            .font(JPFont.mono(11))
+                            .font(JPFont.mono(12))
                             .foregroundStyle(WebTheme.muted2)
                             .lineLimit(1)
                     }
@@ -815,6 +831,7 @@ struct StoryViewerView: View {
         case .restart:
             // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
             clock.restart(running: !frozen && !(current?.isVideo ?? false), at: Date())
+            restartCount += 1
             syncSong(restart: true)
         case .previous(let target):
             go(to: target)
@@ -1247,6 +1264,9 @@ struct StoryViewerView: View {
                                         .padding(.horizontal, 14)
                                         .frame(minHeight: 36)
                                         .jpGlass(in: Capsule(), border: 0.14)
+                                        // 見た目は 36 の札のまま、押せる所は 44
+                                        .frame(minHeight: WebTheme.minTapTarget)
+                                        .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(isSending)
@@ -1559,7 +1579,7 @@ struct StoryViewerView: View {
                         .font(.system(size: 14, weight: .semibold))
                     if let ago = StoryPlayback.ago(from: item.t) {
                         Text(ago)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(WebTheme.faint)
                     }
                 }
@@ -1582,7 +1602,9 @@ struct StoryViewerView: View {
         voting = true
         defer { voting = false }
         do {
-            voteStates[story.id] = try await environment.stories.vote(id: story.id, choice: choice)
+            let state = try await environment.stories.vote(id: story.id, choice: choice)
+            voteStates[story.id] = state
+            onVoted?(story.id, state)
         } catch {
             // **いま出している1本のときだけ知らせる**（送っている間に移った先に出さない）
             guard visible.indices.contains(index), visible[index].id == story.id else { return }

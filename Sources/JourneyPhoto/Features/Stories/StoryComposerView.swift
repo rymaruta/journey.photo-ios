@@ -52,6 +52,8 @@ struct StoryComposerView: View {
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
+    /// 開いたときの問いを済ませた（`onAppear` はカメラを閉じたときにも走る）
+    @State private var askedOnOpen = false
 
     // 板 24b「文字と札」の編集
     /// 文字と札を編集している（写真を暗くし、上に札の種類、下に操作欄）
@@ -200,13 +202,18 @@ struct StoryComposerView: View {
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
             drafts.use(userId: auth.userId)
+            // **尋ねるのは開いた回だけ。** カメラ（fullScreenCover）を閉じると onAppear が
+            // もう一度走り、開いたときの問いがまた出ていた
+            guard !askedOnOpen else { return }
+            askedOnOpen = true
             // **送れなかった残りが先。** 片付くまで新しい投稿は受けないので、
             // ここでも出口を出す（ホームの輪が見えない人のため）
             if case .failed = uploads.phase {
                 showPendingFailure = true
                 // 下書きの問いは出ない＝答えていない。消さずに次へ持ち越す
                 if prepared == nil { unansweredDraftStamp = drafts.draft?.savedAt }
-            } else if drafts.draft != nil, prepared == nil {
+            } else if Self.asksRestore(draftStamp: drafts.draft?.savedAt, hasShot: prepared != nil,
+                                       sendingDraftStamp: uploads.pendingDraftStamp) {
                 showRestore = true
             }
         }
@@ -513,7 +520,7 @@ struct StoryComposerView: View {
             durationOptions
         } label: {
             Text(L("表示 \(durationSec) 秒", "\(durationSec)s"))
-                .font(JPFont.mono(11))
+                .font(JPFont.mono(12))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -606,6 +613,9 @@ struct StoryComposerView: View {
                             .padding(.horizontal, 14)
                             .frame(minHeight: 36)
                             .background(WebTheme.accentBackground, in: Capsule())
+                            // 見た目は 36 の札のまま、押せる所は 44（CLAUDE.md の最小）
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
@@ -618,6 +628,8 @@ struct StoryComposerView: View {
                         .padding(.horizontal, 14)
                         .frame(minHeight: 36)
                         .jpGlass(in: Capsule())
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(prepared == nil || !canSaveDraft)
@@ -1016,6 +1028,13 @@ struct StoryComposerView: View {
         return stamp == keptStamp || stamp == unansweredStamp
     }
 
+    /// 開いたときに「続きから」を尋ねるか。**裏で送っている最中の下書きには尋ねない**
+    /// ——送り終えるまで下書きは残るので、尋ねると同じ投稿をもう1本出しやすい
+    nonisolated static func asksRestore(draftStamp: String?, hasShot: Bool, sendingDraftStamp: String?) -> Bool {
+        guard let draftStamp, !hasShot else { return false }
+        return draftStamp != sendingDraftStamp
+    }
+
     /// この画面から下書きに保存してよいか。**残すと決めた（まだ答えていない）下書きがある
     /// 間は保存しない**——下書きは1件だけなので、保存すると黙って置き換える。
     /// 閉じる確認と上の「下書き保存」の両方がこれを見る（片方だけ守ると別の口から素通りした）
@@ -1093,10 +1112,12 @@ struct StoryComposerView: View {
         let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
         // **焼き込んでから渡す。** 文字が無ければ元のデータをそのまま渡す
         // （読み書きの往復で画質を落とさない）
-        let jobs = shots.map { shot in
+        // 撮影地は全部で1つなので、基準の写真から遠い写真の座標は送らない（`StoryQueue.coordsToSend`）
+        let coords = StoryQueue.coordsToSend(shots.map(\.prepared.coords))
+        let jobs = zip(shots, coords).map { shot, shotCoords in
             StoryUploadCenter.Job(
                 imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),
-                caption: caption, location: place, coords: shot.prepared.coords,
+                caption: caption, location: place, coords: shotCoords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
                 texts: StoryPostText.list(vote: shot.vote, caption: caption))

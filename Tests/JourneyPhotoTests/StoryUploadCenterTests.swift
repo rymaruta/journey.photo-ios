@@ -351,6 +351,16 @@ final class StoryUploadCenterTests: XCTestCase {
         XCTAssertEqual(cleared, ["2026-09-27T00:00:00Z"])
     }
 
+    /// 送っている間は元の下書きの印を見せる（投稿画面が「続きから」を出さないため）。送り終えたら消える
+    func testPendingDraftStampIsVisibleWhileSending() async {
+        let center = StoryUploadCenter()
+        center.start([job(1)], ownerId: "me", currentUserId: { "me" }, draftToClear: "d1",
+                     send: { _, _ in })
+        XCTAssertEqual(center.pendingDraftStamp, "d1")
+        await settle(center)
+        XCTAssertNil(center.pendingDraftStamp)
+    }
+
     /// 画像を読めずに落としたぶんを「出せた」に数えない
     func testMissingImagesAreNotCountedAsPosted() async throws {
         let dir = tempDir()

@@ -23,10 +23,12 @@ struct StoryMedia: View {
     var onSettled: ((Bool) -> Void)? = nil
     /// 写真が敷かれた大きさ（縦横比を知る口・`RemoteImage.onLayout`）。動画には来ない
     var onImageLayout: ((CGSize) -> Void)? = nil
+    /// 頭から見直す合図（左を押した）。変わったら動画を 0 へ戻す。写真には効かない
+    var restartToken = 0
 
     var body: some View {
         if story.isVideo, let url = story.imageURL {
-            StoryVideo(url: url, isMuted: isMuted, isPaused: isPaused, onEnded: onEnded)
+            StoryVideo(url: url, isMuted: isMuted, isPaused: isPaused, restartToken: restartToken, onEnded: onEnded)
         } else {
             // **画面いっぱいに敷く**（板は `object-fit: cover`）。はみ出しは
             // 閲覧画面が切る
@@ -49,6 +51,7 @@ private struct StoryVideo: View {
     let url: URL
     var isMuted = false
     var isPaused = false
+    var restartToken = 0
     var onEnded: (() -> Void)? = nil
 
     @State private var player: AVPlayer?
@@ -133,6 +136,12 @@ private struct StoryVideo: View {
             }
             .onChange(of: isMuted) { _, muted in
                 player?.isMuted = muted
+            }
+            // **左を押して頭から見直すときは、動画も 0 へ戻す。** 時計だけ戻して
+            // 動画は続きから鳴っていた
+            .onChange(of: restartToken) { _, _ in
+                player?.seek(to: .zero)
+                if !isPaused { player?.play() }
             }
             .accessibilityLabel(L("動画のストーリー", "Video story"))
     }

@@ -108,6 +108,10 @@ final class StoryUploadCenter: ObservableObject {
     /// 送っている最中か、失敗した残りを持っているか（新しい投稿を受けない）
     var isBusy: Bool { phase != .idle }
 
+    /// いま送っている（送れずに持っている）並びの元の下書きの印。投稿画面はこの下書きに
+    /// 「続きから」を出さない——送っている最中の下書きを戻すと、同じ投稿を二重に出しやすい
+    var pendingDraftStamp: String? { draftToClear }
+
     static var defaultDirectory: URL {
         (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory)

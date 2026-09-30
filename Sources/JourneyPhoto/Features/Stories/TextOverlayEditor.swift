@@ -476,7 +476,7 @@ struct OverlayPanel: View {
             if overlay.kind.hasTypography {
             HStack(spacing: 8) {
                 Text(L("書体", "Font"))
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
                 // **選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を開き直すと、
@@ -502,7 +502,7 @@ struct OverlayPanel: View {
             if overlay.kind.hasTypography {
             HStack(spacing: 10) {
                 Text(L("色", "Color"))
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(WebTheme.faint)
                     .frame(width: 36, alignment: .leading)
                 // 見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
@@ -562,8 +562,10 @@ struct OverlayPanel: View {
                     Label(L("消す", "Delete"), systemImage: "trash")
                         .font(.system(size: 13))
                         .foregroundStyle(WebTheme.danger)
-                        .frame(minHeight: 36)
+                        // 押せる所は 44（CLAUDE.md の最小）。地の無い文字なので見た目は変わらない
+                        .frame(minHeight: WebTheme.minTapTarget)
                         .padding(.horizontal, 12)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -600,7 +602,7 @@ struct OverlayPanel: View {
                 .tint(.white)
                 Text(L("大", "L"))
             }
-            .font(.system(size: 11))
+            .font(.system(size: 12))
             .foregroundStyle(WebTheme.muted2)
         }
         .padding(12)
@@ -633,6 +635,9 @@ struct OverlayChip: View {
             .background(selected ? AnyShapeStyle(WebTheme.accentBackground) : AnyShapeStyle(Color.black.opacity(0.55)),
                         in: Capsule())
             .overlay(Capsule().strokeBorder(Color.white.opacity(selected ? 0 : 0.14), lineWidth: 1))
+            // 見た目は 36 の札のまま、押せる所は 44（CLAUDE.md の最小）
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
