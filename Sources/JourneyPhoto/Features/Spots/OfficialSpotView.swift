@@ -88,9 +88,12 @@ struct OfficialSpotView: View {
                 if !linked.isEmpty { spotPhotos }
                 bodySections
                 // 写真が0枚の場所は、本文の後に「まだありません」（1画面目を空にしない）
-                if linked.isEmpty { spotPhotos }
-                nearbySpots
-                checkLine
+                // 下の3つはまとめる（ひとつの並びに置ける数の上限を越えないように）
+                Group {
+                    if linked.isEmpty { spotPhotos }
+                    nearbySpots
+                    checkLine
+                }
             }
             .padding(.bottom, 32)
         }
