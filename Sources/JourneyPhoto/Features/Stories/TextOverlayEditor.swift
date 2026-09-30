@@ -260,7 +260,8 @@ struct StoryCanvas: View {
                             if targetsVote(pairedWithVote: scalesVote, other: other,
                                            at: value.startLocation, photo: photo) {
                                 rotatesVote = true
-                                voteRotatePhotoId = photoId
+                                // 2本指の片方が先に決まっていたら、その写真を引き継ぐ（途中で写真が替わっても前の写真に書く）
+                                voteRotatePhotoId = scalesVote ? voteScalePhotoId : photoId
                             } else {
                             switch StoryTextEditing.gestureTarget(other: other,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) },
@@ -269,7 +270,7 @@ struct StoryCanvas: View {
                                 rotateId = id
                             case .photo:
                                 twistsPhoto = true
-                                framingRotatePhotoId = photoId
+                                framingRotatePhotoId = pinchesPhoto ? framingScalePhotoId : photoId
                             }
                             }
                         }
@@ -296,7 +297,7 @@ struct StoryCanvas: View {
                             if targetsVote(pairedWithVote: rotatesVote, other: other,
                                            at: value.startLocation, photo: photo) {
                                 scalesVote = true
-                                voteScalePhotoId = photoId
+                                voteScalePhotoId = rotatesVote ? voteRotatePhotoId : photoId
                             } else {
                             switch StoryTextEditing.gestureTarget(other: other,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) },
@@ -305,7 +306,7 @@ struct StoryCanvas: View {
                                 scaleId = id
                             case .photo:
                                 pinchesPhoto = true
-                                framingScalePhotoId = photoId
+                                framingScalePhotoId = twistsPhoto ? framingRotatePhotoId : photoId
                             }
                             }
                         }

@@ -1431,10 +1431,16 @@ struct PhotoMapView: View {
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                Text(Self.spotSubline(row, loaded: model.loaded))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
-                    .lineLimit(1)
+                // 枚数は写真が取れてから（読み込み中・初回の失敗で手元が空なら「0枚」と言わない。
+                // 判定はスポットの画面と同じ `SpotScreen.photosKnown`）
+                let sub = Self.spotSubline(row, loaded: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded,
+                                                                               photos: model.photos))
+                if !sub.isEmpty {
+                    Text(sub)
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .lineLimit(1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right")
