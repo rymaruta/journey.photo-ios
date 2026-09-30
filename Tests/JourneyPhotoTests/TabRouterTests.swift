@@ -78,4 +78,22 @@ final class TabRouterTests: XCTestCase {
         XCTAssertEqual(router.menuRequests, 1)
         XCTAssertEqual(router.myPageRequests, 0)
     }
+
+    /// 探すの0件の出口は語を地図へ渡す。地図は一度だけ受け取り、
+    /// 語なしで開き直した回に古い語が残らない
+    func testOpenMapCarriesQueryOnce() async {
+        let router = TabRouter()
+        router.openMap(query: "  京都 ")
+        XCTAssertEqual(router.mapRequests, 1)
+        XCTAssertEqual(router.takePendingMapQuery(), "京都")
+        XCTAssertNil(router.takePendingMapQuery())
+
+        router.openMap(query: "奈良")
+        router.openMap()
+        XCTAssertEqual(router.mapRequests, 3)
+        XCTAssertNil(router.takePendingMapQuery())
+
+        router.openMap(query: "   ")
+        XCTAssertNil(router.takePendingMapQuery())
+    }
 }

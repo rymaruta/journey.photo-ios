@@ -148,6 +148,11 @@ struct PhotoMapView: View {
             isOnScreen = true
             tabRouter.mapRootOnScreen = true
             if needsDrop { dropHidden() }
+            applyPendingQuery()
+        }
+        // 探すの0件の出口から来た回。地図がもう出来ていれば `onAppear` より先にここで受ける
+        .onChange(of: tabRouter.mapRequests) { _, _ in
+            applyPendingQuery()
         }
         .onDisappear {
             isOnScreen = false
@@ -254,6 +259,13 @@ struct PhotoMapView: View {
     /// **撮影地の文字列とスポットの名前だけ**で絞る（通信しない）。
     /// 「都市」で当たるのは撮影地にその語が入っているときだけなので、
     /// プレースホルダにもそう書く
+    /// 探すから渡された語で絞り、地図の表示にする（一度きり）
+    private func applyPendingQuery() {
+        guard let query = tabRouter.takePendingMapQuery() else { return }
+        model.query = query
+        model.mode = .map
+    }
+
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")

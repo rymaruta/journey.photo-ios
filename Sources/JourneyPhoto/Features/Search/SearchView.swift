@@ -752,7 +752,8 @@ struct SearchView: View {
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
                 if !(model.loadFailed && model.everything.isEmpty) {
-                    Button { tabRouter.openMap() } label: {
+                    // 打った語を地図へ持っていく（地図で打ち直させない）
+                    Button { tabRouter.openMap(query: query) } label: {
                         Label(L("地図で撮影地を探す", "Explore shooting places on the map"), systemImage: "map")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(WebTheme.accent)

@@ -22,7 +22,22 @@ final class TabRouter: ObservableObject {
     @Published private(set) var menuRequests = 0
 
     func openSearch() { searchRequests += 1 }
-    func openMap() { mapRequests += 1 }
+    /// 探すの0件の出口から来たときの検索語。地図が一度だけ受け取る
+    /// （`takePendingMapQuery`）。渡さないと地図が空の絞りで開き、打ち直すことになる
+    private(set) var pendingMapQuery: String?
+
+    /// 語なしで呼ばれた回は前の語を消す（古い語で絞った地図を出さない）
+    func openMap(query: String? = nil) {
+        let trimmed = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        pendingMapQuery = trimmed.isEmpty ? nil : trimmed
+        mapRequests += 1
+    }
+
+    /// 地図が受け取る。受け取ったら消す（戻ってくるたびに絞り直さない）
+    func takePendingMapQuery() -> String? {
+        defer { pendingMapQuery = nil }
+        return pendingMapQuery
+    }
     func openMenu() { menuRequests += 1 }
 
     /// **ホームを開いたまま、下の「ホーム」をもう一度押した回数。**
