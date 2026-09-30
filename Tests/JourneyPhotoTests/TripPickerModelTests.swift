@@ -87,6 +87,20 @@ final class TripPickerModelTests: XCTestCase {
         XCTAssertNil(TripPickerModel().undo())
     }
 
+    /// 前から「行きたい」に入っていた場所は、戻したときに外さない（決めた時点の記録を返す）
+    func testUndoRemembersPlacesThatWereAlreadyWanted() async throws {
+        let model = await loaded(try (0..<3).map { try spot("s\($0)") })
+        model.decide(.want, alreadyWanted: true)
+        model.decide(.want)
+        model.decide(.skip, alreadyWanted: true)
+        XCTAssertEqual(model.undo()?.wasWanted, false)   // 見送りは足していない
+        XCTAssertEqual(model.undo()?.wasWanted, false)
+        XCTAssertEqual(model.undo()?.wasWanted, true)
+        // 前から入っていた場所も、選んだ場所には入る
+        model.decide(.want, alreadyWanted: true)
+        XCTAssertEqual(model.picked.count, 1)
+    }
+
     // MARK: - 3. 上限
 
     func testWantStopsAtPickMaxButPassStillWorks() async throws {

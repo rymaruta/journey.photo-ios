@@ -74,6 +74,8 @@ struct TripPlansView: View {
             }
         }
         .fullScreenCover(isPresented: $showPicker, onDismiss: {
+            // 板の中の保存の失敗の文を、一覧に持ち帰らない（一覧と板で1つの model を共有している）
+            model.clearError()
             guard let planId = pickedPlanId else { return }
             pickedPlanId = nil
             openedPlanId = planId

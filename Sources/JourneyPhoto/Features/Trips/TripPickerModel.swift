@@ -19,6 +19,10 @@ final class TripPickerModel: ObservableObject {
     struct Decision: Equatable {
         let spot: OfficialSpot
         let choice: Choice
+        /// 決めた時点で**もう「行きたい」に入っていた**か。入っていたら、足しも外しもしない
+        /// （山は開いた時点の写しで除くので、起動時の同期が済む前は入っている場所も出る。
+        ///  「ひとつ戻す」で本人が前から入れていた場所を外さない）
+        var wasWanted = false
     }
 
     @Published private(set) var status: Status = .loading
@@ -27,6 +31,12 @@ final class TripPickerModel: ObservableObject {
     @Published private(set) var decisions: [Decision] = []
     /// 下書きで「このプランから外す」を押した場所（`spotId`）。**「行きたい」からは外さない**
     @Published private(set) var removed: Set<String> = []
+
+    /// 下書きの保存の1段目（作る）が通ったプラン。**下書きの画面ではなくここに持つ**
+    /// ——下書きの画面は戻って開き直すと作り直されるので、そこに置くと2段目が断られた
+    /// あとの保存が1段目からやり直しになり、同じプランが2つできた
+    @Published var createdPlanId: String?
+    @Published var createdTitle: String?
 
     /// いまの札の位置（めくった数と同じ）
     var position: Int { decisions.count }
@@ -68,10 +78,10 @@ final class TripPickerModel: ObservableObject {
 
     /// いまの札を決める。**決めた場所**を返す（札が無い・上限で「行きたい」を足せないときは nil）
     @discardableResult
-    func decide(_ choice: Choice) -> OfficialSpot? {
+    func decide(_ choice: Choice, alreadyWanted: Bool = false) -> OfficialSpot? {
         guard let spot = current else { return nil }
         if choice == .want && isFull { return nil }
-        decisions.append(Decision(spot: spot, choice: choice))
+        decisions.append(Decision(spot: spot, choice: choice, wasWanted: choice == .want && alreadyWanted))
         return spot
     }
 

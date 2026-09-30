@@ -23,9 +23,6 @@ struct TripPickerDraftView: View {
     @State private var title = ""
     @State private var start: String?
     @State private var end: String?
-    /// 1段目（作る）が通ったプラン。**2段目のやり直しで作り直さない**
-    @State private var createdPlanId: String?
-    @State private var createdTitle: String?
     @State private var saving = false
     @State private var errorText: String?
 
@@ -241,7 +238,9 @@ struct TripPickerDraftView: View {
             }
             Spacer(minLength: 0)
             // **このプランから外すだけ**（「行きたい」には残る）
+            // 保存の間は外させない（押した時点の日程を送っていて、済むとすぐ閉じる）
             Button {
+                guard !saving else { return }
                 picker.remove(spot.spotId)
             } label: {
                 Image(systemName: "xmark")
@@ -250,6 +249,7 @@ struct TripPickerDraftView: View {
                     .webTappable()
             }
             .buttonStyle(.plain)
+            .disabled(saving)
             .accessibilityLabel(L("「\(spot.name)」をこのプランから外す", "Remove \(spot.name) from this trip"))
         }
         .padding(.leading, 12)
@@ -266,7 +266,7 @@ struct TripPickerDraftView: View {
         Button { save() } label: {
             HStack(spacing: 8) {
                 if saving { ProgressView().tint(WebTheme.accentText) }
-                Text(createdPlanId == nil ? L("旅行プランを保存", "Save trip") : L("日程をもう一度保存", "Save the days again"))
+                Text(picker.createdPlanId == nil ? L("旅行プランを保存", "Save trip") : L("日程をもう一度保存", "Save the days again"))
                     .font(.body.weight(.semibold))
             }
             .foregroundStyle(WebTheme.accentText)
@@ -296,7 +296,7 @@ struct TripPickerDraftView: View {
         Task {
             defer { saving = false }
             let planId: String
-            if let made = createdPlanId {
+            if let made = picker.createdPlanId {
                 planId = made
             } else {
                 guard let made = await plans.create(title: sendTitle, environment: environment) else {
@@ -304,8 +304,8 @@ struct TripPickerDraftView: View {
                         ?? L("旅行プランを作れませんでした。もう一度お試しください。", "Couldn't create the trip. Please try again.")
                     return
                 }
-                createdPlanId = made.planId
-                createdTitle = sendTitle
+                picker.createdPlanId = made.planId
+                picker.createdTitle = sendTitle
                 planId = made.planId
             }
             var patch = TripPlanService.Patch()
@@ -313,7 +313,7 @@ struct TripPickerDraftView: View {
             if let sendStart { patch.startDate = sendStart }
             if let sendEnd { patch.endDate = sendEnd }
             // やり直しの間に題を変えていたら、それも送る
-            if let createdTitle, createdTitle != sendTitle { patch.title = sendTitle }
+            if let createdTitle = picker.createdTitle, createdTitle != sendTitle { patch.title = sendTitle }
             guard await plans.update(planId, patch, environment: environment) else {
                 let reason = plans.errorMessage ?? L("もう一度お試しください", "Please try again")
                 errorText = L("旅行プランは作りましたが、日程を保存できませんでした（\(reason)）。もう一度保存してください。",

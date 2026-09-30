@@ -56,7 +56,8 @@ struct TripPickerView: View {
         }
         // 全画面の板の上では、アプリの下の知らせ（`RootView`）が隠れるので、ここにも置く
         .overlay(alignment: .bottom) {
-            ToastOverlay().padding(.bottom, 24)
+            // 足元の「旅行プランにする」・下書きの「保存」（56pt 前後）に重ねない
+            ToastOverlay().padding(.bottom, 84)
         }
         .task {
             await model.load(fetch: { try await environment.spots.fetchIndex() },
@@ -79,7 +80,8 @@ struct TripPickerView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         intro
                         card(spot)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            // 大きい文字の小さい端末でも写真を潰さない
+                            .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
                         caption(spot)
                     }
                     .padding(.horizontal, 16)
@@ -125,8 +127,9 @@ struct TripPickerView: View {
                 photoFrame(photo.url)
                     .overlay(alignment: .topLeading) { stamp(L("行きたい", "Want to go"), icon: "heart.fill").opacity(stampOpacity(1)) }
                     .overlay(alignment: .topTrailing) { stamp(L("見送る", "Pass"), icon: "xmark").opacity(stampOpacity(-1)) }
-                    .offset(x: dragX)
+                    // 回してから動かす（逆だと、動く前の位置を中心に回って札が下へ沈む）
                     .rotationEffect(.degrees(dragX / 24))
+                    .offset(x: dragX)
                     .gesture(swipe)
                     // 読み上げでは1つの札として読み、操作の一覧から選ばせる
                     .accessibilityElement(children: .ignore)
@@ -215,7 +218,7 @@ struct TripPickerView: View {
                 Text("\(hint.label) · \(hint.text)")
                     .font(.footnote)
                     .foregroundStyle(WebTheme.muted2)
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
             // **出典は写真と必ず一緒に**（CC BY・CC BY-SA の条件）。押すと出典・ライセンスへ
             if let photo = spot.photo {
@@ -311,8 +314,10 @@ struct TripPickerView: View {
 
     private func commit(_ choice: TripPickerModel.Choice) {
         dragX = 0
-        guard let spot = model.decide(choice), choice == .want else { return }
-        let key = SavedSpotKey.official(spot.slug)
+        let key = model.current.map { SavedSpotKey.official($0.slug) } ?? ""
+        let wasWanted = !key.isEmpty && wishlist.contains(key)
+        guard let spot = model.decide(choice, alreadyWanted: wasWanted), choice == .want,
+              !wasWanted, key == SavedSpotKey.official(spot.slug) else { return }
         let store = wishlist
         let service = environment.savedSpots
         model.enqueueWish {
@@ -325,7 +330,8 @@ struct TripPickerView: View {
     }
 
     private func undo() {
-        guard !flying, let last = model.undo(), last.choice == .want else { return }
+        // 前から「行きたい」に入っていた場所は外さない（`Decision.wasWanted`）
+        guard !flying, let last = model.undo(), last.choice == .want, !last.wasWanted else { return }
         let key = SavedSpotKey.official(last.spot.slug)
         let store = wishlist
         let service = environment.savedSpots
