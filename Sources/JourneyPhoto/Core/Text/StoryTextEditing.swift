@@ -106,43 +106,50 @@ enum StoryTextEditing {
                         height: y - h / 2 < -tolerance || y + h / 2 > Double(canvas.height) + tolerance)
     }
 
-    /// 縮めても空きに収まらない向きに、どちらの端を見せるか
-    enum Pin: Equatable { case leading, center, trailing }
-
-    /// 打つ画面の並べ方（縮み・寄せ方）
+    /// 打つ画面の並べ方（縮み・横のずらし・下寄せ）
     struct TypingLayout: Equatable {
         var scale: Double
-        /// 縮めても横に収まらないとき見せる端。**キャレットのいる側**——1行の札と、改行の無い文字は
-        /// 行の末尾（右）、改行した文字は揃えの側（左揃えなら左）。真ん中に置くと末尾のキャレットが
-        /// 切れ、いつも右に寄せると左揃えの短い最終行が切れた（9702932・ea8fa74 のレビュー）
-        var horizontal: Pin
+        /// 真ん中に置いた位置から横にずらす量（pt・縮めた後の見た目の座標）。**キャレット（最終行の末尾）が
+        /// 枠に入るように**ずらす。端に寄せる形では、寄るのが欄全体の端でキャレットではないので、
+        /// 前の行が長いと打っている行が丸ごと外に出た（fb7acab のレビュー）
+        var offsetX: Double
         /// 縮めても縦に収まらないとき、下（いま打っている最終行）を見せる
         var pinBottom: Bool
     }
 
-    /// 打つ画面の並べ方を決める。`typing`（欄に見えている大きさ）を打つ画面の空き `available` に
-    /// 縮めて収め、それでも寄せる枠 `area` からはみ出す向きは、キャレットのいる側の端を見せる。
-    /// `lastLineWidth` は最終行（キャレットのいる行）の幅——最終行が枠に収まるなら揃えの側、
-    /// 収まらないなら行の末尾（右）。揃えの側だけで決めると、改行して長い2行目を打つと末尾が
-    /// 切れた（253cf60 のレビュー）。
+    /// 打つ画面の並べ方を決める。`typing`（欄に見えている大きさ・帯の余白込み）を打つ画面の空き
+    /// `available` に縮めて収める。縮めても枠 `area` の幅を超えるときは、揃えの側を見せつつ
+    /// **キャレット（最終行の末尾）が枠に入るよう**横にずらす。
+    ///  - `lastLineWidth`: 最終行の幅（帯の余白を除く）。`padding`: 帯の左右の余白（無ければ 0）
     /// **はみ出しの断り（`overflow`）は別の物差し**（仕上がり×写真の枠）なので、ここでは決めない
-    static func typingLayout(overlay: TextOverlay, typing: CGSize, lastLineWidth: Double,
+    static func typingLayout(overlay: TextOverlay, typing: CGSize, lastLineWidth: Double, padding: Double = 0,
                              available: CGSize, area: CGSize) -> TypingLayout {
         let scale = fitScale(content: typing, available: available)
-        let tooWide = Double(typing.width) * scale > Double(area.width) + 0.5
-        let horizontal: Pin
-        if !tooWide {
-            horizontal = .center
-        } else if !overlay.kind.allowsNewlines || !overlay.text.contains("\n") || overlay.align == .trailing {
-            horizontal = .trailing
-        } else if lastLineWidth * scale > Double(area.width) + 0.5 {
-            // 最終行そのものが枠に収まらない＝末尾は右の外。右を見せる
-            horizontal = .trailing
-        } else {
-            horizontal = overlay.align == .leading ? .leading : .center
+        let width = Double(typing.width) * scale
+        let frame = Double(area.width)
+        let pinBottom = Double(typing.height) * scale > Double(area.height) + 0.5
+        guard width > frame + 0.5 else { return TypingLayout(scale: scale, offsetX: 0, pinBottom: pinBottom) }
+        // 縮めた欄の左端を x、枠の左端を 0 とする。真ん中に置いたときの左端
+        let centered = (frame - width) / 2
+        // キャレットの位置（欄の左端から）。改行の無い文字・1行の札は行の末尾＝欄の右端
+        let multiline = overlay.kind.allowsNewlines && overlay.text.contains("\n")
+        let align: TextOverlay.Align = multiline ? overlay.align : .trailing
+        let caret: Double
+        let preferred: Double
+        switch align {
+        case .leading:
+            caret = (padding + lastLineWidth) * scale
+            preferred = 0
+        case .center:
+            caret = (width + lastLineWidth * scale) / 2
+            preferred = centered
+        case .trailing:
+            caret = width - padding * scale
+            preferred = frame - width
         }
-        return TypingLayout(scale: scale, horizontal: horizontal,
-                            pinBottom: Double(typing.height) * scale > Double(area.height) + 0.5)
+        // 揃えの側を見せる位置から始め、キャレットが枠の外なら入る所までずらす
+        let left = min(max(preferred, -caret), frame - caret)
+        return TypingLayout(scale: scale, offsetX: left - centered, pinBottom: pinBottom)
     }
 
     /// 最終行（キャレットのいる行）の文字。札は印ごと（1行しか無いので同じ）

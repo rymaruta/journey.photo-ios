@@ -69,10 +69,13 @@ struct StoryTextTypingView: View {
                         let pinArea = CGSize(width: max(0, space.width - Self.sideInset * 2), height: space.height)
                         let lastLine = TextOverlayRenderer.naturalSize(overlay, text: StoryTextEditing.lastLine(overlay),
                                                                        fontSize: fontSize).width
-                        let layout = StoryTextEditing.typingLayout(overlay: overlay, typing: typingSize(fontSize: fontSize),
-                                                                   lastLineWidth: Double(lastLine),
-                                                                   available: available, area: pinArea)
-                        let pin = Self.pinAlignment(layout)
+                        let layout = StoryTextEditing.typingLayout(
+                            overlay: overlay, typing: typingSize(fontSize: fontSize), lastLineWidth: Double(lastLine),
+                            padding: overlay.style == .banner ? fontSize * 0.35 : 0,
+                            available: available, area: pinArea)
+                        // 縦だけ端に寄せる（下＝打っている最終行）。横は真ん中に置いてからキャレットの側へずらす
+                        let vertical: (alignment: Alignment, anchor: UnitPoint) = layout.pinBottom
+                            ? (.bottom, .bottom) : (.center, .center)
                         ZStack {
                             // 欄の外の空いた所を押しても確定する（暗幕の上を覆うので、暗幕の
                             // 「押すと確定」が届かない）。**欄の後ろに敷く**——前だと欄にピントが入らない
@@ -80,14 +83,15 @@ struct StoryTextTypingView: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture { onDone() }
                                 .accessibilityHidden(true)
-                            // 縮めても空きに収まらないときは、打っている端（右・下）に寄せ、そこを基点に縮める
-                            // （真ん中だと行の末尾のキャレットが枠の外に切れた）
+                            // 縮めても空きに収まらないときは、キャレット（最終行の末尾）が見える所まで横にずらし、
+                            // 縦は下（打っている最終行）に寄せる
                             field(fontSize: fontSize)
-                                .scaleEffect(layout.scale, anchor: pin.anchor)
+                                .scaleEffect(layout.scale, anchor: vertical.anchor)
                                 // **大きさを決め打ちにした枠で寄せる**。上限だけの枠（maxWidth: .infinity）は
                                 // 中身が大きいと中身の大きさになり、寄せ方が効かずに真ん中へ置かれ、長い文字が
                                 // 画面から丸ごと消えた（ea8fa74 のレビュー）
-                                .frame(width: pinArea.width, height: pinArea.height, alignment: pin.alignment)
+                                .frame(width: pinArea.width, height: pinArea.height, alignment: vertical.alignment)
+                                .offset(x: layout.offsetX)
                                 // 寄せる枠をつまみの内側に置く（外へはみ出した分は下の clipped が切る）
                                 .frame(width: space.width, height: space.height)
                                 // 見本の位置: 断り書きの分だけ上に寄せる（字の下端に重ねない）
@@ -136,18 +140,6 @@ struct StoryTextTypingView: View {
     static let sideInset: Double = 56
     /// 断り書きの帯の高さ（字の下端に重ねないよう、その分だけ上に寄せる）
     static let noticeHeight: Double = 28
-
-    /// 縮めても収まらない向きに合わせた寄せ方と、縮める基点（同じ端にそろえる）
-    static func pinAlignment(_ layout: StoryTextEditing.TypingLayout) -> (alignment: Alignment, anchor: UnitPoint) {
-        switch (layout.horizontal, layout.pinBottom) {
-        case (.leading, false): return (.leading, .leading)
-        case (.center, false): return (.center, .center)
-        case (.trailing, false): return (.trailing, .trailing)
-        case (.leading, true): return (.bottomLeading, .bottomLeading)
-        case (.center, true): return (.bottom, .bottom)
-        case (.trailing, true): return (.bottomTrailing, .bottomTrailing)
-        }
-    }
 
     static func notice(_ overflow: StoryTextEditing.Overflow) -> String {
         switch (overflow.width, overflow.height) {
