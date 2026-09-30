@@ -27,6 +27,8 @@ struct HomeTopCardView: View {
     @EnvironmentObject private var environment: AppEnvironment
     /// 「行きたい」の鍵（「行きたい場所のこの季節」の札）
     @EnvironmentObject private var wishlist: WishlistStore
+    /// 見頃のお知らせを予約してよいか（受け取る設定・端末の許可）
+    @EnvironmentObject private var push: PushCenter
 
     @State private var plans: [TripPlan] = []
     /// `plans` が誰のものか。**人が替わったら、取れるまで前の人のプランを出さない**
@@ -80,6 +82,7 @@ struct HomeTopCardView: View {
                 wishedKeys = wishlist.spotIds
                 isShown = true
                 applyPendingQuiz()
+                scheduleSeasonReminder()
                 if reloadPlansOnReturn {
                     reloadPlansOnReturn = false
                     returnReloads &+= 1
@@ -351,6 +354,17 @@ struct HomeTopCardView: View {
         let fetched = try? await environment.spots.fetchIndex()
         guard !Task.isCancelled, let fetched else { return }
         spots = fetched
+        scheduleSeasonReminder()
+    }
+
+    /// 見頃のお知らせ（次の季節の始まりに1件だけ・端末の中だけ・`SeasonReminder`）を入れ替える。
+    /// 索引が取れたとき・ホームに戻ったとき（「行きたい」を変えたかもしれない）に呼ぶ。
+    /// 索引が取れていない間は触らない（空の索引で前の予約を消さない）
+    private func scheduleSeasonReminder() {
+        guard !spots.isEmpty else { return }
+        let plan = SeasonReminder.plan(now: Date(), spots: spots, wishlist: wishlist.spotIds, calendar: .current)
+        let allowed = auth.userId != nil && push.isEnabled && push.isAuthorized
+        Task { await SeasonReminderScheduler.shared.reschedule(plan, allowed: allowed) }
     }
 
     /// 今日の一問。**取れなかった日は札を出さない**（404・圏外とも）。静的な JSON なので

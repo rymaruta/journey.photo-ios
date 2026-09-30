@@ -67,6 +67,8 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        // 見頃のお知らせ（端末の中で予約したもの）はお知らせ画面の出来事ではない——開くだけにする
+        if (response.notification.request.content.userInfo["kind"] as? String) == SeasonReminder.kind { return }
         await MainActor.run { NotificationRouter.shared.openActivity() }
     }
 }
