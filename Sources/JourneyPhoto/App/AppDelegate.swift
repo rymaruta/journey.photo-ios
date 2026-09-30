@@ -61,18 +61,21 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         return [.banner, .list, .sound, .badge]
     }
 
-    /// 通知を押した。**行き先はお知らせ画面**。
+    /// 通知を押した。**お知らせ画面を開き、その上にその写真・その人を積む**（2026-09-30）。
     ///
     /// 写真の個別画面へ直接飛ばすには写真そのものを引く必要があり、
-    /// 圏外や削除済みだと**押しても何も起きない**に落ちる。お知らせ画面は
-    /// どの種類の通知でも意味が通り、そこから1タップで目的地へ行ける。
+    /// 圏外や削除済みだと**押しても何も起きない**に落ちる。だから着く先は
+    /// 今までどおりお知らせ画面で、そこが読み終えてから、**一覧の行を押したのと
+    /// 同じ決まり**（`NotificationsViewModel.route(for:)`）で行き先を積む。
+    /// 引けない写真・ストーリーの返信は一覧に留まる（空振りを作らない）。戻れば一覧
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
         // 見頃のお知らせ（端末の中で予約したもの）はお知らせ画面の出来事ではない——開くだけにする
         if (response.notification.request.content.userInfo["kind"] as? String) == SeasonReminder.kind { return }
-        await MainActor.run { NotificationRouter.shared.openActivity() }
+        let target = AppNotification.fromPush(response.notification.request.content.userInfo)
+        await MainActor.run { NotificationRouter.shared.openActivity(target: target) }
     }
 }
 
@@ -94,9 +97,20 @@ final class NotificationRouter: ObservableObject {
     /// アプリを開いている間に届いた通知の数（ベルの数え直しの合図）
     @Published private(set) var arrivals = 0
 
-    func openActivity() {
+    /// 押された通知の行き先（お知らせ画面が読み終えてから取りに来る）。
+    /// **最後に押したものだけ**を持つ——続けて2つ押したら後の方へ行く
+    private(set) var pendingTarget: AppNotification?
+
+    func openActivity(target: AppNotification? = nil) {
+        pendingTarget = target
         hasPendingActivity = true
         openActivityRequests += 1
+    }
+
+    /// 押された通知の行き先を受け取る。**受け取るのは1回だけ**
+    func takePendingTarget() -> AppNotification? {
+        defer { pendingTarget = nil }
+        return pendingTarget
     }
 
     /// 押された分を受け取る。**受け取るのは1回だけ**（2回目は false）

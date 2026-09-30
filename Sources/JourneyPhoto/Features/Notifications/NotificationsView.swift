@@ -175,6 +175,11 @@ struct NotificationsView: View {
             // したことは端末のアイコンに伝わらない——誰も消さないと増える
             // 一方。ただし圏外で開いた回に消すと、タブは 3・アイコンは 0 に割れる
             if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge() }
+            // 押した通知の行き先を積む（読み終えてから——写真は読んだ一覧から引き当てる）。
+            // 引けなければ一覧に留まる。**打ち切られた回は取らない**（次の回が取る）
+            guard !Task.isCancelled, let target = router.takePendingTarget(),
+                  let destination = model.route(for: target) else { return }
+            route = destination
         }
         .refreshable {
             if await model.load(environment: environment, viewerId: auth.userId, refreshing: true) {
