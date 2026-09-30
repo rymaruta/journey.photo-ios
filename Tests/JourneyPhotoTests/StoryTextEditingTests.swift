@@ -60,6 +60,10 @@ final class StoryTextEditingTests: XCTestCase {
         let dark = StoryTextEditing.nextStyle(TextOverlay(text: "文字"))
         XCTAssertEqual(dark.style, .dark)
         XCTAssertTrue(StoryTextEditing.typingNeedsLightPlate(dark), "黒の見た目の墨の字が見えない")
+        // 白の見た目でも墨を選べば敷く（白の見た目は色を寄せない）
+        var lightInk = TextOverlay(text: "文字")
+        lightInk.ink = .ink
+        XCTAssertTrue(StoryTextEditing.typingNeedsLightPlate(lightInk))
         // 白の字・帯・スタンプには敷かない
         XCTAssertFalse(StoryTextEditing.typingNeedsLightPlate(TextOverlay(text: "文字")))
         XCTAssertFalse(StoryTextEditing.typingNeedsLightPlate(dark.withStyle(.banner)))

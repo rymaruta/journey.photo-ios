@@ -253,6 +253,11 @@ struct StoryTextTypingView: View {
                     .accessibilityHidden(true)
             }
         }
+        // **欄（と下敷き）を押したらキーボードを出し直す。** ピントを入れるのは開いたときの1回だけで、
+        // 色選びなどでキーボードが閉じると戻る口が無かった（欄の外を押すと確定して閉じる）。
+        // 欄そのものの押し方（キャレットの位置決め）を邪魔しないよう、同時に効かせる
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded { if overlay.kind.isEditable { focused = true } })
     }
 
     /// 打つ欄。**時刻・日付は直せない**（端末から採った値）ので、同じ見た目の文字を出し、
