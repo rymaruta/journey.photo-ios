@@ -259,7 +259,8 @@ enum TripPicker {
 
     /// 並びを保ったまま `target` 日に切り直す（1日は `itemsPerDayMax` まで・空の日は作らない）。
     ///
-    /// 1日の数の上限を `crowdedDay` か、均したときの数（n÷日数の切り上げ）＋目安の半分の大きい方に置き、
+    /// 1日の数の上限を `crowdedDay` か、均したときの数（n÷日数の切り上げ）＋目安の半分の大きい方に置き
+    /// （目安を越えるときは下限も均した数−目安の半分に置き）、
     /// その中で **地域を混ぜる日の数**が少ない → **いちばん多い日**が少ない →
     /// 日ごとの数の2乗の和が小さい（均す）切り方を、全部の切り方から選ぶ。
     /// 貪欲にまとめると、40か所を2日で「16・16・8」の3日に行き詰まっていた（「20・20」なら収まる）。
@@ -274,6 +275,10 @@ enum TripPicker {
         // 均した数を越えて、目安の半分（2か所）までは偏ってよい——ぴったりで打ち切ると、
         // 均した数が8を越えたとたんに「10・9・8」の混ぜない切り方が作れず、混ぜた「9・9・9」になった
         let limit = min(cap, max(crowdedDay, (n + parts - 1) / parts + placesPerDay / 2))
+        // 上限が目安を越える（詰まる）ときは、**下限も均した数の2か所下**に置く。上だけ広げると、
+        // 混ぜる日を少なくするために小さい日がいくらでも小さくなり、「10・10・2」「14・14・7」が出た。
+        // 均した数は必ずこの幅に入るので、切れない入力は無い
+        let floorSize = limit > crowdedDay ? max(1, n / parts - placesPerDay / 2) : 1
         let keys: [String?] = items.map { region(of: $0).label == nil ? nil : region(of: $0).key }
 
         struct Score {
@@ -293,7 +298,7 @@ enum TripPicker {
         for d in 1...parts {
             for i in d...n {
                 var chosen: Score?
-                for size in 1...min(limit, i) {
+                for size in 1...min(limit, i) where size >= floorSize {
                     let j = i - size
                     guard let prev = best[d - 1][j] else { continue }
                     let mixed = Set(keys[j..<i].compactMap { $0 }).count > 1 ? 1 : 0

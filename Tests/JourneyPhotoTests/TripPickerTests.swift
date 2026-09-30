@@ -210,6 +210,25 @@ final class TripPickerTests: XCTestCase {
         XCTAssertEqual(TripPicker.days([k9, n7], dayCount: 2).map(\.count), [9, 7])
     }
 
+    /// 詰まる日程では、混ぜる日を減らすために小さい日を作り過ぎない（「10・10・2」「14・14・7」にしない）
+    func testCrowdedPackingDoesNotLeaveTinyDays() throws {
+        func regions(_ counts: [Int]) throws -> [[OfficialSpot]] {
+            try counts.enumerated().map { r, count in
+                try (0..<count).map { i in
+                    try spot("g\(r)-\(i)", prefecture: "県\(r)", lat: 35 + Double(r) * 0.5 + Double(i) * 0.01, lng: 135)
+                }
+            }
+        }
+        for (counts, dayCount) in [([10, 10, 2], 3), ([7, 7, 7, 7, 7], 3), ([10, 10, 10, 1], 4), ([10, 10, 4], 3)] {
+            let groups = try regions(counts)
+            let days = TripPicker.days(groups, dayCount: dayCount)
+            let n = counts.reduce(0, +)
+            XCTAssertEqual(days.count, dayCount)
+            XCTAssertGreaterThanOrEqual(days.map(\.count).min() ?? 0, n / dayCount - TripPicker.placesPerDay / 2, "\(counts)")
+            XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(groups.flatMap { $0 }))
+        }
+    }
+
     /// どんな数でも、決めた日数ちょうど・1日20か所まで・場所を落とさない・並びを変えない
     func testAnyCountFitsRequestedDaysWithinServerLimits() throws {
         let pool = try (0..<TripPicker.pickMax).map { i in
@@ -218,9 +237,10 @@ final class TripPickerTests: XCTestCase {
         for n in [1, 2, 5, 9, 17, 23, 40] {
             let groups = TripPicker.grouped(Array(pool.prefix(n)))
             let flat = groups.flatMap { $0 }
-            for dayCount in [1, 2, 3, 7, 60] {
+            for dayCount in [1, 2, 3, 7, 60, 61] {
                 let days = TripPicker.days(groups, dayCount: dayCount)
-                let expected = max(dayCount, (n + TripPlanService.itemsPerDayMax - 1) / TripPlanService.itemsPerDayMax)
+                let expected = max(min(dayCount, TripPlanService.daysMax),
+                                   (n + TripPlanService.itemsPerDayMax - 1) / TripPlanService.itemsPerDayMax)
                 XCTAssertEqual(days.count, expected, "n=\(n) days=\(dayCount)")
                 XCTAssertTrue(days.allSatisfy { $0.count <= TripPlanService.itemsPerDayMax })
                 XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(flat), "n=\(n) days=\(dayCount)")
