@@ -634,6 +634,9 @@ final class NotificationsViewModel: ObservableObject {
                 // 待つ間に人が替わっていたら、次の人のアイコンの数も消させない
                 return marked && era == userEra
             }
+            // サーバーの未読がもう 0 だった回も、既読にできた回と同じ合図でベルを 0 にする
+            // （閉じたときの数え直しが落ちると、ベルだけ古い数が残った）
+            if era == userEra { NotificationRouter.shared.noteRead(owner: viewerId) }
             // 人が替わって既読化を送らなかった回も、次の人のアイコンの数を消させない
             return era == userEra
         } catch {

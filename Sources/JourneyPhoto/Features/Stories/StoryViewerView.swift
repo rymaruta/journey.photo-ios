@@ -423,7 +423,8 @@ struct StoryViewerView: View {
                     repliesLoaded = true
                 } catch {
                     guard !Task.isCancelled else { return }
-                    repliesFailed = true
+                    // 引き下げの読み直しが先に読めていたら、失敗で上書きしない
+                    if !repliesLoaded { repliesFailed = true }
                 }
             }
         }
