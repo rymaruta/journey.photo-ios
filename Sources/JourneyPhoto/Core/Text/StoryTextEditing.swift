@@ -210,12 +210,13 @@ enum StoryTextEditing {
     }
 
     /// 2本指の操作の相手を決める。**回すとつまむは同じ相手に**——別々に決めると、認識される時刻の
-    /// ずれで札は大きくなり写真は回った。順は: もう片方の操作の相手 → 選んだ札 → 1本指で運んでいる札
-    /// （運んだ先でつまむと、元の位置で当てて別の札や写真に効いた）→ 指の下の札 → 写真
+    /// ずれで札は大きくなり写真は回った。順は: もう片方の操作の相手 → 1本指で運んでいる札（指が乗って
+    /// いる。選んだ別の札より先——選んだ札が回った・4ed53ca のレビュー）→ 選んだ札 → 指の下の札 → 写真。
+    /// `dragging` は**まだ相殺されていない**運びだけを渡す
     static func gestureTarget(other: GestureTarget?, selected: UUID?, dragging: UUID?,
                               under: () -> UUID?) -> GestureTarget {
         if let other { return other }
-        if let id = selected ?? dragging ?? under() { return .overlay(id) }
+        if let id = dragging ?? selected ?? under() { return .overlay(id) }
         return .photo
     }
 

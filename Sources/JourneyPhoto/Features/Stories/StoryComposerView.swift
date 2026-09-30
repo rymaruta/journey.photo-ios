@@ -379,6 +379,8 @@ struct StoryComposerView: View {
                     // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
                     .opacity(draggingOverlay ? 0 : 1)
                     .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
+                    .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .leading) {
@@ -390,6 +392,8 @@ struct StoryComposerView: View {
                     // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
                     .opacity(draggingOverlay ? 0 : 1)
                     .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
+                    .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottomLeading) {
@@ -401,6 +405,8 @@ struct StoryComposerView: View {
                     // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
                     .opacity(draggingOverlay ? 0 : 1)
                     .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
+                    .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -412,6 +418,8 @@ struct StoryComposerView: View {
                     // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
                     .opacity(draggingOverlay ? 0 : 1)
                     .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
+                    .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottom) {
@@ -430,6 +438,7 @@ struct StoryComposerView: View {
                 }
                 .opacity(draggingOverlay ? 0 : 1)
                 .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
             }
         }
         .background {

@@ -206,7 +206,7 @@ struct StoryCanvas: View {
                         if rotateId == nil && !twistsPhoto {
                             let other: StoryTextEditing.GestureTarget? = scaleId.map { .overlay($0) }
                                 ?? (pinchesPhoto ? .photo : nil)
-                            switch StoryTextEditing.gestureTarget(other: other, selected: selectedId, dragging: dragId,
+                            switch StoryTextEditing.gestureTarget(other: other, selected: selectedId, dragging: dragSpoiled ? nil : dragId,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) }) {
                             case .overlay(let id):
                                 absorbDrag(photo: photo, canvas: geometry.size)
@@ -234,7 +234,7 @@ struct StoryCanvas: View {
                         if scaleId == nil && !pinchesPhoto {
                             let other: StoryTextEditing.GestureTarget? = rotateId.map { .overlay($0) }
                                 ?? (twistsPhoto ? .photo : nil)
-                            switch StoryTextEditing.gestureTarget(other: other, selected: selectedId, dragging: dragId,
+                            switch StoryTextEditing.gestureTarget(other: other, selected: selectedId, dragging: dragSpoiled ? nil : dragId,
                                                                   under: { overlayUnder(value.startLocation, photo: photo) }) {
                             case .overlay(let id):
                                 absorbDrag(photo: photo, canvas: geometry.size)
@@ -444,7 +444,12 @@ struct StoryCanvas: View {
                     .onChanged { value in
                         // 動かし始め（前の回の印を戻す）
                         if dragId == nil { dragSpoiled = false }
-                        // 2本指の操作（回す・つまむ。**写真に効いているときも**）が入ったら、この回は動かさない
+                        // 2本指の操作（回す・つまむ。**写真に効いているときも**）が入ったら、この回は動かさない。
+                        // **相殺する前に、そこまで運んだ分を入れる**（2本指の判定より先にここへ来ると、
+                        // 運んだ分が捨てられて札が元の位置へ戻った・4ed53ca のレビュー）。2回目は何もしない
+                        if twoFingerActive && !dragSpoiled && dragId == overlay.id {
+                            absorbDrag(photo: photo, canvas: canvas)
+                        }
                         if twoFingerActive { dragSpoiled = true }
                         dragId = overlay.id
                         guard !dragSpoiled else {

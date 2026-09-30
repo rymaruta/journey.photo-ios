@@ -303,13 +303,14 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertNil(StoryTextEditing.overlay(at: CGPoint(x: 260, y: 140), in: [tilted], slop: 0))
     }
 
-    /// 2本指の操作の相手: もう片方の相手 → 選んだ札 → 運んでいる札 → 指の下 → 写真
+    /// 2本指の操作の相手: もう片方の相手 → 運んでいる札 → 選んだ札 → 指の下 → 写真
     func testGestureTargetOrder() {
         let a = UUID(), b = UUID(), c = UUID(), d = UUID()
         XCTAssertEqual(StoryTextEditing.gestureTarget(other: .photo, selected: a, dragging: b, under: { c }), .photo)
         XCTAssertEqual(StoryTextEditing.gestureTarget(other: .overlay(d), selected: a, dragging: b, under: { c }), .overlay(d))
-        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: a, dragging: b, under: { c }), .overlay(a))
-        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: nil, dragging: b, under: { c }), .overlay(b))
+        // 指が乗って運んでいる札が、選んである別の札より先
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: a, dragging: b, under: { c }), .overlay(b))
+        XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: a, dragging: nil, under: { c }), .overlay(a))
         XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: nil, dragging: nil, under: { c }), .overlay(c))
         XCTAssertEqual(StoryTextEditing.gestureTarget(other: nil, selected: nil, dragging: nil, under: { nil }), .photo)
     }
