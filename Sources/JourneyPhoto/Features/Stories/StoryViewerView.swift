@@ -906,7 +906,9 @@ struct StoryViewerView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    // 反応の並びが開いていたら、押しても送らずに閉じるだけ
+                    // 反応の並び・返信の入力が開いていたら、押しても送らずに閉じるだけ
+                    // （送ると `go(to:)` が返信の書きかけを消す）
+                    if replyFocused { replyFocused = false; return }
                     if showReactions { showReactions = false } else { leftTap() }
                 }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
@@ -916,6 +918,7 @@ struct StoryViewerView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
+                    if replyFocused { replyFocused = false; return }
                     if showReactions { showReactions = false }
                     else if paused { paused = false } else if !isSending { advance() }
                 }
