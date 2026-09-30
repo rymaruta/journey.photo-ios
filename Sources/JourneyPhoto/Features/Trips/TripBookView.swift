@@ -262,7 +262,9 @@ struct TripBookView: View {
     private func page(_ photo: Photo, dayPlace: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             NavigationLink {
-                PhotoDetailView(photo: photo, context: trip.photos)
+                // 旅の一冊は自分の写真だけ（`TripBook.shelfTrips(from: myPhotos)`）。
+                // 投稿直後の写真は個別ページがまだ無い（`PhotoLink`）
+                PhotoDetailView(photo: photo, fromPublicFeed: false, context: trip.photos)
             } label: {
                 RemoteImage(url: photo.detailImageURL, contentMode: .fit)
                     .frame(maxWidth: .infinity)

@@ -66,4 +66,19 @@ final class LikedPhotosTests: XCTestCase {
         ]
         XCTAssertEqual(LikedPhotos.resolve(["old", "new"], in: [feed]).map(\.id), ["new", "old"])
     }
+
+    /// 🔴 **自分の写真の束だけから引き当てた写真は、個別ページが在るとみなさない。**
+    /// 投稿直後・非公開の自分の写真は `/photo/<id>` がまだ無い（`PhotoLink`）。
+    /// 以前は保存・いいねの一覧から開くと既定の `true` のままで、共有が 404 を指した
+    func testOnlyPhotosFoundInThePublicFeedHaveAPage() throws {
+        let feed = [try photo("public", createdAt: "2026-01-01")]
+        let mine = [try photo("just-posted", createdAt: "2026-09-30"),
+                    try photo("public", createdAt: "2026-01-01")]
+        let found = LikedPhotos.resolve(["public", "just-posted"], in: [feed, mine])
+        let isPublic = LikedPhotos.fromPublicFeed(feed)
+        XCTAssertEqual(found.map(\.id), ["just-posted", "public"])
+        XCTAssertFalse(isPublic(found[0]), "自分の写真の束だけに在る写真にページは無い")
+        XCTAssertTrue(isPublic(found[1]), "公開一覧に在る写真はページが在る")
+        XCTAssertFalse(LikedPhotos.fromPublicFeed([])(found[1]), "公開一覧が取れていない回は無いとみなす")
+    }
 }

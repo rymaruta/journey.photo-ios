@@ -536,7 +536,8 @@ struct MyPageView: View {
         // **先に公開一覧を絞ってから引き当てる**（`SavedPhotosView` と同じ順）。引き当ててから
         // 絞ると、公開一覧の古い写しが先に当たって落ち、自分の非公開の写し（新しい方）が
         // 使われずに、非公開にした自分の写真が保存から消えた
-        let saved = LikedPhotos.resolve(savedIds, in: [dropped.visible(feed), model.photos])
+        let publicPool = dropped.visible(feed)
+        let saved = LikedPhotos.resolve(savedIds, in: [publicPool, model.photos])
         if saved.isEmpty {
             switch LikedPhotos.emptyState(idCount: savedIds.count, loaded: feedLoaded && !model.isLoading,
                                           failed: feedFailed) {
@@ -555,8 +556,11 @@ struct MyPageView: View {
                 }
             }
         } else {
+            // 保存は他人の写真と自分の写真が混ざる。公開一覧から引き当てた写真だけ
+            // 個別ページが在る（`LikedPhotos.fromPublicFeed`・`SavedPhotosView` と同じ）
+            let isPublic = LikedPhotos.fromPublicFeed(publicPool)
             PhotoGrid(photos: saved) { photo in
-                PhotoDetailView(photo: photo, context: saved)
+                PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: saved)
             }
         }
     }

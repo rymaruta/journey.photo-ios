@@ -185,7 +185,9 @@ struct HomeTopCardView: View {
             .buttonStyle(.plain)
         case .oneYearAgo(let photo, let byUploadDate):
             NavigationLink {
-                PhotoDetailView(photo: photo, context: [photo])
+                // 1年前の札は自分の写真だけ（`HomeTopCard.oneYearAgo(myPhotos:)`）。
+                // 個別ページが在るとはみなさない（`PhotoLink`）
+                PhotoDetailView(photo: photo, fromPublicFeed: false, context: [photo])
             } label: {
                 card(eyebrow: "ONE YEAR AGO", eyebrowLabel: L("1年前", "A year ago"),
                      title: byUploadDate ? L("1年前に投稿", "Posted a year ago")
