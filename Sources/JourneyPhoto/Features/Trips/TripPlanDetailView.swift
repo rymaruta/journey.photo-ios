@@ -267,6 +267,11 @@ struct TripPlanDetailView: View {
             resetIfNeeded()
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
+        // 日程が変わったら日の削除の札を閉じる。控えを残すと、日程が元の形に戻ったときに
+        // 押していない札がまた開いた（a229438 のレビュー）
+        .onChange(of: days) { _, now in
+            if let target = removingDay, target.days != now { removingDay = nil }
+        }
 
         // その日の場所を番号つきで地図に・前の場所からの経路（2026-09-30）。
         // **開いた時点の日程で出す**（保存していない並び替えも反映する）
@@ -508,16 +513,19 @@ struct TripPlanDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("\(di + 1) 日目を削除", "Remove day \(di + 1)"))
-                .accessibilityHint(TripPlanEdit.confirmsRemoving(day)
-                                   ? L("確認が出ます", "Asks before removing") : "")
+                .accessibilityHint(!TripPlanEdit.confirmsRemoving(day) ? ""
+                                   : isConfirmingRemove(di) ? L("確認を閉じます", "Closes the confirmation")
+                                   : L("確認が出ます", "Asks before removing"))
             }
             .padding(.horizontal, 4)
 
-            if isConfirmingRemove(di) {
-                removeDayConfirm(di)
-            }
-
             VStack(spacing: 0) {
+                // 札は**消える日の箱の中の先頭**に開く（別の箱にすると、どちらが消えるのか分かりにくい・
+                // プランの削除の札も押したボタンと同じ箱の中）
+                if isConfirmingRemove(di) {
+                    removeDayConfirm(di)
+                    divider
+                }
                 if day.items.isEmpty {
                     Text(L("まだ何も入っていません。", "Nothing planned."))
                         .font(.footnote)
@@ -584,8 +592,6 @@ struct TripPlanDetailView: View {
             }
         }
         .padding(14)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
     }
 
     private var divider: some View {
