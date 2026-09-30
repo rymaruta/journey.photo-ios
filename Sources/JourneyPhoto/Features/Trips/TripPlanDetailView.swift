@@ -480,6 +480,8 @@ struct TripPlanDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("\(di + 1) 日目を地図で見る", "Show day \(di + 1) on a map"))
+                    // 確認の無い日の削除（赤）のすぐ隣に置かない（押し間違い・eaf0c48 のレビュー）
+                    .padding(.trailing, 8)
                 }
                 Button {
                     guard days.indices.contains(di) else { return }

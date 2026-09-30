@@ -63,7 +63,10 @@ struct TripBookView: View {
         .task(id: "\(trip.id)|\(trip.cover?.id ?? "")|\(trip.photos.count)|\(auth.userId ?? "")") {
             if cardOwner != auth.userId { cardURL = nil }
             cardOwner = auth.userId
-            if let made = await makeCard() { cardURL = made }
+            // **作れなかったら前の画像を捨てる**（表紙・枚数が替わったのに前の1枚を配っていた・
+            // eaf0c48 のレビュー）。取り消されただけ（すぐ次の作り直しが来る）なら触らない
+            let made = await makeCard()
+            if !Task.isCancelled { cardURL = made }
         }
 
     }

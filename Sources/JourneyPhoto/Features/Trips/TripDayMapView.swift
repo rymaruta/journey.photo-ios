@@ -16,12 +16,15 @@ struct TripDayMapView: View {
     @State private var camera: MapCameraPosition = .automatic
     /// 経路を探している場所（連打で2つ開かない）
     @State private var opening: Int?
+    /// 経路を探している仕事。**画面を閉じたら取り消す**
+    @State private var directionsTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
             Map(position: $camera) {
                 ForEach(stops.filter { $0.coords != nil }) { stop in
-                    Annotation(stop.name, coordinate: coordinate(stop.coords!)) {
+                    // 読み上げで番号が分かるように（ピンの番号は読み上げから外してある）
+                    Annotation("\(stop.number). \(stop.name)", coordinate: coordinate(stop.coords!)) {
                         pin(stop.number)
                     }
                 }
@@ -53,6 +56,7 @@ struct TripDayMapView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
         }
+        .onDisappear { directionsTask?.cancel() }
     }
 
     private func coordinate(_ coords: Photo.Coords) -> CLLocationCoordinate2D {
@@ -119,19 +123,25 @@ struct TripDayMapView: View {
     }
 
     /// 前の場所（1か所目は今いる場所）から、この場所への経路。行き先・起点とも名前で探し直す
+    ///
+    /// 🔴 **閉じたら開かない。** 探している間（最大で数秒）に画面を閉じると、閉じたあとで
+    /// Apple のマップが開いていた（押していないものが開く・eaf0c48 のレビュー）。
+    /// 起点と行き先は並べて探す（待ちを1回分にする）
     private func openDirections(_ stop: TripDayMap.Stop, to: Photo.Coords) {
         guard opening == nil else { return }
         opening = stop.number
-        Task { @MainActor in
+        directionsTask = Task { @MainActor in
             defer { opening = nil }
-            let destination = await SpotDirections.item(name: stop.name, coords: to)
+            async let destination = SpotDirections.item(name: stop.name, coords: to)
             let origin: MKMapItem
             if let from = stop.from, let fromName = stop.fromName {
                 origin = await SpotDirections.item(name: fromName, coords: from)
             } else {
                 origin = MKMapItem.forCurrentLocation()
             }
-            MKMapItem.openMaps(with: [origin, destination], launchOptions: [
+            let target = await destination
+            guard !Task.isCancelled else { return }
+            MKMapItem.openMaps(with: [origin, target], launchOptions: [
                 MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
             ])
         }
