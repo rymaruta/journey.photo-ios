@@ -79,6 +79,15 @@ final class TripLightTests: XCTestCase {
         XCTAssertNil(TripLight.entry(plan: p, today: day("2026-10-12"), spots: [g]))
     }
 
+    /// 極夜（北緯69度の12月）は Web と同じく「極夜」（何も出さないと理由が分からない）
+    func testPolarNightSaysSo() throws {
+        let north = try spot("sp_n", name: "北", lat: 69.05, lng: 20.8, country: "フィンランド", seasons: "[]")
+        let p = plan(start: "2026-12-15", end: "2026-12-15", days: [["sp_n"]])
+        let e = try XCTUnwrap(TripLight.entry(plan: p, today: day("2026-12-15"), spots: [north]))
+        XCTAssertEqual(e.sunset, "極夜")
+        XCTAssertEqual(e.eveningGolden, "極夜")
+    }
+
     /// 🔴 北極圏（公開中のサンタクロース村・北緯66.5度）。Web の撮影の光の表と同じ言い分け
     /// ——「日の入り 00:10」を朝のことに読ませない・一日中マジックアワーを「無い」と読ませない
     func testArcticWordsMatchTheWeb() throws {

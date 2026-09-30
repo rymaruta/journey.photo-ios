@@ -21,7 +21,7 @@ enum TripLight {
         let isTomorrow: Bool
         /// 1から（出発日が1日目）
         let dayNumber: Int
-        /// 日の入り。日付をまたげば「翌00:03」、白夜なら「白夜」（Web の撮影の光の表と同じ言い分け）
+        /// 日の入り。日付をまたげば「翌00:10」、白夜なら「白夜」（Web の撮影の光の表と同じ言い分け）
         let sunset: String?
         /// 夕方のマジックアワー "HH:MM–HH:MM"。一日中低ければ「終日」、終わらなければ「HH:MM–（沈まない）」
         let eveningGolden: String?
@@ -50,8 +50,9 @@ enum TripLight {
         var sunset: String?
         if let set {
             sunset = rise.map { nextDay($0, set) } ?? set
-        } else if let altitude, altitude.min > horizon {
-            sunset = L("白夜", "Midnight sun")
+        } else if let altitude {
+            // 日の入りが無い日は白夜か極夜（同じ赤緯・同じ式なので必ずどちらか・Web と同じ）
+            sunset = altitude.min > horizon ? L("白夜", "Midnight sun") : L("極夜", "Polar night")
         }
         let gStart = SunTimes.clock(times.eveningGolden.start, in: zone)
         let gEnd = SunTimes.clock(times.eveningGolden.end, in: zone)
@@ -61,6 +62,8 @@ enum TripLight {
         } else if gStart == nil, let altitude, altitude.max < goldenTop, altitude.max > horizon {
             // 昇るが一日中 6° まで上がらない＝昼のあいだずっとマジックアワー（昇らない日には言わない）
             golden = L("終日", "All day")
+        } else if gStart == nil, let altitude, altitude.max <= horizon {
+            golden = L("極夜", "Polar night")
         } else if let gStart {
             // −4° まで下がらない。沈まない（白夜）か、沈むが明け方までつながるか（Web と同じ言い分け）
             golden = (altitude?.min ?? horizon) > horizon

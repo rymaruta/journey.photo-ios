@@ -151,7 +151,7 @@ struct HomeTopCardView: View {
                         : L("出発まで \(daysUntil) 日", daysUntil == 1 ? "1 day to go" : "\(daysUntil) days to go"),
                      // 前日と当日は、予定した撮影スポットの光の時刻（当日モード・`TripLight`）
                      detail: tripLight(plan) ?? (plan.itemCount > 0 ? TripPlanText.placeCount(plan.itemCount) : nil),
-                     backdrop: nil, inCarousel: inCarousel)
+                     backdrop: nil, detailTruncation: .tail, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .onTrip(let plan, let dayNumber):
@@ -164,7 +164,7 @@ struct HomeTopCardView: View {
                      detail: tripLight(plan),
                      backdrop: nil,
                      // 押すと投稿画面が開く（別の画面へ進む「›」ではない）
-                     trailingSymbol: "plus", inCarousel: inCarousel)
+                     trailingSymbol: "plus", detailTruncation: .tail, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
         case .bookReady(let trip):
@@ -247,7 +247,8 @@ struct HomeTopCardView: View {
 
     private func card(eyebrow: String, eyebrowLabel: String, title: String, line: String,
                       detail: String?, backdrop: Photo?, backdropURL: URL? = nil,
-                      trailingSymbol: String = "chevron.right", inCarousel: Bool) -> some View {
+                      trailingSymbol: String = "chevron.right", detailTruncation: Text.TruncationMode = .middle,
+                      inCarousel: Bool) -> some View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(eyebrow)
@@ -272,7 +273,9 @@ struct HomeTopCardView: View {
                         .font(.footnote)
                         .foregroundStyle(WebTheme.muted)
                         .lineLimit(2)
-                        .truncationMode(.middle)
+                        // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
+                        // （名前が長くても、先頭の「明日 · 名前 · マジックアワー」を残す）
+                        .truncationMode(detailTruncation)
                 }
             }
             Spacer(minLength: 0)
