@@ -93,4 +93,14 @@ final class SpotAliasTests: XCTestCase {
                                                         aliases: ["abukumado": ["鍾乳洞"]]).map(\.slug), ["abukumado"])
         XCTAssertTrue(PlaceSpotSuggestions.suggestions(query: "鍾乳洞", near: nil, index: [s]).isEmpty)
     }
+
+    /// 名前で当たったものが先。近い別名の当たりが、遠い名前の当たりを押し出さない
+    func testNameMatchesComeBeforeAliasMatches() throws {
+        let near = try spot("near", name: "あぶくま洞")          // 近いが別名だけで当たる
+        let far = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(#"{"spotId":"sp_far","slug":"far","name":"滝の公園","stage":"published","coords":{"lat":40.0,"lng":140.6}}"#.utf8))
+        let here = Photo.Coords(lat: 37.2, lng: 140.6)
+        let result = PlaceSpotSuggestions.suggestions(query: "滝", near: here, index: [near, far],
+                                                      aliases: ["near": ["滝根町"]])
+        XCTAssertEqual(result.map(\.slug), ["far", "near"])
+    }
 }

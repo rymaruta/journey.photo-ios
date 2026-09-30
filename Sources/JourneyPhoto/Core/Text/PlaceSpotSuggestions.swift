@@ -32,16 +32,23 @@ enum PlaceSpotSuggestions {
                 .map(\.spot)
                 .prefix(limit))
         }
-        let matched = usable.filter { spot in
+        // **名前・読みで当たったものが先、別名だけで当たったものは後。** 別名は「町」「公園」の
+        // ような一般の語を含むので、混ぜて3つで切ると、近い別名の当たりが名前の当たりを
+        // 押し出した（47b7180 のレビュー・Web の searchSpotRows も名前が先）。段の中は近い順
+        let byName = usable.filter { spot in
             [spot.name, spot.reading, spot.nameEn]
                 .compactMap { $0 }
                 .contains { MapSearch.fold($0).contains(needle) }
-                || OfficialSpotIndex.aliasMatches(aliases[spot.slug], needle: needle)
         }
-        guard let near else {
-            return Array(matched.sorted { ($0.name, $0.slug) < ($1.name, $1.slug) }.prefix(limit))
+        let named = Set(byName.map(\.spotId))
+        let byAlias = usable.filter {
+            !named.contains($0.spotId) && OfficialSpotIndex.aliasMatches(aliases[$0.slug], needle: needle)
         }
-        return Array(byDistance(matched, from: near).map(\.spot).prefix(limit))
+        func ordered(_ spots: [OfficialSpot]) -> [OfficialSpot] {
+            guard let near else { return spots.sorted { ($0.name, $0.slug) < ($1.name, $1.slug) } }
+            return byDistance(spots, from: near).map(\.spot)
+        }
+        return Array((ordered(byName) + ordered(byAlias)).prefix(limit))
     }
 
     /// スポットを選んだときに欄へ入れる座標。

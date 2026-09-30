@@ -158,7 +158,10 @@ struct PlaceSearchField: View {
         if spotIndex == nil {
             spotIndex = try? await environment.spots.fetchIndex()
         }
-        if spotAliases.isEmpty { spotAliases = await environment.spots.fetchAliases() }
+        // 索引が取れた時点で一度出す（別名の通信を待って候補を遅らせない）。別名が届いたら出し直す
+        if focused { suggestSpots(for: location) }
+        guard spotAliases.isEmpty else { return }
+        spotAliases = await environment.spots.fetchAliases()
         guard focused else { return }
         suggestSpots(for: location)
     }
