@@ -63,8 +63,13 @@ struct StoryComposerView: View {
     /// **写真の上で直接打っている札**（`StoryTextTypingView`）。nil なら打っていない。
     /// 「文字と札」の中からも外からも開く（owner・2026-09-30「使いづらい」）
     @State private var typingId: UUID?
+    /// 打っている札が載っている写真。**写真の読み込みで表示中の写真が移っても、打つ先を取り違えない**
+    /// （移った先には札が無く、打った字が消え、元の写真に見えない空の札が残った・4ffb74f のレビュー）
+    @State private var typingShotId: UUID?
     /// 写真の枠の大きさ（**キーボードで縮む前**）。打つ画面の文字を焼き込みと同じ大きさで見せる
     @State private var canvasSize: CGSize = .zero
+    /// 打ち始めた瞬間の `canvasSize`（打っている間はキーボードで枠が縮むので、こちらで測る）
+    @State private var typingCanvas: CGSize = .zero
     /// 投票の札を選んでいる（札の `selectedId` とはどちらか一方）
     @State private var voteSelected = false
     /// 編集に入ったときの投票（「キャンセル」で戻す）
@@ -154,6 +159,8 @@ struct StoryComposerView: View {
                     footer
                 }
             }
+            // 打っている間は後ろを読ませない（VoiceOver で投稿・他の札へ移れた）
+            .accessibilityHidden(typingId != nil)
             if typingId == nil {
                 topBar
                     .padding(.horizontal, 8)
@@ -170,7 +177,7 @@ struct StoryComposerView: View {
             }
             // 写真の上で直接打つ（開いたらすぐキーボード）
             if let typingId {
-                StoryTextTypingView(overlay: overlayBinding(id: typingId),
+                StoryTextTypingView(overlay: typingBinding(id: typingId),
                                     photoShortSide: photoShortSide) { finishTyping() }
             }
         }
@@ -306,13 +313,11 @@ struct StoryComposerView: View {
                 StoryCanvas(preview: preview, imageSize: previewSize, overlays: overlays, framing: framing,
                             selectedId: textMode ? selectedId : nil,
                             // 打っている札は打つ画面の真ん中に出す（写真の上に二重に出さない）
-                            hiddenId: typingId,
+                            hiddenId: typingShotId == shots[current].id ? typingId : nil,
                             onTap: { overlay in
                                 // **打ち直せる札（文字・撮影地・タグ・曲）は、押したらすぐ打つ画面へ**
                                 if StoryTextEditing.opensTyping(overlay) {
-                                    selectedId = nil
-                                    voteSelected = false
-                                    typingId = overlay.id
+                                    startTyping(overlay.id)
                                     return
                                 }
                                 // 押したら文字と札の編集へ（その札を選んだ状態で）。
@@ -823,33 +828,64 @@ struct StoryComposerView: View {
                         "Up to \(TextOverlay.maxCount) text items per photo")
             return
         }
-        captionFocused = false
         overlays.wrappedValue.append(overlay)
+        startTyping(overlay.id)
+    }
+
+    /// いま表示中の写真の札を打ち始める。**打つ先の写真を覚える**
+    private func startTyping(_ id: UUID) {
+        guard shots.indices.contains(current) else { return }
+        // 別の札を打っている最中に呼ばれたら（VoiceOver など）、前の札を先に確定する
+        if typingId != nil { finishTyping() }
+        captionFocused = false
         selectedId = nil
         voteSelected = false
-        typingId = overlay.id
+        // キーボードが出る前の枠で文字の大きさを決める（`photoShortSide`）
+        typingCanvas = canvasSize
+        typingShotId = shots[current].id
+        typingId = id
     }
 
-    /// 打ち終えた。**空なら置かない**（新しく足した札も、打ち直して消した札も）
+    /// 打ち終えた。**空なら置かない**（新しく足した札も、打ち直して消した札も）。
+    /// 片付ける先は**打ち始めた写真**（表示中の写真ではない）
     private func finishTyping() {
-        guard let id = typingId else { return }
-        overlays.wrappedValue = StoryTextEditing.finish(overlays.wrappedValue, id: id)
-        typingId = nil
-    }
-
-    /// 画面上の写真の短い辺（打つ画面の文字の大きさ・焼き込みと同じ基準）
-    private var photoShortSide: Double {
-        guard canvasSize.width > 0, canvasSize.height > 0 else { return 0 }
-        let rect = TextOverlay.filledRect(image: previewSize ?? canvasSize, in: canvasSize)
-        return Double(min(rect.width, rect.height))
-    }
-
-    /// 写真の枠の大きさを覚える。**幅が変わったら測り直し、同じ幅なら高い方**
-    /// （キーボードで縮んだ枠で測ると、打つ画面の文字が置いたあとより小さく見える・`StoryCanvas` と同じ）
-    private func rememberCanvas(_ size: CGSize) {
-        if size.width != canvasSize.width || size.height > canvasSize.height {
-            canvasSize = size
+        if let id = typingId, let shotId = typingShotId,
+           let i = shots.firstIndex(where: { $0.id == shotId }) {
+            shots[i].overlays = StoryTextEditing.finish(shots[i].overlays, id: id)
         }
+        typingId = nil
+        typingShotId = nil
+    }
+
+    /// 打っている札への窓。**打ち始めた写真の中を id で引く**（表示中の写真が移っても同じ札）
+    private func typingBinding(id: UUID) -> Binding<TextOverlay> {
+        Binding(
+            get: {
+                shots.first { $0.id == typingShotId }?.overlays.first { $0.id == id } ?? TextOverlay(text: "")
+            },
+            set: { value in
+                guard let s = shots.firstIndex(where: { $0.id == typingShotId }),
+                      let o = shots[s].overlays.firstIndex(where: { $0.id == id }) else { return }
+                shots[s].overlays[o] = value
+            }
+        )
+    }
+
+    /// 画面上の写真の短い辺（打つ画面の文字の大きさ・焼き込みと同じ基準）。
+    /// 枠は**打ち始めた瞬間の枠**（キーボードが出る前・`typingCanvas`）
+    private var photoShortSide: Double {
+        let shot = shots.first { $0.id == typingShotId }
+        return StoryTextEditing.photoShortSide(canvas: typingCanvas, image: shot?.imageSize)
+    }
+
+    /// 写真の枠の大きさ（いまの配置のまま）。**高い方を覚える形にはしない**——
+    /// 「文字と札」に入るとフッターが消えて枠が高くなり、その値に張り付いて、打つ画面の文字が
+    /// 置いたあとより2割ほど大きく見えた（4ffb74f のレビュー）。キーボードの分は、打ち始めた瞬間の
+    /// 枠を `typingCanvas` に写して避ける（キーボードは打ち始めた後に出る）
+    private func rememberCanvas(_ size: CGSize) {
+        // ひとことのキーボードで縮んだ枠は覚えない（そのまま「Aa」を押すと、縮んだ枠で大きさを決める）
+        guard !captionFocused else { return }
+        canvasSize = size
     }
 
     private func leaveTextMode() {
@@ -974,7 +1010,9 @@ struct StoryComposerView: View {
             shots.append(shot)
             // 足したらそれを編集する（選んだ直後に文字を置ける）。
             // **文字と札の編集中は移らない**（編集している写真が入れ替わる）
-            if !textMode { current = shots.count - 1 }
+            // **打っている間も移らない**（打つ先は `typingShotId` で引くが、見えている写真と打っている
+            // 写真が違うと、完了した後に別の写真が出て驚く）
+            if !textMode && typingId == nil { current = shots.count - 1 }
             self.message = nil
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")

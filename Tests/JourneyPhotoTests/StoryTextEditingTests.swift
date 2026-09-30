@@ -86,4 +86,22 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertEqual(StoryTextEditing.typingFontSize(overlay, photoShortSide: 0, fallbackWidth: 300),
                        30, accuracy: 0.0001)
     }
+
+    /// 写真の短い辺は、写真を枠いっぱいに**埋めた**ときの短い辺（置いたあとの `StoryCanvas` と同じ）
+    func testPhotoShortSideUsesFilledPhoto() {
+        let canvas = CGSize(width: 390, height: 700)
+        // 3:4 の縦の写真: 高さで埋まる（700 / 4 × 3 = 525 が幅＝短い辺）
+        XCTAssertEqual(StoryTextEditing.photoShortSide(canvas: canvas, image: CGSize(width: 3000, height: 4000)),
+                       525, accuracy: 0.001)
+        // 横長の写真も高さで埋まり、短い辺は枠の高さ
+        XCTAssertEqual(StoryTextEditing.photoShortSide(canvas: canvas, image: CGSize(width: 4000, height: 3000)),
+                       700, accuracy: 0.001)
+        // 枠より縦に長い写真は幅で埋まり、短い辺は枠の幅
+        XCTAssertEqual(StoryTextEditing.photoShortSide(canvas: canvas, image: CGSize(width: 1000, height: 3000)),
+                       390, accuracy: 0.001)
+        // 写真の大きさが分からなければ枠を写真とみなす
+        XCTAssertEqual(StoryTextEditing.photoShortSide(canvas: canvas, image: nil), 390, accuracy: 0.001)
+        // 枠が測れていなければ 0（呼ぶ側が画面の幅で代える）
+        XCTAssertEqual(StoryTextEditing.photoShortSide(canvas: .zero, image: CGSize(width: 3, height: 4)), 0)
+    }
 }

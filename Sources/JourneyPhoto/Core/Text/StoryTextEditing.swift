@@ -51,6 +51,15 @@ enum StoryTextEditing {
         return next
     }
 
+    /// 画面上の写真の短い辺（pt）。写真は枠いっぱいに**埋めて**敷く（`TextOverlay.filledRect`）ので、
+    /// 置いたあとの文字（`StoryCanvas`）と同じ基準になる。写真の大きさが分からなければ枠を写真とみなす。
+    /// 枠が測れていなければ 0（呼ぶ側が画面の幅で代える）
+    static func photoShortSide(canvas: CGSize, image: CGSize?) -> Double {
+        guard canvas.width > 0, canvas.height > 0 else { return 0 }
+        let rect = TextOverlay.filledRect(image: image ?? canvas, in: canvas)
+        return Double(min(rect.width, rect.height))
+    }
+
     /// 打つ画面で見せる文字の大きさ（pt）。**焼き込みと同じ式**（写真の短い辺 × 割合・`TextOverlay.fontSize`）
     /// に、画面上の写真の短い辺を入れる。分からない（0）ときは画面の幅の割合で代える
     static func typingFontSize(_ overlay: TextOverlay, photoShortSide: Double, fallbackWidth: Double) -> Double {

@@ -42,11 +42,25 @@ struct StoryTextTypingView: View {
                     topBar
                         .padding(.horizontal, 8)
                         .padding(.top, 2)
-                    Spacer(minLength: 12)
-                    field(fontSize: fontSize)
-                        // 左の縦のつまみと重ねない
-                        .padding(.horizontal, 56)
-                    Spacer(minLength: 12)
+                    // **打つ欄は折り返さない**（置いたあとの `StoryCanvas` も焼き込みも折り返さない。
+                    // 欄の幅で折り返すと、完了した途端に1行の長い帯になって写真からはみ出した・
+                    // 4ffb74f のレビュー）。大きな字や長い行は、上の「完了」と下の列を押し出さずに
+                    // この中で縦横に流す
+                    GeometryReader { area in
+                        ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                            field(fontSize: fontSize)
+                                .frame(minWidth: area.size.width, minHeight: area.size.height)
+                                // 欄の外の空いた所を押しても確定する（流す欄が暗幕の上を覆うので、
+                                // 暗幕の「押すと確定」がここには届かない）。**欄の後ろに敷く**——
+                                // 前に置くと欄を押してもピントが入らない
+                                .background {
+                                    Color.clear
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { onDone() }
+                                }
+                        }
+                        .defaultScrollAnchor(.center)
+                    }
                     if overlay.kind.hasTypography {
                         paletteRow
                             .padding(.bottom, 8)
@@ -60,7 +74,12 @@ struct StoryTextTypingView: View {
                 }
             }
         }
-        .onAppear { focused = true }
+        // 画面が差し込まれた後に1拍おいてから（同じ更新でひとことの欄のピントが外れる）
+        .task { focused = true }
+        // **VoiceOver では打つ画面だけを読む**（後ろの「ストーリーに投稿」や他の札に移れた・
+        // 4ffb74f のレビュー）。2本指の Z でも確定して閉じる
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) { onDone() }
     }
 
     // MARK: - 上のバー
@@ -120,6 +139,24 @@ struct StoryTextTypingView: View {
     // MARK: - 打つ欄（仕上がりと同じ見た目）
 
     private func field(fontSize: Double) -> some View {
+        HStack(spacing: fontSize * 0.2) {
+            // 札の印（📍 # ♪）。**置いたあと（`drawnText`）と同じく頭に付ける**——打っている間だけ
+            // 印が無いと、帯の幅と見た目が完了した後と違った（4ffb74f のレビュー）
+            if let symbol = overlay.kind.symbol {
+                Text(symbol)
+                    .font(StoryCanvas.font(overlay.face, size: fontSize))
+                    .foregroundStyle(StoryCanvas.color(hex: overlay.drawnHex))
+                    .accessibilityHidden(true)
+            }
+            input(fontSize: fontSize)
+        }
+        .padding(.horizontal, overlay.style == .banner ? fontSize * 0.35 : 0)
+        .padding(.vertical, overlay.style == .banner ? fontSize * 0.175 : 0)
+        .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
+        .shadow(radius: overlay.style == .light ? 6 : 0)
+    }
+
+    private func input(fontSize: Double) -> some View {
         let input = TextField(L("文字を入力", "Type something"), text: Binding(
             get: { overlay.text },
             set: { overlay.text = TextOverlay.cleaned($0, kind: overlay.kind) }
@@ -132,12 +169,12 @@ struct StoryTextTypingView: View {
         .tint(.white)
         // 縁（黒の見た目＝白い縁・縁取り＝黒い縁）。打つ欄には縁の写しを敷けないので、
         // ぼかし無しの影を4方向に重ねて近い見た目にする（置いたあとは `StoryCanvas.edged` の本物）
+        // 1行の欄（撮影地・タグ・曲）は Return で確定して閉じる（キーボードだけ閉じて画面が残った）。
+        // 改行できる欄では Return は改行なので、ここは呼ばれない
+        .onSubmit { onDone() }
         return Self.edged(input, style: overlay.style, fontSize: fontSize)
-            .padding(.horizontal, overlay.style == .banner ? fontSize * 0.35 : 0)
-            .padding(.vertical, overlay.style == .banner ? fontSize * 0.175 : 0)
-            .background(overlay.style == .banner ? Color.black.opacity(0.65) : Color.clear)
-            .shadow(radius: overlay.style == .light ? 6 : 0)
-            .fixedSize(horizontal: false, vertical: true)
+            // **中身の幅と高さに合わせる＝改行した所だけで行が分かれる**（置いたあとと同じ）
+            .fixedSize()
             .accessibilityLabel(L("文字", "Text"))
     }
 

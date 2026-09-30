@@ -404,6 +404,10 @@ extension View {
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 決まった操作（`.escape` ＝ VoiceOver の2本指の Z で閉じる）
+    public func accessibilityAction(_ kind: AccessibilityActionKind, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 流す欄の最初の位置（iOS 17。`.center` で真ん中から見せる）
+    public func defaultScrollAnchor(_ anchor: UnitPoint?) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func swipeActions<C: View>(allowsFullSwipe: Bool = true, @ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
 }
 
@@ -517,4 +521,11 @@ public struct GestureMask: OptionSet, Sendable {
     public static let gesture = GestureMask(rawValue: 1)
     public static let subviews = GestureMask(rawValue: 2)
     public static let all: GestureMask = [.gesture, .subviews]
+}
+
+/// `accessibilityAction(_:_:)` が受ける操作の種類。本物は struct
+public struct AccessibilityActionKind {
+    public static let `default` = AccessibilityActionKind()
+    public static let escape = AccessibilityActionKind()
+    public static let magicTap = AccessibilityActionKind()
 }
