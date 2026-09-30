@@ -44,6 +44,9 @@ struct StoryReelView: View {
     /// **止めるのは横（人を替える）だけ**——下へ払って閉じるのは止めない（圏外で返事を
     /// 待つ間に閉じられなくなる。`StoryViewerView.leftTap` の注記と同じ）
     @State private var swipeLocked = false
+    /// 閲覧画面の返信欄に入力中。**この間の払いは下も横も動かさない**（閲覧画面が
+    /// キーボードを閉じるだけ）——下へ払うと閉じて書きかけが消えていた
+    @State private var typing = false
     /// 払い始めに決めた向き。**離したときもこれを使う**（離した瞬間の移動量で決め直すと、
     /// 横に回していたのに指が下へ流れて閉じる、縮めていたのに横へ流れて回る、が起きた）。
     /// `onChanged` で `value` から決める（`@GestureState` の反映の順に頼らない）。
@@ -138,9 +141,7 @@ struct StoryReelView: View {
                     guard !turning else { return }
                     let dx = value.translation.width, dy = value.translation.height
                     if state.axis == nil {
-                        let axis = StoryReel.axis(dx: dx, dy: dy)
-                        // 入力中・送信中は横（人を替える）を始めない。下へ閉じるのは止めない
-                        state.axis = (axis == .horizontal && swipeLocked) ? nil : axis
+                        state.axis = StoryReel.axis(dx: dx, dy: dy, swipeLocked: swipeLocked, typing: typing)
                     }
                     state.dx = dx
                     state.dy = dy
@@ -151,8 +152,8 @@ struct StoryReelView: View {
                         lockedAxis = nil
                     }
                     guard lockedAxis == nil, !turning else { return }
-                    let axis = StoryReel.axis(dx: value.translation.width, dy: value.translation.height)
-                    lockedAxis = (axis == .horizontal && swipeLocked) ? nil : axis
+                    lockedAxis = StoryReel.axis(dx: value.translation.width, dy: value.translation.height,
+                                                swipeLocked: swipeLocked, typing: typing)
                 }
                 .onEnded { value in
                     let axis = lockedStart == value.startLocation ? lockedAxis : nil
@@ -203,6 +204,7 @@ struct StoryReelView: View {
             swipesHandledOutside: true,
             onDropped: { removed.insert($0) },
             onSwipeLockChange: { swipeLocked = $0 },
+            onTypingChange: { typing = $0 },
             spotIndex: spotIndex,
             voteStates: voteStates,
             onVoted: { voteStates[$0] = $1 },

@@ -67,6 +67,29 @@ final class StoryVoteDraftTests: XCTestCase {
         XCTAssertEqual(up.y, 0.6, accuracy: 1e-9)
     }
 
+    /// 🔴 **大きくした札は、下端が 0.75 を超えないところまでしか下げられない**——
+    /// y の上限が大きさに関係なく 0.7 だと、札を大きくして下端に置くと下の欄に重なった。
+    /// 描く・動かす・送るの3か所で同じ位置
+    func testBigVoteStaysAboveTheCaptionBlock() {
+        var big = StoryVoteDraft.new().scaled(by: 100)
+        XCTAssertEqual(big.size, 0.16, accuracy: 1e-9)
+        big = big.moved(by: CGSize(width: 0, height: 9999), in: CGSize(width: 400, height: 800))
+        let height = big.size * StoryVoteDraft.heightPerSize
+        XCTAssertLessThanOrEqual(big.y + (1 - big.y) * height, 0.75 + 1e-9, "札の下端が下の欄に重なる")
+        XCTAssertLessThan(big.y, 0.65)
+        guard case .vote(let drawn) = big.asItem else { return XCTFail("投票として描いていない") }
+        XCTAssertEqual(drawn.place.y, big.y, accuracy: 1e-9)
+        XCTAssertEqual(StoryPostText.vote(big).y, big.y, accuracy: 1e-9)
+        // 下に置いてから大きくした札も、描く・送る位置は上がる
+        var grown = StoryVoteDraft.new()
+        grown.size = 0.16
+        guard case .vote(let grownDrawn) = grown.asItem else { return XCTFail("投票として描いていない") }
+        XCTAssertEqual(grownDrawn.place.y, big.y, accuracy: 1e-9)
+        XCTAssertEqual(StoryPostText.vote(grown).y, big.y, accuracy: 1e-9)
+        // 既定の大きさは今までどおり 0.7 まで
+        XCTAssertEqual(StoryVoteDraft.clampY(0.9, size: StoryVoteDraft.defaultSize), 0.7, accuracy: 1e-9)
+    }
+
     /// 前の版で `maxY` より下に置いた下書き: 描く位置も送る位置も `maxY`。少し動かしても跳ばない
     func testOldDraftBelowTheLimitIsDrawnAndSentAtTheLimit() {
         var old = StoryVoteDraft.new()
