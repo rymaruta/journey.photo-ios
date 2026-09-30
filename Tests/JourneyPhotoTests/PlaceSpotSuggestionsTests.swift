@@ -75,14 +75,14 @@ final class SpotAliasTests: XCTestCase {
         XCTAssertNil(OfficialSpotService.aliases(from: Data("<html>".utf8)))
     }
 
-    /// 名前で当たったものが先、別名が次、地域だけが最後
-    func testAliasRanksBetweenNameAndRegion() throws {
+    /// 別名は名前と同じ扱い（Web の `searchSpotRows`）: 別名の完全一致は名前の前方一致より先、地域だけが最後
+    func testAliasRanksLikeNameBeforeRegion() throws {
         let byName = try spot("b", name: "月の世界公園", prefecture: "福島県")
         let byAlias = try spot("abukumado", name: "あぶくま洞", prefecture: "福島県")
         let byRegion = try spot("r", name: "別の場所", prefecture: "月の世界県")
         let hits = OfficialSpotIndex.matches([byRegion, byAlias, byName], query: "月の世界",
                                              aliases: ["abukumado": ["月の世界"]])
-        XCTAssertEqual(hits.map(\.slug), ["b", "abukumado", "r"])
+        XCTAssertEqual(hits.map(\.slug), ["abukumado", "b", "r"])
         // 別名を渡さなければ今までどおり
         XCTAssertEqual(OfficialSpotIndex.matches([byAlias], query: "月の世界").count, 0)
     }

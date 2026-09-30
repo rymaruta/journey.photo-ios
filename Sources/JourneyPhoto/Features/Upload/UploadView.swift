@@ -128,6 +128,7 @@ struct UploadView: View {
                     .font(.footnote)
                     .foregroundStyle(WebTheme.muted)
                     .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             // 送っている間は外せない——送信は1枚ごとに `spot` を読むので、束の途中で紐付けが割れる

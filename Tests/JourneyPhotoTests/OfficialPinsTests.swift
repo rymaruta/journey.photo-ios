@@ -101,9 +101,9 @@ final class OfficialPinsTests: XCTestCase {
         let kyoto = frame(lat: 35.01, lng: 135.76, span: 0.3)
         XCTAssertEqual(OfficialPins.visible(spots, frame: kyoto, query: "寺").map(\.slug),
                        ["kiyomizu", "kinkaku", "zenkoji", "asakusa"])
-        // 枠が無ければ名前の一致順（slug 順）のまま
+        // 枠が無ければ名前の一致順（同じ段の中は索引の順）のまま
         XCTAssertEqual(OfficialPins.visible(spots, frame: nil, query: "寺").map(\.slug),
-                       ["asakusa", "kinkaku", "kiyomizu", "zenkoji"])
+                       ["asakusa", "kiyomizu", "zenkoji", "kinkaku"])
     }
 
     func testQueryMatchesStopAtTheLimit() throws {

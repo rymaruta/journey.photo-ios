@@ -62,7 +62,7 @@ enum MapSearch {
     }
 
     /// 突き合わせる前の揃え方（前後の空白・全角半角・大小）。
-    /// スポットの索引（`OfficialSpotIndex`）も同じ揃え方で引く
+    /// スポットの索引の名前は、これに加えて空白・括弧も見ない（`OfficialSpotIndex.spotName`）
     static func fold(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)

@@ -7,45 +7,63 @@ import Foundation
 enum OfficialSpotIndex {
 
     /// 名前・読み・英語名・別名・国・都道府県・市区町村のどれかに当たるもの。
-    /// **空の語は何も当てない**（「絞っていない」）。全角半角・大小は区別しない。
+    /// **空の語は何も当てない**（「絞っていない」）。揃え方は Web の `normalizeSpotName`
+    /// （`spotName`）: 全角半角・大小に加えて、空白と括弧・読点も見ない
+    /// （「嵐山渡月橋」で「嵐山 渡月橋」に当たる）。
     ///
-    /// **名前で当たったものが先**、別名で当たったものが次、地域だけで当たったものはその後ろ。
-    /// 同じ段の中は slug 順（毎回同じ並びにする）。`limit` が nil なら全部
+    /// 並びは Web の `searchSpotRows` と同じ: 名前・英語名・読み・別名で**完全一致 → 前方一致 →
+    /// 部分一致**、地域だけで当たったものはその後ろ。別名は名前と同じ扱い。
+    /// 同じ段の中は渡された順（索引の順）。`limit` が nil なら全部
     /// （地図は枠で並べ直してから切るので、ここでは切らない）。
     /// `aliases` は slug → 別名（`OfficialSpotService.fetchAliases`・無ければ空）
     static func matches(_ spots: [OfficialSpot], query: String, limit: Int? = nil,
                         aliases: [String: [String]] = [:]) -> [OfficialSpot] {
-        let needle = MapSearch.fold(query)
+        let needle = spotName(query)
         guard !needle.isEmpty else { return [] }
-        let ranked = spots
-            .compactMap { spot -> (OfficialSpot, Int)? in
-                if nameMatches(spot, needle: needle) { return (spot, 0) }
-                if aliasMatches(aliases[spot.slug], needle: needle) { return (spot, 1) }
-                if regionMatches(spot, needle: needle) { return (spot, 2) }
-                return nil
+        let ranked = spots.enumerated()
+            .compactMap { i, spot -> (OfficialSpot, Int, Int)? in
+                var rank = rankByNames([spot.name, spot.nameEn, spot.reading] + (aliases[spot.slug] ?? []), needle)
+                if rank < 0, spotName(regionLabel(spot)).contains(needle) { rank = 3 }
+                return rank < 0 ? nil : (spot, rank, i)
             }
-            .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.slug < $1.0.slug }
+            .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.2 < $1.2 }
             .map(\.0)
         guard let limit else { return ranked }
         return Array(ranked.prefix(limit))
     }
 
-    private static func nameMatches(_ spot: OfficialSpot, needle: String) -> Bool {
-        [spot.name, spot.reading, spot.nameEn]
-            .compactMap { $0 }
-            .contains { MapSearch.fold($0).contains(needle) }
+    /// Web の `normalizeSpotName`（`lib/utils/spots.ts`）と同じ。**判定にしか使わない**。
+    /// 写真の撮影地の当て方（`MapSearch.matches`）には使わない
+    static func spotName(_ value: String?) -> String {
+        (value ?? "").precomposedStringWithCompatibilityMapping
+            .lowercased()
+            .filter { !$0.isWhitespace && !"()（）「」『』,、，".contains($0) }
     }
 
+    /// Web の `rankByNames`。完全一致 0・前方一致 1・部分一致 2・外れ -1
+    private static func rankByNames(_ names: [String?], _ needle: String) -> Int {
+        var rank = -1
+        for raw in names {
+            let name = spotName(raw)
+            if name.isEmpty { continue }
+            if name == needle { return 0 }
+            if name.hasPrefix(needle) { rank = 1; continue }
+            if name.contains(needle), rank < 0 { rank = 2 }
+        }
+        return rank
+    }
+
+    /// Web の `regionLabel`（`lib/data/spotSearchFeed.ts`）。国は日本の外の行だけに載る
+    /// 「日本」は当てない——索引に載ると「本」で国内のほぼ全部が当たる
+    private static func regionLabel(_ spot: OfficialSpot) -> String {
+        let r = spot.region
+        let country = r?.country == "日本" ? nil : r?.country
+        return [country, r?.prefecture, r?.city].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// 写真の場所の候補（`PlaceSpotSuggestions`）が使う別名の当て方（`MapSearch.fold` の揃え方のまま）
     static func aliasMatches(_ aliases: [String]?, needle: String) -> Bool {
         (aliases ?? []).contains { MapSearch.fold($0).contains(needle) }
-    }
-
-    private static func regionMatches(_ spot: OfficialSpot, needle: String) -> Bool {
-        // 国は日本の外の行だけに載る（Web の「さがす」も国で当てる・`lib/data/spotSearchFeed.ts`）
-        // 「日本」は当てない——索引に載ると「本」で国内のほぼ全部が当たる（Web の `regionLabel` も外す）
-        [spot.region?.country == "日本" ? nil : spot.region?.country, spot.region?.prefecture, spot.region?.city]
-            .compactMap { $0 }
-            .contains { MapSearch.fold($0).contains(needle) }
     }
 
     /// 「近く」と呼んでよい距離（km）。写真から作る撮影地（`DerivedSpot.nearbyMaxKm`）と同じ
