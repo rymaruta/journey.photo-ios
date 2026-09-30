@@ -119,12 +119,14 @@ enum DerivedSpot {
     /// 「フランス」で、**短い方が狭い**——長さでは決まらない
     /// （Web の `broaderSpots` が同じことを書いている）。
     static func broader(of label: String, in photos: [Photo]) -> [String] {
-        let needle = label.lowercased()
+        // 自分かどうかは**空白を抜いて**見る（`photoIsIn` と同じ物差し）。小文字にしただけだと
+        // 「パリ,フランス」から見て綴り違いの「パリ, フランス」が広い方に出る
+        let needle = LocationMatch.normalized(label)
         var seen = Set<String>()
         var out: [String] = []
         for photo in photos {
             let other = (photo.location ?? "").trimmingCharacters(in: .whitespaces)
-            let key = other.lowercased()
+            let key = LocationMatch.normalized(other)
             guard !other.isEmpty, key != needle, seen.insert(key).inserted else { continue }
             // 「この撮影地の写真は、そちらのページにも載るか」
             // 名前として含むときだけ（`LocationMatch.photoIsIn`・「福岡八宮」は「福岡」ではない）

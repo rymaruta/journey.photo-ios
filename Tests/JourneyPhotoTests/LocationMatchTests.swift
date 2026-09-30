@@ -62,6 +62,8 @@ final class LocationMatchTests: XCTestCase {
         XCTAssertTrue(LocationMatch.photoIsIn("兵庫県神戸市", "兵庫県"))
         XCTAssertTrue(LocationMatch.photoIsIn("福岡県福岡市", "福岡"))
         XCTAssertTrue(LocationMatch.photoIsIn("宮崎県西臼杵郡", "宮崎県"))
+        XCTAssertTrue(LocationMatch.photoIsIn("北海道札幌市", "札幌"))
+        XCTAssertTrue(LocationMatch.photoIsIn("西臼杵郡高千穂町", "高千穂"))
     }
 
     /// 名前の途中に当たるだけのものは含まない
@@ -75,5 +77,24 @@ final class LocationMatchTests: XCTestCase {
         XCTAssertTrue(LocationMatch.photoIsIn("オペラ・ガルニエ（パリ）", "パリ"))
         XCTAssertTrue(LocationMatch.photoIsIn("オペラ座, パリ, フランス", "パリ, フランス"))
         XCTAssertFalse(LocationMatch.photoIsIn("パリ, ドイツ, フランス", "パリ, フランス"))
+    }
+
+    /// 英字は大文字小文字を見ない・読点（「、」「，」）も区切り
+    func testCaseAndJapaneseCommas() {
+        XCTAssertTrue(LocationMatch.photoIsIn("Paris, France", "paris"))
+        XCTAssertTrue(LocationMatch.photoIsIn("オペラ座、パリ", "パリ"))
+        XCTAssertTrue(LocationMatch.photoIsIn("オペラ座，パリ", "パリ"))
+    }
+
+    /// 最初に当たった位置が名前の途中でも、**後ろで名前として当たれば**含む
+    func testLaterOccurrenceCounts() {
+        XCTAssertTrue(LocationMatch.photoIsIn("福岡八宮町福岡", "福岡"))
+        XCTAssertFalse(LocationMatch.photoIsIn("福岡八宮福岡市", "福岡"))
+    }
+
+    /// 空白の有無で語の割れ方が変わる同じ名前は同じ
+    func testSpacingVariantsOfOneNameMatch() {
+        XCTAssertTrue(LocationMatch.photoIsIn("東京渋谷", "東京 渋谷"))
+        XCTAssertTrue(LocationMatch.photoIsIn("東京 渋谷", "東京渋谷"))
     }
 }

@@ -85,6 +85,12 @@ final class DerivedSpotTests: XCTestCase {
         XCTAssertEqual(DerivedSpot.broader(of: zao, in: photos), ["宮城県"])
     }
 
+    /// 🔴 **空白だけ違う綴りの自分は広い方に入れない**（2ca7d84 のレビューで見つけた回帰）
+    func testBroaderExcludesASpacingVariantOfItself() throws {
+        let photos = [try photo("a", location: "パリ,フランス"), try photo("b", location: "パリ, フランス")]
+        XCTAssertTrue(DerivedSpot.broader(of: "パリ,フランス", in: photos).isEmpty)
+    }
+
     /// **自分自身は広い方に入れない**
     func testBroaderExcludesItself() throws {
         XCTAssertTrue(DerivedSpot.broader(of: "パリ", in: [try photo("a", location: "パリ")]).isEmpty)
