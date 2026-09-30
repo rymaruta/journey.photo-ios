@@ -55,6 +55,10 @@ struct StoryCanvas: View {
     /// 2本指で回している最中の投票の札と、回し始めた写真の印（つまむのと同じ）
     @State private var rotatesVote = false
     @State private var voteRotatePhotoId: UUID?
+    /// この回の2本指の操作で、投票の大きさが目に見えて変わったか。つまんでいた回の
+    /// 小さなひねりは捨てる（写真と同じ `PhotoFraming.intendedTwist`。捨てないと、
+    /// 縮めただけで投票が数度傾いた・686566d のレビュー）
+    @State private var votePinched = false
     /// 指が触れている間だけ立つ印。**打ち切られても（着信・画面の切り替えで `onEnded` が
     /// 呼ばれない回も）SwiftUI が倒す**——倒れたら、途中の値を札へ入れて片付ける。
     /// 片付けないと、見た目だけ大きく（回って・ずれて）見えたまま、投稿される札は元のままだった
@@ -225,6 +229,7 @@ struct StoryCanvas: View {
                         }
                         liveScale = Double(value)
                         if pinchesPhoto && abs(liveScale - 1) > 0.05 { photoPinched = true }
+                        if scalesVote && abs(liveScale - 1) > 0.05 { votePinched = true }
                     }
                     .onEnded { value in
                         guard scaleId != nil || pinchesPhoto || scalesVote else { return }
@@ -260,7 +265,9 @@ struct StoryCanvas: View {
     private func liveVote(_ current: StoryVoteDraft) -> StoryVoteDraft {
         var live = current
         if scalesVote { live = live.scaled(by: liveScale) }
-        if rotatesVote { live = live.rotated(byRadians: liveRotation) }
+        if rotatesVote {
+            live = live.rotated(byRadians: PhotoFraming.intendedTwist(liveRotation, whilePinching: votePinched))
+        }
         return live
     }
 
@@ -280,12 +287,14 @@ struct StoryCanvas: View {
         } else if twistsPhoto {
             framing = framing.rotated(by: PhotoFraming.intendedTwist(liveRotation, whilePinching: photoPinched))
         } else if rotatesVote, voteRotatePhotoId == photoId, let current = vote.wrappedValue {
-            vote.wrappedValue = current.rotated(byRadians: liveRotation)
+            vote.wrappedValue = current.rotated(
+                byRadians: PhotoFraming.intendedTwist(liveRotation, whilePinching: votePinched))
         }
         rotateId = nil
         twistsPhoto = false
         rotatesVote = false
         voteRotatePhotoId = nil
+        if !scalesVote { votePinched = false }
         liveRotation = 0
         if !pinchesPhoto { photoPinched = false }
     }
@@ -303,6 +312,7 @@ struct StoryCanvas: View {
         pinchesPhoto = false
         scalesVote = false
         voteScalePhotoId = nil
+        if !rotatesVote { votePinched = false }
         liveScale = 1
         // 回す方がまだ続いていれば、つまんでいた印はそちらの片付けで戻す
         if !twistsPhoto { photoPinched = false }

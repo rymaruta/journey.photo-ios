@@ -225,6 +225,11 @@ struct StoryService {
     /// **幅（`durationRange`）は変えない**——前に選べた秒数で出したストーリーも、そのまま読む
     static let durationChoices = [5, 10, 15]
 
+    /// いま選べる秒数のうち近いもの（同じ近さなら短い方）
+    static func nearestDurationChoice(_ value: Int) -> Int {
+        durationChoices.min { abs($0 - value) < abs($1 - value) } ?? defaultDurationSec
+    }
+
     static func storedDuration(_ value: Int?) -> Int? {
         guard let value else { return nil }
         let clamped = min(durationRange.upperBound, max(durationRange.lowerBound, value))

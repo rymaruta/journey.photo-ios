@@ -1097,8 +1097,11 @@ struct StoryComposerView: View {
         // 流し始めは表示秒数に収めてから戻す（`restoredContent` もその値で撮る）。
         // 収まっていない下書きをそのまま戻すと、表示秒数が変わらない回は上限を越えたまま
         // 送られ、変わる回は何も触らずに閉じても「変更あり」になった（c15a415 のレビュー）
-        song = draft.song?.fitting(window: draft.durationSec)
-        durationSec = draft.durationSec
+        // 前に選べた秒数（3・7 など）の下書きは、いま選べる近い秒数へ寄せる（メニューで
+        // どれにも印が付かず、選び直すと戻せない形を作らない・686566d のレビュー）
+        let window = StoryService.nearestDurationChoice(draft.durationSec)
+        song = draft.song?.fitting(window: window)
+        durationSec = window
         keepInArchive = draft.archive == true
         allowReplies = draft.allowReplies != false
         message = nil
@@ -1139,7 +1142,7 @@ struct StoryComposerView: View {
                 allowReplies: allowReplies,
                 texts: StoryPostText.list(vote: shot.vote, caption: caption),
                 // 曲の札を焼き込んだ1枚は、見る画面の ♪ の行を出さない（曲名が2か所に出ない）
-                songOnPhoto: song != nil && shot.overlays.contains { $0.kind == .song })
+                songOnPhoto: SongSticker.isOnPhoto(shot.overlays, song: song))
         }
         let stories = environment.stories
         let drafts = drafts

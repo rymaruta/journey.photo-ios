@@ -18,6 +18,16 @@ enum SongSticker {
         return artist.isEmpty ? title : "\(title) · \(artist)"
     }
 
+    /// この写真に**いまの曲の札**が焼き込まれるか（見る画面の ♪ の行を出さない印・`songOnPhoto`）。
+    /// 作る画面の `currentHasSongSticker` と同じ判定——種類だけで見ると、文字を消した札
+    /// （焼き込まれない）・前の曲の札・自分で打った「曲」の札でも立ち、**曲名がどこにも
+    /// 出ない**投稿ができた（686566d のレビュー）
+    static func isOnPhoto(_ overlays: [TextOverlay], song: Photo.Song?) -> Bool {
+        guard let song, let text = text(for: song) else { return false }
+        let placed = String(text.prefix(TextOverlay.maxLength))
+        return overlays.contains { $0.kind == .song && !$0.isEmpty && $0.text == placed }
+    }
+
     /// 新しく置く札。場所は撮影地の札と同じ少し下（文字の札と重なりにくい）。
     /// **長い曲名は小さくして置く**（焼き込みは1行で折り返さないので、既定の
     /// 大きさだと「Bohemian Rhapsody · Queen」で写真の幅を超えて両端が切れる）

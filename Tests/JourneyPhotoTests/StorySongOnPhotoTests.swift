@@ -85,4 +85,30 @@ final class StorySongOnPhotoTests: XCTestCase {
         XCTAssertTrue(StoryService.durationChoices.allSatisfy(StoryService.durationRange.contains))
         XCTAssertTrue(StoryService.durationChoices.contains(StoryService.defaultDurationSec))
     }
+
+    // MARK: - 686566d のレビュー
+
+    /// いまの曲の札が文字どおり置いてあるときだけ立つ（空の札・前の曲の札・自分で打った「曲」の札では立たない）
+    func testIsOnPhotoMatchesTheCurrentSongSticker() throws {
+        let sticker = try XCTUnwrap(SongSticker.make(for: song))
+        XCTAssertTrue(SongSticker.isOnPhoto([sticker], song: song))
+        var emptied = sticker; emptied.text = ""
+        XCTAssertFalse(SongSticker.isOnPhoto([emptied], song: song), "焼き込まれない空の札で立てている")
+        var free = sticker; free.text = "旅のBGM"
+        XCTAssertFalse(SongSticker.isOnPhoto([free], song: song), "曲名でない札で立てている")
+        let other = Photo.Song(title: "山", artist: nil, artwork: nil,
+                               previewUrl: "https://audio-ssl.itunes.apple.com/b.m4a", trackUrl: nil)
+        XCTAssertFalse(SongSticker.isOnPhoto([sticker], song: other), "前の曲の札で立てている")
+        XCTAssertFalse(SongSticker.isOnPhoto([sticker], song: nil))
+    }
+
+    /// 前に選べた秒数の下書きは、いま選べる近い秒数へ寄せる
+    func testNearestDurationChoice() {
+        XCTAssertEqual(StoryService.nearestDurationChoice(3), 5)
+        XCTAssertEqual(StoryService.nearestDurationChoice(7), 5)
+        XCTAssertEqual(StoryService.nearestDurationChoice(8), 10)
+        XCTAssertEqual(StoryService.nearestDurationChoice(15), 15)
+        XCTAssertEqual(StoryService.nearestDurationChoice(10), 10)
+    }
 }
+

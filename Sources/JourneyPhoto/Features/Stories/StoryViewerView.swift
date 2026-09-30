@@ -606,7 +606,9 @@ struct StoryViewerView: View {
         let place = story.location.flatMap { $0.isEmpty ? nil : $0 }
         // 曲の札を焼き込んだ1本は出さない（写真の上の札と2度出る・`songLineShown`）
         let song = story.songLineShown
-        if caption != nil || place != nil || song != nil {
+        // 札は画像なので読み上げでは読めない。隠した行は**読み上げにだけ**残す（686566d のレビュー）
+        let spokenSong = song == nil ? story.songLine : nil
+        if caption != nil || place != nil || song != nil || spokenSong != nil {
             VStack(alignment: .leading, spacing: 8) {
                 if let caption {
                     Text(caption)
@@ -654,6 +656,13 @@ struct StoryViewerView: View {
                 if let song {
                     photoMeta(symbol: "music.note", text: song)
                         .allowsHitTesting(false)
+                }
+                if let spokenSong {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .allowsHitTesting(false)
+                        .accessibilityElement()
+                        .accessibilityLabel(L("曲 \(spokenSong)", "Song \(spokenSong)"))
                 }
             }
         }
