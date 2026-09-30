@@ -190,10 +190,14 @@ struct OfficialSpotView: View {
                 .font(JPFont.display(28, relativeTo: .title))
                 .foregroundStyle(WebTheme.foreground)
             // 「[都道府県] · [市区町村] · N枚の写真」。N は数えた値
-            Text(SpotScreen.subtitle(region: spot.regionLabel,
-                                     photoCount: photosKnown || !linked.isEmpty ? linked.count : nil))
-                .font(.system(size: 12))
-                .foregroundStyle(WebTheme.muted2)
+            let subtitle = SpotScreen.subtitle(region: spot.regionLabel,
+                                               photoCount: photosKnown || !linked.isEmpty ? linked.count : nil)
+            // 地域も枚数も無い（ストーリーから開いた地域の無いスポット）なら行を置かない
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(WebTheme.muted2)
+            }
         }
         .padding(.horizontal, 16)
     }

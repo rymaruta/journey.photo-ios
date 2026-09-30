@@ -613,7 +613,8 @@ struct StoryViewerView: View {
                         .accessibilityLabel(L("撮影地 \(place)。撮影スポットのガイドを開く",
                                               "Location \(place). Open the photo spot guide"))
                     } else {
-                        photoMeta(symbol: "mappin", text: place)
+                        // 結べた行と同じく詰める（索引が届いた瞬間に文字が変わらないように）
+                        photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))
                             .allowsHitTesting(false)
                     }
                 }

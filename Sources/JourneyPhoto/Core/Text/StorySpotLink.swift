@@ -53,17 +53,23 @@ enum StorySpotLink {
         guard let head = segments.first else { return nil }
         let place = segments.joined()
         return spots
-            .compactMap { spot -> (OfficialSpot, Double)? in
+            .compactMap { spot -> (spot: OfficialSpot, km: Double, length: Int)? in
                 guard !spot.isDraft, let there = spot.coords else { return nil }
                 let names = names(of: spot)
-                let hit = names.contains { place.contains($0) }
-                    || (head.count >= minPrefixLength && firstWord(of: spot) == head)
-                guard hit else { return nil }
+                // 当たった名前の長さ（**長く当たった方を先に**——「明治神宮外苑」の撮影地が、
+                // 近い方の「明治神宮」に取られていた）
+                var length = names.filter { place.contains($0) }.map(\.count).max() ?? 0
+                if head.count >= minPrefixLength, firstWord(of: spot) == head { length = max(length, head.count) }
+                guard length > 0 else { return nil }
                 let km = TravelDistance.kilometers(from: here, to: there)
-                return km <= maxKm ? (spot, km) : nil
+                return km <= maxKm ? (spot, km, length) : nil
             }
-            .min { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.slug < $1.0.slug }?
-            .0
+            .min { a, b in
+                if a.length != b.length { return a.length > b.length }
+                if a.km != b.km { return a.km < b.km }
+                return a.spot.slug < b.spot.slug
+            }?
+            .spot
     }
 
     /// 当てる名前: 名前・括弧を除いた名前・「旧・」で始まる括弧の中（旧称）・英語名
@@ -108,10 +114,17 @@ enum StorySpotLink {
             for name in [spot.region?.prefecture, spot.region?.city, spot.region?.country].compactMap({ $0 }) {
                 let folded = squash(name)
                 guard !folded.isEmpty else { continue }
-                out.insert(folded)
-                if let last = folded.last, suffixes.contains(last), folded.count >= 3 {
-                    let bare = String(folded.dropLast())
-                    if !spotNames.contains(bare) { out.insert(bare) }
+                // 「南都留郡山中湖村」は「山中湖村」とも書かれる（郡を外した形も地名）
+                var forms = [folded]
+                if let gun = folded.lastIndex(of: "郡"), folded.index(after: gun) < folded.endIndex {
+                    forms.append(String(folded[folded.index(after: gun)...]))
+                }
+                for form in forms {
+                    out.insert(form)
+                    if let last = form.last, suffixes.contains(last), form.count >= 3 {
+                        let bare = String(form.dropLast())
+                        if !spotNames.contains(bare) { out.insert(bare) }
+                    }
                 }
             }
         }

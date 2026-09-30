@@ -87,6 +87,20 @@ final class StorySpotLinkTests: XCTestCase {
         XCTAssertNil(StorySpotLink.spot(for: story(location: "近江八幡", lat: 35.14, lng: 136.09), in: [hori]))
     }
 
+    /// 郡の付いた町村（索引は「南都留郡山中湖村」）の「山中湖村」だけでは結ばない。
+    /// 長く当たった名前を先に（「明治神宮外苑」が近い方の明治神宮に取られていた）
+    func testCountyTownAndLongestMatch() {
+        let lake = spot("lake-yamanaka", name: "山中湖", lat: 35.42, lng: 138.87,
+                        prefecture: "山梨県", city: "南都留郡山中湖村")
+        XCTAssertNil(StorySpotLink.spot(for: story(location: "山中湖村, 山梨県", lat: 35.42, lng: 138.87), in: [lake]))
+        XCTAssertEqual(StorySpotLink.spot(for: story(location: "山中湖", lat: 35.42, lng: 138.87), in: [lake])?.slug,
+                       "lake-yamanaka")
+        let gaien = spot("gaien", name: "明治神宮外苑 いちょう並木", lat: 35.67, lng: 139.72)
+        let jingu = spot("meiji-jingu", name: "明治神宮", lat: 35.68, lng: 139.71)
+        XCTAssertEqual(StorySpotLink.spot(for: story(location: "明治神宮外苑 いちょう並木", lat: 35.68, lng: 139.71),
+                                          in: [gaien, jingu])?.slug, "gaien")
+    }
+
     func testShortenedPlace() {
         XCTAssertEqual(StorySpotLink.shortened("高屋神社"), "高屋神社")
         let long = String(repeating: "あ", count: 30)
