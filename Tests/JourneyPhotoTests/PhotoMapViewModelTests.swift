@@ -260,6 +260,19 @@ extension PhotoMapViewModelTests {
         XCTAssertFalse(model.hasNothingToShow, "別名で当たるのに「見つかりませんでした」")
     }
 
+    /// 🔴 **「索引を取り終えた」と知らせた時点で、別名のピンがもう出ている。** 先に知らせると、
+    /// 探すから別名だけで当たる語が来た回に「当たらなかった」と決まり、語への寄せが下りていた
+    func testIndexReadyOnlyAfterAliasesArrive() async {
+        let model = PhotoMapViewModel()
+        model.query = "天空の鳥居"
+        let loading = Task { await model.load(environment: environment(
+            spots: spotsJSON, aliases: #"[{"s":"takaya-jinja","n":"高屋神社","a":["天空の鳥居"]}]"#)) }
+        while model.officialIndexState == .loading { await Task.yield() }
+        XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja"],
+                       "取り終えたと知らせたのに、別名のピンがまだ無い（寄せが下りる）")
+        await loading.value
+    }
+
     /// 🔴 **名前で絞ってスポットだけ当たった回に「見つかりませんでした」と言わない。**
     /// 帯は写真もスポットも無いときだけ
     func testNoResultsOnlyWhenNeitherPhotosNorSpotsMatch() async {

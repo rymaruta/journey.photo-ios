@@ -138,14 +138,17 @@ final class PhotoMapViewModel: ObservableObject {
         // 入れ替える。取れなくても写真は出す——索引は無くても地図は成り立つ
         indexTask = Task { [weak self] in
             let fetched = try? await environment.spots.fetchIndex()
-            self?.officialSpots = fetched ?? []
-            self?.officialIndexState = fetched == nil ? .failed : .ready
-            self?.refreshOfficialPins()
-            // 別名は索引のあと（索引のピンを待たせない）。届いたらピンを数え直す
-            let aliases = await environment.spots.fetchAliases()
-            guard let self, !aliases.isEmpty else { return }
+            // **別名も取り終えてから「索引を取り終えた」にする。** 先に取り終えたと
+            // 知らせると、探すから別名だけで当たる語が来た回に「当たらなかった」と
+            // 決まって語への寄せ（`MapQueryFraming`）が下り、あとで別名のピンが
+            // 出ても寄らなかった。別名は控えがあればすぐ返る・取れなければ空
+            let aliases = fetched == nil ? [:] : await environment.spots.fetchAliases()
+            guard let self else { return }
+            self.officialSpots = fetched ?? []
             self.spotAliases = aliases
+            // ピンを数え直してから知らせる（知らせを受けた側が、別名込みのピンで寄せを決める）
             self.refreshOfficialPins()
+            self.officialIndexState = fetched == nil ? .failed : .ready
         }
         do {
             photos = try await environment.gallery.fetchPhotos()
