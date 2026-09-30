@@ -1085,8 +1085,14 @@ struct PhotoDetailView: View {
                         // ことを審査（1.2）で見られる
                         if comment.uid == auth.userId || isMine {
                             // **押してすぐ消さない**（確かめてから）。読み上げには誰のコメントかを入れる
-                            Button(Labels.Common.delete) { commentPendingDelete = comment }
-                                .font(.caption2)
+                            // 押せる広さは 44pt（字は本文の最小 12pt）。広げるのはラベルの内側で
+                            // （ボタンの外に frame を付けても当たりは広がらない）
+                            Button { commentPendingDelete = comment } label: {
+                                Text(Labels.Common.delete)
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                                .font(.caption)
                                 // 読み直している間・消している途中は押せない（`deleteComment` は黙って断る）
                                 .disabled(model.isReloadingComments || model.deletingCommentIds.contains(comment.id))
                                 .accessibilityLabel(L("\(comment.name)さんのコメントを削除",

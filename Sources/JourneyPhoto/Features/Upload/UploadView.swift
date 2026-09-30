@@ -326,7 +326,8 @@ struct UploadView: View {
             Text(title)
                 .font(.footnote.weight(selected ? .semibold : .regular))
                 .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-                .frame(maxWidth: .infinity, minHeight: 38)
+                // 押せるものは 44pt
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .background(selected ? WebTheme.accentBackground : Color.clear,
                             in: RoundedRectangle(cornerRadius: 9))
                 .contentShape(RoundedRectangle(cornerRadius: 9))
