@@ -112,6 +112,15 @@ struct PhotoDetailView: View {
     private static let heroOverlap: CGFloat = 94
     /// コメントの「削除」の当たりを字の上下にはみ出させる幅（44pt − 12pt の字の高さ ≒ 28 の半分）
     private static let commentDeleteTapSlack: CGFloat = 14
+    /// コメントした人の名前（`.caption` の太字・約 16pt）の当たりを上へはみ出させる幅。
+    /// **下は本文との間（2pt）まで**——下へ広げると本文の1行目にかぶる。
+    /// 上はひとつ前のコメントとの間（12 ＋ 2 ＋ 2）と、その本文の下の方にかかるが、
+    /// 本文は押せないので奪うものは無い
+    private static let commentNameTapSlackTop: CGFloat = 26
+    private static let commentNameTapSlackBottom: CGFloat = 2
+    /// カテゴリの札（`.caption` ＋ 上下 4 ≒ 24pt）の当たりを札の上下にはみ出させる幅
+    /// （44 − 24 の半分）。上下の段との間は 16 あるので、隣の当たりに届かない
+    private static let chipTapSlack: CGFloat = 10
 
     // **段ごとに割ってある。** 一本の長い `ScrollView { … }` にすると、Swift の
     // 型検査が現実的な時間で終わらなくなることがある
@@ -159,8 +168,13 @@ struct PhotoDetailView: View {
             model.setSignedIn(auth.userId != nil)
             // 前の1枚の「ブロックしました」を持ち越さない
             actionNotice = nil
-            model.show(photoId: current.id, initialLikes: current.likes,
-                       liked: favorites.contains(current.id))
+            // **数はホームのカードと同じ出どころ**（`LiveLikes.base`）。一覧の数
+            // （`current.likes`）のままだと、ホームで押した直後に開くと古い数が出た
+            let stored = likeCounts.entry(for: current.id)
+            model.show(photoId: current.id,
+                       initialLikes: LiveLikes.base(for: current, stored: stored),
+                       liked: favorites.contains(current.id),
+                       answeredAt: stored?.at)
             await model.load()
         }
         .onChange(of: heroPage) { _, page in
@@ -446,10 +460,17 @@ struct PhotoDetailView: View {
                     NavigationLink {
                         TagPhotosView(kind: .category(shown.category ?? ""))
                     } label: {
+                        // 札の見た目はそのまま、当たりだけ 44pt（札の外に広げて負の余白で詰める）
                         Text(category)
                             .font(.caption)
                             .foregroundStyle(WebTheme.muted2)
                             .webChip(prominent: true)
+                            // 外へ広げてから同じだけ詰める——並びの高さは札のまま。
+                            // 文字を大きくして札が伸びても、詰めすぎて上下に重ならない
+                            .padding(.vertical, Self.chipTapSlack)
+                            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .padding(.vertical, -Self.chipTapSlack)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1076,7 +1097,14 @@ struct PhotoDetailView: View {
                             NavigationLink {
                                 UserProfileView(userId: comment.uid)
                             } label: {
+                                // 当たりだけ 44pt（行の高さは字のまま・「削除」と同じ形）
                                 Text(comment.name).font(.caption.weight(.semibold))
+                                    .padding(.top, Self.commentNameTapSlackTop)
+                                    .padding(.bottom, Self.commentNameTapSlackBottom)
+                                    .frame(minWidth: 44, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .padding(.top, -Self.commentNameTapSlackTop)
+                                    .padding(.bottom, -Self.commentNameTapSlackBottom)
                             }
                         }
                         Spacer()
@@ -1454,10 +1482,17 @@ private struct ExifRow: View {
                                 NavigationLink {
                                     TagPhotosView(kind: .camera(camera))
                                 } label: {
+                                    // 字の見た目・行の高さはそのまま、当たりだけ 44pt
+                                    // （`.title3` ≒ 24pt の上下に 10 ずつ。外へ広げて同じだけ詰める。
+                                    // 長い機種名が2行になっても並びは縮まない）
                                     Text(item.value)
                                         .font(.title3)
                                         .foregroundStyle(WebTheme.foreground)
                                         .underline(true, color: Color.white.opacity(0.25))
+                                        .padding(.vertical, 10)
+                                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                        .padding(.vertical, -10)
                                 }
                                 .buttonStyle(.plain)
                             } else {

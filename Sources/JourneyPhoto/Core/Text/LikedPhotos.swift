@@ -66,4 +66,18 @@ enum LikedPhotos {
         }
         return GallerySort.new.apply(found)
     }
+
+    /// 引き当てた写真を開くときの `PhotoDetailView.fromPublicFeed`（`PhotoLink`）。
+    ///
+    /// **公開一覧から引き当てた写真だけが真。** 自分の写真の束だけに在る写真
+    /// （投稿した直後・非公開）は、個別ページ `/photo/<id>` がまだ建っていない
+    /// ——既定の `true` のまま開くと、共有のリンクが建て直すまで 404 を指す。
+    ///
+    /// - Parameter feed: `resolve` に**最初の束として渡した**公開一覧（絞ったあとの
+    ///   もの）。`resolve` は先の束で当たった写しを使うので、ここに在る id は
+    ///   公開一覧から来た写真
+    static func fromPublicFeed(_ feed: [Photo]) -> (Photo) -> Bool {
+        let ids = Set(feed.map(\.id))
+        return { ids.contains($0.id) }
+    }
 }

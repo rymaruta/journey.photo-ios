@@ -132,6 +132,23 @@ final class UploadViewModel: ObservableObject {
     // ここから下は、まとめて同じものが付く
     @Published var song: Photo.Song?
     @Published var tagsText = ""
+    /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき・`UploadView`）。
+    /// **入れるだけで、消せる**——決めつけない
+    var initialTag: String?
+    /// `initialTag` をもう入れたか。**一度だけ入れる**——`onAppear` は選択画面などから
+    /// 戻るたびに呼ばれるので、印が無いと利用者が空にしたタグがまた入る
+    private var appliedInitialTag = false
+
+    /// 今日のテーマのタグを入れる（画面が出たとき）。既に何か打っていれば触らない
+    func applyInitialTag() {
+        guard let initialTag, !appliedInitialTag else { return }
+        appliedInitialTag = true
+        // 入れたタグは「最初から入っていたもの」として控える（書きかけ扱いにしない・main #86）
+        if tagsText.isEmpty {
+            tagsText = initialTag
+            initialTagsText = initialTag
+        }
+    }
     /// カテゴリ。**決まった選択肢から選ぶ**（`CategoryChoices`）
     @Published var category = ""
     @Published var published = true
@@ -662,6 +679,10 @@ final class UploadViewModel: ObservableObject {
         tagsText = ""
         // 最初のタグも忘れる（残すと、空に戻した画面が「書きかけ」になり、閉じられなかった）
         initialTagsText = ""
+        // **印も下ろして入れ直す。** 曲だけ付かなかった回は画面が閉じずにここへ来るので、
+        // 下ろさないと次の投稿でテーマのタグが空のまま残る
+        appliedInitialTag = false
+        applyInitialTag()
         category = ""
         published = true
         audience = .everyone
