@@ -23,6 +23,12 @@ struct SearchView: View {
     @State private var needsReload = false
     /// 人の結果から落とす「見せない」の写し。**画面に出ている間だけ取り直す**
     @State private var dropped = ModerationSnapshot()
+    /// 撮影スポットの索引（`OfficialSpotService.fetchIndex` は一度取れば控える）。
+    /// 語で探したとき、写真とは別の節でガイドへ案内する（2026-09-30 のレビュー:
+    /// 「銀山温泉」で写真0件・ガイドは在るのに案内されない。Web の「さがす」と同じ直し）
+    @State private var officialSpots: [OfficialSpot] = []
+    /// 撮影スポットの節を全部出しているか（語が変わったら畳む）
+    @State private var spotsExpandedFor: String? = nil
 
     var body: some View {
         ScrollView {
@@ -73,6 +79,11 @@ struct SearchView: View {
         }
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
+        }
+        // 索引は語が入ったときに取る（取れなければ節を出さないだけ・写真の検索はそのまま）
+        .task(id: query.isEmpty) {
+            guard !query.isEmpty, officialSpots.isEmpty else { return }
+            officialSpots = (try? await environment.spots.fetchIndex()) ?? []
         }
         // **ブロック／通報の直後に消す。** `loadPhotos` は
         // `guard allPhotos.isEmpty` で二度と読まない作りなので、
@@ -592,6 +603,7 @@ struct SearchView: View {
         }
 
         if model.scope.showsPhotos {
+            spotResults
             photoResults
         } else if users.isEmpty {
             // 人だけを探しているとき。**打つ前と見つからなかったを分ける**
@@ -611,11 +623,96 @@ struct SearchView: View {
         }
     }
 
+    /// 語に当たる撮影スポット（名前・読み・英語名・都道府県・市区町村）。地図の検索と同じ当て方
+    private var spotHits: [OfficialSpot] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return OfficialSpotIndex.matches(officialSpots, query: q)
+    }
+
+    /// **撮影スポットの節**（写真の件数とは混ぜない）。最初は5件、押すと全部
+    @ViewBuilder
+    private var spotResults: some View {
+        let hits = spotHits
+        if !hits.isEmpty {
+            let expanded = spotsExpandedFor == query
+            VStack(alignment: .leading, spacing: 10) {
+                Text(L("撮影スポット（\(hits.count)か所）", "Shooting spots (\(hits.count))"))
+                    .font(.headline)
+                    .foregroundStyle(WebTheme.foreground)
+                VStack(spacing: 0) {
+                    ForEach(Array((expanded ? hits : Array(hits.prefix(5))).enumerated()), id: \.element.id) { i, spot in
+                        if i > 0 { Divider().overlay(WebTheme.border) }
+                        NavigationLink {
+                            OfficialSpotView(spot: spot, spots: officialSpots, photos: model.everything)
+                        } label: {
+                            spotRow(spot)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                if hits.count > 5 {
+                    Button {
+                        spotsExpandedFor = expanded ? nil : query
+                    } label: {
+                        Text(expanded ? L("閉じる", "Show fewer") : L("すべて表示（\(hits.count)か所）", "Show all \(hits.count)"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(WebTheme.accent)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .accessibilityIdentifier("search.spots")
+        }
+    }
+
+    private func spotRow(_ spot: OfficialSpot) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mappin.and.ellipse")
+                .font(.system(size: 17))
+                .foregroundStyle(WebTheme.accent)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(spot.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(1)
+                Text(Self.spotSubtitle(spot))
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
+    }
+
+    /// 「撮影地ガイド・山形県 尾花沢市」（海外は国から）
+    nonisolated static func spotSubtitle(_ spot: OfficialSpot) -> String {
+        let r = spot.region
+        let place = [r?.country, r?.prefecture, r?.city].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        let head = L("撮影地ガイド", "Photo spot guide")
+        return place.isEmpty ? head : "\(head)・\(place)"
+    }
+
     @ViewBuilder
     private var photoResults: some View {
         // **件数と並び替えは結果の上**（提案の絵）
         HStack {
-            Text(L("検索結果: \(model.shown.count) 件", "\(model.shown.count) results"))
+            // 撮影スポットの節が上に出るので、ここは「写真」と名乗る（スポットまで0件に読ませない）
+            Text(query.isEmpty
+                 ? L("検索結果: \(model.shown.count) 件", "\(model.shown.count) results")
+                 : L("写真: \(model.shown.count) 件", "Photos: \(model.shown.count)"))
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.muted2)
             Spacer()
