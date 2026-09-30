@@ -101,7 +101,7 @@ struct InviteView: View {
                 Section { Text(L("まだ写真がありません", "No photos yet")).foregroundStyle(.secondary) }
             } else {
                 Section(L("このアルバムの写真", "Photos in this album")) {
-                    ForEach(photos) { photo in
+                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
                         NavigationLink {
                             // **公開の一覧から来たのではない**（個別ページは無いかもしれない）
                             PhotoDetailView(photo: photo, fromPublicFeed: false, context: photos)
@@ -110,7 +110,9 @@ struct InviteView: View {
                                 RemoteImage(url: photo.gridImageURL, alignment: photo.gridAlignment)
                                     .frame(width: 56, height: 56)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                                Text(photo.displayTitle)
+                                // 招待の応答は題を返さないので、空の行にせず何枚目かを出す
+                                Text(photo.displayTitle.isEmpty
+                                     ? L("\(index + 1)枚目", "Photo \(index + 1)") : photo.displayTitle)
                                     .lineLimit(2)
                             }
                         }
