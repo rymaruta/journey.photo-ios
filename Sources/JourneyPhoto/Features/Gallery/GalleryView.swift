@@ -24,6 +24,8 @@ struct GalleryView: View {
     @State private var isOnScreen = false
     /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
     @State private var needsReload = false
+    /// 出ていない間に投稿を閉じた。戻ってきたときに自分の写真を読み直す
+    @State private var needsMyPhotosReload = false
     /// 描くときに落とす「見せない」の写し。**画面に出ている間だけ取り直す**。
     /// 戻った瞬間、読み直しが終わるまでブロックした人のカードが見えないように
     @State private var dropped = ModerationSnapshot()
@@ -125,9 +127,13 @@ struct GalleryView: View {
         }
         // **下の「投稿」を閉じたら自分の写真を読み直す。** 今日のテーマの札から投稿しても、
         // シートは `RootView` にあるので `.task(id:)` は走らず、札が「参加する」のまま残った
+        //
+        // 🔴 **画面に出ている間だけ**（`MyPageView` と同じ）。旅の一冊などを上に積んだまま
+        // 読み直すと、札が差し替わって開いている画面ごと閉じる。出ていない回は印を立て、
+        // 戻ってきたとき（`onAppear`）に読み直す
         .onChange(of: tabRouter.postSheetsClosed) { _, _ in
-            guard let userId = auth.userId else { return }
-            Task { await model.loadMyPhotos(environment.photos, viewerId: userId) }
+            guard auth.userId != nil else { return }
+            if isOnScreen { reloadMyPhotos() } else { needsMyPhotosReload = true }
         }
         // **前面に戻ったら輪を読み直す。** 日をまたいで戻っても昨日の輪のまま、
         // フォローしている人の新しいストーリーも出なかった
@@ -180,8 +186,15 @@ struct GalleryView: View {
             isOnScreen = true
             dropped = hidden.snapshot
             if needsReload { reloadHidden() }
+            if needsMyPhotosReload { reloadMyPhotos() }
         }
         .onDisappear { isOnScreen = false }
+    }
+
+    private func reloadMyPhotos() {
+        needsMyPhotosReload = false
+        guard let userId = auth.userId else { return }
+        Task { await model.loadMyPhotos(environment.photos, viewerId: userId) }
     }
 
     private func reloadHidden() {
