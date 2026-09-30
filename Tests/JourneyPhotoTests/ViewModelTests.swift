@@ -294,17 +294,126 @@ final class ViewModelTests: XCTestCase {
         return (model.followers, model.following)
     }
 
-    /// **割り込みがブロックの後の数を読み、読み直しが落ちた → 2**（二重に引かない）
-    func testBlockWithInterveningPostBlockLoadAndFailedReread() async {
-        let (followers, _) = await followersAfterBlock(intervening: (2, 1), reread: nil)
-        XCTAssertEqual(followers, 2, "ブロック後の数を読んだ割り込みのあとで、さらに引いた")
-    }
-
-    /// 読み直しが落ちたら、**数は触らない**（推し量って引かない）
+    /// 読み直しも、1回だけの走らせ直しも落ちたら、**数は触らず、それ以上は追わない**
+    /// （推し量って引かない。走らせ直しを繰り返さない）
     func testBlockLeavesCountsWhenRereadFails() async {
         let (followers, following) = await followersAfterBlock(intervening: nil, reread: nil)
         XCTAssertEqual(followers, 3)
         XCTAssertEqual(following, 2)
+    }
+
+    /// 人のページの環境（公開一覧はスタブ）。`gates` で口を止める
+    private func profileEnv(gates: [String: Gate]) -> AppEnvironment {
+        AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                       gallery: PublicGalleryService(
+                          url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                          session: session,
+                          snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                       api: api(gates: PathGates(gates)))
+    }
+
+    private func serveProfile(followers: Int, following: Int) {
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 200,
+                             body: #"{"followers":\#(followers),"following":\#(following)}"#)
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        StubProtocol.respond(path: "/users/u1/block", status: 200, body: #"{"blocked":true}"#)
+    }
+
+    /// 🔴 **フォロー数の手前で止まっていた読み込みが、ブロック後にブロック前の数を持ち帰っても書かない。**
+    /// 読み直しの 2/1 が勝つ（`followWrites` と `blocks == blockWrites` の見張り）
+    func testLoadStartedBeforeBlockDoesNotOverwriteTheReread() async {
+        prepare()
+        serveProfile(followers: 2, following: 1)          // ブロックの後の数
+        let gate = Gate(holds: 1)                          // 1回目（読み込み）のフォロー数だけ止める
+        let env = profileEnv(gates: ["GET /users/u1/follow": gate])
+        let model = UserProfileViewModel()
+        let loading = Task { await model.load(userId: "u1", environment: env, viewerId: "me") }
+        await gate.untilWaiting()
+
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await model.block(userId: "u1", environment: env, store: store, toasts: ToastCenter())
+        XCTAssertEqual(model.followers, 2, "前提: 読み直しの数が入っていない")
+        XCTAssertEqual(model.following, 1)
+
+        // 止まっていた読み込みは、ブロックの前の数を持ち帰る
+        StubProtocol.reset()
+        serveProfile(followers: 3, following: 2)
+        await gate.open()
+        await loading.value
+        XCTAssertEqual(model.followers, 2, "ブロックの前に始まった読み込みが、フォロワー数を戻した")
+        XCTAssertEqual(model.following, 1, "ブロックの前に始まった読み込みが、フォロー中の数を戻した")
+    }
+
+    /// 🔴 **読み直しの間に始まった読み込みの答えを、読み直しで上書きしない**（`loadSeq == seq`）
+    func testRereadDoesNotOverwriteANewerLoad() async {
+        prepare()
+        serveProfile(followers: 3, following: 2)
+        let gate = Gate(holds: 1, skip: 1)                 // 2回目（ブロック後の読み直し）だけ止める
+        let env = profileEnv(gates: ["GET /users/u1/follow": gate])
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: "me")
+        XCTAssertEqual(model.followers, 3)
+
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let blocking = Task { await model.block(userId: "u1", environment: env, store: store, toasts: ToastCenter()) }
+        await gate.untilWaiting(2)
+
+        // 読み直しを待っている間に、別の人で読み込む
+        StubProtocol.reset()
+        serveProfile(followers: 7, following: 4)
+        await model.load(userId: "u1", environment: env, viewerId: "other")
+        XCTAssertEqual(model.followers, 7)
+
+        // 読み直しは古い答えを持ち帰る
+        StubProtocol.reset()
+        serveProfile(followers: 9, following: 9)
+        await gate.open()
+        await blocking.value
+        XCTAssertEqual(model.followers, 7, "読み直しが、後から始まった読み込みの数を上書きした")
+        XCTAssertEqual(model.following, 4)
+    }
+
+    /// 🔴 **読み直しが落ちたら、読み込みを1回だけ走らせ直す。** 同時に走っていた読み込みは
+    /// ブロックの見張りで数を捨てるので、読み直しが落ちると 0 のまま残った
+    func testFailedRereadRunsTheLoadOnceMore() async {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        StubProtocol.respond(path: "/users/u1/block", status: 200, body: #"{"blocked":true}"#)
+        let stats = Gate(holds: 1)                         // 最初の読み込みのフォロー数を止める
+        let profile = Gate(holds: 1, skip: 1)              // 走らせ直しのプロフィールを止める
+        let env = profileEnv(gates: ["GET /users/u1/follow": stats, "/profile/u1": profile])
+        let model = UserProfileViewModel()
+        let loading = Task { await model.load(userId: "u1", environment: env, viewerId: "me") }
+        await stats.untilWaiting()
+
+        // ブロックは通る。読み直しは落ち（500）、走らせ直しがプロフィールの手前で止まる
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let blocking = Task { await model.block(userId: "u1", environment: env, store: store, toasts: ToastCenter()) }
+        await profile.untilWaiting(2)
+
+        // ここからはサーバーが答える
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":2,"following":1}"#)
+        StubProtocol.respond(path: "/user/following", status: 200, body: #"{"userIds":[]}"#)
+        await stats.open()
+        await loading.value
+        await profile.open()
+        await blocking.value
+
+        XCTAssertEqual(model.followers, 2, "読み直しが落ちたあと、数を取り直していない")
+        XCTAssertEqual(model.following, 1)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.actionMessage)
+        // ブロックの姿のまま（格子は空・数は言わない）
+        XCTAssertEqual(model.photos, [])
+        XCTAssertEqual(model.photoCount, .pending)
     }
 
     /// 読み直しが通った → サーバーの数（割り込みの数でもない）
