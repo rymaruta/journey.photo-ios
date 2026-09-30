@@ -1267,7 +1267,8 @@ private struct NearbyMapScreen: View {
 
     var body: some View {
         ScrollView {
-            MyPhotosMap(photos: [opened] + nearby, fromPublicFeed: { photo in
+            // 近くの写真は他人のものも混ざる（「投稿するときに…」と言わない）
+            MyPhotosMap(photos: [opened] + nearby, isMine: false, fromPublicFeed: { photo in
                 NearbyPhotos.fromPublicFeed(photo, openedId: opened.id,
                                             openedFromPublicFeed: openedFromPublicFeed)
             })

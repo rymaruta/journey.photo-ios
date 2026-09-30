@@ -200,7 +200,7 @@ struct UserProfileView: View {
         } else if tab == .map {
             // 相手のページでも「どこで撮ったか」を出す（モック11 と同じ並び）
             // シートの中でブロック／通報して閉じたら、格子も絞り直す（`onAppear` は来ない）
-            MyPhotosMap(photos: shownPhotos, onSheetDismiss: { dropped = hidden.snapshot })
+            MyPhotosMap(photos: shownPhotos, isMine: false, onSheetDismiss: { dropped = hidden.snapshot })
         } else {
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(shownPhotos) { photo in
