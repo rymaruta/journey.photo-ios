@@ -174,6 +174,8 @@ struct InviteView: View {
     }
 
     private func join(_ preview: AlbumService.InvitePreview) async {
+        // 素早く2回押すと、`.disabled` が効く前に2本目の Task が走る
+        guard !isJoining else { return }
         isJoining = true
         message = nil
         defer { isJoining = false }

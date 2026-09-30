@@ -50,6 +50,33 @@ final class PhotoDetailRulesTests: XCTestCase {
                        PhotoGroups.siblings(of: context[0], in: context).map(\.id))
     }
 
+    /// 🔴 **詳細の上の送りにも、通報した写真を残さない**（大きく見る画面と同じ絞り方）。
+    /// 今の1枚は残し、位置は落とした後の束で引く
+    func testHeroGroupDropsReportedLikeTheViewer() async throws {
+        func grouped(_ id: String, _ at: String) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(
+                "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"userId\":\"me\",\"createdAt\":\"\(at)\",\"groupId\":\"g\"}".utf8))
+        }
+        let group = [try grouped("g1", "2026-09-01T10:00:00.000Z"),
+                     try grouped("g2", "2026-09-01T10:00:01.000Z"),
+                     try grouped("g3", "2026-09-01T10:00:02.000Z")]
+        let hiding = ModerationSnapshot(reported: ["g1", "g2"])
+
+        // g1・g2 を通報したあと g3 を見ている: 2枚は落ち、位置は落とした後の束で 0
+        let hero = PhotoDetailRules.heroGroup(group, current: group[2], hiding: hiding)
+        XCTAssertEqual(hero.photos.map(\.id), ["g3"])
+        XCTAssertEqual(hero.index, 0)
+
+        // 通報した1枚そのものを見ている間は残す
+        let own = PhotoDetailRules.heroGroup(group, current: group[1], hiding: hiding)
+        XCTAssertEqual(own.photos.map(\.id), ["g2", "g3"])
+        XCTAssertEqual(own.index, 0)
+
+        // 大きく見る画面の束と同じ並び
+        let lineup = PhotoDetailRules.viewerLineup(group, current: group[1], hiding: hiding)
+        XCTAssertEqual(own.photos.map(\.id), lineup.photos.map(\.id))
+    }
+
     /// **押した1枚が落ちる側でも範囲外にしない。** 詳細の上に出ている1枚は残す
     func testViewerLineupKeepsShownPhotoAndIndexInRange() async throws {
         let siblings = [try photo("p1", userId: "a"), try photo("p2", userId: "b"),

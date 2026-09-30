@@ -16,4 +16,10 @@ enum CommentsHeading {
         guard let commentCount else { return L("コメント", "Comments") }
         return L("コメント（\(commentCount)）", "Comments (\(commentCount))")
     }
+
+    /// 見出しに出す数。サーバーの総数から、読めた一覧（`loaded` 件）のうち
+    /// 画面に出さない分（ブロックした人のコメント）を引く。総数が取れていなければ nil
+    static func visibleCount(total: Int?, loaded: Int, shown: Int) -> Int? {
+        total.map { max(0, $0 - max(0, loaded - shown)) }
+    }
 }
