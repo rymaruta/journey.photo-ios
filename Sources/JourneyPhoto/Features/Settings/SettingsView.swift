@@ -131,8 +131,10 @@ struct SettingsView: View {
         // 戻るボタンの文言（子の画面の「< 設定」）のために題は持つが、
         // **バーの中央には出さない**（板は左寄せの大見出しだけ）
         .navigationTitle(L("設定", "Settings"))
-        // ログアウトの途中は戻らせない（戻って開き直すと門が新しくなり、二度押せる。`DeleteAccountView` と同じ）
+        // ログアウトの途中は戻らせない・シートも払わせない（戻って開き直すと門が新しくなり、
+        // 二度押せる。`DeleteAccountView` と同じ2つ）
         .navigationBarBackButtonHidden(isSigningOut)
+        .interactiveDismissDisabled(isSigningOut)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
