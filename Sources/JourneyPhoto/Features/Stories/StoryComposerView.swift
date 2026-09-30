@@ -52,6 +52,8 @@ struct StoryComposerView: View {
     @State private var message: String?
     /// 前に書きかけて閉じたもの。**開いた直後に一度だけ尋ねる**
     @State private var showRestore = false
+    /// 開いたときの問いを済ませた（`onAppear` はカメラを閉じたときにも走る）
+    @State private var askedOnOpen = false
 
     // 板 24b「文字と札」の編集
     /// 文字と札を編集している（写真を暗くし、上に札の種類、下に操作欄）
@@ -200,6 +202,10 @@ struct StoryComposerView: View {
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
             drafts.use(userId: auth.userId)
+            // **尋ねるのは開いた回だけ。** カメラ（fullScreenCover）を閉じると onAppear が
+            // もう一度走り、開いたときの問いがまた出ていた
+            guard !askedOnOpen else { return }
+            askedOnOpen = true
             // **送れなかった残りが先。** 片付くまで新しい投稿は受けないので、
             // ここでも出口を出す（ホームの輪が見えない人のため）
             if case .failed = uploads.phase {
