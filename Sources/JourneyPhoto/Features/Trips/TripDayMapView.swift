@@ -25,13 +25,13 @@ struct TripDayMapView: View {
                 ForEach(stops.filter { $0.coords != nil }) { stop in
                     // 題はピンの下に字で出る。番号はピンにあるので題には入れない（二重に見えた・0755872 のレビュー）
                     Annotation(stop.name, coordinate: coordinate(stop.coords!)) {
-                        pin(stop.number)
+                        pin(stop)
                     }
                 }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 300)
-            .accessibilityLabel(L("\(title)の地図", "Map of \(title)"))
+            // 地図そのものにラベルを付けない（1つの要素にまとまってピンに入れなくなりうる・`PhotoMapView` も付けていない）
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -64,15 +64,21 @@ struct TripDayMapView: View {
     }
 
     /// 番号のピン（真鍮の塗り＋墨の番号＋黒の縁）
-    private func pin(_ number: Int) -> some View {
-        Text("\(number)")
+    private func pin(_ stop: TripDayMap.Stop) -> some View {
+        Text("\(stop.number)")
             .font(JPFont.mono(14, medium: true))
             .foregroundStyle(WebTheme.accentText)
             .frame(width: 30, height: 30)
             .background(WebTheme.accentFill, in: Circle())
             .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
-            // 読み上げでも番号が分かるように（題は名前だけ）
-            .accessibilityLabel(L("\(number) 番目", "Stop \(number)"))
+            // 読み上げは名前と番号を1つに（題とピンに分けると、どちらかが欠けうる・86a6edb のレビュー。
+            // `PhotoMapView` の撮影スポットの印と同じく、ピンに名前ごと付ける）
+            .accessibilityLabel(Self.spokenLabel(stop))
+    }
+
+    /// 「清水寺、1 か所目」
+    static func spokenLabel(_ stop: TripDayMap.Stop) -> String {
+        L("\(stop.name)、\(stop.number) か所目", "\(stop.name), stop \(stop.number)")
     }
 
     private func row(_ stop: TripDayMap.Stop) -> some View {
@@ -87,6 +93,8 @@ struct TripDayMapView: View {
                     .font(.body)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(2)
+                    // 番号の字は読み上げから外してあるので、ピンと照らし合わせられるよう名前に付ける
+                    .accessibilityLabel(Self.spokenLabel(stop))
                 if stop.coords == nil {
                     Text(L("地図の場所が分かりません", "No map location"))
                         .font(.caption)
