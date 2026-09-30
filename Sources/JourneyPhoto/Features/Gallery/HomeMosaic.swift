@@ -165,7 +165,7 @@ struct HomeFeedTile: View {
                             ago: large ? StoryPlayback.ago(from: photo.createdAt) : nil)
     }
 
-    /// 撮影地と撮った人（板: 明朝の撮影地、その下に 11pt）。**撮影地が無い写真は
+    /// 撮影地と撮った人（板: 明朝の撮影地、その下に 11pt。本文系の最小に合わせて 12pt）。**撮影地が無い写真は
     /// 文字を重ねず、下を薄く暗くするだけ**（いいねの丸を読ませるため）
     @ViewBuilder
     private var caption: some View {
@@ -178,7 +178,7 @@ struct HomeFeedTile: View {
                     .shadow(color: Color.black.opacity(0.4), radius: 4, x: 0, y: 1)
                     .lineLimit(1)
                 Text(byline)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(Color.white.opacity(0.82))
                     .lineLimit(1)
             }
@@ -226,7 +226,7 @@ struct HomeFeedTile: View {
                 Image(systemName: liked ? "heart.fill" : "heart")
                     .font(.system(size: 13, weight: .semibold))
                 Text("\(likeCount)")
-                    .font(JPFont.mono(11))
+                    .font(JPFont.mono(12))
             }
             .foregroundStyle(Color.white)
             .padding(.horizontal, 10)

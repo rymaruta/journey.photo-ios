@@ -410,7 +410,7 @@ struct PhotoDetailView: View {
             }
             if let headline {
                 Text(headline)
-                    .font(JPFont.mono(11))
+                    .font(JPFont.mono(12))
                     .foregroundStyle(WebTheme.faint)
             }
         }
@@ -560,8 +560,8 @@ struct PhotoDetailView: View {
                             }
                             if let username = model.owner?.username, !username.isEmpty {
                                 Text("@\(username)")
-                                    // 板 02: 11px
-                                    .font(.caption2)
+                                    // 板 02 は 11px だが、本文系の最小は 12pt
+                                    .font(.caption)
                                     .foregroundStyle(WebTheme.faint)
                                     .lineLimit(1)
                             }

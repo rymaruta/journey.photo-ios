@@ -73,7 +73,7 @@ struct SongPickerView: View {
             }
             // 板 23 の一覧の下の注記
             Text(SongPickerText.previewNote)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .listRowBackground(Color.clear)
         }

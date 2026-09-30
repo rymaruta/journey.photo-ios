@@ -128,9 +128,9 @@ struct UploadView: View {
                 detailSection
                 rowsCard
                 tagsAndCategory
-                // 板: 本文の最後に 11px の注記
+                // 板: 本文の最後に注記（板は 11px だが、本文系の最小は 12pt）
                 Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(WebTheme.faint)
                     .padding(.horizontal, 4)
             }
@@ -235,7 +235,7 @@ struct UploadView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(alignment: .bottomLeading) {
             Text("\(index + 1)")
-                .font(JPFont.mono(10))
+                .font(JPFont.mono(12))
                 .foregroundStyle(Color.white)
                 .frame(minWidth: 18, minHeight: 18)
                 .padding(.horizontal, 3)
@@ -280,7 +280,7 @@ struct UploadView: View {
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: "plus").font(.system(size: 20, weight: .regular))
-                Text(L("追加", "Add")).font(.caption2)
+                Text(L("追加", "Add")).font(.caption)
             }
             .foregroundStyle(WebTheme.muted2)
             .frame(width: 96, height: 120)
@@ -315,7 +315,7 @@ struct UploadView: View {
                  ? L("一覧では1枚のカードにまとまり、左右に送れます（題と説明は1枚ずつ書きます）",
                      "Shown as one card you can swipe (each photo keeps its own title)")
                  : L("それぞれ別の投稿として並びます", "Shown as separate posts"))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 4)
         }
@@ -380,7 +380,7 @@ struct UploadView: View {
             // 数え方はサーバーと同じ（`PostLimits.length`）——字で数えると、止まったのに
             // 「150/200」のように余っている数が出る
             Text("\(PostLimits.length(text))/\(limit)")
-                .font(JPFont.mono(11))
+                .font(JPFont.mono(12))
                 .foregroundStyle(PostLimits.length(text) >= limit ? WebTheme.danger : WebTheme.faint)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.top, -8)
@@ -438,7 +438,7 @@ struct UploadView: View {
                  ? model.audience.photoNote
                  : L("非公開の写真は、あなた以外には見えません。あとから公開できます。",
                      "Private photos stay yours. You can publish them later."))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 4)
         }
