@@ -66,6 +66,11 @@ struct SearchView: View {
         .refreshable {
             await model.reloadPhotos(environment: environment, force: true, hidden: hidden.snapshot)
             await model.search(query, environment: environment)
+            // 撮影スポットの索引も、取れていなければ取り直す（`.task(id: query)` は
+            // 語が変わらないと走らないので、引き下げても節が出ないままだった）
+            if officialSpots.isEmpty {
+                officialSpots = (try? await environment.spots.fetchIndex(force: true)) ?? []
+            }
         }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
