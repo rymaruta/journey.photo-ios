@@ -437,6 +437,9 @@ struct StoryComposerView: View {
                     .buttonStyle(.plain)
                 }
             }
+            // 読み込み中は足さない（投稿・下書き保存と同じ条件）。2本の読み込みが混ざって並んだ
+            .disabled(loadingPicks > 0)
+            .opacity(loadingPicks > 0 ? 0.4 : 1)
             if let message {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.muted2)
             }
@@ -1000,6 +1003,10 @@ struct StoryComposerView: View {
                             .strokeBorder(Color.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                 }
                 .accessibilityLabel(L("写真を追加", "Add a photo"))
+                // 読み込み中は足さない（投稿・下書き保存と同じ条件）。2本の読み込みが混ざって並び、
+                // 10枚を超えた分が落ちた
+                .disabled(loadingPicks > 0)
+                .opacity(loadingPicks > 0 ? 0.4 : 1)
             }
         }
     }
