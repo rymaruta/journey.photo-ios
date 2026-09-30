@@ -556,7 +556,10 @@ struct PhotoMapView: View {
                     selected = nil
                     chosenPlace = nil
                 } label: {
+                    // 印は 32〜40pt のまま、押せる範囲だけ 44pt に広げる（中心は変わらない）
                     officialMarker(pin)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 // 読み上げでも下書きだと分かるように（画面の札と同じ語）
