@@ -30,7 +30,7 @@ enum SpotDetailParts {
             }
             .foregroundStyle(WebTheme.foreground)
             Text(label)
-                .font(.caption2)
+                .font(.system(size: 12))
                 .foregroundStyle(WebTheme.faint)
         }
         .frame(maxWidth: .infinity)

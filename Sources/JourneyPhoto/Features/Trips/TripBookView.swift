@@ -116,7 +116,7 @@ struct TripBookView: View {
                 }
             }
             Text(label)
-                .font(.system(size: 10))
+                .font(.system(size: 12))
                 .foregroundStyle(WebTheme.faint)
                 .lineLimit(1)
         }
@@ -154,7 +154,9 @@ struct TripBookView: View {
         }
     }
 
-    private static let routeHeight: CGFloat = 118
+    /// 札を 12pt（本文の最小）にしたぶん点を 6 下げ、枠も伸ばす。
+    /// そのままだと上の札が左上の「ROUTE」の行に重なる
+    private static let routeHeight: CGFloat = 126
 
     /// 点の位置。**左から右へ等間隔、高さは交互**（板の波打つ線）
     private func routePoints(count: Int, width: CGFloat) -> [CGPoint] {
@@ -162,7 +164,7 @@ struct TripBookView: View {
         let span = max(0, width - inset * 2)
         return (0..<count).map { index in
             let x = count > 1 ? inset + span * CGFloat(index) / CGFloat(count - 1) : width / 2
-            return CGPoint(x: x, y: index.isMultiple(of: 2) ? 74 : 46)
+            return CGPoint(x: x, y: index.isMultiple(of: 2) ? 80 : 52)
         }
     }
 
@@ -195,14 +197,14 @@ struct TripBookView: View {
                     .position(x: point.x, y: point.y)
                 // 低い点は下に、高い点は上に札を出す（線と重ねない）
                 Text("DAY \(stop.day) · \(stop.place)")
-                    .font(JPFont.mono(9, relativeTo: .caption2))
+                    .font(JPFont.mono(12, relativeTo: .caption2))
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
                     .frame(width: labelWidth)
                     .position(x: point.x, y: index.isMultiple(of: 2) ? point.y + 22 : point.y - 18)
             }
             Text("ROUTE · \(TripBook.distanceText(distance))\(distance == nil ? "" : " km")")
-                .font(JPFont.mono(8, relativeTo: .caption2))
+                .font(JPFont.mono(12, relativeTo: .caption2))
                 .tracking(1.5)
                 .foregroundStyle(WebTheme.placeholder)
                 .padding(.leading, 14)
