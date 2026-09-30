@@ -505,6 +505,30 @@ final class UploadServiceTests: XCTestCase {
         }
         XCTAssertTrue(ScriptedProtocol.calls.isEmpty)
     }
+
+    /// 🔴 **差し替えで撮影日を載せなかった回は、そうと返す**（画面が「撮影日は前のまま」と知らせる）。
+    /// 載せた回・元から撮影日の無い写真は false
+    func testReplaceTellsWhenTheDateWasLeftOut() async throws {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let photos = PhotoService(api: api)
+        for (takenOn, keptOld) in [("1980-01-01", true), ("2024-11-01", false), (nil, false)] as [(String?, Bool)] {
+            ScriptedProtocol.reset()
+            ScriptedProtocol.script = [
+                .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+                .init(match: "/put", status: 200, body: ""),
+                .init(match: "/photos/p1", status: 200, body: "{}"),
+            ]
+            let prepared = ImagePreparer.Prepared(data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg",
+                                                  contentType: "image/jpeg", exif: nil, coords: nil, takenOn: takenOn)
+            let result = try await photos.replace(photoId: "p1", prepared: prepared, uploads: service())
+            XCTAssertEqual(result, keptOld, "\(takenOn ?? "nil")")
+            let put = try XCTUnwrap(ScriptedProtocol.calls.first { $0.path == "/photos/p1" })
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(put.body)) as? [String: Any])
+            let replace = try XCTUnwrap(json["replace"] as? [String: Any])
+            XCTAssertEqual(replace["date"] as? String, keptOld ? nil : takenOn)
+        }
+    }
 }
 
 /// 順番に応答を返す `URLProtocol`。パスの一部で引き当てる。

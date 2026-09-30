@@ -178,16 +178,25 @@ struct EditPhotoView: View {
         }
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else { return }
-            let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
+            // **縮小・EXIF の書き直しは主スレッドの外で**（投稿の `prepareOffMain` と同じ）。
+            // 大きい写真だと、差し替え中の表示ごと画面が固まっていた
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try ImagePreparer.prepare(data: data, fileName: "photo")
+            }.value
             // ピンの無い写真・この画面で撮影地を消した写真に、差し替えた写真の位置を書かない
             let keep = EditPlaceRules.keepsCoordsOnReplace(openedLocation: photo.location,
                                                            openedHasCoords: photo.coords != nil,
                                                            currentLocation: location)
-            try await environment.photos.replace(photoId: photo.id, prepared: prepared,
-                                                 uploads: environment.uploads,
-                                                 keepCoords: keep)
+            let keptOldDate = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
+                                                                   uploads: environment.uploads,
+                                                                   keepCoords: keep)
             messageIsError = false
             message = L("差し替えました（反映まで数分かかります）", "Replaced. It takes a few minutes to appear.")
+            // 撮影日を載せなかった回は、前の撮影日が残ることを言う（黙って古い日付を残さない）
+            if keptOldDate {
+                message = (message ?? "") + "\n" + L("撮影日は前のままです（1990年より前・未来の日付は入れられません）",
+                                                     "The date taken is unchanged (dates before 1990 or in the future can't be set).")
+            }
         } catch {
             messageIsError = true
             message = (error as? LocalizedError)?.errorDescription

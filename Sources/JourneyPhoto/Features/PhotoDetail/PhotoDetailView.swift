@@ -110,6 +110,8 @@ struct PhotoDetailView: View {
     /// 写真の高さ（板 02 の 460pt）と、本文がその上に重なる深さ（板の 94pt）
     private static let heroHeight: CGFloat = 460
     private static let heroOverlap: CGFloat = 94
+    /// コメントの「削除」の当たりを字の上下にはみ出させる幅（44pt − 12pt の字の高さ ≒ 28 の半分）
+    private static let commentDeleteTapSlack: CGFloat = 14
 
     // **段ごとに割ってある。** 一本の長い `ScrollView { … }` にすると、Swift の
     // 型検査が現実的な時間で終わらなくなることがある
@@ -410,7 +412,7 @@ struct PhotoDetailView: View {
             }
             if let headline {
                 Text(headline)
-                    .font(JPFont.mono(11))
+                    .font(JPFont.mono(12))
                     .foregroundStyle(WebTheme.faint)
             }
         }
@@ -560,8 +562,8 @@ struct PhotoDetailView: View {
                             }
                             if let username = model.owner?.username, !username.isEmpty {
                                 Text("@\(username)")
-                                    // 板 02: 11px
-                                    .font(.caption2)
+                                    // 板 02 は 11px だが、本文系の最小は 12pt
+                                    .font(.caption)
                                     .foregroundStyle(WebTheme.faint)
                                     .lineLimit(1)
                             }
@@ -1085,8 +1087,17 @@ struct PhotoDetailView: View {
                         // ことを審査（1.2）で見られる
                         if comment.uid == auth.userId || isMine {
                             // **押してすぐ消さない**（確かめてから）。読み上げには誰のコメントかを入れる
-                            Button(Labels.Common.delete) { commentPendingDelete = comment }
-                                .font(.caption2)
+                            // 押せる広さは 44pt（字は本文の最小 12pt）。広げるのはラベルの内側で
+                            // （ボタンの外に frame を付けても当たりは広がらない）。
+                            // **行の高さは字のまま**——当たりだけ上下にはみ出させる
+                            // （44pt の枠で並べると、コメントの行が間延びした）
+                            Button { commentPendingDelete = comment } label: {
+                                Text(Labels.Common.delete)
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                                    .padding(.vertical, -Self.commentDeleteTapSlack)
+                            }
+                                .font(.caption)
                                 // 読み直している間・消している途中は押せない（`deleteComment` は黙って断る）
                                 .disabled(model.isReloadingComments || model.deletingCommentIds.contains(comment.id))
                                 .accessibilityLabel(L("\(comment.name)さんのコメントを削除",
@@ -1545,7 +1556,10 @@ enum PhotoDetailRules {
     static func viewerLineup(_ siblings: [Photo], current: Photo,
                              hiding: ModerationSnapshot) -> (photos: [Photo], index: Int) {
         let kept = Set(hiding.visible(siblings).map(\.id))
-        let photos = siblings.filter { $0.id == current.id || kept.contains($0.id) }
+        // 束の写真は詳細の上（`PhotoGroups.siblings`）と同じ選んだ順に。渡された順のままだと
+        // 上では右へ送る写真が、大きく見る画面では左にあった
+        let photos = PhotoGroups.inPostOrderWithinGroups(siblings)
+            .filter { $0.id == current.id || kept.contains($0.id) }
         guard !photos.isEmpty else { return ([current], 0) }
         return (photos, photos.firstIndex(where: { $0.id == current.id }) ?? 0)
     }

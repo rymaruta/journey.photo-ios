@@ -82,6 +82,30 @@ final class PhotoGroupsTests: XCTestCase {
         let lonely = try photo("z", group: "g9")
         XCTAssertEqual(PhotoGroups.siblings(of: lonely, in: []).map(\.id), ["z"])
     }
+
+    /// 🔴 **束の中は選んだ順（`createdAt` の古い順）。** 人気順などで並べた一覧のまま
+    /// 束ねると、表紙と「1/n」の順が並べ替えのたびに変わった。束の置き場所は一覧の並びのまま
+    func testMembersFollowPostOrderRegardlessOfFeedSort() throws {
+        func dated(_ id: String, _ at: String?, group: String? = "g1") throws -> Photo {
+            let g = group.map { ",\"groupId\":\"\($0)\"" } ?? ""
+            let c = at.map { ",\"createdAt\":\"\($0)\"" } ?? ""
+            return try JSONDecoder.api.decode(Photo.self, from: Data(
+                "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"userId\":\"me\"\(g)\(c)}".utf8))
+        }
+        // 一覧は人気順: 3枚目 → 別の写真 → 1枚目 → 2枚目
+        let feed = [
+            try dated("third", "2026-09-01T10:00:02.000Z"),
+            try dated("other", "2026-09-02T00:00:00.000Z", group: nil),
+            try dated("first", "2026-09-01T10:00:00.000Z"),
+            try dated("second", "2026-09-01T10:00:01.000Z"),
+        ]
+        let groups = PhotoGroups.group(feed)
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(groups[0].photos.map(\.id), ["first", "second", "third"])
+        XCTAssertEqual(groups[0].cover.id, "first")
+        XCTAssertEqual(groups[1].id, "other", "束の置き場所が変わった")
+        XCTAssertEqual(PhotoGroups.siblings(of: feed[0], in: feed).map(\.id), ["first", "second", "third"])
+    }
 }
 
 /// 格子の「複数枚」の印（モック2-7）。
