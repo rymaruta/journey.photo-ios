@@ -647,7 +647,8 @@ struct MyPageView: View {
                 ForEach(officialRows) { row in
                     if let spot = row.spot {
                         NavigationLink {
-                            OfficialSpotView(spot: spot, spots: officialSpots, photos: model.photos)
+                            OfficialSpotView(spot: spot, spots: officialSpots, photos: pool,
+                                             photosKnown: SpotScreen.photosKnown(loadFailed: feedFailed || !feedLoaded, photos: pool))
                         } label: {
                             officialWishlistRow(row)
                         }
