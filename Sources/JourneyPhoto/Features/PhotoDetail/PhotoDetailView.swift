@@ -166,8 +166,9 @@ struct PhotoDetailView: View {
         // **送った先の1枚でも読み直す**（鍵に今の1枚を入れる）
         .task(id: PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)) {
             model.setSignedIn(auth.userId != nil)
-            // 前の1枚の「ブロックしました」を持ち越さない
+            // 前の1枚の「ブロックしました」・保存の失敗を持ち越さない
             actionNotice = nil
+            actionError = nil
             // **数はホームのカードと同じ出どころ**（`LiveLikes.base`）。一覧の数
             // （`current.likes`）のままだと、ホームで押した直後に開くと古い数が出た
             let stored = likeCounts.entry(for: current.id)
@@ -660,6 +661,8 @@ struct PhotoDetailView: View {
             } catch is CancellationError {
                 return
             } catch {
+                // 待つ間に別の人の写真へ送っていたら、今の人に前の人の失敗を出さない
+                guard ownerId == userId else { return }
                 actionError = L("フォローの状態を確かめられませんでした", "Couldn't check follow status")
                 return
             }
@@ -684,6 +687,8 @@ struct PhotoDetailView: View {
         } catch is CancellationError {
             return
         } catch {
+            // 待つ間に別の人の写真へ送っていたら、今の人に前の人の失敗を出さない
+            guard ownerId == userId else { return }
             actionError = (error as? LocalizedError)?.errorDescription
                 ?? L("うまくいきませんでした", "That didn't work")
         }
@@ -1003,7 +1008,7 @@ struct PhotoDetailView: View {
                     .font(.subheadline)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 11)
-                    .frame(minHeight: 42)
+                    .frame(minHeight: 44)
                     .background(Color.white.opacity(0.08), in: Capsule())
                     .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
                 Button {
@@ -1252,6 +1257,8 @@ struct PhotoDetailView: View {
             savedPhotos.set(id, saved: wasSaved, for: owner)
         } catch {
             savedPhotos.set(id, saved: wasSaved, for: owner)
+            // 待っている間に束の隣へ送っていたら、今の1枚に前の1枚の失敗を出さない
+            guard id == current.id else { return }
             // **黙らない**（いいね・フォローと同じ）。404 で保存が残っている回は
             // `SaveService.save` が成功として返すのでここには来ない。残る 404 は
             // 下書き（公開していない写真）——サーバーの「見つかりません」では分からない

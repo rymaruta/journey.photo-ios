@@ -49,6 +49,18 @@ final class StoryReelTests: XCTestCase {
         XCTAssertNil(StoryReel.neighbor(from: 0, step: -1, count: 4) { _ in true })
     }
 
+    /// 前の人へ戻るときは**その人の最後の1本から**（Web の `goPrev`）。進むときは開く1本から
+    func testEnteringBackStartsAtLastStory() {
+        let a1 = story("a1", "a", "2026-09-29T01:00:00Z")
+        let a2 = story("a2", "a", "2026-09-29T02:00:00Z")
+        let a3 = story("a3", "a", "2026-09-29T03:00:00Z")
+        let g = StoryReel.Group(stories: [a1, a2, a3], start: 1)
+        XCTAssertEqual(StoryReel.entering(g, back: true).start, 2, "前の人の最後の1本へ戻っていない")
+        XCTAssertEqual(StoryReel.entering(g, back: false), g, "進む向きは今までどおり")
+        let single = StoryReel.Group(stories: [a1], start: 0)
+        XCTAssertEqual(StoryReel.entering(single, back: true).start, 0)
+    }
+
     // MARK: - 立方体
 
     /// 真ん中の面は 0 度・隣の面は ±90 度・その間は指の移動に比例

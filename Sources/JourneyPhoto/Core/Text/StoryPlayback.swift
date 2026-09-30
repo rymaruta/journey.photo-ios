@@ -179,6 +179,15 @@ enum StoryPlayback {
         return .previous(index - 1)
     }
 
+    /// 左タップの判断（`leftTap`）に渡す経過。**動画と読み込み中の写真は、見せ始めてからの
+    /// 実時間**（Web の `goPrev` と同じ）。時計（`Clock`）は写真が出てからしか回らないので、
+    /// 動画ではいつも0になり、左を押すと頭から流れずに前の1本・前の人へ飛んでいた。
+    /// 出ている写真は今までどおり時計（止めていた間は数えない）
+    static func leftTapElapsed(clock: TimeInterval, sinceShown: TimeInterval,
+                               isVideo: Bool, mediaReady: Bool) -> TimeInterval {
+        isVideo || !mediaReady ? sinceShown : clock
+    }
+
     /// 頭から見直したときの終わりの控え（`pendingEnd`）と受け取った印（`endedIds`）。
     ///
     /// **控えは捨て、いまの1本の印も外す。** 知らせが出ている間に動画が終わると控えに入る。

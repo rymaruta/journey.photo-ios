@@ -201,7 +201,7 @@ struct JPToggleRow: View {
                     .foregroundStyle(WebTheme.text)
                 if let detail {
                     Text(detail)
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -247,7 +247,7 @@ struct JPRowLabel: View {
                     .foregroundStyle(WebTheme.text)
                 if let detail {
                     Text(detail)
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                         .fixedSize(horizontal: false, vertical: true)
                 }

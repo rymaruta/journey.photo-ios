@@ -41,6 +41,12 @@ enum StoryReel {
         return Group(stories: kept, start: start)
     }
 
+    /// 回って入る束。**前の人へ戻るときは最後の1本から**（Web の `goPrev` と同じ）。
+    /// 次の人へ進むときは今までどおり最初に開く1本から
+    static func entering(_ group: Group, back: Bool) -> Group {
+        back ? Group(stories: group.stories, start: max(0, group.stories.count - 1)) : group
+    }
+
     /// `from` から `step`（+1 / -1）の向きで、**まだ見せるものがある**いちばん近い人
     static func neighbor(from index: Int, step: Int, count: Int, isLive: (Int) -> Bool) -> Int? {
         guard step != 0 else { return nil }
