@@ -106,27 +106,39 @@ enum StoryTextEditing {
                         height: y - h / 2 < -tolerance || y + h / 2 > Double(canvas.height) + tolerance)
     }
 
-    /// 打つ画面の並べ方（断り書き・縮み・寄せ方）
+    /// 縮めても空きに収まらない向きに、どちらの端を見せるか
+    enum Pin: Equatable { case leading, center, trailing }
+
+    /// 打つ画面の並べ方（縮み・寄せ方）
     struct TypingLayout: Equatable {
-        var overflow: Overflow
         var scale: Double
-        /// 縮めても空きに収まらない向き。**いま打っている端（右・下）に寄せる**——真ん中に置くと
-        /// 行の末尾のキャレットが枠の外に切れて見えなかった（9702932 のレビュー）
-        var pinTrailing: Bool
+        /// 縮めても横に収まらないとき見せる端。**キャレットのいる側**——1行の札と、改行の無い文字は
+        /// 行の末尾（右）、改行した文字は揃えの側（左揃えなら左）。真ん中に置くと末尾のキャレットが
+        /// 切れ、いつも右に寄せると左揃えの短い最終行が切れた（9702932・ea8fa74 のレビュー）
+        var horizontal: Pin
+        /// 縮めても縦に収まらないとき、下（いま打っている最終行）を見せる
         var pinBottom: Bool
     }
 
-    /// 打つ画面の並べ方を決める。**物差しを取り違えないよう、ここ1か所で決める**
-    ///  - `finished`: 仕上がり（置いたあと）の大きさ → はみ出しの判定（写真の枠 `canvas`・置き場所・回しと比べる）
-    ///  - `typing`: 欄に見えている大きさ → 縮み（打つ画面の空き `available` と比べる）
-    ///  - `area`: 欄を置く場所の大きさ（縮めてもはみ出すなら、打っている端へ寄せる）
-    static func typingLayout(finished: CGSize, typing: CGSize, center: CGPoint, rotation: Double,
-                             canvas: CGSize, available: CGSize, area: CGSize, isEmpty: Bool) -> TypingLayout {
-        let overflow = isEmpty ? Overflow() : Self.overflow(content: finished, center: center,
-                                                            rotation: rotation, canvas: canvas)
+    /// 打つ画面の並べ方を決める。`typing`（欄に見えている大きさ）を打つ画面の空き `available` に
+    /// 縮めて収め、それでも欄の置き場 `area` からはみ出す向きは、キャレットのいる側の端を見せる。
+    /// **はみ出しの断り（`overflow`）は別の物差し**（仕上がり×写真の枠）なので、ここでは決めない
+    static func typingLayout(overlay: TextOverlay, typing: CGSize, available: CGSize, area: CGSize) -> TypingLayout {
         let scale = fitScale(content: typing, available: available)
-        return TypingLayout(overflow: overflow, scale: scale,
-                            pinTrailing: Double(typing.width) * scale > Double(area.width) + 0.5,
+        let tooWide = Double(typing.width) * scale > Double(area.width) + 0.5
+        let horizontal: Pin
+        if !tooWide {
+            horizontal = .center
+        } else if !overlay.kind.allowsNewlines || !overlay.text.contains("\n") {
+            horizontal = .trailing
+        } else {
+            switch overlay.align {
+            case .leading: horizontal = .leading
+            case .center: horizontal = .center
+            case .trailing: horizontal = .trailing
+            }
+        }
+        return TypingLayout(scale: scale, horizontal: horizontal,
                             pinBottom: Double(typing.height) * scale > Double(area.height) + 0.5)
     }
 
