@@ -234,49 +234,112 @@ extension PhotoMapViewModelTests {
         XCTAssertFalse(model.showsCard(official: nil, onScreen: false))
     }
 
-    /// 🔴 **絞りで結果から外れた選びは下ろす。** 下ろさないと、札は消えるのに選びが残り、
-    /// 絞りを外したとたんに前の札が戻ってきた。積んでいる間は下ろさない
-    func testCommittedFilterDropsSelectionOutsideResults() async {
-        let model = await loaded(spots: spotsJSON)
-        guard let tokyo = model.pins.first(where: { $0.photos.contains { $0.id == "c" } }) else {
-            return XCTFail("東京のピンが出ていない")
-        }
-        let pinOnly = PhotoMapViewModel.Selection(pin: tokyo, official: nil)
-        XCTAssertEqual(model.keptAfterFilterChange(.queryCommitted, pinOnly, onScreen: true).pin, tokyo,
-                       "結果に居るのに下ろしている")
-        model.query = "パリ"
-        XCTAssertNil(model.keptAfterFilterChange(.queryCommitted, pinOnly, onScreen: true).pin,
-                     "語で外れた選びが残っている")
-        XCTAssertEqual(model.keptAfterFilterChange(.queryCommitted, pinOnly, onScreen: false).pin, tokyo,
-                       "積んでいる間に下ろしている")
+    private typealias Selection = PhotoMapViewModel.Selection
 
-        model.query = ""
-        model.update(visible: narrow())
-        guard let takaya = model.officialPins.first(where: { $0.slug == "takaya-jinja" }) else {
-            return XCTFail("高屋神社のピンが出ていない")
-        }
-        let spotOnly = PhotoMapViewModel.Selection(pin: nil, official: takaya)
-        XCTAssertEqual(model.keptAfterFilterChange(.queryCommitted, spotOnly, onScreen: true).official, takaya)
-        model.query = "流氷"
-        XCTAssertNil(model.keptAfterFilterChange(.queryCommitted, spotOnly, onScreen: true).official,
-                     "語で外れたスポットが残っている")
-        XCTAssertNil(model.keptAfterFilterChange(.area, spotOnly, onScreen: true).official,
-                     "範囲で外れたスポットが残っている")
-        XCTAssertEqual(model.keptAfterFilterChange(.queryCommitted, spotOnly, onScreen: false).official, takaya,
-                       "積んでいる間に下ろしている")
+    private func tokyoPin(_ model: PhotoMapViewModel) -> MapPin? {
+        model.pins.first { $0.photos.contains { $0.id == "c" } }
     }
 
-    /// 🔴 **打っている途中の字では下ろさない。** 日本語入力では「t」「と」も語として流れ、
-    /// 最初の1打で選びが消えて、「東京」と確定しても札が戻らなかった
-    func testTypingDoesNotDropSelection() async {
+    /// 🔴 **語が決まったら、その語で外れた選びは下ろす。** 下ろさないと、札は消えるのに
+    /// 選びが残り、絞りを外したとたんに前の札が戻ってきた。積んでいる間は下ろさない
+    func testCommittedQueryDropsSelectionOutsideResults() async {
         let model = await loaded(spots: spotsJSON)
-        guard let tokyo = model.pins.first(where: { $0.photos.contains { $0.id == "c" } }) else {
-            return XCTFail("東京のピンが出ていない")
+        guard let tokyo = tokyoPin(model) else { return XCTFail("東京のピンが出ていない") }
+        let current = Selection(pin: tokyo, official: nil)
+        model.query = "パリ"
+        XCTAssertNil(model.keptAfterFilterChanges(MapFilterEvents.submitted(query: "パリ"), current, onScreen: true).pin,
+                     "語で外れた選びが残っている")
+        XCTAssertNil(model.keptAfterFilterChanges(MapFilterEvents.focusChanged(isFocused: false, query: "パリ"),
+                                                  current, onScreen: true).pin,
+                     "キーボードを閉じても下ろしていない")
+        XCTAssertEqual(model.keptAfterFilterChanges(MapFilterEvents.submitted(query: "パリ"), current, onScreen: false),
+                       current, "積んでいる間に下ろしている")
+        XCTAssertEqual(model.keptAfterFilterChanges(MapFilterEvents.submitted(query: "東京"), current, onScreen: true),
+                       current, "結果に居るのに下ろしている")
+    }
+
+    /// 🔴 **× は空にする前の語で見る。** 東京を選ぶ →「パリ」と打つ → × で、東京は下ろされる
+    /// （空の語で見ると、パリで隠れていた東京の札が × で戻ってきた）
+    func testClearUsesQueryBeforeClearing() async {
+        let model = await loaded(spots: spotsJSON)
+        guard let tokyo = tokyoPin(model) else { return XCTFail("東京のピンが出ていない") }
+        var selection = Selection(pin: tokyo, official: nil)
+        // 打っている途中（変換中の「p」「パ」も流れる）では下ろさない
+        for typed in ["p", "パ", "パリ"] {
+            model.query = typed
+            selection = model.keptAfterFilterChanges(MapFilterEvents.queryEdited(), selection, onScreen: true)
         }
+        XCTAssertEqual(selection.pin, tokyo, "打っている途中で下ろしている")
+        // × を押した: 空にする前の語で見てから空にする
+        selection = model.keptAfterFilterChanges(MapFilterEvents.clearTapped(queryBefore: model.query),
+                                                 selection, onScreen: true)
+        model.query = ""
+        XCTAssertNil(selection.pin, "× で、打った語で隠れていた選びが戻ってくる")
+    }
+
+    /// 欄にいるままバックスペースで空にした回・焦点が来ただけの回は下ろさない（打ち直しの途中を守る）
+    func testEditingInFieldDoesNotDropSelection() async {
+        let model = await loaded(spots: spotsJSON)
+        guard let tokyo = tokyoPin(model) else { return XCTFail("東京のピンが出ていない") }
+        let current = Selection(pin: tokyo, official: nil)
         model.query = "t"
-        let current = PhotoMapViewModel.Selection(pin: tokyo, official: nil)
-        XCTAssertEqual(model.keptAfterFilterChange(.queryTyping, current, onScreen: true), current,
+        XCTAssertEqual(model.keptAfterFilterChanges(MapFilterEvents.queryEdited(), current, onScreen: true), current,
                        "変換中の字で選びを下ろしている")
+        XCTAssertEqual(MapFilterEvents.focusChanged(isFocused: true, query: "t"), [])
+        model.query = ""
+        XCTAssertEqual(model.keptAfterFilterChanges(MapFilterEvents.queryEdited(), current, onScreen: true), current)
+    }
+
+    /// 🔴 **スポットは語で外れたかだけで見る。** 引いた状態で「高屋」→ 選ぶ → × で、高屋は残る
+    /// （倍率で見えなくなっただけのスポットを、語が決まったからと下ろさない）
+    func testClearKeepsSpotHiddenOnlyByZoom() async {
+        let model = await loaded(spots: spotsJSON)
+        model.update(visible: MapFraming.Frame(latitude: 36, longitude: 138, latitudeSpan: 12, longitudeSpan: 12))
+        model.query = "高屋"
+        guard let takaya = model.officialPins.first(where: { $0.slug == "takaya-jinja" }) else {
+            return XCTFail("語で高屋神社が出ていない")
+        }
+        var selection = Selection(pin: nil, official: takaya)
+        selection = model.keptAfterFilterChanges(MapFilterEvents.clearTapped(queryBefore: model.query),
+                                                 selection, onScreen: true)
+        model.query = ""
+        XCTAssertFalse(model.stillShown(official: takaya), "引いた状態になっていない（前提）")
+        XCTAssertEqual(selection.official, takaya, "× で、引いて隠れているだけのスポットを下ろしている")
+        // 空の語が決まった回（キーボードを閉じた）も同じ
+        selection = model.keptAfterFilterChanges(MapFilterEvents.focusChanged(isFocused: false, query: ""),
+                                                 selection, onScreen: true)
+        XCTAssertEqual(selection.official, takaya, "空の語でスポットを下ろしている")
+        // 語で外れたら下ろす
+        model.query = "流氷"
+        XCTAssertNil(model.keptAfterFilterChanges(MapFilterEvents.submitted(query: "流氷"), selection, onScreen: true).official,
+                     "語で外れたスポットが残っている")
+    }
+
+    /// 「このエリアを検索」: 範囲で外れたら下ろす。スポットも範囲で外れたかだけで見る
+    func testAreaDropsSelectionOutsideArea() async {
+        let model = await loaded(spots: spotsJSON)
+        XCTAssertEqual(model.query, "")
+        model.update(visible: narrow())
+        guard let takaya = model.officialPins.first(where: { $0.slug == "takaya-jinja" }),
+              let tokyo = tokyoPin(model) else { return XCTFail("ピンが出ていない") }
+        let current = Selection(pin: tokyo, official: takaya)
+        // 範囲の中（高屋の近く）: 高屋は残り、東京は外れる
+        model.applyArea()
+        let inside = model.keptAfterFilterChanges(MapFilterEvents.areaChanged(), current, onScreen: true)
+        XCTAssertEqual(inside.official, takaya, "範囲の中のスポットを下ろしている")
+        XCTAssertNil(inside.pin, "範囲で外れた写真のピンが残っている")
+        // 網走で範囲を押し直す: 高屋も外れる
+        model.update(visible: narrow(lat: 44.02, lng: 144.28))
+        model.applyArea()
+        XCTAssertNil(model.keptAfterFilterChanges(MapFilterEvents.areaChanged(), current, onScreen: true).official,
+                     "範囲で外れたスポットが残っている")
+        XCTAssertEqual(model.keptAfterFilterChanges(MapFilterEvents.areaChanged(), current, onScreen: false), current,
+                       "積んでいる間に下ろしている")
+        // 範囲を外した: 網走を見ていて高屋は隠れているだけ——下ろさない
+        model.clearArea()
+        XCTAssertEqual(model.keptAfterFilterChanges(MapFilterEvents.areaChanged(), .init(pin: nil, official: takaya),
+                                                    onScreen: true).official, takaya,
+                       "範囲を外したとき、引いて隠れているだけのスポットを下ろしている")
     }
 
     /// カテゴリは写真にだけ効く。**引いて札が隠れているだけのスポットを、カテゴリで下ろさない**。
@@ -285,13 +348,12 @@ extension PhotoMapViewModelTests {
         let model = await loaded(spots: spotsJSON)
         model.update(visible: narrow())
         guard let takaya = model.officialPins.first(where: { $0.slug == "takaya-jinja" }),
-              let tokyo = model.pins.first(where: { $0.photos.contains { $0.id == "c" } }) else {
-            return XCTFail("ピンが出ていない")
-        }
+              let tokyo = tokyoPin(model) else { return XCTFail("ピンが出ていない") }
         // 引いて高屋神社のピンが外れた（札は隠れる）
         model.update(visible: narrow(lat: 44.02, lng: 144.28))
         model.select(category: "風景")
-        let kept = model.keptAfterFilterChange(.category, .init(pin: tokyo, official: takaya), onScreen: true)
+        let kept = model.keptAfterFilterChanges(MapFilterEvents.categoryChanged(), .init(pin: tokyo, official: takaya),
+                                                onScreen: true)
         XCTAssertEqual(kept.official, takaya, "カテゴリでスポットの選びを下ろしている")
         XCTAssertNil(kept.pin, "カテゴリで外れた写真のピンが残っている")
     }
