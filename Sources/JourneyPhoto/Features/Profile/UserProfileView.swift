@@ -400,10 +400,8 @@ final class UserProfileViewModel: ObservableObject {
     /// 数と「フォローしていない」が後から届いて戻していた。断られた回は数えない。
     /// 「フォロー中」の数（この人が何人をフォローしているか）は押しても変わらないので止めない
     private var followWrites = 0
-    /// ブロックが受け付けられた回数。**通ったときだけ進める**（断られた回は数えない）。
-    /// 読み込みの間に増えたら、その読み込みの「フォロー中か」・フォロー中の数・写真は書かない
-    /// （ブロックはフォローを両方向とも外す・`block.ts`。数はブロックの後の読み直しが書く）。
-    /// フォロワー数は `followWrites` を進めて止める
+    /// ブロックが受け付けられた回数。**ブロックで変わるのは「フォロー中か」だけ**なので、
+    /// こちらはフォロワー数を止めない
     private var blockWrites = 0
 
     /// 前回の読み込みで見ていた人
@@ -471,7 +469,7 @@ final class UserProfileViewModel: ObservableObject {
         guard current() else { return }
         if let stats {
             if writes == followWrites { followers = stats.followers }
-            if blocks == blockWrites { following = stats.following }
+            following = stats.following
         }
         if viewerId != nil {
             // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
@@ -580,23 +578,18 @@ final class UserProfileViewModel: ObservableObject {
         }
     }
 
+    /// ブロック後のフォロー数は次に読み込むまで古いまま（2026-09-30 判断: 同時の読み込み・
+    /// 人の切り替え・失敗との組み合わせで回帰が続いたため）
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
         actionMessage = nil
         // 控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let owner = store.owner
-        // 押した時点で見ていた人（`toggleFollow` と同じ守り）
-        let viewer = lastViewerId
         do {
             try await environment.moderation.block(userId: userId)
             blockWrites += 1
-            // 走っている読み込みの、ブロック前のフォロワー数で戻させない
-            followWrites += 1
             store.block(userId, for: owner)
             await environment.gallery.setHidden(store.snapshot)
-            // 🔴 **押した人の画面にだけ書く。** 待っている間に別の人で入り直していたら、
-            // 前の人のブロックの姿（「フォローしていない」・空の格子・知らせ）を出さない
-            guard lastViewerId == viewer else { return }
             isFollowing = false
             followUnknown = false
             photos = []
@@ -606,28 +599,6 @@ final class UserProfileViewModel: ObservableObject {
             // いたので、うまくいった操作が「失敗」の見た目で出ていた
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
-            // **フォロー数を1回読み直す。** サーバーはブロックでフォローを両方向とも外す
-            // （`block.ts`）ので、フォロワー数・フォロー中の数がブロック前のままだった。
-            // 読み直しの間に新しい読み込みが始まったら、その答えに任せる
-            let seq = loadSeq
-            let stats = try? await environment.social.followStats(userId: userId)
-            guard loadSeq == seq else { return }
-            if let stats {
-                followers = stats.followers
-                following = stats.following
-                return
-            }
-            // 🔴 **読めなければ読み込みを1回だけ走らせ直す。** 同時に走っていた読み込みは
-            // ブロックの見張りで数を捨てるので、そのままだと 0 や古い数が残った。
-            // 走らせ直しも落ちたら、それ以上は追わない（`load` は `block` を呼ばない）
-            await load(userId: userId, environment: environment, viewerId: viewer ?? nil)
-            // 走らせ直しが最後の読み込みのままなら、ブロックの姿に戻す——ブロックした人の
-            // 格子は空で数は言わない（解いたあと読み直すまで「0 写真」と出さない）。
-            // 読み込めなかった知らせも出さない（ブロックは通っていて、画面は出ている）
-            guard loadSeq == seq + 1 else { return }
-            photos = []
-            photoCount = .pending
-            errorMessage = nil
         } catch {
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
