@@ -66,6 +66,14 @@ struct TripPlanDetailView: View {
     @State private var noteError: String?
     /// 項目を動かせなかった知らせ（メニューを開いている間に日程が差し替わった）
     @State private var moveError: String?
+
+    /// **いまアラートを出してよいか。** 候補のシート・上に積んだ画面・戻る確認・ひとことの欄の
+    /// 間と、**ほかのアラートがもう立っている間**は出さない（2つ目は捨てられ、その値が立った
+    /// ままになると次から出なくなる）。同じ条件を手で写すと片方だけ直す形になるので1か所に置く
+    private var canPresentAlert: Bool {
+        picking == nil && onTop && !confirmLeave && noteTarget == nil
+            && leaveSaveError == nil && noteError == nil && deleteError == nil && moveError == nil
+    }
     private struct Draft: Equatable {
         var days: [TripDay]
         var start: String?
@@ -161,7 +169,7 @@ struct TripPlanDetailView: View {
                     // （ほかの確認・候補のシート・上に積んだ画面の間は出さない）
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 350_000_000)
-                        guard picking == nil, onTop, !confirmLeave, noteTarget == nil else { return }
+                        guard canPresentAlert else { return }
                         noteError = L("書いている間に項目が変わったため、ひとことを入れられませんでした。もう一度書いてください。",
                                       "The item changed while you were writing, so the note wasn't added. Please try again.")
                     }
@@ -191,7 +199,7 @@ struct TripPlanDetailView: View {
             deferredSaveError = nil
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 350_000_000)
-                guard picking == nil, onTop, !confirmLeave, noteTarget == nil else { return }
+                guard canPresentAlert else { return }
                 leaveSaveError = message
             }
         }
@@ -308,7 +316,10 @@ struct TripPlanDetailView: View {
                 // 確認を出している間は、アラートは黙って捨てられる。そのときは赤い行だけが
                 // 残る（この直しの前と同じ）。持っておいて後で出す作りは、戻るスワイプの
                 // 長さ・他の確認・走っている保存と噛み合わず回帰が続いたので採らない
-                guard picking == nil, onTop, !confirmLeave else { return }
+                // ほかのアラートが立っている間も出さない（`canPresentAlert` と同じ考え。ひとことの
+                // 欄だけは下で「閉じてから出す」ので、ここでは見ない）
+                guard picking == nil, onTop, !confirmLeave,
+                      leaveSaveError == nil, noteError == nil, deleteError == nil, moveError == nil else { return }
                 let message = model.errorMessage ?? L("もう一度お試しください", "Please try again.")
                 // ひとことを書いている間は、欄を閉じてから出す（重ねない・捨てない）
                 if noteTarget != nil { deferredSaveError = message; return }
@@ -568,7 +579,8 @@ struct TripPlanDetailView: View {
                         "\(name) couldn't be moved because the item changed. Please try again.")
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 350_000_000)
-            guard picking == nil, onTop, !confirmLeave, noteTarget == nil else { return }
+            // 出せないとき（戻る確認・上の画面・ほかのアラート）は、せめて読み上げで伝える
+            guard canPresentAlert else { return announce(message) }
             moveError = message
         }
     }
