@@ -613,6 +613,9 @@ struct StoryComposerView: View {
                             .padding(.horizontal, 14)
                             .frame(minHeight: 36)
                             .background(WebTheme.accentBackground, in: Capsule())
+                            // 見た目は 36 の札のまま、押せる所は 44（CLAUDE.md の最小）
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
@@ -625,6 +628,8 @@ struct StoryComposerView: View {
                         .padding(.horizontal, 14)
                         .frame(minHeight: 36)
                         .jpGlass(in: Capsule())
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(prepared == nil || !canSaveDraft)

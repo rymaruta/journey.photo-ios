@@ -562,8 +562,10 @@ struct OverlayPanel: View {
                     Label(L("消す", "Delete"), systemImage: "trash")
                         .font(.system(size: 13))
                         .foregroundStyle(WebTheme.danger)
-                        .frame(minHeight: 36)
+                        // 押せる所は 44（CLAUDE.md の最小）。地の無い文字なので見た目は変わらない
+                        .frame(minHeight: WebTheme.minTapTarget)
                         .padding(.horizontal, 12)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -633,6 +635,9 @@ struct OverlayChip: View {
             .background(selected ? AnyShapeStyle(WebTheme.accentBackground) : AnyShapeStyle(Color.black.opacity(0.55)),
                         in: Capsule())
             .overlay(Capsule().strokeBorder(Color.white.opacity(selected ? 0 : 0.14), lineWidth: 1))
+            // 見た目は 36 の札のまま、押せる所は 44（CLAUDE.md の最小）
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

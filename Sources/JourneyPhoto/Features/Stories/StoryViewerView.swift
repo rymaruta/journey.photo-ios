@@ -725,6 +725,8 @@ struct StoryViewerView: View {
                         .padding(.horizontal, 16)
                         .frame(minHeight: 40)
                         .jpGlass(in: Capsule(), border: 0.4)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -1262,6 +1264,9 @@ struct StoryViewerView: View {
                                         .padding(.horizontal, 14)
                                         .frame(minHeight: 36)
                                         .jpGlass(in: Capsule(), border: 0.14)
+                                        // 見た目は 36 の札のまま、押せる所は 44
+                                        .frame(minHeight: WebTheme.minTapTarget)
+                                        .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(isSending)
