@@ -330,7 +330,10 @@ struct StoryComposerView: View {
                             vote: vote,
                             voteSelected: voteSelected,
                             onTapVote: { voteSelected = true },
-                            photoId: shots.indices.contains(current) ? shots[current].id : nil)
+                            photoId: shots.indices.contains(current) ? shots[current].id : nil,
+                            // 「ひとこと」の欄は**写真と札の間**に敷く（札の上に重ねると、真ん中の札を
+                            // 欄が先に取って動かせなかった）
+                            underOverlays: AnyView(captionLayer))
             } else {
                 emptyPhoto
             }
@@ -352,18 +355,6 @@ struct StoryComposerView: View {
                 toolColumn
                     .padding(.trailing, 12)
                     .padding(.top, 120)
-                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
-                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
-                    .opacity(draggingOverlay ? 0 : 1)
-                    .allowsHitTesting(!draggingOverlay)
-                .accessibilityHidden(draggingOverlay)
-            }
-        }
-        .overlay(alignment: .leading) {
-            if typingId == nil && !votePanelOpen && preview != nil {
-                captionBlock
-                    .padding(.leading, 36)
-                    .padding(.trailing, 70)
                     // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
                     // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
                     .opacity(draggingOverlay ? 0 : 1)
@@ -505,6 +496,21 @@ struct StoryComposerView: View {
 
     /// 写真の上のひとこと（明朝32・影）と撮影地の札。**ひとことはその場で打つ**。
     /// 曲は動かせる札として写真に置く（`SongSticker`）
+    /// 写真の上の「ひとこと」の層（左寄せ・縦は真ん中）。**`StoryCanvas` が写真と札の間に敷く**
+    @ViewBuilder
+    private var captionLayer: some View {
+        if typingId == nil && !votePanelOpen && preview != nil {
+            captionBlock
+                .padding(.leading, 36)
+                .padding(.trailing, 70)
+                // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
+                // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
+                .opacity(draggingOverlay ? 0 : 1)
+                .allowsHitTesting(!draggingOverlay)
+                .accessibilityHidden(draggingOverlay)
+        }
+    }
+
     private var captionBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField(L("ひとことを書く", "Write a caption"), text: Binding(
