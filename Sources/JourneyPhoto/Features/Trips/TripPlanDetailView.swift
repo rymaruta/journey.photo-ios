@@ -742,8 +742,9 @@ struct TripPlanDetailView: View {
                             Task {
                                 if await model.remove(planId, environment: environment) {
                                     dismiss()
-                                } else if canPresentAlert {
-                                    // 出せるときだけ（右上の「保存」と同じ条件。出せない回は赤い行が残る）
+                                } else if canPresentAlert, noteTarget == nil {
+                                    // 出せるときだけ（ほかのアラート・ひとことの欄が開いていない時）。
+                                    // 出せない回は赤い行が残る（保存と違い、閉じてから出す控えは持たない）
                                     deleteError = model.errorMessage
                                         ?? L("もう一度お試しください", "Please try again.")
                                 }
