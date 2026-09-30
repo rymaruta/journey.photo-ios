@@ -17,7 +17,7 @@ import Foundation
 enum SeasonReminder {
 
     struct Plan: Equatable {
-        /// 予約する時刻（端末の暦・`year` `month` `day` `hour`）
+        /// 予約する時刻（グレゴリオ暦・`year` `month` `day` `hour`。時刻帯は付けない＝鳴る時点のその土地の時刻）
         let fireAt: DateComponents
         /// "spring"〜"winter"
         let season: String
@@ -74,8 +74,9 @@ enum SeasonReminder {
         var fireAt = DateComponents()
         // **暦と時刻帯を付ける。** 付けないと予約（トリガー）は端末の暦で読む——和暦の端末で「令和2026年」、
         // 仏暦で過去の年になり、一度も鳴らなかった（56686f6 のレビュー）
+        // 時刻帯は付けない——付けると予約した時点の時刻帯の 9時に固定され、アプリを開かずに旅先へ
+        // 移ると深夜に鳴りうる。付けなければ、鳴る時点のその土地の 9時（実機での確認は未）
         fireAt.calendar = calendar
-        fireAt.timeZone = calendar.timeZone
         fireAt.year = next.year
         fireAt.month = next.month
         fireAt.day = 1

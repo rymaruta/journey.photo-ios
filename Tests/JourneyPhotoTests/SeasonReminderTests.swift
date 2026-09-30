@@ -52,7 +52,7 @@ final class SeasonReminderTests: XCTestCase {
         XCTAssertEqual(plan.fireAt.hour, 9)
         // 暦を付ける（和暦・仏暦の端末で予約が読み違えられない）
         XCTAssertEqual(plan.fireAt.calendar?.identifier, .gregorian)
-        XCTAssertNotNil(plan.fireAt.timeZone)
+        XCTAssertNil(plan.fireAt.timeZone, "時刻帯は付けない（旅先ではその土地の 9時）")
         let fire = try XCTUnwrap(plan.fireAt.date)
         XCTAssertEqual(calendar.dateComponents([.year, .month, .day, .hour], from: fire),
                        DateComponents(year: 2026, month: 12, day: 1, hour: 9))
@@ -104,25 +104,53 @@ final class SeasonReminderTests: XCTestCase {
         XCTAssertEqual(removed.count, 2)
     }
 
-    /// 予約を入れている間に取り消し（ログアウト）が来たら、入れ終えた予約を消す
+    /// 通知センターの偽物（予約が残っているかを持つ）。**本物と同じく、予約は要求が届いた時点で登録され、
+    /// 返事（await の戻り）だけが後から来る**。`hold` の間は返事を止める
     @MainActor
-    func testCancelWhileAddingRemovesTheLateRequest() async throws {
-        var removed = 0
-        var resume: (() -> Void)?
-        var scheduler: SeasonReminderScheduler!
-        scheduler = SeasonReminderScheduler(add: { _ in
-            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in resume = { c.resume() } }
-        }, removePending: { _ in removed += 1 })
+    private final class FakeCenter {
+        var pending = false
+        var hold = false
+        var waiting: [CheckedContinuation<Void, Never>] = []
+        func add() async {
+            pending = true
+            if hold { await withCheckedContinuation { waiting.append($0) } }
+        }
+        func remove() { pending = false }
+        func release() { let w = waiting; waiting = []; w.forEach { $0.resume() } }
+    }
+
+    /// 🔴 入れ替えが重なっても、覚えている中身と実際の予約が食い違わない（1本ずつ順に）
+    @MainActor
+    func testOverlappingReschedulesStayConsistent() async throws {
+        let center = FakeCenter()
+        let scheduler = SeasonReminderScheduler(add: { _ in await center.add() }, removePending: { _ in center.remove() })
         let a = try spot("sp_a", name: "銀山温泉", seasons: ["winter"])
         let plan = SeasonReminder.plan(now: date(2026, 9, 30), spots: [a], wishlist: [SavedSpotKey.official("sp_a")], calendar: calendar)
-        let adding = Task { @MainActor in await scheduler.reschedule(plan, allowed: true) }
-        while resume == nil { await Task.yield() }
-        let before = removed
-        await scheduler.reschedule(nil, allowed: false)
-        resume?()
+
+        // 入れる回が2本重なる
+        center.hold = true
+        let first = Task { @MainActor in await scheduler.reschedule(plan, allowed: true) }
+        let second = Task { @MainActor in await scheduler.reschedule(plan, allowed: true) }
+        while center.waiting.isEmpty { await Task.yield() }
+        center.hold = false
+        center.release()
+        await first.value
+        await second.value
+        XCTAssertTrue(center.pending, "予約が残っている")
+        XCTAssertEqual(scheduler.scheduled, plan)
+
+        // 入れる回の途中に取り消し（ログアウト）が来る
+        center.hold = true
+        let adding = Task { @MainActor in await scheduler.reschedule(SeasonReminder.plan(now: self.date(2026, 12, 2), spots: [a],
+            wishlist: [SavedSpotKey.official("sp_a")], calendar: self.calendar), allowed: true) }
+        let cancel = Task { @MainActor in await scheduler.reschedule(nil, allowed: false) }
+        await Task.yield()
+        center.hold = false
+        center.release()
         await adding.value
+        await cancel.value
+        XCTAssertFalse(center.pending, "取り消しが最後なら予約は無い")
         XCTAssertNil(scheduler.scheduled)
-        XCTAssertEqual(removed, before + 2, "取り消しで1回・入れ終えた古い予約で1回")
     }
 
     @MainActor
