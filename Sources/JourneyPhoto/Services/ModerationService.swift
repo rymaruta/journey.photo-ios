@@ -39,8 +39,17 @@ struct ModerationService {
         }
     }
 
-    /// 補足の上限。長い文章を溜めるところではない（サーバーも500で切る）。
+    /// 補足の上限。長い文章を溜めるところではない（サーバーも500で切る・`reports.ts` の
+    /// `REPORT_NOTE_MAX`。数え方は UTF-16 の単位——`PostLimits.length`）。
+    /// **欄で止める**（`ReportSheet`）。ここで切るのは欄を通らずに来たときの支えだけ
     static let reportNoteMax = 500
+
+    /// 送る補足。空なら送らない。**サーバーと同じ単位で切る**——字（書記素）で `prefix` を取ると、
+    /// 絵文字の多い補足は上限内に見えてもサーバーで黙って切られた
+    static func reportNote(_ note: String?) -> String? {
+        let trimmed = (note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : PostLimits.clamp(trimmed, limit: reportNoteMax)
+    }
 
     /// 通報する。**同じ人が押し直したら上書き**なので、二重送信を怖がらなくてよい。
     /// 自分の投稿は 400 で断られる。
@@ -49,13 +58,9 @@ struct ModerationService {
             let reason: String
             let note: String?
         }
-        let trimmed = (note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         try await api.authorizedVoid(
             .post, "/photos/\(encoded(photoId))/report",
-            body: Body(
-                reason: reason.rawValue,
-                note: trimmed.isEmpty ? nil : String(trimmed.prefix(Self.reportNoteMax))
-            )
+            body: Body(reason: reason.rawValue, note: Self.reportNote(note))
         )
     }
 

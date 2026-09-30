@@ -336,6 +336,37 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(PostLimits.storyReply, 200)   // storyReplies.ts の TEXT_MAX
     }
 
+    /// 🔴 **プロフィールの欄の上限はサーバーの値**（`api-user/src/userProfile.ts` の
+    /// `updateMyProfile`）。欄で止めていなかったので、超えたぶんは保存で黙って切られていた
+    func testProfileLimitsMatchTheServer() {
+        XCTAssertEqual(PostLimits.Profile.displayName, 100)   // truncate(displayName, 100)
+        XCTAssertEqual(PostLimits.Profile.bio, 300)           // truncate(bio, 300)
+        XCTAssertEqual(PostLimits.Profile.instagram, 100)     // instagram.slice(0, 100)
+        XCTAssertEqual(PostLimits.Profile.website, 200)       // website.slice(0, 200)
+        XCTAssertEqual(PostLimits.Profile.statusText, 60)     // truncate(statusText, 60)
+        XCTAssertEqual(PostLimits.Profile.homeLocation, 60)   // truncate(homeLocation, 60)
+        // 数え方もサーバーと同じ（UTF-16）。絵文字 31 個（62 単位）はひとことに入らない
+        let status = PostLimits.limited(old: "", new: String(repeating: "😀", count: 31),
+                                        limit: PostLimits.Profile.statusText)
+        XCTAssertEqual(status, String(repeating: "😀", count: 30))
+    }
+
+    /// 🔴 **通報の補足はサーバーと同じ単位（UTF-16）で 500 に収める。** 字で `prefix(500)` を
+    /// 取っていたので、絵文字の多い補足はアプリでは切られず、サーバーで黙って切られていた
+    func testReportNoteIsClampedLikeTheServer() {
+        let note = ModerationService.reportNote(String(repeating: "😀", count: 300))   // 600 単位
+        XCTAssertEqual(note?.utf16.count, 500, "サーバーの上限を超えたまま送っている")
+        XCTAssertEqual(ModerationService.reportNote("  \n "), nil)
+        XCTAssertEqual(ModerationService.reportNote(" 補足 "), "補足")
+    }
+
+    /// **縮めても 12pt を割らない**（本文の最小）。13pt の札の名前を 0.8 で縮めて 10.4pt にしていた
+    func testMinimumScaleKeepsTwelvePoints() {
+        XCTAssertEqual(13 * WebTheme.minimumScale(forTextSize: 13), 12, accuracy: 0.0001)
+        XCTAssertEqual(WebTheme.minimumScale(forTextSize: 12), 1, "12pt 以下を縮めている")
+        XCTAssertEqual(WebTheme.minimumScale(forTextSize: 11), 1)
+    }
+
     /// 🔴 **途中に足した回は、末尾を消さずに足したほうを受けない**（Web の `maxLength` と同じ）。
     /// 末尾を切っていたので、上限いっぱいの文の途中に打つと画面の外の末尾が黙って消えた
     func testInsertingInTheMiddleDoesNotDropTheEnd() {

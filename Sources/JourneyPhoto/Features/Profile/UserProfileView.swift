@@ -400,8 +400,9 @@ final class UserProfileViewModel: ObservableObject {
     /// 数と「フォローしていない」が後から届いて戻していた。断られた回は数えない。
     /// 「フォロー中」の数（この人が何人をフォローしているか）は押しても変わらないので止めない
     private var followWrites = 0
-    /// ブロックが受け付けられた回数。**ブロックで変わるのは「フォロー中か」だけ**なので、
-    /// こちらはフォロワー数を止めない
+    /// ブロックが受け付けられた回数。読み込みの間に増えたら、その読み込みの「フォロー中か」と
+    /// 「フォロー中」の数は書かない（ブロックはフォローを両方向とも外す・`block.ts`）。
+    /// フォロワー数はブロックでも `followWrites` を進めて止める
     private var blockWrites = 0
 
     /// 前回の読み込みで見ていた人
@@ -469,7 +470,7 @@ final class UserProfileViewModel: ObservableObject {
         guard current() else { return }
         if let stats {
             if writes == followWrites { followers = stats.followers }
-            following = stats.following
+            if blocks == blockWrites { following = stats.following }
         }
         if viewerId != nil {
             // **取れなかった回は書かない**（`FollowListView` と同じ）。圏外で
@@ -583,9 +584,12 @@ final class UserProfileViewModel: ObservableObject {
         actionMessage = nil
         // 控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let owner = store.owner
+        let wasFollowing = isFollowing
         do {
             try await environment.moderation.block(userId: userId)
             blockWrites += 1
+            // 走っている読み込みの、ブロック前のフォロワー数で戻させない
+            followWrites += 1
             store.block(userId, for: owner)
             await environment.gallery.setHidden(store.snapshot)
             isFollowing = false
@@ -597,6 +601,18 @@ final class UserProfileViewModel: ObservableObject {
             // いたので、うまくいった操作が「失敗」の見た目で出ていた
             toasts.show(L("ブロックしました。設定から解除できます。",
                           "Blocked. You can undo this in Settings."))
+            // 🔴 **フォロー数を読み直す。** サーバーはブロックでフォローを両方向とも外す
+            // （`block.ts`）ので、フォロワー数・フォロー中の数がブロック前のままだった。
+            // 読めなければ、分かっているぶん（自分が外れた1人）だけ引く
+            let writes = followWrites
+            let stats = try? await environment.social.followStats(userId: userId)
+            guard writes == followWrites else { return }
+            if let stats {
+                followers = stats.followers
+                following = stats.following
+            } else if wasFollowing {
+                followers = max(0, followers - 1)
+            }
         } catch {
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }

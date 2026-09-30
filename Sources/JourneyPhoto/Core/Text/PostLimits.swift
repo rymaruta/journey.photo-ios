@@ -23,6 +23,23 @@ enum PostLimits {
     /// ストーリーへの返信（`storyReplies.ts` の `TEXT_MAX`）
     static let storyReply = 200
 
+    /// プロフィールの欄（`userProfile.ts` の `updateMyProfile`）。**超えたぶんはサーバーが黙って切る**
+    /// ので、欄で止める。数え方は上と同じ UTF-16 の単位（`truncate` も `slice` も JavaScript の `length`）
+    enum Profile {
+        /// `truncate(displayName, 100)`
+        static let displayName = 100
+        /// `truncate(bio, 300)`
+        static let bio = 300
+        /// `instagram.slice(0, 100)`
+        static let instagram = 100
+        /// `website.slice(0, 200)`
+        static let website = 200
+        /// ひとこと（`truncate(statusText, 60)`）
+        static let statusText = 60
+        /// 居住地（`truncate(homeLocation, 60)`）
+        static let homeLocation = 60
+    }
+
     /// **サーバーと同じ数え方（UTF-16 の単位）。** `truncate`（`sanitize.ts`）は JavaScript の
     /// `length` で数えるので、絵文字は2つ以上に数える。字（書記素）で数えると、画面では上限内に
     /// 見えてもサーバーで黙って切られていた

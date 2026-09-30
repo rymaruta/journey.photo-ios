@@ -91,6 +91,16 @@ enum WebTheme {
     /// **見た目は太らせない。** 当たり判定だけを広げるので、並びの詰まりは
     /// そのまま（`contentShape` で余白まで押せるようにする）。
     static let minTapTarget: CGFloat = 44
+
+    /// **本文系の字の最小（12pt）。** 11pt は眉ラベルだけ（CLAUDE.md・デザインの板）
+    nonisolated static let minBodyText: CGFloat = 12
+
+    /// `minimumScaleFactor` に渡す値。**縮めても `minBodyText` を割らない**。
+    /// 字がもともと 12pt 以下なら縮めない（1）
+    nonisolated static func minimumScale(forTextSize size: CGFloat) -> CGFloat {
+        guard size > minBodyText else { return 1 }
+        return minBodyText / size
+    }
     /// 地図の右の操作（方位磁針・現在地・拡大縮小）の間隔。
     /// 8pt では丸いボタンどうしが接して見え、押し間違えやすかった
     static let mapControlSpacing: CGFloat = 12

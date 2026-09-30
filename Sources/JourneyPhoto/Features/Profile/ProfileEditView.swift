@@ -67,6 +67,7 @@ struct ProfileEditView: View {
             Section {
                 labeled(L("表示名", "Display name")) {
                     TextField("", text: $displayName)
+                        .lengthLimited($displayName, to: PostLimits.Profile.displayName)
                 }
                 labeled(L("ユーザー名（半角英数）", "Username (letters and numbers)")) {
                     TextField("", text: $username)
@@ -78,16 +79,19 @@ struct ProfileEditView: View {
                     // （statusText）があり、どちらに書くのか紛れる
                     TextField("", text: $bio, axis: .vertical)
                         .lineLimit(2...6)
+                        .lengthLimited($bio, to: PostLimits.Profile.bio)
                 }
                 // 板は居住地と Instagram を横に2つ並べる
                 HStack(alignment: .top, spacing: 10) {
                     labeled(L("居住地", "Where you're based")) {
                         TextField("", text: $homeLocation)
+                            .lengthLimited($homeLocation, to: PostLimits.Profile.homeLocation)
                     }
                     labeled(L("Instagram（@なし）", "Instagram (without @)")) {
                         TextField("", text: $instagram)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .lengthLimited($instagram, to: PostLimits.Profile.instagram)
                     }
                 }
             }
@@ -99,12 +103,14 @@ struct ProfileEditView: View {
             Section(L("そのほか", "More")) {
                 labeled(L("ひとこと", "Status")) {
                     TextField("", text: $statusText)
+                        .lengthLimited($statusText, to: PostLimits.Profile.statusText)
                 }
                 ThemeColorField(themeColor: $themeColor)
                 labeled(L("ウェブサイト", "Website")) {
                     TextField("", text: $website)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
+                        .lengthLimited($website, to: PostLimits.Profile.website)
                 }
             }
             .listRowBackground(Color.clear)
@@ -366,6 +372,18 @@ struct ProfileEditView: View {
             message = kind == .avatar ? L("アイコンを変えました", "Avatar updated") : L("カバーを変えました", "Cover updated")
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("画像を変えられませんでした", "Couldn't update the image")
+        }
+    }
+}
+
+private extension View {
+    /// **上限で止める**（`PostLimits.Profile`）。サーバーは超えたぶんを黙って切るので、
+    /// 保存してから縮んでいたことに気づけなかった。止め方は `HighlightEditorView` の名前の欄と同じ
+    /// （`PostLimits.limited`: 入れようとした字のほうを削る・UTF-16 の単位で数える）
+    func lengthLimited(_ text: Binding<String>, to limit: Int) -> some View {
+        onChange(of: text.wrappedValue) { old, new in
+            let kept = PostLimits.limited(old: old, new: new, limit: limit)
+            if kept != new { text.wrappedValue = kept }
         }
     }
 }

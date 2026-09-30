@@ -14,6 +14,8 @@ struct ProfileTabBar: View {
 
     let tabs: [ProfileTab]
     @Binding var selection: ProfileTab
+    /// 名前の字の大きさ（`.footnote` と同じだけ伸びる。既定 13）。縮める下限の計算に使う
+    @ScaledMetric(relativeTo: .footnote) private var labelSize: CGFloat = 13
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -70,7 +72,8 @@ struct ProfileTabBar: View {
                 Text(option.label)
                     .font(.footnote.weight(selected ? .semibold : .regular))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    // **縮めても 12pt まで**（本文の最小）。0.8 では 13pt が 10.4pt まで縮んでいた
+                    .minimumScaleFactor(WebTheme.minimumScale(forTextSize: labelSize))
             }
     }
 }

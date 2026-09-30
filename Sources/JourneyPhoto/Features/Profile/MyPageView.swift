@@ -370,28 +370,31 @@ struct MyPageView: View {
     private var stats: some View {
         // 板: 3列の等幅。等幅の数字（18）の下に小さい名前（10）
         HStack(alignment: .top, spacing: 8) {
-            statCell(value: "\(model.photos.count)", label: L("投稿", "Posts"))
+            statCell(value: ProfileLine.statValue(model.photoCount), label: L("投稿", "Posts"))
             NavigationLink {
                 FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .followers)
             } label: {
-                statCell(value: "\(model.followers)", label: L("フォロワー", "Followers"))
+                statCell(value: ProfileLine.statValue(model.followerCount), label: L("フォロワー", "Followers"))
             }
             .buttonStyle(.plain)
             NavigationLink {
                 FollowListView(userId: model.profile?.userId ?? auth.userId ?? "", kind: .following)
             } label: {
-                statCell(value: "\(model.following)", label: L("フォロー中", "Following"))
+                statCell(value: ProfileLine.statValue(model.followingCount), label: L("フォロー中", "Following"))
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
     }
 
-    private func statCell(value: String, label: String) -> some View {
+    /// - Parameter value: nil は読み込み中。**数を出さずに高さだけ取る**（出たときに並びが動かない）
+    private func statCell(value: String?, label: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(value)
+            Text(value ?? "0")
                 .font(JPFont.mono(18, relativeTo: .title3))
                 .foregroundStyle(Color.white)
+                .opacity(value == nil ? 0 : 1)
+                .accessibilityHidden(value == nil)
             Text(label)
                 .font(.caption)
                 .foregroundStyle(WebTheme.faint)
@@ -424,43 +427,57 @@ struct MyPageView: View {
         let countries = VisitedCountries.count(in: model.photos)
         let km = TravelDistance.total(of: model.photos)
         if countries > 0 || km > 0 {
-            // 板: 「訪れた国・地域 00 · 写真をつないだ距離 000 km」（12px・間 6px）
-            HStack(spacing: 6) {
-                if countries > 0 {
-                    recordItem(label: L("訪れた国・地域", "Countries"), value: "\(countries)") {
-                        showCountriesNote = true
+            // 板: 「訪れた国・地域 00 · 写真をつないだ距離 000 km」（12px・間 6px）。
+            // **1行に入らなければ2行に分ける**（幅の狭い端末・大きい文字）。以前は字を 0.8 まで
+            // 縮めて1行に押し込み、12pt の字が 10pt を切っていた
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    if countries > 0 { countriesItem(countries) }
+                    if countries > 0 && km > 0 {
+                        Text("·")
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.faint)
+                            .accessibilityHidden(true)
                     }
-                    .alert(L("訪れた国・地域", "Countries and regions"),
-                           isPresented: $showCountriesNote) {
-                        Button(Labels.Common.close, role: .cancel) {}
-                    } message: {
-                        // **数え方をそのまま書く。** 「思ったより少ない」の答えが
-                        // ここにある（国名を書いた写真しか数えていない）
-                        Text(L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
-                               "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number."))
-                    }
+                    if km > 0 { distanceItem(km) }
                 }
-                if countries > 0 && km > 0 {
-                    Text("·")
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
-                        .accessibilityHidden(true)
+                // 押せる範囲（上下に張り出した 44pt）が重ならない間を空ける
+                VStack(alignment: .leading, spacing: 2 * Self.recordTapSlack) {
+                    if countries > 0 { countriesItem(countries) }
+                    if km > 0 { distanceItem(km) }
                 }
-                if km > 0 {
-                    recordItem(label: L("写真をつないだ距離", "Distance between photos"),
-                               value: "\(TravelDistance.formatted(km)) km") {
-                        showDistanceNote = true
-                    }
-                    .alert(L("写真をつないだ距離", "Distance between photos"),
-                           isPresented: $showDistanceNote) {
-                        Button(Labels.Common.close, role: .cancel) {}
-                    } message: {
-                        Text(distanceNote)
-                    }
-                }
-                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
+            // 知らせは並べ方の外に付ける（2つの並べ方のどちらを選んでも1つ）
+            .alert(L("訪れた国・地域", "Countries and regions"),
+                   isPresented: $showCountriesNote) {
+                Button(Labels.Common.close, role: .cancel) {}
+            } message: {
+                // **数え方をそのまま書く。** 「思ったより少ない」の答えが
+                // ここにある（国名を書いた写真しか数えていない）
+                Text(L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
+                       "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number."))
+            }
+            .alert(L("写真をつないだ距離", "Distance between photos"),
+                   isPresented: $showDistanceNote) {
+                Button(Labels.Common.close, role: .cancel) {}
+            } message: {
+                Text(distanceNote)
+            }
+        }
+    }
+
+    private func countriesItem(_ countries: Int) -> some View {
+        recordItem(label: L("訪れた国・地域", "Countries"), value: "\(countries)") {
+            showCountriesNote = true
+        }
+    }
+
+    private func distanceItem(_ km: Double) -> some View {
+        recordItem(label: L("写真をつないだ距離", "Distance between photos"),
+                   value: "\(TravelDistance.formatted(km)) km") {
+            showDistanceNote = true
         }
     }
 
@@ -471,9 +488,7 @@ struct MyPageView: View {
                 Text(label)
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
-                    // 幅の狭い端末（SE など）で2項目が1行に収まるように、折り返さずに少しだけ縮める
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    // **縮めない**（12pt を割る）。1行に入らなければ `travelRecord` が2行に分ける
                 Text(value)
                     .font(JPFont.mono(12, relativeTo: .caption))
                     .foregroundStyle(Color.white)
@@ -980,6 +995,26 @@ final class MyPageViewModel: ObservableObject {
     /// 一覧の長さから数えない——50人で切ったぶんが落ちる
     @Published private(set) var followers = 0
     @Published private(set) var following = 0
+    /// フォロー数を読めたか（nil: まだ・false: 取れなかった）。**数の 0 と見分ける**——
+    /// 読み込み中・失敗のあいだ「0」と出ていた（人のページの `PhotoCount` と同じ決まりにする）
+    @Published private(set) var followStatsRead: Bool?
+
+    /// 画面に出す写真の数。**読み終えるまで言わず、取れなければ「—」**（`ProfileLine.PhotoCount`）
+    var photoCount: ProfileLine.PhotoCount {
+        if hasLoadedPhotos { return .loaded(photos.count) }
+        return errorMessage != nil ? .failed : .pending
+    }
+    var followerCount: ProfileLine.PhotoCount { followCount(followers) }
+    var followingCount: ProfileLine.PhotoCount { followCount(following) }
+
+    private func followCount(_ value: Int) -> ProfileLine.PhotoCount {
+        switch followStatsRead {
+        case true?: return .loaded(value)
+        case false?: return .failed
+        // まだ取りに行けていない（プロフィールで落ちた）回も、読み込みが失敗していれば「—」
+        case nil: return errorMessage != nil ? .failed : .pending
+        }
+    }
 
     /// 公開一覧。**鍵の要らない経路で描くときだけ使う**（下の `loadPublicly`）。
     private let gallery: PublicGalleryService
@@ -1079,6 +1114,10 @@ final class MyPageViewModel: ObservableObject {
             if let loadedStats {
                 self.followers = loadedStats.followers
                 self.following = loadedStats.following
+                followStatsRead = true
+            } else if followStatsRead != true, !Task.isCancelled {
+                // 一度読めた数は、読み直しの失敗で「—」にしない
+                followStatsRead = false
             }
             _ = try photosOutcome.get()
         } catch is CancellationError {
@@ -1138,6 +1177,9 @@ final class MyPageViewModel: ObservableObject {
         if let stats, gen == generation {
             self.followers = stats.followers
             self.following = stats.following
+            followStatsRead = true
+        } else if gen == generation, followStatsRead != true, !Task.isCancelled {
+            followStatsRead = false
         }
     }
 
@@ -1160,6 +1202,7 @@ final class MyPageViewModel: ObservableObject {
         profile = nil
         followers = 0
         following = 0
+        followStatsRead = nil
         errorMessage = nil
         // 前の人あての知らせ（読み直しの失敗・ピン留めの断り）も残さない
         actionMessage = nil

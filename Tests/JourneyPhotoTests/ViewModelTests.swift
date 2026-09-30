@@ -211,6 +211,35 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// 🔴 **人のページ: ブロックが通ったらフォロー数を読み直す。** サーバーはブロックで
+    /// フォローを両方向とも外す（`block.ts`）のに、フォロワー数・フォロー中の数が前のままだった
+    func testProfileBlockRereadsFollowCounts() async {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":3,"following":2}"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: nil)
+        XCTAssertEqual(model.followers, 3, "前提: フォロー数を読めていない")
+        XCTAssertEqual(model.following, 2)
+
+        // ブロックでおたがいのフォローが外れた後の数
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/users/u1/block", status: 200, body: #"{"blocked":true}"#)
+        StubProtocol.respond(path: "/users/u1/follow", status: 200, body: #"{"followers":2,"following":1}"#)
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await model.block(userId: "u1", environment: env, store: store, toasts: ToastCenter())
+        XCTAssertNil(model.actionMessage)
+        XCTAssertEqual(model.followers, 2, "ブロック前のフォロワー数のまま")
+        XCTAssertEqual(model.following, 1, "ブロック前のフォロー中の数のまま")
+    }
+
     /// 🔴 **ストーリーの輪: 先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない。**
     /// 人が替わった直後は読み直しが2本同時に走り、前の人のブロックの集合で絞った先の回が
     /// 後から着くと、次の人がブロックした人の輪が並んだままになっていた
@@ -950,6 +979,35 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.profile?.displayName, "わたし", "写真の失敗で見出しまで消えた")
         XCTAssertEqual(model.followers, 7, "写真の失敗でフォロー数を取りに行かず 0 と出る")
         XCTAssertNotNil(model.errorMessage)
+    }
+
+    /// 🔴 **マイページの数は、読み込み中・取れなかったときに「0」と言わない**
+    /// （人のページの `ProfileLine.PhotoCount` と同じ決まり）。配列の長さ・数の既定値 0 を
+    /// そのまま出していたので、圏外で開くと「投稿 0・フォロワー 0」と嘘が出た
+    func testMyPageCountsAreNotZeroUntilRead() async {
+        prepare()
+        let model = MyPageViewModel(api: api())
+        XCTAssertEqual(model.photoCount, .pending)
+        XCTAssertEqual(model.followerCount, .pending)
+        XCTAssertNil(ProfileLine.statValue(model.photoCount), "読み込み中に 0 と出している")
+
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/users/a/follow", status: 500, body: #"{"error":"x"}"#)
+        await model.load(for: "a")
+        XCTAssertEqual(model.photoCount, .failed, "写真を読めていないのに数を言っている")
+        XCTAssertEqual(model.followerCount, .failed, "フォロー数を読めていないのに数を言っている")
+        XCTAssertEqual(model.followingCount, .failed)
+        XCTAssertEqual(ProfileLine.statValue(model.followerCount), "—")
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/a/follow", status: 200, body: #"{"followers":0,"following":4}"#)
+        await model.load(for: "a")
+        XCTAssertEqual(model.photoCount, .loaded(0), "読めた 0 は 0 と言う")
+        XCTAssertEqual(model.followerCount, .loaded(0))
+        XCTAssertEqual(model.followingCount, .loaded(4))
     }
 
     /// **フォロー数が遅くても、写真は待たずに入る**（3ecb6a5 は数を待ってから

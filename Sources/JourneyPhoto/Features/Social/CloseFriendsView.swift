@@ -196,8 +196,10 @@ struct CloseFriendsView: View {
                 Button {
                     query = ""
                 } label: {
+                    // 押せる幅は 44pt（探す口の「×」と同じ・bd98adc）
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(WebTheme.faint)
+                        .webTappable()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("消す", "Clear"))
