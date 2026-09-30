@@ -477,9 +477,10 @@ struct SearchView: View {
                 .background(WebTheme.surface, in: Circle())
                 .clipShape(Circle())
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 1))
-            // 本文の最小 12pt。縮めずに2行まで折る（英語の「Forest & nature」が5列に入らない）
+            // 本文の最小 12pt（`.caption` は標準で 12pt・字の大きさの設定に追従する）。
+            // 縮めずに2行まで折る（英語の「Forest & nature」が5列に入らない）
             Text(section.family.note)
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundStyle(WebTheme.muted2)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
