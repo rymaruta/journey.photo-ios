@@ -217,6 +217,31 @@ final class ScreenshotTests: XCTestCase {
             let signedOut = app.descendants(matching: .any)
                 .matching(identifier: "signin.form").firstMatch.exists
             shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
+            // ホームの「撮影地を探す / 写真から探す」が見える状態をPR確認用に残す
+            if name == "ホーム", app.buttons["home.exploreMap"].firstMatch.exists {
+                shoot(app, "10b-ホーム（撮影地への入口）")
+                // フォロー中が0件の回は、行き止まりではなく発見へのCTAが出ることも残す
+                let following = app.buttons["フォロー中"].firstMatch
+                if following.exists, following.isHittable {
+                    following.tap()
+                    Thread.sleep(forTimeInterval: 2)
+                    if app.buttons["home.emptyAction"].firstMatch.exists {
+                        shoot(app, "10c-ホーム（空フィードの次の行動）")
+                    }
+                }
+            }
+            if name == "探す" {
+                let field = app.textFields["search.field"].firstMatch
+                if field.exists, field.isHittable {
+                    field.tap()
+                    field.typeText("zzzz-no-photo-result")
+                    Thread.sleep(forTimeInterval: 2)
+                    if app.buttons["search.emptyMap"].firstMatch.exists {
+                        shoot(app, "11b-探す（0件から地図へ）")
+                    }
+                    field.buttons["Clear text"].firstMatch.tap()
+                }
+            }
             if name == "マップ" { shootSpotPin(app) }
         }
 
@@ -329,6 +354,19 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "20-写真の詳細")
 
+            // 撮影地は1枚しかない場所でも必ず入口を持つ。スポット化できる地点は
+            // spotLink、1枚だけなら placeLink。どちらでも「写真→場所」の流れを実画面で残す。
+            let spotLink = app.buttons["photo.spotLink"].firstMatch
+            let placeLink = app.buttons["photo.placeLink"].firstMatch
+            let locationLink = spotLink.exists ? spotLink : placeLink
+            if locationLink.waitForExistence(timeout: 3), locationLink.isHittable {
+                locationLink.tap()
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "20b-写真から撮影地へ")
+                app.navigationBars.buttons.firstMatch.tap()
+                Thread.sleep(forTimeInterval: 2)
+            }
+
             // **人のページ**（モック2 と同じ部品で組んである）。
             //
             // **画面の下に隠れていたら送る（上限あり）。** 作者の行は説明の
@@ -366,6 +404,9 @@ final class ScreenshotTests: XCTestCase {
             toSpot.tap()
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "60-撮影スポット")
+            if app.otherElements["spot.official.journeyCue"].firstMatch.exists {
+                shoot(app, "60b-撮影スポット（撮影までの流れ）")
+            }
             app.swipeUp()
             Thread.sleep(forTimeInterval: 2)
             shoot(app, "61-撮影スポット（下）")
