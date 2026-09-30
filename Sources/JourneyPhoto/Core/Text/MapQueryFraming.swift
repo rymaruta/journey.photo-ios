@@ -9,7 +9,7 @@ import Foundation
 ///
 /// - 受け取ったら「語で寄せる」印を立てる。写真・索引が届いて枠が決まった時点で一度だけ寄せる
 /// - 印がある間は、**自動の**現在地で寄せない（ボタンで取った現在地は寄せる＝人の操作が勝つ）
-/// - 人が地図を触ったら、あとから寄せ直さない
+/// - 人が地図を触ったら、あとから寄せ直さない（語の当たりへも、開いたときの自動の現在地へも）
 struct MapQueryFraming: Equatable {
 
     /// 枠が決まったら寄せる
@@ -62,8 +62,10 @@ struct MapQueryFraming: Equatable {
         holdsAgainstAutoLocate = false
     }
 
-    /// 人が地図を動かした。見ている場所から引き戻さない
+    /// 人が地図を動かした。見ている場所から引き戻さない——語の当たりへも、
+    /// あとから届く**自動の**現在地へも（ボタンで取った現在地は寄せる）
     mutating func userMovedCamera() {
         waitingToFrame = false
+        holdsAgainstAutoLocate = true
     }
 }
