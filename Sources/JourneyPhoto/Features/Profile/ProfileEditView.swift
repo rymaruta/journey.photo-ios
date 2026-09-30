@@ -67,7 +67,7 @@ struct ProfileEditView: View {
             Section {
                 labeled(L("表示名", "Display name")) {
                     TextField("", text: $displayName)
-                        .lengthLimited($displayName, to: PostLimits.Profile.displayName)
+                        .onChange(of: displayName, limitLength($displayName, to: PostLimits.Profile.displayName))
                 }
                 labeled(L("ユーザー名（半角英数）", "Username (letters and numbers)")) {
                     TextField("", text: $username)
@@ -79,19 +79,19 @@ struct ProfileEditView: View {
                     // （statusText）があり、どちらに書くのか紛れる
                     TextField("", text: $bio, axis: .vertical)
                         .lineLimit(2...6)
-                        .lengthLimited($bio, to: PostLimits.Profile.bio)
+                        .onChange(of: bio, limitLength($bio, to: PostLimits.Profile.bio))
                 }
                 // 板は居住地と Instagram を横に2つ並べる
                 HStack(alignment: .top, spacing: 10) {
                     labeled(L("居住地", "Where you're based")) {
                         TextField("", text: $homeLocation)
-                            .lengthLimited($homeLocation, to: PostLimits.Profile.homeLocation)
+                            .onChange(of: homeLocation, limitLength($homeLocation, to: PostLimits.Profile.homeLocation))
                     }
                     labeled(L("Instagram（@なし）", "Instagram (without @)")) {
                         TextField("", text: $instagram)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .lengthLimited($instagram, to: PostLimits.Profile.instagram)
+                            .onChange(of: instagram, limitLength($instagram, to: PostLimits.Profile.instagram))
                     }
                 }
             }
@@ -103,14 +103,14 @@ struct ProfileEditView: View {
             Section(L("そのほか", "More")) {
                 labeled(L("ひとこと", "Status")) {
                     TextField("", text: $statusText)
-                        .lengthLimited($statusText, to: PostLimits.Profile.statusText)
+                        .onChange(of: statusText, limitLength($statusText, to: PostLimits.Profile.statusText))
                 }
                 ThemeColorField(themeColor: $themeColor)
                 labeled(L("ウェブサイト", "Website")) {
                     TextField("", text: $website)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
-                        .lengthLimited($website, to: PostLimits.Profile.website)
+                        .onChange(of: website, limitLength($website, to: PostLimits.Profile.website))
                 }
             }
             .listRowBackground(Color.clear)
@@ -215,6 +215,16 @@ struct ProfileEditView: View {
     }
 
     /// 欄の上に小さい見出し（板の「表示名」などの置き方）
+    /// **上限で止める**（`PostLimits.Profile`）。サーバーは超えたぶんを黙って切るので、
+    /// 保存してから縮んでいたことに気づけなかった。止め方は `HighlightEditorView` の名前の欄と同じ
+    /// （`PostLimits.limited`: 入れようとした字のほうを削る・UTF-16 の単位で数える）
+    private func limitLength(_ text: Binding<String>, to limit: Int) -> (String, String) -> Void {
+        { old, new in
+            let kept = PostLimits.limited(old: old, new: new, limit: limit)
+            if kept != new { text.wrappedValue = kept }
+        }
+    }
+
     private func labeled<Field: View>(_ title: String, @ViewBuilder field: () -> Field) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
@@ -376,14 +386,3 @@ struct ProfileEditView: View {
     }
 }
 
-private extension View {
-    /// **上限で止める**（`PostLimits.Profile`）。サーバーは超えたぶんを黙って切るので、
-    /// 保存してから縮んでいたことに気づけなかった。止め方は `HighlightEditorView` の名前の欄と同じ
-    /// （`PostLimits.limited`: 入れようとした字のほうを削る・UTF-16 の単位で数える）
-    func lengthLimited(_ text: Binding<String>, to limit: Int) -> some View {
-        onChange(of: text.wrappedValue) { old, new in
-            let kept = PostLimits.limited(old: old, new: new, limit: limit)
-            if kept != new { text.wrappedValue = kept }
-        }
-    }
-}
