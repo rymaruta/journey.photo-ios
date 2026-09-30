@@ -183,6 +183,67 @@ actor OfficialSpotService {
         return body
     }
 
+    // MARK: - 別名（`/app/data/spot-search.json`・2026-09-30）
+
+    /// 別名の控え（slug → 別名）と、取れた／取れなかった時刻。
+    private var aliasCache: (map: [String: [String]], until: Date)?
+    /// 別名を使い回す長さ。台帳の別名はめったに変わらない
+    static let aliasLifetime: TimeInterval = 600
+    /// 取れなかったときに叩き直さない長さ
+    static let aliasRetryAfter: TimeInterval = 60
+
+    /// 撮影スポットの別名（slug → 別名の一覧）。**Web の「さがす」が読む名前だけの索引**
+    /// （`spot-search.json`・`lib/data/spotSearchFeed.ts`）を読む。索引（`spots.json`）には載っていない。
+    ///
+    /// **取れなければ空**（投げない）。別名は当たりを良くするおまけで、無くても名前・読みで引ける。
+    /// 圏外・404・HTML・壊れた中身はどれも空（前に取れていればそれを使う）
+    func fetchAliases() async -> [String: [String]] {
+        if let hit = aliasCache, Date() < hit.until { return hit.map }
+        // 🔴 **読み込みは1本に寄せ、呼んだ側の取り消しを受けない。** 「さがす」は打つたびに
+        // 呼ぶ側（`.task(id: query)`）が取り消されるので、取り消しを失敗と数えて空を1分控え、
+        // その間は別名が一切当たらなかった。並んだ呼び出しが別々に叩き、遅れた失敗が先の成功を
+        // 古い値で上書きすることもあった（47b7180 のレビュー）
+        if aliasLoad == nil {
+            let aliasURL = url.deletingLastPathComponent().appendingPathComponent("spot-search.json")
+            let session = self.session
+            aliasLoad = Task {
+                guard let (data, response) = try? await session.data(from: aliasURL),
+                      let http = response as? HTTPURLResponse,
+                      (200..<300).contains(http.statusCode), !Self.isHTML(http) else { return nil }
+                return Self.aliases(from: data)
+            }
+        }
+        let loaded = await aliasLoad?.value
+        aliasLoad = nil
+        // 待っている間に別の呼び出しが控えを書いていたら、それを使う
+        if let hit = aliasCache, Date() < hit.until { return hit.map }
+        if let map = loaded.flatMap({ $0 }) {
+            aliasCache = (map, Date().addingTimeInterval(Self.aliasLifetime))
+            return map
+        }
+        let previous = aliasCache?.map ?? [:]
+        aliasCache = (previous, Date().addingTimeInterval(Self.aliasRetryAfter))
+        return previous
+    }
+
+    /// 走っている別名の読み込み（1本だけ）
+    private var aliasLoad: Task<[String: [String]]?, Never>?
+
+    /// `spot-search.json` の行（`{ s: slug, n: 名前, a?: 別名[] }` ほか）から slug → 別名。
+    /// 読めなければ nil。**読めない行・空の別名は落とす**（行ごと・中身ごと捨てない）
+    static func aliases(from data: Data) -> [String: [String]]? {
+        struct Row: Decodable { let s: String; let a: [String]? }
+        guard let rows = try? JSONDecoder().decode([Lenient<Row>].self, from: data) else { return nil }
+        var map: [String: [String]] = [:]
+        for row in rows.compactMap(\.value) {
+            let names = (row.a ?? [])
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !row.s.isEmpty, !names.isEmpty { map[row.s] = names }
+        }
+        return map
+    }
+
     /// `Content-Type` が `text/html` か。鍵の大小は見ない（サーバーによって違う）
     private static func isHTML(_ response: HTTPURLResponse) -> Bool {
         for (key, value) in response.allHeaderFields {

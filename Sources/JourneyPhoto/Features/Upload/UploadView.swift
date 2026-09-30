@@ -10,6 +10,8 @@ struct UploadView: View {
     @State private var showSongPicker = false
     @State private var showLibrary = false
     @State private var appliedInitialSpot = false
+    /// 「書きかけを捨てて閉じますか？」
+    @State private var confirmDiscard = false
     @Environment(\.dismiss) private var dismiss
 
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき）。
@@ -17,8 +19,9 @@ struct UploadView: View {
     private let initialTag: String?
     /// スポットの画面から開いたときの行き先
     private let initialSpot: UploadSpotTarget?
-    /// 全部上がって閉じるときに呼ぶ。渡すのは**スポットのページに並ぶ形で上がった枚数**
-    /// （スポットの画面が「投稿しました」を出すか決める）
+    /// スポットのページに並ぶ形で1枚上がるたび・全部上がって閉じるときに呼ぶ。
+    /// 渡すのは**スポットのページに並ぶ形で上がった枚数**（スポットの画面が
+    /// 「投稿しました」を出すか決める）。**何度呼ばれても同じ結果になる受け手に渡す**
     private let onPosted: ((Int) -> Void)?
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil) {
@@ -53,7 +56,11 @@ struct UploadView: View {
         // 板 22: 左に ×、右に真鍮の「投稿する」（下の大きいボタンはやめる）
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button { dismiss() } label: {
+                // 🔴 **書きかけを黙って捨てない**（2026-09-30）。選んだ写真と書いた題・説明が
+                // 確認なしで消えていた。写真を選び始めたら一度聞く（旅行プランの日程と同じ判断）
+                Button {
+                    if model.hasDraft { confirmDiscard = true } else { dismiss() }
+                } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(WebTheme.foreground)
@@ -68,7 +75,21 @@ struct UploadView: View {
                 ToolbarItem(placement: .confirmationAction) { submitButton }
             }
         }
-        .interactiveDismissDisabled(model.isWorking)
+        // 書きかけがある間は、下へ払っても閉じない（× で確かめてから）
+        .interactiveDismissDisabled(model.isWorking || model.hasDraft)
+        .confirmationDialog(L("書きかけの投稿を捨てて閉じますか？", "Discard this post?"),
+                            isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button(L("捨てて閉じる", "Discard"), role: .destructive) { dismiss() }
+            Button(L("書き続ける", "Keep editing"), role: .cancel) { }
+        } message: {
+            Text(L("選んだ写真と、書いた題・説明は残りません。",
+                   "The photos you picked and what you wrote won't be kept."))
+        }
+        // **上がった時点で知らせる。** × や下に払って閉じる時点で知らせると、
+        // 一部だけ上がった・曲だけ付かなかったまま下に払って閉じた回が漏れる
+        .onChange(of: model.postedToSpot) { _, n in
+            if n > 0 { onPosted?(n) }
+        }
         .onChange(of: model.didPostAll) { _, posted in
             // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
             // 選び直しの読み込み中（一度空にする）にも閉じてしまい、
@@ -367,7 +388,8 @@ struct UploadView: View {
                 count(item.caption, limit: PostLimits.description)
                 VStack(alignment: .leading, spacing: 6) {
                     JPSectionTitle(L("撮影地", "Place"))
-                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords)
+                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
+                                     near: item.prepared.coords, offersSpots: true)
                 }
             }
         }

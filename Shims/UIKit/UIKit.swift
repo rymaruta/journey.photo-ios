@@ -102,6 +102,8 @@ public struct UIViewControllerRepresentableContext<R: UIViewControllerRepresenta
 extension UIImageShim {
     public var size: CGSize { CGSize(width: 0, height: 0) }
     public func draw(in rect: CGRect) {}
+    /// 縮めて展開した画像（本物と同じ・iOS 15〜）
+    public func preparingThumbnail(of size: CGSize) -> UIImageShim? { nil }
 }
 
 public final class UIColor {
@@ -187,6 +189,8 @@ public struct NSStringDrawingOptions: OptionSet {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
     public static let usesLineFragmentOrigin = NSStringDrawingOptions(rawValue: 1)
+    /// 枠に収まらない最後の行を「…」で切る（本物と同じ）
+    public static let truncatesLastVisibleLine = NSStringDrawingOptions(rawValue: 2)
 }
 
 /// 描き込みの文脈（使わない・本物と同じ形のため）

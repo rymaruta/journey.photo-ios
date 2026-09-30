@@ -336,6 +336,86 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(PostLimits.storyReply, 200)   // storyReplies.ts の TEXT_MAX
     }
 
+    /// 🔴 **プロフィールの欄の上限はサーバーの値**（`api-user/src/userProfile.ts` の
+    /// `updateMyProfile`）。欄で止めていなかったので、超えたぶんは保存で黙って切られていた
+    func testProfileLimitsMatchTheServer() {
+        XCTAssertEqual(PostLimits.Profile.displayName, 100)   // truncate(displayName, 100)
+        XCTAssertEqual(PostLimits.Profile.bio, 300)           // truncate(bio, 300)
+        XCTAssertEqual(PostLimits.Profile.instagram, 100)     // instagram.slice(0, 100)
+        XCTAssertEqual(PostLimits.Profile.website, 200)       // website.slice(0, 200)
+        XCTAssertEqual(PostLimits.Profile.statusText, 60)     // truncate(statusText, 60)
+        XCTAssertEqual(PostLimits.Profile.homeLocation, 60)   // truncate(homeLocation, 60)
+        // 数え方もサーバーと同じ（UTF-16）。絵文字 31 個（62 単位）はひとことに入らない
+        let status = PostLimits.limited(old: "", new: String(repeating: "😀", count: 31),
+                                        limit: PostLimits.Profile.statusText)
+        XCTAssertEqual(status, String(repeating: "😀", count: 30))
+    }
+
+    /// 🔴 **色の丸は Web と同じ 36・押せる枠 44 で、393pt 幅の端末のフォームの行に収まる。**
+    /// 8色＋「なし」を1行（44×9＝396）に並べると行に入らず「7個＋2行目」に割れていた。
+    /// フォームの行の中身は 393 − 左右の外の余白 16〜20 − 行の中の余白 16〜20 ≈ 313〜329
+    func testThemeColorRowsFitAFormRow() {
+        XCTAssertEqual(ThemeColorLayout.swatch, 36)
+        XCTAssertEqual(ThemeColorLayout.target, 44)
+        XCTAssertEqual(ThemeColorLayout.rows.flatMap { $0 }, ThemeColor.presets, "色が抜けた・並びが変わった")
+        XCTAssertLessThanOrEqual(ThemeColorLayout.widestRow, 393 - 2 * 20 - 2 * 20,
+                                 "393pt 幅の端末でフォームの行に入らない")
+    }
+
+    /// 選んだ印の外側の輪（間 2・輪 2）は、押せる枠の余白 4 に収まる（隣の枠へはみ出さない）
+    func testThemeColorRingFitsTheTapTarget() {
+        XCTAssertEqual(ThemeColorLayout.ringGap, 2)
+        XCTAssertEqual(ThemeColorLayout.ringWidth, 2)
+        XCTAssertLessThanOrEqual(ThemeColorLayout.swatch + 2 * (ThemeColorLayout.ringGap + ThemeColorLayout.ringWidth),
+                                 ThemeColorLayout.target)
+    }
+
+    /// 🔴 **上限を超えて保存されていた欄だけ、切れることを知らせる。** 超えていない欄には出さない
+    func testOverLimitNoteOnlyForOverLongValues() {
+        XCTAssertNil(PostLimits.overLimitNote(String(repeating: "あ", count: 60), limit: 60))
+        XCTAssertNil(PostLimits.overLimitNote("", limit: 60))
+        let note = PostLimits.overLimitNote(String(repeating: "あ", count: 72), limit: 60)
+        // 触っていない欄は送らないので切れない。**直して保存すると**切れる、と言う
+        XCTAssertEqual(note, L("72/60・60字まで。この欄を直して保存すると 60字に切れます",
+                               "72/60 · Up to 60 characters. If you edit this field and save, it will be cut to 60"))
+        // 数え方はサーバーと同じ（UTF-16）。絵文字 31 個は 62
+        XCTAssertNotNil(PostLimits.overLimitNote(String(repeating: "😀", count: 31), limit: 60))
+    }
+
+    /// 🔴 **通報の補足はサーバーと同じ単位（UTF-16）で 500 に収める。** 字で `prefix(500)` を
+    /// 取っていたので、絵文字の多い補足はアプリでは切られず、サーバーで黙って切られていた
+    func testReportNoteIsClampedLikeTheServer() {
+        let note = ModerationService.reportNote(String(repeating: "😀", count: 300))   // 600 単位
+        XCTAssertEqual(note?.utf16.count, 500, "サーバーの上限を超えたまま送っている")
+        XCTAssertEqual(ModerationService.reportNote("  \n "), nil)
+        XCTAssertEqual(ModerationService.reportNote(" 補足 "), "補足")
+    }
+
+    /// **縮めても 12pt を割らない**（本文の最小）。13pt の札の名前を 0.8 で縮めて 10.4pt にしていた
+    func testMinimumScaleKeepsTwelvePoints() {
+        XCTAssertEqual(13 * WebTheme.minimumScale(forTextSize: 13), 12, accuracy: 0.0001)
+        XCTAssertEqual(WebTheme.minimumScale(forTextSize: 12), 1, "12pt 以下を縮めている")
+        XCTAssertEqual(WebTheme.minimumScale(forTextSize: 11), 1)
+        // 🔴 **大きい字を 0.8 より深く縮めない。** 12/字 だけだと、字の大きさの設定で大きくした
+        // 人ほど深く縮んだ（xxxLarge の 19pt が 12pt まで）
+        XCTAssertGreaterThanOrEqual(WebTheme.minimumScale(forTextSize: 20), 0.8)
+        XCTAssertGreaterThanOrEqual(WebTheme.minimumScale(forTextSize: 19), 0.8)
+    }
+
+    /// 🔴 **読み込んだ値を欄に入れた回は切らない。** 読み込みも欄の変化として届くので、
+    /// 上限を超えて保存されている値が開いただけで切られていた。入れたあとは増やせず、減らせる
+    func testLoadedValueIsNotCutWhenFilledIn() {
+        let long = String(repeating: "あ", count: 70)   // ひとことの上限 60 を超えている
+        XCTAssertEqual(PostLimits.limitedEdit(old: "", new: long, limit: 60, loaded: long), long,
+                       "読み込んだ値を入れた瞬間に切っている")
+        XCTAssertEqual(PostLimits.limitedEdit(old: long, new: long + "い", limit: 60, loaded: long), long,
+                       "上限を超えている欄に字を足せている")
+        XCTAssertEqual(PostLimits.limitedEdit(old: long, new: String(long.dropLast()), limit: 60, loaded: long),
+                       String(long.dropLast()))
+        // 読み込んだ値でない長い文（貼り付け）は今までどおり止める
+        XCTAssertEqual(PostLimits.limitedEdit(old: "", new: long, limit: 60, loaded: "旅").utf16.count, 60)
+    }
+
     /// 🔴 **途中に足した回は、末尾を消さずに足したほうを受けない**（Web の `maxLength` と同じ）。
     /// 末尾を切っていたので、上限いっぱいの文の途中に打つと画面の外の末尾が黙って消えた
     func testInsertingInTheMiddleDoesNotDropTheEnd() {

@@ -59,6 +59,17 @@ enum ProfileLine {
         }
     }
 
+    /// マイページの3列（板 05c）の数の字。**人のページの `PhotoCount` と同じ決まり**——
+    /// 読み込み中は出さない（nil）・取れなければ「—」。0 と言うのは数を読めたときだけ
+    /// （以前は読み込み中・失敗のあいだ「0」と出ていた）
+    static func statValue(_ count: PhotoCount) -> String? {
+        switch count {
+        case .pending: return nil
+        case .failed: return "—"
+        case .loaded(let n): return "\(n)"
+        }
+    }
+
     static func counts(followers: Int, following: Int, photos: PhotoCount) -> [Count] {
         var items = [
             Count(kind: .followers, value: "\(followers)",

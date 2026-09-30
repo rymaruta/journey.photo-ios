@@ -86,12 +86,15 @@ enum SpotScreen {
 
     /// 「[都道府県] · [市区町村] · N枚の写真」。地域が無ければ枚数だけ
     /// （N は `Photo.spotId` で紐づいた公開写真を数えた値）
-    static func subtitle(region: String?, photoCount: Int) -> String {
+    /// `photoCount` が nil なら枚数を言わない（写真の一覧を持たない画面から開いたとき。0 と言うと事実と違う）
+    static func subtitle(region: String?, photoCount: Int?) -> String {
         var parts: [String] = []
         if let region = region?.trimmingCharacters(in: .whitespaces), !region.isEmpty {
             parts.append(region)
         }
-        parts.append(L("\(photoCount)枚の写真", photoCount == 1 ? "1 photo" : "\(photoCount) photos"))
+        if let photoCount {
+            parts.append(L("\(photoCount)枚の写真", photoCount == 1 ? "1 photo" : "\(photoCount) photos"))
+        }
         return parts.joined(separator: " · ")
     }
 }

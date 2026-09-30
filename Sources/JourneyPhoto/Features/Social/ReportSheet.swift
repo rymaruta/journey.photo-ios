@@ -36,6 +36,12 @@ struct ReportSheet: View {
                         JPField(L("補足（任意）", "Details (optional)"), multiline: true) {
                             TextField(L("状況を書いてください", "Tell us what happened"), text: $note, axis: .vertical)
                                 .lineLimit(3...6)
+                                // **500 で止める。** 送る前に黙って切っていたので、書いた末尾が
+                                // 届いていないことに気づけなかった（数え方はサーバーと同じ UTF-16）
+                                .onChange(of: note) { old, new in
+                                    let kept = PostLimits.limited(old: old, new: new, limit: ModerationService.reportNoteMax)
+                                    if kept != new { note = kept }
+                                }
                         }
                         if ownerId != nil {
                             JPCard {

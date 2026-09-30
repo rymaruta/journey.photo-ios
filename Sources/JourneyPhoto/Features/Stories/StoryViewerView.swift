@@ -43,6 +43,9 @@ struct StoryViewerView: View {
     /// 写真の時計（`StoryPlayback.Clock`）。**書き換わるのは動く／止まるの切り替えと、
     /// 1本を頭から始めたときだけ**——バーは `TimelineView` が描画ごとに読む
     @State private var clock = StoryPlayback.Clock()
+    /// いまの1本を見せ始めた時刻（頭から見直したときも）。**左タップの判断に使う**
+    /// ——動画と読み込み中の写真は時計が回らない（`StoryPlayback.leftTapElapsed`）
+    @State private var shownAt = Date()
     @State private var pressing = false
     /// 0.35秒押し続けた（`pressing` は触れた瞬間に立つので、見た目はこちらで決める）
     @State private var longHeld = false
@@ -55,7 +58,10 @@ struct StoryViewerView: View {
     /// 後に走り、その間に次の1本へ進んでいると、描き直された閉包の `story` は
     /// 次の1本になっている（通報した1本が並びから落ちなかった）
     @State private var reportingStory: Story?
-    @State private var muted = false
+    /// 音を消しているか。**覚えた設定から始める**（`StoryAudioPreference`）
+    @State private var muted = StoryAudioPreference().muted
+    /// ♡ の長押しで出す反応の並び（6つ）
+    @State private var showReactions = false
     /// この画面が鳴らした曲の回（`MusicPreviewPlayer.session`）。鳴らしていなければ nil
     @State private var songSession: Int?
     /// この画面の札（`MusicPreviewPlayer.beginStoryViewing`）。作り直すと新しくなる
@@ -78,6 +84,13 @@ struct StoryViewerView: View {
     @State private var showBlockConfirm = false
     /// 見出しの名前を押して開く投稿者のページ
     @State private var showAuthor = false
+    /// 撮影地から開いた撮影スポットのガイド（`StorySpotLink`）
+    @State private var guideSpot: OfficialSpot?
+    /// 自分で読んだ撮影スポットの索引（外から渡されないとき）。**取れなかった回は空**＝つながないだけ
+    @State private var loadedSpots: [OfficialSpot] = []
+    /// いま見ている1本の撮影地から結んだスポット（`StorySpotLink`）。**1本ごとに一度だけ解く**
+    /// ——描き直しのたびに全件を当て直すと、1回 数十ms かかっていた（Linux のデバッグ実測）
+    @State private var spotLink: (storyId: String, spot: OfficialSpot?)?
     /// 自分のストーリーを消す前の確認（板「25f 削除の確認」）。
     /// **以前は確認なしで即座に消えていた**
     @State private var showDeleteConfirm = false
@@ -142,6 +155,10 @@ struct StoryViewerView: View {
     /// 外へ知らせる。**外の払い（`StoryReelView`）が見る**——返信の一言の候補を横に
     /// 流しただけで次の人へ回り、書きかけが消えていた
     let onSwipeLockChange: ((Bool) -> Void)?
+    /// 撮影スポットの索引。**人から人への並び（`StoryReelView`）が一度だけ読んで渡す**——
+    /// 人ごとに閲覧画面を作り直すので、ここで読むと人が替わるたびに読み直していた。
+    /// nil なら自分で読む（ハイライトなど）
+    let providedSpots: [OfficialSpot]?
     /// 票を入れた1本を外へ知らせる。**人を行き来して閲覧画面が作り直されても
     /// 入れた票を消さない**ため（`StoryReelView` が覚えて `voteStates` で戻す）
     let onVoted: ((String, StoryVoteState) -> Void)?
@@ -154,6 +171,7 @@ struct StoryViewerView: View {
          swipesHandledOutside: Bool = false,
          onDropped: ((String) -> Void)? = nil,
          onSwipeLockChange: ((Bool) -> Void)? = nil,
+         spotIndex: [OfficialSpot]? = nil,
          voteStates: [String: StoryVoteState] = [:],
          onVoted: ((String, StoryVoteState) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
@@ -163,6 +181,7 @@ struct StoryViewerView: View {
         self.swipesHandledOutside = swipesHandledOutside
         self.onDropped = onDropped
         self.onSwipeLockChange = onSwipeLockChange
+        self.providedSpots = spotIndex
         self.onVoted = onVoted
         _voteStates = State(initialValue: voteStates)
         self.stories = stories
@@ -194,7 +213,7 @@ struct StoryViewerView: View {
             paused: paused,
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
-                || showAuthor || showDeleteConfirm || isHeld,
+                || showAuthor || showDeleteConfirm || guideSpot != nil || showReactions || isHeld,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -203,11 +222,14 @@ struct StoryViewerView: View {
         )
     }
 
+    /// 撮影スポットの索引（渡されたもの、無ければ自分で読んだもの）
+    private var spots: [OfficialSpot] { providedSpots ?? loadedSpots }
+
     /// 払ってはいけない間（`onSwipeLockChange`）。長押し・絵の読み込みは含めない
     /// （止まっていても払って次へは行ける）
     private var swipeLocked: Bool {
         replyFocused || isSending || showMenu || showReplies || showInsights || showReport
-            || showBlockConfirm || showAuthor || showDeleteConfirm
+            || showBlockConfirm || showAuthor || showDeleteConfirm || guideSpot != nil || showReactions
     }
 
     /// この人の束をもう見せられない（最後の1本を消した・通報した・ブロックした）。
@@ -245,8 +267,18 @@ struct StoryViewerView: View {
         // 知らせが消えたら（2.5秒で消える）、待たせていた1本を進める
         .onChange(of: message) { _, _ in settlePendingEnd() }
         .onChange(of: holds) { _, now in isHeld = now }
+        // 返信欄・メニュー・シート・確認を開いたら反応の並びを閉じる（♡ が隠れたまま並びだけ
+        // 残り、止まったまま進まなかった）
+        .onChange(of: StoryPlayback.closesReactionPicker(
+            replyFocused: replyFocused, menuOpen: showMenu,
+            sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
+                || showAuthor || showDeleteConfirm || guideSpot != nil)) { _, close in
+            if close { showReactions = false }
+        }
         .onChange(of: muted) { _, now in
             if ownsSong { MusicPreviewPlayer.shared.setMuted(now) }
+            // 次の1本・次に開いたときも同じにする
+            StoryAudioPreference().muted = now
         }
         // 閉じたら止める（閉じたあとも鳴り続けないように）。場は最後の閲覧画面が
         // 閉じたときに返す（返さないと他のアプリの音楽が戻らない）
@@ -437,6 +469,27 @@ struct StoryViewerView: View {
                 }
             }
         }
+        // 撮影地から開いた撮影スポットのガイド。**見ている間は止める**（`frozen` の sheetOpen）
+        .sheet(item: $guideSpot) { spot in
+            NavigationStack {
+                // 写真の一覧はこの画面に無い。**「この場所の写真（0）まだありません」を言わせない**
+                OfficialSpotView(spot: spot, spots: spots, photos: [], photosKnown: false)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                    }
+            }
+        }
+        // 撮影スポットの索引。**外から渡されないときだけ一度読む**（静的な JSON）
+        .task {
+            guard providedSpots == nil, loadedSpots.isEmpty else { return }
+            let fetched = try? await environment.spots.fetchIndex()
+            guard !Task.isCancelled, let fetched else { return }
+            loadedSpots = fetched
+        }
+        // 撮影地 → スポットは**1本ごと・索引が変わったときだけ**解く
+        .task(id: "\(story.id)#\(spots.count)") {
+            spotLink = (story.id, StorySpotLink.spot(for: story, in: spots))
+        }
         .sheet(isPresented: $showInsights) {
             NavigationStack {
                 StoryInsightsView(story: story)
@@ -515,10 +568,11 @@ struct StoryViewerView: View {
                 .opacity(dimOpacity)
                 .allowsHitTesting(false)
 
+            // **撮影地の行だけ押せる**（撮影スポットのガイドへ）。ひとことと曲は指を素通りさせ、
+            // 左右の送る的を塞がない（中で1つずつ `allowsHitTesting(false)` を付ける）
             captionBlock(for: story)
                 .padding(.horizontal, 32)
                 .padding(.bottom, highlight == nil ? 96 : 150)
-                .allowsHitTesting(false)
 
             if let message {
                 Text(message)
@@ -562,12 +616,43 @@ struct StoryViewerView: View {
                         .minimumScaleFactor(0.7)
                         .foregroundStyle(.white)
                         .jpPhotoTextShadow()
+                        .allowsHitTesting(false)
                 }
                 if let place {
-                    photoMeta(symbol: "mappin", text: place)
+                    if let spot = spotLink?.storyId == story.id ? spotLink?.spot : nil {
+                        // 撮影地 → 撮影スポットのガイド（「行きたい」もそこで押せる）
+                        Button {
+                            guideSpot = spot
+                        } label: {
+                            // **押せる所は文字の幅だけ**（枠で幅を決めると、短い撮影地でも 260pt 広がり、
+                            // 右の「進む」の的を塞いだ）。長い撮影地は文字を詰めて短くする
+                            HStack(spacing: 4) {
+                                photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(WebTheme.muted)
+                                    .jpPhotoTextShadow()
+                            }
+                            // **押せる所だけ上下に広げて 44pt に、並びは変えない**（`minHeight` にすると
+                            // 行が 44pt になり、索引が届いた瞬間にひとことの塊が上へ跳ねた）
+                            .padding(.vertical, 15)
+                            .contentShape(Rectangle())
+                            .padding(.vertical, -15)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L("撮影地 \(place)。撮影スポットのガイドを開く",
+                                              "Location \(place). Open the photo spot guide"))
+                    } else {
+                        // 結べた行と同じく詰める（索引が届いた瞬間に文字が変わらないように）
+                        photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))
+                            .allowsHitTesting(false)
+                            // 詰めた文字でなく全文を読み上げる
+                            .accessibilityLabel(L("撮影地 \(place)", "Location \(place)"))
+                    }
                 }
                 if let song {
                     photoMeta(symbol: "music.note", text: song)
+                        .allowsHitTesting(false)
                 }
             }
         }
@@ -782,7 +867,10 @@ struct StoryViewerView: View {
         HStack(spacing: 0) {
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture { leftTap() }
+                .onTapGesture {
+                    // 反応の並びが開いていたら、押しても送らずに閉じるだけ
+                    if showReactions { showReactions = false } else { leftTap() }
+                }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
                     if !pressedNow { longHeld = false }
@@ -790,7 +878,8 @@ struct StoryViewerView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if paused { paused = false } else if !isSending { advance() }
+                    if showReactions { showReactions = false }
+                    else if paused { paused = false } else if !isSending { advance() }
                 }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
@@ -824,13 +913,19 @@ struct StoryViewerView: View {
         // でした」が別の1本の画面に出ていた。**払って閉じるのは止めない**（圏外で
         // 返事を待つ間に閉じられなくなる）
         guard !isSending else { return }
-        switch StoryPlayback.leftTap(index: index, elapsed: clock.elapsed(at: Date()),
+        let now = Date()
+        let elapsed = StoryPlayback.leftTapElapsed(clock: clock.elapsed(at: now),
+                                                   sinceShown: now.timeIntervalSince(shownAt),
+                                                   isVideo: current?.isVideo ?? false,
+                                                   mediaReady: mediaReady)
+        switch StoryPlayback.leftTap(index: index, elapsed: elapsed,
                                      hasPreviousGroup: onGroupBack != nil) {
         case .previousGroup:
             onGroupBack?()
         case .restart:
             // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
-            clock.restart(running: !frozen && !(current?.isVideo ?? false), at: Date())
+            clock.restart(running: !frozen && !(current?.isVideo ?? false), at: now)
+            shownAt = now
             // **控えていた終わりを捨てる**（`StoryPlayback.afterRestart`）。読めなかった動画は
             // 見直しの合図を受けて終わりを知らせ直す（`StoryPlayback.restartAction`）
             (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
@@ -882,8 +977,11 @@ struct StoryViewerView: View {
     private func go(to target: Int) {
         guard visible.indices.contains(target) else { return }
         index = target
+        // 反応の並びは前の1本のもの（開いたまま次へ持ち越さない）
+        showReactions = false
         // 止めておく。絵が出て（`mediaReady`）止める理由が無くなったら `syncClock` が動かす
         clock.restart(running: false, at: Date())
+        shownAt = Date()
         pendingEnd = nil
         endedIds = []
         // 別の1本へ移ったら止めていたのを解く（払って移ると止まったまま進んでいた）
@@ -1182,8 +1280,13 @@ struct StoryViewerView: View {
     /// ブロックの手順は `UserProfileViewModel.block` と同じ
     /// （サーバー → 端末の控え → 公開一覧 → toast）。兄弟は全部同じ投稿者
     /// なので、成功したら画面ごと閉じる
+    ///
+    /// **返事を待つ間は送っている扱い**（`keep`・`deleteStory` と同じ）。確認を閉じた時点で
+    /// 時計と払いが動き出し、次の1本・次の人へ移った後に `leaveGroup` がもう1人飛ばしていた
     private func block(_ story: Story) async {
-        guard let userId = story.userId else { return }
+        guard !isSending, let userId = story.userId else { return }
+        isSending = true
+        defer { isSending = false }
         let owner = hidden.owner
         do {
             try await environment.moderation.block(userId: userId)
@@ -1314,17 +1417,41 @@ struct StoryViewerView: View {
                         .disabled(isSending || !canSend)
                         .accessibilityLabel(Labels.Common.send)
                     } else {
-                        // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）
-                        Button {
-                            Task { await sendReaction(StoryService.reactions[0], to: story) }
-                        } label: {
-                            Image(systemName: "heart")
-                                .font(.system(size: 22))
-                                .foregroundStyle(.white)
-                                .webTappable()
+                        // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）。
+                        // **長押しで6つから選ぶ**（サーバーは6つとも受ける。以前は ❤️ だけだった）。
+                        // 🔴 **Button にしない。** Button に長押しを足すと、OS の版によっては長押しの
+                        // あとに Button の送信も走る（❤️ が送られてから並びが開く）。押すと長押しを
+                        // 別々の手振りにして、どちらか片方だけが効くようにする
+                        Image(systemName: "heart")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white)
+                            .webTappable()
+                            .opacity(isSending ? 0.4 : 1)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                guard !isSending else { return }
+                                showReactions = false
+                                Task { await sendReaction(StoryService.reactions[0], to: story) }
+                            }
+                            .onLongPressGesture(minimumDuration: 0.35, perform: {
+                                guard !isSending else { return }
+                                showReactions = true
+                            })
+                            .accessibilityElement()
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel(L("いいね", "Like"))
+                            .accessibilityHint(L("長押しでほかの反応を選べます", "Press and hold for more reactions"))
+                            .accessibilityAction {
+                                guard !isSending else { return }
+                                Task { await sendReaction(StoryService.reactions[0], to: story) }
+                            }
+                            .accessibilityAction(named: L("反応を選ぶ", "Choose a reaction")) {
+                                guard !isSending else { return }
+                                showReactions = true
+                            }
+                        .overlay(alignment: .bottomTrailing) {
+                            if showReactions { reactionPicker(for: story) }
                         }
-                        .disabled(isSending)
-                        .accessibilityLabel(L("いいね", "Like"))
                     }
                 }
             }
@@ -1623,6 +1750,30 @@ struct StoryViewerView: View {
         }
     }
 
+    /// ♡ の長押しで出す6つの反応。**選んだら送って閉じる**。写真を押すと送らずに閉じる
+    private func reactionPicker(for story: Story) -> some View {
+        HStack(spacing: 4) {
+            ForEach(StoryService.reactions, id: \.self) { emoji in
+                Button {
+                    showReactions = false
+                    Task { await sendReaction(emoji, to: story) }
+                } label: {
+                    Text(emoji)
+                        .font(.system(size: 28))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(StoryPlayback.reactionName(emoji))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .jpGlass(in: Capsule(), border: 0.35)
+        .fixedSize()
+        // ♡ の真上に出す（足元の行を押し広げない）
+        .offset(y: -56)
+    }
+
     /// 定型の反応を送る。
     private func sendReaction(_ emoji: String, to story: Story) async {
         guard !isSending else { return }
@@ -1630,7 +1781,7 @@ struct StoryViewerView: View {
         defer { isSending = false }
         do {
             try await environment.stories.react(id: story.id, emoji: emoji)
-            message = L("いいねを送りました", "Like sent")
+            message = StoryPlayback.reactionSentMessage(emoji)
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
         }

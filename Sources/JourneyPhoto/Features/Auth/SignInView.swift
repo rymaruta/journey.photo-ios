@@ -193,6 +193,12 @@ struct SignInView: View {
                 JPField(L("表示名（あとで変えられます）", "Display name (you can change it later)")) {
                     TextField("", text: $displayName)
                         .textContentType(.name)
+                        // 登録後にプロフィールへ書く名前。サーバーは 100 を超えたぶんを黙って切るので、
+                        // 欄で止める（プロフィール編集と同じ `PostLimits.Profile.displayName`）
+                        .onChange(of: displayName) { old, new in
+                            let kept = PostLimits.limited(old: old, new: new, limit: PostLimits.Profile.displayName)
+                            if kept != new { displayName = kept }
+                        }
                 }
                 Text(AuthMessage.passwordRule)
                     .font(.caption)

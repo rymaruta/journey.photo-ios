@@ -268,6 +268,7 @@ struct UserProfileView: View {
     /// 押して一覧を開けるのは、ログインしていて1人以上いるときだけ
     /// （`FollowCounts.isTappable`）。一覧の口は認証が要るので、未ログインで
     /// 押せると赤字だけの行き止まりになる。
+    /// 人のページのフォロー数は読み込み中・失敗のとき 0 と出る（2026-09-30 判断: 見張りとの組み合わせで回帰が続いたため、マイページだけ直してある）
     private var counts: some View {
         HStack(spacing: 20) {
             ForEach(ProfileLine.counts(followers: model.followers, following: model.following,
@@ -578,6 +579,8 @@ final class UserProfileViewModel: ObservableObject {
         }
     }
 
+    /// ブロック後のフォロー数は次に読み込むまで古いまま（2026-09-30 判断: 同時の読み込み・
+    /// 人の切り替え・失敗との組み合わせで回帰が続いたため）
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
         actionMessage = nil

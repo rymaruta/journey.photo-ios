@@ -28,6 +28,10 @@ struct OfficialSpotView: View {
     let spots: [OfficialSpot]
     /// 「この場所の写真」を引く公開写真。`spotId` で紐づいたものだけ数える
     let photos: [Photo]
+    /// `photos` が公開写真の全部か。**false なら「この場所の写真（0）まだありません」を言わない**
+    /// ——写真の一覧を持たない画面（ストーリーの撮影地から開いたとき）が空を渡すと、
+    /// 紐づいた写真があっても「まだありません」と事実と違うことを言っていた
+    var photosKnown = true
 
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
@@ -186,9 +190,14 @@ struct OfficialSpotView: View {
                 .font(JPFont.display(28, relativeTo: .title))
                 .foregroundStyle(WebTheme.foreground)
             // 「[都道府県] · [市区町村] · N枚の写真」。N は数えた値
-            Text(SpotScreen.subtitle(region: spot.regionLabel, photoCount: linked.count))
-                .font(.system(size: 12))
-                .foregroundStyle(WebTheme.muted2)
+            let subtitle = SpotScreen.subtitle(region: spot.regionLabel,
+                                               photoCount: photosKnown || !linked.isEmpty ? linked.count : nil)
+            // 地域も枚数も無い（ストーリーから開いた地域の無いスポット）なら行を置かない
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(WebTheme.muted2)
+            }
         }
         .padding(.horizontal, 16)
     }
@@ -428,7 +437,9 @@ struct OfficialSpotView: View {
     @ViewBuilder
     private var spotPhotos: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SpotDetailParts.sectionHeader(L("この場所の写真（\(linked.count)）", "Photos here (\(linked.count))"))
+            if photosKnown || !linked.isEmpty {
+                SpotDetailParts.sectionHeader(L("この場所の写真（\(linked.count)）", "Photos here (\(linked.count))"))
+            }
             if postedHere {
                 // 一覧は開いた時点の写しなので、上げた写真はすぐには並ばない。
                 // 「まだありません」のままだと、上がっていないと思ってもう一度上げてしまう
@@ -438,7 +449,7 @@ struct OfficialSpotView: View {
                     .foregroundStyle(WebTheme.muted)
                     .padding(.horizontal, 16)
             }
-            if linked.isEmpty && !postedHere {
+            if linked.isEmpty && !postedHere && photosKnown {
                 // **空を隠さない。** 紐づいた写真が無いことをそのまま言う
                 Text(L("まだありません。ここで撮った写真があれば、最初の1枚にしませんか。",
                        "None yet. If you've shot here, share the first one."))
@@ -481,7 +492,7 @@ struct OfficialSpotView: View {
                 VStack(spacing: 0) {
                     ForEach(near, id: \.spot.id) { item in
                         NavigationLink {
-                            OfficialSpotView(spot: item.spot, spots: spots, photos: photos)
+                            OfficialSpotView(spot: item.spot, spots: spots, photos: photos, photosKnown: photosKnown)
                         } label: {
                             nearbyRow(item.spot, km: item.km)
                         }

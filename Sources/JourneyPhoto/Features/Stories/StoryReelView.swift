@@ -23,6 +23,7 @@ struct StoryReelView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var environment: AppEnvironment
 
     @State private var group: Int
     /// 指で動かしている間の値。**打ち切られても（通知センター・電話・背面）自動で
@@ -53,6 +54,8 @@ struct StoryReelView: View {
     /// たびに渡す束を変えると、閲覧画面の中の位置と食い違い、通報した1本や見ていない
     /// 1本に「見た」が飛んだ（7a3894b のレビュー）
     @State private var shown: StoryReel.Group?
+    /// 撮影スポットの索引（撮影地 → ガイド）。**並び全体で一度だけ読み、閲覧画面へ渡す**
+    @State private var spotIndex: [OfficialSpot] = []
 
     struct Finger: Equatable {
         var axis: StoryReel.Axis?
@@ -104,10 +107,10 @@ struct StoryReelView: View {
                 Color.black.ignoresSafeArea()
                 // 隣の面（画面の外に倒して置いておく）
                 if let previous = neighbor(-1) {
-                    face(StoryReelFace(story: representative(of: previous)), minX: -width + dragX)
+                    face(StoryReelFace(story: representative(of: previous, back: true)), minX: -width + dragX)
                 }
                 if let next = neighbor(1) {
-                    face(StoryReelFace(story: representative(of: next)), minX: width + dragX)
+                    face(StoryReelFace(story: representative(of: next, back: false)), minX: width + dragX)
                 }
                 if let current = shown {
                     face(viewer(current), minX: dragX)
@@ -121,6 +124,13 @@ struct StoryReelView: View {
             .offset(y: max(0, dragY))
             .onAppear { width = max(1, geo.size.width) }
             .onChange(of: geo.size.width) { _, w in width = max(1, w) }
+            // 撮影スポットの索引は並び全体で**一度だけ**（取れなければ撮影地を結ばないだけ）
+            .task {
+                guard spotIndex.isEmpty else { return }
+                let fetched = try? await environment.spots.fetchIndex()
+                guard !Task.isCancelled, let fetched else { return }
+                spotIndex = fetched
+            }
         }
         .simultaneousGesture(
             DragGesture(minimumDistance: StoryReel.axisThreshold)
@@ -193,15 +203,16 @@ struct StoryReelView: View {
             swipesHandledOutside: true,
             onDropped: { removed.insert($0) },
             onSwipeLockChange: { swipeLocked = $0 },
+            spotIndex: spotIndex,
             voteStates: voteStates,
             onVoted: { voteStates[$0] = $1 },
             onSeen: onSeen,
             onDeleted: onDeleted)
     }
 
-    /// 隣の面に出す1本（その人の束で最初に開く1本）
-    private func representative(of index: Int) -> Story? {
-        guard let g = liveGroup(index) else { return nil }
+    /// 隣の面に出す1本（回って入ったときに開く1本・`StoryReel.entering`）
+    private func representative(of index: Int, back: Bool) -> Story? {
+        guard let g = liveGroup(index).map({ StoryReel.entering($0, back: back) }) else { return nil }
         return g.stories.indices.contains(g.start) ? g.stories[g.start] : g.stories.first
     }
 
@@ -230,8 +241,9 @@ struct StoryReelView: View {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(Int(Self.turnDuration * 1000)))
             // 回りきった面（写真1枚）を本物の閲覧画面に差し替える。**動きは付けない**
+            let back = target < group
             group = target
-            shown = liveGroup(target)
+            shown = liveGroup(target).map { StoryReel.entering($0, back: back) }
             settleX = 0
             turning = false
             // 回っている間にその人の束が空になった（削除の完了・ブロックの同期）。

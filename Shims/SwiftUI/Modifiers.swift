@@ -408,8 +408,9 @@ extension View {
     public func coordinateSpace(_ space: NamedCoordinateSpace) -> Self { self }
     /// 値が変わったら端末を震わせる（iOS 17）
     public func sensoryFeedback<T: Equatable>(_ feedback: SensoryFeedback, trigger: T) -> Self { self }
-    /// 決まった操作（`.escape` ＝ VoiceOver の2本指の Z で閉じる）
-    public func accessibilityAction(_ kind: AccessibilityActionKind, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 読み上げでの既定の操作（ダブルタップ）。本物と同じ形
+    public func accessibilityAction(_ actionKind: AccessibilityActionKind = .default,
+                                    _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func swipeActions<C: View>(allowsFullSwipe: Bool = true, @ViewBuilder content: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
 }
 
@@ -564,7 +565,7 @@ public struct GestureMask: OptionSet, Sendable {
     public static let all: GestureMask = [.gesture, .subviews]
 }
 
-/// `accessibilityAction(_:_:)` が受ける操作の種類。本物は struct
+/// 読み上げの操作の種類（本物は `.default`・`.escape`・`.magicTap` など）
 public struct AccessibilityActionKind {
     public static let `default` = AccessibilityActionKind()
     public static let escape = AccessibilityActionKind()
