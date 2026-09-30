@@ -6,6 +6,7 @@ import SwiftUI
 /// 写真を「並べる」のではなく「読ませる」——ここが一覧との違い。
 struct TripBookView: View {
 
+    /// 開いたときの旅。**描くのは `book`**（消した写真を落としたもの）
     let trip: TripBook.Trip
     /// 写真に個別ページが在るか（`PhotoDetailView.fromPublicFeed`）。
     /// **公開一覧に載っている写真だけ真**（`LikedPhotos.fromPublicFeed`）——旅は自分の
@@ -15,6 +16,14 @@ struct TripBookView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var hidden: ModerationStore
+    /// 一冊から落とす「見せない」の写し。**戻ってきたとき（`onAppear`）に取る**
+    /// （`CollectionPhotosScreen` と同じ）。旅は開いた時点の値なので、ここから開いた
+    /// 詳細で消した写真が、戻っても表紙・数字・ページに残っていた
+    @State private var dropped = ModerationSnapshot()
+
+    /// 消した・非公開にした写真を落とした一冊
+    private var book: TripBook.Trip { Self.visible(trip, dropped: dropped) }
     /// 共有する1枚の画像（`TripBookCard`）。**作れるまでは文だけを配る**（表紙が読めない・圏外でも共有できる）
     @State private var cardURL: URL?
     /// その画像を作った人。**人が替わったときだけ**共有を文に戻す（表紙が替わっただけなら前の画像のまま・
@@ -36,7 +45,8 @@ struct TripBookView: View {
             .padding(.bottom, 32)
         }
         .webScreen()
-        .navigationTitle(TripBook.title(of: trip))
+        .onAppear { dropped = hidden.snapshot }
+        .navigationTitle(TripBook.title(of: book))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // 板の右上の「共有」。**配るのは題と期間の文だけ**（URL を持たない理由は
@@ -46,11 +56,11 @@ struct TripBookView: View {
                     // 表紙と題・期間・数字を載せた1枚（2026-09-30）。作れるまでは文
                     if let cardURL {
                         // 共有シートに題を出す（ファイル名を出さない）
-                        ShareLink(item: cardURL, preview: SharePreview(TripBook.title(of: trip))) {
+                        ShareLink(item: cardURL, preview: SharePreview(TripBook.title(of: book))) {
                             Image(systemName: "square.and.arrow.up")
                         }
                     } else {
-                        ShareLink(item: TripBook.shareText(of: trip)) { Image(systemName: "square.and.arrow.up") }
+                        ShareLink(item: TripBook.shareText(of: book)) { Image(systemName: "square.and.arrow.up") }
                     }
                 }
                 .webToolbarIcon()
@@ -60,7 +70,7 @@ struct TripBookView: View {
         // 開いたときに1回だけ作っておく（押してから待たせない）。同じ旅なら同じファイルを上書き。
         // **表紙・枚数が変わったら作り直す**（表紙はいいねの数で選ぶので、写真が同じでも替わる）
         // **人が替わったら作り直す**（サインアウトしても この画面は残る。前の人の画像を指したままにしない）
-        .task(id: "\(trip.id)|\(trip.cover?.id ?? "")|\(trip.photos.count)|\(auth.userId ?? "")") {
+        .task(id: "\(book.id)|\(book.cover?.id ?? "")|\(book.photos.count)|\(auth.userId ?? "")") {
             if cardOwner != auth.userId { cardURL = nil }
             cardOwner = auth.userId
             // **作れなかったら前の画像を捨てる**（表紙・枚数が替わったのに前の1枚を配っていた・
@@ -77,19 +87,19 @@ struct TripBookView: View {
         let owner = auth.userId
         guard owner != nil else { return nil }
         var cover: Data?
-        if let url = trip.cover?.detailImageURL {
+        if let url = book.cover?.detailImageURL {
             cover = await TripBookCardRenderer.coverData(url)
         }
         guard !Task.isCancelled else { return nil }
-        let lines = TripBookCard.lines(of: trip, distance: distance)
-        let focal = trip.cover?.focalPoint
+        let lines = TripBookCard.lines(of: book, distance: distance)
+        let focal = book.cover?.focalPoint
         let data = await Task.detached(priority: .utility) {
             TripBookCardRenderer.render(lines, cover: cover, focal: focal)
         }.value
         // 🔴 **作っている間に人が替わっていたら書かない**。サインアウトの片付け（`TripBookCard.removeAll`）の
         // 後に書くと、前の人の表紙の写真が次の人の端末に残った（6ff1954 のレビュー）
         guard !Task.isCancelled, !data.isEmpty, auth.userId == owner, owner != nil else { return nil }
-        return TripBookCard.write(data, for: trip)
+        return TripBookCard.write(data, for: book)
     }
 
     // MARK: - 表紙
@@ -97,7 +107,7 @@ struct TripBookView: View {
     /// 小見出し → 題 → 期間の範囲（板 03）
     private var cover: some View {
         ZStack(alignment: .bottomLeading) {
-            if let cover = trip.cover {
+            if let cover = book.cover {
                 Color.clear
                     .aspectRatio(3.0 / 4.0, contentMode: .fit)
                     .overlay {
@@ -119,11 +129,11 @@ struct TripBookView: View {
                     .foregroundStyle(Color.white.opacity(0.85))
                     // 読み上げは「旅の一冊」（「トリップブック」と英語で読ませない）
                     .accessibilityLabel(L("旅の一冊 · 自動でまとまった旅", "Trip book · Put together for you"))
-                Text(TripBook.title(of: trip))
+                Text(TripBook.title(of: book))
                     .font(JPFont.display(44, relativeTo: .largeTitle))
                     .foregroundStyle(WebTheme.foreground)
                     .shadow(color: Color.black.opacity(0.5), radius: 7, y: 2)
-                Text("\(TripBook.dateRange(from: trip.start, to: trip.end)) · \(TripBook.daysLabel(trip.days))")
+                Text("\(TripBook.dateRange(from: book.start, to: book.end)) · \(TripBook.daysLabel(book.days))")
                     .font(JPFont.mono(12, relativeTo: .caption))
                     .foregroundStyle(WebTheme.muted)
             }
@@ -138,8 +148,8 @@ struct TripBookView: View {
     /// つないだ合計**で、道のりではない（`TravelDistance`）。だから札は「直線」
     private var stats: some View {
         HStack(spacing: 1) {
-            statCell("\(trip.photos.count)", unit: nil, label: L("枚", "Photos"))
-            statCell("\(TripBook.placeCount(of: trip.photos))", unit: nil, label: L("撮影地", "Places"))
+            statCell("\(book.photos.count)", unit: nil, label: L("枚", "Photos"))
+            statCell("\(TripBook.placeCount(of: book.photos))", unit: nil, label: L("撮影地", "Places"))
             statCell(TripBook.distanceText(distance), unit: distance == nil ? nil : "km",
                      label: L("移動（直線）", "Distance (straight)"))
         }
@@ -185,7 +195,7 @@ struct TripBookView: View {
     /// **2か所以上のときだけ**出す（`TripBook.routeStops`）
     @ViewBuilder
     private var route: some View {
-        let stops = TripBook.sampledStops(TripBook.routeStops(of: trip))
+        let stops = TripBook.sampledStops(TripBook.routeStops(of: book))
         if !stops.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text(L("たどった場所", "Where you went"))
@@ -273,7 +283,7 @@ struct TripBookView: View {
     /// 段の頭は板と同じ DAY n／MM.dd
     private var pages: some View {
         VStack(alignment: .leading, spacing: 36) {
-            ForEach(TripBook.days(of: trip), id: \.number) { day in
+            ForEach(TripBook.days(of: book), id: \.number) { day in
                 VStack(alignment: .leading, spacing: 20) {
                     dayHeader(day)
                     ForEach(day.photos) { photo in
@@ -317,7 +327,7 @@ struct TripBookView: View {
                 // 旅の一冊は自分の写真だけ（`TripBook.shelfTrips(from: myPhotos)`）。
                 // 投稿直後の写真は個別ページがまだ無い（`PhotoLink`）ので、公開一覧に
                 // 載っているかで決める（`isPublic`）
-                PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: trip.photos)
+                PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: book.photos)
             } label: {
                 RemoteImage(url: photo.detailImageURL, contentMode: .fit)
                     .frame(maxWidth: .infinity)
@@ -352,8 +362,15 @@ struct TripBookView: View {
 
     // MARK: - 計算
 
+    /// 一冊から消した・非公開にした写真を落とす（`ModerationSnapshot.visible`・他の一覧と同じ）。
+    /// 題・期間は開いたときのまま（`id` も変えない——共有の画像を同じファイルに書く）
+    nonisolated static func visible(_ trip: TripBook.Trip, dropped: ModerationSnapshot) -> TripBook.Trip {
+        TripBook.Trip(id: trip.id, place: trip.place, start: trip.start, end: trip.end,
+                      photos: dropped.visible(trip.photos), timeZone: trip.timeZone)
+    }
+
     /// 移動（直線）。数えられなければ nil（枠には「—」）
-    private var distance: Double? { TravelDistance.countableTotal(of: trip.photos, timeZone: trip.timeZone) }
+    private var distance: Double? { TravelDistance.countableTotal(of: book.photos, timeZone: book.timeZone) }
 
     /// 数の升・ルート図の地（板の `#0b0b0c`）
     private static let cellColor = Color(red: 0x0B / 255.0, green: 0x0B / 255.0, blue: 0x0C / 255.0)

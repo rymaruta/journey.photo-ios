@@ -445,3 +445,25 @@ final class TripBookSpokenTests: XCTestCase {
         XCTAssertFalse(label.contains("DAY"))
     }
 }
+
+/// 一冊の中から開いた詳細で消した写真は、戻ったら一冊から落ちる
+/// （表紙・数字・ページが同じ `book` を見る）
+final class TripBookDroppedTests: XCTestCase {
+    private func photo(_ id: String, date: String, likes: Int = 0) throws -> Photo {
+        try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"\(id)\",\"src\":\"https://x/\(id).jpg\",\"userId\":\"owner\",\"date\":\"\(date)\",\"likes\":\(likes)}".utf8))
+    }
+
+    func testDeletedPhotoLeavesTheBook() throws {
+        let trip = try XCTUnwrap(TripBook.trips(from: [
+            try photo("a", date: "2026-05-01"),
+            try photo("b", date: "2026-05-02", likes: 9),
+            try photo("c", date: "2026-05-03"),
+        ]).first)
+        XCTAssertEqual(trip.cover?.id, "b")
+        let book = TripBookView.visible(trip, dropped: ModerationSnapshot(gone: ["b"]))
+        XCTAssertEqual(book.photos.map(\.id), ["a", "c"])
+        XCTAssertNotEqual(book.cover?.id, "b", "消した写真を表紙に残さない")
+        XCTAssertEqual(book.id, trip.id, "id は変えない（共有の画像を同じファイルに書く）")
+    }
+}

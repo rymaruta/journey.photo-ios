@@ -696,7 +696,7 @@ struct SearchView: View {
                         if i > 0 { Divider().overlay(WebTheme.border) }
                         NavigationLink {
                             OfficialSpotView(spot: spot, spots: officialSpots, photos: model.everything,
-                                             photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed, photos: model.everything))
+                                             photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.hasLoaded, photos: model.everything))
                         } label: {
                             spotRow(spot)
                         }

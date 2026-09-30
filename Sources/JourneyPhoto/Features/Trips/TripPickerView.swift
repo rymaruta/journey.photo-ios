@@ -398,13 +398,13 @@ struct TripPickerView: View {
         VStack(spacing: 12) {
             Spacer(minLength: 0)
             Text(model.deck.isEmpty
-                 ? L("新しく見せられる写真がありません", "No new photos to show")
+                 ? L("選べる撮影スポットがありません", "No places left to pick")
                  : L("ここまでで全部です", "That's all for now"))
                 .font(JPFont.rowTitle)
                 .foregroundStyle(WebTheme.foreground)
             Text(model.deck.isEmpty
-                 ? L("写真のある撮影スポットは、もう「行きたい」に入っています。",
-                     "Every photo spot with a photo is already on your wishlist.")
+                 ? L("「行きたい」に入れた場所は、ここには出しません。",
+                     "Places already on your wishlist aren't shown.")
                  : L("選んだ場所で旅行プランを作れます。", "Make a trip with the places you picked."))
                 .font(.footnote)
                 .foregroundStyle(WebTheme.muted2)
