@@ -622,8 +622,12 @@ struct PhotoMapView: View {
         // のどれでも。つまんだだけで現在地を見たままでも下げる——地図を自分で見始めた合図）。
         // こちらが寄せた回（現在地を追う・全体へ寄せる・拡大縮小のボタン）は下げない
         noneNearbyBanner.cameraMoved(byUser: camera.positionedByUser)
-        // 指で動かしたら、あとから語の当たりへ引き戻さない
-        if camera.positionedByUser { queryFraming.userMovedCamera() }
+        // 指で動かしたら、あとから語の当たりへも写真の範囲へも引き戻さない
+        // （現在地が無いまま読み込みの間に寄せた回、読み終えて写真の範囲へ戻り、札も消えていた）
+        if camera.positionedByUser {
+            queryFraming.userMovedCamera()
+            framedToPhotos = true
+        }
     }
 
     /// 地図の上に1行。**空の状態を隠さない**——ピンが消えただけの画面にしない
