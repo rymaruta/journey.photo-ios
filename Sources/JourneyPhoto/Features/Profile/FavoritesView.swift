@@ -42,6 +42,9 @@ struct FavoritesView: View {
     @State private var poolsFailed = false
     /// サーバーに聞けなかった回（端末のぶんは消さない。足りないことだけ伝える）
     @State private var partial = false
+    /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
+    /// （初回は `.task(id:)` が読む・`GalleryView`・`MyPageView` と同じ形）
+    @State private var didAppear = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -96,7 +99,12 @@ struct FavoritesView: View {
         // **戻ってきたら絞り直す。** 詳細画面でハートを外したぶんは、
         // その画面を閉じたこの時点で消える（見ている最中には消さない）
         // ブロック／通報したぶんも、同じく戻ってきたときに落とす
-        .onAppear { refilter() }
+        // 消した自分の写真も、戻ってきたときに読み直して落とす（`SavedPhotosView` と同じ）
+        .onAppear {
+            refilter()
+            if didAppear { Task { await load() } }
+            didAppear = true
+        }
     }
 
     private func refilter() {

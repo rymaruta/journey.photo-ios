@@ -28,6 +28,9 @@ struct SavedPhotosView: View {
     @State private var loaded = false
     /// 最後の読み込みで引き当て先が取れなかったか（「読み込めませんでした」はこの回だけ）
     @State private var failed = false
+    /// 一度でもこの画面が出たか。**戻ってきた回だけ読み直す**ための印
+    /// （初回は `.task(id:)` が読む・`GalleryView`・`MyPageView` と同じ形）
+    @State private var didAppear = false
 
     var body: some View {
         ScrollView {
@@ -56,7 +59,15 @@ struct SavedPhotosView: View {
         .navigationTitle(ProfileTab.favorites.label)
         .task(id: auth.state) { await load() }
         .refreshable { await load(force: true) }
-        .onAppear { refilter() }
+        // **戻ってきたら読み直す。** 自分の写真（`mine`）は `.task(id:)` と引き下げでしか
+        // 読まないので、消した自分の写真が一覧に残った。`mine` を「消した」印で絞る形は
+        // ホームで回帰が出てやめた（2026-09-30 判断）ので、ホームと同じく読み直す。
+        // `onAppear` はこの画面が前に出たときだけ走るので、開いている詳細は閉じない
+        .onAppear {
+            refilter()
+            if didAppear { Task { await load() } }
+            didAppear = true
+        }
     }
 
     /// マイページの「お気に入り」タブでも使う
