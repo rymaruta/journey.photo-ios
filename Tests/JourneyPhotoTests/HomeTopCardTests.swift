@@ -413,6 +413,52 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertNil(old.seasonalGuide)
         XCTAssertEqual(old.seasons, [])
     }
+    // MARK: - 今日の一問
+
+    private func quiz() throws -> DailyQuiz {
+        try XCTUnwrap(DailyQuiz.parse(Data(DailyQuizTests.json(date: "2026-09-27").utf8), date: "2026-09-27"))
+    }
+
+    /// 今日の一問は**今日のテーマの直後**・1年前より前。取れなかった日は出さない
+    func testQuizSitsRightAfterTheTheme() throws {
+        let q = try quiz()
+        let yearAgo = try photo("y", date: "2025-09-27")
+        let with = HomeTopCard.cards(now: now, plans: [], myPhotos: [yearAgo], openedBookDays: [],
+                                     quiz: q, timeZone: utc).map(\.slot)
+        XCTAssertEqual(with, ["theme", "quiz", "oneYearAgo"])
+        let without = HomeTopCard.cards(now: now, plans: [], myPhotos: [yearAgo], openedBookDays: [],
+                                        timeZone: utc).map(\.slot)
+        XCTAssertEqual(without, ["theme", "oneYearAgo"], "取れなかった日は札を出さない")
+    }
+
+    /// 今日の一問の答えと同じスポットの季節の札は、その日は出さない（名前つきの札と並んで答えが見える）
+    func testSeasonCardForTheAnswerSpotIsHiddenThatDay() throws {
+        let answerSpot = try spot("sp_000000000002")
+        let q = try quiz()
+        XCTAssertEqual(q.answer, answerSpot.spotId)
+        let slots = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [answerSpot], quiz: q, timeZone: utc).map(\.slot)
+        XCTAssertEqual(slots, ["theme", "quiz"])
+        // 問題が無い日は季節の札をそのまま出す
+        let plain = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [answerSpot], timeZone: utc).map(\.slot)
+        XCTAssertEqual(plain, ["inSeason", "theme"])
+    }
+
+    /// 「行きたい」の札も同じ（答えのスポットが行きたい場所に入っている日）
+    func testWishlistCardForTheAnswerSpotIsHiddenThatDay() throws {
+        let answerSpot = try spot("sp_000000000002")
+        let slots = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [answerSpot], wishlist: [SavedSpotKey.official(answerSpot.slug)],
+                                      quiz: try quiz(), timeZone: utc).map(\.slot)
+        XCTAssertFalse(slots.contains("wishlistSeason"))
+        XCTAssertFalse(slots.contains("inSeason"))
+        let plain = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [answerSpot], wishlist: [SavedSpotKey.official(answerSpot.slug)],
+                                      timeZone: utc).map(\.slot)
+        XCTAssertTrue(plain.contains("wishlistSeason"), "問題が無い日は出す（試験の前提）")
+    }
+
 }
 
 /// 札から開いた一冊の印（`OpenedTripBooks`）

@@ -48,6 +48,19 @@ struct HomeTopCardView: View {
     /// ——札が出ないだけ。索引は静的な JSON（Lambda を通らない）で、サービスが
     /// 60秒の控えと端末の控えを持つ。**一度取れたら画面が生きている間は取り直さない**
     @State private var spots: [OfficialSpot] = []
+    /// 今日の一問（取れなかった日は nil のまま＝札を出さない）。サービスが日付ごとに覚えるので、
+    /// 札から開いた画面は取り直さない
+    @State private var quiz: DailyQuiz?
+    /// 取り直した今日の一問。**差し替えはホームに戻ったとき（`onAppear`）だけ**——札の並びを
+    /// 読み込みの最中に変えると、札から開いていた問題の画面が閉じる（押した元のリンクが消える・
+    /// 一冊の札と同じ形・f3bcf5a のレビュー）
+    @State private var pendingQuiz: DailyQuiz?
+    /// ホームがいま見えているか（`onAppear`〜`onDisappear`）。**見えている間は札をその場で差し替え、
+    /// 札から開いた画面が前に出ている間だけ後回しにする**——ホームのまま前面に戻る回（いちばん多い）は
+    /// `onAppear` が来ないので、後回しだけにすると昨日の札が残り続けた（4621e39 のレビュー）
+    @State private var isShown = false
+    /// 今日の一問に答えたか（札の2行目を変える）。ホームに戻ったときに読み直す
+    @State private var quizAnswered = false
 
     private let opened = OpenedTripBooks()
 
@@ -55,6 +68,7 @@ struct HomeTopCardView: View {
         content
             .task(id: "\(auth.userId ?? "-")#\(reloadToken)#\(returnReloads)") { await load() }
             .task { await loadSpots() }
+            .task(id: "\(reloadToken)") { await loadQuiz() }
             // ホームに戻ってきたら、開いた一冊の印を読み直す（札を下げる）。
             // 札から旅行プランを開いていたら、プランも読み直す（`.task` の鍵を変えて）
             //
@@ -64,11 +78,14 @@ struct HomeTopCardView: View {
             .onAppear {
                 openedBooks = opened.ids(for: auth.userId)
                 wishedKeys = wishlist.spotIds
+                isShown = true
+                applyPendingQuiz()
                 if reloadPlansOnReturn {
                     reloadPlansOnReturn = false
                     returnReloads &+= 1
                 }
             }
+            .onDisappear { isShown = false }
             .onChange(of: auth.userId) { _, userId in
                 openedBooks = opened.ids(for: userId)
                 wishedKeys = wishlist.spotIds
@@ -86,7 +103,7 @@ struct HomeTopCardView: View {
     private var content: some View {
         let choices = HomeTopCard.cards(now: Date(), plans: plansOwner == auth.userId ? plans : [],
                                         myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
-                                        wishlist: wishedKeys)
+                                        wishlist: wishedKeys, quiz: quiz)
         if choices.count == 1, let only = choices.first {
             // 1枚の日はいまと同じ（左右 16 の余白で画面いっぱい）
             card(for: only, inCarousel: false)
@@ -208,6 +225,20 @@ struct HomeTopCardView: View {
             .buttonStyle(.plain)
         case .theme:
             DailyThemeCard(photos: themePhotos, myPhotos: myPhotos, inCarousel: inCarousel)
+        case .quiz(let quiz):
+            NavigationLink {
+                DailyQuizView(photos: themePhotos)
+            } label: {
+                card(eyebrow: "DAILY QUIZ", eyebrowLabel: L("今日の一問", "Today's question"),
+                     title: L("この写真はどこ？", "Where is this?"),
+                     line: quizAnswered
+                        ? L("答えました · 明日また新しい写真", "Answered · A new photo tomorrow")
+                        : L("4つの中から撮影地を当てる", "Guess the spot from four choices"),
+                     // 写真を出すなら作者とライセンスも出す（季節の札と同じ）
+                     detail: quiz.photo.credit,
+                     backdrop: nil, backdropURL: quiz.photo.url, inCarousel: inCarousel)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -309,6 +340,34 @@ struct HomeTopCardView: View {
         let fetched = try? await environment.spots.fetchIndex()
         guard !Task.isCancelled, let fetched else { return }
         spots = fetched
+    }
+
+    /// 今日の一問。**取れなかった日は札を出さない**（404・圏外とも）。静的な JSON なので
+    /// Lambda の同時実行には乗らない
+    private func loadQuiz() async {
+        let date = DailyQuiz.today()
+        if quiz?.date == date { return }
+        let result = try? await environment.quiz.fetch(date: date)
+        guard !Task.isCancelled else { return }
+        if case .ready(let fetched)? = result {
+            pendingQuiz = fetched
+        }
+        // 見えていればその場で整える（取れなければ昨日の札を下げる）。**見えていない＝札から開いた
+        // 画面が前に出ている間は触らない**——今日の一問の札・答えと同じスポットの季節の札が
+        // 消えると、押した元のリンクが消えて開いている画面が閉じる
+        if isShown { applyPendingQuiz() }
+    }
+
+    /// 今日の一問の札を整える（ホームが見えているときだけ呼ぶ）: 取り直したものがあれば差し替え、
+    /// **昨日の札は下げる**（0時をまたいだ・取り直しに失敗した）。答えたかも読み直す
+    private func applyPendingQuiz() {
+        if let pendingQuiz {
+            quiz = pendingQuiz
+            self.pendingQuiz = nil
+        } else if let current = quiz, current.date != DailyQuiz.today() {
+            quiz = nil
+        }
+        quizAnswered = quiz.map { QuizAnswers().chosen(for: $0) != nil } ?? false
     }
 
     private func load() async {
