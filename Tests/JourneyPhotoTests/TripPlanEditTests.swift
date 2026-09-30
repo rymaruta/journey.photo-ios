@@ -160,10 +160,13 @@ final class TripPlanEditTests: XCTestCase {
     }
 
     func testRemoveDayRefusesWhenTheDayChangedWhileAsking() throws {
-        let removed = try XCTUnwrap(TripPlanEdit.removeDay(sample, at: 0, expected: sample[0]))
+        let removed = try XCTUnwrap(TripPlanEdit.removeDay(sample, at: 0, snapshot: sample))
         XCTAssertEqual(removed.map(ids), [["d"]])
-        // 確かめている間に日程が変わった（添字の先が別の日）→ 何もしない
-        XCTAssertNil(TripPlanEdit.removeDay(sample, at: 0, expected: sample[1]))
-        XCTAssertNil(TripPlanEdit.removeDay(sample, at: 2, expected: sample[1]))
+        // 確かめている間に日程が変わった（1日目が消えて添字の先が別の日）→ 何もしない
+        XCTAssertNil(TripPlanEdit.removeDay([sample[1]], at: 0, snapshot: sample))
+        XCTAssertNil(TripPlanEdit.removeDay(sample, at: 2, snapshot: sample))
+        // 同じ中身の日が2つ。確かめている間に片方が消えても、残りの日を消さない
+        let twin = TripDay(items: [s("a")])
+        XCTAssertNil(TripPlanEdit.removeDay([twin], at: 0, snapshot: [twin, twin]))
     }
 }

@@ -19,10 +19,11 @@ enum TripPlanEdit {
         !day.items.isEmpty
     }
 
-    /// 日を消す。**確かめている間に日程が変わっていたら何もしない**（`nil`）——
-    /// 添字だけで消すと、ほかの日を消したあとの確認で別の日が消える
-    static func removeDay(_ days: [TripDay], at index: Int, expected: TripDay) -> [TripDay]? {
-        guard days.indices.contains(index), days[index] == expected else { return nil }
+    /// 日を消す。**確かめている間に日程が少しでも変わっていたら何もしない**（`nil`）——
+    /// 添字だけで消すと、ほかの日を消したあとの確認で別の日が消える。消す日の中身だけを比べると、
+    /// 同じ中身の日が並んでいて片方が差し替わったときに残りの日まで消えた（37b96ec のレビュー）
+    static func removeDay(_ days: [TripDay], at index: Int, snapshot: [TripDay]) -> [TripDay]? {
+        guard days == snapshot, days.indices.contains(index) else { return nil }
         var out = days
         out.remove(at: index)
         return out
