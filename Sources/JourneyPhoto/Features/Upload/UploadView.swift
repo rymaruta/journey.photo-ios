@@ -19,8 +19,9 @@ struct UploadView: View {
     private let initialTag: String?
     /// スポットの画面から開いたときの行き先
     private let initialSpot: UploadSpotTarget?
-    /// 全部上がって閉じるときに呼ぶ。渡すのは**スポットのページに並ぶ形で上がった枚数**
-    /// （スポットの画面が「投稿しました」を出すか決める）
+    /// スポットのページに並ぶ形で1枚上がるたび・全部上がって閉じるときに呼ぶ。
+    /// 渡すのは**スポットのページに並ぶ形で上がった枚数**（スポットの画面が
+    /// 「投稿しました」を出すか決める）。**何度呼ばれても同じ結果になる受け手に渡す**
     private let onPosted: ((Int) -> Void)?
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil) {
@@ -83,6 +84,11 @@ struct UploadView: View {
         } message: {
             Text(L("選んだ写真と、書いた題・説明は残りません。",
                    "The photos you picked and what you wrote won't be kept."))
+        }
+        // **上がった時点で知らせる。** × や下に払って閉じる時点で知らせると、
+        // 一部だけ上がった・曲だけ付かなかったまま下に払って閉じた回が漏れる
+        .onChange(of: model.postedToSpot) { _, n in
+            if n > 0 { onPosted?(n) }
         }
         .onChange(of: model.didPostAll) { _, posted in
             // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
