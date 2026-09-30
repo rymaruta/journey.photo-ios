@@ -361,14 +361,15 @@ struct UserProfileView: View {
     }
 
     /// フォロー一覧を開く丸（板 31: 人と＋の印・44×36 の縁取り）。
-    /// **開けるときだけ出す**（数の札と同じ `FollowCounts.isTappable`）——
+    /// **開けるときだけ出す**（数の札と同じ `opensList`）——
     /// 開く先はフォロワーから、居なければフォロー中から（一覧の中で切り替えられる）
     @ViewBuilder
     private var followListButton: some View {
-        let total = model.followers + model.following
-        if FollowCounts.isTappable(signedIn: auth.userId != nil, count: total) {
+        let signedIn = auth.userId != nil
+        let toFollowers = Self.opensList(model.followerCount, signedIn: signedIn)
+        if toFollowers || Self.opensList(model.followingCount, signedIn: signedIn) {
             NavigationLink {
-                FollowListView(userId: userId, kind: model.followers > 0 ? .followers : .following)
+                FollowListView(userId: userId, kind: toFollowers ? .followers : .following)
             } label: {
                 Image(systemName: "person.badge.plus")
                     .font(.system(size: 16))
@@ -492,9 +493,12 @@ final class UserProfileViewModel: ObservableObject {
         let stats = try? await environment.social.followStats(userId: userId)
         guard current() else { return }
         if let stats {
-            if writes == followWrites { followers = stats.followers }
             following = stats.following
-            followStatsRead = true
+            // フォロワー数を書かなかった回は「読めた」にしない（書いていない 0 を数として出す）
+            if writes == followWrites {
+                followers = stats.followers
+                followStatsRead = true
+            }
         } else if followStatsRead != true, !Task.isCancelled {
             // 一度読めた数は、読み直しの失敗で「—」にしない
             followStatsRead = false
@@ -599,6 +603,7 @@ final class UserProfileViewModel: ObservableObject {
             // サーバーの答えは確かな値——外したあとにフォローし直すとき、また取り直しに行かない
             followUnknown = false
             followers = result.followers
+            followStatsRead = true
         } catch {
             // 前の人が押した失敗を、次の人の画面に出さない
             guard lastViewerId == viewer else { return }
