@@ -190,6 +190,9 @@ struct PhotoMapView: View {
         // 新しい中身に差し替える（札だけ古い写真と出典のまま残らないように）
         // 索引が届いてもピンが空のまま（語がスポットにも当たらない）だと上の知らせは来ない。
         // 取り終えたことで「何にも当たらなかった」と決める
+        .onChange(of: model.aliasesSettled) { _, _ in
+            frameToQueryIfReady()
+        }
         .onChange(of: model.officialIndexState) { _, _ in
             frameToQueryIfReady()
         }
@@ -293,7 +296,8 @@ struct PhotoMapView: View {
     /// 索引も取り終えて何にも当たらないと決まったら、印を下ろす（現在地の自動の寄せも戻す）
     private func frameToQueryIfReady() {
         guard model.loaded else { return }
-        let settled = model.officialIndexState != .loading
+        // 別名まで取り終えてから「当たらなかった」と決める（別名だけで当たる語がある）
+        let settled = model.officialIndexState != .loading && model.aliasesSettled
         guard let queryFrame = queryFraming.frameIfReady(model.frame, settled: settled) else { return }
         framedToPhotos = true
         frame(queryFrame)

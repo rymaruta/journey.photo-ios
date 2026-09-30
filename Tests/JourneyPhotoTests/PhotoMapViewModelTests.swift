@@ -260,14 +260,16 @@ extension PhotoMapViewModelTests {
         XCTAssertFalse(model.hasNothingToShow, "別名で当たるのに「見つかりませんでした」")
     }
 
-    /// 🔴 **「索引を取り終えた」と知らせた時点で、別名のピンがもう出ている。** 先に知らせると、
-    /// 探すから別名だけで当たる語が来た回に「当たらなかった」と決まり、語への寄せが下りていた
-    func testIndexReadyOnlyAfterAliasesArrive() async {
+    /// 🔴 **別名を取り終えた印が立った時点で、別名のピンがもう出ている。** 印より先に
+    /// 「当たらなかった」と決めると、探すから別名だけで当たる語が来た回に語への寄せが下りていた
+    func testAliasesSettledOnlyAfterAliasPinsAreIn() async {
         let model = PhotoMapViewModel()
         model.query = "天空の鳥居"
         let loading = Task { await model.load(environment: environment(
             spots: spotsJSON, aliases: #"[{"s":"takaya-jinja","n":"高屋神社","a":["天空の鳥居"]}]"#)) }
-        while model.officialIndexState == .loading { await Task.yield() }
+        var spins = 0
+        while !model.aliasesSettled && spins < 100_000 { spins += 1; await Task.yield() }
+        XCTAssertTrue(model.aliasesSettled, "別名を取り終えた印が立たない")
         XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja"],
                        "取り終えたと知らせたのに、別名のピンがまだ無い（寄せが下りる）")
         await loading.value

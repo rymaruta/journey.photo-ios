@@ -69,6 +69,8 @@ final class PhotoMapViewModel: ObservableObject {
     /// 名前・読み・地域だけで当てる。**「さがす」と同じ当て方にする**——別名で当たったスポットを
     /// 地図へ持ってきた回に「見つかりませんでした」にしない。届くのは1回なので知らせる
     @Published private(set) var spotAliases: [String: [String]] = [:]
+    /// 別名を取り終えたか（取れなかった回も立つ）。語への寄せの当たり外れはこれを待って決める
+    @Published private(set) var aliasesSettled = false
     enum IndexState { case loading, ready, failed }
 
     /// 地図に置く撮影スポットのピン。**寄せたときと、名前で絞ったときだけ**
@@ -138,17 +140,19 @@ final class PhotoMapViewModel: ObservableObject {
         // 入れ替える。取れなくても写真は出す——索引は無くても地図は成り立つ
         indexTask = Task { [weak self] in
             let fetched = try? await environment.spots.fetchIndex()
-            // **別名も取り終えてから「索引を取り終えた」にする。** 先に取り終えたと
-            // 知らせると、探すから別名だけで当たる語が来た回に「当たらなかった」と
-            // 決まって語への寄せ（`MapQueryFraming`）が下り、あとで別名のピンが
-            // 出ても寄らなかった。別名は控えがあればすぐ返る・取れなければ空
+            self?.officialSpots = fetched ?? []
+            self?.refreshOfficialPins()
+            self?.officialIndexState = fetched == nil ? .failed : .ready
+            // 別名は索引のあと（索引のピンを待たせない）。届いたらピンを数え直し、
+            // **取り終えた印を立てる**——語への寄せが「当たらなかった」と決めてよいのは
+            // 別名まで見てから（探すから別名だけで当たる語が来た回に、寄せが下りていた）
             let aliases = fetched == nil ? [:] : await environment.spots.fetchAliases()
             guard let self else { return }
-            self.officialSpots = fetched ?? []
-            self.spotAliases = aliases
-            // ピンを数え直してから知らせる（知らせを受けた側が、別名込みのピンで寄せを決める）
-            self.refreshOfficialPins()
-            self.officialIndexState = fetched == nil ? .failed : .ready
+            if !aliases.isEmpty {
+                self.spotAliases = aliases
+                self.refreshOfficialPins()
+            }
+            self.aliasesSettled = true
         }
         do {
             photos = try await environment.gallery.fetchPhotos()
