@@ -56,7 +56,9 @@ struct PlaceSearchField: View {
                     // 🔴 **位置のある写真は、写真の座標のまま。** スポットの座標（約1kmに丸めた値・
                     // 3km 先のこともある）で撮った位置を置き換えて「正確」として送っていた。
                     // スポットの座標を使うのは位置の無い写真だけ（`UploadViewModel.append` と同じ決まり）
-                    if near == nil { coords = spot.coords }
+                    // 位置のある写真では**前に選んだ地名の座標も捨てる**（残すと名前はスポット、
+                    // 座標は前の地名のまま「正確」として送られた）。nil＝写真の座標のまま
+                    coords = PlaceSpotSuggestions.coordsAfterPicking(spot, photoHasPosition: near != nil)
                     location = spot.name
                     spotSuggestions = []
                     suggestions = []

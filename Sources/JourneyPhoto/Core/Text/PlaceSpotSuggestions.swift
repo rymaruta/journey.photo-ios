@@ -41,6 +41,16 @@ enum PlaceSpotSuggestions {
         return Array(byDistance(matched, from: near).map(\.spot).prefix(limit))
     }
 
+    /// スポットを選んだときに欄へ入れる座標。
+    ///
+    /// 🔴 **位置のある写真は nil（写真の座標のまま）。** スポットの座標（約1kmに丸めた値・3km 先の
+    /// こともある）で撮った位置を置き換えて「正確」として送っていた。前に選んだ地名の座標も
+    /// 残さない（残すと名前はスポット、座標は前の地名になった）。位置の無い写真だけスポットの座標
+    /// （`UploadViewModel.append` のスポットから開いた回と同じ決まり）
+    static func coordsAfterPicking(_ spot: OfficialSpot, photoHasPosition: Bool) -> Photo.Coords? {
+        photoHasPosition ? nil : spot.coords
+    }
+
     /// 近い順（同じ距離は slug 順・毎回同じ並び）
     private static func byDistance(_ spots: [OfficialSpot], from here: Photo.Coords) -> [(spot: OfficialSpot, km: Double)] {
         spots

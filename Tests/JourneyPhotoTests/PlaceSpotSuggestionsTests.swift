@@ -48,4 +48,11 @@ final class PlaceSpotSuggestionsTests: XCTestCase {
         let result = PlaceSpotSuggestions.suggestions(query: "滝", near: here, index: spots + [noCoords, draft])
         XCTAssertEqual(result.map(\.slug), ["s4", "s3", "s2"])
     }
+
+    /// 位置のある写真では、スポットを選んでも座標を入れない（写真の座標のまま・前の地名の座標も捨てる）
+    func testPickingASpotKeepsThePhotoPosition() throws {
+        let s = try spot("s", name: "高屋神社", lat: 34.12, lng: 133.63)
+        XCTAssertNil(PlaceSpotSuggestions.coordsAfterPicking(s, photoHasPosition: true))
+        XCTAssertEqual(PlaceSpotSuggestions.coordsAfterPicking(s, photoHasPosition: false), s.coords)
+    }
 }
