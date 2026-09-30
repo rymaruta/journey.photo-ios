@@ -171,6 +171,11 @@ open class MKMapItem: NSObject {
     public init(placemark: MKPlacemark) { self.placemark = placemark }
     @discardableResult
     open func openInMaps(launchOptions: [String: Any]? = nil) -> Bool { true }
+    /// 今いる場所（経路の起点に使う・本物と同じ）
+    open class func forCurrentLocation() -> MKMapItem { MKMapItem() }
+    /// 複数の地点を渡して開く（2つなら1つ目から2つ目への経路・本物と同じ）
+    @discardableResult
+    open class func openMaps(with mapItems: [MKMapItem], launchOptions: [String: Any]? = nil) -> Bool { true }
 }
 
 public let MKLaunchOptionsDirectionsModeKey = "MKLaunchOptionsDirectionsMode"

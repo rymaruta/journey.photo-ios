@@ -14,6 +14,12 @@ struct TripBookView: View {
     var isPublic: (Photo) -> Bool = { _ in false }
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
+    /// 共有する1枚の画像（`TripBookCard`）。**作れるまでは文だけを配る**（表紙が読めない・圏外でも共有できる）
+    @State private var cardURL: URL?
+    /// その画像を作った人。**人が替わったときだけ**共有を文に戻す（表紙が替わっただけなら前の画像のまま・
+    /// 同じファイルを上書きするので、作り直しの間に共有のボタンが文に切り替わらない）
+    @State private var cardOwner: String?
 
     var body: some View {
         ScrollView {
@@ -36,13 +42,54 @@ struct TripBookView: View {
             // 板の右上の「共有」。**配るのは題と期間の文だけ**（URL を持たない理由は
             // `TripBook.shareText`）
             ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: TripBook.shareText(of: trip)) {
-                    Image(systemName: "square.and.arrow.up")
+                Group {
+                    // 表紙と題・期間・数字を載せた1枚（2026-09-30）。作れるまでは文
+                    if let cardURL {
+                        // 共有シートに題を出す（ファイル名を出さない）
+                        ShareLink(item: cardURL, preview: SharePreview(TripBook.title(of: trip))) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    } else {
+                        ShareLink(item: TripBook.shareText(of: trip)) { Image(systemName: "square.and.arrow.up") }
+                    }
                 }
                 .webToolbarIcon()
                 .accessibilityLabel(L("共有", "Share"))
             }
         }
+        // 開いたときに1回だけ作っておく（押してから待たせない）。同じ旅なら同じファイルを上書き。
+        // **表紙・枚数が変わったら作り直す**（表紙はいいねの数で選ぶので、写真が同じでも替わる）
+        // **人が替わったら作り直す**（サインアウトしても この画面は残る。前の人の画像を指したままにしない）
+        .task(id: "\(trip.id)|\(trip.cover?.id ?? "")|\(trip.photos.count)|\(auth.userId ?? "")") {
+            if cardOwner != auth.userId { cardURL = nil }
+            cardOwner = auth.userId
+            // **作れなかったら前の画像を捨てる**（表紙・枚数が替わったのに前の1枚を配っていた・
+            // eaf0c48 のレビュー）。取り消されただけ（すぐ次の作り直しが来る）なら触らない
+            let made = await makeCard()
+            if !Task.isCancelled { cardURL = made }
+        }
+
+    }
+
+    /// 共有する1枚を作って、端末の一時置き場に書く。**作れなければ nil**（文で共有する）。
+    /// 描くのは**画面の処理の外で**（写真の展開と JPEG の書き出しで画面を引っかけない）
+    private func makeCard() async -> URL? {
+        let owner = auth.userId
+        guard owner != nil else { return nil }
+        var cover: Data?
+        if let url = trip.cover?.detailImageURL {
+            cover = await TripBookCardRenderer.coverData(url)
+        }
+        guard !Task.isCancelled else { return nil }
+        let lines = TripBookCard.lines(of: trip, distance: distance)
+        let focal = trip.cover?.focalPoint
+        let data = await Task.detached(priority: .utility) {
+            TripBookCardRenderer.render(lines, cover: cover, focal: focal)
+        }.value
+        // 🔴 **作っている間に人が替わっていたら書かない**。サインアウトの片付け（`TripBookCard.removeAll`）の
+        // 後に書くと、前の人の表紙の写真が次の人の端末に残った（6ff1954 のレビュー）
+        guard !Task.isCancelled, !data.isEmpty, auth.userId == owner, owner != nil else { return nil }
+        return TripBookCard.write(data, for: trip)
     }
 
     // MARK: - 表紙
