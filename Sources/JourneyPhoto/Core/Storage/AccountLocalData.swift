@@ -33,6 +33,8 @@ enum AccountLocalData {
         StoryDraftStore(defaults: defaults, directory: draftDirectory).removeData(for: userId)
         OpenedTripBooks(defaults: defaults).removeData(for: userId)
         PushCenter.removeLocalData(for: userId, defaults: defaults)
+        // 共有のために書いた旅の一冊の画像（表紙の写真を含む）
+        TripBookCard.removeAll()
         if let username, !username.isEmpty {
             PendingVerificationStore(defaults: defaults).forget(username: username)
         }

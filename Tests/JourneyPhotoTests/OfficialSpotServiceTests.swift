@@ -40,6 +40,27 @@ final class OfficialSpotServiceTests: XCTestCase {
         OfficialSpotService(url: url, session: session, snapshot: SpotSnapshotStore(fileName: snapshot))
     }
 
+    /// 🔴 別名: 呼んだ側が取り消されても、空を控えない（次の呼び出しで取れる）。並んだ呼び出しは1本に寄せる
+    func testAliasLoadSurvivesCancelledCallerAndIsShared() async {
+        let body = #"[{"s":"abukumado","n":"あぶくま洞","a":["月の世界"]}]"#
+        StubProtocol.respond(path: "/app/data/spot-search.json", status: 200, body: body, delay: 0.3)
+        let spots = service()
+        // 取り消された呼び出し（「さがす」で打ち直した回）
+        let cancelled = Task { await spots.fetchAliases() }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        cancelled.cancel()
+        // 並んだ2つの呼び出し
+        async let a = spots.fetchAliases()
+        async let b = spots.fetchAliases()
+        let (first, second) = await (a, b)
+        XCTAssertEqual(first["abukumado"], ["月の世界"])
+        XCTAssertEqual(second, first)
+        XCTAssertEqual(StubProtocol.requestCount, 1, "並んだ呼び出しが別々に叩いている")
+        // 控えがあるので叩かない
+        _ = await spots.fetchAliases()
+        XCTAssertEqual(StubProtocol.requestCount, 1)
+    }
+
     /// Web が配る索引の形（`content/spots.json` → `app/data/spots.json`）。
     /// **知らない項目（`extra`）は無視される**ことも、ここで一緒に見る
     static let threeSpots = """
