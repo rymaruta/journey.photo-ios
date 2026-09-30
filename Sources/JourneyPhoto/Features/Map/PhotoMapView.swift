@@ -769,7 +769,9 @@ struct PhotoMapView: View {
             Label(L("近くの写真", "Photos near me"), systemImage: "location.magnifyingglass")
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                // 押せる高さ 44pt。隣の範囲の札（`areaControl`）と同じ作りにして高さをそろえる
+                // （以前は上下 10 の余白で約38pt）
+                .frame(minHeight: WebTheme.minTapTarget)
                 .background(WebTheme.accentBackground, in: Capsule())
                 .foregroundStyle(WebTheme.accentText)
         }

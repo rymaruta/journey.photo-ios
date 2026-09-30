@@ -146,8 +146,10 @@ struct SearchView: View {
                 Button {
                     query = ""
                 } label: {
+                    // 押せる幅は 44pt（地図の探す口の「×」と同じ）
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(WebTheme.faint)
+                        .webTappable()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("消す", "Clear"))
