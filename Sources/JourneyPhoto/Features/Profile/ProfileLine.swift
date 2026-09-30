@@ -70,20 +70,20 @@ enum ProfileLine {
         }
     }
 
-    static func counts(followers: Int, following: Int, photos: PhotoCount) -> [Count] {
-        var items = [
-            Count(kind: .followers, value: "\(followers)",
-                  label: L("フォロワー", followers == 1 ? "follower" : "followers")),
-            Count(kind: .following, value: "\(following)", label: L("フォロー中", "following")),
-        ]
-        switch photos {
-        case .pending:
-            break
-        case .failed:
-            items.append(Count(kind: .photos, value: "—", label: L("写真", "photos")))
-        case .loaded(let n):
-            items.append(Count(kind: .photos, value: "\(n)",
-                               label: L("写真", n == 1 ? "photo" : "photos")))
+    /// **3つとも `PhotoCount` の決まり**——読み込み中は札ごと出さず、取れなければ「—」。
+    /// フォロー数も以前は読み込み中・失敗のあいだ「0」と出ていた（マイページの `statValue` と同じ）
+    static func counts(followers: PhotoCount, following: PhotoCount, photos: PhotoCount) -> [Count] {
+        var items: [Count] = []
+        if let value = statValue(followers) {
+            items.append(Count(kind: .followers, value: value,
+                               label: L("フォロワー", followers == .loaded(1) ? "follower" : "followers")))
+        }
+        if let value = statValue(following) {
+            items.append(Count(kind: .following, value: value, label: L("フォロー中", "following")))
+        }
+        if let value = statValue(photos) {
+            items.append(Count(kind: .photos, value: value,
+                               label: L("写真", photos == .loaded(1) ? "photo" : "photos")))
         }
         return items
     }

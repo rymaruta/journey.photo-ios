@@ -211,6 +211,39 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// 🔴 **人のページのフォロー数: 読み込み中・取れなかったときに「0」と言わない。**
+    /// 一度読めた数は、読み直しが落ちても「—」にしない（マイページと同じ決まり）
+    func testProfileFollowCountsAreNotZeroUntilRead() async {
+        prepare()
+        func stub(follow status: Int, _ body: String) {
+            StubProtocol.reset()
+            StubProtocol.respond(path: "/users/u1/follow", status: status, body: body)
+            StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+            StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: "[]")
+        }
+        stub(follow: 500, #"{"error":"x"}"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = UserProfileViewModel()
+        XCTAssertEqual(model.followerCount, .pending)
+        await model.load(userId: "u1", environment: env, viewerId: nil)
+        XCTAssertEqual(model.followerCount, .failed, "フォロー数を読めていないのに数を言っている")
+        XCTAssertEqual(model.followingCount, .failed)
+
+        stub(follow: 200, #"{"followers":0,"following":4}"#)
+        await model.load(userId: "u1", environment: env, viewerId: nil)
+        XCTAssertEqual(model.followerCount, .loaded(0), "読めた 0 は 0 と言う")
+        XCTAssertEqual(model.followingCount, .loaded(4))
+
+        stub(follow: 500, #"{"error":"x"}"#)
+        await model.load(userId: "u1", environment: env, viewerId: nil)
+        XCTAssertEqual(model.followingCount, .loaded(4), "読み直しの失敗で読めた数を消した")
+    }
+
     /// 🔴 **ストーリーの輪: 先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない。**
     /// 人が替わった直後は読み直しが2本同時に走り、前の人のブロックの集合で絞った先の回が
     /// 後から着くと、次の人がブロックした人の輪が並んだままになっていた

@@ -30,7 +30,7 @@ final class ProfileLineTests: XCTestCase {
 
     /// 人のページの数（板 31）: フォロワー・フォロー中・写真の順で、数が先
     func testCountsOrderAndValues() {
-        let counts = ProfileLine.counts(followers: 12, following: 3, photos: .loaded(0))
+        let counts = ProfileLine.counts(followers: .loaded(12), following: .loaded(3), photos: .loaded(0))
         XCTAssertEqual(counts.map(\.kind), [.followers, .following, .photos])
         XCTAssertEqual(counts.map(\.value), ["12", "3", "0"])
         XCTAssertEqual(counts.map(\.label), ["フォロワー", "フォロー中", "写真"])
@@ -38,10 +38,18 @@ final class ProfileLineTests: XCTestCase {
 
     /// **読み終える前と失敗したときに「0 写真」と言わない**
     func testPhotoCountIsNotZeroUntilLoaded() {
-        let pending = ProfileLine.counts(followers: 1, following: 1, photos: .pending)
+        let pending = ProfileLine.counts(followers: .loaded(1), following: .loaded(1), photos: .pending)
         XCTAssertEqual(pending.map(\.kind), [.followers, .following])
-        let failed = ProfileLine.counts(followers: 1, following: 1, photos: .failed)
+        let failed = ProfileLine.counts(followers: .loaded(1), following: .loaded(1), photos: .failed)
         XCTAssertEqual(failed.last?.value, "—")
+    }
+
+    /// 🔴 **フォロー数も、読み込み中は出さず、取れなければ「—」**（以前は「0」と出ていた）
+    func testFollowCountsAreNotZeroUntilLoaded() {
+        let pending = ProfileLine.counts(followers: .pending, following: .pending, photos: .pending)
+        XCTAssertEqual(pending, [], "読み込み中にフォロー数を「0」と言っている")
+        let failed = ProfileLine.counts(followers: .failed, following: .failed, photos: .loaded(2))
+        XCTAssertEqual(failed.map(\.value), ["—", "—", "2"])
     }
 
     /// マイページの3列の数も同じ決まり: 読み込み中は出さず、取れなければ「—」
