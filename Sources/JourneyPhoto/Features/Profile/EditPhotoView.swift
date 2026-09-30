@@ -63,6 +63,8 @@ struct EditPhotoView: View {
                     PhotosPicker(selection: $replaceItem, matching: .images) {
                         Label(L("写真を差し替える", "Replace the photo"), systemImage: "photo.on.rectangle.angled")
                     }
+                    // 保存の途中は差し替えさせない（保存ボタンと同じ門）
+                    .disabled(isSaving)
                 }
             } footer: {
                 // 派生（AVIF・小さい版）はサーバーが消して作り直す
@@ -155,12 +157,17 @@ struct EditPhotoView: View {
         .webScreen()
         .navigationTitle(L("写真を編集", "Edit photo"))
         .navigationBarTitleDisplayMode(.inline)
+        // 下へ払っても閉じない（保存・差し替えの最中だけ・`HighlightEditorView` と同じ）
+        .interactiveDismissDisabled(isSaving || isReplacing)
         .onChange(of: replaceItem) { _, item in
             Task { await replace(item) }
         }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
+                // 保存・差し替えの最中は閉じさせない。閉じると詳細が古い姿のまま残り、
+                // 失敗の知らせも見えない
                 Button(Labels.Common.close) { dismiss() }
+                    .disabled(isSaving || isReplacing)
             }
         }
     }
