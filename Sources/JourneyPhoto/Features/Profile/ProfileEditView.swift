@@ -126,6 +126,11 @@ struct ProfileEditView: View {
                     ProgressView()
                 } else {
                     Button(L("保存", "Save")) {
+                        // 🔴 **門は押したその場で閉じる。** `isSaving` を Task の中で立てて
+                        // いたので、描き直しの前に2回押すと保存が2本走った
+                        // （`HighlightEditorView`・`DeleteAccountView` と同じ）
+                        guard !isSaving else { return }
+                        isSaving = true
                         Task { await save() }
                     }
                     .font(.body.weight(.semibold))
@@ -138,8 +143,9 @@ struct ProfileEditView: View {
             }
         }
         .overlay { if isLoading { ProgressView() } }
-        .navigationBarBackButtonHidden(uploadingImage != nil)
-        .interactiveDismissDisabled(uploadingImage != nil)
+        // 画像の送信中・保存中は戻らせない（戻れると保存の結果を見届けられない）
+        .navigationBarBackButtonHidden(uploadingImage != nil || isSaving)
+        .interactiveDismissDisabled(uploadingImage != nil || isSaving)
         .alert(L("保存できませんでした", "Couldn't save"),
                isPresented: Binding(get: { saveError != nil },
                                     set: { if !$0 { saveError = nil } })) {
@@ -328,7 +334,9 @@ struct ProfileEditView: View {
                      homeLocation: homeLocation, themeColor: themeColor, songs: songs)
     }
 
+    /// 呼ぶ前に `isSaving` を立てておくこと（ボタンが同期で立てる）。戻るときは必ず下ろす
     private func save() async {
+        defer { isSaving = false }
         // **読めていない内容で上書きしない。**
         //
         // 読み込みに失敗すると欄は全部空のまま出る。サーバーは
@@ -351,11 +359,11 @@ struct ProfileEditView: View {
             dismiss()
             return
         }
-        isSaving = true
         message = nil
-        defer { isSaving = false }
         do {
             try await environment.profiles.update(patch)
+            // マイページに読み直させる（ログイン直後の表示名と同じ知らせ）
+            auth.noteProfileChanged()
             dismiss()
         } catch {
             saveError = (error as? LocalizedError)?.errorDescription ?? L("もう一度お試しください", "Please try again")
