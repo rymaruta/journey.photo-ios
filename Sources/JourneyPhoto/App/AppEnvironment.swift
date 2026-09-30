@@ -31,6 +31,8 @@ final class AppEnvironment: ObservableObject {
     /// 撮影スポットの索引（静的サイトの `app/data/spots.json`）。
     /// 写真の一覧と同じく API ではない
     let spots: OfficialSpotService
+    /// 今日の一問（静的サイトの `app/data/quiz/<日付>.json`）。Web の `/q` と同じファイル
+    let quiz: DailyQuizService
     /// 旅行プラン（`/user/trips`・本人だけ）
     let trips: TripPlanService
 
@@ -43,12 +45,14 @@ final class AppEnvironment: ObservableObject {
     init(tokenProvider: TokenProviding = CognitoTokenProvider(),
          gallery: PublicGalleryService = PublicGalleryService(liveURL: AppConfig.livePhotosURL),
          spots: OfficialSpotService = OfficialSpotService(),
+         quiz: DailyQuizService = DailyQuizService(),
          trips: TripPlanService? = nil,
          api: APIClient? = nil) {
         let api = api ?? APIClient(tokenProvider: tokenProvider)
         self.api = api
         self.gallery = gallery
         self.spots = spots
+        self.quiz = quiz
         self.photos = PhotoService(api: api)
         self.profiles = ProfileService(api: api)
         self.uploads = UploadService(api: api)

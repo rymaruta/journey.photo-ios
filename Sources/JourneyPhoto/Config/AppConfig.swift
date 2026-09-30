@@ -121,4 +121,16 @@ enum AppConfig {
     static var publicSpotsURL: URL {
         siteBaseURL.appendingPathComponent("app/data/spots.json")
     }
+
+    /// **今日の一問**（`app/data/quiz/<YYYY-MM-DD>.json`）。写真・索引と同じく**静的な JSON**で、
+    /// API ではない。Web がビルド時に前日から61日ぶん書き出す（`lib/data/quizFeed.ts`）。
+    /// **Web の `/q` と同じファイル**を読む＝同じ日に同じ問題
+    static func quizURL(date: String) -> URL {
+        siteBaseURL.appendingPathComponent("app/data/quiz/\(date).json")
+    }
+
+    /// Web の今日の一問の画面（共有する文に付ける）
+    static var quizPageURL: URL {
+        siteBaseURL.appendingPathComponent("q")
+    }
 }

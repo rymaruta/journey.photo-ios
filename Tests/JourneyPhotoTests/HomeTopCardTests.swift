@@ -413,6 +413,24 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertNil(old.seasonalGuide)
         XCTAssertEqual(old.seasons, [])
     }
+    // MARK: - 今日の一問
+
+    private func quiz() throws -> DailyQuiz {
+        try XCTUnwrap(DailyQuiz.parse(Data(DailyQuizTests.json(date: "2026-09-27").utf8), date: "2026-09-27"))
+    }
+
+    /// 今日の一問は**今日のテーマの直後**・1年前より前。取れなかった日は出さない
+    func testQuizSitsRightAfterTheTheme() throws {
+        let q = try quiz()
+        let yearAgo = try photo("y", date: "2025-09-27")
+        let with = HomeTopCard.cards(now: now, plans: [], myPhotos: [yearAgo], openedBookDays: [],
+                                     quiz: q, timeZone: utc).map(\.slot)
+        XCTAssertEqual(with, ["theme", "quiz", "oneYearAgo"])
+        let without = HomeTopCard.cards(now: now, plans: [], myPhotos: [yearAgo], openedBookDays: [],
+                                        timeZone: utc).map(\.slot)
+        XCTAssertEqual(without, ["theme", "oneYearAgo"], "取れなかった日は札を出さない")
+    }
+
 }
 
 /// 札から開いた一冊の印（`OpenedTripBooks`）

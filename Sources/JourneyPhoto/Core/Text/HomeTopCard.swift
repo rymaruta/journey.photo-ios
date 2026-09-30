@@ -25,6 +25,8 @@ import Foundation
 ///     仕組みがアプリ側にない」。2026-09-30 に owner「週替わりとかにして欲しい」で週替わりへ。
 ///     毎日替わる札は「今日のテーマ」が受け持つ）。4 と同じスポットの週は出さない
 ///  6. **今日のテーマ** — 毎日（当たる札が無い日は、これ1枚）
+///  6'. **今日の一問** — その日の問題のファイルが取れた日だけ（2026-09-30・owner「毎日開く理由を
+///     作りたい」への案①）。問題は Web がビルド時に書き出したもの（`DailyQuiz`）
 ///  7. **1年前の今ごろ** — 1年前の今日の前後 `yearAgoWindowDays` 日に撮った自分の写真。
 ///     **振り返りなので最後**（2026-09-29・owner「1年前の今頃とかは振り返りなので
 ///     カードの最後の方でいい」）。これから撮りに行く札を前に出す
@@ -61,6 +63,8 @@ enum HomeTopCard {
         /// `season` は `spring`〜`winter`、`guide` はその季節の案内の文（台帳の文のまま）
         case inSeason(spot: OfficialSpot, season: String, guide: String)
         case theme
+        /// 今日の一問（Web の `/q` と同じ問題）。**その日のファイルが取れたときだけ**
+        case quiz(DailyQuiz)
 
         /// 並びの中の目印。**種類ごとに1枚まで**なので種類で足りる（並び順で持つと、
         /// 一冊の札が下がったときに隣の札と取り違える）
@@ -73,6 +77,7 @@ enum HomeTopCard {
             case .wishlistSeason: return "wishlistSeason"
             case .inSeason: return "inSeason"
             case .theme: return "theme"
+            case .quiz: return "quiz"
             }
         }
     }
@@ -96,8 +101,12 @@ enum HomeTopCard {
     static func cards(now: Date, plans: [TripPlan], myPhotos: [Photo],
                       openedBookDays: Set<String>, spots: [OfficialSpot] = [],
                       wishlist: Set<String> = [],
+                      quiz: DailyQuiz? = nil,
                       timeZone: TimeZone = .current) -> [Choice] {
-        guard let today = today(now, in: timeZone) else { return [.theme] }
+        // 今日の一問は**今日のテーマの直後**（毎日替わる札どうしを並べる。1年前の振り返りより前）。
+        // 取れなかった日は出さない（空き地を作らない）
+        let daily: [Choice] = [.theme] + [quiz.map { Choice.quiz($0) }].compactMap { $0 }
+        guard let today = today(now, in: timeZone) else { return daily }
         let found: [Choice?] = [
             departure(today: today, plans: plans),
             onTrip(today: today, plans: plans),
@@ -112,7 +121,7 @@ enum HomeTopCard {
             inSeason(today: today, spots: spots, excluding: wishedId),
         ]
         let yearAgo = oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone)
-        return found.compactMap { $0 } + season.compactMap { $0 } + [.theme] + [yearAgo].compactMap { $0 }
+        return found.compactMap { $0 } + season.compactMap { $0 } + daily + [yearAgo].compactMap { $0 }
     }
 
     /// 端末の時刻帯の今日を、**その日の UTC 0 時**にする（`TripPlanText` と `TripBook.day` の基準）
