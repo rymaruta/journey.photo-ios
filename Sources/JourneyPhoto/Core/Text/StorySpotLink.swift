@@ -116,7 +116,9 @@ enum StorySpotLink {
                 guard !folded.isEmpty else { continue }
                 // 「南都留郡山中湖村」は「山中湖村」とも書かれる（郡を外した形も地名）
                 var forms = [folded]
-                if let gun = folded.lastIndex(of: "郡"), folded.index(after: gun) < folded.endIndex {
+                // 「〜郡〜町／村」の形のときだけ（「郡上市」「蒲郡市」の郡では切らない）
+                if let gun = folded.lastIndex(of: "郡"), folded.index(after: gun) < folded.endIndex,
+                   let last = folded.last, last == "町" || last == "村" {
                     forms.append(String(folded[folded.index(after: gun)...]))
                 }
                 for form in forms {

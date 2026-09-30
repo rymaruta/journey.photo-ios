@@ -630,6 +630,8 @@ struct StoryViewerView: View {
                         // 結べた行と同じく詰める（索引が届いた瞬間に文字が変わらないように）
                         photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))
                             .allowsHitTesting(false)
+                            // 詰めた文字でなく全文を読み上げる
+                            .accessibilityLabel(L("撮影地 \(place)", "Location \(place)"))
                     }
                 }
                 if let song {
