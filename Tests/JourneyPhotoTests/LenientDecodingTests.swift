@@ -146,6 +146,18 @@ final class StoryReplyDecodingTests: XCTestCase {
         try JSONDecoder.api.decode(StoryReply.self, from: Data(json.utf8))
     }
 
+    /// 🔴 **退会した人の返信は、その人のページへ行かせない。** サーバーは `deleted: true` を
+    /// 立てて返す（`storyReplies.ts`）。反応の画面の見た人の行（`StoryViewer.deleted`）と同じ扱い
+    func testDeletedReplierIsNotLinked() throws {
+        let gone = try reply(#"{"id":"1","uid":"u","name":"退会したユーザー","text":"いいね","deleted":true}"#)
+        XCTAssertEqual(gone.deleted, true)
+        XCTAssertNil(gone.profileUserId)
+        XCTAssertEqual(gone.displayName, Labels.Common.deletedUser)
+        let here = try reply(#"{"id":"2","uid":"u","name":"港の人","text":"いいね"}"#)
+        XCTAssertEqual(here.profileUserId, "u")
+        XCTAssertEqual(here.displayName, "港の人")
+    }
+
     func testEmojiReactionIsShown() throws {
         let r = try reply(#"{"id":"1","uid":"u","name":"だれか","emoji":"❤️","t":"2026-09-20T00:00:00Z"}"#)
         XCTAssertEqual(r.body, "❤️")

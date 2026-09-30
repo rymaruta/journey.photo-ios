@@ -263,8 +263,14 @@ struct StoryInsightsView: View {
     }
 
     private func load() async {
-        isLoading = true
-        errorMessage = nil
+        // **一度読めたら、裏で読み直す。** 人のページから戻るたびに `.task` がまた走る。
+        // そのたびに読み込み中に切り替えると、一覧が消えてスクロールの位置が失われた。
+        // 読み直しに失敗しても、前に読めた一覧を出し続ける（失敗の知らせで置き換えない）
+        let firstLoad = !viewersLoaded
+        if firstLoad {
+            isLoading = true
+            errorMessage = nil
+        }
         defer { isLoading = false }
         do {
             viewers = try await environment.stories.viewers(id: story.id)
@@ -284,7 +290,9 @@ struct StoryInsightsView: View {
         } catch is CancellationError {
             // 取り消された（画面を離れた・引き下げの途中で描き直された）。失敗と言わない
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+            if firstLoad {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed
+            }
         }
     }
 }
