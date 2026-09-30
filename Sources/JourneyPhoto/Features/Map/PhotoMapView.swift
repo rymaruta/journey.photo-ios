@@ -393,8 +393,9 @@ struct PhotoMapView: View {
                         .foregroundStyle(selected ? WebTheme.accentText : Color.white.opacity(0.82))
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .background(selected ? Color.white.opacity(0.92) : Color.clear, in: Capsule())
-                        // 見た目の札は 36（板 04c）、**押せる範囲は 44**（CLAUDE.md）
-                        .frame(minHeight: WebTheme.minTapTarget)
+                        // 見た目の札は 36（板 04c）、上下 4 の余白まで押せる＝**押せる範囲は 44**（CLAUDE.md）。
+                        // 余白で広げる——字を大きくしても札が帯の縁に接しない
+                        .padding(.vertical, 4)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -402,7 +403,7 @@ struct PhotoMapView: View {
                 .accessibilityIdentifier("map.mode.\(mode.rawValue)")
             }
         }
-        // 上下の余白は付けない——札 36 を押せる範囲 44 の中央に置き、帯は 44 のまま（板 04c）
+        // 上下の余白は札の側（押せる範囲）に持たせる。帯は 36＋4＋4＝44 のまま（板 04c）
         .padding(.horizontal, 4)
         .jpGlass(in: Capsule())
         .padding(.horizontal, 16)
