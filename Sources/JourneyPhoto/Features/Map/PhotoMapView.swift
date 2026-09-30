@@ -130,10 +130,7 @@ struct PhotoMapView: View {
             // 読んでいる間に通報された回、古い集合で絞った結果を残さない
             dropHidden()
             // 探すから語を受け取っていれば、その当たりへ寄せる（現在地が先でも）
-            if let queryFrame = queryFraming.frameIfReady(model.frame) {
-                framedToPhotos = true
-                frame(queryFrame)
-            }
+            frameToQueryIfReady()
             // 現在地が先に取れていたら、写真の読み込みで引き戻さない
             if here == nil, !framedToPhotos, let photosFrame = model.frame {
                 framedToPhotos = true
@@ -189,12 +186,15 @@ struct PhotoMapView: View {
         }
         // 索引を読み直してピンの中身（写真・出典・下書き）が変わったら、開いている札も
         // 新しい中身に差し替える（札だけ古い写真と出典のまま残らないように）
+        // 索引が届いてもピンが空のまま（語がスポットにも当たらない）だと上の知らせは来ない。
+        // 取り終えたことで「何にも当たらなかった」と決める
+        .onChange(of: model.officialIndexState) { _, _ in
+            frameToQueryIfReady()
+        }
         .onChange(of: model.officialPins) { _, _ in
             // 探すからの語がスポットの名前だけで当たる回は、索引が届いて初めて枠が決まる。
             // 写真の読み込みの後に限る（先に索引で寄せると、写真で当たる回に寄せ直せない）
-            if model.loaded, let queryFrame = queryFraming.frameIfReady(model.frame) {
-                frame(queryFrame)
-            }
+            frameToQueryIfReady()
             guard let selected = selectedOfficial,
                   let fresh = model.officialPins.first(where: { $0.id == selected.id }),
                   fresh != selected else { return }
@@ -282,9 +282,17 @@ struct PhotoMapView: View {
         model.mode = .map
         queryFraming.received()
         // 読み込み済みならその場で寄せる。まだなら `.task` と索引の知らせが寄せる
-        if model.loaded, let queryFrame = queryFraming.frameIfReady(model.frame) {
-            frame(queryFrame)
-        }
+        frameToQueryIfReady()
+    }
+
+    /// 探すからの語の当たりへ寄せる（`MapQueryFraming`）。写真を読み終えてから。
+    /// 索引も取り終えて何にも当たらないと決まったら、印を下ろす（現在地の自動の寄せも戻す）
+    private func frameToQueryIfReady() {
+        guard model.loaded else { return }
+        let settled = model.officialIndexState != .loading
+        guard let queryFrame = queryFraming.frameIfReady(model.frame, settled: settled) else { return }
+        framedToPhotos = true
+        frame(queryFrame)
     }
 
     /// **撮影地の文字列とスポットの名前だけ**で絞る（通信しない）。

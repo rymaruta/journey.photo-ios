@@ -10,15 +10,15 @@ final class MapQueryFramingTests: XCTestCase {
     func testFramesOnceWhenFrameArrives() {
         var framing = MapQueryFraming()
         framing.received()
-        XCTAssertNil(framing.frameIfReady(nil))
-        XCTAssertEqual(framing.frameIfReady(kyoto), kyoto)
-        XCTAssertNil(framing.frameIfReady(kyoto))
+        XCTAssertNil(framing.frameIfReady(nil, settled: false))
+        XCTAssertEqual(framing.frameIfReady(kyoto, settled: true), kyoto)
+        XCTAssertNil(framing.frameIfReady(kyoto, settled: true))
     }
 
     /// 受け取っていなければ寄せない（普通に開いた地図を動かさない）
     func testDoesNothingWithoutQuery() {
         var framing = MapQueryFraming()
-        XCTAssertNil(framing.frameIfReady(kyoto))
+        XCTAssertNil(framing.frameIfReady(kyoto, settled: true))
         XCTAssertTrue(framing.followsLocation(requestedByUser: false))
     }
 
@@ -27,7 +27,7 @@ final class MapQueryFramingTests: XCTestCase {
         var framing = MapQueryFraming()
         framing.received()
         XCTAssertFalse(framing.followsLocation(requestedByUser: false))
-        XCTAssertEqual(framing.frameIfReady(kyoto), kyoto)
+        XCTAssertEqual(framing.frameIfReady(kyoto, settled: true), kyoto)
         XCTAssertFalse(framing.followsLocation(requestedByUser: false))
 
         XCTAssertTrue(framing.followsLocation(requestedByUser: true))
@@ -39,11 +39,27 @@ final class MapQueryFramingTests: XCTestCase {
         var located = MapQueryFraming()
         located.received()
         _ = located.followsLocation(requestedByUser: true)
-        XCTAssertNil(located.frameIfReady(kyoto))
+        XCTAssertNil(located.frameIfReady(kyoto, settled: true))
 
         var moved = MapQueryFraming()
         moved.received()
         moved.userMovedCamera()
-        XCTAssertNil(moved.frameIfReady(kyoto))
+        XCTAssertNil(moved.frameIfReady(kyoto, settled: true))
+    }
+
+    /// 写真も索引も取り終えて何にも当たらなかったら、印を両方下ろす
+    /// （あとで急に寄らない・自動の現在地も抑えない）。取り終える前は待ち続ける
+    func testNothingMatchedLowersBothMarks() {
+        var framing = MapQueryFraming()
+        framing.received()
+        XCTAssertNil(framing.frameIfReady(nil, settled: false))
+        XCTAssertTrue(framing.waitingToFrame)
+        XCTAssertFalse(framing.followsLocation(requestedByUser: false))
+
+        XCTAssertNil(framing.frameIfReady(nil, settled: true))
+        XCTAssertFalse(framing.waitingToFrame)
+        XCTAssertFalse(framing.holdsAgainstAutoLocate)
+        XCTAssertTrue(framing.followsLocation(requestedByUser: false))
+        XCTAssertNil(framing.frameIfReady(kyoto, settled: true))
     }
 }

@@ -23,9 +23,20 @@ struct MapQueryFraming: Equatable {
         holdsAgainstAutoLocate = true
     }
 
-    /// 枠が決まっていれば、一度だけそれを返す（寄せる先）。まだなら nil で待ち続ける
-    mutating func frameIfReady(_ frame: MapFraming.Frame?) -> MapFraming.Frame? {
-        guard waitingToFrame, let frame else { return nil }
+    /// 枠が決まっていれば、一度だけそれを返す（寄せる先）。まだなら nil で待ち続ける。
+    ///
+    /// - Parameter settled: 写真も索引も取り終えたか。取り終えて枠が無い＝語が何にも
+    ///   当たらなかった。**そのときは印を両方下ろす**——待ち続けると、あとで人が
+    ///   触った語の変化や索引の読み直しで急に寄り、自動の現在地も抑えたままになる
+    mutating func frameIfReady(_ frame: MapFraming.Frame?, settled: Bool) -> MapFraming.Frame? {
+        guard waitingToFrame else { return nil }
+        guard let frame else {
+            if settled {
+                waitingToFrame = false
+                holdsAgainstAutoLocate = false
+            }
+            return nil
+        }
         waitingToFrame = false
         return frame
     }
