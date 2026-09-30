@@ -587,9 +587,10 @@ struct StoryViewerView: View {
     /// 撮影地は以前は見出しの2行目にあった
     @ViewBuilder
     private func captionBlock(for story: Story) -> some View {
-        // **文字をデータで置いた1本はひとことを出さない**——`caption` はその文字から作られた
-        // もので、写真の上の文字と二重になる（Web も `texts` があれば出さない）
-        let caption = captionHidden || !story.texts.isEmpty ? nil : story.caption.flatMap { $0.isEmpty ? nil : $0 }
+        // **文字の項目を置いた1本はひとことを出さない**——`caption` はその文字から作られた
+        // もので、写真の上の文字と二重になる。投票・スタンプだけなら出す（サーバーは送られた
+        // `caption` を保存する・Web の `hasStoryTextItem` と同じ判定）
+        let caption = captionHidden ? nil : StoryTextItem.bottomCaption(story.caption, texts: story.texts)
         let place = story.location.flatMap { $0.isEmpty ? nil : $0 }
         let song = story.songLine
         if caption != nil || place != nil || song != nil {

@@ -25,6 +25,9 @@ struct StoryVoteDraft: Codable, Equatable {
     static let optionMax = 12
     /// Web の `DEFAULT_STORY_VOTE_SIZE`（文字の既定より小さめ——札は問いと2つのボタンを持つ）
     static let defaultSize = 0.05
+    /// 投票の y の上限。**これより下に置くと、下のひとことの欄・撮影地・曲の行に重なる**
+    /// （レビューの計算で y > 約0.75 から重なる）。既定の y（0.7）と同じ値
+    static let maxY = 0.7
 
     /// 新しく置く投票。**問いと2択は Web と同じ既定**（`STORY_VOTE_DEFAULT`）
     static func new() -> StoryVoteDraft {
@@ -54,7 +57,7 @@ struct StoryVoteDraft: Codable, Equatable {
     }
 
     /// 指で動かした量（画面の点）を、絵の矩形（画面の点）に対する割合で足す。
-    /// 幅はサーバーと同じ（0.06〜0.94）に、`visible` があれば**見えている範囲**（割合）にも挟む
+    /// 幅はサーバーと同じ（0.06〜0.94。y は下の欄に重ねないよう `maxY` まで）に、`visible` があれば**見えている範囲**（割合）にも挟む
     /// ——絵を埋めて敷くと端が画面の外に出る。そこへ動かすと掴み直せなかった（274951f のレビュー）
     func moved(by translation: CGSize, in box: CGSize,
                visible: (x: ClosedRange<Double>, y: ClosedRange<Double>)? = nil) -> StoryVoteDraft {
@@ -66,6 +69,8 @@ struct StoryVoteDraft: Codable, Equatable {
             next.x = min(max(next.x, visible.x.lowerBound), visible.x.upperBound)
             next.y = min(max(next.y, visible.y.lowerBound), visible.y.upperBound)
         }
+        // 下の欄に重ねない（見えている範囲より優先——重なると札もひとことも読めない）
+        next.y = min(next.y, Self.maxY)
         return next
     }
 
