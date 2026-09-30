@@ -187,8 +187,7 @@ struct ReportSheet: View {
             // **知らせは1つ。** 全部うまくいけば閉じてトーストで伝える
             // （以前はシートの完了画面とトーストの二重だった）。ブロックだけ
             // 落ちたときは閉じずに、その旨を読ませる。
-            // ストーリーは全画面の上なのでトーストが見えない——閲覧画面が
-            // 自分の知らせで伝える（`StoryViewerView.afterReport`）
+            // ストーリーの全画面（`StoryReelView`）にも同じ知らせを重ねてある
             if errorMessage == nil {
                 toasts.show(L("通報を受け付けました。ありがとうございます。",
                               "Thanks — your report was received."))
