@@ -18,10 +18,24 @@ final class StoryVoteDraftTests: XCTestCase {
         XCTAssertFalse(v.isComplete)
     }
 
-    /// 字数はサーバーと同じ（問い40・選択肢12）。改行は空白に
+    /// 字数はサーバーと同じ（問い40・選択肢12）**を UTF-16 で数える**（絵文字は2つ以上）。改行は空白に
     func testLimits() {
-        XCTAssertEqual(StoryVoteDraft.limited(String(repeating: "あ", count: 50), max: StoryVoteDraft.questionMax).count, 40)
-        XCTAssertEqual(StoryVoteDraft.limited("はい\nいいえ", max: 12), "はい いいえ")
+        XCTAssertEqual(StoryVoteDraft.limited(old: "", new: String(repeating: "あ", count: 50), max: StoryVoteDraft.questionMax).count, 40)
+        XCTAssertEqual(StoryVoteDraft.limited(old: "", new: "はい\nいいえ", max: 12), "はい いいえ")
+        // 🇯🇵 は4単位。12単位に3つまで（字で数えると12個入って、サーバーで黙って切られた）
+        let flags = StoryVoteDraft.limited(old: "", new: String(repeating: "🇯🇵", count: 12), max: StoryVoteDraft.optionMax)
+        XCTAssertLessThanOrEqual(flags.utf16.count, 12)
+    }
+
+    /// 見えている範囲（絵を埋めて敷くと端が画面の外）。**その外へは動かさない**
+    func testMoveStaysInTheVisiblePart() throws {
+        // 絵は画面より横に広い（左右に 120pt ずつはみ出す）
+        let photo = CGRect(x: -120, y: 0, width: 640, height: 800)
+        let visible = try XCTUnwrap(StoryVoteDraft.visibleRange(photo: photo, canvas: CGSize(width: 400, height: 800)))
+        XCTAssertGreaterThan(visible.x.lowerBound, 120.0 / 640)
+        XCTAssertLessThan(visible.x.upperBound, 520.0 / 640)
+        let far = StoryVoteDraft.new().moved(by: CGSize(width: 9999, height: 0), in: photo.size, visible: visible)
+        XCTAssertEqual(far.x, visible.x.upperBound, accuracy: 1e-9)
     }
 
     /// 動かした量は絵の矩形に対する割合。幅はサーバーと同じ（0.06〜0.94）

@@ -1584,6 +1584,8 @@ struct StoryViewerView: View {
         do {
             voteStates[story.id] = try await environment.stories.vote(id: story.id, choice: choice)
         } catch {
+            // **いま出している1本のときだけ知らせる**（送っている間に移った先に出さない）
+            guard visible.indices.contains(index), visible[index].id == story.id else { return }
             message = (error as? LocalizedError)?.errorDescription ?? L("投票できませんでした", "Couldn't vote")
         }
     }

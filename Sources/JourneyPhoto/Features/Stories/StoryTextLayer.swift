@@ -18,16 +18,22 @@ struct StoryTextLayer: View {
     var onVote: (String) -> Void = { _ in }
     /// 作る画面で選んでいる（投票の札を破線で囲む）
     var highlighted = false
+    /// 作る画面（札を掴んで動かす）。**見る画面では札は指を取らない**——取ると札の上で
+    /// 送る・止める・払う操作が効かなかった（fa2ad19 のレビュー）。票のボタンだけが取る
+    var editable = false
 
     var body: some View {
         GeometryReader { geometry in
             let box = TextOverlay.filledRect(image: imageSize ?? geometry.size, in: geometry.size)
-            ZStack(alignment: .topLeading) {
-                Color.clear
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .allowsHitTesting(false)
+            // **1つずつ、画面の大きさの透明な枠に重ねて置く**（`overlay` は枠を広げない）。
+            // 1つの `ZStack` に揃えて並べると、絵の左や上にはみ出す要素があるときに ZStack が
+            // 広がり、全部の要素がまとめて右下へずれた（fa2ad19 のレビュー）
+            ZStack {
                 ForEach(Array(texts.enumerated()), id: \.offset) { _, item in
-                    placed(item, box: box)
+                    Color.clear
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .allowsHitTesting(false)
+                        .overlay(alignment: .topLeading) { placed(item, box: box) }
                 }
             }
         }
@@ -52,7 +58,9 @@ struct StoryTextLayer: View {
     @ViewBuilder
     private func content(_ item: StoryTextItem, box: CGRect) -> some View {
         let fontSize = max(1, Double(box.width) * item.place.size)
-        let maxWidth = Double(box.width) * 0.86
+        // 折り返す幅: Web の `<p>` は `left: x%` の絶対配置で幅は中身に合わせる（CSS の
+        // shrink-to-fit）ので、使える幅は「絵の幅 − 左の位置」。上限は 86%
+        let maxWidth = Double(box.width) * max(0.1, min(0.86, 1 - item.place.x))
         switch item {
         case .text(let label):
             textLabel(label, fontSize: fontSize, maxWidth: maxWidth)
@@ -135,12 +143,15 @@ struct StoryTextLayer: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("投票：\(vote.question)", "Poll: \(vote.question)"))
+        // 指を取るのは、作る画面か票を入れられるときだけ
+        .allowsHitTesting(editable || open)
     }
 
     private func optionLabel(_ vote: StoryTextItem.Vote, index: Int, percents: (a: Int, b: Int)?) -> String {
         let option = vote.options[index]
         let mine = voteState?.myVote == (index == 0 ? "a" : "b")
-        guard let percents else { return option }
+        // 数が読めなかった回も、自分の票には ✓（Web と同じ）
+        guard let percents else { return mine ? "✓ \(option)" : option }
         return "\(mine ? "✓ " : "")\(option) \(index == 0 ? percents.a : percents.b)%"
     }
 

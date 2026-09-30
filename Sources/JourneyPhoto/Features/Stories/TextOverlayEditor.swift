@@ -53,8 +53,11 @@ struct StoryCanvas: View {
     @GestureState private var twisting = false
     @GestureState private var pinching = false
     @GestureState private var dragging = false
-    /// 投票の札を指で動かしている最中の移動量（離したときに位置へ入れる）
-    @State private var voteDrag: CGSize = .zero
+    /// 投票の札を動かし始めたときの札（動かしている間は**札の位置そのもの**を書き換える——
+    /// 指の移動をそのまま見せると、札の置き方（割合の点で合わせる）と比が違い、離すと戻った）
+    @State private var voteDragStart: StoryVoteDraft?
+    /// 動かしている間に2本指の操作が入った（この回は動かさず、始めの位置に戻す）
+    @State private var voteDragSpoiled = false
     @GestureState private var voteDragging = false
     /// 写真を動かしている最中の移動量（離したときに `framing` へ入れる）と、その印
     @State private var photoDrag: CGSize = .zero
@@ -128,18 +131,22 @@ struct StoryCanvas: View {
                     // 投票の札。**置き方は閲覧画面と同じ**（絵の矩形に対する割合）。
                     // 札の上だけが指を取る（層の残りは素通り）
                     StoryTextLayer(texts: [current.asItem], imageSize: imageSize, voteState: nil,
-                                   canVote: false, voting: false, highlighted: voteSelected)
+                                   canVote: false, voting: false, highlighted: voteSelected, editable: true)
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .offset(x: voteDrag.width, y: voteDrag.height)
                         .gesture(
                             DragGesture()
                                 .updating($voteDragging) { _, state, _ in state = true }
-                                .onChanged { value in voteDrag = twoFingerActive ? .zero : value.translation }
-                                .onEnded { value in
-                                    if !twoFingerActive {
-                                        vote.wrappedValue = current.moved(by: value.translation, in: photo.size)
-                                    }
-                                    voteDrag = .zero
+                                .onChanged { value in
+                                    if voteDragStart == nil { voteDragStart = current; voteDragSpoiled = false }
+                                    guard let start = voteDragStart else { return }
+                                    if twoFingerActive { voteDragSpoiled = true }
+                                    vote.wrappedValue = voteDragSpoiled ? start : start.moved(
+                                        by: value.translation, in: photo.size,
+                                        visible: StoryVoteDraft.visibleRange(photo: photo, canvas: geometry.size))
+                                }
+                                .onEnded { _ in
+                                    if voteDragSpoiled, let start = voteDragStart { vote.wrappedValue = start }
+                                    voteDragStart = nil
                                 }
                         )
                         .onTapGesture { onTapVote() }
@@ -190,8 +197,11 @@ struct StoryCanvas: View {
             .onChange(of: twisting) { _, active in if !active { commitRotation() } }
             .onChange(of: pinching) { _, active in if !active { commitScale() } }
             .onChange(of: voteDragging) { _, active in
-                // 投票の札を動かす操作の打ち切り。**移動は入れない**
-                if !active { voteDrag = .zero }
+                // 投票の札を動かす操作の打ち切り。**始めの位置に戻す**（離した位置が分からない）
+                if !active, let start = voteDragStart {
+                    vote.wrappedValue = start
+                    voteDragStart = nil
+                }
             }
             .onChange(of: photoDragging) { _, active in
                 // 写真を動かす操作の打ち切り。**移動は入れない**（印は次に動かし始めたときに戻す）
@@ -654,7 +664,7 @@ struct VotePanel: View {
             HStack(spacing: 8) {
                 field(L("問い", "Question"), .question, text: Binding(
                     get: { vote.question },
-                    set: { vote.question = StoryVoteDraft.limited($0, max: StoryVoteDraft.questionMax) }))
+                    set: { vote.question = StoryVoteDraft.limited(old: vote.question, new: $0, max: StoryVoteDraft.questionMax) }))
                 if focused != nil {
                     Button { focused = nil } label: {
                         Image(systemName: "keyboard.chevron.compact.down")
@@ -669,10 +679,10 @@ struct VotePanel: View {
             HStack(spacing: 8) {
                 field(L("選択肢1", "Option 1"), .optionA, text: Binding(
                     get: { vote.optionA },
-                    set: { vote.optionA = StoryVoteDraft.limited($0, max: StoryVoteDraft.optionMax) }))
+                    set: { vote.optionA = StoryVoteDraft.limited(old: vote.optionA, new: $0, max: StoryVoteDraft.optionMax) }))
                 field(L("選択肢2", "Option 2"), .optionB, text: Binding(
                     get: { vote.optionB },
-                    set: { vote.optionB = StoryVoteDraft.limited($0, max: StoryVoteDraft.optionMax) }))
+                    set: { vote.optionB = StoryVoteDraft.limited(old: vote.optionB, new: $0, max: StoryVoteDraft.optionMax) }))
             }
             HStack {
                 // 欠けた投票は送れない（サーバーが黙って落とす）。**どこが欠けているかを言う**

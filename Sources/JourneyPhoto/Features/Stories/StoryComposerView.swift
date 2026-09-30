@@ -806,6 +806,7 @@ struct StoryComposerView: View {
         let overlay = TextOverlay(text: emoji, x: 0.5, y: 0.5, size: TextOverlay.stampSize, kind: .stamp)
         overlays.wrappedValue.append(overlay)
         selectedId = overlay.id
+        voteSelected = false
         // 置いたら列を閉じる。開いたままだと写真の上の方を覆い、そこの札を掴めない
         showStamps = false
     }
@@ -819,6 +820,8 @@ struct StoryComposerView: View {
                                   face: kind == .text ? .mincho : .gothic)
         overlays.wrappedValue.append(overlay)
         selectedId = overlay.id
+        // 投票を選んでいたら外す（下の欄が投票のまま残り、足した文字を直せなかった）
+        voteSelected = false
     }
 
     // MARK: - 共通

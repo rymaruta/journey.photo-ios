@@ -33,9 +33,11 @@ struct StoryVoteDraft: Codable, Equatable {
                        x: 0.5, y: 0.7, size: defaultSize)
     }
 
-    /// 問い・選択肢の字数を切る（打っている欄から呼ぶ）
-    static func limited(_ text: String, max: Int) -> String {
-        String(text.replacingOccurrences(of: "\n", with: " ").prefix(max))
+    /// 問い・選択肢の字数を切る（打っている欄から呼ぶ）。**数え方はサーバーと同じ UTF-16**
+    /// ——字で数えると、絵文字の入った問いが画面では上限内なのにサーバーで黙って切られた
+    /// （274951f のレビュー）。入れようとした字のほうを削る（`PostLimits.limited`）
+    static func limited(old: String, new: String, max: Int) -> String {
+        PostLimits.limited(old: old, new: new.replacingOccurrences(of: "\n", with: " "), limit: max)
     }
 
     /// 送れる形か（問いと2択が全部ある）。**サーバーの `isCompleteStoryVote` と同じ判断**
@@ -52,18 +54,36 @@ struct StoryVoteDraft: Codable, Equatable {
     }
 
     /// 指で動かした量（画面の点）を、絵の矩形（画面の点）に対する割合で足す。
-    /// 幅はサーバーと同じ（0.06〜0.94）
-    func moved(by translation: CGSize, in box: CGSize) -> StoryVoteDraft {
+    /// 幅はサーバーと同じ（0.06〜0.94）に、`visible` があれば**見えている範囲**（割合）にも挟む
+    /// ——絵を埋めて敷くと端が画面の外に出る。そこへ動かすと掴み直せなかった（274951f のレビュー）
+    func moved(by translation: CGSize, in box: CGSize,
+               visible: (x: ClosedRange<Double>, y: ClosedRange<Double>)? = nil) -> StoryVoteDraft {
         guard box.width > 0, box.height > 0 else { return self }
         var next = self
         next.x = StoryTextItem.clampPosition(x + Double(translation.width / box.width))
         next.y = StoryTextItem.clampPosition(y + Double(translation.height / box.height))
+        if let visible {
+            next.x = min(max(next.x, visible.x.lowerBound), visible.x.upperBound)
+            next.y = min(max(next.y, visible.y.lowerBound), visible.y.upperBound)
+        }
         return next
+    }
+
+    /// 画面に見えている範囲（絵の矩形に対する割合）。**端から少し内側まで**
+    static func visibleRange(photo: CGRect, canvas: CGSize) -> (x: ClosedRange<Double>, y: ClosedRange<Double>)? {
+        guard photo.width > 0, photo.height > 0 else { return nil }
+        func range(start: Double, length: Double, canvasLength: Double) -> ClosedRange<Double> {
+            let lo = max(0.06, -start / length + 0.1)
+            let hi = min(0.94, (canvasLength - start) / length - 0.1)
+            return lo <= hi ? lo...hi : 0.5...0.5
+        }
+        return (range(start: Double(photo.minX), length: Double(photo.width), canvasLength: Double(canvas.width)),
+                range(start: Double(photo.minY), length: Double(photo.height), canvasLength: Double(canvas.height)))
     }
 }
 
 /// `POST /stories` の `texts` に入れる1つ（送る形）。**鍵はサーバーの `sanitizeStoryTexts` が読むもの**
-struct StoryPostText: Encodable, Equatable {
+struct StoryPostText: Codable, Equatable {
     var kind: String
     var x: Double
     var y: Double
@@ -90,7 +110,7 @@ struct StoryPostText: Encodable, Equatable {
     /// あればひとことを出さないので、**ひとことも写真の上の文字として送る**。
     /// 置き場所は写真の下の方の真ん中、明朝・白・下地なし（アプリのひとことの見た目に近い）
     static func caption(_ text: String) -> StoryPostText {
-        StoryPostText(kind: "text", x: 0.5, y: 0.86, size: 0.07,
+        StoryPostText(kind: "text", x: 0.5, y: 0.86, size: 0.05,
                       text: String(text.prefix(TextOverlay.maxLength)), font: "mincho", color: "white", bg: "none")
     }
 
