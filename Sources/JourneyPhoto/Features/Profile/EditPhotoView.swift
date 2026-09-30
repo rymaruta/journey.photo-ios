@@ -178,7 +178,11 @@ struct EditPhotoView: View {
         }
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else { return }
-            let prepared = try ImagePreparer.prepare(data: data, fileName: "photo")
+            // **縮小・EXIF の書き直しは主スレッドの外で**（投稿の `prepareOffMain` と同じ）。
+            // 大きい写真だと、差し替え中の表示ごと画面が固まっていた
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try ImagePreparer.prepare(data: data, fileName: "photo")
+            }.value
             // ピンの無い写真・この画面で撮影地を消した写真に、差し替えた写真の位置を書かない
             let keep = EditPlaceRules.keepsCoordsOnReplace(openedLocation: photo.location,
                                                            openedHasCoords: photo.coords != nil,
