@@ -8,12 +8,16 @@ open class AVPlayerItem: NSObject {
     /// 本物と同じ形（読み込みに失敗したら `.failed`）
     public enum Status: Int { case unknown, readyToPlay, failed }
     open var status: Status { .unknown }
+    /// 本物と同じ形（長さ。読み込み前は無限・NaN のことがある）
+    open var duration: CMTime { .zero }
 }
 
 open class AVPlayer {
     public private(set) var currentItem: AVPlayerItem? = AVPlayerItem()
     /// 本物と同じ形。ミュートの実体
     public var isMuted: Bool = false
+    /// 本物と同じ形（再生の速さ。止めている・詰まっている間は 0）
+    public var rate: Float = 0
     public init(url: URL) {}
     public func play() {}
     public func pause() {}

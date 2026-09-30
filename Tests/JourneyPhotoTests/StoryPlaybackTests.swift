@@ -137,6 +137,47 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(clock.elapsed(at: t0.addingTimeInterval(9.5)), 0.5, accuracy: 0.0001)
     }
 
+    // MARK: - 動画の位置
+
+    /// 動画は再生器が知らせた位置で塗る。知らせが無ければ塗らない（今までどおり）
+    func testVideoSegmentFillsFromReportedPosition() {
+        XCTAssertEqual(StoryPlayback.segmentFills(count: 3, current: 1, elapsed: 0, duration: 5, isVideo: true,
+                                                  videoFraction: 0.25)[1], 0.25)
+        XCTAssertNil(StoryPlayback.segmentFills(count: 3, current: 1, elapsed: 0, duration: 5, isVideo: true,
+                                                videoFraction: nil)[1])
+        XCTAssertEqual(StoryPlayback.segmentFills(count: 1, current: 0, elapsed: 0, duration: 5, isVideo: true,
+                                                  videoFraction: 1.7)[0], 1.0, "1 を超えない")
+    }
+
+    /// 知らせの間は時刻から伸ばす。止めている間は伸ばさない・長さを超えない・長さが分からなければ塗らない
+    func testVideoProgressExtrapolates() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let playing = StoryPlayback.VideoProgress(seconds: 2, duration: 10, at: t0, playing: true)
+        XCTAssertEqual(playing.seconds(at: t0.addingTimeInterval(1.5)), 3.5, accuracy: 0.0001)
+        XCTAssertEqual(playing.fraction(at: t0.addingTimeInterval(3))!, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(playing.seconds(at: t0.addingTimeInterval(60)), 10, "長さを超えない")
+        let paused = StoryPlayback.VideoProgress(seconds: 2, duration: 10, at: t0, playing: false)
+        XCTAssertEqual(paused.seconds(at: t0.addingTimeInterval(5)), 2, "止めている間は伸ばさない")
+        let unknown = StoryPlayback.VideoProgress(seconds: 2, duration: .nan, at: t0, playing: true)
+        XCTAssertNil(unknown.fraction(at: t0), "長さが分からなければ塗らない")
+        XCTAssertNil(StoryPlayback.VideoProgress(seconds: 0, duration: 0, at: t0, playing: true).fraction(at: t0))
+    }
+
+    /// 画面を書き直すのは、ずれた・止まった・動き出した・長さが分かったときだけ
+    func testVideoProgressUpdatesOnlyWhenNeeded() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let old = StoryPlayback.VideoProgress(seconds: 2, duration: 10, at: t0, playing: true)
+        XCTAssertTrue(StoryPlayback.VideoProgress.needsUpdate(from: nil, to: old))
+        let onTrack = StoryPlayback.VideoProgress(seconds: 2.5, duration: 10, at: t0.addingTimeInterval(0.5), playing: true)
+        XCTAssertFalse(StoryPlayback.VideoProgress.needsUpdate(from: old, to: onTrack), "予想どおりなら書かない")
+        let stalled = StoryPlayback.VideoProgress(seconds: 2.0, duration: 10, at: t0.addingTimeInterval(0.5), playing: true)
+        XCTAssertTrue(StoryPlayback.VideoProgress.needsUpdate(from: old, to: stalled), "詰まってずれたら書く")
+        let paused = StoryPlayback.VideoProgress(seconds: 2.5, duration: 10, at: t0.addingTimeInterval(0.5), playing: false)
+        XCTAssertTrue(StoryPlayback.VideoProgress.needsUpdate(from: old, to: paused), "止まったら書く")
+        let known = StoryPlayback.VideoProgress(seconds: 2.5, duration: 12, at: t0.addingTimeInterval(0.5), playing: true)
+        XCTAssertTrue(StoryPlayback.VideoProgress.needsUpdate(from: old, to: known), "長さが替わったら書く")
+    }
+
     // MARK: - 前後
 
     /// 最後は閉じる（最初に戻して回し続けない）。

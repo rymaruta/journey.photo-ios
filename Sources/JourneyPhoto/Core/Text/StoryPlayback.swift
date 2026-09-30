@@ -9,8 +9,8 @@ import Foundation
 ///
 /// - 写真は投稿者が選んだ秒数（`durationSec`・3〜15）で実際に送り、
 ///   その経過だけをバーに塗る
-/// - 動画は経過の出どころ（`CMTime`）を模型に足していないので**塗らない**。
-///   区切りで「何枚目か」だけ分かるようにする
+/// - 動画は**再生器が知らせた位置**（`VideoProgress`）で塗る。まだ知らせが無い間
+///   （読み込み中・長さが分からない）は塗らず、区切りで「何枚目か」だけ分かるようにする
 enum StoryPlayback {
 
     // MARK: - 表示秒数
@@ -28,20 +28,67 @@ enum StoryPlayback {
     // MARK: - 進行バー
 
     /// 区切りごとの塗り（0〜1）。**`nil` は「今ここだが経過は描けない」**
-    /// ——動画の区切りがこれ。前は満・後は空。
+    /// ——位置の知らせがまだ無い動画の区切りがこれ。前は満・後は空。
+    ///
+    /// - Parameter videoFraction: 動画の位置（0〜1）。再生器が知らせた位置から
+    ///   `VideoProgress.fraction(at:)` で出したもの。**nil なら動画は塗らない**
     static func segmentFills(count: Int, current: Int, elapsed: TimeInterval,
-                             duration: TimeInterval, isVideo: Bool) -> [Double?] {
+                             duration: TimeInterval, isVideo: Bool,
+                             videoFraction: Double? = nil) -> [Double?] {
         guard count > 0 else { return [] }
         return (0..<count).map { index in
             if index < current { return 1.0 }
             if index > current { return 0.0 }
-            if isVideo { return nil }
+            if isVideo { return videoFraction.map { min(1.0, max(0.0, $0)) } }
             guard duration > 0 else { return 0.0 }
             return min(1.0, max(0.0, elapsed / duration))
         }
     }
 
     // MARK: - 時間を進める
+
+    /// 動画の位置。**再生器が知らせた位置と、その時刻**だけを持ち、間は時刻から伸ばす
+    /// （写真の `Clock` と同じ考え方——知らせの間隔で伸ばすと、知らせの遅れで止まって見える）。
+    ///
+    /// 知らせは 0.5 秒ごとに来るが、**画面の状態を書き換えるのは `needsUpdate` が真のときだけ**
+    /// （再生・停止が替わった・長さが替わった・伸ばした位置と実際が `maxDrift` 以上ずれた）。
+    /// 毎回書くと、閲覧画面の全体を1秒に2回描き直す
+    struct VideoProgress: Equatable {
+        /// 知らせが来た時点の位置（秒）
+        var seconds: Double
+        /// 動画の長さ（秒）。0 以下・無限は「分からない」
+        var duration: Double
+        /// 知らせが来た時刻
+        var at: Date
+        /// 再生中か（止めている・読み込み中なら伸ばさない）
+        var playing: Bool
+
+        /// 伸ばした位置と実際のずれを、これ以上なら書き直す（秒）
+        static let maxDrift: Double = 0.3
+
+        var hasDuration: Bool { duration.isFinite && duration > 0 }
+
+        /// `now` の時点の位置（秒）。**長さを超えない・負にしない**
+        func seconds(at now: Date) -> Double {
+            let moved = playing ? max(0, now.timeIntervalSince(at)) : 0
+            let raw = seconds + moved
+            return hasDuration ? min(duration, max(0, raw)) : max(0, raw)
+        }
+
+        /// `now` の時点の割合（0〜1）。長さが分からなければ nil（塗らない）
+        func fraction(at now: Date) -> Double? {
+            guard hasDuration else { return nil }
+            return seconds(at: now) / duration
+        }
+
+        /// 新しい知らせで画面を書き直すか
+        static func needsUpdate(from old: VideoProgress?, to new: VideoProgress) -> Bool {
+            guard let old else { return true }
+            if old.playing != new.playing { return true }
+            if old.duration != new.duration { return true }
+            return abs(old.seconds(at: new.at) - new.seconds) >= maxDrift
+        }
+    }
 
     /// 写真1枚の時計。**「いつから動いているか」だけを持ち、経過はその場で計算する。**
     ///
