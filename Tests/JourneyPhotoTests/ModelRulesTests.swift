@@ -479,4 +479,13 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(PostLimits.clamp(long, limit: PostLimits.title).count, 200)
         XCTAssertEqual(PostLimits.clamp("短い", limit: 200), "短い")
     }
+    /// **ログインの画面に、公開範囲を絞った写真を敷かない。** ログアウトの直後は
+    /// 読み出し口の入れ替えより先に一覧を読むことがあり、前の人あての写真が混ざった
+    func testSignInTilesSkipRestrictedPhotos() throws {
+        let photos = try JSONDecoder.api.decode([Photo].self, from: Data(#"""
+            [{"id":"pub","src":"https://x/p.jpg"},
+             {"id":"secret","src":"https://x/s.jpg","audience":"closeFriends"}]
+            """#.utf8))
+        XCTAssertEqual(SignInView.tiles(from: photos).map(\.id), ["pub"])
+    }
 }

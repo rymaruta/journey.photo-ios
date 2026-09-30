@@ -76,6 +76,9 @@ struct DeleteAccountView: View {
         .safeAreaInset(edge: .bottom) { deleteButton }
         .navigationTitle(L("アカウントの削除", "Delete account"))
         .navigationBarTitleDisplayMode(.inline)
+        // 消している最中は戻らせない（戻って開き直すと、2本目の退会が走る。`ProfileEditView` と同じ）
+        .navigationBarBackButtonHidden(isWorking)
+        .interactiveDismissDisabled(isWorking)
     }
 
     private var canDelete: Bool {
