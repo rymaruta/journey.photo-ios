@@ -578,6 +578,8 @@ final class UserProfileViewModel: ObservableObject {
         }
     }
 
+    /// ブロック後のフォロー数は次に読み込むまで古いまま（2026-09-30 判断: 同時の読み込み・
+    /// 人の切り替え・失敗との組み合わせで回帰が続いたため）
     func block(userId: String, environment: AppEnvironment, store: ModerationStore,
                toasts: ToastCenter) async {
         actionMessage = nil

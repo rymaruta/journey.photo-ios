@@ -23,6 +23,23 @@ enum PostLimits {
     /// ストーリーへの返信（`storyReplies.ts` の `TEXT_MAX`）
     static let storyReply = 200
 
+    /// プロフィールの欄（`userProfile.ts` の `updateMyProfile`）。**超えたぶんはサーバーが黙って切る**
+    /// ので、欄で止める。数え方は上と同じ UTF-16 の単位（`truncate` も `slice` も JavaScript の `length`）
+    enum Profile {
+        /// `truncate(displayName, 100)`
+        static let displayName = 100
+        /// `truncate(bio, 300)`
+        static let bio = 300
+        /// `instagram.slice(0, 100)`
+        static let instagram = 100
+        /// `website.slice(0, 200)`
+        static let website = 200
+        /// ひとこと（`truncate(statusText, 60)`）
+        static let statusText = 60
+        /// 居住地（`truncate(homeLocation, 60)`）
+        static let homeLocation = 60
+    }
+
     /// **サーバーと同じ数え方（UTF-16 の単位）。** `truncate`（`sanitize.ts`）は JavaScript の
     /// `length` で数えるので、絵文字は2つ以上に数える。字（書記素）で数えると、画面では上限内に
     /// 見えてもサーバーで黙って切られていた
@@ -81,6 +98,26 @@ enum PostLimits {
         }
         let kept = clamp(body, limit: room - length(trail)) + trail
         return prefix + (length(kept) <= room ? kept : clamp(inserted, limit: room)) + suffix
+    }
+
+    /// 読み込んだ値のある欄の `limited`。**読み込んだ値をそのまま入れた回は切らない**——
+    /// 読み込みで欄に値を入れた瞬間にも欄の変化として届くので、上限を超えて保存されている値
+    /// （上限ができる前の値など）が、開いただけで切られ、触っていない欄まで保存で送られた。
+    /// 一度入れば、そのあとは `limited` の「前の文が超えていれば減らす変更だけ受ける」で扱う
+    static func limitedEdit(old: String, new: String, limit: Int, loaded: String?) -> String {
+        if let loaded, new == loaded { return new }
+        return limited(old: old, new: new, limit: limit)
+    }
+
+    /// 上限を超えている欄の知らせ（「72/60・60字まで。この欄を直して保存すると 60字に切れます」）。
+    /// **超えていなければ nil。** `limitedEdit` は読み込んだ値を切らずに残す。触らなければ
+    /// 送らない（`ProfileDraft.patch`）ので切れないが、直して保存するとサーバーで上限に切られる。
+    /// 数え方は `length`（サーバーと同じ UTF-16。投稿の字数の表示と同じ出し方）
+    static func overLimitNote(_ text: String, limit: Int) -> String? {
+        let count = length(text)
+        guard count > limit else { return nil }
+        return L("\(count)/\(limit)・\(limit)字まで。この欄を直して保存すると \(limit)字に切れます",
+                 "\(count)/\(limit) · Up to \(limit) characters. If you edit this field and save, it will be cut to \(limit)")
     }
 
     /// 上限で切る（画面側で止める）。**字の途中では切らない**（サーバーの `truncate` と同じく、

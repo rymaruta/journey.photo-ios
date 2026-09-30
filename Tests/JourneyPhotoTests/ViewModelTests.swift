@@ -952,6 +952,35 @@ final class ViewModelTests: XCTestCase {
         XCTAssertNotNil(model.errorMessage)
     }
 
+    /// 🔴 **マイページの数は、読み込み中・取れなかったときに「0」と言わない**
+    /// （人のページの `ProfileLine.PhotoCount` と同じ決まり）。配列の長さ・数の既定値 0 を
+    /// そのまま出していたので、圏外で開くと「投稿 0・フォロワー 0」と嘘が出た
+    func testMyPageCountsAreNotZeroUntilRead() async {
+        prepare()
+        let model = MyPageViewModel(api: api())
+        XCTAssertEqual(model.photoCount, .pending)
+        XCTAssertEqual(model.followerCount, .pending)
+        XCTAssertNil(ProfileLine.statValue(model.photoCount), "読み込み中に 0 と出している")
+
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 500, body: #"{"error":"x"}"#)
+        StubProtocol.respond(path: "/users/a/follow", status: 500, body: #"{"error":"x"}"#)
+        await model.load(for: "a")
+        XCTAssertEqual(model.photoCount, .failed, "写真を読めていないのに数を言っている")
+        XCTAssertEqual(model.followerCount, .failed, "フォロー数を読めていないのに数を言っている")
+        XCTAssertEqual(model.followingCount, .failed)
+        XCTAssertEqual(ProfileLine.statValue(model.followerCount), "—")
+
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: 200, body: "[]")
+        StubProtocol.respond(path: "/users/a/follow", status: 200, body: #"{"followers":0,"following":4}"#)
+        await model.load(for: "a")
+        XCTAssertEqual(model.photoCount, .loaded(0), "読めた 0 は 0 と言う")
+        XCTAssertEqual(model.followerCount, .loaded(0))
+        XCTAssertEqual(model.followingCount, .loaded(4))
+    }
+
     /// **フォロー数が遅くても、写真は待たずに入る**（3ecb6a5 は数を待ってから
     /// 写真を入れていたので、格子が往復1回ぶん遅れていた）
     func testSlowFollowStatsDoNotHoldBackPhotos() async {
