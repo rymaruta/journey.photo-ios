@@ -44,6 +44,13 @@ final class ProfileLineTests: XCTestCase {
         XCTAssertEqual(failed.last?.value, "—")
     }
 
+    /// マイページの3列の数も同じ決まり: 読み込み中は出さず、取れなければ「—」
+    func testStatValueHidesPendingAndDashesFailure() {
+        XCTAssertNil(ProfileLine.statValue(.pending))
+        XCTAssertEqual(ProfileLine.statValue(.failed), "—")
+        XCTAssertEqual(ProfileLine.statValue(.loaded(0)), "0")
+    }
+
     /// ブロック中の相手には、フォロー・一覧・ハイライト・ブロックを出さない
     func testCanActExcludesBlockedSelfAndSignedOut() {
         XCTAssertTrue(ProfileLine.canAct(viewerId: "me", userId: "u", blocked: []))
