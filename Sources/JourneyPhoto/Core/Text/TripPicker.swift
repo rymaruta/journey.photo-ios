@@ -210,14 +210,29 @@ enum TripPicker {
     /// 越えると選んだ場所が保存で消える。日数が無いときも60日で切り直す
     /// （収まらないのは 60×20＝1,200か所を越えたときだけ。選べるのは `pickMax` まで）
     static func days(_ groups: [[OfficialSpot]], dayCount: Int?) -> [[OfficialSpot]] {
-        var days: [[OfficialSpot]] = []
+        // 地域の無い場所は1か所ずつ別の地域（`region(of:)`）だが、日に割るときは
+        // **続いている分を1つの並びとして**均す（1か所ずつ1日にしない）
+        var runs: [[OfficialSpot]] = []
+        var previousUnplaced = false
         for group in groups where !group.isEmpty {
-            let parts = Int((Double(group.count) / Double(placesPerDay)).rounded(.up))
-            days.append(contentsOf: balanced(group, parts: parts))
+            let unplaced = region(of: group[0]).label == nil
+            if unplaced && previousUnplaced {
+                runs[runs.count - 1].append(contentsOf: group)
+            } else {
+                runs.append(group)
+            }
+            previousUnplaced = unplaced
         }
-        let target = min(dayCount ?? days.count, TripPlanService.daysMax)
-        guard !days.isEmpty else { return Array(repeating: [], count: max(0, target)) }
-        guard target > 0 else { return days }
+        var days: [[OfficialSpot]] = []
+        for run in runs {
+            let parts = Int((Double(run.count) / Double(placesPerDay)).rounded(.up))
+            days.append(contentsOf: balanced(run, parts: parts))
+        }
+        // 0以下の日数は「日数が無い」と同じ（60日の上限を素通りさせない）
+        let requested = dayCount.flatMap { $0 > 0 ? $0 : nil }
+        let target = min(requested ?? days.count, TripPlanService.daysMax)
+        // 場所が無ければ、決めた日数ぶんの空の日（日数が無ければ何も無い）
+        guard !days.isEmpty else { return Array(repeating: [], count: target) }
 
         if days.count > target {
             return packed(days.flatMap { $0 }, into: target)
@@ -237,18 +252,27 @@ enum TripPicker {
         return days
     }
 
+    /// 1日に詰めてよい目安（か所）。**これを越えるほど詰まるなら、地域を混ぜてでも均す**
+    /// （京都20・奈良20を3日にすると、混ぜない切り方は「20・10・10」——1日20か所は回れない。
+    /// 「14・13・13」にする）。越えないうちは地域を混ぜない方を採る
+    static let crowdedDay = placesPerDay * 2
+
     /// 並びを保ったまま `target` 日に切り直す（1日は `itemsPerDayMax` まで・空の日は作らない）。
     ///
-    /// 決め方は順に: **地域を混ぜる日の数**が少ない → **いちばん多い日**が少ない →
-    /// 日ごとの数の2乗の和が小さい（均す）。貪欲にまとめると、40か所を2日で
-    /// 「16・16・8」の3日に行き詰まっていた（「20・20」なら収まる）ので、全部の切り方を比べる。
-    /// 20か所ずつでも `target` 日に収まらなければ、収まる日数まで増やす（場所は落とさない）
+    /// 1日の数の上限を `crowdedDay` か、均したときの数（n÷日数の切り上げ）の大きい方に置き、
+    /// その中で **地域を混ぜる日の数**が少ない → **いちばん多い日**が少ない →
+    /// 日ごとの数の2乗の和が小さい（均す）切り方を、全部の切り方から選ぶ。
+    /// 貪欲にまとめると、40か所を2日で「16・16・8」の3日に行き詰まっていた（「20・20」なら収まる）。
+    /// 20か所ずつでも `target` 日に収まらなければ、収まる日数まで増やす（場所は落とさない）。
+    /// **地域の無い場所は「混ぜる」に数えない**（地域が分からないだけで、別の地域とは言えない）
     private static func packed(_ items: [OfficialSpot], into target: Int) -> [[OfficialSpot]] {
         let n = items.count
         let cap = TripPlanService.itemsPerDayMax
         let parts = min(n, max(target, (n + cap - 1) / cap))
         guard parts > 0 else { return [] }
-        let keys = items.map { region(of: $0).key }
+        // 1日の数の上限。均した数は必ず入るので、これで切れない入力は無い
+        let limit = min(cap, max(crowdedDay, (n + parts - 1) / parts))
+        let keys: [String?] = items.map { region(of: $0).label == nil ? nil : region(of: $0).key }
 
         struct Score {
             var mixed: Int
@@ -267,10 +291,10 @@ enum TripPicker {
         for d in 1...parts {
             for i in d...n {
                 var chosen: Score?
-                for size in 1...min(cap, i) {
+                for size in 1...min(limit, i) {
                     let j = i - size
                     guard let prev = best[d - 1][j] else { continue }
-                    let mixed = Set(keys[j..<i]).count > 1 ? 1 : 0
+                    let mixed = Set(keys[j..<i].compactMap { $0 }).count > 1 ? 1 : 0
                     let score = Score(mixed: prev.mixed + mixed, widest: max(prev.widest, size),
                                       squares: prev.squares + size * size, from: j)
                     if chosen == nil || score.better(than: chosen!) { chosen = score }

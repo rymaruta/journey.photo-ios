@@ -191,6 +191,35 @@ final class TripPickerTests: XCTestCase {
         XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(k + n))
     }
 
+    /// 1日が詰まりすぎるなら、地域を混ぜてでも均す（混ぜない「20・10・10」にしない）
+    func testCrowdedDaysAreBalancedEvenIfRegionsMix() throws {
+        let k = try line("k", 20)
+        let n = try (0..<20).map { try nara("n\($0)", lat: 34.6 - Double($0) * 0.01) }
+        let days = TripPicker.days([k, n], dayCount: 3)
+        XCTAssertEqual(days.map(\.count), [14, 13, 13])
+        XCTAssertEqual(slugs(days.flatMap { $0 }), slugs(k + n))
+    }
+
+    /// 地域の無い場所は、日に割るときは続いた並びとして均す（1か所ずつ1日にしない・混ぜると数えない）
+    func testUnplacedSpotsAreSpreadLikeOneRegion() throws {
+        let spots = try (0..<10).map { try spot("u\($0)", lat: 35 + Double($0) * 0.01, lng: 135) }
+        let groups = TripPicker.grouped(spots)
+        XCTAssertEqual(TripPicker.days(groups, dayCount: nil).map(\.count), [4, 3, 3])
+        XCTAssertEqual(TripPicker.days(groups, dayCount: 3).map(\.count), [4, 3, 3])
+        let forty = try (0..<40).map { try spot("v\($0)", lat: 35 + Double($0) * 0.01, lng: 135) }
+        XCTAssertEqual(TripPicker.days(TripPicker.grouped(forty), dayCount: 5).map(\.count), [8, 8, 8, 8, 8])
+    }
+
+    /// 0以下の日数は「日数が無い」と同じ（60日の上限を素通りさせない）
+    func testNonPositiveDayCountIsLikeNoDates() throws {
+        let spots = try (0..<70).map { try spot("p\($0)", prefecture: "県\($0)", lat: 35, lng: 135 + Double($0) * 0.1) }
+        let groups = TripPicker.grouped(spots)
+        XCTAssertEqual(TripPicker.days(groups, dayCount: 0).count, TripPlanService.daysMax)
+        XCTAssertEqual(TripPicker.days(groups, dayCount: -3).count, TripPlanService.daysMax)
+        XCTAssertEqual(TripPicker.days([], dayCount: 0).count, 0)
+        XCTAssertEqual(TripPicker.days([], dayCount: 2), [[], []])
+    }
+
     /// 収まる日程は必ず収める（貪欲にまとめると 40か所/2日 が「16・16・8」の3日になっていた）
     func testPacksIntoTheRequestedDaysWhenItFits() throws {
         let k = try line("k", 40)
