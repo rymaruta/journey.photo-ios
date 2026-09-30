@@ -33,6 +33,11 @@ struct TripPlanDetailView: View {
     @State private var picking: PickTarget?
     /// 「地図で見る」を押した日（`TripDayMapView`）
     @State private var mapDay: MapTarget?
+    /// 消すか確かめている日（予定の入った日だけ・`TripPlanEdit.confirmsRemoving`）。
+    /// **画面の中に開く札で確かめる**（プランの削除と同じ形）。系統の確認ダイアログにすると、
+    /// 保存の返事を待つ間に出した確認の上にエラーのアラートが立てず、以後の知らせが止まった
+    /// （37b96ec のレビュー）
+    @State private var removingDay: RemoveDayTarget?
     @State private var confirmingDelete = false
     /// 「保存して戻る／変更を捨てる」の確認
     @State private var confirmLeave = false
@@ -56,6 +61,12 @@ struct TripPlanDetailView: View {
     @State private var sourcesFailed = false
 
     private struct PickTarget: Identifiable { let day: Int; var id: Int { day } }
+    /// 消すか確かめている日（何日目と、**押したときの日程まるごと**）。
+    /// 日程が変わったら札を出さない・消さない（`TripPlanEdit.removeDay`）
+    private struct RemoveDayTarget {
+        let index: Int
+        let days: [TripDay]
+    }
     private struct MapTarget: Identifiable {
         let day: Int
         let stops: [TripDayMap.Stop]
@@ -256,6 +267,11 @@ struct TripPlanDetailView: View {
             resetIfNeeded()
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
+        // 日程が変わったら日の削除の札を閉じる。控えを残すと、日程が元の形に戻ったときに
+        // 押していない札がまた開いた（a229438 のレビュー）
+        .onChange(of: days) { _, now in
+            if let target = removingDay, target.days != now { removingDay = nil }
+        }
 
         // その日の場所を番号つきで地図に・前の場所からの経路（2026-09-30）。
         // **開いた時点の日程で出す**（保存していない並び替えも反映する）
@@ -480,12 +496,16 @@ struct TripPlanDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("\(di + 1) 日目を地図で見る", "Show day \(di + 1) on a map"))
-                    // 確認の無い日の削除（赤）のすぐ隣に置かない（押し間違い・eaf0c48 のレビュー）
+                    // 日の削除（赤）のすぐ隣に置かない（押し間違い・eaf0c48 のレビュー。空の日の削除は確認が無い）
                     .padding(.trailing, 8)
                 }
                 Button {
                     guard days.indices.contains(di) else { return }
-                    days.remove(at: di)
+                    if TripPlanEdit.confirmsRemoving(days[di]) {
+                        removingDay = isConfirmingRemove(di) ? nil : RemoveDayTarget(index: di, days: days)
+                    } else {
+                        removeDay(di, confirmedOn: days)
+                    }
                 } label: {
                     Image(systemName: "trash")
                         .foregroundStyle(WebTheme.danger)
@@ -493,10 +513,19 @@ struct TripPlanDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("\(di + 1) 日目を削除", "Remove day \(di + 1)"))
+                .accessibilityHint(!TripPlanEdit.confirmsRemoving(day) ? ""
+                                   : isConfirmingRemove(di) ? L("確認を閉じます", "Closes the confirmation")
+                                   : L("確認が出ます", "Asks before removing"))
             }
             .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
+                // 札は**消える日の箱の中の先頭**に開く（別の箱にすると、どちらが消えるのか分かりにくい・
+                // プランの削除の札も押したボタンと同じ箱の中）
+                if isConfirmingRemove(di) {
+                    removeDayConfirm(di)
+                    divider
+                }
                 if day.items.isEmpty {
                     Text(L("まだ何も入っていません。", "Nothing planned."))
                         .font(.footnote)
@@ -514,6 +543,55 @@ struct TripPlanDetailView: View {
             .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
         }
+    }
+
+    /// 札を出している日か。**押したときから日程が変わっていたら出さない**
+    private func isConfirmingRemove(_ di: Int) -> Bool {
+        guard let target = removingDay else { return false }
+        return target.index == di && target.days == days
+    }
+
+    /// 日を消す。消せたら読み上げで知らせる（焦点は次の日のゴミ箱に残るので、消えたことが聞こえない）
+    private func removeDay(_ di: Int, confirmedOn snapshot: [TripDay]) {
+        removingDay = nil
+        guard let next = TripPlanEdit.removeDay(days, at: di, snapshot: snapshot) else { return }
+        days = next
+        announce(L("\(di + 1) 日目を削除しました", "Removed day \(di + 1)"))
+    }
+
+    /// 日を消す前の札（プランの削除の札と同じ形）
+    private func removeDayConfirm(_ di: Int) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L("\(di + 1) 日目と、その日の予定を削除しますか？", "Remove day \(di + 1) and its plans?"))
+                .font(.footnote)
+                .foregroundStyle(WebTheme.muted2)
+            HStack(spacing: 8) {
+                Button {
+                    guard let target = removingDay else { return }
+                    removeDay(di, confirmedOn: target.days)
+                } label: {
+                    Text(L("削除する", "Remove"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.danger)
+                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                Button {
+                    removingDay = nil
+                } label: {
+                    Text(Labels.Common.cancel)
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.foreground)
+                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14)
     }
 
     private var divider: some View {

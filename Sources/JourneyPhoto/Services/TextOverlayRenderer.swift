@@ -77,18 +77,7 @@ enum TextOverlayRenderer {
             merged[.paragraphStyle] = paragraph
             return NSAttributedString(string: overlay.drawnText, attributes: merged)
         }
-        let bounds: CGSize = {
-            guard multiline else { return text.size(withAttributes: attributes) }
-            // **測るのは揃えを付けずに**（行の幅は揃えに関係ない）。中央・右の段落を
-            // 果てしなく広い枠で測ると、寄せる計算で桁が落ちるおそれがある（6e76bf5 のレビュー）。
-            // 揃えは描くときだけ付ける
-            // 枠は**有限の広さ**で測る（右から左の文字は揃えの既定が右寄せになり、果てしない枠だと
-            // 同じ桁落ちが起きうる・ec4645b のレビュー）。写真の画素より十分広い
-            let rect = NSAttributedString(string: overlay.drawnText, attributes: attributes).boundingRect(
-                with: CGSize(width: 100_000, height: 100_000),
-                options: .usesLineFragmentOrigin, context: nil)
-            return CGSize(width: rect.width.rounded(.up), height: rect.height.rounded(.up))
-        }()
+        let bounds = Self.textBounds(overlay.drawnText, attributes: attributes)
         // 位置は中心で持っている（0...1 の相対値）。**回しは中心の周りで**
         // （編集画面の `rotationEffect` も中心の周り）
         let center = overlay.center(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
@@ -121,6 +110,26 @@ enum TextOverlayRenderer {
             }
             text.draw(at: origin, withAttributes: attributes)
         }
+    }
+
+    /// 文字の大きさ（折り返さない）。**焼き込みと、写真の上で打つ画面（`StoryTextTypingView`）が
+    /// 同じ測り方を通す**——打つ画面は、これが写真の幅を超えたら縮めて見せて断る
+    /// `text` を渡すと、その文字を札の書体で測る（打つ画面は最後の空の行まで数える）
+    static func naturalSize(_ overlay: TextOverlay, text: String? = nil, fontSize: Double) -> CGSize {
+        textBounds(text ?? overlay.drawnText, attributes: attributes(for: overlay, fontSize: fontSize).fill)
+    }
+
+    private static func textBounds(_ text: String, attributes: [NSAttributedString.Key: Any]) -> CGSize {
+        guard text.contains("\n") else { return (text as NSString).size(withAttributes: attributes) }
+        // **測るのは揃えを付けずに**（行の幅は揃えに関係ない）。中央・右の段落を
+        // 果てしなく広い枠で測ると、寄せる計算で桁が落ちるおそれがある（6e76bf5 のレビュー）。
+        // 揃えは描くときだけ付ける
+        // 枠は**有限の広さ**で測る（右から左の文字は揃えの既定が右寄せになり、果てしない枠だと
+        // 同じ桁落ちが起きうる・ec4645b のレビュー）。写真の画素より十分広い
+        let rect = NSAttributedString(string: text, attributes: attributes).boundingRect(
+            with: CGSize(width: 100_000, height: 100_000),
+            options: .usesLineFragmentOrigin, context: nil)
+        return CGSize(width: rect.width.rounded(.up), height: rect.height.rounded(.up))
     }
 
     static func textAlignment(_ align: TextOverlay.Align) -> NSTextAlignment {
