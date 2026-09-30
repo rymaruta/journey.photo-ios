@@ -657,9 +657,21 @@ struct StoryViewerView: View {
                     photoMeta(symbol: "music.note", text: song)
                         .allowsHitTesting(false)
                 }
-                if let spokenSong {
+                // ひとことも撮影地も無い回は並びが空になり、背景に大きさが無いので中に置く
+                // （ほかに要素が無いので間隔は足されない）
+                if caption == nil, place == nil, let spokenSong {
                     Color.clear
                         .frame(width: 1, height: 1)
+                        .allowsHitTesting(false)
+                        .accessibilityElement()
+                        .accessibilityLabel(L("曲 \(spokenSong)", "Song \(spokenSong)"))
+                }
+            }
+            // **並びの外（背景）に置く。** 並びの中に置くと間隔 8pt ＋ 1pt が足され、下端で
+            // 揃えている塊が 9pt 押し上がった（c04fdf5 のレビュー）
+            .background {
+                if caption != nil || place != nil, let spokenSong {
+                    Color.clear
                         .allowsHitTesting(false)
                         .accessibilityElement()
                         .accessibilityLabel(L("曲 \(spokenSong)", "Song \(spokenSong)"))
