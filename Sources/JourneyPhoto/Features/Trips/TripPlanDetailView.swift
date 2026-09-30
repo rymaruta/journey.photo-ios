@@ -53,8 +53,9 @@ struct TripPlanDetailView: View {
     @State private var sourcesFailed = false
 
     private struct PickTarget: Identifiable { let day: Int; var id: Int { day } }
-    /// ひとことを書いている項目（何日目の何番目）。書く欄の中身は `noteText`
-    private struct NoteTarget: Equatable { let day: Int; let item: Int }
+    /// ひとことを書いている項目（何日目の何番目と、**開いたときの項目そのもの**）。
+    /// 書く欄を開いている間に日程が差し替わっても、別の項目に書かない（`TripPlanEdit.locate`）
+    private struct NoteTarget { let day: Int; let item: Int; let original: TripItem }
     @State private var noteTarget: NoteTarget?
     @State private var noteText = ""
     private struct Draft: Equatable {
@@ -115,7 +116,8 @@ struct TripPlanDetailView: View {
                                        try? await Task.sleep(nanoseconds: 350_000_000)
                                        // その間に次の保存を送った・確認を開き直したなら出さない
                                        // （成功した後に前の失敗が出ていた。赤い行は残る）
-                                       guard saveAttempt == mine, !confirmLeave else { return }
+                                       // ひとことを書いている間も出さない（アラートが2つ重なる）
+                                       guard saveAttempt == mine, !confirmLeave, noteTarget == nil else { return }
                                        leaveSaveError = message
                                    }
                                }
@@ -138,10 +140,21 @@ struct TripPlanDetailView: View {
                                     set: { if !$0 { noteTarget = nil } })) {
             TextField(L("例: 朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)
             Button(Labels.Common.save) {
-                if let t = noteTarget, let next = TripPlanEdit.setNote(days, day: t.day, item: t.item, note: noteText) {
-                    days = next
-                }
+                let target = noteTarget
                 noteTarget = nil
+                guard let t = target else { return }
+                if let at = TripPlanEdit.locate(days, day: t.day, item: t.item, original: t.original),
+                   let next = TripPlanEdit.setNote(days, day: t.day, item: at, note: noteText) {
+                    days = next
+                } else {
+                    // 書いている間に項目が外れた（別の端末・保存の応答で差し替わった）。
+                    // 黙って捨てずに知らせる（アラートは閉じた後に出す）
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        leaveSaveError = L("項目が変わったため、ひとことを入れられませんでした。もう一度書いてください。",
+                                           "The item changed, so the note wasn't added. Please try again.")
+                    }
+                }
             }
             Button(Labels.Common.cancel, role: .cancel) { noteTarget = nil }
         } message: {
@@ -260,7 +273,8 @@ struct TripPlanDetailView: View {
                 // 確認を出している間は、アラートは黙って捨てられる。そのときは赤い行だけが
                 // 残る（この直しの前と同じ）。持っておいて後で出す作りは、戻るスワイプの
                 // 長さ・他の確認・走っている保存と噛み合わず回帰が続いたので採らない
-                guard picking == nil, onTop, !confirmLeave else { return }
+                // ひとことを書いている間も同じ（アラートが2つ重なる）
+                guard picking == nil, onTop, !confirmLeave, noteTarget == nil else { return }
                 leaveSaveError = model.errorMessage ?? L("もう一度お試しください", "Please try again.")
             }
         }
@@ -426,7 +440,7 @@ struct TripPlanDetailView: View {
 
     private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem) -> some View {
         let name = TripPlanText.label(for: item, index: index, places: places)
-        return HStack(spacing: 4) {
+        return HStack(spacing: 12) {
             itemLink(item, name: name)
             itemMenu(di, ii, item, name: name)
             // **外す。** 日の削除（赤いゴミ箱）と見分けるため × にする
@@ -447,31 +461,36 @@ struct TripPlanDetailView: View {
     }
 
     /// 項目の操作（2026-09-30）: 上へ・下へ・別の日へ・ひとこと。**規則は `TripPlanEdit`**
-    /// （範囲外やいっぱいの日へは移さない）。押せないものは出さずに無効にする
+    /// （範囲外やいっぱいの日へは移さない）。上へ・下へは押せないとき無効（灰色）で残し、
+    /// 「別の日へ移す」は移せる日が無いとき（1日だけ・ほかの日が全部いっぱい）出さない。
+    /// 押せるかどうかも `TripPlanEdit` の答えから導く（判定を二重に持たない）
     private func itemMenu(_ di: Int, _ ii: Int, _ item: TripItem, name: String) -> some View {
-        let count = days.indices.contains(di) ? days[di].items.count : 0
+        let up = TripPlanEdit.moveUp(days, day: di, item: ii)
+        let down = TripPlanEdit.moveDown(days, day: di, item: ii)
         let targets = TripPlanEdit.movableDays(days, from: di)
         return Menu {
             Button {
-                if let next = TripPlanEdit.moveUp(days, day: di, item: ii) { days = next }
+                if let up { apply(up, said: L("\(di + 1) 日目の \(ii) 番目へ", "Moved to position \(ii) on day \(di + 1)")) }
             } label: { Label(L("上へ", "Move up"), systemImage: "arrow.up") }
-            .disabled(ii == 0)
+            .disabled(up == nil)
             Button {
-                if let next = TripPlanEdit.moveDown(days, day: di, item: ii) { days = next }
+                if let down { apply(down, said: L("\(di + 1) 日目の \(ii + 2) 番目へ", "Moved to position \(ii + 2) on day \(di + 1)")) }
             } label: { Label(L("下へ", "Move down"), systemImage: "arrow.down") }
-            .disabled(ii + 1 >= count)
+            .disabled(down == nil)
             if !targets.isEmpty {
                 Menu {
                     ForEach(targets, id: \.self) { to in
                         Button(L("\(to + 1) 日目", "Day \(to + 1)")) {
-                            if let next = TripPlanEdit.moveToDay(days, day: di, item: ii, toDay: to) { days = next }
+                            if let next = TripPlanEdit.moveToDay(days, day: di, item: ii, toDay: to) {
+                                apply(next, said: L("「\(name)」を \(to + 1) 日目へ移しました", "Moved \(name) to day \(to + 1)"))
+                            }
                         }
                     }
                 } label: { Label(L("別の日へ移す", "Move to another day"), systemImage: "calendar") }
             }
             Button {
                 noteText = item.note ?? ""
-                noteTarget = NoteTarget(day: di, item: ii)
+                noteTarget = NoteTarget(day: di, item: ii, original: item)
             } label: {
                 Label(item.note == nil ? L("ひとことを書く", "Add a note") : L("ひとことを直す", "Edit note"),
                       systemImage: "text.bubble")
@@ -482,7 +501,18 @@ struct TripPlanDetailView: View {
                 .foregroundStyle(WebTheme.muted2)
                 .webTappable()
         }
+        // 画面の下のほうで上に開いても、上へ・下へが逆さに並ばないようにする
+        .menuOrder(.fixed)
         .accessibilityLabel(L("「\(name)」の操作", "Actions for \(name)"))
+        // 行の身元は位置なので、並べ替えのあと読み上げの焦点は同じ位置に残る。
+        // 位置を値として読ませ、動かした結果は `apply` が読み上げる
+        .accessibilityValue(L("\(di + 1) 日目・\(ii + 1) 番目", "Day \(di + 1), item \(ii + 1)"))
+    }
+
+    /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）
+    private func apply(_ next: [TripDay], said: String) {
+        days = next
+        AccessibilityNotification.Announcement(said).post()
     }
 
     /// 名前を押すとその場所へ。**開ける先が無いものは行だけ**（押しても何も起きない札を作らない）

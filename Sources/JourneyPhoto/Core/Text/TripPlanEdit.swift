@@ -56,6 +56,19 @@ enum TripPlanEdit {
         return out
     }
 
+    /// ひとことを書き始めたときの項目が、**いま**どこにあるか（2026-09-30）。
+    ///
+    /// 書く欄を開いている間に日程が差し替わる（前に送った保存の応答が届き、サーバーの
+    /// 姿に合わせ直す）ことがある。位置だけで書くと、同じ位置にある**別の項目**に書いて
+    /// しまう。まず同じ位置が同じ項目かを見て、違えば同じ日の中で同じ項目を探す。
+    /// 見つからなければ `nil`（書かない・呼ぶ側が知らせる）
+    static func locate(_ days: [TripDay], day: Int, item: Int, original: TripItem) -> Int? {
+        guard days.indices.contains(day) else { return nil }
+        let items = days[day].items
+        if items.indices.contains(item), items[item] == original { return item }
+        return items.firstIndex(of: original)
+    }
+
     /// 送るひとこと（空なら `nil`）
     static func noteToSend(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -119,4 +119,24 @@ final class TripPlanEditTests: XCTestCase {
         let noted = try XCTUnwrap(TripPlanEdit.setNote(sample, day: 1, item: 0, note: "夕方"))
         XCTAssertTrue(TripPlanText.isDirty(plan: plan, days: noted, start: nil, end: nil))
     }
+
+    // MARK: - 書く欄を開いている間に日程が変わったとき
+
+    /// 同じ位置に同じ項目があればそこ
+    func testLocateKeepsThePositionWhenUnchanged() {
+        XCTAssertEqual(TripPlanEdit.locate(sample, day: 0, item: 1, original: s("b")), 1)
+    }
+
+    /// 並びが変わっていたら、**同じ項目を探し直す**（同じ位置の別の項目に書かない）
+    func testLocateFollowsTheItemWhenTheDayWasReordered() throws {
+        let reordered = try XCTUnwrap(TripPlanEdit.moveUp(sample, day: 0, item: 2))   // a c b
+        XCTAssertEqual(TripPlanEdit.locate(reordered, day: 0, item: 1, original: s("b")), 2)
+    }
+
+    /// 消えていたら書かない（呼ぶ側が知らせる）
+    func testLocateGivesUpWhenTheItemIsGone() {
+        let days = [TripDay(items: [s("a"), s("c")])]
+        XCTAssertNil(TripPlanEdit.locate(days, day: 0, item: 1, original: s("b")))
+        XCTAssertNil(TripPlanEdit.locate(days, day: 3, item: 0, original: s("a")))
+    }
 }
