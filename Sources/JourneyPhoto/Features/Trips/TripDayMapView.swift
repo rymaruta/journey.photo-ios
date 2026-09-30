@@ -23,8 +23,8 @@ struct TripDayMapView: View {
         VStack(spacing: 0) {
             Map(position: $camera) {
                 ForEach(stops.filter { $0.coords != nil }) { stop in
-                    // 読み上げで番号が分かるように（ピンの番号は読み上げから外してある）
-                    Annotation("\(stop.number). \(stop.name)", coordinate: coordinate(stop.coords!)) {
+                    // 題はピンの下に字で出る。番号はピンにあるので題には入れない（二重に見えた・0755872 のレビュー）
+                    Annotation(stop.name, coordinate: coordinate(stop.coords!)) {
                         pin(stop.number)
                     }
                 }
@@ -71,7 +71,8 @@ struct TripDayMapView: View {
             .frame(width: 30, height: 30)
             .background(WebTheme.accentFill, in: Circle())
             .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
-            .accessibilityHidden(true)
+            // 読み上げでも番号が分かるように（題は名前だけ）
+            .accessibilityLabel(L("\(number) 番目", "Stop \(number)"))
     }
 
     private func row(_ stop: TripDayMap.Stop) -> some View {
