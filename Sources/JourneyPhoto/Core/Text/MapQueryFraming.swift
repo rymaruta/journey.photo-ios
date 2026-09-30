@@ -51,6 +51,13 @@ struct MapQueryFraming: Equatable {
         return !holdsAgainstAutoLocate
     }
 
+    /// 空の語を受け取った（前の語を消すだけ）。前の語の寄せ待ちも下ろす——残すと、
+    /// 読み終えた時点で写真全体の枠へ「語で寄せた」扱いで寄り、自動の現在地も抑えたままになる
+    mutating func cleared() {
+        waitingToFrame = false
+        holdsAgainstAutoLocate = false
+    }
+
     /// 人が地図を動かした。見ている場所から引き戻さない
     mutating func userMovedCamera() {
         waitingToFrame = false

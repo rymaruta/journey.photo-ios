@@ -34,7 +34,9 @@ enum SearchScope: String, CaseIterable, Identifiable {
     var showsTagChips: Bool { self == .all || self == .photos || self == .tags }
     /// 0件の出口（地図で撮影地を探す）へ持っていく語。**タグで探していた語は渡さない**
     /// ——地図は撮影地とスポット名で当てるので、タグの語で絞ると地図まで0件になる。
-    /// 代わりに空の語を渡して、地図に前の語が残らないようにする（`TabRouter.openMap`）
+    /// 代わりに空の語を渡して、地図に前の語が残らないようにする（`TabRouter.openMap`）。
+    /// 欄が空のまま（カテゴリだけで）探していた回も空の語になり、地図の語・範囲・カテゴリは外れる
+    /// ——探すのカテゴリは地図へ持っていかない
     func mapQuery(for query: String) -> String {
         self == .tags ? "" : query
     }

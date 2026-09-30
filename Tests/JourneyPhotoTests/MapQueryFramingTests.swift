@@ -62,4 +62,13 @@ final class MapQueryFramingTests: XCTestCase {
         XCTAssertTrue(framing.followsLocation(requestedByUser: false))
         XCTAssertNil(framing.frameIfReady(kyoto, settled: true))
     }
+
+    /// 前の語の寄せ待ちの間に空の語が来たら、印を両方下ろす（写真全体の枠へ寄らない）
+    func testEmptyQueryClearsPendingFrame() {
+        var framing = MapQueryFraming()
+        framing.received()
+        framing.cleared()
+        XCTAssertNil(framing.frameIfReady(kyoto, settled: true))
+        XCTAssertTrue(framing.followsLocation(requestedByUser: false))
+    }
 }
