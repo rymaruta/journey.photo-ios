@@ -14,6 +14,8 @@ struct TripBookView: View {
     var isPublic: (Photo) -> Bool = { _ in false }
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// 共有する1枚の画像（`TripBookCard`）。**作れるまでは文だけを配る**（表紙が読めない・圏外でも共有できる）
+    @State private var cardURL: URL?
 
     var body: some View {
         ScrollView {
@@ -36,12 +38,38 @@ struct TripBookView: View {
             // 板の右上の「共有」。**配るのは題と期間の文だけ**（URL を持たない理由は
             // `TripBook.shareText`）
             ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: TripBook.shareText(of: trip)) {
-                    Image(systemName: "square.and.arrow.up")
+                Group {
+                    // 表紙と題・期間・数字を載せた1枚（2026-09-30）。作れるまでは文
+                    if let cardURL {
+                        ShareLink(item: cardURL) { Image(systemName: "square.and.arrow.up") }
+                    } else {
+                        ShareLink(item: TripBook.shareText(of: trip)) { Image(systemName: "square.and.arrow.up") }
+                    }
                 }
                 .webToolbarIcon()
                 .accessibilityLabel(L("共有", "Share"))
             }
+        }
+        // 開いたときに1回だけ作っておく（押してから待たせない）。同じ旅なら同じファイルを上書き
+        .task(id: trip.id) { cardURL = await makeCard() }
+    }
+
+    /// 共有する1枚を作って、端末の一時置き場に書く。**作れなければ nil**（文で共有する）
+    private func makeCard() async -> URL? {
+        var cover: Data?
+        if let url = trip.cover?.detailImageURL {
+            cover = await TripBookCardRenderer.coverData(url)
+        }
+        guard !Task.isCancelled else { return nil }
+        let data = TripBookCardRenderer.render(TripBookCard.lines(of: trip, distance: distance),
+                                               cover: cover, focal: trip.cover?.focalPoint)
+        guard !data.isEmpty else { return nil }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(TripBookCard.fileName(for: trip))
+        do {
+            try data.write(to: file, options: .atomic)
+            return file
+        } catch {
+            return nil
         }
     }
 
