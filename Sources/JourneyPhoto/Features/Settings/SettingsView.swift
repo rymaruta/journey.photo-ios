@@ -105,7 +105,7 @@ struct SettingsView: View {
                 // 板の最下部の1行「バージョン [0.0.0] · 接続先 [本番]」。
                 // 接続先は**いつも出す**（本番かどうかを見分けるため）
                 Text(versionLine)
-                    .font(JPFont.mono(11))
+                    .font(JPFont.mono(12))
                     // 白 45% は黒地で 4.43:1 と文字の線（4.5:1）を割る。注記の text-3（白 60%）
                     .foregroundStyle(WebTheme.faint)
                     .frame(maxWidth: .infinity)

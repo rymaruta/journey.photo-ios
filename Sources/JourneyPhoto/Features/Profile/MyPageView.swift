@@ -393,7 +393,7 @@ struct MyPageView: View {
                 .font(JPFont.mono(18, relativeTo: .title3))
                 .foregroundStyle(Color.white)
             Text(label)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
         }
         .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
@@ -911,7 +911,7 @@ struct MyPageView: View {
                     }
                     if photo.published == false {
                         Text(L("下書き", "Draft"))
-                            .font(.caption2.weight(.semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(Color.white)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)

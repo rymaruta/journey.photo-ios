@@ -10,6 +10,8 @@ import MapKit
 struct MyPhotosMap: View {
 
     let photos: [Photo]
+    /// 自分の写真の地図か。**空のときの言い方が変わる**（`emptyMessage`）
+    let isMine: Bool
     /// 開いた写真に個別ページが在るか（`PhotoDetailView.fromPublicFeed`）。
     /// **写真ごとに決める**——写真の詳細の「地図で見る」から来たとき、
     /// 個別ページの無い自分の写真に共有を出さず、近くの公開写真には出す
@@ -28,12 +30,21 @@ struct MyPhotosMap: View {
 
     private var pins: [MapPin] { MapPin.group(dropped?.visible(photos) ?? photos) }
 
+    /// 空の地図の案内。🔴 **「投稿するときに場所を入れると」は本人にだけ言う**——
+    /// 人のページで、見ている人を投稿した人として扱っていた。ほかは地図のタブ
+    /// （`PhotoMapView`）と同じ言い方
+    nonisolated static func emptyMessage(isMine: Bool) -> String {
+        isMine
+            ? L("撮影地の分かる写真がありません。投稿するときに場所を入れると、ここに並びます。",
+                "No photos with a place yet. Add a place when you post.")
+            : L("撮影地の分かる写真がありません", "No photos with a place yet")
+    }
+
     var body: some View {
         Group {
             if pins.isEmpty {
                 // **「地図が空」と「撮影地を書いていない」を分ける**
-                ErrorBanner(message: L("撮影地の分かる写真がありません。投稿するときに場所を入れると、ここに並びます。",
-                                       "No photos with a place yet. Add a place when you post."))
+                ErrorBanner(message: Self.emptyMessage(isMine: isMine))
             } else {
                 Map(position: $camera) {
                     ForEach(pins) { pin in
