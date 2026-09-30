@@ -66,7 +66,10 @@ enum TripPlanEdit {
         guard days.indices.contains(day) else { return nil }
         let items = days[day].items
         if items.indices.contains(item), items[item] == original { return item }
-        return items.firstIndex(of: original)
+        // 同じ項目が同じ日に2つあるときは、**開いた位置にいちばん近い方**（先頭の方ではない）
+        return items.indices
+            .filter { items[$0] == original }
+            .min { abs($0 - item) < abs($1 - item) }
     }
 
     /// 送るひとこと（空なら `nil`）

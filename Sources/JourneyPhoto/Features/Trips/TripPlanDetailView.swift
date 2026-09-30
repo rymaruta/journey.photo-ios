@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 旅行プランの日程（キャンバス「17b 旅行プランの日程」／ Web の `PlanEditor`）。
 ///
@@ -58,6 +59,11 @@ struct TripPlanDetailView: View {
     private struct NoteTarget { let day: Int; let item: Int; let original: TripItem }
     @State private var noteTarget: NoteTarget?
     @State private var noteText = ""
+    /// ひとことを書いている間に届いた保存の失敗。**欄を閉じたあとに出す**（その間に出すと
+    /// アラートが2つ重なって片方が捨てられる。捨てると下までスクロールした人に何も見えない）
+    @State private var deferredSaveError: String?
+    /// ひとことを入れられなかった知らせ（書いている間に項目が外れた）
+    @State private var noteError: String?
     private struct Draft: Equatable {
         var days: [TripDay]
         var start: String?
@@ -116,8 +122,9 @@ struct TripPlanDetailView: View {
                                        try? await Task.sleep(nanoseconds: 350_000_000)
                                        // その間に次の保存を送った・確認を開き直したなら出さない
                                        // （成功した後に前の失敗が出ていた。赤い行は残る）
-                                       // ひとことを書いている間も出さない（アラートが2つ重なる）
-                                       guard saveAttempt == mine, !confirmLeave, noteTarget == nil else { return }
+                                       guard saveAttempt == mine, !confirmLeave else { return }
+                                       // ひとことを書いている間は、欄を閉じてから出す（重ねない）
+                                       if noteTarget != nil { deferredSaveError = message; return }
                                        leaveSaveError = message
                                    }
                                }
@@ -148,17 +155,36 @@ struct TripPlanDetailView: View {
                     days = next
                 } else {
                     // 書いている間に項目が外れた（別の端末・保存の応答で差し替わった）。
-                    // 黙って捨てずに知らせる（アラートは閉じた後に出す）
+                    // 黙って捨てずに知らせる。アラートは閉じた後に、出してよい時だけ
+                    // （ほかの確認・候補のシート・上に積んだ画面の間は出さない）
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 350_000_000)
-                        leaveSaveError = L("項目が変わったため、ひとことを入れられませんでした。もう一度書いてください。",
-                                           "The item changed, so the note wasn't added. Please try again.")
+                        guard picking == nil, onTop, !confirmLeave, noteTarget == nil else { return }
+                        noteError = L("書いている間に項目が変わったため、ひとことを入れられませんでした。もう一度書いてください。",
+                                      "The item changed while you were writing, so the note wasn't added. Please try again.")
                     }
                 }
             }
             Button(Labels.Common.cancel, role: .cancel) { noteTarget = nil }
         } message: {
             Text(L("\(TripPlanService.noteMax)字まで。空にすると外します", "Up to \(TripPlanService.noteMax) characters. Leave empty to remove."))
+        }
+        .alert(L("ひとことを入れられませんでした", "Couldn't add the note"),
+               isPresented: Binding(get: { noteError != nil },
+                                    set: { if !$0 { noteError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(noteError ?? "")
+        }
+        // ひとことの欄を閉じたら、その間に届いた保存の失敗を出す
+        .onChange(of: noteTarget == nil) { _, closed in
+            guard closed, let message = deferredSaveError else { return }
+            deferredSaveError = nil
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard picking == nil, onTop, !confirmLeave, noteTarget == nil else { return }
+                leaveSaveError = message
+            }
         }
         .alert(L("削除できませんでした", "Couldn't delete"),
                isPresented: Binding(get: { deleteError != nil },
@@ -273,9 +299,11 @@ struct TripPlanDetailView: View {
                 // 確認を出している間は、アラートは黙って捨てられる。そのときは赤い行だけが
                 // 残る（この直しの前と同じ）。持っておいて後で出す作りは、戻るスワイプの
                 // 長さ・他の確認・走っている保存と噛み合わず回帰が続いたので採らない
-                // ひとことを書いている間も同じ（アラートが2つ重なる）
-                guard picking == nil, onTop, !confirmLeave, noteTarget == nil else { return }
-                leaveSaveError = model.errorMessage ?? L("もう一度お試しください", "Please try again.")
+                guard picking == nil, onTop, !confirmLeave else { return }
+                let message = model.errorMessage ?? L("もう一度お試しください", "Please try again.")
+                // ひとことを書いている間は、欄を閉じてから出す（重ねない・捨てない）
+                if noteTarget != nil { deferredSaveError = message; return }
+                leaveSaveError = message
             }
         }
         .font(.body.weight(.semibold))
@@ -465,25 +493,32 @@ struct TripPlanDetailView: View {
     /// 「別の日へ移す」は移せる日が無いとき（1日だけ・ほかの日が全部いっぱい）出さない。
     /// 押せるかどうかも `TripPlanEdit` の答えから導く（判定を二重に持たない）
     private func itemMenu(_ di: Int, _ ii: Int, _ item: TripItem, name: String) -> some View {
-        let up = TripPlanEdit.moveUp(days, day: di, item: ii)
-        let down = TripPlanEdit.moveDown(days, day: di, item: ii)
+        // 押せるかどうかは描いた時点の答えで決めてよい。**押したときの計算は、押した時点の
+        // `days` から、その位置にまだこの項目があるかを確かめてやり直す**（描いた時点の
+        // 日程を丸ごと持って入れると、その間に保存の応答で差し替わった姿を巻き戻す）
+        let canUp = TripPlanEdit.moveUp(days, day: di, item: ii) != nil
+        let canDown = TripPlanEdit.moveDown(days, day: di, item: ii) != nil
         let targets = TripPlanEdit.movableDays(days, from: di)
         return Menu {
             Button {
-                if let up { apply(up, said: L("\(di + 1) 日目の \(ii) 番目へ", "Moved to position \(ii) on day \(di + 1)")) }
+                guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
+                      let next = TripPlanEdit.moveUp(days, day: di, item: at) else { return }
+                apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at) 番目へ", "Moved \(name) to position \(at) on day \(di + 1)"))
             } label: { Label(L("上へ", "Move up"), systemImage: "arrow.up") }
-            .disabled(up == nil)
+            .disabled(!canUp)
             Button {
-                if let down { apply(down, said: L("\(di + 1) 日目の \(ii + 2) 番目へ", "Moved to position \(ii + 2) on day \(di + 1)")) }
+                guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
+                      let next = TripPlanEdit.moveDown(days, day: di, item: at) else { return }
+                apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at + 2) 番目へ", "Moved \(name) to position \(at + 2) on day \(di + 1)"))
             } label: { Label(L("下へ", "Move down"), systemImage: "arrow.down") }
-            .disabled(down == nil)
+            .disabled(!canDown)
             if !targets.isEmpty {
                 Menu {
                     ForEach(targets, id: \.self) { to in
                         Button(L("\(to + 1) 日目", "Day \(to + 1)")) {
-                            if let next = TripPlanEdit.moveToDay(days, day: di, item: ii, toDay: to) {
-                                apply(next, said: L("「\(name)」を \(to + 1) 日目へ移しました", "Moved \(name) to day \(to + 1)"))
-                            }
+                            guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
+                                  let next = TripPlanEdit.moveToDay(days, day: di, item: at, toDay: to) else { return }
+                            apply(next, said: L("「\(name)」を \(to + 1) 日目へ移しました", "Moved \(name) to day \(to + 1)"))
                         }
                     }
                 } label: { Label(L("別の日へ移す", "Move to another day"), systemImage: "calendar") }
@@ -509,10 +544,15 @@ struct TripPlanDetailView: View {
         .accessibilityValue(L("\(di + 1) 日目・\(ii + 1) 番目", "Day \(di + 1), item \(ii + 1)"))
     }
 
-    /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）
+    /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）。
+    /// **少し遅らせて出す**——メニューが閉じると焦点が「…」に戻ってその名前を読み始め、
+    /// 同時に出した読み上げは割り込まれて消えることがある
     private func apply(_ next: [TripDay], said: String) {
         days = next
-        AccessibilityNotification.Announcement(said).post()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            UIAccessibility.post(notification: .announcement, argument: said)
+        }
     }
 
     /// 名前を押すとその場所へ。**開ける先が無いものは行だけ**（押しても何も起きない札を作らない）

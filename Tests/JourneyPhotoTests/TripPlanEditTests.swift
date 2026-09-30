@@ -139,4 +139,13 @@ final class TripPlanEditTests: XCTestCase {
         XCTAssertNil(TripPlanEdit.locate(days, day: 0, item: 1, original: s("b")))
         XCTAssertNil(TripPlanEdit.locate(days, day: 3, item: 0, original: s("a")))
     }
+
+    /// 同じ項目が2つあるときは、開いた位置を優先し、ずれたら近い方（先頭の方ではない）
+    func testLocatePrefersTheOpenedPositionAmongDuplicates() {
+        let bab = [TripDay(items: [s("b"), s("a"), s("b")])]
+        XCTAssertEqual(TripPlanEdit.locate(bab, day: 0, item: 2, original: s("b")), 2)
+        // 2つ目の b を開いている間に a が外れた → [b, b] の後ろの方
+        let bb = [TripDay(items: [s("b"), s("b")])]
+        XCTAssertEqual(TripPlanEdit.locate(bb, day: 0, item: 2, original: s("b")), 1)
+    }
 }
