@@ -11,10 +11,12 @@ import Foundation
 enum SongSticker {
 
     /// 札の文字（「曲名 · アーティスト」）。題が空なら置かない
+    /// **改行は空白にする**（札は1行・`TextOverlay.cleaned` が改行を空白に置き換える）。そのままだと
+    /// 置いた札と文字が食い違い、札が「付けた曲の札」と見なされず帯と二重に出た（27430f2b のレビュー）
     static func text(for song: Photo.Song) -> String? {
-        let title = song.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = TextOverlay.cleaned(song.title, kind: .song).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return nil }
-        let artist = song.artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let artist = TextOverlay.cleaned(song.artist ?? "", kind: .song).trimmingCharacters(in: .whitespacesAndNewlines)
         return artist.isEmpty ? title : "\(title) · \(artist)"
     }
 

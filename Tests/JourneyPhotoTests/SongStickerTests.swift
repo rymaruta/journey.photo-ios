@@ -24,6 +24,15 @@ final class SongStickerTests: XCTestCase {
         XCTAssertTrue(SongSticker.isSticker(SongSticker.make(for: long)!, of: long))
     }
 
+    /// 曲名に改行があっても、置いた札は「付けた曲の札」と見なせる（帯と二重に出ない・消せば曲が外れる）
+    func testStickerWithNewlineInTitleIsRecognized() {
+        let now = song("海\nへ", "誰\nか")
+        let sticker = SongSticker.make(for: now)!
+        XCTAssertFalse(sticker.text.contains("\n"))
+        XCTAssertTrue(SongSticker.isSticker(sticker, of: now))
+        XCTAssertTrue(SongSticker.isOnPhoto([sticker], song: now))
+    }
+
     /// 札を消したら曲も外すか: 付けた曲の最後の札なら外す。別の写真に残っていれば外さない。
     /// 打ち直した札・自分で打った「曲」の札は「残っている」に数えない。札でない物を消しても外さない
     func testShouldDetach() {
