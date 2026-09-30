@@ -184,7 +184,8 @@ final class PushCenter: ObservableObject {
         }
         inFlightSeq += 1
         let seq = inFlightSeq
-        // 人を入れ替えるのは呼んだその場で（後から呼ばれた別の人の `use` が先に見る値）
+        // **その場で変えるのは `isSigningOut` だけ**（人が替わるなら下ろす）。`userId` を
+        // 入れ替えるのは `apply` が走るとき
         if self.userId != userId { isSigningOut = false }
         let task = Task { await self.apply(userId: userId) }
         inFlight = (userId, seq, task)
@@ -239,7 +240,7 @@ final class PushCenter: ObservableObject {
         //
         // ここで前の人のぶんを `DELETE` しても外れない。ログアウト後は前の人の
         // ID トークンが無く、次の人が入ったあとは**次の人の集合**から消すだけ
-        if let userId, let token, mayBelongToSomeoneElse(than: userId) {
+        if let userId, let token, !isSigningOut, mayBelongToSomeoneElse(than: userId) {
             await releasePreviousOwner(token: token, as: userId)
             guard self.userId == userId else { return }
         }
@@ -357,7 +358,11 @@ final class PushCenter: ObservableObject {
     ///
     /// 外せなかったら（圏外など）印が残り、ログアウトのあとの `use` が端末ごと
     /// 外し（`registeredOwner`）、次にログインした人がサーバーから引き取る（`owner`）
-    func signingOut() async {
+    ///
+    /// - Parameter accountDeleted: 退会でサーバーのデータを消せた。🔴 **その人の「受け取る」を
+    ///   端末で「受け取らない」にする**——Cognito の削除だけ落ちて起動し直すと、
+    ///   `isSigningOut` は消え意思は残るので、退会した人の宛先がまた預けられた
+    func signingOut(accountDeleted: Bool = false) async {
         // **アイコンの数字と通知センターの通知は、登録の有無に関係なく消す。**
         // 残すと、次にこの端末を触る人（や別の人でログインし直した自分）に
         // 前の人の未読数と通知の本文が見えたままになる
@@ -366,6 +371,11 @@ final class PushCenter: ObservableObject {
         let userId = self.userId
         // ここから先は預け直さない（`isSigningOut`）
         isSigningOut = true
+        if accountDeleted, let userId {
+            // 消すのではなく false を書く（消すと昔の端末共通の鍵が移ってきうる——`loadIntent`）
+            defaults.set(false, forKey: Self.enabledKey(for: userId))
+            if self.userId == userId { isEnabled = false }
+        }
         await clearPreviousUserTraces()
         guard let token, let userId else { return }
         // **外せた回だけ、自分の印だけ消す。** 前の人の印（預け直しが落ちて

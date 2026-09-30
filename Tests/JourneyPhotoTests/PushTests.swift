@@ -417,6 +417,34 @@ final class PushTakeoverTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requests, ["POST /user/devices"])
     }
 
+    /// 🔴 **退会でデータを消せたあと Cognito の削除だけ落ちて起動し直しても、預け直さない。**
+    /// `isSigningOut` は起動し直すと消え、「受け取る」の意思が残っていた
+    func testDeletedAccountIsNotReRegisteredAfterRelaunch() async {
+        let defaults = registeredByA("push-deleted")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let session = URLSession(configuration: config)
+        func make() -> PushCenter {
+            PushCenter(service: {
+                PushService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                           tokenProvider: StubTokenProvider(token: "t"),
+                                           session: session))
+            }, defaults: defaults, releaseDevice: {}, readAuthorization: { true })
+        }
+        let push = make()
+        await push.use(userId: "a")
+        await push.signingOut(accountDeleted: true)
+
+        // 起動し直す（まだ A でログインしたまま）
+        let relaunched = make()
+        await relaunched.use(userId: "a")
+        StubProtocol.requests = []
+        await relaunched.registerIfPossible()
+
+        XCTAssertFalse(relaunched.isEnabled, "退会した人の「受け取る」が残っている")
+        XCTAssertEqual(StubProtocol.requests, [], "退会した人の宛先を預け直している")
+    }
+
     /// 🔴 **同じ人の `use` が重なっても、外す・預けるは1本ずつ。** 前面に戻ったのと
     /// ログイン状態の変化が重なると、DELETE が2本出ていた
     func testConcurrentUseForTheSameUserRunsOnce() async {
