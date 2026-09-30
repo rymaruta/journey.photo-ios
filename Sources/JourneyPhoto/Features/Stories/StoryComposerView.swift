@@ -69,6 +69,12 @@ struct StoryComposerView: View {
     @State private var canvasSize: CGSize = .zero
     /// 打ち始めた瞬間の `canvasSize`（打っている間はキーボードで枠が縮むので、こちらで測る）
     @State private var typingCanvas: CGSize = .zero
+    /// 写真の枠を**キーボードで縮めない**か。打ち始めで立て、ひとことの欄・投票の欄（どちらも
+    /// キーボードを避けたい欄）にピントが入るまで下ろさない。`typingId` だけで切り替えると、
+    /// 「完了」の瞬間はキーボードがまだ出ているので、枠が一度縮んで写真が切り直された（b40f96dd のレビュー）
+    @State private var photoIgnoresKeyboard = false
+    /// 打っている札が**付けた曲の札**だったか（打ち始めの時点）。空にして閉じたら曲も外す
+    @State private var typingSongSticker = false
     /// 札を指で動かしている最中（周りの道具を隠し、下のゴミ箱を見せる）
     @State private var draggingOverlay = false
     /// 投票の札を選んでいる（下に投票の欄を出す）
@@ -163,6 +169,11 @@ struct StoryComposerView: View {
                         .allowsHitTesting(typingId == nil)
                 }
             }
+            // **打っている間はキーボードで写真の枠を縮めない。** 縮めると写真が縮んだ枠に合わせて
+            // 切り直され、下に（隠した足元の分の）黒い帯が残った（2026-09-30 の owner の画面
+            // 「画面の上の方おかしい」）。キーボードを避けるのは上に重ねた打つ画面だけ。
+            // ひとことを打つ間は今まで通り避ける（欄がキーボードの下に隠れないように）
+            .ignoresSafeArea(.keyboard, edges: photoIgnoresKeyboard ? .bottom : [])
             // 打っている間は後ろを読ませない（VoiceOver で投稿・他の札へ移れた）
             .accessibilityHidden(typingId != nil)
             if typingId == nil {
@@ -196,6 +207,9 @@ struct StoryComposerView: View {
         }
         // 写真を切り替えたら投票の欄を閉じる（別の写真の投票の欄が出たままになった）
         .onChange(of: current) { _, _ in voteSelected = false }
+        // キーボードを避けたい欄に移ったら、写真の枠もキーボードを避ける側へ戻す
+        .onChange(of: captionFocused) { _, focused in if focused { photoIgnoresKeyboard = false } }
+        .onChange(of: votePanelOpen) { _, open in if open { photoIgnoresKeyboard = false } }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { picked in applySong(picked) }
@@ -333,7 +347,7 @@ struct StoryComposerView: View {
                             // 写真を押したら投票の欄を閉じる
                             onTapPhoto: { voteSelected = false },
                             // ゴミ箱へ運んで離した（VoiceOver の「消す」も）。**表示中の写真の札**
-                            onDelete: { id in overlays.wrappedValue.removeAll { $0.id == id } },
+                            onDelete: { id in deleteOverlay(id) },
                             onDraggingChange: { draggingOverlay = $0 },
                             vote: vote,
                             voteSelected: voteSelected,
@@ -543,10 +557,12 @@ struct StoryComposerView: View {
             if !location.isEmpty {
                 photoChip(symbol: "mappin", text: location)
             }
-            // **曲が付いていることは必ず見せる。** 札はいまの1枚にしか置かないので、
-            // 札を消した・別の写真に切り替えた・札が上限で置けなかったときに、
-            // 曲が付いているのに画面から何も分からなくなる
-            if let song, !currentHasSongSticker, let text = SongSticker.text(for: song) {
+            // 曲は**動かせる札で見せる**。帯は**どの写真にも札が無いときだけ**（札が上限で置けなかった・
+            // 札の文字を打ち直した・札を置いた写真を外した・前の動きの下書き）。以前は表示中の写真に
+            // 札が無ければ出していて、札のある写真と二重に見え、札をゴミ箱に入れると帯が代わりに出て
+            // 「消せない」になった（2026-09-30 の owner）。最後の札を消すと曲も外れる（`deleteOverlay`）
+            if let song, let text = SongSticker.text(for: song),
+               !shots.contains(where: { SongSticker.isOnPhoto($0.overlays, song: song) }) {
                 photoChip(symbol: "music.note", text: text)
             }
         }
@@ -782,6 +798,8 @@ struct StoryComposerView: View {
         // キーボードが出る前の枠で文字の大きさを決める（`photoShortSide`）
         typingCanvas = canvasSize
         typingShotId = shots[current].id
+        typingSongSticker = overlays.wrappedValue.first { $0.id == id }.map { SongSticker.isSticker($0, of: song) } ?? false
+        photoIgnoresKeyboard = true
         typingId = id
     }
 
@@ -790,10 +808,18 @@ struct StoryComposerView: View {
     private func finishTyping() {
         if let id = typingId, let shotId = typingShotId,
            let i = shots.firstIndex(where: { $0.id == shotId }) {
+            let before = shots[i].overlays.first { $0.id == id }
             shots[i].overlays = StoryTextEditing.finish(shots[i].overlays, id: id)
+            // 曲の札を空にして閉じた＝札を消した（ゴミ箱と同じ扱い）
+            let removed = shots[i].overlays.contains { $0.id == id } ? nil : before
+            if typingSongSticker, removed != nil,
+               SongSticker.shouldDetach(removedSticker: true, remaining: shots.map(\.overlays), song: song) {
+                applySong(nil)
+            }
         }
         typingId = nil
         typingShotId = nil
+        typingSongSticker = false
     }
 
     /// 打っている札への窓。**打ち始めた写真の中を id で引く**（表示中の写真が移っても同じ札）
@@ -827,6 +853,18 @@ struct StoryComposerView: View {
         // 欄が閉じて足元が戻るので、打つ画面の文字が置いたあとより2割大きく見えた（f38d404 のレビュー）
         guard !captionFocused && !votePanelOpen else { return }
         canvasSize = size
+    }
+
+    /// 表示中の写真の札を消す（ゴミ箱・VoiceOver の「消す」）。**付けた曲の最後の札なら曲も外す**
+    /// （Instagram と同じ。札だけ消えて曲が黙って残ると、画面から曲が付いていると分からない）。
+    /// 別の写真にも同じ曲の札があれば、曲はそちらで見えているので外さない
+    private func deleteOverlay(_ id: UUID) {
+        let removed = overlays.wrappedValue.first { $0.id == id }
+        overlays.wrappedValue.removeAll { $0.id == id }
+        let wasSticker = removed.map { SongSticker.isSticker($0, of: song) } ?? false
+        if SongSticker.shouldDetach(removedSticker: wasSticker, remaining: shots.map(\.overlays), song: song) {
+            applySong(nil)
+        }
     }
 
     /// 曲を付ける・変える・外す。**写真の上の曲の札も合わせる**——付けたら

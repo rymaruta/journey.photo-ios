@@ -278,6 +278,25 @@ final class StoryTextEditingTests: XCTestCase {
                        "📍 京都")
     }
 
+    /// 打つ欄そのものの幅を決める文字は印を数えない（印は欄の外に並ぶ）。空なら見本、最後の空の行も数える
+    func testTypingFieldTextExcludesSymbol() {
+        XCTAssertEqual(StoryTextEditing.typingFieldText(TextOverlay(text: "京都", kind: .place), placeholder: "見本"), "京都")
+        XCTAssertEqual(StoryTextEditing.typingFieldText(TextOverlay(text: "", kind: .place), placeholder: "見本"), "見本")
+        XCTAssertEqual(StoryTextEditing.typingFieldText(TextOverlay(text: "港\n"), placeholder: "見本"), "港\n ")
+        XCTAssertEqual(StoryTextEditing.typingFieldText(TextOverlay(text: "港"), placeholder: "見本"), "港")
+    }
+
+    /// 打つ欄の幅は**測った幅より必ず広い**（0 や測りちょうどだと欄の中で折り返す・何も描かれない）
+    func testTypingFieldWidthAddsRoom() {
+        XCTAssertEqual(StoryTextEditing.typingFieldWidth(measured: 100, fontSize: 60)!, 118, accuracy: 1e-9)
+        // 小さな字でも最低 14pt（内側の余白が左右 5pt ずつ付く組み方＋キャレット）
+        XCTAssertEqual(StoryTextEditing.typingFieldWidth(measured: 100, fontSize: 12)!, 114, accuracy: 1e-9)
+        XCTAssertGreaterThan(StoryTextEditing.typingFieldWidth(measured: 0, fontSize: 30)!, 0)
+        // 測れなければ幅を渡さない（0 を渡すと何も描かれない）
+        XCTAssertNil(StoryTextEditing.typingFieldWidth(measured: .nan, fontSize: 30))
+        XCTAssertNil(StoryTextEditing.typingFieldWidth(measured: 50, fontSize: .infinity))
+    }
+
     /// 最終行（キャレットのいる行）。札は印ごと
     func testLastLine() {
         XCTAssertEqual(StoryTextEditing.lastLine(TextOverlay(text: "一行目\n二行目")), "二行目")

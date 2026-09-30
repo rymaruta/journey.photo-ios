@@ -9,6 +9,43 @@ final class SongStickerTests: XCTestCase {
                    previewUrl: "https://audio-ssl.itunes.apple.com/p.m4a", trackUrl: nil)
     }
 
+    /// 付けた曲の札か（ゴミ箱に入れたら曲も外す判定）。自分で打った「曲」の札・前の曲の札・
+    /// 同じ文字の別の種類の札は当たらない。曲が無ければ当たらない
+    func testIsSticker() {
+        let now = song("海へ", "誰か")
+        let sticker = SongSticker.make(for: now)!
+        XCTAssertTrue(SongSticker.isSticker(sticker, of: now))
+        XCTAssertFalse(SongSticker.isSticker(sticker, of: nil))
+        XCTAssertFalse(SongSticker.isSticker(sticker, of: song("山へ", "誰か")))
+        XCTAssertFalse(SongSticker.isSticker(TextOverlay(text: "好きな曲", kind: .song), of: now))
+        XCTAssertFalse(SongSticker.isSticker(TextOverlay(text: "海へ · 誰か", kind: .text), of: now))
+        // 上限で切って置いた長い曲名も当たる（置くときと同じ切り方）
+        let long = song(String(repeating: "あ", count: TextOverlay.maxLength + 20))
+        XCTAssertTrue(SongSticker.isSticker(SongSticker.make(for: long)!, of: long))
+    }
+
+    /// 曲名に改行があっても、置いた札は「付けた曲の札」と見なせる（帯と二重に出ない・消せば曲が外れる）
+    func testStickerWithNewlineInTitleIsRecognized() {
+        let now = song("海\nへ", "誰\nか")
+        let sticker = SongSticker.make(for: now)!
+        XCTAssertFalse(sticker.text.contains("\n"))
+        XCTAssertTrue(SongSticker.isSticker(sticker, of: now))
+        XCTAssertTrue(SongSticker.isOnPhoto([sticker], song: now))
+    }
+
+    /// 札を消したら曲も外すか: 付けた曲の最後の札なら外す。別の写真に残っていれば外さない。
+    /// 打ち直した札・自分で打った「曲」の札は「残っている」に数えない。札でない物を消しても外さない
+    func testShouldDetach() {
+        let now = song("海へ", "誰か")
+        let sticker = SongSticker.make(for: now)!
+        XCTAssertTrue(SongSticker.shouldDetach(removedSticker: true, remaining: [[], []], song: now))
+        XCTAssertFalse(SongSticker.shouldDetach(removedSticker: true, remaining: [[], [sticker]], song: now))
+        XCTAssertTrue(SongSticker.shouldDetach(removedSticker: true,
+                                               remaining: [[TextOverlay(text: "海へ", kind: .song)]], song: now))
+        XCTAssertFalse(SongSticker.shouldDetach(removedSticker: false, remaining: [[]], song: now))
+        XCTAssertFalse(SongSticker.shouldDetach(removedSticker: true, remaining: [[]], song: nil))
+    }
+
     /// 札は「曲名 · アーティスト」の曲の札（動かせる `.song`）。題が空なら置かない
     func testMakeSticker() {
         let sticker = SongSticker.make(for: song("海へ", "誰か"))

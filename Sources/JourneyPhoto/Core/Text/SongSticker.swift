@@ -11,10 +11,12 @@ import Foundation
 enum SongSticker {
 
     /// 札の文字（「曲名 · アーティスト」）。題が空なら置かない
+    /// **改行は空白にする**（札は1行・`TextOverlay.cleaned` が改行を空白に置き換える）。そのままだと
+    /// 置いた札と文字が食い違い、札が「付けた曲の札」と見なされず帯と二重に出た（27430f2b のレビュー）
     static func text(for song: Photo.Song) -> String? {
-        let title = song.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = TextOverlay.cleaned(song.title, kind: .song).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return nil }
-        let artist = song.artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let artist = TextOverlay.cleaned(song.artist ?? "", kind: .song).trimmingCharacters(in: .whitespacesAndNewlines)
         return artist.isEmpty ? title : "\(title) · \(artist)"
     }
 
@@ -26,6 +28,21 @@ enum SongSticker {
         guard let song, let text = text(for: song) else { return false }
         let placed = String(text.prefix(TextOverlay.maxLength))
         return overlays.contains { $0.kind == .song && !$0.isEmpty && $0.text == placed }
+    }
+
+    /// `overlay` が**付けた曲の札**か（`retext` と同じ判定: 種類が曲で、文字がいまの曲名）。
+    /// 自分で打った別の文字の「曲」の札は当たらない
+    static func isSticker(_ overlay: TextOverlay, of song: Photo.Song?) -> Bool {
+        guard let song, let text = text(for: song) else { return false }
+        return overlay.kind == .song && overlay.text == String(text.prefix(TextOverlay.maxLength))
+    }
+
+    /// 札を消したあとに**曲も外すか**。付けた曲の札を消して、どの写真にも（打ち直していない）
+    /// その曲の札が残っていなければ外す（Instagram と同じ）。別の写真に残っていれば、曲はそこで
+    /// 見えているので外さない
+    static func shouldDetach(removedSticker: Bool, remaining: [[TextOverlay]], song: Photo.Song?) -> Bool {
+        guard removedSticker, song != nil else { return false }
+        return !remaining.contains { $0.contains { isSticker($0, of: song) } }
     }
 
     /// 新しく置く札。場所は撮影地の札と同じ少し下（文字の札と重なりにくい）。

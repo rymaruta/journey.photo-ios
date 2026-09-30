@@ -221,6 +221,8 @@ extension View {
     public func alignmentGuide(_ g: HorizontalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 端を選んで安全領域を無視する（本物は `regions:` も取る）
     public func ignoresSafeArea(edges: Edge.Set) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 領域（キーボード・容れ物）と端を選んで無視する（本物と同じ形）
+    public func ignoresSafeArea(_ regions: SafeAreaRegions, edges: Edge.Set = .all) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// 画面の端に貼り付く帯（iOS 15+）。本物はスクロールの底の余白も足す。
     /// 模型は素通し——キーボードで持ち上がるかは Mac で見る
     public func safeAreaInset<V: View>(edge: VerticalEdge, alignment: HorizontalAlignment = .center,
