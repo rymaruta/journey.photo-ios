@@ -648,7 +648,9 @@ struct MyPageView: View {
                     if let spot = row.spot {
                         NavigationLink {
                             OfficialSpotView(spot: spot, spots: officialSpots, photos: pool,
-                                             photosKnown: SpotScreen.photosKnown(loadFailed: sourceFailed || !(feedLoaded && model.hasLoadedPhotos), photos: pool))
+                                             // pool には自分の写真が混ざり、公開一覧が取れなくても空にならない。
+                                             // pool の空では決めず、読み込みの状態だけで決める
+                                             photosKnown: !sourceFailed && feedLoaded && model.hasLoadedPhotos)
                         } label: {
                             officialWishlistRow(row)
                         }

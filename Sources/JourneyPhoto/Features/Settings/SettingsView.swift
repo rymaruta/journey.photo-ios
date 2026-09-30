@@ -14,6 +14,9 @@ struct SettingsView: View {
     @State private var showDeniedHint = false
     /// 切り替えている最中。二度押しで登録と解除が交差しないようにする
     @State private var isApplying = false
+    /// ログアウトの最中。宛先を外し終えるまで（最大20秒）二度押させず、進み具合を見せる
+    /// （`DeleteAccountView.isWorking` と同じ形）
+    @State private var isSigningOut = false
 
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -269,7 +272,11 @@ struct SettingsView: View {
     private var logoutSection: some View {
         section(nil) {
             Button {
+                // **門は押したその場で閉じる**（`Task` の中で立てると連打の2発目が通る）
+                guard !isSigningOut else { return }
+                isSigningOut = true
                 Task {
+                    defer { isSigningOut = false }
                     // **通知の宛先は、ログアウトの前に外す。**
                     // あとだと認証が通らず、外せないまま次にこの端末を
                     // 使う人へ前の人あての通知が飛ぶ
@@ -277,10 +284,14 @@ struct SettingsView: View {
                     await auth.signOut()
                 }
             } label: {
-                JPRowLabel(title: Labels.Navigation.logout,
+                JPRowLabel(title: isSigningOut ? L("ログアウトしています…", "Signing out…") : Labels.Navigation.logout,
                            systemImage: "rectangle.portrait.and.arrow.right", chevron: false)
+                    .overlay(alignment: .trailing) {
+                        if isSigningOut { ProgressView().padding(.trailing, 14) }
+                    }
             }
             .buttonStyle(JPRowButtonStyle())
+            .disabled(isSigningOut)
         }
     }
 }
