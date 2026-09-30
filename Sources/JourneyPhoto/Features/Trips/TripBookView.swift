@@ -17,6 +17,9 @@ struct TripBookView: View {
     @EnvironmentObject private var auth: AuthStore
     /// 共有する1枚の画像（`TripBookCard`）。**作れるまでは文だけを配る**（表紙が読めない・圏外でも共有できる）
     @State private var cardURL: URL?
+    /// その画像を作った人。**人が替わったときだけ**共有を文に戻す（表紙が替わっただけなら前の画像のまま・
+    /// 同じファイルを上書きするので、作り直しの間に共有のボタンが文に切り替わらない）
+    @State private var cardOwner: String?
 
     var body: some View {
         ScrollView {
@@ -58,8 +61,9 @@ struct TripBookView: View {
         // **表紙・枚数が変わったら作り直す**（表紙はいいねの数で選ぶので、写真が同じでも替わる）
         // **人が替わったら作り直す**（サインアウトしても この画面は残る。前の人の画像を指したままにしない）
         .task(id: "\(trip.id)|\(trip.cover?.id ?? "")|\(trip.photos.count)|\(auth.userId ?? "")") {
-            cardURL = nil
-            cardURL = await makeCard()
+            if cardOwner != auth.userId { cardURL = nil }
+            cardOwner = auth.userId
+            if let made = await makeCard() { cardURL = made }
         }
 
     }

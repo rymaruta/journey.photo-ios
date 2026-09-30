@@ -31,6 +31,8 @@ struct TripPlanDetailView: View {
     @State private var appeared = false
     /// 「行きたい場所から追加」を押した日
     @State private var picking: PickTarget?
+    /// 「地図で見る」を押した日（`TripDayMapView`）
+    @State private var mapDay: MapTarget?
     @State private var confirmingDelete = false
     /// 「保存して戻る／変更を捨てる」の確認
     @State private var confirmLeave = false
@@ -54,6 +56,11 @@ struct TripPlanDetailView: View {
     @State private var sourcesFailed = false
 
     private struct PickTarget: Identifiable { let day: Int; var id: Int { day } }
+    private struct MapTarget: Identifiable {
+        let day: Int
+        let stops: [TripDayMap.Stop]
+        var id: Int { day }
+    }
     /// ひとことを書いている項目（何日目の何番目と、**開いたときの項目そのもの**）。
     /// 書く欄を開いている間に日程が差し替わっても、別の項目に書かない（`TripPlanEdit.locate`）
     private struct NoteTarget { let day: Int; let item: Int; let original: TripItem }
@@ -250,6 +257,14 @@ struct TripPlanDetailView: View {
         }
         .onChange(of: plan) { _, _ in resetIfNeeded() }
 
+        // その日の場所を番号つきで地図に・前の場所からの経路（2026-09-30）。
+        // **開いた時点の日程で出す**（保存していない並び替えも反映する）
+        .sheet(item: $mapDay) { target in
+            NavigationStack {
+                TripDayMapView(title: L("\(target.day + 1) 日目の地図", "Day \(target.day + 1) map"),
+                               stops: target.stops)
+            }
+        }
         .sheet(item: $picking) { target in
             NavigationStack {
                 TripPlanPickSheet(dayIndex: target.day,
@@ -453,6 +468,19 @@ struct TripPlanDetailView: View {
                 .foregroundStyle(WebTheme.faint)
                 .accessibilityElement(children: .combine)
                 Spacer()
+                // 地図で見る。**地図に置ける場所がある日だけ**（押しても空の地図を出さない）
+                let stops = TripDayMap.stops(of: day, index: index, places: places)
+                if TripDayMap.hasPins(stops) {
+                    Button {
+                        mapDay = MapTarget(day: di, stops: stops)
+                    } label: {
+                        Image(systemName: "map")
+                            .foregroundStyle(WebTheme.muted2)
+                            .webTappable()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("\(di + 1) 日目を地図で見る", "Show day \(di + 1) on a map"))
+                }
                 Button {
                     guard days.indices.contains(di) else { return }
                     days.remove(at: di)
