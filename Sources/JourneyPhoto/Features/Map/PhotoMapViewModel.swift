@@ -212,73 +212,6 @@ final class PhotoMapViewModel: ObservableObject {
         return !onScreen || stillShown(official: pin)
     }
 
-    /// 選びを下ろすか見る場面（`keptAfterFilterChange`）。欄の出来事からどれを渡すかは `MapFilterEvents`
-    enum FilterChange: Equatable {
-        /// 欄に打っている途中。**下ろさない**——日本語入力では変換中の「t」「と」も
-        /// 語として流れ、最初の1打で選びが消えて、確定しても札が戻らなかった
-        case queryTyping
-        /// 語が決まった（探すから届いた・× ・確定キー・欄から指が離れた）。**その語で見る**
-        /// ——× は空にする**前**の語を渡す（空の語で見ると、打った語で隠れていた選びが戻る）
-        case queryCommitted(String)
-        /// カテゴリ。**写真にだけ効く**ので、スポットの選びは見ない（引いて札が
-        /// 隠れているだけのスポットを、カテゴリで下ろさない）
-        case category
-        /// 「このエリアを検索」を押した・外した
-        case area
-    }
-
-    /// 札の選び（写真のピン・撮影スポット）
-    struct Selection: Equatable {
-        var pin: MapPin?
-        var official: OfficialPins.Pin?
-    }
-
-    /// 絞りが変わったあとも残す選び。
-    ///
-    /// 🔴 **地図の根が出ている間に、絞りの結果から外れたら下ろす（nil）。** 残すと、
-    /// 札は消えるのに選びだけ生き残り、絞りを外したとたんに前の札が戻ってきた。
-    /// 上に画面を積んでいる間（`onScreen == false`）は `showsCard` と同じく下ろさない。
-    ///
-    /// **スポットは絞りで外れたかだけで見る**——引いて（倍率で）見えなくなっただけの
-    /// スポットは下ろさない。語が空なら語では外れない。範囲は語が無いときだけスポットに効く
-    /// （`OfficialPins.visible`: 語があると枠の外の当たりも出る）
-    func keptAfterFilterChange(_ change: FilterChange, _ current: Selection, onScreen: Bool) -> Selection {
-        guard onScreen else { return current }
-        var kept = current
-        switch change {
-        case .queryTyping:
-            break
-        case .queryCommitted(let committed):
-            if let pin = current.pin, !photoPins(query: committed).contains(where: { $0.id == pin.id }) {
-                kept.pin = nil
-            }
-            if let spot = current.official, !MapSearch.fold(committed).isEmpty,
-               !OfficialSpotIndex.matches(officialSpots, query: committed).contains(where: { $0.spotId == spot.spotId }) {
-                kept.official = nil
-            }
-        case .category:
-            if let pin = current.pin, Self.refreshed(pin, in: pins) == nil { kept.pin = nil }
-        case .area:
-            if let pin = current.pin, Self.refreshed(pin, in: pins) == nil { kept.pin = nil }
-            if let spot = current.official, let areaFrame, MapSearch.fold(query).isEmpty,
-               !MapSearch.contains(areaFrame, latitude: spot.coords.lat, longitude: spot.coords.lng) {
-                kept.official = nil
-            }
-        }
-        return kept
-    }
-
-    /// 出来事から来た場面を順に当てる（`MapFilterEvents` の返す並び）
-    func keptAfterFilterChanges(_ changes: [FilterChange], _ current: Selection, onScreen: Bool) -> Selection {
-        changes.reduce(current) { keptAfterFilterChange($1, $0, onScreen: onScreen) }
-    }
-
-    /// その語で絞ったときのピン（カテゴリ・範囲はいまのまま）。いまの語なら `pins` をそのまま使う
-    private func photoPins(query other: String) -> [MapPin] {
-        guard other != query else { return pins }
-        return MapPin.group(MapSearch.photos(photos, filter: MapSearch.Filter(query: other, category: category, frame: areaFrame)))
-    }
-
     /// ピンの元の行（画面へ渡す。概要・近くのスポットはここから）
     func officialSpot(for pin: OfficialPins.Pin) -> OfficialSpot? {
         officialSpots.first { $0.spotId == pin.spotId }
@@ -359,28 +292,4 @@ extension PhotoMapViewModel {
         let shown = (name?.isEmpty == false) ? name! : L("場所の名前なし", "No place name")
         return L("\(shown)、写真 \(count)枚", "\(shown), \(photoCountLabel(count))")
     }
-}
-
-/// 地図の欄・絞りの出来事から、選びを見る場面（`PhotoMapViewModel.FilterChange`）を決める。
-///
-/// **語が決まったときだけ語で見る。** 打っている途中（日本語入力の変換中の字も流れる）・
-/// 欄にいるままバックスペースで空にした回は見ない（打ち直しの途中を守る）。
-/// キーボードを閉じた（欄から指が離れた）ら語が決まったと見なす
-enum MapFilterEvents {
-    typealias Change = PhotoMapViewModel.FilterChange
-
-    /// 欄の語が変わった（打鍵・変換・バックスペース）
-    static func queryEdited() -> [Change] { [.queryTyping] }
-    /// × を押した。**空にする前の語**で見る
-    static func clearTapped(queryBefore: String) -> [Change] { [.queryCommitted(queryBefore)] }
-    /// 確定キー
-    static func submitted(query: String) -> [Change] { [.queryCommitted(query)] }
-    /// 欄の焦点が変わった。離れたときだけ、そのときの語で見る
-    static func focusChanged(isFocused: Bool, query: String) -> [Change] {
-        isFocused ? [] : [.queryCommitted(query)]
-    }
-    /// 探すから語が届いた
-    static func pendingQueryArrived(_ query: String) -> [Change] { [.queryCommitted(query)] }
-    static func categoryChanged() -> [Change] { [.category] }
-    static func areaChanged() -> [Change] { [.area] }
 }

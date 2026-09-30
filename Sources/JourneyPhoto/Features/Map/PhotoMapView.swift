@@ -56,8 +56,6 @@ struct PhotoMapView: View {
     /// 押した撮影スポットのピン（台帳）。札は同時に1枚——写真のピン・
     /// Apple の地点と取り合わせず、どれかを押したら他は下げる
     @State private var selectedOfficial: OfficialPins.Pin?
-    /// 絞る欄に焦点があるか。**離れたら語が決まった**と見なす（`MapFilterEvents.focusChanged`）
-    @FocusState private var searchFocused: Bool
     /// 撮影スポットの「経路」の検索。押し直し・札の切り替え・画面を離れたら止める
     @State private var directionsTask: Task<Void, Never>?
     /// 一覧を開くとき（札の「写真を見る →」）
@@ -173,20 +171,12 @@ struct PhotoMapView: View {
         .onChange(of: model.query) { _, query in
             // 欄を空にした（× や手で消した）ら、探すから来た語の寄せ待ちも下ろす
             if query.isEmpty { queryFraming.cleared() }
-            // 打っている途中では下ろさない（下ろすのは語が決まったとき: 探すから届いた・× ・
-            // 確定キー・欄から指が離れた）。欄にいるままバックスペースで空にした回もここ
-            dropSelectionOutsideFilter(MapFilterEvents.queryEdited())
             guard model.areaFrame == nil else { return }
             frame(model.frame)
         }
         .onChange(of: model.category) { _, _ in
-            dropSelectionOutsideFilter(MapFilterEvents.categoryChanged())
             guard model.areaFrame == nil else { return }
             frame(model.frame)
-        }
-        // 「このエリアを検索」を押した・外したときも同じ（範囲も絞りのうち）
-        .onChange(of: model.areaFrame) { _, _ in
-            dropSelectionOutsideFilter(MapFilterEvents.areaChanged())
         }
         // リストへ切り替えたら地点の札は下げる（地図に戻ると選択の印が
         // 消えているので、札だけ残ると何を指しているか分からない）
@@ -282,17 +272,6 @@ struct PhotoMapView: View {
         }
     }
 
-    /// 絞りが変わって、選んでいたピン・スポットが見えている結果から外れたら選びを下ろす
-    /// （`PhotoMapViewModel.keptAfterFilterChange`）。残すと、絞りを外したとき消えた札が戻ってくる。
-    /// 上に画面を積んでいる間は下ろさない（`showsCard` と同じ決まり）。どの場面で何を見るかは
-    /// `PhotoMapViewModel.FilterChange`、どの出来事で何を渡すかは `MapFilterEvents`
-    private func dropSelectionOutsideFilter(_ changes: [PhotoMapViewModel.FilterChange]) {
-        let kept = model.keptAfterFilterChanges(changes, .init(pin: selected, official: selectedOfficial),
-                                                onScreen: isOnScreen)
-        if kept.pin == nil, selected != nil { selected = nil }
-        if kept.official == nil, selectedOfficial != nil { selectedOfficial = nil }
-    }
-
     // MARK: - 絞る口
 
     /// 探すから渡された語で絞り、地図の表示にする（一度きり・根が出ているときだけ）。
@@ -303,8 +282,6 @@ struct PhotoMapView: View {
         model.select(category: nil)
         model.query = query
         model.mode = .map
-        // 届いた語は決まった語（打っている途中ではない）
-        dropSelectionOutsideFilter(MapFilterEvents.pendingQueryArrived(query))
         // 空の語（タグ・語なしで探した回）は前の語を消すだけ（前の語の寄せ待ちも下ろす）
         queryFraming.received(query: query)
         guard !query.isEmpty else { return }
@@ -334,18 +311,8 @@ struct PhotoMapView: View {
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("map.search")
                 .foregroundStyle(WebTheme.foreground)
-                .focused($searchFocused)
-                // 確定キーで語が決まったら、結果から外れた選びを下ろす
-                .onSubmit { dropSelectionOutsideFilter(MapFilterEvents.submitted(query: model.query)) }
-                // キーボードを閉じた（欄から指が離れた）ら、そのときの語で決まったと見なす
-                .onChange(of: searchFocused) { _, focused in
-                    dropSelectionOutsideFilter(MapFilterEvents.focusChanged(isFocused: focused, query: model.query))
-                }
             if !model.query.isEmpty {
                 Button {
-                    // **空にする前の語で見てから空にする**（空の語で見ると、打った語で
-                    // 隠れていた選びが札ごと戻ってくる）
-                    dropSelectionOutsideFilter(MapFilterEvents.clearTapped(queryBefore: model.query))
                     model.query = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -480,6 +447,8 @@ struct PhotoMapView: View {
                 // **札は model.pins から引き直した最新のピンで描く。** `selected` は
                 // 押した時点の写しで、`MapPin ==` は id（座標）しか比べないので、
                 // 絞り込みで同じ座標の写真が減っても写しは古い枚数・写真のままだった
+                // **選びは絞りの間も持ち続け、見える結果に入れば札を出す**（2026-09-30 判断:
+                // 絞りで下ろすと、日本語入力・×・倍率・範囲との組み合わせで回帰が続いたため）
                 if let current = PhotoMapViewModel.refreshed(selected, in: model.pins) {
                     pinCard(current)
                         .padding(.horizontal, 16)
