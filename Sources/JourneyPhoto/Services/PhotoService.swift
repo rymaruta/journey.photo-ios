@@ -106,7 +106,8 @@ struct PhotoService {
             key: presigned.key,
             publicUrl: presigned.publicUrl,
             exif: prepared.exif,
-            date: prepared.takenOn,
+            // サーバーが弾く撮影日は載せない（載せると差し替えごと 400）
+            date: Self.replaceDate(prepared.takenOn),
             // 送る前に端末でも丸める（投稿と同じ）
             coords: (keepCoords ? prepared.coords : nil).map {
                 Replace.Coords(lat: ($0.lat * 100).rounded() / 100, lng: ($0.lng * 100).rounded() / 100)
@@ -123,6 +124,26 @@ struct PhotoService {
             await uploads.discard(key: presigned.key)
             throw error
         }
+    }
+
+    /// 差し替えに載せる撮影日。**サーバーが弾く日付なら nil（送らない）。**
+    ///
+    /// `photoUpdate.ts` は `replace.date` が読めない（1990年より前・未来）と
+    /// `dateWasRejected` で**差し替えごと 400** にする。カメラの日付未設定
+    /// （1970・1980）の EXIF を持つ写真で、写真そのものが差し替えられなかった。
+    /// 境界は `sanitize.ts` の `sanitizeDate` と同じ（UTC の年が 1990 未満・今より24時間先を超える）
+    static func replaceDate(_ takenOn: String?, now: Date = Date()) -> String? {
+        guard let takenOn else { return nil }
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(identifier: "UTC")
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let date = parser.date(from: takenOn) else { return nil }
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        guard utc.component(.year, from: date) >= 1990,
+              date <= now.addingTimeInterval(24 * 60 * 60) else { return nil }
+        return takenOn
     }
 
     /// 削除。**画像の実体と CloudFront の控えもサーバー側で消える**
