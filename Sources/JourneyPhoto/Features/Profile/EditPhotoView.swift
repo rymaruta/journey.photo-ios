@@ -187,11 +187,16 @@ struct EditPhotoView: View {
             let keep = EditPlaceRules.keepsCoordsOnReplace(openedLocation: photo.location,
                                                            openedHasCoords: photo.coords != nil,
                                                            currentLocation: location)
-            try await environment.photos.replace(photoId: photo.id, prepared: prepared,
-                                                 uploads: environment.uploads,
-                                                 keepCoords: keep)
+            let keptOldDate = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
+                                                                   uploads: environment.uploads,
+                                                                   keepCoords: keep)
             messageIsError = false
             message = L("差し替えました（反映まで数分かかります）", "Replaced. It takes a few minutes to appear.")
+            // 撮影日を載せなかった回は、前の撮影日が残ることを言う（黙って古い日付を残さない）
+            if keptOldDate {
+                message = (message ?? "") + "\n" + L("撮影日は前のままです（1990年より前・未来の日付は入れられません）",
+                                                     "The date taken is unchanged (dates before 1990 or in the future can't be set).")
+            }
         } catch {
             messageIsError = true
             message = (error as? LocalizedError)?.errorDescription
