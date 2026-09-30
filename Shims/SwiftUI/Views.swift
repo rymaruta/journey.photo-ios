@@ -380,6 +380,8 @@ public struct DragGesture: Gesture {
         public var predictedEndTranslation: CGSize { CGSize(width: 0, height: 0) }
     }
     public init(minimumDistance: Double = 10) {}
+    /// 指の位置を名前を付けた座標で読む（iOS 17）
+    public init(minimumDistance: Double = 10, coordinateSpace: NamedCoordinateSpace) {}
     public func onChanged(_ action: @escaping (Value) -> Void) -> DragGesture { self }
     public func onEnded(_ action: @escaping (Value) -> Void) -> DragGesture { self }
     /// 指で動かしている間の値を `@GestureState` に書く（本物と同じ）

@@ -70,6 +70,8 @@ struct StoryComposerView: View {
     @State private var canvasSize: CGSize = .zero
     /// 打ち始めた瞬間の `canvasSize`（打っている間はキーボードで枠が縮むので、こちらで測る）
     @State private var typingCanvas: CGSize = .zero
+    /// 札を指で動かしている最中（周りの道具を隠し、下のゴミ箱を見せる）
+    @State private var draggingOverlay = false
     /// 投票の札を選んでいる（札の `selectedId` とはどちらか一方）
     @State private var voteSelected = false
     /// 編集に入ったときの投票（「キャンセル」で戻す）
@@ -332,6 +334,12 @@ struct StoryComposerView: View {
                             },
                             // 写真を押したら選んでいる札を外す（写真を合わせられるように戻る）
                             onTapPhoto: { if textMode { selectedId = nil; voteSelected = false } },
+                            // ゴミ箱へ運んで離した（VoiceOver の「消す」も）。**表示中の写真の札**
+                            onDelete: { id in
+                                overlays.wrappedValue.removeAll { $0.id == id }
+                                if selectedId == id { selectedId = nil }
+                            },
+                            onDraggingChange: { draggingOverlay = $0 },
                             vote: vote,
                             voteSelected: textMode && voteSelected,
                             onTapVote: {
@@ -363,28 +371,28 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if !textMode && typingId == nil && preview != nil {
+            if !textMode && typingId == nil && !draggingOverlay && preview != nil {
                 toolColumn
                     .padding(.trailing, 12)
                     .padding(.top, 120)
             }
         }
         .overlay(alignment: .leading) {
-            if !textMode && typingId == nil && preview != nil {
+            if !textMode && typingId == nil && !draggingOverlay && preview != nil {
                 captionBlock
                     .padding(.leading, 36)
                     .padding(.trailing, 70)
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if !textMode && typingId == nil && preview != nil {
+            if !textMode && typingId == nil && !draggingOverlay && preview != nil {
                 mediaStrip
                     .padding(.leading, 16)
                     .padding(.bottom, 20)
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !textMode && typingId == nil && preview != nil {
+            if !textMode && typingId == nil && !draggingOverlay && preview != nil {
                 durationMenu
                     .padding(.trailing, 16)
                     .padding(.bottom, 30)
@@ -399,7 +407,7 @@ struct StoryComposerView: View {
                     vote.wrappedValue = nil
                     voteSelected = false
                 }
-            } else if textMode, let selectedId, selectedIndex != nil {
+            } else if textMode, !draggingOverlay, let selectedId, selectedIndex != nil {
                 OverlayPanel(overlay: overlayBinding(id: selectedId)) {
                     overlays.wrappedValue.removeAll { $0.id == selectedId }
                     self.selectedId = nil

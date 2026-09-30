@@ -234,6 +234,8 @@ struct StoryTextTypingView: View {
                     .font(StoryCanvas.font(overlay.face, size: fontSize))
                     .foregroundStyle(StoryCanvas.color(hex: overlay.drawnHex))
                     .accessibilityHidden(true)
+                    // 欄が枠より広いとき、印に回る幅が 0 になって「…」に潰れないように（e634a70 のレビュー）
+                    .fixedSize()
             }
             input(fontSize: fontSize)
         }

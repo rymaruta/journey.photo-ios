@@ -166,4 +166,66 @@ enum StoryTextEditing {
         // 最後の空の行は、測る文字の側では字が無いと数えられないので、空白を1つ置く
         return shown.hasSuffix("\n") ? shown + " " : shown
     }
+
+    // MARK: - 指で直接動かす（「文字と札」に入らずに・2026-09-30）
+
+    /// 画面に置かれた札の場所（画面の座標）。指の下の札を探すのに使う
+    struct Placed: Equatable {
+        let id: UUID
+        let center: CGPoint
+        /// 回す前の大きさ（帯の余白込み）
+        let size: CGSize
+        /// 回し（ラジアン）
+        let rotation: Double
+    }
+
+    /// 2本指の操作で、指の下の札を探す余白（pt）。小さな札でも指の間に挟めるように広めに取る
+    static let pinchSlop = 44.0
+
+    /// `point` の下にある札（**上に重なっているものを先に**＝並びの後ろから）。無ければ nil。
+    /// 札の回しを戻した向きで、札の矩形を `slop` だけ広げて当てる
+    static func overlay(at point: CGPoint, in placed: [Placed], slop: Double = pinchSlop) -> UUID? {
+        for item in placed.reversed() {
+            let dx = Double(point.x - item.center.x), dy = Double(point.y - item.center.y)
+            let c = cos(-item.rotation), s = sin(-item.rotation)
+            let lx = dx * c - dy * s, ly = dx * s + dy * c
+            if abs(lx) <= Double(item.size.width) / 2 + slop && abs(ly) <= Double(item.size.height) / 2 + slop {
+                return item.id
+            }
+        }
+        return nil
+    }
+
+    /// 真ん中の目安に吸い付く距離（pt）
+    static let snapDistance = 8.0
+
+    /// 動かしている札の中心を、画面の真ん中の縦・横の線に吸い付ける。吸い付いた向きを返す（線を出す）
+    static func snap(_ point: CGPoint, canvas: CGSize, distance: Double = snapDistance)
+        -> (point: CGPoint, vertical: Bool, horizontal: Bool) {
+        guard canvas.width > 0, canvas.height > 0 else { return (point, false, false) }
+        var result = point
+        let midX = canvas.width / 2, midY = canvas.height / 2
+        let vertical = abs(Double(point.x - midX)) <= distance
+        let horizontal = abs(Double(point.y - midY)) <= distance
+        if vertical { result.x = midX }
+        if horizontal { result.y = midY }
+        return (result, vertical, horizontal)
+    }
+
+    /// ゴミ箱の中心（画面の下の真ん中・左下の写真の並びより上）と、指が入ったとみなす半径
+    static let trashBottomInset = 120.0
+    static let trashRadius = 44.0
+
+    static func trashCenter(canvas: CGSize) -> CGPoint {
+        CGPoint(x: canvas.width / 2, y: max(0, canvas.height - trashBottomInset))
+    }
+
+    /// 動かしている指がゴミ箱の上にあるか（**札の中心ではなく指の位置**で見る——大きな札を
+    /// ゴミ箱まで運ぶのに、札の中心まで重ねさせない）
+    static func isOverTrash(_ finger: CGPoint, canvas: CGSize) -> Bool {
+        guard canvas.width > 0, canvas.height > 0 else { return false }
+        let c = trashCenter(canvas: canvas)
+        let dx = Double(finger.x - c.x), dy = Double(finger.y - c.y)
+        return dx * dx + dy * dy <= trashRadius * trashRadius
+    }
 }

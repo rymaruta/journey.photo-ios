@@ -198,6 +198,37 @@ final class StoryTextEditingTests: XCTestCase {
         }
     }
 
+    /// 帯の余白もキャレットの位置に入る（左揃えは左の余白の後ろ、右揃えは右の余白の手前）
+    func testTypingLayoutCountsBannerPadding() {
+        let pad = 20.0
+        var left = TextOverlay(text: "一\n二")
+        left.align = .leading
+        // 最終行 780: 余白込みで (20 + 780) × 0.35 = 280 ≤ 281 → 左端から見せればキャレットは枠の中
+        let l = StoryTextEditing.typingLayout(overlay: left, typing: CGSize(width: 2400, height: 80),
+                                              lastLineWidth: 780, padding: pad,
+                                              available: CGSize(width: 281, height: 300),
+                                              area: CGSize(width: 281, height: 324))
+        let width = 2400 * l.scale
+        let leftEdge = (281 - width) / 2 + l.offsetX
+        XCTAssertEqual(leftEdge, 0, accuracy: 0.001)
+        // 最終行 790: (20 + 790) × 0.35 = 283.5 > 281 → 余白の分まで数えて 2.5 だけ左へずらす
+        let l2 = StoryTextEditing.typingLayout(overlay: left, typing: CGSize(width: 2400, height: 80),
+                                               lastLineWidth: 790, padding: pad,
+                                               available: CGSize(width: 281, height: 300),
+                                               area: CGSize(width: 281, height: 324))
+        XCTAssertEqual((281 - width) / 2 + l2.offsetX, -2.5, accuracy: 0.001)
+        // 右揃え: 欄の右端を枠の右端に揃え（余白ごと見せる）、キャレットは余白×縮みだけ内側
+        var right = left
+        right.align = .trailing
+        let r = StoryTextEditing.typingLayout(overlay: right, typing: CGSize(width: 2400, height: 80),
+                                              lastLineWidth: 100, padding: pad,
+                                              available: CGSize(width: 281, height: 300),
+                                              area: CGSize(width: 281, height: 324))
+        let rightEdge = (281 - width) / 2 + r.offsetX + width
+        XCTAssertEqual(rightEdge, 281, accuracy: 0.001)
+        XCTAssertEqual(rightEdge - pad * r.scale, 274, accuracy: 0.001)
+    }
+
     /// 揃えの側を見せられるなら見せる（左揃えで最終行が短ければ左端から）
     func testTypingLayoutPrefersAlignedSide() {
         var left = TextOverlay(text: "一行目\n二")
@@ -232,5 +263,60 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertEqual(StoryTextEditing.lastLine(TextOverlay(text: "一行目\n二行目")), "二行目")
         XCTAssertEqual(StoryTextEditing.lastLine(TextOverlay(text: "港\n")), "")
         XCTAssertEqual(StoryTextEditing.lastLine(TextOverlay(text: "京都", kind: .place)), "📍 京都")
+    }
+
+    // MARK: - 指で直接動かす
+
+    /// 2本指の始めの位置の下の札。**上に重なっている方（並びの後ろ）を先に**・札の外は nil
+    func testOverlayAtPrefersTopmostAndHonorsSlop() {
+        let bottom = StoryTextEditing.Placed(id: UUID(), center: CGPoint(x: 100, y: 100),
+                                             size: CGSize(width: 100, height: 40), rotation: 0)
+        let top = StoryTextEditing.Placed(id: UUID(), center: CGPoint(x: 120, y: 100),
+                                          size: CGSize(width: 100, height: 40), rotation: 0)
+        XCTAssertEqual(StoryTextEditing.overlay(at: CGPoint(x: 110, y: 100), in: [bottom, top], slop: 0), top.id)
+        XCTAssertEqual(StoryTextEditing.overlay(at: CGPoint(x: 55, y: 100), in: [bottom, top], slop: 0), bottom.id)
+        // 札の外（余白なし）は無し、余白の内側なら当たる
+        XCTAssertNil(StoryTextEditing.overlay(at: CGPoint(x: 100, y: 140), in: [bottom], slop: 0))
+        XCTAssertEqual(StoryTextEditing.overlay(at: CGPoint(x: 100, y: 140), in: [bottom], slop: 25), bottom.id)
+        XCTAssertNil(StoryTextEditing.overlay(at: CGPoint(x: 100, y: 100), in: []))
+    }
+
+    /// 回した札は、回した向きの矩形で当てる（縦に回した横長の札の上下の端でも掴める）
+    func testOverlayAtFollowsRotation() {
+        let upright = StoryTextEditing.Placed(id: UUID(), center: CGPoint(x: 200, y: 200),
+                                              size: CGSize(width: 200, height: 20), rotation: .pi / 2)
+        // 回す前なら外（上へ 80）、縦に回すと札の中
+        XCTAssertEqual(StoryTextEditing.overlay(at: CGPoint(x: 200, y: 120), in: [upright], slop: 0), upright.id)
+        // 回す前なら中（右へ 80）、縦に回すと札の外
+        XCTAssertNil(StoryTextEditing.overlay(at: CGPoint(x: 280, y: 200), in: [upright], slop: 0))
+    }
+
+    /// 真ん中の縦・横の線に吸い付く（距離の内側だけ・向きごと）
+    func testSnapToCenterLines() {
+        let canvas = CGSize(width: 400, height: 800)
+        let near = StoryTextEditing.snap(CGPoint(x: 205, y: 300), canvas: canvas)
+        XCTAssertEqual(near.point, CGPoint(x: 200, y: 300))
+        XCTAssertTrue(near.vertical)
+        XCTAssertFalse(near.horizontal)
+        let both = StoryTextEditing.snap(CGPoint(x: 193, y: 406), canvas: canvas)
+        XCTAssertEqual(both.point, CGPoint(x: 200, y: 400))
+        XCTAssertTrue(both.vertical && both.horizontal)
+        let far = StoryTextEditing.snap(CGPoint(x: 220, y: 300), canvas: canvas)
+        XCTAssertEqual(far.point, CGPoint(x: 220, y: 300))
+        XCTAssertFalse(far.vertical || far.horizontal)
+        // 枠が測れていなければ何もしない
+        XCTAssertEqual(StoryTextEditing.snap(CGPoint(x: 1, y: 1), canvas: .zero).point, CGPoint(x: 1, y: 1))
+    }
+
+    /// ゴミ箱は下の真ん中。**指の位置**が半径の内側なら入る
+    func testTrashZone() {
+        let canvas = CGSize(width: 400, height: 800)
+        let c = StoryTextEditing.trashCenter(canvas: canvas)
+        XCTAssertEqual(c, CGPoint(x: 200, y: 800 - StoryTextEditing.trashBottomInset))
+        XCTAssertTrue(StoryTextEditing.isOverTrash(c, canvas: canvas))
+        XCTAssertTrue(StoryTextEditing.isOverTrash(CGPoint(x: c.x + 30, y: c.y - 30), canvas: canvas))
+        XCTAssertFalse(StoryTextEditing.isOverTrash(CGPoint(x: c.x + 40, y: c.y + 40), canvas: canvas))
+        XCTAssertFalse(StoryTextEditing.isOverTrash(CGPoint(x: 200, y: 300), canvas: canvas))
+        XCTAssertFalse(StoryTextEditing.isOverTrash(c, canvas: .zero))
     }
 }
