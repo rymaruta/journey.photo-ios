@@ -73,4 +73,20 @@ struct AppNotification: Decodable, Identifiable, Equatable {
     }
 
     // 画面の文言は `NotificationText.line(for:)`（まとめ表示と一緒に決めるため）
+
+    /// 押されたプッシュ通知の中身から、行き先を決めるための1件を作る。
+    ///
+    /// サーバーは中身の最上位に `type`・`photoId`・`byId`・`targetUserId` を入れて送る
+    /// （`api-user/src/notify.ts` の `deliverPush`・`apns.ts` の `pushPayload`）。
+    /// **お知らせの一覧と同じ復号を通す**——知らない種類は nil のまま（行き先なし）。
+    /// 文字列でない値・`aps` は読まない。種類が無ければ nil（押しても一覧を開くだけ）
+    static func fromPush(_ userInfo: [AnyHashable: Any]) -> AppNotification? {
+        var fields: [String: String] = [:]
+        for key in ["type", "photoId", "byId", "targetUserId"] {
+            if let value = userInfo[key] as? String, !value.isEmpty { fields[key] = value }
+        }
+        guard fields["type"] != nil,
+              let data = try? JSONSerialization.data(withJSONObject: fields) else { return nil }
+        return try? JSONDecoder().decode(AppNotification.self, from: data)
+    }
 }

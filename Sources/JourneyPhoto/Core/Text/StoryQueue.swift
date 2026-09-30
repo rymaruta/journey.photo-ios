@@ -44,6 +44,39 @@ enum StoryQueue {
         items.filter { !posted.contains($0.id) }
     }
 
+    /// 同じ撮影地として座標を送ってよい、基準の写真からの距離（km）
+    static let sameSpotKm = 10.0
+
+    /// まとめて出すときに**写真ごとに送る座標**（並びは `coords` と同じ）。
+    ///
+    /// 撮影地の名前は全部の写真で1つなので、**`sameSpotKm` 以内の仲間がいちばん多い写真**
+    /// （多数派・同数なら前の写真）を基準にし、**基準から遠い写真だけ送らない**——同じ地名で
+    /// 別の街に札が立つのを防ぐ。最初の写真を基準にすると、1枚目だけ別の街で撮った並びでは
+    /// 残りの全部が消えた。近い写真は自分の座標のまま（1つにそろえると、約1kmの丸めの境目を
+    /// またいだだけで全部消えた）。
+    ///
+    /// **GPS の無い写真には付けない**——その写真の本当の位置ではない。ストーリーはこの座標を
+    /// （撮影地の名前があるときだけ）保存し、残す操作（`storyKeep`）はそれを写真の `coords`（地図のピン）へ写す。
+    /// 撮影時の GPS 由来として扱うので `geoApprox`（地名から引いたおおよその位置）も立たない
+    static func coordsToSend(_ coords: [Photo.Coords?]) -> [Photo.Coords?] {
+        let known = coords.compactMap { $0 }
+        func near(_ a: Photo.Coords, _ b: Photo.Coords) -> Bool {
+            TravelDistance.kilometers(from: a, to: b) <= sameSpotKm
+        }
+        // 仲間の数が同じなら前の写真（多いときだけ替える）
+        var base: Photo.Coords?
+        var baseCount = 0
+        for c in known {
+            let count = known.filter { near(c, $0) }.count
+            if count > baseCount { base = c; baseCount = count }
+        }
+        guard let base else { return coords.map { _ in nil } }
+        return coords.map { c in
+            guard let c, near(base, c) else { return nil }
+            return c
+        }
+    }
+
     /// あと何枚足せるか。**上限に達していたら 0**
     static func remaining(_ count: Int) -> Int { max(0, maxShots - count) }
 

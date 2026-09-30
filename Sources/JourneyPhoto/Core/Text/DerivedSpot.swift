@@ -119,15 +119,18 @@ enum DerivedSpot {
     /// 「フランス」で、**短い方が狭い**——長さでは決まらない
     /// （Web の `broaderSpots` が同じことを書いている）。
     static func broader(of label: String, in photos: [Photo]) -> [String] {
-        let needle = label.lowercased()
+        // 自分かどうかは**空白を抜いて**見る（`photoIsIn` と同じ物差し）。小文字にしただけだと
+        // 「パリ,フランス」から見て綴り違いの「パリ, フランス」が広い方に出る
+        let needle = LocationMatch.normalized(label)
         var seen = Set<String>()
         var out: [String] = []
         for photo in photos {
             let other = (photo.location ?? "").trimmingCharacters(in: .whitespaces)
-            let key = other.lowercased()
+            let key = LocationMatch.normalized(other)
             guard !other.isEmpty, key != needle, seen.insert(key).inserted else { continue }
             // 「この撮影地の写真は、そちらのページにも載るか」
-            if needle.contains(key) { out.append(other) }
+            // 名前として含むときだけ（`LocationMatch.photoIsIn`・「福岡八宮」は「福岡」ではない）
+            if LocationMatch.photoIsIn(label, other) { out.append(other) }
         }
         return out
     }
@@ -158,14 +161,12 @@ enum DerivedSpot {
     static func nearby(_ place: Place, in photos: [Photo], limit: Int = 6,
                        maxKm: Double = nearbyMaxKm) -> [(place: Place, km: Double)] {
         guard let here = place.coords else { return [] }
-        let needle = place.label.lowercased()
         let candidates = all(in: photos)
             .filter { $0.slug != place.slug }
             // **自分を含む／自分に含まれる撮影地は出さない。**
             // 広い方は `broader`、狭い方の写真はこの画面の一覧に入っている
             .filter { other in
-                let key = other.label.lowercased()
-                return !needle.contains(key) && !key.contains(needle)
+                !LocationMatch.same(place.label, other.label)
             }
             .compactMap { other -> (Place, Double)? in
                 guard let there = other.coords else { return nil }

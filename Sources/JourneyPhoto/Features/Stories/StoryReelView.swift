@@ -37,6 +37,9 @@ struct StoryReelView: View {
     @State private var width: Double = 390
     /// 並びから落とした1本（通報・削除）。**人を行き来して閲覧画面が作り直されても戻さない**
     @State private var removed: Set<String> = []
+    /// 入れた票（1本ごと）。**閲覧画面は人ごとに作り直されるので、ここで覚える**
+    /// ——閲覧画面の中だけに持つと、次の人へ行って戻ると入れる前の数に戻っていた
+    @State private var voteStates: [String: StoryVoteState] = [:]
     /// 閲覧画面が「いまは払えない」（返信欄に入力中・メニュー・送信中）と言っている。
     /// **止めるのは横（人を替える）だけ**——下へ払って閉じるのは止めない（圏外で返事を
     /// 待つ間に閉じられなくなる。`StoryViewerView.leftTap` の注記と同じ）
@@ -201,6 +204,8 @@ struct StoryReelView: View {
             onDropped: { removed.insert($0) },
             onSwipeLockChange: { swipeLocked = $0 },
             spotIndex: spotIndex,
+            voteStates: voteStates,
+            onVoted: { voteStates[$0] = $1 },
             onSeen: onSeen,
             onDeleted: onDeleted)
     }

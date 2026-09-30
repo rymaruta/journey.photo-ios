@@ -77,4 +77,62 @@ final class StoryQueueTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - 座標（撮影地は全部で1つ・`StoryQueue.coordsToSend`）
+
+    private let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
+    /// 京都から約1.1km（丸めの境目をまたぐ隣のマス）
+    private let kyotoNext = Photo.Coords(lat: 35.02, lng: 135.77)
+    private let tokyo = Photo.Coords(lat: 35.68, lng: 139.77)
+    /// 京都から約40km
+    private let osaka = Photo.Coords(lat: 34.69, lng: 135.50)
+
+    /// 🔴 GPS の無い写真には付けない（その写真の本当の位置ではない）
+    func testShotsWithoutGPSGetNoCoords() {
+        XCTAssertEqual(StoryQueue.coordsToSend([nil, kyoto, nil]), [nil, kyoto, nil])
+    }
+
+    /// 🔴 近い写真は自分の座標のまま（丸めの境目をまたいでも消さない）
+    func testNearbyShotsKeepTheirOwnCoords() {
+        XCTAssertEqual(StoryQueue.coordsToSend([kyoto, kyotoNext, kyoto]), [kyoto, kyotoNext, kyoto])
+    }
+
+    /// 🔴 基準（多数派・同数なら前）から遠い写真だけ送らない（同じ地名で別の街に札が立った）
+    func testFarShotsGetNoCoords() {
+        XCTAssertEqual(StoryQueue.coordsToSend([kyoto, tokyo, kyotoNext]), [kyoto, nil, kyotoNext])
+        XCTAssertEqual(StoryQueue.coordsToSend([nil, tokyo, kyoto]), [nil, tokyo, nil])
+    }
+
+    /// 🔴 基準は多数派（10km 以内の仲間がいちばん多い写真）。1枚目だけ別の街でも残りを消さない
+    func testBaseIsTheMajority() {
+        XCTAssertEqual(StoryQueue.coordsToSend([osaka, kyoto, kyoto, kyoto]), [nil, kyoto, kyoto, kyoto])
+    }
+
+    /// 並べ替えても、どの写真に座標が付くかは変わらない（多数派が同数で並ぶときを除く——同数なら前が基準）
+    func testMajorityDoesNotDependOnOrder() {
+        let shots: [Photo.Coords?] = [osaka, kyoto, kyotoNext, nil, kyoto]
+        let expected = shots.map { c -> Photo.Coords? in c == osaka ? nil : c }
+        var orders: [[Int]] = []
+        func permute(_ rest: [Int], _ done: [Int]) {
+            if rest.isEmpty { orders.append(done); return }
+            for (i, x) in rest.enumerated() {
+                var r = rest; r.remove(at: i); permute(r, done + [x])
+            }
+        }
+        permute(Array(shots.indices), [])
+        for order in orders {
+            XCTAssertEqual(StoryQueue.coordsToSend(order.map { shots[$0] }), order.map { expected[$0] }, "\(order)")
+        }
+    }
+
+    /// 仲間の数が同じなら前の写真が基準
+    func testTieGoesToTheEarlierShot() {
+        XCTAssertEqual(StoryQueue.coordsToSend([kyoto, osaka]), [kyoto, nil])
+        XCTAssertEqual(StoryQueue.coordsToSend([osaka, kyoto]), [osaka, nil])
+    }
+
+    func testNoBaseMeansNoCoords() {
+        XCTAssertEqual(StoryQueue.coordsToSend([nil, nil]), [nil, nil])
+        XCTAssertEqual(StoryQueue.coordsToSend([]), [])
+    }
 }

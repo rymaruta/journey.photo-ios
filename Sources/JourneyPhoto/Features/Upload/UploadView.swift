@@ -10,6 +10,8 @@ struct UploadView: View {
     @State private var showSongPicker = false
     @State private var showLibrary = false
     @State private var appliedInitialSpot = false
+    /// 「書きかけを捨てて閉じますか？」
+    @State private var confirmDiscard = false
     @Environment(\.dismiss) private var dismiss
 
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき）。
@@ -53,7 +55,11 @@ struct UploadView: View {
         // 板 22: 左に ×、右に真鍮の「投稿する」（下の大きいボタンはやめる）
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button { dismiss() } label: {
+                // 🔴 **書きかけを黙って捨てない**（2026-09-30）。選んだ写真と書いた題・説明が
+                // 確認なしで消えていた。写真を選び始めたら一度聞く（旅行プランの日程と同じ判断）
+                Button {
+                    if model.hasDraft { confirmDiscard = true } else { dismiss() }
+                } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(WebTheme.foreground)
@@ -68,7 +74,16 @@ struct UploadView: View {
                 ToolbarItem(placement: .confirmationAction) { submitButton }
             }
         }
-        .interactiveDismissDisabled(model.isWorking)
+        // 書きかけがある間は、下へ払っても閉じない（× で確かめてから）
+        .interactiveDismissDisabled(model.isWorking || model.hasDraft)
+        .confirmationDialog(L("書きかけの投稿を捨てて閉じますか？", "Discard this post?"),
+                            isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button(L("捨てて閉じる", "Discard"), role: .destructive) { dismiss() }
+            Button(L("書き続ける", "Keep editing"), role: .cancel) { }
+        } message: {
+            Text(L("選んだ写真と、書いた題・説明は残りません。",
+                   "The photos you picked and what you wrote won't be kept."))
+        }
         .onChange(of: model.didPostAll) { _, posted in
             // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
             // 選び直しの読み込み中（一度空にする）にも閉じてしまい、
@@ -128,9 +143,9 @@ struct UploadView: View {
                 detailSection
                 rowsCard
                 tagsAndCategory
-                // 板: 本文の最後に 11px の注記
+                // 板: 本文の最後に注記（板は 11px だが、本文系の最小は 12pt）
                 Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(WebTheme.faint)
                     .padding(.horizontal, 4)
             }
@@ -143,7 +158,10 @@ struct UploadView: View {
             // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
             model.onAlbumGone = { [joined] id in joined.forget(id: id) }
             // **今日のテーマから来たときだけ。** 既に何か打っていれば触らない
-            if let initialTag, model.tagsText.isEmpty { model.tagsText = initialTag }
+            if let initialTag, model.tagsText.isEmpty {
+                model.tagsText = initialTag
+                model.initialTagsText = initialTag
+            }
             // **一度だけ入れる**（外したあとに戻さない）
             if let initialSpot, !appliedInitialSpot {
                 appliedInitialSpot = true
@@ -235,7 +253,7 @@ struct UploadView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(alignment: .bottomLeading) {
             Text("\(index + 1)")
-                .font(JPFont.mono(10))
+                .font(JPFont.mono(12))
                 .foregroundStyle(Color.white)
                 .frame(minWidth: 18, minHeight: 18)
                 .padding(.horizontal, 3)
@@ -280,7 +298,7 @@ struct UploadView: View {
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: "plus").font(.system(size: 20, weight: .regular))
-                Text(L("追加", "Add")).font(.caption2)
+                Text(L("追加", "Add")).font(.caption)
             }
             .foregroundStyle(WebTheme.muted2)
             .frame(width: 96, height: 120)
@@ -315,7 +333,7 @@ struct UploadView: View {
                  ? L("一覧では1枚のカードにまとまり、左右に送れます（題と説明は1枚ずつ書きます）",
                      "Shown as one card you can swipe (each photo keeps its own title)")
                  : L("それぞれ別の投稿として並びます", "Shown as separate posts"))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 4)
         }
@@ -326,7 +344,8 @@ struct UploadView: View {
             Text(title)
                 .font(.footnote.weight(selected ? .semibold : .regular))
                 .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
-                .frame(maxWidth: .infinity, minHeight: 38)
+                // 押せるものは 44pt
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .background(selected ? WebTheme.accentBackground : Color.clear,
                             in: RoundedRectangle(cornerRadius: 9))
                 .contentShape(RoundedRectangle(cornerRadius: 9))
@@ -363,7 +382,8 @@ struct UploadView: View {
                 count(item.caption, limit: PostLimits.description)
                 VStack(alignment: .leading, spacing: 6) {
                     JPSectionTitle(L("撮影地", "Place"))
-                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords)
+                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
+                                     near: item.prepared.coords, offersSpots: true)
                 }
             }
         }
@@ -379,7 +399,7 @@ struct UploadView: View {
             // 数え方はサーバーと同じ（`PostLimits.length`）——字で数えると、止まったのに
             // 「150/200」のように余っている数が出る
             Text("\(PostLimits.length(text))/\(limit)")
-                .font(JPFont.mono(11))
+                .font(JPFont.mono(12))
                 .foregroundStyle(PostLimits.length(text) >= limit ? WebTheme.danger : WebTheme.faint)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.top, -8)
@@ -437,7 +457,7 @@ struct UploadView: View {
                  ? model.audience.photoNote
                  : L("非公開の写真は、あなた以外には見えません。あとから公開できます。",
                      "Private photos stay yours. You can publish them later."))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 4)
         }

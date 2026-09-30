@@ -62,7 +62,10 @@ struct HighlightsRow: View {
                     }
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
-                    .frame(minHeight: 28)
+                    // 押せる高さは 44pt。並びの高さは 28pt のまま（上下 8pt ずつはみ出す）
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, -8)
                 }
             }
         }
@@ -100,7 +103,7 @@ struct HighlightsRow: View {
                         .font(.system(size: 18))
                         .foregroundStyle(Color.white))
                 Text(L("新規", "New"))
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
             }
@@ -136,7 +139,7 @@ struct HighlightsRow: View {
             .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
 
             Text(highlight.displayTitle)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.muted2)
                 .lineLimit(1)
         }

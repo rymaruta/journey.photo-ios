@@ -72,6 +72,9 @@ struct NotificationsView: View {
                                                  : AnyShapeStyle(WebTheme.surface),
                                         in: Capsule())
                             .foregroundStyle(selected ? WebTheme.accentText : WebTheme.muted2)
+                            // 札は 40pt 前後。押せる高さを 44pt にする（見た目は変えない）
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])
@@ -166,15 +169,26 @@ struct NotificationsView: View {
             }
         }
         .navigationDestination(item: $route) { route in
+            // 開いている写真の上で別の通知を押したとき、前の写真の画面の状態を引き継がない
+            // （`PhotoDetailView` は写真を init でしか受け取らない）
             destinationView(route)
+                .id(route)
         }
         // この一覧はログイン済みのときだけ描かれる（上の `body` の分岐）ので、
         // 読み込みの `viewerId` は必ずいまの人
         .task(id: router.openActivityRequests) {
+            // 押した通知の行き先は**読み込みの前に**受け取る。打ち切られた回（読み込み中に
+            // 行を押して進んだ・閉じた）はそのまま捨てる——残すと、戻ったときに走り直した
+            // この task が、押したことを忘れた頃に勝手に積んでいた
+            let target = router.takePendingTarget()
             // **読めたときだけ消す。** サーバーは未読数を載せるが、既読に
             // したことは端末のアイコンに伝わらない——誰も消さないと増える
             // 一方。ただし圏外で開いた回に消すと、タブは 3・アイコンは 0 に割れる
             if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge() }
+            // 押した通知の行き先を積む（読み終えてから——写真は読んだ一覧から引き当てる）。
+            // 引けなければ一覧に留まる
+            guard !Task.isCancelled, let target, let destination = model.route(for: target) else { return }
+            route = destination
         }
         .refreshable {
             if await model.load(environment: environment, viewerId: auth.userId, refreshing: true) {
@@ -256,7 +270,7 @@ private struct NotificationRow: View {
                         .foregroundStyle(WebTheme.text)
                     if let ago = NotificationText.ago(notification.t) {
                         Text(ago)
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                     }
                 }
@@ -287,11 +301,15 @@ private struct NotificationRow: View {
             .background(WebTheme.surface)
             .clipShape(Circle())
         if let userId, notification.deleted != true, let onOpenProfile {
-            Button { onOpenProfile(userId) } label: { face }
+            // 顔は 42pt、押せるのは 44pt 四方（見た目は変えない）
+            Button { onOpenProfile(userId) } label: {
+                face.frame(width: 44, height: 44).contentShape(Rectangle())
+            }
                 .buttonStyle(.plain)
                 .accessibilityLabel(NotificationText.openProfileLabel(notification))
         } else {
-            face.accessibilityHidden(true)
+            // 押せない顔も同じ 44pt の枠に入れる（押せる顔と左端・字の位置をそろえる）
+            face.frame(width: 44, height: 44).accessibilityHidden(true)
         }
     }
 
@@ -319,6 +337,9 @@ private struct NotificationRow: View {
                     .frame(height: 32)
                     .background(WebTheme.foreground, in: Capsule())
                     .foregroundStyle(WebTheme.accentText)
+                    // 見た目は 32pt、押せる高さは 44pt
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(busy)

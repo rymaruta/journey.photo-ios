@@ -72,7 +72,8 @@ struct LegalGateView: View {
         }.padding(14).background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.border, lineWidth: 1))
     }
 
-    private var links: some View { HStack(spacing: 20) { Link(destination: LegalConsent.termsURL) { Text(L("利用規約", "Terms of Use")).underline() }; Link(destination: LegalConsent.privacyURL) { Text(L("プライバシーポリシー", "Privacy Policy")).underline() } }.font(.footnote).foregroundStyle(WebTheme.accent).frame(minHeight: 32) }
+    // 押せる高さは**リンクごとに** 44pt（外の枠だけ高くしても、押せるのは文字の高さだけ）
+    private var links: some View { HStack(spacing: 20) { Link(destination: LegalConsent.termsURL) { Text(L("利用規約", "Terms of Use")).underline().frame(minHeight: 44).contentShape(Rectangle()) }; Link(destination: LegalConsent.privacyURL) { Text(L("プライバシーポリシー", "Privacy Policy")).underline().frame(minHeight: 44).contentShape(Rectangle()) } }.font(.footnote).foregroundStyle(WebTheme.accent) }
 
     private var agreeButton: some View { Button { consent.accept() } label: { Text(L("同意してJourney Photoをはじめる", "Agree and start Journey Photo")).jpPillButton() }.buttonStyle(.plain).accessibilityIdentifier("legal.agree").jpBottomBar() }
 

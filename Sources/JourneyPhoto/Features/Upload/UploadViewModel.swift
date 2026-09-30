@@ -84,6 +84,18 @@ struct PendingPhoto: Identifiable {
     var coordsToSend: Photo.Coords? {
         locationClearedByUser ? nil : (pickedCoords ?? prepared.coords)
     }
+
+    /// スポットから開いた投稿で送る座標。**位置の無い写真は、スポットに紐付くあいだ
+    /// スポットの座標を送る。**
+    ///
+    /// 以前は `pickedCoords` に入れていたが、撮影地の欄は文字が変わると
+    /// `pickedCoords` を捨てる（`PlaceSearchField`）ので、「高屋神社, 香川」と足しただけで
+    /// `spotId` は付いたままピンだけ消えていた。紐付けと同じ条件（`spotIdToSend`）で決める
+    func coordsToSend(spot: UploadSpotTarget?) -> Photo.Coords? {
+        if let coords = coordsToSend { return coords }
+        guard prepared.coords == nil, UploadSpotTarget.spotIdToSend(spot, for: self) != nil else { return nil }
+        return spot?.coords
+    }
 }
 
 @MainActor
@@ -97,14 +109,10 @@ final class UploadViewModel: ObservableObject {
     /// スポットの画面から開いたときの行き先（`UploadSpotTarget`）。外すと普通の投稿に戻る
     @Published var spot: UploadSpotTarget?
 
-    /// スポットを外す。**もう並んでいる写真に入れたスポットの座標も外す**（写真の位置に戻す）。
+    /// スポットを外す。スポットの座標は外した時点で送らなくなる（`coordsToSend(spot:)`）。
     /// 撮影地の名前は残す（本人が直せる。空にすると座標まで送らなくなる）
     func removeSpot() {
-        guard let spot else { return }
-        for i in items.indices where items[i].pickedCoords != nil && items[i].pickedCoords == spot.coords {
-            items[i].pickedCoords = nil
-        }
-        self.spot = nil
+        spot = nil
     }
 
     @Published var pickerItems: [PhotosPickerItem] = [] {
@@ -235,6 +243,24 @@ final class UploadViewModel: ObservableObject {
             .map { Album(id: $0.id, title: $0.title, createdAt: nil,
                          memberCount: nil, inviteToken: nil, inviteExpiresAt: nil) }
         albums = mine + extra
+    }
+
+    /// 最初から入れたタグ（今日のテーマの「参加する」）。**本人が書いたものではない**ので、
+    /// これと同じ間は書きかけに数えない（`hasDraft`）
+    var initialTagsText = ""
+
+    /// 閉じると消える書きかけがあるか。
+    ///
+    /// - **写真を選び始めたら**（読み込み中・カメラの準備中を含む。題・説明・撮影地は写真ごと）
+    /// - 写真の前でも入れられる欄（タグ・曲・アルバム・公開範囲・カテゴリ）を**変えたら**。
+    ///   写真ばかり見ていたので、写真を選ぶ前に入れたこれらが確認なしで消えていた（48b2481 のレビュー）
+    /// 最初から入っているタグ・スポットの紐付けは本人が書いたものではないので数えない
+    var hasDraft: Bool {
+        !items.isEmpty || isLoadingPicked || preparingCaptures > 0
+            || song != nil || selectedAlbumId != nil || !published || audience != .everyone
+            || !category.isEmpty
+            // タグは**中身で**比べる（候補を足して外すと末尾に「, 」が残り、同じ中身が書きかけに見えた）
+            || TagInput.parse(tagsText) != TagInput.parse(initialTagsText)
     }
 
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
@@ -409,8 +435,8 @@ final class UploadViewModel: ObservableObject {
         }
     }
 
-    /// 1枚を待ち行列に足し、撮影地を引き始める。
-    private func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil) {
+    /// 1枚を待ち行列に足し、撮影地を引き始める。試験から呼ぶので private にしない
+    func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil) {
         var photo = PendingPhoto(prepared: prepared)
         photo.pickerItem = pickerItem
         photo.preview = Self.image(from: prepared.data)
@@ -419,8 +445,8 @@ final class UploadViewModel: ObservableObject {
         // 位置のある写真は写真の座標をそのまま送る（撮った場所の方が正しい）。
         // スポットの座標を使うのは位置の無い写真だけ
         if let spot, spot.covers(prepared) {
+            // 位置の無い写真の座標は送るときに決める（`coordsToSend(spot:)`）
             photo.location = spot.name
-            if prepared.coords == nil { photo.pickedCoords = spot.coords }
             items.append(photo)
             return
         }
@@ -546,7 +572,7 @@ final class UploadViewModel: ObservableObject {
         draft.audience = audienceToSend
         // **選んだ撮影地の座標を優先する。** 写真に残っていた位置より、
         // 本人が選んだ地名の方が正しい（丸めはどちらも約1km）
-        draft.coords = item.coordsToSend
+        draft.coords = item.coordsToSend(spot: spot)
         draft.date = item.prepared.takenOn
         draft.exif = item.prepared.exif
         // **読み込み中の地の色。** Web は前から送っていて、アプリだけ
@@ -634,6 +660,8 @@ final class UploadViewModel: ObservableObject {
         groupId = nil
         song = nil
         tagsText = ""
+        // 最初のタグも忘れる（残すと、空に戻した画面が「書きかけ」になり、閉じられなかった）
+        initialTagsText = ""
         category = ""
         published = true
         audience = .everyone

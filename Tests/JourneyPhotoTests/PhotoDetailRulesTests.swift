@@ -27,6 +27,29 @@ final class PhotoDetailRulesTests: XCTestCase {
         XCTAssertEqual(open.index, 2, "落としたあとの並びで位置を引き直す")
     }
 
+    /// 🔴 **束の写真は詳細の上と同じ選んだ順（`createdAt` の古い順）で送る。**
+    /// 渡された順（人気順など）のままだと、上と大きく見る画面で送る向きが逆になった。
+    /// 束ねていない写真の場所は動かさない
+    func testViewerLineupOrdersGroupMembersLikeTheHero() async throws {
+        func dated(_ id: String, _ at: String, group: String?) throws -> Photo {
+            let g = group.map { ",\"groupId\":\"\($0)\"" } ?? ""
+            return try JSONDecoder.api.decode(Photo.self, from: Data(
+                "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"userId\":\"me\",\"createdAt\":\"\(at)\"\(g)}".utf8))
+        }
+        let context = [
+            try dated("g3", "2026-09-01T10:00:02.000Z", group: "g"),
+            try dated("solo", "2026-09-05T00:00:00.000Z", group: nil),
+            try dated("g1", "2026-09-01T10:00:00.000Z", group: "g"),
+            try dated("g2", "2026-09-01T10:00:01.000Z", group: "g"),
+        ]
+        let lineup = PhotoDetailRules.viewerLineup(context, current: context[0], hiding: ModerationSnapshot())
+        XCTAssertEqual(lineup.photos.map(\.id), ["g1", "solo", "g2", "g3"])
+        XCTAssertEqual(lineup.index, 3)
+        // 詳細の上の束と同じ向き
+        XCTAssertEqual(lineup.photos.filter { $0.groupId == "g" }.map(\.id),
+                       PhotoGroups.siblings(of: context[0], in: context).map(\.id))
+    }
+
     /// **押した1枚が落ちる側でも範囲外にしない。** 詳細の上に出ている1枚は残す
     func testViewerLineupKeepsShownPhotoAndIndexInRange() async throws {
         let siblings = [try photo("p1", userId: "a"), try photo("p2", userId: "b"),

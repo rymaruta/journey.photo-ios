@@ -73,7 +73,7 @@ struct StoryInsightsView: View {
                         .foregroundStyle(.white)
                     if let posted = StoryPlayback.postedAt(story.createdAt) {
                         Text(posted)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(WebTheme.faint)
                     }
                 }
@@ -115,7 +115,7 @@ struct StoryInsightsView: View {
                 .font(JPFont.mono(18, relativeTo: .title3))
                 .foregroundStyle(.white)
             Text(label)
-                .font(.system(size: 10))
+                .font(.system(size: 12))
                 .foregroundStyle(WebTheme.faint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

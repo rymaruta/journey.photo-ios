@@ -72,8 +72,11 @@ struct PhotoService {
     /// 上げ方は投稿と同じ3手（presign → S3 → 保存）で、EXIF は端末で落とす。
     /// - Parameter keepCoords: 新しい写真の座標を書くか（`EditPlaceRules.keepsCoordsOnReplace`）。
     ///   ピンの無い写真・撮影地を消した写真では false——外した位置が戻らないように
+    /// - Returns: **撮影日を載せずに差し替えたか**（`replaceDate` が落とした）。
+    ///   true なら保存済みの撮影日は前のまま残る——画面で知らせる（黙って古い日付が残らないように）
+    @discardableResult
     func replace(photoId: String, prepared: ImagePreparer.Prepared,
-                 uploads: UploadService, keepCoords: Bool = true) async throws {
+                 uploads: UploadService, keepCoords: Bool = true) async throws -> Bool {
         // **投稿と同じ関所を通す。** 50MB と対応形式はサーバーも見るが、
         // 手前で弾かないと、上げ切ってから 400 を食う（投稿側と同じ理由）
         try UploadService.checkAcceptable(size: prepared.data.count, type: prepared.contentType)
@@ -102,11 +105,13 @@ struct PhotoService {
             let coords: Coords?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }
+        // サーバーが弾く撮影日は載せない（載せると差し替えごと 400）
+        let date = Self.replaceDate(prepared.takenOn)
         let body = Body(replace: Replace(
             key: presigned.key,
             publicUrl: presigned.publicUrl,
             exif: prepared.exif,
-            date: prepared.takenOn,
+            date: date,
             // 送る前に端末でも丸める（投稿と同じ）
             coords: (keepCoords ? prepared.coords : nil).map {
                 Replace.Coords(lat: ($0.lat * 100).rounded() / 100, lng: ($0.lng * 100).rounded() / 100)
@@ -123,6 +128,27 @@ struct PhotoService {
             await uploads.discard(key: presigned.key)
             throw error
         }
+        return prepared.takenOn != nil && date == nil
+    }
+
+    /// 差し替えに載せる撮影日。**サーバーが弾く日付なら nil（送らない）。**
+    ///
+    /// `photoUpdate.ts` は `replace.date` が読めない（1990年より前・未来）と
+    /// `dateWasRejected` で**差し替えごと 400** にする。カメラの日付未設定
+    /// （1970・1980）の EXIF を持つ写真で、写真そのものが差し替えられなかった。
+    /// 境界は `sanitize.ts` の `sanitizeDate` と同じ（UTC の年が 1990 未満・今より24時間先を超える）
+    static func replaceDate(_ takenOn: String?, now: Date = Date()) -> String? {
+        guard let takenOn else { return nil }
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(identifier: "UTC")
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let date = parser.date(from: takenOn) else { return nil }
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        guard utc.component(.year, from: date) >= 1990,
+              date <= now.addingTimeInterval(24 * 60 * 60) else { return nil }
+        return takenOn
     }
 
     /// 削除。**画像の実体と CloudFront の控えもサーバー側で消える**

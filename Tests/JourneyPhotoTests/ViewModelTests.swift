@@ -179,6 +179,38 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.photoCount, .loaded(1))
     }
 
+    /// 🔴 **人のページ: ブロックしたら写真の数も「読み込み中」に戻す。** 空にした一覧の
+    /// 数（0）が残り、設定から解いたあと読み直すまで「0 写真」と出ていた
+    func testProfileBlockResetsPhotoCountUntilReload() async {
+        prepare()
+        StubProtocol.respond(path: "/profile/u1", status: 200, body: #"{"userId":"u1","displayName":"U"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200,
+                             body: #"[{"id":"p1","src":"https://x/p1.jpg","userId":"u1"}]"#)
+        StubProtocol.respond(path: "/users/u1/block", status: 200, body: #"{"blocked":true}"#)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"),
+                                 gallery: PublicGalleryService(
+                                    url: URL(string: "https://site.example.test/app/data/photos.json")!,
+                                    session: session,
+                                    snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)),
+                                 api: api())
+        let model = UserProfileViewModel()
+        await model.load(userId: "u1", environment: env, viewerId: nil)
+        XCTAssertEqual(model.photoCount, .loaded(1))
+
+        let store = ModerationStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await model.block(userId: "u1", environment: env, store: store, toasts: ToastCenter())
+        XCTAssertNil(model.actionMessage)
+        XCTAssertEqual(model.photos, [])
+        XCTAssertEqual(model.photoCount, .pending, "空にした一覧の数を残している（解いたあと「0 写真」）")
+
+        // 解いたあとの読み直しで戻る（設定のブロック中の人から解いた形）
+        store.unblock("u1", for: store.owner)
+        await env.gallery.setHidden(store.snapshot)
+        await model.load(userId: "u1", environment: env, viewerId: nil)
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+        XCTAssertEqual(model.photoCount, .loaded(1))
+    }
+
     /// 🔴 **ストーリーの輪: 先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない。**
     /// 人が替わった直後は読み直しが2本同時に走り、前の人のブロックの集合で絞った先の回が
     /// 後から着くと、次の人がブロックした人の輪が並んだままになっていた

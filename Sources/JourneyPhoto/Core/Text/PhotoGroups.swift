@@ -27,6 +27,9 @@ enum PhotoGroups {
     /// **並びは壊さない。** 束は「その束の先頭が出てきた場所」に置く
     /// ——新しい順に並んだ一覧を畳んだとき、束が急に先頭へ飛ばない。
     ///
+    /// **束の中は選んだ順（`createdAt` の古い順）。** 一覧の並び（人気順など）の
+    /// ままだと、10枚の投稿の表紙と「1/10」の順が並べ替えのたびに変わった。
+    ///
     /// **持ち主の違う写真は同じ束にしない。** `groupId` は画面が作る値なので、
     /// 別の人が同じ値を送れば他人の写真が自分の投稿に混ざりうる。
     static func group(_ photos: [Photo]) -> [Group] {
@@ -41,7 +44,7 @@ enum PhotoGroups {
             buckets[key]?.append(photo)
         }
         return order.compactMap { key in
-            guard let items = buckets[key], let first = items.first else { return nil }
+            guard let items = buckets[key].map(inPostOrder), let first = items.first else { return nil }
             return Group(id: first.id, photos: items)
         }
     }
@@ -72,11 +75,41 @@ enum PhotoGroups {
         return "group#\(owner)#\(groupId)"
     }
 
-    /// その写真と同じ束の写真（同じ並びのまま）。
+    /// その写真と同じ束の写真（選んだ順・`inPostOrder`）。
     /// **1枚しか無ければその1枚だけ**
     static func siblings(of photo: Photo, in photos: [Photo]) -> [Photo] {
         let key = groupKey(of: photo)
-        let found = photos.filter { groupKey(of: $0) == key }
+        let found = inPostOrder(photos.filter { groupKey(of: $0) == key })
         return found.isEmpty ? [photo] : found
+    }
+
+    /// 一覧の並びはそのまま、**束の写真どうしだけ選んだ順に入れ替える**。
+    /// 束の写真が居た場所（何番目か）は変えない——束ねていない写真は動かない。
+    /// 詳細の上の束（`siblings`）と大きく見る画面で、送る向きをそろえるため
+    static func inPostOrderWithinGroups(_ photos: [Photo]) -> [Photo] {
+        var slots: [String: [Int]] = [:]
+        for (i, photo) in photos.enumerated() {
+            slots[groupKey(of: photo), default: []].append(i)
+        }
+        var result = photos
+        for indices in slots.values where indices.count > 1 {
+            for (slot, photo) in zip(indices, inPostOrder(indices.map { photos[$0] })) {
+                result[slot] = photo
+            }
+        }
+        return result
+    }
+
+    /// 束の中の並び。**`createdAt` の古い順**（投稿は選んだ順に1枚ずつ保存される）。
+    /// 同じ時刻・時刻の無い写真は元の並びのまま（時刻の無いものは後ろ）
+    static func inPostOrder(_ photos: [Photo]) -> [Photo] {
+        photos.enumerated().sorted { a, b in
+            switch (a.element.createdAt, b.element.createdAt) {
+            case let (x?, y?) where x != y: return x < y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: return a.offset < b.offset
+            }
+        }.map(\.element)
     }
 }

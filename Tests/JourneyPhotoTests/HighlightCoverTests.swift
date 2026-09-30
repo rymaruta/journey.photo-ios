@@ -45,6 +45,24 @@ final class HighlightCoverTests: XCTestCase {
         XCTAssertEqual(ProfileSongs.replacingFirst([], with: song("z")).map(\.previewUrl), ["z"])
     }
 
+    /// 🔴 **選び直しても、いまの表紙が並びに残っていれば変えない。** 選ぶたびに
+    /// 先頭へ替えていたので、直すだけで表紙が黙って替わった（外したら先頭）
+    func testReselectingKeepsTheCoverWhileItIsStillPicked() {
+        XCTAssertEqual(HighlightService.cover(keeping: "b", in: ["a", "b", "c"]), "b")
+        XCTAssertEqual(HighlightService.cover(keeping: "b", in: ["a", "c"]), "a", "外したら先頭")
+        XCTAssertEqual(HighlightService.cover(keeping: nil, in: ["a", "c"]), "a")
+        XCTAssertNil(HighlightService.cover(keeping: "b", in: []))
+    }
+
+    /// 🔴 **「最初の1件が表紙」と言わない**——直すときはサーバーの表紙を引き継ぐ
+    func testNoteNamesTheActualCover() {
+        let note = HighlightService.pickedNote(picked: ["a", "b", "c"], coverId: "b")
+        XCTAssertTrue(note.contains("2件目") || note.contains("#2"), note)
+        XCTAssertFalse(note.contains("最初の1件") || note.contains("The first one"), note)
+        let first = HighlightService.pickedNote(picked: ["a"], coverId: nil)
+        XCTAssertTrue(first.contains("1件目") || first.contains("#1"), first)
+    }
+
     /// **表紙の形が崩れていても一覧ごと落とさない**（表紙を伏せるだけ）
     func testBrokenCoverDoesNotDropTheList() throws {
         let list = try decode(#"{"highlights":[{"id":"h1","title":"a","cover":{"src":5}},{"id":"h2","title":"b"}]}"#)

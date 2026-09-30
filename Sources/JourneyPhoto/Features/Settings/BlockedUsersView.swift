@@ -25,10 +25,10 @@ struct BlockedUsersView: View {
     var body: some View {
         List {
             // 板 45 の説明。**同じ言い方をアプリの他の入口（通報・プロフィール）でも使っている**
-            // 板: 11px・白60%
+            // 板: 11px・白60%（本文の下限 12pt に上げた）
             Text(L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。",
                    "Blocking hides each other's posts, stories and notifications."))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 4)
                 // 板: 上 16・説明と一覧の間 12（＝ここの下 3 ＋ 行の上 9）
@@ -57,7 +57,9 @@ struct BlockedUsersView: View {
                             .padding(.horizontal, 14)
                             .frame(minWidth: 44, minHeight: 36)
                             .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
-                            .contentShape(Capsule())
+                            // 見た目は 36pt、押せる高さは 44pt（`FollowPill` と同じ）
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                     }
                     // 行の中のボタンは borderless にしないと、行のどこを
                     // 押しても反応する

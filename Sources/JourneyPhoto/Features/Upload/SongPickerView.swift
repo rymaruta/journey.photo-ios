@@ -49,24 +49,31 @@ struct SongPickerView: View {
                         // 下の再生バー（`MiniPlayerBar`）が出ない
                         player.toggle(song.previewURL, song: song, origin: .songPicker)
                     } label: {
+                        // 押せる広さは 44pt（記号だけだと 20pt ほどしかなかった）
                         Image(systemName: player.isPlaying(song.previewURL)
                               ? "pause.circle.fill" : "play.circle")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                             .accessibilityLabel(SongPickerText.previewButtonLabel(
                                 isPlaying: player.isPlaying(song.previewURL)))
                     }
                     .buttonStyle(.borderless)
-                    Button(L("選ぶ", "Choose")) {
+                    Button {
                         player.stop()
                         recent = recentStore.remember(song, userId: auth.userId)
                         onSelect(song)
                         dismiss()
+                    } label: {
+                        Text(L("選ぶ", "Choose"))
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.borderless)
                 }
             }
             // 板 23 の一覧の下の注記
             Text(SongPickerText.previewNote)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .listRowBackground(Color.clear)
         }

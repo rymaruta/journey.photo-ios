@@ -22,7 +22,29 @@ final class TabRouter: ObservableObject {
     @Published private(set) var menuRequests = 0
 
     func openSearch() { searchRequests += 1 }
-    func openMap() { mapRequests += 1 }
+    /// 探すの0件の出口から来たときの検索語。地図が一度だけ受け取る
+    /// （`takePendingMapQuery`）。渡さないと地図が空の絞りで開き、打ち直すことになる
+    private(set) var pendingMapQuery: String?
+
+    /// - Parameter query: nil＝地図の絞りに触れない（メニュー・注目スポットから）。
+    ///   空の語＝**地図の前の語を消す**（タグで探した0件から。タグの語は地図で当たらないが、
+    ///   前に地図で打った語が残ると、探していたものと関係ない絞りで開く）。
+    ///   語なしで呼ばれた回は、待っていた語も捨てる（古い語で絞った地図を出さない）
+    func openMap(query: String? = nil) {
+        pendingMapQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines)
+        mapRequests += 1
+    }
+
+    /// 地図が受け取る。受け取ったら消す（戻ってくるたびに絞り直さない）。
+    ///
+    /// 🔴 **地図の根（`mapRootOnScreen`）が出ていない間は渡さず残す。** 詳細を積んだまま
+    /// 絞り直すと、語が見えないうえ、押した元の `NavigationLink` が消えて詳細が黙って閉じる。
+    /// 根に戻った `onAppear` で受け取る
+    func takePendingMapQuery(rootOnScreen: Bool) -> String? {
+        guard rootOnScreen else { return nil }
+        defer { pendingMapQuery = nil }
+        return pendingMapQuery
+    }
     func openMenu() { menuRequests += 1 }
 
     /// **ホームを開いたまま、下の「ホーム」をもう一度押した回数。**
@@ -73,6 +95,13 @@ final class TabRouter: ObservableObject {
     /// 合図を出す（別の札から来たときは何もしない＝開き直しで勝手に
     /// 上へ飛ばない・現在地へ引き戻さない）。受け取るのはホームと地図
     func tabTapped(_ tab: Reselectable?, alreadySelected: Bool) {
+        // 人が下の札を押した＝探すの出口の続きではない。残っていた語が
+        // あとで（詳細から根へ戻ったときなど）勝手に当たらないよう捨てる。
+        // `openMap` の移動は札を押さない（RootView が selection を直に書く）ので、ここを通らない。
+        // 🔴 **ただし詳細を積んだ地図で「マップ」を押し直した回は捨てない。** iOS が根まで戻し、
+        // 待っていた語はその `onAppear` で受け取る（捨てると何も届かない）
+        let returnsToMapRoot = alreadySelected && tab == .map && !mapRootOnScreen
+        if !returnsToMapRoot { pendingMapQuery = nil }
         guard alreadySelected, let tab else { return }
         switch tab {
         case .home: homeTopRequests += 1
