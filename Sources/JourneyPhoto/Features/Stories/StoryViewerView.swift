@@ -76,6 +76,10 @@ struct StoryViewerView: View {
     @State private var showBlockConfirm = false
     /// 見出しの名前を押して開く投稿者のページ
     @State private var showAuthor = false
+    /// 撮影地から開いた撮影スポットのガイド（`StorySpotLink`）
+    @State private var guideSpot: OfficialSpot?
+    /// 撮影スポットの索引（撮影地をガイドへつなぐのに使う）。**取れなかった回は空**＝つながないだけ
+    @State private var spotIndex: [OfficialSpot] = []
     /// 自分のストーリーを消す前の確認（板「25f 削除の確認」）。
     /// **以前は確認なしで即座に消えていた**
     @State private var showDeleteConfirm = false
@@ -185,7 +189,7 @@ struct StoryViewerView: View {
             paused: paused,
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
-                || showAuthor || showDeleteConfirm || isHeld,
+                || showAuthor || showDeleteConfirm || guideSpot != nil || isHeld,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -198,7 +202,7 @@ struct StoryViewerView: View {
     /// （止まっていても払って次へは行ける）
     private var swipeLocked: Bool {
         replyFocused || isSending || showMenu || showReplies || showInsights || showReport
-            || showBlockConfirm || showAuthor || showDeleteConfirm
+            || showBlockConfirm || showAuthor || showDeleteConfirm || guideSpot != nil
     }
 
     /// この人の束をもう見せられない（最後の1本を消した・通報した・ブロックした）。
@@ -424,6 +428,22 @@ struct StoryViewerView: View {
                 }
             }
         }
+        // 撮影地から開いた撮影スポットのガイド。**見ている間は止める**（`frozen` の sheetOpen）
+        .sheet(item: $guideSpot) { spot in
+            NavigationStack {
+                OfficialSpotView(spot: spot, spots: spotIndex, photos: [])
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                    }
+            }
+        }
+        // 撮影スポットの索引は**一度だけ**読む（静的な JSON・サービスに60秒の控えと端末の控え）
+        .task {
+            guard spotIndex.isEmpty else { return }
+            let fetched = try? await environment.spots.fetchIndex()
+            guard !Task.isCancelled, let fetched else { return }
+            spotIndex = fetched
+        }
         .sheet(isPresented: $showInsights) {
             NavigationStack {
                 StoryInsightsView(story: story)
@@ -501,10 +521,11 @@ struct StoryViewerView: View {
                 .opacity(dimOpacity)
                 .allowsHitTesting(false)
 
+            // **撮影地の行だけ押せる**（撮影スポットのガイドへ）。ひとことと曲は指を素通りさせ、
+            // 左右の送る的を塞がない（中で1つずつ `allowsHitTesting(false)` を付ける）
             captionBlock(for: story)
                 .padding(.horizontal, 32)
                 .padding(.bottom, highlight == nil ? 96 : 150)
-                .allowsHitTesting(false)
 
             if let message {
                 Text(message)
@@ -548,12 +569,35 @@ struct StoryViewerView: View {
                         .minimumScaleFactor(0.7)
                         .foregroundStyle(.white)
                         .jpPhotoTextShadow()
+                        .allowsHitTesting(false)
                 }
                 if let place {
-                    photoMeta(symbol: "mappin", text: place)
+                    if let spot = StorySpotLink.spot(for: story, in: spotIndex) {
+                        // 撮影地 → 撮影スポットのガイド（「行きたい」もそこで押せる）
+                        Button {
+                            guideSpot = spot
+                        } label: {
+                            HStack(spacing: 4) {
+                                photoMeta(symbol: "mappin", text: place)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(WebTheme.muted)
+                                    .jpPhotoTextShadow()
+                            }
+                            .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L("撮影地 \(place)。撮影スポットのガイドを開く",
+                                              "Location \(place). Open the photo spot guide"))
+                    } else {
+                        photoMeta(symbol: "mappin", text: place)
+                            .allowsHitTesting(false)
+                    }
                 }
                 if let song {
                     photoMeta(symbol: "music.note", text: song)
+                        .allowsHitTesting(false)
                 }
             }
         }
