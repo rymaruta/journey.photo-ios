@@ -99,6 +99,13 @@ enum NotificationText {
         return L("\(name) のプロフィールを開く", "Open \(name)'s profile")
     }
 
+    /// 右の小窓の画像。**ストーリーへの返信は出さない**（Web の `NotificationsBell` と同じ）
+    /// ——`photoSrc` は24時間で消えるストーリーの画像や動画で、小窓が壊れた画像になる
+    static func thumbnailURL(_ row: AppNotification) -> URL? {
+        guard row.kind != .storyreply, let src = row.photoSrc else { return nil }
+        return URL(string: src)
+    }
+
     /// 板の文言（「[user] があなたの写真にいいねしました」）。
     /// 種類の分からないものは nil——**既定の文言で嘘を出さない**。
     static func line(for entry: Entry) -> Line? {

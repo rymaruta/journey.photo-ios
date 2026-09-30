@@ -326,4 +326,12 @@ final class NotificationRouteTests: XCTestCase {
         XCTAssertTrue(NotificationsViewModel.kept(nil, previous: before, cancelled: false).isEmpty)
         XCTAssertEqual(NotificationsViewModel.kept([try photo("b")], previous: before, cancelled: true).map(\.id), ["b"])
     }
+    /// **ストーリー返信は小窓を出さない**（Web の `NotificationsBell` と同じ）。
+    /// `photoSrc` は24時間で消えるストーリーの画像・動画で、壊れた画像になっていた
+    func testStoryReplyHasNoThumbnail() async throws {
+        let reply = try notification(#"{"type":"storyreply","photoId":"s","photoSrc":"https://x/s.mp4","byId":"u"}"#)
+        XCTAssertNil(NotificationText.thumbnailURL(reply))
+        let like = try notification(#"{"type":"like","photoId":"p","photoSrc":"https://x/p.jpg","byId":"u"}"#)
+        XCTAssertEqual(NotificationText.thumbnailURL(like)?.absoluteString, "https://x/p.jpg")
+    }
 }

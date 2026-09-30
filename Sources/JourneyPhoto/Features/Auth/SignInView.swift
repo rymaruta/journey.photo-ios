@@ -145,7 +145,14 @@ struct SignInView: View {
     /// **失敗しても黙る**（飾りなので、地の色のまま）
     private func loadTiles() async {
         guard tiles.isEmpty, let photos = try? await environment.gallery.fetchPhotos() else { return }
-        tiles = Array(photos.filter { $0.gridImageURL != nil }.prefix(9))
+        tiles = Self.tiles(from: photos)
+    }
+
+    /// 敷く9枚。**公開範囲を絞った写真は敷かない**——ログアウトの直後は、読み出し口の
+    /// 入れ替え（`JourneyPhotoApp.applyRestrictedFeed`）より先にここが読むことがあり、
+    /// 前の人あての「フォロワーのみ」「親しい友達」が混ざる
+    nonisolated static func tiles(from photos: [Photo]) -> [Photo] {
+        Array(photos.filter { $0.gridImageURL != nil && !RestrictedFeed.isRestricted($0) }.prefix(9))
     }
 
     private var verificationOffer: some View {
