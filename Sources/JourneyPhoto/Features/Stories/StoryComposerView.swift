@@ -620,7 +620,21 @@ struct StoryComposerView: View {
             .disabled(leave == .wait)
             .accessibilityLabel(Labels.Common.close)
             Spacer()
-            if captionFocused {
+            if votePanelOpen {
+                // 投票の欄を閉じる（欄の間は投稿ボタンが隠れるので、閉じる口を見える所に出す）
+                Button { voteSelected = false } label: {
+                    Text(L("完了", "Done"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(WebTheme.accentBackground, in: Capsule())
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("投票の編集を終える", "Finish editing poll"))
+            } else if captionFocused {
                 // ひとことのキーボードを閉じる（複数行なので Return では閉じない）
                 Button { captionFocused = false } label: {
                     Text(L("完了", "Done"))
@@ -779,8 +793,10 @@ struct StoryComposerView: View {
     /// 張り付いて、打つ画面の文字が置いたあとより2割ほど大きく見えた（4ffb74f のレビュー）。キーボードの分は、打ち始めた瞬間の
     /// 枠を `typingCanvas` に写して避ける（キーボードは打ち始めた後に出る）
     private func rememberCanvas(_ size: CGSize) {
-        // ひとことのキーボードで縮んだ枠は覚えない（そのまま「Aa」を押すと、縮んだ枠で大きさを決める）
-        guard !captionFocused else { return }
+        // ひとことのキーボードで縮んだ枠は覚えない（そのまま「Aa」を押すと、縮んだ枠で大きさを決める）。
+        // 投票の欄の間（足元が消えて伸びた枠・欄のキーボードで縮んだ枠）も覚えない——札を押すと
+        // 欄が閉じて足元が戻るので、打つ画面の文字が置いたあとより2割大きく見えた（f38d404 のレビュー）
+        guard !captionFocused && !votePanelOpen else { return }
         canvasSize = size
     }
 
@@ -825,7 +841,10 @@ struct StoryComposerView: View {
             guard overlays.wrappedValue.count < TextOverlay.maxCount else { return }
             // 曲を付けてあれば、その曲の札（右の列の「曲」と同じ札・打たなくてよい）
             if kind == .song, let song, let sticker = SongSticker.make(for: song) {
-                overlays.wrappedValue.append(sticker)
+                // 同じ写真に付けた曲の札が既にあれば置かない（右の列の「曲」と同じく1枚）
+                if !SongSticker.retext(overlays.wrappedValue, from: song, to: song).found {
+                    overlays.wrappedValue.append(sticker)
+                }
                 voteSelected = false
                 return
             }
@@ -889,7 +908,8 @@ struct StoryComposerView: View {
             // 足したらそれを編集する（選んだ直後に文字を置ける）。
             // **打っている間も移らない**（打つ先は `typingShotId` で引くが、見えている写真と打っている
             // 写真が違うと、完了した後に別の写真が出て驚く）
-            if typingId == nil { current = shots.count - 1 }
+            // 投票の欄を打っている間も移らない（移ると欄が閉じてキーボードも消えた）
+            if typingId == nil && !votePanelOpen { current = shots.count - 1 }
             self.message = nil
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("写真を読み込めませんでした", "Couldn't load the photo")
