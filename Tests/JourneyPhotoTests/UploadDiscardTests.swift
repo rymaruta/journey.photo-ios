@@ -23,9 +23,29 @@ final class UploadDiscardTests: XCTestCase {
     /// 何も選んでいなければ、そのまま閉じてよい（最初から入っているタグは本人の書きかけではない）
     func testNothingPickedIsNotADraft() async {
         let model = model()
+        XCTAssertFalse(model.hasDraft)
+    }
+
+    /// 写真の前でも入れられる欄を変えたら書きかけ（最初から入れたタグと同じ間は違う）
+    func testFieldsBeforePhotosCountAsDraft() async {
+        let model = model()
+        model.tagsText = "夕焼け"
+        model.initialTagsText = "夕焼け"
+        XCTAssertFalse(model.hasDraft)
+        model.tagsText = "夕焼け 海"
+        XCTAssertTrue(model.hasDraft)
         model.tagsText = "夕焼け"
         model.published = false
-        XCTAssertFalse(model.hasDraft)
+        XCTAssertTrue(model.hasDraft)
+        model.published = true
+        model.category = "風景"
+        XCTAssertTrue(model.hasDraft)
+        model.category = ""
+        model.selectedAlbumId = "a1"
+        XCTAssertTrue(model.hasDraft)
+        model.selectedAlbumId = nil
+        model.audience = .closeFriends
+        XCTAssertTrue(model.hasDraft)
     }
 
     /// 写真を1枚でも選んだら書きかけ。外し切ったら書きかけではない

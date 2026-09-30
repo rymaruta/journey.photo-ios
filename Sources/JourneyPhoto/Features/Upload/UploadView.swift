@@ -158,7 +158,10 @@ struct UploadView: View {
             // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
             model.onAlbumGone = { [joined] id in joined.forget(id: id) }
             // **今日のテーマから来たときだけ。** 既に何か打っていれば触らない
-            if let initialTag, model.tagsText.isEmpty { model.tagsText = initialTag }
+            if let initialTag, model.tagsText.isEmpty {
+                model.tagsText = initialTag
+                model.initialTagsText = initialTag
+            }
             // **一度だけ入れる**（外したあとに戻さない）
             if let initialSpot, !appliedInitialSpot {
                 appliedInitialSpot = true

@@ -237,10 +237,23 @@ final class UploadViewModel: ObservableObject {
         albums = mine + extra
     }
 
-    /// 閉じると消える書きかけがあるか。**写真を選び始めたら**（読み込み中・カメラの
-    /// 準備中を含む）。題・説明・撮影地は写真ごとに持つので、写真が無ければ書きかけも無い。
-    /// 最初から入っているタグ（今日のテーマ）・スポットの紐付けは本人が書いたものではないので数えない
-    var hasDraft: Bool { !items.isEmpty || isLoadingPicked || preparingCaptures > 0 }
+    /// 最初から入れたタグ（今日のテーマの「参加する」）。**本人が書いたものではない**ので、
+    /// これと同じ間は書きかけに数えない（`hasDraft`）
+    var initialTagsText = ""
+
+    /// 閉じると消える書きかけがあるか。
+    ///
+    /// - **写真を選び始めたら**（読み込み中・カメラの準備中を含む。題・説明・撮影地は写真ごと）
+    /// - 写真の前でも入れられる欄（タグ・曲・アルバム・公開範囲・カテゴリ）を**変えたら**。
+    ///   写真ばかり見ていたので、写真を選ぶ前に入れたこれらが確認なしで消えていた（48b2481 のレビュー）
+    /// 最初から入っているタグ・スポットの紐付けは本人が書いたものではないので数えない
+    var hasDraft: Bool {
+        !items.isEmpty || isLoadingPicked || preparingCaptures > 0
+            || song != nil || selectedAlbumId != nil || !published || audience != .everyone
+            || !category.isEmpty
+            || tagsText.trimmingCharacters(in: .whitespacesAndNewlines)
+                != initialTagsText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
     var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 }

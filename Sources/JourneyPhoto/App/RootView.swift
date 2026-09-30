@@ -129,8 +129,13 @@ struct RootView: View {
     private func takeActivityRequest() {
         guard router.takePendingActivity() else { return }
         if showNotifications {
-            // 本当に出ている: お知らせの画面が数を見て読み直す
-            if ModalProbe.isPresenting() { return }
+            // 本当に出ている: お知らせの画面が数を見て読み直す。
+            // ただしログインしていない（中はログイン画面）なら、押した通知が誰宛てか
+            // 分からないので行き先は捨てる（ログインした直後に別の人の画面を積まない）
+            if ModalProbe.isPresenting() {
+                if auth.userId == nil { router.dropPendingTarget() }
+                return
+            }
             // **出ていないのに true のまま**（出せなかった回）。残すと、この先
             // 押してもベルを押しても true → true で何も起きなくなる
             showNotifications = false

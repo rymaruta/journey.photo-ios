@@ -104,8 +104,10 @@ final class NotificationRouter: ObservableObject {
     private var pendingTargetAt: Date?
     /// 押してから、お知らせ画面が行き先を受け取るまでに待てる長さ。
     /// 🔴 これを過ぎた行き先・待つのをやめた回の行き先を残すと、何時間も後にベルから
-    /// 開いたお知らせが、その写真・その人の画面を勝手に積んでいた（88a8e7e の回帰）
-    static let targetLifetime: TimeInterval = 120
+    /// 開いたお知らせが、その写真・その人の画面を勝手に積んでいた（88a8e7e の回帰）。
+    /// 開くのをあきらめた回は捨てている（`dropPendingTarget`）ので、ここは念のための上限。
+    /// 冷えた起動で規約の同意を読む時間を含めて10分（2分では落ちていた）
+    static let targetLifetime: TimeInterval = 600
 
     func openActivity(target: AppNotification? = nil, now: Date = Date()) {
         pendingTarget = target
