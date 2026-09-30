@@ -61,6 +61,8 @@ struct StoryViewerView: View {
     /// この画面の札（`MusicPreviewPlayer.beginStoryViewing`）。作り直すと新しくなる
     @State private var viewingToken = UUID()
     @State private var captionHidden = false
+    /// 左を押して頭から見直した回数（動画を 0 へ戻す合図・`StoryMedia.restartToken`）
+    @State private var restartCount = 0
     /// いまの1本の写真が敷かれた大きさ（データで置いた文字の置き場所を決める）。移ったら nil
     @State private var mediaImageSize: CGSize?
     /// 票を入れたあとの票の状態（1本ごと）。**一覧を読み直すまでの間、入れた票を見せる**
@@ -467,7 +469,8 @@ struct StoryViewerView: View {
                 onImageLayout: { [id = story.id] size in
                     // 前の1本の絵の知らせが遅れて来ても、いまの1本に当てない
                     if visible.indices.contains(index), visible[index].id == id { mediaImageSize = size }
-                }
+                },
+                restartToken: restartCount
             )
             // 🔴 **1本ごとに作り直す。** 同じ型・同じ場所のままだと SwiftUI は
             // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
@@ -826,6 +829,7 @@ struct StoryViewerView: View {
         case .restart:
             // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
             clock.restart(running: !frozen && !(current?.isVideo ?? false), at: Date())
+            restartCount += 1
             syncSong(restart: true)
         case .previous(let target):
             go(to: target)
