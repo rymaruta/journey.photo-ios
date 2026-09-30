@@ -347,8 +347,12 @@ struct StoryViewerView: View {
             // ハイライトは期限切れの並び。見た印も見た人・返信も、サーバーは
             // 期限で消しているので叩かない
             guard highlight == nil else { return }
-            // **見たことを伝えるのは1回。** 失敗しても画面は止めない
-            await environment.stories.markViewed(id: story.id)
+            // **見たことを伝えるのは1回。** 失敗しても画面は止めない。
+            // この task の外で送る——次へ早送りすると task が取り消され、
+            // 送る前に止まって既読が届かなかった（APIClient がトークンの後に取り消しを見る）
+            let stories = environment.stories
+            let storyId = story.id
+            Task { await stories.markViewed(id: storyId) }
             if isMine(story) {
                 // **次の1本へ移ったあとに返ってきた答えは書かない。** 書くと、`go` で
                 // 空にしたあとへ前の1本の見た人・返信が入り、いまの1本の数に見える
