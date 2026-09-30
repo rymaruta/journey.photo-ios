@@ -41,12 +41,16 @@ struct HighlightEditorView: View {
                 }
             }
             .webScreen()
+            // 下へ引いても閉じない（キャンセルと同じ・保存・削除の最中だけ）
+            .interactiveDismissDisabled(saving)
             .navigationTitle(existing == nil
                              ? L("新しいハイライト", "New highlight")
                              : L("ハイライトを編集", "Edit highlight"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                        // 保存・削除の最中は閉じさせない（`DeleteAccountView` と同じ形）
                     Button(Labels.Common.cancel) { dismiss() }
+                        .disabled(saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(Labels.Common.save) {
