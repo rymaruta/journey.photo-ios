@@ -1101,10 +1101,12 @@ struct StoryComposerView: View {
         let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
         // **焼き込んでから渡す。** 文字が無ければ元のデータをそのまま渡す
         // （読み書きの往復で画質を落とさない）
+        // 撮影地は全部で1つなので、座標もそろえる（食い違えば送らない・`StoryQueue.sharedCoords`）
+        let coords = StoryQueue.sharedCoords(shots.map(\.prepared.coords))
         let jobs = shots.map { shot in
             StoryUploadCenter.Job(
                 imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),
-                caption: caption, location: place, coords: shot.prepared.coords,
+                caption: caption, location: place, coords: coords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
                 texts: StoryPostText.list(vote: shot.vote, caption: caption))

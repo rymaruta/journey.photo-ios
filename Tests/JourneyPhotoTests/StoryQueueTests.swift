@@ -77,4 +77,27 @@ final class StoryQueueTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - 座標（撮影地は全部で1つ）
+
+    func testSharedCoordsWhenAllAgree() {
+        let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
+        XCTAssertEqual(StoryQueue.sharedCoords([kyoto, kyoto]), kyoto)
+    }
+
+    /// 座標の無い写真は数えない（ある写真どうしが同じなら、その座標）
+    func testSharedCoordsIgnoresShotsWithoutGPS() {
+        let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
+        XCTAssertEqual(StoryQueue.sharedCoords([nil, kyoto, nil]), kyoto)
+        XCTAssertNil(StoryQueue.sharedCoords([nil, nil]))
+        XCTAssertNil(StoryQueue.sharedCoords([]))
+    }
+
+    /// 🔴 食い違えば送らない（同じ地名の札が別々の場所に立った）
+    func testSharedCoordsIsNilWhenShotsDisagree() {
+        let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
+        let tokyo = Photo.Coords(lat: 35.68, lng: 139.77)
+        XCTAssertNil(StoryQueue.sharedCoords([kyoto, tokyo]))
+        XCTAssertNil(StoryQueue.sharedCoords([kyoto, nil, kyoto, tokyo]))
+    }
 }

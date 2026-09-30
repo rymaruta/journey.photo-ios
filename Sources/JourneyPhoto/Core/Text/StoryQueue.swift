@@ -44,6 +44,15 @@ enum StoryQueue {
         items.filter { !posted.contains($0.id) }
     }
 
+    /// まとめて出すときに送る座標。**撮影地の名前は全部の写真で1つ**なので、座標も1つにそろえる。
+    /// 座標のある写真どうしが（約1kmに丸めて）同じ場所なら、その座標。食い違えば送らない
+    /// ——写真ごとの座標をそのまま送ると、同じ地名の札が別々の場所に立った
+    static func sharedCoords(_ coords: [Photo.Coords?]) -> Photo.Coords? {
+        let known = coords.compactMap { $0 }
+        guard let first = known.first, known.allSatisfy({ $0 == first }) else { return nil }
+        return first
+    }
+
     /// あと何枚足せるか。**上限に達していたら 0**
     static func remaining(_ count: Int) -> Int { max(0, maxShots - count) }
 
