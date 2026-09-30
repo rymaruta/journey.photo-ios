@@ -121,7 +121,16 @@ enum HomeTopCard {
             inSeason(today: today, spots: spots, excluding: wishedId),
         ]
         let yearAgo = oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone)
-        return found.compactMap { $0 } + season.compactMap { $0 } + daily + [yearAgo].compactMap { $0 }
+        // **今日の一問の答えと同じスポットの季節の札は、その日は出さない**——名前つきの札と
+        // 同じ写真の問題の札が横に並び、答えが見える（週に1%前後・f3bcf5a のレビュー）
+        let answerId = quiz?.answer
+        let seasonShown = season.compactMap { $0 }.filter { choice in
+            switch choice {
+            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _): return spot.spotId != answerId
+            default: return true
+            }
+        }
+        return found.compactMap { $0 } + seasonShown + daily + [yearAgo].compactMap { $0 }
     }
 
     /// 端末の時刻帯の今日を、**その日の UTC 0 時**にする（`TripPlanText` と `TripBook.day` の基準）

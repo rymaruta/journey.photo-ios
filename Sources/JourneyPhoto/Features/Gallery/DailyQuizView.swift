@@ -40,7 +40,8 @@ struct DailyQuizView: View {
                 Text(eyebrow)
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
-                    .accessibilityLabel(L("今日の一問", "Today's question"))
+                    // 英字の眉は読み上げでは日本語で。**日付まで読む**（上書きで日付を落とさない）
+                    .accessibilityLabel(eyebrowLabel)
                 content
                     .padding(.top, 12)
             }
@@ -55,7 +56,11 @@ struct DailyQuizView: View {
         .task { await loadSpots() }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            if shownDate != nil, DailyQuiz.today() != shownDate { attempt &+= 1 }
+            // 読み直す間は読み込み中に戻す（昨日の問題を押させない）
+            if shownDate != nil, DailyQuiz.today() != shownDate {
+                load = .loading
+                attempt &+= 1
+            }
         }
     }
 
@@ -65,6 +70,12 @@ struct DailyQuizView: View {
         case .none(let date), .failed(let date): return date
         case .ready(let quiz, _): return quiz.date
         }
+    }
+
+    private var eyebrowLabel: String {
+        let head = L("今日の一問", "Today's question")
+        guard let date = shownDate else { return head }
+        return "\(head) \(DailyQuiz.dottedDate(date))"
     }
 
     private var eyebrow: String {
@@ -194,7 +205,9 @@ struct DailyQuizView: View {
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
-        .disabled(answered)
+        // `.disabled` にしない——押せないボタンは iOS が薄く描き、白地の選択と「✓ 正解」まで
+        // 薄くなる（Web は薄くしない）。二度押しは上の `guard` と、ここの当たり判定で止める
+        .allowsHitTesting(!answered)
         .accessibilityAddTraits(isChosen ? .isSelected : [])
     }
 

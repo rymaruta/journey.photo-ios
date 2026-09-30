@@ -431,6 +431,20 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(without, ["theme", "oneYearAgo"], "取れなかった日は札を出さない")
     }
 
+    /// 今日の一問の答えと同じスポットの季節の札は、その日は出さない（名前つきの札と並んで答えが見える）
+    func testSeasonCardForTheAnswerSpotIsHiddenThatDay() throws {
+        let answerSpot = try spot("sp_000000000002")
+        let q = try quiz()
+        XCTAssertEqual(q.answer, answerSpot.spotId)
+        let slots = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [answerSpot], quiz: q, timeZone: utc).map(\.slot)
+        XCTAssertEqual(slots, ["theme", "quiz"])
+        // 問題が無い日は季節の札をそのまま出す
+        let plain = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [answerSpot], timeZone: utc).map(\.slot)
+        XCTAssertEqual(plain, ["inSeason", "theme"])
+    }
+
 }
 
 /// 札から開いた一冊の印（`OpenedTripBooks`）

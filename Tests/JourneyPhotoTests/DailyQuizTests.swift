@@ -85,6 +85,10 @@ final class DailyQuizTests: XCTestCase {
         """)), "綴りの形が違う")
         XCTAssertNil(parse(Self.json().replacingOccurrences(of: "\"author\":\"撮影者A\"", with: "\"author\":\"\"")),
                      "作者が無い写真は出さない（CC の表示条件を満たせない）")
+        XCTAssertNil(parse(Self.json().replacingOccurrences(of: "https://commons.wikimedia.org", with: "http://commons.wikimedia.org")),
+                     "出典のページが https でない")
+        XCTAssertNil(parse(Self.json().replacingOccurrences(of: "\"license\":\"CC BY-SA 4.0\"", with: "\"license\":\"\"")),
+                     "ライセンスが無い")
         XCTAssertNil(parse("null"))
         XCTAssertNil(parse("<html>"))
     }
@@ -167,6 +171,21 @@ final class DailyQuizServiceTests: XCTestCase {
         StubProtocol.respond(status: 200, body: DailyQuizTests.json(date: "2026-09-30"), contentType: "application/json")
         let result = try await service().fetch(date: "2026-10-01")
         XCTAssertEqual(result, .none)
+    }
+
+    /// 「無い」は覚えない——デプロイで今日のファイルが出たら、次に開いたときに読める
+    func testNoneIsNotRemembered() async throws {
+        let s = service()
+        StubProtocol.respond(status: 404, body: "Not Found")
+        let first = try await s.fetch(date: "2026-10-01")
+        XCTAssertEqual(first, .none)
+        StubProtocol.respond(status: 200, body: DailyQuizTests.json(), contentType: "application/json")
+        guard case .ready = try await s.fetch(date: "2026-10-01") else { return XCTFail("「無い」を覚えている") }
+    }
+
+    func testOfflineThrows() async {
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        do { _ = try await service().fetch(date: "2026-10-01"); XCTFail("圏外で投げていない") } catch {}
     }
 
     /// 「読めなかった」を「まだありません」と言わない

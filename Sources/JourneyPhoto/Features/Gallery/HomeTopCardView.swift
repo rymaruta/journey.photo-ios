@@ -51,6 +51,10 @@ struct HomeTopCardView: View {
     /// 今日の一問（取れなかった日は nil のまま＝札を出さない）。サービスが日付ごとに覚えるので、
     /// 札から開いた画面は取り直さない
     @State private var quiz: DailyQuiz?
+    /// 取り直した今日の一問。**差し替えはホームに戻ったとき（`onAppear`）だけ**——札の並びを
+    /// 読み込みの最中に変えると、札から開いていた問題の画面が閉じる（押した元のリンクが消える・
+    /// 一冊の札と同じ形・f3bcf5a のレビュー）
+    @State private var pendingQuiz: DailyQuiz?
     /// 今日の一問に答えたか（札の2行目を変える）。ホームに戻ったときに読み直す
     @State private var quizAnswered = false
 
@@ -70,7 +74,7 @@ struct HomeTopCardView: View {
             .onAppear {
                 openedBooks = opened.ids(for: auth.userId)
                 wishedKeys = wishlist.spotIds
-                if let quiz { quizAnswered = QuizAnswers().chosen(for: quiz) != nil }
+                applyPendingQuiz()
                 if reloadPlansOnReturn {
                     reloadPlansOnReturn = false
                     returnReloads &+= 1
@@ -339,12 +343,26 @@ struct HomeTopCardView: View {
         if quiz?.date == date { return }
         let result = try? await environment.quiz.fetch(date: date)
         guard !Task.isCancelled else { return }
-        if case .ready(let fetched)? = result {
+        guard case .ready(let fetched)? = result else { return }
+        if quiz == nil {
+            // まだ札が無い＝押された元のリンクも無い。すぐ出してよい
             quiz = fetched
             quizAnswered = QuizAnswers().chosen(for: fetched) != nil
         } else {
+            pendingQuiz = fetched
+        }
+    }
+
+    /// ホームに戻ったときに今日の一問の札を整える: 取り直したものがあれば差し替え、
+    /// **昨日の札は下げる**（前面のまま0時をまたいだ・取り直しに失敗した）。答えたかも読み直す
+    private func applyPendingQuiz() {
+        if let pendingQuiz {
+            quiz = pendingQuiz
+            self.pendingQuiz = nil
+        } else if let current = quiz, current.date != DailyQuiz.today() {
             quiz = nil
         }
+        quizAnswered = quiz.map { QuizAnswers().chosen(for: $0) != nil } ?? false
     }
 
     private func load() async {
