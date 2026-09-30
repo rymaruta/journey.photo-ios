@@ -179,9 +179,10 @@ struct StoryComposerView: View {
             if let typingId {
                 StoryTextTypingView(overlay: typingBinding(id: typingId),
                                     photoShortSide: photoShortSide,
-                                    visiblePhoto: StoryTextEditing.visiblePhotoSize(
-                                        canvas: typingCanvas,
-                                        image: shots.first { $0.id == typingShotId }?.imageSize)) { finishTyping() }
+                                    canvas: typingCanvas,
+                                    photo: TextOverlay.filledRect(
+                                        image: shots.first { $0.id == typingShotId }?.imageSize ?? typingCanvas,
+                                        in: typingCanvas)) { finishTyping() }
             }
         }
         // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）

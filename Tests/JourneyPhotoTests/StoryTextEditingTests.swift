@@ -124,19 +124,75 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertEqual(StoryTextEditing.fitScale(content: CGSize(width: Double.infinity, height: 1), available: area), 1)
     }
 
-    /// はみ出しは**写真の見えている範囲**と比べる（打つ画面の空きではない）。向きごとに言う
-    func testOverflowComparesWithVisiblePhoto() {
-        let photo = StoryTextEditing.visiblePhotoSize(canvas: CGSize(width: 393, height: 700),
-                                                      image: CGSize(width: 3000, height: 4000))
-        // 3:4 は高さで埋まり幅 525 → 枠で切って 393
-        XCTAssertEqual(photo, CGSize(width: 393, height: 700))
-        // 打つ画面の空き（281）は超えても、写真（393）に収まればはみ出していない
-        XCTAssertFalse(StoryTextEditing.overflow(content: CGSize(width: 330, height: 40), photo: photo).any)
-        XCTAssertEqual(StoryTextEditing.overflow(content: CGSize(width: 400, height: 40), photo: photo),
+    /// はみ出しは**置き場所と回しを入れて**枠と比べる（大きさだけではない）
+    func testOverflowUsesPlacementAndRotation() {
+        let canvas = CGSize(width: 393, height: 700)
+        // 真ん中なら 330 幅は収まる
+        XCTAssertFalse(StoryTextEditing.overflow(content: CGSize(width: 330, height: 40),
+                                                 center: CGPoint(x: 196, y: 300), rotation: 0, canvas: canvas).any)
+        // 同じ大きさでも右に寄せれば右が切れる
+        XCTAssertEqual(StoryTextEditing.overflow(content: CGSize(width: 330, height: 40),
+                                                 center: CGPoint(x: 354, y: 300), rotation: 0, canvas: canvas),
                        StoryTextEditing.Overflow(width: true, height: false))
-        XCTAssertEqual(StoryTextEditing.overflow(content: CGSize(width: 100, height: 800), photo: photo),
+        // 縦に回した 500 幅は、横は収まる（縦 500 < 700）
+        XCTAssertFalse(StoryTextEditing.overflow(content: CGSize(width: 500, height: 40),
+                                                 center: CGPoint(x: 196, y: 350), rotation: .pi / 2, canvas: canvas).any)
+        // 回さなければ 500 幅は横にはみ出す
+        XCTAssertTrue(StoryTextEditing.overflow(content: CGSize(width: 500, height: 40),
+                                                center: CGPoint(x: 196, y: 350), rotation: 0, canvas: canvas).width)
+        // 上の端
+        XCTAssertEqual(StoryTextEditing.overflow(content: CGSize(width: 100, height: 100),
+                                                 center: CGPoint(x: 196, y: 20), rotation: 0, canvas: canvas),
                        StoryTextEditing.Overflow(width: false, height: true))
-        XCTAssertFalse(StoryTextEditing.overflow(content: CGSize(width: 900, height: 900), photo: .zero).any)
+        XCTAssertFalse(StoryTextEditing.overflow(content: CGSize(width: 900, height: 900),
+                                                 center: .zero, rotation: 0, canvas: .zero).any)
+    }
+
+    /// 打つ画面の並べ方: **判定は仕上がりの大きさ×枠、縮みは欄の大きさ×空き**（物差しを取り違えない）
+    func testTypingLayoutKeepsMeasuresApart() {
+        let canvas = CGSize(width: 393, height: 700)
+        let center = CGPoint(x: 196, y: 245)
+        // 仕上がりは写真に収まる（330）が、打つ画面の空き（281）は超える → 断らずに縮めるだけ
+        let fits = StoryTextEditing.typingLayout(
+            finished: CGSize(width: 330, height: 40), typing: CGSize(width: 330, height: 40),
+            center: center, rotation: 0, canvas: canvas,
+            available: CGSize(width: 281, height: 300), area: CGSize(width: 393, height: 324), isEmpty: false)
+        XCTAssertFalse(fits.overflow.any)
+        XCTAssertEqual(fits.scale, 281.0 / 330.0, accuracy: 0.0001)
+        XCTAssertFalse(fits.pinTrailing || fits.pinBottom)
+
+        // 仕上がりがはみ出す（500）→ 断る。欄の大きさ（600）で縮める
+        let wide = StoryTextEditing.typingLayout(
+            finished: CGSize(width: 500, height: 40), typing: CGSize(width: 600, height: 40),
+            center: center, rotation: 0, canvas: canvas,
+            available: CGSize(width: 300, height: 300), area: CGSize(width: 393, height: 324), isEmpty: false)
+        XCTAssertTrue(wide.overflow.width)
+        XCTAssertEqual(wide.scale, 0.5, accuracy: 0.0001)
+
+        // 空なら断らない
+        XCTAssertFalse(StoryTextEditing.typingLayout(
+            finished: CGSize(width: 900, height: 40), typing: CGSize(width: 100, height: 40),
+            center: center, rotation: 0, canvas: canvas,
+            available: CGSize(width: 300, height: 300), area: CGSize(width: 393, height: 324), isEmpty: true).overflow.any)
+    }
+
+    /// 下限まで縮めても空きに収まらない向きは、打っている端（右・下）に寄せる
+    func testTypingLayoutPinsTheTypingEdgeWhenStillTooBig() {
+        let layout = StoryTextEditing.typingLayout(
+            finished: CGSize(width: 3000, height: 1200), typing: CGSize(width: 3000, height: 1200),
+            center: CGPoint(x: 196, y: 245), rotation: 0, canvas: CGSize(width: 393, height: 700),
+            available: CGSize(width: 281, height: 300), area: CGSize(width: 393, height: 324), isEmpty: false)
+        XCTAssertEqual(layout.scale, StoryTextEditing.minFitScale, accuracy: 0.0001)
+        // 3000 × 0.35 = 1050 > 393、1200 × 0.35 = 420 > 324
+        XCTAssertTrue(layout.pinTrailing)
+        XCTAssertTrue(layout.pinBottom)
+        // 下限で収まる向きは寄せない
+        let tall = StoryTextEditing.typingLayout(
+            finished: CGSize(width: 200, height: 1200), typing: CGSize(width: 200, height: 1200),
+            center: CGPoint(x: 196, y: 245), rotation: 0, canvas: CGSize(width: 393, height: 700),
+            available: CGSize(width: 281, height: 300), area: CGSize(width: 393, height: 324), isEmpty: false)
+        XCTAssertFalse(tall.pinTrailing)
+        XCTAssertTrue(tall.pinBottom)
     }
 
     /// 打つ画面で測る文字は、欄に見えている行を全部数える（最後の改行・空白だけの文字も）

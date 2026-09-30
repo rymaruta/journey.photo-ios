@@ -18,8 +18,11 @@ struct StoryTextTypingView: View {
     @Binding var overlay: TextOverlay
     /// 画面上の写真の短い辺（pt）。**焼き込みと同じ大きさで見せる**ため。分からなければ 0
     let photoShortSide: Double
-    /// 画面に見えている写真の大きさ（pt）。**仕上がりがはみ出すかはこれと比べる**（打つ画面の空きではない）
-    let visiblePhoto: CGSize
+    /// 写真の枠（打ち始めた瞬間・キーボードが出る前）と、その中に埋めて敷いた写真の場所。
+    /// **仕上がりがはみ出すかは、札の置き場所と回しを入れてこの枠と比べる**（打つ画面の空きではない）。
+    /// 測れていなければ 0（打つ画面の大きさで代える）
+    let canvas: CGSize
+    let photo: CGRect
     var onDone: () -> Void
 
     @FocusState private var focused: Bool
@@ -50,14 +53,22 @@ struct StoryTextTypingView: View {
                     // ——横に流すとキャレットが画面の外へ出て追えず、流す指でキーボードも閉じた
                     // （92a38d7 のレビュー）
                     GeometryReader { area in
-                        // はみ出しは**仕上がり（置いたあとの文字）と写真の見えている範囲**で見る
-                        let overflow = overlay.isEmpty ? StoryTextEditing.Overflow()
-                            : StoryTextEditing.overflow(content: finishedSize(fontSize: fontSize), photo: visiblePhoto)
-                        // 見せるための縮みは、打つ画面の空き（つまみを避けた幅・断り書きの分を除いた高さ）に収まるまで
+                        // 枠が測れていなければ打つ画面の大きさで代える（断り書きが一度も出なくなる）
+                        let frame = canvas.width > 0 && canvas.height > 0 ? canvas : geometry.size
+                        let placedIn = photo.width > 0 && photo.height > 0 ? photo : CGRect(origin: .zero, size: frame)
+                        // 断り書きが出るかは空きに依らないので先に決め、その分を空きから引く
+                        let noticeShown = !overlay.isEmpty && StoryTextEditing.overflow(
+                            content: finishedSize(fontSize: fontSize), center: overlay.center(in: placedIn),
+                            rotation: overlay.rotation, canvas: frame).any
                         let available = CGSize(width: max(0, area.size.width - Self.sideInset * 2),
-                                               height: max(0, area.size.height - 24 - (overflow.any ? Self.noticeHeight : 0)))
-                        let scale = StoryTextEditing.fitScale(content: typingSize(fontSize: fontSize),
-                                                              available: available)
+                                               height: max(0, area.size.height - 24 - (noticeShown ? Self.noticeHeight : 0)))
+                        let space = CGSize(width: area.size.width,
+                                           height: max(0, area.size.height - (noticeShown ? Self.noticeHeight : 0)))
+                        let layout = StoryTextEditing.typingLayout(
+                            finished: finishedSize(fontSize: fontSize), typing: typingSize(fontSize: fontSize),
+                            center: overlay.center(in: placedIn), rotation: overlay.rotation,
+                            canvas: frame, available: available, area: space, isEmpty: overlay.isEmpty)
+                        let pin = Self.pinAlignment(layout)
                         ZStack {
                             // 欄の外の空いた所を押しても確定する（暗幕の上を覆うので、暗幕の
                             // 「押すと確定」が届かない）。**欄の後ろに敷く**——前だと欄にピントが入らない
@@ -65,17 +76,22 @@ struct StoryTextTypingView: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture { onDone() }
                                 .accessibilityHidden(true)
+                            // 縮めても空きに収まらないときは、打っている端（右・下）に寄せ、そこを基点に縮める
+                            // （真ん中だと行の末尾のキャレットが枠の外に切れた）
                             field(fontSize: fontSize)
-                                .scaleEffect(scale)
+                                .scaleEffect(layout.scale, anchor: pin.anchor)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pin.alignment)
                                 // 見本の位置: 断り書きの分だけ上に寄せる（字の下端に重ねない）
-                                .padding(.bottom, overflow.any ? Self.noticeHeight : 0)
+                                .padding(.bottom, noticeShown ? Self.noticeHeight : 0)
                         }
                         .frame(width: area.size.width, height: area.size.height)
-                        // 縮め足りない（下限に当たった）ときも、上のバーと下の列の上に描かない
+                        // 収まり切らない分を、上のバーと下の列の上に描かない。**当たり判定も枠に閉じる**
+                        // （`clipped` は見た目だけを切る——切れた所が「完了」の上にかぶって指を取りうる）
                         .clipped()
+                        .contentShape(Rectangle())
                         .overlay(alignment: .bottom) {
-                            if overflow.any {
-                                Text(Self.notice(overflow))
+                            if layout.overflow.any {
+                                Text(Self.notice(layout.overflow))
                                     .font(.system(size: 12))
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 10)
@@ -111,6 +127,16 @@ struct StoryTextTypingView: View {
     static let sideInset: Double = 56
     /// 断り書きの帯の高さ（字の下端に重ねないよう、その分だけ上に寄せる）
     static let noticeHeight: Double = 28
+
+    /// 縮めても収まらない向きに合わせた寄せ方と、縮める基点
+    static func pinAlignment(_ layout: StoryTextEditing.TypingLayout) -> (alignment: Alignment, anchor: UnitPoint) {
+        switch (layout.pinTrailing, layout.pinBottom) {
+        case (true, true): return (.bottomTrailing, .bottomTrailing)
+        case (true, false): return (.trailing, .trailing)
+        case (false, true): return (.bottom, .bottom)
+        case (false, false): return (.center, .center)
+        }
+    }
 
     static func notice(_ overflow: StoryTextEditing.Overflow) -> String {
         switch (overflow.width, overflow.height) {

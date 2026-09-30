@@ -468,6 +468,7 @@ extension View {
                                    perform action: @escaping () -> Void,
                                    onPressingChanged: ((Bool) -> Void)? = nil) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     public func scaleEffect(_ scale: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    public func scaleEffect(_ scale: Double, anchor: UnitPoint) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     /// この部品の更新にかかる動きを書き換える（本物と同じ）
     public func transaction(_ transform: @escaping (inout Transaction) -> Void) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 奥行きのある回り（ストーリーの人から人への立方体）

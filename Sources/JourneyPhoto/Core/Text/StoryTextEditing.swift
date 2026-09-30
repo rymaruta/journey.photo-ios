@@ -84,24 +84,50 @@ enum StoryTextEditing {
         return max(minimum, scale)
     }
 
-    /// 仕上がりが写真の見えている範囲からはみ出す向き（置いたあと・焼き込みは折り返さないので、
-    /// はみ出した分は写真の外に切れる）。打つ画面はこれで断り書きを出す
+    /// 仕上がりが画面（写真の枠）からはみ出す向き。置いたあと・焼き込みは折り返さず、
+    /// 枠の外は切れる。打つ画面はこれで断り書きを出す
     struct Overflow: Equatable {
         var width = false
         var height = false
         var any: Bool { width || height }
     }
 
-    static func overflow(content: CGSize, photo: CGSize) -> Overflow {
-        guard photo.width > 0, photo.height > 0 else { return Overflow() }
-        return Overflow(width: content.width > photo.width + 0.5, height: content.height > photo.height + 0.5)
+    /// 札の**置き場所（中心）と回しを入れて**、仕上がりが枠からはみ出すか。大きさだけで比べると、
+    /// 端に寄せた札は収まる大きさでも切れるのに断らず、縦に回した長い札は収まるのに断った
+    /// （9702932 のレビュー）。`content` は回す前の大きさ
+    static func overflow(content: CGSize, center: CGPoint, rotation: Double, canvas: CGSize) -> Overflow {
+        guard canvas.width > 0, canvas.height > 0, content.width > 0, content.height > 0 else { return Overflow() }
+        let c = abs(cos(rotation)), s = abs(sin(rotation))
+        let w = Double(content.width) * c + Double(content.height) * s
+        let h = Double(content.width) * s + Double(content.height) * c
+        let x = Double(center.x), y = Double(center.y)
+        let tolerance = 0.5
+        return Overflow(width: x - w / 2 < -tolerance || x + w / 2 > Double(canvas.width) + tolerance,
+                        height: y - h / 2 < -tolerance || y + h / 2 > Double(canvas.height) + tolerance)
     }
 
-    /// 画面に見えている写真の大きさ（枠いっぱいに埋めた写真を、枠で切ったもの）
-    static func visiblePhotoSize(canvas: CGSize, image: CGSize?) -> CGSize {
-        guard canvas.width > 0, canvas.height > 0 else { return .zero }
-        let rect = TextOverlay.filledRect(image: image ?? canvas, in: canvas)
-        return CGSize(width: min(rect.width, canvas.width), height: min(rect.height, canvas.height))
+    /// 打つ画面の並べ方（断り書き・縮み・寄せ方）
+    struct TypingLayout: Equatable {
+        var overflow: Overflow
+        var scale: Double
+        /// 縮めても空きに収まらない向き。**いま打っている端（右・下）に寄せる**——真ん中に置くと
+        /// 行の末尾のキャレットが枠の外に切れて見えなかった（9702932 のレビュー）
+        var pinTrailing: Bool
+        var pinBottom: Bool
+    }
+
+    /// 打つ画面の並べ方を決める。**物差しを取り違えないよう、ここ1か所で決める**
+    ///  - `finished`: 仕上がり（置いたあと）の大きさ → はみ出しの判定（写真の枠 `canvas`・置き場所・回しと比べる）
+    ///  - `typing`: 欄に見えている大きさ → 縮み（打つ画面の空き `available` と比べる）
+    ///  - `area`: 欄を置く場所の大きさ（縮めてもはみ出すなら、打っている端へ寄せる）
+    static func typingLayout(finished: CGSize, typing: CGSize, center: CGPoint, rotation: Double,
+                             canvas: CGSize, available: CGSize, area: CGSize, isEmpty: Bool) -> TypingLayout {
+        let overflow = isEmpty ? Overflow() : Self.overflow(content: finished, center: center,
+                                                            rotation: rotation, canvas: canvas)
+        let scale = fitScale(content: typing, available: available)
+        return TypingLayout(overflow: overflow, scale: scale,
+                            pinTrailing: Double(typing.width) * scale > Double(area.width) + 0.5,
+                            pinBottom: Double(typing.height) * scale > Double(area.height) + 0.5)
     }
 
     /// 打つ画面で大きさを測る文字。**欄に見えている行を全部数える**——置いたあとの `drawnText` は

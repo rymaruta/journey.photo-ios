@@ -369,6 +369,8 @@ public struct UnitPoint: Hashable, Sendable {
     public static let leading = UnitPoint()
     public static let trailing = UnitPoint()
     public static let center = UnitPoint()
+    public static let topLeading = UnitPoint(), topTrailing = UnitPoint()
+    public static let bottomLeading = UnitPoint(), bottomTrailing = UnitPoint()
     public init() {}
 }
 
