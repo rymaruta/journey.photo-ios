@@ -62,7 +62,10 @@ struct HighlightsRow: View {
                     }
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
-                    .frame(minHeight: 28)
+                    // 押せる高さは 44pt。並びの高さは 28pt のまま（上下 8pt ずつはみ出す）
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, -8)
                 }
             }
         }

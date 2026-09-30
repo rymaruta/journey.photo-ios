@@ -57,7 +57,9 @@ struct BlockedUsersView: View {
                             .padding(.horizontal, 14)
                             .frame(minWidth: 44, minHeight: 36)
                             .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
-                            .contentShape(Capsule())
+                            // 見た目は 36pt、押せる高さは 44pt（`FollowPill` と同じ）
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                     }
                     // 行の中のボタンは borderless にしないと、行のどこを
                     // 押しても反応する
