@@ -382,7 +382,7 @@ struct UploadView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     JPSectionTitle(L("撮影地", "Place"))
                     PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
-                                     near: item.prepared.coords)
+                                     near: item.prepared.coords, offersSpots: true)
                 }
             }
         }

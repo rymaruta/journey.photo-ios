@@ -135,9 +135,14 @@ struct RootView: View {
             if ModalProbe.isPresenting() {
                 // ログインの確認中（冷えた起動）は、確認が終わってから決める——確認中に捨てると
                 // 正しい押し方の行き先まで落ち、決めずに抜けると未ログインのときに残った
-                Task { @MainActor in
-                    while auth.isResolving { try? await Task.sleep(nanoseconds: 300_000_000) }
-                    if auth.userId == nil { router.dropPendingTarget() }
+                // 待ちは1本だけ（`activityWait`・押すたびに前の分を止める。裏へ回った・人が替わった
+                // ときの `cancelActivityWait` でも止まる）
+                activityWait?.cancel()
+                activityWait = Task { @MainActor in
+                    while !Task.isCancelled && auth.isResolving {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                    }
+                    if !Task.isCancelled && auth.userId == nil { router.dropPendingTarget() }
                 }
                 return
             }

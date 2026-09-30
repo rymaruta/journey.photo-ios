@@ -14,6 +14,12 @@ struct PlaceSearchField: View {
     @Binding var coords: Photo.Coords?
     /// 写真の位置（あれば）。**近くの撮影スポットを先に出すためだけ**に使い、送らない
     var near: Photo.Coords? = nil
+    /// 撮影スポットの候補を出すか。**投稿画面だけ**。
+    ///
+    /// 🔴 写真の編集画面では出さない。開いた写真の座標は、撮った位置（EXIF）と地名から引いた
+    /// おおよその座標（サーバーの `geoApprox`）の区別が付かず（`Photo` は読んでいない）、
+    /// スポットを選ぶと名前と座標が食い違うか、ピンが消えた
+    var offersSpots = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @State private var suggestions: [DiscoveryService.Place] = []
@@ -131,12 +137,13 @@ struct PlaceSearchField: View {
 
     /// 撮影スポットの候補を出し直す（索引が読めていれば。端末の中だけで引く）
     private func suggestSpots(for value: String) {
-        guard let spotIndex else { return }
+        guard offersSpots, let spotIndex else { return }
         spotSuggestions = PlaceSpotSuggestions.suggestions(query: value, near: near, index: spotIndex)
             .filter { $0.name != location }
     }
 
     private func loadSpotsAndSuggest() async {
+        guard offersSpots else { return }
         if spotIndex == nil {
             spotIndex = try? await environment.spots.fetchIndex()
         }
