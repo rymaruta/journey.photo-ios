@@ -189,6 +189,23 @@ final class UploadViewModel: ObservableObject {
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
     /// だけでは閉じない——選び直しの読み込み中も空になる）
     @Published private(set) var didPostAll = false
+    /// 投稿したら Threads にも載せるか（`ThreadsShare`）。**端末に覚える**——毎回入れ直させない
+    @Published var shareToThreads = UserDefaults.standard.bool(forKey: ThreadsShare.defaultsKey) {
+        didSet { UserDefaults.standard.set(shareToThreads, forKey: ThreadsShare.defaultsKey) }
+    }
+    /// 共有の画面に渡すもの。**全部上がった回だけ**、`didPostAll` より先に立てる
+    /// （画面は立っていれば閉じる代わりに共有の画面を出し、それを閉じてから閉じる）
+    @Published var threadsBundle: ThreadsBundle?
+    /// 上がった写真のうち外へ渡してよいもの（公開・全体に公開）。やり直しをまたいで貯め、
+    /// 全部上がったときに `threadsBundle` にする
+    private var sharable: [(data: Data, photoId: String, title: String, description: String, location: String)] = []
+
+    struct ThreadsBundle: Identifiable {
+        let id = UUID()
+        let images: [Data]
+        let text: String
+    }
+
     /// スポットのページに並ぶ形で上がった枚数（`spotId` 付き・公開・全体に公開）。
     /// スポットの画面が「投稿しました」を出すかを決める（並ばない投稿で言い切らない）
     @Published private(set) var postedToSpot = 0
@@ -554,6 +571,12 @@ final class UploadViewModel: ObservableObject {
             // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
             // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
             if songFailures == 0 {
+                if shareToThreads, let lead = sharable.first {
+                    threadsBundle = ThreadsBundle(
+                        images: sharable.prefix(ThreadsShare.maxImages).map(\.data),
+                        text: ThreadsShare.text(title: lead.title, description: lead.description, location: lead.location,
+                                                url: PhotoLink.url(photoId: lead.photoId, isPublished: true)))
+                }
                 didPostAll = done.count > 0
             } else {
                 errorMessage = UploadSummary.message(done: done.count, failures: failures,
@@ -622,6 +645,9 @@ final class UploadViewModel: ObservableObject {
             throw error
         }
         staged[item.id] = nil
+        if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
+            sharable.append((item.prepared.data, id, draft.title, draft.description, draft.location))
+        }
         if photo != nil, draft.spotId != nil, draft.published, draft.audience == .everyone {
             postedToSpot += 1
         }
@@ -687,6 +713,7 @@ final class UploadViewModel: ObservableObject {
         published = true
         audience = .everyone
         selectedAlbumId = nil
+        sharable = []
     }
 
     private static func image(from data: Data) -> Image? {
