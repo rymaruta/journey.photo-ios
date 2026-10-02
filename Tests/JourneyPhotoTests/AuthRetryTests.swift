@@ -35,11 +35,12 @@ final class AuthRetryTests: XCTestCase {
     func testUnauthorizedRefreshesOnceAndRetriesWithTheNewToken() async throws {
         StubProtocol.respondInOrder([(401, #"{"error":"Unauthorized"}"#), (200, #"{"ok":true}"#)])
         let log = RefreshLog()
-        let provider = RefreshingTokenProvider(token: "OLD", refreshed: .token("NEW"), log: log)
+        let provider = RefreshingTokenProvider(token: FakeJWT.make(sub: "u1", tag: "old"), refreshed: .token(FakeJWT.make(sub: "u1", tag: "new")), log: log)
         let payload = try await client(provider).authorized(.get, "/user/profile", as: Payload.self)
         XCTAssertEqual(payload, Payload(ok: true))
         XCTAssertEqual(StubProtocol.requestCount, 2, "401 のあと送り直していない")
-        XCTAssertEqual(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer NEW",
+        XCTAssertEqual(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"),
+                       "Bearer \(FakeJWT.make(sub: "u1", tag: "new"))",
                        "送り直しに古い鍵を使っている")
         let refreshes = await log.refreshes
         let expiries = await log.expiries
@@ -51,7 +52,7 @@ final class AuthRetryTests: XCTestCase {
     func testSecondUnauthorizedExpiresTheSessionWithoutAThirdTry() async {
         StubProtocol.respond(status: 401, body: #"{"error":"Unauthorized"}"#)
         let log = RefreshLog()
-        let provider = RefreshingTokenProvider(token: "OLD", refreshed: .token("NEW"), log: log)
+        let provider = RefreshingTokenProvider(token: FakeJWT.make(sub: "u1", tag: "old"), refreshed: .token(FakeJWT.make(sub: "u1", tag: "new")), log: log)
         do {
             _ = try await client(provider).authorized(.get, "/user/profile", as: Payload.self)
             XCTFail("投げるはず")
@@ -69,7 +70,7 @@ final class AuthRetryTests: XCTestCase {
     func testUnrefreshableSessionExpiresWithoutResending() async {
         StubProtocol.respond(status: 401, body: "")
         let log = RefreshLog()
-        let provider = RefreshingTokenProvider(token: "OLD", refreshed: .none, log: log)
+        let provider = RefreshingTokenProvider(token: FakeJWT.make(sub: "u1", tag: "old"), refreshed: .none, log: log)
         do {
             _ = try await client(provider).authorizedVoid(.delete, "/photos/p1")
             XCTFail("投げるはず")
@@ -85,7 +86,7 @@ final class AuthRetryTests: XCTestCase {
     func testRefreshThatCannotReachCognitoDoesNotSignOut() async {
         StubProtocol.respond(status: 401, body: "")
         let log = RefreshLog()
-        let provider = RefreshingTokenProvider(token: "OLD", refreshed: .unreachable, log: log)
+        let provider = RefreshingTokenProvider(token: FakeJWT.make(sub: "u1", tag: "old"), refreshed: .unreachable, log: log)
         do {
             _ = try await client(provider).authorizedVoid(.get, "/user/profile")
             XCTFail("投げるはず")
@@ -99,7 +100,7 @@ final class AuthRetryTests: XCTestCase {
     /// 認証の要らない口・401 以外（403 は権限の話）はやり直さない
     func testAnonymousCallsAndForbiddenAreNotRetried() async {
         let log = RefreshLog()
-        let api = client(RefreshingTokenProvider(token: "OLD", refreshed: .token("NEW"), log: log))
+        let api = client(RefreshingTokenProvider(token: FakeJWT.make(sub: "u1", tag: "old"), refreshed: .token(FakeJWT.make(sub: "u1", tag: "new")), log: log))
 
         StubProtocol.respond(status: 401, body: "")
         _ = try? await api.anonymous(.get, "/profile/u1", as: Payload.self)
@@ -125,7 +126,7 @@ final class AuthRetryTests: XCTestCase {
         let refresher = TokenRefresher {
             await fetches.noteRefresh()
             await gate.wait()
-            return "NEW"
+            return FakeJWT.make(sub: "u1", tag: "new")
         }
         let provider = SharedRefresherTokenProvider(refresher: refresher)
         let a = client(provider)
@@ -150,6 +151,33 @@ final class AuthRetryTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 4)
     }
 
+    /// 🔴 **取り直した鍵が別の人なら送り直さない。** 期限切れで別のアカウントに入り直した
+    /// 直後に古い要求の 401 が返ると、前の人の操作が新しい人として通っていた
+    func testDoesNotResendAsSomeoneElse() async {
+        StubProtocol.respondInOrder([(401, ""), (200, #"{"ok":true}"#)])
+        let log = RefreshLog()
+        let provider = RefreshingTokenProvider(token: FakeJWT.make(sub: "before", tag: "old"),
+                                               refreshed: .token(FakeJWT.make(sub: "after", tag: "new")), log: log)
+        do {
+            try await client(provider).authorizedVoid(.delete, "/photos/p1")
+            XCTFail("投げるはず")
+        } catch {
+            XCTAssertEqual((error as? APIError)?.isAuthExpired, true)
+        }
+        XCTAssertEqual(StubProtocol.requestCount, 1, "前の人の要求を新しい人の鍵で送り直している")
+        let expiries = await log.expiries
+        XCTAssertEqual(expiries, 0, "新しい人のログインを期限切れとして落としている")
+    }
+
+    /// 人を読めない鍵（JWT でない）でも送り直さない
+    func testSamePersonNeedsReadableSubjects() {
+        let a = FakeJWT.make(sub: "u1", tag: "a")
+        XCTAssertTrue(APIClient.isSamePerson(a, FakeJWT.make(sub: "u1", tag: "b")))
+        XCTAssertFalse(APIClient.isSamePerson(a, FakeJWT.make(sub: "u2", tag: "b")))
+        XCTAssertFalse(APIClient.isSamePerson("OLD", "NEW"))
+        XCTAssertFalse(APIClient.isSamePerson(a, "not-a-jwt"))
+    }
+
     /// 終わった後に来た 401 は、新しく取り直す（前の答えを使い回さない）
     func testRefreshAfterTheFirstFinishedStartsAgain() async throws {
         let log = RefreshLog()
@@ -165,6 +193,17 @@ final class AuthRetryTests: XCTestCase {
 }
 
 // MARK: - 差し替え用
+
+/// 試験用の ID トークン（署名は飾り）。`sub` だけを読ませる
+enum FakeJWT {
+    static func make(sub: String, tag: String) -> String {
+        let body = Data(#"{"sub":"\#(sub)","jti":"\#(tag)"}"#.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return "eyJhbGciOiJSUzI1NiJ9.\(body).sig"
+    }
+}
 
 actor RefreshLog {
     private(set) var refreshes = 0
@@ -197,6 +236,6 @@ struct RefreshingTokenProvider: TokenProviding {
 /// 本番と同じく、1つの `TokenRefresher` を通して取り直す提供者
 private struct SharedRefresherTokenProvider: TokenProviding {
     let refresher: TokenRefresher
-    func idToken() async throws -> String? { "OLD" }
+    func idToken() async throws -> String? { FakeJWT.make(sub: "u1", tag: "old") }
     func refreshedIdToken() async throws -> String? { try await refresher.refresh() }
 }

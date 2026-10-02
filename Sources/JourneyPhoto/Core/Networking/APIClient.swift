@@ -167,11 +167,24 @@ actor APIClient {
             await tokenProvider.sessionExpired()
             throw error
         }
+        // 🔴 **取り直した鍵が別の人のものなら送り直さない。** 期限切れでログアウトし、
+        // 別のアカウントで入り直した直後に古い要求の 401 が返ると、取り直した鍵は
+        // **新しい人の**ものになる——そのまま送り直すと、前の人の操作（いいね・削除）が
+        // 新しい人として通る。同じ人と確かめられた回だけ送り直す（読めない鍵も送らない）。
+        // 新しい人のログインは正しいので、ログアウトには倒さない
+        guard Self.isSamePerson(token, fresh) else { throw error }
         let second = await attempt(request, bearer: fresh)
         if case .failure(let retryError) = second, (retryError as? APIError)?.isAuthExpired == true {
             await tokenProvider.sessionExpired()
         }
         return try second.get()
+    }
+
+    /// 2つの ID トークンが同じ人（`sub`）のものか。どちらかが読めなければ false
+    static func isSamePerson(_ sent: String, _ refreshed: String) -> Bool {
+        guard let before = IdTokenClaims.subject(fromJWT: sent),
+              let after = IdTokenClaims.subject(fromJWT: refreshed) else { return false }
+        return before == after
     }
 
     /// 鍵を付けて1回送る（失敗も値で返す——上の注記）
