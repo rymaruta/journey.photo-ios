@@ -713,6 +713,8 @@ struct PhotoMapView: View {
 
     /// 写真を読み直す（「もう一度試す」）
     private func retryLoad() {
+        // 読んでいる最中は重ねない（ボタンも止めている。古い回の答えは模型が捨てる）
+        guard !model.isLoading else { return }
         Task { await model.load(environment: environment) }
     }
 
@@ -723,12 +725,17 @@ struct PhotoMapView: View {
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.foreground)
             if retry {
-                Button(Labels.Common.retry) { retryLoad() }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.foreground)
-                    .frame(minHeight: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
-                    .buttonStyle(.plain)
+                // 当たりは**ラベルの中で** 44pt に（ボタンの外の余白は押せない）
+                Button { retryLoad() } label: {
+                    Text(Labels.Common.retry)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isLoading)
+                .opacity(model.isLoading ? 0.4 : 1)
             }
         }
         .padding(.horizontal, 14)
@@ -741,10 +748,7 @@ struct PhotoMapView: View {
     private var loadFailedListNote: some View {
         HStack(spacing: 8) {
             listNote(Self.loadFailedText)
-            Button(Labels.Common.retry) { retryLoad() }
-                .font(.caption.weight(.semibold))
-                .buttonStyle(.bordered)
-                .frame(minHeight: WebTheme.minTapTarget)
+            RetryButton(isBusy: model.isLoading, compact: true) { retryLoad() }
         }
     }
 
@@ -1307,10 +1311,7 @@ struct PhotoMapView: View {
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.muted2)
                 Spacer(minLength: 0)
-                Button(Labels.Common.retry) { retryLoad() }
-                    .font(.subheadline.weight(.semibold))
-                    .buttonStyle(.bordered)
-                    .frame(minHeight: WebTheme.minTapTarget)
+                RetryButton(isBusy: model.isLoading) { retryLoad() }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if photos.isEmpty {
@@ -1409,9 +1410,7 @@ struct PhotoMapView: View {
                         Text(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
                             .font(.subheadline)
                             .foregroundStyle(WebTheme.faint)
-                        Button(Labels.Common.retry) { retryLoad() }
-                            .buttonStyle(.bordered)
-                            .frame(minHeight: WebTheme.minTapTarget)
+                        RetryButton(isBusy: model.isLoading) { retryLoad() }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
@@ -1565,7 +1564,7 @@ struct PhotoMapView: View {
                 switch Self.listEmpty(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
                                       filtering: filtering) {
                 case .failed:
-                    ErrorBanner(message: Self.loadFailedText) { retryLoad() }
+                    ErrorBanner(message: Self.loadFailedText, isBusy: model.isLoading) { retryLoad() }
                 case .noResults:
                     EmptyState(message: L("見つかりませんでした", "No results"))
                 case .noPlaces:
@@ -1608,10 +1607,7 @@ struct PhotoMapView: View {
                 listNote(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
                 // 写真も読めていない回は上の行の「もう一度試す」が両方を読み直す（2つ並べない）
                 if !model.loadFailed {
-                    Button(Labels.Common.retry) { retryLoad() }
-                        .font(.caption.weight(.semibold))
-                        .buttonStyle(.bordered)
-                        .frame(minHeight: WebTheme.minTapTarget)
+                    RetryButton(isBusy: model.isLoading, compact: true) { retryLoad() }
                 }
             }
         }

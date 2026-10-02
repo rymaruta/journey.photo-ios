@@ -174,11 +174,12 @@ enum StoryPlayback {
     /// 失敗の通知と状態の見張りの両方が来ると、1本飛ばしてもいた
     ///
     /// **読み上げ（VoiceOver）が動いている間は進めない**（`autoAdvances`）——終わっても
-    /// その1本に留まり、人が「次へ」の操作で送る
+    /// その1本に留まり（`.hold` で控える）、人が「次へ」の操作で送る。読み上げを切ったら
+    /// 控えた終わりで進む（止めていた間と同じ。捨てるとその1本で止まったままになる）
     static func mediaEnded(storyId: String, currentId: String?, frozen: Bool,
                            voiceOver: Bool = false) -> MediaEnd {
-        guard storyId == currentId, autoAdvances(voiceOver: voiceOver) else { return .ignore }
-        return frozen ? .hold : .advance
+        guard storyId == currentId else { return .ignore }
+        return frozen || !autoAdvances(voiceOver: voiceOver) ? .hold : .advance
     }
 
     // MARK: - 読み上げ（VoiceOver）
@@ -227,6 +228,48 @@ enum StoryPlayback {
     static func next(after index: Int, count: Int) -> Int? {
         let candidate = index + 1
         return candidate < count ? candidate : nil
+    }
+
+    // MARK: - 押したとき・読み上げの操作
+
+    /// 押す・払う・読み上げの操作の前に**先に片づけるもの**。返信を打っている・反応の並びが
+    /// 開いている間は、送らずにそれを閉じるだけ（送ると `go(to:)` が返信の書きかけを消す）
+    enum TapGuard: Equatable {
+        case dismissKeyboard
+        case closeReactions
+    }
+
+    static func tapGuard(replyFocused: Bool, showReactions: Bool) -> TapGuard? {
+        if replyFocused { return .dismissKeyboard }
+        if showReactions { return .closeReactions }
+        return nil
+    }
+
+    /// 右（次へ）を押した・読み上げの「次へ」。**同じ判定を通す**（読み上げの「次へ」が
+    /// 返信を打っている最中に書きかけを消して送っていた・2026-10-02 のレビュー）
+    enum Forward: Equatable {
+        case guarded(TapGuard)
+        /// 止めていたら、押すと続きから（送らない）
+        case resume
+        case advance
+        /// 送っている間は送らない
+        case none
+    }
+
+    static func forward(replyFocused: Bool, showReactions: Bool, paused: Bool, isSending: Bool) -> Forward {
+        if let guarded = tapGuard(replyFocused: replyFocused, showReactions: showReactions) {
+            return .guarded(guarded)
+        }
+        if paused { return .resume }
+        return isSending ? .none : .advance
+    }
+
+    /// 読み上げの「前へ」。**経過時間を見ずに1つ前へ**（束の先頭なら前の人、前の人も
+    /// いなければ頭から）。左タップ（`leftTap`）は 0.8 秒を過ぎると今の1本の頭へ戻るので、
+    /// 読み上げで名前を聞き終わる頃には前へ戻れなかった（2026-10-02 のレビュー）
+    static func voiceOverPrevious(index: Int, hasPreviousGroup: Bool) -> LeftTap {
+        if index > 0 { return .previous(index - 1) }
+        return hasPreviousGroup ? .previousGroup : .restart
     }
 
     enum LeftTap: Equatable {

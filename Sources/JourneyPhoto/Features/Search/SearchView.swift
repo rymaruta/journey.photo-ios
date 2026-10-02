@@ -15,6 +15,8 @@ struct SearchView: View {
     /// ——`@EnvironmentObject` はどこからも配られておらず、開いた瞬間に落ちた（verify.sh の NG）
     @ObservedObject private var tabRouter = TabRouter.shared
     @StateObject private var model = SearchViewModel()
+    /// 引き下げ・「もう一度試す」の読み直しの最中
+    @State private var isReloading = false
     @State private var query = ""
     /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
     /// （`GalleryView` と同じ形）
@@ -597,8 +599,12 @@ struct SearchView: View {
 
     // MARK: - 結果
 
-    /// 引き下げ・「もう一度試す」の読み直し
+    /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**（続けて押すと古い回が
+    /// 新しい回を上書きした・2026-10-02 のレビュー）
     private func reloadAll() async {
+        guard !isReloading else { return }
+        isReloading = true
+        defer { isReloading = false }
         await model.reloadPhotos(environment: environment, force: true, hidden: hidden.snapshot)
         await model.search(query, environment: environment)
         // 撮影スポットの索引も、取れていなければ取り直す（`.task(id: query)` は
@@ -676,11 +682,10 @@ struct SearchView: View {
                 .padding(.bottom, peopleRetryShown ? 8 : 24)
             if peopleRetryShown {
                 // 引き下げを知らない人にも出口を（2026-10-02 の調査）
-                Button(Labels.Common.retry) {
+                // 探している間は押せない（`isSearching`。語ごとの回の番号で古い答えも捨てている）
+                RetryButton(isBusy: model.isSearching) {
                     Task { await model.search(query, environment: environment) }
                 }
-                .buttonStyle(.bordered)
-                .frame(minHeight: WebTheme.minTapTarget)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
@@ -835,9 +840,7 @@ struct SearchView: View {
                     .accessibilityIdentifier("search.emptyMap")
                 } else {
                     // 引き下げを知らない人にも出口を（2026-10-02 の調査）
-                    Button(Labels.Common.retry) { Task { await reloadAll() } }
-                        .buttonStyle(.bordered)
-                        .frame(minHeight: WebTheme.minTapTarget)
+                    RetryButton(isBusy: isReloading) { Task { await reloadAll() } }
                 }
             }
             .frame(maxWidth: .infinity)

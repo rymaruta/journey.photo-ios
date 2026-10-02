@@ -11,6 +11,8 @@ struct MyPageView: View {
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
     /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
+    /// 引き下げ・「もう一度試す」の読み直しの最中（重ねて走らせない）
+    @State private var isReloading = false
     @State private var officialSpots: [OfficialSpot] = []
     /// 保存した写真を引き当てる先のうち**公開一覧**。もう一方の自分の写真は
     /// `model.photos`（`myPhotos()`・`PhotoPools` と同じ口）。公開一覧が無いと
@@ -287,8 +289,12 @@ struct MyPageView: View {
         .refreshable { await reloadAll() }
     }
 
-    /// 引き下げ・「もう一度試す」の読み直し
+    /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**（続けて押すと古い回が
+    /// 新しい回を上書きした・2026-10-02 のレビュー）
     private func reloadAll() async {
+        guard !isReloading else { return }
+        isReloading = true
+        defer { isReloading = false }
         await model.load(for: auth.userId)
         // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
         // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
@@ -623,7 +629,8 @@ struct MyPageView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
-                                       "Couldn't load the photos. Pull to refresh.")) {
+                                       "Couldn't load the photos. Pull to refresh."),
+                            isBusy: isReloading) {
                     Task { await reloadAll() }
                 }
             case .empty:
@@ -641,10 +648,7 @@ struct MyPageView: View {
                             .foregroundStyle(WebTheme.danger)
                         Spacer(minLength: 0)
                         // 引き下げを知らない人にも出口を（2026-10-02 の調査）
-                        Button(Labels.Common.retry) { Task { await reloadAll() } }
-                            .font(.footnote.weight(.semibold))
-                            .buttonStyle(.bordered)
-                            .frame(minHeight: WebTheme.minTapTarget)
+                        RetryButton(isBusy: isReloading, compact: true) { Task { await reloadAll() } }
                     }
                     .padding(.horizontal, 16)
                 }

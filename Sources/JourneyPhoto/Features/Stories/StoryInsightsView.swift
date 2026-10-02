@@ -52,6 +52,8 @@ struct StoryInsightsView: View {
     @State private var errorMessage: String?
     /// 引き下げて読み直したのに読めなかった（短く知らせて消す。一覧は前のまま）
     @State private var refreshNotice: String?
+    /// 「もう一度試す」の読み直しの最中
+    @State private var isRetrying = false
 
     var body: some View {
         ScrollView {
@@ -273,10 +275,16 @@ struct StoryInsightsView: View {
     /// 読めなかった回の「もう一度試す」。**引き下げと同じ読み直し**（失敗したら短く知らせる）。
     /// 引き下げを知らない人にも出口を（2026-10-02 の調査）
     private var retryButton: some View {
-        Button(Labels.Common.retry) { Task { await load(pulled: true) } }
-            .buttonStyle(.bordered)
-            .frame(minHeight: WebTheme.minTapTarget)
-            .padding(.vertical, 8)
+        RetryButton(isBusy: isRetrying) {
+            // 読み直している間は重ねない（続けて押すと古い回が新しい回を上書きする）
+            guard !isRetrying else { return }
+            isRetrying = true
+            Task {
+                await load(pulled: true)
+                isRetrying = false
+            }
+        }
+        .padding(.vertical, 8)
     }
 
     private func hasReaction(from userId: String) -> Bool {

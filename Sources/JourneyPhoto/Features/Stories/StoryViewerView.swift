@@ -118,6 +118,10 @@ struct StoryViewerView: View {
     /// 返信を読めなかった。**空の一覧と区別する**（数は出ているのに
     /// 何も無い画面は「消えた」に見える）
     @State private var repliesFailed = false
+    /// 返信を読み直している最中（「もう一度試す」を止める・重ねて走らせない）
+    @State private var repliesReloading = false
+    /// 読めていた返信の読み直しに失敗した（一覧はそのまま、短く知らせる）
+    @State private var repliesNotice: String?
     /// 送っている最中。**二度押しで2件送らない**。自動送りも止める
     @State private var isSending = false
 
@@ -271,6 +275,8 @@ struct StoryViewerView: View {
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
         .onAppear { voiceOverOn = voiceOverEnv }
         .onChange(of: voiceOverEnv) { _, now in voiceOverOn = now }
+        // 読み上げを切ったら、読み上げ中に控えた動画の終わりで進む
+        .onChange(of: voiceOverOn) { _, _ in settlePendingEnd() }
         // 読み上げの「閉じる」（2本指で Z を描く）
         .accessibilityAction(.escape) { dismiss() }
         .onChange(of: frozen) { _, isFrozen in
@@ -940,9 +946,13 @@ struct StoryViewerView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     // 反応の並び・返信の入力が開いていたら、押しても送らずに閉じるだけ
-                    // （送ると `go(to:)` が返信の書きかけを消す）
-                    if replyFocused { replyFocused = false; return }
-                    if showReactions { showReactions = false } else { leftTap() }
+                    // （送ると `go(to:)` が返信の書きかけを消す。`StoryPlayback.tapGuard`）
+                    if let guarded = StoryPlayback.tapGuard(replyFocused: replyFocused,
+                                                            showReactions: showReactions) {
+                        apply(guarded)
+                    } else {
+                        leftTap()
+                    }
                 }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
@@ -950,11 +960,7 @@ struct StoryViewerView: View {
                 })
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    if replyFocused { replyFocused = false; return }
-                    if showReactions { showReactions = false }
-                    else if paused { paused = false } else if !isSending { advance() }
-                }
+                .onTapGesture { forward() }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
                     if !pressedNow { longHeld = false }
@@ -987,16 +993,46 @@ struct StoryViewerView: View {
         .accessibilityLabel(storyAccessibilityLabel)
         .accessibilityHint(L("上下に払って、次へ・前へ・一時停止を選べます",
                              "Swipe up or down to choose next, previous or pause"))
-        .accessibilityAction(named: L("次へ", "Next")) {
-            if paused { paused = false }
-            if !isSending { advance() }
-        }
-        .accessibilityAction(named: L("前へ", "Previous")) {
-            if paused { paused = false }
-            leftTap()
-        }
+        // 「次へ」は右を押したときと同じ判定（返信を打っている間は閉じるだけ）
+        .accessibilityAction(named: L("次へ", "Next")) { forward() }
+        // 「前へ」は経過を見ずに1つ前へ（`StoryPlayback.voiceOverPrevious`）
+        .accessibilityAction(named: L("前へ", "Previous")) { voiceOverBack() }
         .accessibilityAction(named: paused ? L("再開", "Resume") : L("一時停止", "Pause")) {
             paused.toggle()
+        }
+    }
+
+    private func apply(_ guarded: StoryPlayback.TapGuard) {
+        switch guarded {
+        case .dismissKeyboard: replyFocused = false
+        case .closeReactions: showReactions = false
+        }
+    }
+
+    /// 右を押した・読み上げの「次へ」（`StoryPlayback.forward`）
+    private func forward() {
+        switch StoryPlayback.forward(replyFocused: replyFocused, showReactions: showReactions,
+                                     paused: paused, isSending: isSending) {
+        case .guarded(let guarded): apply(guarded)
+        case .resume: paused = false
+        case .advance: advance()
+        case .none: break
+        }
+    }
+
+    /// 読み上げの「前へ」。左タップと違い、経過を見ずに1つ前へ
+    private func voiceOverBack() {
+        if let guarded = StoryPlayback.tapGuard(replyFocused: replyFocused, showReactions: showReactions) {
+            apply(guarded)
+            return
+        }
+        paused = false
+        // 送っている間は前後へ送らない（`leftTap` と同じ）
+        guard !isSending else { return }
+        switch StoryPlayback.voiceOverPrevious(index: index, hasPreviousGroup: onGroupBack != nil) {
+        case .previous(let target): go(to: target)
+        case .previousGroup: onGroupBack?()
+        case .restart: restartCurrent()
         }
     }
 
@@ -1027,20 +1063,25 @@ struct StoryViewerView: View {
         case .previousGroup:
             onGroupBack?()
         case .restart:
-            // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
-            clock.restart(running: !frozen && !(current?.isVideo ?? false), at: now)
-            shownAt = now
-            // **控えていた終わりを捨てる**（`StoryPlayback.afterRestart`）。読めなかった動画は
-            // 見直しの合図を受けて終わりを知らせ直す（`StoryPlayback.restartAction`）
-            (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
-                                                                currentId: current?.id)
-            restartCount += 1
-            // 動画の位置も捨てる（残すと 0 へ戻した動画のバーが、次の知らせまで元の位置で伸びる）
-            videoProgress = nil
-            syncSong(restart: true)
+            restartCurrent(at: now)
         case .previous(let target):
             go(to: target)
         }
+    }
+
+    /// 今の1本を頭から
+    private func restartCurrent(at now: Date = Date()) {
+        // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
+        clock.restart(running: !frozen && !(current?.isVideo ?? false), at: now)
+        shownAt = now
+        // **控えていた終わりを捨てる**（`StoryPlayback.afterRestart`）。読めなかった動画は
+        // 見直しの合図を受けて終わりを知らせ直す（`StoryPlayback.restartAction`）
+        (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
+                                                            currentId: current?.id)
+        restartCount += 1
+        // 動画の位置も捨てる（残すと 0 へ戻した動画のバーが、次の知らせまで元の位置で伸びる）
+        videoProgress = nil
+        syncSong(restart: true)
     }
 
     /// 動画の終わり（読めずに諦めた回も）。`StoryPlayback.mediaEnded`
@@ -1103,6 +1144,7 @@ struct StoryViewerView: View {
         replies = []
         repliesFailed = false
         repliesLoaded = false
+        repliesNotice = nil
         viewersLoaded = nil
     }
 
@@ -1765,15 +1807,19 @@ struct StoryViewerView: View {
         return NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    if let repliesNotice {
+                        Text(repliesNotice)
+                            .font(.footnote)
+                            .foregroundStyle(WebTheme.danger)
+                            .padding(.top, 12)
+                    }
                     if repliesFailed {
                         Text(Labels.Common.loadFailed)
                             .font(.subheadline)
                             .foregroundStyle(WebTheme.muted2)
                             .padding(.top, 16)
                         // 引き下げを知らない人にも出口を（2026-10-02 の調査）
-                        Button(Labels.Common.retry) { Task { await reloadReplies() } }
-                            .buttonStyle(.bordered)
-                            .frame(minHeight: WebTheme.minTapTarget)
+                        RetryButton(isBusy: repliesReloading) { Task { await reloadReplies() } }
                             .padding(.bottom, 16)
                     } else if !repliesLoaded {
                         // **読み込み中に「まだ返信はありません」と言わない**（丸のバッジと同じ）
@@ -1822,15 +1868,29 @@ struct StoryViewerView: View {
 
     /// 返信を読み直す（返信のシートの引き下げ）。**読み直しの間に別の1本へ移ったら書かない**。
     /// 読めなければ今の表示のまま
+    ///
+    /// **重ねて走らせない**（続けて押すと古い回が新しい回を上書きした）。**失敗を黙らせない**——
+    /// 以前は `catch {}` で、引き下げても「もう一度試す」を押しても何も起きないように見えた。
+    /// 何を出すかは反応の画面と同じ決まり（`StoryInsightsView.failureOutcome`）
     private func reloadReplies() async {
-        guard let story = current else { return }
+        guard let story = current, !repliesReloading else { return }
+        repliesReloading = true
+        defer { repliesReloading = false }
         do {
             let loaded = try await environment.stories.replies(id: story.id)
             guard current?.id == story.id else { return }
             replies = loaded
             repliesFailed = false
             repliesLoaded = true
-        } catch {}
+            repliesNotice = nil
+        } catch {
+            guard current?.id == story.id else { return }
+            switch StoryInsightsView.failureOutcome(error, firstLoad: !repliesLoaded, pulled: true) {
+            case .silent: break
+            case .errorMessage: repliesFailed = true
+            case .refreshNotice: repliesNotice = L("読み直せませんでした", "Couldn't refresh")
+            }
+        }
     }
 
     /// 返信のシートの地（板の `#0c0c0d`）

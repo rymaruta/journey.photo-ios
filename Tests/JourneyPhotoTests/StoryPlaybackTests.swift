@@ -405,10 +405,35 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertFalse(StoryPlayback.timeUp(elapsed: 9, duration: 5, frozen: false,
                                             messageShown: true, voiceOver: false))
         XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: "a", frozen: false,
-                                                voiceOver: true), .ignore,
-                       "読み上げ中に動画の終わりで次へ送っている")
+                                                voiceOver: true), .hold,
+                       "読み上げ中に動画の終わりで次へ送っている（または捨てて、切っても進まない）")
+        XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: "b", frozen: false,
+                                                voiceOver: true), .ignore)
         XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: "a", frozen: false,
                                                 voiceOver: false), .advance)
+    }
+
+    /// **読み上げの「前へ」は経過を見ない**（左タップは 0.8 秒で頭に戻るので前へ戻れなかった）
+    func testVoiceOverPreviousIgnoresElapsed() {
+        XCTAssertEqual(StoryPlayback.leftTap(index: 2, elapsed: 5), .restart, "下ごしらえ: 左タップは頭へ")
+        XCTAssertEqual(StoryPlayback.voiceOverPrevious(index: 2, hasPreviousGroup: false), .previous(1))
+        XCTAssertEqual(StoryPlayback.voiceOverPrevious(index: 0, hasPreviousGroup: true), .previousGroup)
+        XCTAssertEqual(StoryPlayback.voiceOverPrevious(index: 0, hasPreviousGroup: false), .restart)
+    }
+
+    /// **右を押す・読み上げの「次へ」は同じ判定。** 返信を打っている間は閉じるだけ
+    func testForwardGuardsTypingAndReactions() {
+        XCTAssertEqual(StoryPlayback.forward(replyFocused: true, showReactions: true, paused: true, isSending: false),
+                       .guarded(.dismissKeyboard), "返信を打っている最中に送っている（書きかけが消える）")
+        XCTAssertEqual(StoryPlayback.forward(replyFocused: false, showReactions: true, paused: false, isSending: false),
+                       .guarded(.closeReactions))
+        XCTAssertEqual(StoryPlayback.forward(replyFocused: false, showReactions: false, paused: true, isSending: false),
+                       .resume)
+        XCTAssertEqual(StoryPlayback.forward(replyFocused: false, showReactions: false, paused: false, isSending: true),
+                       .none)
+        XCTAssertEqual(StoryPlayback.forward(replyFocused: false, showReactions: false, paused: false, isSending: false),
+                       .advance)
+        XCTAssertNil(StoryPlayback.tapGuard(replyFocused: false, showReactions: false))
     }
 
     /// 読み直しに失敗したら前の輪を残す。ただし絞り込みはかけ直し、
