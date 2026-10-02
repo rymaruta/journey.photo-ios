@@ -43,6 +43,8 @@ struct JourneyPhotoApp: App {
 
     init() {
         JourneyPhotoApp.configureImageCache()
+        // 選んでいるタブを真鍮に（`TabBarStyle`。TabView の tint だけでは中身の白に負ける）
+        TabBarStyle.apply()
         do {
             try AuthGateway.configure()
         } catch {
