@@ -349,6 +349,19 @@ final class ScreenshotTests: XCTestCase {
         // 位置で探していたときは、今日のテーマの「参加する」に当たって
         // **ログイン画面を「写真の詳細」として撮って**いた（run 49）。
         let firstPhoto = app.buttons["feed.photo"].firstMatch
+        // **画面の下（タブバーの裏）に隠れていたら送る（上限あり・`21` と同じ考え）。**
+        // ホームは写真の前に今日のテーマ・発見の節が並ぶので、1枚目がタブバーの裏に
+        // 掛かって `isHittable == false` になり、`20` と `21` が**黙って欠けて**いた。
+        // `swipeUp` は勢いで1枚目ごと画面の上へ流しうるので、勢いの付かない短い引き
+        // （画面の 35% ぶん）で少しずつ送る
+        var feedPushes = 0
+        while firstPhoto.waitForExistence(timeout: 10), !firstPhoto.isHittable, feedPushes < 4 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+            feedPushes += 1
+        }
         if firstPhoto.waitForExistence(timeout: 10), firstPhoto.isHittable {
             firstPhoto.tap()
             Thread.sleep(forTimeInterval: 4)

@@ -371,6 +371,32 @@ extension PhotoMapViewModelTests {
         XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja", "kotohira"])
     }
 
+    /// 🔴 **「もう一度試す」を続けて押しても、古い回の答えで新しい回を上書きしない**
+    /// （2026-10-02 のレビュー: 前の回の索引を取り消さずに作り直していた）
+    func testOlderLoadDoesNotOverwriteNewerOne() async throws {
+        let model = PhotoMapViewModel()
+        let gate = Gate()
+        // 1回目: 索引の手前で止める
+        await model.load(environment: environment(spots: spotsJSON, indexGate: gate))
+        await gate.untilWaiting(1)
+        // 2回目: すぐ届く（3件）
+        await model.load(environment: environment(spots: spotsJSON))
+        await model.awaitIndex()
+        XCTAssertEqual(model.officialSpots.count, 3)
+        XCTAssertFalse(model.isLoading)
+        // 1回目が遅れて別の答え（1件）を受け取っても書かない（道は先に足した方が勝つので消してから）
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/spots.json", status: 200, body: """
+        [{"spotId":"sp_c3","slug":"abashiri-ryuhyo","name":"網走の流氷","coords":{"lat":44.02,"lng":144.28},"stage":"review"}]
+        """)
+        await gate.open()
+        for _ in 0..<40 {
+            await Task.yield()
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(model.officialSpots.count, 3, "古い回の索引が新しい回を上書きした")
+    }
+
     /// 札は**いま出ているピンのぶんだけ**（写真の札と同じ約束）
     func testOfficialCardFollowsThePins() async throws {
         let model = await loaded(spots: spotsJSON)

@@ -34,6 +34,14 @@ struct StoryViewerView: View {
     /// 進まなくなる（2026-09-26 のレビューで見つかった）
     @State private var isForeground = true
     @Environment(\.dismiss) private var dismiss
+    /// 読み上げ（VoiceOver）が動いているか。**`isForeground` と同じ理由で `@State` へ写して読む**
+    /// （時計の写しの中で固まらないように）。動いている間はひとりでに次へ送らない
+    /// （`StoryPlayback.autoAdvances`）
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnv
+    @State private var voiceOverOn = false
+    /// メニューの行の絵の幅。**文字の大きさに付いてくる**（固定の 22 だと大きい文字で
+    /// 絵が枠からはみ出し、行の字とずれた）
+    @ScaledMetric(relativeTo: .body) private var menuIconWidth: CGFloat = 22
 
     @State private var index: Int
     /// 通報して落とした・自分で消した1本。**兄弟の並びから消す**（左タップで戻れないように）
@@ -113,6 +121,10 @@ struct StoryViewerView: View {
     /// 返信を読めなかった。**空の一覧と区別する**（数は出ているのに
     /// 何も無い画面は「消えた」に見える）
     @State private var repliesFailed = false
+    /// 返信を読み直している最中（「もう一度試す」を止める・重ねて走らせない）
+    @State private var repliesReloading = false
+    /// 読めていた返信の読み直しに失敗した（一覧はそのまま、短く知らせる）
+    @State private var repliesNotice: String?
     /// 送っている最中。**二度押しで2件送らない**。自動送りも止める
     @State private var isSending = false
 
@@ -264,6 +276,12 @@ struct StoryViewerView: View {
             syncSong(restart: true)
         }
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
+        .onAppear { voiceOverOn = voiceOverEnv }
+        .onChange(of: voiceOverEnv) { _, now in voiceOverOn = now }
+        // 読み上げを切ったら、読み上げ中に控えた動画の終わりで進む
+        .onChange(of: voiceOverOn) { _, _ in settlePendingEnd() }
+        // 読み上げの「閉じる」（2本指で Z を描く）
+        .accessibilityAction(.escape) { dismiss() }
         .onChange(of: frozen) { _, isFrozen in
             // **止まった瞬間にバーも止める。** 時計の見回り（`runClock`）を待つと、長押しから
             // 最大 `clockStep` だけバーが進み続けて見える
@@ -336,6 +354,12 @@ struct StoryViewerView: View {
         MusicPreviewPlayer.shared.stop(releaseSession: false)
     }
 
+    /// **写真の上の飾り（見出し・足元・ひとこと・知らせ）の文字の大きさの上限。**
+    /// 文字は Dynamic Type に付いてくる（2026-10-02 まで `.system(size:)` の固定だった）が、
+    /// 写真の上は広さが決まっているので、ここで止める。写真に焼き込む文字
+    /// （`StoryTextLayer`）は見る人と同じ位置に出すため固定のまま
+    static let chromeTypeLimit = DynamicTypeSize.xxLarge
+
     /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る。板は 844 のうち 84）
     private static let footerHeight: CGFloat = 60
 
@@ -353,12 +377,14 @@ struct StoryViewerView: View {
                     .overlay(alignment: .bottom) {
                         highlightFooter(for: story, highlight: highlight)
                             .opacity(chrome.hidesChrome ? 0 : 1)
+                            .dynamicTypeSize(...Self.chromeTypeLimit)
                     }
             } else {
             VStack(spacing: 0) {
                 photoArea(for: story)
                     .ignoresSafeArea(edges: .top)
                 footer(for: story)
+                    .dynamicTypeSize(...Self.chromeTypeLimit)
                     .frame(minHeight: Self.footerHeight)
                     // 止めている間は足元を隠す（板「25b」は進行バーだけ残す）。
                     // 場所は残す——消すと写真の枠が伸び縮みする
@@ -373,17 +399,22 @@ struct StoryViewerView: View {
                     .allowsHitTesting(!chrome.hidesChrome)
             }
             .padding(.top, 5)
+            .dynamicTypeSize(...Self.chromeTypeLimit)
 
             if chrome.showsPill {
                 pausedPill
+                    .dynamicTypeSize(...Self.chromeTypeLimit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(false)
             }
             if showMenu {
                 menuSheet(for: story)
+                    // 写真の上に重ねる板（スクロールしない）。大きすぎると項目が画面からはみ出す
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
             if showDeleteConfirm {
                 deleteConfirm(for: story)
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
         }
         .animation(.easeOut(duration: 0.18), value: showMenu)
@@ -592,12 +623,14 @@ struct StoryViewerView: View {
             // **撮影地の行だけ押せる**（撮影スポットのガイドへ）。ひとことと曲は指を素通りさせ、
             // 左右の送る的を塞がない（中で1つずつ `allowsHitTesting(false)` を付ける）
             captionBlock(for: story)
+                .dynamicTypeSize(...Self.chromeTypeLimit)
                 .padding(.horizontal, 32)
                 .padding(.bottom, highlight == nil ? 96 : 150)
 
             if let message {
                 Text(message)
                     .font(.footnote)
+                    .dynamicTypeSize(...Self.chromeTypeLimit)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -654,7 +687,7 @@ struct StoryViewerView: View {
                             HStack(spacing: 4) {
                                 photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.caption.weight(.semibold))
                                     .foregroundStyle(WebTheme.muted)
                                     .jpPhotoTextShadow()
                             }
@@ -706,9 +739,9 @@ struct StoryViewerView: View {
     private func photoMeta(symbol: String, text: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: symbol)
-                .font(.system(size: 12))
+                .font(.caption)
             Text(text)
-                .font(.system(size: 12))
+                .font(.caption)
                 .lineLimit(1)
         }
         .foregroundStyle(WebTheme.muted)
@@ -794,7 +827,7 @@ struct StoryViewerView: View {
                     showMenu = true
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 20))
+                        .font(.title3)
                         .foregroundStyle(.white)
                         .webTappable()
                         .accessibilityLabel(L("その他の操作", "More actions"))
@@ -804,7 +837,7 @@ struct StoryViewerView: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 20))
+                    .font(.title3)
                     .foregroundStyle(.white)
                     .webTappable()
                     .accessibilityLabel(Labels.Common.close)
@@ -829,11 +862,11 @@ struct StoryViewerView: View {
             .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
             VStack(alignment: .leading, spacing: 0) {
                 Text(highlight.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text(L("ストーリーハイライト · \(highlight.count)件", "Story highlight · \(highlight.count)"))
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted)
             }
         }
@@ -852,7 +885,7 @@ struct StoryViewerView: View {
             if let onEdit = highlight.onEdit {
                 Button(action: onEdit) {
                     Text(L("編集", "Edit"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .frame(minHeight: 40)
@@ -880,7 +913,7 @@ struct StoryViewerView: View {
                 // 自分: 「あなた」と、下に等幅で「2時間前 · あと 22 時間で消えます」（板 25e）
                 VStack(alignment: .leading, spacing: 1) {
                     Text(L("あなた", "You"))
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                     if let line = ownTimeLine(for: story) {
                         Text(line)
@@ -891,12 +924,12 @@ struct StoryViewerView: View {
                 }
             } else {
                 Text(story.authorName)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 if let ago = StoryPlayback.ago(from: story.createdAt) {
                     Text(ago)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(WebTheme.muted)
                         .lineLimit(1)
                 }
@@ -916,9 +949,13 @@ struct StoryViewerView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     // 反応の並び・返信の入力が開いていたら、押しても送らずに閉じるだけ
-                    // （送ると `go(to:)` が返信の書きかけを消す）
-                    if replyFocused { replyFocused = false; return }
-                    if showReactions { showReactions = false } else { leftTap() }
+                    // （送ると `go(to:)` が返信の書きかけを消す。`StoryPlayback.tapGuard`）
+                    if let guarded = StoryPlayback.tapGuard(replyFocused: replyFocused,
+                                                            showReactions: showReactions) {
+                        apply(guarded)
+                    } else {
+                        leftTap()
+                    }
                 }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
@@ -926,11 +963,7 @@ struct StoryViewerView: View {
                 })
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    if replyFocused { replyFocused = false; return }
-                    if showReactions { showReactions = false }
-                    else if paused { paused = false } else if !isSending { advance() }
-                }
+                .onTapGesture { forward() }
                 .onLongPressGesture(minimumDuration: 0.35, perform: { longHeld = true }, onPressingChanged: { pressedNow in
                     pressing = pressedNow
                     if !pressedNow { longHeld = false }
@@ -956,6 +989,63 @@ struct StoryViewerView: View {
                     }
                 }
         )
+        // **読み上げ（VoiceOver）で操作できるように。** 左右の押す場所は `Color.clear` と
+        // 押す・払う動きだけで、読み上げでは触れられなかった（2026-10-02 の調査）。
+        // 画面いっぱいの1つの要素にして、上下に払う操作で選ぶ
+        .accessibilityElement()
+        .accessibilityLabel(storyAccessibilityLabel)
+        .accessibilityHint(L("上下に払って、次へ・前へ・一時停止を選べます",
+                             "Swipe up or down to choose next, previous or pause"))
+        // 「次へ」は右を押したときと同じ判定（返信を打っている間は閉じるだけ）
+        .accessibilityAction(named: L("次へ", "Next")) { forward() }
+        // 「前へ」は経過を見ずに1つ前へ（`StoryPlayback.voiceOverPrevious`）
+        .accessibilityAction(named: L("前へ", "Previous")) { voiceOverBack() }
+        .accessibilityAction(named: paused ? L("再開", "Resume") : L("一時停止", "Pause")) {
+            paused.toggle()
+        }
+    }
+
+    private func apply(_ guarded: StoryPlayback.TapGuard) {
+        switch guarded {
+        case .dismissKeyboard: replyFocused = false
+        case .closeReactions: showReactions = false
+        }
+    }
+
+    /// 右を押した・読み上げの「次へ」（`StoryPlayback.forward`）
+    private func forward() {
+        switch StoryPlayback.forward(replyFocused: replyFocused, showReactions: showReactions,
+                                     paused: paused, isSending: isSending) {
+        case .guarded(let guarded): apply(guarded)
+        case .resume: paused = false
+        case .advance: advance()
+        case .none: break
+        }
+    }
+
+    /// 読み上げの「前へ」。左タップと違い、経過を見ずに1つ前へ
+    private func voiceOverBack() {
+        if let guarded = StoryPlayback.tapGuard(replyFocused: replyFocused, showReactions: showReactions) {
+            apply(guarded)
+            return
+        }
+        paused = false
+        // 送っている間は前後へ送らない（`leftTap` と同じ）
+        guard !isSending else { return }
+        switch StoryPlayback.voiceOverPrevious(index: index, hasPreviousGroup: onGroupBack != nil) {
+        case .previous(let target): go(to: target)
+        case .previousGroup: onGroupBack?()
+        case .restart: restartCurrent()
+        }
+    }
+
+    /// 読み上げで読む名前（「〇〇のストーリー、2 / 5」）
+    private var storyAccessibilityLabel: String {
+        let position = "\(index + 1) / \(visible.count)"
+        if let highlight { return L("\(highlight.title)、\(position)", "\(highlight.title), \(position)") }
+        guard let story = current else { return L("ストーリー", "Story") }
+        let name = isMine(story) ? L("あなた", "You") : story.authorName
+        return L("\(name)のストーリー、\(position)", "\(name)'s story, \(position)")
     }
 
     private func leftTap() {
@@ -976,20 +1066,25 @@ struct StoryViewerView: View {
         case .previousGroup:
             onGroupBack?()
         case .restart:
-            // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
-            clock.restart(running: !frozen && !(current?.isVideo ?? false), at: now)
-            shownAt = now
-            // **控えていた終わりを捨てる**（`StoryPlayback.afterRestart`）。読めなかった動画は
-            // 見直しの合図を受けて終わりを知らせ直す（`StoryPlayback.restartAction`）
-            (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
-                                                                currentId: current?.id)
-            restartCount += 1
-            // 動画の位置も捨てる（残すと 0 へ戻した動画のバーが、次の知らせまで元の位置で伸びる）
-            videoProgress = nil
-            syncSong(restart: true)
+            restartCurrent(at: now)
         case .previous(let target):
             go(to: target)
         }
+    }
+
+    /// 今の1本を頭から
+    private func restartCurrent(at now: Date = Date()) {
+        // 動画は時計を回さない（回すと次の1本まで毎フレーム描き直す）
+        clock.restart(running: !frozen && !(current?.isVideo ?? false), at: now)
+        shownAt = now
+        // **控えていた終わりを捨てる**（`StoryPlayback.afterRestart`）。読めなかった動画は
+        // 見直しの合図を受けて終わりを知らせ直す（`StoryPlayback.restartAction`）
+        (pendingEnd, endedIds) = StoryPlayback.afterRestart(pendingEnd: pendingEnd, endedIds: endedIds,
+                                                            currentId: current?.id)
+        restartCount += 1
+        // 動画の位置も捨てる（残すと 0 へ戻した動画のバーが、次の知らせまで元の位置で伸びる）
+        videoProgress = nil
+        syncSong(restart: true)
     }
 
     /// 動画の終わり（読めずに諦めた回も）。`StoryPlayback.mediaEnded`
@@ -998,7 +1093,8 @@ struct StoryViewerView: View {
     /// 一瞬も読めなかった。知らせは2.5秒で消え、そこで `settlePendingEnd` が進める
     private func mediaEnded(_ id: String) {
         switch StoryPlayback.mediaEnded(storyId: id, currentId: current?.id,
-                                        frozen: frozen || message != nil) {
+                                        frozen: frozen || message != nil,
+                                        voiceOver: voiceOverOn) {
         case .ignore: break
         case .hold: pendingEnd = id
         case .advance:
@@ -1051,6 +1147,7 @@ struct StoryViewerView: View {
         replies = []
         repliesFailed = false
         repliesLoaded = false
+        repliesNotice = nil
         viewersLoaded = nil
     }
 
@@ -1097,7 +1194,10 @@ struct StoryViewerView: View {
             syncClock(frozen: frozen)
             // 知らせ（「送りました」など）が出ている間は進めない（`go` が消して読めない）。
             // 知らせは2.5秒で消える
-            if !frozen, message == nil, clock.elapsed(at: Date()) >= duration {
+            // 読み上げが動いている間は送らない（`StoryPlayback.timeUp`）
+            if StoryPlayback.timeUp(elapsed: clock.elapsed(at: Date()), duration: duration,
+                                    frozen: frozen, messageShown: message != nil,
+                                    voiceOver: voiceOverOn) {
                 advance()
                 return
             }
@@ -1140,9 +1240,9 @@ struct StoryViewerView: View {
     private var pausedPill: some View {
         HStack(spacing: 8) {
             Image(systemName: "pause")
-                .font(.system(size: 14))
+                .font(.subheadline)
             Text(StoryPlayback.pausedNote(pressing: chrome.pillSaysRelease))
-                .font(.system(size: 13))
+                .font(.footnote)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 16)
@@ -1174,7 +1274,7 @@ struct StoryViewerView: View {
             VStack(spacing: 8) {
                 VStack(spacing: 0) {
                     Text(L("開いている間は止まっています", "Paused while this is open"))
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 12)
@@ -1234,7 +1334,7 @@ struct StoryViewerView: View {
                     showMenu = false
                 } label: {
                     Text(Labels.Common.cancel)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 52)
                         .background(Self.sheetColor, in: RoundedRectangle(cornerRadius: 16))
@@ -1261,10 +1361,10 @@ struct StoryViewerView: View {
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: symbol)
-                    .font(.system(size: 18))
-                    .frame(width: 22)
+                    .font(.body)
+                    .frame(width: menuIconWidth)
                 Text(title)
-                    .font(.system(size: 16))
+                    .font(.callout)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(danger ? Self.storyDanger : WebTheme.text)
@@ -1291,10 +1391,10 @@ struct StoryViewerView: View {
             VStack(spacing: 0) {
                 VStack(spacing: 6) {
                     Text(L("このストーリーを削除しますか？", "Delete this story?"))
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.callout.weight(.semibold))
                     Text(L("見た人の記録と返信も消えます。元に戻せません。",
                            "Viewers and replies are deleted too. This can't be undone."))
-                        .font(.system(size: 13))
+                        .font(.footnote)
                         .foregroundStyle(WebTheme.muted2)
                         .lineSpacing(4)
                 }
@@ -1322,7 +1422,7 @@ struct StoryViewerView: View {
                                action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 16, weight: weight))
+                .font(.callout.weight(weight))
                 .foregroundStyle(color)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .contentShape(Rectangle())
@@ -1426,7 +1526,7 @@ struct StoryViewerView: View {
                                     Task { await sendReply(text, to: story) }
                                 } label: {
                                     Text(text)
-                                        .font(.system(size: 13))
+                                        .font(.footnote)
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 14)
                                         .frame(minHeight: 36)
@@ -1441,7 +1541,7 @@ struct StoryViewerView: View {
                         }
                     }
                     Text(L("返信は \(story.authorName) さんにだけ届きます", "Only \(story.authorName) sees your reply"))
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(WebTheme.muted2)
                         .padding(.leading, 4)
                 }
@@ -1453,7 +1553,7 @@ struct StoryViewerView: View {
                             if kept != value { reply = kept }
                         }
                         .accessibilityLabel(L("\(story.authorName) さんに返信", "Reply to \(story.authorName)"))
-                        .font(.system(size: 15))
+                        .font(.subheadline)
                         .foregroundStyle(.white)
                         // 打っている間は止める（打ち終わる前に次へ送られない）
                         .focused($replyFocused)
@@ -1469,7 +1569,7 @@ struct StoryViewerView: View {
                             Task { await sendReply(to: story) }
                         } label: {
                             Image(systemName: "paperplane")
-                                .font(.system(size: 18))
+                                .font(.body)
                                 .foregroundStyle(WebTheme.accentText)
                                 .frame(width: 46, height: 46)
                                 .background(WebTheme.accentBackground, in: Circle())
@@ -1483,7 +1583,7 @@ struct StoryViewerView: View {
                         // あとに Button の送信も走る（❤️ が送られてから並びが開く）。押すと長押しを
                         // 別々の手振りにして、どちらか片方だけが効くようにする
                         Image(systemName: "heart")
-                            .font(.system(size: 22))
+                            .font(.title2)
                             .foregroundStyle(.white)
                             .webTappable()
                             .opacity(isSending ? 0.4 : 1)
@@ -1510,7 +1610,10 @@ struct StoryViewerView: View {
                                 showReactions = true
                             }
                         .overlay(alignment: .bottomTrailing) {
-                            if showReactions { reactionPicker(for: story) }
+                            if showReactions {
+                                reactionPicker(for: story)
+                                    .dynamicTypeSize(...Self.chromeTypeLimit)
+                            }
                         }
                     }
                 }
@@ -1586,7 +1689,7 @@ struct StoryViewerView: View {
             HStack(spacing: 10) {
                 if viewersLoaded != true || viewers.isEmpty {
                     Image(systemName: "eye")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(WebTheme.muted2)
                         .frame(width: 30, height: 30)
                         .background(WebTheme.raised, in: Circle())
@@ -1597,16 +1700,16 @@ struct StoryViewerView: View {
                     if viewersLoaded != true {
                         // 読み込み中・読めなかった。**数は言わない**（0 と言い切らない）
                         Text(L("反応を見る", "Insights"))
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.subheadline.weight(.medium))
                     } else if isQuiet {
                         Text(L("まだ誰も見ていません", "No views yet"))
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.subheadline.weight(.medium))
                     } else {
                         HStack(spacing: 0) {
                             Text(L("見た人 ", "Viewers "))
                             Text("\(viewers.count)").font(JPFont.mono(14, medium: true))
                         }
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         // **返信を読めていなければ「いいね」の数は言わない**
                         // （読めなかった回に空の一覧から「いいね 0」と言い切っていた）
                         if repliesLoaded {
@@ -1616,7 +1719,7 @@ struct StoryViewerView: View {
                             }
                             // 本文系の最小は 12（デザインシステム「黒塗りの真鍮」02 書体）。
                             // **数は白のまま**——いいねは白、真鍮は合図と手がかりだけ（同 04）
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(WebTheme.muted2)
                         }
                     }
@@ -1692,7 +1795,7 @@ struct StoryViewerView: View {
     /// 操作の丸（写真の上の ✕ と同じガラス・他の人の送信の丸と同じ 46）
     private func ownCircle(symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 17, weight: .medium))
+            .font(.body.weight(.medium))
             .foregroundStyle(.white)
             .frame(width: 46, height: 46)
             .jpGlass(in: Circle(), border: 0.14)
@@ -1707,11 +1810,20 @@ struct StoryViewerView: View {
         return NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    if let repliesNotice {
+                        Text(repliesNotice)
+                            .font(.footnote)
+                            .foregroundStyle(WebTheme.danger)
+                            .padding(.top, 12)
+                    }
                     if repliesFailed {
                         Text(Labels.Common.loadFailed)
                             .font(.subheadline)
                             .foregroundStyle(WebTheme.muted2)
-                            .padding(.vertical, 16)
+                            .padding(.top, 16)
+                        // 引き下げを知らない人にも出口を（2026-10-02 の調査）
+                        RetryButton(isBusy: repliesReloading) { Task { await reloadReplies() } }
+                            .padding(.bottom, 16)
                     } else if !repliesLoaded {
                         // **読み込み中に「まだ返信はありません」と言わない**（丸のバッジと同じ）
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
@@ -1726,7 +1838,7 @@ struct StoryViewerView: View {
                     }
                     Text(L("返信はあなたにだけ見えています。ストーリーが消えると、返信も一緒に消えます。",
                            "Only you can see replies. They disappear with the story."))
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .lineSpacing(4)
                         .foregroundStyle(WebTheme.faint)
                         .padding(.vertical, 16)
@@ -1742,7 +1854,7 @@ struct StoryViewerView: View {
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 4) {
-                        Text(L("返信", "Replies")).font(.system(size: 16, weight: .semibold))
+                        Text(L("返信", "Replies")).font(.callout.weight(.semibold))
                         // 読めていない間は数を出さない（`StoryInsightsView` と同じ）
                         if repliesLoaded {
                             Text("\(items.count)").font(JPFont.mono(16, medium: true))
@@ -1759,15 +1871,29 @@ struct StoryViewerView: View {
 
     /// 返信を読み直す（返信のシートの引き下げ）。**読み直しの間に別の1本へ移ったら書かない**。
     /// 読めなければ今の表示のまま
+    ///
+    /// **重ねて走らせない**（続けて押すと古い回が新しい回を上書きした）。**失敗を黙らせない**——
+    /// 以前は `catch {}` で、引き下げても「もう一度試す」を押しても何も起きないように見えた。
+    /// 何を出すかは反応の画面と同じ決まり（`StoryInsightsView.failureOutcome`）
     private func reloadReplies() async {
-        guard let story = current else { return }
+        guard let story = current, !repliesReloading else { return }
+        repliesReloading = true
+        defer { repliesReloading = false }
         do {
             let loaded = try await environment.stories.replies(id: story.id)
             guard current?.id == story.id else { return }
             replies = loaded
             repliesFailed = false
             repliesLoaded = true
-        } catch {}
+            repliesNotice = nil
+        } catch {
+            guard current?.id == story.id else { return }
+            switch StoryInsightsView.failureOutcome(error, firstLoad: !repliesLoaded, pulled: true) {
+            case .silent: break
+            case .errorMessage: repliesFailed = true
+            case .refreshNotice: repliesNotice = L("読み直せませんでした", "Couldn't refresh")
+            }
+        }
     }
 
     /// 返信のシートの地（板の `#0c0c0d`）
@@ -1794,15 +1920,15 @@ struct StoryViewerView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(item.displayName)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                     if let ago = StoryPlayback.ago(from: item.t) {
                         Text(ago)
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                     }
                 }
                 Text(item.body)
-                    .font(.system(size: 14))
+                    .font(.subheadline)
                     .lineSpacing(6)
             }
             .foregroundStyle(.white)
@@ -1846,7 +1972,7 @@ struct StoryViewerView: View {
                     Task { await sendReaction(emoji, to: story) }
                 } label: {
                     Text(emoji)
-                        .font(.system(size: 28))
+                        .font(.title)
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)

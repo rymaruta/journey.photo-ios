@@ -59,7 +59,7 @@ struct CollectionPhotosScreen: View {
                 if photos.isEmpty && !isLoading, let retry {
                     ErrorBanner(message: Labels.Common.loadFailed, retry: retry)
                 } else if shown.isEmpty && !isLoading {
-                    ErrorBanner(message: Labels.Gallery.empty)
+                    EmptyState(message: Labels.Gallery.empty)
                 } else {
                     let list = sorted
                     PhotoGrid(photos: list, captionsLead: true) { photo in

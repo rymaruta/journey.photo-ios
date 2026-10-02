@@ -63,9 +63,9 @@ struct FavoritesView: View {
                     // 取得中に空の格子を出さない（以前のタブと同じく ProgressView）
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
                 case .none:
-                    ErrorBanner(message: L("まだお気に入りがありません", "No liked photos yet"))
+                    EmptyState(message: L("まだお気に入りがありません", "No liked photos yet"))
                 case .nothingShown:
-                    ErrorBanner(message: LikedPhotos.nothingShownMessage)
+                    EmptyState(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:
                     ErrorBanner(message: L("いいねした写真を読み込めませんでした。通信の状態を確かめるか、消された写真かもしれません",
                                            "Couldn't load your liked photos. Check your connection — some may have been removed.")) {
