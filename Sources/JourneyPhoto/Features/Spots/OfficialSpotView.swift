@@ -359,7 +359,8 @@ struct OfficialSpotView: View {
                             .font(.footnote)
                     }
                     .frame(minHeight: 44)
-                    .foregroundStyle(WebTheme.foreground)
+                    // 外へ出るリンクは真鍮（黒地の上・規約や出典のリンクと同じ。2026-10-02 owner）
+                    .foregroundStyle(WebTheme.accent)
                 }
                 .padding(.horizontal, 16)
         }
