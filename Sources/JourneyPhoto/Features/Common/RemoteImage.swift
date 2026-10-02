@@ -30,6 +30,18 @@ struct RemoteImage: View {
     /// 「読み込みに失敗した」ように見えていた（実機の絵・run 40）。
     /// 人を指す場所では人型を置く。
     var placeholderSymbol: String = "photo"
+    /// 自動の1回のあと、**押して読み直せる**記号を出すか。**既定は出さない。**
+    ///
+    /// 🔴 ボタンは周りの操作を奪う——ストーリーでは左右送りの押下を、一覧・旅の本では
+    /// `NavigationLink` を取ってしまう（2026-10-02 のレビュー）。周りに押す操作が無い所だけで
+    /// 呼ぶ側が true にする
+    var allowsManualRetry = false
+
+    /// 読み直した回数。**`AsyncImage` の `.id` に使う**——替えると作り直されて、もう一度読む
+    @State private var attempt = 0
+    /// 自動で読み直した回数・押して読み直した回数（上限は `RemoteImageRetry`）
+    @State private var automaticRetries = 0
+    @State private var manualRetries = 0
 
     var body: some View {
         ZStack {
@@ -54,19 +66,69 @@ struct RemoteImage: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
                             .onAppear { onSettled?(true) }
                     case .failure:
-                        placeholder
-                            .onAppear { onSettled?(false) }
+                        failure(RemoteImageRetry.step(automaticDone: automaticRetries, manualDone: manualRetries,
+                                              allowsManualRetry: allowsManualRetry))
                     case .empty:
                         ProgressView()
                     @unknown default:
                         placeholder
                     }
                 }
+                .id(attempt)
             } else {
                 placeholder
             }
         }
         .clipped()
+        // 別の写真に替わったら数え直す（前の写真の失敗で、次の写真の読み直しを使い切らない）
+        .onChange(of: url) { _, _ in
+            attempt = 0
+            automaticRetries = 0
+            manualRetries = 0
+        }
+    }
+
+    /// 読めなかったときの段。**一度だけ自動で読み直し、それでも駄目なら押して読み直せる**
+    /// （2026-10-02）。圏外の一瞬・スクロールで取り消された読み込みで、記号のまま残っていた
+    @ViewBuilder
+    private func failure(_ step: RemoteImageRetry.Step) -> some View {
+        switch step {
+        case .retryAutomatically(let seconds):
+            // まだ諦めていない。**読み込み中に見せる**（`onSettled` もまだ呼ばない——
+            // ストーリーは読み直しの結果を待つ）
+            ProgressView()
+                .task {
+                    try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                    guard !Task.isCancelled else { return }
+                    automaticRetries += 1
+                    attempt += 1
+                }
+        case .offerTap:
+            Button {
+                manualRetries += 1
+                attempt += 1
+            } label: {
+                placeholder
+                    // 今の記号の中に小さく「読み直す」の印
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .offset(x: 7, y: 4)
+                            .accessibilityHidden(true)
+                    }
+                    // 押せる幅は 44pt まで（小さな丸では枠に収める——隣を奪わない）
+                    .frame(maxWidth: 44, maxHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("画像を読み込めませんでした。読み直す", "Image failed to load. Reload"))
+            .accessibilityAddTraits(.isButton)
+            .onAppear { onSettled?(false) }
+        case .giveUp:
+            placeholder
+                .onAppear { onSettled?(false) }
+        }
     }
 
     private var placeholder: some View {
@@ -76,4 +138,38 @@ struct RemoteImage: View {
             // 飾り。読み上げの邪魔をしない
             .accessibilityHidden(true)
     }
+}
+
+/// 読めなかった写真を**何回まで読み直すか**（画面を持たない計算）。
+///
+/// **通信を増やしすぎない。** 一覧の格子で圏外になると、全部のマスが一斉に失敗する。
+/// 自動の読み直しは1枚につき1回だけ（少し待ってから）、その先は人が押したときだけ・
+/// 押せるのも `manualLimit` 回まで。数えるのは写真（URL）ごと——替われば数え直す
+enum RemoteImageRetry {
+    /// 自動で読み直す回数
+    static let automaticLimit = 1
+    /// 自動で読み直す前に待つ秒数（圏外の一瞬・取り消された読み込みが戻るのを待つ）
+    static let automaticDelay: Double = 1.2
+    /// 押して読み直せる回数。使い切ったら記号だけを置く
+    static let manualLimit = 3
+
+    enum Step: Equatable {
+        /// 少し待って自動で読み直す
+        case retryAutomatically(afterSeconds: Double)
+        /// 押すと読み直せる記号を置く
+        case offerTap
+        /// 読み直さない（記号だけ）
+        case giveUp
+    }
+
+    /// 失敗したときに次にすること。`automaticDone`・`manualDone` はその写真で読み直した回数。
+    /// `allowsManualRetry` が false（既定）なら、自動の1回のあとは記号だけ
+    static func step(automaticDone: Int, manualDone: Int, allowsManualRetry: Bool = false) -> Step {
+        if automaticDone < automaticLimit { return .retryAutomatically(afterSeconds: automaticDelay) }
+        if allowsManualRetry, manualDone < manualLimit { return .offerTap }
+        return .giveUp
+    }
+
+    /// 1枚の写真を読みに行く回数の上限（最初の1回＋自動＋押した分）
+    static var maxLoads: Int { 1 + automaticLimit + manualLimit }
 }

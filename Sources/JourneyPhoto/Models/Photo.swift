@@ -81,6 +81,19 @@ struct Photo: Identifiable, Decodable, Equatable {
     let exif: Exif?
     /// 写真に付けた曲。30秒の試聴だけを持つ（`previewUrl` は必須）
     let song: Song?
+    /// 元画像の表示寸法（EXIF の回転を反映済み）。**ビルドが書く**（`scripts/generate-thumbnails.js`
+    /// の `buildMetaFields`）ので、持たない写真も多い（`photos.json` の実測で 0/30 の頃がある）
+    let width: Double?
+    let height: Double?
+
+    /// 縦横比（幅 ÷ 高さ）。寸法が無い・おかしいときは nil。
+    /// **読み込む前に枠を取る**ために使う（旅の本で、遅れて出た絵が下のページを押し下げないように）
+    var aspectRatio: Double? {
+        guard let width, let height, width.isFinite, height.isFinite, width > 0, height > 0 else { return nil }
+        let ratio = width / height
+        // 極端な値（壊れた寸法）では枠を取らない——細すぎる・平たすぎる枠より、今の出し方の方がまし
+        return (0.2...5).contains(ratio) ? ratio : nil
+    }
 
     /// **送る側にもなる。** 写真を直すときに座標も一緒に送るので
     /// `Encodable` が要る（`PhotoPatch.coords`）。
@@ -197,6 +210,12 @@ struct Photo: Identifiable, Decodable, Equatable {
     /// 一覧に出す画像。軽い順に落としていく。
     var gridImageURL: URL? {
         URL(string: thumbSrc ?? src256 ?? src)
+    }
+
+    /// 地図のピンの画像（44pt の角丸）。**256px（`thumbSm`）から**——512px を読む必要は無い。
+    /// 無ければ一覧と同じものに落とす（Web の `PhotoMap.tsx` の `thumbSm || thumbSrc || src` と同じ順）
+    var pinImageURL: URL? {
+        URL(string: thumbSm ?? thumbSrc ?? src256 ?? src)
     }
 
     /// 一覧で切り抜くときに残す側。**持ち主が選んだ位置**（`focalPoint`）。

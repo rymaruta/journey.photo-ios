@@ -86,9 +86,11 @@ public struct MapContentBuilder {
     public static func buildIf<C: MapContent>(_ c: C?) -> C? { c }
     public static func buildOptional<C: MapContent>(_ c: C?) -> C? { c }
     public static func buildExpression<C: MapContent>(_ c: C) -> C { c }
-    /// 2つ・3つ並べる（本物は任意個）。自分の位置・写真のピン・撮影スポットのピン
+    /// 2〜4つ並べる（本物は任意個）。自分の位置・写真のピン・撮影スポットのピン
     public static func buildBlock<C0: MapContent, C1: MapContent>(_ c0: C0, _ c1: C1) -> TupleMapContent { TupleMapContent() }
     public static func buildBlock<C0: MapContent, C1: MapContent, C2: MapContent>(_ c0: C0, _ c1: C1, _ c2: C2) -> TupleMapContent { TupleMapContent() }
+    /// 4つ（写真のピンの束 `MapPinClusters` を足した）
+    public static func buildBlock<C0: MapContent, C1: MapContent, C2: MapContent, C3: MapContent>(_ c0: C0, _ c1: C1, _ c2: C2, _ c3: C3) -> TupleMapContent { TupleMapContent() }
 }
 
 public struct TupleMapContent: MapContent {}

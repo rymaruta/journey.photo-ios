@@ -68,7 +68,8 @@ struct EditPhotoView: View {
                         .frame(maxHeight: 200)
                         .accessibilityLabel(L("差し替えた写真", "Replaced photo"))
                 case .original(let url):
-                    RemoteImage(url: url, contentMode: .fit)
+                    // 周りに押す操作の無い1枚なので、押して読み直せる（`RemoteImage.allowsManualRetry`）
+                    RemoteImage(url: url, contentMode: .fit, allowsManualRetry: true)
                         .frame(maxHeight: 200)
                 }
                 if isReplacing {
@@ -204,7 +205,7 @@ struct EditPhotoView: View {
             // **縮小・EXIF の書き直しは主スレッドの外で**（投稿の `prepareOffMain` と同じ）。
             // 大きい写真だと、差し替え中の表示ごと画面が固まっていた
             let prepared = try await Task.detached(priority: .userInitiated) {
-                try ImagePreparer.prepare(data: data, fileName: "photo")
+                try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true)
             }.value
             // ピンの無い写真・この画面で撮影地を消した写真に、差し替えた写真の位置を書かない
             let keep = EditPlaceRules.keepsCoordsOnReplace(openedLocation: photo.location,

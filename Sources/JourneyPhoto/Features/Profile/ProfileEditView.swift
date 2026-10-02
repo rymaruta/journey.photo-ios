@@ -402,7 +402,13 @@ struct ProfileEditView: View {
                 try ImagePreparer.prepare(data: data, fileName: "profile")
             }.value
             try await environment.profiles.uploadProfileImage(kind: kind, jpeg: prepared.data)
-            imageBust = UUID().uuidString
+            // マイページ・人のページにも新しい絵を出させる（その人の `?v=` だけ替える）
+            if let uid = userId ?? auth.userId {
+                ProfileImageVersions.shared.bump(uid)
+                imageBust = ProfileImageVersions.shared.token(for: uid)
+            } else {
+                imageBust = UUID().uuidString
+            }
             message = kind == .avatar ? L("アイコンを変えました", "Avatar updated") : L("カバーを変えました", "Cover updated")
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("画像を変えられませんでした", "Couldn't update the image")

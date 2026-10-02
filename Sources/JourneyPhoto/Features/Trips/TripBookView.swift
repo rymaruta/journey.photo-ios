@@ -284,15 +284,21 @@ struct TripBookView: View {
     /// **日ごとの段に、写真を1枚ずつ大きく。** 一覧の格子と同じ見せ方にすると、
     /// 「一冊」にならない（板 03 は小さく3枚並べるが、ここは意図して変えない）。
     /// 段の頭は板と同じ DAY n／MM.dd
+    ///
+    /// **`LazyVStack` に平らに並べる（2026-10-02）。** 入れ子の `VStack` だと開いた瞬間に全ページの
+    /// 元画像（`detailImageURL`）を読んでいた。間は行ごとの上の余白で前と同じ（`TripBook.pageRows`）
     private var pages: some View {
-        VStack(alignment: .leading, spacing: 36) {
-            ForEach(TripBook.days(of: book), id: \.number) { day in
-                VStack(alignment: .leading, spacing: 20) {
-                    dayHeader(day)
-                    ForEach(day.photos) { photo in
-                        page(photo, dayPlace: day.place)
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(TripBook.pageRows(of: TripBook.days(of: book))) { row in
+                Group {
+                    switch row.kind {
+                    case .header(let day):
+                        dayHeader(day)
+                    case .page(let photo, let dayPlace):
+                        page(photo, dayPlace: dayPlace)
                     }
                 }
+                .padding(.top, row.topSpacing)
             }
         }
         .padding(.horizontal, 16)
@@ -324,6 +330,18 @@ struct TripBookView: View {
         .accessibilityAddTraits(.isHeader)
     }
 
+    /// ページの写真。**寸法が分かれば、読み込む前に縦横比で枠を取る**（2026-10-02）——
+    /// ページは `LazyVStack` で遅れて読むので、枠が無いと絵が出た瞬間に下のページが跳ねる
+    @ViewBuilder
+    private func pageImage(_ photo: Photo) -> some View {
+        if let ratio = photo.aspectRatio {
+            RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+                .aspectRatio(ratio, contentMode: .fit)
+        } else {
+            RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+        }
+    }
+
     private func page(_ photo: Photo, dayPlace: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             NavigationLink {
@@ -332,7 +350,7 @@ struct TripBookView: View {
                 // 載っているかで決める（`isPublic`）
                 PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: book.photos)
             } label: {
-                RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+                pageImage(photo)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     // 絵だけのリンク。写真の題（無ければ撮影地）を読み上げる

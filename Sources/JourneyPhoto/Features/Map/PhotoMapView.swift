@@ -479,6 +479,12 @@ struct PhotoMapView: View {
             // 「このエリアを検索」がそこへ重なっていた
             .padding(.bottom, 34)
         }
+        // **選んだピンが束に吸われた（または多すぎて枠の外で置かれなくなった）ら選びを外す**
+        // ——札が地図に無いピンを指さない（2026-10-02 のレビュー）。絞りで結果から外れたぶんは
+        // 持ち続ける（2026-09-30 判断）ので、`pins` に居るのに置かれていないときだけ
+        .onChange(of: model.pinLayout) { _, layout in
+            if layout.hides(selected, among: model.pins) { selected = nil }
+        }
         // 地点を選んだら、ピンの札は下げる（札は1枚だけ）
         .onChange(of: chosenPlace) { _, place in
             if place != nil {
@@ -527,7 +533,8 @@ struct PhotoMapView: View {
     @MapContentBuilder
     private var pinMarkers: some MapContent {
         UserAnnotation()
-        ForEach(model.pins) { pin in
+        // **置くのは `pinLayout`**——多すぎるときだけ近いピンを束ねてある（`MapPinClusters`）
+        ForEach(model.pinLayout.pins) { pin in
             Annotation(pin.title, coordinate: pin.coordinate) {
                 Button {
                     selected = pin
@@ -535,17 +542,15 @@ struct PhotoMapView: View {
                     chosenPlace = nil
                 } label: {
                     ZStack(alignment: .topTrailing) {
-                        RemoteImage(url: pin.photos.first?.gridImageURL,
+                        // 44pt の印に 512px は要らない（256px の `thumbSm` から）
+                        RemoteImage(url: pin.photos.first?.pinImageURL,
                                     alignment: pin.photos.first?.gridAlignment ?? .center)
                             .frame(width: 44, height: 44)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         // **数えた枚数**（モックのクラスタの数字にあたる）
                         if pin.photos.count > 1 {
-                            Text("\(pin.photos.count)")
-                                .font(.caption2.weight(.bold))
-                                .padding(4)
-                                .background(.thinMaterial, in: Circle())
-                                .offset(x: 6, y: -6)
+                            CountBadge(count: pin.photos.count)
+                                .offset(x: 8, y: -8)
                         }
                     }
                 }
@@ -553,6 +558,32 @@ struct PhotoMapView: View {
                 // 読み上げは撮影地と枚数（見た目は写真だけで、名前は無かった）
                 .accessibilityLabel(PhotoMapViewModel.pinSpokenLabel(
                     place: pin.hasPlaceName ? pin.title : nil, count: pin.photos.count))
+            }
+        }
+        // 束。押すとその束が収まる枠まで寄る（札は出さない——ピンを選んだことにしない）
+        ForEach(model.pinLayout.clusters) { cluster in
+            Annotation("", coordinate: CLLocationCoordinate2D(latitude: cluster.latitude,
+                                                              longitude: cluster.longitude)) {
+                Button {
+                    frame(cluster.frame)
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        // 後ろに1枚ずらして重ね、1つの撮影地のピンと見分ける
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(WebTheme.raised)
+                            .frame(width: 44, height: 44)
+                            .offset(x: 3, y: 3)
+                        RemoteImage(url: cluster.cover?.pinImageURL,
+                                    alignment: cluster.cover?.gridAlignment ?? .center)
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        CountBadge(count: cluster.photoCount)
+                            .offset(x: 8, y: -8)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(PhotoMapViewModel.clusterSpokenLabel(photos: cluster.photoCount,
+                                                                         places: cluster.pins.count))
             }
         }
         ForEach(model.officialPins) { pin in

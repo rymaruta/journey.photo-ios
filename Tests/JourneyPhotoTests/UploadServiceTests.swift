@@ -654,6 +654,9 @@ final class ScriptedProtocol: URLProtocol {
         let match: String
         let status: Int
         let body: String
+        /// 1回使ったら外す。**同じ口に1回目・2回目で別の答え**を返すのに使う
+        /// （本体とサムネイルの presign に別の鍵を返し、取り違えを捕まえる）
+        var once = false
     }
 
     struct Call {
@@ -683,7 +686,9 @@ final class ScriptedProtocol: URLProtocol {
             contentType: request.value(forHTTPHeaderField: "Content-Type"),
             body: request.httpBody ?? Self.read(request.httpBodyStream)
         ))
-        let step = ScriptedProtocol.script.first { path.contains($0.match) }
+        let index = ScriptedProtocol.script.firstIndex { path.contains($0.match) }
+        let step = index.map { ScriptedProtocol.script[$0] }
+        if let index, step?.once == true { ScriptedProtocol.script.remove(at: index) }
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: step?.status ?? 404,

@@ -55,6 +55,12 @@ final class PhotoMapViewModel: ObservableObject {
     /// ピン（約1km で束ねた写真）
     @Published private(set) var pins: [MapPin] = [] { didSet { cachedPhotoFrame = nil } }
 
+    /// 地図に**置く**写真の印（`MapPinClusters.layout`）。多すぎるときだけ近いピンを束ねる。
+    /// 札・枠・件数は今までどおり `pins` から（束はピンを選ばない）。
+    ///
+    /// **組み方が変わったときだけ入れ替える**（`officialPins` と同じ・run 37 の固まり方）
+    @Published private(set) var pinLayout = MapPinClusters.Layout()
+
     /// 撮影スポットの索引（`app/data/spots.json`）。**取れなければ空**
     /// ——本番は Web の変更が main に入るまで 404 で、そのあいだピンが
     /// 出ないだけ（写真の機能は止めない）。描画には `officialPins` を使うので
@@ -111,8 +117,20 @@ final class PhotoMapViewModel: ObservableObject {
     private func refresh() {
         shown = MapSearch.photos(photos, filter: MapSearch.Filter(query: query, category: category, frame: areaFrame))
         pins = MapPin.group(shown)
+        pinLayout = MapPinClusters.layout(pins, frame: visibleFrame)
         refreshOfficialPins()
     }
+
+    /// 地図が動いたときの束ね直し。**組み方が変わらなければ知らせない**
+    private func refreshPinLayout() {
+        let next = MapPinClusters.layout(pins, frame: visibleFrame)
+        guard next != pinLayout else { return }
+        pinLayout = next
+        pinLayoutUpdates += 1
+    }
+
+    /// `pinLayout` を地図の動きで何回入れ替えたか。**回り続けていないことを試験で数えるためだけ**
+    private(set) var pinLayoutUpdates = 0
 
     /// 「このエリアを検索」中はその枠、そうでなければ見えている枠で数える
     private func refreshOfficialPins() {
@@ -208,6 +226,7 @@ final class PhotoMapViewModel: ObservableObject {
     func update(visible frame: MapFraming.Frame) {
         visibleFrame = frame
         if !canSearchArea { canSearchArea = true }
+        refreshPinLayout()
         refreshOfficialPins()
     }
 
@@ -322,6 +341,12 @@ extension PhotoMapViewModel {
     /// ピンの札の「この周辺の写真 3枚」
     nonisolated static func nearbyCountLabel(_ count: Int) -> String {
         L("この周辺の写真 \(count)枚", count == 1 ? "1 photo nearby" : "\(count) photos nearby")
+    }
+
+    /// 束ねたピン（`MapPinClusters`）の読み上げ名（「3地点の写真 12枚。押すと寄ります」）
+    nonisolated static func clusterSpokenLabel(photos: Int, places: Int) -> String {
+        L("\(placeCountLabel(places))の写真 \(photos)枚。押すと寄ります",
+          "\(photoCountLabel(photos)) at \(placeCountLabel(places)). Tap to zoom in")
     }
 
     /// 写真のピンの読み上げ名（「パリ、写真 3枚」）。撮影地が無ければ

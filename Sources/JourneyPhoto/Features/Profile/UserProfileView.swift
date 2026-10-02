@@ -428,7 +428,8 @@ final class UserProfileViewModel: ObservableObject {
         errorMessage = nil
         // 読み直したら前の操作の失敗も消す（再試行のあとに古い文が残る）
         actionMessage = nil
-        cacheBust = String(Int(Date().timeIntervalSince1970))
+        // **読み直すたびに替えない**（`ProfileImageVersions`）。替わるのは本人が変えたとき・開き直したとき
+        cacheBust = ProfileImageVersions.shared.token(for: userId)
         defer { if current() { isLoading = false } }
 
         // 🔴 **出している最中に取り消された回は失敗として書かない。** 戻ると `.task` が

@@ -252,7 +252,7 @@ struct MyPageView: View {
                             // カバーと見出しは間を空けずに重ねる（板 05c）。カバーが無ければ
                             // 右上の設定の丸の下から始める（板 05d）
                             VStack(alignment: .leading, spacing: 0) {
-                                ProfileCover(url: profile.coverURL(cacheBust: model.avatarCacheBust),
+                                ProfileCover(url: profile.coverURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)),
                                              reserve: hasCover) { hasCover = $0 }
                                 header(profile)
                             }
@@ -324,7 +324,7 @@ struct MyPageView: View {
     private func header(_ profile: UserProfile) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .bottom) {
-                RemoteImage(url: profile.avatarURL(cacheBust: model.avatarCacheBust))
+                RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
                     .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
                     .clipShape(Circle())
                     // **板どおり黒の 3pt の縁**（写真の上でも丸が割れない）。
@@ -1008,10 +1008,6 @@ final class MyPageViewModel: ObservableObject {
     /// 同じ欄だと、ピン留めが通った瞬間に読み直しの失敗の知らせまで消えていた
     @Published private(set) var reloadError: String?
 
-    /// アイコンは固定キーで中身が差し替わる（サーバーは `no-store`）。
-    /// 読み直すたびに別の URL にして、古い絵が残らないようにする。
-    private(set) var avatarCacheBust = ""
-
     private let profiles: ProfileService
     private let photoService: PhotoService
     private let social: SocialService
@@ -1083,7 +1079,6 @@ final class MyPageViewModel: ObservableObject {
         errorMessage = nil
         // 人が替わった後に返った回は、次の人の「読み込み中」を解かない
         defer { if gen == generation { isLoading = false } }
-        avatarCacheBust = String(Int(Date().timeIntervalSince1970))
         // 🔴 **鍵を持たずに入っている回は、鍵の要る口を叩かない。**
         //
         // `AuthStore` の `PreviewSession`（Debug のみ）は利用者 ID だけを

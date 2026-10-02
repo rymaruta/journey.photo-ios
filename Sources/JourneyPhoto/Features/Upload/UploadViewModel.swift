@@ -303,8 +303,10 @@ final class UploadViewModel: ObservableObject {
 
     /// 画像を整える口（`ImagePreparer.prepare`）。**試験でだけ差し替える**——模型の ImageIO は
     /// 画像を読めないので、整った1枚を決まった形で作る。**画面の処理の外から呼ばれる**
+    ///
+    /// 既定は**一覧用の 512px も作る**（`withThumbnail: true`・保存の `thumbUrl` になる）
     var prepareData: @Sendable (Data) throws -> ImagePreparer.Prepared = { data in
-        try ImagePreparer.prepare(data: data, fileName: "photo")
+        try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true)
     }
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
@@ -740,21 +742,18 @@ final class UploadViewModel: ObservableObject {
         // 🔴 **やり直しは前回の鍵で保存する**（`UploadService.stage` の注記）。
         // 保存が落ちた写真は本体を置き直さない——新しい鍵で送ると、前回の保存が
         // 実は通っていたときに同じ写真が2枚になる
-        let presigned: UploadService.PresignResponse
+        // 一覧用の 512px も同じ回で置く（`UploadService.stagePhoto`）。やり直しは前回のサムネも使い回す
+        let placed: UploadService.Staged
         if let already = staged[item.id] {
-            presigned = already
+            placed = already
         } else {
-            presigned = try await uploads.stage(
-                data: item.prepared.data,
-                fileName: item.prepared.fileName,
-                fileType: item.prepared.contentType
-            )
-            staged[item.id] = presigned
+            placed = try await uploads.stagePhoto(item.prepared)
+            staged[item.id] = placed
         }
         let photo: Photo?
         var outcome = UploadOutcome()
         do {
-            photo = try await uploads.save(draft, presigned: presigned)
+            photo = try await uploads.save(draft, presigned: placed.main, thumbUrl: placed.thumb?.publicUrl)
         } catch let error as APIError {
             // **保存の 404 だけ**が「アルバムが無い」。S3 への PUT の 404 は別の失敗
             if let albumId = draft.albumId, case .server(404, _) = error { throw AlbumGone(albumId: albumId) }
@@ -766,7 +765,7 @@ final class UploadViewModel: ObservableObject {
             outcome.savedEarlier = true
             if let song {
                 // 写真の ID が分からなければ曲は付けられない——付いたことにしない（知らせる側に倒す）
-                if let id = presigned.photoId {
+                if let id = placed.main.photoId {
                     var patch = PhotoPatch()
                     patch.song = song
                     do { try await photoService.update(photoId: id, patch: patch) } catch { outcome.songAttached = false }
@@ -821,10 +820,10 @@ final class UploadViewModel: ObservableObject {
 
     /// 置いたまま保存していない本体を片付ける（本人がその写真を外した）
     private func discardStaged(_ photoId: UUID) {
-        guard let presigned = staged[photoId] else { return }
+        guard let placed = staged[photoId] else { return }
         staged[photoId] = nil
         let uploads = self.uploads
-        Task { await uploads.discard(key: presigned.key) }
+        Task { for key in placed.keys { await uploads.discard(key: key) } }
     }
 
     private func reset() {
@@ -881,16 +880,16 @@ final class BackgroundWindow {
 /// **MainActor に縛らない箱に入れる**のは、画面のモデルが消えるとき（`deinit`）
 /// にも読むため。触るのは MainActor の上だけ
 final class StagedUploads: @unchecked Sendable {
-    private var byPhoto: [UUID: UploadService.PresignResponse] = [:]
+    private var byPhoto: [UUID: UploadService.Staged] = [:]
 
-    subscript(photoId: UUID) -> UploadService.PresignResponse? {
+    subscript(photoId: UUID) -> UploadService.Staged? {
         get { byPhoto[photoId] }
         set { byPhoto[photoId] = newValue }
     }
 
     /// 全部を取り出して空にする。返すのは片付ける鍵
     func removeAll() -> [String] {
-        let keys = byPhoto.values.map(\.key)
+        let keys = byPhoto.values.flatMap(\.keys)
         byPhoto = [:]
         return keys
     }
