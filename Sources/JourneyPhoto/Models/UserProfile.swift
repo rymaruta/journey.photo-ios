@@ -87,3 +87,35 @@ struct UserProfile: Decodable, Equatable, Identifiable {
         return components?.url
     }
 }
+
+/// アイコン・カバーの `?v=`（`UserProfile.profileAssetURL` の `cacheBust`）を**いつ替えるか**。
+///
+/// **読み直すたびに替えない（2026-10-02）。** マイページと人のページは、読み込みのたび
+/// （タブに戻る・画面に戻る）に今の時刻を `?v=` にしていた。URL が毎回変わるので、
+/// 出ていた絵まで捨てて取り直し、見出しが一瞬空になっていた。
+///
+/// 替えるのは:
+/// - **アプリを開き直したとき**（`launch`）——Web や別の端末で変えた分は、ここで拾う
+/// - **この端末で本人がアイコン・カバーを変えたとき**（`bump`）——その人のぶんだけ
+///
+/// サーバーはアイコンの版を返さない（`profiles/<uid>` は固定キーで、上げても
+/// プロフィールの行は書き換わらない）ので、他の人の変更はアプリを開き直すまで待つ
+struct ProfileImageVersions: Equatable {
+    /// この起動の印
+    let launch: String
+    /// この端末で変えた人ごとの印
+    private(set) var bumped: [String: String] = [:]
+
+    init(launch: String) { self.launch = launch }
+
+    /// その人のアイコン・カバーに付ける `?v=`
+    func token(for userId: String) -> String { bumped[userId] ?? launch }
+
+    /// 本人がアイコンかカバーを変えた。**その人の印だけ**替える
+    mutating func bump(_ userId: String, token: String = UUID().uuidString) {
+        bumped[userId] = token
+    }
+
+    /// アプリ全体で1つ（画面をまたいで同じ印を使う）
+    @MainActor static var shared = ProfileImageVersions(launch: String(Int(Date().timeIntervalSince1970)))
+}

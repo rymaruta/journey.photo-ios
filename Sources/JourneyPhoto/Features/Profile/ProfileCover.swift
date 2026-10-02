@@ -14,8 +14,8 @@ struct ProfileCover: View {
 
     let url: URL?
     /// 前の回に出せていたか。**読み直しの間も帯の場所を空けておく**——
-    /// 開くたびに `cacheBust` で別の URL になるので、0 に畳むと戻ってくる
-    /// たびに見出しが 180pt 跳ねる
+    /// カバーを変えた・開き直したときは `cacheBust` で別の URL になる（`ProfileImageVersions`）
+    /// ので、0 に畳むとそのたびに見出しが 180pt 跳ねる
     var reserve = false
     var onLoaded: (Bool) -> Void = { _ in }
 
