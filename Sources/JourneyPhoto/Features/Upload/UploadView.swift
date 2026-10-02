@@ -103,6 +103,8 @@ struct UploadView: View {
         .sheet(item: $model.threadsBundle, onDismiss: { dismiss() }) { bundle in
             ShareSheet(images: bundle.images, text: bundle.text)
                 .ignoresSafeArea()
+                // 共有の画面は半分の高さから（全高に広がると、後ろの投稿画面が見えず何が起きたか分からない）
+                .presentationDetents([.medium, .large])
         }
     }
 
@@ -533,7 +535,6 @@ struct UploadView: View {
         album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title
     }
 
-    /// 公開範囲（板: 1行。全体・フォロワー・親しい友達・非公開の4択）
     /// 投稿したら Threads にも載せる（共有の画面が開き、写真と文が入る）。入切は端末に覚える
     private var threadsRow: some View {
         Toggle(isOn: $model.shareToThreads) {
@@ -553,6 +554,7 @@ struct UploadView: View {
         .padding(.vertical, 10)
     }
 
+    /// 公開範囲（板: 1行。全体・フォロワー・親しい友達・非公開の4択）
     private var audienceRow: some View {
         Menu {
             ForEach(Audience.allCases) { choice in

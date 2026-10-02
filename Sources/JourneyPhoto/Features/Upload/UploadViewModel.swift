@@ -198,7 +198,7 @@ final class UploadViewModel: ObservableObject {
     @Published var threadsBundle: ThreadsBundle?
     /// 上がった写真のうち外へ渡してよいもの（公開・全体に公開）。やり直しをまたいで貯め、
     /// 全部上がったときに `threadsBundle` にする
-    private var sharable: [(data: Data, photoId: String, title: String, description: String, location: String)] = []
+    private var sharable: [(data: Data, title: String, description: String, location: String)] = []
 
     struct ThreadsBundle: Identifiable {
         let id = UUID()
@@ -571,11 +571,19 @@ final class UploadViewModel: ObservableObject {
             // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
             // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
             if songFailures == 0 {
-                if shareToThreads, let lead = sharable.first {
+                // **いまの欄でも入切が見えているときだけ**（失敗のあと公開範囲を絞ってやり直すと、
+                // 行が消えて入切が見えないまま共有の画面が開いた・6c6c42a7 のレビュー）。
+                // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
+                if shareToThreads, ThreadsShare.isEligible(published: published, audience: audience),
+                   let lead = sharable.first {
                     threadsBundle = ThreadsBundle(
                         images: sharable.prefix(ThreadsShare.maxImages).map(\.data),
-                        text: ThreadsShare.text(title: lead.title, description: lead.description, location: lead.location,
-                                                url: PhotoLink.url(photoId: lead.photoId, isPublished: true)))
+                        // **本文に URL は入れない**（owner 2026-10-02「Threads 側に出る見た目も洗練させたい」）。
+                        // Threads の本文は文字のリンクを作れず（「Journey Photo」を押すと飛ぶ、はできない）、
+                        // 写真付きの投稿ではリンクの札も出ない見込み（実機では未確認）で、URL は長い文字列のまま本文に並ぶ。
+                        // 写真のページへの導線は、API で載せる形（返信にリンクの札）で足す
+                        text: ThreadsShare.text(title: lead.title, description: lead.description,
+                                                location: lead.location, url: nil))
                 }
                 didPostAll = done.count > 0
             } else {
@@ -645,8 +653,8 @@ final class UploadViewModel: ObservableObject {
             throw error
         }
         staged[item.id] = nil
-        if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
-            sharable.append((item.prepared.data, id, draft.title, draft.description, draft.location))
+        if photo != nil, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
+            sharable.append((item.prepared.data, draft.title, draft.description, draft.location))
         }
         if photo != nil, draft.spotId != nil, draft.published, draft.audience == .everyone {
             postedToSpot += 1

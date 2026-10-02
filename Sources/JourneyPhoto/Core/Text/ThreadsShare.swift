@@ -26,23 +26,26 @@ enum ThreadsShare {
         published && audience == .everyone
     }
 
-    /// 添える文: 題・説明・撮影地・写真のページ。空の行は入れない。上限を超えるときは前の方を
-    /// 詰めて、**URL は必ず丸ごと残す**（途中で切れた URL は開けない）。
+    /// 添える文: 題・説明・撮影地・写真のページを**空行で段落に分ける**（owner 2026-10-02
+    /// 「タイトル／文章／撮影地(あれば) みたいな改行を入れたい」）。無い項目の段落は作らない。
+    /// 上限を超えるときは前の方を詰めて、**URL は必ず丸ごと残す**（途中で切れた URL は開けない）。
     /// **タグは入れない**——Threads は1投稿に1つしかトピックにならず、並べても飾りの文字になる
     static func text(title: String, description: String = "", location: String, url: URL?) -> String {
         let link = url?.absoluteString ?? ""
         var lines: [String] = []
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !t.isEmpty { lines.append(t) }
-        let d = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 説明の中の空行は詰める（段落の区切りと見分けがつかなくなる）
+        let d = description.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n")
         if !d.isEmpty { lines.append(d) }
         let l = location.trimmingCharacters(in: .whitespacesAndNewlines)
         if !l.isEmpty { lines.append("📍 \(l)") }
-        var head = lines.joined(separator: "\n")
-        let budget = maxTextLength - link.count - (link.isEmpty || head.isEmpty ? 0 : 1)
+        var head = lines.joined(separator: "\n\n")
+        let budget = maxTextLength - link.count - (link.isEmpty || head.isEmpty ? 0 : 2)
         if head.count > budget {
             head = budget > 1 ? String(head.prefix(budget - 1)) + "…" : ""
         }
-        return [head, link].filter { !$0.isEmpty }.joined(separator: "\n")
+        return [head, link].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 }
