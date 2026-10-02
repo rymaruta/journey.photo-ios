@@ -104,7 +104,7 @@ struct UploadView: View {
             // 打った文字ごと消える
             if posted {
                 onPosted?(model.postedToSpot)
-                // Threads にも載せる回は、共有の画面を閉じてから閉じる（`threadsBundle`）
+                // SNS にも載せる回は、共有の画面を閉じてから閉じる（`threadsBundle`）
                 if model.threadsBundle == nil { dismiss() }
             }
         }
@@ -553,7 +553,7 @@ struct UploadView: View {
         album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title
     }
 
-    /// 投稿したら Threads にも載せる（共有の画面が開き、写真と文が入る）。入切は端末に覚える
+    /// 投稿したら SNS にも載せる（共有の画面が開き、写真と文が入る）。入切は端末に覚える
     private var threadsRow: some View {
         Toggle(isOn: $model.shareToThreads) {
             VStack(alignment: .leading, spacing: 2) {
@@ -562,8 +562,8 @@ struct UploadView: View {
                 Text(L("SNS にも載せる", "Also share to social apps"))
                     .font(.callout)
                     .foregroundStyle(.white)
-                Text(L("投稿のあと共有の画面が開きます。Threads・X・Instagram など載せたいアプリを選んでください",
-                       "After posting, the share sheet opens. Pick Threads, X, Instagram or any app."))
+                Text(L("投稿のあと共有の画面が開きます。Threads・X・Instagram など載せたいアプリを選んでください。文はコピーされるので、入らないアプリでは貼り付けてください",
+                       "After posting, the share sheet opens. Pick Threads, X, Instagram or any app. The caption is copied, so paste it if the app leaves it out."))
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
             }

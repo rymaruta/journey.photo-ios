@@ -83,6 +83,19 @@ open class UIImagePickerController: UIViewController {
 public final class UIPasteboard {
     public static let general = UIPasteboard()
     public var string: String?
+    public struct OptionsKey: Hashable {
+        public static let localOnly = OptionsKey(), expirationDate = OptionsKey()
+    }
+    public func setItems(_ items: [[String: Any]], options: [OptionsKey: Any] = [:]) {}
+}
+
+public enum CGBlendMode { case normal }
+
+/// 書体の記述（serif＝New York を選ぶのに使うぶんだけ）
+public final class UIFontDescriptor {
+    public struct SystemDesign { public static let serif = SystemDesign(), `default` = SystemDesign() }
+    public init() {}
+    public func withDesign(_ design: SystemDesign) -> UIFontDescriptor? { self }
 }
 
 /// 共有の画面（本物と同じ形・中身は無い）
@@ -119,7 +132,11 @@ public struct UIViewControllerRepresentableContext<R: UIViewControllerRepresenta
 // 描画に要るぶんだけ足す
 extension UIImageShim {
     public var size: CGSize { CGSize(width: 0, height: 0) }
+    public init?(named: String) { return nil }
     public func draw(in rect: CGRect) {}
+    public func draw(in rect: CGRect, blendMode: CGBlendMode, alpha: Double) {}
+    public enum RenderingMode { case alwaysOriginal, alwaysTemplate }
+    public func withTintColor(_ color: UIColor, renderingMode: RenderingMode) -> UIImageShim { self }
     /// 縮めて展開した画像（本物と同じ・iOS 15〜）
     public func preparingThumbnail(of size: CGSize) -> UIImageShim? { nil }
 }
@@ -147,6 +164,8 @@ public final class UIFont {
     public static func monospacedSystemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
     public init() {}
     public init?(name: String, size: Double) {}
+    public init(descriptor: UIFontDescriptor, size: Double) {}
+    public var fontDescriptor: UIFontDescriptor { UIFontDescriptor() }
     /// 1行の高さ（複数行の焼き込みで行を送る）
     public var lineHeight: Double { 0 }
 }
@@ -183,6 +202,7 @@ public func UIRectFill(_ rect: CGRect) {}
 extension NSAttributedString.Key {
     public static let font = NSAttributedString.Key("font")
     public static let foregroundColor = NSAttributedString.Key("foregroundColor")
+    public static let kern = NSAttributedString.Key("kern")
     public static let strokeColor = NSAttributedString.Key("strokeColor")
     public static let strokeWidth = NSAttributedString.Key("strokeWidth")
     public static let paragraphStyle = NSAttributedString.Key("paragraphStyle")

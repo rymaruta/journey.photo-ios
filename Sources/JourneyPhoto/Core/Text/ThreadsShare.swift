@@ -22,9 +22,10 @@ enum ThreadsShare {
 
     /// 投稿したら共有の画面を開くか（端末に覚える）
     static let defaultsKey = "upload.shareToThreads"
-    /// 一度に渡す写真の上限（Threads の1投稿は20枚まで。共有の画面に重い画像を並べすぎない）
+    /// 一度に渡す写真の上限（共有の画面に重い画像を並べすぎない。X は1投稿4枚までなので、
+    /// X では先頭の4枚を選び直してもらうことになる＝X 側の入力画面の作り）
     static let maxImages = 10
-    /// Threads の本文の上限（500字）
+    /// 本文の上限（Threads の500字。X は280字で、長い説明は X の入力画面で削ってもらう）
     static let maxTextLength = 500
 
     /// 共有の画面に渡すもの（写真のデータと文）
