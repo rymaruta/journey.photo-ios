@@ -55,7 +55,8 @@ actor OfficialSpotService {
             let config = URLSessionConfiguration.default
             config.timeoutIntervalForRequest = APIClient.requestTimeout
             // 索引は `public, max-age=3600` で配られるが、端末側の控えは
-            // 自分で持つ（`snapshot`）ので、URLSession には溜めさせない
+            // 自分で持つ（`snapshot` と版の印）ので、URLSession には溜めさせない
+            // （要求の側でも付けている——`ConditionalGet.plainRequest`）
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
             self.session = URLSession(configuration: config)
         }
@@ -81,7 +82,20 @@ actor OfficialSpotService {
         let response: URLResponse
         do {
             try RequestCancellation.throwIfCancelled()
-            (data, response) = try await session.data(from: url)
+            // **条件付きで取る**（`ConditionalGet`・写真の一覧と同じ部品）。
+            // 変わっていなければ 304 で、端末の控えを使う
+            let snapshot = self.snapshot
+            let outcome = try await ConditionalGet.fetch(url, session: session, validators: snapshot.validators) {
+                snapshot.load()
+            }
+            switch outcome {
+            case .notModified(let spots):
+                cached = spots
+                cachedAt = Date()
+                return spots
+            case .fetched(let body, let reply):
+                (data, response) = (body, reply)
+            }
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
             if let cached = snapshot.load() { return cached }
@@ -121,7 +135,10 @@ actor OfficialSpotService {
             // **読めたものだけを控える。** 1件も読めなかった回も控えない
             // ——前回の良い控えを空で上書きしない（本当に0件なら dropped も0）
             if !spots.isEmpty || list.dropped == 0 {
-                snapshot.save(data)
+                snapshot.save(data, validator: HTTPValidator(response: http))
+            } else {
+                // 控えていない中身の印を残さない（`PublicGalleryService` と同じ）
+                snapshot.validators.clear()
             }
             cached = spots
             cachedAt = Date()

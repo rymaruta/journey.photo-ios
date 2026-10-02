@@ -230,12 +230,31 @@ actor PublicGalleryService {
     }
 
     /// 静的 JSON を取る。**圏外・壊れた応答なら前回の控え**。
+    ///
+    /// **条件付きで取る**（`ConditionalGet`・2026-10-02）。控えに前回の `ETag` が
+    /// あれば `If-None-Match` を付け、変わっていなければ 304（本文なし）で
+    /// 控えの中身を使う。60秒の控え（`freshCache`）の判断はその手前のまま
     private func fetchStaticList() async throws -> [Photo] {
         let data: Data
         let response: URLResponse
         do {
             try RequestCancellation.throwIfCancelled()
-            (data, response) = try await session.data(from: url)
+            // 304 のときは**端末の控え**を読む。手元の一覧（`cached`）は使わない
+            // ——このサービスは画面ごとに別に作られることがあり（`GalleryViewModel` の既定）、
+            // 印と控えのファイルは共有なので、別の口が新しい回を書いた後に
+            // 自分の古い一覧を「変わっていない」として出してしまう
+            let snapshot = self.snapshot
+            let outcome = try await ConditionalGet.fetch(url, session: session, validators: snapshot.validators) {
+                snapshot.load()
+            }
+            switch outcome {
+            case .notModified(let photos):
+                cached = photos
+                cachedAt = Date()
+                return photos
+            case .fetched(let body, let reply):
+                (data, response) = (body, reply)
+            }
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
             if let cached = snapshot.load() { return cached }
@@ -260,7 +279,11 @@ actor PublicGalleryService {
             // 1件も読めなかった回も控えない——**前回の良い控えを空で上書き
             // しない**（写真が本当に0枚なら dropped も0なので控える）
             if !photos.isEmpty || list.dropped == 0 {
-                snapshot.save(data)
+                snapshot.save(data, validator: HTTPValidator(response: http))
+            } else {
+                // 控えていない中身の印を残さない（前の回の印で 304 を受けると、
+                // 今回とは違う控えを「変わっていない」として出す）
+                snapshot.validators.clear()
             }
             cached = photos
             cachedAt = Date()
