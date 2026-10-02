@@ -43,6 +43,20 @@ final class CameraCaptureTests: XCTestCase {
         XCTAssertNil(out.exif?.camera)
     }
 
+    /// カメラの撮影情報は文字列の鍵の辞書で受け、入れ子まで CFString の鍵へ移す（`CameraCapture.metadata(from:)`）。
+    /// 移したものから撮影日・機種が読める
+    func testMetadataFromStringKeyedDictionary() {
+        let raw: [String: Any] = [
+            "{Exif}": ["DateTimeOriginal": "2026:09:13 08:21:05"] as [String: Any],
+            "{TIFF}": ["Make": "Apple", "Model": "iPhone 15 Pro"] as [String: Any],
+            "Orientation": 6,
+        ]
+        let out = ImagePreparer.applyingCaptureInfo(prepared(), metadata: CameraCapture.metadata(from: raw),
+                                                    capturedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(out.takenOn, "2026-09-13")
+        XCTAssertEqual(out.exif?.camera, "Apple iPhone 15 Pro")
+    }
+
     /// 🔴 **画面の流れの配線まで見る。** JPEG にする・整えるのは主スレッドの外で、
     /// 待ち行列に入った1枚に撮影日と機種が付いている
     @MainActor

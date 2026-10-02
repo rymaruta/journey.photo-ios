@@ -129,4 +129,74 @@ final class UploadRetryVisibilityTests: XCTestCase {
         model.chooseVisibility(published: true, audience: .everyone)
         XCTAssertEqual(model.audience, .everyone)
     }
+
+    /// 「保存済み」の判定は**前方一致**。別の断りの文中に「保存済み」が出ただけでは上がったことにしない
+    func testSavedAlreadyMatchesOnlyTheServerSentence() {
+        XCTAssertTrue(UploadSummary.isSavedAlready("この写真は保存済みです。公開範囲は、写真の編集から変えられます"))
+        XCTAssertFalse(UploadSummary.isSavedAlready("この画像はすでに登録されています"))
+        XCTAssertFalse(UploadSummary.isSavedAlready("下書きは保存済みですが、画像を移せませんでした"),
+                       "文中の「保存済み」で上がったことにした")
+        XCTAssertFalse(UploadSummary.isSavedAlready(""))
+    }
+
+    /// 「保存済み」の 409 で写真の ID が分からない（presign が `photoId` を返さなかった）ときは、
+    /// 曲を付けられない——**付いたことにせず知らせる**
+    @MainActor
+    func testSavedAlreadyWithoutPhotoIdReportsTheSongAsNotAttached() async throws {
+        let model = makeModel()
+        model.song = Photo.Song(title: "曲", artist: nil, artwork: nil,
+                                previewUrl: "https://example.test/p.m4a", trackUrl: nil)
+        model.items = [photo()]
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: """
+            {"presignedUrl":"https://s3.example.test/put?sig=1","key":"uploads/u1/abc.jpg",
+             "publicUrl":"https://cdn.example.test/uploads/u1/abc.jpg","contentType":"image/jpeg"}
+            """),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 504, body: "{}"),
+        ]
+        await model.submit()
+        ScriptedProtocol.reset()
+        ScriptedProtocol.script = [.init(match: "/upload/save", status: 409, body: savedAlready)]
+        await model.submit()
+
+        XCTAssertTrue(model.items.isEmpty)
+        let message = try XCTUnwrap(model.errorMessage)
+        XCTAssertTrue(message.contains("曲") || message.contains("song"), "曲が付かなかったことを言っていない: \(message)")
+        XCTAssertFalse(ScriptedProtocol.calls.contains { $0.path.hasPrefix("/photos/") }, "ID の無い写真に曲を付けにいった")
+    }
+
+    /// 🔴 **送っている間は公開範囲を変えない**（`chooseVisibility`）。送信は1枚ごとにその時点の値を読む
+    @MainActor
+    func testVisibilityDoesNotChangeWhileSending() async throws {
+        let gate = Gate(holds: 1)
+        let gates = PathGates(["/upload/presigned-url": gate])
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session,
+                            beforeRequest: { await gates.wait(for: $0) })
+        let model = UploadViewModel(uploads: UploadService(api: api, session: session), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+        ]
+        model.items = [photo()]
+        model.chooseVisibility(published: true, audience: .followers)
+        let sending = Task { await model.submit() }
+        await gate.untilWaiting()
+        XCTAssertTrue(model.isWorking, "前提: 送っている途中")
+        XCTAssertFalse(model.visibilityLocked, "前提: 鍵はまだ控えていない（錠ではなく送信中で止める）")
+
+        model.chooseVisibility(published: false, audience: nil)
+        model.chooseVisibility(published: true, audience: .everyone)
+        XCTAssertTrue(model.published, "送っている間に非公開に変わった")
+        XCTAssertEqual(model.audience, .followers, "送っている間に公開範囲が変わった")
+
+        await gate.open()
+        await sending.value
+        let save = try XCTUnwrap(ScriptedProtocol.calls.first { $0.path == "/upload/save" })
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(save.body)) as? [String: Any])
+        XCTAssertEqual(json["audience"] as? String, "followers")
+    }
 }

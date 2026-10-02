@@ -206,21 +206,24 @@ final class UploadViewModel: ObservableObject {
     /// （応答だけ失われた）、今回の公開範囲が違うと、サーバーは画像の置き場が食い違うので
     /// 「保存済み」の 409 で断る（`upload.ts`）。以前はそこで行き詰まり、押し直しても 409 が続いた。
     /// 下書き↔公開も同じ行で選ぶので、まとめて止める（非公開にすると送る公開範囲も変わる）。
-    /// その写真を外せば（`remove`）鍵も片付き、また変えられる
+    /// その写真を外せば（`remove`）鍵も片付くが、**外すことは勧めない**——前の保存が通っていたら、
+    /// 選び直して上げると同じ写真が2枚になる。勧めるのは「もう一度投稿する」
+    /// （届いていれば同じ鍵の保存が通るか、「保存済み」の 409 で投稿済みとして外れる）
     var visibilityLocked: Bool { items.contains { staged[$0.id] != nil } }
 
     /// 公開範囲を変えられない理由（短い一言）。変えられるときは nil
     var visibilityLockReason: String? {
         visibilityLocked
-            ? L("送りかけの写真があるため変えられません（その写真を外すと変えられます）",
-                "Can't change while a photo is half-sent (remove that photo to change it)")
+            ? L("前の送信が届いている可能性があるため、公開範囲は変えられません。まず「投稿する」をもう一度押してください（届いていれば投稿済みになります）",
+                "Your last attempt may have gone through, so visibility can't be changed. Tap Post again first (if it went through, it will show as posted).")
             : nil
     }
 
-    /// 公開範囲を選ぶ（画面の行から）。**錠が掛かっていれば何もしない**——ボタンの
-    /// `.disabled` は次の描画まで効かない。`audience` が nil なら公開範囲は今のまま（非公開を選んだ）
+    /// 公開範囲を選ぶ（画面の行から）。**錠が掛かっている・送っている間は何もしない**——ボタンの
+    /// `.disabled` は次の描画まで効かない。送信は1枚ごとにその時点の値を読むので、送っている間に
+    /// 変わると同じ束で割れる。`audience` が nil なら公開範囲は今のまま（非公開を選んだ）
     func chooseVisibility(published: Bool, audience: Audience?) {
-        guard !visibilityLocked else { return }
+        guard !visibilityLocked, !isWorking else { return }
         self.published = published
         if let audience { self.audience = audience }
     }
@@ -761,10 +764,15 @@ final class UploadViewModel: ObservableObject {
             guard case .server(409, let message) = error, UploadSummary.isSavedAlready(message) else { throw error }
             staged[item.id] = nil
             outcome.savedEarlier = true
-            if let song, let id = presigned.photoId {
-                var patch = PhotoPatch()
-                patch.song = song
-                do { try await photoService.update(photoId: id, patch: patch) } catch { outcome.songAttached = false }
+            if let song {
+                // 写真の ID が分からなければ曲は付けられない——付いたことにしない（知らせる側に倒す）
+                if let id = presigned.photoId {
+                    var patch = PhotoPatch()
+                    patch.song = song
+                    do { try await photoService.update(photoId: id, patch: patch) } catch { outcome.songAttached = false }
+                } else {
+                    outcome.songAttached = false
+                }
             }
             return outcome
         }

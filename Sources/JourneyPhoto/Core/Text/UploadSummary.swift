@@ -62,7 +62,8 @@ enum UploadSummary {
     /// 「この画像はすでに登録されています」（他人の写真とぶつかった・行と画像が合わない）は
     /// 上がっていないので含めない。サーバーの文言が変わったらここも直す（日本語だけで返る）
     static func isSavedAlready(_ serverMessage: String) -> Bool {
-        serverMessage.contains("保存済み")
+        // **前方一致で見る。** 部分一致だと、別の断りの文中に「保存済み」が出ただけで上がったことにする
+        serverMessage.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("この写真は保存済み")
     }
 
     /// 前の公開範囲で投稿済みだった写真の知らせを、結果の一言に足す
