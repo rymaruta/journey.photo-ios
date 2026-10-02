@@ -49,16 +49,18 @@ enum StoryTool: CaseIterable, Identifiable {
 
     /// この道具を使ったか。**表示中の1枚の札**と、全体で1つの曲・撮影地で決める。
     ///  - 文字: 表示中の1枚に文字の札が1つ以上
-    ///  - スタンプ: 文字以外の札（スタンプ・撮影地・タグ・曲・時刻・日付の札）か投票が1つ以上
-    ///  - 曲: 曲が付いている
-    ///  - 場所: 撮影地が入っている（空白だけは入っていない扱い。送るときも削る）
+    ///  - スタンプ: スタンプ・タグ・時刻・日付の札か投票が1つ以上。**曲の札と撮影地の札は数えない**
+    ///    （曲の札は曲を付けると自動で置かれる——スタンプが光ると、置いていないのに光って見える）
+    ///  - 曲: 曲が付いている（曲の札もここ）
+    ///  - 場所: 撮影地が入っているか、撮影地の札がある（空白だけは入っていない扱い。送るときも削る）
     static func isUsed(_ tool: StoryTool, overlays: [TextOverlay], hasVote: Bool,
                        hasSong: Bool, location: String) -> Bool {
         switch tool {
         case .text: return overlays.contains { $0.kind == .text }
-        case .sticker: return hasVote || overlays.contains { $0.kind != .text }
-        case .song: return hasSong
+        case .sticker: return hasVote || overlays.contains { ![.text, .song, .place].contains($0.kind) }
+        case .song: return hasSong || overlays.contains { $0.kind == .song }
         case .place: return !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || overlays.contains { $0.kind == .place }
         }
     }
 }

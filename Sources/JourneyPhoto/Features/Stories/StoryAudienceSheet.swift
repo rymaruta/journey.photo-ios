@@ -13,8 +13,7 @@ import SwiftUI
 /// サーバーが受けるようになったら、ここに選ぶ口を足して `CloseFriendsView` へつなぐ。
 ///
 /// 地は黒、行の面は #121212 相当（`WebTheme.surface`）。トグルのオンは暗い真鍮（#796440）。
-/// 写真の無い画面なので、主ボタン「決める」は白（写真の無い画面の主ボタンは真鍮でもよいが、
-/// 投稿画面の「シェアする」と同じ白に揃える）。
+/// 写真の無いシートなので、主ボタン「決める」は accent-fill（#B8955A）に墨（owner の好み「白より真鍮」）。
 struct StoryAudienceSheet: View {
 
     @Binding var allowReplies: Bool
@@ -57,7 +56,8 @@ struct StoryAudienceSheet: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(WebTheme.accentText)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(WebTheme.accentBackground, in: Capsule())
+                    // 写真の無いシートの主ボタンは accent-fill に墨（owner の好み「白より真鍮」）
+                    .background(WebTheme.accentFill, in: Capsule())
             }
             .buttonStyle(.plain)
             .padding(.bottom, 8)

@@ -327,7 +327,7 @@ struct StoryTextTypingView: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
-                        .frame(width: 32, height: WebTheme.minTapTarget)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -408,7 +408,8 @@ struct StoryTextTypingView: View {
                 .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0.5),
                                                lineWidth: selected ? 3 : 2))
                 .overlay(Circle().strokeBorder(Color.black, lineWidth: selected ? 1 : 0).padding(-2))
-                .frame(width: 38, height: WebTheme.minTapTarget)
+                // 見た目の丸は 26 のまま、押せる所は 44×44（入らなければ横に流す）
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -425,7 +426,8 @@ struct StoryTextTypingView: View {
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
                 .overlay(Circle().strokeBorder(Color.white.opacity(other ? 1 : 0.5), lineWidth: other ? 3 : 1.5))
-                .frame(width: 38, height: WebTheme.minTapTarget)
+                // 見た目の丸は 26 のまま、押せる所は 44×44（入らなければ横に流す）
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -320,7 +320,7 @@ struct StoryComposerView: View {
                    "Kept on this device. You can pick up where you left off."))
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { data in accept(data) }
+            CameraPicker { data in acceptFromCamera(data) }
                 .ignoresSafeArea()
         }
         // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
@@ -748,11 +748,11 @@ struct StoryComposerView: View {
 
     // MARK: - 上のバー
 
-    /// 左上は「戻る」、右上は「…」（表示秒数・写真の合わせ方を戻す・下書き保存）。
+    /// 左上は ✕（閉じる・確認つき）、右上は「…」（表示秒数・写真の合わせ方を戻す・下書き保存）。
     /// 投票の欄・ひとことを打っている間は、右上は「完了」（前のまま）
     private var topBar: some View {
         HStack {
-            // **戻る。** この段は写真がある間だけ出るので、前の ✕ と同じ確認（下書きに保存しますか）を通す。
+            // **閉じる。** この段は写真がある間だけ出るので、前の ✕ と同じ確認（下書きに保存しますか）を通す。
             // 写真を全部外すと、ここを押さなくても写真を選ぶ段へ戻る
             Button {
                 switch leave {
@@ -761,7 +761,8 @@ struct StoryComposerView: View {
                 case .wait: break
                 }
             } label: {
-                Image(systemName: "chevron.left")
+                // 押すと画面ごと閉じる（確認つき）ので、見た目は ✕・読み上げは「閉じる」
+                Image(systemName: "xmark")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
@@ -769,7 +770,7 @@ struct StoryComposerView: View {
             }
             .buttonStyle(.plain)
             .disabled(leave == .wait)
-            .accessibilityLabel(L("戻る", "Back"))
+            .accessibilityLabel(Labels.Common.close)
             Spacer()
             if votePanelOpen {
                 // 投票の欄を閉じる（欄の間は投稿ボタンが隠れるので、閉じる口を見える所に出す）
@@ -1090,6 +1091,23 @@ struct StoryComposerView: View {
         pickerItems = []
     }
 
+    /// カメラで撮った1枚。**写真を選ぶ段で印を付けていた写真があれば、先にそれを読み込む**
+    /// （「次へ」と同じ `load`）。撮った1枚は最後。以前は印を付けた写真が黙って消えた
+    private func acceptFromCamera(_ data: Data) {
+        let pending = StorySimpleRules.picksToLoadBeforeCamera(librarySelection, hasShots: !shots.isEmpty)
+        guard !pending.isEmpty else {
+            accept(data)
+            return
+        }
+        Task {
+            await load(pending)
+            // 読み込めなかった断り（`load` の知らせ）は、撮った1枚が入っても消さない
+            let note = message
+            accept(data)
+            if message == nil { message = note }
+        }
+    }
+
     /// 1枚受け取る。**足す**（選び直しではない）。
     ///
     /// 文字は写真ごとに持つので、足した写真には何も付いていない状態で
@@ -1146,6 +1164,8 @@ struct StoryComposerView: View {
                     Button(role: .destructive) { remove(at: index) } label: {
                         Label(L("この写真を外す", "Remove this photo"), systemImage: "trash")
                     }
+                    // 読み込み中は外さない（全部外れて写真を選ぶ段へ戻り、届いた写真でまた仕上げる段へ、と行き来する）
+                    .disabled(!StorySimpleRules.canRemoveShot(loading: loadingPicks > 0))
                 }
                 // 読み上げからも移す・外す（長押しのメニューは見つけにくい）
                 .accessibilityAction(named: L("前へ移す", "Move earlier")) { move(from: index, to: index - 1) }
@@ -1211,7 +1231,8 @@ struct StoryComposerView: View {
     /// 1枚外す。**編集中の位置がずれないように直す**
     /// ——直さないと、外した瞬間に別の写真の文字を触ることになる
     private func remove(at index: Int) {
-        guard shots.indices.contains(index) else { return }
+        guard shots.indices.contains(index),
+              StorySimpleRules.canRemoveShot(loading: loadingPicks > 0) else { return }
         shots.remove(at: index)
         current = StoryQueue.currentAfterRemoving(index, current: current, count: shots.count)
     }

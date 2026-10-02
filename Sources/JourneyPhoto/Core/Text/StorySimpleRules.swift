@@ -24,6 +24,20 @@ enum StorySimpleRules {
         return NextButton(title: L("次へ（\(selected)枚）", "Next (\(selected))"), enabled: !loading)
     }
 
+    // MARK: - カメラ・並びの帯
+
+    /// 写真を選ぶ段でカメラを撮ったとき、**撮った1枚より先に読み込む印付きの写真**。
+    /// まだ1枚も入っていない（写真を選ぶ段）ときだけ。仕上げる段のカメラは足すだけ
+    static func picksToLoadBeforeCamera<Item>(_ selection: [Item], hasShots: Bool) -> [Item] {
+        hasShots ? [] : selection
+    }
+
+    /// 並びの帯の「この写真を外す」を通すか。**読み込み中は止める**（全部外れて写真を選ぶ段へ戻り、
+    /// 届いた写真でまた仕上げる段へ、と段が行き来する）
+    static func canRemoveShot(loading: Bool) -> Bool {
+        !loading
+    }
+
     // MARK: - 書体（「Aa 明朝」のボタン）
 
     /// 押すたびに回る順。**明朝 → ゴシック → 手書き風 → …（残りの5つ）→ 明朝**。

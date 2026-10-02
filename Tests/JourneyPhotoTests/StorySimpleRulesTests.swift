@@ -24,6 +24,24 @@ final class StorySimpleRulesTests: XCTestCase {
         XCTAssertFalse(StorySimpleRules.nextButton(selected: 2, loading: true).enabled)
     }
 
+    // MARK: - カメラ・並びの帯
+
+    /// 写真を選ぶ段で印を付けてからカメラで撮ったら、印の写真も読み込む（撮った1枚は後）
+    func testCameraKeepsMarkedPicksOnPickStage() {
+        XCTAssertEqual(StorySimpleRules.picksToLoadBeforeCamera(["a", "b"], hasShots: false), ["a", "b"])
+    }
+
+    /// 仕上げる段で撮ったときは足すだけ
+    func testCameraOnEditStageLoadsNothingElse() {
+        XCTAssertEqual(StorySimpleRules.picksToLoadBeforeCamera(["a"], hasShots: true), [])
+    }
+
+    /// 読み込み中は「この写真を外す」を止める
+    func testCannotRemoveShotWhileLoading() {
+        XCTAssertFalse(StorySimpleRules.canRemoveShot(loading: true))
+        XCTAssertTrue(StorySimpleRules.canRemoveShot(loading: false))
+    }
+
     // MARK: - 書体
 
     /// 明朝 → ゴシック → 手書き風 の順で回り、後ろの5つを通って明朝へ戻る
@@ -128,12 +146,26 @@ final class StorySimpleRulesTests: XCTestCase {
         XCTAssertFalse(used(.text, overlays: [TextOverlay(text: "🌸", kind: .stamp)]))
     }
 
-    /// スタンプ: 文字以外の札（スタンプ・撮影地の札など）か投票
-    func testStickerUsedByNonTextOverlaysOrVote() {
+    /// スタンプ: スタンプ・タグ・時刻などの札か投票
+    func testStickerUsedByStampsOrVote() {
         XCTAssertTrue(used(.sticker, overlays: [TextOverlay(text: "🌸", kind: .stamp)]))
-        XCTAssertTrue(used(.sticker, overlays: [TextOverlay(text: "京都", kind: .place)]))
+        XCTAssertTrue(used(.sticker, overlays: [TextOverlay(text: "旅行", kind: .hashtag)]))
         XCTAssertTrue(used(.sticker, vote: true))
         XCTAssertFalse(used(.sticker, overlays: [TextOverlay(text: "旅")]))
+    }
+
+    /// 曲の札（曲を付けると自動で置かれる）はスタンプに数えず、曲を光らせる
+    func testSongStickerLightsSongNotSticker() {
+        let sticker = [TextOverlay(text: "曲名", kind: .song)]
+        XCTAssertFalse(used(.sticker, overlays: sticker, song: true))
+        XCTAssertTrue(used(.song, overlays: sticker, song: true))
+    }
+
+    /// 撮影地の札は場所を光らせ、スタンプには数えない
+    func testPlaceStickerLightsPlaceNotSticker() {
+        let sticker = [TextOverlay(text: "京都", kind: .place)]
+        XCTAssertFalse(used(.sticker, overlays: sticker))
+        XCTAssertTrue(used(.place, overlays: sticker))
     }
 
     func testSongAndPlace() {
