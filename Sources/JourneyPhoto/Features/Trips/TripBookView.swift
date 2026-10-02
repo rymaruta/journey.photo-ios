@@ -170,7 +170,7 @@ struct TripBookView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value)
-                    .font(JPFont.mono(18, relativeTo: .title3))
+                    .font(JPFont.statNumber)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)

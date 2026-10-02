@@ -71,8 +71,10 @@ enum TripBookCardRenderer {
 
     private struct Fonts {
         let display = UIFont(name: JPFont.displayName, size: 84) ?? UIFont.systemFont(ofSize: 84, weight: .bold)
-        let mono = UIFont(name: JPFont.monoMediumName, size: 30) ?? UIFont.monospacedSystemFont(ofSize: 30, weight: .medium)
-        let eyebrow = UIFont(name: JPFont.monoMediumName, size: 26) ?? UIFont.monospacedSystemFont(ofSize: 26, weight: .medium)
+        /// 数字と眉ラベルは SF Pro の等幅数字（画面の `JPFont.mono` と同じ・2026-10-02）。
+        /// 焼き込む絵は大きさが決まっているので Dynamic Type には追従させない
+        let mono = UIFont.monospacedDigitSystemFont(ofSize: 30, weight: .medium)
+        let eyebrow = UIFont.monospacedDigitSystemFont(ofSize: 26, weight: .medium)
         let body = UIFont.systemFont(ofSize: 32, weight: .medium)
     }
 

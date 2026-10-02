@@ -340,7 +340,7 @@ listed = re.findall(r"""^\s+-\s+["']?([^\s"']+\.(?:ttf|otf))["']?\s*$""",
                     project_text.split("UIAppFonts:", 1)[1].split("CFBundleDevelopmentRegion", 1)[0],
                     re.M) if "UIAppFonts:" in project_text else []
 if not listed:
-    fail("project.yml の UIAppFonts が空です（見出しの明朝・数字の等幅が出ません）")
+    fail("project.yml の UIAppFonts が空です（見出しの明朝が出ません）")
 for name in listed:
     if not (FONTS_DIR / name).exists():
         fail(f"UIAppFonts の {name} が Resources/Fonts/ にありません")
@@ -368,7 +368,7 @@ for ps in face_names:
         continue
     if f"{ps}.ttf" not in listed and f"{ps}.otf" not in listed:
         fail(f"ストーリーの文字が引く {ps} に当たる書体が UIAppFonts にありません")
-for lic in ("OFL-ShipporiMincho.txt", "OFL-IBMPlexMono.txt", "OFL-KleeOne.txt",
+for lic in ("OFL-ShipporiMincho.txt", "OFL-KleeOne.txt",
             "OFL-YuseiMagic.txt", "OFL-HachiMaruPop.txt"):
     if not (FONTS_DIR / lic).exists():
         fail(f"書体のライセンス {lic} がありません（OFL は同梱が条件）")

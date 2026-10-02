@@ -391,7 +391,7 @@ struct MyPageView: View {
     private func statCell(value: String?, label: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value ?? "0")
-                .font(JPFont.mono(18, relativeTo: .title3))
+                .font(JPFont.statNumber)
                 .foregroundStyle(Color.white)
                 .opacity(value == nil ? 0 : 1)
                 .accessibilityHidden(value == nil)

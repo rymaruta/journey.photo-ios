@@ -125,7 +125,7 @@ struct StoryInsightsView: View {
     private func countCell(_ label: String, value: Int?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value.map { "\($0)" } ?? "—")
-                .font(JPFont.mono(18, relativeTo: .title3))
+                .font(JPFont.statNumber)
                 .foregroundStyle(.white)
             Text(label)
                 .font(.system(size: 12))
