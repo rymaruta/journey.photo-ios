@@ -34,7 +34,7 @@ struct TripShelf: View {
                 Spacer(minLength: 0)
                 Text(L("\(TripBook.daysLabel(trip.days)) · \(trip.photos.count)枚",
                        "\(TripBook.daysLabel(trip.days)) · \(trip.photos.count) photos"))
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted)
                     .lineLimit(1)
             }
@@ -88,7 +88,7 @@ struct TripShelfList: View {
             }
             Text(L("同じころに撮った公開写真が2枚たまると、ひとつの旅にまとまります。「旅の写真からまとめて」で入れた写真は、その束で一冊になります",
                    "Two or more public photos taken around the same time become a trip. Photos added with \"From a trip in your photos\" become one trip together"))
-                .font(.system(size: 12))
+                .font(.caption)
                 .lineSpacing(3)
                 .foregroundStyle(WebTheme.faint)
                 .frame(maxWidth: .infinity, alignment: trips.isEmpty ? .center : .leading)

@@ -238,6 +238,23 @@ final class DoubleTapLikeTests: XCTestCase {
         XCTAssertNil(DoubleTapLike.shown(photos, at: 3))
         XCTAssertNil(DoubleTapLike.shown(photos, at: -1))
     }
+
+    /// 🔴 **ダブルタップの行き先は叩いたページの写真。** ページ式 TabView の選択が
+    /// 送りの直後に遅れている窓（選択はまだ 0）で 1 枚目を叩いても、0 枚目に付けない。
+    /// 0 枚目が拡大されたままでも、叩いたページの拡大ではないので「倍率を戻す」にしない
+    func testDoubleTapTargetsTheTappedPageEvenWhenSelectionLags() throws {
+        let photos = try ["a", "b"].map { id in
+            try JSONDecoder.api.decode(
+                Photo.self, from: Data(#"{"id":"\#(id)","src":"https://x/\#(id).jpg"}"#.utf8))
+        }
+        let tap = DoubleTapLike.tap(photos[1], at: 1, shownIndex: 0, isZoomed: true,
+                                    alreadyLiked: false, signedIn: true)
+        XCTAssertEqual(tap.target.id, "b", "選んでいる添字（遅れている）の写真に付けている")
+        XCTAssertEqual(tap.action, .like, "前のページの拡大で、叩いたページのいいねを止めている")
+        // 叩いたページが拡大しているページなら倍率を戻す
+        XCTAssertEqual(DoubleTapLike.tap(photos[1], at: 1, shownIndex: 1, isZoomed: true,
+                                         alreadyLiked: false, signedIn: true).action, .resetZoom)
+    }
 }
 
 /// 表示名を決めてもらう案内を出すか（Web の `ProfileSetupBanner`）。

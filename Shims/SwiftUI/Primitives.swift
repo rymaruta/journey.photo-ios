@@ -152,6 +152,8 @@ public struct EnvironmentValues {
     public var colorScheme: ColorScheme { .light }
     /// 「視差効果を減らす」（本物と同じ）
     public var accessibilityReduceMotion: Bool { false }
+    /// 読み上げ（VoiceOver）が動いているか（本物と同じ）
+    public var accessibilityVoiceOverEnabled: Bool { false }
 }
 
 public struct DismissAction {

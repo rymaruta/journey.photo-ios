@@ -191,7 +191,7 @@ struct UserProfileView: View {
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
         } else if shownPhotos.isEmpty && !model.isLoading {
             // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す
-            ErrorBanner(message: L("公開された写真はまだありません", "No public photos yet"))
+            EmptyState(message: L("公開された写真はまだありません", "No public photos yet"))
         } else if tab == .map && shownPhotos.isEmpty {
             // 🔴 **読み込み中の空の地図に「撮影地の分かる写真がありません」と言わない。**
             // 「読み終えて0枚」は上の枝で済んでいるので、ここに来るのは読み込み中だけ

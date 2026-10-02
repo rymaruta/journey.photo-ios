@@ -36,9 +36,9 @@ struct SavedPhotosView: View {
                 case .loading:
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
                 case .none:
-                    ErrorBanner(message: Self.emptyMessage)
+                    EmptyState(message: Self.emptyMessage)
                 case .nothingShown:
-                    ErrorBanner(message: LikedPhotos.nothingShownMessage)
+                    EmptyState(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:
                     ErrorBanner(message: Self.unresolvedMessage) {
                         Task { await load(force: true) }

@@ -13,6 +13,8 @@ struct NearbyPhotosSheet: View {
     let photos: [Photo]
     /// 地図がまだ読めていない・読むのに失敗した。**「無い」と分けるため**
     var couldNotLoad = true
+    /// 読むのに失敗した回の「もう一度試す」（地図が読み直す）。nil なら出さない（読み込み中）
+    var onRetry: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var hidden: ModerationStore
@@ -47,11 +49,15 @@ struct NearbyPhotosSheet: View {
                         // 地図が1枚も持っていないのは「この範囲に無い」では
                         // なく「まだ読めていない」——同じ文で出すと、
                         // 圏外の人に「近くには何も無い」と言うことになる
-                        // 地図に引き下げの読み直しは無い——開き直すと読む（地図の帯と同じ文）
-                        Text(L("写真をまだ読み込めていません。地図を開き直すと読み直します。",
-                               "Photos haven't loaded yet. Reopen the map to retry."))
+                        // 地図に引き下げの読み直しは無い——「もう一度試す」で地図が読み直す
+                        Text(L("写真をまだ読み込めていません。",
+                               "Photos haven't loaded yet."))
                             .font(.callout)
                             .foregroundStyle(WebTheme.muted2)
+                        if let onRetry {
+                            Button(Labels.Common.retry, action: onRetry)
+                                .frame(minHeight: WebTheme.minTapTarget)
+                        }
                     } else if found.isEmpty {
                         // ここまで来たら、測った結果として本当に無い
                         Text(L("この範囲には、まだ写真がありません。", "No photos in this range yet."))

@@ -22,7 +22,7 @@ struct RootView: View {
     /// 「旅の写真からまとめて」（全画面）
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
-    @State private var pendingTripPhotos: [Data] = []
+    @State private var pendingTripPhotos: [ImagePreparer.Prepared] = []
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
     /// 見出しの「メニュー（≡）」（板 01d）
@@ -311,9 +311,12 @@ struct RootView: View {
             .tabItem { Label(Labels.Navigation.mypage, systemImage: "person") }
             .tag(Tab.mypage)
         }
-        // **選んでいるタブは真鍮**（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。タブの札の色は TabView の tint で決まる。
+        // **選んでいるタブは真鍮**（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。
         // 中身には各タブの `.tint(WebTheme.foreground)`（白）で配り直す——真鍮を中身の
-        // 既定の押せる色にまで広げない（`.borderedProminent` の白地の注記と同じ理由）
+        // 既定の押せる色にまで広げない（`.borderedProminent` の白地の注記と同じ理由）。
+        // 🔴 **札の色はここの tint だけでは決まらない**——SwiftUI は選んでいるタブの中身の
+        // tint（白）を札に使うことがある（2026-10-02 の調査）。選択色はタブバーそのものに
+        // 書いてある（`TabBarStyle.apply`・起動時）。ここの tint は残す（同じ色の念押し）
         .tint(WebTheme.accent)
         .task(id: auth.userId) { await refreshUnread() }
         // **人が替わったら待ちをやめる。** `.task(id:)` の中で取り消すと、
