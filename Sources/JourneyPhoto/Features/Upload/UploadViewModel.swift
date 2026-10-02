@@ -195,16 +195,10 @@ final class UploadViewModel: ObservableObject {
     }
     /// 共有の画面に渡すもの。**全部上がった回だけ**、`didPostAll` より先に立てる
     /// （画面は立っていれば閉じる代わりに共有の画面を出し、それを閉じてから閉じる）
-    @Published var threadsBundle: ThreadsBundle?
+    @Published var threadsBundle: ThreadsShare.Bundle?
     /// 上がった写真のうち外へ渡してよいもの（公開・全体に公開）。やり直しをまたいで貯め、
     /// 全部上がったときに `threadsBundle` にする
     private var sharable: [(data: Data, photoId: String, title: String, description: String, location: String)] = []
-
-    struct ThreadsBundle: Identifiable {
-        let id = UUID()
-        let images: [Data]
-        let text: String
-    }
 
     /// スポットのページに並ぶ形で上がった枚数（`spotId` 付き・公開・全体に公開）。
     /// スポットの画面が「投稿しました」を出すかを決める（並ばない投稿で言い切らない）
@@ -576,14 +570,15 @@ final class UploadViewModel: ObservableObject {
                 // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
                 if shareToThreads, ThreadsShare.isEligible(published: published, audience: audience),
                    let lead = sharable.first {
-                    threadsBundle = ThreadsBundle(
+                    threadsBundle = ThreadsShare.Bundle(
                         images: sharable.prefix(ThreadsShare.maxImages).map(\.data),
-                        // 最後に「Journey Photo」とその下に1枚目の写真のリンク（owner 2026-10-02）。
-                        // **`/?photo=` の形で**——`/photo/<id>` は再ビルドのあと（数分）まで無く、すぐ載せると
-                        // Threads が 404 を読む（`PhotoLink`）。写真の個別ページが建てば `/?photo=` からも開ける
+                        // 最後に「Journey Photo」とその下に1枚目の写真の**短縮リンク**（owner 2026-10-02）。
+                        // `/?p=<先頭8文字>` はトップが `/?photo=<id>` に置き換える。`/photo/<id>` は
+                        // 再ビルドのあと（数分）まで無く、すぐ載せると Threads が 404 を読む（`PhotoLink`）
                         text: ThreadsShare.text(title: lead.title, description: lead.description,
                                                 location: lead.location,
-                                                url: PhotoLink.url(photoId: lead.photoId, isPublished: false)))
+                                                url: PhotoLink.shortURL(photoId: lead.photoId)
+                                                    ?? PhotoLink.url(photoId: lead.photoId, isPublished: false)))
                 }
                 didPostAll = done.count > 0
             } else {

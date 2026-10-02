@@ -20,6 +20,13 @@ enum ThreadsShare {
     /// Threads の本文の上限（500字）
     static let maxTextLength = 500
 
+    /// 共有の画面に渡すもの（写真のデータと文）
+    struct Bundle: Identifiable {
+        let id = UUID()
+        let images: [Data]
+        let text: String
+    }
+
     /// 外へ渡してよい投稿か。**公開・全体に公開だけ**——非公開・親しい友達だけの写真を
     /// 外の SNS に流す口を作らない
     static func isEligible(published: Bool, audience: Audience) -> Bool {
