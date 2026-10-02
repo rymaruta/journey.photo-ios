@@ -79,6 +79,12 @@ open class UIImagePickerController: UIViewController {
     public override init() {}
 }
 
+/// クリップボード（本物と同じ形・中身は無い）
+public final class UIPasteboard {
+    public static let general = UIPasteboard()
+    public var string: String?
+}
+
 /// 共有の画面（本物と同じ形・中身は無い）
 open class UIActivityViewController: UIViewController {
     public var completionWithItemsHandler: ((Any?, Bool, [Any]?, Error?) -> Void)?

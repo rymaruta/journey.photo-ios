@@ -725,10 +725,10 @@ struct PhotoDetailView: View {
         actionNotice = L("写真を読み込んでいます…", "Loading the photo…")
         defer { preparingThreads = false }
         actionError = nil
-        // 🔴 **画素だけにしてから渡す。** `src` は原本で、Web から上げた原本は GPS 入りのまま
-        // （`photo-gallery/app/user/upload/page.tsx`）。共有の画面の作りに頼らず、ここで落とす
+        // 🔴 **画素だけに書き出し直してから渡す。** `src` は原本で、Web から上げた原本は GPS 入りのまま
+        // （`photo-gallery/app/user/upload/page.tsx`）。`WatermarkRenderer` が書き出し直す（透かしも入れる）
         guard let raw = await TripBookCardRenderer.coverData(url),
-              let data = ShareSheet.pixelsOnly(raw) else {
+              let data = await Task.detached(operation: { WatermarkRenderer.apply(raw) }).value else {
             actionNotice = nil
             actionError = L("写真を読み込めませんでした。通信を確かめてください",
                             "Couldn't load the photo. Check your connection.")
@@ -764,7 +764,7 @@ struct PhotoDetailView: View {
                 // 人の写真の画像を自分の Threads に載せる口も作らない）
                 if CollectionScreen.isShareable(shown) {
                     Button { Task { await prepareThreads() } } label: {
-                        Label(L("Threads に載せる", "Share to Threads"), systemImage: "at")
+                        Label(L("SNS に載せる", "Share to social apps"), systemImage: "square.and.arrow.up.on.square")
                     }
                     .disabled(preparingThreads)
                 }

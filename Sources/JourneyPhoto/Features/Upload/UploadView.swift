@@ -557,11 +557,13 @@ struct UploadView: View {
     private var threadsRow: some View {
         Toggle(isOn: $model.shareToThreads) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(L("Threads にも載せる", "Also share to Threads"))
+                // owner 2026-10-02「Threads だけでなく他の SNS でも同じようにできるようにしたい」。
+                // 共有の画面なので、もとから X・Instagram・LINE なども選べる。名前と説明だけを広げた
+                Text(L("SNS にも載せる", "Also share to social apps"))
                     .font(.callout)
                     .foregroundStyle(.white)
-                Text(L("投稿のあと共有の画面が開きます。Threads を選んでください",
-                       "After posting, the share sheet opens. Choose Threads."))
+                Text(L("投稿のあと共有の画面が開きます。Threads・X・Instagram など載せたいアプリを選んでください",
+                       "After posting, the share sheet opens. Pick Threads, X, Instagram or any app."))
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
             }

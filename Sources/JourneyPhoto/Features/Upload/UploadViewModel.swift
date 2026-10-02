@@ -636,8 +636,12 @@ final class UploadViewModel: ObservableObject {
                 // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
                 if shareToThreads, ThreadsShare.isEligible(published: published, audience: audience),
                    let lead = sharable.first {
+                    // 透かしを入れる（`WatermarkRenderer`・重いので画面の処理の外で）。
+                    // 束は `didPostAll` より先に立てる（画面は立っていれば閉じずに共有の画面を出す）
+                    let raw = Array(sharable.prefix(ThreadsShare.maxImages).map(\.data))
+                    let marked = await Task.detached { raw.compactMap { WatermarkRenderer.apply($0) } }.value
                     threadsBundle = ThreadsShare.Bundle(
-                        images: sharable.prefix(ThreadsShare.maxImages).map(\.data),
+                        images: marked,
                         // 最後に「Journey Photo」とその下に1枚目の写真の**短縮リンク**（owner 2026-10-02）。
                         // `/?p=<先頭8文字>` はトップが `/?photo=<id>` に置き換える。`/photo/<id>` は
                         // 再ビルドのあと（数分）まで無く、すぐ載せると Threads が 404 を読む（`PhotoLink`）

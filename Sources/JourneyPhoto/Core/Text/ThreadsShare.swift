@@ -11,7 +11,13 @@ import Foundation
 ///
 /// 渡す写真は、投稿の直後は**投稿に使った画像そのもの**（`ImagePreparer` が位置などの EXIF を
 /// 落としたもの）、過去の投稿からは**サーバーの原本を画素だけに書き出し直したもの**
-/// （`ShareSheet.pixelsOnly`・Web から上げた原本は GPS 入り）。端末の原本は渡さない
+/// （Web から上げた原本は GPS 入り）。どちらも `WatermarkRenderer` が画素だけに書き出し直し、
+/// 右下に「Journey Photo」の透かしを入れる。端末の原本は渡さない
+///
+/// **Threads 以外の SNS にも同じ形で載せる**（2026-10-02 owner「他の SNS でも同じようにできる
+/// ようにしたい」）。共有の画面なので X・Instagram・LINE なども選べる。画面の名前は「SNS にも
+/// 載せる」。文を受け取らないアプリ（Instagram・Facebook）のために、文はクリップボードにも置く
+/// （`ShareSheet`）。型の名前は Threads のまま（最初の入口の名残・中身はどの SNS でも同じ）
 enum ThreadsShare {
 
     /// 投稿したら共有の画面を開くか（端末に覚える）
