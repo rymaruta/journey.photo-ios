@@ -320,7 +320,7 @@ struct StoryComposerView: View {
                    "Kept on this device. You can pick up where you left off."))
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { data in acceptFromCamera(data) }
+            CameraPicker { capture in acceptFromCamera(capture) }
                 .ignoresSafeArea()
         }
         // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
@@ -1102,16 +1102,22 @@ struct StoryComposerView: View {
 
     /// カメラで撮った1枚。**写真を選ぶ段で印を付けていた写真があれば、先にそれを読み込む**
     /// （「次へ」と同じ `load`）。撮った1枚は最後。以前は印を付けた写真が黙って消えた
-    private func acceptFromCamera(_ data: Data) {
+    ///
+    /// **JPEG にするのは画面の処理の外で**（`CameraCapture` の注記）。その間は読み込み中に数える
+    /// （「次へ」・投稿を押させない）
+    private func acceptFromCamera(_ capture: CameraCapture) {
         let pending = StorySimpleRules.picksToLoadBeforeCamera(librarySelection, hasShots: !shots.isEmpty)
-        guard !pending.isEmpty else {
-            accept(data)
-            return
-        }
+        loadingPicks += 1
         Task {
+            defer { loadingPicks -= 1 }
             await load(pending)
             // 読み込めなかった断り（`load` の知らせ）は、撮った1枚が入っても消さない
-            let note = message
+            // （先に読むものが無かった回は、前の知らせを持ち越さない——以前と同じ）
+            let note = pending.isEmpty ? nil : message
+            guard let data = await Task.detached(priority: .userInitiated, operation: { capture.jpegData() }).value else {
+                message = L("写真を読み込めませんでした", "Couldn't load the photo")
+                return
+            }
             accept(data)
             if message == nil { message = note }
         }

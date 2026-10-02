@@ -208,8 +208,8 @@ struct UploadView: View {
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { data in
-                model.accept(capturedJPEG: data)
+            CameraPicker { capture in
+                model.accept(capture: capture)
             }
             .ignoresSafeArea()
         }

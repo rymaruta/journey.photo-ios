@@ -83,6 +83,42 @@ enum ImagePreparer {
         )
     }
 
+    /// カメラで撮った1枚に、撮影情報（撮影日時・機種など）を付け直す。
+    ///
+    /// カメラの1枚は `UIImage` を経由して JPEG にするので、本体には EXIF が残らず、
+    /// `prepare` が読む撮影日（`takenOn`）が**いつも空**だった（旅の記録・撮影日で並べる一覧から落ちる）。
+    ///
+    /// **2026-10-02 判断: カメラが付ける撮影情報（`info[.mediaMetadata]`）を先に使い、
+    /// 撮影日時が無ければ撮った時刻（端末の時計・端末の時間帯）を撮影日にする。**
+    /// その場で撮った写真なので、端末の今の時刻が撮影日時そのもの。
+    /// EXIF の撮影日時は撮った土地の壁時計なので、端末の時間帯で書くのが同じ意味になる。
+    ///
+    /// **位置は読まない。** `UIImagePickerController` は位置を付けない（付いていても今の扱いのまま、
+    /// カメラの写真は座標なし）。座標は `prepared` のまま
+    static func applyingCaptureInfo(_ prepared: Prepared, metadata: [CFString: Any], capturedAt: Date,
+                                    timeZone: TimeZone = .current) -> Prepared {
+        var exif = readExif(from: metadata)
+        var takenOn = readTakenOn(from: metadata)
+        if exif.dateTimeOriginal == nil || takenOn == nil {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = timeZone
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            let stamp = formatter.string(from: capturedAt)
+            exif.dateTimeOriginal = exif.dateTimeOriginal ?? stamp
+            takenOn = takenOn ?? String(stamp.prefix(10))
+        }
+        return Prepared(
+            data: prepared.data,
+            fileName: prepared.fileName,
+            contentType: prepared.contentType,
+            exif: exif.isEmpty ? nil : exif,
+            coords: prepared.coords,
+            takenOn: takenOn,
+            dominantColor: prepared.dominantColor
+        )
+    }
+
     // MARK: - 変換
 
     /// 1920px に収めて JPEG に焼き直す。

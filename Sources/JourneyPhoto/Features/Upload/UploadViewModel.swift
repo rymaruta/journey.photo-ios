@@ -269,6 +269,12 @@ final class UploadViewModel: ObservableObject {
         try await item.loadTransferable(type: Data.self)
     }
 
+    /// 画像を整える口（`ImagePreparer.prepare`）。**試験でだけ差し替える**——模型の ImageIO は
+    /// 画像を読めないので、整った1枚を決まった形で作る。**画面の処理の外から呼ばれる**
+    var prepareData: @Sendable (Data) throws -> ImagePreparer.Prepared = { data in
+        try ImagePreparer.prepare(data: data, fileName: "photo")
+    }
+
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
         self.uploads = uploads
         self.albumService = albums
@@ -361,15 +367,26 @@ final class UploadViewModel: ObservableObject {
         items[index].location = next
     }
 
-    /// カメラで撮った画像を受ける。
+    /// カメラで撮った1枚を受ける。
     ///
     /// **`UIImage` を経由した時点で EXIF は残っていない**（撮影地も
     /// 機材名も付かない）。それでも `ImagePreparer` を通すのは、
     /// 1920px への縮小と「残っていないことの確認」を1か所に寄せるため。
-    func accept(capturedJPEG data: Data) {
+    ///
+    /// 🔴 **JPEG にするのも画面の処理の外で**（`CameraCapture` の注記）。撮影日・機種は
+    /// カメラが付けた撮影情報から付け直す（無ければ撮った時刻・`ImagePreparer.applyingCaptureInfo`）
+    func accept(capture: CameraCapture) {
         preparingCaptures += 1
+        let prepare = prepareData
         Task { [weak self] in
-            let result = await Self.prepareOffMain(data)
+            let result: Result<ImagePreparer.Prepared, Error> = await Task.detached(priority: .userInitiated) {
+                Result {
+                    guard let data = capture.jpegData() else { throw ImagePreparer.PrepareError.unreadable }
+                    let prepared = try prepare(data)
+                    return ImagePreparer.applyingCaptureInfo(prepared, metadata: capture.metadata,
+                                                             capturedAt: capture.capturedAt)
+                }
+            }.value
             guard let self else { return }
             self.preparingCaptures -= 1
             switch result {
@@ -391,17 +408,18 @@ final class UploadViewModel: ObservableObject {
 
     /// 端末の写真ライブラリから読んだ本体を受ける（旅の写真からまとめて）。
     ///
-    /// 準備は `accept(capturedJPEG:)` と同じ——`ImagePreparer` で縮小し、**EXIF・GPS を
+    /// 準備は `accept(capture:)` と同じ——`ImagePreparer` で縮小し、**EXIF・GPS を
     /// 落としてから**並べる。撮影地と撮影日は ImagePreparer が EXIF から読んで残す
     /// （落とすのは送る本体からだけ）。**並びは渡した順のまま**（1枚ずつ順に整える）。
     /// 整えられなかった写真は「N 枚は読み込めませんでした」と言って除く
     func accept(libraryPhotos photos: [Data]) {
         guard !photos.isEmpty else { return }
         preparingCaptures += photos.count
+        let prepare = prepareData
         Task { [weak self] in
             var failed = 0
             for data in photos {
-                let result = await Self.prepareOffMain(data)
+                let result = await Self.prepareOffMain(data, with: prepare)
                 guard let self else { return }
                 self.preparingCaptures -= 1
                 switch result {
@@ -420,9 +438,11 @@ final class UploadViewModel: ObservableObject {
     /// 🔴 **画像を整えるのは画面の処理（MainActor）の外で。** 縮小・JPEG への
     /// 焼き直し・読み直しての確認・代表色で、1枚に数百ミリ秒かかる。10枚選ぶと
     /// その間ずっと画面が止まっていた
-    private static func prepareOffMain(_ data: Data) async -> Result<ImagePreparer.Prepared, Error> {
+    private static func prepareOffMain(
+        _ data: Data, with prepare: @escaping @Sendable (Data) throws -> ImagePreparer.Prepared
+    ) async -> Result<ImagePreparer.Prepared, Error> {
         await Task.detached(priority: .userInitiated) {
-            Result { try ImagePreparer.prepare(data: data, fileName: "photo") }
+            Result { try prepare(data) }
         }.value
     }
 
@@ -501,7 +521,7 @@ final class UploadViewModel: ObservableObject {
                 // **`itemIdentifier` をファイル名にしない。** スラッシュを含む
                 // 端末内部の ID で、キーの組み立てを壊す。拡張子は
                 // `ImagePreparer` が .jpg に付け替える。整えるのは画面の処理の外で
-                let result = await Self.prepareOffMain(data)
+                let result = await Self.prepareOffMain(data, with: prepareData)
                 // 整えている間に選び直されたら、この結果は捨てる
                 guard !Task.isCancelled, generation == pickGeneration else { return }
                 switch result {

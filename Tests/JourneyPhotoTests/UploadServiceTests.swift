@@ -456,7 +456,7 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertTrue(model.canSubmit)
 
         // 模型の ImageIO は読めないので、整えるのは失敗で終わる
-        model.accept(capturedJPEG: Data([0x00]))
+        model.accept(capture: CameraCapture(metadata: [:], capturedAt: Date(), encode: { Data([0x00]) }))
         XCTAssertFalse(model.canSubmit, "整えている間に投稿できる")
         try await waitUntil { model.canSubmit }
         XCTAssertTrue(model.canSubmit)
