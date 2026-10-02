@@ -153,8 +153,9 @@ enum ImagePreparer {
         return output as Data
     }
 
-    /// 出力を読み直して、EXIF / GPS / TIFF が残っていないことを確かめる。
-    private static func assertStripped(_ data: Data) throws {
+    /// 出力を読み直して、EXIF / GPS / TIFF / XMP が残っていないことを確かめる。
+    /// 試験から呼ぶので `private` にしない
+    static func assertStripped(_ data: Data) throws {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
             throw PrepareError.encodeFailed
@@ -176,6 +177,19 @@ enum ImagePreparer {
         }
         if let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
             if tiff[kCGImagePropertyTIFFMake] != nil || tiff[kCGImagePropertyTIFFModel] != nil {
+                throw PrepareError.metadataRemains
+            }
+        }
+        // **XMP も見る。** 上の辞書は EXIF・GPS・TIFF の欄だけで、XMP の包み（撮影地の市名・
+        // 作成日時など）に残ったものは見えない。今の焼き直しは XMP を書かないが、書く形に変わっても
+        // 素通ししないように、場所・日時・機材を言う項目だけを確かめる
+        if let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil) {
+            let identifying = [
+                "exif:GPSLatitude", "exif:GPSLongitude", "exif:DateTimeOriginal",
+                "tiff:Make", "tiff:Model", "xmp:CreateDate",
+                "photoshop:City", "photoshop:DateCreated", "Iptc4xmpCore:Location",
+            ]
+            if identifying.contains(where: { CGImageMetadataCopyTagWithPath(metadata, nil, $0 as CFString) != nil }) {
                 throw PrepareError.metadataRemains
             }
         }
