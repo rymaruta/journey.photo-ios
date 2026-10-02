@@ -162,6 +162,24 @@ struct JourneyPhotoApp: App {
                 .environmentObject(push)
                 .environmentObject(toasts)
                 .task { await auth.restore() }
+                // 🔴 **退会の途中で止まったアカウント**（自分のプロフィールが 410）。サーバーの
+                // データは消えているので、使い続ける道は無い——残り（サーバーの退会の
+                // やり直し・Cognito の削除・端末の控え）を済ませる一択にする
+                // （`AuthStore.finishPendingDeletion`）
+                .alert(L("退会の手続きが途中です", "Account deletion is unfinished"),
+                       isPresented: Binding(
+                           get: { auth.deletionPending && !auth.isFinishingDeletion },
+                           set: { _ in })) {
+                    Button(L("完了する", "Finish")) {
+                        let account = environment.account
+                        auth.startFinishingDeletion(
+                            deleteServerData: { try await account.deleteAccount() },
+                            releaseDevice: { await push.signingOut(accountDeleted: true) })
+                    }
+                } message: {
+                    Text(auth.deletionFailure
+                         ?? L("退会の手続きが途中です。完了します", "Your account deletion didn't finish. We'll complete it now."))
+                }
                 // **前面に戻るたびに通知の宛先を合わせ直す。** 圏外で「受け取らない」を
                 // 押して外せなかった回は、ログイン状態が変わるまでやり直されず、
                 // 止めたはずの通知が届き続けた（預け損ねも同じ）。確認中・ID が取れ

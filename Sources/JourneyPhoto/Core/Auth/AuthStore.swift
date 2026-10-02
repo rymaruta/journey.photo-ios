@@ -51,19 +51,99 @@ final class AuthStore: ObservableObject {
     private(set) var signedOutByExpiry = false
 
     private var expiryObserver: NSObjectProtocol?
+    private var deletionObserver: NSObjectProtocol?
 
-    init() {
+    /// 退会の途中で止まったアカウント（サーバーのデータは消え、Cognito の利用者が残っている）。
+    /// 立ったら画面の根が「退会の手続きが途中です」を出す（`JourneyPhotoApp`）
+    @Published private(set) var deletionPending = false
+    /// その残りを済ませている最中か（知らせを出し直さない・二重に走らせない）
+    @Published private(set) var isFinishingDeletion = false
+    /// 残りを済ませられなかった理由（もう一度押してもらう）
+    @Published private(set) var deletionFailure: String?
+    /// Cognito に頼む口（試験で差し替える）
+    private let gateway: AuthStoreGateway
+    /// 期限切れのログアウトを走らせている最中か（`expireSession`）
+    private var isExpiring = false
+
+    init(gateway: AuthStoreGateway = .live) {
+        self.gateway = gateway
         // ログインの期限切れ（`AuthGateway.idToken`）を受けてログアウトに倒す
         expiryObserver = NotificationCenter.default.addObserver(
             forName: .authSessionExpired, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in await self?.expireSession() }
         }
+        deletionObserver = NotificationCenter.default.addObserver(
+            forName: .accountDeletionPending, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.noteDeletionPending() }
+        }
+    }
+
+    /// 自分のプロフィールが 410 だった（`ProfileService.myProfile`）。ログイン中だけ立てる
+    func noteDeletionPending() {
+        guard userId != nil else { return }
+        deletionPending = true
+    }
+
+    /// 「退会の手続きが途中です」の「完了する」。**門は押したその場で閉じる**
+    /// （Task の中で閉じると、描き直しの前に2回押せて2本走る——`DeleteAccountView` と同じ）
+    func startFinishingDeletion(deleteServerData: @escaping @MainActor () async throws -> Void,
+                                releaseDevice: @escaping @MainActor () async -> Void) {
+        guard deletionPending, !isFinishingDeletion else { return }
+        isFinishingDeletion = true
+        Task { await finishPendingDeletion(deleteServerData: deleteServerData, releaseDevice: releaseDevice) }
+    }
+
+    /// 退会の途中で止まったアカウントの残りを済ませる。
+    ///
+    /// 🔴 **サーバーの退会（`DELETE /user/account`）からやり直す。** 410 は墓石が書けた
+    /// ことしか言わない——墓石の後の掃除（フォロー・お知らせ・いいねなど）が途中で
+    /// 切れた回もある。Cognito だけ消すと、その残りを消せる人がいなくなる。サーバーは
+    /// やり直しを想定している（`account.ts` の `deleteAccount`——済んだ分は飛ばし、
+    /// 残りを消す）。落ちたら Cognito に進まない（もう一度押してもらう）。
+    /// そのあと退会の後半（`completeAccountDeletion`）を走らせる。
+    ///
+    /// - Parameters:
+    ///   - deleteServerData: サーバーの退会（`AccountService.deleteAccount`）
+    ///   - releaseDevice: 端末の通知の宛先の後片付け（`PushCenter.signingOut(accountDeleted:)`）
+    func finishPendingDeletion(deleteServerData: @MainActor () async throws -> Void,
+                               releaseDevice: @MainActor () async -> Void,
+                               localDefaults: UserDefaults = .standard) async {
+        guard deletionPending else { isFinishingDeletion = false; return }
+        isFinishingDeletion = true
+        deletionFailure = nil
+        defer { isFinishingDeletion = false }
+        // **消す前に控える**（消したあとは誰だったか分からない）
+        let id = userId
+        let username = try? await gateway.currentUsername()
+        do {
+            try await deleteServerData()
+        } catch {
+            deletionFailure = L("アカウントの削除を完了できませんでした。通信できる所でもう一度お試しください",
+                                "Couldn't finish deleting your account. Please try again with a connection.")
+            return
+        }
+        await releaseDevice()
+        do {
+            try await completeAccountDeletion(userId: id, username: username, localDefaults: localDefaults)
+            deletionPending = false
+        } catch {
+            deletionFailure = L("アカウントの削除を完了できませんでした。通信できる所でもう一度お試しください",
+                                "Couldn't finish deleting your account. Please try again with a connection.")
+        }
     }
 
     /// ログインの期限が切れた。**ログイン中の見た目のまま何もできない**状態を作らない
+    ///
+    /// 🔴 **何通来ても1回だけ走らせる。** 画面の口が一斉に 401 になると、期限切れの
+    /// 知らせが同時に何通も届く。`userId` を見るだけだと、1本目がログアウトを待って
+    /// いる間（まだ `.signedIn`）に2本目も通り、ログアウトが並んで走っていた。
+    /// 印は**最初の await より前に**立てる（MainActor の上なので、ここまでは割り込まれない）
     func expireSession() async {
-        guard userId != nil else { return }
+        guard userId != nil, !isExpiring else { return }
+        isExpiring = true
+        defer { isExpiring = false }
         await signOut(byExpiry: true)
         errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                          "Your session has expired. Please sign in again.")
@@ -96,17 +176,28 @@ final class AuthStore: ObservableObject {
             return
         }
         #endif
-        guard await AuthGateway.isSignedIn() else {
+        // 🔴 **前のログアウトで端末の中のログインを消せなかったなら、ログイン中に戻さない**
+        // （`SignOutLatch` の「2026-10-02 判断」）。Amplify は控えが残っているので
+        // 「ログイン中」と答えるが、本人はログアウトを押している。もう一度消してみて、
+        // 消えても消えなくても未ログインとして始める。**消せない回が上限に達したら諦めて、
+        // 印の無かった頃と同じく Amplify の答えに従う**（閉じ込めない・同じ注記）
+        if gateway.latch.isSet, !gateway.latch.giveUpIfExhausted() {
+            _ = await gateway.signOut()
             state = .signedOut
             isAdmin = false
             return
         }
-        let id = try? await AuthGateway.currentUserId()
+        guard await gateway.isSignedIn() else {
+            state = .signedOut
+            isAdmin = false
+            return
+        }
+        let id = try? await gateway.currentUserId()
         // **期限切れは起動時に見つける。** ログイン中の見た目のまま始めない。
         // 圏外などで判定できない回は `false`（ログイン中のまま進む）。
         // **ID が取れなかった回も見る**——見ないと、期限切れなのに「本当に
         // ログアウトしたか分からない」扱いになり、通知の宛先を外さない
-        if await AuthGateway.isSessionExpired() {
+        if await gateway.isSessionExpired() {
             await signOut(byExpiry: true)
             errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                              "Your session has expired. Please sign in again.")
@@ -147,13 +238,23 @@ final class AuthStore: ObservableObject {
         // **`run` の中で外す**（二度押し止め・くるくるの内側）——外に置くと、圏外で
         // 外すのを待つ間にもう一度押され、2本目の外しが1本目のログインを消しうる
         await run {
-            if self.isSignedOutUncertain {
-                await AuthGateway.signOut()
+            // 前のログアウトで端末の中のログインを消せなかった回（`SignOutLatch`）も同じ
+            if self.isSignedOutUncertain || self.gateway.latch.isSet {
+                _ = await self.gateway.signOut()
             }
-            _ = try await AuthGateway.signIn(email: email, password: password)
-            let id = try await AuthGateway.currentUserId()
+            // **invalidState を「前のログインが残っている」と読むのはログインの時だけ。**
+            // ほかの操作（登録・パスワード変更など）の invalidState は別の理由なので、
+            // `AuthFailure` では読み替えない（前と同じ汎用の文のまま）
+            do {
+                _ = try await self.gateway.signIn(email, password)
+            } catch let error as AuthError {
+                if case .invalidState = error { throw SignInIncomplete.leftoverSession }
+                throw error
+            }
+            let id = try await self.gateway.currentUserId()
             self.isSignedOutUncertain = false
             self.signedOutByExpiry = false
+            self.gateway.latch.clear()
             self.state = .signedIn(userId: id)
             await refreshAdmin()
         }
@@ -168,7 +269,9 @@ final class AuthStore: ObservableObject {
     func signOut(byExpiry: Bool = false) async {
         isSignedOutUncertain = false
         signedOutByExpiry = byExpiry
-        await AuthGateway.signOut()
+        // 端末から消せなくても**画面はログアウトの扱いにする**（ここで止めると、押したのに
+        // 何も起きない）。次の起動でログイン中に戻さないのは `SignOutLatch` の役目
+        _ = await gateway.signOut()
         settleSignedOut()
     }
 
@@ -178,6 +281,9 @@ final class AuthStore: ObservableObject {
     /// これを通っていなかったので、パスワード変更で間違えたあと退会すると、ログイン画面に
     /// 「いまのパスワードが違います」が赤字で残っていた
     func settleSignedOut() {
+        // 退会の途中の知らせは、その人がログインしている間だけのもの
+        deletionPending = false
+        deletionFailure = nil
         // 共有のために書いた旅の一冊の画像（表紙の写真を含む）を次の人に残さない
         TripBookCard.removeAll()
         // 旅の写真から引いた地名の控え（その人の旅先が分かる）も次の人に残さない
@@ -197,12 +303,26 @@ final class AuthStore: ObservableObject {
     /// 失敗として投げると「もう一度押して」が永久に続き、抜けられない
     func deleteCognitoUser() async throws {
         do {
-            try await AuthGateway.deleteUser()
+            try await gateway.deleteUser()
         } catch let error as AuthError where AuthFailure(error).meansUserAlreadyGone {
             // 消えている。下のサインアウトへ進む
         }
-        await AuthGateway.signOut()
+        _ = await gateway.signOut()
         settleSignedOut()
+    }
+
+    /// 退会の後半（サーバーのデータを消した後）: Cognito の利用者を消し、端末に残った本人の
+    /// 控え（`AccountLocalData`）を消す。**退会の画面と「退会の途中で止まったアカウント」
+    /// （410・`finishPendingDeletion`）の両方がここを通る**——片方だけ直して食い違わないように。
+    ///
+    /// 控えを消すのは Cognito まで消せた回だけ（途中で落ちたらアカウントは残っている）。
+    /// 失敗は投げる
+    func completeAccountDeletion(userId: String?, username: String?,
+                                 localDefaults: UserDefaults = .standard) async throws {
+        try await deleteCognitoUser()
+        if let userId {
+            AccountLocalData.remove(userId: userId, username: username, defaults: localDefaults)
+        }
     }
 
     /// - Returns: 確認コード送信に使う UUID。失敗したら nil。
@@ -236,7 +356,7 @@ final class AuthStore: ObservableObject {
         // **期限切れも同じ種類（`.notAuthorized`）に畳まれる**ので、先に見分ける——
         // 見分けないと、正しいパスワードを何度打っても「違います」と出る
         if lastFailure == .notAuthorized {
-            if await AuthGateway.isSessionExpired() {
+            if await gateway.isSessionExpired() {
                 await expireSession()
             } else {
                 errorMessage = L("いまのパスワードが違います", "Your current password is incorrect")
@@ -329,15 +449,45 @@ final class AuthStore: ObservableObject {
     }
 }
 
+/// `AuthStore` が Cognito に頼む口。**試験で差し替える**——Amplify は Linux の試験では
+/// 動かない（模型）ので、ログアウトの並び・結果の扱いを見るにはここを替える。
+/// 本番は `AuthGateway` そのまま
+struct AuthStoreGateway: Sendable {
+    var isSignedIn: @Sendable () async -> Bool
+    var currentUserId: @Sendable () async throws -> String
+    var currentUsername: @Sendable () async throws -> String
+    var isSessionExpired: @Sendable () async -> Bool
+    var signOut: @Sendable () async -> SignOutOutcome
+    var deleteUser: @Sendable () async throws -> Void
+    /// 前のログアウトで端末の中のログインを消せなかった印（`SignOutLatch`）。
+    /// 本番の `signOut`（`AuthGateway.signOut`）が同じ印を進め・外す
+    var latch: SignOutLatch = SignOutLatch()
+    var signIn: @Sendable (_ email: String, _ password: String) async throws -> Bool = { email, password in
+        try await AuthGateway.signIn(email: email, password: password)
+    }
+
+    static let live = AuthStoreGateway(
+        isSignedIn: { await AuthGateway.isSignedIn() },
+        currentUserId: { try await AuthGateway.currentUserId() },
+        currentUsername: { try await AuthGateway.currentUsername() },
+        isSessionExpired: { await AuthGateway.isSessionExpired() },
+        signOut: { await AuthGateway.signOut() },
+        deleteUser: { try await AuthGateway.deleteUser() }
+    )
+}
+
 /// ログインが「続きの段」で止まった（`AuthGateway.outcome`）
 enum SignInIncomplete: Error, Equatable {
     case passwordResetRequired
     case unsupportedStep
+    /// 端末に前のログインが残っていて、Amplify が断った（invalidState・`AuthStore.signIn`）
+    case leftoverSession
 
     var failure: AuthFailure {
         switch self {
         case .passwordResetRequired: return .passwordResetRequired
         case .unsupportedStep: return .signInIncomplete
+        case .leftoverSession: return .alreadySignedIn
         }
     }
 }
@@ -365,6 +515,10 @@ enum AuthFailure: Equatable {
     case passwordResetRequired
     /// アプリで続けられないログインの段（新しいパスワードの設定・多要素認証など）
     case signInIncomplete
+    /// 端末に前のログインが残っていて、ログインを断られた（ログインの操作での Amplify の
+    /// `invalidState`・`SignInIncomplete.leftoverSession`）。**前のログインを渡さない**
+    /// （`SignOutLatch` の「2026-10-02 判断」）
+    case alreadySignedIn
     case other
 
     init(_ error: AuthError) {
@@ -446,6 +600,9 @@ enum AuthMessage {
         case .signInIncomplete:
             return L("このアカウントはアプリからログインを完了できません。Web からログインしてください",
                      "This account can't finish signing in from the app. Please sign in on the web.")
+        case .alreadySignedIn:
+            return L("前のログインがこの端末から消せていません。アプリを終了して開き直してから、もう一度ログインしてください",
+                     "A previous sign-in couldn't be cleared from this device. Quit and reopen the app, then sign in again.")
         case .none, .other:
             return L("うまくいきませんでした。しばらくしてからもう一度お試しください", "That didn't work. Please try again in a moment.")
         }

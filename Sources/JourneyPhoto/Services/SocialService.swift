@@ -9,8 +9,9 @@ struct SocialService {
         self.api = api
     }
 
-    private func encoded(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
+    /// パスに入れる ID。**英数字・`-`・`_` 以外は要求を出さずに失敗にする**（`PathID`）
+    private func encoded(_ value: String) throws -> String {
+        try PathID.segment(value)
     }
 
     // MARK: - いいね
@@ -63,7 +64,7 @@ struct SocialService {
     /// 区別しないので、例として書くと**在りもしない口を叩いている**ことに
     /// なる（これを書いた最初の版で実際にそうなった）
     func setCloseFriend(userId: String, wanted: Bool) async throws -> Bool {
-        let id = encoded(userId)
+        let id = try encoded(userId)
         if wanted {
             return try await api.authorized(.put, "/user/close-friends/\(id)",
                                             as: CloseFriendResult.self).closeFriend
