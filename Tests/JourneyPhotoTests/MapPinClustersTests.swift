@@ -106,6 +106,26 @@ final class MapPinClustersTests: XCTestCase {
         XCTAssertEqual(holding.cover?.id, "35.0,139.0-0")
     }
 
+    // MARK: - 選んだピンが束に吸われたら選びを外す
+
+    func testSelectionAbsorbedIntoAClusterIsHidden() throws {
+        let pins = try grid(400)
+        let layout = MapPinClusters.layout(pins, frame: japan)
+        let absorbed = try XCTUnwrap(layout.clusters.first?.pins.first)
+        XCTAssertTrue(layout.hides(absorbed, among: pins), "束に吸われたピンを札が指し続ける")
+        if let shown = layout.pins.first {
+            XCTAssertFalse(layout.hides(shown, among: pins))
+        }
+        XCTAssertFalse(layout.hides(nil, among: pins))
+    }
+
+    /// 絞り込みで結果から外れたピンは**外さない**（2026-09-30 判断: 選びは絞りの間も持ち続ける）
+    func testSelectionFilteredOutIsKept() throws {
+        let pins = try grid(10)
+        let filteredOut = try pin(10, 10)
+        XCTAssertFalse(MapPinClusters.layout(pins, frame: nil).hides(filteredOut, among: pins))
+    }
+
     // MARK: - ピンの画像は 256px
 
     func testPinImagePrefersTheSmallThumbnail() throws {

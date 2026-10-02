@@ -63,6 +63,13 @@ enum MapPinClusters {
         /// 置く印の数
         var markerCount: Int { pins.count + clusters.count }
 
+        /// 選んでいるピンが**結果には居るのに地図に置かれていない**（束に吸われた・枠の外）か。
+        /// true なら選びを外す。結果から外れたピン（絞り込み）は false——選びを持ち続ける決まり
+        func hides(_ selected: MapPin?, among results: [MapPin]) -> Bool {
+            guard let selected, results.contains(where: { $0.id == selected.id }) else { return false }
+            return !pins.contains { $0.id == selected.id }
+        }
+
         /// **id の並びで比べる。** 中身（写真）の入れ替わりは `refresh` が必ず入れ直すので、
         /// 地図を動かしたときに見るのは組み方が変わったかだけ
         static func == (lhs: Layout, rhs: Layout) -> Bool {
