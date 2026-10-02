@@ -73,3 +73,9 @@ public let kCGImagePropertyGPSLatitude: CFString = "Latitude"
 public let kCGImagePropertyGPSLongitude: CFString = "Longitude"
 public let kCGImagePropertyGPSLatitudeRef: CFString = "LatitudeRef"
 public let kCGImagePropertyGPSLongitudeRef: CFString = "LongitudeRef"
+
+/// 画像の向き（本物と同じ名前・値）。`PHImageManager.requestImageDataAndOrientation`
+/// の結果に付いてくる。アプリは使わず読み捨てる（向きは `ImagePreparer` が EXIF から直す）
+public enum CGImagePropertyOrientation: UInt32 {
+    case up = 1, upMirrored, down, downMirrored, leftMirrored, right, rightMirrored, left
+}

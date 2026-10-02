@@ -56,3 +56,16 @@ open class CLLocationManager: NSObject {
     /// 1回だけ取る口。`startUpdatingLocation`（追跡）は使わないので写していない
     public func requestLocation() {}
 }
+
+/// 地名（住所の部品）。使うのは市区町村と都道府県だけ
+open class CLPlacemark: NSObject {
+    open var locality: String? { nil }
+    open var administrativeArea: String? { nil }
+}
+
+/// 座標から地名を引く（Apple の地図に問い合わせる）。模型は何も返さない
+open class CLGeocoder: NSObject {
+    public override init() {}
+    open func reverseGeocodeLocation(_ location: CLLocation) async throws -> [CLPlacemark] { [] }
+    open func cancelGeocode() {}
+}

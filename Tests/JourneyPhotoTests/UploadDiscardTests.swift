@@ -67,4 +67,36 @@ final class UploadDiscardTests: XCTestCase {
         model.items = []
         XCTAssertFalse(model.hasDraft)
     }
+
+    // MARK: - 旅の写真からまとめて（非公開で始める・最初の写真）
+
+    /// 非公開で始めた画面は、非公開のままなら書きかけではない（公開に変えたら書きかけ）
+    func testStartingPrivateIsNotADraft() async {
+        let model = model()
+        model.applyInitialPhotos([], startPrivate: true)
+        XCTAssertFalse(model.published, "非公開で始まっていない")
+        XCTAssertFalse(model.hasDraft, "非公開で始めただけで、閉じるときに確かめている")
+        model.published = true
+        XCTAssertTrue(model.hasDraft)
+    }
+
+    /// 最初の写真は一度だけ入れる。2枚以上ならまとめる。整えている間も書きかけで、投稿させない
+    func testInitialPhotosAreAppliedOnce() async throws {
+        let model = model()
+        model.applyInitialPhotos([Data([1]), Data([2])], startPrivate: true)
+        XCTAssertTrue(model.groupsAsOnePost, "同じ旅の写真なのに別々の投稿になる")
+        XCTAssertTrue(model.hasDraft, "整えている間に閉じると黙って消える")
+        XCTAssertFalse(model.canSubmit, "整え終わる前に投稿できる")
+        // 選択画面などから戻ってきた（onAppear がまた呼ばれる）
+        model.applyInitialPhotos([Data([3])], startPrivate: false)
+        XCTAssertFalse(model.published, "2回目の呼び出しで初期値が変わった")
+        // 模型の ImageIO は画像を読めないので、整えるのは全部失敗する——失敗を言うことを見る
+        for _ in 0..<300 where model.hasDraft && model.errorMessage == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertEqual(model.errorMessage, L("写真を読み込めませんでした", "Couldn't load the photos"),
+                       "読めなかった写真を黙って落とした")
+        XCTAssertFalse(model.hasDraft, "整え終えて空になった画面を書きかけにした")
+    }
 }

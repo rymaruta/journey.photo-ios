@@ -34,6 +34,7 @@ let package = Package(
         .target(name: "UIKit", dependencies: ["SwiftUI"], path: "Shims/UIKit"),
         .target(name: "PhotosUI", dependencies: ["SwiftUI"], path: "Shims/PhotosUI"),
         .target(name: "CoreLocation", path: "Shims/CoreLocation"),
+        .target(name: "Photos", dependencies: ["UIKit", "CoreLocation", "ImageIO"], path: "Shims/Photos"),
         .target(name: "MapKit", dependencies: ["SwiftUI", "CoreLocation"], path: "Shims/MapKit"),
         .target(name: "AVFoundation", path: "Shims/AVFoundation"),
         .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation"], path: "Shims/AVKit"),
@@ -52,7 +53,7 @@ let package = Package(
         .target(
             name: "JourneyPhoto",
             dependencies: [
-                "SwiftUI", "Combine", "UIKit", "PhotosUI", "MapKit", "CoreLocation",
+                "SwiftUI", "Combine", "UIKit", "PhotosUI", "Photos", "MapKit", "CoreLocation",
                 "AVFoundation", "AVKit", "ImageIO", "UniformTypeIdentifiers", "UserNotifications",
                 "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
             ],
