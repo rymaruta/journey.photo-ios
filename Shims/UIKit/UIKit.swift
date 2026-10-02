@@ -79,6 +79,12 @@ open class UIImagePickerController: UIViewController {
     public override init() {}
 }
 
+/// 共有の画面（本物と同じ形・中身は無い）
+open class UIActivityViewController: UIViewController {
+    public var completionWithItemsHandler: ((Any?, Bool, [Any]?, Error?) -> Void)?
+    public init(activityItems: [Any], applicationActivities: [Any]?) {}
+}
+
 public protocol UIViewControllerRepresentable: View {
     associatedtype UIViewControllerType: UIViewController
     associatedtype Coordinator = Void
@@ -89,6 +95,10 @@ public protocol UIViewControllerRepresentable: View {
 }
 extension UIViewControllerRepresentable {
     public var body: Never { fatalError("模型") }
+}
+/// 本物と同じく、受け手を持たない包みは `makeCoordinator` を書かなくてよい
+extension UIViewControllerRepresentable where Coordinator == Void {
+    public func makeCoordinator() {}
 }
 public struct UIViewControllerRepresentableContext<R: UIViewControllerRepresentable> {
     public var coordinator: R.Coordinator { fatalError("模型") }
