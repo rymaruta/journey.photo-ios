@@ -126,6 +126,8 @@ struct StoryInsightsView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value.map { "\($0)" } ?? "—")
                 .font(JPFont.statNumber)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .foregroundStyle(.white)
             Text(label)
                 .font(.system(size: 12))

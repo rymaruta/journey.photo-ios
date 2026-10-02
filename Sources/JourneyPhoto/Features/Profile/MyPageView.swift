@@ -365,10 +365,10 @@ struct MyPageView: View {
         .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 49)
     }
 
-    /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・等幅の数字 18 と名前）。
+    /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・数字（`JPFont.statNumber`）と名前）。
     /// 列は幅を三等分し、押せる高さは 44pt
     private var stats: some View {
-        // 板: 3列の等幅。等幅の数字（18）の下に小さい名前（10）
+        // 板: 3列の等幅。数字（`JPFont.statNumber`・SF の等幅数字）の下に小さい名前
         HStack(alignment: .top, spacing: 8) {
             statCell(value: ProfileLine.statValue(model.photoCount), label: L("投稿", "Posts"))
             NavigationLink {
