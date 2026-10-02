@@ -215,8 +215,11 @@ final class PhotoDetailViewModel: ObservableObject {
         let likes: Int?
     }
 
+    /// - Parameter gate: 画面をまたいだ送信中の印（`LikeCountStore.beginSending`）。
+    ///   **ホームや大きく見る画面で同じ写真を送っている間は送らない**——この画面の
+    ///   `isLiking` だけでは、別の画面から飛んでいる逆向きを止められない
     @discardableResult
-    func toggleLike() async -> LikeAnswer? {
+    func toggleLike(gate: LikeCountStore? = nil) async -> LikeAnswer? {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
@@ -225,12 +228,15 @@ final class PhotoDetailViewModel: ObservableObject {
             return nil
         }
         guard !isLiking else { return nil }
+        let id = photoId
+        // 別の画面で同じ写真を送っている間は、押しても何もしない（知らせも消さない）
+        if let gate, !gate.beginSending(id) { return nil }
+        defer { gate?.endSending(id) }
         // 前の操作の失敗を残さない（送っている間の二度押しでは消さない）
         errorMessage = nil
         isLiking = true
         defer { isLiking = false }
         let wasLiked = liked
-        let id = photoId
         do {
             let result = wasLiked
                 ? try await social.unlike(photoId: id)

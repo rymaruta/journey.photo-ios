@@ -57,11 +57,6 @@ struct PhotoDetailView: View {
     @State private var commentPendingDelete: PhotoComment?
     @State private var isFollowWorking = false
     @State private var showUnfollowConfirm = false
-    /// 大きく見る画面で、**この画面の1枚以外**のいいねを送っている写真。
-    /// 写真ごとに持って再入を止める——ダブルタップの直後にハートを押すと、
-    /// 2本目が1本目の答えの前に逆向きを送り、画面とサーバーが食い違う
-    /// （この画面の1枚は `PhotoDetailViewModel.isLiking` が止めている）
-    @State private var viewerLikesInFlight: Set<String> = []
     /// この画面が出ているか・裏にいる間にブロック／通報があったか（`hidden.revision`）
     @State private var isOnScreen = false
     @State private var needsRefilter = false
@@ -825,8 +820,11 @@ struct PhotoDetailView: View {
             await toggleLikeHere()
             return
         }
-        guard viewerLikesInFlight.insert(shown.id).inserted else { return }
-        defer { viewerLikesInFlight.remove(shown.id) }
+        // **送っている印は画面をまたいで1つ**（`LikeCountStore.beginSending`）。
+        // ダブルタップの直後にハートを押す・ホームで送っている写真をここで叩くと、
+        // 2本目が1本目の答えの前に逆向きを送り、画面とサーバーが食い違う
+        guard likeCounts.beginSending(shown.id) else { return }
+        defer { likeCounts.endSending(shown.id) }
         // 先に灯す（押した手応えを待たせない）。届かなければ**押す前に**戻す
         // ——元からいいね済みの写真を「外した」扱いにしない
         let wasLiked = favorites.contains(shown.id)
@@ -853,8 +851,8 @@ struct PhotoDetailView: View {
             await toggleLikeHere()
             return
         }
-        guard viewerLikesInFlight.insert(shown.id).inserted else { return }
-        defer { viewerLikesInFlight.remove(shown.id) }
+        guard likeCounts.beginSending(shown.id) else { return }
+        defer { likeCounts.endSending(shown.id) }
         let wasLiked = favorites.contains(shown.id)
         let owner = favorites.owner
         favorites.set(shown.id, favorite: !wasLiked)
@@ -897,7 +895,8 @@ struct PhotoDetailView: View {
     /// 前の1枚のもの——今の1枚の控えに書かない
     private func toggleLikeHere() async {
         // 送っている間は押しても何もしないので、知らせも消さない
-        guard !model.isLiking else { return }
+        // （別の画面で同じ写真を送っている間も同じ・`LikeCountStore.sending`）
+        guard !model.isLiking, !likeCounts.isSending(current.id) else { return }
         clearNotices()
         guard acceptsReactions else {
             model.errorMessage = L("下書きにはいいねできません。公開すると付けられます",
@@ -907,7 +906,7 @@ struct PhotoDetailView: View {
         // **届かなかった回は控えに書かない**（押す前のハートのまま）。
         // 答えは**押した1枚に**書く——送っている間に束の隣へ送っても
         let owner = favorites.owner
-        let answer = await model.toggleLike()
+        let answer = await model.toggleLike(gate: likeCounts)
         guard let answer else { return }
         favorites.set(answer.photoId, favorite: answer.liked, for: owner)
         // 押した回の答えだけを渡す（`LikeCountStore` の注記）

@@ -286,4 +286,53 @@ final class SyncRaceTests: XCTestCase {
         store.endSending("p1")
         XCTAssertTrue(store.beginSending("p1"), "答えの後も押せない")
     }
+
+    // MARK: - 画面をまたいだ送信中の印
+
+    /// 🔴 **ホーム（や大きく見る画面）で送っている写真を、詳細で押しても送らない。**
+    /// 以前は詳細が自分の `isLiking` しか見ず、逆向きが同時に飛んでいた
+    func testDetailDoesNotSendWhileAnotherScreenIsSendingThatPhoto() async {
+        let social = stubbedSocial()
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"liked":true,"likes":6}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setSignedIn(true)
+        let store = LikeCountStore()
+        XCTAssertTrue(store.beginSending("p1"), "前提: ホームが送り始めた")
+
+        let answer = await model.toggleLike(gate: store)
+        XCTAssertNil(answer, "別の画面が送っている写真を、詳細からも送っている")
+        XCTAssertEqual(StubProtocol.requestCount, 0, "別の画面が送っている写真を、詳細からも送っている")
+        XCTAssertTrue(store.isSending("p1"), "他の画面の印を詳細が外している")
+    }
+
+    /// 🔴 **詳細で送っている間は、他の画面（ホームのカード・大きく見る画面）が送れない。**
+    /// 答えが来たら印を外す（外さないと二度と押せない）
+    func testDetailHoldsTheSharedMarkWhileSending() async {
+        let liking = Gate()
+        let social = stubbedSocial(gates: PathGates(["POST /photos/p1/like": liking]))
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"liked":true,"likes":6}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setSignedIn(true)
+        let store = LikeCountStore()
+
+        let pressed = Task { await model.toggleLike(gate: store) }
+        await liking.untilWaiting()
+        XCTAssertFalse(store.beginSending("p1"), "詳細が送っている間に、他の画面から逆向きを送れる")
+        XCTAssertTrue(store.beginSending("p2"), "別の写真まで止めている")
+        await liking.open()
+        let answer = await pressed.value
+        XCTAssertEqual(answer?.liked, true)
+        XCTAssertFalse(store.isSending("p1"), "答えの後も印が残り、二度と押せない")
+    }
+
+    /// 届かなかった回も印を外す
+    func testDetailReleasesTheSharedMarkOnFailure() async {
+        let social = stubbedSocial()
+        StubProtocol.respond(path: "/photos/p1/like", status: 500, body: "{}")
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setSignedIn(true)
+        let store = LikeCountStore()
+        _ = await model.toggleLike(gate: store)
+        XCTAssertFalse(store.isSending("p1"), "失敗の後も印が残り、二度と押せない")
+    }
 }
