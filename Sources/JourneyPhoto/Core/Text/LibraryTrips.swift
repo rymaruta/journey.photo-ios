@@ -72,8 +72,10 @@ struct LibraryTrip: Identifiable, Equatable {
 /// 4. 旅の期間に入る**位置の無い写真**も含める（機内モード・位置を切ったカメラ）。
 ///    ただし並べるだけで、枚数の数え・表紙・最初の選びには使わない
 /// 5. **位置のある写真が5枚未満なら旅にしない**（たまたま遠くで撮った数枚を「旅」と呼ばない）
-/// 6. **`maxDays` 日を超えるまとまりは旅にしない**（引っ越す前の家で撮りためた何か月もが
-///    「旅」になる）
+/// 6. **`maxDays` 日を超えるまとまりは、そのままでは旅にしない**（引っ越した人は前の家が
+///    「家」になり、新しい家の日常が何か月もつながる）。捨てずに、まとまりの中で
+///    いちばん写真の多い約10kmの升を仮の家にして、**その期間の写真だけで1段だけ**探し直す
+///    （新しい家から出かけた本当の旅が残る）。探し直しても長すぎるまとまりは捨てる
 ///
 /// スクリーンショットはここへ来る前に外す（`PhotoLibrary.shots`）。
 /// MainActor に置かない——試験から呼び、画面は MainActor の外で回す。
@@ -91,17 +93,25 @@ enum LibraryTrips {
     static func find(_ shots: [LibraryShot],
                      home: (lat: Double, lng: Double)? = nil,
                      timeZone: TimeZone = .current) -> [LibraryTrip] {
-        let located = shots.filter { $0.coords != nil }
         let homePoint: Photo.Coords
         if let home {
             homePoint = Photo.Coords(lat: home.lat, lng: home.lng)
-        } else if let guessed = busiestCellCenter(of: located) {
+        } else if let guessed = busiestCellCenter(of: shots) {
             homePoint = guessed
         } else {
             // 位置のある写真が1枚も無い——どこが旅先か決められない
             return []
         }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return search(shots, home: homePoint, calendar: calendar, retries: 1)
+            .sorted { $0.start > $1.start }
+    }
 
+    /// `home` から見た旅を探す。`retries` は長すぎるまとまりを探し直してよい段の数
+    private static func search(_ shots: [LibraryShot], home homePoint: Photo.Coords,
+                               calendar: Calendar, retries: Int) -> [LibraryTrip] {
+        let located = shots.filter { $0.coords != nil }
         let away = located
             .filter { shot in
                 guard let coords = shot.coords else { return false }
@@ -123,27 +133,29 @@ enum LibraryTrips {
 
         let awayIds = Set(away.map(\.id))
         let unlocated = shots.filter { $0.coords == nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
 
-        return spans.compactMap { span -> LibraryTrip? in
-            guard span.end.timeIntervalSince(span.start) <= Double(maxDays) * 86_400 else { return nil }
+        return spans.flatMap { span -> [LibraryTrip] in
             let located = away.filter { $0.date >= span.start && $0.date <= span.end }
+            guard span.end.timeIntervalSince(span.start) <= Double(maxDays) * 86_400 else {
+                // 長すぎる: そのまとまりでいちばん多い升を仮の家にして、その期間だけで探し直す
+                guard retries > 0, let tempHome = busiestCellCenter(of: located) else { return [] }
+                let inSpan = shots.filter { $0.date >= span.start && $0.date <= span.end }
+                return search(inSpan, home: tempHome, calendar: calendar, retries: retries - 1)
+            }
             // 数えるのは位置のある写真だけ（位置の無い写真で5枚に届かせない）
-            guard located.count >= minShots else { return nil }
+            guard located.count >= minShots else { return [] }
             let ordered = (located + unlocated.filter { $0.date >= span.start && $0.date <= span.end })
                 .sorted(by: inOrder)
-            guard let first = ordered.first else { return nil }
-            return LibraryTrip(
+            guard let first = ordered.first else { return [] }
+            return [LibraryTrip(
                 id: first.id,
                 shots: ordered,
                 start: span.start,
                 end: span.end,
                 days: days(of: ordered, from: span.start, calendar: calendar),
                 center: busiestCellCenter(of: ordered.filter { awayIds.contains($0.id) })
-            )
+            )]
         }
-        .sorted { $0.start > $1.start }
     }
 
     /// 投稿済みの写真の撮影日と重なる旅の日数。一覧で「投稿済みの日があります」を出すのに使う。
@@ -240,6 +252,16 @@ enum LibraryTrips {
         let head = "DAY \(day.number) · \(day.month).\(day.day)"
         guard let place, !place.isEmpty else { return head }
         return "\(head) · \(place)"
+    }
+
+    /// 引けなかった地名を引き直すまでの間（秒）。**10分**——圏外から戻れば引ける、
+    /// しかし開き直すたびに Apple の地図へ問い合わせて断られ続けない
+    static let nameRetryAfter: TimeInterval = 10 * 60
+
+    /// その座標の地名を引いてよいか（前に引けなかった時刻から `nameRetryAfter` 経ったか）
+    static func shouldLookUpName(failedAt: Date?, now: Date) -> Bool {
+        guard let failedAt else { return true }
+        return now.timeIntervalSince(failedAt) >= nameRetryAfter
     }
 
     /// 地名を引くときに Apple の地図へ渡す座標。**小数第2位（約1km）に丸める**——

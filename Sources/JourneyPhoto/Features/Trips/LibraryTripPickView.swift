@@ -64,9 +64,10 @@ struct LibraryTripPickView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) { bottomBar }
-        // 読んでいる間は戻らせない（戻っても読み込みは止める・`onDisappear`）
-        .navigationBarBackButtonHidden(isLoading)
-        .onDisappear { loadTask?.cancel() }
+        // **戻る・閉じるは読み込み中も止めない**（iCloud からの読み込みには時間の上限が無い）。
+        // 画面が消えたら読み込みを取り消す。閉じたあとに届いた写真は呼び手が捨てる
+        // （`TripImportHandoff.received`）
+        .onDisappear { stopLoading() }
         // 日ごとの地名（引けなければ日付だけ）
         .task { await model.resolveNames(trip.days.map(\.center)) }
         .alert(L("\(failedCount)枚は読み込めませんでした", "\(failedCount) photo(s) couldn't be loaded"),
@@ -150,33 +151,50 @@ struct LibraryTripPickView: View {
                     .font(.footnote)
                     .foregroundStyle(WebTheme.text)
             }
-            Button {
-                loadTask = Task { await load() }
-            } label: {
-                Group {
-                    if isLoading {
-                        ProgressView().tint(WebTheme.accentText)
-                    } else {
-                        Text(L("\(selected.count)枚を下書きに入れる", "Add \(selected.count) to a draft"))
-                    }
+            if isLoading {
+                // 読み込み中は主ボタンの位置に「やめる」（輪と並べる）
+                HStack(spacing: 12) {
+                    ProgressView().tint(WebTheme.foreground)
+                    Text(L("写真を読み込んでいます", "Loading photos"))
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.muted2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .jpPillButton(.primary)
-                .opacity(selected.isEmpty ? 0.5 : 1)
+                Button { stopLoading() } label: {
+                    Text(L("やめる", "Stop")).jpPillButton(.outline)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button { startLoading() } label: {
+                    Text(L("\(selected.count)枚を下書きに入れる", "Add \(selected.count) to a draft"))
+                        .jpPillButton(.primary)
+                        .opacity(selected.isEmpty ? 0.5 : 1)
+                }
+                .buttonStyle(.plain)
+                .disabled(selected.isEmpty)
             }
-            .buttonStyle(.plain)
-            .disabled(selected.isEmpty || isLoading)
-            .accessibilityLabel(isLoading ? L("写真を読み込んでいます", "Loading photos")
-                                          : L("\(selected.count)枚を下書きに入れる", "Add \(selected.count) to a draft"))
         }
         .jpBottomBar()
     }
 
+    /// 読み込みを始める。**印を立ててから仕事を作る**——ボタンの `.disabled` は次の描画まで
+    /// 効かないので、素早い二度押しで仕事が2つできていた
+    private func startLoading() {
+        guard loadTask == nil, !isLoading, !selected.isEmpty else { return }
+        isLoading = true
+        loadTask = Task { await load() }
+    }
+
+    /// 読み込みをやめる（「やめる」・画面が消えた）。状態はここで戻す——取り消した仕事は
+    /// 状態に触らない（次に始めた読み込みの「読み込み中」を消さない）
+    private func stopLoading() {
+        loadTask?.cancel()
+        loadTask = nil
+        isLoading = false
+    }
+
     /// 選んだ写真の本体を旅の並びで読む。読めなかった写真は外して知らせる
     private func load() async {
-        // ボタンの `.disabled` は次の描画まで効かない——二度押しをここでも止める
-        guard !isLoading, !selected.isEmpty else { return }
-        isLoading = true
-        defer { isLoading = false }
         let order = trip.shots.map(\.id).filter { selected.contains($0) }
         var photos: [Data] = []
         var failed: [String] = []
@@ -188,8 +206,10 @@ struct LibraryTripPickView: View {
                 failed.append(id)
             }
         }
-        // 読んでいる間に画面を離れた（閉じた・戻った）なら、何も渡さない
+        // 読んでいる間にやめた・画面を離れたなら、何も渡さない（状態は `stopLoading` が戻した）
         guard !Task.isCancelled else { return }
+        loadTask = nil
+        isLoading = false
         if failed.isEmpty {
             onDone(photos)
             return

@@ -57,13 +57,14 @@ struct LibraryTripListView: View {
                     await model.resolveNames(model.trips.map(\.center))
                 }
             } label: {
+                // 黒地の上の文字リンクなので真鍮（owner 2026-10-02）
                 Text(L("写真を追加で選ぶ", "Select more photos"))
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(WebTheme.text)
+                    .foregroundStyle(WebTheme.accent)
                     .webTappable()
             }
             .buttonStyle(.plain)
-            .disabled(model.isLoading)
+            .disabled(model.isLoading || model.isPickingMore)
         }
         .padding(.horizontal, 16)
     }

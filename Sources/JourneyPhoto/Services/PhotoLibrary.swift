@@ -36,10 +36,12 @@ enum PhotoLibrary {
     /// 一部だけ許可した人が、許可する写真を選び足す画面を出す（閉じるまで待つ）。
     /// 起動ごとの iOS の案内は止めている（Info.plist の
     /// `PHPhotoLibraryPreventAutomaticLimitedAccessAlert`）ので、選び足す口はここだけ
+    /// - Returns: 選び足す画面を出せたか。**出せなかったら false**（呼び手は探し直さない）
     @MainActor
-    static func presentLimitedPicker() async {
-        guard let top = topController() else { return }
+    static func presentLimitedPicker() async -> Bool {
+        guard let top = topController() else { return false }
         _ = await PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: top)
+        return true
     }
 
     /// いちばん上に出ている画面（全画面の流れの上に出す）
@@ -102,10 +104,40 @@ enum PhotoLibrary {
         // 1回だけ呼ばれる形（`.opportunistic` は粗い版と本番で2回呼ばれる）
         options.deliveryMode = .highQualityFormat
         options.version = .current
-        return await withCheckedContinuation { continuation in
-            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
-                continuation.resume(returning: data)
+        // **取り消せるようにする**（「やめる」・画面を離れた）。iCloud から落とす読み込みには
+        // 時間の上限が無いので、取り消しで PhotoKit の要求も止める。止めた要求は結果が nil で返る
+        let manager = PHImageManager.default()
+        let request = ImageRequestBox()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let id = manager.requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
+                    continuation.resume(returning: data)
+                }
+                if request.set(id) { manager.cancelImageRequest(id) }
             }
+        } onCancel: {
+            if let id = request.cancel() { manager.cancelImageRequest(id) }
+        }
+    }
+
+    /// 要求の番号と「取り消された」印を、取り消しの口（別の糸で走る）と分け合う箱
+    private final class ImageRequestBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var id: PHImageRequestID?
+        private var cancelled = false
+
+        /// 番号を控える。**もう取り消されていたら true**（呼び手がすぐ止める）
+        func set(_ id: PHImageRequestID) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            self.id = id
+            return cancelled
+        }
+
+        /// 取り消しの印を立てる。番号が分かっていればそれを返す
+        func cancel() -> PHImageRequestID? {
+            lock.lock(); defer { lock.unlock() }
+            cancelled = true
+            return id
         }
     }
 

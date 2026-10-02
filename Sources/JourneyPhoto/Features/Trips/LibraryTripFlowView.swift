@@ -64,9 +64,20 @@ final class LibraryTripModel: ObservableObject {
     @Published private(set) var loaded = false
     /// 自分の投稿の撮影日（`YYYY-MM-DD`）
     @Published private(set) var postedDayKeys: Set<String> = []
-    /// 引いた地名。鍵は `LibraryTrips.lookupKey`。**引けなかった座標は入れない**
-    /// （通信が切れていた・断られた回を控えると、その旅は閉じるまで日付だけになる）
+    /// 引いた地名。鍵は `LibraryTrips.lookupKey`。**流れをまたいで控える**（`knownNames`）
     @Published private(set) var names: [String: String] = [:]
+    /// 選び足しの画面を出している（二度押しで画面が重ならないように）
+    @Published private(set) var isPickingMore = false
+
+    /// 引けた地名（流れをまたいで使う）
+    private static var knownNames: [String: String] = [:]
+    /// 引けなかった座標と、その時刻。**`LibraryTrips.nameRetryAfter` の間は引き直さない**
+    /// （断られた直後に開き直すたびに Apple の地図へ問い合わせない）。流れをまたいで控える
+    private static var failedAt: [String: Date] = [:]
+
+    init() {
+        names = Self.knownNames
+    }
 
     func requestAccess() async {
         status = await PhotoLibrary.requestAccess()
@@ -90,8 +101,13 @@ final class LibraryTripModel: ObservableObject {
 
     /// 一部だけ許可した人が写真を選び足したあと、探し直す（投稿済みの日はそのまま）
     func addMorePhotos() async {
-        guard !isLoading else { return }
-        await PhotoLibrary.presentLimitedPicker()
+        // **印を立ててから出す**（二度押しで選び足しの画面が重なっていた）
+        guard !isLoading, !isPickingMore else { return }
+        isPickingMore = true
+        let presented = await PhotoLibrary.presentLimitedPicker()
+        isPickingMore = false
+        // 出せなかったら何もしない（黙って探し直さない）
+        guard presented else { return }
         isLoading = true
         trips = await Self.findTrips()
         isLoading = false
@@ -110,14 +126,21 @@ final class LibraryTripModel: ObservableObject {
     }
 
     /// 地名を**1つずつ順に**引く（Apple の地名引きは短い間に何度も呼ぶと断られる）。
-    /// 引けなかった座標は、次にその画面が出たときに引き直す（同じ回の中では1度だけ）
+    /// 引けなかった座標は、時刻を控えて `LibraryTrips.nameRetryAfter` の間は引き直さない
     func resolveNames(_ points: [Photo.Coords?]) async {
         var tried: Set<String> = []
         for case let coords? in points {
             let key = LibraryTrips.lookupKey(coords)
-            guard names[key] == nil, tried.insert(key).inserted else { continue }
+            guard names[key] == nil, tried.insert(key).inserted,
+                  LibraryTrips.shouldLookUpName(failedAt: Self.failedAt[key], now: Date()) else { continue }
             if Task.isCancelled { return }
-            if let name = await PhotoLibrary.placeName(near: coords) { names[key] = name }
+            if let name = await PhotoLibrary.placeName(near: coords) {
+                names[key] = name
+                Self.knownNames[key] = name
+                Self.failedAt[key] = nil
+            } else {
+                Self.failedAt[key] = Date()
+            }
         }
     }
 }

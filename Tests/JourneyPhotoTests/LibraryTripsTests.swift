@@ -143,6 +143,39 @@ final class LibraryTripsTests: XCTestCase {
         XCTAssertEqual(trips.map(\.id), ["hk0", "old0"])
     }
 
+    private let sapporo = (lat: 43.06, lng: 141.35)  // 京都からも東京からも遠い
+
+    /// 🔴 引っ越した人: 前の家（東京）から見ると、新しい家（京都）の日常が何か月もつながる。
+    /// その中の本当の旅（札幌の3日）は、まとまりの中の仮の家（京都）から探し直して残す
+    func testTripInsideMonthsAfterMovingSurvives() throws {
+        var shots: [LibraryShot] = []
+        for day in 0..<120 where !(50...52).contains(day) {
+            shots.append(shot("kyoto\(day)", hours: Double(day) * 24 + 12, kyoto))
+        }
+        let trip = (0..<6).map { shot("sap\($0)", hours: 50 * 24 + 9 + Double($0) * 12, sapporo) }
+        let found = LibraryTrips.find(shots + trip, home: home, timeZone: tokyo)
+        XCTAssertEqual(found.count, 1, "引っ越し後の日常の中の旅が消えた")
+        XCTAssertEqual(found.first?.shots.map(\.id), trip.map(\.id), "新しい家の日常が旅に混ざった")
+    }
+
+    /// 31日以上同じ場所に居続けるまとまりは出ない。探し直しても長すぎるまとまりも出ない（1段だけ）
+    func testLongStaysAreNotTripsEvenAfterRetry() {
+        let stay = (0..<40).map { shot("stay\($0)", hours: Double($0) * 24 + 12, kyoto) }
+        XCTAssertTrue(LibraryTrips.find(stay, home: home, timeZone: tokyo).isEmpty, "40日の滞在を旅にした")
+        // 京都に住みつつ、2日おきに札幌へ（札幌のまとまりも40日つながる）
+        let commute = (0..<20).map { shot("sap\($0)", hours: Double($0) * 48 + 18, sapporo) }
+        XCTAssertTrue(LibraryTrips.find(stay + commute, home: home, timeZone: tokyo).isEmpty,
+                      "探し直しても長すぎるまとまりを旅にした")
+    }
+
+    /// 引けなかった地名は10分は引き直さない
+    func testFailedNameIsNotRetriedForTenMinutes() {
+        let failed = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertTrue(LibraryTrips.shouldLookUpName(failedAt: nil, now: failed))
+        XCTAssertFalse(LibraryTrips.shouldLookUpName(failedAt: failed, now: failed.addingTimeInterval(599)))
+        XCTAssertTrue(LibraryTrips.shouldLookUpName(failedAt: failed, now: failed.addingTimeInterval(600)))
+    }
+
     // MARK: - 日
 
     /// 日ごとの束と「DAY n」の数（撮らなかった日も数に入る）
