@@ -92,6 +92,8 @@ struct SpotDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .webToolbarIcon()
+                // 絵だけのボタン。名前を明示する（OS 任せにすると版によって読まれ方が揺れる）
+                .accessibilityLabel(L("シェア", "Share"))
             }
         }
     }
@@ -114,6 +116,11 @@ struct SpotDetailView: View {
                                 .aspectRatio(4.0 / 3.0, contentMode: .fit)
                                 .overlay { RemoteImage(url: photo.detailImageURL, alignment: .center) }
                                 .clipped()
+                                // `Color.clear` は読み上げの対象にならないので、1つの画像としてまとめて
+                                // 名前を付ける（`OfficialSpotView` の代表写真と同じ）
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityAddTraits(.isImage)
+                                .accessibilityLabel(photo.accessibilityText)
                         }
                         .buttonStyle(.plain)
                         .tag(index)

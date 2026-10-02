@@ -6,14 +6,15 @@ import SwiftUI
 /// **最初から日ごとにばらけるよう選んでおく**（`LibraryTrips.spreadPick`）——
 /// 何百枚から10枚を自分で探すのがいちばん重い。
 ///
-/// 下の主ボタンで選んだ写真の本体を読み、投稿画面へ（写真のある画面なので白）
+/// 下の主ボタンで選んだ写真の本体を読み、1枚ずつ整えて（`ImagePreparer`）投稿画面へ
+/// （写真のある画面なので白）。**原本は持ち続けない**——読んだらすぐ縮めて、原本は捨てる
 struct LibraryTripPickView: View {
 
     let trip: LibraryTrip
     /// 画面の題（旅の地名、無ければ期間）
     let title: String
     @ObservedObject var model: LibraryTripModel
-    let onDone: ([Data]) -> Void
+    let onDone: ([ImagePreparer.Prepared]) -> Void
 
     /// 選んだ写真の id（選んだ順）。投稿画面へは旅の並びに直して渡す
     @State private var selected: [String]
@@ -24,14 +25,15 @@ struct LibraryTripPickView: View {
     /// 読めなかった枚数（知らせを出す）と、読めたぶん
     @State private var failedCount = 0
     @State private var showFailed = false
-    @State private var loadedPhotos: [Data] = []
+    @State private var loadedPhotos: [ImagePreparer.Prepared] = []
     /// 読み込みの仕事。**画面を離れたら取り消す**——取り消さないと、閉じたあとに
     /// 読み終えた写真が呼び手へ届き、次の投稿に混ざっていた
     @State private var loadTask: Task<Void, Never>?
 
     private let limit = UploadViewModel.maxSelection
 
-    init(trip: LibraryTrip, title: String, model: LibraryTripModel, onDone: @escaping ([Data]) -> Void) {
+    init(trip: LibraryTrip, title: String, model: LibraryTripModel,
+         onDone: @escaping ([ImagePreparer.Prepared]) -> Void) {
         self.trip = trip
         self.title = title
         self.model = model
@@ -79,8 +81,8 @@ struct LibraryTripPickView: View {
             }
             Button(L("選び直す", "Pick again"), role: .cancel) { }
         } message: {
-            Text(L("iCloud から落とせなかった写真は外しました。通信できる場所でもう一度お試しください。",
-                   "Photos that couldn't be downloaded from iCloud were removed. Try again with a connection."))
+            Text(L("読み込めなかった写真（iCloud から落とせなかったものなど）は外しました。通信できる場所でもう一度お試しください。",
+                   "Photos that couldn't be loaded (such as ones that couldn't be downloaded from iCloud) were removed. Try again with a connection."))
         }
     }
 
@@ -200,15 +202,27 @@ struct LibraryTripPickView: View {
         isLoading = false
     }
 
-    /// 選んだ写真の本体を旅の並びで読む。読めなかった写真は外して知らせる
+    /// 選んだ写真の本体を旅の並びで読み、**読んだそばから1枚ずつ整える**（縮小・EXIF と GPS を落とす・
+    /// 撮影日と約1kmに丸めた座標は残す）。読めなかった・整えられなかった写真は外して知らせる。
+    ///
+    /// 🔴 **原本を溜めない。** 以前は原本（1枚 数MB〜数十MB の HEIC・JPEG）を10枚まとめて読み、
+    /// 投稿画面へ渡して、画面を閉じるまで持ち続けていた。整えるのは画面の処理の外で
     private func load() async {
         let order = trip.shots.map(\.id).filter { selected.contains($0) }
-        var photos: [Data] = []
+        var photos: [ImagePreparer.Prepared] = []
         var failed: [String] = []
         for id in order {
             if Task.isCancelled { return }
-            if let data = await PhotoLibrary.imageData(for: id) {
-                photos.append(data)
+            guard let data = await PhotoLibrary.imageData(for: id) else {
+                failed.append(id)
+                continue
+            }
+            if Task.isCancelled { return }
+            let prepared = try? await Task.detached(priority: .userInitiated) {
+                try ImagePreparer.prepare(data: data, fileName: "photo")
+            }.value
+            if let prepared {
+                photos.append(prepared)
             } else {
                 failed.append(id)
             }

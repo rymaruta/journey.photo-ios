@@ -181,7 +181,7 @@ struct TripBookView: View {
                 }
             }
             Text(label)
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .lineLimit(1)
         }
@@ -202,7 +202,7 @@ struct TripBookView: View {
         if !stops.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text(L("たどった場所", "Where you went"))
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.caption.weight(.medium))
                     .tracking(0.5)
                     .foregroundStyle(WebTheme.faint)
                     .padding(.horizontal, 4)
@@ -316,7 +316,7 @@ struct TripBookView: View {
                 .foregroundStyle(WebTheme.muted2)
             if !day.place.isEmpty {
                 Text(day.place)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
             }
@@ -353,6 +353,10 @@ struct TripBookView: View {
                 pageImage(photo)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
+                    // 絵だけのリンク。写真の題（無ければ撮影地）を読み上げる
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityAddTraits(.isImage)
+                    .accessibilityLabel(photo.accessibilityText)
             }
             .buttonStyle(.plain)
 

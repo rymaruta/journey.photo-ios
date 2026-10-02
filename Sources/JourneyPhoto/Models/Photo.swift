@@ -61,7 +61,8 @@ struct Photo: Identifiable, Decodable, Equatable {
 
     let userId: String?
     let uploadedBy: String?
-    let displayName: String?
+    /// `var` は編集の控えを一覧に重ねるとき、一覧の今の名前を残すため（`PhotoEditOverlay.overlaid`）
+    var displayName: String?
     let createdAt: String?
     let updatedAt: String?
     /// 撮影日（YYYY-MM-DD）。持っている写真は少ない（実データで 8/30）

@@ -1,5 +1,7 @@
 import SwiftUI
 import PhotosUI
+// 差し替えた画像を見本に出す（UIImage・SwiftUI / PhotosUI から見えることに頼らない）
+import UIKit
 
 /// 自分の写真を直す（題・説明・撮影地・タグ・撮影日・公開）。
 struct EditPhotoView: View {
@@ -35,6 +37,8 @@ struct EditPhotoView: View {
     /// 写真そのものの差し替え（Web の `/user/edit` と同じ操作）
     @State private var replaceItem: PhotosPickerItem?
     @State private var isReplacing = false
+    /// この画面で差し替えた画像（送った本体から作る）。**見本はこちらを出す**（`EditPreview`）
+    @State private var replacedPreview: Image?
 
     init(photo: Photo) {
         self.photo = photo
@@ -55,9 +59,19 @@ struct EditPhotoView: View {
     var body: some View {
         Form {
             Section {
-                // 周りに押す操作の無い1枚なので、押して読み直せる
-                RemoteImage(url: photo.detailImageURL, contentMode: .fit, allowsManualRetry: true)
-                    .frame(maxHeight: 200)
+                // 差し替えた回は送った画像を出す（開いたときの URL は前の写真・`EditPreview`）
+                switch EditPreview.source(replaced: replacedPreview, original: photo.detailImageURL) {
+                case .replaced(let image):
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 200)
+                        .accessibilityLabel(L("差し替えた写真", "Replaced photo"))
+                case .original(let url):
+                    // 周りに押す操作の無い1枚なので、押して読み直せる（`RemoteImage.allowsManualRetry`）
+                    RemoteImage(url: url, contentMode: .fit, allowsManualRetry: true)
+                        .frame(maxHeight: 200)
+                }
                 if isReplacing {
                     HStack { ProgressView(); Text(L("差し替えています…", "Replacing…")) }
                 } else {
@@ -200,6 +214,10 @@ struct EditPhotoView: View {
             let keptOldDate = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
                                                                    uploads: environment.uploads,
                                                                    keepCoords: keep)
+            // 見本を差し替えた画像に替える（サーバーの小さい版は作り直しに数分かかる）
+            if let image = UIImage(data: prepared.data) {
+                replacedPreview = Image(uiImage: image)
+            }
             messageIsError = false
             message = L("差し替えました（反映まで数分かかります）", "Replaced. It takes a few minutes to appear.")
             // 撮影日を載せなかった回は、前の撮影日が残ることを言う（黙って古い日付を残さない）

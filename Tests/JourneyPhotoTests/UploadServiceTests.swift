@@ -158,12 +158,10 @@ final class UploadServiceTests: XCTestCase {
             let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
                                         photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
             if fromTrip {
-                // 旅の写真の流れ（RootView → UploadView の initialPhotos）。模型では整えられないので
-                // 失敗を言い終えるまで待ってから、整った写真を置く
-                model.applyInitialPhotos([Data([1])], startPrivate: true)
-                for _ in 0..<300 where model.errorMessage == nil {
-                    try await Task.sleep(nanoseconds: 10_000_000)
-                }
+                // 旅の写真の流れ（RootView → UploadView の initialPhotos）。並んだ写真は下で置き直す
+                model.applyInitialPhotos([ImagePreparer.Prepared(
+                    data: Data([1]), fileName: "photo.jpg", contentType: "image/jpeg",
+                    exif: nil, coords: nil, takenOn: nil)], startPrivate: true)
                 XCTAssertTrue(model.fromTripImport)
             }
             // 旅の流れでは「それぞれ別の投稿」にしても束ねる（ふだんの投稿はまとめるときだけ）
@@ -456,7 +454,7 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertTrue(model.canSubmit)
 
         // 模型の ImageIO は読めないので、整えるのは失敗で終わる
-        model.accept(capturedJPEG: Data([0x00]))
+        model.accept(capture: CameraCapture(metadata: [:], capturedAt: Date(), encode: { Data([0x00]) }))
         XCTAssertFalse(model.canSubmit, "整えている間に投稿できる")
         try await waitUntil { model.canSubmit }
         XCTAssertTrue(model.canSubmit)

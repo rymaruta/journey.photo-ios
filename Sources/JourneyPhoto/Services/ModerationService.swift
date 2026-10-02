@@ -14,8 +14,9 @@ struct ModerationService {
         self.api = api
     }
 
-    private func encoded(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
+    /// パスに入れる ID。**英数字・`-`・`_` 以外は要求を出さずに失敗にする**（`PathID`）
+    private func encoded(_ value: String) throws -> String {
+        try PathID.segment(value)
     }
 
     /// 通報の理由。**サーバーの許可リストと同じ並び**

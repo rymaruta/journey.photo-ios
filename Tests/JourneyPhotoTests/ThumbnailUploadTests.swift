@@ -102,6 +102,24 @@ final class ThumbnailUploadTests: XCTestCase {
                       "既定は作らない")
     }
 
+    /// カメラの1枚に撮影情報を付け直しても、**サムネイルは落とさない**（写真の編集の枝との合流・2026-10-02）
+    func testCaptureInfoKeepsTheThumbnail() {
+        let thumb = Data([7, 7, 7])
+        let after = ImagePreparer.applyingCaptureInfo(prepared(thumbnail: thumb), metadata: [:],
+                                                      capturedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(after.thumbnail, thumb)
+    }
+
+    /// 投稿の差し込み口の既定は**サムネイル付き**の prepare
+    func testDefaultPrepareDataMakesAThumbnail() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift"), encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "var prepareData"))
+        XCTAssertTrue(source[start.upperBound...].prefix(200).contains("withThumbnail: true"))
+    }
+
     // MARK: - 投稿
 
     /// 本体 → サムネの順に presign と PUT。サムネの presign は `image/jpeg`・自分の大きさで、

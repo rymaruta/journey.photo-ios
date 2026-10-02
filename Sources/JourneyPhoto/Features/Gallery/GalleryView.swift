@@ -12,6 +12,8 @@ struct GalleryView: View {
     /// 「ホーム」をもう一度押した合図（一番上へ戻る）
     @ObservedObject private var tabRouter = TabRouter.shared
     /// ストーリーの輪を読み直す合図（引き下げ・前面に戻った）
+    /// 引き下げ・「もう一度試す」の読み直しの最中（重ねて走らせない）
+    @State private var isRefreshing = false
     @State private var storiesRefresh = 0
     @Environment(\.scenePhase) private var scenePhase
     /// 背面へ行ったか（戻るときは background → inactive → active と段を踏むので、
@@ -110,22 +112,7 @@ struct GalleryView: View {
             // 今日のテーマに参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: userId)
         }
-        .refreshable {
-            // ストーリーの輪も読み直す（写真だけ読み直すと、輪は古いまま残った）
-            storiesRefresh &+= 1
-            await model.load(force: true)
-            // **フォロー一覧も取り直す。** 取れなかった回の出口
-            // （「読み込めませんでした。引き下げて読み直せます」）
-            if let userId = auth.userId {
-                let ticket = model.beginFollowingFetch()
-                let following = await fetchFollowing()
-                // 待っている間に人が替わっていたら捨てる
-                guard auth.userId == userId else { return }
-                model.refreshFollowing(following, viewerId: userId, ticket: ticket)
-                // 今日のテーマの「参加済み」も取り直す（`.task(id:)` は人が替わらないと走らない）
-                await model.loadMyPhotos(environment.photos, viewerId: userId)
-            }
-        }
+        .refreshable { await refreshAll() }
         // **下の「投稿」を閉じたら自分の写真を読み直す。** 今日のテーマの札から投稿しても、
         // シートは `RootView` にあるので `.task(id:)` は走らず、札が「参加する」のまま残った
         //
@@ -307,7 +294,7 @@ struct GalleryView: View {
                     .lineLimit(1)
                 // 本文の最小は 12pt（CLAUDE.md）。縮めずに2行まで
                 Text(note)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(WebTheme.faint)
                     .lineLimit(2)
             }
@@ -456,6 +443,9 @@ struct GalleryView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("home.emptyAction")
+            } else if model.feed == .following {
+                // 引き下げを知らない人にも出口を（2026-10-02 の調査）
+                RetryButton(isBusy: isRefreshing) { Task { await refreshAll() } }
             }
         }
         .frame(maxWidth: .infinity)
@@ -471,6 +461,28 @@ struct GalleryView: View {
             ? L("フォロー中の人を読み込めませんでした。引き下げて読み直せます",
                 "Couldn't load the people you follow. Pull to retry")
             : L("フォロー中の人の写真はまだありません", "No photos from people you follow yet")
+    }
+
+    /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**——続けて押すと、
+    /// 遅れて返った古い回が新しい回の答えを上書きした（2026-10-02 のレビュー）
+    private func refreshAll() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+        // ストーリーの輪も読み直す（写真だけ読み直すと、輪は古いまま残った）
+        storiesRefresh &+= 1
+        await model.load(force: true)
+        // **フォロー一覧も取り直す。** 取れなかった回の出口
+        // （「読み込めませんでした」の下の「もう一度試す」と引き下げ）
+        if let userId = auth.userId {
+            let ticket = model.beginFollowingFetch()
+            let following = await fetchFollowing()
+            // 待っている間に人が替わっていたら捨てる
+            guard auth.userId == userId else { return }
+            model.refreshFollowing(following, viewerId: userId, ticket: ticket)
+            // 今日のテーマの「参加済み」も取り直す（`.task(id:)` は人が替わらないと走らない）
+            await model.loadMyPhotos(environment.photos, viewerId: userId)
+        }
     }
 
     /// フォロー一覧。**取れなかったら nil**（空の集合と分ける）

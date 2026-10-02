@@ -68,9 +68,15 @@ public protocol UIImagePickerControllerDelegate: AnyObject {}
 open class UIImagePickerController: UIViewController {
     public enum SourceType { case camera, photoLibrary }
     public enum CameraCaptureMode { case photo, video }
+    /// 本物は文字列の鍵（`RawRepresentable`）。**値で見分ける**——中身の無い struct だと
+    /// どの鍵も同じに見え、取り違えても模型では通ってしまう
     public struct InfoKey: Hashable {
-        public static let originalImage = InfoKey()
-        public static let editedImage = InfoKey()
+        public let rawValue: String
+        public init(rawValue: String) { self.rawValue = rawValue }
+        public static let originalImage = InfoKey(rawValue: "UIImagePickerControllerOriginalImage")
+        public static let editedImage = InfoKey(rawValue: "UIImagePickerControllerEditedImage")
+        /// 撮った1枚の撮影情報（`{Exif}`・`{TIFF}` などの辞書。カメラのときだけ）
+        public static let mediaMetadata = InfoKey(rawValue: "UIImagePickerControllerMediaMetadata")
     }
     public var sourceType: SourceType = .photoLibrary
     public var cameraCaptureMode: CameraCaptureMode = .photo

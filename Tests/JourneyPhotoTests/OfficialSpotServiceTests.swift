@@ -31,13 +31,25 @@ final class OfficialSpotServiceTests: XCTestCase {
     }
 
     override func tearDown() {
+        // 本物の Caches に書いた控えと印を残さない
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        for name in snapshotNames {
+            let file = caches.appendingPathComponent(name)
+            try? FileManager.default.removeItem(at: file)
+            try? FileManager.default.removeItem(at: file.appendingPathExtension("validator"))
+        }
+        snapshotNames = []
         StubProtocol.reset()
         AppConfig.testOverrides = nil
         super.tearDown()
     }
 
+    /// この試験で作った控えの名前（`tearDown` で消す）
+    private var snapshotNames: [String] = []
+
     private func service(snapshot: String = UUID().uuidString) -> OfficialSpotService {
-        OfficialSpotService(url: url, session: session, snapshot: SpotSnapshotStore(fileName: snapshot))
+        snapshotNames.append(snapshot)
+        return OfficialSpotService(url: url, session: session, snapshot: SpotSnapshotStore(fileName: snapshot))
     }
 
     /// 🔴 別名: 呼んだ側が取り消されても、空を控えない（次の呼び出しで取れる）。並んだ呼び出しは1本に寄せる

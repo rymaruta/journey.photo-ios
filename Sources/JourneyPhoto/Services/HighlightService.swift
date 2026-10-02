@@ -23,8 +23,9 @@ struct HighlightService {
     /// 1人が持てる輪の数（`HIGHLIGHTS_PER_USER`）
     static let perUser = 20
 
-    private func encoded(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
+    /// パスに入れる ID。**英数字・`-`・`_` 以外は要求を出さずに失敗にする**（`PathID`）
+    private func encoded(_ value: String) throws -> String {
+        try PathID.segment(value)
     }
 
     /// その人の輪の一覧。**追っていなければ空**（404 ではない）

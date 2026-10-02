@@ -11,6 +11,8 @@ struct MyPageView: View {
     @StateObject private var model = MyPageViewModel()
     /// 「行きたい」の台帳のスポットの名前を引く索引（`app/data/spots.json`）。
     /// 取れなければ空——鍵のぶんは slug から起こした名前で行だけ出す
+    /// 引き下げ・「もう一度試す」の読み直しの最中（重ねて走らせない）
+    @State private var isReloading = false
     @State private var officialSpots: [OfficialSpot] = []
     /// 保存した写真を引き当てる先のうち**公開一覧**。もう一方の自分の写真は
     /// `model.photos`（`myPhotos()`・`PhotoPools` と同じ口）。公開一覧が無いと
@@ -284,16 +286,23 @@ struct MyPageView: View {
                 .simultaneousGesture(tabSwipe)
             }
         }
-        .refreshable {
-            await model.load(for: auth.userId)
-            // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
-            // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
-            // 読み取りも強い整合でなく（`userList.ts` の `readUserRows`）、外した
-            // 直後に入れ替えると外した保存が控えに戻る（いいねで踏んだのと同じ形）。
-            // サーバーに合わせるのは起動時・ログイン時の `syncSaves` だけ
-            await loadFeed(force: true)
-            refreshSavedIds()
-        }
+        .refreshable { await reloadAll() }
+    }
+
+    /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**（続けて押すと古い回が
+    /// 新しい回を上書きした・2026-10-02 のレビュー）
+    private func reloadAll() async {
+        guard !isReloading else { return }
+        isReloading = true
+        defer { isReloading = false }
+        await model.load(for: auth.userId)
+        // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
+        // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
+        // 読み取りも強い整合でなく（`userList.ts` の `readUserRows`）、外した
+        // 直後に入れ替えると外した保存が控えに戻る（いいねで踏んだのと同じ形）。
+        // サーバーに合わせるのは起動時・ログイン時の `syncSaves` だけ
+        await loadFeed(force: true)
+        refreshSavedIds()
     }
 
     /// 右上の設定（板: 44pt のガラスの丸）。**上のバーを出さないので、ここが入口**
@@ -559,9 +568,9 @@ struct MyPageView: View {
             case .loading:
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             case .none:
-                ErrorBanner(message: SavedPhotosView.emptyMessage)
+                EmptyState(message: SavedPhotosView.emptyMessage)
             case .nothingShown:
-                ErrorBanner(message: LikedPhotos.nothingShownMessage)
+                EmptyState(message: LikedPhotos.nothingShownMessage)
             case .unresolved:
                 ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
                     Task {
@@ -620,20 +629,28 @@ struct MyPageView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
-                                       "Couldn't load the photos. Pull to refresh."))
+                                       "Couldn't load the photos. Pull to refresh."),
+                            isBusy: isReloading) {
+                    Task { await reloadAll() }
+                }
             case .empty:
-                ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
+                EmptyState(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
                                        "Nothing yet. Tap “Want to go” on a place."))
             case .list:
                 // 公開一覧の失敗のときだけ（自分の写真の失敗は上の一行が既に言う）
                 if ProfileSections.wishlistPartlyMissing(shownCount: reachable + officialRows.count,
                                                          savedIdCount: wishIds.count,
                                                          sourceFailed: feedFailed) {
-                    Text(L("一部の場所を読み込めませんでした。引き下げて読み直してください",
-                           "Some places couldn't be loaded. Pull to refresh."))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.danger)
-                        .padding(.horizontal, 16)
+                    HStack(spacing: 8) {
+                        Text(L("一部の場所を読み込めませんでした。引き下げて読み直してください",
+                               "Some places couldn't be loaded. Pull to refresh."))
+                            .font(.footnote)
+                            .foregroundStyle(WebTheme.danger)
+                        Spacer(minLength: 0)
+                        // 引き下げを知らない人にも出口を（2026-10-02 の調査）
+                        RetryButton(isBusy: isReloading, compact: true) { Task { await reloadAll() } }
+                    }
+                    .padding(.horizontal, 16)
                 }
                 ForEach(wanted) { place in
                     NavigationLink {
@@ -872,7 +889,7 @@ struct MyPageView: View {
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
-            ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
+            EmptyState(message: L("まだ写真がありません", "No photos yet"))
         } else {
             let multiple = PhotoGroups.multiPhotoIds(model.photos)
             LazyVGrid(columns: columns, spacing: 4) {
