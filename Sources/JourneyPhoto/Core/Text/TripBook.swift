@@ -67,10 +67,13 @@ enum TripBook {
     }
 
     private static func tripsForOnePerson(_ photos: [Photo], timeZone: TimeZone) -> [Trip] {
-        // **日付を持たない写真は旅に入れない。** いつの旅か決まらないものを
-        // 混ぜると、関係ない写真が一冊に紛れ込む
+        // **撮影日を持たない写真は旅に入れない。** 投稿日で代用すると、昔の旅をまとめて
+        // 上げた日に、別々の旅の写真が1冊に束ねられた（2026-10-02 の owner「分類めちゃくちゃ」・
+        // 実データ: 公開30枚のうち22枚に撮影日が無く、1月20日に上げた19枚がパリ・
+        // ヴェルサイユ・北海道・香川・茨城をまたいで「1日の旅」になっていた）。
+        // 投稿日は「いつ上げたか」で「いつ行ったか」ではない
         let dated = inOrder(photos, timeZone: timeZone).compactMap { photo -> (Photo, Date)? in
-            guard let date = day(of: photo, in: timeZone) else { return nil }
+            guard hasTakenDay(photo), let date = day(of: photo, in: timeZone) else { return nil }
             return (photo, date)
         }
 
