@@ -581,6 +581,7 @@ final class UploadViewModel: ObservableObject {
                         // **本文に URL は入れない**（owner 2026-10-02「Threads 側に出る見た目も洗練させたい」）。
                         // Threads の本文は文字のリンクを作れず（「Journey Photo」を押すと飛ぶ、はできない）、
                         // 写真付きの投稿ではリンクの札も出ない見込み（実機では未確認）で、URL は長い文字列のまま本文に並ぶ。
+                        // 署名（Journey Photo と短いドメイン）は `ThreadsShare.signature` が最後に付ける。
                         // 写真のページへの導線は、API で載せる形（返信にリンクの札）で足す
                         text: ThreadsShare.text(title: lead.title, description: lead.description,
                                                 location: lead.location, url: nil))
