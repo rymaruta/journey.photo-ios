@@ -284,16 +284,19 @@ struct MyPageView: View {
                 .simultaneousGesture(tabSwipe)
             }
         }
-        .refreshable {
-            await model.load(for: auth.userId)
-            // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
-            // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
-            // 読み取りも強い整合でなく（`userList.ts` の `readUserRows`）、外した
-            // 直後に入れ替えると外した保存が控えに戻る（いいねで踏んだのと同じ形）。
-            // サーバーに合わせるのは起動時・ログイン時の `syncSaves` だけ
-            await loadFeed(force: true)
-            refreshSavedIds()
-        }
+        .refreshable { await reloadAll() }
+    }
+
+    /// 引き下げ・「もう一度試す」の読み直し
+    private func reloadAll() async {
+        await model.load(for: auth.userId)
+        // 保存した写真の引き当て先（公開一覧）も読み直す。保存の ID は
+        // **端末の控えを写すだけ**で、サーバーには聞き直さない——保存の一覧の
+        // 読み取りも強い整合でなく（`userList.ts` の `readUserRows`）、外した
+        // 直後に入れ替えると外した保存が控えに戻る（いいねで踏んだのと同じ形）。
+        // サーバーに合わせるのは起動時・ログイン時の `syncSaves` だけ
+        await loadFeed(force: true)
+        refreshSavedIds()
     }
 
     /// 右上の設定（板: 44pt のガラスの丸）。**上のバーを出さないので、ここが入口**
@@ -620,7 +623,9 @@ struct MyPageView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
-                                       "Couldn't load the photos. Pull to refresh."))
+                                       "Couldn't load the photos. Pull to refresh.")) {
+                    Task { await reloadAll() }
+                }
             case .empty:
                 ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
                                        "Nothing yet. Tap “Want to go” on a place."))
@@ -629,11 +634,19 @@ struct MyPageView: View {
                 if ProfileSections.wishlistPartlyMissing(shownCount: reachable + officialRows.count,
                                                          savedIdCount: wishIds.count,
                                                          sourceFailed: feedFailed) {
-                    Text(L("一部の場所を読み込めませんでした。引き下げて読み直してください",
-                           "Some places couldn't be loaded. Pull to refresh."))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.danger)
-                        .padding(.horizontal, 16)
+                    HStack(spacing: 8) {
+                        Text(L("一部の場所を読み込めませんでした。引き下げて読み直してください",
+                               "Some places couldn't be loaded. Pull to refresh."))
+                            .font(.footnote)
+                            .foregroundStyle(WebTheme.danger)
+                        Spacer(minLength: 0)
+                        // 引き下げを知らない人にも出口を（2026-10-02 の調査）
+                        Button(Labels.Common.retry) { Task { await reloadAll() } }
+                            .font(.footnote.weight(.semibold))
+                            .buttonStyle(.bordered)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                    }
+                    .padding(.horizontal, 16)
                 }
                 ForEach(wanted) { place in
                     NavigationLink {

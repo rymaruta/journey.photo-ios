@@ -180,6 +180,7 @@ struct StoryInsightsView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if let errorMessage {
                 Text(errorMessage).font(.footnote).foregroundStyle(WebTheme.danger)
+                retryButton
             } else if scope == .reactions && repliesFailed && !repliesLoaded {
                 // 反応だけ引けなかった回に「まだリアクションはありません」と言わない。
                 // 前に読めていれば、その一覧と数を出し続ける（上の升と食い違わせない）
@@ -187,7 +188,8 @@ struct StoryInsightsView: View {
                        "Couldn't load reactions. Pull to retry"))
                     .font(.subheadline)
                     .foregroundStyle(WebTheme.faint)
-                    .padding(.vertical, 12)
+                    .padding(.top, 12)
+                retryButton
             } else if shownViewers.isEmpty {
                 // **「まだ0人」と「読めなかった」を混ぜない**
                 Text(scope == .reactions
@@ -266,6 +268,15 @@ struct StoryInsightsView: View {
 
     private func replyText(from userId: String) -> String? {
         replies.first { $0.uid == userId && ($0.emoji ?? "").isEmpty }?.text
+    }
+
+    /// 読めなかった回の「もう一度試す」。**引き下げと同じ読み直し**（失敗したら短く知らせる）。
+    /// 引き下げを知らない人にも出口を（2026-10-02 の調査）
+    private var retryButton: some View {
+        Button(Labels.Common.retry) { Task { await load(pulled: true) } }
+            .buttonStyle(.bordered)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .padding(.vertical, 8)
     }
 
     private func hasReaction(from userId: String) -> Bool {

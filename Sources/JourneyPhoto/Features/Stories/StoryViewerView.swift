@@ -1751,7 +1751,12 @@ struct StoryViewerView: View {
                         Text(Labels.Common.loadFailed)
                             .font(.subheadline)
                             .foregroundStyle(WebTheme.muted2)
-                            .padding(.vertical, 16)
+                            .padding(.top, 16)
+                        // 引き下げを知らない人にも出口を（2026-10-02 の調査）
+                        Button(Labels.Common.retry) { Task { await reloadReplies() } }
+                            .buttonStyle(.bordered)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .padding(.bottom, 16)
                     } else if !repliesLoaded {
                         // **読み込み中に「まだ返信はありません」と言わない**（丸のバッジと同じ）
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
