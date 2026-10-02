@@ -26,6 +26,12 @@ actor PublicGalleryService {
     private let session: URLSession
     private let snapshot: PhotoSnapshotStore
 
+    /// 自分で編集して保存した写真の新しい行（`PhotoEditLedger`）。**出すところで重ねる**
+    /// ——一覧は建て直しまで古い静的 JSON なので、重ねないとホーム・探す・地図から
+    /// 開き直した写真が編集前に戻って見えた。詳細の画面も同じ控えを引く（主スレッドから
+    /// 同期で読むので actor の外に置く）
+    nonisolated let edits: PhotoEditLedger
+
     /// 見せない相手と、見せない写真。
     ///
     /// **公開一覧は静的な JSON なので、サーバー側では絞れない。**
@@ -170,8 +176,10 @@ actor PublicGalleryService {
          liveURL: URL? = nil,
          session: URLSession? = nil,
          snapshot: PhotoSnapshotStore = PhotoSnapshotStore(),
+         edits: PhotoEditLedger = PhotoEditLedger(),
          beforeLiveRequest: (@Sendable () async -> Void)? = nil) {
         self.url = url
+        self.edits = edits
         self.liveURL = liveURL
         self.snapshot = snapshot
         self.beforeLiveRequest = beforeLiveRequest
@@ -279,11 +287,15 @@ actor PublicGalleryService {
     ///
     /// いいねの数は**ここで**いまの数に差し替える（`LiveLikes`）。
     /// 取れていなければ静的 JSON の数のまま。
+    ///
+    /// **自分で編集した写真は編集後の行を重ねる**（`edits`）。限定の行を足した**後**に重ねる
+    /// ——限定の行は今の行なので、たいてい追いついていて控えが捨てられる。
+    /// `visible` より前に重ねる（編集で非公開にした写真を落とすため）
     private func merged(_ photos: [Photo], force: Bool) async -> (photos: [Photo], epoch: Int) {
         let counted = LiveLikes.apply(liveCounts ?? [:], asOf: liveCountsAsOf ?? .distantPast, to: photos)
         let (extra, epoch) = await restrictedPhotos(force: force)
-        if extra.isEmpty { return (visible(counted), epoch) }
-        return (visible(RestrictedFeed.merge(publicPhotos: counted, restricted: extra)), epoch)
+        if extra.isEmpty { return (visible(edits.apply(to: counted)), epoch) }
+        return (visible(edits.apply(to: RestrictedFeed.merge(publicPhotos: counted, restricted: extra))), epoch)
     }
 
     /// いいねのいまの数を取り直す。**失敗しても何も投げない**

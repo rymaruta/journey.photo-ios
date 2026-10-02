@@ -222,6 +222,9 @@ struct JourneyPhotoApp: App {
                     // で行われ（ログアウト後は取れずに前の人の控えを返す）、
                     // 前の人あての「フォロワーのみ」が残ったままになる
                     await applyRestrictedFeed()
+                    // **前の人が編集した写真の控えを捨てる**（`PhotoEditLedger`）。
+                    // ログアウト・別の人のログインで、前の人の編集後の姿を重ねない
+                    environment.gallery.edits.clear()
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)

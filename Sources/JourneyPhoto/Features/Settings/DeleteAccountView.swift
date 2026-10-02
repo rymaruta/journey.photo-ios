@@ -152,6 +152,9 @@ struct DeleteAccountView: View {
             if let userId {
                 AccountLocalData.remove(userId: userId, username: username)
             }
+            // 編集した写真の控え（端末に書かない・`PhotoEditLedger`）も捨てる。
+            // ログアウトでも捨てるが、退会はそれを待たずに
+            environment.gallery.edits.clear()
             dismiss()
         } catch {
             errorMessage = L("写真とプロフィールは削除されました。アカウント自体の削除だけが残っています。もう一度「アカウントを削除する」を押してください",

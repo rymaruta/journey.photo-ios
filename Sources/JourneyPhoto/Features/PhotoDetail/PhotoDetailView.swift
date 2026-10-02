@@ -79,7 +79,18 @@ struct PhotoDetailView: View {
     }
 
     /// 画面に描く1枚。編集していれば新しい方。
-    private var shown: Photo { edits[current.id] ?? current }
+    ///
+    /// 🔴 **別の画面（前に開いた詳細）で編集した分も引く**（`PhotoEditLedger`）。
+    /// `edits` はこの画面の `@State` で、ホーム・探す・地図から開き直すと
+    /// 古い一覧の行（編集前）が出ていた
+    private var shown: Photo {
+        edits[current.id] ?? environment.gallery.edits.edited(over: current) ?? current
+    }
+    /// 束の写真の編集後の姿。**この画面で直した分と、別の画面で直した分**（`PhotoEditLedger`）。
+    /// この画面で直した分が新しい
+    private var knownEdits: [String: Photo] {
+        environment.gallery.edits.pending(in: siblings).merging(edits) { _, here in here }
+    }
     /// コメント・いいねを受け付けるか（下書きは受け付けない・`PhotoDetailRules.acceptsReactions`）
     private var acceptsReactions: Bool { PhotoDetailRules.acceptsReactions(published: shown.published) }
 
@@ -258,7 +269,7 @@ struct PhotoDetailView: View {
             // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）。
             // 編集して保存した写真は新しい姿で（題・撮影地が古いまま出ていた）
             let lineup = PhotoDetailRules.viewerLineup(siblings, current: shown,
-                                                       hiding: dropped, edits: edits)
+                                                       hiding: dropped, edits: knownEdits)
             PhotoViewerView(
                 photos: lineup.photos,
                 index: lineup.index,
@@ -363,7 +374,7 @@ struct PhotoDetailView: View {
     /// 同じ投稿の束（1枚だけならこの1枚）。**大きく見る画面と同じく、ブロック・通報した
     /// 写真を落とす**（`PhotoDetailRules.heroGroup`・今の1枚は残す）
     private var heroGroup: [Photo] {
-        PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: edits).photos
+        PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: knownEdits).photos
     }
 
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）。
@@ -373,7 +384,7 @@ struct PhotoDetailView: View {
     /// 題・いいね・削除の対象が食い違う。送ったら `current` をその1枚にする
     private var heroPage: Binding<Int> {
         Binding(
-            get: { PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: edits).index },
+            get: { PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: knownEdits).index },
             set: { page in
                 let group = heroGroup
                 guard group.indices.contains(page) else { return }
@@ -1384,6 +1395,9 @@ struct PhotoDetailView: View {
         let id = current.id
         guard let fresh = try? await environment.photos.myPhoto(id: id) else { return }
         edits[id] = fresh
+        // **ほかの画面にも渡す**（`PhotoEditLedger`）。公開一覧に重ね、別の画面から
+        // 開き直した詳細もこの姿で出す
+        environment.gallery.edits.record(fresh)
     }
 
     private func deletePhoto() async {
