@@ -950,7 +950,9 @@ final class UploadViewModel: ObservableObject {
             } else if let data = body?.data {
                 sharable.append((data, id, draft.title, draft.description, draft.location))
             } else if shareToThreads {
-                if let data = try? await preparedToSend(item).data {
+                // （`if let … = try? await` を1行に書くと構文の検査の tree-sitter が読めない）
+                let rebuilt = try? await preparedToSend(item)
+                if let data = rebuilt?.data {
                     sharable.append((data, id, draft.title, draft.description, draft.location))
                 } else {
                     outcome.shareSkipped = true
