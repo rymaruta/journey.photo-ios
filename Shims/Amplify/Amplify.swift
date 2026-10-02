@@ -86,7 +86,18 @@ public struct AuthSignInResult {
 }
 public struct AuthCodeDeliveryDetails {}
 public struct AuthResetPasswordResult {}
-public struct AuthSignOutResult {}
+/// 本物は protocol（`Amplify/Categories/Auth/Result/AuthSignOutResult.swift`）。
+/// 中身は Cognito プラグインの `AWSCognitoSignOutResult`（enum）で、`as?` で読む
+public protocol AuthSignOutResult: Sendable {}
+private struct ShimSignOutResult: AuthSignOutResult {}
+/// 本物の `AuthFetchSessionRequest.Options`（`forceRefresh()` で手元の控えを使わず取り直す）
+public enum AuthFetchSessionRequest {
+    public struct Options {
+        public let forceRefresh: Bool
+        public init(forceRefresh: Bool = false) { self.forceRefresh = forceRefresh }
+        public static func forceRefresh() -> Options { Options(forceRefresh: true) }
+    }
+}
 public protocol AuthUser {
     var username: String { get }
     var userId: String { get }
@@ -99,7 +110,9 @@ public enum Amplify {
     public static func configure(_ configuration: AmplifyConfiguration) throws {}
 
     public enum Auth {
-        public static func fetchAuthSession() async throws -> any AuthSession { fatalError("模型") }
+        public static func fetchAuthSession(options: AuthFetchSessionRequest.Options? = nil) async throws -> any AuthSession {
+            fatalError("模型")
+        }
         public static func getCurrentUser() async throws -> any AuthUser { fatalError("模型") }
         public static func signUp(username: String, password: String,
                                   options: AuthSignUpRequest.Options? = nil) async throws -> AuthSignUpResult {
@@ -115,7 +128,7 @@ public enum Amplify {
         public static func signIn(username: String?, password: String?) async throws -> AuthSignInResult {
             fatalError("模型")
         }
-        public static func signOut() async -> AuthSignOutResult { AuthSignOutResult() }
+        public static func signOut() async -> any AuthSignOutResult { ShimSignOutResult() }
         /// サインイン中の利用者を Cognito から消す（本物は済むとローカルのサインアウトもする）
         public static func deleteUser() async throws {}
         public static func resetPassword(for username: String) async throws -> AuthResetPasswordResult {

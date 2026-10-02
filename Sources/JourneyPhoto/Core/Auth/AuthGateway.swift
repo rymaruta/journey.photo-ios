@@ -123,8 +123,40 @@ enum AuthGateway {
     }
 
     @MainActor
-    private static func announceSessionExpired() {
+    static func announceSessionExpired() {
         NotificationCenter.default.post(name: .authSessionExpired, object: nil)
+    }
+
+    /// サーバーに 401 を返された後の取り直し（`APIClient.send`）。**1本にまとめる**
+    /// ——画面の口が一斉に 401 になっても、Cognito に頼むのは1回（`TokenRefresher`）
+    static let refresher = TokenRefresher { try await forcedIdToken() }
+
+    static func refreshedIdToken() async throws -> String? {
+        guard isConfigured else { return nil }
+        return try await refresher.refresh()
+    }
+
+    /// 手元の控えを使わず、Cognito から ID トークンを取り直す。
+    ///
+    /// 取り直せない（更新トークンも切れた・取り消された）回は nil。**ここでは知らせない**
+    /// ——知らせるのは `APIClient` が「取り直せなかった」と決めたとき（`sessionExpired`）。
+    /// 通信できない回は `tokenFailure` で `unreachable` にして投げる（ログアウトさせない）
+    private static func forcedIdToken() async throws -> String? {
+        let session: any AuthSession
+        do {
+            session = try await Amplify.Auth.fetchAuthSession(options: .forceRefresh())
+        } catch {
+            throw tokenFailure(error)
+        }
+        guard session.isSignedIn,
+              let provider = session as? AuthCognitoTokensProvider else { return nil }
+        switch provider.getCognitoTokens() {
+        case .success(let tokens):
+            return tokens.idToken
+        case .failure(let error):
+            guard AuthFailure(error) == .notAuthorized else { throw tokenFailure(error) }
+            return nil
+        }
     }
 
     /// ログインの期限が切れているか（起動時の確認用・知らせは出さない）。
@@ -268,6 +300,15 @@ enum AuthGateway {
 struct CognitoTokenProvider: TokenProviding {
     func idToken() async throws -> String? {
         try await AuthGateway.idToken()
+    }
+
+    func refreshedIdToken() async throws -> String? {
+        try await AuthGateway.refreshedIdToken()
+    }
+
+    /// 取り直しても 401。`AuthStore` が受けてログアウトに倒す
+    func sessionExpired() async {
+        await AuthGateway.announceSessionExpired()
     }
 }
 

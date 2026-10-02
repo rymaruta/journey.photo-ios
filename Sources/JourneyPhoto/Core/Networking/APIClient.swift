@@ -16,6 +16,23 @@ protocol TokenProviding: Sendable {
     /// （`api-user/serverless.yml`）。アクセストークンの `aud` は空で
     /// `client_id` に入るため、送ると全部 401 になる。
     func idToken() async throws -> String?
+
+    /// **401 を受けたあと**、手元の控えを使わずに Cognito から取り直した ID トークン。
+    /// nil は「取り直せない（ログインが切れている）」。通信できない回は投げる
+    /// （圏外の人をログアウトさせない）。
+    ///
+    /// 同時に何本 401 になっても、取り直しは1本にまとめること（`TokenRefresher`）
+    func refreshedIdToken() async throws -> String?
+
+    /// 取り直しても通らなかった（またはそもそも取り直せなかった）。ログアウトに倒す
+    func sessionExpired() async
+}
+
+extension TokenProviding {
+    /// 既定は「取り直せない」。**試験の差し替えはこれのまま**——401 は今までどおり
+    /// 呼び手に返る（取り直しを見る試験だけが自分で持つ）
+    func refreshedIdToken() async throws -> String? { nil }
+    func sessionExpired() async {}
 }
 
 /// api-user を叩く薄いクライアント。
@@ -125,13 +142,50 @@ actor APIClient {
             request.httpBody = try JSONEncoder.api.encode(AnyEncodable(body))
         }
 
-        if authorized {
-            guard let token = try await tokenProvider.idToken() else {
-                throw APIError.notAuthenticated
-            }
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard authorized else { return try await perform(request) }
+        guard let token = try await tokenProvider.idToken() else {
+            throw APIError.notAuthenticated
         }
 
+        // 🔴 **401 を受けたら、取り直して1回だけやり直す。** ID トークンは1時間で切れる。
+        // Amplify は手元の控えが切れる少し前に更新するが、端末の時計のずれや、
+        // 送っている途中で切れた回はサーバーが 401 を返す。そのまま投げていたので、
+        // 画面は「ログインの有効期限が切れました」を出したまま、ログイン中の見た目で
+        // 何もできなかった（`APIError.isAuthExpired` はどこからも読まれていなかった）。
+        //
+        // **やり直すのは1回だけ。** 取り直しても 401 なら、本当に切れている——
+        // ログアウトに倒す（`TokenProviding.sessionExpired`）。認証の要らない口は上で
+        // 返しているので、ここへは来ない。
+        //
+        // `catch … where` の中で await しない（Xcode 26.3 のコンパイラが落ちた・
+        // `AuthGateway.idToken` の注記）。答えを `Result` に取ってから分ける
+        let first = await attempt(request, bearer: token)
+        guard case .failure(let error) = first else { return try first.get() }
+        guard (error as? APIError)?.isAuthExpired == true else { throw error }
+
+        guard let fresh = try await tokenProvider.refreshedIdToken() else {
+            await tokenProvider.sessionExpired()
+            throw error
+        }
+        let second = await attempt(request, bearer: fresh)
+        if case .failure(let retryError) = second, (retryError as? APIError)?.isAuthExpired == true {
+            await tokenProvider.sessionExpired()
+        }
+        return try second.get()
+    }
+
+    /// 鍵を付けて1回送る（失敗も値で返す——上の注記）
+    private func attempt(_ request: URLRequest, bearer token: String) async -> Result<Data, Error> {
+        var request = request
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            return .success(try await perform(request))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func perform(_ request: URLRequest) async throws -> Data {
         await beforeRequest?(request)
         let data: Data
         let response: URLResponse
