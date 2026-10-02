@@ -51,8 +51,13 @@ final class AuthStore: ObservableObject {
     private(set) var signedOutByExpiry = false
 
     private var expiryObserver: NSObjectProtocol?
+    /// Cognito に頼む口（試験で差し替える）
+    private let gateway: AuthStoreGateway
+    /// 期限切れのログアウトを走らせている最中か（`expireSession`）
+    private var isExpiring = false
 
-    init() {
+    init(gateway: AuthStoreGateway = .live) {
+        self.gateway = gateway
         // ログインの期限切れ（`AuthGateway.idToken`）を受けてログアウトに倒す
         expiryObserver = NotificationCenter.default.addObserver(
             forName: .authSessionExpired, object: nil, queue: .main
@@ -62,8 +67,15 @@ final class AuthStore: ObservableObject {
     }
 
     /// ログインの期限が切れた。**ログイン中の見た目のまま何もできない**状態を作らない
+    ///
+    /// 🔴 **何通来ても1回だけ走らせる。** 画面の口が一斉に 401 になると、期限切れの
+    /// 知らせが同時に何通も届く。`userId` を見るだけだと、1本目がログアウトを待って
+    /// いる間（まだ `.signedIn`）に2本目も通り、ログアウトが並んで走っていた。
+    /// 印は**最初の await より前に**立てる（MainActor の上なので、ここまでは割り込まれない）
     func expireSession() async {
-        guard userId != nil else { return }
+        guard userId != nil, !isExpiring else { return }
+        isExpiring = true
+        defer { isExpiring = false }
         await signOut(byExpiry: true)
         errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                          "Your session has expired. Please sign in again.")
@@ -96,17 +108,17 @@ final class AuthStore: ObservableObject {
             return
         }
         #endif
-        guard await AuthGateway.isSignedIn() else {
+        guard await gateway.isSignedIn() else {
             state = .signedOut
             isAdmin = false
             return
         }
-        let id = try? await AuthGateway.currentUserId()
+        let id = try? await gateway.currentUserId()
         // **期限切れは起動時に見つける。** ログイン中の見た目のまま始めない。
         // 圏外などで判定できない回は `false`（ログイン中のまま進む）。
         // **ID が取れなかった回も見る**——見ないと、期限切れなのに「本当に
         // ログアウトしたか分からない」扱いになり、通知の宛先を外さない
-        if await AuthGateway.isSessionExpired() {
+        if await gateway.isSessionExpired() {
             await signOut(byExpiry: true)
             errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                              "Your session has expired. Please sign in again.")
@@ -148,10 +160,10 @@ final class AuthStore: ObservableObject {
         // 外すのを待つ間にもう一度押され、2本目の外しが1本目のログインを消しうる
         await run {
             if self.isSignedOutUncertain {
-                await AuthGateway.signOut()
+                await self.gateway.signOut()
             }
             _ = try await AuthGateway.signIn(email: email, password: password)
-            let id = try await AuthGateway.currentUserId()
+            let id = try await self.gateway.currentUserId()
             self.isSignedOutUncertain = false
             self.signedOutByExpiry = false
             self.state = .signedIn(userId: id)
@@ -168,7 +180,7 @@ final class AuthStore: ObservableObject {
     func signOut(byExpiry: Bool = false) async {
         isSignedOutUncertain = false
         signedOutByExpiry = byExpiry
-        await AuthGateway.signOut()
+        await gateway.signOut()
         settleSignedOut()
     }
 
@@ -197,11 +209,11 @@ final class AuthStore: ObservableObject {
     /// 失敗として投げると「もう一度押して」が永久に続き、抜けられない
     func deleteCognitoUser() async throws {
         do {
-            try await AuthGateway.deleteUser()
+            try await gateway.deleteUser()
         } catch let error as AuthError where AuthFailure(error).meansUserAlreadyGone {
             // 消えている。下のサインアウトへ進む
         }
-        await AuthGateway.signOut()
+        await gateway.signOut()
         settleSignedOut()
     }
 
@@ -236,7 +248,7 @@ final class AuthStore: ObservableObject {
         // **期限切れも同じ種類（`.notAuthorized`）に畳まれる**ので、先に見分ける——
         // 見分けないと、正しいパスワードを何度打っても「違います」と出る
         if lastFailure == .notAuthorized {
-            if await AuthGateway.isSessionExpired() {
+            if await gateway.isSessionExpired() {
                 await expireSession()
             } else {
                 errorMessage = L("いまのパスワードが違います", "Your current password is incorrect")
@@ -327,6 +339,27 @@ final class AuthStore: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+/// `AuthStore` が Cognito に頼む口。**試験で差し替える**——Amplify は Linux の試験では
+/// 動かない（模型）ので、ログアウトの並び・結果の扱いを見るにはここを替える。
+/// 本番は `AuthGateway` そのまま
+struct AuthStoreGateway: Sendable {
+    var isSignedIn: @Sendable () async -> Bool
+    var currentUserId: @Sendable () async throws -> String
+    var currentUsername: @Sendable () async throws -> String
+    var isSessionExpired: @Sendable () async -> Bool
+    var signOut: @Sendable () async -> Void
+    var deleteUser: @Sendable () async throws -> Void
+
+    static let live = AuthStoreGateway(
+        isSignedIn: { await AuthGateway.isSignedIn() },
+        currentUserId: { try await AuthGateway.currentUserId() },
+        currentUsername: { try await AuthGateway.currentUsername() },
+        isSessionExpired: { await AuthGateway.isSessionExpired() },
+        signOut: { await AuthGateway.signOut() },
+        deleteUser: { try await AuthGateway.deleteUser() }
+    )
 }
 
 /// ログインが「続きの段」で止まった（`AuthGateway.outcome`）
