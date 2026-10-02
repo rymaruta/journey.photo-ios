@@ -165,13 +165,20 @@ struct LibraryTripPickView: View {
                 }
                 .buttonStyle(.plain)
             } else {
+                // 旅の記録の一冊は2枚から（1枚では束にならず、非公開のままどこの棚にも出ない）
+                let canAdd = LibraryTrips.canAddToTrips(count: selected.count)
+                if !canAdd {
+                    Text(L("2枚から旅の記録に入れられます", "Pick 2 or more photos to add to your trips"))
+                        .font(.footnote)
+                        .foregroundStyle(WebTheme.muted2)
+                }
                 Button { startLoading() } label: {
-                    Text(L("\(selected.count)枚を下書きに入れる", "Add \(selected.count) to a draft"))
+                    Text(L("\(selected.count)枚を旅の記録に入れる", "Add \(selected.count) to your trips"))
                         .jpPillButton(.primary)
-                        .opacity(selected.isEmpty ? 0.5 : 1)
+                        .opacity(canAdd ? 1 : 0.5)
                 }
                 .buttonStyle(.plain)
-                .disabled(selected.isEmpty)
+                .disabled(!canAdd)
             }
         }
         .jpBottomBar()
@@ -180,7 +187,7 @@ struct LibraryTripPickView: View {
     /// 読み込みを始める。**印を立ててから仕事を作る**——ボタンの `.disabled` は次の描画まで
     /// 効かないので、素早い二度押しで仕事が2つできていた
     private func startLoading() {
-        guard loadTask == nil, !isLoading, !selected.isEmpty else { return }
+        guard loadTask == nil, !isLoading, LibraryTrips.canAddToTrips(count: selected.count) else { return }
         isLoading = true
         loadTask = Task { await load() }
     }

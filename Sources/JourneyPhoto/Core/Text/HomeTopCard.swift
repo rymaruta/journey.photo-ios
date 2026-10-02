@@ -177,10 +177,15 @@ enum HomeTopCard {
 
     /// 閉じたばかりで、まだ札から開いていない一冊。**一番新しい旅だけを見る**
     /// ——古い旅の札を後から出さない（新しい旅がもう閉じているなら、そちらが今の話）。
-    /// 旅は**マイページの「旅の記録」と同じ棚**（`TripBook.shelfTrips`・下書きを入れない）
+    /// 旅は**マイページの「旅の記録」と同じ棚**（`TripBook.shelfTrips`）。
+    /// **自分だけの一冊（非公開の束）も出す**——この札は本人の端末のホームにしか出ない
     static func bookReady(today: Date, myPhotos: [Photo], openedBookDays: Set<String>,
                           timeZone: TimeZone) -> Choice? {
-        guard let latest = TripBook.shelfTrips(from: myPhotos, timeZone: timeZone).first else { return nil }
+        // **終わりのいちばん遅い一冊を見る。** 棚は始まりの新しい順なので、日付の一冊の途中に
+        // 束の一冊があると、束の方が先頭に来て、旅の最中に「閉じた」と言っていた。
+        // 日付の一冊どうしは重ならないので、日付だけの棚では今までと同じ一冊になる
+        guard let latest = TripBook.shelfTrips(from: myPhotos, timeZone: timeZone)
+            .max(by: { $0.end < $1.end }) else { return nil }
         let sinceEnd = TripBook.calendarDays(from: latest.end, to: today)
         let closed = sinceEnd > TripBook.maxGapDays
         let fresh = sinceEnd <= TripBook.maxGapDays + bookFreshDays
@@ -192,14 +197,21 @@ enum HomeTopCard {
     ///
     /// 🔴 **旅の id（写真の id をつないだもの）で持たない。** 撮り残しを1枚足す・
     /// 1枚消すだけで id が変わり、開いた一冊の札がまた出てきた
+    ///
+    /// **束から作った一冊は束の id（`group#…`）で持つ。** 同じ日々に、束の一冊と
+    /// 日付で束ねた一冊が並ぶことがある（旅の写真からまとめて上げ、別に公開でも上げた）。
+    /// 始まりの日で持つと、片方を開いただけでもう片方の札まで下がる
     static func bookKey(_ trip: TripBook.Trip) -> String {
-        TripPlanText.ymd(trip.start)
+        trip.groupId != nil ? trip.id : TripPlanText.ymd(trip.start)
     }
 
     /// 印の日が**この旅の期間の中にあれば**開いたことにする。始まりの日で持つので、
     /// 開いたあとに前の日の写真を足して始まりが早まっても、同じ旅と分かる
     static func isOpened(_ trip: TripBook.Trip, openedBookDays: Set<String>) -> Bool {
-        openedBookDays.contains { key in
+        // 束の一冊は束の id だけを見る（日付の鍵では下げない）。日付の鍵は日として読めるものだけ
+        // （`group#…` は日として読めないので、日付の一冊を下げない）
+        if trip.groupId != nil { return openedBookDays.contains(trip.id) }
+        return openedBookDays.contains { key in
             guard let day = TripPlanText.date(fromYMD: key) else { return false }
             return day >= trip.start && day <= trip.end
         }

@@ -41,6 +41,19 @@ struct TripShelf: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
         }
+        // **自分だけの一冊に鍵**（非公開の写真が入っている）。写真の上なので白、
+        // 読めるように黒の丸を敷く
+        .overlay(alignment: .topTrailing) {
+            if trip.isPrivate {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    .frame(width: 26, height: 26)
+                    .background(Color.black.opacity(0.55), in: Circle())
+                    .padding(10)
+                    .accessibilityLabel(L("自分だけ", "Only you"))
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18)
             .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
@@ -73,8 +86,8 @@ struct TripShelfList: View {
                     }
                 }
             }
-            Text(L("同じころに撮った写真が2枚たまると、ひとつの旅にまとまります",
-                   "Two or more photos taken around the same time become a trip"))
+            Text(L("同じころに撮った公開写真が2枚たまると、ひとつの旅にまとまります。「旅の写真からまとめて」で入れた写真は、その束で一冊になります",
+                   "Two or more public photos taken around the same time become a trip. Photos added with \"From a trip in your photos\" become one trip together"))
                 .font(.system(size: 12))
                 .lineSpacing(3)
                 .foregroundStyle(WebTheme.faint)

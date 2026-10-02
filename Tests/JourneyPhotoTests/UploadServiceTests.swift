@@ -142,6 +142,50 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertEqual(model.tagsText, "", "空にしたタグを戻ってきたときに入れ直している")
     }
 
+    /// 束の印の頭（2026-10-02 判断）: 旅の写真の流れから来た投稿は必ず `trip-` で始まり、
+    /// ふだんのまとめ投稿には付かない（旅の記録の一冊になるのは前者だけ）
+    @MainActor
+    func testTripGroupIdOnlyFromTheTripFlow() async throws {
+        for fromTrip in [true, false] {
+            ScriptedProtocol.reset()
+            ScriptedProtocol.script = [
+                .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+                .init(match: "/put", status: 200, body: ""),
+                .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+            ]
+            let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                tokenProvider: StubTokenProvider(token: "t"), session: session)
+            let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                        photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+            if fromTrip {
+                // 旅の写真の流れ（RootView → UploadView の initialPhotos）。模型では整えられないので
+                // 失敗を言い終えるまで待ってから、整った写真を置く
+                model.applyInitialPhotos([Data([1])], startPrivate: true)
+                for _ in 0..<300 where model.errorMessage == nil {
+                    try await Task.sleep(nanoseconds: 10_000_000)
+                }
+                XCTAssertTrue(model.fromTripImport)
+            }
+            // 旅の流れでは「それぞれ別の投稿」にしても束ねる（ふだんの投稿はまとめるときだけ）
+            model.groupsAsOnePost = !fromTrip
+            model.items = (0..<2).map { _ in PendingPhoto(prepared: ImagePreparer.Prepared(
+                data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+                exif: nil, coords: nil, takenOn: nil)) }
+
+            await model.submit()
+
+            let saves = ScriptedProtocol.calls.filter { $0.path == "/upload/save" }
+            XCTAssertEqual(saves.count, 2)
+            for save in saves {
+                let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(save.body)) as? [String: Any])
+                let groupId = try XCTUnwrap(json["groupId"] as? String)
+                XCTAssertEqual(groupId.hasPrefix("trip-"), fromTrip,
+                               fromTrip ? "旅の写真の流れの束に trip- が付いていない" : "ふだんのまとめ投稿に trip- が付いた")
+                XCTAssertLessThanOrEqual(groupId.count, 64)
+            }
+        }
+    }
+
     /// 旅の写真から来た投稿は**非公開で送る**。上げ終えて片付けたあとも非公開のまま
     /// （初期値に戻す）で、片付いた画面は書きかけではない（閉じるときに聞かない）
     @MainActor

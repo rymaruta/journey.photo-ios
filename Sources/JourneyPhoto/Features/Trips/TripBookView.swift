@@ -52,6 +52,8 @@ struct TripBookView: View {
             // 板の右上の「共有」。**配るのは題と期間の文だけ**（URL を持たない理由は
             // `TripBook.shareText`）
             ToolbarItem(placement: .topBarTrailing) {
+                // 自分だけの一冊は共有しない（`TripBook.canShare`）
+                if TripBook.canShare(book) {
                 Group {
                     // 表紙と題・期間・数字を載せた1枚（2026-09-30）。作れるまでは文
                     if let cardURL {
@@ -65,6 +67,7 @@ struct TripBookView: View {
                 }
                 .webToolbarIcon()
                 .accessibilityLabel(L("共有", "Share"))
+                }
             }
         }
         // 開いたときに1回だけ作っておく（押してから待たせない）。同じ旅なら同じファイルを上書き。
@@ -365,8 +368,10 @@ struct TripBookView: View {
     /// 一冊から消した・非公開にした写真を落とす（`ModerationSnapshot.visible`・他の一覧と同じ）。
     /// 題・期間は開いたときのまま（`id` も変えない——共有の画像を同じファイルに書く）
     nonisolated static func visible(_ trip: TripBook.Trip, dropped: ModerationSnapshot) -> TripBook.Trip {
+        // 束の印・「自分だけ」の印も引き継ぐ（落とすと、開いた一冊で鍵と札の鍵が食い違う）
         TripBook.Trip(id: trip.id, place: trip.place, start: trip.start, end: trip.end,
-                      photos: dropped.visible(trip.photos), timeZone: trip.timeZone)
+                      photos: dropped.visible(trip.photos), timeZone: trip.timeZone,
+                      groupId: trip.groupId, isPrivate: trip.isPrivate)
     }
 
     /// 移動（直線）。数えられなければ nil（枠には「—」）
