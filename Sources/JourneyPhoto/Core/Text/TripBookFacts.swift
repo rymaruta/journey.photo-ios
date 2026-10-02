@@ -100,6 +100,43 @@ extension TripBook {
         return result
     }
 
+    // MARK: - ページの行（画面外を読まないため）
+
+    /// 段の頭と写真の間・写真どうしの間（前の `VStack(spacing: 20)`）
+    static let pageSpacing: Double = 20
+    /// 段と段の間（前の `VStack(spacing: 36)`）
+    static let daySpacing: Double = 36
+
+    /// ページを**平らな1列**にしたときの1行。
+    ///
+    /// **一冊の全ページを一度に作らない（2026-10-02）。** 日の段を入れ子の `VStack` で並べると、
+    /// 開いた瞬間に全ページの `RemoteImage` が作られ、画面外の元画像まで一度に読んでいた。
+    /// 平らな行にして `LazyVStack(spacing: 0)` に並べ、間は行ごとの `topSpacing` で前と同じに保つ
+    /// （段の間 36・段の中 20。並びと余白は変えない）
+    struct PageRow: Identifiable, Equatable {
+        enum Kind: Equatable {
+            case header(Day)
+            case page(Photo, dayPlace: String)
+        }
+        let id: String
+        let kind: Kind
+        /// この行の上に空ける高さ（先頭は 0）
+        let topSpacing: Double
+    }
+
+    static func pageRows(of days: [Day]) -> [PageRow] {
+        var rows: [PageRow] = []
+        for day in days {
+            rows.append(PageRow(id: "day-\(day.number)", kind: .header(day),
+                                topSpacing: rows.isEmpty ? 0 : daySpacing))
+            for photo in day.photos {
+                rows.append(PageRow(id: "photo-\(photo.id)", kind: .page(photo, dayPlace: day.place),
+                                    topSpacing: pageSpacing))
+            }
+        }
+        return rows
+    }
+
     // MARK: - ルート図
 
     struct RouteStop: Equatable {
