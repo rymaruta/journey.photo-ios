@@ -169,7 +169,7 @@ final class LibraryTripsTests: XCTestCase {
     }
 
     /// 🔴 単身赴任: 家は東京、平日5日は大阪、週末2日は東京。探し直しで大阪を仮の家にしても、
-    /// **東京（本当の家）の週末は旅ではない**（仮の家だけから見て9件の「旅」が出ていた）
+    /// **東京（本当の家）の週末は旅ではない**（仮の家だけから見て11件の「旅」が出ていた）
     func testWeekendsAtTheRealHomeAreNotTripsAfterRetry() {
         let osaka = (lat: 34.69, lng: 135.50)
         var shots: [LibraryShot] = []
@@ -184,6 +184,33 @@ final class LibraryTripsTests: XCTestCase {
         }
         XCTAssertEqual(LibraryTrips.find(shots, home: home, timeZone: tokyo).count, 0,
                        "本当の家で過ごした週末を旅にした")
+    }
+
+    /// 🔴 引っ越したあとの里帰り: 京都に120日、その中に前の家（東京）への2日が1回。
+    /// たまにしか行かないので本当の家は家として扱わず、東京の2日を旅として残す（2026-10-02 判断）
+    func testOccasionalVisitToTheOldHomeIsATrip() {
+        var shots: [LibraryShot] = []
+        for day in 0..<120 where !(60...61).contains(day) {
+            shots.append(shot("kyoto\(day)", hours: Double(day) * 24 + 12, kyoto))
+        }
+        let visit = (0..<6).map { shot("tokyo\($0)", hours: 60 * 24 + 9 + Double($0) * 6, home) }
+        let found = LibraryTrips.find(shots + visit, home: home, timeZone: tokyo)
+        XCTAssertEqual(found.count, 1, "里帰りが消えた")
+        XCTAssertEqual(found.first?.shots.map(\.id), visit.map(\.id))
+    }
+
+    /// 本当の家を家のまま扱うのは、半分以上の週に行くときだけ
+    func testHomesKeptInRetryByWeeklyFrequency() {
+        let start = base
+        let end = base.addingTimeInterval(4 * 7 * 86_400 - 1)  // 4週
+        let tokyoHome = Photo.Coords(lat: home.lat, lng: home.lng)
+        func visits(_ weeks: [Int]) -> [LibraryShot] {
+            weeks.map { shot("v\($0)", hours: Double($0) * 7 * 24 + 30, home) }
+        }
+        XCTAssertEqual(LibraryTrips.homesKeptInRetry([tokyoHome], shots: visits([0, 2]), start: start, end: end).count, 1,
+                       "4週のうち2週帰る家を家として扱っていない")
+        XCTAssertTrue(LibraryTrips.homesKeptInRetry([tokyoHome], shots: visits([1]), start: start, end: end).isEmpty,
+                      "4週のうち1週しか行かない家を家として扱った")
     }
 
     /// 引けなかった地名は10分は引き直さない
