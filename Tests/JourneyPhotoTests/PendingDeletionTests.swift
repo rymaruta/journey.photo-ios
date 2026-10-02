@@ -36,7 +36,7 @@ final class PendingDeletionTests: XCTestCase {
                 calls.deleteUser += 1
                 if calls.deleteFails { throw APIError.unreachable }
             },
-            signOutNotCleared: { false }, clearSignOutNotCleared: {}))
+            latch: .forTesting()))
         await auth.restore()
         XCTAssertEqual(auth.userId, "u1", "下ごしらえ: ログイン中になる")
         return auth
@@ -78,7 +78,7 @@ final class PendingDeletionTests: XCTestCase {
         let auth = AuthStore(gateway: AuthStoreGateway(
             isSignedIn: { false }, currentUserId: { "" }, currentUsername: { "" },
             isSessionExpired: { false }, signOut: { .signedOut }, deleteUser: {},
-            signOutNotCleared: { false }, clearSignOutNotCleared: {}))
+            latch: .forTesting()))
         auth.noteDeletionPending()
         XCTAssertFalse(auth.deletionPending)
     }

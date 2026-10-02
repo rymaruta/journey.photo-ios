@@ -179,8 +179,9 @@ final class AuthStore: ObservableObject {
         // 🔴 **前のログアウトで端末の中のログインを消せなかったなら、ログイン中に戻さない**
         // （`SignOutLatch` の「2026-10-02 判断」）。Amplify は控えが残っているので
         // 「ログイン中」と答えるが、本人はログアウトを押している。もう一度消してみて、
-        // 消えても消えなくても未ログインとして始める
-        if gateway.signOutNotCleared() {
+        // 消えても消えなくても未ログインとして始める。**消せない回が上限に達したら諦めて、
+        // 印の無かった頃と同じく Amplify の答えに従う**（閉じ込めない・同じ注記）
+        if gateway.latch.isSet, !gateway.latch.giveUpIfExhausted() {
             _ = await gateway.signOut()
             state = .signedOut
             isAdmin = false
@@ -238,14 +239,14 @@ final class AuthStore: ObservableObject {
         // 外すのを待つ間にもう一度押され、2本目の外しが1本目のログインを消しうる
         await run {
             // 前のログアウトで端末の中のログインを消せなかった回（`SignOutLatch`）も同じ
-            if self.isSignedOutUncertain || self.gateway.signOutNotCleared() {
+            if self.isSignedOutUncertain || self.gateway.latch.isSet {
                 _ = await self.gateway.signOut()
             }
-            _ = try await AuthGateway.signIn(email: email, password: password)
+            _ = try await self.gateway.signIn(email, password)
             let id = try await self.gateway.currentUserId()
             self.isSignedOutUncertain = false
             self.signedOutByExpiry = false
-            self.gateway.clearSignOutNotCleared()
+            self.gateway.latch.clear()
             self.state = .signedIn(userId: id)
             await refreshAdmin()
         }
@@ -450,10 +451,12 @@ struct AuthStoreGateway: Sendable {
     var isSessionExpired: @Sendable () async -> Bool
     var signOut: @Sendable () async -> SignOutOutcome
     var deleteUser: @Sendable () async throws -> Void
-    /// 前のログアウトで端末の中のログインを消せなかった印があるか（`SignOutLatch`）
-    var signOutNotCleared: @Sendable () -> Bool
-    /// 本人がログインし直せたので、印を外す
-    var clearSignOutNotCleared: @Sendable () -> Void
+    /// 前のログアウトで端末の中のログインを消せなかった印（`SignOutLatch`）。
+    /// 本番の `signOut`（`AuthGateway.signOut`）が同じ印を進め・外す
+    var latch: SignOutLatch = SignOutLatch()
+    var signIn: @Sendable (_ email: String, _ password: String) async throws -> Bool = { email, password in
+        try await AuthGateway.signIn(email: email, password: password)
+    }
 
     static let live = AuthStoreGateway(
         isSignedIn: { await AuthGateway.isSignedIn() },
@@ -461,9 +464,7 @@ struct AuthStoreGateway: Sendable {
         currentUsername: { try await AuthGateway.currentUsername() },
         isSessionExpired: { await AuthGateway.isSessionExpired() },
         signOut: { await AuthGateway.signOut() },
-        deleteUser: { try await AuthGateway.deleteUser() },
-        signOutNotCleared: { SignOutLatch().isSet },
-        clearSignOutNotCleared: { SignOutLatch().clear() }
+        deleteUser: { try await AuthGateway.deleteUser() }
     )
 }
 
@@ -503,6 +504,9 @@ enum AuthFailure: Equatable {
     case passwordResetRequired
     /// アプリで続けられないログインの段（新しいパスワードの設定・多要素認証など）
     case signInIncomplete
+    /// 端末に前のログインが残っていて、ログインを断られた（Amplify の `invalidState`）。
+    /// **前のログインを渡さない**（`SignOutLatch` の「2026-10-02 判断」）
+    case alreadySignedIn
     case other
 
     init(_ error: AuthError) {
@@ -527,6 +531,7 @@ enum AuthFailure: Equatable {
         switch error {
         case .notAuthorized: self = .notAuthorized
         case .sessionExpired: self = .notAuthorized
+        case .invalidState: self = .alreadySignedIn
         default: self = .other
         }
     }
@@ -584,6 +589,9 @@ enum AuthMessage {
         case .signInIncomplete:
             return L("このアカウントはアプリからログインを完了できません。Web からログインしてください",
                      "This account can't finish signing in from the app. Please sign in on the web.")
+        case .alreadySignedIn:
+            return L("前のログインがこの端末から消せていません。アプリを終了して開き直してから、もう一度ログインしてください",
+                     "A previous sign-in couldn't be cleared from this device. Quit and reopen the app, then sign in again.")
         case .none, .other:
             return L("うまくいきませんでした。しばらくしてからもう一度お試しください", "That didn't work. Please try again in a moment.")
         }

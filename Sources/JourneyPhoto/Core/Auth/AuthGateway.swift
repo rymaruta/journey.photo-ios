@@ -366,20 +366,47 @@ enum SignOutOutcome: Equatable {
 /// 未ログインとして始める（本人が押したログアウトを、起動し直しただけで黙って
 /// 取り消さない）。印はログアウトが通った回・本人がログインし直せた回に外す。
 ///
+/// **印は消せなかった回数を数え、`limit` 回に達したら諦める（2026-10-02 判断）。**
+/// `.failed` が続く端末では、起動時の消し直しもログイン前の消し直しも落ち、Amplify は
+/// 前の人でログイン中のまま——`signIn` は「既にログイン中」（invalidState）で断るので、
+/// 印を持ち続けると**誰もログインできない抜け道の無い状態**になる。`limit` に達した
+/// 起動では印を外し、印の無かった頃と同じ挙動（Amplify の答えどおりログイン中に戻る）
+/// に倒す。本人のログアウトが1度取り消されることになるが、閉じ込めるよりはよい。
+///
+/// **ログイン前の消し直しが落ちて `signIn` が invalidState を返したときは、通さない
+/// （2026-10-02 判断）。** 残っているのは前の人のログインで、いま打たれたメールと
+/// パスワードは Cognito で確かめられていない——同じメールでも「同じ人」とは言えず、
+/// 前の人のログインをそのまま渡すと、メールを知っているだけの人が入れてしまう。
+/// 「アプリを開き直して」と案内し（`AuthFailure.alreadySignedIn`）、開き直しの消し直しで
+/// 数を進める。`limit` に達すれば上のとおり前の人のログインに戻り、そこからログアウト
+/// し直せる。
+///
 /// Keychain ではなく `UserDefaults` に置くのは、消せなかった相手が Keychain だから
 /// （同じ所に書けない回がある）。アプリを入れ直すと印は消えるが、そのとき Amplify の
 /// 控えがどうなるかは確かめていない
-struct SignOutLatch {
+struct SignOutLatch: @unchecked Sendable {  // UserDefaults は複数のスレッドから読み書きしてよい
     static let key = "jp-signout-not-cleared"
+    /// 消せなかった回数がこれに達したら諦める
+    static let limit = 3
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
-    var isSet: Bool { defaults.bool(forKey: Self.key) }
-    func set() { defaults.set(true, forKey: Self.key) }
+    /// 消せなかった回数（印の無いときは 0）
+    var count: Int { defaults.integer(forKey: Self.key) }
+    var isSet: Bool { count > 0 }
+    /// 消せなかった。回数を1つ進める
+    func set() { defaults.set(count + 1, forKey: Self.key) }
     func clear() { defaults.removeObject(forKey: Self.key) }
+
+    /// 上限に達していれば印を外して true（＝もう印に従わない）
+    func giveUpIfExhausted() -> Bool {
+        guard count >= Self.limit else { return false }
+        clear()
+        return true
+    }
 }
 
 extension Notification.Name {

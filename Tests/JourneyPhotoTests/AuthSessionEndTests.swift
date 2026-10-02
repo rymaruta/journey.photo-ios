@@ -22,8 +22,7 @@ final class AuthSessionEndTests: XCTestCase {
                 return .signedOut
             },
             deleteUser: {},
-            signOutNotCleared: { false },
-            clearSignOutNotCleared: {}
+            latch: .forTesting()
         )
     }
 
@@ -128,26 +127,105 @@ final class SignOutResultTests: XCTestCase {
         let auth = AuthStore(gateway: AuthStoreGateway(
             isSignedIn: { true }, currentUserId: { "u1" }, currentUsername: { "n" },
             isSessionExpired: { false }, signOut: { .notClearedLocally }, deleteUser: {},
-            signOutNotCleared: { false }, clearSignOutNotCleared: {}))
+            latch: .forTesting()))
         await auth.restore()
         XCTAssertEqual(auth.userId, "u1")
         await auth.signOut()
         XCTAssertEqual(auth.state, .signedOut)
     }
 
-    /// 🔴 **印があれば、Amplify が「ログイン中」と答えても戻さない。** もう一度消してみる
-    func testRestoreDoesNotSignBackInWhileTheLatchIsSet() async {
-        let signOuts = SignOutCounter()
-        let auth = AuthStore(gateway: AuthStoreGateway(
+    /// 消せない端末の口: ログアウトは毎回落ち、本番と同じく印を1つ進める
+    private func stuckGateway(_ latch: SignOutLatch, signOuts: SignOutCounter, log: SignInLog,
+                              signIn: @escaping @Sendable () async throws -> Bool = { true }) -> AuthStoreGateway {
+        AuthStoreGateway(
             isSignedIn: { true }, currentUserId: { "u1" }, currentUsername: { "n" },
             isSessionExpired: { false },
-            signOut: { await signOuts.note(); return .notClearedLocally },
+            signOut: {
+                await signOuts.note()
+                await log.note("signOut")
+                latch.set()
+                return .notClearedLocally
+            },
             deleteUser: {},
-            signOutNotCleared: { true }, clearSignOutNotCleared: {}))
+            latch: latch,
+            signIn: { _, _ in
+                await log.note("signIn")
+                return try await signIn()
+            })
+    }
+
+    /// 🔴 **印があれば、Amplify が「ログイン中」と答えても戻さない。** もう一度消してみる。
+    /// **消せない回が上限に達したら諦めて、印の無かった頃と同じくログイン中に戻す**
+    /// ——印を持ち続けると、ログインも断られ（invalidState）抜け道が無くなる
+    func testRestoreHonoursTheLatchUntilTheLimitThenGivesUp() async {
+        let latch = SignOutLatch.forTesting()
+        latch.set()  // 本人のログアウトが2回とも落ちた
+        let signOuts = SignOutCounter()
+        let gateway = stuckGateway(latch, signOuts: signOuts, log: SignInLog())
+
+        for round in 1..<SignOutLatch.limit {
+            let auth = AuthStore(gateway: gateway)
+            await auth.restore()
+            XCTAssertEqual(auth.state, .signedOut, "\(round) 回目の起動で、ログアウトしたはずの人がログイン中に戻った")
+        }
+        let tries = await signOuts.count
+        XCTAssertEqual(tries, SignOutLatch.limit - 1, "起動時にもう一度消してみていない")
+        XCTAssertEqual(latch.count, SignOutLatch.limit)
+
+        let auth = AuthStore(gateway: gateway)
         await auth.restore()
-        XCTAssertEqual(auth.state, .signedOut, "ログアウトしたはずの人が、起動し直しただけでログイン中に戻った")
-        let count = await signOuts.count
-        XCTAssertEqual(count, 1, "起動時にもう一度消してみていない")
+        XCTAssertEqual(auth.userId, "u1", "上限に達しても印に従い続けている（誰もログインできない）")
+        XCTAssertFalse(latch.isSet, "諦めたのに印が残っている")
+    }
+
+    /// 印があるときは、ログインの前に前のログインを消してみる。ログインできたら印を外す
+    func testSignInClearsTheOldSessionFirstAndDropsTheLatch() async {
+        let latch = SignOutLatch.forTesting()
+        latch.set()
+        let log = SignInLog()
+        let auth = AuthStore(gateway: AuthStoreGateway(
+            isSignedIn: { false }, currentUserId: { "u2" }, currentUsername: { "n" },
+            isSessionExpired: { false },
+            // 消し直しは落ちたが、Cognito のログインは通った（印を外すのはログインの方）
+            signOut: { await log.note("signOut"); return .notClearedLocally },
+            deleteUser: {}, latch: latch,
+            signIn: { _, _ in await log.note("signIn"); return true }))
+        // （起動時の消し直しは通さない——ログイン画面から入る順だけを見る）
+        await auth.signIn(email: "b@example.test", password: "pw")
+        let steps = await log.steps
+        XCTAssertEqual(steps, ["signOut", "signIn"], "印があるのにログインの前に消していない")
+        XCTAssertEqual(auth.userId, "u2")
+        XCTAssertFalse(latch.isSet, "ログインし直せたのに印が残っている（次の起動でログアウトさせる）")
+    }
+
+    /// 🔴 **前のログインを消せないまま断られたら（invalidState）、通さない。** 打たれたメールと
+    /// パスワードは Cognito で確かめられていないので、前の人のログインを渡さない。
+    /// 開き直しを案内する
+    func testSignInRefusedByALeftoverSessionIsNotLetThrough() async {
+        let latch = SignOutLatch.forTesting()
+        latch.set()
+        let log = SignInLog()
+        let auth = AuthStore(gateway: stuckGateway(latch, signOuts: SignOutCounter(), log: log, signIn: {
+            throw AuthError.invalidState("There is already a user in signedIn state", "", nil)
+        }))
+        await auth.restore()
+        await auth.signIn(email: "a@example.test", password: "pw")
+        XCTAssertNil(auth.userId, "確かめていない人に前のログインを渡した")
+        XCTAssertEqual(auth.lastFailure, .alreadySignedIn)
+        XCTAssertEqual(auth.errorMessage, AuthMessage.text(for: .alreadySignedIn))
+        XCTAssertTrue(latch.isSet)
+    }
+}
+
+actor SignInLog {
+    private(set) var steps: [String] = []
+    func note(_ step: String) { steps.append(step) }
+}
+
+extension SignOutLatch {
+    /// 試験ごとに別の入れ物（本物の `UserDefaults.standard` に触らない）
+    static func forTesting() -> SignOutLatch {
+        SignOutLatch(defaults: UserDefaults(suiteName: UUID().uuidString)!)
     }
 }
 
