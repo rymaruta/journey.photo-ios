@@ -24,6 +24,8 @@ final class StoryDynamicTypeTests: XCTestCase {
         "Stories/StoryAudienceSheet.swift",
         "Stories/SongStartSheet.swift",
         "Stories/StickerTray.swift",
+        "Stories/StoriesRow.swift",
+        "Stories/StoryComposerView.swift",
     ]
 
     func testStoryScreensDoNotUseFixedTextSizes() throws {

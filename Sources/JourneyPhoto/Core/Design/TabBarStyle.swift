@@ -22,8 +22,13 @@ enum TabBarStyle {
 
     /// アプリの起動時に一度だけ（`JourneyPhotoApp.init`）。これより後に作られる
     /// タブバーに効く
+    /// `apply()` を呼んだ回数。**起動時に呼ばれていることを試験で確かめる印**
+    /// （呼び出しを消すと、色の決まりだけの試験は通ったまま札が白に戻る）
+    @MainActor private(set) static var appliedCount = 0
+
     @MainActor
     static func apply() {
+        appliedCount += 1
         let brass = UIColor(red: Double((selectedHex >> 16) & 0xFF) / 255,
                             green: Double((selectedHex >> 8) & 0xFF) / 255,
                             blue: Double(selectedHex & 0xFF) / 255, alpha: 1)
