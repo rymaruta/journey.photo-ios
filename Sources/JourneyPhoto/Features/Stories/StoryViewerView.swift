@@ -39,6 +39,9 @@ struct StoryViewerView: View {
     /// （`StoryPlayback.autoAdvances`）
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnv
     @State private var voiceOverOn = false
+    /// メニューの行の絵の幅。**文字の大きさに付いてくる**（固定の 22 だと大きい文字で
+    /// 絵が枠からはみ出し、行の字とずれた）
+    @ScaledMetric(relativeTo: .body) private var menuIconWidth: CGFloat = 22
 
     @State private var index: Int
     /// 通報して落とした・自分で消した1本。**兄弟の並びから消す**（左タップで戻れないように）
@@ -1359,7 +1362,7 @@ struct StoryViewerView: View {
             HStack(spacing: 14) {
                 Image(systemName: symbol)
                     .font(.body)
-                    .frame(width: 22)
+                    .frame(width: menuIconWidth)
                 Text(title)
                     .font(.callout)
                 Spacer(minLength: 0)

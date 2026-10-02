@@ -141,8 +141,11 @@ struct StoriesRow: View {
                 Button {
                     showComposer = true
                 } label: {
+                    // 22pt の丸の中の記号（字ではない）。丸は輪に重ねる決まった大きさなので、
+                    // 記号も既定の大きさで止める（大きい文字でも丸からはみ出さない）
                     Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.caption2.weight(.bold))
+                        .dynamicTypeSize(...DynamicTypeSize.large)
                         .foregroundStyle(WebTheme.accentText)
                         .frame(width: 22, height: 22)
                         .background(Color.white, in: Circle())
@@ -169,7 +172,8 @@ struct StoriesRow: View {
                             .strokeBorder(Color.white.opacity(0.35),
                                           style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                         Image(systemName: "plus")
-                            .font(.system(size: 18))
+                            .font(.body)
+                            .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                             .foregroundStyle(.white)
                     }
                     .frame(width: 62, height: 62)
@@ -215,7 +219,8 @@ struct StoriesRow: View {
                     }
                     if failed {
                         Image(systemName: "exclamationmark")
-                            .font(.system(size: 18, weight: .bold))
+                            .font(.body.weight(.bold))
+                            .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                             .foregroundStyle(.white)
                     }
                 }
@@ -267,8 +272,11 @@ struct StoriesRow: View {
     /// 名前。**未読は太く白く、既読は細く薄く**（板 27）
     private func ringName(_ name: String, emphasized: Bool) -> some View {
         Text(name)
-            // 本文の最小は 12pt（CLAUDE.md。板 27 は 10 だが、決まりを優先）
-            .font(.system(size: 12, weight: emphasized ? .semibold : .regular))
+            // 本文の最小は 12pt（CLAUDE.md。板 27 は 10 だが、決まりを優先）。
+            // **眉ラベル（11）扱いにはしない**——名前は人を見分ける本文なので 12（.caption）。
+            // 輪の幅（64）は決まっているので、大きい文字は xxLarge で止める（1行で切れる）
+            .font(.caption.weight(emphasized ? .semibold : .regular))
+            .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
             .foregroundStyle(emphasized ? WebTheme.text : WebTheme.faint)
             .lineLimit(1)
             .frame(maxWidth: 64)
