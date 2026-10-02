@@ -172,8 +172,11 @@ final class UploadViewModel: ObservableObject {
     var initialPublished: Bool { !startsPrivate }
 
     /// 旅の写真からまとめて来たときの初期値を入れる（画面が出たとき・一度だけ）。
-    /// 2枚以上なら「1つの投稿にまとめる」にする（同じ旅の写真なので）
-    func applyInitialPhotos(_ photos: [Data], startPrivate: Bool) {
+    /// 2枚以上なら「1つの投稿にまとめる」にする（同じ旅の写真なので）。
+    ///
+    /// 写真は**整えてあるもの**（`LibraryTripPickView` が読みながら1枚ずつ `ImagePreparer` に通した。
+    /// EXIF・GPS は落ちていて、撮影日と約1kmに丸めた座標を持つ）。**並びは渡した順のまま**
+    func applyInitialPhotos(_ photos: [ImagePreparer.Prepared], startPrivate: Bool) {
         guard !appliedInitialPhotos else { return }
         appliedInitialPhotos = true
         startsPrivate = startPrivate
@@ -181,7 +184,7 @@ final class UploadViewModel: ObservableObject {
         guard !photos.isEmpty else { return }
         fromTripImport = true
         if photos.count > 1 { groupsAsOnePost = true }
-        accept(libraryPhotos: photos)
+        for prepared in photos { append(prepared) }
     }
 
     /// カテゴリ。**決まった選択肢から選ぶ**（`CategoryChoices`）
@@ -244,7 +247,7 @@ final class UploadViewModel: ObservableObject {
     /// 間に「送信中… 0 / 2 枚目」と「残りをやめる」が出る
     @Published private(set) var isWorking = false
     @Published private(set) var isLoadingPicked = false
-    /// カメラで撮った写真・旅の写真を整えている枚数。**整え終わるまで投稿させない**
+    /// カメラで撮った写真を整えている枚数。**整え終わるまで投稿させない**
     /// （押すと、撮った1枚だけが待ち行列に入る前に送信が始まり、画面に残る）
     @Published private(set) var preparingCaptures = 0
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
@@ -429,35 +432,6 @@ final class UploadViewModel: ObservableObject {
                 self.errorMessage = (error as? LocalizedError)?.errorDescription
                     ?? L("写真を読み込めませんでした", "Couldn't load the photo")
             }
-        }
-    }
-
-    /// 端末の写真ライブラリから読んだ本体を受ける（旅の写真からまとめて）。
-    ///
-    /// 準備は `accept(capture:)` と同じ——`ImagePreparer` で縮小し、**EXIF・GPS を
-    /// 落としてから**並べる。撮影地と撮影日は ImagePreparer が EXIF から読んで残す
-    /// （落とすのは送る本体からだけ）。**並びは渡した順のまま**（1枚ずつ順に整える）。
-    /// 整えられなかった写真は「N 枚は読み込めませんでした」と言って除く
-    func accept(libraryPhotos photos: [Data]) {
-        guard !photos.isEmpty else { return }
-        preparingCaptures += photos.count
-        let prepare = prepareData
-        Task { [weak self] in
-            var failed = 0
-            for data in photos {
-                let result = await Self.prepareOffMain(data, with: prepare)
-                guard let self else { return }
-                self.preparingCaptures -= 1
-                switch result {
-                case .success(let prepared): self.append(prepared)
-                case .failure: failed += 1
-                }
-            }
-            guard let self, failed > 0 else { return }
-            // **黙って減らさない**（`loadPicked` と同じ言い方）
-            self.errorMessage = self.items.isEmpty
-                ? L("写真を読み込めませんでした", "Couldn't load the photos")
-                : L("\(failed) 枚は読み込めませんでした", "\(failed) photo(s) couldn't be loaded")
         }
     }
 

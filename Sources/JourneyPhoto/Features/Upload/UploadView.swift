@@ -23,14 +23,14 @@ struct UploadView: View {
     /// 渡すのは**スポットのページに並ぶ形で上がった枚数**（スポットの画面が
     /// 「投稿しました」を出すか決める）。**何度呼ばれても同じ結果になる受け手に渡す**
     private let onPosted: ((Int) -> Void)?
-    /// 最初から並べておく写真の本体（旅の写真からまとめて来たとき・`LibraryTripFlowView`）。
-    /// 整えるのは model（`accept(libraryPhotos:)`）。**一度だけ入れる**
-    private let initialPhotos: [Data]
+    /// 最初から並べておく写真（旅の写真からまとめて来たとき・`LibraryTripFlowView`）。
+    /// **整えてあるもの**（選ぶ画面が読みながら1枚ずつ `ImagePreparer` に通した）。**一度だけ入れる**
+    private let initialPhotos: [ImagePreparer.Prepared]
     /// 非公開で始める（旅の写真から来たとき）。**変えられる**——決めつけない
     private let startPrivate: Bool
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil,
-         initialPhotos: [Data] = [], startPrivate: Bool = false) {
+         initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false) {
         self.initialTag = initialTag
         self.initialSpot = spot
         self.onPosted = onPosted

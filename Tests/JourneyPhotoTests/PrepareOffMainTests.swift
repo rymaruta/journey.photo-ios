@@ -30,6 +30,6 @@ final class PrepareOffMainTests: XCTestCase {
                               "\(file.lastPathComponent):\(index + 1) が画面の処理の上で画像を整えている")
             }
         }
-        XCTAssertGreaterThanOrEqual(calls, 4, "呼び出しを見つけられていない（探し方が古い）")
+        XCTAssertGreaterThanOrEqual(calls, 5, "呼び出しを見つけられていない（探し方が古い）")
     }
 }
