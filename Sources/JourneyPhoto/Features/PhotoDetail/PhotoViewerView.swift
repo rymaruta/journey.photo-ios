@@ -133,6 +133,12 @@ struct PhotoViewerView: View {
             }
 
             topBar
+
+            // **全画面の中の知らせ**（いいねが届かなかった）。アプリの下の知らせ（`RootView`）と
+            // 裏の詳細画面の赤字は全画面に隠れるので、ここにも置く（`StoryReelView` と同じ）。
+            // 下の題・ハートに重ねないよう、上の列の下に出す
+            ToastOverlay()
+                .padding(.top, 56)
         }
         .statusBarHidden()
     }
