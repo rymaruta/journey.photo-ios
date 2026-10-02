@@ -108,6 +108,16 @@ final class AuthStore: ObservableObject {
             return
         }
         #endif
+        // 🔴 **前のログアウトで端末の中のログインを消せなかったなら、ログイン中に戻さない**
+        // （`SignOutLatch` の「2026-10-02 判断」）。Amplify は控えが残っているので
+        // 「ログイン中」と答えるが、本人はログアウトを押している。もう一度消してみて、
+        // 消えても消えなくても未ログインとして始める
+        if gateway.signOutNotCleared() {
+            _ = await gateway.signOut()
+            state = .signedOut
+            isAdmin = false
+            return
+        }
         guard await gateway.isSignedIn() else {
             state = .signedOut
             isAdmin = false
@@ -159,13 +169,15 @@ final class AuthStore: ObservableObject {
         // **`run` の中で外す**（二度押し止め・くるくるの内側）——外に置くと、圏外で
         // 外すのを待つ間にもう一度押され、2本目の外しが1本目のログインを消しうる
         await run {
-            if self.isSignedOutUncertain {
-                await self.gateway.signOut()
+            // 前のログアウトで端末の中のログインを消せなかった回（`SignOutLatch`）も同じ
+            if self.isSignedOutUncertain || self.gateway.signOutNotCleared() {
+                _ = await self.gateway.signOut()
             }
             _ = try await AuthGateway.signIn(email: email, password: password)
             let id = try await self.gateway.currentUserId()
             self.isSignedOutUncertain = false
             self.signedOutByExpiry = false
+            self.gateway.clearSignOutNotCleared()
             self.state = .signedIn(userId: id)
             await refreshAdmin()
         }
@@ -180,7 +192,9 @@ final class AuthStore: ObservableObject {
     func signOut(byExpiry: Bool = false) async {
         isSignedOutUncertain = false
         signedOutByExpiry = byExpiry
-        await gateway.signOut()
+        // 端末から消せなくても**画面はログアウトの扱いにする**（ここで止めると、押したのに
+        // 何も起きない）。次の起動でログイン中に戻さないのは `SignOutLatch` の役目
+        _ = await gateway.signOut()
         settleSignedOut()
     }
 
@@ -213,7 +227,7 @@ final class AuthStore: ObservableObject {
         } catch let error as AuthError where AuthFailure(error).meansUserAlreadyGone {
             // 消えている。下のサインアウトへ進む
         }
-        await gateway.signOut()
+        _ = await gateway.signOut()
         settleSignedOut()
     }
 
@@ -349,8 +363,12 @@ struct AuthStoreGateway: Sendable {
     var currentUserId: @Sendable () async throws -> String
     var currentUsername: @Sendable () async throws -> String
     var isSessionExpired: @Sendable () async -> Bool
-    var signOut: @Sendable () async -> Void
+    var signOut: @Sendable () async -> SignOutOutcome
     var deleteUser: @Sendable () async throws -> Void
+    /// 前のログアウトで端末の中のログインを消せなかった印があるか（`SignOutLatch`）
+    var signOutNotCleared: @Sendable () -> Bool
+    /// 本人がログインし直せたので、印を外す
+    var clearSignOutNotCleared: @Sendable () -> Void
 
     static let live = AuthStoreGateway(
         isSignedIn: { await AuthGateway.isSignedIn() },
@@ -358,7 +376,9 @@ struct AuthStoreGateway: Sendable {
         currentUsername: { try await AuthGateway.currentUsername() },
         isSessionExpired: { await AuthGateway.isSessionExpired() },
         signOut: { await AuthGateway.signOut() },
-        deleteUser: { try await AuthGateway.deleteUser() }
+        deleteUser: { try await AuthGateway.deleteUser() },
+        signOutNotCleared: { SignOutLatch().isSet },
+        clearSignOutNotCleared: { SignOutLatch().clear() }
     )
 }
 

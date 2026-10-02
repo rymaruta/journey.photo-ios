@@ -257,9 +257,47 @@ enum AuthGateway {
     }
 
 
-    static func signOut() async {
-        guard isConfigured else { return }
-        _ = await Amplify.Auth.signOut()
+    /// ログアウト。**結果を見る**（以前は `_ =` で捨てていた）。
+    ///
+    /// Amplify の `signOut` は投げずに結果を返す。Cognito では `AWSCognitoSignOutResult` で、
+    /// `.failed` は**端末の中のログイン（Keychain の控え）も消せていない**——画面だけ
+    /// ログアウトして、次の起動の `restore` で黙ってログイン中に戻っていた。
+    /// `.partial` はサーバー側の取り消しだけが落ちた回で、端末からは消えている。
+    ///
+    /// 消せなかったらもう一度だけ試す。それでも駄目なら `SignOutLatch` に印を残す
+    /// （→ `SignOutLatch` の「2026-10-02 判断」）
+    @discardableResult
+    static func signOut() async -> SignOutOutcome {
+        guard isConfigured else { return .signedOut }
+        return await signOut(
+            attempt: { signedOutLocally(await Amplify.Auth.signOut()) },
+            latch: SignOutLatch()
+        )
+    }
+
+    /// 上の流れの本体（試験が Amplify の代わりの `attempt` を渡す）。
+    /// - Parameter attempt: 1回ログアウトを頼み、端末から消せたら true
+    static func signOut(attempt: () async -> Bool, latch: SignOutLatch) async -> SignOutOutcome {
+        for _ in 0..<2 {
+            if await attempt() {
+                latch.clear()
+                return .signedOut
+            }
+        }
+        latch.set()
+        return .notClearedLocally
+    }
+
+    /// 端末の中のログインが消えたか。**分からない形の結果は「消えた」と読む**
+    /// ——消えていないと読むと、次の起動からずっとログインできない側へ倒れる
+    static func signedOutLocally(_ result: any AuthSignOutResult) -> Bool {
+        guard let cognito = result as? AWSCognitoSignOutResult else { return true }
+        switch cognito {
+        case .failed:
+            return false
+        case .complete, .partial:
+            return true
+        }
     }
 
     /// Cognito の利用者そのものを消す。**サーバーの `DELETE /user/account` は
@@ -310,6 +348,38 @@ struct CognitoTokenProvider: TokenProviding {
     func sessionExpired() async {
         await AuthGateway.announceSessionExpired()
     }
+}
+
+/// ログアウトの結果（`AuthGateway.signOut`）
+enum SignOutOutcome: Equatable {
+    case signedOut
+    /// 2回頼んでも端末の中のログインを消せなかった（`SignOutLatch` に印を残した）
+    case notClearedLocally
+}
+
+/// **端末の中のログインを消せなかった**印。
+///
+/// 🔴 **2026-10-02 判断:** Amplify の `signOut` が2回とも `.failed`（Keychain の控えを
+/// 消せない）だったときは、**画面はログアウトの扱いのまま**にし、この印を
+/// `UserDefaults` に残す。次の起動の `AuthStore.restore` は、Amplify が「ログイン中」と
+/// 答えても印があればログイン中に戻さず、もう一度ログアウトを試してから
+/// 未ログインとして始める（本人が押したログアウトを、起動し直しただけで黙って
+/// 取り消さない）。印はログアウトが通った回・本人がログインし直せた回に外す。
+///
+/// Keychain ではなく `UserDefaults` に置くのは、消せなかった相手が Keychain だから
+/// （同じ所に書けない回がある）。アプリを入れ直すと印は消えるが、そのとき Amplify の
+/// 控えがどうなるかは確かめていない
+struct SignOutLatch {
+    static let key = "jp-signout-not-cleared"
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    var isSet: Bool { defaults.bool(forKey: Self.key) }
+    func set() { defaults.set(true, forKey: Self.key) }
+    func clear() { defaults.removeObject(forKey: Self.key) }
 }
 
 extension Notification.Name {
