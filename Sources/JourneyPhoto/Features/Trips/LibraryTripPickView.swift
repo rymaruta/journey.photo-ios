@@ -25,6 +25,9 @@ struct LibraryTripPickView: View {
     @State private var failedCount = 0
     @State private var showFailed = false
     @State private var loadedPhotos: [Data] = []
+    /// 読み込みの仕事。**画面を離れたら取り消す**——取り消さないと、閉じたあとに
+    /// 読み終えた写真が呼び手へ届き、次の投稿に混ざっていた
+    @State private var loadTask: Task<Void, Never>?
 
     private let limit = UploadViewModel.maxSelection
 
@@ -61,6 +64,9 @@ struct LibraryTripPickView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) { bottomBar }
+        // 読んでいる間は戻らせない（戻っても読み込みは止める・`onDisappear`）
+        .navigationBarBackButtonHidden(isLoading)
+        .onDisappear { loadTask?.cancel() }
         // 日ごとの地名（引けなければ日付だけ）
         .task { await model.resolveNames(trip.days.map(\.center)) }
         .alert(L("\(failedCount)枚は読み込めませんでした", "\(failedCount) photo(s) couldn't be loaded"),
@@ -145,7 +151,7 @@ struct LibraryTripPickView: View {
                     .foregroundStyle(WebTheme.text)
             }
             Button {
-                Task { await load() }
+                loadTask = Task { await load() }
             } label: {
                 Group {
                     if isLoading {
@@ -175,12 +181,15 @@ struct LibraryTripPickView: View {
         var photos: [Data] = []
         var failed: [String] = []
         for id in order {
+            if Task.isCancelled { return }
             if let data = await PhotoLibrary.imageData(for: id) {
                 photos.append(data)
             } else {
                 failed.append(id)
             }
         }
+        // 読んでいる間に画面を離れた（閉じた・戻った）なら、何も渡さない
+        guard !Task.isCancelled else { return }
         if failed.isEmpty {
             onDone(photos)
             return

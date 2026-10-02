@@ -27,7 +27,7 @@ struct PostSheet: View {
     }
 
     var body: some View {
-        // 板 21: 下から出る短いシート。左に明朝の見出し、右に ×、2枚の札
+        // 板 21: 下から出る短いシート。左に明朝の見出し、右に ×、3枚の札
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(L("投稿する", "Create"))
@@ -62,7 +62,7 @@ struct PostSheet: View {
             choice(
                 thumb: thumbs.dropFirst(2).first,
                 title: L("旅の写真からまとめて", "From a trip in your photos"),
-                detail: L("撮影日と場所から旅を見つけます", "Finds trips by when and where you shot."),
+                detail: L("撮影日と場所から旅を見つけます。", "Finds trips by when and where you shot."),
                 systemImage: "suitcase",
                 kind: .trip
             )

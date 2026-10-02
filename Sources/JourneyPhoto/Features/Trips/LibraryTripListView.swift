@@ -1,9 +1,10 @@
 import SwiftUI
+import Photos
 
 /// 写真ライブラリから見つかった旅の一覧。
 ///
 /// 1行に、表紙・地名（明朝 18）・期間（等幅）・日数と枚数。**投稿済みの日がある旅は
-/// 下に分けて薄く出す**——もう残した旅をまた上げる手間を減らす（消しはしない。
+/// 下に分けて、表紙を薄く出す**——もう残した旅をまた上げる手間を減らす（消しはしない。
 /// 1日だけ上げた旅の残りを出したい人もいる）
 struct LibraryTripListView: View {
 
@@ -22,6 +23,53 @@ struct LibraryTripListView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if model.status == .limited { limitedBar }
+            content
+        }
+        .webScreen()
+        .navigationTitle(L("旅の写真から", "From your trips"))
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            // 投稿済みの日は自分の投稿から。ログインしていない・取れないときは無しで出す
+            let signedIn = auth.userId != nil
+            let photos = environment.photos
+            await model.load {
+                guard signedIn else { return [] }
+                return (try? await photos.myPhotos()) ?? []
+            }
+            // 旅の名前は新しい旅から順に（画面の上から埋まる）
+            await model.resolveNames(model.trips.map(\.center))
+        }
+    }
+
+    /// 一部だけ許可しているときの1行。**iOS の起動ごとの案内は止めている**
+    /// （`PHPhotoLibraryPreventAutomaticLimitedAccessAlert`）ので、選び足す口はここ
+    private var limitedBar: some View {
+        HStack(spacing: 8) {
+            Text(L("一部の写真だけを許可しています", "You've allowed only some photos"))
+                .font(.footnote)
+                .foregroundStyle(WebTheme.muted2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                Task {
+                    await model.addMorePhotos()
+                    await model.resolveNames(model.trips.map(\.center))
+                }
+            } label: {
+                Text(L("写真を追加で選ぶ", "Select more photos"))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text)
+                    .webTappable()
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isLoading)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         Group {
             if model.isLoading || !model.loaded {
                 VStack(spacing: 12) {
@@ -43,20 +91,6 @@ struct LibraryTripListView: View {
                 list
             }
         }
-        .webScreen()
-        .navigationTitle(L("旅の写真から", "From your trips"))
-        .navigationBarTitleDisplayMode(.inline)
-        .task {
-            // 投稿済みの日は自分の投稿から。ログインしていない・取れないときは無しで出す
-            let signedIn = auth.userId != nil
-            let photos = environment.photos
-            await model.load {
-                guard signedIn else { return [] }
-                return (try? await photos.myPhotos()) ?? []
-            }
-            // 旅の名前は新しい旅から順に（画面の上から埋まる）
-            await model.resolveNames(model.trips.map(\.center))
-        }
     }
 
     private var list: some View {
@@ -70,9 +104,8 @@ struct LibraryTripListView: View {
                         .padding(.top, 20)
                         .padding(.horizontal, 4)
                         .accessibilityAddTraits(.isHeader)
-                    ForEach(posted) { trip in
-                        row(trip).opacity(0.55)
-                    }
+                    // 薄くするのは表紙だけ（行ごと薄くすると 12pt の注記が読めない）
+                    ForEach(posted) { trip in row(trip) }
                 }
             }
             .padding(16)
@@ -96,6 +129,7 @@ struct LibraryTripListView: View {
                 }
                 .frame(width: 64, height: 64)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .opacity(postedDays > 0 ? 0.45 : 1)
                 .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     // 地名が引けなければ期間だけを題にする

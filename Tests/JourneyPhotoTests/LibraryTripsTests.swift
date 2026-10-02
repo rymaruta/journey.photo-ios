@@ -98,11 +98,35 @@ final class LibraryTripsTests: XCTestCase {
         }, "日時順に並んでいない")
     }
 
-    /// 位置の無い写真で数を満たしてもよい（5枚のうち2枚が位置なし）
-    func testUnlocatedShotsCountTowardTheMinimum() {
+    /// 位置の無い写真では5枚に届かせない（旅の写真か確かでない）
+    func testUnlocatedShotsDoNotCountTowardTheMinimum() {
         let located = kyotoShots(3, startHours: 0)  // 0〜2時間
         let unlocated = [shot("n1", hours: 0.5, nil), shot("n2", hours: 1.5, nil)]
-        XCTAssertEqual(LibraryTrips.find(located + unlocated, home: home, timeZone: tokyo).first?.shots.count, 5)
+        XCTAssertTrue(LibraryTrips.find(located + unlocated, home: home, timeZone: tokyo).isEmpty,
+                      "位置のある写真3枚を、位置の無い写真で旅にした")
+    }
+
+    /// 位置の無い写真は表紙にも、最初の選びにも使わない（一覧には並ぶ）
+    func testUnlocatedShotsAreNotCoverOrPicked() throws {
+        // 位置の無い写真を真ん中に多く置く（並びの真ん中は位置の無い写真になる）
+        let located = kyotoShots(5, startHours: 0)  // 0〜4時間
+        let unlocated = (0..<9).map { shot("n\($0)", hours: 1.05 + Double($0) * 0.1, nil) }
+        let trip = try XCTUnwrap(LibraryTrips.find(located + unlocated, home: home, timeZone: tokyo).first)
+        XCTAssertEqual(trip.shots.count, 14, "位置の無い写真が一覧から落ちた")
+        XCTAssertNotNil(trip.cover?.coords, "表紙が位置の無い写真")
+        let picked = LibraryTrips.spreadPick(trip, limit: 10)
+        XCTAssertEqual(Set(picked), Set(located.map(\.id)), "位置の無い写真を最初から選んだ")
+    }
+
+    /// 30日を超えるまとまりは旅にしない（引っ越す前の家で撮りためた何か月も）
+    func testLongerThanThirtyDaysIsNotATrip() {
+        // 2日おきに撮る: 0, 48, 96 … 時間
+        func run(_ count: Int) -> [LibraryShot] {
+            (0..<count).map { shot("r\($0)", hours: Double($0) * 48, kyoto) }
+        }
+        XCTAssertEqual(LibraryTrips.maxDays, 30)
+        XCTAssertEqual(LibraryTrips.find(run(16), home: home, timeZone: tokyo).count, 1, "ちょうど30日を落とした")
+        XCTAssertTrue(LibraryTrips.find(run(17), home: home, timeZone: tokyo).isEmpty, "32日のまとまりを旅にした")
     }
 
     /// 5枚未満は旅にしない

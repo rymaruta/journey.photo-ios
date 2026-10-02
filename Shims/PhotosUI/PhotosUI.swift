@@ -1,6 +1,14 @@
 // PhotosUI の模型。
 import Foundation
 import SwiftUI
+import UIKit
+import Photos
+
+/// 一部だけ許可した人が「写真を追加で選ぶ」画面（本物は PhotosUI が PHPhotoLibrary に足す口・iOS 15〜）。
+/// 返すのは選び終えたあとに許可されている写真の id
+extension PHPhotoLibrary {
+    public func presentLimitedLibraryPicker(from controller: UIViewController) async -> [String] { [] }
+}
 
 public struct PhotosPickerItem: Equatable, Hashable {
     public let itemIdentifier: String?

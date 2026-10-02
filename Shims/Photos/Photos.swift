@@ -24,6 +24,17 @@ public enum PHAssetMediaType: Int {
     case unknown = 0, image, video, audio
 }
 
+/// 写真の種類の細目（本物と同じ値）。アプリはスクリーンショットを見分けるのに使う
+public struct PHAssetMediaSubtype: OptionSet {
+    public let rawValue: UInt
+    public init(rawValue: UInt) { self.rawValue = rawValue }
+    public static let photoPanorama = PHAssetMediaSubtype(rawValue: 1 << 0)
+    public static let photoHDR = PHAssetMediaSubtype(rawValue: 1 << 1)
+    public static let photoScreenshot = PHAssetMediaSubtype(rawValue: 1 << 2)
+    public static let photoLive = PHAssetMediaSubtype(rawValue: 1 << 3)
+    public static let photoDepthEffect = PHAssetMediaSubtype(rawValue: 1 << 4)
+}
+
 open class PHPhotoLibrary: NSObject {
     open class func shared() -> PHPhotoLibrary { PHPhotoLibrary() }
     open class func authorizationStatus(for accessLevel: PHAccessLevel) -> PHAuthorizationStatus { .notDetermined }
@@ -43,6 +54,7 @@ open class PHObject: NSObject {
 
 open class PHAsset: PHObject {
     open var mediaType: PHAssetMediaType { .unknown }
+    open var mediaSubtypes: PHAssetMediaSubtype { [] }
     open var creationDate: Date? { nil }
     open var location: CLLocation? { nil }
     open var pixelWidth: Int { 0 }

@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import UIKit
 import Photos
+import PhotosUI
 import CoreLocation
 
 /// 端末の写真ライブラリ（PhotoKit）を読む口。「旅の写真からまとめて」で使う。
@@ -32,6 +33,29 @@ enum PhotoLibrary {
         status == .authorized || status == .limited
     }
 
+    /// 一部だけ許可した人が、許可する写真を選び足す画面を出す（閉じるまで待つ）。
+    /// 起動ごとの iOS の案内は止めている（Info.plist の
+    /// `PHPhotoLibraryPreventAutomaticLimitedAccessAlert`）ので、選び足す口はここだけ
+    @MainActor
+    static func presentLimitedPicker() async {
+        guard let top = topController() else { return }
+        _ = await PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: top)
+    }
+
+    /// いちばん上に出ている画面（全画面の流れの上に出す）
+    @MainActor
+    private static func topController() -> UIViewController? {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows where window.isKeyWindow {
+                var top = window.rootViewController
+                while let next = top?.presentedViewController { top = next }
+                return top
+            }
+        }
+        return nil
+    }
+
     /// 直近 `lookbackYears` 年の画像を、新しい順に `LibraryShot` へ写す。
     /// **重いので画面の処理（MainActor）の外で**——数万枚を1枚ずつ見る
     static func shots(now: Date = Date()) async -> [LibraryShot] {
@@ -55,6 +79,9 @@ enum PhotoLibrary {
         shots.reserveCapacity(result.count)
         for index in 0..<result.count {
             let asset = result.object(at: index)
+            // **スクリーンショットは旅に入れない。** 旅先で見た地図や予約の画面は旅の写真ではなく、
+            // 位置の無い写真として期間に紛れ込む
+            if asset.mediaSubtypes.contains(.photoScreenshot) { continue }
             // 撮影日時の無い写真は旅に並べられない
             guard let date = asset.creationDate, date >= since else { continue }
             let coordinate = asset.location?.coordinate

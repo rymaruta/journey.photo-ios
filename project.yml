@@ -86,6 +86,9 @@ targets:
         NSCameraUsageDescription: 写真を撮って投稿するためにカメラを使います。
         NSPhotoLibraryUsageDescription: 端末の写真を選んで投稿するため、また撮影日と場所から旅を見つけるために使います。写真は選んだものだけを送ります。
         NSPhotoLibraryAddUsageDescription: 撮った写真を端末に保存するために使います。
+        # 一部だけ許可（.limited）のとき、iOS が起動ごとに出す「写真を選び直す」案内を止める。
+        # 選び足す口は旅の一覧の上に置く（`PhotoLibrary.presentLimitedPicker`）
+        PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
         # 実際に位置を要求するのは撮影地マップの現在地ボタン（寄せる・点と向きを描く・保存しない）。
         # 投稿の撮影地は写真の EXIF から読むので、ここで取った位置は使わない
         NSLocationWhenInUseUsageDescription: 撮影地マップで、現在地と向いている方向を表示し、地図をその周りへ寄せるために使います。位置は保存も送信もしません。

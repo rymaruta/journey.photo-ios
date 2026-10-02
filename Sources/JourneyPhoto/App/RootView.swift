@@ -405,6 +405,8 @@ struct RootView: View {
         // 「参加する」が押されたら、投稿画面をそのタグで開く
         .onChange(of: missions.requests) { _, _ in
             pendingThemeTag = missions.tag
+            // 旅の写真の控えは渡さない（`TripImportHandoff`）
+            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .theme, pending: pendingTripPhotos)
             showPhotoUpload = true
         }
         // 今日のテーマの「参加する」から来たときのタグ。
@@ -419,17 +421,25 @@ struct RootView: View {
         .sheet(isPresented: $showPostChoice) {
             PostSheet { kind in
                 switch kind {
-                case .photo: showPhotoUpload = true
+                case .photo:
+                    pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .photo, pending: pendingTripPhotos)
+                    showPhotoUpload = true
                 case .story: showStoryComposer = true
-                case .trip: showTripImport = true
+                case .trip:
+                    pendingTripPhotos = []
+                    showTripImport = true
                 }
             }
         }
         // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
         .fullScreenCover(isPresented: $showTripImport, onDismiss: {
+            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
             if !pendingTripPhotos.isEmpty { showPhotoUpload = true }
         }) {
-            LibraryTripFlowView { photos in pendingTripPhotos = photos }
+            // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）
+            LibraryTripFlowView { photos in
+                pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
+            }
         }
         // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの
         // 格子とストーリーの行はこれを見て読み直す

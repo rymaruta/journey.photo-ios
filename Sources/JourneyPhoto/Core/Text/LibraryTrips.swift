@@ -48,9 +48,14 @@ struct LibraryTrip: Identifiable, Equatable {
     /// 旅の代表点（位置のある写真でいちばん多い約10kmの升の平均）。旅の名前を引くのに使う
     let center: Photo.Coords?
 
-    /// 表紙。**真ん中あたりの1枚**（初日の朝の1枚は駅や車内になりやすい）
+    /// 位置のある写真（日時順）。位置の無い写真は**旅の写真かどうか確かでない**
+    /// （同じ時間に家で撮った・ほかのアプリで保存した）ので、表紙・最初の選びに使わない
+    var locatedShots: [LibraryShot] { shots.filter { $0.coords != nil } }
+
+    /// 表紙。**位置のある写真の真ん中あたりの1枚**（初日の朝の1枚は駅や車内になりやすい）
     var cover: LibraryShot? {
-        shots.isEmpty ? nil : shots[shots.count / 2]
+        let located = locatedShots
+        return located.isEmpty ? nil : located[located.count / 2]
     }
 }
 
@@ -64,16 +69,22 @@ struct LibraryTrip: Identifiable, Equatable {
 /// 2. 家から **50km 以上**離れた位置のある写真を「旅先」とする
 /// 3. 旅先の写真を日時順に並べ、前の旅先の写真から `TripBook.maxGapDays` を
 ///    **超えて**空いたら別の旅（区切りの幅は TripBook と同じ）
-/// 4. 旅の期間に入る**位置の無い写真**も含める（機内モード・位置を切ったカメラ）
-/// 5. **5枚未満は旅にしない**（たまたま遠くで撮った数枚を「旅」と呼ばない）
+/// 4. 旅の期間に入る**位置の無い写真**も含める（機内モード・位置を切ったカメラ）。
+///    ただし並べるだけで、枚数の数え・表紙・最初の選びには使わない
+/// 5. **位置のある写真が5枚未満なら旅にしない**（たまたま遠くで撮った数枚を「旅」と呼ばない）
+/// 6. **`maxDays` 日を超えるまとまりは旅にしない**（引っ越す前の家で撮りためた何か月もが
+///    「旅」になる）
 ///
+/// スクリーンショットはここへ来る前に外す（`PhotoLibrary.shots`）。
 /// MainActor に置かない——試験から呼び、画面は MainActor の外で回す。
 enum LibraryTrips {
 
     /// 旅先と見なす家からの距離（km）
     static let awayKm = 50.0
-    /// 一つの旅に要る最小の枚数
+    /// 一つの旅に要る最小の枚数（位置のある写真で数える）
     static let minShots = 5
+    /// 旅の長さの上限（日）。最初と最後の旅先の写真の間がこれを超えたら旅にしない
+    static let maxDays = 30
     /// 家を推す升の細かさ（度）。0.1度 ≒ 約10km
     static let cellDegrees = 0.1
 
@@ -116,10 +127,13 @@ enum LibraryTrips {
         calendar.timeZone = timeZone
 
         return spans.compactMap { span -> LibraryTrip? in
-            let inside = away.filter { $0.date >= span.start && $0.date <= span.end }
-                + unlocated.filter { $0.date >= span.start && $0.date <= span.end }
-            let ordered = inside.sorted(by: inOrder)
-            guard ordered.count >= minShots, let first = ordered.first else { return nil }
+            guard span.end.timeIntervalSince(span.start) <= Double(maxDays) * 86_400 else { return nil }
+            let located = away.filter { $0.date >= span.start && $0.date <= span.end }
+            // 数えるのは位置のある写真だけ（位置の無い写真で5枚に届かせない）
+            guard located.count >= minShots else { return nil }
+            let ordered = (located + unlocated.filter { $0.date >= span.start && $0.date <= span.end })
+                .sorted(by: inOrder)
+            guard let first = ordered.first else { return nil }
             return LibraryTrip(
                 id: first.id,
                 shots: ordered,
@@ -149,6 +163,8 @@ enum LibraryTrips {
     }
 
     /// 最初に選んでおく写真。**日ごとにばらける**ように最大 `limit` 枚を均等に間引く。
+    /// **位置のある写真からだけ選ぶ**（位置の無い写真は旅の写真か確かでない）。
+    /// 位置のある写真の無い日は飛ばす
     ///
     /// - 日が `limit` より多ければ、日を均等に飛ばして1日1枚
     /// - 少なければ、どの日にも同じ数ずつ配る（撮った枚数の少ない日はその日の全部まで）
@@ -157,6 +173,8 @@ enum LibraryTrips {
     /// 返すのは旅の並び（日時順）の id
     static func spreadPick(_ trip: LibraryTrip, limit: Int) -> [String] {
         let days = trip.days
+            .map { $0.shots.filter { $0.coords != nil } }
+            .filter { !$0.isEmpty }
         guard limit > 0, !days.isEmpty else { return [] }
 
         var quotas = Array(repeating: 0, count: days.count)
@@ -168,13 +186,13 @@ enum LibraryTrips {
         } else {
             // 順に1枚ずつ配る: **まだ少なくしか選んでいない日**へ。同じなら写真の残りが多い日、
             // それも同じなら早い日。撮った枚数の少ない日は、その日の全部で打ち止め
-            var left = min(limit, days.reduce(0) { $0 + $1.shots.count })
+            var left = min(limit, days.reduce(0) { $0 + $1.count })
             while left > 0 {
                 var best: Int?
-                for i in days.indices where quotas[i] < days[i].shots.count {
+                for i in days.indices where quotas[i] < days[i].count {
                     guard let b = best else { best = i; continue }
-                    let room = days[i].shots.count - quotas[i]
-                    let bestRoom = days[b].shots.count - quotas[b]
+                    let room = days[i].count - quotas[i]
+                    let bestRoom = days[b].count - quotas[b]
                     if quotas[i] < quotas[b] || (quotas[i] == quotas[b] && room > bestRoom) { best = i }
                 }
                 guard let chosen = best else { break }
@@ -184,10 +202,10 @@ enum LibraryTrips {
         }
 
         var picked: [String] = []
-        for (day, quota) in zip(days, quotas) where quota > 0 {
-            let n = day.shots.count
+        for (shots, quota) in zip(days, quotas) where quota > 0 {
+            let n = shots.count
             for j in 0..<quota {
-                picked.append(day.shots[(2 * j + 1) * n / (2 * quota)].id)
+                picked.append(shots[(2 * j + 1) * n / (2 * quota)].id)
             }
         }
         return picked

@@ -5,7 +5,7 @@ import Photos
 /// 「旅の写真からまとめて」の流れ（投稿の選択の3つ目の行から全画面で開く）。
 ///
 /// 写真へのアクセスの説明 → 見つかった旅の一覧 → 旅の写真を日ごとに選ぶ → 投稿画面。
-/// **投稿画面はこの流れを閉じてから呼び手（`RootView`）が開く**——ふだんの投稿と
+/// **投稿画面はこの流れが閉じきってから呼び手（`RootView`）が開く**——ふだんの投稿と
 /// 同じシートで開けば、閉じたあとのマイページの読み直し（`postSheetClosed`）や
 /// 書きかけの確認がそのまま効く。
 struct LibraryTripFlowView: View {
@@ -14,7 +14,7 @@ struct LibraryTripFlowView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = LibraryTripModel()
 
-    /// 選んだ写真の本体（読めたぶん・選んだ順）。閉じてから渡す
+    /// 選んだ写真の本体（読めたぶん・旅の並び）。渡してから閉じる
     let onDone: ([Data]) -> Void
 
     var body: some View {
@@ -22,9 +22,10 @@ struct LibraryTripFlowView: View {
             Group {
                 if PhotoLibrary.canRead(model.status) {
                     LibraryTripListView(model: model) { photos in
-                        // **閉じてから渡す**（`PostSheet` と同じ。開いたまま次を出すと重なる）
-                        dismiss()
+                        // **渡してから閉じる。** 呼び手は「流れが開いている間だけ受ける」
+                        // （`TripImportHandoff.received`）。投稿画面は閉じきってから呼び手が開く
                         onDone(photos)
+                        dismiss()
                     }
                 } else {
                     LibraryTripIntroView(status: model.status,
@@ -63,7 +64,8 @@ final class LibraryTripModel: ObservableObject {
     @Published private(set) var loaded = false
     /// 自分の投稿の撮影日（`YYYY-MM-DD`）
     @Published private(set) var postedDayKeys: Set<String> = []
-    /// 引いた地名。鍵は `LibraryTrips.lookupKey`。**引けなかった座標は空文字**（引き直さない）
+    /// 引いた地名。鍵は `LibraryTrips.lookupKey`。**引けなかった座標は入れない**
+    /// （通信が切れていた・断られた回を控えると、その旅は閉じるまで日付だけになる）
     @Published private(set) var names: [String: String] = [:]
 
     func requestAccess() async {
@@ -80,27 +82,42 @@ final class LibraryTripModel: ObservableObject {
         guard !loaded, !isLoading, PhotoLibrary.canRead(status) else { return }
         isLoading = true
         async let posted = myPhotos()
-        let shots = await PhotoLibrary.shots()
-        // 探すのも画面の処理の外で（数万枚を升に分ける）
-        trips = await Task.detached(priority: .userInitiated) { LibraryTrips.find(shots) }.value
+        trips = await Self.findTrips()
         postedDayKeys = LibraryTrips.dayKeys(ofPosted: await posted)
         isLoading = false
         loaded = true
     }
 
-    /// 地名（無い・まだ引いていなければ nil）
-    func name(for coords: Photo.Coords?) -> String? {
-        guard let coords, let name = names[LibraryTrips.lookupKey(coords)], !name.isEmpty else { return nil }
-        return name
+    /// 一部だけ許可した人が写真を選び足したあと、探し直す（投稿済みの日はそのまま）
+    func addMorePhotos() async {
+        guard !isLoading else { return }
+        await PhotoLibrary.presentLimitedPicker()
+        isLoading = true
+        trips = await Self.findTrips()
+        isLoading = false
     }
 
-    /// 地名を**1つずつ順に**引く（Apple の地名引きは短い間に何度も呼ぶと断られる）
+    private static func findTrips() async -> [LibraryTrip] {
+        let shots = await PhotoLibrary.shots()
+        // 探すのも画面の処理の外で（数万枚を升に分ける）
+        return await Task.detached(priority: .userInitiated) { LibraryTrips.find(shots) }.value
+    }
+
+    /// 地名（無い・まだ引いていなければ nil）
+    func name(for coords: Photo.Coords?) -> String? {
+        guard let coords else { return nil }
+        return names[LibraryTrips.lookupKey(coords)]
+    }
+
+    /// 地名を**1つずつ順に**引く（Apple の地名引きは短い間に何度も呼ぶと断られる）。
+    /// 引けなかった座標は、次にその画面が出たときに引き直す（同じ回の中では1度だけ）
     func resolveNames(_ points: [Photo.Coords?]) async {
+        var tried: Set<String> = []
         for case let coords? in points {
             let key = LibraryTrips.lookupKey(coords)
-            guard names[key] == nil else { continue }
+            guard names[key] == nil, tried.insert(key).inserted else { continue }
             if Task.isCancelled { return }
-            names[key] = await PhotoLibrary.placeName(near: coords) ?? ""
+            if let name = await PhotoLibrary.placeName(near: coords) { names[key] = name }
         }
     }
 }

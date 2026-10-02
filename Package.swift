@@ -32,7 +32,7 @@ let package = Package(
         .target(name: "Combine", path: "Shims/Combine"),
         .target(name: "SwiftUI", dependencies: ["Combine"], path: "Shims/SwiftUI"),
         .target(name: "UIKit", dependencies: ["SwiftUI"], path: "Shims/UIKit"),
-        .target(name: "PhotosUI", dependencies: ["SwiftUI"], path: "Shims/PhotosUI"),
+        .target(name: "PhotosUI", dependencies: ["SwiftUI", "UIKit", "Photos"], path: "Shims/PhotosUI"),
         .target(name: "CoreLocation", path: "Shims/CoreLocation"),
         .target(name: "Photos", dependencies: ["UIKit", "CoreLocation", "ImageIO"], path: "Shims/Photos"),
         .target(name: "MapKit", dependencies: ["SwiftUI", "CoreLocation"], path: "Shims/MapKit"),
