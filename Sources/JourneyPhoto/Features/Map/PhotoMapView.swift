@@ -558,6 +558,8 @@ struct PhotoMapView: View {
                 // 読み上げは撮影地と枚数（見た目は写真だけで、名前は無かった）
                 .accessibilityLabel(PhotoMapViewModel.pinSpokenLabel(
                     place: pin.hasPlaceName ? pin.title : nil, count: pin.photos.count))
+                // UI テスト（`ScreenshotTests`）が写真のピンを数える目印
+                .accessibilityIdentifier("map.photoPin")
             }
         }
         // 束。押すとその束が収まる枠まで寄る（札は出さない——ピンを選んだことにしない）
@@ -584,6 +586,7 @@ struct PhotoMapView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(PhotoMapViewModel.clusterSpokenLabel(photos: cluster.photoCount,
                                                                          places: cluster.pins.count))
+                .accessibilityIdentifier("map.photoCluster")
             }
         }
         ForEach(model.officialPins) { pin in

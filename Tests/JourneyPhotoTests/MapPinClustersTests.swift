@@ -134,6 +134,49 @@ final class MapPinClustersTests: XCTestCase {
         XCTAssertEqual(try photo("a", thumbSrc: "https://cdn/a_thumb.webp").pinImageURL?.absoluteString,
                        "https://cdn/a_thumb.webp", "無ければ一覧と同じもの")
         XCTAssertEqual(try photo("a").pinImageURL?.absoluteString, "https://x/a.jpg")
+        XCTAssertEqual(try photo("a", thumbSm: "", thumbSrc: "https://cdn/a_thumb.webp").pinImageURL?.absoluteString,
+                       "https://cdn/a_thumb.webp", "空の thumbSm で先へ落ちない（Web の || と同じ）")
+    }
+
+    // MARK: - 枠が使えないときも写真のピンを置く（2026-10-02 の回帰の調査）
+
+    /// 🔴 **幅0・負・数でない枠で、写真のピンを全部落とさない。** 上限を超えたときの
+    /// 「枠の中だけ置く」に幅0の枠をそのまま通すと、どの点も入らず1本も出ない
+    func testUnusableFrameStillPlacesThePins() throws {
+        let pins = try grid(MapPinClusters.limit + 40)
+        let center = MapFraming.Frame(latitude: 35.05, longitude: 139.1, latitudeSpan: 0, longitudeSpan: 0)
+        let unusable: [MapFraming.Frame] = [
+            center,
+            MapFraming.Frame(latitude: 35.05, longitude: 139.1, latitudeSpan: 0, longitudeSpan: 0.5),
+            MapFraming.Frame(latitude: 35.05, longitude: 139.1, latitudeSpan: -1, longitudeSpan: -1),
+            MapFraming.Frame(latitude: .nan, longitude: 139.1, latitudeSpan: 1, longitudeSpan: 1),
+            MapFraming.Frame(latitude: 35.05, longitude: 139.1, latitudeSpan: .nan, longitudeSpan: .nan),
+            MapFraming.Frame(latitude: 35.05, longitude: 139.1, latitudeSpan: .infinity, longitudeSpan: 1),
+        ]
+        let noFrame = MapPinClusters.layout(pins, frame: nil)
+        for frame in unusable {
+            XCTAssertNil(MapPinClusters.usable(frame))
+            let layout = MapPinClusters.layout(pins, frame: frame)
+            XCTAssertGreaterThan(layout.markerCount, 0, "使えない枠（\(frame)）で写真の印が1本も置かれない")
+            XCTAssertLessThanOrEqual(layout.markerCount, MapPinClusters.limit)
+            XCTAssertEqual(layout, noFrame, "使えない枠は「枠がまだ無い」と同じに扱う")
+            let covered = layout.pins.count + layout.clusters.reduce(0) { $0 + $1.pins.count }
+            XCTAssertEqual(covered, pins.count, "使えない枠で写真を落とした")
+        }
+    }
+
+    /// 少ないとき（上限以下）は枠が何でも全部置く——幅0・NaN でも
+    func testFewPinsIgnoreAnUnusableFrame() throws {
+        let pins = try grid(5)
+        for frame in [MapFraming.Frame(latitude: 0, longitude: 0, latitudeSpan: 0, longitudeSpan: 0),
+                      MapFraming.Frame(latitude: .nan, longitude: .nan, latitudeSpan: .nan, longitudeSpan: .nan)] {
+            XCTAssertEqual(MapPinClusters.layout(pins, frame: frame).pins.map(\.id), pins.map(\.id))
+        }
+    }
+
+    /// 使える枠はそのまま使う（`usable` が普通の枠を捨てない）
+    func testUsableFrameIsKept() {
+        XCTAssertEqual(MapPinClusters.usable(japan), japan)
     }
 }
 
