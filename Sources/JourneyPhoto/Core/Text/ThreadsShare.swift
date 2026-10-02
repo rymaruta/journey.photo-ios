@@ -26,10 +26,9 @@ enum ThreadsShare {
         published && audience == .everyone
     }
 
-    /// 末尾に付ける署名（owner 2026-10-02「せっかくなら Journey Photo つけたい」）。
-    /// Threads の本文は文字にリンクを付けられないので、名前の下に**短いドメインだけ**を置く
-    /// （長い写真の URL は並べない）。ドメインがリンクになるかは Threads の作りしだい（実機で未確認）
-    static let signature = "Journey Photo\njourney-photo.com"
+    /// 末尾の見出し（owner 2026-10-02「Journey Photo／リンク」の形）。**すぐ下の行に写真のリンク**を
+    /// 置く（Threads の本文は文字にリンクを付けられないので、名前の下に URL を並べる）
+    static let signature = "Journey Photo"
 
     /// 添える文: 題・説明・撮影地を**空行で段落に分け**（owner 2026-10-02
     /// 「タイトル／文章／撮影地(あれば) みたいな改行を入れたい」）、最後に署名（と URL）を置く。
@@ -48,7 +47,8 @@ enum ThreadsShare {
         let l = location.trimmingCharacters(in: .whitespacesAndNewlines)
         if !l.isEmpty { lines.append("📍 \(l)") }
         var head = lines.joined(separator: "\n\n")
-        let tail = [signature ?? "", url?.absoluteString ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        // 見出しと URL は**空行を挟まず**続ける（「Journey Photo」の下にリンク）
+        let tail = [signature ?? "", url?.absoluteString ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
         let budget = maxTextLength - tail.count - (tail.isEmpty || head.isEmpty ? 0 : 2)
         if head.count > budget {
             head = budget > 1 ? String(head.prefix(budget - 1)) + "…" : ""

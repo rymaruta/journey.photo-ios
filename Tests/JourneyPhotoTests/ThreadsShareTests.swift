@@ -35,15 +35,15 @@ final class ThreadsShareTests: XCTestCase {
         XCTAssertTrue(text.hasSuffix("…\n\nhttps://journey-photo.com/photo/abc"))
     }
 
-    /// 既定では最後の段落に署名（Journey Photo と短いドメイン）が付く。URL は付けない呼び方
-    func testSignatureIsLastParagraph() {
-        XCTAssertEqual(ThreadsShare.text(title: "天空の鳥居", description: "絶景だった。", location: "高屋神社", url: nil),
-                       "天空の鳥居\n\n絶景だった。\n\n📍 高屋神社\n\nJourney Photo\njourney-photo.com")
-        // 本文が無くても署名だけは付く
+    /// 既定では最後の段落に「Journey Photo」、そのすぐ下に写真のリンク（空行は挟まない）
+    func testSignatureWithLinkIsLastParagraph() {
+        XCTAssertEqual(ThreadsShare.text(title: "天空の鳥居", description: "絶景だった。", location: "高屋神社", url: url),
+                       "天空の鳥居\n\n絶景だった。\n\n📍 高屋神社\n\nJourney Photo\nhttps://journey-photo.com/photo/abc")
+        // リンクが無ければ見出しだけ・本文が無くても見出しは付く
         XCTAssertEqual(ThreadsShare.text(title: "", location: "", url: nil), ThreadsShare.signature)
-        // 上限を超えても署名は丸ごと残る
-        let long = ThreadsShare.text(title: String(repeating: "あ", count: 600), location: "", url: nil)
+        // 上限を超えても見出しとリンクは丸ごと残る
+        let long = ThreadsShare.text(title: String(repeating: "あ", count: 600), location: "", url: url)
         XCTAssertEqual(long.count, ThreadsShare.maxTextLength)
-        XCTAssertTrue(long.hasSuffix("…\n\n" + ThreadsShare.signature))
+        XCTAssertTrue(long.hasSuffix("…\n\nJourney Photo\nhttps://journey-photo.com/photo/abc"))
     }
 }

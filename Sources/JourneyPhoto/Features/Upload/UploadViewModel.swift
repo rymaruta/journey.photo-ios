@@ -198,7 +198,7 @@ final class UploadViewModel: ObservableObject {
     @Published var threadsBundle: ThreadsBundle?
     /// 上がった写真のうち外へ渡してよいもの（公開・全体に公開）。やり直しをまたいで貯め、
     /// 全部上がったときに `threadsBundle` にする
-    private var sharable: [(data: Data, title: String, description: String, location: String)] = []
+    private var sharable: [(data: Data, photoId: String, title: String, description: String, location: String)] = []
 
     struct ThreadsBundle: Identifiable {
         let id = UUID()
@@ -578,13 +578,12 @@ final class UploadViewModel: ObservableObject {
                    let lead = sharable.first {
                     threadsBundle = ThreadsBundle(
                         images: sharable.prefix(ThreadsShare.maxImages).map(\.data),
-                        // **本文に URL は入れない**（owner 2026-10-02「Threads 側に出る見た目も洗練させたい」）。
-                        // Threads の本文は文字のリンクを作れず（「Journey Photo」を押すと飛ぶ、はできない）、
-                        // 写真付きの投稿ではリンクの札も出ない見込み（実機では未確認）で、URL は長い文字列のまま本文に並ぶ。
-                        // 署名（Journey Photo と短いドメイン）は `ThreadsShare.signature` が最後に付ける。
-                        // 写真のページへの導線は、API で載せる形（返信にリンクの札）で足す
+                        // 最後に「Journey Photo」とその下に1枚目の写真のリンク（owner 2026-10-02）。
+                        // **`/?photo=` の形で**——`/photo/<id>` は再ビルドのあと（数分）まで無く、すぐ載せると
+                        // Threads が 404 を読む（`PhotoLink`）。写真の個別ページが建てば `/?photo=` からも開ける
                         text: ThreadsShare.text(title: lead.title, description: lead.description,
-                                                location: lead.location, url: nil))
+                                                location: lead.location,
+                                                url: PhotoLink.url(photoId: lead.photoId, isPublished: false)))
                 }
                 didPostAll = done.count > 0
             } else {
@@ -654,8 +653,8 @@ final class UploadViewModel: ObservableObject {
             throw error
         }
         staged[item.id] = nil
-        if photo != nil, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
-            sharable.append((item.prepared.data, draft.title, draft.description, draft.location))
+        if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
+            sharable.append((item.prepared.data, id, draft.title, draft.description, draft.location))
         }
         if photo != nil, draft.spotId != nil, draft.published, draft.audience == .everyone {
             postedToSpot += 1
