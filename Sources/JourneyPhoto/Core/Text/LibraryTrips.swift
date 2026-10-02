@@ -75,8 +75,8 @@ struct LibraryTrip: Identifiable, Equatable {
 /// 6. **`maxDays` 日を超えるまとまりは、そのままでは旅にしない**（引っ越した人は前の家が
 ///    「家」になり、新しい家の日常が何か月もつながる）。捨てずに、まとまりの中で
 ///    いちばん写真の多い約10kmの升を仮の家にして、**その期間の写真だけで1段だけ**探し直す
-///    （新しい家から出かけた本当の旅が残る）。探し直しでは**仮の家と本当の家の両方から**
-///    離れた写真だけを旅先にする。探し直しても長すぎるまとまりは捨てる
+///    （新しい家から出かけた本当の旅が残る）。本当の家も家のまま扱うかは、そこへ行く
+///    頻度で決める（`homesKeptInRetry`・2026-10-02 判断）。探し直しても長すぎるまとまりは捨てる
 ///
 /// スクリーンショットはここへ来る前に外す（`PhotoLibrary.shots`）。
 /// MainActor に置かない——試験から呼び、画面は MainActor の外で回す。
@@ -112,8 +112,7 @@ enum LibraryTrips {
     /// `homes` の**どれからも** `awayKm` 以上離れた写真を旅先として旅を探す。
     /// `retries` は長すぎるまとまりを探し直してよい段の数。
     ///
-    /// 🔴 **探し直しでも本当の家は家のまま。** 仮の家だけから見ると、単身赴任の人
-    /// （平日は大阪・週末は東京の家）の東京の週末が「旅」になっていた
+    /// 探し直しで本当の家も家として扱うかは `homesKeptInRetry` が決める（2026-10-02 判断）
     private static func search(_ shots: [LibraryShot], homes: [Photo.Coords],
                                calendar: Calendar, retries: Int) -> [LibraryTrip] {
         let located = shots.filter { $0.coords != nil }
@@ -145,7 +144,8 @@ enum LibraryTrips {
                 // 長すぎる: そのまとまりでいちばん多い升を仮の家にして、その期間だけで探し直す
                 guard retries > 0, let tempHome = busiestCellCenter(of: located) else { return [] }
                 let inSpan = shots.filter { $0.date >= span.start && $0.date <= span.end }
-                return search(inSpan, homes: [tempHome] + homes, calendar: calendar, retries: retries - 1)
+                let kept = homesKeptInRetry(homes, shots: inSpan, start: span.start, end: span.end)
+                return search(inSpan, homes: [tempHome] + kept, calendar: calendar, retries: retries - 1)
             }
             // 数えるのは位置のある写真だけ（位置の無い写真で5枚に届かせない）
             guard located.count >= minShots else { return [] }
@@ -257,6 +257,29 @@ enum LibraryTrips {
         let head = "DAY \(day.number) · \(day.month).\(day.day)"
         guard let place, !place.isEmpty else { return head }
         return "\(head) · \(place)"
+    }
+
+    /// 探し直しで、仮の家のほかに**家のまま扱う**本当の家（最初に推した家）。
+    ///
+    /// **2026-10-02 判断。** 単身赴任（平日は大阪・毎週末は東京の家）と、引っ越したあとの
+    /// 里帰り（京都へ移り、たまに前の家の東京へ2日）は、**距離だけでは区別できない**——
+    /// どちらも「仮の家から遠く、本当の家の近く」の写真になる。仮の家だけから見ると単身赴任の
+    /// 週末が「旅」になり、両方の家から見ると里帰りや前の家の近くへの旅が消えた。
+    /// そこで**行く頻度で分ける**: まとまりの週の数の半分以上の週に、その家から
+    /// `awayKm` 以内の写真があれば家のまま（毎週帰る）。それより少なければ旅先として残す
+    static func homesKeptInRetry(_ homes: [Photo.Coords], shots: [LibraryShot],
+                                 start: Date, end: Date) -> [Photo.Coords] {
+        let week = 7.0 * 86_400
+        let totalWeeks = Int(end.timeIntervalSince(start) / week) + 1
+        return homes.filter { home in
+            var weeks: Set<Int> = []
+            for shot in shots where shot.date >= start && shot.date <= end {
+                guard let coords = shot.coords,
+                      TravelDistance.kilometers(from: home, to: coords) < awayKm else { continue }
+                weeks.insert(Int(shot.date.timeIntervalSince(start) / week))
+            }
+            return weeks.count * 2 >= totalWeeks
+        }
     }
 
     /// 引けなかった地名を引き直すまでの間（秒）。**10分**——圏外から戻れば引ける、
