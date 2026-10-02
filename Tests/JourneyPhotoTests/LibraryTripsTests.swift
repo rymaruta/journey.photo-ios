@@ -168,6 +168,24 @@ final class LibraryTripsTests: XCTestCase {
                       "探し直しても長すぎるまとまりを旅にした")
     }
 
+    /// 🔴 単身赴任: 家は東京、平日5日は大阪、週末2日は東京。探し直しで大阪を仮の家にしても、
+    /// **東京（本当の家）の週末は旅ではない**（仮の家だけから見て9件の「旅」が出ていた）
+    func testWeekendsAtTheRealHomeAreNotTripsAfterRetry() {
+        let osaka = (lat: 34.69, lng: 135.50)
+        var shots: [LibraryShot] = []
+        for week in 0..<12 {
+            for weekday in 0..<7 {
+                let day = week * 7 + weekday
+                let place = weekday < 5 ? osaka : home
+                for i in 0..<3 {
+                    shots.append(shot("w\(day)-\(i)", hours: Double(day) * 24 + 9 + Double(i) * 4, place))
+                }
+            }
+        }
+        XCTAssertEqual(LibraryTrips.find(shots, home: home, timeZone: tokyo).count, 0,
+                       "本当の家で過ごした週末を旅にした")
+    }
+
     /// 引けなかった地名は10分は引き直さない
     func testFailedNameIsNotRetriedForTenMinutes() {
         let failed = Date(timeIntervalSince1970: 1_000_000)

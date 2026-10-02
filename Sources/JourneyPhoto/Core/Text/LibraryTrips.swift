@@ -75,7 +75,8 @@ struct LibraryTrip: Identifiable, Equatable {
 /// 6. **`maxDays` 日を超えるまとまりは、そのままでは旅にしない**（引っ越した人は前の家が
 ///    「家」になり、新しい家の日常が何か月もつながる）。捨てずに、まとまりの中で
 ///    いちばん写真の多い約10kmの升を仮の家にして、**その期間の写真だけで1段だけ**探し直す
-///    （新しい家から出かけた本当の旅が残る）。探し直しても長すぎるまとまりは捨てる
+///    （新しい家から出かけた本当の旅が残る）。探し直しでは**仮の家と本当の家の両方から**
+///    離れた写真だけを旅先にする。探し直しても長すぎるまとまりは捨てる
 ///
 /// スクリーンショットはここへ来る前に外す（`PhotoLibrary.shots`）。
 /// MainActor に置かない——試験から呼び、画面は MainActor の外で回す。
@@ -104,18 +105,22 @@ enum LibraryTrips {
         }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
-        return search(shots, home: homePoint, calendar: calendar, retries: 1)
+        return search(shots, homes: [homePoint], calendar: calendar, retries: 1)
             .sorted { $0.start > $1.start }
     }
 
-    /// `home` から見た旅を探す。`retries` は長すぎるまとまりを探し直してよい段の数
-    private static func search(_ shots: [LibraryShot], home homePoint: Photo.Coords,
+    /// `homes` の**どれからも** `awayKm` 以上離れた写真を旅先として旅を探す。
+    /// `retries` は長すぎるまとまりを探し直してよい段の数。
+    ///
+    /// 🔴 **探し直しでも本当の家は家のまま。** 仮の家だけから見ると、単身赴任の人
+    /// （平日は大阪・週末は東京の家）の東京の週末が「旅」になっていた
+    private static func search(_ shots: [LibraryShot], homes: [Photo.Coords],
                                calendar: Calendar, retries: Int) -> [LibraryTrip] {
         let located = shots.filter { $0.coords != nil }
         let away = located
             .filter { shot in
                 guard let coords = shot.coords else { return false }
-                return TravelDistance.kilometers(from: homePoint, to: coords) >= awayKm
+                return homes.allSatisfy { TravelDistance.kilometers(from: $0, to: coords) >= awayKm }
             }
             .sorted(by: inOrder)
 
@@ -140,7 +145,7 @@ enum LibraryTrips {
                 // 長すぎる: そのまとまりでいちばん多い升を仮の家にして、その期間だけで探し直す
                 guard retries > 0, let tempHome = busiestCellCenter(of: located) else { return [] }
                 let inSpan = shots.filter { $0.date >= span.start && $0.date <= span.end }
-                return search(inSpan, home: tempHome, calendar: calendar, retries: retries - 1)
+                return search(inSpan, homes: [tempHome] + homes, calendar: calendar, retries: retries - 1)
             }
             // 数えるのは位置のある写真だけ（位置の無い写真で5枚に届かせない）
             guard located.count >= minShots else { return [] }

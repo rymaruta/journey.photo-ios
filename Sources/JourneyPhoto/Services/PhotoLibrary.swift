@@ -105,13 +105,16 @@ enum PhotoLibrary {
         options.deliveryMode = .highQualityFormat
         options.version = .current
         // **取り消せるようにする**（「やめる」・画面を離れた）。iCloud から落とす読み込みには
-        // 時間の上限が無いので、取り消しで PhotoKit の要求も止める。止めた要求は結果が nil で返る
+        // 時間の上限が無いので、取り消しで PhotoKit の要求も止める。
+        // 続きは箱が**一度だけ**再開する——取り消しの口からも nil で再開するので、PhotoKit が
+        // 結果の口を呼ばなくても仕事が残らない（結果の口があとで呼ばれても二度目は捨てる）
         let manager = PHImageManager.default()
         let request = ImageRequestBox()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
+                guard request.begin(continuation) else { return }
                 let id = manager.requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
-                    continuation.resume(returning: data)
+                    request.finish(data)
                 }
                 if request.set(id) { manager.cancelImageRequest(id) }
             }
@@ -120,11 +123,26 @@ enum PhotoLibrary {
         }
     }
 
-    /// 要求の番号と「取り消された」印を、取り消しの口（別の糸で走る）と分け合う箱
+    /// 要求の続き・番号・「取り消された」印を、取り消しの口（別の糸で走る）と分け合う箱。
+    /// **続きは一度だけ再開する**
     private final class ImageRequestBox: @unchecked Sendable {
         private let lock = NSLock()
+        private var continuation: CheckedContinuation<Data?, Never>?
         private var id: PHImageRequestID?
         private var cancelled = false
+
+        /// 続きを預ける。**もう取り消されていたら nil で再開して false**（要求は出さない）
+        func begin(_ continuation: CheckedContinuation<Data?, Never>) -> Bool {
+            lock.lock()
+            if cancelled {
+                lock.unlock()
+                continuation.resume(returning: nil)
+                return false
+            }
+            self.continuation = continuation
+            lock.unlock()
+            return true
+        }
 
         /// 番号を控える。**もう取り消されていたら true**（呼び手がすぐ止める）
         func set(_ id: PHImageRequestID) -> Bool {
@@ -133,11 +151,25 @@ enum PhotoLibrary {
             return cancelled
         }
 
-        /// 取り消しの印を立てる。番号が分かっていればそれを返す
+        /// 結果で再開する（二度目以降は捨てる）
+        func finish(_ data: Data?) {
+            lock.lock()
+            let waiting = continuation
+            continuation = nil
+            lock.unlock()
+            waiting?.resume(returning: data)
+        }
+
+        /// 取り消す。待っている続きは nil で再開し、番号が分かっていればそれを返す
         func cancel() -> PHImageRequestID? {
-            lock.lock(); defer { lock.unlock() }
+            lock.lock()
             cancelled = true
-            return id
+            let waiting = continuation
+            continuation = nil
+            let known = id
+            lock.unlock()
+            waiting?.resume(returning: nil)
+            return known
         }
     }
 

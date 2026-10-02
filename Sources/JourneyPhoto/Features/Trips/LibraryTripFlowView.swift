@@ -75,6 +75,12 @@ final class LibraryTripModel: ObservableObject {
     /// （断られた直後に開き直すたびに Apple の地図へ問い合わせない）。流れをまたいで控える
     private static var failedAt: [String: Date] = [:]
 
+    /// 地名の控えを消す（サインアウト・退会。`AuthStore.settleSignedOut`）
+    static func forgetPlaceNames() {
+        knownNames = [:]
+        failedAt = [:]
+    }
+
     init() {
         names = Self.knownNames
     }
