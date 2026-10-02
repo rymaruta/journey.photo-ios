@@ -112,7 +112,7 @@ final class PhotoLinkTests: XCTestCase {
     /// 短縮リンクは ID の先頭8文字（小文字）。サイトの `resolveShortPhotoId` と同じ規則
     func testShortLinkUsesFirstEightHex() throws {
         let url = try XCTUnwrap(PhotoLink.shortURL(photoId: "A0E0E987-4686-437a-a5fd-b6eaa2debd84"))
-        XCTAssertEqual(url.absoluteString, "https://site.example.test?p=a0e0e987")
+        XCTAssertEqual(url.absoluteString, "https://site.example.test/?p=a0e0e987")
     }
 
     /// 16進8文字で始まらない ID には作らない（サイトが短縮と読まない）。呼び手は長い形に落とす

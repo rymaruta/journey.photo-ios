@@ -243,13 +243,13 @@ struct PhotoDetailView: View {
         }) {
             ReportSheet(photoId: current.id, ownerId: ownerId)
         }
-        // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
-        // 保存できていないように見える
         .sheet(item: $threadsBundle) { bundle in
             ShareSheet(images: bundle.images, text: bundle.text)
                 .ignoresSafeArea()
                 .presentationDetents([.medium, .large])
         }
+        // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
+        // 保存できていないように見える
         .sheet(isPresented: $showEdit, onDismiss: { Task { await reloadPhoto() } }) {
             NavigationStack { EditPhotoView(photo: shown) }
         }
@@ -715,21 +715,32 @@ struct PhotoDetailView: View {
     /// 過去の投稿を Threads に載せる。写真の本体を読み、投稿したときと同じ文を作って共有の画面へ。
     /// 渡すのは `UIImage` に戻した画像（共有の先で作り直されるので、ファイルの付帯情報は渡らない）
     private func prepareThreads() async {
-        guard !preparingThreads, let url = shown.detailImageURL else { return }
+        // **押した時点の写真を掴んでおく。** 読み込み（最大15秒）の間に束を送ると `shown` が
+        // 替わり、1枚目の画像に2枚目の題とリンクが付いた（87525da9 のレビュー）
+        let target = shown
+        guard !preparingThreads, let url = target.detailImageURL else { return }
+        let link = PhotoLink.shortURL(photoId: target.id) ?? shareURL(for: current)
         preparingThreads = true
+        // 読んでいる間を見せる（メニューが閉じて数秒何も起きないと、押し直しを誘う）
+        actionNotice = L("写真を読み込んでいます…", "Loading the photo…")
         defer { preparingThreads = false }
         actionError = nil
-        guard let data = await TripBookCardRenderer.coverData(url) else {
+        // 🔴 **画素だけにしてから渡す。** `src` は原本で、Web から上げた原本は GPS 入りのまま
+        // （`photo-gallery/app/user/upload/page.tsx`）。共有の画面の作りに頼らず、ここで落とす
+        guard let raw = await TripBookCardRenderer.coverData(url),
+              let data = ShareSheet.pixelsOnly(raw) else {
+            actionNotice = nil
             actionError = L("写真を読み込めませんでした。通信を確かめてください",
                             "Couldn't load the photo. Check your connection.")
             return
         }
+        actionNotice = nil
         threadsBundle = ThreadsShare.Bundle(
             images: [data],
-            text: ThreadsShare.text(title: shown.title?.resolved() ?? "",
-                                    description: shown.paragraphs.joined(separator: "\n"),
-                                    location: shown.location ?? "",
-                                    url: PhotoLink.shortURL(photoId: shown.id) ?? shareURL(for: current)))
+            text: ThreadsShare.text(title: target.title?.resolved() ?? "",
+                                    description: target.paragraphs.joined(separator: "\n"),
+                                    location: target.location ?? "",
+                                    url: link))
     }
 
     private var menu: some View {
