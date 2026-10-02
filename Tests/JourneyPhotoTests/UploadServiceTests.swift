@@ -142,8 +142,6 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertEqual(model.tagsText, "", "空にしたタグを戻ってきたときに入れ直している")
     }
 
-    /// 旅の写真から来た投稿は**非公開で送る**。上げ終えて片付けたあとも非公開のまま
-    /// （初期値に戻す）で、片付いた画面は書きかけではない（閉じるときに聞かない）
     /// 束の印の頭（2026-10-02 判断）: 旅の写真の流れから来た投稿は必ず `trip-` で始まり、
     /// ふだんのまとめ投稿には付かない（旅の記録の一冊になるのは前者だけ）
     @MainActor
@@ -168,7 +166,8 @@ final class UploadServiceTests: XCTestCase {
                 }
                 XCTAssertTrue(model.fromTripImport)
             }
-            model.groupsAsOnePost = true
+            // 旅の流れでは「それぞれ別の投稿」にしても束ねる（ふだんの投稿はまとめるときだけ）
+            model.groupsAsOnePost = !fromTrip
             model.items = (0..<2).map { _ in PendingPhoto(prepared: ImagePreparer.Prepared(
                 data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
                 exif: nil, coords: nil, takenOn: nil)) }
@@ -187,6 +186,8 @@ final class UploadServiceTests: XCTestCase {
         }
     }
 
+    /// 旅の写真から来た投稿は**非公開で送る**。上げ終えて片付けたあとも非公開のまま
+    /// （初期値に戻す）で、片付いた画面は書きかけではない（閉じるときに聞かない）
     @MainActor
     func testPrivateStartIsSentAndKeptAfterReset() async throws {
         ScriptedProtocol.script = [

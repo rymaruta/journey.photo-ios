@@ -236,4 +236,25 @@ final class TripBookGroupsTests: XCTestCase {
         XCTAssertFalse(UploadGrouping.isTripGroup(ordinary), "ふだんのまとめ投稿に trip- が付いた")
         XCTAssertFalse(UploadGrouping.isTripGroup(nil))
     }
+
+    // MARK: - 旅の流れは2枚から・いつもまとめる
+
+    /// 選ぶ画面の主ボタンは2枚から（1枚では束にならず、非公開のままどこの棚にも出ない）
+    func testAddToTripsNeedsTwoPhotos() {
+        XCTAssertFalse(LibraryTrips.canAddToTrips(count: 0))
+        XCTAssertFalse(LibraryTrips.canAddToTrips(count: 1), "1枚で「旅の記録に入れる」を押せる")
+        XCTAssertTrue(LibraryTrips.canAddToTrips(count: 2))
+    }
+
+    /// 旅の流れの投稿画面の一言（切り替えの代わり）。1枚になったら「2枚から」と伝える。ふだんの投稿には出さない
+    func testTripNoteInTheUploadScreen() {
+        XCTAssertNil(UploadGrouping.tripNote(fromTrip: false, count: 3), "ふだんの投稿で切り替えが消える")
+        XCTAssertNil(UploadGrouping.tripNote(fromTrip: true, count: 0))
+        XCTAssertEqual(UploadGrouping.tripNote(fromTrip: true, count: 1),
+                       L("旅の記録には2枚から入ります。1枚のままでも投稿できます",
+                         "Trips need 2 or more photos. You can still post this one."),
+                       "1枚になったことを伝えていない")
+        XCTAssertEqual(UploadGrouping.tripNote(fromTrip: true, count: 2),
+                       L("1つの投稿にまとめて、旅の記録の一冊にします", "Posted as one and kept as a trip"))
+    }
 }

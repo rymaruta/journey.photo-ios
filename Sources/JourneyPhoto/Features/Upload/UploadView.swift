@@ -163,7 +163,15 @@ struct UploadView: View {
                 progressAndErrors
                 if let spot = model.spot { spotBanner(spot) }
                 strip
-                if model.items.count > 1 { groupChoice }
+                // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言
+                if let note = UploadGrouping.tripNote(fromTrip: model.fromTripImport, count: model.items.count) {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .padding(.horizontal, 4)
+                } else if model.items.count > 1 {
+                    groupChoice
+                }
                 detailSection
                 rowsCard
                 tagsAndCategory

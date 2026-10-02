@@ -228,6 +228,12 @@ enum LibraryTrips {
         return picked
     }
 
+    /// 旅の記録に入れられる枚数か。**2枚から**（`TripBook.minPhotos`）——1枚では束にならず、
+    /// 非公開で始まった写真がどこの棚にも出ない
+    static func canAddToTrips(count: Int) -> Bool {
+        count >= TripBook.minPhotos
+    }
+
     /// 選ぶ・外すの切り替え。**上限を超える選びは受けない**（`overLimit` を立てて返す）
     static func toggle(_ id: String, in selected: [String], limit: Int) -> (selected: [String], overLimit: Bool) {
         if selected.contains(id) {

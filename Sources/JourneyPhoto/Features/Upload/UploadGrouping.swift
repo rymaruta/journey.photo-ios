@@ -34,6 +34,17 @@ enum UploadGrouping {
         fromTrip ? tripPrefix + uuid : uuid
     }
 
+    /// 旅の写真の流れから開いた投稿画面の、束についての一言（「それぞれ別の投稿」の切り替えの代わり）。
+    /// **旅の流れでは、いつも1つの投稿にまとめる**（束でないと旅の記録に入らない）。
+    /// 写真を外して1枚になっても送信は止めない——旅の記録には2枚からと伝えるだけ
+    static func tripNote(fromTrip: Bool, count: Int) -> String? {
+        guard fromTrip, count > 0 else { return nil }
+        return count >= TripBook.minPhotos
+            ? L("1つの投稿にまとめて、旅の記録の一冊にします", "Posted as one and kept as a trip")
+            : L("旅の記録には2枚から入ります。1枚のままでも投稿できます",
+                "Trips need 2 or more photos. You can still post this one.")
+    }
+
     /// 旅の写真の流れで上げた束か
     static func isTripGroup(_ groupId: String?) -> Bool {
         groupId?.trimmingCharacters(in: .whitespaces).hasPrefix(tripPrefix) ?? false
