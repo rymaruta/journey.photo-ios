@@ -55,7 +55,8 @@ struct ProfileService {
     /// 「取れなかった」と「退会した」を混ぜないよう、呼び出し側は
     /// 404 を専用に扱うこと。
     func publicProfile(userId: String) async throws -> UserProfile {
-        let encoded = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId
+        // 英数字・`-`・`_` 以外は要求を出さずに失敗にする（`PathID`）
+        let encoded = try PathID.segment(userId)
         return try await api.anonymous(.get, "/profile/\(encoded)", as: UserProfile.self)
     }
 
