@@ -52,21 +52,35 @@ struct HTTPValidator: Codable, Equatable, Sendable {
 /// 端末に残した控え（`PhotoSnapshotStore`・`SpotSnapshotStore`）の隣に置く、版の印。
 ///
 /// 🔴 **印は、控えの中身と同じ回のものでなければならない。** 違う回の印を送ると、
-/// 304 で古い中身を「最新」として出し続ける。だから控えを書くときは
-/// **印を先に消し → 中身を書き → 書けたときだけ印を書く**（`saveSnapshot`）。
-/// 途中で落ちても「印が無い」側に倒れる（次は条件なしで取るだけ）。
+/// 304 で古い中身を「最新」として出し続ける。守りは2つ:
+///
+/// 1. 書く順は**印を先に消し → 中身を書き → 書けたときだけ印を書く**（`saveSnapshot`）
+/// 2. 🔴 **印に中身の指紋（`contentHash`）を添え、読むときに控えの中身と照合する。**
+///    合わなければ印は無い扱い（条件なしで取る）。1 だけでは足りない——
+///    `PublicGalleryService` は本番でも2つ以上作られ（`AppEnvironment.gallery` と
+///    `MyPageView` の自前）、同じ控えファイルを書く。別々の actor の書き込みが
+///    交わると「中身は1回目・印は2回目」が残りうる（2026-10-02 のレビュー）
 struct ValidatorStore {
 
     private let url: URL
+    private let snapshotURL: URL
 
     /// - Parameter snapshotURL: 控えのファイル。印はその隣（`<名前>.validator`）
     init(snapshotURL: URL) {
+        self.snapshotURL = snapshotURL
         self.url = snapshotURL.appendingPathExtension("validator")
     }
 
+    /// 印のファイル（試験の後片付け用）
+    var fileURL: URL { url }
+
+    /// 印を読む。**控えの今の中身と指紋が合うときだけ返す**
     func load() -> HTTPValidator? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(HTTPValidator.self, from: data)
+        guard let data = try? Data(contentsOf: url),
+              let stored = try? JSONDecoder().decode(StoredValidator.self, from: data),
+              let snapshot = try? Data(contentsOf: snapshotURL),
+              stored.contentHash == Self.fingerprint(snapshot) else { return nil }
+        return stored.validator
     }
 
     func clear() {
@@ -74,12 +88,36 @@ struct ValidatorStore {
     }
 
     /// 控えの中身と印を、**ずれない順で**書く。印が nil なら印は残さない
-    func saveSnapshot(_ data: Data, to snapshotURL: URL, validator: HTTPValidator?) {
+    func saveSnapshot(_ data: Data, validator: HTTPValidator?) {
         clear()
         // 失敗しても何も言わない（控えが取れないだけで、本筋は動いている）
         guard (try? data.write(to: snapshotURL, options: .atomic)) != nil else { return }
-        guard let validator, let encoded = try? JSONEncoder().encode(validator) else { return }
+        guard let validator else { return }
+        let stored = StoredValidator(validator: validator, contentHash: Self.fingerprint(data))
+        guard let encoded = try? JSONEncoder().encode(stored) else { return }
         try? encoded.write(to: url, options: .atomic)
+    }
+
+    /// ファイルに書く形。印と、その回の中身の指紋
+    private struct StoredValidator: Codable {
+        var validator: HTTPValidator
+        var contentHash: String
+    }
+
+    /// 中身の指紋。**長さ＋FNV-1a（64 ビット）**。
+    ///
+    /// 暗号のハッシュは要らない（照合するのは自分が書いた2つのファイルで、
+    /// 狙って衝突させる相手がいない）。CryptoKit は Linux に無く、
+    /// swift-crypto を足すほどでもないので、Foundation だけで書ける形にした
+    static func fingerprint(_ data: Data) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            for byte in bytes {
+                hash ^= UInt64(byte)
+                hash = hash &* 0x0000_0100_0000_01b3
+            }
+        }
+        return "\(data.count)-" + String(hash, radix: 16)
     }
 }
 

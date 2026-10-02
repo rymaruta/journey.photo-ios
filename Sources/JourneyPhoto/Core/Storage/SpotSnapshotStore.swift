@@ -22,7 +22,7 @@ struct SpotSnapshotStore {
     /// 中身と、その応答の版の印を書く。**印の無い応答なら印は残さない**
     /// （前の回の印を残すと、304 で違う中身を出す）
     func save(_ data: Data, validator: HTTPValidator? = nil) {
-        validators.saveSnapshot(data, to: url, validator: validator)
+        validators.saveSnapshot(data, validator: validator)
     }
 
     /// 控えを消す。**索引が下げられた（404）とき**——古い控えを出し続けない

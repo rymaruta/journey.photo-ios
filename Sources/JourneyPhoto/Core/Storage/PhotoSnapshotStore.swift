@@ -21,7 +21,7 @@ struct PhotoSnapshotStore {
     /// 中身と、その応答の版の印を書く。**印の無い応答なら印は残さない**
     /// （前の回の印を残すと、304 で違う中身を出す）
     func save(_ data: Data, validator: HTTPValidator? = nil) {
-        validators.saveSnapshot(data, to: url, validator: validator)
+        validators.saveSnapshot(data, validator: validator)
     }
 
     func load() -> [Photo]? {
