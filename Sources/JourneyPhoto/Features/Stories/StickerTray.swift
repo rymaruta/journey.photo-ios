@@ -45,7 +45,7 @@ struct StickerTray: View {
                     }
                 }
                 Text(L("スタンプ", "Stickers"))
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 52), spacing: 4)], spacing: 4) {
                     ForEach(TextOverlay.stamps, id: \.self) { emoji in
@@ -64,7 +64,7 @@ struct StickerTray: View {
                 if full {
                     Text(L("文字と札は1枚に\(TextOverlay.maxCount)個までです",
                            "Up to \(TextOverlay.maxCount) items per photo"))
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(WebTheme.muted2)
                 }
             }

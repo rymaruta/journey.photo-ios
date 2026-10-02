@@ -14,8 +14,8 @@ struct LibraryTripFlowView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = LibraryTripModel()
 
-    /// 選んだ写真の本体（読めたぶん・旅の並び）。渡してから閉じる
-    let onDone: ([Data]) -> Void
+    /// 選んだ写真を整えたもの（読めたぶん・旅の並び）。渡してから閉じる
+    let onDone: ([ImagePreparer.Prepared]) -> Void
 
     var body: some View {
         NavigationStack {

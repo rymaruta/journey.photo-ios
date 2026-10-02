@@ -165,6 +165,11 @@ final class StubProtocol: URLProtocol {
     /// 応答を写しているのは「キャプティブポータルが 200 で HTML を返す」
     /// 経路だけで、そこを試すときにだけ指定する
     nonisolated(unsafe) private static var contentType: String?
+    /// 応答に足す見出し（`ETag` など）。**既定は無し**。条件付きの取得
+    /// （`ConditionalGetTests`）を試すときにだけ入れる
+    nonisolated(unsafe) static var responseHeaders: [String: String] = [:]
+    /// 届いた要求を全部（見出しを見るため）
+    nonisolated(unsafe) static var allRequests: [URLRequest] = []
 
     static func reset() {
         status = 200
@@ -178,6 +183,8 @@ final class StubProtocol: URLProtocol {
         queue = []
         routes = []
         contentType = nil
+        responseHeaders = [:]
+        allRequests = []
     }
 
     static func respond(status: Int, body: String, contentType: String? = nil) {
@@ -224,6 +231,7 @@ final class StubProtocol: URLProtocol {
         StubProtocol.requestCount += 1
         StubProtocol.requests.append("\(request.httpMethod ?? "GET") \(request.url?.path ?? "")")
         StubProtocol.lastRequest = request
+        StubProtocol.allRequests.append(request)
         StubProtocol.lastBody = request.httpBody ?? StubProtocol.readStream(request.httpBodyStream)
         if let body = StubProtocol.lastBody { StubProtocol.bodies.append(body) }
 
@@ -247,7 +255,8 @@ final class StubProtocol: URLProtocol {
             status = next.0
             body = next.1
         }
-        let headers = StubProtocol.contentType.map { ["Content-Type": $0] }
+        var headers = StubProtocol.responseHeaders
+        if let contentType = StubProtocol.contentType { headers["Content-Type"] = contentType }
         let response = HTTPURLResponse(
             url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers
         )!

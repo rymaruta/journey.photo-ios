@@ -23,14 +23,14 @@ struct UploadView: View {
     /// 渡すのは**スポットのページに並ぶ形で上がった枚数**（スポットの画面が
     /// 「投稿しました」を出すか決める）。**何度呼ばれても同じ結果になる受け手に渡す**
     private let onPosted: ((Int) -> Void)?
-    /// 最初から並べておく写真の本体（旅の写真からまとめて来たとき・`LibraryTripFlowView`）。
-    /// 整えるのは model（`accept(libraryPhotos:)`）。**一度だけ入れる**
-    private let initialPhotos: [Data]
+    /// 最初から並べておく写真（旅の写真からまとめて来たとき・`LibraryTripFlowView`）。
+    /// **整えてあるもの**（選ぶ画面が読みながら1枚ずつ `ImagePreparer` に通した）。**一度だけ入れる**
+    private let initialPhotos: [ImagePreparer.Prepared]
     /// 非公開で始める（旅の写真から来たとき）。**変えられる**——決めつけない
     private let startPrivate: Bool
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil,
-         initialPhotos: [Data] = [], startPrivate: Bool = false) {
+         initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false) {
         self.initialTag = initialTag
         self.initialSpot = spot
         self.onPosted = onPosted
@@ -208,8 +208,8 @@ struct UploadView: View {
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { data in
-                model.accept(capturedJPEG: data)
+            CameraPicker { capture in
+                model.accept(capture: capture)
             }
             .ignoresSafeArea()
         }
@@ -463,8 +463,9 @@ struct UploadView: View {
                     albumRow
                 }
                 JPCardDivider()
+                // 鍵を控えている写真がある間も変えさせない（`visibilityLocked` の注記）
                 audienceRow
-                    .disabled(model.isWorking)
+                    .disabled(model.isWorking || model.visibilityLocked)
                 // 公開・全体に公開のときだけ（外の SNS に絞った写真を流さない・`ThreadsShare`）
                 if ThreadsShare.isEligible(published: model.published, audience: model.audience) {
                     JPCardDivider()
@@ -501,6 +502,13 @@ struct UploadView: View {
             // 付けた曲は試し聴きできる形で出す（アートワーク・アーティスト・再生）
             if let song = model.song {
                 SongRow(song: song)
+            }
+            // 公開範囲を変えられない理由（送りかけの写真がある間だけ）
+            if let reason = model.visibilityLockReason {
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+                    .padding(.horizontal, 4)
             }
             // 公開範囲の説明（何が起きるかを先に言う）
             Text(model.published
@@ -579,13 +587,12 @@ struct UploadView: View {
         Menu {
             ForEach(Audience.allCases) { choice in
                 Button {
-                    model.published = true
-                    model.audience = choice
+                    model.chooseVisibility(published: true, audience: choice)
                 } label: {
                     choiceLabel(choice.label, selected: model.published && model.audience == choice)
                 }
             }
-            Button { model.published = false } label: {
+            Button { model.chooseVisibility(published: false, audience: nil) } label: {
                 choiceLabel(L("非公開", "Private"), selected: !model.published)
             }
         } label: {

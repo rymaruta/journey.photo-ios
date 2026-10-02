@@ -9,15 +9,19 @@ import Foundation
 struct PhotoSnapshotStore {
 
     private let url: URL
+    /// 中身と同じ回の版の印（`ETag`・`Last-Modified`）。条件付きの取得に使う（`ConditionalGet`）
+    let validators: ValidatorStore
 
     init(fileName: String = "photos-snapshot.json") {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         self.url = caches.appendingPathComponent(fileName)
+        self.validators = ValidatorStore(snapshotURL: url)
     }
 
-    func save(_ data: Data) {
-        // 失敗しても何も言わない（控えが取れないだけで、本筋は動いている）
-        try? data.write(to: url, options: .atomic)
+    /// 中身と、その応答の版の印を書く。**印の無い応答なら印は残さない**
+    /// （前の回の印を残すと、304 で違う中身を出す）
+    func save(_ data: Data, validator: HTTPValidator? = nil) {
+        validators.saveSnapshot(data, validator: validator)
     }
 
     func load() -> [Photo]? {

@@ -11,8 +11,8 @@ struct LibraryTripListView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @ObservedObject var model: LibraryTripModel
-    /// 選んだ写真の本体を渡す（投稿画面へ）
-    let onDone: ([Data]) -> Void
+    /// 選んだ写真を整えたものを渡す（投稿画面へ）
+    let onDone: ([ImagePreparer.Prepared]) -> Void
 
     private var fresh: [LibraryTrip] {
         model.trips.filter { LibraryTrips.postedDays(trip: $0, postedDayKeys: model.postedDayKeys) == 0 }

@@ -9,6 +9,11 @@ struct PhotoService {
         self.api = api
     }
 
+    /// パスに入れる ID。**英数字・`-`・`_` 以外は要求を出さずに失敗にする**（`PathID`）
+    private func encoded(_ value: String) throws -> String {
+        try PathID.segment(value)
+    }
+
     /// 自分の写真（下書き＝非公開を含む）。応答は Photo の配列そのもの。
     ///
     /// **1行ずつ緩く読む**（公開一覧と同じ `LenientPhotoList`）。`[Photo]` で
@@ -60,7 +65,7 @@ struct PhotoService {
     func update(photoId: String, patch: PhotoPatch) async throws {
         try await api.authorizedVoid(
             .put,
-            "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)",
+            "/photos/\(encoded(photoId))",
             body: patch
         )
     }
@@ -77,6 +82,8 @@ struct PhotoService {
     @discardableResult
     func replace(photoId: String, prepared: ImagePreparer.Prepared,
                  uploads: UploadService, keepCoords: Bool = true) async throws -> Bool {
+        // ID の形は**上げる前に**確かめる（上げ切ってから弾くと、実体が無駄に残る）
+        _ = try encoded(photoId)
         // **投稿と同じ関所を通す。** 50MB と対応形式はサーバーも見るが、
         // 手前で弾かないと、上げ切ってから 400 を食う（投稿側と同じ理由）
         try UploadService.checkAcceptable(size: prepared.data.count, type: prepared.contentType)
@@ -120,7 +127,7 @@ struct PhotoService {
         do {
             try await api.authorizedVoid(
                 .put,
-                "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)",
+                "/photos/\(encoded(photoId))",
                 body: body
             )
         } catch {
@@ -161,7 +168,7 @@ struct PhotoService {
         do {
             try await api.authorizedVoid(
                 .delete,
-                "/photos/\(photoId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? photoId)"
+                "/photos/\(encoded(photoId))"
             )
         } catch where SocialService.isNotFound(error) {
             return

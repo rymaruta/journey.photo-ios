@@ -9,8 +9,9 @@ struct AlbumService {
         self.api = api
     }
 
-    private func encoded(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
+    /// パスに入れる ID。**英数字・`-`・`_` 以外は要求を出さずに失敗にする**（`PathID`）
+    private func encoded(_ value: String) throws -> String {
+        try PathID.segment(value)
     }
 
     private struct AlbumList: Decodable { let albums: [Album] }

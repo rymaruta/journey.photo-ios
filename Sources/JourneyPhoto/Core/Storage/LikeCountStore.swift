@@ -33,10 +33,20 @@ final class LikeCountStore: ObservableObject {
         entries[photoId]
     }
 
-    /// ホームのカードからいいねを送っている写真。**カードの外に持つ**——
-    /// カードの `@State` に持つと、LazyVStack がカードを作り直したときに消え、
-    /// 答えを待っている間にもう一度押せた（逆向きが同時に飛ぶ）
+    /// いいねを送っている写真。**どの画面から送っても、ここ1つで守る**
+    /// （ホームのカード・詳細の下のハート・大きく見る画面）。
+    ///
+    /// - カードの `@State` に持つと、LazyVStack がカードを作り直したときに消え、
+    ///   答えを待っている間にもう一度押せた（逆向きが同時に飛ぶ）
+    /// - 🔴 以前は画面ごとに別の印（ホームはここ・詳細は `PhotoDetailViewModel.isLiking`・
+    ///   大きく見る画面の隣の写真は詳細の `@State`）で、**ある画面で送っている写真を
+    ///   別の画面で押すと逆向きが同時に飛んだ**（ホームで押してすぐ詳細を開いて押す、など）
     private(set) var sending: Set<String> = []
+
+    /// 送っている最中か（押しても何もしない・知らせも消さない判断に使う）
+    func isSending(_ photoId: String) -> Bool {
+        sending.contains(photoId)
+    }
 
     /// 送り始める。**既に送っていれば false**（押させない）
     func beginSending(_ photoId: String) -> Bool {

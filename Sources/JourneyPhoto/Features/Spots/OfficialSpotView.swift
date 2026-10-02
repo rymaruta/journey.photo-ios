@@ -122,6 +122,8 @@ struct OfficialSpotView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .webToolbarIcon()
+                // 絵だけのボタン。名前を明示する（OS 任せにすると版によって読まれ方が揺れる）
+                .accessibilityLabel(L("シェア", "Share"))
             }
         }
         .accessibilityIdentifier("spot.official")
@@ -195,7 +197,7 @@ struct OfficialSpotView: View {
             // 地域も枚数も無い（ストーリーから開いた地域の無いスポット）なら行を置かない
             if !subtitle.isEmpty {
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
             }
         }
@@ -282,7 +284,7 @@ struct OfficialSpotView: View {
         VStack(spacing: 5) {
             Image(systemName: icon).font(.system(size: 15, weight: .medium)).foregroundStyle(WebTheme.accent)
             // 本文の最小は 12pt（CLAUDE.md）
-            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(WebTheme.muted2)
+            Text(title).font(.caption.weight(.medium)).foregroundStyle(WebTheme.muted2)
                 .multilineTextAlignment(.center).lineLimit(2)
         }.frame(maxWidth: .infinity)
     }
@@ -515,7 +517,7 @@ struct OfficialSpotView: View {
                 .foregroundStyle(WebTheme.muted2)
             VStack(alignment: .leading, spacing: 3) {
                 Text(other.name)
-                    .font(.system(size: 15))
+                    .font(.subheadline)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(1)
                 if other.isDraft {
@@ -527,7 +529,7 @@ struct OfficialSpotView: View {
             Spacer(minLength: 8)
             // **距離は計算したもの。** 言い方は「近くの写真」と同じ関数（`NearbyPhotos.label`）
             Text(NearbyPhotos.label(km: km))
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(WebTheme.faint)
             Image(systemName: "chevron.right")
                 .font(.caption)

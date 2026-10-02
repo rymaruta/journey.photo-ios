@@ -172,14 +172,19 @@ struct StoryComposerView: View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             // 写真が0枚なら写真を選ぶ段。全部外したときもここへ戻る
+            // 写真の上・黒い面の上の飾りは文字の大きさに付いてくるが、xxLarge で止める
+            // （`StoryViewerView.chromeTypeLimit`。広さが決まっている）。シートは止めない
             if shots.isEmpty {
                 pickStage
+                    .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
             } else {
                 VStack(spacing: 0) {
                     photoArea
+                        .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                         .ignoresSafeArea(edges: .top)
                     if !votePanelOpen {
                         footer
+                            .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                             // 打っている間は**隠すだけ**（枠の大きさは変えない——変えると写真の枠が伸びて、
                             // 打ち始めに測った枠とずれる）。暗幕越しに「ストーリーに投稿」が
                             // 書体の列の下に透けて重なっていた（2026-09-30 の owner の画面）
@@ -196,6 +201,7 @@ struct StoryComposerView: View {
                 .accessibilityHidden(typingId != nil)
                 if typingId == nil {
                     topBar
+                        .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                         .padding(.horizontal, 8)
                         .padding(.top, 2)
                 }
@@ -320,7 +326,7 @@ struct StoryComposerView: View {
                    "Kept on this device. You can pick up where you left off."))
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { data in acceptFromCamera(data) }
+            CameraPicker { capture in acceptFromCamera(capture) }
                 .ignoresSafeArea()
         }
         // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
@@ -475,7 +481,7 @@ struct StoryComposerView: View {
                         }
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.body.weight(.semibold))
                             .foregroundStyle(.white)
                             .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                             .contentShape(Rectangle())
@@ -487,7 +493,7 @@ struct StoryComposerView: View {
                         // 撮って入れる（前のカメラの流れ。撮ったら `accept` で並びに入り、仕上げる段へ）
                         Button { showCamera = true } label: {
                             Image(systemName: "camera")
-                                .font(.system(size: 17, weight: .semibold))
+                                .font(.body.weight(.semibold))
                                 .foregroundStyle(.white)
                                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                                 .background(WebTheme.surface, in: Circle())
@@ -547,7 +553,7 @@ struct StoryComposerView: View {
                         Text(next.title)
                     }
                 }
-                .font(.system(size: 16, weight: .semibold))
+                .font(.callout.weight(.semibold))
                 .foregroundStyle(WebTheme.accentText)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background(WebTheme.accentBackground, in: Capsule())
@@ -625,7 +631,7 @@ struct StoryComposerView: View {
     private func toolCell(_ tool: StoryTool, used: Bool) -> some View {
         VStack(spacing: 6) {
             Image(systemName: tool.symbol)
-                .font(.system(size: 20, weight: StoryTool.symbolWeight))
+                .font(.title3.weight(StoryTool.symbolWeight))
                 .foregroundStyle(used ? StoryTool.usedColor : StoryTool.idleColor)
                 .frame(height: 24)
                 .overlay(alignment: .topTrailing) {
@@ -637,7 +643,7 @@ struct StoryComposerView: View {
                     }
                 }
             Text(tool.label)
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(WebTheme.text)
                 .lineLimit(1)
         }
@@ -718,8 +724,8 @@ struct StoryComposerView: View {
 
     private func photoChip(symbol: String, text: String) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: symbol).font(.system(size: 12))
-            Text(text).font(.system(size: 12)).lineLimit(1)
+            Image(systemName: symbol).font(.caption)
+            Text(text).font(.caption).lineLimit(1)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 10)
@@ -772,7 +778,7 @@ struct StoryComposerView: View {
             } label: {
                 // 押すと画面ごと閉じる（確認つき）ので、見た目は ✕・読み上げは「閉じる」
                 Image(systemName: "xmark")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
                     .jpGlass(in: Circle())
@@ -785,7 +791,7 @@ struct StoryComposerView: View {
                 // 投票の欄を閉じる（欄の間は投稿ボタンが隠れるので、閉じる口を見える所に出す）
                 Button { voteSelected = false } label: {
                     Text(L("完了", "Done"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.accentText)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 36)
@@ -799,7 +805,7 @@ struct StoryComposerView: View {
                 // ひとことのキーボードを閉じる（複数行なので Return では閉じない）
                 Button { captionFocused = false } label: {
                     Text(L("完了", "Done"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.accentText)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 36)
@@ -843,7 +849,7 @@ struct StoryComposerView: View {
             .disabled(prepared == nil || !canSaveDraft || loadingPicks > 0)
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
                 .jpGlass(in: Circle())
@@ -871,9 +877,9 @@ struct StoryComposerView: View {
                         Text(L("フォロワー", "Followers"))
                             .lineLimit(1)
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                     }
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.text)
                     .fixedSize()
                     .padding(.horizontal, 16)
@@ -897,7 +903,7 @@ struct StoryComposerView: View {
                             Text(L("シェアする", "Share"))
                         }
                     }
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(WebTheme.accentText)
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .background(WebTheme.accentBackground, in: Capsule())
@@ -1085,7 +1091,7 @@ struct StoryComposerView: View {
         for item in items {
             let data = try? await item.loadTransferable(type: Data.self)
             if let data {
-                accept(data)
+                await accept(data)
             } else {
                 failed += 1
             }
@@ -1102,17 +1108,23 @@ struct StoryComposerView: View {
 
     /// カメラで撮った1枚。**写真を選ぶ段で印を付けていた写真があれば、先にそれを読み込む**
     /// （「次へ」と同じ `load`）。撮った1枚は最後。以前は印を付けた写真が黙って消えた
-    private func acceptFromCamera(_ data: Data) {
+    ///
+    /// **JPEG にするのは画面の処理の外で**（`CameraCapture` の注記）。その間は読み込み中に数える
+    /// （「次へ」・投稿を押させない）
+    private func acceptFromCamera(_ capture: CameraCapture) {
         let pending = StorySimpleRules.picksToLoadBeforeCamera(librarySelection, hasShots: !shots.isEmpty)
-        guard !pending.isEmpty else {
-            accept(data)
-            return
-        }
+        loadingPicks += 1
         Task {
+            defer { loadingPicks -= 1 }
             await load(pending)
             // 読み込めなかった断り（`load` の知らせ）は、撮った1枚が入っても消さない
-            let note = message
-            accept(data)
+            // （先に読むものが無かった回は、前の知らせを持ち越さない——以前と同じ）
+            let note = pending.isEmpty ? nil : message
+            guard let data = await Task.detached(priority: .userInitiated, operation: { capture.jpegData() }).value else {
+                message = L("写真を読み込めませんでした", "Couldn't load the photo")
+                return
+            }
+            await accept(data)
             if message == nil { message = note }
         }
     }
@@ -1121,9 +1133,13 @@ struct StoryComposerView: View {
     ///
     /// 文字は写真ごとに持つので、足した写真には何も付いていない状態で
     /// 始まる——前の写真の文字が別の絵に残ると、置いた場所の意味が変わる。
-    private func accept(_ data: Data) {
+    private func accept(_ data: Data) async {
         do {
-            let prepared = try ImagePreparer.prepare(data: data, fileName: "story")
+            // **縮小・EXIF の書き直しは画面の処理の外で**（投稿の `prepareOffMain`・`EditPhotoView` と同じ）。
+            // 1枚に数百ミリ秒かかり、選んだ枚数ぶん画面が止まっていた
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try ImagePreparer.prepare(data: data, fileName: "story")
+            }.value
             guard shots.count < StoryQueue.maxShots else {
                 message = L("一度に出せるのは\(StoryQueue.maxShots)枚までです",
                             "You can post up to \(StoryQueue.maxShots) at once")
@@ -1193,7 +1209,7 @@ struct StoryComposerView: View {
                     }
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 16))
+                        .font(.callout)
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 56)
                         .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))

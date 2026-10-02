@@ -16,6 +16,9 @@ struct PhotoDetailView: View {
     @EnvironmentObject private var likeCounts: LikeCountStore
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var hidden: ModerationStore
+    /// 大きく見る画面の中の知らせ（いいねが届かなかった）。**全画面の上では、
+    /// この画面の赤字（`actionError`・`model.errorMessage`）が見えない**
+    @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model: PhotoDetailViewModel
     /// 保存（しおり）を送っている最中
@@ -56,12 +59,10 @@ struct PhotoDetailView: View {
     /// 削除を確かめているコメント（押してすぐ消さない）
     @State private var commentPendingDelete: PhotoComment?
     @State private var isFollowWorking = false
+    /// 大きく見る画面から、**この画面の1枚**のいいねを送っている間の向き（`ViewerLike`）。
+    /// 隣の写真と同じく先に灯す——この画面の1枚は答えが来るまで値が替わらない
+    @State private var viewerPendingLikes: [String: Bool] = [:]
     @State private var showUnfollowConfirm = false
-    /// 大きく見る画面で、**この画面の1枚以外**のいいねを送っている写真。
-    /// 写真ごとに持って再入を止める——ダブルタップの直後にハートを押すと、
-    /// 2本目が1本目の答えの前に逆向きを送り、画面とサーバーが食い違う
-    /// （この画面の1枚は `PhotoDetailViewModel.isLiking` が止めている）
-    @State private var viewerLikesInFlight: Set<String> = []
     /// この画面が出ているか・裏にいる間にブロック／通報があったか（`hidden.revision`）
     @State private var isOnScreen = false
     @State private var needsRefilter = false
@@ -78,7 +79,18 @@ struct PhotoDetailView: View {
     }
 
     /// 画面に描く1枚。編集していれば新しい方。
-    private var shown: Photo { edits[current.id] ?? current }
+    ///
+    /// 🔴 **別の画面（前に開いた詳細）で編集した分も引く**（`PhotoEditLedger`）。
+    /// `edits` はこの画面の `@State` で、ホーム・探す・地図から開き直すと
+    /// 古い一覧の行（編集前）が出ていた
+    private var shown: Photo {
+        edits[current.id] ?? environment.gallery.edits.edited(over: current) ?? current
+    }
+    /// 束の写真の編集後の姿。**この画面で直した分と、別の画面で直した分**（`PhotoEditLedger`）。
+    /// この画面で直した分が新しい
+    private var knownEdits: [String: Photo] {
+        environment.gallery.edits.pending(in: siblings).merging(edits) { _, here in here }
+    }
     /// コメント・いいねを受け付けるか（下書きは受け付けない・`PhotoDetailRules.acceptsReactions`）
     private var acceptsReactions: Bool { PhotoDetailRules.acceptsReactions(published: shown.published) }
 
@@ -257,13 +269,17 @@ struct PhotoDetailView: View {
             // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）。
             // 編集して保存した写真は新しい姿で（題・撮影地が古いまま出ていた）
             let lineup = PhotoDetailRules.viewerLineup(siblings, current: shown,
-                                                       hiding: dropped, edits: edits)
+                                                       hiding: dropped, edits: knownEdits)
             PhotoViewerView(
                 photos: lineup.photos,
                 index: lineup.index,
                 // **写真ごとに答える。** この画面の1枚は画面が持つ値、
                 // 隣の写真は端末の控え（ホームのハートと同じ出どころ）
-                isLiked: { shown in shown.id == current.id ? model.liked : favorites.contains(shown.id) },
+                // 送っている間は送った向きを先に出す（`ViewerLike`）
+                isLiked: { shown in
+                    ViewerLike.isLiked(shown.id, currentId: current.id, currentLiked: model.liked,
+                                       pending: viewerPendingLikes, stored: favorites.contains(shown.id))
+                },
                 isSignedIn: auth.userId != nil,
                 // 下書きにはハートを出さない（押すと灯ってから黙って消え、断りは画面の裏に出ていた）
                 acceptsLike: { PhotoDetailRules.acceptsReactions(published: $0.published) },
@@ -358,7 +374,7 @@ struct PhotoDetailView: View {
     /// 同じ投稿の束（1枚だけならこの1枚）。**大きく見る画面と同じく、ブロック・通報した
     /// 写真を落とす**（`PhotoDetailRules.heroGroup`・今の1枚は残す）
     private var heroGroup: [Photo] {
-        PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: edits).photos
+        PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: knownEdits).photos
     }
 
     /// 同じ投稿の中で、いま見ている1枚（モック6-1 の送り）。
@@ -368,7 +384,7 @@ struct PhotoDetailView: View {
     /// 題・いいね・削除の対象が食い違う。送ったら `current` をその1枚にする
     private var heroPage: Binding<Int> {
         Binding(
-            get: { PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: edits).index },
+            get: { PhotoDetailRules.heroGroup(siblings, current: shown, hiding: dropped, edits: knownEdits).index },
             set: { page in
                 let group = heroGroup
                 guard group.indices.contains(page) else { return }
@@ -822,11 +838,14 @@ struct PhotoDetailView: View {
             // 入れ替えを通すと、ダブルタップで外れていた（隣の写真は `like` だけ）
             guard !model.liked else { return }
             // 下のハートと同じく、端末の控えとホームの数にも渡す
-            await toggleLikeHere()
+            await toggleLikeHereFromViewer()
             return
         }
-        guard viewerLikesInFlight.insert(shown.id).inserted else { return }
-        defer { viewerLikesInFlight.remove(shown.id) }
+        // **送っている印は画面をまたいで1つ**（`LikeCountStore.beginSending`）。
+        // ダブルタップの直後にハートを押す・ホームで送っている写真をここで叩くと、
+        // 2本目が1本目の答えの前に逆向きを送り、画面とサーバーが食い違う
+        guard likeCounts.beginSending(shown.id) else { return }
+        defer { likeCounts.endSending(shown.id) }
         // 先に灯す（押した手応えを待たせない）。届かなければ**押す前に**戻す
         // ——元からいいね済みの写真を「外した」扱いにしない
         let wasLiked = favorites.contains(shown.id)
@@ -841,6 +860,8 @@ struct PhotoDetailView: View {
         } catch {
             favorites.set(shown.id, favorite: LiveLikes.likedAfterFailedDoubleTap(wasLiked: wasLiked),
                           for: owner)
+            // 黙って消さない（先に灯したハートが戻るだけでは、届かなかったと分からない）
+            toasts.show(ViewerLike.failureNotice(error), kind: .failure)
         }
     }
 
@@ -850,11 +871,11 @@ struct PhotoDetailView: View {
     /// から送り、届かなければ元に戻す（ダブルタップと同じ控え方）
     private func toggleLikeFromViewer(_ shown: Photo) async {
         if shown.id == current.id {
-            await toggleLikeHere()
+            await toggleLikeHereFromViewer()
             return
         }
-        guard viewerLikesInFlight.insert(shown.id).inserted else { return }
-        defer { viewerLikesInFlight.remove(shown.id) }
+        guard likeCounts.beginSending(shown.id) else { return }
+        defer { likeCounts.endSending(shown.id) }
         let wasLiked = favorites.contains(shown.id)
         let owner = favorites.owner
         favorites.set(shown.id, favorite: !wasLiked)
@@ -866,6 +887,25 @@ struct PhotoDetailView: View {
             if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
         } catch {
             favorites.set(shown.id, favorite: wasLiked, for: owner)
+            toasts.show(ViewerLike.failureNotice(error), kind: .failure)
+        }
+    }
+
+    /// 大きく見る画面から、**この画面の1枚**のいいねを入れ替える（ダブルタップ・下のハート）。
+    ///
+    /// 🔴 以前は `toggleLikeHere` をそのまま呼んでいて、下のハートが答えまで白いまま、
+    /// 失敗の文は裏の詳細画面にしか出なかった。隣の写真と同じく**先に灯して**
+    /// （`viewerPendingLikes`）、届かなければ戻し、全画面の中に知らせを出す
+    private func toggleLikeHereFromViewer() async {
+        let id = current.id
+        // 送っている間は何もしない（`toggleLikeHere` と同じ門。先に灯さない）
+        guard !model.isLiking, !likeCounts.isSending(id) else { return }
+        viewerPendingLikes[id] = !model.liked
+        // 答えが来たら（来なくても）外す。届いた回は画面の値が答えになっている
+        defer { viewerPendingLikes[id] = nil }
+        let answer = await toggleLikeHere()
+        if answer == nil, let message = model.errorMessage {
+            toasts.show(message, kind: .failure)
         }
     }
 
@@ -895,23 +935,27 @@ struct PhotoDetailView: View {
     ///
     /// **押した1枚を先に覚える。** 送っている間に束の隣へ送ると、答えは
     /// 前の1枚のもの——今の1枚の控えに書かない
-    private func toggleLikeHere() async {
+    /// - Returns: サーバーの答え。送らなかった・届かなかった回は nil
+    @discardableResult
+    private func toggleLikeHere() async -> PhotoDetailViewModel.LikeAnswer? {
         // 送っている間は押しても何もしないので、知らせも消さない
-        guard !model.isLiking else { return }
+        // （別の画面で同じ写真を送っている間も同じ・`LikeCountStore.sending`）
+        guard !model.isLiking, !likeCounts.isSending(current.id) else { return nil }
         clearNotices()
         guard acceptsReactions else {
             model.errorMessage = L("下書きにはいいねできません。公開すると付けられます",
                                    "Drafts can't be liked. Publish the photo first.")
-            return
+            return nil
         }
         // **届かなかった回は控えに書かない**（押す前のハートのまま）。
         // 答えは**押した1枚に**書く——送っている間に束の隣へ送っても
         let owner = favorites.owner
-        let answer = await model.toggleLike()
-        guard let answer else { return }
+        let answer = await model.toggleLike(gate: likeCounts)
+        guard let answer else { return nil }
         favorites.set(answer.photoId, favorite: answer.liked, for: owner)
         // 押した回の答えだけを渡す（`LikeCountStore` の注記）
         if let likes = answer.likes { likeCounts.set(answer.photoId, count: likes) }
+        return answer
     }
 
     private func socialBar(_ proxy: ScrollViewProxy) -> some View {
@@ -1349,8 +1393,17 @@ struct PhotoDetailView: View {
     private func reloadPhoto() async {
         guard isMine else { return }
         let id = current.id
+        // 送ったときの人と控えの回（`PhotoEditLedger.mark`）を**待つ前に**取る
+        let sender = auth.userId
+        let mark = environment.gallery.edits.mark
         guard let fresh = try? await environment.photos.myPhoto(id: id) else { return }
+        // 🔴 **待っている間に人が替わったら書かない。** 答えがログアウト（`clear`）の後に
+        // 戻ると、前の人の行を控えに書き戻し、次の人の一覧に重ねていた
+        guard auth.userId == sender else { return }
         edits[id] = fresh
+        // **ほかの画面にも渡す**（`PhotoEditLedger`）。公開一覧に重ね、別の画面から
+        // 開き直した詳細もこの姿で出す。捨てられた後の答えは書かない（`since`）
+        environment.gallery.edits.record(fresh, since: mark)
     }
 
     private func deletePhoto() async {

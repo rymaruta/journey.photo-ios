@@ -55,6 +55,13 @@ public func CGImageSourceCreateWithData(_ data: CFData, _ options: CFDictionary?
 public func CGImageSourceGetCount(_ source: CGImageSource) -> Int { 0 }
 public func CGImageSourceCopyPropertiesAtIndex(_ source: CGImageSource, _ index: Int,
                                                _ options: CFDictionary?) -> CFDictionary? { nil }
+/// XMP を含む撮影情報（本物と同じ名前・形）。模型は読めない（nil）
+public final class CGImageMetadata {}
+public final class CGImageMetadataTag {}
+public func CGImageSourceCopyMetadataAtIndex(_ isrc: CGImageSource, _ index: Int,
+                                             _ options: CFDictionary?) -> CGImageMetadata? { nil }
+public func CGImageMetadataCopyTagWithPath(_ metadata: CGImageMetadata, _ parent: CGImageMetadataTag?,
+                                           _ path: CFString) -> CGImageMetadataTag? { nil }
 public func CGImageSourceCreateThumbnailAtIndex(_ source: CGImageSource, _ index: Int,
                                                 _ options: CFDictionary?) -> CGImage? { nil }
 public func CGImageDestinationCreateWithData(_ data: CFMutableData, _ type: CFString,

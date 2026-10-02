@@ -14,6 +14,8 @@ enum APIError: LocalizedError, Equatable {
     case server(status: Int, message: String)
     /// 応答の形が想定と違う
     case decoding(String)
+    /// パスに入れる ID・トークンの形が違う（`PathID`）。**要求は出していない**
+    case invalidIdentifier
 
     var errorDescription: String? {
         switch self {
@@ -50,6 +52,8 @@ enum APIError: LocalizedError, Equatable {
             return message.isEmpty ? L("サーバーエラー（\(status)）", "Server error (\(status))") : message
         case .decoding:
             return L("応答を読み取れませんでした", "Couldn't read the response")
+        case .invalidIdentifier:
+            return L("この項目を開けませんでした", "Couldn't open this item")
         }
     }
 

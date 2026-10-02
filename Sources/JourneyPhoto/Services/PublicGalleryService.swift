@@ -26,6 +26,12 @@ actor PublicGalleryService {
     private let session: URLSession
     private let snapshot: PhotoSnapshotStore
 
+    /// 自分で編集して保存した写真の新しい行（`PhotoEditLedger`）。**出すところで重ねる**
+    /// ——一覧は建て直しまで古い静的 JSON なので、重ねないとホーム・探す・地図から
+    /// 開き直した写真が編集前に戻って見えた。詳細の画面も同じ控えを引く（主スレッドから
+    /// 同期で読むので actor の外に置く）
+    nonisolated let edits: PhotoEditLedger
+
     /// 見せない相手と、見せない写真。
     ///
     /// **公開一覧は静的な JSON なので、サーバー側では絞れない。**
@@ -54,6 +60,11 @@ actor PublicGalleryService {
     private var restrictedLoader: (@Sendable () async throws -> [Photo])?
 
     func setRestrictedLoader(_ loader: (@Sendable () async throws -> [Photo])?) {
+        // 🔴 **前の人が編集した写真の控えを、口の差し替えと同じ手番で捨てる。**
+        // 差し替えの後（画面の側）で捨てていた頃は、その間に始まった読み直しが
+        // `merged` まで進むと、前の人の編集後の姿が次の人の一覧に重なった。
+        // ここ（actor の上）で捨てれば、この後の `merged` は必ず空の控えで重ねる
+        edits.clear()
         restrictedLoader = loader
         // ログインし直した人に、前の人ぶんを見せない
         restrictedCache = nil
@@ -170,8 +181,10 @@ actor PublicGalleryService {
          liveURL: URL? = nil,
          session: URLSession? = nil,
          snapshot: PhotoSnapshotStore = PhotoSnapshotStore(),
+         edits: PhotoEditLedger = PhotoEditLedger(),
          beforeLiveRequest: (@Sendable () async -> Void)? = nil) {
         self.url = url
+        self.edits = edits
         self.liveURL = liveURL
         self.snapshot = snapshot
         self.beforeLiveRequest = beforeLiveRequest
@@ -230,12 +243,31 @@ actor PublicGalleryService {
     }
 
     /// 静的 JSON を取る。**圏外・壊れた応答なら前回の控え**。
+    ///
+    /// **条件付きで取る**（`ConditionalGet`・2026-10-02）。控えに前回の `ETag` が
+    /// あれば `If-None-Match` を付け、変わっていなければ 304（本文なし）で
+    /// 控えの中身を使う。60秒の控え（`freshCache`）の判断はその手前のまま
     private func fetchStaticList() async throws -> [Photo] {
         let data: Data
         let response: URLResponse
         do {
             try RequestCancellation.throwIfCancelled()
-            (data, response) = try await session.data(from: url)
+            // 304 のときは**端末の控え**を読む。手元の一覧（`cached`）は使わない
+            // ——このサービスは画面ごとに別に作られることがあり（`GalleryViewModel` の既定）、
+            // 印と控えのファイルは共有なので、別の口が新しい回を書いた後に
+            // 自分の古い一覧を「変わっていない」として出してしまう
+            let snapshot = self.snapshot
+            let outcome = try await ConditionalGet.fetch(url, session: session, validators: snapshot.validators) {
+                snapshot.load()
+            }
+            switch outcome {
+            case .notModified(let photos):
+                cached = photos
+                cachedAt = Date()
+                return photos
+            case .fetched(let body, let reply):
+                (data, response) = (body, reply)
+            }
         } catch {
             // **圏外なら前回のぶんを出す。** 出せなければそのとき初めて諦める
             if let cached = snapshot.load() { return cached }
@@ -260,7 +292,11 @@ actor PublicGalleryService {
             // 1件も読めなかった回も控えない——**前回の良い控えを空で上書き
             // しない**（写真が本当に0枚なら dropped も0なので控える）
             if !photos.isEmpty || list.dropped == 0 {
-                snapshot.save(data)
+                snapshot.save(data, validator: HTTPValidator(response: http))
+            } else {
+                // 控えていない中身の印を残さない（前の回の印で 304 を受けると、
+                // 今回とは違う控えを「変わっていない」として出す）
+                snapshot.validators.clear()
             }
             cached = photos
             cachedAt = Date()
@@ -279,11 +315,15 @@ actor PublicGalleryService {
     ///
     /// いいねの数は**ここで**いまの数に差し替える（`LiveLikes`）。
     /// 取れていなければ静的 JSON の数のまま。
+    ///
+    /// **自分で編集した写真は編集後の行を重ねる**（`edits`）。限定の行を足した**後**に重ねる
+    /// ——限定の行は今の行なので、たいてい追いついていて控えが捨てられる。
+    /// `visible` より前に重ねる（編集で非公開にした写真を落とすため）
     private func merged(_ photos: [Photo], force: Bool) async -> (photos: [Photo], epoch: Int) {
         let counted = LiveLikes.apply(liveCounts ?? [:], asOf: liveCountsAsOf ?? .distantPast, to: photos)
         let (extra, epoch) = await restrictedPhotos(force: force)
-        if extra.isEmpty { return (visible(counted), epoch) }
-        return (visible(RestrictedFeed.merge(publicPhotos: counted, restricted: extra)), epoch)
+        if extra.isEmpty { return (visible(edits.apply(to: counted)), epoch) }
+        return (visible(edits.apply(to: RestrictedFeed.merge(publicPhotos: counted, restricted: extra))), epoch)
     }
 
     /// いいねのいまの数を取り直す。**失敗しても何も投げない**
