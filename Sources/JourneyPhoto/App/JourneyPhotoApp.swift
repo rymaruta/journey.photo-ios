@@ -221,10 +221,11 @@ struct JourneyPhotoApp: App {
                     // 読み直す。差し替えが後だと、その読み直しが**前の人の口と控え**
                     // で行われ（ログアウト後は取れずに前の人の控えを返す）、
                     // 前の人あての「フォロワーのみ」が残ったままになる
+                    // **前の人が編集した写真の控え（`PhotoEditLedger`）も、ここで捨てる**
+                    // ——`setRestrictedLoader` の中で、口の差し替えと同じ手番で捨てる。
+                    // 差し替えの後に捨てていた頃は、その間に始まった読み直しが
+                    // `merged` まで進むと、前の人の編集後の姿が次の人の一覧に重なった
                     await applyRestrictedFeed()
-                    // **前の人が編集した写真の控えを捨てる**（`PhotoEditLedger`）。
-                    // ログアウト・別の人のログインで、前の人の編集後の姿を重ねない
-                    environment.gallery.edits.clear()
                     // **アカウントごとの控えは、ログイン状態が決まってから。**
                     // 先に読むと未ログインぶんが見える
                     favorites.use(userId: auth.userId)

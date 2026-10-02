@@ -1393,11 +1393,17 @@ struct PhotoDetailView: View {
     private func reloadPhoto() async {
         guard isMine else { return }
         let id = current.id
+        // 送ったときの人と控えの回（`PhotoEditLedger.mark`）を**待つ前に**取る
+        let sender = auth.userId
+        let mark = environment.gallery.edits.mark
         guard let fresh = try? await environment.photos.myPhoto(id: id) else { return }
+        // 🔴 **待っている間に人が替わったら書かない。** 答えがログアウト（`clear`）の後に
+        // 戻ると、前の人の行を控えに書き戻し、次の人の一覧に重ねていた
+        guard auth.userId == sender else { return }
         edits[id] = fresh
         // **ほかの画面にも渡す**（`PhotoEditLedger`）。公開一覧に重ね、別の画面から
-        // 開き直した詳細もこの姿で出す
-        environment.gallery.edits.record(fresh)
+        // 開き直した詳細もこの姿で出す。捨てられた後の答えは書かない（`since`）
+        environment.gallery.edits.record(fresh, since: mark)
     }
 
     private func deletePhoto() async {

@@ -60,6 +60,11 @@ actor PublicGalleryService {
     private var restrictedLoader: (@Sendable () async throws -> [Photo])?
 
     func setRestrictedLoader(_ loader: (@Sendable () async throws -> [Photo])?) {
+        // 🔴 **前の人が編集した写真の控えを、口の差し替えと同じ手番で捨てる。**
+        // 差し替えの後（画面の側）で捨てていた頃は、その間に始まった読み直しが
+        // `merged` まで進むと、前の人の編集後の姿が次の人の一覧に重なった。
+        // ここ（actor の上）で捨てれば、この後の `merged` は必ず空の控えで重ねる
+        edits.clear()
         restrictedLoader = loader
         // ログインし直した人に、前の人ぶんを見せない
         restrictedCache = nil

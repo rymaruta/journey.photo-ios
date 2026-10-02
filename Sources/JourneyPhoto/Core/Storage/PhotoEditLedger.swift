@@ -18,12 +18,24 @@ final class PhotoEditLedger: @unchecked Sendable {
 
     private let lock = NSLock()
     private var overlay = PhotoEditOverlay()
+    /// 捨てた回数（`clear`）。**引き直しを始める前に取り（`mark`）、書くときに比べる**
+    private var generation = 0
 
     init() {}
 
-    /// 保存した後に引き直した行を控える
-    func record(_ photo: Photo) {
+    /// いまの回。引き直しを始める**前**に取って `record(_:since:)` に渡す
+    var mark: Int {
         lock.lock(); defer { lock.unlock() }
+        return generation
+    }
+
+    /// 保存した後に引き直した行を控える。
+    ///
+    /// 🔴 **`since` の後に捨てられていたら書かない。** 引き直しの答えがログアウト・退会
+    /// （`clear`）の後に戻ると、前の人の行を書き戻し、次の人の一覧に重ねていた
+    func record(_ photo: Photo, since mark: Int) {
+        lock.lock(); defer { lock.unlock() }
+        guard mark == generation else { return }
         overlay.record(photo)
     }
 
@@ -49,6 +61,7 @@ final class PhotoEditLedger: @unchecked Sendable {
     func clear() {
         lock.lock(); defer { lock.unlock() }
         overlay = PhotoEditOverlay()
+        generation += 1
     }
 
     var isEmpty: Bool {
@@ -109,19 +122,30 @@ struct PhotoEditOverlay: Equatable {
         return withoutCounts(listed) == withoutCounts(edited)
     }
 
-    /// 編集後の行に、**一覧の行のいいねの数を残す**（一覧の数はいまの数に差し替え済み・`LiveLikes`）
+    /// 編集後の行に、**一覧の行の表示用の項目を残す**:
+    /// - いいねの数（一覧の数はいまの数に差し替え済み・`LiveLikes`）
+    /// - 表示名（`displayName`）。静的 JSON は建て直しのたびに投稿者の今の名前で
+    ///   焼き直す（`sync-photos-from-ddb.js` の `freshDisplayNames`）が、自分の写真の行
+    ///   （`/user/photos`）は投稿したときの名前のまま——重ねると名前が古く戻った
     static func overlaid(listed: Photo, edited: Photo) -> Photo {
-        guard listed.likes != nil else { return edited }
         var out = edited
-        out.likes = listed.likes
-        out.likesAsOf = listed.likesAsOf
+        if listed.likes != nil {
+            out.likes = listed.likes
+            out.likesAsOf = listed.likesAsOf
+        }
+        if let name = listed.displayName, !name.isEmpty {
+            out.displayName = name
+        }
         return out
     }
 
+    /// 中身の一致を見るとき、**編集では変わらない表示用の項目**は比べない
+    /// （いいねの数・表示名は別の口・建て直しで替わる）
     private static func withoutCounts(_ photo: Photo) -> Photo {
         var out = photo
         out.likes = nil
         out.likesAsOf = nil
+        out.displayName = nil
         return out
     }
 
