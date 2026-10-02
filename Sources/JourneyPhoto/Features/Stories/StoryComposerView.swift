@@ -326,7 +326,7 @@ struct StoryComposerView: View {
                    "Kept on this device. You can pick up where you left off."))
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { data in acceptFromCamera(data) }
+            CameraPicker { capture in acceptFromCamera(capture) }
                 .ignoresSafeArea()
         }
         // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
@@ -1091,7 +1091,7 @@ struct StoryComposerView: View {
         for item in items {
             let data = try? await item.loadTransferable(type: Data.self)
             if let data {
-                accept(data)
+                await accept(data)
             } else {
                 failed += 1
             }
@@ -1108,17 +1108,23 @@ struct StoryComposerView: View {
 
     /// カメラで撮った1枚。**写真を選ぶ段で印を付けていた写真があれば、先にそれを読み込む**
     /// （「次へ」と同じ `load`）。撮った1枚は最後。以前は印を付けた写真が黙って消えた
-    private func acceptFromCamera(_ data: Data) {
+    ///
+    /// **JPEG にするのは画面の処理の外で**（`CameraCapture` の注記）。その間は読み込み中に数える
+    /// （「次へ」・投稿を押させない）
+    private func acceptFromCamera(_ capture: CameraCapture) {
         let pending = StorySimpleRules.picksToLoadBeforeCamera(librarySelection, hasShots: !shots.isEmpty)
-        guard !pending.isEmpty else {
-            accept(data)
-            return
-        }
+        loadingPicks += 1
         Task {
+            defer { loadingPicks -= 1 }
             await load(pending)
             // 読み込めなかった断り（`load` の知らせ）は、撮った1枚が入っても消さない
-            let note = message
-            accept(data)
+            // （先に読むものが無かった回は、前の知らせを持ち越さない——以前と同じ）
+            let note = pending.isEmpty ? nil : message
+            guard let data = await Task.detached(priority: .userInitiated, operation: { capture.jpegData() }).value else {
+                message = L("写真を読み込めませんでした", "Couldn't load the photo")
+                return
+            }
+            await accept(data)
             if message == nil { message = note }
         }
     }
@@ -1127,9 +1133,13 @@ struct StoryComposerView: View {
     ///
     /// 文字は写真ごとに持つので、足した写真には何も付いていない状態で
     /// 始まる——前の写真の文字が別の絵に残ると、置いた場所の意味が変わる。
-    private func accept(_ data: Data) {
+    private func accept(_ data: Data) async {
         do {
-            let prepared = try ImagePreparer.prepare(data: data, fileName: "story")
+            // **縮小・EXIF の書き直しは画面の処理の外で**（投稿の `prepareOffMain`・`EditPhotoView` と同じ）。
+            // 1枚に数百ミリ秒かかり、選んだ枚数ぶん画面が止まっていた
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try ImagePreparer.prepare(data: data, fileName: "story")
+            }.value
             guard shots.count < StoryQueue.maxShots else {
                 message = L("一度に出せるのは\(StoryQueue.maxShots)枚までです",
                             "You can post up to \(StoryQueue.maxShots) at once")
