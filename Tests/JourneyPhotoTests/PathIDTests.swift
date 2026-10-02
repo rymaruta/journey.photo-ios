@@ -96,6 +96,18 @@ final class PathIDServiceTests: XCTestCase {
         await assertNoRequest("公開プロフィール") { _ = try await profiles.publicProfile(userId: "a/../b") }
     }
 
+    /// 壊れた `%` の道は落とさずに失敗にする（`percentEncodedPath` は壊れた `%` で落ちる）
+    func testBrokenPercentInPathFailsWithoutCrashing() async {
+        StubProtocol.reset()
+        do {
+            try await api.authorizedVoid(.get, "/user/spots/a%zz")
+            XCTFail("投げるはず")
+        } catch {
+            guard case .decoding = error as? APIError else { return XCTFail("\(error)") }
+        }
+        XCTAssertEqual(StubProtocol.requestCount, 0)
+    }
+
     /// 正しい ID はそのままパスに載る
     func testGoodIdsAreSentAsIs() async throws {
         let id = "story-1b4e28ba-2fa1-11d2-883f-0016d3cca427"

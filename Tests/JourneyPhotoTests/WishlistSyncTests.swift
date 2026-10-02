@@ -78,6 +78,36 @@ final class WishlistSyncTests: XCTestCase {
         XCTAssertEqual(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Content-Type"), "application/json")
     }
 
+    /// 🔴 **鍵の `/` は道の区切りにしない**（`%2F` で1つの区切りに収める）。以前は符号化せずに
+    /// そのまま道に入れていたので、`a/../../account` のような鍵が別の口を叩きえた
+    func testUnsaveKeepsSlashesInsideOneSegment() async throws {
+        StubProtocol.respond(status: 200, body: #"{"saved":false,"slugs":[]}"#)
+        try await service().unsave("a/../../account")
+        let url = try XCTUnwrap(StubProtocol.lastRequest?.url)
+        XCTAssertTrue(url.absoluteString.hasSuffix("/user/spots/a%2F..%2F..%2Faccount"), "\(url.absoluteString)")
+        XCTAssertFalse(url.absoluteString.contains("%25"), "二重に符号化している: \(url.absoluteString)")
+
+        // ? と # と % も区切り・問い合わせにしない
+        try await service().unsave("京都?x=1#y%z")
+        let other = try XCTUnwrap(StubProtocol.lastRequest?.url)
+        XCTAssertNil(other.query, "鍵の ? が問い合わせになった: \(other.absoluteString)")
+        XCTAssertTrue(other.absoluteString.hasSuffix("%3Fx=1%23y%25z"), "\(other.absoluteString)")
+    }
+
+    /// 点だけの鍵（`.`・`..`）と空の鍵は要求を出さない
+    func testUnsaveRefusesDotOnlyKeys() async {
+        for key in ["", ".", ".."] {
+            StubProtocol.reset()
+            do {
+                try await service().unsave(key)
+                XCTFail("投げるはず: \(key)")
+            } catch {
+                XCTAssertEqual(error as? APIError, .invalidIdentifier)
+            }
+            XCTAssertEqual(StubProtocol.requestCount, 0, "点だけの鍵で要求を出している: \(key)")
+        }
+    }
+
     /// 🔴 **外す鍵はパスに1回だけ符号化して乗る。** 二重にすると、サーバーは
     /// `%E3%83…` という別の鍵を外しにいき、200 が返るのに外れない
     func testUnsaveEncodesTheKeyOnceInThePath() async throws {

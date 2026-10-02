@@ -61,13 +61,26 @@ struct SavedSpotService {
 
     /// 外す（冪等・`DELETE /user/spots/{slug}`）。応答はサーバーの一覧（新しい順）
     ///
-    /// 🔴 **ここでは符号化しない。** `APIClient` は `appendingPathComponent` で
-    /// パスを組み、そこで1回符号化される。ほかの口のように `addingPercentEncoding`
-    /// を先に掛けると `パリ` が `%25E3%2583…` と**二重に**なり、サーバーは
-    /// `%E3%83…` という別の鍵を外しにいく——200 が返るのに外れない
-    /// （写真 ID・ユーザー ID は ASCII なので他の口では表に出ていない）
+    /// 🔴 **鍵は `pathSegment` で1つの区切りに収める。** 以前は符号化せずにそのまま
+    /// 道に入れていたので、`/` や `..` を含む鍵が道の区切りとして読まれ、別の口を
+    /// 叩きえた。日本語の地名はそのまま通す（`APIClient` が符号化し直さない）
     @discardableResult
     func unsave(_ key: String) async throws -> [String] {
-        try await api.authorized(.delete, "/user/spots/\(key)", as: List.self).slugs
+        let slug = try Self.pathSegment(key)
+        return try await api.authorized(.delete, "/user/spots/\(slug)", as: List.self).slugs
+    }
+
+    /// 行きたい場所の鍵を、道の1区切りとして符号化する。`/`・`?`・`#`・`%` も符号化し、
+    /// 日本語は UTF-8 の `%XX` にする（サーバーは1回だけ戻す）。
+    /// **空と、点だけの鍵（`.`・`..`）は要求を出さずに失敗にする**——符号化しても
+    /// 道の正規化で親へ上がりうる
+    static func pathSegment(_ key: String) throws -> String {
+        guard !key.isEmpty, !key.allSatisfy({ $0 == "." }) else { throw APIError.invalidIdentifier }
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove("/")
+        guard let encoded = key.addingPercentEncoding(withAllowedCharacters: allowed) else {
+            throw APIError.invalidIdentifier
+        }
+        return encoded
     }
 }

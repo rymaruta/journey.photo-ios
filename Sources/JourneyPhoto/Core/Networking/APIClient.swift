@@ -225,14 +225,29 @@ actor APIClient {
         return data
     }
 
+    /// パスに書いてよい文字。`.urlPathAllowed` に **`%` を足す**——呼び手が先に符号化した
+    /// 部分（行きたい場所の鍵の `/` → `%2F`・`SavedSpotService.pathSegment`）を二重にしない。
+    /// 生の日本語は今までどおりここで1回だけ符号化される
+    private static let pathAllowed: CharacterSet = {
+        var set = CharacterSet.urlPathAllowed
+        set.insert("%")
+        return set
+    }()
+
+    /// 🔴 **`appendingPathComponent` を使わない。** あれは `%` も符号化するので、
+    /// 呼び手が `/` を `%2F` にして渡しても `%252F` に化け、鍵の中の `/` を
+    /// 道の区切りから守る手段が無かった。ほかの口の値は `PathID` が英数字・`-`・`_` に
+    /// 絞っているので、組み方を変えても同じ URL になる
     private func url(for path: String, query: [String: String]) throws -> URL {
         let normalized = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        guard var components = URLComponents(
-            url: baseURL.appendingPathComponent(normalized),
-            resolvingAgainstBaseURL: false
-        ) else {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
+              let encoded = normalized.addingPercentEncoding(withAllowedCharacters: Self.pathAllowed),
+              // 壊れた `%`（`%z` など）を `percentEncodedPath` に入れると Foundation が落とす
+              encoded.removingPercentEncoding != nil else {
             throw APIError.decoding("URL を組み立てられませんでした: \(path)")
         }
+        let base = components.percentEncodedPath
+        components.percentEncodedPath = (base.hasSuffix("/") ? String(base.dropLast()) : base) + "/" + encoded
         if !query.isEmpty {
             components.queryItems = query
                 .sorted { $0.key < $1.key }
