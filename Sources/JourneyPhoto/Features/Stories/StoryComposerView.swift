@@ -172,14 +172,19 @@ struct StoryComposerView: View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             // 写真が0枚なら写真を選ぶ段。全部外したときもここへ戻る
+            // 写真の上・黒い面の上の飾りは文字の大きさに付いてくるが、xxLarge で止める
+            // （`StoryViewerView.chromeTypeLimit`。広さが決まっている）。シートは止めない
             if shots.isEmpty {
                 pickStage
+                    .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
             } else {
                 VStack(spacing: 0) {
                     photoArea
+                        .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                         .ignoresSafeArea(edges: .top)
                     if !votePanelOpen {
                         footer
+                            .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                             // 打っている間は**隠すだけ**（枠の大きさは変えない——変えると写真の枠が伸びて、
                             // 打ち始めに測った枠とずれる）。暗幕越しに「ストーリーに投稿」が
                             // 書体の列の下に透けて重なっていた（2026-09-30 の owner の画面）
@@ -196,6 +201,7 @@ struct StoryComposerView: View {
                 .accessibilityHidden(typingId != nil)
                 if typingId == nil {
                     topBar
+                        .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                         .padding(.horizontal, 8)
                         .padding(.top, 2)
                 }
@@ -475,7 +481,7 @@ struct StoryComposerView: View {
                         }
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.body.weight(.semibold))
                             .foregroundStyle(.white)
                             .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                             .contentShape(Rectangle())
@@ -487,7 +493,7 @@ struct StoryComposerView: View {
                         // 撮って入れる（前のカメラの流れ。撮ったら `accept` で並びに入り、仕上げる段へ）
                         Button { showCamera = true } label: {
                             Image(systemName: "camera")
-                                .font(.system(size: 17, weight: .semibold))
+                                .font(.body.weight(.semibold))
                                 .foregroundStyle(.white)
                                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                                 .background(WebTheme.surface, in: Circle())
@@ -547,7 +553,7 @@ struct StoryComposerView: View {
                         Text(next.title)
                     }
                 }
-                .font(.system(size: 16, weight: .semibold))
+                .font(.callout.weight(.semibold))
                 .foregroundStyle(WebTheme.accentText)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background(WebTheme.accentBackground, in: Capsule())
@@ -625,7 +631,7 @@ struct StoryComposerView: View {
     private func toolCell(_ tool: StoryTool, used: Bool) -> some View {
         VStack(spacing: 6) {
             Image(systemName: tool.symbol)
-                .font(.system(size: 20, weight: StoryTool.symbolWeight))
+                .font(.title3.weight(StoryTool.symbolWeight))
                 .foregroundStyle(used ? StoryTool.usedColor : StoryTool.idleColor)
                 .frame(height: 24)
                 .overlay(alignment: .topTrailing) {
@@ -637,7 +643,7 @@ struct StoryComposerView: View {
                     }
                 }
             Text(tool.label)
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(WebTheme.text)
                 .lineLimit(1)
         }
@@ -718,8 +724,8 @@ struct StoryComposerView: View {
 
     private func photoChip(symbol: String, text: String) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: symbol).font(.system(size: 12))
-            Text(text).font(.system(size: 12)).lineLimit(1)
+            Image(systemName: symbol).font(.caption)
+            Text(text).font(.caption).lineLimit(1)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 10)
@@ -772,7 +778,7 @@ struct StoryComposerView: View {
             } label: {
                 // 押すと画面ごと閉じる（確認つき）ので、見た目は ✕・読み上げは「閉じる」
                 Image(systemName: "xmark")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
                     .jpGlass(in: Circle())
@@ -785,7 +791,7 @@ struct StoryComposerView: View {
                 // 投票の欄を閉じる（欄の間は投稿ボタンが隠れるので、閉じる口を見える所に出す）
                 Button { voteSelected = false } label: {
                     Text(L("完了", "Done"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.accentText)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 36)
@@ -799,7 +805,7 @@ struct StoryComposerView: View {
                 // ひとことのキーボードを閉じる（複数行なので Return では閉じない）
                 Button { captionFocused = false } label: {
                     Text(L("完了", "Done"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.accentText)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 36)
@@ -843,7 +849,7 @@ struct StoryComposerView: View {
             .disabled(prepared == nil || !canSaveDraft || loadingPicks > 0)
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
                 .jpGlass(in: Circle())
@@ -871,9 +877,9 @@ struct StoryComposerView: View {
                         Text(L("フォロワー", "Followers"))
                             .lineLimit(1)
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                     }
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.text)
                     .fixedSize()
                     .padding(.horizontal, 16)
@@ -897,7 +903,7 @@ struct StoryComposerView: View {
                             Text(L("シェアする", "Share"))
                         }
                     }
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(WebTheme.accentText)
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .background(WebTheme.accentBackground, in: Capsule())
@@ -1193,7 +1199,7 @@ struct StoryComposerView: View {
                     }
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 16))
+                        .font(.callout)
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 56)
                         .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))

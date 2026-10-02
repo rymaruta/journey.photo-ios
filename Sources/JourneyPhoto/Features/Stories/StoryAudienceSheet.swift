@@ -30,11 +30,11 @@ struct StoryAudienceSheet: View {
             // 届く相手の説明（選ぶ口ではない・ラジオなし）
             HStack(spacing: 10) {
                 Image(systemName: "person.2")
-                    .font(.system(size: 15))
+                    .font(.subheadline)
                     .foregroundStyle(WebTheme.muted2)
                     .accessibilityHidden(true)
                 Text(L("フォロワーに届きます", "Goes to your followers"))
-                    .font(.system(size: 15))
+                    .font(.subheadline)
                     .foregroundStyle(WebTheme.text)
             }
             .accessibilityElement(children: .combine)
@@ -53,7 +53,7 @@ struct StoryAudienceSheet: View {
 
             Button(action: onDone) {
                 Text(L("決める", "Done"))
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(WebTheme.accentText)
                     .frame(maxWidth: .infinity, minHeight: 52)
                     // 写真の無いシートの主ボタンは accent-fill に墨（owner の好み「白より真鍮」）
@@ -71,11 +71,11 @@ struct StoryAudienceSheet: View {
         Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 15))
+                    .font(.subheadline)
                     .foregroundStyle(WebTheme.text)
                 if let detail {
                     Text(detail)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(WebTheme.muted2)
                 }
             }

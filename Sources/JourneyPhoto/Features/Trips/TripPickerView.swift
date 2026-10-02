@@ -215,7 +215,7 @@ struct TripPickerView: View {
                 .lineLimit(2)
             if let region = regionLine(spot) {
                 Text(region)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
             }
             // いまの季節の案内があるときだけ（無ければ作らない）

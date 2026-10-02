@@ -246,7 +246,8 @@ struct PhotoMapView: View {
         .sheet(isPresented: $showNearby, onDismiss: { if needsDrop { dropHidden() } }) {
             if let here {
                 NearbyPhotosSheet(center: here, photos: model.photos,
-                                  couldNotLoad: !model.loaded || model.loadFailed)
+                                  couldNotLoad: !model.loaded || model.loadFailed,
+                                  onRetry: model.loaded && model.loadFailed ? { retryLoad() } : nil)
             }
         }
         // 一覧のシートの中の詳細でブロックした回は、地図は見え続けていて
@@ -636,21 +637,9 @@ struct PhotoMapView: View {
     @ViewBuilder
     private var statusLine: some View {
         if let message = emptyMessage {
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.foreground)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.black.opacity(0.7), in: Capsule())
-                .padding(.top, 12)
+            statusCapsule(message, retry: message == Self.loadFailedText)
         } else if let note = locationNote ?? loadFailedNote {
-            Text(note)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.foreground)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.black.opacity(0.7), in: Capsule())
-                .padding(.top, 12)
+            statusCapsule(note, retry: note == Self.loadFailedText)
         } else if !noneNearbyBanner.dismissed, model.areaFrame == nil, !model.isFiltering,
                   model.frame != nil, let here,
                   NearbyPhotos.noneNearby(model.photos, here: here) {
@@ -699,8 +688,68 @@ struct PhotoMapView: View {
         return L("撮影地の分かる写真がありません", "No photos with a place yet")
     }
 
+    /// 🔴 **読めなかった回は「もう一度試す」を添える**（以前は「開き直すと読み直します」と
+    /// 言うだけで、押して読み直す出口が無かった。2026-10-02 の調査）
     private static var loadFailedText: String {
-        L("写真を読み込めませんでした。開き直すと読み直します", "Couldn't load photos. Reopen the map to retry")
+        L("写真を読み込めませんでした", "Couldn't load photos")
+    }
+
+    /// リストが空のときに何と言うか
+    enum ListEmpty: Equatable {
+        /// 写真を読めなかった（警告と「もう一度試す」）
+        case failed
+        /// 絞り込んで当たらなかった
+        case noResults
+        /// 読めたが撮影地の分かる写真が無い
+        case noPlaces
+    }
+
+    /// リストが空の理由。**読めなかったのを「無い」と言わない**——前に読めた写真が
+    /// 手元に残っている回は数が本物なので「無い」側（帯の知らせと同じ `photos.isEmpty`）
+    nonisolated static func listEmpty(loadFailed: Bool, photosEmpty: Bool, filtering: Bool) -> ListEmpty {
+        if loadFailed && photosEmpty { return .failed }
+        return filtering ? .noResults : .noPlaces
+    }
+
+    /// 写真を読み直す（「もう一度試す」）
+    private func retryLoad() {
+        // 読んでいる最中は重ねない（ボタンも止めている。古い回の答えは模型が捨てる）
+        guard !model.isLoading else { return }
+        Task { await model.load(environment: environment) }
+    }
+
+    /// 地図の上の帯1本。`retry` なら右に「もう一度試す」
+    private func statusCapsule(_ text: String, retry: Bool) -> some View {
+        HStack(spacing: 10) {
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.foreground)
+            if retry {
+                // 当たりは**ラベルの中で** 44pt に（ボタンの外の余白は押せない）
+                Button { retryLoad() } label: {
+                    Text(Labels.Common.retry)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isLoading)
+                .opacity(model.isLoading ? 0.4 : 1)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, retry ? 0 : 8)
+        .background(Color.black.opacity(0.7), in: Capsule())
+        .padding(.top, 12)
+    }
+
+    /// リスト・札の中の「読めなかった」と「もう一度試す」
+    private var loadFailedListNote: some View {
+        HStack(spacing: 8) {
+            listNote(Self.loadFailedText)
+            RetryButton(isBusy: model.isLoading, compact: true) { retryLoad() }
+        }
     }
 
     /// 🔴 **撮影スポットのピンだけ出ている回も、写真が取れなかったことを言う**
@@ -1257,10 +1306,14 @@ struct PhotoMapView: View {
                 .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
         } else if photos.isEmpty, model.loadFailed, model.photos.isEmpty {
             // 🔴 **読めなかったのに「まだありません」と言わない**（投稿を勧めていた）
-            Text(Self.loadFailedText)
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.muted2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Text(Self.loadFailedText)
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.muted2)
+                Spacer(minLength: 0)
+                RetryButton(isBusy: model.isLoading) { retryLoad() }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else if photos.isEmpty {
             HStack(spacing: 8) {
                 Text(L("この付近の写真はまだありません", "No photos near here yet"))
@@ -1345,7 +1398,7 @@ struct PhotoMapView: View {
                 // （前に読めた写真が手元に残っている回は数が本物なので言わない——
                 // 他の知らせと同じく `model.photos.isEmpty` まで見る）
                 if model.loadFailed, model.photos.isEmpty {
-                    listNote(Self.loadFailedText)
+                    loadFailedListNote
                 }
                 if model.officialIndexState == .loading {
                     // **読み込み中に「無い」と言わない**
@@ -1353,11 +1406,14 @@ struct PhotoMapView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 24)
                 } else if model.officialIndexState == .failed {
-                    Text(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.faint)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
+                    VStack(spacing: 8) {
+                        Text(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.faint)
+                        RetryButton(isBusy: model.isLoading) { retryLoad() }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
                 } else if rows.isEmpty {
                     Text(MapSearch.fold(model.query).isEmpty
                          ? L("公開中の撮影スポットはまだありません", "No photo spots yet")
@@ -1504,10 +1560,16 @@ struct PhotoMapView: View {
             VStack(alignment: .leading, spacing: 8) {
                 // 写真の失敗は下の帯が言う（二度言わない）。ここでは台帳の失敗だけ
                 indexNote
-                ErrorBanner(message: model.loadFailed && model.photos.isEmpty
-                            ? Self.loadFailedText
-                            : (filtering ? L("見つかりませんでした", "No results")
-                                                 : L("撮影地の分かる写真がありません", "No photos with a place yet")))
+                // **失敗と空を分ける**（`listEmpty`）。空に警告の三角と「もう一度試す」を出さない
+                switch Self.listEmpty(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
+                                      filtering: filtering) {
+                case .failed:
+                    ErrorBanner(message: Self.loadFailedText, isBusy: model.isLoading) { retryLoad() }
+                case .noResults:
+                    EmptyState(message: L("見つかりませんでした", "No results"))
+                case .noPlaces:
+                    EmptyState(message: L("撮影地の分かる写真がありません", "No photos with a place yet"))
+                }
             }
             .padding(.top, 8)
             Spacer()
@@ -1533,7 +1595,7 @@ struct PhotoMapView: View {
     @ViewBuilder
     private var listNotes: some View {
         if model.loadFailed {
-            listNote(Self.loadFailedText)
+            loadFailedListNote
         }
         indexNote
     }
@@ -1541,7 +1603,13 @@ struct PhotoMapView: View {
     @ViewBuilder
     private var indexNote: some View {
         if model.officialIndexState == .failed {
-            listNote(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
+            HStack(spacing: 8) {
+                listNote(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
+                // 写真も読めていない回は上の行の「もう一度試す」が両方を読み直す（2つ並べない）
+                if !model.loadFailed {
+                    RetryButton(isBusy: model.isLoading, compact: true) { retryLoad() }
+                }
+            }
         }
     }
 

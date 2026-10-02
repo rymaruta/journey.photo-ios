@@ -67,6 +67,25 @@ enum StoryReel {
         return max(-90, min(90, minX / width * 90))
     }
 
+    /// 1面の見せ方（回り・横の位置・濃さ）
+    struct FaceLook: Equatable {
+        var angle: Double
+        var offsetX: Double
+        var opacity: Double
+    }
+
+    /// 面の見せ方。**「動きを減らす」が入っていたら回さない**——立方体の3Dの回りと
+    /// 横に流れる動きをやめ、同じ場所で重ねて**濃さだけ入れ替える**（フェード）。
+    /// 指で払った分だけ隣の面が濃くなり、今の面が薄くなる（2026-10-02）
+    static func faceLook(minX: Double, width: Double, reduceMotion: Bool) -> FaceLook {
+        guard reduceMotion else {
+            return FaceLook(angle: cubeAngle(minX: minX, width: width), offsetX: minX, opacity: 1)
+        }
+        guard width > 0 else { return FaceLook(angle: 0, offsetX: 0, opacity: 1) }
+        let opacity = max(0, min(1, 1 - abs(minX) / width))
+        return FaceLook(angle: 0, offsetX: 0, opacity: opacity)
+    }
+
     /// 面の回りの軸。**右へずれた面は左端、左へずれた面は右端**を軸にする
     /// （2つの面が境目で接して回る＝立方体）
     enum Hinge: Equatable { case leading, trailing }

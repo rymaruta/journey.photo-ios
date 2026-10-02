@@ -88,6 +88,12 @@ final class PhotoMapViewModel: ObservableObject {
     /// 索引の取得。**写真を待たせない**ために別の Task で走らせ、届いたら
     /// ピンだけ入れ替える（`load` は写真が届いた時点で戻る）
     private var indexTask: Task<Void, Never>?
+    /// 読み込みの回の番号。**新しい回が始まったら、古い回の答えは書かない**——
+    /// 「もう一度試す」を続けて押すと、遅れて返った古い回（失敗）が新しい回（成功）を
+    /// 上書きしていた（2026-10-02 のレビュー）
+    private var loadGeneration = 0
+    /// 写真を読んでいる最中（「もう一度試す」を止める）
+    @Published private(set) var isLoading = false
 
     /// 索引が届くまで待つ。**試験のためだけ**（画面は待たない——届いたら
     /// `officialPins` が入れ替わって描き直される）
@@ -135,32 +141,48 @@ final class PhotoMapViewModel: ObservableObject {
     }
 
     func load(environment: AppEnvironment) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        isLoading = true
+        // 前の回の索引は取り消す（答えが来ても下の世代の見張りで書かない）
+        indexTask?.cancel()
         // **索引は写真と並行に取る。** 直列に待つと、索引が遅い回に写真の
         // ピンと最初の寄せまで遅れる（通信の上限は20秒）。届いたらピンだけ
         // 入れ替える。取れなくても写真は出す——索引は無くても地図は成り立つ
         indexTask = Task { [weak self] in
             let fetched = try? await environment.spots.fetchIndex()
-            self?.officialSpots = fetched ?? []
-            self?.refreshOfficialPins()
-            self?.officialIndexState = fetched == nil ? .failed : .ready
+            guard let self, self.loadGeneration == generation else { return }
+            self.officialSpots = fetched ?? []
+            self.refreshOfficialPins()
+            self.officialIndexState = fetched == nil ? .failed : .ready
             // 別名は索引のあと（索引のピンを待たせない）。届いたらピンを数え直し、
             // **取り終えた印を立てる**——語への寄せが「当たらなかった」と決めてよいのは
             // 別名まで見てから（探すから別名だけで当たる語が来た回に、寄せが下りていた）
             let aliases = fetched == nil ? [:] : await environment.spots.fetchAliases()
-            guard let self else { return }
+            guard self.loadGeneration == generation else { return }
             if !aliases.isEmpty {
                 self.spotAliases = aliases
                 self.refreshOfficialPins()
             }
             self.aliasesSettled = true
         }
+        let result: Result<[Photo], Error>
         do {
-            photos = try await environment.gallery.fetchPhotos()
-            loadFailed = false
+            result = .success(try await environment.gallery.fetchPhotos())
         } catch {
+            result = .failure(error)
+        }
+        // 待っている間に新しい回が始まっていたら書かない（新しい回が書く）
+        guard loadGeneration == generation else { return }
+        switch result {
+        case .success(let fetched):
+            photos = fetched
+            loadFailed = false
+        case .failure:
             // **取れなかったのを「写真が無い」と言わない**。手元のぶんは残す
             loadFailed = true
         }
+        isLoading = false
         loaded = true
         refresh()
     }

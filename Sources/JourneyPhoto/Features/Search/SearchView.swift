@@ -15,6 +15,8 @@ struct SearchView: View {
     /// ——`@EnvironmentObject` はどこからも配られておらず、開いた瞬間に落ちた（verify.sh の NG）
     @ObservedObject private var tabRouter = TabRouter.shared
     @StateObject private var model = SearchViewModel()
+    /// 引き下げ・「もう一度試す」の読み直しの最中
+    @State private var isReloading = false
     @State private var query = ""
     /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
     /// （`GalleryView` と同じ形）
@@ -65,23 +67,7 @@ struct SearchView: View {
         }
         .webScreen()
         // 読み込めなかった回の出口（以前は一度読んだら二度と読まなかった）
-        .refreshable {
-            await model.reloadPhotos(environment: environment, force: true, hidden: hidden.snapshot)
-            await model.search(query, environment: environment)
-            // 撮影スポットの索引も、取れていなければ取り直す（`.task(id: query)` は
-            // 語が変わらないと走らないので、引き下げても節が出ないままだった）。
-            // 語が無いときは節を出さないので取らない。force は付けない——取り損ねた回
-            // （圏外）は控えが無いので取り直し、404 の「無い」は60秒覚えたまま叩かない
-            if !query.isEmpty, officialSpots.isEmpty {
-                officialSpots = (try? await environment.spots.fetchIndex()) ?? []
-            }
-            // 別名も同じ（詳細を開いている間に届いた回は捨てているので、ここで取り直す）
-            // 引き下げの途中で詳細を開いたら入れ替えない（`.task(id: query)` の 🔴）
-            if !query.isEmpty, spotAliases.isEmpty {
-                let fetched = await environment.spots.fetchAliases()
-                if isOnScreen { spotAliases = fetched }
-            }
-        }
+        .refreshable { await reloadAll() }
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
@@ -613,6 +599,29 @@ struct SearchView: View {
 
     // MARK: - 結果
 
+    /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**（続けて押すと古い回が
+    /// 新しい回を上書きした・2026-10-02 のレビュー）
+    private func reloadAll() async {
+        guard !isReloading else { return }
+        isReloading = true
+        defer { isReloading = false }
+        await model.reloadPhotos(environment: environment, force: true, hidden: hidden.snapshot)
+        await model.search(query, environment: environment)
+        // 撮影スポットの索引も、取れていなければ取り直す（`.task(id: query)` は
+        // 語が変わらないと走らないので、引き下げても節が出ないままだった）。
+        // 語が無いときは節を出さないので取らない。force は付けない——取り損ねた回
+        // （圏外）は控えが無いので取り直し、404 の「無い」は60秒覚えたまま叩かない
+        if !query.isEmpty, officialSpots.isEmpty {
+            officialSpots = (try? await environment.spots.fetchIndex()) ?? []
+        }
+        // 別名も同じ（詳細を開いている間に届いた回は捨てているので、ここで取り直す）
+        // 引き下げの途中で詳細を開いたら入れ替えない（`.task(id: query)` の 🔴）
+        if !query.isEmpty, spotAliases.isEmpty {
+            let fetched = await environment.spots.fetchAliases()
+            if isOnScreen { spotAliases = fetched }
+        }
+    }
+
     @ViewBuilder
     private var results: some View {
         // 人は写真より先に出す（名前で探しているなら、それが目当て）。
@@ -669,8 +678,23 @@ struct SearchView: View {
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 24)
+                .padding(.top, 24)
+                .padding(.bottom, peopleRetryShown ? 8 : 24)
+            if peopleRetryShown {
+                // 引き下げを知らない人にも出口を（2026-10-02 の調査）
+                // 探している間は押せない（`isSearching`。語ごとの回の番号で古い答えも捨てている）
+                RetryButton(isBusy: model.isSearching) {
+                    Task { await model.search(query, environment: environment) }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+            }
         }
+    }
+
+    /// 人を読み込めなかった回の「もう一度試す」を出すか
+    private var peopleRetryShown: Bool {
+        !query.isEmpty && !model.isSearching && model.usersFailed
     }
 
     /// 語に当たる撮影スポット（名前・読み・英語名・別名・都道府県・市区町村）。地図の検索と同じ当て方に、別名を足したもの
@@ -814,6 +838,9 @@ struct SearchView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("search.emptyMap")
+                } else {
+                    // 引き下げを知らない人にも出口を（2026-10-02 の調査）
+                    RetryButton(isBusy: isReloading) { Task { await reloadAll() } }
                 }
             }
             .frame(maxWidth: .infinity)
