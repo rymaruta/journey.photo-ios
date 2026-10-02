@@ -7,8 +7,11 @@ import SwiftUI
 ///
 ///  - 開いたらすぐキーボード。文字は**真ん中に、仕上がりと同じ書体・色・見た目・大きさ**で出る
 ///    （大きさは焼き込みと同じ式・`StoryTextEditing.typingFontSize`）
-///  - 書体と色は**キーボードのすぐ上に1列だけ**（左の丸で書体 ⇄ 色を切り替える）
-///  - 大きさは左の縦のつまみ。揃えと見た目（白・黒・帯・縁取り）は上のボタンを押すたびに次へ
+///  - **キーボードの上は1列だけ**（かんたん版・owner 2026-10-02「めっちゃいい」）:
+///    「Aa 明朝」の書体ボタン（押すたびに次の書体）・背景ボタン（無し → 帯 → 縁取り）・
+///    色の丸4つ（「ほかの色」で12色と好きな色の列に替わる）・消す（ゴミ箱・危険の赤）。
+///    回し方と色の寄せ方は `StorySimpleRules`
+///  - 大きさは左の縦のつまみ。揃えは左上のボタンを押すたびに次へ。右上は白い「完了」
 ///  - 「完了」か、文字の外を押すと確定。**空なら置かない**（呼ぶ側が `StoryTextEditing.finish` を通す）
 ///
 /// 写真の上に置くのは白だけ（デザインシステム「黒塗りの真鍮」: 写真の上に真鍮を置かない）。
@@ -23,13 +26,13 @@ struct StoryTextTypingView: View {
     /// 測れていなければ 0（打つ画面の大きさで代える）
     let canvas: CGSize
     let photo: CGRect
+    /// ゴミ箱。**打っている札を消す**（呼ぶ側が空にして `onDone` と同じ片付けを通す）
+    var onDelete: () -> Void
     var onDone: () -> Void
 
     @FocusState private var focused: Bool
-    /// キーボードの上の列に出すもの（書体か色）
-    @State private var palette: Palette = .faces
-
-    enum Palette { case faces, inks }
+    /// 色の丸4つの代わりに、12色と好きな色の列（`OverlayInkRow`）を出している
+    @State private var showAllInks = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -185,31 +188,16 @@ struct StoryTextTypingView: View {
                     overlay = StoryTextEditing.nextAlign(overlay)
                 }
             }
-            // 見た目（自由な文字だけ。札は帯で固定）。押すたびに 白 → 黒 → 帯 → 縁取り
-            if overlay.kind.forcedStyle == nil {
-                Button {
-                    overlay = StoryTextEditing.nextStyle(overlay)
-                } label: {
-                    Text(overlay.style.label)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 36)
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.7), lineWidth: 1.5))
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("見た目: \(overlay.style.label)", "Style: \(overlay.style.label)"))
-                .accessibilityHint(L("押すと次の見た目に替わります", "Tap for the next style"))
-            }
             Spacer()
+            // 白い「完了」（写真の上なので白・板「黒塗りの真鍮」）
             Button(action: onDone) {
                 Text(L("完了", "Done"))
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(WebTheme.accentText)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 36)
+                    .background(WebTheme.accentBackground, in: Capsule())
                     .frame(minHeight: WebTheme.minTapTarget)
-                    .padding(.horizontal, 10)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -324,40 +312,139 @@ struct StoryTextTypingView: View {
             .shadow(color: color, radius: 0, x: 0, y: -width)
     }
 
-    // MARK: - キーボードの上の列（書体 ⇄ 色）
+    // MARK: - キーボードの上の1列（書体・背景・色・消す）
 
     private var paletteRow: some View {
-        HStack(spacing: 6) {
-            // 書体と色を切り替える丸。**いま出していない方の印**を出す（押すとそちらへ）
-            Button {
-                palette = palette == .faces ? .inks : .faces
-            } label: {
-                Group {
-                    if palette == .faces {
-                        Circle()
-                            .fill(StoryCanvas.color(hex: overlay.drawnHex))
-                            .frame(width: 26, height: 26)
-                            .overlay(Circle().strokeBorder(Color.white, lineWidth: 2))
-                    } else {
-                        Text("Aa")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
-                            .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+        HStack(spacing: 4) {
+            faceButton
+            // 背景は自由な文字だけ（札は帯で固定・前の「見た目」ボタンと同じ条件）
+            if overlay.kind.forcedStyle == nil {
+                backdropButton
+            }
+            if showAllInks {
+                // 12色と好きな色（前の色の列そのまま）。左の「‹」で4つの丸へ戻る
+                Button { showAllInks = false } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("色の丸4つに戻る", "Back to four colors"))
+                OverlayInkRow(overlay: $overlay)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        ForEach(StorySimpleRules.inks(for: overlay)) { ink in
+                            inkDot(ink)
+                        }
+                        moreInksButton
                     }
                 }
+            }
+            deleteButton
+        }
+        .padding(.horizontal, 8)
+    }
+
+    /// 「Aa 明朝」。押すたびに 明朝 → ゴシック → 手書き風 → …（`StorySimpleRules.nextFace`）
+    private var faceButton: some View {
+        Button {
+            overlay = StorySimpleRules.nextFace(overlay)
+        } label: {
+            HStack(spacing: 4) {
+                Text("Aa")
+                    .font(StoryCanvas.font(overlay.face, size: 16))
+                Text(overlay.face.label)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.white)
+            .fixedSize()
+            .padding(.horizontal, 12)
+            .frame(minHeight: 36)
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.7), lineWidth: 1.5))
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("書体: \(overlay.face.label)", "Font: \(overlay.face.label)"))
+        .accessibilityHint(L("押すと次の書体に替わります", "Tap for the next font"))
+    }
+
+    /// 背景（無し → 帯 → 縁取り）。いまの段を「A」の見本で見せる
+    private var backdropButton: some View {
+        let backdrop = StorySimpleRules.backdrop(of: overlay.style)
+        return Button {
+            overlay = StorySimpleRules.nextBackdrop(overlay)
+        } label: {
+            Text("A")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(backdrop == .banner ? Color.black.opacity(0.65) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.white.opacity(backdrop == .none ? 0.7 : 1),
+                                  style: StrokeStyle(lineWidth: backdrop == .outline ? 2.5 : 1.5,
+                                                     dash: backdrop == .none ? [3, 2] : [])))
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(palette == .faces ? L("色を選ぶ", "Choose color") : L("書体を選ぶ", "Choose font"))
-
-            switch palette {
-            case .faces: OverlayFaceRow(overlay: $overlay)
-            case .inks: OverlayInkRow(overlay: $overlay)
-            }
         }
-        .padding(.leading, 8)
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("背景: \(backdrop.label)", "Background: \(backdrop.label)"))
+        .accessibilityHint(L("押すと次の背景に替わります", "Tap for the next background"))
+    }
+
+    private func inkDot(_ ink: TextOverlay.Ink) -> some View {
+        let selected = StorySimpleRules.isSelected(ink, in: overlay)
+        return Button {
+            overlay = StorySimpleRules.choose(ink, for: overlay)
+        } label: {
+            Circle()
+                .fill(StoryCanvas.color(ink))
+                .frame(width: 26, height: 26)
+                .overlay(Circle().strokeBorder(Color.white.opacity(selected ? 1 : 0.5),
+                                               lineWidth: selected ? 3 : 2))
+                .overlay(Circle().strokeBorder(Color.black, lineWidth: selected ? 1 : 0).padding(-2))
+                // 見た目の丸は 26 のまま、押せる所は 44×44（入らなければ横に流す）
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("文字の色 \(ink.label)", "Text color \(ink.label)"))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// 「ほかの色」（12色と好きな色の列へ）。4つ以外を選んでいるときは輪で知らせる
+    private var moreInksButton: some View {
+        let other = !StorySimpleRules.inks(for: overlay).contains { StorySimpleRules.isSelected($0, in: overlay) }
+        return Button { showAllInks = true } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .overlay(Circle().strokeBorder(Color.white.opacity(other ? 1 : 0.5), lineWidth: other ? 3 : 1.5))
+                // 見た目の丸は 26 のまま、押せる所は 44×44（入らなければ横に流す）
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("ほかの色", "More colors"))
+    }
+
+    /// 消す（ゴミ箱・危険の赤 `WebTheme.danger`）
+    private var deleteButton: some View {
+        Button(action: onDelete) {
+            Image(systemName: "trash")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(WebTheme.danger)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("この文字を消す", "Delete this text"))
     }
 
     // MARK: - 大きさ（左の縦のつまみ）
