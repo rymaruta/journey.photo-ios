@@ -198,6 +198,12 @@ struct Photo: Identifiable, Decodable, Equatable {
         URL(string: thumbSrc ?? src256 ?? src)
     }
 
+    /// 地図のピンの画像（44pt の角丸）。**256px（`thumbSm`）から**——512px を読む必要は無い。
+    /// 無ければ一覧と同じものに落とす（Web の `PhotoMap.tsx` の `thumbSm || thumbSrc || src` と同じ順）
+    var pinImageURL: URL? {
+        URL(string: thumbSm ?? thumbSrc ?? src256 ?? src)
+    }
+
     /// 一覧で切り抜くときに残す側。**持ち主が選んだ位置**（`focalPoint`）。
     var gridCrop: FocalCrop {
         guard let focalPoint else { return .center }
