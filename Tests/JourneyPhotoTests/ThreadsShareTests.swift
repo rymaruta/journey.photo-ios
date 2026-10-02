@@ -16,22 +16,34 @@ final class ThreadsShareTests: XCTestCase {
 
     /// 題・撮影地・URL を空行で段落に分ける。無い項目の段落は作らない
     func testTextLines() {
-        XCTAssertEqual(ThreadsShare.text(title: " 雲海 ", location: "高屋神社", url: url),
+        XCTAssertEqual(ThreadsShare.text(title: " 雲海 ", location: "高屋神社", url: url, signature: nil),
                        "雲海\n\n📍 高屋神社\n\nhttps://journey-photo.com/photo/abc")
-        XCTAssertEqual(ThreadsShare.text(title: "", location: "", url: url), "https://journey-photo.com/photo/abc")
-        XCTAssertEqual(ThreadsShare.text(title: "雲海", location: " ", url: nil), "雲海")
+        XCTAssertEqual(ThreadsShare.text(title: "", location: "", url: url, signature: nil), "https://journey-photo.com/photo/abc")
+        XCTAssertEqual(ThreadsShare.text(title: "雲海", location: " ", url: nil, signature: nil), "雲海")
     }
 
     /// 説明は題の次の段落に入る。説明の中の空行は詰める（前後の空白は落とす）
     func testTextIncludesDescription() {
-        XCTAssertEqual(ThreadsShare.text(title: "朝の富士山", description: " やっぱり特別だ。\n\n また来たい。\n", location: "山中湖", url: url),
+        XCTAssertEqual(ThreadsShare.text(title: "朝の富士山", description: " やっぱり特別だ。\n\n また来たい。\n", location: "山中湖", url: url, signature: nil),
                        "朝の富士山\n\nやっぱり特別だ。\nまた来たい。\n\n📍 山中湖\n\nhttps://journey-photo.com/photo/abc")
     }
 
     /// 上限を超えたら題を詰める。URL は丸ごと残す
     func testTextKeepsWholeURLWithinLimit() {
-        let text = ThreadsShare.text(title: String(repeating: "あ", count: 600), location: "", url: url)
+        let text = ThreadsShare.text(title: String(repeating: "あ", count: 600), location: "", url: url, signature: nil)
         XCTAssertEqual(text.count, ThreadsShare.maxTextLength)
         XCTAssertTrue(text.hasSuffix("…\n\nhttps://journey-photo.com/photo/abc"))
+    }
+
+    /// 既定では最後の段落に署名（Journey Photo と短いドメイン）が付く。URL は付けない呼び方
+    func testSignatureIsLastParagraph() {
+        XCTAssertEqual(ThreadsShare.text(title: "天空の鳥居", description: "絶景だった。", location: "高屋神社", url: nil),
+                       "天空の鳥居\n\n絶景だった。\n\n📍 高屋神社\n\nJourney Photo\njourney-photo.com")
+        // 本文が無くても署名だけは付く
+        XCTAssertEqual(ThreadsShare.text(title: "", location: "", url: nil), ThreadsShare.signature)
+        // 上限を超えても署名は丸ごと残る
+        let long = ThreadsShare.text(title: String(repeating: "あ", count: 600), location: "", url: nil)
+        XCTAssertEqual(long.count, ThreadsShare.maxTextLength)
+        XCTAssertTrue(long.hasSuffix("…\n\n" + ThreadsShare.signature))
     }
 }
