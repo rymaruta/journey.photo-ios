@@ -80,6 +80,33 @@ struct PendingPhoto: Identifiable {
     /// 入っていた撮影地を空にしたか（`location` の didSet だけが書く）
     private(set) var locationClearedByUser = false
 
+    // MARK: 写真の編集（Phase 2・2026-10-02）
+
+    /// 編集のレシピ。**写真ごと**（別の写真には効かない）。無編集なら `prepared` をそのまま送る
+    var recipe: PhotoRecipe = .identity
+    /// 編集の元（選んだときの原本の一時ファイル・`PhotoEditSources`）。
+    /// 無ければ整えた本体（`prepared.data`）を元にする——旅の写真から来た分（選ぶ画面が整えてから
+    /// 渡す）と、一時ファイルを書けなかった分
+    var editSource: URL?
+    /// 編集後の見本（帯のサムネ）。無編集・まだ描けていなければ nil（元の `preview` を出す）
+    var editedPreview: Image?
+
+    /// 帯に出す絵。編集してあれば編集後
+    var stripPreview: Image? {
+        recipe.isIdentity ? preview : (editedPreview ?? preview)
+    }
+
+    /// 帯のサムネに付ける札（プリセット名か「調整」）。無編集なら nil
+    var editBadge: String? { PhotoEditBadge.text(for: recipe) }
+
+    /// 編集の元の中身を読む口。**画面の処理の外で呼ぶ**（数 MB）。一時ファイルが読めなければ整えた本体。
+    /// 読むものだけを持つ（写真の行そのもの＝画面の絵を抱えたまま処理の外へ渡さない）
+    var editSourceReader: @Sendable () -> Data {
+        let url = editSource
+        let fallback = prepared.data
+        return { url.flatMap { try? Data(contentsOf: $0) } ?? fallback }
+    }
+
     /// 送る座標。空にした撮影地の座標は送らない
     var coordsToSend: Photo.Coords? {
         locationClearedByUser ? nil : (pickedCoords ?? prepared.coords)
@@ -128,7 +155,16 @@ final class UploadViewModel: ObservableObject {
         }
     }
     /// 投稿を待っている写真。**画面から直接書き換える**ので `var`
-    @Published var items: [PendingPhoto] = []
+    @Published var items: [PendingPhoto] = [] {
+        didSet {
+            // 編集の元（一時ファイル）は、並びから居なくなった写真の分を消す
+            // （外した・選び直した・投稿した・`reset()`。どの道でもここを通る）
+            let inUse = Set(items.compactMap(\.editSource))
+            if inUse != editSources.urls { editSources.keep(only: inUse) }
+        }
+    }
+    /// 編集の元の一時ファイル。画面を閉じたら（`deinit`）全部消す
+    let editSources = PhotoEditSources()
 
     // ここから下は、まとめて同じものが付く
     @Published var song: Photo.Song?
@@ -295,6 +331,11 @@ final class UploadViewModel: ObservableObject {
     private var isSettingSelectionQuietly = false
     /// 本体まで置けて、保存がまだ通っていない写真（`UploadService.stage` の注記）
     private let staged = StagedUploads()
+    /// 控えた鍵を置いたときの編集と、置いた絵の代表色（`UploadEditRules.reusesStaged`）。
+    /// 鍵と同じ時に書き、同じ時に消す。やり直しは書き出し直さないので、代表色もここから送る
+    private var stagedEdits: [UUID: (recipe: PhotoRecipe, dominantColor: String?)] = [:]
+    /// 帯のサムネの編集後を描いている仕事（写真ごと。編集し直したら前のを捨てる）
+    private var stripRenders: [UUID: Task<Void, Never>] = [:]
     /// ライブラリの写真を読む口。**試験でだけ差し替える**——シミュレータでは
     /// 本物の写真ライブラリに問い合わせるので、「読めなかった」回を決まった形で作れない
     var loadPickedData: (PhotosPickerItem) async throws -> Data? = { item in
@@ -307,6 +348,23 @@ final class UploadViewModel: ObservableObject {
     /// 既定は**一覧用の 512px も作る**（`withThumbnail: true`・保存の `thumbUrl` になる）
     var prepareData: @Sendable (Data) throws -> ImagePreparer.Prepared = { data in
         try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true)
+    }
+
+    /// 編集の元（原本）を一時ファイルに残す口（`PhotoEditSources.write`）。**画面の処理の外から呼ばれる。**
+    /// 試験でだけ差し替える
+    var keepEditSource: @Sendable (Data) -> URL? = { data in PhotoEditSources.write(data) }
+
+    /// 編集した写真を、送る本体に書き出す口（`PhotoRenderer.exportPrepared`）。**画面の処理の外から呼ばれる。**
+    /// 試験でだけ差し替える（模型の Core Image は描けない）
+    var exportEdited: @Sendable (Data, PhotoRecipe, ImagePreparer.Prepared) throws -> ImagePreparer.Prepared = {
+        source, recipe, base in
+        try PhotoRenderer.shared.exportPrepared(source: source, recipe: recipe, base: base)
+    }
+
+    /// 帯のサムネの編集後を描く口。**画面の処理の外から呼ばれる。** 試験でだけ差し替える
+    var renderStripPreview: @Sendable (Data, PhotoRecipe) -> UIImage? = { data, recipe in
+        // 帯は 96×120pt。3倍の画面で長い辺 360px あれば足りる
+        PhotoRenderer.shared.render(data: data, recipe: recipe, maxPixelSize: 360).map { UIImage(cgImage: $0) }
     }
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
@@ -323,6 +381,7 @@ final class UploadViewModel: ObservableObject {
     /// Lambda は続く・利用者の索引は結果整合）は消えうる——窓は、保存の失敗の
     /// たびに消していた以前より狭い。塞ぐならサーバー側（確かめていない）
     deinit {
+        editSources.removeAll()
         let keys = staged.removeAll()
         guard !keys.isEmpty else { return }
         let uploads = self.uploads
@@ -413,19 +472,26 @@ final class UploadViewModel: ObservableObject {
         preparingCaptures += 1
         let prepare = prepareData
         Task { [weak self] in
-            let result: Result<ImagePreparer.Prepared, Error> = await Task.detached(priority: .userInitiated) {
+            let keep = self?.keepEditSource
+            let result: Result<(ImagePreparer.Prepared, URL?), Error> = await Task.detached(priority: .userInitiated) {
                 Result {
                     guard let data = capture.jpegData() else { throw ImagePreparer.PrepareError.unreadable }
                     let prepared = try prepare(data)
-                    return ImagePreparer.applyingCaptureInfo(prepared, metadata: capture.metadata,
-                                                             capturedAt: capture.capturedAt)
+                    // 編集の元は撮った JPEG（撮影情報は持たない。`prepared` は付け直したもの）
+                    return (ImagePreparer.applyingCaptureInfo(prepared, metadata: capture.metadata,
+                                                              capturedAt: capture.capturedAt),
+                            keep?(data))
                 }
             }.value
-            guard let self else { return }
+            guard let self else {
+                // 画面が先に閉じた。残した元は誰も消さないので、ここで消す
+                if case .success(let (_, url)) = result, let url { try? FileManager.default.removeItem(at: url) }
+                return
+            }
             self.preparingCaptures -= 1
             switch result {
-            case .success(let prepared):
-                self.append(prepared)
+            case .success(let (prepared, source)):
+                self.append(prepared, editSource: source)
                 // **読めなかったライブラリの写真が選ばれたままなら、それを言い直す。**
                 // ただ消すと、その写真が抜けていることが二度と出ない（写真を外しても
                 // 読み直さない）。前の知らせを残すと、撮り直しで直ったカメラの失敗や
@@ -443,11 +509,66 @@ final class UploadViewModel: ObservableObject {
     /// 🔴 **画像を整えるのは画面の処理（MainActor）の外で。** 縮小・JPEG への
     /// 焼き直し・読み直しての確認・代表色で、1枚に数百ミリ秒かかる。10枚選ぶと
     /// その間ずっと画面が止まっていた
+    ///
+    /// 編集の元（原本）の一時ファイルも同じ所で書く（`keepEditSource`）。整えられなかった写真は残さない
     private static func prepareOffMain(
-        _ data: Data, with prepare: @escaping @Sendable (Data) throws -> ImagePreparer.Prepared
-    ) async -> Result<ImagePreparer.Prepared, Error> {
+        _ data: Data, with prepare: @escaping @Sendable (Data) throws -> ImagePreparer.Prepared,
+        keep: @escaping @Sendable (Data) -> URL?
+    ) async -> Result<(ImagePreparer.Prepared, URL?), Error> {
         await Task.detached(priority: .userInitiated) {
-            Result { try prepare(data) }
+            Result { (try prepare(data), keep(data)) }
+        }.value
+    }
+
+    // MARK: - 写真の編集（Phase 2・2026-10-02）
+
+    /// この写真の編集画面を開けない理由。開けるなら nil（`UploadEditRules.canEdit`）
+    func editLockReason(for photoId: UUID) -> String? {
+        UploadEditRules.canEdit(isStaged: staged[photoId] != nil, isWorking: isWorking)
+            ? nil : UploadEditRules.editLockMessage
+    }
+
+    /// 編集画面の「完了」。**その写真だけ**にレシピを入れ、帯のサムネの編集後を描き直す。
+    /// 開けない写真（`editLockReason`）・もう並びに居ない写真には何もしない（false）。
+    /// 画面の `.disabled` は次の描画まで効かないので、ここでも確かめる
+    @discardableResult
+    func applyEdit(_ photoId: UUID, recipe: PhotoRecipe) -> Bool {
+        guard editLockReason(for: photoId) == nil,
+              let index = items.firstIndex(where: { $0.id == photoId }) else { return false }
+        let next = recipe.sanitized
+        guard items[index].recipe != next else { return true }
+        items[index].recipe = next
+        items[index].editedPreview = nil
+        stripRenders[photoId]?.cancel()
+        stripRenders[photoId] = nil
+        // 無編集に戻した写真は元の `preview` を出す（描かない）
+        guard !next.isIdentity else { return true }
+        let read = items[index].editSourceReader
+        let render = renderStripPreview
+        stripRenders[photoId] = Task { [weak self] in
+            let image = await Task.detached(priority: .userInitiated) {
+                render(read(), next)
+            }.value
+            guard !Task.isCancelled, let self,
+                  let i = self.items.firstIndex(where: { $0.id == photoId }),
+                  // 描いている間に編集し直されたら、この絵は捨てる
+                  self.items[i].recipe == next else { return }
+            self.items[i].editedPreview = image.map { Image(uiImage: $0) }
+            self.stripRenders[photoId] = nil
+        }
+        return true
+    }
+
+    /// 送る1枚。**編集してあれば元から書き出したもの**（`UploadEditRules.needsExport`）、
+    /// 無編集なら整えた `prepared` のまま。書き出しは画面の処理の外で
+    private func preparedToSend(_ item: PendingPhoto) async throws -> ImagePreparer.Prepared {
+        guard UploadEditRules.needsExport(item.recipe) else { return item.prepared }
+        let export = exportEdited
+        let read = item.editSourceReader
+        let recipe = item.recipe
+        let base = item.prepared
+        return try await Task.detached(priority: .userInitiated) {
+            try export(read(), recipe, base)
         }.value
     }
 
@@ -457,6 +578,8 @@ final class UploadViewModel: ObservableObject {
         guard !isWorking else { return }
         placeTasks[photoId]?.cancel()
         placeTasks[photoId] = nil
+        stripRenders[photoId]?.cancel()
+        stripRenders[photoId] = nil
         discardStaged(photoId)
         let removed = items.first { $0.id == photoId }
         items.removeAll { $0.id == photoId }
@@ -526,12 +649,15 @@ final class UploadViewModel: ObservableObject {
                 // **`itemIdentifier` をファイル名にしない。** スラッシュを含む
                 // 端末内部の ID で、キーの組み立てを壊す。拡張子は
                 // `ImagePreparer` が .jpg に付け替える。整えるのは画面の処理の外で
-                let result = await Self.prepareOffMain(data, with: prepareData)
-                // 整えている間に選び直されたら、この結果は捨てる
-                guard !Task.isCancelled, generation == pickGeneration else { return }
+                let result = await Self.prepareOffMain(data, with: prepareData, keep: keepEditSource)
+                // 整えている間に選び直されたら、この結果は捨てる（残した元の一時ファイルも）
+                guard !Task.isCancelled, generation == pickGeneration else {
+                    if case .success(let (_, url)) = result, let url { try? FileManager.default.removeItem(at: url) }
+                    return
+                }
                 switch result {
-                case .success(let prepared):
-                    append(prepared, pickerItem: item)
+                case .success(let (prepared, source)):
+                    append(prepared, pickerItem: item, editSource: source)
                 case .failure:
                     failedItems.append(item)
                 }
@@ -554,9 +680,10 @@ final class UploadViewModel: ObservableObject {
     }
 
     /// 1枚を待ち行列に足し、撮影地を引き始める。試験から呼ぶので private にしない
-    func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil) {
+    func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil, editSource: URL? = nil) {
         var photo = PendingPhoto(prepared: prepared)
         photo.pickerItem = pickerItem
+        photo.editSource = editSource
         photo.preview = Self.image(from: prepared.data)
         // **スポットから開いたときは、撮影地をそのスポットにする**（座標から引き直さない）。
         // ただし**写真の位置がスポットから遠い写真は普通の投稿**（別の旅の写真を混ぜて選んだ）。
@@ -743,12 +870,25 @@ final class UploadViewModel: ObservableObject {
         // 保存が落ちた写真は本体を置き直さない——新しい鍵で送ると、前回の保存が
         // 実は通っていたときに同じ写真が2枚になる
         // 一覧用の 512px も同じ回で置く（`UploadService.stagePhoto`）。やり直しは前回のサムネも使い回す
+        //
+        // **編集した写真は、元から書き出した1枚を置く**（`preparedToSend`）。控えた鍵が別の編集の
+        // 画像なら使わない（`UploadEditRules.reusesStaged`。編集の錠があるのでふつうは起きない）
         let placed: UploadService.Staged
-        if let already = staged[item.id] {
+        // 置いた本体。やり直し（前の鍵を使う）では書き出し直さない（共有に要るときだけ下で作る）
+        var body: ImagePreparer.Prepared?
+        if let already = staged[item.id],
+           UploadEditRules.reusesStaged(stagedWith: stagedEdits[item.id]?.recipe, current: item.recipe) {
             placed = already
+            if let edit = stagedEdits[item.id] { draft.dominantColor = edit.dominantColor }
         } else {
-            placed = try await uploads.stagePhoto(item.prepared)
+            discardStaged(item.id)
+            let exported = try await preparedToSend(item)
+            body = exported
+            // 代表色は**置く絵から**（編集後。無編集なら整えたときの色のまま）。撮影情報は原本のまま
+            draft.dominantColor = exported.dominantColor
+            placed = try await uploads.stagePhoto(exported)
             staged[item.id] = placed
+            stagedEdits[item.id] = (item.recipe, exported.dominantColor)
         }
         let photo: Photo?
         var outcome = UploadOutcome()
@@ -762,6 +902,7 @@ final class UploadViewModel: ObservableObject {
             // 公開範囲は前に選んだもの——今回の値では無いので、共有・スポットの数には入れない
             guard case .server(409, let message) = error, UploadSummary.isSavedAlready(message) else { throw error }
             staged[item.id] = nil
+            stagedEdits[item.id] = nil
             outcome.savedEarlier = true
             if let song {
                 // 写真の ID が分からなければ曲は付けられない——付いたことにしない（知らせる側に倒す）
@@ -776,8 +917,15 @@ final class UploadViewModel: ObservableObject {
             return outcome
         }
         staged[item.id] = nil
+        stagedEdits[item.id] = nil
         if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
-            sharable.append((item.prepared.data, id, draft.title, draft.description, draft.location))
+            // 共有に渡すのも**置いた絵**（編集後）。やり直しで書き出していなければ、載せる設定のときだけ
+            // ここで作る。作れなければ整えた本体（共有は投稿のおまけ。投稿自体は済んでいる）
+            var shared = body?.data
+            if shared == nil, shareToThreads, UploadEditRules.needsExport(item.recipe) {
+                shared = try? await preparedToSend(item).data
+            }
+            sharable.append((shared ?? item.prepared.data, id, draft.title, draft.description, draft.location))
         }
         if photo != nil, draft.spotId != nil, draft.published, draft.audience == .everyone {
             postedToSpot += 1
@@ -820,6 +968,7 @@ final class UploadViewModel: ObservableObject {
 
     /// 置いたまま保存していない本体を片付ける（本人がその写真を外した）
     private func discardStaged(_ photoId: UUID) {
+        stagedEdits[photoId] = nil
         guard let placed = staged[photoId] else { return }
         staged[photoId] = nil
         let uploads = self.uploads
@@ -830,6 +979,8 @@ final class UploadViewModel: ObservableObject {
         pickerItems = []
         placeTasks.values.forEach { $0.cancel() }
         placeTasks = [:]
+        stripRenders.values.forEach { $0.cancel() }
+        stripRenders = [:]
         items = []
         groupId = nil
         song = nil

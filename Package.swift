@@ -31,7 +31,7 @@ let package = Package(
         // 引数ラベルの不一致・型の取り違え。
         .target(name: "Combine", path: "Shims/Combine"),
         .target(name: "SwiftUI", dependencies: ["Combine"], path: "Shims/SwiftUI"),
-        .target(name: "UIKit", dependencies: ["SwiftUI"], path: "Shims/UIKit"),
+        .target(name: "UIKit", dependencies: ["SwiftUI", "ImageIO"], path: "Shims/UIKit"),
         .target(name: "PhotosUI", dependencies: ["SwiftUI", "UIKit", "Photos"], path: "Shims/PhotosUI"),
         .target(name: "CoreLocation", path: "Shims/CoreLocation"),
         .target(name: "Photos", dependencies: ["UIKit", "CoreLocation", "ImageIO"], path: "Shims/Photos"),
