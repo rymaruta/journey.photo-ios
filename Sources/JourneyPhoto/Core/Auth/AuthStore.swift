@@ -51,6 +51,15 @@ final class AuthStore: ObservableObject {
     private(set) var signedOutByExpiry = false
 
     private var expiryObserver: NSObjectProtocol?
+    private var deletionObserver: NSObjectProtocol?
+
+    /// 退会の途中で止まったアカウント（サーバーのデータは消え、Cognito の利用者が残っている）。
+    /// 立ったら画面の根が「退会の手続きが途中です」を出す（`JourneyPhotoApp`）
+    @Published private(set) var deletionPending = false
+    /// その残りを済ませている最中か（知らせを出し直さない・二重に走らせない）
+    @Published private(set) var isFinishingDeletion = false
+    /// 残りを済ませられなかった理由（もう一度押してもらう）
+    @Published private(set) var deletionFailure: String?
     /// Cognito に頼む口（試験で差し替える）
     private let gateway: AuthStoreGateway
     /// 期限切れのログアウトを走らせている最中か（`expireSession`）
@@ -63,6 +72,48 @@ final class AuthStore: ObservableObject {
             forName: .authSessionExpired, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in await self?.expireSession() }
+        }
+        deletionObserver = NotificationCenter.default.addObserver(
+            forName: .accountDeletionPending, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.noteDeletionPending() }
+        }
+    }
+
+    /// 自分のプロフィールが 410 だった（`ProfileService.myProfile`）。ログイン中だけ立てる
+    func noteDeletionPending() {
+        guard userId != nil else { return }
+        deletionPending = true
+    }
+
+    /// 「退会の手続きが途中です」の「完了する」。**門は押したその場で閉じる**
+    /// （Task の中で閉じると、描き直しの前に2回押せて2本走る——`DeleteAccountView` と同じ）
+    func startFinishingDeletion(releaseDevice: @escaping @MainActor () async -> Void) {
+        guard deletionPending, !isFinishingDeletion else { return }
+        isFinishingDeletion = true
+        Task { await finishPendingDeletion(releaseDevice: releaseDevice) }
+    }
+
+    /// 退会の途中で止まったアカウントの残りを済ませる。サーバーのデータは消えている
+    /// （410）ので、退会の後半（`completeAccountDeletion`）だけを走らせる。
+    ///
+    /// - Parameter releaseDevice: 端末の通知の宛先の後片付け（`PushCenter.signingOut(accountDeleted:)`）
+    func finishPendingDeletion(releaseDevice: @MainActor () async -> Void,
+                               localDefaults: UserDefaults = .standard) async {
+        guard deletionPending else { isFinishingDeletion = false; return }
+        isFinishingDeletion = true
+        deletionFailure = nil
+        defer { isFinishingDeletion = false }
+        // **消す前に控える**（消したあとは誰だったか分からない）
+        let id = userId
+        let username = try? await gateway.currentUsername()
+        await releaseDevice()
+        do {
+            try await completeAccountDeletion(userId: id, username: username, localDefaults: localDefaults)
+            deletionPending = false
+        } catch {
+            deletionFailure = L("アカウントの削除を完了できませんでした。通信できる所でもう一度お試しください",
+                                "Couldn't finish deleting your account. Please try again with a connection.")
         }
     }
 
@@ -204,6 +255,9 @@ final class AuthStore: ObservableObject {
     /// これを通っていなかったので、パスワード変更で間違えたあと退会すると、ログイン画面に
     /// 「いまのパスワードが違います」が赤字で残っていた
     func settleSignedOut() {
+        // 退会の途中の知らせは、その人がログインしている間だけのもの
+        deletionPending = false
+        deletionFailure = nil
         // 共有のために書いた旅の一冊の画像（表紙の写真を含む）を次の人に残さない
         TripBookCard.removeAll()
         // 旅の写真から引いた地名の控え（その人の旅先が分かる）も次の人に残さない
@@ -229,6 +283,20 @@ final class AuthStore: ObservableObject {
         }
         _ = await gateway.signOut()
         settleSignedOut()
+    }
+
+    /// 退会の後半（サーバーのデータを消した後）: Cognito の利用者を消し、端末に残った本人の
+    /// 控え（`AccountLocalData`）を消す。**退会の画面と「退会の途中で止まったアカウント」
+    /// （410・`finishPendingDeletion`）の両方がここを通る**——片方だけ直して食い違わないように。
+    ///
+    /// 控えを消すのは Cognito まで消せた回だけ（途中で落ちたらアカウントは残っている）。
+    /// 失敗は投げる
+    func completeAccountDeletion(userId: String?, username: String?,
+                                 localDefaults: UserDefaults = .standard) async throws {
+        try await deleteCognitoUser()
+        if let userId {
+            AccountLocalData.remove(userId: userId, username: username, defaults: localDefaults)
+        }
     }
 
     /// - Returns: 確認コード送信に使う UUID。失敗したら nil。

@@ -146,12 +146,10 @@ struct DeleteAccountView: View {
         do {
             // 🔴 **Cognito の利用者も消す。** サーバーは消さないので、これが無いと
             // 退会したのに同じメールとパスワードでログインできた（審査 5.1.1(v)）
-            try await auth.deleteCognitoUser()
             // 🔴 **端末に残った本人の控えも消す**（`AccountLocalData`）。
-            // Cognito まで消せた回だけ——途中で落ちたらアカウントは残っている
-            if let userId {
-                AccountLocalData.remove(userId: userId, username: username)
-            }
+            // Cognito まで消せた回だけ——途中で落ちたらアカウントは残っている。
+            // 退会の途中で止まったアカウント（410）の後始末と同じ口（`completeAccountDeletion`）
+            try await auth.completeAccountDeletion(userId: userId, username: username)
             dismiss()
         } catch {
             errorMessage = L("写真とプロフィールは削除されました。アカウント自体の削除だけが残っています。もう一度「アカウントを削除する」を押してください",

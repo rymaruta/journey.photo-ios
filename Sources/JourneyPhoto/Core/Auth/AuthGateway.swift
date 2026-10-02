@@ -385,4 +385,7 @@ struct SignOutLatch {
 extension Notification.Name {
     /// ログインの期限が切れた（`AuthGateway.idToken`）。`AuthStore` が受けてログアウトに倒す
     static let authSessionExpired = Notification.Name("jp.authSessionExpired")
+    /// 自分のプロフィールが 410（退会の途中で止まったアカウント・`ProfileService.myProfile`）。
+    /// `AuthStore` が受けて、退会の残り（Cognito の削除・端末の控え）を済ませる
+    static let accountDeletionPending = Notification.Name("jp.accountDeletionPending")
 }
