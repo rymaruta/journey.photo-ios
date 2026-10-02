@@ -172,8 +172,11 @@ final class UploadViewModel: ObservableObject {
     var initialPublished: Bool { !startsPrivate }
 
     /// 旅の写真からまとめて来たときの初期値を入れる（画面が出たとき・一度だけ）。
-    /// 2枚以上なら「1つの投稿にまとめる」にする（同じ旅の写真なので）
-    func applyInitialPhotos(_ photos: [Data], startPrivate: Bool) {
+    /// 2枚以上なら「1つの投稿にまとめる」にする（同じ旅の写真なので）。
+    ///
+    /// 写真は**整えてあるもの**（`LibraryTripPickView` が読みながら1枚ずつ `ImagePreparer` に通した。
+    /// EXIF・GPS は落ちていて、撮影日と約1kmに丸めた座標を持つ）。**並びは渡した順のまま**
+    func applyInitialPhotos(_ photos: [ImagePreparer.Prepared], startPrivate: Bool) {
         guard !appliedInitialPhotos else { return }
         appliedInitialPhotos = true
         startsPrivate = startPrivate
@@ -181,7 +184,7 @@ final class UploadViewModel: ObservableObject {
         guard !photos.isEmpty else { return }
         fromTripImport = true
         if photos.count > 1 { groupsAsOnePost = true }
-        accept(libraryPhotos: photos)
+        for prepared in photos { append(prepared) }
     }
 
     /// カテゴリ。**決まった選択肢から選ぶ**（`CategoryChoices`）
@@ -195,6 +198,35 @@ final class UploadViewModel: ObservableObject {
 
     /// サーバーへ送る公開範囲。**非公開なら送らない。**
     var audienceToSend: Audience { published ? audience : .everyone }
+
+    /// 🔴 **鍵を控えている写真（本体は置けたが保存が通ったか分からない）が1枚でもある間は、
+    /// 公開範囲を変えさせない。**
+    ///
+    /// やり直しは前回の鍵で保存する（`UploadService.stage` の注記）。前回の保存が実は通っていて
+    /// （応答だけ失われた）、今回の公開範囲が違うと、サーバーは画像の置き場が食い違うので
+    /// 「保存済み」の 409 で断る（`upload.ts`）。以前はそこで行き詰まり、押し直しても 409 が続いた。
+    /// 下書き↔公開も同じ行で選ぶので、まとめて止める（非公開にすると送る公開範囲も変わる）。
+    /// その写真を外せば（`remove`）鍵も片付くが、**外すことは勧めない**——前の保存が通っていたら、
+    /// 選び直して上げると同じ写真が2枚になる。勧めるのは「もう一度投稿する」
+    /// （届いていれば同じ鍵の保存が通るか、「保存済み」の 409 で投稿済みとして外れる）
+    var visibilityLocked: Bool { items.contains { staged[$0.id] != nil } }
+
+    /// 公開範囲を変えられない理由（短い一言）。変えられるときは nil
+    var visibilityLockReason: String? {
+        visibilityLocked
+            ? L("前の送信が届いている可能性があるため、公開範囲は変えられません。まず「投稿する」をもう一度押してください（届いていれば投稿済みになります）。何度押しても投稿できないときは、その写真を外してください",
+                "Your last attempt may have gone through, so visibility can't be changed. Tap Post again first (if it went through, it will show as posted). If it keeps failing, remove that photo.")
+            : nil
+    }
+
+    /// 公開範囲を選ぶ（画面の行から）。**錠が掛かっている・送っている間は何もしない**——ボタンの
+    /// `.disabled` は次の描画まで効かない。送信は1枚ごとにその時点の値を読むので、送っている間に
+    /// 変わると同じ束で割れる。`audience` が nil なら公開範囲は今のまま（非公開を選んだ）
+    func chooseVisibility(published: Bool, audience: Audience?) {
+        guard !visibilityLocked, !isWorking else { return }
+        self.published = published
+        if let audience { self.audience = audience }
+    }
     /// 選んだ写真を**1つの投稿としてまとめる**か（モック8）。
     ///
     /// **行は1枚ずつのまま。** まとめても個別ページとサイトマップは
@@ -218,7 +250,7 @@ final class UploadViewModel: ObservableObject {
     /// 間に「送信中… 0 / 2 枚目」と「残りをやめる」が出る
     @Published private(set) var isWorking = false
     @Published private(set) var isLoadingPicked = false
-    /// カメラで撮った写真・旅の写真を整えている枚数。**整え終わるまで投稿させない**
+    /// カメラで撮った写真を整えている枚数。**整え終わるまで投稿させない**
     /// （押すと、撮った1枚だけが待ち行列に入る前に送信が始まり、画面に残る）
     @Published private(set) var preparingCaptures = 0
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
@@ -267,6 +299,12 @@ final class UploadViewModel: ObservableObject {
     /// 本物の写真ライブラリに問い合わせるので、「読めなかった」回を決まった形で作れない
     var loadPickedData: (PhotosPickerItem) async throws -> Data? = { item in
         try await item.loadTransferable(type: Data.self)
+    }
+
+    /// 画像を整える口（`ImagePreparer.prepare`）。**試験でだけ差し替える**——模型の ImageIO は
+    /// 画像を読めないので、整った1枚を決まった形で作る。**画面の処理の外から呼ばれる**
+    var prepareData: @Sendable (Data) throws -> ImagePreparer.Prepared = { data in
+        try ImagePreparer.prepare(data: data, fileName: "photo")
     }
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
@@ -361,15 +399,26 @@ final class UploadViewModel: ObservableObject {
         items[index].location = next
     }
 
-    /// カメラで撮った画像を受ける。
+    /// カメラで撮った1枚を受ける。
     ///
     /// **`UIImage` を経由した時点で EXIF は残っていない**（撮影地も
     /// 機材名も付かない）。それでも `ImagePreparer` を通すのは、
     /// 1920px への縮小と「残っていないことの確認」を1か所に寄せるため。
-    func accept(capturedJPEG data: Data) {
+    ///
+    /// 🔴 **JPEG にするのも画面の処理の外で**（`CameraCapture` の注記）。撮影日・機種は
+    /// カメラが付けた撮影情報から付け直す（無ければ撮った時刻・`ImagePreparer.applyingCaptureInfo`）
+    func accept(capture: CameraCapture) {
         preparingCaptures += 1
+        let prepare = prepareData
         Task { [weak self] in
-            let result = await Self.prepareOffMain(data)
+            let result: Result<ImagePreparer.Prepared, Error> = await Task.detached(priority: .userInitiated) {
+                Result {
+                    guard let data = capture.jpegData() else { throw ImagePreparer.PrepareError.unreadable }
+                    let prepared = try prepare(data)
+                    return ImagePreparer.applyingCaptureInfo(prepared, metadata: capture.metadata,
+                                                             capturedAt: capture.capturedAt)
+                }
+            }.value
             guard let self else { return }
             self.preparingCaptures -= 1
             switch result {
@@ -389,40 +438,14 @@ final class UploadViewModel: ObservableObject {
         }
     }
 
-    /// 端末の写真ライブラリから読んだ本体を受ける（旅の写真からまとめて）。
-    ///
-    /// 準備は `accept(capturedJPEG:)` と同じ——`ImagePreparer` で縮小し、**EXIF・GPS を
-    /// 落としてから**並べる。撮影地と撮影日は ImagePreparer が EXIF から読んで残す
-    /// （落とすのは送る本体からだけ）。**並びは渡した順のまま**（1枚ずつ順に整える）。
-    /// 整えられなかった写真は「N 枚は読み込めませんでした」と言って除く
-    func accept(libraryPhotos photos: [Data]) {
-        guard !photos.isEmpty else { return }
-        preparingCaptures += photos.count
-        Task { [weak self] in
-            var failed = 0
-            for data in photos {
-                let result = await Self.prepareOffMain(data)
-                guard let self else { return }
-                self.preparingCaptures -= 1
-                switch result {
-                case .success(let prepared): self.append(prepared)
-                case .failure: failed += 1
-                }
-            }
-            guard let self, failed > 0 else { return }
-            // **黙って減らさない**（`loadPicked` と同じ言い方）
-            self.errorMessage = self.items.isEmpty
-                ? L("写真を読み込めませんでした", "Couldn't load the photos")
-                : L("\(failed) 枚は読み込めませんでした", "\(failed) photo(s) couldn't be loaded")
-        }
-    }
-
     /// 🔴 **画像を整えるのは画面の処理（MainActor）の外で。** 縮小・JPEG への
     /// 焼き直し・読み直しての確認・代表色で、1枚に数百ミリ秒かかる。10枚選ぶと
     /// その間ずっと画面が止まっていた
-    private static func prepareOffMain(_ data: Data) async -> Result<ImagePreparer.Prepared, Error> {
+    private static func prepareOffMain(
+        _ data: Data, with prepare: @escaping @Sendable (Data) throws -> ImagePreparer.Prepared
+    ) async -> Result<ImagePreparer.Prepared, Error> {
         await Task.detached(priority: .userInitiated) {
-            Result { try ImagePreparer.prepare(data: data, fileName: "photo") }
+            Result { try prepare(data) }
         }.value
     }
 
@@ -501,7 +524,7 @@ final class UploadViewModel: ObservableObject {
                 // **`itemIdentifier` をファイル名にしない。** スラッシュを含む
                 // 端末内部の ID で、キーの組み立てを壊す。拡張子は
                 // `ImagePreparer` が .jpg に付け替える。整えるのは画面の処理の外で
-                let result = await Self.prepareOffMain(data)
+                let result = await Self.prepareOffMain(data, with: prepareData)
                 // 整えている間に選び直されたら、この結果は捨てる
                 guard !Task.isCancelled, generation == pickGeneration else { return }
                 switch result {
@@ -587,6 +610,8 @@ final class UploadViewModel: ObservableObject {
         var failures: [String] = []
         /// 写真は上がったが曲を付けられなかった枚数。**成功に数えない**
         var songFailures = 0
+        /// 前の送信の保存が通っていた（「保存済み」の 409）枚数。上がったものとして外し、知らせる
+        var savedEarlier = 0
         let queue = items.map(\.id)
         for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
@@ -596,8 +621,9 @@ final class UploadViewModel: ObservableObject {
             // 始めたときの写しで送ると、直した題が古い値で上がる
             guard let item = items.first(where: { $0.id == id }) else { continue }
             do {
-                let songAttached = try await upload(item)
-                if !songAttached { songFailures += 1 }
+                let outcome = try await upload(item)
+                if !outcome.songAttached { songFailures += 1 }
+                if outcome.savedEarlier { savedEarlier += 1 }
                 done.append(item.id)
             } catch {
                 // 🔴 **アルバムが無くなっていたら、そこで止めて行き先から外す。** 保存の 404 は
@@ -629,8 +655,9 @@ final class UploadViewModel: ObservableObject {
         // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
         if items.isEmpty && failures.isEmpty {
             // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
-            // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
-            if songFailures == 0 {
+            // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない。
+            // 前の公開範囲で投稿済みだった回も閉じない（その知らせを見せる）
+            if songFailures == 0 && savedEarlier == 0 {
                 // **いまの欄でも入切が見えているときだけ**（失敗のあと公開範囲を絞ってやり直すと、
                 // 行が消えて入切が見えないまま共有の画面が開いた・6c6c42a7 のレビュー）。
                 // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
@@ -656,8 +683,10 @@ final class UploadViewModel: ObservableObject {
                 }
                 didPostAll = done.count > 0
             } else {
-                errorMessage = UploadSummary.message(done: done.count, failures: failures,
-                                                     cancelled: cancelled, songFailures: songFailures)
+                errorMessage = UploadSummary.withSavedEarlier(
+                    UploadSummary.message(done: done.count, failures: failures,
+                                          cancelled: cancelled, songFailures: songFailures),
+                    savedEarlier: savedEarlier)
                 songFailuresShown = songFailures
             }
             // **どちらにしても選択は捨てる。** 残すと `pickerItems` に
@@ -666,17 +695,26 @@ final class UploadViewModel: ObservableObject {
             // （`errorMessage` は `reset()` では消えないので警告は残る）
             reset()
         } else {
-            errorMessage = UploadSummary.message(done: done.count, failures: failures,
-                                                 cancelled: cancelled, songFailures: songFailures)
+            errorMessage = UploadSummary.withSavedEarlier(
+                UploadSummary.message(done: done.count, failures: failures,
+                                      cancelled: cancelled, songFailures: songFailures),
+                savedEarlier: savedEarlier)
             songFailuresShown = songFailures
         }
     }
 
-    /// - Returns: 曲まで含めて狙いどおりに終わったか。写真は上がったが
-    ///   曲を付けられなかったときだけ `false`。**ここで `errorMessage` に
-    ///   書かない**——呼び出し元が最後にまとめて出す（途中で書くと、
-    ///   全部成功と見なされた `reset()` のあとに画面が閉じて消える）
-    private func upload(_ item: PendingPhoto) async throws -> Bool {
+    /// 1枚の結末（写真は上がっている）
+    private struct UploadOutcome {
+        /// 曲まで含めて狙いどおりに終わったか。曲を付けられなかったときだけ `false`
+        var songAttached = true
+        /// 前の送信の保存が通っていた（「保存済み」の 409）。公開範囲は前に選んだもの
+        var savedEarlier = false
+    }
+
+    /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
+    ///   **ここで `errorMessage` に書かない**——呼び出し元が最後にまとめて出す
+    ///   （途中で書くと、全部成功と見なされた `reset()` のあとに画面が閉じて消える）
+    private func upload(_ item: PendingPhoto) async throws -> UploadOutcome {
         var draft = PhotoDraft()
         draft.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.description = item.caption
@@ -714,12 +752,29 @@ final class UploadViewModel: ObservableObject {
             staged[item.id] = presigned
         }
         let photo: Photo?
+        var outcome = UploadOutcome()
         do {
             photo = try await uploads.save(draft, presigned: presigned)
         } catch let error as APIError {
             // **保存の 404 だけ**が「アルバムが無い」。S3 への PUT の 404 は別の失敗
             if let albumId = draft.albumId, case .server(404, _) = error { throw AlbumGone(albumId: albumId) }
-            throw error
+            // 🔴 **「保存済み」の 409 は、前の送信の保存が通っていた印。** 上がったものとして外す
+            // （残すと押し直しても同じ鍵・同じ 409 で抜けられない・`visibilityLocked` の注記）。
+            // 公開範囲は前に選んだもの——今回の値では無いので、共有・スポットの数には入れない
+            guard case .server(409, let message) = error, UploadSummary.isSavedAlready(message) else { throw error }
+            staged[item.id] = nil
+            outcome.savedEarlier = true
+            if let song {
+                // 写真の ID が分からなければ曲は付けられない——付いたことにしない（知らせる側に倒す）
+                if let id = presigned.photoId {
+                    var patch = PhotoPatch()
+                    patch.song = song
+                    do { try await photoService.update(photoId: id, patch: patch) } catch { outcome.songAttached = false }
+                } else {
+                    outcome.songAttached = false
+                }
+            }
+            return outcome
         }
         staged[item.id] = nil
         if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
@@ -737,10 +792,10 @@ final class UploadViewModel: ObservableObject {
             do {
                 try await photoService.update(photoId: id, patch: patch)
             } catch {
-                return false
+                outcome.songAttached = false
             }
         }
-        return true
+        return outcome
     }
 
     /// 保存がアルバムの 404 で断られた。`albumId` は**その保存で送った宛先**

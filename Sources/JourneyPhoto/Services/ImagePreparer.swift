@@ -83,6 +83,42 @@ enum ImagePreparer {
         )
     }
 
+    /// カメラで撮った1枚に、撮影情報（撮影日時・機種など）を付け直す。
+    ///
+    /// カメラの1枚は `UIImage` を経由して JPEG にするので、本体には EXIF が残らず、
+    /// `prepare` が読む撮影日（`takenOn`）が**いつも空**だった（旅の記録・撮影日で並べる一覧から落ちる）。
+    ///
+    /// **2026-10-02 判断: カメラが付ける撮影情報（`info[.mediaMetadata]`）を先に使い、
+    /// 撮影日時が無ければ撮った時刻（端末の時計・端末の時間帯）を撮影日にする。**
+    /// その場で撮った写真なので、端末の今の時刻が撮影日時そのもの。
+    /// EXIF の撮影日時は撮った土地の壁時計なので、端末の時間帯で書くのが同じ意味になる。
+    ///
+    /// **位置は読まない。** `UIImagePickerController` は位置を付けない（付いていても今の扱いのまま、
+    /// カメラの写真は座標なし）。座標は `prepared` のまま
+    static func applyingCaptureInfo(_ prepared: Prepared, metadata: [CFString: Any], capturedAt: Date,
+                                    timeZone: TimeZone = .current) -> Prepared {
+        var exif = readExif(from: metadata)
+        var takenOn = readTakenOn(from: metadata)
+        if exif.dateTimeOriginal == nil || takenOn == nil {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = timeZone
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            let stamp = formatter.string(from: capturedAt)
+            exif.dateTimeOriginal = exif.dateTimeOriginal ?? stamp
+            takenOn = takenOn ?? String(stamp.prefix(10))
+        }
+        return Prepared(
+            data: prepared.data,
+            fileName: prepared.fileName,
+            contentType: prepared.contentType,
+            exif: exif.isEmpty ? nil : exif,
+            coords: prepared.coords,
+            takenOn: takenOn,
+            dominantColor: prepared.dominantColor
+        )
+    }
+
     // MARK: - 変換
 
     /// 1920px に収めて JPEG に焼き直す。
@@ -117,8 +153,9 @@ enum ImagePreparer {
         return output as Data
     }
 
-    /// 出力を読み直して、EXIF / GPS / TIFF が残っていないことを確かめる。
-    private static func assertStripped(_ data: Data) throws {
+    /// 出力を読み直して、EXIF / GPS / TIFF / XMP が残っていないことを確かめる。
+    /// 試験から呼ぶので `private` にしない
+    static func assertStripped(_ data: Data) throws {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
             throw PrepareError.encodeFailed
@@ -140,6 +177,19 @@ enum ImagePreparer {
         }
         if let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
             if tiff[kCGImagePropertyTIFFMake] != nil || tiff[kCGImagePropertyTIFFModel] != nil {
+                throw PrepareError.metadataRemains
+            }
+        }
+        // **XMP も見る。** 上の辞書は EXIF・GPS・TIFF の欄だけで、XMP の包み（撮影地の市名・
+        // 作成日時など）に残ったものは見えない。今の焼き直しは XMP を書かないが、書く形に変わっても
+        // 素通ししないように、場所・日時・機材を言う項目だけを確かめる
+        if let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil) {
+            let identifying = [
+                "exif:GPSLatitude", "exif:GPSLongitude", "exif:DateTimeOriginal",
+                "tiff:Make", "tiff:Model", "xmp:CreateDate",
+                "photoshop:City", "photoshop:DateCreated", "Iptc4xmpCore:Location",
+            ]
+            if identifying.contains(where: { CGImageMetadataCopyTagWithPath(metadata, nil, $0 as CFString) != nil }) {
                 throw PrepareError.metadataRemains
             }
         }

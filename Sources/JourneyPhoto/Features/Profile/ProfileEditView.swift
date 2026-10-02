@@ -396,7 +396,11 @@ struct ProfileEditView: View {
             }
             // アイコンにも同じ関所を通す。**EXIF の付いた自撮りを
             // そのまま上げない**（撮影地が入っていることがある）
-            let prepared = try ImagePreparer.prepare(data: data, fileName: "profile")
+            // **縮小・EXIF の書き直しは画面の処理の外で**（`EditPhotoView` の差し替えと同じ）。
+            // 1枚に数百ミリ秒かかり、その間「送っています…」の表示ごと画面が止まっていた
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try ImagePreparer.prepare(data: data, fileName: "profile")
+            }.value
             try await environment.profiles.uploadProfileImage(kind: kind, jpeg: prepared.data)
             imageBust = UUID().uuidString
             message = kind == .avatar ? L("アイコンを変えました", "Avatar updated") : L("カバーを変えました", "Cover updated")

@@ -22,7 +22,7 @@ struct RootView: View {
     /// 「旅の写真からまとめて」（全画面）
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
-    @State private var pendingTripPhotos: [Data] = []
+    @State private var pendingTripPhotos: [ImagePreparer.Prepared] = []
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
     /// 見出しの「メニュー（≡）」（板 01d）

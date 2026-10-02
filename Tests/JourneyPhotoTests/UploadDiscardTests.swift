@@ -80,23 +80,21 @@ final class UploadDiscardTests: XCTestCase {
         XCTAssertTrue(model.hasDraft)
     }
 
-    /// 最初の写真は一度だけ入れる。2枚以上ならまとめる。整えている間も書きかけで、投稿させない
+    /// 最初の写真は一度だけ入れる。2枚以上ならまとめる。並んだら書きかけ。
+    /// 写真は選ぶ画面が整えて渡す（読めなかった写真はそこで外して知らせる・`LibraryTripPickView`）
     func testInitialPhotosAreAppliedOnce() async throws {
         let model = model()
-        model.applyInitialPhotos([Data([1]), Data([2])], startPrivate: true)
-        XCTAssertTrue(model.groupsAsOnePost, "同じ旅の写真なのに別々の投稿になる")
-        XCTAssertTrue(model.hasDraft, "整えている間に閉じると黙って消える")
-        XCTAssertFalse(model.canSubmit, "整え終わる前に投稿できる")
-        // 選択画面などから戻ってきた（onAppear がまた呼ばれる）
-        model.applyInitialPhotos([Data([3])], startPrivate: false)
-        XCTAssertFalse(model.published, "2回目の呼び出しで初期値が変わった")
-        // 模型の ImageIO は画像を読めないので、整えるのは全部失敗する——失敗を言うことを見る
-        for _ in 0..<300 where model.hasDraft && model.errorMessage == nil {
-            try await Task.sleep(nanoseconds: 10_000_000)
+        func shot(_ byte: UInt8) -> ImagePreparer.Prepared {
+            ImagePreparer.Prepared(data: Data([byte]), fileName: "p.jpg", contentType: "image/jpeg",
+                                   exif: nil, coords: nil, takenOn: nil)
         }
-        XCTAssertTrue(model.items.isEmpty)
-        XCTAssertEqual(model.errorMessage, L("写真を読み込めませんでした", "Couldn't load the photos"),
-                       "読めなかった写真を黙って落とした")
-        XCTAssertFalse(model.hasDraft, "整え終えて空になった画面を書きかけにした")
+        model.applyInitialPhotos([shot(1), shot(2)], startPrivate: true)
+        XCTAssertTrue(model.groupsAsOnePost, "同じ旅の写真なのに別々の投稿になる")
+        XCTAssertTrue(model.hasDraft, "並んだ写真を閉じると黙って消える")
+        XCTAssertEqual(model.items.count, 2)
+        // 選択画面などから戻ってきた（onAppear がまた呼ばれる）
+        model.applyInitialPhotos([shot(3)], startPrivate: false)
+        XCTAssertFalse(model.published, "2回目の呼び出しで初期値が変わった")
+        XCTAssertEqual(model.items.map(\.prepared.data), [Data([1]), Data([2])], "同じ写真をもう一度足した")
     }
 }
