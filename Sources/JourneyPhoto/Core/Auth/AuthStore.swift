@@ -88,17 +88,27 @@ final class AuthStore: ObservableObject {
 
     /// 「退会の手続きが途中です」の「完了する」。**門は押したその場で閉じる**
     /// （Task の中で閉じると、描き直しの前に2回押せて2本走る——`DeleteAccountView` と同じ）
-    func startFinishingDeletion(releaseDevice: @escaping @MainActor () async -> Void) {
+    func startFinishingDeletion(deleteServerData: @escaping @MainActor () async throws -> Void,
+                                releaseDevice: @escaping @MainActor () async -> Void) {
         guard deletionPending, !isFinishingDeletion else { return }
         isFinishingDeletion = true
-        Task { await finishPendingDeletion(releaseDevice: releaseDevice) }
+        Task { await finishPendingDeletion(deleteServerData: deleteServerData, releaseDevice: releaseDevice) }
     }
 
-    /// 退会の途中で止まったアカウントの残りを済ませる。サーバーのデータは消えている
-    /// （410）ので、退会の後半（`completeAccountDeletion`）だけを走らせる。
+    /// 退会の途中で止まったアカウントの残りを済ませる。
     ///
-    /// - Parameter releaseDevice: 端末の通知の宛先の後片付け（`PushCenter.signingOut(accountDeleted:)`）
-    func finishPendingDeletion(releaseDevice: @MainActor () async -> Void,
+    /// 🔴 **サーバーの退会（`DELETE /user/account`）からやり直す。** 410 は墓石が書けた
+    /// ことしか言わない——墓石の後の掃除（フォロー・お知らせ・いいねなど）が途中で
+    /// 切れた回もある。Cognito だけ消すと、その残りを消せる人がいなくなる。サーバーは
+    /// やり直しを想定している（`account.ts` の `deleteAccount`——済んだ分は飛ばし、
+    /// 残りを消す）。落ちたら Cognito に進まない（もう一度押してもらう）。
+    /// そのあと退会の後半（`completeAccountDeletion`）を走らせる。
+    ///
+    /// - Parameters:
+    ///   - deleteServerData: サーバーの退会（`AccountService.deleteAccount`）
+    ///   - releaseDevice: 端末の通知の宛先の後片付け（`PushCenter.signingOut(accountDeleted:)`）
+    func finishPendingDeletion(deleteServerData: @MainActor () async throws -> Void,
+                               releaseDevice: @MainActor () async -> Void,
                                localDefaults: UserDefaults = .standard) async {
         guard deletionPending else { isFinishingDeletion = false; return }
         isFinishingDeletion = true
@@ -107,6 +117,13 @@ final class AuthStore: ObservableObject {
         // **消す前に控える**（消したあとは誰だったか分からない）
         let id = userId
         let username = try? await gateway.currentUsername()
+        do {
+            try await deleteServerData()
+        } catch {
+            deletionFailure = L("アカウントの削除を完了できませんでした。通信できる所でもう一度お試しください",
+                                "Couldn't finish deleting your account. Please try again with a connection.")
+            return
+        }
         await releaseDevice()
         do {
             try await completeAccountDeletion(userId: id, username: username, localDefaults: localDefaults)

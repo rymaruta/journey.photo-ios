@@ -92,7 +92,12 @@ final class PendingDeletionTests: XCTestCase {
 
         auth.noteDeletionPending()
         var released = 0
-        await auth.finishPendingDeletion(releaseDevice: { released += 1 }, localDefaults: defaults)
+        var order: [String] = []
+        await auth.finishPendingDeletion(deleteServerData: { order.append("server") },
+                                         releaseDevice: { released += 1; order.append("device") },
+                                         localDefaults: defaults)
+        XCTAssertEqual(order, ["server", "device"],
+                       "サーバーの退会をやり直していない（墓石の後の掃除が孤立する）")
 
         XCTAssertEqual(calls.deleteUser, 1, "Cognito の利用者を消していない")
         XCTAssertEqual(released, 1, "通知の宛先を片づけていない")
@@ -111,7 +116,7 @@ final class PendingDeletionTests: XCTestCase {
         let likes = FavoritesStore(defaults: defaults); likes.use(userId: "u1"); likes.set("p", favorite: true)
 
         auth.noteDeletionPending()
-        await auth.finishPendingDeletion(releaseDevice: {}, localDefaults: defaults)
+        await auth.finishPendingDeletion(deleteServerData: {}, releaseDevice: {}, localDefaults: defaults)
 
         XCTAssertTrue(auth.deletionPending, "消せなかったのに「途中」を下ろした（もう一度押せない）")
         XCTAssertNotNil(auth.deletionFailure)
@@ -121,13 +126,29 @@ final class PendingDeletionTests: XCTestCase {
         XCTAssertFalse(after.ids.isEmpty, "アカウントが残っているのに控えを消した")
     }
 
+    /// 🔴 **サーバーの退会のやり直しが落ちたら、Cognito に進まない。** 先に Cognito を消すと、
+    /// 墓石の後の掃除（フォロー・お知らせ・いいね）を消せる人がいなくなる
+    func testServerFailureStopsBeforeCognito() async {
+        let calls = Calls()
+        let auth = await signedIn(calls)
+        auth.noteDeletionPending()
+        var released = 0
+        await auth.finishPendingDeletion(deleteServerData: { throw APIError.unreachable },
+                                         releaseDevice: { released += 1 })
+        XCTAssertEqual(calls.deleteUser, 0, "サーバーの掃除が残ったまま Cognito を消した")
+        XCTAssertEqual(released, 0)
+        XCTAssertTrue(auth.deletionPending)
+        XCTAssertNotNil(auth.deletionFailure)
+        XCTAssertEqual(auth.userId, "u1")
+    }
+
     /// 「完了する」の二度押しで2本走らせない（門は押したその場で閉じる）
     func testDoubleTapStartsOnlyOnce() async {
         let calls = Calls()
         let auth = await signedIn(calls)
         auth.noteDeletionPending()
-        auth.startFinishingDeletion(releaseDevice: {})
-        auth.startFinishingDeletion(releaseDevice: {})
+        auth.startFinishingDeletion(deleteServerData: {}, releaseDevice: {})
+        auth.startFinishingDeletion(deleteServerData: {}, releaseDevice: {})
         await waitUntil { !auth.isFinishingDeletion }
         XCTAssertEqual(calls.deleteUser, 1)
     }

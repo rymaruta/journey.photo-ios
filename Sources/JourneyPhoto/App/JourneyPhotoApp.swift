@@ -161,14 +161,18 @@ struct JourneyPhotoApp: App {
                 .environmentObject(toasts)
                 .task { await auth.restore() }
                 // 🔴 **退会の途中で止まったアカウント**（自分のプロフィールが 410）。サーバーの
-                // データは消えているので、使い続ける道は無い——残り（Cognito の削除・端末の
-                // 控え）を済ませる一択にする（`AuthStore.finishPendingDeletion`）
+                // データは消えているので、使い続ける道は無い——残り（サーバーの退会の
+                // やり直し・Cognito の削除・端末の控え）を済ませる一択にする
+                // （`AuthStore.finishPendingDeletion`）
                 .alert(L("退会の手続きが途中です", "Account deletion is unfinished"),
                        isPresented: Binding(
                            get: { auth.deletionPending && !auth.isFinishingDeletion },
                            set: { _ in })) {
                     Button(L("完了する", "Finish")) {
-                        auth.startFinishingDeletion { await push.signingOut(accountDeleted: true) }
+                        let account = environment.account
+                        auth.startFinishingDeletion(
+                            deleteServerData: { try await account.deleteAccount() },
+                            releaseDevice: { await push.signingOut(accountDeleted: true) })
                     }
                 } message: {
                     Text(auth.deletionFailure
