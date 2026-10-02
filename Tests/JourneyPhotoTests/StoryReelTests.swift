@@ -144,4 +144,20 @@ final class StoryReelTests: XCTestCase {
                        "見始めて時間が経っていれば、今のを最初から")
         XCTAssertEqual(StoryPlayback.leftTap(index: 2, elapsed: 0.3, hasPreviousGroup: true), .previous(1))
     }
+
+    /// **「動きを減らす」なら立方体に回さない**——同じ場所に重ね、払った分だけ濃さを
+    /// 入れ替える（フェード）。入っていなければ今までどおり回して横へずらす
+    func testReduceMotionFadesInsteadOfRotating() {
+        let normal = StoryReel.faceLook(minX: 200, width: 400, reduceMotion: false)
+        XCTAssertEqual(normal, .init(angle: 45, offsetX: 200, opacity: 1))
+        let still = StoryReel.faceLook(minX: 200, width: 400, reduceMotion: true)
+        XCTAssertEqual(still.angle, 0, "「動きを減らす」なのに3Dで回している")
+        XCTAssertEqual(still.offsetX, 0, "「動きを減らす」なのに横へ流している")
+        XCTAssertEqual(still.opacity, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(StoryReel.faceLook(minX: 0, width: 400, reduceMotion: true).opacity, 1)
+        XCTAssertEqual(StoryReel.faceLook(minX: -400, width: 400, reduceMotion: true).opacity, 0,
+                       "画面の外に置いた隣の面が見えている")
+        XCTAssertEqual(StoryReel.faceLook(minX: 900, width: 400, reduceMotion: true).opacity, 0)
+        XCTAssertEqual(StoryReel.faceLook(minX: 10, width: 0, reduceMotion: true).opacity, 1)
+    }
 }

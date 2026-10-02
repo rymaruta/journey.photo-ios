@@ -22,6 +22,9 @@ struct StoryReelView: View {
     let onDeleted: ((String) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+    /// 「動きを減らす」。入っていたら立方体に回さず、重ねて濃さを入れ替える
+    /// （`StoryReel.faceLook`）。ばねの戻りも短い緩やかな動きにする
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var environment: AppEnvironment
 
@@ -179,7 +182,7 @@ struct StoryReelView: View {
                         if StoryReel.closes(dy: dy, predictedDY: value.predictedEndTranslation.height) {
                             dismiss()
                         } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { settleY = 0 }
+                            withAnimation(settleAnimation) { settleY = 0 }
                         }
                     case nil:
                         break
@@ -188,15 +191,23 @@ struct StoryReelView: View {
         )
     }
 
-    /// 立方体の1面。`minX` は面の左端の位置
+    /// 指を離した後に戻す動き。**「動きを減らす」ならばねで弾ませない**
+    private var settleAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)
+    }
+
+    /// 立方体の1面。`minX` は面の左端の位置。
+    /// 「動きを減らす」なら回さず重ねて濃さを入れ替える（`StoryReel.faceLook`）
     private func face<V: View>(_ content: V, minX: Double) -> some View {
         let hinge = StoryReel.hinge(minX: minX)
+        let look = StoryReel.faceLook(minX: minX, width: width, reduceMotion: reduceMotion)
         return content
-            .rotation3DEffect(.degrees(StoryReel.cubeAngle(minX: minX, width: width)),
+            .rotation3DEffect(.degrees(look.angle),
                               axis: (x: 0, y: 1, z: 0),
                               anchor: hinge == .leading ? .leading : .trailing,
                               perspective: 0.5)
-            .offset(x: minX)
+            .offset(x: look.offsetX)
+            .opacity(look.opacity)
     }
 
     private func viewer(_ g: StoryReel.Group) -> some View {
@@ -234,12 +245,12 @@ struct StoryReelView: View {
             target = next
         case .back:
             guard let previous = neighbor(-1) else {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { settleX = 0 }
+                withAnimation(settleAnimation) { settleX = 0 }
                 return
             }
             target = previous
         case .stay:
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { settleX = 0 }
+            withAnimation(settleAnimation) { settleX = 0 }
             return
         }
         turning = true
