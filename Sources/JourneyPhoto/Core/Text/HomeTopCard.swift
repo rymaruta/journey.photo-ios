@@ -181,7 +181,11 @@ enum HomeTopCard {
     /// **自分だけの一冊（非公開の束）も出す**——この札は本人の端末のホームにしか出ない
     static func bookReady(today: Date, myPhotos: [Photo], openedBookDays: Set<String>,
                           timeZone: TimeZone) -> Choice? {
-        guard let latest = TripBook.shelfTrips(from: myPhotos, timeZone: timeZone).first else { return nil }
+        // **終わりのいちばん遅い一冊を見る。** 棚は始まりの新しい順なので、日付の一冊の途中に
+        // 束の一冊があると、束の方が先頭に来て、旅の最中に「閉じた」と言っていた。
+        // 日付の一冊どうしは重ならないので、日付だけの棚では今までと同じ一冊になる
+        guard let latest = TripBook.shelfTrips(from: myPhotos, timeZone: timeZone)
+            .max(by: { $0.end < $1.end }) else { return nil }
         let sinceEnd = TripBook.calendarDays(from: latest.end, to: today)
         let closed = sinceEnd > TripBook.maxGapDays
         let fresh = sinceEnd <= TripBook.maxGapDays + bookFreshDays

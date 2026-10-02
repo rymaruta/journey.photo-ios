@@ -52,6 +52,8 @@ struct TripBookView: View {
             // 板の右上の「共有」。**配るのは題と期間の文だけ**（URL を持たない理由は
             // `TripBook.shareText`）
             ToolbarItem(placement: .topBarTrailing) {
+                // 自分だけの一冊は共有しない（`TripBook.canShare`）
+                if TripBook.canShare(book) {
                 Group {
                     // 表紙と題・期間・数字を載せた1枚（2026-09-30）。作れるまでは文
                     if let cardURL {
@@ -65,6 +67,7 @@ struct TripBookView: View {
                 }
                 .webToolbarIcon()
                 .accessibilityLabel(L("共有", "Share"))
+                }
             }
         }
         // 開いたときに1回だけ作っておく（押してから待たせない）。同じ旅なら同じファイルを上書き。

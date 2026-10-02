@@ -136,12 +136,18 @@ enum TripBook {
         return nil
     }
 
+    /// 共有してよい一冊か。**自分だけの一冊（非公開の写真を含む）は共有しない**——表紙に
+    /// 非公開の写真が載った画像が外へ出る（安全側の既定）
+    static func canShare(_ trip: Trip) -> Bool {
+        !trip.isPrivate
+    }
+
     /// **自分の旅の棚**（マイページの「旅の記録」・ホームの「一冊ができた」）。**絞り方はここ1か所**。
     ///
     /// 2つを合わせる（期間の新しい順）:
     ///
     /// 1. **1つの投稿としてまとめた束（`groupId`）は、公開・非公開に関係なく一冊**
-    ///    （`groupTrips`）。旅の写真からまとめて上げた写真は非公開で始まるので、
+    ///    （`groupTrips`・**旅の写真の流れで上げた束だけ**）。旅の写真からまとめて上げた写真は非公開で始まるので、
     ///    下書きを落とすだけだと、本人が「旅の記録に入れる」を押した旅が棚に出なかった。
     ///    束は本人が「これで一冊」と選んだものなので、下書きを入れない規則の例外にする
     /// 2. **残りの公開写真を日付で束ねる**（今までどおり）。下書きは入れない——見せていない
@@ -155,9 +161,8 @@ enum TripBook {
         return (groups + dated).sorted { $0.start > $1.start }
     }
 
-    /// 1つの投稿としてまとめた束（持ち主＋`groupId`・`PhotoGroups.groupKey`）を一冊にする。
-    /// **2枚以上の束だけ**（1枚は旅ではない）。題は `mainPlace`、期間は `day(of:in:)` の最小と最大
-    /// （日の決まらない写真は期間に数えない・日の決まる写真が無い束は一冊にしない）。
+    /// 「旅の写真からまとめて」で上げた束（`groupId` が `trip-` で始まる・持ち主＋`groupId`）を一冊にする。
+    /// **撮影日のある写真が2枚以上の束だけ**（1枚は旅ではない）。題は `mainPlace`、期間は撮影日の最小と最大。
     /// id は `"group#<groupId>"`——日付の束の id（写真の id をつないだもの）と重ならない。
     ///
     /// **撮影日の幅が `LibraryTrips.maxDays`（30日）を超える束は一冊にしない**（2026-10-02 判断）。
@@ -168,8 +173,14 @@ enum TripBook {
         var order: [String] = []
         var buckets: [String: [Photo]] = [:]
         for photo in photos {
+            // **旅の写真の流れで上げた束だけ**（`UploadGrouping.tripPrefix`・2026-10-02 判断）。
+            // ふだんの「1つの投稿にまとめる」は今までどおり日付の一冊に入る
+            guard UploadGrouping.isTripGroup(photo.groupId) else { continue }
+            // **撮影日の無い写真は落とす**（日付の一冊と同じ `hasTakenDay`）。投稿日で数えると、
+            // 上げた日が旅の期間に入る。落とした写真は日付の一冊と同じく棚に出ない
+            guard hasTakenDay(photo) else { continue }
             let key = PhotoGroups.groupKey(of: photo)
-            // `groupId` の無い写真は1枚の束（`single#`）——一冊にしない
+            // 持ち主の分からない写真は1枚の束（`single#`）——一冊にしない
             guard key.hasPrefix("group#") else { continue }
             if buckets[key] == nil { order.append(key) }
             buckets[key, default: []].append(photo)

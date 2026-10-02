@@ -19,4 +19,23 @@ enum UploadGrouping {
         if let current { return current }
         return count > 1 ? make() : nil
     }
+
+    /// 「旅の写真からまとめて」で上げた束の印の頭（2026-10-02 判断）。
+    ///
+    /// 旅の記録の一冊にするのは**この流れで上げた束だけ**（`TripBook.groupTrips`）。ふだんの
+    /// 「1つの投稿にまとめる」まで一冊にすると、日付で束ねた一冊が割れ、開いた印も外れた。
+    /// サーバーに印の欄は足さず、`groupId` の頭で見分ける（サーバーの `sanitizeGroupId` は
+    /// 英数字とハイフン・64字まで——「trip-」＋UUID の 41字は通る）。1.0.51 以前に上げた
+    /// 旅の束は頭が無いので一冊にならないが、まだ公開前の機能なので受け入れる
+    static let tripPrefix = "trip-"
+
+    /// 新しい束の印。旅の写真の流れから来た投稿だけ `tripPrefix` を付ける
+    static func newGroupId(fromTrip: Bool, uuid: String = UUID().uuidString) -> String {
+        fromTrip ? tripPrefix + uuid : uuid
+    }
+
+    /// 旅の写真の流れで上げた束か
+    static func isTripGroup(_ groupId: String?) -> Bool {
+        groupId?.trimmingCharacters(in: .whitespaces).hasPrefix(tripPrefix) ?? false
+    }
 }

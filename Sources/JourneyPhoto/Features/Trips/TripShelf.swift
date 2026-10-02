@@ -86,8 +86,8 @@ struct TripShelfList: View {
                     }
                 }
             }
-            Text(L("同じころに撮った写真が2枚たまると、ひとつの旅にまとまります",
-                   "Two or more photos taken around the same time become a trip"))
+            Text(L("同じころに撮った公開写真が2枚たまると、ひとつの旅にまとまります。「旅の写真からまとめて」で入れた写真は、その束で一冊になります",
+                   "Two or more public photos taken around the same time become a trip. Photos added with \"From a trip in your photos\" become one trip together"))
                 .font(.system(size: 12))
                 .lineSpacing(3)
                 .foregroundStyle(WebTheme.faint)

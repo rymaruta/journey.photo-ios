@@ -158,6 +158,9 @@ final class UploadViewModel: ObservableObject {
     /// 呼ばれるので、印が無いと同じ写真が足される。`reset()` でも下ろさない
     /// （入れ直すと、上げたばかりの写真がもう一度並ぶ）
     private var appliedInitialPhotos = false
+    /// 旅の写真の流れから来た投稿か（最初の写真を受けた）。束の印に `UploadGrouping.tripPrefix`
+    /// を付ける——旅の記録の一冊になるのはこの束だけ。`reset()` でも下ろさない（同じ画面の続き）
+    private(set) var fromTripImport = false
 
     /// 公開範囲の初期値（`startsPrivate` の裏返し）
     var initialPublished: Bool { !startsPrivate }
@@ -170,6 +173,7 @@ final class UploadViewModel: ObservableObject {
         startsPrivate = startPrivate
         if startPrivate { published = false }
         guard !photos.isEmpty else { return }
+        fromTripImport = true
         if photos.count > 1 { groupsAsOnePost = true }
         accept(libraryPhotos: photos)
     }
@@ -570,7 +574,8 @@ final class UploadViewModel: ObservableObject {
         }
 
         groupId = UploadGrouping.groupIdForSubmit(current: groupId, grouping: groupsAsOnePost,
-                                        count: items.count, make: { UUID().uuidString })
+                                        count: items.count,
+                                        make: { UploadGrouping.newGroupId(fromTrip: fromTripImport) })
 
         var done: [UUID] = []
         var failures: [String] = []
