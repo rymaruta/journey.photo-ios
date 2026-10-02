@@ -11,18 +11,22 @@ enum RestrictedFeed {
 
     /// 2本を混ぜて新しい順に並べる。
     ///
-    /// - 同じ id が両方に居たら**公開側を残す**。絞りの口は本人にも返すので、
-    ///   自分の写真が二重に並ぶのを防ぐ（id が同じなら中身も同じ行）
+    /// - 同じ id が両方に居たら**絞りの口の行を採る**（二重には並べない）。
+    ///   絞りの口は DynamoDB から直に来る今の行で、公開側は建て直しまで古い静的 JSON。
+    ///   🔴 以前は公開側を残していたので、公開→フォロワー限定に変えた写真が
+    ///   古い公開の行（建て直しで消える画像の URL・印の無い `audience`）のまま出て、
+    ///   画像が出ず、「フォロワーのみ」の札も付かなかった
     /// - `createdAt` は文字列のまま比べる（ISO8601 なので辞書順＝時刻順）。
     ///   **欠けている行を落とさない**——空文字として一番後ろに置く。
     ///   落とすと、古い投稿が一覧から消える
     static func merge(publicPhotos: [Photo], restricted: [Photo]) -> [Photo] {
-        var seen = Set(publicPhotos.map(\.id))
-        var all = publicPhotos
-        for photo in restricted where !seen.contains(photo.id) {
-            seen.insert(photo.id)
+        // 絞りの口の中で同じ id が2度来ても1行（先の行を採る）
+        var restrictedIds = Set<String>()
+        var all: [Photo] = []
+        for photo in restricted where restrictedIds.insert(photo.id).inserted {
             all.append(photo)
         }
+        all.append(contentsOf: publicPhotos.filter { !restrictedIds.contains($0.id) })
         return all.sorted { ($0.createdAt ?? "") > ($1.createdAt ?? "") }
     }
 

@@ -11,6 +11,20 @@ final class RestrictedFeedTests: XCTestCase {
             "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\"\(c)\(a)}".utf8))
     }
 
+    /// 🔴 **同じ id なら絞りの口の行を採る。** 公開→フォロワー限定に変えた写真で、
+    /// 古い公開の行（消える画像の URL・印の無い範囲）を出さない
+    func testRestrictedRowWinsOverTheStalePublicRow() throws {
+        let stale = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"a","src":"/uploads/old.jpg","createdAt":"2026-09-20T00:00:00Z"}"#.utf8))
+        let fresh = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"a","src":"/uploads/new.jpg","createdAt":"2026-09-20T00:00:00Z","audience":"followers"}"#.utf8))
+        let merged = RestrictedFeed.merge(publicPhotos: [try photo("b", at: "2026-09-21T00:00:00Z"), stale],
+                                          restricted: [fresh])
+        XCTAssertEqual(merged.map(\.id), ["b", "a"])
+        XCTAssertEqual(merged.last?.src, "/uploads/new.jpg", "古い公開の行（消えた URL）を採っている")
+        XCTAssertEqual(merged.last?.audience, "followers", "限定の印が落ちている")
+    }
+
     /// 新しい順に混ざる（公開と絞りが交互でも）
     func testMergedFeedIsNewestFirst() throws {
         let merged = RestrictedFeed.merge(
