@@ -6,11 +6,11 @@ import SwiftUI
 /// 並んでいた。**それをここへ移した。** 値は投稿画面の状態そのもの（`keepInArchive`・`allowReplies`）で、
 /// このシートは新しい値を持たない。
 ///
-/// 🔴 **親しい友達には、まだ絞れない。** ストーリーはフォロワーだけが見る作りで
-/// （2026-09-22・owner の判断。`api-user/src/storyVisibility.ts`）、サーバーは公開範囲を受け取らない
-/// （`StoryService.createRecord`）。選べる形にすると、親しい友達だけに出したつもりのストーリーが
-/// フォロワー全員に届く。だから行は見せるが押せず、そう書く。サーバーが受けるようになったら、
-/// ここを選べるようにして `CloseFriendsView` へつなぐ。
+/// 🔴 **2026-10-02 判断: 範囲をサーバーが受け取るまで、親しい友達は出さない。**
+/// ストーリーはフォロワーだけが見る作りで（2026-09-22・owner の判断。`api-user/src/storyVisibility.ts`）、
+/// サーバーは公開範囲を受け取らない（`StoryService.createRecord`）。選べない行を出すと迷わせる
+/// （かんたん版の狙いに反する）ので、「フォロワーに届きます」の説明1行だけにする。
+/// サーバーが受けるようになったら、ここに選ぶ口を足して `CloseFriendsView` へつなぐ。
 ///
 /// 地は黒、行の面は #121212 相当（`WebTheme.surface`）。トグルのオンは暗い真鍮（#796440）。
 /// 写真の無い画面なので、主ボタン「決める」は白（写真の無い画面の主ボタンは真鍮でもよいが、
@@ -28,18 +28,17 @@ struct StoryAudienceSheet: View {
                 .foregroundStyle(WebTheme.text)
                 .padding(.top, 24)
 
-            VStack(spacing: 0) {
-                radioRow(title: L("フォロワー", "Followers"),
-                         detail: L("あなたをフォローしている人", "People who follow you"),
-                         selected: true)
-                Divider().overlay(WebTheme.border)
-                radioRow(title: L("親しい友達", "Close friends"),
-                         detail: L("ストーリーはまだ親しい友達だけに絞れません。いまはフォロワー全員に届きます",
-                                   "Stories can't be limited to close friends yet. They go to all your followers"),
-                         selected: false)
-                    .opacity(0.5)
+            // 届く相手の説明（選ぶ口ではない・ラジオなし）
+            HStack(spacing: 10) {
+                Image(systemName: "person.2")
+                    .font(.system(size: 15))
+                    .foregroundStyle(WebTheme.muted2)
+                    .accessibilityHidden(true)
+                Text(L("フォロワーに届きます", "Goes to your followers"))
+                    .font(.system(size: 15))
+                    .foregroundStyle(WebTheme.text)
             }
-            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+            .accessibilityElement(children: .combine)
 
             VStack(spacing: 0) {
                 toggleRow(title: L("返信を受け取る", "Receive replies"), detail: nil, isOn: $allowReplies)
@@ -66,30 +65,6 @@ struct StoryAudienceSheet: View {
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(WebTheme.background)
-    }
-
-    private func radioRow(title: String, detail: String, selected: Bool) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                .font(.system(size: 20))
-                .foregroundStyle(selected ? WebTheme.accent : WebTheme.faint)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(WebTheme.text)
-                Text(detail)
-                    .font(.system(size: 12))
-                    .foregroundStyle(WebTheme.muted2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(minHeight: 56)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func toggleRow(title: String, detail: String?, isOn: Binding<Bool>) -> some View {
