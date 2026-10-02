@@ -22,10 +22,30 @@ enum DoubleTapLike {
         case resetZoom
     }
 
-    /// **いいねの行き先は、いま見ている1枚。** 左右に送れる画面では、
-    /// 開いたときの1枚とは限らない
+    /// **いま見ている1枚**（題・共有・下のハート）。左右に送れる画面では、
+    /// 開いたときの1枚とは限らない。**ダブルタップの行き先には使わない**（`tap`）
     static func shown(_ photos: [Photo], at index: Int) -> Photo? {
         photos.indices.contains(index) ? photos[index] : nil
+    }
+
+    /// 叩いたページへの答え。**行き先は叩いたページの写真**（`tapped`）で、
+    /// 選んでいる添字（`shownIndex`）からは引かない。
+    ///
+    /// 🔴 ページ式 TabView の `selection` は、送りの指を離してから少し遅れて替わる。
+    /// その窓で新しいページを2回叩くと、添字から引いた「前のページ」の写真に
+    /// いいねが付いていた。拡大も**叩いたページが拡大しているページ**のときだけ見る
+    /// ——拡大は選んでいるページにだけ掛かるので、遅れた添字の拡大で新しいページの
+    /// いいねを「倍率を戻す」に化けさせない
+    struct Tap: Equatable {
+        let target: Photo
+        let action: Action
+    }
+
+    static func tap(_ tapped: Photo, at offset: Int, shownIndex: Int, isZoomed: Bool,
+                    alreadyLiked: Bool, signedIn: Bool, acceptsLike: Bool = true) -> Tap {
+        Tap(target: tapped,
+            action: action(isZoomed: offset == shownIndex && isZoomed, alreadyLiked: alreadyLiked,
+                           signedIn: signedIn, acceptsLike: acceptsLike))
     }
 
     /// - Parameter acceptsLike: その写真にいいねを付けられるか。**下書きは付けられない**
