@@ -15,8 +15,13 @@ import ImageIO
 /// 縮めてから `CIImage` にする（向きもここで画素に焼く）。
 ///
 /// **色空間（2026-10-02 判断）**
-/// - 作業は Core Image の既定（拡張リニア sRGB）のまま。P3 の色も 0…1 の外の値として
-///   失わずに運べるので、作業色空間を変える理由が無い
+/// - 作業は**拡張リニア Display P3**（Core Image の既定の拡張リニア sRGB から変えた）。
+///   既定のままだと、P3 の鮮やかな色は sRGB の原色で表して**負の値**になる（P3 の純赤は
+///   G・B が負）。色の曲線（`CIToneCurve`）を通すと、`inputExtrapolate` を渡していても
+///   その負の値が 0 に切られ、P3 の赤が sRGB の赤に潰れた（Mac の run 37047301740:
+///   書き出しを拡張 sRGB で読んで [1.06, 0.003, −0.003]。本来は G・B が約 −0.23 / −0.15）。
+///   P3 の原色で作業すれば、P3 の写真の色はどれも 0…1 の中に収まり、どこで 0…1 に
+///   切られても失われない。拡張（0…1 の外も持てる）にしてあるので、P3 より外の色も運べる
 /// - 書き出しは、**元の画像が Display P3 なら Display P3、それ以外は sRGB**。
 ///   iPhone の写真（HEIC）は P3 で撮られているので、sRGB に潰すと赤や緑の鮮やかさが
 ///   落ちる。逆に sRGB の写真を P3 で書いても得は無い。どちらも ICC を画像に付ける
@@ -29,7 +34,11 @@ final class PhotoRenderer {
 
     static let shared = PhotoRenderer()
 
-    let context = CIContext()
+    /// 作業色空間は拡張リニア Display P3（上の注記）。作れない環境では既定のまま
+    let context: CIContext = {
+        guard let working = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) else { return CIContext() }
+        return CIContext(options: [.workingColorSpace: working])
+    }()
 
     /// 読んだ写真。描く元の画像と、書き出す色空間
     struct Loaded {

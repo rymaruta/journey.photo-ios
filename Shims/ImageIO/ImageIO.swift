@@ -28,6 +28,7 @@ public final class CGColorSpace {
     public var name: CFString? { nil }
     public static let sRGB: CFString = "kCGColorSpaceSRGB"
     public static let displayP3: CFString = "kCGColorSpaceDisplayP3"
+    public static let extendedLinearDisplayP3: CFString = "kCGColorSpaceExtendedLinearDisplayP3"
 }
 public func CGColorSpaceCreateDeviceRGB() -> CGColorSpace { CGColorSpace() }
 

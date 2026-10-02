@@ -144,14 +144,65 @@ final class PhotoRendererExportTests: XCTestCase {
         return try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
     }
 
-    /// 色の曲線だけを通しても、P3 の純赤が sRGB の域に潰れない（`inputExtrapolate`）。
-    /// 拡張 sRGB で読むと、域の外の色は G・B が負になる
+    /// 色の曲線だけを通しても、P3 の純赤が sRGB の域に潰れない。
+    /// 拡張 sRGB で読むと、域の外の色は G・B が負になる（P3 の純赤は約 −0.23 / −0.15）。
+    ///
+    /// **落ちたときにどの段で潰れたかが1回で分かるよう、段ごとの値を失敗の文に出す**
+    /// （Mac の実行は1回1時間かかる。run 37047301740 でここが [1.06, 0.003, −0.003] で落ちた）
     func testToneCurveKeepsP3RedOutsideSRGB() throws {
+        let stages = try p3RedStages()
+        let report = stages.map { "\($0.name)=\($0.rgb.map { String(format: "%.3f", $0) })" }.joined(separator: " / ")
+        let target = try XCTUnwrap(stages.first { $0.name.hasPrefix("3") })
+        XCTAssertLessThan(min(target.rgb[1], target.rgb[2]), -0.05, "sRGB の域の外のまま。段ごと: \(report)")
+    }
+
+    /// 対照: 曲線を通さない書き出しでは、P3 の純赤が域の外に残る（読み方・書き出しの土台が
+    /// 正しいことの確認。ここが落ちるなら、曲線ではなく読み方か書き出しが潰している）
+    func testExportWithoutCurveKeepsP3RedOutsideSRGB() throws {
+        let stages = try p3RedStages()
+        let report = stages.map { "\($0.name)=\($0.rgb.map { String(format: "%.3f", $0) })" }.joined(separator: " / ")
+        for prefix in ["0", "1", "2"] {
+            let stage = try XCTUnwrap(stages.first { $0.name.hasPrefix(prefix) })
+            XCTAssertLessThan(min(stage.rgb[1], stage.rgb[2]), -0.05, "\(stage.name)。段ごと: \(report)")
+        }
+    }
+
+    /// P3 の純赤を段ごとに描いて、真ん中の画素を拡張 sRGB で読む
+    private func p3RedStages() throws -> [(name: String, rgb: [Double])] {
         let data = try makeP3Red()
-        let exported = try PhotoRenderer.shared.export(data: data, recipe: PhotoRecipe(highlights: 1))
         let extended = try XCTUnwrap(CGColorSpace(name: CGColorSpace.extendedSRGB))
-        let rgb = try centerPixel(decode(exported), in: extended)
-        XCTAssertLessThan(min(rgb[1], rgb[2]), -0.05, "sRGB の域の外のまま: \(rgb)")
+        let renderer = PhotoRenderer.shared
+        let curve = PhotoRecipe(highlights: 1)
+        var stages: [(name: String, rgb: [Double])] = []
+        func add(_ name: String, _ rgb: [Double]) {
+            stages.append((name, rgb))
+            XCTContext.runActivity(named: "\(name): \(rgb)") { _ in }
+        }
+        add("0 元の PNG", try centerPixel(decode(data), in: extended))
+        add("1 無編集で書き出し", try centerPixel(decode(renderer.export(data: data, recipe: .identity)), in: extended))
+        add("2 露出 +0.01 だけで書き出し",
+            try centerPixel(decode(renderer.export(data: data, recipe: PhotoRecipe(exposure: 0.01))), in: extended))
+        add("3 曲線（highlights +1）で書き出し",
+            try centerPixel(decode(renderer.export(data: data, recipe: curve)), in: extended))
+
+        // JPEG を通さず、浮動小数で直に描く（8bit・P3 への書き出しで切られていないかを分ける）
+        let loaded = try XCTUnwrap(PhotoRenderer.load(data: data, maxPixelSize: 64))
+        func direct(_ context: CIContext, _ image: CIImage) throws -> [Double] {
+            try centerPixel(XCTUnwrap(context.createCGImage(image, from: loaded.image.extent,
+                                                            format: .RGBAh, colorSpace: extended)), in: extended)
+        }
+        add("4 曲線・アプリの CIContext に直描き", try direct(renderer.context, renderer.apply(curve, to: loaded.image)))
+        let srgbWorking = CIContext(options: [.workingColorSpace: try XCTUnwrap(CGColorSpace(name: CGColorSpace.extendedLinearSRGB))])
+        add("5 曲線・作業色空間 拡張リニア sRGB に直描き", try direct(srgbWorking, renderer.apply(curve, to: loaded.image)))
+        for extrapolate in [true, false] {
+            let filter = try XCTUnwrap(CIFilter(name: "CIToneCurve"))
+            filter.setValue(loaded.image, forKey: kCIInputImageKey)
+            if filter.inputKeys.contains("inputExtrapolate") { filter.setValue(extrapolate, forKey: "inputExtrapolate") }
+            let image = try XCTUnwrap(filter.outputImage)
+            add("6 恒等の曲線 extrapolate=\(extrapolate)・拡張リニア sRGB", try direct(srgbWorking, image))
+            add("7 恒等の曲線 extrapolate=\(extrapolate)・アプリの CIContext", try direct(renderer.context, image))
+        }
+        return stages
     }
 
     /// haze（彩度 −0.25・曲線）を当てても、P3 の赤の鮮やかさが大きくは落ちない

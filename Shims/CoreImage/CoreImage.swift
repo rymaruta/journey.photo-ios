@@ -31,8 +31,15 @@ public struct CIFormat: Equatable {
     public static let RGBA8 = CIFormat(rawValue: 0)
 }
 
+public struct CIContextOption: Hashable {
+    public let rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public static let workingColorSpace = CIContextOption(rawValue: "working_color_space")
+}
+
 public final class CIContext {
     public init() {}
+    public init(options: [CIContextOption: Any]?) {}
     public func createCGImage(_ image: CIImage, from fromRect: CGRect,
                               format: CIFormat, colorSpace: CGColorSpace?) -> CGImage? { nil }
 }
