@@ -235,12 +235,15 @@ struct SignInView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
-            // **いちばん押される場所を白い大ボタンに**（板: 52pt・白のカプセル）
+            // **いちばん押される場所を真鍮の大ボタンに**（52pt のカプセル・墨の字）。写真のタイルは
+            // 上で黒へ溶けていて、ボタンは黒地に乗るので「写真の無い画面の主ボタン」（`.accent`）。
+            // 2026-10-02 の owner「ログインボタンもテーマカラーの真鍮の色にしたい」。
+            // 同じ画面の続き（登録の完了・コードを送る・パスワードを変える）も揃える
             Button {
                 Task { await submitCredentials() }
             } label: {
                 Text(mode == .signIn ? Labels.Navigation.login : L("登録する", "Create account"))
-                    .jpPillButton()
+                    .jpPillButton(.accent)
             }
             .buttonStyle(.plain)
             .disabled(!canSubmit)
@@ -472,7 +475,7 @@ struct SignInView: View {
                     }
                 }
             } label: {
-                Text(L("登録を完了する", "Finish sign up")).jpPillButton()
+                Text(L("登録を完了する", "Finish sign up")).jpPillButton(.accent)
             }
             .buttonStyle(.plain)
             .disabled(auth.isWorking || code.isEmpty)
@@ -557,7 +560,7 @@ struct SignInView: View {
                         }
                     }
                 } label: {
-                    Text(L("コードを送る", "Send code")).jpPillButton()
+                    Text(L("コードを送る", "Send code")).jpPillButton(.accent)
                 }
                 .buttonStyle(.plain)
                 .disabled(auth.isWorking || email.isEmpty)
@@ -581,7 +584,7 @@ struct SignInView: View {
                         }
                     }
                 } label: {
-                    Text(L("パスワードを変える", "Change password")).jpPillButton()
+                    Text(L("パスワードを変える", "Change password")).jpPillButton(.accent)
                 }
                 .buttonStyle(.plain)
                 .disabled(auth.isWorking || code.isEmpty || password.isEmpty)
