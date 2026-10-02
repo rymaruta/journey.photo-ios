@@ -32,6 +32,22 @@ final class TripBookPagesTests: XCTestCase {
         }
     }
 
+    /// 寸法が分かる写真は、読み込む前に縦横比で枠を取る（遅れて出た絵で下のページが跳ねない）
+    func testAspectRatioFromDimensions() throws {
+        func decode(_ extra: String) throws -> Photo {
+            try JSONDecoder.api.decode(Photo.self, from: Data(#"{"id":"a","src":"https://x/a.jpg"\#(extra)}"#.utf8))
+        }
+        XCTAssertEqual(try decode(#","width":1600,"height":1200"#).aspectRatio, 4.0 / 3.0)
+        XCTAssertNil(try decode("").aspectRatio, "寸法が無ければ枠を取らない（今の出し方）")
+        XCTAssertNil(try decode(#","width":0,"height":1200"#).aspectRatio)
+        XCTAssertNil(try decode(#","width":10000,"height":10"#).aspectRatio, "壊れた寸法では取らない")
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "Sources/JourneyPhoto/Features/Trips/TripBookView.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("if let ratio = photo.aspectRatio"), "旅の本のページが枠を取っていない")
+    }
+
     func testEmptyTripHasNoRows() {
         XCTAssertEqual(TripBook.pageRows(of: []), [])
     }

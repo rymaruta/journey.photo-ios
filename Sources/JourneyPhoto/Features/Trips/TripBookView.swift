@@ -330,6 +330,18 @@ struct TripBookView: View {
         .accessibilityAddTraits(.isHeader)
     }
 
+    /// ページの写真。**寸法が分かれば、読み込む前に縦横比で枠を取る**（2026-10-02）——
+    /// ページは `LazyVStack` で遅れて読むので、枠が無いと絵が出た瞬間に下のページが跳ねる
+    @ViewBuilder
+    private func pageImage(_ photo: Photo) -> some View {
+        if let ratio = photo.aspectRatio {
+            RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+                .aspectRatio(ratio, contentMode: .fit)
+        } else {
+            RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+        }
+    }
+
     private func page(_ photo: Photo, dayPlace: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             NavigationLink {
@@ -338,7 +350,7 @@ struct TripBookView: View {
                 // 載っているかで決める（`isPublic`）
                 PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: book.photos)
             } label: {
-                RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+                pageImage(photo)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
             }
