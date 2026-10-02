@@ -1085,7 +1085,7 @@ struct StoryComposerView: View {
         for item in items {
             let data = try? await item.loadTransferable(type: Data.self)
             if let data {
-                accept(data)
+                await accept(data)
             } else {
                 failed += 1
             }
@@ -1118,7 +1118,7 @@ struct StoryComposerView: View {
                 message = L("写真を読み込めませんでした", "Couldn't load the photo")
                 return
             }
-            accept(data)
+            await accept(data)
             if message == nil { message = note }
         }
     }
@@ -1127,9 +1127,13 @@ struct StoryComposerView: View {
     ///
     /// 文字は写真ごとに持つので、足した写真には何も付いていない状態で
     /// 始まる——前の写真の文字が別の絵に残ると、置いた場所の意味が変わる。
-    private func accept(_ data: Data) {
+    private func accept(_ data: Data) async {
         do {
-            let prepared = try ImagePreparer.prepare(data: data, fileName: "story")
+            // **縮小・EXIF の書き直しは画面の処理の外で**（投稿の `prepareOffMain`・`EditPhotoView` と同じ）。
+            // 1枚に数百ミリ秒かかり、選んだ枚数ぶん画面が止まっていた
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try ImagePreparer.prepare(data: data, fileName: "story")
+            }.value
             guard shots.count < StoryQueue.maxShots else {
                 message = L("一度に出せるのは\(StoryQueue.maxShots)枚までです",
                             "You can post up to \(StoryQueue.maxShots) at once")
