@@ -340,7 +340,7 @@ listed = re.findall(r"""^\s+-\s+["']?([^\s"']+\.(?:ttf|otf))["']?\s*$""",
                     project_text.split("UIAppFonts:", 1)[1].split("CFBundleDevelopmentRegion", 1)[0],
                     re.M) if "UIAppFonts:" in project_text else []
 if not listed:
-    fail("project.yml の UIAppFonts が空です（見出しの明朝・数字の等幅が出ません）")
+    fail("project.yml の UIAppFonts が空です（見出しの明朝が出ません）")
 for name in listed:
     if not (FONTS_DIR / name).exists():
         fail(f"UIAppFonts の {name} が Resources/Fonts/ にありません")
@@ -352,6 +352,13 @@ for ps in re.findall(r'static let \w+Name = "([^"]+)"', jpfont):
     # この repo はファイル名＝PostScript 名にしてある（`Tools/make-display-font.py`）
     if f"{ps}.ttf" not in listed and f"{ps}.otf" not in listed:
         fail(f"JPFont が引く {ps} に当たる書体が UIAppFonts にありません")
+# **書体の名前を Sources に直に書かない**（`.custom("…"` ・ `UIFont(name: "…"`）。名前は
+# JPFont の `*Name` か `TextOverlay.Face.fontName` に置き、上と下で突き合わせる。直に書くと
+# 同梱していない名前でも黙ってシステム書体に落ち、ここで気づけない（2026-10-02: Plex を外したとき
+# レビューで、`mono` を `.custom("IBMPlexMono-Regular"…` に戻しても何も落ちないと分かった）
+for swift in sorted((ROOT / "Sources").rglob("*.swift")):
+    for m in re.finditer(r'(?:\.custom\(|UIFont\(name:)\s*"([^"]+)"', swift.read_text(encoding="utf-8")):
+        fail(f"{swift.relative_to(ROOT)}: 書体の名前 {m.group(1)} を直に書いています（JPFont の *Name に置く）")
 # ストーリーの文字の書体（`TextOverlay.Face.fontName`）も同じく突き合わせる
 overlay_src = (ROOT / "Sources/JourneyPhoto/Core/Text/TextOverlay.swift").read_text(encoding="utf-8")
 face_block = overlay_src.split("var fontName: String? {", 1)[1].split("\n        }\n", 1)[0] \
@@ -368,7 +375,7 @@ for ps in face_names:
         continue
     if f"{ps}.ttf" not in listed and f"{ps}.otf" not in listed:
         fail(f"ストーリーの文字が引く {ps} に当たる書体が UIAppFonts にありません")
-for lic in ("OFL-ShipporiMincho.txt", "OFL-IBMPlexMono.txt", "OFL-KleeOne.txt",
+for lic in ("OFL-ShipporiMincho.txt", "OFL-KleeOne.txt",
             "OFL-YuseiMagic.txt", "OFL-HachiMaruPop.txt"):
     if not (FONTS_DIR / lic).exists():
         fail(f"書体のライセンス {lic} がありません（OFL は同梱が条件）")

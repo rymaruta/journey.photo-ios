@@ -162,6 +162,7 @@ public final class UIFont {
     }
     public static func systemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
     public static func monospacedSystemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
+    public static func monospacedDigitSystemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
     public init() {}
     public init?(name: String, size: Double) {}
     public init(descriptor: UIFontDescriptor, size: Double) {}

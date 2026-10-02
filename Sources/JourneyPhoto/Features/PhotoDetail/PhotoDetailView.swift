@@ -1540,9 +1540,10 @@ private struct ExifRow: View {
                         }
                     }
                     // **大きい文字の設定で「1/4000s」が切れないように上限を置く。**
-                    // 3列で1列 約89pt。等幅 24pt の .title は AX2 で 43pt まで伸び、
-                    // 縮小の下限 0.6 をかけても 93pt で「1/40…」と切れる（レビューの見積もり）。
-                    // xxxLarge（.title = 34pt）なら 7字 × 0.6em × 34 × 0.6 ≈ 86pt で収まる
+                    // 3列で1列 約89pt。数字は SF の等幅数字・.title2（22pt。`JPFont.mono` の注記）で、
+                    // 大きい文字の設定では縮小の下限 0.6 をかけても「1/40…」と切れうる。
+                    // 上限 xxxLarge なら収まる見積もり（Plex 24pt・.title のときの見積もりより小さい字なので安全側。
+                    // 2026-10-02 に書体を替えたあと実機では測っていない）
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 }
 

@@ -240,6 +240,8 @@ public struct Font {
     /// 省略できるが、模型で両方に既定値を付けると上の2つと曖昧になるので `design` は必須
     public static func system(size: Double, weight: Weight = .regular, design: Design) -> Font { Font() }
     public enum Design { case `default`, serif, rounded, monospaced }
+    /// 文字の種類から（iOS 16〜）。Dynamic Type に追従する
+    public static func system(_ style: TextStyle, design: Design? = nil, weight: Weight? = nil) -> Font { Font() }
     public static func custom(_ name: String, size: Double, relativeTo textStyle: TextStyle) -> Font { Font() }
     public static func custom(_ name: String, fixedSize: Double) -> Font { Font() }
     public func weight(_ w: Weight) -> Font { self }
