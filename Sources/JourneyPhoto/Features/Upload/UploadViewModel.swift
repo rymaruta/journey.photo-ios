@@ -189,6 +189,23 @@ final class UploadViewModel: ObservableObject {
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
     /// だけでは閉じない——選び直しの読み込み中も空になる）
     @Published private(set) var didPostAll = false
+    /// 投稿したら Threads にも載せるか（`ThreadsShare`）。**端末に覚える**——毎回入れ直させない
+    @Published var shareToThreads = UserDefaults.standard.bool(forKey: ThreadsShare.defaultsKey) {
+        didSet { UserDefaults.standard.set(shareToThreads, forKey: ThreadsShare.defaultsKey) }
+    }
+    /// 共有の画面に渡すもの。**全部上がった回だけ**、`didPostAll` より先に立てる
+    /// （画面は立っていれば閉じる代わりに共有の画面を出し、それを閉じてから閉じる）
+    @Published var threadsBundle: ThreadsBundle?
+    /// 上がった写真のうち外へ渡してよいもの（公開・全体に公開）。やり直しをまたいで貯め、
+    /// 全部上がったときに `threadsBundle` にする
+    private var sharable: [(data: Data, title: String, description: String, location: String)] = []
+
+    struct ThreadsBundle: Identifiable {
+        let id = UUID()
+        let images: [Data]
+        let text: String
+    }
+
     /// スポットのページに並ぶ形で上がった枚数（`spotId` 付き・公開・全体に公開）。
     /// スポットの画面が「投稿しました」を出すかを決める（並ばない投稿で言い切らない）
     @Published private(set) var postedToSpot = 0
@@ -554,6 +571,20 @@ final class UploadViewModel: ObservableObject {
             // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
             // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
             if songFailures == 0 {
+                // **いまの欄でも入切が見えているときだけ**（失敗のあと公開範囲を絞ってやり直すと、
+                // 行が消えて入切が見えないまま共有の画面が開いた・6c6c42a7 のレビュー）。
+                // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
+                if shareToThreads, ThreadsShare.isEligible(published: published, audience: audience),
+                   let lead = sharable.first {
+                    threadsBundle = ThreadsBundle(
+                        images: sharable.prefix(ThreadsShare.maxImages).map(\.data),
+                        // **本文に URL は入れない**（owner 2026-10-02「Threads 側に出る見た目も洗練させたい」）。
+                        // Threads の本文は文字のリンクを作れず（「Journey Photo」を押すと飛ぶ、はできない）、
+                        // 写真付きの投稿ではリンクの札も出ない見込み（実機では未確認）で、URL は長い文字列のまま本文に並ぶ。
+                        // 写真のページへの導線は、API で載せる形（返信にリンクの札）で足す
+                        text: ThreadsShare.text(title: lead.title, description: lead.description,
+                                                location: lead.location, url: nil))
+                }
                 didPostAll = done.count > 0
             } else {
                 errorMessage = UploadSummary.message(done: done.count, failures: failures,
@@ -622,6 +653,9 @@ final class UploadViewModel: ObservableObject {
             throw error
         }
         staged[item.id] = nil
+        if photo != nil, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
+            sharable.append((item.prepared.data, draft.title, draft.description, draft.location))
+        }
         if photo != nil, draft.spotId != nil, draft.published, draft.audience == .everyone {
             postedToSpot += 1
         }
@@ -687,6 +721,7 @@ final class UploadViewModel: ObservableObject {
         published = true
         audience = .everyone
         selectedAlbumId = nil
+        sharable = []
     }
 
     private static func image(from data: Data) -> Image? {

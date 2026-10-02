@@ -96,8 +96,15 @@ struct UploadView: View {
             // 打った文字ごと消える
             if posted {
                 onPosted?(model.postedToSpot)
-                dismiss()
+                // Threads にも載せる回は、共有の画面を閉じてから閉じる（`threadsBundle`）
+                if model.threadsBundle == nil { dismiss() }
             }
+        }
+        .sheet(item: $model.threadsBundle, onDismiss: { dismiss() }) { bundle in
+            ShareSheet(images: bundle.images, text: bundle.text)
+                .ignoresSafeArea()
+                // 共有の画面は半分の高さから（全高に広がると、後ろの投稿画面が見えず何が起きたか分からない）
+                .presentationDetents([.medium, .large])
         }
     }
 
@@ -440,6 +447,12 @@ struct UploadView: View {
                 JPCardDivider()
                 audienceRow
                     .disabled(model.isWorking)
+                // 公開・全体に公開のときだけ（外の SNS に絞った写真を流さない・`ThreadsShare`）
+                if ThreadsShare.isEligible(published: model.published, audience: model.audience) {
+                    JPCardDivider()
+                    threadsRow
+                        .disabled(model.isWorking)
+                }
                 // **選ぶ先が空なら誰にも見えない。** 選びに行く口をここに置く
                 if model.published && model.audience == .closeFriends {
                     JPCardDivider()
@@ -520,6 +533,25 @@ struct UploadView: View {
 
     private func albumTitle(_ album: Album) -> String {
         album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title
+    }
+
+    /// 投稿したら Threads にも載せる（共有の画面が開き、写真と文が入る）。入切は端末に覚える
+    private var threadsRow: some View {
+        Toggle(isOn: $model.shareToThreads) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("Threads にも載せる", "Also share to Threads"))
+                    .font(.callout)
+                    .foregroundStyle(.white)
+                Text(L("投稿のあと共有の画面が開きます。Threads を選んでください",
+                       "After posting, the share sheet opens. Choose Threads."))
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+            }
+        }
+        // **軌道は暗い真鍮**（ストーリーの入切と同じ。既定の白だと白い軌道に白いつまみが乗る）
+        .tint(WebTheme.accentDeep)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     /// 公開範囲（板: 1行。全体・フォロワー・親しい友達・非公開の4択）
