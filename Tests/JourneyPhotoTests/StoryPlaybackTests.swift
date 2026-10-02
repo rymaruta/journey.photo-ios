@@ -388,6 +388,29 @@ final class StoryPlaybackTests: XCTestCase {
         XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: nil, frozen: false), .ignore)
     }
 
+    /// **読み上げ（VoiceOver）が動いている間は、ひとりでに次へ送らない**
+    /// （写真の秒数を使い切っても・動画が終わっても。送るのは読み上げの「次へ」）
+    func testVoiceOverNeverAutoAdvances() {
+        XCTAssertTrue(StoryPlayback.autoAdvances(voiceOver: false))
+        XCTAssertFalse(StoryPlayback.autoAdvances(voiceOver: true))
+        XCTAssertTrue(StoryPlayback.timeUp(elapsed: 5, duration: 5, frozen: false,
+                                           messageShown: false, voiceOver: false))
+        XCTAssertFalse(StoryPlayback.timeUp(elapsed: 60, duration: 5, frozen: false,
+                                            messageShown: false, voiceOver: true),
+                       "読み上げ中に写真の秒数で次へ送っている")
+        XCTAssertFalse(StoryPlayback.timeUp(elapsed: 4.9, duration: 5, frozen: false,
+                                            messageShown: false, voiceOver: false))
+        XCTAssertFalse(StoryPlayback.timeUp(elapsed: 9, duration: 5, frozen: true,
+                                            messageShown: false, voiceOver: false))
+        XCTAssertFalse(StoryPlayback.timeUp(elapsed: 9, duration: 5, frozen: false,
+                                            messageShown: true, voiceOver: false))
+        XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: "a", frozen: false,
+                                                voiceOver: true), .ignore,
+                       "読み上げ中に動画の終わりで次へ送っている")
+        XCTAssertEqual(StoryPlayback.mediaEnded(storyId: "a", currentId: "a", frozen: false,
+                                                voiceOver: false), .advance)
+    }
+
     /// 読み直しに失敗したら前の輪を残す。ただし絞り込みはかけ直し、
     /// 見ている人が変わっていたら空にする
     func testAfterLoadKeepsPreviousOnFailure() {

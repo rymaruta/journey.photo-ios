@@ -34,6 +34,11 @@ struct StoryViewerView: View {
     /// 進まなくなる（2026-09-26 のレビューで見つかった）
     @State private var isForeground = true
     @Environment(\.dismiss) private var dismiss
+    /// 読み上げ（VoiceOver）が動いているか。**`isForeground` と同じ理由で `@State` へ写して読む**
+    /// （時計の写しの中で固まらないように）。動いている間はひとりでに次へ送らない
+    /// （`StoryPlayback.autoAdvances`）
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnv
+    @State private var voiceOverOn = false
 
     @State private var index: Int
     /// 通報して落とした・自分で消した1本。**兄弟の並びから消す**（左タップで戻れないように）
@@ -264,6 +269,10 @@ struct StoryViewerView: View {
             syncSong(restart: true)
         }
         .onChange(of: current?.id) { _, _ in syncSong(restart: true) }
+        .onAppear { voiceOverOn = voiceOverEnv }
+        .onChange(of: voiceOverEnv) { _, now in voiceOverOn = now }
+        // 読み上げの「閉じる」（2本指で Z を描く）
+        .accessibilityAction(.escape) { dismiss() }
         .onChange(of: frozen) { _, isFrozen in
             // **止まった瞬間にバーも止める。** 時計の見回り（`runClock`）を待つと、長押しから
             // 最大 `clockStep` だけバーが進み続けて見える
@@ -956,6 +965,33 @@ struct StoryViewerView: View {
                     }
                 }
         )
+        // **読み上げ（VoiceOver）で操作できるように。** 左右の押す場所は `Color.clear` と
+        // 押す・払う動きだけで、読み上げでは触れられなかった（2026-10-02 の調査）。
+        // 画面いっぱいの1つの要素にして、上下に払う操作で選ぶ
+        .accessibilityElement()
+        .accessibilityLabel(storyAccessibilityLabel)
+        .accessibilityHint(L("上下に払って、次へ・前へ・一時停止を選べます",
+                             "Swipe up or down to choose next, previous or pause"))
+        .accessibilityAction(named: L("次へ", "Next")) {
+            if paused { paused = false }
+            if !isSending { advance() }
+        }
+        .accessibilityAction(named: L("前へ", "Previous")) {
+            if paused { paused = false }
+            leftTap()
+        }
+        .accessibilityAction(named: paused ? L("再開", "Resume") : L("一時停止", "Pause")) {
+            paused.toggle()
+        }
+    }
+
+    /// 読み上げで読む名前（「〇〇のストーリー、2 / 5」）
+    private var storyAccessibilityLabel: String {
+        let position = "\(index + 1) / \(visible.count)"
+        if let highlight { return L("\(highlight.title)、\(position)", "\(highlight.title), \(position)") }
+        guard let story = current else { return L("ストーリー", "Story") }
+        let name = isMine(story) ? L("あなた", "You") : story.authorName
+        return L("\(name)のストーリー、\(position)", "\(name)'s story, \(position)")
     }
 
     private func leftTap() {
@@ -998,7 +1034,8 @@ struct StoryViewerView: View {
     /// 一瞬も読めなかった。知らせは2.5秒で消え、そこで `settlePendingEnd` が進める
     private func mediaEnded(_ id: String) {
         switch StoryPlayback.mediaEnded(storyId: id, currentId: current?.id,
-                                        frozen: frozen || message != nil) {
+                                        frozen: frozen || message != nil,
+                                        voiceOver: voiceOverOn) {
         case .ignore: break
         case .hold: pendingEnd = id
         case .advance:
@@ -1097,7 +1134,10 @@ struct StoryViewerView: View {
             syncClock(frozen: frozen)
             // 知らせ（「送りました」など）が出ている間は進めない（`go` が消して読めない）。
             // 知らせは2.5秒で消える
-            if !frozen, message == nil, clock.elapsed(at: Date()) >= duration {
+            // 読み上げが動いている間は送らない（`StoryPlayback.timeUp`）
+            if StoryPlayback.timeUp(elapsed: clock.elapsed(at: Date()), duration: duration,
+                                    frozen: frozen, messageShown: message != nil,
+                                    voiceOver: voiceOverOn) {
                 advance()
                 return
             }

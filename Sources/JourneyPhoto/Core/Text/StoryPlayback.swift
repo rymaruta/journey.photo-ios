@@ -172,9 +172,30 @@ enum StoryPlayback {
     /// 失敗は止めていても届くので、ブロックの確認を出している間に次の1本へ移り、
     /// 確認の「ブロック」が**次の投稿者**に効いていた（通報・返信の書きかけも同じ）。
     /// 失敗の通知と状態の見張りの両方が来ると、1本飛ばしてもいた
-    static func mediaEnded(storyId: String, currentId: String?, frozen: Bool) -> MediaEnd {
-        guard storyId == currentId else { return .ignore }
+    ///
+    /// **読み上げ（VoiceOver）が動いている間は進めない**（`autoAdvances`）——終わっても
+    /// その1本に留まり、人が「次へ」の操作で送る
+    static func mediaEnded(storyId: String, currentId: String?, frozen: Bool,
+                           voiceOver: Bool = false) -> MediaEnd {
+        guard storyId == currentId, autoAdvances(voiceOver: voiceOver) else { return .ignore }
         return frozen ? .hold : .advance
+    }
+
+    // MARK: - 読み上げ（VoiceOver）
+
+    /// 表示時間を使い切った・動画が終わったときに**ひとりでに次へ送るか**。
+    ///
+    /// 読み上げを使う人は、名前と文字を読み上げ終わる前に次の1本へ送られると
+    /// 何が写っていたか分からない。左右の押す場所も払いも読み上げでは使えないので、
+    /// 送るのは読み上げの操作（「次へ」「前へ」）だけにする（2026-10-02）
+    static func autoAdvances(voiceOver: Bool) -> Bool { !voiceOver }
+
+    /// 写真の時計の見回りで、**いま次へ送るか**。止めている・知らせが出ている・
+    /// 読み上げが動いている間は送らない
+    static func timeUp(elapsed: TimeInterval, duration: TimeInterval, frozen: Bool,
+                       messageShown: Bool, voiceOver: Bool) -> Bool {
+        guard autoAdvances(voiceOver: voiceOver), !frozen, !messageShown else { return false }
+        return elapsed >= duration
     }
 
     static func isFrozen(pressing: Bool, paused: Bool, menuOpen: Bool, sheetOpen: Bool,
