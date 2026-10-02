@@ -493,9 +493,13 @@ struct StoryComposerView: View {
                                 .background(WebTheme.surface, in: Circle())
                         }
                         .buttonStyle(.plain)
-                        .disabled(loadingPicks > 0)
-                        .opacity(loadingPicks > 0 ? 0.4 : 1)
+                        // 印が上限まで付いていたら押せない（撮った1枚が上限で入らず失われる）
+                        .disabled(loadingPicks > 0 || !cameraAllowed)
+                        .opacity(loadingPicks > 0 || !cameraAllowed ? 0.4 : 1)
                         .accessibilityLabel(L("カメラ", "Camera"))
+                        .accessibilityHint(cameraAllowed ? ""
+                            : L("選べるのは\(StoryQueue.maxShots)枚までです。印を外すと撮れます",
+                                "Up to \(StoryQueue.maxShots) photos. Unmark one to use the camera"))
                     }
                 }
             }
@@ -517,6 +521,11 @@ struct StoryComposerView: View {
 
             pickFooter
         }
+    }
+
+    /// 写真を選ぶ段のカメラを押せるか（印が上限まで付いていれば押せない）
+    private var cameraAllowed: Bool {
+        StorySimpleRules.canUseCameraOnPickStage(selected: librarySelection.count)
     }
 
     /// 写真を選ぶ段の下（知らせと白い「次へ（N枚）」）

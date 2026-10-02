@@ -32,6 +32,12 @@ enum StorySimpleRules {
         hasShots ? [] : selection
     }
 
+    /// 写真を選ぶ段のカメラを押せるか。**印が上限（`StoryQueue.maxShots`）まで付いていれば押せない**
+    /// ——印の写真を先に読み込むので、撮った1枚が上限で入らず失われる
+    static func canUseCameraOnPickStage(selected: Int) -> Bool {
+        selected < StoryQueue.maxShots
+    }
+
     /// 並びの帯の「この写真を外す」を通すか。**読み込み中は止める**（全部外れて写真を選ぶ段へ戻り、
     /// 届いた写真でまた仕上げる段へ、と段が行き来する）
     static func canRemoveShot(loading: Bool) -> Bool {

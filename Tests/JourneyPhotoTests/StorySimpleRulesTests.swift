@@ -36,6 +36,12 @@ final class StorySimpleRulesTests: XCTestCase {
         XCTAssertEqual(StorySimpleRules.picksToLoadBeforeCamera(["a"], hasShots: true), [])
     }
 
+    /// 印が上限まで付いていたら、写真を選ぶ段のカメラは押せない（撮った1枚が上限で失われる）
+    func testCameraDisabledWhenSelectionIsFull() {
+        XCTAssertFalse(StorySimpleRules.canUseCameraOnPickStage(selected: StoryQueue.maxShots))
+        XCTAssertTrue(StorySimpleRules.canUseCameraOnPickStage(selected: StoryQueue.maxShots - 1))
+    }
+
     /// 読み込み中は「この写真を外す」を止める
     func testCannotRemoveShotWhileLoading() {
         XCTAssertFalse(StorySimpleRules.canRemoveShot(loading: true))

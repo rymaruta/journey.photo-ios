@@ -53,6 +53,7 @@ enum StoryTool: CaseIterable, Identifiable {
     ///    （曲の札は曲を付けると自動で置かれる——スタンプが光ると、置いていないのに光って見える）
     ///  - 曲: 曲が付いている（曲の札もここ）
     ///  - 場所: 撮影地が入っているか、撮影地の札がある（空白だけは入っていない扱い。送るときも削る）
+    ///  - 2026-10-02 判断: 曲の札・撮影地の札を手で置いたときも「曲」「場所」が光る（札も曲・場所の表現なので意図どおり）
     static func isUsed(_ tool: StoryTool, overlays: [TextOverlay], hasVote: Bool,
                        hasSong: Bool, location: String) -> Bool {
         switch tool {
