@@ -365,8 +365,10 @@ struct TripBookView: View {
     /// 一冊から消した・非公開にした写真を落とす（`ModerationSnapshot.visible`・他の一覧と同じ）。
     /// 題・期間は開いたときのまま（`id` も変えない——共有の画像を同じファイルに書く）
     nonisolated static func visible(_ trip: TripBook.Trip, dropped: ModerationSnapshot) -> TripBook.Trip {
+        // 束の印・「自分だけ」の印も引き継ぐ（落とすと、開いた一冊で鍵と札の鍵が食い違う）
         TripBook.Trip(id: trip.id, place: trip.place, start: trip.start, end: trip.end,
-                      photos: dropped.visible(trip.photos), timeZone: trip.timeZone)
+                      photos: dropped.visible(trip.photos), timeZone: trip.timeZone,
+                      groupId: trip.groupId, isPrivate: trip.isPrivate)
     }
 
     /// 移動（直線）。数えられなければ nil（枠には「—」）

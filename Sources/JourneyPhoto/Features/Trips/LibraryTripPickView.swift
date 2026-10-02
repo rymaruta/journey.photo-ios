@@ -166,7 +166,7 @@ struct LibraryTripPickView: View {
                 .buttonStyle(.plain)
             } else {
                 Button { startLoading() } label: {
-                    Text(L("\(selected.count)枚を下書きに入れる", "Add \(selected.count) to a draft"))
+                    Text(L("\(selected.count)枚を旅の記録に入れる", "Add \(selected.count) to your trips"))
                         .jpPillButton(.primary)
                         .opacity(selected.isEmpty ? 0.5 : 1)
                 }

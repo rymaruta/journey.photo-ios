@@ -35,6 +35,12 @@ enum TripBook {
         /// 投稿日時を暦の日に直すときの時刻帯（`day(of:in:)`）。アプリでは
         /// 端末の時刻帯。日の段・ルート図・移動（直線）もこれで数え直す
         var timeZone: TimeZone = .current
+        /// 1つの投稿としてまとめた束（`groupId`）から作った一冊なら、その `groupId`。
+        /// 日付で束ねた一冊は nil
+        var groupId: String? = nil
+        /// **自分だけ**の一冊（非公開の写真が1枚でも入っている）。棚の札に鍵を付け、
+        /// 人に見える所には出さない
+        var isPrivate: Bool = false
 
         /// 表紙。**いいねがいちばん多い1枚**、並びが同じなら最初の1枚
         var cover: Photo? {
@@ -130,11 +136,56 @@ enum TripBook {
         return nil
     }
 
-    /// **自分の旅の棚**（マイページの「旅の記録」・ホームの「一冊ができた」）。
-    /// 下書きは入れない——見せていない写真が一冊に紛れ込み、入口によって
-    /// 同じ旅の枚数・表紙・区切りが変わる。**絞り方はここ1か所**
+    /// **自分の旅の棚**（マイページの「旅の記録」・ホームの「一冊ができた」）。**絞り方はここ1か所**。
+    ///
+    /// 2つを合わせる（期間の新しい順）:
+    ///
+    /// 1. **1つの投稿としてまとめた束（`groupId`）は、公開・非公開に関係なく一冊**
+    ///    （`groupTrips`）。旅の写真からまとめて上げた写真は非公開で始まるので、
+    ///    下書きを落とすだけだと、本人が「旅の記録に入れる」を押した旅が棚に出なかった。
+    ///    束は本人が「これで一冊」と選んだものなので、下書きを入れない規則の例外にする
+    /// 2. **残りの公開写真を日付で束ねる**（今までどおり）。下書きは入れない——見せていない
+    ///    写真が一冊に紛れ込み、入口によって同じ旅の枚数・表紙・区切りが変わる。
+    ///    **一冊になった束の写真は抜く**（同じ写真を2冊に数えない）
     static func shelfTrips(from photos: [Photo], timeZone: TimeZone = .current) -> [Trip] {
-        trips(from: photos.filter { $0.published != false }, timeZone: timeZone)
+        let groups = groupTrips(from: photos, timeZone: timeZone)
+        let inGroups = Set(groups.flatMap { $0.photos.map(\.id) })
+        let dated = trips(from: photos.filter { $0.published != false && !inGroups.contains($0.id) },
+                          timeZone: timeZone)
+        return (groups + dated).sorted { $0.start > $1.start }
+    }
+
+    /// 1つの投稿としてまとめた束（持ち主＋`groupId`・`PhotoGroups.groupKey`）を一冊にする。
+    /// **2枚以上の束だけ**（1枚は旅ではない）。題は `mainPlace`、期間は `day(of:in:)` の最小と最大
+    /// （日の決まらない写真は期間に数えない・日の決まる写真が無い束は一冊にしない）。
+    /// id は `"group#<groupId>"`——日付の束の id（写真の id をつないだもの）と重ならない
+    static func groupTrips(from photos: [Photo], timeZone: TimeZone = .current) -> [Trip] {
+        var order: [String] = []
+        var buckets: [String: [Photo]] = [:]
+        for photo in photos {
+            let key = PhotoGroups.groupKey(of: photo)
+            // `groupId` の無い写真は1枚の束（`single#`）——一冊にしない
+            guard key.hasPrefix("group#") else { continue }
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(photo)
+        }
+        return order.compactMap { key -> Trip? in
+            guard let items = buckets[key], items.count >= minPhotos,
+                  let groupId = items.first?.groupId?.trimmingCharacters(in: .whitespaces) else { return nil }
+            let ordered = inOrder(items, timeZone: timeZone)
+            let days = ordered.compactMap { day(of: $0, in: timeZone) }
+            guard let start = days.min(), let end = days.max() else { return nil }
+            return Trip(
+                id: "group#\(groupId)",
+                place: mainPlace(of: ordered),
+                start: start,
+                end: end,
+                photos: ordered,
+                timeZone: timeZone,
+                groupId: groupId,
+                isPrivate: ordered.contains { $0.published == false }
+            )
+        }
     }
 
     /// `day(of:in:)` が**撮影日**で日を決めたか（false なら投稿日で代用した・日が無い）。
