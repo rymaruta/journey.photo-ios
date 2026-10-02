@@ -642,7 +642,8 @@ final class UploadViewModel: ObservableObject {
                     let marked = await Task.detached(priority: .userInitiated) {
                         raw.compactMap { WatermarkRenderer.apply($0) }
                     }.value
-                    // 1枚も用意できなければ出さない（文だけの共有になる）
+                    // 1枚も用意できなければ共有の画面は出さず、投稿画面はそのまま閉じる（投稿自体は済んでいる）。
+                    // 渡すのは `ImagePreparer` が作った JPEG なので、ここで全部失敗することは実際にはまず無い
                     if !marked.isEmpty { threadsBundle = ThreadsShare.Bundle(
                         images: marked,
                         // 最後に「Journey Photo」とその下に1枚目の写真の**短縮リンク**（owner 2026-10-02）。

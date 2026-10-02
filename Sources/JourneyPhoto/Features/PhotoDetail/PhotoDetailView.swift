@@ -733,10 +733,11 @@ struct PhotoDetailView: View {
                             "Couldn't load the photo. Check your connection.")
             return
         }
-        // 読めたが書き出せない（壊れた画像など）は通信のせいではない
+        // 読めたが画像として書き出せない（壊れた画像・ホテルの Wi-Fi のログイン画面が HTML を返した等）
         guard let data = await Task.detached(priority: .userInitiated, operation: { WatermarkRenderer.apply(raw) }).value else {
             actionNotice = nil
-            actionError = L("この写真は SNS 用に用意できませんでした", "Couldn't prepare this photo for sharing.")
+            actionError = L("この写真を SNS 用に用意できませんでした。少し時間をおいて、もう一度お試しください",
+                            "Couldn't prepare this photo for sharing. Please try again in a moment.")
             return
         }
         actionNotice = nil
