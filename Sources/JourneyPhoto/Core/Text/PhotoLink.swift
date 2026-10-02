@@ -26,4 +26,19 @@ enum PhotoLink {
         components?.queryItems = [URLQueryItem(name: "photo", value: photoId)]
         return components?.url
     }
+
+    /// 短縮リンク `/?p=<ID の先頭8文字>`（Threads に載せる文の最後・owner 2026-10-02「短縮リンクは
+    /// 載せれる？」）。サイトのトップが一覧と照らして `/?photo=<id>` に置き換える
+    /// （`lib/utils/shortPhotoLink.ts`・規則は同じ）。**ID が16進で始まらないときは作らない**
+    /// （サイトが短縮と読まず、開けないリンクになる）——呼び手は長い形に落とす
+    static func shortURL(photoId: String) -> URL? {
+        let short = String(photoId.prefix(8)).lowercased()
+        guard short.count == 8, short.allSatisfy({ $0.isHexDigit }) else { return nil }
+        var components = URLComponents(url: AppConfig.siteBaseURL, resolvingAgainstBaseURL: false)
+        // **末尾の `/` を付ける**（基底 URL は `/` 無し。`https://journey-photo.com?p=…` は正しい URL だが、
+        // Threads がそこまでリンクにするかは分からない。1文字で確実な形にする）
+        if components?.path.isEmpty ?? false { components?.path = "/" }
+        components?.queryItems = [URLQueryItem(name: "p", value: short)]
+        return components?.url
+    }
 }

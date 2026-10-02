@@ -20,4 +20,10 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+
+    /// **画素だけの JPEG に書き出し直す**（位置・撮影日時・機種などの付帯情報を落とす）。
+    /// サーバーの原本（Web から上げたものは GPS 入り）を外へ渡す前に通す。読めなければ nil
+    static func pixelsOnly(_ data: Data) -> Data? {
+        UIImage(data: data)?.jpegData(compressionQuality: 0.9)
+    }
 }
