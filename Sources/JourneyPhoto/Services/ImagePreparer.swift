@@ -74,7 +74,9 @@ enum ImagePreparer {
         }
     }
 
-    static func prepare(data: Data, fileName: String) throws -> Prepared {
+    /// - Parameter withThumbnail: 一覧用の 512px も作るか。**写真の投稿・差し替えだけ** true
+    ///   （ストーリー・アイコン・カバーは `thumbSrc` を持たないので作らない——縮小と読み直しが1回ずつ無駄になる）
+    static func prepare(data: Data, fileName: String, withThumbnail: Bool = false) throws -> Prepared {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               CGImageSourceGetCount(source) > 0 else {
             throw PrepareError.unreadable
@@ -90,7 +92,7 @@ enum ImagePreparer {
         // **縮めた本体から作る**（Web と同じ。原本の 24〜48MP をもう一度読まない）。
         // 本体は向きを焼き込み済みで EXIF も無い。**同じ関所（`assertStripped`）を通す**
         // ——通らなければサムネを上げない（素通ししない）
-        let thumbnail = makeThumbnail(fromJPEG: jpeg)
+        let thumbnail = withThumbnail ? makeThumbnail(fromJPEG: jpeg) : nil
 
         return Prepared(
             data: jpeg,

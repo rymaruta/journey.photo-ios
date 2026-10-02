@@ -30,6 +30,12 @@ struct RemoteImage: View {
     /// 「読み込みに失敗した」ように見えていた（実機の絵・run 40）。
     /// 人を指す場所では人型を置く。
     var placeholderSymbol: String = "photo"
+    /// 自動の1回のあと、**押して読み直せる**記号を出すか。**既定は出さない。**
+    ///
+    /// 🔴 ボタンは周りの操作を奪う——ストーリーでは左右送りの押下を、一覧・旅の本では
+    /// `NavigationLink` を取ってしまう（2026-10-02 のレビュー）。周りに押す操作が無い所だけで
+    /// 呼ぶ側が true にする
+    var allowsManualRetry = false
 
     /// 読み直した回数。**`AsyncImage` の `.id` に使う**——替えると作り直されて、もう一度読む
     @State private var attempt = 0
@@ -60,7 +66,8 @@ struct RemoteImage: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
                             .onAppear { onSettled?(true) }
                     case .failure:
-                        failure(RemoteImageRetry.step(automaticDone: automaticRetries, manualDone: manualRetries))
+                        failure(RemoteImageRetry.step(automaticDone: automaticRetries, manualDone: manualRetries,
+                                              allowsManualRetry: allowsManualRetry))
                     case .empty:
                         ProgressView()
                     @unknown default:
@@ -155,10 +162,11 @@ enum RemoteImageRetry {
         case giveUp
     }
 
-    /// 失敗したときに次にすること。`automaticDone`・`manualDone` はその写真で読み直した回数
-    static func step(automaticDone: Int, manualDone: Int) -> Step {
+    /// 失敗したときに次にすること。`automaticDone`・`manualDone` はその写真で読み直した回数。
+    /// `allowsManualRetry` が false（既定）なら、自動の1回のあとは記号だけ
+    static func step(automaticDone: Int, manualDone: Int, allowsManualRetry: Bool = false) -> Step {
         if automaticDone < automaticLimit { return .retryAutomatically(afterSeconds: automaticDelay) }
-        if manualDone < manualLimit { return .offerTap }
+        if allowsManualRetry, manualDone < manualLimit { return .offerTap }
         return .giveUp
     }
 

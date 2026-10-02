@@ -42,6 +42,28 @@ final class ThumbnailUploadTests: XCTestCase {
      "photoId":"p1","contentType":"image/jpeg"}
     """
 
+    /// 2回目の presign（サムネイル）は**別の鍵**を返す。同じ答えだと、本体とサムネイルの URL を
+    /// 取り違えても緑のまま（2026-10-02 のレビュー）
+    private let thumbPresignBody = """
+    {"presignedUrl":"https://s3.example.test/put?sig=2",
+     "key":"uploads/u1/thumb.jpg",
+     "publicUrl":"https://cdn.example.test/uploads/u1/thumb.jpg",
+     "photoId":"p2","contentType":"image/jpeg"}
+    """
+
+    /// 本体 → サムネイルの順に別の鍵を返す presign
+    private var twoPresigns: [ScriptedProtocol.Step] {
+        [.init(match: "/upload/presigned-url", status: 200, body: presignBody, once: true),
+         .init(match: "/upload/presigned-url", status: 200, body: thumbPresignBody, once: true)]
+    }
+
+    /// 片付け（`/upload/discard`）に送った鍵
+    private var discardedKeys: [String] {
+        ScriptedProtocol.calls.filter { $0.path == "/upload/discard" }.compactMap {
+            (try? JSONSerialization.jsonObject(with: $0.body ?? Data())) as? [String: Any]
+        }.compactMap { $0["key"] as? String }
+    }
+
     private func prepared(thumbnail: Data?) -> ImagePreparer.Prepared {
         ImagePreparer.Prepared(data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg",
                                contentType: "image/jpeg", exif: nil, coords: nil, takenOn: nil,
@@ -62,14 +84,31 @@ final class ThumbnailUploadTests: XCTestCase {
         XCTAssertEqual(prepared(thumbnail: nil).thumbnailFileName, "photo_thumb.jpg")
     }
 
+    /// 🔴 **サムネイルを作るのは写真の投稿・差し替えだけ。** ストーリー・アイコン・カバーは
+    /// `thumbSrc` を持たないので、作ると縮小と読み直しが1回ずつ無駄になる（2026-10-02 のレビュー）
+    func testThumbnailIsMadeOnlyForPhotoPostsAndReplacements() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        func source(_ path: String) throws -> String {
+            try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
+        }
+        for path in ["Features/Upload/UploadViewModel.swift", "Features/Profile/EditPhotoView.swift"] {
+            XCTAssertTrue(try source(path).contains("withThumbnail: true"), "\(path) がサムネイルを作っていない")
+        }
+        for path in ["Features/Stories/StoryComposerView.swift", "Features/Profile/ProfileEditView.swift"] {
+            XCTAssertFalse(try source(path).contains("withThumbnail: true"), "\(path) がサムネイルを作っている")
+        }
+        XCTAssertTrue(try source("Services/ImagePreparer.swift").contains("withThumbnail: Bool = false"),
+                      "既定は作らない")
+    }
+
     // MARK: - 投稿
 
     /// 本体 → サムネの順に presign と PUT。サムネの presign は `image/jpeg`・自分の大きさで、
     /// 保存の本文に `thumbUrl`（presign が返した `publicUrl`）が入る
     @MainActor
     func testPostSendsThumbUrlInTheSaveBody() async throws {
-        ScriptedProtocol.script = [
-            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+        ScriptedProtocol.script = twoPresigns + [
             .init(match: "/put", status: 200, body: ""),
             .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
         ]
@@ -93,8 +132,10 @@ final class ThumbnailUploadTests: XCTestCase {
         // PUT の中身は URLProtocol に届かない（`upload(for:from:)`）ので、大きさは presign の署名で見る
 
         let save = try json(ScriptedProtocol.calls.last?.body)
-        XCTAssertEqual(save["thumbUrl"] as? String, "https://cdn.example.test/uploads/u1/abc.jpg")
+        XCTAssertEqual(save["thumbUrl"] as? String, "https://cdn.example.test/uploads/u1/thumb.jpg",
+                       "サムネイルの presign の URL")
         XCTAssertEqual(save["publicUrl"] as? String, "https://cdn.example.test/uploads/u1/abc.jpg")
+        XCTAssertEqual(save["key"] as? String, "uploads/u1/abc.jpg", "保存の鍵は本体（写真の ID の素）")
     }
 
     /// サムネが無ければ（作れなかった・復元した下書き）、**前と同じ3手**で `thumbUrl` を送らない
@@ -131,8 +172,7 @@ final class ThumbnailUploadTests: XCTestCase {
     /// 🔴 **保存のやり直しは同じ2つの鍵で。** サムネも置き直さない（置き直すと迷子が増える）
     @MainActor
     func testRetryReusesTheThumbnailToo() async throws {
-        ScriptedProtocol.script = [
-            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+        ScriptedProtocol.script = twoPresigns + [
             .init(match: "/put", status: 200, body: ""),
             .init(match: "/upload/save", status: 500, body: #"{"error":"保存に失敗しました"}"#),
         ]
@@ -150,7 +190,7 @@ final class ThumbnailUploadTests: XCTestCase {
         XCTAssertEqual(paths.filter { $0 == "/upload/presigned-url" }.count, 2, "本体とサムネの1回ずつだけ")
         XCTAssertEqual(paths.filter { $0 == "/put" }.count, 2)
         XCTAssertEqual(try json(ScriptedProtocol.calls.last?.body)["thumbUrl"] as? String,
-                       "https://cdn.example.test/uploads/u1/abc.jpg", "やり直しでもサムネを送る")
+                       "https://cdn.example.test/uploads/u1/thumb.jpg", "やり直しでもサムネを送る")
     }
 
     /// 片付けの鍵は本体とサムネの両方
@@ -164,8 +204,7 @@ final class ThumbnailUploadTests: XCTestCase {
 
     /// 差し替えも `replace.thumbUrl` を送る（`photoReplace.ts` の `buildReplace` が `thumbSrc` に書く）
     func testReplaceSendsThumbUrl() async throws {
-        ScriptedProtocol.script = [
-            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+        ScriptedProtocol.script = twoPresigns + [
             .init(match: "/put", status: 200, body: ""),
             .init(match: "/photos/p1", status: 200, body: #"{"success":true}"#),
         ]
@@ -174,7 +213,86 @@ final class ThumbnailUploadTests: XCTestCase {
         XCTAssertEqual(ScriptedProtocol.calls.map(\.path),
                        ["/upload/presigned-url", "/put", "/upload/presigned-url", "/put", "/photos/p1"])
         let replace = try XCTUnwrap(try json(ScriptedProtocol.calls.last?.body)["replace"] as? [String: Any])
-        XCTAssertEqual(replace["thumbUrl"] as? String, "https://cdn.example.test/uploads/u1/abc.jpg")
+        XCTAssertEqual(replace["thumbUrl"] as? String, "https://cdn.example.test/uploads/u1/thumb.jpg")
+        XCTAssertEqual(replace["publicUrl"] as? String, "https://cdn.example.test/uploads/u1/abc.jpg")
+        XCTAssertEqual(replace["key"] as? String, "uploads/u1/abc.jpg")
+    }
+
+    /// 差し替えの保存が断られたら、**本体とサムネイルの両方**を片付ける
+    func testFailedReplaceDiscardsTheThumbnailToo() async throws {
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/photos/p1", status: 500, body: #"{"error":"x"}"#),
+            .init(match: "/upload/discard", status: 200, body: #"{"success":true}"#),
+        ]
+        do {
+            try await PhotoService(api: api()).replace(photoId: "p1", prepared: prepared(thumbnail: Data([1])),
+                                                       uploads: service())
+            XCTFail("投げるはず")
+        } catch {}
+        XCTAssertEqual(Set(discardedKeys), ["uploads/u1/abc.jpg", "uploads/u1/thumb.jpg"])
+    }
+
+    // MARK: - 取り消し・片付け
+
+    /// 取り消された回（画面を閉じた）は、サムネイルの presign も PUT も送らない
+    func testCancelledThumbnailSendsNothing() async throws {
+        ScriptedProtocol.script = twoPresigns + [.init(match: "/put", status: 200, body: "")]
+        let uploads = service()
+        let task = Task { () -> UploadService.PresignResponse? in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await uploads.stageThumbnail(data: Data([1, 2]), fileName: "photo_thumb.jpg")
+        }
+        let result = await task.value
+        XCTAssertNil(result)
+        XCTAssertTrue(ScriptedProtocol.calls.isEmpty, "取り消したのに送った: \(ScriptedProtocol.calls.map(\.path))")
+    }
+
+    /// 保存が落ちた写真を**外したら**、本体とサムネイルの両方の鍵を片付けに行く
+    @MainActor
+    func testRemovingAPhotoDiscardsItsThumbnailToo() async throws {
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 500, body: #"{"error":"x"}"#),
+            .init(match: "/upload/discard", status: 200, body: #"{"success":true}"#),
+        ]
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api()),
+                                    photos: PhotoService(api: api()), discovery: DiscoveryService(api: api()))
+        model.items = [PendingPhoto(prepared: prepared(thumbnail: Data([9])))]
+        await model.submit()
+        XCTAssertTrue(discardedKeys.isEmpty, "保存の失敗では片付けない（やり直しで使う）")
+
+        model.remove(model.items[0].id)
+        try await waitUntil { self.discardedKeys.count >= 2 }
+        XCTAssertEqual(Set(discardedKeys), ["uploads/u1/abc.jpg", "uploads/u1/thumb.jpg"])
+    }
+
+    /// 保存が落ちたまま画面を閉じた（view model が消えた）ら、両方の鍵を片付けに行く
+    @MainActor
+    func testClosingDiscardsTheThumbnailToo() async throws {
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 500, body: #"{"error":"x"}"#),
+            .init(match: "/upload/discard", status: 200, body: #"{"success":true}"#),
+        ]
+        var model: UploadViewModel? = UploadViewModel(
+            uploads: service(), albums: AlbumService(api: api()),
+            photos: PhotoService(api: api()), discovery: DiscoveryService(api: api()))
+        model?.items = [PendingPhoto(prepared: prepared(thumbnail: Data([9])))]
+        await model?.submit()
+        weak var gone = model
+        model = nil
+        XCTAssertNil(gone, "画面の頭が残っている（deinit が走らない）")
+        try await waitUntil { self.discardedKeys.count >= 2 }
+        XCTAssertEqual(Set(discardedKeys), ["uploads/u1/abc.jpg", "uploads/u1/thumb.jpg"])
+    }
+
+    /// 条件が立つまで待つ（最長5秒）
+    @MainActor
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        for _ in 0..<500 where !condition() {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
     }
 
     /// サムネが無い差し替えは `thumbUrl` を送らない（サーバーは `thumbSrc` を消してビルドに作らせる）

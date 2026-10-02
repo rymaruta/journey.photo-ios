@@ -422,7 +422,7 @@ final class UploadViewModel: ObservableObject {
     /// その間ずっと画面が止まっていた
     private static func prepareOffMain(_ data: Data) async -> Result<ImagePreparer.Prepared, Error> {
         await Task.detached(priority: .userInitiated) {
-            Result { try ImagePreparer.prepare(data: data, fileName: "photo") }
+            Result { try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true) }
         }.value
     }
 

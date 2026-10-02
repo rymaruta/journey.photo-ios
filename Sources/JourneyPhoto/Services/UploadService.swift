@@ -169,6 +169,11 @@ struct UploadService {
     /// **失敗しても投げない（nil）——本体の投稿は止めない**（Web と同じ）。置けなかった実体は
     /// その場で片付ける（PUT の失敗）。サーバーの検査（`upload.ts` の `isOwnUploadUrl`）には、
     /// presign が返す `publicUrl`（`uploads/<自分>/…`・CDN の https）をそのまま送るので通る
+    ///
+    /// ⚠️ **2026-10-02 判断: サムネイルのために presign を2回。** presign は1回ごとに写真の数え直し
+    /// （`photoLimitError`）をするので問い合わせが増えるが、サーバー変更を避けた（Web も同じく2回）
+    ///
+    /// 取り消された回（画面を閉じた・やめた）は何も送らない
     func stageThumbnail(data: Data?, fileName: String) async -> PresignResponse? {
         guard let data, !data.isEmpty, !Task.isCancelled else { return nil }
         return try? await stage(data: data, fileName: fileName, fileType: "image/jpeg")
