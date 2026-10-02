@@ -123,8 +123,40 @@ enum AuthGateway {
     }
 
     @MainActor
-    private static func announceSessionExpired() {
+    static func announceSessionExpired() {
         NotificationCenter.default.post(name: .authSessionExpired, object: nil)
+    }
+
+    /// サーバーに 401 を返された後の取り直し（`APIClient.send`）。**1本にまとめる**
+    /// ——画面の口が一斉に 401 になっても、Cognito に頼むのは1回（`TokenRefresher`）
+    static let refresher = TokenRefresher { try await forcedIdToken() }
+
+    static func refreshedIdToken() async throws -> String? {
+        guard isConfigured else { return nil }
+        return try await refresher.refresh()
+    }
+
+    /// 手元の控えを使わず、Cognito から ID トークンを取り直す。
+    ///
+    /// 取り直せない（更新トークンも切れた・取り消された）回は nil。**ここでは知らせない**
+    /// ——知らせるのは `APIClient` が「取り直せなかった」と決めたとき（`sessionExpired`）。
+    /// 通信できない回は `tokenFailure` で `unreachable` にして投げる（ログアウトさせない）
+    private static func forcedIdToken() async throws -> String? {
+        let session: any AuthSession
+        do {
+            session = try await Amplify.Auth.fetchAuthSession(options: .forceRefresh())
+        } catch {
+            throw tokenFailure(error)
+        }
+        guard session.isSignedIn,
+              let provider = session as? AuthCognitoTokensProvider else { return nil }
+        switch provider.getCognitoTokens() {
+        case .success(let tokens):
+            return tokens.idToken
+        case .failure(let error):
+            guard AuthFailure(error) == .notAuthorized else { throw tokenFailure(error) }
+            return nil
+        }
     }
 
     /// ログインの期限が切れているか（起動時の確認用・知らせは出さない）。
@@ -225,9 +257,47 @@ enum AuthGateway {
     }
 
 
-    static func signOut() async {
-        guard isConfigured else { return }
-        _ = await Amplify.Auth.signOut()
+    /// ログアウト。**結果を見る**（以前は `_ =` で捨てていた）。
+    ///
+    /// Amplify の `signOut` は投げずに結果を返す。Cognito では `AWSCognitoSignOutResult` で、
+    /// `.failed` は**端末の中のログイン（Keychain の控え）も消せていない**——画面だけ
+    /// ログアウトして、次の起動の `restore` で黙ってログイン中に戻っていた。
+    /// `.partial` はサーバー側の取り消しだけが落ちた回で、端末からは消えている。
+    ///
+    /// 消せなかったらもう一度だけ試す。それでも駄目なら `SignOutLatch` に印を残す
+    /// （→ `SignOutLatch` の「2026-10-02 判断」）
+    @discardableResult
+    static func signOut() async -> SignOutOutcome {
+        guard isConfigured else { return .signedOut }
+        return await signOut(
+            attempt: { signedOutLocally(await Amplify.Auth.signOut()) },
+            latch: SignOutLatch()
+        )
+    }
+
+    /// 上の流れの本体（試験が Amplify の代わりの `attempt` を渡す）。
+    /// - Parameter attempt: 1回ログアウトを頼み、端末から消せたら true
+    static func signOut(attempt: () async -> Bool, latch: SignOutLatch) async -> SignOutOutcome {
+        for _ in 0..<2 {
+            if await attempt() {
+                latch.clear()
+                return .signedOut
+            }
+        }
+        latch.set()
+        return .notClearedLocally
+    }
+
+    /// 端末の中のログインが消えたか。**分からない形の結果は「消えた」と読む**
+    /// ——消えていないと読むと、次の起動からずっとログインできない側へ倒れる
+    static func signedOutLocally(_ result: any AuthSignOutResult) -> Bool {
+        guard let cognito = result as? AWSCognitoSignOutResult else { return true }
+        switch cognito {
+        case .failed:
+            return false
+        case .complete, .partial:
+            return true
+        }
     }
 
     /// Cognito の利用者そのものを消す。**サーバーの `DELETE /user/account` は
@@ -269,9 +339,80 @@ struct CognitoTokenProvider: TokenProviding {
     func idToken() async throws -> String? {
         try await AuthGateway.idToken()
     }
+
+    func refreshedIdToken() async throws -> String? {
+        try await AuthGateway.refreshedIdToken()
+    }
+
+    /// 取り直しても 401。`AuthStore` が受けてログアウトに倒す
+    func sessionExpired() async {
+        await AuthGateway.announceSessionExpired()
+    }
+}
+
+/// ログアウトの結果（`AuthGateway.signOut`）
+enum SignOutOutcome: Equatable {
+    case signedOut
+    /// 2回頼んでも端末の中のログインを消せなかった（`SignOutLatch` に印を残した）
+    case notClearedLocally
+}
+
+/// **端末の中のログインを消せなかった**印。
+///
+/// 🔴 **2026-10-02 判断:** Amplify の `signOut` が2回とも `.failed`（Keychain の控えを
+/// 消せない）だったときは、**画面はログアウトの扱いのまま**にし、この印を
+/// `UserDefaults` に残す。次の起動の `AuthStore.restore` は、Amplify が「ログイン中」と
+/// 答えても印があればログイン中に戻さず、もう一度ログアウトを試してから
+/// 未ログインとして始める（本人が押したログアウトを、起動し直しただけで黙って
+/// 取り消さない）。印はログアウトが通った回・本人がログインし直せた回に外す。
+///
+/// **印は消せなかった回数を数え、`limit` 回に達したら諦める（2026-10-02 判断）。**
+/// `.failed` が続く端末では、起動時の消し直しもログイン前の消し直しも落ち、Amplify は
+/// 前の人でログイン中のまま——`signIn` は「既にログイン中」（invalidState）で断るので、
+/// 印を持ち続けると**誰もログインできない抜け道の無い状態**になる。`limit` に達した
+/// 起動では印を外し、印の無かった頃と同じ挙動（Amplify の答えどおりログイン中に戻る）
+/// に倒す。本人のログアウトが1度取り消されることになるが、閉じ込めるよりはよい。
+///
+/// **ログイン前の消し直しが落ちて `signIn` が invalidState を返したときは、通さない
+/// （2026-10-02 判断）。** 残っているのは前の人のログインで、いま打たれたメールと
+/// パスワードは Cognito で確かめられていない——同じメールでも「同じ人」とは言えず、
+/// 前の人のログインをそのまま渡すと、メールを知っているだけの人が入れてしまう。
+/// 「アプリを開き直して」と案内し（`AuthFailure.alreadySignedIn`）、開き直しの消し直しで
+/// 数を進める。`limit` に達すれば上のとおり前の人のログインに戻り、そこからログアウト
+/// し直せる。
+///
+/// Keychain ではなく `UserDefaults` に置くのは、消せなかった相手が Keychain だから
+/// （同じ所に書けない回がある）。アプリを入れ直すと印は消えるが、そのとき Amplify の
+/// 控えがどうなるかは確かめていない
+struct SignOutLatch: @unchecked Sendable {  // UserDefaults は複数のスレッドから読み書きしてよい
+    static let key = "jp-signout-not-cleared"
+    /// 消せなかった回数がこれに達したら諦める
+    static let limit = 3
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    /// 消せなかった回数（印の無いときは 0）
+    var count: Int { defaults.integer(forKey: Self.key) }
+    var isSet: Bool { count > 0 }
+    /// 消せなかった。回数を1つ進める
+    func set() { defaults.set(count + 1, forKey: Self.key) }
+    func clear() { defaults.removeObject(forKey: Self.key) }
+
+    /// 上限に達していれば印を外して true（＝もう印に従わない）
+    func giveUpIfExhausted() -> Bool {
+        guard count >= Self.limit else { return false }
+        clear()
+        return true
+    }
 }
 
 extension Notification.Name {
     /// ログインの期限が切れた（`AuthGateway.idToken`）。`AuthStore` が受けてログアウトに倒す
     static let authSessionExpired = Notification.Name("jp.authSessionExpired")
+    /// 自分のプロフィールが 410（退会の途中で止まったアカウント・`ProfileService.myProfile`）。
+    /// `AuthStore` が受けて、退会の残り（Cognito の削除・端末の控え）を済ませる
+    static let accountDeletionPending = Notification.Name("jp.accountDeletionPending")
 }

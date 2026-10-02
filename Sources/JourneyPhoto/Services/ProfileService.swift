@@ -18,8 +18,35 @@ struct ProfileService {
 
     /// 自分のプロフィール。行が無ければサーバー側が作る
     /// （`createProfileIfMissing`）。
+    ///
+    /// 🔴 **410 は「退会の途中で止まったアカウント」。** サーバーはデータを消して墓石を
+    /// 置いた人に 410 を返す（`userProfile.ts` の `getMyProfile`）。退会の画面で Cognito の
+    /// 削除だけが落ちたまま閉じると、その人はログインできるのに何も使えない状態で残っていた
+    /// （覚えていたのは退会の画面の `@State` だけ）。知らせを出し、`AuthStore` が
+    /// 「退会の手続きが途中です」を出して残りを済ませる（`finishPendingDeletion`）
     func myProfile() async throws -> UserProfile {
-        try await api.authorized(.get, "/user/profile", as: UserProfile.self)
+        // `catch … where` の中で await しない（`AuthGateway.idToken` の注記）
+        let result: Result<UserProfile, Error>
+        do {
+            result = .success(try await api.authorized(.get, "/user/profile", as: UserProfile.self))
+        } catch {
+            result = .failure(error)
+        }
+        if case .failure(let error) = result, Self.meansAccountDeleted(error) {
+            await Self.announceDeletionPending()
+        }
+        return try result.get()
+    }
+
+    /// 自分のプロフィールの取得で、アカウントがもう消されている（410）
+    static func meansAccountDeleted(_ error: Error) -> Bool {
+        if case .server(status: 410, _)? = error as? APIError { return true }
+        return false
+    }
+
+    @MainActor
+    private static func announceDeletionPending() {
+        NotificationCenter.default.post(name: .accountDeletionPending, object: nil)
     }
 
     /// 他人のプロフィール（認証不要）。
@@ -28,7 +55,8 @@ struct ProfileService {
     /// 「取れなかった」と「退会した」を混ぜないよう、呼び出し側は
     /// 404 を専用に扱うこと。
     func publicProfile(userId: String) async throws -> UserProfile {
-        let encoded = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId
+        // 英数字・`-`・`_` 以外は要求を出さずに失敗にする（`PathID`）
+        let encoded = try PathID.segment(userId)
         return try await api.anonymous(.get, "/profile/\(encoded)", as: UserProfile.self)
     }
 
