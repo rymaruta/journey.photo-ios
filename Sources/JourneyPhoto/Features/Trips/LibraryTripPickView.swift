@@ -219,7 +219,7 @@ struct LibraryTripPickView: View {
             }
             if Task.isCancelled { return }
             let prepared = try? await Task.detached(priority: .userInitiated) {
-                try ImagePreparer.prepare(data: data, fileName: "photo")
+                try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true)
             }.value
             if let prepared {
                 photos.append(prepared)
