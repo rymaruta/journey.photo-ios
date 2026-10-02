@@ -135,7 +135,7 @@ final class MapPinClustersTests: XCTestCase {
                        "https://cdn/a_thumb.webp", "無ければ一覧と同じもの")
         XCTAssertEqual(try photo("a").pinImageURL?.absoluteString, "https://x/a.jpg")
         XCTAssertEqual(try photo("a", thumbSm: "", thumbSrc: "https://cdn/a_thumb.webp").pinImageURL?.absoluteString,
-                       "https://cdn/a_thumb.webp", "空の thumbSm で先へ落ちない（Web の || と違う）")
+                       "https://cdn/a_thumb.webp", "空の thumbSm で先へ落ちない（Web の || と同じ）")
     }
 
     // MARK: - 枠が使えないときも写真のピンを置く（2026-10-02 の回帰の調査）

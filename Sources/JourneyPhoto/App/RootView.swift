@@ -275,15 +275,15 @@ struct RootView: View {
         )) {
             NavigationStack {
                 GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
-                    .tint(WebTheme.foreground)
             }
+            .tint(WebTheme.foreground)
             .tabItem { Label(L("ホーム", "Home"), systemImage: "house") }
             .tag(Tab.home)
 
             NavigationStack {
                 SearchView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
-                    .tint(WebTheme.foreground)
             }
+            .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.searchTab, systemImage: "magnifyingglass") }
             .tag(Tab.search)
 
@@ -299,27 +299,24 @@ struct RootView: View {
                 PhotoMapView(unread: unread,
                              onOpenNotifications: { openNotificationsFromBell() },
                              onPost: { showPostChoice = true })
-                    .tint(WebTheme.foreground)
             }
+            .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.mapTab, systemImage: "map") }
             .tag(Tab.map)
 
             NavigationStack {
                 MyPageView()
-                    .tint(WebTheme.foreground)
             }
+            .tint(WebTheme.foreground)
             .tabItem { Label(Labels.Navigation.mypage, systemImage: "person") }
             .tag(Tab.mypage)
         }
         // **選んでいるタブは真鍮**（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。
         // 中身には各タブの `.tint(WebTheme.foreground)`（白）で配り直す——真鍮を中身の
         // 既定の押せる色にまで広げない（`.borderedProminent` の白地の注記と同じ理由）。
-        // 🔴 **白は NavigationStack の「中」に付ける。タブの子（NavigationStack）そのものに
-        // 付けない。** iOS 18 以降の TabView は、選んでいるタブの子の tint を札の選択色に
-        // 使うと見られる（iOS 26 の絵で「マイページ」が白のまま。`UITabBarAppearance` の
-        // 選択色も効いていなかった。実機では確かめていない）。中に付ければタブの子の tint は
-        // ここの真鍮のまま。
-        // 戻るボタンなど上のバーの色は `TabBarStyle.apply` が白に決めている（2026-10-02）
+        // 🔴 **札の色はここの tint だけでは決まらない**——SwiftUI は選んでいるタブの中身の
+        // tint（白）を札に使うことがある（2026-10-02 の調査）。選択色はタブバーそのものに
+        // 書いてある（`TabBarStyle.apply`・起動時）。ここの tint は残す（同じ色の念押し）
         .tint(WebTheme.accent)
         .task(id: auth.userId) { await refreshUnread() }
         // **人が替わったら待ちをやめる。** `.task(id:)` の中で取り消すと、

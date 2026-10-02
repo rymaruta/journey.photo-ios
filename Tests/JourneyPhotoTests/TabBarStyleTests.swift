@@ -31,24 +31,4 @@ final class TabBarStyleTests: XCTestCase {
         XCTAssertEqual(TabBarStyle.appliedCount, before + 1,
                        "起動（JourneyPhotoApp.init）で TabBarStyle.apply を呼んでいない")
     }
-
-    /// 🔴 **白の tint はタブの子（NavigationStack）そのものに付けない**（2026-10-02）。
-    /// iOS 18 以降の TabView は選んでいるタブの子の tint を札の選択色に使うと見られ、
-    /// 付けると「マイページ」などの選んでいる札が白に戻る（iOS 26 の絵）。
-    /// NavigationStack の中（根の画面）に付ける
-    func testWhiteTintIsInsideTheNavigationStacks() async throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/App/RootView.swift"),
-                              encoding: .utf8)
-        let lines = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        var onTabChild = 0
-        var inside = 0
-        for (i, line) in lines.enumerated() where line == ".tint(WebTheme.foreground)" && i > 0 {
-            if lines[i - 1] == "}" { onTabChild += 1 }
-            if i + 1 < lines.count, lines[i + 1] == "}" { inside += 1 }
-        }
-        XCTAssertEqual(onTabChild, 0, "白の tint が NavigationStack の外（タブの子）に付いている——札が白になる")
-        XCTAssertEqual(inside, 4, "4つのタブの根の画面に白の tint が付いていない")
-    }
 }

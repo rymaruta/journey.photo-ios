@@ -43,11 +43,6 @@ enum TabBarStyle {
         bar.standardAppearance = standard
         bar.scrollEdgeAppearance = edge
         bar.tintColor = brass
-
-        // 上のバー（戻るボタン）は白のまま。白の tint を NavigationStack の外から中へ
-        // 移した（`RootView.tabs`）ので、NavigationStack 自身は TabView の真鍮を受け取る。
-        // 戻るボタンまで真鍮にしない——今までどおりの白に固定する（2026-10-02）
-        UINavigationBar.appearance().tintColor = .white
     }
 
     /// 縦並び・横並び・狭い横並びの3つ全部の「選んでいる」に色を書く
