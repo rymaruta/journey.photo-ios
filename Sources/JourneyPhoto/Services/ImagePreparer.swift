@@ -100,6 +100,21 @@ enum ImagePreparer {
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw PrepareError.encodeFailed
         }
+        return try encodeJPEG(image)
+    }
+
+    /// **自前で描いた画像**（写真の編集の書き出し・`PhotoRenderer`）を、原本と同じ関所に通す:
+    /// JPEG に焼いて、EXIF / GPS が残っていないことを読み直して確かめる。
+    /// 大きさはここでは変えない——呼ぶ側が `maxPixelSize` に収めてから渡す
+    static func encodeStripped(_ image: CGImage) throws -> Data {
+        let jpeg = try encodeJPEG(image)
+        try assertStripped(jpeg)
+        return jpeg
+    }
+
+    /// CGImage を JPEG に焼く。**元の properties を渡さない**ので EXIF は付かない。
+    /// 色空間は画像のもの（ICC として埋め込まれる）
+    private static func encodeJPEG(_ image: CGImage) throws -> Data {
         let output = NSMutableData()
         // `CGImageDestinationCreateWithData` は `CFMutableData` を取る。
         // NSMutableData からの橋渡しは明示的に書く（暗黙に通る保証がない）

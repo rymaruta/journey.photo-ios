@@ -12,11 +12,20 @@ public final class CGImageDestination {}
 public final class CGImage {
     public var width: Int { 0 }
     public var height: Int { 0 }
+    /// 写真の編集の書き出しが、元の色空間（Display P3 か）を見るのに使う
+    public var colorSpace: CGColorSpace? { nil }
 }
 
 // MARK: - 画素を読むための最小限（CoreGraphics。本物にある口だけ）
 
-public final class CGColorSpace {}
+public final class CGColorSpace {
+    init() {}
+    /// 名前で作る（本物と同じ形）。写真の編集の書き出し（`PhotoRenderer`）が使う
+    public init?(name: CFString) { return nil }
+    public var name: CFString? { nil }
+    public static let sRGB: CFString = "kCGColorSpaceSRGB"
+    public static let displayP3: CFString = "kCGColorSpaceDisplayP3"
+}
 public func CGColorSpaceCreateDeviceRGB() -> CGColorSpace { CGColorSpace() }
 
 public struct CGBitmapInfo: OptionSet {
