@@ -87,8 +87,10 @@ struct PhotoViewerView: View {
                             including: zoom.isZoomed ? .all : .subviews
                         )
                         // **2回叩いていいね**（Web のモーダルと同じ）。
-                        // 拡大中だけは倍率を戻す側に倒す（`DoubleTapLike`）
-                        .onTapGesture(count: 2) { handleDoubleTap() }
+                        // 拡大中だけは倍率を戻す側に倒す（`DoubleTapLike`）。
+                        // 🔴 **叩いたページの写真を渡す**——`index` は送りの直後に遅れて替わるので、
+                        // そこから引くと隣の写真に付く窓があった（`DoubleTapLike.tap`）
+                        .onTapGesture(count: 2) { handleDoubleTap(photo, at: offset) }
                         .accessibilityLabel(photo.accessibilityText)
                         .tag(offset)
                 }
@@ -276,14 +278,15 @@ struct PhotoViewerView: View {
         }
     }
 
-    private func handleDoubleTap() {
-        guard let shown = DoubleTapLike.shown(photos, at: index) else { return }
-        switch DoubleTapLike.action(isZoomed: zoom.isZoomed, alreadyLiked: isLiked(shown), signedIn: isSignedIn,
-                                    acceptsLike: acceptsLike(shown)) {
+    private func handleDoubleTap(_ tapped: Photo, at offset: Int) {
+        let tap = DoubleTapLike.tap(tapped, at: offset, shownIndex: index, isZoomed: zoom.isZoomed,
+                                    alreadyLiked: isLiked(tapped), signedIn: isSignedIn,
+                                    acceptsLike: acceptsLike(tapped))
+        switch tap.action {
         case .resetZoom:
             resetZoom()
         case .like:
-            onDoubleTapLike(shown)
+            onDoubleTapLike(tap.target)
             showBurst()
         case .burstOnly:
             showBurst()
