@@ -72,6 +72,26 @@ final class TripBookGroupsTests: XCTestCase {
         XCTAssertTrue(TripBook.groupTrips(from: [try photo("x", date: "2026-09-12", group: "g9", published: false)]).isEmpty)
     }
 
+    /// 撮影日の幅が30日を超える束は一冊にしない。公開写真は日付の束に戻る（2026-10-02 判断）
+    func testGroupLongerThanThirtyDaysIsNotABook() throws {
+        let photos = [
+            try photo("paris-a", date: "2026-01-10", group: "g1", published: true),
+            try photo("paris-b", date: "2026-01-11", group: "g1", published: true),
+            try photo("hokkaido-a", date: "2026-02-12", group: "g1", published: true),
+            try photo("hokkaido-b", date: "2026-02-13", group: "g1", published: true),
+        ]
+        let shelf = TripBook.shelfTrips(from: photos, timeZone: utc)
+        XCTAssertNil(shelf.first { $0.groupId != nil }, "何か月にまたがる束を一冊にした")
+        XCTAssertEqual(shelf.map { $0.photos.map(\.id) }, [["hokkaido-a", "hokkaido-b"], ["paris-a", "paris-b"]],
+                       "一冊にしなかった束の公開写真が日付の束に戻っていない")
+        // ちょうど30日は一冊
+        let edge = [
+            try photo("a", date: "2026-01-01", group: "g2", published: false),
+            try photo("b", date: "2026-01-31", group: "g2", published: false),
+        ]
+        XCTAssertEqual(TripBook.groupTrips(from: edge, timeZone: utc).count, 1, "30日の束を落とした")
+    }
+
     /// 公開写真の日付の束は今までどおり（下書きは入れない）
     func testDateTripsUnchanged() throws {
         let photos = [

@@ -158,7 +158,12 @@ enum TripBook {
     /// 1つの投稿としてまとめた束（持ち主＋`groupId`・`PhotoGroups.groupKey`）を一冊にする。
     /// **2枚以上の束だけ**（1枚は旅ではない）。題は `mainPlace`、期間は `day(of:in:)` の最小と最大
     /// （日の決まらない写真は期間に数えない・日の決まる写真が無い束は一冊にしない）。
-    /// id は `"group#<groupId>"`——日付の束の id（写真の id をつないだもの）と重ならない
+    /// id は `"group#<groupId>"`——日付の束の id（写真の id をつないだもの）と重ならない。
+    ///
+    /// **撮影日の幅が `LibraryTrips.maxDays`（30日）を超える束は一冊にしない**（2026-10-02 判断）。
+    /// 別々の旅の写真を1つの投稿にまとめて上げると、何か月にまたがる一冊になる。
+    /// 一冊にしなかった束の写真は、公開なら日付の束に戻る。「非公開を含む束だけ」に絞らないのは、
+    /// 一冊を公開したとたんに束がばらけて日付で分け直されるため
     static func groupTrips(from photos: [Photo], timeZone: TimeZone = .current) -> [Trip] {
         var order: [String] = []
         var buckets: [String: [Photo]] = [:]
@@ -174,7 +179,8 @@ enum TripBook {
                   let groupId = items.first?.groupId?.trimmingCharacters(in: .whitespaces) else { return nil }
             let ordered = inOrder(items, timeZone: timeZone)
             let days = ordered.compactMap { day(of: $0, in: timeZone) }
-            guard let start = days.min(), let end = days.max() else { return nil }
+            guard let start = days.min(), let end = days.max(),
+                  end.timeIntervalSince(start) <= Double(LibraryTrips.maxDays) * 86_400 else { return nil }
             return Trip(
                 id: "group#\(groupId)",
                 place: mainPlace(of: ordered),
