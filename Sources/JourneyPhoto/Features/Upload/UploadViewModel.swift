@@ -195,6 +195,32 @@ final class UploadViewModel: ObservableObject {
 
     /// サーバーへ送る公開範囲。**非公開なら送らない。**
     var audienceToSend: Audience { published ? audience : .everyone }
+
+    /// 🔴 **鍵を控えている写真（本体は置けたが保存が通ったか分からない）が1枚でもある間は、
+    /// 公開範囲を変えさせない。**
+    ///
+    /// やり直しは前回の鍵で保存する（`UploadService.stage` の注記）。前回の保存が実は通っていて
+    /// （応答だけ失われた）、今回の公開範囲が違うと、サーバーは画像の置き場が食い違うので
+    /// 「保存済み」の 409 で断る（`upload.ts`）。以前はそこで行き詰まり、押し直しても 409 が続いた。
+    /// 下書き↔公開も同じ行で選ぶので、まとめて止める（非公開にすると送る公開範囲も変わる）。
+    /// その写真を外せば（`remove`）鍵も片付き、また変えられる
+    var visibilityLocked: Bool { items.contains { staged[$0.id] != nil } }
+
+    /// 公開範囲を変えられない理由（短い一言）。変えられるときは nil
+    var visibilityLockReason: String? {
+        visibilityLocked
+            ? L("送りかけの写真があるため変えられません（その写真を外すと変えられます）",
+                "Can't change while a photo is half-sent (remove that photo to change it)")
+            : nil
+    }
+
+    /// 公開範囲を選ぶ（画面の行から）。**錠が掛かっていれば何もしない**——ボタンの
+    /// `.disabled` は次の描画まで効かない。`audience` が nil なら公開範囲は今のまま（非公開を選んだ）
+    func chooseVisibility(published: Bool, audience: Audience?) {
+        guard !visibilityLocked else { return }
+        self.published = published
+        if let audience { self.audience = audience }
+    }
     /// 選んだ写真を**1つの投稿としてまとめる**か（モック8）。
     ///
     /// **行は1枚ずつのまま。** まとめても個別ページとサイトマップは
@@ -607,6 +633,8 @@ final class UploadViewModel: ObservableObject {
         var failures: [String] = []
         /// 写真は上がったが曲を付けられなかった枚数。**成功に数えない**
         var songFailures = 0
+        /// 前の送信の保存が通っていた（「保存済み」の 409）枚数。上がったものとして外し、知らせる
+        var savedEarlier = 0
         let queue = items.map(\.id)
         for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
@@ -616,8 +644,9 @@ final class UploadViewModel: ObservableObject {
             // 始めたときの写しで送ると、直した題が古い値で上がる
             guard let item = items.first(where: { $0.id == id }) else { continue }
             do {
-                let songAttached = try await upload(item)
-                if !songAttached { songFailures += 1 }
+                let outcome = try await upload(item)
+                if !outcome.songAttached { songFailures += 1 }
+                if outcome.savedEarlier { savedEarlier += 1 }
                 done.append(item.id)
             } catch {
                 // 🔴 **アルバムが無くなっていたら、そこで止めて行き先から外す。** 保存の 404 は
@@ -649,8 +678,9 @@ final class UploadViewModel: ObservableObject {
         // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
         if items.isEmpty && failures.isEmpty {
             // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
-            // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
-            if songFailures == 0 {
+            // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない。
+            // 前の公開範囲で投稿済みだった回も閉じない（その知らせを見せる）
+            if songFailures == 0 && savedEarlier == 0 {
                 // **いまの欄でも入切が見えているときだけ**（失敗のあと公開範囲を絞ってやり直すと、
                 // 行が消えて入切が見えないまま共有の画面が開いた・6c6c42a7 のレビュー）。
                 // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
@@ -676,8 +706,10 @@ final class UploadViewModel: ObservableObject {
                 }
                 didPostAll = done.count > 0
             } else {
-                errorMessage = UploadSummary.message(done: done.count, failures: failures,
-                                                     cancelled: cancelled, songFailures: songFailures)
+                errorMessage = UploadSummary.withSavedEarlier(
+                    UploadSummary.message(done: done.count, failures: failures,
+                                          cancelled: cancelled, songFailures: songFailures),
+                    savedEarlier: savedEarlier)
                 songFailuresShown = songFailures
             }
             // **どちらにしても選択は捨てる。** 残すと `pickerItems` に
@@ -686,17 +718,26 @@ final class UploadViewModel: ObservableObject {
             // （`errorMessage` は `reset()` では消えないので警告は残る）
             reset()
         } else {
-            errorMessage = UploadSummary.message(done: done.count, failures: failures,
-                                                 cancelled: cancelled, songFailures: songFailures)
+            errorMessage = UploadSummary.withSavedEarlier(
+                UploadSummary.message(done: done.count, failures: failures,
+                                      cancelled: cancelled, songFailures: songFailures),
+                savedEarlier: savedEarlier)
             songFailuresShown = songFailures
         }
     }
 
-    /// - Returns: 曲まで含めて狙いどおりに終わったか。写真は上がったが
-    ///   曲を付けられなかったときだけ `false`。**ここで `errorMessage` に
-    ///   書かない**——呼び出し元が最後にまとめて出す（途中で書くと、
-    ///   全部成功と見なされた `reset()` のあとに画面が閉じて消える）
-    private func upload(_ item: PendingPhoto) async throws -> Bool {
+    /// 1枚の結末（写真は上がっている）
+    private struct UploadOutcome {
+        /// 曲まで含めて狙いどおりに終わったか。曲を付けられなかったときだけ `false`
+        var songAttached = true
+        /// 前の送信の保存が通っていた（「保存済み」の 409）。公開範囲は前に選んだもの
+        var savedEarlier = false
+    }
+
+    /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
+    ///   **ここで `errorMessage` に書かない**——呼び出し元が最後にまとめて出す
+    ///   （途中で書くと、全部成功と見なされた `reset()` のあとに画面が閉じて消える）
+    private func upload(_ item: PendingPhoto) async throws -> UploadOutcome {
         var draft = PhotoDraft()
         draft.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.description = item.caption
@@ -734,12 +775,24 @@ final class UploadViewModel: ObservableObject {
             staged[item.id] = presigned
         }
         let photo: Photo?
+        var outcome = UploadOutcome()
         do {
             photo = try await uploads.save(draft, presigned: presigned)
         } catch let error as APIError {
             // **保存の 404 だけ**が「アルバムが無い」。S3 への PUT の 404 は別の失敗
             if let albumId = draft.albumId, case .server(404, _) = error { throw AlbumGone(albumId: albumId) }
-            throw error
+            // 🔴 **「保存済み」の 409 は、前の送信の保存が通っていた印。** 上がったものとして外す
+            // （残すと押し直しても同じ鍵・同じ 409 で抜けられない・`visibilityLocked` の注記）。
+            // 公開範囲は前に選んだもの——今回の値では無いので、共有・スポットの数には入れない
+            guard case .server(409, let message) = error, UploadSummary.isSavedAlready(message) else { throw error }
+            staged[item.id] = nil
+            outcome.savedEarlier = true
+            if let song, let id = presigned.photoId {
+                var patch = PhotoPatch()
+                patch.song = song
+                do { try await photoService.update(photoId: id, patch: patch) } catch { outcome.songAttached = false }
+            }
+            return outcome
         }
         staged[item.id] = nil
         if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
@@ -757,10 +810,10 @@ final class UploadViewModel: ObservableObject {
             do {
                 try await photoService.update(photoId: id, patch: patch)
             } catch {
-                return false
+                outcome.songAttached = false
             }
         }
-        return true
+        return outcome
     }
 
     /// 保存がアルバムの 404 で断られた。`albumId` は**その保存で送った宛先**

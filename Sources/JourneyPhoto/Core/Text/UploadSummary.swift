@@ -55,6 +55,28 @@ enum UploadSummary {
         return parts.map { $0 + L("。", ".") }.joined(separator: L("", " "))
     }
 
+    /// 保存が「保存済み」の 409 で断られたか（`api-user/src/upload.ts` の
+    /// `ConditionalCheckFailedException` の枝。本文は `{ error }` だけで、コードは無い）。
+    ///
+    /// **前の送信の保存が通っていて、今回は公開範囲が違う**ときだけ返る。同じ 409 の
+    /// 「この画像はすでに登録されています」（他人の写真とぶつかった・行と画像が合わない）は
+    /// 上がっていないので含めない。サーバーの文言が変わったらここも直す（日本語だけで返る）
+    static func isSavedAlready(_ serverMessage: String) -> Bool {
+        serverMessage.contains("保存済み")
+    }
+
+    /// 前の公開範囲で投稿済みだった写真の知らせを、結果の一言に足す
+    static func withSavedEarlier(_ summary: String?, savedEarlier: Int) -> String? {
+        guard savedEarlier > 0 else { return summary }
+        let note = savedEarlier == 1
+            ? L("前に選んだ公開範囲で投稿済みです。公開範囲は写真の編集から変えられます",
+                "This photo was already posted with the visibility you chose before. You can change it from Edit photo.")
+            : L("\(savedEarlier) 枚は前に選んだ公開範囲で投稿済みです。公開範囲は写真の編集から変えられます",
+                "\(savedEarlier) photos were already posted with the visibility you chose before. You can change it from Edit photo.")
+        guard let summary else { return note }
+        return summary + L("　", " ") + note
+    }
+
     /// **曲のことは、どの結末でも言う。** 先頭の分岐でしか見ていなかった頃は、
     /// 途中でやめた回・他の写真が失敗した回に、曲が付かなかったことが
     /// 一度も伝わらなかった。
