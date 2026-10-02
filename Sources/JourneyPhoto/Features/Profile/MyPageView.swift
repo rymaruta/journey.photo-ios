@@ -562,9 +562,9 @@ struct MyPageView: View {
             case .loading:
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             case .none:
-                ErrorBanner(message: SavedPhotosView.emptyMessage)
+                EmptyState(message: SavedPhotosView.emptyMessage)
             case .nothingShown:
-                ErrorBanner(message: LikedPhotos.nothingShownMessage)
+                EmptyState(message: LikedPhotos.nothingShownMessage)
             case .unresolved:
                 ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
                     Task {
@@ -627,7 +627,7 @@ struct MyPageView: View {
                     Task { await reloadAll() }
                 }
             case .empty:
-                ErrorBanner(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
+                EmptyState(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
                                        "Nothing yet. Tap “Want to go” on a place."))
             case .list:
                 // 公開一覧の失敗のときだけ（自分の写真の失敗は上の一行が既に言う）
@@ -885,7 +885,7 @@ struct MyPageView: View {
             // **この文言は「投稿」の話。** 以前はタブの判定より前に
             // 置いてあったので、写真が0枚の人は地図もお気に入りも
             // 「まだ写真がありません」に潰れていた
-            ErrorBanner(message: L("まだ写真がありません", "No photos yet"))
+            EmptyState(message: L("まだ写真がありません", "No photos yet"))
         } else {
             let multiple = PhotoGroups.multiPhotoIds(model.photos)
             LazyVGrid(columns: columns, spacing: 4) {

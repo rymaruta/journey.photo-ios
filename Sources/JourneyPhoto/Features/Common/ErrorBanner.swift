@@ -24,3 +24,19 @@ struct ErrorBanner: View {
         .frame(maxWidth: .infinity)
     }
 }
+
+/// **空の状態**（「まだありません」）の見た目。`ErrorBanner` と同じ置き方・同じ文字色で、
+/// **警告の三角を出さない**——0件は失敗ではない（2026-10-02 の調査: 「まだありません」にも
+/// 三角が出ていて、何か壊れたように読めた）。読めなかった回は `ErrorBanner` を使う
+struct EmptyState: View {
+    let message: String
+
+    var body: some View {
+        Text(message)
+            .font(.callout)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.secondary)
+            .padding(24)
+            .frame(maxWidth: .infinity)
+    }
+}

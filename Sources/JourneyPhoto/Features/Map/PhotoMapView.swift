@@ -694,6 +694,23 @@ struct PhotoMapView: View {
         L("写真を読み込めませんでした", "Couldn't load photos")
     }
 
+    /// リストが空のときに何と言うか
+    enum ListEmpty: Equatable {
+        /// 写真を読めなかった（警告と「もう一度試す」）
+        case failed
+        /// 絞り込んで当たらなかった
+        case noResults
+        /// 読めたが撮影地の分かる写真が無い
+        case noPlaces
+    }
+
+    /// リストが空の理由。**読めなかったのを「無い」と言わない**——前に読めた写真が
+    /// 手元に残っている回は数が本物なので「無い」側（帯の知らせと同じ `photos.isEmpty`）
+    nonisolated static func listEmpty(loadFailed: Bool, photosEmpty: Bool, filtering: Bool) -> ListEmpty {
+        if loadFailed && photosEmpty { return .failed }
+        return filtering ? .noResults : .noPlaces
+    }
+
     /// 写真を読み直す（「もう一度試す」）
     private func retryLoad() {
         Task { await model.load(environment: environment) }
@@ -1544,11 +1561,16 @@ struct PhotoMapView: View {
             VStack(alignment: .leading, spacing: 8) {
                 // 写真の失敗は下の帯が言う（二度言わない）。ここでは台帳の失敗だけ
                 indexNote
-                ErrorBanner(message: model.loadFailed && model.photos.isEmpty
-                            ? Self.loadFailedText
-                            : (filtering ? L("見つかりませんでした", "No results")
-                                                 : L("撮影地の分かる写真がありません", "No photos with a place yet")),
-                            retry: model.loadFailed && model.photos.isEmpty ? { retryLoad() } : nil)
+                // **失敗と空を分ける**（`listEmpty`）。空に警告の三角と「もう一度試す」を出さない
+                switch Self.listEmpty(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
+                                      filtering: filtering) {
+                case .failed:
+                    ErrorBanner(message: Self.loadFailedText) { retryLoad() }
+                case .noResults:
+                    EmptyState(message: L("見つかりませんでした", "No results"))
+                case .noPlaces:
+                    EmptyState(message: L("撮影地の分かる写真がありません", "No photos with a place yet"))
+                }
             }
             .padding(.top, 8)
             Spacer()
