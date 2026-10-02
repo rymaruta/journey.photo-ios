@@ -7,7 +7,7 @@ import UIKit
 /// プリセット名は今のまま）。デザインシステム「黒塗りの真鍮」に合わせて:
 /// - 上: 左「キャンセル」（白）、中央に取り消し・やり直し（白、押せないときは薄く）、
 ///   右「完了」（真鍮・太字。黒地のヘッダーの文字ボタン）
-/// - 写真は黒地に収める（fit）。**長押しの間だけ編集前**、左上に「編集前」の札（黒 62% に白 13pt）。
+/// - 写真は黒地に収める（fit）。**長押しの間だけ元の写真（無編集）**、左上に「編集前」の札（黒 62% に白 13pt）。
 ///   写真の上は白だけ
 /// - タブ「フィルム」「調整」。選んでいるタブは真鍮の字と下線（黒地）
 /// - フィルム: 「なし」＋プリセット8つ。64pt の見本、選んでいるのは真鍮 2px の輪＋名前を真鍮。強さ 0〜100
@@ -42,7 +42,8 @@ struct PhotoEditView: View {
     private static let selectedFill = Color(red: 0x1A / 255.0, green: 0x1A / 255.0, blue: 0x1A / 255.0)
     private static let idle = Color(red: 0xB8 / 255.0, green: 0xB8 / 255.0, blue: 0xB8 / 255.0)
     private static let hint = Color(red: 0x99 / 255.0, green: 0x99 / 255.0, blue: 0x99 / 255.0)
-    private static let track = Color(red: 0x3A / 255.0, green: 0x3A / 255.0, blue: 0x3A / 255.0)
+    /// つまみの塗り（板の outline #666666。#3A3A3A は黒地で見えにくかった）
+    private static let track = WebTheme.outline
     /// プリセットの見本の大きさ（pt）
     private static let thumbSize: CGFloat = 64
 
@@ -169,20 +170,28 @@ struct PhotoEditView: View {
                 }
             }
             .contentShape(Rectangle())
-            // **指が触れただけでは比べない**（`PhotoEditScreen.Press`）。長押しと認めたら編集前、離したら戻す
-            .onLongPressGesture(minimumDuration: 0.25, perform: {
-                screen.press(.recognized)
-            }, onPressingChanged: { pressing in
-                if !pressing { screen.press(.released) }
-            })
+            // **触れている間を取る**（距離 0 の DragGesture）。`onLongPressGesture` は長押しと認めた瞬間に
+            // 終わるので、離すまで編集前を出し続けられない。触れてから `holdDelay` たったら時計を送り、
+            // 判定は `PhotoEditScreen.press`（純）に任せる。離したら必ず戻す
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard screen.pressedAt == nil else { return }
+                        screen.press(.began(at: Date()))
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: UInt64(PhotoEditScreen.holdDelay * 1_000_000_000))
+                            screen.press(.tick(now: Date()))
+                        }
+                    }
+                    .onEnded { _ in screen.press(.ended) }
+            )
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(screen.showsBeforeLabel ? L("編集前の写真", "Original photo")
+            .accessibilityLabel(screen.showsBeforeLabel ? L("元の写真", "Original photo")
                                                         : L("編集中の写真", "Photo being edited"))
             .accessibilityAddTraits(.isImage)
             .onAppear {
                 preview.start(source: source, box: proxy.size, scale: Double(displayScale),
-                              thumbPoints: Double(Self.thumbSize),
-                              original: screen.history.original, current: screen.current)
+                              thumbPoints: Double(Self.thumbSize), current: screen.current)
             }
         }
     }
@@ -376,13 +385,13 @@ struct PhotoEditView: View {
 /// - **画面に合う大きさに縮めて読む**（`PhotoRenderer.previewPixelSize`。原本をそのまま Core Image に渡さない）
 /// - **描くのは画面の処理の外。** つまみを動かしている間も画面は止まらない
 /// - **最新だけを描く**（`LatestOnlyQueue`）。描いている間に来た値は最後の1つだけ残し、途中の値は捨てる
-/// - 編集前（`PhotoEditHistory.original`）は最初に1回だけ描いて持つ——長押しで即座に出すため
+/// - 元の写真（無編集）は最初に1回だけ描いて持つ——長押しで即座に出すため
 /// - プリセットの見本（64pt）は小さく読んだものに強さ 1 で当てて、最初に1回だけ描く
 @MainActor
 final class PhotoEditPreview: ObservableObject {
 
-    /// 「なし」の見本の鍵
-    static let noneKey = ""
+    /// 「なし」の見本の鍵（画面の処理の外の描画からも読む）
+    nonisolated static let noneKey = ""
 
     @Published private(set) var edited: UIImage?
     @Published private(set) var before: UIImage?
@@ -402,7 +411,7 @@ final class PhotoEditPreview: ObservableObject {
     private var waiting: PhotoRecipe?
 
     func start(source: @escaping @Sendable () -> Data, box size: CGSize, scale: Double, thumbPoints: Double,
-               original: PhotoRecipe, current: PhotoRecipe) {
+               current: PhotoRecipe) {
         guard !started else { return }
         started = true
         waiting = current
@@ -415,7 +424,8 @@ final class PhotoEditPreview: ObservableObject {
                 let data = source()
                 guard let full = PhotoRenderer.load(data: data, maxPixelSize: pixels) else { return nil }
                 let renderer = PhotoRenderer.shared
-                let before = renderer.preview(original, loaded: full).map { UIImage(cgImage: $0) }
+                // 長押しで出す「編集前」は元の写真（無編集・`PhotoEditScreen.Press` の注記）
+                let before = renderer.preview(.identity, loaded: full).map { UIImage(cgImage: $0) }
                 var thumbs: [String: UIImage] = [:]
                 if let small = PhotoRenderer.load(data: data, maxPixelSize: thumbPixels) {
                     if let image = renderer.preview(.identity, loaded: small) { thumbs[Self.noneKey] = UIImage(cgImage: image) }

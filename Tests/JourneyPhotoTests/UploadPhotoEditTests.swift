@@ -279,4 +279,187 @@ final class UploadPhotoEditTests: XCTestCase {
         XCTAssertEqual(model.items.first?.editSource, kept)
         XCTAssertEqual(received.calls.map(\.source), [Data([9, 9, 9])], "残すのは原本")
     }
+
+    // MARK: - レビューの穴（2026-10-02）
+
+    private var twoPresigns: [ScriptedProtocol.Step] {
+        [.init(match: "/upload/presigned-url", status: 200, body: presignBody, once: true),
+         .init(match: "/upload/presigned-url", status: 200, body: thumbPresignBody, once: true)]
+    }
+
+    private var discardedKeys: [String] {
+        ScriptedProtocol.calls.filter { $0.path == "/upload/discard" }.compactMap {
+            (try? JSONSerialization.jsonObject(with: $0.body ?? Data())) as? [String: Any]
+        }.compactMap { $0["key"] as? String }
+    }
+
+    /// 錠をすり抜けて（画面を通らずに）レシピが変わったら、控えた鍵は**使わない**:
+    /// 書き出し直して置き直し、前の鍵は片付けに回す（`reusesStaged`）
+    @MainActor
+    func testStagedKeyIsNotReusedForADifferentEdit() async throws {
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 500, body: #"{"error":"x"}"#),
+        ]
+        let log = ExportLog()
+        let model = model()
+        model.exportEdited = fakeExport(log)
+        if model.shareToThreads { model.shareToThreads = false }
+        model.items = [PendingPhoto(prepared: original())]
+        model.applyEdit(model.items[0].id, recipe: PhotoRecipe(exposure: 0.4))
+        await model.submit()
+
+        model.items[0].recipe = PhotoRecipe(exposure: -0.4)
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/discard", status: 200, body: #"{"success":true}"#),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        await model.submit()
+        for _ in 0..<500 where discardedKeys.count < 2 { try await Task.sleep(nanoseconds: 10_000_000) }
+
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.path == "/upload/presigned-url" }.count, 4, "置き直した")
+        XCTAssertEqual(log.calls.map(\.recipe), [PhotoRecipe(exposure: 0.4), PhotoRecipe(exposure: -0.4)])
+        XCTAssertEqual(Set(discardedKeys), ["uploads/u1/abc.jpg", "uploads/u1/thumb.jpg"], "前の鍵を片付ける")
+        XCTAssertTrue(model.items.isEmpty)
+    }
+
+    /// カメラで撮った1枚も、撮った JPEG を編集の元に残す
+    @MainActor
+    func testCameraCaptureKeepsItsJPEGAsEditSource() async throws {
+        let model = model()
+        let kept = URL(fileURLWithPath: "/tmp/kept-camera-source")
+        let received = ExportLog()
+        model.prepareData = { _ in
+            ImagePreparer.Prepared(data: Data([1]), fileName: "photo.jpg", contentType: "image/jpeg",
+                                   exif: nil, coords: nil, takenOn: nil)
+        }
+        model.keepEditSource = { data in
+            received.calls.append((data, .identity, ImagePreparer.Prepared(data: data, fileName: "", contentType: "",
+                                                                           exif: nil, coords: nil, takenOn: nil)))
+            return kept
+        }
+        model.accept(capture: CameraCapture(metadata: [:], capturedAt: Date(), encode: { Data([5, 5]) }))
+        for _ in 0..<500 where model.items.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(model.items.first?.editSource, kept)
+        XCTAssertEqual(received.calls.map(\.source), [Data([5, 5])])
+    }
+
+    /// 選び直しで捨てた回（整えている間に選択が変わった）の一時ファイルは消す
+    @MainActor
+    func testDiscardedPickRemovesItsEditSource() async throws {
+        let model = model()
+        let written = ExportLog()
+        model.loadPickedData = { _ in Data([3, 3]) }
+        model.prepareData = { _ in
+            Thread.sleep(forTimeInterval: 0.3)
+            return ImagePreparer.Prepared(data: Data([1]), fileName: "photo.jpg", contentType: "image/jpeg",
+                                          exif: nil, coords: nil, takenOn: nil)
+        }
+        let urls = URLBox()
+        model.keepEditSource = { data in
+            let url = PhotoEditSources.write(data)
+            urls.value = url
+            written.calls.append((data, .identity, ImagePreparer.Prepared(data: data, fileName: "", contentType: "",
+                                                                          exif: nil, coords: nil, takenOn: nil)))
+            return url
+        }
+        model.pickerItems = [PhotosPickerItem(itemIdentifier: "a")]
+        try await Task.sleep(nanoseconds: 100_000_000)
+        model.pickerItems = []
+        for _ in 0..<500 where urls.value == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let url = try XCTUnwrap(urls.value, "整え終わる前に止まった（試験の前提が崩れている）")
+        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "捨てた回の元が残っている")
+    }
+
+    private final class URLBox: @unchecked Sendable { var value: URL? }
+
+    /// 編集しない写真のサムネは元のまま（描き直さない・編集後の絵を出さない）
+    @MainActor
+    func testUneditedPhotoKeepsItsOriginalThumbnail() async throws {
+        let model = model()
+        let rendered = ExportLog()
+        model.renderStripPreview = { data, recipe in
+            rendered.calls.append((data, recipe, ImagePreparer.Prepared(data: data, fileName: "", contentType: "",
+                                                                        exif: nil, coords: nil, takenOn: nil)))
+            return nil
+        }
+        model.items = [PendingPhoto(prepared: original()), PendingPhoto(prepared: original())]
+        model.applyEdit(model.items[0].id, recipe: PhotoRecipe(exposure: 0.4))
+        model.applyEdit(model.items[1].id, recipe: .identity)
+        for _ in 0..<200 where rendered.calls.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(rendered.calls.map(\.recipe), [PhotoRecipe(exposure: 0.4)], "編集した1枚だけ描く")
+
+        // 無編集の写真は、編集後の絵が残っていても元の絵を出す
+        var photo = PendingPhoto(prepared: original())
+        photo.editedPreview = Image(systemName: "photo")
+        XCTAssertNil(photo.stripPreview, "元の preview（ここでは無し）を出す")
+        photo.recipe = PhotoRecipe(contrast: 0.2)
+        XCTAssertNotNil(photo.stripPreview)
+    }
+
+    /// SNS（Threads）に渡すのも**編集後**。作れなければ共有に回さず知らせる（編集前を黙って渡さない）
+    @MainActor
+    func testThreadsGetsTheEditedPictureOrNothing() async throws {
+        let log = ExportLog()
+        let savedOverrides = AppConfig.testOverrides
+        defer { AppConfig.testOverrides = savedOverrides }
+        AppConfig.testOverrides = (savedOverrides ?? [:]).merging(["JPSiteBaseURL": "https://site.example.test"]) { $1 }
+        let model = model()
+        defer { model.shareToThreads = false }
+        model.shareToThreads = true
+        model.watermark = { $0 }
+        model.exportEdited = fakeExport(log)
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        model.items = [PendingPhoto(prepared: original())]
+        model.applyEdit(model.items[0].id, recipe: PhotoRecipe(exposure: 0.4))
+        await model.submit()
+        XCTAssertEqual(model.threadsBundle?.images, [Data(repeating: 0xEE, count: 33)], "共有は編集後の絵")
+    }
+
+    @MainActor
+    func testThreadsSkipsAnEditedPictureThatCannotBeRebuilt() async throws {
+        let log = ExportLog()
+        let savedOverrides = AppConfig.testOverrides
+        defer { AppConfig.testOverrides = savedOverrides }
+        AppConfig.testOverrides = (savedOverrides ?? [:]).merging(["JPSiteBaseURL": "https://site.example.test"]) { $1 }
+        let model = model()
+        defer { model.shareToThreads = false }
+        model.shareToThreads = true
+        model.watermark = { $0 }
+        model.exportEdited = fakeExport(log)
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 500, body: #"{"error":"x"}"#),
+        ]
+        model.items = [PendingPhoto(prepared: original())]
+        model.applyEdit(model.items[0].id, recipe: PhotoRecipe(exposure: 0.4))
+        await model.submit()
+        // やり直しは書き出し直さない。共有の絵を作り直そうとして落ちる
+        model.exportEdited = { _, _, _ in throw ImagePreparer.PrepareError.encodeFailed }
+        ScriptedProtocol.script = [.init(match: "/upload/save", status: 200, body: saved)]
+        await model.submit()
+        XCTAssertTrue(model.items.isEmpty, "投稿自体は済んでいる")
+        XCTAssertNil(model.threadsBundle, "編集前の絵を渡さない")
+        XCTAssertFalse(model.didPostAll, "知らせを見せるため閉じない")
+        XCTAssertTrue(model.errorMessage?.contains("共有に含めていません") ?? false, model.errorMessage ?? "nil")
+    }
+
+    /// 書き出しが落ちたときの知らせに、編集を「なし」に戻せば送れることを添える
+    @MainActor
+    func testExportFailureTellsHowToSendTheOriginal() async throws {
+        ScriptedProtocol.script = []
+        let model = model()
+        model.exportEdited = { _, _, _ in throw ImagePreparer.PrepareError.encodeFailed }
+        model.items = [PendingPhoto(prepared: original())]
+        model.applyEdit(model.items[0].id, recipe: PhotoRecipe(contrast: 0.3))
+        await model.submit()
+        XCTAssertTrue(model.errorMessage?.contains("編集を「なし」に戻すと元の写真で送れます") ?? false,
+                      model.errorMessage ?? "nil")
+    }
 }

@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 履歴は `PhotoEditHistory`（#138 のエンジン）をそのまま持ち、ここは
 /// 「どのタブ・どの項目を選んでいるか」「つまみの位置 ↔ レシピの値」「長押しで比べる」だけを足す。
-/// 画面（`PhotoEditView`）はこれを `@State` に持ち、描くレシピは `history.displayed`。
+/// 画面（`PhotoEditView`）はこれを `@State` に持ち、描くレシピは `displayed`。
 ///
 /// デザインは Artifact「写真の編集 — 画面の候補」の 1（owner 2026-10-02: 比べ方は長押し・
 /// プリセット名は今のまま）。
@@ -106,8 +106,8 @@ struct PhotoEditScreen: Equatable {
         history = PhotoEditHistory(original: original)
     }
 
-    /// 今見せているレシピ（長押しの間は編集前）
-    var displayed: PhotoRecipe { history.displayed }
+    /// 今見せているレシピ。長押しの間は**元の写真（無編集）**（`press` の注記）
+    var displayed: PhotoRecipe { showsBeforeLabel ? .identity : history.current }
     /// 編集中のレシピ（つまみの途中を含む）
     var current: PhotoRecipe { history.current }
 
@@ -175,18 +175,44 @@ struct PhotoEditScreen: Equatable {
 
     // MARK: - 長押しで編集前と比べる（owner 2026-10-02: 比べ方は長押し）
 
-    /// 長押しの出来事。**指が触れただけでは比べない**（押すたびに写真が一瞬入れ替わると、
-    /// ただのタップでもちらつく）。長押しと認めたら編集前、指を離したら戻す
-    enum Press: Equatable { case recognized, released }
+    /// 長押しと認めるまでの時間（秒）
+    static let holdDelay: TimeInterval = 0.25
+
+    /// 指の出来事。
+    ///
+    /// - `began(at:)`: 指が触れた（触れている間に何度来ても、最初の1回だけ数える）
+    /// - `tick(now:)`: 時計（触れてから `holdDelay` たったら呼ぶ）。**触れてからの時間で決める**——
+    ///   離して触れ直したあとに前の時計が届いても、新しい指からはまだ時間がたっていないので比べない
+    /// - `ended`: 指を離した。**離すまで編集前を出し続け、離したら必ず戻す**
+    ///
+    /// **指が触れただけでは比べない**（ただのタップで写真がちらつく）。
+    ///
+    /// **2026-10-02 判断（owner の Before/After）: 出すのは元の写真（無編集）。** この編集を始めたときの姿
+    /// （`PhotoEditHistory.original`）ではない——帯の一言「元の写真は変わりません」と同じ「元」
+    enum Press: Equatable {
+        case began(at: Date)
+        case tick(now: Date)
+        case ended
+    }
+
+    /// 指が触れた時刻（離していれば nil）
+    private(set) var pressedAt: Date?
 
     mutating func press(_ event: Press) {
         switch event {
-        case .recognized: history.setComparing(true)
-        case .released: history.setComparing(false)
+        case .began(let at):
+            guard pressedAt == nil else { return }
+            pressedAt = at
+        case .tick(let now):
+            guard let pressedAt, now.timeIntervalSince(pressedAt) >= Self.holdDelay else { return }
+            history.setComparing(true)
+        case .ended:
+            pressedAt = nil
+            history.setComparing(false)
         }
     }
 
-    /// 「編集前」の札を出すか（長押しの間だけ）
+    /// 「編集前」の札を出すか（長押しと認めてから、指を離すまで）
     var showsBeforeLabel: Bool { history.isComparing }
 
     // MARK: - 閉じる
@@ -241,6 +267,23 @@ enum UploadEditRules {
 
     static let editLockMessage = L("前の送信が届いている可能性があるため、この写真は編集できません。まず「投稿する」をもう一度押してください",
                                    "Your last attempt may have gone through, so this photo can't be edited. Tap Post again first.")
+
+    /// 編集した写真を書き出せなかったときの知らせ。**抜け道を添える**——書き出しが毎回落ちる写真でも、
+    /// 編集を「なし」に戻せば整えた元の写真で送れる
+    static func exportFailureMessage(_ reason: String?) -> String {
+        let head = reason ?? L("編集した写真を書き出せませんでした", "Couldn't export the edited photo")
+        return head + L("。編集を「なし」に戻すと元の写真で送れます",
+                        ". Set the edit back to None to post the original photo.")
+    }
+
+    /// 共有から外した写真があれば、そのことを知らせに足す（編集前の絵を黙って SNS に渡さない）
+    static func withShareSkipped(_ summary: String?, skipped: Int) -> String? {
+        guard skipped > 0 else { return summary }
+        let note = L("編集した写真を共有用に用意できなかったため、\(skipped) 枚は SNS への共有に含めていません",
+                     "\(skipped) edited photo(s) couldn't be prepared for sharing, so they weren't shared.")
+        guard let summary else { return note }
+        return summary + L("　", " ") + note
+    }
 
     /// 控えている鍵（`staged`）をやり直しに使ってよいか。**置いたときと同じ見た目のときだけ。**
     ///

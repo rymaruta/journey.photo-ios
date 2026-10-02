@@ -361,6 +361,10 @@ final class UploadViewModel: ObservableObject {
         try PhotoRenderer.shared.exportPrepared(source: source, recipe: recipe, base: base)
     }
 
+    /// SNS に渡す絵に透かしを入れる口（`WatermarkRenderer.apply`）。**画面の処理の外から呼ばれる。**
+    /// 試験でだけ差し替える（模型では描けない）
+    var watermark: @Sendable (Data) -> Data? = { WatermarkRenderer.apply($0) }
+
     /// 帯のサムネの編集後を描く口。**画面の処理の外から呼ばれる。** 試験でだけ差し替える
     var renderStripPreview: @Sendable (Data, PhotoRecipe) -> UIImage? = { data, recipe in
         // 帯は 96×120pt。3倍の画面で長い辺 360px あれば足りる
@@ -567,9 +571,21 @@ final class UploadViewModel: ObservableObject {
         let read = item.editSourceReader
         let recipe = item.recipe
         let base = item.prepared
-        return try await Task.detached(priority: .userInitiated) {
-            try export(read(), recipe, base)
-        }.value
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                try export(read(), recipe, base)
+            }.value
+        } catch {
+            // 書き出しが毎回落ちる写真もありうる。抜け道（編集をやめれば元の写真で送れる）を添える
+            throw EditExportFailed(message: UploadEditRules.exportFailureMessage(
+                (error as? LocalizedError)?.errorDescription))
+        }
+    }
+
+    /// 編集した写真を書き出せなかった（知らせの文は `UploadEditRules.exportFailureMessage`）
+    private struct EditExportFailed: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
     }
 
     func remove(_ photoId: UUID) {
@@ -741,6 +757,8 @@ final class UploadViewModel: ObservableObject {
         var songFailures = 0
         /// 前の送信の保存が通っていた（「保存済み」の 409）枚数。上がったものとして外し、知らせる
         var savedEarlier = 0
+        /// 編集した写真を共有用に書き出せず、共有から外した枚数（`UploadOutcome.shareSkipped`）
+        var shareSkipped = 0
         let queue = items.map(\.id)
         for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
@@ -753,6 +771,7 @@ final class UploadViewModel: ObservableObject {
                 let outcome = try await upload(item)
                 if !outcome.songAttached { songFailures += 1 }
                 if outcome.savedEarlier { savedEarlier += 1 }
+                if outcome.shareSkipped { shareSkipped += 1 }
                 done.append(item.id)
             } catch {
                 // 🔴 **アルバムが無くなっていたら、そこで止めて行き先から外す。** 保存の 404 は
@@ -786,7 +805,8 @@ final class UploadViewModel: ObservableObject {
             // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
             // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない。
             // 前の公開範囲で投稿済みだった回も閉じない（その知らせを見せる）
-            if songFailures == 0 && savedEarlier == 0 {
+            // 共有から外した写真がある回も閉じない（共有の画面は出さず、そのことを知らせる）
+            if songFailures == 0 && savedEarlier == 0 && shareSkipped == 0 {
                 // **いまの欄でも入切が見えているときだけ**（失敗のあと公開範囲を絞ってやり直すと、
                 // 行が消えて入切が見えないまま共有の画面が開いた・6c6c42a7 のレビュー）。
                 // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
@@ -795,8 +815,9 @@ final class UploadViewModel: ObservableObject {
                     // 透かしを入れる（`WatermarkRenderer`・重いので画面の処理の外で）。
                     // 束は `didPostAll` より先に立てる（画面は立っていれば閉じずに共有の画面を出す）
                     let raw = Array(sharable.prefix(ThreadsShare.maxImages).map(\.data))
+                    let mark = watermark
                     let marked = await Task.detached(priority: .userInitiated) {
-                        raw.compactMap { WatermarkRenderer.apply($0) }
+                        raw.compactMap { mark($0) }
                     }.value
                     // 1枚も用意できなければ共有の画面は出さず、投稿画面はそのまま閉じる（投稿自体は済んでいる）。
                     // 渡すのは `ImagePreparer` が作った JPEG なので、ここで全部失敗することは実際にはまず無い
@@ -812,10 +833,10 @@ final class UploadViewModel: ObservableObject {
                 }
                 didPostAll = done.count > 0
             } else {
-                errorMessage = UploadSummary.withSavedEarlier(
+                errorMessage = UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
                     UploadSummary.message(done: done.count, failures: failures,
                                           cancelled: cancelled, songFailures: songFailures),
-                    savedEarlier: savedEarlier)
+                    savedEarlier: savedEarlier), skipped: shareSkipped)
                 songFailuresShown = songFailures
             }
             // **どちらにしても選択は捨てる。** 残すと `pickerItems` に
@@ -824,10 +845,10 @@ final class UploadViewModel: ObservableObject {
             // （`errorMessage` は `reset()` では消えないので警告は残る）
             reset()
         } else {
-            errorMessage = UploadSummary.withSavedEarlier(
+            errorMessage = UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
                 UploadSummary.message(done: done.count, failures: failures,
                                       cancelled: cancelled, songFailures: songFailures),
-                savedEarlier: savedEarlier)
+                savedEarlier: savedEarlier), skipped: shareSkipped)
             songFailuresShown = songFailures
         }
     }
@@ -838,6 +859,8 @@ final class UploadViewModel: ObservableObject {
         var songAttached = true
         /// 前の送信の保存が通っていた（「保存済み」の 409）。公開範囲は前に選んだもの
         var savedEarlier = false
+        /// 編集した写真を共有用に書き出せず、共有に回さなかった（元の絵を黙って渡さない）
+        var shareSkipped = false
     }
 
     /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
@@ -920,12 +943,19 @@ final class UploadViewModel: ObservableObject {
         stagedEdits[item.id] = nil
         if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
             // 共有に渡すのも**置いた絵**（編集後）。やり直しで書き出していなければ、載せる設定のときだけ
-            // ここで作る。作れなければ整えた本体（共有は投稿のおまけ。投稿自体は済んでいる）
-            var shared = body?.data
-            if shared == nil, shareToThreads, UploadEditRules.needsExport(item.recipe) {
-                shared = try? await preparedToSend(item).data
+            // ここで作る。🔴 **作れなければ共有に回さず知らせる**——編集前の絵を黙って渡さない
+            // （投稿したのは編集後なので、SNS と見た目が割れる）
+            if !UploadEditRules.needsExport(item.recipe) {
+                sharable.append((item.prepared.data, id, draft.title, draft.description, draft.location))
+            } else if let data = body?.data {
+                sharable.append((data, id, draft.title, draft.description, draft.location))
+            } else if shareToThreads {
+                if let data = try? await preparedToSend(item).data {
+                    sharable.append((data, id, draft.title, draft.description, draft.location))
+                } else {
+                    outcome.shareSkipped = true
+                }
             }
-            sharable.append((shared ?? item.prepared.data, id, draft.title, draft.description, draft.location))
         }
         if photo != nil, draft.spotId != nil, draft.published, draft.audience == .everyone {
             postedToSpot += 1

@@ -114,18 +114,54 @@ final class PhotoEditScreenTests: XCTestCase {
 
     // MARK: - 長押しで比べる
 
-    func testLongPressShowsTheOriginalUntilReleased() {
+    private let t0 = Date(timeIntervalSince1970: 1_000)
+
+    /// 長押しと認めたら**元の写真（無編集）**を、指を離すまで出す（owner の Before/After）
+    func testLongPressShowsTheUneditedPhotoUntilReleased() {
         var screen = PhotoEditScreen(original: PhotoRecipe(exposure: 0.2))
         screen.selectPreset("haze")
-        XCTAssertFalse(screen.showsBeforeLabel)
-        screen.press(.recognized)
+        screen.press(.began(at: t0))
+        XCTAssertFalse(screen.showsBeforeLabel, "触れただけでは比べない")
+        screen.press(.tick(now: t0.addingTimeInterval(PhotoEditScreen.holdDelay)))
         XCTAssertTrue(screen.showsBeforeLabel)
-        XCTAssertEqual(screen.displayed, PhotoRecipe(exposure: 0.2), "編集を始めたときの姿")
+        XCTAssertEqual(screen.displayed, .identity, "編集を始めたときの姿ではなく、元の写真")
         XCTAssertEqual(screen.current.preset?.id, "haze", "比べても編集は動かさない")
-        screen.press(.released)
-        XCTAssertFalse(screen.showsBeforeLabel)
+        // 触れたまま時間がたっても（指が少し動いて began がまた来ても）出し続ける
+        screen.press(.began(at: t0.addingTimeInterval(2)))
+        screen.press(.tick(now: t0.addingTimeInterval(3)))
+        XCTAssertTrue(screen.showsBeforeLabel, "離すまで出し続ける")
+        screen.press(.ended)
+        XCTAssertFalse(screen.showsBeforeLabel, "離したら必ず戻す")
         XCTAssertEqual(screen.displayed.preset?.id, "haze")
         XCTAssertTrue(screen.canUndo, "比べても履歴は動かない")
+    }
+
+    /// 時間の扱い: 認めるのは触れてから `holdDelay` たってから。離したあとに届いた古い時計・
+    /// 触れ直した直後に届いた前の時計では比べない
+    func testHoldDelayIsMeasuredFromTheCurrentTouch() {
+        var screen = PhotoEditScreen()
+        screen.press(.began(at: t0))
+        screen.press(.tick(now: t0.addingTimeInterval(PhotoEditScreen.holdDelay - 0.01)))
+        XCTAssertFalse(screen.showsBeforeLabel, "まだ短い")
+        screen.press(.ended)
+        screen.press(.tick(now: t0.addingTimeInterval(1)))
+        XCTAssertFalse(screen.showsBeforeLabel, "離したあとの時計で比べない")
+        // 素早く触れ直した: 前の指の時計（t0 + 0.25）が、新しい指（t0 + 0.2）の直後に届く
+        screen.press(.began(at: t0.addingTimeInterval(0.2)))
+        screen.press(.tick(now: t0.addingTimeInterval(PhotoEditScreen.holdDelay)))
+        XCTAssertFalse(screen.showsBeforeLabel, "新しい指からはまだ時間がたっていない")
+        screen.press(.tick(now: t0.addingTimeInterval(0.2 + PhotoEditScreen.holdDelay)))
+        XCTAssertTrue(screen.showsBeforeLabel)
+    }
+
+    func testFailureAndShareMessages() {
+        XCTAssertEqual(UploadEditRules.exportFailureMessage("画像を変換できませんでした"),
+                       "画像を変換できませんでした。編集を「なし」に戻すと元の写真で送れます")
+        XCTAssertTrue(UploadEditRules.exportFailureMessage(nil).hasSuffix("編集を「なし」に戻すと元の写真で送れます"))
+        XCTAssertNil(UploadEditRules.withShareSkipped(nil, skipped: 0))
+        XCTAssertEqual(UploadEditRules.withShareSkipped("x", skipped: 0), "x")
+        XCTAssertTrue(UploadEditRules.withShareSkipped(nil, skipped: 2)?.contains("2 枚は SNS への共有に含めていません") ?? false)
+        XCTAssertTrue(UploadEditRules.withShareSkipped("x", skipped: 1)?.hasPrefix("x") ?? false)
     }
 
     func testCancelAsksOnlyWhenChanged() {

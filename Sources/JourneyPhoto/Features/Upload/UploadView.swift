@@ -341,28 +341,8 @@ struct UploadView: View {
         .accessibilityHint(L("押すと編集できます", "Opens the editor"))
         .accessibilityIdentifier("upload.thumb.\(index)")
         .overlay(alignment: .topLeading) {
-            // 編集済みの札（見本 3: 黒 66% の地に白 12pt）。写真の上なので白。
-            // 2026-10-02 判断: 見本は左下だが、左下には送る順の番号があるので左上に置く
-            if let badge = item.editBadge {
-                HStack(spacing: 4) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 10, weight: .bold))
-                    Text(badge)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(Color.white)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(Color.black.opacity(0.66), in: Capsule())
-                .padding(6)
-                // 右上の外す丸と重ならない幅に収める
-                .frame(maxWidth: 70, alignment: .leading)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
-        }
-        .overlay(alignment: .bottomLeading) {
+            // 送る順の番号。2026-10-02 判断: 左下は編集済みの札（見本 3 の位置）に譲り、左上に移した
+            // （右上の外す丸とは 96pt の幅の両端で離れている）
             Text("\(index + 1)")
                 .font(JPFont.mono(12))
                 .foregroundStyle(Color.white)
@@ -371,6 +351,29 @@ struct UploadView: View {
                 .background(Color.black.opacity(0.6), in: Capsule())
                 .padding(6)
                 .accessibilityHidden(true)
+        }
+        .overlay(alignment: .bottomLeading) {
+            // 編集済みの札（見本 3: 左下・黒 66% の地に白 12pt）。写真の上なので白。
+            // 名前が読める幅に: サムネの幅いっぱい（左右 6pt を残す）まで・1行・入らなければ 0.8 まで縮める
+            // （文字を詰めて「旅の葉…」にしない）
+            if let badge = item.editBadge {
+                HStack(spacing: 4) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 10, weight: .bold))
+                    Text(badge)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(Color.black.opacity(0.66), in: Capsule())
+                .frame(maxWidth: 96 - 12, alignment: .leading)
+                .padding(6)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
         }
         .overlay(alignment: .topTrailing) {
             Button {
