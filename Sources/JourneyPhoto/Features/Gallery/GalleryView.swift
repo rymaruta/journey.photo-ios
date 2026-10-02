@@ -292,7 +292,7 @@ struct GalleryView: View {
                     .lineLimit(1)
                 // 本文の最小は 12pt（CLAUDE.md）。縮めずに2行まで
                 Text(note)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(WebTheme.faint)
                     .lineLimit(2)
             }

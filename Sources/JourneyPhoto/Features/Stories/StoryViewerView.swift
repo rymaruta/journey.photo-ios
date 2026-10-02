@@ -345,6 +345,12 @@ struct StoryViewerView: View {
         MusicPreviewPlayer.shared.stop(releaseSession: false)
     }
 
+    /// **写真の上の飾り（見出し・足元・ひとこと・知らせ）の文字の大きさの上限。**
+    /// 文字は Dynamic Type に付いてくる（2026-10-02 まで `.system(size:)` の固定だった）が、
+    /// 写真の上は広さが決まっているので、ここで止める。写真に焼き込む文字
+    /// （`StoryTextLayer`）は見る人と同じ位置に出すため固定のまま
+    static let chromeTypeLimit = DynamicTypeSize.xxLarge
+
     /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る。板は 844 のうち 84）
     private static let footerHeight: CGFloat = 60
 
@@ -362,12 +368,14 @@ struct StoryViewerView: View {
                     .overlay(alignment: .bottom) {
                         highlightFooter(for: story, highlight: highlight)
                             .opacity(chrome.hidesChrome ? 0 : 1)
+                            .dynamicTypeSize(...Self.chromeTypeLimit)
                     }
             } else {
             VStack(spacing: 0) {
                 photoArea(for: story)
                     .ignoresSafeArea(edges: .top)
                 footer(for: story)
+                    .dynamicTypeSize(...Self.chromeTypeLimit)
                     .frame(minHeight: Self.footerHeight)
                     // 止めている間は足元を隠す（板「25b」は進行バーだけ残す）。
                     // 場所は残す——消すと写真の枠が伸び縮みする
@@ -382,17 +390,22 @@ struct StoryViewerView: View {
                     .allowsHitTesting(!chrome.hidesChrome)
             }
             .padding(.top, 5)
+            .dynamicTypeSize(...Self.chromeTypeLimit)
 
             if chrome.showsPill {
                 pausedPill
+                    .dynamicTypeSize(...Self.chromeTypeLimit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(false)
             }
             if showMenu {
                 menuSheet(for: story)
+                    // 写真の上に重ねる板（スクロールしない）。大きすぎると項目が画面からはみ出す
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
             if showDeleteConfirm {
                 deleteConfirm(for: story)
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
         }
         .animation(.easeOut(duration: 0.18), value: showMenu)
@@ -601,12 +614,14 @@ struct StoryViewerView: View {
             // **撮影地の行だけ押せる**（撮影スポットのガイドへ）。ひとことと曲は指を素通りさせ、
             // 左右の送る的を塞がない（中で1つずつ `allowsHitTesting(false)` を付ける）
             captionBlock(for: story)
+                .dynamicTypeSize(...Self.chromeTypeLimit)
                 .padding(.horizontal, 32)
                 .padding(.bottom, highlight == nil ? 96 : 150)
 
             if let message {
                 Text(message)
                     .font(.footnote)
+                    .dynamicTypeSize(...Self.chromeTypeLimit)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -663,7 +678,7 @@ struct StoryViewerView: View {
                             HStack(spacing: 4) {
                                 photoMeta(symbol: "mappin", text: StorySpotLink.shortened(place))
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.caption.weight(.semibold))
                                     .foregroundStyle(WebTheme.muted)
                                     .jpPhotoTextShadow()
                             }
@@ -715,9 +730,9 @@ struct StoryViewerView: View {
     private func photoMeta(symbol: String, text: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: symbol)
-                .font(.system(size: 12))
+                .font(.caption)
             Text(text)
-                .font(.system(size: 12))
+                .font(.caption)
                 .lineLimit(1)
         }
         .foregroundStyle(WebTheme.muted)
@@ -803,7 +818,7 @@ struct StoryViewerView: View {
                     showMenu = true
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 20))
+                        .font(.title3)
                         .foregroundStyle(.white)
                         .webTappable()
                         .accessibilityLabel(L("その他の操作", "More actions"))
@@ -813,7 +828,7 @@ struct StoryViewerView: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 20))
+                    .font(.title3)
                     .foregroundStyle(.white)
                     .webTappable()
                     .accessibilityLabel(Labels.Common.close)
@@ -838,11 +853,11 @@ struct StoryViewerView: View {
             .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
             VStack(alignment: .leading, spacing: 0) {
                 Text(highlight.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text(L("ストーリーハイライト · \(highlight.count)件", "Story highlight · \(highlight.count)"))
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted)
             }
         }
@@ -861,7 +876,7 @@ struct StoryViewerView: View {
             if let onEdit = highlight.onEdit {
                 Button(action: onEdit) {
                     Text(L("編集", "Edit"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .frame(minHeight: 40)
@@ -889,7 +904,7 @@ struct StoryViewerView: View {
                 // 自分: 「あなた」と、下に等幅で「2時間前 · あと 22 時間で消えます」（板 25e）
                 VStack(alignment: .leading, spacing: 1) {
                     Text(L("あなた", "You"))
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                     if let line = ownTimeLine(for: story) {
                         Text(line)
@@ -900,12 +915,12 @@ struct StoryViewerView: View {
                 }
             } else {
                 Text(story.authorName)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 if let ago = StoryPlayback.ago(from: story.createdAt) {
                     Text(ago)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(WebTheme.muted)
                         .lineLimit(1)
                 }
@@ -1180,9 +1195,9 @@ struct StoryViewerView: View {
     private var pausedPill: some View {
         HStack(spacing: 8) {
             Image(systemName: "pause")
-                .font(.system(size: 14))
+                .font(.subheadline)
             Text(StoryPlayback.pausedNote(pressing: chrome.pillSaysRelease))
-                .font(.system(size: 13))
+                .font(.footnote)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 16)
@@ -1214,7 +1229,7 @@ struct StoryViewerView: View {
             VStack(spacing: 8) {
                 VStack(spacing: 0) {
                     Text(L("開いている間は止まっています", "Paused while this is open"))
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(WebTheme.faint)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 12)
@@ -1274,7 +1289,7 @@ struct StoryViewerView: View {
                     showMenu = false
                 } label: {
                     Text(Labels.Common.cancel)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 52)
                         .background(Self.sheetColor, in: RoundedRectangle(cornerRadius: 16))
@@ -1301,10 +1316,10 @@ struct StoryViewerView: View {
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: symbol)
-                    .font(.system(size: 18))
+                    .font(.body)
                     .frame(width: 22)
                 Text(title)
-                    .font(.system(size: 16))
+                    .font(.callout)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(danger ? Self.storyDanger : WebTheme.text)
@@ -1331,10 +1346,10 @@ struct StoryViewerView: View {
             VStack(spacing: 0) {
                 VStack(spacing: 6) {
                     Text(L("このストーリーを削除しますか？", "Delete this story?"))
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.callout.weight(.semibold))
                     Text(L("見た人の記録と返信も消えます。元に戻せません。",
                            "Viewers and replies are deleted too. This can't be undone."))
-                        .font(.system(size: 13))
+                        .font(.footnote)
                         .foregroundStyle(WebTheme.muted2)
                         .lineSpacing(4)
                 }
@@ -1362,7 +1377,7 @@ struct StoryViewerView: View {
                                action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 16, weight: weight))
+                .font(.callout.weight(weight))
                 .foregroundStyle(color)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .contentShape(Rectangle())
@@ -1466,7 +1481,7 @@ struct StoryViewerView: View {
                                     Task { await sendReply(text, to: story) }
                                 } label: {
                                     Text(text)
-                                        .font(.system(size: 13))
+                                        .font(.footnote)
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 14)
                                         .frame(minHeight: 36)
@@ -1481,7 +1496,7 @@ struct StoryViewerView: View {
                         }
                     }
                     Text(L("返信は \(story.authorName) さんにだけ届きます", "Only \(story.authorName) sees your reply"))
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(WebTheme.muted2)
                         .padding(.leading, 4)
                 }
@@ -1493,7 +1508,7 @@ struct StoryViewerView: View {
                             if kept != value { reply = kept }
                         }
                         .accessibilityLabel(L("\(story.authorName) さんに返信", "Reply to \(story.authorName)"))
-                        .font(.system(size: 15))
+                        .font(.subheadline)
                         .foregroundStyle(.white)
                         // 打っている間は止める（打ち終わる前に次へ送られない）
                         .focused($replyFocused)
@@ -1509,7 +1524,7 @@ struct StoryViewerView: View {
                             Task { await sendReply(to: story) }
                         } label: {
                             Image(systemName: "paperplane")
-                                .font(.system(size: 18))
+                                .font(.body)
                                 .foregroundStyle(WebTheme.accentText)
                                 .frame(width: 46, height: 46)
                                 .background(WebTheme.accentBackground, in: Circle())
@@ -1523,7 +1538,7 @@ struct StoryViewerView: View {
                         // あとに Button の送信も走る（❤️ が送られてから並びが開く）。押すと長押しを
                         // 別々の手振りにして、どちらか片方だけが効くようにする
                         Image(systemName: "heart")
-                            .font(.system(size: 22))
+                            .font(.title2)
                             .foregroundStyle(.white)
                             .webTappable()
                             .opacity(isSending ? 0.4 : 1)
@@ -1550,7 +1565,10 @@ struct StoryViewerView: View {
                                 showReactions = true
                             }
                         .overlay(alignment: .bottomTrailing) {
-                            if showReactions { reactionPicker(for: story) }
+                            if showReactions {
+                                reactionPicker(for: story)
+                                    .dynamicTypeSize(...Self.chromeTypeLimit)
+                            }
                         }
                     }
                 }
@@ -1626,7 +1644,7 @@ struct StoryViewerView: View {
             HStack(spacing: 10) {
                 if viewersLoaded != true || viewers.isEmpty {
                     Image(systemName: "eye")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(WebTheme.muted2)
                         .frame(width: 30, height: 30)
                         .background(WebTheme.raised, in: Circle())
@@ -1637,16 +1655,16 @@ struct StoryViewerView: View {
                     if viewersLoaded != true {
                         // 読み込み中・読めなかった。**数は言わない**（0 と言い切らない）
                         Text(L("反応を見る", "Insights"))
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.subheadline.weight(.medium))
                     } else if isQuiet {
                         Text(L("まだ誰も見ていません", "No views yet"))
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.subheadline.weight(.medium))
                     } else {
                         HStack(spacing: 0) {
                             Text(L("見た人 ", "Viewers "))
                             Text("\(viewers.count)").font(JPFont.mono(14, medium: true))
                         }
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         // **返信を読めていなければ「いいね」の数は言わない**
                         // （読めなかった回に空の一覧から「いいね 0」と言い切っていた）
                         if repliesLoaded {
@@ -1656,7 +1674,7 @@ struct StoryViewerView: View {
                             }
                             // 本文系の最小は 12（デザインシステム「黒塗りの真鍮」02 書体）。
                             // **数は白のまま**——いいねは白、真鍮は合図と手がかりだけ（同 04）
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(WebTheme.muted2)
                         }
                     }
@@ -1732,7 +1750,7 @@ struct StoryViewerView: View {
     /// 操作の丸（写真の上の ✕ と同じガラス・他の人の送信の丸と同じ 46）
     private func ownCircle(symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 17, weight: .medium))
+            .font(.body.weight(.medium))
             .foregroundStyle(.white)
             .frame(width: 46, height: 46)
             .jpGlass(in: Circle(), border: 0.14)
@@ -1771,7 +1789,7 @@ struct StoryViewerView: View {
                     }
                     Text(L("返信はあなたにだけ見えています。ストーリーが消えると、返信も一緒に消えます。",
                            "Only you can see replies. They disappear with the story."))
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .lineSpacing(4)
                         .foregroundStyle(WebTheme.faint)
                         .padding(.vertical, 16)
@@ -1787,7 +1805,7 @@ struct StoryViewerView: View {
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 4) {
-                        Text(L("返信", "Replies")).font(.system(size: 16, weight: .semibold))
+                        Text(L("返信", "Replies")).font(.callout.weight(.semibold))
                         // 読めていない間は数を出さない（`StoryInsightsView` と同じ）
                         if repliesLoaded {
                             Text("\(items.count)").font(JPFont.mono(16, medium: true))
@@ -1839,15 +1857,15 @@ struct StoryViewerView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(item.displayName)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                     if let ago = StoryPlayback.ago(from: item.t) {
                         Text(ago)
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                     }
                 }
                 Text(item.body)
-                    .font(.system(size: 14))
+                    .font(.subheadline)
                     .lineSpacing(6)
             }
             .foregroundStyle(.white)
@@ -1891,7 +1909,7 @@ struct StoryViewerView: View {
                     Task { await sendReaction(emoji, to: story) }
                 } label: {
                     Text(emoji)
-                        .font(.system(size: 28))
+                        .font(.title)
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)

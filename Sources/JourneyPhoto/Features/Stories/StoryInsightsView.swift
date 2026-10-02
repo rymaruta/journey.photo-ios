@@ -58,7 +58,7 @@ struct StoryInsightsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if let refreshNotice {
                     Text(refreshNotice)
-                        .font(.system(size: 13))
+                        .font(.footnote)
                         .foregroundStyle(WebTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         // **少しで消す**（閲覧画面の知らせと同じ 2.5 秒）
@@ -82,11 +82,11 @@ struct StoryInsightsView: View {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
                     Text(L("ストーリーの反応", "Story insights"))
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(.white)
                     if let posted = StoryPlayback.postedAt(story.createdAt) {
                         Text(posted)
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(WebTheme.faint)
                     }
                 }
@@ -130,7 +130,7 @@ struct StoryInsightsView: View {
                 .minimumScaleFactor(0.7)
                 .foregroundStyle(.white)
             Text(label)
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundStyle(WebTheme.faint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -154,7 +154,7 @@ struct StoryInsightsView: View {
                     scope = option
                 } label: {
                     Text(option.label)
-                        .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                        .font(.footnote.weight(selected ? .semibold : .regular))
                         .foregroundStyle(selected ? Color.white : WebTheme.faint)
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .overlay(alignment: .bottom) {
@@ -227,17 +227,17 @@ struct StoryInsightsView: View {
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
                         Text(viewer.name)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                         if let ago = ago(from: viewer.at) {
                             Text(ago)
-                                .font(.system(size: 12))
+                                .font(.caption)
                                 .foregroundStyle(WebTheme.faint)
                         }
                         // いいねと返信の両方をした人は、返信の文を名前の下に
                         if hasReaction(from: viewer.userId), let reply = replyText(from: viewer.userId) {
                             Text("「\(reply)」")
-                                .font(.system(size: 12))
+                                .font(.caption)
                                 .foregroundStyle(WebTheme.muted2)
                                 .lineLimit(1)
                         }
@@ -255,7 +255,7 @@ struct StoryInsightsView: View {
                     .accessibilityLabel(L("いいね", "Liked"))
             } else if let reply = replyText(from: viewer.userId) {
                 Text("「\(reply)」")
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
                     .frame(maxWidth: 140, alignment: .trailing)

@@ -38,9 +38,9 @@ struct SongStartSheet: View {
                     .frame(width: 52, height: 52)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(song.title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    Text(song.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                     if let artist = song.artist, !artist.isEmpty {
-                        Text(artist).font(.system(size: 13)).foregroundStyle(WebTheme.muted2).lineLimit(1)
+                        Text(artist).font(.footnote).foregroundStyle(WebTheme.muted2).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 8)
@@ -48,7 +48,7 @@ struct SongStartSheet: View {
                     if isPlaying { player.stop() } else { playFromStart() }
                 } label: {
                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16))
+                        .font(.callout)
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
                         .jpGlass(in: Circle())
@@ -70,7 +70,7 @@ struct SongStartSheet: View {
 
             Text(L("30秒の試聴のうち、ここから表示の\(durationSec)秒ぶん流れます。見る人にもこの位置から流れます。",
                    "Plays \(durationSec)s from here within the 30-second preview — viewers hear it from here too."))
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundStyle(WebTheme.muted2)
             Spacer(minLength: 0)
         }

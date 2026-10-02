@@ -58,7 +58,7 @@ struct HighlightsRow: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(L("すべて見る", "See all"))
-                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
                     }
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
