@@ -33,3 +33,10 @@ public final class UITabBar {
     private static let proxy = UITabBar()
     public static func appearance() -> UITabBar { proxy }
 }
+
+public final class UINavigationBar {
+    public var tintColor: UIColor?
+    public init() {}
+    private static let proxy = UINavigationBar()
+    public static func appearance() -> UINavigationBar { proxy }
+}

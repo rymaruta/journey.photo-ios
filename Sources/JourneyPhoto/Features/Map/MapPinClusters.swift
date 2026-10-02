@@ -79,12 +79,13 @@ enum MapPinClusters {
 
     /// - Parameters:
     ///   - pins: 絞り込んだあとのピン（`MapPin.group`）
-    ///   - frame: いま見えている枠。まだ届いていなければ nil（全部のピンを囲む枠で数える）
+    ///   - frame: いま見えている枠。まだ届いていなければ nil（全部のピンを囲む枠で数える）。
+    ///     **幅が0・負・数でない枠は nil と同じに扱う**（`usable`）
     static func layout(_ pins: [MapPin], frame: MapFraming.Frame?, limit: Int = limit) -> Layout {
         guard pins.count > limit, limit > 0 else { return Layout(pins: pins) }
         let area: MapFraming.Frame
         let inArea: [MapPin]
-        if let frame {
+        if let frame = frame.flatMap(usable) {
             area = MapFraming.Frame(latitude: frame.latitude, longitude: frame.longitude,
                                     latitudeSpan: frame.latitudeSpan * (1 + 2 * margin),
                                     longitudeSpan: frame.longitudeSpan * (1 + 2 * margin))
@@ -128,6 +129,17 @@ enum MapPinClusters {
         layout.pins.sort { $0.id < $1.id }
         layout.clusters.sort { $0.id < $1.id }
         return layout
+    }
+
+    /// 枠として使えるか。🔴 **地図が幅0（`span` が 0）や数でない枠を知らせてこない保証は無い**
+    /// （大きさが決まる前の1回目など。実機で見たわけではない）。そのまま「枠の中だけ置く」に
+    /// 通すと、中心ぴったりのピンしか残らず**写真のピンが1本も出ない**（どの点も幅0の
+    /// 枠には入らない・NaN との比べは常に偽）。使えない枠は「まだ枠が無い」（nil）と同じ扱いにし、
+    /// 全部のピンを囲む枠で数える（2026-10-02 の回帰の調査で見つけた穴）
+    static func usable(_ frame: MapFraming.Frame) -> MapFraming.Frame? {
+        let values = [frame.latitude, frame.longitude, frame.latitudeSpan, frame.longitudeSpan]
+        guard values.allSatisfy(\.isFinite), frame.latitudeSpan > 0, frame.longitudeSpan > 0 else { return nil }
+        return frame
     }
 
     /// 世界に固定した `cell` 度の升で分ける

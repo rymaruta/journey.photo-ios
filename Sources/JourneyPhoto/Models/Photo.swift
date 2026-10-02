@@ -213,9 +213,13 @@ struct Photo: Identifiable, Decodable, Equatable {
     }
 
     /// 地図のピンの画像（44pt の角丸）。**256px（`thumbSm`）から**——512px を読む必要は無い。
-    /// 無ければ一覧と同じものに落とす（Web の `PhotoMap.tsx` の `thumbSm || thumbSrc || src` と同じ順）
+    /// 無ければ一覧と同じものに落とす（Web の `PhotoMap.tsx` の `thumbSm || thumbSrc || src` と同じ順）。
+    /// **空の文字は「無い」と同じ**（Web の `||` と同じ）——`thumbSm: ""` で先へ落ちずに
+    /// 画像の無い印になるのを防ぐ
     var pinImageURL: URL? {
-        URL(string: thumbSm ?? thumbSrc ?? src256 ?? src)
+        let candidates = [thumbSm, thumbSrc, src256].compactMap { $0 }
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        return URL(string: candidates.first ?? src)
     }
 
     /// 一覧で切り抜くときに残す側。**持ち主が選んだ位置**（`focalPoint`）。

@@ -54,6 +54,44 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **写真のピンが地図に出ているか**を数えて残す（2026-10-02）。
+    ///
+    /// 「13-マップ」（パリ）で写真のピンが消えたように見えた回があった——丸い印は Apple の
+    /// 名所の挿絵で、それが描かれる前に撮っていたと見られる（絵だけでは写真のピンと見分けにくい）。
+    /// 印の目印（`map.photoPin`・束は `map.photoCluster`）で数えて、ログと添付に本数を書く。
+    /// 1本も無ければ縮小を3回まで押して探し、見つかったら「13e」を撮る。
+    ///
+    /// **落とさない**（この試験の決まり）。本数は本番のデータと位置で変わるので、
+    /// 0本を失敗にすると見張りが読めなくなる。0本のときは添付の本数で気づく
+    private func shootPhotoPins(_ app: XCUIApplication) {
+        let map = app.buttons["map.mode.map"].firstMatch
+        if map.exists { map.tap() }
+        func count() -> Int {
+            app.descendants(matching: .any).matching(identifier: "map.photoPin").count
+                + app.descendants(matching: .any).matching(identifier: "map.photoCluster").count
+        }
+        let first = app.descendants(matching: .any).matching(identifier: "map.photoPin").firstMatch
+        _ = first.waitForExistence(timeout: 5)
+        var found = count()
+        var zoomOuts = 0
+        let zoomOut = app.buttons["縮小"].firstMatch
+        while found == 0, zoomOuts < 3, zoomOut.exists, zoomOut.isHittable {
+            zoomOut.tap()
+            zoomOuts += 1
+            Thread.sleep(forTimeInterval: 2)
+            found = count()
+        }
+        print("ScreenshotTests: 写真のピン \(found) 本（縮小 \(zoomOuts) 回）")
+        let note = XCTAttachment(string: "写真のピン（map.photoPin + map.photoCluster）: \(found) 本・縮小 \(zoomOuts) 回")
+        note.name = "13e-写真のピンの本数"
+        note.lifetime = .keepAlways
+        add(note)
+        if found > 0 {
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "13e-マップ（写真のピン）")
+        }
+    }
+
     /// 名前で絞って、ピン（13b）と押したときの札（13c）を撮る
     private func shootSearchedSpot(_ app: XCUIApplication) {
         let field = app.textFields["map.search"].firstMatch
@@ -242,7 +280,10 @@ final class ScreenshotTests: XCTestCase {
                     field.buttons["Clear text"].firstMatch.tap()
                 }
             }
-            if name == "マップ" { shootSpotPin(app) }
+            if name == "マップ" {
+                shootSpotPin(app)
+                shootPhotoPins(app)
+            }
         }
 
         // **マイページの下半分**（モック2）。ハイライトの輪・作品の格子・
