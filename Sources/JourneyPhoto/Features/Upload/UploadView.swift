@@ -12,6 +12,13 @@ struct UploadView: View {
     @State private var appliedInitialSpot = false
     /// 「書きかけを捨てて閉じますか？」
     @State private var confirmDiscard = false
+    /// 編集画面を開いている写真（帯のサムネを押した）
+    @State private var editing: EditTarget?
+    /// 編集できない理由（再試行の鍵を控えている写真・`UploadEditRules.canEdit`）
+    @State private var editLockMessage: String?
+
+    /// 編集画面の行き先（写真の id）
+    private struct EditTarget: Identifiable { let id: UUID }
     @Environment(\.dismiss) private var dismiss
 
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき）。
@@ -163,6 +170,14 @@ struct UploadView: View {
                 progressAndErrors
                 if let spot = model.spot { spotBanner(spot) }
                 strip
+                if !model.items.isEmpty {
+                    // 見本 3 の一言（編集は写真ごと・元の写真は変わらない）
+                    Text(L("写真を押すと編集できます。編集は写真ごとに別々で、元の写真は変わりません。",
+                           "Tap a photo to edit it. Edits apply to that photo only, and the original stays as it is."))
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .padding(.horizontal, 4)
+                }
                 // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言
                 if let note = UploadGrouping.tripNote(fromTrip: model.fromTripImport, count: model.items.count) {
                     Text(note)
@@ -206,6 +221,26 @@ struct UploadView: View {
             NavigationStack {
                 SongPickerView { song in model.song = song }
             }
+        }
+        // 写真の編集（帯のサムネを押す）。**その写真だけ**にレシピを入れる（`applyEdit`）
+        .fullScreenCover(item: $editing) { target in
+            if let item = model.items.first(where: { $0.id == target.id }) {
+                PhotoEditView(recipe: item.recipe, source: item.editSourceReader,
+                              onDone: { recipe in
+                                  model.applyEdit(target.id, recipe: recipe)
+                                  editing = nil
+                              },
+                              onCancel: { editing = nil })
+            } else {
+                // 開いている間に写真が無くなった（ふつうは起きない。送信中は開かせない）
+                Color.black.ignoresSafeArea().onAppear { editing = nil }
+            }
+        }
+        .alert(L("この写真は編集できません", "Can't edit this photo"),
+               isPresented: Binding(get: { editLockMessage != nil }, set: { if !$0 { editLockMessage = nil } })) {
+            Button(L("OK", "OK"), role: .cancel) { editLockMessage = nil }
+        } message: {
+            Text(editLockMessage ?? "")
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { capture in
@@ -278,16 +313,55 @@ struct UploadView: View {
         .padding(.top, -8)
     }
 
+    /// 帯の1枚。**押すと編集画面**（写真ごと）。編集してあれば編集後の絵と札（見本 3）
     private func thumb(_ item: PendingPhoto, index: Int) -> some View {
-        Group {
-            if let preview = item.preview {
-                preview.resizable().aspectRatio(contentMode: .fill)
+        Button {
+            if let reason = model.editLockReason(for: item.id) {
+                editLockMessage = reason
             } else {
-                WebTheme.surface
+                editing = EditTarget(id: item.id)
+            }
+        } label: {
+            Group {
+                if let preview = item.stripPreview {
+                    preview.resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    WebTheme.surface
+                }
+            }
+            .frame(width: 96, height: 120)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        // 送っている間は開かせない（送信は1枚ごとにその時点の写真を読む）
+        .disabled(model.isWorking)
+        .accessibilityLabel(item.editBadge.map { L("\(index + 1)枚目・\($0)で編集済み", "Photo \(index + 1), edited: \($0)") }
+                            ?? L("\(index + 1)枚目", "Photo \(index + 1)"))
+        .accessibilityHint(L("押すと編集できます", "Opens the editor"))
+        .accessibilityIdentifier("upload.thumb.\(index)")
+        .overlay(alignment: .topLeading) {
+            // 編集済みの札（見本 3: 黒 66% の地に白 12pt）。写真の上なので白。
+            // 2026-10-02 判断: 見本は左下だが、左下には送る順の番号があるので左上に置く
+            if let badge = item.editBadge {
+                HStack(spacing: 4) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 10, weight: .bold))
+                    Text(badge)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(Color.black.opacity(0.66), in: Capsule())
+                .padding(6)
+                // 右上の外す丸と重ならない幅に収める
+                .frame(maxWidth: 70, alignment: .leading)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
         }
-        .frame(width: 96, height: 120)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(alignment: .bottomLeading) {
             Text("\(index + 1)")
                 .font(JPFont.mono(12))
