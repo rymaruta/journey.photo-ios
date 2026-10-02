@@ -19,6 +19,15 @@ enum ImagePreparer {
     static let maxPixelSize = 1920
     static let jpegQuality = 0.85
 
+    /// 一覧の格子に出す軽い版（`thumbSrc`）。**Web と同じ大きさと品質**
+    /// （`lib/utils/image.ts` の `createThumbnail(file, 512, 0.75)`）。
+    ///
+    /// アプリで上げた写真には `thumbSrc` が無く、一覧が元画像（〜1920px）を読んでいた
+    /// （2026-10-02 の調査）。形式だけは JPEG——Web は WebP だが、ImageIO は WebP を
+    /// 書けない。サーバーは `image/jpeg` を受ける（`uploadPolicy.ts` の許可リスト）
+    static let thumbnailMaxPixelSize = 512
+    static let thumbnailQuality = 0.75
+
     struct Prepared {
         /// 上げる本体。常に JPEG（EXIF なし）
         let data: Data
@@ -36,6 +45,15 @@ enum ImagePreparer {
         /// 既定を持たせてあるのは、**組み立て直す側**（下書きの復元・テスト）
         /// が色を知らないため。色は原本からしか取れない
         var dominantColor: String? = nil
+        /// 一覧用の 512px JPEG（EXIF なし・本体と同じ関所を通したもの）。
+        /// **作れなければ nil——投稿は止めない**（Web もサムネ無しで続ける）。
+        /// 組み立て直す側（下書きの復元・テスト）は持たないので既定は nil
+        var thumbnail: Data? = nil
+
+        /// サムネのファイル名（Web の `thumbFileName` と同じ `<名前>_thumb.jpg`）
+        var thumbnailFileName: String {
+            "\((fileName as NSString).deletingPathExtension)_thumb.jpg"
+        }
     }
 
     enum PrepareError: LocalizedError {
@@ -67,8 +85,12 @@ enum ImagePreparer {
         let coords = readCoords(from: properties)
         let takenOn = readTakenOn(from: properties)
 
-        let jpeg = try reencodeAsJPEG(source: source)
+        let jpeg = try reencodeAsJPEG(source: source, maxPixelSize: maxPixelSize, quality: jpegQuality)
         try assertStripped(jpeg)
+        // **縮めた本体から作る**（Web と同じ。原本の 24〜48MP をもう一度読まない）。
+        // 本体は向きを焼き込み済みで EXIF も無い。**同じ関所（`assertStripped`）を通す**
+        // ——通らなければサムネを上げない（素通ししない）
+        let thumbnail = makeThumbnail(fromJPEG: jpeg)
 
         return Prepared(
             data: jpeg,
@@ -79,19 +101,30 @@ enum ImagePreparer {
             takenOn: takenOn,
             // **原本から取る。** 焼き込みや再圧縮のあとでは色がわずかに動く
             // ——読み込み中の地の色なので実害は無いが、Web と同じものを出す
-            dominantColor: DominantColorExtractor.hex(from: data)
+            dominantColor: DominantColorExtractor.hex(from: data),
+            thumbnail: thumbnail
         )
+    }
+
+    /// 一覧用の 512px。作れない・メタデータを消せたと確かめられないときは nil
+    private static func makeThumbnail(fromJPEG jpeg: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(jpeg as CFData, nil),
+              CGImageSourceGetCount(source) > 0,
+              let thumb = try? reencodeAsJPEG(source: source, maxPixelSize: thumbnailMaxPixelSize,
+                                              quality: thumbnailQuality),
+              (try? assertStripped(thumb)) != nil else { return nil }
+        return thumb
     }
 
     // MARK: - 変換
 
-    /// 1920px に収めて JPEG に焼き直す。
+    /// `maxPixelSize` に収めて JPEG に焼き直す（本体は 1920px・サムネは 512px）。
     ///
     /// サムネイル API を使うのは、**出力に元のメタデータが引き継がれない**
     /// から。`CGImageDestination` に元の properties を渡さなければ EXIF は付かない。
     /// 回転は画素に焼き込む（`WithTransform`）——落とした EXIF に
     /// Orientation も含まれるので、焼かないと横倒しになる。
-    private static func reencodeAsJPEG(source: CGImageSource) throws -> Data {
+    private static func reencodeAsJPEG(source: CGImageSource, maxPixelSize: Int, quality: Double) throws -> Data {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -109,7 +142,7 @@ enum ImagePreparer {
             throw PrepareError.encodeFailed
         }
         CGImageDestinationAddImage(destination, image, [
-            kCGImageDestinationLossyCompressionQuality: jpegQuality
+            kCGImageDestinationLossyCompressionQuality: quality
         ] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
             throw PrepareError.encodeFailed

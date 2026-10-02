@@ -91,6 +91,10 @@ struct PhotoService {
             await uploads.discard(key: presigned.key)
             throw error
         }
+        // 一覧用の 512px も替える（`photoReplace.ts` の `buildReplace` は `thumbUrl` を
+        // `publicUrl` と同じ検査で受けて `thumbSrc` に書く。送らなければ消してビルドに作らせる）。
+        // 置けなくても差し替えは止めない
+        let thumb = await uploads.stageThumbnail(data: prepared.thumbnail, fileName: prepared.thumbnailFileName)
 
         // **`replace` で包む。** サーバーは `body.replace` しか見ない
         // （`photoUpdate.ts` の `hasReplace`）。包まないと、包まれていない
@@ -100,6 +104,8 @@ struct PhotoService {
         struct Replace: Encodable {
             let key: String
             let publicUrl: String
+            /// 無ければ送らない（キーごと落ちる）
+            let thumbUrl: String?
             let exif: ExifFields?
             let date: String?
             let coords: Coords?
@@ -110,6 +116,7 @@ struct PhotoService {
         let body = Body(replace: Replace(
             key: presigned.key,
             publicUrl: presigned.publicUrl,
+            thumbUrl: thumb?.publicUrl,
             exif: prepared.exif,
             date: date,
             // 送る前に端末でも丸める（投稿と同じ）
@@ -126,6 +133,7 @@ struct PhotoService {
         } catch {
             // 保存できなかったぶんの実体を残さない（投稿と同じ後始末）
             await uploads.discard(key: presigned.key)
+            if let thumb { await uploads.discard(key: thumb.key) }
             throw error
         }
         return prepared.takenOn != nil && date == nil

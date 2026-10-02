@@ -107,8 +107,9 @@ struct UploadService {
         let photo: Photo?
     }
 
-    func save(_ draft: PhotoDraft, presigned: PresignResponse) async throws -> Photo? {
-        let body = draft.saveBody(key: presigned.key, publicUrl: presigned.publicUrl)
+    /// - Parameter thumbUrl: 一覧用の 512px を置いた URL（`stageThumbnail`）。無ければ送らない
+    func save(_ draft: PhotoDraft, presigned: PresignResponse, thumbUrl: String? = nil) async throws -> Photo? {
+        let body = draft.saveBody(key: presigned.key, publicUrl: presigned.publicUrl, thumbUrl: thumbUrl)
         let result: SaveResponse = try await api.authorized(
             .post, "/upload/save", body: body, as: SaveResponse.self
         )
@@ -159,6 +160,37 @@ struct UploadService {
         }
         return presigned
     }
+
+    /// 一覧用の 512px（`ImagePreparer.Prepared.thumbnail`）を置く。**本体と同じ presign → PUT。**
+    ///
+    /// アプリで上げた写真には `thumbSrc` が無く、一覧の格子が元画像（〜1920px）を読んでいた。
+    /// Web は前から 512px を併せて上げている（`app/user/upload/page.tsx`）。
+    ///
+    /// **失敗しても投げない（nil）——本体の投稿は止めない**（Web と同じ）。置けなかった実体は
+    /// その場で片付ける（PUT の失敗）。サーバーの検査（`upload.ts` の `isOwnUploadUrl`）には、
+    /// presign が返す `publicUrl`（`uploads/<自分>/…`・CDN の https）をそのまま送るので通る
+    func stageThumbnail(data: Data?, fileName: String) async -> PresignResponse? {
+        guard let data, !data.isEmpty, !Task.isCancelled else { return nil }
+        return try? await stage(data: data, fileName: fileName, fileType: "image/jpeg")
+    }
+
+    /// 本体とサムネを置いたもの。**保存のやり直しは同じ2つの鍵で送る**（`stage` の注記）
+    struct Staged {
+        let main: PresignResponse
+        /// 一覧用の 512px。置けなかったら nil（サムネ無しで保存する）
+        let thumb: PresignResponse?
+
+        /// 諦めたときに片付ける鍵（本体・サムネ）
+        var keys: [String] { [main.key] + (thumb.map { [$0.key] } ?? []) }
+    }
+
+    /// 本体を置き、続けて一覧用の 512px を置く。本体の失敗だけが投げる
+    func stagePhoto(_ prepared: ImagePreparer.Prepared) async throws -> Staged {
+        let main = try await stage(data: prepared.data, fileName: prepared.fileName,
+                                   fileType: prepared.contentType)
+        let thumb = await stageThumbnail(data: prepared.thumbnail, fileName: prepared.thumbnailFileName)
+        return Staged(main: main, thumb: thumb)
+    }
 }
 
 /// 投稿の下書き。画面が組み立てて UploadService に渡す。
@@ -196,10 +228,11 @@ struct PhotoDraft {
     /// **座標は端末側でも丸めてから送る。** サーバーも約1km（小数第2位）に
     /// 丸めるが（`sanitize.ts` の `sanitizeCoords`）、丸める前の値を
     /// 電波に乗せる理由が無い。
-    func saveBody(key: String, publicUrl: String) -> SaveBody {
+    func saveBody(key: String, publicUrl: String, thumbUrl: String? = nil) -> SaveBody {
         SaveBody(
             key: key,
             publicUrl: publicUrl,
+            thumbUrl: thumbUrl,
             title: title.isEmpty ? nil : title,
             description: description.isEmpty ? nil : description,
             location: location.isEmpty ? nil : location,
@@ -221,6 +254,9 @@ struct PhotoDraft {
     struct SaveBody: Encodable {
         let key: String
         let publicUrl: String
+        /// 一覧用の 512px の URL（`thumbSrc` になる）。無ければ送らない。サーバーは
+        /// `publicUrl` と同じ検査（自分の `uploads/` 配下・500字まで）を通す（`upload.ts`）
+        let thumbUrl: String?
         let title: String?
         let description: String?
         let location: String?

@@ -702,20 +702,17 @@ final class UploadViewModel: ObservableObject {
         // 🔴 **やり直しは前回の鍵で保存する**（`UploadService.stage` の注記）。
         // 保存が落ちた写真は本体を置き直さない——新しい鍵で送ると、前回の保存が
         // 実は通っていたときに同じ写真が2枚になる
-        let presigned: UploadService.PresignResponse
+        // 一覧用の 512px も同じ回で置く（`UploadService.stagePhoto`）。やり直しは前回のサムネも使い回す
+        let placed: UploadService.Staged
         if let already = staged[item.id] {
-            presigned = already
+            placed = already
         } else {
-            presigned = try await uploads.stage(
-                data: item.prepared.data,
-                fileName: item.prepared.fileName,
-                fileType: item.prepared.contentType
-            )
-            staged[item.id] = presigned
+            placed = try await uploads.stagePhoto(item.prepared)
+            staged[item.id] = placed
         }
         let photo: Photo?
         do {
-            photo = try await uploads.save(draft, presigned: presigned)
+            photo = try await uploads.save(draft, presigned: placed.main, thumbUrl: placed.thumb?.publicUrl)
         } catch let error as APIError {
             // **保存の 404 だけ**が「アルバムが無い」。S3 への PUT の 404 は別の失敗
             if let albumId = draft.albumId, case .server(404, _) = error { throw AlbumGone(albumId: albumId) }
@@ -766,10 +763,10 @@ final class UploadViewModel: ObservableObject {
 
     /// 置いたまま保存していない本体を片付ける（本人がその写真を外した）
     private func discardStaged(_ photoId: UUID) {
-        guard let presigned = staged[photoId] else { return }
+        guard let placed = staged[photoId] else { return }
         staged[photoId] = nil
         let uploads = self.uploads
-        Task { await uploads.discard(key: presigned.key) }
+        Task { for key in placed.keys { await uploads.discard(key: key) } }
     }
 
     private func reset() {
@@ -826,16 +823,16 @@ final class BackgroundWindow {
 /// **MainActor に縛らない箱に入れる**のは、画面のモデルが消えるとき（`deinit`）
 /// にも読むため。触るのは MainActor の上だけ
 final class StagedUploads: @unchecked Sendable {
-    private var byPhoto: [UUID: UploadService.PresignResponse] = [:]
+    private var byPhoto: [UUID: UploadService.Staged] = [:]
 
-    subscript(photoId: UUID) -> UploadService.PresignResponse? {
+    subscript(photoId: UUID) -> UploadService.Staged? {
         get { byPhoto[photoId] }
         set { byPhoto[photoId] = newValue }
     }
 
     /// 全部を取り出して空にする。返すのは片付ける鍵
     func removeAll() -> [String] {
-        let keys = byPhoto.values.map(\.key)
+        let keys = byPhoto.values.flatMap(\.keys)
         byPhoto = [:]
         return keys
     }
