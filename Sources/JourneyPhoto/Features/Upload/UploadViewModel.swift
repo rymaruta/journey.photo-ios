@@ -214,8 +214,8 @@ final class UploadViewModel: ObservableObject {
     /// 公開範囲を変えられない理由（短い一言）。変えられるときは nil
     var visibilityLockReason: String? {
         visibilityLocked
-            ? L("前の送信が届いている可能性があるため、公開範囲は変えられません。まず「投稿する」をもう一度押してください（届いていれば投稿済みになります）",
-                "Your last attempt may have gone through, so visibility can't be changed. Tap Post again first (if it went through, it will show as posted).")
+            ? L("前の送信が届いている可能性があるため、公開範囲は変えられません。まず「投稿する」をもう一度押してください（届いていれば投稿済みになります）。何度押しても投稿できないときは、その写真を外してください",
+                "Your last attempt may have gone through, so visibility can't be changed. Tap Post again first (if it went through, it will show as posted). If it keeps failing, remove that photo.")
             : nil
     }
 
