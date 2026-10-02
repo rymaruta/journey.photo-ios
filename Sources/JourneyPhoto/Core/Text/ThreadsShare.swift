@@ -11,14 +11,21 @@ import Foundation
 ///
 /// 渡す写真は、投稿の直後は**投稿に使った画像そのもの**（`ImagePreparer` が位置などの EXIF を
 /// 落としたもの）、過去の投稿からは**サーバーの原本を画素だけに書き出し直したもの**
-/// （`ShareSheet.pixelsOnly`・Web から上げた原本は GPS 入り）。端末の原本は渡さない
+/// （Web から上げた原本は GPS 入り）。どちらも `WatermarkRenderer` が画素だけに書き出し直し、
+/// 右下に「Journey Photo」の透かしを入れる。端末の原本は渡さない
+///
+/// **Threads 以外の SNS にも同じ形で載せる**（2026-10-02 owner「他の SNS でも同じようにできる
+/// ようにしたい」）。共有の画面なので X・Instagram・LINE なども選べる。画面の名前は「SNS にも
+/// 載せる」。文を受け取らないアプリ（Instagram・Facebook）のために、文はクリップボードにも置く
+/// （`ShareSheet`）。型の名前は Threads のまま（最初の入口の名残・中身はどの SNS でも同じ）
 enum ThreadsShare {
 
     /// 投稿したら共有の画面を開くか（端末に覚える）
     static let defaultsKey = "upload.shareToThreads"
-    /// 一度に渡す写真の上限（Threads の1投稿は20枚まで。共有の画面に重い画像を並べすぎない）
+    /// 一度に渡す写真の上限（共有の画面に重い画像を並べすぎない。X は1投稿4枚までなので、
+    /// X では先頭の4枚を選び直してもらうことになる＝X 側の入力画面の作り）
     static let maxImages = 10
-    /// Threads の本文の上限（500字）
+    /// 本文の上限（Threads の500字。X は280字で、長い説明は X の入力画面で削ってもらう）
     static let maxTextLength = 500
 
     /// 共有の画面に渡すもの（写真のデータと文）

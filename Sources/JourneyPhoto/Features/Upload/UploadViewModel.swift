@@ -224,7 +224,7 @@ final class UploadViewModel: ObservableObject {
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
     /// だけでは閉じない——選び直しの読み込み中も空になる）
     @Published private(set) var didPostAll = false
-    /// 投稿したら Threads にも載せるか（`ThreadsShare`）。**端末に覚える**——毎回入れ直させない
+    /// 投稿したら SNS にも載せるか（`ThreadsShare`）。**端末に覚える**——毎回入れ直させない
     @Published var shareToThreads = UserDefaults.standard.bool(forKey: ThreadsShare.defaultsKey) {
         didSet { UserDefaults.standard.set(shareToThreads, forKey: ThreadsShare.defaultsKey) }
     }
@@ -636,15 +636,23 @@ final class UploadViewModel: ObservableObject {
                 // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
                 if shareToThreads, ThreadsShare.isEligible(published: published, audience: audience),
                    let lead = sharable.first {
-                    threadsBundle = ThreadsShare.Bundle(
-                        images: sharable.prefix(ThreadsShare.maxImages).map(\.data),
+                    // 透かしを入れる（`WatermarkRenderer`・重いので画面の処理の外で）。
+                    // 束は `didPostAll` より先に立てる（画面は立っていれば閉じずに共有の画面を出す）
+                    let raw = Array(sharable.prefix(ThreadsShare.maxImages).map(\.data))
+                    let marked = await Task.detached(priority: .userInitiated) {
+                        raw.compactMap { WatermarkRenderer.apply($0) }
+                    }.value
+                    // 1枚も用意できなければ共有の画面は出さず、投稿画面はそのまま閉じる（投稿自体は済んでいる）。
+                    // 渡すのは `ImagePreparer` が作った JPEG なので、ここで全部失敗することは実際にはまず無い
+                    if !marked.isEmpty { threadsBundle = ThreadsShare.Bundle(
+                        images: marked,
                         // 最後に「Journey Photo」とその下に1枚目の写真の**短縮リンク**（owner 2026-10-02）。
                         // `/?p=<先頭8文字>` はトップが `/?photo=<id>` に置き換える。`/photo/<id>` は
                         // 再ビルドのあと（数分）まで無く、すぐ載せると Threads が 404 を読む（`PhotoLink`）
                         text: ThreadsShare.text(title: lead.title, description: lead.description,
                                                 location: lead.location,
                                                 url: PhotoLink.shortURL(photoId: lead.photoId)
-                                                    ?? PhotoLink.url(photoId: lead.photoId, isPublished: false)))
+                                                    ?? PhotoLink.url(photoId: lead.photoId, isPublished: false))) }
                 }
                 didPostAll = done.count > 0
             } else {

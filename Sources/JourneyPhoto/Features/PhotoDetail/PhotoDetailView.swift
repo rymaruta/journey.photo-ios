@@ -25,7 +25,7 @@ struct PhotoDetailView: View {
     @State private var ownerBlockedWhenReporting = false
     @State private var showDeleteConfirm = false
     @State private var showEdit = false
-    /// 過去の投稿を Threads に載せる（owner 2026-10-02「すでに投稿済みのでも共有できると嬉しい」）
+    /// 過去の投稿を SNS に載せる（owner 2026-10-02「すでに投稿済みのでも共有できると嬉しい」）
     @State private var threadsBundle: ThreadsShare.Bundle?
     @State private var preparingThreads = false
     @State private var showViewer = false
@@ -712,8 +712,8 @@ struct PhotoDetailView: View {
 
     // MARK: - 操作
 
-    /// 過去の投稿を Threads に載せる。写真の本体を読み、投稿したときと同じ文を作って共有の画面へ。
-    /// 渡すのは `UIImage` に戻した画像（共有の先で作り直されるので、ファイルの付帯情報は渡らない）
+    /// 過去の投稿を SNS に載せる。写真の本体を読み、投稿したときと同じ文を作って共有の画面へ。
+    /// 渡すのは `WatermarkRenderer` が画素だけに書き出し直し、透かしを入れた画像
     private func prepareThreads() async {
         // **押した時点の写真を掴んでおく。** 読み込み（最大15秒）の間に束を送ると `shown` が
         // 替わり、1枚目の画像に2枚目の題とリンクが付いた（87525da9 のレビュー）
@@ -725,13 +725,19 @@ struct PhotoDetailView: View {
         actionNotice = L("写真を読み込んでいます…", "Loading the photo…")
         defer { preparingThreads = false }
         actionError = nil
-        // 🔴 **画素だけにしてから渡す。** `src` は原本で、Web から上げた原本は GPS 入りのまま
-        // （`photo-gallery/app/user/upload/page.tsx`）。共有の画面の作りに頼らず、ここで落とす
-        guard let raw = await TripBookCardRenderer.coverData(url),
-              let data = ShareSheet.pixelsOnly(raw) else {
+        // 🔴 **画素だけに書き出し直してから渡す。** `src` は原本で、Web から上げた原本は GPS 入りのまま
+        // （`photo-gallery/app/user/upload/page.tsx`）。`WatermarkRenderer` が書き出し直す（透かしも入れる）
+        guard let raw = await TripBookCardRenderer.coverData(url) else {
             actionNotice = nil
             actionError = L("写真を読み込めませんでした。通信を確かめてください",
                             "Couldn't load the photo. Check your connection.")
+            return
+        }
+        // 読めたが画像として書き出せない（壊れた画像・ホテルの Wi-Fi のログイン画面が HTML を返した等）
+        guard let data = await Task.detached(priority: .userInitiated, operation: { WatermarkRenderer.apply(raw) }).value else {
+            actionNotice = nil
+            actionError = L("この写真を SNS 用に用意できませんでした。少し時間をおいて、もう一度お試しください",
+                            "Couldn't prepare this photo for sharing. Please try again in a moment.")
             return
         }
         actionNotice = nil
@@ -761,10 +767,10 @@ struct PhotoDetailView: View {
                     Label(L("編集", "Edit"), systemImage: "pencil")
                 }
                 // **自分の、全体に公開した写真だけ**（`ThreadsShare`・絞った写真を外の SNS に流さない。
-                // 人の写真の画像を自分の Threads に載せる口も作らない）
+                // 人の写真の画像を自分の SNS に載せる口も作らない）
                 if CollectionScreen.isShareable(shown) {
                     Button { Task { await prepareThreads() } } label: {
-                        Label(L("Threads に載せる", "Share to Threads"), systemImage: "at")
+                        Label(L("SNS に載せる", "Share to social apps"), systemImage: "square.and.arrow.up.on.square")
                     }
                     .disabled(preparingThreads)
                 }
