@@ -10,13 +10,26 @@ public typealias CFMutableData = NSMutableData
 public final class CGImageSource {}
 public final class CGImageDestination {}
 public final class CGImage {
+    /// **本物には無い。** Linux の試験で「何かの画像」を渡すためだけのもの
+    /// （試験の側も `#if !canImport(Darwin)` の中でしか使わない）
+    public init() {}
     public var width: Int { 0 }
     public var height: Int { 0 }
+    /// 写真の編集の書き出しが、元の色空間（Display P3 か）を見るのに使う
+    public var colorSpace: CGColorSpace? { nil }
 }
 
 // MARK: - 画素を読むための最小限（CoreGraphics。本物にある口だけ）
 
-public final class CGColorSpace {}
+public final class CGColorSpace {
+    init() {}
+    /// 名前で作る（本物と同じ形）。写真の編集の書き出し（`PhotoRenderer`）が使う
+    public init?(name: CFString) { return nil }
+    public var name: CFString? { nil }
+    public static let sRGB: CFString = "kCGColorSpaceSRGB"
+    public static let displayP3: CFString = "kCGColorSpaceDisplayP3"
+    public static let extendedLinearDisplayP3: CFString = "kCGColorSpaceExtendedLinearDisplayP3"
+}
 public func CGColorSpaceCreateDeviceRGB() -> CGColorSpace { CGColorSpace() }
 
 public struct CGBitmapInfo: OptionSet {
@@ -62,6 +75,9 @@ public func CGImageDestinationFinalize(_ destination: CGImageDestination) -> Boo
 public let kCGImageSourceCreateThumbnailFromImageAlways: CFString = "kCGImageSourceCreateThumbnailFromImageAlways"
 public let kCGImageSourceCreateThumbnailWithTransform: CFString = "kCGImageSourceCreateThumbnailWithTransform"
 public let kCGImageSourceThumbnailMaxPixelSize: CFString = "kCGImageSourceThumbnailMaxPixelSize"
+/// HDR を SDR に直して読む（iOS 17+。本物と同じ名前）
+public let kCGImageSourceDecodeRequest: CFString = "kCGImageSourceDecodeRequest"
+public let kCGImageSourceDecodeToSDR: CFString = "kCGImageSourceDecodeToSDR"
 public let kCGImageDestinationLossyCompressionQuality: CFString = "kCGImageDestinationLossyCompressionQuality"
 public let kCGImagePropertyExifDictionary: CFString = "{Exif}"
 public let kCGImagePropertyGPSDictionary: CFString = "{GPS}"
