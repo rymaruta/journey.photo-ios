@@ -19,6 +19,10 @@ struct RootView: View {
     @ObservedObject private var missions = MissionRouter.shared
     @ObservedObject private var tabRouter = TabRouter.shared
     @State private var showStoryComposer = false
+    /// 「旅の写真からまとめて」（全画面）
+    @State private var showTripImport = false
+    /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
+    @State private var pendingTripPhotos: [Data] = []
     /// お知らせ（タブから外してヘッダーへ移した）
     @State private var showNotifications = false
     /// 見出しの「メニュー（≡）」（板 01d）
@@ -401,25 +405,50 @@ struct RootView: View {
         // 「参加する」が押されたら、投稿画面をそのタグで開く
         .onChange(of: missions.requests) { _, _ in
             pendingThemeTag = missions.tag
+            // 旅の写真の控えは渡さない（`TripImportHandoff`）
+            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .theme, pending: pendingTripPhotos)
             showPhotoUpload = true
         }
         // 今日のテーマの「参加する」から来たときのタグ。
         // **投稿画面を閉じたら忘れる**（次の投稿に引きずらない）
         .onChange(of: showPhotoUpload) { _, shown in
-            if !shown { pendingThemeTag = nil }
+            if !shown {
+                pendingThemeTag = nil
+                // 旅の写真も同じ（次の投稿に同じ写真が並ばない）
+                pendingTripPhotos = []
+            }
         }
         .sheet(isPresented: $showPostChoice) {
             PostSheet { kind in
                 switch kind {
-                case .photo: showPhotoUpload = true
+                case .photo:
+                    pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .photo, pending: pendingTripPhotos)
+                    showPhotoUpload = true
                 case .story: showStoryComposer = true
+                case .trip:
+                    pendingTripPhotos = []
+                    showTripImport = true
                 }
+            }
+        }
+        // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
+        .fullScreenCover(isPresented: $showTripImport, onDismiss: {
+            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
+            if !pendingTripPhotos.isEmpty { showPhotoUpload = true }
+        }) {
+            // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）
+            LibraryTripFlowView { photos in
+                pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
             }
         }
         // **閉じたら知らせる**（`TabRouter.postSheetsClosed`）。マイページの
         // 格子とストーリーの行はこれを見て読み直す
         .sheet(isPresented: $showPhotoUpload, onDismiss: { tabRouter.postSheetClosed() }) {
-            NavigationStack { UploadView(initialTag: pendingThemeTag) }
+            // 旅の写真から来たときは、その写真を並べて**非公開で**始める
+            NavigationStack {
+                UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
+                           startPrivate: !pendingTripPhotos.isEmpty)
+            }
         }
         .sheet(isPresented: $showStoryComposer, onDismiss: { tabRouter.postSheetClosed() }) {
             NavigationStack { StoryComposerView() }

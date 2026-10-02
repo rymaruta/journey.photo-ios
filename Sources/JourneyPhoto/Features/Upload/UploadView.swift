@@ -23,11 +23,19 @@ struct UploadView: View {
     /// 渡すのは**スポットのページに並ぶ形で上がった枚数**（スポットの画面が
     /// 「投稿しました」を出すか決める）。**何度呼ばれても同じ結果になる受け手に渡す**
     private let onPosted: ((Int) -> Void)?
+    /// 最初から並べておく写真の本体（旅の写真からまとめて来たとき・`LibraryTripFlowView`）。
+    /// 整えるのは model（`accept(libraryPhotos:)`）。**一度だけ入れる**
+    private let initialPhotos: [Data]
+    /// 非公開で始める（旅の写真から来たとき）。**変えられる**——決めつけない
+    private let startPrivate: Bool
 
-    init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil) {
+    init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil,
+         initialPhotos: [Data] = [], startPrivate: Bool = false) {
         self.initialTag = initialTag
         self.initialSpot = spot
         self.onPosted = onPosted
+        self.initialPhotos = initialPhotos
+        self.startPrivate = startPrivate
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
         // ため、ここでは既定の組み立てを使う
         let api = APIClient(tokenProvider: CognitoTokenProvider())
@@ -178,6 +186,8 @@ struct UploadView: View {
             // 利用者が空にしたタグがまた入る（印は model が持つ・送ったあとの reset で下ろす）
             model.initialTag = initialTag
             model.applyInitialTag()
+            // 旅の写真と「非公開で始める」も一度だけ（印は model が持つ）
+            model.applyInitialPhotos(initialPhotos, startPrivate: startPrivate)
             // **一度だけ入れる**（外したあとに戻さない）
             if let initialSpot, !appliedInitialSpot {
                 appliedInitialSpot = true

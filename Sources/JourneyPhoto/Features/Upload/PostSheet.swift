@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 「写真を投稿／ストーリーを投稿」の2択。
+/// 「写真を投稿／ストーリーを投稿／旅の写真からまとめて」の3択。
 ///
 /// Web 側の `app/components/PostSheet.tsx` と対。owner:「写真を追加のとこで
 /// 投稿かストーリーを選べるようにしたい」。
@@ -22,10 +22,12 @@ struct PostSheet: View {
     enum Kind {
         case photo
         case story
+        /// 端末の写真ライブラリから旅を見つけて、まとめて投稿（`LibraryTripFlowView`）
+        case trip
     }
 
     var body: some View {
-        // 板 21: 下から出る短いシート。左に明朝の見出し、右に ×、2枚の札
+        // 板 21: 下から出る短いシート。左に明朝の見出し、右に ×、3枚の札
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(L("投稿する", "Create"))
@@ -57,12 +59,19 @@ struct PostSheet: View {
                 systemImage: "clock",
                 kind: .story
             )
+            choice(
+                thumb: thumbs.dropFirst(2).first,
+                title: L("旅の写真からまとめて", "From a trip in your photos"),
+                detail: L("撮影日と場所から旅を見つけます。", "Finds trips by when and where you shot."),
+                systemImage: "suitcase",
+                kind: .trip
+            )
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.top, 20)
         // 文字を大きくしたときに切れないよう、全画面にも伸ばせる
-        .presentationDetents([.height(320), .large])
+        .presentationDetents([.height(424), .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Self.sheetBackground)
         .task {
@@ -76,9 +85,17 @@ struct PostSheet: View {
             }
             // **取れなかったときは控えない**（次に開いたときに取り直す）
             guard let mine = try? await environment.photos.myPhotos() else { return }
-            let picked = PostSheetThumbs.pick(fromMine: mine)
+            let picked = PostSheetThumbs.pick(fromMine: mine, count: 3)
             PostSheetThumbs.cache.store(picked, for: userId)
             thumbs = picked
+        }
+    }
+
+    private static func identifier(_ kind: Kind) -> String {
+        switch kind {
+        case .photo: return "photo"
+        case .story: return "story"
+        case .trip: return "trip"
         }
     }
 
@@ -137,6 +154,6 @@ struct PostSheet: View {
         }
         .buttonStyle(.plain)
         // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
-        .accessibilityIdentifier("post.choice.\(kind == .photo ? "photo" : "story")")
+        .accessibilityIdentifier("post.choice.\(Self.identifier(kind))")
     }
 }

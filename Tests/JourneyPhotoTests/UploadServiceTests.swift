@@ -142,6 +142,34 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertEqual(model.tagsText, "", "空にしたタグを戻ってきたときに入れ直している")
     }
 
+    /// 旅の写真から来た投稿は**非公開で送る**。上げ終えて片付けたあとも非公開のまま
+    /// （初期値に戻す）で、片付いた画面は書きかけではない（閉じるときに聞かない）
+    @MainActor
+    func testPrivateStartIsSentAndKeptAfterReset() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: #"{"success":true,"photo":{"id":"p1","src":"https://x/p1.jpg"}}"#),
+        ]
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let model = UploadViewModel(uploads: service(), albums: AlbumService(api: api),
+                                    photos: PhotoService(api: api), discovery: DiscoveryService(api: api))
+        model.applyInitialPhotos([], startPrivate: true)
+        model.items = [PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(repeating: 0xFF, count: 16), fileName: "photo.jpg", contentType: "image/jpeg",
+            exif: nil, coords: nil, takenOn: nil))]
+
+        await model.submit()
+
+        let save = try XCTUnwrap(ScriptedProtocol.calls.first { $0.path == "/upload/save" })
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(save.body)) as? [String: Any])
+        XCTAssertEqual(json["published"] as? Bool, false, "非公開で始めたのに公開で送った")
+        XCTAssertTrue(model.didPostAll)
+        XCTAssertFalse(model.published, "片付けで公開に戻った")
+        XCTAssertFalse(model.hasDraft, "片付いた画面を書きかけにした")
+    }
+
     /// 🔴 **曲だけ付かなかった回は画面が閉じずに入力を片付ける。** そのときテーマの
     /// タグは入れ直す——印を下ろさないと、次の投稿でタグが空のまま残った
     @MainActor
