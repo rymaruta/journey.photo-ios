@@ -4,6 +4,15 @@ import PhotosUI
 import UIKit
 
 /// ストーリーを投稿する。24時間で消える。
+///
+/// **かんたん版**（owner・2026-10-02 に候補を見て「めっちゃいい」）。3つの段:
+///  1. 写真を選ぶ — 写真が0枚なら、開いてすぐ最近の写真の格子（埋め込みの写真選び）。下の白い「次へ（N枚）」
+///  2. 仕上げる — 写真を大きく、その下に名前つきの道具4つ（文字・スタンプ・曲・場所・`StoryTool`）。
+///     表示秒数・写真の合わせ方を戻す・下書き保存は右上の「…」
+///  3. 誰に見せる — 下の「フォロワー ▾」でシート（`StoryAudienceSheet`）、右の白い「シェアする」で投稿
+///
+/// 段は**写真の有無で決める**（`shots.isEmpty` なら1）。段の状態は新しく持たない——
+/// 下書き・送信・文字のデータ・写真の合わせ方の中身は前のまま、置き場所だけを変えた。
 struct StoryComposerView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -90,10 +99,15 @@ struct StoryComposerView: View {
     private var votePanelOpen: Bool { voteSelected && typingId == nil && vote.wrappedValue != nil }
     /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
     @FocusState private var captionFocused: Bool
-    /// 撮影地を打つ（右の列の「撮影地」）
+    /// 撮影地を打つ（写真の下の道具の「場所」）
     @State private var showPlaceEditor = false
-    /// 写真を選ぶ画面（「＋」のメニューと、写真が無いときの入口から開く）
+    /// 写真を選ぶ画面（並びの帯の「＋」から開く・足すとき）
     @State private var showLibrary = false
+    /// 埋め込みの写真選び（写真が0枚のとき）で選んでいるもの。**「次へ」まで読み込まない**
+    /// （`pickerItems` は変わった瞬間に読み込むので別に持つ）
+    @State private var librarySelection: [PhotosPickerItem] = []
+    /// 「誰に見せる？」のシート
+    @State private var showAudience = false
     @State private var placeDraft = ""
     /// ✕ で閉じる前の「下書きに保存／捨てる／キャンセル」
     @State private var showLeaveConfirm = false
@@ -157,42 +171,59 @@ struct StoryComposerView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
-            VStack(spacing: 0) {
-                photoArea
-                    .ignoresSafeArea(edges: .top)
-                if !votePanelOpen {
-                    footer
-                        // 打っている間は**隠すだけ**（枠の大きさは変えない——変えると写真の枠が伸びて、
-                        // 打ち始めに測った枠とずれる）。暗幕越しに「ストーリーに投稿」が
-                        // 書体の列の下に透けて重なっていた（2026-09-30 の owner の画面）
-                        .opacity(typingId == nil ? 1 : 0)
-                        .allowsHitTesting(typingId == nil)
+            // 写真が0枚なら写真を選ぶ段。全部外したときもここへ戻る
+            if shots.isEmpty {
+                pickStage
+            } else {
+                VStack(spacing: 0) {
+                    photoArea
+                        .ignoresSafeArea(edges: .top)
+                    if !votePanelOpen {
+                        footer
+                            // 打っている間は**隠すだけ**（枠の大きさは変えない——変えると写真の枠が伸びて、
+                            // 打ち始めに測った枠とずれる）。暗幕越しに「ストーリーに投稿」が
+                            // 書体の列の下に透けて重なっていた（2026-09-30 の owner の画面）
+                            .opacity(typingId == nil ? 1 : 0)
+                            .allowsHitTesting(typingId == nil)
+                    }
                 }
-            }
-            // **打っている間はキーボードで写真の枠を縮めない。** 縮めると写真が縮んだ枠に合わせて
-            // 切り直され、下に（隠した足元の分の）黒い帯が残った（2026-09-30 の owner の画面
-            // 「画面の上の方おかしい」）。キーボードを避けるのは上に重ねた打つ画面だけ。
-            // ひとことを打つ間は今まで通り避ける（欄がキーボードの下に隠れないように）
-            .ignoresSafeArea(.keyboard, edges: photoIgnoresKeyboard ? .bottom : [])
-            // 打っている間は後ろを読ませない（VoiceOver で投稿・他の札へ移れた）
-            .accessibilityHidden(typingId != nil)
-            if typingId == nil {
-                topBar
-                    .padding(.horizontal, 8)
-                    .padding(.top, 2)
-            }
-            // 写真の上で直接打つ（開いたらすぐキーボード）
-            if let typingId {
-                StoryTextTypingView(overlay: typingBinding(id: typingId),
-                                    photoShortSide: photoShortSide,
-                                    canvas: typingCanvas,
-                                    photo: TextOverlay.filledRect(
-                                        image: shots.first { $0.id == typingShotId }?.imageSize ?? typingCanvas,
-                                        in: typingCanvas)) { finishTyping() }
+                // **打っている間はキーボードで写真の枠を縮めない。** 縮めると写真が縮んだ枠に合わせて
+                // 切り直され、下に（隠した足元の分の）黒い帯が残った（2026-09-30 の owner の画面
+                // 「画面の上の方おかしい」）。キーボードを避けるのは上に重ねた打つ画面だけ。
+                // ひとことを打つ間は今まで通り避ける（欄がキーボードの下に隠れないように）
+                .ignoresSafeArea(.keyboard, edges: photoIgnoresKeyboard ? .bottom : [])
+                // 打っている間は後ろを読ませない（VoiceOver で投稿・他の札へ移れた）
+                .accessibilityHidden(typingId != nil)
+                if typingId == nil {
+                    topBar
+                        .padding(.horizontal, 8)
+                        .padding(.top, 2)
+                }
+                // 写真の上で直接打つ（開いたらすぐキーボード）
+                if let typingId {
+                    StoryTextTypingView(overlay: typingBinding(id: typingId),
+                                        photoShortSide: photoShortSide,
+                                        canvas: typingCanvas,
+                                        photo: TextOverlay.filledRect(
+                                            image: shots.first { $0.id == typingShotId }?.imageSize ?? typingCanvas,
+                                            in: typingCanvas),
+                                        onDelete: { deleteTyping() }) { finishTyping() }
+                }
             }
         }
         // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）
         .toolbar(.hidden, for: .navigationBar)
+        // 写真が入ったら、埋め込みの写真選びの選択は空にする（全部外して戻ったとき、前の選択のまま
+        // 「次へ」を押すと同じ写真がもう一度入る）
+        .onChange(of: shots.isEmpty) { _, empty in if !empty { librarySelection = [] } }
+        // 誰に見せる（前は足元にあった「フォロワーが見られます」と2つのスイッチ）
+        .sheet(isPresented: $showAudience) {
+            StoryAudienceSheet(allowReplies: $allowReplies, keepInArchive: $keepInArchive) {
+                showAudience = false
+            }
+            .presentationDetents([.medium, .large])
+            .presentationBackground(WebTheme.background)
+        }
         .sheet(isPresented: $showStickerTray, onDismiss: {
             if let pick = pendingPick {
                 pendingPick = nil
@@ -357,7 +388,8 @@ struct StoryComposerView: View {
                             // 欄が先に取って動かせなかった）
                             underOverlays: AnyView(captionLayer))
             } else {
-                emptyPhoto
+                // 写真を読めなかった1枚（並びには居る）。黒のまま
+                Color.black
             }
         }
         .overlay(alignment: .top) {
@@ -372,18 +404,6 @@ struct StoryComposerView: View {
                 .frame(height: 170)
                 .allowsHitTesting(false)
         }
-        .overlay(alignment: .topTrailing) {
-            if typingId == nil && !votePanelOpen && preview != nil {
-                toolColumn
-                    .padding(.trailing, 12)
-                    .padding(.top, 120)
-                    // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
-                    // 枠が伸びて札が指から外れた・81cbd07 のレビュー）
-                    .opacity(draggingOverlay ? 0 : 1)
-                    .allowsHitTesting(!draggingOverlay)
-                .accessibilityHidden(draggingOverlay)
-            }
-        }
         .overlay(alignment: .bottomLeading) {
             if typingId == nil && !votePanelOpen && preview != nil {
                 mediaStrip
@@ -397,8 +417,9 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if typingId == nil && !votePanelOpen && preview != nil {
-                durationMenu
+            if typingId == nil && !votePanelOpen && preview != nil && shots.count > 1 {
+                // 何枚目か（等幅）。表示秒数は右上の「…」へ移した
+                shotCounter
                     .padding(.trailing, 16)
                     .padding(.bottom, 30)
                     // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
@@ -433,48 +454,143 @@ struct StoryComposerView: View {
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }
 
-    /// まだ1枚も選んでいないとき。**写真の道具だけを真ん中に**
-    private var emptyPhoto: some View {
-        VStack(spacing: 14) {
-            Text(L("写真を選ぶ", "Choose a photo"))
-                .font(JPFont.display(26, relativeTo: .title))
-                .foregroundStyle(.white)
-            HStack(spacing: 10) {
-                Button { showLibrary = true } label: {
-                    glassPill(L("ライブラリ", "Library"), systemImage: "photo")
-                }
-                .buttonStyle(.plain)
-                if CameraPicker.isAvailable {
-                    Button { showCamera = true } label: {
-                        glassPill(L("カメラ", "Camera"), systemImage: "camera")
+    // MARK: - 写真を選ぶ段
+
+    /// 写真が0枚のとき。**開いてすぐ最近の写真の格子**（iOS 17 の埋め込みの写真選び）。
+    /// 写真ライブラリの許可は求めない（`photoLibrary` を渡さない形は、選んだものだけを受け取る）。
+    /// 開いたときの問い（送れなかった・続きから）は前のまま、この上に先に出る
+    private var pickStage: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Text(L("ストーリー", "Story"))
+                    .font(JPFont.display(18, relativeTo: .headline))
+                    .foregroundStyle(WebTheme.text)
+                    .accessibilityAddTraits(.isHeader)
+                HStack {
+                    Button {
+                        switch leave {
+                        case .now: dismiss()
+                        case .confirm: showLeaveConfirm = true
+                        case .wait: break
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Labels.Common.close)
+                    Spacer()
+                    if CameraPicker.isAvailable {
+                        // 撮って入れる（前のカメラの流れ。撮ったら `accept` で並びに入り、仕上げる段へ）
+                        Button { showCamera = true } label: {
+                            Image(systemName: "camera")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                                .background(WebTheme.surface, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(loadingPicks > 0)
+                        .opacity(loadingPicks > 0 ? 0.4 : 1)
+                        .accessibilityLabel(L("カメラ", "Camera"))
+                    }
                 }
             }
-            // 読み込み中は足さない（投稿・下書き保存と同じ条件）。2本の読み込みが混ざって並んだ
-            .disabled(loadingPicks > 0)
-            .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos") : "")
-            .opacity(loadingPicks > 0 ? 0.4 : 1)
+            .padding(.horizontal, 8)
+            .padding(.top, 2)
+            .padding(.bottom, 6)
+
+            // 選んだ順に並ぶ（`.ordered`）。「キャンセル」「追加」を止めると、押すたびに選択が変わる
+            PhotosPicker(selection: $librarySelection,
+                         maxSelectionCount: StoryQueue.maxShots,
+                         selectionBehavior: .ordered,
+                         matching: .images) {
+                Text(L("写真を選ぶ", "Choose photos"))
+            }
+            .photosPickerStyle(.inline)
+            .photosPickerDisabledCapabilities(.selectionActions)
+            .photosPickerAccessoryVisibility(.hidden, edges: .all)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            pickFooter
+        }
+    }
+
+    /// 写真を選ぶ段の下（知らせと白い「次へ（N枚）」）
+    private var pickFooter: some View {
+        let next = StorySimpleRules.nextButton(selected: librarySelection.count, loading: loadingPicks > 0)
+        return VStack(spacing: 10) {
             if let message {
                 Text(message).font(.footnote).foregroundStyle(WebTheme.muted2)
             }
+            Button {
+                // 読み込みは前の `load`（読めたものから並びに入り、1枚入ると仕上げる段に移る）
+                let items = librarySelection
+                Task { await load(items) }
+            } label: {
+                Group {
+                    if loadingPicks > 0 {
+                        ProgressView().tint(WebTheme.accentText)
+                    } else {
+                        Text(next.title)
+                    }
+                }
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(WebTheme.accentText)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(WebTheme.accentBackground, in: Capsule())
+                .opacity(next.enabled || loadingPicks > 0 ? 1 : 0.5)
+                .accessibilityLabel(next.title)
+                .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos") : "")
+            }
+            .buttonStyle(.plain)
+            .disabled(!next.enabled)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
     }
 
-    /// 右の縦の列（文字と札・曲・撮影地・表示秒数。44のガラスの丸）
-    private var toolColumn: some View {
-        VStack(spacing: 10) {
-            // 「Aa」は**押したらすぐ打つ**（以前は「文字と札」→「文字」→下の欄、の3段だった）
-            toolButton(symbol: "textformat", label: L("文字を入れる", "Add text")) { startNewText() }
-            toolButton(symbol: "face.smiling", label: L("札とスタンプ", "Stickers")) {
+    // MARK: - 道具（写真の下の4つ）
+
+    /// 文字・スタンプ・曲・場所を横に等分（面 #121212・角丸・高さ 64・アイコン＋名前 13pt）。
+    /// 形と色は `StoryTool` の1か所から
+    private var toolRow: some View {
+        HStack(spacing: 8) {
+            ForEach(StoryTool.allCases) { tool in
+                toolControl(tool)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func toolControl(_ tool: StoryTool) -> some View {
+        let used = StoryTool.isUsed(tool, overlays: overlays.wrappedValue, hasVote: vote.wrappedValue != nil,
+                                    hasSong: song != nil, location: location)
+        switch tool {
+        case .text:
+            // 押したらすぐ写真の上で打つ（前の右の列の「Aa」と同じ）
+            Button { startNewText() } label: { toolCell(tool, used: used) }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tool.accessibilityLabel(used: used))
+        case .sticker:
+            // 札とスタンプのトレイ。投票もここ（前の右の列と同じ）
+            Button {
                 captionFocused = false
                 showStickerTray = true
-            }
+            } label: { toolCell(tool, used: used) }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tool.accessibilityLabel(used: used))
+        case .song:
             if song == nil {
-                toolButton(symbol: "music.note", label: L("曲を付ける", "Add a song")) { showSongPicker = true }
+                Button { showSongPicker = true } label: { toolCell(tool, used: used) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tool.accessibilityLabel(used: used))
             } else {
-                // 付けた曲は変える・外すを選ぶ（外す口が無かった）
+                // 付けた曲は変える・流し始め・外す（前の右の列のメニューと同じ）
                 Menu {
                     Button(L("曲を変える", "Change song")) { showSongPicker = true }
                     // 流し始め（Web の「好きな部分」と同じ `startSec`）。いまの位置をメニューに出す
@@ -482,42 +598,43 @@ struct StoryComposerView: View {
                              "Start point (\(Photo.Song.startLabel(song?.startSec)))")) { showSongStart = true }
                     Button(L("曲を外す", "Remove song"), role: .destructive) { applySong(nil) }
                 } label: {
-                    toolIcon("music.note")
+                    toolCell(tool, used: used)
                 }
-                .accessibilityLabel(L("曲", "Song"))
+                .accessibilityLabel(tool.accessibilityLabel(used: used))
             }
-            // 写真を拡大・移動・回転したら、元へ戻す口（写真を2回押しても戻る）
-            if !framing.wrappedValue.isIdentity {
-                toolButton(symbol: "arrow.counterclockwise", label: L("写真の合わせ方を戻す", "Reset photo framing")) {
-                    framing.wrappedValue = .identity
-                }
-            }
-            toolButton(symbol: "mappin", label: L("撮影地", "Place")) {
+        case .place:
+            Button {
                 placeDraft = location
                 showPlaceEditor = true
-            }
-            // 表示秒数は右下の札から選ぶ（ここは同じ札を開く入口）
-            Menu {
-                durationOptions
-            } label: {
-                toolIcon("timer")
-            }
-            .accessibilityLabel(L("表示秒数", "Duration"))
+            } label: { toolCell(tool, used: used) }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tool.accessibilityLabel(used: used))
         }
     }
 
-    private func toolButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { toolIcon(symbol) }
-            .buttonStyle(.plain)
-            .accessibilityLabel(label)
-    }
-
-    private func toolIcon(_ symbol: String) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 18))
-            .foregroundStyle(.white)
-            .frame(width: 44, height: 44)
-            .jpGlass(in: Circle())
+    /// 道具の1つ。**使ったらアイコンを真鍮にし、右上に真鍮の点**（黒地の面の上なので真鍮を置ける）
+    private func toolCell(_ tool: StoryTool, used: Bool) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: tool.symbol)
+                .font(.system(size: 20, weight: StoryTool.symbolWeight))
+                .foregroundStyle(used ? StoryTool.usedColor : StoryTool.idleColor)
+                .frame(height: 24)
+                .overlay(alignment: .topTrailing) {
+                    if used {
+                        Circle()
+                            .fill(StoryTool.usedColor)
+                            .frame(width: StoryTool.dotSize, height: StoryTool.dotSize)
+                            .offset(x: 7, y: -3)
+                    }
+                }
+            Text(tool.label)
+                .font(.system(size: 13))
+                .foregroundStyle(WebTheme.text)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, minHeight: 64)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .contentShape(RoundedRectangle(cornerRadius: 14))
     }
 
     /// 写真の上の「ひとこと」の層（左寄せ・縦は真ん中）。**`StoryCanvas` が写真と札の間に敷く**
@@ -601,21 +718,16 @@ struct StoryComposerView: View {
         .jpGlass(in: Capsule(), border: 0)
     }
 
-    /// 右下の「表示 5 秒」（等幅・ガラスの札）。押すと 5・10・15 秒から選ぶ
-    private var durationMenu: some View {
-        Menu {
-            durationOptions
-        } label: {
-            Text(L("表示 \(durationSec) 秒", "\(durationSec)s"))
-                .font(JPFont.mono(12))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .jpGlass(in: Capsule(), border: 0)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel(L("表示 \(durationSec) 秒", "\(durationSec) seconds"))
+    /// 右下の「1 / 2」（等幅・ガラスの札）。並べた写真の何枚目を直しているか
+    private var shotCounter: some View {
+        Text("\(current + 1) / \(shots.count)")
+            .font(JPFont.mono(12))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .jpGlass(in: Capsule(), border: 0)
+            .frame(minHeight: 44)
+            .accessibilityLabel(L("\(shots.count)枚のうち\(current + 1)枚目", "Photo \(current + 1) of \(shots.count)"))
     }
 
     /// 5・10・15 秒（`StoryService.durationChoices`・owner「細かい時間いらない」）。受けて読む幅は 3〜15 のまま
@@ -636,8 +748,12 @@ struct StoryComposerView: View {
 
     // MARK: - 上のバー
 
+    /// 左上は「戻る」、右上は「…」（表示秒数・写真の合わせ方を戻す・下書き保存）。
+    /// 投票の欄・ひとことを打っている間は、右上は「完了」（前のまま）
     private var topBar: some View {
         HStack {
+            // **戻る。** この段は写真がある間だけ出るので、前の ✕ と同じ確認（下書きに保存しますか）を通す。
+            // 写真を全部外すと、ここを押さなくても写真を選ぶ段へ戻る
             Button {
                 switch leave {
                 case .now: dismiss()
@@ -645,15 +761,15 @@ struct StoryComposerView: View {
                 case .wait: break
                 }
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 18))
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
                     .jpGlass(in: Circle())
             }
             .buttonStyle(.plain)
             .disabled(leave == .wait)
-            .accessibilityLabel(Labels.Common.close)
+            .accessibilityLabel(L("戻る", "Back"))
             Spacer()
             if votePanelOpen {
                 // 投票の欄を閉じる（欄の間は投稿ボタンが隠れるので、閉じる口を見える所に出す）
@@ -684,29 +800,50 @@ struct StoryComposerView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-            // **写真が無ければ下書きにできない。** 文字だけ残しても
-            // 「続きから」で出すものが無い
-            Button { saveDraft() } label: {
-                Text(L("下書き保存", "Save draft"))
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 36)
-                    .jpGlass(in: Capsule())
-                    .frame(minHeight: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(prepared == nil || !canSaveDraft || loadingPicks > 0)
-            // 薄くするのは止めるのと同じ条件（押せる見た目で押しても何も起きなかった）
-            .opacity(prepared == nil || !canSaveDraft || loadingPicks > 0 ? 0.4 : 1)
+                moreMenu
             }
         }
     }
 
+    /// 右上の「…」。前は右の列（表示秒数・合わせ方を戻す）・右下の札（表示秒数）・右上（下書き保存）に
+    /// 散っていたものをまとめた。中身の動きは前のまま
+    private var moreMenu: some View {
+        Menu {
+            // 5・10・15 秒（前の右下の「表示 5 秒」と同じ選び方）
+            Menu {
+                durationOptions
+            } label: {
+                Label(L("表示秒数（\(durationSec) 秒）", "Duration (\(durationSec)s)"), systemImage: "timer")
+            }
+            // 写真を拡大・移動・回転したら、元へ戻す口（写真を2回押しても戻る）
+            if !framing.wrappedValue.isIdentity {
+                Button {
+                    framing.wrappedValue = .identity
+                } label: {
+                    Label(L("写真の合わせ方を戻す", "Reset photo framing"), systemImage: "arrow.counterclockwise")
+                }
+            }
+            // **写真が無ければ下書きにできない。** 文字だけ残しても「続きから」で出すものが無い。
+            // 残すと決めた下書きがある間・読み込み中も止める（前の「下書き保存」と同じ条件）
+            Button {
+                saveDraft()
+            } label: {
+                Label(L("下書き保存", "Save draft"), systemImage: "square.and.arrow.down")
+            }
+            .disabled(prepared == nil || !canSaveDraft || loadingPicks > 0)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .jpGlass(in: Circle())
+        }
+        .accessibilityLabel(L("その他", "More"))
+    }
+
     // MARK: - 足元
 
-    /// 「フォロワーが見られます」・自分用に残す・投稿ボタン（板 24）
+    /// 写真の下: 知らせ・道具4つ・「フォロワー ▾」と白い「シェアする」
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let message, prepared != nil {
@@ -715,63 +852,57 @@ struct StoryComposerView: View {
             if let songNote, prepared != nil {
                 Text(songNote).font(.footnote).foregroundStyle(WebTheme.muted2)
             }
-            HStack(spacing: 8) {
-                // 🔴 **ストーリーはフォロワーだけが見る**（2026-09-22・owner の
-                // 判断。`api-user/src/storyVisibility.ts`）。選ぶ口は置かない
-                Image(systemName: "eye").font(.system(size: 14))
-                Text(L("フォロワーが見られます", "Your followers can see it"))
-                    .font(.system(size: 13))
-                Spacer(minLength: 8)
-                // 24時間のあとも残すか。**ハイライトに入れられるのは残したものだけ**
-                // （`api-user/src/highlights.ts`）。既定は残さない——消えることが
-                // ストーリーの約束なので、残す方を選ばせる
-                Toggle(isOn: $keepInArchive) {
-                    Text(L("自分用に残す", "Keep for me"))
-                        .font(.system(size: 13))
-                }
-                .fixedSize()
-                // **軌道は暗い真鍮。** 既定（白）だと白い軌道に白いつまみが乗る
-                .tint(WebTheme.accentDeep)
-            }
-            .foregroundStyle(WebTheme.muted2)
-            // 返信を受けるか（Web の「返信を許可」）。切ると見る人に返信欄と ♡ が出ない
-            // （サーバーも断る）。既定は入
-            HStack(spacing: 8) {
-                Spacer(minLength: 8)
-                Toggle(isOn: $allowReplies) {
-                    Text(L("返信を許可", "Allow replies"))
-                        .font(.system(size: 13))
-                }
-                .fixedSize()
-                .tint(WebTheme.accentDeep)
-            }
-            .foregroundStyle(WebTheme.muted2)
-
-            Button {
-                post()
-            } label: {
-                // 押したら画面を閉じる。**送信中は自分の輪に出る**（板 27）
-                Group {
-                    if loadingPicks > 0 {
-                        ProgressView().tint(WebTheme.accentText)
-                    } else {
-                        Text(L("ストーリーに投稿", "Post story"))
+            toolRow
+            HStack(spacing: 10) {
+                // 誰に見せる（シート）。🔴 **ストーリーはフォロワーだけが見る**（2026-09-22・owner の
+                // 判断。`api-user/src/storyVisibility.ts`）ので、いまは「フォロワー」だけ
+                Button { showAudience = true } label: {
+                    HStack(spacing: 6) {
+                        Text(L("フォロワー", "Followers"))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
                     }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(WebTheme.text)
+                    .fixedSize()
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 52)
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+                    .contentShape(Capsule())
                 }
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(WebTheme.accentText)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(WebTheme.accentBackground, in: Capsule())
-                .opacity(prepared == nil ? 0.5 : 1)
-                // 輪を出している間も読み上げは空にしない
-                .accessibilityLabel(L("ストーリーに投稿", "Post story"))
-                .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos") : "")
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("見せる相手: フォロワー", "Audience: Followers"))
+                .accessibilityHint(L("返信と、24時間後も残すかもここで決めます",
+                                     "Also set replies and whether to keep it after 24 hours"))
+
+                Button {
+                    post()
+                } label: {
+                    // 押したら画面を閉じる。**送信中は自分の輪に出る**（板 27）
+                    Group {
+                        if loadingPicks > 0 {
+                            ProgressView().tint(WebTheme.accentText)
+                        } else {
+                            Text(L("シェアする", "Share"))
+                        }
+                    }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(WebTheme.accentText)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(WebTheme.accentBackground, in: Capsule())
+                    .opacity(prepared == nil ? 0.5 : 1)
+                    // 輪を出している間も読み上げは空にしない
+                    .accessibilityLabel(L("シェアする", "Share"))
+                    .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos") : "")
+                }
+                .buttonStyle(.plain)
+                .disabled(prepared == nil || loadingPicks > 0)
             }
-            .buttonStyle(.plain)
-            .disabled(prepared == nil || loadingPicks > 0)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
     }
 
     // MARK: - 文字と札
@@ -786,6 +917,14 @@ struct StoryComposerView: View {
         }
         overlays.wrappedValue.append(overlay)
         startTyping(overlay.id)
+    }
+
+    /// 打つ画面のゴミ箱。**空にして、打ち終えたときと同じ片付けを通す**（`finishTyping` が空の札を
+    /// 取り除き、付けた曲の最後の札なら曲も外す——ゴミ箱へ運んだときと同じ扱い）
+    private func deleteTyping() {
+        guard let id = typingId else { return }
+        typingBinding(id: id).wrappedValue.text = ""
+        finishTyping()
     }
 
     /// いま表示中の写真の札を打ち始める。**打つ先の写真を覚える**
@@ -924,15 +1063,6 @@ struct StoryComposerView: View {
     }
 
     // MARK: - 共通
-
-    private func glassPill(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .frame(minHeight: 44)
-            .jpGlass(in: Capsule())
-    }
 
     /// 選ばれたぶんを順に足す。**1枚も読めなかったときだけ断りを出す**
     /// ——何枚か読めた回に「読み込めませんでした」だけ出すと、
