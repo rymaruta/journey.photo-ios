@@ -26,10 +26,11 @@ enum ThreadsShare {
         published && audience == .everyone
     }
 
-    /// 末尾に付ける署名（owner 2026-10-02「せっかくなら Journey Photo つけたい」）。
-    /// Threads の本文は文字にリンクを付けられないので、名前の下に**短いドメインだけ**を置く
+    /// 末尾に付ける署名（owner 2026-10-02「せっかくなら Journey Photo つけたい」「どっちかがいい」）。
+    /// **ドメインの1行だけ**——名前とドメインの2行は重い。Threads の本文は文字にリンクを付けられず、
+    /// 「Journey Photo」の文字は押せないので、名前として読めて押せる見込みもあるドメインを残した
     /// （長い写真の URL は並べない）。ドメインがリンクになるかは Threads の作りしだい（実機で未確認）
-    static let signature = "Journey Photo\njourney-photo.com"
+    static let signature = "journey-photo.com"
 
     /// 添える文: 題・説明・撮影地を**空行で段落に分け**（owner 2026-10-02
     /// 「タイトル／文章／撮影地(あれば) みたいな改行を入れたい」）、最後に署名（と URL）を置く。
