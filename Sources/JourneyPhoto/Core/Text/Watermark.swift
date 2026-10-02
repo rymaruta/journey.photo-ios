@@ -10,6 +10,9 @@ import Foundation
 enum Watermark {
 
     static let text = "Journey Photo"
+    /// ロゴのマークの絵（`AppLogo` と同じ・Assets.xcassets）。**必ず入れる**（owner 2026-10-02
+    /// 「ロゴは絶対入れたい」）。名前を変えると透かしからマークが黙って消えるので、テストで見張る
+    static let markAssetName = "BrandMark"
     /// 字の大きさ＝短い辺 × この割合（1080px の写真で約 49px）。
     /// 3.2% から上げた（2026-10-02 owner「A だね、もう少し大きい方がいいのでは？」）
     static let scale = 0.045

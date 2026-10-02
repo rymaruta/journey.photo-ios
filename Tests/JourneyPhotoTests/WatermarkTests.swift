@@ -22,4 +22,20 @@ final class WatermarkTests: XCTestCase {
         let origin = Watermark.origin(text: CGSize(width: 200, height: 40), canvas: CGSize(width: 1000, height: 800), margin: 30)
         XCTAssertEqual(origin, CGPoint(x: 770, y: 730))
     }
+
+    /// 🔴 **ロゴのマークは必ず入る**（owner「ロゴは絶対入れたい」）。透かしが引く絵の名前が
+    /// アプリの絵の入れ物に在ること。無いと実機ではマークが黙って消え、字だけになる
+    func testMarkAssetExists() {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let contents = root.appendingPathComponent(
+            "Sources/JourneyPhoto/Assets.xcassets/\(Watermark.markAssetName).imageset/Contents.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: contents.path), contents.path)
+    }
+
+    /// マークと字の比はロゴと同じ（22pt の字に 19pt の枠・間 8pt）
+    func testMarkProportionsMatchLogo() {
+        XCTAssertEqual(Watermark.markSize(fontSize: 44), 38, accuracy: 1e-9)
+        XCTAssertEqual(Watermark.markGap(fontSize: 44), 16, accuracy: 1e-9)
+    }
 }

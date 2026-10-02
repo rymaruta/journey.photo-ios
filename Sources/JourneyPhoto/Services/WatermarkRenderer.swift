@@ -21,7 +21,7 @@ enum WatermarkRenderer {
             let kern = Watermark.tracking(fontSize: fontSize)
             let text = Watermark.text as NSString
             let textSize = text.size(withAttributes: [.font: font, .kern: kern])
-            let mark = UIImage(named: "BrandMark")
+            let mark = UIImage(named: Watermark.markAssetName)
             let markSide = mark == nil ? 0 : Watermark.markSize(fontSize: fontSize)
             let gap = mark == nil ? 0 : Watermark.markGap(fontSize: fontSize)
             // マーク＋間＋字をひとかたまりとして右下に寄せる
