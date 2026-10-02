@@ -981,13 +981,17 @@ struct PhotoDetailView: View {
     /// 数は等幅 12px の白・押せる大きさ 44×44 以上）。
     /// 数は**取れたときだけ**（読み込み前・圏外に「0」を出すと「まだ無い」と読まれる）
     private func actionLabel(systemImage: String, count: Int? = nil) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Image(systemName: systemImage)
-                // 文字サイズの設定で伸びる
-                .font(.title2)
-            if let count {
+                // 文字サイズの設定で伸びる。**線は細め（light）**——既定の太さの白い線は黒地で
+                // 鈍く重く見え、安っぽく見えた（2026-10-02 の owner）。写真が主役の画面なので印は控えめに
+                .font(.title2.weight(.light))
+            // **0 は出さない**（「0」が並ぶと空っぽの画面に見える）。分からない数（nil）も出さない
+            if let count, count > 0 {
+                // **等幅の書体をやめて本文と同じ書体に**（等幅の「0」はコードの字に見えた）。
+                // 桁がそろうように数字だけ等幅にする
                 Text("\(count)")
-                    .font(JPFont.mono(12, relativeTo: .caption))
+                    .font(.footnote.weight(.medium).monospacedDigit())
             }
         }
         .foregroundStyle(Color.white)

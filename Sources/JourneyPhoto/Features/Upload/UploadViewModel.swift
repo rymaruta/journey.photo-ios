@@ -104,7 +104,8 @@ final class UploadViewModel: ObservableObject {
     /// **一度に選べる枚数。** 本当の上限はサーバーの1000枚
     /// （`api-user/src/photoLimit.ts`）だが、1枚ずつ題と説明を書く画面なので、
     /// 一度に扱う数はここで抑える（多すぎると、どれを書いているか見失う）。
-    static let maxSelection = 10
+    /// 画面の外（旅の写真を選ぶ画面の init）からも読むので MainActor に縛らない
+    nonisolated static let maxSelection = 10
 
     /// スポットの画面から開いたときの行き先（`UploadSpotTarget`）。外すと普通の投稿に戻る
     @Published var spot: UploadSpotTarget?
@@ -149,6 +150,30 @@ final class UploadViewModel: ObservableObject {
             initialTagsText = initialTag
         }
     }
+    /// **非公開で始める**（旅の写真からまとめて来たとき・`UploadView` の `startPrivate`）。
+    /// 何年も前の旅を一度に出すので、まず自分だけに見える形で入れる。
+    /// `reset()` はこの初期値に戻し、`hasDraft` はこれと同じ間は書きかけに数えない
+    private(set) var startsPrivate = false
+    /// 最初の写真（旅の写真）をもう入れたか。**一度だけ入れる**——`onAppear` は戻るたびに
+    /// 呼ばれるので、印が無いと同じ写真が足される。`reset()` でも下ろさない
+    /// （入れ直すと、上げたばかりの写真がもう一度並ぶ）
+    private var appliedInitialPhotos = false
+
+    /// 公開範囲の初期値（`startsPrivate` の裏返し）
+    var initialPublished: Bool { !startsPrivate }
+
+    /// 旅の写真からまとめて来たときの初期値を入れる（画面が出たとき・一度だけ）。
+    /// 2枚以上なら「1つの投稿にまとめる」にする（同じ旅の写真なので）
+    func applyInitialPhotos(_ photos: [Data], startPrivate: Bool) {
+        guard !appliedInitialPhotos else { return }
+        appliedInitialPhotos = true
+        startsPrivate = startPrivate
+        if startPrivate { published = false }
+        guard !photos.isEmpty else { return }
+        if photos.count > 1 { groupsAsOnePost = true }
+        accept(libraryPhotos: photos)
+    }
+
     /// カテゴリ。**決まった選択肢から選ぶ**（`CategoryChoices`）
     @Published var category = ""
     @Published var published = true
@@ -183,7 +208,7 @@ final class UploadViewModel: ObservableObject {
     /// 間に「送信中… 0 / 2 枚目」と「残りをやめる」が出る
     @Published private(set) var isWorking = false
     @Published private(set) var isLoadingPicked = false
-    /// カメラで撮った写真を整えている枚数。**整え終わるまで投稿させない**
+    /// カメラで撮った写真・旅の写真を整えている枚数。**整え終わるまで投稿させない**
     /// （押すと、撮った1枚だけが待ち行列に入る前に送信が始まり、画面に残る）
     @Published private(set) var preparingCaptures = 0
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
@@ -285,7 +310,9 @@ final class UploadViewModel: ObservableObject {
     /// 最初から入っているタグ・スポットの紐付けは本人が書いたものではないので数えない
     var hasDraft: Bool {
         !items.isEmpty || isLoadingPicked || preparingCaptures > 0
-            || song != nil || selectedAlbumId != nil || !published || audience != .everyone
+            // 公開範囲は初期値と比べる（旅の写真から来たときは非公開で始まる。
+            // 投稿し終えて片付けた画面を「書きかけ」にしない）
+            || song != nil || selectedAlbumId != nil || published != initialPublished || audience != .everyone
             || !category.isEmpty
             // タグは**中身で**比べる（候補を足して外すと末尾に「, 」が残り、同じ中身が書きかけに見えた）
             || TagInput.parse(tagsText) != TagInput.parse(initialTagsText)
@@ -349,6 +376,34 @@ final class UploadViewModel: ObservableObject {
                 self.errorMessage = (error as? LocalizedError)?.errorDescription
                     ?? L("写真を読み込めませんでした", "Couldn't load the photo")
             }
+        }
+    }
+
+    /// 端末の写真ライブラリから読んだ本体を受ける（旅の写真からまとめて）。
+    ///
+    /// 準備は `accept(capturedJPEG:)` と同じ——`ImagePreparer` で縮小し、**EXIF・GPS を
+    /// 落としてから**並べる。撮影地と撮影日は ImagePreparer が EXIF から読んで残す
+    /// （落とすのは送る本体からだけ）。**並びは渡した順のまま**（1枚ずつ順に整える）。
+    /// 整えられなかった写真は「N 枚は読み込めませんでした」と言って除く
+    func accept(libraryPhotos photos: [Data]) {
+        guard !photos.isEmpty else { return }
+        preparingCaptures += photos.count
+        Task { [weak self] in
+            var failed = 0
+            for data in photos {
+                let result = await Self.prepareOffMain(data)
+                guard let self else { return }
+                self.preparingCaptures -= 1
+                switch result {
+                case .success(let prepared): self.append(prepared)
+                case .failure: failed += 1
+                }
+            }
+            guard let self, failed > 0 else { return }
+            // **黙って減らさない**（`loadPicked` と同じ言い方）
+            self.errorMessage = self.items.isEmpty
+                ? L("写真を読み込めませんでした", "Couldn't load the photos")
+                : L("\(failed) 枚は読み込めませんでした", "\(failed) photo(s) couldn't be loaded")
         }
     }
 
@@ -713,7 +768,8 @@ final class UploadViewModel: ObservableObject {
         appliedInitialTag = false
         applyInitialTag()
         category = ""
-        published = true
+        // 初期値に戻す（旅の写真から来た画面は非公開のまま。`hasDraft` もこれと比べる）
+        published = initialPublished
         audience = .everyone
         selectedAlbumId = nil
         sharable = []

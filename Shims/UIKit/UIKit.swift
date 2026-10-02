@@ -36,6 +36,8 @@ open class UIApplication {
     /// 実機で「何も起きない」形の間違いを作る
     public struct LaunchOptionsKey: Hashable {}
     public static let shared = UIApplication()
+    /// このアプリの設定画面を開く URL（本物と同じ名前）
+    public static let openSettingsURLString = "app-settings:"
     public func registerForRemoteNotifications() {}
     public func unregisterForRemoteNotifications() {}
     public var connectedScenes: Set<UIScene> { [] }

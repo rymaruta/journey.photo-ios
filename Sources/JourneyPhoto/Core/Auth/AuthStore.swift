@@ -180,6 +180,8 @@ final class AuthStore: ObservableObject {
     func settleSignedOut() {
         // 共有のために書いた旅の一冊の画像（表紙の写真を含む）を次の人に残さない
         TripBookCard.removeAll()
+        // 旅の写真から引いた地名の控え（その人の旅先が分かる）も次の人に残さない
+        LibraryTripModel.forgetPlaceNames()
         state = .signedOut
         isAdmin = false
         errorMessage = nil
