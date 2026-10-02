@@ -39,22 +39,37 @@ final class PhotoRenderer {
 
     // MARK: - 読む
 
-    /// 最大辺 `maxPixelSize` に縮めて読む（向きは画素に焼く）。読めなければ nil。
-    /// プレビューには「画面の幅（点）× 画面の倍率」を渡す
+    /// **長い辺** `maxPixelSize` に縮めて読む（向きは画素に焼く・HDR は SDR に直す。
+    /// 指定は `ImagePreparer.downsampleOptions` と共通）。読めなければ nil。
+    /// プレビューには `previewPixelSize`（表示枠に収めたときの長い辺の画素数）を渡す
     static func load(data: Data, maxPixelSize: Int) -> Loaded? {
         guard maxPixelSize > 0,
               let source = CGImageSourceCreateWithData(data as CFData, nil),
-              CGImageSourceGetCount(source) > 0 else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-        ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+              CGImageSourceGetCount(source) > 0,
+              let cgImage = ImagePreparer.downsampledImage(source: source, maxPixelSize: maxPixelSize) else {
             return nil
         }
         guard let space = outputColorSpace(for: cgImage.colorSpace) else { return nil }
         return Loaded(image: CIImage(cgImage: cgImage), colorSpace: space)
+    }
+
+    /// プレビューで読む大きさ: 写真を表示枠（点）に**収めた**ときの長い辺の画素数。
+    /// `ThumbnailMaxPixelSize` は**長い辺**に効くので、枠の幅を渡すと縦長の写真が
+    /// 縦に足りず粗くなる。写真の大きさ（点でも画素でも比が分かればよい）が分からなければ、
+    /// 枠の長い辺（どの比の写真でも足りる側）。枠を埋める（はみ出す）表示には使えない
+    static func previewPixelSize(box: CGSize, scale: Double, imageSize: CGSize? = nil) -> Int? {
+        let w = Double(box.width), h = Double(box.height)
+        guard w.isFinite, h.isFinite, w > 0, h > 0, scale.isFinite, scale > 0 else { return nil }
+        var longSide = max(w, h)
+        if let imageSize {
+            let iw = Double(imageSize.width), ih = Double(imageSize.height)
+            if iw.isFinite, ih.isFinite, iw > 0, ih > 0 {
+                longSide = max(iw, ih) * min(w / iw, h / ih)
+            }
+        }
+        let pixels = (longSide * scale).rounded(.up)
+        guard pixels.isFinite, pixels >= 1, pixels <= 100_000 else { return nil }
+        return Int(pixels)
     }
 
     /// 書き出す色空間: 元が Display P3 の系統なら Display P3、それ以外は sRGB
@@ -85,6 +100,10 @@ final class PhotoRenderer {
                 switch value {
                 case .number(let number):
                     filter.setValue(number, forKey: key)
+                case .flag(let flag):
+                    // 古い OS に無い鍵を KVC で渡すと例外で落ちる。在るときだけ渡す
+                    guard filter.inputKeys.contains(key) else { continue }
+                    filter.setValue(flag, forKey: key)
                 case .vector(let values):
                     // 使っている引数（中立点・曲線の点）はどれも2つの値
                     guard values.count == 2 else { continue }

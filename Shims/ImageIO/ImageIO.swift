@@ -10,6 +10,9 @@ public typealias CFMutableData = NSMutableData
 public final class CGImageSource {}
 public final class CGImageDestination {}
 public final class CGImage {
+    /// **本物には無い。** Linux の試験で「何かの画像」を渡すためだけのもの
+    /// （試験の側も `#if !canImport(Darwin)` の中でしか使わない）
+    public init() {}
     public var width: Int { 0 }
     public var height: Int { 0 }
     /// 写真の編集の書き出しが、元の色空間（Display P3 か）を見るのに使う
@@ -64,6 +67,9 @@ public func CGImageDestinationFinalize(_ destination: CGImageDestination) -> Boo
 public let kCGImageSourceCreateThumbnailFromImageAlways: CFString = "kCGImageSourceCreateThumbnailFromImageAlways"
 public let kCGImageSourceCreateThumbnailWithTransform: CFString = "kCGImageSourceCreateThumbnailWithTransform"
 public let kCGImageSourceThumbnailMaxPixelSize: CFString = "kCGImageSourceThumbnailMaxPixelSize"
+/// HDR を SDR に直して読む（iOS 17+。本物と同じ名前）
+public let kCGImageSourceDecodeRequest: CFString = "kCGImageSourceDecodeRequest"
+public let kCGImageSourceDecodeToSDR: CFString = "kCGImageSourceDecodeToSDR"
 public let kCGImageDestinationLossyCompressionQuality: CFString = "kCGImageDestinationLossyCompressionQuality"
 public let kCGImagePropertyExifDictionary: CFString = "{Exif}"
 public let kCGImagePropertyGPSDictionary: CFString = "{GPS}"

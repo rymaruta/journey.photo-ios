@@ -18,6 +18,7 @@ open class CIFilter {
     public init?(name: String) { return nil }
     open func setValue(_ value: Any?, forKey key: String) {}
     open var outputImage: CIImage? { nil }
+    open var inputKeys: [String] { [] }
 }
 
 public final class CIVector {

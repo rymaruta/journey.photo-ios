@@ -92,29 +92,48 @@ enum ImagePreparer {
     /// 回転は画素に焼き込む（`WithTransform`）——落とした EXIF に
     /// Orientation も含まれるので、焼かないと横倒しになる。
     private static func reencodeAsJPEG(source: CGImageSource) throws -> Data {
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-        ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        guard let image = downsampledImage(source: source, maxPixelSize: maxPixelSize) else {
             throw PrepareError.encodeFailed
         }
         return try encodeJPEG(image)
     }
 
+    /// 縮めて読むときの指定。**上げる経路と写真の編集（`PhotoRenderer`）で同じものを使う。**
+    ///
+    /// - `ThumbnailMaxPixelSize` は**長い辺**の画素数。元より大きくはしない
+    /// - 向きは画素に焼く（`WithTransform`）
+    /// - **HDR（PQ / HLG）は SDR に直して読む**（`kCGImageSourceDecodeToSDR`・iOS 17+）。
+    ///   HDR のまま 8bit の JPEG に焼くと、明るい所が白く飛ぶ（2026-10-02 のレビュー）
+    static func downsampleOptions(maxPixelSize: Int) -> [CFString: Any] {
+        [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceDecodeRequest: kCGImageSourceDecodeToSDR,
+        ]
+    }
+
+    /// 長い辺 `maxPixelSize` に縮めて読む（`downsampleOptions`）
+    static func downsampledImage(source: CGImageSource, maxPixelSize: Int) -> CGImage? {
+        CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions(maxPixelSize: maxPixelSize) as CFDictionary)
+    }
+
     /// **自前で描いた画像**（写真の編集の書き出し・`PhotoRenderer`）を、原本と同じ関所に通す:
     /// JPEG に焼いて、EXIF / GPS が残っていないことを読み直して確かめる。
     /// 大きさはここでは変えない——呼ぶ側が `maxPixelSize` に収めてから渡す
-    static func encodeStripped(_ image: CGImage) throws -> Data {
-        let jpeg = try encodeJPEG(image)
+    ///
+    /// `encode` は試験のための差し口（撮影情報を書き込む焼き方を渡し、関所が投げるのを見る）。
+    /// アプリからは渡さない
+    static func encodeStripped(_ image: CGImage,
+                               encode: (CGImage) throws -> Data = ImagePreparer.encodeJPEG) throws -> Data {
+        let jpeg = try encode(image)
         try assertStripped(jpeg)
         return jpeg
     }
 
     /// CGImage を JPEG に焼く。**元の properties を渡さない**ので EXIF は付かない。
     /// 色空間は画像のもの（ICC として埋め込まれる）
-    private static func encodeJPEG(_ image: CGImage) throws -> Data {
+    static func encodeJPEG(_ image: CGImage) throws -> Data {
         let output = NSMutableData()
         // `CGImageDestinationCreateWithData` は `CFMutableData` を取る。
         // NSMutableData からの橋渡しは明示的に書く（暗黙に通る保証がない）

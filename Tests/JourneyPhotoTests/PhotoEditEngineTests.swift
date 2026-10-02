@@ -203,6 +203,7 @@ final class PhotoRecipePlanTests: XCTestCase {
         XCTAssertEqual(curve?["inputPoint0"], .vector([0, 0]))
         XCTAssertEqual(curve?["inputPoint1"], .vector([0.25, 0.18]))
         XCTAssertEqual(curve?["inputPoint4"], .vector([1, 1]))
+        XCTAssertEqual(curve?["inputExtrapolate"], .flag(true), "0…1 の外（P3 の色）を切り詰めない")
     }
 
     func testHighlightLiftStacksOnPresetCurve() {

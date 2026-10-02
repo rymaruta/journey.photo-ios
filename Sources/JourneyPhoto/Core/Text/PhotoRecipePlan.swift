@@ -23,6 +23,8 @@ enum PhotoRecipePlan {
     enum Value: Equatable {
         case number(Double)
         case vector([Double])
+        /// 真偽の引数（`inputExtrapolate`）
+        case flag(Bool)
     }
 
     struct Step: Equatable {
@@ -124,7 +126,10 @@ enum PhotoRecipePlan {
         }
         let curve = a.curve.adding(highlightLift(a.highlights))
         if zip(curve.ys, PhotoToneCurve.xs).contains(where: { changed($0 - $1) }) {
-            var parameters: [String: Value] = [:]
+            // **0…1 の外を切り詰めない**（iOS 17 の `extrapolate`。既定は false）。
+            // 作業色空間は拡張リニア sRGB で、P3 の鮮やかな色は 0…1 の外にある。
+            // 切り詰めると、曲線を通しただけで P3 の赤や緑が sRGB の域に潰れる（2026-10-02 のレビュー）
+            var parameters: [String: Value] = ["inputExtrapolate": .flag(true)]
             for (i, (x, y)) in zip(PhotoToneCurve.xs, curve.ys).enumerated() {
                 parameters["inputPoint\(i)"] = .vector([x, y])
             }
