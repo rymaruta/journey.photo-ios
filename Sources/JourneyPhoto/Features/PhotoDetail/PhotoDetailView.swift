@@ -25,6 +25,9 @@ struct PhotoDetailView: View {
     @State private var ownerBlockedWhenReporting = false
     @State private var showDeleteConfirm = false
     @State private var showEdit = false
+    /// 過去の投稿を Threads に載せる（owner 2026-10-02「すでに投稿済みのでも共有できると嬉しい」）
+    @State private var threadsBundle: ThreadsShare.Bundle?
+    @State private var preparingThreads = false
     @State private var showViewer = false
     @State private var actionError: String?
     /// 編集して保存したあとの姿。**`photo` は `let` で書き換えられない**
@@ -239,6 +242,11 @@ struct PhotoDetailView: View {
             followLookupFailed = false
         }) {
             ReportSheet(photoId: current.id, ownerId: ownerId)
+        }
+        .sheet(item: $threadsBundle) { bundle in
+            ShareSheet(images: bundle.images, text: bundle.text)
+                .ignoresSafeArea()
+                .presentationDetents([.medium, .large])
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
         // 保存できていないように見える
@@ -704,6 +712,37 @@ struct PhotoDetailView: View {
 
     // MARK: - 操作
 
+    /// 過去の投稿を Threads に載せる。写真の本体を読み、投稿したときと同じ文を作って共有の画面へ。
+    /// 渡すのは `UIImage` に戻した画像（共有の先で作り直されるので、ファイルの付帯情報は渡らない）
+    private func prepareThreads() async {
+        // **押した時点の写真を掴んでおく。** 読み込み（最大15秒）の間に束を送ると `shown` が
+        // 替わり、1枚目の画像に2枚目の題とリンクが付いた（87525da9 のレビュー）
+        let target = shown
+        guard !preparingThreads, let url = target.detailImageURL else { return }
+        let link = PhotoLink.shortURL(photoId: target.id) ?? shareURL(for: current)
+        preparingThreads = true
+        // 読んでいる間を見せる（メニューが閉じて数秒何も起きないと、押し直しを誘う）
+        actionNotice = L("写真を読み込んでいます…", "Loading the photo…")
+        defer { preparingThreads = false }
+        actionError = nil
+        // 🔴 **画素だけにしてから渡す。** `src` は原本で、Web から上げた原本は GPS 入りのまま
+        // （`photo-gallery/app/user/upload/page.tsx`）。共有の画面の作りに頼らず、ここで落とす
+        guard let raw = await TripBookCardRenderer.coverData(url),
+              let data = ShareSheet.pixelsOnly(raw) else {
+            actionNotice = nil
+            actionError = L("写真を読み込めませんでした。通信を確かめてください",
+                            "Couldn't load the photo. Check your connection.")
+            return
+        }
+        actionNotice = nil
+        threadsBundle = ThreadsShare.Bundle(
+            images: [data],
+            text: ThreadsShare.text(title: target.title?.resolved() ?? "",
+                                    description: target.paragraphs.joined(separator: "\n"),
+                                    location: target.location ?? "",
+                                    url: link))
+    }
+
     private var menu: some View {
         Menu {
             // **共有するのは画像ではなくページ。** 生の画像を送ると、
@@ -720,6 +759,14 @@ struct PhotoDetailView: View {
                 // ナビゲーションの外側に出るので押しても進まない。シートで出す
                 Button { showEdit = true } label: {
                     Label(L("編集", "Edit"), systemImage: "pencil")
+                }
+                // **自分の、全体に公開した写真だけ**（`ThreadsShare`・絞った写真を外の SNS に流さない。
+                // 人の写真の画像を自分の Threads に載せる口も作らない）
+                if CollectionScreen.isShareable(shown) {
+                    Button { Task { await prepareThreads() } } label: {
+                        Label(L("Threads に載せる", "Share to Threads"), systemImage: "at")
+                    }
+                    .disabled(preparingThreads)
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     Label(Labels.Common.delete, systemImage: "trash")

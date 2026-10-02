@@ -9,8 +9,9 @@ import Foundation
 /// - Threads API は Meta の審査と、サーバーに利用者ごとの鍵を持つ作りが要る。1枚載せるために
 ///   持つには重い（「機能は足すより減らす」）
 ///
-/// 渡す写真は**投稿に使った画像そのもの**（`ImagePreparer` が位置などの EXIF を落としたもの）。
-/// 端末の原本は渡さない（GPS が載ったまま外へ出る）
+/// 渡す写真は、投稿の直後は**投稿に使った画像そのもの**（`ImagePreparer` が位置などの EXIF を
+/// 落としたもの）、過去の投稿からは**サーバーの原本を画素だけに書き出し直したもの**
+/// （`ShareSheet.pixelsOnly`・Web から上げた原本は GPS 入り）。端末の原本は渡さない
 enum ThreadsShare {
 
     /// 投稿したら共有の画面を開くか（端末に覚える）
@@ -19,6 +20,13 @@ enum ThreadsShare {
     static let maxImages = 10
     /// Threads の本文の上限（500字）
     static let maxTextLength = 500
+
+    /// 共有の画面に渡すもの（写真のデータと文）
+    struct Bundle: Identifiable {
+        let id = UUID()
+        let images: [Data]
+        let text: String
+    }
 
     /// 外へ渡してよい投稿か。**公開・全体に公開だけ**——非公開・親しい友達だけの写真を
     /// 外の SNS に流す口を作らない
