@@ -335,6 +335,10 @@ struct TripBookView: View {
                 RemoteImage(url: photo.detailImageURL, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
+                    // 絵だけのリンク。写真の題（無ければ撮影地）を読み上げる
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityAddTraits(.isImage)
+                    .accessibilityLabel(photo.accessibilityText)
             }
             .buttonStyle(.plain)
 

@@ -122,6 +122,8 @@ struct OfficialSpotView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .webToolbarIcon()
+                // 絵だけのボタン。名前を明示する（OS 任せにすると版によって読まれ方が揺れる）
+                .accessibilityLabel(L("シェア", "Share"))
             }
         }
         .accessibilityIdentifier("spot.official")
