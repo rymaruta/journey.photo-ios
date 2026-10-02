@@ -215,6 +215,13 @@ final class SignOutResultTests: XCTestCase {
         XCTAssertEqual(auth.errorMessage, AuthMessage.text(for: .alreadySignedIn))
         XCTAssertTrue(latch.isSet)
     }
+
+    /// **ほかの操作の invalidState は「前のログインが残っている」と言わない**（前と同じ汎用の文）
+    func testInvalidStateOutsideSignInKeepsTheGenericMessage() async {
+        let failure = AuthFailure(AuthError.invalidState("state", "", nil))
+        XCTAssertEqual(failure, .other)
+        XCTAssertNotEqual(AuthMessage.text(for: failure), AuthMessage.text(for: .alreadySignedIn))
+    }
 }
 
 actor SignInLog {

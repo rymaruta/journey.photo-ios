@@ -242,7 +242,15 @@ final class AuthStore: ObservableObject {
             if self.isSignedOutUncertain || self.gateway.latch.isSet {
                 _ = await self.gateway.signOut()
             }
-            _ = try await self.gateway.signIn(email, password)
+            // **invalidState を「前のログインが残っている」と読むのはログインの時だけ。**
+            // ほかの操作（登録・パスワード変更など）の invalidState は別の理由なので、
+            // `AuthFailure` では読み替えない（前と同じ汎用の文のまま）
+            do {
+                _ = try await self.gateway.signIn(email, password)
+            } catch let error as AuthError {
+                if case .invalidState = error { throw SignInIncomplete.leftoverSession }
+                throw error
+            }
             let id = try await self.gateway.currentUserId()
             self.isSignedOutUncertain = false
             self.signedOutByExpiry = false
@@ -472,11 +480,14 @@ struct AuthStoreGateway: Sendable {
 enum SignInIncomplete: Error, Equatable {
     case passwordResetRequired
     case unsupportedStep
+    /// 端末に前のログインが残っていて、Amplify が断った（invalidState・`AuthStore.signIn`）
+    case leftoverSession
 
     var failure: AuthFailure {
         switch self {
         case .passwordResetRequired: return .passwordResetRequired
         case .unsupportedStep: return .signInIncomplete
+        case .leftoverSession: return .alreadySignedIn
         }
     }
 }
@@ -504,8 +515,9 @@ enum AuthFailure: Equatable {
     case passwordResetRequired
     /// アプリで続けられないログインの段（新しいパスワードの設定・多要素認証など）
     case signInIncomplete
-    /// 端末に前のログインが残っていて、ログインを断られた（Amplify の `invalidState`）。
-    /// **前のログインを渡さない**（`SignOutLatch` の「2026-10-02 判断」）
+    /// 端末に前のログインが残っていて、ログインを断られた（ログインの操作での Amplify の
+    /// `invalidState`・`SignInIncomplete.leftoverSession`）。**前のログインを渡さない**
+    /// （`SignOutLatch` の「2026-10-02 判断」）
     case alreadySignedIn
     case other
 
@@ -531,7 +543,6 @@ enum AuthFailure: Equatable {
         switch error {
         case .notAuthorized: self = .notAuthorized
         case .sessionExpired: self = .notAuthorized
-        case .invalidState: self = .alreadySignedIn
         default: self = .other
         }
     }

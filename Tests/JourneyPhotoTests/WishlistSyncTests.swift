@@ -94,6 +94,21 @@ final class WishlistSyncTests: XCTestCase {
         XCTAssertTrue(other.absoluteString.hasSuffix("%3Fx=1%23y%25z"), "\(other.absoluteString)")
     }
 
+    /// 🔴 **日本語の鍵は、`/` を守るために先に符号化しても二重にならない。** 鍵の符号化
+    /// （`pathSegment`）のあと `APIClient` がもう一度 `%` を符号化すると `%25E4…` になり、
+    /// サーバーは別の鍵を外しにいく——200 が返るのに外れない
+    func testUnsaveDoesNotDoubleEncodeJapaneseKeys() async throws {
+        StubProtocol.respond(status: 200, body: #"{"saved":false,"slugs":[]}"#)
+        try await service().unsave("京都/祇園")
+        let url = try XCTUnwrap(StubProtocol.lastRequest?.url)
+        XCTAssertFalse(url.absoluteString.contains("%25"), "二重に符号化している: \(url.absoluteString)")
+        XCTAssertTrue(url.absoluteString.hasSuffix("/user/spots/%E4%BA%AC%E9%83%BD%2F%E7%A5%87%E5%9C%92"),
+                      "\(url.absoluteString)")
+        // サーバーが1回戻すと元の鍵になる（`url.path` は Linux と Apple で %2F の戻し方が違うので使わない）
+        let segment = url.absoluteString.components(separatedBy: "/user/spots/").last
+        XCTAssertEqual(segment?.removingPercentEncoding, "京都/祇園", "サーバーが戻す鍵が元の鍵と違う")
+    }
+
     /// 点だけの鍵（`.`・`..`）と空の鍵は要求を出さない
     func testUnsaveRefusesDotOnlyKeys() async {
         for key in ["", ".", ".."] {
