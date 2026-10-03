@@ -496,10 +496,8 @@ final class ScreenshotTests: XCTestCase {
         // 巡回は「出なければ撮らない」ので、赤くもならない。
         tabBar.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 2)
-        // 🔴 **フィードを「おすすめ」へ戻す。** 一巡の `10c` が「フォロー中」に切り替えたまま
-        // ここへ来ていた。鍵なしログインのフォロー一覧は空なので `feed.photo` が1枚も無く、
-        // `20`・`21` が run 316〜332 のあいだ毎回**黙って欠けて**いた（run 332 の `10d` の絵で
-        // 「フォロー中」が選ばれたままなのが見える・2026-10-03）
+        // **フィードを「おすすめ」へ戻す。** 一巡の `10c` が「フォロー中」に切り替えることがある
+        // （鍵なしログインのフォロー一覧は空＝`feed.photo` が出ない）。欠けていた主な原因は下の送り方
         let recommended = app.buttons["おすすめ"].firstMatch
         if recommended.waitForExistence(timeout: 5), recommended.isHittable {
             recommended.tap()
@@ -514,8 +512,13 @@ final class ScreenshotTests: XCTestCase {
         // 掛かって `isHittable == false` になり、`20` と `21` が**黙って欠けて**いた。
         // `swipeUp` は勢いで1枚目ごと画面の上へ流しうるので、勢いの付かない短い引き
         // （画面の 35% ぶん）で少しずつ送る
+        //
+        // 🔴 **まだ作られていない間も送る**（2026-10-03・run 334 のログと絵で確かめた）。写真の一覧は
+        // `LazyVStack` の下の方（季節の段・入口・おすすめの横並びの下）にあり、画面の外では**要素が
+        // まだ無い**。前は「在る・押せない」間だけ送っていたので、無いまま 10 秒待って抜け、
+        // `20`・`21` が毎回欠けていた。上限を広げ、在って押せるまで送る
         var feedPushes = 0
-        while firstPhoto.waitForExistence(timeout: 10), !firstPhoto.isHittable, feedPushes < 4 {
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), feedPushes < 8 {
             let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
             let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
             from.press(forDuration: 0.05, thenDragTo: to)
