@@ -150,6 +150,8 @@ struct ProfileEditView: View {
         // 確かめる（親しい友達・旅行プランと同じ `unsavedLeaveGuard`）。画像の送信中・保存中は
         // 戻らせない（戻れると保存の結果を見届けられない。以前の戻るを隠す門と同じ）
         .unsavedLeaveGuard(leave, isPresented: $showLeaveConfirm, canSave: loaded,
+                           // 自前の戻るにも前の画面の題を添える（標準の「‹ マイページ」と同じ見た目・旅行プランと同じ形）
+                           backTitle: Labels.Navigation.mypage,
                            message: L("保存しないで戻ると、直した内容は残りません。",
                                       "If you go back without saving, your edits will be lost."),
                            onSave: {

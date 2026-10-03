@@ -43,6 +43,9 @@ struct StoryReelView: View {
     /// 入れた票（1本ごと）。**閲覧画面は人ごとに作り直されるので、ここで覚える**
     /// ——閲覧画面の中だけに持つと、次の人へ行って戻ると入れる前の数に戻っていた
     @State private var voteStates: [String: StoryVoteState] = [:]
+    /// 送った反応（1本ごと・`StoryPlayback.SentReactions`）。票と同じく**ここで覚える**
+    /// ——閲覧画面の中だけに持つと、次の人へ回って戻ると ♡ の印が消え、2回目を送れた
+    @State private var sentReactions = StoryPlayback.SentReactions()
     /// 閲覧画面が「いまは払えない」（返信欄に入力中・メニュー・送信中）と言っている。
     /// **止めるのは横（人を替える）だけ**——下へ払って閉じるのは止めない（圏外で返事を
     /// 待つ間に閉じられなくなる。`StoryViewerView.leftTap` の注記と同じ）
@@ -219,6 +222,8 @@ struct StoryReelView: View {
             spotIndex: spotIndex,
             voteStates: voteStates,
             onVoted: { voteStates[$0] = $1 },
+            sentReactions: sentReactions,
+            onReacted: { sentReactions.record($1, on: $0) },
             onSeen: onSeen,
             onDeleted: onDeleted)
     }

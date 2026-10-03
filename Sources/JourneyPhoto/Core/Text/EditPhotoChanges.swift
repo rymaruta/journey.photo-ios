@@ -115,6 +115,13 @@ enum EditPhotoChanges {
         !patch(photo: photo, openedAudience: openedAudience, fields: fields).isEmpty
     }
 
+    /// 閉じるときの確認に「保存して閉じる」を出すか。**保存（`EditPhotoView.save`）と同じ関所**
+    /// ——説明が上限を超えている間は保存しても断って開いたままになるので、出さない
+    /// （「変更を捨てる」「キャンセル」だけ。戻って説明を縮めれば保存できる）
+    static func canSaveAndClose(photo: Photo, fields: Fields) -> Bool {
+        LocalizedEdit.descriptionOverLimit(original: photo.description, field: fields.caption) == nil
+    }
+
     /// 閉じようとしたときの扱い（`UnsavedLeave`）。保存・差し替えの最中は閉じさせない
     static func leave(photo: Photo, openedAudience: Audience?, fields: Fields,
                       isSaving: Bool) -> UnsavedLeave {

@@ -183,7 +183,9 @@ struct EditPhotoView: View {
         // 保存・差し替えの最中は払っても閉じない（`.wait`）
         .unsavedCloseGuard(leave, isPresented: $showLeaveConfirm,
                            title: L("変更を保存しますか？", "Save your changes?"),
-                           canSave: !isReplacing,
+                           // 説明が上限を超えている間は出さない（保存と同じ関所・`canSaveAndClose`）。
+                           // 保存・差し替えの最中は `.wait` で確認そのものが出ない
+                           canSave: EditPhotoChanges.canSaveAndClose(photo: photo, fields: fields),
                            saveTitle: L("保存して閉じる", "Save and close"),
                            discardTitle: L("変更を捨てる", "Discard changes"),
                            message: L("保存しないで閉じると、直した内容は残りません。",

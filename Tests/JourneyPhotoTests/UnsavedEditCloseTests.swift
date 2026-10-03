@@ -76,6 +76,21 @@ final class UnsavedEditCloseTests: XCTestCase {
         XCTAssertFalse(EditPhotoChanges.hasChanges(photo: p, openedAudience: nil, fields: f))
     }
 
+    /// 🔴 **説明が上限を超えている間は「保存して閉じる」を出さない。** 保存は同じ関所で断り、
+    /// 押しても閉じずに開いたままになる（確認から押した人には何が起きたか分からない）
+    func testEditPhotoSaveAndCloseIsHiddenWhileTheDescriptionIsTooLong() {
+        let p = sample
+        var f = EditPhotoChanges.Fields(opening: p)
+        f.caption = "短い説明"
+        XCTAssertTrue(EditPhotoChanges.canSaveAndClose(photo: p, fields: f))
+        f.caption = String(repeating: "え", count: PostLimits.description + 1)
+        XCTAssertNotNil(LocalizedEdit.descriptionOverLimit(original: p.description, field: f.caption), "前提: 保存が断る長さ")
+        XCTAssertFalse(EditPhotoChanges.canSaveAndClose(photo: p, fields: f), "保存が断る長さで「保存して閉じる」を出す")
+        // 変更としては確かめる（捨てるか、戻って縮めるか）
+        XCTAssertEqual(EditPhotoChanges.leave(photo: p, openedAudience: EditPhotoChanges.openedAudience(p),
+                                              fields: f, isSaving: false), .confirm)
+    }
+
     // MARK: - プロフィールの編集
 
     /// 🔴 **自己紹介などを直したら、戻るで確かめる。** 以前は戻るで黙って消えた

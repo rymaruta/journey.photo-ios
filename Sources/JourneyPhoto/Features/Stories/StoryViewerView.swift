@@ -127,8 +127,9 @@ struct StoryViewerView: View {
     @State private var repliesNotice: String?
     /// 送っている最中。**二度押しで2件送らない**。自動送りも止める
     @State private var isSending = false
-    /// この閲覧で送った反応（`StoryPlayback.SentReactions`）。**同じ1本に二度送らない**
-    @State private var sentReactions = StoryPlayback.SentReactions()
+    /// 送った反応（`StoryPlayback.SentReactions`）。**同じ1本に二度送らない**。
+    /// 人から人への並びでは `StoryReelView` が覚えて渡す（人を回して戻っても忘れない）
+    @State private var sentReactions: StoryPlayback.SentReactions
 
     /// 見終えた1本を知らせる。**送るたびに呼ぶ**——次へ送ったぶんも
     /// 既読にしないと、閉じたときに輪が点いたまま残る
@@ -181,6 +182,9 @@ struct StoryViewerView: View {
     /// 票を入れた1本を外へ知らせる。**人を行き来して閲覧画面が作り直されても
     /// 入れた票を消さない**ため（`StoryReelView` が覚えて `voteStates` で戻す）
     let onVoted: ((String, StoryVoteState) -> Void)?
+    /// 反応を送れた1本を外へ知らせる（ストーリー id・絵文字）。`onVoted` と同じく、
+    /// **人を行き来して閲覧画面が作り直されても送った印を消さない**ため（`StoryReelView` が `sentReactions` で戻す）
+    let onReacted: ((String, String) -> Void)?
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
@@ -194,6 +198,8 @@ struct StoryViewerView: View {
          spotIndex: [OfficialSpot]? = nil,
          voteStates: [String: StoryVoteState] = [:],
          onVoted: ((String, StoryVoteState) -> Void)? = nil,
+         sentReactions: StoryPlayback.SentReactions = StoryPlayback.SentReactions(),
+         onReacted: ((String, String) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
          onDeleted: ((String) -> Void)? = nil) {
         self.onGroupEnd = onGroupEnd
@@ -205,6 +211,8 @@ struct StoryViewerView: View {
         self.providedSpots = spotIndex
         self.onVoted = onVoted
         _voteStates = State(initialValue: voteStates)
+        self.onReacted = onReacted
+        _sentReactions = State(initialValue: sentReactions)
         self.stories = stories
         self.onDeleted = onDeleted
         self.viewerId = viewerId
@@ -2007,6 +2015,7 @@ struct StoryViewerView: View {
         do {
             try await environment.stories.react(id: story.id, emoji: emoji)
             sentReactions.record(emoji, on: story.id)
+            onReacted?(story.id, emoji)
             message = StoryPlayback.reactionSentMessage(emoji)
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")

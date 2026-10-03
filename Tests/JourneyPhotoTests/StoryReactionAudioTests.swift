@@ -57,6 +57,22 @@ final class StoryReactionAudioTests: XCTestCase {
         XCTAssertNil(sent.emoji(on: "s2"))
     }
 
+    /// 人から人への並びは、閲覧画面が知らせた反応（`onReacted`）を覚え、作り直した閲覧画面へ
+    /// 渡し直す（`sentReactions`）。値で渡すので、渡した後に閲覧画面の中で足しても並びの覚えは
+    /// 知らせ（`record`）でしか増えない——知らせを落とすと、人を回して戻ったら忘れる
+    func testReelKeepsReactionsAcrossViewerRebuilds() {
+        var reel = StoryPlayback.SentReactions()
+        // 1人目の閲覧画面（並びの覚えから始まる）で ❤️ を送り、並びへ知らせた
+        var firstViewer = reel
+        firstViewer.record("❤️", on: "s1")
+        reel.record("❤️", on: "s1")        // `onReacted`
+        // 次の人へ回って戻った: 閲覧画面は並びの覚えから作り直される
+        let rebuilt = reel
+        XCTAssertFalse(rebuilt.shouldSend(on: "s1"), "人を回して戻ったら、送った反応を忘れた")
+        XCTAssertEqual(rebuilt.emoji(on: "s1"), "❤️")
+        XCTAssertEqual(firstViewer, rebuilt)
+    }
+
     /// 2回目の知らせは、**送ってある方の絵文字**で言う
     func testAlreadySentMessage() {
         XCTAssertEqual(StoryPlayback.reactionAlreadySentMessage("❤️"),
