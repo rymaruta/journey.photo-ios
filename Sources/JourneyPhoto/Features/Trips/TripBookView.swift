@@ -332,13 +332,16 @@ struct TripBookView: View {
 
     /// ページの写真。**寸法が分かれば、読み込む前に縦横比で枠を取る**（2026-10-02）——
     /// ページは `LazyVStack` で遅れて読むので、枠が無いと絵が出た瞬間に下のページが跳ねる
+    ///
+    /// **表示する幅に縮めて読む**（`DownsampledRemoteImage`・2026-10-03）。元の画像（1920px）を
+    /// そのまま展開すると、通り過ぎたページの絵を抱えたまま長い旅でメモリが膨らみうる
     @ViewBuilder
     private func pageImage(_ photo: Photo) -> some View {
         if let ratio = photo.aspectRatio {
-            RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+            DownsampledRemoteImage(url: photo.detailImageURL, contentMode: .fit, aspectRatio: CGFloat(ratio))
                 .aspectRatio(ratio, contentMode: .fit)
         } else {
-            RemoteImage(url: photo.detailImageURL, contentMode: .fit)
+            DownsampledRemoteImage(url: photo.detailImageURL, contentMode: .fit)
         }
     }
 
