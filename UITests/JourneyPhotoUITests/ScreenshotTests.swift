@@ -98,6 +98,9 @@ final class ScreenshotTests: XCTestCase {
             swipes += 1
         }
         guard credit.exists, credit.isHittable else { return }
+        // 出典の1行の当たりは 44pt 以上（押せるものの最小・2026-10-03）
+        XCTAssertGreaterThanOrEqual(credit.frame.height, 44, "作例の出典の当たりが 44pt 未満")
+        XCTAssertGreaterThanOrEqual(credit.frame.width, 44, "作例の出典の当たりが 44pt 未満")
         // 写真が読み込まれるのを待つ（Commons の縮小版）
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "13g-撮影スポット（作例）")
