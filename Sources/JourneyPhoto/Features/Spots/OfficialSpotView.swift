@@ -21,6 +21,9 @@ import MapKit
 /// 並び（板 13・2026-09-27 owner「写真が主役」）: 地図 → 小見出し → 名前 →
 /// 地域と枚数 → 帯 → 行動3つ → 概要 → **写真がある場所はこの場所の写真** →
 /// 本文の節 → **写真が0枚の場所は「まだありません」** → 近くの撮影スポット → 印の1行。
+///
+/// **作例（2026-10-03）**: 本文の `samples`（Wikimedia Commons の写真・`SpotSample`）を
+/// 「この場所の魅力」と「撮影ガイド」の間に出す（Web の `SpotGuideClient` と同じ位置）。
 struct OfficialSpotView: View {
 
     let spot: OfficialSpot
@@ -46,6 +49,8 @@ struct OfficialSpotView: View {
     @State private var camera: MapCameraPosition = .automatic
     /// 本文（公開済みの場所だけ取りに行く）。取れなければ nil のまま
     @State private var spotBody: SpotBody?
+    /// 読み込めなかった作例（出典のページで覚える）。その1枚を出典ごと隠す
+    @State private var brokenSamples: Set<URL> = []
     /// 「このスポットの写真を投稿」から開く投稿画面
     @State private var showUpload = false
     /// この画面から投稿した（写真の一覧は開いた時点の写しなので、すぐには並ばない）
@@ -112,6 +117,7 @@ struct OfficialSpotView: View {
         .onAppear { dropped = hidden.snapshot }
         // 下書き→公開に差し替わったら取り直す（slug だけだと走り直さない）
         .task(id: "\(spot.slug)|\(spot.isDraft)") {
+            brokenSamples = []
             // 下書きは取りに行かない（本文は公開済みの場所にしか無い）
             guard !spot.isDraft else {
                 spotBody = nil
@@ -333,6 +339,10 @@ struct OfficialSpotView: View {
                     }
                 }
             }
+        }
+        // 作例は本文の節が無くても出す（本文が作例だけの場所もある）
+        samplesSection
+        if let body = spotBody, body.hasContent {
             let seasons = SpotBodyText.orderedSeasons(body.seasonalGuide,
                                                       current: SpotBodyText.currentSeason(now: Date()))
             // 朝・夕の文は「光の時刻」の節を出すときだけそちらに並べ、ここは残り（日中・夜）。出さなければ全部
@@ -374,6 +384,69 @@ struct OfficialSpotView: View {
                     .foregroundStyle(WebTheme.accent)
                 }
                 .padding(.horizontal, 16)
+        }
+    }
+
+    // MARK: - 作例（Wikimedia Commons・2026-10-03）
+
+    /// 出す作例（読み込めなかった1枚は除く）。全部読めなければ節ごと隠す
+    private var shownSamples: [SpotSample] {
+        (spotBody?.samples ?? []).filter { !brokenSamples.contains($0.sourceUrl) }
+    }
+
+    /// 横に送る帯。1枚ごとに写真のすぐ下へ「題 / 写真: 作者 / ライセンス / Wikimedia Commons」。
+    ///
+    /// 2026-10-03 判断: 板（SpotDetail）の「この場所の写真」は 3列の格子だが、あれは**切り抜く**
+    /// 正方形の格子。作例は切り抜かない（CC BY-SA の写真を改変と受け取られる余地を作らない・
+    /// docs/spot-samples-commons.md）うえに1枚ごとに4つの項目の出典が付くので、格子では
+    /// 文字が写真より長くなる。高さをそろえ、幅を写真の縦横比に合わせた横送りの帯にした。
+    /// 見出し・注記・出典の文字は板の節（見出し 12・text-3）に、リンクは真鍮（黒地の上・
+    /// 出典のリンクは真鍮＝CLAUDE.md の owner の好み）に合わせる
+    @ViewBuilder
+    private var samplesSection: some View {
+        let samples = shownSamples
+        if !samples.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                SpotDetailParts.sectionHeader(SpotSampleText.heading)
+                Text(SpotSampleText.note)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(samples) { sample in
+                            sampleCard(sample)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("spot.official.samples")
+        }
+    }
+
+    /// 作例の1枚: 写真（縦横比のまま・切り抜かない）と、その下の出典の1行
+    private func sampleCard(_ sample: SpotSample) -> some View {
+        let size = SpotSampleText.frame(aspectRatio: sample.aspectRatio)
+        return VStack(alignment: .leading, spacing: 6) {
+            RemoteImage(url: sample.src, contentMode: .fit, onSettled: { loaded in
+                // 読めなかった1枚（Commons で消えた・差し替わった）は出典ごと隠す
+                if !loaded { brokenSamples.insert(sample.sourceUrl) }
+            })
+            .frame(width: size.width, height: size.height)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isImage)
+            .accessibilityLabel(sample.accessibilityLabel)
+            Text(sample.linkedCredit)
+                .tint(WebTheme.accent)
+                .font(.caption)
+                .foregroundStyle(WebTheme.muted2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: size.width, alignment: .leading)
+                .accessibilityIdentifier("spot.official.sampleCredit")
         }
     }
 

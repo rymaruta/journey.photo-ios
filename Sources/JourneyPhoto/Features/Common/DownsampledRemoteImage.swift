@@ -28,13 +28,16 @@ struct DownsampledRemoteImage: View {
     /// 写真の縦横比（幅 ÷ 高さ）。分かれば渡す——縦長の写真も幅いっぱいに描くので、
     /// 長い辺の画素数を縦横比から決める（`DownsampledImageSize.pixels`）
     var aspectRatio: CGFloat? = nil
+    /// 敷き方が `.fill` のとき、枠のどこを残すか（`RemoteImage.alignment` と同じ）
+    var alignment: Alignment = .center
 
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
     /// いま出している絵を読んだときの画素数（長い辺）。これ以上で読めていれば読み直さない
     @State private var loadedPixels = 0
     @State private var failed = false
-    @State private var width: CGFloat = 0
+    /// 敷く枠の大きさ（読む画素数を決めるため）。0 の間は読まない
+    @State private var size: CGSize = .zero
     /// 自動で読み直した回数（上限は `RemoteImageRetry.automaticLimit`）
     @State private var automaticRetries = 0
 
@@ -43,7 +46,7 @@ struct DownsampledRemoteImage: View {
             WebTheme.surface
             if let image {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
             } else if failed {
                 Image(systemName: "photo")
                     .font(.title2)
@@ -54,18 +57,15 @@ struct DownsampledRemoteImage: View {
             }
         }
         .clipped()
-        // 幅を測る（読む画素数を決めるため）。0 の間は読まない
+        // 枠を測る（読む画素数を決めるため）。0 の間は読まない
         .background {
             GeometryReader { g in
                 Color.clear
-                    .onAppear { width = g.size.width }
-                    .onChange(of: g.size.width) { _, newWidth in width = newWidth }
+                    .onAppear { size = g.size }
+                    .onChange(of: g.size) { _, newSize in size = newSize }
             }
         }
-        .task(id: LoadKey(url: url,
-                          pixels: DownsampledImageSize.pixels(width: width, scale: displayScale,
-                                                              aspectRatio: aspectRatio),
-                          attempt: automaticRetries)) {
+        .task(id: LoadKey(url: url, pixels: neededPixels, attempt: automaticRetries)) {
             await load()
         }
         // 別の写真に替わったら数え直す（前の写真の失敗で、次の写真の読み直しを使い切らない）
@@ -77,6 +77,16 @@ struct DownsampledRemoteImage: View {
         }
     }
 
+    /// いまの枠で要る長い辺の画素数（敷き方で決め方が違う）
+    private var neededPixels: Int? {
+        switch contentMode {
+        case .fill:
+            return DownsampledImageSize.pixels(filling: size, scale: displayScale, aspectRatio: aspectRatio)
+        default:
+            return DownsampledImageSize.pixels(width: size.width, scale: displayScale, aspectRatio: aspectRatio)
+        }
+    }
+
     private struct LoadKey: Equatable {
         let url: URL?
         let pixels: Int?
@@ -84,9 +94,7 @@ struct DownsampledRemoteImage: View {
     }
 
     private func load() async {
-        guard let url,
-              let pixels = DownsampledImageSize.pixels(width: width, scale: displayScale,
-                                                      aspectRatio: aspectRatio) else { return }
+        guard let url, let pixels = neededPixels else { return }
         // 同じ大きさ以上で読めていれば読み直さない（幅が少し縮んだだけの回）
         if image != nil, loadedPixels >= pixels { return }
         do {
@@ -140,6 +148,26 @@ enum DownsampledImageSize {
         var longSide = width * scale
         if let aspectRatio, aspectRatio > 0, aspectRatio < 1 { longSide /= aspectRatio }
         let needed = Int(longSide.rounded(.up))
+        let stepped = ((needed + step - 1) / step) * step
+        return min(maximum, max(minimum, stepped))
+    }
+
+    /// 枠いっぱいに**敷き詰める**（`.fill`）ときの長い辺の画素数（撮影地の代表写真の並び）。
+    ///
+    /// 敷き詰めると、写真は枠の幅と高さの**両方を覆う**まで広がる。枠より横長の写真は
+    /// 高さに合わせて広がり、幅は枠からはみ出す——幅の画素だけで読むとぼやける。
+    /// 縦横比（幅 ÷ 高さ）が分かれば、広がった後の写真の長い辺を出す。
+    /// **縦横比が分からなければ上限で読む**（どの形でもぼやけない。縮める得は無くなる）。
+    /// 枠の幅か高さがまだ分からない（0 以下）なら nil
+    static func pixels(filling box: CGSize, scale: CGFloat, aspectRatio: CGFloat? = nil) -> Int? {
+        guard box.width > 0, box.height > 0, scale > 0 else { return nil }
+        guard let ratio = aspectRatio, ratio > 0 else { return maximum }
+        // 写真が枠を覆うまで広げたときの大きさ（pt）
+        let boxRatio = box.width / box.height
+        let shown = ratio >= boxRatio
+            ? CGSize(width: box.height * ratio, height: box.height)
+            : CGSize(width: box.width, height: box.width / ratio)
+        let needed = Int((max(shown.width, shown.height) * scale).rounded(.up))
         let stepped = ((needed + step - 1) / step) * step
         return min(maximum, max(minimum, stepped))
     }
