@@ -85,6 +85,28 @@ enum HomeSpotShelf {
         return Shelf(season: guides.season, entries: picked.map { Entry(spot: $0.spot, guide: $0.guide) })
     }
 
+    /// ホームに出す段（画面 `HomeTopCardView` が呼ぶ）。
+    ///
+    /// 🔴 **今日の一問が決着する（取れた・取れなかった）まで出さない**（`quizSettled`・2026-10-03 のレビュー）。
+    /// 先に出すと、一問の選択肢の場所が段に並び、一問が届いた瞬間に消える（答えの手がかりが一瞬見え、
+    /// 段の並びも入れ替わる）。`choices` は上段の札の並び（`HomeTopCard.cards`・同じ回の計算を渡す）
+    static func visibleShelf(today: Date?, spots: [OfficialSpot], choices: [HomeTopCard.Choice],
+                             quiz: DailyQuiz?, quizSettled: Bool) -> Shelf? {
+        guard quizSettled, let today else { return nil }
+        return shelf(today: today, spots: spots,
+                     excluding: excluded(by: choices, quizSpots: quiz?.choices.map(\.spotId) ?? []))
+    }
+
+    /// 本文を取りに行く slug: **まだ取りに行っていないもの**と、**取れなかったもの**（nil を覚えている）。
+    /// 取れなかった場所は、段が作り直されたとき・引っぱって更新したとき（`reloadToken`）に取り直す
+    /// （サービスは 404 を長めに覚えるので、本当に無い場所を叩き続けることはない）
+    static func slugsToFetch(_ entries: [Entry], bodies: [String: SpotBody?]) -> [String] {
+        entries.map(\.spot.slug).filter { slug in
+            guard let known = bodies[slug] else { return true }
+            return known == nil
+        }
+    }
+
     /// 段から除くスポット: 上の札（季節・行きたい場所）に出ているものと、今日の一問の選択肢
     static func excluded(by choices: [HomeTopCard.Choice], quizSpots: [String]) -> Set<String> {
         var ids = Set<String>()

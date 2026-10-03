@@ -244,3 +244,41 @@ final class HomeSpotShelfTests: XCTestCase {
         XCTAssertNil(HomeSpotShelf.Entry(spot: try spot("c", prefecture: " "), guide: "").regionLabel)
     }
 }
+
+/// レビュー（2026-10-03）の直し: 一問が決着するまで段を出さない・取れなかった本文を取り直す
+final class HomeSpotShelfGateTests: XCTestCase {
+
+    private let utc = TimeZone(identifier: "UTC")!
+    private let now = Date(timeIntervalSince1970: 1_790_510_400)
+
+    private func spot(_ id: String) throws -> OfficialSpot {
+        try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
+            #"{"spotId":"\#(id)","slug":"\#(id)","name":"[\#(id)]","stage":"published","seasonalGuide":[{"season":"autumn","text":"秋"}]}"#.utf8))
+    }
+
+    /// 🔴 一問が決着するまで段を出さない（選択肢が先に並んで、届いた瞬間に消えるのを防ぐ）
+    func testShelfWaitsForTheQuizToSettle() throws {
+        let q = try XCTUnwrap(DailyQuiz.parse(Data(DailyQuizTests.json(date: "2026-09-27").utf8), date: "2026-09-27"))
+        let list = try q.choices.map { try spot($0.spotId) } + [try spot("sp_other")]
+        let today = HomeTopCard.today(now, in: utc)
+        XCTAssertNil(HomeSpotShelf.visibleShelf(today: today, spots: list, choices: [], quiz: nil, quizSettled: false),
+                     "一問が届く前に段を出した")
+        let settled = HomeSpotShelf.visibleShelf(today: today, spots: list, choices: [], quiz: q, quizSettled: true)
+        XCTAssertEqual(settled?.entries.map(\.id), ["sp_other"], "選択肢を除いていない")
+        // 一問が取れなかった日（決着・quiz なし）は全部出す
+        let failed = HomeSpotShelf.visibleShelf(today: today, spots: list, choices: [], quiz: nil, quizSettled: true)
+        XCTAssertEqual(failed?.entries.count, 5)
+        XCTAssertNil(HomeSpotShelf.visibleShelf(today: nil, spots: list, choices: [], quiz: nil, quizSettled: true))
+    }
+
+    /// まだ取っていない・取れなかった（nil）場所だけ取りに行く。取れた本文は取り直さない
+    func testRefetchesOnlyMissingOrFailedBodies() throws {
+        let entries = try ["a", "b", "c"].map { HomeSpotShelf.Entry(spot: try spot($0), guide: "") }
+        let body = try JSONDecoder.api.decode(SpotBody.self, from: Data(
+            #"{"slug":"a","check":{"kind":"human","verifiedAt":"2026-09-25"}}"#.utf8))
+        let bodies: [String: SpotBody?] = ["a": body, "b": nil]  // リテラルの nil は「鍵あり・中身なし」
+        XCTAssertEqual(bodies.count, 2)
+        XCTAssertEqual(HomeSpotShelf.slugsToFetch(entries, bodies: bodies), ["b", "c"])
+        XCTAssertEqual(HomeSpotShelf.slugsToFetch(entries, bodies: [:]), ["a", "b", "c"])
+    }
+}

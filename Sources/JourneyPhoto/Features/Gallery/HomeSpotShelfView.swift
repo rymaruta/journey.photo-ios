@@ -17,11 +17,15 @@ struct HomeSpotShelfView: View {
     let spots: [OfficialSpot]
     /// 撮影スポットの画面に渡す公開写真（この場所の写真）
     let photos: [Photo]
+    /// 変わったら、本文が取れなかった場所を取り直す（引っぱって更新・前面に戻った・`HomeTopCardView` と同じ合図）
+    var reloadToken: Int = 0
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// アクセシビリティ用の大きさでは出典の行数の上限を外す（`credit` の注記）
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// 取りに行った本文（slug → 取れなければ nil）。**鍵が在る＝取りに行き終えた**。
-    /// 画面が生きている間は取り直さない（段に出る数件だけ・サービスにも控えがある）
+    /// 取れた本文は画面が生きている間は取り直さない。取れなかった（nil）場所は `reloadToken` が変わったときに取り直す
     @State private var bodies: [String: SpotBody?] = [:]
     /// 読み込めなかった写真（Commons で消えた・差し替わった）。その1枚を出典ごと隠し、次の候補へ
     @State private var broken: Set<URL> = []
@@ -46,7 +50,7 @@ struct HomeSpotShelfView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.spotShelf")
-        .task(id: shelf.entries.map(\.spot.slug).joined(separator: ",")) { await loadBodies() }
+        .task(id: shelf.entries.map(\.spot.slug).joined(separator: ",") + "#\(reloadToken)") { await loadBodies() }
     }
 
     private var header: some View {
@@ -150,15 +154,17 @@ struct HomeSpotShelfView: View {
     ///
     /// 2026-10-03 判断: **3行まで・切るのは頭**。札は幅 240 で、題（Commons のファイル名）が長いと
     /// 段の背が伸び、下の写真の一覧が押し下がる。頭で切れば作者・ライセンス・出典（表示の条件の
-    /// 3つ）は必ず残り、題も末尾は見える。全文は読み上げ（`accessibilityLabel`）とリンク先で読める
+    /// 3つ）は必ず残り、題も末尾は見える。全文は読み上げ（`accessibilityLabel`）とリンク先で読める。
+    /// **アクセシビリティ用の大きさでは上限を外す**——大きな字で3行だと作者の途中で切れうる
     private func credit(_ picture: HomeSpotShelf.Picture) -> some View {
         CreditLinksMenu(links: picture.creditLinks, accessibilityLabel: picture.credit) {
             Text(picture.linkedCredit)
                 .tint(WebTheme.accent)
                 .font(.caption)
                 .foregroundStyle(WebTheme.faint)
-                .lineLimit(3)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 3)
                 .truncationMode(.head)
+                .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
                 .multilineTextAlignment(.leading)
                 .frame(width: Self.cardWidth - 24, alignment: .leading)
         }
@@ -166,9 +172,10 @@ struct HomeSpotShelfView: View {
         .accessibilityIdentifier("home.spotShelf.credit")
     }
 
-    /// 段に出ている場所の本文だけを取る（取りに行き終えたものは取り直さない）。並べて取る（最大 `HomeSpotShelf.count` 本）
+    /// 段に出ている場所の本文だけを取る（取れたものは取り直さない・取れなかったものは取り直す
+    /// `HomeSpotShelf.slugsToFetch`）。並べて取る（最大 `HomeSpotShelf.count` 本）
     private func loadBodies() async {
-        let slugs = shelf.entries.map(\.spot.slug).filter { bodies[$0] == nil }
+        let slugs = HomeSpotShelf.slugsToFetch(shelf.entries, bodies: bodies)
         guard !slugs.isEmpty else { return }
         let service = environment.spots
         await withTaskGroup(of: (String, SpotBody?).self) { group in

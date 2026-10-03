@@ -66,15 +66,21 @@ struct HomeTopCardView: View {
     @State private var isShown = false
     /// 今日の一問に答えたか（札の2行目を変える）。ホームに戻ったときに読み直す
     @State private var quizAnswered = false
+    /// 今日の一問が決着したか（取れた・取れなかった）。**決着するまで「いまの季節のスポット」の段を出さない**
+    /// （`HomeSpotShelf.visibleShelf`）。差し替えと同じく、見えている間に移す（`pendingQuizSettled`）
+    @State private var quizSettled = false
+    @State private var pendingQuizSettled = false
 
     private let opened = OpenedTripBooks()
 
     var body: some View {
         // 札の並びの下に「いまの季節のスポット」の段（2026-10-03・`HomeSpotShelf`）。
         // 間は一覧の段の間（`GalleryView` の 24）と同じ
+        // 札の並びは**1回だけ計算して**、札と段の両方に渡す
+        let choices = self.choices
         VStack(spacing: 24) {
-            content
-            spotShelf
+            content(choices)
+            spotShelf(choices)
         }
             .task(id: "\(auth.userId ?? "-")#\(reloadToken)#\(returnReloads)") { await load() }
             .task { await loadSpots() }
@@ -121,22 +127,20 @@ struct HomeTopCardView: View {
                           wishlist: wishedKeys, quiz: quiz)
     }
 
-    /// 「いまの季節のスポット」の段。**索引が取れていない・候補が無い日は出さない**（空き地を作らない）。
-    /// 上の札に出ている場所と今日の一問の選択肢は除く（`HomeSpotShelf.excluded`）。
+    /// 「いまの季節のスポット」の段。**索引が取れていない・候補が無い日・今日の一問が決着する前は出さない**
+    /// （空き地を作らない・`HomeSpotShelf.visibleShelf`）。上の札に出ている場所と今日の一問の選択肢は除く。
     /// 並びが変わるのは、札と同じく索引が取れたとき・ホームに戻ったとき（行きたい場所）・
     /// 見えている間（今日の一問）だけ——段から開いた画面が前に出ている間に札が消えて閉じることはない
     @ViewBuilder
-    private var spotShelf: some View {
-        if let today = HomeTopCard.today(Date(), in: .current),
-           let shelf = HomeSpotShelf.shelf(today: today, spots: spots,
-                                           excluding: HomeSpotShelf.excluded(by: choices, quizSpots: quiz?.choices.map(\.spotId) ?? [])) {
-            HomeSpotShelfView(shelf: shelf, spots: spots, photos: themePhotos)
+    private func spotShelf(_ choices: [HomeTopCard.Choice]) -> some View {
+        if let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(Date(), in: .current), spots: spots,
+                                                  choices: choices, quiz: quiz, quizSettled: quizSettled) {
+            HomeSpotShelfView(shelf: shelf, spots: spots, photos: themePhotos, reloadToken: reloadToken)
         }
     }
 
     @ViewBuilder
-    private var content: some View {
-        let choices = self.choices
+    private func content(_ choices: [HomeTopCard.Choice]) -> some View {
         if choices.count == 1, let only = choices.first {
             // 1枚の日はいまと同じ（左右 16 の余白で画面いっぱい）
             card(for: only, inCarousel: false)
@@ -404,12 +408,17 @@ struct HomeTopCardView: View {
     /// Lambda の同時実行には乗らない
     private func loadQuiz() async {
         let date = DailyQuiz.today()
-        if quiz?.date == date { return }
+        if quiz?.date == date {
+            quizSettled = true
+            return
+        }
         let result = try? await environment.quiz.fetch(date: date)
+        // 止められた回は決着にしない（次の `.task` が取り直す）
         guard !Task.isCancelled else { return }
         if case .ready(let fetched)? = result {
             pendingQuiz = fetched
         }
+        pendingQuizSettled = true
         // 見えていればその場で整える（取れなければ昨日の札を下げる）。**見えていない＝札から開いた
         // 画面が前に出ている間は触らない**——今日の一問の札・答えと同じスポットの季節の札が
         // 消えると、押した元のリンクが消えて開いている画面が閉じる
@@ -426,6 +435,10 @@ struct HomeTopCardView: View {
             quiz = nil
         }
         quizAnswered = quiz.map { QuizAnswers().chosen(for: $0) != nil } ?? false
+        if pendingQuizSettled {
+            quizSettled = true
+            pendingQuizSettled = false
+        }
     }
 
     private func load() async {
