@@ -152,7 +152,7 @@ enum ConditionalGet {
         if let validator = validators.load() {
             var request = plainRequest(url)
             validator.apply(to: &request)
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.cancellableData(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 304 else {
                 return .fetched(data, response)
             }
@@ -162,7 +162,7 @@ enum ConditionalGet {
             validators.clear()
         }
         try RequestCancellation.throwIfCancelled()
-        let (data, response) = try await session.data(for: plainRequest(url))
+        let (data, response) = try await session.cancellableData(for: plainRequest(url))
         return .fetched(data, response)
     }
 
