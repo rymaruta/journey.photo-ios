@@ -352,7 +352,10 @@ final class ScreenshotTests: XCTestCase {
                     if app.buttons["search.emptyMap"].firstMatch.exists {
                         shoot(app, "11b-探す（0件から地図へ）")
                     }
-                    field.buttons["Clear text"].firstMatch.tap()
+                    // 消すボタンは入力欄の外にある自前のボタン（`search.clear`）。OS の「Clear text」は無い。
+                    // 見つからなくても落とさない（この試験の決まり: 出なければ撮らないだけ）
+                    let clear = app.buttons["search.clear"].firstMatch
+                    if clear.waitForExistence(timeout: 3), clear.isHittable { clear.tap() }
                 }
             }
             if name == "マップ" {

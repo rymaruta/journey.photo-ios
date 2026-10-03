@@ -174,6 +174,7 @@ struct SearchView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("消す", "Clear"))
+                .accessibilityIdentifier("search.clear")
             }
         }
         .padding(.horizontal, 14)
