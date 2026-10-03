@@ -34,6 +34,34 @@ final class ScreenshotTests: XCTestCase {
         add(shot)
     }
 
+    /// **ホームの「いまの季節のスポット」の段を撮る**（2026-10-03・`HomeSpotShelfView`）。
+    /// 札が画面の下に隠れていたら少しずつ送る（上限あり）。作例の写真は本文と Commons から来るので
+    /// 少し待つ。段が出なければ撮らない（索引が取れない回・その季節の候補が無い回）。
+    ///
+    /// 🔴 **`swipeUp` は使わない・撮ったら上へ戻す。** 勢いで流れると、後の `20`・`21` が探す
+    /// 1枚目の写真の位置が変わる（`feedPushes` の注記）。同じ短い引き（画面の 35%）で送り、
+    /// 送った回数だけ逆に引いて戻す
+    private func shootSpotShelf(_ app: XCUIApplication) {
+        let card = app.buttons["home.spotShelf.card"].firstMatch
+        guard card.waitForExistence(timeout: 10) else { return }
+        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        var pushes = 0
+        while !card.isHittable, pushes < 3 {
+            low.press(forDuration: 0.05, thenDragTo: high)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        if card.isHittable {
+            Thread.sleep(forTimeInterval: 4)
+            shoot(app, "10d-ホーム（いまの季節のスポット・作例）")
+        }
+        for _ in 0..<pushes {
+            high.press(forDuration: 0.05, thenDragTo: low)
+            Thread.sleep(forTimeInterval: 1)
+        }
+    }
+
     /// **撮影スポットのピンを撮る。** 公開済みのスポットは国内の4件だけで、
     /// 地図を開いた範囲（シミュレータの現在地＝パリ）には1本も出ない。名前で絞ると
     /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
@@ -346,6 +374,7 @@ final class ScreenshotTests: XCTestCase {
                     }
                 }
             }
+            if name == "ホーム" { shootSpotShelf(app) }
             if name == "探す" {
                 let field = app.textFields["search.field"].firstMatch
                 if field.exists, field.isHittable {
