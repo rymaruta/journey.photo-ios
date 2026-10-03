@@ -189,6 +189,75 @@ final class EditPostDeviceFixesTests: XCTestCase {
         XCTAssertEqual(model.myPhotos.map(\.id), ["new", "old"])
     }
 
+    /// ホームの自分の写真: 控えは読み直しが失敗しても手放す。60秒を過ぎた控えは使わない
+    @MainActor
+    func testGalleryPostedHoldIsReleasedOnFailureAndExpires() async throws {
+        let model = GalleryViewModel(gallery: PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString)))
+        let old = try photo("old", at: "2026-10-01T00:00:00Z")
+        await model.loadMyPhotos(viewerId: "me") { [old] }
+        model.showPosted([try photo("new", at: "2026-10-03T00:00:00Z")], viewerId: "me")
+        struct Boom: Error {}
+        await model.loadMyPhotos(viewerId: "me") { throw Boom() }
+        await model.loadMyPhotos(viewerId: "me") { [old] }
+        XCTAssertEqual(model.myPhotos.map(\.id), ["old"], "失敗した読み直しのあとも控えが残っている")
+
+        model.showPosted([try photo("late", at: "2026-10-03T00:00:00Z")], viewerId: "me",
+                         at: Date().addingTimeInterval(-61))
+        await model.loadMyPhotos(viewerId: "me") { [old] }
+        XCTAssertEqual(model.myPhotos.map(\.id), ["old"], "60秒を過ぎた控えを使った")
+    }
+
+    func testPendingPostsExpireAfterSixtySeconds() throws {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let pending = PostedPhotos.Pending(photos: [try photo("a", at: "2026-10-03T00:00:00Z")], receivedAt: t0)
+        XCTAssertEqual(pending.photos(at: t0.addingTimeInterval(60)).count, 1)
+        XCTAssertTrue(pending.photos(at: t0.addingTimeInterval(60.5)).isEmpty)
+    }
+
+    /// 公開範囲を絞った写真・`/private/` を指す行は、先に足さない（署名の無い URL では画像が出ない）
+    func testRestrictedPostedPhotosAreNotShownEarly() throws {
+        let open = try photo("a", at: "2026-10-03T00:00:00Z")
+        let limited = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"b","src":"/uploads/b.jpg","audience":"followers","userId":"me"}"#.utf8))
+        let privateSrc = try photo("c", at: "2026-10-03T00:00:00Z", src: "https://cdn/private/c.jpg")
+        XCTAssertEqual(PostedPhotos.showable([open, limited, privateSrc]).map(\.id), ["a"])
+    }
+
+    // MARK: - 上限時間つきの待ち（`AsyncTimeout`）
+
+    /// 答えが先に来たら、時間を計る側も止める
+    func testFirstWithinStopsTheTimerAfterAnEarlyAnswer() async throws {
+        final class Flag: @unchecked Sendable { var stopped = false }
+        let flag = Flag()
+        let value: Int? = await AsyncTimeout.firstWithin(seconds: 30, sleep: { _ in
+            do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { flag.stopped = true; throw error }
+        }) { 7 }
+        XCTAssertEqual(value, 7)
+        for _ in 0..<200 where !flag.stopped { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertTrue(flag.stopped, "答えのあとも時間を計り続けている")
+    }
+
+    // MARK: - 書き出しの進み・描けなかったとき
+
+    func testExportProgressText() {
+        let progress = UploadEditRules.ExportProgress(index: 2, total: 3)
+        XCTAssertEqual(progress.label, "書き出し中 2/3")
+        XCTAssertEqual(progress.accessibilityLabel, "編集した写真を書き出し中 2 / 3 枚目")
+    }
+
+    /// 編集後の最初の絵を描けなかったら、スピナーを回し続けず元の写真に添えて知らせる
+    func testRenderFailureShowsTheOriginalWithANotice() {
+        let screen = PhotoEditScreen(original: PhotoRecipe(exposure: 0.4))
+        XCTAssertEqual(screen.photoShown(hasEdited: false, hasBefore: true, hasPlaceholder: true, failed: false,
+                                         renderFailed: true), .beforeRenderFailed)
+        XCTAssertEqual(screen.photoShown(hasEdited: false, hasBefore: false, hasPlaceholder: true, failed: false,
+                                         renderFailed: true), .failed, "元の写真も無ければ失敗の文")
+        XCTAssertEqual(screen.photoShown(hasEdited: true, hasBefore: true, hasPlaceholder: true, failed: false,
+                                         renderFailed: true), .edited, "前に描けた絵があればそれを出す")
+    }
+
     // MARK: - 編集の元の一時ファイル（`PhotoEditSources.fileProtection`）
 
     /// 起動後に一度ロックを解けば読める守り（`.complete` だとロック中・裏で読めない）

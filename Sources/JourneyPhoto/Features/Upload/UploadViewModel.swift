@@ -333,6 +333,8 @@ final class UploadViewModel: ObservableObject {
     /// スポットのページに並ぶ形で上がった枚数（`spotId` 付き・公開・全体に公開）。
     /// スポットの画面が「投稿しました」を出すかを決める（並ばない投稿で言い切らない）
     @Published private(set) var postedToSpot = 0
+    /// 編集した写真を書き出している間の進み（送り始める前・`exportAllEdited`）。書き出していなければ nil
+    @Published private(set) var exportProgress: UploadEditRules.ExportProgress?
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
     @Published private(set) var uploadingIndex = 0
     @Published var errorMessage: String?
@@ -369,7 +371,7 @@ final class UploadViewModel: ObservableObject {
         try await item.loadTransferable(type: Data.self)
     }
 
-    /// ライブラリの写真1枚を読むのを待つ上限（秒）。過ぎたら「読めなかった」に回す（`OfficialSpotIndex.firstWithin`）。
+    /// ライブラリの写真1枚を読むのを待つ上限（秒）。過ぎたら「読めなかった」に回す（`AsyncTimeout.firstWithin`）。
     ///
     /// 🔴 **2026-10-03 判断: 60秒。** iCloud にしか無い写真は落としてくるので数十秒かかることがあり、
     /// 短いと読める写真まで落とす。いっぽう上限が無いと、返らない1枚のために「読み込み中」が解けず、
@@ -647,17 +649,23 @@ final class UploadViewModel: ObservableObject {
     /// - 書き出せなかった写真は結果に失敗を持たせ、**その写真だけ**送らずに残す（今までと同じ）
     /// - 控えた鍵を使い回す写真（`reusesStaged`）は置く絵が要らない。SNS に載せる回だけ共有の絵として書き出す
     ///
-    /// 2026-10-03 判断: 書き出しの間は「送信中」のまま枚数は 0（何枚目かは置き始めてから数える）。
-    /// 失うもの: 最初の1枚が上がり始めるまでの時間が、編集した枚数ぶんの書き出しだけ延びる
+    /// 書き出しの間は「書き出し中 n/N」を出す（`exportProgress`。「0/N」のまま止まって見えた）。
+    /// 失うもの: 最初の1枚が上がり始めるまでの時間が、編集した枚数ぶんの書き出しだけ延びる（2026-10-03 判断）
     private func exportAllEdited(_ queue: [UUID]) async -> [UUID: Exported] {
         var out: [UUID: Exported] = [:]
         let sharing = shareToThreads && ThreadsShare.isEligible(published: published, audience: audienceToSend)
-        for id in queue {
+        // 書き出す写真を先に決める（「n/N」の N）
+        let targets = items.filter { item in
+            guard queue.contains(item.id), UploadEditRules.needsExport(item.recipe) else { return false }
+            let reuses = staged[item.id] != nil
+                && UploadEditRules.reusesStaged(stagedWith: stagedEdits[item.id]?.recipe, current: item.recipe)
+            return !reuses || sharing
+        }.map(\.id)
+        defer { exportProgress = nil }
+        for (offset, id) in targets.enumerated() {
             if cancelled { break }
-            guard let item = items.first(where: { $0.id == id }), UploadEditRules.needsExport(item.recipe) else { continue }
-            let reuses = staged[id] != nil
-                && UploadEditRules.reusesStaged(stagedWith: stagedEdits[id]?.recipe, current: item.recipe)
-            if reuses && !sharing { continue }
+            guard let item = items.first(where: { $0.id == id }) else { continue }
+            exportProgress = UploadEditRules.ExportProgress(index: offset + 1, total: targets.count)
             do {
                 out[id] = Exported(recipe: item.recipe, result: .success(try await preparedToSend(item)))
             } catch {
@@ -757,7 +765,7 @@ final class UploadViewModel: ObservableObject {
                 // **1枚ごとに上限時間を設ける**（`pickedLoadTimeout` の注記）。過ぎた・読めなかった写真は
                 // 「読めなかった」に回し、読めた写真だけで投稿できるようにする
                 // 待つのは `firstWithin`（取り消しに応えない読み込みでも時間切れが効く）
-                let outcome = await OfficialSpotIndex.firstWithin(seconds: pickedLoadTimeout) {
+                let outcome = await AsyncTimeout.firstWithin(seconds: pickedLoadTimeout) {
                     () async -> Result<Data?, Error>? in
                     do { return .success(try await load(item)) } catch { return .failure(error) }
                 }

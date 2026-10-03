@@ -224,6 +224,8 @@ struct PhotoEditScreen: Equatable {
         case before
         /// 帯の編集済みサムネを仮に出す（編集後の最初の絵が届くまで）
         case placeholder
+        /// 編集後の絵を描けなかった。元の写真を出し、描けなかったことを添える
+        case beforeRenderFailed
         case spinner
         case failed
     }
@@ -233,14 +235,19 @@ struct PhotoEditScreen: Equatable {
     /// 🔴 **編集済みの写真で開き直したとき、編集後の最初の絵が届くまで元の写真を札なしで出さない。**
     /// 以前は `edited ?? before` で、元の写真（無編集）が「編集前」の札なしで出て、編集が消えたように見えた。
     /// 今のレシピが無編集でないあいだは、帯の編集済みサムネ（あれば・長い辺 360px なので仮）か、スピナー。
-    /// 長押しの間は元の写真（`showsBeforeLabel`）
-    func photoShown(hasEdited: Bool, hasBefore: Bool, hasPlaceholder: Bool, failed: Bool) -> PhotoShown {
+    /// 長押しの間は元の写真（`showsBeforeLabel`）。
+    ///
+    /// `renderFailed`: 編集後の絵を描けなかった（まだ1枚も描けていない）。スピナーを回し続けず、
+    /// 元の写真に「描けなかった」を添えて出す（2026-10-03）
+    func photoShown(hasEdited: Bool, hasBefore: Bool, hasPlaceholder: Bool, failed: Bool,
+                    renderFailed: Bool = false) -> PhotoShown {
         if showsBeforeLabel {
             if hasBefore { return .before }
             return failed ? .failed : .spinner
         }
         if hasEdited { return .edited }
         if failed { return .failed }
+        if renderFailed { return hasBefore ? .beforeRenderFailed : .failed }
         if !current.isIdentity { return hasPlaceholder ? .placeholder : .spinner }
         return hasBefore ? .before : .spinner
     }
@@ -370,6 +377,19 @@ enum UploadEditRules {
         let head = reason ?? L("編集した写真を書き出せませんでした", "Couldn't export the edited photo")
         return head + L("。編集を「なし」に戻すと元の写真で送れます",
                         ". Set the edit back to None to post the original photo.")
+    }
+
+    /// 送り始める前に編集した写真を書き出している進み（2026-10-03）。`index` は 1 から
+    struct ExportProgress: Equatable {
+        let index: Int
+        let total: Int
+
+        /// 投稿ボタンに出す短い文（送信中の「3/5」と同じ書き方）
+        var label: String { L("書き出し中 \(index)/\(total)", "Exporting \(index)/\(total)") }
+        /// 読み上げ
+        var accessibilityLabel: String {
+            L("編集した写真を書き出し中 \(index) / \(total) 枚目", "Exporting edited photo \(index) of \(total)")
+        }
     }
 
     /// 共有から外した写真があれば、そのことを知らせに足す（編集前の絵を黙って SNS に渡さない）

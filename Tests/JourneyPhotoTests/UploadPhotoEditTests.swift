@@ -593,4 +593,32 @@ final class UploadPhotoEditTests: XCTestCase {
         XCTAssertFalse(model.canRetryUnreadable)
         XCTAssertNil(model.errorMessage)
     }
+
+    /// 書き出しの間は「書き出し中 n/N」を出す（「0/N」のまま止まって見えない）。終わったら消す
+    @MainActor
+    func testExportShowsProgress() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        final class Seen: @unchecked Sendable { var progress: [UploadEditRules.ExportProgress?] = [] }
+        let seen = Seen()
+        let model = model()
+        if model.shareToThreads { model.shareToThreads = false }
+        let log = ExportLog()
+        let export = fakeExport(log)
+        model.exportEdited = { source, recipe, base in
+            // 書き出しは画面の処理の外。画面の処理の上で今の進みを読む
+            seen.progress.append(DispatchQueue.main.sync { MainActor.assumeIsolated { model.exportProgress } })
+            return try export(source, recipe, base)
+        }
+        model.items = [PendingPhoto(prepared: original()), PendingPhoto(prepared: original()),
+                       PendingPhoto(prepared: original())]
+        model.applyEdit(model.items[0].id, recipe: PhotoRecipe(exposure: 0.4))
+        model.applyEdit(model.items[2].id, recipe: PhotoRecipe(contrast: 0.2))
+        await model.submit()
+        XCTAssertEqual(seen.progress, [.init(index: 1, total: 2), .init(index: 2, total: 2)])
+        XCTAssertNil(model.exportProgress)
+    }
 }

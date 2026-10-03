@@ -1081,6 +1081,9 @@ final class MyPageViewModel: ObservableObject {
         errorMessage = nil
         // 人が替わった後に返った回は、次の人の「読み込み中」を解かない
         defer { if gen == generation { isLoading = false } }
+        // 先に足した控えは、この読み直しが**成功・失敗・取り消しのどれで終わっても**手放す
+        // （残すと、あとで消した写真が次の読み直しで戻る・`PostedPhotos.keepSeconds`）
+        defer { if gen == generation { justPosted = nil } }
         // 🔴 **鍵を持たずに入っている回は、鍵の要る口を叩かない。**
         //
         // `AuthStore` の `PreviewSession`（Debug のみ）は利用者 ID だけを
@@ -1128,8 +1131,8 @@ final class MyPageViewModel: ObservableObject {
                 // 自分のページでも、留めた写真は先頭（他人から見えている並びと揃える）
                 self.pinnedIds = self.profile?.pinnedPhotoIds ?? []
                 // 投稿したばかりでまだ索引に無い写真も残す（`showPosted`・id で重複を除く）
-                let merged = PostedPhotos.merge(loaded: loadedPhotos, posted: justPosted, owner: activeUser)
-                justPosted = []
+                let merged = PostedPhotos.merge(loaded: loadedPhotos, posted: justPosted?.photos(at: Date()) ?? [],
+                                                owner: activeUser)
                 self.photos = PhotoPinning.pinnedFirst(merged, pinned: self.pinnedIds)
                 hasLoadedPhotos = true
                 serverRead = ServerRead(owner: activeUser, publishedIds: loadedPhotos.filter { $0.published != false }.map(\.id),
@@ -1224,7 +1227,7 @@ final class MyPageViewModel: ObservableObject {
         generation += 1
         isLoading = false
         photos = []
-        justPosted = []
+        justPosted = nil
         pinnedIds = []
         profile = nil
         followers = 0
@@ -1239,18 +1242,20 @@ final class MyPageViewModel: ObservableObject {
         serverRead = nil
     }
 
-    /// 投稿したばかりで、まだ読み直しの結果に合わせていない写真（`PostedPhotos`）。
-    /// 次に読めた回に合わせて手放す（その回に索引がまだ返さなくても、一覧には残る。
-    /// その次の読み直しはサーバーの答えだけになる）
-    private var justPosted: [Photo] = []
+    /// 投稿したばかりで、まだ読み直しの結果に合わせていない写真（`PostedPhotos.Pending`）。
+    /// 次の読み直しが終わったら（成功・失敗・取り消しのどれでも）手放す。`keepSeconds` を過ぎた控えは使わない。
+    /// 読めた回に索引がまだ返さなくても一覧には残り、その次の読み直しはサーバーの答えだけになる
+    private var justPosted: PostedPhotos.Pending?
 
     /// 投稿画面を閉じた（`TabRouter.lastPosted`）。保存の応答の行を**読み直しの前に**一覧へ足す。
-    /// 人が替わっていたら何もしない。まだ一度も読めていなければ一覧には触らず、読めた回に合わせる
-    func showPosted(_ posted: [Photo], for userId: String?) {
-        guard let userId, userId == activeUser, !posted.isEmpty else { return }
-        justPosted = posted
+    /// 人が替わっていたら何もしない。まだ一度も読めていなければ一覧には触らず、読めた回に合わせる。
+    /// **公開範囲を絞った写真は足さない**（`PostedPhotos.showable`・署名の無い URL で画像が出ない）
+    func showPosted(_ posted: [Photo], for userId: String?, at now: Date = Date()) {
+        let shown = PostedPhotos.showable(posted)
+        guard let userId, userId == activeUser, !shown.isEmpty else { return }
+        justPosted = PostedPhotos.Pending(photos: shown, receivedAt: now)
         guard hasLoadedPhotos else { return }
-        photos = PhotoPinning.pinnedFirst(PostedPhotos.merge(loaded: photos, posted: posted, owner: userId),
+        photos = PhotoPinning.pinnedFirst(PostedPhotos.merge(loaded: photos, posted: shown, owner: userId),
                                           pinned: pinnedIds)
     }
 

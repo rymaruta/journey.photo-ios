@@ -38,6 +38,73 @@ final class ViewModelTests: XCTestCase {
                   beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } })
     }
 
+    // MARK: - 投稿したばかりの写真を先に並べる（`PostedPhotos`・2026-10-03）
+
+    private func servePhotos(_ body: String, status: Int = 200) {
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: status, body: body)
+    }
+
+    private let serverP1 = #"[{"id":"p1","src":"/uploads/p1.jpg","createdAt":"2026-10-01T00:00:00Z","userId":"a"}]"#
+
+    private func postedPhoto(_ id: String, extra: String = "") throws -> Photo {
+        try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"\#(id)","src":"/uploads/\#(id).jpg","createdAt":"2026-10-03T00:00:00Z","userId":"a"\#(extra)}"#.utf8))
+    }
+
+    /// マイページ: 閉じた直後に足し、索引が遅れた読み直しでも残す。次の読み直しはサーバーの答えだけ。
+    /// 公開範囲を絞った写真（署名の無い `/private/` の URL）は先に足さない
+    func testMyPageShowsPostedPhotoThroughALaggingReload() async throws {
+        prepare()
+        servePhotos(serverP1)
+        let model = MyPageViewModel(api: api())
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+
+        let restricted = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"r1","src":"/private/r1.jpg","audience":"followers","createdAt":"2026-10-03T01:00:00Z","userId":"a"}"#.utf8))
+        model.showPosted([try postedPhoto("new"), restricted], for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["new", "p1"], "読み直しの前に足していない・絞った写真を足した")
+
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["new", "p1"], "索引が遅れた読み直しで消えた")
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "控えを手放していない（消した写真が戻る）")
+    }
+
+    /// マイページ: 控えは読み直しが失敗しても手放す。60秒を過ぎた控えは使わない
+    func testMyPagePostedHoldIsReleasedOnFailureAndExpires() async throws {
+        prepare()
+        servePhotos(serverP1)
+        let model = MyPageViewModel(api: api())
+        await model.load(for: "a")
+
+        model.showPosted([try postedPhoto("new")], for: "a")
+        servePhotos(#"{"error":"x"}"#, status: 500)
+        await model.load(for: "a")
+        servePhotos(serverP1)
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "失敗した読み直しのあとも控えが残っている")
+
+        model.showPosted([try postedPhoto("old")], for: "a", at: Date().addingTimeInterval(-61))
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "60秒を過ぎた控えを使った")
+    }
+
+    /// 投稿画面を閉じたら、その画面で上がった写真を渡す（次に閉じたら入れ替わる）
+    func testPostSheetCloseHandsOverPostedPhotos() async throws {
+        let router = TabRouter()
+        let p = try postedPhoto("new")
+        router.notePosted(p)
+        XCTAssertTrue(router.lastPosted.isEmpty, "閉じる前に渡した")
+        router.postSheetClosed()
+        XCTAssertEqual(router.lastPosted.map(\.id), ["new"])
+        XCTAssertEqual(router.postSheetsClosed, 1)
+        router.postSheetClosed()
+        XCTAssertTrue(router.lastPosted.isEmpty, "前の投稿画面の写真をもう一度渡した")
+    }
+
     private func gallery(_ body: String) -> PublicGalleryService {
         prepare()
         StubProtocol.respond(status: 200, body: body)
@@ -1887,4 +1954,5 @@ final class PeopleSearchQueryTests: XCTestCase {
         XCTAssertEqual(sent, ["ab"])
         XCTAssertFalse(model.peopleQueryTooShort, "探せる語になったのに短いと言い続けた")
     }
+
 }

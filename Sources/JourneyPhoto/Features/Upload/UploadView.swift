@@ -274,7 +274,14 @@ struct UploadView: View {
         Button {
             Task { await model.submit() }
         } label: {
-            if model.isWorking {
+            if let export = model.exportProgress {
+                // 送り始める前の書き出し（「0/N」のまま止まって見えないように）
+                HStack(spacing: 6) {
+                    ProgressView().tint(WebTheme.accent)
+                    Text(export.label)
+                        .font(JPFont.mono(13, relativeTo: .footnote))
+                }
+            } else if model.isWorking {
                 // **何枚目かを出す。** 5枚選んだときに、進んでいるのか
                 // 止まっているのかが分からないのがいちばん不安
                 HStack(spacing: 6) {
@@ -293,12 +300,12 @@ struct UploadView: View {
         }
         .foregroundStyle(model.canSubmit ? WebTheme.accent : WebTheme.faint)
         .disabled(!model.canSubmit)
-        .accessibilityLabel(model.isWorking
+        .accessibilityLabel(model.exportProgress?.accessibilityLabel ?? (model.isWorking
                             ? L("送信中 \(model.uploadingIndex) / \(model.items.count) 枚目",
                                 "Sending \(model.uploadingIndex) of \(model.items.count)")
                             : (model.items.count > 1
                                ? L("\(model.items.count) 枚を投稿する", "Post \(model.items.count) photos")
-                               : L("投稿する", "Post")))
+                               : L("投稿する", "Post"))))
     }
 
     /// 選んだ写真の帯（板: 96×120・角丸12、右上に外す丸、左下に番号、最後に「追加」）。

@@ -209,7 +209,8 @@ struct PhotoEditView: View {
     @ViewBuilder
     private var photoContent: some View {
         switch screen.photoShown(hasEdited: preview.edited != nil, hasBefore: preview.before != nil,
-                                 hasPlaceholder: placeholder != nil, failed: preview.failed) {
+                                 hasPlaceholder: placeholder != nil, failed: preview.failed,
+                                 renderFailed: preview.renderFailed) {
         case .edited:
             if let edited = preview.edited {
                 Image(uiImage: edited).resizable().aspectRatio(contentMode: .fit)
@@ -217,6 +218,20 @@ struct PhotoEditView: View {
         case .before:
             if let before = preview.before {
                 Image(uiImage: before).resizable().aspectRatio(contentMode: .fit)
+            }
+        case .beforeRenderFailed:
+            if let before = preview.before {
+                Image(uiImage: before).resizable().aspectRatio(contentMode: .fit)
+                    .overlay(alignment: .bottom) {
+                        // 写真の上なので白（「編集前」の札と同じ形）
+                        Text(L("編集後の写真を表示できませんでした", "Couldn't show the edited photo"))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.black.opacity(0.62), in: Capsule())
+                            .padding(12)
+                    }
             }
         case .placeholder:
             // 帯の編集済みサムネ（長い辺 360px なので仮）。編集後の絵が届いたら差し替わる。
@@ -438,6 +453,8 @@ final class PhotoEditPreview: ObservableObject {
     @Published private(set) var before: UIImage?
     @Published private(set) var thumbs: [String: UIImage] = [:]
     @Published private(set) var failed = false
+    /// 編集後の絵を描けなかった（描けた絵がまだ無い間だけ立てる・`PhotoEditScreen.photoShown`）
+    @Published private(set) var renderFailed = false
 
     /// 読んだ写真（`PhotoRenderer.Loaded` は Core Image の画像を持つ。描くときは読むだけ）
     private final class Box: @unchecked Sendable {
@@ -524,7 +541,13 @@ final class PhotoEditPreview: ObservableObject {
             }.value
             guard let self else { return }
             // 描き終えた絵は出してよい（表示中の絵より新しい）。待っていた最新があれば続けて描く
-            if let image { self.edited = image }
+            if let image {
+                self.edited = image
+                self.renderFailed = false
+            } else if self.edited == nil {
+                // 最初の絵を描けなかった。スピナーを回し続けない（元の写真に添えて知らせる）
+                self.renderFailed = true
+            }
             if let next = self.queue.finish() { self.run(next) }
         }
     }
