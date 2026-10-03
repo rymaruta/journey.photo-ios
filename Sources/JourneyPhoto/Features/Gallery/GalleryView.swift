@@ -75,7 +75,8 @@ struct GalleryView: View {
         .task {
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない
-            model.use(gallery: environment.gallery)
+            // 「新着」はページで読む（`GET /feed`・2026-10-03）。同じ理由で環境の1つを渡す
+            model.use(gallery: environment.gallery, feed: environment.publicFeed)
             await model.load()
         }
         // **ログイン状態が決まってから範囲を決める**（範囲は選んでいるフィードが決める）。
@@ -400,6 +401,7 @@ struct GalleryView: View {
                 }
                 // 板 01c: 大きく1枚 → 2枚 → 2枚、端から端まで・隙間 4pt
                 HomeMosaic(groups: groups, onReport: { reportTarget = $0 })
+                pageFooter
             }
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
@@ -416,6 +418,29 @@ struct GalleryView: View {
     }
 
     private static let feedTopID = "home-feed-top"
+
+    /// 「新着」の続き（`GET /feed`・2026-10-03）。**下まで送ったら次のページを読む**。
+    ///
+    /// `LazyVStack` の最後の子なので、ここが作られる＝下まで来た。読んだページの数で
+    /// 作り直す（`id`）——短いページで目印が画面に残ったままでも次を頼むため。
+    /// 重ねて頼まないのはモデル側（`isLoadingPage`）。読めなかったら「もう一度試す」
+    @ViewBuilder
+    private var pageFooter: some View {
+        if model.hasMorePages {
+            Group {
+                if model.pageFailed {
+                    RetryButton(isBusy: model.isLoadingPage) {
+                        Task { await model.loadNextPage() }
+                    }
+                } else {
+                    ProgressView()
+                        .onAppear { Task { await model.loadNextPage() } }
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+            .id(model.loadedPageCount)
+        }
+    }
 
     private var feedEmptyState: some View {
         VStack(spacing: 14) {

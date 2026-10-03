@@ -81,31 +81,232 @@ final class GalleryViewModel: ObservableObject {
     /// ギャラリーから一生消えない**（再起動しても消えない）。
     private var gallery: PublicGalleryService
 
-    init(gallery: PublicGalleryService = PublicGalleryService()) {
+    /// 公開写真のページ（`GET /feed`）。**nil ならページで読まない**（今までどおり
+    /// `photos.json` だけ）。`gallery` と同じ理由で、画面が出てから環境の1つを入れる
+    private var feedPages: PublicFeedService?
+
+    init(gallery: PublicGalleryService = PublicGalleryService(), feed: PublicFeedService? = nil) {
         self.gallery = gallery
+        self.feedPages = feed
     }
 
     /// 画面が出たら、環境が持っている1つに繋ぎ直す。
-    func use(gallery: PublicGalleryService) {
+    func use(gallery: PublicGalleryService, feed: PublicFeedService? = nil) {
         self.gallery = gallery
+        if let feed { self.feedPages = feed }
     }
 
-    /// - Parameter force: 控えを無視して取り直す（引き下げ更新）。
+    /// - Parameter force: 控えを無視して取り直す（引き下げ更新）。**ページは1ページ目から読み直す**
+    ///
+    /// **`photos.json`（全件）と `/feed` の1ページ目を同時に読む**（2026-10-03）。
+    /// 「新着」は1ページ目が着いた時点で出す（全件を待たない）。全件は、全件が要る
+    /// 札（おすすめ・フォロー中・カテゴリ・タグ・検索・今日のテーマ）のために今までどおり読む。
+    /// `/feed` が使えない（道が無い 404・500・圏外・壊れた答え）回は全件の並びに戻る
     func load(force: Bool = false) async {
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         let generation = viewerGeneration
         loadedEpoch = await gallery.restrictedEpoch
-        do {
-            let photos = try await gallery.fetchPhotos(force: force)
-            // 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
+        // 引き下げ・まだ試していない回だけ1ページ目から読む。ブロックの後などの読み直し
+        // （force なし）は、読んだページを持ったまま仕上げだけ掛け直す（下まで送った一覧を縮めない）
+        let readsFirstPage = feedPages != nil && (force || pageSource == .untried)
+        let result: Result<[Photo], Error>
+        if readsFirstPage {
+            async let listed = fetchSnapshot(force: force)
+            let paged = await reloadPages()
+            // 最初の1ページで表示を出す
+            if paged, usesPagedFeed, !keepsShownFeed, generation == viewerGeneration {
+                state = .loaded(filtered())
+            }
+            result = await listed
+        } else {
+            result = await fetchSnapshot(force: force)
+        }
+        // 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
+        guard !keepsShownFeed, generation == viewerGeneration else { return }
+        // 限定公開の控え・いいねの数を取り直した後で、読んだページの仕上げを掛け直す
+        if pageSource == .pages {
+            await representPages()
             guard !keepsShownFeed, generation == viewerGeneration else { return }
+        }
+        switch result {
+        case .success(let photos):
             all = sorted(photos)
             state = .loaded(filtered())
-        } catch {
-            guard !keepsShownFeed, generation == viewerGeneration else { return }
-            state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
+        case .failure(let error):
+            // 全件が読めなくても、ページで出している「新着」は出し続ける
+            if usesPagedFeed {
+                state = .loaded(filtered())
+            } else {
+                state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
+            }
         }
+    }
+
+    /// 全件（`photos.json`）。**catch の中で await しない**ために結果で返す
+    private func fetchSnapshot(force: Bool) async -> Result<[Photo], Error> {
+        do {
+            return .success(try await gallery.fetchPhotos(force: force))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    // MARK: - 公開写真のページ（`GET /feed`・2026-10-03）
+
+    /// 「新着」の出どころ
+    private enum PageSource {
+        /// まだ試していない（次の読み込みで1ページ目を読む）
+        case untried
+        /// `/feed` で読めている
+        case pages
+        /// `/feed` が使えなかった。**全件（`photos.json`）の並びに戻っている**。
+        /// 次の引き下げでまた試す
+        case snapshot
+    }
+
+    private var pageSource: PageSource = .untried
+    /// 読んだページの写真（届いた順・id で重複を除いたもの。仕上げ前）
+    private var pageRaw: [Photo] = []
+    private var pageIds: Set<String> = []
+    /// 次のページの札。**nil なら最後まで読んだ**（続きの有無はこれだけで決める）
+    private var nextCursor: String?
+    /// 仕上げ（限定公開・ブロック）を掛けた、出す並び
+    private var pagedPhotos: [Photo] = []
+    /// ページを読み直した回数。**読み直しの前に始めた続きの答えを書かない**ために使う
+    private var pageSerial = 0
+    /// 仕上げを始めた回数。遅れて終わった古い仕上げで新しい並びを戻さない
+    private var presentSerial = 0
+
+    /// ページを読んでいる最中。**続きを重ねて頼まない**
+    @Published private(set) var isLoadingPage = false
+    /// 続きを読めなかった（一覧の下に「もう一度試す」を出す）
+    @Published private(set) var pageFailed = false
+    /// 読んだページの数。一覧の下の目印をこれで作り直す——短いページで目印が画面に
+    /// 残ったままでも、作り直すと `onAppear` がもう一度走って次を読む
+    @Published private(set) var loadedPageCount = 0
+
+    /// 空のページ（`items` が空で `nextCursor` だけ）が続いたとき、1回の頼みで続けて読む上限。
+    /// 超えたら一度返し、一覧の下の目印が次を頼む
+    static let maxEmptyPageHops = 5
+
+    /// いま「新着」をページで出しているか。
+    ///
+    /// **2026-10-03 判断:** ページで出すのは「新着」（新しい順・範囲はすべて）で、
+    /// カテゴリ・タグ・検索の絞りが無いときだけ。`/feed` は新しい順しか返さないので、
+    /// おすすめ（選んだ写真を先頭に・いいね順）・フォロー中（フォロー先で絞る）・
+    /// 絞り込みは、読んだページだけで並べると全体の答えと食い違う。全件の `photos.json` のまま
+    var usesPagedFeed: Bool {
+        pageSource == .pages
+            && feed == .latest && sort == .new && scope == .all
+            && category == nil && selectedTags.isEmpty
+            && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 一覧の下に「続きを読む」目印を出すか
+    var hasMorePages: Bool { usesPagedFeed && nextCursor != nil }
+
+    /// 1ページ目から読み直す。読めたら true（`pageSource` が `.pages` になる）
+    private func reloadPages() async -> Bool {
+        guard let feedPages else { return false }
+        pageSerial += 1
+        let serial = pageSerial
+        isLoadingPage = true
+        defer { if serial == pageSerial { isLoadingPage = false } }
+        let outcome = await readPages(feedPages, from: nil, known: [])
+        guard serial == pageSerial else { return false }
+        switch outcome {
+        case .success(let (items, cursor)):
+            pageRaw = items
+            pageIds = Set(items.map(\.id))
+            nextCursor = cursor
+            pageSource = .pages
+            pageFailed = false
+            loadedPageCount = 1
+            await representPages()
+            return serial == pageSerial
+        case .failure(let error):
+            // 取り消された回は何も変えない（出ていた並びを残す）
+            if error is CancellationError { return false }
+            // **全件の並びに戻る。** 道が無い 404（`isMissingRoute`）・500・圏外・壊れた答えの
+            // どれでも、ホームを空にしない——戻り先の `photos.json` は端末の控えも持つ
+            print("[feed] 公開写真のページを読めませんでした。photos.json に戻ります: \(error)")
+            clearPages()
+            pageSource = .snapshot
+            return false
+        }
+    }
+
+    /// 次のページを読む（一覧の下の目印が呼ぶ）。**読んでいる最中・最後まで読んだ回は何もしない**
+    func loadNextPage() async {
+        guard let feedPages, pageSource == .pages, let cursor = nextCursor, !isLoadingPage else { return }
+        isLoadingPage = true
+        let serial = pageSerial
+        let generation = viewerGeneration
+        defer { if serial == pageSerial { isLoadingPage = false } }
+        let outcome = await readPages(feedPages, from: cursor, known: pageIds)
+        // 待つ間に引き下げ・人の切り替えで読み直していたら、古い続きを書かない
+        guard serial == pageSerial, generation == viewerGeneration else { return }
+        switch outcome {
+        case .success(let (items, next)):
+            pageRaw += items
+            pageIds.formUnion(items.map(\.id))
+            nextCursor = next
+            pageFailed = false
+            loadedPageCount += 1
+            await representPages()
+            guard serial == pageSerial else { return }
+            if case .loaded = state { state = .loaded(filtered()) }
+        case .failure(let error):
+            if error is CancellationError { return }
+            // 読んだぶんは残し、札も残す（「もう一度試す」で同じ続きを頼む）
+            print("[feed] 続きのページを読めませんでした: \(error)")
+            pageFailed = true
+        }
+    }
+
+    /// `cursor` から読み、**新しい写真が1枚でも入るか、最後に着くまで**続けて読む
+    /// （上限 `maxEmptyPageHops`）。空のページ・読んだ写真だけのページは続きを読む
+    private func readPages(_ feedPages: PublicFeedService, from cursor: String?,
+                           known: Set<String>) async -> Result<([Photo], String?), Error> {
+        var seen = known
+        var fresh: [Photo] = []
+        var cursor = cursor
+        do {
+            for _ in 0..<Self.maxEmptyPageHops {
+                let page = try await feedPages.page(cursor: cursor)
+                for photo in page.items where seen.insert(photo.id).inserted {
+                    fresh.append(photo)
+                }
+                cursor = page.nextCursor
+                if !fresh.isEmpty || cursor == nil { break }
+            }
+            return .success((fresh, cursor))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// 読んだページに仕上げ（いいねの数・限定公開・編集・ブロック）を掛け直す
+    private func representPages() async {
+        presentSerial += 1
+        let serial = presentSerial
+        let raw = pageRaw
+        let presented = await gallery.presentFeed(raw, reachedEnd: nextCursor == nil)
+        guard serial == presentSerial, pageSource == .pages else { return }
+        pagedPhotos = presented
+    }
+
+    private func clearPages() {
+        pageSerial += 1
+        presentSerial += 1
+        pageRaw = []
+        pageIds = []
+        nextCursor = nil
+        pagedPhotos = []
+        pageFailed = false
+        isLoadingPage = false
+        loadedPageCount = 0
     }
 
     /// 人が替わった回数。**替わる前に読み始めた回の答えを書かない**ために使う
@@ -126,6 +327,9 @@ final class GalleryViewModel: ObservableObject {
         if previous != nil {
             viewerGeneration += 1
             all = []
+            // 読んだページも捨てる（仕上げに前の人の限定公開が重なっている）。次の読み込みで1ページ目から
+            clearPages()
+            pageSource = .untried
             myPhotos = []
             myPhotosOwner = nil
             myPhotosWanted = next
@@ -157,7 +361,8 @@ final class GalleryViewModel: ObservableObject {
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
     private var all: [Photo] = []
 
-    /// 今日のテーマの背景に使う公開写真（絞り込みの影響を受けない全件）
+    /// 今日のテーマの背景に使う公開写真（絞り込みの影響を受けない全件）。
+    /// **2026-10-03 判断:** 日付で全件から選ぶので `photos.json` の全件のまま（ページにしない）
     var allPhotosForTheme: [Photo] { all }
 
     /// 自分の写真。**今日のテーマに参加したかの判定に使う。**
@@ -316,8 +521,11 @@ final class GalleryViewModel: ObservableObject {
         // 範囲を変えて、選んでいたカテゴリが消えたら絞りも外す
         if let category, !categories.contains(where: { CategoryChoices.isChosen(current: $0, choice: category) }) {
             self.category = nil
+            if usesPagedFeed { return pagedPhotos }
             return inScope
         }
+        // 「新着」で絞りが無いときは、ページで読んだ並び（`/feed`・2026-10-03）
+        if usesPagedFeed { return pagedPhotos }
         guard let category else {
             return PhotoQuery.photos(
                 PhotoQuery.photos(inScope, withAllTags: selectedTags),
@@ -380,6 +588,8 @@ final class GalleryViewModel: ObservableObject {
     /// 固有名詞**が候補に並んでいた（次の写真で押す相手ではない）。
     ///
     /// **1枚も無い語は出さない。** 押しても空になるチップを置かない。
+    /// **2026-10-03 判断:** 全件（`photos.json`）から作る。読んだページだけから作ると、
+    /// 下まで送るたびにチップが増えて並びが動く
     var tags: [String] {
         let present = Set(all.flatMap { $0.tags ?? [] }.map { TagChoices.key($0) })
         return TagChoices.all.filter { present.contains(TagChoices.key($0)) }
@@ -420,6 +630,7 @@ final class GalleryViewModel: ObservableObject {
     /// **「おすすめ」の札のときだけ出す**（owner の判断 2026-09-27）。全員の写真から
     /// 作る段なので、「フォロー中」ではフォローしていない人の写真が
     /// 「フォロー中の人の写真はまだありません」の上に並んでいた
+    /// **2026-10-03 判断:** owner が選んだ写真は日付を問わず全件から拾うので `photos.json` のまま
     var featured: [FeaturedGroups.Group] {
         guard category == nil, feed == .recommended else { return [] }
         return FeaturedGroups.groups(from: all)

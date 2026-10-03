@@ -18,8 +18,9 @@ import FoundationNetworking
 /// 割り切っている点:
 /// - **最新とは限らない。** 反映はサイト再ビルド待ち（投稿時に
 ///   `repository_dispatch` が走るので通常は数分）
-/// - **ページングが無い。** 30枚規模では丸ごと読んで問題ないが、
-///   数百枚を超えたら api-user 側に `GET /feed` を足すこと
+/// - **ページングが無い。** 全件が要る画面（おすすめ・カテゴリ・タグ・検索・地図など）は
+///   今もこちら。ホームの「新着」は `GET /feed` のページ読み（`PublicFeedService`・
+///   2026-10-03）に移した。仕上げ（限定公開・ブロック）は `presentFeed` が同じ道で掛ける
 actor PublicGalleryService {
 
     private let url: URL
@@ -324,6 +325,20 @@ actor PublicGalleryService {
         let (extra, epoch) = await restrictedPhotos(force: force)
         if extra.isEmpty { return (visible(edits.apply(to: counted)), epoch) }
         return (visible(edits.apply(to: RestrictedFeed.merge(publicPhotos: counted, restricted: extra))), epoch)
+    }
+
+    /// **ページで読んだ公開写真**（`GET /feed`・`PublicFeedService`）を、`merged` と同じ
+    /// 仕上げで出せる形にする（2026-10-03）。
+    ///
+    /// いいねのいまの数・絞ったぶん（読んだ範囲だけ・`RestrictedFeed.mergeLoaded`）・
+    /// 自分の編集・ブロックと消した写真の絞り（`visible`）を、`merged` と同じ順で通す。
+    /// **`/feed` は今の行を返すが、端末にしか無い「通報した写真」はここでしか落とせない**。
+    /// 通信はしない（絞ったぶんは控えが古ければ読み直す）
+    func presentFeed(_ raw: [Photo], reachedEnd: Bool) async -> [Photo] {
+        let counted = LiveLikes.apply(liveCounts ?? [:], asOf: liveCountsAsOf ?? .distantPast, to: raw)
+        let (extra, _) = await restrictedPhotos(force: false)
+        let mixed = RestrictedFeed.mergeLoaded(publicPhotos: counted, restricted: extra, reachedEnd: reachedEnd)
+        return visible(edits.apply(to: mixed))
     }
 
     /// いいねのいまの数を取り直す。**失敗しても何も投げない**
