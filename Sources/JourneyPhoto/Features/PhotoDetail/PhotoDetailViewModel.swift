@@ -257,10 +257,18 @@ final class PhotoDetailViewModel: ObservableObject {
     ///   **ホームや大きく見る画面で同じ写真を送っている間は送らない。**
     ///   印は写真ごと——前の1枚を送っている間も、束の隣の1枚は押せる
     @discardableResult
-    func toggleLike(gate likeGate: LikeCountStore) async -> LikeAnswer? {
+    /// - Parameter shownId: 画面に**いま出ている**1枚の id。渡したら、この画面の
+    ///   1枚（`photoId`）と違う回は**何も送らない**（2026-10-03）。束を払うと画面の
+    ///   1枚はすぐ替わるが、`show(photoId:)` が走るのは `.task(id:)` が組み直された
+    ///   後——その間（1フレームほど）に下のハートを押すと、**見えていない前の1枚に**
+    ///   いいね（や取り消し）が飛んでいた
+    func toggleLike(gate likeGate: LikeCountStore, shownId: String? = nil) async -> LikeAnswer? {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
+        // 画面の1枚とこの画面の1枚が食い違う間は、送らず・知らせも出さない
+        // （押した写真に何も起きないだけ。次の描き直しで揃う）
+        if let shownId, shownId != photoId { return nil }
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
             return nil
