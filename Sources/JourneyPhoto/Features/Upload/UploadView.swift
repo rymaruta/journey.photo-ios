@@ -231,13 +231,16 @@ struct UploadView: View {
         // 2026-10-03 判断: **開いたらすぐ写真を選ぶ画面へ**（「追加」→「ライブラリから選ぶ」の2手を省く）。
         // 一度だけ。旅の写真から来た回（もう並んでいる）は開かない。カメラは帯の「追加」に残る
         .task {
+            // シートが出きってから開く（出ている途中に重ねると出ないことがある）。待つのは長めに
+            // （`UploadDetails.autoOpenDelay`）。それでも出なかった回は「ライブラリから選ぶ」が
+            // 立て直す（`openLibrary`）
+            try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
+            guard !Task.isCancelled else { return }
             let hasPhotos = !model.items.isEmpty || model.isLoadingPicked || !initialPhotos.isEmpty
             guard UploadDetails.autoOpensLibrary(hasPhotos: hasPhotos, alreadyOffered: offeredLibrary,
                                                  isWorking: model.isWorking) else { return }
+            // **開いたときにだけ印を付ける。** 待っている間に閉じた回は印を付けない（次に開いたらまた開く）
             offeredLibrary = true
-            // シートが出きってから開く（出ている途中に重ねると出ないことがある）
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            guard !Task.isCancelled, model.items.isEmpty, !model.isLoadingPicked else { return }
             showLibrary = true
         }
         // 写真を選んだ直後（0枚 → 1枚以上）に、一度だけ案内を出す（旅の写真から来た回も同じ）
@@ -543,6 +546,25 @@ struct UploadView: View {
         }
     }
 
+    /// 写真を選ぶ画面を開く（「ライブラリから選ぶ」）。
+    ///
+    /// 🔴 **立ったままの印を立て直す。** 自動で開いた回に選ぶ画面が出なかった（シートの出る途中に
+    /// 重なった）と、`showLibrary` が true のまま残り、もう一度 true を入れても変わらないので
+    /// 二度と開かない。立っていたら一度下ろしてから立てる（`UploadDetails.libraryOpenSteps`）
+    private func openLibrary() {
+        let steps = UploadDetails.libraryOpenSteps(isPresented: showLibrary)
+        guard steps.count > 1 else {
+            showLibrary = true
+            return
+        }
+        showLibrary = false
+        Task {
+            // 下ろしたのが反映されてから立てる（同じ描画の中で false → true にすると変化にならない）
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            showLibrary = true
+        }
+    }
+
     /// 「追加」の点線の枠。**カメラを先に置く**（このアプリがネイティブである
     /// 理由＝4.2 で、旅先でいちばん使う入口でもある）
     private var addTile: some View {
@@ -552,7 +574,7 @@ struct UploadView: View {
                     Label(L("写真を撮る", "Take a photo"), systemImage: "camera")
                 }
             }
-            Button { showLibrary = true } label: {
+            Button { openLibrary() } label: {
                 Label(L("ライブラリから選ぶ", "Choose from library"), systemImage: "photo.on.rectangle")
             }
         } label: {
@@ -767,16 +789,16 @@ struct UploadView: View {
                     .foregroundStyle(WebTheme.faint)
                     .padding(.horizontal, 4)
             }
-            // 公開範囲の説明（何が起きるかを先に言う）。畳んでいる間は行の右の値で足りる
-            if showsDetails {
-                Text(model.published
-                     ? model.audience.photoNote
-                     : L("非公開の写真は、あなた以外には見えません。あとから公開できます。",
-                         "Private photos stay yours. You can publish them later."))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.faint)
-                    .padding(.horizontal, 4)
-            }
+            // 公開範囲の説明（何が起きるかを先に言う）。**畳んでいても出す**（レビュー 2026-10-03）
+            // ——「ウェブサイトにも載り、検索から…」が見えないまま、意図せず公開させない
+            Text(model.published
+                 ? model.audience.photoNote
+                 : L("非公開の写真は、あなた以外には見えません。あとから公開できます。",
+                     "Private photos stay yours. You can publish them later."))
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+                .padding(.horizontal, 4)
+                .accessibilityIdentifier("upload.audienceNote")
         }
     }
 

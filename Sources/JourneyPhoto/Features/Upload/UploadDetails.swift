@@ -59,4 +59,14 @@ enum UploadDetails {
     static func autoOpensLibrary(hasPhotos: Bool, alreadyOffered: Bool, isWorking: Bool) -> Bool {
         !hasPhotos && !alreadyOffered && !isWorking
     }
+
+    /// 自動で開くまで待つ時間。シート（投稿画面）が下から出きる時間（約0.5秒）より長めに取る。
+    /// 当て推量に頼り切らない——出なかった回は `libraryOpenSteps` で立て直せる
+    static let autoOpenDelayNanoseconds: UInt64 = 900_000_000
+
+    /// 「ライブラリから選ぶ」を押したときに `showLibrary` に入れる値の順。
+    /// **立ったままなら一度下ろしてから立てる**（true に true を入れても変化にならず、開かない）
+    static func libraryOpenSteps(isPresented: Bool) -> [Bool] {
+        isPresented ? [false, true] : [true]
+    }
 }

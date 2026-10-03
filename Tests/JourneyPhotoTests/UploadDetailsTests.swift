@@ -122,6 +122,36 @@ final class UploadDetailsTests: XCTestCase {
     func testFormOpensTheLibraryThroughTheRule() throws {
         let source = try uploadViewSource()
         XCTAssertTrue(source.contains("UploadDetails.autoOpensLibrary("), "自動で開く決まりを通していない")
-        XCTAssertTrue(source.contains("showLibrary = true\n        }"), "自動で写真を選ぶ画面を開いていない")
+        XCTAssertTrue(source.contains("offeredLibrary = true\n            showLibrary = true\n        }"),
+                      "開いたときにだけ印を付ける（待っている間に閉じた回に印だけ残さない）")
+        let task = try XCTUnwrap(source.range(of: "UploadDetails.autoOpenDelayNanoseconds"))
+        let mark = try XCTUnwrap(source.range(of: "offeredLibrary = true"))
+        XCTAssertLessThan(task.lowerBound, mark.lowerBound, "待つ前に印を付けている")
+        XCTAssertTrue(source.contains("Button { openLibrary() }"), "「ライブラリから選ぶ」が立て直しを通っていない")
+    }
+
+    /// 自動で開くまでの待ちはシートの出る時間（約0.5秒）より長め
+    func testAutoOpenWaitsLongerThanTheSheetAnimation() {
+        XCTAssertGreaterThanOrEqual(UploadDetails.autoOpenDelayNanoseconds, 800_000_000)
+    }
+
+    /// 🔴 立ったままの印は一度下ろしてから立てる（true に true では開かない）
+    func testLibraryReopensWhenTheFlagIsStuck() {
+        XCTAssertEqual(UploadDetails.libraryOpenSteps(isPresented: false), [true])
+        XCTAssertEqual(UploadDetails.libraryOpenSteps(isPresented: true), [false, true])
+    }
+
+    /// 🔴 **公開範囲の説明は畳んでいても出す**（レビュー 2026-10-03）。「ウェブサイトにも載り、検索から…」が
+    /// 見えないまま、意図せず公開させない
+    func testAudienceNoteShowsEvenWhenFolded() throws {
+        let source = try uploadViewSource()
+        let start = try XCTUnwrap(source.range(of: "private var rowsCard: some View {"))
+        let end = try XCTUnwrap(source.range(of: "private var detailRows: some View {"))
+        let body = String(source[start.upperBound..<end.lowerBound])
+        let note = try XCTUnwrap(body.range(of: "? model.audience.photoNote"))
+        // 説明の直前の数行に `if showsDetails` が無い（畳んでいる間に消えない）
+        let before = body[body.startIndex..<note.lowerBound].suffix(260)
+        XCTAssertFalse(before.contains("if showsDetails"), "公開範囲の説明が畳んだときに消える")
+        XCTAssertTrue(Audience.everyone.photoNote.contains(L("ウェブサイト", "website")))
     }
 }
