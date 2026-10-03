@@ -209,7 +209,6 @@ final class ScreenshotTests: XCTestCase {
         guard waitForKeyboardFocus(field) else { return }
         field.typeText("鍋ヶ滝\n")
         Thread.sleep(forTimeInterval: 3)
-        dismissDictationPrompt(app)
         let pin = app.buttons["鍋ヶ滝"].firstMatch
         guard pin.waitForExistence(timeout: 10) else {
             // ピンが出なくても、絞りは解いてから戻る（13d・あとの画面に持ち越さない）
@@ -265,48 +264,6 @@ final class ScreenshotTests: XCTestCase {
     /// （2026-09-26〜）ので、初めて開くと iOS が許可を尋ねる。この札は
     /// アプリの外（SpringBoard）に出て、**残るとあとのタブが押せなくなる**。
     /// 「使用中は許可」を押す——既定の場所が現在地になる、いまの動きを撮るため
-    /// **「音声入力を有効にしますか（Enable Dictation?）」を閉じる**（2026-10-03・run 335 の絵で確かめた）。
-    ///
-    /// 🔴 検索欄に文字を打つと、CI のシミュレータでキーボードからこの札が出ることがある。残したままだと
-    /// 以降の操作がすべて札に当たり、`14` は探す画面の上に札が出たまま撮れ、`15`・`20`・`21`・`30`・`31`・
-    /// `60`・`41` が黙って欠け、`40` は「Siri、音声入力とプライバシー」の説明を撮っていた。
-    /// **「今はしない」だけを押す**（先頭のボタンは「有効にする」なので決め打ちで押さない）。
-    /// 札がアプリと SpringBoard のどちらに出るかは確かめていないので、両方を見る
-    private func dismissDictationPrompt(_ app: XCUIApplication, timeout: TimeInterval = 1) {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let labels = ["Not Now", "今はしない"]
-        let deadline = Date().addingTimeInterval(timeout)
-        // **札の種別を決め打ちしない**（run 336: `alerts` では見つからず、閉じられなかった）。
-        // どの種別のボタンでも、名前が「今はしない」なら押す
-        repeat {
-            for target in [app, springboard] {
-                for label in labels {
-                    let button = target.buttons[label].firstMatch
-                    if button.exists {
-                        button.tap()
-                        Thread.sleep(forTimeInterval: 1)
-                        return
-                    }
-                }
-            }
-            Thread.sleep(forTimeInterval: 0.3)
-        } while Date() < deadline
-        // 閉じられなかったのに札が見えている回は、要素の木を残す（次に直す手がかり・1回だけ）
-        guard !reportedDictationPrompt else { return }
-        for (name, target) in [("app", app), ("springboard", springboard)]
-        where target.staticTexts["Enable Dictation?"].firstMatch.exists {
-            reportedDictationPrompt = true
-            let note = XCTAttachment(string: target.debugDescription)
-            note.name = "99-音声入力の札を閉じられなかった（\(name) の要素の木）"
-            note.lifetime = .keepAlways
-            add(note)
-            return
-        }
-    }
-
-    /// 閉じられなかった札の木を残したか（1回だけ残す）
-    private var reportedDictationPrompt = false
-
     private func answerLocationPrompt() {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let alert = springboard.alerts.firstMatch
@@ -381,8 +338,6 @@ final class ScreenshotTests: XCTestCase {
         let names = ["ホーム", "探す", "投稿", "マップ", "マイページ"]
         // 中央（投稿）はシートが出るので、一巡の中では触らない
         for (index, name) in names.enumerated() where index < tabBar.buttons.count && index != 2 {
-            // 前の画面で出た音声入力の札が残っていたら閉じる（`dismissDictationPrompt`）
-            dismissDictationPrompt(app)
             if name == "マップ" { simulateLocation() }
             tabBar.buttons.element(boundBy: index).tap()
             if name == "マップ" { answerLocationPrompt() }
@@ -426,16 +381,24 @@ final class ScreenshotTests: XCTestCase {
                     field.tap()
                     field.typeText("zzzz-no-photo-result")
                     Thread.sleep(forTimeInterval: 2)
-                    dismissDictationPrompt(app, timeout: 3)
                     if app.buttons["search.emptyMap"].firstMatch.exists {
                         shoot(app, "11b-探す（0件から地図へ）")
                     }
+                    // 🔴 **キーボードを閉じてから先へ進む**（2026-10-03・run 337 の絵 13・14 で確かめた）。
+                    // 出たままだとタブの帯を覆い、「マップ」を押してもキーボードに当たり（13 が探す画面の
+                    // まま）、右下の「マイページ」は🎤（音声入力）キーに当たって「Enable Dictation?」の札が
+                    // 開いた。以降の操作が全部札に当たり、15・20・21・30・31・60・41 が黙って欠けていた。
+                    // 焦点のあるうちに改行で確定する（焦点の無い `typeText` は失敗として記録される）
+                    field.typeText("\n")
                     // 消すボタンは入力欄の外にある自前のボタン（`search.clear`）。OS の「Clear text」は無い。
                     // 見つからなくても落とさない（この試験の決まり: 出なければ撮らないだけ）
                     let clear = app.buttons["search.clear"].firstMatch
                     if clear.waitForExistence(timeout: 3), clear.isHittable { clear.tap() }
-                    dismissDictationPrompt(app)
-                }
+                    // 閉じたのを確かめてからタブへ（閉じなければ待つだけ・落とさない）
+                    let keyboardGone = NSPredicate(format: "count == 0")
+                    _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardGone, object: app.keyboards)],
+                                       timeout: 5)
+                            }
             }
             if name == "マップ" {
                 shootSpotPin(app)
@@ -452,7 +415,6 @@ final class ScreenshotTests: XCTestCase {
         // 上と同じ絵を置くのは、名前と中身が食い違う絵の変種。
         //
         // 動いたかは**名前の付いた目印の位置**で見る（`profile.tab.trips`）。
-        dismissDictationPrompt(app)
         if tabBar.buttons.count > 4 {
             tabBar.buttons.element(boundBy: 4).tap()
             Thread.sleep(forTimeInterval: 3)
@@ -542,7 +504,6 @@ final class ScreenshotTests: XCTestCase {
         // （run 62 で `20-写真の詳細` と `21-人のページ` が丸ごと欠けた）。
         // 消えたことは**絵の枚数が減った**ことでしか分からない——
         // 巡回は「出なければ撮らない」ので、赤くもならない。
-        dismissDictationPrompt(app)
         tabBar.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 2)
         // **フィードを「おすすめ」へ戻す。** 一巡の `10c` が「フォロー中」に切り替えることがある
@@ -565,8 +526,7 @@ final class ScreenshotTests: XCTestCase {
         // **まだ作られていない間も送る**（2026-10-03）。写真の一覧は
         // `LazyVStack` の下の方（季節の段・入口・おすすめの横並びの下）にあり、画面の外では**要素が
         // まだ無い**ことがある。前は「在る・押せない」間だけ送っていたので、無いと送らずに抜けた。
-        // 上限を広げ、在って押せるまで送る（run 316〜335 で欠けていた主な原因は音声入力の札・
-        // `dismissDictationPrompt`）
+        // 上限を広げ、在って押せるまで送る（run 316〜337 で欠けていた主な原因は 11b のキーボード）
         var feedPushes = 0
         while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), feedPushes < 8 {
             let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
