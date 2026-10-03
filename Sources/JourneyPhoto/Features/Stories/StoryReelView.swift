@@ -50,12 +50,11 @@ struct StoryReelView: View {
     /// 閲覧画面の返信欄に入力中。**この間の払いは下も横も動かさない**（閲覧画面が
     /// キーボードを閉じるだけ）——下へ払うと閉じて書きかけが消えていた
     @State private var typing = false
-    /// 払い始めに決めた向き。**離したときもこれを使う**（離した瞬間の移動量で決め直すと、
-    /// 横に回していたのに指が下へ流れて閉じる、縮めていたのに横へ流れて回る、が起きた）。
-    /// `onChanged` で `value` から決める（`@GestureState` の反映の順に頼らない）。
-    /// **指が触れた位置が変わったら新しい払い**——打ち切られて残った古い向きを使わない
-    @State private var lockedAxis: StoryReel.Axis?
-    @State private var lockedStart: CGPoint?
+    /// 払い始めに決めた向き（`StoryReel.SwipeGate`）。**離したときもこれを使う**（離した瞬間の
+    /// 移動量で決め直すと、横に回していたのに指が下へ流れて閉じる、縮めていたのに横へ流れて回る、
+    /// が起きた）。`onChanged` で `value` から決める（`@GestureState` の反映の順に頼らない）。
+    /// **回っている間に始まった払いは離すまで受けない**
+    @State private var swipeGate = StoryReel.SwipeGate()
     /// いま閲覧画面に渡している束。**人が替わるときだけ決め直す**——通報・ブロックの
     /// たびに渡す束を変えると、閲覧画面の中の位置と食い違い、通報した1本や見ていない
     /// 1本に「見た」が飛んだ（7a3894b のレビュー）
@@ -147,7 +146,8 @@ struct StoryReelView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: StoryReel.axisThreshold)
                 .updating($finger) { value, state, _ in
-                    guard !turning else { return }
+                    // 回っている間・回っている間に始まった払いは指に付けない（`SwipeGate`）
+                    guard swipeGate.accepts(start: value.startLocation, turning: turning) else { return }
                     let dx = value.translation.width, dy = value.translation.height
                     if state.axis == nil {
                         state.axis = StoryReel.axis(dx: dx, dy: dy, swipeLocked: swipeLocked, typing: typing)
@@ -156,18 +156,12 @@ struct StoryReelView: View {
                     state.dy = dy
                 }
                 .onChanged { value in
-                    if lockedStart != value.startLocation {
-                        lockedStart = value.startLocation
-                        lockedAxis = nil
-                    }
-                    guard lockedAxis == nil, !turning else { return }
-                    lockedAxis = StoryReel.axis(dx: value.translation.width, dy: value.translation.height,
-                                                swipeLocked: swipeLocked, typing: typing)
+                    swipeGate.change(start: value.startLocation,
+                                     dx: value.translation.width, dy: value.translation.height,
+                                     turning: turning, swipeLocked: swipeLocked, typing: typing)
                 }
                 .onEnded { value in
-                    let axis = lockedStart == value.startLocation ? lockedAxis : nil
-                    lockedAxis = nil
-                    lockedStart = nil
+                    let axis = swipeGate.end(start: value.startLocation)
                     guard !turning else { return }
                     let dx = value.translation.width, dy = value.translation.height
                     switch axis {

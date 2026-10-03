@@ -707,6 +707,44 @@ enum StoryPlayback {
             : L("\(emoji) を送りました", "Sent \(emoji)")
     }
 
+    /// この閲覧で送った反応（ストーリー id → 送った絵文字）。
+    ///
+    /// 🔴 **同じ1本に反応を二度送らない**（バグ探し 2026-10-03）。♡ は押しても形が
+    /// 変わらなかったので、届いたか分からず何度も押せた。サーバーは反応を**重ねて消さない**
+    /// ——反応は返信の1件として毎回新しい id で足され（`api-user/src/storyReplies.ts` の
+    /// `postStoryReply`。同じ id の再送だけを見分ける）、そのたびに投稿者へ通知が飛び、
+    /// 1人10件の返信の枠（`REPLIES_MAX_PER_USER`）も食う。だから送れた1本は覚えて、
+    /// 2回目は送らずに ♡ を塗りつぶす（印）。
+    ///
+    /// 2026-10-03 判断:
+    ///  - **別の絵文字でも2回目は送らない**（長押しの並びから選び直しても）。サーバーは
+    ///    差し替えられず足すだけなので、「選び直し」は2件目の通知になる
+    ///  - **覚えるのはこの閲覧の間だけ**（閉じて開き直したら忘れる）。サーバーは閲覧者に
+    ///    「自分がもう反応したか」を返さない（返信を読めるのは投稿者だけ）ので、開き直した
+    ///    あとは送れてしまう。端末に残すほどの害ではないと見た
+    ///  - 送れなかった回は覚えない（もう一度押せる）
+    struct SentReactions: Equatable {
+        private var sent: [String: String] = [:]
+
+        init() {}
+
+        /// その1本で送った絵文字（まだなら nil）。♡ を塗りつぶすかに使う
+        func emoji(on storyId: String) -> String? { sent[storyId] }
+
+        /// 送るか。**その1本にまだ送っていなければ**
+        func shouldSend(on storyId: String) -> Bool { sent[storyId] == nil }
+
+        /// 送れた（サーバーが受けた）ときだけ呼ぶ
+        mutating func record(_ emoji: String, on storyId: String) { sent[storyId] = emoji }
+    }
+
+    /// もう送った1本で、もう一度反応しようとしたときの知らせ（黙って何もしないと壊れて見える）
+    static func reactionAlreadySentMessage(_ emoji: String) -> String {
+        emoji == StoryService.reactions.first
+            ? L("いいねは送ってあります", "You already liked this")
+            : L("\(emoji) は送ってあります", "You already sent \(emoji)")
+    }
+
     /// 反応の読み上げの名前（絵文字の読みは端末で違うので、ここで決める）
     static func reactionName(_ emoji: String) -> String {
         switch emoji {

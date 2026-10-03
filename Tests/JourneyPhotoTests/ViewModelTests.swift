@@ -235,6 +235,44 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(model.stories.map(\.id), [], "先に始めた回の結果で、ブロックした人の輪が戻った")
     }
 
+    /// 🔴 **ホームの一覧: 先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない**
+    /// （バグ探し 2026-10-03）。ホームの `load` は `.task`・引き下げ・限定公開の口の入れ替え・
+    /// ブロックから重なって走り、先に始めた回の古い一覧が後の回の一覧を上書きしていた
+    func testGalleryOlderLoadDoesNotOverwriteANewerOne() async {
+        prepare()
+        let gate = Gate(holds: 1)
+        let api = api(gates: PathGates(["/restricted": gate]))
+        let service = PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString))
+        await service.setRestrictedLoader { try await api.authorized(.get, "/restricted", as: [Photo].self) }
+        let publicList = #"[{"id":"pub","src":"https://x/p.jpg","createdAt":"2026-01-02T00:00:00Z","userId":"u1"}]"#
+        func restricted(_ id: String) -> String {
+            #"[{"id":"\#(id)","src":"https://x/\#(id).jpg","createdAt":"2026-02-02T00:00:00Z","userId":"u2","visibility":"followers"}]"#
+        }
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: publicList)
+        StubProtocol.respond(path: "/restricted", status: 200, body: restricted("newer"))
+        let model = GalleryViewModel(gallery: service)
+
+        // 先の回は限定公開の要求の手前で止まる
+        let older = Task { await model.load() }
+        await gate.untilWaiting()
+        // 後の回は通って、新しい一覧を書く
+        await model.load(force: true)
+        guard case .loaded(let after) = model.state else { return XCTFail("後の回が書いていない: \(model.state)") }
+        XCTAssertEqual(after.map(\.id).sorted(), ["newer", "pub"])
+
+        // 先の回は、後から古い一覧を受け取る
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: publicList)
+        StubProtocol.respond(path: "/restricted", status: 200, body: restricted("older"))
+        await gate.open()
+        await older.value
+        guard case .loaded(let final) = model.state else { return XCTFail("一覧が消えた: \(model.state)") }
+        XCTAssertEqual(final.map(\.id).sorted(), ["newer", "pub"], "先に始めた回の古い一覧で、後の回の一覧を戻した")
+    }
+
     /// **後の回が取れなかったときは、先の回で取れた一覧を捨てない**（3dbf727 のレビュー）。
     /// 番号だけで捨てていたので、後の回が圏外で落ちると輪が空のまま残った。
     /// 先の回の答えは、最後に頼まれたブロックの集合で絞る

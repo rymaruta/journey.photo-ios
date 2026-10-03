@@ -127,6 +127,8 @@ struct StoryViewerView: View {
     @State private var repliesNotice: String?
     /// 送っている最中。**二度押しで2件送らない**。自動送りも止める
     @State private var isSending = false
+    /// この閲覧で送った反応（`StoryPlayback.SentReactions`）。**同じ1本に二度送らない**
+    @State private var sentReactions = StoryPlayback.SentReactions()
 
     /// 見終えた1本を知らせる。**送るたびに呼ぶ**——次へ送ったぶんも
     /// 既読にしないと、閉じたときに輪が点いたまま残る
@@ -1582,9 +1584,12 @@ struct StoryViewerView: View {
                         // 🔴 **Button にしない。** Button に長押しを足すと、OS の版によっては長押しの
                         // あとに Button の送信も走る（❤️ が送られてから並びが開く）。押すと長押しを
                         // 別々の手振りにして、どちらか片方だけが効くようにする
-                        Image(systemName: "heart")
+                        // 送れた1本は塗りつぶしの真鍮（足元は写真の外の黒地・CLAUDE.md の
+                        // 「ストーリーの反応のハートは真鍮」）。まだなら白の線
+                        let reacted = sentReactions.emoji(on: story.id) != nil
+                        Image(systemName: reacted ? "heart.fill" : "heart")
                             .font(.title2)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(reacted ? WebTheme.accent : Color.white)
                             .webTappable()
                             .opacity(isSending ? 0.4 : 1)
                             .contentShape(Rectangle())
@@ -1600,6 +1605,7 @@ struct StoryViewerView: View {
                             .accessibilityElement()
                             .accessibilityAddTraits(.isButton)
                             .accessibilityLabel(L("いいね", "Like"))
+                            .accessibilityAddTraits(reacted ? .isSelected : [])
                             .accessibilityHint(L("長押しでほかの反応を選べます", "Press and hold for more reactions"))
                             .accessibilityAction {
                                 guard !isSending else { return }
@@ -1988,12 +1994,19 @@ struct StoryViewerView: View {
     }
 
     /// 定型の反応を送る。
+    ///
+    /// その1本にもう送っていたら**送らない**（`StoryPlayback.SentReactions`・サーバーは重ねて消さない）
     private func sendReaction(_ emoji: String, to story: Story) async {
         guard !isSending else { return }
+        guard sentReactions.shouldSend(on: story.id) else {
+            message = StoryPlayback.reactionAlreadySentMessage(sentReactions.emoji(on: story.id) ?? emoji)
+            return
+        }
         isSending = true
         defer { isSending = false }
         do {
             try await environment.stories.react(id: story.id, emoji: emoji)
+            sentReactions.record(emoji, on: story.id)
             message = StoryPlayback.reactionSentMessage(emoji)
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")

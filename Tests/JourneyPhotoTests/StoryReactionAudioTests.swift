@@ -40,4 +40,28 @@ final class StoryReactionAudioTests: XCTestCase {
         XCTAssertTrue(StoryPlayback.closesReactionPicker(replyFocused: false, menuOpen: true, sheetOpen: false))
         XCTAssertTrue(StoryPlayback.closesReactionPicker(replyFocused: false, menuOpen: false, sheetOpen: true))
     }
+
+    // MARK: - 同じ1本に二度送らない（バグ探し 2026-10-03）
+
+    /// 🔴 **送れた1本には、2回目を送らない**（別の絵文字でも）。サーバーは反応を重ねて消さず、
+    /// 毎回新しい返信として足して投稿者へ通知を飛ばす（`storyReplies.ts` の `postStoryReply`）
+    func testReactionIsSentOncePerStory() {
+        var sent = StoryPlayback.SentReactions()
+        XCTAssertTrue(sent.shouldSend(on: "s1"))
+        XCTAssertNil(sent.emoji(on: "s1"), "送る前から塗りつぶしている")
+        sent.record("❤️", on: "s1")
+        XCTAssertFalse(sent.shouldSend(on: "s1"), "同じ1本に2回目を送る")
+        XCTAssertEqual(sent.emoji(on: "s1"), "❤️", "送った印（塗りつぶし）が付かない")
+        // 別の1本は今までどおり送れる
+        XCTAssertTrue(sent.shouldSend(on: "s2"))
+        XCTAssertNil(sent.emoji(on: "s2"))
+    }
+
+    /// 2回目の知らせは、**送ってある方の絵文字**で言う
+    func testAlreadySentMessage() {
+        XCTAssertEqual(StoryPlayback.reactionAlreadySentMessage("❤️"),
+                       L("いいねは送ってあります", "You already liked this"))
+        XCTAssertEqual(StoryPlayback.reactionAlreadySentMessage("👏"),
+                       L("👏 は送ってあります", "You already sent 👏"))
+    }
 }

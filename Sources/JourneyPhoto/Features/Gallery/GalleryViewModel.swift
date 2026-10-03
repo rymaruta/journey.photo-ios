@@ -95,17 +95,36 @@ final class GalleryViewModel: ObservableObject {
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         let generation = viewerGeneration
+        loadSerial += 1
+        let mine = loadSerial
         loadedEpoch = await gallery.restrictedEpoch
         do {
             let photos = try await gallery.fetchPhotos(force: force)
-            // 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
-            guard !keepsShownFeed, generation == viewerGeneration else { return }
+            // 読んでいる間に人が替わった回・後から始めた回がある回は書かない（`writes`）
+            guard writes(mine, generation: generation) else { return }
             all = sorted(photos)
             state = .loaded(filtered())
         } catch {
-            guard !keepsShownFeed, generation == viewerGeneration else { return }
+            guard writes(mine, generation: generation) else { return }
             state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
         }
+    }
+
+    /// 読み込みを始めた回数（`load` の番号）
+    private var loadSerial = 0
+
+    /// その回の答えを書くか。
+    ///
+    /// - 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
+    /// - 🔴 **最後に始めた回だけ書く**（バグ探し 2026-10-03）。ホームの読み込みは画面の
+    ///   `.task`・引き下げ・限定公開の口の入れ替え（`restrictedChanges`）・ブロックから重なって
+    ///   走り、先に始めた回が後から着くと、後の回の新しい一覧（入れ替わった口の限定公開・
+    ///   引き下げで取り直した数）を古い一覧で戻していた（ストーリーの輪の `load` と同じ形）。
+    ///   2026-10-03 判断: 後の回が失敗して先の回が取れた場合も、先の回は書かない（失敗の帯の
+    ///   「もう一度試す」と引き下げが出口）。ストーリーの輪のように先の答えを拾うには、
+    ///   先の回が使った限定公開の口が今も正しいかを確かめる必要があり、ここでは見送った
+    private func writes(_ serial: Int, generation: Int) -> Bool {
+        !keepsShownFeed && generation == viewerGeneration && serial == loadSerial
     }
 
     /// 人が替わった回数。**替わる前に読み始めた回の答えを書かない**ために使う
