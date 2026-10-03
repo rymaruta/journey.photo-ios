@@ -109,6 +109,10 @@ struct StoryComposerView: View {
     /// 「誰に見せる？」のシート
     @State private var showAudience = false
     @State private var placeDraft = ""
+    /// 撮影スポットの索引（静的な JSON・一度だけ読む）。**取れなかった回は空**＝候補を出さないだけ
+    @State private var spotIndex: [OfficialSpot] = []
+    /// 写真の位置の近くの撮影スポット（`StorySpotSuggestion`）。**押したときだけ**撮影地に入る
+    @State private var spotSuggestion: OfficialSpot?
     /// ✕ で閉じる前の「下書きに保存／捨てる／キャンセル」
     @State private var showLeaveConfirm = false
     /// 「続きから」で戻した直後の中身。**ここから何も変えていなければ**、
@@ -268,6 +272,17 @@ struct StoryComposerView: View {
             if let song, song.fitting(window: window) != song {
                 self.song = song.fitting(window: window)
             }
+        }
+        // 撮影地の候補のための索引。**写真を選んでから**読む（選ぶ段では使わない）
+        .task(id: shots.isEmpty) {
+            guard !shots.isEmpty, spotIndex.isEmpty else { return }
+            let fetched = try? await environment.spots.fetchIndex()
+            guard !Task.isCancelled, let fetched else { return }
+            spotIndex = fetched
+        }
+        // 候補は**写真の位置か索引が変わったときだけ**解く（描き直しのたびに全件を当てない）
+        .task(id: SuggestionKey(coords: shots.map(\.prepared.coords), spots: spotIndex.count)) {
+            spotSuggestion = StorySpotSuggestion.spot(for: shots.map(\.prepared.coords), in: spotIndex)
         }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
             // サーバーが 200 で切る（`sanitizeText(location, 200)`）。画面で止める
@@ -688,6 +703,8 @@ struct StoryComposerView: View {
                 .jpPhotoTextShadow()
             if !location.isEmpty {
                 photoChip(symbol: "mappin", text: location)
+            } else if let spot = spotSuggestion {
+                spotSuggestionChip(spot)
             }
             // 曲は**動かせる札で見せる**。帯は**どの写真にも札が無いときだけ**（札が上限で置けなかった・
             // 札の文字を打ち直した・札を置いた写真を外した・前の動きの下書き）。以前は表示中の写真に
@@ -731,6 +748,40 @@ struct StoryComposerView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .jpGlass(in: Capsule(), border: 0)
+    }
+
+    /// 撮影地の候補（`StorySpotSuggestion`）。**押したときだけ**撮影地に入る。
+    /// 付けた札（`photoChip`）と見分けるため、破線の縁と「＋」（板の「写真を追加」と同じ破線）。
+    /// 写真の上なので白だけ（真鍮は置かない）
+    private func spotSuggestionChip(_ spot: OfficialSpot) -> some View {
+        Button {
+            location = spot.name
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "plus").font(.caption.weight(.semibold))
+                Image(systemName: "mappin").font(.caption)
+                Text(StorySpotLink.shortened(spot.name)).font(.caption).lineLimit(1)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .jpGlass(in: Capsule(), border: 0)
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.45),
+                                            style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+            // **押せる所だけ上下に広げて 44pt に、並びは変えない**（見る画面の撮影地の行と同じ作り）
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+            .padding(.vertical, -9)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("撮影地の候補 \(spot.name)。付ける", "Suggested place \(spot.name). Add"))
+        .accessibilityHint(L("撮影スポットの名前と位置をフォロワーに見せます", "Shows the photo spot's name and location to your followers"))
+    }
+
+    /// 撮影地の候補を解き直す鍵（写真の座標の並びと索引の数）
+    private struct SuggestionKey: Equatable {
+        let coords: [Photo.Coords?]
+        let spots: Int
     }
 
     /// 右下の「1 / 2」（等幅・ガラスの札）。並べた写真の何枚目を直しているか
@@ -1393,7 +1444,9 @@ struct StoryComposerView: View {
         // **焼き込んでから渡す。** 文字が無ければ元のデータをそのまま渡す
         // （読み書きの往復で画質を落とさない）
         // 撮影地は全部で1つなので、基準の写真から遠い写真の座標は送らない（`StoryQueue.coordsToSend`）
-        let coords = StoryQueue.coordsToSend(shots.map(\.prepared.coords))
+        // 候補のスポットを撮影地にした回は、スポットの座標を送る（撮影地の単位だけ・`StorySpotSuggestion`）
+        let coords = StorySpotSuggestion.coordsToSend(shots.map(\.prepared.coords), location: place,
+                                                      suggested: spotSuggestion)
         let jobs = zip(shots, coords).map { shot, shotCoords in
             StoryUploadCenter.Job(
                 imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),

@@ -45,7 +45,13 @@ enum StorySpotLink {
     }
 
     static func spot(for story: Story, in spots: [OfficialSpot]) -> OfficialSpot? {
-        guard let raw = story.location, let here = story.coords else { return nil }
+        spot(location: story.location, coords: story.coords, in: spots)
+    }
+
+    /// 撮影地の文字と座標から結ぶ。作る画面の候補（`StorySpotSuggestion`）が、
+    /// **見る画面で本当に結ばれるか**を投稿の前に確かめるのにも使う（同じ1本で判定する）
+    static func spot(location: String?, coords: Photo.Coords?, in spots: [OfficialSpot]) -> OfficialSpot? {
+        guard let raw = location, let here = coords else { return nil }
         // **市区町村・都道府県・国だけの区切りは落とす**（索引が知っている地名）。
         // 「姫島村, 大分県」が姫島に、「十和田市」が十和田市現代美術館に結ばれていた
         let areas = areaNames(in: spots)

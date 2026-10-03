@@ -59,22 +59,29 @@ enum StoryQueue {
     /// （撮影地の名前があるときだけ）保存し、残す操作（`storyKeep`）はそれを写真の `coords`（地図のピン）へ写す。
     /// 撮影時の GPS 由来として扱うので `geoApprox`（地名から引いたおおよその位置）も立たない
     static func coordsToSend(_ coords: [Photo.Coords?]) -> [Photo.Coords?] {
-        let known = coords.compactMap { $0 }
-        func near(_ a: Photo.Coords, _ b: Photo.Coords) -> Bool {
-            TravelDistance.kilometers(from: a, to: b) <= sameSpotKm
+        guard let base = baseCoords(coords) else { return coords.map { _ in nil } }
+        return coords.map { c in
+            guard let c, isNear(base, c) else { return nil }
+            return c
         }
+    }
+
+    /// 基準の写真の座標（`sameSpotKm` 以内の仲間がいちばん多い写真・同数なら前の写真）。
+    /// GPS の写真が1枚も無ければ nil。撮影地の候補（`StorySpotSuggestion`）も同じ基準から探す
+    static func baseCoords(_ coords: [Photo.Coords?]) -> Photo.Coords? {
+        let known = coords.compactMap { $0 }
         // 仲間の数が同じなら前の写真（多いときだけ替える）
         var base: Photo.Coords?
         var baseCount = 0
         for c in known {
-            let count = known.filter { near(c, $0) }.count
+            let count = known.filter { isNear(c, $0) }.count
             if count > baseCount { base = c; baseCount = count }
         }
-        guard let base else { return coords.map { _ in nil } }
-        return coords.map { c in
-            guard let c, near(base, c) else { return nil }
-            return c
-        }
+        return base
+    }
+
+    private static func isNear(_ a: Photo.Coords, _ b: Photo.Coords) -> Bool {
+        TravelDistance.kilometers(from: a, to: b) <= sameSpotKm
     }
 
     /// あと何枚足せるか。**上限に達していたら 0**
