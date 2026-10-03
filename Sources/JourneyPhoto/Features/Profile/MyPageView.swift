@@ -902,6 +902,8 @@ struct MyPageView: View {
                         gridCell(photo, multiple: multiple.contains(photo.id))
                     }
                     .buttonStyle(.plain)
+                    // 撮影の試験が自分の写真を開く目印（`ScreenshotTests`）
+                    .accessibilityIdentifier("mypage.photo")
                     // 何の写真か（題）を名前に、印（ピン・下書き・複数枚）を値にして読む。
                     // 名前だけ差し替えると中の印が読まれなくなる
                     .accessibilityLabel(photo.accessibilityText)
