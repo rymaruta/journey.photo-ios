@@ -160,7 +160,7 @@ final class PhotoEditScreenTests: XCTestCase {
         XCTAssertTrue(UploadEditRules.exportFailureMessage(nil).hasSuffix("編集を「なし」に戻すと元の写真で送れます"))
         XCTAssertNil(UploadEditRules.withShareSkipped(nil, skipped: 0))
         XCTAssertEqual(UploadEditRules.withShareSkipped("x", skipped: 0), "x")
-        XCTAssertTrue(UploadEditRules.withShareSkipped(nil, skipped: 2)?.contains("2 枚は SNS への共有に含めていません") ?? false)
+        XCTAssertTrue(UploadEditRules.withShareSkipped(nil, skipped: 2)?.contains("2 枚を共有用に用意できなかったため、SNS への共有は開いていません") ?? false)
         XCTAssertTrue(UploadEditRules.withShareSkipped("x", skipped: 1)?.hasPrefix("x") ?? false)
     }
 

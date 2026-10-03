@@ -186,9 +186,14 @@ struct PhotoEditView: View {
                         screen.press(.began(at: Date()))
                         Task { @MainActor in
                             try? await Task.sleep(nanoseconds: UInt64(PhotoEditScreen.holdDelay * 1_000_000_000))
+                            // 素早いタップで触れた・離したが1回の描き直しにまとまると `onChange` が来ない。
+                            // もう触れていなければ時計を送らず、触れた印も消す（編集前を出したまま残さない）
+                            guard touching else { screen.press(.ended); return }
                             screen.press(.tick(now: Date()))
                         }
                     }
+                    // 離した合図は2つの道で送る（`.ended` は何度来ても同じ結果）
+                    .onEnded { _ in screen.press(.ended) }
             )
             .onChange(of: touching) { _, now in
                 if !now { screen.press(.ended) }

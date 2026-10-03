@@ -447,7 +447,7 @@ final class UploadPhotoEditTests: XCTestCase {
         XCTAssertTrue(model.items.isEmpty, "投稿自体は済んでいる")
         XCTAssertNil(model.threadsBundle, "編集前の絵を渡さない")
         XCTAssertFalse(model.didPostAll, "知らせを見せるため閉じない")
-        XCTAssertTrue(model.errorMessage?.contains("共有に含めていません") ?? false, model.errorMessage ?? "nil")
+        XCTAssertTrue(model.errorMessage?.contains("SNS への共有は開いていません") ?? false, model.errorMessage ?? "nil")
     }
 
     /// 書き出しが落ちたときの知らせに、編集を「なし」に戻せば送れることを添える
