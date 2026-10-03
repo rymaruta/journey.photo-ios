@@ -157,13 +157,16 @@ struct OfficialSpotView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityAddTraits(.isImage)
                 .accessibilityLabel(L("\(spot.name) の写真", "Photo of \(spot.name)"))
-            SpotImageCredit(photo: photo)
-                .font(.caption)
-                .foregroundStyle(WebTheme.muted2)
-                .lineLimit(2)
-                .multilineTextAlignment(.trailing)
-                .padding(.horizontal, 16)
-                .accessibilityIdentifier("spot.official.photoCredit")
+            // 当たりは1行全体で 44pt 以上（2026-10-03・`CreditLink` の注記）。見た目は `SpotImageCredit` のまま
+            CreditLinksMenu(links: photo.creditLinks, accessibilityLabel: photo.credit, alignment: .topTrailing) {
+                SpotImageCredit(photo: photo)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+            }
+            .padding(.horizontal, 16)
+            .accessibilityIdentifier("spot.official.photoCredit")
         }
     }
 
@@ -444,44 +447,19 @@ struct OfficialSpotView: View {
         }
     }
 
-    /// 作例の出典の1行（見た目は `linkedCredit` のまま）。当たりは1行全体で、高さ 44pt 以上・幅は写真と同じ
-    /// （`SpotSample.creditLinks` の注記: 文中のリンクは 44pt に広げられないので、1行を1つの当たりにする）。
-    /// 行き先が1つ（パブリックドメイン・CC0）ならそのまま開き、2つならメニューで選ぶ
-    @ViewBuilder
+    /// 作例の出典の1行（見た目は `linkedCredit` のまま）。当たりは1行全体で高さ 44pt 以上・幅は写真と同じ
+    /// （`CreditLink` の注記）。行き先が1つ（パブリックドメイン・CC0）ならそのまま開き、2つならメニューで選ぶ
     private func sampleCreditLink(_ sample: SpotSample, width: Double) -> some View {
-        let links = sample.creditLinks
-        if links.count == 1, let only = links.first {
-            Link(destination: only.url) { sampleCreditText(sample, width: width) }
-                .accessibilityLabel(sample.credit)
-                .accessibilityHint(only.label)
-                .accessibilityIdentifier("spot.official.sampleCredit")
-        } else {
-            Menu {
-                ForEach(links) { link in
-                    Link(link.label, destination: link.url)
-                }
-            } label: {
-                sampleCreditText(sample, width: width)
-            }
-            .accessibilityLabel(sample.credit)
-            .accessibilityHint(L("ライセンスと出典のページを選べます", "Choose the license or the source page"))
-            .accessibilityIdentifier("spot.official.sampleCredit")
+        CreditLinksMenu(links: sample.creditLinks, accessibilityLabel: sample.credit) {
+            Text(sample.linkedCredit)
+                .tint(WebTheme.accent)
+                .font(.caption)
+                .foregroundStyle(WebTheme.muted2)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+                .frame(width: width, alignment: .leading)
         }
-    }
-
-    /// 出典の1行の文字（2026-10-03 から変えていない見た目）と、44pt 以上の当たり。
-    /// 文中のリンクは押させない（押すと1行全体の当たりと取り合う）——色は `linkedCredit` の真鍮のまま
-    private func sampleCreditText(_ sample: SpotSample, width: Double) -> some View {
-        Text(sample.linkedCredit)
-            .tint(WebTheme.accent)
-            .font(.caption)
-            .foregroundStyle(WebTheme.muted2)
-            .fixedSize(horizontal: false, vertical: true)
-            .multilineTextAlignment(.leading)
-            .allowsHitTesting(false)
-            .frame(width: width, alignment: .leading)
-            .frame(minHeight: SpotSampleText.creditTapHeight, alignment: .top)
-            .contentShape(Rectangle())
+        .accessibilityIdentifier("spot.official.sampleCredit")
     }
 
     // MARK: - 光の時刻（日の出・日の入り・ゴールデンアワー・ブルーアワー・2026-10-03）
@@ -828,6 +806,45 @@ struct OfficialSpotView: View {
 /// （折り返し・行数・揃えは呼ぶ側の指定どおり）、部分にリンクを付ける
 /// （`SpotImage.linkedCredit`: 作者 → 出典のページ・ライセンス → 文面）。
 /// リンクは真鍮（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。写真の下の黒地の行
+/// 出典の1行を1つの当たり（高さ・幅 44pt 以上）にして、`links` を開く（2026-10-03・`CreditLink` の注記）。
+/// 行き先が1つならそのまま開き、2つ以上ならメニューで選ぶ。0件なら押せない1行のまま。
+/// `label` の見た目は変えない。文中のリンクは押させない（1行全体の当たりと取り合う）——色は文中のリンクのまま
+struct CreditLinksMenu<Label: View>: View {
+    let links: [CreditLink]
+    /// 読み上げの名前（出典の1行の文字）
+    let accessibilityLabel: String
+    /// 当たりを広げたとき、字を置く位置
+    var alignment: Alignment = .topLeading
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        if links.count == 1, let only = links.first {
+            Link(destination: only.url) { tapArea }
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityHint(only.label)
+        } else if links.count > 1 {
+            Menu {
+                ForEach(links) { link in
+                    Link(link.label, destination: link.url)
+                }
+            } label: {
+                tapArea
+            }
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint(L("開くページを選べます", "Choose a page to open"))
+        } else {
+            label()
+        }
+    }
+
+    private var tapArea: some View {
+        label()
+            .allowsHitTesting(false)
+            .frame(minWidth: CreditLink.tapHeight, minHeight: CreditLink.tapHeight, alignment: alignment)
+            .contentShape(Rectangle())
+    }
+}
+
 struct SpotImageCredit: View {
     let photo: SpotImage
 

@@ -65,28 +65,9 @@ struct SpotSample: Equatable, Identifiable {
     }
 
     /// 出典の1行から開ける先（並びは文字の並びと同じ: ライセンス → Wikimedia Commons）。
-    /// 文面の URL の無いライセンス（パブリックドメイン・CC0）は Commons のページだけ。
-    ///
-    /// 2026-10-03 判断: 文中のリンク（`linkedCredit`）は当たりが字の大きさ（12pt の1行≒16pt）しか
-    /// なく、44pt に届かない。1本の文字の中の2つのリンクは、それぞれを 44pt に広げられない
-    /// （折り返しで位置が決まらない）。そこで**見た目は `linkedCredit` のまま**、出典の1行
-    /// 全体を 44pt 以上の1つの当たりにし、行き先が2つならメニューで選ばせる（1つならそのまま開く）
+    /// 文面の URL の無いライセンス（パブリックドメイン・CC0）は Commons のページだけ（`CreditLink` の注記）
     var creditLinks: [CreditLink] {
-        var links: [CreditLink] = []
-        if let licenseUrl {
-            links.append(CreditLink(label: L("ライセンス（\(license)）を開く", "Open license (\(license))"),
-                                    url: licenseUrl))
-        }
-        links.append(CreditLink(label: L("Wikimedia Commons のページを開く", "Open on Wikimedia Commons"),
-                                url: sourceUrl))
-        return links
-    }
-
-    /// 出典の1行から開ける先の1つ
-    struct CreditLink: Equatable, Identifiable {
-        let label: String
-        let url: URL
-        var id: URL { url }
+        (licenseUrl.map { [CreditLink.license(license, url: $0)] } ?? []) + [CreditLink.commonsPage(sourceUrl)]
     }
 
     /// 写真の読み上げ名（Web の alt と同じ）
@@ -222,9 +203,6 @@ enum SpotSampleText {
     /// 写真の幅の下限・上限（極端な縦長・横長でも帯が崩れないように。はみ出す分は余白を置き、**切り抜かない**）
     static let minWidth: Double = 120
     static let maxWidth: Double = 300
-    /// 出典の1行の当たりの高さの下限（押せるものは 44pt・`WebTheme.minTapTarget`）。
-    /// 字が1行で短くても、当たりはこの高さまで広げる（字の大きさ・色・並びは変えない）
-    static let creditTapHeight: Double = Double(WebTheme.minTapTarget)
 
     /// 1枚の枠。高さをそろえ、幅は縦横比から（上下限の内側）
     static func frame(aspectRatio: Double) -> (width: Double, height: Double) {

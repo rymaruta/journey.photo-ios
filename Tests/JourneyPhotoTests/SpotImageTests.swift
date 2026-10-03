@@ -119,4 +119,22 @@ final class SpotImageTests: XCTestCase {
         """)
         XCTAssertEqual(spot.photo?.pageUrl?.absoluteString, "https://commons.wikimedia.org/wiki/File:A.jpg")
     }
+
+    /// 表紙の出典の1行から開ける先（2026-10-03・当たりを 44pt にするためのメニュー）。
+    /// 並びは文字と同じ（作者 → 出典のページ・ライセンス → 文面）、リンク先は `linkedCredit` と同じ
+    func testCreditLinksMatchLinkedCredit() throws {
+        let photo = try XCTUnwrap(try decode(good).photo)
+        XCTAssertEqual(photo.creditLinks.map(\.url.absoluteString),
+                       ["https://commons.wikimedia.org/wiki/File:A.jpg", "https://creativecommons.org/licenses/by-sa/2.0"])
+        XCTAssertEqual(Set(photo.creditLinks.map(\.url)), Set(photo.linkedCredit.runs.compactMap(\.link)))
+        XCTAssertEqual(photo.creditLinks.last?.label.contains("CC BY-SA 2.0"), true)
+    }
+
+    /// URL の無いものはメニューに出さない（片方だけならそのまま開く・両方無ければ押せない）
+    func testCreditLinksSkipMissingUrls() {
+        let url = URL(string: "https://upload.wikimedia.org/a.jpg")!
+        let page = URL(string: "https://commons.wikimedia.org/wiki/File:A.jpg")!
+        XCTAssertEqual(SpotImage(url: url, author: "A", license: "CC0", pageUrl: page).creditLinks.map(\.url), [page])
+        XCTAssertEqual(SpotImage(url: url, author: "A", license: "CC0", pageUrl: nil).creditLinks, [])
+    }
 }

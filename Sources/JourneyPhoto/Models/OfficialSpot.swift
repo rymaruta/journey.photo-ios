@@ -105,6 +105,13 @@ struct SpotImage: Equatable {
         tail.link = licenseUrl
         return head + AttributedString(" / ") + tail
     }
+
+    /// 出典の1行から開ける先（並びは文字の並びと同じ: 出典のページ → ライセンスの文面）。
+    /// URL の無いものは除く（両方無ければ空＝押せない1行・`CreditLink` の注記）
+    var creditLinks: [CreditLink] {
+        (pageUrl.map { [CreditLink.commonsPage($0)] } ?? [])
+            + (licenseUrl.map { [CreditLink.license(license, url: $0)] } ?? [])
+    }
 }
 
 /// 写真の欄を**決して投げずに**読む入れ物。写真が壊れていても、スポットの行は
