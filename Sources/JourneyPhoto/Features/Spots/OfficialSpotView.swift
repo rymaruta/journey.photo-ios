@@ -50,6 +50,8 @@ struct OfficialSpotView: View {
     @State private var showUpload = false
     /// この画面から投稿した（写真の一覧は開いた時点の写しなので、すぐには並ばない）
     @State private var postedHere = false
+    /// 「光の時刻」で見ている日（今日から何日ずらしたか・その土地の暦）
+    @State private var lightOffset = 0
 
     /// **確定した紐づけだけ**（`Photo.spotId`）。撮影地の文字列では当てない
     private var linked: [Photo] { dropped.visible(photos.filter { $0.spotId == spot.spotId }) }
@@ -90,7 +92,11 @@ struct OfficialSpotView: View {
                 summary
                 // **写真が主役。** 写真がある場所は本文より先に出す
                 if !linked.isEmpty { spotPhotos }
-                bodySections
+                // 光の時刻（計算値・写真が無くても出せる）→ 本文の節。ひとつの並びの上限を越えないようまとめる
+                Group {
+                    lightSection
+                    bodySections
+                }
                 // 写真が0枚の場所は、本文の後に「まだありません」（1画面目を空にしない）
                 // 下の3つはまとめる（ひとつの並びに置ける数の上限を越えないように）
                 Group {
@@ -327,7 +333,9 @@ struct OfficialSpotView: View {
             }
             let seasons = SpotBodyText.orderedSeasons(body.seasonalGuide,
                                                       current: SpotBodyText.currentSeason(now: Date()))
-            let times = SpotBodyText.orderedTimes(body.timeOfDayGuide)
+            // 朝・夕の文は「光の時刻」の節に並べたので、ここは残り（日中・夜）だけ。座標が無ければ全部
+            let times = spot.coords != nil ? SpotLight.remainingTimes(body.timeOfDayGuide)
+                                           : SpotBodyText.orderedTimes(body.timeOfDayGuide)
             if !seasons.isEmpty || !times.isEmpty || !body.compositionTips.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     SpotDetailParts.sectionHeader(L("撮影ガイド", "Shooting guide"))
@@ -366,6 +374,140 @@ struct OfficialSpotView: View {
                 }
                 .padding(.horizontal, 16)
         }
+    }
+
+    // MARK: - 光の時刻（日の出・日の入り・ゴールデンアワー・ブルーアワー・2026-10-03）
+
+    /// **座標があればいつでも出す**（端末で計算する・`SpotLight`）。日付は前後に送れる。
+    /// 黒地の札の上なので、合図（今日に戻す・眉の日付）は真鍮、時刻は白の等幅数字
+    @ViewBuilder
+    private var lightSection: some View {
+        if let coords = spot.coords {
+            let zone = SpotLight.zone(country: spot.region?.country)
+            let now = Date()
+            let today = SpotLight.ymd(offset: 0, from: now, in: zone.timeZone) ?? ""
+            let day = SpotLight.ymd(offset: lightOffset, from: now, in: zone.timeZone) ?? today
+            let blocks = SpotLight.blocks(day, lat: coords.lat, lng: coords.lng, in: zone.timeZone)
+            let guides = SpotLight.guides(spotBody?.timeOfDayGuide ?? [])
+            VStack(alignment: .leading, spacing: 10) {
+                SpotDetailParts.sectionHeader(L("光の時刻", "Light"))
+                lightDateBar(SpotLight.dateLabel(day, offset: lightOffset, todayYMD: today))
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                        if index > 0 { Divider().overlay(WebTheme.border) }
+                        lightBlock(block, guides: block.isMorning ? guides.morning : guides.evening)
+                    }
+                }
+                .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(WebTheme.border, lineWidth: 1))
+                .padding(.horizontal, 16)
+                Text(SpotLight.note(zone))
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.muted2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("spot.official.light")
+        }
+    }
+
+    /// 日付を送る帯: ‹ 10月3日（土）· 今日 ›。矢印は当たり 44pt。今日でなければ「今日」に戻す文字ボタン
+    private func lightDateBar(_ label: String) -> some View {
+        HStack(spacing: 4) {
+            Button {
+                lightOffset = max(lightOffset - 1, -SpotLight.maxOffset)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(WebTheme.foreground)
+            .disabled(lightOffset <= -SpotLight.maxOffset)
+            .accessibilityLabel(L("前の日", "Previous day"))
+            .accessibilityIdentifier("spot.official.light.prev")
+
+            Text(label)
+                .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
+                .foregroundStyle(WebTheme.foreground)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .accessibilityIdentifier("spot.official.light.date")
+
+            Button {
+                lightOffset = min(lightOffset + 1, SpotLight.maxOffset)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(WebTheme.foreground)
+            .disabled(lightOffset >= SpotLight.maxOffset)
+            .accessibilityLabel(L("次の日", "Next day"))
+            .accessibilityIdentifier("spot.official.light.next")
+
+            Spacer(minLength: 8)
+            if lightOffset != 0 {
+                // ヘッダーの文字アクションと同じ扱い（黒地の上の手がかり＝真鍮）
+                Button(L("今日", "Today")) { lightOffset = 0 }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("今日に戻す", "Back to today"))
+                    .accessibilityIdentifier("spot.official.light.today")
+            }
+        }
+        .padding(.horizontal, 6)
+    }
+
+    /// 朝・夕の段: 眉（真鍮）→ 時刻の行 → 台帳の時間帯の文
+    private func lightBlock(_ block: SpotLight.Block, guides: [SpotBody.TimeOfDay]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(block.title)
+                .jpEyebrow()
+                .foregroundStyle(WebTheme.accent)
+            ForEach(Array(block.rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(row.label)
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.muted)
+                    Spacer(minLength: 8)
+                    if let detail = row.detail {
+                        Text(detail)
+                            .font(JPFont.mono(13, relativeTo: .footnote))
+                            .foregroundStyle(WebTheme.muted2)
+                    }
+                    Text(row.value)
+                        .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
+                        .foregroundStyle(WebTheme.foreground)
+                        .multilineTextAlignment(.trailing)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            ForEach(Array(guides.enumerated()), id: \.offset) { _, guide in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(SpotBodyText.timeLabel(guide.time) ?? "")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(WebTheme.surface, in: Capsule())
+                        .foregroundStyle(WebTheme.foreground)
+                    Text(guide.text)
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 札（季節・時間帯）と一文の行を並べる小さな段

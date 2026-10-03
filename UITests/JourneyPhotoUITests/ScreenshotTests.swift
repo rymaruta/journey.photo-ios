@@ -48,10 +48,42 @@ final class ScreenshotTests: XCTestCase {
             spots.tap()
             if app.buttons["map.spotRow"].firstMatch.waitForExistence(timeout: 10) {
                 shoot(app, "13d-マップ（スポットの一覧）")
+                shootSpotLight(app)
             }
             let map = app.buttons["map.mode.map"].firstMatch
             if map.exists { map.tap() }
         }
+    }
+
+    /// **撮影スポットの「光の時刻」**（2026-10-03）。スポットの一覧の先頭の行から台帳の撮影スポットの画面
+    /// （`OfficialSpotView`）を開き、日付の帯が画面の上の方に来るまで送って撮る。撮ったら一覧へ戻す。
+    /// 「探す」の注目スポット（`search.spot`）は写真から導く撮影地の画面で、こちらの節は無い。
+    /// 出なければ撮らない（この試験の決まり）
+    private func shootSpotLight(_ app: XCUIApplication) {
+        let row = app.buttons["map.spotRow"].firstMatch
+        guard row.exists, row.isHittable else { return }
+        row.tap()
+        defer {
+            // 一覧へ戻す（あとの画面に持ち越さない）
+            let back = app.navigationBars.buttons.element(boundBy: 0)
+            if back.exists, back.isHittable { back.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        // 画面の目印（`spot.official`）は ScrollView に付いていて中の要素に移ることがあるので、待つのは時間で
+        Thread.sleep(forTimeInterval: 3)
+        let date = app.descendants(matching: .any).matching(identifier: "spot.official.light.date").firstMatch
+        var swipes = 0
+        while swipes < 6, !(date.exists && date.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard date.exists, date.isHittable else { return }
+        // 日付の帯を画面の上の方へ寄せ、朝・夕の段と注記まで1枚に入れる
+        date.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "13f-撮影スポット（光の時刻）")
     }
 
     /// **写真のピンが地図に出ているか**を数えて残す（2026-10-02）。
