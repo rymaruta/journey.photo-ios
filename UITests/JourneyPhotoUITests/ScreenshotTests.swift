@@ -355,7 +355,10 @@ final class ScreenshotTests: XCTestCase {
                     if app.buttons["search.emptyMap"].firstMatch.exists {
                         shoot(app, "11b-探す（0件から地図へ）")
                     }
-                    field.buttons["Clear text"].firstMatch.tap()
+                    // 消すボタンは入力欄の外にある自前のボタン（`search.clear`）。OS の「Clear text」は無い。
+                    // 見つからなくても落とさない（この試験の決まり: 出なければ撮らないだけ）
+                    let clear = app.buttons["search.clear"].firstMatch
+                    if clear.waitForExistence(timeout: 3), clear.isHittable { clear.tap() }
                 }
             }
             if name == "マップ" {
@@ -674,6 +677,48 @@ final class ScreenshotTests: XCTestCase {
         // 見本の写真が描かれるのを少し待つ（枠だけの絵を「壊れている」と読み違えない）
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "22-写真を編集（色を編集の入口）")
+    }
+
+    /// **探すの「季節・時間帯で絞る」**（2026-10-03・戦略の計画6）。発見の顔の「季節・時間帯から探す」で
+    /// 「秋」を押した1枚（秋の案内のある撮影スポットと、秋に撮った写真）と、続けて「夕」を重ねた1枚。
+    ///
+    /// 札は名指しで探す（`search.season.autumn`・`search.dayPart.evening`）。段が画面の下にあれば少しずつ送る。
+    /// **別の試験にしてある**（一巡の「11-探す」の絵に絞った状態を持ち越さない）。出なければ撮らない（この試験の決まり）
+    func testCapturesSearchSeasonTimeFilter() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return }
+        tabBar.buttons.element(boundBy: 1).tap()
+
+        let autumn = app.buttons["search.season.autumn"].firstMatch
+        guard autumn.waitForExistence(timeout: 20) else { return }
+        var swipes = 0
+        while !autumn.isHittable, swipes < 6 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard autumn.isHittable else { return }
+        autumn.tap()
+        // 撮影スポットの索引と写真の絵が描かれるのを待つ（枠だけの絵を「壊れている」と読み違えない）
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "11c-探す（季節で絞る・秋）")
+
+        let evening = app.buttons["search.dayPart.evening"].firstMatch
+        guard evening.waitForExistence(timeout: 5), evening.isHittable else { return }
+        evening.tap()
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "11d-探す（季節と時間帯で絞る・秋の夕方）")
     }
 
     /// **「行きたい場所」を地図で見る**（2026-10-03・3か月の計画の7の第一歩）。マイページの
