@@ -104,4 +104,26 @@ final class ZoomPanTests: XCTestCase {
         z.reset()
         XCTAssertEqual(z, ZoomPan())
     }
+
+    // MARK: - 送りを止める・つまみ終え（バグ探し 2026-10-03）
+
+    /// 🔴 **つまんでいる最中も送りを止める。** 等倍からつまみ始めた間は `isZoomed` がまだ偽で、
+    /// 2本指の重心が横へ流れると隣の写真へ送られていた
+    func testPagingIsLockedWhilePinching() {
+        let z = ZoomPan()
+        XCTAssertFalse(z.locksPaging(pinch: 1), "等倍で触っていないのに送りを止めている")
+        XCTAssertTrue(z.locksPaging(pinch: 1.3), "つまみ広げている最中に送れる")
+        XCTAssertTrue(z.locksPaging(pinch: 0.8), "つまみ縮めている最中に送れる")
+        var zoomed = ZoomPan()
+        zoomed.endPinch(2, container: screen, content: landscape)
+        XCTAssertTrue(zoomed.locksPaging(pinch: 1), "拡大中に送れる")
+    }
+
+    /// 🔴 **つまみ始めたページと今のページが同じときだけ畳む。** 替わっていたら、前の写真で
+    /// つまんだ倍率を替わった先の写真に掛けない
+    func testPinchEndAppliesOnlyOnTheSamePage() {
+        XCTAssertTrue(ZoomPan.appliesPinchEnd(startedOn: 2, current: 2))
+        XCTAssertFalse(ZoomPan.appliesPinchEnd(startedOn: 2, current: 3), "替わった先の写真に倍率を掛けた")
+        XCTAssertFalse(ZoomPan.appliesPinchEnd(startedOn: 3, current: 2))
+    }
 }

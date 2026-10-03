@@ -127,6 +127,9 @@ struct StoryViewerView: View {
     @State private var repliesNotice: String?
     /// 送っている最中。**二度押しで2件送らない**。自動送りも止める
     @State private var isSending = false
+    /// 送った反応（`StoryPlayback.SentReactions`）。**同じ1本に二度送らない**。
+    /// 人から人への並びでは `StoryReelView` が覚えて渡す（人を回して戻っても忘れない）
+    @State private var sentReactions: StoryPlayback.SentReactions
 
     /// 見終えた1本を知らせる。**送るたびに呼ぶ**——次へ送ったぶんも
     /// 既読にしないと、閉じたときに輪が点いたまま残る
@@ -179,6 +182,9 @@ struct StoryViewerView: View {
     /// 票を入れた1本を外へ知らせる。**人を行き来して閲覧画面が作り直されても
     /// 入れた票を消さない**ため（`StoryReelView` が覚えて `voteStates` で戻す）
     let onVoted: ((String, StoryVoteState) -> Void)?
+    /// 反応を送れた1本を外へ知らせる（ストーリー id・絵文字）。`onVoted` と同じく、
+    /// **人を行き来して閲覧画面が作り直されても送った印を消さない**ため（`StoryReelView` が `sentReactions` で戻す）
+    let onReacted: ((String, String) -> Void)?
 
     init(stories: [Story], startIndex: Int, viewerId: String?,
          highlight: HighlightContext? = nil,
@@ -192,6 +198,8 @@ struct StoryViewerView: View {
          spotIndex: [OfficialSpot]? = nil,
          voteStates: [String: StoryVoteState] = [:],
          onVoted: ((String, StoryVoteState) -> Void)? = nil,
+         sentReactions: StoryPlayback.SentReactions = StoryPlayback.SentReactions(),
+         onReacted: ((String, String) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
          onDeleted: ((String) -> Void)? = nil) {
         self.onGroupEnd = onGroupEnd
@@ -203,6 +211,8 @@ struct StoryViewerView: View {
         self.providedSpots = spotIndex
         self.onVoted = onVoted
         _voteStates = State(initialValue: voteStates)
+        self.onReacted = onReacted
+        _sentReactions = State(initialValue: sentReactions)
         self.stories = stories
         self.onDeleted = onDeleted
         self.viewerId = viewerId
@@ -1582,9 +1592,12 @@ struct StoryViewerView: View {
                         // 🔴 **Button にしない。** Button に長押しを足すと、OS の版によっては長押しの
                         // あとに Button の送信も走る（❤️ が送られてから並びが開く）。押すと長押しを
                         // 別々の手振りにして、どちらか片方だけが効くようにする
-                        Image(systemName: "heart")
+                        // 送れた1本は塗りつぶしの真鍮（足元は写真の外の黒地・CLAUDE.md の
+                        // 「ストーリーの反応のハートは真鍮」）。まだなら白の線
+                        let reacted = sentReactions.emoji(on: story.id) != nil
+                        Image(systemName: reacted ? "heart.fill" : "heart")
                             .font(.title2)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(reacted ? WebTheme.accent : Color.white)
                             .webTappable()
                             .opacity(isSending ? 0.4 : 1)
                             .contentShape(Rectangle())
@@ -1600,6 +1613,7 @@ struct StoryViewerView: View {
                             .accessibilityElement()
                             .accessibilityAddTraits(.isButton)
                             .accessibilityLabel(L("いいね", "Like"))
+                            .accessibilityAddTraits(reacted ? .isSelected : [])
                             .accessibilityHint(L("長押しでほかの反応を選べます", "Press and hold for more reactions"))
                             .accessibilityAction {
                                 guard !isSending else { return }
@@ -1988,12 +2002,20 @@ struct StoryViewerView: View {
     }
 
     /// 定型の反応を送る。
+    ///
+    /// その1本にもう送っていたら**送らない**（`StoryPlayback.SentReactions`・サーバーは重ねて消さない）
     private func sendReaction(_ emoji: String, to story: Story) async {
         guard !isSending else { return }
+        guard sentReactions.shouldSend(on: story.id) else {
+            message = StoryPlayback.reactionAlreadySentMessage(sentReactions.emoji(on: story.id) ?? emoji)
+            return
+        }
         isSending = true
         defer { isSending = false }
         do {
             try await environment.stories.react(id: story.id, emoji: emoji)
+            sentReactions.record(emoji, on: story.id)
+            onReacted?(story.id, emoji)
             message = StoryPlayback.reactionSentMessage(emoji)
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")

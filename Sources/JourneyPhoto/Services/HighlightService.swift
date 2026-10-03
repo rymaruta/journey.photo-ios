@@ -83,6 +83,26 @@ struct HighlightService {
             && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !picked.isEmpty
     }
 
+    /// 編集画面の名前・並び・表紙（`leave` で開いたときと比べる）
+    struct Draft: Equatable {
+        var title: String
+        var picked: [String]
+        var coverId: String?
+    }
+
+    /// 「キャンセル」・下へ払うの扱い（`UnsavedLeave`）。🔴 **選んだストーリー・打った名前を
+    /// 黙って捨てさせない**（バグ探し 2026-10-03）——以前は保存・削除の最中しか止めず、
+    /// 何十件も選んだあと払う・キャンセルで確かめもなく消えた。
+    ///
+    /// - `opened`: 開いたときの姿（新規は空・直すときは読み込んだ中身）
+    /// - 名前は送るときと同じく trim して比べる（末尾の空白だけは変えたことにしない）
+    static func leave(opened: Draft, now: Draft, saving: Bool) -> UnsavedLeave {
+        func trim(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let changed = trim(opened.title) != trim(now.title)
+            || opened.picked != now.picked || opened.coverId != now.coverId
+        return UnsavedLeave.decide(hasChanges: changed, isSaving: saving)
+    }
+
     /// 選び直したあとの表紙。🔴 **いまの表紙がまだ並びに在れば変えない**——選び直す
     /// たびに先頭へ替えていたので、直すだけで表紙が黙って替わった。外したときだけ
     /// 先頭にする（サーバーも省いたときは先頭・並びに無いものは断る——`highlights.ts` の `pickCover`）
