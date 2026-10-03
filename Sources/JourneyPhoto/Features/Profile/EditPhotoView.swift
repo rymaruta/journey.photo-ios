@@ -41,6 +41,13 @@ struct EditPhotoView: View {
     @State private var replacedPreview: Image?
     /// 未保存の変更があるときの「閉じる」・下へ払うの確認（`unsavedCloseGuard`）
     @State private var showLeaveConfirm = false
+    /// 色を編集し直す元（公開中の画像）を読んでいる最中（`PhotoRecolor`）
+    @State private var isLoadingRecolor = false
+    /// 色の編集画面を開いている元の画像（全画面・`PhotoEditView`）
+    @State private var recolorSource: RecolorSource?
+    /// この画面で差し替えた本体。**続けて色を編集するときはこちらを元にする**
+    /// （`photo.src` は開いたときの前の画像のまま）
+    @State private var replacedData: Data?
 
     init(photo: Photo) {
         self.photo = photo
@@ -77,12 +84,25 @@ struct EditPhotoView: View {
                 }
                 if isReplacing {
                     HStack { ProgressView(); Text(L("差し替えています…", "Replacing…")) }
+                } else if isLoadingRecolor {
+                    HStack { ProgressView(); Text(L("写真を読み込んでいます…", "Loading the photo…")) }
                 } else {
                     PhotosPicker(selection: $replaceItem, matching: .images) {
                         Label(L("写真を差し替える", "Replace the photo"), systemImage: "photo.on.rectangle.angled")
                     }
                     // 保存の途中は差し替えさせない（保存ボタンと同じ門）
                     .disabled(isSaving)
+                    // 投稿した写真の色を編集し直す（`PhotoRecolor`）。**隣の行と同じ形・白のまま**
+                    // ——写真のある画面の欄なので真鍮にしない（デザインの板「黒塗りの真鍮」）
+                    Button {
+                        Task { await openRecolor() }
+                    } label: {
+                        Label(L("色を編集", "Edit colors"), systemImage: "slider.horizontal.3")
+                    }
+                    .disabled(isSaving)
+                    .accessibilityHint(L("投稿した写真の上に重ねて、色を編集し直します",
+                                         "Re-edit the colors, layered on top of the posted photo"))
+                    .accessibilityIdentifier("editPhoto.recolor")
                 }
             } footer: {
                 // 派生（AVIF・小さい版）はサーバーが消して作り直す
@@ -143,7 +163,7 @@ struct EditPhotoView: View {
                                 .font(.subheadline)
                         }
                         // 保存・差し替えの最中は先へ進ませない（右上の「閉じる」と同じ）
-                        .disabled(isSaving || isReplacing)
+                        .disabled(isBusy)
                     }
                 } footer: {
                     Text(audience.photoNote)
@@ -170,7 +190,7 @@ struct EditPhotoView: View {
                     }
                 }
                 // 差し替えの間も押させない（下の `save` の注記）
-                .disabled(isSaving || isReplacing)
+                .disabled(isBusy)
             }
             .listRowBackground(Color.clear)
         }
@@ -196,6 +216,17 @@ struct EditPhotoView: View {
         .onChange(of: replaceItem) { _, item in
             Task { await replace(item) }
         }
+        // 色の編集（投稿のときと同じ画面を全画面で・`UploadView` と同じ出し方）。
+        // レシピは無編集から始める——投稿時の編集は公開中の画像にもう焼き込まれている
+        .fullScreenCover(item: $recolorSource) { target in
+            let source = target.data
+            PhotoEditView(recipe: .identity, source: { source }, note: PhotoRecolor.note,
+                          onDone: { recipe in
+                              recolorSource = nil
+                              Task { await finishRecolor(source: source, recipe: recipe) }
+                          },
+                          onCancel: { recolorSource = nil })
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 // 保存・差し替えの最中は閉じさせない。閉じると詳細が古い姿のまま残り、
@@ -207,10 +238,13 @@ struct EditPhotoView: View {
                     case .wait: break
                     }
                 }
-                .disabled(isSaving || isReplacing)
+                .disabled(isBusy)
             }
         }
     }
+
+    /// 保存・差し替え・色の編集の元を読んでいる最中か（閉じる・保存・先へ進むを止める門）
+    private var isBusy: Bool { isSaving || isReplacing || isLoadingRecolor }
 
     /// いま欄に入っている姿（`EditPhotoChanges`）
     private var fields: EditPhotoChanges.Fields {
@@ -222,7 +256,7 @@ struct EditPhotoView: View {
     /// 「閉じる」・下へ払うの扱い（`EditPhotoChanges.leave`）
     private var leave: UnsavedLeave {
         EditPhotoChanges.leave(photo: photo, openedAudience: openedAudience, fields: fields,
-                               isSaving: isSaving || isReplacing)
+                               isSaving: isBusy)
     }
 
     /// 写真そのものを差し替える。**EXIF は端末で落としてから送る**（投稿と同じ関所）。
@@ -250,6 +284,8 @@ struct EditPhotoView: View {
             let keptOldDate = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
                                                                    uploads: environment.uploads,
                                                                    keepCoords: keep)
+            // 続けて色を編集するときの元（`photo.src` は前の画像のまま）
+            replacedData = prepared.data
             // 見本を差し替えた画像に替える（サーバーの小さい版は作り直しに数分かかる）
             if let image = UIImage(data: prepared.data) {
                 replacedPreview = Image(uiImage: image)
@@ -268,11 +304,73 @@ struct EditPhotoView: View {
         }
     }
 
+    /// 「色を編集」。公開中の画像（この画面で差し替えたならその本体）を読んで、編集画面を開く
+    private func openRecolor() async {
+        guard !isBusy else { return }
+        if let replacedData {
+            recolorSource = RecolorSource(data: replacedData)
+            return
+        }
+        isLoadingRecolor = true
+        message = nil
+        defer { isLoadingRecolor = false }
+        do {
+            let data = try await PhotoRecolor.fetchSource(from: photo.detailImageURL)
+            recolorSource = RecolorSource(data: data)
+        } catch {
+            messageIsError = true
+            message = (error as? LocalizedError)?.errorDescription
+                ?? L("写真を読み込めませんでした", "Couldn't load the photo")
+        }
+    }
+
+    /// 色の編集の「完了」（`PhotoRecolor.finish`）。無編集なら何も送らない。
+    /// 変えていれば書き出して差し替える——**撮影情報は載せず**（今の値を残す）、代表色を載せる。
+    /// 差し替えの印は `isReplacing` を使い回す（保存・閉じる・写真の差し替えと重ならない）
+    @MainActor
+    private func finishRecolor(source: Data, recipe: PhotoRecipe) async {
+        do {
+            let result = try await PhotoRecolor.finish(
+                recipe: recipe,
+                isBusy: { isBusy },
+                setReplacing: { on in
+                    isReplacing = on
+                    if on { message = nil }
+                },
+                export: { recipe in
+                    // 書き出し（Core Image・JPEG・EXIF の関所）は主スレッドの外で
+                    try await Task.detached(priority: .userInitiated) {
+                        try PhotoRenderer.shared.exportPrepared(source: source, recipe: recipe,
+                                                                base: PhotoRecolor.base(source: source))
+                    }.value
+                },
+                send: { prepared in
+                    _ = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
+                                                             uploads: environment.uploads,
+                                                             keepCurrentMetadata: true)
+                })
+            guard case .replaced(let prepared) = result else { return }
+            replacedData = prepared.data
+            // 見本を書き出した画像に替える（写真の差し替えと同じ・`EditPreview`）
+            if let image = UIImage(data: prepared.data) {
+                replacedPreview = Image(uiImage: image)
+            }
+            messageIsError = false
+            message = L("色を編集した写真に差し替えました（反映まで数分かかります）",
+                        "Replaced with the recolored photo. It takes a few minutes to appear.")
+        } catch {
+            // 409（ストーリーから残した写真）はサーバーの文言をそのまま（`APIError.errorDescription`）
+            messageIsError = true
+            message = (error as? LocalizedError)?.errorDescription
+                ?? L("差し替えられませんでした", "Couldn't replace it")
+        }
+    }
+
     private func save() async {
         // 🔴 **差し替えの途中は保存しない。** 差し替えは始めた時点の撮影地で「座標を残すか」を
         // 決めて送るので、途中で撮影地を消して保存すると、あとから届いた差し替えが
         // 写真の位置を書き戻していた（消したはずのピンが地図に戻る）
-        guard !isSaving, !isReplacing else { return }
+        guard !isBusy else { return }
         // 送るとサーバーが黙って切る長さなら、保存させずに知らせる
         if let over = LocalizedEdit.descriptionOverLimit(original: photo.description, field: caption) {
             messageIsError = true
@@ -313,4 +411,10 @@ struct EditPhotoView: View {
             message = (error as? LocalizedError)?.errorDescription ?? L("保存できませんでした", "Couldn't save")
         }
     }
+}
+
+/// 色の編集画面を開く元（`fullScreenCover(item:)` の鍵）
+private struct RecolorSource: Identifiable {
+    let id = UUID()
+    let data: Data
 }

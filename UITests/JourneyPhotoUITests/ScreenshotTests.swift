@@ -551,4 +551,50 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "42-投稿（写真の編集の入口）")
     }
+
+    /// **投稿済みの写真の「色を編集」**（2026-10-03・段階1）。マイページ → 自分の写真 → 「…」→「編集」で、
+    /// 写真の欄に「写真を差し替える」と並んだ「色を編集」が見える1枚。
+    ///
+    /// **別の試験にしてある**（「写真を編集」は札で、一巡の途中に置くと閉じ損ねたときにあとの絵が消える）。
+    /// 鍵なしログインで自分の写真が出ない回・「…」に「編集」が無い回は**撮らずに抜ける**（この試験の決まり）。
+    /// 「色を編集」は押さない——押すと公開中の画像を読みに行き、鍵の要らない GET でも撮る絵が通信次第になる
+    func testCapturesEditPhotoRecolorEntry() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+
+        // 自分の写真（名指し・位置で探さない）。タブの下に隠れていたら1回だけ送る
+        let myPhoto = app.buttons["mypage.photo"].firstMatch
+        guard myPhoto.waitForExistence(timeout: 15) else { return }
+        if !myPhoto.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard myPhoto.isHittable else { return }
+        myPhoto.tap()
+
+        let menu = app.buttons["photo.menu"].firstMatch
+        guard menu.waitForExistence(timeout: 10), menu.isHittable else { return }
+        menu.tap()
+        let edit = app.buttons["photo.edit"].firstMatch
+        guard edit.waitForExistence(timeout: 5), edit.isHittable else { return }
+        edit.tap()
+
+        let recolor = app.buttons["editPhoto.recolor"].firstMatch
+        guard recolor.waitForExistence(timeout: 10) else { return }
+        // 見本の写真が描かれるのを少し待つ（枠だけの絵を「壊れている」と読み違えない）
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "22-写真を編集（色を編集の入口）")
+    }
 }

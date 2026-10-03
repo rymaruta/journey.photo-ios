@@ -828,6 +828,8 @@ struct PhotoDetailView: View {
                 Button { showEdit = true } label: {
                     Label(L("編集", "Edit"), systemImage: "pencil")
                 }
+                // 撮影の試験が「写真を編集」へ入る目印（`ScreenshotTests`）
+                .accessibilityIdentifier("photo.edit")
                 // **自分の、全体に公開した写真だけ**（`ThreadsShare`・絞った写真を外の SNS に流さない。
                 // 人の写真の画像を自分の SNS に載せる口も作らない）
                 if CollectionScreen.isShareable(shown) {
@@ -859,6 +861,7 @@ struct PhotoDetailView: View {
             menuIcon
                 .accessibilityLabel(L("この写真の操作", "More actions"))
         }
+        .accessibilityIdentifier("photo.menu")
     }
 
     @ViewBuilder

@@ -27,6 +27,8 @@ struct PhotoEditView: View {
     /// 帯の編集済みサムネ（編集済みの写真で開き直したとき）。編集後の最初の絵が届くまで仮に出す
     /// （`PhotoEditScreen.photoShown`）
     let placeholder: Image?
+    /// 上の帯の下に出す一言（投稿済みの写真を編集し直すとき・`PhotoRecolor.note`）。投稿の途中は nil
+    let note: String?
 
     @State private var screen: PhotoEditScreen
     @StateObject private var preview = PhotoEditPreview()
@@ -38,9 +40,11 @@ struct PhotoEditView: View {
     @Environment(\.displayScale) private var displayScale
 
     init(recipe: PhotoRecipe, source: @escaping @Sendable () -> Data, placeholder: Image? = nil,
+         note: String? = nil,
          onDone: @escaping (PhotoRecipe) -> Void, onCancel: @escaping () -> Void) {
         self.source = source
         self.placeholder = placeholder
+        self.note = note
         self.onDone = onDone
         self.onCancel = onCancel
         _screen = State(initialValue: PhotoEditScreen(original: recipe))
@@ -58,6 +62,17 @@ struct PhotoEditView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if let note {
+                // 黒地の上の薄い灰（板の text-3 #999999・黒に 7.37）。本文系の最小 12pt
+                Text(note)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Self.hint)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .accessibilityIdentifier("photoEdit.note")
+            }
             photo
             Text(L("写真を長押しすると、編集前と比べられます", "Touch and hold the photo to compare with the original"))
                 .font(.system(size: 12))
