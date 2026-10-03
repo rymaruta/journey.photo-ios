@@ -523,8 +523,17 @@ final class ScreenshotTests: XCTestCase {
         library.tap()
 
         // 選ぶ画面の1枚目を選んで「追加」
-        let photo = app.scrollViews.otherElements.images.firstMatch
-        guard photo.waitForExistence(timeout: 10) else { return }
+        //
+        // 🔴 run 37093238090 はここで落ちた——選ぶ画面は別プロセスで、中の写真がこちらの
+        // 木（accessibility）に出てこない回がある。そのとき `images.firstMatch` は
+        // **選ぶ画面の下に隠れた投稿画面の「曲（任意）」の `music.note`** を拾い、
+        // 押せない（`Not hittable`）まま tap して試験ごと落ちた。
+        // 下の画面の絵が先に並ぶこともあるので、**押せる最初の1枚**を探す。
+        // 押せる1枚が見つからなければ撮らずに抜ける（この試験の決まり）
+        let images = app.scrollViews.otherElements.images
+        guard images.firstMatch.waitForExistence(timeout: 10) else { return }
+        let candidates = images.allElementsBoundByIndex.prefix(30)
+        guard let photo = candidates.first(where: { $0.exists && $0.isHittable }) else { return }
         photo.tap()
         for label in ["追加", "Add"] {
             let done = app.navigationBars.buttons[label].firstMatch
