@@ -28,6 +28,10 @@ struct PhotoEditView: View {
     @State private var screen: PhotoEditScreen
     @StateObject private var preview = PhotoEditPreview()
     @State private var confirmDiscard = false
+    /// 写真に指が触れているか。**`@GestureState` で持つ**——ジェスチャーが途中で取り消されたとき
+    /// （着信・通知・別のジェスチャーに奪われた）は `onEnded` が届かないことがあるが、
+    /// `@GestureState` は取り消しでも自動で false に戻る。false になったら `.ended` を送る
+    @GestureState private var touching = false
     @Environment(\.displayScale) private var displayScale
 
     init(recipe: PhotoRecipe, source: @escaping @Sendable () -> Data,
@@ -172,9 +176,11 @@ struct PhotoEditView: View {
             .contentShape(Rectangle())
             // **触れている間を取る**（距離 0 の DragGesture）。`onLongPressGesture` は長押しと認めた瞬間に
             // 終わるので、離すまで編集前を出し続けられない。触れてから `holdDelay` たったら時計を送り、
-            // 判定は `PhotoEditScreen.press`（純）に任せる。離したら必ず戻す
+            // 判定は `PhotoEditScreen.press`（純）に任せる。離したら必ず戻す——離した・取り消された、の
+            // どちらでも `touching` が false に戻るので、それを `onChange` で拾って `.ended` を送る
             .gesture(
                 DragGesture(minimumDistance: 0)
+                    .updating($touching) { _, state, _ in state = true }
                     .onChanged { _ in
                         guard screen.pressedAt == nil else { return }
                         screen.press(.began(at: Date()))
@@ -183,8 +189,10 @@ struct PhotoEditView: View {
                             screen.press(.tick(now: Date()))
                         }
                     }
-                    .onEnded { _ in screen.press(.ended) }
             )
+            .onChange(of: touching) { _, now in
+                if !now { screen.press(.ended) }
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(screen.showsBeforeLabel ? L("元の写真", "Original photo")
                                                         : L("編集中の写真", "Photo being edited"))
