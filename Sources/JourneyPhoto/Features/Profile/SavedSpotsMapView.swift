@@ -31,6 +31,7 @@ struct SavedSpotsMapView: View {
     let photosKnown: Bool
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var toasts: ToastCenter
 
     @State private var camera: MapCameraPosition = .automatic
     /// 枠を決めたときのピンの鍵（同じ集まりなら決め直さない・`frameIfNeeded`）
@@ -39,8 +40,9 @@ struct SavedSpotsMapView: View {
     @State private var opened: String?
     /// 選んだ場所（押した順）。近い順の案は最初に選んだ場所から始める
     @State private var selection = SavedSpotsTrip.Selection()
-    /// 上限に達して足せなかった知らせ
-    @State private var limitNotice = false
+    /// 作っている最中（この画面だけの印）。**押した瞬間に同期で立てる**——`plans.busy` は
+    /// `Task` の中で立つので、その前の二度押しで2つ作られうる
+    @State private var creating = false
     /// 旅行プランの一覧（どのプランに入っているかの印と、作る口）。既存の model をそのまま使う
     @StateObject private var plans = TripPlansModel()
     /// 作ったプラン。日程の画面へ積む（板 WishlistTab: 押すと TripPlanDays へ）
@@ -131,6 +133,17 @@ struct SavedSpotsMapView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // 作っている最中は選び直させない（送った日程と画面の選択が食い違う）
+        .disabled(isBusy)
+        // 選ばずに開く口（長押し・VoiceOver の操作）。**上限に達していても開ける**
+        .contextMenu {
+            if item.canOpen {
+                Button { open(item) } label: {
+                    Label(L("開く", "Open"), systemImage: "arrow.up.right.square")
+                }
+            }
+        }
+        .accessibilityAction(named: L("開く", "Open")) { open(item) }
         .accessibilityLabel(pinLabel(item, inPlans: inPlans))
         // 選択の状態は値と特性の両方で伝える（VoiceOver は「選択中」と読む）
         .accessibilityValue(selectable ? (selected ? L("選択中", "Selected") : L("未選択", "Not selected")) : "")
@@ -150,12 +163,13 @@ struct SavedSpotsMapView: View {
 
     private func toggle(_ item: SavedSpotsMap.Item) {
         let wasSelected = selection.contains(item.key)
+        guard !isBusy else { return }
         guard selection.toggle(item.key) else {
-            limitNotice = true
-            announce(limitText)
+            // 写真から選ぶ板（`TripPickerView.choose`）と同じ知らせ方。一覧の下の文字では
+            // 地図を見ている人に見えない
+            toasts.show(limitText, kind: .failure)
             return
         }
-        limitNotice = false
         createError = nil
         announce(wasSelected ? removedText(item) : L("\(item.name) を選びました。選んだ場所 \(selection.count) か所",
                                                      "Selected \(item.name). \(selection.count) selected"))
@@ -208,8 +222,8 @@ struct SavedSpotsMapView: View {
     private var selectionArea: some View {
         VStack(alignment: .leading, spacing: 8) {
             if selection.isEmpty {
-                Text(L("ピンを押して場所を選ぶと、旅行プランを作れます。複数えらべます。押し直すと外れます。",
-                       "Tap pins to choose places for a trip. You can pick several; tap again to remove."))
+                Text(L("ピンを押して場所を選ぶと、旅行プランを作れます。複数えらべます。押し直すと外れます。開くには、選んだあと下の行を押します。",
+                       "Tap pins to choose places for a trip. You can pick several; tap again to remove. To open a place, select it and tap its row below."))
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -234,11 +248,6 @@ struct SavedSpotsMapView: View {
                 }
                 .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-            }
-            if limitNotice {
-                Text(limitText)
-                    .font(.footnote)
-                    .foregroundStyle(WebTheme.danger)
             }
         }
         .padding(.horizontal, 16)
@@ -283,8 +292,8 @@ struct SavedSpotsMapView: View {
             .accessibilityIdentifier("savedMap.selected")
 
             Button {
+                guard !isBusy else { return }
                 selection.remove(item.key)
-                limitNotice = false
                 announce(removedText(item))
             } label: {
                 Image(systemName: "xmark")
@@ -293,7 +302,7 @@ struct SavedSpotsMapView: View {
                     .webTappable()
             }
             .buttonStyle(.plain)
-            .disabled(plans.busy != nil)
+            .disabled(isBusy)
             .accessibilityLabel(L("「\(item.name)」を選択から外す", "Deselect \(item.name)"))
         }
         .padding(.trailing, 4)
@@ -301,7 +310,9 @@ struct SavedSpotsMapView: View {
 
     // MARK: - 旅行プランを作る
 
-    private var canCreate: Bool { !selection.isEmpty && plans.busy == nil }
+    /// 作っている最中か（この画面の印か、プランの書き込み中）。ピン・× ・主ボタンを止める
+    private var isBusy: Bool { creating || plans.busy != nil }
+    private var canCreate: Bool { !selection.isEmpty && !isBusy }
 
     /// **写真の無い画面の主ボタン1つ＝真鍮の塗り＋墨の字**（デザインシステム・CLAUDE.md）。
     /// 形は板 WishlistTab「この3か所で旅行プランを作る」（高さ 52・角は丸）
@@ -316,7 +327,7 @@ struct SavedSpotsMapView: View {
             }
             Button { create() } label: {
                 HStack(spacing: 8) {
-                    if plans.busy != nil { ProgressView().tint(WebTheme.accentText) }
+                    if isBusy { ProgressView().tint(WebTheme.accentText) }
                     Text(SavedSpotsTrip.createLabel(count: selection.count))
                         .font(.body.weight(.semibold))
                         .lineLimit(2)
@@ -343,15 +354,22 @@ struct SavedSpotsMapView: View {
     /// 既存の作成の口（`TripPlansModel.create`・題と日程を1回で送る）。日付は送らない（日程の画面で入れる）
     private func create() {
         guard canCreate, let draft = SavedSpotsTrip.draft(selectedItems) else { return }
+        // **同期で立てる**（次の押下はこれを見て止まる）
+        creating = true
         createError = nil
         Task {
+            defer { creating = false }
             guard let made = await plans.create(title: draft.title, days: draft.days, environment: environment) else {
-                createError = plans.errorMessage
+                let message = plans.errorMessage
                     ?? L("旅行プランを作れませんでした。もう一度お試しください。", "Couldn't create the trip. Please try again.")
+                createError = message
                 // 文はこの画面で出す（model に残すと、開いた日程の画面の上に赤い行が残る）
                 plans.clearError()
+                // 下の帯の赤い行は VoiceOver の焦点の外にあるので、読み上げでも伝える
+                announce(message)
                 return
             }
+            createError = nil
             selection = SavedSpotsTrip.Selection()
             createdPlanId = made.planId
         }

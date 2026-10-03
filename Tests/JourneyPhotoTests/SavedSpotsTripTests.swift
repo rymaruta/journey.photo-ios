@@ -74,6 +74,16 @@ final class SavedSpotsTripTests: XCTestCase {
         XCTAssertFalse(SavedSpotsTrip.canSelect(unknown), "索引に無いスポットは spotId が無い")
     }
 
+    /// `SPOT-` で始まるスラッグの撮影地は `.location` にしない（スポットの鍵と混ぜない・`SavedSpotKey`）
+    func testPlaceWithOfficialLookingSlugIsNotSelectable() {
+        let odd = SavedSpotsMap.item(DerivedSpot.Place(label: "紛らわしい", slug: "SPOT-kiyomizu", photos: [],
+                                                       broader: [], categories: [],
+                                                       coords: Photo.Coords(lat: 35, lng: 135)))
+        XCTAssertNil(SavedSpotsTrip.tripItem(odd))
+        XCTAssertFalse(SavedSpotsTrip.canSelect(odd))
+        XCTAssertNil(SavedSpotsTrip.draft([odd]))
+    }
+
     // MARK: - 近い順
 
     /// 最初に選んだ場所から、いちばん近い未訪の場所へ進む
@@ -86,6 +96,17 @@ final class SavedSpotsTripTests: XCTestCase {
         let order = SavedSpotsTrip.nearestOrder([tokyo, osaka, sapporo, kyoto]).map(\.key)
         // 東京 → 京都（東京から最も近い）→ 大阪 → 札幌
         XCTAssertEqual(order, ["tokyo", "kyoto", "osaka", "sapporo"])
+    }
+
+    /// **いまいる場所から**近い順（貪欲法）。「最初の場所からの距離で並べるだけ」とは答えが違う例:
+    /// 赤道上の A(0°)・B(東 1°)・C(西 1.5°)・D(東 2°)。A からの距離順なら A・B・C・D だが、
+    /// B に着いたら D（1°）が C（2.5°）より近い → A・B・D・C
+    func testNearestOrderMovesFromTheCurrentPlace() {
+        let a = place("a", 0, 0)
+        let b = place("b", 0, 1)
+        let c = place("c", 0, -1.5)
+        let d = place("d", 0, 2)
+        XCTAssertEqual(SavedSpotsTrip.nearestOrder([a, c, d, b]).map(\.key), ["a", "b", "d", "c"])
     }
 
     /// 1件はそのまま・0件は空
