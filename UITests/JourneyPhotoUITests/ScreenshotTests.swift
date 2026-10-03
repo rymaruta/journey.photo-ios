@@ -65,8 +65,7 @@ final class ScreenshotTests: XCTestCase {
         row.tap()
         defer {
             // 一覧へ戻す（あとの画面に持ち越さない）
-            let back = app.navigationBars.buttons.element(boundBy: 0)
-            if back.exists, back.isHittable { back.tap() }
+            goBack(app)
             Thread.sleep(forTimeInterval: 1)
         }
         // 画面の目印（`spot.official`）は ScrollView に付いていて中の要素に移ることがあるので、待つのは時間で
@@ -84,6 +83,32 @@ final class ScreenshotTests: XCTestCase {
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "13f-撮影スポット（光の時刻）")
+    }
+
+    /// 積んだ画面から1つ戻る（2026-10-03）。
+    ///
+    /// 🔴 **`navigationBars.buttons.element(boundBy: 0)` で戻らない。** 積んだ画面の下には地図の
+    /// バーも残っていて、両方のバーのボタンがまとめて数えられる——1番目が地図の見出しの
+    /// **お知らせのベル**（`header.notifications`）になり、押すとお知らせの札が開いたまま残った。
+    /// その札がマイページを覆い、`14-マイページ` がお知らせの絵になり、15・20・21・30・31・
+    /// 41・60・61 が黙って消えた（#148 から。PR の検証 run 8〜10）。
+    ///
+    /// 標準の戻るボタン（`BackButton`）→ 見出しのボタン（`header.*`）を除いた最初のボタン →
+    /// 左端から払う、の順で戻る
+    private func goBack(_ app: XCUIApplication) {
+        let standard = app.navigationBars.buttons["BackButton"].firstMatch
+        if standard.exists, standard.isHittable {
+            standard.tap()
+            return
+        }
+        let notHeader = NSPredicate(format: "NOT (identifier BEGINSWITH 'header.')")
+        let other = app.navigationBars.buttons.matching(notHeader).firstMatch
+        if other.exists, other.isHittable {
+            other.tap()
+            return
+        }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)))
     }
 
     /// **写真のピンが地図に出ているか**を数えて残す（2026-10-02）。

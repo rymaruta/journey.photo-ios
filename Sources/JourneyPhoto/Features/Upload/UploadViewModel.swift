@@ -987,20 +987,9 @@ final class UploadViewModel: ObservableObject {
         }
     }
 
-    /// 1枚の結末（写真は上がっている）
-    private struct UploadOutcome {
-        /// 曲まで含めて狙いどおりに終わったか。曲を付けられなかったときだけ `false`
-        var songAttached = true
-        /// 前の送信の保存が通っていた（「保存済み」の 409）。公開範囲は前に選んだもの
-        var savedEarlier = false
-        /// 編集した写真を共有用に書き出せず、共有に回さなかった（元の絵を黙って渡さない）
-        var shareSkipped = false
-    }
-
-    /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
-    ///   **ここで `errorMessage` に書かない**——呼び出し元が最後にまとめて出す
-    ///   （途中で書くと、全部成功と見なされた `reset()` のあとに画面が閉じて消える）
-    private func upload(_ item: PendingPhoto, exported: Exported? = nil) async throws -> UploadOutcome {
+    /// 送る下書き（題・説明・撮影地・タグ・行き先ほか）。**画面のいまの値から作る**——
+    /// 送信中も欄は生きているので、保存の直前に呼び直す（`upload` の注記）
+    private func makeDraft(for item: PendingPhoto) -> PhotoDraft {
         var draft = PhotoDraft()
         draft.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.description = item.caption
@@ -1022,6 +1011,24 @@ final class UploadViewModel: ObservableObject {
         draft.albumId = selectedAlbumId
         draft.groupId = groupId
         draft.spotId = UploadSpotTarget.spotIdToSend(spot, for: item)
+        return draft
+    }
+
+    /// 1枚の結末（写真は上がっている）
+    private struct UploadOutcome {
+        /// 曲まで含めて狙いどおりに終わったか。曲を付けられなかったときだけ `false`
+        var songAttached = true
+        /// 前の送信の保存が通っていた（「保存済み」の 409）。公開範囲は前に選んだもの
+        var savedEarlier = false
+        /// 編集した写真を共有用に書き出せず、共有に回さなかった（元の絵を黙って渡さない）
+        var shareSkipped = false
+    }
+
+    /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
+    ///   **ここで `errorMessage` に書かない**——呼び出し元が最後にまとめて出す
+    ///   （途中で書くと、全部成功と見なされた `reset()` のあとに画面が閉じて消える）
+    private func upload(_ item: PendingPhoto, exported: Exported? = nil) async throws -> UploadOutcome {
+        var draft = makeDraft(for: item)
 
         // 🔴 **やり直しは前回の鍵で保存する**（`UploadService.stage` の注記）。
         // 保存が落ちた写真は本体を置き直さない——新しい鍵で送ると、前回の保存が
@@ -1048,6 +1055,13 @@ final class UploadViewModel: ObservableObject {
             staged[item.id] = placed
             stagedEdits[item.id] = (item.recipe, toSend.dominantColor)
         }
+        // 🔴 **保存の直前に、いまの行から下書きを作り直す**（2026-10-03）。下書きは送り始めに
+        // 作っていたので、画像を書き出して置くまで（数秒）の間に直した題・説明・撮影地は
+        // **古い値のまま保存され、保存のあと行ごと消えて黙って失われた**。
+        // 画像から決まる値（代表色）だけは置いた絵のものを引き継ぐ
+        let placedColor = draft.dominantColor
+        draft = makeDraft(for: items.first(where: { $0.id == item.id }) ?? item)
+        draft.dominantColor = placedColor
         let photo: Photo?
         var outcome = UploadOutcome()
         do {
