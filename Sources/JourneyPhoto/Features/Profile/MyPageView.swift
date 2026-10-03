@@ -721,15 +721,29 @@ struct MyPageView: View {
         .padding(.horizontal, 16)
     }
 
-    /// 台帳のスポットの行。撮影地の行と同じ並びで、表紙の代わりに印（写真が無い）
+    /// 台帳のスポットの行。撮影地の行と同じ並び。
+    ///
+    /// 🔴 **台帳に写真（Wikimedia Commons）があれば表紙に敷く**（2026-10-03 owner「ピンだけで悲しい」）。
+    /// 写真の無い行（索引に無い鍵・写真の無いスポット）だけ印を出す。出典は開いた先の
+    /// スポットの画面に出る（地図の一覧の丸い写真と同じ扱い・`PhotoMapView.spotRow`）。
+    /// 小さな枠なので**縮めて読む**（元の画像をそのまま展開しない）
     private func officialWishlistRow(_ row: OfficialWishlist.Row) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "mappin.circle")
-                .font(.title3)
-                .foregroundStyle(WebTheme.muted2)
-                .frame(width: 56, height: 56)
-                .background(WebTheme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+            Group {
+                if let photo = row.spot?.photo {
+                    // 台帳の写真は縦横比を持たないので、2:1 までの形と見込んで読む（56pt なら 512px）
+                    DownsampledRemoteImage(url: photo.url, contentMode: .fill, assumedRatioLimit: 2)
+                } else {
+                    Image(systemName: "mappin.circle")
+                        .font(.title3)
+                        .foregroundStyle(WebTheme.muted2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(WebTheme.surface)
+                }
+            }
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name)
