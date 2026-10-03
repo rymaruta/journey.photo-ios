@@ -116,9 +116,13 @@ final class GalleryViewModel: ObservableObject {
         defer { runningForced.remove(mine) }
         loadedEpoch = await gallery.restrictedEpoch
         // **`/feed` は「新着」のときだけ読む**（2026-10-03 のレビュー）。おすすめなどでは読まない・待たない。
-        // 「新着」でも、引き下げ・まだ試していない回だけ1ページ目から読む。ブロックの後などの読み直し
-        // （force なし）は、読んだページを持ったまま仕上げだけ掛け直す（下まで送った一覧を縮めない）
-        let readsFirstPage = feed == .latest && feedPages != nil && (force || pageSource == .untried)
+        // 「新着」でも、引き下げ・まだ試していない回・1ページ目が古い回（`firstPageIsStale`）だけ
+        // 1ページ目から読む。それ以外の読み直し（force なし）は、読んだページを持ったまま
+        // 仕上げだけ掛け直す（下まで送った一覧を縮めない）
+        let readsFirstPage = feed == .latest && feedPages != nil
+            && (force || pageSource == .untried || firstPageIsStale)
+        // 「新着」以外で引き下げた回は、手元の1ページ目を古いことにする（次に「新着」を選んだら読み直す）
+        if force, !readsFirstPage, pageSource == .pages { firstPageReadAt = nil }
         if readsFirstPage {
             // 1ページ目と全件を同時に読み、**どちらも着いた時点で書く**（片方を待たない）
             async let firstPage: Void = showFirstPage(force: force, generation: generation, alongsideSnapshot: true)
@@ -303,10 +307,30 @@ final class GalleryViewModel: ObservableObject {
         state = .loaded(filtered())
     }
 
-    /// 「新着」を選んだとき、まだ試していなければ1ページ目を読む
+    /// 「新着」を選んだとき、まだ試していない・1ページ目が古ければ1ページ目を読む
     func loadPagesIfNeeded() async {
-        guard feed == .latest, feedPages != nil, pageSource == .untried else { return }
+        guard feed == .latest, feedPages != nil, pageSource == .untried || firstPageIsStale else { return }
         await showFirstPage(force: false, generation: viewerGeneration, alongsideSnapshot: false)
+    }
+
+    /// 1ページ目を読み終えた時刻。nil は「古いことにした」（新着以外で引き下げた）
+    private var firstPageReadAt: Date?
+    /// 今の時刻（試験が進める）
+    var clock: () -> Date = Date.init
+    /// 1ページ目をこれより前に読んでいたら、「新着」を選んだとき・読み込みのときに読み直す
+    static let firstPageFreshness: TimeInterval = 60
+
+    /// 手元の1ページ目が古いか。
+    ///
+    /// **2026-10-03 判断:** 「新着」は「新着」を見ている間しか読まないので、おすすめで引き下げた・
+    /// 詳細から戻った・ブロックの後の読み直しのあとも、前に読んだ1ページ目が出続けていた。
+    /// 読んでから60秒（全件の控え `PublicGalleryService.cacheLifetime` と同じ）を過ぎたら古いとする。
+    /// **読み直すのは2ページ目以降をまだ読んでいないときだけ**——下まで送った一覧を1ページに
+    /// 縮めると、見ていた場所が消える（そちらは引き下げで新しくする）
+    var firstPageIsStale: Bool {
+        guard pageSource == .pages, loadedPageCount <= 1, pendingPage == nil else { return false }
+        guard let readAt = firstPageReadAt else { return true }
+        return clock().timeIntervalSince(readAt) >= Self.firstPageFreshness
     }
 
     /// 1ページ目から読み直す。読めたらその回の番号（`pageSerial`）を返す
@@ -339,6 +363,7 @@ final class GalleryViewModel: ObservableObject {
             pageSource = .pages
             pageFailed = false
             loadedPageCount = 1
+            firstPageReadAt = clock()
             await representPages(loadsRestricted: loadsRestricted)
             return serial == pageSerial
         case .failure(let error):
@@ -405,9 +430,18 @@ final class GalleryViewModel: ObservableObject {
         isOnScreen = false
     }
 
-    /// ホームに戻ってきた。外れていた間に届いた続き・読み直しを書く
-    func returnToScreen() async {
+    /// ホームに戻ってきた印。**同期で立てる**（画面の `onAppear` から直に呼ぶ）。
+    ///
+    /// 🔴 `Task` の中で立てると1拍遅れ、戻ってすぐ詳細を開き直した回に `leaveScreen` の後で
+    /// 立って印が逆転し、詳細を開いている間に続きを足していた（2026-10-03 のレビュー）
+    func markOnScreen() {
         isOnScreen = true
+    }
+
+    /// 外れていた間に届いた続き・読み直しを書く。**印は立てない**（`markOnScreen`）——
+    /// 待っている間にまた外れていたら何もしない
+    func applyPendingPages() async {
+        guard isOnScreen else { return }
         if let page = pendingPage {
             pendingPage = nil
             await apply(page)
@@ -465,6 +499,7 @@ final class GalleryViewModel: ObservableObject {
         pendingPage = nil
         pageWriteDeferred = false
         firstPageTask = nil
+        firstPageReadAt = nil
     }
 
     /// 人が替わった回数。**替わる前に読み始めた回の答えを書かない**ために使う
@@ -793,8 +828,8 @@ final class GalleryViewModel: ObservableObject {
         setViewer(viewerId)
         all = feed.arrange(all)
         state = .loaded(filtered())
-        // 「新着」を初めて選んだ回は `/feed` の1ページ目を読む（おすすめでは読まないので）
-        if feed == .latest, feedPages != nil, pageSource == .untried {
+        // 「新着」を初めて選んだ回・1ページ目が古い回は `/feed` の1ページ目を読む（おすすめでは読まないので）
+        if feed == .latest, feedPages != nil, pageSource == .untried || firstPageIsStale {
             pagesTask = Task { await self.loadPagesIfNeeded() }
         }
     }

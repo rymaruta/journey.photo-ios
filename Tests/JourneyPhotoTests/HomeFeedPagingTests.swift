@@ -504,7 +504,8 @@ final class HomeFeedPagingTests: XCTestCase {
         model.query = ""
         XCTAssertEqual(shown(model), ["p1", "p2"])
 
-        await model.returnToScreen()
+        model.markOnScreen()
+        await model.applyPendingPages()
         XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"], "戻っても続きを足さない")
         XCTAssertTrue(model.hasMorePages)
     }
@@ -591,5 +592,115 @@ final class HomeFeedPagingTests: XCTestCase {
         XCTAssertEqual(shown(model), ["p1", "p2"], "まだ読んでいない時期の限定写真を混ぜた")
         await model.loadNextPage()
         XCTAssertEqual(shown(model), ["p1", "p2", "p3", "r-old"], "最後まで読んだのに限定写真を混ぜない")
+    }
+
+    // MARK: - 再レビュー（2026-10-03）
+
+    /// 印は同期で立てる。**戻ってすぐ詳細を開き直したら、遅れて走った足し込みは何もしない**
+    /// （Task の中で印を立てていた頃は、`leaveScreen` の後に立って逆転し、詳細の裏で続きを足した）
+    func testOnScreenMarkIsSynchronousAndPendingApplyRespectsALaterLeave() async {
+        prepare()
+        StubProtocol.respond(path: "/feed?cursor=c1", status: 200, body: page(["p3", "p4"], next: nil))
+        StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: "c1"))
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
+        let model = makeModel()
+        await model.load()
+        model.leaveScreen()
+        await model.loadNextPage()
+        XCTAssertEqual(shown(model), ["p1", "p2"])
+
+        // 戻った（onAppear）→ 足し込みが走る前にまた詳細を開いた（onDisappear）
+        model.markOnScreen()
+        XCTAssertTrue(model.isOnScreen, "印が同期で立っていない")
+        model.leaveScreen()
+        await model.applyPendingPages()
+        XCTAssertFalse(model.isOnScreen, "遅れて走った足し込みが印を立て直した")
+        XCTAssertEqual(shown(model), ["p1", "p2"], "詳細を開いている間に続きを足した")
+
+        model.markOnScreen()
+        await model.applyPendingPages()
+        XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"])
+    }
+
+    /// 時計を差し替えたホーム（1ページ目 p1・p2、続きあり）を作って読む
+    private func loadedWithClock(_ now: @escaping () -> Date) async -> GalleryViewModel {
+        prepare()
+        StubProtocol.respond(path: "/feed?cursor=c1", status: 200, body: page(["p3", "p4"], next: nil))
+        StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: "c1"))
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
+        let model = makeModel()
+        model.clock = now
+        await model.load()
+        XCTAssertEqual(shown(model), ["p1", "p2"])
+        return model
+    }
+
+    /// 新しい写真 p0 が載った後の /feed
+    private func publishNewPhoto() {
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/feed?cursor=c1", status: 200, body: page(["p2", "p3"], next: nil))
+        StubProtocol.respond(path: "/feed", status: 200, body: page(["p0", "p1"], next: "c1"))
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
+    }
+
+    /// 🔴 おすすめを見ている間に60秒過ぎたら、「新着」に戻ったとき1ページ目を読み直す。60秒以内は読まない
+    func testReturningToLatestRereadsAStaleFirstPage() async {
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        let model = await loadedWithClock { now }
+        model.select(feed: .recommended, viewerId: nil)
+        publishNewPhoto()
+
+        now += 30
+        model.select(feed: .latest, viewerId: nil)
+        await model.pagesTask?.value
+        XCTAssertEqual(feedCursors, [], "60秒以内なのに読み直した")
+        XCTAssertEqual(shown(model), ["p1", "p2"])
+
+        model.select(feed: .recommended, viewerId: nil)
+        now += 31
+        model.select(feed: .latest, viewerId: nil)
+        await model.pagesTask?.value
+        XCTAssertEqual(feedCursors, [nil], "古い1ページ目を読み直さない")
+        XCTAssertEqual(shown(model), ["p0", "p1"], "「新着」が古いまま")
+    }
+
+    /// 詳細から戻った・ブロックの後の読み直し（force なしの load）でも、古ければ読み直す
+    func testPlainReloadRereadsAStaleFirstPage() async {
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        let model = await loadedWithClock { now }
+        publishNewPhoto()
+        now += 61
+        await model.load()
+        XCTAssertEqual(feedCursors, [nil], "古い1ページ目のまま読み直しを終えた")
+        XCTAssertEqual(shown(model), ["p0", "p1"])
+    }
+
+    /// おすすめで引き下げたら、時間に関係なく次の「新着」で読み直す
+    func testRefreshOnAnotherFeedMarksTheFirstPageStale() async {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let model = await loadedWithClock { now }
+        model.select(feed: .recommended, viewerId: nil)
+        publishNewPhoto()
+        await model.load(force: true)
+        XCTAssertEqual(feedCursors, [], "おすすめの引き下げで /feed を読んだ")
+        model.select(feed: .latest, viewerId: nil)
+        await model.pagesTask?.value
+        XCTAssertEqual(shown(model), ["p0", "p1"], "おすすめで引き下げた後も「新着」が古いまま")
+    }
+
+    /// 下まで送った一覧は、古くても1ページ目に縮めない（引き下げで新しくする）
+    func testDeepListIsNotShrunkWhenStale() async {
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        let model = await loadedWithClock { now }
+        await model.loadNextPage()
+        XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"])
+        publishNewPhoto()
+        now += 120
+        await model.load()
+        model.select(feed: .recommended, viewerId: nil)
+        model.select(feed: .latest, viewerId: nil)
+        await model.pagesTask?.value
+        XCTAssertEqual(feedCursors, [], "下まで送った一覧を読み直して縮めた")
+        XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"])
     }
 }

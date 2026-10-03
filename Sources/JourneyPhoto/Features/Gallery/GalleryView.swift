@@ -175,8 +175,10 @@ struct GalleryView: View {
         }
         .onAppear {
             isOnScreen = true
-            // 詳細を開いていた間に届いた「新着」の続きを、戻ってから足す（`GalleryViewModel.pageWrite`）
-            Task { await model.returnToScreen() }
+            // 印は同期で立て（`markOnScreen`）、詳細を開いていた間に届いた「新着」の続きだけ
+            // 後から足す（`GalleryViewModel.pageWrite`）
+            model.markOnScreen()
+            Task { await model.applyPendingPages() }
             dropped = hidden.snapshot
             // **戻ってきたら毎回自分の写真を読み直す**（`MyPageView` と同じ形）。
             // 合図が来ない変わり方がある——すでに「消した」印の付いた写真を消した・
