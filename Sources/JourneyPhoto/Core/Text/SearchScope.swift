@@ -94,16 +94,18 @@ enum SearchScope: String, CaseIterable, Identifiable {
 
 /// 探すの「発見」の段（板 11）。**並びは板どおり**:
 /// 注目スポット → おすすめ → 色 → いまの季節 → 機材。
+/// 「季節・時間帯から探す」（2026-10-03・板に無い段）は、いまの季節の写真の次に置く
+/// （同じ「いつ撮るか」の話をまとめる）。
 /// 中身の無い段は出さない（押しても空になる段を置かない）。
 enum SearchDiscovery {
 
     enum Section: String, CaseIterable, Identifiable {
-        case spots, featured, colors, seasonal, gear
+        case spots, featured, colors, seasonal, shootingTime, gear
         var id: String { rawValue }
     }
 
     /// 段の順。`CaseIterable` の並びに頼らず、ここに書いておく
-    static let order: [Section] = [.spots, .featured, .colors, .seasonal, .gear]
+    static let order: [Section] = [.spots, .featured, .colors, .seasonal, .shootingTime, .gear]
 
     static func sections(present: Set<Section>) -> [Section] {
         order.filter { present.contains($0) }

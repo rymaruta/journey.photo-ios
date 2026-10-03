@@ -45,7 +45,7 @@ struct SearchView: View {
                 if isDiscovering {
                     // **何も打っていないときは「発見」の顔**（板 11）。段の並びは
                     // `SearchDiscovery`、段の間は 20
-                    ForEach(model.discovery) { section in
+                    ForEach(model.discovery(spots: officialSpots)) { section in
                         discoverySection(section)
                     }
                 } else {
@@ -53,6 +53,7 @@ struct SearchView: View {
                     // 発見の間は置かない
                     // 人を探しているときは写真の絞り込みを出さない（効かない札を置かない）
                     if model.scope.showsPhotos {
+                        shootingTimeChips
                         categoryChips
                     }
                     // 撮影地ではタグのチップを出さない（押しても枚数と結果が合わない）
@@ -84,11 +85,15 @@ struct SearchView: View {
         // 索引は語が入ったときに取る（取れなければ節を出さないだけ・写真の検索はそのまま）
         // **語が変わるたびに見直す**（取れていなければ取り直す・取れたら何もしない。
         // `fetchIndex` は控えを持ち、404 は60秒覚えるので叩きすぎない）
-        .task(id: query) {
-            guard !query.isEmpty else { return }
+        .task(id: SpotIndexNeed(query: query, filter: model.timeFilter)) {
+            // 撮影スポットの索引は語が入ったとき・季節／時間帯を選んだときに要る。
+            // 発見の顔でも1度は取る（「季節・時間帯から探す」は季節の案内を持つ撮影地だけでも出す。
+            // `fetchIndex` は控えを持つので叩きすぎない）
             if officialSpots.isEmpty {
                 officialSpots = (try? await environment.spots.fetchIndex()) ?? []
             }
+            // 別名は語で当てるときだけ要る（季節・時間帯だけで絞っているときは取らない）
+            guard !query.isEmpty else { return }
             // 別名は控えがあれば通信しない（取れなかった回は1分叩き直さない）
             // 🔴 **詳細を開いている間は入れ替えない。** 別名で当たる行が前に割り込み、開いた
             // スポットの行が最初の5件から押し出されると、開いている画面がその場で閉じる
@@ -140,7 +145,7 @@ struct SearchView: View {
 
     /// 何も打たず、種類もカテゴリも選んでいない＝「発見」の顔
     private var isDiscovering: Bool {
-        query.isEmpty && model.category == nil && model.scope == .all
+        query.isEmpty && model.category == nil && model.scope == .all && model.timeFilter.isEmpty
     }
 
     // MARK: - 探す口
@@ -156,6 +161,8 @@ struct SearchView: View {
                 .textFieldStyle(.plain)
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.foreground)
+                // 実機の絵の道しるべ（`ScreenshotTests` が「11b」で探している名前。付いていなかった）
+                .accessibilityIdentifier("search.field")
             if !query.isEmpty {
                 Button {
                     query = ""
@@ -167,6 +174,7 @@ struct SearchView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("消す", "Clear"))
+                .accessibilityIdentifier("search.clear")
             }
         }
         .padding(.horizontal, 14)
@@ -291,6 +299,60 @@ struct SearchView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    /// 季節と時間帯の札（2026-10-03・戦略の計画6）。**1列に 春 夏 秋 冬 ｜ 朝 日中 夕 夜**。
+    ///
+    /// 札は板の「絞り込み」の丸チップ（`PillChip`・選ぶと白塗り）。季節と時間帯は**1つずつ選べて、
+    /// 重ねられる**（「秋」＋「夕」＝秋の夕方）。押し直すと外す。2つの群の間には細い縦線を置き、
+    /// 読み上げは「季節 秋」「時間帯 夕」と群の名前から言う（字だけでは「夕」が何の札か分からない）
+    private var shootingTimeChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ShootingTime.Season.allCases) { season in
+                    PillChip(title: season.label, selected: model.timeFilter.season == season) {
+                        model.select(season: season)
+                    }
+                    .accessibilityLabel(L("季節 \(season.label)", "Season: \(season.label)"))
+                    .accessibilityIdentifier("search.season.\(season.rawValue)")
+                }
+                Rectangle()
+                    .fill(Color.white.opacity(0.15))
+                    .frame(width: 1, height: 20)
+                    .padding(.horizontal, 2)
+                    .accessibilityHidden(true)
+                ForEach(ShootingTime.DayPart.allCases) { part in
+                    let selected = model.timeFilter.dayPart == part
+                    // 当たる写真も撮影地も無い時間帯は薄く出して押せなくする（選んでいる札は外せるよう残す）
+                    let usable = selected || availableDayParts.contains(part)
+                    PillChip(title: part.label, selected: selected) {
+                        model.select(dayPart: part)
+                    }
+                    .disabled(!usable)
+                    .opacity(usable ? 1 : 0.35)
+                    .accessibilityLabel(L("時間帯 \(part.label)（\(part.hours)）", "Time of day: \(part.label) (\(part.hours))"))
+                    .accessibilityIdentifier("search.dayPart.\(part.rawValue)")
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        // 札の押せる余白（上下 4）の分だけ詰め、並びの見た目の間隔は前のまま
+        .padding(.vertical, -PillChip.tapSlack)
+    }
+
+    /// 当たるものがある時間帯（写真の側はモデル、撮影地の側は索引から。撮影地は索引に
+    /// `timeOfDayGuide` が載るまで空）
+    private var availableDayParts: Set<ShootingTime.DayPart> {
+        model.dayPartsWithPhotos.union(ShootingTime.dayParts(photos: [], spots: officialSpots))
+    }
+
+    /// 発見の顔の「季節・時間帯から探す」。札を押すと結果の顔に移り、同じ札の列が上に残る
+    /// （語・種類・カテゴリと重ねられる——「秋」を押してから「京都」と打てば秋の京都）
+    private var shootingTimeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader(L("季節・時間帯から探す", "Browse by season & time of day"))
+            shootingTimeChips
+        }
+    }
+
     // MARK: - 発見
 
     @ViewBuilder
@@ -300,6 +362,7 @@ struct SearchView: View {
         case .featured: featured
         case .colors: colors
         case .seasonal: seasonal
+        case .shootingTime: shootingTimeSection
         case .gear: gear
         }
     }
@@ -607,11 +670,11 @@ struct SearchView: View {
         defer { isReloading = false }
         await model.reloadPhotos(environment: environment, force: true, hidden: hidden.snapshot)
         await model.search(query, environment: environment)
-        // 撮影スポットの索引も、取れていなければ取り直す（`.task(id: query)` は
-        // 語が変わらないと走らないので、引き下げても節が出ないままだった）。
-        // 語が無いときは節を出さないので取らない。force は付けない——取り損ねた回
+        // 撮影スポットの索引も、取れていなければ取り直す（`.task(id:)` は
+        // 語・絞り込みが変わらないと走らないので、引き下げても節が出ないままだった）。
+        // 発見の顔の「季節・時間帯から探す」も索引を使うので、語が無くても取る。force は付けない——取り損ねた回
         // （圏外）は控えが無いので取り直し、404 の「無い」は60秒覚えたまま叩かない
-        if !query.isEmpty, officialSpots.isEmpty {
+        if officialSpots.isEmpty {
             officialSpots = (try? await environment.spots.fetchIndex()) ?? []
         }
         // 別名も同じ（詳細を開いている間に届いた回は捨てているので、ここで取り直す）
@@ -698,11 +761,22 @@ struct SearchView: View {
     }
 
     /// 語に当たる撮影スポット（名前・読み・英語名・別名・都道府県・市区町村）。地図の検索と同じ当て方に、別名を足したもの
+    ///
+    /// 季節・時間帯を選んでいるときは、その季節・時間帯の案内を持つ撮影地に絞る（`ShootingTime`）。
+    /// **語が無くても出す**——「秋」だけ選べば、秋の案内のある撮影地が並ぶ（場所の図鑑が主役・戦略の計画6）
     private var spotHits: [OfficialSpot] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty, model.scope.showsSpots else { return [] }
+        let filter = model.timeFilter
+        guard model.scope.showsSpots, !q.isEmpty || !filter.isEmpty else { return [] }
         // **下書きは出さない**（地図の一覧・ホームと同じ。「撮影地ガイド」と名乗らせない）
-        return OfficialSpotIndex.matches(officialSpots.filter { !$0.isDraft }, query: q, aliases: spotAliases)
+        let published = officialSpots.filter { !$0.isDraft }
+        let matched = q.isEmpty ? published : OfficialSpotIndex.matches(published, query: q, aliases: spotAliases)
+        return ShootingTime.spots(matched, filter: filter)
+    }
+
+    /// 撮影スポットの節を開いた鍵（語と絞り込みが変わったら畳む）
+    private var spotsExpandKey: String {
+        "\(query)|\(model.timeFilter.season?.rawValue ?? "")|\(model.timeFilter.dayPart?.rawValue ?? "")"
     }
 
     /// **撮影スポットの節**（写真の件数とは混ぜない）。最初は5件、押すと全部
@@ -710,9 +784,11 @@ struct SearchView: View {
     private var spotResults: some View {
         let hits = spotHits
         if !hits.isEmpty {
-            let expanded = spotsExpandedFor == query
+            let expanded = spotsExpandedFor == spotsExpandKey
             VStack(alignment: .leading, spacing: 10) {
-                Text(L("撮影スポット（\(hits.count)か所）", "Shooting spots (\(hits.count))"))
+                Text(L("\(model.timeFilter.prefix)撮影スポット（\(hits.count)か所）",
+                       model.timeFilter.isEmpty ? "Shooting spots (\(hits.count))"
+                           : "\(model.timeFilter.prefix)shooting spots (\(hits.count))"))
                     .font(.headline)
                     .foregroundStyle(WebTheme.foreground)
                 VStack(spacing: 0) {
@@ -730,7 +806,7 @@ struct SearchView: View {
                 .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 14))
                 if hits.count > 5 {
                     Button {
-                        spotsExpandedFor = expanded ? nil : query
+                        spotsExpandedFor = expanded ? nil : spotsExpandKey
                     } label: {
                         Text(expanded ? L("閉じる", "Show fewer") : L("すべて表示（\(hits.count)か所）", "Show all \(hits.count)"))
                             .font(.subheadline.weight(.semibold))
@@ -763,7 +839,16 @@ struct SearchView: View {
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
+                // 季節・時間帯で絞っているときは、その案内の文を添える（なぜ並ぶのかを見せる・板 11 の
+                // 「THIS SEASON」の札と同じ中身）
+                if let guide = ShootingTime.guide(for: spot, filter: model.timeFilter) {
+                    Text(guide)
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .lineLimit(2)
+                }
             }
+            .padding(.vertical, 8)
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
                 .font(.caption)
@@ -810,6 +895,16 @@ struct SearchView: View {
         }
         .padding(.horizontal, 16)
 
+        // 季節・時間帯の分け方（撮影日・撮影時刻のどちらで、どこで区切ったか）を隠さない
+        if let note = model.timeFilter.note {
+            Text(note)
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("search.time.note")
+        }
+
         if model.shown.isEmpty && !model.hasLoaded {
             // 最初の読み込みが返るまでは何も言わない（失敗とも0件とも言わない）
             ProgressView()
@@ -852,6 +947,12 @@ struct SearchView: View {
     }
 }
 
+/// 撮影スポットの索引を取りに行く鍵（語と季節・時間帯。どちらかが変わったら見直す）
+private struct SpotIndexNeed: Hashable {
+    let query: String
+    let filter: ShootingTime.Filter
+}
+
 @MainActor
 final class SearchViewModel: ObservableObject {
 
@@ -892,6 +993,12 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var colors: [ColorFamilies.Section] = []
     @Published private(set) var category: String?
     @Published private(set) var sort: GallerySort = .new
+    /// 季節・時間帯で絞る（2026-10-03・戦略の計画6）。写真と撮影スポットの両方に効く（`ShootingTime`）
+    @Published private(set) var timeFilter = ShootingTime.Filter()
+    /// 「季節・時間帯から探す」の段を出すか（写真の側。撮影地の側は画面が索引から足す）
+    @Published private(set) var hasShootingTimes = false
+    /// 撮影時刻の分かる写真がある時間帯（無い札は薄く出す）
+    @Published private(set) var dayPartsWithPhotos = Set<ShootingTime.DayPart>()
 
     /// 画面に出す写真。**打っていないときはカテゴリ／タグの結果を出す**
     /// ——空の画面にしない（探しに来た人を手ぶらで帰さない）
@@ -917,7 +1024,8 @@ final class SearchViewModel: ObservableObject {
 
     /// `shown` の絞り方（並べ替えの前まで）
     private func filtered(query: String) -> [Photo] {
-        let base = scope.photos(allPhotos, query: query)
+        // 季節・時間帯はカテゴリと同じく、語と種類で絞った上にかける（「秋の京都」）
+        let base = ShootingTime.photos(scope.photos(allPhotos, query: query), filter: timeFilter)
         guard let category else { return base }
         let key = CategoryChoices.key(category)
         return base.filter { CategoryChoices.key($0.category ?? "") == key }
@@ -927,9 +1035,11 @@ final class SearchViewModel: ObservableObject {
     /// **変わったら描き直す**——写真の絞り込みはここから導く
     @Published private var query = ""
 
-    /// 発見の段（板 11 の並び）。中身の無い段は出さない
-    var discovery: [SearchDiscovery.Section] {
+    /// 発見の段（板 11 の並び）。中身の無い段は出さない。
+    /// - Parameter spots: 撮影スポットの索引（「季節・時間帯から探す」は撮影地だけでも出す）
+    func discovery(spots: [OfficialSpot] = []) -> [SearchDiscovery.Section] {
         var present = Set<SearchDiscovery.Section>()
+        if hasShootingTimes || ShootingTime.hasAnything(photos: [], spots: spots) { present.insert(.shootingTime) }
         if !popularSpots.isEmpty { present.insert(.spots) }
         if featured != nil { present.insert(.featured) }
         if !colors.isEmpty { present.insert(.colors) }
@@ -960,6 +1070,25 @@ final class SearchViewModel: ObservableObject {
     }
 
     func select(sort: GallerySort) { self.sort = sort }
+
+    /// 季節を選ぶ。**押し直したら外す**（カテゴリと同じ）
+    func select(season: ShootingTime.Season?) {
+        timeFilter.season = (season == timeFilter.season) ? nil : season
+        refreshTagChips()
+    }
+
+    /// 時間帯を選ぶ。押し直したら外す
+    func select(dayPart: ShootingTime.DayPart?) {
+        timeFilter.dayPart = (dayPart == timeFilter.dayPart) ? nil : dayPart
+        refreshTagChips()
+    }
+
+    /// 季節・時間帯をまとめて外す。**画面にボタンは置いていない**（札を押し直せば1つずつ外れる）。
+    /// 試験と、これから置く「すべて外す」のための口
+    func clearTimeFilter() {
+        timeFilter = ShootingTime.Filter()
+        refreshTagChips()
+    }
 
     /// 読み込んだ写真そのもの。**スポットの画面に渡す**
     /// ——`shown` は絞り込んだあとなので、突き合わせ（近くの地点など）に
@@ -1067,6 +1196,8 @@ final class SearchViewModel: ObservableObject {
         categoryCovers = CategoryCovers.items(in: allPhotos)
         colors = ColorFamilies.sections(in: allPhotos, limit: .max)
         categories = CategoryChoices.present(in: allPhotos)
+        hasShootingTimes = ShootingTime.hasAnything(photos: allPhotos, spots: [])
+        dayPartsWithPhotos = ShootingTime.dayParts(photos: allPhotos, spots: [])
     }
 
     func search(_ query: String, environment: AppEnvironment) async {
