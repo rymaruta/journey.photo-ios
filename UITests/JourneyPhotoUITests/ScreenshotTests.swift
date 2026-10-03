@@ -34,6 +34,23 @@ final class ScreenshotTests: XCTestCase {
         add(shot)
     }
 
+    /// **ホームの「いまの季節のスポット」の段を撮る**（2026-10-03・`HomeSpotShelfView`）。
+    /// 札が画面の下に隠れていたら少しずつ送る（上限あり）。作例の写真は本文と Commons から来るので
+    /// 少し待つ。段が出なければ撮らない（索引が取れない回・その季節の候補が無い回）
+    private func shootSpotShelf(_ app: XCUIApplication) {
+        let card = app.buttons["home.spotShelf.card"].firstMatch
+        guard card.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !card.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard card.isHittable else { return }
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "10d-ホーム（いまの季節のスポット・作例）")
+    }
+
     /// **撮影スポットのピンを撮る。** 公開済みのスポットは国内の4件だけで、
     /// 地図を開いた範囲（シミュレータの現在地＝パリ）には1本も出ない。名前で絞ると
     /// 地図がそのスポットへ寄るので、ピンと、押したときの札を撮る。
@@ -346,6 +363,7 @@ final class ScreenshotTests: XCTestCase {
                     }
                 }
             }
+            if name == "ホーム" { shootSpotShelf(app) }
             if name == "探す" {
                 let field = app.textFields["search.field"].firstMatch
                 if field.exists, field.isHittable {

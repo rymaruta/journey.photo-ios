@@ -70,7 +70,12 @@ struct HomeTopCardView: View {
     private let opened = OpenedTripBooks()
 
     var body: some View {
-        content
+        // 札の並びの下に「いまの季節のスポット」の段（2026-10-03・`HomeSpotShelf`）。
+        // 間は一覧の段の間（`GalleryView` の 24）と同じ
+        VStack(spacing: 24) {
+            content
+            spotShelf
+        }
             .task(id: "\(auth.userId ?? "-")#\(reloadToken)#\(returnReloads)") { await load() }
             .task { await loadSpots() }
             .task(id: "\(reloadToken)") { await loadQuiz() }
@@ -109,11 +114,29 @@ struct HomeTopCardView: View {
     /// 画面の右端に見せる次の札の幅（めくれることの合図）
     private static let peek: CGFloat = 24
 
+    /// 今日の札の並び（`HomeTopCard.cards`）。段（`spotShelf`）も同じ並びを見て、札に出ている場所を除く
+    private var choices: [HomeTopCard.Choice] {
+        HomeTopCard.cards(now: Date(), plans: plansOwner == auth.userId ? plans : [],
+                          myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
+                          wishlist: wishedKeys, quiz: quiz)
+    }
+
+    /// 「いまの季節のスポット」の段。**索引が取れていない・候補が無い日は出さない**（空き地を作らない）。
+    /// 上の札に出ている場所と今日の一問の選択肢は除く（`HomeSpotShelf.excluded`）。
+    /// 並びが変わるのは、札と同じく索引が取れたとき・ホームに戻ったとき（行きたい場所）・
+    /// 見えている間（今日の一問）だけ——段から開いた画面が前に出ている間に札が消えて閉じることはない
+    @ViewBuilder
+    private var spotShelf: some View {
+        if let today = HomeTopCard.today(Date(), in: .current),
+           let shelf = HomeSpotShelf.shelf(today: today, spots: spots,
+                                           excluding: HomeSpotShelf.excluded(by: choices, quizSpots: quiz?.choices.map(\.spotId) ?? [])) {
+            HomeSpotShelfView(shelf: shelf, spots: spots, photos: themePhotos)
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
-        let choices = HomeTopCard.cards(now: Date(), plans: plansOwner == auth.userId ? plans : [],
-                                        myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
-                                        wishlist: wishedKeys, quiz: quiz)
+        let choices = self.choices
         if choices.count == 1, let only = choices.first {
             // 1枚の日はいまと同じ（左右 16 の余白で画面いっぱい）
             card(for: only, inCarousel: false)

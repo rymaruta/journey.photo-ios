@@ -261,19 +261,27 @@ enum HomeTopCard {
     /// - **下書き・写真の無い行は出さない**（写真が主役の札。下書きを「おすすめ」と
     ///   して出さない）
     static func inSeason(today: Date, spots: [OfficialSpot], excluding: String? = nil) -> Choice? {
-        let month = TripPlanText.calendar.component(.month, from: today)
-        let season = SpotBodyText.season(ofMonth: month)
-        let candidates = spots
-            .filter { !$0.isDraft && $0.photo != nil && $0.spotId != excluding }
-            .compactMap { spot -> (OfficialSpot, String)? in
-                guard let guide = spot.seasons.first(where: { $0.season == season }) else { return nil }
-                return (spot, guide.text.trimmingCharacters(in: .whitespacesAndNewlines))
-            }
-            .sorted { $0.0.spotId < $1.0.spotId }
+        let guides = seasonGuides(today: today, spots: spots)
+        let candidates = guides.rows.filter { $0.spot.photo != nil && $0.spot.spotId != excluding }
         guard !candidates.isEmpty else { return nil }
         let week = weekNumber(today)
         let index = ((week % candidates.count) + candidates.count) % candidates.count
-        return .inSeason(spot: candidates[index].0, season: season, guide: candidates[index].1)
+        return .inSeason(spot: candidates[index].spot, season: guides.season, guide: candidates[index].guide)
+    }
+
+    /// いまの季節と、その季節の案内を持つ**公開済み**のスポット（`spotId` の順・案内の文は前後の空白を落とす）。
+    /// 季節の札（`inSeason`）と、ホームの「いまの季節のスポット」の段（`HomeSpotShelf`）が同じ候補を使う
+    static func seasonGuides(today: Date, spots: [OfficialSpot]) -> (season: String, rows: [(spot: OfficialSpot, guide: String)]) {
+        let month = TripPlanText.calendar.component(.month, from: today)
+        let season = SpotBodyText.season(ofMonth: month)
+        let rows = spots
+            .filter { !$0.isDraft }
+            .compactMap { spot -> (spot: OfficialSpot, guide: String)? in
+                guard let guide = spot.seasons.first(where: { $0.season == season }) else { return nil }
+                return (spot, guide.text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            .sorted { $0.spot.spotId < $1.spot.spotId }
+        return (season, rows)
     }
 
     /// 行きたい場所の札の見出しの読み（「行きたい場所・秋」）

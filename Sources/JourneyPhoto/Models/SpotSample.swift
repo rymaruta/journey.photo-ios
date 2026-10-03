@@ -46,6 +46,27 @@ struct SpotSample: Equatable, Identifiable {
     /// 1枚に出す最大の枚数（Web の `MAX_SHOWN_SAMPLES`）
     static let maxShown = 6
 
+    /// Commons が作り置きする縮小版の幅（Web の `STANDARD_THUMB_WIDTHS`。任意の幅は作り置きが無い）
+    static let standardThumbWidths = [1280, 960, 500, 330, 250]
+
+    /// **小さく出す場所向けの、同じ写真の小さい縮小版**（2026-10-03・ホームの「いまの季節のスポット」）。
+    ///
+    /// 本文の `src` はたいてい 1280px の縮小版で、幅 240pt の札には重い（1枚 数百KB）。
+    /// URL の末尾 `<幅>px-<名前>` の幅だけを、`maxWidth` 以下でいちばん大きい標準の幅に替える。
+    /// **同じ Commons の縮小版**なので改変ではなく、元画像（EXIF が残る）にも戻らない。
+    /// いまの幅が `maxWidth` 以下・形が違う（縮小版の名前でない）ときは `src` のまま
+    func thumbnail(maxWidth: Int) -> URL {
+        guard width > Double(maxWidth),
+              let target = Self.standardThumbWidths.first(where: { $0 <= maxWidth && Double($0) < width }) else { return src }
+        // **文字列のまま替える**（`lastPathComponent` は %xx をほどくので、組み直すと綴りが変わりうる）
+        let raw = src.absoluteString
+        guard let slash = raw.range(of: "/", options: .backwards) else { return src }
+        let name = raw[slash.upperBound...]
+        guard let dash = name.range(of: "px-"),
+              let current = Int(name[name.startIndex..<dash.lowerBound]), current > target else { return src }
+        return URL(string: raw[..<slash.upperBound] + "\(target)px-" + name[dash.upperBound...]) ?? src
+    }
+
     // MARK: - 表示の文
 
     /// 写真のすぐ下の1行「題 / 写真: 作者 / ライセンス / Wikimedia Commons」（Web の `Samples` と同じ並び）
