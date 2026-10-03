@@ -111,3 +111,24 @@ Key ID（`DDYJB5893J`）と Team ID（`5428GX5UM8`）は**秘密ではない**�
 | `400 BadDeviceToken` | ビルドの `aps-environment` と `apnsHost` のずれ（`check-config.py` が見張る） |
 | `403 InvalidProviderToken` | `APNS_PRIVATE_KEY` の中身が `.p8` の全文か（改行ごと貼る） |
 | 通知に `NOTIF_LIKE` と出る | `Localizable.strings` に鍵が無い（`check-config.py` が見張る） |
+
+## PR の検証（`ios-pr.yml`・2026-10-03）
+
+**main へ入れる前に、本物の Xcode でコンパイルとテストを通す。** 以前は TestFlight を
+流すまで、本物の SwiftUI での型検査が1回も無かった。
+
+| 段 | ランナー | 中身 | 目安 |
+|---|---|---|---|
+| 静的な検査 | ubuntu | 構文・参照・import の組・設定（`verify.sh` と同じ道具） | 1分 |
+| 単体テスト（Linux・模型） | ubuntu（`swift:6.0.3-noble`） | `Shims/` に向けたビルドと単体テスト | 5分 |
+| Xcode のビルドとテスト | macos-15 | 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵） | 控えが当たれば20〜30分 |
+
+- **macOS は、Linux の2段が通ってから起こす。** 構文の壊れで macOS の分を使わない
+- **同じ PR に押し直すと、前の回は止まる**（`concurrency`）。文書だけの変更（`docs/**`・`*.md`）では回らない。下書きの PR では macOS を起こさない
+- **結果の読み方**: 実行の「まとめ」に、件数と**落ちたテストの名前と理由**が出る（`Tools/xcresult-summary.py`）。`xcode-test-results` の成果物に `Test.xcresult`・全文ログ・画面の絵が入る（14日）
+- **Web 版との突き合わせは CI では飛ぶ。** `photo-gallery` が非公開で読めないため（「見ていない」と表示される）。手元の `verify.sh` で見る
+- **費用**: このリポジトリは公開なので、標準ランナー（macOS を含む）は無料。**非公開に変えたら、この段は無料枠を大きく食う**（macOS は分数10倍）——そのときは `on:` から `pull_request` を外す
+- **署名も TestFlight も無い。** 本番には何も出さない（出すのは `ios-testflight.yml`）
+
+main を守るには、GitHub の Settings → Branches で `main` に保護の規則を作り、
+「Xcode のビルドとテスト（シミュレータ）」を必須のチェックにする（人の操作。Claude からは変えない）。
