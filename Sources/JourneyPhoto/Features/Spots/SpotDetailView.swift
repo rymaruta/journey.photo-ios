@@ -114,7 +114,12 @@ struct SpotDetailView: View {
                         } label: {
                             Color.clear
                                 .aspectRatio(4.0 / 3.0, contentMode: .fit)
-                                .overlay { RemoteImage(url: photo.detailImageURL, alignment: .center) }
+                                // 表示する大きさに縮めて読む（ページを払うと隣の絵も抱えるので、
+                                // 元の 1920px のまま展開しない・旅の一冊と同じ部品）
+                                .overlay {
+                                    DownsampledRemoteImage(url: photo.detailImageURL, contentMode: .fill,
+                                                           aspectRatio: photo.aspectRatio.map { CGFloat($0) })
+                                }
                                 .clipped()
                                 // `Color.clear` は読み上げの対象にならないので、1つの画像としてまとめて
                                 // 名前を付ける（`OfficialSpotView` の代表写真と同じ）
