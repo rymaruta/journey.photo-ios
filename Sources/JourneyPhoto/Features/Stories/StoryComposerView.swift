@@ -39,7 +39,8 @@ struct StoryComposerView: View {
     /// いま編集している写真の位置
     @State private var current = 0
     @State private var caption = ""
-    @State private var location = ""
+    /// 撮影地と、その候補（`StorySpotSuggestion.Place`）。撮影地が変わるのは本人が決めたときだけ
+    @State private var place = StorySpotSuggestion.Place()
     /// 24時間のあとも残すか（ハイライトの材料になる）
     @State private var keepInArchive = false
     /// 返信を受けるか（Web の「返信を許可」。既定は入）
@@ -109,6 +110,8 @@ struct StoryComposerView: View {
     /// 「誰に見せる？」のシート
     @State private var showAudience = false
     @State private var placeDraft = ""
+    /// 撮影スポットの索引（静的な JSON・一度だけ読む）。**取れなかった回は空**＝候補を出さないだけ
+    @State private var spotIndex: [OfficialSpot] = []
     /// ✕ で閉じる前の「下書きに保存／捨てる／キャンセル」
     @State private var showLeaveConfirm = false
     /// 「続きから」で戻した直後の中身。**ここから何も変えていなければ**、
@@ -158,7 +161,7 @@ struct StoryComposerView: View {
     private var content: StoryComposerContent {
         StoryComposerContent(shotIds: shots.map(\.id), overlays: shots.map(\.overlays),
                         framings: shots.map(\.framing), votes: shots.map(\.vote),
-                        caption: caption, location: location, song: song,
+                        caption: caption, location: place.location, song: song,
                         durationSec: durationSec, archive: keepInArchive,
                         allowReplies: allowReplies)
     }
@@ -269,14 +272,25 @@ struct StoryComposerView: View {
                 self.song = song.fitting(window: window)
             }
         }
+        // 撮影地の候補のための索引。**写真を選んでから**読む（選ぶ段では使わない）
+        .task(id: shots.isEmpty) {
+            guard !shots.isEmpty, spotIndex.isEmpty else { return }
+            let fetched = try? await environment.spots.fetchIndex()
+            guard !Task.isCancelled, let fetched else { return }
+            spotIndex = fetched
+        }
+        // 候補は**写真の位置か索引が変わったときだけ**解く（描き直しのたびに全件を当てない）
+        .task(id: SuggestionKey(coords: shots.map(\.prepared.coords), spots: spotIndex.count)) {
+            place.resolve(coords: shots.map(\.prepared.coords), spots: spotIndex)
+        }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
             // サーバーが 200 で切る（`sanitizeText(location, 200)`）。画面で止める
             TextField(L("撮影地（任意）", "Place (optional)"), text: Binding(
                 get: { placeDraft },
                 set: { placeDraft = PostLimits.limited(old: placeDraft, new: $0, limit: PostLimits.location) }))
-            Button(L("決める", "Set")) { location = placeDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
-            if !location.isEmpty {
-                Button(L("外す", "Remove"), role: .destructive) { location = "" }
+            Button(L("決める", "Set")) { place.location = placeDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if !place.location.isEmpty {
+                Button(L("外す", "Remove"), role: .destructive) { place.location = "" }
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
@@ -584,7 +598,7 @@ struct StoryComposerView: View {
     @ViewBuilder
     private func toolControl(_ tool: StoryTool) -> some View {
         let used = StoryTool.isUsed(tool, overlays: overlays.wrappedValue, hasVote: vote.wrappedValue != nil,
-                                    hasSong: song != nil, location: location)
+                                    hasSong: song != nil, location: place.location)
         switch tool {
         case .text:
             // 押したらすぐ写真の上で打つ（前の右の列の「Aa」と同じ）
@@ -619,7 +633,7 @@ struct StoryComposerView: View {
             }
         case .place:
             Button {
-                placeDraft = location
+                placeDraft = place.location
                 showPlaceEditor = true
             } label: { toolCell(tool, used: used) }
                 .buttonStyle(.plain)
@@ -686,8 +700,10 @@ struct StoryComposerView: View {
                 .foregroundStyle(.white)
                 .lineLimit(1...4)
                 .jpPhotoTextShadow()
-            if !location.isEmpty {
-                photoChip(symbol: "mappin", text: location)
+            if !place.location.isEmpty {
+                photoChip(symbol: "mappin", text: place.location)
+            } else if let spot = place.chip {
+                spotSuggestionChip(spot)
             }
             // 曲は**動かせる札で見せる**。帯は**どの写真にも札が無いときだけ**（札が上限で置けなかった・
             // 札の文字を打ち直した・札を置いた写真を外した・前の動きの下書き）。以前は表示中の写真に
@@ -731,6 +747,40 @@ struct StoryComposerView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .jpGlass(in: Capsule(), border: 0)
+    }
+
+    /// 撮影地の候補（`StorySpotSuggestion`）。**押したときだけ**撮影地に入る。
+    /// 付けた札（`photoChip`）と見分けるため、破線の縁と「＋」（板の「写真を追加」と同じ破線）。
+    /// 写真の上なので白だけ（真鍮は置かない）
+    private func spotSuggestionChip(_ spot: OfficialSpot) -> some View {
+        Button {
+            place.pick()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "plus").font(.caption.weight(.semibold))
+                Image(systemName: "mappin").font(.caption)
+                Text(StorySpotLink.shortened(spot.name)).font(.caption).lineLimit(1)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .jpGlass(in: Capsule(), border: 0)
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.45),
+                                            style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+            // **押せる所だけ上下に広げて 44pt に、並びは変えない**（見る画面の撮影地の行と同じ作り）
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+            .padding(.vertical, -9)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("撮影地の候補 \(spot.name)。付ける", "Suggested place \(spot.name). Add"))
+        .accessibilityHint(L("撮影スポットの名前と位置を見る人に見せます", "Shows the photo spot's name and location to viewers"))
+    }
+
+    /// 撮影地の候補を解き直す鍵（写真の座標の並びと索引の数）
+    private struct SuggestionKey: Equatable {
+        let coords: [Photo.Coords?]
+        let spots: Int
     }
 
     /// 右下の「1 / 2」（等幅・ガラスの札）。並べた写真の何枚目を直しているか
@@ -1279,7 +1329,7 @@ struct StoryComposerView: View {
                                           vote: shot.vote)
             },
             caption: caption,
-            location: location,
+            location: place.location,
             song: song,
             durationSec: durationSec,
             archive: keepInArchive,
@@ -1353,7 +1403,7 @@ struct StoryComposerView: View {
         // 古い下書き（字で数えていた頃）は 200 単位を超えていることがある。欄は超えたぶんを
         // 減らす変更しか受けないので、読み込むときに一度だけ収める
         caption = PostLimits.clamp(draft.caption, limit: PostLimits.storyCaption)
-        location = draft.location
+        place.location = draft.location
         // 流し始めは表示秒数に収めてから戻す（`restoredContent` もその値で撮る）。
         // 収まっていない下書きをそのまま戻すと、表示秒数が変わらない回は上限を越えたまま
         // 送られ、変わる回は何も触らずに閉じても「変更あり」になった（c15a415 のレビュー）
@@ -1389,7 +1439,7 @@ struct StoryComposerView: View {
         }
         message = nil
         let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        let place = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeText = place.location.trimmingCharacters(in: .whitespacesAndNewlines)
         // **焼き込んでから渡す。** 文字が無ければ元のデータをそのまま渡す
         // （読み書きの往復で画質を落とさない）
         // 撮影地は全部で1つなので、基準の写真から遠い写真の座標は送らない（`StoryQueue.coordsToSend`）
@@ -1397,7 +1447,7 @@ struct StoryComposerView: View {
         let jobs = zip(shots, coords).map { shot, shotCoords in
             StoryUploadCenter.Job(
                 imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),
-                caption: caption, location: place, coords: shotCoords,
+                caption: caption, location: placeText, coords: shotCoords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
                 texts: StoryPostText.list(vote: shot.vote, caption: caption),
