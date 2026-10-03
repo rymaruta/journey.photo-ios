@@ -106,6 +106,9 @@ final class GalleryViewModel: ObservableObject {
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         let generation = viewerGeneration
+        // 全件を読んでいる間に始まった1ページ目は、限定公開を読みに行かない（`showFirstPage`）
+        snapshotLoadsInFlight += 1
+        defer { snapshotLoadsInFlight -= 1 }
         loadSerial += 1
         let mine = loadSerial
         // 引き下げ（force）の回は、走っている間だけ覚える（`writes` の3つ目）
@@ -236,6 +239,9 @@ final class GalleryViewModel: ObservableObject {
     /// 残ったままでも、作り直すと `onAppear` がもう一度走って次を読む
     @Published private(set) var loadedPageCount = 0
 
+    /// 走っている全件の読み込み（`load`）の数
+    private var snapshotLoadsInFlight = 0
+
     /// 札を選んだときなどに起こした、1ページ目の読み込み（試験が待つため）
     private(set) var pagesTask: Task<Void, Never>?
 
@@ -277,8 +283,10 @@ final class GalleryViewModel: ObservableObject {
     /// `/feed` が使えなかった回は何も書かない——全件の回（`finishSnapshot`）が書く
     /// （ここで書くと、全件がまだの間に空の一覧を出してしまう）
     private func showFirstPage(force: Bool, generation: Int, alongsideSnapshot: Bool) async {
-        // 全件と同時に読む回は、限定公開を読みに行かない（全件の回が読む。二重に読まない）
-        guard let serial = await reloadPages(force: force, loadsRestricted: !alongsideSnapshot) else {
+        // 全件と同時に読む回・全件の読み込みが走っている間は、限定公開を読みに行かない
+        // （全件の回が読み、読み終えたら掛け直す。二重に読まない）
+        let loadsRestricted = !alongsideSnapshot && snapshotLoadsInFlight == 0
+        guard let serial = await reloadPages(force: force, loadsRestricted: loadsRestricted) else {
             // 全件と同時でない回（札を選んだ・札の 400 で読み直した）で全件に戻ったら、全件の並びを出し直す
             // （ページの並びが出たまま残らないように）。全件と同時の回は全件の回が書く
             if !alongsideSnapshot, pageSource == .snapshot, generation == viewerGeneration,
