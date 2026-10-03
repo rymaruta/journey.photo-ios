@@ -42,6 +42,8 @@ struct PhotoViewerView: View {
     /// 身振りで取り消されたときも自動で初期値へ戻る（`@State` だと `onEnded` が来ず量が残り、
     /// 見た目は2倍なのに「拡大していない」扱いになる）
     @GestureState private var pinch: Double = 1
+    /// つまみ始めたページ（`ZoomPan.appliesPinchEnd`）。つまみ終えたら・取り消されたら外す
+    @State private var pinchStartPage: Int?
     /// 動かしている最中の量（同上）
     @GestureState private var drag: CGSize = .zero
     /// 画面（写真を置く枠）の大きさ
@@ -68,7 +70,14 @@ struct PhotoViewerView: View {
                         .gesture(
                             MagnificationGesture()
                                 .updating($pinch) { value, state, _ in state = value }
+                                .onChanged { _ in
+                                    if pinchStartPage == nil { pinchStartPage = index }
+                                }
                                 .onEnded { value in
+                                    // 🔴 つまんでいる間にページが替わっていたら畳まない（替わった先に倍率を掛けない）
+                                    defer { pinchStartPage = nil }
+                                    guard ZoomPan.appliesPinchEnd(startedOn: pinchStartPage ?? offset,
+                                                                  current: index) else { return }
                                     zoom.endPinch(value, container: container, content: content(for: offset))
                                 }
                         )
@@ -96,9 +105,10 @@ struct PhotoViewerView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            // **拡大中は送りを止める。** 写真を動かしているつもりで隣へ送られない
-            // （SwiftUI の身振りの優先だけでは、ページ式 TabView の下のスクロールを止め切れない）
-            .scrollDisabled(zoom.isZoomed)
+            // **拡大中・つまんでいる最中は送りを止める**（`ZoomPan.locksPaging`）。写真を動かして
+            // いるつもりで隣へ送られない（SwiftUI の身振りの優先だけでは、ページ式 TabView の
+            // 下のスクロールを止め切れない）
+            .scrollDisabled(zoom.locksPaging(pinch: pinch))
             .background {
                 GeometryReader { geo in
                     Color.clear
@@ -109,6 +119,11 @@ struct PhotoViewerView: View {
             // **どの経路で送っても倍率と位置を戻す**（横スワイプ・サムネイル）。
             // 拡大したまま次の写真が出ない
             .onChange(of: index) { _, _ in resetZoom() }
+            // つまむのが取り消された（着信など・`onEnded` が来ない）ときも、始めたページを忘れる
+            // ——残すと次のつまみが「別のページで始めた」扱いになり、倍率が畳まれない
+            .onChange(of: pinch) { _, value in
+                if value == 1 { pinchStartPage = nil }
+            }
 
             // 下: サムネイルの帯と、題・撮影情報・いいね（板 14）。**下に重ねる**
             VStack(spacing: 14) {

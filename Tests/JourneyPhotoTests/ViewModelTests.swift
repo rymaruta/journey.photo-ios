@@ -38,6 +38,73 @@ final class ViewModelTests: XCTestCase {
                   beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } })
     }
 
+    // MARK: - 投稿したばかりの写真を先に並べる（`PostedPhotos`・2026-10-03）
+
+    private func servePhotos(_ body: String, status: Int = 200) {
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/user/profile", status: 200, body: #"{"userId":"a"}"#)
+        StubProtocol.respond(path: "/user/photos", status: status, body: body)
+    }
+
+    private let serverP1 = #"[{"id":"p1","src":"/uploads/p1.jpg","createdAt":"2026-10-01T00:00:00Z","userId":"a"}]"#
+
+    private func postedPhoto(_ id: String, extra: String = "") throws -> Photo {
+        try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"\#(id)","src":"/uploads/\#(id).jpg","createdAt":"2026-10-03T00:00:00Z","userId":"a"\#(extra)}"#.utf8))
+    }
+
+    /// マイページ: 閉じた直後に足し、索引が遅れた読み直しでも残す。次の読み直しはサーバーの答えだけ。
+    /// 公開範囲を絞った写真（署名の無い `/private/` の URL）は先に足さない
+    func testMyPageShowsPostedPhotoThroughALaggingReload() async throws {
+        prepare()
+        servePhotos(serverP1)
+        let model = MyPageViewModel(api: api())
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"])
+
+        let restricted = try JSONDecoder.api.decode(Photo.self, from: Data(
+            #"{"id":"r1","src":"/private/r1.jpg","audience":"followers","createdAt":"2026-10-03T01:00:00Z","userId":"a"}"#.utf8))
+        model.showPosted([try postedPhoto("new"), restricted], for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["new", "p1"], "読み直しの前に足していない・絞った写真を足した")
+
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["new", "p1"], "索引が遅れた読み直しで消えた")
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "控えを手放していない（消した写真が戻る）")
+    }
+
+    /// マイページ: 控えは読み直しが失敗しても手放す。60秒を過ぎた控えは使わない
+    func testMyPagePostedHoldIsReleasedOnFailureAndExpires() async throws {
+        prepare()
+        servePhotos(serverP1)
+        let model = MyPageViewModel(api: api())
+        await model.load(for: "a")
+
+        model.showPosted([try postedPhoto("new")], for: "a")
+        servePhotos(#"{"error":"x"}"#, status: 500)
+        await model.load(for: "a")
+        servePhotos(serverP1)
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "失敗した読み直しのあとも控えが残っている")
+
+        model.showPosted([try postedPhoto("old")], for: "a", at: Date().addingTimeInterval(-61))
+        await model.load(for: "a")
+        XCTAssertEqual(model.photos.map(\.id), ["p1"], "60秒を過ぎた控えを使った")
+    }
+
+    /// 投稿画面を閉じたら、その画面で上がった写真を渡す（次に閉じたら入れ替わる）
+    func testPostSheetCloseHandsOverPostedPhotos() async throws {
+        let router = TabRouter()
+        let p = try postedPhoto("new")
+        router.notePosted(p)
+        XCTAssertTrue(router.lastPosted.isEmpty, "閉じる前に渡した")
+        router.postSheetClosed()
+        XCTAssertEqual(router.lastPosted.map(\.id), ["new"])
+        XCTAssertEqual(router.postSheetsClosed, 1)
+        router.postSheetClosed()
+        XCTAssertTrue(router.lastPosted.isEmpty, "前の投稿画面の写真をもう一度渡した")
+    }
+
     private func gallery(_ body: String) -> PublicGalleryService {
         prepare()
         StubProtocol.respond(status: 200, body: body)
@@ -233,6 +300,103 @@ final class ViewModelTests: XCTestCase {
         await gate.open()
         await older.value
         XCTAssertEqual(model.stories.map(\.id), [], "先に始めた回の結果で、ブロックした人の輪が戻った")
+    }
+
+    // MARK: - ホームの一覧の読み込みが重なったとき（バグ探し 2026-10-03）
+
+    private let homePublic = #"[{"id":"pub","src":"https://x/p.jpg","createdAt":"2026-01-02T00:00:00Z","userId":"u1"}]"#
+
+    private func homeRestricted(_ id: String) -> String {
+        #"[{"id":"\#(id)","src":"https://x/\#(id).jpg","createdAt":"2026-02-02T00:00:00Z","userId":"u2","visibility":"followers"}]"#
+    }
+
+    /// 限定公開の口（`/restricted`）を `gate` で止められるホーム。静的 JSON は即座に答える
+    private func homeModel(gate: Gate, restricted: String) async -> GalleryViewModel {
+        prepare()
+        let api = api(gates: PathGates(["/restricted": gate]))
+        let service = PublicGalleryService(
+            url: URL(string: "https://site.example.test/app/data/photos.json")!,
+            session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString))
+        await service.setRestrictedLoader { try await api.authorized(.get, "/restricted", as: [Photo].self) }
+        answerHome(restricted: restricted)
+        return GalleryViewModel(gallery: service)
+    }
+
+    /// 限定公開の口の答えを差し替える（止めている要求は、開けたときにこの答えを受け取る）
+    private func answerHome(restricted id: String) {
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: homePublic)
+        StubProtocol.respond(path: "/restricted", status: 200, body: homeRestricted(id))
+    }
+
+    private func homeIds(_ model: GalleryViewModel) -> [String]? {
+        guard case .loaded(let photos) = model.state else { return nil }
+        return photos.map(\.id).sorted()
+    }
+
+    /// 🔴 **先に始めた読み込みが後から着いても、後の読み込みの結果を戻さない。**
+    /// ホームの `load` は `.task`・引き下げ・限定公開の口の入れ替え・ブロックから重なって走り、
+    /// 先に始めた回の古い一覧が後の回の一覧を上書きしていた
+    func testGalleryOlderLoadDoesNotOverwriteANewerOne() async {
+        let gate = Gate(holds: 1)
+        let model = await homeModel(gate: gate, restricted: "newer")
+        // 先の回は限定公開の要求の手前で止まる
+        let older = Task { await model.load() }
+        await gate.untilWaiting()
+        // 後の回は通って、新しい一覧を書く
+        await model.load(force: true)
+        XCTAssertEqual(homeIds(model), ["newer", "pub"])
+
+        // 先の回は、後から古い一覧を受け取る
+        answerHome(restricted: "older")
+        await gate.open()
+        await older.value
+        XCTAssertEqual(homeIds(model), ["newer", "pub"], "先に始めた回の古い一覧で、後の回の一覧を戻した")
+    }
+
+    /// 🔴 **後の回が取り消されて何も書かなかったら、先の回の答えを書く。** 「最後に始めた回だけ」
+    /// だと、後の回（詳細を開いて取り消された `.task` など）が書かないまま先の回まで捨て、
+    /// 古い一覧が残っていた
+    func testGalleryEarlierLoadWritesWhenTheLaterOneWasCancelled() async {
+        let gate = Gate(holds: 1, skip: 1)
+        let model = await homeModel(gate: gate, restricted: "old")
+        await model.load()
+        XCTAssertEqual(homeIds(model), ["old", "pub"], "前提: 一覧を出している")
+
+        answerHome(restricted: "new")
+        // 先の回（引き下げ）は限定公開の要求の手前で止まる
+        let earlier = Task { await model.load(force: true) }
+        await gate.untilWaiting(2)
+        // 後の回は取り消され、出している一覧を残して何も書かない（`keepsShownFeed`）
+        let later = Task { await model.load(force: true) }
+        later.cancel()
+        await later.value
+        XCTAssertEqual(homeIds(model), ["old", "pub"])
+
+        await gate.open()
+        await earlier.value
+        XCTAssertEqual(homeIds(model), ["new", "pub"], "後の回が何も書かなかったのに、先の回の答えを捨てた")
+    }
+
+    /// 🔴 **引き下げの答えを待つ間に、force なしの回が控えから即座に返っても、引き下げの新しい
+    /// 答えが負けない。** force なしの回は番号が新しくても中身は控え（引き下げより古い）
+    func testGalleryRefreshIsNotBeatenByACachedLoad() async {
+        let gate = Gate(holds: 1, skip: 1)
+        let model = await homeModel(gate: gate, restricted: "old")
+        await model.load()
+        XCTAssertEqual(homeIds(model), ["old", "pub"], "前提: 一覧を出している（控えにも入った）")
+
+        answerHome(restricted: "new")
+        let refresh = Task { await model.load(force: true) }
+        await gate.untilWaiting(2)
+        // 引き下げを待つ間に、force なしの回が控えから即座に返る
+        await model.load()
+        XCTAssertEqual(homeIds(model), ["old", "pub"])
+
+        await gate.open()
+        await refresh.value
+        XCTAssertEqual(homeIds(model), ["new", "pub"], "引き下げの新しい答えが、控えから返った回に負けた")
     }
 
     /// **後の回が取れなかったときは、先の回で取れた一覧を捨てない**（3dbf727 のレビュー）。
@@ -1894,4 +2058,5 @@ final class PeopleSearchQueryTests: XCTestCase {
         XCTAssertEqual(sent, ["ab"])
         XCTAssertFalse(model.peopleQueryTooShort, "探せる語になったのに短いと言い続けた")
     }
+
 }

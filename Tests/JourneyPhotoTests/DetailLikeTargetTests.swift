@@ -37,7 +37,7 @@ final class DetailLikeTargetTests: XCTestCase {
         model.setSignedIn(true)
         model.show(photoId: "p1", initialLikes: 3, liked: false)
 
-        let answer = await model.toggleLike(shownId: "p2")
+        let answer = await model.toggleLike(gate: LikeCountStore(), shownId: "p2")
 
         XCTAssertNil(answer, "見えていない前の1枚へ送った")
         XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("POST") || $0.hasPrefix("DELETE") }, [],
@@ -55,7 +55,7 @@ final class DetailLikeTargetTests: XCTestCase {
         model.setSignedIn(true)
         model.show(photoId: "p2", initialLikes: 3, liked: false)
 
-        let answer = await model.toggleLike(shownId: "p2")
+        let answer = await model.toggleLike(gate: LikeCountStore(), shownId: "p2")
 
         XCTAssertEqual(answer, PhotoDetailViewModel.LikeAnswer(photoId: "p2", liked: true, likes: 4))
         XCTAssertEqual(StubProtocol.requests.filter { $0.hasPrefix("POST") }, ["POST /photos/p2/like"])
@@ -71,7 +71,7 @@ final class DetailLikeTargetTests: XCTestCase {
         model.setSignedIn(true)
         model.show(photoId: "p1", initialLikes: 3, liked: true)
 
-        let answer = await model.toggleLike(shownId: "p2")
+        let answer = await model.toggleLike(gate: LikeCountStore(), shownId: "p2")
 
         XCTAssertNil(answer)
         XCTAssertTrue(StubProtocol.requests.isEmpty, "いいね済みの前の1枚を外しに行った: \(StubProtocol.requests)")

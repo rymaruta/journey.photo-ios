@@ -253,8 +253,8 @@ struct HomeFeedTile: View {
     /// 押していない状態に戻る）。控えは送れたときだけ合わせる。
     private func toggleLike() async {
         // **答えを待っている間は押させない。** 二度目が古い `liked` を見て
-        // 逆向きに飛ぶと、ハートと数が押した結果と食い違う（詳細画面の
-        // `isLiking` と同じ）
+        // 逆向きに飛ぶと、ハートと数が押した結果と食い違う（詳細画面も
+        // 同じ `LikeCountStore` の印で止める）
         // 待っている印はカードの外（`LikeCountStore`）に持つ——カードが作り直されても消えない
         // **ログインしていなければ送らずに言う。** 送ると認証で断られて黙って戻り、
         // 一瞬灯って消えるだけのボタンになっていた（詳細画面は同じ言葉で断る）。
@@ -277,19 +277,11 @@ struct HomeFeedTile: View {
             pendingDelta = 0
             likeCounts.endSending(photoId)
         }
-        do {
-            let result = wasLiked
-                ? try await environment.social.unlike(photoId: photo.id)
-                : try await environment.social.like(photoId: photo.id)
-            // **返ってきた数と状態を使う。** 自分で数えない。
-            // **数を返さない答え（見えなくなった写真の 404 を読み替えた回）は書かない。**
-            // 押している間の ±1 を含んだ数を「押した答え」として控えに残すと、
-            // 詳細・検索にも作った数が広がる（詳細の下のハートと同じ扱い）
-            if let likes = result.likes { likeCounts.set(photo.id, count: likes) }
-            favorites.set(photo.id, favorite: result.liked, for: owner)
-        } catch {
-            // **届かなかったら戻す。** 画面だけ「いいね済み」にしない
-            favorites.set(photo.id, favorite: wasLiked, for: owner)
+        // 答えの書き方・届かなかったときの戻し方と一言は `HomeLikeGate.send`
+        let social = environment.social
+        await HomeLikeGate.send(photoId, wasLiked: wasLiked, owner: owner,
+                                favorites: favorites, likeCounts: likeCounts, toasts: toasts) {
+            wasLiked ? try await social.unlike(photoId: photoId) : try await social.like(photoId: photoId)
         }
     }
 
@@ -361,5 +353,31 @@ enum HomeLikeGate {
     @MainActor
     static func decide(_ auth: AuthStore) -> Decision {
         decide(userId: auth.userId, isResolving: auth.isResolving)
+    }
+
+    /// 送って、答えを控えに書く（ホームのカードのハート）。
+    ///
+    /// - **返ってきた数と状態を使う。** 自分で数えない。
+    ///   **数を返さない答え（見えなくなった写真の 404 を読み替えた回）は数を書かない。**
+    ///   押している間の ±1 を含んだ数を「押した答え」として控えに残すと、
+    ///   詳細・検索にも作った数が広がる（詳細の下のハートと同じ扱い）
+    /// - **届かなかったら戻す。** 画面だけ「いいね済み」にしない
+    /// - 🔴 **届かなかったと言う**（バグ探し 2026-10-03）。以前は戻すだけで、先に灯した
+    ///   ハートが黙って消え、押せなかったのか押し損ねたのか分からなかった。
+    ///   大きく見る画面と同じ一言（`ViewerLike.failureNotice`）を出す
+    /// - `owner`: 押した人。答えはその人の控えにだけ書く（待っている間に人が替わったら書かない）
+    @MainActor
+    static func send(_ photoId: String, wasLiked: Bool, owner: String?,
+                     favorites: FavoritesStore, likeCounts: LikeCountStore, toasts: ToastCenter,
+                     request: () async throws -> SocialService.LikeResult) async {
+        do {
+            let result = try await request()
+            // 数の無い答えでも答えた時刻は残す（詳細の♥の勝ち負けに使う。`LikeCountStore.recordAnswer`）
+            likeCounts.recordAnswer(photoId, count: result.likes)
+            favorites.set(photoId, favorite: result.liked, for: owner)
+        } catch {
+            favorites.set(photoId, favorite: wasLiked, for: owner)
+            toasts.show(ViewerLike.failureNotice(error), kind: .failure)
+        }
     }
 }

@@ -368,7 +368,7 @@ actor PublicGalleryService {
         await beforeLiveRequest?()
         do {
             try RequestCancellation.throwIfCancelled()
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.cancellableData(for: request)
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode),
                   let counts = LiveLikes.counts(from: data) else { return }
