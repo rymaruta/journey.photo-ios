@@ -37,7 +37,8 @@ struct UploadView: View {
     private let startPrivate: Bool
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil,
-         initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false) {
+         initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false,
+         onSaved: ((Photo) -> Void)? = nil) {
         self.initialTag = initialTag
         self.initialSpot = spot
         self.onPosted = onPosted
@@ -46,12 +47,18 @@ struct UploadView: View {
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
         // ため、ここでは既定の組み立てを使う
         let api = APIClient(tokenProvider: CognitoTokenProvider())
-        _model = StateObject(wrappedValue: UploadViewModel(
-            uploads: UploadService(api: api),
-            albums: AlbumService(api: api),
-            photos: PhotoService(api: api),
-            discovery: DiscoveryService(api: api)
-        ))
+        // （`StateObject` の引数は最初の1回だけ評価される。毎回の init でモデルを作らない）
+        _model = StateObject(wrappedValue: {
+            let model = UploadViewModel(
+                uploads: UploadService(api: api),
+                albums: AlbumService(api: api),
+                photos: PhotoService(api: api),
+                discovery: DiscoveryService(api: api)
+            )
+            // 保存が通った行を外へ渡す（下の「投稿」から開いたときだけ・`TabRouter.notePosted`）
+            model.onSaved = onSaved
+            return model
+        }())
     }
 
     var body: some View {
@@ -226,6 +233,8 @@ struct UploadView: View {
         .fullScreenCover(item: $editing) { target in
             if let item = model.items.first(where: { $0.id == target.id }) {
                 PhotoEditView(recipe: item.recipe, source: item.editSourceReader,
+                              // 編集済みなら帯の編集後サムネを仮に出す（無編集なら nil）
+                              placeholder: item.recipe.isIdentity ? nil : item.editedPreview,
                               onDone: { recipe in
                                   model.applyEdit(target.id, recipe: recipe)
                                   editing = nil
@@ -701,6 +710,15 @@ struct UploadView: View {
     private var progressAndErrors: some View {
         if let error = model.errorMessage {
             Text(error).foregroundStyle(WebTheme.danger).font(.callout)
+        }
+        if model.canRetryUnreadable {
+            // 読めなかった写真（時間切れ・iCloud から落とせなかった）を読み直す口（2026-10-03）。
+            // 隣の「残りをやめる」と同じ縁取りの丸ボタン（高さ 52pt）。文言は今日の一問の再試行と同じ
+            Button { model.retryUnreadable() } label: {
+                Text(L("もう一度読み込む", "Try again")).jpPillButton(.outline)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("upload.retryUnreadable")
         }
         if model.isWorking && model.items.count > 1 {
             // **やめられるようにする。** いま上げている1枚は最後まで通す

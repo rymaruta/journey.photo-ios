@@ -25,9 +25,10 @@ final class PhotoEditSources: @unchecked Sendable {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let url = folder.appendingPathComponent(UUID().uuidString)
-            // 他のアプリからは見えない場所だが、端末のロック中は読めなくしておく（撮影地入りの原本）
+            // 他のアプリからは見えない場所。守りは「起動後に一度ロックを解くまで読めない」
+            // （`fileProtection`）。
             #if os(iOS)
-            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            try data.write(to: url, options: fileProtection)
             #else
             try data.write(to: url, options: .atomic)
             #endif
@@ -36,6 +37,17 @@ final class PhotoEditSources: @unchecked Sendable {
             return nil
         }
     }
+
+    /// 一時ファイルを書くときの守り。
+    ///
+    /// 🔴 **2026-10-03 判断: `.completeFileProtection` ではなく `.completeUntilFirstUserAuthentication`。**
+    /// `.complete` はロック中に読めない。投稿を押してすぐ端末をロックする・裏に回すと、送信の途中で
+    /// 書き出し（編集の元を読む）が落ちていた。書き出しは今は投稿の最初（前面にいるうち）に全部
+    /// 済ませる（`UploadViewModel.exportAllEdited`）ので主な穴は塞いだが、やり直し・共有の絵の作り直しなど
+    /// 裏で読みうる道が残るため、二重の守りとして読める側に倒す。
+    /// 失うもの: 起動後に一度でも解いた端末をロック中に取られ、中身を抜かれたときに読まれうる
+    /// （写真ライブラリの原本と同じ守りの水準。置き場はアプリの一時フォルダで、他のアプリからは見えない）
+    static let fileProtection: Data.WritingOptions = [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
 
     private var tracked: Set<URL> = []
 

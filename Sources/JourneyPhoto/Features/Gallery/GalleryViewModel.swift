@@ -177,6 +177,7 @@ final class GalleryViewModel: ObservableObject {
         guard viewerId != nil else {
             myPhotos = []
             myPhotosOwner = nil
+            justPosted = []
             return
         }
         let fetched = try? await fetch()
@@ -186,7 +187,9 @@ final class GalleryViewModel: ObservableObject {
         // （ログアウトを含む）の読みが始まっていたら、前の人の答えを書かない
         guard myPhotosWanted == viewerId else { return }
         if let fetched {
-            myPhotos = fetched
+            // 投稿したばかりでまだ索引に無い写真も残す（`showPosted`・id で重複を除く）
+            myPhotos = PostedPhotos.merge(loaded: fetched, posted: justPosted, owner: viewerId)
+            justPosted = []
             myPhotosOwner = viewerId
         } else if myPhotosOwner != viewerId {
             // 取れなかった回は、**同じ人のぶんなら残す**（詳細を開いて取り消された回に
@@ -194,6 +197,18 @@ final class GalleryViewModel: ObservableObject {
             myPhotos = []
             myPhotosOwner = nil
         }
+    }
+
+    /// 投稿したばかりで、まだ読み直しの結果に合わせていない写真（`PostedPhotos`・2026-10-03）
+    private var justPosted: [Photo] = []
+
+    /// 投稿画面を閉じた（`TabRouter.lastPosted`）。保存の応答の行を**読み直しの前に**自分の写真へ足す
+    /// （今日のテーマの札が、索引の遅れで「参加する」のまま残らないように）。人が替わっていたら何もしない
+    func showPosted(_ posted: [Photo], viewerId: String?) {
+        guard let viewerId, !posted.isEmpty, myPhotosWanted == nil || myPhotosWanted == viewerId else { return }
+        justPosted = posted
+        guard myPhotosOwner == viewerId else { return }
+        myPhotos = PostedPhotos.merge(loaded: myPhotos, posted: posted, owner: viewerId)
     }
 
     /// `myPhotos` が誰のものか（`followingOwner` と同じ考え方）

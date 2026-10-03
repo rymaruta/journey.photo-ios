@@ -215,6 +215,36 @@ struct PhotoEditScreen: Equatable {
     /// 「編集前」の札を出すか（長押しと認めてから、指を離すまで）
     var showsBeforeLabel: Bool { history.isComparing }
 
+    // MARK: - 写真の欄に何を出すか（2026-10-03）
+
+    enum PhotoShown: Equatable {
+        /// 編集後の絵（`PhotoEditPreview.edited`）
+        case edited
+        /// 元の写真（無編集）
+        case before
+        /// 帯の編集済みサムネを仮に出す（編集後の最初の絵が届くまで）
+        case placeholder
+        case spinner
+        case failed
+    }
+
+    /// 写真の欄に何を出すか。
+    ///
+    /// 🔴 **編集済みの写真で開き直したとき、編集後の最初の絵が届くまで元の写真を札なしで出さない。**
+    /// 以前は `edited ?? before` で、元の写真（無編集）が「編集前」の札なしで出て、編集が消えたように見えた。
+    /// 今のレシピが無編集でないあいだは、帯の編集済みサムネ（あれば・長い辺 360px なので仮）か、スピナー。
+    /// 長押しの間は元の写真（`showsBeforeLabel`）
+    func photoShown(hasEdited: Bool, hasBefore: Bool, hasPlaceholder: Bool, failed: Bool) -> PhotoShown {
+        if showsBeforeLabel {
+            if hasBefore { return .before }
+            return failed ? .failed : .spinner
+        }
+        if hasEdited { return .edited }
+        if failed { return .failed }
+        if !current.isIdentity { return hasPlaceholder ? .placeholder : .spinner }
+        return hasBefore ? .before : .spinner
+    }
+
     // MARK: - 閉じる
 
     /// 「キャンセル」で確かめるか（編集前から変わっている）
@@ -225,6 +255,72 @@ struct PhotoEditScreen: Equatable {
         var copy = history
         copy.commit()
         return copy.current
+    }
+}
+
+/// 編集画面の見本を出す順番（純・2026-10-03）。描くのは `PhotoEditPreview`。
+///
+/// 1. **枠の大きさが取れるまで待つ**——最初の `onAppear` で枠が 0 のことがあり、以前は決め打ちの
+///    1200px で読んでいた（大きい画面では粗く、小さい画面では無駄に重い）
+/// 2. 画面用の写真と編集前の絵を読んで**先に出す**
+/// 3. プリセットの見本は**後から**描く（読んだ写真を縮めて・原本を二度デコードしない）。
+///    以前は見本9枚を描き終えるまで写真も出なかった
+///
+/// 画面を閉じたら（`disappeared`）取り消す。開き直しで枠が来たら始め直す（`run` で前の回の結果を捨てる）
+struct PhotoEditLoadSteps: Equatable {
+
+    enum Phase: Equatable {
+        case waitingForSize
+        case loadingPhoto(pixels: Int)
+        case drawingThumbs
+        case done
+        case failed
+        case cancelled
+    }
+
+    private(set) var phase: Phase = .waitingForSize
+    /// 何回目に始めたか。描き終えた結果はこれが同じときだけ入れる
+    private(set) var run = 0
+
+    /// 見本を描く順（「なし」→ プリセットの並び）
+    static var thumbOrder: [String] { [PhotoEditPreview.noneKey] + PhotoPresets.all.map(\.id) }
+
+    /// 枠の大きさが来た。**読み始めてよければ**写真を読む長い辺の画素数を返す
+    /// （大きさが 0・壊れた値なら nil のまま待つ。始めるのは待っている間・取り消した後だけ）
+    mutating func sized(box: CGSize, scale: Double) -> Int? {
+        switch phase {
+        case .waitingForSize, .cancelled: break
+        default: return nil
+        }
+        guard let pixels = PhotoRenderer.previewPixelSize(box: box, scale: scale) else { return nil }
+        run += 1
+        phase = .loadingPhoto(pixels: pixels)
+        return pixels
+    }
+
+    /// 写真を読み終えた（`ok`: 読めた）。見本を描き始めてよいか
+    mutating func photoLoaded(_ ok: Bool, run: Int) -> Bool {
+        guard run == self.run, case .loadingPhoto = phase else { return false }
+        phase = ok ? .drawingThumbs : .failed
+        return ok
+    }
+
+    /// 見本を1枚描き終えた。入れてよいか（取り消した・始め直した回のものは捨てる）
+    func acceptsThumb(run: Int) -> Bool {
+        run == self.run && phase == .drawingThumbs
+    }
+
+    mutating func thumbsDrawn(run: Int) {
+        guard acceptsThumb(run: run) else { return }
+        phase = .done
+    }
+
+    /// 画面を閉じた。描き終えていなければ取り消す
+    mutating func disappeared() {
+        switch phase {
+        case .done, .failed: return
+        default: phase = .cancelled
+        }
     }
 }
 
