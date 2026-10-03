@@ -64,6 +64,12 @@ struct SpotSample: Equatable, Identifiable {
             + licensePart + AttributedString(" / ") + source
     }
 
+    /// 出典の1行から開ける先（並びは文字の並びと同じ: ライセンス → Wikimedia Commons）。
+    /// 文面の URL の無いライセンス（パブリックドメイン・CC0）は Commons のページだけ（`CreditLink` の注記）
+    var creditLinks: [CreditLink] {
+        (licenseUrl.map { [CreditLink.license(license, url: $0)] } ?? []) + [CreditLink.commonsPage(sourceUrl)]
+    }
+
     /// 写真の読み上げ名（Web の alt と同じ）
     var accessibilityLabel: String {
         L("作例の写真（撮影: \(author)）", "Example photo by \(author)")

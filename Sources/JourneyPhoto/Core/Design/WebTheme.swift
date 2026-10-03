@@ -90,7 +90,7 @@ enum WebTheme {
     ///
     /// **見た目は太らせない。** 当たり判定だけを広げるので、並びの詰まりは
     /// そのまま（`contentShape` で余白まで押せるようにする）。
-    static let minTapTarget: CGFloat = 44
+    nonisolated static let minTapTarget: CGFloat = 44
 
     /// **本文系の字の最小（12pt）。** 11pt は眉ラベルだけ（CLAUDE.md・デザインの板）
     nonisolated static let minBodyText: CGFloat = 12

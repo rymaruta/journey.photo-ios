@@ -148,4 +148,31 @@ final class SpotSampleTests: XCTestCase {
         XCTAssertEqual(SpotSampleText.frame(aspectRatio: .nan).width, SpotSampleText.photoHeight)
         XCTAssertEqual(SpotSampleText.frame(aspectRatio: 1).height, SpotSampleText.photoHeight)
     }
+
+    /// 🔴 出典の1行の当たりは 44pt 以上（押せるものの最小・`WebTheme.minTapTarget`）。
+    /// 文中のリンクは字の高さ（≒16pt）しかないので、1行全体を1つの当たりにしている（2026-10-03）。
+    /// 幅は写真の幅と同じなので、いちばん細い写真でも 44pt を割らない
+    func testCreditTapTargetIsAtLeast44pt() {
+        XCTAssertGreaterThanOrEqual(CreditLink.tapHeight, Double(WebTheme.minTapTarget))
+        for ratio in [0.05, 0.2, 0.5, 1, 1.5, 5, .nan] {
+            XCTAssertGreaterThanOrEqual(SpotSampleText.frame(aspectRatio: ratio).width, Double(WebTheme.minTapTarget),
+                                        "縦横比 \(ratio) の1枚")
+        }
+    }
+
+    /// 出典の1行から開ける先は文字の並びと同じ（ライセンス → Wikimedia Commons）、リンク先は `linkedCredit` と同じ
+    func testCreditLinksMatchLinkedCredit() throws {
+        let s = try XCTUnwrap(try body(samples: "[\(sample())]").samples.first)
+        XCTAssertEqual(s.creditLinks.map(\.url), [s.licenseUrl, s.sourceUrl].compactMap { $0 })
+        XCTAssertEqual(s.creditLinks.first?.label.contains("CC BY-SA 4.0"), true)
+        XCTAssertEqual(s.creditLinks.last?.label.contains("Wikimedia Commons"), true)
+        let inline = s.linkedCredit.runs.compactMap(\.link)
+        XCTAssertEqual(Set(s.creditLinks.map(\.url)), Set(inline), "メニューの行き先と文中のリンク先は同じ")
+    }
+
+    /// 文面の URL の無いライセンス（パブリックドメイン）は Commons のページだけ（メニューを出さずに開く）
+    func testPublicDomainCreditHasOnlyTheSourceLink() throws {
+        let s = try XCTUnwrap(try body(samples: "[\(sample(["license": "Public domain", "licenseUrl": nil]))]").samples.first)
+        XCTAssertEqual(s.creditLinks.map(\.url), [s.sourceUrl])
+    }
 }
