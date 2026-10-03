@@ -83,6 +83,24 @@ final class ScreenshotTests: XCTestCase {
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "13f-撮影スポット（光の時刻）")
+        shootSpotSamples(app)
+    }
+
+    /// **撮影スポットの作例**（Wikimedia Commons・2026-10-03）。光の時刻と同じ画面のまま下へ送り、
+    /// 作例の帯（`spot.official.samples`）が出たら撮る。本文に `samples` の無いスポットでは出ないので撮らない
+    /// （この試験の決まり）。戻るのは呼び出し元（`shootSpotLight` の defer）
+    private func shootSpotSamples(_ app: XCUIApplication) {
+        let credit = app.descendants(matching: .any).matching(identifier: "spot.official.sampleCredit").firstMatch
+        var swipes = 0
+        while swipes < 6, !(credit.exists && credit.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard credit.exists, credit.isHittable else { return }
+        // 写真が読み込まれるのを待つ（Commons の縮小版）
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "13g-撮影スポット（作例）")
     }
 
     /// 積んだ画面から1つ戻る（2026-10-03）。
