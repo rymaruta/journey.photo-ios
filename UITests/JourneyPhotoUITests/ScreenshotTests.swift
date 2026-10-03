@@ -488,4 +488,58 @@ final class ScreenshotTests: XCTestCase {
             }
         }
     }
+
+    /// **投稿画面から写真の編集へ入る口**（2026-10-03 owner「写真編集の仕方がわからなかった。
+    /// どこから入るのか」）。帯のサムネの「編集」の札と、帯の下の「写真を編集」が見える1枚。
+    ///
+    /// **別の試験にしてある。** 投稿画面は札（sheet）で、書きかけがあると閉じるのに確認が要る——
+    /// 一巡（`testCapturesEveryScreen`）の途中に置くと、閉じ損ねたときにあとの絵が全部消える。
+    /// 写真はシミュレータのライブラリの見本から1枚選ぶ。選ぶ画面（PHPicker）は別プロセスで、
+    /// 中が触れない回もある——**出なければ撮らない**（この試験の決まり）
+    func testCapturesUploadEditEntry() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        toPhoto.tap()
+
+        // 「追加」→「ライブラリから選ぶ」（未ログインの回はログイン画面なので、ここで抜ける）
+        let add = app.descendants(matching: .any).matching(identifier: "upload.add").firstMatch
+        guard add.waitForExistence(timeout: 10), add.isHittable else { return }
+        add.tap()
+        let library = app.buttons["ライブラリから選ぶ"].firstMatch
+        guard library.waitForExistence(timeout: 5) else { return }
+        library.tap()
+
+        // 選ぶ画面の1枚目を選んで「追加」
+        let photo = app.scrollViews.otherElements.images.firstMatch
+        guard photo.waitForExistence(timeout: 10) else { return }
+        photo.tap()
+        for label in ["追加", "Add"] {
+            let done = app.navigationBars.buttons[label].firstMatch
+            if done.waitForExistence(timeout: 3) {
+                done.tap()
+                break
+            }
+        }
+
+        // 帯のサムネと「写真を編集」が出たら撮る（読み込みに数秒かかる）
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        guard thumb.waitForExistence(timeout: 15) else { return }
+        let editButton = app.buttons["upload.editButton"].firstMatch
+        guard editButton.waitForExistence(timeout: 5) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "42-投稿（写真の編集の入口）")
+    }
 }
