@@ -95,17 +95,52 @@ final class GalleryViewModel: ObservableObject {
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         let generation = viewerGeneration
+        loadSerial += 1
+        let mine = loadSerial
+        // 引き下げ（force）の回は、走っている間だけ覚える（`writes` の3つ目）
+        if force { runningForced.insert(mine) }
+        defer { runningForced.remove(mine) }
         loadedEpoch = await gallery.restrictedEpoch
         do {
             let photos = try await gallery.fetchPhotos(force: force)
-            // 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
-            guard !keepsShownFeed, generation == viewerGeneration else { return }
+            guard writes(mine, force: force, generation: generation) else { return }
             all = sorted(photos)
             state = .loaded(filtered())
         } catch {
-            guard !keepsShownFeed, generation == viewerGeneration else { return }
+            guard writes(mine, force: force, generation: generation) else { return }
             state = .failed((error as? APIError)?.errorDescription ?? Labels.Common.loadFailed)
         }
+    }
+
+    /// 読み込みを始めた回数（`load` の番号）
+    private var loadSerial = 0
+    /// 一覧を書き終えた回の番号（`writes`）。**書かなかった回は数えない**
+    private var lastWrittenSerial = 0
+    /// 走っている引き下げ（force）の回の番号
+    private var runningForced: Set<Int> = []
+
+    /// その回の答えを書くか。**書くと決めたら `lastWrittenSerial` を進める**（呼んだら必ず書くこと）。
+    ///
+    /// - 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
+    /// - 取り消されて出している一覧を残す回（`keepsShownFeed`）は書かない
+    /// - 🔴 **書き終えた回より新しい回だけ書く**（バグ探し 2026-10-03）。ホームの読み込みは画面の
+    ///   `.task`・引き下げ・限定公開の口の入れ替え（`restrictedChanges`）・ブロックから重なって
+    ///   走り、先に始めた回が後から着くと、後の回の新しい一覧（入れ替わった口の限定公開・
+    ///   引き下げで取り直した数）を古い一覧で戻していた。
+    ///   「最後に始めた回だけ」にしないのは、後の回が取り消されて何も書かなかったとき、
+    ///   先の回の答えまで捨てて古い一覧が残るため——**何も書かなかった回は数えない**
+    /// - 🔴 **引き下げの答えを待っている間に始まった force なしの回は書かない。** force なしの回は
+    ///   60秒の控えから即座に返るので、番号は新しくても中身は引き下げより古い。書くと、あとから
+    ///   着いた引き下げの新しい答えが「古い番号」として捨てられていた。引き下げが着けばそれを書く
+    ///
+    /// 2026-10-03 判断: 後の回が**失敗**して帯を書いたあとに先の回が取れても、先の回は書かない
+    /// （帯の「もう一度試す」と引き下げが出口）。引き下げが失敗した回は、待っている間の
+    /// force なしの答えも捨てたまま帯になる（引き下げは利用者が自分で引いたものなので、その結果を出す）
+    private func writes(_ serial: Int, force: Bool, generation: Int) -> Bool {
+        guard !keepsShownFeed, generation == viewerGeneration, serial > lastWrittenSerial else { return false }
+        if !force, runningForced.contains(where: { $0 < serial }) { return false }
+        lastWrittenSerial = serial
+        return true
     }
 
     /// 人が替わった回数。**替わる前に読み始めた回の答えを書かない**ために使う
@@ -177,8 +212,12 @@ final class GalleryViewModel: ObservableObject {
         guard viewerId != nil else {
             myPhotos = []
             myPhotosOwner = nil
+            justPosted = nil
             return
         }
+        // 先に足した控えは、この読み直しが**成功・失敗・取り消しのどれで終わっても**手放す
+        // （残すと、あとで消した写真が次の読み直しで戻る・`PostedPhotos.keepSeconds`）
+        defer { justPosted = nil }
         let fetched = try? await fetch()
         // 取り消された回（ログアウト・人の切り替え）は、遅れて着いた答えを誰にも付けない
         guard !Task.isCancelled else { return }
@@ -186,7 +225,9 @@ final class GalleryViewModel: ObservableObject {
         // （ログアウトを含む）の読みが始まっていたら、前の人の答えを書かない
         guard myPhotosWanted == viewerId else { return }
         if let fetched {
-            myPhotos = fetched
+            // 投稿したばかりでまだ索引に無い写真も残す（`showPosted`・id で重複を除く）
+            myPhotos = PostedPhotos.merge(loaded: fetched, posted: justPosted?.photos(at: Date()) ?? [],
+                                          owner: viewerId)
             myPhotosOwner = viewerId
         } else if myPhotosOwner != viewerId {
             // 取れなかった回は、**同じ人のぶんなら残す**（詳細を開いて取り消された回に
@@ -194,6 +235,19 @@ final class GalleryViewModel: ObservableObject {
             myPhotos = []
             myPhotosOwner = nil
         }
+    }
+
+    /// 投稿したばかりで、まだ読み直しの結果に合わせていない写真（`PostedPhotos`・2026-10-03）
+    private var justPosted: PostedPhotos.Pending?
+
+    /// 投稿画面を閉じた（`TabRouter.lastPosted`）。保存の応答の行を**読み直しの前に**自分の写真へ足す
+    /// （今日のテーマの札が、索引の遅れで「参加する」のまま残らないように）。人が替わっていたら何もしない
+    /// 控えは次の読み直しが終わったら手放し、`keepSeconds` を過ぎたら使わない（`PostedPhotos.Pending`）
+    func showPosted(_ posted: [Photo], viewerId: String?, at now: Date = Date()) {
+        guard let viewerId, !posted.isEmpty, myPhotosWanted == nil || myPhotosWanted == viewerId else { return }
+        justPosted = PostedPhotos.Pending(photos: posted, receivedAt: now)
+        guard myPhotosOwner == viewerId else { return }
+        myPhotos = PostedPhotos.merge(loaded: myPhotos, posted: posted, owner: viewerId)
     }
 
     /// `myPhotos` が誰のものか（`followingOwner` と同じ考え方）

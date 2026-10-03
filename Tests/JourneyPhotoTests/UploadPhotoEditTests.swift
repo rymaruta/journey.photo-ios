@@ -462,4 +462,163 @@ final class UploadPhotoEditTests: XCTestCase {
         XCTAssertTrue(model.errorMessage?.contains("編集を「なし」に戻すと元の写真で送れます") ?? false,
                       model.errorMessage ?? "nil")
     }
+
+    // MARK: - 端末での直し（2026-10-03）
+
+    /// 🔴 **編集した写真の書き出しは、最初の1枚を置く前に全部済ませる**（裏に回ってから
+    /// Core Image で書き出して落ちていた）。書き出しは1枚ずつ順に・無編集は書き出さない
+    @MainActor
+    func testAllEditsAreExportedBeforeTheFirstStage() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        /// 書き出したときに、もう何本の通信が出ていたか
+        final class Seen: @unchecked Sendable { var requestsAtExport: [Int] = [] }
+        let seen = Seen()
+        let log = ExportLog()
+        let model = model()
+        if model.shareToThreads { model.shareToThreads = false }
+        let export = fakeExport(log)
+        model.exportEdited = { source, recipe, base in
+            seen.requestsAtExport.append(ScriptedProtocol.calls.count)
+            return try export(source, recipe, base)
+        }
+        model.items = [PendingPhoto(prepared: original()), PendingPhoto(prepared: original()),
+                       PendingPhoto(prepared: original())]
+        model.applyEdit(model.items[0].id, recipe: PhotoRecipe(exposure: 0.4))
+        model.applyEdit(model.items[2].id, recipe: PhotoRecipe(contrast: 0.2))
+
+        await model.submit()
+
+        XCTAssertEqual(log.calls.map(\.recipe), [PhotoRecipe(exposure: 0.4), PhotoRecipe(contrast: 0.2)],
+                       "編集した2枚だけ、並びの順に書き出す")
+        XCTAssertEqual(seen.requestsAtExport, [0, 0], "最初の stage（presign）より前に全部書き出していない")
+        XCTAssertFalse(ScriptedProtocol.calls.isEmpty)
+        XCTAssertTrue(model.items.isEmpty, model.errorMessage ?? "")
+    }
+
+    /// 書き出せなかった写真だけ残し、ほかは送る（先に書き出しても今までと同じ結末）
+    @MainActor
+    func testExportFailureBeforeStagingKeepsOnlyThatPhoto() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        let model = model()
+        model.exportEdited = { _, recipe, base in
+            if recipe.exposure != 0 { throw ImagePreparer.PrepareError.encodeFailed }
+            return base
+        }
+        model.items = [PendingPhoto(prepared: original()), PendingPhoto(prepared: original())]
+        let failing = model.items[0].id
+        model.applyEdit(failing, recipe: PhotoRecipe(exposure: 0.4))
+        await model.submit()
+        XCTAssertEqual(model.items.map(\.id), [failing])
+        XCTAssertTrue(model.errorMessage?.contains("編集を「なし」に戻すと元の写真で送れます") ?? false,
+                      model.errorMessage ?? "nil")
+    }
+
+    /// 保存が通った行を外へ渡す（マイページ・ホームが先に並べる・`PostedPhotos`）
+    @MainActor
+    func testSavedPhotoIsHandedOut() async throws {
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        let model = model()
+        if model.shareToThreads { model.shareToThreads = false }
+        var handed: [String] = []
+        model.onSaved = { handed.append($0.id) }
+        model.items = [PendingPhoto(prepared: original())]
+        await model.submit()
+        XCTAssertEqual(handed, ["p1"])
+    }
+
+    /// 帯のサムネは**一覧用のサムネ（512px）から**、画面の処理の外で作る（1920px の本体を UIImage にしない）
+    @MainActor
+    func testStripThumbIsMadeFromTheSmallThumbnail() async throws {
+        let model = model()
+        final class Received: @unchecked Sendable { var data: [Data] = [] }
+        let received = Received()
+        model.makeStripThumb = { data in
+            received.data.append(data)
+            return UIImage()
+        }
+        model.append(original())
+        for _ in 0..<500 where model.items.first?.preview == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(received.data, [Data(repeating: 0x22, count: 3)], "本体ではなく一覧用のサムネから作る")
+        XCTAssertNotNil(model.items.first?.preview)
+    }
+
+    /// 🔴 **iCloud の写真が返らなくても、上限時間で「読めなかった」に回し、読めた分だけで投稿できる。**
+    /// 「もう一度読み込む」で読み直せる
+    @MainActor
+    func testPickedPhotoThatNeverLoadsTimesOut() async throws {
+        let model = model()
+        final class Gate: @unchecked Sendable { var slowLoads = true }
+        let gate = Gate()
+        model.pickedLoadTimeout = 0.3
+        model.loadPickedData = { item in
+            if item.itemIdentifier == "slow", gate.slowLoads {
+                // 試験が門を開けるまで返らない（取り消しにも応えない）
+                while gate.slowLoads { try? await Task.sleep(nanoseconds: 50_000_000) }
+            }
+            return Data([1])
+        }
+        model.prepareData = { _ in
+            ImagePreparer.Prepared(data: Data([1]), fileName: "photo.jpg", contentType: "image/jpeg",
+                                   exif: nil, coords: nil, takenOn: nil)
+        }
+        model.keepEditSource = { _ in nil }
+        model.pickerItems = [PhotosPickerItem(itemIdentifier: "fast"), PhotosPickerItem(itemIdentifier: "slow")]
+        try await Task.sleep(nanoseconds: 20_000_000)
+        for _ in 0..<300 where model.isLoadingPicked { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertFalse(model.isLoadingPicked, "返らない1枚のために読み込み中が解けない")
+        XCTAssertEqual(model.items.map(\.pickerItem?.itemIdentifier), ["fast"])
+        XCTAssertTrue(model.canSubmit, "読めた分だけで投稿できる")
+        XCTAssertEqual(model.errorMessage, "1 枚は読み込めませんでした")
+        XCTAssertTrue(model.canRetryUnreadable)
+
+        // 「もう一度読み込む」
+        gate.slowLoads = false
+        model.retryUnreadable()
+        try await Task.sleep(nanoseconds: 20_000_000)
+        for _ in 0..<300 where model.isLoadingPicked || model.items.count < 2 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(model.items.map(\.pickerItem?.itemIdentifier), ["fast", "slow"], "読めた写真は残し、読み直した分を足す")
+        XCTAssertFalse(model.canRetryUnreadable)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    /// 書き出しの間は「書き出し中 n/N」を出す（「0/N」のまま止まって見えない）。終わったら消す
+    @MainActor
+    func testExportShowsProgress() async throws {
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: presignBody),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        final class Seen: @unchecked Sendable { var progress: [UploadEditRules.ExportProgress?] = [] }
+        let seen = Seen()
+        let model = model()
+        if model.shareToThreads { model.shareToThreads = false }
+        let log = ExportLog()
+        let export = fakeExport(log)
+        model.exportEdited = { source, recipe, base in
+            // 書き出しは画面の処理の外。画面の処理の上で今の進みを読む
+            seen.progress.append(DispatchQueue.main.sync { MainActor.assumeIsolated { model.exportProgress } })
+            return try export(source, recipe, base)
+        }
+        model.items = [PendingPhoto(prepared: original()), PendingPhoto(prepared: original()),
+                       PendingPhoto(prepared: original())]
+        model.applyEdit(model.items[0].id, recipe: PhotoRecipe(exposure: 0.4))
+        model.applyEdit(model.items[2].id, recipe: PhotoRecipe(contrast: 0.2))
+        await model.submit()
+        XCTAssertEqual(seen.progress, [.init(index: 1, total: 2), .init(index: 2, total: 2)])
+        XCTAssertNil(model.exportProgress)
+    }
 }

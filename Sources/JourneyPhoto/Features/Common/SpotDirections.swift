@@ -12,7 +12,7 @@ enum SpotDirections {
 
     /// 行き先の地点。探し直せれば Apple の地点、だめなら丸めた座標に名前を付けたもの
     static func item(name: String, coords: Photo.Coords) async -> MKMapItem {
-        let found = await OfficialSpotIndex.firstWithin(seconds: OfficialSpotIndex.directionsTimeout) {
+        let found = await AsyncTimeout.firstWithin(seconds: OfficialSpotIndex.directionsTimeout) {
             await search(name: name, coords: coords)
         }
         return found ?? rounded(name: name, coords: coords)

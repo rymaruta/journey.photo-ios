@@ -28,6 +28,15 @@ struct HighlightEditorView: View {
     @State private var saving = false
     @State private var message: String?
     @State private var showDeleteConfirm = false
+    /// 開いたときの姿（`HighlightService.leave`）。直すときは読み込んだ中身で置き換える
+    @State private var opened: HighlightService.Draft
+    @State private var showLeaveConfirm = false
+
+    init(existing: Highlight?) {
+        self.existing = existing
+        // 直すときの並びは読み込むまで空（読み込めたら `load` が入れ直す）
+        _opened = State(initialValue: HighlightService.Draft(title: existing?.title ?? "", picked: [], coverId: nil))
+    }
 
     var body: some View {
         NavigationStack {
@@ -41,16 +50,37 @@ struct HighlightEditorView: View {
                 }
             }
             .webScreen()
-            // 下へ引いても閉じない（キャンセルと同じ・保存・削除の最中だけ）
-            .interactiveDismissDisabled(saving)
+            // 🔴 **選んだストーリー・打った名前を黙って捨てさせない**（`HighlightService.leave`・
+            // バグ探し 2026-10-03）。変更がある間は下へ引いても閉じず、「キャンセル」で確かめる
+            // （ストーリー作成・写真の編集と同じ `unsavedCloseGuard`）。保存・削除の最中は閉じない
+            .unsavedCloseGuard(leave, isPresented: $showLeaveConfirm,
+                               title: L("変更を保存しますか？", "Save your changes?"),
+                               canSave: canSave,
+                               saveTitle: L("保存して閉じる", "Save and close"),
+                               discardTitle: L("変更を捨てる", "Discard changes"),
+                               message: L("保存しないで閉じると、選んだストーリーと名前は残りません。",
+                                          "If you close without saving, your picks and name will be lost."),
+                               onSave: {
+                                   // 右上の「保存」と同じ門。成功したら `save` が閉じる
+                                   guard canSave else { return }
+                                   saving = true
+                                   Task { await save() }
+                               },
+                               onDiscard: { dismiss() })
             .navigationTitle(existing == nil
                              ? L("新しいハイライト", "New highlight")
                              : L("ハイライトを編集", "Edit highlight"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                         // 保存・削除の最中は閉じさせない（`DeleteAccountView` と同じ形）
-                    Button(Labels.Common.cancel) { dismiss() }
-                        .disabled(saving)
+                    Button(Labels.Common.cancel) {
+                        switch leave {
+                        case .now: dismiss()
+                        case .confirm: showLeaveConfirm = true
+                        case .wait: break
+                        }
+                    }
+                    .disabled(saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(Labels.Common.save) {
@@ -71,6 +101,13 @@ struct HighlightEditorView: View {
     private var canSave: Bool {
         HighlightService.canSave(title: title, picked: picked, saving: saving,
                                  loading: loading, loadFailed: loadFailed)
+    }
+
+    /// 「キャンセル」・下へ引くの扱い（`HighlightService.leave`）
+    private var leave: UnsavedLeave {
+        HighlightService.leave(opened: opened,
+                               now: HighlightService.Draft(title: title, picked: picked, coverId: coverId),
+                               saving: saving)
     }
 
     private var nameSection: some View {
@@ -241,6 +278,9 @@ struct HighlightEditorView: View {
                 // 表紙だった輪は、直そうとした瞬間に保存できなくなる
                 let cover = contents.coverStoryId
                 coverId = HighlightService.cover(keeping: cover, in: picked)
+                // 比べる元は**読み込んだ中身**（打ちかけの名前ではなく、サーバーの名前）
+                opened = HighlightService.Draft(title: contents.title.isEmpty ? existing.title : contents.title,
+                                                picked: picked, coverId: coverId)
             }
         }
         loading = false

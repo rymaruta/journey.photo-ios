@@ -27,6 +27,20 @@ struct ZoomPan: Equatable {
     /// 拡大しているか（横送りを止め、移動を受け付ける）
     var isZoomed: Bool { scale > 1 }
 
+    /// 送り（ページ式の TabView）を止めるか。🔴 **つまんでいる最中（`pinch != 1`）も止める**
+    /// （バグ探し 2026-10-03）。等倍からつまみ始めた間は `isZoomed` がまだ偽なので送りが生きていて、
+    /// 2本指の重心が横へ流れると隣の写真へ送られ、離したときの倍率が隣の写真に掛かっていた
+    func locksPaging(pinch: Double) -> Bool {
+        isZoomed || pinch != 1
+    }
+
+    /// つまみ終えた倍率を畳むか。**つまみ始めたページと今のページが同じときだけ。**
+    /// サムネイルで跳んだ等でページが替わっていたら、替わった先は等倍から始める
+    /// （`reset` 済み）——前の写真でつまんだ倍率を次の写真に掛けない
+    static func appliesPinchEnd(startedOn: Int, current: Int) -> Bool {
+        startedOn == current
+    }
+
     static func clampScale(_ s: Double) -> Double {
         guard s.isFinite else { return minScale }
         return min(max(s, minScale), maxScale)

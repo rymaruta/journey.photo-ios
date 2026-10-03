@@ -94,6 +94,18 @@ struct ProfileDraft: Equatable {
         return changed ? patch : nil
     }
 
+    /// 戻ろうとしたときの扱い（`UnsavedLeave`）。🔴 **直した欄を黙って捨てさせない**
+    /// （バグ探し 2026-10-03）——プロフィールの編集は積み重ねた画面で、保存は右上だけなので、
+    /// 自己紹介などを直したあと戻ると確かめもなく消えていた。
+    ///
+    /// 「変えたか」は保存で送る差分（`patch`）と同じ判断（末尾の空白だけは変えたことにしない）。
+    /// **読めていない間（`original` が nil）は変更なし**——保存もできないので、確かめずに戻す。
+    /// 保存・画像の送信の最中は戻らせない（`.wait`・結果を見届けられないため）
+    static func leave(original: ProfileDraft?, edited: ProfileDraft, isBusy: Bool) -> UnsavedLeave {
+        let changed = original.map { patch(from: $0, to: edited) != nil } ?? false
+        return UnsavedLeave.decide(hasChanges: changed, isSaving: isBusy)
+    }
+
     /// サーバーの `normalizeUsername` と同じ形（trim・小文字・先頭の @ を外す）
     static func normalizedUsername(_ raw: String) -> String {
         let lowered = trimmed(raw).lowercased()

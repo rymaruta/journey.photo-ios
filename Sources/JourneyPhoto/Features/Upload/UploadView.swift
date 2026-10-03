@@ -17,9 +17,13 @@ struct UploadView: View {
     /// 編集できない理由（再試行の鍵を控えている写真・`UploadEditRules.canEdit`）
     @State private var editLockMessage: String?
 
+    /// 「写真を押すと編集できます」の案内（写真を選んだ直後に一度だけ・`UploadEditEntry.showsHint`）
+    @State private var showEditHint = false
+
     /// 編集画面の行き先（写真の id）
     private struct EditTarget: Identifiable { let id: UUID }
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき）。
     /// **入れるだけで、消せる**——決めつけない
@@ -37,7 +41,8 @@ struct UploadView: View {
     private let startPrivate: Bool
 
     init(initialTag: String? = nil, spot: UploadSpotTarget? = nil, onPosted: ((Int) -> Void)? = nil,
-         initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false) {
+         initialPhotos: [ImagePreparer.Prepared] = [], startPrivate: Bool = false,
+         onSaved: ((Photo) -> Void)? = nil) {
         self.initialTag = initialTag
         self.initialSpot = spot
         self.onPosted = onPosted
@@ -46,12 +51,18 @@ struct UploadView: View {
         // AppEnvironment を init で受け取れない（EnvironmentObject は body 以降）
         // ため、ここでは既定の組み立てを使う
         let api = APIClient(tokenProvider: CognitoTokenProvider())
-        _model = StateObject(wrappedValue: UploadViewModel(
-            uploads: UploadService(api: api),
-            albums: AlbumService(api: api),
-            photos: PhotoService(api: api),
-            discovery: DiscoveryService(api: api)
-        ))
+        // （`StateObject` の引数は最初の1回だけ評価される。毎回の init でモデルを作らない）
+        _model = StateObject(wrappedValue: {
+            let model = UploadViewModel(
+                uploads: UploadService(api: api),
+                albums: AlbumService(api: api),
+                photos: PhotoService(api: api),
+                discovery: DiscoveryService(api: api)
+            )
+            // 保存が通った行を外へ渡す（下の「投稿」から開いたときだけ・`TabRouter.notePosted`）
+            model.onSaved = onSaved
+            return model
+        }())
     }
 
     var body: some View {
@@ -163,21 +174,32 @@ struct UploadView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.border, lineWidth: 1))
     }
 
+    /// 案内・帯・「写真を編集」・一言。**ひとまとめにしてある**——`form` の VStack に直に並べると
+    /// 10 個を超えて型検査が通らない（ViewBuilder の上限）
+    @ViewBuilder
+    private var photosBlock: some View {
+        if showEditHint { editHint }
+        strip
+        // 帯のすぐ下に「写真を編集」（押せる合図がサムネだけだと気づかれなかった）
+        editButton
+        if !model.items.isEmpty {
+            // 見本 3 の一言。2026-10-03: 何ができるか（色や明るさ）を先に言い、短くした
+            // （本文系の最小 12pt＝.caption）
+            Text(L("写真を押すと、色や明るさを編集できます。元の写真は変わりません。",
+                   "Tap a photo to adjust its color and light. The original stays as it is."))
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+                .padding(.horizontal, 4)
+        }
+    }
+
     private var form: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 // **知らせは上に。** 投稿は右上で押すので、下に出すと画面の外になる
                 progressAndErrors
                 if let spot = model.spot { spotBanner(spot) }
-                strip
-                if !model.items.isEmpty {
-                    // 見本 3 の一言（編集は写真ごと・元の写真は変わらない）
-                    Text(L("写真を押すと編集できます。編集は写真ごとに別々で、元の写真は変わりません。",
-                           "Tap a photo to edit it. Edits apply to that photo only, and the original stays as it is."))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.faint)
-                        .padding(.horizontal, 4)
-                }
+                photosBlock
                 // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言
                 if let note = UploadGrouping.tripNote(fromTrip: model.fromTripImport, count: model.items.count) {
                     Text(note)
@@ -201,6 +223,16 @@ struct UploadView: View {
         .scrollDismissesKeyboard(.interactively)
         .webScreen()
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
+        // 写真を選んだ直後（0枚 → 1枚以上）に、一度だけ案内を出す（旅の写真から来た回も同じ）
+        .onChange(of: model.items.isEmpty) { _, empty in
+            if !empty { offerEditHint() }
+        }
+        // 数秒で消す（押せば先に消える・`UploadEditEntry.hintSeconds`）
+        .task(id: showEditHint) {
+            guard showEditHint else { return }
+            try? await Task.sleep(nanoseconds: UInt64(UploadEditEntry.hintSeconds * 1_000_000_000))
+            hideEditHint()
+        }
         .onAppear {
             // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
             model.onAlbumGone = { [joined] id in joined.forget(id: id) }
@@ -226,6 +258,8 @@ struct UploadView: View {
         .fullScreenCover(item: $editing) { target in
             if let item = model.items.first(where: { $0.id == target.id }) {
                 PhotoEditView(recipe: item.recipe, source: item.editSourceReader,
+                              // 編集済みなら帯の編集後サムネを仮に出す（無編集なら nil）
+                              placeholder: item.recipe.isIdentity ? nil : item.editedPreview,
                               onDone: { recipe in
                                   model.applyEdit(target.id, recipe: recipe)
                                   editing = nil
@@ -265,7 +299,14 @@ struct UploadView: View {
         Button {
             Task { await model.submit() }
         } label: {
-            if model.isWorking {
+            if let export = model.exportProgress {
+                // 送り始める前の書き出し（「0/N」のまま止まって見えないように）
+                HStack(spacing: 6) {
+                    ProgressView().tint(WebTheme.accent)
+                    Text(export.label)
+                        .font(JPFont.mono(13, relativeTo: .footnote))
+                }
+            } else if model.isWorking {
                 // **何枚目かを出す。** 5枚選んだときに、進んでいるのか
                 // 止まっているのかが分からないのがいちばん不安
                 HStack(spacing: 6) {
@@ -284,12 +325,12 @@ struct UploadView: View {
         }
         .foregroundStyle(model.canSubmit ? WebTheme.accent : WebTheme.faint)
         .disabled(!model.canSubmit)
-        .accessibilityLabel(model.isWorking
+        .accessibilityLabel(model.exportProgress?.accessibilityLabel ?? (model.isWorking
                             ? L("送信中 \(model.uploadingIndex) / \(model.items.count) 枚目",
                                 "Sending \(model.uploadingIndex) of \(model.items.count)")
                             : (model.items.count > 1
                                ? L("\(model.items.count) 枚を投稿する", "Post \(model.items.count) photos")
-                               : L("投稿する", "Post")))
+                               : L("投稿する", "Post"))))
     }
 
     /// 選んだ写真の帯（板: 96×120・角丸12、右上に外す丸、左下に番号、最後に「追加」）。
@@ -313,14 +354,98 @@ struct UploadView: View {
         .padding(.top, -8)
     }
 
-    /// 帯の1枚。**押すと編集画面**（写真ごと）。編集してあれば編集後の絵と札（見本 3）
-    private func thumb(_ item: PendingPhoto, index: Int) -> some View {
-        Button {
-            if let reason = model.editLockReason(for: item.id) {
-                editLockMessage = reason
-            } else {
-                editing = EditTarget(id: item.id)
+    /// 写真の編集を開く（帯のサムネ・「写真を編集」）。開けない写真なら理由を出す
+    private func openEditor(_ id: UUID) {
+        hideEditHint()
+        if let reason = model.editLockReason(for: id) {
+            editLockMessage = reason
+        } else {
+            editing = EditTarget(id: id)
+        }
+    }
+
+    /// 案内を出すか決めて、出すなら出す（出した時点で覚える＝二度と出さない）
+    private func offerEditHint() {
+        let memory = UploadEditHintMemory()
+        let hasEditable = model.items.contains { model.editLockReason(for: $0.id) == nil }
+        guard UploadEditEntry.showsHint(alreadyShown: memory.shown, hasEditablePhoto: hasEditable) else { return }
+        memory.shown = true
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { showEditHint = true }
+    }
+
+    private func hideEditHint() {
+        guard showEditHint else { return }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showEditHint = false }
+    }
+
+    /// 写真を選んだ直後に一度だけ出す案内（帯の上）。案内の帯なので accent-soft の地に
+    /// 真鍮のアイコン（黒地の上の合図）と白の文字。押すと消える
+    private var editHint: some View {
+        Button { hideEditHint() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "hand.tap")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityHidden(true)
+                Text(L("写真を押すと編集できます", "Tap a photo to edit it"))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(WebTheme.muted2)
+                    .accessibilityHidden(true)
             }
+            .padding(.horizontal, 12)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .background(WebTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+        .accessibilityLabel(L("写真を押すと編集できます", "Tap a photo to edit it"))
+        .accessibilityHint(L("押すとこの案内を閉じます", "Dismisses this tip"))
+        .accessibilityIdentifier("upload.editHint")
+    }
+
+    /// 帯の下の「写真を編集」（黒地の上の副ボタン・真鍮の文字）。開ける写真のうち最初の1枚を開く。
+    /// 開ける写真が無ければ出さない（`UploadEditEntry.buttonTarget`）
+    @ViewBuilder
+    private var editButton: some View {
+        let editable = model.items.map { model.editLockReason(for: $0.id) == nil }
+        if let index = UploadEditEntry.buttonTarget(editable: editable), model.items.indices.contains(index) {
+            let id = model.items[index].id
+            Button { openEditor(id) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 14, weight: .semibold))
+                        .accessibilityHidden(true)
+                    Text(L("写真を編集", "Edit photo"))
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(WebTheme.accent)
+                .padding(.horizontal, 16)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .background(WebTheme.raised, in: Capsule())
+                .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("写真を編集", "Edit photo"))
+            .accessibilityHint(model.items.count > 1
+                               ? L("\(index + 1)枚目の色や明るさを編集します", "Adjusts the color and light of photo \(index + 1)")
+                               : L("色や明るさを編集します", "Adjusts the color and light"))
+            .accessibilityIdentifier("upload.editButton")
+        }
+    }
+
+    /// 帯の1枚。**押すと編集画面**（写真ごと）。左下に一本の札（未編集は「編集」・編集済みは今の札）
+    private func thumb(_ item: PendingPhoto, index: Int) -> some View {
+        let canEdit = model.editLockReason(for: item.id) == nil
+        let tag = UploadEditEntry.thumbTag(badge: item.editBadge, canEdit: canEdit)
+        return Button {
+            openEditor(item.id)
         } label: {
             Group {
                 if let preview = item.stripPreview {
@@ -337,8 +462,10 @@ struct UploadView: View {
         // 送っている間は開かせない（送信は1枚ごとにその時点の写真を読む）
         .disabled(model.isWorking)
         .accessibilityLabel(item.editBadge.map { L("\(index + 1)枚目・\($0)で編集済み", "Photo \(index + 1), edited: \($0)") }
-                            ?? L("\(index + 1)枚目", "Photo \(index + 1)"))
-        .accessibilityHint(L("押すと編集できます", "Opens the editor"))
+                            ?? L("\(index + 1)枚目・未編集", "Photo \(index + 1), not edited"))
+        .accessibilityHint(canEdit
+                           ? L("押すと色や明るさを編集できます", "Opens the editor to adjust color and light")
+                           : L("押すと、いま編集できない理由を表示します", "Shows why this photo can't be edited now"))
         .accessibilityIdentifier("upload.thumb.\(index)")
         .overlay(alignment: .topLeading) {
             // 送る順の番号。2026-10-02 判断: 左下は編集済みの札（見本 3 の位置）に譲り、左上に移した
@@ -353,10 +480,12 @@ struct UploadView: View {
                 .accessibilityHidden(true)
         }
         .overlay(alignment: .bottomLeading) {
-            // 編集済みの札（見本 3: 左下・黒 66% の地に白 12pt）。写真の上なので白。
+            // 札（見本 3: 左下・黒 66% の地に白 12pt）。写真の上なので白。
+            // 2026-10-03: **一本の札**——未編集なら「編集」、編集済みならプリセット名か「調整」
+            // （`UploadEditEntry.thumbTag`）。押せる合図を常に見せる（owner「どこから入るのか」）。
             // 名前が読める幅に: サムネの幅いっぱい（左右 6pt を残す）まで・1行・入らなければ 0.8 まで縮める
             // （文字を詰めて「旅の葉…」にしない）
-            if let badge = item.editBadge {
+            if let badge = tag.text {
                 HStack(spacing: 4) {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 10, weight: .bold))
@@ -421,6 +550,8 @@ struct UploadView: View {
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .accessibilityLabel(L("写真を追加", "Add photos"))
+        // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
+        .accessibilityIdentifier("upload.add")
         // 🔴 **送っている間は足させない。** 足した写真は送信の終わりの `reset()` で
         // 黙って消え、送っている束の印まで変わっていた
         .disabled(model.isWorking)
@@ -701,6 +832,15 @@ struct UploadView: View {
     private var progressAndErrors: some View {
         if let error = model.errorMessage {
             Text(error).foregroundStyle(WebTheme.danger).font(.callout)
+        }
+        if model.canRetryUnreadable {
+            // 読めなかった写真（時間切れ・iCloud から落とせなかった）を読み直す口（2026-10-03）。
+            // 隣の「残りをやめる」と同じ縁取りの丸ボタン（高さ 52pt）。文言は今日の一問の再試行と同じ
+            Button { model.retryUnreadable() } label: {
+                Text(L("もう一度読み込む", "Try again")).jpPillButton(.outline)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("upload.retryUnreadable")
         }
         if model.isWorking && model.items.count > 1 {
             // **やめられるようにする。** いま上げている1枚は最後まで通す
