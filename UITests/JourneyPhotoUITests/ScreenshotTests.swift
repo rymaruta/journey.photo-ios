@@ -592,13 +592,18 @@ final class ScreenshotTests: XCTestCase {
         guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
         toPhoto.tap()
 
-        // 「追加」→「ライブラリから選ぶ」（未ログインの回はログイン画面なので、ここで抜ける）
+        // 2026-10-03: 投稿画面は**開くと写真を選ぶ画面が自動で出る**（`UploadDetails.autoOpensLibrary`）。
+        // 出るのを待ち、出なかった回（帯の「追加」がまだ押せる）だけ「追加」→「ライブラリから選ぶ」。
+        // 未ログインの回はログイン画面で「追加」が無いので、ここで抜ける
         let add = app.descendants(matching: .any).matching(identifier: "upload.add").firstMatch
-        guard add.waitForExistence(timeout: 10), add.isHittable else { return }
-        add.tap()
-        let library = app.buttons["ライブラリから選ぶ"].firstMatch
-        guard library.waitForExistence(timeout: 5) else { return }
-        library.tap()
+        guard add.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        if add.isHittable {
+            add.tap()
+            let library = app.buttons["ライブラリから選ぶ"].firstMatch
+            guard library.waitForExistence(timeout: 5) else { return }
+            library.tap()
+        }
 
         // 選ぶ画面の1枚目を選んで「追加」
         //
@@ -628,6 +633,19 @@ final class ScreenshotTests: XCTestCase {
         guard editButton.waitForExistence(timeout: 5) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "42-投稿（写真の編集の入口）")
+
+        // 2026-10-03: 撮影地・作例の一言と、畳んだ「詳しい設定」（計画9）。下へ送って撮り、
+        // 開いた絵も撮る。出なければ撮らない（この試験の決まり）
+        let details = app.buttons["upload.details"].firstMatch
+        for _ in 0..<3 where !(details.exists && details.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard details.exists, details.isHittable else { return }
+        shoot(app, "43-投稿（撮影地と詳しい設定・畳んだ）")
+        details.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "44-投稿（詳しい設定・開いた）")
     }
 
     /// **投稿済みの写真の「色を編集」**（2026-10-03・段階1）。マイページ → 自分の写真 → 「…」→「編集」で、
