@@ -17,14 +17,45 @@ struct SocialService {
     // MARK: - いいね
 
     struct LikeCount: Decodable { let likes: Int }
-    struct MyLike: Decodable { let liked: Bool }
+    /// `GET /user/likes/{id}` の答え。**`count` は見せてよい相手のときだけ来る**（S-1）。
+    /// 来ないのは「数を出さない」で、0 ではない（古いサーバーもここが無い）
+    struct MyLike: Decodable { let liked: Bool; let count: Int? }
     /// 押した直後の状態。**件数も一緒に返る**ので、こちらで足し算しない
     /// （二重に押した回や、既に押していた回で数がずれる）。
     struct LikeResult: Decodable { let liked: Bool; let likes: Int? }
 
-    /// いいね数（未認証で読める）。
+    /// いいね数（未認証で読める）。**公開範囲を絞った写真は 404**（閲覧者が分からない）
     func likeCount(photoId: String) async throws -> Int {
         try await api.anonymous(.get, "/photos/\(encoded(photoId))/like", as: LikeCount.self).likes
+    }
+
+    /// 写真を開いたときに読む、いいねの印と数。**取れなかったものは nil**（0 や「押していない」にしない）
+    struct LikeSnapshot: Equatable {
+        let liked: Bool?
+        let count: Int?
+    }
+
+    /// 開いた写真のいいね。
+    ///
+    /// - ログイン中は**数を自分の印の口（`GET /user/likes/{id}`）の `count` から取る。**
+    ///   絞った写真（`audience` あり）では未認証の数の口が 404 になり、本人・フォロワーにも
+    ///   数が更新されなかった（photo-gallery #269）。`count` は見せてよい相手にだけ付く
+    /// - `count` が無ければ**公開・限定に関係なく**未認証の口の数を使う。古いサーバーは
+    ///   `count` を付けないが、限定写真の数も未認証の口で返す——アプリがサーバーより先に
+    ///   出ても数が消えない。新しいサーバーの限定写真は 404 → nil（数を出さない）で害は無い
+    /// - **2本は同時に投げる**（順番に2往復しない）。`count` が来たら未認証の答えは待たずに
+    ///   捨てる（抜けると `async let` が取り消す）。未認証の失敗は無視
+    /// - 未ログインは今までどおり未認証の口だけ
+    func likeSnapshot(photoId: String, signedIn: Bool) async -> LikeSnapshot {
+        guard signedIn else {
+            return LikeSnapshot(liked: nil, count: try? await likeCount(photoId: photoId))
+        }
+        async let publicCount = try? likeCount(photoId: photoId)
+        let mine = try? await myLikeAnswer(photoId: photoId)
+        if let count = mine?.count {
+            return LikeSnapshot(liked: mine?.liked, count: count)
+        }
+        return LikeSnapshot(liked: mine?.liked, count: await publicCount)
     }
 
     struct MyLikes: Decodable { let photoIds: [String] }
@@ -75,7 +106,11 @@ struct SocialService {
 
     /// 自分が押しているか（要ログイン）。
     func myLike(photoId: String) async throws -> Bool {
-        try await api.authorized(.get, "/user/likes/\(encoded(photoId))", as: MyLike.self).liked
+        try await myLikeAnswer(photoId: photoId).liked
+    }
+
+    private func myLikeAnswer(photoId: String) async throws -> MyLike {
+        try await api.authorized(.get, "/user/likes/\(encoded(photoId))", as: MyLike.self)
     }
 
     /// いいねする。
@@ -129,9 +164,37 @@ struct SocialService {
     }
     private struct PostedComment: Decodable { let comment: PhotoComment }
 
-    /// コメント一覧（未認証で読める。新しい順）。
-    func comments(photoId: String) async throws -> CommentPage {
-        try await api.anonymous(.get, "/photos/\(encoded(photoId))/comments", as: CommentPage.self)
+    /// コメント一覧（新しい順）。
+    ///
+    /// **ログイン中は認証つきの口（`GET /user/comments/{id}`）で読む。** 公開範囲を絞った
+    /// 写真は未認証の口では閲覧者が分からず 404 になり、本人・フォロワーにも
+    /// 「読み込めませんでした」と出ていた（photo-gallery #269）。答えの形は同じ。
+    ///
+    /// **戻るのは「道が無い」404 のときだけ**（`APIError.isMissingRoute`・アプリが API より
+    /// 先に出た回）。サーバーが断った 404 で未認証の口に戻っても同じ 404 で、往復が増えるだけ。
+    /// 未ログインは今までどおり未認証の口
+    func comments(photoId: String, signedIn: Bool) async throws -> CommentPage {
+        let id = try encoded(photoId)
+        guard signedIn else { return try await publicComments(id) }
+        // ⚠️ catch の中で await しない（Xcode 26.3 のコンパイラが落ちる）
+        let outcome: Result<CommentPage, Error>
+        do {
+            outcome = .success(try await api.authorized(.get, "/user/comments/\(id)", as: CommentPage.self))
+        } catch {
+            outcome = .failure(error)
+        }
+        switch outcome {
+        case .success(let page):
+            return page
+        case .failure(let error):
+            guard (error as? APIError)?.isMissingRoute == true else { throw error }
+            return try await publicComments(id)
+        }
+    }
+
+    /// 未認証の口。`id` は `encoded` を通したもの
+    private func publicComments(_ id: String) async throws -> CommentPage {
+        try await api.anonymous(.get, "/photos/\(id)/comments", as: CommentPage.self)
     }
 
     func postComment(photoId: String, text: String) async throws -> PhotoComment {

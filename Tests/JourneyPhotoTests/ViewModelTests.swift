@@ -1244,11 +1244,13 @@ final class ViewModelTests: XCTestCase {
     func testCommentReloadExcludesPostAndDelete() async throws {
         prepare()
         let page = #"{"items":[{"id":"c1","uid":"u1","name":"a","text":"hi"}],"count":1}"#
+        // ログイン中の読みは認証つきの口（`/user/comments/{id}`）。投稿は `/photos/{id}/comments`
+        StubProtocol.respond(path: "/user/comments/p1", status: 200, body: page)
         StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: page)
         // 1回目の読み直しは通し、2回目の読み直しの返事を止めておく（遅い口）
         let gate = Gate(skip: 1)
         let model = PhotoDetailViewModel(photoId: "p1",
-                                         social: SocialService(api: api(gates: PathGates(["GET /photos/p1/comments": gate]))))
+                                         social: SocialService(api: api(gates: PathGates(["GET /user/comments/p1": gate]))))
         model.setSignedIn(true)
         await model.reloadComments()
         let comment = try XCTUnwrap(model.comments.first)
@@ -1306,14 +1308,15 @@ final class ViewModelTests: XCTestCase {
     /// 1つだったので、p1 の読み直し（圏外で長く待つ）の間、p2 で送れなかった
     func testCommentReloadOfPreviousPhotoDoesNotBlockNextPhoto() async throws {
         prepare()
-        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+        // ログイン中の読みは認証つきの口（`/user/comments/{id}`）
+        StubProtocol.respond(path: "/user/comments/p1", status: 200,
                              body: #"{"items":[],"count":0}"#)
         StubProtocol.respond(path: "/photos/p2/comments", status: 200,
                              body: #"{"items":[],"count":0,"comment":{"id":"c9","uid":"me","name":"me","text":"new"}}"#)
         // 前の1枚（p1）の読み直しの返事を止めておく（圏外で長く待つ回）
         let gate = Gate()
         let model = PhotoDetailViewModel(photoId: "p1",
-                                         social: SocialService(api: api(gates: PathGates(["GET /photos/p1/comments": gate]))))
+                                         social: SocialService(api: api(gates: PathGates(["GET /user/comments/p1": gate]))))
         model.setSignedIn(true)
 
         let reload = Task { await model.reloadComments() }
@@ -1333,15 +1336,16 @@ final class ViewModelTests: XCTestCase {
     /// 上書きし、p1 に戻ると p1 の読み直しが走ったまま再試行を押せた
     func testCommentReloadMarkSurvivesAnotherPhotosReload() async throws {
         prepare()
-        StubProtocol.respond(path: "/photos/p1/comments", status: 200,
+        // ログイン中の読みは認証つきの口（`/user/comments/{id}`）
+        StubProtocol.respond(path: "/user/comments/p1", status: 200,
                              body: #"{"items":[],"count":0}"#)
-        StubProtocol.respond(path: "/photos/p2/comments", status: 200,
+        StubProtocol.respond(path: "/user/comments/p2", status: 200,
                              body: #"{"items":[],"count":0}"#)
         // 2枚の読み直しの返事を両方止めておく
         let g1 = Gate()
         let g2 = Gate()
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api(gates: PathGates([
-            "GET /photos/p1/comments": g1, "GET /photos/p2/comments": g2,
+            "GET /user/comments/p1": g1, "GET /user/comments/p2": g2,
         ]))))
         model.setSignedIn(true)
         let first = Task { await model.reloadComments() }
@@ -1369,6 +1373,9 @@ final class ViewModelTests: XCTestCase {
         StubProtocol.respond(path: "/photos/p1/comments/c2", status: 404, body: #"{"error":"コメントが見つかりません"}"#)
         StubProtocol.respond(path: "/photos/p1/comments", status: 200,
                              body: #"{"items":[{"id":"c1","uid":"u1","name":"a","text":"hi"}],"count":1,"comment":{"id":"c2","uid":"me","name":"me","text":"new"}}"#)
+        // ログイン中の読みは認証つきの口
+        StubProtocol.respond(path: "/user/comments/p1", status: 200,
+                             body: #"{"items":[{"id":"c1","uid":"u1","name":"a","text":"hi"}],"count":1}"#)
         let model = PhotoDetailViewModel(photoId: "p1", social: SocialService(api: api()))
         model.setSignedIn(true)
         await model.reloadComments()

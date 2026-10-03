@@ -123,26 +123,23 @@ final class PhotoDetailViewModel: ObservableObject {
         self.liked = liked
     }
 
-    /// いいね数とコメントは未認証でも読める。自分が押しているかだけ要ログイン。
     /// 投稿者を読む。**写真の主が分かっているときだけ**
     func loadOwner(_ userId: String?, profiles: ProfileService) async {
         guard let userId, !userId.isEmpty, owner == nil else { return }
         owner = try? await profiles.publicProfile(userId: userId)
     }
 
+    /// いいね数とコメントは未認証でも読める。**ログイン中は認証つきの口で読む**
+    /// ——公開範囲を絞った写真は未認証の口が 404 になる（`SocialService` の注記）
     func load() async {
         let id = photoId
         let accepted = acceptedLikes[id, default: 0]
         let readAt = Date()
-        async let count = try? social.likeCount(photoId: id)
-        async let page = try? social.comments(photoId: id)
-        let mine: Bool?
-        if isSignedIn {
-            mine = try? await social.myLike(photoId: id)
-        } else {
-            mine = nil
-        }
-        let loadedCount = await count
+        async let snapshot = social.likeSnapshot(photoId: id, signedIn: isSignedIn)
+        async let page = try? social.comments(photoId: id, signedIn: isSignedIn)
+        let likeState = await snapshot
+        let loadedCount = likeState.count
+        let mine = likeState.liked
         let loaded = await page
         // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
         guard id == photoId else { return }
@@ -181,7 +178,7 @@ final class PhotoDetailViewModel: ObservableObject {
         let id = photoId
         reloadingComments.insert(id)
         defer { reloadingComments.remove(id) }
-        let page = try? await social.comments(photoId: id)
+        let page = try? await social.comments(photoId: id, signedIn: isSignedIn)
         // 読んでいる間に別の1枚へ送ったら捨てる（前の1枚のコメントを今の1枚に出さない）
         guard id == photoId else { return }
         if let page { applyComments(page, for: id) }
