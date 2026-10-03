@@ -747,6 +747,38 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(chip?.count, model.shown.count, "チップの数と押した後の枚数が違う")
     }
 
+    /// **季節・時間帯で絞る**（2026-10-03・戦略の計画6）。語と重ねられ（「秋の京都」）、
+    /// タグのチップの数も絞った後の枚数。押し直すと外れる
+    func testSearchFiltersBySeasonAndTimeOfDay() async {
+        let service = gallery("""
+        [{"id":"kyotoAutumnEvening","src":"https://x/a.jpg","userId":"u1","location":"京都","tags":["山"],
+          "date":"2026-09-26","exif":{"dateTimeOriginal":"2026-09-26T16:37:31"}},
+         {"id":"kyotoSpring","src":"https://x/b.jpg","userId":"u1","location":"京都","tags":["山"],"date":"2026-04-29"},
+         {"id":"parisAutumnNoon","src":"https://x/c.jpg","userId":"u1","location":"パリ",
+          "date":"2026-09-23","exif":{"dateTimeOriginal":"2026-09-23T14:29:02"}},
+         {"id":"undated","src":"https://x/d.jpg","userId":"u1","location":"京都","tags":["山"]}]
+        """)
+        let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
+        let model = SearchViewModel()
+        await model.loadPhotos(environment: env, epoch: 0)
+        XCTAssertTrue(model.discovery().contains(.shootingTime), "撮影日のある写真があるのに段が出ない")
+
+        model.select(season: .autumn)
+        XCTAssertEqual(Set(model.shown.map(\.id)), ["kyotoAutumnEvening", "parisAutumnNoon"])
+        XCTAssertEqual(model.tagChips.first { $0.tag == "山" }?.count, 1, "チップの数が絞った後の枚数になっていない")
+
+        await model.search("京都", environment: env)
+        XCTAssertEqual(model.shown.map(\.id), ["kyotoAutumnEvening"], "秋の京都になっていない")
+
+        model.select(dayPart: .night)
+        XCTAssertEqual(model.shown.map(\.id), [], "秋の夜の京都は無い")
+        model.select(dayPart: .night)   // 押し直し＝外す
+        XCTAssertNil(model.timeFilter.dayPart)
+
+        model.clearTimeFilter()
+        XCTAssertEqual(Set(model.shown.map(\.id)), ["kyotoAutumnEvening", "kyotoSpring", "undated"])
+    }
+
     /// 🔴 **限定公開の読み出し口が替わったら（ログアウト・別の人のログイン）読み直す。**
     /// 探すは一度読んだら読み直さない作りで、前の人の「フォロワーのみ」の
     /// 写真が次の人の探すに残っていた。同じ回なら読み直さない

@@ -45,12 +45,23 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     /// 壊れた1件・知らない季節・空の文は落とし、**行ごとは落とさない**（`LenientSeasonalGuide`）。
     /// `var` で既定 nil なのは、載っていない古い索引・控えも読めるようにするため
     var seasonalGuide: LenientSeasonalGuide? = nil
+    /// 時間帯の案内（夜明け・朝・日中・夕方の斜光・日没後・夜）。
+    ///
+    /// 🔴 **2026-10-03 時点のサーバーの索引には載っていない**（`lib/data/spotFeed.ts` が
+    /// 「載せない」に時間帯を挙げている。本文 `/app/data/spots/<slug>.json` にだけある）。
+    /// 探すの「時間帯で絞る」が撮影地にも効くよう、**本文・台帳と同じ名前・同じ形**
+    /// （`[{time, text}]`）で読む口だけ先に置く——載るまでは常に空で、時間帯で絞ると
+    /// 撮影地の節は出ない（`ShootingTime.spots`）。2026-10-03 判断
+    var timeOfDayGuide: LenientTimeOfDayGuide? = nil
 
     /// 出してよい写真。作者とライセンスが揃っていて、https の画像だけ
     var photo: SpotImage? { image?.value }
 
     /// 出してよい季節の案内（`SpotBody` の本文と同じ決まりで落としたもの）
     var seasons: [SpotBody.Seasonal] { seasonalGuide?.value ?? [] }
+
+    /// 出してよい時間帯の案内（索引に載っていなければ空・`timeOfDayGuide` の注記）
+    var times: [SpotBody.TimeOfDay] { timeOfDayGuide?.value ?? [] }
 
     struct Region: Decodable, Equatable {
         let prefecture: String?
@@ -155,6 +166,22 @@ struct LenientSeasonalGuide: Decodable, Equatable {
         let rows = (try? [Lenient<SpotBody.Seasonal>](from: decoder)) ?? []
         value = rows.compactMap(\.value).filter {
             SpotBodyText.seasonOrder.contains($0.season)
+                && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+}
+
+/// 時間帯の案内の欄を**決して投げずに**読む入れ物（`LenientSeasonalGuide` と同じ理由・同じ形）。
+/// 本文（`SpotBody.timeOfDayGuide`）と同じく、知らない時間帯・空の文の項目は落とす
+struct LenientTimeOfDayGuide: Decodable, Equatable {
+    let value: [SpotBody.TimeOfDay]
+
+    init(_ value: [SpotBody.TimeOfDay]) { self.value = value }
+
+    init(from decoder: Decoder) throws {
+        let rows = (try? [Lenient<SpotBody.TimeOfDay>](from: decoder)) ?? []
+        value = rows.compactMap(\.value).filter {
+            SpotBodyText.timeOrder.contains($0.time)
                 && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }

@@ -81,14 +81,15 @@ enum PhotoMetaLine {
 
     // MARK: - 内側
 
-    private struct Parts {
+    /// 撮影日時の成分。季節・時間帯の絞り込み（`ShootingTime`）も同じ読み方を使う
+    struct Parts: Equatable {
         let y: Int, m: Int, d: Int
         let hh: Int?, mm: Int?
     }
 
     /// `YYYY-MM-DD[T ]HH:MM` と `YYYY:MM:DD HH:MM` を成分に分ける。
     /// 読めない値は nil、読めない時刻は日付だけにする（Web の `splitStoredDate`）
-    private static func parts(_ raw: String?) -> Parts? {
+    static func parts(_ raw: String?) -> Parts? {
         guard let raw = trimmed(raw), raw.count >= 10 else { return nil }
         let head = raw.prefix(10).replacingOccurrences(of: ":", with: "-")
         guard let (y, m, d) = TakenDay.ymd(head) else { return nil }
