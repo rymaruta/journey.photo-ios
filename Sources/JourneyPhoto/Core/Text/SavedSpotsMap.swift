@@ -105,8 +105,8 @@ enum SavedSpotsMap {
     /// - 経度は日付変更線をまたぐ並びも狭く囲む（ハワイと日本なら太平洋側で囲む）。
     ///   点の間の**いちばん広い隙間の反対側**を枠にする
     /// - 余白は `MapFraming.padding`、いちばん狭い幅は `MapFraming.minimumSpan`（1か所だけでも寄りすぎない）
-    /// - 緯度の幅は**枠が南北の極を越えない**ところで止める（越えた枠は地図が受け付けない）。
-    ///   ただし点の広がりそのものより狭くはしない
+    /// - 枠は**南北の極を越えない**（越えた枠は地図が受け付けない）。越えるときは幅を縮めず、
+    ///   中心を極から離す（極のすぐそばの1点でも寄りすぎない）
     /// - 点が無ければ nil（呼ぶ側は地図の既定に任せる）
     static func frame(for coords: [Photo.Coords]) -> MapFraming.Frame? {
         let points = coords.compactMap(usable)
@@ -117,10 +117,14 @@ enum SavedSpotsMap {
             minLat = min(minLat, p.lat)
             maxLat = max(maxLat, p.lat)
         }
-        let centerLat = (minLat + maxLat) / 2
         let rawLat = maxLat - minLat
-        let roomLat = 2 * (90 - abs(centerLat))
-        let latSpan = max(rawLat, min(roomLat, max(MapFraming.minimumSpan, rawLat * MapFraming.padding)))
+        // 幅はいつもの余白つき（180° まで）。極を越えるなら**中心を極から離して**収める
+        // （幅を縮めると、極のすぐそばの1点で地図が寄りすぎた）。幅が点の広がり以上なので、
+        // ずらしても点は枠の中に残る
+        let latSpan = min(180, max(rawLat, MapFraming.minimumSpan, rawLat * MapFraming.padding))
+        var centerLat = (minLat + maxLat) / 2
+        if centerLat + latSpan / 2 > 90 { centerLat = 90 - latSpan / 2 }
+        if centerLat - latSpan / 2 < -90 { centerLat = -90 + latSpan / 2 }
 
         // 経度: 並べて、隣り合う点の間（端から端へ回り込む隙間を含む）でいちばん広い所を外にする
         let lngs = points.map(\.lng).sorted()
@@ -142,6 +146,14 @@ enum SavedSpotsMap {
 
         return MapFraming.Frame(latitude: centerLat, longitude: centerLng,
                                 latitudeSpan: latSpan, longitudeSpan: lngSpan)
+    }
+
+    /// 開く先の読み上げのヒント。撮影スポットと撮影地で言い分ける（開く画面が違う）
+    static func openHint(_ item: Item) -> String {
+        switch item.target {
+        case .place: return L("撮影地の画面を開きます", "Opens the place")
+        case .official: return L("撮影スポットの画面を開きます", "Opens the spot")
+        }
     }
 
     /// ピンの読み上げ名。「伏見稲荷大社 · 京都府 · 行きたい場所」。下書きならそれも言う

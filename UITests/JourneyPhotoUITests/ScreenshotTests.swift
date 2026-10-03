@@ -687,5 +687,20 @@ final class ScreenshotTests: XCTestCase {
         // ピンの写真と地図の絵が描かれるのを待つ
         Thread.sleep(forTimeInterval: 4)
         shoot(app, "63-行きたい場所の地図（撮影用に端末の控えへ3件）")
+
+        // ピンを選ぶ（2026-10-03・地図から旅行プランを作る）。**選ぶだけで「作る」は押さない**
+        // （押すとプランを作りに行く。選ぶのは画面の中の状態で、端末にもサーバーにも何も書かない）
+        let pins = app.descendants(matching: .any).matching(identifier: "savedMap.pin")
+        var tapped = 0
+        for i in 0..<min(pins.count, 3) where pins.element(boundBy: i).isHittable {
+            pins.element(boundBy: i).tap()
+            tapped += 1
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        guard tapped > 0 else { return }
+        let create = app.buttons["savedMap.createTrip"].firstMatch
+        guard create.waitForExistence(timeout: 5) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "64-行きたい場所の地図で選んだ（この N か所で旅行プランを作る）")
     }
 }

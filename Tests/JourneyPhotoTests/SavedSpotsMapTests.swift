@@ -129,6 +129,25 @@ final class SavedSpotsMapTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(frame.latitudeSpan, 90)
     }
 
+    /// 極のすぐそばの1点でも寄りすぎない（幅は縮めず、中心を極から離す）。点は枠の中
+    func testNearPoleSinglePointShiftsTheCenter() throws {
+        let frame = try XCTUnwrap(SavedSpotsMap.frame(for: [Photo.Coords(lat: 89.99, lng: 0)]))
+        XCTAssertEqual(frame.latitudeSpan, MapFraming.minimumSpan, accuracy: 1e-9)
+        XCTAssertLessThanOrEqual(frame.latitude + frame.latitudeSpan / 2, 90 + 1e-9)
+        XCTAssertLessThanOrEqual(abs(89.99 - frame.latitude), frame.latitudeSpan / 2 + 1e-9)
+        let south = try XCTUnwrap(SavedSpotsMap.frame(for: [Photo.Coords(lat: -89.99, lng: 0)]))
+        XCTAssertGreaterThanOrEqual(south.latitude - south.latitudeSpan / 2, -90 - 1e-9)
+    }
+
+    /// 開く先のヒントは撮影地と撮影スポットで言い分ける
+    func testOpenHintDependsOnTarget() throws {
+        let rows = OfficialWishlist.rows(keys: ["SPOT-a"], index: [try spot("a", name: "A寺", coords: (35, 135))])
+        let official = try XCTUnwrap(SavedSpotsMap.split(places: [], officialRows: rows).pinned.first)
+        XCTAssertEqual(SavedSpotsMap.openHint(official), "撮影スポットの画面を開きます")
+        let placeItem = SavedSpotsMap.item(place("kyoto", coords: Photo.Coords(lat: 35, lng: 135)))
+        XCTAssertEqual(SavedSpotsMap.openHint(placeItem), "撮影地の画面を開きます")
+    }
+
     /// 経度の幅は1周（360°）を越えない
     func testLongitudeSpanIsCapped() throws {
         let points = stride(from: -180.0, to: 180.0, by: 30).map { Photo.Coords(lat: 0, lng: $0) }
