@@ -122,6 +122,8 @@ struct GalleryView: View {
         // 戻ってきたとき（`onAppear`）の読み直しが拾う
         .onChange(of: tabRouter.postSheetsClosed) { _, _ in
             guard auth.userId != nil, isOnScreen else { return }
+            // 上げた写真は読み直しを待たずに先に足す（索引が遅れて返らないことがある・`PostedPhotos`）
+            model.showPosted(tabRouter.lastPosted, viewerId: auth.userId)
             reloadMyPhotos()
         }
         // **前面に戻ったら輪を読み直す。** 日をまたいで戻っても昨日の輪のまま、
@@ -173,6 +175,8 @@ struct GalleryView: View {
         }
         .onAppear {
             isOnScreen = true
+            // 詳細を開いていた間に届いた「新着」の続きを、戻ってから足す（`GalleryViewModel.pageWrite`）
+            Task { await model.returnToScreen() }
             dropped = hidden.snapshot
             // **戻ってきたら毎回自分の写真を読み直す**（`MyPageView` と同じ形）。
             // 合図が来ない変わり方がある——すでに「消した」印の付いた写真を消した・
@@ -186,7 +190,10 @@ struct GalleryView: View {
             }
             didAppear = true
         }
-        .onDisappear { isOnScreen = false }
+        .onDisappear {
+            isOnScreen = false
+            model.leaveScreen()
+        }
     }
 
     private func reloadMyPhotos() {
@@ -396,7 +403,9 @@ struct GalleryView: View {
                 // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
                 // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
                 let groups = PhotoGroups.group(photos)
-                if groups.isEmpty {
+                // **続きがある間は「まだありません」と言わない**（読んだ範囲がブロックで全部落ちた・
+                // 続きを読んでいる最中）。下の目印が次を読む
+                if groups.isEmpty && !model.hasMorePages {
                     feedEmptyState
                 }
                 // 板 01c: 大きく1枚 → 2枚 → 2枚、端から端まで・隙間 4pt

@@ -106,29 +106,39 @@ final class GalleryViewModel: ObservableObject {
         // 再読み込みのときに画面を空にしない（読み込み中の白画面を挟まない）
         if case .loaded = state {} else { state = .loading }
         let generation = viewerGeneration
+        loadSerial += 1
+        let mine = loadSerial
+        // 引き下げ（force）の回は、走っている間だけ覚える（`writes` の3つ目）
+        if force { runningForced.insert(mine) }
+        defer { runningForced.remove(mine) }
         loadedEpoch = await gallery.restrictedEpoch
-        // 引き下げ・まだ試していない回だけ1ページ目から読む。ブロックの後などの読み直し
+        // **`/feed` は「新着」のときだけ読む**（2026-10-03 のレビュー）。おすすめなどでは読まない・待たない。
+        // 「新着」でも、引き下げ・まだ試していない回だけ1ページ目から読む。ブロックの後などの読み直し
         // （force なし）は、読んだページを持ったまま仕上げだけ掛け直す（下まで送った一覧を縮めない）
-        let readsFirstPage = feedPages != nil && (force || pageSource == .untried)
-        let result: Result<[Photo], Error>
+        let readsFirstPage = feed == .latest && feedPages != nil && (force || pageSource == .untried)
         if readsFirstPage {
-            async let listed = fetchSnapshot(force: force)
-            let paged = await reloadPages()
-            // 最初の1ページで表示を出す
-            if paged, usesPagedFeed, !keepsShownFeed, generation == viewerGeneration {
-                state = .loaded(filtered())
-            }
-            result = await listed
+            // 1ページ目と全件を同時に読み、**どちらも着いた時点で書く**（片方を待たない）
+            async let firstPage: Void = showFirstPage(force: force, generation: generation, alongsideSnapshot: true)
+            await finishSnapshot(serial: mine, force: force, generation: generation)
+            await firstPage
         } else {
-            result = await fetchSnapshot(force: force)
+            await finishSnapshot(serial: mine, force: force, generation: generation)
         }
-        // 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
-        guard !keepsShownFeed, generation == viewerGeneration else { return }
+    }
+
+    /// 全件（`photos.json`）を読んで書く。**最後の書き込みはここだけで、`writes` を通す**
+    private func finishSnapshot(serial mine: Int, force: Bool, generation: Int) async {
+        // **catch の中で await しない**（Xcode 26.3 の SILGen）。結果を外へ持ち出してから分ける
+        let result: Result<[Photo], Error>
+        do {
+            result = .success(try await gallery.fetchPhotos(force: force))
+        } catch {
+            result = .failure(error)
+        }
         // 限定公開の控え・いいねの数を取り直した後で、読んだページの仕上げを掛け直す
-        if pageSource == .pages {
-            await representPages()
-            guard !keepsShownFeed, generation == viewerGeneration else { return }
-        }
+        // （`writes` の後に await を挟まない——書くと決めたら必ずすぐ書く）
+        if pageSource == .pages, pendingPage == nil { await representPages(loadsRestricted: true) }
+        guard writes(mine, force: force, generation: generation) else { return }
         switch result {
         case .success(let photos):
             all = sorted(photos)
@@ -143,20 +153,45 @@ final class GalleryViewModel: ObservableObject {
         }
     }
 
-    /// 全件（`photos.json`）。**catch の中で await しない**ために結果で返す
-    private func fetchSnapshot(force: Bool) async -> Result<[Photo], Error> {
-        do {
-            return .success(try await gallery.fetchPhotos(force: force))
-        } catch {
-            return .failure(error)
-        }
+    /// 読み込みを始めた回数（`load` の番号）
+    private var loadSerial = 0
+    /// 一覧を書き終えた回の番号（`writes`）。**書かなかった回は数えない**
+    private var lastWrittenSerial = 0
+    /// 走っている引き下げ（force）の回の番号
+    private var runningForced: Set<Int> = []
+
+    /// その回の答えを書くか。**書くと決めたら `lastWrittenSerial` を進める**（呼んだら必ず書くこと）。
+    ///
+    /// - 読んでいる間に人が替わった回は書かない（前の人の限定公開を持ち込む）
+    /// - 取り消されて出している一覧を残す回（`keepsShownFeed`）は書かない
+    /// - 🔴 **書き終えた回より新しい回だけ書く**（バグ探し 2026-10-03）。ホームの読み込みは画面の
+    ///   `.task`・引き下げ・限定公開の口の入れ替え（`restrictedChanges`）・ブロックから重なって
+    ///   走り、先に始めた回が後から着くと、後の回の新しい一覧（入れ替わった口の限定公開・
+    ///   引き下げで取り直した数）を古い一覧で戻していた。
+    ///   「最後に始めた回だけ」にしないのは、後の回が取り消されて何も書かなかったとき、
+    ///   先の回の答えまで捨てて古い一覧が残るため——**何も書かなかった回は数えない**
+    /// - 🔴 **引き下げの答えを待っている間に始まった force なしの回は書かない。** force なしの回は
+    ///   60秒の控えから即座に返るので、番号は新しくても中身は引き下げより古い。書くと、あとから
+    ///   着いた引き下げの新しい答えが「古い番号」として捨てられていた。引き下げが着けばそれを書く
+    ///
+    /// 2026-10-03 判断: 後の回が**失敗**して帯を書いたあとに先の回が取れても、先の回は書かない
+    /// （帯の「もう一度試す」と引き下げが出口）。引き下げが失敗した回は、待っている間の
+    /// force なしの答えも捨てたまま帯になる（引き下げは利用者が自分で引いたものなので、その結果を出す）
+    ///
+    /// **`/feed` の1ページ目の表示はここを通さない**（`showFirstPage`）。あちらは全件の回の番号とは
+    /// 別の道で、`keepsShownFeed`・人の切り替えの番号・ページの番号（`pageSerial`）で守る
+    private func writes(_ serial: Int, force: Bool, generation: Int) -> Bool {
+        guard !keepsShownFeed, generation == viewerGeneration, serial > lastWrittenSerial else { return false }
+        if !force, runningForced.contains(where: { $0 < serial }) { return false }
+        lastWrittenSerial = serial
+        return true
     }
 
     // MARK: - 公開写真のページ（`GET /feed`・2026-10-03）
 
     /// 「新着」の出どころ
     private enum PageSource {
-        /// まだ試していない（次の読み込みで1ページ目を読む）
+        /// まだ試していない（「新着」で次に読み込むとき1ページ目を読む）
         case untried
         /// `/feed` で読めている
         case pages
@@ -177,6 +212,21 @@ final class GalleryViewModel: ObservableObject {
     private var pageSerial = 0
     /// 仕上げを始めた回数。遅れて終わった古い仕上げで新しい並びを戻さない
     private var presentSerial = 0
+    /// 読んでいる最中の1ページ目。**同じ回の読み直しはこれを待つ**（起動時の `.task` と
+    /// 限定公開の口の入れ替えが重なっても `/feed` を2度読まない）
+    private var firstPageTask: (serial: Int, task: Task<Bool, Never>)?
+
+    /// 画面に出ている間に届かなかった続き（`PageWrite.whenVisible`）。戻ってきたら足す
+    private struct PendingPage {
+        let serial: Int
+        let items: [Photo]
+        let next: String?
+    }
+    private var pendingPage: PendingPage?
+    /// 画面に出ていない間に1ページ目から読み直した（続きの札の 400）。戻ってきたら書く
+    private var pageWriteDeferred = false
+    /// ホームが画面に出ているか（詳細を上に積んでいる間は false）。**既定は出ている**
+    private(set) var isOnScreen = true
 
     /// ページを読んでいる最中。**続きを重ねて頼まない**
     @Published private(set) var isLoadingPage = false
@@ -186,9 +236,26 @@ final class GalleryViewModel: ObservableObject {
     /// 残ったままでも、作り直すと `onAppear` がもう一度走って次を読む
     @Published private(set) var loadedPageCount = 0
 
+    /// 札を選んだときなどに起こした、1ページ目の読み込み（試験が待つため）
+    private(set) var pagesTask: Task<Void, Never>?
+
     /// 空のページ（`items` が空で `nextCursor` だけ）が続いたとき、1回の頼みで続けて読む上限。
     /// 超えたら一度返し、一覧の下の目印が次を頼む
     static let maxEmptyPageHops = 5
+
+    /// 届いた続きを、いま一覧に書くか。
+    ///
+    /// 🔴 **詳細を開いている間（ホームが画面に出ていない間）は書かない。** 足すと末尾の欠けた段
+    /// （`EditorialLayout.Row.id` は隣の写真まで含む）が作り直され、そこから開いた詳細が閉じる。
+    /// ページで出していない札（おすすめなど）では一覧に響かないので、すぐ足してよい
+    enum PageWrite: Equatable {
+        case now
+        case whenVisible
+    }
+
+    static func pageWrite(isOnScreen: Bool, showsPages: Bool) -> PageWrite {
+        (isOnScreen || !showsPages) ? .now : .whenVisible
+    }
 
     /// いま「新着」をページで出しているか。
     ///
@@ -206,12 +273,53 @@ final class GalleryViewModel: ObservableObject {
     /// 一覧の下に「続きを読む」目印を出すか
     var hasMorePages: Bool { usesPagedFeed && nextCursor != nil }
 
-    /// 1ページ目から読み直す。読めたら true（`pageSource` が `.pages` になる）
-    private func reloadPages() async -> Bool {
-        guard let feedPages else { return false }
+    /// 1ページ目を読み、**ページで出しているなら書く**。`writes` は通さない（`writes` の注記）。
+    /// `/feed` が使えなかった回は何も書かない——全件の回（`finishSnapshot`）が書く
+    /// （ここで書くと、全件がまだの間に空の一覧を出してしまう）
+    private func showFirstPage(force: Bool, generation: Int, alongsideSnapshot: Bool) async {
+        // 全件と同時に読む回は、限定公開を読みに行かない（全件の回が読む。二重に読まない）
+        guard let serial = await reloadPages(force: force, loadsRestricted: !alongsideSnapshot) else {
+            // 全件と同時でない回（札を選んだ・札の 400 で読み直した）で全件に戻ったら、全件の並びを出し直す
+            // （ページの並びが出たまま残らないように）。全件と同時の回は全件の回が書く
+            if !alongsideSnapshot, pageSource == .snapshot, generation == viewerGeneration,
+               !keepsShownFeed, isOnScreen, case .loaded = state {
+                state = .loaded(filtered())
+            }
+            return
+        }
+        guard serial == pageSerial, !keepsShownFeed, generation == viewerGeneration, usesPagedFeed else { return }
+        guard isOnScreen else {
+            pageWriteDeferred = true
+            return
+        }
+        state = .loaded(filtered())
+    }
+
+    /// 「新着」を選んだとき、まだ試していなければ1ページ目を読む
+    func loadPagesIfNeeded() async {
+        guard feed == .latest, feedPages != nil, pageSource == .untried else { return }
+        await showFirstPage(force: false, generation: viewerGeneration, alongsideSnapshot: false)
+    }
+
+    /// 1ページ目から読み直す。読めたらその回の番号（`pageSerial`）を返す
+    private func reloadPages(force: Bool, loadsRestricted: Bool) async -> Int? {
+        guard let feedPages else { return nil }
+        // 同じ回の1ページ目を読んでいる最中なら、それを待つ（引き下げは新しく読む）
+        if !force, let running = firstPageTask, running.serial == pageSerial {
+            return await running.task.value ? running.serial : nil
+        }
         pageSerial += 1
         let serial = pageSerial
+        pendingPage = nil
         isLoadingPage = true
+        let task = Task { await self.readFirstPage(feedPages, serial: serial, loadsRestricted: loadsRestricted) }
+        firstPageTask = (serial, task)
+        let ok = await task.value
+        if firstPageTask?.serial == serial { firstPageTask = nil }
+        return ok ? serial : nil
+    }
+
+    private func readFirstPage(_ feedPages: PublicFeedService, serial: Int, loadsRestricted: Bool) async -> Bool {
         defer { if serial == pageSerial { isLoadingPage = false } }
         let outcome = await readPages(feedPages, from: nil, known: [])
         guard serial == pageSerial else { return false }
@@ -223,7 +331,7 @@ final class GalleryViewModel: ObservableObject {
             pageSource = .pages
             pageFailed = false
             loadedPageCount = 1
-            await representPages()
+            await representPages(loadsRestricted: loadsRestricted)
             return serial == pageSerial
         case .failure(let error):
             // 取り消された回は何も変えない（出ていた並びを残す）
@@ -237,9 +345,11 @@ final class GalleryViewModel: ObservableObject {
         }
     }
 
-    /// 次のページを読む（一覧の下の目印が呼ぶ）。**読んでいる最中・最後まで読んだ回は何もしない**
+    /// 次のページを読む（一覧の下の目印が呼ぶ）。**読んでいる最中・最後まで読んだ回・
+    /// 届いた続きをまだ足していない回は何もしない**
     func loadNextPage() async {
-        guard let feedPages, pageSource == .pages, let cursor = nextCursor, !isLoadingPage else { return }
+        guard let feedPages, pageSource == .pages, pendingPage == nil,
+              let cursor = nextCursor, !isLoadingPage else { return }
         isLoadingPage = true
         let serial = pageSerial
         let generation = viewerGeneration
@@ -249,19 +359,53 @@ final class GalleryViewModel: ObservableObject {
         guard serial == pageSerial, generation == viewerGeneration else { return }
         switch outcome {
         case .success(let (items, next)):
-            pageRaw += items
-            pageIds.formUnion(items.map(\.id))
-            nextCursor = next
-            pageFailed = false
-            loadedPageCount += 1
-            await representPages()
-            guard serial == pageSerial else { return }
-            if case .loaded = state { state = .loaded(filtered()) }
+            let page = PendingPage(serial: serial, items: items, next: next)
+            switch Self.pageWrite(isOnScreen: isOnScreen, showsPages: usesPagedFeed) {
+            case .now: await apply(page)
+            case .whenVisible: pendingPage = page
+            }
         case .failure(let error):
             if error is CancellationError { return }
+            // 🔴 **札を断られた（400）なら1ページ目から読み直す。** 同じ札で「もう一度試す」を
+            // 押しても永遠に 400 で、続きが読めないまま残っていた
+            if case .server(400, _)? = error as? APIError {
+                print("[feed] 続きの札を断られました。1ページ目から読み直します: \(error)")
+                await showFirstPage(force: true, generation: generation, alongsideSnapshot: false)
+                return
+            }
             // 読んだぶんは残し、札も残す（「もう一度試す」で同じ続きを頼む）
             print("[feed] 続きのページを読めませんでした: \(error)")
             pageFailed = true
+        }
+    }
+
+    /// 届いた続きを足して書く
+    private func apply(_ page: PendingPage) async {
+        guard page.serial == pageSerial else { return }
+        pageRaw += page.items
+        pageIds.formUnion(page.items.map(\.id))
+        nextCursor = page.next
+        pageFailed = false
+        loadedPageCount += 1
+        await representPages(loadsRestricted: true)
+        guard page.serial == pageSerial else { return }
+        if case .loaded = state { state = .loaded(filtered()) }
+    }
+
+    /// ホームが画面から外れた（詳細を開いた）。これ以降の続きは戻るまで足さない
+    func leaveScreen() {
+        isOnScreen = false
+    }
+
+    /// ホームに戻ってきた。外れていた間に届いた続き・読み直しを書く
+    func returnToScreen() async {
+        isOnScreen = true
+        if let page = pendingPage {
+            pendingPage = nil
+            await apply(page)
+        } else if pageWriteDeferred {
+            pageWriteDeferred = false
+            if usesPagedFeed, case .loaded = state { state = .loaded(filtered()) }
         }
     }
 
@@ -287,12 +431,15 @@ final class GalleryViewModel: ObservableObject {
         }
     }
 
-    /// 読んだページに仕上げ（いいねの数・限定公開・編集・ブロック）を掛け直す
-    private func representPages() async {
+    /// 読んだページに仕上げ（いいねの数・限定公開・編集・ブロック）を掛け直す。
+    /// - Parameter loadsRestricted: false なら限定公開は手元の控えだけで重ねる（全件の回と
+    ///   同時に走る1ページ目。全件の回が読み終えたら掛け直す）
+    private func representPages(loadsRestricted: Bool) async {
         presentSerial += 1
         let serial = presentSerial
         let raw = pageRaw
-        let presented = await gallery.presentFeed(raw, reachedEnd: nextCursor == nil)
+        let presented = await gallery.presentFeed(raw, reachedEnd: nextCursor == nil,
+                                                  loadsRestricted: loadsRestricted)
         guard serial == presentSerial, pageSource == .pages else { return }
         pagedPhotos = presented
     }
@@ -307,6 +454,9 @@ final class GalleryViewModel: ObservableObject {
         pageFailed = false
         isLoadingPage = false
         loadedPageCount = 0
+        pendingPage = nil
+        pageWriteDeferred = false
+        firstPageTask = nil
     }
 
     /// 人が替わった回数。**替わる前に読み始めた回の答えを書かない**ために使う
@@ -382,8 +532,12 @@ final class GalleryViewModel: ObservableObject {
         guard viewerId != nil else {
             myPhotos = []
             myPhotosOwner = nil
+            justPosted = nil
             return
         }
+        // 先に足した控えは、この読み直しが**成功・失敗・取り消しのどれで終わっても**手放す
+        // （残すと、あとで消した写真が次の読み直しで戻る・`PostedPhotos.keepSeconds`）
+        defer { justPosted = nil }
         let fetched = try? await fetch()
         // 取り消された回（ログアウト・人の切り替え）は、遅れて着いた答えを誰にも付けない
         guard !Task.isCancelled else { return }
@@ -391,7 +545,9 @@ final class GalleryViewModel: ObservableObject {
         // （ログアウトを含む）の読みが始まっていたら、前の人の答えを書かない
         guard myPhotosWanted == viewerId else { return }
         if let fetched {
-            myPhotos = fetched
+            // 投稿したばかりでまだ索引に無い写真も残す（`showPosted`・id で重複を除く）
+            myPhotos = PostedPhotos.merge(loaded: fetched, posted: justPosted?.photos(at: Date()) ?? [],
+                                          owner: viewerId)
             myPhotosOwner = viewerId
         } else if myPhotosOwner != viewerId {
             // 取れなかった回は、**同じ人のぶんなら残す**（詳細を開いて取り消された回に
@@ -399,6 +555,19 @@ final class GalleryViewModel: ObservableObject {
             myPhotos = []
             myPhotosOwner = nil
         }
+    }
+
+    /// 投稿したばかりで、まだ読み直しの結果に合わせていない写真（`PostedPhotos`・2026-10-03）
+    private var justPosted: PostedPhotos.Pending?
+
+    /// 投稿画面を閉じた（`TabRouter.lastPosted`）。保存の応答の行を**読み直しの前に**自分の写真へ足す
+    /// （今日のテーマの札が、索引の遅れで「参加する」のまま残らないように）。人が替わっていたら何もしない
+    /// 控えは次の読み直しが終わったら手放し、`keepSeconds` を過ぎたら使わない（`PostedPhotos.Pending`）
+    func showPosted(_ posted: [Photo], viewerId: String?, at now: Date = Date()) {
+        guard let viewerId, !posted.isEmpty, myPhotosWanted == nil || myPhotosWanted == viewerId else { return }
+        justPosted = PostedPhotos.Pending(photos: posted, receivedAt: now)
+        guard myPhotosOwner == viewerId else { return }
+        myPhotos = PostedPhotos.merge(loaded: myPhotos, posted: posted, owner: viewerId)
     }
 
     /// `myPhotos` が誰のものか（`followingOwner` と同じ考え方）
@@ -616,6 +785,10 @@ final class GalleryViewModel: ObservableObject {
         setViewer(viewerId)
         all = feed.arrange(all)
         state = .loaded(filtered())
+        // 「新着」を初めて選んだ回は `/feed` の1ページ目を読む（おすすめでは読まないので）
+        if feed == .latest, feedPages != nil, pageSource == .untried {
+            pagesTask = Task { await self.loadPagesIfNeeded() }
+        }
     }
 
     func select(sort: GallerySort) {

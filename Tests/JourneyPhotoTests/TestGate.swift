@@ -95,3 +95,25 @@ struct PathGates: Sendable {
         await hit.gate.wait()
     }
 }
+
+/// 写真詳細の模型ごとの送信中の印（試験用）。**本番は画面をまたいだ `LikeCountStore` を
+/// 必ず渡す**（`load(gate:)`・`toggleLike(gate:)` の引数は省けない）。試験では、印を
+/// 気にしない多くの試験のために、模型ごとに1つの印を貸す（同じ模型の二度押しは同じ印で止まる）
+@MainActor
+enum TestLikeGates {
+    private static var byModel: [ObjectIdentifier: LikeCountStore] = [:]
+    static func of(_ model: PhotoDetailViewModel) -> LikeCountStore {
+        if let gate = byModel[ObjectIdentifier(model)] { return gate }
+        let gate = LikeCountStore()
+        byModel[ObjectIdentifier(model)] = gate
+        return gate
+    }
+}
+
+extension PhotoDetailViewModel {
+    /// 人を気にしない試験のための入り口（本番は `setUser(auth.userId)`）
+    func setSignedIn(_ value: Bool) { setUser(value ? "tester" : nil) }
+    func load() async { await load(gate: TestLikeGates.of(self)) }
+    @discardableResult
+    func toggleLike() async -> LikeAnswer? { await toggleLike(gate: TestLikeGates.of(self)) }
+}

@@ -77,7 +77,19 @@ final class TabRouter: ObservableObject {
     /// 回数で伝えるのは上と同じ理由
     @Published private(set) var postSheetsClosed = 0
 
-    func postSheetClosed() { postSheetsClosed += 1 }
+    func postSheetClosed() {
+        lastPosted = posting
+        posting = []
+        postSheetsClosed += 1
+    }
+
+    /// 開いている投稿画面で保存が通った写真（保存の応答の行・`UploadViewModel.onSaved`）
+    private var posting: [Photo] = []
+    /// **直前に閉じた投稿画面**で上がった写真。マイページ・ホームが `postSheetsClosed` を受けたときに
+    /// 読み直しを待たずに先に並べる（`PostedPhotos`・2026-10-03）。次に閉じたときに入れ替わる
+    private(set) var lastPosted: [Photo] = []
+
+    func notePosted(_ photo: Photo) { posting.append(photo) }
 
     /// **メニュー（≡）のシートを閉じた回数。** メニューから旅行プランを開いて
     /// 変えても、シートの下のホームは画面から消えた扱いにならないので、

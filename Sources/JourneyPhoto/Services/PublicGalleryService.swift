@@ -334,9 +334,18 @@ actor PublicGalleryService {
     /// 自分の編集・ブロックと消した写真の絞り（`visible`）を、`merged` と同じ順で通す。
     /// **`/feed` は今の行を返すが、端末にしか無い「通報した写真」はここでしか落とせない**。
     /// 通信はしない（絞ったぶんは控えが古ければ読み直す）
-    func presentFeed(_ raw: [Photo], reachedEnd: Bool) async -> [Photo] {
+    ///
+    /// - Parameter loadsRestricted: false なら限定公開は**手元の控えだけ**で重ねる（読みに行かない）。
+    ///   全件（`fetchPhotos`）と同時に走る1ページ目で使う——両方が読みに行くと、起動時に
+    ///   `/feed/restricted` を2度読む。全件が読み終えたら呼ぶ側が掛け直す
+    func presentFeed(_ raw: [Photo], reachedEnd: Bool, loadsRestricted: Bool = true) async -> [Photo] {
         let counted = LiveLikes.apply(liveCounts ?? [:], asOf: liveCountsAsOf ?? .distantPast, to: raw)
-        let (extra, _) = await restrictedPhotos(force: false)
+        let extra: [Photo]
+        if loadsRestricted {
+            extra = await restrictedPhotos(force: false).photos
+        } else {
+            extra = restrictedLoader == nil ? [] : (restrictedCache ?? [])
+        }
         let mixed = RestrictedFeed.mergeLoaded(publicPhotos: counted, restricted: extra, reachedEnd: reachedEnd)
         return visible(edits.apply(to: mixed))
     }
@@ -383,7 +392,7 @@ actor PublicGalleryService {
         await beforeLiveRequest?()
         do {
             try RequestCancellation.throwIfCancelled()
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.cancellableData(for: request)
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode),
                   let counts = LiveLikes.counts(from: data) else { return }

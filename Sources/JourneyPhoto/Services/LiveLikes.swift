@@ -89,6 +89,21 @@ enum LiveLikes {
         return readAt >= answeredAt.addingTimeInterval(serverStaleness)
     }
 
+    /// 端末の控え（`FavoritesStore` のハート）で、画面のハートを書き換えてよいか。
+    ///
+    /// **サーバーで確かめたハートは、それより新しい押した答え（`LikeCountStore.Entry.at`）の
+    /// ときだけ控えで書き換える。** 確かめていなければ控えを出す（圏外で開いた回の白を避ける）。
+    /// 2026-10-03: 大きく見る画面を閉じた後の `.task` が、確かめた♥を控えの白で上書きしていた
+    ///
+    /// - Parameters:
+    ///   - confirmedAt: 今の1枚のハートをサーバーで確かめた時刻。nil なら確かめていない
+    ///   - answeredAt: 控えに入った押した答えの時刻。nil なら答えは無い
+    static func storedLikedWins(confirmedAt: Date?, answeredAt: Date?) -> Bool {
+        guard let confirmedAt else { return true }
+        guard let answeredAt else { return false }
+        return answeredAt > confirmedAt
+    }
+
     /// サーバーの数が遅れうる幅。Lambda の控え（10秒）に、
     /// DynamoDB の「あとで揃う」読み方と端末・サーバーの時計のずれの余裕を足す。
     /// **API 側の控えを延ばしたら、ここも延ばすこと**

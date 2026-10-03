@@ -160,4 +160,42 @@ final class StoryReelTests: XCTestCase {
         XCTAssertEqual(StoryReel.faceLook(minX: 900, width: 400, reduceMotion: true).opacity, 0)
         XCTAssertEqual(StoryReel.faceLook(minX: 10, width: 0, reduceMotion: true).opacity, 1)
     }
+
+    // MARK: - 回っている間に始まった払い（バグ探し 2026-10-03）
+
+    /// 🔴 **回っている間に始まった払いは、指を離すまで無視する。** 以前は回りきった瞬間に
+    /// 同じ指の払いが生き返り、回った先の人をすぐまた回す・下へ縮めて閉じる、が起きた
+    func testSwipeStartedWhileTurningIsIgnoredUntilLifted() {
+        var gate = StoryReel.SwipeGate()
+        let start = CGPoint(x: 200, y: 400)
+        // 回っている最中に触れて動かした
+        XCTAssertFalse(gate.accepts(start: start, turning: true))
+        gate.change(start: start, dx: -40, dy: 2, turning: true, swipeLocked: false, typing: false)
+        // 回りきった後も、同じ指のうちは受けない
+        XCTAssertFalse(gate.accepts(start: start, turning: false), "回りきった後に同じ指の払いが指に付いた")
+        gate.change(start: start, dx: -200, dy: 3, turning: false, swipeLocked: false, typing: false)
+        XCTAssertNil(gate.axis, "回りきった後に同じ指の払いの向きを決めた")
+        XCTAssertNil(gate.end(start: start), "回っている間に始まった払いで、離したときに回った")
+
+        // 離して触れ直した払いは今までどおり受ける
+        let next = CGPoint(x: 210, y: 380)
+        XCTAssertTrue(gate.accepts(start: next, turning: false))
+        gate.change(start: next, dx: -40, dy: 2, turning: false, swipeLocked: false, typing: false)
+        XCTAssertEqual(gate.end(start: next), .horizontal)
+    }
+
+    /// 向きは払い始めに決めて離すまで変えない・触れた位置が変わったら新しい払い（今までの決まり）
+    func testSwipeGateKeepsTheFirstAxisAndResetsOnANewTouch() {
+        var gate = StoryReel.SwipeGate()
+        let a = CGPoint(x: 100, y: 100)
+        gate.change(start: a, dx: -30, dy: 5, turning: false, swipeLocked: false, typing: false)
+        gate.change(start: a, dx: -30, dy: 200, turning: false, swipeLocked: false, typing: false)
+        XCTAssertEqual(gate.axis, .horizontal, "横に回していたのに、指が下へ流れて向きが替わった")
+        // 打ち切られて onEnded が来ないまま、別の位置で触れ直した
+        let b = CGPoint(x: 150, y: 120)
+        gate.change(start: b, dx: 2, dy: 60, turning: false, swipeLocked: false, typing: false)
+        XCTAssertEqual(gate.end(start: b), .vertical)
+        // 知らない払いの onEnded は何もしない
+        XCTAssertNil(gate.end(start: a))
+    }
 }

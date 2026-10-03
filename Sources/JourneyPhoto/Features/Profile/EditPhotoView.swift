@@ -39,19 +39,22 @@ struct EditPhotoView: View {
     @State private var isReplacing = false
     /// この画面で差し替えた画像（送った本体から作る）。**見本はこちらを出す**（`EditPreview`）
     @State private var replacedPreview: Image?
+    /// 未保存の変更があるときの「閉じる」・下へ払うの確認（`unsavedCloseGuard`）
+    @State private var showLeaveConfirm = false
 
     init(photo: Photo) {
         self.photo = photo
-        _title = State(initialValue: LocalizedEdit.titleField(photo.title))
-        _caption = State(initialValue: LocalizedEdit.descriptionField(photo.description))
-        _location = State(initialValue: photo.location ?? "")
-        _tagsText = State(initialValue: (photo.tags ?? []).joined(separator: ", "))
-        _category = State(initialValue: photo.category ?? "")
-        _date = State(initialValue: EditDay.field(date: photo.date))
-        _published = State(initialValue: photo.published != false)
-        let raw = photo.audience ?? ""
-        let known = raw.isEmpty ? Audience.everyone : Audience(rawValue: raw)
-        _audience = State(initialValue: known ?? .everyone)
+        // 開いたときの欄は `EditPhotoChanges.Fields(opening:)`（閉じるときの「変えたか」と同じ起点）
+        let opened = EditPhotoChanges.Fields(opening: photo)
+        _title = State(initialValue: opened.title)
+        _caption = State(initialValue: opened.caption)
+        _location = State(initialValue: opened.location)
+        _tagsText = State(initialValue: opened.tagsText)
+        _category = State(initialValue: opened.category)
+        _date = State(initialValue: opened.date)
+        _published = State(initialValue: opened.published)
+        _audience = State(initialValue: opened.audience)
+        let known = EditPhotoChanges.openedAudience(photo)
         audienceKnown = known != nil
         openedAudience = known
     }
@@ -174,8 +177,22 @@ struct EditPhotoView: View {
         .webScreen()
         .navigationTitle(L("写真を編集", "Edit photo"))
         .navigationBarTitleDisplayMode(.inline)
-        // 下へ払っても閉じない（保存・差し替えの最中だけ・`HighlightEditorView` と同じ）
-        .interactiveDismissDisabled(isSaving || isReplacing)
+        // 🔴 **直した欄を黙って捨てさせない**（バグ探し 2026-10-03）。以前は保存・差し替えの
+        // 最中しか止めず、題や撮影地を直したあと下へ払う・「閉じる」で確かめもなく消えた。
+        // 変更がある間は払っても閉じず、「閉じる」で確かめる（ストーリー作成と同じ `unsavedCloseGuard`）。
+        // 保存・差し替えの最中は払っても閉じない（`.wait`）
+        .unsavedCloseGuard(leave, isPresented: $showLeaveConfirm,
+                           title: L("変更を保存しますか？", "Save your changes?"),
+                           // 説明が上限を超えている間は出さない（保存と同じ関所・`canSaveAndClose`）。
+                           // 保存・差し替えの最中は `.wait` で確認そのものが出ない
+                           canSave: EditPhotoChanges.canSaveAndClose(photo: photo, fields: fields),
+                           saveTitle: L("保存して閉じる", "Save and close"),
+                           discardTitle: L("変更を捨てる", "Discard changes"),
+                           message: L("保存しないで閉じると、直した内容は残りません。",
+                                      "If you close without saving, your edits will be lost."),
+                           // 保存は成功したときだけ閉じる（失敗なら開いたまま知らせを出す・`save`）
+                           onSave: { Task { await save() } },
+                           onDiscard: { dismiss() })
         .onChange(of: replaceItem) { _, item in
             Task { await replace(item) }
         }
@@ -183,10 +200,29 @@ struct EditPhotoView: View {
             ToolbarItem(placement: .cancellationAction) {
                 // 保存・差し替えの最中は閉じさせない。閉じると詳細が古い姿のまま残り、
                 // 失敗の知らせも見えない
-                Button(Labels.Common.close) { dismiss() }
-                    .disabled(isSaving || isReplacing)
+                Button(Labels.Common.close) {
+                    switch leave {
+                    case .now: dismiss()
+                    case .confirm: showLeaveConfirm = true
+                    case .wait: break
+                    }
+                }
+                .disabled(isSaving || isReplacing)
             }
         }
+    }
+
+    /// いま欄に入っている姿（`EditPhotoChanges`）
+    private var fields: EditPhotoChanges.Fields {
+        EditPhotoChanges.Fields(title: title, caption: caption, location: location,
+                                pickedCoords: pickedCoords, tagsText: tagsText, category: category,
+                                date: date, published: published, audience: audience)
+    }
+
+    /// 「閉じる」・下へ払うの扱い（`EditPhotoChanges.leave`）
+    private var leave: UnsavedLeave {
+        EditPhotoChanges.leave(photo: photo, openedAudience: openedAudience, fields: fields,
+                               isSaving: isSaving || isReplacing)
     }
 
     /// 写真そのものを差し替える。**EXIF は端末で落としてから送る**（投稿と同じ関所）。
@@ -247,49 +283,8 @@ struct EditPhotoView: View {
         message = nil
         defer { isSaving = false }
 
-        var patch = PhotoPatch()
-        // **触った欄だけ、英語側を残して送る**（`LocalizedEdit`）。
-        // 表示用の1言語を平文で送っていたので、`{ja, en}` の写真を
-        // 保存するたびに英語の題と説明が消えていた
-        patch.title = LocalizedEdit.title(original: photo.title, field: title)
-        patch.description = LocalizedEdit.description(original: photo.description, field: caption)
-        // **変えた項目だけ送る**（Web の `/user/edit` の `changedFields` と同じ）。
-        // 開いた時点の値を毎回全部送っていたので、古い写し（公開 JSON は
-        // 建て直しまで古い）から開いてタグだけ直すと、Web で直した説明や
-        // 撮影地が黙って巻き戻っていた
-        if location != (photo.location ?? "") || pickedCoords != nil {
-            patch.location = location
-        }
-        // **選んだ回だけ載せる。** nil は「触らない」なので、
-        // 地名を手で直しただけの回に既存の座標を壊さない
-        patch.coords = pickedCoords
-        // **本人が撮影地を空にしたら座標も消す。** nil だけでは「触らない」になり、
-        // 地図とページにピンが残っていた（投稿画面の `locationClearedByUser` と同じ考え・`EditPlaceRules`）。
-        // 開いたときから空の写真（圏外で投稿して撮影地が入らなかった等）は座標を残す
-        patch.clearCoords = EditPlaceRules.clearsCoords(openedLocation: photo.location,
-                                                        currentLocation: location,
-                                                        pickedCoords: pickedCoords != nil)
-        // タグは欄と同じ割り方で比べる（区切りの文字を含む古いタグは欄に出した
-        // 時点で割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
-        let tags = TagInput.parse(tagsText)
-        if tags != TagInput.parse((photo.tags ?? []).joined(separator: ", ")) {
-            patch.tags = tags
-        }
-        let trimmedCategory = category.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedCategory != (photo.category ?? "").trimmingCharacters(in: .whitespacesAndNewlines) {
-            patch.category = trimmedCategory
-        }
-        // 公開と公開範囲も**変えたときだけ**（`EditVisibilityRules`）。知らない値の写真では
-        // 範囲を送らない——キーを外せばサーバーは既にある印を残す
-        let visibility = EditVisibilityRules.patch(openedPublished: photo.published != false,
-                                                   openedAudience: openedAudience,
-                                                   published: published, audience: audience)
-        patch.published = visibility.published
-        patch.audience = visibility.audience
-        // **触っていなければ送らない**（時刻付きの撮影日を日付だけに落とさない）。
-        // 入っていた日付を消したら空文字を送る（サーバーが撮影日を消す）
-        patch.date = EditDay.toSend(opened: EditDay.field(date: photo.date),
-                                    field: date)
+        // 差分の決まりは `EditPhotoChanges.patch`（閉じるときの確認と同じ判断）
+        let patch = EditPhotoChanges.patch(photo: photo, openedAudience: openedAudience, fields: fields)
 
         // **何も変えていなければ送らない。** 空の本文はサーバーが 400「更新項目が
         // ありません」で断る（公開を毎回送っていた頃はそれが覆っていた）
@@ -304,8 +299,8 @@ struct EditPhotoView: View {
             // 🔴 **非公開にしたら公開一覧から落とす。** 一覧は建て直しまで古い
             // 静的 JSON なので、非公開にした写真がホーム・探す・地図に出続けていた。
             // **公開に戻したら印を外す**（外さないと、建て直した後もこの端末でだけ出ない）。
-            // 公開を触っていない回（`visibility.published` が nil）は何もしない
-            if let published = visibility.published {
+            // 公開を触っていない回（`patch.published` が nil）は何もしない
+            if let published = patch.published {
                 if published {
                     await hidden.unhideGone(photo.id, for: owner, environment: environment)
                 } else {

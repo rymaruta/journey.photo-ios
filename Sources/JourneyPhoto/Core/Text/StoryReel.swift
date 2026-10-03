@@ -154,6 +154,46 @@ enum StoryReel {
         return axis == .horizontal && swipeLocked ? nil : axis
     }
 
+    /// 1回の払い（指が触れてから離すまで）の受け付け。向きは払い始めに決めて離すまで変えない。
+    ///
+    /// - **指が触れた位置（`start`）が変わったら新しい払い**——打ち切られて残った古い向きを使わない
+    /// - 🔴 **回っている間に始まった払いは、指を離すまで無視する**（バグ探し 2026-10-03）。
+    ///   以前は回っている間だけ向きを決めずにいたので、回りきった瞬間に同じ指の払いが
+    ///   生き返り、回った先の人をすぐまた回す・下へ縮めて閉じる、が起きた（続けて素早く払うと出る）
+    struct SwipeGate: Equatable {
+        private(set) var start: CGPoint?
+        private(set) var axis: Axis?
+        /// この払いは回っている間に始まった（離すまで受けない）
+        private(set) var ignored = false
+
+        init() {}
+
+        /// 指で動かしている間の値（`@GestureState`）を書くか。読むだけ
+        func accepts(start: CGPoint, turning: Bool) -> Bool {
+            guard !turning else { return false }
+            return !(self.start == start && ignored)
+        }
+
+        /// 払いの途中（`onChanged`）。向きがまだなら決める
+        mutating func change(start: CGPoint, dx: Double, dy: Double, turning: Bool,
+                             swipeLocked: Bool, typing: Bool) {
+            if self.start != start {
+                self.start = start
+                axis = nil
+                ignored = turning
+            }
+            guard !ignored, !turning, axis == nil else { return }
+            axis = StoryReel.axis(dx: dx, dy: dy, swipeLocked: swipeLocked, typing: typing)
+        }
+
+        /// 離した（`onEnded`）。**その払いに決めた向き**（無視した払い・知らない払いは nil）。覚えは消す
+        mutating func end(start: CGPoint) -> Axis? {
+            defer { self = SwipeGate() }
+            guard self.start == start, !ignored else { return nil }
+            return axis
+        }
+    }
+
     // MARK: - 下へ払って閉じる
 
     /// これだけ下へ引いて離したら閉じる（勢いでも閉じる）

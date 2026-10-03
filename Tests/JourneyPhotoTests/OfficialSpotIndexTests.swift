@@ -191,7 +191,7 @@ final class OfficialSpotIndexTests: XCTestCase {
     /// 🔴 経路の検索の時間切れ。**取り消しに応じない処理でも、待たずに nil を返す**
     func testFirstWithinGivesUpWithoutWaitingForTheOperation() async {
         let start = Date()
-        let value: Int? = await OfficialSpotIndex.firstWithin(seconds: 0.05) {
+        let value: Int? = await AsyncTimeout.firstWithin(seconds: 0.05) {
             // 取り消しに応じない遅い処理（地図の検索の代わり）
             await Task.detached { Thread.sleep(forTimeInterval: 1.0) }.value
             return 1
@@ -202,14 +202,14 @@ final class OfficialSpotIndexTests: XCTestCase {
 
     /// 間に合えばその答え
     func testFirstWithinReturnsAnEarlyAnswer() async {
-        let value: Int? = await OfficialSpotIndex.firstWithin(seconds: 2) { 7 }
+        let value: Int? = await AsyncTimeout.firstWithin(seconds: 2) { 7 }
         XCTAssertEqual(value, 7)
     }
 
     /// 呼んだ側が取り消されたら、すぐ nil
     func testFirstWithinStopsWhenCancelled() async {
         let task = Task { () -> Int? in
-            await OfficialSpotIndex.firstWithin(seconds: 5) {
+            await AsyncTimeout.firstWithin(seconds: 5) {
                 await Task.detached { Thread.sleep(forTimeInterval: 1.0) }.value
                 return 1
             }

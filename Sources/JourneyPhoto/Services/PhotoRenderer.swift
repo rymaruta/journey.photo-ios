@@ -81,6 +81,34 @@ final class PhotoRenderer {
         return Int(pixels)
     }
 
+    /// 読んだ写真を長い辺 `maxPixelSize` に**縮める**（もう一度デコードしない・2026-10-03）。
+    /// 編集画面のプリセットの見本は、画面用に読んだ写真から作る（以前は原本をもう一度読んでいた）。
+    /// 縮める必要が無い・縮められなければ元のまま
+    static func downscaled(_ loaded: Loaded, maxPixelSize: Int) -> Loaded {
+        let extent = loaded.image.extent
+        guard let scale = downscaleFactor(width: Double(extent.width), height: Double(extent.height),
+                                          maxPixelSize: maxPixelSize),
+              let filter = CIFilter(name: "CILanczosScaleTransform") else { return loaded }
+        filter.setValue(loaded.image, forKey: kCIInputImageKey)
+        filter.setValue(scale, forKey: "inputScale")
+        filter.setValue(1.0, forKey: "inputAspectRatio")
+        guard let output = filter.outputImage else { return loaded }
+        // 縁の半端な画素を切る（描く範囲は `extent`）
+        let e = output.extent
+        let rect = CGRect(x: e.origin.x.rounded(.up), y: e.origin.y.rounded(.up),
+                          width: e.width.rounded(.down), height: e.height.rounded(.down))
+        guard rect.width >= 1, rect.height >= 1 else { return loaded }
+        return Loaded(image: output.cropped(to: rect), colorSpace: loaded.colorSpace)
+    }
+
+    /// 長い辺を `maxPixelSize` にする倍率（1 未満）。もう小さい・値が壊れていれば nil
+    static func downscaleFactor(width: Double, height: Double, maxPixelSize: Int) -> Double? {
+        let longSide = max(width, height)
+        guard maxPixelSize > 0, longSide.isFinite, width > 0, height > 0,
+              longSide > Double(maxPixelSize) else { return nil }
+        return Double(maxPixelSize) / longSide
+    }
+
     /// 書き出す色空間: 元が Display P3 の系統なら Display P3、それ以外は sRGB
     static func outputColorSpace(for original: CGColorSpace?) -> CGColorSpace? {
         let name = original?.name.map { $0 as String } ?? ""

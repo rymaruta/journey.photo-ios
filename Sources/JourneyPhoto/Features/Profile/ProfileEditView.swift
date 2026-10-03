@@ -52,6 +52,8 @@ struct ProfileEditView: View {
     /// 戻れてしまうと送り終わる前の古い画像が前の画面に出たままになり、
     /// 保存と重なると後から来た方がどちらかを上書きする
     @State private var uploadingImage: ProfileService.ImageKind?
+    /// 変えた欄があるときの戻るの確認（`unsavedLeaveGuard`）
+    @State private var showLeaveConfirm = false
 
     var body: some View {
         Form {
@@ -143,9 +145,22 @@ struct ProfileEditView: View {
             }
         }
         .overlay { if isLoading { ProgressView() } }
-        // 画像の送信中・保存中は戻らせない（戻れると保存の結果を見届けられない）
-        .navigationBarBackButtonHidden(uploadingImage != nil || isSaving)
-        .interactiveDismissDisabled(uploadingImage != nil || isSaving)
+        // 🔴 **直した欄を黙って捨てさせない**（`ProfileDraft.leave`・バグ探し 2026-10-03）。
+        // 変えた欄がある間は標準の戻るを隠し、自前の戻るで「保存して戻る／変更を捨てる」を
+        // 確かめる（親しい友達・旅行プランと同じ `unsavedLeaveGuard`）。画像の送信中・保存中は
+        // 戻らせない（戻れると保存の結果を見届けられない。以前の戻るを隠す門と同じ）
+        .unsavedLeaveGuard(leave, isPresented: $showLeaveConfirm, canSave: loaded,
+                           // 自前の戻るにも前の画面の題を添える（標準の「‹ マイページ」と同じ見た目・旅行プランと同じ形）
+                           backTitle: Labels.Navigation.mypage,
+                           message: L("保存しないで戻ると、直した内容は残りません。",
+                                      "If you go back without saving, your edits will be lost."),
+                           onSave: {
+                               // 右上の「保存」と同じ門（押したその場で閉じる）。成功したら `save` が閉じる
+                               guard !isSaving else { return }
+                               isSaving = true
+                               Task { await save() }
+                           },
+                           onDiscard: { dismiss() })
         .alert(L("保存できませんでした", "Couldn't save"),
                isPresented: Binding(get: { saveError != nil },
                                     set: { if !$0 { saveError = nil } })) {
@@ -332,6 +347,11 @@ struct ProfileEditView: View {
         ProfileDraft(username: username, displayName: displayName, bio: bio,
                      website: website, instagram: instagram, statusText: statusText,
                      homeLocation: homeLocation, themeColor: themeColor, songs: songs)
+    }
+
+    /// 戻るの扱い（`ProfileDraft.leave`）
+    private var leave: UnsavedLeave {
+        ProfileDraft.leave(original: original, edited: edited, isBusy: isSaving || uploadingImage != nil)
     }
 
     /// 呼ぶ前に `isSaving` を立てておくこと（ボタンが同期で立てる）。戻るときは必ず下ろす
