@@ -384,11 +384,21 @@ final class ScreenshotTests: XCTestCase {
                     if app.buttons["search.emptyMap"].firstMatch.exists {
                         shoot(app, "11b-探す（0件から地図へ）")
                     }
+                    // 🔴 **キーボードを閉じてから先へ進む**（2026-10-03・run 337 の絵 13・14 で確かめた）。
+                    // 出たままだとタブの帯を覆い、「マップ」を押してもキーボードに当たり（13 が探す画面の
+                    // まま）、右下の「マイページ」は🎤（音声入力）キーに当たって「Enable Dictation?」の札が
+                    // 開いた。以降の操作が全部札に当たり、15・20・21・30・31・60・41 が黙って欠けていた。
+                    // 焦点のあるうちに改行で確定する（焦点の無い `typeText` は失敗として記録される）
+                    field.typeText("\n")
                     // 消すボタンは入力欄の外にある自前のボタン（`search.clear`）。OS の「Clear text」は無い。
                     // 見つからなくても落とさない（この試験の決まり: 出なければ撮らないだけ）
                     let clear = app.buttons["search.clear"].firstMatch
                     if clear.waitForExistence(timeout: 3), clear.isHittable { clear.tap() }
-                }
+                    // 閉じたのを確かめてからタブへ（閉じなければ待つだけ・落とさない）
+                    let keyboardGone = NSPredicate(format: "count == 0")
+                    _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardGone, object: app.keyboards)],
+                                       timeout: 5)
+                            }
             }
             if name == "マップ" {
                 shootSpotPin(app)
@@ -496,6 +506,13 @@ final class ScreenshotTests: XCTestCase {
         // 巡回は「出なければ撮らない」ので、赤くもならない。
         tabBar.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 2)
+        // **フィードを「おすすめ」へ戻す。** 一巡の `10c` が「フォロー中」に切り替えることがある
+        // （鍵なしログインのフォロー一覧は空＝`feed.photo` が出ない）。
+        let recommended = app.buttons["おすすめ"].firstMatch
+        if recommended.waitForExistence(timeout: 5), recommended.isHittable {
+            recommended.tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
         // **写真そのものを名指しで押す**（`feed.photo`）。
         // 位置で探していたときは、今日のテーマの「参加する」に当たって
         // **ログイン画面を「写真の詳細」として撮って**いた（run 49）。
@@ -505,8 +522,13 @@ final class ScreenshotTests: XCTestCase {
         // 掛かって `isHittable == false` になり、`20` と `21` が**黙って欠けて**いた。
         // `swipeUp` は勢いで1枚目ごと画面の上へ流しうるので、勢いの付かない短い引き
         // （画面の 35% ぶん）で少しずつ送る
+        //
+        // **まだ作られていない間も送る**（2026-10-03）。写真の一覧は
+        // `LazyVStack` の下の方（季節の段・入口・おすすめの横並びの下）にあり、画面の外では**要素が
+        // まだ無い**ことがある。前は「在る・押せない」間だけ送っていたので、無いと送らずに抜けた。
+        // 上限を広げ、在って押せるまで送る（run 316〜337 で欠けていた主な原因は 11b のキーボード）
         var feedPushes = 0
-        while firstPhoto.waitForExistence(timeout: 10), !firstPhoto.isHittable, feedPushes < 4 {
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), feedPushes < 8 {
             let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
             let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
             from.press(forDuration: 0.05, thenDragTo: to)
