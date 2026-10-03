@@ -47,9 +47,8 @@ final class PhotoDetailViewModel: ObservableObject {
     ///
     /// 🔴 **写真ごとの印（`LikeCountStore` の送信中）に一本化した。** 以前は画面に1つの
     /// `isLiking` で、束を左右に送った後の♥が、前の1枚の送信中は黙って無視されていた。
-    /// 画面からは常に `LikeCountStore` を渡す（`toggleLike(gate:)`・`load(gate:)`）。
-    /// これは渡されない呼び出し（試験・単体）の受け皿で、同じ型を使う（写しの仕組みを作らない）
-    private let ownLikeGate: LikeCountStore
+    /// 印は**画面をまたいで共有の `LikeCountStore` だけ**——`toggleLike(gate:)`・`load(gate:)` の
+    /// 引数は省けない（自前の空の印を持つと、二つの印が食い違う）
     /// 写真ごとの、押したいいねが**受け付けられた**回数。**読み込みの間にその写真で
     /// 増えたら、その読み込みのハートと数は書かない**——開いた
     /// 直後に押すと、先に出ていた読み込みの（押す前の）答えが後から届き、押した
@@ -65,6 +64,15 @@ final class PhotoDetailViewModel: ObservableObject {
     /// 答え・この画面で押した答え）。そこから `LiveLikes.serverStaleness` の間に
     /// 読んだ数と印は、押す前の古い答えでありうるので書かない（`LiveLikes.readSupersedes`）
     private var likeAnsweredAt: Date?
+    /// 今の1枚のハートを**サーバーで確かめた**時刻（読み込みの「自分が押しているか」・押した答え）。
+    /// 🔴 これより古い端末の控え（`show` の `liked`）では上書きしない
+    /// （`LiveLikes.storedLikedWins`）。大きく見る画面を閉じた後の `.task` が控えの白で
+    /// 上書きし、読み直しも走らないので白い♥のまま固まっていた
+    private var likedConfirmedAt: Date?
+    /// **いまコメントの中身が入っている写真。** 読み終えたときだけ入り、読みに行く前・
+    /// 別の1枚へ送ったときに nil に戻す。画面はこれと今の1枚を比べて、
+    /// 読み直しを省いてよいかを決める（`PhotoDetailRules.rereadPlan`）
+    @Published private(set) var commentsPhotoId: String?
     /// 投稿者の公開プロフィール。**@ユーザー名を出すため**（写真の行は
     /// 表示名しか持っていない）。取れなければ nil——名前だけ出す
     @Published private(set) var owner: UserProfile?
@@ -85,10 +93,11 @@ final class PhotoDetailViewModel: ObservableObject {
         self.photoId = photoId
         self.social = social
         self.likes = initialLikes
-        self.ownLikeGate = LikeCountStore()
     }
 
     func setSignedIn(_ value: Bool) {
+        // 人が替わったら、前の人で確かめたハートを信じない
+        if value != isSignedIn { likedConfirmedAt = nil }
         isSignedIn = value
     }
 
@@ -107,8 +116,10 @@ final class PhotoDetailViewModel: ObservableObject {
             likes = initialLikes
             likesFromServer = false
             likeAnsweredAt = answeredAt
+            likedConfirmedAt = nil
             lastLikeAnswer = nil
             comments = []
+            commentsPhotoId = nil
             commentCount = nil
             commentsUnavailable = false
             draftComment = ""
@@ -123,7 +134,10 @@ final class PhotoDetailViewModel: ObservableObject {
            likeAnsweredAt.map({ answeredAt > $0 }) ?? true {
             likeAnsweredAt = answeredAt
         }
-        self.liked = liked
+        // サーバーで確かめたハートは、それより新しい押した答えのときだけ控えで書き換える
+        if LiveLikes.storedLikedWins(confirmedAt: likedConfirmedAt, answeredAt: answeredAt) {
+            self.liked = liked
+        }
     }
 
     /// 投稿者を読む。**写真の主が分かっているときだけ**
@@ -142,10 +156,12 @@ final class PhotoDetailViewModel: ObservableObject {
     ///   書かなかった回は、答えが届いたときに画面が `show` で入れ直す。
     ///   2026-10-03 判断: 送信が失敗した回もこの読みは捨てる（押す前の数・ハートのまま。
     ///   控えが元に戻るので見た目は合う）。読み直しの往復を増やすより単純さを採った
-    func load(gate: LikeCountStore? = nil) async {
+    func load(gate likeGate: LikeCountStore) async {
         let id = photoId
-        let likeGate = gate ?? ownLikeGate
         let sendingAtStart = likeGate.isSending(id)
+        // **読みに行くと決めたら、待つ前に「中身が入っている」を外す**（取り消し・失敗で
+        // 抜けた回に、読めていない1枚を読み済みと扱わない）
+        commentsPhotoId = nil
         let accepted = acceptedLikes[id, default: 0]
         let readAt = Date()
         async let snapshot = social.likeSnapshot(photoId: id, signedIn: isSignedIn)
@@ -179,6 +195,7 @@ final class PhotoDetailViewModel: ObservableObject {
         guard likeUntouched else { return }
         if let mine {
             liked = mine
+            likedConfirmedAt = readAt
         } else if !isSignedIn {
             liked = false
         }
@@ -215,6 +232,7 @@ final class PhotoDetailViewModel: ObservableObject {
                                         posted: postedComments[id] ?? [], deleted: deletedCommentIds)
         comments = merged.items
         commentCount = merged.count
+        commentsPhotoId = id
     }
 
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、
@@ -234,7 +252,7 @@ final class PhotoDetailViewModel: ObservableObject {
     ///   **ホームや大きく見る画面で同じ写真を送っている間は送らない。**
     ///   印は写真ごと——前の1枚を送っている間も、束の隣の1枚は押せる
     @discardableResult
-    func toggleLike(gate: LikeCountStore? = nil) async -> LikeAnswer? {
+    func toggleLike(gate likeGate: LikeCountStore) async -> LikeAnswer? {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
@@ -243,7 +261,6 @@ final class PhotoDetailViewModel: ObservableObject {
             return nil
         }
         let id = photoId
-        let likeGate = gate ?? ownLikeGate
         // 同じ写真を送っている間は（この画面の二度押しでも、別の画面からでも）、
         // 押しても何もしない（知らせも消さない）
         guard likeGate.beginSending(id) else { return nil }
@@ -261,6 +278,7 @@ final class PhotoDetailViewModel: ObservableObject {
             // 画面には書かない（控えへは呼び出し側が押した1枚に書く）
             guard id == photoId else { return answer }
             liked = result.liked
+            likedConfirmedAt = Date()
             if let likes = result.likes {
                 self.likes = likes
                 lastLikeAnswer = likes

@@ -56,13 +56,16 @@ struct PhotoDetailView: View {
     @State private var followLookupFailed = false
     /// いまの `isFollowing` を**どの鍵（持ち主・自分・ブロック）で取ったか**。
     /// 同じ鍵で取り直す回（大きく見る画面を閉じた後など）は、分かっている値を残す
-    /// （`PhotoDetailRules.followWhileRefetching`）
+    /// （`PhotoDetailRules.followStart`）
     @State private var followKnownFor: String?
-    /// 読み終えた鍵（いいね・コメント／近くの写真／スポットの行き先）。
-    /// **同じ鍵で二度目に `.task` が走っても読み直さない**（`PhotoDetailRules.needsRead`）
-    @State private var readDetailKey: String?
-    @State private var readNearbyKey: String?
-    @State private var readSpotKey: String?
+    /// 大きく見る画面を閉じた時刻。**閉じた直後に走り直す `.task` だけ**読み直しを省く
+    /// （`PhotoDetailRules.rereadPlan`）。写真の主・近くの写真・タブから戻った回は今までどおり読む
+    @State private var viewerClosedAt: Date?
+    /// いま中身が入っている近くの写真・スポットの行き先が、**どの1枚・どの撮影地のものか**。
+    /// 読み終えたときだけ入り、読みに行く前に nil に戻す（取り消し・失敗で抜けた回に、
+    /// 前の1枚の印が残って読み直されないことが無いように）
+    @State private var nearbyPhotoId: String?
+    @State private var spotLeadLocation: String?
     /// 成功の知らせ（ブロックしました など）。**失敗の赤字（`actionError`）と分ける**
     @State private var actionNotice: String?
     /// 削除を確かめているコメント（押してすぐ消さない）
@@ -183,28 +186,26 @@ struct PhotoDetailView: View {
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
         // **送った先の1枚でも読み直す**（鍵に今の1枚を入れる）
         //
-        // 🔴 **同じ鍵で二度目に走った回は読み直さない**（`PhotoDetailRules.needsRead`）。
-        // 大きく見る画面（`fullScreenCover`）を閉じるたびに走り直し、コメントと
-        // 近くの写真を読み直していた。明示の読み直し（「もう一度試す」の `reloadComments`）は
-        // ここを通らないので残る。読めなかった回は覚えない（次に出たときに読み直す）
+        // 🔴 **大きく見る画面を閉じた直後の1回だけ、中身が今の1枚のものなら読み直さない**
+        // （`PhotoDetailRules.rereadPlan`）。閉じるたびに走り直し、コメントと近くの写真を
+        // 読み直していた。省く回は控えからハートも入れない（確かめた♥を控えの白で上書きしない）。
+        // 写真の主・近くの写真・タブから戻った回は今までどおり読む。明示の読み直し
+        // （「もう一度試す」の `reloadComments`）はここを通らない
         //
         // ⚠️ 確かめていない: 閉じたときに iOS 17／26 で本当に下の画面の onDisappear／onAppear
-        // （＝`.task` の取り消しと走り直し）が起きるかは、Xcode の無いこの環境では見ていない。
-        // 起きなければこの守りは何もしないだけで、害は無い。
-        // 2026-10-03 判断: 二度目はいいねの数も読み直さない（`showStoredLike` で端末の控えには
-        // 合わせる）。大きく見る画面の中の♥はこの画面の模型を通るので、数は既に新しい
+        // （＝`.task` の取り消しと走り直し）が起きるか、閉じた印（`showViewer` が false に
+        // なった時刻）が走り直しより先に立つかは、Xcode の無いこの環境では見ていない。
+        // 起きなければ・印が後なら、今までどおり読み直すだけで害は無い
         .task(id: PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)) {
-            let key = PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)
             model.setSignedIn(auth.userId != nil)
-            showStoredLike()
-            guard PhotoDetailRules.needsRead(key, lastRead: readDetailKey) else { return }
+            let plan = PhotoDetailRules.rereadPlan(current.id, contentFor: model.commentsPhotoId,
+                                                   viewerClosedAt: viewerClosedAt, now: Date())
+            if plan.syncFromStores { showStoredLike() }
+            guard plan.read else { return }
             // 前の1枚の「ブロックしました」・保存の失敗を持ち越さない
-            // （同じ1枚へ戻っただけの回は消さない）
             actionNotice = nil
             actionError = nil
             await model.load(gate: likeCounts)
-            guard !Task.isCancelled, !model.commentsUnavailable else { return }
-            readDetailKey = key
         }
         // 🔴 **ホームで押した答えが、開いた後に届いたら入れ直す。** ♥を押した直後
         // （答えの前）に開くと、`.task` の時点の数とハートのまま固まっていた。
@@ -212,12 +213,19 @@ struct PhotoDetailView: View {
         .onChange(of: likeCounts.entry(for: current.id)) { _, _ in showStoredLike() }
         .onChange(of: favorites.contains(current.id)) { _, _ in showStoredLike() }
         .task(id: shown.location) {
-            guard PhotoDetailRules.needsRead(shown.location ?? "", lastRead: readSpotKey) else { return }
+            guard PhotoDetailRules.rereadPlan(shown.location ?? "", contentFor: spotLeadLocation,
+                                              viewerClosedAt: viewerClosedAt, now: Date()).read else { return }
             await loadSpotLead()
         }
         .task(id: shown.id) {
-            guard PhotoDetailRules.needsRead(shown.id, lastRead: readNearbyKey) else { return }
+            guard PhotoDetailRules.rereadPlan(shown.id, contentFor: nearbyPhotoId,
+                                              viewerClosedAt: viewerClosedAt, now: Date()).read else { return }
             await loadNearby()
+        }
+        // 閉じた印。閉じ始め（束ねた値が false になったとき）に立てる——下の画面が出直すのは
+        // 閉じる動きの終わりなので、走り直しより先に立つ（確かめていない・上の注記）
+        .onChange(of: showViewer) { _, isPresented in
+            if !isPresented { viewerClosedAt = Date() }
         }
         // **ブロック・通報で絞り直す**（`hidden.revision`）。この画面で
         // その場でブロック／通報しても、近くの写真とスポットの行き先が
@@ -255,16 +263,17 @@ struct PhotoDetailView: View {
             // **フォローしているかは、その人を見に行かずに知りたい。**
             // 自分のフォロー一覧から引く（相手のページを開かずに済む）
             followLookupFailed = false
-            guard let me = auth.userId, let ownerId, me != ownerId else {
-                isFollowing = false
-                return
-            }
             // 人が替わった・入り直した回は、答えが来るまで「分からない」。
-            // 🔴 **同じ鍵で取り直す回は、分かっている値を残す**（`followWhileRefetching`）。
-            // 大きく見る画面を閉じるたびに nil にしていて、ボタンが一瞬消えていた
-            let followKey = "\(me)|\(ownerId)|\(hidden.blockedUserIds.contains(ownerId))"
-            isFollowing = PhotoDetailRules.followWhileRefetching(isFollowing, knownFor: followKnownFor,
-                                                                 key: followKey)
+            // 🔴 **同じ鍵で取り直す回は、分かっている値を残す**（`PhotoDetailRules.followStart`）。
+            // 大きく見る画面を閉じるたびに nil にしていて、ボタンが一瞬消えていた。
+            // ログアウト中・自分の写真では覚えた鍵も捨てる（入り直した直後に前の値を出さない）
+            let start = PhotoDetailRules.followStart(
+                me: auth.userId, owner: ownerId,
+                blocked: ownerId.map(hidden.blockedUserIds.contains) ?? false,
+                known: isFollowing, knownFor: followKnownFor)
+            isFollowing = start.isFollowing
+            followKnownFor = start.knownFor
+            guard let followKey = start.fetchKey, let ownerId else { return }
             // **取れなかった回は書かない。** 圏外で「フォロー」に戻すと、
             // フォロー中の人を押して二重に送る（`FollowListView` と同じ扱い）
             let ids = try? await environment.social.myFollowingIds()
@@ -1321,9 +1330,13 @@ struct PhotoDetailView: View {
     /// （持つ写真が出てきたら `OfficialSpotView` への行を足す）。
     private func loadSpotLead() async {
         // 途中で消さずに、答えが出てから入れ替える（絞り直しで行がちらつかない）
-        let label = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
+        let location = shown.location ?? ""
+        let label = location.trimmingCharacters(in: .whitespaces)
+        // **読みに行く前に「中身が入っている」を外す**（抜けた回に読み済みと扱わない）
+        spotLeadLocation = nil
         guard !label.isEmpty else {
             spotLead = nil
+            spotLeadLocation = location
             return
         }
         let fetched = try? await environment.gallery.fetchPhotos()
@@ -1338,7 +1351,7 @@ struct PhotoDetailView: View {
         // `blockAndHide` は一覧の側（`setHidden`）より先に `revision` を
         // 進めるので、一覧から取った直後でもここで落とす
         spotLead = Self.makeSpotLead(label, in: hidden.visible(fetched))
-        readSpotKey = shown.location ?? ""
+        spotLeadLocation = location
     }
 
     /// **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
@@ -1362,8 +1375,12 @@ struct PhotoDetailView: View {
     /// 見せない写真（ブロック・通報）は落とす。上の束（`heroGroup`）と同じ
     /// 並び（`siblings`）を渡し、**上に出ている写真だけ**を除く
     private func loadNearby() async {
+        let id = shown.id
+        // **読みに行く前に「中身が入っている」を外す**（抜けた回に読み済みと扱わない）
+        nearbyPhotoId = nil
         guard shown.coords != nil else {
             nearby = []
+            nearbyPhotoId = id
             return
         }
         let fetched = try? await environment.gallery.fetchPhotos()
@@ -1373,7 +1390,7 @@ struct PhotoDetailView: View {
             return
         }
         nearby = NearbyPhotos.around(shown, in: hidden.visible(fetched), context: siblings)
-        readNearbyKey = shown.id
+        nearbyPhotoId = id
     }
 
     private func block(_ userId: String) async {
@@ -1755,28 +1772,64 @@ enum PhotoDetailRules {
         "\(userId ?? "")|\(photoId)|\(acceptsReactions(published: published))"
     }
 
-    /// `.task` が走ったときに読みに行くか。**最後に読み終えた鍵と同じなら読まない。**
+    /// `.task` が走り直したときに読みに行くか（`ReloadPlan`）。
     ///
-    /// 大きく見る画面（`fullScreenCover`）を閉じると、下の詳細の `.task` が走り直し、
-    /// コメントと近くの写真を読み直していた（閉じるたびに通信が飛ぶ）。
+    /// **読まずに済ますのは、大きく見る画面を閉じた直後（`viewerReturnWindow` 以内）で、
+    /// しかも中身が今の1枚（撮影地）のものとして入っているときだけ。** それ以外は今までどおり読む
+    /// ——写真の主・近くの写真・タブから戻った回、別の1枚へ送った回、前の読みが取り消し・
+    /// 失敗で抜けて中身が無い回（`contentFor` が nil か別の1枚）。
     ///
-    /// 2026-10-03 判断: 覚えるのは**最後の1つの鍵**だけ（写真 id の集合にしない）。
-    /// 束の隣へ送ると画面の模型は前の1枚のコメントを捨てる（`PhotoDetailViewModel.show`）ので、
-    /// 戻ってきた1枚は読み直さないと空になる。同じ鍵で二度目に走る＝同じ1枚を出し直しただけ。
-    /// 引き換えに、詳細を出し直しても他の人の新しいコメントは入らない
-    /// （入れるのは別の1枚から戻ったとき・開き直したとき）。明示の読み直し
-    /// （「もう一度試す」）はここを通らない。読めなかった回は鍵を覚えない（次は読む）
-    static func needsRead(_ key: String, lastRead: String?) -> Bool {
-        key != lastRead
+    /// 2026-10-03 判断: 「閉じた直後」は時刻の窓で見る（閉じたときに立てた印を消し忘れても、
+    /// 後の別の戻りで読み直しを省かない）。省いた回は、閉じている間に他の人が付けたコメントや
+    /// いいねは入らない（入れるのは次に出直したとき・「もう一度試す」）。
+    /// 大きく見る画面の中の♥はこの画面の模型を通るので、数とハートは既に新しい
+    static func rereadPlan(_ key: String, contentFor: String?, viewerClosedAt: Date?,
+                           now: Date) -> ReloadPlan {
+        guard let viewerClosedAt, contentFor == key else { return .reread }
+        let elapsed = now.timeIntervalSince(viewerClosedAt)
+        return elapsed >= 0 && elapsed < viewerReturnWindow ? .keep : .reread
     }
 
-    /// フォローの状態を取り直す間に出す値。**同じ鍵（持ち主・自分・ブロック）で取った値なら残す。**
+    /// 大きく見る画面を閉じてから、下の画面が出直すまでに見込む長さ（閉じる動き ≒ 0.5 秒＋余裕）
+    static let viewerReturnWindow: TimeInterval = 2
+
+    /// 走り直した `.task` の扱い。
+    /// **読まない回は、端末の控えからハートも入れない**——サーバーで確かめた♥を控えの白で
+    /// 上書きし、読み直しも走らないので白い♥のまま固まっていた
+    struct ReloadPlan: Equatable {
+        /// 読みに行く（いいね・コメント／近くの写真／スポットの行き先）
+        let read: Bool
+        /// 端末の控え（`LikeCountStore`・`FavoritesStore`）から数とハートを入れる
+        let syncFromStores: Bool
+        static let reread = ReloadPlan(read: true, syncFromStores: true)
+        static let keep = ReloadPlan(read: false, syncFromStores: false)
+    }
+
+    /// フォローの状態を取り直し始めるときの値（`FollowStart`）。
     ///
-    /// 大きく見る画面を閉じるたびに nil（分からない）にしていて、フォローのボタンが
-    /// 一瞬消えていた。人が替わった・入り直した・ブロックが変わった回は分からないに戻す
-    /// （前の人の状態でボタンを出さない）
-    static func followWhileRefetching(_ known: Bool?, knownFor: String?, key: String) -> Bool? {
-        knownFor == key ? known : nil
+    /// - 🔴 **同じ鍵（持ち主・自分・ブロック）で取った値なら残す。** 大きく見る画面を閉じるたびに
+    ///   nil（分からない）にしていて、フォローのボタンが一瞬消えていた
+    /// - 人が替わった・入り直した・ブロックが変わった回は「分からない」に戻す（前の人の状態で
+    ///   ボタンを出さない）
+    /// - 🔴 **ログアウト中・自分の写真は取りに行かず、覚えた鍵も捨てる。** 残すと、ログアウトで
+    ///   false にした値を、同じ人で入り直した直後に「分かっている値」として出していた
+    ///   （フォロー中の人に「フォロー」が出て、押すと二重に送る）
+    static func followStart(me: String?, owner: String?, blocked: Bool,
+                            known: Bool?, knownFor: String?) -> FollowStart {
+        guard let me, let owner, me != owner else {
+            return FollowStart(isFollowing: false, knownFor: nil, fetchKey: nil)
+        }
+        let key = "\(me)|\(owner)|\(blocked)"
+        return FollowStart(isFollowing: knownFor == key ? known : nil, knownFor: knownFor, fetchKey: key)
+    }
+
+    struct FollowStart: Equatable {
+        /// 取り直している間に出す値
+        let isFollowing: Bool?
+        /// 覚えておく鍵（取れたときに `fetchKey` で書き換える）
+        let knownFor: String?
+        /// 取りに行く鍵。nil なら取りに行かない
+        let fetchKey: String?
     }
 
     /// 持ち主の横にフォローのボタンを出すか。

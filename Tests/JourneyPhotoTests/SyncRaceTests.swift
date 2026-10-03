@@ -486,23 +486,91 @@ final class SyncRaceTests: XCTestCase {
         XCTAssertFalse(store.isSending("p2"))
     }
 
-    /// 印を渡さない呼び出しでも、写真ごとに止める（同じ写真の二度押しは止め、隣は送る）
-    func testLikeWithoutSharedGateIsStillPerPhoto() async {
-        let liking = Gate()
-        let social = stubbedSocial(gates: PathGates(["POST /photos/p1/like": liking]))
-        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"liked":true,"likes":8}"#)
-        StubProtocol.respond(path: "/photos/p2/like", status: 200, body: #"{"liked":true,"likes":4}"#)
-        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 7)
-        model.setSignedIn(true)
+    // MARK: - 写真詳細: 中身の印・確かめた♥（2026-10-03 レビュー）
 
-        let pressed = Task { await model.toggleLike() }
-        await liking.untilWaiting()
-        let again = await model.toggleLike()
-        XCTAssertNil(again, "同じ写真の二度押しを通している")
+    /// 🔴 **「いまコメントの中身が入っている写真」は読み終えたときだけ立ち、読みに行く前・
+    /// 取り消し・失敗・別の1枚へ送ったときに外れる。** 前の1枚の印が残り、戻った1枚が
+    /// 空のまま読み直されなかった
+    func testCommentsPhotoIdTracksOnlyLoadedContent() async {
+        let page = Gate(holds: 1, skip: 1)   // 1回目は通し、2回目（取り消す回）を止める
+        let social = stubbedSocial(gates: PathGates(["GET /user/comments/p1": page]))
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#)
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":5}"#)
+        StubProtocol.respond(path: "/user/comments/p1", status: 200, body: #"{"items":[],"count":0}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setSignedIn(true)
+        XCTAssertNil(model.commentsPhotoId)
+
+        await model.load()
+        XCTAssertEqual(model.commentsPhotoId, "p1", "読み終えたのに中身の印が立たない")
+
+        let loading = Task { await model.load() }
+        await page.untilWaiting(2)
+        XCTAssertNil(model.commentsPhotoId, "読みに行く前に印を外していない（抜けた回に読み済みと扱う）")
+        loading.cancel()
+        await page.open()
+        await loading.value
+        XCTAssertNil(model.commentsPhotoId, "取り消された回に、読めていない1枚を読み済みと扱っている")
+
+        await model.load()
+        XCTAssertEqual(model.commentsPhotoId, "p1")
         model.show(photoId: "p2", initialLikes: 3, liked: false)
-        let next = await model.toggleLike()
-        XCTAssertEqual(next?.photoId, "p2", "前の1枚を送っている間、隣の1枚の♥を黙って捨てている")
-        await liking.open()
-        _ = await pressed.value
+        XCTAssertNil(model.commentsPhotoId, "別の1枚へ送ったのに、前の1枚の印が残っている")
+    }
+
+    /// 読めなかった回も印は立たない
+    func testCommentsPhotoIdStaysEmptyWhenCommentsFail() async {
+        let social = stubbedSocial()
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#)
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":5}"#)
+        StubProtocol.respond(path: "/user/comments/p1", status: 500, body: "{}")
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setSignedIn(true)
+        await model.load()
+        XCTAssertTrue(model.commentsUnavailable)
+        XCTAssertNil(model.commentsPhotoId, "読めなかったのに読み済みと扱っている")
+    }
+
+    /// 🔴 **サーバーで確かめた♥を、端末の控えの白で上書きしない**（同じ1枚・それより古い答え）。
+    /// 大きく見る画面を閉じた後の `.task` が控えで上書きし、白い♥のまま固まっていた
+    func testConfirmedHeartIsNotOverwrittenByAnOlderStoredValue() async {
+        let social = stubbedSocial()
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#)
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":5}"#)
+        StubProtocol.respond(path: "/user/comments/p1", status: 200, body: #"{"items":[],"count":0}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setSignedIn(true)
+        model.show(photoId: "p1", initialLikes: 5, liked: false)   // 端末の控えはまだ白
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: サーバーは押してあると答えた")
+
+        model.show(photoId: "p1", initialLikes: 5, liked: false)
+        XCTAssertTrue(model.liked, "確かめた♥を、控えの白で上書きしている")
+        // 確かめた後に押した答え（ホーム・大きく見る画面）が控えに入ったら、そちらを出す
+        model.show(photoId: "p1", initialLikes: 4, liked: false, answeredAt: Date().addingTimeInterval(1))
+        XCTAssertFalse(model.liked, "確かめた後の押した答えを出していない")
+    }
+
+    /// 人が替わったら、前の人で確かめたハートは信じない（控えを出す）
+    func testConfirmedHeartIsForgottenWhenThePersonChanges() async {
+        let social = stubbedSocial()
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#)
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":5}"#)
+        StubProtocol.respond(path: "/user/comments/p1", status: 200, body: #"{"items":[],"count":0}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setSignedIn(true)
+        await model.load()
+        model.setSignedIn(false)
+        model.show(photoId: "p1", initialLikes: 5, liked: false)
+        XCTAssertFalse(model.liked, "ログアウトした後も、前の人の♥を出している")
+    }
+
+    /// 控えで書き換えてよいかの規則（`LiveLikes.storedLikedWins`）
+    func testStoredLikedWinsRule() async {
+        let t = Date(timeIntervalSince1970: 1_000)
+        XCTAssertTrue(LiveLikes.storedLikedWins(confirmedAt: nil, answeredAt: nil), "確かめていなければ控えを出す")
+        XCTAssertFalse(LiveLikes.storedLikedWins(confirmedAt: t, answeredAt: nil))
+        XCTAssertFalse(LiveLikes.storedLikedWins(confirmedAt: t, answeredAt: t.addingTimeInterval(-1)))
+        XCTAssertTrue(LiveLikes.storedLikedWins(confirmedAt: t, answeredAt: t.addingTimeInterval(1)))
     }
 }
