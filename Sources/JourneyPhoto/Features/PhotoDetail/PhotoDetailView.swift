@@ -835,8 +835,9 @@ struct PhotoDetailView: View {
     private func likeFromViewer(_ shown: Photo) async {
         if shown.id == current.id {
             // 🔴 **ダブルタップは付けるだけ。** いいね済みの1枚で下のハートと同じ
-            // 入れ替えを通すと、ダブルタップで外れていた（隣の写真は `like` だけ）
-            guard !model.liked else { return }
+            // 入れ替えを通すと、ダブルタップで外れていた（隣の写真は `like` だけ）。
+            // `model.liked` が今の1枚のものになってから見る（払った直後は前の1枚）
+            guard model.photoId == current.id, !model.liked else { return }
             // 下のハートと同じく、端末の控えとホームの数にも渡す
             await toggleLikeHereFromViewer()
             return
@@ -898,8 +899,9 @@ struct PhotoDetailView: View {
     /// （`viewerPendingLikes`）、届かなければ戻し、全画面の中に知らせを出す
     private func toggleLikeHereFromViewer() async {
         let id = current.id
-        // 送っている間は何もしない（`toggleLikeHere` と同じ門。先に灯さない）
-        guard !model.isLiking, !likeCounts.isSending(id) else { return }
+        // 送っている間は何もしない（`toggleLikeHere` と同じ門。先に灯さない）。
+        // 払った直後で `model` がまだ前の1枚なら、先に灯さない（送られないので）
+        guard !model.isLiking, !likeCounts.isSending(id), model.photoId == id else { return }
         viewerPendingLikes[id] = !model.liked
         // 答えが来たら（来なくても）外す。届いた回は画面の値が答えになっている
         defer { viewerPendingLikes[id] = nil }
@@ -950,7 +952,8 @@ struct PhotoDetailView: View {
         // **届かなかった回は控えに書かない**（押す前のハートのまま）。
         // 答えは**押した1枚に**書く——送っている間に束の隣へ送っても
         let owner = favorites.owner
-        let answer = await model.toggleLike(gate: likeCounts)
+        // **いま出ている1枚を渡す。** 払った直後は `model` がまだ前の1枚を持っている
+        let answer = await model.toggleLike(gate: likeCounts, shownId: current.id)
         guard let answer else { return nil }
         favorites.set(answer.photoId, favorite: answer.liked, for: owner)
         // 押した回の答えだけを渡す（`LikeCountStore` の注記）

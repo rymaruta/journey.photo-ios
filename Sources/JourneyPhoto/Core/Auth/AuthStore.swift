@@ -1,4 +1,8 @@
 import Foundation
+// Linux では URLCache が別モジュールに居る（iOS では何も起きない）
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 // `ObservableObject` と `@Published` は Combine のもの。SwiftUI を読む
 // ファイルは再輸出で使えるが、ここは読んでいないので明示する
 import Combine
@@ -64,6 +68,9 @@ final class AuthStore: ObservableObject {
     private let gateway: AuthStoreGateway
     /// 期限切れのログアウトを走らせている最中か（`expireSession`）
     private var isExpiring = false
+    /// サインアウト・退会で空にする通信の控え。`APIClient`（既定の設定）と
+    /// `AsyncImage` はどちらも `URLCache.shared` を使う（試験で差し替える）
+    var responseCache: URLCache = .shared
 
     init(gateway: AuthStoreGateway = .live) {
         self.gateway = gateway
@@ -288,6 +295,12 @@ final class AuthStore: ObservableObject {
         TripBookCard.removeAll()
         // 旅の写真から引いた地名の控え（その人の旅先が分かる）も次の人に残さない
         LibraryTripModel.forgetPlaceNames()
+        // **通信の控え（URLCache）も次の人に残さない**（2026-10-03）。API の応答
+        // （`/user/profile`・`/user/photos` の下書きと限定写真の署名つき URL・
+        // `/user/notifications` は Cache-Control を付けずに返る）と限定写真の画像が、
+        // 端末の Caches に残りうる。退会の「端末の控えも消す」（`AccountLocalData`）とも
+        // 食い違っていた。公開の写真も消えるが、次に開いたときに取り直すだけ
+        responseCache.removeAllCachedResponses()
         state = .signedOut
         isAdmin = false
         errorMessage = nil

@@ -143,6 +143,11 @@ final class PhotoDetailViewModel: ObservableObject {
         let loaded = await page
         // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
         guard id == photoId else { return }
+        // **取り消された読みは何も書かない**（2026-10-03）。`try?` は取り消しも nil に
+        // 変えるので、同じ1枚のまま `.task` が組み直された回（上に画面を積んだ・
+        // ログインの状態が替わった）に「コメントを読み込めませんでした」が立っていた。
+        // 書くのは組み直した次の回
+        guard !Task.isCancelled else { return }
         // 🔴 **押した答えから間もない読みは、数も印も書かない。** ホームで押して 6 に
         // なった直後に開くと、読み取りは押す前の 5（外したなら押す前の「いいね済み」）を
         // 返すことがあり、出ていた 6 を 5 に戻していた（`LiveLikes.readSupersedes`）
@@ -216,10 +221,18 @@ final class PhotoDetailViewModel: ObservableObject {
     ///   **ホームや大きく見る画面で同じ写真を送っている間は送らない**——この画面の
     ///   `isLiking` だけでは、別の画面から飛んでいる逆向きを止められない
     @discardableResult
-    func toggleLike(gate: LikeCountStore? = nil) async -> LikeAnswer? {
+    /// - Parameter shownId: 画面に**いま出ている**1枚の id。渡したら、この画面の
+    ///   1枚（`photoId`）と違う回は**何も送らない**（2026-10-03）。束を払うと画面の
+    ///   1枚はすぐ替わるが、`show(photoId:)` が走るのは `.task(id:)` が組み直された
+    ///   後——その間（1フレームほど）に下のハートを押すと、**見えていない前の1枚に**
+    ///   いいね（や取り消し）が飛んでいた
+    func toggleLike(gate: LikeCountStore? = nil, shownId: String? = nil) async -> LikeAnswer? {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
         // 呼び出し側がそれを「いま」の答えとしてホームへ渡し直す
         lastLikeAnswer = nil
+        // 画面の1枚とこの画面の1枚が食い違う間は、送らず・知らせも出さない
+        // （押した写真に何も起きないだけ。次の描き直しで揃う）
+        if let shownId, shownId != photoId { return nil }
         guard isSignedIn else {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
             return nil
