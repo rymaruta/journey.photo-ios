@@ -496,6 +496,15 @@ final class ScreenshotTests: XCTestCase {
         // 巡回は「出なければ撮らない」ので、赤くもならない。
         tabBar.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 2)
+        // 🔴 **フィードを「おすすめ」へ戻す。** 一巡の `10c` が「フォロー中」に切り替えたまま
+        // ここへ来ていた。鍵なしログインのフォロー一覧は空なので `feed.photo` が1枚も無く、
+        // `20`・`21` が run 316〜332 のあいだ毎回**黙って欠けて**いた（run 332 の `10d` の絵で
+        // 「フォロー中」が選ばれたままなのが見える・2026-10-03）
+        let recommended = app.buttons["おすすめ"].firstMatch
+        if recommended.waitForExistence(timeout: 5), recommended.isHittable {
+            recommended.tap()
+            Thread.sleep(forTimeInterval: 2)
+        }
         // **写真そのものを名指しで押す**（`feed.photo`）。
         // 位置で探していたときは、今日のテーマの「参加する」に当たって
         // **ログイン画面を「写真の詳細」として撮って**いた（run 49）。
