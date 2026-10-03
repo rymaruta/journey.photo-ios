@@ -1,0 +1,206 @@
+# PR の検証（main へ入れる前に、本物の Xcode でコンパイルとテストを通す）。
+#
+# **今までは TestFlight を流すまで、本物の SwiftUI での型検査が1回も無かった。**
+# 手元（Linux）の `verify.sh` は `Shims/` の模型に向けたビルドなので、SwiftUI 側の
+# 制約・実行時の挙動は見えない。PR の時点でそれを見るための段（2026-10-03）。
+#
+# 費用: このリポジトリは**公開**なので、GitHub の標準ランナー（macOS を含む）は無料
+# （GitHub Actions の課金は private リポジトリだけ）。`ios-testflight.yml` の冒頭の
+# 「private だと分数が10倍」はそのまま正しく、**非公開に変えたら、この段は
+# 無料枠を大きく食う**——そのときは `on:` から `pull_request` を外すこと。
+#
+# 無駄に回さない工夫:
+#  - 同じ PR に押し直したら、前の回は止める（`concurrency`）
+#  - 文書だけの変更では回さない（`paths-ignore`）
+#  - **安い静的な検査が通ってから** macOS を起こす（`needs`）。構文の壊れで
+#    macOS の分を使わない（Linux の単体テストは並んで走らせ、待たない）
+#  - 下書きの PR では macOS を起こさない（`draft`）
+#
+# 本番には何も出さない。署名も TestFlight も無い（それは `ios-testflight.yml`）。
+name: PR の検証
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 構文・参照・import の組・設定（数秒）。Web 版との突き合わせは、
+  # `photo-gallery` が非公開で読めないので「見ていない」と出して飛ばす
+  checks:
+    name: 静的な検査
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: tree-sitter を入れる
+        run: cd Tools && npm install --silent
+      - name: Swift の構文
+        run: node Tools/check-swift-syntax.js Sources Tests UITests
+      - name: 参照
+        run: node Tools/check-swift-refs.js Sources Tests
+      - name: 2つの import が揃って初めて見える型
+        run: python3 Tools/check-cross-imports.py Sources Tests
+      - name: Web 版との突き合わせ（読めなければ飛ばす）
+        run: python3 Tools/check-api-parity.py ../photo-gallery
+      - name: 設定ファイル
+        run: python3 Tools/check-config.py
+
+  # 模型（Shims/）に向けたビルドと単体テスト。手元の verify.sh と同じもの。
+  # 公式の Swift のイメージで回すので、外部の action は使わない
+  linux-tests:
+    name: 単体テスト（Linux・模型）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: swift:6.0.3-noble
+    env:
+      # 🔴 **落ちたときの書き出しを止める**（2026-10-03・run 1）。テストが落ちると Swift は
+      # 呼び出しの積み重なりを書き出そうとするが、コンテナの中ではそこで止まり、
+      # **30分の時間切れまで何も出さずに待った**（手元では1秒で書き出して終わる）。
+      # 落ちた事実は終了コードで十分に分かる
+      SWIFT_BACKTRACE: enable=no
+    steps:
+      - uses: actions/checkout@v4
+      # **控え（actions/cache）は使わない。** Package に外部の依存は無く、効くのは
+      # 自分のコードの差分ビルドだけ（初回3分弱）。1回 280MB をコミットごとに積むと
+      # 控えの上限（10GB）を押し、TestFlight が頼る macOS の依存の控え（いちばん高い）
+      # を追い出しかねない
+      - name: ビルド
+        run: swift build --build-tests
+      # **並列にしない。** 通信の差し替え（`StubProtocol`）はプロセス全体で1つなので、
+      # 並列で回すと別のテストの応答を拾って揺れる。結果のファイル（xunit）は並列の
+      # ときしか出ないので、ログをそのまま残す
+      # 手元では全件15秒ほど。**止まったら10分で切る**（30分待たない）
+      - name: テスト
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          mkdir -p build
+          swift test --skip-build 2>&1 | tee build/linux-tests.log | grep -E "error|failed|Executed [0-9]+ tests" | tail -n 60
+      - name: テストの結果を残す
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-tests
+          path: build/linux-tests.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵）
+  # **待つのは静的な検査だけ。** Linux の単体テストは、Linux の通信部品
+  # （swift-corelibs-foundation）の弱点で、まれに落ちる・止まるテストがある
+  # （終わった通信の取り消しで `TaskRegistry` が落ちる。iOS には無い）。それで
+  # 本物の Xcode の段まで止めると、いちばん欲しい結果が得られない
+  xcode:
+    name: Xcode のビルドとテスト（シミュレータ）
+    needs: [checks]
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: macos-15
+    # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
+    # （ios-testflight.yml の run #8）。控えが当たれば短い
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # TestFlight と同じ選び方（名前から版を読み、いちばん新しい Xcode）。
+      # 理由は ios-testflight.yml の「Xcode を選ぶ」
+      - name: Xcode を選ぶ
+        run: |
+          set +e
+          ver="$(ls -d /Applications/Xcode_*.app 2>/dev/null \
+                 | sed 's#.*/Xcode_##; s#\.app$##' \
+                 | grep -E '^[0-9]+(\.[0-9]+)*$' \
+                 | sort -V | tail -1)"
+          if [ -n "$ver" ] && [ -d "/Applications/Xcode_$ver.app/Contents/Developer" ]; then
+            echo "DEVELOPER_DIR=/Applications/Xcode_$ver.app/Contents/Developer" >> "$GITHUB_ENV"
+            echo "選んだ Xcode: $ver"
+            echo "### Xcode $ver" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::版の読める Xcode が見つかりません。既定のまま進みます"
+          fi
+
+      - name: Xcode の版を読む
+        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
+
+      # **TestFlight と同じ鍵**で控えを共有する（どちらが先に回っても温まる）
+      - name: 依存の控えを戻す
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            ~/Library/Caches/org.swift.swiftpm
+          key: xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}
+          restore-keys: |
+            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+
+      - name: Xcode プロジェクトを作る
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      # 書き方の理由（-sdk を渡さない・arm64 に絞る・xcodebuild を直に叩く）は
+      # ios-testflight.yml の「テスト」の段の注記と同じ
+      - name: テスト（単体＋UI）
+        run: |
+          set -euo pipefail
+          DEVICE="$(python3 Tools/pick-simulator.py)"
+          echo "シミュレータ: $DEVICE"
+          xcodebuild \
+            -project JourneyPhoto.xcodeproj \
+            -scheme JourneyPhoto \
+            -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            -resultBundlePath build/Test.xcresult \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            test 2>&1 | tee build-xcodebuild.log | tail -n 300 || {
+              echo "::group::error: の行だけ"
+              grep -E "error:|failed|Failing tests" build-xcodebuild.log | sort -u | head -200 || true
+              echo "::endgroup::"
+              exit 1
+            }
+
+      # 失敗したテストの名前と理由を、まとめの頁に出す（ログを掘らずに読めるように）
+      - name: 結果のまとめ
+        if: ${{ always() }}
+        run: python3 Tools/xcresult-summary.py build/Test.xcresult >> "$GITHUB_STEP_SUMMARY" || true
+
+      # UI テストが撮った画面の絵（`ScreenshotTests`）。PR では枝に押さず、成果物に置く
+      - name: 画面の絵を取り出す
+        if: ${{ always() }}
+        run: |
+          set +e
+          mkdir -p build/shots
+          if [ -d build/Test.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/Test.xcresult --output-path build/shots
+          fi
+          ls build/shots | head -50
+
+      - name: テストの結果を残す（xcresult・ログ・絵）
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-test-results
+          path: |
+            build/Test.xcresult
+            build-xcodebuild.log
+            build/shots
+          retention-days: 14
+          if-no-files-found: ignore
