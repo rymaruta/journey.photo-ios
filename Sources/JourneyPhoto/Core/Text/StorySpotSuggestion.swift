@@ -12,10 +12,10 @@ import Foundation
 ///    するだけで、見る画面の `StorySpotLink` が結べる。結べない候補は出さない（下の往復の確かめ）
 ///  - **自動では付けない・押したときだけ。** ストーリーは「いま」の投稿なので、撮影地を黙って
 ///    付けると居場所を知らせることになる。これまでどおり、撮影地を送るのは本人が決めたときだけ
-///    （作る画面の「場所」と同じ決まり）
-///  - **候補から付けた回は、写真の座標でなくスポットの座標を送る。** 見る人に出る位置を
-///    「撮影地の単位」（公開済みのスポットの位置）にし、本人の居た約1kmの升目を出さない。
-///    見る画面の距離の判定も 0km になり、確実に結ばれる
+///    （作る画面の「場所」と同じ決まり）。候補を解き直しても撮影地には触らない（`Place.resolve`）
+///  - **座標は写真のまま送る（スポットの座標に置き換えない）。** `PlaceSpotSuggestions.coordsAfterPicking`
+///    と同じ決まり。ストーリーを残すと `storyKeep.ts` が座標を写真のピンに写すので、置き換えると
+///    最大十数 km ずれる。だから往復の確かめも**基準の写真の座標**で当てる（見る画面に届く座標）
 ///  - 探すのは撮影地の欄の候補と同じ仕組み（`PlaceSpotSuggestions`・3km 以内・公開済みだけ）
 enum StorySpotSuggestion {
 
@@ -25,21 +25,32 @@ enum StorySpotSuggestion {
         guard let base = StoryQueue.baseCoords(coords) else { return nil }
         return PlaceSpotSuggestions.suggestions(query: "", near: base, index: spots)
             .first { candidate in
-                // **見る画面で本当に結ばれるものだけ。** スポットの名前が市町村名と同じなどで
-                // 結ばれない候補を出すと、付けても押せる札にならない
-                StorySpotLink.spot(location: candidate.name, coords: candidate.coords, in: spots)?.spotId
+                // **見る画面で本当に結ばれるものだけ。** 見る画面に届く座標は基準の写真のもの
+                // （`StoryQueue.coordsToSend`）なので、その座標と候補の名前で当てる
+                StorySpotLink.spot(location: candidate.name, coords: base, in: spots)?.spotId
                     == candidate.spotId
             }
     }
 
-    /// 写真ごとに送る座標。撮影地が候補のスポットの名前そのものなら、**GPS のある写真は
-    /// スポットの座標に置き換える**（撮影地の単位だけを出す）。GPS の無い写真・基準から遠い写真は
-    /// これまでどおり送らない（`StoryQueue.coordsToSend`）。それ以外の撮影地は写真の座標のまま
-    static func coordsToSend(_ coords: [Photo.Coords?], location: String,
-                             suggested: OfficialSpot?) -> [Photo.Coords?] {
-        let sent = StoryQueue.coordsToSend(coords)
-        guard let suggested, let spotCoords = suggested.coords,
-              location.trimmingCharacters(in: .whitespacesAndNewlines) == suggested.name else { return sent }
-        return sent.map { $0 == nil ? nil : spotCoords }
+    /// 作る画面の撮影地と候補。**撮影地が変わるのは本人が決めたとき（`pick`・欄の入力）だけ**
+    struct Place: Equatable {
+        /// 送る撮影地の文字（空＝付けない）
+        var location = ""
+        /// 写真の位置の近くの撮影スポット（解き直すのは `resolve` だけ）
+        private(set) var suggestion: OfficialSpot?
+
+        /// 写真か索引が変わったので候補を解き直す。**撮影地には触らない**（黙って付けない）
+        mutating func resolve(coords: [Photo.Coords?], spots: [OfficialSpot]) {
+            suggestion = StorySpotSuggestion.spot(for: coords, in: spots)
+        }
+
+        /// 写真の上に出す候補の札。撮影地を決めてあれば出さない
+        var chip: OfficialSpot? { location.isEmpty ? suggestion : nil }
+
+        /// 候補の札を押した
+        mutating func pick() {
+            guard let chip else { return }
+            location = chip.name
+        }
     }
 }

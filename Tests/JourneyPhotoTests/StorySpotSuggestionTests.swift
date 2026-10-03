@@ -6,7 +6,7 @@ import XCTest
 /// 固定したいのは:
 ///  1. 写真の位置の近く（3km 以内）の公開済みスポットを、近い順に1つ。GPS が無ければ出さない
 ///  2. **見る画面で結ばれる候補だけ**（`StorySpotLink` と往復して同じスポットになる）
-///  3. 候補の名前を撮影地にした回は、**写真の座標でなくスポットの座標**を送る（撮影地の単位だけ）
+///  3. 候補は**押したときだけ**撮影地に入る。座標は写真のまま送る（`storyKeep.ts` がピンに写す）
 final class StorySpotSuggestionTests: XCTestCase {
 
     private func spot(_ slug: String, name: String, lat: Double, lng: Double,
@@ -47,33 +47,47 @@ final class StorySpotSuggestionTests: XCTestCase {
         XCTAssertNil(StorySpotSuggestion.spot(for: [takaya], in: [cityNamed]))
     }
 
-    /// 候補を付けた1本は、見る画面でそのスポットに結ばれる（送る座標で往復する）
-    func testPickedSuggestionLinksInViewer() {
+    /// 候補を付けた1本は、見る画面でそのスポットに結ばれる。座標は**写真のまま**送る
+    /// （`storyKeep.ts` が座標を写真のピンに写すので、スポットの座標に置き換えない）
+    func testPickedSuggestionLinksInViewerWithPhotoCoords() {
         let near = spot("takaya", name: "高屋神社 本宮（天空の鳥居）", lat: 34.15, lng: 133.66)
         let spots = [near]
-        let picked = StorySpotSuggestion.spot(for: [takaya], in: spots)
-        XCTAssertEqual(picked?.slug, "takaya")
-        let sent = StorySpotSuggestion.coordsToSend([takaya], location: near.name, suggested: picked)
-        XCTAssertEqual(StorySpotLink.spot(location: near.name, coords: sent[0], in: spots)?.slug, "takaya")
+        var place = StorySpotSuggestion.Place()
+        place.resolve(coords: [takaya, nil], spots: spots)
+        place.pick()
+        let sent = StoryQueue.coordsToSend([takaya, nil])
+        XCTAssertEqual(sent, [takaya, nil], "写真の座標のまま")
+        XCTAssertEqual(StorySpotLink.spot(location: place.location, coords: sent[0], in: spots)?.slug, "takaya")
     }
 
-    /// 🔴 候補の名前を撮影地にした回は、写真の座標（本人の居た升目）でなくスポットの座標を送る
-    func testPickedSuggestionSendsSpotCoordsOnly() {
-        let near = spot("takaya", name: "高屋神社", lat: 34.15, lng: 133.66)
-        let nearby = Photo.Coords(lat: 34.14, lng: 133.65)
-        let tokyo = Photo.Coords(lat: 35.68, lng: 139.76)
-        let spotCoords = Photo.Coords(lat: 34.15, lng: 133.66)
-        let sent = StorySpotSuggestion.coordsToSend([takaya, nil, nearby, takaya, tokyo],
-                                                    location: " 高屋神社 ", suggested: near)
-        XCTAssertEqual(sent, [spotCoords, nil, spotCoords, spotCoords, nil],
-                       "GPS の無い写真・基準から遠い写真は送らないまま")
-    }
+    /// 🔴 候補は**押したときだけ**撮影地に入る。解き直しても撮影地には触らない（黙って付けない）
+    func testSuggestionNeverFillsLocationUntilPicked() {
+        let shrine = spot("takaya", name: "高屋神社", lat: 34.14, lng: 133.64)
+        let sand = spot("zenigata", name: "銭形砂絵", lat: 34.30, lng: 133.80)
+        let spots = [shrine, sand]
+        var place = StorySpotSuggestion.Place()
+        place.resolve(coords: [takaya], spots: spots)
+        XCTAssertEqual(place.location, "", "押す前に撮影地へ入れてはいけない")
+        XCTAssertEqual(place.chip?.slug, "takaya")
 
-    /// 撮影地を打ち直した（候補の名前でない）回は、これまでどおり写真の座標
-    func testOtherLocationKeepsPhotoCoords() {
-        let near = spot("takaya", name: "高屋神社", lat: 34.15, lng: 133.66)
-        XCTAssertEqual(StorySpotSuggestion.coordsToSend([takaya], location: "観音寺の海", suggested: near), [takaya])
-        XCTAssertEqual(StorySpotSuggestion.coordsToSend([takaya], location: "高屋神社", suggested: nil), [takaya])
+        place.pick()
+        XCTAssertEqual(place.location, "高屋神社")
+        XCTAssertNil(place.chip, "撮影地を決めたら札は出さない")
+
+        // 写真を入れ替えて別の候補になっても、決めた撮影地はそのまま
+        place.resolve(coords: [Photo.Coords(lat: 34.30, lng: 133.80)], spots: spots)
+        XCTAssertEqual(place.location, "高屋神社")
+
+        // 外したら札がまた出る（入れはしない）
+        place.location = ""
+        place.resolve(coords: [Photo.Coords(lat: 34.30, lng: 133.80)], spots: spots)
+        XCTAssertEqual(place.location, "")
+        XCTAssertEqual(place.chip?.slug, "zenigata")
+
+        // 本人が打った撮影地は候補で上書きしない
+        place.location = "観音寺の海"
+        place.pick()
+        XCTAssertEqual(place.location, "観音寺の海")
     }
 
     /// 基準の写真を外へ出しても、送る座標の決まりは前のまま（`coordsToSend` の写し）
@@ -94,11 +108,12 @@ final class StorySpotSuggestionTests: XCTestCase {
             .components(separatedBy: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
             .joined(separator: "\n")
-        XCTAssertTrue(composer.contains("StorySpotSuggestion.coordsToSend(shots.map(\\.prepared.coords), location: place,"),
-                      "投稿が候補の座標の決まりを通っていない")
-        XCTAssertFalse(composer.contains("StoryQueue.coordsToSend("), "写真の座標をそのまま送る経路が残っている")
-        XCTAssertTrue(composer.contains("spotSuggestion = StorySpotSuggestion.spot(for:"))
-        // 撮影地に入れるのは候補の札を押したときだけ（黙って入れない）
-        XCTAssertEqual(composer.components(separatedBy: "location = spot.name").count - 1, 1)
+        XCTAssertTrue(composer.contains("let coords = StoryQueue.coordsToSend(shots.map(\\.prepared.coords))\n"),
+                      "写真の座標のまま送っていない")
+        XCTAssertTrue(composer.contains("place.resolve(coords: shots.map(\\.prepared.coords), spots: spotIndex)"))
+        XCTAssertTrue(composer.contains("} else if let spot = place.chip {"))
+        XCTAssertTrue(composer.contains("place.pick()"))
+        XCTAssertNil(composer.range(of: #"location = [^\n]*(spot|suggestion|chip)"#, options: .regularExpression),
+                     "画面が候補の名前を直に撮影地へ入れている（`Place.pick` を通す）")
     }
 }
