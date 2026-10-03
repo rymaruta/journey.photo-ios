@@ -573,4 +573,46 @@ final class SyncRaceTests: XCTestCase {
         XCTAssertFalse(LiveLikes.storedLikedWins(confirmedAt: t, answeredAt: t.addingTimeInterval(-1)))
         XCTAssertTrue(LiveLikes.storedLikedWins(confirmedAt: t, answeredAt: t.addingTimeInterval(1)))
     }
+
+    /// 🔴 **A から B へ直接切り替えたら、A で確かめた♥を B に残さない**（ログインの有無は変わらない）
+    func testConfirmedHeartIsForgottenWhenSwitchingAccounts() async {
+        let social = stubbedSocial()
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#)
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":5}"#)
+        StubProtocol.respond(path: "/user/comments/p1", status: 200, body: #"{"items":[],"count":0}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setUser("a")
+        await model.load()
+        XCTAssertTrue(model.liked, "前提: A は押してある")
+        model.setUser("b")
+        model.show(photoId: "p1", initialLikes: 5, liked: false)
+        XCTAssertFalse(model.liked, "B に切り替えた後も、A で確かめた♥を出している")
+        // 同じ人のまま入れ直しても、確かめた♥は残る
+        model.setUser("b")
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true}"#)
+        await model.load()
+        model.setUser("b")
+        model.show(photoId: "p1", initialLikes: 5, liked: false)
+        XCTAssertTrue(model.liked, "同じ人なのに、確かめた♥を忘れている")
+    }
+
+    /// 🔴 **数を返さない押した答えでも、時刻は残る**（ハートだけ書き換わった答えが、
+    /// サーバーで確かめた古い♥に負けていた）
+    func testAnswerWithoutCountStillBeatsAnOlderConfirmedHeart() async {
+        let social = stubbedSocial()
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":false}"#)
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":5}"#)
+        StubProtocol.respond(path: "/user/comments/p1", status: 200, body: #"{"items":[],"count":0}"#)
+        let model = PhotoDetailViewModel(photoId: "p1", social: social, initialLikes: 5)
+        model.setSignedIn(true)
+        await model.load()
+        XCTAssertFalse(model.liked, "前提: サーバーは押していないと答えた")
+        let store = LikeCountStore()
+        // 別の画面（ホームのカード）で押した。答えに数が無い
+        store.recordAnswer("p1", count: nil, at: Date().addingTimeInterval(1))
+        XCTAssertNil(store.entry(for: "p1"), "数の無い答えで数を作っている")
+        // 画面は `showStoredLike` と同じく、最後の答えの時刻を渡す
+        model.show(photoId: "p1", initialLikes: 5, liked: true, answeredAt: store.lastAnswer(for: "p1"))
+        XCTAssertTrue(model.liked, "数の無い押した答えが、確かめた古い♥に負けている")
+    }
 }

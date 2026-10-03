@@ -95,10 +95,15 @@ final class PhotoDetailViewModel: ObservableObject {
         self.likes = initialLikes
     }
 
-    func setSignedIn(_ value: Bool) {
+    /// 今の人（`auth.userId`）。**ログインの有無ではなく人で見る**——A から B へ直接切り替えた
+    /// 回に、A で確かめた♥を B の画面に残さない
+    private var userId: String?
+
+    func setUser(_ userId: String?) {
         // 人が替わったら、前の人で確かめたハートを信じない
-        if value != isSignedIn { likedConfirmedAt = nil }
-        isSignedIn = value
+        if userId != self.userId { likedConfirmedAt = nil }
+        self.userId = userId
+        isSignedIn = userId != nil
     }
 
     /// 束の別の1枚へ送った。**数・ハート・コメントをその1枚のものに入れ替える。**

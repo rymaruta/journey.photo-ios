@@ -24,9 +24,28 @@ final class LikeCountStore: ObservableObject {
     }
 
     @Published private(set) var entries: [String: Entry] = [:]
+    /// 押した回の答えが届いた時刻。**数を返さない答えでも残す**——ハート（`FavoritesStore`）は
+    /// 書き換わるのに時刻が無いと、詳細画面がサーバーで確かめた古いハートを勝たせて
+    /// 押した答えを出さなかった（`LiveLikes.storedLikedWins`）
+    @Published private(set) var answeredAt: [String: Date] = [:]
 
     func set(_ photoId: String, count: Int, at: Date = Date()) {
         entries[photoId] = Entry(count: max(0, count), at: at)
+        answeredAt[photoId] = at
+    }
+
+    /// 押した回の答えを受け取った。数があれば数も入れる（数の無い答えも時刻は残す）
+    func recordAnswer(_ photoId: String, count: Int?, at: Date = Date()) {
+        if let count {
+            set(photoId, count: count, at: at)
+        } else {
+            answeredAt[photoId] = at
+        }
+    }
+
+    /// その写真に最後に押した答えが届いた時刻（数の有無を問わない）
+    func lastAnswer(for photoId: String) -> Date? {
+        answeredAt[photoId]
     }
 
     func entry(for photoId: String) -> Entry? {

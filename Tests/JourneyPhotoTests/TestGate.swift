@@ -111,6 +111,8 @@ enum TestLikeGates {
 }
 
 extension PhotoDetailViewModel {
+    /// 人を気にしない試験のための入り口（本番は `setUser(auth.userId)`）
+    func setSignedIn(_ value: Bool) { setUser(value ? "tester" : nil) }
     func load() async { await load(gate: TestLikeGates.of(self)) }
     @discardableResult
     func toggleLike() async -> LikeAnswer? { await toggleLike(gate: TestLikeGates.of(self)) }

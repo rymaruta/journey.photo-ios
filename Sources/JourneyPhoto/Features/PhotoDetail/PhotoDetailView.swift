@@ -197,7 +197,7 @@ struct PhotoDetailView: View {
         // なった時刻）が走り直しより先に立つかは、Xcode の無いこの環境では見ていない。
         // 起きなければ・印が後なら、今までどおり読み直すだけで害は無い
         .task(id: PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)) {
-            model.setSignedIn(auth.userId != nil)
+            model.setUser(auth.userId)
             let plan = PhotoDetailRules.rereadPlan(current.id, contentFor: model.commentsPhotoId,
                                                    viewerClosedAt: viewerClosedAt, now: Date())
             if plan.syncFromStores { showStoredLike() }
@@ -210,7 +210,8 @@ struct PhotoDetailView: View {
         // 🔴 **ホームで押した答えが、開いた後に届いたら入れ直す。** ♥を押した直後
         // （答えの前）に開くと、`.task` の時点の数とハートのまま固まっていた。
         // 読み込みはその写真を送っている間の読みを書かない（`PhotoDetailViewModel.load`）
-        .onChange(of: likeCounts.entry(for: current.id)) { _, _ in showStoredLike() }
+        // 数の無い答えでも時刻は変わる（`LikeCountStore.lastAnswer`）
+        .onChange(of: likeCounts.lastAnswer(for: current.id)) { _, _ in showStoredLike() }
         .onChange(of: favorites.contains(current.id)) { _, _ in showStoredLike() }
         .task(id: shown.location) {
             guard PhotoDetailRules.rereadPlan(shown.location ?? "", contentFor: spotLeadLocation,
@@ -901,7 +902,7 @@ struct PhotoDetailView: View {
             let result = try await environment.social.like(photoId: shown.id)
             favorites.set(shown.id, favorite: result.liked, for: owner)
             // 押した回の答えだけを渡す（`LikeCountStore` の注記）
-            if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
+            likeCounts.recordAnswer(shown.id, count: result.likes)
         } catch {
             favorites.set(shown.id, favorite: LiveLikes.likedAfterFailedDoubleTap(wasLiked: wasLiked),
                           for: owner)
@@ -929,7 +930,7 @@ struct PhotoDetailView: View {
                 ? try await environment.social.unlike(photoId: shown.id)
                 : try await environment.social.like(photoId: shown.id)
             favorites.set(shown.id, favorite: result.liked, for: owner)
-            if let likes = result.likes { likeCounts.set(shown.id, count: likes) }
+            likeCounts.recordAnswer(shown.id, count: result.likes)
         } catch {
             favorites.set(shown.id, favorite: wasLiked, for: owner)
             toasts.show(ViewerLike.failureNotice(error), kind: .failure)
@@ -963,7 +964,8 @@ struct PhotoDetailView: View {
         model.show(photoId: current.id,
                    initialLikes: LiveLikes.base(for: current, stored: stored),
                    liked: favorites.contains(current.id),
-                   answeredAt: stored?.at)
+                   // 数の無い答えの時刻も渡す（ハートだけ書き換わった答えを、確かめた古い♥に負けさせない）
+                   answeredAt: likeCounts.lastAnswer(for: current.id))
     }
 
     /// 共有するページ。**個別ページが在る写真だけ**（`PhotoLink`）。
@@ -1011,7 +1013,7 @@ struct PhotoDetailView: View {
         guard let answer else { return nil }
         favorites.set(answer.photoId, favorite: answer.liked, for: owner)
         // 押した回の答えだけを渡す（`LikeCountStore` の注記）
-        if let likes = answer.likes { likeCounts.set(answer.photoId, count: likes) }
+        likeCounts.recordAnswer(answer.photoId, count: answer.likes)
         return answer
     }
 
