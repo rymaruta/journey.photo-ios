@@ -629,4 +629,63 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "22-写真を編集（色を編集の入口）")
     }
+
+    /// **「行きたい場所」を地図で見る**（2026-10-03・3か月の計画の7の第一歩）。マイページの
+    /// 「行きたい場所」のタブ（「地図で見る」が見える1枚）と、押した先の地図の1枚。
+    ///
+    /// 🔴 **鍵なしログインでは `/user/spots` が 401 で、行きたい場所は0件。** 撮るために
+    /// **端末の控え（`WishlistStore` の鍵）へ公開済みの撮影スポットを3件、起動引数で入れる**
+    /// （UserDefaults の引数の領域。端末には書き込まれず、サーバーにも送られない——同期は
+    /// 401 で止まり、`replace` は呼ばれない）。絵の名前にもそう書く（中身と名前を食い違わせない）。
+    /// スポットは索引（`app/data/spots.json`）の公開済み・座標ありの行。
+    ///
+    /// **別の試験にしてある**（一巡の絵に「入れた控え」を混ぜない）。出なければ撮らない（この試験の決まり）
+    func testCapturesWishlistMap() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        // 京都・鎌倉・函館（離れた3か所＝枠が全部を囲むかが絵で分かる）
+        app.launchArguments += ["-journey-photo-wishlist:\(Self.previewUserId)",
+                                "(\"SPOT-fushimi-inari-taisha\",\"SPOT-kenchoji\",\"SPOT-goryokaku\")"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+
+        // タブの札（名指し）。画面の下に隠れていたら少しずつ送る（上限あり）
+        let wishTab = app.buttons["profile.tab.wishlist"].firstMatch
+        guard wishTab.waitForExistence(timeout: 15) else { return }
+        var pushes = 0
+        while !wishTab.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard wishTab.isHittable else { return }
+        wishTab.tap()
+
+        let mapLink = app.buttons["mypage.wishlistMap"].firstMatch
+        guard mapLink.waitForExistence(timeout: 15) else { return }
+        if !mapLink.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard mapLink.isHittable else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "62-行きたい場所（撮影用に端末の控えへ3件）")
+        mapLink.tap()
+
+        let pin = app.descendants(matching: .any).matching(identifier: "savedMap.pin").firstMatch
+        guard pin.waitForExistence(timeout: 15) else { return }
+        // ピンの写真と地図の絵が描かれるのを待つ
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "63-行きたい場所の地図（撮影用に端末の控えへ3件）")
+    }
 }

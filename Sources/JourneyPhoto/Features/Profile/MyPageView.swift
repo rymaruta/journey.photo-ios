@@ -638,7 +638,14 @@ struct MyPageView: View {
             case .empty:
                 EmptyState(message: L("まだありません。スポットの画面で「行きたい」を押すとここに並びます",
                                        "Nothing yet. Tap “Want to go” on a place."))
+                // 板 WishlistTab の B1（空）の「撮影スポットを探す」
+                FindSpotsButton()
+                    .frame(maxWidth: .infinity)
             case .list:
+                // 「地図で見る」（保存を地図で見る・2026-10-03）。並べるのは下の一覧と同じ行
+                wishlistMapLink(SavedSpotsMap.split(places: wanted, officialRows: officialRows),
+                                pool: pool,
+                                photosKnown: !sourceFailed && feedLoaded && model.hasLoadedPhotos)
                 // 公開一覧の失敗のときだけ（自分の写真の失敗は上の一行が既に言う）
                 if ProfileSections.wishlistPartlyMissing(shownCount: reachable + officialRows.count,
                                                          savedIdCount: wishIds.count,
@@ -680,6 +687,38 @@ struct MyPageView: View {
                 }
             }
         }
+    }
+
+    /// 「地図で見る」の小さな文字ボタン（板 DesignSystem「『地図で見る』など小さな文字ボタンは
+    /// min-height 44」）。黒地の上の手がかりなので真鍮（owner の好み「デザインの箇所は白より真鍮」）。
+    /// 件数は数なので白（数は合図ではない・CLAUDE.md の実例）
+    private func wishlistMapLink(_ split: SavedSpotsMap.Split, pool: [Photo], photosKnown: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(L("すべての行きたい場所 · \(split.count)", "All places · \(split.count)"))
+                .font(.footnote)
+                .foregroundStyle(WebTheme.faint)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 8)
+            NavigationLink {
+                SavedSpotsMapView(split: split, officialSpots: officialSpots, photos: pool,
+                                  photosKnown: photosKnown)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "map")
+                        .font(.footnote)
+                        .accessibilityHidden(true)
+                    Text(L("地図で見る", "View on map"))
+                        .font(.footnote.weight(.semibold))
+                }
+                .foregroundStyle(WebTheme.accent)
+                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("行きたい場所を地図で見る", "View places on a map"))
+            .accessibilityIdentifier("mypage.wishlistMap")
+        }
+        .padding(.horizontal, 16)
     }
 
     /// 台帳のスポットの行。撮影地の行と同じ並びで、表紙の代わりに印（写真が無い）
