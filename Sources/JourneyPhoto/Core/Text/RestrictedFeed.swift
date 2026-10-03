@@ -30,6 +30,22 @@ enum RestrictedFeed {
         return all.sorted { ($0.createdAt ?? "") > ($1.createdAt ?? "") }
     }
 
+    /// **ページで読んだ公開写真**（`GET /feed`）に、絞ったぶんを混ぜる。
+    ///
+    /// 混ぜるのは**読んだところまでの範囲**（いちばん古い公開写真の `createdAt` 以降）に
+    /// 入る行だけ。全部混ぜると、まだ読んでいない古い時期の限定写真が1ページ目の
+    /// 末尾に並び、次のページを読むと間に公開写真が割り込んで並びが入れ替わる。
+    /// 最後まで読んだ（`reachedEnd`）なら全部混ぜる（`merge` と同じ）
+    static func mergeLoaded(publicPhotos: [Photo], restricted: [Photo], reachedEnd: Bool) -> [Photo] {
+        if reachedEnd { return merge(publicPhotos: publicPhotos, restricted: restricted) }
+        guard let oldest = publicPhotos.compactMap(\.createdAt).filter({ !$0.isEmpty }).min() else {
+            // まだ1枚も読めていない（または日付の無い行だけ）——範囲が決まらないので混ぜない
+            return merge(publicPhotos: publicPhotos, restricted: [])
+        }
+        let inRange = restricted.filter { ($0.createdAt ?? "") >= oldest }
+        return merge(publicPhotos: publicPhotos, restricted: inRange)
+    }
+
     /// 絞られている写真か（画面に印を出すため）。
     ///
     /// **知らない値は「絞られている」に倒す。** サーバーが選択肢を増やした

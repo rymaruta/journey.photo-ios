@@ -244,7 +244,11 @@ final class StubProtocol: URLProtocol {
         var delay: TimeInterval = 0
         if !StubProtocol.routes.isEmpty {
             let path = request.url?.path ?? ""
-            let hit = StubProtocol.routes.first { path.contains($0.path) }
+            // **`?` を含む鍵はクエリまで見る**（`/feed?cursor=c1` ——同じ道をページの札で
+            // 叩き分ける）。先にそちらを探し、無ければ今までどおり道だけで探す
+            let full = path + (request.url?.query.map { "?" + $0 } ?? "")
+            let hit = StubProtocol.routes.first { $0.path.contains("?") && full.contains($0.path) }
+                ?? StubProtocol.routes.first { !$0.path.contains("?") && path.contains($0.path) }
             status = hit?.status ?? 404
             body = hit?.body ?? Data("{\"error\":\"no route\"}".utf8)
             delay = hit?.delay ?? 0

@@ -75,7 +75,8 @@ struct GalleryView: View {
         .task {
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない
-            model.use(gallery: environment.gallery)
+            // 「新着」はページで読む（`GET /feed`・2026-10-03）。同じ理由で環境の1つを渡す
+            model.use(gallery: environment.gallery, feed: environment.publicFeed)
             await model.load()
         }
         // **ログイン状態が決まってから範囲を決める**（範囲は選んでいるフィードが決める）。
@@ -174,6 +175,10 @@ struct GalleryView: View {
         }
         .onAppear {
             isOnScreen = true
+            // 印は同期で立て（`markOnScreen`）、詳細を開いていた間に届いた「新着」の続きだけ
+            // 後から足す（`GalleryViewModel.pageWrite`）
+            model.markOnScreen()
+            Task { await model.applyPendingPages() }
             dropped = hidden.snapshot
             // **戻ってきたら毎回自分の写真を読み直す**（`MyPageView` と同じ形）。
             // 合図が来ない変わり方がある——すでに「消した」印の付いた写真を消した・
@@ -187,7 +192,10 @@ struct GalleryView: View {
             }
             didAppear = true
         }
-        .onDisappear { isOnScreen = false }
+        .onDisappear {
+            isOnScreen = false
+            model.leaveScreen()
+        }
     }
 
     private func reloadMyPhotos() {
@@ -397,11 +405,14 @@ struct GalleryView: View {
                 // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
                 // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
                 let groups = PhotoGroups.group(photos)
-                if groups.isEmpty {
+                // **続きがある間は「まだありません」と言わない**（読んだ範囲がブロックで全部落ちた・
+                // 続きを読んでいる最中）。下の目印が次を読む
+                if groups.isEmpty && !model.hasMorePages {
                     feedEmptyState
                 }
                 // 板 01c: 大きく1枚 → 2枚 → 2枚、端から端まで・隙間 4pt
                 HomeMosaic(groups: groups, onReport: { reportTarget = $0 })
+                pageFooter
             }
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
@@ -418,6 +429,29 @@ struct GalleryView: View {
     }
 
     private static let feedTopID = "home-feed-top"
+
+    /// 「新着」の続き（`GET /feed`・2026-10-03）。**下まで送ったら次のページを読む**。
+    ///
+    /// `LazyVStack` の最後の子なので、ここが作られる＝下まで来た。読んだページの数で
+    /// 作り直す（`id`）——短いページで目印が画面に残ったままでも次を頼むため。
+    /// 重ねて頼まないのはモデル側（`isLoadingPage`）。読めなかったら「もう一度試す」
+    @ViewBuilder
+    private var pageFooter: some View {
+        if model.hasMorePages {
+            Group {
+                if model.pageFailed {
+                    RetryButton(isBusy: model.isLoadingPage) {
+                        Task { await model.loadNextPage() }
+                    }
+                } else {
+                    ProgressView()
+                        .onAppear { Task { await model.loadNextPage() } }
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+            .id(model.loadedPageCount)
+        }
+    }
 
     private var feedEmptyState: some View {
         VStack(spacing: 14) {
