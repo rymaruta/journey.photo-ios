@@ -42,6 +42,9 @@ struct SpotBody: Decodable, Equatable {
     /// 上げた先が開けないサイトがある。台帳の公開済み364件は全部 https）
     let officialWebsite: URL?
     let check: Check
+    /// 作例（Wikimedia Commons・2026-10-03〜）。出してよい1枚だけ・最大6枚（`SpotSample.list`）。
+    /// **後から足された項目**なので、無い本文は空。壊れていても本文ごとは落とさない
+    let samples: [SpotSample]
 
     /// 本文の節が1つでもあるか（無ければ節ごと出さない）
     var hasContent: Bool {
@@ -51,7 +54,7 @@ struct SpotBody: Decodable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case slug, description, highlights, seasonalGuide, timeOfDayGuide, compositionTips,
-             officialWebsiteUrl, check
+             officialWebsiteUrl, check, samples
     }
 
     private enum CheckKeys: String, CodingKey { case kind, verifiedAt, checkedAt, sources }
@@ -75,6 +78,7 @@ struct SpotBody: Decodable, Equatable {
             .compactMap(\.value)
             .filter { SpotBodyText.timeOrder.contains($0.time) && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         officialWebsite = (try? c.decode(String.self, forKey: .officialWebsiteUrl)).flatMap(Self.httpsURL)
+        samples = SpotSample.list(((try? c.decode([Lenient<SpotSample.Raw>].self, forKey: .samples)) ?? []).compactMap(\.value))
 
         // **印は必ず要る。** 読めなければ投げる（本文ごと出さない）
         let k = try c.nestedContainer(keyedBy: CheckKeys.self, forKey: .check)
