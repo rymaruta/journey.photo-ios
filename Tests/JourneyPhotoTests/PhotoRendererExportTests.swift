@@ -70,6 +70,36 @@ final class PhotoRendererExportTests: XCTestCase {
         XCTAssertLessThanOrEqual(abs(width * 3 - height * 4), 8, "縦横比を保つ")
     }
 
+    /// 投稿画面で編集した写真を送る本体（`exportPrepared`・Phase 2）: **GPS が無い・最大辺 1920**。
+    /// 一覧用のサムネイルも書き出しから作り（同じ関所・512 以下）、撮影情報は原本から整えたもののまま
+    func testPostedEditedBodyHasNoGPSAndFitsIn1920() throws {
+        let data = try makeJPEG(width: 4032, height: 3024, colorSpaceName: CGColorSpace.displayP3)
+        let base = try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true)
+        XCTAssertNotNil(base.coords, "原本の座標（丸めたもの）を読めている")
+        let sent = try PhotoRenderer.shared.exportPrepared(source: data, recipe: recipe, base: base)
+
+        let props = try properties(of: sent.data)
+        XCTAssertNil(props[kCGImagePropertyGPSDictionary], "送る本体に GPS が無い")
+        let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
+        XCTAssertNil(exif[kCGImagePropertyExifDateTimeOriginal])
+        let width = try XCTUnwrap(props[kCGImagePropertyPixelWidth] as? Int)
+        let height = try XCTUnwrap(props[kCGImagePropertyPixelHeight] as? Int)
+        XCTAssertEqual(max(width, height), 1920)
+        XCTAssertNotEqual(sent.data, base.data, "編集が当たっている（整えた本体のままではない）")
+
+        let thumb = try XCTUnwrap(sent.thumbnail, "一覧用のサムネイル")
+        let thumbProps = try properties(of: thumb)
+        XCTAssertNil(thumbProps[kCGImagePropertyGPSDictionary])
+        let tw = try XCTUnwrap(thumbProps[kCGImagePropertyPixelWidth] as? Int)
+        let th = try XCTUnwrap(thumbProps[kCGImagePropertyPixelHeight] as? Int)
+        XCTAssertEqual(max(tw, th), ImagePreparer.thumbnailMaxPixelSize)
+
+        XCTAssertEqual(sent.coords, base.coords, "座標は原本から")
+        XCTAssertEqual(sent.takenOn, base.takenOn, "撮影日は原本から")
+        XCTAssertEqual(sent.exif, base.exif, "撮影情報は原本から")
+        XCTAssertNotNil(sent.dominantColor)
+    }
+
     func testExportKeepsDisplayP3WithICC() throws {
         let data = try makeJPEG(width: 800, height: 600, colorSpaceName: CGColorSpace.displayP3)
         let props = try properties(of: PhotoRenderer.shared.export(data: data, recipe: recipe))

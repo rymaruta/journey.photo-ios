@@ -155,4 +155,25 @@ final class PhotoRenderer {
         }
         return try ImagePreparer.encodeStripped(cgImage)
     }
+
+    /// 投稿の本体にする1枚（投稿画面・`UploadViewModel`）。`source` は**編集の元**
+    /// （選んだときの原本の一時ファイル。無ければ整えた本体）、`base` は原本から整えた1枚。
+    ///
+    /// - 本体: `export`（最大辺 1920・EXIF / GPS の関所 `encodeStripped` を通る）
+    /// - 一覧用のサムネイル: **書き出した本体から**作る（`ImagePreparer.makeThumbnail`・同じ関所）
+    /// - 代表色: 書き出した本体から取り直す（白黒のプリセットで地の色が浮かないように）
+    /// - 撮影情報・ファイル名: `base` のまま（原本から読んだもの。書き出しは画素しか持たない）
+    func exportPrepared(source: Data, recipe: PhotoRecipe, base: ImagePreparer.Prepared) throws -> ImagePreparer.Prepared {
+        let data = try export(data: source, recipe: recipe)
+        return base.replacingPixels(data: data,
+                                    thumbnail: ImagePreparer.makeThumbnail(fromJPEG: data),
+                                    dominantColor: DominantColorExtractor.hex(from: data))
+    }
+
+    /// 長い辺 `maxPixelSize` に縮めて読み、レシピを当てた絵（投稿画面の帯のサムネ・編集画面の見本）。
+    /// 読めなければ nil
+    func render(data: Data, recipe: PhotoRecipe, maxPixelSize: Int) -> CGImage? {
+        guard let loaded = Self.load(data: data, maxPixelSize: maxPixelSize) else { return nil }
+        return preview(recipe, loaded: loaded)
+    }
 }

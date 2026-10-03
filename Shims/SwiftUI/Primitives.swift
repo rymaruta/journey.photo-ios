@@ -154,6 +154,8 @@ public struct EnvironmentValues {
     public var accessibilityReduceMotion: Bool { false }
     /// 読み上げ（VoiceOver）が動いているか（本物と同じ）
     public var accessibilityVoiceOverEnabled: Bool { false }
+    /// 画面の倍率（本物と同じ。写真の編集の見本を画面の画素で描くのに使う）
+    public var displayScale: CGFloat { 2 }
 }
 
 public struct DismissAction {

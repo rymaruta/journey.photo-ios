@@ -54,6 +54,16 @@ enum ImagePreparer {
         var thumbnailFileName: String {
             "\((fileName as NSString).deletingPathExtension)_thumb.jpg"
         }
+
+        /// **画素だけを差し替えた1枚**（写真の編集で書き出したもの・`PhotoRenderer.exportPrepared`）。
+        /// 撮影情報（EXIF の8項目・撮影日・丸めた座標）とファイル名は**元の写真から読んだまま**。
+        /// 本体・一覧用のサムネイル・代表色は書き出した画像のもの（代表色が取れなければ元の色）
+        func replacingPixels(data: Data, thumbnail: Data?, dominantColor: String?) -> Prepared {
+            Prepared(data: data, fileName: fileName, contentType: "image/jpeg",
+                     exif: exif, coords: coords, takenOn: takenOn,
+                     dominantColor: dominantColor ?? self.dominantColor,
+                     thumbnail: thumbnail)
+        }
     }
 
     enum PrepareError: LocalizedError {
@@ -111,8 +121,9 @@ enum ImagePreparer {
     /// 一覧用の 512px。作れない・メタデータを消せたと確かめられないときは nil。
     ///
     /// **本体と同じ入口を通す**——縮めて読むのは `downsampledImage`（向きの焼き込み・HDR→SDR）、
-    /// 焼くのは `encodeJPEG`、関所は `assertStripped`（`encodeStripped` にまとめてある）
-    private static func makeThumbnail(fromJPEG jpeg: Data) -> Data? {
+    /// 焼くのは `encodeJPEG`、関所は `assertStripped`（`encodeStripped` にまとめてある）。
+    /// 写真の編集の書き出し（`PhotoRenderer.exportPrepared`）も、書き出した本体からこれで作る
+    static func makeThumbnail(fromJPEG jpeg: Data) -> Data? {
         guard let source = CGImageSourceCreateWithData(jpeg as CFData, nil),
               CGImageSourceGetCount(source) > 0,
               let image = downsampledImage(source: source, maxPixelSize: thumbnailMaxPixelSize) else { return nil }

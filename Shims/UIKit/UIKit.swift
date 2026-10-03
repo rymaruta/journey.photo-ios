@@ -1,5 +1,6 @@
 // UIKit の模型（Linux で型検査するためだけのもの）。
 @_exported import SwiftUI
+import ImageIO
 
 open class UIViewController {
     /// 本物は読み取りだけ（このコントローラが出しているもの）
@@ -145,6 +146,8 @@ extension UIImageShim {
     public func withTintColor(_ color: UIColor, renderingMode: RenderingMode) -> UIImageShim { self }
     /// 縮めて展開した画像（本物と同じ・iOS 15〜）
     public func preparingThumbnail(of size: CGSize) -> UIImageShim? { nil }
+    /// 描いた画像から作る（写真の編集の見本・本物と同じ）
+    public init(cgImage: CGImage) { self.init() }
 }
 
 public final class UIColor {
