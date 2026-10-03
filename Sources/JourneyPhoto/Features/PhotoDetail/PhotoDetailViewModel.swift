@@ -76,9 +76,6 @@ final class PhotoDetailViewModel: ObservableObject {
     /// `.task` で渡してもらう。init で `false` に固定すると
     /// 「ログインしているのに、いいねが押せない」になる。
     private var isSignedIn = false
-    /// 今の1枚が公開範囲を絞った写真か（`RestrictedFeed.isRestricted`）。
-    /// いいね数を未認証の口へ取りに戻るかを決める（`SocialService.likeSnapshot`）
-    private var restricted = false
 
     /// - Parameter initialLikes: 一覧から来た写真の数。**読み込みが終わるまで 0 と出さない**
     ///   （圏外で取れなかった回も、一覧の数を出し続ける）
@@ -101,10 +98,7 @@ final class PhotoDetailViewModel: ObservableObject {
     ///   **読めるまではこれを出す**——白で始めると、圏外で開いたいいね済みの写真が
     ///   白いハートになり、押すと「いいね」を送って（届かず）控えまで消していた
     ///   - answeredAt: 押した回の答えの時刻（`LikeCountStore.Entry.at`）。無ければ nil
-    ///   - restricted: 公開範囲を絞った写真か。絞った写真は未認証の数の口が 404 になる
-    func show(photoId: String, initialLikes: Int?, liked: Bool, answeredAt: Date? = nil,
-              restricted: Bool = false) {
-        self.restricted = restricted
+    func show(photoId: String, initialLikes: Int?, liked: Bool, answeredAt: Date? = nil) {
         if photoId != self.photoId {
             self.photoId = photoId
             likes = initialLikes
@@ -141,7 +135,7 @@ final class PhotoDetailViewModel: ObservableObject {
         let id = photoId
         let accepted = acceptedLikes[id, default: 0]
         let readAt = Date()
-        async let snapshot = social.likeSnapshot(photoId: id, signedIn: isSignedIn, restricted: restricted)
+        async let snapshot = social.likeSnapshot(photoId: id, signedIn: isSignedIn)
         async let page = try? social.comments(photoId: id, signedIn: isSignedIn)
         let likeState = await snapshot
         let loadedCount = likeState.count

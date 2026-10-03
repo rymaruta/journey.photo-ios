@@ -37,22 +37,25 @@ struct SocialService {
 
     /// 開いた写真のいいね。
     ///
-    /// - ログイン中は**自分の印の口（`GET /user/likes/{id}`）1本で数も取る。**
+    /// - ログイン中は**数を自分の印の口（`GET /user/likes/{id}`）の `count` から取る。**
     ///   絞った写真（`audience` あり）では未認証の数の口が 404 になり、本人・フォロワーにも
-    ///   数が更新されなかった（photo-gallery #269）。数はこの口が見せてよい相手にだけ付ける
-    /// - 数が来なかったら**公開の写真に限って**未認証の口に戻る（古いサーバーは数を付けない）。
-    ///   絞った写真は戻っても同じ 404 なので、往復を増やさず「数を出さない」
+    ///   数が更新されなかった（photo-gallery #269）。`count` は見せてよい相手にだけ付く
+    /// - `count` が無ければ**公開・限定に関係なく**未認証の口の数を使う。古いサーバーは
+    ///   `count` を付けないが、限定写真の数も未認証の口で返す——アプリがサーバーより先に
+    ///   出ても数が消えない。新しいサーバーの限定写真は 404 → nil（数を出さない）で害は無い
+    /// - **2本は同時に投げる**（順番に2往復しない）。`count` が来たら未認証の答えは待たずに
+    ///   捨てる（抜けると `async let` が取り消す）。未認証の失敗は無視
     /// - 未ログインは今までどおり未認証の口だけ
-    func likeSnapshot(photoId: String, signedIn: Bool, restricted: Bool) async -> LikeSnapshot {
+    func likeSnapshot(photoId: String, signedIn: Bool) async -> LikeSnapshot {
         guard signedIn else {
             return LikeSnapshot(liked: nil, count: try? await likeCount(photoId: photoId))
         }
+        async let publicCount = try? likeCount(photoId: photoId)
         let mine = try? await myLikeAnswer(photoId: photoId)
         if let count = mine?.count {
             return LikeSnapshot(liked: mine?.liked, count: count)
         }
-        let fallback = restricted ? nil : try? await likeCount(photoId: photoId)
-        return LikeSnapshot(liked: mine?.liked, count: fallback)
+        return LikeSnapshot(liked: mine?.liked, count: await publicCount)
     }
 
     struct MyLikes: Decodable { let photoIds: [String] }
