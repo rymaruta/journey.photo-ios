@@ -287,7 +287,7 @@ struct HomeTopCardView: View {
                         .foregroundStyle(WebTheme.muted)
                         .lineLimit(2)
                         // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
-                        // （名前が長くても、先頭の「明日 · 名前 · マジックアワー」を残す）
+                        // （名前が長くても、先頭の「明日 · 名前 · ゴールデンアワー」を残す）
                         .truncationMode(detailTruncation)
                 }
             }

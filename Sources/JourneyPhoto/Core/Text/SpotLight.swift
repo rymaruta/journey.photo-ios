@@ -8,13 +8,17 @@ import Foundation
 /// ## 決まりごと
 ///
 ///  - 時刻は**その土地の時計**。時刻帯は台帳の国から引く（`SunTimes.timeZone(forCountry:)`・
-///    日本は Asia/Tokyo）。表に無い国は**端末の時刻帯で出し、そう書く**（`Zone.isDevice`）
+///    日本は Asia/Tokyo）。**表に無い国は節を出さない**（Web の表・ホームの札と同じ。端末の時計で言うと
+///    旅先で読み違える）。座標があっても段が1つも作れなければ節を出さない（`sheet`）
 ///  - 日の出・日の入りの方角は「東北東 67°」（16方位＋北から時計回りの度）
-///  - ゴールデンアワーは太陽の高さ +6°〜−4°（Web とホームの札が「マジックアワー」と呼ぶ幅と同じ）、
-///    ブルーアワーは −4°〜−6°
+///  - ゴールデンアワーは太陽の高さ +6°〜−4°（ホームの札と同じ幅・同じ呼び名。2026-10-03 owner 判断で
+///    「マジックアワー」から揃えた）、ブルーアワーは −4°〜−6°
+///  - 段の中は時刻の順: 朝はブルーアワー → 日の出 → ゴールデンアワー、夕はゴールデンアワー → 日の入り → ブルーアワー
+///    （朝は帯の終わりの順・夕は帯の始まりの順。朝のゴールデンアワーは −4° から始まり日の出より前に始まるが、
+///    日の出を段の真ん中に置く）
 ///  - 白夜・極夜で時刻が無い日は、**作り話の時刻を出さず**「白夜（沈まない）」「極夜（昇らない）」と言う
 ///  - 台帳の `timeOfDayGuide` のうち、夜明け・朝は「朝」の段、夕方の斜光・日没後は「夕」の段に並べる
-///    （日中・夜は撮影ガイドの時間帯に残す）
+///    （日中・夜は撮影ガイドの時間帯に残す）。節を出さないときは全部を撮影ガイドに残す（`guideTimes`）
 enum SpotLight {
 
     /// 1行: 札（日の出・ゴールデンアワー…）・値（時刻か言い分け）・添え（方角）
@@ -32,10 +36,15 @@ enum SpotLight {
         let rows: [Row]
     }
 
-    /// 時刻を言う時刻帯。`isDevice` は台帳の国から引けず、端末の時刻帯で代わりに出したとき
-    struct Zone: Equatable {
+    /// 節に出すもの一式（その日の段と、言う時刻帯）
+    struct Sheet: Equatable {
         let timeZone: TimeZone
-        let isDevice: Bool
+        /// その土地の今日
+        let todayYMD: String
+        /// 見ている日
+        let ymd: String
+        /// 1つ以上
+        let blocks: [Block]
     }
 
     /// 日付を送れる幅（今日から前後この日数まで）
@@ -45,9 +54,14 @@ enum SpotLight {
 
     // MARK: - 時刻帯・日付
 
-    static func zone(country: String?, device: TimeZone = .current) -> Zone {
-        if let zone = SunTimes.timeZone(forCountry: country) { return Zone(timeZone: zone, isDevice: false) }
-        return Zone(timeZone: device, isDevice: true)
+    /// 節の中身。**時刻帯が引けない国・座標が読めない・段が1つも作れない日は nil**（節ごと出さない）
+    static func sheet(country: String?, lat: Double, lng: Double, offset: Int, now: Date) -> Sheet? {
+        guard let zone = SunTimes.timeZone(forCountry: country),
+              let today = ymd(offset: 0, from: now, in: zone),
+              let day = ymd(offset: min(max(offset, -maxOffset), maxOffset), from: now, in: zone) else { return nil }
+        let list = blocks(day, lat: lat, lng: lng, in: zone)
+        guard !list.isEmpty else { return nil }
+        return Sheet(timeZone: zone, todayYMD: today, ymd: day, blocks: list)
     }
 
     private static func calendar(_ zone: TimeZone) -> Calendar {
@@ -157,13 +171,14 @@ enum SpotLight {
         let goldenJoined = polarNight ? nil : joinedAcrossNoon(times.morningGolden, times.eveningGolden)
         let blueJoined = joinedAcrossNoon(times.morningBlue, times.eveningBlue)
 
+        // 朝は時刻の順: ブルーアワー → 日の出 → ゴールデンアワー
         var morning: [Row] = []
+        if let s = spanText(blueJoined ?? times.morningBlue, in: zone) { morning.append(Row(label: blue, value: s)) }
         if let rise = SunTimes.clock(times.sunrise, in: zone) {
             morning.append(Row(label: L("日の出", "Sunrise"), value: rise, detail: direction(times.sunriseAzimuth)))
         } else if let noSun {
             morning.append(Row(label: L("日の出", "Sunrise"), value: noSun))
         }
-        if let s = spanText(blueJoined ?? times.morningBlue, in: zone) { morning.append(Row(label: blue, value: s)) }
         if let joined = goldenJoined {
             if let s = spanText(joined, in: zone) {
                 morning.append(Row(label: golden, value: s + L("（一日中・太陽が 6° より上がらない）", " (all day · sun stays below 6°)")))
@@ -172,16 +187,17 @@ enum SpotLight {
             morning.append(Row(label: golden, value: s))
         }
 
+        // 夕も時刻の順: ゴールデンアワー → 日の入り → ブルーアワー
         var evening: [Row] = []
+        if goldenJoined == nil, !polarNight, let s = spanText(times.eveningGolden, in: zone) {
+            evening.append(Row(label: golden, value: s))
+        }
         if let set = SunTimes.clock(times.sunset, in: zone) {
             let rise = SunTimes.clock(times.sunrise, in: zone)
             evening.append(Row(label: L("日の入り", "Sunset"), value: rise.map { nextDay($0, set) } ?? set,
                                detail: direction(times.sunsetAzimuth)))
         } else if let noSun {
             evening.append(Row(label: L("日の入り", "Sunset"), value: noSun))
-        }
-        if goldenJoined == nil, !polarNight, let s = spanText(times.eveningGolden, in: zone) {
-            evening.append(Row(label: golden, value: s))
         }
         if blueJoined == nil, let s = spanText(times.eveningBlue, in: zone) { evening.append(Row(label: blue, value: s)) }
 
@@ -209,22 +225,22 @@ enum SpotLight {
                 ordered.filter { eveningTimes.contains($0.time) })
     }
 
-    /// 光の時刻の節に出したぶんを除いた残り（日中・夜）。撮影ガイドの「時間帯」はこれだけ出す
-    static func remainingTimes(_ list: [SpotBody.TimeOfDay]) -> [SpotBody.TimeOfDay] {
-        SpotBodyText.orderedTimes(list).filter { !morningTimes.contains($0.time) && !eveningTimes.contains($0.time) }
+    /// 撮影ガイドの「時間帯」に出す文。光の時刻の節を出すときは、そちらに並べたぶん（夜明け・朝・
+    /// 夕方の斜光・日没後）を除いた残り（日中・夜）。節を出さないときは全部
+    static func guideTimes(_ list: [SpotBody.TimeOfDay], lightShown: Bool) -> [SpotBody.TimeOfDay] {
+        let ordered = SpotBodyText.orderedTimes(list)
+        guard lightShown else { return ordered }
+        return ordered.filter { !morningTimes.contains($0.time) && !eveningTimes.contains($0.time) }
     }
 
     // MARK: - 注記
 
-    /// 節の下の注記。端末の時刻帯で代わりに出したときは、そう書く
-    static func note(_ zone: Zone) -> String {
-        let id = zone.timeZone.identifier
-        let clock = zone.isDevice
-            ? L("時刻はこの端末の時刻帯（\(id)）で表示しています。現地の時刻とは違うことがあります。",
-                "Times are shown in this device's time zone (\(id)) and may differ from local time.")
-            : (id == "Asia/Tokyo"
-                ? L("時刻は日本時間。", "Times in Japan Standard Time.")
-                : L("時刻は現地時間（\(id)）。", "Times in local time (\(id))."))
+    /// 節の下の注記
+    static func note(_ zone: TimeZone) -> String {
+        let id = zone.identifier
+        let clock = id == "Asia/Tokyo"
+            ? L("時刻は日本時間。", "Times in Japan Standard Time.")
+            : L("時刻は現地時間（\(id)）。", "Times in local time (\(id)).")
         return clock + L(
             "端末で計算した値です。ゴールデンアワーは太陽の高さが 6° から −4°、ブルーアワーは −4° から −6° の間。方角は北から時計回り。天気や山・建物の影は含みません。",
             " Calculated on this device. Golden hour is when the sun is between 6° and −4°, blue hour between −4° and −6°. Directions are measured clockwise from north. Weather and shadows from terrain or buildings are not included.")

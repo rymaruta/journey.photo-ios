@@ -14,7 +14,7 @@ final class SunTimesTests: XCTestCase {
         XCTAssertEqual(SunTimes.clock(s.sunset, in: tokyo), "17:32")
     }
 
-    /// 夕方: マジックアワー（+6°→−4°）→ ブルーアワー（−4°→−6°）の順につながる（銀山温泉）
+    /// 夕方: ゴールデンアワー（+6°→−4°）→ ブルーアワー（−4°→−6°）の順につながる（銀山温泉）
     func testEveningGoldenThenBlue() throws {
         let s = try XCTUnwrap(SunTimes.compute("2026-10-10", lat: 38.58, lng: 140.53))
         XCTAssertEqual(SunTimes.clock(s.eveningGolden.start, in: tokyo), "16:34")

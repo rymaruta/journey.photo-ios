@@ -23,7 +23,7 @@ enum TripLight {
         let dayNumber: Int
         /// 日の入り。日付をまたげば「翌00:10」、白夜なら「白夜」（Web の撮影の光の表と同じ言い分け）
         let sunset: String?
-        /// 夕方のマジックアワー "HH:MM–HH:MM"。一日中低ければ「終日」、終わらなければ「HH:MM–（沈まない）」
+        /// 夕方のゴールデンアワー "HH:MM–HH:MM"。一日中低ければ「終日」、終わらなければ「HH:MM–（沈まない）」
         let eveningGolden: String?
         /// その季節の案内（短く切ったもの）。札には出さず、呼ぶ側が使うときのため
         let seasonGuide: String?
@@ -42,7 +42,8 @@ enum TripLight {
         later < earlier ? L("翌\(later)", "\(later) (+1)") : later
     }
 
-    /// 日の入りとマジックアワーの言い方（Web の `lightCalendar` と同じ言い分け・9d7ba04e のレビュー）
+    /// 日の入りとゴールデンアワーの言い方（Web の `lightCalendar` と同じ言い分け・9d7ba04e のレビュー）。
+    /// 呼び名は 2026-10-03 owner 判断で「ゴールデンアワー」（Web は同じ幅を「マジックアワー」と呼ぶ）
     static func words(_ times: SunTimes, altitude: (max: Double, min: Double)?, in zone: TimeZone)
         -> (sunset: String?, golden: String?) {
         let rise = SunTimes.clock(times.sunrise, in: zone)
@@ -60,7 +61,7 @@ enum TripLight {
         if let gStart, let gEnd {
             golden = "\(gStart)–\(nextDay(gStart, gEnd))"
         } else if gStart == nil, let altitude, altitude.max < goldenTop, altitude.max > horizon {
-            // 昇るが一日中 6° まで上がらない＝昼のあいだずっとマジックアワー（昇らない日には言わない）
+            // 昇るが一日中 6° まで上がらない＝昼のあいだずっとゴールデンアワー（昇らない日には言わない）
             golden = L("終日", "All day")
         } else if gStart == nil, let altitude, altitude.max <= horizon {
             golden = L("極夜", "Polar night")
@@ -106,12 +107,12 @@ enum TripLight {
 
     /// 札の小さい行（**ほかの札と同じ2行まで**——3行にすると並びの背が揃うぶん全部の札が高くなり、
     /// 下の写真の一覧が押し下がる）:
-    ///   「明日 · 銀山温泉 · マジックアワー 16:26–17:18 · 日の入り 17:02」
+    ///   「明日 · 銀山温泉 · ゴールデンアワー 16:26–17:18 · 日の入り 17:02」
     /// 季節の案内は札に出さない（スポットの画面にある）。時刻が1つも無ければ名前だけ
     static func line(_ entry: Entry) -> String {
         let when = entry.isTomorrow ? L("明日", "Tomorrow") : L("今日", "Today")
         var parts = [when, entry.spot.name]
-        if let golden = entry.eveningGolden { parts.append(L("マジックアワー \(golden)", "Golden hour \(golden)")) }
+        if let golden = entry.eveningGolden { parts.append(L("ゴールデンアワー \(golden)", "Golden hour \(golden)")) }
         if let sunset = entry.sunset { parts.append(L("日の入り \(sunset)", "Sunset \(sunset)")) }
         return parts.joined(separator: " · ")
     }

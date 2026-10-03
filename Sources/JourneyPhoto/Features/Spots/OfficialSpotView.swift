@@ -52,6 +52,8 @@ struct OfficialSpotView: View {
     @State private var postedHere = false
     /// 「光の時刻」で見ている日（今日から何日ずらしたか・その土地の暦）
     @State private var lightOffset = 0
+    /// 文字サイズ。アクセシビリティの大きさでは「光の時刻」の行を縦に積む
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// **確定した紐づけだけ**（`Photo.spotId`）。撮影地の文字列では当てない
     private var linked: [Photo] { dropped.visible(photos.filter { $0.spotId == spot.spotId }) }
@@ -333,9 +335,8 @@ struct OfficialSpotView: View {
             }
             let seasons = SpotBodyText.orderedSeasons(body.seasonalGuide,
                                                       current: SpotBodyText.currentSeason(now: Date()))
-            // 朝・夕の文は「光の時刻」の節に並べたので、ここは残り（日中・夜）だけ。座標が無ければ全部
-            let times = spot.coords != nil ? SpotLight.remainingTimes(body.timeOfDayGuide)
-                                           : SpotBodyText.orderedTimes(body.timeOfDayGuide)
+            // 朝・夕の文は「光の時刻」の節を出すときだけそちらに並べ、ここは残り（日中・夜）。出さなければ全部
+            let times = SpotLight.guideTimes(body.timeOfDayGuide, lightShown: lightSheet != nil)
             if !seasons.isEmpty || !times.isEmpty || !body.compositionTips.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     SpotDetailParts.sectionHeader(L("撮影ガイド", "Shooting guide"))
@@ -378,22 +379,23 @@ struct OfficialSpotView: View {
 
     // MARK: - 光の時刻（日の出・日の入り・ゴールデンアワー・ブルーアワー・2026-10-03）
 
-    /// **座標があればいつでも出す**（端末で計算する・`SpotLight`）。日付は前後に送れる。
-    /// 黒地の札の上なので、合図（今日に戻す・眉の日付）は真鍮、時刻は白の等幅数字
+    /// 節の中身（端末で計算する・`SpotLight.sheet`）。座標が無い・時刻帯が引けない国・段が作れない日は nil
+    private var lightSheet: SpotLight.Sheet? {
+        guard let coords = spot.coords else { return nil }
+        return SpotLight.sheet(country: spot.region?.country, lat: coords.lat, lng: coords.lng,
+                               offset: lightOffset, now: Date())
+    }
+
+    /// 日付は前後に送れる。黒地の札の上なので、合図（今日に戻す・眉）は真鍮、時刻は白の等幅数字
     @ViewBuilder
     private var lightSection: some View {
-        if let coords = spot.coords {
-            let zone = SpotLight.zone(country: spot.region?.country)
-            let now = Date()
-            let today = SpotLight.ymd(offset: 0, from: now, in: zone.timeZone) ?? ""
-            let day = SpotLight.ymd(offset: lightOffset, from: now, in: zone.timeZone) ?? today
-            let blocks = SpotLight.blocks(day, lat: coords.lat, lng: coords.lng, in: zone.timeZone)
+        if let sheet = lightSheet {
             let guides = SpotLight.guides(spotBody?.timeOfDayGuide ?? [])
             VStack(alignment: .leading, spacing: 10) {
                 SpotDetailParts.sectionHeader(L("光の時刻", "Light"))
-                lightDateBar(SpotLight.dateLabel(day, offset: lightOffset, todayYMD: today))
+                lightDateBar(SpotLight.dateLabel(sheet.ymd, offset: lightOffset, todayYMD: sheet.todayYMD))
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                    ForEach(Array(sheet.blocks.enumerated()), id: \.offset) { index, block in
                         if index > 0 { Divider().overlay(WebTheme.border) }
                         lightBlock(block, guides: block.isMorning ? guides.morning : guides.evening)
                     }
@@ -401,7 +403,7 @@ struct OfficialSpotView: View {
                 .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(WebTheme.border, lineWidth: 1))
                 .padding(.horizontal, 16)
-                Text(SpotLight.note(zone))
+                Text(SpotLight.note(sheet.timeZone))
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -412,57 +414,76 @@ struct OfficialSpotView: View {
         }
     }
 
-    /// 日付を送る帯: ‹ 10月3日（土）· 今日 ›。矢印は当たり 44pt。今日でなければ「今日」に戻す文字ボタン
+    /// 日付を送る帯: ‹ 10月3日（土）· 今日 ›。矢印・「今日」は当たり 44pt（label の内側で取る）。
+    /// 日付は**切らない**（年付きでも折り返す）。アクセシビリティの大きさでは日付を上の行に出し、
+    /// 矢印と「今日」をその下に並べる
+    @ViewBuilder
     private func lightDateBar(_ label: String) -> some View {
-        HStack(spacing: 4) {
-            Button {
-                lightOffset = max(lightOffset - 1, -SpotLight.maxOffset)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+        let date = Text(label)
+            .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
             .foregroundStyle(WebTheme.foreground)
-            .disabled(lightOffset <= -SpotLight.maxOffset)
-            .accessibilityLabel(L("前の日", "Previous day"))
-            .accessibilityIdentifier("spot.official.light.prev")
-
-            Text(label)
-                .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
-                .foregroundStyle(WebTheme.foreground)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .accessibilityIdentifier("spot.official.light.date")
-
-            Button {
-                lightOffset = min(lightOffset + 1, SpotLight.maxOffset)
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
+            .accessibilityIdentifier("spot.official.light.date")
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                date.padding(.horizontal, 10)
+                HStack(spacing: 4) {
+                    lightStepButton(-1)
+                    lightStepButton(1)
+                    Spacer(minLength: 8)
+                    lightTodayButton
+                }
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(WebTheme.foreground)
-            .disabled(lightOffset >= SpotLight.maxOffset)
-            .accessibilityLabel(L("次の日", "Next day"))
-            .accessibilityIdentifier("spot.official.light.next")
-
-            Spacer(minLength: 8)
-            if lightOffset != 0 {
-                // ヘッダーの文字アクションと同じ扱い（黒地の上の手がかり＝真鍮）
-                Button(L("今日", "Today")) { lightOffset = 0 }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.accent)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L("今日に戻す", "Back to today"))
-                    .accessibilityIdentifier("spot.official.light.today")
+            .padding(.horizontal, 6)
+        } else {
+            HStack(spacing: 4) {
+                lightStepButton(-1)
+                date
+                lightStepButton(1)
+                Spacer(minLength: 8)
+                lightTodayButton
             }
+            .padding(.horizontal, 6)
         }
-        .padding(.horizontal, 6)
+    }
+
+    /// 前の日（-1）・次の日（+1）の矢印。当たりは 44pt
+    private func lightStepButton(_ step: Int) -> some View {
+        let atEdge = step < 0 ? lightOffset <= -SpotLight.maxOffset : lightOffset >= SpotLight.maxOffset
+        return Button {
+            lightOffset = min(max(lightOffset + step, -SpotLight.maxOffset), SpotLight.maxOffset)
+        } label: {
+            Image(systemName: step < 0 ? "chevron.left" : "chevron.right")
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(WebTheme.foreground)
+        .disabled(atEdge)
+        .accessibilityLabel(step < 0 ? L("前の日", "Previous day") : L("次の日", "Next day"))
+        .accessibilityIdentifier(step < 0 ? "spot.official.light.prev" : "spot.official.light.next")
+    }
+
+    /// 今日でないときだけ「今日」に戻す文字ボタン（ヘッダーの文字アクションと同じ扱い＝黒地の上の手がかり＝真鍮）。
+    /// 当たり 44pt は label の内側（frame＋contentShape）で取る——Button の外に付けた frame は当たりにならない
+    @ViewBuilder
+    private var lightTodayButton: some View {
+        if lightOffset != 0 {
+            Button {
+                lightOffset = 0
+            } label: {
+                Text(L("今日", "Today"))
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(WebTheme.accent)
+            .accessibilityLabel(L("今日に戻す", "Back to today"))
+            .accessibilityIdentifier("spot.official.light.today")
+        }
     }
 
     /// 朝・夕の段: 眉（真鍮）→ 時刻の行 → 台帳の時間帯の文
@@ -472,22 +493,7 @@ struct OfficialSpotView: View {
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             ForEach(Array(block.rows.enumerated()), id: \.offset) { _, row in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(row.label)
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.muted)
-                    Spacer(minLength: 8)
-                    if let detail = row.detail {
-                        Text(detail)
-                            .font(JPFont.mono(13, relativeTo: .footnote))
-                            .foregroundStyle(WebTheme.muted2)
-                    }
-                    Text(row.value)
-                        .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
-                        .foregroundStyle(WebTheme.foreground)
-                        .multilineTextAlignment(.trailing)
-                }
-                .accessibilityElement(children: .combine)
+                lightRow(row)
             }
             ForEach(Array(guides.enumerated()), id: \.offset) { _, guide in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -508,6 +514,34 @@ struct OfficialSpotView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 1行（札・方角・時刻）。アクセシビリティの大きさでは縦に積む（横に並べると時刻が切れる・折れる）
+    @ViewBuilder
+    private func lightRow(_ row: SpotLight.Row) -> some View {
+        let label = Text(row.label).font(.subheadline).foregroundStyle(WebTheme.muted)
+        let detail = row.detail.map {
+            Text($0).font(JPFont.mono(13, relativeTo: .footnote)).foregroundStyle(WebTheme.muted2)
+        }
+        let value = Text(row.value)
+            .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
+            .foregroundStyle(WebTheme.foreground)
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 2) {
+                label
+                value.fixedSize(horizontal: false, vertical: true)
+                if let detail { detail }
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                label
+                Spacer(minLength: 8)
+                if let detail { detail }
+                value.multilineTextAlignment(.trailing)
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     /// 札（季節・時間帯）と一文の行を並べる小さな段
