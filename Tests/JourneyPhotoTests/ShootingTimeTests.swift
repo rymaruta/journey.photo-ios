@@ -152,6 +152,17 @@ final class ShootingTimeTests: XCTestCase {
         let both = ShootingTime.Filter(season: .autumn, dayPart: .evening)
         XCTAssertEqual(both.prefix, L("秋・夕方の", "Autumn evening "))
         XCTAssertTrue(both.note?.contains(L("16〜18時", "16–18")) ?? false)
+        XCTAssertTrue(both.note?.contains(L("南半球", "Southern Hemisphere")) ?? false)
+        XCTAssertEqual(ShootingTime.Filter(dayPart: .evening).prefix, L("夕方の", "Evening "))
+    }
+
+    /// 0件の時間帯の札を薄くするための集計（写真は撮影時刻、撮影地は時間帯の案内・下書きは数えない）
+    func testDayPartsWithSomethingToShow() throws {
+        let photos = [try photo(["id": "a", "date": "2026-09-26", "exif": ["dateTimeOriginal": "2026-09-26T16:37:31"]]),
+                      try photo(["id": "b", "date": "2026-09-26"])]
+        XCTAssertEqual(ShootingTime.dayParts(photos: photos, spots: []), [.evening])
+        let spots = [try spot("s", times: ["dawn"]), try spot("d", stage: "review", times: ["night"]), try spot("plain", seasons: ["autumn"])]
+        XCTAssertEqual(ShootingTime.dayParts(photos: [], spots: spots), [.morning])
     }
 
     /// 段を出すのは、季節か時間帯の分かる写真か、案内のある公開済みの撮影地があるときだけ

@@ -6,6 +6,7 @@ import SwiftUI
 /// **選択は読み上げにも渡す**（`.isSelected`）——色だけで伝えない。
 ///
 /// 見た目の札は 36、上下 4 の余白まで押せる＝**押せる範囲は 44**（地図の切り替えと同じ形）。
+/// 幅も 44 を下回らせない（「秋」「夜」のような1文字の札は字と左右の余白で約 41 にしかならない）。
 /// 並べる側は `.padding(.vertical, -PillChip.tapSlack)` を外側（横の ScrollView の外）に付け、
 /// 並びの見た目の間隔を前のまま保つ。
 struct PillChip: View {
@@ -23,7 +24,7 @@ struct PillChip: View {
                 .font(.footnote.weight(selected ? .semibold : .regular))
                 .lineLimit(1)
                 .padding(.horizontal, 14)
-                .frame(minHeight: 36)
+                .frame(minWidth: 44, minHeight: 36)
                 .background(selected ? WebTheme.accentBackground : Color.white.opacity(0.05),
                             in: Capsule())
                 .overlay(Capsule().strokeBorder(

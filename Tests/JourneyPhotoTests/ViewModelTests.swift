@@ -762,6 +762,7 @@ final class ViewModelTests: XCTestCase {
         let model = SearchViewModel()
         await model.loadPhotos(environment: env, epoch: 0)
         XCTAssertTrue(model.discovery().contains(.shootingTime), "撮影日のある写真があるのに段が出ない")
+        XCTAssertEqual(model.dayPartsWithPhotos, [.evening, .day], "撮影時刻のある時間帯だけを数える")
 
         model.select(season: .autumn)
         XCTAssertEqual(Set(model.shown.map(\.id)), ["kyotoAutumnEvening", "parisAutumnNoon"])

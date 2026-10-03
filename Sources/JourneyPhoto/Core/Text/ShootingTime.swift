@@ -151,19 +151,21 @@ enum ShootingTime {
             return true
         }
 
-        /// 「秋の」「夕方の」「秋・夕方の」（節の見出しの頭）。絞っていなければ空
+        /// 「秋の」「夕方の」「秋・夕方の」（節の見出しの頭）。絞っていなければ空。
+        /// 英語は後ろに小文字の語が続く前提で、頭だけ大文字（"Autumn evening " + "shooting spots"）
         var prefix: String {
             let parts = [season?.label, dayPart?.phrase].compactMap { $0 }
             guard !parts.isEmpty else { return "" }
-            return L(parts.joined(separator: "・") + "の", parts.joined(separator: " ") + " ")
+            let english = parts.map { $0.lowercased() }.joined(separator: " ")
+            return L(parts.joined(separator: "・") + "の", english.prefix(1).uppercased() + english.dropFirst() + " ")
         }
 
         /// 絞り方の注記（どう分けたかを隠さない）。絞っていなければ nil
         var note: String? {
             var lines: [String] = []
             if season != nil {
-                lines.append(L("季節は撮影日（春3〜5月・夏6〜8月・秋9〜11月・冬12〜2月）",
-                               "Season by date taken (spring Mar–May, summer Jun–Aug, autumn Sep–Nov, winter Dec–Feb)"))
+                lines.append(L("季節は撮影日（春3〜5月・夏6〜8月・秋9〜11月・冬12〜2月。南半球で撮った写真は半年ずらす）",
+                               "Season by date taken (spring Mar–May, summer Jun–Aug, autumn Sep–Nov, winter Dec–Feb; shifted by six months for photos taken in the Southern Hemisphere)"))
             }
             if let dayPart {
                 lines.append(L("時間帯はカメラの撮影時刻（\(dayPart.label) \(dayPart.hours)）",
@@ -195,6 +197,18 @@ enum ShootingTime {
             return hit.text
         }
         return nil
+    }
+
+    /// 当たるものがある時間帯（写真はカメラの撮影時刻、撮影地は時間帯の案内）。
+    /// **0件の札は薄く出して押せなくする**——押しても空の結果しか出ない札を置かない
+    static func dayParts(photos: [Photo], spots: [OfficialSpot]) -> Set<DayPart> {
+        var found = Set(photos.compactMap { dayPart(of: $0) })
+        for spot in spots where !spot.isDraft {
+            for part in DayPart.allCases where spot.times.contains(where: { part.ledgerTimes.contains($0.time) }) {
+                found.insert(part)
+            }
+        }
+        return found
     }
 
     /// 発見の段（「季節・時間帯から探す」）を出すか。**押しても空になる段を置かない**

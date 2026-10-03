@@ -89,13 +89,11 @@ struct SearchView: View {
             // 撮影スポットの索引は語が入ったとき・季節／時間帯を選んだときに要る。
             // 発見の顔でも1度は取る（「季節・時間帯から探す」は季節の案内を持つ撮影地だけでも出す。
             // `fetchIndex` は控えを持つので叩きすぎない）
-            if query.isEmpty && model.timeFilter.isEmpty {
-                if officialSpots.isEmpty { officialSpots = (try? await environment.spots.fetchIndex()) ?? [] }
-                return
-            }
             if officialSpots.isEmpty {
                 officialSpots = (try? await environment.spots.fetchIndex()) ?? []
             }
+            // 別名は語で当てるときだけ要る（季節・時間帯だけで絞っているときは取らない）
+            guard !query.isEmpty else { return }
             // 別名は控えがあれば通信しない（取れなかった回は1分叩き直さない）
             // 🔴 **詳細を開いている間は入れ替えない。** 別名で当たる行が前に割り込み、開いた
             // スポットの行が最初の5件から押し出されると、開いている画面がその場で閉じる
@@ -321,9 +319,14 @@ struct SearchView: View {
                     .padding(.horizontal, 2)
                     .accessibilityHidden(true)
                 ForEach(ShootingTime.DayPart.allCases) { part in
-                    PillChip(title: part.label, selected: model.timeFilter.dayPart == part) {
+                    let selected = model.timeFilter.dayPart == part
+                    // 当たる写真も撮影地も無い時間帯は薄く出して押せなくする（選んでいる札は外せるよう残す）
+                    let usable = selected || availableDayParts.contains(part)
+                    PillChip(title: part.label, selected: selected) {
                         model.select(dayPart: part)
                     }
+                    .disabled(!usable)
+                    .opacity(usable ? 1 : 0.35)
                     .accessibilityLabel(L("時間帯 \(part.label)（\(part.hours)）", "Time of day: \(part.label) (\(part.hours))"))
                     .accessibilityIdentifier("search.dayPart.\(part.rawValue)")
                 }
@@ -332,6 +335,12 @@ struct SearchView: View {
         }
         // 札の押せる余白（上下 4）の分だけ詰め、並びの見た目の間隔は前のまま
         .padding(.vertical, -PillChip.tapSlack)
+    }
+
+    /// 当たるものがある時間帯（写真の側はモデル、撮影地の側は索引から。撮影地は索引に
+    /// `timeOfDayGuide` が載るまで空）
+    private var availableDayParts: Set<ShootingTime.DayPart> {
+        model.dayPartsWithPhotos.union(ShootingTime.dayParts(photos: [], spots: officialSpots))
     }
 
     /// 発見の顔の「季節・時間帯から探す」。札を押すと結果の顔に移り、同じ札の列が上に残る
@@ -777,7 +786,8 @@ struct SearchView: View {
             let expanded = spotsExpandedFor == spotsExpandKey
             VStack(alignment: .leading, spacing: 10) {
                 Text(L("\(model.timeFilter.prefix)撮影スポット（\(hits.count)か所）",
-                       "\(model.timeFilter.prefix)Shooting spots (\(hits.count))"))
+                       model.timeFilter.isEmpty ? "Shooting spots (\(hits.count))"
+                           : "\(model.timeFilter.prefix)shooting spots (\(hits.count))"))
                     .font(.headline)
                     .foregroundStyle(WebTheme.foreground)
                 VStack(spacing: 0) {
@@ -986,6 +996,8 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var timeFilter = ShootingTime.Filter()
     /// 「季節・時間帯から探す」の段を出すか（写真の側。撮影地の側は画面が索引から足す）
     @Published private(set) var hasShootingTimes = false
+    /// 撮影時刻の分かる写真がある時間帯（無い札は薄く出す）
+    @Published private(set) var dayPartsWithPhotos = Set<ShootingTime.DayPart>()
 
     /// 画面に出す写真。**打っていないときはカテゴリ／タグの結果を出す**
     /// ——空の画面にしない（探しに来た人を手ぶらで帰さない）
@@ -1070,7 +1082,8 @@ final class SearchViewModel: ObservableObject {
         refreshTagChips()
     }
 
-    /// 季節・時間帯をまとめて外す（結果の上の「外す」）
+    /// 季節・時間帯をまとめて外す。**画面にボタンは置いていない**（札を押し直せば1つずつ外れる）。
+    /// 試験と、これから置く「すべて外す」のための口
     func clearTimeFilter() {
         timeFilter = ShootingTime.Filter()
         refreshTagChips()
@@ -1183,6 +1196,7 @@ final class SearchViewModel: ObservableObject {
         colors = ColorFamilies.sections(in: allPhotos, limit: .max)
         categories = CategoryChoices.present(in: allPhotos)
         hasShootingTimes = ShootingTime.hasAnything(photos: allPhotos, spots: [])
+        dayPartsWithPhotos = ShootingTime.dayParts(photos: allPhotos, spots: [])
     }
 
     func search(_ query: String, environment: AppEnvironment) async {
