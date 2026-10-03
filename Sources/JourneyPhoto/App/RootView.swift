@@ -450,7 +450,9 @@ struct RootView: View {
             // 旅の写真から来たときは、その写真を並べて**非公開で**始める
             NavigationStack {
                 UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
-                           startPrivate: !pendingTripPhotos.isEmpty)
+                           startPrivate: !pendingTripPhotos.isEmpty,
+                           // 上がった写真をマイページ・ホームに先に並べる（`TabRouter.lastPosted`）
+                           onSaved: { tabRouter.notePosted($0) })
             }
         }
         .sheet(isPresented: $showStoryComposer, onDismiss: { tabRouter.postSheetClosed() }) {

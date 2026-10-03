@@ -3,6 +3,8 @@ import SwiftUI
 import PhotosUI
 // UIImage を使う（SwiftUI / PhotosUI から見えることに頼らない）
 import UIKit
+// 帯のサムネを縮めて読む（`StripThumb`）
+import ImageIO
 
 /// スポットの画面から開いた投稿の行き先。撮影地の名前と座標を先に入れ、
 /// 保存で `spotId` を付ける（スポットのページの「この場所の写真」に並ぶ）
@@ -43,6 +45,28 @@ struct UploadSpotTarget: Equatable {
     static func spotIdToSend(_ target: UploadSpotTarget?, for item: PendingPhoto) -> String? {
         guard let target, !item.locationClearedByUser, item.location.contains(target.name) else { return nil }
         return target.spotId
+    }
+}
+
+/// 投稿画面の帯のサムネ（無編集の絵・2026-10-03）。
+///
+/// 帯は 96×120pt。3倍の画面で長い辺 360px あれば足りる——編集後のサムネ
+/// （`UploadViewModel.renderStripPreview`）と同じ大きさにそろえる
+enum StripThumb {
+    static let maxPixelSize = 360
+
+    /// どのデータから作るか。**一覧用のサムネ（512px）があればそれ**——1920px の本体を読まずに済む。
+    /// 無ければ（カメラ・旅の写真で作れなかった）本体から
+    static func source(for prepared: ImagePreparer.Prepared) -> Data {
+        prepared.thumbnail ?? prepared.data
+    }
+
+    /// ImageIO の縮小（`ImagePreparer.downsampledImage`）で長い辺 `maxPixelSize` に作る。
+    /// 全部を読み込んでから縮めない。**画面の処理の外で呼ぶ**。読めなければ nil
+    static func make(from data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) > 0 else { return nil }
+        return ImagePreparer.downsampledImage(source: source, maxPixelSize: maxPixelSize)
     }
 }
 
@@ -282,6 +306,9 @@ final class UploadViewModel: ObservableObject {
     /// 選んだアルバムに入れなくなった（持ち主が消した・外された）。画面が端末の控え
     /// （`JoinedAlbumsStore`）から外す。外さないと行き先に残り続け、選ぶたびに全部落ちる
     var onAlbumGone: ((String) -> Void)?
+    /// 保存が通った1枚（保存の応答の行）。下の「投稿」から開いた画面が `TabRouter` に渡し、
+    /// マイページ・ホームが読み直しを待たずに先に並べる（`PostedPhotos`・2026-10-03）
+    var onSaved: ((Photo) -> Void)?
     /// 送信中。**読み込み中とは分ける**——一緒にすると、写真を選んでいる
     /// 間に「送信中… 0 / 2 枚目」と「残りをやめる」が出る
     @Published private(set) var isWorking = false
@@ -306,6 +333,8 @@ final class UploadViewModel: ObservableObject {
     /// スポットのページに並ぶ形で上がった枚数（`spotId` 付き・公開・全体に公開）。
     /// スポットの画面が「投稿しました」を出すかを決める（並ばない投稿で言い切らない）
     @Published private(set) var postedToSpot = 0
+    /// 編集した写真を書き出している間の進み（送り始める前・`exportAllEdited`）。書き出していなければ nil
+    @Published private(set) var exportProgress: UploadEditRules.ExportProgress?
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
     @Published private(set) var uploadingIndex = 0
     @Published var errorMessage: String?
@@ -342,6 +371,14 @@ final class UploadViewModel: ObservableObject {
         try await item.loadTransferable(type: Data.self)
     }
 
+    /// ライブラリの写真1枚を読むのを待つ上限（秒）。過ぎたら「読めなかった」に回す（`AsyncTimeout.firstWithin`）。
+    ///
+    /// 🔴 **2026-10-03 判断: 60秒。** iCloud にしか無い写真は落としてくるので数十秒かかることがあり、
+    /// 短いと読める写真まで落とす。いっぽう上限が無いと、返らない1枚のために「読み込み中」が解けず、
+    /// 読めた写真まで投稿できないままだった（`canSubmit` は読み込み中は押させない）。
+    /// 過ぎた写真は「もう一度読み込む」（`retryUnreadable`）で読み直せる。試験でだけ短くする
+    var pickedLoadTimeout: TimeInterval = 60
+
     /// 画像を整える口（`ImagePreparer.prepare`）。**試験でだけ差し替える**——模型の ImageIO は
     /// 画像を読めないので、整った1枚を決まった形で作る。**画面の処理の外から呼ばれる**
     ///
@@ -367,8 +404,14 @@ final class UploadViewModel: ObservableObject {
 
     /// 帯のサムネの編集後を描く口。**画面の処理の外から呼ばれる。** 試験でだけ差し替える
     var renderStripPreview: @Sendable (Data, PhotoRecipe) -> UIImage? = { data, recipe in
-        // 帯は 96×120pt。3倍の画面で長い辺 360px あれば足りる
-        PhotoRenderer.shared.render(data: data, recipe: recipe, maxPixelSize: 360).map { UIImage(cgImage: $0) }
+        PhotoRenderer.shared.render(data: data, recipe: recipe, maxPixelSize: StripThumb.maxPixelSize)
+            .map { UIImage(cgImage: $0) }
+    }
+
+    /// 帯のサムネ（無編集の絵）を作る口（`StripThumb.make`）。**画面の処理の外から呼ばれる。**
+    /// 受け取るのは `StripThumb.source` が選んだデータ。試験でだけ差し替える
+    var makeStripThumb: @Sendable (Data) -> UIImage? = { data in
+        StripThumb.make(from: data).map { UIImage(cgImage: $0) }
     }
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
@@ -432,6 +475,12 @@ final class UploadViewModel: ObservableObject {
     }
 
     /// **読み込み中は押させない。** 読めたぶんだけが上がり、残りは黙って画面に残っていた
+    ///
+    /// 2026-10-03 判断: 読み込みの上限時間（`pickedLoadTimeout`）が過ぎた写真は「読めなかった」に回し、
+    /// **読めた分だけで押せる**ようにする（ここは変えない）。この注記が防いでいるのは「読み込みの最中に
+    /// 押して、残りが黙って画面に残る」ことで、時間切れの後は読み込みは終わっている。読めなかった枚数は
+    /// 知らせ（`errorMessage`）に出し、「もう一度読み込む」（`retryUnreadable`）を添えるので黙って減らない。
+    /// `loadPicked` の「1枚でも読めたら、読めたぶんは受ける」とも同じ考え
     var canSubmit: Bool { !items.isEmpty && !isWorking && !isLoadingPicked && preparingCaptures == 0 }
 
     /// 写真の座標から撮影地を引いて、**空のときだけ**入れる。
@@ -582,6 +631,58 @@ final class UploadViewModel: ObservableObject {
         }
     }
 
+    /// 送る前に書き出した1枚（写真ごと）。書き出したときのレシピを添える（送るときに違えば使わない）
+    private struct Exported {
+        let recipe: PhotoRecipe
+        let result: Result<ImagePreparer.Prepared, Error>
+    }
+
+    /// 🔴 **編集した写真を、送り始める前（まだ前面にいるうち）に全部書き出す**（2026-10-03）。
+    ///
+    /// 以前は1枚ごとに「書き出す → 置く → 保存」を繰り返していた。投稿を押してすぐ裏に回ると、
+    /// 2枚目以降の書き出し（Core Image・GPU）が裏で走り、裏では GPU を使えない・編集の元の一時ファイルが
+    /// ロックで読めない（`PhotoEditSources.fileProtection`）で落ちていた。書き出しは前面にいるうちに済ませ、
+    /// 裏に回ってからは通信だけにする（`BackgroundWindow` の窓は通信の分）。
+    ///
+    /// - **1枚ずつ順に**書き出す（並べるとメモリが原本の数だけ膨らむ）。持つのは結果だけ
+    ///   （1枚 1920px の JPEG・数百 KB〜1MB 程度。10枚まで）
+    /// - 書き出せなかった写真は結果に失敗を持たせ、**その写真だけ**送らずに残す（今までと同じ）
+    /// - 控えた鍵を使い回す写真（`reusesStaged`）は置く絵が要らない。SNS に載せる回だけ共有の絵として書き出す
+    ///
+    /// 書き出しの間は「書き出し中 n/N」を出す（`exportProgress`。「0/N」のまま止まって見えた）。
+    /// 失うもの: 最初の1枚が上がり始めるまでの時間が、編集した枚数ぶんの書き出しだけ延びる（2026-10-03 判断）
+    private func exportAllEdited(_ queue: [UUID]) async -> [UUID: Exported] {
+        var out: [UUID: Exported] = [:]
+        let sharing = shareToThreads && ThreadsShare.isEligible(published: published, audience: audienceToSend)
+        // 書き出す写真を先に決める（「n/N」の N）
+        let targets = items.filter { item in
+            guard queue.contains(item.id), UploadEditRules.needsExport(item.recipe) else { return false }
+            let reuses = staged[item.id] != nil
+                && UploadEditRules.reusesStaged(stagedWith: stagedEdits[item.id]?.recipe, current: item.recipe)
+            return !reuses || sharing
+        }.map(\.id)
+        defer { exportProgress = nil }
+        for (offset, id) in targets.enumerated() {
+            if cancelled { break }
+            guard let item = items.first(where: { $0.id == id }) else { continue }
+            exportProgress = UploadEditRules.ExportProgress(index: offset + 1, total: targets.count)
+            do {
+                out[id] = Exported(recipe: item.recipe, result: .success(try await preparedToSend(item)))
+            } catch {
+                out[id] = Exported(recipe: item.recipe, result: .failure(error))
+            }
+        }
+        return out
+    }
+
+    /// 置く本体。先に書き出した結果を使う（レシピが同じとき）。無ければここで書き出す
+    /// （書き出してから送るまでに編集が変わった。編集の錠があるのでふつうは起きない）
+    private func bodyToSend(_ item: PendingPhoto, exported: Exported?) async throws -> ImagePreparer.Prepared {
+        guard UploadEditRules.needsExport(item.recipe) else { return item.prepared }
+        if let exported, exported.recipe == item.recipe { return try exported.result.get() }
+        return try await preparedToSend(item)
+    }
+
     /// 編集した写真を書き出せなかった（知らせの文は `UploadEditRules.exportFailureMessage`）
     private struct EditExportFailed: LocalizedError {
         let message: String
@@ -617,7 +718,10 @@ final class UploadViewModel: ObservableObject {
     ///
     /// **1枚でも読めたら、読めたぶんは受ける。** 全部捨てると、
     /// 1枚の壊れた写真のために選び直しになる（Web も落ちた枚数だけ伝える）。
-    private func loadPicked(_ picked: [PhotosPickerItem]) async {
+    ///
+    /// `retryingUnreadable`: 「もう一度読み込む」（`retryUnreadable`）から。選び足していなくても
+    /// 読めなかった写真を読み直す
+    private func loadPicked(_ picked: [PhotosPickerItem], retryingUnreadable: Bool = false) async {
         // 走り出す前に取り消された回は、古い選択で一覧を削らない
         guard !Task.isCancelled else { return }
         // **選び直しは差分で。** 外した分だけ落とし、足した分だけ読む。
@@ -625,7 +729,8 @@ final class UploadViewModel: ObservableObject {
         // 分まで消えていた（2026-09-26 のレビュー）
         let diff = PickerReconcile.reconcile(existing: items.map(\.pickerItem), picked: picked)
         // 🔴 **本当に選び足したときだけ読む。** 読めなかった写真の扱いは `toLoad` の注記
-        let plan = PickerReconcile.toLoad(added: diff.added, picked: picked, unreadable: unreadable)
+        let plan = PickerReconcile.toLoad(added: diff.added, picked: picked, unreadable: unreadable,
+                                          retry: retryingUnreadable)
         unreadable = plan.unreadable
         let added = plan.load
         let dropped = zip(items, diff.keep).filter { !$0.1 }.map { $0.0.id }
@@ -653,10 +758,21 @@ final class UploadViewModel: ObservableObject {
         defer { if generation == pickGeneration { isLoadingPicked = false } }
 
         var failedItems: [PhotosPickerItem] = []
+        let load = loadPickedData
         for item in added {
             if Task.isCancelled { return }
             do {
-                guard let data = try await loadPickedData(item) else {
+                // **1枚ごとに上限時間を設ける**（`pickedLoadTimeout` の注記）。過ぎた・読めなかった写真は
+                // 「読めなかった」に回し、読めた写真だけで投稿できるようにする
+                // 待つのは `firstWithin`（取り消しに応えない読み込みでも時間切れが効く）
+                let outcome = await AsyncTimeout.firstWithin(seconds: pickedLoadTimeout) {
+                    () async -> Result<Data?, Error>? in
+                    do { return .success(try await load(item)) } catch { return .failure(error) }
+                }
+                // 選び直し・画面を閉じた
+                if Task.isCancelled { return }
+                // nil は時間切れ
+                guard let data = try outcome?.get() else {
                     failedItems.append(item)
                     continue
                 }
@@ -695,12 +811,28 @@ final class UploadViewModel: ObservableObject {
         }
     }
 
+    /// 読めなかったライブラリの写真があるか（画面が「もう一度読み込む」を出す）。
+    /// 読み込み中・送信中は出さない
+    var canRetryUnreadable: Bool { !unreadable.isEmpty && !isLoadingPicked && !isWorking }
+
+    /// 読めなかった写真（時間切れ・iCloud から落とせなかった）を**もう一度読む**（2026-10-03）。
+    ///
+    /// 今までは選び足したときに一緒に読み直すだけで（`PickerReconcile.toLoad` の注記）、
+    /// 読めなかった写真を読み直す口が画面に無かった。読めた写真・打った題はそのまま残る
+    func retryUnreadable() {
+        guard canRetryUnreadable else { return }
+        loadTask?.cancel()
+        let picked = pickerItems
+        loadTask = Task { [weak self] in await self?.loadPicked(picked, retryingUnreadable: true) }
+    }
+
     /// 1枚を待ち行列に足し、撮影地を引き始める。試験から呼ぶので private にしない
     func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil, editSource: URL? = nil) {
         var photo = PendingPhoto(prepared: prepared)
         photo.pickerItem = pickerItem
         photo.editSource = editSource
-        photo.preview = Self.image(from: prepared.data)
+        // 帯のサムネは**画面の処理の外で小さく作る**（`StripThumb`）。届くまでは地の色
+        startStripThumb(for: photo.id, prepared: prepared)
         // **スポットから開いたときは、撮影地をそのスポットにする**（座標から引き直さない）。
         // ただし**写真の位置がスポットから遠い写真は普通の投稿**（別の旅の写真を混ぜて選んだ）。
         // 位置のある写真は写真の座標をそのまま送る（撮った場所の方が正しい）。
@@ -760,6 +892,8 @@ final class UploadViewModel: ObservableObject {
         /// 編集した写真を共有用に書き出せず、共有から外した枚数（`UploadOutcome.shareSkipped`）
         var shareSkipped = 0
         let queue = items.map(\.id)
+        // 🔴 **編集した写真の書き出しは、最初の1枚を置く前に全部済ませる**（`exportAllEdited` の注記）
+        let exported = await exportAllEdited(queue)
         for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
             if cancelled { break }
@@ -768,7 +902,7 @@ final class UploadViewModel: ObservableObject {
             // 始めたときの写しで送ると、直した題が古い値で上がる
             guard let item = items.first(where: { $0.id == id }) else { continue }
             do {
-                let outcome = try await upload(item)
+                let outcome = try await upload(item, exported: exported[item.id])
                 if !outcome.songAttached { songFailures += 1 }
                 if outcome.savedEarlier { savedEarlier += 1 }
                 if outcome.shareSkipped { shareSkipped += 1 }
@@ -866,7 +1000,7 @@ final class UploadViewModel: ObservableObject {
     /// - Returns: 写真は上がっている。曲・前の保存のことは `UploadOutcome`。
     ///   **ここで `errorMessage` に書かない**——呼び出し元が最後にまとめて出す
     ///   （途中で書くと、全部成功と見なされた `reset()` のあとに画面が閉じて消える）
-    private func upload(_ item: PendingPhoto) async throws -> UploadOutcome {
+    private func upload(_ item: PendingPhoto, exported: Exported? = nil) async throws -> UploadOutcome {
         var draft = PhotoDraft()
         draft.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.description = item.caption
@@ -905,13 +1039,14 @@ final class UploadViewModel: ObservableObject {
             if let edit = stagedEdits[item.id] { draft.dominantColor = edit.dominantColor }
         } else {
             discardStaged(item.id)
-            let exported = try await preparedToSend(item)
-            body = exported
+            // 編集した写真は送り始める前に書き出してある（`exportAllEdited`）
+            let toSend = try await bodyToSend(item, exported: exported)
+            body = toSend
             // 代表色は**置く絵から**（編集後。無編集なら整えたときの色のまま）。撮影情報は原本のまま
-            draft.dominantColor = exported.dominantColor
-            placed = try await uploads.stagePhoto(exported)
+            draft.dominantColor = toSend.dominantColor
+            placed = try await uploads.stagePhoto(toSend)
             staged[item.id] = placed
-            stagedEdits[item.id] = (item.recipe, exported.dominantColor)
+            stagedEdits[item.id] = (item.recipe, toSend.dominantColor)
         }
         let photo: Photo?
         var outcome = UploadOutcome()
@@ -941,6 +1076,7 @@ final class UploadViewModel: ObservableObject {
         }
         staged[item.id] = nil
         stagedEdits[item.id] = nil
+        if let photo { onSaved?(photo) }
         if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
             // 共有に渡すのも**置いた絵**（編集後）。やり直しで書き出していなければ、載せる設定のときだけ
             // ここで作る。🔴 **作れなければ共有に回さず知らせる**——編集前の絵を黙って渡さない
@@ -950,8 +1086,9 @@ final class UploadViewModel: ObservableObject {
             } else if let data = body?.data {
                 sharable.append((data, id, draft.title, draft.description, draft.location))
             } else if shareToThreads {
+                // やり直し（前の鍵を使う）でも、共有の絵は送り始める前に書き出してある（`exportAllEdited`）
                 // （`if let … = try? await` を1行に書くと構文の検査の tree-sitter が読めない）
-                let rebuilt = try? await preparedToSend(item)
+                let rebuilt = try? await bodyToSend(item, exported: exported)
                 if let data = rebuilt?.data {
                     sharable.append((data, id, draft.title, draft.description, draft.location))
                 } else {
@@ -1031,9 +1168,17 @@ final class UploadViewModel: ObservableObject {
         sharable = []
     }
 
-    private static func image(from data: Data) -> Image? {
-        guard let uiImage = UIImage(data: data) else { return nil }
-        return Image(uiImage: uiImage)
+    /// 帯のサムネを作って入れる（2026-10-03）。以前は 1920px の本体をそのまま `UIImage(data:)` にして
+    /// 画面の処理の上で持っていた（10枚で 1 枚 約 15MB の画素 × 10。帯は 96×120pt）
+    private func startStripThumb(for photoId: UUID, prepared: ImagePreparer.Prepared) {
+        let source = StripThumb.source(for: prepared)
+        let make = makeStripThumb
+        Task { [weak self] in
+            let image = await Task.detached(priority: .userInitiated) { make(source) }.value
+            guard let self, let image,
+                  let i = self.items.firstIndex(where: { $0.id == photoId }) else { return }
+            self.items[i].preview = Image(uiImage: image)
+        }
     }
 }
 
@@ -1094,11 +1239,14 @@ enum PickerReconcile {
     /// **読む分は控えから外して返す。** 失敗は最後まで走った回だけが戻す——途中で
     /// 取り消された回の分は、次の回で新しい写真として読み直される（控えに残すと、
     /// 次の回が「新しい写真なし」で帰り、知らせも無いまま落ちる）。読めた写真も残らない
-    static func toLoad<Key: Hashable>(added: [Key], picked: [Key], unreadable: Set<Key>)
+    ///
+    /// `retry`: 「もう一度読み込む」を押した（`UploadViewModel.retryUnreadable`）。選び足していなくても、
+    /// 読めなかった分を読み直す
+    static func toLoad<Key: Hashable>(added: [Key], picked: [Key], unreadable: Set<Key>, retry: Bool = false)
         -> (load: [Key], unreadable: Set<Key>) {
         let stillPicked = unreadable.intersection(picked)
         let fresh = added.filter { !stillPicked.contains($0) }
-        guard !fresh.isEmpty else { return ([], stillPicked) }
+        guard retry || !fresh.isEmpty else { return ([], stillPicked) }
         return (added, stillPicked.subtracting(added))
     }
 

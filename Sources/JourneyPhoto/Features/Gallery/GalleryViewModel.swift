@@ -212,8 +212,12 @@ final class GalleryViewModel: ObservableObject {
         guard viewerId != nil else {
             myPhotos = []
             myPhotosOwner = nil
+            justPosted = nil
             return
         }
+        // 先に足した控えは、この読み直しが**成功・失敗・取り消しのどれで終わっても**手放す
+        // （残すと、あとで消した写真が次の読み直しで戻る・`PostedPhotos.keepSeconds`）
+        defer { justPosted = nil }
         let fetched = try? await fetch()
         // 取り消された回（ログアウト・人の切り替え）は、遅れて着いた答えを誰にも付けない
         guard !Task.isCancelled else { return }
@@ -221,7 +225,9 @@ final class GalleryViewModel: ObservableObject {
         // （ログアウトを含む）の読みが始まっていたら、前の人の答えを書かない
         guard myPhotosWanted == viewerId else { return }
         if let fetched {
-            myPhotos = fetched
+            // 投稿したばかりでまだ索引に無い写真も残す（`showPosted`・id で重複を除く）
+            myPhotos = PostedPhotos.merge(loaded: fetched, posted: justPosted?.photos(at: Date()) ?? [],
+                                          owner: viewerId)
             myPhotosOwner = viewerId
         } else if myPhotosOwner != viewerId {
             // 取れなかった回は、**同じ人のぶんなら残す**（詳細を開いて取り消された回に
@@ -229,6 +235,19 @@ final class GalleryViewModel: ObservableObject {
             myPhotos = []
             myPhotosOwner = nil
         }
+    }
+
+    /// 投稿したばかりで、まだ読み直しの結果に合わせていない写真（`PostedPhotos`・2026-10-03）
+    private var justPosted: PostedPhotos.Pending?
+
+    /// 投稿画面を閉じた（`TabRouter.lastPosted`）。保存の応答の行を**読み直しの前に**自分の写真へ足す
+    /// （今日のテーマの札が、索引の遅れで「参加する」のまま残らないように）。人が替わっていたら何もしない
+    /// 控えは次の読み直しが終わったら手放し、`keepSeconds` を過ぎたら使わない（`PostedPhotos.Pending`）
+    func showPosted(_ posted: [Photo], viewerId: String?, at now: Date = Date()) {
+        guard let viewerId, !posted.isEmpty, myPhotosWanted == nil || myPhotosWanted == viewerId else { return }
+        justPosted = PostedPhotos.Pending(photos: posted, receivedAt: now)
+        guard myPhotosOwner == viewerId else { return }
+        myPhotos = PostedPhotos.merge(loaded: myPhotos, posted: posted, owner: viewerId)
     }
 
     /// `myPhotos` が誰のものか（`followingOwner` と同じ考え方）

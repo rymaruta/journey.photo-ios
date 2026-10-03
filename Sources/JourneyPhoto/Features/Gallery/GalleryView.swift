@@ -121,6 +121,8 @@ struct GalleryView: View {
         // 戻ってきたとき（`onAppear`）の読み直しが拾う
         .onChange(of: tabRouter.postSheetsClosed) { _, _ in
             guard auth.userId != nil, isOnScreen else { return }
+            // 上げた写真は読み直しを待たずに先に足す（索引が遅れて返らないことがある・`PostedPhotos`）
+            model.showPosted(tabRouter.lastPosted, viewerId: auth.userId)
             reloadMyPhotos()
         }
         // **前面に戻ったら輪を読み直す。** 日をまたいで戻っても昨日の輪のまま、

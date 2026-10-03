@@ -24,6 +24,9 @@ struct PhotoEditView: View {
     let onDone: (PhotoRecipe) -> Void
     /// 「キャンセル」（編集を捨てる）
     let onCancel: () -> Void
+    /// 帯の編集済みサムネ（編集済みの写真で開き直したとき）。編集後の最初の絵が届くまで仮に出す
+    /// （`PhotoEditScreen.photoShown`）
+    let placeholder: Image?
 
     @State private var screen: PhotoEditScreen
     @StateObject private var preview = PhotoEditPreview()
@@ -34,9 +37,10 @@ struct PhotoEditView: View {
     @GestureState private var touching = false
     @Environment(\.displayScale) private var displayScale
 
-    init(recipe: PhotoRecipe, source: @escaping @Sendable () -> Data,
+    init(recipe: PhotoRecipe, source: @escaping @Sendable () -> Data, placeholder: Image? = nil,
          onDone: @escaping (PhotoRecipe) -> Void, onCancel: @escaping () -> Void) {
         self.source = source
+        self.placeholder = placeholder
         self.onDone = onDone
         self.onCancel = onCancel
         _screen = State(initialValue: PhotoEditScreen(original: recipe))
@@ -146,21 +150,8 @@ struct PhotoEditView: View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 Color.black
-                if let shown = screen.showsBeforeLabel ? preview.before : (preview.edited ?? preview.before) {
-                    Image(uiImage: shown)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if preview.failed {
-                    Text(L("写真を読み込めませんでした", "Couldn't load the photo"))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.faint)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ProgressView()
-                        .tint(WebTheme.foreground)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                photoContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if screen.showsBeforeLabel {
                     // 写真の上なので白（真鍮は写真の上では読めない）
                     Text(L("編集前", "Original"))
@@ -202,10 +193,60 @@ struct PhotoEditView: View {
             .accessibilityLabel(screen.showsBeforeLabel ? L("元の写真", "Original photo")
                                                         : L("編集中の写真", "Photo being edited"))
             .accessibilityAddTraits(.isImage)
-            .onAppear {
-                preview.start(source: source, box: proxy.size, scale: Double(displayScale),
-                              thumbPoints: Double(Self.thumbSize), current: screen.current)
+            // 枠の大きさが 0 の回は待ち、次に大きさが取れたときに始める（`PhotoEditLoadSteps`）
+            .onAppear { startPreview(box: proxy.size) }
+            .onChange(of: proxy.size) { _, size in startPreview(box: size) }
+            .onDisappear { preview.stop() }
+        }
+    }
+
+    private func startPreview(box: CGSize) {
+        preview.start(source: source, box: box, scale: Double(displayScale),
+                      thumbPoints: Double(Self.thumbSize), current: screen.current)
+    }
+
+    /// 写真の欄の中身（`PhotoEditScreen.photoShown`）
+    @ViewBuilder
+    private var photoContent: some View {
+        switch screen.photoShown(hasEdited: preview.edited != nil, hasBefore: preview.before != nil,
+                                 hasPlaceholder: placeholder != nil, failed: preview.failed,
+                                 renderFailed: preview.renderFailed) {
+        case .edited:
+            if let edited = preview.edited {
+                Image(uiImage: edited).resizable().aspectRatio(contentMode: .fit)
             }
+        case .before:
+            if let before = preview.before {
+                Image(uiImage: before).resizable().aspectRatio(contentMode: .fit)
+            }
+        case .beforeRenderFailed:
+            if let before = preview.before {
+                Image(uiImage: before).resizable().aspectRatio(contentMode: .fit)
+                    .overlay(alignment: .bottom) {
+                        // 写真の上なので白（「編集前」の札と同じ形）
+                        Text(L("編集後の写真を表示できませんでした", "Couldn't show the edited photo"))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.black.opacity(0.62), in: Capsule())
+                            .padding(12)
+                    }
+            }
+        case .placeholder:
+            // 帯の編集済みサムネ（長い辺 360px なので仮）。編集後の絵が届いたら差し替わる。
+            // 写真の上なので、読み込み中の合図は白
+            ZStack {
+                placeholder?.resizable().aspectRatio(contentMode: .fit)
+                ProgressView().tint(Color.white)
+            }
+        case .spinner:
+            // 黒地の上なので真鍮（デザインシステム: 真鍮は黒い地の上だけ）
+            ProgressView().tint(WebTheme.accent)
+        case .failed:
+            Text(L("写真を読み込めませんでした", "Couldn't load the photo"))
+                .font(.footnote)
+                .foregroundStyle(WebTheme.faint)
         }
     }
 
@@ -395,11 +436,13 @@ struct PhotoEditView: View {
 
 /// 編集画面の見本を描く（Core Image・`PhotoRenderer`）。
 ///
-/// - **画面に合う大きさに縮めて読む**（`PhotoRenderer.previewPixelSize`。原本をそのまま Core Image に渡さない）
+/// - **画面に合う大きさに縮めて読む**（`PhotoRenderer.previewPixelSize`。原本をそのまま Core Image に渡さない）。
+///   枠の大きさが取れるまでは読み始めない（`PhotoEditLoadSteps`）
 /// - **描くのは画面の処理の外。** つまみを動かしている間も画面は止まらない
 /// - **最新だけを描く**（`LatestOnlyQueue`）。描いている間に来た値は最後の1つだけ残し、途中の値は捨てる
-/// - 元の写真（無編集）は最初に1回だけ描いて持つ——長押しで即座に出すため
-/// - プリセットの見本（64pt）は小さく読んだものに強さ 1 で当てて、最初に1回だけ描く
+/// - 画面用の写真と元の写真（無編集）を**先に出す**——長押しで即座に出すため、持っておく
+/// - プリセットの見本（64pt）は**その後で**、読んだ写真を縮めたものに強さ 1 で当てて1枚ずつ描く
+///   （原本をもう一度デコードしない）。画面を閉じたら（`stop`）残りは描かない
 @MainActor
 final class PhotoEditPreview: ObservableObject {
 
@@ -410,6 +453,8 @@ final class PhotoEditPreview: ObservableObject {
     @Published private(set) var before: UIImage?
     @Published private(set) var thumbs: [String: UIImage] = [:]
     @Published private(set) var failed = false
+    /// 編集後の絵を描けなかった（描けた絵がまだ無い間だけ立てる・`PhotoEditScreen.photoShown`）
+    @Published private(set) var renderFailed = false
 
     /// 読んだ写真（`PhotoRenderer.Loaded` は Core Image の画像を持つ。描くときは読むだけ）
     private final class Box: @unchecked Sendable {
@@ -418,50 +463,65 @@ final class PhotoEditPreview: ObservableObject {
     }
 
     private var box: Box?
-    private var started = false
+    /// 読み込みの順番（純・`PhotoEditLoadSteps`）
+    private var steps = PhotoEditLoadSteps()
+    /// 写真を読んで見本を描く仕事。画面を閉じたら取り消す
+    private var loading: Task<Void, Never>?
     private var queue = LatestOnlyQueue<PhotoRecipe>()
     /// 読み終わる前に来た最新の値
     private var waiting: PhotoRecipe?
 
+    /// 枠の大きさが来るたびに呼ぶ。**始めるのは1回だけ**（大きさが 0 の回は何もしない）
     func start(source: @escaping @Sendable () -> Data, box size: CGSize, scale: Double, thumbPoints: Double,
                current: PhotoRecipe) {
-        guard !started else { return }
-        started = true
-        waiting = current
-        // 枠に収める長い辺（写真の比はまだ分からないので枠の長い辺・`previewPixelSize` の注記）
-        let pixels = PhotoRenderer.previewPixelSize(box: size, scale: scale) ?? 1200
+        if waiting == nil, box == nil { waiting = current }
+        guard let pixels = steps.sized(box: size, scale: scale) else { return }
+        let run = steps.run
+        failed = false
         // 見本は 64pt の正方形を埋める（fill）。2:1 の写真でも短い辺が足りるよう倍を読む
         let thumbPixels = Int((thumbPoints * scale * 2).rounded(.up))
-        Task { [weak self] in
-            let loaded = await Task.detached(priority: .userInitiated) { () -> (Box, UIImage?, [String: UIImage])? in
-                let data = source()
-                guard let full = PhotoRenderer.load(data: data, maxPixelSize: pixels) else { return nil }
-                let renderer = PhotoRenderer.shared
-                // 長押しで出す「編集前」は元の写真（無編集・`PhotoEditScreen.Press` の注記）
-                let before = renderer.preview(.identity, loaded: full).map { UIImage(cgImage: $0) }
-                var thumbs: [String: UIImage] = [:]
-                if let small = PhotoRenderer.load(data: data, maxPixelSize: thumbPixels) {
-                    if let image = renderer.preview(.identity, loaded: small) { thumbs[Self.noneKey] = UIImage(cgImage: image) }
-                    for preset in PhotoPresets.all {
-                        let recipe = PhotoRecipe(preset: .init(id: preset.id, strength: 1))
-                        if let image = renderer.preview(recipe, loaded: small) { thumbs[preset.id] = UIImage(cgImage: image) }
-                    }
-                }
-                return (Box(full), before, thumbs)
+        loading?.cancel()
+        loading = Task { [weak self] in
+            // 1. 画面用の写真と、長押しで出す「編集前」（元の写真・無編集。`PhotoEditScreen.Press` の注記）
+            let first = await Task.detached(priority: .userInitiated) { () -> (Box, UIImage?)? in
+                guard let full = PhotoRenderer.load(data: source(), maxPixelSize: pixels) else { return nil }
+                return (Box(full), PhotoRenderer.shared.preview(.identity, loaded: full).map { UIImage(cgImage: $0) })
             }.value
-            guard let self else { return }
-            guard let loaded else {
-                self.failed = true
+            guard let self, !Task.isCancelled else { return }
+            guard self.steps.photoLoaded(first != nil, run: run), let first else {
+                if self.steps.phase == .failed { self.failed = true }
                 return
             }
-            self.box = loaded.0
-            self.before = loaded.1
-            self.thumbs = loaded.2
+            self.box = first.0
+            self.before = first.1
             if let waiting = self.waiting {
                 self.waiting = nil
                 self.request(waiting)
             }
+            // 2. プリセットの見本。読んだ写真を縮めて（デコードし直さない）、1枚ずつ描いて出す
+            let loaded = first.0
+            let small = await Task.detached(priority: .utility) {
+                Box(PhotoRenderer.downscaled(loaded.loaded, maxPixelSize: thumbPixels))
+            }.value
+            for key in PhotoEditLoadSteps.thumbOrder {
+                guard !Task.isCancelled, self.steps.acceptsThumb(run: run) else { return }
+                let recipe = key == Self.noneKey ? PhotoRecipe.identity
+                                                 : PhotoRecipe(preset: .init(id: key, strength: 1))
+                let image = await Task.detached(priority: .utility) {
+                    PhotoRenderer.shared.preview(recipe, loaded: small.loaded).map { UIImage(cgImage: $0) }
+                }.value
+                guard !Task.isCancelled, self.steps.acceptsThumb(run: run) else { return }
+                if let image { self.thumbs[key] = image }
+            }
+            self.steps.thumbsDrawn(run: run)
         }
+    }
+
+    /// 画面を閉じた。読み込み・見本の残りを取り消す
+    func stop() {
+        steps.disappeared()
+        loading?.cancel()
+        loading = nil
     }
 
     /// 描いてほしい値。描いている最中なら最新だけを待たせる
@@ -481,7 +541,13 @@ final class PhotoEditPreview: ObservableObject {
             }.value
             guard let self else { return }
             // 描き終えた絵は出してよい（表示中の絵より新しい）。待っていた最新があれば続けて描く
-            if let image { self.edited = image }
+            if let image {
+                self.edited = image
+                self.renderFailed = false
+            } else if self.edited == nil {
+                // 最初の絵を描けなかった。スピナーを回し続けない（元の写真に添えて知らせる）
+                self.renderFailed = true
+            }
             if let next = self.queue.finish() { self.run(next) }
         }
     }
