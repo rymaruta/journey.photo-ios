@@ -41,13 +41,15 @@ final class PhotoDetailViewModel: ObservableObject {
     /// コメントが p2 の一覧に「未反映の自分の投稿」として差し込まれていた
     private var postedComments: [String: [PhotoComment]] = [:]
     private var deletedCommentIds: Set<String> = []
-    /// いいねを送っている最中。**二度押しで2回投げない。**
+    /// いいねを送っている最中の印。**二度押しで2回投げない**——素早く2回叩くと、
+    /// 1回目の応答が返る前に2回目が `liked` の古い値を見て走り、
+    /// **「いいね」と「取り消し」が同時に飛ぶ**。
     ///
-    /// コメントには `isPosting` があったのに、いいねには何も無かった。
-    /// 素早く2回叩くと、1回目の応答が返る前に2回目が `liked` の古い値を
-    /// 見て走り、**「いいね」と「取り消し」が同時に飛ぶ**。どちらが後に
-    /// 返るかで最終的なハートの色が決まるので、押した結果と食い違う。
-    @Published private(set) var isLiking = false
+    /// 🔴 **写真ごとの印（`LikeCountStore` の送信中）に一本化した。** 以前は画面に1つの
+    /// `isLiking` で、束を左右に送った後の♥が、前の1枚の送信中は黙って無視されていた。
+    /// 画面からは常に `LikeCountStore` を渡す（`toggleLike(gate:)`・`load(gate:)`）。
+    /// これは渡されない呼び出し（試験・単体）の受け皿で、同じ型を使う（写しの仕組みを作らない）
+    private let ownLikeGate: LikeCountStore
     /// 写真ごとの、押したいいねが**受け付けられた**回数。**読み込みの間にその写真で
     /// 増えたら、その読み込みのハートと数は書かない**——開いた
     /// 直後に押すと、先に出ていた読み込みの（押す前の）答えが後から届き、押した
@@ -83,6 +85,7 @@ final class PhotoDetailViewModel: ObservableObject {
         self.photoId = photoId
         self.social = social
         self.likes = initialLikes
+        self.ownLikeGate = LikeCountStore()
     }
 
     func setSignedIn(_ value: Bool) {
@@ -131,8 +134,18 @@ final class PhotoDetailViewModel: ObservableObject {
 
     /// いいね数とコメントは未認証でも読める。**ログイン中は認証つきの口で読む**
     /// ——公開範囲を絞った写真は未認証の口が 404 になる（`SocialService` の注記）
-    func load() async {
+    ///
+    /// - Parameter gate: 画面をまたいだ送信中の印（`LikeCountStore`）。
+    ///   🔴 **読み始めか読み終わりにその写真を送っていたら、ハートと数は書かない。**
+    ///   ホームで♥を押した直後（答えの前）に開くと、押す前の読みが先に着いて
+    ///   `likesFromServer` が立ち、あとで届いた答え（`show`）が数に入らず古いまま固まっていた。
+    ///   書かなかった回は、答えが届いたときに画面が `show` で入れ直す。
+    ///   2026-10-03 判断: 送信が失敗した回もこの読みは捨てる（押す前の数・ハートのまま。
+    ///   控えが元に戻るので見た目は合う）。読み直しの往復を増やすより単純さを採った
+    func load(gate: LikeCountStore? = nil) async {
         let id = photoId
+        let likeGate = gate ?? ownLikeGate
+        let sendingAtStart = likeGate.isSending(id)
         let accepted = acceptedLikes[id, default: 0]
         let readAt = Date()
         async let snapshot = social.likeSnapshot(photoId: id, signedIn: isSignedIn)
@@ -141,12 +154,17 @@ final class PhotoDetailViewModel: ObservableObject {
         let loadedCount = likeState.count
         let mine = likeState.liked
         let loaded = await page
+        // 🔴 **取り消された回は何も書かない**（同じ画面の `loadNearby` などと同じ形）。
+        // `try?` が取り消しを nil に変えるので、書くと「コメントを読み込めませんでした」が出て、
+        // 未ログインならハートまで白に倒れていた（画面を離れた・鍵が替わった回）
+        guard !Task.isCancelled else { return }
         // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
         guard id == photoId else { return }
         // 🔴 **押した答えから間もない読みは、数も印も書かない。** ホームで押して 6 に
         // なった直後に開くと、読み取りは押す前の 5（外したなら押す前の「いいね済み」）を
         // 返すことがあり、出ていた 6 を 5 に戻していた（`LiveLikes.readSupersedes`）
-        let likeUntouched = accepted == acceptedLikes[id, default: 0]
+        let likeUntouched = !sendingAtStart && !likeGate.isSending(id)
+            && accepted == acceptedLikes[id, default: 0]
             && LiveLikes.readSupersedes(readAt: readAt, answeredAt: likeAnsweredAt)
         if likeUntouched {
             likes = loadedCount ?? likes
@@ -213,8 +231,8 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     /// - Parameter gate: 画面をまたいだ送信中の印（`LikeCountStore.beginSending`）。
-    ///   **ホームや大きく見る画面で同じ写真を送っている間は送らない**——この画面の
-    ///   `isLiking` だけでは、別の画面から飛んでいる逆向きを止められない
+    ///   **ホームや大きく見る画面で同じ写真を送っている間は送らない。**
+    ///   印は写真ごと——前の1枚を送っている間も、束の隣の1枚は押せる
     @discardableResult
     func toggleLike(gate: LikeCountStore? = nil) async -> LikeAnswer? {
         // **どの guard より先に消す。** 未ログインで押した回に前の答えが残ると、
@@ -224,15 +242,14 @@ final class PhotoDetailViewModel: ObservableObject {
             errorMessage = L("いいねするにはログインしてください", "Sign in to like photos")
             return nil
         }
-        guard !isLiking else { return nil }
         let id = photoId
-        // 別の画面で同じ写真を送っている間は、押しても何もしない（知らせも消さない）
-        if let gate, !gate.beginSending(id) { return nil }
-        defer { gate?.endSending(id) }
+        let likeGate = gate ?? ownLikeGate
+        // 同じ写真を送っている間は（この画面の二度押しでも、別の画面からでも）、
+        // 押しても何もしない（知らせも消さない）
+        guard likeGate.beginSending(id) else { return nil }
+        defer { likeGate.endSending(id) }
         // 前の操作の失敗を残さない（送っている間の二度押しでは消さない）
         errorMessage = nil
-        isLiking = true
-        defer { isLiking = false }
         let wasLiked = liked
         do {
             let result = wasLiked

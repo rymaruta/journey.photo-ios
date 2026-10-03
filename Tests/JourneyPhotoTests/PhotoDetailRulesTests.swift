@@ -136,6 +136,34 @@ final class PhotoDetailRulesTests: XCTestCase {
         XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: false, signedIn: false, isFollowing: false,
                                                     lookupFailed: false, ownerBlocked: false))
     }
+
+    // MARK: - 大きく見る画面を閉じた後の読み直し（2026-10-03）
+
+    /// 🔴 **同じ鍵で二度目に走った `.task` は読み直さない**（閉じるたびにコメントと近くの写真を読んでいた）。
+    /// 別の1枚・入り直し・まだ読めていない回は読む
+    func testNeedsReadSkipsTheSameKeyOnly() async {
+        let p1 = PhotoDetailRules.reloadKey(userId: "u", photoId: "p1", published: true)
+        let p2 = PhotoDetailRules.reloadKey(userId: "u", photoId: "p2", published: true)
+        XCTAssertTrue(PhotoDetailRules.needsRead(p1, lastRead: nil), "まだ読んでいない")
+        XCTAssertFalse(PhotoDetailRules.needsRead(p1, lastRead: p1), "同じ1枚を出し直しただけで読み直している")
+        XCTAssertTrue(PhotoDetailRules.needsRead(p2, lastRead: p1), "別の1枚へ送ったのに読まない")
+        XCTAssertTrue(PhotoDetailRules.needsRead(p1, lastRead: p2), "前の1枚へ戻ったのに読まない（模型は捨てている）")
+        let signedOut = PhotoDetailRules.reloadKey(userId: nil, photoId: "p1", published: true)
+        XCTAssertTrue(PhotoDetailRules.needsRead(signedOut, lastRead: p1), "入り直したのに読まない")
+    }
+
+    /// 🔴 **同じ鍵で取り直す間は、分かっているフォローの状態を残す**（ボタンが一瞬消えていた）。
+    /// 人・自分・ブロックが替わったら「分からない」に戻す
+    func testFollowStateIsKeptWhileRefetchingTheSameKey() async {
+        XCTAssertEqual(PhotoDetailRules.followWhileRefetching(true, knownFor: "me|a|false", key: "me|a|false"), true,
+                       "同じ人を取り直す間に、フォロー中のボタンを消している")
+        XCTAssertEqual(PhotoDetailRules.followWhileRefetching(false, knownFor: "me|a|false", key: "me|a|false"), false)
+        XCTAssertNil(PhotoDetailRules.followWhileRefetching(true, knownFor: "me|a|false", key: "me|b|false"),
+                     "前の人の状態で次の人のボタンを出している")
+        XCTAssertNil(PhotoDetailRules.followWhileRefetching(true, knownFor: "me|a|false", key: "me|a|true"),
+                     "ブロックした相手に前の状態を残している")
+        XCTAssertNil(PhotoDetailRules.followWhileRefetching(true, knownFor: nil, key: "me|a|false"))
+    }
 }
 
 /// 下書きにはコメント・いいねを出さない（サーバーが断る）

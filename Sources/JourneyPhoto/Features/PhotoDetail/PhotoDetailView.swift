@@ -54,6 +54,15 @@ struct PhotoDetailView: View {
     /// 出し、押されたら先に取り直してから判断する（`toggleFollow`）。
     /// 失敗を nil のまま放置すると、ボタンが二度と出なかった
     @State private var followLookupFailed = false
+    /// いまの `isFollowing` を**どの鍵（持ち主・自分・ブロック）で取ったか**。
+    /// 同じ鍵で取り直す回（大きく見る画面を閉じた後など）は、分かっている値を残す
+    /// （`PhotoDetailRules.followWhileRefetching`）
+    @State private var followKnownFor: String?
+    /// 読み終えた鍵（いいね・コメント／近くの写真／スポットの行き先）。
+    /// **同じ鍵で二度目に `.task` が走っても読み直さない**（`PhotoDetailRules.needsRead`）
+    @State private var readDetailKey: String?
+    @State private var readNearbyKey: String?
+    @State private var readSpotKey: String?
     /// 成功の知らせ（ブロックしました など）。**失敗の赤字（`actionError`）と分ける**
     @State private var actionNotice: String?
     /// 削除を確かめているコメント（押してすぐ消さない）
@@ -173,22 +182,43 @@ struct PhotoDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { menu } }
         // **送った先の1枚でも読み直す**（鍵に今の1枚を入れる）
+        //
+        // 🔴 **同じ鍵で二度目に走った回は読み直さない**（`PhotoDetailRules.needsRead`）。
+        // 大きく見る画面（`fullScreenCover`）を閉じるたびに走り直し、コメントと
+        // 近くの写真を読み直していた。明示の読み直し（「もう一度試す」の `reloadComments`）は
+        // ここを通らないので残る。読めなかった回は覚えない（次に出たときに読み直す）
+        //
+        // ⚠️ 確かめていない: 閉じたときに iOS 17／26 で本当に下の画面の onDisappear／onAppear
+        // （＝`.task` の取り消しと走り直し）が起きるかは、Xcode の無いこの環境では見ていない。
+        // 起きなければこの守りは何もしないだけで、害は無い。
+        // 2026-10-03 判断: 二度目はいいねの数も読み直さない（`showStoredLike` で端末の控えには
+        // 合わせる）。大きく見る画面の中の♥はこの画面の模型を通るので、数は既に新しい
         .task(id: PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)) {
+            let key = PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)
             model.setSignedIn(auth.userId != nil)
+            showStoredLike()
+            guard PhotoDetailRules.needsRead(key, lastRead: readDetailKey) else { return }
             // 前の1枚の「ブロックしました」・保存の失敗を持ち越さない
+            // （同じ1枚へ戻っただけの回は消さない）
             actionNotice = nil
             actionError = nil
-            // **数はホームのカードと同じ出どころ**（`LiveLikes.base`）。一覧の数
-            // （`current.likes`）のままだと、ホームで押した直後に開くと古い数が出た
-            let stored = likeCounts.entry(for: current.id)
-            model.show(photoId: current.id,
-                       initialLikes: LiveLikes.base(for: current, stored: stored),
-                       liked: favorites.contains(current.id),
-                       answeredAt: stored?.at)
-            await model.load()
+            await model.load(gate: likeCounts)
+            guard !Task.isCancelled, !model.commentsUnavailable else { return }
+            readDetailKey = key
         }
-        .task(id: shown.location) { await loadSpotLead() }
-        .task(id: shown.id) { await loadNearby() }
+        // 🔴 **ホームで押した答えが、開いた後に届いたら入れ直す。** ♥を押した直後
+        // （答えの前）に開くと、`.task` の時点の数とハートのまま固まっていた。
+        // 読み込みはその写真を送っている間の読みを書かない（`PhotoDetailViewModel.load`）
+        .onChange(of: likeCounts.entry(for: current.id)) { _, _ in showStoredLike() }
+        .onChange(of: favorites.contains(current.id)) { _, _ in showStoredLike() }
+        .task(id: shown.location) {
+            guard PhotoDetailRules.needsRead(shown.location ?? "", lastRead: readSpotKey) else { return }
+            await loadSpotLead()
+        }
+        .task(id: shown.id) {
+            guard PhotoDetailRules.needsRead(shown.id, lastRead: readNearbyKey) else { return }
+            await loadNearby()
+        }
         // **ブロック・通報で絞り直す**（`hidden.revision`）。この画面で
         // その場でブロック／通報しても、近くの写真とスポットの行き先が
         // 古い一覧のまま残っていた。
@@ -229,18 +259,24 @@ struct PhotoDetailView: View {
                 isFollowing = false
                 return
             }
-            // 人が替わった・入り直した回は、答えが来るまで「分からない」
-            isFollowing = nil
+            // 人が替わった・入り直した回は、答えが来るまで「分からない」。
+            // 🔴 **同じ鍵で取り直す回は、分かっている値を残す**（`followWhileRefetching`）。
+            // 大きく見る画面を閉じるたびに nil にしていて、ボタンが一瞬消えていた
+            let followKey = "\(me)|\(ownerId)|\(hidden.blockedUserIds.contains(ownerId))"
+            isFollowing = PhotoDetailRules.followWhileRefetching(isFollowing, knownFor: followKnownFor,
+                                                                 key: followKey)
             // **取れなかった回は書かない。** 圏外で「フォロー」に戻すと、
             // フォロー中の人を押して二重に送る（`FollowListView` と同じ扱い）
             let ids = try? await environment.social.myFollowingIds()
             guard !Task.isCancelled else { return }
             guard let ids else {
                 // 押されたら取り直す（`toggleFollow`）。ボタンが出る経路を残す
-                followLookupFailed = true
+                // （分かっている値を残した回は、その値のボタンが出ている）
+                followLookupFailed = isFollowing == nil
                 return
             }
             isFollowing = ids.contains(ownerId)
+            followKnownFor = followKey
         }
         // **通報シートで「ブロックもする」を選んだ回は、`block()` と同じ後始末をする。**
         // シートは閉じるだけで、前の失敗の赤字と、ブロックした相手のフォローの状態が残っていた
@@ -899,7 +935,7 @@ struct PhotoDetailView: View {
     private func toggleLikeHereFromViewer() async {
         let id = current.id
         // 送っている間は何もしない（`toggleLikeHere` と同じ門。先に灯さない）
-        guard !model.isLiking, !likeCounts.isSending(id) else { return }
+        guard !likeCounts.isSending(id) else { return }
         viewerPendingLikes[id] = !model.liked
         // 答えが来たら（来なくても）外す。届いた回は画面の値が答えになっている
         defer { viewerPendingLikes[id] = nil }
@@ -907,6 +943,18 @@ struct PhotoDetailView: View {
         if answer == nil, let message = model.errorMessage {
             toasts.show(message, kind: .failure)
         }
+    }
+
+    /// 今の1枚の数とハートを、ホームと同じ出どころ（`LikeCountStore`・`FavoritesStore`）から入れる。
+    /// **数はホームのカードと同じ出どころ**（`LiveLikes.base`）。一覧の数
+    /// （`current.likes`）のままだと、ホームで押した直後に開くと古い数が出た。
+    /// 開いたとき（`.task`）と、開いた後に答えが届いたとき（`onChange`）に使う
+    private func showStoredLike() {
+        let stored = likeCounts.entry(for: current.id)
+        model.show(photoId: current.id,
+                   initialLikes: LiveLikes.base(for: current, stored: stored),
+                   liked: favorites.contains(current.id),
+                   answeredAt: stored?.at)
     }
 
     /// 共有するページ。**個別ページが在る写真だけ**（`PhotoLink`）。
@@ -940,7 +988,7 @@ struct PhotoDetailView: View {
     private func toggleLikeHere() async -> PhotoDetailViewModel.LikeAnswer? {
         // 送っている間は押しても何もしないので、知らせも消さない
         // （別の画面で同じ写真を送っている間も同じ・`LikeCountStore.sending`）
-        guard !model.isLiking, !likeCounts.isSending(current.id) else { return nil }
+        guard !likeCounts.isSending(current.id) else { return nil }
         clearNotices()
         guard acceptsReactions else {
             model.errorMessage = L("下書きにはいいねできません。公開すると付けられます",
@@ -1290,6 +1338,7 @@ struct PhotoDetailView: View {
         // `blockAndHide` は一覧の側（`setHidden`）より先に `revision` を
         // 進めるので、一覧から取った直後でもここで落とす
         spotLead = Self.makeSpotLead(label, in: hidden.visible(fetched))
+        readSpotKey = shown.location ?? ""
     }
 
     /// **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
@@ -1324,6 +1373,7 @@ struct PhotoDetailView: View {
             return
         }
         nearby = NearbyPhotos.around(shown, in: hidden.visible(fetched), context: siblings)
+        readNearbyKey = shown.id
     }
 
     private func block(_ userId: String) async {
@@ -1349,7 +1399,7 @@ struct PhotoDetailView: View {
     /// **引けなくても画面は壊さない**（圏外なら古いまま出す方がまし）。
     /// 保存を入れ替える。**サーバーが本体**で、控えは送れたときだけ合わせる
     private func toggleSave() async {
-        // **送っている間は受けない**（いいねの `isLiking` と同じ）。連打で save と
+        // **送っている間は受けない**（いいねの送信中の印と同じ）。連打で save と
         // unsave が並んで飛ぶと、着く順や失敗の巻き戻しで画面とサーバーが食い違う
         guard !isSavingBookmark else { return }
         clearNotices()
@@ -1703,6 +1753,30 @@ enum PhotoDetailRules {
     /// でした」と空のいいねの数が残っていた
     static func reloadKey(userId: String?, photoId: String, published: Bool?) -> String {
         "\(userId ?? "")|\(photoId)|\(acceptsReactions(published: published))"
+    }
+
+    /// `.task` が走ったときに読みに行くか。**最後に読み終えた鍵と同じなら読まない。**
+    ///
+    /// 大きく見る画面（`fullScreenCover`）を閉じると、下の詳細の `.task` が走り直し、
+    /// コメントと近くの写真を読み直していた（閉じるたびに通信が飛ぶ）。
+    ///
+    /// 2026-10-03 判断: 覚えるのは**最後の1つの鍵**だけ（写真 id の集合にしない）。
+    /// 束の隣へ送ると画面の模型は前の1枚のコメントを捨てる（`PhotoDetailViewModel.show`）ので、
+    /// 戻ってきた1枚は読み直さないと空になる。同じ鍵で二度目に走る＝同じ1枚を出し直しただけ。
+    /// 引き換えに、詳細を出し直しても他の人の新しいコメントは入らない
+    /// （入れるのは別の1枚から戻ったとき・開き直したとき）。明示の読み直し
+    /// （「もう一度試す」）はここを通らない。読めなかった回は鍵を覚えない（次は読む）
+    static func needsRead(_ key: String, lastRead: String?) -> Bool {
+        key != lastRead
+    }
+
+    /// フォローの状態を取り直す間に出す値。**同じ鍵（持ち主・自分・ブロック）で取った値なら残す。**
+    ///
+    /// 大きく見る画面を閉じるたびに nil（分からない）にしていて、フォローのボタンが
+    /// 一瞬消えていた。人が替わった・入り直した・ブロックが変わった回は分からないに戻す
+    /// （前の人の状態でボタンを出さない）
+    static func followWhileRefetching(_ known: Bool?, knownFor: String?, key: String) -> Bool? {
+        knownFor == key ? known : nil
     }
 
     /// 持ち主の横にフォローのボタンを出すか。
