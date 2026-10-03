@@ -53,6 +53,15 @@ struct SocialService {
         async let publicCount = try? likeCount(photoId: photoId)
         let mine = try? await myLikeAnswer(photoId: photoId)
         if let count = mine?.count {
+            #if canImport(FoundationNetworking)
+            // 🔴 **Linux（試験）では、未認証の読みを取り消さずに終わるまで待つ**（2026-10-03）。
+            // 待たずに戻ると Swift が `async let` を取り消すが、Linux の通信部品
+            // （swift-corelibs-foundation）は**終わりかけの通信を取り消すと落ちるか固まる**
+            // （`TaskRegistry.swift: Trying to access a behaviour for a task that in not in
+            // the registry`）。この試験の群れは CPU 4つで10回に5回落ちた／止まった。
+            // iOS（Apple の Foundation）では起きないので、アプリの動きは変えない
+            _ = await publicCount
+            #endif
             return LikeSnapshot(liked: mine?.liked, count: count)
         }
         return LikeSnapshot(liked: mine?.liked, count: await publicCount)

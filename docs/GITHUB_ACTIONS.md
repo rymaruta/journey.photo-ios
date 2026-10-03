@@ -123,7 +123,11 @@ Key ID（`DDYJB5893J`）と Team ID（`5428GX5UM8`）は**秘密ではない**�
 | 単体テスト（Linux・模型） | ubuntu（`swift:6.0.3-noble`） | `Shims/` に向けたビルドと単体テスト | 5分 |
 | Xcode のビルドとテスト | macos-15 | 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵） | 控えが当たれば20〜30分 |
 
-- **macOS は、Linux の2段が通ってから起こす。** 構文の壊れで macOS の分を使わない
+- **macOS は、静的な検査が通ってから起こす。** 構文の壊れで macOS の分を使わない。Linux の単体テストは待たない——
+  Linux の通信部品（swift-corelibs-foundation）の弱点で、終わった通信を取り消すと落ちることがあり
+  （`TaskRegistry` の Fatal error。iOS には無い）、それで本物の Xcode の段まで止めないため
+- Linux の単体テストは、落ちたときの書き出しを止めている（`SWIFT_BACKTRACE=enable=no`。コンテナの中では書き出しで止まり、
+  run 1 は30分の時間切れまで待った）。テストの段は10分で切る
 - **同じ PR に押し直すと、前の回は止まる**（`concurrency`）。文書だけの変更（`docs/**`・`*.md`）では回らない。下書きの PR では macOS を起こさない
 - **結果の読み方**: 実行の「まとめ」に、件数と**落ちたテストの名前と理由**が出る（`Tools/xcresult-summary.py`）。`xcode-test-results` の成果物に `Test.xcresult`・全文ログ・画面の絵が入る（14日）
 - **Web 版との突き合わせは CI では飛ぶ。** `photo-gallery` が非公開で読めないため（「見ていない」と表示される）。手元の `verify.sh` で見る

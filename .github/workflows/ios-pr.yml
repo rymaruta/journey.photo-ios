@@ -12,8 +12,8 @@
 # 無駄に回さない工夫:
 #  - 同じ PR に押し直したら、前の回は止める（`concurrency`）
 #  - 文書だけの変更では回さない（`paths-ignore`）
-#  - **安い Linux の検査が通ってから** macOS を起こす（`needs`）。構文の壊れや
-#    模型に向けたビルドの失敗で、macOS の分を使わない
+#  - **安い静的な検査が通ってから** macOS を起こす（`needs`）。構文の壊れで
+#    macOS の分を使わない（Linux の単体テストは並んで走らせ、待たない）
 #  - 下書きの PR では macOS を起こさない（`draft`）
 #
 # 本番には何も出さない。署名も TestFlight も無い（それは `ios-testflight.yml`）。
@@ -67,6 +67,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container: swift:6.0.3-noble
+    env:
+      # 🔴 **落ちたときの書き出しを止める**（2026-10-03・run 1）。テストが落ちると Swift は
+      # 呼び出しの積み重なりを書き出そうとするが、コンテナの中ではそこで止まり、
+      # **30分の時間切れまで何も出さずに待った**（手元では1秒で書き出して終わる）。
+      # 落ちた事実は終了コードで十分に分かる
+      SWIFT_BACKTRACE: enable=no
     steps:
       - uses: actions/checkout@v4
       # **控え（actions/cache）は使わない。** Package に外部の依存は無く、効くのは
@@ -78,8 +84,10 @@ jobs:
       # **並列にしない。** 通信の差し替え（`StubProtocol`）はプロセス全体で1つなので、
       # 並列で回すと別のテストの応答を拾って揺れる。結果のファイル（xunit）は並列の
       # ときしか出ないので、ログをそのまま残す
+      # 手元では全件15秒ほど。**止まったら10分で切る**（30分待たない）
       - name: テスト
         shell: bash
+        timeout-minutes: 10
         run: |
           set -o pipefail
           mkdir -p build
@@ -94,9 +102,13 @@ jobs:
           if-no-files-found: ignore
 
   # 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵）
+  # **待つのは静的な検査だけ。** Linux の単体テストは、Linux の通信部品
+  # （swift-corelibs-foundation）の弱点で、まれに落ちる・止まるテストがある
+  # （終わった通信の取り消しで `TaskRegistry` が落ちる。iOS には無い）。それで
+  # 本物の Xcode の段まで止めると、いちばん欲しい結果が得られない
   xcode:
     name: Xcode のビルドとテスト（シミュレータ）
-    needs: [checks, linux-tests]
+    needs: [checks]
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: macos-15
     # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
