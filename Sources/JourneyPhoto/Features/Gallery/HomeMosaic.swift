@@ -253,8 +253,8 @@ struct HomeFeedTile: View {
     /// 押していない状態に戻る）。控えは送れたときだけ合わせる。
     private func toggleLike() async {
         // **答えを待っている間は押させない。** 二度目が古い `liked` を見て
-        // 逆向きに飛ぶと、ハートと数が押した結果と食い違う（詳細画面の
-        // `isLiking` と同じ）
+        // 逆向きに飛ぶと、ハートと数が押した結果と食い違う（詳細画面も
+        // 同じ `LikeCountStore` の印で止める）
         // 待っている印はカードの外（`LikeCountStore`）に持つ——カードが作り直されても消えない
         // **ログインしていなければ送らずに言う。** 送ると認証で断られて黙って戻り、
         // 一瞬灯って消えるだけのボタンになっていた（詳細画面は同じ言葉で断る）。
@@ -372,7 +372,8 @@ enum HomeLikeGate {
                      request: () async throws -> SocialService.LikeResult) async {
         do {
             let result = try await request()
-            if let likes = result.likes { likeCounts.set(photoId, count: likes) }
+            // 数の無い答えでも答えた時刻は残す（詳細の♥の勝ち負けに使う。`LikeCountStore.recordAnswer`）
+            likeCounts.recordAnswer(photoId, count: result.likes)
             favorites.set(photoId, favorite: result.liked, for: owner)
         } catch {
             favorites.set(photoId, favorite: wasLiked, for: owner)

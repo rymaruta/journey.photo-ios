@@ -136,6 +136,73 @@ final class PhotoDetailRulesTests: XCTestCase {
         XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: false, signedIn: false, isFollowing: false,
                                                     lookupFailed: false, ownerBlocked: false))
     }
+
+    // MARK: - 大きく見る画面を閉じた後の読み直し（2026-10-03）
+
+    /// 🔴 **読み直しを省くのは、大きく見る画面を閉じた直後で、中身が今の1枚のものとして入っているときだけ**
+    func testRereadIsSkippedOnlyRightAfterClosingTheViewer() async {
+        let closed = Date(timeIntervalSince1970: 1_000)
+        let soon = closed.addingTimeInterval(0.6)
+        XCTAssertEqual(PhotoDetailRules.rereadPlan("p1", contentFor: "p1", viewerClosedAt: closed, now: soon), .keep,
+                       "閉じた直後に、同じ1枚のコメント・近くの写真を読み直している")
+        // 閉じていない（写真の主・近くの写真・タブから戻った）回は読む
+        XCTAssertEqual(PhotoDetailRules.rereadPlan("p1", contentFor: "p1", viewerClosedAt: nil, now: soon), .reread,
+                       "大きく見る画面と関係ない戻りで、読み直しを省いている")
+        // 閉じてから時間が経った戻り（印を消し忘れても）は読む
+        let later = closed.addingTimeInterval(PhotoDetailRules.viewerReturnWindow + 1)
+        XCTAssertEqual(PhotoDetailRules.rereadPlan("p1", contentFor: "p1", viewerClosedAt: closed, now: later), .reread,
+                       "閉じた印が残り、後の別の戻りでも読み直しを省いている")
+    }
+
+    /// 🔴 **中身が無い（取り消し・失敗で抜けた）・別の1枚の中身なら、閉じた直後でも読む**。
+    /// 読み済みの印が前の1枚のまま残り、戻った1枚のコメント・近くの写真が空のままだった
+    func testRereadHappensWhenContentIsMissingOrForAnotherPhoto() async {
+        let closed = Date(timeIntervalSince1970: 1_000)
+        let soon = closed.addingTimeInterval(0.3)
+        XCTAssertEqual(PhotoDetailRules.rereadPlan("p1", contentFor: nil, viewerClosedAt: closed, now: soon), .reread,
+                       "中身の無い1枚を読み直さない")
+        XCTAssertEqual(PhotoDetailRules.rereadPlan("p1", contentFor: "p2", viewerClosedAt: closed, now: soon), .reread,
+                       "前の1枚の中身を、今の1枚の読み済みと扱っている")
+        XCTAssertEqual(PhotoDetailRules.rereadPlan("", contentFor: nil, viewerClosedAt: closed, now: soon), .reread)
+    }
+
+    /// 🔴 **読まない回は控えからハートも入れない**（確かめた♥を控えの白で上書きして固まっていた）
+    func testKeepPlanDoesNotSyncFromStores() async {
+        XCTAssertFalse(PhotoDetailRules.ReloadPlan.keep.syncFromStores, "読み直さない回に控えでハートを上書きする")
+        XCTAssertFalse(PhotoDetailRules.ReloadPlan.keep.read)
+        XCTAssertTrue(PhotoDetailRules.ReloadPlan.reread.syncFromStores)
+        XCTAssertTrue(PhotoDetailRules.ReloadPlan.reread.read)
+    }
+
+    /// 🔴 **同じ鍵で取り直す間は、分かっているフォローの状態を残す**（ボタンが一瞬消えていた）。
+    /// 人・自分・ブロックが替わったら「分からない」に戻す
+    func testFollowStateIsKeptWhileRefetchingTheSameKey() async {
+        let kept = PhotoDetailRules.followStart(me: "me", owner: "a", blocked: false, known: true, knownFor: "me|a|false")
+        XCTAssertEqual(kept, .init(isFollowing: true, knownFor: "me|a|false", fetchKey: "me|a|false"),
+                       "同じ人を取り直す間に、フォロー中のボタンを消している")
+        XCTAssertNil(PhotoDetailRules.followStart(me: "me", owner: "b", blocked: false, known: true,
+                                                  knownFor: "me|a|false").isFollowing,
+                     "前の人の状態で次の人のボタンを出している")
+        XCTAssertNil(PhotoDetailRules.followStart(me: "me", owner: "a", blocked: true, known: true,
+                                                  knownFor: "me|a|false").isFollowing,
+                     "ブロックした相手に前の状態を残している")
+        XCTAssertNil(PhotoDetailRules.followStart(me: "me", owner: "a", blocked: false, known: true,
+                                                  knownFor: nil).isFollowing)
+    }
+
+    /// 🔴 **ログアウト中は覚えた鍵も捨てる。** 残すと、ログアウトで false にした値を、
+    /// 同じ人で入り直した直後に「分かっている値」として出していた（フォロー中の人に「フォロー」）
+    func testSigningOutForgetsTheKnownFollowKey() async {
+        let out = PhotoDetailRules.followStart(me: nil, owner: "a", blocked: false, known: true, knownFor: "me|a|false")
+        XCTAssertEqual(out, .init(isFollowing: false, knownFor: nil, fetchKey: nil),
+                       "ログアウト中に、前の人で覚えた鍵を残している")
+        let back = PhotoDetailRules.followStart(me: "me", owner: "a", blocked: false,
+                                                known: out.isFollowing, knownFor: out.knownFor)
+        XCTAssertNil(back.isFollowing, "入り直した直後に、ログアウト中の false を「分かっている値」として出している")
+        XCTAssertEqual(back.fetchKey, "me|a|false")
+        let mine = PhotoDetailRules.followStart(me: "a", owner: "a", blocked: false, known: true, knownFor: "a|a|false")
+        XCTAssertEqual(mine, .init(isFollowing: false, knownFor: nil, fetchKey: nil))
+    }
 }
 
 /// 下書きにはコメント・いいねを出さない（サーバーが断る）
