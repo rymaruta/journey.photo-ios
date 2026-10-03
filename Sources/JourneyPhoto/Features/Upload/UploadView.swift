@@ -19,6 +19,11 @@ struct UploadView: View {
 
     /// 「写真を押すと編集できます」の案内（写真を選んだ直後に一度だけ・`UploadEditEntry.showsHint`）
     @State private var showEditHint = false
+    /// 「詳しい設定」（公開範囲・曲・アルバム・SNS・カテゴリ）を開いているか。**畳んで始める**
+    /// （2026-10-03 判断・`UploadDetails`）。畳んでいても今の値は行の右に出る
+    @State private var showsDetails = false
+    /// 写真を選ぶ画面を自動で開いたか（一度だけ・`UploadDetails.autoOpensLibrary`）
+    @State private var offeredLibrary = false
 
     /// 編集画面の行き先（写真の id）
     private struct EditTarget: Identifiable { let id: UUID }
@@ -223,6 +228,21 @@ struct UploadView: View {
         .scrollDismissesKeyboard(.interactively)
         .webScreen()
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
+        // 2026-10-03 判断: **開いたらすぐ写真を選ぶ画面へ**（「追加」→「ライブラリから選ぶ」の2手を省く）。
+        // 一度だけ。旅の写真から来た回（もう並んでいる）は開かない。カメラは帯の「追加」に残る
+        .task {
+            // シートが出きってから開く（出ている途中に重ねると出ないことがある）。待つのは長めに
+            // （`UploadDetails.autoOpenDelay`）。それでも出なかった回は「ライブラリから選ぶ」が
+            // 立て直す（`openLibrary`）
+            try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            let hasPhotos = !model.items.isEmpty || model.isLoadingPicked || !initialPhotos.isEmpty
+            guard UploadDetails.autoOpensLibrary(hasPhotos: hasPhotos, alreadyOffered: offeredLibrary,
+                                                 isWorking: model.isWorking) else { return }
+            // **開いたときにだけ印を付ける。** 待っている間に閉じた回は印を付けない（次に開いたらまた開く）
+            offeredLibrary = true
+            showLibrary = true
+        }
         // 写真を選んだ直後（0枚 → 1枚以上）に、一度だけ案内を出す（旅の写真から来た回も同じ）
         .onChange(of: model.items.isEmpty) { _, empty in
             if !empty { offerEditHint() }
@@ -526,6 +546,25 @@ struct UploadView: View {
         }
     }
 
+    /// 写真を選ぶ画面を開く（「ライブラリから選ぶ」）。
+    ///
+    /// 🔴 **立ったままの印を立て直す。** 自動で開いた回に選ぶ画面が出なかった（シートの出る途中に
+    /// 重なった）と、`showLibrary` が true のまま残り、もう一度 true を入れても変わらないので
+    /// 二度と開かない。立っていたら一度下ろしてから立てる（`UploadDetails.libraryOpenSteps`）
+    private func openLibrary() {
+        let steps = UploadDetails.libraryOpenSteps(isPresented: showLibrary)
+        guard steps.count > 1 else {
+            showLibrary = true
+            return
+        }
+        showLibrary = false
+        Task {
+            // 下ろしたのが反映されてから立てる（同じ描画の中で false → true にすると変化にならない）
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            showLibrary = true
+        }
+    }
+
     /// 「追加」の点線の枠。**カメラを先に置く**（このアプリがネイティブである
     /// 理由＝4.2 で、旅先でいちばん使う入口でもある）
     private var addTile: some View {
@@ -535,7 +574,7 @@ struct UploadView: View {
                     Label(L("写真を撮る", "Take a photo"), systemImage: "camera")
                 }
             }
-            Button { showLibrary = true } label: {
+            Button { openLibrary() } label: {
                 Label(L("ライブラリから選ぶ", "Choose from library"), systemImage: "photo.on.rectangle")
             }
         } label: {
@@ -606,6 +645,30 @@ struct UploadView: View {
                 if model.items.count > 1 {
                     JPSectionTitle(L("\(indexOf(item)) 枚目", "Photo \(indexOf(item))"))
                 }
+                // 2026-10-03 判断: **撮影地を題・説明より先に**（いちばん多い道は 写真 → 撮影地 → 投稿。
+                // 題と説明は任意）。撮影地は写真の位置から自動で入る（`fillPlaceName`）
+                VStack(alignment: .leading, spacing: 6) {
+                    JPSectionTitle(L("撮影地", "Place"))
+                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
+                                     near: item.prepared.coords, offersSpots: true)
+                    // 投稿が撮影地の作例になることを一言（実際に並ぶときだけ・`UploadDetails.showsSampleNote`）
+                    if UploadDetails.showsSampleNote(location: item.location, published: model.published,
+                                                     audience: model.audience) {
+                        Label {
+                            Text(UploadDetails.sampleNote)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            // 黒地の上の手がかりなので真鍮（板: 真鍮＝合図と手がかり）
+                            Image(systemName: "mappin.and.ellipse")
+                                .foregroundStyle(WebTheme.accent)
+                                .accessibilityHidden(true)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.muted2)
+                        .padding(.horizontal, 4)
+                        .accessibilityIdentifier("upload.sampleNote")
+                    }
+                }
                 JPField(L("タイトル", "Title")) {
                     TextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
                               text: $item.title)
@@ -625,11 +688,6 @@ struct UploadView: View {
                         }
                 }
                 count(item.caption, limit: PostLimits.description)
-                VStack(alignment: .leading, spacing: 6) {
-                    JPSectionTitle(L("撮影地", "Place"))
-                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
-                                     near: item.prepared.coords, offersSpots: true)
-                }
             }
         }
     }
@@ -656,69 +714,83 @@ struct UploadView: View {
         (model.items.firstIndex(where: { $0.id == item.id }) ?? 0) + 1
     }
 
-    /// まとめて付く行（板: 札に 曲・入れるアルバム・公開範囲。カテゴリも同じ形で）
+    /// 「詳しい設定」の行の右に出す、いまの値（`UploadDetails.summary`）
+    private var detailsSummary: String {
+        UploadDetails.summary(
+            published: model.published, audience: model.audience,
+            songTitle: model.song?.title,
+            albumTitle: model.albums.first { $0.id == model.selectedAlbumId }.map(albumTitle),
+            sharesToSocial: model.shareToThreads, category: model.category)
+    }
+
+    /// 「詳しい設定」の開け閉めの行。**畳んでいても今の値を出す**（公開範囲はいつも先頭）
+    private var detailsToggle: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsDetails.toggle() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 17))
+                    .foregroundStyle(WebTheme.muted2)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L("詳しい設定", "More settings"))
+                        .font(.subheadline)
+                        .foregroundStyle(WebTheme.text)
+                    Text(detailsSummary)
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(WebTheme.faint)
+                    .rotationEffect(.degrees(showsDetails ? 180 : 0))
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("詳しい設定", "More settings"))
+        .accessibilityValue(detailsSummary)
+        .accessibilityHint(showsDetails
+                           ? L("押すと畳みます", "Collapses the settings")
+                           : L("押すと公開範囲・曲・アルバムなどを変えられます",
+                               "Shows visibility, song, album and more"))
+        .accessibilityIdentifier("upload.details")
+    }
+
+    /// まとめて付く行（板: 札に 曲・入れるアルバム・公開範囲。カテゴリも同じ形で）。
+    ///
+    /// 2026-10-03 判断: **「詳しい設定」に畳む**（計画9・`UploadDetails`）。機能は消さない。
+    /// 既定値（全体に公開・曲なし・アルバムなし）のまま投稿できるので、いちばん多い道では開かない
     private var rowsCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             JPCard {
-                // **送っている間は変えさせない**（公開範囲・カテゴリ・タグも同じ）。
-                // 送信は1枚ごとにその時点の値を読むので、同じ束で割れる
-                // （Web の AudiencePicker disabled={uploading} と同じ）。
-                // アルバムは送信中に選び直せる作り（`onAlbumGone`）なので止めない
-                songRow
-                    .disabled(model.isWorking)
-                if !model.albums.isEmpty {
+                detailsToggle
+                if showsDetails {
                     JPCardDivider()
-                    albumRow
+                    detailRows
                 }
-                JPCardDivider()
-                // 鍵を控えている写真がある間も変えさせない（`visibilityLocked` の注記）
-                audienceRow
-                    .disabled(model.isWorking || model.visibilityLocked)
-                // 公開・全体に公開のときだけ（外の SNS に絞った写真を流さない・`ThreadsShare`）
-                if ThreadsShare.isEligible(published: model.published, audience: model.audience) {
-                    JPCardDivider()
-                    threadsRow
-                        .disabled(model.isWorking)
-                }
-                // **選ぶ先が空なら誰にも見えない。** 選びに行く口をここに置く
-                if model.published && model.audience == .closeFriends {
-                    JPCardDivider()
-                    NavigationLink { CloseFriendsView() } label: {
-                        JPRowLabel(title: L("親しい友達を選ぶ", "Pick close friends"), systemImage: "star")
-                    }
-                    .buttonStyle(JPRowButtonStyle())
-                    // **送っている間は積ませない。** 積んだ画面は変更が無いとき「払って閉じてよい」
-                    // （`unsavedLeaveGuard`）を出すので、このシートの「送信中は払って閉じない」を
-                    // 打ち消すおそれがある（どちらが勝つかは SwiftUI 任せ）
-                    .disabled(model.isWorking)
-                }
-                JPCardDivider()
-                NavigationLink {
-                    ScrollView {
-                        CategoryField(category: $model.category).padding(16)
-                    }
-                    .webScreen()
-                    .navigationTitle(L("カテゴリ", "Category"))
-                    .navigationBarTitleDisplayMode(.inline)
-                } label: {
-                    JPRowLabel(title: L("カテゴリ", "Category"), systemImage: "square.grid.2x2",
-                               value: model.category.isEmpty ? L("選ぶ", "Choose") : model.category)
-                }
-                .buttonStyle(JPRowButtonStyle())
-                .disabled(model.isWorking)
             }
             // 付けた曲は試し聴きできる形で出す（アートワーク・アーティスト・再生）
-            if let song = model.song {
+            if showsDetails, let song = model.song {
                 SongRow(song: song)
             }
-            // 公開範囲を変えられない理由（送りかけの写真がある間だけ）
+            // 公開範囲を変えられない理由（送りかけの写真がある間だけ）。**畳んでいても出す**
             if let reason = model.visibilityLockReason {
                 Text(reason)
                     .font(.caption)
                     .foregroundStyle(WebTheme.faint)
                     .padding(.horizontal, 4)
             }
-            // 公開範囲の説明（何が起きるかを先に言う）
+            // 公開範囲の説明（何が起きるかを先に言う）。**畳んでいても出す**（レビュー 2026-10-03）
+            // ——「ウェブサイトにも載り、検索から…」が見えないまま、意図せず公開させない
             Text(model.published
                  ? model.audience.photoNote
                  : L("非公開の写真は、あなた以外には見えません。あとから公開できます。",
@@ -726,7 +798,59 @@ struct UploadView: View {
                 .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .padding(.horizontal, 4)
+                .accessibilityIdentifier("upload.audienceNote")
         }
+    }
+
+    /// 「詳しい設定」の中身（前の札の行そのまま）
+    @ViewBuilder
+    private var detailRows: some View {
+        // **送っている間は変えさせない**（公開範囲・カテゴリ・タグも同じ）。
+        // 送信は1枚ごとにその時点の値を読むので、同じ束で割れる
+        // （Web の AudiencePicker disabled={uploading} と同じ）。
+        // アルバムは送信中に選び直せる作り（`onAlbumGone`）なので止めない
+        songRow
+            .disabled(model.isWorking)
+        if !model.albums.isEmpty {
+            JPCardDivider()
+            albumRow
+        }
+        JPCardDivider()
+        // 鍵を控えている写真がある間も変えさせない（`visibilityLocked` の注記）
+        audienceRow
+            .disabled(model.isWorking || model.visibilityLocked)
+        // 公開・全体に公開のときだけ（外の SNS に絞った写真を流さない・`ThreadsShare`）
+        if ThreadsShare.isEligible(published: model.published, audience: model.audience) {
+            JPCardDivider()
+            threadsRow
+                .disabled(model.isWorking)
+        }
+        // **選ぶ先が空なら誰にも見えない。** 選びに行く口をここに置く
+        if model.published && model.audience == .closeFriends {
+            JPCardDivider()
+            NavigationLink { CloseFriendsView() } label: {
+                JPRowLabel(title: L("親しい友達を選ぶ", "Pick close friends"), systemImage: "star")
+            }
+            .buttonStyle(JPRowButtonStyle())
+            // **送っている間は積ませない。** 積んだ画面は変更が無いとき「払って閉じてよい」
+            // （`unsavedLeaveGuard`）を出すので、このシートの「送信中は払って閉じない」を
+            // 打ち消すおそれがある（どちらが勝つかは SwiftUI 任せ）
+            .disabled(model.isWorking)
+        }
+        JPCardDivider()
+        NavigationLink {
+            ScrollView {
+                CategoryField(category: $model.category).padding(16)
+            }
+            .webScreen()
+            .navigationTitle(L("カテゴリ", "Category"))
+            .navigationBarTitleDisplayMode(.inline)
+        } label: {
+            JPRowLabel(title: L("カテゴリ", "Category"), systemImage: "square.grid.2x2",
+                       value: model.category.isEmpty ? L("選ぶ", "Choose") : model.category)
+        }
+        .buttonStyle(JPRowButtonStyle())
+        .disabled(model.isWorking)
     }
 
     @ViewBuilder
