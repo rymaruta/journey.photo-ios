@@ -204,7 +204,7 @@ actor APIClient {
         let response: URLResponse
         do {
             try RequestCancellation.throwIfCancelled()
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await session.cancellableData(for: request)
         } catch let error as URLError where error.code == .userAuthenticationRequired {
             throw APIError.notAuthenticated
         } catch let error as URLError where error.code == .cancelled {

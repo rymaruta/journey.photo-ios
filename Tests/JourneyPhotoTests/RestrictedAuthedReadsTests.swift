@@ -192,6 +192,38 @@ final class RestrictedAuthedReadsTests: XCTestCase {
         XCTAssertEqual(snapshot, SocialService.LikeSnapshot(liked: true, count: 3))
     }
 
+    /// 🔴 **未認証の答えを捨てる（`async let` の取り消し）と応答が重なっても固まらない。**
+    /// Linux の URLSession の `data(for:)` は、取り消しと応答が重なると互いに待って止まり、
+    /// 全試験が3回に1回返ってこなかった（`URLSession.cancellableData` の注記）。
+    /// 重なりは1回では起きにくいので、何度も回す
+    func testDiscardingThePublicAnswerNeverHangs() async {
+        prepare()
+        StubProtocol.respond(path: "/user/likes/p1", status: 200, body: #"{"liked":true,"count":3}"#)
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":9}"#)
+        let service = social()
+        for _ in 0..<300 {
+            let snapshot = await service.likeSnapshot(photoId: "p1", signedIn: true)
+            XCTAssertEqual(snapshot, SocialService.LikeSnapshot(liked: true, count: 3))
+        }
+    }
+
+    /// 取り消された読み込みは `URLError(.cancelled)`→`CancellationError` で返る（固まらず・
+    /// 「通信できません」にもならない）。応答と取り消しのどちらが先でも1回だけ返る
+    func testCancelledReadReturnsWithoutHanging() async {
+        prepare()
+        StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":9}"#)
+        let service = social(token: nil)
+        for _ in 0..<300 {
+            let read = Task { try await service.likeCount(photoId: "p1") }
+            read.cancel()
+            let result = await read.result
+            switch result {
+            case .success(let count): XCTAssertEqual(count, 9)
+            case .failure(let error): XCTAssertTrue(error is CancellationError, "取り消しを別の失敗にしている: \(error)")
+            }
+        }
+    }
+
     /// 未ログインは今までどおり未認証の数の口だけ（印は聞かない）
     func testSignedOutReadsThePublicCount() async {
         prepare()
