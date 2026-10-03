@@ -80,6 +80,19 @@ final class HomeFeedPagingTests: XCTestCase {
         return true
     }
 
+    /// 1ページ目の読み込み。**門で止まって終わらない（1ページ目を2度読む壊れ方）回は、
+    /// 門を開けて落とす**——開けないと試験ごと固まる
+    private func loadWithoutHanging(_ model: GalleryViewModel, opening gate: Gate,
+                                    file: StaticString = #filePath, line: UInt = #line) async {
+        var finished = false
+        let loading = Task { await model.load(); finished = true }
+        if !(await waitUntil { finished }) {
+            XCTFail("1ページ目の読み込みが終わらない（/feed を2度読んで門で止まった）", file: file, line: line)
+            await gate.open()
+        }
+        await loading.value
+    }
+
     private func isShowing(_ model: GalleryViewModel, _ ids: [String]) -> Bool {
         if case .loaded(let photos) = model.state { return photos.map(\.id) == ids }
         return false
@@ -188,7 +201,7 @@ final class HomeFeedPagingTests: XCTestCase {
         let gate = Gate(holds: 1, skip: 1)
         let model = makeModel(gates: PathGates(["/feed": gate]))
 
-        await model.load()
+        await loadWithoutHanging(model, opening: gate)
         let first = Task { await model.loadNextPage() }
         await gate.untilWaiting(2)
         XCTAssertTrue(model.isLoadingPage)
@@ -235,7 +248,7 @@ final class HomeFeedPagingTests: XCTestCase {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
         let gate = Gate(holds: 1, skip: 1)
         let model = makeModel(gates: PathGates(["/feed": gate]))
-        await model.load()
+        await loadWithoutHanging(model, opening: gate)
 
         let stale = Task { await model.loadNextPage() }
         await gate.untilWaiting(2)
