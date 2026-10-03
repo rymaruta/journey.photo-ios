@@ -30,7 +30,7 @@ final class TripLightTests: XCTestCase {
         XCTAssertEqual(e.sunset, "17:09")
         XCTAssertEqual(e.season, "autumn")
         // 札はほかの札と同じ2行まで（季節の案内は札に出さない＝並びの背を揃えても写真を押し下げない）
-        XCTAssertEqual(TripLight.line(e), "明日 · 銀山温泉 · マジックアワー 16:34–17:26 · 日の入り 17:09")
+        XCTAssertEqual(TripLight.line(e), "明日 · 銀山温泉 · ゴールデンアワー 16:34–17:26 · 日の入り 17:09")
         XCTAssertTrue(e.seasonGuide!.hasSuffix("…"), "長い案内は切る")
     }
 
@@ -89,7 +89,7 @@ final class TripLightTests: XCTestCase {
     }
 
     /// 🔴 北極圏（公開中のサンタクロース村・北緯66.5度）。Web の撮影の光の表と同じ言い分け
-    /// ——「日の入り 00:10」を朝のことに読ませない・一日中マジックアワーを「無い」と読ませない
+    /// ——「日の入り 00:10」を朝のことに読ませない・一日中ゴールデンアワーを「無い」と読ませない
     func testArcticWordsMatchTheWeb() throws {
         let santa = try spot("sp_s", name: "サンタクロース村", lat: 66.5436, lng: 25.8473, country: "フィンランド", seasons: "[]")
         func entry(_ ymd: String) throws -> TripLight.Entry {

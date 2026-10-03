@@ -156,6 +156,8 @@ public struct EnvironmentValues {
     public var accessibilityVoiceOverEnabled: Bool { false }
     /// 画面の倍率（本物と同じ。写真の編集の見本を画面の画素で描くのに使う）
     public var displayScale: CGFloat { 2 }
+    /// 文字サイズの段（本物と同じ）
+    public var dynamicTypeSize: DynamicTypeSize { .large }
 }
 
 public struct DismissAction {
@@ -415,4 +417,6 @@ public struct Namespace {
 public enum DynamicTypeSize: Comparable {
     case xSmall, small, medium, large, xLarge, xxLarge, xxxLarge
     case accessibility1, accessibility2, accessibility3, accessibility4, accessibility5
+    /// アクセシビリティの大きさか（本物と同じ）
+    public var isAccessibilitySize: Bool { self >= .accessibility1 }
 }
