@@ -249,6 +249,17 @@ final class PhotoRecolorTests: XCTestCase {
         XCTAssertTrue(PhotoRecolor.blocksClosing(isSaving: false, isReplacing: true, isLoadingRecolor: false))
     }
 
+    /// 🔴 **色の編集の元を読んでいる間も保存できる**（未保存の確認の「保存して閉じる」が何もしなかった）。
+    /// 止めるのは保存・差し替えの最中だけ
+    func testLoadingDoesNotBlockSaving() {
+        XCTAssertFalse(PhotoRecolor.blocksSaving(isSaving: false, isReplacing: false, isLoadingRecolor: true),
+                       "読み込み中の「保存して閉じる」が何もしない")
+        XCTAssertFalse(PhotoRecolor.blocksSaving(isSaving: false, isReplacing: false, isLoadingRecolor: false))
+        XCTAssertTrue(PhotoRecolor.blocksSaving(isSaving: true, isReplacing: false, isLoadingRecolor: false))
+        XCTAssertTrue(PhotoRecolor.blocksSaving(isSaving: false, isReplacing: true, isLoadingRecolor: false),
+                      "差し替えの途中に保存した（座標を書き戻す）")
+    }
+
     // MARK: - 読み込み（fetchSource・loadSource）
 
     private func fetch(_ path: String, maxBytes: Int = PhotoRecolor.maxSourceBytes) async throws -> Data {

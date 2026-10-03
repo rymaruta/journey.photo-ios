@@ -47,6 +47,12 @@ enum PhotoRecolor {
         isSaving || isReplacing
     }
 
+    /// 保存を止めるか。**保存・差し替えの最中だけ。** 色の編集の元を読んでいる間は止めない
+    /// ——未保存の確認の「保存して閉じる」が読み込み中に何もしなかった。読み込みは保存の前に取り消す
+    static func blocksSaving(isSaving: Bool, isReplacing: Bool, isLoadingRecolor: Bool) -> Bool {
+        isSaving || isReplacing
+    }
+
     /// 「完了」を押したあとの結末
     enum Finish {
         /// 無編集。何も送らずに閉じる

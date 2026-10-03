@@ -332,6 +332,14 @@ struct EditPhotoView: View {
     /// 「色を編集」。読み込みの仕事を持っておく（閉じたら取り消す）
     private func startRecolorLoad() {
         guard !isBusy else { return }
+        if let replacedData {
+            recolorSource = RecolorSource(data: replacedData, recipe: .identity)
+            return
+        }
+        // **仕事を作る前に印を立てる**（二度押しで読み込みが2本走らない・`isBusy` が次の押下を止める）
+        isLoadingRecolor = true
+        message = nil
+        recolorRetry = nil
         recolorLoad = Task { await openRecolor() }
     }
 
@@ -339,13 +347,7 @@ struct EditPhotoView: View {
     /// 403（URL の期限切れ）なら写真を取り直して1回だけ読み直す（`PhotoRecolor.loadSource`）
     @MainActor
     private func openRecolor() async {
-        if let replacedData {
-            recolorSource = RecolorSource(data: replacedData, recipe: .identity)
-            return
-        }
-        isLoadingRecolor = true
-        message = nil
-        recolorRetry = nil
+        // 印は `startRecolorLoad` が立てた。下ろすのはここ（取り消された回も）
         defer { isLoadingRecolor = false }
         do {
             let photos = environment.photos
@@ -418,7 +420,11 @@ struct EditPhotoView: View {
         // 🔴 **差し替えの途中は保存しない。** 差し替えは始めた時点の撮影地で「座標を残すか」を
         // 決めて送るので、途中で撮影地を消して保存すると、あとから届いた差し替えが
         // 写真の位置を書き戻していた（消したはずのピンが地図に戻る）
-        guard !isBusy else { return }
+        // **色の編集の元を読んでいる間は止めない**（確認の「保存して閉じる」が何もしなかった）。
+        // 読み込みは取り消してから保存する（`PhotoRecolor.blocksSaving`）
+        guard !PhotoRecolor.blocksSaving(isSaving: isSaving, isReplacing: isReplacing,
+                                         isLoadingRecolor: isLoadingRecolor) else { return }
+        recolorLoad?.cancel()
         // 送るとサーバーが黙って切る長さなら、保存させずに知らせる
         if let over = LocalizedEdit.descriptionOverLimit(original: photo.description, field: caption) {
             messageIsError = true
