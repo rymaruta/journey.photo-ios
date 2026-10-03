@@ -43,8 +43,12 @@ struct EditPhotoView: View {
     @State private var showLeaveConfirm = false
     /// 色を編集し直す元（公開中の画像）を読んでいる最中（`PhotoRecolor`）
     @State private var isLoadingRecolor = false
-    /// 色の編集画面を開いている元の画像（全画面・`PhotoEditView`）
+    /// 色を編集し直す元を読む仕事。**閉じたら取り消す**（読み込み中も「閉じる」で抜けられる）
+    @State private var recolorLoad: Task<Void, Never>?
+    /// 色の編集画面を開いている元の画像と、始めるレシピ（全画面・`PhotoEditView`）
     @State private var recolorSource: RecolorSource?
+    /// 差し替えに失敗した・止まった回の、元の画像と最後の調整内容（「もう一度」で開き直す）
+    @State private var recolorRetry: PhotoRecolor.Retry?
     /// この画面で差し替えた本体。**続けて色を編集するときはこちらを元にする**
     /// （`photo.src` は開いたときの前の画像のまま）
     @State private var replacedData: Data?
@@ -95,7 +99,7 @@ struct EditPhotoView: View {
                     // 投稿した写真の色を編集し直す（`PhotoRecolor`）。**隣の行と同じ形・白のまま**
                     // ——写真のある画面の欄なので真鍮にしない（デザインの板「黒塗りの真鍮」）
                     Button {
-                        Task { await openRecolor() }
+                        startRecolorLoad()
                     } label: {
                         Label(L("色を編集", "Edit colors"), systemImage: "slider.horizontal.3")
                     }
@@ -175,6 +179,18 @@ struct EditPhotoView: View {
                 Section {
                     Text(message).font(.callout)
                         .foregroundStyle(messageIsError ? WebTheme.danger : WebTheme.faint)
+                    // 色の差し替えが失敗した・止まった回は、最後の調整内容から開き直せる
+                    if let retry = recolorRetry {
+                        Button {
+                            recolorSource = RecolorSource(data: retry.source, recipe: retry.recipe)
+                        } label: {
+                            Label(L("もう一度", "Try again"), systemImage: "arrow.clockwise")
+                        }
+                        .disabled(isBusy)
+                        .accessibilityHint(L("最後に調整した内容から、色の編集を開き直します",
+                                             "Reopens the color editor with your last adjustments"))
+                        .accessibilityIdentifier("editPhoto.recolorRetry")
+                    }
                 }
                 .listRowBackground(Color.clear)
             }
@@ -220,7 +236,7 @@ struct EditPhotoView: View {
         // レシピは無編集から始める——投稿時の編集は公開中の画像にもう焼き込まれている
         .fullScreenCover(item: $recolorSource) { target in
             let source = target.data
-            PhotoEditView(recipe: .identity, source: { source }, note: PhotoRecolor.note,
+            PhotoEditView(recipe: target.recipe, source: { source }, note: PhotoRecolor.note,
                           onDone: { recipe in
                               recolorSource = nil
                               Task { await finishRecolor(source: source, recipe: recipe) }
@@ -231,16 +247,22 @@ struct EditPhotoView: View {
             ToolbarItem(placement: .cancellationAction) {
                 // 保存・差し替えの最中は閉じさせない。閉じると詳細が古い姿のまま残り、
                 // 失敗の知らせも見えない
+                // 色の編集の元を読んでいる間は閉じられる（読み込みは取り消す・`blocksClosing`）
                 Button(Labels.Common.close) {
                     switch leave {
-                    case .now: dismiss()
+                    case .now:
+                        recolorLoad?.cancel()
+                        dismiss()
                     case .confirm: showLeaveConfirm = true
                     case .wait: break
                     }
                 }
-                .disabled(isBusy)
+                .disabled(PhotoRecolor.blocksClosing(isSaving: isSaving, isReplacing: isReplacing,
+                                                    isLoadingRecolor: isLoadingRecolor))
             }
         }
+        // 下へ払って閉じた回・「変更を捨てる」で閉じた回も、読み込みを残さない
+        .onDisappear { recolorLoad?.cancel() }
     }
 
     /// 保存・差し替え・色の編集の元を読んでいる最中か（閉じる・保存・先へ進むを止める門）
@@ -256,7 +278,8 @@ struct EditPhotoView: View {
     /// 「閉じる」・下へ払うの扱い（`EditPhotoChanges.leave`）
     private var leave: UnsavedLeave {
         EditPhotoChanges.leave(photo: photo, openedAudience: openedAudience, fields: fields,
-                               isSaving: isBusy)
+                               isSaving: PhotoRecolor.blocksClosing(isSaving: isSaving, isReplacing: isReplacing,
+                                                    isLoadingRecolor: isLoadingRecolor))
     }
 
     /// 写真そのものを差し替える。**EXIF は端末で落としてから送る**（投稿と同じ関所）。
@@ -264,6 +287,8 @@ struct EditPhotoView: View {
         guard let item else { return }
         isReplacing = true
         message = nil
+        // 写真そのものを替えるので、前の画像に重ねる「もう一度」は残さない
+        recolorRetry = nil
         defer {
             isReplacing = false
             // **選択を戻す。** 戻さないと、同じ写真をもう一度選んでも
@@ -304,20 +329,36 @@ struct EditPhotoView: View {
         }
     }
 
-    /// 「色を編集」。公開中の画像（この画面で差し替えたならその本体）を読んで、編集画面を開く
-    private func openRecolor() async {
+    /// 「色を編集」。読み込みの仕事を持っておく（閉じたら取り消す）
+    private func startRecolorLoad() {
         guard !isBusy else { return }
+        recolorLoad = Task { await openRecolor() }
+    }
+
+    /// 公開中の画像（この画面で差し替えたならその本体）を読んで、編集画面を開く。
+    /// 403（URL の期限切れ）なら写真を取り直して1回だけ読み直す（`PhotoRecolor.loadSource`）
+    @MainActor
+    private func openRecolor() async {
         if let replacedData {
-            recolorSource = RecolorSource(data: replacedData)
+            recolorSource = RecolorSource(data: replacedData, recipe: .identity)
             return
         }
         isLoadingRecolor = true
         message = nil
+        recolorRetry = nil
         defer { isLoadingRecolor = false }
         do {
-            let data = try await PhotoRecolor.fetchSource(from: photo.detailImageURL)
-            recolorSource = RecolorSource(data: data)
+            let photos = environment.photos
+            let id = photo.id
+            let data = try await PhotoRecolor.loadSource(
+                url: photo.detailImageURL,
+                refreshURL: { try await photos.myPhoto(id: id)?.detailImageURL },
+                fetch: { try await PhotoRecolor.fetchSource(from: $0) })
+            // 閉じた後に読み終えた回は開かない
+            guard !Task.isCancelled else { return }
+            recolorSource = RecolorSource(data: data, recipe: .identity)
         } catch {
+            guard !Task.isCancelled, !(error is CancellationError) else { return }
             messageIsError = true
             message = (error as? LocalizedError)?.errorDescription
                 ?? L("写真を読み込めませんでした", "Couldn't load the photo")
@@ -326,43 +367,50 @@ struct EditPhotoView: View {
 
     /// 色の編集の「完了」（`PhotoRecolor.finish`）。無編集なら何も送らない。
     /// 変えていれば書き出して差し替える——**撮影情報は載せず**（今の値を残す）、代表色を載せる。
-    /// 差し替えの印は `isReplacing` を使い回す（保存・閉じる・写真の差し替えと重ならない）
+    /// 差し替えの印は `isReplacing` を使い回す（保存・閉じる・写真の差し替えと重ならない）。
+    /// 失敗した・止まった回は最後の調整内容を残す（「もう一度」）
     @MainActor
     private func finishRecolor(source: Data, recipe: PhotoRecipe) async {
-        do {
-            let result = try await PhotoRecolor.finish(
-                recipe: recipe,
-                isBusy: { isBusy },
-                setReplacing: { on in
-                    isReplacing = on
-                    if on { message = nil }
-                },
-                export: { recipe in
-                    // 書き出し（Core Image・JPEG・EXIF の関所）は主スレッドの外で
-                    try await Task.detached(priority: .userInitiated) {
-                        try PhotoRenderer.shared.exportPrepared(source: source, recipe: recipe,
-                                                                base: PhotoRecolor.base(source: source))
-                    }.value
-                },
-                send: { prepared in
-                    _ = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
-                                                             uploads: environment.uploads,
-                                                             keepCurrentMetadata: true)
-                })
-            guard case .replaced(let prepared) = result else { return }
+        let result = await PhotoRecolor.finish(
+            recipe: recipe,
+            source: source,
+            isBusy: { isBusy },
+            setReplacing: { on in
+                isReplacing = on
+                if on {
+                    message = nil
+                    recolorRetry = nil
+                }
+            },
+            export: { recipe in
+                // 書き出し（Core Image・JPEG・EXIF の関所）は主スレッドの外で
+                try await Task.detached(priority: .userInitiated) {
+                    try PhotoRenderer.shared.exportPrepared(source: source, recipe: recipe,
+                                                            base: PhotoRecolor.base(source: source))
+                }.value
+            },
+            send: { prepared in
+                _ = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
+                                                         uploads: environment.uploads,
+                                                         keepCurrentMetadata: true)
+            })
+        switch result {
+        case .unchanged:
+            break
+        case .busy(let retry), .failed(_, let retry):
+            // 409（ストーリーから残した写真）はサーバーの文言そのまま（`PhotoRecolor.finish`）
+            recolorRetry = retry
+        case .replaced(let prepared):
+            recolorRetry = nil
             replacedData = prepared.data
             // 見本を書き出した画像に替える（写真の差し替えと同じ・`EditPreview`）
             if let image = UIImage(data: prepared.data) {
                 replacedPreview = Image(uiImage: image)
             }
-            messageIsError = false
-            message = L("色を編集した写真に差し替えました（反映まで数分かかります）",
-                        "Replaced with the recolored photo. It takes a few minutes to appear.")
-        } catch {
-            // 409（ストーリーから残した写真）はサーバーの文言をそのまま（`APIError.errorDescription`）
-            messageIsError = true
-            message = (error as? LocalizedError)?.errorDescription
-                ?? L("差し替えられませんでした", "Couldn't replace it")
+        }
+        if let notice = PhotoRecolor.notice(for: result) {
+            messageIsError = notice.isError
+            message = notice.text
         }
     }
 
@@ -417,4 +465,6 @@ struct EditPhotoView: View {
 private struct RecolorSource: Identifiable {
     let id = UUID()
     let data: Data
+    /// 始めるレシピ。ふつうは無編集、「もう一度」は最後の調整内容
+    let recipe: PhotoRecipe
 }
