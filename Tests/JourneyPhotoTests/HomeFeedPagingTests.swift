@@ -214,6 +214,12 @@ final class HomeFeedPagingTests: XCTestCase {
 
         let stale = Task { await model.loadNextPage() }
         await gate.untilWaiting(2)
+        // 続きが止まっていない（壊れた）回は、引き下げが止まる側に入って試験ごと固まる。先に開けて落とす
+        guard await gate.arrived >= 2 else {
+            await gate.open()
+            await stale.value
+            return
+        }
         await model.load(force: true)   // 3回目の /feed は止めずに通る
         await gate.open()
         await stale.value
