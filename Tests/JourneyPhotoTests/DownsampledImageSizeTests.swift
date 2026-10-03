@@ -95,6 +95,37 @@ final class DownsampledImageSizeTests: XCTestCase {
         XCTAssertNil(DownsampledImageSize.pixels(filling: box, scale: 0, aspectRatio: 1))
     }
 
+    /// 縦横比の分からない写真を小さな枠に敷く（行きたい場所の一覧の表紙・56pt）。
+    /// 2:1 までの形と見込めば 56 × 2 × 3 = 336 → 512px。上限（2048px）で読まない
+    func testFillWithAnAssumedRatioLimitReadsSmallForThumbnails() {
+        let thumb = CGSize(width: 56, height: 56)
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: thumb, scale: 3, assumedRatioLimit: 2), 512)
+        // 見込みの比までなら、横長でも縦長でもぼやけない（実際の縦横比で要る画素以上）
+        let assumed = DownsampledImageSize.pixels(filling: thumb, scale: 3, assumedRatioLimit: 2)!
+        for ratio: CGFloat in [2, 1.5, 1, 0.75, 0.5] {
+            XCTAssertGreaterThanOrEqual(assumed, DownsampledImageSize.pixels(filling: thumb, scale: 3, aspectRatio: ratio)!,
+                                        "縦横比 \(ratio) で画素が足りない")
+        }
+        // 縦横比が分かればそちらを使う。見込みを渡さなければ今までどおり上限
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: thumb, scale: 3, aspectRatio: 1, assumedRatioLimit: 2), 256)
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: thumb, scale: 3), DownsampledImageSize.maximum)
+        // 1 未満の見込みはおかしな値として上限で読む
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: thumb, scale: 3, assumedRatioLimit: 0.5),
+                       DownsampledImageSize.maximum)
+    }
+
+    /// 🔴 **行きたい場所の撮影スポットの行は、台帳の写真を表紙に敷く**（2026-10-03 owner「ピンだけで悲しい」）。
+    /// 写真の無い行だけ印。画面は模型では描けないので、書いてあることを見る
+    func testWishlistSpotRowShowsTheSpotPhoto() throws {
+        let source = try String(contentsOfFile: Self.sourcePath("Features/Profile/MyPageView.swift"), encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "private func officialWishlistRow"))
+        let end = try XCTUnwrap(source.range(of: "Spacer(minLength: 8)", range: start.upperBound..<source.endIndex))
+        let row = String(source[start.lowerBound..<end.lowerBound])
+        XCTAssertTrue(row.contains("row.spot?.photo"), "台帳の写真を見ていない（ピンだけになる）")
+        XCTAssertTrue(row.contains("DownsampledRemoteImage("), "表紙を縮めて読んでいない")
+        XCTAssertTrue(row.contains("assumedRatioLimit:"), "縦横比の無い写真を上限の大きさで読んでいる")
+    }
+
     /// 撮影地の代表写真の並びが、縮めて読む部品を使っていること（元の画像をそのまま展開する
     /// `RemoteImage` に戻さない）。ページを払うと隣の絵も抱えるので、ここが一番効く
     func testSpotHeroPagerUsesTheDownsampledImage() throws {
