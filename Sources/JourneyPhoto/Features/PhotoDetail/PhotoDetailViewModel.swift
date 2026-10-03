@@ -76,6 +76,9 @@ final class PhotoDetailViewModel: ObservableObject {
     /// `.task` で渡してもらう。init で `false` に固定すると
     /// 「ログインしているのに、いいねが押せない」になる。
     private var isSignedIn = false
+    /// 今の1枚が公開範囲を絞った写真か（`RestrictedFeed.isRestricted`）。
+    /// いいね数を未認証の口へ取りに戻るかを決める（`SocialService.likeSnapshot`）
+    private var restricted = false
 
     /// - Parameter initialLikes: 一覧から来た写真の数。**読み込みが終わるまで 0 と出さない**
     ///   （圏外で取れなかった回も、一覧の数を出し続ける）
@@ -98,7 +101,10 @@ final class PhotoDetailViewModel: ObservableObject {
     ///   **読めるまではこれを出す**——白で始めると、圏外で開いたいいね済みの写真が
     ///   白いハートになり、押すと「いいね」を送って（届かず）控えまで消していた
     ///   - answeredAt: 押した回の答えの時刻（`LikeCountStore.Entry.at`）。無ければ nil
-    func show(photoId: String, initialLikes: Int?, liked: Bool, answeredAt: Date? = nil) {
+    ///   - restricted: 公開範囲を絞った写真か。絞った写真は未認証の数の口が 404 になる
+    func show(photoId: String, initialLikes: Int?, liked: Bool, answeredAt: Date? = nil,
+              restricted: Bool = false) {
+        self.restricted = restricted
         if photoId != self.photoId {
             self.photoId = photoId
             likes = initialLikes
@@ -123,26 +129,23 @@ final class PhotoDetailViewModel: ObservableObject {
         self.liked = liked
     }
 
-    /// いいね数とコメントは未認証でも読める。自分が押しているかだけ要ログイン。
     /// 投稿者を読む。**写真の主が分かっているときだけ**
     func loadOwner(_ userId: String?, profiles: ProfileService) async {
         guard let userId, !userId.isEmpty, owner == nil else { return }
         owner = try? await profiles.publicProfile(userId: userId)
     }
 
+    /// いいね数とコメントは未認証でも読める。**ログイン中は認証つきの口で読む**
+    /// ——公開範囲を絞った写真は未認証の口が 404 になる（`SocialService` の注記）
     func load() async {
         let id = photoId
         let accepted = acceptedLikes[id, default: 0]
         let readAt = Date()
-        async let count = try? social.likeCount(photoId: id)
-        async let page = try? social.comments(photoId: id)
-        let mine: Bool?
-        if isSignedIn {
-            mine = try? await social.myLike(photoId: id)
-        } else {
-            mine = nil
-        }
-        let loadedCount = await count
+        async let snapshot = social.likeSnapshot(photoId: id, signedIn: isSignedIn, restricted: restricted)
+        async let page = try? social.comments(photoId: id, signedIn: isSignedIn)
+        let likeState = await snapshot
+        let loadedCount = likeState.count
+        let mine = likeState.liked
         let loaded = await page
         // **読んでいる間に別の1枚へ送ったら捨てる**（前の1枚の数を今の1枚に出さない）
         guard id == photoId else { return }
@@ -181,7 +184,7 @@ final class PhotoDetailViewModel: ObservableObject {
         let id = photoId
         reloadingComments.insert(id)
         defer { reloadingComments.remove(id) }
-        let page = try? await social.comments(photoId: id)
+        let page = try? await social.comments(photoId: id, signedIn: isSignedIn)
         // 読んでいる間に別の1枚へ送ったら捨てる（前の1枚のコメントを今の1枚に出さない）
         guard id == photoId else { return }
         if let page { applyComments(page, for: id) }

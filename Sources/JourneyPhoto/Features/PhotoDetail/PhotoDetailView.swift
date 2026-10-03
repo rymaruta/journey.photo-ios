@@ -184,7 +184,8 @@ struct PhotoDetailView: View {
             model.show(photoId: current.id,
                        initialLikes: LiveLikes.base(for: current, stored: stored),
                        liked: favorites.contains(current.id),
-                       answeredAt: stored?.at)
+                       answeredAt: stored?.at,
+                       restricted: RestrictedFeed.isRestricted(current))
             await model.load()
         }
         .task(id: shown.location) { await loadSpotLead() }

@@ -66,6 +66,19 @@ enum APIError: LocalizedError, Equatable {
         return false
     }
 
+    /// **道（ルート）がまだデプロイされていない** 404 か。新しい口へ切り替える途中で、
+    /// 古い口に戻ってよい回だけを見分ける（`SocialService.comments`）。
+    ///
+    /// api-user の 404 は必ず `{ "error": "..." }` を持つ（`http.ts` の `jsonError`）。
+    /// API Gateway の「道が無い」は `{"message":"Not Found"}` で `error` が無く、
+    /// `APIClient.errorMessage` が空にする——**本文の読み方を増やさず、空の 404 で見分ける。**
+    /// 本文の無い 404 もこちらに入るが、戻り先は同じか狭い答えしか返さないので害は無い
+    /// （Web の `isMissingRouteResponse` は `message` まで見る。`APIError` は本文を持ち歩かない）
+    var isMissingRoute: Bool {
+        if case .server(404, let message) = self { return message.isEmpty }
+        return false
+    }
+
     /// ログイン済みなのに権限が無い（Web の `MemberOnlyNotice` が出る状態）
     var isForbidden: Bool {
         if case .server(let status, _) = self { return status == 403 }
