@@ -271,15 +271,17 @@ final class ScreenshotTests: XCTestCase {
     /// 以降の操作がすべて札に当たり、`14` は探す画面の上に札が出たまま撮れ、`15`・`20`・`21`・`30`・`31`・
     /// `60`・`41` が黙って欠け、`40` は「Siri、音声入力とプライバシー」の説明を撮っていた。
     /// **「今はしない」だけを押す**（先頭のボタンは「有効にする」なので決め打ちで押さない）。
-    /// 札はアプリの中に出ることも SpringBoard に出ることもあるので両方を見る
+    /// 札がアプリと SpringBoard のどちらに出るかは確かめていないので、両方を見る
     private func dismissDictationPrompt(_ app: XCUIApplication, timeout: TimeInterval = 1) {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let labels = ["Not Now", "今はしない"]
         let deadline = Date().addingTimeInterval(timeout)
+        // **札の種別を決め打ちしない**（run 336: `alerts` では見つからず、閉じられなかった）。
+        // どの種別のボタンでも、名前が「今はしない」なら押す
         repeat {
             for target in [app, springboard] {
                 for label in labels {
-                    let button = target.alerts.buttons[label].firstMatch
+                    let button = target.buttons[label].firstMatch
                     if button.exists {
                         button.tap()
                         Thread.sleep(forTimeInterval: 1)
@@ -289,7 +291,21 @@ final class ScreenshotTests: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.3)
         } while Date() < deadline
+        // 閉じられなかったのに札が見えている回は、要素の木を残す（次に直す手がかり・1回だけ）
+        guard !reportedDictationPrompt else { return }
+        for (name, target) in [("app", app), ("springboard", springboard)]
+        where target.staticTexts["Enable Dictation?"].firstMatch.exists {
+            reportedDictationPrompt = true
+            let note = XCTAttachment(string: target.debugDescription)
+            note.name = "99-音声入力の札を閉じられなかった（\(name) の要素の木）"
+            note.lifetime = .keepAlways
+            add(note)
+            return
+        }
     }
+
+    /// 閉じられなかった札の木を残したか（1回だけ残す）
+    private var reportedDictationPrompt = false
 
     private func answerLocationPrompt() {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
