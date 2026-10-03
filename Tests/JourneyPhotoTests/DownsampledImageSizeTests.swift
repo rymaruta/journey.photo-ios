@@ -64,6 +64,51 @@ final class DownsampledImageSizeTests: XCTestCase {
                        "旅の一冊のページに元の画像をそのまま展開する部品が残っている")
     }
 
+    // MARK: - 枠いっぱいに敷き詰める（撮影地の代表写真の並び・2026-10-03）
+
+    /// 🔴 **枠より横長の写真は、高さに合わせて広がる。** 幅の画素（1170）だけで読むと、
+    /// 4:3 の枠（390×292.5pt）に 16:9 の写真を敷いたとき、写真の幅は 520pt＝1560px 要るのにぼやける
+    func testFillWithAWiderPhotoUsesTheHeight() {
+        let box = CGSize(width: 390, height: 292.5)
+        // 520 × 3 = 1560 → 1792
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: box, scale: 3, aspectRatio: 16.0 / 9.0), 1792)
+        let longSide = DownsampledImageSize.pixels(filling: box, scale: 3, aspectRatio: 16.0 / 9.0)!
+        XCTAssertGreaterThanOrEqual(Double(longSide) * 9.0 / 16.0, 292.5 * 3, "横長で高さの画素が足りない")
+    }
+
+    /// 縦長の写真は幅に合わせて広がり、長い辺は高さ（幅 ÷ 縦横比）
+    func testFillWithATallerPhotoUsesTheWidth() {
+        let box = CGSize(width: 390, height: 292.5)
+        // 幅 390pt・高さ 520pt → 520 × 3 = 1560 → 1792
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: box, scale: 3, aspectRatio: 0.75), 1792)
+        // 枠と同じ 4:3 → 長い辺は幅 390 × 3 = 1170 → 1280
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: box, scale: 3, aspectRatio: 4.0 / 3.0), 1280)
+    }
+
+    /// 縦横比が分からなければ上限で読む（どの形でもぼやけない）。枠が測れないうちは読まない
+    func testFillWithoutRatioReadsTheMaximumAndWaitsForTheBox() {
+        let box = CGSize(width: 390, height: 292.5)
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: box, scale: 3), DownsampledImageSize.maximum)
+        XCTAssertEqual(DownsampledImageSize.pixels(filling: box, scale: 3, aspectRatio: 0), DownsampledImageSize.maximum)
+        XCTAssertNil(DownsampledImageSize.pixels(filling: CGSize(width: 390, height: 0), scale: 3, aspectRatio: 1))
+        XCTAssertNil(DownsampledImageSize.pixels(filling: CGSize(width: 0, height: 300), scale: 3, aspectRatio: 1))
+        XCTAssertNil(DownsampledImageSize.pixels(filling: box, scale: 0, aspectRatio: 1))
+    }
+
+    /// 撮影地の代表写真の並びが、縮めて読む部品を使っていること（元の画像をそのまま展開する
+    /// `RemoteImage` に戻さない）。ページを払うと隣の絵も抱えるので、ここが一番効く
+    func testSpotHeroPagerUsesTheDownsampledImage() throws {
+        let source = try String(contentsOfFile: Self.sourcePath("Features/Spots/SpotDetailView.swift"), encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "private var heroPager"))
+        let end = try XCTUnwrap(source.range(of: ".tabViewStyle(", range: start.upperBound..<source.endIndex))
+        let pager = String(source[start.lowerBound..<end.lowerBound])
+        XCTAssertTrue(pager.contains("DownsampledRemoteImage("), "撮影地の代表写真が縮めて読む部品を使っていない")
+        XCTAssertTrue(pager.contains("contentMode: .fill"), "敷き詰め（fill）の画素数で読んでいない")
+        let plain = try NSRegularExpression(pattern: "(?<!Downsampled)RemoteImage\\(")
+        XCTAssertEqual(plain.numberOfMatches(in: pager, range: NSRange(pager.startIndex..., in: pager)), 0,
+                       "撮影地の代表写真に元の画像をそのまま展開する部品が残っている")
+    }
+
     private static func sourcePath(_ relative: String) -> String {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
