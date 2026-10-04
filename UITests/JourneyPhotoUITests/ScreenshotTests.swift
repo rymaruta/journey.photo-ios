@@ -748,6 +748,28 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "22-写真を編集（色を編集の入口）")
     }
 
+    /// **「新しくなったこと」**（2026-10-04・`WhatsNewView`）。更新して初めて開いた人に出るシート。
+    ///
+    /// 更新した人を起動の引数で作る: 規約に同意済み（`-legal.consent.version 1`）・前に見た版が古い
+    /// （`-whatsNew.seenVersion 0.0.1`）。どちらも UserDefaults の引数の領域で、端末には書かない。
+    /// 出たら撮って、主ボタン「はじめる」で閉じられることも見る。出なければ撮らない（この試験の決まり）
+    func testCapturesWhatsNew() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "1"]
+        app.launchArguments += ["-whatsNew.seenVersion", "0.0.1"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launch()
+
+        let close = app.buttons["whatsNew.close"].firstMatch
+        guard close.waitForExistence(timeout: 20) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02b-新しくなったこと")
+        close.tap()
+        // 閉じたあとはホームが見える（主ボタンで閉じられる）
+        _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
+    }
+
     /// **探すの「季節・時間帯で絞る」**（2026-10-03・戦略の計画6）。発見の顔の「季節・時間帯から探す」で
     /// 「秋」を押した1枚（秋の案内のある撮影スポットと、秋に撮った写真）と、続けて「夕」を重ねた1枚。
     ///

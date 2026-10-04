@@ -40,6 +40,11 @@ struct RootView: View {
     /// それが**同じ人の数**のときだけ——人が替わった直後の取得が捨てられ、
     /// 次の取得が失敗すると、前の人の数が残っていた
     @State private var unreadOwner: String?
+    /// 「新しくなったこと」を出すか（起動した時点で決める・`WhatsNewGate`）
+    @StateObject private var whatsNew = WhatsNewGate()
+    @State private var showWhatsNew = false
+    /// 出した版。`markSeen` で門の側は空になるので、シートにはこちらを渡す
+    @State private var whatsNewReleases: [WhatsNew.Release] = []
 
     enum Tab: Hashable {
         // **提案の並び**（owner の絵・2026-09-21）:
@@ -390,17 +395,42 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             ToastOverlay().padding(.bottom, 116)
         }
-        // メニューの「マイページ」が押されたら、マイページの札へ移る
+        // メニューの「マイページ」が押されたら、マイページの札へ移る。
+        // **メニューのシートも下ろす**（2026-10-04 判断: メニュー → 設定 →「新しくなったこと」から
+        // 札へ移ると、メニューのシートが上に残って移った先が見えない。メニュー自身の行は先に閉じている）
         .onChange(of: tabRouter.myPageRequests) { _, _ in
+            showMenu = false
             selection = .mypage
         }
         // 見出しの「探す」（ホームだけ）→ 探すの札へ
         .onChange(of: tabRouter.searchRequests) { _, _ in
+            showMenu = false
             selection = .search
         }
         // メニューの「撮影地マップ」→ マップの札へ
         .onChange(of: tabRouter.mapRequests) { _, _ in
+            showMenu = false
             selection = .map
+        }
+        // 「新しくなったこと」の項目 → ホームの札へ
+        .onChange(of: tabRouter.homeRequests) { _, _ in
+            showMenu = false
+            selection = .home
+        }
+        // **更新して初めて開いたときに1回だけ**「新しくなったこと」を出す（`WhatsNewGate`）。
+        // 規約の画面の後（このタブが出てから）。描き終わるのを少し待つ——出てきた瞬間に
+        // シートを出すと黙って無視されることがある。通知を押して起動した回など、ほかのシートが
+        // 先に出ていたら出さない（覚えないので、次の起動で出る）
+        .task {
+            guard whatsNew.shouldPresent else { return }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else { return }
+            whatsNewReleases = whatsNew.pending
+            whatsNew.markSeen()
+            showWhatsNew = true
+        }
+        .sheet(isPresented: $showWhatsNew) {
+            WhatsNewView(releases: whatsNewReleases)
         }
         .onChange(of: tabRouter.menuRequests) { _, _ in
             showMenu = true
