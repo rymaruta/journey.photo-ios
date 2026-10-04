@@ -30,6 +30,10 @@ struct DownsampledRemoteImage: View {
     var aspectRatio: CGFloat? = nil
     /// 敷き方が `.fill` のとき、枠のどこを残すか（`RemoteImage.alignment` と同じ）
     var alignment: Alignment = .center
+    /// 縦横比が分からない写真を `.fill` で敷くとき、**この比（長い辺 ÷ 短い辺）までの形**と
+    /// 見込んで読む。nil なら上限で読む（`DownsampledImageSize.pixels(filling:)`）。
+    /// 小さな枠（一覧の表紙）で、縦横比を持たない写真を上限の大きさで読まないため
+    var assumedRatioLimit: CGFloat? = nil
 
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
@@ -81,7 +85,8 @@ struct DownsampledRemoteImage: View {
     private var neededPixels: Int? {
         switch contentMode {
         case .fill:
-            return DownsampledImageSize.pixels(filling: size, scale: displayScale, aspectRatio: aspectRatio)
+            return DownsampledImageSize.pixels(filling: size, scale: displayScale, aspectRatio: aspectRatio,
+                                               assumedRatioLimit: assumedRatioLimit)
         default:
             return DownsampledImageSize.pixels(width: size.width, scale: displayScale, aspectRatio: aspectRatio)
         }
@@ -158,10 +163,19 @@ enum DownsampledImageSize {
     /// 高さに合わせて広がり、幅は枠からはみ出す——幅の画素だけで読むとぼやける。
     /// 縦横比（幅 ÷ 高さ）が分かれば、広がった後の写真の長い辺を出す。
     /// **縦横比が分からなければ上限で読む**（どの形でもぼやけない。縮める得は無くなる）。
+    /// ただし `assumedRatioLimit`（長い辺 ÷ 短い辺）を渡されたら、**その比までの横長・縦長の
+    /// どちらでも足りる**大きさで読む（一覧の小さな表紙・台帳の写真は縦横比を持たない）。
     /// 枠の幅か高さがまだ分からない（0 以下）なら nil
-    static func pixels(filling box: CGSize, scale: CGFloat, aspectRatio: CGFloat? = nil) -> Int? {
+    static func pixels(filling box: CGSize, scale: CGFloat, aspectRatio: CGFloat? = nil,
+                       assumedRatioLimit: CGFloat? = nil) -> Int? {
         guard box.width > 0, box.height > 0, scale > 0 else { return nil }
-        guard let ratio = aspectRatio, ratio > 0 else { return maximum }
+        guard let ratio = aspectRatio, ratio > 0 else {
+            guard let limit = assumedRatioLimit, limit >= 1 else { return maximum }
+            // いちばん横長（limit:1）といちばん縦長（1:limit）の、要る方の大きい方
+            let wide = pixels(filling: box, scale: scale, aspectRatio: limit) ?? maximum
+            let tall = pixels(filling: box, scale: scale, aspectRatio: 1 / limit) ?? maximum
+            return max(wide, tall)
+        }
         // 写真が枠を覆うまで広げたときの大きさ（pt）
         let boxRatio = box.width / box.height
         let shown = ratio >= boxRatio
