@@ -341,4 +341,68 @@ final class SpotSampleTests: XCTestCase {
         XCTAssertEqual(SpotSampleText.heading(flickrOnly), L("作例（Flickr より）", "Example photos (from Flickr)"))
         XCTAssertFalse(SpotSampleText.note(flickrOnly).contains("Wikimedia Commons"))
     }
+
+    // MARK: - サイトに置いた写真（環境省・県の観光連盟など・photo-gallery #290 の形）
+
+    private func hostedSample(_ overrides: [String: Any?] = [:]) -> String {
+        let page = "https://www.crossroadfukuoka.jp/photo/123"
+        let base: [String: Any?] = [
+            "src": "https://journey-photo.com/samples/ukiha-inari/1.jpg",
+            "title": "浮羽稲荷神社", "author": "福岡県観光連盟",
+            "license": "クロスロードふくおか フォトダウンロード利用規約",
+            "licenseUrl": "https://www.crossroadfukuoka.jp/business/photo/guide",
+            "sourceUrl": page,
+            "source": ["name": "福岡県観光連盟", "url": page],
+            "credit": "写真提供：福岡県観光連盟",
+            "modified": "journey.photo が縮小して掲載",
+            "termsUrl": "https://www.crossroadfukuoka.jp/business/photo/guide",
+        ]
+        return sample(base.merging(overrides) { $1 })
+    }
+
+    /// 🔴 「題 / credit / 規約名（文面へ）/ 提供元（写真のページへ）/ modified」
+    func testHostedCreditLine() throws {
+        let s = try XCTUnwrap(try body(samples: "[\(hostedSample())]").samples.first)
+        XCTAssertEqual(s.credit, "浮羽稲荷神社 / 写真提供：福岡県観光連盟 / クロスロードふくおか フォトダウンロード利用規約 / 福岡県観光連盟 / journey.photo が縮小して掲載")
+        var links: [String: URL] = [:]
+        for run in s.linkedCredit.runs {
+            if let link = run.link { links[String(s.linkedCredit[run.range].characters)] = link }
+        }
+        XCTAssertEqual(links["クロスロードふくおか フォトダウンロード利用規約"], s.licenseUrl)
+        XCTAssertEqual(links["福岡県観光連盟"]?.absoluteString, "https://www.crossroadfukuoka.jp/photo/123")
+        XCTAssertEqual(links.count, 2, "credit・modified にはリンクを付けない")
+        XCTAssertEqual(s.creditLinks.map(\.label), [L("ライセンス（クロスロードふくおか フォトダウンロード利用規約）を開く",
+                                                    "Open license (クロスロードふくおか フォトダウンロード利用規約)"),
+                                                  L("福岡県観光連盟 のページを開く", "Open on 福岡県観光連盟")])
+        XCTAssertEqual(s.accessibilityLabel, L("作例の写真（写真提供：福岡県観光連盟）", "Example photo by 福岡県観光連盟"))
+        // modified が無ければ最後に添えない。credit が無ければ「写真: 作者」
+        let plain = try XCTUnwrap(try body(samples: "[\(hostedSample(["modified": nil, "credit": 3]))]").samples.first)
+        XCTAssertEqual(plain.credit, L("浮羽稲荷神社 / 写真: 福岡県観光連盟 / クロスロードふくおか フォトダウンロード利用規約 / 福岡県観光連盟",
+                                       "浮羽稲荷神社 / Photo: 福岡県観光連盟 / クロスロードふくおか フォトダウンロード利用規約 / 福岡県観光連盟"))
+        // Commons・Flickr の1枚に credit が付いていても使わない（その他の出どころだけ）
+        let commons = try XCTUnwrap(try body(samples: "[\(sample(["credit": "x", "modified": "y"]))]").samples.first)
+        XCTAssertFalse(commons.credit.contains(" / x"))
+        XCTAssertFalse(commons.credit.hasSuffix(" / y"))
+    }
+
+    /// 規約の文面が写真のページに載っている提供元（licenseUrl＝写真のページ）は、メニューの行き先を1つにする
+    func testHostedLicenseOnPhotoPageHasOneLink() throws {
+        let page = "https://yamaguchi-tourism.jp/photo/9"
+        let s = try XCTUnwrap(try body(samples: "[\(hostedSample(["licenseUrl": page, "sourceUrl": page, "source": ["name": "山口県観光連盟", "url": page]]))]").samples.first)
+        XCTAssertEqual(s.creditLinks.map(\.url.absoluteString), [page])
+        XCTAssertEqual(Set(s.creditLinks.map(\.id)).count, s.creditLinks.count, "メニューの id が重ならない")
+    }
+
+    /// 注記は自由なライセンス（Commons・Flickr）と規約に従う提供元を分けて書く（Web と同じ）
+    func testNoteSeparatesHostedSources() throws {
+        let mixed = try body(samples: "[\(sample()),\(hostedSample())]").samples
+        XCTAssertEqual(SpotSampleText.note(mixed),
+                       L("この場所の近くで撮られ、Wikimedia Commons で自由なライセンスのもと公開されている写真です。福岡県観光連盟の写真は、提供元の利用規約に従って掲載しています。撮影者はこのアプリの利用者ではありません。",
+                         "Photos taken near this spot and published under free licenses on Wikimedia Commons. Photos from 福岡県観光連盟 are shown under the provider's terms of use. The photographers are not members of this app."))
+        let hostedOnly = try body(samples: "[\(hostedSample())]").samples
+        XCTAssertEqual(SpotSampleText.note(hostedOnly),
+                       L("福岡県観光連盟の写真は、提供元の利用規約に従って掲載しています。撮影者はこのアプリの利用者ではありません。",
+                         "Photos from 福岡県観光連盟 are shown under the provider's terms of use. The photographers are not members of this app."))
+        XCTAssertEqual(SpotSampleText.heading(hostedOnly), L("作例（福岡県観光連盟 より）", "Example photos (from 福岡県観光連盟)"))
+    }
 }
