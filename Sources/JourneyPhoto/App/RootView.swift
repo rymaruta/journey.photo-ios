@@ -68,7 +68,7 @@ struct RootView: View {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）
                 LegalGateView()
             } else {
-                tabs
+                tabsWithWhatsNew
             }
         }
         // **Web と同じ「固定ダーク」にする。** `app/globals.css` が
@@ -267,6 +267,38 @@ struct RootView: View {
         router.dropPendingTarget()
     }
 
+    /// 下の札に「新しくなったこと」を足したもの（2026-10-04）。
+    /// **`tabs` の修飾子の列に足さない**——長すぎて Xcode の型検査が時間切れになった（run 343）
+    private var tabsWithWhatsNew: some View {
+        tabs
+        // 「新しくなったこと」の項目 → ホームの札へ
+        .onChange(of: tabRouter.homeRequests) { _, _ in
+            showMenu = false
+            selection = .home
+        }
+        // **札へ移るときはメニューのシートも下ろす**（2026-10-04 判断: メニュー → 設定 →
+        // 「新しくなったこと」から札へ移ると、メニューのシートが上に残って移った先が見えない。
+        // メニュー自身の行は先に閉じている）。札を切り替えるのは `tabs` の側
+        .onChange(of: tabRouter.myPageRequests) { _, _ in showMenu = false }
+        .onChange(of: tabRouter.searchRequests) { _, _ in showMenu = false }
+        .onChange(of: tabRouter.mapRequests) { _, _ in showMenu = false }
+        // **更新して初めて開いたときに1回だけ**「新しくなったこと」を出す（`WhatsNewGate`）。
+        // 規約の画面の後（このタブが出てから）。描き終わるのを少し待つ——出てきた瞬間に
+        // シートを出すと黙って無視されることがある。通知を押して起動した回など、ほかのシートが
+        // 先に出ていたら出さない（覚えないので、次の起動で出る）
+        .task {
+            guard whatsNew.shouldPresent else { return }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else { return }
+            whatsNewReleases = whatsNew.pending
+            whatsNew.markSeen()
+            showWhatsNew = true
+        }
+        .sheet(isPresented: $showWhatsNew) {
+            WhatsNewView(releases: whatsNewReleases)
+        }
+    }
+
     private var tabs: some View {
         // **同じ札をもう一度押したことを拾う。** `$selection` のままだと
         // 値が変わらないので何も届かない。本物の TabView は選ばれている札を
@@ -395,42 +427,17 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             ToastOverlay().padding(.bottom, 116)
         }
-        // メニューの「マイページ」が押されたら、マイページの札へ移る。
-        // **メニューのシートも下ろす**（2026-10-04 判断: メニュー → 設定 →「新しくなったこと」から
-        // 札へ移ると、メニューのシートが上に残って移った先が見えない。メニュー自身の行は先に閉じている）
+        // メニューの「マイページ」が押されたら、マイページの札へ移る
         .onChange(of: tabRouter.myPageRequests) { _, _ in
-            showMenu = false
             selection = .mypage
         }
         // 見出しの「探す」（ホームだけ）→ 探すの札へ
         .onChange(of: tabRouter.searchRequests) { _, _ in
-            showMenu = false
             selection = .search
         }
         // メニューの「撮影地マップ」→ マップの札へ
         .onChange(of: tabRouter.mapRequests) { _, _ in
-            showMenu = false
             selection = .map
-        }
-        // 「新しくなったこと」の項目 → ホームの札へ
-        .onChange(of: tabRouter.homeRequests) { _, _ in
-            showMenu = false
-            selection = .home
-        }
-        // **更新して初めて開いたときに1回だけ**「新しくなったこと」を出す（`WhatsNewGate`）。
-        // 規約の画面の後（このタブが出てから）。描き終わるのを少し待つ——出てきた瞬間に
-        // シートを出すと黙って無視されることがある。通知を押して起動した回など、ほかのシートが
-        // 先に出ていたら出さない（覚えないので、次の起動で出る）
-        .task {
-            guard whatsNew.shouldPresent else { return }
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else { return }
-            whatsNewReleases = whatsNew.pending
-            whatsNew.markSeen()
-            showWhatsNew = true
-        }
-        .sheet(isPresented: $showWhatsNew) {
-            WhatsNewView(releases: whatsNewReleases)
         }
         .onChange(of: tabRouter.menuRequests) { _, _ in
             showMenu = true
