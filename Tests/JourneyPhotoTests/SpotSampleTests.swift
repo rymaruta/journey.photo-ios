@@ -253,7 +253,7 @@ final class SpotSampleTests: XCTestCase {
         }
     }
 
-    /// `source` が無い・形が壊れているときは今まで通り Commons。2つ以外の名前の1枚は落とす（Web と同じ）
+    /// `source` が無い・形が壊れているときは今まで通り Commons。名前が空の1枚は落とす
     func testMissingOrBrokenSourceMeansCommons() throws {
         for source: Any? in [nil, "Flickr", ["name": 3], [1, 2],
                              ["name": "Wikimedia Commons", "url": "https://commons.wikimedia.org/wiki/File:Kinkaku.jpg"]] {
@@ -265,8 +265,68 @@ final class SpotSampleTests: XCTestCase {
         }
         // 壊れた source の Flickr の1枚は Commons の規則で落ちる
         XCTAssertEqual(try body(samples: "[\(flickrSample(["source": "x"]))]").samples, [])
-        for name in ["Instagram", "flickr", ""] {
+        for name in ["", "  "] {
             XCTAssertEqual(try body(samples: "[\(sample(["source": ["name": name, "url": flickrPage]]))]").samples, [], name)
+        }
+        // 綴りを変えても Flickr の検査は抜けられない（Commons の画像は Flickr として出せない）
+        XCTAssertEqual(try body(samples: "[\(sample(["source": ["name": " flickr ", "url": flickrPage]]))]").samples, [])
+        XCTAssertEqual(try body(samples: "[\(flickrSample(["source": ["name": "FLICKR", "url": flickrPage]]))]").samples.first?.origin, .flickr)
+    }
+
+    // MARK: - その他の出どころ（環境省・県の観光連盟など・2026-10-04）
+
+    private let otherPage = "https://www.env.go.jp/park/example/photo/12.html"
+
+    private func otherSample(_ overrides: [String: Any?] = [:]) -> String {
+        let base: [String: Any?] = [
+            "src": "https://journey-photo.com/samples/env/oze-12.jpg",
+            "sourceUrl": otherPage,
+            "license": "PDL1.0", "licenseUrl": nil, "author": "環境省",
+            "source": ["name": " 環境省 ", "url": otherPage],
+        ]
+        return sample(base.merging(overrides) { $1 })
+    }
+
+    /// 🔴 名前はそのまま出典の行とメニューに、ライセンスは文字のまま、画像は作り替えない
+    func testOtherSourceIsShownAsIs() throws {
+        let s = try XCTUnwrap(try body(samples: "[\(otherSample(["width": 1600]))]").samples.first)
+        XCTAssertEqual(s.origin, .other("環境省"))
+        XCTAssertEqual(s.license, "PDL1.0")
+        XCTAssertNil(s.licenseUrl)
+        XCTAssertEqual(s.credit, L("Kinkaku-ji in autumn / 写真: 環境省 / PDL1.0 / 環境省",
+                                   "Kinkaku-ji in autumn / Photo: 環境省 / PDL1.0 / 環境省"))
+        XCTAssertEqual(s.creditLinks.map(\.label), [L("環境省 のページを開く", "Open on 環境省")])
+        XCTAssertEqual(s.creditLinks.last?.url.absoluteString, otherPage)
+        XCTAssertEqual(s.thumbnail(maxWidth: 500), s.src)
+        let lookalike = URL(string: "https://journey-photo.com/samples/env/1280px-oze.jpg")!
+        let odd = SpotSample(src: lookalike, width: 1280, height: 853, title: "T", author: "A", license: "PDL1.0",
+                             licenseUrl: nil, sourceUrl: URL(string: otherPage)!, origin: .other("環境省"))
+        XCTAssertEqual(odd.thumbnail(maxWidth: 500), lookalike, "Commons 以外は作り替えない")
+        // 文面の URL があればライセンスのリンクも付く
+        let withUrl = try XCTUnwrap(try body(samples: "[\(otherSample(["licenseUrl": "https://www.digital.go.jp/resources/open_data/public_data_license_v1.0"]))]").samples.first)
+        XCTAssertEqual(withUrl.creditLinks.count, 2)
+        // 見出しは Commons が先、その後は出ている順
+        let mixed = try body(samples: "[\(otherSample()),\(flickrSample()),\(sample())]").samples
+        XCTAssertEqual(SpotSampleText.heading(mixed),
+                       L("作例（Wikimedia Commons・環境省・Flickr より）", "Example photos (from Wikimedia Commons and 環境省 and Flickr)"))
+    }
+
+    /// その他の出どころでも、https でない画像・出典のページ・NC/ND・作者や題やライセンスの無い1枚は出さない
+    func testOtherSourceRejectsUnsafe() throws {
+        let bad: [(String, Any?)] = [
+            ("src", "ftp://journey-photo.com/samples/a.jpg"),
+            ("src", nil),
+            ("source", ["name": "環境省"]),
+            ("source", ["name": "環境省", "url": "javascript:alert(1)"]),
+            ("license", "CC BY-NC 4.0"),
+            ("license", " "),
+            ("author", ""),
+            ("author", "作者不明"),
+            ("title", ""),
+            ("width", 0),
+        ]
+        for (key, value) in bad {
+            XCTAssertEqual(try body(samples: "[\(otherSample([key: value]))]").samples, [], "\(key)=\(String(describing: value))")
         }
     }
 

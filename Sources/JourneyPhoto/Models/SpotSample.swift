@@ -28,12 +28,18 @@ import Foundation
 /// `toFlickrSample` と同じ規則）。サーバーは Commons 以外のときだけ1枚に
 /// `source: {"name": "Flickr", "url": <写真のページ>}` を足す。
 ///   - `source` が無い・形が壊れている（オブジェクトでない）→ 今まで通り Commons
-///   - `name` が "Flickr"・"Wikimedia Commons" のどちらでもない → 落とす（Web と同じ）
+///   - `name` が空 → 落とす
 ///   - Flickr: ライセンスは CC BY・CC BY-SA・CC0 だけ（パブリックドメインは出さない）、出典は
 ///     `source.url`（`https://www.flickr.com/photos/<人>/<写真ID>/`）、画像は
 ///     `https://live.staticflickr.com/<server>/<写真ID>_<secret>[_<大きさ>].jpg|png` で、2つの写真ID が同じ。
 ///     Web より1つ厳しく、元画像（大きさ `_o`）は落とす（EXIF の位置情報が残りうる）
-/// 出典の行・メニューに出す名前は `Origin.name`（サーバーの文字をそのまま出さない）。
+///   - 2026-10-04 判断（方針変更）: **その他の出どころ**（環境省・県の観光連盟など。画像は
+///     journey-photo.com/samples/… に自前で置く）も受け入れる。名前はサーバーの文字のまま出典の行と
+///     メニュー（「<名前> のページを開く」）に出す。画像・出典のページは https なら可（作り替えない）、
+///     ライセンスは文字のまま出す（"PDL1.0" など。Commons の種類の判定は使わない）。ただし
+///     NC・ND と読める書き方・作者が空や決まり文句の1枚は、どの出どころでも落とす
+/// "Flickr"・"Wikimedia Commons" は大文字・小文字を問わずそろえ、その出どころの検査を必ず通す
+/// （綴りを変えて Flickr の検査を抜けられないように）。
 struct SpotSample: Equatable, Identifiable {
     /// 表示に使う Commons の縮小版（upload.wikimedia.org/…/thumb/…）
     let src: URL
@@ -54,20 +60,25 @@ struct SpotSample: Equatable, Identifiable {
     /// 作例の出どころ。名前は出典の行の最後とメニューに出す
     enum Origin: Equatable {
         case commons, flickr
+        /// その他（環境省・県の観光連盟など）。名前はサーバーの文字（前後の空白を除く）
+        case other(String)
 
         var name: String {
             switch self {
             case .commons: return "Wikimedia Commons"
             case .flickr: return "Flickr"
+            case .other(let name): return name
             }
         }
 
-        /// サーバーの `source.name` から（Web の `sampleSourceName` と同じく2つの名前だけ）。知らない名前は nil
+        /// サーバーの `source.name` から。空は nil（その1枚は落とす）
         static func named(_ raw: String?) -> Origin? {
-            switch raw?.trimmingCharacters(in: .whitespacesAndNewlines) {
-            case "Wikimedia Commons": return .commons
-            case "Flickr": return .flickr
-            default: return nil
+            let name = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            switch name.lowercased() {
+            case "": return nil
+            case "wikimedia commons": return .commons
+            case "flickr": return .flickr
+            default: return .other(name)
             }
         }
     }
@@ -183,7 +194,9 @@ struct SpotSample: Equatable, Identifiable {
 
     /// 生の1枚を表示の形へ。**出してはいけない1枚は nil**（規則は型の注記）
     static func make(_ raw: Raw) -> SpotSample? {
+        guard let origin = origin(of: raw.source) else { return nil }
         let license = trimmed(raw.license)
+        if case .other = origin { return makeOther(raw, origin: origin, license: license) }
         guard let kind = sampleLicenseKind(license), !isUsOnlyPublicDomain(license) else { return nil }
         let byLicense = kind == .ccBy || kind == .ccBySA
         let author = trimmed(raw.author)
@@ -191,7 +204,7 @@ struct SpotSample: Equatable, Identifiable {
         // パブリックドメイン・CC0 でも空は出さない（Web は「作者不明」を入れて配る）
         if author.isEmpty || (byLicense && isPlaceholderAuthor(author)) { return nil }
         let title = trimmed(raw.title)
-        guard !title.isEmpty, let origin = origin(of: raw.source) else { return nil }
+        guard !title.isEmpty else { return nil }
         // Flickr はパブリックドメイン（Public Domain Mark など）を出さない（Web の `toFlickrSample`）
         if origin == .flickr && kind == .publicDomain { return nil }
         guard let src = https(raw.src), let source = pageURL(raw, origin: origin), isAllowed(src: src, page: source, origin: origin),
@@ -201,6 +214,18 @@ struct SpotSample: Equatable, Identifiable {
         if byLicense && licenseUrl == nil { return nil }
         return SpotSample(src: src, width: width, height: height, title: title, author: author,
                           license: license, licenseUrl: licenseUrl, sourceUrl: source, origin: origin)
+    }
+
+    /// その他の出どころの1枚（型の注記）。ライセンスは文字のまま・画像と出典のページは https なら可
+    private static func makeOther(_ raw: Raw, origin: Origin, license: String) -> SpotSample? {
+        let author = trimmed(raw.author), title = trimmed(raw.title)
+        guard !license.isEmpty, !matches(license.replacingOccurrences(of: "-", with: " "), #"\bnc\b|\bnd\b"#),
+              !isPlaceholderAuthor(author), !title.isEmpty,
+              let src = https(raw.src), let source = https(raw.source?.url),
+              let width = raw.width, let height = raw.height, width > 0, height > 0,
+              width.isFinite, height.isFinite else { return nil }
+        return SpotSample(src: src, width: width, height: height, title: title, author: author,
+                          license: license, licenseUrl: https(raw.licenseUrl), sourceUrl: source, origin: origin)
     }
 
     /// 本文 JSON の `samples` を読む。壊れた・出せない1枚だけ落とし、同じ出典の2枚目も落とす。最大6枚
@@ -260,7 +285,7 @@ struct SpotSample: Equatable, Identifiable {
     private static func pageURL(_ raw: Raw, origin: Origin) -> URL? {
         switch origin {
         case .commons: return https(raw.sourceUrl)
-        case .flickr: return https(raw.source?.url)
+        case .flickr, .other: return https(raw.source?.url)
         }
     }
 
@@ -277,6 +302,8 @@ struct SpotSample: Equatable, Identifiable {
                   let imageId = firstGroup(srcRaw, #"^https://live\.staticflickr\.com/\d+/(\d+)_[0-9a-f]+(?:_[a-z0-9]{1,2})?\.(?:jpe?g|png)$"#),
                   pageId == imageId else { return false }
             return !matches(srcRaw, #"_o\.(?:jpe?g|png)$"#)
+        case .other:
+            return true
         }
     }
 
@@ -309,7 +336,7 @@ enum SpotSampleText {
     static func sourceNames(_ samples: [SpotSample]) -> String {
         var origins: [SpotSample.Origin] = []
         for sample in samples where !origins.contains(sample.origin) { origins.append(sample.origin) }
-        origins.sort { $0 == .commons && $1 != .commons }
+        origins = origins.filter { $0 == .commons } + origins.filter { $0 != .commons }
         let names = (origins.isEmpty ? [.commons] : origins).map(\.name)
         return names.joined(separator: L("・", " and "))
     }
