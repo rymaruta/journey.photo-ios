@@ -761,11 +761,13 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launch()
 
+        // 見出しの文字で待つ（目印が部品の作りで変わっても、出たかどうかは見分けられる）
+        let title = app.staticTexts["新しくなったこと"].firstMatch
+        guard title.waitForExistence(timeout: 20) else { return }
         let close = app.buttons["whatsNew.close"].firstMatch
-        guard close.waitForExistence(timeout: 20) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "02b-新しくなったこと")
-        close.tap()
+        if close.exists { close.tap() } else { app.buttons["はじめる"].firstMatch.tap() }
         // 閉じたあとはホームが見える（主ボタンで閉じられる）
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
     }

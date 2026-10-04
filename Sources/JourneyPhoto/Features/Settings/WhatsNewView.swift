@@ -50,7 +50,8 @@ struct WhatsNewView: View {
         }
         .webScreen()
         .presentationDragIndicator(.visible)
-        .accessibilityIdentifier("whatsNew")
+        // 画面全体に目印を付けない——付けると中の部品（主ボタンの `whatsNew.close`）の目印まで
+        // 上書きされ、UI テストが主ボタンを見つけられなかった（run 344）
     }
 
     private var header: some View {
