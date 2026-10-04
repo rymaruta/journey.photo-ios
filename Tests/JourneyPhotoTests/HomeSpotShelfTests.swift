@@ -235,6 +235,7 @@ final class HomeSpotShelfTests: XCTestCase {
         XCTAssertEqual(HomeSpotShelf.eyebrow("autumn"), "THIS SEASON · 秋")
         XCTAssertEqual(HomeSpotShelf.eyebrow("???"), "THIS SEASON")
         XCTAssertTrue(HomeSpotShelf.note.contains("利用者ではありません"), "作例の撮影者は利用者ではないと添える")
+        XCTAssertFalse(HomeSpotShelf.note.contains("Wikimedia Commons"), "出どころは Commons だけではない（2026-10-04）")
     }
 
     /// 札の地域は県（国外は国）。空なら出さない
