@@ -27,6 +27,17 @@ on:
         type: boolean
         default: false
 
+# 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
+# どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
+# （2026-10-03: run 326 と 327 がどちらも 1.0.63 になった。CLAUDE.md「同じ版のまま出さない」）。
+# 2本目は1本目が版の印（`testflight/<版>`）を付け終わるまで待ち、次の版を決める。
+# 止めはしない（`cancel-in-progress: false`）。上げない回（submit=false）は版を決めないので、
+# 回ごとの組にして待たせない。
+# GitHub の決まりで、待てるのは1本だけ——3本目を流すと、待っていた2本目は取り消される
+concurrency:
+  group: testflight-${{ inputs.submit && 'upload' || github.run_id }}
+  cancel-in-progress: false
+
 # **渡していない権限は漏らせない**（photo-gallery の IAM-3 と同じ方針）。
 # checkout に要るのは読み取りだけ。
 permissions:
