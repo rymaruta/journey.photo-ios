@@ -40,6 +40,11 @@ struct RootView: View {
     /// それが**同じ人の数**のときだけ——人が替わった直後の取得が捨てられ、
     /// 次の取得が失敗すると、前の人の数が残っていた
     @State private var unreadOwner: String?
+    /// 「新しくなったこと」を出すか（起動した時点で決める・`WhatsNewGate`）
+    @StateObject private var whatsNew = WhatsNewGate()
+    @State private var showWhatsNew = false
+    /// 出した版。`markSeen` で門の側は空になるので、シートにはこちらを渡す
+    @State private var whatsNewReleases: [WhatsNew.Release] = []
 
     enum Tab: Hashable {
         // **提案の並び**（owner の絵・2026-09-21）:
@@ -63,7 +68,7 @@ struct RootView: View {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）
                 LegalGateView()
             } else {
-                tabs
+                tabsWithWhatsNew
             }
         }
         // **Web と同じ「固定ダーク」にする。** `app/globals.css` が
@@ -260,6 +265,38 @@ struct RootView: View {
         bellReopen = nil
         // 押した通知の行き先も捨てる（後でベルから開いた回に勝手に積まない・次の人に出さない）
         router.dropPendingTarget()
+    }
+
+    /// 下の札に「新しくなったこと」を足したもの（2026-10-04）。
+    /// **`tabs` の修飾子の列に足さない**——長すぎて Xcode の型検査が時間切れになった（run 343）
+    private var tabsWithWhatsNew: some View {
+        tabs
+        // 「新しくなったこと」の項目 → ホームの札へ
+        .onChange(of: tabRouter.homeRequests) { _, _ in
+            showMenu = false
+            selection = .home
+        }
+        // **札へ移るときはメニューのシートも下ろす**（2026-10-04 判断: メニュー → 設定 →
+        // 「新しくなったこと」から札へ移ると、メニューのシートが上に残って移った先が見えない。
+        // メニュー自身の行は先に閉じている）。札を切り替えるのは `tabs` の側
+        .onChange(of: tabRouter.myPageRequests) { _, _ in showMenu = false }
+        .onChange(of: tabRouter.searchRequests) { _, _ in showMenu = false }
+        .onChange(of: tabRouter.mapRequests) { _, _ in showMenu = false }
+        // **更新して初めて開いたときに1回だけ**「新しくなったこと」を出す（`WhatsNewGate`）。
+        // 規約の画面の後（このタブが出てから）。描き終わるのを少し待つ——出てきた瞬間に
+        // シートを出すと黙って無視されることがある。通知を押して起動した回など、ほかのシートが
+        // 先に出ていたら出さない（覚えないので、次の起動で出る）
+        .task {
+            guard whatsNew.shouldPresent else { return }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else { return }
+            whatsNewReleases = whatsNew.pending
+            whatsNew.markSeen()
+            showWhatsNew = true
+        }
+        .sheet(isPresented: $showWhatsNew) {
+            WhatsNewView(releases: whatsNewReleases)
+        }
     }
 
     private var tabs: some View {

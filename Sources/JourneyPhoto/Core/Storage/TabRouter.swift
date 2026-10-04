@@ -22,6 +22,9 @@ final class TabRouter: ObservableObject {
     @Published private(set) var menuRequests = 0
 
     func openSearch() { searchRequests += 1 }
+    /// 「新しくなったこと」の項目から（2026-10-04）。押した回数で伝える（上と同じ理由）
+    @Published private(set) var homeRequests = 0
+    func openHome() { homeRequests += 1 }
     /// 探すの0件の出口から来たときの検索語。地図が一度だけ受け取る
     /// （`takePendingMapQuery`）。渡さないと地図が空の絞りで開き、打ち直すことになる
     private(set) var pendingMapQuery: String?

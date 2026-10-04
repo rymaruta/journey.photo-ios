@@ -1,0 +1,55 @@
+{
+  "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
+  "releases": [
+    {
+      "version": "1.0.67",
+      "items": [
+        {
+          "symbol": "photo.on.rectangle.angled",
+          "title": { "ja": "撮影スポットに作例写真", "en": "Sample photos at photo spots" },
+          "detail": { "ja": "全国約1,000か所に、作者・出典つきの写真が付きました。", "en": "About 1,000 spots across Japan now show credited sample photos." },
+          "destination": "map"
+        },
+        {
+          "symbol": "sun.horizon",
+          "title": { "ja": "光の時刻", "en": "Light times" },
+          "detail": { "ja": "日の出・日の入り、ゴールデンアワー・ブルーアワーと太陽の方角が分かります。", "en": "See sunrise, sunset, golden and blue hours, and where the sun will be." }
+        },
+        {
+          "symbol": "leaf",
+          "title": { "ja": "季節・時間帯で探す", "en": "Search by season and time" },
+          "detail": { "ja": "「秋」「夕」などで、写真と撮影地を絞り込めます。", "en": "Narrow photos and spots down by season or time of day." },
+          "destination": "search"
+        },
+        {
+          "symbol": "calendar",
+          "title": { "ja": "いまの季節のスポット", "en": "Spots for this season" },
+          "detail": { "ja": "ホームに、いまが見頃の撮影地が並びます。", "en": "Home now lists spots that are at their best right now." },
+          "destination": "home"
+        },
+        {
+          "symbol": "map",
+          "title": { "ja": "行きたい場所の地図と旅行プラン", "en": "Wishlist map and trip plans" },
+          "detail": { "ja": "保存した撮影地を地図で見て、近い順のプランにできます。", "en": "See saved spots on a map and turn them into a nearest-first plan." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "mappin.and.ellipse",
+          "title": { "ja": "ストーリーに撮影地", "en": "Spots on stories" },
+          "detail": { "ja": "近くの撮影地を付けると、見る人が撮影地のページへ行けます。", "en": "Tag a nearby spot so viewers can jump to its page." }
+        },
+        {
+          "symbol": "square.and.arrow.up",
+          "title": { "ja": "投稿がかんたんに", "en": "Simpler posting" },
+          "detail": { "ja": "写真を選んで撮影地を入れるだけ。細かい設定は「詳しい設定」にまとめました。", "en": "Pick photos and add a spot. Everything else lives in More settings." }
+        },
+        {
+          "symbol": "paintpalette",
+          "title": { "ja": "投稿後も色を編集", "en": "Edit colors after posting" },
+          "detail": { "ja": "投稿した写真の色を、あとから直せます。", "en": "Adjust the colors of photos you've already posted." },
+          "destination": "mypage"
+        }
+      ]
+    }
+  ]
+}

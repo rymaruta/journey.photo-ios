@@ -17,6 +17,8 @@ struct SettingsView: View {
     /// ログアウトの最中。宛先を外し終えるまで（最大20秒）二度押させず、進み具合を見せる
     /// （`DeleteAccountView.isWorking` と同じ形）
     @State private var isSigningOut = false
+    /// 「新しくなったこと」を開き直す（起動で出たものと同じ画面・2026-10-04）
+    @State private var showWhatsNew = false
 
     private var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -137,6 +139,10 @@ struct SettingsView: View {
         .navigationTitle(L("設定", "Settings"))
         // ログアウトの途中は戻らせない・シートも払わせない（戻って開き直すと門が新しくなり、
         // 二度押せる。`DeleteAccountView` と同じ2つ）
+        // 開き直すときは一番新しい版の分だけ（版が増えても昔の項目まで並べない）
+        .sheet(isPresented: $showWhatsNew) {
+            WhatsNewView(releases: Array(WhatsNew.bundled().prefix(1)), primaryTitle: Labels.Common.close)
+        }
         .navigationBarBackButtonHidden(isSigningOut)
         .interactiveDismissDisabled(isSigningOut)
         .navigationBarTitleDisplayMode(.inline)
@@ -250,6 +256,13 @@ struct SettingsView: View {
                 .buttonStyle(JPRowButtonStyle())
                 JPCardDivider()
             }
+            // 「新しくなったこと」はいつでも開き直せる（未ログインでも出す）
+            Button { showWhatsNew = true } label: {
+                JPRowLabel(title: L("新しくなったこと", "What's new"), systemImage: "sparkles")
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.whatsNew")
+            JPCardDivider()
             NavigationLink { LegalLinksView() } label: {
                 JPRowLabel(title: L("利用規約・プライバシーポリシー", "Terms & Privacy"), systemImage: "flag")
             }
