@@ -135,9 +135,12 @@ final class SpotSampleTests: XCTestCase {
         XCTAssertEqual(links.count, 2)
     }
 
-    func testHeadingAndNote() {
-        XCTAssertEqual(SpotSampleText.heading, L("作例（Wikimedia Commons より）", "Example photos (from Wikimedia Commons)"))
-        XCTAssertTrue(SpotSampleText.note.contains(L("利用者ではありません", "not members")))
+    func testHeadingAndNote() throws {
+        let commons = try body(samples: "[\(sample())]").samples
+        XCTAssertEqual(SpotSampleText.heading(commons), L("作例（Wikimedia Commons より）", "Example photos (from Wikimedia Commons)"))
+        XCTAssertEqual(SpotSampleText.note(commons),
+                       L("この場所の近くで撮られ、Wikimedia Commons で自由なライセンスのもと公開されている写真です。撮影者はこのアプリの利用者ではありません。",
+                         "Photos taken near this spot and published under free licenses on Wikimedia Commons. The photographers are not members of this app."))
     }
 
     /// 帯の枠は高さをそろえ、幅は縦横比から（極端なものは上下限で止め、切り抜かない）
@@ -265,5 +268,17 @@ final class SpotSampleTests: XCTestCase {
         for name in ["Instagram", "flickr", ""] {
             XCTAssertEqual(try body(samples: "[\(sample(["source": ["name": name, "url": flickrPage]]))]").samples, [], name)
         }
+    }
+
+    /// 🔴 見出しと注記は出ている写真の出どころを全部名乗る（Commons が先・Web と同じ）
+    func testHeadingNamesShownSources() throws {
+        let both = try body(samples: "[\(flickrSample()),\(sample())]").samples
+        XCTAssertEqual(both.map(\.origin), [.flickr, .commons])
+        XCTAssertEqual(SpotSampleText.heading(both),
+                       L("作例（Wikimedia Commons・Flickr より）", "Example photos (from Wikimedia Commons and Flickr)"))
+        XCTAssertTrue(SpotSampleText.note(both).contains(L("Wikimedia Commons・Flickr で自由な", "on Wikimedia Commons and Flickr.")))
+        let flickrOnly = try body(samples: "[\(flickrSample())]").samples
+        XCTAssertEqual(SpotSampleText.heading(flickrOnly), L("作例（Flickr より）", "Example photos (from Flickr)"))
+        XCTAssertFalse(SpotSampleText.note(flickrOnly).contains("Wikimedia Commons"))
     }
 }

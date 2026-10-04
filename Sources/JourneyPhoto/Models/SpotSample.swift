@@ -304,13 +304,27 @@ struct SpotSample: Equatable, Identifiable {
 
 /// 作例の節の言葉と大きさ（画面 `OfficialSpotView.samplesSection` が使う・Web の `Samples` と同じ言葉）
 enum SpotSampleText {
-    /// 節の見出し（docs/spot-samples-commons.md の決まり）
-    static var heading: String { L("作例（Wikimedia Commons より）", "Example photos (from Wikimedia Commons)") }
+    /// 見出しと注記で名乗る出どころ（2026-10-04・Web の `Samples` と同じ）。**出ている写真の分だけ**、
+    /// Commons が先、日本語は「・」・英語は " and " でつなぐ。1枚も無ければ Commons
+    static func sourceNames(_ samples: [SpotSample]) -> String {
+        var origins: [SpotSample.Origin] = []
+        for sample in samples where !origins.contains(sample.origin) { origins.append(sample.origin) }
+        origins.sort { $0 == .commons && $1 != .commons }
+        let names = (origins.isEmpty ? [.commons] : origins).map(\.name)
+        return names.joined(separator: L("・", " and "))
+    }
+
+    /// 節の見出し（docs/spot-samples-commons.md の決まり）。Commons だけなら「作例（Wikimedia Commons より）」
+    static func heading(_ samples: [SpotSample]) -> String {
+        let from = sourceNames(samples)
+        return L("作例（\(from) より）", "Example photos (from \(from))")
+    }
 
     /// 見出しの下の注記。撮影者はこのアプリの利用者ではないと添える（決まり）
-    static var note: String {
-        L("この場所の近くで撮られ、Wikimedia Commons で自由なライセンスのもと公開されている写真です。撮影者はこのアプリの利用者ではありません。",
-          "Photos taken near this spot and published under free licenses on Wikimedia Commons. The photographers are not members of this app.")
+    static func note(_ samples: [SpotSample]) -> String {
+        let from = sourceNames(samples)
+        return L("この場所の近くで撮られ、\(from) で自由なライセンスのもと公開されている写真です。撮影者はこのアプリの利用者ではありません。",
+                 "Photos taken near this spot and published under free licenses on \(from). The photographers are not members of this app.")
     }
 
     /// 帯の写真の高さ

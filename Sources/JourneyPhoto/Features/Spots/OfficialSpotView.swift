@@ -410,8 +410,8 @@ struct OfficialSpotView: View {
         let samples = shownSamples
         if !samples.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                SpotDetailParts.sectionHeader(SpotSampleText.heading)
-                Text(SpotSampleText.note)
+                SpotDetailParts.sectionHeader(SpotSampleText.heading(samples))
+                Text(SpotSampleText.note(samples))
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                     .fixedSize(horizontal: false, vertical: true)
