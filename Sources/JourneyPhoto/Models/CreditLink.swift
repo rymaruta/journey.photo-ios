@@ -21,8 +21,13 @@ struct CreditLink: Equatable, Identifiable {
         CreditLink(label: L("ライセンス（\(name)）を開く", "Open license (\(name))"), url: url)
     }
 
+    /// 出どころのその写真のページ（出典）。`name` は「Wikimedia Commons」「Flickr」など（2026-10-04）
+    static func sourcePage(_ name: String, url: URL) -> CreditLink {
+        CreditLink(label: L("\(name) のページを開く", "Open on \(name)"), url: url)
+    }
+
     /// Commons のファイルのページ（出典）
     static func commonsPage(_ url: URL) -> CreditLink {
-        CreditLink(label: L("Wikimedia Commons のページを開く", "Open on Wikimedia Commons"), url: url)
+        sourcePage("Wikimedia Commons", url: url)
     }
 }

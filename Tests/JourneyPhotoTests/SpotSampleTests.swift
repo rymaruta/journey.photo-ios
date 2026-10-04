@@ -175,4 +175,95 @@ final class SpotSampleTests: XCTestCase {
         let s = try XCTUnwrap(try body(samples: "[\(sample(["license": "Public domain", "licenseUrl": nil]))]").samples.first)
         XCTAssertEqual(s.creditLinks.map(\.url), [s.sourceUrl])
     }
+    // MARK: - Commons 以外の出どころ（Flickr・2026-10-04・photo-gallery #286 の形）
+
+    private let flickrPage = "https://www.flickr.com/photos/taro/53212345678/"
+
+    /// Web の `toFlickrSample` が出す形（`sourceUrl` と `source.url` は同じ写真のページ）
+    private func flickrSample(_ overrides: [String: Any?] = [:]) -> String {
+        let base: [String: Any?] = [
+            "src": "https://live.staticflickr.com/65535/53212345678_1a2b3c4d5e_b.jpg",
+            "sourceUrl": flickrPage,
+            "source": ["name": "Flickr", "url": flickrPage],
+        ]
+        return sample(base.merging(overrides) { $1 })
+    }
+
+    /// Flickr の作例を読む（画像は live.staticflickr.com、出典は写真のページ）
+    func testReadsFlickrSample() throws {
+        let s = try XCTUnwrap(try body(samples: "[\(flickrSample())]").samples.first)
+        XCTAssertEqual(s.origin, .flickr)
+        XCTAssertEqual(s.src.absoluteString, "https://live.staticflickr.com/65535/53212345678_1a2b3c4d5e_b.jpg")
+        XCTAssertEqual(s.sourceUrl.absoluteString, flickrPage)
+        XCTAssertEqual(s.title, "Kinkaku-ji in autumn")
+        // CC0 は出せる（文面の URL も要らない）
+        XCTAssertEqual(try body(samples: "[\(flickrSample(["license": "CC0", "licenseUrl": nil]))]").samples.count, 1)
+    }
+
+    /// 🔴 出典の行の最後とメニューの行き先は出どころの名前（「Flickr」「Flickr のページを開く」）、リンク先は写真のページ
+    func testFlickrCreditAndMenu() throws {
+        let s = try XCTUnwrap(try body(samples: "[\(flickrSample())]").samples.first)
+        XCTAssertEqual(s.credit, L("Kinkaku-ji in autumn / 写真: Taro Yamada / CC BY-SA 4.0 / Flickr",
+                                   "Kinkaku-ji in autumn / Photo: Taro Yamada / CC BY-SA 4.0 / Flickr"))
+        XCTAssertEqual(String(s.linkedCredit.characters), s.credit)
+        var links: [String: URL] = [:]
+        for run in s.linkedCredit.runs {
+            if let link = run.link { links[String(s.linkedCredit[run.range].characters)] = link }
+        }
+        XCTAssertEqual(links["Flickr"]?.absoluteString, flickrPage)
+        XCTAssertEqual(s.creditLinks.last?.label, L("Flickr のページを開く", "Open on Flickr"))
+        XCTAssertEqual(s.creditLinks.last?.url.absoluteString, flickrPage)
+        XCTAssertFalse(s.creditLinks.contains { $0.label.contains("Wikimedia Commons") })
+        let picture = HomeSpotShelf.Picture.sample(s)
+        XCTAssertTrue(picture.credit.hasSuffix(" / Flickr"), "ホームの札の出典も同じ")
+    }
+
+    /// 🔴 Flickr の縮小版は作り替えない（Commons の名前の形を前提にしているため）
+    func testFlickrThumbnailIsNotRewritten() throws {
+        let s = try XCTUnwrap(try body(samples: "[\(flickrSample(["width": 1600, "height": 1067]))]").samples.first)
+        XCTAssertEqual(s.thumbnail(maxWidth: 500), s.src)
+        XCTAssertEqual(HomeSpotShelf.Picture.sample(s).url, s.src, "ホームの札も元の URL のまま")
+        // Commons の縮小版の形（`<幅>px-<名前>`）に見える名前でも、Flickr なら触らない
+        let lookalike = URL(string: "https://live.staticflickr.com/65535/1280px-53212345678_1a2b3c4d5e.jpg")!
+        let odd = SpotSample(src: lookalike, width: 1280, height: 853, title: "T", author: "A", license: "CC0",
+                             licenseUrl: nil, sourceUrl: URL(string: flickrPage)!, origin: .flickr)
+        XCTAssertEqual(odd.thumbnail(maxWidth: 500), lookalike)
+    }
+
+    /// Flickr でも画像・出典・ライセンスは確かめる（Web の `toFlickrSample` と同じ＋元画像 `_o` は落とす）
+    func testFlickrRejectsWrongShapes() throws {
+        let bad: [(String, Any?)] = [
+            ("src", "https://live.staticflickr.com/65535/53212345678_9f8e7d6c5b_o.jpg"),
+            ("src", "https://live.staticflickr.com/65535/99999999999_1a2b3c4d5e_b.jpg"),
+            ("src", "https://example.com/53212345678_1a2b3c4d5e_b.jpg"),
+            ("src", "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/K.jpg/1280px-K.jpg"),
+            ("source", ["name": "Flickr", "url": "https://commons.wikimedia.org/wiki/File:Kinkaku.jpg"]),
+            ("source", ["name": "Flickr", "url": "https://example.com/photos/taro/53212345678/"]),
+            ("source", ["name": "Flickr"]),
+            ("license", "Public domain"),
+            ("license", "CC BY-NC 2.0"),
+            ("licenseUrl", nil),
+            ("author", "Own work"),
+        ]
+        for (key, value) in bad {
+            XCTAssertEqual(try body(samples: "[\(flickrSample([key: value]))]").samples, [], "\(key)=\(String(describing: value))")
+        }
+    }
+
+    /// `source` が無い・形が壊れているときは今まで通り Commons。2つ以外の名前の1枚は落とす（Web と同じ）
+    func testMissingOrBrokenSourceMeansCommons() throws {
+        for source: Any? in [nil, "Flickr", ["name": 3], [1, 2],
+                             ["name": "Wikimedia Commons", "url": "https://commons.wikimedia.org/wiki/File:Kinkaku.jpg"]] {
+            let s = try XCTUnwrap(try body(samples: "[\(sample(["source": source]))]").samples.first,
+                                  String(describing: source))
+            XCTAssertEqual(s.origin, .commons)
+            XCTAssertTrue(s.credit.hasSuffix(" / Wikimedia Commons"))
+            XCTAssertEqual(s.creditLinks.last?.label, L("Wikimedia Commons のページを開く", "Open on Wikimedia Commons"))
+        }
+        // 壊れた source の Flickr の1枚は Commons の規則で落ちる
+        XCTAssertEqual(try body(samples: "[\(flickrSample(["source": "x"]))]").samples, [])
+        for name in ["Instagram", "flickr", ""] {
+            XCTAssertEqual(try body(samples: "[\(sample(["source": ["name": name, "url": flickrPage]]))]").samples, [], name)
+        }
+    }
 }

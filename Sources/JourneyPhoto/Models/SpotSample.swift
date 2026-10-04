@@ -23,6 +23,17 @@ import Foundation
 ///   - 題が空・縦横が無い → 落とす
 /// 移していないもの: 人物の権利の印（`personality`）・人や催しの語（`EVENT_OR_PERSON`）は
 /// 本文 JSON に載らない項目で決まるので、Web の側だけで落とす。
+///
+/// 2026-10-04 判断: **Commons 以外の出どころ（まず Flickr）にも対応**（photo-gallery #286 の
+/// `toFlickrSample` と同じ規則）。サーバーは Commons 以外のときだけ1枚に
+/// `source: {"name": "Flickr", "url": <写真のページ>}` を足す。
+///   - `source` が無い・形が壊れている（オブジェクトでない）→ 今まで通り Commons
+///   - `name` が "Flickr"・"Wikimedia Commons" のどちらでもない → 落とす（Web と同じ）
+///   - Flickr: ライセンスは CC BY・CC BY-SA・CC0 だけ（パブリックドメインは出さない）、出典は
+///     `source.url`（`https://www.flickr.com/photos/<人>/<写真ID>/`）、画像は
+///     `https://live.staticflickr.com/<server>/<写真ID>_<secret>[_<大きさ>].jpg|png` で、2つの写真ID が同じ。
+///     Web より1つ厳しく、元画像（大きさ `_o`）は落とす（EXIF の位置情報が残りうる）
+/// 出典の行・メニューに出す名前は `Origin.name`（サーバーの文字をそのまま出さない）。
 struct SpotSample: Equatable, Identifiable {
     /// 表示に使う Commons の縮小版（upload.wikimedia.org/…/thumb/…）
     let src: URL
@@ -35,8 +46,31 @@ struct SpotSample: Equatable, Identifiable {
     let license: String
     /// ライセンスの文面。パブリックドメインなど URL の無いものは nil
     let licenseUrl: URL?
-    /// Commons のファイルのページ（出典）
+    /// その写真のページ（出典。Commons ならファイルのページ、Flickr なら写真のページ）
     let sourceUrl: URL
+    /// 出どころ（無ければ Commons・2026-10-04）
+    var origin: Origin = .commons
+
+    /// 作例の出どころ。名前は出典の行の最後とメニューに出す
+    enum Origin: Equatable {
+        case commons, flickr
+
+        var name: String {
+            switch self {
+            case .commons: return "Wikimedia Commons"
+            case .flickr: return "Flickr"
+            }
+        }
+
+        /// サーバーの `source.name` から（Web の `sampleSourceName` と同じく2つの名前だけ）。知らない名前は nil
+        static func named(_ raw: String?) -> Origin? {
+            switch raw?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            case "Wikimedia Commons": return .commons
+            case "Flickr": return .flickr
+            default: return nil
+            }
+        }
+    }
 
     var id: URL { sourceUrl }
 
@@ -51,12 +85,15 @@ struct SpotSample: Equatable, Identifiable {
 
     /// **小さく出す場所向けの、同じ写真の小さい縮小版**（2026-10-03・ホームの「いまの季節のスポット」）。
     ///
+    /// 2026-10-04: **Commons の縮小版の名前を前提にした作り替え**なので、Commons 以外（Flickr）は
+    /// `src` のまま（Flickr の URL の綴りは違い、作り替えると別の画像・存在しない URL になりうる）。
+    ///
     /// 本文の `src` はたいてい 1280px の縮小版で、幅 240pt の札には重い（1枚 数百KB）。
     /// URL の末尾 `<幅>px-<名前>` の幅だけを、`maxWidth` 以下でいちばん大きい標準の幅に替える。
     /// **同じ Commons の縮小版**なので改変ではなく、元画像（EXIF が残る）にも戻らない。
     /// いまの幅が `maxWidth` 以下・形が違う（縮小版の名前でない）ときは `src` のまま
     func thumbnail(maxWidth: Int) -> URL {
-        guard width > Double(maxWidth),
+        guard origin == .commons, width > Double(maxWidth),
               let target = Self.standardThumbWidths.first(where: { $0 <= maxWidth && Double($0) < width }) else { return src }
         // **文字列のまま替える**（`lastPathComponent` は %xx をほどくので、組み直すと綴りが変わりうる）
         let raw = src.absoluteString
@@ -69,26 +106,27 @@ struct SpotSample: Equatable, Identifiable {
 
     // MARK: - 表示の文
 
-    /// 写真のすぐ下の1行「題 / 写真: 作者 / ライセンス / Wikimedia Commons」（Web の `Samples` と同じ並び）
+    /// 写真のすぐ下の1行「題 / 写真: 作者 / ライセンス / 出どころ」（Web の `Samples` と同じ並び。
+    /// 出どころは `origin.name`＝「Wikimedia Commons」「Flickr」）
     var credit: String {
-        "\(title) / \(L("写真: ", "Photo: "))\(author) / \(license) / Wikimedia Commons"
+        "\(title) / \(L("写真: ", "Photo: "))\(author) / \(license) / \(origin.name)"
     }
 
-    /// `credit` と**同じ文字のまま**、ライセンス → 文面・「Wikimedia Commons」→ ファイルのページ に
+    /// `credit` と**同じ文字のまま**、ライセンス → 文面・出どころの名前 → その写真のページ に
     /// リンクを付けたもの（Web と同じリンク先）
     var linkedCredit: AttributedString {
         var licensePart = AttributedString(license)
         licensePart.link = licenseUrl
-        var source = AttributedString("Wikimedia Commons")
+        var source = AttributedString(origin.name)
         source.link = sourceUrl
         return AttributedString("\(title) / \(L("写真: ", "Photo: "))\(author) / ")
             + licensePart + AttributedString(" / ") + source
     }
 
-    /// 出典の1行から開ける先（並びは文字の並びと同じ: ライセンス → Wikimedia Commons）。
-    /// 文面の URL の無いライセンス（パブリックドメイン・CC0）は Commons のページだけ（`CreditLink` の注記）
+    /// 出典の1行から開ける先（並びは文字の並びと同じ: ライセンス → 出どころのページ）。
+    /// 文面の URL の無いライセンス（パブリックドメイン・CC0）は出どころのページだけ（`CreditLink` の注記）
     var creditLinks: [CreditLink] {
-        (licenseUrl.map { [CreditLink.license(license, url: $0)] } ?? []) + [CreditLink.commonsPage(sourceUrl)]
+        (licenseUrl.map { [CreditLink.license(license, url: $0)] } ?? []) + [CreditLink.sourcePage(origin.name, url: sourceUrl)]
     }
 
     /// 写真の読み上げ名（Web の alt と同じ）
@@ -108,6 +146,37 @@ struct SpotSample: Equatable, Identifiable {
         let license: String?
         let licenseUrl: String?
         let sourceUrl: String?
+        /// 出どころ（任意・2026-10-04）。壊れた形でも1枚ごとは落とさない
+        let source: Source?
+
+        struct Source: Decodable {
+            let name: String?
+            let url: String?
+        }
+
+        /// 他の項目は今まで通り（型が違えば1枚ごと落ちる）。`source` だけは壊れていても nil にする
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            src = try c.decodeIfPresent(String.self, forKey: .src)
+            width = try c.decodeIfPresent(Double.self, forKey: .width)
+            height = try c.decodeIfPresent(Double.self, forKey: .height)
+            title = try c.decodeIfPresent(String.self, forKey: .title)
+            author = try c.decodeIfPresent(String.self, forKey: .author)
+            license = try c.decodeIfPresent(String.self, forKey: .license)
+            licenseUrl = try c.decodeIfPresent(String.self, forKey: .licenseUrl)
+            sourceUrl = try c.decodeIfPresent(String.self, forKey: .sourceUrl)
+            source = (try? c.decodeIfPresent(Source.self, forKey: .source)) ?? nil
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case src, width, height, title, author, license, licenseUrl, sourceUrl, source
+        }
+    }
+
+    /// 出どころを決める。`source` が無い・形が壊れている → Commons。知らない名前 → nil（落とす）
+    static func origin(of source: Raw.Source?) -> Origin? {
+        guard let source else { return .commons }
+        return Origin.named(source.name)
     }
 
     enum LicenseKind: Equatable { case cc0, publicDomain, ccBy, ccBySA }
@@ -122,15 +191,16 @@ struct SpotSample: Equatable, Identifiable {
         // パブリックドメイン・CC0 でも空は出さない（Web は「作者不明」を入れて配る）
         if author.isEmpty || (byLicense && isPlaceholderAuthor(author)) { return nil }
         let title = trimmed(raw.title)
-        guard !title.isEmpty,
-              let src = https(raw.src), isCommonsThumb(src),
-              let source = https(raw.sourceUrl), isCommonsPage(source),
+        guard !title.isEmpty, let origin = origin(of: raw.source) else { return nil }
+        // Flickr はパブリックドメイン（Public Domain Mark など）を出さない（Web の `toFlickrSample`）
+        if origin == .flickr && kind == .publicDomain { return nil }
+        guard let src = https(raw.src), let source = pageURL(raw, origin: origin), isAllowed(src: src, page: source, origin: origin),
               let width = raw.width, let height = raw.height, width > 0, height > 0,
               width.isFinite, height.isFinite else { return nil }
         let licenseUrl = https(raw.licenseUrl)
         if byLicense && licenseUrl == nil { return nil }
         return SpotSample(src: src, width: width, height: height, title: title, author: author,
-                          license: license, licenseUrl: licenseUrl, sourceUrl: source)
+                          license: license, licenseUrl: licenseUrl, sourceUrl: source, origin: origin)
     }
 
     /// 本文 JSON の `samples` を読む。壊れた・出せない1枚だけ落とし、同じ出典の2枚目も落とす。最大6枚
@@ -186,17 +256,41 @@ struct SpotSample: Equatable, Identifiable {
         s?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    /// 出典のページ。Commons は `sourceUrl`、Flickr は `source.url`（Web は同じ値を両方に入れる）
+    private static func pageURL(_ raw: Raw, origin: Origin) -> URL? {
+        switch origin {
+        case .commons: return https(raw.sourceUrl)
+        case .flickr: return https(raw.source?.url)
+        }
+    }
+
+    /// 画像と出典のページの形。Commons は縮小版とファイルのページ（元画像は EXIF の位置情報が残る）。
+    /// Flickr は live.staticflickr.com の画像と写真のページで、写真ID が同じもの（元画像 `_o` は落とす）
+    private static func isAllowed(src: URL, page: URL, origin: Origin) -> Bool {
+        let srcRaw = src.absoluteString, pageRaw = page.absoluteString
+        switch origin {
+        case .commons:
+            return srcRaw.hasPrefix("https://upload.wikimedia.org/wikipedia/commons/thumb/")
+                && pageRaw.hasPrefix("https://commons.wikimedia.org/wiki/File:")
+        case .flickr:
+            guard let pageId = firstGroup(pageRaw, #"^https://www\.flickr\.com/photos/[A-Za-z0-9@_-]+/(\d+)/?$"#),
+                  let imageId = firstGroup(srcRaw, #"^https://live\.staticflickr\.com/\d+/(\d+)_[0-9a-f]+(?:_[a-z0-9]{1,2})?\.(?:jpe?g|png)$"#),
+                  pageId == imageId else { return false }
+            return !matches(srcRaw, #"_o\.(?:jpe?g|png)$"#)
+        }
+    }
+
+    /// 正規表現の最初のかっこの中身（大文字・小文字は区別する）
+    private static func firstGroup(_ s: String, _ pattern: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)), m.numberOfRanges > 1,
+              let r = Range(m.range(at: 1), in: s) else { return nil }
+        return String(s[r])
+    }
+
     /// http は https に上げる（Web の `toSpotSample` と同じ）。空・それ以外の形は nil
     private static func https(_ raw: String?) -> URL? {
         LenientSpotImage.httpsURL(raw)
-    }
-
-    private static func isCommonsThumb(_ url: URL) -> Bool {
-        url.absoluteString.hasPrefix("https://upload.wikimedia.org/wikipedia/commons/thumb/")
-    }
-
-    private static func isCommonsPage(_ url: URL) -> Bool {
-        url.absoluteString.hasPrefix("https://commons.wikimedia.org/wiki/File:")
     }
 
     private static func matches(_ s: String, _ pattern: String) -> Bool {
