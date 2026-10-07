@@ -94,6 +94,29 @@ enum ColorFamilies {
         }
     }
 
+    /// その写真を、この色味の札に入れてよいか（2026-10-07 判断）。
+    ///
+    /// **札は景色を約束している**（「雪・冬景色」「夕日」「桜・花」…）。色だけで振ると、
+    /// 白い器の料理が「雪・冬景色」に、オレンジの料理が「夕日」に並んだ
+    /// （owner の指摘: 「雪冬景色に料理の写真、お皿とか混ざってる」）。
+    /// だから**外の景色の分類だけ**を入れる。分類の無い写真は何が写っているか分からないので入れない
+    /// （「決められなければ出さない」——代表色を持たない写真と同じ扱い）。
+    /// 白（雪・冬景色）は、建物・街の白い壁も雪ではないので、風景・自然だけにする
+    static func allows(_ photo: Photo, in family: Family) -> Bool {
+        guard let raw = photo.category?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return false }
+        let key = CategoryChoices.key(raw)
+        switch family {
+        case .white: return natural.contains(key)
+        default: return outdoor.contains(key)
+        }
+    }
+
+    /// 外の景色の分類（`CategoryChoices.key` の鍵）
+    private static let outdoor: Set<String> = ["landscape", "nature", "architecture", "street"]
+    /// 雪・冬景色に入れてよい分類
+    private static let natural: Set<String> = ["landscape", "nature"]
+
     struct Section: Identifiable, Equatable {
         let family: Family
         let photos: [Photo]
@@ -105,7 +128,7 @@ enum ColorFamilies {
     static func sections(in photos: [Photo], limit: Int = 12) -> [Section] {
         Family.allCases.compactMap { family in
             let matched = GallerySort.popular.apply(
-                photos.filter { self.family(ofHex: $0.dominantColor) == family })
+                photos.filter { self.family(ofHex: $0.dominantColor) == family && allows($0, in: family) })
             guard !matched.isEmpty else { return nil }
             return Section(family: family, photos: Array(matched.prefix(limit)))
         }
