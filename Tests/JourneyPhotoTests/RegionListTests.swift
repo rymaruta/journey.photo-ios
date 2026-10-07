@@ -198,7 +198,8 @@ final class RegionListTests: XCTestCase {
             try photo("c", location: "北海道", category: "city"),
         ]
         let byQuery = RegionList.filter(photos: photos, spots: try spots(), query: "京都", category: nil)
-        XCTAssertEqual(byQuery.photos.map(\.id), ["a", "b"], "東京都も『京都』を含む（地図の検索と同じゆるい当て方）")
+        // 2026-10-07: 撮影地は名前として当てる（`LocationMatch.photoIsIn`）。東京都は『京都』に当たらない
+        XCTAssertEqual(byQuery.photos.map(\.id), ["b"], "東京都が『京都』に当たっている")
         XCTAssertTrue(byQuery.spots.map(\.slug).contains("kinkakuji"))
         let byCategory = RegionList.filter(photos: photos, spots: try spots(), query: "", category: "city")
         XCTAssertEqual(byCategory.photos.map(\.id), ["b", "c"])

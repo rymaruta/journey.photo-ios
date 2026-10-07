@@ -43,13 +43,18 @@ enum MapSearch {
         }
     }
 
-    /// 撮影地の文字列はゆるく見る（`PhotoQuery.photos(_:in: .location)` と同じ約束:
-    /// 「パリ」は「パリ, フランス」にも「オペラ・ガルニエ（パリ）」にも当たる）。
-    /// 全角半角・大小は区別しない
+    /// 撮影地の文字列を**名前として、向きを見て**当てる（`LocationMatch.photoIsIn`・Web の
+    /// `photoIsInLocation` と同じ規則）。「パリ」は「パリ, フランス」にも「オペラ・ガルニエ（パリ）」
+    /// にも当たる。全角半角・大小は区別しない。
+    ///
+    /// 🔴 2026-10-07 判断: 以前は両向きの字の部分一致で、地図の「福岡」が宮城県白石市の
+    /// 「福岡八宮」を含む撮影地（蔵王キツネ村）に当たり、**宮城県の写真へ飛んでいた**。
+    /// 狭い語で広い撮影地の写真も拾っていた（「パリ, フランス」で撮影地「パリ」の写真）。
+    /// 撮影地のページ（`PhotoQuery.photos(_:in: .location)`）と同じ当て方にそろえる
     static func matches(_ photo: Photo, needle: String) -> Bool {
         let location = fold(photo.location ?? "")
         guard !location.isEmpty else { return false }
-        return location == needle || location.contains(needle) || needle.contains(location)
+        return LocationMatch.photoIsIn(location, fold(needle))
     }
 
     /// その点が範囲に入っているか。**幅の半分**で切る（`span` は端から端）。

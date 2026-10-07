@@ -28,12 +28,29 @@ final class MapSearchTests: XCTestCase {
             try photo("p4", place: "Helsinki", lat: 60.17, lng: 24.94),
         ]
         XCTAssertEqual(ids(MapSearch.photos(photos, filter: .init(query: "パリ"))), ["p1", "p2", "p3"])
-        // 逆向きにも当たる（「パリ, フランス」と打って「パリ」の写真が残る）
-        XCTAssertEqual(ids(MapSearch.photos(photos, filter: .init(query: "パリ, フランス"))), ["p1", "p2"])
+        // 向きを見る（2026-10-07）: 「パリ, フランス」と打って、撮影地が広い「パリ」だけの写真は出さない
+        // （撮影地のページ・Web の `photoIsInLocation` と同じ）
+        XCTAssertEqual(ids(MapSearch.photos(photos, filter: .init(query: "パリ, フランス"))), ["p2"])
         // 全角半角・大小は区別しない
         XCTAssertEqual(ids(MapSearch.photos(photos, filter: .init(query: "ﾊﾟﾘ"))), ["p1", "p2", "p3"])
         XCTAssertEqual(ids(MapSearch.photos(photos, filter: .init(query: "helsinki"))), ["p4"])
         XCTAssertEqual(ids(MapSearch.photos(photos, filter: .init(query: "  "))).count, 4)
+    }
+
+    /// 🔴 2026-10-07: 地図の「福岡」で宮城県の写真（蔵王キツネ村・大字「福岡八宮」）へ飛んでいた。
+    /// 撮影地は名前として当てる（`LocationMatch.photoIsIn`）。探すの「撮影地」・リストの札も同じ
+    func testFukuokaDoesNotMatchFukuokaYatsumiyaInMiyagi() throws {
+        let photos = [
+            try photo("zao", place: "蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本",
+                      lat: 38.0, lng: 140.5),
+            try photo("hakata", place: "博多駅, 博多区, 福岡市, 福岡県, 日本", lat: 33.59, lng: 130.42),
+            try photo("fukuoka", place: "福岡", lat: 33.6, lng: 130.4),
+        ]
+        XCTAssertEqual(ids(MapSearch.photos(photos, filter: .init(query: "福岡"))), ["hakata", "fukuoka"])
+        XCTAssertEqual(ids(SearchScope.places.photos(photos, query: "福岡")), ["hakata", "fukuoka"])
+        XCTAssertEqual(ids(RegionList.filter(photos: photos, spots: [], query: "福岡", category: nil).photos),
+                       ["hakata", "fukuoka"])
+        XCTAssertEqual(ids(MapSearch.photos(photos, filter: .init(query: "宮城"))), ["zao"])
     }
 
     /// スポットの名前・別名は台帳を通してだけ当たる。**台帳が無ければ当たらない**

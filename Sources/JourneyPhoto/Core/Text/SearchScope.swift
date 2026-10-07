@@ -53,7 +53,7 @@ enum SearchScope: String, CaseIterable, Identifiable {
     ///
     /// - 打っていないとき: タグ／撮影地は**その欄を持つ写真**だけ、写真とすべては全部
     /// - 打っているとき: すべて・写真は `PhotoQuery.match`（題・説明・撮影地・カテゴリ・タグ）、
-    ///   タグはタグだけ、撮影地は撮影地だけに当てる。
+    ///   タグはタグだけ、撮影地は撮影地だけに当てる（撮影地は `MapSearch.matches`＝名前として・向きを見て）。
     ///   **大文字小文字と全角半角は区別しない**（`PhotoQuery.match` と同じ）
     func photos(_ photos: [Photo], query: String) -> [Photo] {
         guard showsPhotos else { return [] }
@@ -79,9 +79,11 @@ enum SearchScope: String, CaseIterable, Identifiable {
                 return needle.isEmpty ? !tags.isEmpty : (tags.contains { $0.contains(needle) } || hasAlias(photo))
             }
         case .places:
+            // 撮影地は名前として・向きを見て当てる（地図の `MapSearch.matches` と同じ。
+            // 2026-10-07: 字の部分一致だと「福岡」が宮城県の「福岡八宮」に当たっていた）
             return photos.filter { photo in
                 let place = Self.fold(photo.location ?? "")
-                return needle.isEmpty ? !place.isEmpty : place.contains(needle)
+                return needle.isEmpty ? !place.isEmpty : MapSearch.matches(photo, needle: needle)
             }
         }
     }
