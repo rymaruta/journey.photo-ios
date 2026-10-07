@@ -11,7 +11,7 @@ import Foundation
 ///  - 出すのは**前日から最終日まで**。今日の日に撮影スポットがあれば今日、無ければ明日の最初のスポット。
 ///    前日は「明日（1日目）」になる。それ以外の日は nil
 ///  - 日付は `TripPlanText.dayDate`（その日の日付 → 無ければ出発日から数える）。推測はしない
-///  - スポットは**公開済みで座標があり、時刻帯が引ける**ものだけ（`SunTimes.timeZone(forCountry:)`）
+///  - スポットは**公開済みで座標があり、時刻帯が引ける**ものだけ（`SunTimes.timeZone(named:country:)`・行の `timeZone` が先・2026-10-07）
 ///  - 時刻は**その土地の時計**（旅先の時刻）。季節の案内はその日の月の季節の文（台帳の文のまま・短く切る）
 ///  - 天気は含まない（言わない。計算値だけ）
 enum TripLight {
@@ -88,7 +88,7 @@ enum TripLight {
                     guard case .spot(let spotId, _) = item,
                           let spot = byId[spotId], !spot.isDraft,
                           let coords = spot.coords,
-                          let zone = SunTimes.timeZone(forCountry: spot.region?.country),
+                          let zone = SunTimes.timeZone(named: spot.timeZone, country: spot.region?.country),
                           let times = SunTimes.compute(date, lat: coords.lat, lng: coords.lng) else { continue }
                     let month = TakenDay.ymd(date)?.1 ?? 1
                     let season = SpotBodyText.season(ofMonth: month)

@@ -53,6 +53,11 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     /// （`[{time, text}]`）で読む口だけ先に置く——載るまでは常に空で、時間帯で絞ると
     /// 撮影地の節は出ない（`ShootingTime.spots`）。2026-10-03 判断
     var timeOfDayGuide: LenientTimeOfDayGuide? = nil
+    /// その場所の時刻帯（IANA 名・例 "America/New_York"）。**台帳に書いた行だけ**サイトが載せる
+    /// （`lib/data/spotFeed.ts`・2026-10-07）。光の時刻はこれを国より先に使う（`SunTimes.timeZone(named:country:)`）。
+    /// アメリカ・カナダ・オーストラリアのように時刻帯が複数ある国は、これが無いと時計を決められない。
+    /// 古い索引には無い。読めない名前は国の表に落とす
+    var timeZone: String? = nil
 
     /// 出してよい写真。作者とライセンスが揃っていて、https の画像だけ
     var photo: SpotImage? { image?.value }

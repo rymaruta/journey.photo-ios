@@ -7,8 +7,8 @@ import Foundation
 ///
 /// ## 決まりごと
 ///
-///  - 時刻は**その土地の時計**。時刻帯は台帳の国から引く（`SunTimes.timeZone(forCountry:)`・
-///    日本は Asia/Tokyo）。**表に無い国は節を出さない**（Web の表・ホームの札と同じ。端末の時計で言うと
+///  - 時刻は**その土地の時計**。時刻帯は台帳の行の `timeZone`（IANA 名・2026-10-07）があればそれ、
+///    無ければ国から引く（`SunTimes.timeZone(named:country:)`・日本は Asia/Tokyo）。**どちらでも決まらない行は節を出さない**（Web の表・ホームの札と同じ。端末の時計で言うと
 ///    旅先で読み違える）。座標があっても段が1つも作れなければ節を出さない（`sheet`）
 ///  - 日の出・日の入りの方角は「東北東 67°」（16方位＋北から時計回りの度）
 ///  - ゴールデンアワーは太陽の高さ +6°〜−4°（ホームの札と同じ幅・同じ呼び名。2026-10-03 owner 判断で
@@ -54,9 +54,10 @@ enum SpotLight {
 
     // MARK: - 時刻帯・日付
 
-    /// 節の中身。**時刻帯が引けない国・座標が読めない・段が1つも作れない日は nil**（節ごと出さない）
-    static func sheet(country: String?, lat: Double, lng: Double, offset: Int, now: Date) -> Sheet? {
-        guard let zone = SunTimes.timeZone(forCountry: country),
+    /// 節の中身（`timeZone` は台帳の行の時刻帯・IANA 名。あれば国より先）。
+    /// **時刻帯が決まらない・座標が読めない・段が1つも作れない日は nil**（節ごと出さない）
+    static func sheet(country: String?, timeZone: String? = nil, lat: Double, lng: Double, offset: Int, now: Date) -> Sheet? {
+        guard let zone = SunTimes.timeZone(named: timeZone, country: country),
               let today = ymd(offset: 0, from: now, in: zone),
               let day = ymd(offset: min(max(offset, -maxOffset), maxOffset), from: now, in: zone) else { return nil }
         let list = blocks(day, lat: lat, lng: lng, in: zone)
