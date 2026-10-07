@@ -5,6 +5,8 @@ struct UploadView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var joined: JoinedAlbumsStore
+    /// 撮影スポットの索引を読むため（`model.fetchSpotIndex`）。撮影地の欄（`PlaceSearchField`）も同じものを読む
+    @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model: UploadViewModel
     @State private var showCamera = false
     @State private var showSongPicker = false
@@ -256,6 +258,8 @@ struct UploadView: View {
         .onAppear {
             // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
             model.onAlbumGone = { [joined] id in joined.forget(id: id) }
+            // 撮影地が写真の近くのスポットを指すかを見る索引（送るときだけ読む・`PlaceCoordsRule`）
+            model.fetchSpotIndex = { [spots = environment.spots] in try? await spots.fetchIndex() }
             // **今日のテーマから来たときだけ、一度だけ。** 既に何か打っていれば触らない。
             // 選択画面などから戻ると onAppear はまた呼ばれるので、印が無いと
             // 利用者が空にしたタグがまた入る（印は model が持つ・送ったあとの reset で下ろす）

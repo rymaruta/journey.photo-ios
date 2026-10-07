@@ -53,12 +53,16 @@ enum PlaceSpotSuggestions {
 
     /// スポットを選んだときに欄へ入れる座標。
     ///
-    /// 🔴 **位置のある写真は nil（写真の座標のまま）。** スポットの座標（約1kmに丸めた値・3km 先の
+    /// 🔴 **近くで撮った写真は写真の座標のまま。** スポットの座標（約1kmに丸めた値・3km 先の
     /// こともある）で撮った位置を置き換えて「正確」として送っていた。前に選んだ地名の座標も
-    /// 残さない（残すと名前はスポット、座標は前の地名になった）。位置の無い写真だけスポットの座標
-    /// （`UploadViewModel.append` のスポットから開いた回と同じ決まり）
-    static func coordsAfterPicking(_ spot: OfficialSpot, photoHasPosition: Bool) -> Photo.Coords? {
-        photoHasPosition ? nil : spot.coords
+    /// 残さない（残すと名前はスポット、座標は前の地名になった）
+    ///
+    /// 2026-10-07 判断（`PlaceCoordsRule`）: 書き換えた撮影地には写真の座標を付けないので、nil（写真の
+    /// 座標のまま）ではなく、**写真から `PlaceCoordsRule.photoKm`（5km）以内のスポットなら写真の座標そのもの**
+    /// （撮った位置を置き換えない決まりは守る）、遠いスポットはスポットの座標（写真の撮った位置を
+    /// スポットの名前に付けない）。スポットに座標が無ければ nil
+    static func coordsAfterPicking(_ spot: OfficialSpot, photoPosition: Photo.Coords?) -> Photo.Coords? {
+        PlaceCoordsRule.coordsForPickedSpot(spot.coords, photo: photoPosition)
     }
 
     /// 近い順（同じ距離は slug 順・毎回同じ並び）
