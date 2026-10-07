@@ -44,6 +44,33 @@ final class SpotSampleTests: XCTestCase {
     }
 
     /// 後から足された項目なので、無い本文・壊れた形でも本文ごとは落とさない
+    /// 撮影日（`takenAt`）は書き方が混在する。年と月が読めれば読み、読めなければ nil（2026-10-07・本番の本文で見た形）
+    func testReadsTakenAtInMixedFormats() throws {
+        let cases: [(String, Int, Int)] = [
+            ("2013-08-03", 2013, 8), ("2009-10-21 16:24:00", 2009, 10), ("2016-02", 2016, 2),
+            ("2009/09/21145646", 2009, 9), ("2011-11−18", 2011, 11),
+            ("2009年8月16日", 2009, 8), ("2011年4月15日, 14:12:03", 2011, 4), ("2025年1月1日 ( Exif データによる)", 2025, 1),
+            ("Taken on 12 August 2011", 2011, 8), ("10 February 2024 (according to Exif data)", 2024, 2),
+            ("Taken on 3 July 2026, 07:38:39", 2026, 7), ("August 12, 2011", 2011, 8),
+        ]
+        for (raw, year, month) in cases {
+            XCTAssertEqual(SpotSample.TakenAt.parse(raw), SpotSample.TakenAt(year: year, month: month), raw)
+        }
+        for raw in [nil, "", "2017", "H20-4", "2016年6月16日, 16:37:38 (UTC)より前", "2019-13-01", "unknown"] {
+            XCTAssertNil(SpotSample.TakenAt.parse(raw), raw ?? "nil")
+        }
+        let b = try body(samples: "[\(sample()),\(sample(["takenAt": nil, "sourceUrl": "https://commons.wikimedia.org/wiki/File:B.jpg"])),\(sample(["takenAt": 2019, "sourceUrl": "https://commons.wikimedia.org/wiki/File:C.jpg"]))]")
+        XCTAssertEqual(b.samples.map(\.takenAt), [SpotSample.TakenAt(year: 2019, month: 11), nil, nil],
+                       "撮影日が無い・形が違う1枚も落とさない")
+    }
+
+    /// 季節は撮影月から。南半球は半年ずらす
+    func testTakenAtSeason() {
+        XCTAssertEqual(SpotSample.TakenAt(year: 2019, month: 10).season(southern: false), "autumn")
+        XCTAssertEqual(SpotSample.TakenAt(year: 2019, month: 12).season(southern: false), "winter")
+        XCTAssertEqual(SpotSample.TakenAt(year: 2019, month: 4).season(southern: true), "autumn")
+    }
+
     func testMissingOrBrokenSamplesKeepTheBody() throws {
         XCTAssertEqual(try body(samples: "null").samples, [])
         XCTAssertEqual(try decode(#"{"slug":"a","highlights":["x"],"check":{"kind":"human","verifiedAt":"2026-09-25"}}"#).samples, [])

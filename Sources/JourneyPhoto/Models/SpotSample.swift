@@ -64,6 +64,64 @@ struct SpotSample: Equatable, Identifiable {
     var creditText: String? = nil
     /// 加工の表記（その他の出どころで縮小したとき）。あれば出典の行の最後に添える
     var modified: String? = nil
+    /// 撮った年と月（本文の `takenAt`＝撮影日の文字。書き方が混在するので、読めなければ nil・2026-10-07）。
+    /// ホームの「いまの季節のスポット」が、季節の合う作例を選ぶのに使う（`HomeSpotShelf.picture`）
+    var takenAt: TakenAt? = nil
+
+    /// 撮った年と月（`takenAt` の読み取り結果）
+    struct TakenAt: Equatable {
+        let year: Int
+        let month: Int
+
+        /// 季節（`SpotBodyText.season`）。**南半球（緯度が負）は半年ずらす**——その土地の季節
+        /// （`ShootingTime.season(of:)` と同じ読み替え）
+        func season(southern: Bool) -> String {
+            let season = SpotBodyText.season(ofMonth: month)
+            guard southern, let s = ShootingTime.Season(rawValue: season) else { return season }
+            return s.opposite.rawValue
+        }
+
+        private static let englishMonths = ["january", "february", "march", "april", "may", "june", "july",
+                                            "august", "september", "october", "november", "december"]
+
+        /// 本文の `takenAt` を読む（2026-10-07 に本番の本文で見た書き方）:
+        ///   - `2013-08-03`・`2009-10-21 16:24:00`・`2016-02`・`2009/09/21…`（年-月 が先頭）
+        ///   - `2009年8月16日`・`2011年4月15日, 14:12:03`
+        ///   - `Taken on 12 August 2011`・`10 February 2024 (according to Exif data)`
+        /// 2026-10-07 判断: 「〜より前」「before」は**その日より前のどこか**で月が決まらないので nil。
+        /// 年だけ（`2017`）・和暦（`H20-4`）も nil（季節を当てない）
+        static func parse(_ raw: String?) -> TakenAt? {
+            let text = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !text.isEmpty, !text.contains("より前"),
+                  text.range(of: "before", options: .caseInsensitive) == nil else { return nil }
+            if let g = groups(text, #"^(\d{4})\s*[-/]\s*(\d{1,2})(?!\d)"#) {
+                return make(year: Int(g[0]), month: Int(g[1]))
+            }
+            if let g = groups(text, #"(\d{4})\s*年\s*(\d{1,2})\s*月"#) {
+                return make(year: Int(g[0]), month: Int(g[1]))
+            }
+            let names = englishMonths.joined(separator: "|")
+            if let g = groups(text, #"(?<!\d)\d{1,2}\s+("# + names + #")\s+(\d{4})"#) {
+                return make(year: Int(g[1]), month: (englishMonths.firstIndex(of: g[0].lowercased()) ?? -1) + 1)
+            }
+            if let g = groups(text, #"("# + names + #")\s+\d{1,2},?\s+(\d{4})"#) {
+                return make(year: Int(g[1]), month: (englishMonths.firstIndex(of: g[0].lowercased()) ?? -1) + 1)
+            }
+            return nil
+        }
+
+        private static func make(year: Int?, month: Int?) -> TakenAt? {
+            guard let year, let month, (1...12).contains(month), (1800...2100).contains(year) else { return nil }
+            return TakenAt(year: year, month: month)
+        }
+
+        /// かっこの中身（大文字・小文字を問わない）
+        private static func groups(_ s: String, _ pattern: String) -> [String]? {
+            guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+                  let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
+            return (1..<m.numberOfRanges).map { i in Range(m.range(at: i), in: s).map { String(s[$0]) } ?? "" }
+        }
+    }
 
     /// 作例の出どころ。名前は出典の行の最後とメニューに出す
     enum Origin: Equatable {
@@ -180,6 +238,8 @@ struct SpotSample: Equatable, Identifiable {
         /// 規約が求める出典の文・加工の表記（その他の出どころだけ・任意。壊れた形は無いものとみなす）
         let credit: String?
         let modified: String?
+        /// 撮影日（任意・書き方が混在・2026-10-07）。壊れた形は無いものとみなす
+        let takenAt: String?
 
         struct Source: Decodable {
             let name: String?
@@ -200,10 +260,11 @@ struct SpotSample: Equatable, Identifiable {
             source = (try? c.decodeIfPresent(Source.self, forKey: .source)) ?? nil
             credit = (try? c.decodeIfPresent(String.self, forKey: .credit)) ?? nil
             modified = (try? c.decodeIfPresent(String.self, forKey: .modified)) ?? nil
+            takenAt = (try? c.decodeIfPresent(String.self, forKey: .takenAt)) ?? nil
         }
 
         private enum CodingKeys: String, CodingKey {
-            case src, width, height, title, author, license, licenseUrl, sourceUrl, source, credit, modified
+            case src, width, height, title, author, license, licenseUrl, sourceUrl, source, credit, modified, takenAt
         }
     }
 
@@ -236,7 +297,8 @@ struct SpotSample: Equatable, Identifiable {
         let licenseUrl = https(raw.licenseUrl)
         if byLicense && licenseUrl == nil { return nil }
         return SpotSample(src: src, width: width, height: height, title: title, author: author,
-                          license: license, licenseUrl: licenseUrl, sourceUrl: source, origin: origin)
+                          license: license, licenseUrl: licenseUrl, sourceUrl: source, origin: origin,
+                          takenAt: TakenAt.parse(raw.takenAt))
     }
 
     /// その他の出どころの1枚（型の注記）。ライセンスは文字のまま・画像と出典のページは https なら可
@@ -250,7 +312,8 @@ struct SpotSample: Equatable, Identifiable {
         let creditText = trimmed(raw.credit), modified = trimmed(raw.modified)
         return SpotSample(src: src, width: width, height: height, title: title, author: author,
                           license: license, licenseUrl: https(raw.licenseUrl), sourceUrl: source, origin: origin,
-                          creditText: creditText.isEmpty ? nil : creditText, modified: modified.isEmpty ? nil : modified)
+                          creditText: creditText.isEmpty ? nil : creditText, modified: modified.isEmpty ? nil : modified,
+                          takenAt: TakenAt.parse(raw.takenAt))
     }
 
     /// 本文 JSON の `samples` を読む。壊れた・出せない1枚だけ落とし、同じ出典の2枚目も落とす。最大6枚
