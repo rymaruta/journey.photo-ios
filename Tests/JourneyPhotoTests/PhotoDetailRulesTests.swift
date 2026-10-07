@@ -306,15 +306,89 @@ final class NearbyShelfTests: XCTestCase {
         XCTAssertEqual(shelf.photos.map(\.id), ["kinkaku"])
     }
 
-    /// 並びが空のときは裏にいても入れる（消える行が無い）。開いた直後の1回目が
-    /// `onAppear` より先に着いても、節が出ないままにならない
-    func testEmptyShelfAcceptsAnswerEvenBeforeAppear() throws {
+    /// 開いた直後の1回目が `onAppear` より先に着いても、印が立って出直し（`onAppear`）で
+    /// 読み直す——節が出ないままにはならない。空のときも裏では入れない（スポットの行き先は
+    /// 空→有りで行が別の `NavigationLink` に替わり、開いた撮影地の一覧が閉じる）
+    func testAnswerBeforeAppearIsRereadOnAppear() throws {
         let key = PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris)
         var shelf = NearbyShelf()
         shelf.beginLoad()
         shelf.land([try photo("eiffel")], for: key, onScreen: false)
+        XCTAssertEqual(shelf.photos.map(\.id), [])
+        XCTAssertTrue(shelf.appear(), "onAppear より先に着いた1回目を読み直さない")
+        shelf.beginLoad()
+        shelf.land([try photo("eiffel")], for: key, onScreen: true)
         XCTAssertEqual(shelf.photos.map(\.id), ["eiffel"])
-        XCTAssertEqual(shelf.contentFor, key)
+    }
+
+    /// 🔴 **読んでいる途中で取り消された回も、裏にいれば印を立てる。** 撮影地を直した直後、
+    /// 読み終える前に近くの写真を押して `.task` が取り消されると、出どころは外れるが印が無く、
+    /// 戻ったときに `.task` が走り直さなければ古い場所のまま残った
+    func testCancelledWhileBehindRereadsOnAppear() throws {
+        let oldKey = PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris)
+        var shelf = NearbyShelf()
+        shelf.land([try photo("eiffel")], for: oldKey, onScreen: true)
+        shelf.beginLoad()
+        shelf.cancelled(onScreen: false)
+        XCTAssertEqual(shelf.photos.map(\.id), ["eiffel"], "取り消された回に中身を触った")
+        XCTAssertNil(shelf.contentFor)
+        XCTAssertTrue(shelf.appear(), "取り消された回を、出直したときに読み直さない")
+
+        // 画面に出ている間の取り消し（鍵が替わって走り直す回）は印を立てない
+        shelf.beginLoad()
+        shelf.cancelled(onScreen: true)
         XCTAssertFalse(shelf.appear())
+    }
+}
+
+/// H-3 と同じ種類の穴: 「この場所のスポット」の行き先（`SpotLeadShelf`）
+final class SpotLeadShelfTests: XCTestCase {
+
+    private func photo(_ id: String, at location: String) throws -> Photo {
+        try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"userId\":\"u\",\"location\":\"\(location)\"}".utf8))
+    }
+
+    private func lead(_ label: String) throws -> PhotoDetailSpotLead? {
+        PhotoDetailSpotLead.make(label, in: [try photo("a", at: "Paris"), try photo("b", at: "Paris"),
+                                             try photo("c", at: "Kyoto"), try photo("d", at: "Kyoto")])
+    }
+
+    /// 🔴 **裏にいる間に撮影地の名前が変わっても（`PhotoEditLedger` 経由）、行き先を差し替えない。**
+    /// 差し替えると、そこから開いたスポットの画面（または撮影地の一覧）が閉じうる。
+    /// 出直したら読み直して新しい場所の行き先を入れる
+    func testSpotLeadIsNotReplacedWhileBehindAndRereadsOnAppear() throws {
+        var shelf = SpotLeadShelf()
+        shelf.beginLoad()
+        shelf.land(try lead("Paris"), for: "Paris", onScreen: true)
+        XCTAssertEqual(shelf.value?.spot.label, "Paris")
+
+        shelf.beginLoad()
+        shelf.land(try lead("Kyoto"), for: "Kyoto", onScreen: false)
+        XCTAssertEqual(shelf.value?.spot.label, "Paris", "裏にいる間に行き先を差し替えると、開いた画面が閉じる")
+        XCTAssertNil(shelf.contentFor)
+
+        shelf.beginLoad()
+        shelf.land(nil, for: "", onScreen: false)
+        XCTAssertNotNil(shelf.value, "裏にいる間に撮影地を消すと、行き先の行ごと消えた")
+
+        shelf.fail(onScreen: false)
+        XCTAssertNotNil(shelf.value, "裏にいる間の失敗で行き先を消した")
+
+        XCTAssertTrue(shelf.appear(), "裏で持ち越した読み直しを、出直したときに走らせない")
+        shelf.beginLoad()
+        shelf.land(try lead("Kyoto"), for: "Kyoto", onScreen: true)
+        XCTAssertEqual(shelf.value?.spot.label, "Kyoto")
+        XCTAssertEqual(shelf.contentFor, "Kyoto")
+    }
+
+    /// 撮影地を直して読み終える前に取り消された回も、裏にいれば出直しで読み直す
+    func testSpotLeadCancelledWhileBehindRereadsOnAppear() throws {
+        var shelf = SpotLeadShelf()
+        shelf.land(try lead("Paris"), for: "Paris", onScreen: true)
+        shelf.beginLoad()
+        shelf.cancelled(onScreen: false)
+        XCTAssertEqual(shelf.value?.spot.label, "Paris")
+        XCTAssertTrue(shelf.appear())
     }
 }
