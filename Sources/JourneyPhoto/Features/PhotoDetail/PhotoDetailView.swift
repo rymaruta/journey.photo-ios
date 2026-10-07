@@ -586,7 +586,8 @@ struct PhotoDetailView: View {
                 .accessibilityIdentifier("photo.spotLink")
             } else {
                 NavigationLink {
-                    TagPhotosView(kind: .location(location))
+                    // 下書き・限定写真は公開の一覧に載らないので、この写真自身も並べる（空の一覧にしない）
+                    TagPhotosView(kind: .location(location), opened: shown)
                 } label: {
                     placeLabel(location, spotSuffix: false)
                 }
@@ -1052,14 +1053,16 @@ struct PhotoDetailView: View {
                 Spacer(minLength: 0)
 
                 // 吹き出しを押すと下のコメントへ送る。**数は取れたときだけ**
-                // ——読み込み前・圏外に「0」を出すと「まだ無い」と読まれる
+                // ——読み込み前・圏外に「0」を出すと「まだ無い」と読まれる。
+                // 2026-10-07 判断: 数は見出しと同じ `visibleCommentCount`（ブロックした人の分を引く）。
+                // サーバーの総数のままだと、見出しの「コメント（N）」と食い違った
                 Button {
                     withAnimation { proxy.scrollTo(Self.commentsAnchor, anchor: .top) }
                 } label: {
-                    actionLabel(systemImage: "bubble.right", count: model.commentCount)
+                    actionLabel(systemImage: "bubble.right", count: visibleCommentCount)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(CommentsHeading.label(commentCount: model.commentCount))
+                .accessibilityLabel(CommentsHeading.label(commentCount: visibleCommentCount))
                 Spacer(minLength: 0)
 
                 // **保存**。いいねとは別の入れ物（`saves#<uid>`）。

@@ -155,10 +155,12 @@ final class HomeSpotShelfTests: XCTestCase {
         return try JSONDecoder.api.decode(SpotBody.self, from: Data(json.utf8))
     }
 
-    private func sample(_ name: String, width: Int = 1280) -> String {
-        """
+    /// 作例の1枚。撮影日は既定で秋（段の季節と合う）
+    private func sample(_ name: String, width: Int = 1280, takenAt: String? = "2019-10-12") -> String {
+        let taken = takenAt.map { "\"takenAt\":\"\($0)\"," } ?? ""
+        return """
         {"src":"https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/\(name).jpg/\(width)px-\(name).jpg",\
-        "width":\(width),"height":853,"title":"\(name)","author":"Taro","license":"CC BY-SA 4.0",\
+        \(taken)"width":\(width),"height":853,"title":"\(name)","author":"Taro","license":"CC BY-SA 4.0",\
         "licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0",\
         "sourceUrl":"https://commons.wikimedia.org/wiki/File:\(name).jpg"}
         """
@@ -169,26 +171,61 @@ final class HomeSpotShelfTests: XCTestCase {
         let withCover = try spot("sp_c", image: true)
         let bare = try spot("sp_b")
         let b = try body(samples: [sample("One"), sample("Two")])
-        guard case .sample(let first)? = HomeSpotShelf.picture(for: withCover, body: b) else {
+        guard case .sample(let first)? = HomeSpotShelf.picture(for: withCover, body: b, season: "autumn") else {
             return XCTFail("作例が先に出ない")
         }
         XCTAssertEqual(first.title, "One")
         let firstURL = HomeSpotShelf.Picture.sample(first).url
-        guard case .sample(let second)? = HomeSpotShelf.picture(for: withCover, body: b, broken: [firstURL]) else {
+        guard case .sample(let second)? = HomeSpotShelf.picture(for: withCover, body: b, season: "autumn", broken: [firstURL]) else {
             return XCTFail("読めなかった1枚の次の作例に進まない")
         }
         XCTAssertEqual(second.title, "Two")
         let allBroken: Set<URL> = Set(b.samples.map { HomeSpotShelf.Picture.sample($0).url })
-        XCTAssertEqual(HomeSpotShelf.picture(for: withCover, body: b, broken: allBroken), .cover(try XCTUnwrap(withCover.photo)))
-        XCTAssertEqual(HomeSpotShelf.picture(for: withCover, body: nil), .cover(try XCTUnwrap(withCover.photo)))
-        XCTAssertNil(HomeSpotShelf.picture(for: bare, body: nil))
-        XCTAssertNil(HomeSpotShelf.picture(for: bare, body: try body(samples: [])))
+        XCTAssertEqual(HomeSpotShelf.picture(for: withCover, body: b, season: "autumn", broken: allBroken), .cover(try XCTUnwrap(withCover.photo)))
+        XCTAssertEqual(HomeSpotShelf.picture(for: withCover, body: nil, season: "autumn"), .cover(try XCTUnwrap(withCover.photo)))
+        XCTAssertNil(HomeSpotShelf.picture(for: bare, body: nil, season: "autumn"))
+        XCTAssertNil(HomeSpotShelf.picture(for: bare, body: try body(samples: []), season: "autumn"))
+    }
+
+    /// 2026-10-07: 秋の札に夏・春の作例を出さない。季節の合う作例が先（本文の並びが後でも）、
+    /// 撮影日の読めない作例も出さない。季節の合う作例が無ければ代表写真、それも無ければ nil
+    func testPicturePrefersSamplesTakenInThisSeason() throws {
+        let withCover = try spot("sp_c", image: true)
+        let bare = try spot("sp_b")
+        let b = try body(samples: [sample("Summer", takenAt: "2013-08-03"),
+                                   sample("Unknown", takenAt: nil),
+                                   sample("Spring", takenAt: "2009年4月16日"),
+                                   sample("Autumn", takenAt: "Taken on 12 November 2011")])
+        guard case .sample(let picked)? = HomeSpotShelf.picture(for: withCover, body: b, season: "autumn") else {
+            return XCTFail("季節の合う作例が出ない")
+        }
+        XCTAssertEqual(picked.title, "Autumn")
+        let offSeason = try body(samples: [sample("Summer", takenAt: "2013-08-03 10:00:00"),
+                                           sample("Unknown", takenAt: nil)])
+        XCTAssertEqual(HomeSpotShelf.picture(for: withCover, body: offSeason, season: "autumn"),
+                       .cover(try XCTUnwrap(withCover.photo)), "季節外れの作例より代表写真")
+        XCTAssertNil(HomeSpotShelf.picture(for: bare, body: offSeason, season: "autumn"), "季節外れの作例よりピン")
+        guard case .sample(let summer)? = HomeSpotShelf.picture(for: bare, body: offSeason, season: "summer") else {
+            return XCTFail("夏の段なら夏の作例が出る")
+        }
+        XCTAssertEqual(summer.title, "Summer")
+    }
+
+    /// 南半球のスポットは撮影月の季節を半年ずらして見る（4月＝その土地の秋）
+    func testPictureReadsSouthernSeasonsHalfAYearApart() throws {
+        let json = #"{"spotId":"sp_s","slug":"sp_s","name":"S","stage":"published","coords":{"lat":-33.9,"lng":151.2}}"#
+        let southern = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(json.utf8))
+        let b = try body(samples: [sample("October", takenAt: "2019-10-12"), sample("April", takenAt: "2019-04-12")])
+        guard case .sample(let picked)? = HomeSpotShelf.picture(for: southern, body: b, season: "autumn") else {
+            return XCTFail("南半球の秋の作例が出ない")
+        }
+        XCTAssertEqual(picked.title, "April")
     }
 
     /// 🔴 作例の出典は「題 / 写真: 作者 / ライセンス / Wikimedia Commons」のまま（表示の条件）
     func testSampleCreditKeepsAllFourParts() throws {
         let b = try body(samples: [sample("One")])
-        let picture = try XCTUnwrap(HomeSpotShelf.picture(for: try spot("sp_x"), body: b))
+        let picture = try XCTUnwrap(HomeSpotShelf.picture(for: try spot("sp_x"), body: b, season: "autumn"))
         XCTAssertEqual(picture.credit, "One / 写真: Taro / CC BY-SA 4.0 / Wikimedia Commons")
         XCTAssertEqual(picture.creditLinks.count, 2)
     }

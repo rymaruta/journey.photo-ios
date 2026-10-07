@@ -320,4 +320,8 @@ struct ModerationSnapshot: Equatable {
     func follows(_ users: [FollowUser]) -> [FollowUser] {
         BlockFilter.follows(users, blocked: blocked)
     }
+
+    func replies(_ replies: [StoryReply]) -> [StoryReply] {
+        BlockFilter.replies(replies, blocked: blocked)
+    }
 }

@@ -9,6 +9,9 @@ struct TagPhotosView: View {
     /// 絞り込みの条件。中身は `PhotoQuery.Collection`（画面を持たない層に置いて、
     /// Linux 上の `swift test` で検証できるようにしてある）。
     let kind: PhotoQuery.Collection
+    /// 詳細から開いたときの、その写真。下書き・限定写真は公開の一覧に載らないので、
+    /// 一覧に足す（`CollectionScreen.withOpened`・2026-10-07）
+    var opened: Photo? = nil
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
@@ -41,6 +44,6 @@ struct TagPhotosView: View {
         loadFailed = all == nil
         guard let all else { return }
         // 読んでいる間に通報された回、古い集合で絞った結果で上書きしない
-        photos = hidden.visible(PhotoQuery.photos(all, in: kind))
+        photos = hidden.visible(CollectionScreen.withOpened(PhotoQuery.photos(all, in: kind), opened: opened, kind: kind))
     }
 }

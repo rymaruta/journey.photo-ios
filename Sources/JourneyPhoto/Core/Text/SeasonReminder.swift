@@ -68,7 +68,7 @@ enum SeasonReminder {
         let label = TripLight.seasonLabel(season)
         let body = names.count == 1
             ? L("行きたい場所の「\(first)」に\(label)の撮影ガイドがあります。",
-                "\(first) on your want-to-go list has a \(label.lowercased()) guide.")
+                "\(first) on your want-to-go list has \(withArticle(label.lowercased())) guide.")
             : L("行きたい場所の「\(first)」ほか\(names.count - 1)か所に\(label)の撮影ガイドがあります。",
                 "\(first) and \(names.count - 1) more on your want-to-go list have \(label.lowercased()) guides.")
         var fireAt = DateComponents()
@@ -87,5 +87,14 @@ enum SeasonReminder {
         fireAt.hour = hour
         return Plan(fireAt: fireAt, season: season,
                     title: L("\(label)の撮影スポット", "\(label) photo spots"), body: body)
+    }
+}
+
+extension SeasonReminder {
+    /// 英語の不定冠詞を付けた語（"an autumn"・"a winter"）。2026-10-07: "a autumn guide" と出ていた。
+    /// 季節の名前だけに使うので、頭の文字が母音かどうかで決める
+    static func withArticle(_ word: String) -> String {
+        let vowel = word.lowercased().first.map { "aeiou".contains($0) } ?? false
+        return "\(vowel ? "an" : "a") \(word)"
     }
 }

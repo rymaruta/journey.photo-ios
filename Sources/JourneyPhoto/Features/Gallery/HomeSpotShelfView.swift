@@ -77,7 +77,7 @@ struct HomeSpotShelfView: View {
         let loaded = bodies[entry.spot.slug] != nil
         let spotBody = bodies[entry.spot.slug] ?? nil
         // **本文を待ってから決める**——先に代表写真を出すと、作例が届いた瞬間に写真が入れ替わる
-        let picture = loaded ? HomeSpotShelf.picture(for: entry.spot, body: spotBody, broken: broken) : nil
+        let picture = loaded ? HomeSpotShelf.picture(for: entry.spot, body: spotBody, season: shelf.season, broken: broken) : nil
         return VStack(alignment: .leading, spacing: 0) {
             NavigationLink {
                 OfficialSpotView(spot: entry.spot, spots: spots, photos: photos)
