@@ -338,8 +338,8 @@ struct SearchView: View {
         .padding(.vertical, -PillChip.tapSlack)
     }
 
-    /// 当たるものがある時間帯（写真の側はモデル、撮影地の側は索引から。撮影地は索引に
-    /// `timeOfDayGuide` が載るまで空）
+    /// 当たるものがある時間帯（写真の側はモデル、撮影地の側は索引の `timeOfDayGuide` から。
+    /// 索引は時間帯の案内を載せている——2026-10-07 の実データで 1079件中 315件）
     private var availableDayParts: Set<ShootingTime.DayPart> {
         model.dayPartsWithPhotos.union(ShootingTime.dayParts(photos: [], spots: officialSpots))
     }
@@ -786,9 +786,8 @@ struct SearchView: View {
         if !hits.isEmpty {
             let expanded = spotsExpandedFor == spotsExpandKey
             VStack(alignment: .leading, spacing: 10) {
-                Text(L("\(model.timeFilter.prefix)撮影スポット（\(hits.count)か所）",
-                       model.timeFilter.isEmpty ? "Shooting spots (\(hits.count))"
-                           : "\(model.timeFilter.prefix)shooting spots (\(hits.count))"))
+                // 季節・時間帯で絞っているときは「冬の案内がある撮影スポット」（`ShootingTime.Filter.spotsHeading`）
+                Text(model.timeFilter.spotsHeading(count: hits.count))
                     .font(.headline)
                     .foregroundStyle(WebTheme.foreground)
                 VStack(spacing: 0) {
@@ -1022,10 +1021,14 @@ final class SearchViewModel: ObservableObject {
         tagChips = tagCounts.map { (tag: $0.tag, count: filtered(query: $0.tag).count) }
     }
 
+    /// 写真 id → 探すための畳んだ字（題・説明・撮影地・カテゴリ・タグ）。一覧が変わったときだけ作る
+    /// ——`shown` は描くたびに何度も読まれるので、そのたびに全写真の説明を畳み直さない（2026-10-07）
+    private var searchTexts: [String: String] = [:]
+
     /// `shown` の絞り方（並べ替えの前まで）
     private func filtered(query: String) -> [Photo] {
         // 季節・時間帯はカテゴリと同じく、語と種類で絞った上にかける（「秋の京都」）
-        let base = ShootingTime.photos(scope.photos(allPhotos, query: query), filter: timeFilter)
+        let base = ShootingTime.photos(scope.photos(allPhotos, query: query, texts: searchTexts), filter: timeFilter)
         guard let category else { return base }
         let key = CategoryChoices.key(category)
         return base.filter { CategoryChoices.key($0.category ?? "") == key }
@@ -1048,9 +1051,9 @@ final class SearchViewModel: ObservableObject {
         return SearchDiscovery.sections(present: present)
     }
 
-    /// 「いまの季節の写真」の先の小さい字（どのタグで集めたかを隠さない）
+    /// 「いまの季節の写真」の先の小さい字（どのタグで集めたかを隠さない。英語表示では英語）
     var seasonalNote: String {
-        DiscoverySections.seasonalTags().map { "#\($0)" }.joined(separator: " ")
+        DiscoverySections.seasonalNote()
     }
 
     func select(scope: SearchScope) {
@@ -1180,6 +1183,8 @@ final class SearchViewModel: ObservableObject {
     /// **人が替わって一覧を空にしたときも呼ぶ**——呼ばないと、読み直しが返るまで
     /// 前の人の一覧（限定公開を含む）から作ったチップ・季節の写真・機材が残っていた
     private func rebuildDerived() {
+        // 先に作る（下の `refreshTagChips` も `filtered` を通る）
+        searchTexts = PhotoQuery.searchTexts(allPhotos)
         popularTags = PhotoQuery.topTags(in: allPhotos)
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
         refreshTagChips()

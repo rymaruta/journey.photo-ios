@@ -1550,7 +1550,7 @@ struct PhotoMapView: View {
     /// （「スポット」の札と同じ行・近い順）。
     ///
     /// 絞り込みは上の欄とカテゴリだけ効かせる。**地図の見えている範囲では切らない**
-    /// （全国を県で並べる札なので）。座標の無い写真も「場所が分からない写真」に入る
+    /// （全国を県で並べる札なので）。座標の無い写真も「県・国に分けられない写真」に入る
     @ViewBuilder
     private var listArea: some View {
         let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
@@ -1560,7 +1560,7 @@ struct PhotoMapView: View {
         let currentId = sections.first(where: \.isCurrent)?.id
         let filtering = !MapSearch.fold(model.query).isEmpty || model.category != nil
         // **撮影スポットの台帳が届くまでは並べない。** 届く前は県を当てる手がかりが無く、
-        // 座標だけの写真が「場所が分からない」に入る。そこから詳細を開いた後に台帳が届くと、
+        // 座標だけの写真が「県・国に分けられない」段に入る。そこから詳細を開いた後に台帳が届くと、
         // 写真が県へ移って元の行が消え、詳細がその場で閉じる（台帳は控えがあればすぐ届く）
         if model.officialIndexState == .loading || (sections.isEmpty && !model.loaded) {
             // **読み込み中に「無い」と言わない**

@@ -9,7 +9,7 @@ import Foundation
 /// - 日本の外は**国ごとの段**（owner の要求変更・2026-09-29。以前は「海外」に1つだった）。
 ///   県の段のあとに、起点から近い順（起点が無ければ国名の順）。撮影スポットは台帳の国
 ///   （`region.country`）、写真は**150km 以内で一番近い海外の撮影スポットの国**。
-///   国が分からない海外は最後の「海外（その他）」に。最後に「場所が分からない写真」
+///   国が分からない海外は最後の「海外（その他）」に。最後に「県・国に分けられない写真」
 /// - 県の中は、写真（受け取った順）と撮影スポット（`OfficialSpotList.rows` と同じ行・近い順）
 ///
 /// 県の決め方:
@@ -51,7 +51,12 @@ enum RegionList {
             case .prefecture(let name): return name
             case .country(let name): return name
             case .abroad: return L("海外（その他）", "Elsewhere outside Japan")
-            case .unknown: return L("場所が分からない写真", "Photos without a place")
+            // 2026-10-07 判断: 以前は「場所が分からない写真」で、撮影地に「福岡」「土谷棚田」と
+            // 書いてある写真（県名の正式名も座標も無い）まで「場所が分からない」と言っていた。
+            // ここに入るのは**県・国を決められなかった**写真なので、そう言う。
+            // 「地図に置けない写真」にしないのは、座標があって近くに撮影スポットが無い写真
+            // （地図には置ける）もここに入るため。板 MapList の注記の字（「場所が分からない写真」）とは違う
+            case .unknown: return L("県・国に分けられない写真", "Photos not sorted by prefecture or country")
             }
         }
     }
@@ -65,9 +70,11 @@ enum RegionList {
 
         var id: String { key.id }
 
-        /// 見出し。「場所が分からない」に撮影スポットも入った回は「写真」と言わない
+        /// 見出し。「県・国に分けられない」段に撮影スポットも入った回は「写真」と言わない
         var title: String {
-            if key == .unknown && !spots.isEmpty { return L("場所が分からないもの", "Without a place") }
+            if key == .unknown && !spots.isEmpty {
+                return L("県・国に分けられないもの", "Not sorted by prefecture or country")
+            }
             return key.title
         }
         var count: Int { photos.count + spots.count }
@@ -96,6 +103,13 @@ enum RegionList {
         "徳島県", "香川県", "愛媛県", "高知県", "福岡県", "佐賀県", "長崎県",
         "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県",
     ]
+
+    /// 打った語が都道府県の名前か（「福岡」「福岡県」→「福岡県」）。違えば nil
+    static func prefecture(named query: String) -> String? {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.count >= 2 else { return nil }
+        return prefectures.first { $0 == q || ($0.count == q.count + 1 && $0.hasPrefix(q)) }
+    }
 
     /// 撮影地の文字から都道府県。**正式名だけ**を見る（「京都」だけでは東京都と区別できない）。
     /// 複数あれば文字の先に出てくる方
@@ -133,7 +147,7 @@ enum RegionList {
 
     /// 上の欄（撮影地・スポット名）とカテゴリで絞る。地図の絞り込みと同じ当て方
     /// （写真は `MapSearch.matches`、スポットは `OfficialSpotIndex.matches`）。
-    /// **地図と違って座標の無い写真も残す**（「場所が分からない写真」に入る）。
+    /// **地図と違って座標の無い写真も残す**（「県・国に分けられない写真」に入る）。
     /// カテゴリは写真の分類なので、撮影スポットには効かせない（地図のピンと同じ）
     /// `aliases` は slug → 別名（`OfficialSpotService.fetchAliases`）。「さがす」と同じく別名にも当てる
     static func filter(photos: [Photo], spots: [OfficialSpot], query: String, category: String?,

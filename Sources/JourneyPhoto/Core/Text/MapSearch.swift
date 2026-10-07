@@ -24,7 +24,7 @@ enum MapSearch {
     }
 
     /// 条件に合う写真。**座標の無い写真は最初から入れない**（地図に置けない）。
-    /// 「リスト」の札は座標の無い写真も「場所が分からない写真」に出す（`RegionList.filter`）
+    /// 「リスト」の札は座標の無い写真も「県・国に分けられない写真」に出す（`RegionList.filter`）
     ///
     /// ⚠️ **ここで当たるのは撮影地の文字列だけ。** 撮影スポットの台帳は
     /// Web が `content/spots.json`（review 段階の下書き）として持ち、アプリは
@@ -43,13 +43,26 @@ enum MapSearch {
         }
     }
 
-    /// 撮影地の文字列はゆるく見る（`PhotoQuery.photos(_:in: .location)` と同じ約束:
-    /// 「パリ」は「パリ, フランス」にも「オペラ・ガルニエ（パリ）」にも当たる）。
-    /// 全角半角・大小は区別しない
+    /// 撮影地の文字列に打った語が入っていれば当てる（Web の地図 `mapFilter.ts` の
+    /// `matchesMapQuery` と同じく字の部分一致。打ちかけの「Toky」でも当たる）。
+    /// 全角半角・大小は区別しない。「パリ」は「パリ, フランス」にも「オペラ・ガルニエ（パリ）」にも当たる。
+    /// 向きは見る（「パリ, フランス」と打って撮影地が「パリ」だけの写真は出さない）。
+    ///
+    /// 🔴 2026-10-07 判断: 字の部分一致のままだと次の2つが起きていたので、そこだけ外す:
+    ///  - **長い行政区分の名前の途中**に当たる（「東京都中央区」の「京都」）→ `LocationMatch.looselyContains`
+    ///  - 地図の「福岡」が、宮城県白石市の大字「福岡八宮」を含む撮影地（蔵王キツネ村）に当たり、
+    ///    **宮城県の写真へ飛んでいた** → 打った語が都道府県の名前（「福岡」）で、撮影地が**別の**
+    ///    都道府県の正式名（「宮城県」）を書いていれば当てない
+    ///
+    /// `LocationMatch.photoIsIn`（名前として当てる）は撮影地のページ（`/location/*`）の集め方で、
+    /// 検索には厳しすぎる（「東京駅」の「東京」・打ちかけの語が外れる）ので使わない
     static func matches(_ photo: Photo, needle: String) -> Bool {
         let location = fold(photo.location ?? "")
-        guard !location.isEmpty else { return false }
-        return location == needle || location.contains(needle) || needle.contains(location)
+        let n = fold(needle)
+        guard !location.isEmpty, !n.isEmpty else { return false }
+        if let named = RegionList.prefecture(named: n),
+           let written = RegionList.prefecture(inText: location), written != named { return false }
+        return LocationMatch.looselyContains(location, n)
     }
 
     /// その点が範囲に入っているか。**幅の半分**で切る（`span` は端から端）。

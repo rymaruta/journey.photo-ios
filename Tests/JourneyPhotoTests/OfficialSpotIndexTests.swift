@@ -73,6 +73,57 @@ final class OfficialSpotIndexTests: XCTestCase {
         XCTAssertTrue(OfficialSpotIndex.matches([x], query: "本").isEmpty)
     }
 
+    /// 🔴 2026-10-07: 「京都」で**東京都**のスポットが混ざっていた（県＋市をつないだ
+    /// 「東京都千代田区」に部分一致）。県名・市区町村名を名前として見る
+    func testKyotoDoesNotMatchTokyoTo() throws {
+        let spots = [
+            try spot("tokyo-station", name: "東京駅", prefecture: "東京都", city: "千代田区"),
+            try spot("kiyomizu", name: "清水寺", prefecture: "京都府", city: "京都市東山区"),
+            try spot("fukuchiyama", name: "福知山城", prefecture: "京都府", city: "福知山市"),
+        ]
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "京都").map(\.slug), ["kiyomizu", "fukuchiyama"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "京都府").map(\.slug), ["kiyomizu", "fukuchiyama"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "東京").map(\.slug), ["tokyo-station"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "千代田").map(\.slug), ["tokyo-station"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "東京都千代田区").map(\.slug), ["tokyo-station"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "東山").map(\.slug), ["kiyomizu"])
+        // 地図のピン・リストの札も同じ当て方（索引を通る）
+        XCTAssertEqual(RegionList.filter(photos: [], spots: spots, query: "京都", category: nil).spots.map(\.slug),
+                       ["kiyomizu", "fukuchiyama"])
+    }
+
+    /// 2026-10-07（レビュー）: 海外の「〜州」「〜地方」と、打ちかけの県名・県と町を並べた語が
+    /// 地域で当たらなくなっていた。欄の頭からの一致と、州・地方の切れ目を数える。京都≠東京都は保つ
+    func testRegionMatchesPrefixesForeignRegionsAndWords() throws {
+        func region(_ country: String?, _ prefecture: String, _ city: String?) throws -> OfficialSpot {
+            let c = country.map { "\"country\":\"\($0)\"," } ?? ""
+            let ci = city.map { ",\"city\":\"\($0)\"" } ?? ""
+            let json = "{\"spotId\":\"sp_r\",\"slug\":\"r\",\"name\":\"R\",\"stage\":\"review\","
+                + "\"region\":{\(c)\"prefecture\":\"\(prefecture)\"\(ci)}}"
+            return try JSONDecoder.api.decode(OfficialSpot.self, from: Data(json.utf8))
+        }
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(try region("スペイン", "アンダルシア州", "セビリア"), query: "アンダルシア"))
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(try region("イタリア", "トスカーナ州", "フィレンツェ"), query: "トスカーナ"))
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(try region("フランス", "ブルターニュ地方", nil), query: "ブルターニュ"))
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(try region("スペイン", "カタルーニャ州", "バルセロナ"), query: "カタルーニャ州 バルセロナ"))
+        let hakone = try region(nil, "神奈川県", "足柄下郡箱根町")
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(hakone, query: "神奈"))
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(hakone, query: "神奈川 箱根"))
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(hakone, query: "箱根"))
+        XCTAssertFalse(OfficialSpotIndex.regionMatches(hakone, query: "神奈川 京都"))
+        let tokyo = try region(nil, "東京都", "千代田区")
+        XCTAssertFalse(OfficialSpotIndex.regionMatches(tokyo, query: "京都"))
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(tokyo, query: "東京"))
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(try region(nil, "京都府", "京都市"), query: "京都"))
+        // 州・地方は切れ目（県＋市をつないだ字の中でも当たる）
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(try region("スペイン", "アンダルシア州", "セビリア県"),
+                                                      query: "アンダルシア州セビリア"))
+        XCTAssertTrue(OfficialSpotIndex.regionMatches(try region("ドイツ", "バイエルン州オーバーバイエルン", nil),
+                                                      query: "オーバーバイエルン"))
+        XCTAssertTrue(LocationMatch.nameIn("ブルターニュ地方レンヌ", "レンヌ", boundaries: ["州", "地方"]))
+        XCTAssertFalse(LocationMatch.nameIn("ブルターニュ地方レンヌ", "レンヌ"))
+    }
+
     /// **名前で当たったものが先。** 地域だけで当たったものはその後ろ
     func testNameMatchesComeFirst() throws {
         let spots = [

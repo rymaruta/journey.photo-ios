@@ -49,4 +49,20 @@ final class GearGroupsTests: XCTestCase {
         XCTAssertEqual(sections.map(\.group), [.wide, .telephoto])
         XCTAssertEqual(sections[0].photos.map(\.id), ["wide2", "wide1"])
     }
+
+    /// 2026-10-07: 一言が「ダイナミックな風景」「遠くの絶景を」で、料理・接写も並ぶ中身と
+    /// 合わなかった。焦点距離（画角）そのものを言う。英語の範囲に「〜」を出さない
+    func testNotesTalkAboutFocalLengthAndEnglishRangeHasNoWaveDash() {
+        let scenery = ["風景", "絶景", "スナップ", "landscape", "view", "snapshot"]
+        for group in GearGroups.Group.allCases {
+            XCTAssertFalse(scenery.contains { group.noteText.ja.contains($0) }, group.noteText.ja)
+            XCTAssertFalse(["Sweeping landscapes", "Distant views", "Everyday snapshots"].contains(group.noteText.en))
+            XCTAssertFalse(group.rangeText.en.contains("〜"), group.rangeText.en)
+            XCTAssertEqual(group.range, L(group.rangeText.ja, group.rangeText.en))
+            XCTAssertEqual(group.note, L(group.noteText.ja, group.noteText.en))
+        }
+        XCTAssertEqual(GearGroups.Group.wide.noteText.ja, "広く写す")
+        XCTAssertEqual(GearGroups.Group.telephoto.noteText.ja, "遠くを引き寄せる")
+        XCTAssertEqual(GearGroups.Group.standard.rangeText.en, "36–70mm")
+    }
 }
