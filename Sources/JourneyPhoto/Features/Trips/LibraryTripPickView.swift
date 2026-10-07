@@ -208,10 +208,12 @@ struct LibraryTripPickView: View {
     /// 🔴 **原本を溜めない。** 以前は原本（1枚 数MB〜数十MB の HEIC・JPEG）を10枚まとめて読み、
     /// 投稿画面へ渡して、画面を閉じるまで持ち続けていた。整えるのは画面の処理の外で
     private func load() async {
-        let order = trip.shots.map(\.id).filter { selected.contains($0) }
+        let order = trip.shots.filter { selected.contains($0.id) }
+        let zone = trip.timeZone
         var photos: [ImagePreparer.Prepared] = []
         var failed: [String] = []
-        for id in order {
+        for shot in order {
+            let id = shot.id
             if Task.isCancelled { return }
             guard let data = await PhotoLibrary.imageData(for: id) else {
                 failed.append(id)
@@ -219,7 +221,10 @@ struct LibraryTripPickView: View {
             }
             if Task.isCancelled { return }
             let prepared = try? await Task.detached(priority: .userInitiated) {
-                try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true)
+                // EXIF の撮影日時が無ければ写真ライブラリの撮った時刻で付ける（一冊から落ちない）
+                ImagePreparer.fillingTakenDate(
+                    try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true),
+                    takenAt: shot.date, timeZone: zone)
             }.value
             if let prepared {
                 photos.append(prepared)
