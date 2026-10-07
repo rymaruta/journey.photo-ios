@@ -1,0 +1,51 @@
+# 版の印（`testflight/<版>`）を付け直す（手で押すだけ・2026-10-07）。
+#
+# TestFlight の回（`ios-testflight.yml`）は、上げたあとに `testflight/<版>` のタグを押して
+# 「どの版まで出したか」を覚える。その押しが落ちると、次の回が同じ版を使ってしまう
+# （run 348 で 1.0.69 がそうなった）。そのときにここで付け直す。
+#
+# 押し方: Actions →「版の印を付け直す」→ Run workflow に、版（例 1.0.69）とコミット
+# （その回が上げた main の sha）を入れる。**もう在る印は動かさない**（上書きしない）。
+name: 版の印を付け直す
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "表に出る版（例: 1.0.69）"
+        required: true
+        type: string
+      commit:
+        description: "その版を上げたコミット（main の sha。短くてもよい）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 印を付ける
+        env:
+          VERSION: ${{ inputs.version }}
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::版の形が違います: ${VERSION}（例 1.0.69）"; exit 1
+          fi
+          sha=$(git rev-parse --verify "${COMMIT}^{commit}")
+          # main に入っているコミットだけ（枝の途中に印を付けない）
+          git merge-base --is-ancestor "$sha" origin/main || { echo "::error::${sha} は main に入っていません"; exit 1; }
+          if git rev-parse -q --verify "refs/tags/testflight/${VERSION}" >/dev/null; then
+            echo "::error::testflight/${VERSION} はもう在ります（動かしません）"; exit 1
+          fi
+          git tag "testflight/${VERSION}" "$sha"
+          git push origin "testflight/${VERSION}"
+          echo "### 付けた: testflight/${VERSION} → ${sha:0:7}" >> "$GITHUB_STEP_SUMMARY"
