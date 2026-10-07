@@ -303,9 +303,16 @@ struct EditPhotoView: View {
                 try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true)
             }.value
             // ピンの無い写真・この画面で撮影地を消した写真に、差し替えた写真の位置を書かない
+            let spots = await PlaceCoordsRule.index(
+                current: [],
+                needed: photo.coords != nil && EditPlaceRules.needsSpotIndex(
+                    openedLocation: photo.location, currentLocation: location, pickedCoords: false,
+                    photoCoords: prepared.coords),
+                fetch: { [spots = environment.spots] in try? await spots.fetchIndex() })
             let keep = EditPlaceRules.keepsCoordsOnReplace(openedLocation: photo.location,
                                                            openedHasCoords: photo.coords != nil,
-                                                           currentLocation: location)
+                                                           currentLocation: location,
+                                                           newPhotoCoords: prepared.coords, spots: spots)
             let keptOldDate = try await environment.photos.replace(photoId: photo.id, prepared: prepared,
                                                                    uploads: environment.uploads,
                                                                    keepCoords: keep)
@@ -436,7 +443,13 @@ struct EditPhotoView: View {
         defer { isSaving = false }
 
         // 差分の決まりは `EditPhotoChanges.patch`（閉じるときの確認と同じ判断）
-        let patch = EditPhotoChanges.patch(photo: photo, openedAudience: openedAudience, fields: fields)
+        // 書き換えた撮影地が写真の近くのスポットを指すか（`PlaceCoordsRule`）を見る索引。要るときだけ少し待つ
+        let spots = await PlaceCoordsRule.index(
+            current: [],
+            needed: EditPlaceRules.needsSpotIndex(openedLocation: photo.location, currentLocation: location,
+                                                  pickedCoords: pickedCoords != nil, photoCoords: photo.coords),
+            fetch: { [spots = environment.spots] in try? await spots.fetchIndex() })
+        let patch = EditPhotoChanges.patch(photo: photo, openedAudience: openedAudience, fields: fields, spots: spots)
 
         // **何も変えていなければ送らない。** 空の本文はサーバーが 400「更新項目が
         // ありません」で断る（公開を毎回送っていた頃はそれが覆っていた）

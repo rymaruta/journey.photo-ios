@@ -21,20 +21,20 @@ final class UploadDraftTests: XCTestCase {
                                               exif: nil, coords: Photo.Coords(lat: 34.12, lng: 133.99), takenOn: nil)
         var item = PendingPhoto(prepared: prepared)
         // 撮影地がまだ入っていない（自動入力が間に合わない）→ 送る
-        XCTAssertNotNil(item.coordsToSend)
+        XCTAssertNotNil(item.coordsToSend(spots: []))
         // 自動で入った → 送る
         item.fillAutomatically("観音寺市")
-        XCTAssertNotNil(item.coordsToSend)
+        XCTAssertNotNil(item.coordsToSend(spots: []))
         // 本人が空にした → 送らない
         item.location = ""
-        XCTAssertNil(item.coordsToSend)
+        XCTAssertNil(item.coordsToSend(spots: []))
         // 自動で入った地名に戻した → また送る
         item.location = "観音寺市"
-        XCTAssertNotNil(item.coordsToSend)
+        XCTAssertNotNil(item.coordsToSend(spots: []))
         // 消したあと空白だけ打った → 送るときは空なので、座標も送らない
         item.location = ""
         item.location = "  "
-        XCTAssertNil(item.coordsToSend)
+        XCTAssertNil(item.coordsToSend(spots: []))
     }
 
     // MARK: - 書き換えた撮影地と写真の座標（2026-10-07 判断）
@@ -50,14 +50,14 @@ final class UploadDraftTests: XCTestCase {
         var item = PendingPhoto(prepared: shotAtHome())
         item.fillAutomatically("観音寺市")
         item.location = "東京"
-        XCTAssertNil(item.coordsToSend, "書き換えた地名に写真の位置のピンが立つ")
+        XCTAssertNil(item.coordsToSend(spots: []), "書き換えた地名に写真の位置のピンが立つ")
         // 一字だけ足しても同じ（人が変えた）
         item.location = "観音寺市内"
-        XCTAssertNil(item.coordsToSend)
+        XCTAssertNil(item.coordsToSend(spots: []))
         // 自動入力が間に合う前に打った地名にも、写真の座標を付けない
         var typed = PendingPhoto(prepared: shotAtHome())
         typed.location = "東京"
-        XCTAssertNil(typed.coordsToSend)
+        XCTAssertNil(typed.coordsToSend(spots: []))
     }
 
     /// 候補から選び直したら、選んだ地名の座標を送る（人が選んだ場所）
@@ -68,16 +68,16 @@ final class UploadDraftTests: XCTestCase {
         // `PlaceSearchField` の候補の選び方と同じ順（座標 → 地名）
         item.pickedCoords = tokyo
         item.location = "東京都千代田区"
-        XCTAssertEqual(item.coordsToSend, tokyo)
+        XCTAssertEqual(item.coordsToSend(spots: []), tokyo)
     }
 
     /// 自動で入った地名を一字も変えなければ、写真の座標を今までどおり送る（前後の空白は見ない）
     func testUntouchedAutoPlaceKeepsPhotoCoords() {
         var item = PendingPhoto(prepared: shotAtHome())
         item.fillAutomatically("観音寺市")
-        XCTAssertEqual(item.coordsToSend, shotAtHome().coords)
+        XCTAssertEqual(item.coordsToSend(spots: []), shotAtHome().coords)
         item.location = "観音寺市 "
-        XCTAssertEqual(item.coordsToSend, shotAtHome().coords)
+        XCTAssertEqual(item.coordsToSend(spots: []), shotAtHome().coords)
     }
 
     /// 空にしたら送らない（今までどおり）。書き換えてから空にしても同じ
@@ -86,7 +86,7 @@ final class UploadDraftTests: XCTestCase {
         item.fillAutomatically("観音寺市")
         item.location = "東京"
         item.location = ""
-        XCTAssertNil(item.coordsToSend)
+        XCTAssertNil(item.coordsToSend(spots: []))
         XCTAssertNil(item.coordsToSend(spot: nil))
     }
 
@@ -97,11 +97,13 @@ final class UploadDraftTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift"), encoding: .utf8)
         XCTAssertTrue(source.contains("items[index].fillAutomatically(next)"))
-        XCTAssertTrue(source.contains("photo.fillAutomatically(spot.name)"))
+        // 送るときは索引を待ってから (c) を見る（`PlaceCoordsRule`）
+        XCTAssertTrue(source.contains("draft.coords = item.coordsToSend(spot: spot, spots: spotIndexForSubmit)"))
+        XCTAssertTrue(source.contains("spotIndexForSubmit = await PlaceCoordsRule.index("))
     }
 
     /// スポットから開いた投稿で県を足した（紐付けは残る）なら、スポットの近くで撮った写真の座標を送る。
-    /// スポットから遠い写真に、手でスポットの名前を打っても写真の座標は付けない
+    /// スポットから遠い写真に手でスポットの名前を打ったら、写真の座標ではなくスポットの座標
     func testSpotTiedPlaceKeepsNearbyPhotoCoords() {
         let spot = UploadSpotTarget(spotId: "sp_0123456789ab", name: "高屋神社",
                                     coords: Photo.Coords(lat: 34.12, lng: 133.63))
@@ -113,7 +115,7 @@ final class UploadDraftTests: XCTestCase {
             data: Data(), fileName: "p.jpg", contentType: "image/jpeg", exif: nil,
             coords: Photo.Coords(lat: 35.66, lng: 139.75), takenOn: nil))
         far.location = "高屋神社"
-        XCTAssertNil(far.coordsToSend(spot: spot), "東京で撮った写真が高屋神社のピンとして出る")
+        XCTAssertEqual(far.coordsToSend(spot: spot), spot.coords, "東京で撮った位置が高屋神社のピンとして出る")
     }
 
     /// 🔴 **位置の無い写真をスポットから投稿したら、撮影地を書き足してもピンが残る。**

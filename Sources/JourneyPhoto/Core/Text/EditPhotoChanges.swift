@@ -60,7 +60,9 @@ enum EditPhotoChanges {
     /// 保存で送るもの。**変えた項目だけ**（各項目の決まりは下の注記と、それぞれの型）。
     ///
     /// - Parameter openedAudience: 開いたときの公開範囲。知らない値なら nil（`EditVisibilityRules`）
-    static func patch(photo: Photo, openedAudience: Audience?, fields f: Fields) -> PhotoPatch {
+    /// - Parameter spots: 撮影スポットの索引（座標を消すかの判断・`EditPlaceRules.clearsCoords`）。無ければ空
+    static func patch(photo: Photo, openedAudience: Audience?, fields f: Fields,
+                      spots: [OfficialSpot] = []) -> PhotoPatch {
         var patch = PhotoPatch()
         // **触った欄だけ、英語側を残して送る**（`LocalizedEdit`）。
         // 表示用の1言語を平文で送っていたので、`{ja, en}` の写真を
@@ -77,12 +79,14 @@ enum EditPhotoChanges {
         // **選んだ回だけ載せる。** nil は「触らない」なので、
         // 地名を手で直しただけの回に既存の座標を壊さない
         patch.coords = f.pickedCoords
-        // **本人が撮影地を空にした・書き換えたら座標も消す**（書き換えは 2026-10-07 判断）。nil だけでは
-        // 「触らない」になり、地図とページにピンが残っていた（投稿画面の `coordsToSend` と同じ考え・`EditPlaceRules`）。
-        // 開いたときから空の写真（圏外で投稿して撮影地が入らなかった等）は座標を残す
+        // **本人が撮影地を空にした・書き換えたら座標も消す。** nil だけでは「触らない」になり、
+        // 地図とページにピンが残っていた。2026-10-07 判断で投稿・ストーリーと同じ決まり（`PlaceCoordsRule`）:
+        // 変えていない撮影地（開いたときから空の写真を含む）と、写真の近くの撮影スポットを指す撮影地
+        // （「, 香川」を足した）は座標を残す。それ以外に書き換えたら消す（`EditPlaceRules.clearsCoords`）
         patch.clearCoords = EditPlaceRules.clearsCoords(openedLocation: photo.location,
                                                         currentLocation: f.location,
-                                                        pickedCoords: f.pickedCoords != nil)
+                                                        pickedCoords: f.pickedCoords != nil,
+                                                        photoCoords: photo.coords, spots: spots)
         // タグは欄と同じ割り方で比べる（区切りの文字を含む古いタグは欄に出した
         // 時点で割れて見えるので、元の配列と直に比べると毎回「変わった」になる）
         let tags = TagInput.parse(f.tagsText)

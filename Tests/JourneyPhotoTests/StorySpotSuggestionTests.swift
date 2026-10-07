@@ -144,8 +144,10 @@ final class StorySpotSuggestionTests: XCTestCase {
             .components(separatedBy: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
             .joined(separator: "\n")
-        XCTAssertTrue(composer.contains("let coords = place.coordsToSend(shots.map(\\.prepared.coords), spots: spotIndex)\n"),
+        XCTAssertTrue(composer.contains("let coords = place.coordsToSend(shotCoords, spots: waitedSpots ?? spotIndex)\n"),
                       "撮影地の決まりを通さずに座標を送っている")
+        XCTAssertTrue(composer.contains("if waitedSpots == nil, place.needsSpotIndex(shotCoords, spots: spotIndex) {"),
+                      "索引が無いまま決めている")
         XCTAssertTrue(composer.contains("place.resolve(coords: shots.map(\\.prepared.coords), spots: spotIndex)"))
         XCTAssertTrue(composer.contains("} else if let spot = place.chip {"))
         XCTAssertTrue(composer.contains("place.pick()"))

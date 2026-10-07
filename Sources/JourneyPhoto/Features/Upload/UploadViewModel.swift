@@ -86,11 +86,11 @@ struct PendingPhoto: Identifiable {
     /// 送られて地図に出ていた。**空にした操作だけを見る**——自動入力が間に合わない
     /// （選んですぐ投稿・圏外・候補なし）ときは Web と同じく座標を送る
     ///
-    /// 2026-10-07 判断: **書き換えた撮影地にも、写真の座標を付けない**（`coordsToSend`）。
-    /// 自宅の町の地名を「東京」に直しても、ピンは自宅のあたりに立っていた。上の「空にした
-    /// 操作だけを見る」が守っているのは**欄が空のまま**の回（自動入力が間に合わなかった）で、
-    /// それは変えない——空の欄は今までどおり送る。文字が入っているときだけ、写真から自動で
-    /// 入れた地名（`photoPlaceName`）と一字でも違えば、写真の座標を送らない
+    /// 2026-10-07 判断: **書き換えた撮影地にも、写真の座標を付けない**（`coordsToSend(spots:)`・
+    /// 決まりは `PlaceCoordsRule`）。自宅の町の地名を「東京」に直しても、ピンは自宅のあたりに
+    /// 立っていた。上の「空にした操作だけを見る」が守っているのは**欄が空のまま**の回（自動入力が
+    /// 間に合わなかった）で、それは変えない——空の欄は今までどおり送る。文字が入っているときは、
+    /// 写真から自動で入れた地名（`photoPlaceName`）のままか、写真の近くの撮影スポットを指すときだけ送る
     var location = "" {
         didSet {
             // 空白だけは空と同じに見る（送るときは trim で空になるのに、
@@ -110,8 +110,9 @@ struct PendingPhoto: Identifiable {
     /// 入っていた撮影地を空にしたか（`location` の didSet だけが書く）
     private(set) var locationClearedByUser = false
 
-    /// 写真の位置から自動で入れた地名（座標から引いた地名・スポットから開いた回のスポット名）。
-    /// **`fillAutomatically` だけが書く**。欄がこれと同じ間だけ、写真の座標を送る（2026-10-07 判断）
+    /// 写真の位置から自動で入れた地名（座標から引いた地名）。**`fillAutomatically` だけが書く**。
+    /// 欄がこれと同じ間は、写真の座標を送る（2026-10-07 判断）。スポットから開いた回のスポット名は
+    /// 写真から引いた名前ではないので入れない（`coordsToSend(spot:spots:)` が決める）
     private(set) var photoPlaceName: String?
 
     /// 写真の位置から引いた地名を入れる（人の入力と区別するため、自動の値はここを通す）
@@ -120,10 +121,8 @@ struct PendingPhoto: Identifiable {
         location = name
     }
 
-    /// 写真の座標を送ってよい撮影地か。**欄が空（自動入力が間に合わなかった）か、
-    /// 自動で入れた地名を一字も変えていない**ときだけ。人が書き換えた地名に、写真の
-    /// 位置のピンを立てない（場所を伏せたくて書き換えた人の意図に反する・2026-10-07 判断）。
-    /// 空にした回は `locationClearedByUser` が止める
+    /// `PlaceCoordsRule` の (a)(b): **欄が空（自動入力が間に合わなかった）か、自動で入れた地名を
+    /// 一字も変えていない**。空にした回は `locationClearedByUser` が止める
     var keepsPhotoCoords: Bool {
         let now = location.trimmingCharacters(in: .whitespacesAndNewlines)
         if now.isEmpty { return true }
@@ -159,11 +158,20 @@ struct PendingPhoto: Identifiable {
 
     /// 送る座標。空にした撮影地の座標は送らない。
     /// **候補から選んだ地名の座標（`pickedCoords`）は送る**——人が選んだ場所なので。
-    /// 写真の座標は、自動で入れた地名のままのときだけ（`keepsPhotoCoords`・2026-10-07 判断）
-    var coordsToSend: Photo.Coords? {
+    /// 写真の座標は `PlaceCoordsRule` の (a)(b)(c) のときだけ（2026-10-07 判断）。
+    /// `spots` は撮影スポットの索引（(c) を見る。無ければ空＝(c) は当たらない）
+    func coordsToSend(spots: [OfficialSpot]) -> Photo.Coords? {
         if locationClearedByUser { return nil }
         if let pickedCoords { return pickedCoords }
-        return keepsPhotoCoords ? prepared.coords : nil
+        if keepsPhotoCoords || PlaceCoordsRule.namesSpotNear(location, photo: prepared.coords, spots: spots) {
+            return prepared.coords
+        }
+        return nil
+    }
+
+    /// 索引が無いと (c) を決められない写真か（送る前に索引を待つかどうか・`PlaceCoordsRule.index`）
+    var needsSpotIndex: Bool {
+        !locationClearedByUser && pickedCoords == nil && prepared.coords != nil && !keepsPhotoCoords
     }
 
     /// スポットから開いた投稿で送る座標。**位置の無い写真は、スポットに紐付くあいだ
@@ -173,13 +181,13 @@ struct PendingPhoto: Identifiable {
     /// `pickedCoords` を捨てる（`PlaceSearchField`）ので、「高屋神社, 香川」と足しただけで
     /// `spotId` は付いたままピンだけ消えていた。紐付けと同じ条件（`spotIdToSend`）で決める
     ///
-    /// 2026-10-07: 書き換えた撮影地には写真の座標を付けない（`coordsToSend`）が、**スポットに
-    /// 紐付くあいだ**（「高屋神社, 香川」と県を足した）は、スポットの近くで撮った写真の座標を送る
-    /// ——人が選んだスポットの場所なので。スポットから遠い写真（`covers` が外す）には付けない
-    func coordsToSend(spot: UploadSpotTarget?) -> Photo.Coords? {
-        if let coords = coordsToSend { return coords }
-        guard let spot, UploadSpotTarget.spotIdToSend(spot, for: self) != nil, spot.covers(prepared) else { return nil }
-        return prepared.coords ?? spot.coords
+    /// 2026-10-07（`PlaceCoordsRule`）: **スポットに紐付くあいだ**（スポット名のまま・「高屋神社, 香川」と
+    /// 県を足した）は、人が選んだスポットとして扱う——写真がスポットの 5km 以内なら写真の座標、
+    /// 遠い・位置の無い写真はスポットの座標（`coordsForPickedSpot`）
+    func coordsToSend(spot: UploadSpotTarget?, spots: [OfficialSpot] = []) -> Photo.Coords? {
+        if let coords = coordsToSend(spots: spots) { return coords }
+        guard let spot, UploadSpotTarget.spotIdToSend(spot, for: self) != nil else { return nil }
+        return PlaceCoordsRule.coordsForPickedSpot(spot.coords, photo: prepared.coords)
     }
 }
 
@@ -447,6 +455,11 @@ final class UploadViewModel: ObservableObject {
     var makeStripThumb: @Sendable (Data) -> UIImage? = { data in
         StripThumb.make(from: data).map { UIImage(cgImage: $0) }
     }
+
+    /// 撮影スポットの索引を読む口（`UploadView` が `AppEnvironment.spots` を入れる）。試験・既定は読まない
+    var fetchSpotIndex: @Sendable () async -> [OfficialSpot]? = { nil }
+    /// 送るときに使う撮影スポットの索引（`submit` が読む・`PlaceCoordsRule`）
+    private(set) var spotIndexForSubmit: [OfficialSpot] = []
 
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
         self.uploads = uploads
@@ -873,7 +886,9 @@ final class UploadViewModel: ObservableObject {
         // スポットの座標を使うのは位置の無い写真だけ
         if let spot, spot.covers(prepared) {
             // 位置の無い写真の座標は送るときに決める（`coordsToSend(spot:)`）
-            photo.fillAutomatically(spot.name)
+            // スポットの名前は写真から引いた地名ではないので `fillAutomatically` を通さない
+            // （座標は `coordsToSend(spot:spots:)` がスポットとの距離で決める・2026-10-07）
+            photo.location = spot.name
             items.append(photo)
             return
         }
@@ -928,6 +943,11 @@ final class UploadViewModel: ObservableObject {
         let queue = items.map(\.id)
         // 🔴 **編集した写真の書き出しは、最初の1枚を置く前に全部済ませる**（`exportAllEdited` の注記）
         let exported = await exportAllEdited(queue)
+        // 撮影地が写真の近くのスポットを指すか（`PlaceCoordsRule` の (c)）を見る索引。要る写真があって
+        // まだ無いときだけ、少しだけ待って読む（控えがあればすぐ返る）
+        spotIndexForSubmit = await PlaceCoordsRule.index(current: spotIndexForSubmit,
+                                                         needed: items.contains(where: \.needsSpotIndex),
+                                                         fetch: fetchSpotIndex)
         for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
             if cancelled { break }
@@ -1038,7 +1058,7 @@ final class UploadViewModel: ObservableObject {
         draft.audience = audienceToSend
         // **選んだ撮影地の座標を優先する。** 写真に残っていた位置より、
         // 本人が選んだ地名の方が正しい（丸めはどちらも約1km）
-        draft.coords = item.coordsToSend(spot: spot)
+        draft.coords = item.coordsToSend(spot: spot, spots: spotIndexForSubmit)
         draft.date = item.prepared.takenOn
         draft.exif = item.prepared.exif
         // **読み込み中の地の色。** Web は前から送っていて、アプリだけ

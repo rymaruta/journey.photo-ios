@@ -11,25 +11,39 @@ enum EditPlaceRules {
         trim(openedLocation ?? "") != trim(currentLocation)
     }
 
-    /// 保存で `coords: null` を送るか。**本人が撮影地を消した・書き換えたとき**（候補を選んだ回は除く）。
-    /// 開いたときから撮影地が空で座標だけある写真（圏外で投稿した等）は、
-    /// 題を直しただけで座標を消さない
+    /// 保存で `coords: null` を送るか（決まりは投稿・ストーリーと同じ `PlaceCoordsRule`・2026-10-07 判断）。
     ///
-    /// 2026-10-07 判断: **書き換えたときも消す。** 自宅の町の地名を「東京」に直しても、
-    /// 写真の位置のピンが自宅のあたりに残っていた（投稿画面の `PendingPhoto.coordsToSend` と同じ考え）。
-    /// 候補から選び直せば、その座標を送る（`pickedCoords`）
-    static func clearsCoords(openedLocation: String?, currentLocation: String,
-                             pickedCoords: Bool) -> Bool {
+    /// 写真の座標を残すのは、撮影地を**変えていない**（開いたときから空の写真も、題を直しただけなら
+    /// 残す）か、変えた撮影地が**写真の近くの撮影スポットを指す**（「高屋神社」に「, 香川」を足した）
+    /// ときだけ。**消した・それ以外に書き換えたときは消す**——自宅の町の地名を「東京」に直しても、
+    /// 写真の位置のピンが自宅のあたりに残っていた。候補から選び直した回は、その座標を送るので消さない
+    ///
+    /// - Parameters:
+    ///   - photoCoords: 写真のいまの座標（(c) を見る）
+    ///   - spots: 撮影スポットの索引。無ければ空（(c) は当たらない＝消す側に倒れる）
+    static func clearsCoords(openedLocation: String?, currentLocation: String, pickedCoords: Bool,
+                             photoCoords: Photo.Coords? = nil, spots: [OfficialSpot] = []) -> Bool {
         !pickedCoords && changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
+            && !PlaceCoordsRule.namesSpotNear(currentLocation, photo: photoCoords, spots: spots)
+    }
+
+    /// 索引が無いと `clearsCoords` を決められないか（保存の前に索引を待つかどうか）
+    static func needsSpotIndex(openedLocation: String?, currentLocation: String, pickedCoords: Bool,
+                               photoCoords: Photo.Coords?) -> Bool {
+        !pickedCoords && photoCoords != nil && !trim(currentLocation).isEmpty
+            && changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
     }
 
     /// 差し替えで新しい写真の位置を書くか。**元からピンがあった写真だけ**、
     /// ピンを新しい写真の位置へ動かす。ピンの無い写真（Web の「地図に出さない」で
     /// 外した・撮影地も無い）に位置を戻さない。この画面で撮影地を消した・書き換えたときも
-    /// 書かない（2026-10-07 判断・`clearsCoords` と同じ）
-    static func keepsCoordsOnReplace(openedLocation: String?, openedHasCoords: Bool,
-                                     currentLocation: String) -> Bool {
-        openedHasCoords && !changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
+    /// 書かない——ただし書き換えた撮影地が新しい写真の近くのスポットを指すなら書く
+    /// （`clearsCoords` と同じ決まり・2026-10-07 判断）
+    static func keepsCoordsOnReplace(openedLocation: String?, openedHasCoords: Bool, currentLocation: String,
+                                     newPhotoCoords: Photo.Coords? = nil, spots: [OfficialSpot] = []) -> Bool {
+        openedHasCoords
+            && (!changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
+                || PlaceCoordsRule.namesSpotNear(currentLocation, photo: newPhotoCoords, spots: spots))
     }
 
     private static func trim(_ text: String) -> String {

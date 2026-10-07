@@ -112,6 +112,8 @@ struct StoryComposerView: View {
     @State private var placeDraft = ""
     /// 撮影スポットの索引（静的な JSON・一度だけ読む）。**取れなかった回は空**＝候補を出さないだけ
     @State private var spotIndex: [OfficialSpot] = []
+    /// 送る前に撮影スポットの索引を待っている（`post`・押し直しを受けない）
+    @State private var isWaitingForSpots = false
     /// ✕ で閉じる前の「下書きに保存／捨てる／キャンセル」
     @State private var showLeaveConfirm = false
     /// 「続きから」で戻した直後の中身。**ここから何も変えていなければ**、
@@ -1473,16 +1475,34 @@ struct StoryComposerView: View {
     /// 以前はここで送り終えるまで待ち、その間は画面を閉じられなかった。
     /// 途中で失敗したときの決まり（止める・出たぶんは残す・残りを持つ）は
     /// 係の側へそのまま移した。
-    private func post() {
+    ///
+    /// - Parameter waitedSpots: 撮影スポットの索引を待ったあとの呼び直しで渡す（下の (c) の判断）
+    private func post(waitedSpots: [OfficialSpot]? = nil) {
         // 🔴 **二度押しで二重に出さない**（2026-09-25 owner「2重投稿」）。
         // ここは同期で、1回目で画面を閉じ係に渡す。2回目は係が「片付いていない
-        // 並びがある」で受けない
+        // 並びがある」で受けない。索引を待っている間の押し直しは `isWaitingForSpots` で受けない
         guard !shots.isEmpty, let ownerId = auth.userId else { return }
+        guard waitedSpots != nil || !isWaitingForSpots else { return }
         // **欠けた投票は送らない**（サーバーが黙って落とす＝置いたのに出ない）。どの写真かを言う
         if let index = shots.firstIndex(where: { $0.vote.map { !$0.isComplete } ?? false }) {
             current = index
             message = L("\(index + 1)枚目の投票に、問いと2つの選択肢を入れてください",
                         "Fill in the question and both options of the poll on photo \(index + 1)")
+            return
+        }
+        // 撮影地が写真の近くのスポットを指すか（`PlaceCoordsRule` の (c)）は索引が無いと決められない。
+        // まだ読めていなければ少しだけ待って（控えがあればすぐ返る）から出し直す（2026-10-07）
+        let shotCoords = shots.map(\.prepared.coords)
+        if waitedSpots == nil, place.needsSpotIndex(shotCoords, spots: spotIndex) {
+            isWaitingForSpots = true
+            let current = spotIndex
+            Task {
+                let spots = await PlaceCoordsRule.index(current: current, needed: true,
+                                                        fetch: { [spots = environment.spots] in try? await spots.fetchIndex() })
+                isWaitingForSpots = false
+                if spotIndex.isEmpty { spotIndex = spots }
+                post(waitedSpots: spots)
+            }
             return
         }
         message = nil
@@ -1492,7 +1512,7 @@ struct StoryComposerView: View {
         // （読み書きの往復で画質を落とさない）
         // 撮影地は全部で1つなので、基準の写真から遠い写真の座標は送らない（`StoryQueue.coordsToSend`）。
         // 手で書いた撮影地が写真の近くのスポットを指さなければ、座標を送らない（`Place.coordsToSend`・2026-10-07）
-        let coords = place.coordsToSend(shots.map(\.prepared.coords), spots: spotIndex)
+        let coords = place.coordsToSend(shotCoords, spots: waitedSpots ?? spotIndex)
         let jobs = zip(shots, coords).map { shot, shotCoords in
             StoryUploadCenter.Job(
                 imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),

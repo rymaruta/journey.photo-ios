@@ -65,12 +65,17 @@ enum StorySpotSuggestion {
         /// 撮影地が空の回は今までどおり（サーバーは撮影地の無い座標を保存しない・`stories.ts`）
         func coordsToSend(_ coords: [Photo.Coords?], spots: [OfficialSpot]) -> [Photo.Coords?] {
             let sent = StoryQueue.coordsToSend(coords)
-            let text = location.trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.isEmpty { return sent }
-            guard let base = StoryQueue.baseCoords(coords),
-                  StorySpotLink.spot(location: text, coords: base, in: spots) != nil
+            if location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return sent }
+            guard PlaceCoordsRule.namesSpotNear(location, photo: StoryQueue.baseCoords(coords), spots: spots)
             else { return coords.map { _ in nil } }
             return sent
+        }
+
+        /// 送る前に撮影スポットの索引を待つか。撮影地があり、GPS の写真があり、索引がまだ無いとき
+        /// （待たずに決めると、近くのスポットを指していても座標が落ちてスポットへの導線が消える）
+        func needsSpotIndex(_ coords: [Photo.Coords?], spots: [OfficialSpot]) -> Bool {
+            spots.isEmpty && !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && StoryQueue.baseCoords(coords) != nil
         }
     }
 }
