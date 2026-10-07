@@ -281,9 +281,9 @@ final class LibraryTripsTests: XCTestCase {
     func testPostedDays() throws {
         let shots = (0..<6).map { shot("k\($0)", hours: Double($0) * 12, kyoto) }  // 9/12〜9/14
         let trip = try XCTUnwrap(LibraryTrips.find(shots, home: home, timeZone: tokyo).first)
-        // 前後1日のずれは同じ日と見なす（`LibraryTrips.postedDays` の注記）: 9/11 は 9/12 にだけ重なる
-        XCTAssertEqual(LibraryTrips.postedDays(trip: trip, postedDayKeys: ["2026-09-11", "2026-01-01"]), 1)
-        XCTAssertEqual(LibraryTrips.postedDays(trip: trip, postedDayKeys: ["2026-09-09"]), 0, "2日離れた日まで数えた")
+        XCTAssertEqual(LibraryTrips.postedDays(trip: trip, postedDayKeys: ["2026-09-13", "2026-01-01"]), 1)
+        // 時間帯が分かっている旅（ここでは渡した）は、前後1日のずれを許さない
+        XCTAssertEqual(LibraryTrips.postedDays(trip: trip, postedDayKeys: ["2026-09-11"]), 0)
         XCTAssertEqual(LibraryTrips.postedDays(trip: trip, postedDayKeys: []), 0)
     }
 

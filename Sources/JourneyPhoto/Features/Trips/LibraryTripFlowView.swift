@@ -62,8 +62,8 @@ final class LibraryTripModel: ObservableObject {
     @Published private(set) var isLoading = false
     /// 一度読み終えた（0件の言葉を出してよい）
     @Published private(set) var loaded = false
-    /// 自分の投稿の撮影日（`YYYY-MM-DD`）
-    @Published private(set) var postedDayKeys: Set<String> = []
+    /// 自分の投稿の撮影日（`YYYY-MM-DD`）と撮影地（`LibraryTrips.postedDays` の突き合わせ）
+    @Published private(set) var posted: [LibraryTrips.PostedShot] = []
     /// 引いた地名。鍵は `LibraryTrips.lookupKey`。**流れをまたいで控える**（`knownNames`）
     @Published private(set) var names: [String: String] = [:]
     /// 選び足しの画面を出している（二度押しで画面が重ならないように）
@@ -104,7 +104,7 @@ final class LibraryTripModel: ObservableObject {
         isLoading = true
         async let posted = myPhotos()
         trips = await Self.findTrips()
-        postedDayKeys = LibraryTrips.dayKeys(ofPosted: await posted)
+        self.posted = LibraryTrips.postedShots(of: await posted)
         isLoading = false
         loaded = true
     }
@@ -149,8 +149,9 @@ final class LibraryTripModel: ObservableObject {
             let place = await PhotoLibrary.place(near: coords)
             if let zone = place.timeZone {
                 Self.knownZones[key] = zone
-                // 撮った土地の時間帯が分かった: その旅の日を切り直す（2026-10-07 判断）
-                trips = LibraryTrips.applyingZones(trips, zones: [key: zone])
+                // 撮った土地の時間帯が分かった: その旅の日を切り直す（2026-10-07 判断）。
+                // **分かっている時間帯を全部渡す**——旅の代表点の時間帯が日の代表点より先
+                trips = LibraryTrips.applyingZones(trips, zones: Self.knownZones)
             }
             if let name = place.name {
                 names[key] = name

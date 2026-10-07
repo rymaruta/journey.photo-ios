@@ -15,11 +15,11 @@ struct LibraryTripListView: View {
     let onDone: ([ImagePreparer.Prepared]) -> Void
 
     private var fresh: [LibraryTrip] {
-        model.trips.filter { LibraryTrips.postedDays(trip: $0, postedDayKeys: model.postedDayKeys) == 0 }
+        model.trips.filter { LibraryTrips.postedDays(trip: $0, posted: model.posted) == 0 }
     }
 
     private var posted: [LibraryTrip] {
-        model.trips.filter { LibraryTrips.postedDays(trip: $0, postedDayKeys: model.postedDayKeys) > 0 }
+        model.trips.filter { LibraryTrips.postedDays(trip: $0, posted: model.posted) > 0 }
     }
 
     var body: some View {
@@ -116,7 +116,7 @@ struct LibraryTripListView: View {
     private func row(_ trip: LibraryTrip) -> some View {
         let name = model.name(for: trip.center)
         let period = LibraryTrips.periodText(trip)
-        let postedDays = LibraryTrips.postedDays(trip: trip, postedDayKeys: model.postedDayKeys)
+        let postedDays = LibraryTrips.postedDays(trip: trip, posted: model.posted)
         return NavigationLink {
             LibraryTripPickView(trip: trip, title: name ?? period, model: model, onDone: onDone)
         } label: {
