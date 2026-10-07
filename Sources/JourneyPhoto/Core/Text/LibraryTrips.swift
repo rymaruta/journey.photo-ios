@@ -397,7 +397,7 @@ enum LibraryTrips {
     /// （`days.count`）だと、中日に撮らなかった旅が一冊の「3日間」と違う「2日」になった
     static func countText(_ trip: LibraryTrip) -> String {
         let days = TripBook.daysLabel(calendarDays(trip))
-        return L("\(days)・\(trip.shots.count)枚", "\(days) · \(trip.shots.count) photos")
+        return "\(days)" + L("・", " · ") + PhotoMapViewModel.photoCountLabel(trip.shots.count)
     }
 
     /// 日の眉ラベル「DAY 1 · 9.12 · 京都市」。地名が引けなければ「DAY 1 · 9.12」

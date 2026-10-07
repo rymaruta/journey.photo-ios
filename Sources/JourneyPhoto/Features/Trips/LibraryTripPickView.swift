@@ -101,7 +101,7 @@ struct LibraryTripPickView: View {
                 .font(JPFont.cardTitle)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
-            Text("\(LibraryTrips.periodText(current)) · \(L("\(current.shots.count)枚", "\(current.shots.count) photos"))")
+            Text("\(LibraryTrips.periodText(current)) · \(PhotoMapViewModel.photoCountLabel(current.shots.count))")
                 .font(JPFont.mono(12))
                 .foregroundStyle(WebTheme.muted2)
             Text(L("日ごとにばらけるよう選んであります。押すと選ぶ・外すが切り替わります",

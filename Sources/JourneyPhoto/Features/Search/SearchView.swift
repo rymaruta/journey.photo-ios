@@ -511,7 +511,7 @@ struct SearchView: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
-                    Text(L("\(spot.count)枚の写真", "\(spot.count) photos"))
+                    Text(L("\(spot.count)枚の写真", spot.count == 1 ? "1 photo" : "\(spot.count) photos"))
                         .font(JPFont.mono(12, relativeTo: .caption))
                         .foregroundStyle(WebTheme.muted)
                 }
