@@ -1048,9 +1048,9 @@ final class SearchViewModel: ObservableObject {
         return SearchDiscovery.sections(present: present)
     }
 
-    /// 「いまの季節の写真」の先の小さい字（どのタグで集めたかを隠さない）
+    /// 「いまの季節の写真」の先の小さい字（どのタグで集めたかを隠さない。英語表示では英語）
     var seasonalNote: String {
-        DiscoverySections.seasonalTags().map { "#\($0)" }.joined(separator: " ")
+        DiscoverySections.seasonalNote()
     }
 
     func select(scope: SearchScope) {
