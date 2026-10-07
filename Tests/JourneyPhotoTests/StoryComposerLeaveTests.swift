@@ -14,6 +14,23 @@ final class StoryComposerLeaveTests: XCTestCase {
                              allowReplies: allowReplies)
     }
 
+    /// 🔴 **写真の読み込み中は、閉じる確認に「下書きに保存」を出さない。** 右上の「…」の
+    /// 下書き保存は止めていたのに、閉じる確認からは通り、読み込み中の写真を落とした下書きを書いていた
+    func testLeaveDialogHidesDraftSaveWhileLoading() {
+        let loading = StoryComposerView.leaveDialog(canSaveDraft: true, loading: true, restored: false)
+        XCTAssertFalse(loading.canSave, "読み込み中に「下書きに保存」が出ている")
+        XCTAssertEqual(loading.title, L("閉じますか？", "Close?"))
+
+        let idle = StoryComposerView.leaveDialog(canSaveDraft: true, loading: false, restored: false)
+        XCTAssertTrue(idle.canSave)
+        XCTAssertEqual(idle.title, L("下書きに保存しますか？", "Save as a draft?"))
+        // 戻した下書きを直した回の説明は前のまま
+        XCTAssertNotEqual(StoryComposerView.leaveDialog(canSaveDraft: true, loading: false, restored: true).message,
+                          idle.message)
+        // 残すと決めた下書きがある間は、読み込みに関係なく出さない（前のまま）
+        XCTAssertFalse(StoryComposerView.leaveDialog(canSaveDraft: false, loading: false, restored: false).canSave)
+    }
+
     func testEmptyComposerClosesAtOnce() {
         XCTAssertEqual(StoryComposerView.leave(content(), restored: nil), .now)
     }

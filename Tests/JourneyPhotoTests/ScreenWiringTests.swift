@@ -76,4 +76,12 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertTrue(composer.contains("StorySimpleRules.readPicks("), "上限時間を通らずに写真を読んでいる")
         XCTAssertEqual(count("loadTransferable(", in: composer), 1, "readPicks の外で写真を読んでいる")
     }
+
+    /// ストーリー: 閉じる確認の「下書きに保存」は読み込み中を見る（`leaveDialog`）
+    func testStoryComposerLeaveDialogSeesLoading() throws {
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains("canSave: leaveDialog.canSave"))
+        XCTAssertTrue(composer.contains("loading: loadingPicks > 0"))
+        XCTAssertTrue(composer.contains("guard !shots.isEmpty, loadingPicks == 0 else { return }"))
+    }
 }
