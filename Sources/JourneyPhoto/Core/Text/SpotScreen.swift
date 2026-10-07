@@ -47,6 +47,27 @@ enum SpotScreen {
         return siteBase.appendingPathComponent("spots").appendingPathComponent(slug)
     }
 
+    /// 写真から作った撮影地（`DerivedSpot`）のサイトのページ（`<サイト>/location/<スラッグ>`）。
+    ///
+    /// 🔴 **公開の写真が1枚以上ある撮影地のときだけ**（2026-10-07・全国の戦略「共有のリンクを
+    /// 検索に強いページへ戻す」）。Web は公開の一覧（`photos.json`）から1枚以上ある撮影地の
+    /// ページを建てる（写真1枚の `/location/福岡` も 200・無い撮影地は 404 を確かめた）。
+    /// 自分の下書き（`published == false`）や公開範囲を絞った写真（`audience` あり）は
+    /// 公開の一覧に載らないので、それだけの撮影地にリンクを付けると**開けないリンクを配る**。
+    /// スラッグは呼ぶ側が `LocationSlug.make`（Web の `slugify(_, "location")` と同じ）で作ったもの
+    static func locationPageURL(slug: String, photos: [Photo], siteBase: URL) -> URL? {
+        let slug = slug.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !slug.isEmpty, photos.contains(where: isOnPublicSite) else { return nil }
+        return siteBase.appendingPathComponent("location").appendingPathComponent(slug)
+    }
+
+    /// 静的サイトの公開の一覧に載る写真か（下書きでも、公開範囲を絞った写真でもない）
+    static func isOnPublicSite(_ photo: Photo) -> Bool {
+        guard photo.published != false else { return false }
+        let audience = photo.audience?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return audience.isEmpty
+    }
+
     /// 端末の地図アプリへの行き先。**座標があるときだけ**
     /// （無い地点に「地図で見る」を出さない）。
     static func mapURL(name: String, coords: Photo.Coords?) -> URL? {

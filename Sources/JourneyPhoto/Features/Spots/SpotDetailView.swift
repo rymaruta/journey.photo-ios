@@ -221,12 +221,10 @@ struct SpotDetailView: View {
                 .buttonStyle(.plain)
             }
 
-            // **シェアは文字で配る**（モック5-6）。
-            //
-            // 🔴 **journey-photo.com のリンクは付けない。** スポットの
-            // ページ（`/spots/<スラッグ>`）はまだ作っていない（Phase 1.5）ので、
-            // 付けると**開けないリンクを配る**ことになる。代わりに
-            // 名前と地図のリンクを配る——受け取った人がその場所へ行ける。
+            // **シェアは文字で配る**（モック5-6）。名前・地域・地図のリンクに加えて、
+            // **公開の写真がある撮影地はサイトのページ（`/location/<スラッグ>`）も配る**
+            // （2026-10-07。共有されたリンクが検索に強いページへ人を戻す）。
+            // 公開の写真が無い撮影地には付けない（ページが建たない・`SpotScreen.locationPageURL`）
             ShareLink(item: shareText) {
                 SpotDetailParts.actionLabel(icon: "square.and.arrow.up", title: L("シェア", "Share"), filled: false)
             }
@@ -247,7 +245,9 @@ struct SpotDetailView: View {
     /// 行動の札・数え札・節の見出し・近くの札は `SpotDetailParts`
     /// （台帳の撮影スポットの画面 `OfficialSpotView` と共用）
     private var shareText: String {
-        SpotScreen.shareText(name: spot.label, region: placeLine, mapURL: mapURL)
+        SpotScreen.shareText(name: spot.label, region: placeLine, mapURL: mapURL,
+                             pageURL: SpotScreen.locationPageURL(slug: spot.slug, photos: linked,
+                                                                 siteBase: AppConfig.siteBaseURL))
     }
 
     /// 端末の地図アプリへ。**座標があるときだけ**（`SpotScreen`）
