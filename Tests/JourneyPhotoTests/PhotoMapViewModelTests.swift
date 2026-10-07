@@ -286,6 +286,28 @@ extension PhotoMapViewModelTests {
         XCTAssertFalse(model.showsCard(official: nil, onScreen: false))
     }
 
+    /// 🔴 **カテゴリで絞っている間は撮影スポットのピンを置かない**（Web の `filterMapSpots` と同じ）。
+    /// チップは写真の分類で、スポットには対応が無い。以前は写真のピンだけ絞れ、スポットのピンは全部残った
+    func testCategoryHidesOfficialPins() async {
+        let model = await loaded(spots: spotsJSON)
+        model.update(visible: narrow())
+        XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja", "kotohira"], "下ごしらえ: 寄せると出る")
+
+        model.select(category: "landscape")
+        XCTAssertEqual(model.shown.map(\.id), ["a", "e"], "写真のピンはカテゴリで絞る（風景と landscape は同じ鍵）")
+        XCTAssertTrue(model.officialPins.isEmpty, "カテゴリで絞っているのにスポットのピンが残っている")
+        // 地図を動かしても、名前で当てても置かない
+        model.update(visible: narrow(lat: 34.141, lng: 133.681))
+        XCTAssertTrue(model.officialPins.isEmpty, "地図を動かしたらスポットのピンが戻った")
+        model.query = "たかや"
+        XCTAssertTrue(model.officialPins.isEmpty, "語で当たったスポットはカテゴリを無視して出ている")
+
+        // 「すべて」に戻すと出る
+        model.query = ""
+        model.select(category: nil)
+        XCTAssertEqual(model.officialPins.map(\.slug), ["takaya-jinja", "kotohira"])
+    }
+
     /// 名前で絞っているときは倍率に関係なく当たったものが出る（owner が名前で探す入口）
     func testQueryShowsMatchingSpotsRegardlessOfZoom() async {
         let model = await loaded(spots: spotsJSON)
