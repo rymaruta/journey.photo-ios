@@ -71,6 +71,9 @@ final class LibraryTripModel: ObservableObject {
 
     /// 引けた地名（流れをまたいで使う）
     private static var knownNames: [String: String] = [:]
+    /// 地名と一緒に分かった土地の時間帯（鍵は `LibraryTrips.lookupKey`）。旅の日を
+    /// 撮った土地の暦で切り直すのに使う（`LibraryTrips.applyingZones`）。流れをまたいで控える
+    private static var knownZones: [String: TimeZone] = [:]
     /// 引けなかった座標と、その時刻。**`LibraryTrips.nameRetryAfter` の間は引き直さない**
     /// （断られた直後に開き直すたびに Apple の地図へ問い合わせない）。流れをまたいで控える
     private static var failedAt: [String: Date] = [:]
@@ -78,6 +81,7 @@ final class LibraryTripModel: ObservableObject {
     /// 地名の控えを消す（サインアウト・退会。`AuthStore.settleSignedOut`）
     static func forgetPlaceNames() {
         knownNames = [:]
+        knownZones = [:]
         failedAt = [:]
     }
 
@@ -122,7 +126,9 @@ final class LibraryTripModel: ObservableObject {
     private static func findTrips() async -> [LibraryTrip] {
         let shots = await PhotoLibrary.shots()
         // 探すのも画面の処理の外で（数万枚を升に分ける）
-        return await Task.detached(priority: .userInitiated) { LibraryTrips.find(shots) }.value
+        let found = await Task.detached(priority: .userInitiated) { LibraryTrips.find(shots) }.value
+        // 前に引いて分かった土地の時間帯で日を切り直す（分からない旅は経度の目安のまま）
+        return LibraryTrips.applyingZones(found, zones: knownZones)
     }
 
     /// 地名（無い・まだ引いていなければ nil）
@@ -140,7 +146,13 @@ final class LibraryTripModel: ObservableObject {
             guard names[key] == nil, tried.insert(key).inserted,
                   LibraryTrips.shouldLookUpName(failedAt: Self.failedAt[key], now: Date()) else { continue }
             if Task.isCancelled { return }
-            if let name = await PhotoLibrary.placeName(near: coords) {
+            let place = await PhotoLibrary.place(near: coords)
+            if let zone = place.timeZone {
+                Self.knownZones[key] = zone
+                // 撮った土地の時間帯が分かった: その旅の日を切り直す（2026-10-07 判断）
+                trips = LibraryTrips.applyingZones(trips, zones: [key: zone])
+            }
+            if let name = place.name {
                 names[key] = name
                 Self.knownNames[key] = name
                 Self.failedAt[key] = nil
