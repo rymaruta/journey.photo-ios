@@ -325,6 +325,22 @@ enum LibraryTrips {
         return "\(head) — \(tail)"
     }
 
+    /// 何日間の旅か。**暦の日で数える**（撮らなかった中日も入る・旅の時間帯で切る）。
+    /// 一冊の「N日間」（`TripBook.Trip.days`）と同じ数え方
+    static func calendarDays(_ trip: LibraryTrip) -> Int {
+        let calendar = makeCalendar(trip.timeZone)
+        let span = calendar.dateComponents([.day], from: calendar.startOfDay(for: trip.start),
+                                           to: calendar.startOfDay(for: trip.end)).day ?? 0
+        return max(1, span + 1)
+    }
+
+    /// 一覧の行の「3日間・12枚」。**日数は暦の日**（`calendarDays`・2026-10-07 判断）——撮った日の数
+    /// （`days.count`）だと、中日に撮らなかった旅が一冊の「3日間」と違う「2日」になった
+    static func countText(_ trip: LibraryTrip) -> String {
+        let days = TripBook.daysLabel(calendarDays(trip))
+        return L("\(days)・\(trip.shots.count)枚", "\(days) · \(trip.shots.count) photos")
+    }
+
     /// 日の眉ラベル「DAY 1 · 9.12 · 京都市」。地名が引けなければ「DAY 1 · 9.12」
     static func dayLabel(_ day: LibraryTrip.Day, place: String?) -> String {
         let head = "DAY \(day.number) · \(day.month).\(day.day)"

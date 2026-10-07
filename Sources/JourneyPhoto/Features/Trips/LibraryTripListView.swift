@@ -143,8 +143,7 @@ struct LibraryTripListView: View {
                             .font(JPFont.mono(12))
                             .foregroundStyle(WebTheme.muted2)
                     }
-                    Text(L("\(trip.days.count)日・\(trip.shots.count)枚",
-                           "\(trip.days.count) days · \(trip.shots.count) photos"))
+                    Text(LibraryTrips.countText(trip))
                         .font(JPFont.mono(12))
                         .foregroundStyle(WebTheme.faint)
                     if postedDays > 0 {
