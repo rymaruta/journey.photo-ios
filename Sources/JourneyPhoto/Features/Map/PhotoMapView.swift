@@ -314,11 +314,13 @@ struct PhotoMapView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.faint)
             TextField(L("撮影地・スポット名で絞る", "Filter by place or spot"),
-                      text: $model.query)
+                      text: $model.typedQuery)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("map.search")
                 .foregroundStyle(WebTheme.foreground)
-            if !model.query.isEmpty {
+                // 打っている間は間引いて絞る（`typedQuery`）。確定はその場で
+                .onSubmit { model.commitTypedQuery() }
+            if !model.typedQuery.isEmpty {
                 Button {
                     model.query = ""
                 } label: {
