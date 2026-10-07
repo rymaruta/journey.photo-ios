@@ -30,6 +30,20 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertEqual(SearchScope.photos.photos(photos, query: "冬").map(\.id), ["place", "tag", "title"])
     }
 
+    /// 2026-10-07: 検索欄の案内は「題・説明・タグなど」なのに、説明を探していなかった
+    func testAllAndPhotosMatchTheDescription() throws {
+        let photos = try sample() + [
+            try photo(["id": "desc", "title": "朝", "description": ["ja": "雪の残る冬の湖畔で"]]),
+            try photo(["id": "desc2", "description": "ＴＡＫＡＹＡ shrine"]),
+        ]
+        XCTAssertEqual(SearchScope.all.photos(photos, query: "湖畔").map(\.id), ["desc"])
+        XCTAssertEqual(SearchScope.photos.photos(photos, query: "湖畔").map(\.id), ["desc"])
+        XCTAssertEqual(PhotoQuery.match(photos, query: "takaya").map(\.id), ["desc2"])
+        // タグ・撮影地で絞っているときは説明を見ない
+        XCTAssertTrue(SearchScope.tags.photos(photos, query: "湖畔").isEmpty)
+        XCTAssertTrue(SearchScope.places.photos(photos, query: "湖畔").isEmpty)
+    }
+
     /// 🔴 **チップの枚数と結果を合わせる。** 枚数は日英の別名をまとめて数える
     /// （冬＝winter）ので、「冬」で探したら winter の写真も出す
     func testTagAliasesMatchLikeTheChipCount() throws {

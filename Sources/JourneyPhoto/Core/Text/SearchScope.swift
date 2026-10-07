@@ -52,7 +52,7 @@ enum SearchScope: String, CaseIterable, Identifiable {
     /// 写真を種類で絞る。
     ///
     /// - 打っていないとき: タグ／撮影地は**その欄を持つ写真**だけ、写真とすべては全部
-    /// - 打っているとき: すべて・写真は `PhotoQuery.match`（題・撮影地・カテゴリ・タグ）、
+    /// - 打っているとき: すべて・写真は `PhotoQuery.match`（題・説明・撮影地・カテゴリ・タグ）、
     ///   タグはタグだけ、撮影地は撮影地だけに当てる。
     ///   **大文字小文字と全角半角は区別しない**（`PhotoQuery.match` と同じ）
     func photos(_ photos: [Photo], query: String) -> [Photo] {

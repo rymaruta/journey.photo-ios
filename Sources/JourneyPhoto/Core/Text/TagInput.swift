@@ -145,14 +145,18 @@ enum TagInput {
 
 enum PhotoQuery {
 
-    /// 題・撮影地・タグ・カテゴリのどれかに含まれれば拾う。
+    /// 題・説明・撮影地・タグ・カテゴリのどれかに含まれれば拾う。
     /// 大文字小文字と全角半角は区別しない。
+    ///
+    /// 2026-10-07 判断: **説明（`paragraphs`）も見る。** 検索欄の案内は「題・説明・タグなど」
+    /// （`SearchScope.prompt`・板 Search の欄の字）なのに、説明を探していなかった
     static func match(_ photos: [Photo], query: String) -> [Photo] {
         let needle = query.folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
         guard !needle.isEmpty else { return [] }
         return photos.filter { photo in
             let haystack = [
                 photo.displayTitle,
+                photo.paragraphs.joined(separator: " "),
                 photo.location ?? "",
                 photo.category ?? "",
                 (photo.tags ?? []).joined(separator: " "),
