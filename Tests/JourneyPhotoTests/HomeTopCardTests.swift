@@ -445,6 +445,26 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(plain, ["inSeason", "theme"])
     }
 
+    /// 2026-10-07: **外れの選択肢のスポットの札も出さない**（消去法の手がかりになる。下の段と同じく4つとも）
+    func testSeasonCardForAWrongChoiceSpotIsHiddenThatDay() throws {
+        let q = try quiz()
+        for id in ["sp_000000000001", "sp_000000000003", "sp_000000000004"] {
+            XCTAssertNotEqual(q.answer, id)
+            let wrong = try spot(id)
+            let slots = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                          spots: [wrong], quiz: q, timeZone: utc).map(\.slot)
+            XCTAssertEqual(slots, ["theme", "quiz"], "外れの選択肢 \(id) の季節の札が出ている")
+            let wished = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                           spots: [wrong], wishlist: [SavedSpotKey.official(wrong.slug)],
+                                           quiz: q, timeZone: utc).map(\.slot)
+            XCTAssertEqual(wished, ["theme", "quiz"], "外れの選択肢 \(id) の行きたい場所の札が出ている")
+        }
+        // 選択肢に無いスポットはそのまま出す
+        let other = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [try spot("sp_000000000009")], quiz: q, timeZone: utc).map(\.slot)
+        XCTAssertEqual(other, ["inSeason", "theme", "quiz"])
+    }
+
     /// 「行きたい」の札も同じ（答えのスポットが行きたい場所に入っている日）
     func testWishlistCardForTheAnswerSpotIsHiddenThatDay() throws {
         let answerSpot = try spot("sp_000000000002")

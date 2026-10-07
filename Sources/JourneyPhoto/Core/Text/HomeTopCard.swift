@@ -121,12 +121,14 @@ enum HomeTopCard {
             inSeason(today: today, spots: spots, excluding: wishedId),
         ]
         let yearAgo = oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone)
-        // **今日の一問の答えと同じスポットの季節の札は、その日は出さない**——名前つきの札と
-        // 同じ写真の問題の札が横に並び、答えが見える（週に1%前後・f3bcf5a のレビュー）
-        let answerId = quiz?.answer
+        // **今日の一問の選択肢（4つ）と同じスポットの季節の札は、その日は出さない**——名前つきの札と
+        // 同じ写真の問題の札が横に並び、答えが見える（週に1%前後・f3bcf5a のレビュー）。
+        // 2026-10-07 判断: 正解だけでなく**外れの選択肢も除く**。外れの場所が名前と写真つきで並ぶと
+        // 消去法の手がかりになる（下の段 `HomeSpotShelf.excluded` と同じく4つとも）
+        let quizIds = Set((quiz?.choices.map(\.spotId) ?? []) + [quiz?.answer].compactMap { $0 })
         let seasonShown = season.compactMap { $0 }.filter { choice in
             switch choice {
-            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _): return spot.spotId != answerId
+            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _): return !quizIds.contains(spot.spotId)
             default: return true
             }
         }
