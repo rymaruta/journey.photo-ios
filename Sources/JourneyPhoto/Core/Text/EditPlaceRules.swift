@@ -6,25 +6,30 @@ import Foundation
 /// 置くのは、Linux の模型では画面を動かせず試験できないため。
 enum EditPlaceRules {
 
-    /// 開いたときは撮影地が入っていて、いま空（＝本人が消した）
-    static func clearedByUser(openedLocation: String?, currentLocation: String) -> Bool {
-        !trim(openedLocation ?? "").isEmpty && trim(currentLocation).isEmpty
+    /// 撮影地の文字を、開いたときから変えたか（前後の空白は見ない）。空にした回も含む
+    static func changedByUser(openedLocation: String?, currentLocation: String) -> Bool {
+        trim(openedLocation ?? "") != trim(currentLocation)
     }
 
-    /// 保存で `coords: null` を送るか。**本人が撮影地を消したときだけ。**
+    /// 保存で `coords: null` を送るか。**本人が撮影地を消した・書き換えたとき**（候補を選んだ回は除く）。
     /// 開いたときから撮影地が空で座標だけある写真（圏外で投稿した等）は、
     /// 題を直しただけで座標を消さない
+    ///
+    /// 2026-10-07 判断: **書き換えたときも消す。** 自宅の町の地名を「東京」に直しても、
+    /// 写真の位置のピンが自宅のあたりに残っていた（投稿画面の `PendingPhoto.coordsToSend` と同じ考え）。
+    /// 候補から選び直せば、その座標を送る（`pickedCoords`）
     static func clearsCoords(openedLocation: String?, currentLocation: String,
                              pickedCoords: Bool) -> Bool {
-        !pickedCoords && clearedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
+        !pickedCoords && changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
     }
 
     /// 差し替えで新しい写真の位置を書くか。**元からピンがあった写真だけ**、
     /// ピンを新しい写真の位置へ動かす。ピンの無い写真（Web の「地図に出さない」で
-    /// 外した・撮影地も無い）に位置を戻さない。この画面で撮影地を消したときも書かない
+    /// 外した・撮影地も無い）に位置を戻さない。この画面で撮影地を消した・書き換えたときも
+    /// 書かない（2026-10-07 判断・`clearsCoords` と同じ）
     static func keepsCoordsOnReplace(openedLocation: String?, openedHasCoords: Bool,
                                      currentLocation: String) -> Bool {
-        openedHasCoords && !clearedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
+        openedHasCoords && !changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
     }
 
     private static func trim(_ text: String) -> String {

@@ -57,8 +57,18 @@ enum PlaceSpotSuggestions {
     /// こともある）で撮った位置を置き換えて「正確」として送っていた。前に選んだ地名の座標も
     /// 残さない（残すと名前はスポット、座標は前の地名になった）。位置の無い写真だけスポットの座標
     /// （`UploadViewModel.append` のスポットから開いた回と同じ決まり）
-    static func coordsAfterPicking(_ spot: OfficialSpot, photoHasPosition: Bool) -> Photo.Coords? {
-        photoHasPosition ? nil : spot.coords
+    ///
+    /// 2026-10-07 判断: 投稿画面は**書き換えた撮影地に写真の座標を付けない**（`PendingPhoto.coordsToSend`）。
+    /// nil（写真の座標のまま）を返すと、スポットを選んだ回もピンが消えるので、**写真の近く
+    /// （`UploadSpotTarget.nearbyKm` 以内）のスポットなら写真の座標そのもの**を返す（撮った位置を
+    /// 置き換えない決まりは守る）。**遠いスポット**（名前で当てた別の場所）は、写真の座標を付けると
+    /// 自宅などの撮った位置が名前と食い違って出るので、人が選んだスポットの座標を返す
+    static func coordsAfterPicking(_ spot: OfficialSpot, photoPosition: Photo.Coords?) -> Photo.Coords? {
+        guard let photoPosition else { return spot.coords }
+        guard let spotCoords = spot.coords,
+              TravelDistance.kilometers(from: photoPosition, to: spotCoords) > UploadSpotTarget.nearbyKm
+        else { return photoPosition }
+        return spotCoords
     }
 
     /// 近い順（同じ距離は slug 順・毎回同じ並び）

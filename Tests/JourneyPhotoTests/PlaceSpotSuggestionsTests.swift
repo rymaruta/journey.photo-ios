@@ -49,11 +49,23 @@ final class PlaceSpotSuggestionsTests: XCTestCase {
         XCTAssertEqual(result.map(\.slug), ["s4", "s3", "s2"])
     }
 
-    /// 位置のある写真では、スポットを選んでも座標を入れない（写真の座標のまま・前の地名の座標も捨てる）
+    /// 位置のある写真では、近いスポットを選んでも写真の座標のまま（スポットの座標で置き換えない）。
+    /// 2026-10-07: 書き換えた撮影地は写真の座標を送らないので、写真の座標そのものを入れる。
+    /// 遠いスポット（名前で当てた別の場所）はスポットの座標（写真の撮った位置を名前に付けない）
     func testPickingASpotKeepsThePhotoPosition() throws {
         let s = try spot("s", name: "高屋神社", lat: 34.12, lng: 133.63)
-        XCTAssertNil(PlaceSpotSuggestions.coordsAfterPicking(s, photoHasPosition: true))
-        XCTAssertEqual(PlaceSpotSuggestions.coordsAfterPicking(s, photoHasPosition: false), s.coords)
+        let taken = Photo.Coords(lat: 34.10, lng: 133.60)
+        XCTAssertEqual(PlaceSpotSuggestions.coordsAfterPicking(s, photoPosition: taken), taken)
+        XCTAssertEqual(PlaceSpotSuggestions.coordsAfterPicking(s, photoPosition: nil), s.coords)
+        let home = Photo.Coords(lat: 35.66, lng: 139.75)
+        XCTAssertEqual(PlaceSpotSuggestions.coordsAfterPicking(s, photoPosition: home), s.coords)
+        // 選んだあと、投稿画面が送る座標
+        var item = PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(), fileName: "p.jpg", contentType: "image/jpeg", exif: nil, coords: taken, takenOn: nil))
+        item.fillAutomatically("観音寺市")
+        item.pickedCoords = PlaceSpotSuggestions.coordsAfterPicking(s, photoPosition: taken)
+        item.location = s.name
+        XCTAssertEqual(item.coordsToSend, taken, "近いスポットを選んだらピンが消えた")
     }
 }
 

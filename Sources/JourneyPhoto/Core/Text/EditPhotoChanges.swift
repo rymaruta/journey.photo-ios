@@ -77,8 +77,8 @@ enum EditPhotoChanges {
         // **選んだ回だけ載せる。** nil は「触らない」なので、
         // 地名を手で直しただけの回に既存の座標を壊さない
         patch.coords = f.pickedCoords
-        // **本人が撮影地を空にしたら座標も消す。** nil だけでは「触らない」になり、
-        // 地図とページにピンが残っていた（投稿画面の `locationClearedByUser` と同じ考え・`EditPlaceRules`）。
+        // **本人が撮影地を空にした・書き換えたら座標も消す**（書き換えは 2026-10-07 判断）。nil だけでは
+        // 「触らない」になり、地図とページにピンが残っていた（投稿画面の `coordsToSend` と同じ考え・`EditPlaceRules`）。
         // 開いたときから空の写真（圏外で投稿して撮影地が入らなかった等）は座標を残す
         patch.clearCoords = EditPlaceRules.clearsCoords(openedLocation: photo.location,
                                                         currentLocation: f.location,

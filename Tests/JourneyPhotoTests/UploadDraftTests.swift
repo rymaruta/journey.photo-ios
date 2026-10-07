@@ -23,18 +23,97 @@ final class UploadDraftTests: XCTestCase {
         // 撮影地がまだ入っていない（自動入力が間に合わない）→ 送る
         XCTAssertNotNil(item.coordsToSend)
         // 自動で入った → 送る
-        item.location = "観音寺市"
+        item.fillAutomatically("観音寺市")
         XCTAssertNotNil(item.coordsToSend)
         // 本人が空にした → 送らない
         item.location = ""
         XCTAssertNil(item.coordsToSend)
-        // 別の地名を入れ直した → また送る
-        item.location = "高屋神社"
+        // 自動で入った地名に戻した → また送る
+        item.location = "観音寺市"
         XCTAssertNotNil(item.coordsToSend)
         // 消したあと空白だけ打った → 送るときは空なので、座標も送らない
         item.location = ""
         item.location = "  "
         XCTAssertNil(item.coordsToSend)
+    }
+
+    // MARK: - 書き換えた撮影地と写真の座標（2026-10-07 判断）
+
+    private func shotAtHome() -> ImagePreparer.Prepared {
+        ImagePreparer.Prepared(data: Data(), fileName: "p.jpg", contentType: "image/jpeg",
+                               exif: nil, coords: Photo.Coords(lat: 34.12, lng: 133.66), takenOn: nil)
+    }
+
+    /// 🔴 **自動で入った地名を書き換えたら、写真の座標を送らない。** 自宅の町の地名を
+    /// 「東京」に直しても、ピンが自宅のあたりに立っていた
+    func testRewrittenPlaceDropsPhotoCoords() {
+        var item = PendingPhoto(prepared: shotAtHome())
+        item.fillAutomatically("観音寺市")
+        item.location = "東京"
+        XCTAssertNil(item.coordsToSend, "書き換えた地名に写真の位置のピンが立つ")
+        // 一字だけ足しても同じ（人が変えた）
+        item.location = "観音寺市内"
+        XCTAssertNil(item.coordsToSend)
+        // 自動入力が間に合う前に打った地名にも、写真の座標を付けない
+        var typed = PendingPhoto(prepared: shotAtHome())
+        typed.location = "東京"
+        XCTAssertNil(typed.coordsToSend)
+    }
+
+    /// 候補から選び直したら、選んだ地名の座標を送る（人が選んだ場所）
+    func testPickedPlaceSendsItsCoords() {
+        var item = PendingPhoto(prepared: shotAtHome())
+        item.fillAutomatically("観音寺市")
+        let tokyo = Photo.Coords(lat: 35.68, lng: 139.77)
+        // `PlaceSearchField` の候補の選び方と同じ順（座標 → 地名）
+        item.pickedCoords = tokyo
+        item.location = "東京都千代田区"
+        XCTAssertEqual(item.coordsToSend, tokyo)
+    }
+
+    /// 自動で入った地名を一字も変えなければ、写真の座標を今までどおり送る（前後の空白は見ない）
+    func testUntouchedAutoPlaceKeepsPhotoCoords() {
+        var item = PendingPhoto(prepared: shotAtHome())
+        item.fillAutomatically("観音寺市")
+        XCTAssertEqual(item.coordsToSend, shotAtHome().coords)
+        item.location = "観音寺市 "
+        XCTAssertEqual(item.coordsToSend, shotAtHome().coords)
+    }
+
+    /// 空にしたら送らない（今までどおり）。書き換えてから空にしても同じ
+    func testClearedPlaceSendsNoCoords() {
+        var item = PendingPhoto(prepared: shotAtHome())
+        item.fillAutomatically("観音寺市")
+        item.location = "東京"
+        item.location = ""
+        XCTAssertNil(item.coordsToSend)
+        XCTAssertNil(item.coordsToSend(spot: nil))
+    }
+
+    /// 自動入力は投稿画面の道（`fillPlaceName`・スポットから開いた回）から `fillAutomatically` を通る。
+    /// 直に `location` へ入れると、自動の地名が「人が書き換えた」に見えてピンが消える
+    func testAutoFillGoesThroughFillAutomatically() throws {
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Upload/UploadViewModel.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("items[index].fillAutomatically(next)"))
+        XCTAssertTrue(source.contains("photo.fillAutomatically(spot.name)"))
+    }
+
+    /// スポットから開いた投稿で県を足した（紐付けは残る）なら、スポットの近くで撮った写真の座標を送る。
+    /// スポットから遠い写真に、手でスポットの名前を打っても写真の座標は付けない
+    func testSpotTiedPlaceKeepsNearbyPhotoCoords() {
+        let spot = UploadSpotTarget(spotId: "sp_0123456789ab", name: "高屋神社",
+                                    coords: Photo.Coords(lat: 34.12, lng: 133.63))
+        var item = PendingPhoto(prepared: shotAtHome())
+        item.fillAutomatically(spot.name)
+        item.location = "高屋神社, 香川"
+        XCTAssertEqual(item.coordsToSend(spot: spot), shotAtHome().coords)
+        var far = PendingPhoto(prepared: ImagePreparer.Prepared(
+            data: Data(), fileName: "p.jpg", contentType: "image/jpeg", exif: nil,
+            coords: Photo.Coords(lat: 35.66, lng: 139.75), takenOn: nil))
+        far.location = "高屋神社"
+        XCTAssertNil(far.coordsToSend(spot: spot), "東京で撮った写真が高屋神社のピンとして出る")
     }
 
     /// 🔴 **位置の無い写真をスポットから投稿したら、撮影地を書き足してもピンが残る。**
