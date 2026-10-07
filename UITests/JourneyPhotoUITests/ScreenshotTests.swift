@@ -125,7 +125,10 @@ final class ScreenshotTests: XCTestCase {
     /// 一覧の先頭はシミュレータの現在地（パリ）に近いスポットになるので、ストアには使えない。
     /// 開けなければ撮らない（この試験の決まり）
     private func shootStoreSpot(_ app: XCUIApplication) {
-        let open = app.buttons["map.officialCard.open"].firstMatch
+        // **ボタンの種類で探さない。** `.plain` の NavigationLink は「ボタン」として出ないことがあり、
+        // PR #171 の初回の Mac の回（run 37639772459）では `app.buttons` で見つからず 70・71 が欠けた。
+        // 名前（`map.officialCard.open`）だけで探し、押せる所まで出ていれば押す
+        let open = app.descendants(matching: .any).matching(identifier: "map.officialCard.open").firstMatch
         guard open.waitForExistence(timeout: 5), open.isHittable else { return }
         open.tap()
         defer {
