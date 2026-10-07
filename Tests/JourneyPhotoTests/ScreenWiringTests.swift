@@ -112,6 +112,23 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertFalse(viewer.contains("replies = loaded"))
     }
 
+    /// ストーリーの返信の一覧・反応の一覧を閉じたら、**見た人と返信の両方**からブロックした人を落とす。
+    /// 返信の一覧でブロックしても見た人を落とさず、「見た人 N」に数えたままだった（2026-10-07 のレビュー）
+    func testStorySheetsDropBlockedViewersAndRepliesOnDismiss() throws {
+        let viewer = try source("Features/Stories/StoryViewerView.swift")
+        for sheet in ["showReplies", "showInsights"] {
+            let head = ".sheet(isPresented: $\(sheet), onDismiss: {"
+            let parts = viewer.components(separatedBy: head)
+            XCTAssertEqual(parts.count, 2, "\(sheet) のシートが見つからない（書き方を変えたらここも直す）")
+            guard parts.count == 2, let end = parts[1].range(of: "}) {") else { continue }
+            let dismiss = String(parts[1][..<end.lowerBound])
+            XCTAssertTrue(dismiss.contains("viewers = BlockFilter.viewers(viewers, blocked: hidden.blockedUserIds)"),
+                          "\(sheet) を閉じたとき、ブロックした人が「見た人」に残る")
+            XCTAssertTrue(dismiss.contains("replies = BlockFilter.replies(replies, blocked: hidden.blockedUserIds)"),
+                          "\(sheet) を閉じたとき、ブロックした人の返信が残る")
+        }
+    }
+
     /// 写真詳細の撮影地の行: 開いた写真を一覧に渡す。共有は並ぶ写真で URL を決める（2026-10-07）
     func testPlaceRowPassesOpenedPhotoAndShareSeesPhotos() throws {
         let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")

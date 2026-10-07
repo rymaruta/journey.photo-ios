@@ -501,8 +501,10 @@ struct StoryViewerView: View {
             let target = reportingStory ?? story
             ReportSheet(photoId: target.id, ownerId: target.userId)
         }
-        // 一覧から開いたページでブロックしたら、その人の返信を外す
+        // 一覧から開いたページでブロックしたら、その人の返信を外す。**見た人も外す**——返信を外すだけだと、
+        // ブロックした人が「見た人 N」の数と顔に残る（反応の一覧を閉じたときと同じ後始末・2026-10-07 のレビュー）
         .sheet(isPresented: $showReplies, onDismiss: {
+            viewers = BlockFilter.viewers(viewers, blocked: hidden.blockedUserIds)
             replies = BlockFilter.replies(replies, blocked: hidden.blockedUserIds)
         }) {
             repliesSheet
