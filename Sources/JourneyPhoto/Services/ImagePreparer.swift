@@ -175,16 +175,25 @@ enum ImagePreparer {
     /// 撮影日が既にある写真はそのまま。ほかの撮影情報（機種など）は残す
     static func fillingTakenDate(_ prepared: Prepared, takenAt: Date, timeZone: TimeZone) -> Prepared {
         guard prepared.takenOn == nil else { return prepared }
-        let stamp = wallClock(takenAt, timeZone: timeZone)
         var exif = prepared.exif ?? ExifFields()
-        exif.dateTimeOriginal = exif.dateTimeOriginal ?? stamp
+        let takenOn: String
+        if let original = exif.dateTimeOriginal,
+           original.range(of: #"^\d{4}-\d{2}-\d{2}"#, options: .regularExpression) != nil {
+            // 撮影日時は既にある（保存する形で書かれていて `takenOn` が読めなかった）——
+            // **その日を撮影日にする**。写真ライブラリの時刻で付けると、2つが食い違いうる
+            takenOn = String(original.prefix(10))
+        } else {
+            let stamp = wallClock(takenAt, timeZone: timeZone)
+            exif.dateTimeOriginal = exif.dateTimeOriginal ?? stamp
+            takenOn = String(stamp.prefix(10))
+        }
         return Prepared(
             data: prepared.data,
             fileName: prepared.fileName,
             contentType: prepared.contentType,
             exif: exif,
             coords: prepared.coords,
-            takenOn: String(stamp.prefix(10)),
+            takenOn: takenOn,
             dominantColor: prepared.dominantColor,
             thumbnail: prepared.thumbnail
         )

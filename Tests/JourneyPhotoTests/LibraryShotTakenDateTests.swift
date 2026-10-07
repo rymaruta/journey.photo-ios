@@ -41,6 +41,25 @@ final class LibraryShotTakenDateTests: XCTestCase {
         XCTAssertEqual(out.exif, exif)
     }
 
+    /// 撮影情報の無い写真（exif が nil）にも付ける
+    func testFilledWhenExifIsMissingEntirely() {
+        let out = ImagePreparer.fillingTakenDate(prepared(), takenAt: Date(timeIntervalSince1970: 1_789_263_000),
+                                                 timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+        XCTAssertEqual(out.takenOn, "2026-09-13")
+        XCTAssertEqual(out.exif?.dateTimeOriginal, "2026-09-13T10:30:00")
+    }
+
+    /// 撮影日時は既にある（保存する形で `takenOn` が読めなかった）なら、その日を撮影日にする
+    /// ——写真ライブラリの時刻で付けて2つが食い違わない
+    func testExistingIsoDateTimeWinsOverTheLibraryStamp() {
+        var exif = ExifFields()
+        exif.dateTimeOriginal = "2026-09-10T23:50:00"
+        let out = ImagePreparer.fillingTakenDate(prepared(exif: exif), takenAt: Date(timeIntervalSince1970: 1_789_263_000),
+                                                 timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+        XCTAssertEqual(out.takenOn, "2026-09-10", "撮影日時と撮影日が食い違う")
+        XCTAssertEqual(out.exif?.dateTimeOriginal, "2026-09-10T23:50:00")
+    }
+
     /// 選ぶ画面の読み込みが、旅の時間帯で撮影日を付けている
     func testPickViewFillsTheDate() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
@@ -49,5 +68,8 @@ final class LibraryShotTakenDateTests: XCTestCase {
                               encoding: .utf8)
         XCTAssertTrue(view.contains("ImagePreparer.fillingTakenDate("), "選んだ写真に撮影日を付けていない")
         XCTAssertTrue(view.contains("takenAt: shot.date, timeZone: zone"), "写真ライブラリの時刻・旅の時間帯で付けていない")
+        // 時間帯はモデルの今の旅（地名を引いて切り直したもの）から取る。開いたときの値のままにしない
+        XCTAssertTrue(view.contains("let live = current") && view.contains("let zone = live.timeZone"),
+                      "撮影日を付ける時間帯が開いたときの旅のまま")
     }
 }
