@@ -13,7 +13,8 @@ import Foundation
 ///  - **自動では付けない・押したときだけ。** ストーリーは「いま」の投稿なので、撮影地を黙って
 ///    付けると居場所を知らせることになる。これまでどおり、撮影地を送るのは本人が決めたときだけ
 ///    （作る画面の「場所」と同じ決まり）。候補を解き直しても撮影地には触らない（`Place.resolve`）
-///  - **座標は写真のまま送る（スポットの座標に置き換えない）。** `PlaceSpotSuggestions.coordsAfterPicking`
+///  - **座標は写真のまま送る（スポットの座標に置き換えない）。** 手で書いた撮影地がスポットを
+///    指さないときは座標を送らない（2026-10-07 判断・`Place.coordsToSend`）。 `PlaceSpotSuggestions.coordsAfterPicking`
 ///    と同じ決まり。ストーリーを残すと `storyKeep.ts` が座標を写真のピンに写すので、置き換えると
 ///    最大十数 km ずれる。だから往復の確かめも**基準の写真の座標**で当てる（見る画面に届く座標）
 ///  - 探すのは撮影地の欄の候補と同じ仕組み（`PlaceSpotSuggestions`・3km 以内・公開済みだけ）
@@ -51,6 +52,25 @@ enum StorySpotSuggestion {
         mutating func pick() {
             guard let chip else { return }
             location = chip.name
+        }
+
+        /// 写真ごとに送る座標（並びは `coords` と同じ）。
+        ///
+        /// 2026-10-07 判断（投稿画面の `PendingPhoto.coordsToSend` と同じ決まり）: **撮影地の文字が
+        /// 写真の近くのスポットを指すときだけ、写真の座標を送る。** 候補の札を押した・同じ名前を打った・
+        /// 「高屋神社, 香川」と足した、は見る画面で結ばれる（`StorySpotLink`・5km 以内）ので、写真の座標の
+        /// まま送る——撮影地からスポットへの導線は座標が無いと結べない。**それ以外の手で書いた地名**
+        /// （自宅の町で撮って「東京」と書いた）に写真の位置を付けると、名前で伏せた場所がピン
+        /// （残すと `storyKeep.ts` が写真の地図に写す）で分かってしまうので送らない。
+        /// 撮影地が空の回は今までどおり（サーバーは撮影地の無い座標を保存しない・`stories.ts`）
+        func coordsToSend(_ coords: [Photo.Coords?], spots: [OfficialSpot]) -> [Photo.Coords?] {
+            let sent = StoryQueue.coordsToSend(coords)
+            let text = location.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.isEmpty { return sent }
+            guard let base = StoryQueue.baseCoords(coords),
+                  StorySpotLink.spot(location: text, coords: base, in: spots) != nil
+            else { return coords.map { _ in nil } }
+            return sent
         }
     }
 }

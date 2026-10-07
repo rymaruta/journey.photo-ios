@@ -1490,8 +1490,9 @@ struct StoryComposerView: View {
         let placeText = place.location.trimmingCharacters(in: .whitespacesAndNewlines)
         // **焼き込んでから渡す。** 文字が無ければ元のデータをそのまま渡す
         // （読み書きの往復で画質を落とさない）
-        // 撮影地は全部で1つなので、基準の写真から遠い写真の座標は送らない（`StoryQueue.coordsToSend`）
-        let coords = StoryQueue.coordsToSend(shots.map(\.prepared.coords))
+        // 撮影地は全部で1つなので、基準の写真から遠い写真の座標は送らない（`StoryQueue.coordsToSend`）。
+        // 手で書いた撮影地が写真の近くのスポットを指さなければ、座標を送らない（`Place.coordsToSend`・2026-10-07）
+        let coords = place.coordsToSend(shots.map(\.prepared.coords), spots: spotIndex)
         let jobs = zip(shots, coords).map { shot, shotCoords in
             StoryUploadCenter.Job(
                 imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data),
