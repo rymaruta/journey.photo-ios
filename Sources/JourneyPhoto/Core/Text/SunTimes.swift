@@ -109,9 +109,15 @@ struct SunTimes: Equatable {
     }
 
     /// 国（台帳の `region.country`・日本語表記）→ 時刻帯。**Web の `COUNTRY_TIME_ZONES` と同じ表**。
-    /// 無い国は nil——その土地の時計で言えないので時刻を出さない（端末の時計で言うと旅先で読み違える）
+    /// 無い国は nil——その土地の時計で言えないので時刻を出さない（端末の時計で言うと旅先で読み違える）。
+    ///
+    /// 2026-10-07 判断: 海外のスポットを大きく増やすので、**時刻帯が1つの国**を足した（15 → 87 か国）。
+    /// アメリカ・カナダ・オーストラリア・ブラジル・メキシコ・ロシア・インドネシア・モンゴル・チリ・
+    /// エクアドル・ニュージーランドのように**時刻帯が複数ある国は表に入れない**——台帳の行に
+    /// `timeZone`（IANA 名）が載る（`timeZone(named:country:)` が先に見る）
     static let countryTimeZones: [String: String] = [
         "日本": "Asia/Tokyo",
+        // 欧州
         "フランス": "Europe/Paris",
         "スペイン": "Europe/Madrid",
         "フィンランド": "Europe/Helsinki",
@@ -126,12 +132,106 @@ struct SunTimes: Equatable {
         "クロアチア": "Europe/Zagreb",
         "バチカン市国": "Europe/Vatican",
         "オーストリア": "Europe/Vienna",
+        "アイルランド": "Europe/Dublin",
+        "ベルギー": "Europe/Brussels",
+        "ルクセンブルク": "Europe/Luxembourg",
+        "モナコ": "Europe/Monaco",
+        "デンマーク": "Europe/Copenhagen",
+        "ノルウェー": "Europe/Oslo",
+        "スウェーデン": "Europe/Stockholm",
+        "アイスランド": "Atlantic/Reykjavik",
+        "エストニア": "Europe/Tallinn",
+        "ラトビア": "Europe/Riga",
+        "リトアニア": "Europe/Vilnius",
+        "ポーランド": "Europe/Warsaw",
+        "スロバキア": "Europe/Bratislava",
+        "ハンガリー": "Europe/Budapest",
+        "スロベニア": "Europe/Ljubljana",
+        "ボスニア・ヘルツェゴビナ": "Europe/Sarajevo",
+        "セルビア": "Europe/Belgrade",
+        "モンテネグロ": "Europe/Podgorica",
+        "アルバニア": "Europe/Tirane",
+        "北マケドニア": "Europe/Skopje",
+        "ルーマニア": "Europe/Bucharest",
+        "ブルガリア": "Europe/Sofia",
+        "マルタ": "Europe/Malta",
+        "ジョージア": "Asia/Tbilisi",
+        "アルメニア": "Asia/Yerevan",
+        // アジア
+        "韓国": "Asia/Seoul",
+        "台湾": "Asia/Taipei",
+        "中国": "Asia/Shanghai",
+        "香港": "Asia/Hong_Kong",
+        "マカオ": "Asia/Macau",
+        "タイ": "Asia/Bangkok",
+        "ベトナム": "Asia/Ho_Chi_Minh",
+        "カンボジア": "Asia/Phnom_Penh",
+        "ラオス": "Asia/Vientiane",
+        "ミャンマー": "Asia/Yangon",
+        "マレーシア": "Asia/Kuala_Lumpur",
+        "シンガポール": "Asia/Singapore",
+        "フィリピン": "Asia/Manila",
+        "インド": "Asia/Kolkata",
+        "ネパール": "Asia/Kathmandu",
+        "ブータン": "Asia/Thimphu",
+        "スリランカ": "Asia/Colombo",
+        "モルディブ": "Indian/Maldives",
+        "ウズベキスタン": "Asia/Tashkent",
+        // 中東
+        "トルコ": "Europe/Istanbul",
+        "イスラエル": "Asia/Jerusalem",
+        "ヨルダン": "Asia/Amman",
+        "アラブ首長国連邦": "Asia/Dubai",
+        "カタール": "Asia/Qatar",
+        "オマーン": "Asia/Muscat",
+        "サウジアラビア": "Asia/Riyadh",
+        "イラン": "Asia/Tehran",
+        // アフリカ
+        "エジプト": "Africa/Cairo",
+        "モロッコ": "Africa/Casablanca",
+        "チュニジア": "Africa/Tunis",
+        "ケニア": "Africa/Nairobi",
+        "タンザニア": "Africa/Dar_es_Salaam",
+        "エチオピア": "Africa/Addis_Ababa",
+        "ナミビア": "Africa/Windhoek",
+        "南アフリカ": "Africa/Johannesburg",
+        // 米州
+        "キューバ": "America/Havana",
+        "ジャマイカ": "America/Jamaica",
+        "グアテマラ": "America/Guatemala",
+        "コスタリカ": "America/Costa_Rica",
+        "パナマ": "America/Panama",
+        "コロンビア": "America/Bogota",
+        "ペルー": "America/Lima",
+        "ボリビア": "America/La_Paz",
+        "アルゼンチン": "America/Argentina/Buenos_Aires",
+        "ウルグアイ": "America/Montevideo",
+        // オセアニア
+        "フィジー": "Pacific/Fiji",
+        "パラオ": "Pacific/Palau",
     ]
 
     /// 国が無い行は日本
     static func timeZone(forCountry country: String?) -> TimeZone? {
         let key = (country ?? "").trimmingCharacters(in: .whitespaces)
         return countryTimeZones[key.isEmpty ? "日本" : key].flatMap { TimeZone(identifier: $0) }
+    }
+
+    /// IANA の時刻帯の名前として読めるときだけ（"America/New_York" など）。
+    /// "EST"・"JST"・"+09:00" のような略号・ずれは受けない——`TimeZone(identifier:)` は略号も通すので、
+    /// 「地域/都市」の形を先に見る（Web の `isTimeZoneName` と同じ）
+    static func timeZone(named name: String?) -> TimeZone? {
+        let n = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard n.range(of: #"^[A-Za-z][A-Za-z0-9_+\-]*(/[A-Za-z0-9_+\-]+)+$"#, options: .regularExpression) != nil
+        else { return nil }
+        return TimeZone(identifier: n)
+    }
+
+    /// スポットの時刻帯。**台帳の行の `timeZone`（IANA 名）が読めればそれ**、無ければ国の表
+    /// （2026-10-07 判断: アメリカ・カナダ・オーストラリアのように時刻帯が複数ある国は、国から決められない）。
+    /// 読めない `timeZone` は国の表に落とす。**Web の `spotTimeZone` と同じ順**
+    static func timeZone(named name: String?, country: String?) -> TimeZone? {
+        timeZone(named: name) ?? timeZone(forCountry: country)
     }
 
     /// その時刻帯での "HH:MM"（24時間）。nil は nil のまま（画面は行ごと出さない）
