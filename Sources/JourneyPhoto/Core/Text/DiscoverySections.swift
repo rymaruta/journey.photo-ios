@@ -120,21 +120,13 @@ enum DiscoverySections {
         return Array(GallerySort.new.apply(matched).prefix(limit))
     }
 
-    /// 「いまの季節の写真」の先の小さい字（どう集めたかを隠さない）。英語表示では英語の語で
+    /// 「いまの季節の写真」の先の小さい字（どう集めたかを隠さない）。英語表示では英語の語で。
+    /// 月の範囲は書かない——南半球で撮った写真は半年ずらして見るので、「9〜11月に撮った」とは限らない
     static func seasonalNote(now: Date = Date(), calendar: Calendar = .current) -> String {
-        let season = currentSeason(now: now, calendar: calendar)
-        let list = words(for: season)
-        let months: (ja: String, en: String) = {
-            switch season {
-            case .spring: return ("3〜5月", "Mar–May")
-            case .summer: return ("6〜8月", "Jun–Aug")
-            case .autumn: return ("9〜11月", "Sep–Nov")
-            case .winter: return ("12〜2月", "Dec–Feb")
-            }
-        }()
+        let list = words(for: currentSeason(now: now, calendar: calendar))
         return L(list.map { "#\($0.ja)" }.joined(separator: " ")
-                 + "（撮影日の分かる写真は\(months.ja)に撮ったもの。料理の写真は入れない）",
+                 + "（ほかの季節に撮った写真・料理・分類の無い写真は入れない）",
                  "Tagged " + list.map(\.en).joined(separator: " or ")
-                 + " (photos with a known date were taken \(months.en); food photos are left out)")
+                 + " (excluding photos taken in another season, food and uncategorized photos)")
     }
 }

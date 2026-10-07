@@ -101,8 +101,10 @@ final class DiscoverySectionsTests: XCTestCase {
         let october = DateComponents(calendar: calendar, year: 2026, month: 10, day: 7).date!
         let note = DiscoverySections.seasonalNote(now: october, calendar: calendar)
         XCTAssertFalse(note.contains("森"))
-        XCTAssertEqual(note, L("#秋 #紅葉（撮影日の分かる写真は9〜11月に撮ったもの。料理の写真は入れない）",
-                               "Tagged autumn or autumn leaves (photos with a known date were taken Sep–Nov; food photos are left out)"))
+        XCTAssertEqual(note, L("#秋 #紅葉（ほかの季節に撮った写真・料理・分類の無い写真は入れない）",
+                               "Tagged autumn or autumn leaves (excluding photos taken in another season, food and uncategorized photos)"))
+        // 南半球の写真は半年ずらすので、月の範囲は書かない
+        XCTAssertFalse(note.contains("9〜11月") || note.contains("Sep–Nov"))
     }
 
     /// 🔴 **札の枚数と、開いた先の枚数を一致させる。**
