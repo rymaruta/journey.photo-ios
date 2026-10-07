@@ -154,4 +154,19 @@ final class UploadDetailsTests: XCTestCase {
         XCTAssertFalse(before.contains("if showsDetails"), "公開範囲の説明が畳んだときに消える")
         XCTAssertTrue(Audience.everyone.photoNote.contains(L("ウェブサイト", "website")))
     }
+
+    // MARK: - 選んだ写真の帯の外す丸
+
+    /// 🔴 **外す丸の押せる範囲が、隣の写真に重ならない。** 板どおり 14 はみ出させると、帯の間（10）を
+    /// 越えて隣の写真に 4 重なっていた。見た目（丸の位置・大きさ）は板のまま、押せる範囲は 44 のまま
+    func testRemoveButtonHitAreaStaysOutOfTheNextPhoto() {
+        XCTAssertLessThanOrEqual(UploadStripLayout.hitOverhangRight, UploadStripLayout.spacing,
+                                 "外す丸の押せる範囲が隣の写真に重なっている")
+        XCTAssertGreaterThanOrEqual(UploadStripLayout.removeHit, 44)
+        // 見た目は板のまま: 丸は写真の右の端から 6 はみ出す（right -14・44 の枠の真ん中に 28）
+        XCTAssertEqual(UploadStripLayout.dotOverhangRight, 6)
+        XCTAssertEqual(UploadStripLayout.removeDot, 28)
+        XCTAssertEqual(UploadStripLayout.removeOffset, 14)
+        XCTAssertTrue(UploadStripLayout.dotInsideHit, "ずらした丸が押せる範囲からはみ出している")
+    }
 }
