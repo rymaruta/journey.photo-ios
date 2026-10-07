@@ -111,4 +111,15 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertFalse(viewer.contains("viewers = loaded"))
         XCTAssertFalse(viewer.contains("replies = loaded"))
     }
+
+    /// 写真詳細の撮影地の行: 開いた写真を一覧に渡す。共有は並ぶ写真で URL を決める（2026-10-07）
+    func testPlaceRowPassesOpenedPhotoAndShareSeesPhotos() throws {
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(detail.contains("TagPhotosView(kind: .location(location), opened: shown)"),
+                      "下書き・限定写真から開くと空の一覧になる")
+        let tag = try source("Features/Gallery/TagPhotosView.swift")
+        XCTAssertTrue(tag.contains("CollectionScreen.withOpened(PhotoQuery.photos(all, in: kind), opened: opened, kind: kind)"))
+        let screen = try source("Features/Gallery/CollectionPhotosScreen.swift")
+        XCTAssertTrue(screen.contains("photos: shown)"), "共有の URL を並ぶ写真で決めていない")
+    }
 }

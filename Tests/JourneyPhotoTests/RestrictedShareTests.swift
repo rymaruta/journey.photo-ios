@@ -31,12 +31,14 @@ final class RestrictedShareTests: XCTestCase {
 
     func testRestrictedLeadPhotoIsNotShared() throws {
         let restricted = try photo("p1", audience: "followers")
-        let text = CollectionScreen.shareText(title: "パリ", count: 1, kind: nil, lead: restricted)
+        let text = CollectionScreen.shareText(title: "パリ", count: 1, kind: nil, lead: restricted,
+                                              photos: [restricted])
         // `/photo/` も `?photo=`（ホームへの振り替え）も、Web では開けない
         XCTAssertFalse(text.contains("http"), "開けないリンクを配っている: \(text)")
 
         let everyone = try photo("p2", audience: nil)
-        let shared = CollectionScreen.shareText(title: "パリ", count: 1, kind: nil, lead: everyone)
+        let shared = CollectionScreen.shareText(title: "パリ", count: 1, kind: nil, lead: everyone,
+                                                photos: [everyone])
         XCTAssertTrue(shared.contains("p2"), "全体に公開の写真まで配らなくなった: \(shared)")
     }
 
@@ -49,6 +51,6 @@ final class RestrictedShareTests: XCTestCase {
         XCTAssertEqual(CollectionScreen.shareLead([restricted, draft, open])?.id, "o")
         XCTAssertNil(CollectionScreen.shareLead([restricted, draft]))
         // 下書きも URL を付けない（?photo= に振り替えても Web で開けない）
-        XCTAssertFalse(CollectionScreen.shareText(title: "a", count: 1, kind: nil, lead: draft).contains("http"))
+        XCTAssertFalse(CollectionScreen.shareText(title: "a", count: 1, kind: nil, lead: draft, photos: [draft]).contains("http"))
     }
 }

@@ -586,7 +586,8 @@ struct PhotoDetailView: View {
                 .accessibilityIdentifier("photo.spotLink")
             } else {
                 NavigationLink {
-                    TagPhotosView(kind: .location(location))
+                    // 下書き・限定写真は公開の一覧に載らないので、この写真自身も並べる（空の一覧にしない）
+                    TagPhotosView(kind: .location(location), opened: shown)
                 } label: {
                     placeLabel(location, spotSuffix: false)
                 }
