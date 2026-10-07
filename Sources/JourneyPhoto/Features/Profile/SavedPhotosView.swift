@@ -16,23 +16,19 @@ struct SavedPhotosView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var savedPhotos: SavedPhotosStore
     @EnvironmentObject private var hidden: ModerationStore
-    /// 引き当て先（公開一覧＋自分の写真・`PhotoPools`）
-    @State private var feed: [Photo] = []
-    @State private var mine: [Photo] = []
+    /// 引き当て先（公開一覧＋自分の写真・`PhotoPools`）と、読み込みの答えを入れる時機。
+    /// **戻るたびに読み直し、答えは画面に出ている間だけ入れる**（`LikedPhotosScreen`・H-2）
+    @State private var screen = LikedPhotosScreen()
     /// 画面に出す分。**戻ってきたときに絞り直す**（`FavoritesView` と同じ理由——
     /// 見ている詳細でしおりを外した瞬間に元の行が消えると、詳細が閉じる）
     @State private var photos: [Photo] = []
     /// 絞ったときの ID の数（「0件」と「出せる写真が無い」を分ける）
     @State private var idCount = 0
-    /// 引き当て先を一度でも読み終えたか（「まだ」と「0件」を混ぜない）
-    @State private var loaded = false
-    /// 最後の読み込みで引き当て先が取れなかったか（「読み込めませんでした」はこの回だけ）
-    @State private var failed = false
 
     var body: some View {
         ScrollView {
             if photos.isEmpty {
-                switch LikedPhotos.emptyState(idCount: idCount, loaded: loaded, failed: failed) {
+                switch LikedPhotos.emptyState(idCount: idCount, loaded: screen.shown.loaded, failed: screen.shown.poolsFailed) {
                 case .loading:
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
                 case .none:
@@ -46,7 +42,7 @@ struct SavedPhotosView: View {
                 }
             } else {
                 // 公開一覧から引き当てた写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
-                let isPublic = LikedPhotos.fromPublicFeed(hidden.visible(feed))
+                let isPublic = LikedPhotos.fromPublicFeed(hidden.visible(screen.shown.feed))
                 PhotoGrid(photos: photos) { photo in
                     PhotoDetailView(photo: photo, fromPublicFeed: isPublic(photo), context: photos)
                 }
@@ -54,9 +50,14 @@ struct SavedPhotosView: View {
         }
         .webScreen()
         .navigationTitle(ProfileTab.favorites.label)
-        .task(id: auth.state) { await load() }
+        // 鍵に戻ってきた回数を入れる——戻るたびに読み直す（消した自分の写真を落とす・H-2）
+        .task(id: "\(auth.state)#\(screen.returns)") { await load() }
         .refreshable { await load(force: true) }
-        .onAppear { refilter() }
+        .onAppear {
+            screen.appear()
+            refilter()
+        }
+        .onDisappear { screen.disappear() }
     }
 
     /// マイページの「お気に入り」タブでも使う
@@ -78,21 +79,17 @@ struct SavedPhotosView: View {
     private func refilter() {
         let ids = savedPhotos.ids
         idCount = ids.count
-        photos = LikedPhotos.resolve(ids, in: [hidden.visible(feed), mine])
+        photos = screen.shown.resolve(ids) { hidden.visible($0) }
     }
 
     private func load(force: Bool = false) async {
         // ログインの確認中は待つ（決まったら `.task(id:)` が読み直す）
         guard !auth.isResolving else { return }
-        let signedIn = auth.userId != nil
-        let pools = await PhotoPools.load(environment, signedIn: signedIn, force: force)
+        let user = auth.userId
+        let pools = await PhotoPools.load(environment, signedIn: user != nil, force: force)
         // 取り消された回（画面を離れた・読み直しに追い越された）は何も書かない
         guard !Task.isCancelled else { return }
-        failed = pools.feed == nil || (signedIn && pools.mine == nil)
-        feed = pools.feed ?? feed
-        // ログアウトしたら前の人の写真を残さない
-        mine = signedIn ? (pools.mine ?? mine) : []
-        loaded = true
-        refilter()
+        // 画面に出ていなければ取っておき、戻ったときに入れる（詳細を閉じない）
+        if screen.receive(.init(user: user, feed: pools.feed, mine: pools.mine)) { refilter() }
     }
 }

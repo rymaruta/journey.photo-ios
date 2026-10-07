@@ -19,14 +19,13 @@ struct FavoritesView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var favorites: FavoritesStore
     @EnvironmentObject private var hidden: ModerationStore
-    /// 引き当て先（公開一覧＋自分の写真・`PhotoPools`）。
+    /// 引き当て先（公開一覧＋自分の写真・`PhotoPools`）とサーバーのいいね一覧、
+    /// 読み込みの答えを入れる時機（`LikedPhotosScreen`・H-2）。
     /// 以前のマイページのタブは自分の写真も見ていた——公開一覧だけだと、
-    /// 自分の非公開の写真へのいいねが落ちる
-    @State private var feed: [Photo] = []
-    @State private var mine: [Photo] = []
-    /// 今回取れたサーバーのいいね一覧（取れなければ nil）。
-    /// 控えは書き換えず、絞るときに和を取る（`refilter`）
-    @State private var serverIds: [String]?
+    /// 自分の非公開の写真へのいいねが落ちる。サーバーの一覧は控えを書き換えず、
+    /// 絞るときに和を取る（`refilter`）。**戻るたびに読み直し、答えは画面に
+    /// 出ている間だけ入れる。取れなかった回は同じ人なら前の一覧を残す**
+    @State private var screen = LikedPhotosScreen()
     /// 画面に出す分。**描画のたびに絞らない。**
     ///
     /// 絞りを計算に変えると、詳細画面でハートを外した瞬間に
@@ -36,12 +35,6 @@ struct FavoritesView: View {
     @State private var photos: [Photo] = []
     /// 絞ったときの ID の数（「0件」と「出せる写真が無い」を分ける）
     @State private var idCount = 0
-    /// 引き当て先を一度でも読み終えたか（「まだ」と「0件」を混ぜない）
-    @State private var loaded = false
-    /// 最後の読み込みで引き当て先が取れなかったか（「読み込めませんでした」はこの回だけ）
-    @State private var poolsFailed = false
-    /// サーバーに聞けなかった回（端末のぶんは消さない。足りないことだけ伝える）
-    @State private var partial = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -51,14 +44,14 @@ struct FavoritesView: View {
 
     var body: some View {
         ScrollView {
-            if partial {
+            if screen.shown.partial {
                 ErrorBanner(message: L("サーバーのいいねを取れませんでした。この端末に覚えているぶんだけ出しています",
                                        "Couldn't reach the server — showing what's on this device")) {
                     Task { await load(force: true) }
                 }
             }
             if photos.isEmpty {
-                switch LikedPhotos.emptyState(idCount: idCount, loaded: loaded, failed: poolsFailed) {
+                switch LikedPhotos.emptyState(idCount: idCount, loaded: screen.shown.loaded, failed: screen.shown.poolsFailed) {
                 case .loading:
                     // 取得中に空の格子を出さない（以前のタブと同じく ProgressView）
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
@@ -74,7 +67,7 @@ struct FavoritesView: View {
                 }
             } else {
                 // 公開一覧から引き当てた写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
-                let isPublic = LikedPhotos.fromPublicFeed(hidden.visible(feed))
+                let isPublic = LikedPhotos.fromPublicFeed(hidden.visible(screen.shown.feed))
                 LazyVGrid(columns: columns, spacing: 2) {
                     ForEach(photos) { photo in
                         NavigationLink {
@@ -91,23 +84,30 @@ struct FavoritesView: View {
         .navigationTitle(Labels.Navigation.favorites)
         // **ログイン状態が決まってから**聞く。確認中（`isResolving`）を
         // 未ログインと同じに扱わない。決まったら id が変わって読み直す
-        .task(id: auth.state) { await load() }
+        // 鍵に戻ってきた回数を入れる——戻るたびに読み直す（消した自分の写真を落とす・H-2）
+        .task(id: "\(auth.state)#\(screen.returns)") { await load() }
         .refreshable { await load(force: true) }
         // **戻ってきたら絞り直す。** 詳細画面でハートを外したぶんは、
         // その画面を閉じたこの時点で消える（見ている最中には消さない）
         // ブロック／通報したぶんも、同じく戻ってきたときに落とす
-        .onAppear { refilter() }
+        // 読み込みの答えも、ここで入れる（詳細を開いている間に届いた分・H-2）
+        .onAppear {
+            screen.appear()
+            refilter()
+        }
+        .onDisappear { screen.disappear() }
     }
 
     private func refilter() {
-        let ids = favorites.listedIds(server: serverIds)
+        let ids = favorites.listedIds(server: screen.shown.serverIds)
         idCount = ids.count
-        photos = LikedPhotos.resolve(ids, in: [hidden.visible(feed), mine])
+        photos = screen.shown.resolve(ids) { hidden.visible($0) }
     }
 
     private func load(force: Bool = false) async {
         guard !auth.isResolving else { return }
-        let signedIn = auth.userId != nil
+        let user = auth.userId
+        let signedIn = user != nil
         async let poolsTask = PhotoPools.load(environment, signedIn: signedIn, force: force)
         // **未ログインなら聞きに行かない**（端末の控えが答え）
         var failed = false
@@ -123,15 +123,11 @@ struct FavoritesView: View {
         }
         let pools = await poolsTask
         guard !Task.isCancelled else { return }
-        partial = failed
-        // 取れなかった回は前の一覧を**残さない**（控えだけ出す）。残すと、人が
-        // 替わった直後に取れなかったとき、前の人のいいねが次の人に見える
-        serverIds = fetched
-        poolsFailed = pools.feed == nil || (signedIn && pools.mine == nil)
-        feed = pools.feed ?? feed
-        // ログアウトしたら前の人の写真を残さない
-        mine = signedIn ? (pools.mine ?? mine) : []
-        loaded = true
-        refilter()
+        // 取れなかった回は、同じ人なら前の一覧を残す（圏外で戻っても、ほかの端末の
+        // いいねを消さない）。人が替わった直後は残さない（`LikedPhotosScreen.Materials.absorbing`）。
+        // 画面に出ていなければ取っておき、戻ったときに入れる（詳細を閉じない）
+        let fetch = LikedPhotosScreen.Fetch(user: user, feed: pools.feed, mine: pools.mine,
+                                            serverIds: fetched, serverFailed: failed)
+        if screen.receive(fetch) { refilter() }
     }
 }
