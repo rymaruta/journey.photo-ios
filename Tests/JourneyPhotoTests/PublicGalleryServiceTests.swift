@@ -192,3 +192,115 @@ final class GalleryCacheTests: XCTestCase {
         XCTAssertTrue(photos.isEmpty, "控えを返すときに絞り込みを飛ばしている")
     }
 }
+
+/// **同時の取得は1本にまとめる**（`fetchStaticList`・docs/QUALITY_2026-10-03.md の P2）。
+/// 呼び手の1つが取り消されても、ほかの呼び手の取得は止まらない（取り消しは待ちだけを外す）
+final class PublicGalleryCoalescingTests: XCTestCase {
+
+    private var session: URLSession!
+    private let url = URL(string: "https://site.example.test/app/data/photos.json")!
+    private let twoPhotos = """
+    [{"id":"a","src":"https://x/a.jpg","userId":"u1"},
+     {"id":"b","src":"https://x/b.jpg","userId":"u2"}]
+    """
+
+    override func setUp() {
+        super.setUp()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        session = URLSession(configuration: config)
+        StubProtocol.reset()
+        StubProtocol.respond(status: 200, body: twoPhotos)
+    }
+
+    override func tearDown() {
+        StubProtocol.reset()
+        super.tearDown()
+    }
+
+    /// 一覧の要求の手前で `gate` に止まるサービス（端末の控えは毎回新しい名前で空）
+    private func service(_ gate: Gate) -> PublicGalleryService {
+        PublicGalleryService(url: url, session: session,
+                             snapshot: PhotoSnapshotStore(fileName: UUID().uuidString),
+                             beforeStaticRequest: { await gate.wait() })
+    }
+
+    /// 呼び手が取得まで進むのを待つ（`fetchPhotos` は actor を何度か行き来してから取りに行く）
+    private func settle() async throws {
+        for _ in 0..<10 { await Task.yield() }
+        try await Task.sleep(nanoseconds: 100_000_000)
+    }
+
+    /// 同時に3つ来ても、取りに行くのは1回。3つとも同じ一覧を受け取る
+    func testConcurrentFetchesShareOneRequest() async throws {
+        let gate = Gate()
+        let gallery = service(gate)
+        let calls = (0..<3).map { _ in Task { try await gallery.fetchPhotos() } }
+        await gate.untilWaiting(1)
+        try await settle()
+        let arrived = await gate.arrived
+        XCTAssertEqual(arrived, 1, "同じ一覧を同時に \(arrived) 本取りに行っている")
+        await gate.open()
+        for call in calls {
+            let photos = try await call.value
+            XCTAssertEqual(photos.map(\.id), ["a", "b"])
+        }
+        XCTAssertEqual(StubProtocol.requestCount, 1)
+    }
+
+    /// 先に始めた呼び手が取り消されても、相乗りした呼び手の取得は止まらない。
+    /// 取り消された呼び手は**取得の終わりを待たずに**戻る（控えが無ければ unreachable）
+    func testCancellingOneCallerDoesNotStopTheOthers() async throws {
+        let gate = Gate()
+        let gallery = service(gate)
+        let first = Task { try await gallery.fetchPhotos() }
+        await gate.untilWaiting(1)
+        let second = Task { try await gallery.fetchPhotos() }
+        try await settle()
+
+        first.cancel()
+        // 門を閉じたまま、取り消した側が戻るのを待つ（上限2秒。壊れても試験ごと固まらない）
+        let returned = Returned()
+        Task { _ = await first.result; await returned.mark() }
+        let deadline = Date().addingTimeInterval(2)
+        while await !returned.value, Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let firstReturned = await returned.value
+        XCTAssertTrue(firstReturned, "取り消した呼び手が、共有の取得の終わりまで待たされている")
+
+        await gate.open()
+        do {
+            _ = try await first.value
+            XCTFail("控えが無いのに一覧が返った")
+        } catch {
+            guard case APIError.unreachable = error else {
+                return XCTFail("取り消された呼び手の戻り方が変わった: \(error)")
+            }
+        }
+        let photos = try await second.value
+        XCTAssertEqual(photos.map(\.id), ["a", "b"], "取り消しが、ほかの呼び手の取得まで止めた")
+        let arrived = await gate.arrived
+        XCTAssertEqual(arrived, 1)
+        XCTAssertEqual(StubProtocol.requestCount, 1)
+    }
+
+    /// 引き下げ更新は、引く前に始まった取得に相乗りしない
+    func testForceDoesNotJoinAnEarlierFetch() async throws {
+        let gate = Gate()
+        let gallery = service(gate)
+        let first = Task { try await gallery.fetchPhotos() }
+        await gate.untilWaiting(1)
+        let forced = Task { try await gallery.fetchPhotos(force: true) }
+        await gate.untilWaiting(2)
+        await gate.open()
+        _ = try await first.value
+        _ = try await forced.value
+        XCTAssertEqual(StubProtocol.requestCount, 2)
+    }
+
+    private actor Returned {
+        private(set) var value = false
+        func mark() { value = true }
+    }
+}
