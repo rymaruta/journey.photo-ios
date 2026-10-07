@@ -85,4 +85,15 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertTrue(composer.contains("if let blocked = Self.draftSaveBlockedNote(loading: loadingPicks > 0) {"),
                       "読み込み中の下書き保存が黙って戻る")
     }
+
+    /// 写真詳細: 吹き出しの数と読み上げは見出しと同じ `visibleCommentCount`（ブロックした人の分を引く・2026-10-07）
+    func testPhotoDetailBubbleCountMatchesHeading() throws {
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(detail.contains(#"actionLabel(systemImage: "bubble.right", count: visibleCommentCount)"#),
+                      "吹き出しの数がサーバーの総数のまま（見出しと食い違う）")
+        XCTAssertEqual(count("CommentsHeading.label(commentCount: visibleCommentCount)", in: detail), 2,
+                       "吹き出しの読み上げと見出しが同じ数を読まない")
+        XCTAssertFalse(detail.contains("commentCount: model.commentCount"), "ブロックした人の分を含む数を出している")
+        XCTAssertFalse(detail.contains("count: model.commentCount"), "ブロックした人の分を含む数を出している")
+    }
 }
