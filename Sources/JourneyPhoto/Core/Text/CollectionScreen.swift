@@ -13,7 +13,8 @@ enum CollectionScreen {
     static func subtitle(count: Int, note: String?, isLoading: Bool = false) -> String {
         let extra = (note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if isLoading { return extra }
-        let counted = L("\(count)枚", "\(count) photos")
+        // 英語は1枚のとき単数形（地図の `photoCountLabel` を使い回す・2026-10-07）
+        let counted = PhotoMapViewModel.photoCountLabel(count)
         return extra.isEmpty ? counted : "\(counted) · \(extra)"
     }
 
@@ -80,7 +81,7 @@ enum CollectionScreen {
     /// `photos` は並んでいる写真（撮影地のページを付けてよいかを見る）
     static func shareText(title: String, count: Int, kind: PhotoQuery.Collection?, lead: Photo?,
                           photos: [Photo]) -> String {
-        var lines = ["\(title) · \(L("\(count)枚", "\(count) photos"))"]
+        var lines = ["\(title) · \(PhotoMapViewModel.photoCountLabel(count))"]
         if let url = pageURL(kind, photos: photos) ?? lead.flatMap({
             // 配れない写真（絞った・下書き）は URL を付けない（`PhotoDetailView.shareURL`）
             isShareable($0) ? PhotoLink.url(photoId: $0.id, isPublished: true) : nil

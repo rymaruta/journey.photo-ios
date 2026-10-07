@@ -122,4 +122,15 @@ final class ScreenWiringTests: XCTestCase {
         let screen = try source("Features/Gallery/CollectionPhotosScreen.swift")
         XCTAssertTrue(screen.contains("photos: shown)"), "共有の URL を並ぶ写真で決めていない")
     }
+
+    /// 英語の枚数は単数形を持つ `photoCountLabel` を通す（「1 photos」と出ていた・2026-10-07）
+    func testPhotoCountsUseSingularAwareLabel() throws {
+        for path in ["Core/Text/CollectionScreen.swift", "Features/Gallery/HomeTopCardView.swift",
+                     "Core/Text/TripBookFacts.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains(".photoCountLabel("), path)
+            XCTAssertFalse(text.contains("count) photos\")"), "\(path) が「1 photos」と出す")
+            XCTAssertFalse(text.contains("count)枚\", \"\\("), "\(path) が単数形を持たない枚数を組んでいる")
+        }
+    }
 }
