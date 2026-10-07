@@ -14,7 +14,7 @@ struct CollectionPhotosScreen: View {
     /// 集約の種類。**シェアで Web のページを指せるか**に使う（色・季節は nil）
     var kind: PhotoQuery.Collection?
     var isLoading = false
-    /// 一覧の上に置く一言（機材の「ダイナミックな風景」）。
+    /// 一覧の上に置く一言（機材の「広く写す」）。
     /// 板 12 に寄せる前から画面の上にあった字で、**なぜこの写真が
     /// 並んでいるのか**を言う。無ければ出さない
     var lede: String?
