@@ -338,8 +338,8 @@ struct SearchView: View {
         .padding(.vertical, -PillChip.tapSlack)
     }
 
-    /// 当たるものがある時間帯（写真の側はモデル、撮影地の側は索引から。撮影地は索引に
-    /// `timeOfDayGuide` が載るまで空）
+    /// 当たるものがある時間帯（写真の側はモデル、撮影地の側は索引の `timeOfDayGuide` から。
+    /// 索引は時間帯の案内を載せている——2026-10-07 の実データで 1079件中 315件）
     private var availableDayParts: Set<ShootingTime.DayPart> {
         model.dayPartsWithPhotos.union(ShootingTime.dayParts(photos: [], spots: officialSpots))
     }
@@ -786,9 +786,8 @@ struct SearchView: View {
         if !hits.isEmpty {
             let expanded = spotsExpandedFor == spotsExpandKey
             VStack(alignment: .leading, spacing: 10) {
-                Text(L("\(model.timeFilter.prefix)撮影スポット（\(hits.count)か所）",
-                       model.timeFilter.isEmpty ? "Shooting spots (\(hits.count))"
-                           : "\(model.timeFilter.prefix)shooting spots (\(hits.count))"))
+                // 季節・時間帯で絞っているときは「冬の案内がある撮影スポット」（`ShootingTime.Filter.spotsHeading`）
+                Text(model.timeFilter.spotsHeading(count: hits.count))
                     .font(.headline)
                     .foregroundStyle(WebTheme.foreground)
                 VStack(spacing: 0) {

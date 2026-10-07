@@ -47,11 +47,10 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     var seasonalGuide: LenientSeasonalGuide? = nil
     /// 時間帯の案内（夜明け・朝・日中・夕方の斜光・日没後・夜）。
     ///
-    /// 🔴 **2026-10-03 時点のサーバーの索引には載っていない**（`lib/data/spotFeed.ts` が
-    /// 「載せない」に時間帯を挙げている。本文 `/app/data/spots/<slug>.json` にだけある）。
-    /// 探すの「時間帯で絞る」が撮影地にも効くよう、**本文・台帳と同じ名前・同じ形**
-    /// （`[{time, text}]`）で読む口だけ先に置く——載るまでは常に空で、時間帯で絞ると
-    /// 撮影地の節は出ない（`ShootingTime.spots`）。2026-10-03 判断
+    /// 2026-10-03 には索引に載っておらず、読む口だけ先に置いた（本文・台帳と同じ名前・
+    /// 同じ形 `[{time, text}]`）。**2026-10-07 の実データでは索引に載っている**
+    /// （公開済み 1079件中 315件）。載っていない行・古い索引は nil で、時間帯で絞ると
+    /// その撮影地は出ない（`ShootingTime.spots`）
     var timeOfDayGuide: LenientTimeOfDayGuide? = nil
 
     /// 出してよい写真。作者とライセンスが揃っていて、https の画像だけ
@@ -60,7 +59,7 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     /// 出してよい季節の案内（`SpotBody` の本文と同じ決まりで落としたもの）
     var seasons: [SpotBody.Seasonal] { seasonalGuide?.value ?? [] }
 
-    /// 出してよい時間帯の案内（索引に載っていなければ空・`timeOfDayGuide` の注記）
+    /// 出してよい時間帯の案内（その行に載っていなければ空・`timeOfDayGuide` の注記）
     var times: [SpotBody.TimeOfDay] { timeOfDayGuide?.value ?? [] }
 
     struct Region: Decodable, Equatable {
