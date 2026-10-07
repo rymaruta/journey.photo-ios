@@ -125,18 +125,28 @@ final class ScreenshotTests: XCTestCase {
     /// 一覧の先頭はシミュレータの現在地（パリ）に近いスポットになるので、ストアには使えない。
     /// 開けなければ撮らない（この試験の決まり）
     private func shootStoreSpot(_ app: XCUIApplication) {
-        // **ボタンの種類で探さない。** `.plain` の NavigationLink は「ボタン」として出ないことがあり、
-        // PR #171 の初回の Mac の回（run 37639772459）では `app.buttons` で見つからず 70・71 が欠けた。
-        // 名前（`map.officialCard.open`）だけで探し、押せる所まで出ていれば押す
-        let open = app.descendants(matching: .any).matching(identifier: "map.officialCard.open").firstMatch
-        guard open.waitForExistence(timeout: 5), open.isHittable else { return }
-        open.tap()
+        // **地図の札の「スポットを見る」からは開けなかった**（PR #171 の Mac の回で2回とも
+        // 70・71 が欠けた）。13f が撮れている道——「スポット」の一覧の行（`map.spotRow`）——を使う。
+        // 呼ぶのは「鍋ヶ滝」で絞っている間なので、一覧の先頭は鍋ヶ滝になる
+        let spots = app.buttons["map.mode.spots"].firstMatch
+        guard spots.waitForExistence(timeout: 5) else { return }
+        spots.tap()
+        defer {
+            let map = app.buttons["map.mode.map"].firstMatch
+            if map.exists { map.tap() }
+        }
+        let row = app.buttons["map.spotRow"].firstMatch
+        guard row.waitForExistence(timeout: 10), row.isHittable else { return }
+        row.tap()
         defer {
             goBack(app)
             Thread.sleep(forTimeInterval: 1)
         }
         // 表紙の写真（作例）が読み込まれるのを待つ
         Thread.sleep(forTimeInterval: 5)
+        // 開いたのが鍋ヶ滝でなければ撮らない（名前と中身が食い違う絵は、無い絵より悪い）
+        let named = NSPredicate(format: "label CONTAINS %@", "鍋ヶ滝")
+        guard app.staticTexts.matching(named).firstMatch.waitForExistence(timeout: 5) else { return }
         shoot(app, "70-ストア・撮影スポット（鍋ヶ滝）")
         if scrollToSpotLight(app) {
             shoot(app, "71-ストア・光の時刻（鍋ヶ滝）")
