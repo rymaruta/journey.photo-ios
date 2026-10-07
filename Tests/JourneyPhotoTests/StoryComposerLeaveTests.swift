@@ -31,6 +31,15 @@ final class StoryComposerLeaveTests: XCTestCase {
         XCTAssertFalse(StoryComposerView.leaveDialog(canSaveDraft: false, loading: false, restored: false).canSave)
     }
 
+    /// 読み込み中に下書き保存へ来たら、黙って戻らずに理由を知らせる
+    func testDraftSaveWhileLoadingSaysWhy() {
+        XCTAssertEqual(StoryComposerView.draftSaveBlockedNote(loading: true),
+                       L("写真の読み込み中は下書きに保存できません。読み込み終わってからお試しください",
+                         "You can't save a draft while photos are loading. Try again when they finish."),
+                       "読み込み中の下書き保存が黙って戻る")
+        XCTAssertNil(StoryComposerView.draftSaveBlockedNote(loading: false))
+    }
+
     func testEmptyComposerClosesAtOnce() {
         XCTAssertEqual(StoryComposerView.leave(content(), restored: nil), .now)
     }

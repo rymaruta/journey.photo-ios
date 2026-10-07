@@ -1346,14 +1346,26 @@ struct StoryComposerView: View {
                     "If you close now, the photos and text you added will be lost. Drafts stay on this device only."))
     }
 
+    /// 下書きに保存できないときの一言（`saveDraft`）。保存できるなら nil
+    nonisolated static func draftSaveBlockedNote(loading: Bool) -> String? {
+        loading ? L("写真の読み込み中は下書きに保存できません。読み込み終わってからお試しください",
+                    "You can't save a draft while photos are loading. Try again when they finish.")
+                : nil
+    }
+
     /// 下書きにする。**焼き込む前の文字のまま残す**
     /// ——焼いてしまうと位置も色も直せなくなる（投稿と同じ片道になる）。
     /// **並べた写真を全部残す。** 以前は表示中の1枚だけを渡していて、
     /// 3枚並べて保存しても開き直すと1枚になっていた
     private func saveDraft() {
+        guard !shots.isEmpty else { return }
         // 読み込み中は書かない（閉じる確認・「…」の両方で止めているが、確認を出した後に
-        // 読み込みが始まった回の念のため。書かずに閉じもしない）
-        guard !shots.isEmpty, loadingPicks == 0 else { return }
+        // 読み込みが始まった回の念のため）。書かずに閉じもしないが、**黙って戻らない**——
+        // 押した人には何も起きないように見える。理由を知らせに出す
+        if let blocked = Self.draftSaveBlockedNote(loading: loadingPicks > 0) {
+            message = blocked
+            return
+        }
         let ok = drafts.save(
             shots: shots.map { shot in
                 StoryDraftStore.ShotInput(imageData: shot.prepared.data,

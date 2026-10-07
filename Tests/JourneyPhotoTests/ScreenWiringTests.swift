@@ -82,6 +82,7 @@ final class ScreenWiringTests: XCTestCase {
         let composer = try source("Features/Stories/StoryComposerView.swift")
         XCTAssertTrue(composer.contains("canSave: leaveDialog.canSave"))
         XCTAssertTrue(composer.contains("loading: loadingPicks > 0"))
-        XCTAssertTrue(composer.contains("guard !shots.isEmpty, loadingPicks == 0 else { return }"))
+        XCTAssertTrue(composer.contains("if let blocked = Self.draftSaveBlockedNote(loading: loadingPicks > 0) {"),
+                      "読み込み中の下書き保存が黙って戻る")
     }
 }
