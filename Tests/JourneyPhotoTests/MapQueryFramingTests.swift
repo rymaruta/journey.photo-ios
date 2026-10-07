@@ -80,4 +80,32 @@ final class MapQueryFramingTests: XCTestCase {
         XCTAssertFalse(framing.followsLocation(requestedByUser: false))
         XCTAssertTrue(framing.followsLocation(requestedByUser: true))
     }
+
+    /// 🔴 指で動かしたあと、自動の現在地が届く前に欄を空にしても、引き戻さない
+    /// （語の印と一緒に「動かした」印まで下ろしていた）
+    func testClearingQueryAfterMovingKeepsTheHold() {
+        var framing = MapQueryFraming()
+        framing.userMovedCamera()
+        framing.cleared()
+        XCTAssertFalse(framing.followsLocation(requestedByUser: false), "欄を空にしたら現在地へ引き戻した")
+
+        // 語を受け取ってから動かし、そのあと空の語で戻った回も同じ
+        var viaQuery = MapQueryFraming()
+        viaQuery.received(query: "京都")
+        viaQuery.userMovedCamera()
+        viaQuery.received(query: "")
+        XCTAssertFalse(viaQuery.followsLocation(requestedByUser: false), "空の語で戻ったら現在地へ引き戻した")
+        // ボタンで取った現在地へは寄せる
+        XCTAssertTrue(viaQuery.followsLocation(requestedByUser: true))
+    }
+
+    /// 🔴 指で動かしたあと、0件の語で戻っても（何にも当たらないと決まっても）引き戻さない
+    func testNothingMatchedAfterMovingKeepsTheHold() {
+        var framing = MapQueryFraming()
+        framing.userMovedCamera()
+        framing.received(query: "どこにも無い語")
+        XCTAssertNil(framing.frameIfReady(nil, settled: true))
+        XCTAssertFalse(framing.waitingToFrame)
+        XCTAssertFalse(framing.followsLocation(requestedByUser: false), "0件の語で戻ったら現在地へ引き戻した")
+    }
 }

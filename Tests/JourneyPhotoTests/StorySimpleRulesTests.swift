@@ -24,6 +24,40 @@ final class StorySimpleRulesTests: XCTestCase {
         XCTAssertFalse(StorySimpleRules.nextButton(selected: 2, loading: true).enabled)
     }
 
+    // MARK: - 選んだ写真の読み込み
+
+    /// 🔴 **返らない1枚があっても、上限時間で戻る。** 以前は待ち続け、読み込み中が解けずに
+    /// 「シェアする」・並びの「＋」が止まったままだった（閉じて開き直すまで）。
+    /// 返らない1枚は「読めなかった」に数え、ほかの写真は受け取る
+    @MainActor
+    func testPickThatNeverReturnsTimesOut() async {
+        let gate = Gate()
+        final class Box { var accepted: [Data] = []; var failed: Int?; }
+        let box = Box()
+        let run = Task { @MainActor in
+            box.failed = await StorySimpleRules.readPicks([1, 2, 3], timeout: 0.1, read: { i in
+                if i == 2 { await gate.wait(); return nil }
+                return Data([UInt8(i)])
+            }, accept: { box.accepted.append($0) })
+        }
+        // 直っていなければ戻らない。上限（2秒）で試験を落とし、門を開けて片づける
+        let deadline = Date().addingTimeInterval(2)
+        while box.failed == nil, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let returned = box.failed != nil
+        await gate.open()
+        await run.value
+        XCTAssertTrue(returned, "返らない1枚を待ち続けて、読み込み中が解けない")
+        XCTAssertEqual(box.failed, 1)
+        XCTAssertEqual(box.accepted, [Data([1]), Data([3])])
+    }
+
+    /// 投稿の写真と同じ上限（iCloud の写真を落とさない長さ）
+    func testPickLoadTimeoutMatchesUpload() {
+        XCTAssertEqual(StorySimpleRules.pickLoadTimeout, 60)
+    }
+
     // MARK: - カメラ・並びの帯
 
     /// 写真を選ぶ段で印を付けてからカメラで撮ったら、印の写真も読み込む（撮った1枚は後）

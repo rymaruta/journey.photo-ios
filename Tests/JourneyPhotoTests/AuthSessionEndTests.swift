@@ -51,6 +51,44 @@ final class AuthSessionEndTests: XCTestCase {
         XCTAssertNotNil(auth.errorMessage, "期限切れの案内が出ていない")
     }
 
+    /// 🔴 **本人が押したログアウトは、何度押しても・メニューと設定の両方から押しても1本。**
+    /// メニューは先に閉じる作りで、画面の印では閉じる間の2発目を止められず、
+    /// 通知の宛先外しとログアウトが2本走っていた（2026-10-01 の既知の残り）
+    func testSignOutPressedTwiceRunsOnce() async {
+        let signOuts = SignOutCounter()
+        let releases = SignOutCounter()
+        let gate = Gate()
+        let auth = AuthStore(gateway: gateway(signOuts: signOuts, gate: gate))
+        await auth.restore()
+        XCTAssertEqual(auth.userId, "u1", "下ごしらえ: ログイン中になる")
+
+        // メニューから押し、閉じる間にもう一度・設定からも押す（同じ印を見る）
+        let first = auth.startSigningOut { await releases.note() }
+        let second = auth.startSigningOut { await releases.note() }
+        let third = auth.startSigningOut { await releases.note() }
+        XCTAssertNotNil(first)
+        XCTAssertTrue(auth.isSigningOut, "押したその場で印が立っていない")
+        await gate.untilWaiting(1)
+        for _ in 0..<20 { await Task.yield() }
+        await gate.open()
+        await first?.value
+        await second?.value
+        await third?.value
+
+        let signOutCount = await signOuts.count
+        let releaseCount = await releases.count
+        XCTAssertEqual(signOutCount, 1, "二度押しでログアウトが並んで走っている")
+        XCTAssertEqual(releaseCount, 1, "二度押しで通知の宛先外しが並んで走っている")
+        XCTAssertFalse(auth.isSigningOut, "終わっても印が下りない")
+        XCTAssertNil(auth.userId)
+
+        // 入り直した後は、また押せる
+        await auth.restore()
+        await auth.startSigningOut { await releases.note() }?.value
+        let again = await signOuts.count
+        XCTAssertEqual(again, 2, "1回目の印が残って、次のログアウトが効かない")
+    }
+
     /// 走り終えた後なら、次の期限切れ（入り直した後）でまたログアウトできる
     func testExpiryCanRunAgainAfterTheFirstFinished() async {
         let signOuts = SignOutCounter()
