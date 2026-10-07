@@ -465,6 +465,43 @@ final class HomeTopCardTests: XCTestCase {
         XCTAssertEqual(other, ["inSeason", "theme", "quiz"])
     }
 
+    /// 🔴 **選んでから札ごと落とさない**（2026-10-07 のレビュー）。今週当たる候補が今日の一問の
+    /// 選択肢なら、それを外した中から選ぶ——次の候補の札が出る
+    func testSeasonCardSkipsAQuizChoiceAndShowsTheNextSpot() throws {
+        let q = try quiz()
+        let choice = try spot("sp_000000000001")   // 外れの選択肢
+        let next = try spot("sp_000000000009")     // 選択肢に無い
+        XCTAssertTrue(q.choices.map(\.spotId).contains(choice.spotId))
+        // 前提: 問題が無い日、9/27 の週は1件目（選択肢の方）が当たる
+        XCTAssertEqual(inSeasonCard(seasonCards([choice, next])),
+                       .inSeason(spot: choice, season: "autumn", guide: "秋は紅葉"))
+        let cards = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: [choice, next], quiz: q, timeZone: utc)
+        XCTAssertEqual(cards.map(\.slot), ["inSeason", "theme", "quiz"], "選択肢に当たった週に季節の札ごと消えた")
+        XCTAssertEqual(inSeasonCard(cards), .inSeason(spot: next, season: "autumn", guide: "秋は紅葉"))
+
+        // 行きたい場所の札も同じ（選択肢を外して、次に行きたい場所を出す）
+        let wish: Set<String> = [SavedSpotKey.official(choice.slug), SavedSpotKey.official(next.slug)]
+        XCTAssertEqual(wishCards([choice, next], wishlist: wish).first { $0.slot == "wishlistSeason" },
+                       .wishlistSeason(spot: choice, season: "autumn", guide: "秋は紅葉"), "試験の前提")
+        let wished = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                       spots: [choice, next], wishlist: wish, quiz: q, timeZone: utc)
+        XCTAssertEqual(wished.map(\.slot), ["wishlistSeason", "theme", "quiz"])
+        XCTAssertEqual(wished.first { $0.slot == "wishlistSeason" },
+                       .wishlistSeason(spot: next, season: "autumn", guide: "秋は紅葉"))
+    }
+
+    /// 候補が**全部**今日の一問の選択肢なら、季節の札も行きたい場所の札も出さない（空き地を作らない）
+    func testNoSeasonCardWhenEveryCandidateIsAQuizChoice() throws {
+        let q = try quiz()
+        let all = try ["sp_000000000001", "sp_000000000002", "sp_000000000003", "sp_000000000004"].map { try spot($0) }
+        XCTAssertEqual(Set(all.map(\.spotId)), Set(q.choices.map(\.spotId)), "試験の前提: 4つとも選択肢")
+        let wish = Set(all.map { SavedSpotKey.official($0.slug) })
+        let slots = HomeTopCard.cards(now: now, plans: [], myPhotos: [], openedBookDays: [],
+                                      spots: all, wishlist: wish, quiz: q, timeZone: utc).map(\.slot)
+        XCTAssertEqual(slots, ["theme", "quiz"])
+    }
+
     /// 「行きたい」の札も同じ（答えのスポットが行きたい場所に入っている日）
     func testWishlistCardForTheAnswerSpotIsHiddenThatDay() throws {
         let answerSpot = try spot("sp_000000000002")
