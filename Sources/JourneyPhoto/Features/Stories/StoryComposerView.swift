@@ -1137,15 +1137,13 @@ struct StoryComposerView: View {
         guard !items.isEmpty else { return }
         loadingPicks += 1
         defer { loadingPicks -= 1 }
-        var failed = 0
-        for item in items {
-            let data = try? await item.loadTransferable(type: Data.self)
-            if let data {
-                await accept(data)
-            } else {
-                failed += 1
-            }
-        }
+        // **1枚ごとに上限時間**（`StorySimpleRules.pickLoadTimeout`）。返らない1枚で
+        // 読み込み中が解けず、「シェアする」・「＋」が止まったままにならないように
+        let failed = await StorySimpleRules.readPicks(items, read: { item in
+            try await item.loadTransferable(type: Data.self)
+        }, accept: { data in
+            await accept(data)
+        })
         if failed > 0 {
             message = failed == items.count
                 ? L("写真を読み込めませんでした", "Couldn't load the photos")

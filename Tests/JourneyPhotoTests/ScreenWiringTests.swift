@@ -69,4 +69,11 @@ final class ScreenWiringTests: XCTestCase {
             XCTAssertFalse(screen.contains("await auth.signOut()"), "\(path) が直にログアウトしている")
         }
     }
+
+    /// ストーリー: 選んだ写真は上限時間つきで読む（`StorySimpleRules.readPicks`）
+    func testStoryComposerReadsPicksWithTimeout() throws {
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains("StorySimpleRules.readPicks("), "上限時間を通らずに写真を読んでいる")
+        XCTAssertEqual(count("loadTransferable(", in: composer), 1, "readPicks の外で写真を読んでいる")
+    }
 }
