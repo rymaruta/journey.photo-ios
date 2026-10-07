@@ -73,6 +73,25 @@ final class OfficialSpotIndexTests: XCTestCase {
         XCTAssertTrue(OfficialSpotIndex.matches([x], query: "本").isEmpty)
     }
 
+    /// 🔴 2026-10-07: 「京都」で**東京都**のスポットが混ざっていた（県＋市をつないだ
+    /// 「東京都千代田区」に部分一致）。県名・市区町村名を名前として見る
+    func testKyotoDoesNotMatchTokyoTo() throws {
+        let spots = [
+            try spot("tokyo-station", name: "東京駅", prefecture: "東京都", city: "千代田区"),
+            try spot("kiyomizu", name: "清水寺", prefecture: "京都府", city: "京都市東山区"),
+            try spot("fukuchiyama", name: "福知山城", prefecture: "京都府", city: "福知山市"),
+        ]
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "京都").map(\.slug), ["kiyomizu", "fukuchiyama"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "京都府").map(\.slug), ["kiyomizu", "fukuchiyama"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "東京").map(\.slug), ["tokyo-station"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "千代田").map(\.slug), ["tokyo-station"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "東京都千代田区").map(\.slug), ["tokyo-station"])
+        XCTAssertEqual(OfficialSpotIndex.matches(spots, query: "東山").map(\.slug), ["kiyomizu"])
+        // 地図のピン・リストの札も同じ当て方（索引を通る）
+        XCTAssertEqual(RegionList.filter(photos: [], spots: spots, query: "京都", category: nil).spots.map(\.slug),
+                       ["kiyomizu", "fukuchiyama"])
+    }
+
     /// **名前で当たったものが先。** 地域だけで当たったものはその後ろ
     func testNameMatchesComeFirst() throws {
         let spots = [

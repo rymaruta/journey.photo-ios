@@ -90,6 +90,13 @@ enum LocationMatch {
         return false
     }
 
+    /// 字 `text` の中に `name` が**名前として**入っているか（前後が端か行政区分の字）。
+    /// 「東京都」の中の「京都」は ✗、「京都府」の中の「京都」は ○。
+    /// 揃え方（小文字・空白など）は呼び手がそろえてから渡す
+    static func nameIn(_ text: String, _ name: String) -> Bool {
+        nameInToken(Array(text), Array(name))
+    }
+
     /// `inner` の語の並びの中に、`outer` の語が**同じ順で続けて**名前として入っているか
     private static func contains(_ inner: String?, _ outer: String?) -> Bool {
         guard normalized(inner).count >= 2, normalized(outer).count >= 2 else { return false }
