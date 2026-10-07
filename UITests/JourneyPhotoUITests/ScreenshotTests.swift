@@ -495,6 +495,21 @@ final class ScreenshotTests: XCTestCase {
                         app.navigationBars.buttons.firstMatch.tap()
                     }
                 }
+                // **旅の記録の下の、共同アルバムと旅行プランの入口**（2026-10-07）。
+                // 名前の付いた行（`trips.albums`）だけを探し、画面に収まるまで送る。
+                // 旅の一冊から戻れなかった回（詳細のまま）は在っても押せないので撮らない
+                Thread.sleep(forTimeInterval: 2)
+                let albumsRow = app.buttons["trips.albums"].firstMatch
+                let rowBottom = app.windows.firstMatch.frame.maxY - 100
+                var rowPushes = 0
+                while albumsRow.exists, albumsRow.frame.maxY > rowBottom, rowPushes < 4 {
+                    app.swipeUp()
+                    Thread.sleep(forTimeInterval: 1)
+                    rowPushes += 1
+                }
+                if albumsRow.waitForExistence(timeout: 5), albumsRow.isHittable {
+                    shoot(app, "32-旅の記録の入口")
+                }
             }
         }
 

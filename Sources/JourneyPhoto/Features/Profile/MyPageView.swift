@@ -276,7 +276,7 @@ struct MyPageView: View {
                 // 下の札の「投稿」とホームのストーリーの行と入口が重なっていた。
                 // 旅の記録は下のタブへ移した。**編集・アルバム・お気に入りの
                 // ボタンの列も置かない**——編集は見出しの右、お気に入りは下のタブ、
-                // アルバムは設定から入る（`SettingsView`）
+                // アルバムと旅行プランは下の「旅の記録」のタブの札（`tripToolsCard`）
                 highlightsRow
                 // **札と中身は横に払っても切り替わる**（札を押すのと同じ）。
                 // 払いを受けるのは札から下だけ——上のハイライトの列は横に流れる
@@ -870,10 +870,40 @@ struct MyPageView: View {
                 .frame(maxWidth: .infinity)
                 .padding(24)
         } else {
-            // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
-            // 公開一覧に載っている写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
-            TripShelfList(trips: trips, isPublic: LikedPhotos.fromPublicFeed(dropped.visible(feed)))
+            VStack(alignment: .leading, spacing: 20) {
+                // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）
+                // 公開一覧に載っている写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
+                TripShelfList(trips: trips, isPublic: LikedPhotos.fromPublicFeed(dropped.visible(feed)))
+                tripToolsCard
+            }
         }
+    }
+
+    /// 旅の記録の下の、共同アルバムと旅行プランの入口（2026-10-07）。
+    ///
+    /// **入口がメニューと設定の奥にしか無かった。** 板 05c に寄せたときにマイページの
+    /// ボタンの列を外し、アルバムは設定・旅行プランはメニューからだけになった。
+    /// どちらも「旅」の道具なので、旅の記録のタブに置く（板 MyPage の旅の記録にも
+    /// 「行きたい場所から旅行プランを作る」の行がある）。形は設定・メニューと同じ札と行
+    private var tripToolsCard: some View {
+        JPCard {
+            NavigationLink { AlbumsView() } label: {
+                JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack",
+                           detail: L("招待リンクで、旅の仲間と写真を集める",
+                                     "Collect photos with your travel companions via an invite link"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trips.albums")
+            JPCardDivider()
+            NavigationLink { TripPlansView() } label: {
+                JPRowLabel(title: L("旅行プラン", "Trip plans"), systemImage: "calendar",
+                           detail: L("行きたい場所を、回る順に並べる",
+                                     "Put the places you want to visit in order"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("trips.plans")
+        }
+        .padding(.horizontal, 16)
     }
 
     /// 「行きたい」の地点を導く写真の集まり。自分の写真を先に、公開一覧を後に
