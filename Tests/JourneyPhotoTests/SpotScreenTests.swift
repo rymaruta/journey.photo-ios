@@ -28,7 +28,7 @@ final class SpotScreenTests: XCTestCase {
 
     // MARK: - シェア（モック5-6）
 
-    /// ページを渡さない回（下書き・撮影地から作った地点）は journey-photo.com を
+    /// ページを渡さない回（下書き・公開の写真が無い撮影地）は journey-photo.com を
     /// 入れない——開けないリンクを配らない
     func testShareTextHasNoSiteLink() {
         let url = SpotScreen.mapURL(name: "イアの夕景", coords: Photo.Coords(lat: 36.46, lng: 25.37))
@@ -127,6 +127,50 @@ final class SpotScreenTests: XCTestCase {
         let base = try XCTUnwrap(URL(string: "https://journey-photo.com"))
         XCTAssertNil(SpotScreen.pageURL(slug: "takaya-shrine", isDraft: true, siteBase: base))
         XCTAssertNil(SpotScreen.pageURL(slug: "  ", isDraft: false, siteBase: base))
+    }
+
+    // MARK: - 写真から作った撮影地のサイトのページ（2026-10-07）
+
+    private func photo(_ fields: [String: Any]) throws -> Photo {
+        var row = fields
+        row["src"] = "https://x/\(fields["id"] ?? "").jpg"
+        return try JSONDecoder.api.decode(Photo.self, from: JSONSerialization.data(withJSONObject: row))
+    }
+
+    /// 公開の写真が1枚でもあれば `/location/<スラッグ>` を配る（日本語は URL の中で符号化される）
+    func testDerivedPlaceWithAPublicPhotoCarriesItsLocationPage() throws {
+        let base = try XCTUnwrap(URL(string: "https://journey-photo.com"))
+        let photos = [try photo(["id": "p1", "location": "山中湖"])]
+        let page = try XCTUnwrap(SpotScreen.locationPageURL(slug: LocationSlug.make("山中湖"), photos: photos, siteBase: base))
+        XCTAssertEqual(page.absoluteString, "https://journey-photo.com/location/%E5%B1%B1%E4%B8%AD%E6%B9%96")
+        let text = SpotScreen.shareText(name: "山中湖", region: nil, mapURL: nil, pageURL: page)
+        XCTAssertTrue(text.contains("https://journey-photo.com/location/"), "共有にサイトのページが入っていない")
+    }
+
+    /// 🔴 **下書き・公開範囲を絞った写真だけの撮影地には付けない**——Web にページが建たず、
+    /// 開けないリンクを配ることになる
+    func testDerivedPlaceWithoutPublicPhotosHasNoLocationPage() throws {
+        let base = try XCTUnwrap(URL(string: "https://journey-photo.com"))
+        let draft = try photo(["id": "d1", "location": "秘密の滝", "published": false])
+        let followers = try photo(["id": "f1", "location": "秘密の滝", "audience": "followers"])
+        let close = try photo(["id": "c1", "location": "秘密の滝", "audience": "closeFriends"])
+        XCTAssertNil(SpotScreen.locationPageURL(slug: "秘密の滝", photos: [draft, followers, close], siteBase: base),
+                     "公開の写真が無い撮影地にリンクを付けた（Web は 404）")
+        XCTAssertNil(SpotScreen.locationPageURL(slug: "秘密の滝", photos: [], siteBase: base))
+        XCTAssertNil(SpotScreen.locationPageURL(slug: "  ", photos: [try photo(["id": "p1"])], siteBase: base))
+        // 1枚でも公開があれば付ける（下書きが混ざっていても）
+        let open = try photo(["id": "o1", "location": "秘密の滝", "published": true])
+        XCTAssertNotNil(SpotScreen.locationPageURL(slug: "秘密の滝", photos: [draft, open], siteBase: base))
+    }
+
+    /// 写真から作った撮影地の画面が、共有にサイトのページを渡していること（画面は模型で描けないので書いてあることを見る）
+    func testSpotDetailShareUsesTheLocationPage() throws {
+        let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto/Features/Spots/SpotDetailView.swift").path
+        let source = try String(contentsOfFile: path, encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "private var shareText: String"))
+        let body = String(source[start.lowerBound...].prefix(400))
+        XCTAssertTrue(body.contains("SpotScreen.locationPageURL("), "撮影地の共有にサイトのページを渡していない")
     }
 
     // MARK: - 写真の一覧が取れなかった回（「この場所の写真（0）」を言わない）
