@@ -58,14 +58,34 @@ done < <(git for-each-ref --format='%(refname:lstrip=3) %(objectname)' refs/remo
 
 [ "$APPLY" = "true" ] || exit 0
 
+# 🔴 **消す直前に、GitHub に1本ずつ問い直す**（2026-10-07）。
+# 初回の一括の掃除で、手元の試しでは「残す」だった枝（main に入っていない・PR なし）が
+# 16本消えた。原因は突き止め切れていない（手元で同じ条件を流すと残す側になる）ので、
+# 手元の判定だけを信じない。いまの先頭を読み直し、main との比べ（compare）が
+# 「main に含まれる」か、その先頭のまま併合された PR があるときだけ消す
+still_merged() {
+  local branch=$1 now status
+  now=$(gh api "repos/$REPO/git/ref/heads/$branch" --jq .object.sha 2>/dev/null) || return 1
+  status=$(gh api "repos/$REPO/compare/main...$now" --jq .status 2>/dev/null) || return 1
+  case "$status" in identical|behind) return 0 ;; esac
+  awk -F'\t' -v b="$branch" -v s="$now" '$1==b && $2==s && $4=="true"{f=1} END{exit !f}' "$prs"
+}
+
 failed=0
+skipped=0
 for row in "${delete[@]}"; do
   branch=${row%%|*}
+  if ! still_merged "$branch"; then
+    echo "::warning::問い直したら main に入っていなかったので残す: $branch"
+    skipped=$((skipped + 1))
+    continue
+  fi
+  echo "消す: ${branch}（${row#*|}）"
   # 枝の名前の / はそのまま（API はパスの続きとして受ける）
   if ! gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" --silent; then
     echo "::warning::消せなかった: $branch"
     failed=$((failed + 1))
   fi
 done
-echo "消せなかった枝: $failed 本" >> "$SUMMARY"
+echo "消せなかった枝: $failed 本 / 問い直して残した枝: $skipped 本" >> "$SUMMARY"
 [ "$failed" -eq 0 ]
