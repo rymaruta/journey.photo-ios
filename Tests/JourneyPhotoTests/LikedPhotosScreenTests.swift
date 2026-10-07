@@ -118,4 +118,35 @@ final class LikedPhotosScreenTests: XCTestCase {
         XCTAssertTrue(screen.shown.loaded)
         XCTAssertEqual(screen.returns, 0)
     }
+
+    // MARK: - 戻ったときに読み込みを2本立てない
+
+    /// 🔴 **戻ったとき、読み込みは1本だけ。** SwiftUI が `.task` を元の鍵で走り直しても
+    /// （読み終えた鍵なので空振り）、走り直さなくても（`appear` で進んだ新しい鍵の1本）
+    func testReturnStartsExactlyOneLoadWhetherOrNotTheOldTaskReruns() throws {
+        var screen = LikedPhotosScreen()
+        let first = screen.key(auth: "me")
+        XCTAssertTrue(screen.needsLoad(first), "初回は読む")
+        screen.appear()
+        XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: [try photo("a")]), key: first))
+
+        // 詳細を開いて戻る
+        screen.disappear()
+        // 元の鍵での走り直し（SwiftUI がする場合）は空振り
+        XCTAssertFalse(screen.needsLoad(first), "読み終えた鍵で2本目を立てない")
+        screen.appear()
+        let next = screen.key(auth: "me")
+        XCTAssertNotEqual(next, first, "戻ったら鍵が進む")
+        XCTAssertTrue(screen.needsLoad(next), "新しい鍵の1本は読む")
+        XCTAssertTrue(screen.receive(.init(user: "me", feed: [], mine: []), key: next))
+        XCTAssertFalse(screen.needsLoad(next), "読み終えたら同じ鍵では読まない")
+    }
+
+    /// 取り消された回（答えが届かなかった）は読み終えたと覚えない（次の走り直しで読む）
+    func testCancelledLoadIsNotRememberedAsLoaded() {
+        let screen = LikedPhotosScreen()
+        let key = screen.key(auth: "me")
+        // 読み始めたが取り消された（`receive` は呼ばれない）
+        XCTAssertTrue(screen.needsLoad(key))
+    }
 }

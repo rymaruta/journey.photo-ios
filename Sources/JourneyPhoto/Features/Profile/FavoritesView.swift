@@ -85,7 +85,7 @@ struct FavoritesView: View {
         // **ログイン状態が決まってから**聞く。確認中（`isResolving`）を
         // 未ログインと同じに扱わない。決まったら id が変わって読み直す
         // 鍵に戻ってきた回数を入れる——戻るたびに読み直す（消した自分の写真を落とす・H-2）
-        .task(id: "\(auth.state)#\(screen.returns)") { await load() }
+        .task(id: screen.key(auth: "\(auth.state)")) { await load() }
         .refreshable { await load(force: true) }
         // **戻ってきたら絞り直す。** 詳細画面でハートを外したぶんは、
         // その画面を閉じたこの時点で消える（見ている最中には消さない）
@@ -106,6 +106,9 @@ struct FavoritesView: View {
 
     private func load(force: Bool = false) async {
         guard !auth.isResolving else { return }
+        // 読み終えた鍵での再実行は空振り（戻ったときに2本立てない・`LikedPhotosScreen.loadedKey`）
+        let key = screen.key(auth: "\(auth.state)")
+        guard force || screen.needsLoad(key) else { return }
         let user = auth.userId
         let signedIn = user != nil
         async let poolsTask = PhotoPools.load(environment, signedIn: signedIn, force: force)
@@ -128,6 +131,6 @@ struct FavoritesView: View {
         // 画面に出ていなければ取っておき、戻ったときに入れる（詳細を閉じない）
         let fetch = LikedPhotosScreen.Fetch(user: user, feed: pools.feed, mine: pools.mine,
                                             serverIds: fetched, serverFailed: failed)
-        if screen.receive(fetch) { refilter() }
+        if screen.receive(fetch, key: key) { refilter() }
     }
 }

@@ -86,10 +86,23 @@ struct LikedPhotosScreen {
     /// `Task` を立てると、`.task` と2本同時に取りに行く（`HomeTopCardView` と同じ形）
     private(set) var returns = 0
     private var didAppear = false
+    /// 読み終えた鍵（`key(auth:)`）。**同じ鍵での再実行は空振りさせる**（`needsLoad`）。
+    /// 戻ったとき SwiftUI が `.task` を元の鍵で走り直す場合でも、`appear` で鍵が進むので、
+    /// 読み込みは新しい鍵の1本だけになる（`HomeTopCardView` の `loadedKey` と同じ形・
+    /// 走り直す・走り直さないのどちらでも1本。2026-10-07 判断）
+    private(set) var loadedKey: String?
+
+    /// 読み込みの `.task(id:)` の鍵（ログインの状態と、戻ってきた回数）
+    func key(auth: String) -> String { "\(auth)#\(returns)" }
+
+    /// この鍵で読む必要があるか（読み終えた鍵なら空振り）。引き下げ・再試行は聞かずに読む
+    func needsLoad(_ key: String) -> Bool { key != loadedKey }
 
     /// 読み込みの答えが届いた。**画面に出ていればその場で入れて true**（絞り直す）。
     /// 出ていなければ取っておく（詳細を開いている——差し替えると詳細が閉じる）
-    mutating func receive(_ fetch: Fetch) -> Bool {
+    /// - Parameter key: 読み始めたときの鍵。届いた（取り消されなかった）回だけ「読み終えた」と覚える
+    mutating func receive(_ fetch: Fetch, key: String? = nil) -> Bool {
+        if let key { loadedKey = key }
         // 取っておいた答えの上に重ねる（前の答えで取れた一覧を、後の失敗で消さない）
         let next = (staged ?? shown).absorbing(fetch)
         if isShown {
@@ -103,6 +116,9 @@ struct LikedPhotosScreen {
 
     /// 画面が前に出た。取っておいた答えを入れ、**戻ってきた回なら読み直す**
     /// （`returns` が進む＝`.task(id:)` が走る）。初回は `.task(id:)` がもう読んでいる
+    ///
+    /// ⚠️ 戻るスワイプを途中でやめた回（`onAppear` が来て、出ないまま詳細に戻る）にも
+    /// 取っておいた答えが入る。**確かめていない・前からの `refilter` と同じ穴**（2026-10-07 判断）
     mutating func appear() {
         isShown = true
         if let staged {

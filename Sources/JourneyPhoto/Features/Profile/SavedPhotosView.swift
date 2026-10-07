@@ -51,7 +51,7 @@ struct SavedPhotosView: View {
         .webScreen()
         .navigationTitle(ProfileTab.favorites.label)
         // 鍵に戻ってきた回数を入れる——戻るたびに読み直す（消した自分の写真を落とす・H-2）
-        .task(id: "\(auth.state)#\(screen.returns)") { await load() }
+        .task(id: screen.key(auth: "\(auth.state)")) { await load() }
         .refreshable { await load(force: true) }
         .onAppear {
             screen.appear()
@@ -85,11 +85,14 @@ struct SavedPhotosView: View {
     private func load(force: Bool = false) async {
         // ログインの確認中は待つ（決まったら `.task(id:)` が読み直す）
         guard !auth.isResolving else { return }
+        // 読み終えた鍵での再実行は空振り（戻ったときに2本立てない・`LikedPhotosScreen.loadedKey`）
+        let key = screen.key(auth: "\(auth.state)")
+        guard force || screen.needsLoad(key) else { return }
         let user = auth.userId
         let pools = await PhotoPools.load(environment, signedIn: user != nil, force: force)
         // 取り消された回（画面を離れた・読み直しに追い越された）は何も書かない
         guard !Task.isCancelled else { return }
         // 画面に出ていなければ取っておき、戻ったときに入れる（詳細を閉じない）
-        if screen.receive(.init(user: user, feed: pools.feed, mine: pools.mine)) { refilter() }
+        if screen.receive(.init(user: user, feed: pools.feed, mine: pools.mine), key: key) { refilter() }
     }
 }
