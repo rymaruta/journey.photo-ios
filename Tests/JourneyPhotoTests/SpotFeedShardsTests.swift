@@ -74,7 +74,7 @@ final class SpotFeedShardsTests: XCTestCase {
     /// フランスの詳細
     static let france = """
     [{"spotId":"sp_paris0000001","slug":"versailles","name":"ヴェルサイユ宮殿","region":{"country":"フランス","prefecture":"イヴリーヌ県"},
-      "coords":{"lat":48.80,"lng":2.12},"summary":"鏡の間。","stage":"published",
+      "coords":{"lat":48.80,"lng":2.12},"summary":"鏡の間。","stage":"published","timeZone":"Europe/Paris",
       "seasonalGuide":[{"season":"spring","text":"庭園の花"}]}]
     """
 
@@ -120,6 +120,8 @@ final class SpotFeedShardsTests: XCTestCase {
         XCTAssertEqual(tokyo.summary, "赤れんがの駅舎。")
         XCTAssertEqual(tokyo.seasons.first?.text, "秋の夕方に赤れんがが映える")
         XCTAssertEqual(tokyo.times.map(\.time), ["dusk"])
+        // 時刻帯は詳細にだけ載る（光の時刻・旅の当日の行が使う）。重ねた行で読める
+        XCTAssertEqual(spots.first { $0.slug == "versailles" }?.timeZone, "Europe/Paris", "詳細の時刻帯を落としている")
         XCTAssertEqual(count("/app/data/spots.json"), 0, "新しい置き場があるのに古い置き場も読んでいる")
         XCTAssertEqual(count("/app/data/spot-feed/jp-kanto.json"), 1)
         XCTAssertEqual(count("/app/data/spot-feed/fr.json"), 1)

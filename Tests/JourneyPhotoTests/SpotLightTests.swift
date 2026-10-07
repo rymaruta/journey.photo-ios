@@ -168,12 +168,27 @@ final class SpotLightTests: XCTestCase {
         XCTAssertEqual(SpotLight.sheet(country: nil, lat: 35.68, lng: 139.77, offset: 0, now: now)?.timeZone, tokyo,
                        "国の無い行は日本")
         XCTAssertNil(SpotLight.sheet(country: "アメリカ", lat: 40.7, lng: -74.0, offset: 0, now: now))
+        // 2026-10-07: 台帳の行の timeZone があれば国より先（複数の時刻帯の国でも節が出る）
+        XCTAssertEqual(SpotLight.sheet(country: "アメリカ", timeZone: "America/New_York", lat: 40.7, lng: -74.0,
+                                       offset: 0, now: now)?.timeZone.identifier, "America/New_York")
+        XCTAssertNil(SpotLight.sheet(country: "アメリカ", timeZone: "EST", lat: 40.7, lng: -74.0, offset: 0, now: now),
+                     "略号は受けない")
         XCTAssertNil(SpotLight.sheet(country: "日本", lat: 95, lng: 139.77, offset: 0, now: now))
         XCTAssertNil(SpotLight.sheet(country: "日本", lat: .nan, lng: 139.77, offset: 0, now: now))
         XCTAssertEqual(SpotLight.sheet(country: "日本", lat: 35.68, lng: 139.77, offset: 1, now: now)?.ymd, "2026-10-05")
         // 送れる幅の外は端で止める
         XCTAssertEqual(SpotLight.sheet(country: "日本", lat: 35.68, lng: 139.77, offset: 9999, now: now)?.ymd,
                        SpotLight.ymd(offset: SpotLight.maxOffset, from: now, in: tokyo))
+    }
+
+    /// 節の日の出も、その土地の夏時間の時計で出る（Web の `spotTimeZone.test.ts` と同じ値）
+    func testSheetUsesRowTimeZoneWithDaylightSaving() throws {
+        let now = Date(timeIntervalSince1970: 1_784_131_200)  // 2026-07-15 16:00 UTC（ニューヨークは 12:00）
+        let sheet = try XCTUnwrap(SpotLight.sheet(country: "アメリカ", timeZone: "America/New_York",
+                                                  lat: 40.7128, lng: -74.006, offset: 0, now: now))
+        XCTAssertEqual(sheet.ymd, "2026-07-15")
+        let rise = sheet.blocks.first(where: \.isMorning)?.rows.first { $0.label == "日の出" }
+        XCTAssertEqual(rise?.value, "05:38")
     }
 
     func testNote() {

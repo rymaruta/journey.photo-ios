@@ -98,6 +98,14 @@ final class ScreenshotTests: XCTestCase {
         }
         // 画面の目印（`spot.official`）は ScrollView に付いていて中の要素に移ることがあるので、待つのは時間で
         Thread.sleep(forTimeInterval: 3)
+        guard scrollToSpotLight(app) else { return }
+        shoot(app, "13f-撮影スポット（光の時刻）")
+        shootSpotSamples(app)
+    }
+
+    /// 撮影スポットの画面で、光の時刻の日付の帯を画面の上の方へ寄せる（朝・夕の段と注記まで1枚に入れる）。
+    /// 帯が出なければ `false`（撮らない）
+    private func scrollToSpotLight(_ app: XCUIApplication) -> Bool {
         let date = app.descendants(matching: .any).matching(identifier: "spot.official.light.date").firstMatch
         var swipes = 0
         while swipes < 6, !(date.exists && date.isHittable) {
@@ -105,13 +113,44 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             swipes += 1
         }
-        guard date.exists, date.isHittable else { return }
-        // 日付の帯を画面の上の方へ寄せ、朝・夕の段と注記まで1枚に入れる
+        guard date.exists, date.isHittable else { return false }
         date.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "13f-撮影スポット（光の時刻）")
-        shootSpotSamples(app)
+        return true
+    }
+
+    /// **App Store 用の、日本の撮影スポットの絵**（2026-10-07・`Tools/store-screenshots.py` の材料）。
+    /// 地図の札（鍋ヶ滝）から撮影スポットの画面を開き、上（70）と光の時刻（71）を撮って戻る。
+    /// 一覧の先頭はシミュレータの現在地（パリ）に近いスポットになるので、ストアには使えない。
+    /// 開けなければ撮らない（この試験の決まり）
+    private func shootStoreSpot(_ app: XCUIApplication) {
+        // **地図の札の「スポットを見る」からは開けなかった**（PR #171 の Mac の回で2回とも
+        // 70・71 が欠けた）。13f が撮れている道——「スポット」の一覧の行（`map.spotRow`）——を使う。
+        // 呼ぶのは「鍋ヶ滝」で絞っている間なので、一覧の先頭は鍋ヶ滝になる
+        let spots = app.buttons["map.mode.spots"].firstMatch
+        guard spots.waitForExistence(timeout: 5) else { return }
+        spots.tap()
+        defer {
+            let map = app.buttons["map.mode.map"].firstMatch
+            if map.exists { map.tap() }
+        }
+        let row = app.buttons["map.spotRow"].firstMatch
+        guard row.waitForExistence(timeout: 10), row.isHittable else { return }
+        row.tap()
+        defer {
+            goBack(app)
+            Thread.sleep(forTimeInterval: 1)
+        }
+        // 表紙の写真（作例）が読み込まれるのを待つ
+        Thread.sleep(forTimeInterval: 5)
+        // 開いたのが鍋ヶ滝でなければ撮らない（名前と中身が食い違う絵は、無い絵より悪い）
+        let named = NSPredicate(format: "label CONTAINS %@", "鍋ヶ滝")
+        guard app.staticTexts.matching(named).firstMatch.waitForExistence(timeout: 5) else { return }
+        shoot(app, "70-ストア・撮影スポット（鍋ヶ滝）")
+        if scrollToSpotLight(app) {
+            shoot(app, "71-ストア・光の時刻（鍋ヶ滝）")
+        }
     }
 
     /// **撮影スポットの作例**（Wikimedia Commons・2026-10-03）。光の時刻と同じ画面のまま下へ送り、
@@ -220,6 +259,7 @@ final class ScreenshotTests: XCTestCase {
         pin.tap()
         if app.descendants(matching: .any).matching(identifier: "map.officialCard").firstMatch.waitForExistence(timeout: 5) {
             shoot(app, "13c-マップ（撮影スポットの札）")
+            shootStoreSpot(app)
         }
         // 絞りを解いて、あとの画面に持ち越さない
         let clear = app.buttons["消す"].firstMatch

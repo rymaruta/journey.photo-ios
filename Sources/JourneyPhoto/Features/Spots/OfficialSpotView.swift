@@ -478,9 +478,11 @@ struct OfficialSpotView: View {
 
     /// 節の中身（端末で計算する・`SpotLight.sheet`）。座標が無い・時刻帯が引けない国・段が作れない日は nil
     private var lightSheet: SpotLight.Sheet? {
-        // 詳細を重ねた行で（時刻帯など、詳細にだけ載る項目が足されても同じ行から読む）
+        // 詳細を重ねた行で読む（時刻帯は詳細にだけ載る・分けた置き場・2026-10-07）
         guard let coords = shown.coords else { return nil }
-        return SpotLight.sheet(country: shown.region?.country, lat: coords.lat, lng: coords.lng,
+        // 時刻帯は索引の行 → 本文 → 国の表の順（2026-10-07 判断・どれも同じ台帳の値）
+        return SpotLight.sheet(country: shown.region?.country, timeZone: shown.timeZone ?? spotBody?.timeZone,
+                               lat: coords.lat, lng: coords.lng,
                                offset: lightOffset, now: Date())
     }
 

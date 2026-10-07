@@ -45,6 +45,10 @@ struct SpotBody: Decodable, Equatable {
     /// 作例（Wikimedia Commons・2026-10-03〜）。出してよい1枚だけ・最大6枚（`SpotSample.list`）。
     /// **後から足された項目**なので、無い本文は空。壊れていても本文ごとは落とさない
     let samples: [SpotSample]
+    /// 時刻帯（IANA 名・2026-10-07〜・Web の `spotBody.ts`）。**台帳に書いた行だけ**。
+    /// 光の時刻は索引（`OfficialSpot.timeZone`）を先に、無ければこれ、無ければ国の表を使う。
+    /// 文字でなければ nil（本文ごとは落とさない）
+    var timeZone: String? = nil
 
     /// 本文の節が1つでもあるか（無ければ節ごと出さない）
     var hasContent: Bool {
@@ -54,7 +58,7 @@ struct SpotBody: Decodable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case slug, description, highlights, seasonalGuide, timeOfDayGuide, compositionTips,
-             officialWebsiteUrl, check, samples
+             officialWebsiteUrl, check, samples, timeZone
     }
 
     private enum CheckKeys: String, CodingKey { case kind, verifiedAt, checkedAt, sources }
@@ -78,6 +82,9 @@ struct SpotBody: Decodable, Equatable {
             .compactMap(\.value)
             .filter { SpotBodyText.timeOrder.contains($0.time) && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         officialWebsite = (try? c.decode(String.self, forKey: .officialWebsiteUrl)).flatMap(Self.httpsURL)
+        timeZone = (try? c.decode(String.self, forKey: .timeZone))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
         samples = SpotSample.list(((try? c.decode([Lenient<SpotSample.Raw>].self, forKey: .samples)) ?? []).compactMap(\.value))
 
         // **印は必ず要る。** 読めなければ投げる（本文ごと出さない）

@@ -35,6 +35,14 @@ final class SpotBodyTests: XCTestCase {
         XCTAssertTrue(body.hasContent)
     }
 
+    /// 時刻帯（2026-10-07）。書いた行だけ載る。文字でなければ nil で、本文ごとは落とさない
+    func testTimeZoneIsOptionalAndLenient() throws {
+        let check = #""check":{"kind":"human","verifiedAt":"2026-09-25"}"#
+        XCTAssertEqual(try decode(#"{"slug":"a","timeZone":" Australia/Sydney ",\#(check)}"#).timeZone, "Australia/Sydney")
+        XCTAssertNil(try decode(#"{"slug":"a",\#(check)}"#).timeZone)
+        XCTAssertNil(try decode(#"{"slug":"a","timeZone":9,\#(check)}"#).timeZone)
+    }
+
     func testHumanCheck() throws {
         let body = try decode(#"{"slug":"a","highlights":["x"],"check":{"kind":"human","verifiedAt":"2026-09-25"}}"#)
         XCTAssertEqual(body.check, .human(verifiedAt: "2026-09-25"))

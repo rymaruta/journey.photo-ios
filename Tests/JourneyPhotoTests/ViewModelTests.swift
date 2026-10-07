@@ -807,7 +807,7 @@ final class ViewModelTests: XCTestCase {
     /// そのものなので、12で切ると13枚目から先が数えられず、押しても出てこなかった
     func testSearchGearAndColorSectionsAreNotCappedAtTwelve() async {
         let photos = (1...15).map { i in
-            ##"{"id":"g\##(i)","src":"https://x/g\##(i).jpg","exif":{"focalLength":"24mm"},"dominantColor":"#d32f2f"}"##
+            ##"{"id":"g\##(i)","src":"https://x/g\##(i).jpg","exif":{"focalLength":"24mm"},"dominantColor":"#d32f2f","category":"landscape"}"##
         }
         let service = gallery("[" + photos.joined(separator: ",") + "]")
         let env = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: service)
