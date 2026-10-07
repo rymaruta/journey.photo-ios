@@ -391,12 +391,23 @@ struct TripBookView: View {
     // MARK: - 計算
 
     /// 一冊から消した・非公開にした写真を落とす（`ModerationSnapshot.visible`・他の一覧と同じ）。
-    /// 題・期間は開いたときのまま（`id` も変えない——共有の画像を同じファイルに書く）
+    /// 題・期間は開いたときのまま（`id` も変えない——共有の画像を同じファイルに書く）。
+    ///
+    /// **束の一冊（`groupId`）は、非公開にした写真を落とさない**（2026-10-07 判断）。束は公開・非公開に
+    /// 関係なく一冊（`TripBook.groupTrips`）で、棚もそう数える。落とすと一冊の中だけ消えて、
+    /// 棚の枚数とずれた。落とすのはブロック・通報と、**消した**写真（`ModerationSnapshot.deleted`）だけ
     nonisolated static func visible(_ trip: TripBook.Trip, dropped: ModerationSnapshot) -> TripBook.Trip {
+        let photos: [Photo]
+        if trip.groupId != nil {
+            photos = BlockFilter.photos(trip.photos, blocked: dropped.blocked, reported: dropped.reported)
+                .filter { !dropped.deleted.contains($0.id) }
+        } else {
+            photos = dropped.visible(trip.photos)
+        }
         // 束の印・「自分だけ」の印も引き継ぐ（落とすと、開いた一冊で鍵と札の鍵が食い違う）
-        TripBook.Trip(id: trip.id, place: trip.place, start: trip.start, end: trip.end,
-                      photos: dropped.visible(trip.photos), timeZone: trip.timeZone,
-                      groupId: trip.groupId, isPrivate: trip.isPrivate)
+        return TripBook.Trip(id: trip.id, place: trip.place, start: trip.start, end: trip.end,
+                             photos: photos, timeZone: trip.timeZone,
+                             groupId: trip.groupId, isPrivate: trip.isPrivate)
     }
 
     /// 移動（直線）。数えられなければ nil（枠には「—」）

@@ -1498,7 +1498,7 @@ struct PhotoDetailView: View {
             // 🔴 **公開一覧からも落とす。** 一覧は建て直しまで古い静的 JSON で、
             // 控えも残るので、消した写真がホーム・探す・地図に出続け、押すと
             // いいね・保存・コメントが 404 になっていた（`ModerationStore.goneMarks`）
-            await hidden.hideGone(photoId, for: owner, environment: environment)
+            await hidden.hideGone(photoId, for: owner, environment: environment, deleted: true)
             // **消した写真の画面に留まらせない。** 残ると、もう無いものを
             // 編集したり、もう一度削除を押したりできてしまう
             dismiss()
