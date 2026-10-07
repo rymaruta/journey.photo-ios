@@ -39,9 +39,22 @@ enum WishlistSync {
         return await set(key, wanted: !store.contains(key), store: store, service: service)
     }
 
-    /// 入れる・外す。**控えを先に変え、送れなかったら戻す**
+    /// 入れる・外す。**控えを先に変え、送れなかったら戻す**。
+    /// 入れられた回は、評価をお願いする頃合いを数える「うれしい瞬間」に数える（`ReviewPromptStore`）
     static func set(_ key: String, wanted: Bool,
                     store: WishlistStore, service: SavedSpotService) async -> Outcome {
+        let outcome = await apply(key, wanted: wanted, store: store, service: service)
+        switch outcome {
+        case .synced(wanted: true), .local(wanted: true):
+            ReviewPromptStore.shared.noteHappyMoment()
+        default:
+            break
+        }
+        return outcome
+    }
+
+    private static func apply(_ key: String, wanted: Bool,
+                              store: WishlistStore, service: SavedSpotService) async -> Outcome {
         guard !key.isEmpty, !store.isSending(key) else { return .ignored }
         // 戻すのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let owner = store.owner

@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(StoreKit)
+import StoreKit
+#endif
 
 struct RootView: View {
 
@@ -18,6 +21,11 @@ struct RootView: View {
     @State private var pendingThemeTag: String?
     @ObservedObject private var missions = MissionRouter.shared
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// App Store の評価をお願いする頃合い（`ReviewPromptStore`・2026-10-07）
+    @ObservedObject private var reviewPrompt = ReviewPromptStore.shared
+    #if canImport(StoreKit)
+    @Environment(\.requestReview) private var requestReview
+    #endif
     @State private var showStoryComposer = false
     /// 「旅の写真からまとめて」（全画面）
     @State private var showTripImport = false
@@ -68,7 +76,7 @@ struct RootView: View {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）
                 LegalGateView()
             } else {
-                tabsWithWhatsNew
+                tabsWithReviewPrompt
             }
         }
         // **Web と同じ「固定ダーク」にする。** `app/globals.css` が
@@ -265,6 +273,29 @@ struct RootView: View {
         bellReopen = nil
         // 押した通知の行き先も捨てる（後でベルから開いた回に勝手に積まない・次の人に出さない）
         router.dropPendingTarget()
+    }
+
+    /// 「新しくなったこと」に、評価のお願いを足したもの（2026-10-07）。
+    /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
+    private var tabsWithReviewPrompt: some View {
+        tabsWithWhatsNew
+            .onChange(of: reviewPrompt.requests) { _, _ in askForReviewWhenIdle() }
+    }
+
+    /// **ほかの画面が閉じてから**評価をお願いする。投稿は全部上がると画面を閉じ、
+    /// Threads への共有の画面が続くこともあるので、出ているものが無くなるまで待つ
+    /// （最長で約45秒。待ちきれなければ頼まず、次のうれしい瞬間に回す）
+    private func askForReviewWhenIdle() {
+        Task { @MainActor in
+            for _ in 0..<30 {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                if !ModalProbe.isPresenting() { break }
+            }
+            guard !ModalProbe.isPresenting(), reviewPrompt.consume() else { return }
+            #if canImport(StoreKit)
+            requestReview()
+            #endif
+        }
     }
 
     /// 下の札に「新しくなったこと」を足したもの（2026-10-04）。

@@ -966,6 +966,8 @@ final class UploadViewModel: ObservableObject {
                                                     ?? PhotoLink.url(photoId: lead.photoId, isPublished: false))) }
                 }
                 didPostAll = done.count > 0
+                // 全部上がった回は「うれしい瞬間」（評価をお願いする頃合いを数える・`ReviewPromptStore`）
+                if didPostAll { ReviewPromptStore.shared.noteHappyMoment() }
             } else {
                 errorMessage = UploadEditRules.withShareSkipped(UploadSummary.withSavedEarlier(
                     UploadSummary.message(done: done.count, failures: failures,
