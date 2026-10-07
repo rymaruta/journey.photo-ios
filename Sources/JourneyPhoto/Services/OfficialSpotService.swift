@@ -52,6 +52,9 @@ actor OfficialSpotService {
     private let feedSnapshotPrefix: String
     /// 詳細の和（索引の `shards[].bytes` の和）がこれ以下なら、索引のあと**全区分を読む**
     let detailPrefetchBudget: Int
+    /// 区分の要求を出す**直前**に待つ口。**本番は nil**。試験が「区分を読んでいる途中」を作るのに使う
+    /// （`beforeRequest` と同じ理由）
+    private let beforeShardRequest: (@Sendable () async -> Void)?
 
     /// - Parameters:
     ///   - splitFeed: 分けた置き場（`url` の隣の `spot-feed/index.json`・本番は
@@ -64,7 +67,9 @@ actor OfficialSpotService {
          missingBodyLifetime: TimeInterval = OfficialSpotService.cacheLifetime * 10,
          splitFeed: Bool = true,
          feedSnapshotPrefix: String = "spot-feed",
-         detailPrefetchBudget: Int = OfficialSpotService.detailPrefetchBudget) {
+         detailPrefetchBudget: Int = OfficialSpotService.detailPrefetchBudget,
+         beforeShardRequest: (@Sendable () async -> Void)? = nil) {
+        self.beforeShardRequest = beforeShardRequest
         self.url = url
         self.feedIndexURL = splitFeed
             ? url.deletingLastPathComponent().appendingPathComponent("spot-feed").appendingPathComponent("index.json")
@@ -113,10 +118,12 @@ actor OfficialSpotService {
         if !force, let fresh = freshCache { return withLoadedDetails(fresh) }
         await beforeRequest?()
         if let feedIndexURL, let rows = await fetchFeedIndex(feedIndexURL) {
-            cached = rows
-            cachedAt = Date()
             let keys = Set(shardTable.keys)
             await loadShards(keys, network: totalDetailBytes <= detailPrefetchBudget)
+            // 🔴 **区分を読み終えてから控える**（2026-10-07 のレビュー）。先に控えると、読んでいる間に
+            // 来た別の呼び出しが60秒の控えから「索引だけの行」を受け取り、写真・季節の文が欠けた画面になる
+            cached = rows
+            cachedAt = Date()
             return withLoadedDetails(rows)
         }
         resetFeedState()
@@ -214,6 +221,8 @@ actor OfficialSpotService {
         let rows: [OfficialSpot]
         let table: [String: ShardInfo]
         let aliases: [String: [String]]
+        /// `spotId` → 区分（今の索引の）
+        let shardOf: [String: String]
         let dropped: Int
     }
 
@@ -238,6 +247,14 @@ actor OfficialSpotService {
     private var shardRetryAt: [String: Date] = [:]
     /// 索引の別名（slug → 別名）。分けた置き場を読めた回だけ
     private var indexAliases: [String: [String]]?
+    /// `spotId` → 区分。**今の索引から引く**——画面が持っている行の `shard` は読んだ時点のもので、
+    /// サーバーが区分を割り直したあとは古い（2026-10-07 のレビュー）
+    private var shardOf: [String: String] = [:]
+
+    /// 行の今の区分（今の索引に無ければ行が持つもの）
+    private func currentShard(_ row: OfficialSpot) -> String? {
+        shardOf[row.spotId] ?? row.shard
+    }
 
     private var totalDetailBytes: Int { shardTable.values.reduce(0) { $0 + $1.bytes } }
 
@@ -245,6 +262,7 @@ actor OfficialSpotService {
         shardTable = [:]
         details = [:]
         indexAliases = nil
+        shardOf = [:]
     }
 
     /// 索引を読む。**nil は「分けた置き場は使えない」＝古い置き場へ**
@@ -276,14 +294,10 @@ actor OfficialSpotService {
                 switch Self.decodeFeedIndex(data) {
                 case .ok(let parsed):
                     if parsed.dropped > 0 {
-                        print("[spots] 読めなかった・重複した索引の行を \(parsed.dropped) 件落としました")
+                        print("[spots] 読めなかった・重複した索引の行・区分を \(parsed.dropped) 件落としました")
                     }
-                    // 読めたものだけを控える（1件も読めなかった回は控えない・古い置き場と同じ判断）
-                    if !parsed.rows.isEmpty || parsed.dropped == 0 {
-                        store.save(data, validator: HTTPValidator(response: http))
-                    } else {
-                        store.validators.clear()
-                    }
+                    // 読めた索引だけを控える（1件も読めず何か捨てた回は `.broken` で、ここに来ない）
+                    store.save(data, validator: HTTPValidator(response: http))
                     return adopt(parsed)
                 case .unknownVersion:
                     // このアプリが知らない形。**古い置き場に戻る**（控えた古い版も出さない）
@@ -291,7 +305,9 @@ actor OfficialSpotService {
                     store.clear()
                     return nil
                 case .broken:
+                    // 壊れた索引は控えない。**前回の良い控え**か、無ければ古い置き場へ
                     print("[spots] 分けた置き場の索引が読めませんでした")
+                    store.validators.clear()
                     return fromSnapshot()
                 }
             }
@@ -305,6 +321,7 @@ actor OfficialSpotService {
     private func adopt(_ parsed: ParsedFeedIndex) -> [OfficialSpot] {
         shardTable = parsed.table
         indexAliases = parsed.aliases
+        shardOf = parsed.shardOf
         details = details.filter { key, value in
             guard let info = parsed.table[key] else { return false }
             return value.hash != nil && value.hash == info.hash
@@ -325,11 +342,14 @@ actor OfficialSpotService {
         guard let head = try? JSONDecoder.api.decode(Head.self, from: data) else { return .broken }
         guard head.v == feedVersion else { return .unknownVersion }
         guard let file = try? JSONDecoder.api.decode(File.self, from: data) else { return .broken }
+        // 読めずに捨てた区分（形の違う区分）も数える。中の行の数は分からないので1件と数える
+        let brokenShards = file.shards.filter { $0.value == nil }.count
         var rows: [OfficialSpot] = []
         var table: [String: ShardInfo] = [:]
         var aliases: [String: [String]] = [:]
         var seen = Set<String>()
-        var dropped = 0
+        var shardOf: [String: String] = [:]
+        var dropped = brokenShards
         for shard in file.shards.compactMap(\.value) {
             // 区分の鍵はパスに混ぜる。綴りが違えば区分ごと落とす（行も地図に出さない）
             guard isSafeKey(shard.key), table[shard.key] == nil else {
@@ -343,11 +363,15 @@ actor OfficialSpotService {
                 guard seen.insert(row.spotId).inserted else { dropped += 1; continue }
                 row.shard = shard.key
                 row.isIndexOnly = true
+                shardOf[row.spotId] = shard.key
                 if let names = row.aliases?.value, !names.isEmpty { aliases[row.slug] = names }
                 rows.append(row)
             }
         }
-        return .ok(ParsedFeedIndex(rows: rows, table: table, aliases: aliases, dropped: dropped))
+        // 🔴 **1件も読めず、何か捨てた索引は壊れている**（2026-10-07 のレビュー）。`.ok` の空で返すと、
+        // 地図からスポットが全部消え、その空を控えて圏外でも出し続けた
+        if rows.isEmpty && dropped > 0 { return .broken }
+        return .ok(ParsedFeedIndex(rows: rows, table: table, aliases: aliases, shardOf: shardOf, dropped: dropped))
     }
 
     /// 区分の鍵として使ってよい綴り（`[a-z0-9-]`・空でない）
@@ -359,8 +383,10 @@ actor OfficialSpotService {
     private func withLoadedDetails(_ rows: [OfficialSpot]) -> [OfficialSpot] {
         guard !details.isEmpty else { return rows }
         return rows.map { row in
-            guard row.isIndexOnly, let key = row.shard, let detail = details[key]?.rows[row.spotId] else { return row }
-            return row.merged(with: detail)
+            guard row.isIndexOnly, let key = currentShard(row), let detail = details[key]?.rows[row.spotId] else { return row }
+            var merged = row.merged(with: detail)
+            merged.shard = key
+            return merged
         }
     }
 
@@ -371,10 +397,10 @@ actor OfficialSpotService {
     /// 詳細を重ね済みの行・古い置き場の行は何もしない。取れなかった区分の行は索引のまま返す
     /// （投げない——写真や文が出ないだけ）
     func withDetails(_ spots: [OfficialSpot], for needed: [OfficialSpot]) async -> [OfficialSpot] {
-        let keys = Set(needed.filter(\.isIndexOnly).compactMap(\.shard))
-        guard !keys.isEmpty else { return withLoadedDetails(spots) }
+        guard needed.contains(where: \.isIndexOnly) else { return withLoadedDetails(spots) }
         // 区分の表が無い（このサービスでまだ索引を読んでいない）なら先に読む
         if shardTable.isEmpty { _ = try? await fetchIndex() }
+        let keys = Set(needed.filter(\.isIndexOnly).compactMap { currentShard($0) })
         await loadShards(keys, network: true)
         return withLoadedDetails(spots)
     }
@@ -418,6 +444,7 @@ actor OfficialSpotService {
         }
         guard network else { return }
         if let retry = shardRetryAt[key], Date() < retry { return }
+        await beforeShardRequest?()
         let load: Task<ShardDownload, Never>
         if let running = shardLoads[key] {
             load = running

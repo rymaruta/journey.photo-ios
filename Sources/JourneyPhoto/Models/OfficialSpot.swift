@@ -30,17 +30,17 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     let coords: Photo.Coords?
     let category: String?
     /// 概要。**書かれたものだけ**（自動生成しない）
-    let summary: String?
+    var summary: String?
     /// `review`（運営未確認の下書き）か `published`（公開済み＝人が確かめたか、AI 照合）。
     /// **`published` だけで「運営が確かめた」と言わない**——本文の印（`SpotBody.check`）で出し分ける
     let stage: String
     /// 下書きを書いた日（`YYYY-MM-DD`）。**確認日ではない**
-    let draftedAt: String?
+    var draftedAt: String?
     /// 人が確かめた日。`published` の行だけが持つ
-    let verifiedAt: String?
+    var verifiedAt: String?
     /// スポットの写真（Wikimedia Commons・2026-09-26〜）。**owner が写真を確かめた
     /// 公開済みの行だけ**が持つ。壊れていても行ごと落とさない（`LenientSpotImage`）
-    let image: LenientSpotImage?
+    var image: LenientSpotImage?
     /// 季節の案内（2026-09-29〜 索引に載る。Web の `spotFeed.ts`）。**公開済みの行だけ**が持つ。
     /// 壊れた1件・知らない季節・空の文は落とし、**行ごとは落とさない**（`LenientSeasonalGuide`）。
     /// `var` で既定 nil なのは、載っていない古い索引・控えも読めるようにするため
@@ -98,15 +98,22 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
         isIndexOnly ? hasImage?.value == true : photo != nil
     }
 
-    /// 索引の行に詳細の行を重ねる。**詳細は同じ `spotId` のときだけ**使い、索引の印（区分・種類・別名）は残す
+    /// 索引の行に詳細の行を重ねる。**詳細は同じ `spotId` のときだけ**使う。
+    ///
+    /// 🔴 **名前・座標・地域・stage・slug などは索引の値を残す**（2026-10-07 のレビュー）。索引と区分は
+    /// 別のファイルで、CDN の入れ替わりの途中や控えの区分では食い違いうる——地図のピン・下書きの印・
+    /// 「行きたい」の鍵が詳細の側で入れ替わらないように、詳細からは**索引に無いもの**だけを足す
+    /// （写真・概要・季節/時間帯の文・時刻帯・日付）
     func merged(with detail: OfficialSpot) -> OfficialSpot {
         guard detail.spotId == spotId else { return self }
-        var row = detail
-        row.shard = shard
-        row.seasonKinds = seasonKinds
-        row.timeKinds = timeKinds
-        row.hasImage = hasImage
-        row.aliases = aliases ?? detail.aliases
+        var row = self
+        row.summary = detail.summary
+        row.image = detail.image
+        row.seasonalGuide = detail.seasonalGuide
+        row.timeOfDayGuide = detail.timeOfDayGuide
+        row.timeZone = detail.timeZone
+        row.draftedAt = detail.draftedAt
+        row.verifiedAt = detail.verifiedAt
         row.isIndexOnly = false
         return row
     }

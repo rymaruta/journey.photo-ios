@@ -38,7 +38,7 @@ final class SpotFeedShardsTests: XCTestCase {
 
     override func tearDown() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        let names = snapshotNames + prefixes.flatMap { p in ["index", "jp-kanto", "fr"].map { "\(p)-\($0).json" } }
+        let names = snapshotNames + prefixes.flatMap { p in ["index", "jp-kanto", "fr", "jp-tokyo"].map { "\(p)-\($0).json" } }
         for name in names {
             let file = caches.appendingPathComponent(name)
             try? FileManager.default.removeItem(at: file)
@@ -251,6 +251,153 @@ final class SpotFeedShardsTests: XCTestCase {
         XCTAssertTrue(first.allSatisfy(\.isIndexOnly))
         _ = await spots.withDetails(rows, for: rows)
         XCTAssertEqual(count("/app/data/spot-feed/jp-kanto.json"), 1)
+    }
+
+    // MARK: - レビュー（2026-10-07）で足した試験
+
+    /// 🔴 404（分けた置き場を下げた）は索引の控えも消す——圏外で下げた索引を出し続けない
+    func testNotFoundClearsTheIndexSnapshot() async throws {
+        let prefix = UUID().uuidString
+        serve()
+        _ = try await service(prefix: prefix).fetchIndex()
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/spots.json", status: 200, body: OfficialSpotServiceTests.threeSpots)
+        let legacy = try await service(prefix: prefix).fetchIndex()
+        XCTAssertEqual(legacy.count, 3, "404 なのに古い置き場に戻っていない")
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        do {
+            let offline = try await service(prefix: prefix).fetchIndex()
+            XCTAssertFalse(offline.contains { $0.slug == "tokyo-station" }, "下げた索引の控えを圏外で出している")
+        } catch {
+            // 控え（索引も古い置き場も）が無ければ投げる。下げた索引を出さなければよい
+        }
+    }
+
+    /// 🔴 200 の HTML（キャプティブポータル）は読まずに退け、前回の控えを出す。控えも上書きしない
+    func testHTMLIndexIsRejectedAndDoesNotReplaceTheSnapshot() async throws {
+        let prefix = UUID().uuidString
+        serve()
+        _ = try await service(prefix: prefix).fetchIndex()
+        StubProtocol.reset()
+        // 中身は読める索引（1か所だけ）でも、種別が HTML なら信じない
+        let onlyFrance = """
+        {"v":1,"shards":[{"key":"fr","bytes":1,"hash":"x","spots":[{"spotId":"sp_x","slug":"x","name":"X","stage":"published"}]}]}
+        """
+        StubProtocol.respond(status: 200, body: "", contentType: "text/html; charset=utf-8")
+        StubProtocol.respond(path: "/app/data/spot-feed/index.json", status: 200, body: onlyFrance)
+        let spots = try await service(prefix: prefix).fetchIndex()
+        XCTAssertEqual(spots.map(\.slug).sorted(), ["tokyo-station", "versailles"], "HTML の応答を索引として読んでいる")
+        StubProtocol.reset()
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        let offline = try await service(prefix: prefix).fetchIndex()
+        XCTAssertEqual(offline.count, 2, "HTML で控えを上書きしている")
+    }
+
+    /// 取れなかった区分は、指紋の合わない前回の控えでも重ねる（圏外・5xx で写真が消えない）
+    func testStaleShardSnapshotIsUsedWhenTheShardFails() async throws {
+        let prefix = UUID().uuidString
+        serve()
+        _ = try await service(prefix: prefix).fetchIndex()
+        StubProtocol.reset()
+        let changed = Self.kanto.replacingOccurrences(of: "赤れんがの駅舎。", with: "直した概要。")
+        StubProtocol.respond(path: "/app/data/spot-feed/index.json", status: 200, body: Self.index(kanto: changed))
+        StubProtocol.respond(path: "/app/data/spot-feed/fr.json", status: 200, body: Self.france)
+        StubProtocol.respond(path: "/app/data/spot-feed/jp-kanto.json", status: 500, body: "oops")
+        let spots = try await service(prefix: prefix).fetchIndex()
+        let tokyo = try XCTUnwrap(spots.first { $0.slug == "tokyo-station" })
+        XCTAssertEqual(tokyo.photo?.author, "撮った人", "取れなかった区分の前回の控えを重ねていない")
+        XCTAssertEqual(tokyo.summary, "赤れんがの駅舎。")
+    }
+
+    /// 🔴 区分が1つも読めず捨てた索引は壊れている。控えにも保存しない（前回の良い控えを出す）
+    func testIndexWithOnlyBrokenShardsIsBroken() async throws {
+        if case .broken = OfficialSpotService.decodeFeedIndex(Data(#"{"v":1,"shards":[{"key":"jp-kanto"}]}"#.utf8)) {} else {
+            XCTFail("区分が全部壊れた索引を読めたことにしている")
+        }
+        if case .broken = OfficialSpotService.decodeFeedIndex(Data(
+            #"{"v":1,"shards":[{"key":"jp-kanto","spots":[{"spotId":1}]}]}"#.utf8)) {} else {
+            XCTFail("行が全部壊れた索引を読めたことにしている")
+        }
+        // 区分が無い（0件）だけの索引は壊れていない
+        if case .ok(let empty) = OfficialSpotService.decodeFeedIndex(Data(#"{"v":1,"shards":[]}"#.utf8)) {
+            XCTAssertTrue(empty.rows.isEmpty)
+        } else {
+            XCTFail("空の索引")
+        }
+
+        let prefix = UUID().uuidString
+        serve()
+        _ = try await service(prefix: prefix).fetchIndex()
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/spot-feed/index.json", status: 200, body: #"{"v":1,"shards":[{"key":"jp-kanto"}]}"#)
+        let spots = try await service(prefix: prefix).fetchIndex()
+        XCTAssertEqual(spots.count, 2, "壊れた索引で前回の控えを出していない")
+        StubProtocol.reset()
+        StubProtocol.fail(with: URLError(.notConnectedToInternet))
+        let offline = try await service(prefix: prefix).fetchIndex()
+        XCTAssertEqual(offline.count, 2, "壊れた索引で控えを上書きしている")
+    }
+
+    /// 詳細を重ねても、名前・座標・stage は索引の値（区分が古い・食い違う回にピンや下書きの印が入れ替わらない）
+    func testMergeKeepsTheIndexValues() async throws {
+        let stale = Self.kanto
+            .replacingOccurrences(of: "\"name\":\"東京駅\"", with: "\"name\":\"古い名前\"")
+            .replacingOccurrences(of: "\"lat\":35.68", with: "\"lat\":10.0")
+            .replacingOccurrences(of: "\"stage\":\"published\"", with: "\"stage\":\"review\"")
+        serve(kanto: stale)
+        // 索引の指紋は詳細の中身から作るので、食い違った詳細でも読む
+        StubProtocol.reset()
+        serve(index: Self.index(kanto: stale), kanto: stale)
+        let spots = try await service().fetchIndex()
+        let tokyo = try XCTUnwrap(spots.first { $0.slug == "tokyo-station" })
+        XCTAssertFalse(tokyo.isIndexOnly)
+        XCTAssertEqual(tokyo.name, "東京駅", "詳細の名前で索引を上書きしている")
+        XCTAssertEqual(tokyo.coords?.lat, 35.68)
+        XCTAssertFalse(tokyo.isDraft)
+        XCTAssertEqual(tokyo.photo?.author, "撮った人")
+    }
+
+    /// サーバーが区分を割り直したあとも、画面が持っている古い行に詳細が載る（今の索引から区分を引く）
+    func testWithDetailsUsesTheCurrentShardAfterResplit() async throws {
+        serve()
+        let spots = service(budget: 0)
+        let old = try await spots.fetchIndex()
+        let oldTokyo = try XCTUnwrap(old.first { $0.slug == "tokyo-station" })
+        XCTAssertEqual(oldTokyo.shard, "jp-kanto")
+        // 東京駅を `jp-tokyo` に移した索引
+        let resplit = Self.index().replacingOccurrences(of: "\"key\":\"jp-kanto\"", with: "\"key\":\"jp-tokyo\"")
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/app/data/spot-feed/index.json", status: 200, body: resplit)
+        StubProtocol.respond(path: "/app/data/spot-feed/jp-tokyo.json", status: 200, body: Self.kanto)
+        _ = try await spots.fetchIndex(force: true)
+        let merged = await spots.withDetails(old, for: [oldTokyo])
+        let tokyo = try XCTUnwrap(merged.first { $0.slug == "tokyo-station" })
+        XCTAssertEqual(tokyo.photo?.author, "撮った人", "割り直したあと、古い行の区分で探して詳細が載らない")
+        XCTAssertEqual(tokyo.shard, "jp-tokyo")
+        XCTAssertEqual(count("/app/data/spot-feed/jp-tokyo.json"), 1)
+    }
+
+    /// 🔴 区分を読んでいる間に来た呼び出しにも、詳細を重ねた行を返す（60秒の控えに索引だけの行を置かない）
+    func testConcurrentCallsGetDetailedRows() async throws {
+        serve()
+        let gate = Gate()
+        let prefix = UUID().uuidString
+        prefixes.append(prefix)
+        let legacy = UUID().uuidString
+        snapshotNames.append(legacy)
+        let spots = OfficialSpotService(url: url, session: session, snapshot: SpotSnapshotStore(fileName: legacy),
+                                        feedSnapshotPrefix: prefix,
+                                        beforeShardRequest: { await gate.wait() })
+        let a = Task { try await spots.fetchIndex() }
+        // 1本目が区分を読んでいる途中で、2本目が来る
+        await gate.untilWaiting(1)
+        let b = Task { try await spots.fetchIndex() }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        await gate.open()
+        let first = try await a.value
+        let second = try await b.value
+        XCTAssertFalse(first.contains(where: \.isIndexOnly))
+        XCTAssertFalse(second.contains(where: \.isIndexOnly), "読んでいる間の呼び出しに索引だけの行を返している")
     }
 
     // MARK: - 別名は索引から
