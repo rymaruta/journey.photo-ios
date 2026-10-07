@@ -150,6 +150,55 @@ final class PhotoMapViewModelTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, before)
     }
 
+    /// 欄に打っている間は**1字ごとに絞り直さない**。止まってから1回だけ絞る
+    /// （docs/QUALITY_2026-10-03.md の P2・`typedQuery`）
+    func testTypingIsDebouncedBeforeFiltering() async {
+        let model = await loaded()
+        model.queryDebounce = .seconds(60)
+        let before = model.refreshCount
+        model.typedQuery = "パ"
+        model.typedQuery = "パリ"
+        model.typedQuery = "パリ,"
+        model.typedQuery = "パリ"
+        // 打っている途中は、絞りもピンも前のまま
+        XCTAssertEqual(model.refreshCount, before)
+        XCTAssertEqual(model.query, "")
+        XCTAssertEqual(model.shown.count, 4)
+
+        // 止まったら1回だけ絞る（待ちを短くして、最後の字で写す）
+        model.queryDebounce = .milliseconds(20)
+        model.typedQuery = "パリ,"
+        model.typedQuery = "パリ"
+        await model.awaitTypedQuery()
+        XCTAssertEqual(model.query, "パリ")
+        XCTAssertEqual(model.shown.map(\.id), ["a", "b"])
+        XCTAssertEqual(model.refreshCount, before + 1)
+    }
+
+    /// 確定（return）と × は**待たずに**効く。打ち止めの待ちが後から古い字で上書きしない
+    func testSubmitAndClearApplyImmediately() async {
+        let model = await loaded()
+        model.queryDebounce = .seconds(60)
+        model.typedQuery = "東京"
+        model.commitTypedQuery()
+        XCTAssertEqual(model.query, "東京")
+        XCTAssertEqual(model.shown.map(\.id), ["c"])
+
+        // 打ちかけ（待ち中）に × を押す → その場で空に戻り、欄も空
+        model.typedQuery = "パリ"
+        model.query = ""
+        XCTAssertEqual(model.typedQuery, "")
+        XCTAssertEqual(model.shown.count, 4)
+        model.queryDebounce = .zero
+        await model.awaitTypedQuery()
+        XCTAssertEqual(model.query, "")
+
+        // 探すから語を入れた回も、欄の字がそろう
+        model.query = "パリ"
+        XCTAssertEqual(model.typedQuery, "パリ")
+        XCTAssertEqual(model.shown.count, 2)
+    }
+
     /// 台帳が取れなくても写真は出る（導線が無いだけ）
     func testLoadsPhotos() async {
         let model = PhotoMapViewModel()

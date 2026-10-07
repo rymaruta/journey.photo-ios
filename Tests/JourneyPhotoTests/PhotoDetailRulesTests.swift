@@ -227,3 +227,168 @@ final class PhotoDetailDraftTests: XCTestCase {
                           PhotoDetailRules.reloadKey(userId: "me", photoId: "p2", published: true))
     }
 }
+
+/// H-3: 撮影地を直したときの「この近くで撮られた写真」（`PhotoDetailRules.nearbyKey`・`NearbyShelf`）
+final class NearbyShelfTests: XCTestCase {
+
+    private func photo(_ id: String) throws -> Photo {
+        try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"userId\":\"u\"}".utf8))
+    }
+
+    private let paris = Photo.Coords(lat: 48.85, lng: 2.35)
+    private let kyoto = Photo.Coords(lat: 35.01, lng: 135.77)
+
+    /// 🔴 **撮影地を直す・消すと近くの写真を拾い直す。** 写真が同じでも座標が変われば鍵が変わる
+    /// （写真の id だけの鍵では、直して保存しても前の場所のまま残った）
+    func testChangingCoordsChangesTheNearbyKey() {
+        XCTAssertNotEqual(PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris),
+                          PhotoDetailRules.nearbyKey(photoId: "p1", coords: kyoto),
+                          "撮影地を直しても近くの写真が前の場所のまま残る")
+        XCTAssertNotEqual(PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris),
+                          PhotoDetailRules.nearbyKey(photoId: "p1", coords: nil),
+                          "撮影地を消しても近くの写真の節が残る")
+        XCTAssertEqual(PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris),
+                       PhotoDetailRules.nearbyKey(photoId: "p1", coords: Photo.Coords(lat: 48.85, lng: 2.35)))
+        XCTAssertNotEqual(PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris),
+                          PhotoDetailRules.nearbyKey(photoId: "p2", coords: paris))
+    }
+
+    /// 🔴 **撮影地を直した後は、新しい場所の答えで中身を差し替え、前の場所の読みとは扱わない**
+    /// （画面に出ている間）。読み直しの判断（`rereadPlan`）も新しい鍵で「読む」になる
+    func testEditedLocationReplacesNearbyWhileOnScreen() throws {
+        let oldKey = PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris)
+        let newKey = PhotoDetailRules.nearbyKey(photoId: "p1", coords: kyoto)
+        var shelf = NearbyShelf()
+        shelf.beginLoad()
+        shelf.land([try photo("eiffel")], for: oldKey, onScreen: true)
+        XCTAssertEqual(shelf.contentFor, oldKey)
+
+        let closedAt = Date()
+        XCTAssertTrue(PhotoDetailRules.rereadPlan(newKey, contentFor: shelf.contentFor,
+                                                  viewerClosedAt: closedAt, now: closedAt).read,
+                      "撮影地を直した後も、前の場所の中身を今の撮影地のものと扱って読み直さない")
+
+        shelf.beginLoad()
+        shelf.land([try photo("kinkaku")], for: newKey, onScreen: true)
+        XCTAssertEqual(shelf.photos.map(\.id), ["kinkaku"], "近くの写真が前の場所のまま")
+        XCTAssertEqual(shelf.contentFor, newKey)
+        XCTAssertFalse(shelf.appear(), "画面に出ている間に入れた回は、出直しで読み直さない")
+    }
+
+    /// 🔴 **回帰（f0b0751）: 裏にいる間は並びを差し替えない。** 近くの写真から開いた詳細が
+    /// 裏の画面の上に出ている間に撮影地が変わり、並びを差し替えると、押した元の
+    /// `NavigationLink` ごと開いている詳細が閉じた。裏では印だけ立て、出直したら読み直す
+    func testNearbyIsNotReplacedWhileBehindAndRereadsOnAppear() throws {
+        let oldKey = PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris)
+        let newKey = PhotoDetailRules.nearbyKey(photoId: "p1", coords: kyoto)
+        var shelf = NearbyShelf()
+        shelf.land([try photo("eiffel"), try photo("louvre")], for: oldKey, onScreen: true)
+
+        // 裏にいる間に撮影地が変わり、読み直しが走った
+        shelf.beginLoad()
+        shelf.land([try photo("kinkaku")], for: newKey, onScreen: false)
+        XCTAssertEqual(shelf.photos.map(\.id), ["eiffel", "louvre"],
+                       "裏にいる間に近くの写真を差し替えると、そこから開いた詳細が閉じる")
+        XCTAssertNil(shelf.contentFor, "入れなかった答えを読み済みと扱わない")
+
+        // 読めなかった回も裏では消さない
+        shelf.fail(onScreen: false)
+        XCTAssertEqual(shelf.photos.map(\.id), ["eiffel", "louvre"], "裏にいる間の失敗で並びを空にした")
+
+        // 出直したら読み直す（1回だけ）
+        XCTAssertTrue(shelf.appear(), "裏で持ち越した読み直しを、出直したときに走らせない")
+        XCTAssertFalse(shelf.appear())
+        XCTAssertTrue(PhotoDetailRules.rereadPlan(newKey, contentFor: shelf.contentFor,
+                                                  viewerClosedAt: Date(), now: Date()).read)
+        shelf.beginLoad()
+        shelf.land([try photo("kinkaku")], for: newKey, onScreen: true)
+        XCTAssertEqual(shelf.photos.map(\.id), ["kinkaku"])
+    }
+
+    /// 開いた直後の1回目が `onAppear` より先に着いても、印が立って出直し（`onAppear`）で
+    /// 読み直す——節が出ないままにはならない。空のときも裏では入れない（スポットの行き先は
+    /// 空→有りで行が別の `NavigationLink` に替わり、開いた撮影地の一覧が閉じる）
+    func testAnswerBeforeAppearIsRereadOnAppear() throws {
+        let key = PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris)
+        var shelf = NearbyShelf()
+        shelf.beginLoad()
+        shelf.land([try photo("eiffel")], for: key, onScreen: false)
+        XCTAssertEqual(shelf.photos.map(\.id), [])
+        XCTAssertTrue(shelf.appear(), "onAppear より先に着いた1回目を読み直さない")
+        shelf.beginLoad()
+        shelf.land([try photo("eiffel")], for: key, onScreen: true)
+        XCTAssertEqual(shelf.photos.map(\.id), ["eiffel"])
+    }
+
+    /// 🔴 **読んでいる途中で取り消された回も、裏にいれば印を立てる。** 撮影地を直した直後、
+    /// 読み終える前に近くの写真を押して `.task` が取り消されると、出どころは外れるが印が無く、
+    /// 戻ったときに `.task` が走り直さなければ古い場所のまま残った
+    func testCancelledWhileBehindRereadsOnAppear() throws {
+        let oldKey = PhotoDetailRules.nearbyKey(photoId: "p1", coords: paris)
+        var shelf = NearbyShelf()
+        shelf.land([try photo("eiffel")], for: oldKey, onScreen: true)
+        shelf.beginLoad()
+        shelf.cancelled(onScreen: false)
+        XCTAssertEqual(shelf.photos.map(\.id), ["eiffel"], "取り消された回に中身を触った")
+        XCTAssertNil(shelf.contentFor)
+        XCTAssertTrue(shelf.appear(), "取り消された回を、出直したときに読み直さない")
+
+        // 画面に出ている間の取り消し（鍵が替わって走り直す回）は印を立てない
+        shelf.beginLoad()
+        shelf.cancelled(onScreen: true)
+        XCTAssertFalse(shelf.appear())
+    }
+}
+
+/// H-3 と同じ種類の穴: 「この場所のスポット」の行き先（`SpotLeadShelf`）
+final class SpotLeadShelfTests: XCTestCase {
+
+    private func photo(_ id: String, at location: String) throws -> Photo {
+        try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"\(id)\",\"src\":\"/uploads/\(id).jpg\",\"userId\":\"u\",\"location\":\"\(location)\"}".utf8))
+    }
+
+    private func lead(_ label: String) throws -> PhotoDetailSpotLead? {
+        PhotoDetailSpotLead.make(label, in: [try photo("a", at: "Paris"), try photo("b", at: "Paris"),
+                                             try photo("c", at: "Kyoto"), try photo("d", at: "Kyoto")])
+    }
+
+    /// 🔴 **裏にいる間に撮影地の名前が変わっても（`PhotoEditLedger` 経由）、行き先を差し替えない。**
+    /// 差し替えると、そこから開いたスポットの画面（または撮影地の一覧）が閉じうる。
+    /// 出直したら読み直して新しい場所の行き先を入れる
+    func testSpotLeadIsNotReplacedWhileBehindAndRereadsOnAppear() throws {
+        var shelf = SpotLeadShelf()
+        shelf.beginLoad()
+        shelf.land(try lead("Paris"), for: "Paris", onScreen: true)
+        XCTAssertEqual(shelf.value?.spot.label, "Paris")
+
+        shelf.beginLoad()
+        shelf.land(try lead("Kyoto"), for: "Kyoto", onScreen: false)
+        XCTAssertEqual(shelf.value?.spot.label, "Paris", "裏にいる間に行き先を差し替えると、開いた画面が閉じる")
+        XCTAssertNil(shelf.contentFor)
+
+        shelf.beginLoad()
+        shelf.land(nil, for: "", onScreen: false)
+        XCTAssertNotNil(shelf.value, "裏にいる間に撮影地を消すと、行き先の行ごと消えた")
+
+        shelf.fail(onScreen: false)
+        XCTAssertNotNil(shelf.value, "裏にいる間の失敗で行き先を消した")
+
+        XCTAssertTrue(shelf.appear(), "裏で持ち越した読み直しを、出直したときに走らせない")
+        shelf.beginLoad()
+        shelf.land(try lead("Kyoto"), for: "Kyoto", onScreen: true)
+        XCTAssertEqual(shelf.value?.spot.label, "Kyoto")
+        XCTAssertEqual(shelf.contentFor, "Kyoto")
+    }
+
+    /// 撮影地を直して読み終える前に取り消された回も、裏にいれば出直しで読み直す
+    func testSpotLeadCancelledWhileBehindRereadsOnAppear() throws {
+        var shelf = SpotLeadShelf()
+        shelf.land(try lead("Paris"), for: "Paris", onScreen: true)
+        shelf.beginLoad()
+        shelf.cancelled(onScreen: false)
+        XCTAssertEqual(shelf.value?.spot.label, "Paris")
+        XCTAssertTrue(shelf.appear())
+    }
+}

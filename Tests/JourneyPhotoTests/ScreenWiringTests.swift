@@ -60,4 +60,29 @@ final class ScreenWiringTests: XCTestCase {
         let map = try source("Features/Map/PhotoMapView.swift")
         XCTAssertTrue(map.contains("switch Self.listEmpty(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,"))
     }
+
+    /// ログアウト: メニューと設定の両方が共有の印（`AuthStore.startSigningOut`）を通る
+    func testSignOutButtonsShareTheGate() throws {
+        for path in ["Features/Common/SiteMenuView.swift", "Features/Settings/SettingsView.swift"] {
+            let screen = try source(path)
+            XCTAssertTrue(screen.contains("auth.startSigningOut {"), "\(path) が共有の印を通らずにログアウトしている")
+            XCTAssertFalse(screen.contains("await auth.signOut()"), "\(path) が直にログアウトしている")
+        }
+    }
+
+    /// ストーリー: 選んだ写真は上限時間つきで読む（`StorySimpleRules.readPicks`）
+    func testStoryComposerReadsPicksWithTimeout() throws {
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains("StorySimpleRules.readPicks("), "上限時間を通らずに写真を読んでいる")
+        XCTAssertEqual(count("loadTransferable(", in: composer), 1, "readPicks の外で写真を読んでいる")
+    }
+
+    /// ストーリー: 閉じる確認の「下書きに保存」は読み込み中を見る（`leaveDialog`）
+    func testStoryComposerLeaveDialogSeesLoading() throws {
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains("canSave: leaveDialog.canSave"))
+        XCTAssertTrue(composer.contains("loading: loadingPicks > 0"))
+        XCTAssertTrue(composer.contains("if let blocked = Self.draftSaveBlockedNote(loading: loadingPicks > 0) {"),
+                      "読み込み中の下書き保存が黙って戻る")
+    }
 }

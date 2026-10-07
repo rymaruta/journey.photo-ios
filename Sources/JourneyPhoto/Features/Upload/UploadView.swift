@@ -359,7 +359,7 @@ struct UploadView: View {
     /// 「まとめる」は見せ方だけ（`groupChoice`）
     private var strip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: UploadStripLayout.spacing) {
                 ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
                     thumb(item, index: index)
                 }
@@ -531,17 +531,19 @@ struct UploadView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.white)
-                    .frame(width: 28, height: 28)
+                    .frame(width: UploadStripLayout.removeDot, height: UploadStripLayout.removeDot)
                     .background(Color(red: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x2c / 255.0), in: Circle())
                     .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))
+                    // 丸は板の位置のまま、押せる範囲だけ左へずらす（`UploadStripLayout` の注記）
+                    .offset(x: UploadStripLayout.removeDotNudge)
                     // 押せる範囲は 44pt（見た目は 28pt）
-                    .frame(width: 44, height: 44)
+                    .frame(width: UploadStripLayout.removeHit, height: UploadStripLayout.removeHit)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             // 送っている間は並びを変えさせない（送る順の番号がずれる）
             .disabled(model.isWorking)
-            .offset(x: 14, y: -14)
+            .offset(x: UploadStripLayout.removeHitOffsetX, y: -UploadStripLayout.removeOffset)
             .accessibilityLabel(L("\(index + 1)枚目を外す", "Remove photo \(index + 1)"))
         }
     }
@@ -974,5 +976,38 @@ struct UploadView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+}
+
+/// 選んだ写真の帯の寸法（板 `project/Upload.dc.html`: 96×120・間 10、右上の外す丸は
+/// 見た目 28・押せる所 44 で、写真の右上の角から右へ・上へ 14 はみ出す）。
+///
+/// 🔴 **2026-10-07 判断: 丸は板の位置のまま、押せる範囲だけ左へ 4 ずらす。** 板どおりに
+/// 押せる範囲を 14 はみ出させると、帯の間（10）を越えて隣の写真に 4 重なり、隣の写真の左上を
+/// 押したつもりで1つ前の写真が外れた（2026-10-01 の既知の残り）。見た目（丸の位置と大きさ）は
+/// 変えない——押せる範囲（見えない）を、丸が収まる範囲で寄せるだけ。44 も保つ
+enum UploadStripLayout {
+    /// 写真と写真の間（板 gap 10）
+    static let spacing: CGFloat = 10
+    /// 外す丸の見た目の大きさ（板 28）
+    static let removeDot: CGFloat = 28
+    /// 外す丸が押せる範囲（CLAUDE.md の最小 44）
+    static let removeHit: CGFloat = 44
+    /// 丸（44 の枠の真ん中に置いたとき）を写真の右上の角から右へ・上へずらす量（板 right/top -14）
+    static let removeOffset: CGFloat = 14
+    /// 押せる範囲を右へずらす量。**帯の間を越えない**
+    static let removeHitOffsetX: CGFloat = min(removeOffset, spacing)
+    /// 押せる範囲を左へ寄せたぶん、丸を戻す（見た目の位置は `removeOffset` のまま）
+    static let removeDotNudge: CGFloat = removeOffset - removeHitOffsetX
+
+    /// 押せる範囲が写真の右の端から右へはみ出す量（隣の写真に重なってはいけない）
+    static var hitOverhangRight: CGFloat { removeHitOffsetX }
+    /// 丸の見た目の右の端が、写真の右の端から右へはみ出す量（板どおり 6）
+    static var dotOverhangRight: CGFloat {
+        removeHitOffsetX + removeDotNudge - (removeHit - removeDot) / 2
+    }
+    /// 丸が押せる範囲に収まっているか（ずらした丸の右の端が枠の中）
+    static var dotInsideHit: Bool {
+        (removeHit + removeDot) / 2 + removeDotNudge <= removeHit
     }
 }

@@ -360,21 +360,16 @@ struct StoryComposerView: View {
         // 下書きを黙って置き換える（投稿の `keepsDraft` と同じ判断）。
         // 戻した下書きを直した回の「捨てる」は**変更だけ**を捨てる（前の下書きは残る）ので、
         // そう言う（「続きから」の「捨てる」は下書きごと消すので、言葉を分ける）
+        //
+        // 🔴 **写真の読み込み中は「下書きに保存」を出さない**（`leaveDialog`）。右上の「…」の
+        // 下書き保存と同じ条件——片方だけ止めると、読み込み中の写真を落とした下書きが別の口から書けた
         .unsavedCloseGuard(leave, isPresented: $showLeaveConfirm,
-                           title: canSaveDraft ? L("下書きに保存しますか？", "Save as a draft?")
-                                               : L("閉じますか？", "Close?"),
-                           canSave: canSaveDraft,
+                           title: leaveDialog.title,
+                           canSave: leaveDialog.canSave,
                            saveTitle: L("下書きに保存", "Save draft"),
                            discardTitle: restoredContent != nil ? L("変更を捨てる", "Discard changes")
                                                                 : L("捨てる", "Discard"),
-                           message: !canSaveDraft
-                               ? L("選んだ写真と置いた文字は消えます。前の下書きはそのまま残ります（下書きは1件だけです）。",
-                                   "The photos and text you added will be lost. Your earlier draft stays (only one draft is kept).")
-                               : restoredContent != nil
-                               ? L("閉じると、下書きを開いてからの変更は消えます（前の下書きは残ります）。",
-                                   "If you close now, your changes since opening the draft will be lost. The draft itself stays.")
-                               : L("閉じると、選んだ写真と置いた文字は消えます。下書きはこの端末にだけ残ります。",
-                                   "If you close now, the photos and text you added will be lost. Drafts stay on this device only."),
+                           message: leaveDialog.message,
                            onSave: { saveDraft() },
                            onDiscard: { dismiss() })
     }
@@ -1137,15 +1132,13 @@ struct StoryComposerView: View {
         guard !items.isEmpty else { return }
         loadingPicks += 1
         defer { loadingPicks -= 1 }
-        var failed = 0
-        for item in items {
-            let data = try? await item.loadTransferable(type: Data.self)
-            if let data {
-                await accept(data)
-            } else {
-                failed += 1
-            }
-        }
+        // **1枚ごとに上限時間**（`StorySimpleRules.pickLoadTimeout`）。返らない1枚で
+        // 読み込み中が解けず、「シェアする」・「＋」が止まったままにならないように
+        let failed = await StorySimpleRules.readPicks(items, read: { item in
+            try await item.loadTransferable(type: Data.self)
+        }, accept: { data in
+            await accept(data)
+        })
         if failed > 0 {
             message = failed == items.count
                 ? L("写真を読み込めませんでした", "Couldn't load the photos")
@@ -1312,12 +1305,67 @@ struct StoryComposerView: View {
         current = StoryQueue.currentAfterRemoving(index, current: current, count: shots.count)
     }
 
+    /// 閉じる確認の中身（`unsavedCloseGuard`）
+    private var leaveDialog: LeaveDialog {
+        Self.leaveDialog(canSaveDraft: canSaveDraft, loading: loadingPicks > 0,
+                         restored: restoredContent != nil)
+    }
+
+    /// 閉じる確認の題・「下書きに保存」を出すか・説明
+    struct LeaveDialog: Equatable {
+        let title: String
+        let canSave: Bool
+        let message: String
+    }
+
+    /// 閉じる確認の中身を決める。
+    ///
+    /// 🔴 **2026-10-07 判断: 写真の読み込み中は「下書きに保存」を出さない。** 右上の「…」の
+    /// 下書き保存は読み込み中は押せないのに、閉じる確認からは通り、読み込み中の写真を
+    /// 落とした下書きを書いて閉じていた。待てば読み込みは終わる（上限は
+    /// `StorySimpleRules.pickLoadTimeout`）ので、「キャンセル」して待ってもらう
+    nonisolated static func leaveDialog(canSaveDraft: Bool, loading: Bool, restored: Bool) -> LeaveDialog {
+        guard canSaveDraft else {
+            return LeaveDialog(
+                title: L("閉じますか？", "Close?"), canSave: false,
+                message: L("選んだ写真と置いた文字は消えます。前の下書きはそのまま残ります（下書きは1件だけです）。",
+                           "The photos and text you added will be lost. Your earlier draft stays (only one draft is kept)."))
+        }
+        guard !loading else {
+            return LeaveDialog(
+                title: L("閉じますか？", "Close?"), canSave: false,
+                message: L("写真を読み込んでいる間は下書きに保存できません。保存するならキャンセルして、読み込み終わるまでお待ちください。閉じると、選んだ写真と置いた文字は消えます。",
+                           "You can't save a draft while photos are loading. To save, tap Cancel and wait for them to finish. If you close now, the photos and text you added will be lost."))
+        }
+        return LeaveDialog(
+            title: L("下書きに保存しますか？", "Save as a draft?"), canSave: true,
+            message: restored
+                ? L("閉じると、下書きを開いてからの変更は消えます（前の下書きは残ります）。",
+                    "If you close now, your changes since opening the draft will be lost. The draft itself stays.")
+                : L("閉じると、選んだ写真と置いた文字は消えます。下書きはこの端末にだけ残ります。",
+                    "If you close now, the photos and text you added will be lost. Drafts stay on this device only."))
+    }
+
+    /// 下書きに保存できないときの一言（`saveDraft`）。保存できるなら nil
+    nonisolated static func draftSaveBlockedNote(loading: Bool) -> String? {
+        loading ? L("写真の読み込み中は下書きに保存できません。読み込み終わってからお試しください",
+                    "You can't save a draft while photos are loading. Try again when they finish.")
+                : nil
+    }
+
     /// 下書きにする。**焼き込む前の文字のまま残す**
     /// ——焼いてしまうと位置も色も直せなくなる（投稿と同じ片道になる）。
     /// **並べた写真を全部残す。** 以前は表示中の1枚だけを渡していて、
     /// 3枚並べて保存しても開き直すと1枚になっていた
     private func saveDraft() {
         guard !shots.isEmpty else { return }
+        // 読み込み中は書かない（閉じる確認・「…」の両方で止めているが、確認を出した後に
+        // 読み込みが始まった回の念のため）。書かずに閉じもしないが、**黙って戻らない**——
+        // 押した人には何も起きないように見える。理由を知らせに出す
+        if let blocked = Self.draftSaveBlockedNote(loading: loadingPicks > 0) {
+            message = blocked
+            return
+        }
         let ok = drafts.save(
             shots: shots.map { shot in
                 StoryDraftStore.ShotInput(imageData: shot.prepared.data,

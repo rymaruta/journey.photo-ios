@@ -16,7 +16,8 @@ struct SettingsView: View {
     @State private var isApplying = false
     /// ログアウトの最中。宛先を外し終えるまで（最大20秒）二度押させず、進み具合を見せる
     /// （`DeleteAccountView.isWorking` と同じ形）
-    @State private var isSigningOut = false
+    /// 印は `AuthStore` の共有のもの（メニューから押した分とも1本にまとめる）
+    private var isSigningOut: Bool { auth.isSigningOut }
     /// 「新しくなったこと」を開き直す（起動で出たものと同じ画面・2026-10-04）
     @State private var showWhatsNew = false
 
@@ -293,17 +294,10 @@ struct SettingsView: View {
     private var logoutSection: some View {
         section(nil) {
             Button {
-                // **門は押したその場で閉じる**（`Task` の中で立てると連打の2発目が通る）
-                guard !isSigningOut else { return }
-                isSigningOut = true
-                Task {
-                    defer { isSigningOut = false }
-                    // **通知の宛先は、ログアウトの前に外す。**
-                    // あとだと認証が通らず、外せないまま次にこの端末を
-                    // 使う人へ前の人あての通知が飛ぶ
-                    await push.signingOut()
-                    await auth.signOut()
-                }
+                // **門は押したその場で閉じる**（`startSigningOut` が共有の印を立てる）。
+                // **通知の宛先は、ログアウトの前に外す。** あとだと認証が通らず、
+                // 外せないまま次にこの端末を使う人へ前の人あての通知が飛ぶ
+                auth.startSigningOut { await push.signingOut() }
             } label: {
                 JPRowLabel(title: isSigningOut ? L("ログアウトしています…", "Signing out…") : Labels.Navigation.logout,
                            systemImage: "rectangle.portrait.and.arrow.right", chevron: false)

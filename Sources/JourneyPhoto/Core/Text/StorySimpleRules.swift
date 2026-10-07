@@ -24,6 +24,40 @@ enum StorySimpleRules {
         return NextButton(title: L("次へ（\(selected)枚）", "Next (\(selected))"), enabled: !loading)
     }
 
+    // MARK: - 選んだ写真の読み込み
+
+    /// ライブラリの写真1枚を読むのを待つ上限（秒）。過ぎたら「読めなかった」に回す。
+    ///
+    /// 🔴 **2026-10-07 判断: 投稿の写真（`UploadViewModel.pickedLoadTimeout`）と同じ 60 秒。**
+    /// iCloud にしか無い写真は数十秒かかることがあり、短いと読める写真まで落とす。
+    /// 上限が無いと、返らない1枚のために読み込み中（`loadingPicks`）が解けず、
+    /// 「シェアする」・並びの「＋」・カメラが止まったままだった（閉じて開き直すまで）
+    static let pickLoadTimeout: TimeInterval = 60
+
+    /// 選んだ写真を順に読み、読めたものを `accept` に渡す。**1枚ごとに上限時間を設ける**
+    /// （`AsyncTimeout.firstWithin`——取り消しに応えない読み込みでも時間切れが効く。
+    /// 呼んだ側が取り消されたときもすぐ戻る）。
+    ///
+    /// - Returns: 読めなかった（時間切れ・失敗・取り消し）枚数
+    @MainActor
+    static func readPicks<Item>(_ items: [Item], timeout: TimeInterval = pickLoadTimeout,
+                                read: @escaping (Item) async throws -> Data?,
+                                accept: (Data) async -> Void) async -> Int {
+        var failed = 0
+        for item in items {
+            // nil は時間切れ・取り消し・読めなかった
+            let data = await AsyncTimeout.firstWithin(seconds: timeout) { () async -> Data? in
+                try? await read(item)
+            }
+            if let data {
+                await accept(data)
+            } else {
+                failed += 1
+            }
+        }
+        return failed
+    }
+
     // MARK: - カメラ・並びの帯
 
     /// 写真を選ぶ段でカメラを撮ったとき、**撮った1枚より先に読み込む印付きの写真**。

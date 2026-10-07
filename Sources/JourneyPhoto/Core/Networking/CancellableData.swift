@@ -35,7 +35,7 @@ extension URLSession {
     /// 確かめていない。Linux で動くのは試験だけ（アプリは iOS だけ）
     func cancellableData(for request: URLRequest) async throws -> (Data, URLResponse) {
         #if canImport(FoundationNetworking)
-        let waiter = CancellableWaiter()
+        let waiter = CancellableWaiter<(Data, URLResponse)>()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 guard waiter.install(continuation) else { return }
@@ -61,17 +61,47 @@ extension URLSession {
     }
 }
 
-#if canImport(FoundationNetworking)
-/// 待っている側を**1回だけ**起こす（応答と取り消しの先に来た方）。
+extension Task where Failure == Error {
+    /// 共有している仕事の答えを待つ。**待っている側が取り消されたら、待ちだけを外す**
+    /// （`CancellationError` で起こす）。仕事そのものは取り消さない——同じ仕事を
+    /// 待っているほかの呼び手の答えまで止めないため（`PublicGalleryService.fetchStaticList`）。
+    ///
+    /// ふつうの `await task.value` は、待っている側が取り消されても仕事が終わるまで
+    /// 戻らない（取り消しは仕事へ伝わらない）。起こし方は `cancellableData` と同じ
+    /// ——手当ての中では起こさず、鍵の外で起こす
+    func valueReleasingOnCancel() async throws -> Success {
+        let waiter = CancellableWaiter<Success>()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                guard waiter.install(continuation) else { return }
+                Task<Void, Never> {
+                    do {
+                        waiter.finish(.success(try await self.value))
+                    } catch {
+                        waiter.finish(.failure(error))
+                    }
+                }
+            }
+        } onCancel: {
+            DispatchQueue.global().async { waiter.finish(.failure(waitCancelled())) }
+        }
+    }
+}
+
+/// `Task` の中では `CancellationError()` が古い `Task.CancellationError()` の方に
+/// 解決されて書けないので、外で作る
+private func waitCancelled() -> Error { CancellationError() }
+
+/// 待っている側を**1回だけ**起こす（答えと取り消しの先に来た方）。
 /// 取り消しが `install` より先に来たら、入れた途端に取り消しで起こす
-private final class CancellableWaiter: @unchecked Sendable {
+final class CancellableWaiter<Value>: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<(Data, URLResponse), Error>?
-    private var early: Result<(Data, URLResponse), Error>?
+    private var continuation: CheckedContinuation<Value, Error>?
+    private var early: Result<Value, Error>?
     private var done = false
 
     /// 入れたら true。もう終わっていた（先に取り消された）ら、その場で起こして false
-    func install(_ continuation: CheckedContinuation<(Data, URLResponse), Error>) -> Bool {
+    func install(_ continuation: CheckedContinuation<Value, Error>) -> Bool {
         lock.lock()
         if let early {
             self.early = nil
@@ -84,7 +114,7 @@ private final class CancellableWaiter: @unchecked Sendable {
         return true
     }
 
-    func finish(_ result: Result<(Data, URLResponse), Error>) {
+    func finish(_ result: Result<Value, Error>) {
         lock.lock()
         guard !done else { lock.unlock(); return }
         done = true
@@ -98,4 +128,3 @@ private final class CancellableWaiter: @unchecked Sendable {
         continuation.resume(with: result)
     }
 }
-#endif

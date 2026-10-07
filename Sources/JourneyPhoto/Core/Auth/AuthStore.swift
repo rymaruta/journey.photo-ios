@@ -68,6 +68,13 @@ final class AuthStore: ObservableObject {
     private let gateway: AuthStoreGateway
     /// 期限切れのログアウトを走らせている最中か（`expireSession`）
     private var isExpiring = false
+    /// 本人が押したログアウトを走らせている最中か（`startSigningOut`）。
+    ///
+    /// 🔴 **2026-10-07 判断: 印は画面ではなくここに持つ。** メニュー（`SiteMenuView`）は
+    /// 押すと先に閉じる作りで、画面の `@State` では2発目を止められなかった
+    /// （閉じる動きの間にもう一度押せて、通知の宛先外しとログアウトが2本走る）。
+    /// 設定（`SettingsView`）も同じ印を見る——どこから押しても1本だけ
+    @Published private(set) var isSigningOut = false
     /// サインアウト・退会で空にする通信の控え。`APIClient`（既定の設定）と
     /// `AsyncImage` はどちらも `URLCache.shared` を使う（試験で差し替える）
     var responseCache: URLCache = .shared
@@ -270,6 +277,23 @@ final class AuthStore: ObservableObject {
         // は残す——ほかの流れ（送り直し・退会）の文は変えない
         if lastFailure == .userNotFound {
             errorMessage = AuthMessage.text(for: .notAuthorized)
+        }
+    }
+
+    /// 本人が押したログアウト（メニュー・設定の両方がここを通る）。
+    /// **門は押したその場で閉じる**（`Task` の中で閉じると、描き直しの前に2回押せる——
+    /// `startFinishingDeletion` と同じ形）。
+    ///
+    /// - Parameter releaseDevice: 通知の宛先を外す（`PushCenter.signingOut`）。
+    ///   **ログアウトの前に呼ぶ**——あとだと認証が通らず外せない
+    @discardableResult
+    func startSigningOut(releaseDevice: @escaping @MainActor () async -> Void) -> Task<Void, Never>? {
+        guard userId != nil, !isSigningOut else { return nil }
+        isSigningOut = true
+        return Task {
+            defer { isSigningOut = false }
+            await releaseDevice()
+            await signOut()
         }
     }
 
