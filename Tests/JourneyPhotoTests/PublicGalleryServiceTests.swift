@@ -299,6 +299,77 @@ final class PublicGalleryCoalescingTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requestCount, 2)
     }
 
+    /// 取得が失敗で終わったら「取得中」の印を下ろす。**次の呼び手は取り直す**
+    /// （印が残ると、終わった失敗の答えを返し続けて二度と取りに行かない）
+    func testFailedFetchDoesNotStickAsInFlight() async throws {
+        StubProtocol.respondInOrder([(status: 500, body: ""), (status: 200, body: twoPhotos)])
+        let gallery = service(Gate(holds: 0))
+        do {
+            _ = try await gallery.fetchPhotos()
+            XCTFail("500 なのに一覧が返った")
+        } catch {}
+        let photos = try await gallery.fetchPhotos()
+        XCTAssertEqual(photos.map(\.id), ["a", "b"])
+        XCTAssertEqual(StubProtocol.requestCount, 2)
+    }
+
+    /// 先の取得が終わっても、**引き下げ更新が後から始めた取得の印は消さない**
+    /// （消すと、その最中に来た呼び手が3本目を取りに行く）
+    func testOlderFetchDoesNotClearNewerInFlightMark() async throws {
+        // 1本目は 500（`cached` を残さない＝次の呼び手が控えで済ませない）
+        StubProtocol.respondInOrder([(status: 500, body: ""), (status: 200, body: twoPhotos),
+                                     (status: 200, body: twoPhotos)])
+        let first = Gate(), second = Gate()
+        let order = Arrivals()
+        let gallery = PublicGalleryService(
+            url: url, session: session,
+            snapshot: PhotoSnapshotStore(fileName: UUID().uuidString),
+            beforeStaticRequest: {
+                switch await order.next() {
+                case 0: await first.wait()
+                case 1: await second.wait()
+                default: break
+                }
+            })
+        let older = Task { try await gallery.fetchPhotos() }
+        await first.untilWaiting(1)
+        let forced = Task { try await gallery.fetchPhotos(force: true) }
+        await second.untilWaiting(1)
+        await first.open()
+        _ = await older.result
+
+        let joiner = Task { try await gallery.fetchPhotos() }
+        try await settle()
+        let arrived = await order.count
+        XCTAssertEqual(arrived, 2, "先の取得が、引き下げ更新の取得の印を消した")
+        await second.open()
+        let forcedPhotos = try await forced.value
+        let joinedPhotos = try await joiner.value
+        XCTAssertEqual(forcedPhotos.map(\.id), ["a", "b"])
+        XCTAssertEqual(joinedPhotos.map(\.id), ["a", "b"])
+        XCTAssertEqual(StubProtocol.requestCount, 2)
+    }
+
+    /// もう取り消された呼び手は、新しい取得を**始めない**（要求の手前の門にも着かない）
+    @MainActor
+    func testAlreadyCancelledCallerStartsNoFetch() async throws {
+        let gate = Gate()
+        let gallery = service(gate)
+        // メインアクターの上で作るので、下の cancel() より先には走らない
+        let task = Task { try await gallery.fetchPhotos() }
+        task.cancel()
+        _ = await task.result
+        try await settle()
+        let arrived = await gate.arrived
+        XCTAssertEqual(arrived, 0, "取り消された呼び手が取得を始めた")
+        await gate.open()
+    }
+
+    private actor Arrivals {
+        private(set) var count = 0
+        func next() -> Int { defer { count += 1 }; return count }
+    }
+
     private actor Returned {
         private(set) var value = false
         func mark() { value = true }
