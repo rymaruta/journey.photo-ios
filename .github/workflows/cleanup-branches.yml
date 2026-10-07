@@ -1,0 +1,84 @@
+# 使い終わった枝の掃除（手で押すだけ・2026-10-07）。
+#
+# **中身が main に入り終えた枝だけを消す。** 消す条件はどちらか:
+#  1. 枝の先頭が main の履歴に含まれる（ふつうの併合）
+#  2. その枝の PR が併合済みで、枝の先頭がそのとき併合した先頭のまま
+#     （まとめて併合（squash）した枝。併合のあとに足したコミットがあれば消さない）
+#
+# **消さない枝:** main・screenshots（画面写真の置き場）・開いている PR の枝・
+# 上のどちらにも当たらない枝（まだ main に入っていない作業。別のセッションの
+# 作業中のこともある）。
+#
+# 押し方: Actions →「使い終わった枝の掃除」→ Run workflow。
+#  - `apply` を外したまま（既定）= **試すだけ**。消す枝と残す枝の一覧を、回の
+#    まとめ（Summary）に出す。何も消さない
+#  - 一覧を見てから `apply` に印を付けて押し直す = 消す
+#
+# **併合した PR の枝は、併合したその場で自動で消す**（下の `on-merge`・owner の希望で
+# 「操作なしで消したい」2026-10-07）。消すのはその PR の枝1本だけで、守る枝と、
+# 併合のあとに足したコミットがある枝は消さない。
+#
+# 消した枝は GitHub の「Branches」の画面から、しばらくは戻せる（Restore）。
+# 一括の掃除（`cleanup`）は定期では回さない。
+name: 使い終わった枝の掃除
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "印を付けると本当に消す（外したままなら一覧を出すだけ）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: cleanup-branches-${{ github.event.pull_request.number || 'all' }}
+  cancel-in-progress: false
+
+jobs:
+  # 併合した PR の枝を1本だけ消す。このリポジトリの中の枝だけ（フォークの枝には触れない）
+  on-merge:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != 'main' &&
+      github.event.pull_request.head.ref != 'screenshots'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 併合した枝を消す（併合のあとに足したコミットがあれば残す）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          MERGED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          now=$(gh api "repos/$REPO/git/ref/heads/$BRANCH" --jq .object.sha 2>/dev/null || true)
+          if [ -z "$now" ]; then echo "もう無い: $BRANCH"; exit 0; fi
+          if [ "$now" != "$MERGED_SHA" ]; then
+            echo "::notice::併合のあとにコミットが足されているので残す: $BRANCH"
+            exit 0
+          fi
+          gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" --silent
+          echo "消した: $BRANCH"
+
+  cleanup:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 消す枝を選ぶ（と、apply のときは消す）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLY: ${{ inputs.apply }}
+          REPO: ${{ github.repository }}
+        run: bash Tools/cleanup-branches.sh
