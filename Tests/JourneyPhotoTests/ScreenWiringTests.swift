@@ -60,4 +60,13 @@ final class ScreenWiringTests: XCTestCase {
         let map = try source("Features/Map/PhotoMapView.swift")
         XCTAssertTrue(map.contains("switch Self.listEmpty(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,"))
     }
+
+    /// ログアウト: メニューと設定の両方が共有の印（`AuthStore.startSigningOut`）を通る
+    func testSignOutButtonsShareTheGate() throws {
+        for path in ["Features/Common/SiteMenuView.swift", "Features/Settings/SettingsView.swift"] {
+            let screen = try source(path)
+            XCTAssertTrue(screen.contains("auth.startSigningOut {"), "\(path) が共有の印を通らずにログアウトしている")
+            XCTAssertFalse(screen.contains("await auth.signOut()"), "\(path) が直にログアウトしている")
+        }
+    }
 }

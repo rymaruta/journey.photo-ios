@@ -91,17 +91,18 @@ struct SiteMenuView: View {
                 if auth.userId != nil {
                     JPCard {
                         Button {
+                            // 印は `AuthStore` の共有のもの（メニューは先に閉じるので、
+                            // 画面の印では閉じる間の2発目を止められない）
+                            guard !auth.isSigningOut else { return }
                             dismiss()
-                            Task {
-                                await push.signingOut()
-                                await auth.signOut()
-                            }
+                            auth.startSigningOut { await push.signingOut() }
                         } label: {
                             JPRowLabel(title: Labels.Navigation.logout,
                                        systemImage: "rectangle.portrait.and.arrow.right", chevron: false)
                         }
                         .buttonStyle(JPRowButtonStyle())
                         .accessibilityIdentifier("menu.logout")
+                        .disabled(auth.isSigningOut)
                     }
                 }
             }
