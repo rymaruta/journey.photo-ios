@@ -195,9 +195,55 @@ final class PhotoMapViewModel: ObservableObject {
     private func refreshOfficialPins() {
         let next = OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame, query: query,
                                         aliases: spotAliases)
+        requestPinDetails(next)
         guard OfficialPins.changed(officialPins, next) else { return }
         officialPins = next
         officialPinsUpdates += 1
+    }
+
+    // MARK: - ピンの詳細（分けた置き場・2026-10-07）
+
+    /// 索引を読んだサービス（ピンの詳細を読むのに使う）
+    private var spotService: OfficialSpotService?
+    /// ピンの詳細を読んでいる回
+    private var pinDetailTask: Task<Void, Never>?
+    /// 最後に読みに行った行の鍵。**同じ集まりで叩き直さない**（取れなかった区分で回り続けない）
+    private var pinDetailKey = ""
+
+    /// 置いたピンのうち、まだ索引だけの行（写真が無い）の詳細を読み、届いたらピンを入れ替える。
+    /// 詳細の和が小さいうちはサービスが全区分を読んでいるので、何もしない（`SpotDetailNeeds`）
+    private func requestPinDetails(_ pins: [OfficialPins.Pin]) {
+        guard let service = spotService, !pins.isEmpty else { return }
+        let ids = Set(pins.map(\.spotId))
+        let needs = SpotDetailNeeds.indexOnly(officialSpots.filter { ids.contains($0.spotId) })
+        let key = SpotDetailNeeds.key(needs)
+        guard !needs.isEmpty, key != pinDetailKey else { return }
+        pinDetailKey = key
+        let generation = loadGeneration
+        pinDetailTask = Task { [weak self] in
+            guard let self else { return }
+            let merged = await service.withDetails(self.officialSpots, for: needs)
+            // 待っている間に読み直しが始まっていたら書かない（新しい回の索引を古い行で上書きしない）
+            guard self.loadGeneration == generation else { return }
+            self.officialSpots = Self.overlay(self.officialSpots, with: merged)
+            self.refreshOfficialPins()
+        }
+    }
+
+    /// 今の行に、重ねた行（詳細あり）だけを差し込む（待っている間に変わった行を古い写しで戻さない）
+    private static func overlay(_ current: [OfficialSpot], with merged: [OfficialSpot]) -> [OfficialSpot] {
+        let detailed = Dictionary(merged.filter { !$0.isIndexOnly }.map { ($0.spotId, $0) },
+                                  uniquingKeysWith: { first, _ in first })
+        guard !detailed.isEmpty else { return current }
+        return current.map { row in
+            guard row.isIndexOnly, let hit = detailed[row.spotId] else { return row }
+            return hit
+        }
+    }
+
+    /// ピンの詳細が届くまで待つ。**試験のためだけ**
+    func awaitPinDetails() async {
+        await pinDetailTask?.value
     }
 
     /// チップに出すカテゴリ。**座標のある写真だけ**から数える——座標の無い
@@ -223,6 +269,8 @@ final class PhotoMapViewModel: ObservableObject {
         isLoading = true
         // 前の回の索引は取り消す（答えが来ても下の世代の見張りで書かない）
         indexTask?.cancel()
+        spotService = environment.spots
+        pinDetailKey = ""
         // **索引は写真と並行に取る。** 直列に待つと、索引が遅い回に写真の
         // ピンと最初の寄せまで遅れる（通信の上限は20秒）。届いたらピンだけ
         // 入れ替える。取れなくても写真は出す——索引は無くても地図は成り立つ

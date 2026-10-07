@@ -54,6 +54,58 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     /// 撮影地の節は出ない（`ShootingTime.spots`）。2026-10-03 判断
     var timeOfDayGuide: LenientTimeOfDayGuide? = nil
 
+    // MARK: 分けた置き場の索引（`/app/data/spot-feed/index.json`・2026-10-07）
+
+    /// 索引の「季節の案内がある季節」（**種類だけ・文は詳細**）。索引の鍵は `seasons`
+    var seasonKinds: LenientStringList? = nil
+    /// 索引の「時間帯の案内がある時間帯」（種類だけ）。索引の鍵は `times`
+    var timeKinds: LenientStringList? = nil
+    /// 索引の「写真が詳細にある」
+    var hasImage: LenientFlag? = nil
+    /// 索引の別名（`spot-search.json` と同じもの）。古い置き場の行には無い
+    var aliases: LenientStringList? = nil
+    /// 詳細の区分（`/app/data/spot-feed/<shard>.json`）。**サービスが付ける**（JSON の鍵ではない）
+    var shard: String? = nil
+    /// **索引だけで読み、まだ詳細を重ねていない行。** 写真・概要・季節/時間帯の文・時刻帯が無い。
+    /// 要る画面は `OfficialSpotService.withDetails` で詳細を重ねる（サービスが付ける）
+    var isIndexOnly: Bool = false
+
+    private enum CodingKeys: String, CodingKey {
+        case spotId, slug, name, nameEn, reading, region, coords, category, summary, stage,
+             draftedAt, verifiedAt, image, seasonalGuide, timeOfDayGuide, hasImage, aliases
+        case seasonKinds = "seasons"
+        case timeKinds = "times"
+    }
+
+    /// 季節の案内がある季節（台帳の綴り）。**絞り込み・候補選びはこちらを使う**——
+    /// 索引だけの行でも答えられる（文は `seasons`、詳細を重ねてから）
+    var seasonKeys: [String] {
+        isIndexOnly ? (seasonKinds?.value ?? []).filter { SpotBodyText.seasonOrder.contains($0) } : seasons.map(\.season)
+    }
+
+    /// 時間帯の案内がある時間帯（台帳の綴り）。`seasonKeys` と同じ理由
+    var timeKeys: [String] {
+        isIndexOnly ? (timeKinds?.value ?? []).filter { SpotBodyText.timeOrder.contains($0) } : times.map(\.time)
+    }
+
+    /// 写真があるか。**候補選びはこちらを使う**（索引だけの行は写真そのものを持たない）
+    var hasPhoto: Bool {
+        isIndexOnly ? hasImage?.value == true : photo != nil
+    }
+
+    /// 索引の行に詳細の行を重ねる。**詳細は同じ `spotId` のときだけ**使い、索引の印（区分・種類・別名）は残す
+    func merged(with detail: OfficialSpot) -> OfficialSpot {
+        guard detail.spotId == spotId else { return self }
+        var row = detail
+        row.shard = shard
+        row.seasonKinds = seasonKinds
+        row.timeKinds = timeKinds
+        row.hasImage = hasImage
+        row.aliases = aliases ?? detail.aliases
+        row.isIndexOnly = false
+        return row
+    }
+
     /// 出してよい写真。作者とライセンスが揃っていて、https の画像だけ
     var photo: SpotImage? { image?.value }
 
@@ -159,6 +211,32 @@ struct LenientSpotImage: Decodable, Equatable {
         if s.hasPrefix("http://") { s = "https://" + s.dropFirst("http://".count) }
         guard let url = URL(string: s), url.scheme == "https", url.host != nil else { return nil }
         return url
+    }
+}
+
+/// 文字の一覧を**決して投げずに**読む入れ物（索引の季節・時間帯の種類と別名）。
+/// 文字でない・空の項目は落とす。行ごとは落とさない（`LenientSpotImage` と同じ理由）
+struct LenientStringList: Decodable, Equatable {
+    let value: [String]
+
+    init(_ value: [String]) { self.value = value }
+
+    init(from decoder: Decoder) throws {
+        let rows = (try? [Lenient<String>](from: decoder)) ?? []
+        value = rows.compactMap(\.value)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+}
+
+/// 真偽を**決して投げずに**読む入れ物（索引の `hasImage`）。真偽でなければ false
+struct LenientFlag: Decodable, Equatable {
+    let value: Bool
+
+    init(_ value: Bool) { self.value = value }
+
+    init(from decoder: Decoder) throws {
+        value = (try? Bool(from: decoder)) ?? false
     }
 }
 

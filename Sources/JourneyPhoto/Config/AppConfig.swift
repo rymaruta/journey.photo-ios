@@ -122,6 +122,17 @@ enum AppConfig {
         siteBaseURL.appendingPathComponent("app/data/spots.json")
     }
 
+    /// 撮影スポットの**分けた置き場の索引**（`app/data/spot-feed/index.json`・2026-10-07）。
+    ///
+    /// 数千〜数万件に増やすため、Web が軽い索引（全件）と区分ごとの詳細
+    /// （隣の `spot-feed/<区分>.json`・行は `spots.json` と同じ中身）に分けて配る。
+    /// `spots.json` は古いアプリのために 2026-10-07 の行で固定され、これ以上増えない。
+    /// **ここが無い（404）Web なら `publicSpotsURL` に戻る**（`OfficialSpotService.fetchIndex`）。
+    /// 設計は photo-gallery の `docs/spot-feed-sharding.md`
+    static var publicSpotFeedIndexURL: URL {
+        siteBaseURL.appendingPathComponent("app/data/spot-feed/index.json")
+    }
+
     /// **今日の一問**（`app/data/quiz/<YYYY-MM-DD>.json`）。写真・索引と同じく**静的な JSON**で、
     /// API ではない。Web がビルド時に前日から61日ぶん書き出す（`lib/data/quizFeed.ts`）。
     /// **Web の `/q` と同じファイル**を読む＝同じ日に同じ問題

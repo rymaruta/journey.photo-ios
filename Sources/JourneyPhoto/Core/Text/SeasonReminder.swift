@@ -61,7 +61,8 @@ enum SeasonReminder {
         let season = SpotBodyText.season(ofMonth: next.month)
         let names = spots
             .filter { !$0.isDraft && wishlist.contains(SavedSpotKey.official($0.slug)) }
-            .filter { spot in spot.seasons.contains { $0.season == season } }
+            // 種類で見る（索引だけの行でも答えられる・`OfficialSpot.seasonKeys`）
+            .filter { spot in spot.seasonKeys.contains(season) }
             .sorted { $0.spotId < $1.spotId }
             .map(\.name)
         guard let first = names.first else { return nil }

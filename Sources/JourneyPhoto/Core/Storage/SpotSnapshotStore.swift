@@ -31,6 +31,11 @@ struct SpotSnapshotStore {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// 控えの中身そのもの（分けた置き場の索引・区分は形が違う・指紋を照らすのに使う）
+    func loadData() -> Data? {
+        try? Data(contentsOf: url)
+    }
+
     func load() -> [OfficialSpot]? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         // 控えの側も1行の型違いで全部消さない（`LenientOfficialSpotList` の理由）

@@ -218,11 +218,11 @@ final class ConditionalGetTests: XCTestCase {
         StubProtocol.respond(status: 200, body: OfficialSpotServiceTests.threeSpots)
         StubProtocol.responseHeaders = ["ETag": #"W/"s1""#]
         _ = try await OfficialSpotService(url: spotsURL, session: session,
-                                          snapshot: SpotSnapshotStore(fileName: name)).fetchIndex()
+                                          snapshot: SpotSnapshotStore(fileName: name), splitFeed: false).fetchIndex()
 
         respond(304, "")
         let spots = try await OfficialSpotService(url: spotsURL, session: session,
-                                                  snapshot: SpotSnapshotStore(fileName: name)).fetchIndex()
+                                                  snapshot: SpotSnapshotStore(fileName: name), splitFeed: false).fetchIndex()
         XCTAssertEqual(spots.count, 3, "304 で控えの索引を返していない")
         XCTAssertEqual(header("If-None-Match", ofRequest: 1), #"W/"s1""#)
         XCTAssertEqual(StubProtocol.allRequests.count, 2)
@@ -233,7 +233,7 @@ final class ConditionalGetTests: XCTestCase {
         let name = newName()
         StubProtocol.respond(status: 200, body: OfficialSpotServiceTests.threeSpots)
         StubProtocol.responseHeaders = ["ETag": #""s1""#]
-        let spots = OfficialSpotService(url: spotsURL, session: session, snapshot: SpotSnapshotStore(fileName: name))
+        let spots = OfficialSpotService(url: spotsURL, session: session, snapshot: SpotSnapshotStore(fileName: name), splitFeed: false)
         _ = try await spots.fetchIndex()
         respond(404, "not found")
         _ = try await spots.fetchIndex(force: true)
@@ -247,7 +247,7 @@ final class ConditionalGetTests: XCTestCase {
         let name = newName()
         StubProtocol.respond(status: 200, body: OfficialSpotServiceTests.threeSpots)
         StubProtocol.responseHeaders = ["ETag": #""s1""#]
-        let spots = OfficialSpotService(url: spotsURL, session: session, snapshot: SpotSnapshotStore(fileName: name))
+        let spots = OfficialSpotService(url: spotsURL, session: session, snapshot: SpotSnapshotStore(fileName: name), splitFeed: false)
         _ = try await spots.fetchIndex()
         respond(200, #"[{"spotId":1}]"#, etag: #""s2""#)
         _ = try await spots.fetchIndex(force: true)
@@ -261,7 +261,7 @@ final class ConditionalGetTests: XCTestCase {
         let name = newName()
         StubProtocol.respond(status: 200, body: OfficialSpotServiceTests.threeSpots)
         StubProtocol.responseHeaders = ["ETag": #""s1""#]
-        let spots = OfficialSpotService(url: spotsURL, session: session, snapshot: SpotSnapshotStore(fileName: name))
+        let spots = OfficialSpotService(url: spotsURL, session: session, snapshot: SpotSnapshotStore(fileName: name), splitFeed: false)
         _ = try await spots.fetchIndex()
         respond(304, "")
         _ = try await spots.fetchIndex(force: true)

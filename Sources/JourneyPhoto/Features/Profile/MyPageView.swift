@@ -105,6 +105,15 @@ struct MyPageView: View {
             guard auth.userId != nil else { return }
             officialSpots = (try? await environment.spots.fetchIndex()) ?? officialSpots
         }
+        // 「行きたい」のスポットの詳細（行の写真・地図の札）。分けた置き場の索引だけの行のときだけ読む
+        // （`SpotDetailNeeds`・2026-10-07）
+        .task(id: SpotDetailNeeds.key(SpotDetailNeeds.wished(wishIds, spots: officialSpots))) {
+            let needs = SpotDetailNeeds.wished(wishIds, spots: officialSpots)
+            guard !needs.isEmpty else { return }
+            let merged = await environment.spots.withDetails(officialSpots, for: needs)
+            guard !Task.isCancelled else { return }
+            officialSpots = merged
+        }
         // **戻ってきたら読み直す。** この画面から押して出る先
         // （プロフィール編集・写真の詳細）はどれも `NavigationLink` で、
         // 閉じる合図を受け取る口が無い。保存しても削除しても、

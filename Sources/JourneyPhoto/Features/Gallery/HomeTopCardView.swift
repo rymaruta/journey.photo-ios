@@ -84,6 +84,9 @@ struct HomeTopCardView: View {
         }
             .task(id: "\(auth.userId ?? "-")#\(reloadToken)#\(returnReloads)") { await load() }
             .task { await loadSpots() }
+            // 札・段・当日の行に出るスポットの詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ読む
+            // （`SpotDetailNeeds`・2026-10-07）。重ねたら鍵が空になって止まる
+            .task(id: SpotDetailNeeds.key(detailNeeds(choices))) { await loadDetails(choices) }
             .task(id: "\(reloadToken)") { await loadQuiz() }
             // ホームに戻ってきたら、開いた一冊の印を読み直す（札を下げる）。
             // 札から旅行プランを開いていたら、プランも読み直す（`.task` の鍵を変えて）
@@ -392,6 +395,23 @@ struct HomeTopCardView: View {
         guard !Task.isCancelled, let fetched else { return }
         spots = fetched
         scheduleSeasonReminder()
+    }
+
+    /// 札・段・当日の行に出る、まだ索引だけのスポット
+    private func detailNeeds(_ choices: [HomeTopCard.Choice]) -> [OfficialSpot] {
+        guard !spots.isEmpty else { return [] }
+        let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(Date(), in: .current), spots: spots,
+                                               choices: choices, quiz: quiz, quizSettled: quizSettled)
+        return SpotDetailNeeds.home(choices: choices, shelf: shelf, spots: spots)
+    }
+
+    /// 出すスポットの詳細を重ねる（`OfficialSpotService.withDetails`）。取れなければ索引のまま（写真・文が出ないだけ）
+    private func loadDetails(_ choices: [HomeTopCard.Choice]) async {
+        let needs = detailNeeds(choices)
+        guard !needs.isEmpty else { return }
+        let merged = await environment.spots.withDetails(spots, for: needs)
+        guard !Task.isCancelled else { return }
+        spots = merged
     }
 
     /// 見頃のお知らせ（次の季節の始まりに1件だけ・端末の中だけ・`SeasonReminder`）を入れ替える。
