@@ -178,13 +178,19 @@ actor PublicGalleryService {
     /// 叩いてまれに落ちる
     private let beforeLiveRequest: (@Sendable () async -> Void)?
 
+    /// 一覧の要求を出す**直前**に待つ口。**本番は nil**。試験が「取りに行っている最中」を
+    /// 作るのに使う（`beforeLiveRequest` と同じ理由で、遅さを `URLProtocol` で作らない）
+    private let beforeStaticRequest: (@Sendable () async -> Void)?
+
     init(url: URL = AppConfig.publicPhotosURL,
          liveURL: URL? = nil,
          session: URLSession? = nil,
          snapshot: PhotoSnapshotStore = PhotoSnapshotStore(),
          edits: PhotoEditLedger = PhotoEditLedger(),
-         beforeLiveRequest: (@Sendable () async -> Void)? = nil) {
+         beforeLiveRequest: (@Sendable () async -> Void)? = nil,
+         beforeStaticRequest: (@Sendable () async -> Void)? = nil) {
         self.url = url
+        self.beforeStaticRequest = beforeStaticRequest
         self.edits = edits
         self.liveURL = liveURL
         self.snapshot = snapshot
@@ -238,7 +244,7 @@ actor PublicGalleryService {
         // **いいねのいまの数は、一覧と同時に取りに行く**
         // （順に待つと、起き抜けの Lambda のぶん一覧が遅れる）
         async let live: Void = refreshLiveCounts(force: force)
-        let photos = try await fetchStaticList()
+        let photos = try await fetchStaticList(force: force)
         await live
         return await merged(photos, force: force)
     }
@@ -248,7 +254,55 @@ actor PublicGalleryService {
     /// **条件付きで取る**（`ConditionalGet`・2026-10-02）。控えに前回の `ETag` が
     /// あれば `If-None-Match` を付け、変わっていなければ 304（本文なし）で
     /// 控えの中身を使う。60秒の控え（`freshCache`）の判断はその手前のまま
-    private func fetchStaticList() async throws -> [Photo] {
+    ///
+    /// **同時の取得は1本にまとめる**（docs/QUALITY_2026-10-03.md の P2）。起動直後はホーム・探す・
+    /// 地図・お知らせが同じ一覧を同時に取りに来て、同じ JSON を何本も落としていた。
+    ///
+    /// 2026-10-07 判断: 前回まとめなかったのは「取り消しの挙動が変わる」ため——呼び手の
+    /// `Task` の中で取ると、最初の呼び手（たとえば閉じた画面）が取り消されたとき、相乗りした
+    /// ほかの呼び手の取得まで止まる。だから取得は**どの呼び手にも属さない `Task`** で走らせ
+    /// （いいねの数の `liveInFlight` と同じ）、呼び手は `valueReleasingOnCancel` で待つ。
+    /// 取り消された呼び手は**待ちだけ**を外し、今までどおり端末の控え（無ければ unreachable）で
+    /// 戻る。取得は続き、ほかの呼び手と `cached` に届く。
+    /// 引き下げ更新（`force`）は途中の取得に相乗りしない——引く前に始まった取得で済ませない
+    /// （`refreshLiveCounts` と同じ約束）。新しい取得を始め、以後の呼び手はそちらに乗る
+    ///
+    /// **もう取り消されている呼び手は、新しい取得を始めない**（`RequestCancellation` の約束・
+    /// `testCancelledGalleryFetchDoesNotReachTheNetwork`）。取得はどの呼び手にも属さないので、
+    /// 始めてしまうと誰も待たない要求が出る。途中の取得に乗るのは構わない（もう出ている）
+    private func fetchStaticList(force: Bool) async throws -> [Photo] {
+        let task: Task<[Photo], Error>
+        if !force, let inFlight = staticInFlight {
+            task = inFlight.task
+        } else {
+            guard !Task.isCancelled else { return try cancelledStaticList() }
+            let id = UUID()
+            task = Task { try await self.loadStaticList(id: id) }
+            staticInFlight = (id, task)
+        }
+        do {
+            return try await task.valueReleasingOnCancel()
+        } catch is CancellationError {
+            // 待っていた側が取り消された（取得は続いている）
+            return try cancelledStaticList()
+        }
+    }
+
+    /// 取り消された呼び手の戻り方。**まとめる前と同じ**——圏外と同じ道（端末の控え、無ければ unreachable）
+    private func cancelledStaticList() throws -> [Photo] {
+        if let cached = snapshot.load() { return cached }
+        throw APIError.unreachable
+    }
+
+    /// 取りに行っている最中の一覧。**同時に来た呼び出しはこれを待つ**（`fetchStaticList`）
+    private var staticInFlight: (id: UUID, task: Task<[Photo], Error>)?
+
+    /// 一覧を1回取る本体。**「取得中」の印はここで消す**——自分の印のときだけ
+    /// （引き下げ更新が後から始めた取得の印を、先に終わった古い取得が消さない）。
+    /// 印を立てるのは `fetchStaticList` で、この本体はそのあとにしか actor の上で走らない
+    private func loadStaticList(id: UUID) async throws -> [Photo] {
+        defer { if staticInFlight?.id == id { staticInFlight = nil } }
+        await beforeStaticRequest?()
         let data: Data
         let response: URLResponse
         do {

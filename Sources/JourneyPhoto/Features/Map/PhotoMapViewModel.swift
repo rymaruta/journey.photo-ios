@@ -26,7 +26,65 @@ final class PhotoMapViewModel: ObservableObject {
     @Published private(set) var loaded = false
     /// 写真の一覧を取れなかった（圏外で控えも無い）。**0枚とは分ける**
     @Published private(set) var loadFailed = false
-    @Published var query = "" { didSet { refresh() } }
+    /// 絞りに効いている語。**入れたらその場で絞り直す**（探すから来た語・× で消す・確定）。
+    /// 欄に打っている途中の字は `typedQuery` に入り、間引いてからここへ写す
+    @Published var query = "" {
+        didSet {
+            // 欄の字もそろえ、待っている写しは捨てる（古い字で上書きしない）
+            queryDebounceTask?.cancel()
+            queryDebounceTask = nil
+            if typedQuery != query { typedQuery = query }
+            refresh()
+        }
+    }
+
+    /// 検索欄に打っている字（欄の束ね先）。**打つたびには絞り直さない**——
+    /// 1字ごとに全件を絞り、ピンを束ね直していた（docs/QUALITY_2026-10-03.md の P2）。
+    /// 打つのが `queryDebounce` だけ止まったら `query` へ写す。確定（return）は `commitTypedQuery()`、
+    /// × は `query = ""` でその場で効かせる。
+    ///
+    /// 2026-10-07 判断: 間引きは 250ms。探すの人の検索（`SearchViewModel.search`・300ms）は通信の
+    /// ための待ちで、ここは手元の絞りだけなので少し短くする。仕組みは同じ（前の待ちを取り消し、
+    /// 眠ってから写す）だが、あちらは通信の回の番号まで持つので関数は分けたまま
+    @Published var typedQuery = "" {
+        didSet {
+            guard typedQuery != oldValue else { return }
+            scheduleQueryCommit()
+        }
+    }
+
+    /// 打つのが止まってから絞るまでの間。**試験のためだけに差し替える**
+    var queryDebounce: Duration = .milliseconds(250)
+    private var queryDebounceTask: Task<Void, Never>?
+
+    /// 打っている字を、いま絞りに効かせる（return・試験）。同じ語なら何もしない
+    func commitTypedQuery() {
+        queryDebounceTask?.cancel()
+        queryDebounceTask = nil
+        guard query != typedQuery else { return }
+        query = typedQuery
+    }
+
+    /// 間引きの待ちが済むまで待つ。**試験のためだけ**
+    func awaitTypedQuery() async {
+        await queryDebounceTask?.value
+    }
+
+    private func scheduleQueryCommit() {
+        queryDebounceTask?.cancel()
+        queryDebounceTask = nil
+        // `query` の didSet から揃えた回（同じ字）は待たない
+        guard typedQuery != query else { return }
+        let delay = queryDebounce
+        queryDebounceTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.commitTypedQuery()
+        }
+    }
+
+    /// 絞り直した回数。**打つたびに絞り直していないことを試験で数えるためだけ**
+    private(set) var refreshCount = 0
     @Published private(set) var category: String?
     @Published var mode: Mode = .map
     /// 「このエリアを検索」で固定した範囲
@@ -115,6 +173,7 @@ final class PhotoMapViewModel: ObservableObject {
 
     /// 絞り直す。条件が変わったときにだけ呼ぶ
     private func refresh() {
+        refreshCount += 1
         shown = MapSearch.photos(photos, filter: MapSearch.Filter(query: query, category: category, frame: areaFrame))
         pins = MapPin.group(shown)
         pinLayout = MapPinClusters.layout(pins, frame: visibleFrame)

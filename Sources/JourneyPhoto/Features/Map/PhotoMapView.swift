@@ -174,6 +174,12 @@ struct PhotoMapView: View {
             guard model.areaFrame == nil else { return }
             frame(model.frame)
         }
+        // 欄を手で消した時点で寄せ待ちを下ろす。2026-10-07 判断: 絞りは間引く（`typedQuery`）ので、
+        // 消してすぐ別の語を打つと `query` が "" を通らず、上の `cleared()` が呼ばれない。
+        // 呼ぶのは上と同じ `cleared()` だけ（印の中身には触らない）
+        .onChange(of: model.typedQuery) { _, typed in
+            if typed.isEmpty { queryFraming.cleared() }
+        }
         .onChange(of: model.category) { _, _ in
             guard model.areaFrame == nil else { return }
             frame(model.frame)
@@ -314,11 +320,13 @@ struct PhotoMapView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.faint)
             TextField(L("撮影地・スポット名で絞る", "Filter by place or spot"),
-                      text: $model.query)
+                      text: $model.typedQuery)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("map.search")
                 .foregroundStyle(WebTheme.foreground)
-            if !model.query.isEmpty {
+                // 打っている間は間引いて絞る（`typedQuery`）。確定はその場で
+                .onSubmit { model.commitTypedQuery() }
+            if !model.typedQuery.isEmpty {
                 Button {
                     model.query = ""
                 } label: {
