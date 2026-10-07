@@ -43,7 +43,7 @@ enum ColorFamilies {
     /// 分かっても、読み上げでは何色か分からない
     static func accessibilityLabel(_ family: Family, count: Int) -> String {
         L("\(family.label)（\(family.note)）・\(count)枚",
-          "\(family.label) (\(family.note)), \(count) photos")
+          "\(family.label) (\(family.note)), " + (count == 1 ? "1 photo" : "\(count) photos"))
     }
 
     /// `#rrggbb` を 0...1 の3つに。読めなければ nil

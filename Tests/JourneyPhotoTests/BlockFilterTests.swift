@@ -106,4 +106,18 @@ final class BlockFilterTests: XCTestCase {
         XCTAssertEqual(before.follows(users).map(\.id), ["a", "b"])
         XCTAssertEqual(after.follows(users).map(\.id), ["b"])
     }
+
+    /// 🔴 **ストーリーの反応の数はブロックした人を落としてから数える**（2026-10-07）。
+    /// 「いいね」「返信」の数がブロックした人を含み、一覧（落とした後）と合わなかった。
+    /// 相手の分からない行は落とさない
+    func testStoryRepliesDropBlockedBeforeCounting() throws {
+        let json = #"[{"uid":"a","emoji":"❤️","t":"1"},{"uid":"a","text":"きれい","t":"2"},{"uid":"b","emoji":"❤️","t":"3"},{"uid":"c","text":"どこ？","t":"4"},{"emoji":"❤️","t":"5"}]"#
+        let replies = try JSONDecoder.api.decode([StoryReply].self, from: Data(json.utf8))
+        XCTAssertEqual(replies.reactionCount, 3)
+        let shown = BlockFilter.replies(replies, blocked: ["a"])
+        XCTAssertEqual(shown.reactionCount, 2)
+        XCTAssertEqual(shown.textReplies.map(\.body), ["どこ？"])
+        XCTAssertEqual(BlockFilter.replies(replies, blocked: []).count, 5)
+        XCTAssertEqual(ModerationSnapshot(blocked: ["a", "c"]).replies(replies).map(\.uid), ["b", nil])
+    }
 }

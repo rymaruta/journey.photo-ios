@@ -256,12 +256,34 @@ final class LibraryTripsTests: XCTestCase {
         XCTAssertEqual(LibraryTrips.periodText(oneDay, timeZone: tokyo), "2026.09.12")
     }
 
+    /// 一覧の「N日間」は暦の日（撮らなかった中日も入る）。一冊の「N日間」と同じ数え方
+    func testListCountsCalendarDays() throws {
+        let shots = [
+            shot("d1a", hours: 10, kyoto), shot("d1b", hours: 20, kyoto),
+            // 9/13 は撮っていない
+            shot("d3a", hours: 48 + 9, kyoto), shot("d3b", hours: 48 + 23.5, kyoto),
+            shot("d4a", hours: 72 + 1, kyoto),
+        ]
+        let trip = try XCTUnwrap(LibraryTrips.find(shots, home: home, timeZone: tokyo).first)
+        XCTAssertEqual(trip.days.count, 3, "撮った日は3日")
+        XCTAssertEqual(LibraryTrips.calendarDays(trip), 4, "9/12〜9/15 は暦では4日間")
+        XCTAssertEqual(LibraryTrips.countText(trip),
+                       L("\(TripBook.daysLabel(4))・5枚", "\(TripBook.daysLabel(4)) · 5 photos"))
+        XCTAssertEqual(TripBook.daysLabel(4), L("4日間", "4 days"))
+        let oneDay = try XCTUnwrap(LibraryTrips.find(Array(repeating: 0, count: 5).enumerated().map {
+            shot("o\($0.offset)", hours: 10 + Double($0.offset), kyoto)
+        }, home: home, timeZone: tokyo).first)
+        XCTAssertEqual(LibraryTrips.calendarDays(oneDay), 1)
+    }
+
     // MARK: - 投稿済みの日
 
     func testPostedDays() throws {
         let shots = (0..<6).map { shot("k\($0)", hours: Double($0) * 12, kyoto) }  // 9/12〜9/14
         let trip = try XCTUnwrap(LibraryTrips.find(shots, home: home, timeZone: tokyo).first)
         XCTAssertEqual(LibraryTrips.postedDays(trip: trip, postedDayKeys: ["2026-09-13", "2026-01-01"]), 1)
+        // 時間帯が分かっている旅（ここでは渡した）は、前後1日のずれを許さない
+        XCTAssertEqual(LibraryTrips.postedDays(trip: trip, postedDayKeys: ["2026-09-11"]), 0)
         XCTAssertEqual(LibraryTrips.postedDays(trip: trip, postedDayKeys: []), 0)
     }
 

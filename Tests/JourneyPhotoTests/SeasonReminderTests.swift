@@ -177,4 +177,16 @@ final class SeasonReminderTests: XCTestCase {
         await scheduler.reschedule(plan, allowed: true)
         XCTAssertEqual(added, 1)
     }
+
+    /// 英語の冠詞（"an autumn guide"。"a autumn" と出ていた・2026-10-07）
+    func testEnglishArticleFollowsTheSeason() throws {
+        XCTAssertEqual(SeasonReminder.withArticle("autumn"), "an autumn")
+        XCTAssertEqual(SeasonReminder.withArticle("winter"), "a winter")
+        XCTAssertEqual(SeasonReminder.withArticle("spring"), "a spring")
+        XCTAssertEqual(SeasonReminder.withArticle("summer"), "a summer")
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Core/Text/SeasonReminder.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("has \\(withArticle(label.lowercased())) guide."), "英語の文が冠詞の関数を通らない")
+        XCTAssertFalse(source.contains("has a \\(label"), "冠詞を a に決め打ちしている")
+    }
 }

@@ -32,6 +32,13 @@ final class ModerationStore: ObservableObject {
     /// 覚えていても害は無い。公開に戻したら `unmarkGone` で外す
     @Published private(set) var goneMarks: [String: Date] = [:]
     var gonePhotoIds: Set<String> { Set(goneMarks.keys) }
+    /// `goneMarks` のうち**消した**写真（非公開にしただけの写真は入らない）。
+    ///
+    /// **2026-10-07 判断: 「消した」と「非公開にした」を分ける。** 束の一冊（自分だけの一冊を含む）は
+    /// 非公開の写真も入れるので、非公開にした写真を `goneMarks` で落とすと一冊の中だけ消え、
+    /// 棚の枚数とずれた。束の一冊は消した写真だけを落とす（`TripBookView.visible`）。
+    /// 端末には残さない——起動し直せば自分の写真はサーバーから読み直す
+    private(set) var deletedPhotoIds: Set<String> = []
     /// 覚えておく長さ。**週1の定期ビルド（最大7日）に合わせる**
     static let goneLifetime: TimeInterval = 7 * 24 * 60 * 60
     /// 中身が変わるたびに増える。**画面が「読み直せ」を1回で受け取るため。**
@@ -80,6 +87,7 @@ final class ModerationStore: ObservableObject {
         reportedPhotoIds = Set(defaults.stringArray(forKey: key("reported")) ?? [])
         // **人ごとに読む。** 前の人が消した写真の印を次の人に持ち越さない
         goneMarks = loadGoneMarks()
+        if changedUser { deletedPhotoIds = [] }
         blockEdits.reset(owner: userId)
         // **人が変わったときも数を進める。** 進めないと、画面は
         // `.onChange(of: revision)` を見ているので読み直さず、
@@ -133,7 +141,8 @@ final class ModerationStore: ObservableObject {
     /// いまの「見せない」の写し。**画面が絞る時点を自分で選ぶため**
     /// （描画のたびに `visible` を呼ぶと、見ている最中に一覧が縮む）
     var snapshot: ModerationSnapshot {
-        ModerationSnapshot(blocked: blockedUserIds, reported: reportedPhotoIds, gone: gonePhotoIds)
+        ModerationSnapshot(blocked: blockedUserIds, reported: reportedPhotoIds, gone: gonePhotoIds,
+                           deleted: deletedPhotoIds)
     }
 
     /// ブロック一覧を取りに行く**前に**取る。`replaceBlocked(with:for:since:)` に渡す
@@ -225,10 +234,13 @@ final class ModerationStore: ObservableObject {
     /// 自分で消した・非公開にした写真を、公開一覧の写しから落とす（`goneMarks`）。
     /// **サーバーの答えを待った後に呼ぶ。** 待っている間に人が替わっていたら書かない
     /// （`markReported(_:for:)` と同じ）——書くと次の人の画面からその写真が消える
-    func markGone(_ photoId: String, for owner: String?) {
+    ///
+    /// - Parameter deleted: 消した（true）か、非公開にしただけ（false）か（`deletedPhotoIds`）
+    func markGone(_ photoId: String, for owner: String?, deleted: Bool = false) {
         guard owner == userId else { return }
         let before = snapshot
         goneMarks[photoId] = now()
+        if deleted { deletedPhotoIds.insert(photoId) }
         saveGoneMarks(goneMarks)
         bumpIfChanged(since: before)
     }
@@ -298,6 +310,8 @@ struct ModerationSnapshot: Equatable {
     var reported: Set<String> = []
     /// 自分で消した・非公開にした写真（`ModerationStore.goneMarks`）
     var gone: Set<String> = []
+    /// そのうち**消した**写真（`ModerationStore.deletedPhotoIds`）。束の一冊はこれだけで落とす
+    var deleted: Set<String> = []
 
     func visible(_ photos: [Photo]) -> [Photo] {
         BlockFilter.photos(photos, blocked: blocked, reported: reported, gone: gone)
@@ -319,5 +333,9 @@ struct ModerationSnapshot: Equatable {
 
     func follows(_ users: [FollowUser]) -> [FollowUser] {
         BlockFilter.follows(users, blocked: blocked)
+    }
+
+    func replies(_ replies: [StoryReply]) -> [StoryReply] {
+        BlockFilter.replies(replies, blocked: blocked)
     }
 }

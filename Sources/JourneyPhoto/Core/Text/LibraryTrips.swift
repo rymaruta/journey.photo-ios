@@ -22,7 +22,7 @@ struct LibraryTrip: Identifiable, Equatable {
 
     /// 旅の1日。**写真のある日だけ**を持つ（撮らなかった中日は飛ぶ）
     struct Day: Identifiable, Equatable {
-        /// 撮影日（`YYYY-MM-DD`・端末の時刻帯）。投稿済みの写真の撮影日と突き合わせる
+        /// 撮影日（`YYYY-MM-DD`・**撮った土地の時間帯**＝`LibraryTrip.timeZone`）。投稿済みの写真の撮影日と突き合わせる
         let key: String
         /// 旅の何日目か（1始まり・**暦の日で数える**）。撮らなかった日も数に入る
         /// ——3日目に撮らず4日目に撮ったら「DAY 4」
@@ -47,6 +47,11 @@ struct LibraryTrip: Identifiable, Equatable {
     let days: [Day]
     /// 旅の代表点（位置のある写真でいちばん多い約10kmの升の平均）。旅の名前を引くのに使う
     let center: Photo.Coords?
+    /// 日を切る時間帯。**撮った土地の時間帯**（`LibraryTrips.find` の注記）
+    let timeZone: TimeZone
+    /// `timeZone` が本当の時間帯か（地名を引いて分かった・試験で渡した）。false なら目安
+    /// （経度の目安か端末の時間帯）。投稿済みの日の突き合わせで前後1日を許すかを決める
+    var zoneIsKnown: Bool = false
 
     /// 位置のある写真（日時順）。位置の無い写真は**旅の写真かどうか確かでない**
     /// （同じ時間に家で撮った・ほかのアプリで保存した）ので、表紙・最初の選びに使わない
@@ -91,9 +96,21 @@ enum LibraryTrips {
     /// 家を推す升の細かさ（度）。0.1度 ≒ 約10km
     static let cellDegrees = 0.1
 
+    /// 日の切り方（**2026-10-07 判断: 撮った土地の時間帯で切る**）。
+    ///
+    /// 投稿した写真の撮影日は EXIF の撮った土地の壁時計（`ImagePreparer.takenOn`）で、
+    /// 一冊はそれで日を数える（`TripBook.day(of:)`）。ここを端末の時間帯で切ると、
+    /// 海外の旅で選ぶ画面の「DAY n」と一冊の日がずれ、投稿済みの日の突き合わせも外れた
+    /// （パリの 9/12 20:00 は日本の端末では 9/13 03:00）。
+    ///
+    /// - `timeZone` を渡せばすべての旅をそれで切る（試験）
+    /// - 渡さなければ目安で切る（`guessedTimeZone`: 国内・近くの旅は端末の時間帯、
+    ///   はっきり外国の旅だけ経度の目安）。地名を引いたときに分かる本当の時間帯
+    ///   （`CLPlacemark.timeZone`）は、後から `recut` / `applyingZones` で切り直す
     static func find(_ shots: [LibraryShot],
                      home: (lat: Double, lng: Double)? = nil,
-                     timeZone: TimeZone = .current) -> [LibraryTrip] {
+                     timeZone: TimeZone? = nil,
+                     deviceTimeZone: TimeZone = .current) -> [LibraryTrip] {
         let homePoint: Photo.Coords
         if let home {
             homePoint = Photo.Coords(lat: home.lat, lng: home.lng)
@@ -103,10 +120,60 @@ enum LibraryTrips {
             // 位置のある写真が1枚も無い——どこが旅先か決められない
             return []
         }
+        return search(shots, homes: [homePoint], timeZone: timeZone, device: deviceTimeZone, retries: 1)
+            .sorted { $0.start > $1.start }
+    }
+
+    /// 本当の時間帯が分かるまでの目安。
+    ///
+    /// **経度の目安は夏時間も国の境も知らない**（シカゴの夏は CDT -5 だが目安は -6・
+    /// スペインやフランス・中国の西・インドの +5:30 も外れる）。国内や近くの旅では
+    /// 端末の時間帯のほうが当たる。そこで、経度の目安と端末の**標準時**（夏時間を除いた差）
+    /// が1時間以内なら端末の時間帯を使い、はっきり外国の旅だけ経度の目安を使う（2026-10-07 判断）
+    static func guessedTimeZone(longitude: Double, at date: Date, device: TimeZone) -> TimeZone {
+        let estimate = estimatedTimeZone(longitude: longitude)
+        let deviceStandard = device.secondsFromGMT(for: date) - Int(device.daylightSavingTimeOffset(for: date))
+        return abs(estimate.secondsFromGMT(for: date) - deviceStandard) <= 3600 ? device : estimate
+    }
+
+    /// 経度から目安の時間帯（経度 15 度で1時間）。**本当の時間帯が分からないときだけ**使う
+    /// （夏時間や国の境は分からない）。地名を引いたら `CLPlacemark.timeZone` で切り直す
+    static func estimatedTimeZone(longitude: Double) -> TimeZone {
+        let hours = max(-12, min(14, Int((longitude / 15).rounded())))
+        return TimeZone(secondsFromGMT: hours * 3600) ?? TimeZone(identifier: "UTC")!
+    }
+
+    /// 別の時間帯で日を切り直す（地名を引いて本当の時間帯が分かったとき）。
+    /// 写真・期間・代表点・id は変えない。切り直した旅の時間帯は本当の時間帯（`zoneIsKnown`）
+    static func recut(_ trip: LibraryTrip, timeZone: TimeZone) -> LibraryTrip {
+        LibraryTrip(id: trip.id, shots: trip.shots, start: trip.start, end: trip.end,
+                    days: days(of: trip.shots, from: trip.start, calendar: makeCalendar(timeZone)),
+                    center: trip.center, timeZone: timeZone, zoneIsKnown: true)
+    }
+
+    /// 分かった時間帯（鍵は `lookupKey`）で旅を切り直す。**旅の代表点の鍵を先に見て、
+    /// 無ければ日の代表点の鍵**（選ぶ画面は日の地名を引く。代表点の地名が引けていなくても
+    /// 日の地名で時間帯が分かる・2026-10-07）。分からない旅・既に本当の時間帯で同じ旅はそのまま
+    static func applyingZones(_ trips: [LibraryTrip], zones: [String: TimeZone]) -> [LibraryTrip] {
+        guard !zones.isEmpty else { return trips }
+        return trips.map { trip in
+            let points = [trip.center] + trip.days.map(\.center)
+            guard let zone = points.lazy.compactMap({ $0.flatMap { zones[lookupKey($0)] } }).first,
+                  !(trip.zoneIsKnown && zone.identifier == trip.timeZone.identifier) else { return trip }
+            return recut(trip, timeZone: zone)
+        }
+    }
+
+    /// 今の一覧の同じ旅（同じ id）。無ければ渡された旅（選ぶ画面が開いたときの値）。
+    /// 選ぶ画面はこれで、地名を引いて切り直した旅を読む
+    static func current(_ trip: LibraryTrip, in trips: [LibraryTrip]) -> LibraryTrip {
+        trips.first { $0.id == trip.id } ?? trip
+    }
+
+    private static func makeCalendar(_ timeZone: TimeZone) -> Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
-        return search(shots, homes: [homePoint], calendar: calendar, retries: 1)
-            .sorted { $0.start > $1.start }
+        return calendar
     }
 
     /// `homes` の**どれからも** `awayKm` 以上離れた写真を旅先として旅を探す。
@@ -114,7 +181,7 @@ enum LibraryTrips {
     ///
     /// 探し直しで本当の家も家として扱うかは `homesKeptInRetry` が決める（2026-10-02 判断）
     private static func search(_ shots: [LibraryShot], homes: [Photo.Coords],
-                               calendar: Calendar, retries: Int) -> [LibraryTrip] {
+                               timeZone: TimeZone?, device: TimeZone, retries: Int) -> [LibraryTrip] {
         let located = shots.filter { $0.coords != nil }
         let away = located
             .filter { shot in
@@ -145,28 +212,88 @@ enum LibraryTrips {
                 guard retries > 0, let tempHome = busiestCellCenter(of: located) else { return [] }
                 let inSpan = shots.filter { $0.date >= span.start && $0.date <= span.end }
                 let kept = homesKeptInRetry(homes, shots: inSpan, start: span.start, end: span.end)
-                return search(inSpan, homes: [tempHome] + kept, calendar: calendar, retries: retries - 1)
+                return search(inSpan, homes: [tempHome] + kept, timeZone: timeZone, device: device, retries: retries - 1)
             }
             // 数えるのは位置のある写真だけ（位置の無い写真で5枚に届かせない）
             guard located.count >= minShots else { return [] }
             let ordered = (located + unlocated.filter { $0.date >= span.start && $0.date <= span.end })
                 .sorted(by: inOrder)
             guard let first = ordered.first else { return [] }
+            let center = busiestCellCenter(of: ordered.filter { awayIds.contains($0.id) })
+            // 撮った土地の時間帯（渡されなければ目安・`guessedTimeZone`）
+            let zone = timeZone
+                ?? center.map { guessedTimeZone(longitude: $0.lng, at: span.start, device: device) }
+                ?? device
             return [LibraryTrip(
                 id: first.id,
                 shots: ordered,
                 start: span.start,
                 end: span.end,
-                days: days(of: ordered, from: span.start, calendar: calendar),
-                center: busiestCellCenter(of: ordered.filter { awayIds.contains($0.id) })
+                days: days(of: ordered, from: span.start, calendar: makeCalendar(zone)),
+                center: center,
+                timeZone: zone,
+                zoneIsKnown: timeZone != nil
             )]
         }
     }
 
+    /// 投稿済みの写真1枚の撮影日（`YYYY-MM-DD`）と撮影地（約1km に丸めたもの・無ければ nil）
+    struct PostedShot: Equatable {
+        let key: String
+        let coords: Photo.Coords?
+    }
+
     /// 投稿済みの写真の撮影日と重なる旅の日数。一覧で「投稿済みの日があります」を出すのに使う。
-    /// `postedDayKeys` は `dayKeys(ofPosted:)` で作る
+    /// `posted` は `postedShots(of:)` で作る。
+    ///
+    /// **同じ日だけを数える。前後1日のずれを許すのは、旅の時間帯がまだ目安で（`zoneIsKnown` が
+    /// false）、しかもその写真の撮影地が旅の代表点から `awayKm` 以内のときだけ**（2026-10-07 判断）。
+    /// 投稿済みの写真には家で撮った写真も入るので、誰にでも1日のずれを許すと、旅の翌日に家で
+    /// 撮って投稿した1枚で、まだ何も上げていない旅が「投稿済みの日がある旅」に回った。
+    /// 撮影地の無い写真には許さない
+    static func postedDays(trip: LibraryTrip, posted: [PostedShot]) -> Int {
+        guard !posted.isEmpty else { return 0 }
+        let exact = Set(posted.map(\.key))
+        var nearby: Set<String> = []
+        if !trip.zoneIsKnown, let center = trip.center {
+            for shot in posted {
+                guard let coords = shot.coords,
+                      TravelDistance.kilometers(from: center, to: coords) <= awayKm else { continue }
+                nearby.insert(shot.key)
+            }
+        }
+        return trip.days.filter { day in
+            exact.contains(day.key) || neighborKeys(of: day.key).contains { nearby.contains($0) }
+        }.count
+    }
+
+    /// 撮影日の鍵だけで数える（撮影地を知らない・前後のずれは許さない）
     static func postedDays(trip: LibraryTrip, postedDayKeys: Set<String>) -> Int {
-        trip.days.filter { postedDayKeys.contains($0.key) }.count
+        postedDays(trip: trip, posted: postedDayKeys.map { PostedShot(key: $0, coords: nil) })
+    }
+
+    /// 自分の投稿の撮影日と撮影地。撮影日の無い写真は入れない（`dayKeys(ofPosted:)` と同じ）
+    static func postedShots(of photos: [Photo]) -> [PostedShot] {
+        photos.compactMap { photo -> PostedShot? in
+            guard let head = TakenDay.ymd(photo.date) else { return nil }
+            let (y, m, d) = head
+            return PostedShot(key: String(format: "%04d-%02d-%02d", y, m, d), coords: photo.coords)
+        }
+    }
+
+    /// その日と前後1日の鍵（`YYYY-MM-DD`）。読めない鍵はそれだけ
+    static func neighborKeys(of key: String) -> [String] {
+        let utc = makeCalendar(TimeZone(identifier: "UTC")!)
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3,
+              let date = utc.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else {
+            return [key]
+        }
+        return [-1, 0, 1].compactMap { offset -> String? in
+            guard let shifted = utc.date(byAdding: .day, value: offset, to: date) else { return nil }
+            let c = utc.dateComponents([.year, .month, .day], from: shifted)
+            return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+        }
     }
 
     /// 自分の投稿の撮影日（`YYYY-MM-DD`）。**撮影日だけ**を見る——投稿日で代用すると、
@@ -244,10 +371,9 @@ enum LibraryTrips {
     }
 
     /// 期間（等幅で出す）。「2026.09.12 — 09.14」、年をまたげば「2025.12.30 — 2026.01.02」、
-    /// 1日なら「2026.09.12」
-    static func periodText(_ trip: LibraryTrip, timeZone: TimeZone = .current) -> String {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
+    /// 1日なら「2026.09.12」。**旅の時間帯（撮った土地）で出す**——日の段と同じ切り方
+    static func periodText(_ trip: LibraryTrip, timeZone: TimeZone? = nil) -> String {
+        let calendar = makeCalendar(timeZone ?? trip.timeZone)
         let a = calendar.dateComponents([.year, .month, .day], from: trip.start)
         let b = calendar.dateComponents([.year, .month, .day], from: trip.end)
         let head = String(format: "%04d.%02d.%02d", a.year ?? 0, a.month ?? 0, a.day ?? 0)
@@ -256,6 +382,22 @@ enum LibraryTrips {
             ? String(format: "%02d.%02d", b.month ?? 0, b.day ?? 0)
             : String(format: "%04d.%02d.%02d", b.year ?? 0, b.month ?? 0, b.day ?? 0)
         return "\(head) — \(tail)"
+    }
+
+    /// 何日間の旅か。**暦の日で数える**（撮らなかった中日も入る・旅の時間帯で切る）。
+    /// 一冊の「N日間」（`TripBook.Trip.days`）と同じ数え方
+    static func calendarDays(_ trip: LibraryTrip) -> Int {
+        let calendar = makeCalendar(trip.timeZone)
+        let span = calendar.dateComponents([.day], from: calendar.startOfDay(for: trip.start),
+                                           to: calendar.startOfDay(for: trip.end)).day ?? 0
+        return max(1, span + 1)
+    }
+
+    /// 一覧の行の「3日間・12枚」。**日数は暦の日**（`calendarDays`・2026-10-07 判断）——撮った日の数
+    /// （`days.count`）だと、中日に撮らなかった旅が一冊の「3日間」と違う「2日」になった
+    static func countText(_ trip: LibraryTrip) -> String {
+        let days = TripBook.daysLabel(calendarDays(trip))
+        return "\(days)" + L("・", " · ") + PhotoMapViewModel.photoCountLabel(trip.shots.count)
     }
 
     /// 日の眉ラベル「DAY 1 · 9.12 · 京都市」。地名が引けなければ「DAY 1 · 9.12」

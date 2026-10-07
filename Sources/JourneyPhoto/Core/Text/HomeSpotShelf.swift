@@ -24,7 +24,8 @@ import Foundation
 /// 作例は**スポットごとの本文**（`/app/data/spots/<slug>.json`）にしか無い。索引（1,400件）の分を
 /// 取りに行かず、**段に出す `count` 件だけ**本文を取る（`OfficialSpotService.fetchBody`・
 /// サービスの控えあり）。画面が生きている間は取り直さない（画面の側）。写真は Commons の
-/// **小さい縮小版**（`SpotSample.thumbnail(maxWidth:)`・500px）。本文が取れない・作例の無い場所は、
+/// **小さい縮小版**（`SpotSample.thumbnail(maxWidth:)`・500px）。作例は**いまの季節に撮ったものだけ**（`picture`）。
+/// 本文が取れない・季節の合う作例の無い場所は、
 /// 索引に載っている代表写真（`OfficialSpot.photo`・通信は増えない）を使い、それも無ければ真鍮のピンだけ
 /// （板の注記「写真の無い行は真鍮のピンだけ」）。
 ///
@@ -167,11 +168,20 @@ enum HomeSpotShelf {
         }
     }
 
-    /// 札の写真。**作例が先**（その場所で撮られた写真）、無ければ索引の代表写真、どちらも無ければ nil。
-    /// `broken` は読み込めなかった写真の URL（その1枚を出典ごと隠し、次の候補へ）
-    static func picture(for spot: OfficialSpot, body: SpotBody?, broken: Set<URL> = []) -> Picture? {
+    /// 札の写真。**いまの季節に撮った作例が先**（その場所で、その季節に撮られた写真）、無ければ索引の
+    /// 代表写真、どちらも無ければ nil。`season` は段の季節（`Shelf.season`）。
+    /// `broken` は読み込めなかった写真の URL（その1枚を出典ごと隠し、次の候補へ）。
+    ///
+    /// 2026-10-07 判断: 秋の札に夏・春の作例が出ていた（本番で秋の案内のある191件中114件）。
+    /// 作例は撮影日（`SpotSample.takenAt`）の月で季節を見て、**季節の合う作例だけ**を使う。
+    /// 撮影日の読めない作例も使わない（季節外れかもしれない）。季節の合う作例が無ければ、作例は出さずに
+    /// 代表写真かピンへ落とす（代表写真は撮影日を持たないが、索引の顔として選ばれた1枚なので従来どおり）。
+    /// 南半球のスポット（緯度が負）は撮影月の季節を半年ずらして見る（`SpotSample.TakenAt.season`）。
+    /// 撮影スポットの画面（`OfficialSpotView`）の作例の帯は、季節を問わず全部を出す（ここだけの絞り込み）
+    static func picture(for spot: OfficialSpot, body: SpotBody?, season: String, broken: Set<URL> = []) -> Picture? {
         if let body {
-            for sample in body.samples {
+            let southern = (spot.coords?.lat ?? 0) < 0
+            for sample in body.samples where sample.takenAt?.season(southern: southern) == season {
                 let picture = Picture.sample(sample)
                 if !broken.contains(picture.url) { return picture }
             }

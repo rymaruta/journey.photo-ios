@@ -21,8 +21,10 @@ extension ModerationStore {
     /// 見えなくなる）。`owner` は送る**前に**取った `self.owner`——待っている間に
     /// 人が替わっていたら書かない。`blockAndHide` と同じく、控えに入れてから
     /// 公開一覧へ渡す。画面は `revision` を見て読み直す（ブロック・通報と同じ道）
-    func hideGone(_ photoId: String, for owner: String?, environment: AppEnvironment) async {
-        markGone(photoId, for: owner)
+    /// `deleted` は消した回だけ true（非公開にしただけの回と分ける・`deletedPhotoIds`）
+    func hideGone(_ photoId: String, for owner: String?, environment: AppEnvironment,
+                  deleted: Bool = false) async {
+        markGone(photoId, for: owner, deleted: deleted)
         await environment.gallery.setHidden(snapshot)
     }
 

@@ -90,6 +90,57 @@ enum LocationMatch {
         return false
     }
 
+    /// 字 `text` の中に `name` が**名前として**入っているか（前後が端か行政区分の字）。
+    /// 「東京都」の中の「京都」は ✗、「京都府」の中の「京都」は ○。
+    /// `boundaries` は行政区分の字に加えて切れ目とみなす字（海外の「州」「地方」など）。
+    /// 揃え方（小文字・空白など）は呼び手がそろえてから渡す
+    static func nameIn(_ text: String, _ name: String, boundaries: [String] = []) -> Bool {
+        guard !boundaries.isEmpty else { return nameInToken(Array(text), Array(name)) }
+        let t = Array(text), l = Array(name)
+        guard !l.isEmpty, l.count <= t.count else { return false }
+        let marks = boundaries.map(Array.init)
+        func endsWithMark(_ upTo: Int) -> Bool {
+            marks.contains { m in m.count <= upTo && Array(t[(upTo - m.count)..<upTo]) == m }
+        }
+        func startsWithMark(_ from: Int) -> Bool {
+            marks.contains { m in from + m.count <= t.count && Array(t[from..<(from + m.count)]) == m }
+        }
+        for k in 0...(t.count - l.count) where Array(t[k..<(k + l.count)]) == l {
+            let end = k + l.count
+            let before = k == 0 || adminSuffix.contains(t[k - 1]) || endsWithMark(k)
+            let after = end == t.count || adminSuffix.contains(t[end]) || adminSuffix.contains(l[l.count - 1])
+                || startsWithMark(end)
+            if before && after { return true }
+        }
+        return false
+    }
+
+    /// **地図・撮影地の検索の当て方**（2026-10-07 判断）。字の部分一致（打ちかけの「Toky」・
+    /// 「東京駅」の中の「東京」も当たる。Web の地図 `mapFilter.ts` の `matchesMapQuery` と同じ）だが、
+    /// **行政区分の字で終わる長い名前の途中**に当たったものだけは数えない:
+    ///
+    ///     「東京都中央区」の中の「京都」 ✗（前に「東」があり、語は「区」で終わる）
+    ///     「東京駅」の中の「東京」       ○   「富士山」の中の「富士」 ○
+    ///
+    /// 語の区切りは `tokens` と同じ（「,」「、」空白・括弧）。揃え方は呼び手がそろえてから渡す
+    static func looselyContains(_ text: String, _ needle: String) -> Bool {
+        let t = Array(text), l = Array(needle)
+        guard !l.isEmpty, l.count <= t.count else { return false }
+        let separators = CharacterSet(charactersIn: ",、，()（）").union(.whitespacesAndNewlines)
+        func isSeparator(_ c: Character) -> Bool {
+            c.unicodeScalars.allSatisfy { separators.contains($0) }
+        }
+        for k in 0...(t.count - l.count) where Array(t[k..<(k + l.count)]) == l {
+            // 語の頭から当たっていれば数える
+            if k == 0 || isSeparator(t[k - 1]) { return true }
+            // 語の途中なら、その語が行政区分の字で終わるときだけ外す
+            var end = k + l.count
+            while end < t.count, !isSeparator(t[end]) { end += 1 }
+            if !adminSuffix.contains(t[end - 1]) { return true }
+        }
+        return false
+    }
+
     /// `inner` の語の並びの中に、`outer` の語が**同じ順で続けて**名前として入っているか
     private static func contains(_ inner: String?, _ outer: String?) -> Bool {
         guard normalized(inner).count >= 2, normalized(outer).count >= 2 else { return false }

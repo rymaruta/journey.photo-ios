@@ -60,6 +60,42 @@ final class StorySpotSuggestionTests: XCTestCase {
         XCTAssertEqual(StorySpotLink.spot(location: place.location, coords: sent[0], in: spots)?.slug, "takaya")
     }
 
+    // MARK: - 手で書いた撮影地と写真の座標（2026-10-07 判断）
+
+    /// 🔴 **手で書いた撮影地がスポットを指さなければ、写真の座標を送らない。**
+    /// 自宅の町で撮って「東京」と書いても、ピンが自宅のあたりに立っていた
+    func testHandWrittenPlaceDropsPhotoCoords() {
+        let spots = [spot("takaya", name: "高屋神社", lat: 34.14, lng: 133.64)]
+        var place = StorySpotSuggestion.Place()
+        place.resolve(coords: [takaya, takaya], spots: spots)
+        place.location = "東京"
+        XCTAssertEqual(place.coordsToSend([takaya, takaya], spots: spots), [nil, nil])
+        // 遠いスポットの名前を書いても同じ（写真の位置はそのスポットではない）
+        let far = spot("tower", name: "東京タワー", lat: 35.66, lng: 139.75)
+        place.location = "東京タワー"
+        XCTAssertEqual(place.coordsToSend([takaya], spots: spots + [far]), [nil])
+    }
+
+    /// 候補の札を押した（近いスポット）なら写真の座標のまま。見る画面でスポットへ結ばれる
+    func testPickedSpotKeepsPhotoCoordsAndLink() {
+        let spots = [spot("takaya", name: "高屋神社", lat: 34.14, lng: 133.64)]
+        var place = StorySpotSuggestion.Place()
+        place.resolve(coords: [takaya, nil], spots: spots)
+        place.pick()
+        let sent = place.coordsToSend([takaya, nil], spots: spots)
+        XCTAssertEqual(sent, [takaya, nil])
+        XCTAssertEqual(StorySpotLink.spot(location: place.location, coords: sent[0], in: spots)?.slug, "takaya")
+        // 県を足しても、スポットを指すあいだは導線を残す
+        place.location = "高屋神社, 香川"
+        XCTAssertEqual(place.coordsToSend([takaya, nil], spots: spots), [takaya, nil])
+    }
+
+    /// 撮影地が空なら今までどおり（サーバーは撮影地の無い座標を保存しない）
+    func testEmptyPlaceKeepsCurrentRule() {
+        let place = StorySpotSuggestion.Place()
+        XCTAssertEqual(place.coordsToSend([takaya, nil], spots: []), StoryQueue.coordsToSend([takaya, nil]))
+    }
+
     /// 🔴 候補は**押したときだけ**撮影地に入る。解き直しても撮影地には触らない（黙って付けない）
     func testSuggestionNeverFillsLocationUntilPicked() {
         let shrine = spot("takaya", name: "高屋神社", lat: 34.14, lng: 133.64)
@@ -108,8 +144,10 @@ final class StorySpotSuggestionTests: XCTestCase {
             .components(separatedBy: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
             .joined(separator: "\n")
-        XCTAssertTrue(composer.contains("let coords = StoryQueue.coordsToSend(shots.map(\\.prepared.coords))\n"),
-                      "写真の座標のまま送っていない")
+        XCTAssertTrue(composer.contains("let coords = place.coordsToSend(shotCoords, spots: waitedSpots ?? spotIndex)\n"),
+                      "撮影地の決まりを通さずに座標を送っている")
+        XCTAssertTrue(composer.contains("if waitedSpots == nil, place.needsSpotIndex(shotCoords, spots: spotIndex) {"),
+                      "索引が無いまま決めている")
         XCTAssertTrue(composer.contains("place.resolve(coords: shots.map(\\.prepared.coords), spots: spotIndex)"))
         XCTAssertTrue(composer.contains("} else if let spot = place.chip {"))
         XCTAssertTrue(composer.contains("place.pick()"))

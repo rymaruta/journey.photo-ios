@@ -30,6 +30,30 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertEqual(SearchScope.photos.photos(photos, query: "冬").map(\.id), ["place", "tag", "title"])
     }
 
+    /// 2026-10-07: 検索欄の案内は「題・説明・タグなど」なのに、説明を探していなかった
+    func testAllAndPhotosMatchTheDescription() throws {
+        let photos = try sample() + [
+            try photo(["id": "desc", "title": "朝", "description": ["ja": "雪の残る冬の湖畔で"]]),
+            try photo(["id": "desc2", "description": "ＴＡＫＡＹＡ shrine"]),
+        ]
+        XCTAssertEqual(SearchScope.all.photos(photos, query: "湖畔").map(\.id), ["desc"])
+        XCTAssertEqual(SearchScope.photos.photos(photos, query: "湖畔").map(\.id), ["desc"])
+        XCTAssertEqual(PhotoQuery.match(photos, query: "takaya").map(\.id), ["desc2"])
+        // タグ・撮影地で絞っているときは説明を見ない
+        XCTAssertTrue(SearchScope.tags.photos(photos, query: "湖畔").isEmpty)
+        XCTAssertTrue(SearchScope.places.photos(photos, query: "湖畔").isEmpty)
+    }
+
+    /// 畳んだ字を先に作って渡せる（探す画面は一覧が変わったときだけ作る）。作った字と、その場で作る字は同じ
+    func testPrecomputedSearchTextsAreUsed() throws {
+        let photos = try sample() + [try photo(["id": "desc", "description": "湖畔で"])]
+        let texts = PhotoQuery.searchTexts(photos)
+        XCTAssertEqual(texts["desc"], PhotoQuery.searchText(photos.last!))
+        XCTAssertEqual(SearchScope.all.photos(photos, query: "湖畔", texts: texts).map(\.id), ["desc"])
+        // 渡した字で当てている（その場で作り直していない）
+        XCTAssertEqual(PhotoQuery.match(photos, query: "zzz", texts: ["bare": "zzz"]).map(\.id), ["bare"])
+    }
+
     /// 🔴 **チップの枚数と結果を合わせる。** 枚数は日英の別名をまとめて数える
     /// （冬＝winter）ので、「冬」で探したら winter の写真も出す
     func testTagAliasesMatchLikeTheChipCount() throws {
@@ -44,6 +68,7 @@ final class SearchScopeTests: XCTestCase {
         let photos = try sample()
         XCTAssertEqual(SearchScope.tags.photos(photos, query: "冬").map(\.id), ["tag"])
         XCTAssertEqual(SearchScope.places.photos(photos, query: "冬").map(\.id), ["place"])
+        XCTAssertEqual(SearchScope.places.photos(photos, query: "冬の湖").map(\.id), ["place"])
     }
 
     /// 大文字小文字・全角半角は区別しない（`PhotoQuery.match` と同じ）

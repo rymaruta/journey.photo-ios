@@ -116,6 +116,6 @@ enum NearbyPhotos {
     /// 見出し。**数えた件数だけ**を出す
     static func heading(radiusKm: Double, count: Int) -> String {
         let r = radiusKm < 10 ? String(format: "%.0f", radiusKm) : String(Int(radiusKm))
-        return L("半径約\(r)kmの写真 \(count)枚", "\(count) photos within about \(r) km")
+        return L("半径約\(r)kmの写真 \(count)枚", (count == 1 ? "1 photo" : "\(count) photos") + " within about \(r) km")
     }
 }

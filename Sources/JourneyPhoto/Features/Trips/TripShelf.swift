@@ -32,8 +32,7 @@ struct TripShelf: View {
                         .foregroundStyle(WebTheme.muted)
                 }
                 Spacer(minLength: 0)
-                Text(L("\(TripBook.daysLabel(trip.days)) · \(trip.photos.count)枚",
-                       "\(TripBook.daysLabel(trip.days)) · \(trip.photos.count) photos"))
+                Text("\(TripBook.daysLabel(trip.days)) · \(PhotoMapViewModel.photoCountLabel(trip.photos.count))")
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted)
                     .lineLimit(1)

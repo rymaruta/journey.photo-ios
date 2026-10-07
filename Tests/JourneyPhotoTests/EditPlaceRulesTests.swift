@@ -20,6 +20,18 @@ final class EditPlaceRulesTests: XCTestCase {
         XCTAssertFalse(EditPlaceRules.clearsCoords(openedLocation: "パリ", currentLocation: "", pickedCoords: true))
     }
 
+    /// 🔴 撮影地を書き換えて保存したら座標を消す（2026-10-07 判断）。変えていなければ消さない。
+    /// 候補から選び直したなら消さない（選んだ座標を送る）
+    func testRewritingThePlaceClearsCoords() {
+        XCTAssertTrue(EditPlaceRules.clearsCoords(openedLocation: "観音寺市", currentLocation: "東京", pickedCoords: false))
+        XCTAssertTrue(EditPlaceRules.clearsCoords(openedLocation: nil, currentLocation: "東京", pickedCoords: false))
+        XCTAssertFalse(EditPlaceRules.clearsCoords(openedLocation: "観音寺市", currentLocation: " 観音寺市", pickedCoords: false))
+        XCTAssertFalse(EditPlaceRules.clearsCoords(openedLocation: "観音寺市", currentLocation: "東京", pickedCoords: true))
+        // 差し替えでも、書き換えた撮影地に新しい写真の位置を書かない
+        XCTAssertFalse(EditPlaceRules.keepsCoordsOnReplace(openedLocation: "観音寺市", openedHasCoords: true,
+                                                           currentLocation: "東京"))
+    }
+
     /// ピンのある写真は、差し替えでピンを新しい写真の位置へ動かす
     func testReplaceMovesAnExistingPin() {
         XCTAssertTrue(EditPlaceRules.keepsCoordsOnReplace(openedLocation: "パリ", openedHasCoords: true, currentLocation: "パリ"))

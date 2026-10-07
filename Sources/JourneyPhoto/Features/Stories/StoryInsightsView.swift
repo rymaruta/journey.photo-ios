@@ -108,9 +108,11 @@ struct StoryInsightsView: View {
                 .frame(width: 72, height: 112)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             HStack(spacing: 1) {
-                countCell(L("閲覧", "Views"), value: viewersLoaded ? viewers.count : nil)
-                countCell(L("いいね", "Likes"), value: repliesLoaded ? replies.reactionCount : nil)
-                countCell(L("返信", "Replies"), value: repliesLoaded ? replies.textReplies.count : nil)
+                // 2026-10-07 判断: 数は**ブロックした人を落としてから**数える（下の一覧と同じ `dropped`）。
+                // 落とす前の数だと、一覧に居ない人の分まで数えて合わなかった
+                countCell(L("閲覧", "Views"), value: viewersLoaded ? dropped.viewers(viewers).count : nil)
+                countCell(L("いいね", "Likes"), value: repliesLoaded ? dropped.replies(replies).reactionCount : nil)
+                countCell(L("返信", "Replies"), value: repliesLoaded ? dropped.replies(replies).textReplies.count : nil)
             }
             .background(Color.white.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 16))
