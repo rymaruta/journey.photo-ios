@@ -96,4 +96,19 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertFalse(detail.contains("commentCount: model.commentCount"), "ブロックした人の分を含む数を出している")
         XCTAssertFalse(detail.contains("count: model.commentCount"), "ブロックした人の分を含む数を出している")
     }
+
+    /// ストーリーの反応: 数はブロックした人を落としてから数える（一覧と合わせる・2026-10-07）
+    func testStoryInsightsCountsDropBlockedPeople() throws {
+        let insights = try source("Features/Stories/StoryInsightsView.swift")
+        XCTAssertTrue(insights.contains("viewersLoaded ? dropped.viewers(viewers).count : nil"))
+        XCTAssertTrue(insights.contains("repliesLoaded ? dropped.replies(replies).reactionCount : nil"))
+        XCTAssertTrue(insights.contains("repliesLoaded ? dropped.replies(replies).textReplies.count : nil"))
+        let viewer = try source("Features/Stories/StoryViewerView.swift")
+        XCTAssertEqual(count("viewers = BlockFilter.viewers(loaded, blocked: hidden.blockedUserIds)", in: viewer), 1,
+                       "見た人の数・顔がブロックした人を含む")
+        XCTAssertEqual(count("replies = BlockFilter.replies(loaded, blocked: hidden.blockedUserIds)", in: viewer), 2,
+                       "初めの読み込みと読み直しの両方で返信を落としていない")
+        XCTAssertFalse(viewer.contains("viewers = loaded"))
+        XCTAssertFalse(viewer.contains("replies = loaded"))
+    }
 }

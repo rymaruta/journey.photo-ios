@@ -448,7 +448,8 @@ struct StoryViewerView: View {
                 do {
                     let loaded = try await environment.stories.viewers(id: story.id)
                     guard !Task.isCancelled else { return }
-                    viewers = loaded
+                    // ブロックした人は**読んだときに**落とす（数・顔が反応の画面の一覧と合うように・2026-10-07）
+                    viewers = BlockFilter.viewers(loaded, blocked: hidden.blockedUserIds)
                     viewersLoaded = true
                 } catch {
                     guard !Task.isCancelled else { return }
@@ -459,7 +460,7 @@ struct StoryViewerView: View {
                 do {
                     let loaded = try await environment.stories.replies(id: story.id)
                     guard !Task.isCancelled else { return }
-                    replies = loaded
+                    replies = BlockFilter.replies(loaded, blocked: hidden.blockedUserIds)
                     repliesFailed = false
                     repliesLoaded = true
                 } catch {
@@ -502,7 +503,7 @@ struct StoryViewerView: View {
         }
         // 一覧から開いたページでブロックしたら、その人の返信を外す
         .sheet(isPresented: $showReplies, onDismiss: {
-            replies.removeAll { reply in reply.uid.map { hidden.blockedUserIds.contains($0) } ?? false }
+            replies = BlockFilter.replies(replies, blocked: hidden.blockedUserIds)
         }) {
             repliesSheet
         }
@@ -541,7 +542,11 @@ struct StoryViewerView: View {
         .task(id: "\(story.id)#\(spots.count)") {
             spotLink = (story.id, StorySpotLink.spot(for: story, in: spots))
         }
-        .sheet(isPresented: $showInsights) {
+        // 反応の画面で見た人のページへ行きブロックしたら、閉じたときに数・顔からも外す
+        .sheet(isPresented: $showInsights, onDismiss: {
+            viewers = BlockFilter.viewers(viewers, blocked: hidden.blockedUserIds)
+            replies = BlockFilter.replies(replies, blocked: hidden.blockedUserIds)
+        }) {
             NavigationStack {
                 StoryInsightsView(story: story)
                     .toolbar {
@@ -1896,7 +1901,7 @@ struct StoryViewerView: View {
         do {
             let loaded = try await environment.stories.replies(id: story.id)
             guard current?.id == story.id else { return }
-            replies = loaded
+            replies = BlockFilter.replies(loaded, blocked: hidden.blockedUserIds)
             repliesFailed = false
             repliesLoaded = true
             repliesNotice = nil
