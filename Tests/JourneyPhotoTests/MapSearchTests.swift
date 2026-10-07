@@ -53,6 +53,35 @@ final class MapSearchTests: XCTestCase {
         XCTAssertEqual(ids(MapSearch.photos(photos, filter: .init(query: "宮城"))), ["zao"])
     }
 
+    /// 2026-10-07（レビュー）: 名前として当てる（`photoIsIn`）と、ふつうの部分の名前・打ちかけの語が
+    /// 外れていた。字の部分一致に戻し、長い行政区分の名前の途中（東京都の「京都」）だけを外す
+    func testPartialNamesAndTypingStillMatch() throws {
+        func hit(_ place: String, _ query: String) throws -> Bool {
+            MapSearch.matches(try photo("x", place: place, lat: 35, lng: 139), needle: query)
+        }
+        XCTAssertTrue(try hit("東京駅", "東京"))
+        XCTAssertTrue(try hit("京都駅", "京都"))
+        XCTAssertTrue(try hit("富士山", "富士"))
+        XCTAssertTrue(try hit("嵐山渡月橋", "嵐山"))
+        XCTAssertTrue(try hit("清水寺", "清水"))
+        XCTAssertTrue(try hit("渋谷スクランブル交差点", "渋谷"))
+        XCTAssertTrue(try hit("Kyoto-shi, Japan", "kyoto"))
+        XCTAssertTrue(try hit("フィレンツェ, トスカーナ州, イタリア", "トスカーナ"))
+        XCTAssertTrue(try hit("Tokyo", "Toky"))
+        XCTAssertTrue(try hit("Helsinki, Finland", "helsin"))
+        XCTAssertTrue(try hit("東京都 渋谷区", "渋谷"))
+        XCTAssertTrue(try hit("博多駅, 博多区, 福岡市, 福岡県, 日本", "福岡"))
+        // 長い行政区分の名前の途中は外す
+        XCTAssertFalse(try hit("東京都中央区", "京都"))
+        XCTAssertFalse(try hit("東京都", "京都"))
+        XCTAssertFalse(try hit("銀座, 中央区, 東京都, 日本", "京都"))
+        // 撮影地に都道府県の正式名が無くても、長い市の名前の途中は外す（大阪府の河内長野市は長野ではない）
+        XCTAssertFalse(try hit("滝畑ダム, 河内長野市", "長野"))
+        XCTAssertTrue(try hit("善光寺, 長野市", "長野"))
+        // 打った県名と別の県の撮影地は外す（蔵王キツネ村・大字「福岡八宮」）
+        XCTAssertFalse(try hit("蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本", "福岡"))
+    }
+
     /// スポットの名前・別名は台帳を通してだけ当たる。**台帳が無ければ当たらない**
     /// ⚠️ **スポットの名前・別名では引けなくなった。** 本番が
     /// 「台帳を持たない」と決めた（`photo-gallery/docs/spot-master.md`）ので、

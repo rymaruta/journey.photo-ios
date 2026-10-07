@@ -53,9 +53,10 @@ enum SearchScope: String, CaseIterable, Identifiable {
     ///
     /// - 打っていないとき: タグ／撮影地は**その欄を持つ写真**だけ、写真とすべては全部
     /// - 打っているとき: すべて・写真は `PhotoQuery.match`（題・説明・撮影地・カテゴリ・タグ）、
-    ///   タグはタグだけ、撮影地は撮影地だけに当てる（撮影地は `MapSearch.matches`＝名前として・向きを見て）。
+    ///   タグはタグだけ、撮影地は撮影地だけに当てる（撮影地は地図と同じ `MapSearch.matches`）。
     ///   **大文字小文字と全角半角は区別しない**（`PhotoQuery.match` と同じ）
-    func photos(_ photos: [Photo], query: String) -> [Photo] {
+    /// - `texts`: `PhotoQuery.searchTexts` で作っておいた畳んだ字（無ければその場で作る）
+    func photos(_ photos: [Photo], query: String, texts: [String: String] = [:]) -> [Photo] {
         guard showsPhotos else { return [] }
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let needle = Self.fold(trimmed)
@@ -71,7 +72,7 @@ enum SearchScope: String, CaseIterable, Identifiable {
             return []
         case .all, .photos:
             guard !trimmed.isEmpty else { return photos }
-            let matched = Set(PhotoQuery.match(photos, query: trimmed).map(\.id))
+            let matched = Set(PhotoQuery.match(photos, query: trimmed, texts: texts).map(\.id))
             return photos.filter { matched.contains($0.id) || hasAlias($0) }
         case .tags:
             return photos.filter { photo in
@@ -79,8 +80,8 @@ enum SearchScope: String, CaseIterable, Identifiable {
                 return needle.isEmpty ? !tags.isEmpty : (tags.contains { $0.contains(needle) } || hasAlias(photo))
             }
         case .places:
-            // 撮影地は名前として・向きを見て当てる（地図の `MapSearch.matches` と同じ。
-            // 2026-10-07: 字の部分一致だと「福岡」が宮城県の「福岡八宮」に当たっていた）
+            // 撮影地は地図の `MapSearch.matches` と同じ当て方（2026-10-07: 字の部分一致だと
+            // 「福岡」が宮城県の「福岡八宮」に、「京都」が「東京都」に当たっていた）
             return photos.filter { photo in
                 let place = Self.fold(photo.location ?? "")
                 return needle.isEmpty ? !place.isEmpty : MapSearch.matches(photo, needle: needle)

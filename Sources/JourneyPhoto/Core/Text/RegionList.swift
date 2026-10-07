@@ -104,6 +104,13 @@ enum RegionList {
         "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県",
     ]
 
+    /// 打った語が都道府県の名前か（「福岡」「福岡県」→「福岡県」）。違えば nil
+    static func prefecture(named query: String) -> String? {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.count >= 2 else { return nil }
+        return prefectures.first { $0 == q || ($0.count == q.count + 1 && $0.hasPrefix(q)) }
+    }
+
     /// 撮影地の文字から都道府県。**正式名だけ**を見る（「京都」だけでは東京都と区別できない）。
     /// 複数あれば文字の先に出てくる方
     static func prefecture(inText text: String?) -> String? {

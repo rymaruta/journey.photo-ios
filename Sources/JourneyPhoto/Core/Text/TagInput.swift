@@ -149,21 +149,32 @@ enum PhotoQuery {
     /// 大文字小文字と全角半角は区別しない。
     ///
     /// 2026-10-07 判断: **説明（`paragraphs`）も見る。** 検索欄の案内は「題・説明・タグなど」
-    /// （`SearchScope.prompt`・板 Search の欄の字）なのに、説明を探していなかった
-    static func match(_ photos: [Photo], query: String) -> [Photo] {
+    /// （`SearchScope.prompt`・板 Search の欄の字）なのに、説明を探していなかった。
+    /// 説明は長いので、探す画面は一覧が変わったときに `searchTexts` で畳んだ字を作っておき、
+    /// `texts` に渡す（描くたびに全写真の説明を畳み直さない）。無い写真はその場で作る
+    static func match(_ photos: [Photo], query: String, texts: [String: String] = [:]) -> [Photo] {
         let needle = query.folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
         guard !needle.isEmpty else { return [] }
         return photos.filter { photo in
-            let haystack = [
-                photo.displayTitle,
-                photo.paragraphs.joined(separator: " "),
-                photo.location ?? "",
-                photo.category ?? "",
-                (photo.tags ?? []).joined(separator: " "),
-            ].joined(separator: " ")
-                .folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
-            return haystack.contains(needle)
+            (texts[photo.id] ?? searchText(photo)).contains(needle)
         }
+    }
+
+    /// `match` が当てる字（畳んだもの）
+    static func searchText(_ photo: Photo) -> String {
+        [
+            photo.displayTitle,
+            photo.paragraphs.joined(separator: " "),
+            photo.location ?? "",
+            photo.category ?? "",
+            (photo.tags ?? []).joined(separator: " "),
+        ].joined(separator: " ")
+            .folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
+    }
+
+    /// 写真 id → `searchText`。一覧が変わったときに1回だけ作る
+    static func searchTexts(_ photos: [Photo]) -> [String: String] {
+        Dictionary(photos.map { ($0.id, searchText($0)) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// タグ・撮影地・カテゴリでの絞り込み。

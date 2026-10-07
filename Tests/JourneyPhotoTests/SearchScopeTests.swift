@@ -44,6 +44,16 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertTrue(SearchScope.places.photos(photos, query: "湖畔").isEmpty)
     }
 
+    /// 畳んだ字を先に作って渡せる（探す画面は一覧が変わったときだけ作る）。作った字と、その場で作る字は同じ
+    func testPrecomputedSearchTextsAreUsed() throws {
+        let photos = try sample() + [try photo(["id": "desc", "description": "湖畔で"])]
+        let texts = PhotoQuery.searchTexts(photos)
+        XCTAssertEqual(texts["desc"], PhotoQuery.searchText(photos.last!))
+        XCTAssertEqual(SearchScope.all.photos(photos, query: "湖畔", texts: texts).map(\.id), ["desc"])
+        // 渡した字で当てている（その場で作り直していない）
+        XCTAssertEqual(PhotoQuery.match(photos, query: "zzz", texts: ["bare": "zzz"]).map(\.id), ["bare"])
+    }
+
     /// 🔴 **チップの枚数と結果を合わせる。** 枚数は日英の別名をまとめて数える
     /// （冬＝winter）ので、「冬」で探したら winter の写真も出す
     func testTagAliasesMatchLikeTheChipCount() throws {
@@ -57,9 +67,8 @@ final class SearchScopeTests: XCTestCase {
     func testTagsAndPlacesLookOnlyAtTheirField() throws {
         let photos = try sample()
         XCTAssertEqual(SearchScope.tags.photos(photos, query: "冬").map(\.id), ["tag"])
+        XCTAssertEqual(SearchScope.places.photos(photos, query: "冬").map(\.id), ["place"])
         XCTAssertEqual(SearchScope.places.photos(photos, query: "冬の湖").map(\.id), ["place"])
-        // 撮影地は名前として当てる（2026-10-07・`MapSearch.matches`）。名前の欠片の1字では当てない
-        XCTAssertTrue(SearchScope.places.photos(photos, query: "冬").isEmpty)
     }
 
     /// 大文字小文字・全角半角は区別しない（`PhotoQuery.match` と同じ）

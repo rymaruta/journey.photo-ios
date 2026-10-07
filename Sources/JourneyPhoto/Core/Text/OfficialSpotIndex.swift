@@ -23,7 +23,7 @@ enum OfficialSpotIndex {
         let ranked = spots.enumerated()
             .compactMap { i, spot -> (OfficialSpot, Int, Int)? in
                 var rank = rankByNames([spot.name, spot.nameEn, spot.reading] + (aliases[spot.slug] ?? []), needle)
-                if rank < 0, regionMatches(spot, needle) { rank = 3 }
+                if rank < 0, regionMatches(spot, query: query) { rank = 3 }
                 return rank < 0 ? nil : (spot, rank, i)
             }
             .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.2 < $1.2 }
@@ -56,23 +56,32 @@ enum OfficialSpotIndex {
     /// 地域（国・都道府県・市区町村）で当たるか。国は日本の外の行だけに載る——
     /// 「日本」は当てない（索引に載ると「本」で国内のほぼ全部が当たる）。
     ///
-    /// 🔴 2026-10-07 判断: **県名・市区町村名を別々に、名前として**見る
-    /// （`LocationMatch.nameIn`・撮影地の当て方と同じ「行政区分の字で切れる」規則）。
-    /// 以前は Web の `regionLabel` のように「国 県 市」をつないだ字に部分一致していて、
-    /// 「京都」で東京都のスポットが22件混ざった（「東**京都**千代田区」）。
-    /// 「香川県 観音寺」のように県と市を続けて打つ人のために、県＋市をつないだ字にも
-    /// 同じ規則で当てる（「東京都千代田区」の「京都」は前が「東」なので当たらない）
-    static func regionMatches(_ spot: OfficialSpot, _ needle: String) -> Bool {
+    /// 🔴 2026-10-07 判断: 以前は Web の `regionLabel` のように「国 県 市」をつないだ字に
+    /// 部分一致していて、「京都」で東京都のスポットが22件混ざった（「東**京都**千代田区」）。
+    /// いまは国・県・市区町村（と県＋市をつないだ字）を**別々に**見て、次のどれかなら当てる:
+    ///  - その欄が語で**始まる**（「神奈」→ 神奈川県・「トスカーナ」→ トスカーナ州）
+    ///  - 語が欄の中に**名前として**入っている（`LocationMatch.nameIn`。前後が端・行政区分の字・
+    ///    海外の「州」「地方」）——「箱根」→ 足柄下郡箱根町、「東山」→ 京都市東山区
+    ///
+    /// 空白で区切った語（「神奈川 箱根」）は**どの語もどれかの欄に**当たること。
+    /// 区切らずに続けた「東京都千代田区」は県＋市をつないだ字に当てる
+    static func regionMatches(_ spot: OfficialSpot, query: String) -> Bool {
         guard let r = spot.region else { return false }
         let country = r.country == "日本" ? nil : r.country
         let pair: String = [r.prefecture, r.city].compactMap { $0 }.joined()
         let whole: String = [country, r.prefecture, r.city].compactMap { $0 }.joined()
-        let names: [String?] = [country, r.prefecture, r.city, pair, whole]
-        return names.contains { name in
-            let n = spotName(name)
-            return !n.isEmpty && LocationMatch.nameIn(n, needle)
+        let fields = [country, r.prefecture, r.city, pair, whole].map(spotName).filter { !$0.isEmpty }
+        func hit(_ word: String) -> Bool {
+            !word.isEmpty && fields.contains { $0.hasPrefix(word) || LocationMatch.nameIn($0, word, boundaries: regionMarks) }
         }
+        let words = query.components(separatedBy: CharacterSet(charactersIn: "、,，").union(.whitespacesAndNewlines))
+            .map(spotName).filter { !$0.isEmpty }
+        if words.count > 1, words.allSatisfy(hit) { return true }
+        return hit(spotName(query))
     }
+
+    /// 海外の地域名の切れ目（「アンダルシア州」「ブルターニュ地方」）
+    private static let regionMarks = ["州", "地方"]
 
     /// 写真の場所の候補（`PlaceSpotSuggestions`）が使う別名の当て方（`MapSearch.fold` の揃え方のまま）
     static func aliasMatches(_ aliases: [String]?, needle: String) -> Bool {

@@ -1021,10 +1021,14 @@ final class SearchViewModel: ObservableObject {
         tagChips = tagCounts.map { (tag: $0.tag, count: filtered(query: $0.tag).count) }
     }
 
+    /// 写真 id → 探すための畳んだ字（題・説明・撮影地・カテゴリ・タグ）。一覧が変わったときだけ作る
+    /// ——`shown` は描くたびに何度も読まれるので、そのたびに全写真の説明を畳み直さない（2026-10-07）
+    private var searchTexts: [String: String] = [:]
+
     /// `shown` の絞り方（並べ替えの前まで）
     private func filtered(query: String) -> [Photo] {
         // 季節・時間帯はカテゴリと同じく、語と種類で絞った上にかける（「秋の京都」）
-        let base = ShootingTime.photos(scope.photos(allPhotos, query: query), filter: timeFilter)
+        let base = ShootingTime.photos(scope.photos(allPhotos, query: query, texts: searchTexts), filter: timeFilter)
         guard let category else { return base }
         let key = CategoryChoices.key(category)
         return base.filter { CategoryChoices.key($0.category ?? "") == key }
@@ -1179,6 +1183,8 @@ final class SearchViewModel: ObservableObject {
     /// **人が替わって一覧を空にしたときも呼ぶ**——呼ばないと、読み直しが返るまで
     /// 前の人の一覧（限定公開を含む）から作ったチップ・季節の写真・機材が残っていた
     private func rebuildDerived() {
+        // 先に作る（下の `refreshTagChips` も `filtered` を通る）
+        searchTexts = PhotoQuery.searchTexts(allPhotos)
         popularTags = PhotoQuery.topTags(in: allPhotos)
         tagCounts = PhotoQuery.tagCounts(in: allPhotos)
         refreshTagChips()
