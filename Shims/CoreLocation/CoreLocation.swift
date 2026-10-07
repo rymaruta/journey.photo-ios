@@ -57,10 +57,11 @@ open class CLLocationManager: NSObject {
     public func requestLocation() {}
 }
 
-/// 地名（住所の部品）。使うのは市区町村と都道府県だけ
+/// 地名（住所の部品）。使うのは市区町村と都道府県と、その土地の時間帯
 open class CLPlacemark: NSObject {
     open var locality: String? { nil }
     open var administrativeArea: String? { nil }
+    open var timeZone: TimeZone? { nil }
 }
 
 /// 座標から地名を引く（Apple の地図に問い合わせる）。模型は何も返さない

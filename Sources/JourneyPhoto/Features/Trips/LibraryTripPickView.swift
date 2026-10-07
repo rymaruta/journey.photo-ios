@@ -10,6 +10,7 @@ import SwiftUI
 /// （写真のある画面なので白）。**原本は持ち続けない**——読んだらすぐ縮めて、原本は捨てる
 struct LibraryTripPickView: View {
 
+    /// 開いたときの旅。**画面ではモデルの今の旅（`current`）を使う**
     let trip: LibraryTrip
     /// 画面の題（旅の地名、無ければ期間）
     let title: String
@@ -43,11 +44,18 @@ struct LibraryTripPickView: View {
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 4)
 
+    /// モデルの今の旅（同じ id）。**地名を引いて時間帯が分かると、モデルが日を切り直す**
+    /// （`LibraryTrips.applyingZones`）。開いたときの値のままだと、日の段も撮影日を付ける
+    /// 時間帯（`fillingTakenDate`）も目安のまま残り、外れた撮影日がサーバーに書かれた（2026-10-07）
+    private var current: LibraryTrip {
+        LibraryTrips.current(trip, in: model.trips)
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 header
-                ForEach(trip.days) { day in
+                ForEach(current.days) { day in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(LibraryTrips.dayLabel(day, place: model.name(for: day.center)))
                             .jpEyebrow()
@@ -71,7 +79,8 @@ struct LibraryTripPickView: View {
         // （`TripImportHandoff.received`）
         .onDisappear { stopLoading() }
         // 日ごとの地名（引けなければ日付だけ）
-        .task { await model.resolveNames(trip.days.map(\.center)) }
+        // **旅の代表点を先に引く**（時間帯は代表点の地名から決める・`applyingZones`）
+        .task { await model.resolveNames([current.center] + current.days.map(\.center)) }
         .alert(L("\(failedCount)枚は読み込めませんでした", "\(failedCount) photo(s) couldn't be loaded"),
                isPresented: $showFailed) {
             if !loadedPhotos.isEmpty {
@@ -92,7 +101,7 @@ struct LibraryTripPickView: View {
                 .font(JPFont.cardTitle)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
-            Text("\(LibraryTrips.periodText(trip)) · \(L("\(trip.shots.count)枚", "\(trip.shots.count) photos"))")
+            Text("\(LibraryTrips.periodText(current)) · \(L("\(current.shots.count)枚", "\(current.shots.count) photos"))")
                 .font(JPFont.mono(12))
                 .foregroundStyle(WebTheme.muted2)
             Text(L("日ごとにばらけるよう選んであります。押すと選ぶ・外すが切り替わります",
@@ -208,10 +217,17 @@ struct LibraryTripPickView: View {
     /// 🔴 **原本を溜めない。** 以前は原本（1枚 数MB〜数十MB の HEIC・JPEG）を10枚まとめて読み、
     /// 投稿画面へ渡して、画面を閉じるまで持ち続けていた。整えるのは画面の処理の外で
     private func load() async {
-        let order = trip.shots.map(\.id).filter { selected.contains($0) }
+        // 撮影日を付ける時間帯を決めるため、旅の代表点の地名（時間帯）を先に引く。
+        // 引けている・引けなかった直後なら待たない（`resolveNames` が飛ばす）
+        await model.resolveNames([current.center])
+        if Task.isCancelled { return }
+        let live = current
+        let order = live.shots.filter { selected.contains($0.id) }
+        let zone = live.timeZone
         var photos: [ImagePreparer.Prepared] = []
         var failed: [String] = []
-        for id in order {
+        for shot in order {
+            let id = shot.id
             if Task.isCancelled { return }
             guard let data = await PhotoLibrary.imageData(for: id) else {
                 failed.append(id)
@@ -219,7 +235,10 @@ struct LibraryTripPickView: View {
             }
             if Task.isCancelled { return }
             let prepared = try? await Task.detached(priority: .userInitiated) {
-                try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true)
+                // EXIF の撮影日時が無ければ写真ライブラリの撮った時刻で付ける（一冊から落ちない）
+                ImagePreparer.fillingTakenDate(
+                    try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true),
+                    takenAt: shot.date, timeZone: zone)
             }.value
             if let prepared {
                 photos.append(prepared)

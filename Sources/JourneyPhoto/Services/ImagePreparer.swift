@@ -147,11 +147,7 @@ enum ImagePreparer {
         var exif = readExif(from: metadata)
         var takenOn = readTakenOn(from: metadata)
         if exif.dateTimeOriginal == nil || takenOn == nil {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = timeZone
-            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-            let stamp = formatter.string(from: capturedAt)
+            let stamp = wallClock(capturedAt, timeZone: timeZone)
             exif.dateTimeOriginal = exif.dateTimeOriginal ?? stamp
             takenOn = takenOn ?? String(stamp.prefix(10))
         }
@@ -166,6 +162,50 @@ enum ImagePreparer {
             // サムネイル（画素だけ・撮影情報なし）は付け直す前のものをそのまま使う
             thumbnail: prepared.thumbnail
         )
+    }
+
+    /// 撮影日時（EXIF）の無い1枚に、分かっている撮った時刻で撮影日を付ける。
+    /// **カメラの1枚（`applyingCaptureInfo`）と同じ形**——撮影日時は `timeZone` の壁時計で書く。
+    ///
+    /// **2026-10-07 判断: 「旅の写真から」で選んだ写真は `PHAsset.creationDate` を使う。**
+    /// ほかのアプリで保存した画像（EXIF の撮影日時が無い）は撮影日が空のまま上がり、
+    /// 一冊（撮影日のある写真だけ・`TripBook.hasTakenDay`）から落ちていた。2枚選んだのに
+    /// 1枚しか数えられず一冊にならないこともあった。時間帯は選ぶ画面の日を切ったもの
+    /// （`LibraryTrip.timeZone`）——画面で見た日と同じ日に入る。
+    /// 撮影日が既にある写真はそのまま。ほかの撮影情報（機種など）は残す
+    static func fillingTakenDate(_ prepared: Prepared, takenAt: Date, timeZone: TimeZone) -> Prepared {
+        guard prepared.takenOn == nil else { return prepared }
+        var exif = prepared.exif ?? ExifFields()
+        let takenOn: String
+        if let original = exif.dateTimeOriginal,
+           original.range(of: #"^\d{4}-\d{2}-\d{2}"#, options: .regularExpression) != nil {
+            // 撮影日時は既にある（保存する形で書かれていて `takenOn` が読めなかった）——
+            // **その日を撮影日にする**。写真ライブラリの時刻で付けると、2つが食い違いうる
+            takenOn = String(original.prefix(10))
+        } else {
+            let stamp = wallClock(takenAt, timeZone: timeZone)
+            exif.dateTimeOriginal = exif.dateTimeOriginal ?? stamp
+            takenOn = String(stamp.prefix(10))
+        }
+        return Prepared(
+            data: prepared.data,
+            fileName: prepared.fileName,
+            contentType: prepared.contentType,
+            exif: exif,
+            coords: prepared.coords,
+            takenOn: takenOn,
+            dominantColor: prepared.dominantColor,
+            thumbnail: prepared.thumbnail
+        )
+    }
+
+    /// 撮った時刻を、その時間帯の壁時計で保存する形（`2026-09-13T08:21:05`）にする
+    private static func wallClock(_ date: Date, timeZone: TimeZone) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return formatter.string(from: date)
     }
 
     // MARK: - 変換
