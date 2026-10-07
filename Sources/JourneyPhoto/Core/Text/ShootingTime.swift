@@ -26,8 +26,10 @@ import Foundation
 ///  - 季節: 季節の案内（`OfficialSpot.seasons`）にその季節の文がある公開済みのスポット
 ///  - 時間帯: 時間帯の案内（`OfficialSpot.times`）に当たる時間帯の文があるスポット。
 ///    台帳の6つを4つに寄せる: 夜明け・朝 → 朝、日中 → 日中、夕方の斜光・日没後 → 夕、夜 → 夜。
-///    🔴 **いまの索引は時間帯を載せていない**（`OfficialSpot.timeOfDayGuide` の注記）ので、
-///    時間帯で絞ると撮影地は0件になり、節は出ない
+///    索引は時間帯の案内を載せている（2026-10-07 の実データで公開済み 1079件中 315件）。
+///    案内の無い撮影地は時間帯で絞ると出ない
+///  - 見出しは「冬の**案内がある**撮影スポット」（`Filter.spotsHeading`）——案内が「冬季は通行止め」
+///    のこともあるので、「冬に撮れる」とは言わない
 enum ShootingTime {
 
     // MARK: - 季節
@@ -159,6 +161,20 @@ enum ShootingTime {
             guard !parts.isEmpty else { return "" }
             let english = parts.map { $0.lowercased() }.joined(separator: " ")
             return L(parts.joined(separator: "・") + "の", english.prefix(1).uppercased() + english.dropFirst() + " ")
+        }
+
+        /// 撮影スポットの節の見出し（「冬の案内がある撮影スポット（3か所）」）。
+        ///
+        /// 2026-10-07 判断: 以前は「冬の撮影スポット」で、冬の案内が「冬季は通行止め」
+        /// 「冬は休業」のようなスポット（実データで 192件中少なくとも5件）も並び、
+        /// 冬に撮りに行ける所と読めた。絞っているのは**その季節・時間帯の案内があるか**なので、
+        /// 見出しもそう言う（いちばん小さい直し。案内の中身は読み分けない）
+        func spotsHeading(count: Int) -> String {
+            let parts = [season?.label, dayPart?.phrase].compactMap { $0 }
+            guard !parts.isEmpty else { return L("撮影スポット（\(count)か所）", "Shooting spots (\(count))") }
+            let english = parts.map { $0.lowercased() }.joined(separator: " ")
+            return L("\(prefix)案内がある撮影スポット（\(count)か所）",
+                     "Shooting spots with \(english) notes (\(count))")
         }
 
         /// 絞り方の注記（どう分けたかを隠さない）。絞っていなければ nil

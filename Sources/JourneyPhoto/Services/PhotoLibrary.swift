@@ -173,19 +173,21 @@ enum PhotoLibrary {
         }
     }
 
-    /// 地名（市区町村、無ければ都道府県）。旅の名前と日ごとの見出しに使う。
+    /// 地名（市区町村、無ければ都道府県）と、その土地の時間帯。地名は旅の名前と日ごとの見出しに、
+    /// 時間帯は旅の日を撮った土地の暦で切るのに使う（`LibraryTrips.recut`・2026-10-07）。
     ///
     /// **座標は約1km に丸めてから渡す**（`LibraryTrips.roundedForLookup`）——Apple の地図に
-    /// 細かい位置を渡さない。引けなければ nil（画面は日付だけを出す）
-    static func placeName(near coords: Photo.Coords) async -> String? {
+    /// 細かい位置を渡さない。引けなければどちらも nil（画面は日付だけを出す）。
+    /// **1回の問い合わせで両方を取る**（短い間に何度も呼ぶと断られる）
+    static func place(near coords: Photo.Coords) async -> (name: String?, timeZone: TimeZone?) {
         let rounded = LibraryTrips.roundedForLookup(coords)
         let location = CLLocation(latitude: rounded.lat, longitude: rounded.lng)
         guard let marks = try? await CLGeocoder().reverseGeocodeLocation(location),
-              let mark = marks.first else { return nil }
-        for name in [mark.locality, mark.administrativeArea] {
-            if let name, !name.trimmingCharacters(in: .whitespaces).isEmpty { return name }
-        }
-        return nil
+              let mark = marks.first else { return (nil, nil) }
+        let name = [mark.locality, mark.administrativeArea]
+            .compactMap { $0 }
+            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        return (name, mark.timeZone)
     }
 }
 

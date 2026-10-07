@@ -139,9 +139,22 @@ final class RegionListTests: XCTestCase {
         let odd = try spot("odd", prefecture: "不明", lat: 27.09, lng: 142.19)
         let withSpot = RegionList.sections(photos: [], spots: [odd], from: nil)
         XCTAssertEqual(withSpot.map(\.key), [.unknown])
-        XCTAssertEqual(withSpot[0].title, L("場所が分からないもの", "Without a place"))
+        XCTAssertEqual(withSpot[0].title, L("県・国に分けられないもの", "Not sorted by prefecture or country"))
         let photoOnly = RegionList.sections(photos: [try photo("p")], spots: [], from: nil)
-        XCTAssertEqual(photoOnly[0].title, L("場所が分からない写真", "Photos without a place"))
+        XCTAssertEqual(photoOnly[0].title, L("県・国に分けられない写真", "Photos not sorted by prefecture or country"))
+    }
+
+    /// 2026-10-07: 撮影地に「福岡」「土谷棚田」と書いてある写真（県の正式名も座標も無い）が
+    /// 「場所が分からない写真」の段に入り、場所が書いてあるのに「分からない」と言っていた。
+    /// 段の名前は「県・国に分けられない写真」
+    func testUnsortedSectionDoesNotSayThePlaceIsUnknown() throws {
+        let sections = RegionList.sections(
+            photos: [try photo("f", location: "福岡"), try photo("t", location: "土谷棚田")], spots: [], from: nil)
+        XCTAssertEqual(sections.map(\.key), [.unknown])
+        XCTAssertEqual(sections[0].photos.map(\.id), ["f", "t"])
+        XCTAssertFalse(sections[0].title.contains("場所が分からない"), sections[0].title)
+        XCTAssertFalse(sections[0].title.contains("without a place"), sections[0].title)
+        XCTAssertEqual(sections[0].title, L("県・国に分けられない写真", "Photos not sorted by prefecture or country"))
     }
 
     // MARK: - 並び
@@ -198,7 +211,8 @@ final class RegionListTests: XCTestCase {
             try photo("c", location: "北海道", category: "city"),
         ]
         let byQuery = RegionList.filter(photos: photos, spots: try spots(), query: "京都", category: nil)
-        XCTAssertEqual(byQuery.photos.map(\.id), ["a", "b"], "東京都も『京都』を含む（地図の検索と同じゆるい当て方）")
+        // 2026-10-07: 撮影地は名前として当てる（`LocationMatch.photoIsIn`）。東京都は『京都』に当たらない
+        XCTAssertEqual(byQuery.photos.map(\.id), ["b"], "東京都が『京都』に当たっている")
         XCTAssertTrue(byQuery.spots.map(\.slug).contains("kinkakuji"))
         let byCategory = RegionList.filter(photos: photos, spots: try spots(), query: "", category: "city")
         XCTAssertEqual(byCategory.photos.map(\.id), ["b", "c"])

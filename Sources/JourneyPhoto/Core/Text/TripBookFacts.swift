@@ -197,7 +197,7 @@ extension TripBook {
     /// ものでサイトに対応するページが無い（サイトの `/trips` は旅行プランの
     /// 画面で別物）。推測で URL を作ると**開けないリンクを配る**
     static func shareText(of trip: Trip) -> String {
-        let count = L("\(trip.photos.count)枚", "\(trip.photos.count) photos")
+        let count = PhotoMapViewModel.photoCountLabel(trip.photos.count)
         return "\(title(of: trip))\n\(dateRange(from: trip.start, to: trip.end)) · \(daysLabel(trip.days)) · \(count)"
     }
 

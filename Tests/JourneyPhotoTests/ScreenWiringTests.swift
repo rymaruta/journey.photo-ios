@@ -85,4 +85,69 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertTrue(composer.contains("if let blocked = Self.draftSaveBlockedNote(loading: loadingPicks > 0) {"),
                       "読み込み中の下書き保存が黙って戻る")
     }
+
+    /// 写真詳細: 吹き出しの数と読み上げは見出しと同じ `visibleCommentCount`（ブロックした人の分を引く・2026-10-07）
+    func testPhotoDetailBubbleCountMatchesHeading() throws {
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(detail.contains(#"actionLabel(systemImage: "bubble.right", count: visibleCommentCount)"#),
+                      "吹き出しの数がサーバーの総数のまま（見出しと食い違う）")
+        XCTAssertEqual(count("CommentsHeading.label(commentCount: visibleCommentCount)", in: detail), 2,
+                       "吹き出しの読み上げと見出しが同じ数を読まない")
+        XCTAssertFalse(detail.contains("commentCount: model.commentCount"), "ブロックした人の分を含む数を出している")
+        XCTAssertFalse(detail.contains("count: model.commentCount"), "ブロックした人の分を含む数を出している")
+    }
+
+    /// ストーリーの反応: 数はブロックした人を落としてから数える（一覧と合わせる・2026-10-07）
+    func testStoryInsightsCountsDropBlockedPeople() throws {
+        let insights = try source("Features/Stories/StoryInsightsView.swift")
+        XCTAssertTrue(insights.contains("viewersLoaded ? dropped.viewers(viewers).count : nil"))
+        XCTAssertTrue(insights.contains("repliesLoaded ? dropped.replies(replies).reactionCount : nil"))
+        XCTAssertTrue(insights.contains("repliesLoaded ? dropped.replies(replies).textReplies.count : nil"))
+        let viewer = try source("Features/Stories/StoryViewerView.swift")
+        XCTAssertEqual(count("viewers = BlockFilter.viewers(loaded, blocked: hidden.blockedUserIds)", in: viewer), 1,
+                       "見た人の数・顔がブロックした人を含む")
+        XCTAssertEqual(count("replies = BlockFilter.replies(loaded, blocked: hidden.blockedUserIds)", in: viewer), 2,
+                       "初めの読み込みと読み直しの両方で返信を落としていない")
+        XCTAssertFalse(viewer.contains("viewers = loaded"))
+        XCTAssertFalse(viewer.contains("replies = loaded"))
+    }
+
+    /// ストーリーの返信の一覧・反応の一覧を閉じたら、**見た人と返信の両方**からブロックした人を落とす。
+    /// 返信の一覧でブロックしても見た人を落とさず、「見た人 N」に数えたままだった（2026-10-07 のレビュー）
+    func testStorySheetsDropBlockedViewersAndRepliesOnDismiss() throws {
+        let viewer = try source("Features/Stories/StoryViewerView.swift")
+        for sheet in ["showReplies", "showInsights"] {
+            let head = ".sheet(isPresented: $\(sheet), onDismiss: {"
+            let parts = viewer.components(separatedBy: head)
+            XCTAssertEqual(parts.count, 2, "\(sheet) のシートが見つからない（書き方を変えたらここも直す）")
+            guard parts.count == 2, let end = parts[1].range(of: "}) {") else { continue }
+            let dismiss = String(parts[1][..<end.lowerBound])
+            XCTAssertTrue(dismiss.contains("viewers = BlockFilter.viewers(viewers, blocked: hidden.blockedUserIds)"),
+                          "\(sheet) を閉じたとき、ブロックした人が「見た人」に残る")
+            XCTAssertTrue(dismiss.contains("replies = BlockFilter.replies(replies, blocked: hidden.blockedUserIds)"),
+                          "\(sheet) を閉じたとき、ブロックした人の返信が残る")
+        }
+    }
+
+    /// 写真詳細の撮影地の行: 開いた写真を一覧に渡す。共有は並ぶ写真で URL を決める（2026-10-07）
+    func testPlaceRowPassesOpenedPhotoAndShareSeesPhotos() throws {
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(detail.contains("TagPhotosView(kind: .location(location), opened: shown)"),
+                      "下書き・限定写真から開くと空の一覧になる")
+        let tag = try source("Features/Gallery/TagPhotosView.swift")
+        XCTAssertTrue(tag.contains("CollectionScreen.withOpened(PhotoQuery.photos(all, in: kind), opened: opened, kind: kind)"))
+        let screen = try source("Features/Gallery/CollectionPhotosScreen.swift")
+        XCTAssertTrue(screen.contains("photos: shown)"), "共有の URL を並ぶ写真で決めていない")
+    }
+
+    /// 英語の枚数は単数形を持つ `photoCountLabel` を通す（「1 photos」と出ていた・2026-10-07）
+    func testPhotoCountsUseSingularAwareLabel() throws {
+        for path in ["Core/Text/CollectionScreen.swift", "Features/Gallery/HomeTopCardView.swift",
+                     "Core/Text/TripBookFacts.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains(".photoCountLabel("), path)
+            XCTAssertFalse(text.contains("count) photos\")"), "\(path) が「1 photos」と出す")
+            XCTAssertFalse(text.contains("count)枚\", \"\\("), "\(path) が単数形を持たない枚数を組んでいる")
+        }
+    }
 }

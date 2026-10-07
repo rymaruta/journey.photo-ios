@@ -219,7 +219,7 @@ struct HomeTopCardView: View {
                 card(eyebrow: "TRIP BOOK", eyebrowLabel: L("旅の一冊", "Trip book"),
                      title: L("旅の一冊ができました", "Your trip book is ready"),
                      line: "\(TripBook.title(of: trip)) · \(TripBook.daysLabel(trip.days)) · "
-                        + L("\(trip.photos.count)枚", "\(trip.photos.count) photos"),
+                        + PhotoMapViewModel.photoCountLabel(trip.photos.count),
                      detail: nil,
                      backdrop: trip.cover, inCarousel: inCarousel)
             }

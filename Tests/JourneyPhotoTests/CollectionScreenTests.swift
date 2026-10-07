@@ -103,8 +103,9 @@ final class CollectionScreenTests: XCTestCase {
 
     /// 撮影地は Web の集約ページを指す（`LocationSlug` の綴り）
     func testShareOfLocationPointsToItsPage() throws {
+        let lead = try photo(["id": "p1"])
         let text = CollectionScreen.shareText(title: "パリ", count: 3, kind: .location("パリ, フランス"),
-                                              lead: try photo(["id": "p1"]))
+                                              lead: lead, photos: [lead])
         let lines = text.split(separator: "\n").map(String.init)
         XCTAssertEqual(lines.first, "パリ · \(L("3枚", "3 photos"))")
         XCTAssertEqual(lines.last.flatMap { URL(string: $0) }?.path, "/location/パリ,-フランス")
@@ -112,15 +113,47 @@ final class CollectionScreenTests: XCTestCase {
 
     /// **タグは綴りを当て推量しない**（Web には別名の表がある）。先頭の写真のページを添える
     func testShareOfTagFallsBackToLeadPhoto() throws {
+        let lead = try photo(["id": "p1"])
         let text = CollectionScreen.shareText(title: "#秋", count: 2, kind: .tag("秋"),
-                                              lead: try photo(["id": "p1"]))
+                                              lead: lead, photos: [lead])
         XCTAssertTrue(text.hasSuffix("https://site.example.test/photo/p1"), text)
-        XCTAssertNil(CollectionScreen.pageURL(.tag("秋")))
-        XCTAssertNil(CollectionScreen.pageURL(nil))
+        XCTAssertNil(CollectionScreen.pageURL(.tag("秋"), photos: [lead]))
+        XCTAssertNil(CollectionScreen.pageURL(nil, photos: [lead]))
     }
 
     func testShareWithoutPhotosHasNoLink() {
-        let text = CollectionScreen.shareText(title: L("青", "Blue"), count: 0, kind: nil, lead: nil)
+        let text = CollectionScreen.shareText(title: L("青", "Blue"), count: 0, kind: nil, lead: nil, photos: [])
         XCTAssertFalse(text.contains("http"))
+    }
+
+    /// 🔴 **下書き・限定写真だけの撮影地に `/location/<スラッグ>` を付けない**（Web に建たない・2026-10-07）。
+    /// `SpotScreen.locationPageURL` と同じ決まり。公開の写真が1枚あれば付ける
+    func testLocationPageOnlyWithPublicPhotos() throws {
+        let draft = try photo(["id": "d", "location": "パリ", "published": false])
+        let limited = try photo(["id": "r", "location": "パリ", "audience": "followers"])
+        let open = try photo(["id": "o", "location": "パリ"])
+        XCTAssertNil(CollectionScreen.pageURL(.location("パリ"), photos: [draft, limited]))
+        XCTAssertNil(CollectionScreen.pageURL(.location("パリ"), photos: []))
+        XCTAssertEqual(CollectionScreen.pageURL(.location("パリ"), photos: [draft, open])?.path, "/location/パリ")
+        let text = CollectionScreen.shareText(title: "パリ", count: 1, kind: .location("パリ"),
+                                              lead: CollectionScreen.shareLead([draft]), photos: [draft])
+        XCTAssertFalse(text.contains("http"), "開けないリンクを配っている: \(text)")
+    }
+
+    /// 🔴 **下書き・限定写真の詳細から撮影地を押すと、その写真自身が並ぶ**（空の一覧にしない・2026-10-07）。
+    /// 公開の写真は足さない（公開の一覧から来る）・もう並んでいれば重ねない・撮影地が当たらなければ足さない
+    func testOpenedPrivatePhotoJoinsItsLocationList() throws {
+        let draft = try photo(["id": "d", "location": "パリ", "published": false])
+        let limited = try photo(["id": "r", "location": "パリ", "audience": "followers"])
+        let open = try photo(["id": "o", "location": "パリ"])
+        let kind = PhotoQuery.Collection.location("パリ")
+        XCTAssertEqual(CollectionScreen.withOpened([], opened: draft, kind: kind).map(\.id), ["d"])
+        XCTAssertEqual(CollectionScreen.withOpened([open], opened: limited, kind: kind).map(\.id), ["r", "o"])
+        XCTAssertEqual(CollectionScreen.withOpened([open], opened: draft, kind: kind).map(\.id), ["d", "o"])
+        XCTAssertEqual(CollectionScreen.withOpened([draft], opened: draft, kind: kind).map(\.id), ["d"])
+        XCTAssertEqual(CollectionScreen.withOpened([], opened: open, kind: kind).map(\.id), [],
+                       "公開の写真は一覧から来る（消された写真を残さない）")
+        XCTAssertEqual(CollectionScreen.withOpened([], opened: draft, kind: .location("京都")).map(\.id), [])
+        XCTAssertEqual(CollectionScreen.withOpened([open], opened: nil, kind: kind).map(\.id), ["o"])
     }
 }

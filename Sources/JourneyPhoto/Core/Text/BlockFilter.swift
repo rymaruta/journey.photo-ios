@@ -47,6 +47,14 @@ enum BlockFilter {
         return viewers.filter { !blocked.contains($0.userId) }
     }
 
+    /// ストーリーの返信と反応（`GET /stories/{id}/replies`）。ブロックした人の分を落とす（2026-10-07）。
+    /// 落としてから数える——「いいね」「返信」の数がブロックした人を含み、一覧と合わなかった。
+    /// 相手の分からない行（`uid` が無い）は落とさない
+    static func replies(_ replies: [StoryReply], blocked: Set<String>) -> [StoryReply] {
+        guard !blocked.isEmpty else { return replies }
+        return replies.filter { reply in reply.uid.map { !blocked.contains($0) } ?? true }
+    }
+
     /// フォロー中・フォロワーの一覧（`FollowListView`）。ブロックした人の行に
     /// 「フォローする」が残り、押すとサーバーが 400 を返していた
     static func follows(_ users: [FollowUser], blocked: Set<String>) -> [FollowUser] {

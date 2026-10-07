@@ -112,25 +112,23 @@ enum HomeTopCard {
             onTrip(today: today, plans: plans),
             bookReady(today: today, myPhotos: myPhotos, openedBookDays: openedBookDays, timeZone: timeZone),
         ]
-        let wished = wishlistSeason(today: today, spots: spots, wishlist: wishlist)
-        var wishedId: String?
-        if case .wishlistSeason(let spot, _, _)? = wished { wishedId = spot.spotId }
+        // **今日の一問の選択肢（4つ）と同じスポットは、その日は季節の札の候補から外す**——名前つきの札と
+        // 同じ写真の問題の札が横に並び、答えが見える（週に1%前後・f3bcf5a のレビュー）。
+        // 2026-10-07 判断: 正解だけでなく**外れの選択肢も除く**。外れの場所が名前と写真つきで並ぶと
+        // 消去法の手がかりになる（下の段 `HomeSpotShelf.excluded` と同じく4つとも）。
+        // 🔴 **選んでから札ごと落とさない。** 先に候補から外して選ぶので、次の候補が出る
+        // （除くものが1つから4つに増え、札ごと落とすと札の消える日がぐっと増えた・2026-10-07 のレビュー）
+        let quizIds = Set((quiz?.choices.map(\.spotId) ?? []) + [quiz?.answer].compactMap { $0 })
+        let wished = wishlistSeason(today: today, spots: spots, wishlist: wishlist, excluding: quizIds)
+        var seasonExcluded = quizIds
+        if case .wishlistSeason(let spot, _, _)? = wished { seasonExcluded.insert(spot.spotId) }
         // 旅の札 → 季節の札（今月の見ごろ）→ 今日のテーマ → 振り返り（owner・2026-09-29）
         let season: [Choice?] = [
             wished,
-            inSeason(today: today, spots: spots, excluding: wishedId),
+            inSeason(today: today, spots: spots, excluding: seasonExcluded),
         ]
         let yearAgo = oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone)
-        // **今日の一問の答えと同じスポットの季節の札は、その日は出さない**——名前つきの札と
-        // 同じ写真の問題の札が横に並び、答えが見える（週に1%前後・f3bcf5a のレビュー）
-        let answerId = quiz?.answer
-        let seasonShown = season.compactMap { $0 }.filter { choice in
-            switch choice {
-            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _): return spot.spotId != answerId
-            default: return true
-            }
-        }
-        return found.compactMap { $0 } + seasonShown + daily + [yearAgo].compactMap { $0 }
+        return found.compactMap { $0 } + season.compactMap { $0 } + daily + [yearAgo].compactMap { $0 }
     }
 
     /// 端末の時刻帯の今日を、**その日の UTC 0 時**にする（`TripPlanText` と `TripBook.day` の基準）
@@ -260,9 +258,12 @@ enum HomeTopCard {
     ///   16進なので、県や種別が続けて並ぶことはない
     /// - **下書き・写真の無い行は出さない**（写真が主役の札。下書きを「おすすめ」と
     ///   して出さない）
-    static func inSeason(today: Date, spots: [OfficialSpot], excluding: String? = nil) -> Choice? {
+    ///
+    /// - Parameter excluding: 候補から外す `spotId`（行きたい場所の札に出したもの・今日の一問の選択肢）。
+    ///   **選ぶ前に外す**ので、外れた週も次の候補が出る
+    static func inSeason(today: Date, spots: [OfficialSpot], excluding: Set<String> = []) -> Choice? {
         let guides = seasonGuides(today: today, spots: spots)
-        let candidates = guides.rows.filter { $0.spot.hasPhoto && $0.spot.spotId != excluding }
+        let candidates = guides.rows.filter { $0.spot.hasPhoto && !excluding.contains($0.spot.spotId) }
         guard !candidates.isEmpty else { return nil }
         let week = weekNumber(today)
         let index = ((week % candidates.count) + candidates.count) % candidates.count
@@ -308,13 +309,16 @@ enum HomeTopCard {
 
     /// 「行きたい」に入れた公開済みのスポットのうち、いまの季節の案内を持つものから
     /// **週替わりで1件**（並べ方・回し方は `inSeason` と同じ）。
-    /// **写真は無くてもよい**——自分で選んだ場所なので、写真が無くても出す価値がある
-    static func wishlistSeason(today: Date, spots: [OfficialSpot], wishlist: Set<String>) -> Choice? {
+    /// **写真は無くてもよい**——自分で選んだ場所なので、写真が無くても出す価値がある。
+    /// `excluding`（今日の一問の選択肢の `spotId`）は**選ぶ前に外す**（`inSeason` と同じ）
+    static func wishlistSeason(today: Date, spots: [OfficialSpot], wishlist: Set<String>,
+                               excluding: Set<String> = []) -> Choice? {
         guard !wishlist.isEmpty else { return nil }
         let month = TripPlanText.calendar.component(.month, from: today)
         let season = SpotBodyText.season(ofMonth: month)
         let candidates = spots
-            .filter { !$0.isDraft && wishlist.contains(SavedSpotKey.official($0.slug)) && $0.seasonKeys.contains(season) }
+            .filter { !$0.isDraft && !excluding.contains($0.spotId) && wishlist.contains(SavedSpotKey.official($0.slug))
+                && $0.seasonKeys.contains(season) }
             .map { spot -> (OfficialSpot, String) in
                 // 文は詳細（索引だけの行は空・`seasonGuides` の注記）
                 let text = spot.seasons.first(where: { $0.season == season })?.text ?? ""

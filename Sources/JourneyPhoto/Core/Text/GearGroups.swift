@@ -28,20 +28,30 @@ enum GearGroups {
             }
         }
 
-        var note: String {
+        /// 一覧の上に置く一言。
+        ///
+        /// 2026-10-07 判断: **焦点距離そのものを言う。** 以前は「ダイナミックな風景」「遠くの絶景を」
+        /// で、中身（料理・接写も焦点距離で入る）と合わなかった。並ぶのは何を撮ったかではなく
+        /// 何ミリで撮ったかなので、画角の話だけをする
+        var note: String { L(noteText.ja, noteText.en) }
+
+        /// 一言の日英（テストで英語の側も確かめるため対で持つ）
+        var noteText: (ja: String, en: String) {
             switch self {
-            case .wide: return L("ダイナミックな風景", "Sweeping landscapes")
-            case .standard: return L("旅の定番スナップ", "Everyday snapshots")
-            case .telephoto: return L("遠くの絶景を", "Distant views")
+            case .wide: return ("広く写す", "Takes in a wide view")
+            case .standard: return ("見た目に近い広さで写す", "Close to what the eye sees")
+            case .telephoto: return ("遠くを引き寄せる", "Brings distant subjects closer")
             }
         }
 
-        /// 画面に出す範囲。**分け方を隠さない**
-        var range: String {
+        /// 画面に出す範囲。**分け方を隠さない**。英語表示では「〜」を使わない
+        var range: String { L(rangeText.ja, rangeText.en) }
+
+        var rangeText: (ja: String, en: String) {
             switch self {
-            case .wide: return "〜35mm"
-            case .standard: return "36〜70mm"
-            case .telephoto: return "71mm〜"
+            case .wide: return ("〜35mm", "up to 35mm")
+            case .standard: return ("36〜70mm", "36–70mm")
+            case .telephoto: return ("71mm〜", "71mm+")
             }
         }
     }

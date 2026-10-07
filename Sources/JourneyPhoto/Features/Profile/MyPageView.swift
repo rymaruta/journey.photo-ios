@@ -972,6 +972,11 @@ struct MyPageView: View {
             favoritesArea
         } else if let error = model.errorMessage {
             ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
+            // **旅の記録のタブでは、共同アルバム・旅行プランの札を残す**（2026-10-07 判断）。
+            // どちらも自分の写真の読み込みと無関係なのに、最初の読み込みの失敗で入口ごと消えていた
+            if tab == .trips {
+                tripToolsCard
+            }
         } else if tab == .trips {
             // **写真の有無とは無関係に、ここで空の理由まで言う**
             tripsArea
