@@ -43,10 +43,18 @@ struct PhotoDetailView: View {
     /// 🔴 以前は開いた1枚（`photo`）のままで、2枚目へ送っても題・いいね・
     /// 削除・通報は1枚目が対象だった（「2/3枚」と出ているのに）
     @State private var current: Photo
-    /// 「この近くで撮られた写真」（板 02）。座標の無い写真では空のまま
-    @State private var nearby: [Photo] = []
-    /// 「この場所のスポット」の行き先。**台帳にも写真にも辿り着けたときだけ入る**
-    @State private var spotLead: SpotLead?
+    /// 「この近くで撮られた写真」（板 02）。座標の無い写真では空のまま。
+    /// 中身と「どの1枚・どの撮影地のものか」・裏にいる間に読み直しを持ち越した印をまとめて持つ
+    /// （`NearbyShelf`。答えを入れるのは画面に出ている間だけ）
+    @State private var nearbyShelf = NearbyShelf()
+    /// 裏にいる間に持ち越した読み直しを、出直したときに走らせる（近くの写真の `.task` の鍵に入れる）
+    @State private var nearbyReloads = 0
+    private var nearby: [Photo] { nearbyShelf.photos }
+    /// 「この場所のスポット」の行き先。**台帳にも写真にも辿り着けたときだけ入る**。
+    /// 近くの写真と同じく、答えを入れるのは画面に出ている間だけ（`SpotLeadShelf`）
+    @State private var spotShelf = SpotLeadShelf()
+    @State private var spotReloads = 0
+    private var spotLead: PhotoDetailSpotLead? { spotShelf.value }
     /// フォローしているか。**分からない間は nil**——ボタンを出さない
     /// （取れなかった回に「フォロー」と出すと、フォロー中の人に二重に送る）
     @State private var isFollowing: Bool?
@@ -61,11 +69,6 @@ struct PhotoDetailView: View {
     /// 大きく見る画面を閉じた時刻。**閉じた直後に走り直す `.task` だけ**読み直しを省く
     /// （`PhotoDetailRules.rereadPlan`）。写真の主・近くの写真・タブから戻った回は今までどおり読む
     @State private var viewerClosedAt: Date?
-    /// いま中身が入っている近くの写真・スポットの行き先が、**どの1枚・どの撮影地のものか**。
-    /// 読み終えたときだけ入り、読みに行く前に nil に戻す（取り消し・失敗で抜けた回に、
-    /// 前の1枚の印が残って読み直されないことが無いように）
-    @State private var nearbyPhotoId: String?
-    @State private var spotLeadLocation: String?
     /// 成功の知らせ（ブロックしました など）。**失敗の赤字（`actionError`）と分ける**
     @State private var actionNotice: String?
     /// 削除を確かめているコメント（押してすぐ消さない）
@@ -82,13 +85,6 @@ struct PhotoDetailView: View {
     /// ——コメントした人のページでブロックすると、描くたびに絞っていた元の行
     /// （`NavigationLink`）が消え、そのページが閉じていた
     @State private var dropped = ModerationSnapshot()
-
-    /// スポット詳細に渡すもの一式。**撮影地から導いた地点**と、
-    /// 突き合わせる公開写真（近くの地点もここから出す）
-    private struct SpotLead {
-        let spot: DerivedSpot.Place
-        let photos: [Photo]
-    }
 
     /// 画面に描く1枚。編集していれば新しい方。
     ///
@@ -213,13 +209,19 @@ struct PhotoDetailView: View {
         // 数の無い答えでも時刻は変わる（`LikeCountStore.lastAnswer`）
         .onChange(of: likeCounts.lastAnswer(for: current.id)) { _, _ in showStoredLike() }
         .onChange(of: favorites.contains(current.id)) { _, _ in showStoredLike() }
-        .task(id: shown.location) {
-            guard PhotoDetailRules.rereadPlan(shown.location ?? "", contentFor: spotLeadLocation,
+        // 撮影地の名前が裏にいる間に変わっても、行き先を入れるのは出直してから（`SpotLeadShelf`）
+        .task(id: "\(shown.location ?? "")#\(spotReloads)") {
+            guard PhotoDetailRules.rereadPlan(shown.location ?? "", contentFor: spotShelf.contentFor,
                                               viewerClosedAt: viewerClosedAt, now: Date()).read else { return }
             await loadSpotLead()
         }
-        .task(id: shown.id) {
-            guard PhotoDetailRules.rereadPlan(shown.id, contentFor: nearbyPhotoId,
+        // 🔴 H-3: **撮影地も鍵に入れる**（`PhotoDetailRules.nearbyKey`）。写真の id だけだと、
+        // 撮影地を直して保存しても近くの写真が前の場所のまま残った（画面を出れば直った）。
+        // 答えを入れるのは画面に出ている間だけ（`loadNearby`・`NearbyShelf`）。
+        // `nearbyReloads` は裏にいる間に持ち越した読み直しを、出直したときに走らせる
+        .task(id: "\(PhotoDetailRules.nearbyKey(photoId: shown.id, coords: shown.coords))#\(nearbyReloads)") {
+            let key = PhotoDetailRules.nearbyKey(photoId: shown.id, coords: shown.coords)
+            guard PhotoDetailRules.rereadPlan(key, contentFor: nearbyShelf.contentFor,
                                               viewerClosedAt: viewerClosedAt, now: Date()).read else { return }
             await loadNearby()
         }
@@ -255,6 +257,9 @@ struct PhotoDetailView: View {
                 needsRefilter = false
                 refilterHidden()
             }
+            // 裏にいる間に撮影地が変わって持ち越した近くの写真の読み直し（`NearbyShelf.appear`）
+            if nearbyShelf.appear() { nearbyReloads += 1 }
+            if spotShelf.appear() { spotReloads += 1 }
         }
         .onDisappear { isOnScreen = false }
         // **ブロック中かどうかも鍵に入れる。** 解除して戻ったとき、ブロックで「分からない」に
@@ -1341,40 +1346,36 @@ struct PhotoDetailView: View {
         let location = shown.location ?? ""
         let label = location.trimmingCharacters(in: .whitespaces)
         // **読みに行く前に「中身が入っている」を外す**（抜けた回に読み済みと扱わない）
-        spotLeadLocation = nil
+        spotShelf.beginLoad()
         guard !label.isEmpty else {
-            spotLead = nil
-            spotLeadLocation = location
+            spotShelf.land(nil, for: location, onScreen: isOnScreen)
             return
         }
         let fetched = try? await environment.gallery.fetchPhotos()
         // **取り消された回は何も書かない。** `try?` が取り消しを nil に
-        // 変えるので、書くと後の回が入れた行き先を消しうる
-        guard !Task.isCancelled else { return }
+        // 変えるので、書くと後の回が入れた行き先を消しうる。裏にいれば印だけ立てる
+        guard !Task.isCancelled else {
+            spotShelf.cancelled(onScreen: isOnScreen)
+            return
+        }
         guard let fetched else {
-            spotLead = nil
+            spotShelf.fail(onScreen: isOnScreen)
             return
         }
         // 見せない写真を落としてから数える（`ModerationStore.visible`）。
         // `blockAndHide` は一覧の側（`setHidden`）より先に `revision` を
         // 進めるので、一覧から取った直後でもここで落とす
-        spotLead = Self.makeSpotLead(label, in: hidden.visible(fetched))
-        spotLeadLocation = location
-    }
-
-    /// **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
-    /// この写真の個別ページと中身が同じになる
-    private static func makeSpotLead(_ label: String, in photos: [Photo]) -> SpotLead? {
-        DerivedSpot.openable(label, in: photos).map { SpotLead(spot: $0, photos: photos) }
+        spotShelf.land(PhotoDetailSpotLead.make(label, in: hidden.visible(fetched)),
+                       for: location, onScreen: isOnScreen)
     }
 
     /// ブロック・通報のあと、**手元の並びだけ**を絞り直す（通信しない）。
     /// スポットの行き先は落としたあとで**数え直す**——2枚を割れば行を消す
     private func refilterHidden() {
-        nearby = hidden.visible(nearby)
+        nearbyShelf.refilter(to: hidden.visible(nearby))
         if let lead = spotLead {
             let label = (shown.location ?? "").trimmingCharacters(in: .whitespaces)
-            spotLead = Self.makeSpotLead(label, in: hidden.visible(lead.photos))
+            spotShelf.refilter(to: PhotoDetailSpotLead.make(label, in: hidden.visible(lead.photos)))
         }
     }
 
@@ -1382,23 +1383,29 @@ struct PhotoDetailView: View {
     ///
     /// 見せない写真（ブロック・通報）は落とす。上の束（`heroGroup`）と同じ
     /// 並び（`siblings`）を渡し、**上に出ている写真だけ**を除く
+    ///
+    /// 🔴 **答えを入れるのは画面に出ている間だけ**（`NearbyShelf.land`）。裏にいる間は印だけ立て、
+    /// 出直したとき（`onAppear`）に読み直す
     private func loadNearby() async {
-        let id = shown.id
+        let key = PhotoDetailRules.nearbyKey(photoId: shown.id, coords: shown.coords)
         // **読みに行く前に「中身が入っている」を外す**（抜けた回に読み済みと扱わない）
-        nearbyPhotoId = nil
+        nearbyShelf.beginLoad()
         guard shown.coords != nil else {
-            nearby = []
-            nearbyPhotoId = id
+            nearbyShelf.land([], for: key, onScreen: isOnScreen)
             return
         }
         let fetched = try? await environment.gallery.fetchPhotos()
-        guard !Task.isCancelled else { return }
-        guard let fetched else {
-            nearby = []
+        // 取り消された回は中身を触らない。裏にいれば印だけ立てる（出直しで読み直す）
+        guard !Task.isCancelled else {
+            nearbyShelf.cancelled(onScreen: isOnScreen)
             return
         }
-        nearby = NearbyPhotos.around(shown, in: hidden.visible(fetched), context: siblings)
-        nearbyPhotoId = id
+        guard let fetched else {
+            nearbyShelf.fail(onScreen: isOnScreen)
+            return
+        }
+        nearbyShelf.land(NearbyPhotos.around(shown, in: hidden.visible(fetched), context: siblings),
+                         for: key, onScreen: isOnScreen)
     }
 
     private func block(_ userId: String) async {
@@ -1780,6 +1787,13 @@ enum PhotoDetailRules {
         "\(userId ?? "")|\(photoId)|\(acceptsReactions(published: published))"
     }
 
+    /// 近くの写真を拾い直す鍵。**撮影地も入れる**——写真の id だけだと、撮影地を直して・
+    /// 消して保存しても、近くの写真が前の場所のまま残っていた（H-3）
+    static func nearbyKey(photoId: String, coords: Photo.Coords?) -> String {
+        guard let coords else { return "\(photoId)|" }
+        return "\(photoId)|\(coords.lat),\(coords.lng)"
+    }
+
     /// `.task` が走り直したときに読みに行くか（`ReloadPlan`）。
     ///
     /// **読まずに済ますのは、大きく見る画面を閉じた直後（`viewerReturnWindow` 以内）で、
@@ -1886,5 +1900,101 @@ enum PhotoDetailRules {
             .filter { $0.id == current.id || kept.contains($0.id) }
         guard !photos.isEmpty else { return ([current], 0) }
         return (photos, photos.firstIndex(where: { $0.id == current.id }) ?? 0)
+    }
+}
+
+/// 写真詳細で、**裏にいる間に差し替えると開いた先の画面が閉じる**中身（近くの写真の並び・
+/// スポットの行き先）と、その出どころ。
+///
+/// 🔴 H-3（2026-10-07 判断）: 撮影地を直すと鍵（`PhotoDetailRules.nearbyKey`・撮影地の名前）が
+/// 変わって拾い直すが、**答えを入れるのは画面に出ている間だけ。** 裏にいる間に差し替えると、
+/// そこから開いた詳細が、押した元の `NavigationLink` ごと消えて閉じた
+/// （前回の直し f0b0751 の回帰）。裏にいる間は印（`isStale`）だけ立て、出直したとき
+/// （`appear`）に読み直す——同じ画面の `needsRefilter` と同じ形。
+///
+/// 空のときも裏では入れない（スポットの行き先は空→有りで行が別の `NavigationLink` に替わり、
+/// 撮影地の一覧が閉じる）。開いた直後の1回目が `onAppear` より先に着いても、印が立って
+/// 直後の `onAppear` で読み直すので、出ないままにはならない
+struct OnScreenShelf<Value> {
+    /// 画面に出している中身
+    private(set) var value: Value
+    /// 中身がどの鍵のものか。入れたときだけ入り、読みに行く前に nil に戻す
+    private(set) var contentFor: String?
+    /// 裏にいる間に答えを入れずに持ち越した（出直したら読み直す）
+    private(set) var isStale = false
+    /// 読めなかったときに画面に出す中身（空の並び・行き先なし）
+    private let blank: Value
+
+    init(blank: Value) {
+        self.value = blank
+        self.blank = blank
+    }
+
+    /// 読みに行く前。**出どころだけ外し、中身は触らない**（裏にいても行を消さない）
+    mutating func beginLoad() { contentFor = nil }
+
+    /// 読み終えた答え。画面に出ていない（`onScreen` が false）なら入れずに印だけ立てる
+    mutating func land(_ found: Value, for key: String, onScreen: Bool) {
+        guard onScreen else {
+            isStale = true
+            return
+        }
+        value = found
+        contentFor = key
+        isStale = false
+    }
+
+    /// 読めなかった。画面に出ていれば今までどおり空にする。裏にいる間は消さずに持ち越す
+    mutating func fail(onScreen: Bool) {
+        if onScreen {
+            value = blank
+        } else {
+            isStale = true
+        }
+    }
+
+    /// 読んでいる途中で取り消された（`Task.isCancelled`）。中身は触らない。
+    /// 🔴 **裏にいれば印を立てる**——撮影地を直した直後、読んでいる途中に近くの写真を押して
+    /// 取り消されると、出どころは外れたまま印が無く、戻ったときに `.task` が走り直さなければ
+    /// 古い場所のまま残った
+    mutating func cancelled(onScreen: Bool) {
+        if !onScreen { isStale = true }
+    }
+
+    /// 出直したとき。持ち越した読み直しがあれば印を下ろして true
+    mutating func appear() -> Bool {
+        defer { isStale = false }
+        return isStale
+    }
+
+    /// ブロック・通報で絞り直す（`refilterHidden`。画面に出ている間だけ呼ばれる）
+    mutating func refilter(to kept: Value) { value = kept }
+}
+
+/// 「この近くで撮られた写真」の並び
+typealias NearbyShelf = OnScreenShelf<[Photo]>
+
+extension OnScreenShelf where Value == [Photo] {
+    init() { self.init(blank: []) }
+    var photos: [Photo] { value }
+}
+
+/// 「この場所のスポット」の行き先（`PhotoDetailSpotLead`。辿り着けないときは nil）
+typealias SpotLeadShelf = OnScreenShelf<PhotoDetailSpotLead?>
+
+extension OnScreenShelf where Value == PhotoDetailSpotLead? {
+    init() { self.init(blank: nil) }
+}
+
+/// スポット詳細に渡すもの一式。**撮影地から導いた地点**と、
+/// 突き合わせる公開写真（近くの地点もここから出す）
+struct PhotoDetailSpotLead {
+    let spot: DerivedSpot.Place
+    let photos: [Photo]
+
+    /// **1枚しか無い地点には出さない**（`DerivedSpot.openable`）。
+    /// この写真の個別ページと中身が同じになる
+    static func make(_ label: String, in photos: [Photo]) -> PhotoDetailSpotLead? {
+        DerivedSpot.openable(label, in: photos).map { PhotoDetailSpotLead(spot: $0, photos: photos) }
     }
 }
