@@ -80,7 +80,7 @@ for row in "${delete[@]}"; do
     skipped=$((skipped + 1))
     continue
   fi
-  echo "消す: $branch（${row#*|}）"
+  echo "消す: ${branch}（${row#*|}）"
   # 枝の名前の / はそのまま（API はパスの続きとして受ける）
   if ! gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" --silent; then
     echo "::warning::消せなかった: $branch"
