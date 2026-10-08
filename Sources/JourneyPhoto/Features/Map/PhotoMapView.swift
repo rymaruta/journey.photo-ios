@@ -1550,7 +1550,8 @@ struct PhotoMapView: View {
     /// （「スポット」の札と同じ行・近い順）。
     ///
     /// 絞り込みは上の欄とカテゴリだけ効かせる。**地図の見えている範囲では切らない**
-    /// （全国を県で並べる札なので）。座標の無い写真も「県・国に分けられない写真」に入る
+    /// （全国を県で並べる札なので）。座標の無い写真も「県・国に分けられない写真」に入る。
+    /// カテゴリで絞っている間は撮影スポットの行を出さず、理由を上に1行で言う（`categoryNote`）
     @ViewBuilder
     private var listArea: some View {
         let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
@@ -1572,6 +1573,7 @@ struct PhotoMapView: View {
             VStack(alignment: .leading, spacing: 8) {
                 // 写真の失敗は下の帯が言う（二度言わない）。ここでは台帳の失敗だけ
                 indexNote
+                categoryNote
                 // **失敗と空を分ける**（`listEmpty`）。空に警告の三角と「もう一度試す」を出さない
                 switch Self.listEmpty(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
                                       filtering: filtering) {
@@ -1610,6 +1612,18 @@ struct PhotoMapView: View {
             loadFailedListNote
         }
         indexNote
+        categoryNote
+    }
+
+    /// カテゴリで絞っている間、撮影スポットの行が無い理由（地図のピンも同じく出さない）。
+    /// 黙ると「このカテゴリには撮影スポットが無い」と読める
+    @ViewBuilder
+    private var categoryNote: some View {
+        if model.category != nil {
+            listNote(RegionList.categoryHidesSpotsNote)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("map.list.categoryNote")
+        }
     }
 
     @ViewBuilder

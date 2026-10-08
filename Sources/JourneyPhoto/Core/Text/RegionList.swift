@@ -10,7 +10,8 @@ import Foundation
 ///   県の段のあとに、起点から近い順（起点が無ければ国名の順）。撮影スポットは台帳の国
 ///   （`region.country`）、写真は**150km 以内で一番近い海外の撮影スポットの国**。
 ///   国が分からない海外は最後の「海外（その他）」に。最後に「県・国に分けられない写真」
-/// - 県の中は、写真（受け取った順）と撮影スポット（`OfficialSpotList.rows` と同じ行・近い順）
+/// - 県の中は、写真（受け取った順）と撮影スポット（`OfficialSpotList.rows` と同じ行・近い順）。
+///   カテゴリで絞っている間は撮影スポットの行を出さない（`filter`）
 ///
 /// 県の決め方:
 /// - 撮影スポット: 台帳の `region.prefecture` が**47都道府県の名前と一致するときだけ**その県。
@@ -148,10 +149,11 @@ enum RegionList {
     /// 上の欄（撮影地・スポット名）とカテゴリで絞る。地図の絞り込みと同じ当て方
     /// （写真は `MapSearch.matches`、スポットは `OfficialSpotIndex.matches`）。
     /// **地図と違って座標の無い写真も残す**（「県・国に分けられない写真」に入る）。
-    /// カテゴリは写真の分類なので、撮影スポットには効かせない（スポットの行はそのまま残す）。
-    /// **地図のピンとは違う**——地図はカテゴリで絞っている間スポットのピンを置かない
-    /// （`PhotoMapViewModel.refreshOfficialPins`・Web の `filterMapSpots`）。リストは 2026-09-29 の
-    /// 決め（`testFilter`）のまま
+    /// **カテゴリで絞っている間は撮影スポットの行を出さない**（2026-10-08・owner 承認）。
+    /// カテゴリは写真の分類で、撮影スポットには分類が無い——残すと「このカテゴリのスポット」と読める。
+    /// 地図のピン（`PhotoMapViewModel.refreshOfficialPins`・PR #179）・Web の `filterMapSpots` と同じ。
+    /// 以前（2026-09-29 の決め）はリストだけ行を残していて、地図と食い違っていた。
+    /// 隠している理由は画面に1行で言う（`categoryHidesSpotsNote`）
     /// `aliases` は slug → 別名（`OfficialSpotService.fetchAliases`）。「さがす」と同じく別名にも当てる
     static func filter(photos: [Photo], spots: [OfficialSpot], query: String, category: String?,
                        aliases: [String: [String]] = [:])
@@ -162,8 +164,16 @@ enum RegionList {
             if let categoryKey, CategoryChoices.key(photo.category ?? "") != categoryKey { return false }
             return needle.isEmpty || MapSearch.matches(photo, needle: needle)
         }
-        let shownSpots = needle.isEmpty ? spots : OfficialSpotIndex.matches(spots, query: query, aliases: aliases)
+        let shownSpots = categoryKey != nil ? []
+            : needle.isEmpty ? spots : OfficialSpotIndex.matches(spots, query: query, aliases: aliases)
         return (shownPhotos, shownSpots)
+    }
+
+    /// カテゴリで絞っている間、撮影スポットの行が無い理由（リストの上に淡い1行で出す）。
+    /// 字は Web の `MapSpotList` と同じ。iOS のチップも「すべて」/ "All"（`Labels.Category.all`）
+    static var categoryHidesSpotsNote: String {
+        L("カテゴリは写真の分類なので、絞っている間は撮影スポットを出していません。「すべて」に戻すと出ます。",
+          "Categories filter photos only, so spots are hidden. Choose “All” to see spots.")
     }
 
     /// - `photos` / `spots`: 絞る前の全部。上の欄・カテゴリ（`query` / `category`）はここで効かせる。
