@@ -155,7 +155,9 @@ final class PhotoMapViewModel: ObservableObject {
     /// 読み込みの回の番号。**新しい回が始まったら、古い回の答えは書かない**——
     /// 「もう一度試す」を続けて押すと、遅れて返った古い回（失敗）が新しい回（成功）を
     /// 上書きしていた（2026-10-02 のレビュー）
-    private var loadGeneration = 0
+    ///
+    /// 画面からは読むだけ（一覧の詳細の `.task(id:)` に混ぜる——`SpotDetailNeeds.listTaskId`）
+    private(set) var loadGeneration = 0
     /// 写真を読んでいる最中（「もう一度試す」を止める）
     @Published private(set) var isLoading = false
 
@@ -230,20 +232,47 @@ final class PhotoMapViewModel: ObservableObject {
             let merged = await service.withDetails(self.officialSpots, for: needs)
             // 待っている間に読み直しが始まっていたら書かない（新しい回の索引を古い行で上書きしない）
             guard self.loadGeneration == generation else { return }
-            self.officialSpots = Self.overlay(self.officialSpots, with: merged)
+            let next = SpotDetailNeeds.overlay(self.officialSpots, with: merged)
+            guard next != self.officialSpots else { return }
+            self.officialSpots = next
+            // 一覧（「スポット」「リスト」の札）も同じ行を出す。ピンの側が先に重ねた回も描き直させる
+            // ——一覧の鍵はこの行を「重ね済み」と見て読まないので、知らせないと古い行のまま残る
+            self.listDetailsRevision += 1
             self.refreshOfficialPins()
         }
     }
 
-    /// 今の行に、重ねた行（詳細あり）だけを差し込む（待っている間に変わった行を古い写しで戻さない）
-    private static func overlay(_ current: [OfficialSpot], with merged: [OfficialSpot]) -> [OfficialSpot] {
-        let detailed = Dictionary(merged.filter { !$0.isIndexOnly }.map { ($0.spotId, $0) },
-                                  uniquingKeysWith: { first, _ in first })
-        guard !detailed.isEmpty else { return current }
-        return current.map { row in
-            guard row.isIndexOnly, let hit = detailed[row.spotId] else { return row }
-            return hit
-        }
+    /// `officialSpots` に詳細を重ねた回数（ピン・一覧のどちらの道でも）。**一覧に描き直させるためだけ**に知らせる
+    /// （`officialSpots` は知らせない値・地図の描き直しで回らないように、行が変わった回だけ上がる）
+    @Published private(set) var listDetailsRevision = 0
+
+    /// 「スポット」「リスト」の札に出す行（`needs`・`SpotDetailNeeds.mapSpotList` / `mapRegionList`）の詳細を読み、
+    /// 届いたら行を入れ替えて一覧を描き直させる（分けた置き場・2026-10-08）。
+    ///
+    /// 詳細の和が予算（`OfficialSpotService.detailPrefetchBudget`）を超えると、索引のあとは全区分を読まない。
+    /// ピンだけ読んでいた回は、一覧の行が索引だけのまま（丸写真が無くカメラの印）になっていた。
+    /// 画面は `.task(id: SpotDetailNeeds.listTaskId(needs, generation: loadGeneration))` で呼ぶ——重ねたら鍵が空になって止まる。
+    ///
+    /// **読み込みの回（`loadGeneration`）も鍵に入れる**（2026-10-08 のレビュー）。読んでいる途中に読み直し（`load`）が
+    /// 始まると、下の見張りでこの回の答えは捨てる。索引は60秒の控えから同じ索引だけの行で返るので、`needs` だけの鍵は
+    /// 変わらず、`.task` が走り直さない——行がカメラの印のまま残っていた。回が変われば鍵も変わり、読み直す。
+    ///
+    /// **取れなかった区分は時間で叩き直さない。** 行は索引のまま残り、鍵も変わらないので回り続けない。
+    /// 直るのは、一覧が次の頁に進んで深さが上がったとき（鍵が変わる）・札を開き直したとき（`.task` が走り直す）・
+    /// 読み直し（`load`・回が変わる）のとき。区分の側も取れなかった区分を60秒は叩かない（`OfficialSpotService.shardRetryAt`）
+    func loadListDetails(_ needs: [OfficialSpot]) async {
+        guard let service = spotService, !needs.isEmpty else { return }
+        let generation = loadGeneration
+        let merged = await service.withDetails(officialSpots, for: needs)
+        // 待っている間に読み直しが始まっていたら書かない（新しい回の索引を古い行で上書きしない）
+        guard loadGeneration == generation else { return }
+        // 待っている間に変わった行（ピンの側が先に重ねた行など）は戻さない
+        let next = SpotDetailNeeds.overlay(officialSpots, with: merged)
+        guard next != officialSpots else { return }
+        officialSpots = next
+        // `officialSpots` は知らせない値なので、ここで一覧に描き直させる（届いた回だけ・回り続けない）
+        listDetailsRevision += 1
+        refreshOfficialPins()
     }
 
     /// ピンの詳細が届くまで待つ。**試験のためだけ**

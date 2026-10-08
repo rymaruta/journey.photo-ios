@@ -65,6 +65,11 @@ struct PhotoMapView: View {
     /// 起点の県として一度でも開いた県。**起点が替わっても閉じない**——閉じると、
     /// その県から開いていた詳細が元の行ごと消えてその場で閉じる
     @State private var autoOpenedRegions: Set<String> = []
+    /// 「スポット」「リスト」の札で詳細（丸写真）を読む深さ（頭から何行・`SpotDetailNeeds.ListDepth`）。
+    /// 分けた置き場の詳細の和が予算を超えたあと、**見えた行の頁と次の頁まで**だけ読む（2026-10-08）。
+    /// 測ったときの絞り込みと一緒に持ち、描く回の中で今の絞り込みと突き合わせる（変わっていれば頭から）
+    @State private var spotListDepth = SpotDetailNeeds.ListDepth()
+    @State private var regionListDepth = SpotDetailNeeds.ListDepth()
     /// 押した地点（Apple の地図が描く POI）。**iOS 18 以降だけ**入る
     /// （`PlaceSelectableMap`）。ピンの札とは同時に出さない
     @State private var chosenPlace: ChosenPlace?
@@ -1396,6 +1401,10 @@ struct PhotoMapView: View {
             ? model.officialSpots
             : OfficialSpotIndex.matches(model.officialSpots, query: model.query, aliases: model.spotAliases)
         let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center)
+        // 丸写真の詳細を読む行（分けた置き場の索引だけの行のうち、頭から今の絞り込みでの深さまで）。
+        // 詳細の和が小さいうちはどれも重ね済みで空——通信しない（`SpotDetailNeeds`・2026-10-08）
+        let detailNeeds = SpotDetailNeeds.mapSpotList(
+            rows, through: spotListDepth.depth(query: model.query, category: model.category))
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 // 板: 12px・medium・白60%。起点が何かを言う（現在地か地図の中心か）
@@ -1449,6 +1458,10 @@ struct PhotoMapView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("map.spotRow")
+                            .onAppear {
+                                let next = spotListDepth.seen(index, query: model.query, category: model.category)
+                                if next != spotListDepth { spotListDepth = next }
+                            }
                         }
                     }
                     .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
@@ -1471,6 +1484,11 @@ struct PhotoMapView: View {
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 24)
+        }
+        // 重ねたら鍵が空になって止まる。取れなかった区分は鍵が変わらないので叩き直さない。
+        // 読み直し（`load`）で回が変われば走り直す（`SpotDetailNeeds.listTaskId`）
+        .task(id: SpotDetailNeeds.listTaskId(detailNeeds, generation: model.loadGeneration)) {
+            await model.loadListDetails(detailNeeds)
         }
     }
 
@@ -1559,6 +1577,11 @@ struct PhotoMapView: View {
                                            query: model.query, category: model.category,
                                            aliases: model.spotAliases, from: center)
         let currentId = sections.first(where: \.isCurrent)?.id
+        // 開いている県の撮影スポットの行を並ぶ順につないだもの。丸写真の詳細は頭から `regionListDepth` 行だけ読む
+        // （閉じた県は描かないので読まない・`SpotDetailNeeds`・2026-10-08）
+        let openRows = SpotDetailNeeds.mapRegionRows(sections, isOpen: isOpen)
+        let detailNeeds = SpotDetailNeeds.listed(
+            openRows, through: regionListDepth.depth(query: model.query, category: model.category))
         let filtering = !MapSearch.fold(model.query).isEmpty || model.category != nil
         // **撮影スポットの台帳が届くまでは並べない。** 届く前は県を当てる手がかりが無く、
         // 座標だけの写真が「県・国に分けられない」段に入る。そこから詳細を開いた後に台帳が届くと、
@@ -1592,7 +1615,7 @@ struct PhotoMapView: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     listNotes
                     ForEach(sections) { section in
-                        regionSection(section)
+                        regionSection(section, openRows: openRows)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -1601,6 +1624,10 @@ struct PhotoMapView: View {
             }
             .onAppear { if let currentId { autoOpenedRegions.insert(currentId) } }
             .onChange(of: currentId) { _, id in if let id { autoOpenedRegions.insert(id) } }
+            // 重ねたら鍵が空になって止まる（「スポット」の札と同じ）
+            .task(id: SpotDetailNeeds.listTaskId(detailNeeds, generation: model.loadGeneration)) {
+                await model.loadListDetails(detailNeeds)
+            }
         }
     }
 
@@ -1652,7 +1679,9 @@ struct PhotoMapView: View {
         regionOpen[section.id] ?? (section.isCurrent || autoOpenedRegions.contains(section.id))
     }
 
-    private func regionSection(_ section: RegionList.Section) -> some View {
+    /// - Parameter openRows: 開いている県の撮影スポットの行を並ぶ順につないだもの（詳細を読む深さに使う。
+    ///   番号は行が見えたときにだけ引く——描くたびに表を作らない）
+    private func regionSection(_ section: RegionList.Section, openRows: [OfficialSpot]) -> some View {
         let open = isOpen(section)
         // **中も Lazy に。** 開いた県の行を一斉に描くと、丸写真を全部同時に取りに行く
         // （「スポット」の札で「読めない」記号になった穴・`spotsArea` の注記）
@@ -1701,6 +1730,11 @@ struct PhotoMapView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("map.regionSpotRow")
+                    .onAppear {
+                        guard let index = openRows.firstIndex(where: { $0.spotId == row.id }) else { return }
+                        let next = regionListDepth.seen(index, query: model.query, category: model.category)
+                        if next != regionListDepth { regionListDepth = next }
+                    }
                 }
             }
         }
