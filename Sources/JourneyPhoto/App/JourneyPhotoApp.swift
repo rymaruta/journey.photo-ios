@@ -60,21 +60,31 @@ struct JourneyPhotoApp: App {
     /// ここを広げるだけで効く。**Web 側の Service Worker が画像を別の
     /// 入れ物に 80件だけ控えているのと同じ役目**（`public/sw.js`）。
     /// 端末側は容量で押し出してくれるので、件数ではなく容量で切る。
+    ///
+    /// 撮影スポットの縮小版（`SpotImage.smallURL`・1枚 数十KB）もここに入る——一覧を
+    /// 開き直しても読み直さない。**使い回せるかはサーバーの `Cache-Control` 次第**
+    /// （2026-10-08 に見た `/images/spots/*.jpg` は `public, max-age=3600` と `ETag`・`Last-Modified`。
+    /// 1時間は通信なしで出し、過ぎたら条件付きの取得で 304 なら本体を読み直さない）
     private static func configureImageCache() {
         // Linux の corelibs は `diskPath` が必須。iOS では省略できる
         #if canImport(Darwin)
         URLCache.shared = URLCache(
-            memoryCapacity: 32 * 1024 * 1024,
-            diskCapacity: 256 * 1024 * 1024
+            memoryCapacity: imageCacheMemoryBytes,
+            diskCapacity: imageCacheDiskBytes
         )
         #else
         URLCache.shared = URLCache(
-            memoryCapacity: 32 * 1024 * 1024,
-            diskCapacity: 256 * 1024 * 1024,
+            memoryCapacity: imageCacheMemoryBytes,
+            diskCapacity: imageCacheDiskBytes,
             diskPath: nil
         )
         #endif
     }
+
+    /// 画像の控えの容量（メモリ 32MB・ディスク 256MB）。既定（メモリ 512KB 前後・ディスク 10MB 前後）
+    /// では、地図の一覧の丸い写真が数十枚で押し出される
+    static let imageCacheMemoryBytes = 32 * 1024 * 1024
+    static let imageCacheDiskBytes = 256 * 1024 * 1024
 
     /// 「見せない」を公開一覧の側へ渡す。
     ///

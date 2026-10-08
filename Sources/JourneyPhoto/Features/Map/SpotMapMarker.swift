@@ -13,13 +13,16 @@ import SwiftUI
 struct SpotMapMarker: View {
 
     let photoURL: URL?
+    /// `photoURL` が読めなかったときに一度だけ切り替える先（撮影スポットの縮小版 → 元の画像・
+    /// `SpotThumbImage`）。撮影地の写真のピンは nil（切り替えない）
+    var fallbackURL: URL? = nil
 
     var body: some View {
         if let photoURL {
             // 写真の丸・真鍮の縁（デザイン 07「写真あり」）。**縁を真鍮にして**
             // Apple の名所（白い縁の丸）とユーザーの写真のピン（角丸の四角）から見分ける。
             // 読めなかったときは真鍮の地が見える（空の枠にしない）
-            RemoteImage(url: photoURL)
+            SpotThumbImage(url: photoURL, fallbackURL: fallbackURL)
                 .frame(width: 40, height: 40)
                 .background(WebTheme.accent)
                 .clipShape(Circle())
