@@ -92,6 +92,7 @@ final class SpotThumbTests: XCTestCase {
         let row = OfficialWishlist.Row(key: SavedSpotKey.official(spot.slug), slug: spot.slug, name: spot.name,
                                        regionLabel: nil, spot: spot)
         XCTAssertEqual(SavedSpotsMap.item(row).imageURL?.absoluteString, thumb)
+        XCTAssertEqual(SavedSpotsMap.item(row).imageFallbackURL?.absoluteString, full, "読めなければ元の画像")
     }
 
     // MARK: - 呼ぶ所（画面は Linux で描けないので文で見る）
@@ -102,19 +103,84 @@ final class SpotThumbTests: XCTestCase {
         return try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
     }
 
-    /// 🔴 **小さな枠は縮小版。** 地図の一覧の丸（地域ごとの一覧も同じ `spotRow`）・地図のピン・
-    /// 旅の下書きの行・マイページの「行きたい」の行
+    /// 🔴 **小さな枠は縮小版（読めなければ元の画像）。** 地図の一覧の丸（地域ごとの一覧も同じ `spotRow`）・
+    /// 地図のピン・旅の下書きの行・マイページの「行きたい」の行・「行きたい場所」の地図のピン
     func testSmallThumbnailsUseSmallURL() throws {
         let map = try source("Features/Map/PhotoMapView.swift")
-        XCTAssertTrue(map.contains("SpotMapMarker(photoURL: pin.photo?.smallURL)"), "地図のピン")
-        XCTAssertFalse(map.contains("SpotMapMarker(photoURL: pin.photo?.url)"), "地図のピン")
-        XCTAssertTrue(map.contains("RemoteImage(url: photo.smallURL)"), "地図の一覧の丸（spotRow）")
+        XCTAssertTrue(map.contains("SpotMapMarker(photoURL: pin.photo?.smallURL, fallbackURL: pin.photo?.smallFallbackURL)"),
+                      "地図のピン")
+        XCTAssertTrue(map.contains("SpotThumbImage(image: photo)"), "地図の一覧の丸（spotRow）")
         XCTAssertTrue(try source("Features/Trips/TripPickerDraftView.swift")
-            .contains("RemoteImage(url: photo.smallURL)"), "旅の下書きの行")
+            .contains(".overlay(SpotThumbImage(image: photo))"), "旅の下書きの行")
         XCTAssertTrue(try source("Features/Profile/MyPageView.swift")
-            .contains("DownsampledRemoteImage(url: photo.smallURL"), "マイページの「行きたい」の行")
-        XCTAssertTrue(try source("Core/Text/SavedSpotsMap.swift")
-            .contains("imageURL: row.spot?.photo?.smallURL"), "「行きたい場所」の地図のピン")
+            .contains("SpotThumbImage(image: photo, assumedRatioLimit: 2)"), "マイページの「行きたい」の行")
+        let saved = try source("Core/Text/SavedSpotsMap.swift")
+        XCTAssertTrue(saved.contains("imageURL: row.spot?.photo?.smallURL"), "「行きたい場所」の地図のピン")
+        XCTAssertTrue(saved.contains("imageFallbackURL: row.spot?.photo?.smallFallbackURL"), "「行きたい場所」の地図のピン")
+        XCTAssertTrue(try source("Features/Profile/SavedSpotsMapView.swift")
+            .contains("SpotMapMarker(photoURL: photoURL, fallbackURL: fallbackURL)"), "「行きたい場所」のピンが切り替え先を渡す")
+        XCTAssertTrue(try source("Features/Map/SpotMapMarker.swift")
+            .contains("SpotThumbImage(url: photoURL, fallbackURL: fallbackURL)"), "ピンの丸が切り替える")
+    }
+
+    /// 小さな枠のある5つのファイルで、**元の画像（`photo.url`）を直に読むのは地図の札の頭の1か所だけ**。
+    /// 小さな枠を足したときに縮小版を使い忘れたら、ここで気づく
+    func testSmallSiteFilesDoNotReadTheFullURLDirectly() throws {
+        let files = ["Features/Map/PhotoMapView.swift": 1,  // 札の頭（高さ 150pt）
+                     "Core/Text/SavedSpotsMap.swift": 0,
+                     "Features/Trips/TripPickerDraftView.swift": 0,
+                     "Features/Profile/MyPageView.swift": 0,
+                     "Features/Map/SpotMapMarker.swift": 0]
+        for (file, allowed) in files {
+            let text = try source(file)
+            let count = text.components(separatedBy: "photo.url").count - 1
+                + text.components(separatedBy: "photo?.url").count - 1
+            XCTAssertEqual(count, allowed, "\(file) が元の画像を直に読んでいる（小さな枠は SpotThumbImage / smallURL）")
+        }
+    }
+
+    // MARK: - 縮小版が読めなかったとき（`SpotThumbFallback`）
+
+    private func spotImage(thumb: String?) throws -> SpotImage {
+        try XCTUnwrap(try decode(image(thumb: thumb.map { "\"\($0)\"" })).photo)
+    }
+
+    /// 🔴 **縮小版が読めなければ、一度だけ元の画像に切り替える**（CDN に届く前・1枚だけ 404）
+    func testFailedThumbSwitchesToTheFullImageOnce() throws {
+        var state = SpotThumbFallback(try spotImage(thumb: thumb))
+        XCTAssertEqual(state.current.absoluteString, thumb, "先に縮小版")
+        XCTAssertTrue(state.failed(), "縮小版が読めなければ切り替える")
+        XCTAssertEqual(state.current.absoluteString, full)
+        XCTAssertFalse(state.failed(), "元の画像も読めなければそのまま（行き来しない）")
+        XCTAssertEqual(state.current.absoluteString, full)
+        XCTAssertFalse(state.failed())
+        XCTAssertEqual(state.current.absoluteString, full)
+    }
+
+    /// 縮小版の無い行は元の画像だけ。**二度読まない**
+    func testNoThumbMeansNoSecondAttempt() throws {
+        let photo = try spotImage(thumb: nil)
+        XCTAssertNil(photo.smallFallbackURL)
+        var state = SpotThumbFallback(photo)
+        XCTAssertEqual(state.current.absoluteString, full)
+        XCTAssertFalse(state.failed())
+        XCTAssertEqual(state.current.absoluteString, full)
+    }
+
+    /// 縮小版が元の画像と同じ URL なら、同じものを二度読まない
+    func testSameURLDoesNotRetry() throws {
+        let photo = try spotImage(thumb: full)
+        XCTAssertNil(photo.smallFallbackURL)
+        var state = SpotThumbFallback(primary: photo.smallURL, fallback: photo.url)
+        XCTAssertFalse(state.failed())
+    }
+
+    /// 撮影地の写真のピン（切り替え先なし）は今までどおり1つだけ読む
+    func testMarkerWithoutFallbackKeepsItsURL() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.test/pin.jpg"))
+        var state = SpotThumbFallback(primary: url, fallback: nil)
+        XCTAssertFalse(state.failed())
+        XCTAssertEqual(state.current, url)
     }
 
     /// 大きな枠（スポットの画面の頭・地図の札の頭・旅を選ぶ札）は元の画像のまま。縮小版を伸ばさない

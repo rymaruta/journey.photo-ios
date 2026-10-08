@@ -167,6 +167,14 @@ struct SpotImage: Equatable {
     /// 大きな枠（スポットの画面の頭・ホームの札・今日の一問・地図の札の頭）は `url` のまま
     var smallURL: URL { thumbUrl ?? url }
 
+    /// 縮小版が読めなかったときに切り替える先（元の画像）。縮小版の無い行は nil——元の画像を
+    /// 二度読まない（`SpotThumbImage`）。Web が索引を先に出し、縮小版のファイルが CDN に
+    /// 届く前の間がありうる
+    var smallFallbackURL: URL? {
+        guard let thumbUrl, thumbUrl != url else { return nil }
+        return url
+    }
+
     /// 出典の1行の文字（画面は `linkedCredit` でこの文字にリンクを付けて出す）
     var credit: String { "\(creditAuthor) / \(license)" }
 

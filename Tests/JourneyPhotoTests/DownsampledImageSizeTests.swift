@@ -122,8 +122,12 @@ final class DownsampledImageSizeTests: XCTestCase {
         let end = try XCTUnwrap(source.range(of: "Spacer(minLength: 8)", range: start.upperBound..<source.endIndex))
         let row = String(source[start.lowerBound..<end.lowerBound])
         XCTAssertTrue(row.contains("row.spot?.photo"), "台帳の写真を見ていない（ピンだけになる）")
-        XCTAssertTrue(row.contains("DownsampledRemoteImage("), "表紙を縮めて読んでいない")
-        XCTAssertTrue(row.contains("assumedRatioLimit:"), "縦横比の無い写真を上限の大きさで読んでいる")
+        // 縮小版 → 元の画像の切り替えは `SpotThumbImage`。見込みの縦横比を渡すと中は縮めて読む部品になる
+        XCTAssertTrue(row.contains("SpotThumbImage(image: photo, assumedRatioLimit:"), "表紙を縮めて読んでいない")
+        let thumb = try String(contentsOfFile: Self.sourcePath("Features/Common/SpotThumbImage.swift"), encoding: .utf8)
+        XCTAssertTrue(thumb.contains("if let assumedRatioLimit {\n                DownsampledRemoteImage("),
+                      "見込みの縦横比を渡しても縮めて読んでいない")
+        XCTAssertTrue(thumb.contains("assumedRatioLimit: assumedRatioLimit"), "縦横比の無い写真を上限の大きさで読んでいる")
     }
 
     /// 撮影地の代表写真の並びが、縮めて読む部品を使っていること（元の画像をそのまま展開する

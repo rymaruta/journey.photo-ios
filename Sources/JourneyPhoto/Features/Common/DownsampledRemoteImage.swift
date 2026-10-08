@@ -34,6 +34,9 @@ struct DownsampledRemoteImage: View {
     /// 見込んで読む。nil なら上限で読む（`DownsampledImageSize.pixels(filling:)`）。
     /// 小さな枠（一覧の表紙）で、縦横比を持たない写真を上限の大きさで読まないため
     var assumedRatioLimit: CGFloat? = nil
+    /// 読み込みが片付いたときに呼ぶ（出た＝true・出せないと分かった＝false。`RemoteImage.onSettled` と同じ）。
+    /// 既定は何もしない
+    var onSettled: ((Bool) -> Void)? = nil
 
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
@@ -117,6 +120,7 @@ struct DownsampledRemoteImage: View {
             image = decoded
             loadedPixels = pixels
             failed = false
+            onSettled?(true)
         } catch {
             // 取り消し（スクロールで外れた・別の写真に替わった）は失敗にしない
             guard !Task.isCancelled else { return }
@@ -127,6 +131,7 @@ struct DownsampledRemoteImage: View {
                 automaticRetries += 1
             } else if image == nil {
                 failed = true
+                onSettled?(false)
             }
         }
     }

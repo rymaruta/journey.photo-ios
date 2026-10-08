@@ -128,7 +128,8 @@ struct SavedSpotsMapView: View {
             if selectable { toggle(item) } else { open(item) }
         } label: {
             // 印は 32〜44pt、押せる範囲は 44pt（中心は変わらない）
-            SavedSpotPin(photoURL: item.imageURL, selected: selected, inPlan: !inPlans.isEmpty)
+            SavedSpotPin(photoURL: item.imageURL, fallbackURL: item.imageFallbackURL,
+                         selected: selected, inPlan: !inPlans.isEmpty)
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
         }
@@ -503,6 +504,8 @@ struct FindSpotsButton: View {
 /// 押せる範囲と読み上げは呼ぶ側のボタンが付ける（ここは絵だけ）
 struct SavedSpotPin: View {
     let photoURL: URL?
+    /// 読めなかったときに一度だけ切り替える先（`SpotMapMarker.fallbackURL`）
+    var fallbackURL: URL? = nil
     let selected: Bool
     let inPlan: Bool
 
@@ -519,7 +522,7 @@ struct SavedSpotPin: View {
                     .shadow(color: .black.opacity(0.65), radius: 10, y: 8)
                     .accessibilityHidden(true)
             } else {
-                SpotMapMarker(photoURL: photoURL)
+                SpotMapMarker(photoURL: photoURL, fallbackURL: fallbackURL)
                     .frame(width: 44, height: 44)
             }
             if inPlan {

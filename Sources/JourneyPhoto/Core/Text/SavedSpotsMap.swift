@@ -30,6 +30,9 @@ enum SavedSpotsMap {
         let coords: Photo.Coords?
         /// ピンの丸に出す写真（スポットは Commons の写真、撮影地は代表の1枚）。無ければ真鍮の丸
         let imageURL: URL?
+        /// `imageURL` が読めなかったときに一度だけ切り替える先（スポットの縮小版 → 元の画像）。
+        /// 撮影地と縮小版の無いスポットは nil
+        var imageFallbackURL: URL? = nil
         /// 押して開ける画面があるか（索引に無いスポットの鍵は開けない）
         let canOpen: Bool
         /// 下書き（運営未確認）の撮影スポットか。読み上げ・一覧の札に使う
@@ -85,6 +88,7 @@ enum SavedSpotsMap {
              coords: usable(row.spot?.coords),
              // ピンの丸（40pt）にしか出さないので縮小版（`SpotImage.smallURL`）
              imageURL: row.spot?.photo?.smallURL,
+             imageFallbackURL: row.spot?.photo?.smallFallbackURL,
              canOpen: row.spot != nil,
              isDraft: row.spot?.isDraft ?? false)
     }
