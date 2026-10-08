@@ -216,7 +216,27 @@ final class RegionListTests: XCTestCase {
         XCTAssertTrue(byQuery.spots.map(\.slug).contains("kinkakuji"))
         let byCategory = RegionList.filter(photos: photos, spots: try spots(), query: "", category: "city")
         XCTAssertEqual(byCategory.photos.map(\.id), ["b", "c"])
-        XCTAssertEqual(byCategory.spots.count, 6, "カテゴリは撮影スポットに効かせない")
+        // 2026-10-08: カテゴリで絞っている間は撮影スポットを出さない（地図のピン・Web の `filterMapSpots` と同じ）
+        XCTAssertEqual(byCategory.spots, [], "カテゴリで絞っている間に撮影スポットが残っている")
+        let both = RegionList.filter(photos: photos, spots: try spots(), query: "京都", category: "city")
+        XCTAssertEqual(both.photos.map(\.id), ["b"])
+        XCTAssertEqual(both.spots, [], "語がスポットに当たっても、カテゴリの間は出さない")
+    }
+
+    /// 🔴 カテゴリで絞っている間、リストの県の段に撮影スポットの行が無い（地図のピンと同じ）。
+    /// 写真だけの段になり、写真の無い県の段は出ない
+    func testCategoryHidesSpotRows() throws {
+        let photos = [
+            try photo("a", location: "東京都中央区", category: "nature"),
+            try photo("b", location: "京都府", category: "city"),
+        ]
+        let sections = RegionList.sections(photos: photos, spots: try spots(), category: "city", from: tokyo)
+        XCTAssertEqual(sections.map(\.key), [.prefecture("京都府")])
+        XCTAssertTrue(sections.allSatisfy { $0.spots.isEmpty }, "カテゴリで絞っている間に撮影スポットの行がある")
+        XCTAssertEqual(RegionList.countLabel(sections[0]), L("写真 1枚", "1 photo"))
+        // カテゴリを外せば戻る
+        let all = RegionList.sections(photos: photos, spots: try spots(), from: tokyo)
+        XCTAssertEqual(all.flatMap(\.spots).count, 6)
     }
 
     /// 🔴 「リスト」の札も別名で当てる（「さがす」・地図のピンと同じ当て方）
@@ -240,7 +260,8 @@ final class RegionListTests: XCTestCase {
     func testPhotoCountIgnoresFilter() throws {
         let linked = try JSONDecoder.api.decode(Photo.self, from: Data(
             #"{"id":"l","src":"/uploads/l.jpg","spotId":"sp_zojoji","category":"nature"}"#.utf8))
-        let sections = RegionList.sections(photos: [linked], spots: try spots(), category: "city", from: tokyo)
+        // 語で絞る（カテゴリで絞るとスポットの行が出ない）。写真 l は撮影地が無く語に当たらないが、数には入る
+        let sections = RegionList.sections(photos: [linked], spots: try spots(), query: "zojoji", from: tokyo)
         let zojoji = sections.flatMap(\.spots).first { $0.spot.slug == "zojoji" }
         XCTAssertEqual(zojoji?.photoCount, 1)
     }
