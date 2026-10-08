@@ -231,7 +231,8 @@ struct TripPickerDraftView: View {
             if let photo = spot.photo {
                 Color.clear
                     .frame(width: 44, height: 44)
-                    .overlay(RemoteImage(url: photo.url))
+                    // 44pt の枠なので縮小版（`SpotImage.smallURL`）
+                    .overlay(RemoteImage(url: photo.smallURL))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .accessibilityHidden(true)
             }

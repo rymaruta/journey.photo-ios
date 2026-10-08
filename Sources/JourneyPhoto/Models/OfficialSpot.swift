@@ -158,6 +158,14 @@ struct SpotImage: Equatable {
     /// ライセンスの文面（Web と同じ欄名 `licenseUrl`）。CC BY・CC BY-SA は
     /// 作者・**ライセンスの URI**・出典の表示が条件。パブリックドメインなどは無い
     var licenseUrl: URL? = nil
+    /// 小さな縮小版（短い辺 約240px の JPEG・Web の索引の `image.thumbUrl`・2026-10-08〜）。
+    /// **縮小版を作れた行だけ**サイトが載せる。無い・読めない値は nil（行も写真も落とさない）
+    var thumbUrl: URL? = nil
+
+    /// 小さな枠（〜100pt・地図のピン・一覧の丸・行の頭）に出す画像。**縮小版があればそれ、
+    /// 無ければ元の画像**。元の画像は平均 約148KB で、40pt の丸には大きすぎる。
+    /// 大きな枠（スポットの画面の頭・ホームの札・今日の一問・地図の札の頭）は `url` のまま
+    var smallURL: URL { thumbUrl ?? url }
 
     /// 出典の1行の文字（画面は `linkedCredit` でこの文字にリンクを付けて出す）
     var credit: String { "\(creditAuthor) / \(license)" }
@@ -203,6 +211,12 @@ struct LenientSpotImage: Decodable, Equatable {
         let licenseUrl: String?
     }
 
+    /// 縮小版の欄だけ別に読む。**文字でない・壊れた値でも `Raw` ごと落とさない**ため
+    /// （`Raw` に入れると、型違いの1つで写真そのものが消える）
+    private struct Thumb: Decodable {
+        let thumbUrl: Lenient<String>?
+    }
+
     init(from decoder: Decoder) throws {
         guard let raw = try? Raw(from: decoder) else { value = nil; return }
         let author = raw.author?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -210,8 +224,17 @@ struct LenientSpotImage: Decodable, Equatable {
         guard let s = raw.url, let url = URL(string: s), url.scheme == "https",
               !author.isEmpty, !license.isEmpty else { value = nil; return }
         let page = Self.httpsURL(raw.pageUrl)
+        let thumb = (try? Thumb(from: decoder))?.thumbUrl?.value
         value = SpotImage(url: url, author: author, license: license, pageUrl: page,
-                          licenseUrl: Self.httpsURL(raw.licenseUrl))
+                          licenseUrl: Self.httpsURL(raw.licenseUrl), thumbUrl: Self.thumbURL(thumb))
+    }
+
+    /// 縮小版の URL。**https の絶対 URL だけ**（元の画像と同じ線）。http・相対・空は nil で、
+    /// 呼ぶ側は元の画像に落ちる（`SpotImage.smallURL`）
+    static func thumbURL(_ raw: String?) -> URL? {
+        guard let s = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty,
+              let url = URL(string: s), url.scheme == "https", url.host != nil else { return nil }
+        return url
     }
 
     /// 出典のページ・ライセンスの文面の URL。**http は https に上げる**（Web の

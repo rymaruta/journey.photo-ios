@@ -625,7 +625,8 @@ struct PhotoMapView: View {
     /// 撮影スポットの印。見た目は `SpotMapMarker`（「行きたい場所」の地図と同じ部品）。
     /// 写真の出典は札（`officialCard`）に出す
     private func officialMarker(_ pin: OfficialPins.Pin) -> some View {
-        SpotMapMarker(photoURL: pin.photo?.url)
+        // 40pt の丸なので縮小版（`SpotImage.smallURL`）。札の頭の大きな写真は元の画像のまま
+        SpotMapMarker(photoURL: pin.photo?.smallURL)
     }
 
     /// 見えている範囲を控えるだけ。**絞るのはボタンを押したとき**
@@ -1502,8 +1503,8 @@ struct PhotoMapView: View {
     private func spotRow(_ row: OfficialSpotList.Row, divider: Bool) -> some View {
         HStack(spacing: 12) {
             if let photo = row.spot.photo {
-                // 写真があれば写真の丸・真鍮の縁（地図のピンと同じ見分け方）
-                RemoteImage(url: photo.url)
+                // 写真があれば写真の丸・真鍮の縁（地図のピンと同じ見分け方）。40pt なので縮小版
+                RemoteImage(url: photo.smallURL)
                     .frame(width: 40, height: 40)
                     .background(WebTheme.accent)
                     .clipShape(Circle())

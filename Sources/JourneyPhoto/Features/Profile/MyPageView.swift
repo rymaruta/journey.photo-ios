@@ -741,7 +741,8 @@ struct MyPageView: View {
             Group {
                 if let photo = row.spot?.photo {
                     // 台帳の写真は縦横比を持たないので、2:1 までの形と見込んで読む（56pt なら 512px）
-                    DownsampledRemoteImage(url: photo.url, contentMode: .fill, assumedRatioLimit: 2)
+                    // 縮小版があればそれを読む（`SpotImage.smallURL`・無ければ元の画像）
+                    DownsampledRemoteImage(url: photo.smallURL, contentMode: .fill, assumedRatioLimit: 2)
                 } else {
                     Image(systemName: "mappin.circle")
                         .font(.title3)

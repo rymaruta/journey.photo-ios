@@ -83,7 +83,8 @@ enum SavedSpotsMap {
              name: row.name,
              subtitle: row.regionLabel,
              coords: usable(row.spot?.coords),
-             imageURL: row.spot?.photo?.url,
+             // ピンの丸（40pt）にしか出さないので縮小版（`SpotImage.smallURL`）
+             imageURL: row.spot?.photo?.smallURL,
              canOpen: row.spot != nil,
              isDraft: row.spot?.isDraft ?? false)
     }
