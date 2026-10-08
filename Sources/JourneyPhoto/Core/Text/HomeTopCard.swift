@@ -263,7 +263,7 @@ enum HomeTopCard {
     ///   **選ぶ前に外す**ので、外れた週も次の候補が出る
     static func inSeason(today: Date, spots: [OfficialSpot], excluding: Set<String> = []) -> Choice? {
         let guides = seasonGuides(today: today, spots: spots)
-        let candidates = guides.rows.filter { $0.spot.photo != nil && !excluding.contains($0.spot.spotId) }
+        let candidates = guides.rows.filter { $0.spot.hasPhoto && !excluding.contains($0.spot.spotId) }
         guard !candidates.isEmpty else { return nil }
         let week = weekNumber(today)
         let index = ((week % candidates.count) + candidates.count) % candidates.count
@@ -271,15 +271,18 @@ enum HomeTopCard {
     }
 
     /// いまの季節と、その季節の案内を持つ**公開済み**のスポット（`spotId` の順・案内の文は前後の空白を落とす）。
-    /// 季節の札（`inSeason`）と、ホームの「いまの季節のスポット」の段（`HomeSpotShelf`）が同じ候補を使う
+    /// 季節の札（`inSeason`）と、ホームの「いまの季節のスポット」の段（`HomeSpotShelf`）が同じ候補を使う。
+    ///
+    /// **候補は季節の「種類」で選ぶ**（`OfficialSpot.seasonKeys`・2026-10-07）。索引だけの行（分けた置き場）は
+    /// 文を持たないので案内は空で返り、画面が詳細を重ねたあとに同じ候補で文が入る（`HomeDetailNeeds`）
     static func seasonGuides(today: Date, spots: [OfficialSpot]) -> (season: String, rows: [(spot: OfficialSpot, guide: String)]) {
         let month = TripPlanText.calendar.component(.month, from: today)
         let season = SpotBodyText.season(ofMonth: month)
         let rows = spots
-            .filter { !$0.isDraft }
-            .compactMap { spot -> (spot: OfficialSpot, guide: String)? in
-                guard let guide = spot.seasons.first(where: { $0.season == season }) else { return nil }
-                return (spot, guide.text.trimmingCharacters(in: .whitespacesAndNewlines))
+            .filter { !$0.isDraft && $0.seasonKeys.contains(season) }
+            .map { spot -> (spot: OfficialSpot, guide: String) in
+                let text = spot.seasons.first(where: { $0.season == season })?.text ?? ""
+                return (spot, text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
             .sorted { $0.spot.spotId < $1.spot.spotId }
         return (season, rows)
@@ -314,10 +317,12 @@ enum HomeTopCard {
         let month = TripPlanText.calendar.component(.month, from: today)
         let season = SpotBodyText.season(ofMonth: month)
         let candidates = spots
-            .filter { !$0.isDraft && !excluding.contains($0.spotId) && wishlist.contains(SavedSpotKey.official($0.slug)) }
-            .compactMap { spot -> (OfficialSpot, String)? in
-                guard let guide = spot.seasons.first(where: { $0.season == season }) else { return nil }
-                return (spot, guide.text.trimmingCharacters(in: .whitespacesAndNewlines))
+            .filter { !$0.isDraft && !excluding.contains($0.spotId) && wishlist.contains(SavedSpotKey.official($0.slug))
+                && $0.seasonKeys.contains(season) }
+            .map { spot -> (OfficialSpot, String) in
+                // 文は詳細（索引だけの行は空・`seasonGuides` の注記）
+                let text = spot.seasons.first(where: { $0.season == season })?.text ?? ""
+                return (spot, text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
             .sorted { $0.0.spotId < $1.0.spotId }
         guard !candidates.isEmpty else { return nil }

@@ -49,7 +49,9 @@ final class OfficialSpotServiceTests: XCTestCase {
 
     private func service(snapshot: String = UUID().uuidString) -> OfficialSpotService {
         snapshotNames.append(snapshot)
-        return OfficialSpotService(url: url, session: session, snapshot: SpotSnapshotStore(fileName: snapshot))
+        // この試験は古い置き場（`spots.json`）の読み方を見る。分けた置き場は `SpotFeedShardsTests`
+        return OfficialSpotService(url: url, session: session, snapshot: SpotSnapshotStore(fileName: snapshot),
+                                   splitFeed: false)
     }
 
     /// 🔴 別名: 呼んだ側が取り消されても、空を控えない（次の呼び出しで取れる）。並んだ呼び出しは1本に寄せる

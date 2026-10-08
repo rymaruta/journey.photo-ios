@@ -68,6 +68,10 @@ struct TripPickerView: View {
             await model.load(fetch: { try await environment.spots.fetchIndex() },
                              excluding: wishlist.spotIds, seed: seed)
         }
+        // めくる先の札と選んだ場所の詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ（2026-10-07）
+        .task(id: SpotDetailNeeds.key(model.detailNeeds)) {
+            await model.applyDetails { await environment.spots.withDetails($0, for: $1) }
+        }
     }
 
     @ViewBuilder

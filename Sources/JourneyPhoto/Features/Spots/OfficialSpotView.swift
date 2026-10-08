@@ -49,6 +49,8 @@ struct OfficialSpotView: View {
     @State private var camera: MapCameraPosition = .automatic
     /// 本文（公開済みの場所だけ取りに行く）。取れなければ nil のまま
     @State private var spotBody: SpotBody?
+    /// 詳細を重ねた行（分けた置き場の索引だけの行で開いたとき・2026-10-07）。取れなければ nil のまま
+    @State private var detailed: OfficialSpot?
     /// 読み込めなかった作例（出典のページで覚える）。その1枚を出典ごと隠す
     @State private var brokenSamples: Set<URL> = []
     /// 「このスポットの写真を投稿」から開く投稿画面
@@ -59,6 +61,9 @@ struct OfficialSpotView: View {
     @State private var lightOffset = 0
     /// 文字サイズ。アクセシビリティの大きさでは「光の時刻」の行を縦に積む
     @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// 写真・概要・下書きの日付を出す行。**索引だけの行で開いたら、詳細を重ねたもの**（`SpotDetailNeeds`）
+    private var shown: OfficialSpot { detailed?.spotId == spot.spotId ? detailed! : spot }
 
     /// **確定した紐づけだけ**（`Photo.spotId`）。撮影地の文字列では当てない
     private var linked: [Photo] { dropped.visible(photos.filter { $0.spotId == spot.spotId }) }
@@ -85,13 +90,13 @@ struct OfficialSpotView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 // 写真があれば写真を主役に（モック13の代表画像の位置）。無ければ地図
-                if let photo = spot.photo {
+                if let photo = shown.photo {
                     heroPhoto(photo)
                 } else {
                     heroMap
                 }
                 header
-                if let notice = SpotScreen.reviewNotice(review: spot.isDraft, draftedAt: spot.draftedAt) {
+                if let notice = SpotScreen.reviewNotice(review: spot.isDraft, draftedAt: shown.draftedAt) {
                     draftNotice(notice)
                 }
                 actions
@@ -126,6 +131,13 @@ struct OfficialSpotView: View {
             let fetched = await environment.spots.fetchBody(slug: spot.slug)
             guard !Task.isCancelled else { return }
             spotBody = fetched
+        }
+        // 索引だけの行で開いたら、その区分の詳細（写真・概要）を重ねる（分けた置き場・2026-10-07）
+        .task(id: "\(spot.spotId)|\(spot.isIndexOnly)") {
+            guard spot.isIndexOnly else { return }
+            let merged = await environment.spots.withDetails([spot], for: [spot]).first
+            guard !Task.isCancelled, let merged, !merged.isIndexOnly else { return }
+            detailed = merged
         }
         .webScreen()
         .navigationTitle(spot.name)
@@ -314,7 +326,7 @@ struct OfficialSpotView: View {
 
     @ViewBuilder
     private var summary: some View {
-        if let text = spot.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+        if let text = shown.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
             Text(text)
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.muted)
@@ -466,9 +478,10 @@ struct OfficialSpotView: View {
 
     /// 節の中身（端末で計算する・`SpotLight.sheet`）。座標が無い・時刻帯が引けない国・段が作れない日は nil
     private var lightSheet: SpotLight.Sheet? {
-        guard let coords = spot.coords else { return nil }
+        // 詳細を重ねた行で読む（時刻帯は詳細にだけ載る・分けた置き場・2026-10-07）
+        guard let coords = shown.coords else { return nil }
         // 時刻帯は索引の行 → 本文 → 国の表の順（2026-10-07 判断・どれも同じ台帳の値）
-        return SpotLight.sheet(country: spot.region?.country, timeZone: spot.timeZone ?? spotBody?.timeZone,
+        return SpotLight.sheet(country: shown.region?.country, timeZone: shown.timeZone ?? spotBody?.timeZone,
                                lat: coords.lat, lng: coords.lng,
                                offset: lightOffset, now: Date())
     }
@@ -733,7 +746,7 @@ struct OfficialSpotView: View {
                 showUpload = true
             } label: {
                 Label(L("このスポットの写真を投稿", "Post a photo of this spot"), systemImage: "camera")
-                    .jpPillButton(Self.postButtonStyle(hasCover: spot.photo != nil,
+                    .jpPillButton(Self.postButtonStyle(hasCover: shown.photo != nil,
                                                        hasLinked: !linked.isEmpty, postedHere: postedHere))
             }
             .buttonStyle(.plain)

@@ -146,10 +146,11 @@ enum ShootingTime {
             return true
         }
 
-        /// 撮影地が当たるか（季節は季節の案内、時間帯は時間帯の案内に文があるか）
+        /// 撮影地が当たるか（季節は季節の案内、時間帯は時間帯の案内に文があるか）。
+        /// **種類で見る**——索引だけの行（分けた置き場・文は詳細）でも絞れる（`OfficialSpot.seasonKeys`）
         func matches(_ spot: OfficialSpot) -> Bool {
-            if let season, !spot.seasons.contains(where: { $0.season == season.rawValue }) { return false }
-            if let dayPart, !spot.times.contains(where: { dayPart.ledgerTimes.contains($0.time) }) { return false }
+            if let season, !spot.seasonKeys.contains(season.rawValue) { return false }
+            if let dayPart, !spot.timeKeys.contains(where: { dayPart.ledgerTimes.contains($0) }) { return false }
             return true
         }
 
@@ -220,7 +221,7 @@ enum ShootingTime {
     static func dayParts(photos: [Photo], spots: [OfficialSpot]) -> Set<DayPart> {
         var found = Set(photos.compactMap { dayPart(of: $0) })
         for spot in spots where !spot.isDraft {
-            for part in DayPart.allCases where spot.times.contains(where: { part.ledgerTimes.contains($0.time) }) {
+            for part in DayPart.allCases where spot.timeKeys.contains(where: { part.ledgerTimes.contains($0) }) {
                 found.insert(part)
             }
         }
@@ -231,6 +232,6 @@ enum ShootingTime {
     /// ——季節か時間帯の分かる写真が1枚でもあるか、季節・時間帯の案内を持つ公開済みの撮影地があるとき
     static func hasAnything(photos: [Photo], spots: [OfficialSpot]) -> Bool {
         photos.contains { season(of: $0) != nil || dayPart(of: $0) != nil }
-            || spots.contains { !$0.isDraft && (!$0.seasons.isEmpty || !$0.times.isEmpty) }
+            || spots.contains { !$0.isDraft && (!$0.seasonKeys.isEmpty || !$0.timeKeys.isEmpty) }
     }
 }

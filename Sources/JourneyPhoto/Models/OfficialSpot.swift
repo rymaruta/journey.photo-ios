@@ -30,17 +30,17 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     let coords: Photo.Coords?
     let category: String?
     /// 概要。**書かれたものだけ**（自動生成しない）
-    let summary: String?
+    var summary: String?
     /// `review`（運営未確認の下書き）か `published`（公開済み＝人が確かめたか、AI 照合）。
     /// **`published` だけで「運営が確かめた」と言わない**——本文の印（`SpotBody.check`）で出し分ける
     let stage: String
     /// 下書きを書いた日（`YYYY-MM-DD`）。**確認日ではない**
-    let draftedAt: String?
+    var draftedAt: String?
     /// 人が確かめた日。`published` の行だけが持つ
-    let verifiedAt: String?
+    var verifiedAt: String?
     /// スポットの写真（Wikimedia Commons・2026-09-26〜）。**owner が写真を確かめた
     /// 公開済みの行だけ**が持つ。壊れていても行ごと落とさない（`LenientSpotImage`）
-    let image: LenientSpotImage?
+    var image: LenientSpotImage?
     /// 季節の案内（2026-09-29〜 索引に載る。Web の `spotFeed.ts`）。**公開済みの行だけ**が持つ。
     /// 壊れた1件・知らない季節・空の文は落とし、**行ごとは落とさない**（`LenientSeasonalGuide`）。
     /// `var` で既定 nil なのは、載っていない古い索引・控えも読めるようにするため
@@ -57,6 +57,65 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
     /// アメリカ・カナダ・オーストラリアのように時刻帯が複数ある国は、これが無いと時計を決められない。
     /// 古い索引には無い。読めない名前は国の表に落とす
     var timeZone: String? = nil
+
+    // MARK: 分けた置き場の索引（`/app/data/spot-feed/index.json`・2026-10-07）
+
+    /// 索引の「季節の案内がある季節」（**種類だけ・文は詳細**）。索引の鍵は `seasons`
+    var seasonKinds: LenientStringList? = nil
+    /// 索引の「時間帯の案内がある時間帯」（種類だけ）。索引の鍵は `times`
+    var timeKinds: LenientStringList? = nil
+    /// 索引の「写真が詳細にある」
+    var hasImage: LenientFlag? = nil
+    /// 索引の別名（`spot-search.json` と同じもの）。古い置き場の行には無い
+    var aliases: LenientStringList? = nil
+    /// 詳細の区分（`/app/data/spot-feed/<shard>.json`）。**サービスが付ける**（JSON の鍵ではない）
+    var shard: String? = nil
+    /// **索引だけで読み、まだ詳細を重ねていない行。** 写真・概要・季節/時間帯の文・時刻帯が無い。
+    /// 要る画面は `OfficialSpotService.withDetails` で詳細を重ねる（サービスが付ける）
+    var isIndexOnly: Bool = false
+
+    private enum CodingKeys: String, CodingKey {
+        case spotId, slug, name, nameEn, reading, region, coords, category, summary, stage,
+             draftedAt, verifiedAt, image, seasonalGuide, timeOfDayGuide, timeZone, hasImage, aliases
+        case seasonKinds = "seasons"
+        case timeKinds = "times"
+    }
+
+    /// 季節の案内がある季節（台帳の綴り）。**絞り込み・候補選びはこちらを使う**——
+    /// 索引だけの行でも答えられる（文は `seasons`、詳細を重ねてから）
+    var seasonKeys: [String] {
+        isIndexOnly ? (seasonKinds?.value ?? []).filter { SpotBodyText.seasonOrder.contains($0) } : seasons.map(\.season)
+    }
+
+    /// 時間帯の案内がある時間帯（台帳の綴り）。`seasonKeys` と同じ理由
+    var timeKeys: [String] {
+        isIndexOnly ? (timeKinds?.value ?? []).filter { SpotBodyText.timeOrder.contains($0) } : times.map(\.time)
+    }
+
+    /// 写真があるか。**候補選びはこちらを使う**（索引だけの行は写真そのものを持たない）
+    var hasPhoto: Bool {
+        isIndexOnly ? hasImage?.value == true : photo != nil
+    }
+
+    /// 索引の行に詳細の行を重ねる。**詳細は同じ `spotId` のときだけ**使う。
+    ///
+    /// 🔴 **名前・座標・地域・stage・slug などは索引の値を残す**（2026-10-07 のレビュー）。索引と区分は
+    /// 別のファイルで、CDN の入れ替わりの途中や控えの区分では食い違いうる——地図のピン・下書きの印・
+    /// 「行きたい」の鍵が詳細の側で入れ替わらないように、詳細からは**索引に無いもの**だけを足す
+    /// （写真・概要・季節/時間帯の文・時刻帯・日付）
+    func merged(with detail: OfficialSpot) -> OfficialSpot {
+        guard detail.spotId == spotId else { return self }
+        var row = self
+        row.summary = detail.summary
+        row.image = detail.image
+        row.seasonalGuide = detail.seasonalGuide
+        row.timeOfDayGuide = detail.timeOfDayGuide
+        row.timeZone = detail.timeZone
+        row.draftedAt = detail.draftedAt
+        row.verifiedAt = detail.verifiedAt
+        row.isIndexOnly = false
+        return row
+    }
 
     /// 出してよい写真。作者とライセンスが揃っていて、https の画像だけ
     var photo: SpotImage? { image?.value }
@@ -163,6 +222,32 @@ struct LenientSpotImage: Decodable, Equatable {
         if s.hasPrefix("http://") { s = "https://" + s.dropFirst("http://".count) }
         guard let url = URL(string: s), url.scheme == "https", url.host != nil else { return nil }
         return url
+    }
+}
+
+/// 文字の一覧を**決して投げずに**読む入れ物（索引の季節・時間帯の種類と別名）。
+/// 文字でない・空の項目は落とす。行ごとは落とさない（`LenientSpotImage` と同じ理由）
+struct LenientStringList: Decodable, Equatable {
+    let value: [String]
+
+    init(_ value: [String]) { self.value = value }
+
+    init(from decoder: Decoder) throws {
+        let rows = (try? [Lenient<String>](from: decoder)) ?? []
+        value = rows.compactMap(\.value)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+}
+
+/// 真偽を**決して投げずに**読む入れ物（索引の `hasImage`）。真偽でなければ false
+struct LenientFlag: Decodable, Equatable {
+    let value: Bool
+
+    init(_ value: Bool) { self.value = value }
+
+    init(from decoder: Decoder) throws {
+        value = (try? Bool(from: decoder)) ?? false
     }
 }
 

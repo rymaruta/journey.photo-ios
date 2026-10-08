@@ -21,9 +21,10 @@ enum TripPicker {
     /// 40か所を1日1か所ずつでも60日に収まる。収まらない分は `days` が切り直す）
     static let pickMax = 40
 
-    /// 札に出してよいか。**公開済み・写真あり**だけ（下書きの場所を「行きたい」の札にしない）
+    /// 札に出してよいか。**公開済み・写真あり**だけ（下書きの場所を「行きたい」の札にしない）。
+    /// 写真は「有る」で見る——索引だけの行（分けた置き場）は写真そのものを持たない（`OfficialSpot.hasPhoto`）
     static func isEligible(_ spot: OfficialSpot) -> Bool {
-        !spot.isDraft && spot.photo != nil
+        !spot.isDraft && spot.hasPhoto
     }
 
     /// 札の山。出してよいものを、`seed` で混ぜて返す。

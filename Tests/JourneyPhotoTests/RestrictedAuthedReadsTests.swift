@@ -71,7 +71,7 @@ final class RestrictedAuthedReadsTests: XCTestCase {
         let result = try await social().comments(photoId: "p1", signedIn: true)
         XCTAssertEqual(result.items.map(\.id), ["c1"])
         XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(StubProtocol.requests, ["GET /user/comments/p1"], "未認証の口で読んでいる（絞った写真で 404）")
+        XCTAssertEqual(StubProtocol.requests.filter { $0.contains("comments") }, ["GET /user/comments/p1"], "未認証の口で読んでいる（絞った写真で 404）")
         XCTAssertEqual(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer t")
     }
 
@@ -82,7 +82,7 @@ final class RestrictedAuthedReadsTests: XCTestCase {
         StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: page)
         let result = try await social().comments(photoId: "p1", signedIn: true)
         XCTAssertEqual(result.items.map(\.id), ["c1"], "道が無い回に未認証の口へ戻っていない")
-        XCTAssertEqual(StubProtocol.requests, ["GET /user/comments/p1", "GET /photos/p1/comments"])
+        XCTAssertEqual(StubProtocol.requests.filter { $0.contains("comments") }, ["GET /user/comments/p1", "GET /photos/p1/comments"])
         XCTAssertNil(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"),
                      "未認証の口に鍵を付けている")
     }
@@ -97,7 +97,7 @@ final class RestrictedAuthedReadsTests: XCTestCase {
             XCTFail("サーバーが断ったのに未認証の口で読めたことにしている")
         } catch {
             XCTAssertEqual(error as? APIError, .server(status: 404, message: "写真が見つかりません"))
-            XCTAssertEqual(StubProtocol.requests, ["GET /user/comments/p1"], "断られた 404 で未認証の口に戻っている")
+            XCTAssertEqual(StubProtocol.requests.filter { $0.contains("comments") }, ["GET /user/comments/p1"], "断られた 404 で未認証の口に戻っている")
         }
     }
 
@@ -110,7 +110,7 @@ final class RestrictedAuthedReadsTests: XCTestCase {
             _ = try await social().comments(photoId: "p1", signedIn: true)
             XCTFail("500 なのに成功している")
         } catch {
-            XCTAssertEqual(StubProtocol.requests, ["GET /user/comments/p1"])
+            XCTAssertEqual(StubProtocol.requests.filter { $0.contains("comments") }, ["GET /user/comments/p1"])
         }
     }
 
@@ -120,7 +120,10 @@ final class RestrictedAuthedReadsTests: XCTestCase {
         StubProtocol.respond(path: "/photos/p1/comments", status: 200, body: page)
         let result = try await social(token: nil).comments(photoId: "p1", signedIn: false)
         XCTAssertEqual(result.items.map(\.id), ["c1"])
-        XCTAssertEqual(StubProtocol.requests, ["GET /photos/p1/comments"])
+        // コメントの口だけを見る。🔴 前の試験（`testSignedInTakesTheCountFromMyLike` ほか）が捨てた
+        // 未認証のいいね数の要求（`async let` の取り消し）が、試験の終わった後に `StubProtocol` へ届き、
+        // この試験の記録に混ざることがある（Mac の run 352 で `GET /photos/p1/like` が混ざって落ちた・2026-10-07）
+        XCTAssertEqual(StubProtocol.requests.filter { $0.contains("comments") }, ["GET /photos/p1/comments"])
         XCTAssertNil(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"))
     }
 
@@ -230,7 +233,10 @@ final class RestrictedAuthedReadsTests: XCTestCase {
         StubProtocol.respond(path: "/photos/p1/like", status: 200, body: #"{"likes":3}"#)
         let snapshot = await social(token: nil).likeSnapshot(photoId: "p1", signedIn: false)
         XCTAssertEqual(snapshot, SocialService.LikeSnapshot(liked: nil, count: 3))
-        XCTAssertEqual(StubProtocol.requests, ["GET /photos/p1/like"])
+        // 前の試験が捨てた未認証の要求が遅れて混ざることがある（`testSignedOutReadsThePublicComments` の注記）ので、
+        // 「印の口（/user/…）を聞いていない」と「未認証の口を聞いた」で見る
+        XCTAssertFalse(StubProtocol.requests.contains { $0.contains("/user/") }, "未ログインで印の口を聞いている")
+        XCTAssertTrue(StubProtocol.requests.contains("GET /photos/p1/like"))
     }
 
     // MARK: - 写真の詳細（画面の頭）

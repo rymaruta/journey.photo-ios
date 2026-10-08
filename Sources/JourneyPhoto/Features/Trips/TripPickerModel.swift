@@ -111,6 +111,28 @@ final class TripPickerModel: ObservableObject {
         }
     }
 
+    // MARK: - 詳細（分けた置き場・2026-10-07）
+
+    /// 詳細（写真・季節の文）を重ねる行。**いまの札から先の3枚と、選んだ場所**のうち、まだ索引だけの行
+    var detailNeeds: [OfficialSpot] {
+        let ahead = position < deck.count ? Array(deck[position..<min(deck.count, position + 3)]) : []
+        return SpotDetailNeeds.indexOnly(ahead + picked)
+    }
+
+    /// 札と決めごとに詳細を重ねる。**並び・決めごとは変えない**（行の中身だけ差し替える）
+    ///
+    /// - Parameter fill: `environment.spots.withDetails`（全体・要る行 → 重ねた全体）
+    func applyDetails(_ fill: ([OfficialSpot], [OfficialSpot]) async -> [OfficialSpot]) async {
+        let needs = detailNeeds
+        guard !needs.isEmpty else { return }
+        let merged = await fill(deck, needs)
+        let byId = Dictionary(merged.map { ($0.spotId, $0) }, uniquingKeysWith: { first, _ in first })
+        deck = deck.map { byId[$0.spotId] ?? $0 }
+        decisions = decisions.map {
+            Decision(spot: byId[$0.spot.spotId] ?? $0.spot, choice: $0.choice, wasWanted: $0.wasWanted)
+        }
+    }
+
     /// いまの札を決める。**決めた場所**を返す（札が無い・上限で「行きたい」を足せないときは nil）
     @discardableResult
     func decide(_ choice: Choice, alreadyWanted: Bool = false) -> OfficialSpot? {

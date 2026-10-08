@@ -819,6 +819,15 @@ struct SearchView: View {
             }
             .padding(.horizontal, 16)
             .accessibilityIdentifier("search.spots")
+            // 季節・時間帯で絞っているときは、出ている行に案内の文を添える。分けた置き場の索引だけの行は
+            // 文を持たないので、**出ている行だけ**詳細を重ねる（`SpotDetailNeeds`・2026-10-07）
+            .task(id: SpotDetailNeeds.key(model.timeFilter.isEmpty ? [] : (expanded ? hits : Array(hits.prefix(5))))) {
+                let needs = SpotDetailNeeds.indexOnly(model.timeFilter.isEmpty ? [] : (expanded ? hits : Array(hits.prefix(5))))
+                guard !needs.isEmpty else { return }
+                let merged = await environment.spots.withDetails(officialSpots, for: needs)
+                guard !Task.isCancelled, isOnScreen else { return }
+                officialSpots = merged
+            }
         }
     }
 
