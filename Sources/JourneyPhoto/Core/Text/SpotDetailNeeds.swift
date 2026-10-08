@@ -60,4 +60,52 @@ enum SpotDetailNeeds {
         let fromPlans = inPlans(plans, spots: spots).filter { !ids.contains($0.spotId) }
         return fromChoices + fromPlans
     }
+
+    // MARK: - 長い一覧（地図の「スポット」「リスト」の札・2026-10-08）
+
+    /// 長い一覧で、一度に詳細を読む行の数（1頁）。
+    ///
+    /// 地図の「スポット」「リスト」の札は全件（数千件）を Lazy に並べる。全件の詳細を読むと、
+    /// 分けた置き場で**全区分を読むのと同じ**になるので、**見えた行の頁と次の頁まで**だけ読む
+    static let listPage = 30
+
+    /// 一覧の `index` 番目（0 から）の行が見えたときの、詳細を読む深さ（頭から何行）。
+    /// **深くなるだけ**で浅くはしない（戻ったときに読み直さない）。頁ごとに上がるので、
+    /// 1行見えるたびに鍵が変わって読み直すことはない
+    static func listDepth(after index: Int, current: Int) -> Int {
+        max(current, (max(0, index) / listPage + 2) * listPage)
+    }
+
+    /// 地図の「スポット」の札（近い順の一覧）: **頭から `depth` 行**のうち、まだ索引だけの行
+    static func mapSpotList(_ rows: [OfficialSpotList.Row], through depth: Int) -> [OfficialSpot] {
+        indexOnly(rows.prefix(max(0, depth)).map(\.spot))
+    }
+
+    /// 地図の「リスト」の札で、**開いている県**の撮影スポットの行を、画面に並ぶ順につないだもの。
+    /// 閉じた県の行は描かないので入れない（件数だけ出る）
+    static func mapRegionRows(_ sections: [RegionList.Section],
+                              isOpen: (RegionList.Section) -> Bool) -> [OfficialSpot] {
+        sections.filter(isOpen).flatMap { $0.spots.map(\.spot) }
+    }
+
+    /// 地図の「リスト」の札: 開いている県の行を並ぶ順につなぎ、**頭から `depth` 行**のうち、まだ索引だけの行
+    static func mapRegionList(_ sections: [RegionList.Section], isOpen: (RegionList.Section) -> Bool,
+                              through depth: Int) -> [OfficialSpot] {
+        indexOnly(Array(mapRegionRows(sections, isOpen: isOpen).prefix(max(0, depth))))
+    }
+
+    /// 今の行に、重ねた行（詳細あり）だけを差し込む。
+    ///
+    /// **待っている間に変わった行を古い写しで戻さない**——差し込むのは、今まだ索引だけの行に、
+    /// 同じ `spotId` の詳細つきの行が届いたときだけ。待っている間に読み直した索引の行・
+    /// 別の回が先に重ねた行はそのまま（`PhotoMapViewModel` のピンと一覧が使う）
+    static func overlay(_ current: [OfficialSpot], with merged: [OfficialSpot]) -> [OfficialSpot] {
+        let detailed = Dictionary(merged.filter { !$0.isIndexOnly }.map { ($0.spotId, $0) },
+                                  uniquingKeysWith: { first, _ in first })
+        guard !detailed.isEmpty else { return current }
+        return current.map { row in
+            guard row.isIndexOnly, let hit = detailed[row.spotId] else { return row }
+            return hit
+        }
+    }
 }
