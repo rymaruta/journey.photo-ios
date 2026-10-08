@@ -56,7 +56,7 @@ final class SpotListDetailsTests: XCTestCase {
 
     /// 予算0（＝詳細の和が予算を超えた本番と同じ）の地図の模型。索引まで読み終えたもの
     @MainActor
-    private func overBudgetMap() async -> PhotoMapViewModel {
+    private func overBudgetMap(beforeShardRequest: (@Sendable () async -> Void)? = nil) async -> PhotoMapViewModel {
         StubProtocol.respond(path: "/app/data/spot-feed/index.json", status: 200, body: SpotFeedShardsTests.index())
         StubProtocol.respond(path: "/app/data/spot-feed/jp-kanto.json", status: 200, body: SpotFeedShardsTests.kanto)
         StubProtocol.respond(path: "/app/data/spot-feed/fr.json", status: 200, body: SpotFeedShardsTests.france)
@@ -68,15 +68,20 @@ final class SpotListDetailsTests: XCTestCase {
         snapshotNames += [legacy, photos]
         let spots = OfficialSpotService(url: URL(string: "https://site.example.test/app/data/spots.json")!,
                                         session: session, snapshot: SpotSnapshotStore(fileName: legacy),
-                                        feedSnapshotPrefix: prefix, detailPrefetchBudget: 0)
+                                        feedSnapshotPrefix: prefix, detailPrefetchBudget: 0,
+                                        beforeShardRequest: beforeShardRequest)
         let gallery = PublicGalleryService(url: URL(string: "https://site.example.test/app/data/photos.json")!,
                                            session: session, snapshot: PhotoSnapshotStore(fileName: photos))
         let environment = AppEnvironment(tokenProvider: StubTokenProvider(token: "t"), gallery: gallery, spots: spots)
         let model = PhotoMapViewModel()
         await model.load(environment: environment)
         await model.awaitIndex()
+        self.environment = environment
         return model
     }
+
+    /// `overBudgetMap` の環境（読み直し `load` を呼ぶのに使う）
+    private var environment: AppEnvironment?
 
     // MARK: - 「スポット」の札（近い順の一覧）
 
@@ -124,6 +129,80 @@ final class SpotListDetailsTests: XCTestCase {
         XCTAssertEqual(SpotDetailNeeds.mapSpotList(rows, through: 1_000).count, 100)
     }
 
+    /// 最初の深さは頭の頁と次の頁。頭の行が見えても上がらない（`.task` を走り直させない）
+    func testFirstDepthDoesNotMoveOnTheFirstPage() {
+        let start = SpotDetailNeeds.ListDepth()
+        XCTAssertEqual(start.depth, SpotDetailNeeds.listPage * 2)
+        for index in 0..<SpotDetailNeeds.listPage {
+            XCTAssertEqual(start.seen(index, query: "", category: nil), start, "頭の頁の \(index) 行目で深さが動いた")
+        }
+    }
+
+    /// 🔴 絞り込み（語・カテゴリ）が変わったら、**同じ描く回の中で**深さを頭に戻す（`onChange` の1回遅れを作らない）
+    func testDepthResetsWhenTheFilterChanges() {
+        let page = SpotDetailNeeds.listPage
+        let deep = SpotDetailNeeds.ListDepth().seen(page * 5, query: "東京", category: nil)
+        XCTAssertEqual(deep.depth(query: "東京", category: nil), page * 7)
+        XCTAssertEqual(deep.depth(query: "京都", category: nil), SpotDetailNeeds.firstDepth, "語が変わったのに古い深さで読む")
+        XCTAssertEqual(deep.depth(query: "東京", category: "夜景"), SpotDetailNeeds.firstDepth,
+                       "カテゴリが変わったのに古い深さで読む")
+        // 新しい絞り込みで見えた行は、頭から測り直す
+        XCTAssertEqual(deep.seen(0, query: "京都", category: nil),
+                       SpotDetailNeeds.ListDepth(query: "京都", category: nil, depth: SpotDetailNeeds.firstDepth))
+    }
+
+    /// `.task(id:)` の鍵は読み込みの回でも変わる。要る行が無ければ回によらず空
+    func testTaskIdChangesWithTheLoadGeneration() throws {
+        let rows = try Self.manyIndexOnly(3)
+        XCTAssertNotEqual(SpotDetailNeeds.listTaskId(rows, generation: 1), SpotDetailNeeds.listTaskId(rows, generation: 2))
+        XCTAssertEqual(SpotDetailNeeds.listTaskId([], generation: 1), "")
+        XCTAssertEqual(SpotDetailNeeds.listTaskId([], generation: 2), "")
+    }
+
+    /// 🔴 一覧の詳細を読んでいる途中に読み直し（`load`）が始まると、その回の答えは捨てる。
+    /// 索引は60秒の控えから同じ索引だけの行で返る——`needs` だけの鍵では `.task` が走り直さず、
+    /// 行がカメラの印のまま残っていた。回を混ぜた鍵なら変わり、同じ `needs` でもう一度読めば埋まる
+    @MainActor
+    func testReloadDuringListLoadIsHealedByTheNextRun() async throws {
+        let gate = Gate()
+        let model = await overBudgetMap(beforeShardRequest: { await gate.wait() })
+        let rows = OfficialSpotList.rows(model.officialSpots, photos: [], from: nil)
+        let needs = SpotDetailNeeds.mapSpotList(rows, through: SpotDetailNeeds.firstDepth)
+        XCTAssertFalse(needs.isEmpty)
+        let before = SpotDetailNeeds.listTaskId(needs, generation: model.loadGeneration)
+
+        let first = Task { await model.loadListDetails(needs) }
+        await gate.untilWaiting(1)
+        // 区分を読んでいる途中に読み直す（引き下げ更新・「もう一度試す」）
+        let environment = try XCTUnwrap(environment)
+        await model.load(environment: environment)
+        await model.awaitIndex()
+        await gate.open()
+        await first.value
+        XCTAssertTrue(model.officialSpots.allSatisfy(\.isIndexOnly), "前の回の答えを新しい回に書いている")
+
+        // 行は同じ索引だけの行（控えから）なので needs は同じ。鍵は回で変わる＝画面の `.task` が走り直す
+        let again = SpotDetailNeeds.mapSpotList(OfficialSpotList.rows(model.officialSpots, photos: [], from: nil),
+                                                through: SpotDetailNeeds.firstDepth)
+        XCTAssertEqual(again.map(\.spotId), needs.map(\.spotId))
+        XCTAssertNotEqual(SpotDetailNeeds.listTaskId(again, generation: model.loadGeneration), before,
+                          "読み直しても鍵が変わらない（.task が走り直さず、行が空のまま残る）")
+        await model.loadListDetails(again)
+        let tokyo = try XCTUnwrap(model.officialSpots.first { $0.slug == "tokyo-station" })
+        XCTAssertEqual(tokyo.photo?.author, "撮った人", "走り直した回で行が埋まらない")
+    }
+
+    /// ピンの側が先に重ねた回も、一覧に描き直させる（一覧の鍵はその行を重ね済みと見て読まない）
+    @MainActor
+    func testPinDetailsAlsoRedrawTheList() async throws {
+        let model = await overBudgetMap()
+        XCTAssertEqual(model.listDetailsRevision, 0)
+        model.update(visible: MapFraming.Frame(latitude: 35.68, longitude: 139.76, latitudeSpan: 0.2, longitudeSpan: 0.2))
+        await model.awaitPinDetails()
+        XCTAssertEqual(model.officialSpots.first { $0.slug == "tokyo-station" }?.photo?.author, "撮った人")
+        XCTAssertEqual(model.listDetailsRevision, 1, "ピンの側で行を入れ替えたのに一覧に知らせていない")
+    }
+
     // MARK: - 「リスト」の札（県ごと）
 
     /// 🔴 開いた県の行だけ詳細を読み、読んだら写真が入る。閉じた県の区分は読まない
@@ -135,7 +214,8 @@ final class SpotListDetailsTests: XCTestCase {
         XCTAssertTrue(sections.contains(where: isTokyo))
         XCTAssertTrue(sections.contains { $0.spots.contains { $0.spot.slug == "versailles" } })
 
-        let needs = SpotDetailNeeds.mapRegionList(sections, isOpen: isTokyo, through: SpotDetailNeeds.listPage)
+        let needs = SpotDetailNeeds.listed(SpotDetailNeeds.mapRegionRows(sections, isOpen: isTokyo),
+                                           through: SpotDetailNeeds.firstDepth)
         XCTAssertEqual(needs.map(\.slug), ["tokyo-station"], "閉じた県の行まで選んでいる・開いた県の行を選んでいない")
         await model.loadListDetails(needs)
 
@@ -143,7 +223,8 @@ final class SpotListDetailsTests: XCTestCase {
         let tokyo = try XCTUnwrap(after.first(where: isTokyo)?.spots.first { $0.spot.slug == "tokyo-station" })
         XCTAssertEqual(tokyo.spot.photo?.author, "撮った人", "開いた県の行に丸写真の詳細を重ねていない")
         XCTAssertEqual(count("/app/data/spot-feed/fr.json"), 0, "閉じた県の区分まで読んでいる")
-        XCTAssertTrue(SpotDetailNeeds.mapRegionList(after, isOpen: isTokyo, through: SpotDetailNeeds.listPage).isEmpty,
+        XCTAssertTrue(SpotDetailNeeds.listed(SpotDetailNeeds.mapRegionRows(after, isOpen: isTokyo),
+                                             through: SpotDetailNeeds.firstDepth).isEmpty,
                       "重ねたのに鍵が空にならない（叩き直し続ける）")
     }
 
@@ -152,9 +233,9 @@ final class SpotListDetailsTests: XCTestCase {
         let sections = RegionList.sections(photos: [], spots: try Self.manyIndexOnly(80), from: nil)
         let open = SpotDetailNeeds.mapRegionRows(sections, isOpen: { _ in true })
         XCTAssertEqual(open.count, 80)
-        XCTAssertEqual(SpotDetailNeeds.mapRegionList(sections, isOpen: { _ in true }, through: 30).map(\.spotId),
+        XCTAssertEqual(SpotDetailNeeds.listed(open, through: 30).map(\.spotId),
                        open.prefix(30).map(\.spotId))
-        XCTAssertTrue(SpotDetailNeeds.mapRegionList(sections, isOpen: { _ in false }, through: 30).isEmpty,
+        XCTAssertTrue(SpotDetailNeeds.listed(SpotDetailNeeds.mapRegionRows(sections, isOpen: { _ in false }), through: 30).isEmpty,
                       "閉じた県の行を読んでいる")
     }
 

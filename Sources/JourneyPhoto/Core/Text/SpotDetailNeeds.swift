@@ -69,11 +69,43 @@ enum SpotDetailNeeds {
     /// 分けた置き場で**全区分を読むのと同じ**になるので、**見えた行の頁と次の頁まで**だけ読む
     static let listPage = 30
 
+    /// 最初の深さ（頭から何行）。**頭の頁と次の頁**——頭の行が見えた瞬間に深さが上がって `.task` を
+    /// 走り直させないように、`listDepth(after: 0..)` と同じ値から始める
+    static let firstDepth = listPage * 2
+
     /// 一覧の `index` 番目（0 から）の行が見えたときの、詳細を読む深さ（頭から何行）。
     /// **深くなるだけ**で浅くはしない（戻ったときに読み直さない）。頁ごとに上がるので、
     /// 1行見えるたびに鍵が変わって読み直すことはない
     static func listDepth(after index: Int, current: Int) -> Int {
         max(current, (max(0, index) / listPage + 2) * listPage)
+    }
+
+    /// 一覧の深さと、**それを測ったときの絞り込み**（語・カテゴリ）。
+    ///
+    /// 絞り込みが変わったら、並びも変わるので深さは頭に戻す。`onChange` で戻すと1回遅れ
+    /// （古い深さのまま新しい並びの頭から何百行も読みに行き、区分の読み込みは取り消せない）、
+    /// その札が出ていない間は戻らない。そこで**描く回の中で**「測ったときと同じなら測った深さ、
+    /// 違えば最初の深さ」を決める（`depth(query:category:)`・2026-10-08 のレビュー）
+    struct ListDepth: Equatable {
+        var query: String = ""
+        var category: String? = nil
+        var depth: Int = SpotDetailNeeds.firstDepth
+
+        /// 今の絞り込みでの深さ
+        func depth(query: String, category: String?) -> Int {
+            self.query == query && self.category == category ? depth : SpotDetailNeeds.firstDepth
+        }
+
+        /// 今の絞り込みで `index` 番目の行が見えたあとの値
+        func seen(_ index: Int, query: String, category: String?) -> ListDepth {
+            ListDepth(query: query, category: category,
+                      depth: SpotDetailNeeds.listDepth(after: index, current: depth(query: query, category: category)))
+        }
+    }
+
+    /// 並んだ行の**頭から `depth` 行**のうち、まだ索引だけの行
+    static func listed(_ spots: [OfficialSpot], through depth: Int) -> [OfficialSpot] {
+        indexOnly(Array(spots.prefix(max(0, depth))))
     }
 
     /// 地図の「スポット」の札（近い順の一覧）: **頭から `depth` 行**のうち、まだ索引だけの行
@@ -82,16 +114,18 @@ enum SpotDetailNeeds {
     }
 
     /// 地図の「リスト」の札で、**開いている県**の撮影スポットの行を、画面に並ぶ順につないだもの。
-    /// 閉じた県の行は描かないので入れない（件数だけ出る）
+    /// 閉じた県の行は描かないので入れない（件数だけ出る）。詳細を読む行は、これを `listed` で頭から切る
     static func mapRegionRows(_ sections: [RegionList.Section],
                               isOpen: (RegionList.Section) -> Bool) -> [OfficialSpot] {
         sections.filter(isOpen).flatMap { $0.spots.map(\.spot) }
     }
 
-    /// 地図の「リスト」の札: 開いている県の行を並ぶ順につなぎ、**頭から `depth` 行**のうち、まだ索引だけの行
-    static func mapRegionList(_ sections: [RegionList.Section], isOpen: (RegionList.Section) -> Bool,
-                              through depth: Int) -> [OfficialSpot] {
-        indexOnly(Array(mapRegionRows(sections, isOpen: isOpen).prefix(max(0, depth))))
+    /// 一覧の詳細を読む `.task(id:)` の鍵。**読み込みの回も入れる**——読んでいる途中に読み直しが
+    /// 始まると、その回の答えは捨てる（`PhotoMapViewModel.loadListDetails`）。行が同じ索引だけの行で
+    /// 返っても回が変われば鍵が変わり、読み直す。要る行が無ければ回によらず空（走っても何もしない）
+    static func listTaskId(_ needs: [OfficialSpot], generation: Int) -> String {
+        let key = key(needs)
+        return key.isEmpty ? "" : "\(generation)|\(key)"
     }
 
     /// 今の行に、重ねた行（詳細あり）だけを差し込む。
