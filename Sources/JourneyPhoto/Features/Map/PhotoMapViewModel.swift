@@ -191,10 +191,15 @@ final class PhotoMapViewModel: ObservableObject {
     /// `pinLayout` を地図の動きで何回入れ替えたか。**回り続けていないことを試験で数えるためだけ**
     private(set) var pinLayoutUpdates = 0
 
-    /// 「このエリアを検索」中はその枠、そうでなければ見えている枠で数える
+    /// 「このエリアを検索」中はその枠、そうでなければ見えている枠で数える。
+    ///
+    /// 🔴 **カテゴリで絞っている間は撮影スポットのピンを置かない**（Web の `filterMapSpots` と同じ）。
+    /// チップは**写真の分類**（風景・建築…）で、台帳の `category`（神社・温泉街…）とは別の持ち物——
+    /// 対応表を作ると嘘の対応が混ざる。以前は写真のピンだけ絞れ、「風景」を選んでも
+    /// スポットのピンは全部残り、そのカテゴリのスポットに見えていた
     private func refreshOfficialPins() {
-        let next = OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame, query: query,
-                                        aliases: spotAliases)
+        let next = category != nil ? [] : OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame,
+                                                               query: query, aliases: spotAliases)
         requestPinDetails(next)
         guard OfficialPins.changed(officialPins, next) else { return }
         officialPins = next

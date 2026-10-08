@@ -148,7 +148,10 @@ enum RegionList {
     /// 上の欄（撮影地・スポット名）とカテゴリで絞る。地図の絞り込みと同じ当て方
     /// （写真は `MapSearch.matches`、スポットは `OfficialSpotIndex.matches`）。
     /// **地図と違って座標の無い写真も残す**（「県・国に分けられない写真」に入る）。
-    /// カテゴリは写真の分類なので、撮影スポットには効かせない（地図のピンと同じ）
+    /// カテゴリは写真の分類なので、撮影スポットには効かせない（スポットの行はそのまま残す）。
+    /// **地図のピンとは違う**——地図はカテゴリで絞っている間スポットのピンを置かない
+    /// （`PhotoMapViewModel.refreshOfficialPins`・Web の `filterMapSpots`）。リストは 2026-09-29 の
+    /// 決め（`testFilter`）のまま
     /// `aliases` は slug → 別名（`OfficialSpotService.fetchAliases`）。「さがす」と同じく別名にも当てる
     static func filter(photos: [Photo], spots: [OfficialSpot], query: String, category: String?,
                        aliases: [String: [String]] = [:])
