@@ -109,17 +109,23 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertEqual(WhatsNew.decode(Data("not json".utf8)), [])
     }
 
-    /// 🔴 **同梱の `WhatsNew.json` が読めて、8項目そろっている**（壊れると黙って何も出なくなる）
+    /// 🔴 **同梱の `WhatsNew.json` が読めて、版ごとの項目がそろっている**（壊れると黙って何も出なくなる）
     func testBundledJSONDecodes() async throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
+        XCTAssertEqual(releases.map(\.version), ["1.0.73", "1.0.67"])
+        // 1.0.73: メダル。期限のある初期ユーザー章を先頭に
         let latest = try XCTUnwrap(releases.first)
-        XCTAssertEqual(latest.items.count, 8)
-        XCTAssertEqual(latest.items.first?.title.ja, "撮影スポットに作例写真")
-        XCTAssertEqual(latest.items.compactMap(\.destination), [.map, .search, .home, .mypage, .mypage])
-        for item in latest.items {
+        XCTAssertEqual(latest.items.count, 4)
+        XCTAssertEqual(latest.items.first?.title.ja, "初期ユーザー章を贈ります")
+        XCTAssertEqual(latest.items.compactMap(\.destination), [.mypage, .mypage])
+        let previous = releases[1]
+        XCTAssertEqual(previous.items.count, 8)
+        XCTAssertEqual(previous.items.first?.title.ja, "撮影スポットに作例写真")
+        XCTAssertEqual(previous.items.compactMap(\.destination), [.map, .search, .home, .mypage, .mypage])
+        for item in releases.flatMap(\.items) {
             XCTAssertFalse(item.title.en.isEmpty || item.detail.en.isEmpty || item.detail.ja.isEmpty, item.title.ja)
             XCTAssertFalse(item.symbol.isEmpty, item.title.ja)
         }
