@@ -57,7 +57,7 @@ struct HighlightEditorView: View {
                                title: L("変更を保存しますか？", "Save your changes?"),
                                canSave: canSave,
                                saveTitle: L("保存して閉じる", "Save and close"),
-                               discardTitle: L("変更を捨てる", "Discard changes"),
+                               discardTitle: L("保存せずに閉じる", "Close without saving"),
                                message: L("保存しないで閉じると、選んだストーリーと名前は残りません。",
                                           "If you close without saving, your picks and name will be lost."),
                                onSave: {
