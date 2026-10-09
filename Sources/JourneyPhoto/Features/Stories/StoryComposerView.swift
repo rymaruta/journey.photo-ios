@@ -114,6 +114,9 @@ struct StoryComposerView: View {
     @State private var spotIndex: [OfficialSpot] = []
     /// 送る前に撮影スポットの索引を待っている（`post`・押し直しを受けない）
     @State private var isWaitingForSpots = false
+    /// その待ちの仕事。🔴 **閉じた・下書きに保存した・画面が消えたら取り消す**（`stopWaitingToPost`）。
+    /// 取り消さないと、「保存せずに閉じる」を選んだあとに待ちが明けて、閉じたはずのストーリーが出た
+    @State private var spotWait: Task<Void, Never>?
     /// ✕ で閉じる前の「下書きに保存／捨てる／キャンセル」
     @State private var showLeaveConfirm = false
     /// 「続きから」で戻した直後の中身。**ここから何も変えていなければ**、
@@ -300,6 +303,8 @@ struct StoryComposerView: View {
             Text(L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ります。",
                    "Adding a place also sends the photo's rounded coordinates (about 1 km)."))
         }
+        // 画面が消えたら（外から閉じられた）、送る前の索引の待ちも取り消す
+        .onDisappear { stopWaitingToPost() }
         // **開いた直後に一度だけ尋ねる。** 黙って書きかけを復元すると、
         // 新しく作りにきた人が前の写真に驚く
         .onAppear {
@@ -373,7 +378,10 @@ struct StoryComposerView: View {
                            discardTitle: L("保存せずに閉じる", "Close without saving"),
                            message: leaveDialog.message,
                            onSave: { saveDraft() },
-                           onDiscard: { dismiss() })
+                           onDiscard: {
+                               stopWaitingToPost()
+                               dismiss()
+                           })
     }
 
     // MARK: - 写真
@@ -486,7 +494,9 @@ struct StoryComposerView: View {
                 HStack {
                     Button {
                         switch leave {
-                        case .now: dismiss()
+                        case .now:
+                            stopWaitingToPost()
+                            dismiss()
                         case .confirm: showLeaveConfirm = true
                         case .wait: break
                         }
@@ -818,7 +828,9 @@ struct StoryComposerView: View {
             // 写真を全部外すと、ここを押さなくても写真を選ぶ段へ戻る
             Button {
                 switch leave {
-                case .now: dismiss()
+                case .now:
+                    stopWaitingToPost()
+                    dismiss()
                 case .confirm: showLeaveConfirm = true
                 case .wait: break
                 }
@@ -943,8 +955,9 @@ struct StoryComposerView: View {
                     post()
                 } label: {
                     // 押したら画面を閉じる。**送信中は自分の輪に出る**（板 27）
+                    // 送る前の索引を待っている間も同じ輪（押しても何も起きないように見せない）
                     Group {
-                        if loadingPicks > 0 {
+                        if loadingPicks > 0 || isWaitingForSpots {
                             ProgressView().tint(WebTheme.accentText)
                         } else {
                             Text(L("シェアする", "Share"))
@@ -957,7 +970,8 @@ struct StoryComposerView: View {
                     .opacity(prepared == nil ? 0.5 : 1)
                     // 輪を出している間も読み上げは空にしない
                     .accessibilityLabel(L("シェアする", "Share"))
-                    .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos") : "")
+                    .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos")
+                                        : isWaitingForSpots ? L("送る準備をしています", "Getting ready to share") : "")
                 }
                 .buttonStyle(.plain)
                 .disabled(prepared == nil || loadingPicks > 0)
@@ -1392,7 +1406,11 @@ struct StoryComposerView: View {
             ? L("下書きに保存しました（この端末にだけ残ります）", "Saved as a draft on this device")
             : L("下書きを保存できませんでした（端末の空き容量を確かめてください）",
                 "Couldn't save the draft — check your device's free space")
-        if ok { dismiss() }
+        if ok {
+            // 下書きにしたので、待っている投稿は出さない（同じものが下書きと投稿の両方に残る）
+            stopWaitingToPost()
+            dismiss()
+        }
     }
 
     /// 送り終えたときに下書きを**残す**か。「キャンセル（残す）」を選んだか、
@@ -1469,6 +1487,13 @@ struct StoryComposerView: View {
     }
 
 
+    /// 送る前の索引の待ちをやめる（閉じる・下書きに保存する・画面が消える）。**待ちが明けても出さない**
+    private func stopWaitingToPost() {
+        spotWait?.cancel()
+        spotWait = nil
+        isWaitingForSpots = false
+    }
+
     /// 出す。**送るのは裏の係（`StoryUploadCenter`）**——画面はすぐ閉じ、
     /// ホームの自分の輪が進み具合と「送信中…」を出す（板 27「投稿した直後」）。
     ///
@@ -1496,12 +1521,18 @@ struct StoryComposerView: View {
         if waitedSpots == nil, place.needsSpotIndex(shotCoords, spots: spotIndex) {
             isWaitingForSpots = true
             let current = spotIndex
-            Task {
+            spotWait?.cancel()
+            spotWait = Task {
+                // **索引の行だけ**を待つ（区分の詳細まで待つと、遅い通信で2秒を過ぎて座標を落とす）
                 let spots = await PlaceCoordsRule.index(current: current, needed: true,
-                                                        fetch: { [spots = environment.spots] in try? await spots.fetchIndex() })
+                                                        fetch: { [spots = environment.spots] in await spots.fetchIndexRows() })
+                // 閉じた・下書きに保存した（`stopWaitingToPost`）なら出さない
+                guard !Task.isCancelled else { return }
                 isWaitingForSpots = false
+                spotWait = nil
                 if spotIndex.isEmpty { spotIndex = spots }
-                post(waitedSpots: spots)
+                // 時間切れでも、待っている間にこの画面の `.task` が索引を読めていればそれで決める
+                post(waitedSpots: spots.isEmpty ? spotIndex : spots)
             }
             return
         }

@@ -46,11 +46,18 @@ enum PlaceCoordsRule {
     /// （`isWaitingForSpots` で押し直しを受けない）。投稿・編集の保存も同じ待ちを通る
     static func index(current: [OfficialSpot], needed: Bool, wait: Duration = indexWait,
                       fetch: @escaping @Sendable () async -> [OfficialSpot]?) async -> [OfficialSpot] {
+        await lookup(current: current, needed: needed, wait: wait, fetch: fetch) ?? current
+    }
+
+    /// `index` と同じ待ち方で、**取れなかった（時間切れ・読めなかった）ときは nil**。
+    /// 「分からない」と「スポットが無い」を分けたい呼び手（写真の編集——分からないのに座標を
+    /// 消すと、サーバーのピンが黙って消える）が使う。要らない・もうあるときは `current` を返す
+    static func lookup(current: [OfficialSpot], needed: Bool, wait: Duration = indexWait,
+                       fetch: @escaping @Sendable () async -> [OfficialSpot]?) async -> [OfficialSpot]? {
         guard needed, current.isEmpty else { return current }
-        let found = await AsyncTimeout.firstWithin(seconds: seconds(wait)) { () async -> [OfficialSpot]? in
+        return await AsyncTimeout.firstWithin(seconds: seconds(wait)) { () async -> [OfficialSpot]? in
             await fetch()
         }
-        return found ?? current
     }
 
     /// `Duration` を秒（小数）に
