@@ -51,6 +51,10 @@ struct MyPageView: View {
     @State private var hasCover = false
     /// 下の「投稿」の画面を閉じた合図（`TabRouter.postSheetsClosed`）
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// 名前の横の画面（名前の行を押すと開く・板 BadgePicker）
+    @State private var showNameSide = false
+    /// 明朝 26 の名前の行の高さの見込み（文字サイズの設定で伸びる）
+    @ScaledMetric(relativeTo: .title) private var nameLineHeight: CGFloat = 36
 
     /// 板 05c: 3列・隙間 4pt・角なし
     private let columns = [
@@ -146,6 +150,12 @@ struct MyPageView: View {
             if next == .favorites { refreshSavedIds() }
         }
         .onDisappear { isOnScreen = false }
+        // 名前の横の画面。決めたら `auth.noteProfileChanged()` が上の読み直しを起こす
+        .sheet(isPresented: $showNameSide) {
+            if let profile = model.profile {
+                NameSideBadgeView(profile: profile)
+            }
+        }
         // 「見せない」が変わったら、**画面に出ている間だけ**写しを取り直す
         // （詳細を開いている間に取り直すと押した元が消えて閉じる）。人が替わった回も
         // `hidden.use` が数を進めるのでここで拾う——`auth.userId` の変化の時点では
@@ -358,14 +368,7 @@ struct MyPageView: View {
                 .accessibilityIdentifier("mypage.edit")
             }
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
-                    Text(profile.name)
-                        .font(JPFont.display(26, relativeTo: .title))
-                        .foregroundStyle(Color.white)
-                        // 画面の見出しは名前（人のページと同じ）
-                        .accessibilityAddTraits(.isHeader)
-                    VerifiedBadge(isVerified: profile.verified, nameSize: 26, relativeTo: .title, fit: .mincho)
-                }
+                nameLine(profile)
                 if let line = ProfileLine.handleAndHome(username: profile.username,
                                                         home: profile.homeLocation) {
                     ProfileHandleLine(line: line, showsPin: true)
@@ -384,6 +387,36 @@ struct MyPageView: View {
         // 無ければ右上の設定の丸の下から（板 05d）
         .padding(.top, hasCover ? -ProfileCover.avatarOverlap : 49)
     }
+
+    /// 名前の行（板 05c・BadgePicker）: 明朝 26 の名前 → 公式の封印 → Pro マーク → 選んだバッジ。
+    /// **行ごと押すと名前の横の画面**（バッジを選ぶ・Pro マークの形を選ぶ）。押せる高さは 44pt、
+    /// 並びの上では今までの行の高さのまま（上下に張り出す）
+    private func nameLine(_ profile: UserProfile) -> some View {
+        Button { showNameSide = true } label: {
+            HStack(spacing: 4) {
+                Text(profile.name)
+                    .font(JPFont.display(26, relativeTo: .title))
+                    .foregroundStyle(Color.white)
+                NameMarks(profile: profile, nameSize: 26, relativeTo: .title, fit: .mincho, showsBadge: true)
+            }
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
+            .padding(.vertical, -nameTapSlack)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(MyPageNameLine.label(profile))
+        .accessibilityHint(L("名前の横のバッジを選ぶ", "Choose the badge next to your name"))
+        // 画面の見出しは名前（人のページと同じ）
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("mypage.nameLine")
+    }
+
+    /// 名前の行の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）。
+    /// **44pt に足りない分だけ**張り出し、並びの高さは変えない。明朝 26 の行は既定の文字の
+    /// 大きさで約 36pt（実機で測っていない）。文字を大きくして行が 44pt を超えたら張り出さない
+    /// ——超えても張り出すと、下の「@ユーザー名」の行に重なる
+    private var nameTapSlack: CGFloat { max(0, (WebTheme.minTapTarget - nameLineHeight) / 2) }
 
     /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・数字（`JPFont.statNumber`）と名前）。
     /// 列は幅を三等分し、押せる高さは 44pt

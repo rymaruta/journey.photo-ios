@@ -34,6 +34,8 @@ struct UserProfileView: View {
     @State private var isOnScreen = false
     /// ブロックを解いたが、まだ読み直していない（画面に出ていなかった）
     @State private var reloadOnAppear = false
+    /// 名前の横のバッジを押した → この人のバッジの棚
+    @State private var showShelf = false
 
     /// 板 31: 3列・隙間 4pt・角なし（マイページと同じ）
     private let columns = [
@@ -70,6 +72,11 @@ struct UserProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar { toolbarItems }
+        // 名前の横のバッジから。**自分の頁なら自分の棚**（進み具合つき）、人なら持っているものだけ
+        .navigationDestination(isPresented: $showShelf) {
+            BadgeShelfView(mode: userId == auth.userId ? .mine : .other(userId: userId),
+                           preloaded: model.profile)
+        }
         .alert(L("この人をブロックしますか？", "Block this person?"), isPresented: $showBlockConfirm) {
             Button(L("ブロック", "Block"), role: .destructive) {
                 Task { await model.block(userId: userId, environment: environment, store: hidden, toasts: toasts) }
@@ -239,7 +246,9 @@ struct UserProfileView: View {
                         .foregroundStyle(Color.white)
                         // 題は上のバーに出さないので、画面の見出しは名前が受け持つ
                         .accessibilityAddTraits(.isHeader)
-                    VerifiedBadge(isVerified: model.profile?.verified, nameSize: 26, relativeTo: .title, fit: .mincho)
+                    // 公式の封印 → Pro マーク → 選んだバッジ。バッジを押すとこの人の棚
+                    NameMarks(profile: model.profile, nameSize: 26, relativeTo: .title, fit: .mincho,
+                              showsBadge: true, onBadgeTap: { _ in showShelf = true })
                 }
                 // 公開プロフィールの口（`toPublicProfile`）が username と居住地を返す
                 if let line = ProfileLine.handleAndHome(username: model.profile?.username,

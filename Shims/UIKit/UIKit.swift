@@ -205,6 +205,11 @@ public final class UIGraphicsImageRenderer {
         actions(UIGraphicsImageRendererContext())
         return Data()
     }
+    /// 描いた絵（メダルの表・裏の貼り絵・本物と同じ）
+    public func image(actions: (UIGraphicsImageRendererContext) -> Void) -> UIImage {
+        actions(UIGraphicsImageRendererContext())
+        return UIImage()
+    }
 }
 
 public func UIRectFill(_ rect: CGRect) {}

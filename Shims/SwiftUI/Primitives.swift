@@ -391,6 +391,8 @@ public struct UnitPoint: Hashable, Sendable {
     public static let topLeading = UnitPoint(), topTrailing = UnitPoint()
     public static let bottomLeading = UnitPoint(), bottomTrailing = UnitPoint()
     public init() {}
+    /// 位置を数で（Pro マークの斜めのグラデーション・本物と同じ）
+    public init(x: Double, y: Double) {}
 }
 
 /// 色の位置（本物は `Gradient.Stop`）
@@ -402,6 +404,13 @@ public struct Gradient {
 public struct LinearGradient: View, ShapeStyle {
     public init(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {}
     public init(stops: [Gradient.Stop], startPoint: UnitPoint, endPoint: UnitPoint) {}
+    public var body: Never { fatalError() }
+}
+
+/// 丸いグラデーション（メダルを手に取る画面の地と後光・本物と同じ）
+public struct RadialGradient: View, ShapeStyle {
+    public init(colors: [Color], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
+    public init(stops: [Gradient.Stop], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {}
     public var body: Never { fatalError() }
 }
 

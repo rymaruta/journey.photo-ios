@@ -112,6 +112,9 @@ struct NotificationsView: View {
             PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed)
         case .user(let userId):
             UserProfileView(userId: userId)
+        case .shelf:
+            // 新しいメダル → 自分のバッジの棚（板 15 → Shelf）
+            BadgeShelfView(mode: .mine)
         }
     }
 
@@ -265,6 +268,12 @@ private struct NotificationRow: View {
     private func mainContent(_ line: NotificationText.Line) -> some View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
+                    // 新しいメダルは眉ラベル（黒地の上なので真鍮・板 15）
+                    if notification.kind == .badge {
+                        Text("NEW MEDAL")
+                            .jpEyebrow()
+                            .foregroundStyle(WebTheme.accent)
+                    }
                     (Text(line.who).bold() + Text(line.rest))
                         .font(.subheadline)
                         .foregroundStyle(WebTheme.text)
@@ -283,6 +292,14 @@ private struct NotificationRow: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .accessibilityHidden(true)
                 }
+                // メダルは押すと棚へ進む（板 15 の右の矢印）
+                if notification.kind == .badge {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.faint)
+                        .frame(width: 44, height: 44)
+                        .accessibilityHidden(true)
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
             .contentShape(Rectangle())
@@ -294,6 +311,23 @@ private struct NotificationRow: View {
     /// 名前を伏せているのと揃える）。id の無い古い通知も押せないまま
     @ViewBuilder
     private var avatar: some View {
+        if notification.kind == .badge, let key = notification.key {
+            // 新しいメダル: 顔の代わりにメダルの絵（44pt・板 15）。押す先は行の本体と同じ棚なので
+            // ここは押せないまま（同じ行き先のボタンを2つ並べない）
+            Image(BadgeCatalog.smallImage(key, tier: notification.tier ?? 1))
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 44, height: 44)
+                .shadow(color: Color.black.opacity(0.7), radius: 1.5, x: 0, y: 1)
+                .accessibilityHidden(true)
+        } else {
+            personAvatar
+        }
+    }
+
+    @ViewBuilder
+    private var personAvatar: some View {
         let userId = notification.byId.flatMap { $0.isEmpty ? nil : $0 }
         let face = RemoteImage(url: notification.deleted == true ? nil
                                : userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil) })
@@ -358,6 +392,8 @@ final class NotificationsViewModel: ObservableObject {
         ///   （投稿直後・下書き）ので、共有の口を出さない
         case photo(Photo, fromPublicFeed: Bool)
         case user(String)
+        /// 自分のバッジの棚（新しいメダル）
+        case shelf
         case none
     }
 
@@ -369,11 +405,13 @@ final class NotificationsViewModel: ObservableObject {
     enum Route: Hashable {
         case photo(Photo, fromPublicFeed: Bool)
         case user(String)
+        case shelf
 
         static func == (lhs: Route, rhs: Route) -> Bool {
             switch (lhs, rhs) {
             case let (.photo(a, fa), .photo(b, fb)): return a.id == b.id && fa == fb
             case let (.user(a), .user(b)): return a == b
+            case (.shelf, .shelf): return true
             default: return false
             }
         }
@@ -384,6 +422,8 @@ final class NotificationsViewModel: ObservableObject {
                 hasher.combine(0); hasher.combine(photo.id); hasher.combine(fromPublicFeed)
             case .user(let id):
                 hasher.combine(1); hasher.combine(id)
+            case .shelf:
+                hasher.combine(2)
             }
         }
     }
@@ -461,6 +501,7 @@ final class NotificationsViewModel: ObservableObject {
     ///   どちらにも無ければ押せないまま
     ///   にする（非公開にされた／消された写真を押して空振りさせない）
     /// - ストーリーへの返信は行き先が無い（24時間で消えるため）
+    /// - 新しいメダルは自分のバッジの棚（知らない鍵は行が描かれないので押せない）
     func destination(for notification: AppNotification) -> Destination {
         switch notification.kind {
         case .follow:
@@ -477,6 +518,9 @@ final class NotificationsViewModel: ObservableObject {
                 return .photo(photo, fromPublicFeed: false)
             }
             return .none
+        case .badge:
+            guard let key = notification.key, BadgeCatalog.isKnown(key) else { return .none }
+            return .shelf
         case .storyreply, .none:
             return .none
         }
@@ -486,6 +530,7 @@ final class NotificationsViewModel: ObservableObject {
         switch destination(for: notification) {
         case .photo(let photo, let fromPublicFeed): return .photo(photo, fromPublicFeed: fromPublicFeed)
         case .user(let id): return .user(id)
+        case .shelf: return .shelf
         case .none: return nil
         }
     }

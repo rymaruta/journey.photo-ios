@@ -1,0 +1,258 @@
+import Foundation
+
+/// バッジ（メダル）の台帳。名前・段・絵の名前・金属・棚の並び（第1段階・2026-10-09）。
+///
+/// デザインの正はアーティファクト「journey.photo iOS」の 06 バッジ・Pro（板 61〜71）。
+/// 絵は `Assets.xcassets` の `medal-<key>-<tier>`（大・棚と手に取って回す画面）と
+/// `medal-<key>-<tier>-s`（小・名前の横・選ぶ画面・お知らせ）。初期ユーザーは段が無い。
+///
+/// **知らない鍵は出さない。** サーバーが先に新しいバッジ（Pro 限定の章＝第2段階）を
+/// 足しても、絵の無いものを空の丸で出すより、出さない方がまし（お知らせの種類と同じ判断）。
+///
+/// 画面に依らない計算だけを持つ（Linux の模型でもテストできるように）。
+enum BadgeCatalog {
+
+    /// バッジの種類1つ
+    struct Kind: Equatable {
+        let key: String
+        let ja: String
+        let en: String
+        /// いちばん上の段（最初の一枚・初期ユーザーは 1）
+        let maxTier: Int
+        /// 棚の「あと◯で次」の単位（無ければ数だけ）
+        let unitJa: String
+        let unitEn: String
+        /// 後から取れない（初期ユーザー）。**持っていない人の棚には出さない**
+        let closed: Bool
+
+        var name: String { L(ja, en) }
+    }
+
+    /// 棚・選ぶ画面の並び（板 Shelf の順に寄せた）
+    static let kinds: [Kind] = [
+        Kind(key: "earlyUser", ja: "初期ユーザー", en: "Early user", maxTier: 1, unitJa: "", unitEn: "", closed: true),
+        Kind(key: "first", ja: "最初の一枚", en: "First photo", maxTier: 1, unitJa: "枚", unitEn: "photo", closed: false),
+        Kind(key: "prefectures", ja: "都道府県", en: "Prefectures", maxTier: 3, unitJa: "", unitEn: "", closed: false),
+        Kind(key: "countries", ja: "国・地域", en: "Countries", maxTier: 3, unitJa: "", unitEn: "", closed: false),
+        Kind(key: "seasons", ja: "四季", en: "Four seasons", maxTier: 3, unitJa: "年", unitEn: "year", closed: false),
+        Kind(key: "morning", ja: "朝の光", en: "Morning light", maxTier: 3, unitJa: "枚", unitEn: "photo", closed: false),
+        Kind(key: "night", ja: "夜の光", en: "Night light", maxTier: 3, unitJa: "枚", unitEn: "photo", closed: false),
+        Kind(key: "books", ja: "旅の一冊", en: "Trip books", maxTier: 3, unitJa: "冊", unitEn: "book", closed: false),
+        Kind(key: "wish", ja: "行けた場所", en: "Wishes visited", maxTier: 3, unitJa: "", unitEn: "", closed: false),
+    ]
+
+    static func kind(_ key: String) -> Kind? { kinds.first { $0.key == key } }
+
+    static func isKnown(_ key: String) -> Bool { kind(key) != nil }
+
+    /// 画面に出す名前。知らない鍵は鍵のまま（出す前に `isKnown` で落とす）
+    static func name(_ key: String) -> String { kind(key)?.name ?? key }
+
+    /// 段の呼び名（1 銅・2 銀・3 白金）
+    static func tierWord(_ tier: Int) -> String {
+        switch tier {
+        case ...1: return L("銅", "Bronze")
+        case 2: return L("銀", "Silver")
+        default: return L("白金", "Platinum")
+        }
+    }
+
+    /// 段を台帳の範囲に収める（サーバーが上の段を先に足しても絵の無い名前を引かない）
+    static func clampedTier(_ key: String, _ tier: Int) -> Int {
+        min(max(1, tier), kind(key)?.maxTier ?? 1)
+    }
+
+    /// 段のあるバッジか（読み上げ・お知らせに「· 銅」を付けるか）
+    static func hasTiers(_ key: String) -> Bool { (kind(key)?.maxTier ?? 1) > 1 }
+
+    /// 読み上げ・お知らせに使う名前（「都道府県 · 銀」）。段の無いものは名前だけ
+    static func fullName(_ key: String, tier: Int) -> String {
+        hasTiers(key) ? "\(name(key)) · \(tierWord(clampedTier(key, tier)))" : name(key)
+    }
+
+    /// 名前の横のバッジの読み上げ（「名前の横のバッジ: 都道府県 · 銀」）
+    static func nameSideLabel(_ badge: EarnedBadge) -> String {
+        let name = fullName(badge.key, tier: badge.tier)
+        return L("名前の横のバッジ: \(name)", "Badge: \(name)")
+    }
+
+    // MARK: - 絵の名前
+
+    private static func baseImage(_ key: String, _ tier: Int) -> String {
+        key == "earlyUser" ? "medal-earlyUser" : "medal-\(key)-\(clampedTier(key, tier))"
+    }
+
+    /// 小（192px）。名前の横・選ぶ画面・お知らせ
+    static func smallImage(_ key: String, tier: Int) -> String { baseImage(key, tier) + "-s" }
+
+    /// 大（780px）。棚・手に取って回す画面の表
+    static func largeImage(_ key: String, tier: Int) -> String { baseImage(key, tier) }
+
+    // MARK: - 金属（手に取って回す画面の裏と縁）
+
+    enum Metal: String, CaseIterable {
+        case bronze, silver, platinum, brass
+
+        var reverseImage: String { "reverse-\(rawValue)" }
+        var edgeImage: String { "edge-\(rawValue)" }
+    }
+
+    /// 段ごとの金属。初期ユーザーは真鍮（サポーター・Pro の章も第2段階で真鍮）
+    static func metal(_ key: String, tier: Int) -> Metal {
+        if key == "earlyUser" { return .brass }
+        switch clampedTier(key, tier) {
+        case 1: return .bronze
+        case 2: return .silver
+        default: return .platinum
+        }
+    }
+
+    /// 表の絵のうち、硬貨の円が占める割合（直径）。素材の README の値。
+    /// 無料のメダルは画像の 98.4%、初期ユーザーは後光の余白があるので 71.5%
+    static func discRatio(_ key: String) -> Double {
+        key == "earlyUser" ? 0.715 : 0.984
+    }
+
+    // MARK: - 棚
+
+    /// 棚の1枚
+    struct ShelfItem: Equatable, Identifiable {
+        let key: String
+        /// 絵に使う段（持っていなければ 1 の絵を暗くして出す）
+        let tier: Int
+        let earned: EarnedBadge?
+        /// 「あと◯で次」（人の棚・進み具合の無いときは nil）
+        let progress: String?
+
+        var id: String { key }
+        var isEarned: Bool { earned != nil }
+    }
+
+    /// 棚の並び。
+    ///
+    /// - 自分の棚（`progress` あり）: 持っているもの＋まだのもの（暗く）。
+    ///   後から取れないもの（初期ユーザー）は持っているときだけ
+    /// - 人の棚（`progress` が nil）: **持っているものだけ**。進み具合は出さない
+    static func shelf(badges: BadgeSet, progress: [String: BadgeProgress]?) -> [ShelfItem] {
+        kinds.compactMap { kind in
+            let earned = badges[kind.key]
+            guard earned != nil || (progress != nil && !kind.closed) else { return nil }
+            let tier = earned.map { clampedTier(kind.key, $0.tier) } ?? 1
+            let text = progress.flatMap { map in
+                progressText(kind.key, progress: map[kind.key], earned: earned != nil)
+            }
+            return ShelfItem(key: kind.key, tier: tier, earned: earned, progress: text)
+        }
+    }
+
+    /// 棚の数（「7 / 9」）。持っている数と、その人の棚に並ぶ数
+    static func shelfCount(_ items: [ShelfItem]) -> (earned: Int, total: Int) {
+        (items.filter(\.isEarned).count, items.count)
+    }
+
+    /// 「あと17で次」「あと25枚で次」「達成」「あと5枚」（板 Shelf）。
+    ///
+    /// - 持っていて上の段が無い → 達成
+    /// - 持っていて次がある → あと◯で次
+    /// - まだ持っていない → あと◯（最初の段まで）
+    /// - 進み具合が無い（古いサーバー） → 持っていれば何も出さない・まだなら nil
+    static func progressText(_ key: String, progress: BadgeProgress?, earned: Bool) -> String? {
+        guard let kind = kind(key) else { return nil }
+        if earned, progress?.next == nil || (progress?.tier ?? 0) >= kind.maxTier {
+            // 進み具合が無くても、上の段の無いもの（最初の一枚・初期ユーザー）は達成と言える
+            if progress == nil && kind.maxTier > 1 { return nil }
+            return L("達成", "Complete")
+        }
+        guard let progress, let next = progress.next else { return nil }
+        let left = max(1, next - progress.count)
+        let unitEn = kind.unitEn.isEmpty ? "" : " " + (left == 1 ? kind.unitEn : kind.unitEn + "s")
+        if earned {
+            return L("あと\(left)\(kind.unitJa)で次", "\(left) more\(unitEn) to next")
+        }
+        return L("あと\(left)\(kind.unitJa)", "\(left) more\(unitEn) to earn")
+    }
+
+    /// 名前の横の画面に並べる、持っているバッジ（台帳の順・知らない鍵は落とす）
+    static func owned(_ badges: BadgeSet) -> [EarnedBadge] {
+        kinds.compactMap { badges[$0.key] }
+    }
+
+    // MARK: - 日付（裏に刻む）
+
+    /// 受け取った日（「2026.10.09」）。読めなければ nil
+    static func awardDate(_ iso: String?, timeZone: TimeZone = .current) -> String? {
+        guard let iso, let date = parse(iso) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let y = c.year, let m = c.month, let d = c.day else { return nil }
+        return String(format: "%04d.%02d.%02d", y, m, d)
+    }
+
+    private static func parse(_ iso: String) -> Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFraction.date(from: iso) { return date }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        if let date = plain.date(from: iso) { return date }
+        // 日付だけ（「2026-10-09」）
+        let day = ISO8601DateFormatter()
+        day.formatOptions = [.withFullDate]
+        return day.date(from: iso)
+    }
+}
+
+/// 名前の横のバッジの大きさ（板 BadgePicker・MyPage）。
+///
+/// **バッジの円の部分を、公式の封印（`VerifiedBadge`）と同じ見た目の大きさにそろえる**
+/// ——明朝 26 の名前で円が 22pt。名前の字の大きさに比例させる。
+/// 絵には円の外に余白があるので、絵はそのぶん大きく置き、はみ出した分は
+/// 負の余白で打ち消して**行の高さを変えない**（初期ユーザーは後光の分だけ大きい）
+enum BadgeFit {
+    /// 基準: 明朝 26 の名前のとき、円は 22pt
+    static let referenceNameSize: Double = 26
+    static let referenceCircle: Double = 22
+
+    /// 円の直径
+    static func circle(nameSize: Double) -> Double {
+        nameSize * referenceCircle / referenceNameSize
+    }
+
+    /// 絵の一辺（無料のメダル 22.4・初期ユーザー 30.8 @ 名前 26）。0.1pt に丸める
+    static func imageSide(_ key: String, nameSize: Double) -> Double {
+        ((circle(nameSize: nameSize) / BadgeCatalog.discRatio(key)) * 10).rounded() / 10
+    }
+
+    /// 上下左右にはみ出す量（負の余白に使う。初期ユーザー 4.4 @ 名前 26）
+    static func overhang(_ key: String, nameSize: Double) -> Double {
+        ((imageSide(key, nameSize: nameSize) - circle(nameSize: nameSize)) / 2 * 10).rounded() / 10
+    }
+}
+
+/// Pro マークの大きさ（板 ProMarkOptions）。
+///
+/// **公式の封印（`VerifiedBadge`）と同じ見た目の大きさ。** 明朝の名前では字の 0.835 倍
+/// （26 → 21.7）、本文の書体（写真の詳細の作者・13）では板の 11.5 に合わせて 0.885 倍。
+/// 15pt を切ったら線を太らせた小さい版にする（細い羽根の線は小さいと潰れる）
+enum ProMarkFit {
+    static let minchoRatio: Double = 0.835
+    static let systemRatio: Double = 0.885
+    /// これより小さいときは小さい版
+    static let smallBelow: Double = 15
+
+    /// 印の高さ（絞り羽根は一辺）
+    static func side(nameSize: Double, mincho: Bool) -> Double {
+        ((nameSize * (mincho ? minchoRatio : systemRatio)) * 10).rounded() / 10
+    }
+
+    static func isSmall(side: Double) -> Bool { side < smallBelow }
+
+    /// 印の幅。札（PRO）は横長（大 42:24・小 36:24）
+    static func width(side: Double, style: ProMarkStyle) -> Double {
+        switch style {
+        case .iris: return side
+        case .plate: return side * (isSmall(side: side) ? 36 : 42) / 24
+        }
+    }
+}
