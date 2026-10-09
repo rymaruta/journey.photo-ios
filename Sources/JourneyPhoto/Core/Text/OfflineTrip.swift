@@ -603,9 +603,9 @@ enum OfflineTripText {
 
 enum OfflineTripMap {
 
-    /// 画像の大きさ（pt）。旅全体は板 72c の 358×196、場所ごとは同じ幅で低め
+    /// 画像の大きさ（pt）。旅全体は板 72c の 358×196、場所ごとは板 72d の 358×104（2026-10-09 に足した）
     static let overviewSize = (width: 358.0, height: 196.0)
-    static let stopSize = (width: 358.0, height: 150.0)
+    static let stopSize = (width: 358.0, height: 104.0)
     /// 場所ごとの地図の幅（緯度の度・約 2.5 km）。座標は約1kmに丸めてあるので、それより狭くしない
     static let stopSpan = 0.025
     /// 旅全体の最小の幅（1か所だけ・近い場所だけの旅）
