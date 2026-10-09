@@ -171,6 +171,40 @@ final class ScreenshotTests: XCTestCase {
         // 写真が読み込まれるのを待つ（Commons の縮小版）
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "13g-撮影スポット（作例）")
+        shootComposeGuide(app)
+    }
+
+    /// **作例を重ねて撮る**（Pro・2026-10-09）。作例の帯の下の入口を押し、撮る画面を撮って閉じる。
+    /// 起動の鍵（`-JPComposeGuidePreview`）で Pro の確かめを飛ばしている。シミュレータにカメラは無いので
+    /// 映像の枠は「カメラを使えません」になる（下の黒い面・上の札・出典の行は板どおりに出る）。
+    /// 入口・画面が出なければ撮らない（この試験の決まり）
+    private func shootComposeGuide(_ app: XCUIApplication) {
+        let entry = app.buttons["spot.official.composeGuide"].firstMatch
+        var swipes = 0
+        while swipes < 2, !(entry.exists && entry.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard entry.exists, entry.isHittable else { return }
+        XCTAssertGreaterThanOrEqual(entry.frame.height, 44, "作例を重ねて撮るの入口が 44pt 未満")
+        shoot(app, "13g2-撮影スポット（作例を重ねて撮るの入口）")
+        entry.tap()
+        // 🔴 **開いたら必ず閉じる。** 閉じられないと全画面のまま残り、あとの 14〜61 がこの画面の絵に
+        // なる・消える（PR #195 の1回目: 閉じるボタンが見つからず、14 がこの画面だった）
+        let close = app.buttons["composeGuide.close"].firstMatch
+        let shutter = app.buttons["composeGuide.shutter"].firstMatch
+        guard close.waitForExistence(timeout: 10) || shutter.exists else { return }
+        // 作例のサムネが読み込まれるのを待つ
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "13h-作例を重ねて撮る")
+        if close.exists, close.isHittable {
+            close.tap()
+        } else {
+            // 板の閉じるの位置（左上 12pt・上 52pt・44pt の丸）を直に押す
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.08)).tap()
+        }
+        Thread.sleep(forTimeInterval: 1)
     }
 
     /// 積んだ画面から1つ戻る（2026-10-03）。
@@ -361,6 +395,9 @@ final class ScreenshotTests: XCTestCase {
         // ——**嘘の中身は出ない**。渡す値は公開 API が返している `userId`
         // そのもので、資格情報ではない。
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        // **「作例を重ねて撮る」（Pro）を Pro でなくても開く鍵**（Debug のみ・`ComposeGuideAccess`）。
+        // 撮る画面の絵（13h）を撮るため。シミュレータにカメラは無いので「カメラを使えません」の側が出る
+        app.launchArguments += ["-JPComposeGuidePreview", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]

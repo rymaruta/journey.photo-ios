@@ -1,6 +1,6 @@
 /* System permission prompts. Shown in the device's language. */
 
-"NSCameraUsageDescription" = "Used to take photos you post.";
+"NSCameraUsageDescription" = "Used to take photos you post, and to shoot with an example photo overlaid.";
 "NSPhotoLibraryUsageDescription" = "Used to pick photos to post and to find trips from when and where your photos were taken. Only the photos you choose are uploaded.";
 "NSPhotoLibraryAddUsageDescription" = "Used to save photos you take back to your library.";
 "NSLocationWhenInUseUsageDescription" = "Used on the photo map to show where you are and which way you face, and to move the map around you. Your location is never saved or sent.";
