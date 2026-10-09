@@ -38,19 +38,31 @@ enum PlaceCoordsRule {
 
     /// 決めるのに索引が要るのに、まだ手元に無い（`current` が空）ときだけ読む。
     /// `indexWait` を過ぎたら空のまま返す（(c) は当たらない＝写真の座標を送らない側に倒れる）
+    ///
+    /// 🔴 **待つのは `AsyncTimeout.firstWithin`（2026-10-09）。** 以前は子タスクの組（`withTaskGroup`）で
+    /// 読み込みと眠りを競わせていたが、組は抜けるときに全部の子の終わりを待つ。本番の索引は区分の読み込みを
+    /// 呼んだ側の取り消しで止めない（`OfficialSpotService.loadShard`）ので、2秒のはずの待ちが通信の
+    /// 時間切れ（20秒）まで延び、その間ストーリーの「シェアする」は押しても何も起きなかった
+    /// （`isWaitingForSpots` で押し直しを受けない）。投稿・編集の保存も同じ待ちを通る
     static func index(current: [OfficialSpot], needed: Bool, wait: Duration = indexWait,
                       fetch: @escaping @Sendable () async -> [OfficialSpot]?) async -> [OfficialSpot] {
+        await lookup(current: current, needed: needed, wait: wait, fetch: fetch) ?? current
+    }
+
+    /// `index` と同じ待ち方で、**取れなかった（時間切れ・読めなかった）ときは nil**。
+    /// 「分からない」と「スポットが無い」を分けたい呼び手（写真の編集——分からないのに座標を
+    /// 消すと、サーバーのピンが黙って消える）が使う。要らない・もうあるときは `current` を返す
+    static func lookup(current: [OfficialSpot], needed: Bool, wait: Duration = indexWait,
+                       fetch: @escaping @Sendable () async -> [OfficialSpot]?) async -> [OfficialSpot]? {
         guard needed, current.isEmpty else { return current }
-        let found = await withTaskGroup(of: [OfficialSpot]?.self) { group -> [OfficialSpot]? in
-            group.addTask { await fetch() }
-            group.addTask {
-                try? await Task.sleep(for: wait)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+        return await AsyncTimeout.firstWithin(seconds: seconds(wait)) { () async -> [OfficialSpot]? in
+            await fetch()
         }
-        return found ?? current
+    }
+
+    /// `Duration` を秒（小数）に
+    static func seconds(_ duration: Duration) -> Double {
+        let parts = duration.components
+        return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
     }
 }

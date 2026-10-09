@@ -60,9 +60,10 @@ enum EditPhotoChanges {
     /// 保存で送るもの。**変えた項目だけ**（各項目の決まりは下の注記と、それぞれの型）。
     ///
     /// - Parameter openedAudience: 開いたときの公開範囲。知らない値なら nil（`EditVisibilityRules`）
-    /// - Parameter spots: 撮影スポットの索引（座標を消すかの判断・`EditPlaceRules.clearsCoords`）。無ければ空
+    /// - Parameter spots: 撮影スポットの索引（座標を消すかの判断・`EditPlaceRules.clearsCoords`）。無ければ空。
+    ///   **nil は読めなかった（時間切れ）**——書き換えた撮影地の座標を消さない
     static func patch(photo: Photo, openedAudience: Audience?, fields f: Fields,
-                      spots: [OfficialSpot] = []) -> PhotoPatch {
+                      spots: [OfficialSpot]? = []) -> PhotoPatch {
         var patch = PhotoPatch()
         // **触った欄だけ、英語側を残して送る**（`LocalizedEdit`）。
         // 表示用の1言語を平文で送っていたので、`{ja, en}` の写真を

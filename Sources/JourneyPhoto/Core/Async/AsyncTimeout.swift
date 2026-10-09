@@ -3,7 +3,8 @@ import Foundation
 /// 上限時間つきで待つ（共通・2026-10-03 に `OfficialSpotIndex` から移した）。
 ///
 /// 使っているところ: 経路の検索（`SpotDirections`）・投稿画面のライブラリの写真の読み込み
-/// （`UploadViewModel.pickedLoadTimeout`）
+/// （`UploadViewModel.pickedLoadTimeout`）・ストーリーの写真の読み込み（`StorySimpleRules.readPicks`）・
+/// 送る前の撮影スポットの索引の待ち（`PlaceCoordsRule.index`）
 enum AsyncTimeout {
 
     /// `operation` の答えを `seconds` 秒だけ待つ。過ぎたら nil を返し、`operation` は止める。

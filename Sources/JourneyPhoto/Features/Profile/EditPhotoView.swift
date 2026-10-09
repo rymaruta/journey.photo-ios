@@ -302,13 +302,14 @@ struct EditPhotoView: View {
             let prepared = try await Task.detached(priority: .userInitiated) {
                 try ImagePreparer.prepare(data: data, fileName: "photo", withThumbnail: true)
             }.value
-            // ピンの無い写真・この画面で撮影地を消した写真に、差し替えた写真の位置を書かない
-            let spots = await PlaceCoordsRule.index(
+            // ピンの無い写真・この画面で撮影地を消した写真に、差し替えた写真の位置を書かない。
+            // 索引を読めなかった（nil）ときは、分からないのでピンを残す（`keepsCoordsOnReplace`）
+            let spots = await PlaceCoordsRule.lookup(
                 current: [],
                 needed: photo.coords != nil && EditPlaceRules.needsSpotIndex(
                     openedLocation: photo.location, currentLocation: location, pickedCoords: false,
                     photoCoords: prepared.coords),
-                fetch: { [spots = environment.spots] in try? await spots.fetchIndex() })
+                fetch: { [spots = environment.spots] in await spots.fetchIndexRows() })
             let keep = EditPlaceRules.keepsCoordsOnReplace(openedLocation: photo.location,
                                                            openedHasCoords: photo.coords != nil,
                                                            currentLocation: location,
@@ -443,12 +444,13 @@ struct EditPhotoView: View {
         defer { isSaving = false }
 
         // 差分の決まりは `EditPhotoChanges.patch`（閉じるときの確認と同じ判断）
-        // 書き換えた撮影地が写真の近くのスポットを指すか（`PlaceCoordsRule`）を見る索引。要るときだけ少し待つ
-        let spots = await PlaceCoordsRule.index(
+        // 書き換えた撮影地が写真の近くのスポットを指すか（`PlaceCoordsRule`）を見る索引。要るときだけ少し待つ。
+        // **読めなかった（nil）ときは座標を消さない**（分からないまま消すと、サーバーのピンが消える）
+        let spots = await PlaceCoordsRule.lookup(
             current: [],
             needed: EditPlaceRules.needsSpotIndex(openedLocation: photo.location, currentLocation: location,
                                                   pickedCoords: pickedCoords != nil, photoCoords: photo.coords),
-            fetch: { [spots = environment.spots] in try? await spots.fetchIndex() })
+            fetch: { [spots = environment.spots] in await spots.fetchIndexRows() })
         let patch = EditPhotoChanges.patch(photo: photo, openedAudience: openedAudience, fields: fields, spots: spots)
 
         // **何も変えていなければ送らない。** 空の本文はサーバーが 400「更新項目が

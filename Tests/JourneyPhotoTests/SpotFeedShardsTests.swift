@@ -400,6 +400,77 @@ final class SpotFeedShardsTests: XCTestCase {
         XCTAssertFalse(second.contains(where: \.isIndexOnly), "読んでいる間の呼び出しに索引だけの行を返している")
     }
 
+    /// 区分を門で止めたサービス（`beforeShardRequest`）
+    private func gatedService(_ gate: Gate) -> OfficialSpotService {
+        let prefix = UUID().uuidString
+        prefixes.append(prefix)
+        let legacy = UUID().uuidString
+        snapshotNames.append(legacy)
+        return OfficialSpotService(url: url, session: session, snapshot: SpotSnapshotStore(fileName: legacy),
+                                   feedSnapshotPrefix: prefix,
+                                   beforeShardRequest: { await gate.wait() })
+    }
+
+    /// 門を開け、**読みかけの区分を読み終えてから戻る**（次の試験の `StubProtocol` の数に混ざらない）。
+    /// 区分の読み込みは1本に寄せてあるので、もう一度読むと読みかけのものを待つ
+    private func drain(_ spots: OfficialSpotService, _ gate: Gate) async {
+        await gate.open()
+        _ = try? await spots.fetchIndex()
+    }
+
+    /// 🔴 **送る前の索引の待ち（`PlaceCoordsRule.index`）は、区分を読んでいる途中でも上限で終わる**
+    /// （2026-10-09 owner「ストーリーで写真を選んだのに投稿できない」）。区分の読み込みは呼んだ側の
+    /// 取り消しを受けない（`loadShard`）ので、以前は区分が届くまで（本番は通信の時間切れまで）
+    /// 待ち続け、ストーリーの「シェアする」は押しても何も起きないままだった
+    func testSubmitIndexWaitDoesNotWaitForShardDownloads() async {
+        serve()
+        let gate = Gate()
+        let spots = gatedService(gate)
+        let box = SpotsBox()
+        let run = Task {
+            // 待ちは長め（遅い CI で、区分に着く前に時間切れで取り消されないように）
+            let found = await PlaceCoordsRule.index(current: [], needed: true, wait: .seconds(1),
+                                                    fetch: { try? await spots.fetchIndex() })
+            await box.set(found)
+        }
+        // 区分を読んでいる途中（門で止まっている）にする
+        await gate.untilWaiting(1, timeout: 5)
+        let returned = await box.waitForValue(seconds: 5)
+        await drain(spots, gate)
+        await run.value
+        XCTAssertTrue(returned, "区分の読み込みを待ち続けて、送る前の索引の待ちが上限で終わらない")
+    }
+
+    /// 🔴 **送る前の判断には索引の行だけを返す（区分を待たない）**（2026-10-09 のレビュー）。
+    /// `fetchIndex` は区分を読み終えるまで返らないので、遅い通信では索引が届いているのに2秒を過ぎて
+    /// 「索引なし」に倒れ、近くのスポットを書いた写真の座標を落としていた（編集ではピンを消していた）
+    func testIndexRowsDoNotWaitForShards() async throws {
+        serve()
+        let gate = Gate()
+        let spots = gatedService(gate)
+        let box = SpotsBox()
+        let run = Task {
+            let found = await PlaceCoordsRule.index(current: [], needed: true, wait: .seconds(1),
+                                                    fetch: { await spots.fetchIndexRows() })
+            await box.set(found)
+        }
+        let returned = await box.waitForValue(seconds: 5)
+        await run.value
+        let rows = await box.value ?? []
+        XCTAssertTrue(returned)
+        XCTAssertEqual(Set(rows.map(\.slug)), ["tokyo-station", "versailles"],
+                       "区分を待って時間切れになり、索引の行が使えていない")
+        // 撮影地の判断に要る名前と座標は索引の行にある
+        let tokyo = try XCTUnwrap(rows.first { $0.slug == "tokyo-station" })
+        XCTAssertNotNil(StorySpotLink.spot(location: "東京駅", coords: tokyo.coords, in: rows))
+        XCTAssertEqual(count("/app/data/spot-feed/jp-kanto.json"), 0, "索引の行だけで区分を読みに行っている")
+
+        // **60秒の控えに索引だけの行を置かない**——あとの `fetchIndex` は詳細を重ねた行を返す
+        await gate.open()
+        let full = try await spots.fetchIndex()
+        XCTAssertFalse(full.contains(where: \.isIndexOnly), "索引だけの行を控えに置いている")
+    }
+
     // MARK: - 別名は索引から
 
     func testAliasesComeFromTheIndex() async throws {
