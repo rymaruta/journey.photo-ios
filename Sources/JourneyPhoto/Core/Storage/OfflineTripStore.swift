@@ -45,7 +45,17 @@ final class OfflineTripStore: ObservableObject {
     private let root: URL
     private let fileManager: FileManager
     private var userDir: URL?
-    private var jobs: [String: Task<Void, Never>] = [:]
+    /// 走っている保存。**印（`id`）で見分ける**——消した・人が替わったあとに止まり切っていない前の保存が、
+    /// 新しく始めた保存の印や状態を書き換えないように（2026-10-09 判断）
+    private var jobs: [String: Job] = [:]
+
+    private struct Job {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
+
+    /// この保存がまだ「いまの保存」か（消された・人が替わった・やり直された後なら false）
+    private func isCurrent(_ planId: String, _ job: UUID) -> Bool { jobs[planId]?.id == job }
     /// 止めるを押した旅（取り消しの理由を「電波」と取り違えない）
     private var stopRequested: Set<String> = []
 
@@ -113,7 +123,12 @@ final class OfflineTripStore: ObservableObject {
     private func switchTo(_ userId: String?) {
         let next = userId.map { root.appendingPathComponent(Self.hex($0), isDirectory: true) }
         guard next != userDir else { return }
-        for planId in Array(jobs.keys) { stop(planId) }
+        // 前の人の保存を止め、**いまの保存から外す**（止まり切るまでの間に、前の人の旅の
+        // 「止まった」「失敗した」を次の人の状態に書かない。前の人の途中のものは、その人に戻ったとき
+        // 置き場から「続きから保存」で出る）
+        for (_, job) in jobs { job.task.cancel() }
+        jobs = [:]
+        stopRequested = []
         userDir = next
         reload()
     }
@@ -178,22 +193,24 @@ final class OfflineTripStore: ObservableObject {
         stopRequested.remove(planId)
         apply(planId, .started(total: stops.count, estimate: OfflineTripBytes.estimate(stops: stops.count),
                                alreadyDone: reusable.count))
-        jobs[planId] = Task { [weak self] in
-            await self?.run(plan: plan, stops: stops, partial: partial, reusable: reusable, sources: sources)
-        }
+        let id = UUID()
+        jobs[planId] = Job(id: id, task: Task { [weak self] in
+            await self?.run(plan: plan, stops: stops, partial: partial, reusable: reusable, sources: sources, job: id)
+        })
     }
 
     /// 止める（途中まで残す・次は「続きから保存」）
     func stop(_ planId: String) {
         guard let job = jobs[planId] else { return }
         stopRequested.insert(planId)
-        job.cancel()
+        job.task.cancel()
     }
 
     /// 端末から削除（保存済みと途中のもの）。**旅行プランには触らない**
     func delete(_ planId: String) {
-        jobs[planId]?.cancel()
+        jobs[planId]?.task.cancel()
         jobs[planId] = nil
+        stopRequested.remove(planId)
         if let dir = finalDir(planId) { try? fileManager.removeItem(at: dir) }
         if let dir = partialDir(planId) { try? fileManager.removeItem(at: dir) }
         manifests[planId] = nil
@@ -215,7 +232,7 @@ final class OfflineTripStore: ObservableObject {
     }
 
     private func run(plan: TripPlan, stops: [OfflineTripPlan.Stop], partial: URL,
-                     reusable: [OfflineTripManifest.Stop], sources: OfflineTripSources) async {
+                     reusable: [OfflineTripManifest.Stop], sources: OfflineTripSources, job: UUID) async {
         let planId = plan.planId
         var done: [Int: OfflineTripManifest.Stop] = [:]
         for stop in stops {
@@ -235,6 +252,7 @@ final class OfflineTripStore: ObservableObject {
                 try Task.checkCancellation()
                 try write(record, to: partial.appendingPathComponent("stop-\(stop.number).json"))
                 done[stop.number] = record
+                guard isCurrent(planId, job) else { throw CancellationError() }
                 apply(planId, .progressed(done: done.count, bytes: OfflineTripBytes.count(in: partial, fileManager: fileManager)))
             }
             try Task.checkCancellation()
@@ -244,8 +262,10 @@ final class OfflineTripStore: ObservableObject {
                 overview = "overview.jpg"
             }
             try Task.checkCancellation()
-            try finish(plan: plan, stops: stops, done: done, overview: overview, partial: partial)
+            try finish(plan: plan, stops: stops, done: done, overview: overview, partial: partial, job: job)
         } catch {
+            // 消された・人が替わった・やり直された後の前の保存は、何も書かずに終わる
+            guard isCurrent(planId, job) else { return }
             jobs[planId] = nil
             let stoppedByUser = stopRequested.remove(planId) != nil
             if stoppedByUser || error is CancellationError {
@@ -290,8 +310,9 @@ final class OfflineTripStore: ObservableObject {
 
     /// 書き終えた: 記録を作り、保存済みの置き場と入れ替える
     private func finish(plan: TripPlan, stops: [OfflineTripPlan.Stop], done: [Int: OfflineTripManifest.Stop],
-                        overview: String?, partial: URL) throws {
+                        overview: String?, partial: URL, job: UUID) throws {
         let planId = plan.planId
+        guard isCurrent(planId, job) else { throw CancellationError() }
         var days: [OfflineTripManifest.Day] = []
         for (di, _) in plan.days.enumerated() {
             let inDay = stops.filter { $0.dayIndex == di }.compactMap { done[$0.number] }

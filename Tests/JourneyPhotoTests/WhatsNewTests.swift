@@ -115,13 +115,17 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
-        XCTAssertEqual(releases.map(\.version), ["1.0.79", "1.0.73", "1.0.67"])
-        // 1.0.79: Pro。始まったことを先頭に（入口は設定なので行き先は無い）
+        XCTAssertEqual(releases.map(\.version), ["1.0.80", "1.0.73", "1.0.67"])
+        // 1.0.80: Pro（1.0.79 は Pro 無しで出たので、Pro が入って出た 1.0.80 に置く）。始まったことを先頭に（入口は設定なので行き先は無い）
         let latest = try XCTUnwrap(releases.first)
         XCTAssertEqual(latest.items.count, 4)
         XCTAssertEqual(latest.items.first?.title.ja, "Journey Photo Pro がはじまりました")
         XCTAssertNil(latest.items.first?.destination)
         XCTAssertEqual(latest.items.compactMap(\.destination), [.map, .mypage])
+        // 1.0.79（Pro 無し）を使っていた人は「見た版 = 1.0.79」。Pro の項目が 1.0.79 のままだと
+        // 1.0.80 に上げても出なかった（2026-10-09 判断: 版は Pro が入って出た 1.0.80）
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.0.79", current: "1.0.80", usedBefore: true)
+            .map(\.version), ["1.0.80"])
         // 1.0.73: メダル。期限のある初期ユーザー章を先頭に
         let medals = releases[1]
         XCTAssertEqual(medals.items.count, 4)

@@ -9,13 +9,19 @@ import Foundation
 /// `LightForecastService(api: environment.api)` で作る）
 struct LightForecastService {
 
-    private let api: APIClient
+    let api: APIClient
 
     init(api: APIClient) {
         self.api = api
     }
 
+    /// **端末の HTTP 控えを使わずに読む**（2026-10-09 判断）。サーバーは
+    /// `Cache-Control: private, max-age=600` で返すので、そのままだと URLSession が10分のあいだ
+    /// 控えを返す——「行きたい」を足して戻っても、引っぱって読み直しても、前の一覧（空なら
+    /// 「行きたい場所がまだありません」）のまま変わらなかった。予報はサーバーが1時間控えているので、
+    /// 毎回取りに行っても WeatherKit を余計には叩かない
     func fetch() async throws -> LightForecast {
-        try await api.authorized(.get, "/user/light-forecast", as: LightForecast.self)
+        try await api.authorized(.get, "/user/light-forecast", cachePolicy: .reloadIgnoringLocalCacheData,
+                                 as: LightForecast.self)
     }
 }

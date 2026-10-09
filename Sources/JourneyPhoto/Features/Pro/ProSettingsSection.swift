@@ -71,7 +71,8 @@ struct ProSettingsSection: View {
             if isPro { showManage = true } else { showPaywall = true }
         } label: {
             JPRowLabel(title: "Journey Photo Pro",
-                       detail: ProStatusText.settingsDetail(isPro: isPro, state: store.subscription),
+                       detail: ProStatusText.settingsDetail(isPro: isPro, state: store.subscription,
+                                                            monthlyPrice: store.product(.monthly)?.displayPrice),
                        icon: AnyView(ProMark(style: .iris, side: 20)))
         }
         .buttonStyle(JPRowButtonStyle())

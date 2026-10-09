@@ -19,6 +19,8 @@ import StoreKit
 /// 終えずに残す——`Transaction.unfinished` と次の起動の `updates` で届き直すので、
 /// ログインした時（`deliverUnfinished()`）と起動時にもう一度送る。
 /// サーバーが「受け取れない」と言い切った取引（ほかの人の購入など）は終える（`PurchaseDelivery`）。
+/// **ただし、同じ端末で前にログインしていた人の印（`appAccountToken`）が付いた取引は送らない**
+/// ——送ると 403 で終えてしまい、その人の購入が二度と自動で届かない（`belongsToSomeoneElse`）。
 /// **検証に失敗した取引は送らず、終えもしない**（Apple が直せば次に検証済みで届く）
 ///
 /// ## 復元
@@ -124,13 +126,16 @@ final class StoreService: ObservableObject {
         guard let userId = currentUserId() else {
             return .failed(Labels.Common.signInRequired)
         }
+        // **商品を読み直す前に「買っている最中」にする**（2026-10-09 判断）。後で立てていた頃は、
+        // 商品が読めていない案内（圏外で開いた）で主ボタンを2度押すと、2度目が読み込みの最中に
+        // 入り込んで「App Store に接続できませんでした」を出し、その裏で1度目の購入の画面が開いた
+        isPurchasing = true
+        defer { isPurchasing = false }
         if products[plan] == nil { await loadProducts(force: true) }
         guard let product = products[plan] else {
             return .failed(L("App Store に接続できませんでした。時間をおいてもう一度お試しください。",
                              "Couldn't reach the App Store. Please try again later."))
         }
-        isPurchasing = true
-        defer { isPurchasing = false }
         do {
             let result = try await product.purchase(options: [.appAccountToken(AppAccountToken.make(userId: userId))])
             switch result {
@@ -175,18 +180,23 @@ final class StoreService: ObservableObject {
         }
         var found = false
         var delivered = false
+        var lastMessage: String?
         for await result in StoreKit.Transaction.currentEntitlements {
             guard case .verified(let transaction) = result, isOurs(transaction) else { continue }
             found = true
-            if await send(result.jwsRepresentation, transaction: transaction).outcome == .accepted {
+            let sent = await send(result.jwsRepresentation, transaction: transaction)
+            if sent.outcome == .accepted {
                 delivered = true
+            } else if let message = sent.message {
+                lastMessage = message
             }
         }
         await refreshSubscription()
         if delivered { return .restored }
         if found {
-            return .failed(L("購入をサーバーに届けられませんでした。時間をおいてもう一度お試しください。",
-                             "Couldn't send your purchase to our server. Please try again later."))
+            return .failed(lastMessage
+                           ?? L("購入をサーバーに届けられませんでした。時間をおいてもう一度お試しください。",
+                                "Couldn't send your purchase to our server. Please try again later."))
         }
         return .nothing
     }
@@ -212,6 +222,11 @@ final class StoreService: ObservableObject {
                         || status.state == .inBillingRetryPeriod,
                       case .verified(let transaction) = status.transaction,
                       transaction.productID == product.id else { continue }
+                // 同じ端末（同じ Apple ID）で前の人が買った定期購入を、次の人の設定の行に出さない
+                if let userId = currentUserId(),
+                   PurchaseDelivery.belongsToSomeoneElse(appAccountToken: transaction.appAccountToken, userId: userId) {
+                    continue
+                }
                 var willRenew = true
                 if case .verified(let renewal) = status.renewalInfo { willRenew = renewal.willAutoRenew }
                 best = ProSubscriptionState(plan: plan, renewalDate: transaction.expirationDate,
@@ -238,7 +253,12 @@ final class StoreService: ObservableObject {
     /// 送って、結果で終えるかを決める（終え済みの取引をもう一度終えても何も起きない）
     private func send(_ jws: String, transaction: StoreKit.Transaction) async -> PurchaseDelivery.Result {
         // ログインしていなければ送らない（終えずに残し、ログインした時に送る）
-        guard currentUserId() != nil, let submit else { return PurchaseDelivery.Result(.retryLater) }
+        guard let userId = currentUserId(), let submit else { return PurchaseDelivery.Result(.retryLater) }
+        // ほかの人の印が付いた取引は送らず、終えもしない（その人がログインし直したときに届ける・
+        // `PurchaseDelivery.belongsToSomeoneElse` の注記）
+        if PurchaseDelivery.belongsToSomeoneElse(appAccountToken: transaction.appAccountToken, userId: userId) {
+            return PurchaseDelivery.Result(.retryLater, message: PurchaseDelivery.otherAccountMessage)
+        }
         let result = await submit(jws)
         if PurchaseDelivery.shouldFinish(result.outcome) {
             await transaction.finish()

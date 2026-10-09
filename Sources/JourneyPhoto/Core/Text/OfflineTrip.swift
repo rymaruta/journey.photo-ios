@@ -389,12 +389,35 @@ struct OfflineSaveStatus: Equatable {
 enum OfflineTripAccess {
     enum Action: Equatable { case save, resume, resave, view, delete }
 
-    /// Pro の案内を出すべきか（押したときの行き先）
-    static func needsPro(_ action: Action, isPro: Bool?) -> Bool {
+    /// 押したときの行き先
+    enum Decision: Equatable {
+        /// そのまま進める
+        case proceed
+        /// Pro の案内（Pro でないと分かっている）
+        case paywall
+        /// Pro か分からない（プロフィールが読めなかった・圏外）。確かめ直し、だめなら
+        /// 「Pro かどうかを確かめられませんでした」（`OfflineTripText.Failure.notPro`）
+        case unverified
+    }
+
+    /// 2026-10-09 判断: **Pro か分からないときは案内を出さない。** 前は分からない（nil）も案内に
+    /// していたので、保存が圏外で止まった Pro の人が、圏外のまま日程を開き直して「続きから保存」・
+    /// 「保存し直す」を押すと、払っているのに Pro の案内が開いた
+    static func decide(_ action: Action, isPro: Bool?) -> Decision {
         switch action {
-        case .view, .delete: return false
-        case .save, .resume, .resave: return isPro != true
+        case .view, .delete: return .proceed
+        case .save, .resume, .resave:
+            switch isPro {
+            case .some(true): return .proceed
+            case .some(false): return .paywall
+            case .none: return .unverified
+            }
         }
+    }
+
+    /// Pro の案内を出すべきか（Pro でないと分かっているときだけ）
+    static func needsPro(_ action: Action, isPro: Bool?) -> Bool {
+        decide(action, isPro: isPro) == .paywall
     }
 }
 

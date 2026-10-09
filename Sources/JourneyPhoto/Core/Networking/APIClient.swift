@@ -91,9 +91,10 @@ actor APIClient {
         _ path: String,
         query: [String: String] = [:],
         body: (any Encodable)? = nil,
+        cachePolicy: URLRequest.CachePolicy? = nil,
         as type: Response.Type
     ) async throws -> Response {
-        let data = try await send(method, path, query: query, body: body, authorized: true)
+        let data = try await send(method, path, query: query, body: body, authorized: true, cachePolicy: cachePolicy)
         return try decode(data)
     }
 
@@ -129,10 +130,14 @@ actor APIClient {
         query: [String: String],
         body: (any Encodable)?,
         authorized: Bool,
-        timeout: TimeInterval? = nil
+        timeout: TimeInterval? = nil,
+        cachePolicy: URLRequest.CachePolicy? = nil
     ) async throws -> Data {
         var request = URLRequest(url: try url(for: path, query: query))
         request.httpMethod = method.rawValue
+        // **端末の HTTP 控えを使わない口だけ指定する**（`Cache-Control: max-age` 付きで返る本人の口。
+        // 例: 光と天気の一覧 `LightForecastService`）
+        if let cachePolicy { request.cachePolicy = cachePolicy }
         // **長く掛かると分かっている口だけ延ばす**（退会: サーバーは最長29秒）
         if let timeout { request.timeoutInterval = timeout }
         request.setValue("application/json", forHTTPHeaderField: "Accept")

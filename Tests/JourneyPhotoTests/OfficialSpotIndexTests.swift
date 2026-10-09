@@ -257,6 +257,26 @@ final class OfficialSpotIndexTests: XCTestCase {
         XCTAssertEqual(value, 7)
     }
 
+    /// 🔴 **時間切れなら、止めた処理がすぐ答えを返しても nil**（2026-10-09）。止めてから門を閉めていた頃は、
+    /// 止めた瞬間に返る答え（取り消しに応えて値を返す処理）が先に門を通り、時間切れなのに答えが返った
+    /// （手元で `swift test` を3つ並べて流したとき `PlaceCoordsRuleTests` が時々落ちた）。
+    /// 「門を閉める」と「止める」の間で、止められた処理が答えを返し終えるまで待ち、その順を必ず作る
+    func testTimeoutWinsOverAnswerReturnedOnCancellation() async {
+        let returned = DispatchSemaphore(value: 0)
+        let value: Int? = await AsyncTimeout.firstWithin(seconds: 0, sleep: { _ in }, betweenTimeoutSteps: {
+            // 直す前の順（止める → 閉める）なら、ここに来る前に止められた処理が答えを返している。
+            // 直した順（閉める → 止める）では処理はまだ止められていないので、待たずに進む
+            if returned.wait(timeout: .now() + 0.05) == .success {
+                Thread.sleep(forTimeInterval: 0.02)   // 返した答えが門に届くまで
+            }
+        }) {
+            while !Task.isCancelled { await Task.yield() }
+            defer { returned.signal() }
+            return 1
+        }
+        XCTAssertNil(value, "時間切れなのに、止めた処理の答えが返った")
+    }
+
     /// 呼んだ側が取り消されたら、すぐ nil
     func testFirstWithinStopsWhenCancelled() async {
         let task = Task { () -> Int? in
@@ -272,3 +292,4 @@ final class OfficialSpotIndexTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 0.5)
     }
 }
+

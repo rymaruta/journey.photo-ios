@@ -169,6 +169,56 @@ final class OfflineTripStoreTests: XCTestCase {
         XCTAssertNil(store.status("plan-1").error, "止めたのは失敗ではない")
     }
 
+    /// 🔴 **保存の途中で別の人に替わったら、前の人の保存の「止まった」を次の人の状態に書かない**（2026-10-09）
+    func testSwitchingUserMidSaveLeavesNoTraceForNextUser() async throws {
+        let store = makeStore()
+        let fake = Fake()
+        var reached = false
+        fake.gate = (2, nil)
+        fake.reachedGate = { reached = true }
+        let p = plan(3)
+        store.save(plan: p, stops: stops(p), sources: sources(fake))
+        await waitUntil(store) { _ in reached }
+        store.use(userId: "u2")
+        fake.gate?.continuation?.resume()
+        // 前の人の保存が止まり切るのを待つ
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(store.isRunning("plan-1"))
+        XCTAssertEqual(store.status("plan-1"), OfflineSaveStatus(), "前の人の旅の状態が次の人に残った")
+        XCTAssertNil(store.manifest("plan-1"))
+        // 前の人に戻ると、途中のものが「続きから保存」で出る
+        store.use(userId: "u1")
+        XCTAssertEqual(store.status("plan-1").partial?.done, 1)
+    }
+
+    /// 🔴 **消してすぐ保存し直したとき、止まり切っていない前の保存が新しい保存を「止まった」にしない**（2026-10-09）
+    func testDeleteThenSaveAgainKeepsNewSaveRunning() async throws {
+        let store = makeStore()
+        let fake = Fake()
+        var reached = false
+        fake.gate = (2, nil)
+        fake.reachedGate = { reached = true }
+        let p = plan(3)
+        store.save(plan: p, stops: stops(p), sources: sources(fake))
+        await waitUntil(store) { _ in reached }
+        store.delete("plan-1")
+        // 新しい保存は3か所目で待たせる（前の保存が止まり切る間、走り続けているかを見る）
+        let second = Fake()
+        var secondReached = false
+        second.gate = (3, nil)
+        second.reachedGate = { secondReached = true }
+        store.save(plan: p, stops: stops(p), sources: sources(second))
+        await waitUntil(store) { _ in secondReached }
+        fake.gate?.continuation?.resume()   // 前の保存を止まり切らせる
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(store.isRunning("plan-1"), "前の保存が終わったときに、新しい保存の印まで外した")
+        XCTAssertNotNil(store.status("plan-1").running, "新しい保存が「止まった」になった")
+        XCTAssertNil(store.status("plan-1").error)
+        second.gate?.continuation?.resume()
+        await waitUntil(store) { $0.manifest("plan-1") != nil }
+        XCTAssertEqual(store.manifest("plan-1")?.stopCount, 3)
+    }
+
     func testDeleteAndPerUserFolders() async throws {
         let store = makeStore()
         let p = plan(1)

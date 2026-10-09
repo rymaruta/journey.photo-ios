@@ -123,7 +123,11 @@ final class OfflineTripTests: XCTestCase {
     func testOnlySavingNeedsPro() {
         for action in [OfflineTripAccess.Action.save, .resume, .resave] {
             XCTAssertTrue(OfflineTripAccess.needsPro(action, isPro: false))
-            XCTAssertTrue(OfflineTripAccess.needsPro(action, isPro: nil))
+            // 🔴 Pro か分からない（圏外で開いた）ときは案内を出さない——払っている人に案内が開いた
+            XCTAssertFalse(OfflineTripAccess.needsPro(action, isPro: nil))
+            XCTAssertEqual(OfflineTripAccess.decide(action, isPro: nil), .unverified)
+            XCTAssertEqual(OfflineTripAccess.decide(action, isPro: false), .paywall)
+            XCTAssertEqual(OfflineTripAccess.decide(action, isPro: true), .proceed)
             XCTAssertFalse(OfflineTripAccess.needsPro(action, isPro: true))
         }
         XCTAssertFalse(OfflineTripAccess.needsPro(.view, isPro: false), "見るのは誰でも")
@@ -277,5 +281,22 @@ extension OfflineTripTests {
         let saved = OfflineTripPrint(plan([[a]]))
         XCTAssertEqual(saved.change(to: OfflineTripPrint(plan([[a], []]))), .other, "日程の形が変わった（空の日）")
         XCTAssertEqual(saved.change(to: OfflineTripPrint(plan([[], [a]]))), .other, "別の日へ移した")
+    }
+}
+
+extension OfflineTripTests {
+    /// 🔴 **保存した画像は主スレッドの外で読んで絵に戻す**（2026-10-09。`.task` は主スレッドで走り、
+    /// 数百KB の JPEG を並べて開くと画面が引っかかった）。Linux では描けないので文で確かめる
+    func testStoredImageDecodesOffMainThread() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let src = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/OfflineTripView.swift"),
+                             encoding: .utf8)
+        let start = try XCTUnwrap(src.range(of: "struct OfflineStoredImage"))
+        let end = try XCTUnwrap(src.range(of: "struct OfflineStopNumber"))
+        let body = String(src[start.lowerBound..<end.lowerBound])
+        let detached = try XCTUnwrap(body.range(of: "Task.detached"))
+        let read = try XCTUnwrap(body.range(of: "Data(contentsOf: url)"))
+        XCTAssertLessThan(detached.lowerBound, read.lowerBound, "ファイルを読むのは Task.detached の中")
     }
 }

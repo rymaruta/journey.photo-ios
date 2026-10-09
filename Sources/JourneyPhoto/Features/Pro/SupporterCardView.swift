@@ -15,6 +15,7 @@ struct SupporterCardView: View {
 
     let profile: UserProfile
 
+    @EnvironmentObject private var store: StoreService
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var front: UIImage?
     @State private var viewingCard = false
@@ -40,8 +41,7 @@ struct SupporterCardView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     card(width: cardWidth)
                     yearsSection(width: cardWidth)
-                    Text(L("番号は申し込んだ順で、同じ番号は二度と出ません。やめても番号とメダルは残り、再開すると続きから数えます。月 ¥500。",
-                           "Numbers are given in the order people joined and are never reused. If you stop, your number and medals stay; when you come back, the count continues. ¥500 a month."))
+                    Text(SupporterText.note(monthlyPrice: store.product(.monthly)?.displayPrice))
                         .font(.caption)
                         .lineSpacing(12 * 0.7 - 4)
                         .foregroundStyle(WebTheme.faint)

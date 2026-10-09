@@ -23,6 +23,8 @@ struct OfflineTripCard: View {
     @State private var confirmingDelete = false
     @State private var showPaywall = false
     @State private var preparing = false
+    /// Pro かを確かめられなかったときの1行（圏外で開いた・`OfflineTripAccess.Decision.unverified`）
+    @State private var accessError: String?
 
     private var status: OfflineSaveStatus { offline.status(plan.planId) }
     private var change: OfflineTripPrint.Change {
@@ -74,7 +76,7 @@ struct OfflineTripCard: View {
                 case .free, .hidden:
                     EmptyView()
                 }
-                if let error = status.error {
+                if let error = accessError ?? status.error {
                     Text(error)
                         .font(.footnote)
                         .foregroundStyle(WebTheme.danger)
@@ -297,14 +299,32 @@ struct OfflineTripCard: View {
 
     private func run(_ action: OfflineTripAccess.Action) {
         guard !preparing else { return }
-        guard !OfflineTripAccess.needsPro(action, isPro: isPro) else {
+        accessError = nil
+        switch OfflineTripAccess.decide(action, isPro: isPro) {
+        case .paywall:
             showPaywall = true
             return
+        case .proceed, .unverified:
+            break
         }
         preparing = true
         let plan = plan, index = index, places = places
+        let unverified = OfflineTripAccess.decide(action, isPro: isPro) == .unverified
         Task { @MainActor in
             defer { preparing = false }
+            // Pro か分からなかった（開いたときに読めなかった）→ 確かめ直してから決める
+            if unverified {
+                isPro = (try? await environment.profiles.myProfile())?.isPro
+                switch OfflineTripAccess.decide(action, isPro: isPro) {
+                case .proceed: break
+                case .paywall:
+                    showPaywall = true
+                    return
+                case .unverified:
+                    accessError = OfflineTripText.failureMessage(.notPro)
+                    return
+                }
+            }
             let planned = await OfflineTripLive.plannedStops(plan: plan, environment: environment,
                                                              index: index, places: places)
             let sources = OfflineTripLive.sources(environment: environment, index: planned.index, places: places)

@@ -2,7 +2,7 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
-      "version": "1.0.79",
+      "version": "1.0.80",
       "items": [
         {
           "symbol": "sparkles",

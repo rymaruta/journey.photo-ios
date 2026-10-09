@@ -88,7 +88,13 @@ struct OfflineStoredImage: View {
         }
         .task(id: url) {
             guard let url else { image = nil; return }
-            image = (try? Data(contentsOf: url)).flatMap(UIImage.init(data:))
+            // **読むのと絵に戻すのは主スレッドの外で**（2026-10-09 判断）。作例は1枚 数百KB の JPEG で、
+            // 1か所に3枚と地図が並ぶ。`.task` は主スレッドで走るので、そのままだと開いた・送ったときに画面が引っかかる
+            let loaded = await Task.detached(priority: .userInitiated) {
+                (try? Data(contentsOf: url)).flatMap(UIImage.init(data:))
+            }.value
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
     }
 }

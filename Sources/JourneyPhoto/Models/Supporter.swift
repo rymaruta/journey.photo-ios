@@ -62,6 +62,14 @@ enum SupporterText {
         return String(day.prefix(7))
     }
 
+    /// サポーター証の下の注記（板 64 の文言）。**値段は App Store の字**（読めなければ板の値段）——
+    /// 2026-10-09 判断: 「月 ¥500。」と書き込んでいたので、日本以外の App Store でも円で出ていた
+    static func note(monthlyPrice: String?) -> String {
+        let price = monthlyPrice ?? ProPlan.monthly.fallbackPrice
+        return L("番号は申し込んだ順で、同じ番号は二度と出ません。やめても番号とメダルは残り、再開すると続きから数えます。月 \(price)。",
+                 "Numbers are given in the order people joined and are never reused. If you stop, your number and medals stay; when you come back, the count continues. \(price) a month.")
+    }
+
     /// 「12 か月目」の数。0 か月（申し込んだ直後でサーバーがまだ数えていない）は 1 か月目
     static func monthOrdinal(_ months: Int) -> Int { max(1, months) }
 

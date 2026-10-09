@@ -240,6 +240,14 @@ struct JourneyPhotoApp: App {
                     let userId = auth.userId
                     Task { await push.use(userId: userId) }
                     discardOrphanTransfers()
+                    // **渡し損ねた購入も、裏から戻るたびに送り直す**（2026-10-09 判断）。買った時に圏外・
+                    // サーバーの不調だった回は、案内に「アプリを開いたときに自動でやり直します」と出すが、
+                    // 送り直すのはログインした時（人が決まるたびに走る下の task）と、起動し直した時に
+                    // `Transaction.updates` が届け直す分だけだった——アプリを閉じずに裏から戻しても
+                    // Pro にならず、支払ったのに使えないままだった
+                    if userId != nil, PreviewSession.userId == nil {
+                        Task { await store.deliverUnfinished() }
+                    }
                 }
                 // **ログイン状態が変わるたびに読み直す。** `.task` のままだと
                 // 起動時に1回しか走らず、あとからログインした人には

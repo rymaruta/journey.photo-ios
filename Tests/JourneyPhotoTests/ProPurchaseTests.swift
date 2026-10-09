@@ -125,6 +125,55 @@ final class ProPurchaseTests: XCTestCase {
         XCTAssertEqual(PurchaseDelivery.Result(.rejected, message: "別のアカウント").message, "別のアカウント")
     }
 
+    /// 🔴 **前にログインしていた人の取引を、次の人の名前で送って終えない**（2026-10-09）。
+    /// A が買う → サーバーに届かず残る → 同じ端末で B がログイン → 送り直しが 403 → 終えて、
+    /// A の購入が二度と自動で届かなかった
+    func testOtherPersonsTransactionIsNotSent() {
+        let a = "7b1c2d3e-0000-4000-8000-000000000001", b = "user-123"
+        XCTAssertTrue(PurchaseDelivery.belongsToSomeoneElse(appAccountToken: AppAccountToken.make(userId: a), userId: b))
+        XCTAssertFalse(PurchaseDelivery.belongsToSomeoneElse(appAccountToken: AppAccountToken.make(userId: b), userId: b))
+        // 印の無い取引（コードで買った等）はサーバーに任せる
+        XCTAssertFalse(PurchaseDelivery.belongsToSomeoneElse(appAccountToken: nil, userId: b))
+    }
+
+    /// 送る口・設定の行の両方が、ほかの人の取引を見分けている（Linux の模型では取引を作れないので文で確かめる）
+    func testStoreServiceChecksOwnerBeforeSending() throws {
+        let src = try source("Sources/JourneyPhoto/Core/Store/StoreService.swift")
+        let send = try XCTUnwrap(src.range(of: "private func send("))
+        let body = String(src[send.lowerBound...])
+        let check = try XCTUnwrap(body.range(of: "belongsToSomeoneElse"))
+        let submit = try XCTUnwrap(body.range(of: "await submit(jws)"))
+        XCTAssertLessThan(check.lowerBound, submit.lowerBound, "送る前に見分ける")
+        let refresh = try XCTUnwrap(src.range(of: "func refreshSubscription()"))
+        let refreshBody = String(src[refresh.lowerBound..<send.lowerBound])
+        XCTAssertTrue(refreshBody.contains("belongsToSomeoneElse"), "前の人の定期購入を設定の行に出さない")
+    }
+
+    /// 🔴 主ボタンを2度押しても2度目が入り込まない: 商品を読み直す**前に**「買っている最中」にする
+    func testPurchaseMarksBusyBeforeLoadingProducts() throws {
+        let src = try source("Sources/JourneyPhoto/Core/Store/StoreService.swift")
+        let start = try XCTUnwrap(src.range(of: "func purchase(_ plan: ProPlan)"))
+        let body = String(src[start.lowerBound...])
+        let busy = try XCTUnwrap(body.range(of: "isPurchasing = true"))
+        let load = try XCTUnwrap(body.range(of: "await loadProducts(force: true)"))
+        XCTAssertLessThan(busy.lowerBound, load.lowerBound)
+    }
+
+    /// 🔴 **裏から戻るたびに、渡し損ねた購入を送り直す**（案内の「アプリを開いたときに自動でやり直します」）。
+    /// ログインした時と起動し直した時だけだった頃は、閉じずに戻しても Pro にならなかった
+    func testRedeliversUnfinishedWhenReturningToForeground() throws {
+        let src = try source("Sources/JourneyPhoto/App/JourneyPhotoApp.swift")
+        let start = try XCTUnwrap(src.range(of: ".onChange(of: scenePhase)"))
+        let end = try XCTUnwrap(src.range(of: ".task(id: auth.state)", range: start.upperBound..<src.endIndex))
+        XCTAssertTrue(src[start.upperBound..<end.lowerBound].contains("store.deliverUnfinished()"))
+    }
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
     /// 送る形はサーバーの名前（`signedTransaction`）
     func testPurchaseBodyShape() throws {
         let data = try JSONEncoder().encode(PurchaseService.Body(signedTransaction: "a.b.c"))
@@ -160,6 +209,11 @@ final class ProPurchaseTests: XCTestCase {
     func testSettingsDetailNotPro() {
         XCTAssertEqual(ProStatusText.settingsDetail(isPro: false, state: nil),
                        "月 ¥500 から。サポーターバッジも付きます")
+        // 🔴 App Store の値段が読めたらそれを出す（日本以外の App Store で「¥500」と出さない）
+        XCTAssertEqual(ProStatusText.settingsDetail(isPro: false, state: nil, monthlyPrice: "$4.99"),
+                       "月 $4.99 から。サポーターバッジも付きます")
+        XCTAssertTrue(SupporterText.note(monthlyPrice: "$4.99").hasSuffix("月 $4.99。"))
+        XCTAssertTrue(SupporterText.note(monthlyPrice: nil).hasSuffix("月 ¥500。"))
     }
 
     func testSupporterRowDetail() {

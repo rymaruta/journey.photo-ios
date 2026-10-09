@@ -231,6 +231,27 @@ enum PurchaseDelivery {
     }
 
     static func shouldFinish(_ outcome: Outcome) -> Bool { outcome != .retryLater }
+
+    /// 取引が**いまログインしている人のものではない**か（`appAccountToken` で見る）。
+    ///
+    /// 2026-10-09 判断: ほかの人の印が付いた取引は**送らず、終えもしない**（`retryLater` と同じ扱い）。
+    /// 送るとサーバーは 403（ほかの人の購入）を返し、`shouldFinish` で終えてしまう。すると
+    /// 「A が買った → サーバーに届かず（圏外・5xx）終えずに残る → 同じ端末で B がログイン →
+    /// 送り直しで 403 → 終える」で、A の購入が二度と自動で届かなくなり、サーバーにも結び付かない
+    /// （App Store の知らせも「まだ誰にも結び付いていない取引」として捨てられる）。
+    /// 残しておけば、A がログインし直したときに `deliverUnfinished` で届く。
+    ///
+    /// 印の無い取引（App Store のアプリでコードを使った等）はサーバーに任せる（届いた人に結び付ける）
+    static func belongsToSomeoneElse(appAccountToken: UUID?, userId: String) -> Bool {
+        guard let token = appAccountToken else { return false }
+        return token != AppAccountToken.make(userId: userId)
+    }
+
+    /// ほかの人の印が付いた取引を「復元」したときの1行（サーバーの 403 の文言に合わせる）
+    static var otherAccountMessage: String {
+        L("この Apple ID の購入は、別の Journey Photo のアカウントで購入されたものです。",
+          "This Apple ID's subscription was purchased with a different Journey Photo account.")
+    }
 }
 
 // MARK: - 設定の行の文字
@@ -261,12 +282,15 @@ enum ProStatusText {
     /// - Pro で、この端末の App Store で買った定期購入が読めた → 板の形。
     ///   解約を予約していれば「次の更新」の代わりに「2026.11.09 まで」
     /// - Pro だが読めない（別の Apple ID・読み込み中）→ 「App Store で管理」だけ
-    /// - Pro でない → 値段と、案内の一言
-    static func settingsDetail(isPro: Bool, state: ProSubscriptionState?, timeZone: TimeZone = .current) -> String {
+    /// - Pro でない → 値段と、案内の一言。**値段は App Store の字**（`monthlyPrice`・`Product.displayPrice`）。
+    ///   読めないときだけ板の値段（2026-10-09 判断: 日本以外の App Store では円ではないのに「¥500」と出ていた）
+    static func settingsDetail(isPro: Bool, state: ProSubscriptionState?, monthlyPrice: String? = nil,
+                               timeZone: TimeZone = .current) -> String {
         let manage = L("App Store で管理", "Manage in App Store")
         guard isPro else {
-            return L("月 \(ProPlan.monthly.fallbackPrice) から。サポーターバッジも付きます",
-                     "From \(ProPlan.monthly.fallbackPrice)/month. Includes the supporter badge")
+            let price = monthlyPrice ?? ProPlan.monthly.fallbackPrice
+            return L("月 \(price) から。サポーターバッジも付きます",
+                     "From \(price)/month. Includes the supporter badge")
         }
         guard let state else { return manage }
         var parts = ["\(state.plan.shortUnit) \(state.displayPrice ?? state.plan.fallbackPrice)"]
