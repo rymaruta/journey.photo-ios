@@ -46,7 +46,8 @@
   - ビルド番号（`CURRENT_PROJECT_VERSION`）は TestFlight の最新 +1
 - **上げる回ではテストを流さない（既定・2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。**
   main に入るのは「PR の検証」の Mac のテストを通ったものだけ。main 以外の枝を Mac で確かめたいときだけ
-  `tests: true`（`submit: false`）で流す。App Store 用の原寸の絵（`storeShots: true`）はテストの結果から作るので、そのときはテストも流れる
+  `tests: true` で流す。上げない回（`submit: false`・`/mac-check`）と App Store 用の原寸の絵（`storeShots: true`）は
+  テストの結果から絵を作るので、そのときはテストも流れる
 - **真ん中・先頭の数字（1.1.0・2.0.0）は人が決める。** 見た目や機能が大きく
   変わる版のときに `bash Tools/bump-build.sh 1.1.0` でコミットしてから流す。
   自動で上げない
@@ -58,8 +59,8 @@
 ## 検査
 
 `bash Tools/verify.sh`（構文・参照・Web 版との突き合わせ・設定）。この環境では
-本物の Xcode でのコンパイルはできない——最初の確認は TestFlight のワークフローの
-テスト段になる。
+本物の Xcode でのコンパイルはできない——最初の確認は PR の検証（`ios-pr.yml`）の
+Xcode のテストになる。
 
 **NG は0件が正しい。** Web 版との突き合わせは隣の `../photo-gallery` の作業ツリーを
 読むので、**そこが古い枝のままだと、サーバーに在る口を「無い」と言う**
