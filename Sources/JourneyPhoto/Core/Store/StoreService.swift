@@ -288,7 +288,12 @@ enum StoreTransactionFilter {
     /// **自分たちの商品**で、**ファミリー共有ではない**（owner 2026-10-09: ファミリー共有は切ってある。
     /// `Transaction.updates`・`unfinished`・`currentEntitlements`・設定の行のどれでも数えない）
     static func counts(_ transaction: StoreKit.Transaction, prefix: String) -> Bool {
-        ProProducts.plan(for: transaction.productID, prefix: prefix) != nil
-            && PurchaseDelivery.countsAsOwnPurchase(isFamilyShared: transaction.ownershipType == .familyShared)
+        counts(productID: transaction.productID, isFamilyShared: transaction.ownershipType == .familyShared, prefix: prefix)
+    }
+
+    /// 上の中身（本物の StoreKit の取引は試験で作れないので、値で見る口を分ける）
+    static func counts(productID: String, isFamilyShared: Bool, prefix: String) -> Bool {
+        ProProducts.plan(for: productID, prefix: prefix) != nil
+            && PurchaseDelivery.countsAsOwnPurchase(isFamilyShared: isFamilyShared)
     }
 }

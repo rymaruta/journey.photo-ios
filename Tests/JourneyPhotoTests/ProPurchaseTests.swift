@@ -1,6 +1,5 @@
 import XCTest
 @testable import JourneyPhoto
-import StoreKit
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -206,11 +205,9 @@ final class ProPurchaseTests: XCTestCase {
     func testFamilySharedTransactionIsIgnoredFromUpdates() {
         let prefix = "com.journeyphoto.JourneyPhoto"
         let id = ProProducts.productID(.monthly, prefix: prefix)
-        let own = StoreKit.Transaction(productID: id, ownershipType: .purchased)
-        let shared = StoreKit.Transaction(productID: id, ownershipType: .familyShared)
-        XCTAssertTrue(StoreTransactionFilter.counts(own, prefix: prefix))
-        XCTAssertFalse(StoreTransactionFilter.counts(shared, prefix: prefix), "ファミリー共有は送らない")
-        XCTAssertFalse(StoreTransactionFilter.counts(StoreKit.Transaction(productID: "com.example.other"), prefix: prefix))
+        XCTAssertTrue(StoreTransactionFilter.counts(productID: id, isFamilyShared: false, prefix: prefix))
+        XCTAssertFalse(StoreTransactionFilter.counts(productID: id, isFamilyShared: true, prefix: prefix), "ファミリー共有は送らない")
+        XCTAssertFalse(StoreTransactionFilter.counts(productID: "com.example.other", isFamilyShared: false, prefix: prefix))
         // 届いた取引をさばく口がこの見分けを通る
         let src = (try? source("Sources/JourneyPhoto/Core/Store/StoreService.swift")) ?? ""
         let handle = src.range(of: "private func handle(")
@@ -226,7 +223,7 @@ final class ProPurchaseTests: XCTestCase {
         let restore = try XCTUnwrap(src.range(of: "for await result in StoreKit.Transaction.currentEntitlements"))
         XCTAssertTrue(src[restore.lowerBound...].prefix(200).contains("isOurs(transaction)"))
         XCTAssertTrue(src.contains("StoreTransactionFilter.counts(transaction, prefix: prefix) else { continue }"), "設定の行")
-        XCTAssertTrue(src.contains("transaction.ownershipType == .familyShared"))
+        XCTAssertTrue(src.contains("isFamilyShared: transaction.ownershipType == .familyShared"), "本物の取引の持ち方で見る")
         XCTAssertFalse(PurchaseDelivery.countsAsOwnPurchase(isFamilyShared: true))
         XCTAssertTrue(PurchaseDelivery.countsAsOwnPurchase(isFamilyShared: false))
     }

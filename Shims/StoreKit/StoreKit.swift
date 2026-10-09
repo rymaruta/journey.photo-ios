@@ -64,23 +64,6 @@ public struct Transaction: Sendable {
         public static let familyShared = OwnershipType(rawValue: "FAMILY_SHARED")
     }
 
-    /// 模型だけの作り方（試験で取引を作るため。本物の StoreKit には無い）
-    public init(id: UInt64 = 1, originalID: UInt64 = 1, productID: String, purchaseDate: Date = Date(timeIntervalSince1970: 0),
-                originalPurchaseDate: Date = Date(timeIntervalSince1970: 0), expirationDate: Date? = nil,
-                revocationDate: Date? = nil, isUpgraded: Bool = false, appAccountToken: UUID? = nil,
-                productType: Product.ProductType = .autoRenewable, ownershipType: OwnershipType = .purchased) {
-        self.id = id
-        self.originalID = originalID
-        self.productID = productID
-        self.purchaseDate = purchaseDate
-        self.originalPurchaseDate = originalPurchaseDate
-        self.expirationDate = expirationDate
-        self.revocationDate = revocationDate
-        self.isUpgraded = isUpgraded
-        self.appAccountToken = appAccountToken
-        self.productType = productType
-        self.ownershipType = ownershipType
-    }
 
     public func finish() async {}
 
