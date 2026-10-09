@@ -175,6 +175,17 @@ struct ProfileEditView: View {
             Text(saveError ?? "")
         }
         .task { await load() }
+        // 名前の横の画面（板 61）。🔴 **Form の欄（Section）に付けない**（2026-10-09 owner「メダルを回す
+        // 全画面で戻れなくなった」）。一覧の中の欄に付けたシートから、さらに全画面（メダルを回す）を
+        // 開くと、閉じる操作が届かなくなった。マイページと同じく画面の外側に付ける
+        // 閉じたら**バッジの値だけ**読み直す（入力中の欄は触らない）。読み直さないと、
+        // 名前の横の画面で決めたあとにもう一度開くと、決める前の選択で開いていた
+        // （2026-10-09 バグ調査 高-2: 「なし」にして決める → 開き直すと前のバッジが選ばれて見える）
+        .sheet(isPresented: $showNameSide, onDismiss: { Task { await reloadBadgeState() } }) {
+            if let loadedProfile {
+                NameSideBadgeView(profile: loadedProfile)
+            }
+        }
         .onChange(of: avatarItem) { _, item in
             Task { await upload(item, kind: .avatar) }
         }
@@ -296,11 +307,6 @@ struct ProfileEditView: View {
                    "Pick one of your medals to show beside your name."))
         }
         .listRowBackground(Color.clear)
-        .sheet(isPresented: $showNameSide) {
-            if let loadedProfile {
-                NameSideBadgeView(profile: loadedProfile)
-            }
-        }
     }
 
     /// BGM（モック2-9 の「BGM」の行）。**先頭の1曲だけを触る。**
@@ -345,6 +351,13 @@ struct ProfileEditView: View {
                 }
             }
         }
+    }
+
+    /// 名前の横の画面を閉じたあと、プロフィールのバッジの値だけ読み直す（`loadedProfile`）。
+    /// 表示名などの入力中の欄・比べる元（`original`）は触らない
+    private func reloadBadgeState() async {
+        guard loaded, let fresh = try? await environment.profiles.myProfile() else { return }
+        loadedProfile = fresh
     }
 
     private func load() async {

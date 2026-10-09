@@ -377,8 +377,10 @@ enum NameSideChoice {
     static func patch(profile: UserProfile, selected: String?, style: ProMarkStyle) -> ProfilePatch? {
         var patch = ProfilePatch()
         var changed = false
-        // 持っていない鍵を指していた人が「なし」のまま決めたら、その古い値も消す
-        if selected != profile.chosenBadgeKey {
+        // 持っていない鍵を指していた人が「なし」のまま決めたら、その古い値も消す。
+        // ただし**持っているがこの版のアプリが知らない鍵**（新しい章など）は、選び直していなければ
+        // 触らない（2026-10-09 バグ調査 低-1: 「決める」だけで飾りが外れていた）
+        if selected != profile.chosenBadgeKey, !keepsUnknownOwnedBadge(profile: profile, selected: selected) {
             patch.displayBadge = Clearable(selected)
             changed = true
         }
@@ -387,5 +389,12 @@ enum NameSideChoice {
             changed = true
         }
         return changed ? patch : nil
+    }
+
+    /// 飾っているのが「持っているがアプリの知らない鍵」で、利用者が「なし」のまま（選び直していない）か
+    static func keepsUnknownOwnedBadge(profile: UserProfile, selected: String?) -> Bool {
+        guard selected == nil, let key = profile.chosenBadgeKey,
+              profile.earnedBadges[key] != nil, !BadgeCatalog.isKnown(key) else { return false }
+        return true
     }
 }
