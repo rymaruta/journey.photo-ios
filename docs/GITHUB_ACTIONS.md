@@ -121,9 +121,7 @@ Key ID（`DDYJB5893J`）と Team ID（`5428GX5UM8`）は**秘密ではない**�
 |---|---|---|---|
 | 静的な検査 | ubuntu | 構文・参照・import の組・設定（`verify.sh` と同じ道具） | 1分 |
 | 単体テスト（Linux・模型） | ubuntu（`swift:6.0.3-noble`） | `Shims/` に向けたビルドと単体テスト | 5分 |
-| Xcode のテスト（単体・スモーク） | macos-15 | 本物の Xcode でコンパイル → 単体テスト → 絵以外の UI テスト（`-skip-testing:JourneyPhotoUITests/ScreenshotTests`） | 控えが当たれば12分前後（見込み） |
-| Xcode のテスト（画面の絵） | macos-15 | 本物の Xcode でコンパイル → `ScreenshotTests` だけ（`-only-testing`） | 控えが当たれば17〜19分（見込み） |
-| Xcode のビルドとテスト（シミュレータ） | ubuntu | 上の2台が両方通ったかをまとめる（必須のチェックの名前はここ） | 数秒 |
+| Xcode のビルドとテスト | macos-15 | 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵） | 控えが当たれば20〜30分 |
 
 - **macOS は、静的な検査が通ってから起こす。** 構文の壊れで macOS の分を使わない。Linux の単体テストは待たない——
   Linux の通信部品（swift-corelibs-foundation）の弱点で、終わった通信を取り消すと落ちることがあり
@@ -131,8 +129,8 @@ Key ID（`DDYJB5893J`）と Team ID（`5428GX5UM8`）は**秘密ではない**�
 - Linux の単体テストは、落ちたときの書き出しを止めている（`SWIFT_BACKTRACE=enable=no`。コンテナの中では書き出しで止まり、
   run 1 は30分の時間切れまで待った）。テストの段は10分で切る
 - **同じ PR に押し直すと、前の回は止まる**（`concurrency`）。文書だけの変更（`docs/**`・`*.md`）では回らない。下書きの PR では macOS を起こさない
-- **結果の読み方**: 実行の「まとめ」に、件数と**落ちたテストの名前と理由**が出る（`Tools/xcresult-summary.py`）。`xcode-test-results` の成果物に（画面の絵の台の）`Test.xcresult`・全文ログ・画面の絵が入る（14日）。単体・スモークの台の分は `xcode-test-results-unit`
-- **macOS を2台に分けている**（2026-10-09）。1台のころの実測は、控え1.5〜3分・ビルド3.5〜5分・単体3.5〜5分・UI 10〜11分（うち絵が9.5分）で計20〜24分（控えが外れると29分）。いちばん長い絵を1台に分け、単体とスモークをもう1台で並べて回す
+- **結果の読み方**: 実行の「まとめ」に、件数と**落ちたテストの名前と理由**が出る（`Tools/xcresult-summary.py`）。`xcode-test-results` の成果物に `Test.xcresult`・全文ログ・画面の絵が入る（14日）
+- **macOS は1台のまま**（2026-10-09 に2台へ分けて試したが、ビルドが両方の台で掛かり、無料の macOS は同時5台までで空き待ちも出て、全体が約42分と遅くなったのでやめた。実測は PR #198 の run 37935783814）
 - **TestFlight（`ios-testflight.yml`）ではこのテストを2度回さない**（2026-10-09 owner のルール）。回すのは `force_tests: true`・`submit: false`・`storeShots: true` のときだけ
 - **Web 版との突き合わせは CI では飛ぶ。** `photo-gallery` が非公開で読めないため（「見ていない」と表示される）。手元の `verify.sh` で見る
 - **費用**: このリポジトリは公開なので、標準ランナー（macOS を含む）は無料。**非公開に変えたら、この段は無料枠を大きく食う**（macOS は分数10倍）——そのときは `on:` から `pull_request` を外す

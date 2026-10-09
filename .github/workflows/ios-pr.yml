@@ -106,22 +106,8 @@ jobs:
   # （swift-corelibs-foundation）の弱点で、まれに落ちる・止まるテストがある
   # （終わった通信の取り消しで `TaskRegistry` が落ちる。iOS には無い）。それで
   # 本物の Xcode の段まで止めると、いちばん欲しい結果が得られない
-  #
-  # 🔴 **2台の macOS に分けて並べて回す**（2026-10-09 owner の了承）。1台で回していた
-  # ころの実測（PR の検証 run 48〜59 の6回）:
-  #   控えを戻す 1.5〜3分（外れた回は0秒・後片付けで保存に1.5分）
-  #   ビルド（＋シミュレータの起動）3.5〜5分（控えが外れると12分）
-  #   単体テスト（＋UI テストへの切り替え）3.5〜5分
-  #   UI テスト 10〜11分（うち `ScreenshotTests` 7件で9.5分・`SmokeTests` 3件で1.4分）
-  # いちばん長い `ScreenshotTests` を1台に、残り（単体・スモーク）をもう1台に置く。
-  # 両方がビルドから始める（控えは同じ鍵）ので、縮むのは単体とスモークの分（4〜6分）。
-  # **分け方は「絵」とそれ以外。** 片方を `-only-testing`、もう片方を同じ名前の
-  # `-skip-testing` にして、**UI テストの組が増えても、どちらかで必ず回る**ようにする。
-  #
-  # 必須のチェック（main の保護）が見ている名前「Xcode のビルドとテスト（シミュレータ）」は、
-  # 2台の結果をまとめる段（`xcode`）が持つ。どちらかが落ちれば赤
-  xcode_unit:
-    name: Xcode のテスト（単体・スモーク）
+  xcode:
+    name: Xcode のビルドとテスト（シミュレータ）
     needs: [checks]
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: macos-15
@@ -143,7 +129,7 @@ jobs:
           if [ -n "$ver" ] && [ -d "/Applications/Xcode_$ver.app/Contents/Developer" ]; then
             echo "DEVELOPER_DIR=/Applications/Xcode_$ver.app/Contents/Developer" >> "$GITHUB_ENV"
             echo "選んだ Xcode: $ver"
-            echo "### Xcode ${ver}（単体・スモーク）" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Xcode $ver" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::warning::版の読める Xcode が見つかりません。既定のまま進みます"
           fi
@@ -151,9 +137,7 @@ jobs:
       - name: Xcode の版を読む
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
-      # **TestFlight と同じ鍵**で控えを共有する（どちらが先に回っても温まる）。
-      # 2台とも同じ鍵。外れた回は2台とも保存しようとし、後の1台は
-      # 「別の job が作っている」と言って保存を諦める（害は無い）
+      # **TestFlight と同じ鍵**で控えを共有する（どちらが先に回っても温まる）
       - name: 依存の控えを戻す
         uses: actions/cache@v4
         with:
@@ -171,9 +155,8 @@ jobs:
           xcodegen generate
 
       # 書き方の理由（-sdk を渡さない・arm64 に絞る・xcodebuild を直に叩く）は
-      # ios-testflight.yml の「テスト」の段の注記と同じ。
-      # **絵（`ScreenshotTests`）だけを外す。** 単体テストと、絵以外の UI テストはここ
-      - name: テスト（単体＋UI のスモーク）
+      # ios-testflight.yml の「テスト」の段の注記と同じ
+      - name: テスト（単体＋UI）
         run: |
           set -euo pipefail
           DEVICE="$(python3 Tools/pick-simulator.py)"
@@ -187,7 +170,6 @@ jobs:
             -resultBundlePath build/Test.xcresult \
             -skipPackagePluginValidation \
             -skipMacroValidation \
-            -skip-testing:JourneyPhotoUITests/ScreenshotTests \
             test 2>&1 | tee build-xcodebuild.log | tail -n 300 || {
               echo "::group::error: の行だけ"
               grep -E "error:|failed|Failing tests" build-xcodebuild.log | sort -u | head -200 || true
@@ -196,90 +178,6 @@ jobs:
             }
 
       # 失敗したテストの名前と理由を、まとめの頁に出す（ログを掘らずに読めるように）
-      - name: 結果のまとめ
-        if: ${{ always() }}
-        run: python3 Tools/xcresult-summary.py build/Test.xcresult >> "$GITHUB_STEP_SUMMARY" || true
-
-      # 絵はもう1台（`xcode-test-results`）。こちらは xcresult とログだけ
-      - name: テストの結果を残す（xcresult・ログ）
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: xcode-test-results-unit
-          path: |
-            build/Test.xcresult
-            build-xcodebuild.log
-          retention-days: 14
-          if-no-files-found: ignore
-
-  # 画面の絵（`ScreenshotTests`）。いちばん長い組なので1台を丸ごと使う。
-  # 成果物の名前は分ける前と同じ `xcode-test-results`（`Tools/store-screenshots.py` が
-  # この中の `build/shots`（`manifest.json` と絵）を読む）
-  xcode_shots:
-    name: Xcode のテスト（画面の絵）
-    needs: [checks]
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    runs-on: macos-15
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Xcode を選ぶ
-        run: |
-          set +e
-          ver="$(ls -d /Applications/Xcode_*.app 2>/dev/null \
-                 | sed 's#.*/Xcode_##; s#\.app$##' \
-                 | grep -E '^[0-9]+(\.[0-9]+)*$' \
-                 | sort -V | tail -1)"
-          if [ -n "$ver" ] && [ -d "/Applications/Xcode_$ver.app/Contents/Developer" ]; then
-            echo "DEVELOPER_DIR=/Applications/Xcode_$ver.app/Contents/Developer" >> "$GITHUB_ENV"
-            echo "選んだ Xcode: $ver"
-            echo "### Xcode ${ver}（画面の絵）" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::warning::版の読める Xcode が見つかりません。既定のまま進みます"
-          fi
-
-      - name: Xcode の版を読む
-        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
-
-      - name: 依存の控えを戻す
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
-            ~/Library/Caches/org.swift.swiftpm
-          key: xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}
-          restore-keys: |
-            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
-
-      - name: Xcode プロジェクトを作る
-        run: |
-          brew install xcodegen
-          xcodegen generate
-
-      - name: テスト（UI の画面の絵）
-        run: |
-          set -euo pipefail
-          DEVICE="$(python3 Tools/pick-simulator.py)"
-          echo "シミュレータ: $DEVICE"
-          xcodebuild \
-            -project JourneyPhoto.xcodeproj \
-            -scheme JourneyPhoto \
-            -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=YES \
-            -resultBundlePath build/Test.xcresult \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            -only-testing:JourneyPhotoUITests/ScreenshotTests \
-            test 2>&1 | tee build-xcodebuild.log | tail -n 300 || {
-              echo "::group::error: の行だけ"
-              grep -E "error:|failed|Failing tests" build-xcodebuild.log | sort -u | head -200 || true
-              echo "::endgroup::"
-              exit 1
-            }
-
       - name: 結果のまとめ
         if: ${{ always() }}
         run: python3 Tools/xcresult-summary.py build/Test.xcresult >> "$GITHUB_STEP_SUMMARY" || true
@@ -306,25 +204,3 @@ jobs:
             build/shots
           retention-days: 14
           if-no-files-found: ignore
-
-  # **2台の結果をまとめる段。** main の保護が必須にしている名前はここが持つ。
-  # 2台のどちらかが落ちた・飛んだ（静的な検査が落ちた）・取り消されたら赤。
-  # 下書きの PR では、2台と同じく起こさない（飛ばした扱い）。
-  # macOS は要らないので ubuntu で回す（数秒）
-  xcode:
-    name: Xcode のビルドとテスト（シミュレータ）
-    needs: [xcode_unit, xcode_shots]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: 2台の結果
-        env:
-          UNIT: ${{ needs.xcode_unit.result }}
-          SHOTS: ${{ needs.xcode_shots.result }}
-        run: |
-          echo "単体・スモーク: ${UNIT} / 画面の絵: ${SHOTS}"
-          if [ "$UNIT" != "success" ] || [ "$SHOTS" != "success" ]; then
-            echo "::error::Xcode のテストが通っていません（単体・スモーク: ${UNIT} / 画面の絵: ${SHOTS}）。それぞれの job を見てください"
-            exit 1
-          fi
