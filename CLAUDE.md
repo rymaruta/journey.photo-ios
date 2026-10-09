@@ -44,15 +44,16 @@
     決めるのは `Tools/next-marketing-version.sh`、出した版は
     `testflight/<版>` のタグで覚える（上げるのに成功した回だけタグが付く）
   - ビルド番号（`CURRENT_PROJECT_VERSION`）は TestFlight の最新 +1
+- **上げる回ではテストを流さない（既定・2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。**
+  main に入るのは「PR の検証」の Mac のテストを通ったものだけ。main 以外の枝を Mac で確かめたいときだけ
+  `tests: true` で流す。上げない回（`submit: false`・`/mac-check`）と App Store 用の原寸の絵（`storeShots: true`）は
+  テストの結果から絵を作るので、そのときはテストも流れる
 - **真ん中・先頭の数字（1.1.0・2.0.0）は人が決める。** 見た目や機能が大きく
   変わる版のときに `bash Tools/bump-build.sh 1.1.0` でコミットしてから流す。
   自動で上げない
 - **手元の Xcode から Archive して出すときだけ**、`bash Tools/bump-build.sh <版>` で
   版とビルド番号を自分で上げる。この経路はタグが付かないので、次に Actions で
   出すときに同じ版を二度使わないよう、出した版を owner に伝える
-- **TestFlight ではテストを2度回さない（2026-10-09 owner のルール）。** シミュレータの
-  テストは PR の検証（`ios-pr.yml`）でだけ回す。TestFlight で回したいときは
-  `force_tests: true` で流す（`submit: false`・`storeShots: true` の回は絵のために回る）
 - 詳しい手順は `docs/RELEASE.md`・`docs/TESTFLIGHT.md`
 
 ## 検査

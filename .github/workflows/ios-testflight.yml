@@ -26,8 +26,8 @@ on:
         description: "App Store 用の原寸の絵（PNG）を `store-screenshots` の枝にも置く"
         type: boolean
         default: false
-      force_tests:
-        description: "上げる回でもテスト（シミュレータ）を回す（既定は PR の検証に任せて飛ばす）"
+      tests:
+        description: "テストも流す（main は PR の検証で通っているので要らない。main 以外の枝を確かめるときだけ）"
         type: boolean
         default: false
 
@@ -242,45 +242,13 @@ jobs:
       - name: Xcode プロジェクトを作る
         run: xcodegen generate
 
-      # 🔴 **TestFlight ではテストを2度回さない**（2026-10-09 owner のルール・CLAUDE.md）。
-      # 同じテストは PR の検証の「Xcode のビルドとテスト（シミュレータ）」で回っていて、
-      # それで足りる。ここで回すと控えが当たっても15分前後かかる。
-      #
-      # **回すのは次のどれかのときだけ**:
-      #  - `force_tests` が true（人が回したいと言った）
-      #  - 上げない回（submit=false）——`/mac-check` の絵が目的の回
-      #  - `storeShots` が true——App Store 用の原寸の絵はテストが撮る
-      #
-      # 飛ばしても**コンパイルは「ビルド」の段（Archive）で必ず通る**。
-      # 飛ばした回は xcresult が無いので、絵の書き出しも飛ばす
-      - name: テストを回すかを決める
-        id: tested
-        env:
-          FORCE_TESTS: ${{ inputs.force_tests }}
-          SUBMIT: ${{ inputs.submit }}
-          STORE_SHOTS: ${{ inputs.storeShots }}
-        run: |
-          set -uo pipefail
-          skip=true
-          reason="上げる回。テストは PR の検証で回っている（回したいときは force_tests: true）"
-          if [ "${FORCE_TESTS:-}" = "true" ]; then
-            skip=false; reason="force_tests が true"
-          elif [ "${SUBMIT:-}" != "true" ]; then
-            skip=false; reason="上げない回（submit=false）。テストと絵が目的"
-          elif [ "${STORE_SHOTS:-}" = "true" ]; then
-            skip=false; reason="storeShots が true（原寸の絵はテストが撮る）"
-          fi
-          if [ "$skip" = "true" ]; then
-            echo "テストを飛ばします: ${reason}"
-            echo "### テスト（シミュレータ）は飛ばしました" >> "$GITHUB_STEP_SUMMARY"
-            echo "${reason}" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "テストを回します: ${reason}"
-          fi
-          echo "skip=${skip}" >> "$GITHUB_OUTPUT"
-
+      # **既定ではテストを流さない**（2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。
+      # main に入るのは「PR の検証」の Mac のテストを通ったものだけなので、上げる回で同じテストを
+      # もう一度流すと、Mac を30分ほど二重に使っていた。main 以外の枝を確かめるときは `tests: true`。
+      # 画面の絵（下の `screenshots` の段）はこのテストの結果から作るので、テストを流した回だけ置く
+      # 上げない回（submit=false・`/mac-check`）は絵とテストが目的なので、`tests` が無くても流す
       - name: テスト（本物の SwiftUI で型検査される最初の機会）
-        if: ${{ steps.tested.outputs.skip != 'true' }}
+        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
         run: |
           set -euo pipefail
           # 機種名は固定しない（Xcode が上がると入っているシミュレータが替わる）
@@ -452,9 +420,8 @@ jobs:
       # 再現しない）。実際に描かれた絵は、このランナーのシミュレータに
       # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
       # `Tools/export-screenshots.sh` の頭に書いた
-      # テストを飛ばした回は絵が無い（`screenshots` の枝は前の絵のまま残す）
       - name: 画面の絵を `screenshots` の枝に置く
-        if: ${{ always() && steps.tested.outputs.skip != 'true' }}
+        if: ${{ always() && (inputs.tests || inputs.storeShots || !inputs.submit) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STORE_SHOTS: ${{ inputs.storeShots }}

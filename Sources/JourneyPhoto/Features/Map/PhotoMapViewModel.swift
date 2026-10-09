@@ -173,6 +173,15 @@ final class PhotoMapViewModel: ObservableObject {
         loaded && shown.isEmpty && officialPins.isEmpty
     }
 
+    /// **カテゴリで絞っているせいで、打った語に当たる撮影スポットを隠しているか**（2026-10-09）。
+    /// 帯の「見つかりませんでした」の代わりに理由を短く言う（`PhotoMapView.categoryHidesSpotsBannerText`。
+    /// 全文はリストの `RegionList.categoryHidesSpotsNote`・#181）。
+    /// 黙ると「その名前のスポットは無い」と読める。帯を出す回（`hasNothingToShow`）だけ読まれる
+    var categoryHidesMatchingSpots: Bool {
+        guard category != nil, !MapSearch.fold(query).isEmpty else { return false }
+        return !OfficialSpotIndex.matches(officialSpots, query: query, limit: 1, aliases: spotAliases).isEmpty
+    }
+
     /// 絞り直す。条件が変わったときにだけ呼ぶ
     private func refresh() {
         refreshCount += 1

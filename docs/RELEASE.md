@@ -91,7 +91,7 @@ Archive・配布まで書いてある。ビルド番号は `bash Tools/bump-buil
 
 **Actions（`ios-testflight.yml`）では、シミュレータのテストを既定で回さない**（2026-10-09 owner のルール）。
 同じテストは PR の検証の「Xcode のビルドとテスト（シミュレータ）」で回っていて、それで足りる。
-TestFlight で回すのは `force_tests: true`・`submit: false`（`/mac-check` の絵が目的）・`storeShots: true`
+TestFlight で回すのは `tests: true`・`submit: false`（`/mac-check` の絵が目的）・`storeShots: true`
 （原寸の絵はテストが撮る）のときだけ。飛ばしてもコンパイルは「ビルド」の段（Archive）で通る。
 飛ばした回は絵を撮らないので、`screenshots` の枝は前の絵のまま。
 

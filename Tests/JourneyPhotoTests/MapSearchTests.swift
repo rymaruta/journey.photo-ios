@@ -82,6 +82,40 @@ final class MapSearchTests: XCTestCase {
         XCTAssertFalse(try hit("蔵王キツネ村, 南蔵王七ヶ宿線, 福岡八宮, 白石市, 宮城県, 989-0733, 日本", "福岡"))
     }
 
+    /// 🔴 2026-10-09: 直前が行政区分の字（都道府県市区町村郡）の名前が外れていた。
+    /// 「東京都渋谷区」で「渋谷」、「香川県観音寺市」で「観音寺」が出なかった。
+    /// 直前が行政区分の字なら、名前の切れ目として数える（`LocationMatch.nameIn` の「前」と同じ）
+    func testNameRightAfterAdminSuffixMatches() throws {
+        func hit(_ place: String, _ query: String) throws -> Bool {
+            MapSearch.matches(try photo("x", place: place, lat: 35, lng: 139), needle: query)
+        }
+        XCTAssertTrue(try hit("東京都渋谷区", "渋谷"))
+        XCTAssertTrue(try hit("東京都中央区", "中央区"))
+        XCTAssertTrue(try hit("香川県観音寺市", "観音寺"))
+        XCTAssertTrue(LocationMatch.looselyContains("東京都渋谷区", "渋谷"))
+        XCTAssertEqual(ids(SearchScope.places.photos(
+            [try photo("k", place: "香川県観音寺市", lat: 34.1, lng: 133.6)], query: "観音寺")), ["k"])
+        // 前からの外し方はそのまま
+        XCTAssertFalse(try hit("東京都中央区", "京都"))
+        XCTAssertFalse(try hit("滝畑ダム, 河内長野市", "長野"))
+        XCTAssertFalse(LocationMatch.looselyContains("東京都中央区", "京都"))
+        XCTAssertFalse(LocationMatch.looselyContains("河内長野市", "長野"))
+    }
+
+    /// **承知の上の取りこぼしを固定する**（2026-10-09 のレビュー）。直前が行政区分の字なら当てるので、
+    /// 「新潟県村上市」の「村」の後ろの「上市」（富山県の上市町とは別）にも当たる。
+    /// 「東京都渋谷区」の「渋谷」・「香川県観音寺市」の「観音寺」が出ない方が困るので、こちらを取った。
+    /// この当たりを外すときは、上の 渋谷・観音寺 が外れないことを確かめてから変える
+    func testKnownTradeOffOfTheAdminSuffixRule() {
+        XCTAssertTrue(LocationMatch.looselyContains("新潟県村上市", "上市"),
+                      "承知の上の当たり（行政区分の字の直後）。変えたなら注記と試験を直す")
+        XCTAssertTrue(LocationMatch.looselyContains("東京都渋谷区", "渋谷"))
+        XCTAssertTrue(LocationMatch.looselyContains("香川県観音寺市", "観音寺"))
+        // 前に字のある途中（行政区分の字ではない）は今までどおり外す
+        XCTAssertFalse(LocationMatch.looselyContains("東京都", "京都"))
+        XCTAssertFalse(LocationMatch.looselyContains("東京都中央区", "京都"))
+    }
+
     /// スポットの名前・別名は台帳を通してだけ当たる。**台帳が無ければ当たらない**
     /// ⚠️ **スポットの名前・別名では引けなくなった。** 本番が
     /// 「台帳を持たない」と決めた（`photo-gallery/docs/spot-master.md`）ので、

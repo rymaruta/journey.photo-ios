@@ -160,7 +160,8 @@ struct AlbumsView: View {
     private func row(_ album: Album) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title)
-            Text(L("\(album.members) 人", "\(album.members) members"))
+            // 英語は1人なら単数（「1 members」にしない）
+            Text(L("\(album.members) 人", album.members == 1 ? "1 member" : "\(album.members) members"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             inviteControls(album)
