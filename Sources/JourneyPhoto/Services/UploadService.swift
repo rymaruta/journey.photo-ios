@@ -13,6 +13,9 @@ import FoundationNetworking
 ///     2. PUT  <署名付き URL>          … S3 へ本体を置く
 ///     3. POST /upload/save            … DynamoDB に1行作る
 ///
+/// **2 だけは背景の転送で送る**（`BackgroundTransfer`）——アプリを離れても本体は届き、
+/// 戻った・起こされたところで 3 を送る。1 と 3 は小さいので前面の URLSession のまま。
+///
 /// **2 と 3 の間で落ちたら S3 に迷子のファイルが残る。** ただし 3 の失敗は
 /// **その場では片付けない**——保存は通っていて応答だけ失われたのかもしれず、
 /// やり直しは同じ鍵で送る（`stage` の注記）。片付けるのは、本人がその写真を
@@ -22,7 +25,8 @@ import FoundationNetworking
 struct UploadService {
 
     private let api: APIClient
-    private let session: URLSession
+    /// 本体（S3 への PUT）を運ぶ口。既定は背景の転送（`BackgroundTransfer`）
+    private let transfer: PhotoTransfer
 
     /// api-user が弾く上限（`upload.ts`）。手前で同じ数字を出して、
     /// 50MB のアップロードを走らせてから 400 を食う無駄をなくす。
@@ -36,16 +40,15 @@ struct UploadService {
         "image/avif", "image/gif", "image/heic", "image/heif",
     ]
 
+    /// - Parameter session: 渡すと本体もその URLSession で送る（試験）。
+    ///   渡さなければ**背景の転送**——アプリを離れても本体を送り終える（`BackgroundTransfer`）
     init(api: APIClient, session: URLSession? = nil) {
+        self.init(api: api, transfer: session.map { SessionTransfer(session: $0) } ?? BackgroundTransfer.shared)
+    }
+
+    init(api: APIClient, transfer: PhotoTransfer) {
         self.api = api
-        if let session {
-            self.session = session
-        } else {
-            let config = URLSessionConfiguration.default
-            // 本体の転送は API 呼び出しより長くかかる
-            config.timeoutIntervalForRequest = 120
-            self.session = URLSession(configuration: config)
-        }
+        self.transfer = transfer
     }
 
     // MARK: - 1. 置き場所をもらう
@@ -88,7 +91,7 @@ struct UploadService {
         let response: URLResponse
         do {
             try RequestCancellation.throwIfCancelled()
-            (_, response) = try await session.upload(for: request, from: data)
+            response = try await transfer.upload(request, body: data, key: presigned.key)
         } catch {
             throw APIError.unreachable
         }

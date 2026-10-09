@@ -25,7 +25,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // **押したときの行き先のために、自分を受け手にしておく。**
         // 許可を取るのは設定画面（`PushCenter.enable`）——起動時に聞かない
         UNUserNotificationCenter.current().delegate = self
+        // **前の起動の写真の転送を繋ぎ直す**（`BackgroundTransfer.reconnect`）。待つ人の
+        // 居ない転送は止め、その鍵はログインしているときに片付ける
+        BackgroundTransfer.shared.reconnect()
         return true
+    }
+
+    /// 写真の本体の転送（背景の URLSession）が終わって、OS に起こされた。
+    /// **預かった `completionHandler` は、渡し終えたら呼ぶ**（`urlSessionDidFinishEvents`）
+    /// ——呼ばないと OS は次から起こすのを渋る
+    func application(_ application: UIApplication,
+                     handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        BackgroundTransfer.shared.handleEvents(identifier: identifier, completion: completionHandler)
     }
 
     func application(_ application: UIApplication,

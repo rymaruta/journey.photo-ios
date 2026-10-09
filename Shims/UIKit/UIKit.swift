@@ -29,6 +29,10 @@ public extension UIApplicationDelegate {
                      didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {}
     func application(_ application: UIApplication,
                      didFailToRegisterForRemoteNotificationsWithError error: Error) {}
+    /// 背景の URLSession の転送が終わって起こされた（本物と同じ形）
+    func application(_ application: UIApplication,
+                     handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {}
 }
 
 open class UIApplication {
@@ -43,6 +47,9 @@ open class UIApplication {
     public func unregisterForRemoteNotifications() {}
     public var connectedScenes: Set<UIScene> { [] }
     public var applicationIconBadgeNumber: Int = 0
+    /// 前面に居るか（本物と同じ名前）。模型はいつも前面
+    public enum State: Int { case active, inactive, background }
+    public var applicationState: State { .active }
     /// 裏に回っても少しだけ続けさせてもらう（本物と同じ形）
     public func beginBackgroundTask(withName taskName: String?,
                                     expirationHandler handler: (@MainActor @Sendable () -> Void)? = nil) -> UIBackgroundTaskIdentifier {
