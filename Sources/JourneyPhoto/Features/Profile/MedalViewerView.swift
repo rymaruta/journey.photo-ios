@@ -75,6 +75,7 @@ struct MedalViewerView: View {
                                       "\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) medal"))
                 .accessibilityAddTraits(.isImage)
                 .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
+                .accessibilityIdentifier("medalViewer.coin")
         }
     }
 
@@ -113,6 +114,7 @@ struct MedalViewerView: View {
         .padding(.trailing, 12)
         .padding(.top, 8)
         .accessibilityLabel(Labels.Common.close)
+        .accessibilityIdentifier("medalViewer.close")
     }
 }
 

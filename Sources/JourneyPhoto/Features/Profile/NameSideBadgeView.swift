@@ -244,6 +244,7 @@ struct NameSideBadgeView: View {
         .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { selected = badge.key }
         .accessibilityAction(named: L("手に取って回す", "Turn it in your hand")) { viewing = badge }
+        .accessibilityIdentifier("nameSide.badge.\(badge.key)")
     }
 
     /// 「なし」（名前の横に何も出さない）
@@ -290,6 +291,7 @@ struct NameSideBadgeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("nameSide.shelf")
     }
 
     // MARK: - 決める
