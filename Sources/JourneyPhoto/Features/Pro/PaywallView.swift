@@ -308,6 +308,7 @@ struct PaywallView: View {
 /// Pro の4つの利点（板 63 の文言そのまま）。
 ///
 /// 🔴 **第3段階の機能が3つ入っている**（作例を重ねて撮る・光と天気の知らせ・電波なしで使える旅）。
+/// 2026-10-09 時点で、作例を重ねて撮る・電波なしで使える旅はできた。光と天気の知らせはまだ。
 /// 板どおりに出しているが、機能ができる前に App Store へ出すと、無い機能を売ることになる
 /// （審査 2.3.1 / 3.1.2）。出す前に owner に確かめる（報告済み）
 struct ProBenefit: Identifiable, Equatable {
@@ -329,8 +330,9 @@ struct ProBenefit: Identifiable, Equatable {
                                "The night before, if a place you want to go will have a clear sunrise")),
             ProBenefit(icon: .offline,
                        title: L("電波なしで使える旅", "Offline trips"),
-                       body: L("地図・作例・光の時刻を端末に。山でも海外でも迷わない",
-                               "Maps, references and light times on your device — in the mountains or abroad")),
+                       // 2026-10-09 owner: 「迷わない」をやめる（道案内はしない。地図は画像で、拡大も経路も無い）
+                       body: L("地図・作例・光の時刻を端末に。圏外でも、どこで何を撮るか分かる",
+                               "Maps, references and light times on your device — know where and what to shoot, even with no signal")),
             ProBenefit(icon: .chapter,
                        title: L("Pro マークと Pro 限定の章", "Pro mark & Pro-only chapters"),
                        body: L("名前の横に Pro マーク。季節ごとに届く七宝の章と、道具を使い込んだ証の章",

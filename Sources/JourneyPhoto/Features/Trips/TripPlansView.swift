@@ -11,6 +11,9 @@ struct TripPlansView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    /// 一覧が読めないとき（圏外）に、端末に保存した旅を出す（板 72c）
+    @EnvironmentObject private var offline: OfflineTripStore
+    @EnvironmentObject private var connectivity: Connectivity
     @StateObject private var model = TripPlansModel()
     @State private var newTitle = ""
     /// 作った直後に、そのプランを開く（Web の `onCreate` と同じ）
@@ -211,8 +214,24 @@ struct TripPlansView: View {
         case .loading:
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32)
         case .failed:
-            // 上の1行が事情と再試行を出しているので、ここは黙る
-            EmptyView()
+            // 上の1行が事情と再試行を出している。**端末に保存した旅があれば、それを出す**
+            // （圏外で一覧が読めなくても、保存した旅は開ける・板 72c）
+            if !offline.saved.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    JPSectionTitle(L("電波なしで使える旅 · \(offline.saved.count) 件",
+                                     "Offline trips · \(offline.saved.count)"))
+                    LazyVStack(spacing: 10) {
+                        ForEach(offline.saved) { manifest in
+                            NavigationLink {
+                                OfflineTripView(manifest: manifest, preview: !connectivity.isOffline)
+                            } label: {
+                                offlineCard(manifest)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
         case .loaded:
             if model.plans.isEmpty {
                 VStack(spacing: 8) {
@@ -241,6 +260,33 @@ struct TripPlansView: View {
                 }
             }
         }
+    }
+
+    /// 端末に保存した旅の札（一覧の札と同じ面）
+    private func offlineCard(_ manifest: OfflineTripManifest) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(manifest.title.isEmpty ? L("無題のプラン", "Untitled trip") : manifest.title)
+                    .font(JPFont.rowTitle)
+                    .foregroundStyle(WebTheme.foreground)
+                    .lineLimit(2)
+                Text(OfflineTripText.savedRow(manifest))
+                    .font(JPFont.mono(12))
+                    .foregroundStyle(WebTheme.muted)
+            }
+            Spacer(minLength: 8)
+            OfflinePhoneIcon(saved: true, side: 20)
+            Image(systemName: "chevron.right")
+                .font(.footnote)
+                .foregroundStyle(Color.white.opacity(0.35))
+                .accessibilityHidden(true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     private func card(_ plan: TripPlan) -> some View {
