@@ -65,6 +65,32 @@ final class JoinedAlbumsStore: ObservableObject {
         save()
     }
 
+    /// いまの控えの持ち主。**参加の答えを待つ前に取り、`remember(id:title:token:for:)` に渡す**
+    var owner: String? { userId }
+
+    /// 参加の答えを待った後に覚える。**待っている間に人が替わっていたら、参加した人の控えに書く**
+    /// （2026-10-09: 替わった後の人の控えに、前の人が参加したアルバムが入っていた）。
+    ///
+    /// `SavedPhotosStore`・`ModerationStore` は替わっていたら書かない（サーバーの一覧で取り直せる）が、
+    /// 参加したアルバムは**サーバーが教えてくれない**ので、書かずに落とすと参加した人の入口が消える。
+    /// だから落とさずに、参加した人の鍵へ書く（いまの人の一覧は触らない）。
+    ///
+    /// **送ったときに人が分からない（`owner` が nil・空）なら書かない**（レビュー）。
+    /// 誰のものでもない共通の鍵に書くと、次にログインしていない状態の画面に出てしまう
+    func remember(id: String, title: String, token: String, for owner: String?) {
+        guard let owner, !owner.isEmpty else { return }
+        guard owner != userId else {
+            remember(id: id, title: title, token: token)
+            return
+        }
+        let saved = defaults.data(forKey: key(for: owner))
+            .flatMap { try? JSONDecoder().decode([Entry].self, from: $0) } ?? []
+        var next = saved.filter { $0.id != id }
+        next.insert(Entry(id: id, title: title, token: token), at: 0)
+        guard let data = try? JSONEncoder().encode(next) else { return }
+        defaults.set(data, forKey: key(for: owner))
+    }
+
     func forget(id: String) {
         entries.removeAll { $0.id == id }
         save()

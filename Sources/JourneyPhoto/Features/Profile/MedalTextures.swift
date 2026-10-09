@@ -40,6 +40,10 @@ enum MedalTextureLayout {
         max(160, min(screenWidth - 40, 360))
     }
 
+    /// 初期ユーザーの後光の一辺（硬貨の 1.3 倍）。**画面の幅を超える**（430pt の画面で 468pt）ので、
+    /// 組みの大きさに効かせない（`MedalViewerView` は硬貨の背景に置く）
+    static func haloSide(coin: Double) -> Double { coin * 1.3 }
+
     /// 絵の円が `side` の四角いっぱいになる描き方（中心に置いて拡大する）
     static func fillRect(discRatio: Double, side: Double = textureSide) -> CGRect {
         let drawn = side / discRatio
@@ -80,6 +84,8 @@ enum MedalTextures {
         let back: UIImage?
         let edge: UIImage?
         let edgeRepeat: Double
+        /// 金属（光の映り込みの色を決める）
+        var metal: BadgeCatalog.Metal = .silver
     }
 
     static func make(badge: EarnedBadge, ownerName: String) -> Faces {
@@ -91,7 +97,7 @@ enum MedalTextures {
             reverse($0, name: ownerName, date: BadgeCatalog.awardDate(badge.at))
         }
         return Faces(front: front, back: back, edge: UIImage(named: metal.edgeImage),
-                   edgeRepeat: MedalTextureLayout.edgeRepeat())
+                   edgeRepeat: MedalTextureLayout.edgeRepeat(), metal: metal)
     }
 
     private static func renderer() -> UIGraphicsImageRenderer {
@@ -152,5 +158,117 @@ enum MedalTextures {
         let size = (shown as NSString).size(withAttributes: attributes)
         let point = CGPoint(x: (side - Double(size.width)) / 2, y: centerY - Double(size.height) / 2)
         (shown as NSString).draw(at: point, withAttributes: attributes)
+    }
+}
+
+// MARK: - 凹凸（法線の絵）
+
+/// 硬貨の面の傾きを決める法線の絵（normal map）を作る（2026-10-09）。
+///
+/// 絵を平らな板に貼っただけだと、回しても光が面を流れず、のっぺり見える（owner:
+/// 「3D回転させた時の立体感たりない・表も裏ものっぺりしてる」）。そこで**面を少しふくらませる**
+/// （本物のメダルのように中心が高い）。回すと光が面を横切る。
+///
+/// **表と裏には絵の明るさから凹凸を起こさない。** 明るい所を高くする作りを試したが、文字や網目まで
+/// 盛り上がってざらつき、owner が「凹凸の立体感が少し気持ち悪い」と言った。比べる試作
+/// （https://claude.ai/artifact/C7gyZEE2VzgMqcMnZcQvvR）で owner が「B（凹凸なし・ふくらみ・
+/// 映り込み）、ただし光の反射は控えめ」を選んだ。明るさの凹凸を使うのは縁のギザの帯だけ。
+///
+/// **画像の型を読まない**（数の配列だけ）ので Linux のテストで見張れる
+enum MedalRelief {
+    /// 法線の絵の一辺（px）。貼り絵（1024）の半分で足りる（光の具合はなめらかなので）
+    static let side = 512
+    /// 凹凸の強さ（大きいほど傾く）
+    static let strength: Double = 1.1
+    /// 面のふくらみ（中心と縁の高さの差・明るさ 0〜1 と同じ物差し）
+    static let dome: Double = 0.22
+    /// 縁の帯の凹凸の強さ（ギザの溝に光が乗る程度）
+    static let edgeStrength: Double = 0.8
+    /// 表と裏で明るさを高さに使う割合。**0＝凹凸を起こさない**（owner の選択）
+    static let faceRelief: Double = 0
+    /// ぼかしの半径（箱ぼかしを3回重ねて σ≈2.4px）
+    static let blurRadius = 2
+    static let blurPasses = 3
+
+    /// 明るさ（0〜255・行ごと・上から）から、法線の絵（RGBA・1画素4バイト）を作る。
+    /// `relief` は明るさを高さに使う割合（0 なら明るさは見ず、ふくらみだけ）。
+    ///
+    /// 法線は「右＝+x・上＝+y・手前＝+z」で、`色 = 法線 × 0.5 + 0.5`（緑が上向き）。
+    /// `wrapsX` は縁の帯のように左右がつながる絵（端の傾きを向こう側の画素で計る）。
+    /// `dome` を 0 にするとふくらみを付けない
+    static func normalMap(luminance: [UInt8], width: Int, height: Int,
+                          strength: Double, dome: Double, relief: Double = 1,
+                          wrapsX: Bool = false) -> [UInt8] {
+        guard width > 2, height > 2, luminance.count == width * height else { return [] }
+        var h = luminance.map { Double($0) / 255 * relief }
+        if relief != 0 {
+            for _ in 0..<blurPasses {
+                h = boxBlur(h, width: width, height: height, radius: blurRadius, wrapsX: wrapsX)
+            }
+        }
+        if dome != 0 {
+            let cx = Double(width - 1) / 2, cy = Double(height - 1) / 2
+            let radius = Double(min(width, height)) / 2
+            for y in 0..<height {
+                for x in 0..<width {
+                    let dx = (Double(x) - cx) / radius, dy = (Double(y) - cy) / radius
+                    h[y * width + x] -= dome * (dx * dx + dy * dy)
+                }
+            }
+        }
+        // 傾きは画素の差 × 半分の幅（絵の大きさに依らない強さにする）
+        let scale = strength * Double(min(width, height)) / 2
+        var out = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            let up = max(0, y - 1), down = min(height - 1, y + 1)
+            for x in 0..<width {
+                let left = wrapsX ? (x - 1 + width) % width : max(0, x - 1)
+                let right = wrapsX ? (x + 1) % width : min(width - 1, x + 1)
+                let gx = (h[y * width + right] - h[y * width + left]) / Double(right > left ? right - left : 2)
+                let gy = (h[down * width + x] - h[up * width + x]) / Double(max(1, down - up))
+                // 右へ高くなる＝面は左を向く（-x）。下へ高くなる＝面は上を向く（+y）
+                var nx = -gx * scale, ny = gy * scale, nz = 1.0
+                let length = (nx * nx + ny * ny + nz * nz).squareRoot()
+                nx /= length; ny /= length; nz /= length
+                let i = (y * width + x) * 4
+                out[i] = encode(nx)
+                out[i + 1] = encode(ny)
+                out[i + 2] = encode(nz)
+            }
+        }
+        return out
+    }
+
+    private static func encode(_ value: Double) -> UInt8 {
+        UInt8(max(0, min(255, (value * 0.5 + 0.5) * 255).rounded()))
+    }
+
+    /// 縦横に分けた箱ぼかし（端は端の画素を伸ばす。`wrapsX` なら左右は向こう側へつなぐ）
+    static func boxBlur(_ values: [Double], width: Int, height: Int, radius: Int, wrapsX: Bool) -> [Double] {
+        guard radius > 0 else { return values }
+        let count = Double(radius * 2 + 1)
+        var horizontal = [Double](repeating: 0, count: values.count)
+        for y in 0..<height {
+            let row = y * width
+            for x in 0..<width {
+                var sum = 0.0
+                for k in -radius...radius {
+                    let sx = wrapsX ? ((x + k) % width + width) % width : min(width - 1, max(0, x + k))
+                    sum += values[row + sx]
+                }
+                horizontal[row + x] = sum / count
+            }
+        }
+        var out = [Double](repeating: 0, count: values.count)
+        for y in 0..<height {
+            for x in 0..<width {
+                var sum = 0.0
+                for k in -radius...radius {
+                    sum += horizontal[min(height - 1, max(0, y + k)) * width + x]
+                }
+                out[y * width + x] = sum / count
+            }
+        }
+        return out
     }
 }

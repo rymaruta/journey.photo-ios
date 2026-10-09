@@ -54,7 +54,13 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     private let proMarkStyle: LenientText?
 
     /// 持っているバッジ。返さないサーバーでは空
-    var earnedBadges: BadgeSet { badges ?? BadgeSet() }
+    var earnedBadges: BadgeSet {
+        #if DEBUG
+        // UI テストの見本の持ち物（`PreviewSession.badges`・入っている本人だけ）
+        if userId == PreviewSession.userId, let preview = PreviewSession.badges { return preview }
+        #endif
+        return badges ?? BadgeSet()
+    }
 
     /// 名前の横に出すバッジ。**選んだ鍵を持っているときだけ**——持っていない鍵
     /// （取り消された・古い値）を指していたら何も出さない

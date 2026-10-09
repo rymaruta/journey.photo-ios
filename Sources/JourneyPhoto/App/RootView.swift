@@ -53,6 +53,8 @@ struct RootView: View {
     @State private var showWhatsNew = false
     /// 出した版。`markSeen` で門の側は空になるので、シートにはこちらを渡す
     @State private var whatsNewReleases: [WhatsNew.Release] = []
+    /// 初期ユーザー章を贈る全画面（板 65・`FoundingGiftGate`）。出すときの相手の名前
+    @State private var foundingGiftName: String?
 
     enum Tab: Hashable {
         // **提案の並び**（owner の絵・2026-09-21）:
@@ -76,7 +78,7 @@ struct RootView: View {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）
                 LegalGateView()
             } else {
-                tabsWithReviewPrompt
+                tabsWithFoundingGift
             }
         }
         // **Web と同じ「固定ダーク」にする。** `app/globals.css` が
@@ -275,6 +277,34 @@ struct RootView: View {
         router.dropPendingTarget()
     }
 
+    /// 評価のお願いに、初期ユーザー章を贈る全画面（板 65）を足したもの（2026-10-09）。
+    /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
+    private var tabsWithFoundingGift: some View {
+        tabsWithReviewPrompt
+            .fullScreenCover(isPresented: Binding(get: { foundingGiftName != nil },
+                                                  set: { if !$0 { foundingGiftName = nil } })) {
+                FoundingGiftView(name: foundingGiftName ?? "") {
+                    if let userId = auth.userId { FoundingGiftGate().noteAccepted(userId: userId) }
+                    // マイページはこの合図でプロフィールを読み直す
+                    auth.noteProfileChanged()
+                }
+            }
+    }
+
+    /// 初期ユーザー章を持っていて、まだ飾っていない人に贈り物の画面を出す（`FoundingGiftGate`）。
+    /// 自分のプロフィールを読んで決める。読めない・ほかの画面が出ている回は出さない（数えないので次の起動で出る）
+    private func presentFoundingGiftIfNeeded() async {
+        guard foundingGiftName == nil, let userId = auth.userId else { return }
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        guard !Task.isCancelled, let profile = try? await environment.profiles.myProfile(),
+              auth.userId == userId else { return }
+        let gate = FoundingGiftGate()
+        guard gate.shouldPresent(userId: userId, profile: profile), !ModalProbe.isPresenting(),
+              !showWhatsNew else { return }
+        gate.noteShown(userId: userId)
+        foundingGiftName = FoundingGiftGate.name(profile)
+    }
+
     /// 「新しくなったこと」に、評価のお願いを足したもの（2026-10-07）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithReviewPrompt: some View {
@@ -318,14 +348,19 @@ struct RootView: View {
         // シートを出すと黙って無視されることがある。通知を押して起動した回など、ほかのシートが
         // 先に出ていたら出さない（覚えないので、次の起動で出る）
         .task {
-            guard whatsNew.shouldPresent else { return }
+            // 「新しくなったこと」が出ない回は、そのまま初期ユーザー章の贈り物を確かめる
+            guard whatsNew.shouldPresent else {
+                await presentFoundingGiftIfNeeded()
+                return
+            }
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else { return }
             whatsNewReleases = whatsNew.pending
             whatsNew.markSeen()
             showWhatsNew = true
         }
-        .sheet(isPresented: $showWhatsNew) {
+        // 「新しくなったこと」を閉じたら、続けて贈り物を確かめる（重ねて出さない）
+        .sheet(isPresented: $showWhatsNew, onDismiss: { Task { await presentFoundingGiftIfNeeded() } }) {
             WhatsNewView(releases: whatsNewReleases)
         }
     }

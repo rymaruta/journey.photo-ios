@@ -56,7 +56,7 @@ extension View {
                 if canSave {
                     Button(L("保存して戻る", "Save and go back"), action: onSave)
                 }
-                Button(L("変更を捨てる", "Discard changes"), role: .destructive, action: onDiscard)
+                Button(L("保存せずに戻る", "Go back without saving"), role: .destructive, action: onDiscard)
                 Button(L("キャンセル", "Cancel"), role: .cancel) {}
             } message: {
                 Text(message)
@@ -73,7 +73,7 @@ extension View {
 /// 判断（`UnsavedLeave`）と「保存／捨てる（破壊的）／キャンセル」の並びは同じもの
 /// ——**2つ目の仕組みは作らない**。
 ///
-/// - `saveTitle`・`discardTitle`: 画面の言葉に合わせる（ストーリーは「下書きに保存」「捨てる」）
+/// - `saveTitle`・`discardTitle`: 画面の言葉に合わせる（ストーリーは「下書きに保存」「保存せずに閉じる」）
 /// - `onSave`: 保存し、**成功したときだけ閉じる**のは呼び手の仕事（失敗なら開いたまま断りを出す）
 /// - 送っている最中（`.wait`）も払って閉じさせない。✕ を押せなくするのは呼び手
 extension View {

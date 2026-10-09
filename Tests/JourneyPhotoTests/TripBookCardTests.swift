@@ -30,6 +30,15 @@ final class TripBookCardTests: XCTestCase {
         XCTAssertFalse(TripBookCard.lines(of: t, distance: nil).stats.contains("km"))
     }
 
+    /// 🔴 2026-10-09: 撮影地の分かる写真が無い旅に「撮影地 0」（英語 "0 places"）と載せていた。
+    /// 0 なら載せない（英語の「1 places」は `EnglishPluralTests` が見る）
+    func testZeroPlacesIsLeftOut() throws {
+        let none = trip(photos: [try photo("a"), try photo("b")])
+        XCTAssertEqual(TripBookCard.lines(of: none, distance: nil).stats, L("2枚", "2 photos"))
+        let one = trip(photos: [try photo("a", location: "兼六園")])
+        XCTAssertEqual(TripBookCard.lines(of: one, distance: nil).stats, L("1枚 · 撮影地 1", "1 photo · 1 place"))
+    }
+
     func testCoverFillsTheFrameAndKeepsTheChosenCenter() {
         let canvas = TripBookCard.size
         // 横長の写真（3:2）を縦長の枠へ: 高さに合わせて、横がはみ出す

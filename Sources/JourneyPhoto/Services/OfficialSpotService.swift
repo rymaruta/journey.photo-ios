@@ -130,6 +130,23 @@ actor OfficialSpotService {
         return try await fetchLegacyIndex()
     }
 
+    /// **索引の行だけ**（名前・別名・座標・地域）。区分の詳細は待たない。
+    ///
+    /// 送る前の判断（`PlaceCoordsRule`・撮影地が写真の近くのスポットを指すか）に使う。`fetchIndex` は
+    /// 詳細の和が小さいうちは全区分を読み終えるまで返らないので、遅い通信では索引が手元にあるのに
+    /// 待ちの上限（2秒）を過ぎて「索引なし」に倒れ、近くのスポットを書いた写真の座標を落としていた
+    /// （2026-10-09 のレビュー）。**60秒の控えには置かない**——置くと、地図などが詳細の無い行を受け取る。
+    /// 取れなければ nil（呼ぶ側は「分からない」として扱う）
+    func fetchIndexRows() async -> [OfficialSpot]? {
+        if let fresh = freshCache { return withLoadedDetails(fresh) }
+        if let feedIndexURL, let rows = await fetchFeedIndex(feedIndexURL) {
+            return withLoadedDetails(rows)
+        }
+        // 分けた置き場が使えない Web。古い置き場は1ファイルに全部（`fetchIndex` と同じ道）
+        resetFeedState()
+        return try? await fetchLegacyIndex()
+    }
+
     /// 古い置き場（`spots.json`・1ファイルに全部）。**2026-10-07 の行で固定**されている
     private func fetchLegacyIndex() async throws -> [OfficialSpot] {
         let data: Data

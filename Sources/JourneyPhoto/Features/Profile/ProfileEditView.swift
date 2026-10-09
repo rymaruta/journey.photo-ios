@@ -54,6 +54,10 @@ struct ProfileEditView: View {
     @State private var uploadingImage: ProfileService.ImageKind?
     /// 変えた欄があるときの戻るの確認（`unsavedLeaveGuard`）
     @State private var showLeaveConfirm = false
+    /// 読めたプロフィール（名前の横の画面に渡す）
+    @State private var loadedProfile: UserProfile?
+    /// 名前の横の画面（メダルを1つ選ぶ）。**入口はここ**（2026-10-09 owner:「入り口はプロフィールを編集の中でいい」）
+    @State private var showNameSide = false
 
     var body: some View {
         Form {
@@ -100,6 +104,8 @@ struct ProfileEditView: View {
             .listRowBackground(Color.clear)
 
             bgmSection
+
+            nameSideSection
 
             // **板に無い3つ。** 消すとアプリから直せなくなるので、最後にまとめて残す
             Section(L("そのほか", "More")) {
@@ -169,6 +175,17 @@ struct ProfileEditView: View {
             Text(saveError ?? "")
         }
         .task { await load() }
+        // 名前の横の画面（板 61）。🔴 **Form の欄（Section）に付けない**（2026-10-09 owner「メダルを回す
+        // 全画面で戻れなくなった」）。一覧の中の欄に付けたシートから、さらに全画面（メダルを回す）を
+        // 開くと、閉じる操作が届かなくなった。マイページと同じく画面の外側に付ける
+        // 閉じたら**バッジの値だけ**読み直す（入力中の欄は触らない）。読み直さないと、
+        // 名前の横の画面で決めたあとにもう一度開くと、決める前の選択で開いていた
+        // （2026-10-09 バグ調査 高-2: 「なし」にして決める → 開き直すと前のバッジが選ばれて見える）
+        .sheet(isPresented: $showNameSide, onDismiss: { Task { await reloadBadgeState() } }) {
+            if let loadedProfile {
+                NameSideBadgeView(profile: loadedProfile)
+            }
+        }
         .onChange(of: avatarItem) { _, item in
             Task { await upload(item, kind: .avatar) }
         }
@@ -272,6 +289,26 @@ struct ProfileEditView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// 名前の横のバッジ（持っているメダルから1つ・Pro マークの形）。板 32 の BGM の行と同じ形の行で、
+    /// 押すと名前の横の画面（板 61）。マイページで名前を押しても同じ画面が開く
+    private var nameSideSection: some View {
+        Section {
+            Button {
+                showNameSide = true
+            } label: {
+                Label(L("名前の横のバッジ", "Badge beside your name"), systemImage: "medal")
+            }
+            .disabled(loadedProfile == nil)
+            .accessibilityIdentifier("profileEdit.nameSide")
+        } header: {
+            Text(L("バッジ", "Badges"))
+        } footer: {
+            Text(L("持っているメダルから1つ選んで、名前の横に飾れます。",
+                   "Pick one of your medals to show beside your name."))
+        }
+        .listRowBackground(Color.clear)
+    }
+
     /// BGM（モック2-9 の「BGM」の行）。**先頭の1曲だけを触る。**
     /// Web 版の2曲目以降は残したまま送り返す
     private var bgmSection: some View {
@@ -316,6 +353,13 @@ struct ProfileEditView: View {
         }
     }
 
+    /// 名前の横の画面を閉じたあと、プロフィールのバッジの値だけ読み直す（`loadedProfile`）。
+    /// 表示名などの入力中の欄・比べる元（`original`）は触らない
+    private func reloadBadgeState() async {
+        guard loaded, let fresh = try? await environment.profiles.myProfile() else { return }
+        loadedProfile = fresh
+    }
+
     private func load() async {
         // **読めた後は読み直さない。** タブを替えて戻るなどで `.task` が走り直すと、
         // まだ保存していない入力がサーバーの値で上書きされていた
@@ -328,6 +372,7 @@ struct ProfileEditView: View {
             return
         }
         userId = profile.userId
+        loadedProfile = profile
         let draft = ProfileDraft(profile: profile)
         original = draft
         displayName = draft.displayName

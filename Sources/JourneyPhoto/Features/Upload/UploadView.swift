@@ -110,9 +110,9 @@ struct UploadView: View {
         }
         // 書きかけがある間は、下へ払っても閉じない（× で確かめてから）
         .interactiveDismissDisabled(model.isWorking || model.hasDraft)
-        .confirmationDialog(L("書きかけの投稿を捨てて閉じますか？", "Discard this post?"),
+        .confirmationDialog(L("投稿をやめて閉じますか？", "Stop this post?"),
                             isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button(L("捨てて閉じる", "Discard"), role: .destructive) { dismiss() }
+            Button(L("投稿をやめる", "Stop posting"), role: .destructive) { dismiss() }
             Button(L("書き続ける", "Keep editing"), role: .cancel) { }
         } message: {
             Text(L("選んだ写真と、書いた題・説明は残りません。",
@@ -258,8 +258,9 @@ struct UploadView: View {
         .onAppear {
             // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
             model.onAlbumGone = { [joined] id in joined.forget(id: id) }
-            // 撮影地が写真の近くのスポットを指すかを見る索引（送るときだけ読む・`PlaceCoordsRule`）
-            model.fetchSpotIndex = { [spots = environment.spots] in try? await spots.fetchIndex() }
+            // 撮影地が写真の近くのスポットを指すかを見る索引（送るときだけ読む・`PlaceCoordsRule`）。
+            // **索引の行だけ**（区分の詳細を待つと、遅い通信で2秒の待ちを過ぎて座標を落とす）
+            model.fetchSpotIndex = { [spots = environment.spots] in await spots.fetchIndexRows() }
             // **今日のテーマから来たときだけ、一度だけ。** 既に何か打っていれば触らない。
             // 選択画面などから戻ると onAppear はまた呼ばれるので、印が無いと
             // 利用者が空にしたタグがまた入る（印は model が持つ・送ったあとの reset で下ろす）

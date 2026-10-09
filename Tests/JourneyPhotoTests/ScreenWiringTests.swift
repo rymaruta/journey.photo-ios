@@ -77,6 +77,18 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertEqual(count("loadTransferable(", in: composer), 1, "readPicks の外で写真を読んでいる")
     }
 
+    /// 🔴 ストーリー: 埋め込みの写真選びは**印を付けた瞬間に選択を渡す**（`.continuousAndOrdered`）。
+    /// 「追加」を止めた（`.selectionActions`）まま `.ordered` にすると、選択が一度も渡らず
+    /// 「次へ」が押せないまま（2026-10-09・owner の報告。Mac の run 364 で再現）
+    func testStoryInlinePickerDeliversSelectionContinuously() throws {
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains(".photosPickerDisabledCapabilities(.selectionActions)"))
+        XCTAssertTrue(composer.contains("selectionBehavior: .continuousAndOrdered"),
+                      "「追加」を止めた埋め込みの写真選びが、選択を渡さない")
+        XCTAssertFalse(composer.contains("selectionBehavior: .ordered"),
+                       "「追加」を押した時にしか選択を渡さない形が残っている")
+    }
+
     /// ストーリー: 閉じる確認の「下書きに保存」は読み込み中を見る（`leaveDialog`）
     func testStoryComposerLeaveDialogSeesLoading() throws {
         let composer = try source("Features/Stories/StoryComposerView.swift")

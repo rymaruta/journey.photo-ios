@@ -20,11 +20,16 @@ enum EditPlaceRules {
     ///
     /// - Parameters:
     ///   - photoCoords: 写真のいまの座標（(c) を見る）
-    ///   - spots: 撮影スポットの索引。無ければ空（(c) は当たらない＝消す側に倒れる）
+    ///   - spots: 撮影スポットの索引。空なら (c) は当たらない（消す側に倒れる）。
+    ///     🔴 **nil は「索引を読めなかった（時間切れ・圏外）」**——書き換えた撮影地がスポットを指すか
+    ///     分からないので**消さない**（分からないまま消すと、サーバーのピンが黙って消える・2026-10-09 のレビュー）。
+    ///     撮影地を空にした回は索引が要らないので、nil でも消す
     static func clearsCoords(openedLocation: String?, currentLocation: String, pickedCoords: Bool,
-                             photoCoords: Photo.Coords? = nil, spots: [OfficialSpot] = []) -> Bool {
-        !pickedCoords && changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
-            && !PlaceCoordsRule.namesSpotNear(currentLocation, photo: photoCoords, spots: spots)
+                             photoCoords: Photo.Coords? = nil, spots: [OfficialSpot]? = []) -> Bool {
+        guard !pickedCoords, changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
+        else { return false }
+        guard let spots else { return trim(currentLocation).isEmpty }
+        return !PlaceCoordsRule.namesSpotNear(currentLocation, photo: photoCoords, spots: spots)
     }
 
     /// 索引が無いと `clearsCoords` を決められないか（保存の前に索引を待つかどうか）
@@ -39,11 +44,15 @@ enum EditPlaceRules {
     /// 外した・撮影地も無い）に位置を戻さない。この画面で撮影地を消した・書き換えたときも
     /// 書かない——ただし書き換えた撮影地が新しい写真の近くのスポットを指すなら書く
     /// （`clearsCoords` と同じ決まり・2026-10-07 判断）
+    ///
+    /// 🔴 **`spots` が nil（索引を読めなかった）なら、撮影地を空にした回のほかはピンを残す**
+    /// （`clearsCoords` と同じ理由。分からないことを「落とす」にしない）
     static func keepsCoordsOnReplace(openedLocation: String?, openedHasCoords: Bool, currentLocation: String,
-                                     newPhotoCoords: Photo.Coords? = nil, spots: [OfficialSpot] = []) -> Bool {
-        openedHasCoords
-            && (!changedByUser(openedLocation: openedLocation, currentLocation: currentLocation)
-                || PlaceCoordsRule.namesSpotNear(currentLocation, photo: newPhotoCoords, spots: spots))
+                                     newPhotoCoords: Photo.Coords? = nil, spots: [OfficialSpot]? = []) -> Bool {
+        guard openedHasCoords else { return false }
+        guard changedByUser(openedLocation: openedLocation, currentLocation: currentLocation) else { return true }
+        guard let spots else { return !trim(currentLocation).isEmpty }
+        return PlaceCoordsRule.namesSpotNear(currentLocation, photo: newPhotoCoords, spots: spots)
     }
 
     private static func trim(_ text: String) -> String {

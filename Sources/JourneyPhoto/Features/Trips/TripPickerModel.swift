@@ -31,6 +31,9 @@ final class TripPickerModel: ObservableObject {
     @Published private(set) var decisions: [Decision] = []
     /// 下書きで「このプランから外す」を押した場所（`spotId`）。**「行きたい」からは外さない**
     @Published private(set) var removed: Set<String> = []
+    /// 詳細（写真・季節の文）を一度頼み終えた場所（`spotId`・`applyDetails`）。
+    /// 頼み終えても写真が無い札は読み込み中の輪を止める（`TripPicker.cardFace`）
+    @Published private(set) var detailTried: Set<String> = []
 
     /// 下書きの題・日付・失敗の文は**下書きの画面ではなくここに持つ**——下書きの画面は
     /// 戻って開き直すと作り直される（開き直しで消さない・本人が付けた題を案の題で上書きしない）
@@ -126,6 +129,9 @@ final class TripPickerModel: ObservableObject {
         let needs = detailNeeds
         guard !needs.isEmpty else { return }
         let merged = await fill(deck, needs)
+        // 詳細を一度頼んだ印。届いても写真が無かった行の札は、輪を回し続けずに面だけにする
+        // （`TripPicker.cardFace`）
+        detailTried.formUnion(needs.map(\.spotId))
         let byId = Dictionary(merged.map { ($0.spotId, $0) }, uniquingKeysWith: { first, _ in first })
         deck = deck.map { byId[$0.spotId] ?? $0 }
         decisions = decisions.map {

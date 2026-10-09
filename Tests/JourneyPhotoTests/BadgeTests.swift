@@ -143,6 +143,19 @@ final class BadgePatchTests: XCTestCase {
         XCTAssertEqual(cleared.displayBadge, Clearable(nil))
     }
 
+    /// 🔴 **持っているがアプリの知らない鍵を飾っている人が「決める」だけ押しても外さない**（バグ調査 低-1）。
+    /// 持っていない鍵（取り消された・古い値）は今までどおり消す
+    func testNameSideKeepsUnknownOwnedBadge() throws {
+        let unknown = try profile(#"{"userId":"u1","badges":{"supporter":{"tier":1},"first":{"tier":1}},"displayBadge":"supporter"}"#)
+        XCTAssertNil(NameSideChoice.initialSelection(unknown))
+        XCTAssertNil(NameSideChoice.patch(profile: unknown, selected: nil, style: .iris))
+        // 選び直したら送る
+        XCTAssertEqual(NameSideChoice.patch(profile: unknown, selected: "first", style: .iris)?.displayBadge, Clearable("first"))
+
+        let revoked = try profile(#"{"userId":"u1","badges":{"first":{"tier":1}},"displayBadge":"night"}"#)
+        XCTAssertEqual(NameSideChoice.patch(profile: revoked, selected: nil, style: .iris)?.displayBadge, Clearable(nil))
+    }
+
     func testNameSidePatchSendsMarkStyleForPro() throws {
         let p = try profile(#"{"userId":"u1","pro":true,"proMarkStyle":"iris"}"#)
         let patch = try XCTUnwrap(NameSideChoice.patch(profile: p, selected: nil, style: .plate))

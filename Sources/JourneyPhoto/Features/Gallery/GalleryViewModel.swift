@@ -479,7 +479,10 @@ final class GalleryViewModel: ObservableObject {
     private func representPages(loadsRestricted: Bool) async {
         presentSerial += 1
         let serial = presentSerial
-        let raw = pageRaw
+        // ページの境目をまたぐ複数枚の投稿は、続きが届くまで出さない（前半だけの束にしない・
+        // `PhotoGroups.holdingBackTrailingGroup`）。読んだ印（`pageIds`）には入れたままで、
+        // 続きが届くと末尾でなくなり、そろった束で出る
+        let raw = PhotoGroups.holdingBackTrailingGroup(pageRaw, hasMore: nextCursor != nil)
         let presented = await gallery.presentFeed(raw, reachedEnd: nextCursor == nil,
                                                   loadsRestricted: loadsRestricted)
         guard serial == presentSerial, pageSource == .pages else { return }

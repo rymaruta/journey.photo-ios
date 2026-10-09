@@ -30,8 +30,13 @@ enum TripBookCard {
     static func lines(of trip: TripBook.Trip, distance: Double?) -> Lines {
         var stats = [
             L("\(trip.photos.count)枚", trip.photos.count == 1 ? "1 photo" : "\(trip.photos.count) photos"),
-            L("撮影地 \(TripBook.placeCount(of: trip.photos))", "\(TripBook.placeCount(of: trip.photos)) places"),
         ]
+        // 撮影地の分かる写真が無い旅は「撮影地 0」「0 places」と書かずに載せない（2026-10-09）。
+        // 英語は1か所なら単数
+        let places = TripBook.placeCount(of: trip.photos)
+        if places > 0 {
+            stats.append(L("撮影地 \(places)", places == 1 ? "1 place" : "\(places) places"))
+        }
         // 「—」は画面の枠の中なら読めるが、1行の文では何のことか分からない。数えられなければ載せない
         if let distance {
             stats.append(L("移動（直線）\(TripBook.distanceText(distance)) km",

@@ -26,6 +26,10 @@ on:
         description: "App Store 用の原寸の絵（PNG）を `store-screenshots` の枝にも置く"
         type: boolean
         default: false
+      tests:
+        description: "テストも流す（main は PR の検証で通っているので要らない。main 以外の枝を確かめるときだけ）"
+        type: boolean
+        default: false
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -238,7 +242,13 @@ jobs:
       - name: Xcode プロジェクトを作る
         run: xcodegen generate
 
+      # **既定ではテストを流さない**（2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。
+      # main に入るのは「PR の検証」の Mac のテストを通ったものだけなので、上げる回で同じテストを
+      # もう一度流すと、Mac を30分ほど二重に使っていた。main 以外の枝を確かめるときは `tests: true`。
+      # 画面の絵（下の `screenshots` の段）はこのテストの結果から作るので、テストを流した回だけ置く
+      # 上げない回（submit=false・`/mac-check`）は絵とテストが目的なので、`tests` が無くても流す
       - name: テスト（本物の SwiftUI で型検査される最初の機会）
+        if: ${{ inputs.tests || inputs.storeShots || !inputs.submit }}
         run: |
           set -euo pipefail
           # 機種名は固定しない（Xcode が上がると入っているシミュレータが替わる）
@@ -411,7 +421,7 @@ jobs:
       # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
       # `Tools/export-screenshots.sh` の頭に書いた
       - name: 画面の絵を `screenshots` の枝に置く
-        if: ${{ always() }}
+        if: ${{ always() && (inputs.tests || inputs.storeShots || !inputs.submit) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STORE_SHOTS: ${{ inputs.storeShots }}
