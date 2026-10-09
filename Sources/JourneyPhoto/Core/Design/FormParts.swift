@@ -231,10 +231,16 @@ struct JPRowLabel: View {
     var chevron = true
     /// 危ない行（アカウントの削除）はアイコンだけ赤（板どおり、名前は白のまま）
     var iconColor: Color = WebTheme.muted2
+    /// SF Symbols に無い絵（設定の Pro の行の Pro マーク・線の絵・板 43）。あれば `systemImage` より先に使う
+    var icon: AnyView?
 
     var body: some View {
         HStack(spacing: 12) {
-            if let systemImage {
+            if let icon {
+                icon
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+            } else if let systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: 17))
                     .foregroundStyle(iconColor)

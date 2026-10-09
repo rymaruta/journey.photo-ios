@@ -75,6 +75,11 @@ enum SupporterText {
         yearThresholds.filter { months >= $0 }.count
     }
 
+    /// サーバーが付けた `supporterYear` の段も見る（段は下がらないので、月の数より先に進んでいることがある）
+    static func yearsReached(months: Int, badgeTier: Int?) -> Int {
+        min(yearThresholds.count, max(yearsReached(months: months), badgeTier ?? 0))
+    }
+
     /// 年のメダルの名前（「1年目」）
     static func yearLabel(_ year: Int) -> String {
         L("\(year)年目", year == 1 ? "Year 1" : "Year \(year)")

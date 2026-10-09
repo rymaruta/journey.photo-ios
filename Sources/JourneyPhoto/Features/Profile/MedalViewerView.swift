@@ -244,13 +244,17 @@ final class MedalCoinCoordinator: NSObject {
     /// サポーター証（板 Badge3D: 342×216・角 16・厚み 4・縁は角の丸みまで金の小口）。
     /// 縁は角丸の四角を押し出した形（`SCNShape`）に金の帯を貼り、表と裏は角を丸めた平面
     private func buildCard(aspect: Double) {
-        let width: CGFloat = 2
+        // 舞台は硬貨と同じ正方形（視野 30° で、5.2 離れて見える高さは約 2.79）。カードは
+        // 横幅が舞台の 9 割ほどになる 2.56 にする（硬貨の直径 2 のままだと板より小さく見える）
+        let width: CGFloat = 2.56
         let height = width / CGFloat(max(0.1, aspect))
         let corner = width * CGFloat(SupporterCardLayout.cornerRadius / SupporterCardLayout.width)
         let thickness = width * CGFloat(SupporterCardLayout.thickness / SupporterCardLayout.width)
 
         let outline = UIBezierPath(roundedRect: CGRect(x: -width / 2, y: -height / 2, width: width, height: height),
                                    cornerRadius: corner)
+        // 既定の細かさ（0.6）では角の丸みが直線の面取りになる（この場面は 1 が約 140pt）
+        outline.flatness = 0.002
         let slab = SCNShape(path: outline, extrusionDepth: thickness)
         setUpMetal(edge)
         // 金の小口は光らせる（回すと光が縁を滑る）

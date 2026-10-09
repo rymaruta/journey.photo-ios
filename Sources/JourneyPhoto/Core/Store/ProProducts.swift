@@ -277,4 +277,18 @@ enum ProStatusText {
         parts.append(manage)
         return parts.joined(separator: " · ")
     }
+
+    /// 設定の「サポーター証」の行の2行目（板 43: 「No. 0001 · 手に取って回せます」）
+    static func supporterDetail(number: Int) -> String {
+        "\(SupporterText.numberLabel(number)) · " + L("手に取って回せます", "Turn it in your hand")
+    }
+
+    /// 設定の「名前の横のバッジと Pro マーク」の行の2行目（板 43: 「初期ユーザー · Pro マークは 絞り羽根」）。
+    /// Pro でなければバッジだけ（Pro マークは Pro の間だけ出る）
+    static func nameSideDetail(_ profile: UserProfile) -> String {
+        let badge = profile.shownBadge.flatMap { BadgeCatalog.isKnown($0.key) ? BadgeCatalog.name($0.key) : nil }
+            ?? L("バッジなし", "No badge")
+        guard profile.isPro else { return badge }
+        return badge + " · " + L("Pro マークは \(profile.markStyle.label)", "Pro mark: \(profile.markStyle.label)")
+    }
 }

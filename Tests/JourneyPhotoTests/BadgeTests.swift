@@ -218,7 +218,9 @@ final class BadgeCatalogTests: XCTestCase {
 
     func testNamesTiersAndImages() {
         XCTAssertEqual(BadgeCatalog.kinds.map(\.key),
-                       ["earlyUser", "first", "prefectures", "countries", "seasons", "morning", "night", "books", "wish"])
+                       ["earlyUser", "first", "prefectures", "countries", "seasons", "morning", "night", "books", "wish",
+                        // Pro 限定（第2段階）。季節の章は年ごとの鍵なので台帳には並ばない（`ProChapters`）
+                        "supporter", "supporterYear"])
         XCTAssertEqual(BadgeCatalog.kind("wish")?.ja, "行けた場所")
         XCTAssertEqual(BadgeCatalog.kind("first")?.maxTier, 1)
         XCTAssertEqual(BadgeCatalog.smallImage("morning", tier: 2), "medal-morning-2-s")

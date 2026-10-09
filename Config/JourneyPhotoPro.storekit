@@ -1,0 +1,173 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "ja_JP",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "6B2F1C3A-5E0D-4B8E-9A61-2D7C4F1E8B90",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "ja_JP",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "JPN",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21571001",
+      "localizations" : [
+        {
+          "description" : "Journey Photo Pro",
+          "displayName" : "Journey Photo Pro",
+          "locale" : "ja"
+        }
+      ],
+      "name" : "Journey Photo Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "5000",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6739571001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Pro マークと Pro 限定の章・サポーター証",
+              "displayName" : "Journey Photo Pro（1年）",
+              "locale" : "ja"
+            }
+          ],
+          "productID" : "com.journeyphoto.JourneyPhoto.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro Yearly",
+          "subscriptionGroupID" : "21571001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "500",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6739571002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Pro マークと Pro 限定の章・サポーター証",
+              "displayName" : "Journey Photo Pro（1か月）",
+              "locale" : "ja"
+            }
+          ],
+          "productID" : "com.journeyphoto.JourneyPhoto.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly",
+          "subscriptionGroupID" : "21571001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    },
+    {
+      "id" : "21571002",
+      "localizations" : [
+
+      ],
+      "name" : "Journey Photo Pro (staging)",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "5000",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6739571003",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Pro マークと Pro 限定の章・サポーター証",
+              "displayName" : "Journey Photo Pro（1年・staging）",
+              "locale" : "ja"
+            }
+          ],
+          "productID" : "com.journeyphoto.JourneyPhoto.staging.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro Yearly (staging)",
+          "subscriptionGroupID" : "21571002",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "500",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6739571004",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Pro マークと Pro 限定の章・サポーター証",
+              "displayName" : "Journey Photo Pro（1か月・staging）",
+              "locale" : "ja"
+            }
+          ],
+          "productID" : "com.journeyphoto.JourneyPhoto.staging.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly (staging)",
+          "subscriptionGroupID" : "21571002",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

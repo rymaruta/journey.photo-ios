@@ -827,6 +827,75 @@ final class ScreenshotTests: XCTestCase {
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
     }
 
+    /// **Pro の画面**（第2段階・2026-10-09）: 設定の「Pro」の節（板 43）→ Pro の案内（板 63）、
+    /// マイページの名前の行 → 名前の横の画面の「PRO 限定」（板 BadgePicker）。
+    ///
+    /// 鍵を持たないログイン（`-JPPreviewUserId`）なので、自分のプロフィールは読めない＝Pro でない人の姿
+    /// （サポーター証の行は出ない）。値段は App Store の商品が読めない staging なので板の値段。
+    /// **何も買わない**（主ボタンは押さない）。出なければ撮らない（この試験の決まり）
+    func testCapturesProScreens() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+
+        // 名前の横の画面（PRO 限定の段まで送って撮る）
+        let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+        if nameLine.waitForExistence(timeout: 5), nameLine.isHittable {
+            nameLine.tap()
+            let collect = app.buttons["nameSide.proCollect"].firstMatch
+            if collect.waitForExistence(timeout: 10) {
+                var pushes = 0
+                while !collect.isHittable, pushes < 3 {
+                    app.swipeUp()
+                    Thread.sleep(forTimeInterval: 1)
+                    pushes += 1
+                }
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "82-名前の横（PRO 限定）")
+                // 「Pro で集める」→ Pro の案内が開くこと（板の行き先）
+                if collect.isHittable {
+                    collect.tap()
+                    if app.buttons["paywall.close"].firstMatch.waitForExistence(timeout: 10) {
+                        app.buttons["paywall.close"].firstMatch.tap()
+                    }
+                }
+            }
+            // シートを下ろす
+            let close = app.buttons["閉じる"].firstMatch
+            if close.waitForExistence(timeout: 3), close.isHittable { close.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        // 設定の Pro の節 → Pro の案内
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+        gear.tap()
+        let proRow = app.buttons["settings.pro"].firstMatch
+        guard proRow.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "80-設定（Pro の節）")
+        proRow.tap()
+        let purchase = app.buttons["paywall.purchase"].firstMatch
+        guard purchase.waitForExistence(timeout: 10) else { return }
+        // 上の写真（朝の公開写真）が届くのを少し待つ
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "81-Pro の案内")
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "81b-Pro の案内（下・注記と復元）")
+    }
+
     /// **探すの「季節・時間帯で絞る」**（2026-10-03・戦略の計画6）。発見の顔の「季節・時間帯から探す」で
     /// 「秋」を押した1枚（秋の案内のある撮影スポットと、秋に撮った写真）と、続けて「夕」を重ねた1枚。
     ///

@@ -170,6 +170,7 @@ public final class UIFont {
         public static let regular = Weight(), medium = Weight(), semibold = Weight(), bold = Weight(), heavy = Weight()
     }
     public static func systemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
+    public static func systemFont(ofSize size: Double) -> UIFont { UIFont() }
     public static func monospacedSystemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
     public static func monospacedDigitSystemFont(ofSize size: Double, weight: Weight) -> UIFont { UIFont() }
     public init() {}
