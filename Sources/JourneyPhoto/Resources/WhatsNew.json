@@ -2,6 +2,33 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.0.73",
+      "items": [
+        {
+          "symbol": "seal",
+          "title": { "ja": "初期ユーザー章を贈ります", "en": "Early user badge" },
+          "detail": { "ja": "10月31日までに登録した方に、今しか手に入らない限定のメダルを贈ります。", "en": "Everyone who joins by October 31 receives a limited medal that can never be earned again." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "medal",
+          "title": { "ja": "メダルが集まる", "en": "Earn medals" },
+          "detail": { "ja": "写真や旅の記録に合わせて、都道府県・四季・朝の光などのメダルが自動で届きます。", "en": "Medals for prefectures, seasons, morning light and more arrive automatically as you post and travel." }
+        },
+        {
+          "symbol": "person.text.rectangle",
+          "title": { "ja": "名前の横にメダルを1つ", "en": "A medal beside your name" },
+          "detail": { "ja": "マイページで名前を押すと、持っているメダルから1つ選んで飾れます。", "en": "Tap your name on My Page to show one of your medals beside it." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "rotate.3d",
+          "title": { "ja": "手に取って回す", "en": "Hold and turn" },
+          "detail": { "ja": "メダルを長押しすると、裏まで回して見られます。", "en": "Long-press a medal to turn it over and see the back." }
+        }
+      ]
+    },
+    {
       "version": "1.0.67",
       "items": [
         {
