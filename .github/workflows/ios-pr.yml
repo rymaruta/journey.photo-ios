@@ -128,10 +128,6 @@ jobs:
     # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
     # （ios-testflight.yml の run #8）。控えが当たれば短い
     timeout-minutes: 90
-    # まとめの段（`xcode`）が「テストが通った木の印」を付けるのに使う
-    outputs:
-      tree: ${{ steps.mark.outputs.tree }}
-      xcode: ${{ steps.mark.outputs.xcode }}
     steps:
       - uses: actions/checkout@v4
 
@@ -199,14 +195,6 @@ jobs:
               exit 1
             }
 
-      # テストが通ったときだけ。まとめの段が2台の値を突き合わせてから印を付ける
-      - name: 通した木と Xcode の版を残す
-        id: mark
-        run: |
-          set -euo pipefail
-          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
-          echo "xcode=${XCODE_BUILD}" >> "$GITHUB_OUTPUT"
-
       # 失敗したテストの名前と理由を、まとめの頁に出す（ログを掘らずに読めるように）
       - name: 結果のまとめ
         if: ${{ always() }}
@@ -233,9 +221,6 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: macos-15
     timeout-minutes: 90
-    outputs:
-      tree: ${{ steps.mark.outputs.tree }}
-      xcode: ${{ steps.mark.outputs.xcode }}
     steps:
       - uses: actions/checkout@v4
 
@@ -295,13 +280,6 @@ jobs:
               exit 1
             }
 
-      - name: 通した木と Xcode の版を残す
-        id: mark
-        run: |
-          set -euo pipefail
-          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
-          echo "xcode=${XCODE_BUILD}" >> "$GITHUB_OUTPUT"
-
       - name: 結果のまとめ
         if: ${{ always() }}
         run: python3 Tools/xcresult-summary.py build/Test.xcresult >> "$GITHUB_STEP_SUMMARY" || true
@@ -339,10 +317,6 @@ jobs:
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # **テストが通った木の印を PR の先頭のコミットに付ける**のに、コミットの状態
-    # （statuses）への書き込みが要る。ここだけ開ける（下の「テストが通った木の印を付ける」）
-    permissions:
-      statuses: write
     steps:
       - name: 2台の結果
         env:
@@ -354,39 +328,3 @@ jobs:
             echo "::error::Xcode のテストが通っていません（単体・スモーク: ${UNIT} / 画面の絵: ${SHOTS}）。それぞれの job を見てください"
             exit 1
           fi
-
-      # 🔴 **TestFlight でテストを2度回さないための印**（2026-10-09 owner の了承）。
-      # 2台が通したのは `refs/pull/N/merge`＝「main に入れたあとの姿」。その木
-      # （`HEAD^{tree}`）を PR の先頭のコミットに `mac-tested-tree` の状態として付ける。
-      # PR をマージ（merge の方式）すると、main の木はこれと同じになる——ただし
-      # **マージまでに main が動いていなければ**。動いていれば木が違い、TestFlight の側
-      # （ios-testflight.yml の「同じ木がもうテスト済みかを見る」）は印が合わないので
-      # テストを回す。印に Xcode の版も入れ、版が違っても回す。
-      # **2台の木と版が食い違えば付けない**（同じコミットを見ているはずだが、
-      # ランナーの像の入れ替わりで Xcode が割れることはありうる）。
-      #
-      # **付けない回**: PR 以外（workflow_dispatch）と、fork からの PR（書き込みの
-      # 権限が渡らない）。印が無ければ TestFlight がテストを回すだけなので、害は無い
-      - name: テストが通った木の印を付ける
-        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          TREE_UNIT: ${{ needs.xcode_unit.outputs.tree }}
-          TREE_SHOTS: ${{ needs.xcode_shots.outputs.tree }}
-          XCODE_UNIT: ${{ needs.xcode_unit.outputs.xcode }}
-          XCODE_SHOTS: ${{ needs.xcode_shots.outputs.xcode }}
-        run: |
-          set -euo pipefail
-          if [ -z "$TREE_UNIT" ] || [ "$TREE_UNIT" != "$TREE_SHOTS" ] \
-             || [ -z "$XCODE_UNIT" ] || [ "$XCODE_UNIT" != "$XCODE_SHOTS" ]; then
-            echo "::warning::2台の木か Xcode の版が食い違うので、印は付けません（TestFlight はテストを回します）: 木 ${TREE_UNIT:-空} / ${TREE_SHOTS:-空}、Xcode ${XCODE_UNIT:-空} / ${XCODE_SHOTS:-空}"
-            exit 0
-          fi
-          desc="tree=${TREE_UNIT} xcode=${XCODE_UNIT}"
-          echo "印を付ける: ${HEAD_SHA} に ${desc}"
-          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
-            -f state=success \
-            -f context=mac-tested-tree \
-            -f description="$desc" >/dev/null
-          echo "テストが通った木の印: ${desc}" >> "$GITHUB_STEP_SUMMARY"

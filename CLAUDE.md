@@ -50,13 +50,16 @@
 - **手元の Xcode から Archive して出すときだけ**、`bash Tools/bump-build.sh <版>` で
   版とビルド番号を自分で上げる。この経路はタグが付かないので、次に Actions で
   出すときに同じ版を二度使わないよう、出した版を owner に伝える
+- **TestFlight ではテストを2度回さない（2026-10-09 owner のルール）。** シミュレータの
+  テストは PR の検証（`ios-pr.yml`）でだけ回す。TestFlight で回したいときは
+  `force_tests: true` で流す（`submit: false`・`storeShots: true` の回は絵のために回る）
 - 詳しい手順は `docs/RELEASE.md`・`docs/TESTFLIGHT.md`
 
 ## 検査
 
 `bash Tools/verify.sh`（構文・参照・Web 版との突き合わせ・設定）。この環境では
-本物の Xcode でのコンパイルはできない——最初の確認は TestFlight のワークフローの
-テスト段になる。
+本物の Xcode でのコンパイルはできない——最初の確認は PR の検証（`ios-pr.yml`）の
+Xcode のテストになる。
 
 **NG は0件が正しい。** Web 版との突き合わせは隣の `../photo-gallery` の作業ツリーを
 読むので、**そこが古い枝のままだと、サーバーに在る口を「無い」と言う**
