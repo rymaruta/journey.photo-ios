@@ -41,7 +41,7 @@ final class BackgroundTransferTests: XCTestCase {
 
     /// 🔴 **誰も受け取らなかった鍵は、起動し直しても残る。** 起動直後はログインを
     /// 確かめられず、片付けは後になる——メモリだけだと、その間に消えて S3 に迷子が残る
-    func testOrphanKeysSurviveRelaunchAndAreTakenOnce() async {
+    func testOrphanKeysSurviveRelaunchUntilSettled() async {
         let file = directory.appendingPathComponent("orphans.json")
         let first = OrphanKeys(fileURL: file)
         first.add("uploads/u1/a.jpg")
@@ -49,17 +49,51 @@ final class BackgroundTransferTests: XCTestCase {
         first.add("uploads/u1/b.jpg")
 
         let relaunched = OrphanKeys(fileURL: file)
-        XCTAssertEqual(relaunched.takeAll(), ["uploads/u1/a.jpg", "uploads/u1/b.jpg"], "同じ鍵を2回控えた・残っていない")
-        XCTAssertEqual(OrphanKeys(fileURL: file).takeAll(), [], "片付けに渡した鍵がまた出てくる")
+        XCTAssertEqual(relaunched.keys(owner: "u1"), ["uploads/u1/a.jpg", "uploads/u1/b.jpg"],
+                       "同じ鍵を2回控えた・残っていない")
+        relaunched.remove("uploads/u1/a.jpg")
+        XCTAssertEqual(OrphanKeys(fileURL: file).keys(owner: "u1"), ["uploads/u1/b.jpg"], "片付けた鍵がまた出てくる")
     }
 
     /// 控えには上限がある（古いものから落とす）
     func testOrphanKeysAreCapped() async {
         let keys = OrphanKeys(fileURL: nil)
-        for i in 0..<(OrphanKeys.limit + 5) { keys.add("k\(i)") }
-        let taken = keys.takeAll()
-        XCTAssertEqual(taken.count, OrphanKeys.limit)
-        XCTAssertEqual(taken.first, "k5")
+        for i in 0..<(OrphanKeys.limit + 5) { keys.add("uploads/u1/k\(i)") }
+        let kept = keys.keys(owner: "u1")
+        XCTAssertEqual(kept.count, OrphanKeys.limit)
+        XCTAssertEqual(kept.first, "uploads/u1/k5")
+    }
+
+    /// 🔴 **その人の鍵だけを出す。** 別の人の token で送ると 403 で断られ、その鍵を失う。
+    /// 接頭辞が似ているだけの人（`u1` と `u10`）・`..` で外へ出る鍵も出さない
+    func testOrphanKeysAreSplitByOwner() async {
+        let keys = OrphanKeys(fileURL: nil)
+        for key in ["uploads/u1/a.jpg", "uploads/u10/b.jpg", "uploads/u2/c.jpg", "uploads/u1/../u2/d.jpg"] {
+            keys.add(key)
+        }
+        XCTAssertEqual(keys.keys(owner: "u1"), ["uploads/u1/a.jpg"])
+        XCTAssertEqual(keys.keys(owner: "u2"), ["uploads/u2/c.jpg"])
+        XCTAssertEqual(keys.keys(owner: ""), [])
+    }
+
+    /// 🔴 **読めなかった控えを上書きしない。** 鍵の掛かった端末で起こされると、最初のロック解除の
+    /// 前は控えのファイルを読めないことがある。そこで足した1本を書くと、前の控えが消えていた
+    func testUnreadableOrphanFileIsNotOverwritten() async throws {
+        let file = directory.appendingPathComponent("orphans.json")
+        OrphanKeys(fileURL: file).add("uploads/u1/a.jpg")
+        let locked = Box(true)
+        let keys = OrphanKeys(fileURL: file, readFile: { url in
+            if locked.value { throw CocoaError(.fileReadNoPermission) }
+            return try Data(contentsOf: url)
+        })
+        keys.add("uploads/u1/b.jpg")
+        let onDisk = try JSONDecoder().decode([String].self, from: Data(contentsOf: file))
+        XCTAssertEqual(onDisk, ["uploads/u1/a.jpg"], "読めないまま控えを上書きした")
+
+        locked.value = false
+        XCTAssertEqual(keys.keys(owner: "u1"), ["uploads/u1/a.jpg", "uploads/u1/b.jpg"], "読めたときに足し合わせていない")
+        XCTAssertEqual(OrphanKeys(fileURL: file).keys(owner: "u1"), ["uploads/u1/a.jpg", "uploads/u1/b.jpg"],
+                       "読めない間に足した鍵を書いていない")
     }
 
     /// 転送の札は起動し直しても OS が返す。読めない札は無視する
@@ -77,13 +111,30 @@ final class BackgroundTransferTests: XCTestCase {
         let orphans = OrphanKeys(fileURL: nil)
         let book = TransferBook(orphans: orphans)
         let got = Box<Int?>(nil)
-        book.wait(task: 7) { result in got.value = (try? result.get() as? HTTPURLResponse)?.statusCode }
-        XCTAssertTrue(book.isWaited(task: 7))
+        book.wait(file: "F7") { result in got.value = (try? result.get() as? HTTPURLResponse)?.statusCode }
+        XCTAssertTrue(book.isWaited(file: "F7"))
 
-        XCTAssertTrue(book.finish(task: 7, key: "uploads/u1/a.jpg", result: .success(response())))
+        XCTAssertTrue(book.finish(tag: TransferTag(file: "F7", key: "uploads/u1/a.jpg"), result: .success(response())))
         XCTAssertEqual(got.value, 200)
-        XCTAssertFalse(book.isWaited(task: 7))
-        XCTAssertEqual(orphans.takeAll(), [], "待つ人に渡した鍵を片付けに回した")
+        XCTAssertFalse(book.isWaited(file: "F7"))
+        XCTAssertEqual(orphans.keys(owner: "u1"), [], "待つ人に渡した鍵を片付けに回した")
+    }
+
+    /// 🔴 **待つ人は札の UUID で引く。** `taskIdentifier` は起動をまたぐと重なりうるので、番号で引くと
+    /// 前の起動の転送の終わりを今の投稿が受け取り、まだ届いていない本体のまま save へ進みかねない。
+    /// 別の札の終わりは今の投稿に渡さず、控えに回す
+    func testCompletionOfAnotherTransferIsNotHandedToTheWaiter() async {
+        let orphans = OrphanKeys(fileURL: nil)
+        let book = TransferBook(orphans: orphans)
+        let got = Box<[Int]>([])
+        book.wait(file: "NEW") { result in got.value.append((try? result.get() as? HTTPURLResponse)?.statusCode ?? -1) }
+
+        XCTAssertFalse(book.finish(tag: TransferTag(file: "OLD", key: "uploads/u1/old.jpg"), result: .success(response(403))))
+        XCTAssertEqual(got.value, [], "前の起動の転送の終わりを今の投稿に渡した")
+        XCTAssertEqual(orphans.keys(owner: "u1"), ["uploads/u1/old.jpg"])
+
+        XCTAssertTrue(book.finish(tag: TransferTag(file: "NEW", key: "uploads/u1/new.jpg"), result: .success(response())))
+        XCTAssertEqual(got.value, [200])
     }
 
     /// 🔴 **アプリが消されて起動し直したら、前の転送を待つ人は居ない。** その鍵は save されて
@@ -91,59 +142,132 @@ final class BackgroundTransferTests: XCTestCase {
     func testTransferFromAPreviousLaunchIsOrphaned() async {
         let file = directory.appendingPathComponent("orphans.json")
         let before = TransferBook(orphans: OrphanKeys(fileURL: file))
-        before.wait(task: 3) { _ in XCTFail("消えた処理に渡した") }
+        before.wait(file: "F3") { _ in XCTFail("消えた処理に渡した") }
         // ここでアプリが消された。起動し直した帳面には待つ人が居ない
         let after = TransferBook(orphans: OrphanKeys(fileURL: file))
-        XCTAssertFalse(after.finish(task: 3, key: "uploads/u1/a.jpg", result: .success(response())))
-        XCTAssertEqual(OrphanKeys(fileURL: file).takeAll(), ["uploads/u1/a.jpg"])
+        XCTAssertFalse(after.finish(tag: TransferTag(file: "F3", key: "uploads/u1/a.jpg"), result: .success(response())))
+        XCTAssertEqual(OrphanKeys(fileURL: file).keys(owner: "u1"), ["uploads/u1/a.jpg"])
     }
 
     /// 同じ転送の終わりを2回渡さない（2回目は誰も待っていない扱い）
     func testFinishIsDeliveredOnlyOnce() async {
         let book = TransferBook(orphans: OrphanKeys(fileURL: nil))
         let count = Box(0)
-        book.wait(task: 1) { _ in count.value += 1 }
-        book.finish(task: 1, key: "k", result: .success(response()))
-        book.finish(task: 1, key: "k", result: .success(response()))
+        book.wait(file: "F1") { _ in count.value += 1 }
+        book.finish(tag: TransferTag(file: "F1", key: "k"), result: .success(response()))
+        book.finish(tag: TransferTag(file: "F1", key: "k"), result: .success(response()))
         XCTAssertEqual(count.value, 1)
     }
 
+    /// 🔴 **この起動で作った転送は、起動直後の片付け（`reconnect`）が止めない。** 片付けが
+    /// 前の起動の残りを探している間に最初の投稿が転送を作ると、止められ・本体を消されていた。
+    /// 作る前に書く（`claim`）ので、待つ人を書く前でも見分けられる
+    func testTransfersOfThisLaunchAreNotLeftovers() async {
+        let book = TransferBook(orphans: OrphanKeys(fileURL: nil))
+        book.claim(file: "MINE")
+        XCTAssertFalse(book.isLeftover(TransferTag(file: "MINE", key: "uploads/u1/a.jpg")), "この起動の転送を止める")
+        XCTAssertTrue(book.isFromThisLaunch(file: "MINE"), "この起動の本体のファイルを消す")
+        XCTAssertTrue(book.isLeftover(TransferTag(file: "OLD", key: "uploads/u1/b.jpg")))
+        XCTAssertTrue(book.isLeftover(nil), "札の読めない転送を残した")
+        book.release(file: "MINE")
+        XCTAssertTrue(book.isLeftover(TransferTag(file: "MINE", key: "uploads/u1/a.jpg")))
+    }
+
     // MARK: - OS からの終わり（`didCompleteWithError`）
+
+    /// 前の起動の転送の終わりを、OS から渡されたことにする（待つ人は居ない）
+    private func completeFromTheSystem(_ transfer: BackgroundTransfer, key: String, file: String = UUID().uuidString) throws {
+        let bodies = directory.appendingPathComponent("bodies", isDirectory: true)
+        try FileManager.default.createDirectory(at: bodies, withIntermediateDirectories: true)
+        let tag = TransferTag(file: file, key: key)
+        try Data([1, 2, 3]).write(to: bodies.appendingPathComponent(tag.file))
+        let task = session.uploadTask(with: URLRequest(url: URL(string: "https://s3.example.test/put")!),
+                                      fromFile: bodies.appendingPathComponent(tag.file))
+        task.taskDescription = tag.encoded
+        transfer.urlSession(session, task: task, didCompleteWithError: URLError(.cancelled))
+    }
+
+    private func makeTransfer(onFinished: @escaping @MainActor () -> Void = {},
+                              excludeFromBackup: @escaping (URL) -> Void = { _ in }) -> BackgroundTransfer {
+        BackgroundTransfer(identifier: "test", directory: directory, isInForeground: { false },
+                           fallback: SessionTransfer(session: session), onFinished: onFinished,
+                           excludeFromBackup: excludeFromBackup)
+    }
 
     /// 起動し直したあとに OS が渡してきた転送の終わり。**本体のファイルを消し、鍵を控えに書き、
     /// 猶予を取り直す**（渡す相手が居る回はその猶予で save へ進む）
     func testCompletionFromTheSystemCleansUpAndRenews() async throws {
         var renewed = 0
-        let transfer = BackgroundTransfer(identifier: "test", directory: directory,
-                                          isInForeground: { false },
-                                          fallback: SessionTransfer(session: session),
-                                          onFinished: { renewed += 1 })
-        let bodies = directory.appendingPathComponent("bodies", isDirectory: true)
-        try FileManager.default.createDirectory(at: bodies, withIntermediateDirectories: true)
-        let tag = TransferTag(file: "F1", key: "uploads/u1/a.jpg")
-        try Data([1, 2, 3]).write(to: bodies.appendingPathComponent(tag.file))
-        let task = session.uploadTask(with: URLRequest(url: URL(string: "https://s3.example.test/put")!),
-                                      fromFile: bodies.appendingPathComponent(tag.file))
-        task.taskDescription = tag.encoded
+        let transfer = makeTransfer(onFinished: { renewed += 1 })
+        try completeFromTheSystem(transfer, key: "uploads/u1/a.jpg", file: "F1")
 
-        transfer.urlSession(session, task: task, didCompleteWithError: URLError(.cancelled))
-
-        XCTAssertFalse(FileManager.default.fileExists(atPath: bodies.appendingPathComponent(tag.file).path),
-                       "送り終えた本体のファイルが残る")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("bodies/F1").path), "送り終えた本体のファイルが残る")
         XCTAssertEqual(renewed, 1, "猶予を取り直していない")
         var discarded: [String] = []
-        await transfer.discardOrphans { discarded.append($0) }
+        await transfer.discardOrphans(owner: "u1") { discarded.append($0); return true }
         XCTAssertEqual(discarded, ["uploads/u1/a.jpg"])
+    }
+
+    /// 🔴 **片付けに失敗した鍵は控えに残す**（圏外・401・503）。以前は先に控えを空にしてから
+    /// 送り、失敗を捨てていたので、その鍵は二度と片付かなかった。**別の人の鍵には触らない**
+    func testDiscardOrphansKeepsFailuresAndOtherUsersKeys() async throws {
+        let transfer = makeTransfer()
+        for key in ["uploads/u1/a.jpg", "uploads/u1/b.jpg", "uploads/u2/z.jpg"] {
+            try completeFromTheSystem(transfer, key: key)
+        }
+        var sent: [String] = []
+        await transfer.discardOrphans(owner: "u1") { key in
+            sent.append(key)
+            return key != "uploads/u1/b.jpg"
+        }
+        XCTAssertEqual(sent, ["uploads/u1/a.jpg", "uploads/u1/b.jpg"], "別の人の鍵をこの人の token で送った")
+
+        // 次の回（裏から戻った・起動し直した）に、失敗した鍵だけを送り直す
+        let relaunched = makeTransfer()
+        var again: [String] = []
+        await relaunched.discardOrphans(owner: "u1") { again.append($0); return true }
+        XCTAssertEqual(again, ["uploads/u1/b.jpg"], "失敗した鍵を失った・済んだ鍵をまた送った")
+        var other: [String] = []
+        await relaunched.discardOrphans(owner: "u2") { other.append($0); return true }
+        XCTAssertEqual(other, ["uploads/u2/z.jpg"], "別の人の鍵を失った")
+    }
+
+    /// 片付けの答えの読み方。**409（保存済みが使っている）は済んだ扱い**——消してはいけない鍵なので
+    /// 控えから外す。確かめられなかった（503・401・圏外）は済んでいない
+    func testDiscardOrphanTellsSettledFromRetryLater() async {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let uploads = UploadService(api: api, session: session)
+        let cases: [(Int, Bool)] = [(200, true), (409, true), (403, true), (400, true),
+                                    (503, false), (401, false), (429, false)]
+        for (status, settled) in cases {
+            ScriptedProtocol.reset()
+            ScriptedProtocol.script = [.init(match: "/upload/discard", status: status, body: #"{"error":"x"}"#)]
+            let result = await uploads.discardOrphan(key: "uploads/u1/a.jpg")
+            XCTAssertEqual(result, settled, "\(status) の読み方が違う")
+        }
+        let offline = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                tokenProvider: StubTokenProvider(token: nil), session: session)
+        let signedOut = await UploadService(api: offline, session: session).discardOrphan(key: "uploads/u1/a.jpg")
+        XCTAssertFalse(signedOut, "ログインしていない回を済んだ扱いにした")
+    }
+
+    /// 起動時に、本体の置き場所を作って iCloud のバックアップから外す
+    func testReconnectExcludesTheTransferDirectoryFromBackup() async {
+        var marked: [URL] = []
+        let transfer = makeTransfer(excludeFromBackup: { marked.append($0) })
+        transfer.reconnect()
+        XCTAssertEqual(marked.map(\.standardizedFileURL.path), [directory.standardizedFileURL.path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("bodies").path),
+                      "無い場所に印を付けようとした（付かない）")
     }
 
     /// 裏に回ってから始める転送は、前面の URLSession で送る（背景で始めると OS が後回しにする）。
     /// 本体のファイルも作らない
     func testTransferStartedInTheBackgroundUsesTheForegroundSession() async throws {
         ScriptedProtocol.script = [.init(match: "/put", status: 200, body: "")]
-        let transfer = BackgroundTransfer(identifier: "test", directory: directory,
-                                          isInForeground: { false },
-                                          fallback: SessionTransfer(session: session),
-                                          onFinished: {})
+        let transfer = makeTransfer()
         var request = URLRequest(url: URL(string: "https://s3.example.test/put")!)
         request.httpMethod = "PUT"
         let result = try await transfer.upload(request, body: Data([1]), key: "uploads/u1/a.jpg")

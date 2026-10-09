@@ -95,12 +95,17 @@ struct JourneyPhotoApp: App {
     }
 
     /// 写真の本体を送り終えたのに、アプリが消されて誰も save しなかった鍵を片付ける
-    /// （`BackgroundTransfer` の注記）。**ログインしているときだけ**——片付けは本人の鍵しか
-    /// 消せない（`upload.ts` の `discardUpload`）。保存済みの写真が使っている鍵はサーバーが消さない
+    /// （`BackgroundTransfer` の注記）。**ログインしているその人の鍵だけ**——片付けは本人の鍵しか
+    /// 消せない（`upload.ts` の `discardUpload`）。保存済みの写真が使っている鍵はサーバーが消さない（409）。
+    /// 確かめられなかった鍵（圏外・401・503）は控えに残り、次に裏から戻ったときに送り直す
     private func discardOrphanTransfers() {
-        guard auth.userId != nil else { return }
+        guard let userId = auth.userId else { return }
         let uploads = environment.uploads
-        Task { await BackgroundTransfer.shared.discardOrphans { key in await uploads.discard(key: key) } }
+        Task {
+            await BackgroundTransfer.shared.discardOrphans(owner: userId) { key in
+                await uploads.discardOrphan(key: key)
+            }
+        }
     }
 
     /// 公開範囲を絞った写真の取り口を、公開一覧へ渡す。

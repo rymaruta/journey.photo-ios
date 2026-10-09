@@ -128,6 +128,23 @@ struct UploadService {
         _ = try? await api.authorizedVoid(.delete, "/upload/discard", body: Body(key: key))
     }
 
+    /// 誰も save しなかった鍵を片付ける（`BackgroundTransfer.discardOrphans`）。
+    /// **片付けが済んだか（true）、確かめられなかったか（false）を返す**——false の鍵は控えに残し、次に送り直す。
+    ///
+    /// - 200: 消した。409: 保存済みの写真・ストーリーが使っている（消してはいけない鍵なので、控えから外してよい）
+    /// - 400・403: 鍵の形・持ち主で断られた（送り直しても変わらない）。控えには本人の鍵しか渡さない
+    /// - それ以外（圏外・401 のログイン切れ・429・503 の確認できなかった など）: 送り直す
+    func discardOrphan(key: String) async -> Bool {
+        struct Body: Encodable { let key: String }
+        do {
+            try await api.authorizedVoid(.delete, "/upload/discard", body: Body(key: key))
+            return true
+        } catch {
+            if case .server(let status, _)? = error as? APIError, [400, 403, 409].contains(status) { return true }
+            return false
+        }
+    }
+
     // MARK: - まとめて
 
     /// 上げてよい大きさと形式か。**投稿と差し替えで同じものを通す**
