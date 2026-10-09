@@ -171,6 +171,31 @@ final class HomeFeedPagingTests: XCTestCase {
         XCTAssertEqual(post.map { Set($0.photos.map(\.id)) }, ["p2", "p3"], "続きが届いても束がそろわない")
     }
 
+    /// 1ページ目が**丸ごと1つの投稿**の回。続きが届くまで一覧は空だが、続きの目印は出したまま
+    /// （「まだありません」にしない・`hasMorePages`）。続きが届けばそろった束で出る
+    func testFirstPageThatIsOneWholePostWaitsForTheNextPage() async {
+        prepare()
+        func grouped(_ id: String) -> String {
+            photo(id, user: "u1").replacingOccurrences(of: #""userId""#, with: #""groupId":"post1","userId""#)
+        }
+        StubProtocol.respond(path: "/feed?cursor=c1", status: 200,
+                             body: #"{"items":[\#(grouped("p3")),\#(photo("p4"))],"nextCursor":null}"#)
+        StubProtocol.respond(path: "/feed", status: 200,
+                             body: #"{"items":[\#(grouped("p1")),\#(grouped("p2"))],"nextCursor":"c1"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
+        let model = makeModel()
+
+        await model.load()
+        XCTAssertEqual(shown(model), [], "続きがあるのに、境目をまたぐ投稿の前半を出した")
+        XCTAssertTrue(model.hasMorePages, "空の間に続きの目印を下ろした（続きが読まれない）")
+
+        await model.loadNextPage()
+        let photos: [Photo] = { if case .loaded(let p) = model.state { return p } else { return [] } }()
+        XCTAssertEqual(Set(photos.map(\.id)), ["p1", "p2", "p3", "p4"])
+        let post = PhotoGroups.group(photos).first { $0.isMultiple }
+        XCTAssertEqual(post.map { Set($0.photos.map(\.id)) }, ["p1", "p2", "p3"], "続きが届いても束がそろわない")
+    }
+
     /// **`nextCursor` が null なら止まる。** 目印も出さず、頼まれても叩かない
     func testStopsAtTheLastPage() async {
         prepare()
