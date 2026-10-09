@@ -19,6 +19,9 @@ struct TripPlanDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var hidden: ModerationStore
+    /// 電波なしで使える旅（板 72・2026-10-09）
+    @EnvironmentObject private var offline: OfflineTripStore
+    @EnvironmentObject private var connectivity: Connectivity
     @Environment(\.dismiss) private var dismiss
 
     /// 手元の下書き。**開き直したらサーバーの姿に戻す**（Web と同じ）
@@ -122,9 +125,21 @@ struct TripPlanDetailView: View {
         places = DerivedSpot.allMergedBySlug(in: dropped.visible(photos))
     }
 
+    /// 圏外で、端末に保存した中身がある（板 72c）。**このときはプランを変えさせない**（電波が戻るまで）
+    private var offlineManifest: OfflineTripManifest? {
+        connectivity.isOffline ? offline.manifest(planId) : nil
+    }
+
     var body: some View {
         Group {
-            if let plan {
+            if let manifest = offlineManifest {
+                ScrollView {
+                    OfflineTripContent(manifest: manifest)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 32)
+                }
+            } else if let plan {
                 editor(plan)
             } else {
                 // 消した直後・別の端末で消されたとき
@@ -165,7 +180,10 @@ struct TripPlanDetailView: View {
                            },
                            onDiscard: { dismiss() })
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { saveButton }
+            // 圏外で保存した中身を出している間は、保存（プランの変更）を出さない
+            if offlineManifest == nil {
+                ToolbarItem(placement: .topBarTrailing) { saveButton }
+            }
         }
         .alert(L("保存できませんでした", "Couldn't save"),
                isPresented: Binding(get: { leaveSaveError != nil },
@@ -381,6 +399,9 @@ struct TripPlanDetailView: View {
                     dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
                     dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
                 }
+
+                // 電波なしで使えるようにする（板 72・日付の下）。比べるのはサーバーの姿のプラン
+                OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos)
 
                 if let error = model.errorMessage {
                     Text(error)

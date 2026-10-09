@@ -274,3 +274,25 @@ extension NSString {
     }
     public func draw(at point: CGPoint, withAttributes attrs: [NSAttributedString.Key: Any]?) {}
 }
+
+// MARK: - 地図の画像に番号の点を描く（電波なしで使える旅・2026-10-09）
+
+/// 画面の明るさの見た目（地図の画像を暗い地図で撮る）
+public enum UIUserInterfaceStyle { case unspecified, light, dark }
+
+public final class UITraitCollection {
+    public init() {}
+    public init(userInterfaceStyle: UIUserInterfaceStyle) {}
+}
+
+/// 形を描く（丸い点）。本物と同じ名前
+public final class UIBezierPath {
+    public init(ovalIn rect: CGRect) {}
+    public var lineWidth: Double = 1
+    public func fill() {}
+    public func stroke() {}
+}
+
+extension UIColor {
+    public func setStroke() {}
+}
