@@ -20,7 +20,10 @@
 
 **直したら staging で止めず、そのまま本番へ。** 利用者が困っている時間を延ばさない。
 
-- **iOS:** 直しが main に入り Mac の CI が緑になったら、その場で TestFlight を流す（`/release`）。
+**ただし出す前に owner に一言確かめる。** 直しが全部終わったら「リリースしていいか」を聞き、
+返事をもらってから TestFlight・本番の Web/API に出す（2026-10-09 owner）。直しの途中で1件ずつ出さない。
+
+- **iOS:** 直しが全部 main に入り Mac の CI が緑で、owner が「いい」と言ったら TestFlight を流す（`/release`）。
   流す前に `git ls-remote origin 'refs/tags/testflight/*'` で、同じ main の sha がもう出ていないか見る
   （2026-10-09、別のセッションと同じ中身の版を二重に出した）
 - **Web・API（photo-gallery）:** 直しの枝から本番用の枝（main から切って cherry-pick）を作り、
