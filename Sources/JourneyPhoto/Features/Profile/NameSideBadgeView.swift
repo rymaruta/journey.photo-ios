@@ -8,6 +8,10 @@ import SwiftUI
 ///   長押しで手に取って回す
 /// - 「決める」でプロフィールの部分更新（`displayBadge`・`proMarkStyle`）
 ///
+/// **開いたら先に `GET /user/badges` を呼ぶ。** サーバーはそこで数え直して保存し、保存の
+/// `displayBadge` はその保存済みの持ち物で確かめる。読み終えるまで「決める」は押せない
+/// （読めなかったときはプロフィールの持ち物のまま選ばせる）
+///
 /// **第1段階では Pro 限定の章の段は出さない**（まだ買えない＝押しても行き止まりになる）。
 struct NameSideBadgeView: View {
 
@@ -27,16 +31,21 @@ struct NameSideBadgeView: View {
     @State private var errorMessage: String?
     /// 長押しで手に取ったメダル
     @State private var viewing: EarnedBadge?
+    /// 持っているバッジ。開いた時点はプロフィールの値、`GET /user/badges` を読んだら差し替える
+    @State private var badges: BadgeSet
+    /// `GET /user/badges` を読み終えたか（失敗も含む）。それまで「決める」は押せない
+    @State private var refreshed = false
 
     init(profile: UserProfile, showsShelfLink: Bool = true) {
         self.profile = profile
         self.showsShelfLink = showsShelfLink
         _selected = State(initialValue: NameSideChoice.initialSelection(profile))
         _style = State(initialValue: profile.markStyle)
+        _badges = State(initialValue: profile.earnedBadges)
     }
 
-    private var owned: [EarnedBadge] { BadgeCatalog.owned(profile.earnedBadges) }
-    private var selectedBadge: EarnedBadge? { selected.flatMap { profile.earnedBadges[$0] } }
+    private var owned: [EarnedBadge] { BadgeCatalog.owned(badges) }
+    private var selectedBadge: EarnedBadge? { selected.flatMap { badges[$0] } }
 
     /// 板: 4列・隙間 2pt
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 4)
@@ -103,6 +112,16 @@ struct NameSideBadgeView: View {
         .fullScreenCover(item: $viewing) { badge in
             MedalViewerView(badge: badge, ownerName: profile.name)
         }
+        .task { await refreshBadges() }
+    }
+
+    /// サーバーに数え直してもらう（ここで新しく取れたメダルも選べるようになる）
+    private func refreshBadges() async {
+        guard !refreshed else { return }
+        let profiles = environment.profiles
+        let status = try? await profiles.myBadges()
+        if let status { badges = status.badges }
+        refreshed = true
     }
 
     // MARK: - 下見
@@ -178,7 +197,11 @@ struct NameSideBadgeView: View {
 
     @ViewBuilder
     private var badgeGrid: some View {
-        if owned.isEmpty {
+        if owned.isEmpty && !refreshed {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+        } else if owned.isEmpty {
             Text(L("まだバッジはありません。写真を投稿したり旅を記録したりすると集まります。",
                    "No badges yet. Post photos and record your trips to collect them."))
                 .font(.footnote)
@@ -293,7 +316,8 @@ struct NameSideBadgeView: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .disabled(saving)
+            .disabled(saving || !refreshed)
+            .opacity(refreshed ? 1 : 0.5)
             .accessibilityIdentifier("nameSide.save")
             Text(profile.isPro
                  ? L("バッジは1つ（Pro でも1つ）。Pro マークは Pro の間だけ出ます",
@@ -310,7 +334,7 @@ struct NameSideBadgeView: View {
     }
 
     private func save() async {
-        guard !saving else { return }
+        guard !saving, refreshed else { return }
         guard let patch = NameSideChoice.patch(profile: profile, selected: selected, style: style) else {
             dismiss()
             return

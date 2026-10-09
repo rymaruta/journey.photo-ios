@@ -10,4 +10,4 @@
 "NOTIF_STORY_REPLY" = "%@ replied to your story";
 
 /* Medals (2026-10-09). The argument is the medal name sent by the server. */
-"NOTIF_BADGE" = "You earned a new medal: %@";
+"NOTIF_BADGE" = "You earned the %@ medal";
