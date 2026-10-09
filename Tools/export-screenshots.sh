@@ -65,7 +65,7 @@ if [ "${STORE_SHOTS:-false}" = "true" ]; then
 import pathlib, shutil, sys, unicodedata
 out, store = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 # 出す順（インストール画面に出るのは最初の3枚）
-pick = ["10-ホーム", "20-写真の詳細", "13-マップ", "11-探す", "14-マイページ", "40-投稿の2択"]
+pick = ["81-Pro の案内", "81b-Pro の案内", "10-ホーム"]
 nfc = lambda t: unicodedata.normalize("NFC", t)
 for i, want in enumerate(pick, 1):
     hit = next((f for f in sorted(out.glob("*.png")) if nfc(f.name).startswith(want)), None)
