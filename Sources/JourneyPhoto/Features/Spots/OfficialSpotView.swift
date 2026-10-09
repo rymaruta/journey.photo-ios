@@ -53,6 +53,15 @@ struct OfficialSpotView: View {
     @State private var detailed: OfficialSpot?
     /// 読み込めなかった作例（出典のページで覚える）。その1枚を出典ごと隠す
     @State private var brokenSamples: Set<URL> = []
+    /// Pro かどうか・ログインしているか（「作例を重ねて撮る」の入口）
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var store: StoreService
+    /// 「作例を重ねて撮る」（Pro）の撮る画面・Pro の案内・Pro かを確かめている最中
+    @State private var showComposeGuide = false
+    @State private var showComposePaywall = false
+    @State private var checkingPro = false
+    /// 案内を開いたときの「渡し終えた回数」（閉じたときに増えていれば Pro になった）
+    @State private var deliveredAtComposePaywall = 0
     /// 「このスポットの写真を投稿」から開く投稿画面
     @State private var showUpload = false
     /// この画面から投稿した（写真の一覧は開いた時点の写しなので、すぐには並ばない）
@@ -436,9 +445,85 @@ struct OfficialSpotView: View {
                     }
                     .padding(.horizontal, 16)
                 }
+                if ComposeGuide.showsEntry(sampleCount: samples.count) {
+                    composeEntry
+                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("spot.official.samples")
+            .fullScreenCover(isPresented: $showComposeGuide) {
+                ComposeGuideView(spotName: spot.name, samples: samples)
+            }
+            .fullScreenCover(isPresented: $showComposePaywall, onDismiss: {
+                // 案内で Pro になったら、そのまま撮る画面へ（`NameSideBadgeView` と同じ見分け方）
+                guard store.deliveredRevision != deliveredAtComposePaywall else { return }
+                Task { await openComposeGuide() }
+            }) {
+                PaywallView()
+            }
+        }
+    }
+
+    // MARK: - 作例を重ねて撮る（Pro・2026-10-09）
+
+    /// 作例の帯の下の入口。黒地の上の行（地は surface・白の字）。合図の「PRO」とカメラの記号だけ真鍮
+    /// （黒地の上の合図・CLAUDE.md）。**作例が1枚も無いスポットでは出さない**（呼ぶ側）
+    private var composeEntry: some View {
+        Button { Task { await openComposeGuide() } } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityHidden(true)
+                Text(L("作例を重ねて撮る", "Shoot with an example overlay"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                Text("PRO")
+                    .jpEyebrow()
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
+                if checkingPro {
+                    ProgressView().tint(WebTheme.muted2)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.faint)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .disabled(checkingPro)
+        .padding(.horizontal, 16)
+        .accessibilityHint(L("Pro の機能です。カメラの映像に作例を半透明で重ねて撮ります",
+                             "A Pro feature. Shoot with an example photo overlaid on the camera view."))
+        .accessibilityIdentifier("spot.official.composeGuide")
+    }
+
+    /// Pro なら撮る画面、そうでなければ Pro の案内。Pro かどうかはサーバーのプロフィールで決める
+    private func openComposeGuide() async {
+        guard !checkingPro else { return }
+        if ComposeGuideAccess.previewUnlocked {
+            showComposeGuide = true
+            return
+        }
+        checkingPro = true
+        defer { checkingPro = false }
+        let signedIn = auth.userId != nil
+        let isPro: Bool? = signedIn ? (try? await environment.profiles.myProfile())?.isPro : nil
+        switch ComposeGuide.destination(signedIn: signedIn, isPro: isPro) {
+        case .camera:
+            showComposeGuide = true
+        case .paywall:
+            deliveredAtComposePaywall = store.deliveredRevision
+            showComposePaywall = true
+        case .unreachable:
+            toasts.show(Labels.Common.unreachable, kind: .failure)
         }
     }
 
