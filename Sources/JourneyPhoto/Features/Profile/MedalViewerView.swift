@@ -7,7 +7,8 @@ import SceneKit
 /// メダルを手に取って回す（板 Badge3D・2026-10-09）。全画面。
 ///
 /// SceneKit の円柱で硬貨を作る: 表＝メダルの絵、裏＝金属ごとの絞り羽根に**持ち主の名前と
-/// 受け取った日を重ねた絵**、縁＝金属ごとの細いギザの帯を円周に巻く。指で横に払うと回り、
+/// 受け取った日を重ねた絵**、縁＝金属ごとの細いギザの帯を円周に巻く。
+/// 表・裏は面を少しふくらませ（`MedalRelief`）、控えめな映り込みを付けて、回すと光が流れる（凹凸は縁のギザだけ）。指で横に払うと回り、
 /// 離すと惰性で少し回って止まる（止まりきったらゆっくり回り続ける）。
 ///
 /// **「視差効果を減らす」の人には勝手に回さない**（惰性も短くする）。読み上げでは
@@ -253,18 +254,23 @@ final class MedalCoinCoordinator: NSObject {
         }
         scene.rootNode.addChildNode(coin)
 
-        // 光: 全体を明るく保つ環境光と、左上手前の点の光（回すと光が縁と面を滑る）
+        // 光（2026-10-09 立体感の見直し）: 環境光は控えめにし（強いと凹凸の陰が消えてのっぺりする）、
+        // 左上手前の主な光・右の弱い補いの光・後ろ右の縁取りの光の3つで、回すと光と陰が面と縁を滑る
         let ambient = SCNNode()
         ambient.light = SCNLight()
         ambient.light?.type = .ambient
-        ambient.light?.intensity = 650
+        ambient.light?.intensity = 400
         scene.rootNode.addChildNode(ambient)
-        let key = SCNNode()
-        key.light = SCNLight()
-        key.light?.type = .omni
-        key.light?.intensity = 650
-        key.position = SCNVector3(-2.5, 3, 5)
-        scene.rootNode.addChildNode(key)
+        for (position, intensity) in [(SCNVector3(-2.5, 3, 5), CGFloat(800)),
+                                      (SCNVector3(3.5, 0.5, 3), CGFloat(240)),
+                                      (SCNVector3(2.5, 1.5, -4), CGFloat(360))] {
+            let light = SCNNode()
+            light.light = SCNLight()
+            light.light?.type = .omni
+            light.light?.intensity = intensity
+            light.position = position
+            scene.rootNode.addChildNode(light)
+        }
 
         let camera = SCNCamera()
         camera.fieldOfView = 30
@@ -277,11 +283,11 @@ final class MedalCoinCoordinator: NSObject {
         applyAngles()
     }
 
-    /// 金属の面。**光り過ぎない**（絵の明るさを保ち、光の筋だけ足す）
+    /// 金属の面。**光り過ぎない**（絵の明るさを保つ。光の点は小さく弱く・owner「光反射しすぎて少し嫌だ」）
     private func setUpMetal(_ material: SCNMaterial) {
         material.lightingModel = .blinn
-        material.specular.contents = UIColor(white: 0.45, alpha: 1)
-        material.shininess = 0.35
+        material.specular.contents = UIColor(white: 0.3, alpha: 1)
+        material.shininess = 0.75
         material.locksAmbientWithDiffuse = true
     }
 
@@ -291,6 +297,36 @@ final class MedalCoinCoordinator: NSObject {
         edge.diffuse.contents = textures.edge
         edge.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(textures.edgeRepeat), 1, 1)
         hasTextures = textures.front != nil
+        applyRelief(textures)
+    }
+
+    /// 面のふくらみ・縁のギザの凹凸（法線の絵・`MedalRelief`）と、周りの映り込み
+    private func applyRelief(_ textures: MedalTextures.Faces) {
+        let side = MedalRelief.side
+        for (material, image) in [(front, textures.front), (back, textures.back)] {
+            guard let image, let normal = MedalReliefImage.normalMap(of: image, width: side, height: side,
+                                                                      strength: MedalRelief.strength,
+                                                                      dome: MedalRelief.dome,
+                                                                      relief: MedalRelief.faceRelief) else { continue }
+            material.normal.contents = normal
+            material.normal.mipFilter = .linear
+        }
+        if let image = textures.edge, let cg = image.cgImage {
+            // 縁の帯は左右がつながる。高さはギザが潰れない程度に半分へ
+            let width = max(3, cg.width / 2), height = max(3, cg.height / 2)
+            if let normal = MedalReliefImage.normalMap(of: image, width: width, height: height,
+                                                       strength: MedalRelief.edgeStrength, dome: 0, wrapsX: true) {
+                edge.normal.contents = normal
+                edge.normal.wrapS = .repeat
+                edge.normal.wrapT = .clamp
+                edge.normal.contentsTransform = edge.diffuse.contentsTransform
+            }
+        }
+        let reflection = MedalReliefImage.studio(tint: MedalReliefImage.tint(textures.metal))
+        for material in [front, back, edge] {
+            material.reflective.contents = reflection
+            material.reflective.intensity = MedalReliefImage.reflectionIntensity
+        }
     }
 
     func start() {
@@ -364,6 +400,85 @@ final class MedalCoinCoordinator: NSObject {
 
     private func applyAngles() {
         coin.eulerAngles = SCNVector3(pitch, yaw, 0)
+    }
+}
+
+/// 凹凸と映り込みの絵を作る（iOS だけ。数の計算は `MedalRelief`）
+enum MedalReliefImage {
+    /// 映り込みの強さ。**控えめ**（owner「光反射しすぎて少し嫌だ」で 0.32 から半分に）
+    static let reflectionIntensity: CGFloat = 0.16
+
+    /// 絵の明るさ（灰色・上の行から）を読み、法線の絵にする
+    static func normalMap(of image: UIImage, width: Int, height: Int,
+                          strength: Double, dome: Double, relief: Double = 1,
+                          wrapsX: Bool = false) -> UIImage? {
+        guard let cg = image.cgImage else { return nil }
+        var gray = [UInt8](repeating: 0, count: width * height)
+        let drawn = gray.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width,
+                                          space: CGColorSpaceCreateDeviceGray(),
+                                          bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+            context.interpolationQuality = .high
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+        let rgba = MedalRelief.normalMap(luminance: gray, width: width, height: height,
+                                         strength: strength, dome: dome, relief: relief, wrapsX: wrapsX)
+        guard !rgba.isEmpty, let provider = CGDataProvider(data: Data(rgba) as CFData),
+              let normal = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                                   bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                   bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                   provider: provider, decode: nil, shouldInterpolate: true,
+                                   intent: .defaultIntent) else { return nil }
+        return UIImage(cgImage: normal)
+    }
+
+    /// 金属ごとの映り込みの色（真鍮・銅は温かく、銀・白金は白に近く）
+    static func tint(_ metal: BadgeCatalog.Metal) -> UIColor {
+        switch metal {
+        case .brass: return UIColor(red: 1.0, green: 0.86, blue: 0.62, alpha: 1)
+        case .bronze: return UIColor(red: 1.0, green: 0.80, blue: 0.64, alpha: 1)
+        case .silver: return UIColor(red: 0.94, green: 0.96, blue: 1.0, alpha: 1)
+        case .platinum: return UIColor(white: 1.0, alpha: 1)
+        }
+    }
+
+    /// 写真の撮影所のような周り（360°を横長に広げた絵）: 下は暗い床、上は明るめ、
+    /// 左上に大きな柔らかい光の箱、右に縦長の細い光。回すとこの光が面を横切る
+    static func studio(tint: UIColor) -> UIImage {
+        let size = CGSize(width: 512, height: 256)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let cg = context.cgContext
+            let space = CGColorSpaceCreateDeviceRGB()
+            let sky = [UIColor(white: 0.42, alpha: 1).cgColor, UIColor(white: 0.10, alpha: 1).cgColor,
+                       UIColor(white: 0.02, alpha: 1).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: space, colors: sky, locations: [0, 0.5, 1]) {
+                cg.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: size.height), options: [])
+            }
+            let glow = [UIColor(white: 1, alpha: 1).cgColor, UIColor(white: 1, alpha: 0).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: space, colors: glow, locations: [0, 1]) {
+                // 左上の光の箱
+                cg.drawRadialGradient(gradient, startCenter: CGPoint(x: size.width * 0.36, y: size.height * 0.24),
+                                      startRadius: 0, endCenter: CGPoint(x: size.width * 0.36, y: size.height * 0.24),
+                                      endRadius: size.height * 0.30, options: [])
+                // 右の縦長の光
+                cg.saveGState()
+                cg.translateBy(x: size.width * 0.66, y: size.height * 0.38)
+                cg.scaleBy(x: 0.22, y: 1)
+                cg.drawRadialGradient(gradient, startCenter: .zero, startRadius: 0, endCenter: .zero,
+                                      endRadius: size.height * 0.30, options: [])
+                cg.restoreGState()
+            }
+            // 金属の色をかける
+            cg.setBlendMode(.multiply)
+            cg.setFillColor(tint.cgColor)
+            cg.fill(CGRect(origin: .zero, size: size))
+        }
     }
 }
 
