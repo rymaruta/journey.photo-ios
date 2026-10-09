@@ -132,26 +132,41 @@ struct TripPickerView: View {
                     .opacity(0.5)
                     .accessibilityHidden(true)
             }
-            if let photo = spot.photo {
-                photoFrame(photo.url)
-                    .overlay(alignment: .topLeading) { stamp(L("行きたい", "Want to go"), icon: "heart.fill").opacity(stampOpacity(1)) }
-                    .overlay(alignment: .topTrailing) { stamp(L("見送る", "Pass"), icon: "xmark").opacity(stampOpacity(-1)) }
-                    // 回してから動かす（逆だと、動く前の位置を中心に回って札が下へ沈む）
-                    .rotationEffect(.degrees(dragX / 24))
-                    .offset(x: dragX)
-                    .gesture(swipe)
-                    // 読み上げでは1つの札として読み、操作の一覧から選ばせる
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityAddTraits(.isImage)
-                    .accessibilityLabel(cardLabel(spot))
-                    .accessibilityHint(L("操作の一覧から「行きたい」か「見送る」を選べます",
-                                         "Use actions to choose Want to go or Pass."))
-                    .accessibilityAction(named: L("行きたい", "Want to go")) { choose(.want) }
-                    .accessibilityAction(named: L("見送る", "Pass")) { choose(.skip) }
-                    .accessibilityIdentifier("tripPicker.card")
-                    // 札が替わったら、払った位置を引き継がない
-                    .id(spot.spotId)
-            }
+            // 詳細がまだの索引だけの行も、読み込み中の札として払える（空白の札で止めない）
+            cardFrame(TripPicker.cardFace(spot))
+                .overlay(alignment: .topLeading) { stamp(L("行きたい", "Want to go"), icon: "heart.fill").opacity(stampOpacity(1)) }
+                .overlay(alignment: .topTrailing) { stamp(L("見送る", "Pass"), icon: "xmark").opacity(stampOpacity(-1)) }
+                // 回してから動かす（逆だと、動く前の位置を中心に回って札が下へ沈む）
+                .rotationEffect(.degrees(dragX / 24))
+                .offset(x: dragX)
+                .gesture(swipe)
+                // 読み上げでは1つの札として読み、操作の一覧から選ばせる
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isImage)
+                .accessibilityLabel(cardLabel(spot))
+                .accessibilityHint(L("操作の一覧から「行きたい」か「見送る」を選べます",
+                                     "Use actions to choose Want to go or Pass."))
+                .accessibilityAction(named: L("行きたい", "Want to go")) { choose(.want) }
+                .accessibilityAction(named: L("見送る", "Pass")) { choose(.skip) }
+                .accessibilityIdentifier("tripPicker.card")
+                // 札が替わったら、払った位置を引き継がない
+                .id(spot.spotId)
+        }
+    }
+
+    /// 札の面。写真が届く前は、写真の読み込み中（`RemoteImage`）と同じ見た目（面の色＋輪）
+    @ViewBuilder
+    private func cardFrame(_ face: TripPicker.CardFace) -> some View {
+        switch face {
+        case .photo(let url):
+            photoFrame(url)
+        case .loading:
+            Color.clear
+                .aspectRatio(4 / 5, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .overlay(ZStack { WebTheme.surface; ProgressView() })
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .contentShape(RoundedRectangle(cornerRadius: 16))
         }
     }
 

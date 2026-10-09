@@ -27,6 +27,21 @@ enum TripPicker {
         !spot.isDraft && spot.hasPhoto
     }
 
+    /// 札の面に何を出すか
+    enum CardFace: Equatable {
+        /// 写真（出典と一緒に出す）
+        case photo(URL)
+        /// 写真はある（`hasPhoto`）が、まだ詳細が届いていない索引だけの行。**読み込み中の札として払える**
+        case loading
+    }
+
+    /// 🔴 2026-10-09: 索引だけの行（`hasImage` はあるが詳細がまだ）は、札の面を描かず
+    /// **空白で払えない**札になっていた。詳細が届くまでは読み込み中の札にする
+    static func cardFace(_ spot: OfficialSpot) -> CardFace {
+        if let photo = spot.photo { return .photo(photo.url) }
+        return .loading
+    }
+
     /// 札の山。出してよいものを、`seed` で混ぜて返す。
     ///
     /// - `excluding` は「行きたい」の鍵（`SavedSpotKey.official`）。**もう入れた場所は出さない**

@@ -46,6 +46,22 @@ final class TripPickerTests: XCTestCase {
 
     // MARK: - 1. 札の山
 
+    /// 🔴 2026-10-09: 索引だけの行（`hasImage` はあるが詳細がまだ）は札の山に入るのに、
+    /// 札の面を描かず空白で払えなかった。**詳細が届くまでは読み込み中の札**にする
+    func testIndexOnlyRowWithoutDetailIsALoadingCard() throws {
+        var indexOnly = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
+            #"{"spotId":"sp_io","slug":"io","name":"[io]","stage":"published","hasImage":true}"#.utf8))
+        indexOnly.isIndexOnly = true
+        XCTAssertEqual(slugs(TripPicker.deck(from: [indexOnly], excluding: [], seed: 1)), ["io"],
+                       "下ごしらえ: 写真のある索引だけの行は札の山に入る")
+        XCTAssertNil(indexOnly.photo, "下ごしらえ: 詳細がまだなので写真そのものは無い")
+        XCTAssertEqual(TripPicker.cardFace(indexOnly), .loading)
+
+        let detailed = try spot("ok")
+        XCTAssertEqual(TripPicker.cardFace(detailed),
+                       .photo(URL(string: "https://journey-photo.com/images/spots/ok.jpg")!))
+    }
+
     func testDeckHasOnlyPublishedSpotsWithPhotoNotYetWanted() throws {
         let ok = try spot("ok")
         let draft = try spot("draft", stage: "review")
