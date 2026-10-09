@@ -117,8 +117,8 @@ struct NameMarks: View {
 /// 打ち消して行の高さを変えない（`BadgeFit`）。
 ///
 /// 縮め方: 画面の画素ちょうどに Lanczos で縮めて軽く輪郭を立てた絵（`NameBadgeRaster`）を、
-/// 画面の処理の外で1度だけ作って覚える。できるまでは大きい絵を高い品質の補間で縮めて出す
-/// （同じ絵・同じ大きさなので、入れ替わっても形は動かない）
+/// 画面の処理の外で1度だけ作って覚える（`RasterBadgeArt`）。できるまでは同じ大きさの透明な枠だけ
+/// （一瞬空いてから出る。行の高さ・並びは動かない）
 struct NameBadgeImage: View {
     let badge: EarnedBadge
     /// 横に並ぶ名前の字の大きさ（文字サイズの設定で伸ばした後の値）
@@ -139,8 +139,13 @@ struct NameBadgeImage: View {
 ///
 /// 名前の横（`NameBadgeImage`）から切り出した（2026-10-09 判断: 名前の横の画面の2つの格子・棚の
 /// 「名前の横に飾る」・お知らせのメダルも、`-s` の引き伸ばしをやめて同じ縮め方にする。写しを作らない）。
-/// 縮めた絵は画面の処理の外で1度だけ作って覚える。できるまでは元の絵を高い品質の補間で縮めて出す
-/// （同じ絵・同じ大きさなので、入れ替わっても形は動かない）
+/// 縮めた絵は画面の処理の外で1度だけ作って覚える（同じ鍵を同時に頼んでも1回・`NameBadgeRaster.shared`）。
+///
+/// **できるまでは透明な同じ大きさの枠だけ**（2026-10-09 確かめ役の指摘: 520〜780px の大きい絵を
+/// 格子の 16〜24 枚ぶん画面の処理で開いて描いていた）。一瞬空いてから出る。
+///
+/// **作り直しの合図は絵の名前と画素の数**（`taskID`）。倍率・文字の大きさ・絵が替われば作り直し、
+/// 前の鍵で作った絵は使わない（`matches`）
 struct RasterBadgeArt: View {
     /// 絵の入れ物の名前（大きい絵。`BadgeCatalog.largeImage` など）
     let image: String
@@ -158,30 +163,41 @@ struct RasterBadgeArt: View {
         static func == (lhs: Rendered, rhs: Rendered) -> Bool { lhs.key == rhs.key }
     }
 
+    /// 作り直しの合図（`.task(id:)`）。絵の名前と画素の数を含む
+    nonisolated static func taskID(image: String, pixels: Int?) -> String {
+        pixels.map { NameBadgeRaster.cacheKey(image: image, pixels: $0) } ?? image
+    }
+
+    /// 作った絵がいまの鍵のものか（前の倍率・前の絵で作ったものは使わない）
+    nonisolated static func matches(renderedKey: String?, key: String) -> Bool { renderedKey == key }
+
     var body: some View {
         let name = image
         let pixels = NameBadgeRaster.pixelSide(points: side, scale: Double(displayScale))
-        let key = pixels.map { NameBadgeRaster.cacheKey(image: name, pixels: $0) } ?? name
-        art(name: name, pixels: pixels, key: key)
-            .resizable()
-            .interpolation(.high)
-            .antialiased(true)
-            .aspectRatio(contentMode: .fit)
+        let key = Self.taskID(image: name, pixels: pixels)
+        Color.clear
             .frame(width: side, height: side)
+            .overlay {
+                if let art = art(name: name, pixels: pixels, key: key) {
+                    art
+                        .resizable()
+                        .interpolation(.high)
+                        .antialiased(true)
+                        .aspectRatio(contentMode: .fit)
+                }
+            }
             .task(id: key) {
-                guard let pixels, rendered?.key != key else { return }
-                let made = await Task.detached(priority: .userInitiated) {
-                    NameBadgeRaster.image(named: name, pixels: pixels)
-                }.value
+                guard let pixels, !Self.matches(renderedKey: rendered?.key, key: key) else { return }
+                let made = await NameBadgeRaster.shared(named: name, pixels: pixels)
                 if let made, !Task.isCancelled { rendered = Rendered(key: key, image: made) }
             }
     }
 
-    /// 縮めて作った絵があればそれ、無ければ元の絵そのもの
-    private func art(name: String, pixels: Int?, key: String) -> Image {
-        if let rendered, rendered.key == key { return Image(uiImage: rendered.image) }
+    /// 縮めて作った絵（いまの鍵のもの・覚えにあるもの）。無ければ nil（透明の枠だけ）
+    private func art(name: String, pixels: Int?, key: String) -> Image? {
+        if let rendered, Self.matches(renderedKey: rendered.key, key: key) { return Image(uiImage: rendered.image) }
         if let pixels, let hit = NameBadgeRaster.cached(image: name, pixels: pixels) { return Image(uiImage: hit) }
-        return Image(name)
+        return nil
     }
 }
 

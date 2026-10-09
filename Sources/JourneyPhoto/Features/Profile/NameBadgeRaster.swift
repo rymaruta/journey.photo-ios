@@ -42,6 +42,19 @@ enum NameBadgeRaster {
         cache.object(forKey: cacheKey(image: image, pixels: pixels) as NSString)?.image
     }
 
+    /// 縮めた絵を画面の処理の外で作る。**同じ鍵（絵の名前と画素の数）を同時に頼まれたら1回だけ作る**
+    /// （名前の横の画面の格子・お知らせで同じ絵のマスが並ぶ。2026-10-09 確かめ役の指摘）
+    static func shared(named name: String, pixels: Int) async -> UIImage? {
+        if let hit = cached(image: name, pixels: pixels) { return hit }
+        let box = await inflight.value(for: cacheKey(image: name, pixels: pixels)) {
+            image(named: name, pixels: pixels).map(Box.init)
+        }
+        return box?.image
+    }
+
+    /// 作っている途中の仕事（鍵ごと）
+    private static let inflight = InflightTasks<Box?>()
+
     /// 縮めた絵。覚えていればそれを、無ければ作って覚える。**重いので画面の処理の外で呼ぶ**
     static func image(named name: String, pixels: Int) -> UIImage? {
         if let hit = cached(image: name, pixels: pixels) { return hit }
@@ -52,7 +65,7 @@ enum NameBadgeRaster {
 
     // MARK: - 作る
 
-    private final class Box: @unchecked Sendable {
+    final class Box: @unchecked Sendable {
         let image: UIImage
         init(_ image: UIImage) { self.image = image }
     }
@@ -95,4 +108,22 @@ enum NameBadgeRaster {
                                                colorSpace: CGColorSpace(name: CGColorSpace.sRGB)) else { return nil }
         return UIImage(cgImage: made)
     }
+}
+
+/// 同じ鍵の仕事を1つにまとめる。作っている途中に同じ鍵が頼まれたら、その仕事の答えを待って分ける。
+/// 終わったら忘れる（できた絵は `NameBadgeRaster` の覚えに残る）
+actor InflightTasks<Value: Sendable> {
+    private var running: [String: Task<Value, Never>] = [:]
+
+    func value(for key: String, make: @escaping @Sendable () -> Value) async -> Value {
+        if let task = running[key] { return await task.value }
+        let task = Task.detached(priority: .userInitiated) { make() }
+        running[key] = task
+        let value = await task.value
+        running[key] = nil
+        return value
+    }
+
+    /// 作っている途中の数（テスト用）
+    var runningCount: Int { running.count }
 }

@@ -186,11 +186,12 @@ enum ProChapters {
     /// - 季節の章: 「2026年12月から届きます」。もう始まっている季節は「いまの季節の章です。まもなく届きます」
     ///   （2026-10-09 判断: 過ぎた月を「から届きます」と言わない）
     /// - 機能の章: 「これから配ります」
-    /// - サポーター章: 「Pro になると届きます」
+    /// - サポーター章: 「まもなく届きます」（この一言は Pro の人にしか出ない——Pro でない人は押すと
+    ///   Pro の案内。「Pro になると届きます」は Pro の人には話が合わないのでやめた・2026-10-09 確かめ役の指摘）
     static func arrivalNote(_ item: LockedItem, now: Date = Date(), timeZone: TimeZone = japan) -> String {
         switch item.kind {
         case .supporter:
-            return L("Pro になると届きます", "Arrives when you go Pro")
+            return L("まもなく届きます", "It arrives soon")
         case .feature:
             return L("これから配ります", "Coming later")
         case .season(let chapter):

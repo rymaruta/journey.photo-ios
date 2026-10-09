@@ -60,8 +60,77 @@ final class ProBadgeGridTests: XCTestCase {
         let marks = try source("Features/Common/NameMarks.swift")
         let image = try slice(marks, from: "struct NameBadgeImage", to: "struct RasterBadgeArt")
         XCTAssertTrue(image.contains("RasterBadgeArt(image: BadgeCatalog.nameSideImage("))
-        XCTAssertFalse(image.contains("NameBadgeRaster.image("), "縮める仕組みは RasterBadgeArt の1か所だけ")
-        XCTAssertEqual(marks.components(separatedBy: "NameBadgeRaster.image(named:").count - 1, 1)
+        let code = image.split(separator: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+        XCTAssertFalse(code.contains { $0.contains("NameBadgeRaster") || $0.contains(".task") },
+                       "縮める仕組みは RasterBadgeArt の1か所だけ")
+        XCTAssertEqual(marks.components(separatedBy: "NameBadgeRaster.shared(named:").count - 1, 1)
+    }
+
+    // MARK: - 作り直しの合図・鍵の一致・できるまで透明・同じ鍵をまとめる（確かめ役の指摘 2026-10-09）
+
+    /// 作り直しの合図は絵の名前と画素の数を両方含む（倍率・文字の大きさ・絵が替われば作り直す）
+    func testTaskIDCarriesImageAndPixels() {
+        let a = RasterBadgeArt.taskID(image: "medal-night-2", pixels: 168)
+        XCTAssertEqual(a, "medal-night-2@168")
+        XCTAssertNotEqual(a, RasterBadgeArt.taskID(image: "medal-night-2", pixels: 112), "倍率が替われば作り直す")
+        XCTAssertNotEqual(a, RasterBadgeArt.taskID(image: "medal-night-3", pixels: 168), "絵が替われば作り直す")
+        XCTAssertEqual(RasterBadgeArt.taskID(image: "medal-night-2", pixels: nil), "medal-night-2")
+        XCTAssertTrue(RasterBadgeArt.matches(renderedKey: a, key: a))
+        XCTAssertFalse(RasterBadgeArt.matches(renderedKey: "medal-night-2@112", key: a), "前の倍率の絵は使わない")
+        XCTAssertFalse(RasterBadgeArt.matches(renderedKey: nil, key: a))
+    }
+
+    /// 🔴 `RasterBadgeArt` の作り直しと鍵の確かめ・できるまで透明を縛る
+    func testRasterBadgeArtRebuildsByKeyAndStaysClearUntilReady() throws {
+        let marks = try source("Features/Common/NameMarks.swift")
+        let view = try slice(marks, from: "struct RasterBadgeArt", to: "/// マイページの名前の行の読み上げ")
+        XCTAssertTrue(view.contains("let key = Self.taskID(image: name, pixels: pixels)"))
+        XCTAssertTrue(view.contains(".task(id: key) {"), "鍵が替われば作り直す（`.task` だけだと前の絵のまま）")
+        let taskLines = view.split(separator: "\n").filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix(".task") }
+        XCTAssertEqual(taskLines.map { $0.trimmingCharacters(in: .whitespaces) }, [".task(id: key) {"])
+        XCTAssertTrue(view.contains("guard let pixels, !Self.matches(renderedKey: rendered?.key, key: key)"))
+        XCTAssertTrue(view.contains("if let rendered, Self.matches(renderedKey: rendered.key, key: key)"),
+                      "前の鍵で作った絵を出さない")
+        XCTAssertFalse(view.contains("if let rendered {"))
+        // できるまでは大きい絵を描かない（透明の枠だけ）
+        XCTAssertFalse(view.contains("Image(name)"), "大きい絵を画面の処理で開かない")
+        XCTAssertTrue(view.contains("Color.clear\n            .frame(width: side, height: side)"))
+        XCTAssertTrue(view.contains("return nil"))
+        XCTAssertTrue(view.contains("await NameBadgeRaster.shared(named: name, pixels: pixels)"))
+    }
+
+    /// 同じ鍵を同時に頼んでも1回だけ作る。違う鍵は別に作る。終わったら忘れる
+    func testInflightTasksCoalesceSameKey() async {
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var n = 0
+            func bump() { lock.lock(); n += 1; lock.unlock() }
+            var value: Int { lock.lock(); defer { lock.unlock() }; return n }
+        }
+        let tasks = InflightTasks<Int>()
+        let made = Counter()
+        let make: @Sendable () -> Int = {
+            made.bump()
+            Thread.sleep(forTimeInterval: 0.2)
+            return 7
+        }
+        async let a = tasks.value(for: "medal@168", make: make)
+        async let b = tasks.value(for: "medal@168", make: make)
+        async let c = tasks.value(for: "medal@168", make: make)
+        let values = await [a, b, c]
+        XCTAssertEqual(values, [7, 7, 7])
+        XCTAssertEqual(made.value, 1, "同じ鍵は1回だけ作る")
+        let runningAfter = await tasks.runningCount
+        XCTAssertEqual(runningAfter, 0, "終わったら忘れる")
+        _ = await tasks.value(for: "medal@112", make: make)
+        XCTAssertEqual(made.value, 2, "違う鍵は別に作る")
+    }
+
+    /// `NameBadgeRaster.shared` は作る仕事をまとめる口を通す
+    func testRasterSharedGoesThroughInflight() throws {
+        let raster = try source("Features/Profile/NameBadgeRaster.swift")
+        let shared = try slice(raster, from: "static func shared(named", to: "private static let inflight")
+        XCTAssertTrue(shared.contains("await inflight.value(for: cacheKey(image: name, pixels: pixels))"))
     }
 
     /// 🔴 「PRO 限定」の絵: サポーター・季節の章は大きい絵、機能の章（大きい絵が無い）は `-s`
@@ -163,7 +232,7 @@ final class ProBadgeGridTests: XCTestCase {
         for item in items {
             let text = ProChapters.arrivalNote(item, now: day(2026, 10), timeZone: tokyo)
             switch item.kind {
-            case .supporter: XCTAssertEqual(text, "Pro になると届きます")
+            case .supporter: XCTAssertEqual(text, "まもなく届きます", "Pro の人にしか出ない一言なので「Pro になると」は言わない")
             case .feature: XCTAssertEqual(text, "これから配ります", item.id)
             case .season: XCTAssertFalse(text.isEmpty)
             }
