@@ -524,10 +524,13 @@ struct StoryComposerView: View {
             .padding(.top, 2)
             .padding(.bottom, 6)
 
-            // 選んだ順に並ぶ（`.ordered`）。「キャンセル」「追加」を止めると、押すたびに選択が変わる
+            // 選んだ順に並ぶ。🔴 **`.continuousAndOrdered` でなければならない**（2026-10-09）。
+            // `.ordered` は「追加」を押した時にだけ選択を渡すが、その「追加」は下で止めている——
+            // 写真に印が付いても `librarySelection` は空のまま、「次へ」が「写真を選んでください」で
+            // 押せなかった（owner の報告・1.0.72/1.0.73。Mac の run 364 で再現）
             PhotosPicker(selection: $librarySelection,
                          maxSelectionCount: StoryQueue.maxShots,
-                         selectionBehavior: .ordered,
+                         selectionBehavior: .continuousAndOrdered,
                          matching: .images) {
                 Text(L("写真を選ぶ", "Choose photos"))
             }

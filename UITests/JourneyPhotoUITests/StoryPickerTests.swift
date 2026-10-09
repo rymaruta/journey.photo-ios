@@ -151,8 +151,12 @@ final class StoryPickerTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "\(tag)-2-印\(i + 1)枚目")
         }
+        // 🔴 run 364: 格子に印（1・2・3）が付いても、下のボタンは「写真を選んでください」で押せないまま
+        // だった（選択が `librarySelection` に渡らない）。それを見逃さないよう、ここは落とす
         guard next.waitForExistence(timeout: 5) else {
+            shoot(app, "\(tag)-3-次へが出ない")
             note("\(tag)-次へが無い", app.debugDescription)
+            XCTFail("\(count)枚に印を付けたのに、下のボタンが「次へ（\(count)枚）」にならない")
             return
         }
         note("\(tag)-次へ", "label=\(next.label) enabled=\(next.isEnabled)")
