@@ -1,5 +1,6 @@
 import XCTest
 @testable import JourneyPhoto
+import StoreKit
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -166,6 +167,68 @@ final class ProPurchaseTests: XCTestCase {
         let start = try XCTUnwrap(src.range(of: ".onChange(of: scenePhase)"))
         let end = try XCTUnwrap(src.range(of: ".task(id: auth.state)", range: start.upperBound..<src.endIndex))
         XCTAssertTrue(src[start.upperBound..<end.lowerBound].contains("store.deliverUnfinished()"))
+    }
+
+    // MARK: - 別のアカウントの購読・ファミリー共有（owner 2026-10-09）
+
+    /// 🔴 サーバーの 403（この購読は別のアカウントのもの＝退会して作り直したアカウントなど）は
+    /// 「別のアカウント」として返し、終える（待っても通らない）
+    func testServer403IsOtherAccount() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "ID"), session: URLSession(configuration: config))
+        StubProtocol.respond(status: 403, body: #"{"error":"別のアカウントで購入されたサブスクリプションです"}"#)
+        let result = await PurchaseService(api: api).submit(signedTransaction: "a.b.c")
+        XCTAssertTrue(result.otherAccount)
+        XCTAssertEqual(result.outcome, .rejected)
+        XCTAssertTrue(PurchaseDelivery.shouldFinish(result.outcome))
+        // ほかの失敗は「別のアカウント」ではない
+        StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
+        let other = await PurchaseService(api: api).submit(signedTransaction: "a.b.c")
+        XCTAssertFalse(other.otherAccount)
+        XCTAssertEqual(PurchaseDelivery.otherAccountMessage, "この Apple ID の購読は、別のアカウントで使われています。")
+    }
+
+    /// 購入・復元・案内が「別のアカウント」を、回し続けず・Pro にせず・ふつうの字で出す（Linux では描けないので文で）
+    func testOtherAccountIsShownAsPlainNote() throws {
+        let store = try source("Sources/JourneyPhoto/Core/Store/StoreService.swift")
+        XCTAssertTrue(store.contains("if delivery.otherAccount { return .otherAccount }"), "購入: 反映待ちと言わない")
+        XCTAssertTrue(store.contains("if otherAccount { return .otherAccount }"), "復元")
+        let paywall = try source("Sources/JourneyPhoto/Features/Pro/PaywallView.swift")
+        XCTAssertEqual(paywall.components(separatedBy: "show(PurchaseDelivery.otherAccountMessage, error: false)").count - 1, 2,
+                       "購入と復元の両方で、赤ではない字で出す")
+    }
+
+    /// 🔴 **ファミリー共有の取引は Pro として扱わない**（`Transaction.updates`・`unfinished` で届いた分）
+    func testFamilySharedTransactionIsIgnoredFromUpdates() {
+        let prefix = "com.journeyphoto.JourneyPhoto"
+        let id = ProProducts.productID(.monthly, prefix: prefix)
+        let own = StoreKit.Transaction(productID: id, ownershipType: .purchased)
+        let shared = StoreKit.Transaction(productID: id, ownershipType: .familyShared)
+        XCTAssertTrue(StoreTransactionFilter.counts(own, prefix: prefix))
+        XCTAssertFalse(StoreTransactionFilter.counts(shared, prefix: prefix), "ファミリー共有は送らない")
+        XCTAssertFalse(StoreTransactionFilter.counts(StoreKit.Transaction(productID: "com.example.other"), prefix: prefix))
+        // 届いた取引をさばく口がこの見分けを通る
+        let src = (try? source("Sources/JourneyPhoto/Core/Store/StoreService.swift")) ?? ""
+        let handle = src.range(of: "private func handle(")
+        XCTAssertNotNil(handle)
+        if let handle {
+            XCTAssertTrue(src[handle.lowerBound...].prefix(400).contains("isOurs(transaction)"))
+        }
+    }
+
+    /// 🔴 **復元（`Transaction.currentEntitlements`）と設定の行でも、ファミリー共有を数えない**
+    func testFamilySharedEntitlementIsIgnoredOnRestore() throws {
+        let src = try source("Sources/JourneyPhoto/Core/Store/StoreService.swift")
+        let restore = try XCTUnwrap(src.range(of: "for await result in StoreKit.Transaction.currentEntitlements"))
+        XCTAssertTrue(src[restore.lowerBound...].prefix(200).contains("isOurs(transaction)"))
+        XCTAssertTrue(src.contains("StoreTransactionFilter.counts(transaction, prefix: prefix) else { continue }"), "設定の行")
+        XCTAssertTrue(src.contains("transaction.ownershipType == .familyShared"))
+        XCTAssertFalse(PurchaseDelivery.countsAsOwnPurchase(isFamilyShared: true))
+        XCTAssertTrue(PurchaseDelivery.countsAsOwnPurchase(isFamilyShared: false))
     }
 
     private func source(_ path: String) throws -> String {

@@ -43,6 +43,8 @@ final class StoreService: ObservableObject {
         /// 承認待ち（ファミリーの「承認と購入のリクエスト」など）
         case pending
         case cancelled
+        /// この Apple ID の購読は別のアカウントのもの（Pro にはならない・`PurchaseDelivery.otherAccountMessage`）
+        case otherAccount
         case failed(String)
     }
 
@@ -51,6 +53,8 @@ final class StoreService: ObservableObject {
         case restored
         /// 有効な購入が無かった
         case nothing
+        /// 有効な購入はあるが、別のアカウントのもの
+        case otherAccount
         case failed(String)
     }
 
@@ -142,6 +146,9 @@ final class StoreService: ObservableObject {
             case .success(let verification):
                 let delivery = await handle(verification)
                 await refreshSubscription()
+                // 退会して作り直したアカウントで、前のアカウントの購読が返ってきた（App Store は
+                // 「購読中」として前の取引を返す）。待っても通らないので「反映待ち」と言わない
+                if delivery.otherAccount { return .otherAccount }
                 switch delivery.outcome {
                 case .accepted: return .purchased
                 case .retryLater: return .purchasedPendingServer
@@ -181,18 +188,22 @@ final class StoreService: ObservableObject {
         var found = false
         var delivered = false
         var lastMessage: String?
+        var otherAccount = false
         for await result in StoreKit.Transaction.currentEntitlements {
             guard case .verified(let transaction) = result, isOurs(transaction) else { continue }
             found = true
             let sent = await send(result.jwsRepresentation, transaction: transaction)
             if sent.outcome == .accepted {
                 delivered = true
+            } else if sent.otherAccount {
+                otherAccount = true
             } else if let message = sent.message {
                 lastMessage = message
             }
         }
         await refreshSubscription()
         if delivered { return .restored }
+        if otherAccount { return .otherAccount }
         if found {
             return .failed(lastMessage
                            ?? L("購入をサーバーに届けられませんでした。時間をおいてもう一度お試しください。",
@@ -221,7 +232,8 @@ final class StoreService: ObservableObject {
                 guard status.state == .subscribed || status.state == .inGracePeriod
                         || status.state == .inBillingRetryPeriod,
                       case .verified(let transaction) = status.transaction,
-                      transaction.productID == product.id else { continue }
+                      transaction.productID == product.id,
+                      StoreTransactionFilter.counts(transaction, prefix: prefix) else { continue }
                 // 同じ端末（同じ Apple ID）で前の人が買った定期購入を、次の人の設定の行に出さない
                 if let userId = currentUserId(),
                    PurchaseDelivery.belongsToSomeoneElse(appAccountToken: transaction.appAccountToken, userId: userId) {
@@ -239,7 +251,7 @@ final class StoreService: ObservableObject {
     // MARK: - 取引をサーバーへ
 
     private func isOurs(_ transaction: StoreKit.Transaction) -> Bool {
-        ProProducts.plan(for: transaction.productID, prefix: prefix) != nil
+        StoreTransactionFilter.counts(transaction, prefix: prefix)
     }
 
     /// 届いた取引を1件さばく。検証済みで自分たちの商品だけ送る
@@ -257,7 +269,7 @@ final class StoreService: ObservableObject {
         // ほかの人の印が付いた取引は送らず、終えもしない（その人がログインし直したときに届ける・
         // `PurchaseDelivery.belongsToSomeoneElse` の注記）
         if PurchaseDelivery.belongsToSomeoneElse(appAccountToken: transaction.appAccountToken, userId: userId) {
-            return PurchaseDelivery.Result(.retryLater, message: PurchaseDelivery.otherAccountMessage)
+            return PurchaseDelivery.Result(.retryLater, message: PurchaseDelivery.otherAccountMessage, otherAccount: true)
         }
         let result = await submit(jws)
         if PurchaseDelivery.shouldFinish(result.outcome) {
@@ -268,5 +280,15 @@ final class StoreService: ObservableObject {
             onDelivered()
         }
         return result
+    }
+}
+
+/// さばく取引か（`StoreService` の外に置く——試験から主スレッドに縛られずに呼べるように）
+enum StoreTransactionFilter {
+    /// **自分たちの商品**で、**ファミリー共有ではない**（owner 2026-10-09: ファミリー共有は切ってある。
+    /// `Transaction.updates`・`unfinished`・`currentEntitlements`・設定の行のどれでも数えない）
+    static func counts(_ transaction: StoreKit.Transaction, prefix: String) -> Bool {
+        ProProducts.plan(for: transaction.productID, prefix: prefix) != nil
+            && PurchaseDelivery.countsAsOwnPurchase(isFamilyShared: transaction.ownershipType == .familyShared)
     }
 }

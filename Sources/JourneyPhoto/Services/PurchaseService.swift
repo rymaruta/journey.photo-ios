@@ -24,7 +24,9 @@ struct PurchaseService {
             return PurchaseDelivery.Result(.accepted)
         } catch let error as APIError {
             if case .server(let status, let message) = error {
-                return PurchaseDelivery.Result(PurchaseDelivery.outcome(statusCode: status), message: message)
+                // 403 = この購読は別のアカウントのもの（退会して作り直したアカウントなど）
+                return PurchaseDelivery.Result(PurchaseDelivery.outcome(statusCode: status), message: message,
+                                               otherAccount: status == 403)
             }
             // 圏外・ログインしていない・応答が読めない → あとでやり直す
             return PurchaseDelivery.Result(.retryLater)

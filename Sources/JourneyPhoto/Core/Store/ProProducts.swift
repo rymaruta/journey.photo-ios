@@ -214,10 +214,14 @@ enum PurchaseDelivery {
         let outcome: Outcome
         /// サーバーの `{ error }`（日本語）。無ければ nil
         let message: String?
+        /// この Apple ID の購読が**別のアカウントのもの**（サーバーの 403・手元で見分けた前の人の印）。
+        /// 画面は失敗の赤ではなく、ふつうの補足の字で `otherAccountMessage` を出す
+        let otherAccount: Bool
 
-        init(_ outcome: Outcome, message: String? = nil) {
+        init(_ outcome: Outcome, message: String? = nil, otherAccount: Bool = false) {
             self.outcome = outcome
             self.message = message.flatMap { $0.isEmpty ? nil : $0 }
+            self.otherAccount = otherAccount
         }
     }
 
@@ -247,11 +251,17 @@ enum PurchaseDelivery {
         return token != AppAccountToken.make(userId: userId)
     }
 
-    /// ほかの人の印が付いた取引を「復元」したときの1行（サーバーの 403 の文言に合わせる）
+    /// この Apple ID の購読が別のアカウントのものだったときの1行（owner 2026-10-09 の文言）。
+    /// 退会して作り直したアカウントで、前のアカウントで買った購読を使おうとしたときなど。
+    /// **Pro にはならない**（権利を決めるのはサーバー）
     static var otherAccountMessage: String {
-        L("この Apple ID の購入は、別の Journey Photo のアカウントで購入されたものです。",
-          "This Apple ID's subscription was purchased with a different Journey Photo account.")
+        L("この Apple ID の購読は、別のアカウントで使われています。",
+          "This Apple ID's subscription is being used by a different account.")
     }
+
+    /// ファミリー共有で使えている取引は数えない（owner 2026-10-09: ファミリー共有は切ってある）。
+    /// 送らず・終えず・設定の行にも出さない
+    static func countsAsOwnPurchase(isFamilyShared: Bool) -> Bool { !isFamilyShared }
 }
 
 // MARK: - 設定の行の文字
