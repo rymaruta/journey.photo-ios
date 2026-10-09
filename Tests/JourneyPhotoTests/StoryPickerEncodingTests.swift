@@ -9,7 +9,7 @@ final class StoryPickerEncodingTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent(
             "Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift"), encoding: .utf8)
-        let start = try XCTUnwrap(source.range(of: "PhotosPicker(selection: $librarySelection,"))
+        let start = try XCTUnwrap(source.range(of: "(selection: $librarySelection,"))
         let call = source[start.lowerBound...].prefix(400)
         XCTAssertTrue(call.contains("preferredItemEncoding: .current"))
     }
