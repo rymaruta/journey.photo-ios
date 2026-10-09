@@ -151,14 +151,16 @@ final class MedalViewerTests: XCTestCase {
             let edit = element(app, "mypage.edit")
             guard edit.waitForExistence(timeout: 20) else { return false }
             edit.tap()
+            // 編集の欄は BGM の下。一覧は画面の外の行を作らない（run 371: 送らずに待って行が無かった）。
+            // 読み込みが済むのを待ってから、行が出て押せるまで送る
+            _ = app.buttons["保存"].firstMatch.waitForExistence(timeout: 15)
+            Thread.sleep(forTimeInterval: 2)
             let row = element(app, "profileEdit.nameSide")
-            guard row.waitForExistence(timeout: 15) else { return false }
-            // 編集の欄は下の方。押せるまで送る（読み込みが済むまで押せない）
-            for _ in 0..<8 where !(row.isHittable && row.isEnabled) {
+            for _ in 0..<12 where !(row.exists && row.isHittable && row.isEnabled) {
                 app.swipeUp()
                 Thread.sleep(forTimeInterval: 0.8)
             }
-            guard row.isHittable, row.isEnabled else { return false }
+            guard row.exists, row.isHittable, row.isEnabled else { return false }
             row.tap()
         }
 
