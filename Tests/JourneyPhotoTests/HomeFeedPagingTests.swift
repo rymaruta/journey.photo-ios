@@ -145,6 +145,32 @@ final class HomeFeedPagingTests: XCTestCase {
         XCTAssertEqual(feedCursors, [nil, "c1"], "前の答えの札をそのまま渡していない")
     }
 
+    /// 🔴 2026-10-09: **ページの境目をまたぐ複数枚の投稿を、前半だけの束で出さない。**
+    /// 続きが届くまで末尾の束を出さず、届いたらそろった束で出す
+    /// （以前は前半だけの束が出て、続きが届くと表紙と枚数が変わり、先に開くと一部しか送れなかった）
+    func testPostStraddlingThePageBoundaryWaitsForTheNextPage() async {
+        prepare()
+        func grouped(_ id: String) -> String {
+            photo(id, user: "u1").replacingOccurrences(of: #""userId""#, with: #""groupId":"post1","userId""#)
+        }
+        StubProtocol.respond(path: "/feed?cursor=c1", status: 200,
+                             body: #"{"items":[\#(grouped("p3")),\#(photo("p4"))],"nextCursor":null}"#)
+        StubProtocol.respond(path: "/feed", status: 200,
+                             body: #"{"items":[\#(photo("p1")),\#(grouped("p2"))],"nextCursor":"c1"}"#)
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
+        let model = makeModel()
+
+        await model.load()
+        XCTAssertEqual(shown(model), ["p1"], "ページの境目をまたぐ投稿の前半だけを出した")
+        XCTAssertTrue(model.hasMorePages)
+
+        await model.loadNextPage()
+        let photos: [Photo] = { if case .loaded(let p) = model.state { return p } else { return [] } }()
+        XCTAssertEqual(Set(photos.map(\.id)), ["p1", "p2", "p3", "p4"])
+        let post = PhotoGroups.group(photos).first { $0.isMultiple }
+        XCTAssertEqual(post.map { Set($0.photos.map(\.id)) }, ["p2", "p3"], "続きが届いても束がそろわない")
+    }
+
     /// **`nextCursor` が null なら止まる。** 目印も出さず、頼まれても叩かない
     func testStopsAtTheLastPage() async {
         prepare()

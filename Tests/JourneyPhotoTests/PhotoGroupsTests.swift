@@ -17,6 +17,20 @@ final class PhotoGroupsTests: XCTestCase {
         XCTAssertFalse(groups[0].isMultiple)
     }
 
+    /// 🔴 2026-10-09: ページの境目をまたぐ複数枚の投稿は、続きがある間は末尾の束ごと出さない。
+    /// 最後まで読んだら出す。束ねていない写真は外さない
+    func testTrailingGroupIsHeldBackWhileMorePagesExist() throws {
+        let page = [try photo("a"), try photo("b", group: "g1"), try photo("c", group: "g2"), try photo("d", group: "g2")]
+        XCTAssertEqual(PhotoGroups.holdingBackTrailingGroup(page, hasMore: true).map(\.id), ["a", "b"])
+        XCTAssertEqual(PhotoGroups.holdingBackTrailingGroup(page, hasMore: false).map(\.id), ["a", "b", "c", "d"])
+        // 末尾が束ねていない写真なら何も外さない
+        let single = [try photo("a", group: "g1"), try photo("b")]
+        XCTAssertEqual(PhotoGroups.holdingBackTrailingGroup(single, hasMore: true).map(\.id), ["a", "b"])
+        // 持ち主の違う同じ印は別の束（外すのは末尾と同じ束だけ）
+        let mixed = [try photo("a", group: "g1", user: "other"), try photo("b", group: "g1")]
+        XCTAssertEqual(PhotoGroups.holdingBackTrailingGroup(mixed, hasMore: true).map(\.id), ["a"])
+    }
+
     func testSameGroupBecomesOneCard() throws {
         let groups = PhotoGroups.group([
             try photo("a", group: "g1"),
