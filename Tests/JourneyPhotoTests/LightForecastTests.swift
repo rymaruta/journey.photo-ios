@@ -333,6 +333,17 @@ final class LightForecastServiceTests: XCTestCase {
         XCTAssertEqual(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer ID")
     }
 
+    /// 🔴 **端末の HTTP 控えを使わない**（サーバーは `max-age=600`。控えのままだと「行きたい」を足しても
+    /// 引っぱって読み直しても10分間 前の一覧のまま）
+    func testBypassesLocalHTTPCache() async throws {
+        StubProtocol.respond(status: 200, body: #"{"places":[]}"#)
+        _ = try await service().fetch()
+        XCTAssertEqual(StubProtocol.lastRequest?.cachePolicy, .reloadIgnoringLocalCacheData)
+        // ほかの口は今までどおり（既定の決まり）
+        _ = try await service().api.authorizedVoid(.get, "/user/profile")
+        XCTAssertEqual(StubProtocol.lastRequest?.cachePolicy, .useProtocolCachePolicy)
+    }
+
     func testNotProAndUnavailable() async {
         StubProtocol.respond(status: 403, body: #"{"error":"Pro の機能です"}"#)
         do { _ = try await service().fetch(); XCTFail("通った") } catch {

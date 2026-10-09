@@ -54,6 +54,16 @@ public struct Transaction: Sendable {
     public let isUpgraded: Bool
     public let appAccountToken: UUID?
     public let productType: Product.ProductType
+    /// 自分で買ったか、ファミリー共有で使えているか
+    public let ownershipType: OwnershipType
+
+    public struct OwnershipType: Equatable, Hashable, Sendable {
+        public let rawValue: String
+        public init(rawValue: String) { self.rawValue = rawValue }
+        public static let purchased = OwnershipType(rawValue: "PURCHASED")
+        public static let familyShared = OwnershipType(rawValue: "FAMILY_SHARED")
+    }
+
 
     public func finish() async {}
 

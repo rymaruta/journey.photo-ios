@@ -214,10 +214,47 @@ enum PurchaseDelivery {
         let outcome: Outcome
         /// サーバーの `{ error }`（日本語）。無ければ nil
         let message: String?
+        /// サーバー（または手元）が**この購読では Pro にしない**と言い切った理由。
+        /// 画面は失敗の赤ではなく、ふつうの補足の字で `message(for:)` を出す。**Pro にはしない**
+        let refusal: Refusal?
 
-        init(_ outcome: Outcome, message: String? = nil) {
+        init(_ outcome: Outcome, message: String? = nil, refusal: Refusal? = nil) {
             self.outcome = outcome
             self.message = message.flatMap { $0.isEmpty ? nil : $0 }
+            self.refusal = refusal
+        }
+    }
+
+    /// Pro にしない理由（サーバーの `code`・photo-gallery #337）
+    enum Refusal: Equatable {
+        /// この Apple ID の購読は別のアカウントのもの（退会した前のアカウント・ほかの生きているアカウント・
+        /// 手元で見分けた前の人の印）
+        case otherAccount
+        /// ファミリー共有の購読（Pro は買った本人だけ・owner 2026-10-09）
+        case familyShared
+    }
+
+    /// サーバーの答えから理由を決める。**`code` で見る**（日本語の本文では見ない）。
+    ///
+    /// - 403 `linked_to_other_account` / 409 `claimed_by_other_account` → 別のアカウント
+    /// - 403 `family_shared_not_supported` → ファミリー共有
+    /// - `code` の無い 403（`code` を返す前のサーバー）→ 別のアカウント（このころの 403 はそれだけ）
+    /// - 409 で `code` が無い（書き込みの重なり）は理由なし（やり直せば通る）
+    static func refusal(statusCode: Int?, code: String?) -> Refusal? {
+        switch code {
+        case "linked_to_other_account", "claimed_by_other_account": return .otherAccount
+        case "family_shared_not_supported": return .familyShared
+        default: return (statusCode == 403 && (code ?? "").isEmpty) ? .otherAccount : nil
+        }
+    }
+
+    /// 理由ごとの1行（owner 2026-10-09 の文言）
+    static func message(for refusal: Refusal) -> String {
+        switch refusal {
+        case .otherAccount: return otherAccountMessage
+        case .familyShared:
+            return L("ファミリー共有の購読では Pro を使えません。",
+                     "Pro isn't available through Family Sharing.")
         }
     }
 
@@ -231,6 +268,33 @@ enum PurchaseDelivery {
     }
 
     static func shouldFinish(_ outcome: Outcome) -> Bool { outcome != .retryLater }
+
+    /// 取引が**いまログインしている人のものではない**か（`appAccountToken` で見る）。
+    ///
+    /// 2026-10-09 判断: ほかの人の印が付いた取引は**送らず、終えもしない**（`retryLater` と同じ扱い）。
+    /// 送るとサーバーは 403（ほかの人の購入）を返し、`shouldFinish` で終えてしまう。すると
+    /// 「A が買った → サーバーに届かず（圏外・5xx）終えずに残る → 同じ端末で B がログイン →
+    /// 送り直しで 403 → 終える」で、A の購入が二度と自動で届かなくなり、サーバーにも結び付かない
+    /// （App Store の知らせも「まだ誰にも結び付いていない取引」として捨てられる）。
+    /// 残しておけば、A がログインし直したときに `deliverUnfinished` で届く。
+    ///
+    /// 印の無い取引（App Store のアプリでコードを使った等）はサーバーに任せる（届いた人に結び付ける）
+    static func belongsToSomeoneElse(appAccountToken: UUID?, userId: String) -> Bool {
+        guard let token = appAccountToken else { return false }
+        return token != AppAccountToken.make(userId: userId)
+    }
+
+    /// この Apple ID の購読が別のアカウントのものだったときの1行（owner 2026-10-09 の文言）。
+    /// 退会して作り直したアカウントで、前のアカウントで買った購読を使おうとしたときなど。
+    /// **Pro にはならない**（権利を決めるのはサーバー）
+    static var otherAccountMessage: String {
+        L("この Apple ID の購読は、別のアカウントで使われています。",
+          "This Apple ID's subscription is being used by a different account.")
+    }
+
+    /// ファミリー共有で使えている取引は数えない（owner 2026-10-09: ファミリー共有は切ってある）。
+    /// 送らず・終えず・設定の行にも出さない
+    static func countsAsOwnPurchase(isFamilyShared: Bool) -> Bool { !isFamilyShared }
 }
 
 // MARK: - 設定の行の文字
@@ -261,12 +325,15 @@ enum ProStatusText {
     /// - Pro で、この端末の App Store で買った定期購入が読めた → 板の形。
     ///   解約を予約していれば「次の更新」の代わりに「2026.11.09 まで」
     /// - Pro だが読めない（別の Apple ID・読み込み中）→ 「App Store で管理」だけ
-    /// - Pro でない → 値段と、案内の一言
-    static func settingsDetail(isPro: Bool, state: ProSubscriptionState?, timeZone: TimeZone = .current) -> String {
+    /// - Pro でない → 値段と、案内の一言。**値段は App Store の字**（`monthlyPrice`・`Product.displayPrice`）。
+    ///   読めないときだけ板の値段（2026-10-09 判断: 日本以外の App Store では円ではないのに「¥500」と出ていた）
+    static func settingsDetail(isPro: Bool, state: ProSubscriptionState?, monthlyPrice: String? = nil,
+                               timeZone: TimeZone = .current) -> String {
         let manage = L("App Store で管理", "Manage in App Store")
         guard isPro else {
-            return L("月 \(ProPlan.monthly.fallbackPrice) から。サポーターバッジも付きます",
-                     "From \(ProPlan.monthly.fallbackPrice)/month. Includes the supporter badge")
+            let price = monthlyPrice ?? ProPlan.monthly.fallbackPrice
+            return L("月 \(price) から。サポーターバッジも付きます",
+                     "From \(price)/month. Includes the supporter badge")
         }
         guard let state else { return manage }
         var parts = ["\(state.plan.shortUnit) \(state.displayPrice ?? state.plan.fallbackPrice)"]

@@ -18,8 +18,10 @@ enum AsyncTimeout {
         await firstWithin(seconds: seconds, sleep: { try await Task.sleep(nanoseconds: $0) }, operation)
     }
 
-    /// 眠り方を差し替えられる形（試験で、時間を計る側が止められたかを見る）
+    /// 眠り方を差し替えられる形（試験で、時間を計る側が止められたかを見る）。
+    /// `betweenTimeoutSteps` は時間切れの「門を閉める」と「処理を止める」の間に呼ぶ（試験で順番を見るためだけ）
     static func firstWithin<T>(seconds: Double, sleep: @escaping @Sendable (UInt64) async throws -> Void,
+                               betweenTimeoutSteps: (@Sendable () -> Void)? = nil,
                                _ operation: @escaping () async -> T?) async -> T? {
         let gate = FirstResultGate<T>()
         let nanos = UInt64(max(0, seconds) * 1_000_000_000)
@@ -32,8 +34,13 @@ enum AsyncTimeout {
                 gate.timer = Task {
                     // 止められた（答えが先に来た）なら何もしない
                     guard (try? await sleep(nanos)) != nil, !Task.isCancelled else { return }
-                    work.cancel()
+                    // 🔴 **先に「時間切れ」で門を閉めてから止める**（2026-10-09）。逆の順だと、取り消しに
+                    // すぐ応えて答えを返す処理（`try? await Task.sleep` のあとで値を返すもの）が、止めた
+                    // 直後に別の糸で `finish(答え)` を先に通し、時間切れなのに答えが返ることがあった
+                    // （手元の `swift test` を並べて流したときに `PlaceCoordsRuleTests` が時々落ちた）
                     gate.finish(nil)
+                    betweenTimeoutSteps?()
+                    work.cancel()
                 }
                 gate.onCancel = { work.cancel() }
             }
@@ -98,7 +105,8 @@ private final class FirstResultGate<T>: @unchecked Sendable {
         cancelled = true
         let hook = _onCancel
         lock.unlock()
-        hook?()
+        // 先に nil で閉めてから止める（上の時間切れと同じ理由）
         finish(nil)
+        hook?()
     }
 }
