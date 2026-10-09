@@ -39,6 +39,40 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     /// いなかっただけ。
     let songs: [Photo.Song]?
 
+    // MARK: バッジと Pro（第1段階・2026-10-09）
+    //
+    // **どれも包みで持ち、壊れていても投げない**（`Badge.swift`）。古いサーバーは
+    // 返さない——そのときは「バッジ無し・Pro でない」で出る。画面は下の計算プロパティを読む
+
+    /// 持っているバッジ（`{key: {tier, at}}`）
+    private let badges: BadgeSet?
+    /// 名前の横に出すと本人が選んだバッジの鍵
+    private let displayBadge: LenientText?
+    /// Pro 会員か（**まだ誰も Pro ではない**が、立てば印が出る）
+    private let pro: LenientFlag?
+    /// Pro マークの形（`iris` / `plate`）
+    private let proMarkStyle: LenientText?
+
+    /// 持っているバッジ。返さないサーバーでは空
+    var earnedBadges: BadgeSet { badges ?? BadgeSet() }
+
+    /// 名前の横に出すバッジ。**選んだ鍵を持っているときだけ**——持っていない鍵
+    /// （取り消された・古い値）を指していたら何も出さない
+    var shownBadge: EarnedBadge? {
+        guard let key = displayBadge?.value else { return nil }
+        return earnedBadges[key]
+    }
+
+    /// 選んでいる鍵（持っているかは問わない。名前の横の画面の初期値に使う）
+    var chosenBadgeKey: String? { displayBadge?.value }
+
+    var isPro: Bool { pro?.value ?? false }
+
+    /// Pro マークの形。知らない値・無い値は既定の絞り羽根
+    var markStyle: ProMarkStyle {
+        proMarkStyle?.value.flatMap(ProMarkStyle.init(rawValue:)) ?? .iris
+    }
+
     /// 画面に出す1曲。**先頭だけ**（モックのカードは1枚）
     var bgm: Photo.Song? {
         guard let songs else { return nil }

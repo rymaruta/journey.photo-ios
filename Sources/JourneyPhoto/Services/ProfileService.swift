@@ -79,6 +79,14 @@ struct ProfileService {
         try await api.authorizedVoid(.put, "/user/profile", body: patch)
     }
 
+    /// 自分のバッジと、次の段までの進み具合（バッジの棚）。
+    ///
+    /// 持っているバッジは公開プロフィールにも載るが、**進み具合は本人だけ**に返る
+    /// （人の棚は持っているメダルだけを出す）
+    func myBadges() async throws -> BadgeStatus {
+        try await api.authorized(.get, "/user/badges", as: BadgeStatus.self)
+    }
+
     // MARK: - アイコンとカバー
 
     enum ImageKind: String {
@@ -160,4 +168,9 @@ struct ProfilePatch: Encodable {
     /// 留める／外す写真（1枚）。`pin` と対で送る。
     var pinPhotoId: String?
     var pin: Bool?
+    /// 名前の横に出すバッジ。**持っている鍵か「外す」（`Clearable(nil)` → JSON の null）**。
+    /// `nil` は「触らない」
+    var displayBadge: Clearable<String>?
+    /// Pro マークの形（`iris` / `plate`）。Pro の人だけが送る
+    var proMarkStyle: String?
 }

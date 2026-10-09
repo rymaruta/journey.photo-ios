@@ -102,7 +102,8 @@ enum NotificationText {
     /// 右の小窓の画像。**ストーリーへの返信は出さない**（Web の `NotificationsBell` と同じ）
     /// ——`photoSrc` は24時間で消えるストーリーの画像や動画で、小窓が壊れた画像になる
     static func thumbnailURL(_ row: AppNotification) -> URL? {
-        guard row.kind != .storyreply, let src = row.photoSrc else { return nil }
+        // メダルは左にメダルの絵を出す（右の小窓は使わない）
+        guard row.kind != .storyreply, row.kind != .badge, let src = row.photoSrc else { return nil }
         return URL(string: src)
     }
 
@@ -110,6 +111,7 @@ enum NotificationText {
     /// 種類の分からないものは nil——**既定の文言で嘘を出さない**。
     static func line(for entry: Entry) -> Line? {
         let row = entry.lead
+        if row.kind == .badge { return badgeLine(row) }
         let who = self.who(row)
         let rest: String
         switch row.kind {
@@ -124,9 +126,19 @@ enum NotificationText {
         case .comment: rest = L(" がコメントしました", " commented on your photo")
         case .follow: rest = L(" があなたをフォローしました", " followed you")
         case .storyreply: rest = L(" がストーリーに返信しました", " replied to your story")
-        case .none: return nil
+        case .badge, .none: return nil
         }
         return Line(who: who, rest: rest)
+    }
+
+    /// 新しいメダル（板 15・2026-10-09）: 「**朝の光**のメダルを手に入れました · 銅」。
+    /// 太字はメダルの名前。**知らない鍵（絵の無いバッジ）は出さない**——既定の文言で嘘を出さない
+    static func badgeLine(_ row: AppNotification) -> Line? {
+        guard let key = row.key, BadgeCatalog.isKnown(key) else { return nil }
+        let name = BadgeCatalog.name(key)
+        let tier = BadgeCatalog.hasTiers(key)
+            ? " · " + BadgeCatalog.tierWord(BadgeCatalog.clampedTier(key, row.tier ?? 1)) : ""
+        return Line(who: name, rest: L("のメダルを手に入れました", " medal earned") + tier)
     }
 
     // MARK: - 経過時間

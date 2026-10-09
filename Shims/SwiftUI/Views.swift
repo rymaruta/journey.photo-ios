@@ -290,6 +290,10 @@ public struct Path: View, Shape {
     public mutating func move(to point: CGPoint) {}
     public mutating func addLine(to point: CGPoint) {}
     public mutating func addCurve(to point: CGPoint, control1: CGPoint, control2: CGPoint) {}
+    /// 線を閉じる（Pro マークの六角形・本物と同じ）
+    public mutating func closeSubpath() {}
+    /// 塗る（本物は `Shape` の修飾子）
+    public func fill<S: ShapeStyle>(_ style: S) -> Path { self }
     public var body: Never { fatalError("模型") }
 }
 /// 角ごとに丸みを変える四角（iOS 16+）。ストーリーの写真は下の角だけ丸める

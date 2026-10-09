@@ -2,9 +2,12 @@ import Foundation
 
 /// お知らせの絞り込み（提案の絵・モック10）。
 ///
-/// **種類はサーバーが決めている4つだけ**（`api-user/src/notify.ts` の
-/// `type: "like" | "comment" | "follow" | "storyreply"`）。ここで
+/// **絞り込みの札はサーバーの種類から作る**（`api-user/src/notify.ts` の
+/// `type: "like" | "comment" | "follow" | "storyreply" | "badge"`）。ここで
 /// 新しい種類を作らない——受け取れない絞り込みを画面に出さない。
+///
+/// **新しいメダル（`badge`）は「すべて」にだけ出す**（2026-10-09）。自分の出来事で
+/// 人からの便りではなく、数も少ないので札を増やさない。
 ///
 /// **ストーリーの返信は「コメント」に入れる。** 利用者から見れば
 /// どちらも「言葉が届いた」で、分けても探しやすくならない。
@@ -29,5 +32,6 @@ enum NotificationFilter: String, CaseIterable, Identifiable {
         case .comment: return kind == .comment || kind == .storyreply
         case .follow: return kind == .follow
         }
+        // `badge` は上のどれにも当たらない（「すべて」だけ）
     }
 }

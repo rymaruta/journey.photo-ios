@@ -640,7 +640,8 @@ struct PhotoDetailView: View {
     /// ので、投稿者の公開プロフィールを1回だけ引く。取れなければ名前だけ
     /// ——「@」だけの行を作らない。
     ///
-    /// 認証の印は名前の横に出す（`VerifiedBadge`・名前 13 に合わせる。付けるのは運営だけ）。
+    /// 認証の印と Pro マークは名前の横に出す（`NameMarks`・名前 13 に合わせる）。
+    /// 選んだバッジはここには出さない（プロフィールの頁だけ・2026-10-09 判断）。
     @ViewBuilder
     private var authorRow: some View {
         if let ownerId {
@@ -663,8 +664,8 @@ struct PhotoDetailView: View {
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(WebTheme.foreground)
                                     .lineLimit(1)
-                                VerifiedBadge(isVerified: model.owner?.verified,
-                                              nameSize: 13, relativeTo: .footnote)
+                                // 公式の封印と Pro マークだけ（選んだバッジはプロフィールの頁だけ）
+                                NameMarks(profile: model.owner, nameSize: 13, relativeTo: .footnote)
                             }
                             if let username = model.owner?.username, !username.isEmpty {
                                 Text("@\(username)")
