@@ -85,6 +85,33 @@ final class PlaceCoordsRuleTests: XCTestCase {
         XCTAssertTrue(slow.isEmpty)
     }
 
+    /// 🔴 **取り消しに応えない読み込みでも、`wait` で戻る**（2026-10-09 owner「ストーリーで写真を選んだのに
+    /// 投稿できない」）。以前は子タスクの組（`withTaskGroup`）で競わせていて、抜けるときに読み込みの終わりを
+    /// 待っていた。本番の索引は区分の読み込みを取り消さない（`OfficialSpotService.loadShard`）ので、
+    /// 2秒のはずの待ちが通信の時間切れ（20秒）まで延び、その間「シェアする」は押しても何も起きなかった
+    func testIndexWaitEndsEvenIfFetchIgnoresCancellation() async {
+        let gate = Gate()
+        let fetched = spots
+        final class Box: @unchecked Sendable { var result: [OfficialSpot]? }
+        let box = Box()
+        let run = Task {
+            box.result = await PlaceCoordsRule.index(current: [], needed: true, wait: .milliseconds(50), fetch: {
+                await gate.wait()   // 取り消しても戻らない読み込み
+                return fetched
+            })
+        }
+        // 直っていなければ戻らない。上限（2秒）で試験を落とし、門を開けて片づける
+        let deadline = Date().addingTimeInterval(2)
+        while box.result == nil, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let returned = box.result != nil
+        await gate.open()
+        await run.value
+        XCTAssertTrue(returned, "取り消しに応えない読み込みを待ち続けて、索引の待ちが上限で終わらない")
+        XCTAssertEqual(box.result?.isEmpty, true, "時間切れなら空（写真の座標を送らない側）")
+    }
+
     /// ストーリー: 撮影地があり GPS の写真があって索引が無いときだけ待つ
     func testStoryWaitsForIndexOnlyWhenNeeded() {
         var place = StorySpotSuggestion.Place()
