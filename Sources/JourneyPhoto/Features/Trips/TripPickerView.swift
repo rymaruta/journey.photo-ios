@@ -133,7 +133,7 @@ struct TripPickerView: View {
                     .accessibilityHidden(true)
             }
             // 詳細がまだの索引だけの行も、読み込み中の札として払える（空白の札で止めない）
-            cardFrame(TripPicker.cardFace(spot))
+            cardFrame(TripPicker.cardFace(spot, detailTried: model.detailTried.contains(spot.spotId)))
                 .overlay(alignment: .topLeading) { stamp(L("行きたい", "Want to go"), icon: "heart.fill").opacity(stampOpacity(1)) }
                 .overlay(alignment: .topTrailing) { stamp(L("見送る", "Pass"), icon: "xmark").opacity(stampOpacity(-1)) }
                 // 回してから動かす（逆だと、動く前の位置を中心に回って札が下へ沈む）
@@ -154,20 +154,28 @@ struct TripPickerView: View {
         }
     }
 
-    /// 札の面。写真が届く前は、写真の読み込み中（`RemoteImage`）と同じ見た目（面の色＋輪）
+    /// 札の面。写真が届く前は、写真の読み込み中（`RemoteImage`）と同じ見た目（面の色＋輪）。
+    /// 頼み終えても写真が無ければ面の色だけ（輪を回し続けない）
     @ViewBuilder
     private func cardFrame(_ face: TripPicker.CardFace) -> some View {
         switch face {
         case .photo(let url):
             photoFrame(url)
         case .loading:
-            Color.clear
-                .aspectRatio(4 / 5, contentMode: .fit)
-                .frame(maxWidth: .infinity)
-                .overlay(ZStack { WebTheme.surface; ProgressView() })
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .contentShape(RoundedRectangle(cornerRadius: 16))
+            plainFrame.overlay(ProgressView())
+        case .noPhoto:
+            plainFrame
         }
+    }
+
+    /// 写真の無い札の面（面の色・写真の札と同じ形）
+    private var plainFrame: some View {
+        Color.clear
+            .aspectRatio(4 / 5, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .background(WebTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private func photoFrame(_ url: URL) -> some View {

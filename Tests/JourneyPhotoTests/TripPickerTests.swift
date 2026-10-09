@@ -56,6 +56,8 @@ final class TripPickerTests: XCTestCase {
                        "下ごしらえ: 写真のある索引だけの行は札の山に入る")
         XCTAssertNil(indexOnly.photo, "下ごしらえ: 詳細がまだなので写真そのものは無い")
         XCTAssertEqual(TripPicker.cardFace(indexOnly), .loading)
+        // 頼み終えても写真が無かった（`hasImage` と食い違う）回は、輪を回し続けない
+        XCTAssertEqual(TripPicker.cardFace(indexOnly, detailTried: true), .noPhoto)
 
         let detailed = try spot("ok")
         XCTAssertEqual(TripPicker.cardFace(detailed),

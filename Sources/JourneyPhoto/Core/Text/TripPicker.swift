@@ -33,13 +33,17 @@ enum TripPicker {
         case photo(URL)
         /// 写真はある（`hasPhoto`）が、まだ詳細が届いていない索引だけの行。**読み込み中の札として払える**
         case loading
+        /// 詳細を頼み終えたのに写真が無かった（`hasImage` と食い違う・読めなかった）。
+        /// **輪を回し続けない**——面の色だけの札で払える
+        case noPhoto
     }
 
     /// 🔴 2026-10-09: 索引だけの行（`hasImage` はあるが詳細がまだ）は、札の面を描かず
-    /// **空白で払えない**札になっていた。詳細が届くまでは読み込み中の札にする
-    static func cardFace(_ spot: OfficialSpot) -> CardFace {
+    /// **空白で払えない**札になっていた。詳細が届くまでは読み込み中の札にする。
+    /// 頼み終えても写真が無ければ（`detailTried`）、輪を止めて面だけにする（レビュー）
+    static func cardFace(_ spot: OfficialSpot, detailTried: Bool = false) -> CardFace {
         if let photo = spot.photo { return .photo(photo.url) }
-        return .loading
+        return detailTried ? .noPhoto : .loading
     }
 
     /// 札の山。出してよいものを、`seed` で混ぜて返す。
