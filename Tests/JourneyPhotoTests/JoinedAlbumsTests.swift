@@ -62,6 +62,19 @@ final class JoinedAlbumsTests: XCTestCase {
         XCTAssertEqual(joined.entries.map(\.id), ["a2"])
     }
 
+    /// 送ったときに人が分からない（`owner` が nil）回は書かない。共通の鍵（ログインしていない
+    /// 状態の控え）に入れない（レビュー）
+    @MainActor
+    func testJoinWithoutAKnownOwnerIsNotWritten() async throws {
+        let (joined, defaults) = store("joined-nil-owner")
+        joined.use(userId: "u2")
+        joined.remember(id: "a1", title: "北欧の旅", token: "t1", for: nil)
+        XCTAssertTrue(joined.entries.isEmpty, "いまの人の一覧に入った")
+        let signedOut = JoinedAlbumsStore(defaults: defaults)
+        signedOut.use(userId: nil)
+        XCTAssertTrue(signedOut.entries.isEmpty, "共通の鍵に書いた")
+    }
+
     /// 同じアルバムのリンクを開き直しても増えない（合図は新しい方で上書き）。
     @MainActor
     func testReJoiningReplacesInsteadOfDuplicating() async throws {

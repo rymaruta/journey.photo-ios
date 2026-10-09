@@ -73,8 +73,12 @@ final class JoinedAlbumsStore: ObservableObject {
     ///
     /// `SavedPhotosStore`・`ModerationStore` は替わっていたら書かない（サーバーの一覧で取り直せる）が、
     /// 参加したアルバムは**サーバーが教えてくれない**ので、書かずに落とすと参加した人の入口が消える。
-    /// だから落とさずに、参加した人の鍵へ書く（いまの人の一覧は触らない）
+    /// だから落とさずに、参加した人の鍵へ書く（いまの人の一覧は触らない）。
+    ///
+    /// **送ったときに人が分からない（`owner` が nil・空）なら書かない**（レビュー）。
+    /// 誰のものでもない共通の鍵に書くと、次にログインしていない状態の画面に出てしまう
     func remember(id: String, title: String, token: String, for owner: String?) {
+        guard let owner, !owner.isEmpty else { return }
         guard owner != userId else {
             remember(id: id, title: title, token: token)
             return
