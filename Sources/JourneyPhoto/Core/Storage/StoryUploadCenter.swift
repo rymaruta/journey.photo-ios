@@ -282,27 +282,17 @@ final class StoryUploadCenter: ObservableObject {
 
     // MARK: - 背面
 
-    /// 背面での猶予（`beginBackgroundTask`）。送る回ごとに札を分ける
-    /// ——捨てた回の片づけが、次の回の猶予を返してしまわないように
-    private var backgroundTasks: [UUID: UIBackgroundTaskIdentifier] = [:]
-
-    /// 背面での猶予をもらう。返すのは札（要らなくなったら `endBackground` に渡す）
-    private func beginBackground() -> UUID? {
+    /// 背面での猶予をもらう（`BackgroundWindow`）。送る回ごとに別の窓——捨てた回の片づけが、
+    /// 次の回の猶予を返してしまわないように。猶予が切れたら札は返す（返さないとアプリごと
+    /// 止められる）。画像の転送は背景の URLSession が続け、終わって起こされたら窓を取り直す
+    /// （`BackgroundTransfer`）。それでも落ちた1本は失敗として戻り、並びは端末に残る
+    private func beginBackground() -> BackgroundWindow? {
         guard keepsAliveInBackground else { return nil }
-        let token = UUID()
-        // 猶予が切れたら返す（返さないとアプリごと止められる）。送っている1本は
-        // 失敗として戻り、並びは端末に残っているので次に送り直せる
-        let identifier = UIApplication.shared.beginBackgroundTask(withName: "story-upload") { [weak self] in
-            MainActor.assumeIsolated { self?.endBackground(token) }
-        }
-        guard identifier != .invalid else { return nil }
-        backgroundTasks[token] = identifier
-        return token
+        return BackgroundWindow(name: "story-upload")
     }
 
-    private func endBackground(_ token: UUID?) {
-        guard let token, let identifier = backgroundTasks.removeValue(forKey: token) else { return }
-        UIApplication.shared.endBackgroundTask(identifier)
+    private func endBackground(_ window: BackgroundWindow?) {
+        window?.end()
     }
 
     // MARK: - 端末に書く

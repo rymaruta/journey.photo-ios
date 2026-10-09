@@ -94,6 +94,20 @@ struct JourneyPhotoApp: App {
         await environment.gallery.setHidden(hidden.snapshot)
     }
 
+    /// 写真の本体を送り終えたのに、アプリが消されて誰も save しなかった鍵を片付ける
+    /// （`BackgroundTransfer` の注記）。**ログインしているその人の鍵だけ**——片付けは本人の鍵しか
+    /// 消せない（`upload.ts` の `discardUpload`）。保存済みの写真が使っている鍵はサーバーが消さない（409）。
+    /// 確かめられなかった鍵（圏外・401・503）は控えに残り、次に裏から戻ったときに送り直す
+    private func discardOrphanTransfers() {
+        guard let userId = auth.userId else { return }
+        let uploads = environment.uploads
+        Task {
+            await BackgroundTransfer.shared.discardOrphans(owner: userId) { key in
+                await uploads.discardOrphan(key: key)
+            }
+        }
+    }
+
     /// 公開範囲を絞った写真の取り口を、公開一覧へ渡す。
     ///
     /// **ログアウトしたら外す。** 外さないと、次にこの端末を使う人の画面に
@@ -205,6 +219,7 @@ struct JourneyPhotoApp: App {
                     guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
                     let userId = auth.userId
                     Task { await push.use(userId: userId) }
+                    discardOrphanTransfers()
                 }
                 // **ログイン状態が変わるたびに読み直す。** `.task` のままだと
                 // 起動時に1回しか走らず、あとからログインした人には
@@ -241,6 +256,7 @@ struct JourneyPhotoApp: App {
                     // 別の人が入ったときは、その人の ID で `userChanged` が捨てる
                     if auth.userId == nil, auth.signedOutByExpiry { return }
                     StoryUploadCenter.shared.userChanged(to: auth.userId)
+                    discardOrphanTransfers()
                 }
                 // **`userId` ではなく状態で見る。** 起動直後の確認中（unknown）も
                 // ログアウト（signedOut）も `userId` は nil で、確認が

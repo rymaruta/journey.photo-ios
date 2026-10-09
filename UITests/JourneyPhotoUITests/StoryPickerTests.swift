@@ -57,16 +57,25 @@ final class StoryPickerTests: XCTestCase {
         return app
     }
 
-    /// 埋め込みの写真選びの初回に出る「写真へのプライベートアクセス」の「OK」
-    private func dismissPrivacyNotice(_ app: XCUIApplication) {
-        for label in ["OK", "了解"] {
-            let ok = app.buttons[label].firstMatch
-            if ok.waitForExistence(timeout: 3), ok.isHittable {
-                ok.tap()
-                Thread.sleep(forTimeInterval: 1)
-                return
+    /// 埋め込みの写真選びの初回に出る「写真へのプライベートアクセス」の「OK」。閉じたら true。
+    ///
+    /// 🔴 PR #201 の run（2026-10-09）: 案内は格子より遅れて出ることがあり、3秒待って見つからずに進むと、
+    /// 印を付けるはずの押しが案内に吸われて「写真を選んでください」のまま落ちた。`timeout` まで見張る
+    @discardableResult
+    private func dismissPrivacyNotice(_ app: XCUIApplication, timeout: TimeInterval = 8) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            for label in ["OK", "了解"] {
+                let ok = app.buttons[label].firstMatch
+                if ok.exists, ok.isHittable {
+                    ok.tap()
+                    Thread.sleep(forTimeInterval: 1)
+                    return true
+                }
             }
-        }
+            Thread.sleep(forTimeInterval: 0.5)
+        } while Date() < deadline
+        return false
     }
 
     /// 写真の格子のマス（押す位置）。
@@ -150,6 +159,14 @@ final class StoryPickerTests: XCTestCase {
             photo.tap()
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "\(tag)-2-印\(i + 1)枚目")
+        }
+        // 押しているあいだに案内が出て押しを吸った回は、閉じてから印を付け直す
+        if !next.waitForExistence(timeout: 2), dismissPrivacyNotice(app, timeout: 1) {
+            for (i, photo) in photos.prefix(count).enumerated() {
+                photo.tap()
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "\(tag)-2-印\(i + 1)枚目-付け直し")
+            }
         }
         // 🔴 run 364: 格子に印（1・2・3）が付いても、下のボタンは「写真を選んでください」で押せないまま
         // だった（選択が `librarySelection` に渡らない）。それを見逃さないよう、ここは落とす

@@ -920,7 +920,9 @@ final class UploadViewModel: ObservableObject {
         songFailuresShown = 0
         // 🔴 **送っている途中でアプリを離れても、少しのあいだ続けさせてもらう。**
         // 無いと裏に回った数秒後に止められ、戻ったときには通信が切れて失敗になる。
-        // 時間切れ（30秒ほど）でも落ちた写真は画面に残り、やり直しは同じ鍵で送る
+        // 本体の転送は時間切れ（30秒ほど）のあとも背景の URLSession が続け、終わって
+        // 起こされたらこの窓を取り直して save へ進む（`BackgroundTransfer`）。
+        // それでも落ちた写真は画面に残り、やり直しは同じ鍵で送る
         let background = BackgroundWindow(name: "photo-upload")
         defer {
             isWorking = false
@@ -1254,22 +1256,60 @@ final class UploadViewModel: ObservableObject {
 
 /// 裏に回っても続けさせてもらう窓（`beginBackgroundTask`）。
 /// **必ず閉じる**——閉じ忘れると、時間切れで OS にアプリごと止められる
+///
+/// 🔴 **時間切れのあとも、閉じるまでは「開いている」まま。** 本体の転送は背景の URLSession が
+/// 続けるので（`BackgroundTransfer`）、転送が終わってアプリが起こされたら、開いている窓を
+/// 全部取り直す（`renewAll`）。取り直さないと、続きの save を送る前にまた止められる
 @MainActor
 final class BackgroundWindow {
+    /// 窓をもらう口・返す口。**試験でだけ差し替える**（模型の UIApplication は窓をくれない）
+    static var beginTask: (String, @escaping @MainActor @Sendable () -> Void) -> UIBackgroundTaskIdentifier = { name, expired in
+        UIApplication.shared.beginBackgroundTask(withName: name, expirationHandler: expired)
+    }
+    static var endTask: (UIBackgroundTaskIdentifier) -> Void = { UIApplication.shared.endBackgroundTask($0) }
+
+    /// 閉じていない窓（時間切れで札を返したものも含む）
+    private static var open: [ObjectIdentifier: Weak] = [:]
+    private struct Weak { weak var window: BackgroundWindow? }
+
+    private let name: String
     private var identifier: UIBackgroundTaskIdentifier = .invalid
+    private var closed = false
+
+    /// 札を持っているか（試験で見る）
+    var isHolding: Bool { identifier != .invalid }
 
     init(name: String) {
-        identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            // 時間切れ。送信は止まるが、ここで閉じないと OS に止められる。
+        self.name = name
+        Self.open[ObjectIdentifier(self)] = Weak(window: self)
+        acquire()
+    }
+
+    /// 開いている窓のうち、時間切れで札を返したものを取り直す
+    static func renewAll() {
+        open = open.filter { $0.value.window != nil }
+        for entry in open.values { entry.window?.acquire() }
+    }
+
+    private func acquire() {
+        guard !closed, identifier == .invalid else { return }
+        identifier = Self.beginTask(name) { [weak self] in
+            // 時間切れ。ここで札を返さないと OS に止められる。窓は閉じない（`renewAll` で取り直す）。
             // 呼ばれるのは主スレッド（SDK の版によって型に書いていないので明示する）
-            MainActor.assumeIsolated { self?.end() }
+            MainActor.assumeIsolated { self?.release() }
         }
     }
 
-    func end() {
+    private func release() {
         guard identifier != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(identifier)
+        Self.endTask(identifier)
         identifier = .invalid
+    }
+
+    func end() {
+        closed = true
+        release()
+        Self.open[ObjectIdentifier(self)] = nil
     }
 }
 

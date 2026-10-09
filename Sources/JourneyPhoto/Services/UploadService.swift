@@ -13,6 +13,9 @@ import FoundationNetworking
 ///     2. PUT  <署名付き URL>          … S3 へ本体を置く
 ///     3. POST /upload/save            … DynamoDB に1行作る
 ///
+/// **2 だけは背景の転送で送る**（`BackgroundTransfer`）——アプリを離れても本体は届き、
+/// 戻った・起こされたところで 3 を送る。1 と 3 は小さいので前面の URLSession のまま。
+///
 /// **2 と 3 の間で落ちたら S3 に迷子のファイルが残る。** ただし 3 の失敗は
 /// **その場では片付けない**——保存は通っていて応答だけ失われたのかもしれず、
 /// やり直しは同じ鍵で送る（`stage` の注記）。片付けるのは、本人がその写真を
@@ -22,7 +25,8 @@ import FoundationNetworking
 struct UploadService {
 
     private let api: APIClient
-    private let session: URLSession
+    /// 本体（S3 への PUT）を運ぶ口。既定は背景の転送（`BackgroundTransfer`）
+    private let transfer: PhotoTransfer
 
     /// api-user が弾く上限（`upload.ts`）。手前で同じ数字を出して、
     /// 50MB のアップロードを走らせてから 400 を食う無駄をなくす。
@@ -36,16 +40,15 @@ struct UploadService {
         "image/avif", "image/gif", "image/heic", "image/heif",
     ]
 
+    /// - Parameter session: 渡すと本体もその URLSession で送る（試験）。
+    ///   渡さなければ**背景の転送**——アプリを離れても本体を送り終える（`BackgroundTransfer`）
     init(api: APIClient, session: URLSession? = nil) {
+        self.init(api: api, transfer: session.map { SessionTransfer(session: $0) } ?? BackgroundTransfer.shared)
+    }
+
+    init(api: APIClient, transfer: PhotoTransfer) {
         self.api = api
-        if let session {
-            self.session = session
-        } else {
-            let config = URLSessionConfiguration.default
-            // 本体の転送は API 呼び出しより長くかかる
-            config.timeoutIntervalForRequest = 120
-            self.session = URLSession(configuration: config)
-        }
+        self.transfer = transfer
     }
 
     // MARK: - 1. 置き場所をもらう
@@ -88,7 +91,7 @@ struct UploadService {
         let response: URLResponse
         do {
             try RequestCancellation.throwIfCancelled()
-            (_, response) = try await session.upload(for: request, from: data)
+            response = try await transfer.upload(request, body: data, key: presigned.key)
         } catch {
             throw APIError.unreachable
         }
@@ -123,6 +126,23 @@ struct UploadService {
     func discard(key: String) async {
         struct Body: Encodable { let key: String }
         _ = try? await api.authorizedVoid(.delete, "/upload/discard", body: Body(key: key))
+    }
+
+    /// 誰も save しなかった鍵を片付ける（`BackgroundTransfer.discardOrphans`）。
+    /// **片付けが済んだか（true）、確かめられなかったか（false）を返す**——false の鍵は控えに残し、次に送り直す。
+    ///
+    /// - 200: 消した。409: 保存済みの写真・ストーリーが使っている（消してはいけない鍵なので、控えから外してよい）
+    /// - 400・403: 鍵の形・持ち主で断られた（送り直しても変わらない）。控えには本人の鍵しか渡さない
+    /// - それ以外（圏外・401 のログイン切れ・429・503 の確認できなかった など）: 送り直す
+    func discardOrphan(key: String) async -> Bool {
+        struct Body: Encodable { let key: String }
+        do {
+            try await api.authorizedVoid(.delete, "/upload/discard", body: Body(key: key))
+            return true
+        } catch {
+            if case .server(let status, _)? = error as? APIError, [400, 403, 409].contains(status) { return true }
+            return false
+        }
     }
 
     // MARK: - まとめて
