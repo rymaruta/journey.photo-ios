@@ -28,18 +28,19 @@ struct MedalViewerView: View {
     @State private var flips = 0
 
     var body: some View {
+        // 🔴 **組みは画面の大きさに固定し、× は画面の右上に重ねる**（2026-10-09 owner「メダル回す画面で
+        // 戻れない」）。初期ユーザーの後光（硬貨の 1.3 倍）が組みの幅に効いていて、組みが画面より広くなり、
+        // × が画面の外へ押し出されていた（説明の文も折り返さず右端で切れていた）。後光は硬貨の背景に置く
         GeometryReader { geo in
             let coin = MedalTextureLayout.coinSide(screenWidth: Double(geo.size.width))
-            ZStack(alignment: .topTrailing) {
-                VStack(spacing: 20) {
-                    Spacer(minLength: 0)
-                    coinStage(coin)
-                    captions
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity)
-                closeButton
+            VStack(spacing: 20) {
+                Spacer(minLength: 0)
+                coinStage(coin)
+                captions
+                Spacer(minLength: 0)
             }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .overlay(alignment: .topTrailing) { closeButton }
         }
         .background { background }
         .statusBarHidden(true)
@@ -56,25 +57,29 @@ struct MedalViewerView: View {
             .ignoresSafeArea()
     }
 
-    @ViewBuilder
     private func coinStage(_ coin: Double) -> some View {
-        ZStack {
+        MedalCoinView(textures: textures, fallbackImage: BadgeCatalog.largeImage(badge.key, tier: badge.tier),
+                      reduceMotion: reduceMotion, flips: flips)
+        .frame(width: coin, height: coin)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) のメダル",
+                              "\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) medal"))
+        .accessibilityAddTraits(.isImage)
+        .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
+        .accessibilityIdentifier("medalViewer.coin")
+        // 後光は**背景に置く**（組みの大きさに効かせない・画面の幅を超えても × を押し出さない）。
+        // 指の払いも硬貨へ通す
+        .background {
             if badge.key == "earlyUser" {
                 // 後光の代わりの淡い真鍮の光（硬貨の外側だけに出る）
                 Circle()
                     .fill(RadialGradient(colors: [WebTheme.accent.opacity(0.30), Color.clear],
                                          center: .center, startRadius: coin * 0.30, endRadius: coin * 0.62))
-                    .frame(width: coin * 1.3, height: coin * 1.3)
+                    .frame(width: MedalTextureLayout.haloSide(coin: coin),
+                           height: MedalTextureLayout.haloSide(coin: coin))
+                    .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
-            MedalCoinView(textures: textures, fallbackImage: BadgeCatalog.largeImage(badge.key, tier: badge.tier),
-                          reduceMotion: reduceMotion, flips: flips)
-                .frame(width: coin, height: coin)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(L("\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) のメダル",
-                                      "\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) medal"))
-                .accessibilityAddTraits(.isImage)
-                .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
         }
     }
 
@@ -113,6 +118,7 @@ struct MedalViewerView: View {
         .padding(.trailing, 12)
         .padding(.top, 8)
         .accessibilityLabel(Labels.Common.close)
+        .accessibilityIdentifier("medalViewer.close")
     }
 }
 

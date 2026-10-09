@@ -28,4 +28,26 @@ enum PreviewSession {
         return nil
         #endif
     }
+
+    /// UI テストで持たせるバッジ（Debug のみ）。`-JPPreviewBadges "prefectures:2,earlyUser:1"`。
+    ///
+    /// 鍵を持たない入り方では `GET /user/badges` が読めず、見本の利用者が持っているメダルも
+    /// 決まらない。メダルを回す全画面の閉じ方（`MedalViewerTests`）を確かめるために、
+    /// **入っている本人のプロフィールにだけ**この持ち物を重ねる。Release では必ず `nil`
+    static let badgesKey = "JPPreviewBadges"
+
+    static var badges: BadgeSet? {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: badgesKey), !raw.isEmpty else { return nil }
+        let items: [EarnedBadge] = raw.split(separator: ",").compactMap { pair in
+            let parts = pair.split(separator: ":").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard parts.count == 2, !parts[0].isEmpty, let tier = Int(parts[1]), tier >= 1 else { return nil }
+            return EarnedBadge(key: parts[0], tier: tier, at: "2026-10-01T09:00:00Z")
+        }
+        return items.isEmpty ? nil : BadgeSet(items)
+        #else
+        return nil
+        #endif
+    }
 }
