@@ -146,7 +146,8 @@ final class BadgePatchTests: XCTestCase {
     /// 🔴 **持っているがアプリの知らない鍵を飾っている人が「決める」だけ押しても外さない**（バグ調査 低-1）。
     /// 持っていない鍵（取り消された・古い値）は今までどおり消す
     func testNameSideKeepsUnknownOwnedBadge() throws {
-        let unknown = try profile(#"{"userId":"u1","badges":{"supporter":{"tier":1},"first":{"tier":1}},"displayBadge":"supporter"}"#)
+        // 知らない鍵の例。"supporter" は Pro の枝でアプリが知る章になったので、まだ無い名前にする
+        let unknown = try profile(#"{"userId":"u1","badges":{"futureChapter":{"tier":1},"first":{"tier":1}},"displayBadge":"futureChapter"}"#)
         XCTAssertNil(NameSideChoice.initialSelection(unknown))
         XCTAssertNil(NameSideChoice.patch(profile: unknown, selected: nil, style: .iris))
         // 選び直したら送る

@@ -481,7 +481,7 @@ enum OfflineTripText {
 
     /// 保存中の左「3 / 6 か所」
     static func progressPlaces(done: Int, total: Int) -> String {
-        L("\(done) / \(total) か所", "\(done) / \(total) places")
+        L("\(done) / \(total) か所", total == 1 ? "\(done) / 1 place" : "\(done) / \(total) places")
     }
 
     /// 保存中の右「12 / 24 MB」。大きさの見込みを超えたら、見込みは数えた値に合わせる
@@ -492,13 +492,14 @@ enum OfflineTripText {
 
     /// 読み上げ「6 か所のうち 3 か所」
     static func progressAccessibility(done: Int, total: Int) -> String {
-        L("\(total) か所のうち \(done) か所", "\(done) of \(total) places")
+        L("\(total) か所のうち \(done) か所", total == 1 ? "\(done) of 1 place" : "\(done) of \(total) places")
     }
 
     /// 途中で止まった札の説明（owner 2026-10-09「続きから保存」）
     static func interruptedBody(done: Int, total: Int) -> String {
-        L("\(total) か所のうち \(done) か所まで保存しました。電波のあるところで、続きから保存できます。",
-          "Saved \(done) of \(total) places. You can continue saving where you have a signal.")
+        let places = total == 1 ? "1 place" : "\(total) places"
+        return L("\(total) か所のうち \(done) か所まで保存しました。電波のあるところで、続きから保存できます。",
+                 "Saved \(done) of \(places). You can continue saving where you have a signal.")
     }
 
     /// 保存したあとにプランが変わった（板 72b-4）。変わっていなければ nil
