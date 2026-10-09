@@ -89,6 +89,14 @@ Organizer → **Distribute App → App Store Connect → Upload**。
 Archive・配布まで書いてある。ビルド番号は `bash Tools/bump-build.sh` で上げる
 （同じ番号は受け付けられない）。
 
+**Actions（`ios-testflight.yml`）のテストの段は、PR で同じ木が通っていれば飛ぶ**（2026-10-09）。
+PR の検証の「Xcode のビルドとテスト（シミュレータ）」が通ると、PR の先頭のコミットに
+`mac-tested-tree` の印（`tree=<木> xcode=<版>`）が付く。上げる回（`submit: true`）で、HEAD が
+その PR のマージのコミットで、木と Xcode の版が印とぴったり合うときだけ、テストを飛ばす
+（コンパイルは「ビルド」の段で通る。絵は撮らない）。マージまでに main が動いた・squash・
+直の push・fork の PR・`submit: false`・`storeShots: true` では今までどおり回る。
+**必ず回したいときは `force_tests: true`** で流す（理由は実行の「同じ木がもうテスト済みかを見る」に出る）。
+
 ### 以前の記述
 
 シミュレータでは確かめられないものがここで初めて見られる:

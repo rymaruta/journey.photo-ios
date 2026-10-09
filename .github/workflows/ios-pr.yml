@@ -114,6 +114,11 @@ jobs:
     # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
     # （ios-testflight.yml の run #8）。控えが当たれば短い
     timeout-minutes: 90
+    # **テストが通った木の印を PR の先頭のコミットに付ける**のに、コミットの状態
+    # （statuses）への書き込みが要る。ここだけ開ける（下の「テストが通った木の印を付ける」）
+    permissions:
+      contents: read
+      statuses: write
     steps:
       - uses: actions/checkout@v4
 
@@ -176,6 +181,32 @@ jobs:
               echo "::endgroup::"
               exit 1
             }
+
+      # 🔴 **TestFlight でテストを2度回さないための印**（2026-10-09 owner の了承）。
+      # ここで通したのは `refs/pull/N/merge`＝「main に入れたあとの姿」。その木
+      # （`HEAD^{tree}`）を PR の先頭のコミットに `mac-tested-tree` の状態として付ける。
+      # PR をマージ（merge の方式）すると、main の木はこれと同じになる——ただし
+      # **マージまでに main が動いていなければ**。動いていれば木が違い、TestFlight の側
+      # （ios-testflight.yml の「同じ木がもうテスト済みかを見る」）は印が合わないので
+      # テストを回す。印に Xcode の版も入れ、版が違っても回す。
+      #
+      # **付けない回**: PR 以外（workflow_dispatch）と、fork からの PR（書き込みの
+      # 権限が渡らない）。印が無ければ TestFlight がテストを回すだけなので、害は無い
+      - name: テストが通った木の印を付ける
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          desc="tree=${tree} xcode=${XCODE_BUILD}"
+          echo "印を付ける: ${HEAD_SHA} に ${desc}"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=success \
+            -f context=mac-tested-tree \
+            -f description="$desc" >/dev/null
+          echo "テストが通った木の印: ${desc}" >> "$GITHUB_STEP_SUMMARY"
 
       # 失敗したテストの名前と理由を、まとめの頁に出す（ログを掘らずに読めるように）
       - name: 結果のまとめ

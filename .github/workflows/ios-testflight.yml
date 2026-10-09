@@ -26,6 +26,10 @@ on:
         description: "App Store 用の原寸の絵（PNG）を `store-screenshots` の枝にも置く"
         type: boolean
         default: false
+      force_tests:
+        description: "PR で同じ木がテスト済みでも、テスト（シミュレータ）をもう一度回す"
+        type: boolean
+        default: false
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -49,9 +53,11 @@ env:
 jobs:
   build:
     # **絵を置く枝（`screenshots`）へ押すのに書き込みが要る。**
-    # 既定は上の `permissions` のとおり読み取りだけ。ここだけ開ける
+    # 既定は上の `permissions` のとおり読み取りだけ。ここだけ開ける。
+    # `statuses: read` は PR の検証が付けた「テストが通った木の印」を読むため
     permissions:
       contents: write
+      statuses: read
     # **`macos-latest` に固定しない。** ランナーの既定 Xcode が上がると
     # 挙動が変わるので、上げるときは意図して上げる
     runs-on: macos-15
@@ -238,7 +244,79 @@ jobs:
       - name: Xcode プロジェクトを作る
         run: xcodegen generate
 
+      # 🔴 **同じ木を PR で通していれば、ここのテストは飛ばす**（2026-10-09 owner の了承）。
+      # テストの段は控えが当たっても15分前後かかり、中身は PR の検証の
+      # 「Xcode のビルドとテスト（シミュレータ）」と同じ。そちらは通った木を
+      # PR の先頭のコミットに `mac-tested-tree` の印（`tree=<木> xcode=<版>`）で残す。
+      #
+      # **飛ばすのは、次の全部が揃ったときだけ。** 1つでも欠ければ・読めなければ回す:
+      #  - `force_tests` が false で、上げる回（submit=true）で、`storeShots` が false
+      #    （上げない回は `/mac-check` の絵が目的。原寸の絵もテストが撮る）
+      #  - HEAD が親2つのマージのコミット（squash・直の push では印を辿れない）
+      #  - 2つ目の親（PR の先頭）に `mac-tested-tree` の success があり、説明が
+      #    HEAD の木と、いまの Xcode の版にぴったり一致する
+      #    （マージまでに main が動いていれば木が違うので回る）
+      #
+      # 飛ばしても**コンパイルは「ビルド」の段（Archive）で必ず通る**。
+      # 飛ばした回は xcresult が無いので、絵の書き出しも飛ばす
+      - name: 同じ木がもうテスト済みかを見る
+        id: tested
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_TESTS: ${{ inputs.force_tests }}
+          SUBMIT: ${{ inputs.submit }}
+          STORE_SHOTS: ${{ inputs.storeShots }}
+        run: |
+          # **どこで失敗しても「回す」に倒す。** `-e` は付けず、最後に1回だけ書く
+          set -uo pipefail
+          skip=false
+          tree="$(git rev-parse 'HEAD^{tree}' 2>/dev/null || true)"
+          # 浅い clone（fetch-depth 1）でも、コミットの中身の parent の行は読める
+          # （`HEAD^2` や `git log --format=%P` は浅い所で親を隠す）
+          parents="$(git cat-file -p HEAD 2>/dev/null | sed -n 's/^parent //p' || true)"
+          count="$(printf '%s\n' "$parents" | grep -c . || true)"
+          second="$(printf '%s\n' "$parents" | sed -n '2p')"
+          want="tree=${tree} xcode=${XCODE_BUILD:-}"
+          echo "HEAD: $(git rev-parse HEAD) / 木: ${tree:-不明} / 親の数: ${count} / Xcode: ${XCODE_BUILD:-不明}"
+          if [ "${FORCE_TESTS:-}" = "true" ]; then
+            reason="force_tests が true（指定どおり回す）"
+          elif [ "${SUBMIT:-}" != "true" ]; then
+            reason="上げない回（submit=false）。テストと絵が目的なので回す"
+          elif [ "${STORE_SHOTS:-}" = "true" ]; then
+            reason="storeShots が true（原寸の絵はテストが撮る）"
+          elif [ -z "$tree" ] || [ -z "${XCODE_BUILD:-}" ]; then
+            reason="木か Xcode の版が読めない"
+          elif [ "$count" != "2" ] || [ -z "$second" ]; then
+            reason="HEAD がマージのコミットではない（親が ${count} つ。squash か直の push）"
+          else
+            marks="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${second}/statuses?per_page=100" \
+                      --jq '.[] | select(.context == "mac-tested-tree" and .state == "success") | .description' 2>&1)"
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              reason="PR の先頭 ${second} の印を読めない: ${marks}"
+            elif [ -z "$marks" ]; then
+              reason="PR の先頭 ${second} に mac-tested-tree の印が無い（fork の PR・PR の検証が通っていない・別の経路で入った）"
+            elif printf '%s\n' "$marks" | grep -Fxq -- "$want"; then
+              skip=true
+              reason="PR の先頭 ${second} で同じ木・同じ Xcode のテストが通っている"
+            else
+              echo "::group::PR の先頭 ${second} に付いていた印"
+              printf '%s\n' "$marks"
+              echo "::endgroup::"
+              reason="印はあるが木か Xcode の版が違う（マージまでに main が動いた・PR の後に Xcode が替わった）"
+            fi
+          fi
+          if [ "$skip" = "true" ]; then
+            echo "テストを飛ばします: ${reason}"
+            echo "### テスト（シミュレータ）は飛ばしました" >> "$GITHUB_STEP_SUMMARY"
+            echo "${reason}。回したいときは force_tests: true で流し直す" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "テストを回します: ${reason}"
+          fi
+          echo "skip=${skip}" >> "$GITHUB_OUTPUT"
+
       - name: テスト（本物の SwiftUI で型検査される最初の機会）
+        if: ${{ steps.tested.outputs.skip != 'true' }}
         run: |
           set -euo pipefail
           # 機種名は固定しない（Xcode が上がると入っているシミュレータが替わる）
@@ -410,8 +488,9 @@ jobs:
       # 再現しない）。実際に描かれた絵は、このランナーのシミュレータに
       # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
       # `Tools/export-screenshots.sh` の頭に書いた
+      # テストを飛ばした回は絵が無い（`screenshots` の枝は前の絵のまま残す）
       - name: 画面の絵を `screenshots` の枝に置く
-        if: ${{ always() }}
+        if: ${{ always() && steps.tested.outputs.skip != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STORE_SHOTS: ${{ inputs.storeShots }}
