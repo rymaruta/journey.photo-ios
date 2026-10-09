@@ -220,8 +220,12 @@ struct UserProfileView: View {
         }
     }
 
-    /// 見出し（板 31）: 84pt のアイコン（黒い 3pt の縁）と右に「フォローする」と
-    /// フォロー一覧の丸、その下に明朝 26 の名前・「@ユーザー名 · 居住地」・ひとことと自己紹介
+    /// 見出し（板 31）: 84pt のアイコン（黒い 3pt の縁）と右に「フォローする」、
+    /// その下に明朝 26 の名前・「@ユーザー名 · 居住地」・ひとことと自己紹介。
+    ///
+    /// 2026-10-09 判断（owner）: 右のフォロー一覧の丸（人と＋の印）は消した。「フォローする」と
+    /// 並んで「人を足す」に見え、行き先は下の数の札（フォロワー・フォロー中）と同じだったため。
+    /// 一覧へは数の札から開く
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .bottom) {
@@ -233,11 +237,10 @@ struct UserProfileView: View {
                     // 色はプロフィール編集で選べ、Web（`themeRingGradient`）には出る
                     .coverCutout(true)
                 Spacer(minLength: 8)
-                HStack(spacing: 8) {
-                    if canAct { followButton }
-                    followListButton
+                if canAct {
+                    followButton
+                        .padding(.bottom, 4)
                 }
-                .padding(.bottom, 4)
             }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -309,6 +312,8 @@ struct UserProfileView: View {
                     .padding(.vertical, -Self.countTapSlack)
             }
             .buttonStyle(.plain)
+            // 一覧への口はここだけ（見出しの丸は 2026-10-09 に消した）。画面写真の試験が押す
+            .accessibilityIdentifier(kind == .followers ? "profile.count.followers" : "profile.count.following")
         } else {
             countText(item)
         }
@@ -356,29 +361,6 @@ struct UserProfileView: View {
             // **向きは押した時点で決める。** 確認が出ている間に読み込みが「もう外れていた」を
             // 書いても、「外す」を選んだのに follow を送らない
             Task { await model.toggleFollow(userId: userId, environment: environment, follow: false) }
-        }
-    }
-
-    /// フォロー一覧を開く丸（板 31: 人と＋の印・44×36 の縁取り）。
-    /// **開けるときだけ出す**（数の札と同じ `FollowCounts.isTappable`）——
-    /// 開く先はフォロワーから、居なければフォロー中から（一覧の中で切り替えられる）
-    @ViewBuilder
-    private var followListButton: some View {
-        let total = model.followers + model.following
-        if FollowCounts.isTappable(signedIn: auth.userId != nil, count: total) {
-            NavigationLink {
-                FollowListView(userId: userId, kind: model.followers > 0 ? .followers : .following)
-            } label: {
-                Image(systemName: "person.badge.plus")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Color.white)
-                    .frame(width: 44, height: 36)
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("フォロー一覧", "Followers and following"))
         }
     }
 }

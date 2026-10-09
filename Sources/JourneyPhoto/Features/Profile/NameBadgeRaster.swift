@@ -19,10 +19,12 @@ enum NameBadgeRaster {
     /// 輪郭の立て方（比べた案 C の作り方 `UnsharpMask(radius=0.8, percent=60)` と同じ）
     static let sharpenRadius: Double = 0.8
     static let sharpenIntensity: Double = 0.6
-    /// 作る絵の上限（大きい文字の設定でも 256px あれば足りる。元の絵より大きくはしない）
+    /// 作る絵の上限（大きい文字の設定でも 256px あれば足りる。元の絵より大きくはしない）。
+    /// 名前の横の画面の「持っているバッジ」56pt × 3倍 = 168px も収まる（2026-10-09 確かめた）
     static let maxPixels = 256
-    /// 覚えておく枚数（名前の横は画面に数枚・倍率と文字の大きさの組み合わせぶん）
-    static let cacheLimit = 48
+    /// 覚えておく枚数。名前の横（画面に数枚）に加え、名前の横の画面の2つの格子（16枚前後）・棚・
+    /// お知らせのメダルも同じ絵を使う（2026-10-09）ので 48 → 64。168px で1枚 約 110KB、満杯で 7MB ほど
+    static let cacheLimit = 64
 
     /// 縮めた先の一辺（px）。点の大きさ × 画面の倍率を丸める。値が壊れていれば nil
     static func pixelSide(points: Double, scale: Double) -> Int? {

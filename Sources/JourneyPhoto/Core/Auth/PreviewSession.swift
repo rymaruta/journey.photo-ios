@@ -69,4 +69,21 @@ enum PreviewSession {
         return nil
         #endif
     }
+
+    /// UI テストで Pro の人の姿にする（Debug のみ）。`-JPPreviewPro YES`。
+    ///
+    /// 見本の利用者は Pro を買っていないので、名前の横の画面の「PRO 限定」の段が Pro でない人の姿
+    /// （鍵・「Pro で集める」）にしかならない。Pro の人の姿（説明の一行・押すと届く時期・2026-10-09）を
+    /// 撮るために、**入っている本人のプロフィールにだけ** Pro を重ねる。サーバーの扱いは変わらない
+    /// （Pro の口はサーバーが本当の値で断る）。Release では必ず false
+    static let proKey = "JPPreviewPro"
+
+    static var isPro: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: proKey)
+        #else
+        return false
+        #endif
+    }
 }

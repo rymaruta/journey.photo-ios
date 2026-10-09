@@ -124,6 +124,29 @@ struct NameBadgeImage: View {
     /// 横に並ぶ名前の字の大きさ（文字サイズの設定で伸ばした後の値）
     let nameSize: Double
 
+    var body: some View {
+        RasterBadgeArt(image: BadgeCatalog.nameSideImage(badge.key, tier: badge.tier),
+                       side: BadgeFit.imageSide(badge.key, nameSize: nameSize))
+            .padding(-BadgeFit.overhang(badge.key, nameSize: nameSize))
+            // 板: drop-shadow(0 1px 3px rgba(0,0,0,0.7))。黒地でも縁が溶けないように
+            .shadow(color: Color.black.opacity(0.7), radius: 1.5, x: 0, y: 1)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(BadgeCatalog.nameSideLabel(badge))
+    }
+}
+
+/// 大きいメダルの絵を**表示の画素ちょうどに縮めて**、一辺 `side` pt の四角に出す（`NameBadgeRaster`）。
+///
+/// 名前の横（`NameBadgeImage`）から切り出した（2026-10-09 判断: 名前の横の画面の2つの格子・棚の
+/// 「名前の横に飾る」・お知らせのメダルも、`-s` の引き伸ばしをやめて同じ縮め方にする。写しを作らない）。
+/// 縮めた絵は画面の処理の外で1度だけ作って覚える。できるまでは元の絵を高い品質の補間で縮めて出す
+/// （同じ絵・同じ大きさなので、入れ替わっても形は動かない）
+struct RasterBadgeArt: View {
+    /// 絵の入れ物の名前（大きい絵。`BadgeCatalog.largeImage` など）
+    let image: String
+    /// 一辺（pt）
+    let side: Double
+
     @Environment(\.displayScale) private var displayScale
     /// 縮めて作った絵（鍵が合うときだけ使う）
     @State private var rendered: Rendered?
@@ -136,8 +159,7 @@ struct NameBadgeImage: View {
     }
 
     var body: some View {
-        let side = BadgeFit.imageSide(badge.key, nameSize: nameSize)
-        let name = BadgeCatalog.nameSideImage(badge.key, tier: badge.tier)
+        let name = image
         let pixels = NameBadgeRaster.pixelSide(points: side, scale: Double(displayScale))
         let key = pixels.map { NameBadgeRaster.cacheKey(image: name, pixels: $0) } ?? name
         art(name: name, pixels: pixels, key: key)
@@ -146,11 +168,6 @@ struct NameBadgeImage: View {
             .antialiased(true)
             .aspectRatio(contentMode: .fit)
             .frame(width: side, height: side)
-            .padding(-BadgeFit.overhang(badge.key, nameSize: nameSize))
-            // 板: drop-shadow(0 1px 3px rgba(0,0,0,0.7))。黒地でも縁が溶けないように
-            .shadow(color: Color.black.opacity(0.7), radius: 1.5, x: 0, y: 1)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(BadgeCatalog.nameSideLabel(badge))
             .task(id: key) {
                 guard let pixels, rendered?.key != key else { return }
                 let made = await Task.detached(priority: .userInitiated) {
@@ -160,7 +177,7 @@ struct NameBadgeImage: View {
             }
     }
 
-    /// 縮めて作った絵があればそれ、無ければ大きい絵そのもの
+    /// 縮めて作った絵があればそれ、無ければ元の絵そのもの
     private func art(name: String, pixels: Int?, key: String) -> Image {
         if let rendered, rendered.key == key { return Image(uiImage: rendered.image) }
         if let pixels, let hit = NameBadgeRaster.cached(image: name, pixels: pixels) { return Image(uiImage: hit) }

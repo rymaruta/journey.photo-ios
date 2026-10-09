@@ -122,6 +122,7 @@ enum ProChapters {
         let ja: String
         let en: String
         var name: String { L(ja, en) }
+        /// 絵は小さい絵（`-s`）だけ。**大きい絵は iOS にまだ無い**
         var smallImage: String { "medal-pro-\(id)-s" }
     }
 
@@ -133,9 +134,18 @@ enum ProChapters {
 
     /// 名前の横の画面の「PRO 限定」に並べる1つ
     struct LockedItem: Equatable, Identifiable {
+        enum Kind: Equatable {
+            case supporter
+            case season(Chapter)
+            case feature
+        }
+
         let id: String
         let name: String
-        let smallImage: String
+        let kind: Kind
+        /// 出す絵。サポーター・季節の章は**大きい絵**（表示の画素ちょうどに縮めて出す・板 BadgePicker）、
+        /// 機能の章は大きい絵が無いので `-s`（2026-10-09 判断）
+        let image: String
     }
 
     /// 「PRO 限定」の並び（板 BadgePicker: サポーター → 季節の章4つ → 機能の章3つ）。
@@ -143,15 +153,57 @@ enum ProChapters {
     static func lockedItems(owned badges: BadgeSet, now: Date = Date()) -> [LockedItem] {
         var items: [LockedItem] = []
         if badges["supporter"] == nil {
-            items.append(LockedItem(id: "supporter", name: BadgeCatalog.name("supporter"),
-                                    smallImage: BadgeCatalog.smallImage("supporter", tier: 1)))
+            items.append(LockedItem(id: "supporter", name: BadgeCatalog.name("supporter"), kind: .supporter,
+                                    image: BadgeCatalog.largeImage("supporter", tier: 1)))
         }
         for chapter in upcoming(now: now) where hasArt(chapter) && badges[chapter.key] == nil {
-            items.append(LockedItem(id: chapter.key, name: chapter.shortName, smallImage: chapter.imageBase + "-s"))
+            items.append(LockedItem(id: chapter.key, name: chapter.shortName, kind: .season(chapter),
+                                    image: chapter.imageBase))
         }
         for feature in featureChapters {
-            items.append(LockedItem(id: feature.id, name: feature.name, smallImage: feature.smallImage))
+            items.append(LockedItem(id: feature.id, name: feature.name, kind: .feature, image: feature.smallImage))
         }
         return items
+    }
+
+    // MARK: - 届く時期（Pro の人が「PRO 限定」の章を押したとき・2026-10-09）
+
+    /// 季節の始まりの月（日本時間）。春 3月・夏 6月・秋 9月・冬 12月（**冬は12月の年**）
+    static func startMonth(_ season: Season) -> Int {
+        switch season {
+        case .spring: return 3
+        case .summer: return 6
+        case .autumn: return 9
+        case .winter: return 12
+        }
+    }
+
+    private static let englishMonths = ["January", "February", "March", "April", "May", "June", "July",
+                                        "August", "September", "October", "November", "December"]
+
+    /// Pro の人がまだ届いていない章を押したときの一言（知らせと読み上げに同じ文を使う）。
+    ///
+    /// - 季節の章: 「2026年12月から届きます」。もう始まっている季節は「いまの季節の章です。まもなく届きます」
+    ///   （2026-10-09 判断: 過ぎた月を「から届きます」と言わない）
+    /// - 機能の章: 「これから配ります」
+    /// - サポーター章: 「Pro になると届きます」
+    static func arrivalNote(_ item: LockedItem, now: Date = Date(), timeZone: TimeZone = japan) -> String {
+        switch item.kind {
+        case .supporter:
+            return L("Pro になると届きます", "Arrives when you go Pro")
+        case .feature:
+            return L("これから配ります", "Coming later")
+        case .season(let chapter):
+            let month = startMonth(chapter.season)
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = timeZone
+            let c = calendar.dateComponents([.year, .month], from: now)
+            let nowIndex = (c.year ?? 0) * 12 + (c.month ?? 1)
+            if nowIndex >= chapter.year * 12 + month {
+                return L("いまの季節の章です。まもなく届きます", "This season's chapter. It arrives soon")
+            }
+            return L("\(chapter.year)年\(month)月から届きます",
+                     "Arrives from \(englishMonths[month - 1]) \(chapter.year)")
+        }
     }
 }
