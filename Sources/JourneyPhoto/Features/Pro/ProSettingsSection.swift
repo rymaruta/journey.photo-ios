@@ -11,7 +11,7 @@ import SwiftUI
 /// 3. 「名前の横のバッジと Pro マーク」（真鍮のメダルの線の絵）。「初期ユーザー · Pro マークは 絞り羽根」
 /// 4.「保存した旅」（電波なしで使える旅・板 72e）。「2 件 · 48 MB」。Pro か、保存した旅があるときだけ
 ///
-/// 板の「お知らせ」の節にある「光と天気の知らせ」は第3段階の機能なので出さない。
+/// 板の「お知らせ」の節にある「光と天気の知らせ」は、この節の最後に置く（`LightAlertSettingsRows` の注記）。
 struct ProSettingsSection: View {
 
     /// 自分のプロフィール（読めていなければ nil＝Pro ではない扱いで出す）
@@ -51,6 +51,7 @@ struct ProSettingsSection: View {
                 }
                 // 4. 保存した旅（板 72e・2026-10-09）。Pro が切れても、保存した旅があれば出す（見る・消すは誰でも）
                 OfflineSavedSettingsRow(isPro: isPro)
+                LightAlertSettingsRows(profile: profile)  // 光と天気の知らせ（第3段階・2026-10-09）
             }
         }
         .task {
