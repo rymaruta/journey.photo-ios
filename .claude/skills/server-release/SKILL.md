@@ -9,6 +9,12 @@ description: photo-gallery（Web と API）の変更を staging → 本番に出
 - `deploy.yml`: main に push → 本番の Web。
 - develop には別の作業の変更が溜まっている。**develop をそのまま main に入れない。**
 
+## バグの直しは急ぐ（2026-10-09 owner のルール）
+
+**バグの直しは staging を待たずに本番へ出す。** 下の手順の 2（develop → staging で確かめる）を飛ばし、
+3〜5 を先にやる。develop へは同じ直しを別の PR で入れる（次の本番で消えないように）。
+新しい機能・DB・GSI・費用の変わるものは、今までどおり下の手順と承認。
+
 ## 手順
 
 1. 枝で作り、PR（base は develop）。別の担当に確かめさせる（`/review` の考え方で）。
