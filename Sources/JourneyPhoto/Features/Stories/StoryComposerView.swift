@@ -334,7 +334,7 @@ struct StoryComposerView: View {
         }
         .alert(L("書きかけの下書きがあります", "You have a saved draft"), isPresented: $showRestore) {
             Button(L("続きから", "Continue")) { restoreDraft() }
-            Button(L("捨てる", "Discard"), role: .destructive) { drafts.clear() }
+            Button(L("下書きを削除", "Delete draft"), role: .destructive) { drafts.clear() }
             // 「キャンセル」は**残す**。この回の投稿が成功しても消さない
             Button(Labels.Common.cancel, role: .cancel) { keptDraftStamp = drafts.draft?.savedAt }
         } message: {
@@ -360,8 +360,9 @@ struct StoryComposerView: View {
         // 🔴 **前の下書きを残すと決めた（「続きから」でキャンセル・まだ答えていない）間は
         // 「下書きに保存」を出さない。** 下書きは1件だけなので、保存すると残すと決めた
         // 下書きを黙って置き換える（投稿の `keepsDraft` と同じ判断）。
-        // 戻した下書きを直した回の「捨てる」は**変更だけ**を捨てる（前の下書きは残る）ので、
-        // そう言う（「続きから」の「捨てる」は下書きごと消すので、言葉を分ける）
+        // 「保存せずに閉じる」は**この回の変更だけ**を残さない（戻した前の下書きは残る）。
+        // 「続きから」の「下書きを削除」は下書きごと消すので、言葉を分ける。
+        // **「捨てる」という言い方は使わない**（owner の好み・2026-10-09）
         //
         // 🔴 **写真の読み込み中は「下書きに保存」を出さない**（`leaveDialog`）。右上の「…」の
         // 下書き保存と同じ条件——片方だけ止めると、読み込み中の写真を落とした下書きが別の口から書けた
@@ -369,8 +370,7 @@ struct StoryComposerView: View {
                            title: leaveDialog.title,
                            canSave: leaveDialog.canSave,
                            saveTitle: L("下書きに保存", "Save draft"),
-                           discardTitle: restoredContent != nil ? L("変更を捨てる", "Discard changes")
-                                                                : L("捨てる", "Discard"),
+                           discardTitle: L("保存せずに閉じる", "Close without saving"),
                            message: leaveDialog.message,
                            onSave: { saveDraft() },
                            onDiscard: { dismiss() })
