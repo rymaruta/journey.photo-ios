@@ -101,6 +101,70 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  # 🔴 **同じ中身を Mac で2度テストしない**（2026-10-09 owner「同じテスト2度としないように」）。
+  # `/mac-check`（TestFlight の `submit=false`）で PR の先頭のコミットをもう Mac で
+  # テストし通っていれば、下の Xcode の段（30分前後）は飛ばす。
+  #
+  # **飛ばすのは、次の全部が揃ったときだけ。** 1つでも欠ければ・読めなければ回す:
+  #  - PR の回である（手で流した回は必ず回す）
+  #  - main へ入れたあとの木（PR のマージの木）が、PR の先頭のコミットの木と同じ
+  #    （PR を作ってから main が動いていれば、試していない組み合わせなので回す）
+  #  - PR の先頭のコミットで、TestFlight のワークフローが success で終わり、
+  #    その回の「テスト」の段が skipped ではなく success
+  #
+  # Linux で API を2〜3回読むだけなので数秒。飛ばしたときも Xcode の段は「skipped」に
+  # なり、必須のチェックにしていても通った扱いになる
+  tested:
+    name: 同じコミットが Mac でテスト済みかを見る
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      skip: ${{ steps.look.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 見る
+        id: look
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # **どこで失敗しても「回す」に倒す。** `-e` は付けず、最後に1回だけ書く
+          set -uo pipefail
+          skip=false
+          merged="$(git rev-parse 'HEAD^{tree}' 2>/dev/null || true)"
+          head_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}" --jq '.commit.tree.sha' 2>/dev/null || true)"
+          echo "PR の先頭: ${HEAD_SHA} / その木: ${head_tree:-不明} / マージの木: ${merged:-不明}"
+          if [ -z "$merged" ] || [ -z "$head_tree" ]; then
+            reason="木が読めない"
+          elif [ "$merged" != "$head_tree" ]; then
+            reason="PR を作ってから main が動いている（マージの木が先頭の木と違う）"
+          else
+            runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ios-testflight.yml/runs?head_sha=${HEAD_SHA}&status=success&per_page=20" \
+                      --jq '.workflow_runs[].id' 2>/dev/null || true)"
+            reason="このコミットで Mac のテストが通った TestFlight の回が無い"
+            for id in $runs; do
+              step="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" \
+                        --jq '[.jobs[].steps[] | select(.name | startswith("テスト")) | .conclusion] | first // ""' 2>/dev/null || true)"
+              if [ "$step" = "success" ]; then
+                skip=true
+                reason="TestFlight の run ${id} で同じコミットのテストが通っている"
+                break
+              fi
+            done
+          fi
+          if [ "$skip" = "true" ]; then
+            echo "Xcode の段を飛ばします: ${reason}"
+            echo "### Xcode のビルドとテストは飛ばしました" >> "$GITHUB_STEP_SUMMARY"
+            echo "${reason}。回したいときは、このワークフローを手で流す" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Xcode の段を回します: ${reason}"
+          fi
+          echo "skip=${skip}" >> "$GITHUB_OUTPUT"
+
   # 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵）
   # **待つのは静的な検査だけ。** Linux の単体テストは、Linux の通信部品
   # （swift-corelibs-foundation）の弱点で、まれに落ちる・止まるテストがある
@@ -108,8 +172,9 @@ jobs:
   # 本物の Xcode の段まで止めると、いちばん欲しい結果が得られない
   xcode:
     name: Xcode のビルドとテスト（シミュレータ）
-    needs: [checks]
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    needs: [checks, tested]
+    # `tested` は PR 以外では飛ぶ（skipped）。`!cancelled()` で、そのときも Xcode の段は回す
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: macos-15
     # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
     # （ios-testflight.yml の run #8）。控えが当たれば短い
