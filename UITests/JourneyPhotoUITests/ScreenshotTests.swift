@@ -1098,4 +1098,45 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "64-行きたい場所の地図で選んだ（この N か所で旅行プランを作る）")
     }
+
+    /// **名前の横のバッジ**（大きいメダルの絵をそのまま縮める・案 C・2026-10-09 owner「そのままがいい」）。
+    ///
+    /// 見本の利用者は鍵を持たず、バッジも選んでいないので、持ち物は `-JPPreviewBadges`、
+    /// 名前の横に出す鍵は `-JPPreviewDisplayBadge`（どちらも Debug のみ・`PreviewSession`）で渡す。
+    /// 後光のある初期ユーザーと、段のあるメダル（都道府県 · 銀）を撮る。**保存は押さない**。
+    /// 出なければ撮らない（この試験の決まり）
+    func testCapturesNameSideBadge() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-JPPreviewBadges", "earlyUser:1,prefectures:2"]
+        app.launchArguments += ["-JPPreviewDisplayBadge", "earlyUser"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+        guard nameLine.waitForExistence(timeout: 20) else { return }
+        // 縮めた絵ができるのを待つ（画面の処理の外で作る）
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "83-マイページ（名前の横のバッジ・初期ユーザー）")
+
+        guard nameLine.isHittable else { return }
+        nameLine.tap()
+        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "83b-名前の横（下見・初期ユーザー）")
+
+        let plain = app.descendants(matching: .any)["nameSide.badge.prefectures"].firstMatch
+        guard plain.waitForExistence(timeout: 5), plain.isHittable else { return }
+        plain.tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "83c-名前の横（下見・都道府県 · 銀）")
+    }
 }

@@ -155,6 +155,8 @@ extension UIImageShim {
     public func preparingThumbnail(of size: CGSize) -> UIImageShim? { nil }
     /// 描いた画像から作る（写真の編集の見本・本物と同じ）
     public init(cgImage: CGImage) { self.init() }
+    /// 画素（名前の横のバッジを縮めて描く元・本物と同じ）
+    public var cgImage: CGImage? { nil }
 }
 
 public final class UIColor {

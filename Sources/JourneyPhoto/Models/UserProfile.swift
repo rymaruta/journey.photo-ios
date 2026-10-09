@@ -65,12 +65,18 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     /// 名前の横に出すバッジ。**選んだ鍵を持っているときだけ**——持っていない鍵
     /// （取り消された・古い値）を指していたら何も出さない
     var shownBadge: EarnedBadge? {
-        guard let key = displayBadge?.value else { return nil }
+        guard let key = chosenBadgeKey else { return nil }
         return earnedBadges[key]
     }
 
     /// 選んでいる鍵（持っているかは問わない。名前の横の画面の初期値に使う）
-    var chosenBadgeKey: String? { displayBadge?.value }
+    var chosenBadgeKey: String? {
+        #if DEBUG
+        // UI テストの見本の選択（`PreviewSession.displayBadge`・入っている本人だけ）
+        if userId == PreviewSession.userId, let preview = PreviewSession.displayBadge { return preview }
+        #endif
+        return displayBadge?.value
+    }
 
     var isPro: Bool { pro?.value ?? false }
 
