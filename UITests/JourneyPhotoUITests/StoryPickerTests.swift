@@ -69,14 +69,31 @@ final class StoryPickerTests: XCTestCase {
         }
     }
 
-    /// 写真の格子の、押せる写真（大きさで絞る——下の画面の札・アイコンを拾わない）
-    private func pickerPhotos(_ app: XCUIApplication) -> [XCUIElement] {
-        let all = app.images.allElementsBoundByIndex.prefix(60)
-        return all.filter { el in
-            guard el.exists, el.isHittable else { return false }
-            let f = el.frame
-            return f.width >= 60 && f.height >= 60
+    /// 写真の格子のマス（押す位置）。
+    ///
+    /// 🔴 run 362: 格子の写真は木に `Image`（`PXGGridLayout-Info`）で出るが **`isHittable` が偽**で、
+    /// 枠も1枚目だけ外れた値（y=20）だった。**格子の組（`PXGGridLayout-Group`・3列）の枠から
+    /// マスの真ん中を計算して、座標で押す**。シートの写真選びが重なっていれば、後ろ（最後の組）を使う
+    private func pickerCells(_ app: XCUIApplication) -> [XCUICoordinate] {
+        let groups = app.descendants(matching: .any).matching(identifier: "PXGGridLayout-Group")
+        guard groups.count > 0 else { return [] }
+        let group = groups.element(boundBy: groups.count - 1)
+        guard group.exists else { return [] }
+        let f = group.frame
+        let columns = 3
+        let side = f.width / CGFloat(columns)
+        guard side > 20, f.height > 20 else { return [] }
+        let rows = max(1, Int((f.height / side).rounded(.down)))
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        var cells: [XCUICoordinate] = []
+        for row in 0..<rows {
+            for col in 0..<columns {
+                cells.append(origin.withOffset(CGVector(dx: f.minX + side * (CGFloat(col) + 0.5),
+                                                        dy: f.minY + side * (CGFloat(row) + 0.5))))
+            }
         }
+        note("格子", "frame=\(f) rows=\(rows) cells=\(cells.count)")
+        return cells
     }
 
     /// 「シェアする」が押せるまで待つ。途中を撮る。押せたら秒数、押せなければ nil
@@ -119,10 +136,10 @@ final class StoryPickerTests: XCTestCase {
         dismissPrivacyNotice(app)
 
         let next = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '次へ' OR label BEGINSWITH 'Next'")).firstMatch
-        var photos = pickerPhotos(app)
+        var photos = pickerCells(app)
         if photos.count < count {
             Thread.sleep(forTimeInterval: 3)
-            photos = pickerPhotos(app)
+            photos = pickerCells(app)
         }
         guard photos.count >= count else {
             shoot(app, "\(tag)-2-写真が木に出ない")
@@ -174,8 +191,8 @@ final class StoryPickerTests: XCTestCase {
         library.tap()
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "\(tag)-1-シートの写真選び")
-        let photos = pickerPhotos(app)
-        guard let photo = photos.last else {
+        let photos = pickerCells(app)
+        guard let photo = photos.first else {
             note("\(tag)-写真が木に出ない", app.debugDescription)
             return
         }
