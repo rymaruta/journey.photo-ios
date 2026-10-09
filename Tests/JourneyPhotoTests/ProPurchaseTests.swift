@@ -179,25 +179,62 @@ final class ProPurchaseTests: XCTestCase {
         defer { StubProtocol.reset() }
         let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
                             tokenProvider: StubTokenProvider(token: "ID"), session: URLSession(configuration: config))
-        StubProtocol.respond(status: 403, body: #"{"error":"別のアカウントで購入されたサブスクリプションです"}"#)
-        let result = await PurchaseService(api: api).submit(signedTransaction: "a.b.c")
-        XCTAssertTrue(result.otherAccount)
-        XCTAssertEqual(result.outcome, .rejected)
-        XCTAssertTrue(PurchaseDelivery.shouldFinish(result.outcome))
-        // ほかの失敗は「別のアカウント」ではない
-        StubProtocol.respond(status: 500, body: #"{"error":"x"}"#)
-        let other = await PurchaseService(api: api).submit(signedTransaction: "a.b.c")
-        XCTAssertFalse(other.otherAccount)
-        XCTAssertEqual(PurchaseDelivery.otherAccountMessage, "この Apple ID の購読は、別のアカウントで使われています。")
+        func submit(_ status: Int, _ body: String) async -> PurchaseDelivery.Result {
+            StubProtocol.respond(status: status, body: body)
+            return await PurchaseService(api: api).submit(signedTransaction: "a.b.c")
+        }
+        // 403 linked_to_other_account（退会した前のアカウントの購読）→ 別のアカウント・終える
+        let linked = await submit(403, #"{"error":"別のアカウントで購入されたサブスクリプションです","code":"linked_to_other_account"}"#)
+        XCTAssertEqual(linked.refusal, .otherAccount)
+        XCTAssertEqual(linked.outcome, .rejected)
+        XCTAssertTrue(PurchaseDelivery.shouldFinish(linked.outcome))
+        // 403 family_shared_not_supported → ファミリー共有・終える
+        let family = await submit(403, #"{"error":"ファミリー共有のサブスクリプションでは Pro になりません","code":"family_shared_not_supported"}"#)
+        XCTAssertEqual(family.refusal, .familyShared)
+        XCTAssertTrue(PurchaseDelivery.shouldFinish(family.outcome))
+        // 409 claimed_by_other_account（ほかの生きているアカウント）→ 別のアカウント（終えないのは今までどおり）
+        let claimed = await submit(409, #"{"error":"このサブスクリプションは別のアカウントで使われています","code":"claimed_by_other_account"}"#)
+        XCTAssertEqual(claimed.refusal, .otherAccount)
+        XCTAssertEqual(claimed.outcome, .retryLater)
+        // 409 の書き込みの重なり（code なし）・500 は理由なし（やり直す）
+        let conflict = await submit(409, #"{"error":"他の変更と重なりました。もう一度お試しください"}"#)
+        XCTAssertNil(conflict.refusal)
+        let server = await submit(500, #"{"error":"x"}"#)
+        XCTAssertNil(server.refusal)
+        // 🔴 日本語の本文では見ない: 本文が同じでも code が違えば理由も違う
+        let wording = await submit(403, #"{"error":"別のアカウントで購入されたサブスクリプションです","code":"family_shared_not_supported"}"#)
+        XCTAssertEqual(wording.refusal, .familyShared)
+    }
+
+    /// 失敗の本文の `code` を読む
+    func testDecodesErrorCode() {
+        XCTAssertEqual(APIClient.errorCode(from: Data(#"{"error":"x","code":"linked_to_other_account"}"#.utf8)), "linked_to_other_account")
+        XCTAssertNil(APIClient.errorCode(from: Data(#"{"error":"x"}"#.utf8)))
+        XCTAssertNil(APIClient.errorCode(from: Data(#"{"error":"x","code":""}"#.utf8)))
+        XCTAssertNil(APIClient.errorCode(from: Data("not json".utf8)))
+        XCTAssertNil(APIClient.errorCode(from: nil))
+    }
+
+    /// `code` → 理由 → 画面の1行（owner 2026-10-09 の文言）
+    func testRefusalMapping() {
+        XCTAssertEqual(PurchaseDelivery.refusal(statusCode: 403, code: "linked_to_other_account"), .otherAccount)
+        XCTAssertEqual(PurchaseDelivery.refusal(statusCode: 409, code: "claimed_by_other_account"), .otherAccount)
+        XCTAssertEqual(PurchaseDelivery.refusal(statusCode: 403, code: "family_shared_not_supported"), .familyShared)
+        XCTAssertEqual(PurchaseDelivery.refusal(statusCode: 403, code: nil), .otherAccount, "code を返す前のサーバーの 403")
+        XCTAssertNil(PurchaseDelivery.refusal(statusCode: 409, code: nil))
+        XCTAssertNil(PurchaseDelivery.refusal(statusCode: 400, code: nil))
+        XCTAssertNil(PurchaseDelivery.refusal(statusCode: nil, code: nil))
+        XCTAssertEqual(PurchaseDelivery.message(for: .otherAccount), "この Apple ID の購読は、別のアカウントで使われています。")
+        XCTAssertEqual(PurchaseDelivery.message(for: .familyShared), "ファミリー共有の購読では Pro を使えません。")
     }
 
     /// 購入・復元・案内が「別のアカウント」を、回し続けず・Pro にせず・ふつうの字で出す（Linux では描けないので文で）
     func testOtherAccountIsShownAsPlainNote() throws {
         let store = try source("Sources/JourneyPhoto/Core/Store/StoreService.swift")
-        XCTAssertTrue(store.contains("if delivery.otherAccount { return .otherAccount }"), "購入: 反映待ちと言わない")
-        XCTAssertTrue(store.contains("if otherAccount { return .otherAccount }"), "復元")
+        XCTAssertTrue(store.contains("if let refusal = delivery.refusal { return .refused(refusal) }"), "購入: 反映待ちと言わない")
+        XCTAssertTrue(store.contains("if let refusal { return .refused(refusal) }"), "復元")
         let paywall = try source("Sources/JourneyPhoto/Features/Pro/PaywallView.swift")
-        XCTAssertEqual(paywall.components(separatedBy: "show(PurchaseDelivery.otherAccountMessage, error: false)").count - 1, 2,
+        XCTAssertEqual(paywall.components(separatedBy: "show(PurchaseDelivery.message(for: refusal), error: false)").count - 1, 2,
                        "購入と復元の両方で、赤ではない字で出す")
     }
 
@@ -221,7 +258,7 @@ final class ProPurchaseTests: XCTestCase {
     func testFamilySharedEntitlementIsIgnoredOnRestore() throws {
         let src = try source("Sources/JourneyPhoto/Core/Store/StoreService.swift")
         let restore = try XCTUnwrap(src.range(of: "for await result in StoreKit.Transaction.currentEntitlements"))
-        XCTAssertTrue(src[restore.lowerBound...].prefix(200).contains("isOurs(transaction)"))
+        XCTAssertTrue(src[restore.lowerBound...].prefix(700).contains("isOurs(transaction)"))
         XCTAssertTrue(src.contains("StoreTransactionFilter.counts(transaction, prefix: prefix) else { continue }"), "設定の行")
         XCTAssertTrue(src.contains("isFamilyShared: transaction.ownershipType == .familyShared"), "本物の取引の持ち方で見る")
         XCTAssertFalse(PurchaseDelivery.countsAsOwnPurchase(isFamilyShared: true))

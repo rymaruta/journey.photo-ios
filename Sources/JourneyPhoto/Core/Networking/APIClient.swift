@@ -225,6 +225,7 @@ actor APIClient {
             throw APIError.decoding("HTTP 応答ではありません")
         }
         guard (200..<300).contains(http.statusCode) else {
+            Self.errorBodySink?.set(data)
             throw APIError.server(status: http.statusCode, message: Self.errorMessage(from: data))
         }
         return data
@@ -273,6 +274,19 @@ actor APIClient {
         }
     }
 
+    /// 失敗の本文の受け取り口。**呼び手が `withValue` で置いたときだけ**、4xx / 5xx の本文をここに残す
+    /// （`APIError.server` は本文の `code` を持たないので。いまは購入の `code` だけ・`PurchaseService`）
+    @TaskLocal static var errorBodySink: APIErrorBody?
+
+    /// api-user のエラー本文の `code`（`{ "error": "...", "code": "..." }`・`http.ts` の `jsonError`）。無ければ nil
+    static func errorCode(from data: Data?) -> String? {
+        struct Envelope: Decodable { let code: String? }
+        guard let data, let code = (try? JSONDecoder().decode(Envelope.self, from: data))?.code, !code.isEmpty else {
+            return nil
+        }
+        return code
+    }
+
     /// api-user のエラー本文は `{ "error": "..." }`（`http.ts` の `jsonError`）。
     /// 日本語のメッセージがそのまま画面に出せる文になっているので拾う。
     static func errorMessage(from data: Data) -> String {
@@ -310,4 +324,12 @@ extension JSONEncoder {
         // 揃う（`photoUpdate.ts` は undefined を「触らない」と読む）
         return encoder
     }()
+}
+
+/// 失敗の本文を受け取る入れ物（`APIClient.errorBodySink`）
+final class APIErrorBody: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _data: Data?
+    var data: Data? { lock.lock(); defer { lock.unlock() }; return _data }
+    func set(_ data: Data) { lock.lock(); _data = data; lock.unlock() }
 }

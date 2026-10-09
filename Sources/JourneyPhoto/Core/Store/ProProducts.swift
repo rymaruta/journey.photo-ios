@@ -214,14 +214,47 @@ enum PurchaseDelivery {
         let outcome: Outcome
         /// サーバーの `{ error }`（日本語）。無ければ nil
         let message: String?
-        /// この Apple ID の購読が**別のアカウントのもの**（サーバーの 403・手元で見分けた前の人の印）。
-        /// 画面は失敗の赤ではなく、ふつうの補足の字で `otherAccountMessage` を出す
-        let otherAccount: Bool
+        /// サーバー（または手元）が**この購読では Pro にしない**と言い切った理由。
+        /// 画面は失敗の赤ではなく、ふつうの補足の字で `message(for:)` を出す。**Pro にはしない**
+        let refusal: Refusal?
 
-        init(_ outcome: Outcome, message: String? = nil, otherAccount: Bool = false) {
+        init(_ outcome: Outcome, message: String? = nil, refusal: Refusal? = nil) {
             self.outcome = outcome
             self.message = message.flatMap { $0.isEmpty ? nil : $0 }
-            self.otherAccount = otherAccount
+            self.refusal = refusal
+        }
+    }
+
+    /// Pro にしない理由（サーバーの `code`・photo-gallery #337）
+    enum Refusal: Equatable {
+        /// この Apple ID の購読は別のアカウントのもの（退会した前のアカウント・ほかの生きているアカウント・
+        /// 手元で見分けた前の人の印）
+        case otherAccount
+        /// ファミリー共有の購読（Pro は買った本人だけ・owner 2026-10-09）
+        case familyShared
+    }
+
+    /// サーバーの答えから理由を決める。**`code` で見る**（日本語の本文では見ない）。
+    ///
+    /// - 403 `linked_to_other_account` / 409 `claimed_by_other_account` → 別のアカウント
+    /// - 403 `family_shared_not_supported` → ファミリー共有
+    /// - `code` の無い 403（`code` を返す前のサーバー）→ 別のアカウント（このころの 403 はそれだけ）
+    /// - 409 で `code` が無い（書き込みの重なり）は理由なし（やり直せば通る）
+    static func refusal(statusCode: Int?, code: String?) -> Refusal? {
+        switch code {
+        case "linked_to_other_account", "claimed_by_other_account": return .otherAccount
+        case "family_shared_not_supported": return .familyShared
+        default: return (statusCode == 403 && (code ?? "").isEmpty) ? .otherAccount : nil
+        }
+    }
+
+    /// 理由ごとの1行（owner 2026-10-09 の文言）
+    static func message(for refusal: Refusal) -> String {
+        switch refusal {
+        case .otherAccount: return otherAccountMessage
+        case .familyShared:
+            return L("ファミリー共有の購読では Pro を使えません。",
+                     "Pro isn't available through Family Sharing.")
         }
     }
 

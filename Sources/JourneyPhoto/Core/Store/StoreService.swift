@@ -43,8 +43,8 @@ final class StoreService: ObservableObject {
         /// 承認待ち（ファミリーの「承認と購入のリクエスト」など）
         case pending
         case cancelled
-        /// この Apple ID の購読は別のアカウントのもの（Pro にはならない・`PurchaseDelivery.otherAccountMessage`）
-        case otherAccount
+        /// この購読では Pro にならない（別のアカウント・ファミリー共有。`PurchaseDelivery.message(for:)`）
+        case refused(PurchaseDelivery.Refusal)
         case failed(String)
     }
 
@@ -53,8 +53,8 @@ final class StoreService: ObservableObject {
         case restored
         /// 有効な購入が無かった
         case nothing
-        /// 有効な購入はあるが、別のアカウントのもの
-        case otherAccount
+        /// 有効な購入はあるが、Pro にならない（別のアカウント・ファミリー共有）
+        case refused(PurchaseDelivery.Refusal)
         case failed(String)
     }
 
@@ -148,7 +148,7 @@ final class StoreService: ObservableObject {
                 await refreshSubscription()
                 // 退会して作り直したアカウントで、前のアカウントの購読が返ってきた（App Store は
                 // 「購読中」として前の取引を返す）。待っても通らないので「反映待ち」と言わない
-                if delivery.otherAccount { return .otherAccount }
+                if let refusal = delivery.refusal { return .refused(refusal) }
                 switch delivery.outcome {
                 case .accepted: return .purchased
                 case .retryLater: return .purchasedPendingServer
@@ -188,22 +188,29 @@ final class StoreService: ObservableObject {
         var found = false
         var delivered = false
         var lastMessage: String?
-        var otherAccount = false
+        var refusal: PurchaseDelivery.Refusal?
         for await result in StoreKit.Transaction.currentEntitlements {
-            guard case .verified(let transaction) = result, isOurs(transaction) else { continue }
+            guard case .verified(let transaction) = result else { continue }
+            // ファミリー共有の購読しか無いときは「復元できる購入はありません」ではなく、その理由を出す
+            if transaction.ownershipType == .familyShared,
+               ProProducts.plan(for: transaction.productID, prefix: prefix) != nil {
+                if refusal == nil { refusal = .familyShared }
+                continue
+            }
+            guard isOurs(transaction) else { continue }
             found = true
             let sent = await send(result.jwsRepresentation, transaction: transaction)
             if sent.outcome == .accepted {
                 delivered = true
-            } else if sent.otherAccount {
-                otherAccount = true
+            } else if let refused = sent.refusal {
+                refusal = refused
             } else if let message = sent.message {
                 lastMessage = message
             }
         }
         await refreshSubscription()
         if delivered { return .restored }
-        if otherAccount { return .otherAccount }
+        if let refusal { return .refused(refusal) }
         if found {
             return .failed(lastMessage
                            ?? L("購入をサーバーに届けられませんでした。時間をおいてもう一度お試しください。",
@@ -269,7 +276,7 @@ final class StoreService: ObservableObject {
         // ほかの人の印が付いた取引は送らず、終えもしない（その人がログインし直したときに届ける・
         // `PurchaseDelivery.belongsToSomeoneElse` の注記）
         if PurchaseDelivery.belongsToSomeoneElse(appAccountToken: transaction.appAccountToken, userId: userId) {
-            return PurchaseDelivery.Result(.retryLater, message: PurchaseDelivery.otherAccountMessage, otherAccount: true)
+            return PurchaseDelivery.Result(.retryLater, message: PurchaseDelivery.otherAccountMessage, refusal: .otherAccount)
         }
         let result = await submit(jws)
         if PurchaseDelivery.shouldFinish(result.outcome) {

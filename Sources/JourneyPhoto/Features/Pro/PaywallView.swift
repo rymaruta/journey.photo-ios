@@ -227,9 +227,9 @@ struct PaywallView: View {
                    "Waiting for approval. You'll become Pro once it's approved."), error: false)
         case .cancelled:
             break
-        case .otherAccount:
-            // 失敗の赤ではなく、ふつうの補足の字で（owner 2026-10-09）
-            show(PurchaseDelivery.otherAccountMessage, error: false)
+        case .refused(let refusal):
+            // 失敗の赤ではなく、ふつうの補足の字で（owner 2026-10-09）。Pro にはしない
+            show(PurchaseDelivery.message(for: refusal), error: false)
         case .failed(let text):
             show(text, error: true)
         }
@@ -243,8 +243,8 @@ struct PaywallView: View {
             dismiss()
         case .nothing:
             show(L("復元できる購入はありませんでした。", "No purchases to restore."), error: false)
-        case .otherAccount:
-            show(PurchaseDelivery.otherAccountMessage, error: false)
+        case .refused(let refusal):
+            show(PurchaseDelivery.message(for: refusal), error: false)
         case .failed(let text):
             show(text, error: true)
         }
