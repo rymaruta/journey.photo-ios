@@ -97,7 +97,9 @@ struct TripPickerDraftView: View {
             Text("Draft")
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
-            Text(L("選んだ \(picker.picked.count) か所の旅", "A trip with \(picker.picked.count) places"))
+            // 英語は1か所なら単数（「1 places」にしない）
+            Text(L("選んだ \(picker.picked.count) か所の旅",
+                   picker.picked.count == 1 ? "A trip with 1 place" : "A trip with \(picker.picked.count) places"))
                 .font(JPFont.cardTitle)
                 .foregroundStyle(WebTheme.foreground)
             // **何をしたかを正直に書く**（道のり・移動時間は計算していない）

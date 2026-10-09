@@ -358,6 +358,24 @@ extension PhotoMapViewModelTests {
         XCTAssertTrue(model.hasNothingToShow)
     }
 
+    /// 🔴 2026-10-09: **カテゴリで絞ったままスポットの名前を打った回は、隠している理由を言う**
+    /// （帯が理由なしの「見つかりませんでした」だった。リストは `categoryHidesSpotsNote` を出す・#181）
+    func testCategoryHidingMatchingSpotsIsReported() async {
+        let model = await loaded(spots: spotsJSON)
+        model.select(category: "建築")
+        model.query = "たかや"
+        XCTAssertTrue(model.hasNothingToShow, "下ごしらえ: 写真もスポットのピンも無い")
+        XCTAssertTrue(model.categoryHidesMatchingSpots, "語に当たるスポットをカテゴリが隠している")
+        // 語に当たるスポットが無ければ言わない
+        model.query = "どこにもない場所"
+        XCTAssertFalse(model.categoryHidesMatchingSpots)
+        // カテゴリを外せばスポットは出る（隠していない）
+        model.query = "たかや"
+        model.select(category: nil)
+        XCTAssertFalse(model.categoryHidesMatchingSpots)
+        XCTAssertFalse(model.hasNothingToShow)
+    }
+
     /// 🔴 **名前で当たったスポットへ寄せる。** 写真が当たらずスポットだけ
     /// 当たった回は、その座標群から枠を作る（写真が当たれば今までどおり写真の枠）
     func testFrameFallsBackToMatchingSpots() async throws {
