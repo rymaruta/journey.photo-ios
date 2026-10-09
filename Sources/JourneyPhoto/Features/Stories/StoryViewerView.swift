@@ -1767,9 +1767,11 @@ struct StoryViewerView: View {
         // 画面に出している文と同じことを読む
         if viewersLoaded != true { return L("反応を見る", "Insights") }
         if isQuiet { return L("まだ誰も見ていません", "No views yet") }
-        let seen = L("見た人 \(viewers.count)人", "\(viewers.count) viewers")
+        // 英語は1つなら単数（「1 viewers」「1 likes」にしない）
+        let seen = L("見た人 \(viewers.count)人", viewers.count == 1 ? "1 viewer" : "\(viewers.count) viewers")
         guard repliesLoaded else { return seen }
-        return seen + L("、いいね \(replies.reactionCount)", ", \(replies.reactionCount) likes")
+        let likes = replies.reactionCount
+        return seen + L("、いいね \(likes)", likes == 1 ? ", 1 like" : ", \(likes) likes")
     }
 
     /// 返信（届いた返信の一覧）。**丸い吹き出し**（`message`・メッセージの App と同じ形）。

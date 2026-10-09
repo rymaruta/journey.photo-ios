@@ -40,6 +40,21 @@ final class TripPickerModelTests: XCTestCase {
         XCTAssertEqual(model.deck.map(\.slug), first)
     }
 
+    /// 2026-10-09（レビュー）: 詳細を頼み終えたのに写真が無い札は、読み込み中の輪を回し続けない。
+    /// 頼み終えた印（`detailTried`）が立ち、札は面だけ（`TripPicker.cardFace` が `.noPhoto`）
+    func testDetailTriedStopsTheSpinnerWhenNoPhotoArrives() async throws {
+        var row = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
+            #"{"spotId":"sp_io","slug":"io","name":"[io]","stage":"published","hasImage":true}"#.utf8))
+        row.isIndexOnly = true
+        let model = await loaded([row])
+        let current = try XCTUnwrap(model.current)
+        XCTAssertEqual(TripPicker.cardFace(current, detailTried: model.detailTried.contains(current.spotId)), .loading)
+        // 詳細を頼んだが、写真は届かなかった（そのままの行が返る）
+        await model.applyDetails { all, _ in all }
+        XCTAssertTrue(model.detailTried.contains("sp_io"))
+        XCTAssertEqual(TripPicker.cardFace(current, detailTried: model.detailTried.contains(current.spotId)), .noPhoto)
+    }
+
     func testFailedLoadCanBeRetried() async throws {
         let model = TripPickerModel()
         await model.load(fetch: { throw Offline() }, excluding: [], seed: 1)

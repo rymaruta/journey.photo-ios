@@ -121,6 +121,7 @@ enum LocationMatch {
     ///
     ///     「東京都中央区」の中の「京都」 ✗（前に「東」があり、語は「区」で終わる）
     ///     「東京駅」の中の「東京」       ○   「富士山」の中の「富士」 ○
+    ///     「東京都渋谷区」の中の「渋谷」 ○（直前が行政区分の字「都」）
     ///
     /// 語の区切りは `tokens` と同じ（「,」「、」空白・括弧）。揃え方は呼び手がそろえてから渡す
     static func looselyContains(_ text: String, _ needle: String) -> Bool {
@@ -133,6 +134,9 @@ enum LocationMatch {
         for k in 0...(t.count - l.count) where Array(t[k..<(k + l.count)]) == l {
             // 語の頭から当たっていれば数える
             if k == 0 || isSeparator(t[k - 1]) { return true }
+            // 直前が行政区分の字なら、そこで名前が切れているので数える（`nameIn` の「前」と同じ規則）。
+            // 「東京都渋谷区」の「渋谷」・「香川県観音寺市」の「観音寺」（2026-10-09 まで外れていた）
+            if adminSuffix.contains(t[k - 1]) { return true }
             // 語の途中なら、その語が行政区分の字で終わるときだけ外す
             var end = k + l.count
             while end < t.count, !isSeparator(t[end]) { end += 1 }

@@ -75,6 +75,19 @@ enum PhotoGroups {
         return "group#\(owner)#\(groupId)"
     }
 
+    /// ページで読んだ並びの**末尾の束を、続きが届くまで出さない**（2026-10-09）。
+    ///
+    /// 🔴 複数枚の投稿がページの境目（30枚）をまたぐと、前半だけの束が出ていた。続きが届くと
+    /// 表紙と枚数が変わり、届く前に開くと一部の写真しか送れなかった。続きがある間（`hasMore`）は、
+    /// 最後の写真と同じ束（`groupKey`）の写真を外す。束ねていない写真（`single#`）は外さない。
+    /// 続きが届けば束は末尾でなくなるので、そろった形で出る
+    static func holdingBackTrailingGroup(_ photos: [Photo], hasMore: Bool) -> [Photo] {
+        guard hasMore, let last = photos.last else { return photos }
+        let key = groupKey(of: last)
+        guard key.hasPrefix("group#") else { return photos }
+        return photos.filter { groupKey(of: $0) != key }
+    }
+
     /// その写真と同じ束の写真（選んだ順・`inPostOrder`）。
     /// **1枚しか無ければその1枚だけ**
     static func siblings(of photo: Photo, in photos: [Photo]) -> [Photo] {

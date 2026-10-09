@@ -21,8 +21,10 @@ struct PhotoDetailView: View {
     @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model: PhotoDetailViewModel
-    /// 保存（しおり）を送っている最中
-    @State private var isSavingBookmark = false
+    /// 保存（しおり）を送っている最中の写真。**写真ごとに持つ**（2026-10-09）——1つの印だと、
+    /// 束の隣へ送った後の保存が、前の1枚の送信中は黙って無視されていた（いいねと同じ直し方・
+    /// `PhotoDetailViewModel` の送信中の印）
+    @State private var savingBookmarks: Set<String> = []
     @State private var showReport = false
     /// 通報シートを開いたときに、持ち主をもうブロックしていたか（閉じたときの後始末を分ける）
     @State private var ownerBlockedWhenReporting = false
@@ -1436,8 +1438,10 @@ struct PhotoDetailView: View {
     /// 保存を入れ替える。**サーバーが本体**で、控えは送れたときだけ合わせる
     private func toggleSave() async {
         // **送っている間は受けない**（いいねの送信中の印と同じ）。連打で save と
-        // unsave が並んで飛ぶと、着く順や失敗の巻き戻しで画面とサーバーが食い違う
-        guard !isSavingBookmark else { return }
+        // unsave が並んで飛ぶと、着く順や失敗の巻き戻しで画面とサーバーが食い違う。
+        // 受けないのは**同じ写真**だけ（束の隣の1枚は、前の1枚の送信中でも保存できる）
+        let id = current.id
+        guard !savingBookmarks.contains(id) else { return }
         clearNotices()
         // **未ログインは送らずに知らせる**（いいねと同じ扱い）。以前は押せて、
         // 失敗を黙って巻き戻すだけだった
@@ -1445,9 +1449,8 @@ struct PhotoDetailView: View {
             actionError = L("保存するにはログインしてください", "Sign in to save photos")
             return
         }
-        isSavingBookmark = true
-        defer { isSavingBookmark = false }
-        let id = current.id
+        savingBookmarks.insert(id)
+        defer { savingBookmarks.remove(id) }
         let wasSaved = savedPhotos.contains(id)
         // 戻すのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let owner = savedPhotos.owner
