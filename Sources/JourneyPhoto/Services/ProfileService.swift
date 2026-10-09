@@ -25,6 +25,13 @@ struct ProfileService {
     /// （覚えていたのは退会の画面の `@State` だけ）。知らせを出し、`AuthStore` が
     /// 「退会の手続きが途中です」を出して残りを済ませる（`finishPendingDeletion`）
     func myProfile() async throws -> UserProfile {
+        #if DEBUG
+        // 鍵を持たない入り方（`PreviewSession`・UI テスト）では、鍵の要る口の代わりに公開プロフィール。
+        // プロフィールの編集・バッジの棚を UI テストで開けるようにする（Release には無い）
+        if let previewId = PreviewSession.userId {
+            return try await publicProfile(userId: previewId)
+        }
+        #endif
         // `catch … where` の中で await しない（`AuthGateway.idToken` の注記）
         let result: Result<UserProfile, Error>
         do {

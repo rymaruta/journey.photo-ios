@@ -212,6 +212,7 @@ struct BadgeShelfView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(BadgeShelfRules.label(item))
                 .accessibilityHint(L("手に取って回す", "Turn it in your hand"))
+                .accessibilityIdentifier("shelf.medal.\(item.key)")
         } else {
             content
                 .accessibilityElement(children: .ignore)
