@@ -110,9 +110,9 @@ struct UploadView: View {
         }
         // 書きかけがある間は、下へ払っても閉じない（× で確かめてから）
         .interactiveDismissDisabled(model.isWorking || model.hasDraft)
-        .confirmationDialog(L("書きかけの投稿を捨てて閉じますか？", "Discard this post?"),
+        .confirmationDialog(L("投稿をやめて閉じますか？", "Stop this post?"),
                             isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button(L("捨てて閉じる", "Discard"), role: .destructive) { dismiss() }
+            Button(L("投稿をやめる", "Stop posting"), role: .destructive) { dismiss() }
             Button(L("書き続ける", "Keep editing"), role: .cancel) { }
         } message: {
             Text(L("選んだ写真と、書いた題・説明は残りません。",

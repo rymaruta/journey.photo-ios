@@ -223,7 +223,7 @@ struct EditPhotoView: View {
                            // 保存・差し替えの最中は `.wait` で確認そのものが出ない
                            canSave: EditPhotoChanges.canSaveAndClose(photo: photo, fields: fields),
                            saveTitle: L("保存して閉じる", "Save and close"),
-                           discardTitle: L("変更を捨てる", "Discard changes"),
+                           discardTitle: L("保存せずに閉じる", "Close without saving"),
                            message: L("保存しないで閉じると、直した内容は残りません。",
                                       "If you close without saving, your edits will be lost."),
                            // 保存は成功したときだけ閉じる（失敗なら開いたまま知らせを出す・`save`）
