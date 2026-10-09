@@ -173,4 +173,7 @@ struct ProfilePatch: Encodable {
     var displayBadge: Clearable<String>?
     /// Pro マークの形（`iris` / `plate`）。Pro の人だけが送る
     var proMarkStyle: String?
+    /// 光と天気の知らせを受け取るか（Pro・2026-10-09）。**真偽だけ**（サーバーは文字の "false" を 400 で断る）。
+    /// `nil` は「触らない」
+    var lightAlert: Bool?
 }
