@@ -102,6 +102,20 @@ final class MapSearchTests: XCTestCase {
         XCTAssertFalse(LocationMatch.looselyContains("河内長野市", "長野"))
     }
 
+    /// **承知の上の取りこぼしを固定する**（2026-10-09 のレビュー）。直前が行政区分の字なら当てるので、
+    /// 「新潟県村上市」の「村」の後ろの「上市」（富山県の上市町とは別）にも当たる。
+    /// 「東京都渋谷区」の「渋谷」・「香川県観音寺市」の「観音寺」が出ない方が困るので、こちらを取った。
+    /// この当たりを外すときは、上の 渋谷・観音寺 が外れないことを確かめてから変える
+    func testKnownTradeOffOfTheAdminSuffixRule() {
+        XCTAssertTrue(LocationMatch.looselyContains("新潟県村上市", "上市"),
+                      "承知の上の当たり（行政区分の字の直後）。変えたなら注記と試験を直す")
+        XCTAssertTrue(LocationMatch.looselyContains("東京都渋谷区", "渋谷"))
+        XCTAssertTrue(LocationMatch.looselyContains("香川県観音寺市", "観音寺"))
+        // 前に字のある途中（行政区分の字ではない）は今までどおり外す
+        XCTAssertFalse(LocationMatch.looselyContains("東京都", "京都"))
+        XCTAssertFalse(LocationMatch.looselyContains("東京都中央区", "京都"))
+    }
+
     /// スポットの名前・別名は台帳を通してだけ当たる。**台帳が無ければ当たらない**
     /// ⚠️ **スポットの名前・別名では引けなくなった。** 本番が
     /// 「台帳を持たない」と決めた（`photo-gallery/docs/spot-master.md`）ので、
