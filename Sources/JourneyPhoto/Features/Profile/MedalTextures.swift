@@ -40,6 +40,10 @@ enum MedalTextureLayout {
         max(160, min(screenWidth - 40, 360))
     }
 
+    /// 初期ユーザーの後光の一辺（硬貨の 1.3 倍）。**画面の幅を超える**（430pt の画面で 468pt）ので、
+    /// 組みの大きさに効かせない（`MedalViewerView` は硬貨の背景に置く）
+    static func haloSide(coin: Double) -> Double { coin * 1.3 }
+
     /// 絵の円が `side` の四角いっぱいになる描き方（中心に置いて拡大する）
     static func fillRect(discRatio: Double, side: Double = textureSide) -> CGRect {
         let drawn = side / discRatio
