@@ -38,24 +38,29 @@ enum StorySimpleRules {
     /// （`AsyncTimeout.firstWithin`——取り消しに応えない読み込みでも時間切れが効く。
     /// 呼んだ側が取り消されたときもすぐ戻る）。
     ///
+    /// 🔴 **全部を読み終えてから `accept` に渡す**（2026-10-09）。1枚読むたびに渡していた頃は、
+    /// 1枚目が並びに入った瞬間に写真を選ぶ段（埋め込みの `PhotosPicker`）が消え、
+    /// 2枚目からの読み込みが返らず1枚ごとに上限時間まで待った——その間「シェアする」が
+    /// 押せないままだった（owner の報告・1.0.72/1.0.73）。読み終えるまでは並びに入れないので、
+    /// 選ぶ段（と埋め込みの写真選び）は読み込みの間ずっと残る
+    ///
     /// - Returns: 読めなかった（時間切れ・失敗・取り消し）枚数
     @MainActor
     static func readPicks<Item>(_ items: [Item], timeout: TimeInterval = pickLoadTimeout,
                                 read: @escaping (Item) async throws -> Data?,
                                 accept: (Data) async -> Void) async -> Int {
-        var failed = 0
+        var loaded: [Data] = []
         for item in items {
             // nil は時間切れ・取り消し・読めなかった
             let data = await AsyncTimeout.firstWithin(seconds: timeout) { () async -> Data? in
                 try? await read(item)
             }
-            if let data {
-                await accept(data)
-            } else {
-                failed += 1
-            }
+            if let data { loaded.append(data) }
         }
-        return failed
+        for data in loaded {
+            await accept(data)
+        }
+        return items.count - loaded.count
     }
 
     // MARK: - カメラ・並びの帯

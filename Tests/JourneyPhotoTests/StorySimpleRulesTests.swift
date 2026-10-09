@@ -53,6 +53,30 @@ final class StorySimpleRulesTests: XCTestCase {
         XCTAssertEqual(box.accepted, [Data([1]), Data([3])])
     }
 
+    /// 🔴 **1枚目を受け取ったら選ぶ段が消え、残りの写真が読めなくなっても、全部を受け取る**
+    /// （2026-10-09・owner「ライブラリから選ぶと投稿のボタンが灰色のまま」）。
+    /// 1枚目が並びに入ると写真を選ぶ段（埋め込みの `PhotosPicker`）が消える。消えた後の読み込みは
+    /// 返らない——ここではそれを「`accept` が呼ばれた後の読み込みは返らない」で写す。
+    /// 1枚ずつ渡していた頃は、2枚目から1枚ごとに上限時間まで待ち（その間「シェアする」は押せない）、
+    /// 最後は「読み込めませんでした」で1枚しか入らなかった
+    @MainActor
+    func testAllPicksAreReadBeforeAnyIsAccepted() async {
+        final class Box { var accepted: [Data] = []; var failed: Int? }
+        let box = Box()
+        let started = Date()
+        box.failed = await StorySimpleRules.readPicks([1, 2, 3], timeout: 0.5, read: { i in
+            // 受け取りが始まった後（＝選ぶ段が消えた後）の読み込みは返らない
+            if !box.accepted.isEmpty {
+                try await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+            return Data([UInt8(i)])
+        }, accept: { box.accepted.append($0) })
+        let took = Date().timeIntervalSince(started)
+        XCTAssertEqual(box.failed, 0, "1枚目を受け取った後の写真が読めず、上限時間まで待って落ちた")
+        XCTAssertEqual(box.accepted, [Data([1]), Data([2]), Data([3])])
+        XCTAssertLessThan(took, 0.5, "読み込みが上限時間まで待った（その間「シェアする」が押せない）")
+    }
+
     /// 投稿の写真と同じ上限（iCloud の写真を落とさない長さ）
     func testPickLoadTimeoutMatchesUpload() {
         XCTAssertEqual(StorySimpleRules.pickLoadTimeout, 60)
