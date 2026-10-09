@@ -891,9 +891,15 @@ final class ScreenshotTests: XCTestCase {
         // 上の写真（朝の公開写真）が届くのを少し待つ
         Thread.sleep(forTimeInterval: 4)
         shoot(app, "81-Pro の案内")
+        // **送れたときだけ下を撮る**（1画面に収まる端末では 81 と同じ絵になる・「15-マイページ（下）」と同じ決まり）
+        let restore = app.buttons["paywall.restore"].firstMatch
+        let before = restore.exists ? restore.frame.origin.y : nil
         app.swipeUp()
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "81b-Pro の案内（下・注記と復元）")
+        let after = restore.exists ? restore.frame.origin.y : nil
+        if let before, let after, abs(before - after) > 1 {
+            shoot(app, "81b-Pro の案内（下・注記と復元）")
+        }
     }
 
     /// **探すの「季節・時間帯で絞る」**（2026-10-03・戦略の計画6）。発見の顔の「季節・時間帯から探す」で
