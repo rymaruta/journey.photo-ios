@@ -534,11 +534,16 @@ struct StoryComposerView: View {
             .padding(.top, 2)
             .padding(.bottom, 6)
 
-            // 選んだ順に並ぶ（`.ordered`）。「キャンセル」「追加」を止めると、押すたびに選択が変わる
+            // 選んだ順に並ぶ（`.ordered`）。「キャンセル」「追加」を止めると、押すたびに選択が変わる。
+            // **元の形のまま受け取る（`.current`）**（2026-10-09 owner の報告: 選んだ写真に白い丸が出たまま
+            // 「写真を選んでください」が灰色のまま）。既定（`.automatic`）だと、写真を JPEG などに
+            // 作り直し終えるまで選択が知らされず、その間は丸だけが出る。大きな写真・iCloud の写真ほど長い。
+            // 読み込みは `Data` で受けて画像にするので、HEIC のままで困らない
             PhotosPicker(selection: $librarySelection,
                          maxSelectionCount: StoryQueue.maxShots,
                          selectionBehavior: .ordered,
-                         matching: .images) {
+                         matching: .images,
+                         preferredItemEncoding: .current) {
                 Text(L("写真を選ぶ", "Choose photos"))
             }
             .photosPickerStyle(.inline)

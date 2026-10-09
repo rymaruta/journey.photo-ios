@@ -11,6 +11,12 @@ extension PHPhotoLibrary {
 }
 
 public struct PhotosPickerItem: Equatable, Hashable {
+    /// 受け取る形（本物にもある・iOS 16〜）。`.current` は作り直さず元の形のまま
+    public struct EncodingDisambiguationPolicy: Equatable {
+        public static let automatic = EncodingDisambiguationPolicy()
+        public static let current = EncodingDisambiguationPolicy()
+        public static let compatible = EncodingDisambiguationPolicy()
+    }
     public let itemIdentifier: String?
     /// 本物にもある（iOS 16〜）。試験で別々の写真を作るのに使う
     public init(itemIdentifier: String) { self.itemIdentifier = itemIdentifier }
@@ -42,6 +48,7 @@ public struct PhotosPicker: View {
                          maxSelectionCount: Int? = nil,
                          selectionBehavior: PhotosPickerSelectionBehavior,
                          matching filter: PHPickerFilter? = nil,
+                         preferredItemEncoding: PhotosPickerItem.EncodingDisambiguationPolicy = .automatic,
                          @ViewBuilder label: () -> L) {}
     public var body: Never { fatalError("模型") }
 }
