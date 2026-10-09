@@ -68,7 +68,6 @@ struct ComposeGuideView: View {
                 camera.stop()
             }
         }
-        .accessibilityIdentifier("composeGuide")
     }
 
     // MARK: - 映像の枠（板: 上 640pt）
@@ -97,13 +96,6 @@ struct ComposeGuideView: View {
                                                      translationWidth: value.translation.width))
                     }
             )
-            // 読み上げでは払えないので、切り替えを操作として置く
-            .accessibilityAction(named: L("次の作例", "Next example")) {
-                switchTo(ComposeGuide.next(after: current, count: samples.count))
-            }
-            .accessibilityAction(named: L("前の作例", "Previous example")) {
-                switchTo(ComposeGuide.previous(before: current, count: samples.count))
-            }
     }
 
     /// 映像の枠の中身（地・映像・作例・三分割の線、または使えない理由）
@@ -327,7 +319,8 @@ struct ComposeGuideView: View {
                 .tint(WebTheme.accent)
                 .font(.caption)
                 .foregroundStyle(WebTheme.muted2)
-                .lineLimit(2)
+                // **切り詰めない**（題・作者・ライセンス・出どころを必ず全部出す・`SpotSample` の注記）
+                .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -394,6 +387,11 @@ struct ComposeGuideView: View {
         .opacity(samples.count < 2 ? 0.4 : 1)
         .accessibilityLabel(L("作例を切り替える", "Switch example"))
         .accessibilityValue(ComposeGuide.counterAccessibility(spotName: spotName, index: current, count: samples.count))
+        // 読み上げでは払えないので、前へ戻す操作もここに置く。**枠（映像の上の重ね）には付けない**——
+        // 中の閉じるボタンまで1つの要素にまとまり、押せなくなる（画面写真の試験で閉じられなかった）
+        .accessibilityAction(named: L("前の作例", "Previous example")) {
+            switchTo(ComposeGuide.previous(before: current, count: samples.count))
+        }
         .accessibilityIdentifier("composeGuide.switch")
     }
 

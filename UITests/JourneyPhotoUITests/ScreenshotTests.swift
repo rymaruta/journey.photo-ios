@@ -190,12 +190,20 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(entry.frame.height, 44, "作例を重ねて撮るの入口が 44pt 未満")
         shoot(app, "13g2-撮影スポット（作例を重ねて撮るの入口）")
         entry.tap()
+        // 🔴 **開いたら必ず閉じる。** 閉じられないと全画面のまま残り、あとの 14〜61 がこの画面の絵に
+        // なる・消える（PR #195 の1回目: 閉じるボタンが見つからず、14 がこの画面だった）
         let close = app.buttons["composeGuide.close"].firstMatch
-        guard close.waitForExistence(timeout: 10) else { return }
+        let shutter = app.buttons["composeGuide.shutter"].firstMatch
+        guard close.waitForExistence(timeout: 10) || shutter.exists else { return }
         // 作例のサムネが読み込まれるのを待つ
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "13h-作例を重ねて撮る")
-        close.tap()
+        if close.exists, close.isHittable {
+            close.tap()
+        } else {
+            // 板の閉じるの位置（左上 12pt・上 52pt・44pt の丸）を直に押す
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.08)).tap()
+        }
         Thread.sleep(forTimeInterval: 1)
     }
 
