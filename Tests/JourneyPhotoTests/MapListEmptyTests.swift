@@ -18,4 +18,19 @@ final class MapListEmptyTests: XCTestCase {
         // 前に読めた写真が残っている回は数が本物（帯の知らせと同じ）
         XCTAssertEqual(PhotoMapView.listEmpty(loadFailed: true, photosEmpty: false, filtering: false), .noPlaces)
     }
+
+    /// 🔴 2026-10-09: カテゴリを選んだままスポットの名前を打つと、地図の帯は理由なしの
+    /// 「見つかりませんでした」だった。リストと同じ字（`categoryHidesSpotsNote`）で理由を言う
+    func testBannerSaysCategoryHidesMatchingSpots() {
+        XCTAssertEqual(PhotoMapView.emptyBanner(loadFailed: false, photosEmpty: false, filtering: true,
+                                                categoryHidesSpots: true), .categoryHidesSpots)
+        // 当たるスポットが無ければ今までどおり
+        XCTAssertEqual(PhotoMapView.emptyBanner(loadFailed: false, photosEmpty: false, filtering: true,
+                                                categoryHidesSpots: false), .noResults)
+        XCTAssertEqual(PhotoMapView.emptyBanner(loadFailed: false, photosEmpty: true, filtering: false,
+                                                categoryHidesSpots: false), .noPlaces)
+        // 読めなかった回は読めなかったと言う（理由より先）
+        XCTAssertEqual(PhotoMapView.emptyBanner(loadFailed: true, photosEmpty: true, filtering: true,
+                                                categoryHidesSpots: true), .failed)
+    }
 }

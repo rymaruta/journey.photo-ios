@@ -697,13 +697,36 @@ struct PhotoMapView: View {
     private var emptyMessage: String? {
         guard model.hasNothingToShow else { return nil }
         // 地図は画面に戻るたびに読み直す（`.task`）ので、案内はそれを言う
-        if model.loadFailed && model.photos.isEmpty {
-            return Self.loadFailedText
+        switch Self.emptyBanner(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
+                                filtering: model.isFiltering,
+                                categoryHidesSpots: model.categoryHidesMatchingSpots) {
+        case .failed: return Self.loadFailedText
+        case .categoryHidesSpots: return RegionList.categoryHidesSpotsNote
+        case .noResults: return L("見つかりませんでした", "No results")
+        case .noPlaces: return L("撮影地の分かる写真がありません", "No photos with a place yet")
         }
-        if model.isFiltering {
-            return L("見つかりませんでした", "No results")
-        }
-        return L("撮影地の分かる写真がありません", "No photos with a place yet")
+    }
+
+    /// 地図の上の帯（何も出ていないとき）に何と言うか
+    enum EmptyBanner: Equatable {
+        /// 写真を読めなかった（「もう一度試す」を添える）
+        case failed
+        /// カテゴリで絞っているせいで、語に当たる撮影スポットを隠している（リストの1行と同じ字）
+        case categoryHidesSpots
+        /// 絞り込んで当たらなかった
+        case noResults
+        /// 読めたが撮影地の分かる写真が無い
+        case noPlaces
+    }
+
+    /// 🔴 2026-10-09: カテゴリを選んだままスポットの名前を打つと、帯は理由なしの
+    /// 「見つかりませんでした」だった（リストは `categoryHidesSpotsNote` で理由を言う・#181）。
+    /// 語に当たるスポットをカテゴリが隠している回は、リストと同じ字で理由を言う
+    nonisolated static func emptyBanner(loadFailed: Bool, photosEmpty: Bool, filtering: Bool,
+                                        categoryHidesSpots: Bool) -> EmptyBanner {
+        if loadFailed && photosEmpty { return .failed }
+        if categoryHidesSpots { return .categoryHidesSpots }
+        return filtering ? .noResults : .noPlaces
     }
 
     /// 🔴 **読めなかった回は「もう一度試す」を添える**（以前は「開き直すと読み直します」と
@@ -742,6 +765,9 @@ struct PhotoMapView: View {
             Text(text)
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.foreground)
+                // 長い理由（`categoryHidesSpotsNote`）は折り返して中央にそろえる
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             if retry {
                 // 当たりは**ラベルの中で** 44pt に（ボタンの外の余白は押せない）
                 Button { retryLoad() } label: {
@@ -759,6 +785,8 @@ struct PhotoMapView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, retry ? 0 : 8)
         .background(Color.black.opacity(0.7), in: Capsule())
+        // 長い字でも画面の端に付けない（左右 16pt）
+        .padding(.horizontal, 16)
         .padding(.top, 12)
     }
 
