@@ -108,7 +108,8 @@ private struct LeadCaption: View {
                     .font(JPFont.mono(12))
                     .foregroundStyle(WebTheme.foreground)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel(L("いいね \(likes)", "\(likes) likes"))
+                    // 英語は1つなら単数（「1 likes」にしない）
+                    .accessibilityLabel(L("いいね \(likes)", likes == 1 ? "1 like" : "\(likes) likes"))
                 }
             }
             .padding(.horizontal, 14)

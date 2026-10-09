@@ -93,7 +93,9 @@ struct InviteView: View {
                 Text(preview.album.title.isEmpty
                      ? L("無題のアルバム", "Untitled album") : preview.album.title)
                     .font(.headline)
-                Text(L("\(preview.album.members) 人", "\(preview.album.members) members"))
+                // 英語は1人なら単数（「1 members」にしない）
+                Text(L("\(preview.album.members) 人",
+                       preview.album.members == 1 ? "1 member" : "\(preview.album.members) members"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

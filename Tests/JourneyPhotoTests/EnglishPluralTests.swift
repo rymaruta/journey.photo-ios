@@ -6,11 +6,12 @@ import XCTest
 /// 件数を差し込んだ「\(…) photos」の行は、同じ行で1枚のときを分けているか、
 /// 1枚にならない数（上限・2枚以上のときだけ出す行）であること。
 ///
-/// 2026-10-09: 写真のほかに撮影地（places・旅の一冊の画像の「1 places」）も見る
+/// 2026-10-09: 写真のほかに撮影地（places・旅の一冊の画像の「1 places」）、
+/// アルバムの人数（members）、ストーリー・一覧の読み上げ（viewers・likes）も見る
 final class EnglishPluralTests: XCTestCase {
 
     /// 見る名詞（複数形）。件数を差し込んだすぐ後に来るもの
-    private let nouns = ["photos", "places"]
+    private let nouns = ["photos", "places", "members", "viewers", "likes"]
 
     /// 1枚にならない数。上限の定数と、`count > 1` の枝の中だけで出す文
     private let neverOne = [
