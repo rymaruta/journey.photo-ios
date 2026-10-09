@@ -50,4 +50,23 @@ enum PreviewSession {
         return nil
         #endif
     }
+
+    /// UI テストで名前の横に出すバッジの鍵（Debug のみ）。`-JPPreviewDisplayBadge earlyUser`。
+    ///
+    /// 見本の利用者は名前の横のバッジを選んでいないので、マイページの名前の横（`NameMarks`）に
+    /// バッジが出ない。名前の横の絵（大きいメダルの絵を縮める・2026-10-09）を撮るために、
+    /// **入っている本人のプロフィールにだけ**選んだことにする（`badges` に無い鍵は出ない）。
+    /// Release では必ず `nil`
+    static let displayBadgeKey = "JPPreviewDisplayBadge"
+
+    static var displayBadge: String? {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: displayBadgeKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        return raw
+        #else
+        return nil
+        #endif
+    }
 }

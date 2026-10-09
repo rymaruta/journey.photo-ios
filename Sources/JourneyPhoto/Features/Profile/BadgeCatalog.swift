@@ -119,7 +119,7 @@ enum BadgeCatalog {
         }
     }
 
-    /// 小（192px・Pro の章は 128px）。名前の横・選ぶ画面・お知らせ。
+    /// 小（192px・Pro の章は 128px）。選ぶ画面・お知らせ（**名前の横には使わない**・`nameSideImage`）。
     /// 続けた年のメダルは小さい絵を持たないので大きい絵を縮めて使う
     static func smallImage(_ key: String, tier: Int) -> String {
         key == "supporterYear" ? baseImage(key, tier) : baseImage(key, tier) + "-s"
@@ -127,6 +127,10 @@ enum BadgeCatalog {
 
     /// 大（780px・Pro の章 600px・サポーター 520px）。棚・手に取って回す画面の表
     static func largeImage(_ key: String, tier: Int) -> String { baseImage(key, tier) }
+
+    /// 名前の横（`NameBadgeImage`）の絵。**大きい絵をそのまま縮める**（案 C・2026-10-09 owner
+    /// 「そのままがいい」）。文字の帯を省いた小さい絵（`-s`）は使わない
+    static func nameSideImage(_ key: String, tier: Int) -> String { largeImage(key, tier: tier) }
 
     // MARK: - 金属（手に取って回す画面の裏と縁）
 
@@ -149,7 +153,12 @@ enum BadgeCatalog {
 
     /// 表の絵のうち、硬貨の円が占める割合（直径）。素材の README の値。
     /// 無料のメダル・サポーター・続けた年は画像の 98.4%、初期ユーザーは後光の余白があるので 71.5%、
-    /// Pro の章は 91%
+    /// Pro の章は 91%。
+    ///
+    /// **大きい絵（名前の横・棚・手に取って回す画面が使う絵）を測って確かめた**（2026-10-09）:
+    /// 円の縁（不透明が切れるところ）は 無料のメダル 98.2%・サポーター／続けた年 98.1%・
+    /// Pro の章 91.2%・初期ユーザー 71.0%（その外は後光で、絵の 94% まで薄く広がる）。
+    /// 小さい絵（`-s`）も同じ割合で描かれているので、名前の横を大きい絵に替えても値は変わらない
     static func discRatio(_ key: String) -> Double {
         if key == "earlyUser" { return 0.715 }
         if ProChapters.parse(key) != nil { return ProChapters.discRatio }
@@ -255,8 +264,9 @@ enum BadgeCatalog {
 ///
 /// **バッジの円の部分を、公式の封印（`VerifiedBadge`）と同じ見た目の大きさにそろえる**
 /// ——明朝 26 の名前で円が 22pt。名前の字の大きさに比例させる。
-/// 絵には円の外に余白があるので、絵はそのぶん大きく置き、はみ出した分は
-/// 負の余白で打ち消して**行の高さを変えない**（初期ユーザーは後光の分だけ大きい）
+/// 絵（大きいメダルの絵を縮めたもの・`BadgeCatalog.nameSideImage`）には円の外に余白があるので、
+/// 絵はそのぶん大きく置き、はみ出した分は負の余白で打ち消して**行の高さを変えない**
+/// （初期ユーザーは後光ごと描くので、後光の分だけ大きい）
 enum BadgeFit {
     /// 基準: 明朝 26 の名前のとき、円は 22pt
     static let referenceNameSize: Double = 26

@@ -11,6 +11,8 @@ public final class CIImage {
     public init(cgImage: CGImage) {}
     public var extent: CGRect { .zero }
     public func cropped(to rect: CGRect) -> CIImage { self }
+    /// 縁の画素を外へ伸ばす（縁でぼかしが透明を拾わないように・本物と同じ）
+    public func clampedToExtent() -> CIImage { self }
 }
 
 /// 本物は `NSObject` の子で、引数は KVC（`setValue(_:forKey:)`）で渡す

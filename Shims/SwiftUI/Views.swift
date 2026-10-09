@@ -25,6 +25,8 @@ public struct Image: View {
     public func resizable() -> Image { self }
     public func renderingMode(_ mode: TemplateRenderingMode?) -> Image { self }
     public func interpolation(_ interpolation: Interpolation) -> Image { self }
+    /// 縮めた絵の縁をなめらかに（本物と同じ）
+    public func antialiased(_ isAntialiased: Bool) -> Image { self }
     public enum TemplateRenderingMode { case template, original }
     public enum Interpolation { case none, low, medium, high }
     public func aspectRatio(_ ratio: Double? = nil, contentMode: ContentMode) -> Image { self }

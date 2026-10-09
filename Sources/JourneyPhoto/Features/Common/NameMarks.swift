@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 名前の横に並ぶ印（2026-10-09）。**並びは 名前 → 公式（運営だけ）→ Pro マーク → 選んだバッジ。**
 ///
@@ -109,18 +110,40 @@ struct NameMarks: View {
     }
 }
 
-/// 名前の横のバッジの絵。**円の部分を公式の封印と同じ大きさにそろえ**、円の外の余白
-/// （初期ユーザーは後光）は負の余白で打ち消して行の高さを変えない（`BadgeFit`）
+/// 名前の横のバッジの絵。**大きいメダルの絵（棚と同じ絵）をそのまま縮めて出す**（案 C・2026-10-09
+/// owner「そのままがいい」）。文字の帯を省いた小さい絵（`-s`）は使わない（選ぶ画面・お知らせだけ）。
+///
+/// **円の部分を公式の封印と同じ大きさにそろえ**、円の外の余白（初期ユーザーは後光）は負の余白で
+/// 打ち消して行の高さを変えない（`BadgeFit`）。
+///
+/// 縮め方: 画面の画素ちょうどに Lanczos で縮めて軽く輪郭を立てた絵（`NameBadgeRaster`）を、
+/// 画面の処理の外で1度だけ作って覚える。できるまでは大きい絵を高い品質の補間で縮めて出す
+/// （同じ絵・同じ大きさなので、入れ替わっても形は動かない）
 struct NameBadgeImage: View {
     let badge: EarnedBadge
     /// 横に並ぶ名前の字の大きさ（文字サイズの設定で伸ばした後の値）
     let nameSize: Double
 
+    @Environment(\.displayScale) private var displayScale
+    /// 縮めて作った絵（鍵が合うときだけ使う）
+    @State private var rendered: Rendered?
+
+    private struct Rendered: Equatable {
+        let key: String
+        let image: UIImage
+
+        static func == (lhs: Rendered, rhs: Rendered) -> Bool { lhs.key == rhs.key }
+    }
+
     var body: some View {
         let side = BadgeFit.imageSide(badge.key, nameSize: nameSize)
-        Image(BadgeCatalog.smallImage(badge.key, tier: badge.tier))
+        let name = BadgeCatalog.nameSideImage(badge.key, tier: badge.tier)
+        let pixels = NameBadgeRaster.pixelSide(points: side, scale: Double(displayScale))
+        let key = pixels.map { NameBadgeRaster.cacheKey(image: name, pixels: $0) } ?? name
+        art(name: name, pixels: pixels, key: key)
             .resizable()
             .interpolation(.high)
+            .antialiased(true)
             .aspectRatio(contentMode: .fit)
             .frame(width: side, height: side)
             .padding(-BadgeFit.overhang(badge.key, nameSize: nameSize))
@@ -128,8 +151,21 @@ struct NameBadgeImage: View {
             .shadow(color: Color.black.opacity(0.7), radius: 1.5, x: 0, y: 1)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(BadgeCatalog.nameSideLabel(badge))
+            .task(id: key) {
+                guard let pixels, rendered?.key != key else { return }
+                let made = await Task.detached(priority: .userInitiated) {
+                    NameBadgeRaster.image(named: name, pixels: pixels)
+                }.value
+                if let made, !Task.isCancelled { rendered = Rendered(key: key, image: made) }
+            }
     }
 
+    /// 縮めて作った絵があればそれ、無ければ大きい絵そのもの
+    private func art(name: String, pixels: Int?, key: String) -> Image {
+        if let rendered, rendered.key == key { return Image(uiImage: rendered.image) }
+        if let pixels, let hit = NameBadgeRaster.cached(image: name, pixels: pixels) { return Image(uiImage: hit) }
+        return Image(name)
+    }
 }
 
 /// マイページの名前の行の読み上げ（行ごと1つのボタンにまとめるので、印の名前もここで言う）
