@@ -137,7 +137,7 @@ enum NotificationText {
         guard let key = row.key, BadgeCatalog.isKnown(key) else { return nil }
         let name = BadgeCatalog.name(key)
         let tier = BadgeCatalog.hasTiers(key)
-            ? " · " + BadgeCatalog.tierWord(BadgeCatalog.clampedTier(key, row.tier ?? 1)) : ""
+            ? " · " + BadgeCatalog.tierWord(key, row.tier ?? 1) : ""
         return Line(who: name, rest: L("のメダルを手に入れました", " medal earned") + tier)
     }
 

@@ -190,6 +190,16 @@ public final class CGContext {
 
 public struct UIGraphicsImageRendererContext {
     public var cgContext: CGContext { CGContext() }
+    /// いまの塗りの色で四角を塗る（本物と同じ）
+    public func fill(_ rect: CGRect) {}
+}
+
+/// 文字の影（サポーター証の名前）。本物は UIKit が持つ
+open class NSShadow: NSObject {
+    public override init() {}
+    open var shadowOffset: CGSize = .zero
+    open var shadowBlurRadius: Double = 0
+    open var shadowColor: Any?
 }
 
 public final class UIGraphicsImageRendererFormat {
@@ -221,6 +231,7 @@ extension NSAttributedString.Key {
     public static let strokeColor = NSAttributedString.Key("strokeColor")
     public static let strokeWidth = NSAttributedString.Key("strokeWidth")
     public static let paragraphStyle = NSAttributedString.Key("paragraphStyle")
+    public static let shadow = NSAttributedString.Key("shadow")
 }
 
 /// 行の揃え（複数行の焼き込み）。本物は UIKit が持つ
@@ -253,6 +264,7 @@ extension NSAttributedString {
     public func boundingRect(with size: CGSize, options: NSStringDrawingOptions,
                              context: NSStringDrawingContext?) -> CGRect { .zero }
     public func draw(with rect: CGRect, options: NSStringDrawingOptions, context: NSStringDrawingContext?) {}
+    public func draw(at point: CGPoint) {}
 }
 
 extension NSString {

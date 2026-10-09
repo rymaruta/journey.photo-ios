@@ -37,6 +37,8 @@ final class AppEnvironment: ObservableObject {
     let trips: TripPlanService
     /// 公開写真のページ（`GET /feed`・認証なし）。ホームの「新着」が読む（2026-10-03）
     let publicFeed: PublicFeedService
+    /// Pro の購入をサーバーへ渡す口（`POST /user/purchases`・第2段階）
+    let purchases: PurchaseService
 
     /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
     ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
@@ -71,5 +73,6 @@ final class AppEnvironment: ObservableObject {
         self.discovery = DiscoveryService(api: api)
         self.trips = trips ?? TripPlanService(api: api)
         self.publicFeed = PublicFeedService(api: api)
+        self.purchases = PurchaseService(api: api)
     }
 }

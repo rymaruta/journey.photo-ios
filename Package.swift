@@ -39,6 +39,8 @@ let package = Package(
         .target(name: "AVFoundation", path: "Shims/AVFoundation"),
         .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation"], path: "Shims/AVKit"),
         .target(name: "UserNotifications", path: "Shims/UserNotifications"),
+        // 定期購入（Pro）。SwiftUI と重なる口（`manageSubscriptionsSheet`）があるので SwiftUI を読む
+        .target(name: "StoreKit", dependencies: ["SwiftUI"], path: "Shims/StoreKit"),
         .target(name: "ImageIO", path: "Shims/ImageIO"),
         .target(name: "CoreImage", dependencies: ["ImageIO"], path: "Shims/CoreImage"),
         .target(name: "UniformTypeIdentifiers", path: "Shims/UniformTypeIdentifiers"),
@@ -56,7 +58,7 @@ let package = Package(
             dependencies: [
                 "SwiftUI", "Combine", "UIKit", "PhotosUI", "Photos", "MapKit", "CoreLocation",
                 "AVFoundation", "AVKit", "ImageIO", "CoreImage", "UniformTypeIdentifiers", "UserNotifications",
-                "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
+                "StoreKit", "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
             ],
             path: "Sources/JourneyPhoto",
             exclude: ["Resources", "Assets.xcassets"]

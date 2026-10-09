@@ -6,8 +6,16 @@ import Foundation
 /// 絵は `Assets.xcassets` の `medal-<key>-<tier>`（大・棚と手に取って回す画面）と
 /// `medal-<key>-<tier>-s`（小・名前の横・選ぶ画面・お知らせ）。初期ユーザーは段が無い。
 ///
-/// **知らない鍵は出さない。** サーバーが先に新しいバッジ（Pro 限定の章＝第2段階）を
-/// 足しても、絵の無いものを空の丸で出すより、出さない方がまし（お知らせの種類と同じ判断）。
+/// **知らない鍵は出さない。** サーバーが先に新しいバッジを足しても、絵の無いものを
+/// 空の丸で出すより、出さない方がまし（お知らせの種類と同じ判断）。
+///
+/// ## Pro 限定（第2段階・2026-10-09）
+///
+/// - `supporter`（サポーター章・羅針盤）・`supporterYear`（続けた年のメダル。段 1/2/3 ＝ 1年目/2年目/3年目）
+/// - 季節の章は**年ごとの鍵** `pro<Spring|Summer|Autumn|Winter><西暦>`（例 `proAutumn2026`）。
+///   サーバーの `badgeKeys.ts` と同じ形。**絵のある年だけ**出す（`ProChapters.artYears`）
+/// - 縁と裏は真鍮。名前の横では円の 91%（季節の章）
+/// - 機能の章（暁・構図・圏外）は第3段階で配る。鍵はまだ無いので、PRO 限定の段の「まだ」の絵だけ
 ///
 /// 画面に依らない計算だけを持つ（Linux の模型でもテストできるように）。
 enum BadgeCatalog {
@@ -39,14 +47,31 @@ enum BadgeCatalog {
         Kind(key: "night", ja: "夜の光", en: "Night light", maxTier: 3, unitJa: "枚", unitEn: "photo", closed: false),
         Kind(key: "books", ja: "旅の一冊", en: "Trip books", maxTier: 3, unitJa: "冊", unitEn: "book", closed: false),
         Kind(key: "wish", ja: "行けた場所", en: "Wishes visited", maxTier: 3, unitJa: "", unitEn: "", closed: false),
+        // Pro 限定（第2段階）。**後から取れない扱い**（持っていない人の棚には出さない）
+        Kind(key: "supporter", ja: "サポーター", en: "Supporter", maxTier: 1, unitJa: "", unitEn: "", closed: true),
+        Kind(key: "supporterYear", ja: "続けた年", en: "Years of support", maxTier: 3, unitJa: "", unitEn: "", closed: true),
     ]
+
+    /// Pro 限定の決まった鍵
+    static let proKeys: Set<String> = ["supporter", "supporterYear"]
 
     static func kind(_ key: String) -> Kind? { kinds.first { $0.key == key } }
 
-    static func isKnown(_ key: String) -> Bool { kind(key) != nil }
+    /// 絵のあるバッジか（決まった鍵か、絵のある年の季節の章）
+    static func isKnown(_ key: String) -> Bool {
+        if kind(key) != nil { return true }
+        guard let chapter = ProChapters.parse(key) else { return false }
+        return ProChapters.hasArt(chapter)
+    }
 
-    /// 画面に出す名前。知らない鍵は鍵のまま（出す前に `isKnown` で落とす）
-    static func name(_ key: String) -> String { kind(key)?.name ?? key }
+    /// Pro 限定のバッジか（縁と裏が真鍮・名前の横の画面の「PRO 限定」）
+    static func isPro(_ key: String) -> Bool { proKeys.contains(key) || ProChapters.parse(key) != nil }
+
+    /// 画面に出す名前（「朝の光」「秋 2026」）。知らない鍵は鍵のまま（出す前に `isKnown` で落とす）
+    static func name(_ key: String) -> String {
+        if let chapter = ProChapters.parse(key) { return chapter.shortName }
+        return kind(key)?.name ?? key
+    }
 
     /// 段の呼び名（1 銅・2 銀・3 白金）
     static func tierWord(_ tier: Int) -> String {
@@ -57,6 +82,11 @@ enum BadgeCatalog {
         }
     }
 
+    /// その鍵の段の呼び名。続けた年のメダルは「1年目」、ほかは金属
+    static func tierWord(_ key: String, _ tier: Int) -> String {
+        key == "supporterYear" ? SupporterText.yearLabel(clampedTier(key, tier)) : tierWord(clampedTier(key, tier))
+    }
+
     /// 段を台帳の範囲に収める（サーバーが上の段を先に足しても絵の無い名前を引かない）
     static func clampedTier(_ key: String, _ tier: Int) -> Int {
         min(max(1, tier), kind(key)?.maxTier ?? 1)
@@ -65,9 +95,10 @@ enum BadgeCatalog {
     /// 段のあるバッジか（読み上げ・お知らせに「· 銅」を付けるか）
     static func hasTiers(_ key: String) -> Bool { (kind(key)?.maxTier ?? 1) > 1 }
 
-    /// 読み上げ・お知らせに使う名前（「都道府県 · 銀」）。段の無いものは名前だけ
+    /// 読み上げ・お知らせに使う名前（「都道府県 · 銀」「続けた年 · 1年目」「秋の章 2026」）。段の無いものは名前だけ
     static func fullName(_ key: String, tier: Int) -> String {
-        hasTiers(key) ? "\(name(key)) · \(tierWord(clampedTier(key, tier)))" : name(key)
+        if let chapter = ProChapters.parse(key) { return chapter.fullName }
+        return hasTiers(key) ? "\(name(key)) · \(tierWord(key, tier))" : name(key)
     }
 
     /// 名前の横のバッジの読み上げ（「名前の横のバッジ: 都道府県 · 銀」）
@@ -79,13 +110,22 @@ enum BadgeCatalog {
     // MARK: - 絵の名前
 
     private static func baseImage(_ key: String, _ tier: Int) -> String {
-        key == "earlyUser" ? "medal-earlyUser" : "medal-\(key)-\(clampedTier(key, tier))"
+        if let chapter = ProChapters.parse(key) { return chapter.imageBase }
+        switch key {
+        case "earlyUser": return "medal-earlyUser"
+        case "supporter": return "medal-supporter"
+        case "supporterYear": return SupporterText.yearImage(clampedTier(key, tier))
+        default: return "medal-\(key)-\(clampedTier(key, tier))"
+        }
     }
 
-    /// 小（192px）。名前の横・選ぶ画面・お知らせ
-    static func smallImage(_ key: String, tier: Int) -> String { baseImage(key, tier) + "-s" }
+    /// 小（192px・Pro の章は 128px）。名前の横・選ぶ画面・お知らせ。
+    /// 続けた年のメダルは小さい絵を持たないので大きい絵を縮めて使う
+    static func smallImage(_ key: String, tier: Int) -> String {
+        key == "supporterYear" ? baseImage(key, tier) : baseImage(key, tier) + "-s"
+    }
 
-    /// 大（780px）。棚・手に取って回す画面の表
+    /// 大（780px・Pro の章 600px・サポーター 520px）。棚・手に取って回す画面の表
     static func largeImage(_ key: String, tier: Int) -> String { baseImage(key, tier) }
 
     // MARK: - 金属（手に取って回す画面の裏と縁）
@@ -97,9 +137,9 @@ enum BadgeCatalog {
         var edgeImage: String { "edge-\(rawValue)" }
     }
 
-    /// 段ごとの金属。初期ユーザーは真鍮（サポーター・Pro の章も第2段階で真鍮）
+    /// 段ごとの金属。初期ユーザー・サポーター・続けた年・Pro の章は真鍮
     static func metal(_ key: String, tier: Int) -> Metal {
-        if key == "earlyUser" { return .brass }
+        if key == "earlyUser" || isPro(key) { return .brass }
         switch clampedTier(key, tier) {
         case 1: return .bronze
         case 2: return .silver
@@ -108,9 +148,12 @@ enum BadgeCatalog {
     }
 
     /// 表の絵のうち、硬貨の円が占める割合（直径）。素材の README の値。
-    /// 無料のメダルは画像の 98.4%、初期ユーザーは後光の余白があるので 71.5%
+    /// 無料のメダル・サポーター・続けた年は画像の 98.4%、初期ユーザーは後光の余白があるので 71.5%、
+    /// Pro の章は 91%
     static func discRatio(_ key: String) -> Double {
-        key == "earlyUser" ? 0.715 : 0.984
+        if key == "earlyUser" { return 0.715 }
+        if ProChapters.parse(key) != nil { return ProChapters.discRatio }
+        return 0.984
     }
 
     // MARK: - 棚
@@ -134,7 +177,7 @@ enum BadgeCatalog {
     ///   後から取れないもの（初期ユーザー）は持っているときだけ
     /// - 人の棚（`progress` が nil）: **持っているものだけ**。進み具合は出さない
     static func shelf(badges: BadgeSet, progress: [String: BadgeProgress]?) -> [ShelfItem] {
-        kinds.compactMap { kind in
+        let fixed: [ShelfItem] = kinds.compactMap { kind in
             let earned = badges[kind.key]
             guard earned != nil || (progress != nil && !kind.closed) else { return nil }
             let tier = earned.map { clampedTier(kind.key, $0.tier) } ?? 1
@@ -143,6 +186,11 @@ enum BadgeCatalog {
             }
             return ShelfItem(key: kind.key, tier: tier, earned: earned, progress: text)
         }
+        // 季節の章は持っているものだけ（後から取れない）。年 → 春夏秋冬の順
+        let chapters = ProChapters.owned(badges).map {
+            ShelfItem(key: $0.key, tier: 1, earned: $0, progress: nil)
+        }
+        return fixed + chapters
     }
 
     /// 棚の数（「7 / 9」）。持っている数と、その人の棚に並ぶ数
@@ -174,7 +222,7 @@ enum BadgeCatalog {
 
     /// 名前の横の画面に並べる、持っているバッジ（台帳の順・知らない鍵は落とす）
     static func owned(_ badges: BadgeSet) -> [EarnedBadge] {
-        kinds.compactMap { badges[$0.key] }
+        kinds.compactMap { badges[$0.key] } + ProChapters.owned(badges)
     }
 
     // MARK: - 日付（裏に刻む）
