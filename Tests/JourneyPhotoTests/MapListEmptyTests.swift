@@ -20,10 +20,15 @@ final class MapListEmptyTests: XCTestCase {
     }
 
     /// 🔴 2026-10-09: カテゴリを選んだままスポットの名前を打つと、地図の帯は理由なしの
-    /// 「見つかりませんでした」だった。リストと同じ字（`categoryHidesSpotsNote`）で理由を言う
+    /// 「見つかりませんでした」だった。帯で理由を言う。
+    /// **帯は短い字**（全文 `categoryHidesSpotsNote` は約3行に折れて右の操作列に重なった・レビュー）。
+    /// 全文はリストの上の1行にだけ出す
     func testBannerSaysCategoryHidesMatchingSpots() {
         XCTAssertEqual(PhotoMapView.emptyBanner(loadFailed: false, photosEmpty: false, filtering: true,
                                                 categoryHidesSpots: true), .categoryHidesSpots)
+        XCTAssertEqual(PhotoMapView.categoryHidesSpotsBannerText, "カテゴリで絞っている間はスポットを出しません")
+        XCTAssertLessThan(PhotoMapView.categoryHidesSpotsBannerText.count, RegionList.categoryHidesSpotsNote.count / 2,
+                          "地図の帯にリストの全文を出している（折り返して右の操作列に重なる）")
         // 当たるスポットが無ければ今までどおり
         XCTAssertEqual(PhotoMapView.emptyBanner(loadFailed: false, photosEmpty: false, filtering: true,
                                                 categoryHidesSpots: false), .noResults)
