@@ -1,0 +1,15 @@
+{
+  "images": [
+    {
+      "filename": "medal-pro-spring-2027.png",
+      "idiom": "universal"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "compression-type": "lossy"
+  }
+}

@@ -81,13 +81,17 @@ public struct ZStack: View {
 }
 /// 線の引き方（破線など）。本物と同じ引数名で持つ
 public enum LineCapShim { case butt, round, square }
+/// 線の角の引き方（本物は `CGLineJoin`）
+public enum LineJoinShim { case miter, round, bevel }
 public struct StrokeStyle {
     public var lineWidth: Double
     public var lineCap: LineCapShim
+    public var lineJoin: LineJoinShim
     public var dash: [Double]
-    public init(lineWidth: Double = 1, lineCap: LineCapShim = .butt, dash: [Double] = []) {
+    public init(lineWidth: Double = 1, lineCap: LineCapShim = .butt, lineJoin: LineJoinShim = .miter, dash: [Double] = []) {
         self.lineWidth = lineWidth
         self.lineCap = lineCap
+        self.lineJoin = lineJoin
         self.dash = dash
     }
 }
@@ -290,6 +294,11 @@ public struct Path: View, Shape {
     public mutating func move(to point: CGPoint) {}
     public mutating func addLine(to point: CGPoint) {}
     public mutating func addCurve(to point: CGPoint, control1: CGPoint, control2: CGPoint) {}
+    /// 二次の曲線・丸・角丸の四角・弧（Pro の案内の線の絵）
+    public mutating func addQuadCurve(to point: CGPoint, control: CGPoint) {}
+    public mutating func addEllipse(in rect: CGRect) {}
+    public mutating func addRoundedRect(in rect: CGRect, cornerSize: CGSize) {}
+    public mutating func addArc(center: CGPoint, radius: CGFloat, startAngle: Angle, endAngle: Angle, clockwise: Bool) {}
     /// 線を閉じる（Pro マークの六角形・本物と同じ）
     public mutating func closeSubpath() {}
     /// 塗る（本物は `Shape` の修飾子）

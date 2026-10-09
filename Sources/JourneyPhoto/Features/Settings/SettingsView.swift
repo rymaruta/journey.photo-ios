@@ -10,6 +10,9 @@ struct SettingsView: View {
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var push: PushCenter
+    @EnvironmentObject private var environment: AppEnvironment
+    /// 自分のプロフィール（Pro の節の中身・第2段階）。読めなければ nil
+    @State private var myProfile: UserProfile?
     @State private var wantsPush = false
     @State private var showDeniedHint = false
     /// 切り替えている最中。二度押しで登録と解除が交差しないようにする
@@ -35,6 +38,8 @@ struct SettingsView: View {
 
     var body: some View {
         list
+            // Pro の節のためのプロフィール。名前の横を決めた・購入した（`noteProfileChanged`）ら読み直す
+            .task(id: auth.profileRevision) { await loadMyProfile() }
             .task {
                 await push.refreshAuthorization()
                 // **本人の意思で見る。** 「預けられたか」で見ると、
@@ -52,6 +57,13 @@ struct SettingsView: View {
                 wantsPush = push.isEnabled && authorized
                 if authorized { showDeniedHint = false }
             }
+    }
+
+    private func loadMyProfile() async {
+        guard auth.userId != nil else { return }
+        let profiles = environment.profiles
+        let fresh = try? await profiles.myProfile()
+        if let fresh { myProfile = fresh }
     }
 
     /// 受け取る／受け取らないを切り替える。
@@ -109,6 +121,8 @@ struct SettingsView: View {
                     .foregroundStyle(WebTheme.text)
                     .accessibilityAddTraits(.isHeader)
                 if auth.userId != nil {
+                    // 板 43 の並び: Pro がいちばん上
+                    ProSettingsSection(profile: myProfile)
                     notificationsSection
                     privacySection
                 }

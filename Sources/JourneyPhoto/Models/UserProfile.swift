@@ -74,6 +74,20 @@ struct UserProfile: Decodable, Equatable, Identifiable {
 
     var isPro: Bool { pro?.value ?? false }
 
+    /// サポーターの印（番号・申し込んだ日・続けた月の数・第2段階）。公開。
+    /// **やめても残る**——Pro かどうかは `isPro` で見る
+    private let supporter: LenientSupporter?
+
+    /// サポーター証の中身。申し込んだことのない人・古いサーバーでは nil
+    var supporterInfo: SupporterInfo? { supporter?.value }
+
+    /// 光と天気の知らせ（Pro・2026-10-09）を受け取るか。**本人の応答だけに載る**（公開プロフィールには無い）。
+    /// サーバーは行に無ければ「受け取る」を返す（`userProfile.ts` の `withBadgeFields`）
+    private let lightAlert: LenientFlag?
+
+    /// 前の晩の知らせを受け取るか。**無い（古いサーバー）ときは受け取る**（サーバーの既定と同じ）
+    var wantsLightAlert: Bool { lightAlert?.value ?? true }
+
     /// Pro マークの形。知らない値・無い値は既定の絞り羽根
     var markStyle: ProMarkStyle {
         proMarkStyle?.value.flatMap(ProMarkStyle.init(rawValue:)) ?? .iris

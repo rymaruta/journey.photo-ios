@@ -59,7 +59,7 @@ struct MedalViewerView: View {
 
     private func coinStage(_ coin: Double) -> some View {
         MedalCoinView(textures: textures, fallbackImage: BadgeCatalog.largeImage(badge.key, tier: badge.tier),
-                      reduceMotion: reduceMotion, flips: flips)
+                      reduceMotion: reduceMotion, flips: flips, shape: .coin)
         .frame(width: coin, height: coin)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("\(BadgeCatalog.fullName(badge.key, tier: badge.tier)) のメダル",
@@ -124,18 +124,26 @@ struct MedalViewerView: View {
 
 // MARK: - 硬貨
 
-/// 硬貨。iOS では SceneKit（`MedalSceneView`）、SceneKit の無い Linux の模型では絵を置くだけ
-private struct MedalCoinView: View {
+/// 手に取って回すものの形。硬貨（メダル）か、角の丸いカード（サポーター証・板 Badge3D）
+enum SpinShape: Equatable {
+    case coin
+    /// 横 ÷ 縦（サポーター証は 342:216）
+    case card(aspect: Double)
+}
+
+/// 硬貨・カード。iOS では SceneKit（`MedalSceneView`）、SceneKit の無い Linux の模型では絵を置くだけ
+struct MedalCoinView: View {
     let textures: MedalTextures.Faces?
     let fallbackImage: String
     let reduceMotion: Bool
     let flips: Int
+    var shape: SpinShape = .coin
 
     var body: some View { coin }
 
     #if canImport(SceneKit)
     private var coin: some View {
-        MedalSceneView(textures: textures, reduceMotion: reduceMotion, flips: flips)
+        MedalSceneView(textures: textures, reduceMotion: reduceMotion, flips: flips, shape: shape)
     }
     #else
     /// Linux の模型のための代わり。**実機では使わない**
@@ -149,13 +157,14 @@ private struct MedalCoinView: View {
 
 #if canImport(SceneKit)
 
-/// SceneKit で描く硬貨。指で回す・惰性・自動で回る（「視差効果を減らす」では回さない）
+/// SceneKit で描く硬貨・カード。指で回す・惰性・自動で回る（「視差効果を減らす」では回さない）
 private struct MedalSceneView: UIViewRepresentable {
     let textures: MedalTextures.Faces?
     let reduceMotion: Bool
     let flips: Int
+    let shape: SpinShape
 
-    func makeCoordinator() -> MedalCoinCoordinator { MedalCoinCoordinator() }
+    func makeCoordinator() -> MedalCoinCoordinator { MedalCoinCoordinator(shape: shape) }
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
@@ -222,12 +231,64 @@ final class MedalCoinCoordinator: NSObject {
     /// 止まりきったあと、ゆっくり回る速さ（板: 9秒で1周 ≈ 0.7rad/s。それより控えめに）
     private static let idleSpin: Float = 0.45
 
-    override init() {
+    private let shape: SpinShape
+
+    init(shape: SpinShape = .coin) {
+        self.shape = shape
         super.init()
         buildScene()
     }
 
     private func buildScene() {
+        switch shape {
+        case .coin: buildCoin()
+        case .card(let aspect): buildCard(aspect: aspect)
+        }
+        addLightsAndCamera()
+        applyAngles()
+    }
+
+    /// サポーター証（板 Badge3D: 342×216・角 16・厚み 4・縁は角の丸みまで金の小口）。
+    /// 縁は角丸の四角を押し出した形（`SCNShape`）に金の帯を貼り、表と裏は角を丸めた平面
+    private func buildCard(aspect: Double) {
+        // 舞台は硬貨と同じ正方形（視野 30° で、5.2 離れて見える高さは約 2.79）。カードは
+        // 横幅が舞台の 9 割ほどになる 2.56 にする（硬貨の直径 2 のままだと板より小さく見える）
+        let width: CGFloat = 2.56
+        let height = width / CGFloat(max(0.1, aspect))
+        let corner = width * CGFloat(SupporterCardLayout.cornerRadius / SupporterCardLayout.width)
+        let thickness = width * CGFloat(SupporterCardLayout.thickness / SupporterCardLayout.width)
+
+        let outline = UIBezierPath(roundedRect: CGRect(x: -width / 2, y: -height / 2, width: width, height: height),
+                                   cornerRadius: corner)
+        // 既定の細かさ（0.6）では角の丸みが直線の面取りになる（この場面は 1 が約 140pt）
+        outline.flatness = 0.002
+        let slab = SCNShape(path: outline, extrusionDepth: thickness)
+        setUpMetal(edge)
+        // 金の小口は光らせる（回すと光が縁を滑る）
+        edge.specular.contents = UIColor(white: 0.9, alpha: 1)
+        edge.shininess = 0.6
+        edge.diffuse.wrapS = .clamp
+        edge.diffuse.wrapT = .clamp
+        slab.materials = [edge, edge, edge]
+        coin.addChildNode(SCNNode(geometry: slab))
+
+        for (material, z, turned) in [(front, Float(thickness) / 2 + 0.001, false),
+                                      (back, -Float(thickness) / 2 - 0.001, true)] {
+            setUpMetal(material)
+            material.diffuse.mipFilter = .linear
+            let plane = SCNPlane(width: width, height: height)
+            plane.cornerRadius = corner
+            plane.cornerSegmentCount = 16
+            plane.materials = [material]
+            let node = SCNNode(geometry: plane)
+            node.position = SCNVector3(0, 0, z)
+            if turned { node.eulerAngles = SCNVector3(0, Float.pi, 0) }
+            coin.addChildNode(node)
+        }
+        scene.rootNode.addChildNode(coin)
+    }
+
+    private func buildCoin() {
         let thickness = CGFloat(MedalTextureLayout.thicknessPerRadius)
 
         // 縁（円柱の側面）。上下の蓋は表・裏の円で隠れる
@@ -259,7 +320,9 @@ final class MedalCoinCoordinator: NSObject {
             coin.addChildNode(node)
         }
         scene.rootNode.addChildNode(coin)
+    }
 
+    private func addLightsAndCamera() {
         // 光（2026-10-09 立体感の見直し）: 環境光は控えめにし（強いと凹凸の陰が消えてのっぺりする）、
         // 左上手前の主な光・右の弱い補いの光・後ろ右の縁取りの光の3つで、回すと光と陰が面と縁を滑る
         let ambient = SCNNode()
@@ -285,8 +348,6 @@ final class MedalCoinCoordinator: NSObject {
         cameraNode.camera = camera
         cameraNode.position = SCNVector3(0, 0, 5.2)
         scene.rootNode.addChildNode(cameraNode)
-
-        applyAngles()
     }
 
     /// 金属の面。**光り過ぎない**（絵の明るさを保つ。光の点は小さく弱く・owner「光反射しすぎて少し嫌だ」）
@@ -301,9 +362,12 @@ final class MedalCoinCoordinator: NSObject {
         front.diffuse.contents = textures.front
         back.diffuse.contents = textures.back
         edge.diffuse.contents = textures.edge
-        edge.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(textures.edgeRepeat), 1, 1)
+        if case .coin = shape {
+            edge.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(textures.edgeRepeat), 1, 1)
+        }
         hasTextures = textures.front != nil
-        applyRelief(textures)
+        // 面のふくらみ・縁のギザは硬貨の形に合わせた凹凸。サポーター証（カード）には貼らない
+        if case .coin = shape { applyRelief(textures) }
     }
 
     /// 面のふくらみ・縁のギザの凹凸（法線の絵・`MedalRelief`）と、周りの映り込み

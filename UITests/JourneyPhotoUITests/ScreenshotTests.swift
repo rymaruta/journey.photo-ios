@@ -171,6 +171,40 @@ final class ScreenshotTests: XCTestCase {
         // 写真が読み込まれるのを待つ（Commons の縮小版）
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "13g-撮影スポット（作例）")
+        shootComposeGuide(app)
+    }
+
+    /// **作例を重ねて撮る**（Pro・2026-10-09）。作例の帯の下の入口を押し、撮る画面を撮って閉じる。
+    /// 起動の鍵（`-JPComposeGuidePreview`）で Pro の確かめを飛ばしている。シミュレータにカメラは無いので
+    /// 映像の枠は「カメラを使えません」になる（下の黒い面・上の札・出典の行は板どおりに出る）。
+    /// 入口・画面が出なければ撮らない（この試験の決まり）
+    private func shootComposeGuide(_ app: XCUIApplication) {
+        let entry = app.buttons["spot.official.composeGuide"].firstMatch
+        var swipes = 0
+        while swipes < 2, !(entry.exists && entry.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard entry.exists, entry.isHittable else { return }
+        XCTAssertGreaterThanOrEqual(entry.frame.height, 44, "作例を重ねて撮るの入口が 44pt 未満")
+        shoot(app, "13g2-撮影スポット（作例を重ねて撮るの入口）")
+        entry.tap()
+        // 🔴 **開いたら必ず閉じる。** 閉じられないと全画面のまま残り、あとの 14〜61 がこの画面の絵に
+        // なる・消える（PR #195 の1回目: 閉じるボタンが見つからず、14 がこの画面だった）
+        let close = app.buttons["composeGuide.close"].firstMatch
+        let shutter = app.buttons["composeGuide.shutter"].firstMatch
+        guard close.waitForExistence(timeout: 10) || shutter.exists else { return }
+        // 作例のサムネが読み込まれるのを待つ
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "13h-作例を重ねて撮る")
+        if close.exists, close.isHittable {
+            close.tap()
+        } else {
+            // 板の閉じるの位置（左上 12pt・上 52pt・44pt の丸）を直に押す
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.08)).tap()
+        }
+        Thread.sleep(forTimeInterval: 1)
     }
 
     /// 積んだ画面から1つ戻る（2026-10-03）。
@@ -361,6 +395,9 @@ final class ScreenshotTests: XCTestCase {
         // ——**嘘の中身は出ない**。渡す値は公開 API が返している `userId`
         // そのもので、資格情報ではない。
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        // **「作例を重ねて撮る」（Pro）を Pro でなくても開く鍵**（Debug のみ・`ComposeGuideAccess`）。
+        // 撮る画面の絵（13h）を撮るため。シミュレータにカメラは無いので「カメラを使えません」の側が出る
+        app.launchArguments += ["-JPComposeGuidePreview", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -825,6 +862,125 @@ final class ScreenshotTests: XCTestCase {
         if close.exists { close.tap() } else { app.buttons["はじめる"].firstMatch.tap() }
         // 閉じたあとはホームが見える（主ボタンで閉じられる）
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
+    }
+
+    /// **Pro の画面**（第2段階・2026-10-09）: 設定の「Pro」の節（板 43）→ Pro の案内（板 63）、
+    /// マイページの名前の行 → 名前の横の画面の「PRO 限定」（板 BadgePicker）。
+    ///
+    /// 鍵を持たないログイン（`-JPPreviewUserId`）なので、自分のプロフィールは読めない＝Pro でない人の姿
+    /// （サポーター証の行は出ない）。値段は App Store の商品が読めない staging なので板の値段。
+    /// **何も買わない**（主ボタンは押さない）。出なければ撮らない（この試験の決まり）
+    func testCapturesProScreens() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+
+        // 名前の横の画面（PRO 限定の段まで送って撮る）
+        let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+        if nameLine.waitForExistence(timeout: 5), nameLine.isHittable {
+            nameLine.tap()
+            let collect = app.buttons["nameSide.proCollect"].firstMatch
+            if collect.waitForExistence(timeout: 10) {
+                var pushes = 0
+                while !collect.isHittable, pushes < 3 {
+                    app.swipeUp()
+                    Thread.sleep(forTimeInterval: 1)
+                    pushes += 1
+                }
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "82-名前の横（PRO 限定）")
+                // 「Pro で集める」→ Pro の案内が開くこと（板の行き先）
+                if collect.isHittable {
+                    collect.tap()
+                    if app.buttons["paywall.close"].firstMatch.waitForExistence(timeout: 10) {
+                        app.buttons["paywall.close"].firstMatch.tap()
+                    }
+                }
+            }
+            // シートを下ろす
+            let close = app.buttons["閉じる"].firstMatch
+            if close.waitForExistence(timeout: 3), close.isHittable { close.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        // 設定の Pro の節 → Pro の案内
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+        gear.tap()
+        let proRow = app.buttons["settings.pro"].firstMatch
+        guard proRow.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "80-設定（Pro の節）")
+        proRow.tap()
+        let purchase = app.buttons["paywall.purchase"].firstMatch
+        guard purchase.waitForExistence(timeout: 10) else { return }
+        // 上の写真（朝の公開写真）が届くのを少し待つ
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "81-Pro の案内")
+        // **送れたときだけ下を撮る**（1画面に収まる端末では 81 と同じ絵になる・「15-マイページ（下）」と同じ決まり）
+        let restore = app.buttons["paywall.restore"].firstMatch
+        let before = restore.exists ? restore.frame.origin.y : nil
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 1)
+        let after = restore.exists ? restore.frame.origin.y : nil
+        if let before, let after, abs(before - after) > 1 {
+            shoot(app, "81b-Pro の案内（下・注記と復元）")
+        }
+    }
+
+    /// **光と天気の知らせ**（Pro・板 LightAlert・2026-10-09）: 設定の Pro の節の「光と天気の知らせ」→
+    /// 一覧「行きたい場所の光（今週）」。見本（`-JPLightForecastPreview sample`・DEBUG だけ・本物の予報ではない）と
+    /// 空の姿（`empty`）を1枚ずつ。出なければ撮らない（この試験の決まり）
+    func testCapturesLightForecast() {
+        for (mode, name) in [("sample", "84-光と天気の知らせ"), ("empty", "84b-光と天気の知らせ（空）")] {
+            let app = XCUIApplication()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-JPLightForecastPreview", mode]
+            app.launch()
+
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+            tabBar.buttons.element(boundBy: 4).tap()
+            guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+            let gear = app.buttons["設定"].firstMatch
+            guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+            gear.tap()
+            let row = app.buttons["settings.lightForecast"].firstMatch
+            guard row.waitForExistence(timeout: 10) else { return }
+            if !row.isHittable { app.swipeUp(); Thread.sleep(forTimeInterval: 1) }
+            guard row.isHittable else { return }
+            row.tap()
+            let ready = mode == "sample"
+                ? app.buttons["lightForecast.card"].firstMatch
+                : app.links["lightForecast.attribution"].firstMatch
+            _ = ready.waitForExistence(timeout: 10)
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, name)
+            if mode == "sample", ready.exists, ready.isHittable {
+                // 札を開いた姿（その場所の7日）
+                ready.tap()
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "84a-光と天気の知らせ（札を開いた）")
+            }
+            app.terminate()
+        }
     }
 
     /// **探すの「季節・時間帯で絞る」**（2026-10-03・戦略の計画6）。発見の顔の「季節・時間帯から探す」で

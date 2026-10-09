@@ -33,6 +33,12 @@ struct JourneyPhotoApp: App {
     @StateObject private var push = PushCenter()
     /// 短い知らせ（Web の `useToast`）。**1つだけ出す**
     @StateObject private var toasts = ToastCenter()
+    /// Pro（定期購入）の StoreKit の窓口。**起動直後から取引を聞く**（`StoreService.start`）
+    @StateObject private var store = StoreService()
+    /// 電波なしで使える旅（Pro・板 72）。**保存は画面ではなくここが持つ**（画面を移っても続く）
+    @StateObject private var offlineTrips = OfflineTripStore()
+    /// 電波があるか（`NWPathMonitor`）。圏外の旅の画面の出し分けに使う
+    @StateObject private var connectivity = Connectivity()
     /// **APNs のトークンは `UIApplicationDelegate` にしか返ってこない。**
     /// SwiftUI だけでは受け取れないので、この1本だけ UIKit を繋ぐ
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -185,7 +191,21 @@ struct JourneyPhotoApp: App {
                 .environmentObject(seenStories)
                 .environmentObject(push)
                 .environmentObject(toasts)
+                .environmentObject(store)
+                .environmentObject(offlineTrips)
+                .environmentObject(connectivity)
+                .task { connectivity.start() }
                 .task { await auth.restore() }
+                // **取引は起動直後から聞く**（Apple の決まり。更新・別の端末での購入・返金が届く）。
+                // サーバーへ渡し終えたら、マイページ・設定がプロフィールを読み直す
+                .task {
+                    let auth = auth
+                    let purchases = environment.purchases
+                    store.configure(currentUserId: { auth.userId },
+                                    submit: { await purchases.submit(signedTransaction: $0) },
+                                    onDelivered: { auth.noteProfileChanged() })
+                    store.start()
+                }
                 // 🔴 **退会の途中で止まったアカウント**（自分のプロフィールが 410）。サーバーの
                 // データは消えているので、使い続ける道は無い——残り（サーバーの退会の
                 // やり直し・Cognito の削除・端末の控え）を済ませる一択にする
@@ -258,6 +278,18 @@ struct JourneyPhotoApp: App {
                     StoryUploadCenter.shared.userChanged(to: auth.userId)
                     discardOrphanTransfers()
                 }
+                // 電波なしで使える旅の置き場を人に合わせる。**圏外で起動して本人の ID が取れなかった回は、
+                // 前に使っていた人の置き場を出す**（圏外で使うための機能なので、圏外の起動で消えては困る）。
+                // 期限切れのログアウトも同じ人が入り直すことが多いので切り替えない
+                .task(id: auth.state) {
+                    guard !auth.isResolving else { return }
+                    if auth.isSignedOutUncertain {
+                        offlineTrips.useLastUser()
+                        return
+                    }
+                    if auth.userId == nil, auth.signedOutByExpiry { return }
+                    offlineTrips.use(userId: auth.userId)
+                }
                 // **`userId` ではなく状態で見る。** 起動直後の確認中（unknown）も
                 // ログアウト（signedOut）も `userId` は nil で、確認が
                 // 「ログインしていない」に決まったときに走り直さない
@@ -313,6 +345,11 @@ struct JourneyPhotoApp: App {
                     // **行きたい場所は最後。** 端末にしか無い分を1本ずつ送るので、回線が
                     // 詰まっていると長く待つ——その間ブロック一覧の同期が止まっていた
                     await syncWishlist(since: wishMark)
+                    // **渡し損ねた購入を送り直す**（買った時に圏外・ログインが切れていた分）。
+                    // 鍵を持たない絵の撮影（`PreviewSession`）では送らない
+                    if auth.userId != nil, PreviewSession.userId == nil {
+                        await store.deliverUnfinished()
+                    }
                 }
         }
     }

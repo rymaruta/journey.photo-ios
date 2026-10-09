@@ -12,7 +12,9 @@ import SwiftUI
 /// `displayBadge` はその保存済みの持ち物で確かめる。読み終えるまで「決める」は押せない
 /// （読めなかったときはプロフィールの持ち物のまま選ばせる）
 ///
-/// **第1段階では Pro 限定の章の段は出さない**（まだ買えない＝押しても行き止まりになる）。
+/// **「PRO 限定」の段（第2段階・板 BadgePicker）**: まだ持っていない Pro 限定のバッジ（サポーター章・
+/// これから届く季節の章・第3段階の機能の章）を暗く並べる。Pro でなければ鍵の印を付け、押すと
+/// Pro の案内（板 63）。Pro の人には鍵も「Pro で集める」も出さない（届くのを待つだけ）。
 struct NameSideBadgeView: View {
 
     /// 開いた時点の自分のプロフィール
@@ -22,7 +24,12 @@ struct NameSideBadgeView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var store: StoreService
     @Environment(\.dismiss) private var dismiss
+    /// Pro の案内（PRO 限定の段から）
+    @State private var showPaywall = false
+    /// 案内を開いた時点の「サーバーに渡し終えた回数」。閉じたときに進んでいれば買えた
+    @State private var deliveredAtPaywall = 0
 
     /// 選んでいるバッジの鍵（nil は「なし」）
     @State private var selected: String?
@@ -79,6 +86,7 @@ struct NameSideBadgeView: View {
                     badgeGrid
                         .padding(.horizontal, 14)
                         .padding(.top, 4)
+                    proSection
                     if showsShelfLink {
                         shelfLink
                             .padding(.horizontal, 20)
@@ -111,6 +119,12 @@ struct NameSideBadgeView: View {
         .interactiveDismissDisabled(saving)
         .fullScreenCover(item: $viewing) { badge in
             MedalViewerView(badge: badge, ownerName: profile.name)
+        }
+        // 買えたら（サーバーが受け取ったら）この画面も閉じる。マイページが Pro の姿で読み直す
+        .fullScreenCover(isPresented: $showPaywall, onDismiss: {
+            if store.deliveredRevision != deliveredAtPaywall { dismiss() }
+        }) {
+            PaywallView()
         }
         .task { await refreshBadges() }
     }
@@ -275,6 +289,88 @@ struct NameSideBadgeView: View {
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
+    // MARK: - PRO 限定
+
+    private var lockedItems: [ProChapters.LockedItem] { ProChapters.lockedItems(owned: badges) }
+
+    private func openPaywall() {
+        deliveredAtPaywall = store.deliveredRevision
+        showPaywall = true
+    }
+
+    /// 板: 眉ラベル「PRO 限定」と右に「Pro で集める」（真鍮・44pt）、48pt の絵を 55% で4列・右下に鍵
+    @ViewBuilder
+    private var proSection: some View {
+        let items = lockedItems
+        if !items.isEmpty {
+            HStack {
+                Text(L("PRO 限定", "PRO ONLY"))
+                    .jpEyebrow()
+                    .foregroundStyle(WebTheme.accent)
+                Spacer(minLength: 8)
+                if !profile.isPro {
+                    Button { openPaywall() } label: {
+                        Text(L("Pro で集める", "Collect with Pro"))
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.accent)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("nameSide.proCollect")
+                }
+            }
+            .frame(minHeight: WebTheme.minTapTarget)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(items) { item in
+                    lockedCell(item)
+                }
+            }
+            .padding(.horizontal, 14)
+        }
+    }
+
+    private func lockedCell(_ item: ProChapters.LockedItem) -> some View {
+        let locked = !profile.isPro
+        return Button { if locked { openPaywall() } } label: {
+            VStack(spacing: 4) {
+                Image(item.smallImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 48, height: 48)
+                    .opacity(0.55)
+                    .overlay(alignment: .bottomTrailing) {
+                        if locked {
+                            // 板: 16pt・真鍮の線 2・地の色の丸（角 8・内側 2）。右 -3・下 -2 にはみ出す
+                            Image(systemName: "lock")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(WebTheme.accent)
+                                .frame(width: 16, height: 16)
+                                .background(NameSideChoice.sheetBackground, in: RoundedRectangle(cornerRadius: 8))
+                                .offset(x: 3, y: 2)
+                        }
+                    }
+                Text(item.name)
+                    .font(.caption)
+                    .foregroundStyle(WebTheme.faint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(WebTheme.minimumScale(forTextSize: 12))
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 2)
+            .frame(maxWidth: .infinity, minHeight: 80)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!locked)
+        .accessibilityLabel(locked ? L("\(item.name)（Pro 限定）", "\(item.name) (Pro only)")
+                                   : L("\(item.name)（まだ届いていません）", "\(item.name) (not yet)"))
+        .accessibilityHint(locked ? L("Pro の案内を開きます", "Opens the Pro page") : "")
+    }
+
     private var shelfLink: some View {
         NavigationLink {
             BadgeShelfView(mode: .mine, allowsChoosing: false)
@@ -321,10 +417,9 @@ struct NameSideBadgeView: View {
             .disabled(saving || !refreshed)
             .opacity(refreshed ? 1 : 0.5)
             .accessibilityIdentifier("nameSide.save")
-            Text(profile.isPro
-                 ? L("バッジは1つ（Pro でも1つ）。Pro マークは Pro の間だけ出ます",
-                     "One badge (Pro included). The Pro mark shows while you're Pro.")
-                 : L("名前の横に出せるバッジは1つです", "You can show one badge next to your name"))
+            // 板の文言（第2段階から Pro があるので、Pro でない人にも同じ文を出す）
+            Text(L("バッジは1つ（Pro でも1つ）。Pro マークは Pro の間だけ出ます",
+                   "One badge (Pro included). The Pro mark shows while you're Pro."))
                 .font(.caption)
                 .foregroundStyle(WebTheme.faint)
                 .multilineTextAlignment(.center)

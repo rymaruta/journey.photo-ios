@@ -31,14 +31,20 @@ let package = Package(
         // 引数ラベルの不一致・型の取り違え。
         .target(name: "Combine", path: "Shims/Combine"),
         .target(name: "SwiftUI", dependencies: ["Combine"], path: "Shims/SwiftUI"),
-        .target(name: "UIKit", dependencies: ["SwiftUI", "ImageIO"], path: "Shims/UIKit"),
+        // 描く層（カメラの映像の層の親）。本物は UIKit が再輸出する
+        .target(name: "QuartzCore", path: "Shims/QuartzCore"),
+        .target(name: "UIKit", dependencies: ["SwiftUI", "ImageIO", "QuartzCore"], path: "Shims/UIKit"),
         .target(name: "PhotosUI", dependencies: ["SwiftUI", "UIKit", "Photos"], path: "Shims/PhotosUI"),
         .target(name: "CoreLocation", path: "Shims/CoreLocation"),
         .target(name: "Photos", dependencies: ["UIKit", "CoreLocation", "ImageIO"], path: "Shims/Photos"),
-        .target(name: "MapKit", dependencies: ["SwiftUI", "CoreLocation"], path: "Shims/MapKit"),
-        .target(name: "AVFoundation", path: "Shims/AVFoundation"),
+        .target(name: "MapKit", dependencies: ["SwiftUI", "UIKit", "CoreLocation"], path: "Shims/MapKit"),
+        .target(name: "AVFoundation", dependencies: ["QuartzCore"], path: "Shims/AVFoundation"),
         .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation"], path: "Shims/AVKit"),
         .target(name: "UserNotifications", path: "Shims/UserNotifications"),
+        // 電波の有無の見張り（`NWPathMonitor`・電波なしで使える旅）
+        .target(name: "Network", path: "Shims/Network"),
+        // 定期購入（Pro）。SwiftUI と重なる口（`manageSubscriptionsSheet`）があるので SwiftUI を読む
+        .target(name: "StoreKit", dependencies: ["SwiftUI"], path: "Shims/StoreKit"),
         .target(name: "ImageIO", path: "Shims/ImageIO"),
         .target(name: "CoreImage", dependencies: ["ImageIO"], path: "Shims/CoreImage"),
         .target(name: "UniformTypeIdentifiers", path: "Shims/UniformTypeIdentifiers"),
@@ -56,7 +62,7 @@ let package = Package(
             dependencies: [
                 "SwiftUI", "Combine", "UIKit", "PhotosUI", "Photos", "MapKit", "CoreLocation",
                 "AVFoundation", "AVKit", "ImageIO", "CoreImage", "UniformTypeIdentifiers", "UserNotifications",
-                "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
+                "StoreKit", "QuartzCore", "Network", "Amplify", "AWSCognitoAuthPlugin", "AWSPluginsCore",
             ],
             path: "Sources/JourneyPhoto",
             exclude: ["Resources", "Assets.xcassets"]

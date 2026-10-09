@@ -115,13 +115,19 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
-        XCTAssertEqual(releases.map(\.version), ["1.0.73", "1.0.67"])
-        // 1.0.73: メダル。期限のある初期ユーザー章を先頭に
+        XCTAssertEqual(releases.map(\.version), ["1.0.79", "1.0.73", "1.0.67"])
+        // 1.0.79: Pro。始まったことを先頭に（入口は設定なので行き先は無い）
         let latest = try XCTUnwrap(releases.first)
         XCTAssertEqual(latest.items.count, 4)
-        XCTAssertEqual(latest.items.first?.title.ja, "初期ユーザー章を贈ります")
-        XCTAssertEqual(latest.items.compactMap(\.destination), [.mypage, .mypage])
-        let previous = releases[1]
+        XCTAssertEqual(latest.items.first?.title.ja, "Journey Photo Pro がはじまりました")
+        XCTAssertNil(latest.items.first?.destination)
+        XCTAssertEqual(latest.items.compactMap(\.destination), [.map, .mypage])
+        // 1.0.73: メダル。期限のある初期ユーザー章を先頭に
+        let medals = releases[1]
+        XCTAssertEqual(medals.items.count, 4)
+        XCTAssertEqual(medals.items.first?.title.ja, "初期ユーザー章を贈ります")
+        XCTAssertEqual(medals.items.compactMap(\.destination), [.mypage, .mypage])
+        let previous = releases[2]
         XCTAssertEqual(previous.items.count, 8)
         XCTAssertEqual(previous.items.first?.title.ja, "撮影スポットに作例写真")
         XCTAssertEqual(previous.items.compactMap(\.destination), [.map, .search, .home, .mypage, .mypage])

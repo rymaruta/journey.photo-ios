@@ -81,8 +81,10 @@ targets:
         JPCognitoClientId: $(JP_COGNITO_CLIENT_ID)
         JPCognitoRegion: $(JP_COGNITO_REGION)
         JPEnvironmentName: $(JP_ENV_NAME)
+        # Pro の商品名の頭（`<束の名前>.pro.monthly`）。サーバーの `proProductIds(bundleId)` と同じ作り方
+        JPStoreProductPrefix: $(JP_BUNDLE_ID)
         # 5.1.1 / 4.2 で審査官が読む利用目的。日本語と英語の両方を出す
-        NSCameraUsageDescription: 写真を撮って投稿するためにカメラを使います。
+        NSCameraUsageDescription: 写真を撮って投稿するため、また作例を重ねて撮るためにカメラを使います。
         NSPhotoLibraryUsageDescription: 端末の写真を選んで投稿するため、また撮影日と場所から旅を見つけるために使います。写真は選んだものだけを送ります。
         NSPhotoLibraryAddUsageDescription: 撮った写真を端末に保存するために使います。
         # 一部だけ許可（.limited）のとき、iOS が起動ごとに出す「写真を選び直す」案内を止める。
@@ -166,6 +168,13 @@ schemes:
         JourneyPhotoUITests: [test]
     run:
       config: Debug
+      # **Xcode から走らせたときだけ効く、手元の App Store の模型**（Pro の定期購入・第2段階）。
+      # 本物の商品は App Store Connect の本番のアプリにだけある（staging の束には無い）ので、
+      # Debug（＝staging の束）で買う流れを試すにはこれが要る。本番と staging の両方の
+      # 商品名を入れてある。ここで買った取引は Xcode の鍵で署名されるので、サーバー
+      # （`POST /user/purchases`）は 400 で断る——画面の流れを見るためだけのもの。
+      # TestFlight・Archive・テストには効かない（流れの全体は `Core/Store/StoreService.swift` の注記）
+      storeKitConfiguration: Config/JourneyPhotoPro.storekit
     test:
       config: Debug
       targets:

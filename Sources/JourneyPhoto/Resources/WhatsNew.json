@@ -2,6 +2,33 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.0.79",
+      "items": [
+        {
+          "symbol": "sparkles",
+          "title": { "ja": "Journey Photo Pro がはじまりました", "en": "Journey Photo Pro is here" },
+          "detail": { "ja": "設定から始められます。名前の横に Pro マークとサポーターバッジが付きます。", "en": "Start it from Settings. You also get a Pro mark and a supporter badge next to your name." }
+        },
+        {
+          "symbol": "camera.viewfinder",
+          "title": { "ja": "作例を重ねて撮る", "en": "Shoot over a reference" },
+          "detail": { "ja": "撮影スポットの作例をカメラに重ねて、同じ構図で撮れます。", "en": "Overlay a spot's sample photo on your camera and shoot the same composition." },
+          "destination": "map"
+        },
+        {
+          "symbol": "sun.haze",
+          "title": { "ja": "光と天気の知らせ", "en": "Light & weather alerts" },
+          "detail": { "ja": "行きたい場所が「明日の朝、晴れて朝焼け」なら、前の晩にお知らせします。", "en": "The night before, we let you know if a place you want to go will have a clear sunrise." }
+        },
+        {
+          "symbol": "icloud.slash",
+          "title": { "ja": "電波なしで使える旅", "en": "Offline trips" },
+          "detail": { "ja": "旅の計画の地図・作例・光の時刻を端末に入れておけば、圏外でもどこで何を撮るか分かります。", "en": "Save a trip's maps, sample photos and light times to your device to know where and what to shoot, even with no signal." },
+          "destination": "mypage"
+        }
+      ]
+    },
+    {
       "version": "1.0.73",
       "items": [
         {

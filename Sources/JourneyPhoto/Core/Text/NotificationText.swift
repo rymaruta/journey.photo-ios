@@ -126,7 +126,8 @@ enum NotificationText {
         case .comment: rest = L(" がコメントしました", " commented on your photo")
         case .follow: rest = L(" があなたをフォローしました", " followed you")
         case .storyreply: rest = L(" がストーリーに返信しました", " replied to your story")
-        case .badge, .none: return nil
+        // 光と天気の知らせは一覧の行にならない（プッシュだけ）
+        case .badge, .light, .none: return nil
         }
         return Line(who: who, rest: rest)
     }
@@ -137,7 +138,7 @@ enum NotificationText {
         guard let key = row.key, BadgeCatalog.isKnown(key) else { return nil }
         let name = BadgeCatalog.name(key)
         let tier = BadgeCatalog.hasTiers(key)
-            ? " · " + BadgeCatalog.tierWord(BadgeCatalog.clampedTier(key, row.tier ?? 1)) : ""
+            ? " · " + BadgeCatalog.tierWord(key, row.tier ?? 1) : ""
         return Line(who: name, rest: L("のメダルを手に入れました", " medal earned") + tier)
     }
 

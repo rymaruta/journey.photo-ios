@@ -17,6 +17,8 @@ import sys
 # 型 → 必要な import の組
 OVERLAYS = {
     r"\bPhotosPicker(Item|SelectionBehavior)?\b": ("SwiftUI", "PhotosUI"),
+    # 解約・プラン変更の画面（StoreKit と SwiftUI の重なり `_StoreKit_SwiftUI`）
+    r"\bmanageSubscriptionsSheet\b": ("SwiftUI", "StoreKit"),
 }
 
 def main(roots):

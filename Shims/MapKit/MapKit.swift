@@ -1,6 +1,7 @@
 // MapKit の模型。
 import Foundation
 import SwiftUI
+import UIKit
 // `CLLocationCoordinate2D` は CoreLocation の型。本物も MapKit を読めば
 // 透けて見えるので、同じ見え方にしておく
 @_exported import CoreLocation
@@ -217,4 +218,24 @@ extension View {
     public func mapFeatureSelectionDisabled(_ isDisabled: @escaping (MapFeature) -> Bool) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     /// Apple の詳細カード（iOS 18）。`item` が nil で閉じる
     public func mapItemDetailSheet(item: Binding<MKMapItem?>, displaysMap: Bool = true) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
+}
+
+// MARK: - 地図の画像（電波なしで使える旅・2026-10-09）
+
+/// 地図を1枚の画像に撮る。本物は UIKit の `UIImage`・`UITraitCollection` を使う
+public final class MKMapSnapshotter {
+    public final class Options {
+        public init() {}
+        public var region = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                                               span: MKCoordinateSpan(latitudeDelta: 1, longitudeDelta: 1))
+        public var size = CGSize(width: 0, height: 0)
+        public var traitCollection = UITraitCollection()
+    }
+    public final class Snapshot {
+        public var image: UIImage { UIImage() }
+        public func point(for coordinate: CLLocationCoordinate2D) -> CGPoint { .zero }
+    }
+    public init(options: Options) {}
+    public func start() async throws -> Snapshot { Snapshot() }
+    public func cancel() {}
 }
