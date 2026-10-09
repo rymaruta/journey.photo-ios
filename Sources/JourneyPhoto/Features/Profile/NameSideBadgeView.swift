@@ -118,7 +118,8 @@ struct NameSideBadgeView: View {
                     .font(JPFont.display(26, relativeTo: .title))
                     .foregroundStyle(Color.white)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    // 明朝は 18pt を割らない（26 × 0.7 ≈ 18.2・JPFont の注記）
+                    .minimumScaleFactor(0.7)
                 NameMarks(verified: profile.verified, proStyle: profile.isPro ? style : nil,
                           badge: selectedBadge, nameSize: 26, relativeTo: .title, fit: .mincho)
             }

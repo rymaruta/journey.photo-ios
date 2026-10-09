@@ -53,6 +53,8 @@ struct MyPageView: View {
     @ObservedObject private var tabRouter = TabRouter.shared
     /// 名前の横の画面（名前の行を押すと開く・板 BadgePicker）
     @State private var showNameSide = false
+    /// 明朝 26 の名前の行の高さの見込み（文字サイズの設定で伸びる）
+    @ScaledMetric(relativeTo: .title) private var nameLineHeight: CGFloat = 36
 
     /// 板 05c: 3列・隙間 4pt・角なし
     private let columns = [
@@ -399,7 +401,7 @@ struct MyPageView: View {
             }
             .frame(minHeight: WebTheme.minTapTarget)
             .contentShape(Rectangle())
-            .padding(.vertical, -Self.nameTapSlack)
+            .padding(.vertical, -nameTapSlack)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -410,9 +412,11 @@ struct MyPageView: View {
         .accessibilityIdentifier("mypage.nameLine")
     }
 
-    /// 名前の行の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）。明朝 26 の行は
-    /// 約 36pt なので、44pt にしても並びの高さは変えない
-    private static let nameTapSlack: CGFloat = 4
+    /// 名前の行の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）。
+    /// **44pt に足りない分だけ**張り出し、並びの高さは変えない。明朝 26 の行は既定の文字の
+    /// 大きさで約 36pt（実機で測っていない）。文字を大きくして行が 44pt を超えたら張り出さない
+    /// ——超えても張り出すと、下の「@ユーザー名」の行に重なる
+    private var nameTapSlack: CGFloat { max(0, (WebTheme.minTapTarget - nameLineHeight) / 2) }
 
     /// 数の並び（板 05c: 投稿・フォロワー・フォロー中の3列・数字（`JPFont.statNumber`）と名前）。
     /// 列は幅を三等分し、押せる高さは 44pt
