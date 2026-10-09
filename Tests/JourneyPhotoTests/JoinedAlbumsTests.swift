@@ -38,6 +38,30 @@ final class JoinedAlbumsTests: XCTestCase {
         XCTAssertTrue(other.entries.isEmpty)
     }
 
+    /// 🔴 2026-10-09: 参加の答えを待つ間にアカウントを替えると、**替わった後の人**の控えに
+    /// 書いていた。送る前の人（`owner`）を取って渡し、その人の控えに書く
+    @MainActor
+    func testJoinFinishingAfterAccountSwitchGoesToTheJoiner() async throws {
+        let (joined, defaults) = store("joined-switch")
+        joined.use(userId: "u1")
+        let owner = joined.owner
+        // 答えを待つ間に替わった
+        joined.use(userId: "u2")
+        joined.remember(id: "a1", title: "北欧の旅", token: "t1", for: owner)
+        XCTAssertTrue(joined.entries.isEmpty, "替わった後の人の一覧に入った")
+
+        let u2 = JoinedAlbumsStore(defaults: defaults)
+        u2.use(userId: "u2")
+        XCTAssertTrue(u2.entries.isEmpty, "替わった後の人の控えに書いた")
+        let u1 = JoinedAlbumsStore(defaults: defaults)
+        u1.use(userId: "u1")
+        XCTAssertEqual(u1.entries.map(\.id), ["a1"], "参加した人の控えから落ちた")
+
+        // 替わっていなければ今までどおり一覧にも入る
+        joined.remember(id: "a2", title: "B", token: "t2", for: joined.owner)
+        XCTAssertEqual(joined.entries.map(\.id), ["a2"])
+    }
+
     /// 同じアルバムのリンクを開き直しても増えない（合図は新しい方で上書き）。
     @MainActor
     func testReJoiningReplacesInsteadOfDuplicating() async throws {

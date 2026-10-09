@@ -183,10 +183,13 @@ struct InviteView: View {
         isJoining = true
         message = nil
         defer { isJoining = false }
+        // 送る前の人を取る。**答えを待つ間にアカウントを替えても、参加した人の控えに書く**
+        // （替わった後の人の一覧に、前の人が参加したアルバムを入れない）
+        let owner = joined.owner
         do {
             let result = try await environment.albums.join(token: token)
             // **サーバーが返した ID を使う**（プレビューと食い違ったら、そちらが正）
-            joined.remember(id: result.albumId, title: preview.album.title, token: token)
+            joined.remember(id: result.albumId, title: preview.album.title, token: token, for: owner)
             // 人数を取り直す（参加しても「N 人」のままだった）。取れなければ前のまま
             let refreshed = try? await environment.albums.invite(token: token)
             if let refreshed { self.preview = refreshed }
