@@ -115,6 +115,9 @@ struct NotificationsView: View {
         case .shelf:
             // 新しいメダル → 自分のバッジの棚（板 15 → Shelf）
             BadgeShelfView(mode: .mine)
+        case .light:
+            // 光と天気の知らせ（プッシュだけ）→ 行きたい場所の光（板 LightAlert）
+            LightForecastView()
         }
     }
 
@@ -394,6 +397,8 @@ final class NotificationsViewModel: ObservableObject {
         case user(String)
         /// 自分のバッジの棚（新しいメダル）
         case shelf
+        /// 行きたい場所の光（光と天気の知らせ・プッシュだけ）
+        case light
         case none
     }
 
@@ -406,12 +411,14 @@ final class NotificationsViewModel: ObservableObject {
         case photo(Photo, fromPublicFeed: Bool)
         case user(String)
         case shelf
+        case light
 
         static func == (lhs: Route, rhs: Route) -> Bool {
             switch (lhs, rhs) {
             case let (.photo(a, fa), .photo(b, fb)): return a.id == b.id && fa == fb
             case let (.user(a), .user(b)): return a == b
             case (.shelf, .shelf): return true
+            case (.light, .light): return true
             default: return false
             }
         }
@@ -424,6 +431,8 @@ final class NotificationsViewModel: ObservableObject {
                 hasher.combine(1); hasher.combine(id)
             case .shelf:
                 hasher.combine(2)
+            case .light:
+                hasher.combine(3)
             }
         }
     }
@@ -502,6 +511,8 @@ final class NotificationsViewModel: ObservableObject {
     ///   にする（非公開にされた／消された写真を押して空振りさせない）
     /// - ストーリーへの返信は行き先が無い（24時間で消えるため）
     /// - 新しいメダルは自分のバッジの棚（知らない鍵は行が描かれないので押せない）
+    /// - 光と天気の知らせ（プッシュだけ）は行きたい場所の光。Pro でなくなっていたら、その画面が
+    ///   「Pro の機能です」と言う（ここでは Pro かを見ない——見るのはサーバー）
     func destination(for notification: AppNotification) -> Destination {
         switch notification.kind {
         case .follow:
@@ -521,6 +532,8 @@ final class NotificationsViewModel: ObservableObject {
         case .badge:
             guard let key = notification.key, BadgeCatalog.isKnown(key) else { return .none }
             return .shelf
+        case .light:
+            return .light
         case .storyreply, .none:
             return .none
         }
@@ -531,6 +544,7 @@ final class NotificationsViewModel: ObservableObject {
         case .photo(let photo, let fromPublicFeed): return .photo(photo, fromPublicFeed: fromPublicFeed)
         case .user(let id): return .user(id)
         case .shelf: return .shelf
+        case .light: return .light
         case .none: return nil
         }
     }

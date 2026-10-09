@@ -10,7 +10,7 @@ import SwiftUI
 ///    （やめても番号は残るので、Pro でなくなっても出る・板 64 の注記）
 /// 3. 「名前の横のバッジと Pro マーク」（真鍮のメダルの線の絵）。「初期ユーザー · Pro マークは 絞り羽根」
 ///
-/// 板の「お知らせ」の節にある「光と天気の知らせ」は第3段階の機能なので出さない。
+/// 板の「お知らせ」の節にある「光と天気の知らせ」は、この節の最後に置く（`LightAlertSettingsRows` の注記）。
 struct ProSettingsSection: View {
 
     /// 自分のプロフィール（読めていなければ nil＝Pro ではない扱いで出す）
@@ -48,6 +48,7 @@ struct ProSettingsSection: View {
                     .buttonStyle(JPRowButtonStyle())
                     .accessibilityIdentifier("settings.nameSide")
                 }
+                LightAlertSettingsRows(profile: profile)  // 光と天気の知らせ（第3段階・2026-10-09）
             }
         }
         .task {

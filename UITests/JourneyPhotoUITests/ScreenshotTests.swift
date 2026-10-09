@@ -939,6 +939,50 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **光と天気の知らせ**（Pro・板 LightAlert・2026-10-09）: 設定の Pro の節の「光と天気の知らせ」→
+    /// 一覧「行きたい場所の光（今週）」。見本（`-JPLightForecastPreview sample`・DEBUG だけ・本物の予報ではない）と
+    /// 空の姿（`empty`）を1枚ずつ。出なければ撮らない（この試験の決まり）
+    func testCapturesLightForecast() {
+        for (mode, name) in [("sample", "84-光と天気の知らせ"), ("empty", "84b-光と天気の知らせ（空）")] {
+            let app = XCUIApplication()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-JPLightForecastPreview", mode]
+            app.launch()
+
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+            tabBar.buttons.element(boundBy: 4).tap()
+            guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+            let gear = app.buttons["設定"].firstMatch
+            guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+            gear.tap()
+            let row = app.buttons["settings.lightForecast"].firstMatch
+            guard row.waitForExistence(timeout: 10) else { return }
+            if !row.isHittable { app.swipeUp(); Thread.sleep(forTimeInterval: 1) }
+            guard row.isHittable else { return }
+            row.tap()
+            let ready = mode == "sample"
+                ? app.buttons["lightForecast.card"].firstMatch
+                : app.links["lightForecast.attribution"].firstMatch
+            _ = ready.waitForExistence(timeout: 10)
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, name)
+            if mode == "sample", ready.exists, ready.isHittable {
+                // 札を開いた姿（その場所の7日）
+                ready.tap()
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "84a-光と天気の知らせ（札を開いた）")
+            }
+            app.terminate()
+        }
+    }
+
     /// **探すの「季節・時間帯で絞る」**（2026-10-03・戦略の計画6）。発見の顔の「季節・時間帯から探す」で
     /// 「秋」を押した1枚（秋の案内のある撮影スポットと、秋に撮った写真）と、続けて「夕」を重ねた1枚。
     ///

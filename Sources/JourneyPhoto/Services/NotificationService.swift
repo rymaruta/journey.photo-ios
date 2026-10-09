@@ -33,6 +33,11 @@ struct AppNotification: Decodable, Identifiable, Equatable {
 
     enum Kind: String, Decodable {
         case like, comment, follow, storyreply, badge
+        /// 光と天気の知らせ（Pro・前の晩 20:00 のプッシュ・2026-10-09）。**プッシュにだけ来る**——
+        /// サーバーはお知らせの一覧に積まない（`lightForecast.ts` の `alertOne`）。押したら一覧
+        /// 「行きたい場所の光」を開く。一覧に紛れ込んでも行の文言を持たないので描かれない
+        /// （`NotificationText.line`）
+        case light
     }
 
     /// 種類。未知の文字列は nil にする
