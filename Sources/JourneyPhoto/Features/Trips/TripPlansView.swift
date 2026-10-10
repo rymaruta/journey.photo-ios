@@ -71,6 +71,10 @@ struct TripPlansView: View {
         }
         .task { await model.load(environment: environment) }
         .refreshable { await model.load(environment: environment) }
+        // 一覧が取れたら、プランが無くなった旅の途中のもの（保存を止めたあとにプランを消した）を片づける
+        .onChange(of: model.status == .loaded ? model.plans.map(\.planId) : nil) { _, ids in
+            if let ids { offline.removeOrphanPartials(keeping: Set(ids)) }
+        }
         .navigationDestination(isPresented: $showOpened) {
             if let planId = openedPlanId {
                 TripPlanDetailView(planId: planId, model: model)

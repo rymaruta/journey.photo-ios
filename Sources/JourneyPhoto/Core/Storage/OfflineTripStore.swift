@@ -20,10 +20,12 @@ struct OfflineTripSources {
     var samples: (OfflineTripPlan.Stop) async -> [OfflineSampleSource]
     /// 画像を取る。圏外は `URLError` を投げる
     var download: (URL) async throws -> Data
-    /// その場所の周りの地図の画像（JPEG）。座標が無い・描けなければ nil
-    var stopMap: (OfflineTripPlan.Stop) async -> Data?
-    /// 旅全体の地図の画像（番号の点つき）
-    var overviewMap: ([OfflineTripPlan.Stop]) async -> Data?
+    /// その場所の周りの地図の画像（JPEG）。座標が無い（描くものが無い）ときだけ nil。
+    /// 🔴 **撮れなかったら投げる**（2026-10-09 判断）——nil と同じに扱っていた頃は、その場所を
+    /// 「地図なしで済んだ」と記録し、続きから保存しても地図を取り直さなかった
+    var stopMap: (OfflineTripPlan.Stop) async throws -> Data?
+    /// 旅全体の地図の画像（番号の点つき）。座標のある場所が無いときだけ nil、撮れなかったら投げる
+    var overviewMap: ([OfflineTripPlan.Stop]) async throws -> Data?
 }
 
 /// 端末に保存した旅の置き場（「電波なしで使える旅」・板 72〜72e・2026-10-09）。
@@ -91,7 +93,14 @@ final class OfflineTripStore: ObservableObject {
         manifests.values.sorted { $0.savedAt > $1.savedAt }
     }
 
-    var totalBytes: Int64 { manifests.values.reduce(0) { $0 + $1.bytes } }
+    /// 途中のもの（`<旅>.partial/`）の大きさの合計。**端末を使っている分なので数える**（2026-10-09 判断:
+    /// 保存を止めたあとプランを消すと途中のものが残り、容量にも「すべて削除」にも出なかった）
+    @Published private(set) var partialBytes: Int64 = 0
+
+    var totalBytes: Int64 { manifests.values.reduce(0) { $0 + $1.bytes } + partialBytes }
+
+    /// 端末に何か残っているか（保存済みか途中のもの）。「すべて削除」を出すか
+    var hasLocalData: Bool { !manifests.isEmpty || partialBytes > 0 }
 
     func manifest(_ planId: String) -> OfflineTripManifest? { manifests[planId] }
 
@@ -169,6 +178,47 @@ final class OfflineTripStore: ObservableObject {
         }
         manifests = found
         self.statuses = statuses
+        refreshPartialBytes()
+    }
+
+    /// 途中のものの大きさを数え直す
+    private func refreshPartialBytes() {
+        partialBytes = partialDirs().reduce(0) { $0 + OfflineTripBytes.count(in: $1, fileManager: fileManager) }
+    }
+
+    private func partialInfo(in dir: URL) -> PartialInfo? {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent(Self.partialInfoName)) else { return nil }
+        return try? JSONDecoder().decode(PartialInfo.self, from: data)
+    }
+
+    /// いまの人の途中のもの（`<旅>.partial/`）の置き場すべて
+    private func partialDirs() -> [URL] {
+        guard let userDir, let names = try? fileManager.contentsOfDirectory(atPath: userDir.path) else { return [] }
+        return names.filter { $0.hasSuffix(".partial") }.map { userDir.appendingPathComponent($0, isDirectory: true) }
+    }
+
+    /// プランが無くなった旅の途中のものを消す（旅行プランの一覧が取れたとき）。
+    /// 保存を止めたあとにプランを消すと、続きから保存する口が無くなり、途中のものだけが残っていた。
+    /// **保存済みの旅は消さない**（帰ってきた旅を自動では消さない・`OfflineSavedView` の注記）。走っている保存も触らない
+    func removeOrphanPartials(keeping planIds: Set<String>) {
+        var removed = false
+        for dir in partialDirs() {
+            let info = partialInfo(in: dir)
+            if let planId = info?.planId {
+                if planIds.contains(planId) || jobs[planId] != nil { continue }
+            }
+            // 印が読めない途中のもの（書きかけで壊れた）も、続きから保存できないので消す
+            try? fileManager.removeItem(at: dir)
+            if let planId = info?.planId {
+                if manifests[planId] == nil {
+                    statuses[planId] = nil
+                } else {
+                    statuses[planId]?.partial = nil
+                }
+            }
+            removed = true
+        }
+        if removed { refreshPartialBytes() }
     }
 
     // MARK: - 保存
@@ -215,12 +265,16 @@ final class OfflineTripStore: ObservableObject {
         if let dir = partialDir(planId) { try? fileManager.removeItem(at: dir) }
         manifests[planId] = nil
         statuses[planId] = nil
+        refreshPartialBytes()
     }
 
     /// 保存した旅をすべて端末から削除（板 72e）
     func deleteAll() {
         let ids = Set(manifests.keys).union(statuses.keys)
         for planId in ids { delete(planId) }
+        // 印が読めず、どの旅とも結びつかない途中のものも消す
+        for dir in partialDirs() { try? fileManager.removeItem(at: dir) }
+        refreshPartialBytes()
     }
 
     // MARK: - 中身
@@ -257,7 +311,8 @@ final class OfflineTripStore: ObservableObject {
             }
             try Task.checkCancellation()
             var overview: String?
-            if let data = await sources.overviewMap(stops) {
+            let overviewData = try await sources.overviewMap(stops)
+            if let data = overviewData {
                 try data.write(to: partial.appendingPathComponent("overview.jpg"), options: .atomic)
                 overview = "overview.jpg"
             }
@@ -298,7 +353,10 @@ final class OfflineTripStore: ObservableObject {
                                                       sourceUrl: source.sourceUrl, licenseUrl: source.licenseUrl))
         }
         var map: String?
-        if stop.coords != nil, let data = await sources.stopMap(stop) {
+        // 撮れなければ投げて保存を止める（この場所は記録しないので、続きから保存で取り直す）
+        var mapData: Data?
+        if stop.coords != nil { mapData = try await sources.stopMap(stop) }
+        if let data = mapData {
             let file = "m\(stop.number).jpg"
             try data.write(to: dir.appendingPathComponent(file), options: .atomic)
             map = file
@@ -354,6 +412,7 @@ final class OfflineTripStore: ObservableObject {
 
     private func apply(_ planId: String, _ event: OfflineSaveStatus.Event) {
         statuses[planId] = OfflineSaveStatus.reduce(statuses[planId] ?? OfflineSaveStatus(), event)
+        refreshPartialBytes()   // 途中のものが増えた・保存済みに入れ替わった
     }
 
     private func write<T: Encodable>(_ value: T, to url: URL) throws {

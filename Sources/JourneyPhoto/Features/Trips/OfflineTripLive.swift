@@ -39,13 +39,13 @@ enum OfflineTripLive {
             },
             stopMap: { stop in
                 guard let c = stop.coords else { return nil }
-                return await snapshot(OfflineTripMap.around(c), size: OfflineTripMap.stopSize,
+                return try await snapshot(OfflineTripMap.around(c), size: OfflineTripMap.stopSize,
                                       dots: [(stop.number, c)])
             },
             overviewMap: { stops in
                 let dots = stops.compactMap { s in s.coords.map { (s.number, $0) } }
                 guard let region = OfflineTripMap.overview(dots.map(\.1)) else { return nil }
-                return await snapshot(region, size: OfflineTripMap.overviewSize, dots: dots)
+                return try await snapshot(region, size: OfflineTripMap.overviewSize, dots: dots)
             })
     }
 
@@ -78,10 +78,13 @@ enum OfflineTripLive {
         }
     }
 
-    /// 地図を撮り、番号の点（真鍮・黒の縁・墨の数字・板 72c）を描いた JPEG。撮れなければ nil
+    /// 地図を撮れなかった（`OfflineTripSources.stopMap` の注記: nil の「描くものが無い」と分ける）
+    struct SnapshotFailed: Error {}
+
+    /// 地図を撮り、番号の点（真鍮・黒の縁・墨の数字・板 72c）を描いた JPEG。**撮れなければ投げる**
     @MainActor
     private static func snapshot(_ region: OfflineTripMap.Region, size: (width: Double, height: Double),
-                                 dots: [(Int, Photo.Coords)]) async -> Data? {
+                                 dots: [(Int, Photo.Coords)]) async throws -> Data {
         let options = MKMapSnapshotter.Options()
         options.region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: region.lat, longitude: region.lng),
@@ -89,7 +92,7 @@ enum OfflineTripLive {
         options.size = CGSize(width: size.width, height: size.height)
         // 黒い画面に合わせて暗い地図で撮る
         options.traitCollection = UITraitCollection(userInterfaceStyle: .dark)
-        guard let shot = try? await MKMapSnapshotter(options: options).start() else { return nil }
+        let shot = try await MKMapSnapshotter(options: options).start()
         let canvas = CGSize(width: size.width, height: size.height)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
@@ -101,7 +104,8 @@ enum OfflineTripLive {
                 drawDot(number: number, at: p)
             }
         }
-        return data.isEmpty ? nil : data
+        guard !data.isEmpty else { throw SnapshotFailed() }
+        return data
     }
 
     /// 番号の点（直径 24pt）

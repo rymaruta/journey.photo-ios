@@ -103,13 +103,32 @@ final class StoreService: ObservableObject {
 
     func product(_ plan: ProPlan) -> Product? { products[plan] }
 
-    /// 商品を読む（読めていれば読み直さない。`force` で読み直す）
+    /// 商品の取り方（試験で差し替える）
+    var fetchProducts: ([String]) async throws -> [Product] = { ids in
+        try await Product.products(for: ids)
+    }
+    /// 走っている読み込み。**後から来た呼び手はこれを待つ**（2026-10-09 判断）。
+    /// 読み込み中に即座に戻していた頃は、設定の節が読んでいる最中に購入を押すと、`purchase` の
+    /// `loadProducts(force: true)` が読み終わる前に戻り、「App Store に接続できませんでした」を出していた
+    private var loadTask: Task<Void, Never>?
+
+    /// 商品を読む（読めていれば読み直さない。`force` で読み直す）。読んでいる最中なら、その読み込みを待つ
     func loadProducts(force: Bool = false) async {
-        if loadState == .loading { return }
+        if let loadTask { return await loadTask.value }
         if loadState == .loaded, !force { return }
         loadState = .loading
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performLoad()
+            self.loadTask = nil
+        }
+        loadTask = task
+        await task.value
+    }
+
+    private func performLoad() async {
         do {
-            let list = try await Product.products(for: ProProducts.allIDs(prefix: prefix))
+            let list = try await fetchProducts(ProProducts.allIDs(prefix: prefix))
             var map: [ProPlan: Product] = [:]
             for product in list {
                 if let plan = ProProducts.plan(for: product.id, prefix: prefix) { map[plan] = product }

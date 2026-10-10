@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// 板のとおりの4行:
 /// 1. 「Journey Photo Pro」（Pro マーク 20pt）。2行目は「月 ¥500 · 次の更新 2026.11.09 · App Store で管理」。
-///    Pro でなければ押すと Pro の案内（板 63）、Pro なら App Store の定期購入の管理
+///    Pro でないと読めたら押すと Pro の案内（板 63）、Pro か、読めていなければ App Store の定期購入の管理
 /// 2. 「サポーター証」（真鍮のカードの線の絵）。「No. 0001 · 手に取って回せます」。**番号を持つ人だけ**
 ///    （やめても番号は残るので、Pro でなくなっても出る・板 64 の注記）
 /// 3. 「名前の横のバッジと Pro マーク」（真鍮のメダルの線の絵）。「初期ユーザー · Pro マークは 絞り羽根」
@@ -14,7 +14,7 @@ import SwiftUI
 /// 板の「お知らせ」の節にある「光と天気の知らせ」は、この節の最後に置く（`LightAlertSettingsRows` の注記）。
 struct ProSettingsSection: View {
 
-    /// 自分のプロフィール（読めていなければ nil＝Pro ではない扱いで出す）
+    /// 自分のプロフィール（読めていなければ nil＝Pro かどうか分からない。案内は出さない）
     let profile: UserProfile?
 
     @EnvironmentObject private var store: StoreService
@@ -23,6 +23,9 @@ struct ProSettingsSection: View {
     @State private var showNameSide = false
 
     private var isPro: Bool { profile?.isPro ?? false }
+    /// Pro かどうか。プロフィールが読めていなければ nil（`ProStatusText.settingsAction` の注記）
+    private var knownPro: Bool? { profile?.isPro }
+    private var action: ProStatusText.SettingsAction { ProStatusText.settingsAction(isPro: knownPro) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -68,15 +71,18 @@ struct ProSettingsSection: View {
 
     private var proRow: some View {
         Button {
-            if isPro { showManage = true } else { showPaywall = true }
+            switch action {
+            case .manage: showManage = true
+            case .paywall: showPaywall = true
+            }
         } label: {
             JPRowLabel(title: "Journey Photo Pro",
-                       detail: ProStatusText.settingsDetail(isPro: isPro, state: store.subscription,
+                       detail: ProStatusText.settingsDetail(isPro: knownPro, state: store.subscription,
                                                             monthlyPrice: store.product(.monthly)?.displayPrice),
                        icon: AnyView(ProMark(style: .iris, side: 20)))
         }
         .buttonStyle(JPRowButtonStyle())
-        .accessibilityHint(isPro ? L("App Store で定期購入を管理します", "Manage your subscription in the App Store")
+        .accessibilityHint(action == .manage ? L("App Store で定期購入を管理します", "Manage your subscription in the App Store")
                                  : L("Pro の案内を開きます", "Opens the Pro page"))
         .accessibilityIdentifier("settings.pro")
     }

@@ -327,10 +327,11 @@ enum ProStatusText {
     /// - Pro だが読めない（別の Apple ID・読み込み中）→ 「App Store で管理」だけ
     /// - Pro でない → 値段と、案内の一言。**値段は App Store の字**（`monthlyPrice`・`Product.displayPrice`）。
     ///   読めないときだけ板の値段（2026-10-09 判断: 日本以外の App Store では円ではないのに「¥500」と出ていた）
-    static func settingsDetail(isPro: Bool, state: ProSubscriptionState?, monthlyPrice: String? = nil,
+    /// - プロフィールが読めていない（`isPro` が nil）→ Pro と同じ形（「App Store で管理」）。案内の値段は出さない
+    static func settingsDetail(isPro: Bool?, state: ProSubscriptionState?, monthlyPrice: String? = nil,
                                timeZone: TimeZone = .current) -> String {
         let manage = L("App Store で管理", "Manage in App Store")
-        guard isPro else {
+        if isPro == false {
             let price = monthlyPrice ?? ProPlan.monthly.fallbackPrice
             return L("月 \(price) から。サポーターバッジも付きます",
                      "From \(price)/month. Includes the supporter badge")
@@ -343,6 +344,21 @@ enum ProStatusText {
         }
         parts.append(manage)
         return parts.joined(separator: " · ")
+    }
+
+    /// 設定の「Journey Photo Pro」の行を押したときの行き先
+    enum SettingsAction: Equatable {
+        /// App Store の定期購入の管理
+        case manage
+        /// Pro の案内
+        case paywall
+    }
+
+    /// **Pro でないと読めたときだけ案内を開く**（2026-10-09 判断）。プロフィールが読めていない
+    /// （圏外・読み込みの失敗で nil）ときは管理を開く——払っている人に案内を出さない
+    /// （`ComposeGuideText.destination` の `.unreachable` と同じ考え。権利を決めるのはサーバー）
+    static func settingsAction(isPro: Bool?) -> SettingsAction {
+        isPro == false ? .paywall : .manage
     }
 
     /// 設定の「サポーター証」の行の2行目（板 43: 「No. 0001 · 手に取って回せます」）
