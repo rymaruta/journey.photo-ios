@@ -374,15 +374,22 @@ enum ProStatusText {
     }
 
     /// 設定の「名前の横のバッジと Pro マーク」の行の2行目（板 43: 「初期ユーザー · Pro マークは 絞り羽根」）。
-    /// Pro でなければバッジだけ（Pro マークは Pro の間だけ出る）。外しているときは「Pro マークは外しています」
-    /// （2026-10-10）
+    /// Pro でなければバッジだけ（Pro マークは Pro の間だけ出る）。外しているときは「Pro マークは外しています」、
+    /// 公式の印を外していれば「公式の印は外しています」も足す（2026-10-10）
     static func nameSideDetail(_ profile: UserProfile) -> String {
         let badge = profile.shownBadge.flatMap { BadgeCatalog.isKnown($0.key) ? BadgeCatalog.name($0.key) : nil }
             ?? L("バッジなし", "No badge")
-        guard profile.isPro else { return badge }
-        guard let mark = profile.chosenProMark else {
-            return badge + " · " + L("Pro マークは外しています", "Pro mark off")
+        var parts = [badge]
+        if profile.isPro {
+            if let mark = profile.chosenProMark {
+                parts.append(L("Pro マークは \(mark.label)", "Pro mark: \(mark.label)"))
+            } else {
+                parts.append(L("Pro マークは外しています", "Pro mark off"))
+            }
         }
-        return badge + " · " + L("Pro マークは \(mark.label)", "Pro mark: \(mark.label)")
+        if profile.verified == true, profile.verifiedMarkRemoved {
+            parts.append(L("公式の印は外しています", "Verified mark off"))
+        }
+        return parts.joined(separator: " · ")
     }
 }

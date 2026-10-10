@@ -280,7 +280,7 @@ struct NameSideBadgeView: View {
         Button(action: action) {
             content()
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(WebTheme.minimumScale(forTextSize: 12))
                 .foregroundStyle(on ? Color.white : WebTheme.muted)
                 .padding(.horizontal, 8)
                 .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)

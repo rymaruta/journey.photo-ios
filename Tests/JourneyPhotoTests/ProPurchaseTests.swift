@@ -397,6 +397,11 @@ final class ProPurchaseTests: XCTestCase {
         // 外しているときは「外しています」（絞り羽根と言わない・2026-10-10）
         let off = try profile(#"{"userId":"u3","pro":true,"proMarkStyle":"none"}"#)
         XCTAssertEqual(ProStatusText.nameSideDetail(off), "バッジなし · Pro マークは外しています")
+        // 公式の印を外していれば言う。付けている・資格の無い人には言わない
+        let verifiedOff = try profile(#"{"userId":"u4","verified":true,"verifiedMarkOff":true}"#)
+        XCTAssertEqual(ProStatusText.nameSideDetail(verifiedOff), "バッジなし · 公式の印は外しています")
+        let verifiedOn = try profile(#"{"userId":"u5","verified":true}"#)
+        XCTAssertEqual(ProStatusText.nameSideDetail(verifiedOn), "バッジなし")
     }
 }
 
