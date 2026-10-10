@@ -121,7 +121,9 @@ final class ComposeCamera: ObservableObject {
         isCapturing = true
         defer { isCapturing = false }
         let output = output
-        let angle = ComposeGuide.captureAngle(coordinator: rotation?.videoRotationAngleForHorizonLevelCapture)
+        // 係の角度は `CGFloat`（本物の SDK）。計算は Double で、つなぎに渡すときに戻す
+        let angle = CGFloat(ComposeGuide.captureAngle(
+            coordinator: rotation.map { Double($0.videoRotationAngleForHorizonLevelCapture) }))
         return await withCheckedContinuation { continuation in
             let delegate = PhotoCaptureDelegate()
             let key = ObjectIdentifier(delegate)

@@ -137,7 +137,7 @@ final class ComposeGuideLauncherTests: XCTestCase {
         XCTAssertTrue(camera.contains("static let gravity: AVLayerVideoGravity = .resizeAspect\n"),
                       "映像を切り抜いて敷いている（線・作例が写真とずれる）")
         XCTAssertTrue(camera.contains("videoGravity = Self.gravity"))
-        XCTAssertTrue(camera.contains("rotation?.videoRotationAngleForHorizonLevelCapture"), "撮る向きが端末の向きでない")
+        XCTAssertTrue(camera.contains("rotation.map { Double($0.videoRotationAngleForHorizonLevelCapture) }"), "撮る向きが端末の向きでない")
         XCTAssertFalse(camera.contains("isVideoRotationAngleSupported(90)"), "90° 決め打ちに戻っている")
         let view = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
         XCTAssertTrue(view.contains("ComposeGuide.viewfinderSize(width:"), "映像の枠が 3:4 でない")

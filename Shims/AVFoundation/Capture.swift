@@ -37,8 +37,9 @@ open class AVCaptureDevice: NSObject {
     open class RotationCoordinator: NSObject {
         public init(device: AVCaptureDevice, previewLayer: CALayer?) {}
         /// 水平を保って撮るための回転角（縦持ち 90・横持ち 0 / 180）
-        open var videoRotationAngleForHorizonLevelCapture: Double { 90 }
-        open var videoRotationAngleForHorizonLevelPreview: Double { 90 }
+        /// 本物と同じく `CGFloat`（2026-10-10: 模型が Double で、Mac の run 397 で初めて型の食い違いが出た）
+        open var videoRotationAngleForHorizonLevelCapture: CGFloat { 90 }
+        open var videoRotationAngleForHorizonLevelPreview: CGFloat { 90 }
     }
     /// 本物では完了の受け手つきの口が async に橋渡しされたもの
     open class func requestAccess(for mediaType: AVMediaType) async -> Bool { false }
@@ -61,8 +62,9 @@ open class AVCaptureOutput: NSObject {
 
 /// 入力と出力のつなぎ（向きだけ使う・iOS 17 の回転角）
 open class AVCaptureConnection: NSObject {
-    open var videoRotationAngle: Double = 0
-    open func isVideoRotationAngleSupported(_ videoRotationAngle: Double) -> Bool { false }
+    /// 本物と同じく `CGFloat`
+    open var videoRotationAngle: CGFloat = 0
+    open func isVideoRotationAngleSupported(_ videoRotationAngle: CGFloat) -> Bool { false }
 }
 
 open class AVCaptureSession: NSObject {
