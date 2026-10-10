@@ -3,8 +3,8 @@ import UIKit
 
 /// 名前の横に並ぶ印（2026-10-09）。**並びは 名前 → 公式（運営だけ）→ Pro マーク → 選んだバッジ。**
 ///
-/// - 公式の封印（`VerifiedBadge`）: 運営が立てた人だけ
-/// - Pro マーク（`ProMark`）: Pro 会員だけ。形は本人が選ぶ
+/// - 公式の封印（`VerifiedBadge`）: 運営が立てた人だけ。本人は外せる（付ける・外すだけ）
+/// - Pro マーク（`ProMark`）: Pro 会員だけ。形は本人が選び、外すこともできる
 /// - 選んだバッジ: **プロフィールの頁だけ**（`showsBadge`）。写真の詳細の作者の行には出さない。
 ///   名前の横の画面の下見は、選んでいる途中の値を直接渡す
 ///
@@ -41,8 +41,10 @@ struct NameMarks: View {
     init(profile: UserProfile?, nameSize: Double = 15, relativeTo: Font.TextStyle = .subheadline,
          fit: VerifiedBadge.Fit = .system, showsBadge: Bool = false,
          onBadgeTap: ((EarnedBadge) -> Void)? = nil) {
-        self.init(verified: profile?.verified,
-                  proStyle: (profile?.isPro ?? false) ? profile?.markStyle : nil,
+        // 本人が外した印は出さない（2026-10-10）。他の人の公開プロフィールは、外した人の資格の項目を
+        // サーバーが落として返すので、同じ判定のままで出ない
+        self.init(verified: profile?.showsVerifiedMark,
+                  proStyle: profile?.shownProMark,
                   badge: showsBadge ? profile?.shownBadge : nil,
                   nameSize: nameSize, relativeTo: relativeTo, fit: fit, onBadgeTap: onBadgeTap)
     }
@@ -206,8 +208,9 @@ enum MyPageNameLine {
     /// 「丸田、認証済み、Pro 会員、名前の横のバッジ: 都道府県 · 銀」
     static func label(_ profile: UserProfile) -> String {
         var parts = [profile.name]
-        if profile.verified == true { parts.append(L("認証済み", "Verified")) }
-        if profile.isPro { parts.append(L("Pro 会員", "Pro member")) }
+        // 名前の横に**出ている**印だけを言う（外した印は言わない・2026-10-10）
+        if profile.showsVerifiedMark { parts.append(L("認証済み", "Verified")) }
+        if profile.shownProMark != nil { parts.append(L("Pro 会員", "Pro member")) }
         if let badge = profile.shownBadge, BadgeCatalog.isKnown(badge.key) {
             parts.append(BadgeCatalog.nameSideLabel(badge))
         }

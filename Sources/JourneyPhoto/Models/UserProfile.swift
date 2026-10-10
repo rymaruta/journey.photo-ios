@@ -50,8 +50,11 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     private let displayBadge: LenientText?
     /// Pro 会員か（**まだ誰も Pro ではない**が、立てば印が出る）
     private let pro: LenientFlag?
-    /// Pro マークの形（`iris` / `plate`）
+    /// Pro マークの形（`iris` / `plate`）。**`none` は本人が印を外している**（2026-10-10）
     private let proMarkStyle: LenientText?
+    /// 本人が認証済みの印を外しているか（2026-10-10）。**本人の応答だけに載る**。
+    /// 公開プロフィールでは、外した人は `verified` ごと返ってこない（サーバーの `toPublicProfile`）
+    private let verifiedMarkOff: LenientFlag?
 
     /// 持っているバッジ。返さないサーバーでは空
     var earnedBadges: BadgeSet {
@@ -100,10 +103,31 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     /// 前の晩の知らせを受け取るか。**無い（古いサーバー）ときは受け取る**（サーバーの既定と同じ）
     var wantsLightAlert: Bool { lightAlert?.value ?? true }
 
-    /// Pro マークの形。知らない値・無い値は既定の絞り羽根
+    /// Pro マークの形。知らない値・無い値は既定の絞り羽根（外しているときも、付け直したときの形として絞り羽根）
     var markStyle: ProMarkStyle {
         proMarkStyle?.value.flatMap(ProMarkStyle.init(rawValue:)) ?? .iris
     }
+
+    // MARK: 名前の横の印の付け外し（2026-10-10 owner「メダルと同様に取り外しできるように」）
+    //
+    // 外しても資格（`isPro`・`verified`）はそのまま。名前の横に出すかだけを本人が決める。
+    // 他の人の公開プロフィールは、外した人の資格の項目をサーバーが落として返すので、
+    // ここで見るのは自分のプロフィール（マイページ・名前の横の画面）のとき
+
+    /// 本人が Pro マークを外しているか（`proMarkStyle: "none"`）
+    var proMarkRemoved: Bool { proMarkStyle?.value == ProMarkStyle.removedValue }
+
+    /// 選んでいる Pro マークの形。**nil は外している**（Pro かどうかは問わない）
+    var chosenProMark: ProMarkStyle? { proMarkRemoved ? nil : markStyle }
+
+    /// 名前の横に出す Pro マーク。Pro で、外していないときだけ
+    var shownProMark: ProMarkStyle? { isPro ? chosenProMark : nil }
+
+    /// 本人が認証済みの印を外しているか
+    var verifiedMarkRemoved: Bool { verifiedMarkOff?.value ?? false }
+
+    /// 名前の横に認証済みの印を出すか。資格があり、外していないときだけ
+    var showsVerifiedMark: Bool { verified == true && !verifiedMarkRemoved }
 
     /// 画面に出す1曲。**先頭だけ**（モックのカードは1枚）
     var bgm: Photo.Song? {
