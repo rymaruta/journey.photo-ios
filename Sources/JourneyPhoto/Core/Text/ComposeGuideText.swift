@@ -102,6 +102,45 @@ enum ComposeGuide {
                  "\(move.distance) to the \(move.direction.en). \(horizonTip)")
     }
 
+    /// 案内の札の文（2026-10-10・構図を選べるようになってから）。構図の一言（`CompositionKind.tip`）を使い、
+    /// 歩く案内が出せるときだけ前に「あと 3 m 北へ。」を付ける。構図が「なし」で歩く案内も無ければ nil（札を出さない）
+    static func hint(current: Photo.Coords?, target: Photo.Coords?, tip: String?) -> String? {
+        let move = movement(current: current, target: target)
+        switch (move, tip) {
+        case (nil, nil): return nil
+        case (nil, let tip?): return tip
+        case (let move?, nil):
+            return L("あと \(move.distance) \(move.direction.ja)へ", "\(move.distance) to the \(move.direction.en)")
+        case (let move?, let tip?):
+            return L("あと \(move.distance) \(move.direction.ja)へ。\(tip)", "\(move.distance) to the \(move.direction.en). \(tip)")
+        }
+    }
+
+    // MARK: - 撮る向き
+
+    /// 撮る回転角（`ComposeCamera.capture`）。端末の向きの係（`AVCaptureDevice.RotationCoordinator` の
+    /// `videoRotationAngleForHorizonLevelCapture`）の値をそのまま使う。係が無い（組み立て前）・数でないときは縦（90°）。
+    /// 2026-10-10: 以前は 90° 決め打ちで、横に持って撮った写真が横倒しのまま残る疑いがあった
+    static func captureAngle(coordinator: Double?) -> Double {
+        guard let coordinator, coordinator.isFinite else { return 90 }
+        return coordinator
+    }
+
+    // MARK: - 撮れる範囲の枠
+
+    /// 撮れる範囲の縦横比（撮影の場は `.photo`＝4:3 の写真。縦持ちの画面では 3:4）
+    static let frameAspect = 3.0 / 4
+
+    /// 映像の枠（3:4）の大きさ。空いている面（`width`×`height`）にいちばん大きく収める。
+    /// 余った上下（または左右）は黒い地のまま（2026-10-10 owner の決定）
+    static func viewfinderSize(width: Double, height: Double) -> (width: Double, height: Double) {
+        guard width.isFinite, height.isFinite, width > 0, height > 0 else { return (0, 0) }
+        if width / height <= frameAspect {
+            return (width, width / frameAspect)
+        }
+        return (height * frameAspect, height)
+    }
+
     /// 歩く案内（距離の文と方角）。出せないときは nil
     struct Movement: Equatable {
         /// 「3 m」「1.2 km」

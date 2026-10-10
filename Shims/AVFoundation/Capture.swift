@@ -31,6 +31,16 @@ open class AVCaptureDevice: NSObject {
         case unspecified = 0, back = 1, front = 2
     }
     open class func authorizationStatus(for mediaType: AVMediaType) -> AVAuthorizationStatus { .notDetermined }
+
+    /// 端末の向きから、写真・映像を回す角度を決める係（iOS 17〜・2026-10-10）。
+    /// 本物は KVO で見張れる。アプリは撮る瞬間に読むだけ
+    open class RotationCoordinator: NSObject {
+        public init(device: AVCaptureDevice, previewLayer: CALayer?) {}
+        /// 水平を保って撮るための回転角（縦持ち 90・横持ち 0 / 180）
+        /// 本物と同じく `CGFloat`（2026-10-10: 模型が Double で、Mac の run 397 で初めて型の食い違いが出た）
+        open var videoRotationAngleForHorizonLevelCapture: CGFloat { 90 }
+        open var videoRotationAngleForHorizonLevelPreview: CGFloat { 90 }
+    }
     /// 本物では完了の受け手つきの口が async に橋渡しされたもの
     open class func requestAccess(for mediaType: AVMediaType) async -> Bool { false }
     /// 模型にはカメラが無い（シミュレータと同じく nil）
@@ -52,8 +62,9 @@ open class AVCaptureOutput: NSObject {
 
 /// 入力と出力のつなぎ（向きだけ使う・iOS 17 の回転角）
 open class AVCaptureConnection: NSObject {
-    open var videoRotationAngle: Double = 0
-    open func isVideoRotationAngleSupported(_ videoRotationAngle: Double) -> Bool { false }
+    /// 本物と同じく `CGFloat`
+    open var videoRotationAngle: CGFloat = 0
+    open func isVideoRotationAngleSupported(_ videoRotationAngle: CGFloat) -> Bool { false }
 }
 
 open class AVCaptureSession: NSObject {
@@ -84,6 +95,8 @@ open class AVCapturePhotoSettings: NSObject {
 open class AVCapturePhoto: NSObject {
     /// 撮影情報つきのファイルの中身（HEIF・JPEG）
     open func fileDataRepresentation() -> Data? { nil }
+    /// 撮影情報（`{Exif}`・`{TIFF}` などの入れ子の辞書）
+    open var metadata: [String: Any] { [:] }
 }
 
 /// 撮れた知らせの受け手。**本物では任意の口だが、模型では必ず書く**——綴りや型を

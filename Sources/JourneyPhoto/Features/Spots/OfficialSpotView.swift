@@ -57,14 +57,8 @@ struct OfficialSpotView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var store: StoreService
     /// 「作例を重ねて撮る」（Pro）の撮る画面・Pro の案内・Pro かを確かめている最中
-    /// 撮る画面を開く頼み（始める作例つき・2026-10-10）。nil なら閉じている
-    @State private var composeLaunch: ComposeGuide.Launch?
-    /// Pro の案内を経て開くときに、始める作例を覚えておく（案内で Pro になったら同じ1枚から）
-    @State private var composeStartSample: URL?
-    @State private var showComposePaywall = false
-    @State private var checkingPro = false
-    /// 案内を開いたときの「渡し終えた回数」（閉じたときに増えていれば Pro になった）
-    @State private var deliveredAtComposePaywall = 0
+    /// （流れは投稿のシートの入口と同じ部品・`ComposeGuideLauncher`・2026-10-10）
+    @StateObject private var composeLauncher = ComposeGuideLauncher()
     /// 「このスポットの写真を投稿」から開く投稿画面
     @State private var showUpload = false
     /// この画面から投稿した（写真の一覧は開いた時点の写しなので、すぐには並ばない）
@@ -454,17 +448,9 @@ struct OfficialSpotView: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("spot.official.samples")
-            // 作例の並びと始める番号は開いた時点のもの（`ComposeGuide.Launch` の注記）
-            .fullScreenCover(item: $composeLaunch) { launch in
-                ComposeGuideView(spotName: spot.name, samples: launch.samples, startIndex: launch.start)
-            }
-            .fullScreenCover(isPresented: $showComposePaywall, onDismiss: {
-                // 案内で Pro になったら、そのまま撮る画面へ（`NameSideBadgeView` と同じ見分け方）
-                guard store.deliveredRevision != deliveredAtComposePaywall else { return }
-                Task { await openComposeGuide(from: composeStartSample) }
-            }) {
-                PaywallView()
-            }
+            // 作例の並びと始める番号は開いた時点のもの（`ComposeGuide.Launch` の注記）。
+            // 案内で Pro になったら同じ1枚から開き直す（`ComposeGuidePresenter`）
+            .composeGuidePresenter(composeLauncher, spotName: spot.name)
         }
     }
 
@@ -488,7 +474,7 @@ struct OfficialSpotView: View {
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityHidden(true)
                 Spacer(minLength: 0)
-                if checkingPro {
+                if composeLauncher.checking {
                     ProgressView().tint(WebTheme.muted2)
                 } else {
                     Image(systemName: "chevron.right")
@@ -503,38 +489,20 @@ struct OfficialSpotView: View {
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
-        .disabled(checkingPro)
+        .disabled(composeLauncher.checking)
         .padding(.horizontal, 16)
         .accessibilityHint(L("Pro の機能です。カメラの映像に作例を半透明で重ねて撮ります",
                              "A Pro feature. Shoot with an example photo overlaid on the camera view."))
         .accessibilityIdentifier("spot.official.composeGuide")
     }
 
-    /// Pro なら撮る画面、そうでなければ Pro の案内。Pro かどうかはサーバーのプロフィールで決める。
-    /// `sample` は始める作例の出典のページ（作例の帯で押した1枚・入口のボタンは nil＝1枚目）
+    /// Pro なら撮る画面、そうでなければ Pro の案内。Pro かどうかはサーバーのプロフィールで決める
+    /// （`ComposeGuideLauncher`）。`sample` は始める作例の出典のページ（作例の帯で押した1枚・入口のボタンは nil＝1枚目）。
+    /// 作例の並びは開く時点で読む（案内を経て開き直すときも、その時点の並び）
     private func openComposeGuide(from sample: URL?) async {
-        guard !checkingPro else { return }
-        // 開いている・案内を出している間は開き直さない（素早い2回押しで全画面が開き直し、
-        // カメラの開始・停止が二重になる・2026-10-10）
-        guard composeLaunch == nil, !showComposePaywall else { return }
-        composeStartSample = sample
-        if ComposeGuideAccess.previewUnlocked {
-            composeLaunch = ComposeGuide.Launch(sample: sample, samples: shownSamples)
-            return
-        }
-        checkingPro = true
-        defer { checkingPro = false }
-        let signedIn = auth.userId != nil
-        let isPro: Bool? = signedIn ? (try? await environment.profiles.myProfile())?.isPro : nil
-        switch ComposeGuide.destination(signedIn: signedIn, isPro: isPro) {
-        case .camera:
-            composeLaunch = ComposeGuide.Launch(sample: sample, samples: shownSamples)
-        case .paywall:
-            deliveredAtComposePaywall = store.deliveredRevision
-            showComposePaywall = true
-        case .unreachable:
-            toasts.show(Labels.Common.unreachable, kind: .failure)
-        }
+        await ComposeGuidePresenter.request(composeLauncher, make: {
+            ComposeGuide.Launch(sample: sample, samples: shownSamples)
+        }, auth: auth, store: store, environment: environment, toasts: toasts)
     }
 
     /// 作例の1枚: 写真（縦横比のまま・切り抜かない）と、その下の出典の1行。
@@ -555,7 +523,7 @@ struct OfficialSpotView: View {
                 .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
-            .disabled(checkingPro)
+            .disabled(composeLauncher.checking)
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits([.isImage, .isButton])
             .accessibilityLabel(sample.accessibilityLabel)

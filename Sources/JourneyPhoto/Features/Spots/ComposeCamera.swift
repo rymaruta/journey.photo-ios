@@ -16,6 +16,11 @@ import UIKit
 /// - 撮った1枚はファイルの中身（HEIF・JPEG）のまま写真に足す（`save`・追加だけの許可
 ///   `NSPhotoLibraryAddUsageDescription`）。位置情報は付けない（撮影の場に位置を渡していない）
 ///
+/// - **構図の線・作例は写真に焼き込まない**（2026-10-10）。重ねは SwiftUI の上だけで、撮る1枚は
+///   カメラの出力（`AVCapturePhotoOutput`）そのもの
+/// - 撮る向きは端末の向きに合わせる（`AVCaptureDevice.RotationCoordinator` の
+///   `videoRotationAngleForHorizonLevelCapture`・iOS 17〜・2026-10-10）
+///
 /// **実機のカメラでは確かめていない**（Linux の模型でビルドを通しただけ・PR の注記）。
 @MainActor
 final class ComposeCamera: ObservableObject {
@@ -34,6 +39,8 @@ final class ComposeCamera: ObservableObject {
     private var starting = false
     /// 撮影中の受け手（撮影の出力は受け手を強く持たないので、終わるまでここで持つ）
     private var pending: [ObjectIdentifier: PhotoCaptureDelegate] = [:]
+    /// 端末の向きから撮る向きを決める係（組み立てたあとに作る）
+    private var rotation: AVCaptureDevice.RotationCoordinator?
 
     /// 許可を確かめて映像を流し始める。画面が出たときに呼ぶ
     func start() async {
@@ -99,28 +106,37 @@ final class ComposeCamera: ObservableObject {
                 continuation.resume(returning: true)
             }
         }
-        if ok { configured = true }
+        if ok {
+            configured = true
+            if rotation == nil, let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
+                rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+            }
+        }
         return ok
     }
 
-    /// 1枚撮る。撮れた写真のファイルの中身（撮れなければ nil）
-    func capture() async -> Data? {
+    /// 1枚撮る。撮れた写真（ファイルの中身と撮影情報）。撮れなければ nil
+    func capture() async -> ComposeShot? {
         guard state == .ready, !isCapturing else { return nil }
         isCapturing = true
         defer { isCapturing = false }
         let output = output
+        // 係の角度は `CGFloat`（本物の SDK）。計算は Double で、つなぎに渡すときに戻す
+        let angle = CGFloat(ComposeGuide.captureAngle(
+            coordinator: rotation.map { Double($0.videoRotationAngleForHorizonLevelCapture) }))
         return await withCheckedContinuation { continuation in
             let delegate = PhotoCaptureDelegate()
             let key = ObjectIdentifier(delegate)
-            delegate.done = { [weak self] data in
-                continuation.resume(returning: data)
+            delegate.done = { [weak self] shot in
+                continuation.resume(returning: shot)
                 Task { @MainActor in self?.pending[key] = nil }
             }
             pending[key] = delegate
             queue.async {
-                // 縦持ちの画面（アプリは縦だけ）なので、写真も縦で残す（iOS 17 の回転角・縦＝90°）
-                if let connection = output.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
-                    connection.videoRotationAngle = 90
+                // 2026-10-10 判断: 端末の向きで回す。以前は 90°（縦）決め打ちで、横に持って撮った写真が
+                // 横倒しのまま残る疑いがあった（画面は縦だけでも、写真は持った向きで残すのが標準のカメラと同じ）
+                if let connection = output.connection(with: .video), connection.isVideoRotationAngleSupported(angle) {
+                    connection.videoRotationAngle = angle
                 }
                 output.capturePhoto(with: AVCapturePhotoSettings(), delegate: delegate)
             }
@@ -142,20 +158,43 @@ final class ComposeCamera: ObservableObject {
     }
 }
 
+/// 撮れた1枚（ファイルの中身＝HEIF か JPEG と、カメラが付けた撮影情報）。
+/// 投稿へ進めるときは `cameraCapture` で投稿のカメラと同じ形（`CameraCapture`）にする
+struct ComposeShot: @unchecked Sendable {
+    let data: Data
+    let metadata: [String: Any]
+    let capturedAt: Date
+
+    /// 投稿画面に渡す形。`ImagePreparer` が JPEG に焼き直す（HEIF のままでも読める）
+    var cameraCapture: CameraCapture {
+        let data = data
+        return CameraCapture(metadata: CameraCapture.metadata(from: metadata), capturedAt: capturedAt,
+                             encode: { data })
+    }
+}
+
 /// 撮れた知らせの受け手（1枚ごとに1つ）。**1回だけ**返す
 final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
 
     /// 撮れたら呼ぶ（呼んだら外す）
-    var done: ((Data?) -> Void)?
+    var done: ((ComposeShot?) -> Void)?
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         let finish = done
         done = nil
-        finish?(error == nil ? photo.fileDataRepresentation() : nil)
+        guard error == nil, let data = photo.fileDataRepresentation() else {
+            finish?(nil)
+            return
+        }
+        finish?(ComposeShot(data: data, metadata: photo.metadata, capturedAt: Date()))
     }
 }
 
-/// カメラの映像（`AVCaptureVideoPreviewLayer` を層にした UIView）。枠いっぱいに敷く（板: 上 640pt）
+/// カメラの映像（`AVCaptureVideoPreviewLayer` を層にした UIView）。
+///
+/// 2026-10-10 判断: **撮れる範囲（3:4）の枠に、切らずに敷く**（`.resizeAspect`）。以前は映像の枠いっぱいに
+/// `.resizeAspectFill` で敷いていて、左右が約 45pt 切れ、三分割の線も作例も撮れる写真とずれていた
+/// （owner の決定: ファインダーを撮れる範囲に合わせる。上下は黒い地）
 struct CameraPreview: UIViewRepresentable {
 
     let session: AVCaptureSession
@@ -163,11 +202,14 @@ struct CameraPreview: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewView {
         let view = Self.preparedView()
         view.previewLayer.session = session
-        view.previewLayer.videoGravity = .resizeAspectFill
+        view.previewLayer.videoGravity = Self.gravity
         return view
     }
 
     func updateUIView(_ uiView: PreviewView, context: Context) {}
+
+    /// 映像の敷き方。枠が 3:4 なので切らずに敷いても余白は出ない（写真と同じ範囲が見える）
+    static let gravity: AVLayerVideoGravity = .resizeAspect
 
     /// 映像を出す部品（層の設定の前まで）。
     ///

@@ -299,6 +299,8 @@ public struct Path: View, Shape {
     /// 二次の曲線・丸・角丸の四角・弧（Pro の案内の線の絵）
     public mutating func addQuadCurve(to point: CGPoint, control: CGPoint) {}
     public mutating func addEllipse(in rect: CGRect) {}
+    /// 四角（構図の切り出し枠の外の暗がり）
+    public mutating func addRect(_ rect: CGRect) {}
     public mutating func addRoundedRect(in rect: CGRect, cornerSize: CGSize) {}
     public mutating func addArc(center: CGPoint, radius: CGFloat, startAngle: Angle, endAngle: Angle, clockwise: Bool) {}
     /// 線を閉じる（Pro マークの六角形・本物と同じ）

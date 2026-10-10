@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 「写真を投稿／ストーリーを投稿／旅の写真からまとめて」の3択。
+/// 「写真を投稿／ストーリーを投稿／旅の写真からまとめて／構図を重ねて撮る（Pro）」の4択。
 ///
 /// Web 側の `app/components/PostSheet.tsx` と対。owner:「写真を追加のとこで
 /// 投稿かストーリーを選べるようにしたい」。
@@ -24,6 +24,9 @@ struct PostSheet: View {
         case story
         /// 端末の写真ライブラリから旅を見つけて、まとめて投稿（`LibraryTripFlowView`）
         case trip
+        /// 構図を重ねて撮る（Pro・作例なし・2026-10-10 owner）。撮ってから投稿へ進める。
+        /// Pro でなければ Pro の案内（`ComposeGuideLauncher`・呼び手が開く）
+        case composition
     }
 
     var body: some View {
@@ -66,12 +69,22 @@ struct PostSheet: View {
                 systemImage: "suitcase",
                 kind: .trip
             )
+            // 2026-10-10: 板 PostSheet に無い4つ目。板の札と同じ形で、題の横に合図の「PRO」（真鍮・黒地の上）
+            choice(
+                thumb: thumbs.dropFirst(3).first,
+                title: L("構図を重ねて撮る", "Shoot with a composition guide"),
+                detail: L("三分割や黄金比の線をカメラに重ねて撮り、そのまま投稿できます。",
+                          "Overlay thirds, golden ratio and more on the camera, then post."),
+                systemImage: "camera.viewfinder",
+                kind: .composition,
+                badge: "PRO"
+            )
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.top, 20)
-        // 文字を大きくしたときに切れないよう、全画面にも伸ばせる
-        .presentationDetents([.height(424), .large])
+        // 文字を大きくしたときに切れないよう、全画面にも伸ばせる。札が4枚になった（2026-10-10）ので 1枚ぶん（92＋12）高く
+        .presentationDetents([.height(528), .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Self.sheetBackground)
         .task {
@@ -85,7 +98,7 @@ struct PostSheet: View {
             }
             // **取れなかったときは控えない**（次に開いたときに取り直す）
             guard let mine = try? await environment.photos.myPhotos() else { return }
-            let picked = PostSheetThumbs.pick(fromMine: mine, count: 3)
+            let picked = PostSheetThumbs.pick(fromMine: mine, count: 4)
             PostSheetThumbs.cache.store(picked, for: userId)
             thumbs = picked
         }
@@ -96,6 +109,7 @@ struct PostSheet: View {
         case .photo: return "photo"
         case .story: return "story"
         case .trip: return "trip"
+        case .composition: return "composition"
         }
     }
 
@@ -103,7 +117,8 @@ struct PostSheet: View {
     private static let sheetBackground = Color(red: 13 / 255, green: 13 / 255, blue: 14 / 255)
 
     /// 板: 最小92pt・角丸18・地7%・縁12%、左に 52pt の角丸14 の絵、右に矢印
-    private func choice(thumb: URL?, title: String, detail: String, systemImage: String, kind: Kind) -> some View {
+    private func choice(thumb: URL?, title: String, detail: String, systemImage: String, kind: Kind,
+                        badge: String? = nil) -> some View {
         Button {
             // **閉じてから渡す。** 開いたまま次の画面を出すと重なる
             dismiss()
@@ -131,9 +146,17 @@ struct PostSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(WebTheme.text)
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(WebTheme.text)
+                        if let badge {
+                            Text(badge)
+                                .jpEyebrow()
+                                .foregroundStyle(WebTheme.accent)
+                                .accessibilityLabel(L("Pro の機能", "Pro feature"))
+                        }
+                    }
                     Text(detail)
                         .font(.caption)
                         .foregroundStyle(WebTheme.muted2)

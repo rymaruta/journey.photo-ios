@@ -1,19 +1,30 @@
 import SwiftUI
 import UIKit
 
-/// 作例を重ねて撮る（Pro・板 ComposeGuide・2026-10-09）。全画面・黒地。
+/// 作例・構図を重ねて撮る（Pro・板 ComposeGuide・2026-10-09）。全画面・黒地。
 ///
-/// 入口は撮影スポットの画面の作例の節（`OfficialSpotView.composeEntry`＝1枚目から、
-/// 帯の作例の写真＝押した1枚から・2026-10-10）。Pro でなければそこで
-/// Pro の案内を出すので、この画面は Pro の人だけが開く。
+/// 入口は2つ（Pro の確かめはどちらも `ComposeGuideLauncher`。この画面は Pro の人だけが開く）:
+/// - 撮影スポットの画面の作例の節（`OfficialSpotView.composeEntry`＝1枚目から、
+///   帯の作例の写真＝押した1枚から・2026-10-10）
+/// - 投稿のシートの「構図を重ねて撮る」（2026-10-10・**作例なし**）。上の札・作例のサムネ・濃さ・
+///   出典・切り替えを隠し、構図の線だけで撮る。撮ったら左下の「投稿」で投稿画面へ進める（`onPost`）
+///
+/// **構図（2026-10-10 owner「有名な構図からマイナーな構図まで」）**: 下の黒い面のいちばん上に「構図」の行
+/// （小さな絵＋名前＋▾、向きのある構図だけ右に「向き」）。押すと構図のシート（`CompositionPicker`）。
+/// 重ね順は 映像 → 作例 → 構図の線 → 切り出し枠の外の暗がり（`CompositionOverlay`）。
+/// 構図の切り替えには払いを付けない（作例の左右の払いと紛れる）。選んだものは端末に覚える
+/// （`CompositionPreferences`・サーバーに送らない）。
+///
+/// **映像の枠は撮れる範囲（3:4）に合わせる**（2026-10-10 owner の決定）。以前は空いた面いっぱいに
+/// 映像を切り抜いて敷いていて、左右が約 45pt 切れ、線も作例も写真とずれていた。上下の余りは黒い地
 ///
 /// 板のとおり（390×844）:
 /// - 上（板 640pt・端末の高さに合わせて伸び縮み）にカメラの映像、その上に作例を半透明で重ね
-///   （既定 0.4・0〜0.8）、三分割の線（白 35%）
+///   （既定 0.4・0〜0.8）、構図の線（白・既定 35%・2026-10-10 から選べる。以前は三分割だけ）
 /// - 左上に閉じる（44pt の丸・黒 55%・白 12% の縁）、上の札「[撮影地の名前] · 作例 [2] / [6]」
 ///   （黒 60%・12pt 太字）
-/// - 映像の下寄りに案内の札（黒 62%・角 12・13pt）。距離が出せないときは「地平線を下の線に合わせる」だけ
-///   （`ComposeGuide.hint` の注記）
+/// - 映像の下寄りに案内の札（黒 62%・角 12・13pt）。文は構図ごとの一言（`CompositionKind.tip`）。
+///   構図が「なし」なら札を出さない（`ComposeGuide.hint(current:target:tip:)`）
 /// - 下（板 204pt）は黒: 「作例の濃さ」のスライダー（白）、下段に左「作例」のサムネ（52pt・角 10）、
 ///   中央シャッター（72pt・白 4pt の輪）、右「作例を切り替える」（52pt の丸）
 ///
@@ -26,20 +37,47 @@ import UIKit
 /// - 左のサムネは押すと作例を隠す・出す（板は押した先が無い）
 /// - カメラが使えない（許可が無い・制限・カメラが無い）ときは、映像の枠に理由と
 ///   「設定を開く」（写真の無い画面の主ボタン＝真鍮の塗りに墨）を出す
+/// - 下の黒い面のいちばん上に「構図」の行（2026-10-10・板に無い。板の決まりに合わせた）
 struct ComposeGuideView: View {
 
-    let spotName: String
+    /// 撮影地の名前（作例なしの入口は nil）
+    let spotName: String?
     let samples: [SpotSample]
+    /// 撮った1枚を投稿へ進める（投稿のシートの入口だけ）。nil なら「投稿」を出さない
+    let onPost: ((CameraCapture) -> Void)?
 
     @StateObject private var camera = ComposeCamera()
+    /// 傾き（水準器・持った向き）。🔴 **`@State` で持つだけで見張らない**——見張ると角度が変わるたびに
+    /// この画面全体が描き直される。角度は線の子の View（`CompositionLines`）だけが見る（2026-10-10）
+    @State private var level = LevelMotion()
+    /// 持った向き（0〜3）。横持ちなら構図の線を写真の向きに回す。変わったときだけ `LevelMotion` が知らせる
+    @State private var quarterTurns = 0
     @State private var index: Int
 
-    /// - Parameter startIndex: 始める作例（作例の帯で押した1枚・2026-10-10）。入口のボタンは 0＝1枚目。
-    ///   範囲の外は内側へ戻す（`ComposeGuide.normalized`）
-    init(spotName: String, samples: [SpotSample], startIndex: Int = 0) {
+    /// 構図（nil は「なし」）・向き・線の濃さ
+    @State private var composition: CompositionKind?
+    @State private var variant: Int
+    @State private var lineOpacity: Double
+    @State private var showPicker = false
+    /// 最後に撮れた1枚（投稿へ進める用）
+    @State private var lastShot: ComposeShot?
+    private let preferences = CompositionPreferences()
+
+    /// - Parameters:
+    ///   - startIndex: 始める作例（作例の帯で押した1枚・2026-10-10）。入口のボタンは 0＝1枚目。
+    ///     範囲の外は内側へ戻す（`ComposeGuide.normalized`）
+    ///   - initialComposition: 始める構図。nil なら前回の構図（初めてなら三分割）
+    init(spotName: String?, samples: [SpotSample], startIndex: Int = 0,
+         initialComposition: CompositionKind? = nil, onPost: ((CameraCapture) -> Void)? = nil) {
         self.spotName = spotName
         self.samples = samples
+        self.onPost = onPost
         _index = State(initialValue: ComposeGuide.normalized(startIndex, count: samples.count))
+        let prefs = CompositionPreferences()
+        let kind = initialComposition ?? prefs.lastKind
+        _composition = State(initialValue: kind)
+        _variant = State(initialValue: kind.map { prefs.variant(for: $0) } ?? 0)
+        _lineOpacity = State(initialValue: prefs.lineOpacity)
     }
     @State private var opacity = ComposeGuide.defaultOpacity
     /// 作例を隠している（左のサムネを押した）
@@ -56,6 +94,8 @@ struct ComposeGuideView: View {
 
     private var current: Int { ComposeGuide.normalized(index, count: samples.count) }
     private var sample: SpotSample? { samples.isEmpty ? nil : samples[current] }
+    /// 作例なし（投稿のシートの入口）
+    private var withoutSamples: Bool { samples.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -65,16 +105,30 @@ struct ComposeGuideView: View {
         .background { Color.black.ignoresSafeArea() }
         .preferredColorScheme(.dark)
         .task { await camera.start() }
+        .onAppear { updateLevel() }
+        .onChange(of: composition) { _, _ in updateLevel() }
         .onDisappear {
             camera.stop()
+            level.stop()
             noticeTask?.cancel()
         }
+        .sheet(isPresented: $showPicker) {
+            CompositionPicker(selected: composition, recents: preferences.recents,
+                              variant: { preferences.variant(for: $0) },
+                              lineOpacity: $lineOpacity) { picked in
+                choose(picked)
+            }
+        }
+        .onChange(of: lineOpacity) { _, value in preferences.setLineOpacity(value) }
         // 裏に回ったら止め、戻ったら流し直す（撮影の場は OS も止めるが、こちらからも止めて電池を守る）
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task { await camera.start() }
+                updateLevel()
             } else if phase == .background {
                 camera.stop()
+                // 傾きの見張りも止める（裏で 30 回/秒 動かし続けない・確かめ役の指摘）
+                level.stop()
             }
         }
     }
@@ -82,15 +136,20 @@ struct ComposeGuideView: View {
     // MARK: - 映像の枠（板: 上 640pt）
 
     private var viewfinder: some View {
-        // 映像・作例・線は時刻の帯の裏まで敷く（板の上 0〜640）。上の札と案内は安全な範囲に置く
-        cameraLayers
-            .ignoresSafeArea(edges: .top)
+        // 撮れる範囲（3:4）の枠を、空いた面の真ん中にいちばん大きく置く。余りは黒い地（2026-10-10）
+        GeometryReader { geo in
+            let size = ComposeGuide.viewfinderSize(width: Double(geo.size.width), height: Double(geo.size.height))
+            cameraLayers
+                .frame(width: size.width, height: size.height)
+                .position(x: Double(geo.size.width) / 2, y: Double(geo.size.height) / 2)
+        }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
             .overlay(alignment: .top) { topBar }
             .overlay(alignment: .bottom) {
                 VStack(spacing: 10) {
                     if let notice { noticeView(notice) }
-                    if camera.state == .ready { hintCard }
+                    if showsLines || camera.state == .ready, let text = hintText { hintCard(text) }
                 }
                 // 板: 案内の札は枠の下端から約 40pt 上
                 .padding(.horizontal, 16)
@@ -107,7 +166,13 @@ struct ComposeGuideView: View {
             )
     }
 
-    /// 映像の枠の中身（地・映像・作例・三分割の線、または使えない理由）
+    /// 構図の線を出すか。映像が出ているときだけ（画面写真の試験の鍵があれば、カメラの無い
+    /// シミュレータでも線の見た目を撮れるように出す・Debug のみ）
+    private var showsLines: Bool {
+        composition != nil && (camera.state == .ready || ComposeGuideAccess.previewUnlocked)
+    }
+
+    /// 映像の枠の中身（地・映像・作例・構図の線、または使えない理由）
     private var cameraLayers: some View {
         ZStack {
             // 板のカメラの映像の地（#2a3440）。映像が出るまでの間だけ見える
@@ -119,7 +184,6 @@ struct ComposeGuideView: View {
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 overlay
-                thirds
             } else if let blocked = ComposeGuide.blockedText(camera.state) {
                 blockedPanel(title: blocked.title, detail: blocked.detail)
             } else {
@@ -127,8 +191,12 @@ struct ComposeGuideView: View {
                     .tint(WebTheme.foreground)
                     .accessibilityLabel(L("カメラを準備しています", "Preparing the camera"))
             }
+            // 重ね順: 映像 → 作例 → 構図の線 → 切り出し枠の外の暗がり（`CompositionOverlay`）
+            if showsLines, let composition {
+                CompositionLines(kind: composition, variant: variant, lineOpacity: lineOpacity,
+                                 quarterTurns: quarterTurns, level: level)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
 
@@ -152,25 +220,6 @@ struct ComposeGuideView: View {
         }
     }
 
-    /// 三分割の線（白 35%・1pt）
-    private var thirds: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            Path { p in
-                for i in 1...2 {
-                    let x = w * Double(i) / 3, y = h * Double(i) / 3
-                    p.move(to: CGPoint(x: x, y: 0))
-                    p.addLine(to: CGPoint(x: x, y: h))
-                    p.move(to: CGPoint(x: 0, y: y))
-                    p.addLine(to: CGPoint(x: w, y: y))
-                }
-            }
-            .stroke(Color.white.opacity(0.35), lineWidth: 1)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
     // MARK: - 上（閉じる・作例の番号）
 
     /// 板: 左に閉じる（44pt の丸）、右へ寄せて札（`justify-content: space-between`）。上は時刻の帯の 5pt 下
@@ -188,7 +237,8 @@ struct ComposeGuideView: View {
             .accessibilityLabel(Labels.Common.close)
             .accessibilityIdentifier("composeGuide.close")
             Spacer(minLength: 0)
-            if !samples.isEmpty {
+            // 作例なしの入口では札を出さない（数える作例が無い）
+            if !samples.isEmpty, let spotName {
                 Text(ComposeGuide.counter(spotName: spotName, index: current, count: samples.count))
                     // 12pt 太字・数字は等幅（送っても札の幅が揺れない）
                     .font(.caption.weight(.semibold).monospacedDigit())
@@ -208,16 +258,24 @@ struct ComposeGuideView: View {
 
     // MARK: - 案内の札
 
+    /// 案内の札の文。構図ごとの一言（2026-10-10）。水準器で傾きが読めない端末ではそう言う
+    private var hintText: String? {
+        if composition == .level, !level.available {
+            return L("この端末では傾きを読めません", "This device can't read its tilt")
+        }
+        return ComposeGuide.hint(current: nil, target: nil, tip: composition?.tip)
+    }
+
     /// 板: 黒 62%・角 12・左に矢印・13pt。いまは作例に撮った位置が無いので、構図の一言だけ
-    /// （`ComposeGuide.hint`）。距離が出せるときだけ上向きの矢印、それ以外は三分割の記号
-    private var hintCard: some View {
+    /// （`ComposeGuide.hint`）。距離が出せるときだけ上向きの矢印、それ以外は格子の記号
+    private func hintCard(_ text: String) -> some View {
         let move = ComposeGuide.movement(current: nil, target: nil)
         return HStack(spacing: 10) {
             Image(systemName: move == nil ? "rectangle.split.3x3" : "arrow.up")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(WebTheme.foreground)
                 .accessibilityHidden(true)
-            Text(ComposeGuide.hint(current: nil, target: nil))
+            Text(text)
                 .font(.system(size: 13))
                 .foregroundStyle(WebTheme.foreground)
                 .fixedSize(horizontal: false, vertical: true)
@@ -291,14 +349,23 @@ struct ComposeGuideView: View {
 
     private var controls: some View {
         VStack(spacing: 14) {
-            opacityRow
-            if let sample { credit(sample) }
+            compositionRow
+            // 作例なしの入口では、作例の濃さ・出典・サムネ・切り替えを出さない
+            if !withoutSamples {
+                opacityRow
+                if let sample { credit(sample) }
+            }
             HStack {
-                thumbButton
+                if withoutSamples { postButton } else { thumbButton }
                 Spacer()
                 shutter
                 Spacer()
-                switchButton
+                if withoutSamples {
+                    // シャッターを真ん中に保つための空き（右の切り替えと同じ幅）
+                    Color.clear.frame(width: 52, height: 52).accessibilityHidden(true)
+                } else {
+                    switchButton
+                }
             }
         }
         .padding(.top, 14)
@@ -306,6 +373,51 @@ struct ComposeGuideView: View {
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
         .background(Color.black)
+    }
+
+    // MARK: - 構図の行（2026-10-10）
+
+    /// 下の黒い面のいちばん上: 小さな絵＋名前＋▾（押すと構図のシート）、向きのある構図だけ右に「向き」（44×44）
+    private var compositionRow: some View {
+        HStack(spacing: 8) {
+            Button { showPicker = true } label: {
+                HStack(spacing: 10) {
+                    CompositionThumbnail(kind: composition, variant: variant, cornerRadius: 3)
+                        .frame(width: 24, height: 32)
+                    Text(composition?.name ?? CompositionGuide.noneName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WebTheme.text)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(WebTheme.muted2)
+                        .accessibilityHidden(true)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(CompositionGuide.accessibilityLabel(composition))
+            .accessibilityHint(L("構図を選びます", "Choose a composition"))
+            .accessibilityIdentifier("composeGuide.composition")
+            if let composition, composition.hasVariants {
+                Button { cycleVariant(of: composition) } label: {
+                    Text(L("向き", "Flip"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(WebTheme.foreground)
+                        .frame(width: 44, height: 44)
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(CompositionGuide.variantAccessibilityLabel(composition, variant: variant))
+                .accessibilityHint(L("次の向きに替えます", "Switches to the next orientation"))
+                .accessibilityIdentifier("composeGuide.variant")
+            }
+        }
     }
 
     /// 「作例の濃さ」（12pt・白 70%）と白いスライダー（0〜0.8）
@@ -367,6 +479,34 @@ struct ComposeGuideView: View {
         .accessibilityIdentifier("composeGuide.thumb")
     }
 
+    /// 左（作例なしの入口）: 撮った1枚を投稿へ進める（52pt・角 10）。撮るまでは空き。
+    /// 写真の無い黒い面の上の押せるものなので、印は真鍮（CLAUDE.md の owner の好み）
+    @ViewBuilder
+    private var postButton: some View {
+        if let onPost, let shot = lastShot {
+            Button {
+                onPost(shot.cameraCapture)
+                dismiss()
+            } label: {
+                VStack(spacing: 2) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text(L("投稿", "Post"))
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(WebTheme.accent)
+                .frame(width: 52, height: 52)
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(WebTheme.accent, lineWidth: 1))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("撮った写真を投稿する", "Post the photo you took"))
+            .accessibilityIdentifier("composeGuide.post")
+        } else {
+            Color.clear.frame(width: 52, height: 52).accessibilityHidden(true)
+        }
+    }
+
     /// 中央: シャッター（72pt・白 4pt の輪・内側に白の丸）
     private var shutter: some View {
         Button { Task { await shoot() } } label: {
@@ -398,7 +538,7 @@ struct ComposeGuideView: View {
         .disabled(samples.count < 2)
         .opacity(samples.count < 2 ? 0.4 : 1)
         .accessibilityLabel(L("作例を切り替える", "Switch example"))
-        .accessibilityValue(ComposeGuide.counterAccessibility(spotName: spotName, index: current, count: samples.count))
+        .accessibilityValue(ComposeGuide.counterAccessibility(spotName: spotName ?? "", index: current, count: samples.count))
         // 読み上げでは払えないので、前へ戻す操作もここに置く。**枠（映像の上の重ね）には付けない**——
         // 中の閉じるボタンまで1つの要素にまとまり、押せなくなる（画面写真の試験で閉じられなかった）
         .accessibilityAction(named: L("前の作例", "Previous example")) {
@@ -417,17 +557,43 @@ struct ComposeGuideView: View {
         } else {
             withAnimation(.easeOut(duration: 0.2)) { index = next }
         }
-        announce(ComposeGuide.counterAccessibility(spotName: spotName, index: next, count: samples.count))
+        announce(ComposeGuide.counterAccessibility(spotName: spotName ?? "", index: next, count: samples.count))
     }
 
-    /// 撮って保存し、結果を知らせる
+    /// 撮って保存し、結果を知らせる。作例なしの入口では、撮れた1枚を「投稿」へ進められるようにする
+    /// （写真への保存を断られても、撮れた1枚は投稿できる）
     private func shoot() async {
-        guard let data = await camera.capture() else {
+        guard let shot = await camera.capture() else {
             show(ComposeGuide.message(for: .failed), isError: true)
             return
         }
-        let outcome = await ComposeCamera.save(data)
+        lastShot = shot
+        let outcome = await ComposeCamera.save(shot.data)
         show(ComposeGuide.message(for: outcome), isError: outcome != .saved)
+    }
+
+    // MARK: - 構図
+
+    /// 構図を選んだ（シートから）。覚えて、読み上げで伝える
+    private func choose(_ picked: CompositionKind?) {
+        composition = picked
+        variant = picked.map { preferences.variant(for: $0) } ?? 0
+        preferences.select(picked)
+        announce(CompositionGuide.accessibilityLabel(picked))
+    }
+
+    /// 次の向きへ（払いは付けない・作例の払いと紛れる）
+    private func cycleVariant(of kind: CompositionKind) {
+        variant = kind.nextVariant(after: variant)
+        preferences.setVariant(variant, for: kind)
+        announce(CompositionGuide.variantAccessibilityLabel(kind, variant: variant))
+    }
+
+    /// 傾きの見張りを始める・速さを合わせる。水準器を選んでいる間だけ角度を 30 回/秒で読み、
+    /// ほかは持った向き（縦・横）だけを 10 回/秒で見る
+    private func updateLevel() {
+        level.onQuarterChange = { quarterTurns = $0 }
+        level.start(level: composition == .level)
     }
 
     /// 知らせを出して数秒で消す。読み上げにも伝える
