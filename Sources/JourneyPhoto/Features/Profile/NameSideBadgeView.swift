@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 名前の横の画面（板 BadgePicker・2026-10-09）。マイページの名前の行を押すと開く。
 ///
@@ -15,6 +16,14 @@ import SwiftUI
 /// **「PRO 限定」の段（第2段階・板 BadgePicker）**: まだ持っていない Pro 限定のバッジ（サポーター章・
 /// これから届く季節の章・第3段階の機能の章）を暗く並べる。Pro でなければ鍵の印を付け、押すと
 /// Pro の案内（板 63）。Pro の人には鍵も「Pro で集める」も出さない（届くのを待つだけ）。
+///
+/// **Pro の人の「PRO 限定」の段（2026-10-09 判断）**: 以前は押しても何も起きず説明も無かった。
+/// 眉ラベルの下に「季節ごとに届く・届いたら上から選べる」の一行を置き、まだ届いていない章を押すと
+/// 届く時期を下の知らせ（`ToastOverlay`）で出す（`ProChapters.arrivalNote`）。読み上げも同じ文。
+///
+/// **格子の絵（2026-10-09 判断）**: 2つの格子とも大きい絵を表示の画素ちょうどに縮めて出す
+/// （`RasterBadgeArt`・名前の横と同じ・板 BadgePicker）。`-s` の引き伸ばしはぼやけていた。
+/// 機能の章（暁・構図・圏外）も 2026-10-10 に板の大きい絵を取り込んだので、すべて大きい絵
 struct NameSideBadgeView: View {
 
     /// 開いた時点の自分のプロフィール
@@ -25,6 +34,7 @@ struct NameSideBadgeView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var store: StoreService
+    @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
     /// Pro の案内（PRO 限定の段から）
     @State private var showPaywall = false
@@ -125,6 +135,11 @@ struct NameSideBadgeView: View {
             if store.deliveredRevision != deliveredAtPaywall { dismiss() }
         }) {
             PaywallView()
+        }
+        // シートの上ではアプリの下の知らせ（`RootView`）が隠れるので、ここにも置く（`TripPickerView` と同じ）。
+        // 足元の「決める」と注記（90pt 前後）に重ねない
+        .overlay(alignment: .bottom) {
+            ToastOverlay().padding(.bottom, 110)
         }
         .task { await refreshBadges() }
     }
@@ -235,11 +250,8 @@ struct NameSideBadgeView: View {
     private func badgeCell(_ badge: EarnedBadge) -> some View {
         let on = selected == badge.key
         return VStack(spacing: 5) {
-            Image(BadgeCatalog.smallImage(badge.key, tier: badge.tier))
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 56, height: 56)
+            RasterBadgeArt(image: BadgeCatalog.largeImage(badge.key, tier: badge.tier),
+                           side: NameSideChoice.ownedArtSide)
                 .padding(4)
                 // 板: 選んだものは地の色 2pt を挟んだ真鍮の 2pt の輪
                 .overlay(Circle().strokeBorder(on ? WebTheme.accent : Color.clear, lineWidth: 2))
@@ -323,6 +335,17 @@ struct NameSideBadgeView: View {
             .frame(minHeight: WebTheme.minTapTarget)
             .padding(.horizontal, 20)
             .padding(.top, 12)
+            if profile.isPro {
+                // Pro の人には「待てば届く」ことと、届いた後の選び方を一行で言う（白の本文系・12pt）
+                Text(NameSideChoice.proWaitingNote)
+                    .font(.caption)
+                    .lineSpacing(3)
+                    .foregroundStyle(WebTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 4)
+                    .accessibilityIdentifier("nameSide.proNote")
+            }
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(items) { item in
                     lockedCell(item)
@@ -334,13 +357,22 @@ struct NameSideBadgeView: View {
 
     private func lockedCell(_ item: ProChapters.LockedItem) -> some View {
         let locked = !profile.isPro
-        return Button { if locked { openPaywall() } } label: {
+        let note = ProChapters.arrivalNote(item)
+        return Button {
+            if locked {
+                openPaywall()
+            } else {
+                // Pro の人: 届く時期を知らせる（VoiceOver には読み上げでも同じ文）
+                toasts.show(note, kind: .info)
+                // 押した名前の読み上げと重ならないよう少し待つ（`SavedSpotsMapView` の `announce` と同じ）
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    UIAccessibility.post(notification: .announcement, argument: note)
+                }
+            }
+        } label: {
             VStack(spacing: 4) {
-                Image(item.smallImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 48, height: 48)
+                RasterBadgeArt(image: item.image, side: NameSideChoice.lockedArtSide)
                     .opacity(0.55)
                     .overlay(alignment: .bottomTrailing) {
                         if locked {
@@ -365,10 +397,10 @@ struct NameSideBadgeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!locked)
         .accessibilityLabel(locked ? L("\(item.name)（Pro 限定）", "\(item.name) (Pro only)")
                                    : L("\(item.name)（まだ届いていません）", "\(item.name) (not yet)"))
-        .accessibilityHint(locked ? L("Pro の案内を開きます", "Opens the Pro page") : "")
+        .accessibilityHint(locked ? L("Pro の案内を開きます", "Opens the Pro page") : note)
+        .accessibilityIdentifier("nameSide.pro.\(item.id)")
     }
 
     private var shelfLink: some View {
@@ -460,6 +492,17 @@ enum NameSideChoice {
     static let sheetBackground = ProMarkColors.color(0x0E0E0F)
     /// 選んでいる Pro マークの札の地（板: #17140E）
     static let chosenFill = ProMarkColors.color(0x17140E)
+
+    /// 「持っているバッジ」の絵の一辺（板: 56pt）
+    static let ownedArtSide: Double = 56
+    /// 「PRO 限定」の絵の一辺（板: 48pt）
+    static let lockedArtSide: Double = 48
+
+    /// Pro の人の「PRO 限定」の段の一行（2026-10-09）
+    static var proWaitingNote: String {
+        L("Pro の間に、季節ごとに届きます。届いたら上の「持っているバッジ」から選べます",
+          "While you're Pro, a new one arrives each season. Once it arrives, choose it from “Your badges” above.")
+    }
 
     /// 開いたときに選ばれているもの。**持っている鍵を選んでいるときだけ**（取り消された鍵は「なし」）
     static func initialSelection(_ profile: UserProfile) -> String? {

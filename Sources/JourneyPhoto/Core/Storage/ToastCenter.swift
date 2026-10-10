@@ -17,7 +17,8 @@ final class ToastCenter: ObservableObject {
         let text: String
         let kind: Kind
 
-        enum Kind { case success, failure }
+        /// `info`: 成功でも失敗でもない案内（届く時期など・2026-10-09）
+        enum Kind { case success, failure, info }
     }
 
     /// 出している時間。Web と同じ 3 秒

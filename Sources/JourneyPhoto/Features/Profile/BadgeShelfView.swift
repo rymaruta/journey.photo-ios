@@ -89,10 +89,8 @@ struct BadgeShelfView: View {
             Button { showNameSide = true } label: {
                 HStack(spacing: 10) {
                     if let badge = profile.shownBadge, BadgeCatalog.isKnown(badge.key) {
-                        Image(BadgeCatalog.smallImage(badge.key, tier: badge.tier))
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 40, height: 40)
+                        // 大きい絵を表示の画素ちょうどに縮める（名前の横と同じ・2026-10-09 判断）
+                        RasterBadgeArt(image: BadgeCatalog.largeImage(badge.key, tier: badge.tier), side: 40)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(BadgeCatalog.fullName(badge.key, tier: badge.tier))
                                 .font(.caption.weight(.semibold))
