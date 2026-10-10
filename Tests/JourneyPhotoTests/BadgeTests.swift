@@ -164,6 +164,82 @@ final class BadgePatchTests: XCTestCase {
         XCTAssertNil(patch.displayBadge)
     }
 
+    // MARK: 名前の横の印の取り外し（2026-10-10 owner「メダルと同様に取り外しできるように」）
+
+    /// Pro マークを外す: `"none"` を送る。開き直すと「外す」が選ばれていて、付け直せば形を送る
+    func testRemovingAndRestoringProMark() throws {
+        let p = try profile(#"{"userId":"u1","pro":true,"proMarkStyle":"plate"}"#)
+        XCTAssertEqual(p.chosenProMark, .plate)
+        let off = try XCTUnwrap(NameSideChoice.patch(profile: p, selected: nil, style: nil))
+        XCTAssertEqual(off.proMarkStyle, "none")
+        XCTAssertEqual(try json(off)["proMarkStyle"] as? String, "none")
+
+        let removed = try profile(#"{"userId":"u1","pro":true,"proMarkStyle":"none"}"#)
+        XCTAssertTrue(removed.proMarkRemoved)
+        XCTAssertNil(removed.chosenProMark, "開いたときは「外す」")
+        XCTAssertNil(removed.shownProMark, "名前の横に出さない")
+        XCTAssertTrue(removed.isPro, "外しても Pro のまま")
+        XCTAssertNil(NameSideChoice.patch(profile: removed, selected: nil, style: nil), "変えなければ送らない")
+        XCTAssertEqual(NameSideChoice.patch(profile: removed, selected: nil, style: .iris)?.proMarkStyle, "iris")
+    }
+
+    /// Pro でない人は外す操作も送らない（形と同じ）
+    func testNonProDoesNotSendProMarkRemoval() throws {
+        let p = try profile(#"{"userId":"u1","pro":false}"#)
+        XCTAssertNil(NameSideChoice.patch(profile: p, selected: nil, style: nil))
+    }
+
+    /// 公式の印を外す / 付け直す: `verifiedMarkOff` を真偽で送る。公式でない人は送らない
+    func testRemovingAndRestoringVerifiedMark() throws {
+        let p = try profile(#"{"userId":"u1","verified":true}"#)
+        XCTAssertTrue(p.showsVerifiedMark)
+        XCTAssertNil(NameSideChoice.patch(profile: p, selected: nil, style: .iris, verifiedOn: true))
+        let off = try XCTUnwrap(NameSideChoice.patch(profile: p, selected: nil, style: .iris, verifiedOn: false))
+        XCTAssertEqual(off.verifiedMarkOff, true)
+        XCTAssertEqual(try json(off)["verifiedMarkOff"] as? Bool, true)
+        XCTAssertNil(try json(off)["verified"], "資格そのものは送らない")
+
+        let removed = try profile(#"{"userId":"u1","verified":true,"verifiedMarkOff":true}"#)
+        XCTAssertTrue(removed.verifiedMarkRemoved)
+        XCTAssertFalse(removed.showsVerifiedMark)
+        XCTAssertNil(NameSideChoice.patch(profile: removed, selected: nil, style: .iris, verifiedOn: false))
+        XCTAssertEqual(NameSideChoice.patch(profile: removed, selected: nil, style: .iris, verifiedOn: true)?.verifiedMarkOff, false)
+
+        let plain = try profile(#"{"userId":"u2"}"#)
+        XCTAssertNil(NameSideChoice.patch(profile: plain, selected: nil, style: .iris, verifiedOn: false))
+    }
+
+    /// 名前の横の並び・読み上げ・設定の行は、外した印を出さない・言わない
+    @MainActor
+    func testRemovedMarksAreNotShownOrSpoken() async throws {
+        let p = try profile(#"{"userId":"u1","displayName":"丸田","verified":true,"verifiedMarkOff":true,"pro":true,"proMarkStyle":"none"}"#)
+        let marks = NameMarks(profile: p)
+        XCTAssertEqual(marks.verified, false)
+        XCTAssertNil(marks.proStyle)
+        XCTAssertEqual(MyPageNameLine.label(p), "丸田")
+
+        let on = try profile(#"{"userId":"u1","displayName":"丸田","verified":true,"pro":true,"proMarkStyle":"plate"}"#)
+        XCTAssertEqual(NameMarks(profile: on).verified, true)
+        XCTAssertEqual(NameMarks(profile: on).proStyle, .plate)
+        XCTAssertEqual(MyPageNameLine.label(on), "丸田、認証済み、Pro 会員")
+    }
+
+    /// 古いサーバー（`verifiedMarkOff` が無い・知らない値）は「付けている」
+    func testOldServerMeansMarksAreOn() throws {
+        let p = try profile(#"{"userId":"u1","verified":true,"verifiedMarkOff":"yes","pro":true,"proMarkStyle":"gold"}"#)
+        XCTAssertTrue(p.showsVerifiedMark)
+        XCTAssertEqual(p.shownProMark, .iris)
+    }
+
+    /// 上の説明は、持っている資格に合わせて付け外しできる印を言う
+    func testIntroMentionsRemovableMarks() {
+        XCTAssertTrue(NameSideChoice.intro(isPro: true, verified: true).contains("公式の印"))
+        XCTAssertTrue(NameSideChoice.intro(isPro: true, verified: false).contains("外すこともできます"))
+        XCTAssertFalse(NameSideChoice.intro(isPro: true, verified: false).contains("公式"))
+        XCTAssertTrue(NameSideChoice.intro(isPro: false, verified: true).contains("公式の印は外すこともできます"))
+        XCTAssertFalse(NameSideChoice.intro(isPro: false, verified: false).contains("外す"))
+    }
+
     /// 持っていない鍵を指していた人は「なし」で開き、決めると古い値を消す
     func testStaleChoiceOpensAsNoneAndIsClearedOnSave() throws {
         let p = try profile(#"{"userId":"u1","badges":{"first":{"tier":1}},"displayBadge":"gone"}"#)

@@ -4,7 +4,8 @@ import UIKit
 /// 名前の横の画面（板 BadgePicker・2026-10-09）。マイページの名前の行を押すと開く。
 ///
 /// - 上: 名前を実際の大きさで出した下見（選んでいる途中の印がそのまま並ぶ）
-/// - Pro の人だけ: Pro マークの形（絞り羽根 / PRO）
+/// - Pro の人だけ: Pro マークの形（絞り羽根 / PRO / 外す）
+/// - 公式の人だけ: 公式の印（付ける / 外す）
 /// - 持っているバッジの格子。押すと1つ選ぶ（選んだものに真鍮の輪）・「なし」も選べる。
 ///   長押しで手に取って回す
 /// - 「決める」でプロフィールの部分更新（`displayBadge`・`proMarkStyle`）
@@ -24,6 +25,15 @@ import UIKit
 /// **格子の絵（2026-10-09 判断）**: 2つの格子とも大きい絵を表示の画素ちょうどに縮めて出す
 /// （`RasterBadgeArt`・名前の横と同じ・板 BadgePicker）。`-s` の引き伸ばしはぼやけていた。
 /// 機能の章（暁・構図・圏外）も 2026-10-10 に板の大きい絵を取り込んだので、すべて大きい絵
+///
+/// **印の取り外し（2026-10-10 owner「メダルと同様に取り外しできるように」）**: Pro マークと公式の印も
+/// バッジと同じく名前の横に「付ける／外す」もの。外しても資格（Pro・公式）は残り、いつでも付け直せる
+/// （公式の資格の付け外しは運営だけのまま）。外すと自分にも他の人にも出ない（サーバーが公開の形から落とす）。
+///
+/// 2026-10-10 判断（並べ方）: 板（BadgePicker）の Pro マークの形は札と2択を1行に並べるが、3択にすると
+/// 390pt 幅に収まらない（92pt × 3 ＋ 札）。札を上の行に置き、下の行に同じ幅の選択肢を横いっぱいに並べる。
+/// 「外す」の絵は板に手本が無いので、バッジの「なし」と同じ点線の丸と斜線（`NameSideNoneMark`）を小さくして使う。
+/// 公式の印の段も同じ形（付ける / 外す）で、公式の人にだけ出す
 struct NameSideBadgeView: View {
 
     /// 開いた時点の自分のプロフィール
@@ -43,7 +53,10 @@ struct NameSideBadgeView: View {
 
     /// 選んでいるバッジの鍵（nil は「なし」）
     @State private var selected: String?
-    @State private var style: ProMarkStyle = .iris
+    /// 選んでいる Pro マークの形（nil は外す）
+    @State private var style: ProMarkStyle? = .iris
+    /// 公式の印を付けているか（公式の人だけ意味を持つ）
+    @State private var verifiedOn = true
     @State private var saving = false
     @State private var errorMessage: String?
     /// 長押しで手に取ったメダル
@@ -57,11 +70,14 @@ struct NameSideBadgeView: View {
         self.profile = profile
         self.showsShelfLink = showsShelfLink
         _selected = State(initialValue: NameSideChoice.initialSelection(profile))
-        _style = State(initialValue: profile.markStyle)
+        _style = State(initialValue: profile.chosenProMark)
+        _verifiedOn = State(initialValue: !profile.verifiedMarkRemoved)
         _badges = State(initialValue: profile.earnedBadges)
     }
 
     private var owned: [EarnedBadge] { BadgeCatalog.owned(badges) }
+    /// 公式の資格があるか（外していても true）
+    private var isVerified: Bool { profile.verified == true }
     private var selectedBadge: EarnedBadge? { selected.flatMap { badges[$0] } }
 
     /// 板: 4列・隙間 2pt
@@ -71,11 +87,7 @@ struct NameSideBadgeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(profile.isPro
-                         ? L("名前の横に出すバッジを1つ選びます。Pro マークの形も選べます。長押しで手に取って回せます。",
-                             "Choose one badge to show next to your name, and the shape of your Pro mark. Press and hold a badge to turn it in your hand.")
-                         : L("名前の横に出すバッジを1つ選びます。長押しで手に取って回せます。",
-                             "Choose one badge to show next to your name. Press and hold a badge to turn it in your hand."))
+                    Text(NameSideChoice.intro(isPro: profile.isPro, verified: isVerified))
                         .font(.caption)
                         .lineSpacing(3)
                         .foregroundStyle(WebTheme.faint)
@@ -85,6 +97,11 @@ struct NameSideBadgeView: View {
                         .padding(.top, 10)
                     if profile.isPro {
                         markStylePicker
+                            .padding(.horizontal, 20)
+                            .padding(.top, 12)
+                    }
+                    if isVerified {
+                        verifiedPicker
                             .padding(.horizontal, 20)
                             .padding(.top, 12)
                     }
@@ -168,7 +185,7 @@ struct NameSideBadgeView: View {
                     .lineLimit(1)
                     // 明朝は 18pt を割らない（26 × 0.7 ≈ 18.2・JPFont の注記）
                     .minimumScaleFactor(0.7)
-                NameMarks(verified: profile.verified, proStyle: profile.isPro ? style : nil,
+                NameMarks(verified: isVerified && verifiedOn, proStyle: profile.isPro ? style : nil,
                           badge: selectedBadge, nameSize: 26, relativeTo: .title, fit: .mincho)
             }
             .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
@@ -187,39 +204,97 @@ struct NameSideBadgeView: View {
 
     // MARK: - Pro マークの形
 
+    /// 板の切り替え（地 6%・選んだものは #17140E の地に真鍮の 1pt の縁）。札は上の行、選択肢は下の行に
+    /// 同じ幅で並べる（3択が 390pt 幅に収まるように・上の注記）
     private var markStylePicker: some View {
-        HStack(spacing: 10) {
-            Text(L("Pro マークの形", "Pro mark"))
+        markRow(title: L("Pro マークの形", "Pro mark")) {
+            ForEach(ProMarkStyle.allCases) { option in
+                markOption(on: style == option, label: option.label,
+                           identifier: "nameSide.proMark.\(option.rawValue)",
+                           action: { style = option }) {
+                    HStack(spacing: 6) {
+                        ProMark(style: option, side: 18)
+                        if option == .iris {
+                            Text(option.label).font(.caption)
+                        }
+                    }
+                }
+            }
+            markOption(on: style == nil, label: L("Pro マークを外す", "Remove the Pro mark"),
+                       identifier: "nameSide.proMark.none",
+                       action: { style = nil }) {
+                removeLabel
+            }
+        }
+    }
+
+    // MARK: - 公式の印
+
+    /// 公式の人だけ。付ける / 外す（資格そのものは運営だけが付け外しする）
+    private var verifiedPicker: some View {
+        markRow(title: L("公式の印", "Verified mark")) {
+            markOption(on: verifiedOn, label: L("公式の印を付ける", "Show the verified mark"),
+                       identifier: "nameSide.verified.on",
+                       action: { verifiedOn = true }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(WebTheme.accentText, WebTheme.accent)
+                        .accessibilityHidden(true)
+                    Text(L("付ける", "Show")).font(.caption)
+                }
+            }
+            markOption(on: !verifiedOn, label: L("公式の印を外す", "Remove the verified mark"),
+                       identifier: "nameSide.verified.off",
+                       action: { verifiedOn = false }) {
+                removeLabel
+            }
+        }
+    }
+
+    /// 「外す」の札（バッジの「なし」と同じ点線の丸と斜線を小さく）
+    private var removeLabel: some View {
+        HStack(spacing: 6) {
+            NameSideNoneMark(side: 18)
+            Text(L("外す", "Remove")).font(.caption)
+        }
+    }
+
+    private func markRow<Options: View>(title: String,
+                                        @ViewBuilder options: () -> Options) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
                 .font(.caption)
                 .foregroundStyle(WebTheme.muted)
-            Spacer(minLength: 0)
             HStack(spacing: 6) {
-                ForEach(ProMarkStyle.allCases) { option in
-                    let on = style == option
-                    Button { style = option } label: {
-                        HStack(spacing: 6) {
-                            ProMark(style: option, side: 18)
-                            if option == .iris {
-                                Text(option.label).font(.caption)
-                            }
-                        }
-                        .foregroundStyle(on ? Color.white : WebTheme.muted)
-                        .padding(.horizontal, 10)
-                        .frame(minWidth: 92, minHeight: WebTheme.minTapTarget)
-                        .background(on ? NameSideChoice.chosenFill : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(on ? WebTheme.accent : Color.clear, lineWidth: 1))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(option.label)
-                    .accessibilityAddTraits(on ? .isSelected : [])
-                }
+                options()
             }
             .padding(3)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
         }
+    }
+
+    private func markOption<Content: View>(on: Bool, label: String, identifier: String,
+                                           action: @escaping () -> Void,
+                                           @ViewBuilder content: () -> Content) -> some View {
+        Button(action: action) {
+            content()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .foregroundStyle(on ? Color.white : WebTheme.muted)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                .background(on ? NameSideChoice.chosenFill : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(on ? WebTheme.accent : Color.clear, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier(identifier)
     }
 
     // MARK: - 持っているバッジ
@@ -278,14 +353,7 @@ struct NameSideBadgeView: View {
         let on = selected == nil
         return Button { selected = nil } label: {
             VStack(spacing: 5) {
-                Circle()
-                    .strokeBorder(WebTheme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                    .frame(width: 56, height: 56)
-                    .overlay(
-                        Image(systemName: "nosign")
-                            .font(.system(size: 20, weight: .regular))
-                            .foregroundStyle(WebTheme.faint)
-                    )
+                NameSideNoneMark(side: 56)
                     .padding(4)
                     .overlay(Circle().strokeBorder(on ? WebTheme.accent : Color.clear, lineWidth: 2))
                 Text(L("なし", "None"))
@@ -464,7 +532,8 @@ struct NameSideBadgeView: View {
 
     private func save() async {
         guard !saving, refreshed else { return }
-        guard let patch = NameSideChoice.patch(profile: profile, selected: selected, style: style) else {
+        guard let patch = NameSideChoice.patch(profile: profile, selected: selected, style: style,
+                                               verifiedOn: verifiedOn) else {
             dismiss()
             return
         }
@@ -504,6 +573,24 @@ enum NameSideChoice {
           "While you're Pro, a new one arrives each season. Once it arrives, choose it from “Your badges” above.")
     }
 
+    /// 上の説明の一行。持っている資格に合わせて、付け外しできる印を言う（2026-10-10）
+    static func intro(isPro: Bool, verified: Bool) -> String {
+        switch (isPro, verified) {
+        case (true, true):
+            return L("名前の横に出すバッジを1つ選びます。Pro マークの形と公式の印も選べ、外すこともできます。長押しで手に取って回せます。",
+                     "Choose one badge to show next to your name. You can also choose your Pro mark and verified mark, or remove them. Press and hold a badge to turn it in your hand.")
+        case (true, false):
+            return L("名前の横に出すバッジを1つ選びます。Pro マークの形も選べ、外すこともできます。長押しで手に取って回せます。",
+                     "Choose one badge to show next to your name, and the shape of your Pro mark, or remove it. Press and hold a badge to turn it in your hand.")
+        case (false, true):
+            return L("名前の横に出すバッジを1つ選びます。公式の印は外すこともできます。長押しで手に取って回せます。",
+                     "Choose one badge to show next to your name. You can also remove your verified mark. Press and hold a badge to turn it in your hand.")
+        case (false, false):
+            return L("名前の横に出すバッジを1つ選びます。長押しで手に取って回せます。",
+                     "Choose one badge to show next to your name. Press and hold a badge to turn it in your hand.")
+        }
+    }
+
     /// 開いたときに選ばれているもの。**持っている鍵を選んでいるときだけ**（取り消された鍵は「なし」）
     static func initialSelection(_ profile: UserProfile) -> String? {
         guard let badge = profile.shownBadge, BadgeCatalog.isKnown(badge.key) else { return nil }
@@ -513,8 +600,10 @@ enum NameSideChoice {
     /// 送る部分更新。**変わったものだけ**を載せ、何も変わっていなければ nil（送らずに閉じる）。
     ///
     /// - バッジ: 選んだ鍵、または「なし」（JSON の null）
-    /// - Pro マークの形: Pro の人だけ
-    static func patch(profile: UserProfile, selected: String?, style: ProMarkStyle) -> ProfilePatch? {
+    /// - Pro マークの形: Pro の人だけ。nil は外す（`"none"`）
+    /// - 公式の印: 公式の人だけ（`verifiedMarkOff`）。`verifiedOn` が nil なら触らない
+    static func patch(profile: UserProfile, selected: String?, style: ProMarkStyle?,
+                      verifiedOn: Bool? = nil) -> ProfilePatch? {
         var patch = ProfilePatch()
         var changed = false
         // 持っていない鍵を指していた人が「なし」のまま決めたら、その古い値も消す。
@@ -524,8 +613,12 @@ enum NameSideChoice {
             patch.displayBadge = Clearable(selected)
             changed = true
         }
-        if profile.isPro, style != profile.markStyle {
-            patch.proMarkStyle = style.rawValue
+        if profile.isPro, style != profile.chosenProMark {
+            patch.proMarkStyle = style?.rawValue ?? ProMarkStyle.removedValue
+            changed = true
+        }
+        if profile.verified == true, let verifiedOn, verifiedOn == profile.verifiedMarkRemoved {
+            patch.verifiedMarkOff = !verifiedOn
             changed = true
         }
         return changed ? patch : nil
@@ -536,5 +629,25 @@ enum NameSideChoice {
         guard selected == nil, let key = profile.chosenBadgeKey,
               profile.earnedBadges[key] != nil, !BadgeCatalog.isKnown(key) else { return false }
         return true
+    }
+}
+
+/// 「なし／外す」の絵（点線の丸と斜線）。バッジの格子の「なし」（56pt）と、Pro マーク・公式の印の
+/// 「外す」（18pt）で同じ形を使う（2026-10-10）。線と記号は大きさに比例させる（56pt で線 1.5・点線 4/3・記号 20）
+struct NameSideNoneMark: View {
+    let side: Double
+
+    var body: some View {
+        let k = side / 56
+        Circle()
+            .strokeBorder(WebTheme.outline,
+                          style: StrokeStyle(lineWidth: max(1, 1.5 * k), dash: [max(1.5, 4 * k), max(1, 3 * k)]))
+            .frame(width: side, height: side)
+            .overlay(
+                Image(systemName: "nosign")
+                    .font(.system(size: max(9, 20 * k), weight: .regular))
+                    .foregroundStyle(WebTheme.faint)
+            )
+            .accessibilityHidden(true)
     }
 }

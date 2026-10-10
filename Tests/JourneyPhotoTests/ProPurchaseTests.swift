@@ -394,6 +394,9 @@ final class ProPurchaseTests: XCTestCase {
         XCTAssertEqual(ProStatusText.nameSideDetail(pro), "初期ユーザー · Pro マークは 絞り羽根")
         let free = try profile(#"{"userId":"u2","pro":false}"#)
         XCTAssertEqual(ProStatusText.nameSideDetail(free), "バッジなし")
+        // 外しているときは「外しています」（絞り羽根と言わない・2026-10-10）
+        let off = try profile(#"{"userId":"u3","pro":true,"proMarkStyle":"none"}"#)
+        XCTAssertEqual(ProStatusText.nameSideDetail(off), "バッジなし · Pro マークは外しています")
     }
 }
 

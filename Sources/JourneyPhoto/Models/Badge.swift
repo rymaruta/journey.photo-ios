@@ -115,6 +115,11 @@ enum ProMarkStyle: String, CaseIterable, Identifiable, Equatable {
 
     var id: String { rawValue }
 
+    /// 「印を外している」を表すサーバーの値（2026-10-10）。形ではないので場合には入れない
+    /// ——`ProMark` が描く形は2つのまま。外したことは `UserProfile.proMarkRemoved`・
+    /// 名前の横の画面では nil で表す
+    static let removedValue = "none"
+
     /// 名前の横の画面の切り替えの札
     var label: String {
         switch self {
