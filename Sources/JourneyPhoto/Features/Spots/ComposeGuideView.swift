@@ -3,7 +3,8 @@ import UIKit
 
 /// 作例を重ねて撮る（Pro・板 ComposeGuide・2026-10-09）。全画面・黒地。
 ///
-/// 入口は撮影スポットの画面の作例の節（`OfficialSpotView.composeEntry`）。Pro でなければそこで
+/// 入口は撮影スポットの画面の作例の節（`OfficialSpotView.composeEntry`＝1枚目から、
+/// 帯の作例の写真＝押した1枚から・2026-10-10）。Pro でなければそこで
 /// Pro の案内を出すので、この画面は Pro の人だけが開く。
 ///
 /// 板のとおり（390×844）:
@@ -31,7 +32,15 @@ struct ComposeGuideView: View {
     let samples: [SpotSample]
 
     @StateObject private var camera = ComposeCamera()
-    @State private var index = 0
+    @State private var index: Int
+
+    /// - Parameter startIndex: 始める作例（作例の帯で押した1枚・2026-10-10）。入口のボタンは 0＝1枚目。
+    ///   範囲の外は内側へ戻す（`ComposeGuide.normalized`）
+    init(spotName: String, samples: [SpotSample], startIndex: Int = 0) {
+        self.spotName = spotName
+        self.samples = samples
+        _index = State(initialValue: ComposeGuide.normalized(startIndex, count: samples.count))
+    }
     @State private var opacity = ComposeGuide.defaultOpacity
     /// 作例を隠している（左のサムネを押した）
     @State private var overlayHidden = false
@@ -105,6 +114,9 @@ struct ComposeGuideView: View {
             Color(red: 0x2A / 255, green: 0x34 / 255, blue: 0x40 / 255)
             if camera.state == .ready {
                 CameraPreview(session: camera.session)
+                    // 2026-10-10 判断: 映像（UIKit の部品）に指を取らせない。枠の左右の払い（作例の切り替え）が
+                    // 映像の上で効くように、当たりは外の `contentShape` に任せる（`CameraPreview` の注記）
+                    .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 overlay
                 thirds

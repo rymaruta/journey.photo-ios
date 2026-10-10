@@ -141,6 +141,88 @@ final class ComposeGuideTests: XCTestCase {
 
     // MARK: - 入口
 
+    private func sample(_ n: Int) -> SpotSample {
+        SpotSample(src: URL(string: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/\(n).jpg/1280px-\(n).jpg")!,
+                   width: 1280, height: 853, title: "T\(n)", author: "A", license: "CC0", licenseUrl: nil,
+                   sourceUrl: URL(string: "https://commons.wikimedia.org/wiki/File:\(n).jpg")!)
+    }
+
+    func testStartIndexIsTheTappedSample() {
+        // owner の報告（2026-10-10・1.0.84）「作例の1枚目しか重ねられない」: 帯で押した1枚から始める
+        let samples = (0..<5).map(sample)
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[2].sourceUrl, in: samples), 2)
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[4].sourceUrl, in: samples), 4)
+        // 入口のボタン（nil）は1枚目
+        XCTAssertEqual(ComposeGuide.startIndex(of: nil, in: samples), 0)
+    }
+
+    func testStartIndexFollowsTheSampleWhenAnEarlierOneIsHidden() {
+        // 案内を経るあいだに前の1枚が読めずに隠れても、押した1枚から始める（番号ではなく出典で探す）
+        let samples = (0..<5).map(sample)
+        let shown = samples.filter { $0 != samples[1] }
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[3].sourceUrl, in: shown), 2)
+        // 押した1枚が消えていたら1枚目
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[1].sourceUrl, in: shown), 0)
+        XCTAssertEqual(ComposeGuide.startIndex(of: samples[0].sourceUrl, in: []), 0)
+    }
+
+    func testEachLaunchIsANewRequest() {
+        // 同じ1枚を続けて開いても、撮る画面を作り直す（前の作例の番号を持ち越さない）
+        let samples = (0..<3).map(sample)
+        let url = samples[1].sourceUrl
+        XCTAssertNotEqual(ComposeGuide.Launch(sample: url, samples: samples),
+                          ComposeGuide.Launch(sample: url, samples: samples))
+    }
+
+    func testLaunchStartsAtTheTappedSampleAndKeepsTheOrder() {
+        let samples = (0..<5).map(sample)
+        let launch = ComposeGuide.Launch(sample: samples[3].sourceUrl, samples: samples)
+        XCTAssertEqual(launch.start, 3)
+        // 開いた時点の並びを持つ（開いている間に帯が縮んでも、撮る画面の作例はずれない）
+        XCTAssertEqual(launch.samples, samples)
+        // 入口のボタンは1枚目
+        XCTAssertEqual(ComposeGuide.Launch(sample: nil, samples: samples).start, 0)
+    }
+
+    // MARK: - 画面のつなぎ（画面の部品は Linux で動かせないので、ソースで縛る・2026-10-10）
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    /// 撮る画面へは、頼み（`Launch`）が持つ並びと始める番号をそのまま渡す。
+    /// `startIndex: 0` や今の帯の並び（`samples:` に `samples`）に戻すと、押した作例から始まらない・ずれる
+    func testSpotScreenPassesTheLaunchToTheCamera() throws {
+        let spot = try source("Sources/JourneyPhoto/Features/Spots/OfficialSpotView.swift")
+        XCTAssertTrue(spot.contains("ComposeGuideView(spotName: spot.name, samples: launch.samples, startIndex: launch.start)"),
+                      "撮る画面に Launch の並びと始める番号を渡していない")
+        XCTAssertEqual(spot.components(separatedBy: "ComposeGuideView(").count - 1, 1, "撮る画面を開く口が増えた")
+        // 帯の写真は押した1枚の出典で開く。入口のボタンは1枚目
+        XCTAssertTrue(spot.contains("openComposeGuide(from: sample.sourceUrl)"), "帯の写真から開いていない")
+        XCTAssertTrue(spot.contains("openComposeGuide(from: nil)"), "入口のボタンが1枚目から開いていない")
+        // 開いている間は開き直さない（素早い2回押し）
+        XCTAssertTrue(spot.contains("guard composeLaunch == nil"), "開いている間の2回押しを止めていない")
+    }
+
+    /// 撮る画面は渡された番号から始め、映像に指を取らせない
+    func testComposeScreenStartsAtTheGivenIndexAndPreviewIgnoresTouches() throws {
+        let view = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
+        XCTAssertTrue(view.contains("_index = State(initialValue: ComposeGuide.normalized(startIndex, count: samples.count))"),
+                      "撮る画面が startIndex から始めていない")
+        // `CameraPreview(...)` の次の部品（`overlay`）までの修飾に `.allowsHitTesting(false)` がある
+        let afterPreview = try XCTUnwrap(view.components(separatedBy: "CameraPreview(session: camera.session)").dropFirst().first)
+        let chain = try XCTUnwrap(afterPreview.components(separatedBy: "\n                overlay\n").first)
+        XCTAssertTrue(chain.contains(".allowsHitTesting(false)"), "映像が指を取る（枠の左右の払いが届かない恐れ）")
+    }
+
+    @MainActor
+    func testCameraPreviewDoesNotTakeTouches() async {
+        // 映像が指を取ると、枠の左右の払い（作例の切り替え）が届かない（2026-10-10）
+        XCTAssertFalse(CameraPreview.preparedView().isUserInteractionEnabled)
+    }
+
     func testEntryOnlyWithSamples() {
         XCTAssertFalse(ComposeGuide.showsEntry(sampleCount: 0))
         XCTAssertTrue(ComposeGuide.showsEntry(sampleCount: 1))

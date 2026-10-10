@@ -165,6 +165,38 @@ enum ComposeGuide {
     /// 入口を出すか。**作例が1枚も無いスポットでは出さない**
     static func showsEntry(sampleCount: Int) -> Bool { sampleCount > 0 }
 
+    /// 撮る画面を開いたときの作例（2026-10-10）。**作例の帯で押した1枚から始める**
+    /// （owner の報告「1枚目しか重ねられない」・TestFlight 1.0.84）。入口のボタンは `nil`＝1枚目。
+    ///
+    /// 押した1枚は**出典のページ（`sourceUrl`）で探す**——番号で渡すと、案内の画面（Pro でない人）を
+    /// 経るあいだに読めなかった作例が帯から隠れて、別の1枚から始まる。見つからなければ 1枚目
+    static func startIndex(of sourceUrl: URL?, in samples: [SpotSample]) -> Int {
+        guard let sourceUrl, let i = samples.firstIndex(where: { $0.sourceUrl == sourceUrl }) else { return 0 }
+        return i
+    }
+
+    /// 撮る画面を開く頼み（`fullScreenCover(item:)` に渡す）。開くたびに別の頼みにする
+    /// （同じ1枚を続けて開いても作り直す）。
+    ///
+    /// 2026-10-10 判断: **開いた時点の作例の並びを持つ。** 撮る画面を開いている間も裏の帯は読み込みを
+    /// 続け、読めなかった1枚は帯から隠れる（`OfficialSpotView.brokenSamples`）。今の並びをそのまま
+    /// 渡すと、撮る画面の番号はそのままで並びだけ縮み、見ている作例が別の1枚にずれる
+    struct Launch: Identifiable, Equatable {
+        let id = UUID()
+        /// 撮る画面に渡す作例（開いた時点で固定）
+        let samples: [SpotSample]
+        /// 始める作例の番号（`samples` の中）
+        let start: Int
+
+        /// - Parameters:
+        ///   - sample: 始める作例の出典のページ（帯で押した1枚）。入口のボタンは nil＝1枚目
+        ///   - samples: いま帯に出している作例
+        init(sample: URL?, samples: [SpotSample]) {
+            self.samples = samples
+            self.start = ComposeGuide.startIndex(of: sample, in: samples)
+        }
+    }
+
     /// 入口を押したときの行き先
     enum Destination: Equatable {
         /// 撮る画面（Pro）
