@@ -113,6 +113,19 @@ final class ProPurchaseTests: XCTestCase {
         XCTAssertEqual(PurchaseDelivery.outcome(statusCode: nil), .retryLater)
     }
 
+    /// 🔴 409 は `code` で分ける: `claimed_by_other_account` はサーバーがずっと断るので終える
+    /// （終えないと起動・ログインのたびに送り直し続ける）。`code` の無い 409（重なり）はやり直す
+    func testDelivery409ByCode() {
+        XCTAssertEqual(PurchaseDelivery.outcome(statusCode: 409, code: "claimed_by_other_account"), .rejected)
+        XCTAssertTrue(PurchaseDelivery.shouldFinish(PurchaseDelivery.outcome(statusCode: 409, code: "claimed_by_other_account")))
+        XCTAssertEqual(PurchaseDelivery.outcome(statusCode: 409, code: nil), .retryLater)
+        XCTAssertEqual(PurchaseDelivery.outcome(statusCode: 409, code: "something_else"), .retryLater)
+        // 409 以外では `code` で結果は変わらない
+        XCTAssertEqual(PurchaseDelivery.outcome(statusCode: 500, code: "claimed_by_other_account"), .retryLater)
+        XCTAssertEqual(PurchaseDelivery.outcome(statusCode: 403, code: "family_shared_not_supported"), .rejected)
+        XCTAssertEqual(PurchaseDelivery.outcome(statusCode: nil, code: "claimed_by_other_account"), .retryLater)
+    }
+
     /// Apple の決まり: 渡し終えてから終える。やり直す取引は終えない
     func testFinishOnlyWhenServerDecided() {
         XCTAssertTrue(PurchaseDelivery.shouldFinish(.accepted))
@@ -226,13 +239,18 @@ final class ProPurchaseTests: XCTestCase {
         let family = await submit(403, #"{"error":"ファミリー共有のサブスクリプションでは Pro になりません","code":"family_shared_not_supported"}"#)
         XCTAssertEqual(family.refusal, .familyShared)
         XCTAssertTrue(PurchaseDelivery.shouldFinish(family.outcome))
-        // 409 claimed_by_other_account（ほかの生きているアカウント）→ 別のアカウント（終えないのは今までどおり）
+        // 409 claimed_by_other_account（ほかの生きているアカウント）→ 別のアカウント・終える
+        // （サーバーはずっと断る。終えないと起動・ログインのたびに送り直し続ける）
         let claimed = await submit(409, #"{"error":"このサブスクリプションは別のアカウントで使われています","code":"claimed_by_other_account"}"#)
         XCTAssertEqual(claimed.refusal, .otherAccount)
-        XCTAssertEqual(claimed.outcome, .retryLater)
-        // 409 の書き込みの重なり（code なし）・500 は理由なし（やり直す）
+        XCTAssertEqual(claimed.outcome, .rejected)
+        XCTAssertTrue(PurchaseDelivery.shouldFinish(claimed.outcome))
+        XCTAssertEqual(PurchaseDelivery.message(for: try XCTUnwrap(claimed.refusal)), PurchaseDelivery.otherAccountMessage)
+        // 409 の書き込みの重なり（code なし）・500 は理由なし（やり直す・終えない）
         let conflict = await submit(409, #"{"error":"他の変更と重なりました。もう一度お試しください"}"#)
         XCTAssertNil(conflict.refusal)
+        XCTAssertEqual(conflict.outcome, .retryLater)
+        XCTAssertFalse(PurchaseDelivery.shouldFinish(conflict.outcome))
         let server = await submit(500, #"{"error":"x"}"#)
         XCTAssertNil(server.refusal)
         // 🔴 日本語の本文では見ない: 本文が同じでも code が違えば理由も違う
