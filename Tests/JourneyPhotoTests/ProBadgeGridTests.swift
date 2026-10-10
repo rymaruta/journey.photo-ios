@@ -126,11 +126,88 @@ final class ProBadgeGridTests: XCTestCase {
         XCTAssertEqual(made.value, 2, "違う鍵は別に作る")
     }
 
-    /// `NameBadgeRaster.shared` は作る仕事をまとめる口を通す
+    /// `NameBadgeRaster.shared` は作る仕事をまとめる口を通し、重い仕事は専用の列で作る
     func testRasterSharedGoesThroughInflight() throws {
         let raster = try source("Features/Profile/NameBadgeRaster.swift")
-        let shared = try slice(raster, from: "static func shared(named", to: "private static let inflight")
+        let shared = try slice(raster, from: "static func shared(named", to: "/// 縮める仕事の専用の列")
         XCTAssertTrue(shared.contains("await inflight.value(for: cacheKey(image: name, pixels: pixels))"))
+        XCTAssertTrue(shared.contains("await onRenderQueue { image(named: name, pixels: pixels)"))
+    }
+
+    // MARK: - 共有の糸をふさがない（Mac run 385 の固まり・2026-10-10）
+
+    /// コメントを除いた行
+    private func codeLines(_ text: String) -> [Substring] {
+        text.split(separator: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+    }
+
+    /// 🔴 縮める重い仕事を `Task.detached`（共有の糸）で走らせない
+    func testRasterNeverBlocksTheSharedPool() throws {
+        let raster = try source("Features/Profile/NameBadgeRaster.swift")
+        let marks = try source("Features/Common/NameMarks.swift")
+        let view = try slice(marks, from: "struct RasterBadgeArt", to: "/// マイページの名前の行の読み上げ")
+        XCTAssertFalse(codeLines(raster).contains { $0.contains("Task.detached") })
+        XCTAssertFalse(codeLines(view).contains { $0.contains("Task.detached") })
+        let onQueue = try slice(raster, from: "static func onRenderQueue", to: "// MARK: - 作る")
+        XCTAssertTrue(onQueue.contains("withCheckedContinuation"))
+        XCTAssertTrue(onQueue.contains("renderQueue.async"))
+    }
+
+    /// 仕事は専用の列の上で走り、外は専用の列ではない
+    func testRenderWorkRunsOnTheDedicatedQueue() async {
+        let inside = await NameBadgeRaster.onRenderQueue { NameBadgeRaster.isOnRenderQueue }
+        XCTAssertTrue(inside)
+        XCTAssertFalse(NameBadgeRaster.isOnRenderQueue)
+    }
+
+    /// 🔴 何枚頼んでも同時に作るのは1枚（直列）。その間も共有の糸は空いていて、ほかの仕事がすぐ進む
+    func testRenderIsSerialAndLeavesThePoolFree() async {
+        final class Gauge: @unchecked Sendable {
+            private let lock = NSLock()
+            private var now = 0
+            private(set) var peak = 0
+            func enter() { lock.lock(); now += 1; peak = max(peak, now); lock.unlock() }
+            func leave() { lock.lock(); now -= 1; lock.unlock() }
+            var maxSeen: Int { lock.lock(); defer { lock.unlock() }; return peak }
+        }
+        let gauge = Gauge()
+        let started = Date()
+        // 格子の枚数より多く（共有の糸の数より十分多く）同時に頼む
+        let jobs = Task {
+            await withTaskGroup(of: Int.self) { group in
+                for i in 0..<24 {
+                    group.addTask {
+                        await NameBadgeRaster.onRenderQueue {
+                            gauge.enter()
+                            Thread.sleep(forTimeInterval: 0.05)
+                            gauge.leave()
+                            return i
+                        }
+                    }
+                }
+                var n = 0
+                for await _ in group { n += 1 }
+                return n
+            }
+        }
+        // 作っている途中に、共有の糸の上のほかの仕事（ネットの続きなど）がすぐ終わる
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        let probeStart = Date()
+        let probe = await Task.detached { () -> Int in
+            await withTaskGroup(of: Int.self) { group in
+                for i in 0..<8 { group.addTask { i } }
+                var sum = 0
+                for await v in group { sum += v }
+                return sum
+            }
+        }.value
+        let probeTime = Date().timeIntervalSince(probeStart)
+        XCTAssertEqual(probe, 28)
+        XCTAssertLessThan(probeTime, 0.5, "縮めている間に共有の糸がふさがっている（\(probeTime)s）")
+        let done = await jobs.value
+        XCTAssertEqual(done, 24)
+        XCTAssertEqual(gauge.maxSeen, 1, "同時に作るのは1枚")
+        XCTAssertGreaterThan(Date().timeIntervalSince(started), 1.1, "24 × 0.05s を1本の列で順に作る")
     }
 
     /// 🔴 「PRO 限定」の絵: すべて大きい絵（機能の章も 2026-10-10 に板から取り込んだ）。`-s` は使わない
