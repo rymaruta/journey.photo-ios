@@ -17,6 +17,12 @@ import Foundation
 ///
 /// 第3段階（機能ができてから）配る。鍵はまだ無い——名前の横の画面の「PRO 限定」に
 /// 「まだ持っていない」絵として並べるだけ（板 BadgePicker のとおり）。
+///
+/// 絵は季節の章と同じ作りの大きい絵 600px（`medal-pro-dawn`・`-compose`・`-summit`）。板の
+/// ProBadges の絵をそのまま取り込んだ（2026-10-10 owner「この辺のバッジも実際のを縮小したのにして」）。
+/// 板の秋 2026 の絵がアプリの `medal-pro-autumn-2026` とバイトまで同じなので、同じ出どころ。
+/// 円の割合も測って季節の章と同じ（中心の行で 91.7%・列で 93.0%＝季節の章と同じ値）なので
+/// `discRatio` 0.91 のまま
 enum ProChapters {
 
     /// 名前の横で円が占める割合（素材の README: 91%）
@@ -122,8 +128,8 @@ enum ProChapters {
         let ja: String
         let en: String
         var name: String { L(ja, en) }
-        /// 絵は小さい絵（`-s`）だけ。**大きい絵は iOS にまだ無い**
-        var smallImage: String { "medal-pro-\(id)-s" }
+        /// 大きい絵（600px・季節の章と同じ作り・2026-10-10 に板から取り込んだ）。表示の画素ちょうどに縮めて出す
+        var largeImage: String { "medal-pro-\(id)" }
     }
 
     static let featureChapters: [FeatureChapter] = [
@@ -144,7 +150,7 @@ enum ProChapters {
         let name: String
         let kind: Kind
         /// 出す絵。サポーター・季節の章は**大きい絵**（表示の画素ちょうどに縮めて出す・板 BadgePicker）、
-        /// 機能の章は大きい絵が無いので `-s`（2026-10-09 判断）
+        /// 機能の章も大きい絵（2026-10-10 に板から取り込んだ）
         let image: String
     }
 
@@ -161,7 +167,7 @@ enum ProChapters {
                                     image: chapter.imageBase))
         }
         for feature in featureChapters {
-            items.append(LockedItem(id: feature.id, name: feature.name, kind: .feature, image: feature.smallImage))
+            items.append(LockedItem(id: feature.id, name: feature.name, kind: .feature, image: feature.largeImage))
         }
         return items
     }

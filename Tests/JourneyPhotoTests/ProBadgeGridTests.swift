@@ -133,20 +133,32 @@ final class ProBadgeGridTests: XCTestCase {
         XCTAssertTrue(shared.contains("await inflight.value(for: cacheKey(image: name, pixels: pixels))"))
     }
 
-    /// 🔴 「PRO 限定」の絵: サポーター・季節の章は大きい絵、機能の章（大きい絵が無い）は `-s`
-    func testLockedItemsUseLargeArtExceptFeatures() {
+    /// 🔴 「PRO 限定」の絵: すべて大きい絵（機能の章も 2026-10-10 に板から取り込んだ）。`-s` は使わない
+    func testLockedItemsUseLargeArt() {
         let items = ProChapters.lockedItems(owned: BadgeSet(), now: day(2026, 10))
         XCTAssertEqual(items.map(\.image), [
             "medal-supporter",
             "medal-pro-spring-2027", "medal-pro-summer-2027", "medal-pro-autumn-2026", "medal-pro-winter-2026",
-            "medal-pro-dawn-s", "medal-pro-compose-s", "medal-pro-summit-s",
+            "medal-pro-dawn", "medal-pro-compose", "medal-pro-summit",
         ])
-        for item in items {
-            if case .feature = item.kind {
-                XCTAssertTrue(item.image.hasSuffix("-s"), item.id)
-            } else {
-                XCTAssertFalse(item.image.hasSuffix("-s"), item.id)
-            }
+        for item in items { XCTAssertFalse(item.image.hasSuffix("-s"), item.id) }
+    }
+
+    /// 🔴 機能の章の大きい絵が絵の入れ物に在り、**縮める元として十分大きい**（600px 四方・季節の章と同じ）
+    func testFeatureChapterLargeArtExists() throws {
+        let folder = root.appendingPathComponent("Sources/JourneyPhoto/Assets.xcassets/ProMedals")
+        for feature in ProChapters.featureChapters {
+            let name = feature.largeImage
+            XCTAssertFalse(name.hasSuffix("-s"), name)
+            let set = folder.appendingPathComponent(name + ".imageset")
+            let contents = try String(contentsOf: set.appendingPathComponent("Contents.json"), encoding: .utf8)
+            XCTAssertTrue(contents.contains("\"\(name).png\""), name)
+            let data = try Data(contentsOf: set.appendingPathComponent(name + ".png"))
+            XCTAssertGreaterThan(data.count, 24)
+            let width = data[16..<20].reduce(0) { $0 << 8 | Int($1) }
+            let height = data[20..<24].reduce(0) { $0 << 8 | Int($1) }
+            XCTAssertEqual(width, 600, name)
+            XCTAssertEqual(height, 600, name)
         }
     }
 
