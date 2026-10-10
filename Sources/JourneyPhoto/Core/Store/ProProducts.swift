@@ -197,11 +197,12 @@ enum SHA1 {
 ///
 /// - 受け取った（2xx）→ 終える
 /// - サーバーが「この取引は受け取れない」と言い切った（400 署名・商品が違う／403 ほかの人の
-///   appAccountToken／410 退会済み）→ 終える。何度送っても通らず、終えないと起動のたびに
-///   送り直し続ける（権利はサーバーが持つので、終えても購入は失われない）
+///   appAccountToken／409 `claimed_by_other_account` 別の生きているアカウントのもの／410 退会済み）
+///   → 終える。何度送っても通らず、終えないと起動のたびに・ログインのたびに送り直し続ける
+///   （権利はサーバーが持つので、終えても購入は失われない）
 /// - それ以外 → **終えない**（あとでやり直す）: 送れなかった（圏外）・ログインが切れた（401）・
-///   409（「別のアカウントで使われている」と「書き込みが重なり続けた」の両方がこの番号で、
-///   後者はやり直せば通る）・5xx・503（サーバーに App Store の設定がまだ無い）
+///   `code` の無い 409（書き込みが重なり続けた。やり直せば通る）・5xx・503（サーバーに
+///   App Store の設定がまだ無い）
 enum PurchaseDelivery {
     enum Outcome: Equatable {
         case accepted
@@ -258,11 +259,17 @@ enum PurchaseDelivery {
         }
     }
 
-    static func outcome(statusCode: Int?) -> Outcome {
-        guard let code = statusCode else { return .retryLater }
-        switch code {
+    /// 取引を終えるかの結果。`code` はサーバーの本文の `code`（`APIClient.errorCode(from:)`・
+    /// `refusal(statusCode:code:)` と同じものを渡す）。
+    ///
+    /// 409 は `code` で分ける: `claimed_by_other_account`（別のアカウントのもの）はサーバーが
+    /// ずっと断るので終える。`code` の無い 409（書き込みの重なり）はやり直せば通るので終えない
+    static func outcome(statusCode: Int?, code: String? = nil) -> Outcome {
+        guard let status = statusCode else { return .retryLater }
+        switch status {
         case 200..<300: return .accepted
         case 400, 403, 410: return .rejected
+        case 409 where code == "claimed_by_other_account": return .rejected
         default: return .retryLater
         }
     }

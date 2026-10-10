@@ -28,10 +28,11 @@ struct PurchaseService {
             return PurchaseDelivery.Result(.accepted)
         } catch let error as APIError {
             if case .server(let status, let message) = error {
-                // 理由はサーバーの `code` で見る（403 別のアカウント・ファミリー共有／409 ほかのアカウント）
-                return PurchaseDelivery.Result(PurchaseDelivery.outcome(statusCode: status), message: message,
-                                               refusal: PurchaseDelivery.refusal(statusCode: status,
-                                                                                 code: APIClient.errorCode(from: errorBody.data)))
+                // 理由も終えるかもサーバーの `code` で見る（403 別のアカウント・ファミリー共有／
+                // 409 ほかのアカウント）。同じ `code` を両方に渡す
+                let code = APIClient.errorCode(from: errorBody.data)
+                return PurchaseDelivery.Result(PurchaseDelivery.outcome(statusCode: status, code: code), message: message,
+                                               refusal: PurchaseDelivery.refusal(statusCode: status, code: code))
             }
             // 圏外・ログインしていない・応答が読めない → あとでやり直す
             return PurchaseDelivery.Result(.retryLater)
